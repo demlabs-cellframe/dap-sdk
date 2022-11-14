@@ -5,15 +5,11 @@ set(CMAKE_C_STANDARD 11)
 
 add_definitions ("-D_GNU_SOURCE")
 
+file(GLOB DAP_IO_SOURCES *.c)
+file(GLOB DAP_IO_HEADERS include/*.h)
 if(WIN32)
-    file(GLOB DAP_IO_SOURCES *.c ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/wepoll/*.c)
-    file(GLOB DAP_IO_HEADERS include/*.h ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/wepoll/*.h)
-
-    
-
-else()
-    file(GLOB DAP_IO_SOURCES *.c)
-    file(GLOB DAP_IO_HEADERS include/*.h)
+    set(DAP_IO_SOURCES ${DAP_IO_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/wepoll/wepoll.c)
+    set(DAP_IO_HEADERS ${DAP_IO_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/wepoll/wepoll.h)
 endif()
 
 if(WIN32)
@@ -38,7 +34,6 @@ endif()
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PRIVATE src)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
-
 
 if (WIN32)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/wepoll)
