@@ -1,5 +1,21 @@
 set(DAP_SDK_NATIVE_VERSION "2.2-2")
 
+if (CELLFRAME_MODULES MATCHES "core")
+    SET(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
+endif()
+
+if (CELLFRAME_MODULES MATCHES "network")
+    set(DAPSDK_MODULES "${DAPSDK_MODULES} app-cli plugin network-core network-client network-server")
+endif()
+
+if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
+    set(DAPSDK_MODULES "core crypto network-core network-client network-server")
+    set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m pthread)
+    if (SUPPORT_PYTHON_PLUGINS)
+        set(CELLFRAME_MODULES "${CELLFRAME_MODULES} core chains network cs-none srv-")
+    endif()
+endif()
+
 # We switch off SSL until its not switched on back
 if(DAPSDK_MODULES MATCHES "ssl-support")
     add_definitions("-DDAP_NET_CLIENT_SSL")
