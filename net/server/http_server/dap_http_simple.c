@@ -238,14 +238,14 @@ static void s_esocket_worker_write_callback(dap_worker_t *a_worker, void *a_arg)
         return;
     }
     l_es->_inheritor = l_http_simple->http_client; // Back to the owner
-    dap_http_client_write((dap_events_socket_t *)a_arg, NULL);
+    dap_http_client_write(l_es, NULL);
 }
 
 inline static void s_write_data_to_socket(dap_proc_thread_t *a_thread, dap_http_simple_t *a_simple)
 {
     dap_http_client_out_header_generate(a_simple->http_client);
     a_simple->http_client->state_write = DAP_HTTP_CLIENT_STATE_START;
-    dap_proc_thread_worker_exec_callback_inter(a_thread, a_simple->worker->id, s_esocket_worker_write_callback, a_simple->esocket);
+    dap_proc_thread_worker_exec_callback_inter(a_thread, a_simple->worker->id, s_esocket_worker_write_callback, a_simple);
 }
 
 
