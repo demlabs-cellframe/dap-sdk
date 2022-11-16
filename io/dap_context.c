@@ -1250,7 +1250,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
     int l_ret = epoll_ctl(a_context->epoll_fd, EPOLL_CTL_ADD, a_es->socket, &a_es->ev);
     if (l_ret != 0 ){
         l_is_error = true;
-        l_errno = l_ret;
+        l_errno = errno;
     }
 #elif defined (DAP_EVENTS_CAPS_POLL)
     if (  a_context->poll_count == a_context->poll_count_max ){ // realloc
@@ -1328,11 +1328,11 @@ lb_exit:
 #else
 #error "Unimplemented new esocket on context callback for current platform"
 #endif
-    if ( l_is_error ){
+    if (l_is_error && l_errno != EEXIST) {
         char l_errbuf[128];
         l_errbuf[0]=0;
         strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        log_it(L_ERROR,"Can't update client socket state on kqueue fd %d: \"%s\" (%d)",
+        log_it(L_ERROR,"Can't update client socket state on poll/epoll/kqueue fd %d: \"%s\" (%d)",
             a_es->socket, l_errbuf, l_errno);
         return l_errno;
     }else{
@@ -1765,7 +1765,7 @@ dap_events_socket_t * dap_context_create_event(dap_context_t * a_context, dap_ev
     l_es->socket        = socket(AF_INET, SOCK_DGRAM, 0);
 
     if (l_es->socket == INVALID_SOCKET) {
-        log_it(L_ERROR, "Error creating socket for TYPE_QUEUE: %d", WSAGetLastError());
+        log_it(L_ERROR, "Error creating socket for TYPE_EVENT: %d", WSAGetLastError());
         DAP_DELETE(l_es);
         return NULL;
     }

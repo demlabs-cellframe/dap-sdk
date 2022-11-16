@@ -220,7 +220,15 @@ void dap_cpu_assign_thread_on(uint32_t a_cpu_id)
  * @return Zero if ok others if no
  */
 int dap_events_init( uint32_t a_threads_count, size_t a_conn_timeout )
-{
+{  
+#ifdef __WIN32
+    WSADATA wsaData;
+    int ret = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (ret != 0) {
+        log_it(L_CRITICAL, "Couldn't init Winsock DLL, error: %d", ret);
+        return 2;
+    }
+#endif
     g_debug_reactor = g_config ? dap_config_get_item_bool_default(g_config, "general", "debug_reactor", false) : false;
 
     uint32_t l_cpu_count = dap_get_cpu_count();
@@ -271,6 +279,9 @@ void dap_events_deinit( )
         DAP_DELETE( s_workers );
 
     s_workers_init = 0;
+#ifdef __WIN32
+    WSACleanup();
+#endif
 }
 
 
