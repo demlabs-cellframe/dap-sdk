@@ -531,10 +531,6 @@ void dap_cli_server_deinit()
 {
     if(server_sockfd != INVALID_SOCKET)
         closesocket(server_sockfd);
-#ifdef __WIN32
-    WSACleanup();
-#endif
-
 }
 
 /**
