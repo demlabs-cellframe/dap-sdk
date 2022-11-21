@@ -376,7 +376,6 @@ void dap_events_stop_all( )
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
         dap_events_socket_event_signal( s_workers[i]->context->event_exit, 1);
     }
-    // TODO implement signal to stop the workers
 }
 
 
