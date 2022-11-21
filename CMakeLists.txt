@@ -1,33 +1,77 @@
-cmake_minimum_required(VERSION 3.1)
-project (dap_chain_global_db C)
+set(DAP_SDK_NATIVE_VERSION "2.2-2")
 
-file(GLOB DAP_CHAIN_GLOBAL_DB_SRC *.c)
-file(GLOB DAP_CHAIN_GLOBAL_DB_HDR include/*.h)
+if (CELLFRAME_MODULES MATCHES "core")
+    SET(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
+endif()
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/cuttdb ${CMAKE_CURRENT_BINARY_DIR}/../../3rdparty/cuttdb)
-set(DAP_CHAIN_GLOBAL_DB_LIBS dap_core dap_io dap_crypto dap_chain dap_chain_net sqlite3 dap_cuttdb json-c)
+if (CELLFRAME_MODULES MATCHES "network")
+    set(DAPSDK_MODULES "${DAPSDK_MODULES} app-cli plugin network-core network-client network-server")
+endif()
 
-if(BUILD_WITH_GDB_DRIVER_MDBX)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/libmdbx ${CMAKE_CURRENT_BINARY_DIR}/../../3rdparty/libmdbx EXCLUDE_FROM_ALL)
-    file(GLOB DAP_CHAIN_GLOBAL_DB_SRC ${DAP_CHAIN_GLOBAL_DB_SRC} dap_chain_global_db_driver_mdbx.c)
-    file(GLOB DAP_CHAIN_GLOBAL_DB_HRR ${DAP_CHAIN_GLOBAL_DB_HDR} include/dap_chain_global_db_driver_mdbx.h)
-    set(DAP_CHAIN_GLOBAL_DB_LIBS ${DAP_CHAIN_GLOBAL_DB_LIBS} mdbx-static)
-    add_definitions("-DDAP_CHAIN_GDB_ENGINE_MDBX")
+if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
+    set(DAPSDK_MODULES "core crypto network-core network-client network-server")
+    set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m pthread)
+    if (SUPPORT_PYTHON_PLUGINS)
+        set(CELLFRAME_MODULES "${CELLFRAME_MODULES} core chains network cs-none srv-")
+    endif()
+endif()
+
+# We switch off SSL until its not switched on back
+if(DAPSDK_MODULES MATCHES "ssl-support")
+    add_definitions("-DDAP_NET_CLIENT_SSL")
 else()
-    list(FILTER DAP_CHAIN_GLOBAL_DB_SRC EXCLUDE REGEX "mdbx")
-    list(FILTER DAP_CHAIN_GLOBAL_DB_HDR EXCLUDE REGEX "mdbx")
+    add_definitions("-DDAP_NET_CLIENT_NO_SSL")
 endif()
 
-if(BUILD_WITH_GDB_DRIVER_PGSQL)
-    set(DAP_CHAIN_GLOBAL_DB_LIBS ${DAP_CHAIN_GLOBAL_DB_LIBS} pq)
-    add_definitions("-DDAP_CHAIN_GDB_ENGINE_PGSQL")
+# Core, add it always
+add_subdirectory(core)
+if (DAPSDK_MODULES MATCHES "crypto")
+    # Cryptography
+    add_subdirectory(crypto)
 endif()
 
-add_library(${PROJECT_NAME} STATIC ${DAP_CHAIN_GLOBAL_DB_SRC} ${DAP_CHAIN_GLOBAL_DB_HDR})
+if (DAPSDK_MODULES MATCHES "app-cli")
+    add_subdirectory(net/app-cli)
+endif()
 
-target_link_libraries(${PROJECT_NAME} ${DAP_CHAIN_GLOBAL_DB_LIBS})
+if (DAPSDK_MODULES MATCHES "plugin")
+    add_subdirectory(plugin)
+endif()
 
-target_include_directories(${PROJECT_NAME} INTERFACE .)
-target_include_directories(${PROJECT_NAME} PUBLIC include)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
+# I/O subsystem
+if (DAPSDK_MODULES MATCHES "io")
+    add_subdirectory(io)
+endif()
 
+# Networking core
+if (DAPSDK_MODULES MATCHES "network-core")
+    add_subdirectory(net/stream)
+endif()
+
+if (DAPSDK_MODULES MATCHES "network-pure")
+    add_subdirectory(io)
+    add_subdirectory(net/core)
+endif()
+
+# Networking client
+if (DAPSDK_MODULES MATCHES "network-client")
+    add_subdirectory(net/client)
+endif()
+
+# Networking server
+if (DAPSDK_MODULES MATCHES "network-server")
+    add_subdirectory(net/server)
+#    add_subdirectory(net/server-udp)
+endif()
+
+if(DARWIN)
+    add_subdirectory(3rdparty/json-c-darwin)
+    add_subdirectory(3rdparty/libmagic-darwin)
+    include_directories(3rdparty/json-c-darwin)
+elseif(ANDROID)
+    add_subdirectory(3rdparty/libmagic)
+    add_subdirectory(3rdparty/json-c)
+    include_directories(3rdparty/)
+elseif(LINUX)
+    add_subdirectory(3rdparty/json-c)
+endif()
