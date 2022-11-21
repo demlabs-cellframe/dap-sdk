@@ -4,6 +4,10 @@ if (CELLFRAME_MODULES MATCHES "core")
     SET(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
 endif()
 
+if (CELLFRAME_MODULES MATCHES "chains")
+    SET(DAPSDK_MODULES "${DAPSDK_MODULES} global-db")
+endif()
+
 if (CELLFRAME_MODULES MATCHES "network")
     set(DAPSDK_MODULES "${DAPSDK_MODULES} app-cli plugin network-core network-client network-server")
 endif()
@@ -43,6 +47,11 @@ if (DAPSDK_MODULES MATCHES "io")
     add_subdirectory(io)
 endif()
 
+# Global database
+if (DAPSDK_MODULES MATCHES "global-db")
+    add_subdirectory(global-db)
+endif()
+
 # Networking core
 if (DAPSDK_MODULES MATCHES "network-core")
     add_subdirectory(net/stream)
@@ -75,3 +84,10 @@ elseif(ANDROID)
 elseif(LINUX)
     add_subdirectory(3rdparty/json-c)
 endif()
+
+#if(BUILD_DAP_TESTS)
+#    file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/test/main_test.py
+#            DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/)
+#    enable_testing()
+#    add_subdirectory(test)
+#endif()

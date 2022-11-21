@@ -60,7 +60,7 @@ void dap_global_db_sync_deinit()
  * @param a_arg a pointer to an argument
  * @return (none)
  */
-void dap_chain_global_db_add_sync_group(const char *a_net_name, const char *a_group_prefix, dap_global_db_obj_callback_notify_t a_callback, void *a_arg)
+void dap_global_db_add_sync_group(const char *a_net_name, const char *a_group_prefix, dap_global_db_obj_callback_notify_t a_callback, void *a_arg)
 {
     dap_sync_group_item_t *l_item = DAP_NEW_Z(dap_sync_group_item_t);
     l_item->net_name = dap_strdup(a_net_name);
@@ -78,7 +78,7 @@ void dap_chain_global_db_add_sync_group(const char *a_net_name, const char *a_gr
  * @param a_arg a pointer to an argument
  * @return (none)
  */
-void dap_chain_global_db_add_sync_extra_group(const char *a_net_name, const char *a_group_mask, dap_global_db_obj_callback_notify_t a_callback, void *a_arg)
+void dap_global_db_add_sync_extra_group(const char *a_net_name, const char *a_group_mask, dap_global_db_obj_callback_notify_t a_callback, void *a_arg)
 {
     dap_sync_group_item_t* l_item = DAP_NEW_Z(dap_sync_group_item_t);
     l_item->net_name = dap_strdup(a_net_name);
