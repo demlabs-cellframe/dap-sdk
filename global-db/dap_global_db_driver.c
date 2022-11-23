@@ -186,19 +186,12 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
     l_store_obj_dst = l_store_obj;
     l_store_obj_src = a_store_obj;
 
-    for( int i =  a_store_count; i--; l_store_obj_dst++, l_store_obj_src++)
-    {
-        memcpy(l_store_obj_dst, l_store_obj_src, sizeof(*l_store_obj_dst));
-
+    for( int i =  a_store_count; i--; l_store_obj_dst++, l_store_obj_src++) {
+        *l_store_obj_dst = *l_store_obj_src;
         l_store_obj_dst->group = dap_strdup(l_store_obj_src->group);
         l_store_obj_dst->key = dap_strdup(l_store_obj_src->key);
-        if(l_store_obj_src->value &&l_store_obj_src->value_len){
+        if(l_store_obj_src->value && l_store_obj_src->value_len)
             l_store_obj_dst->value = DAP_DUP_SIZE(l_store_obj_src->value, l_store_obj_src->value_len);
-        }
-
-        // Why to do if we did memcpy() before?
-        //l_store_obj_dst->callback_proc_thread = l_store_obj_src->callback_proc_thread;
-        //l_store_obj_dst->callback_proc_thread_arg = l_store_obj_src->callback_proc_thread_arg;
     }
 
     return l_store_obj;
@@ -484,7 +477,6 @@ dap_store_obj_t* dap_global_db_driver_read(const char *a_group, const char *a_ke
  */
 bool dap_global_db_driver_is(const char *a_group, const char *a_key)
 {
-    bool l_ret = NULL;
     // read records using the selected database engine
     if(s_drv_callback.is_obj && a_group && a_key)
         return s_drv_callback.is_obj(a_group, a_key);

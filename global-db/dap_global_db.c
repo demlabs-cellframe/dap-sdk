@@ -167,8 +167,8 @@ static bool s_msg_opcode_context_exec(struct queue_io_msg * a_msg);
 static void s_queue_io_msg_delete( struct queue_io_msg * a_msg);
 
 // Delete history add and del
-static int s_record_del_history_add( char *a_key, char *a_group, uint64_t a_timestamp);
-static int s_record_del_history_del( const char *a_key,  const char *a_group);
+static int s_record_del_history_add(char *a_group, char *a_key, uint64_t a_timestamp);
+static int s_record_del_history_del(const char *a_group, const char *a_key);
 
 // Call notificators
 static void s_change_notify(dap_store_obj_t * a_store_obj, char a_opcode);
@@ -345,7 +345,6 @@ int dap_global_db_get_raw(const char * a_group, const char *a_key,dap_global_db_
  */
 static bool s_msg_opcode_get_raw(struct queue_io_msg * a_msg)
 {
-    bool l_store_obj_delete = true;
     size_t l_count_records = 0;
     dap_store_obj_t *l_store_obj = dap_global_db_driver_read( a_msg->group,
                                                                      a_msg->key,
@@ -353,12 +352,10 @@ static bool s_msg_opcode_get_raw(struct queue_io_msg * a_msg)
 
 
     if(a_msg->callback_result_raw)
-        l_store_obj_delete = a_msg->callback_result_raw (s_context_global_db,
-                                                         l_store_obj ? DAP_GLOBAL_DB_RC_SUCCESS:
-                                                                       DAP_GLOBAL_DB_RC_NO_RESULTS, l_store_obj,
-                                                          a_msg->callback_arg );
-    if (l_store_obj && l_store_obj_delete)
-        dap_store_obj_free(l_store_obj,l_count_records);
+        a_msg->callback_result_raw(s_context_global_db, l_store_obj ? DAP_GLOBAL_DB_RC_SUCCESS:
+                                                                      DAP_GLOBAL_DB_RC_NO_RESULTS,
+                                                        l_store_obj, a_msg->callback_arg );
+    dap_store_obj_free(l_store_obj,l_count_records);
     return true;
 }
 
@@ -519,14 +516,9 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
 static bool s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
 {
     dap_store_obj_t *l_store_obj = dap_global_db_driver_read_last(a_msg->group);
-    bool l_store_obj_delete = true;
-    if(l_store_obj){
-        if(a_msg->callback_result)
-            l_store_obj_delete = a_msg->callback_result_raw(s_context_global_db, DAP_GLOBAL_DB_RC_SUCCESS, l_store_obj, a_msg->callback_arg );
-        if(l_store_obj_delete)
-            dap_store_obj_free(l_store_obj,1);
-    }else if(a_msg->callback_result)
-        a_msg->callback_result_raw(s_context_global_db, DAP_GLOBAL_DB_RC_NO_RESULTS, NULL, a_msg->callback_arg );
+    if(a_msg->callback_result)
+        a_msg->callback_result_raw(s_context_global_db, l_store_obj ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS, l_store_obj, a_msg->callback_arg);
+    dap_store_obj_free(l_store_obj, 1);
     return true;
 }
 
@@ -590,19 +582,15 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
         }
     }
 
-    bool l_delete_objs = true;
     // Call callback if present
     if(a_msg->callback_results)
-        l_delete_objs = a_msg->callback_results(s_context_global_db,
-                                                l_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
-                                                a_msg->group, a_msg->key,
-                                                a_msg->values_total, l_values_count,
-                                                l_objs, a_msg->callback_arg);
+        a_msg->callback_results(s_context_global_db,
+                                l_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
+                                a_msg->group, a_msg->values_total, l_values_count,
+                                l_objs, a_msg->callback_arg);
     // Clean memory
-    if(l_store_objs)
-        dap_store_obj_free(l_store_objs,l_values_count);
-    if(l_objs && l_delete_objs)
-        dap_global_db_objs_delete(l_objs,l_values_count);
+    dap_store_obj_free(l_store_objs,l_values_count);
+    dap_global_db_objs_delete(l_objs,l_values_count);
 
     // Here we also check if the reply was with zero values. To prevent endless loop we don't resend query request in such cases
     if (l_values_count && l_values_count != l_values_remains) {
@@ -662,19 +650,16 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg)
     dap_store_obj_t *l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->values_raw_last_id + 1, &l_values_count);
     if (l_store_objs && l_values_count)
         a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id;
-    bool l_store_objs_delete = true;
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all raw request from group %s recieved %zu values from total %zu",
                                                    a_msg->group, l_values_count, l_values_remains);
     // Call callback if present
     if(a_msg->callback_results_raw)
-        l_store_objs_delete = a_msg->callback_results_raw(s_context_global_db,
-                                                          l_store_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
-                                                          a_msg->group, a_msg->key, l_values_count,
-                                                          l_values_remains,
-                                                          l_store_objs, a_msg->callback_arg);
+        a_msg->callback_results_raw(s_context_global_db,
+                                    l_store_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
+                                    a_msg->group, l_values_count, l_values_remains,
+                                    l_store_objs, a_msg->callback_arg);
     // Clean memory
-    if(l_store_objs && l_store_objs_delete)
-        dap_store_obj_free(l_store_objs,l_values_count);
+    dap_store_obj_free(l_store_objs,l_values_count);
 
     // Here we also check if the reply was with zero values. To prevent endless loop we don't resend query request in such cases
     if (l_values_count && l_values_count != l_values_remains) {
@@ -854,10 +839,10 @@ static bool s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
             log_it(L_ERROR,"Can't save raw gdb data, code %d ", l_ret);
     }
     if(a_msg->callback_results_raw){
-        a_msg->callback_results_raw (s_context_global_db,  l_ret==0 ? DAP_GLOBAL_DB_RC_SUCCESS:
-                                        DAP_GLOBAL_DB_RC_ERROR, a_msg->group, a_msg->key,
-                               a_msg->values_raw_total, a_msg->values_raw_total, a_msg->values_raw ,
-                                a_msg->callback_arg );
+        a_msg->callback_results_raw(s_context_global_db,
+                                    l_ret == 0 ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR,
+                                    a_msg->group, a_msg->values_raw_total, a_msg->values_raw_total,
+                                    a_msg->values_raw, a_msg->callback_arg);
     }
     dap_store_obj_free(a_msg->values_raw, a_msg->values_raw_total);
     return true;
@@ -919,15 +904,13 @@ static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
             s_record_del_history_del(a_msg->values[i].key, a_msg->group);
             l_ret = dap_global_db_driver_add(&l_store_obj,1);
             s_change_notify(&l_store_obj , DAP_DB$K_OPTYPE_ADD);
-
         }
     }
-    bool l_delete_values = true;
     if(a_msg->callback_results){
-        l_delete_values = a_msg->callback_results(s_context_global_db,  l_ret==0 ? DAP_GLOBAL_DB_RC_SUCCESS:
-                                        DAP_GLOBAL_DB_RC_ERROR, a_msg->group, a_msg->key,
-                               i, a_msg->values_count, a_msg->values ,
-                                a_msg->callback_arg );
+        a_msg->callback_results(s_context_global_db,
+                                l_ret == 0 ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR,
+                                a_msg->group, i, a_msg->values_count,
+                                a_msg->values, a_msg->callback_arg);
     }
     dap_global_db_objs_delete( a_msg->values, a_msg->values_count);
 
@@ -1109,6 +1092,28 @@ static bool s_msg_opcode_delete(struct queue_io_msg * a_msg)
 }
 
 /**
+ * @brief Copies memory of an objs array.
+ * @param objs a pointer to the first object of the array
+ * @param a_count a number of objects in the array
+ * @return (none)
+ */
+dap_global_db_obj_t *dap_global_db_objs_copy(dap_global_db_obj_t *a_objs, size_t a_count)
+{   /* Sanity checks */
+    if (!a_objs || !a_count)
+        return NULL;
+
+    dap_global_db_obj_t *l_ret = DAP_NEW_Z_SIZE(dap_global_db_obj_t, a_count * sizeof(dap_global_db_obj_t));
+    /* Run over array's elements */
+    for (dap_global_db_obj_t *l_obj = a_objs, *l_cur = l_ret; a_count--; l_cur++, l_obj++) {
+        *l_cur = *l_obj;
+        l_cur->key = dap_strdup(l_obj->key);
+        if (l_obj->value && l_obj->value_len)
+            l_cur->value = DAP_DUP_SIZE(l_obj->value, l_obj->value_len);
+    }
+    return l_ret;
+}
+
+/**
  * @brief Deallocates memory of an objs array.
  * @param objs a pointer to the first object of the array
  * @param a_count a number of objects in the array
@@ -1152,16 +1157,17 @@ struct objs_get{
  * @param a_values
  * @param a_arg
  */
-static bool s_objs_get_callback (dap_global_db_context_t * a_global_db_context,int a_rc, const char * a_group, const char * a_key, const size_t a_values_total,
-                                                  const size_t a_values_count, dap_global_db_obj_t * a_values, void * a_arg)
+static void s_objs_get_callback(dap_global_db_context_t *a_global_db_context,
+                                int a_rc, const char *a_group,
+                                const size_t a_values_total, const size_t a_values_count,
+                                dap_global_db_obj_t *a_values, void *a_arg)
 {
     struct objs_get * l_args = (struct objs_get *) a_arg;
-    l_args->objs = a_values;
+    l_args->objs = dap_global_db_objs_copy(a_values, a_values_count);
     l_args->objs_count = a_values_count;
     pthread_mutex_lock(&l_args->mutex);
     pthread_mutex_unlock(&l_args->mutex);
     pthread_cond_broadcast(&l_args->cond);
-    return false;
 }
 
 /**
@@ -1416,16 +1422,17 @@ struct store_objs_get{
     size_t objs_count;
 };
 
-static bool s_get_all_raw_sync_callback (dap_global_db_context_t * a_global_db_context,int a_rc, const char * a_group, const char * a_key, const size_t a_values_total,
-                                                  const size_t a_values_count, dap_store_obj_t * a_values, void * a_arg)
+static void s_get_all_raw_sync_callback(dap_global_db_context_t *a_global_db_context,
+                                        int a_rc, const char *a_group,
+                                        const size_t a_values_total, const size_t a_values_count,
+                                        dap_store_obj_t *a_values, void *a_arg)
 {
     struct store_objs_get * l_args = (struct store_objs_get *) a_arg;
-    l_args->objs = a_values;
+    l_args->objs = dap_store_obj_copy(a_values, a_values_count);
     l_args->objs_count = a_values_count;
     pthread_mutex_lock(&l_args->mutex);
     pthread_mutex_unlock(&l_args->mutex);
     pthread_cond_broadcast(&l_args->cond);
-    return false;
 }
 
 dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
@@ -1473,15 +1480,15 @@ int dap_global_db_del_unsafe(dap_global_db_context_t * a_global_db_context, cons
 {
     dap_store_obj_t l_store_obj = {0};
 
-    l_store_obj.key = dap_strdup(a_key);
-    l_store_obj.group = dap_strdup(a_group);
+    l_store_obj.key = a_key;
+    l_store_obj.group = (char *)a_group;
 
     int l_res = dap_global_db_driver_delete(&l_store_obj, 1);
 
     if (a_key) {
         if (l_res >= 0) {
             // add to Del group
-            l_res = s_record_del_history_add(l_store_obj.group, (char *)l_store_obj.key, dap_nanotime_now() );
+            l_res = s_record_del_history_add(l_store_obj.group, (char *)l_store_obj.key, dap_nanotime_now());
         }
         // do not add to history if l_res=1 (already deleted)
         if (!l_res) {
@@ -1489,8 +1496,6 @@ int dap_global_db_del_unsafe(dap_global_db_context_t * a_global_db_context, cons
             s_change_notify(&l_store_obj, DAP_DB$K_OPTYPE_DEL);
         }
     }
-    DAP_DELETE(l_store_obj.key);
-    DAP_DELETE(l_store_obj.group);
     return l_res;
 }
 
@@ -1684,7 +1689,7 @@ dap_list_t *l_items_list = dap_global_db_get_sync_groups_all();
 * @param a_group a group name string, for example "kelvin-testnet.nodes"
 * @return If successful, returns true; otherwise, false.
 */
-static int s_record_del_history_del( const char *a_group, const char *a_key)
+static int s_record_del_history_del(const char *a_group, const char *a_key)
 {
 dap_store_obj_t store_data = {0};
 char	l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
@@ -1693,7 +1698,7 @@ int	l_res = 0;
    if(!a_key)
        return -1;
 
-   store_data.key =( char*) a_key;
+   store_data.key = (char *)a_key;
    dap_snprintf(l_group, sizeof(l_group) - 1, "%s.del", a_group);
    store_data.group = l_group;
 
@@ -1705,12 +1710,12 @@ int	l_res = 0;
 
 /**
  * @brief s_record_del_history_add Adds info about the deleted entry to the database.
- * @param a_key an object key string
  * @param a_group a group name string
+ * @param a_key an object key string
  * @param a_timestamp an object time stamp
  * @return True if successful, false otherwise.
  */
-static int s_record_del_history_add( char *a_key, char *a_group, uint64_t a_timestamp)
+static int s_record_del_history_add(char *a_group, char *a_key, uint64_t a_timestamp)
 {
 dap_store_obj_t store_data = {0};
 char	l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
@@ -1733,75 +1738,25 @@ int l_res = -1;
  */
 static void s_queue_io_msg_delete( struct queue_io_msg * a_msg)
 {
-    switch(a_msg->opcode){
-        case MSG_OPCODE_GET:
-            if (a_msg->group)
-                DAP_DELETE(a_msg->group);
-            if (a_msg->key)
-                DAP_DELETE(a_msg->key);
-        break;
-        case MSG_OPCODE_GET_RAW:
-            if (a_msg->group)
-                DAP_DELETE(a_msg->group);
-            if (a_msg->key)
-                DAP_DELETE(a_msg->key);
-        break;
-        case MSG_OPCODE_GET_DEL_TS:
-            if (a_msg->group)
-                DAP_DELETE(a_msg->group);
-            if (a_msg->key)
-                DAP_DELETE(a_msg->key);
-        break;
-        case MSG_OPCODE_GET_LAST:
-            if (a_msg->group)
-                DAP_DELETE(a_msg->group);
-        break;
-        case MSG_OPCODE_GET_LAST_RAW:
-            if (a_msg->group)
-                DAP_DELETE(a_msg->group);
-        break;
-        case MSG_OPCODE_GET_ALL:
-            if (a_msg->group)
-                DAP_DELETE(a_msg->group);
-        break;
-        case MSG_OPCODE_GET_ALL_RAW:
-            if (a_msg->group)
-                DAP_DELETE(a_msg->group);
-        break;
-        case MSG_OPCODE_SET:
-            if (a_msg->group)
-                DAP_DELETE(a_msg->group);
-            if (a_msg->key)
-                DAP_DELETE(a_msg->key);
-        break;
-        case MSG_OPCODE_SET_RAW:
-        break;
-        case MSG_OPCODE_SET_MULTIPLE:
-            if (a_msg->group)
-                DAP_DELETE(a_msg->group);
-        break;
-        case MSG_OPCODE_PIN:
-            if (a_msg->group)
-                DAP_DELETE(a_msg->group);
-            if (a_msg->key)
-                DAP_DELETE(a_msg->key);
-        break;
-        case MSG_OPCODE_UNPIN:
-            if (a_msg->group)
-                DAP_DELETE(a_msg->group);
-            if (a_msg->key)
-                DAP_DELETE(a_msg->key);
-        break;
-        case MSG_OPCODE_DELETE:
-            if (a_msg->group)
-                DAP_DELETE(a_msg->group);
-            if (a_msg->key)
-                DAP_DELETE(a_msg->key);
-        break;
-        default:;
+    switch(a_msg->opcode) {
+    case MSG_OPCODE_GET:
+    case MSG_OPCODE_GET_RAW:
+    case MSG_OPCODE_GET_DEL_TS:
+    case MSG_OPCODE_SET:
+    case MSG_OPCODE_PIN:
+    case MSG_OPCODE_UNPIN:
+    case MSG_OPCODE_DELETE:
+        DAP_DEL_Z(a_msg->key);
+    case MSG_OPCODE_GET_LAST:
+    case MSG_OPCODE_GET_LAST_RAW:
+    case MSG_OPCODE_GET_ALL:
+    case MSG_OPCODE_GET_ALL_RAW:
+    case MSG_OPCODE_SET_MULTIPLE:
+        DAP_DEL_Z(a_msg->group);
+    case MSG_OPCODE_SET_RAW:
+    default:;
     }
-
-   DAP_DELETE(a_msg);
+    DAP_DELETE(a_msg);
 }
 
 

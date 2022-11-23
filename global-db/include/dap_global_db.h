@@ -96,9 +96,9 @@ typedef void (*dap_global_db_callback_result_t) (dap_global_db_context_t * a_glo
 /**
  *  @brief callback for single raw result
  *  @arg a_rc DAP_GLOBAL_DB_RC_SUCCESS if success others if not
- *  @return true if we need to free a_store_obj, false otherwise.
+ *  @return none.
  */
-typedef bool (*dap_global_db_callback_result_raw_t) (dap_global_db_context_t * a_global_db_context,int a_rc, dap_store_obj_t * a_store_obj, void * a_arg);
+typedef void (*dap_global_db_callback_result_raw_t) (dap_global_db_context_t * a_global_db_context,int a_rc, dap_store_obj_t * a_store_obj, void * a_arg);
 
 
 /**
@@ -109,12 +109,12 @@ typedef bool (*dap_global_db_callback_result_raw_t) (dap_global_db_context_t * a
  *  @arg a_values_count Current number of items in a_values
  *  @arg a_values Current items (page of items)
  *  @arg a_arg Custom argument
- *  @return true if we need to free a_store_obj, false otherwise.
+ *  @return none.
  */
-typedef bool (*dap_global_db_callback_results_t) (dap_global_db_context_t * a_global_db_context,int a_rc,
-                                                  const char * a_group, const char * a_key,
+typedef void (*dap_global_db_callback_results_t) (dap_global_db_context_t *a_global_db_context,
+                                                  int a_rc, const char *a_group,
                                                   const size_t a_values_total, const size_t a_values_count,
-                                                  dap_global_db_obj_t * a_values, void * a_arg);
+                                                  dap_global_db_obj_t *a_values, void *a_arg);
 /**
  *  @brief callback for multiple raw result, with pagination
  *  @arg a_rc DAP_GLOBAL_DB_RC_SUCCESS if success other sif not
@@ -122,12 +122,12 @@ typedef bool (*dap_global_db_callback_results_t) (dap_global_db_context_t * a_gl
  *  @arg a_values_shift Current shift from beginning of values set
  *  @arg a_values_count Current number of items in a_values
  *  @arg a_values Current items (page of items)
- *  @return true if we need to free a_store_obj, false otherwise.
+ *  @return none.
  */
-typedef bool (*dap_global_db_callback_results_raw_t) (dap_global_db_context_t * a_global_db_context, int a_rc,
-                                                      const char * a_group, const char * a_key,
+typedef void (*dap_global_db_callback_results_raw_t) (dap_global_db_context_t * a_global_db_context,
+                                                      int a_rc, const char *a_group,
                                                       const size_t a_values_current, const size_t a_values_count,
-                                                      dap_store_obj_t * a_values, void * a_arg);
+                                                      dap_store_obj_t *a_values, void *a_arg);
 // Return codes
 #define DAP_GLOBAL_DB_RC_SUCCESS         0
 #define DAP_GLOBAL_DB_RC_NO_RESULTS     -1
@@ -163,7 +163,8 @@ int dap_global_db_flush( dap_global_db_callback_result_t a_callback, void * a_ar
 
 int dap_global_db_context_exec (dap_global_db_callback_t a_callback, void * a_arg);
 
-
+// Copy global_db_obj array
+dap_global_db_obj_t *dap_global_db_objs_copy(dap_global_db_obj_t *a_objs, size_t a_count);
 // Clear global_db_obj array
 void dap_global_db_objs_delete(dap_global_db_obj_t *a_objs, size_t a_count);
 
