@@ -170,14 +170,19 @@ typedef struct iovec {
     void    *iov_base; /* Data */
     size_t  iov_len; /* ... and its' size */
 } iovec_t;
-
-size_t dap_readv    (HANDLE a_hf, iovec_t const *a_bufs, int a_bufs_num, DWORD *a_err);
-size_t dap_writev   (HANDLE a_hf, const char* a_filename, iovec_t const *a_bufs, int a_bufs_num, DWORD *a_err);
-
+typedef HANDLE dap_file_handle_t;
+typedef DWORD dap_errnum_t;
+#define dap_fileclose CloseHandle
 #else
-#define dap_readv readv
-#define dap_writev writev
+typedef int dap_file_handle_t;
+typedef struct iovec iovec_t;
+typedef int dap_errnum_t;
+#define INVALID_HANDLE_VALUE -1
+#define dap_fileclose close
 #endif
+
+ssize_t dap_readv(dap_file_handle_t a_hf, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
+ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err);
 
 DAP_STATIC_INLINE void *_dap_aligned_alloc( uintptr_t alignment, uintptr_t size )
 {
@@ -259,9 +264,11 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 #define DAP_FORMAT_SOCKET "lu"
 #endif // _WIN64
 #define DAP_FORMAT_HANDLE "p"
+#define DAP_FORMAT_ERRNUM "lu"
 #else
 #define DAP_FORMAT_SOCKET "d"
 #define DAP_FORMAT_HANDLE "d"
+#define DAP_FORMAT_ERRNUM "d"
 #endif // DAP_OS_WINDOWS
 
 #ifndef LOWORD

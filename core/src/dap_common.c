@@ -47,7 +47,7 @@
   #include <syslog.h>
   #include <signal.h>
   #include <sys/syscall.h>
-
+  #include <sys/uio.h>
 #else // WIN32
 
   #include <stdlib.h>
@@ -1296,8 +1296,9 @@ char **dap_parse_items(const char *a_str, char a_delimiter, int *a_count, const 
     return lines;
 }
 
+ssize_t dap_readv(dap_file_handle_t a_hf, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err)
+{
 #ifdef DAP_OS_WINDOWS
-size_t dap_readv(HANDLE a_hf, iovec_t const *a_bufs, int a_bufs_num, DWORD *a_err) {
     if (!a_bufs || !a_bufs_num) {
         return -1;
     }
@@ -1357,9 +1358,20 @@ size_t dap_readv(HANDLE a_hf, iovec_t const *a_bufs, int a_bufs_num, DWORD *a_er
     CloseHandle(l_ol.hEvent);
     DAP_PAGE_ALFREE(l_seg_arr);
     return l_ret;
+#else
+    dap_errnum_t l_err = 0;
+    ssize_t l_res = readv(a_hf, a_bufs, a_bufs_num);
+    if (l_res == -1)
+        l_err = errno;
+    if (a_err)
+        *a_err = l_err;
+    return l_res;
+#endif
 }
 
-size_t dap_writev(HANDLE a_hf, const char* a_filename, iovec_t const *a_bufs, int a_bufs_num, DWORD *a_err) {
+ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err)
+{
+#ifdef DAP_OS_WINDOWS
     if (!a_bufs || !a_bufs_num) {
         log_it(L_ERROR, "Bad input data");
         return -1;
@@ -1466,5 +1478,14 @@ size_t dap_writev(HANDLE a_hf, const char* a_filename, iovec_t const *a_bufs, in
         CloseHandle(l_hf);
     }
     return l_ret;
-}
+#else
+    UNUSED(a_filename);
+    dap_errnum_t l_err = 0;
+    ssize_t l_res = writev(a_hf, a_bufs, a_bufs_num);
+    if (l_res == -1)
+        l_err = errno;
+    if (a_err)
+        *a_err = l_err;
+    return l_res;
 #endif
+}
