@@ -257,14 +257,8 @@ char *dap_itoa128(char *a_str, int128_t a_value, int a_base)
  * @return size_t 
  */
 
-size_t dap_strlen(const char *a_str)
-{
-    size_t l_length = 0;
-
-    if(a_str) {
-        l_length = strlen(a_str);
-    }
-    return l_length;
+size_t dap_strlen(const char *a_str) {
+    return a_str ? strlen(a_str) : 0;
 }
 
 /**
