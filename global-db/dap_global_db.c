@@ -117,7 +117,8 @@ struct queue_io_msg{
 static uint32_t s_global_db_version = 0; // Current GlobalDB version
 static pthread_cond_t s_check_db_cond = PTHREAD_COND_INITIALIZER; // Check version condition
 static pthread_mutex_t s_check_db_mutex = PTHREAD_MUTEX_INITIALIZER; // Check version condition mutex
-static int s_check_db_ret = 0; // Check version return value
+#define INVALID_RETCODE +100500
+static int s_check_db_ret = INVALID_RETCODE; // Check version return value
 
 static const char * s_storage_path = NULL; // GlobalDB storage path
 static const char * s_driver_name = NULL; // GlobalDB driver name
@@ -1141,6 +1142,7 @@ dap_global_db_obj_t *l_obj;
 struct objs_get{
     pthread_mutex_t mutex;
     pthread_cond_t cond;
+    bool called;
     dap_global_db_obj_t * objs;
     size_t objs_count;
 };
@@ -1166,8 +1168,9 @@ static void s_objs_get_callback(dap_global_db_context_t *a_global_db_context,
     l_args->objs = dap_global_db_objs_copy(a_values, a_values_count);
     l_args->objs_count = a_values_count;
     pthread_mutex_lock(&l_args->mutex);
-    pthread_mutex_unlock(&l_args->mutex);
+    l_args->called = true;
     pthread_cond_broadcast(&l_args->cond);
+    pthread_mutex_unlock(&l_args->mutex);
 }
 
 /**
@@ -1185,7 +1188,8 @@ dap_global_db_obj_t* dap_global_db_get_all_sync(const char *a_group, size_t *a_o
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
     dap_global_db_get_all(a_group, 0,s_objs_get_callback, l_args);
-    pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    while (!l_args->called)
+        pthread_cond_wait(&l_args->cond, &l_args->mutex);
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -1204,6 +1208,7 @@ dap_global_db_obj_t* dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 struct sync_op_result{
     pthread_mutex_t mutex;
     pthread_cond_t cond;
+    bool called;
     int result;
 };
 
@@ -1224,8 +1229,9 @@ static void s_sync_op_result_callback (dap_global_db_context_t * a_global_db_con
     struct sync_op_result * l_args = (struct sync_op_result *) a_arg;
     l_args->result = a_rc;
     pthread_mutex_lock(&l_args->mutex);
-    pthread_mutex_unlock(&l_args->mutex);
+    l_args->called = true;
     pthread_cond_broadcast(&l_args->cond);
+    pthread_mutex_unlock(&l_args->mutex);
 }
 
 /**
@@ -1246,7 +1252,8 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
     dap_global_db_set(a_group, a_key,a_value,a_value_length, a_pin_value, s_sync_op_result_callback, l_args);
-    pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    while (!l_args->called)
+        pthread_cond_wait(&l_args->cond, &l_args->mutex);
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -1271,7 +1278,8 @@ int dap_global_db_pin_sync(const char * a_group, const char *a_key)
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
     dap_global_db_pin(a_group, a_key, s_sync_op_result_callback, l_args);
-    pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    while (!l_args->called)
+        pthread_cond_wait(&l_args->cond, &l_args->mutex);
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -1296,7 +1304,8 @@ int dap_global_db_unpin_sync(const char * a_group, const char *a_key)
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
     dap_global_db_unpin(a_group, a_key, s_sync_op_result_callback, l_args);
-    pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    while (!l_args->called)
+        pthread_cond_wait(&l_args->cond, &l_args->mutex);
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -1319,7 +1328,8 @@ int dap_global_db_del_sync(const char * a_group, const char *a_key )
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
     if (dap_global_db_del(a_group, a_key, s_sync_op_result_callback, l_args) == 0)
-        pthread_cond_wait(&l_args->cond, &l_args->mutex);
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
     else
         l_args->result = -777;
     pthread_mutex_unlock(&l_args->mutex);
@@ -1337,6 +1347,7 @@ int dap_global_db_del_sync(const char * a_group, const char *a_key )
 struct store_obj_get{
     pthread_mutex_t mutex;
     pthread_cond_t cond;
+    bool called;
     byte_t * data;
     size_t data_size;
     dap_nanotime_t ts;
@@ -1368,10 +1379,10 @@ static void s_store_obj_get_callback (dap_global_db_context_t * a_global_db_cont
         l_args->ts = a_value_ts;
         l_args->is_pinned = a_is_pinned;
     }
-
     pthread_mutex_lock(&l_args->mutex);
-    pthread_mutex_unlock(&l_args->mutex);
+    l_args->called = true;
     pthread_cond_broadcast(&l_args->cond);
+    pthread_mutex_unlock(&l_args->mutex);
 }
 
 /**
@@ -1389,11 +1400,9 @@ byte_t* dap_global_db_get_sync(const char * a_group,const char *a_key, size_t *a
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
-
-
-
     dap_global_db_get(a_group,a_key, s_store_obj_get_callback, l_args);
-    pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    while (!l_args->called)
+        pthread_cond_wait(&l_args->cond, &l_args->mutex);
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -1418,6 +1427,7 @@ byte_t* dap_global_db_get_sync(const char * a_group,const char *a_key, size_t *a
 struct store_objs_get{
     pthread_mutex_t mutex;
     pthread_cond_t cond;
+    bool called;
     dap_store_obj_t * objs;
     size_t objs_count;
 };
@@ -1431,8 +1441,9 @@ static void s_get_all_raw_sync_callback(dap_global_db_context_t *a_global_db_con
     l_args->objs = dap_store_obj_copy(a_values, a_values_count);
     l_args->objs_count = a_values_count;
     pthread_mutex_lock(&l_args->mutex);
-    pthread_mutex_unlock(&l_args->mutex);
+    l_args->called = true;
     pthread_cond_broadcast(&l_args->cond);
+    pthread_mutex_unlock(&l_args->mutex);
 }
 
 dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
@@ -1444,7 +1455,8 @@ dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
     dap_global_db_get_all_raw(a_group, a_first_id,0,s_get_all_raw_sync_callback, l_args);
-    pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    while (!l_args->called)
+        pthread_cond_wait(&l_args->cond, &l_args->mutex);
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -1759,7 +1771,6 @@ static void s_queue_io_msg_delete( struct queue_io_msg * a_msg)
     DAP_DELETE(a_msg);
 }
 
-
 /**
  * @brief s_context_callback_started
  * @details GlobalDB context started
@@ -1846,7 +1857,8 @@ static int s_check_db_version()
     pthread_mutex_lock(&s_check_db_mutex);
     l_ret = dap_global_db_get(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",s_check_db_version_callback_get, NULL);
     if (l_ret == 0){
-        pthread_cond_wait(&s_check_db_cond, &s_check_db_mutex);
+        while (s_check_db_ret == INVALID_RETCODE)
+            pthread_cond_wait(&s_check_db_cond, &s_check_db_mutex);
         l_ret = s_check_db_ret;
     }else{
         log_it(L_CRITICAL, "Can't process get gdb_version request, code %d", l_ret);
@@ -1936,14 +1948,13 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
     } else if(s_global_db_version > DAP_GLOBAL_DB_VERSION) {
         log_it(L_ERROR, "GlobalDB version %d is newer than supported version %d", s_global_db_version, DAP_GLOBAL_DB_VERSION);
         res = -1;
-        goto lb_exit;
     }
     else {
         log_it(L_NOTICE, "GlobalDB version %d", s_global_db_version);
     }
 lb_exit:
-    s_check_db_ret = res;
     pthread_mutex_lock(&s_check_db_mutex); //    To be sure thats we're on pthread_cond_wait() line
+    s_check_db_ret = res;
     pthread_cond_broadcast(&s_check_db_cond);
     pthread_mutex_unlock(&s_check_db_mutex); //  in calling thread
 }
@@ -1966,14 +1977,11 @@ static void s_check_db_version_callback_set (dap_global_db_context_t * a_global_
     if(a_errno != 0){
         log_it(L_ERROR, "Can't process request for DB version, error code %d", a_errno);
         l_res = a_errno;
-        goto lb_exit;
-    }
+    } else
+        log_it(L_NOTICE, "GlobalDB version updated to %d", s_global_db_version);
 
-    log_it(L_NOTICE, "GlobalDB version updated to %d", s_global_db_version);
-
-lb_exit:
-    s_check_db_ret = l_res;
     pthread_mutex_lock(&s_check_db_mutex); //  in calling thread
+    s_check_db_ret = l_res;
     pthread_cond_broadcast(&s_check_db_cond);
     pthread_mutex_unlock(&s_check_db_mutex); //  in calling thread
 }
