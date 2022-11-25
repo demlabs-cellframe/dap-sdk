@@ -61,6 +61,7 @@ typedef struct dap_context {
     // pthread-related fields
     pthread_cond_t started_cond; // Fires when thread started and pre-loop callback executes
     pthread_mutex_t started_mutex; // related with started_cond
+    bool started;
     pthread_t thread_id; // Thread id
 
 

@@ -54,14 +54,14 @@ static struct conn_pool_item {
 
 static struct conn_pool_item *s_trans = NULL;                               /* SQL context of outstanding  transaction */
 static pthread_mutex_t s_trans_mtx = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t s_trans_cnd = PTHREAD_COND_INITIALIZER;
 
 extern  int g_dap_global_db_debug_more;                                     /* Enable extensible debug output */
 
 static char s_filename_db [MAX_PATH];
 
 static pthread_mutex_t s_conn_free_mtx = PTHREAD_MUTEX_INITIALIZER;         /* Lock to coordinate access to the free connections pool */
-static pthread_cond_t s_conn_free_cnd = PTHREAD_COND_INITIALIZER;           /* To signaling to waites of the free connection */
+static pthread_cond_t s_conn_free_cnd;                                      /* To signaling to waites of the free connection */
+static bool s_conn_free_present = true;
 
 
 static pthread_mutex_t s_db_mtx = PTHREAD_MUTEX_INITIALIZER;
@@ -120,13 +120,30 @@ static inline void s_dap_db_driver_sqlite_free(char *memory)
         sqlite3_free(memory);
 }
 
-#define DAP_DB$K_RTR4CONN   3                                               /* A number of attempts get DB connection */
-#define DAP_DB$K_TMO4CONN   3                                               /* A number of seconds to wait for connection */
+static struct conn_pool_item *s_sqlite_test_free_connection(void)
+{
+    int l_rc;
+    struct conn_pool_item *l_conn;
+    /* Run over connection list, try to get a free connection */
+    l_conn = s_conn_pool;
+    for (int j = DAP_SQLITE_POOL_COUNT; j--; l_conn++) {
+        if ( !(l_rc = atomic_flag_test_and_set (&l_conn->busy)) ) {     /* Test-and-set ... */
+                                                                        /* l_rc == 0 - so connection was free, */
+                                                                        /* we got free connection, so get out */
+            atomic_fetch_add(&l_conn->usage, 1);
+            if (g_dap_global_db_debug_more )
+                log_it(L_DEBUG, "Alloc l_conn: @%p/%p, usage: %llu", l_conn, l_conn->conn, l_conn->usage);
+            return  l_conn;
+        }
+    }
+    return NULL;
+}
 
-static inline struct conn_pool_item *s_sqlite_get_connection(void)
+#define DAP_SQLITE_CONN_TIMEOUT 5   // sec
+
+static struct conn_pool_item *s_sqlite_get_connection(void)
 {
 int     l_rc;
-struct conn_pool_item *l_conn;
 struct timespec tmo = {0};
 
     if ( (l_rc = pthread_mutex_lock(&s_db_mtx)) == EDEADLK )                /* Get the mutex */
@@ -136,39 +153,32 @@ struct timespec tmo = {0};
 
     pthread_mutex_unlock(&s_db_mtx);
 
-    for (int i = DAP_DB$K_RTR4CONN; i--; )
-    {
-        /* Run over connection list, try to get a free connection */
-        l_conn = s_conn_pool;
-        for (int j = DAP_SQLITE_POOL_COUNT; j--; l_conn++)
-        {
-            if ( !(l_rc = atomic_flag_test_and_set (&l_conn->busy)) )       /* Test-and-set ... */
-                {
-                                                                            /* l_rc == 0 - so connection was free, */
-                                                                            /* we got free connection, so get out */
-
-                atomic_fetch_add(&l_conn->usage, 1);
-                if (g_dap_global_db_debug_more )
-                    log_it(L_DEBUG, "Alloc l_conn: @%p/%p, usage: %llu", l_conn, l_conn->conn, l_conn->usage);
-                return  l_conn;
-                }
-        }
-
-        log_it(L_INFO, "No free SQLITE connection, wait %d seconds ...", DAP_DB$K_TMO4CONN);
-
-        /* No free connection at the moment, so, prepare to wait a condition ... */
-
-        clock_gettime(CLOCK_REALTIME, &tmo);
-        tmo.tv_sec += DAP_DB$K_TMO4CONN;
-
-        pthread_mutex_lock(&s_conn_free_mtx);
-        l_rc = pthread_cond_timedwait (&s_conn_free_cnd, &s_conn_free_mtx, &tmo);
+    pthread_mutex_lock(&s_conn_free_mtx);
+    struct conn_pool_item *l_conn = s_sqlite_test_free_connection();
+    if (l_conn) {
         pthread_mutex_unlock(&s_conn_free_mtx);
-
-        log_it(L_DEBUG, "pthread_cond_timedwait()->%d, errno=%d", l_rc, errno);
+        return l_conn;
     }
 
-    return  log_it(L_ERROR, "No free SQLITE connection"), NULL;
+    log_it(L_INFO, "No free SQLITE connection, wait %d seconds ...", DAP_SQLITE_CONN_TIMEOUT);
+
+    /* No free connection at the moment, so, prepare to wait a condition ... */
+
+    clock_gettime(CLOCK_REALTIME, &tmo);
+    tmo.tv_sec += DAP_SQLITE_CONN_TIMEOUT;
+    s_conn_free_present = false;
+    l_rc = 0;
+    while (!s_conn_free_present && !l_rc)
+        l_rc = pthread_cond_timedwait(&s_conn_free_cnd, &s_conn_free_mtx, &tmo);
+    if (!l_rc)
+        l_conn = s_sqlite_test_free_connection();
+    pthread_mutex_unlock(&s_conn_free_mtx);
+
+    if (l_rc)
+        log_it(L_DEBUG, "pthread_cond_timedwait(), error=%d", l_rc);
+    if (!l_conn)
+        log_it(L_ERROR, "No free SQLITE connection");
+    return l_conn;
 }
 
 static inline int s_sqlite_free_connection(struct conn_pool_item *a_conn)
@@ -181,6 +191,7 @@ int     l_rc;
     atomic_flag_clear(&a_conn->busy);                                       /* Clear busy flag */
 
     l_rc = pthread_mutex_lock (&s_conn_free_mtx);                           /* Send a signal to waiters to wake-up */
+    s_conn_free_present = true;
     l_rc = pthread_cond_signal(&s_conn_free_cnd);
     l_rc = pthread_mutex_unlock(&s_conn_free_mtx);
 
@@ -1153,6 +1164,12 @@ char l_errbuf[255] = {0}, *l_error_message = NULL;
     }
 
     DAP_DEL_Z(l_filename_dir);
+
+    pthread_condattr_t l_cond_attr;
+    pthread_condattr_init(&l_cond_attr);
+    pthread_condattr_setclock(&l_cond_attr, CLOCK_MONOTONIC);
+    pthread_cond_init(&s_conn_free_cnd, &l_cond_attr);
+    pthread_condattr_destroy(&l_cond_attr);
 
     /* Create a pool of connection */
     for (int i = 0; i < DAP_SQLITE_POOL_COUNT; i++)

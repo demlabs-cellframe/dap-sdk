@@ -306,7 +306,8 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
             l_es->_inheritor = a_server;
             pthread_mutex_lock(&a_server->started_mutex);
             dap_worker_add_events_socket( l_es, l_w );
-            pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
+            while (!a_server->started)
+                pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
             pthread_mutex_unlock(&a_server->started_mutex);
         } else{
             log_it(L_WARNING, "Can't wrap event socket for %s:%u server", a_server->address, a_server->port);
@@ -330,7 +331,8 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
         l_es->_inheritor = a_server;
         pthread_mutex_lock(&a_server->started_mutex);
         dap_worker_add_events_socket( l_es, l_w );
-        pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
+        while (!a_server->started)
+            pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
         pthread_mutex_unlock(&a_server->started_mutex);
     } else {
         log_it(L_WARNING, "Can't wrap event socket server");
@@ -350,8 +352,9 @@ static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg)
     log_it(L_DEBUG, "Created server socket %p on worker %u", a_es, a_es->context->worker->id);
     dap_server_t *l_server = (dap_server_t*) a_es->_inheritor;
     pthread_mutex_lock( &l_server->started_mutex);
-    pthread_mutex_unlock( &l_server->started_mutex);
+    l_server->started = true;
     pthread_cond_broadcast( &l_server->started_cond);
+    pthread_mutex_unlock( &l_server->started_mutex);
 }
 
 /**
@@ -383,7 +386,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket
     assert(l_server);
 
     dap_events_socket_t * l_es_new = NULL;
-    log_it(L_DEBUG, "Listening socket (binded on %s:%u) got new incomming connection",l_server->address,l_server->port);
+    log_it(L_DEBUG, "Listening socket (binded on %s:%u) got new incoming connection",l_server->address,l_server->port);
     log_it(L_DEBUG, "Accepted new connection (sock %"DAP_FORMAT_SOCKET" from %"DAP_FORMAT_SOCKET")", a_remote_socket, a_es->socket);
     l_es_new = s_es_server_create(a_remote_socket,&l_server->client_callbacks,l_server);
     //l_es_new->is_dont_reset_write_flag = true; // By default all income connection has this flag

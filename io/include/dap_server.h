@@ -91,6 +91,7 @@ typedef struct dap_server {
 
   pthread_cond_t started_cond; // Condition for initialized socket
   pthread_mutex_t started_mutex; // Mutex for shared operation between mirrored sockets
+  bool started;
 } dap_server_t;
 
 int dap_server_init( ); // Init server module

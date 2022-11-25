@@ -194,7 +194,8 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
         l_ret = pthread_create( &a_context->thread_id , NULL, s_context_thread, l_msg);
 
         if(l_ret == 0){ // If everything is good we're waiting for DAP_CONTEXT_WAIT_FOR_STARTED_TIME seconds
-            l_ret=pthread_cond_timedwait(&a_context->started_cond, &a_context->started_mutex, &l_timeout);
+            while (!a_context->started && !l_ret)
+                l_ret = pthread_cond_timedwait(&a_context->started_cond, &a_context->started_mutex, &l_timeout);
             if ( l_ret== ETIMEDOUT ){ // Timeout
                 log_it(L_CRITICAL, "Timeout %d seconds is out: context #%u thread don't respond", DAP_CONTEXT_WAIT_FOR_STARTED_TIME,a_context->id);
             } else if (l_ret != 0){ // Another error
@@ -270,8 +271,12 @@ static void *s_context_thread(void *a_arg)
 
     if(s_thread_init(l_context)!=0){
         // Can't initialize
-        if(l_msg->flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED )
+        if(l_msg->flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED ) {
+            pthread_mutex_lock(&l_context->started_mutex);
+            l_context->started = true;
             pthread_cond_broadcast(&l_context->started_cond);
+            pthread_mutex_unlock(&l_context->started_mutex);
+        }
         return NULL;
     }
     // Now we're running and initalized for sure, so we can assign flags to the current context
@@ -287,6 +292,7 @@ static void *s_context_thread(void *a_arg)
     // Initialization success
     if(l_msg->flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED ){
         pthread_mutex_lock(&l_context->started_mutex); // If we're too fast and calling thread haven't switched on cond_wait line
+        l_context->started = true;
         pthread_cond_broadcast(&l_context->started_cond);
         pthread_mutex_unlock(&l_context->started_mutex);
     }
