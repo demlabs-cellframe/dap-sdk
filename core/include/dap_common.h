@@ -30,8 +30,7 @@
 #endif
 
 #ifdef DAP_OS_WINDOWS
-#ifndef _INC_WINDOWS
-#include <windows.h>
+#ifndef _WINSOCKAPI_
 #include <winsock2.h>
 #endif
 #include <fcntl.h>

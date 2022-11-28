@@ -2,9 +2,7 @@
 
 #include <stdbool.h>
 #include <time.h>
-#include "dap_chain.h"
 #include "dap_chain_common.h"
-#include "dap_chain_net.h"
 #include "dap_global_db_driver.h"
 #include "dap_global_db.h"
 
@@ -17,6 +15,19 @@
 
 #define GDB_SYNC_ALWAYS_FROM_ZERO       // For debug purposes
 // for dap_db_log_list_xxx()
+
+typedef struct dap_chain dap_chain_t;
+typedef struct dap_chain_net dap_chain_net_t;
+
+typedef void (*dap_store_obj_callback_notify_t) (dap_global_db_context_t *a_context, dap_store_obj_t *a_obj, void * a_arg);
+
+// Callback table item
+typedef struct dap_sync_group_item {
+    char *group_mask;
+    char *net_name;
+    dap_store_obj_callback_notify_t callback_notify;
+    void * callback_arg;
+} dap_sync_group_item_t;
 
 typedef struct dap_global_db_pkt {
     dap_nanotime_t timestamp;
@@ -46,6 +57,20 @@ typedef struct dap_db_log_list {
     pthread_t thread;
     pthread_mutex_t list_mutex;
 } dap_db_log_list_t;
+
+void dap_global_db_sync_init();
+void dap_global_db_sync_deinit();
+
+/**
+ * Setup callbacks and filters
+ */
+// Add group name that will be synchronized
+void dap_global_db_add_sync_group(const char *a_net_name, const char *a_group_prefix, dap_store_obj_callback_notify_t a_callback, void *a_arg);
+void dap_global_db_add_sync_extra_group(const char *a_net_name, const char *a_group_mask, dap_store_obj_callback_notify_t a_callback, void *a_arg);
+dap_list_t *dap_chain_db_get_sync_groups(const char *a_net_name);
+dap_list_t *dap_chain_db_get_sync_extra_groups(const char *a_net_name);
+dap_list_t * dap_global_db_get_sync_groups_all();
+dap_list_t * dap_global_db_get_sync_groups_extra_all();
 
 // Set addr for current node
 bool dap_db_set_cur_node_addr(uint64_t a_address, char *a_net_name);

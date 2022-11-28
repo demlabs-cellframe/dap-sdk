@@ -7,12 +7,163 @@
 #include "dap_strfuncs.h"
 #include "dap_string.h"
 #include "dap_chain.h"
+#include "dap_chain_net.h"
 #include "dap_time.h"
 
 #define LOG_TAG "dap_global_db_remote"
 
 // Default time of a node address expired in hours
 #define NODE_TIME_EXPIRED_DEFAULT 720
+
+static dap_list_t *s_sync_group_items = NULL;
+static dap_list_t *s_sync_group_extra_items = NULL;
+
+static void s_clear_sync_grp(void *a_elm);
+static int s_db_add_sync_group(dap_list_t **a_grp_list, dap_sync_group_item_t *a_item);
+
+void dap_global_db_sync_init()
+{
+
+}
+
+/**
+ * @brief Deinitialize a database.
+ * @note You should call this function at the end.
+ * @return (none)
+ */
+void dap_global_db_sync_deinit()
+{
+    dap_list_free_full(s_sync_group_items, s_clear_sync_grp);
+    dap_list_free_full(s_sync_group_extra_items, s_clear_sync_grp);
+    s_sync_group_extra_items = s_sync_group_items = NULL;
+}
+
+/**
+ * @brief Adds a group name for synchronization.
+ * @param a_net_name a net name string, for all net a_net_name=null
+ * @param a_group_prefix a prefix of the group name
+ * @param a_callback a callback function
+ * @param a_arg a pointer to an argument
+ * @return (none)
+ */
+void dap_global_db_add_sync_group(const char *a_net_name, const char *a_group_prefix, dap_store_obj_callback_notify_t a_callback, void *a_arg)
+{
+    dap_sync_group_item_t *l_item = DAP_NEW_Z(dap_sync_group_item_t);
+    l_item->net_name = dap_strdup(a_net_name);
+    l_item->group_mask = dap_strdup_printf("%s.*", a_group_prefix);
+    l_item->callback_notify = a_callback;
+    l_item->callback_arg = a_arg;
+    s_db_add_sync_group(&s_sync_group_items, l_item);
+}
+
+/**
+ * @brief Adds a group name for synchronization with especially node addresses.
+ * @param a_net_name a net name string, for all net a_net_name=null
+ * @param a_group_mask a group mask string
+ * @param a_callback a callabck function
+ * @param a_arg a pointer to an argument
+ * @return (none)
+ */
+void dap_global_db_add_sync_extra_group(const char *a_net_name, const char *a_group_mask, dap_store_obj_callback_notify_t a_callback, void *a_arg)
+{
+    dap_sync_group_item_t* l_item = DAP_NEW_Z(dap_sync_group_item_t);
+    l_item->net_name = dap_strdup(a_net_name);
+    l_item->group_mask = dap_strdup(a_group_mask);
+    l_item->callback_notify = a_callback;
+    l_item->callback_arg = a_arg;
+    s_db_add_sync_group(&s_sync_group_extra_items, l_item);
+}
+
+/**
+ * @brief Gets a list of a group mask for s_sync_group_items.
+ * @param a_net_name a net name string, for all net a_net_name=null
+ * @return Returns a pointer to a list of a group mask.
+ */
+dap_list_t* dap_chain_db_get_sync_groups(const char *a_net_name)
+{
+    if(!a_net_name)
+        return dap_list_copy(s_sync_group_items);
+
+    dap_list_t *l_list_out = NULL;
+    dap_list_t *l_list_group = s_sync_group_items;
+    while(l_list_group) {
+        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*) l_list_group->data)->net_name)) {
+            l_list_out = dap_list_append(l_list_out, l_list_group->data);
+        }
+        l_list_group = dap_list_next(l_list_group);
+    }
+    return l_list_out;
+}
+
+/**
+ * @brief Gets a list of a group mask for s_sync_group_items.
+ * @param a_net_name a net name string, for all net a_net_name=null
+ * @return Returns a pointer to a list of a group mask.
+ */
+dap_list_t* dap_chain_db_get_sync_extra_groups(const char *a_net_name)
+{
+    if(!a_net_name)
+        return dap_list_copy(s_sync_group_extra_items);
+
+    dap_list_t *l_list_out = NULL;
+    dap_list_t *l_list_group = s_sync_group_extra_items;
+    while(l_list_group) {
+        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*) l_list_group->data)->net_name)) {
+            l_list_out = dap_list_append(l_list_out, l_list_group->data);
+        }
+        l_list_group = dap_list_next(l_list_group);
+    }
+    return l_list_out;
+}
+
+/**
+ * @brief dap_global_db_get_sync_groups_all
+ * @return
+ */
+dap_list_t * dap_global_db_get_sync_groups_all()
+{
+    return s_sync_group_items;
+}
+
+/**
+ * @brief dap_global_db_get_sync_groups_extra_all
+ * @return
+ */
+dap_list_t * dap_global_db_get_sync_groups_extra_all()
+{
+    return s_sync_group_extra_items;
+}
+
+/**
+ * @brief s_clear_sync_grp
+ * @param a_elm
+ */
+static void s_clear_sync_grp(void *a_elm)
+{
+    dap_sync_group_item_t *l_item = (dap_sync_group_item_t *)a_elm;
+    DAP_DELETE(l_item->group_mask);
+    DAP_DELETE(l_item);
+}
+
+/**
+ * @brief s_db_add_sync_group
+ * @param a_grp_list
+ * @param a_item
+ * @return
+ */
+static int s_db_add_sync_group(dap_list_t **a_grp_list, dap_sync_group_item_t *a_item)
+{
+    for (dap_list_t *it = *a_grp_list; it; it = it->next) {
+        dap_sync_group_item_t *l_item = (dap_sync_group_item_t *)it->data;
+        if (!dap_strcmp(l_item->group_mask, a_item->group_mask) && !dap_strcmp(l_item->net_name, a_item->net_name)) {
+            log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_item->group_mask);
+            s_clear_sync_grp(a_item);
+            return -1;
+        }
+    }
+    *a_grp_list = dap_list_append(*a_grp_list, a_item);
+    return 0;
+}
 
 /**
  * @brief A function for a thread for reading a log list
@@ -601,91 +752,6 @@ unsigned char *pdata;
  * @param store_obj_count[out] a number of deserialized objects in the array
  * @return Returns a pointer to the first object in the array, if successful; otherwise NULL.
  */
-#if 0
-dap_store_obj_t *dap_global_db_pkt_deserialize(const dap_global_db_pkt_t *a_pkt, size_t *a_store_obj_count)
-{
-    if(!a_pkt || a_pkt->data_size < sizeof(dap_global_db_pkt_t))
-        return NULL;
-    uint64_t l_offset = 0;
-    uint32_t l_count = a_pkt->obj_count, l_cur_count;
-    uint64_t l_size = l_count <= UINT16_MAX ? l_count * sizeof(struct dap_store_obj) : 0;
-    dap_store_obj_t *l_store_obj = l_size? DAP_NEW_Z_SIZE(dap_store_obj_t, l_size) : NULL;
-    if (!l_store_obj || !l_size) {
-        log_it(L_ERROR, "Invalid size: can't allocate %"DAP_UINT64_FORMAT_U" bytes", l_size);
-        DAP_DEL_Z(l_store_obj)
-        return NULL;
-    }
-    for(l_cur_count = 0; l_cur_count < l_count; ++l_cur_count) {
-        dap_store_obj_t *l_obj = l_store_obj + l_cur_count;
-        uint16_t l_str_length;
-
-        uint32_t l_type;
-        if (l_offset+sizeof (uint32_t)> a_pkt->data_size) {log_it(L_ERROR, "Broken GDB element: can't read 'type' field"); break;} // Check for buffer boundries
-        memcpy(&l_type, a_pkt->data + l_offset, sizeof(uint32_t));
-        l_obj->type = l_type;
-        l_offset += sizeof(uint32_t);
-
-        if (l_offset+sizeof (uint16_t)> a_pkt->data_size) {log_it(L_ERROR, "Broken GDB element: can't read 'group_length' field"); break;} // Check for buffer boundries
-        memcpy(&l_str_length, a_pkt->data + l_offset, sizeof(uint16_t));
-        l_offset += sizeof(uint16_t);
-
-        if (l_offset + l_str_length > a_pkt->data_size || !l_str_length) {log_it(L_ERROR, "Broken GDB element: can't read 'group' field"); break;} // Check for buffer boundries
-        l_obj->group = DAP_NEW_Z_SIZE(char, l_str_length + 1);
-        memcpy(l_obj->group, a_pkt->data + l_offset, l_str_length);
-        l_offset += l_str_length;
-
-        if (l_offset+sizeof (uint64_t)> a_pkt->data_size) {log_it(L_ERROR, "Broken GDB element: can't read 'id' field");
-                                                           DAP_DEL_Z(l_obj->group); break;} // Check for buffer boundries
-        memcpy(&l_obj->id, a_pkt->data + l_offset, sizeof(uint64_t));
-        l_offset += sizeof(uint64_t);
-
-        if (l_offset+sizeof (uint64_t)> a_pkt->data_size) {log_it(L_ERROR, "Broken GDB element: can't read 'timestamp' field");
-                                                           DAP_DEL_Z(l_obj->group); break;} // Check for buffer boundries
-        memcpy(&l_obj->timestamp, a_pkt->data + l_offset, sizeof(uint64_t));
-        l_offset += sizeof(uint64_t);
-
-        if (l_offset+sizeof (uint16_t)> a_pkt->data_size) {log_it(L_ERROR, "Broken GDB element: can't read 'key_length' field");
-                                                           DAP_DEL_Z(l_obj->group); break;} // Check for buffer boundries
-        memcpy(&l_str_length, a_pkt->data + l_offset, sizeof(uint16_t));
-        l_offset += sizeof(uint16_t);
-
-        if (l_offset + l_str_length > a_pkt->data_size || !l_str_length) {log_it(L_ERROR, "Broken GDB element: can't read 'key' field: len %s",
-                                                                                 l_str_length ? "OVER" : "NULL");
-                                                                          DAP_DEL_Z(l_obj->group); break;} // Check for buffer boundries
-        l_obj->key = DAP_NEW_Z_SIZE(char, l_str_length + 1);
-        memcpy((char *)l_obj->key, a_pkt->data + l_offset, l_str_length);
-        l_offset += l_str_length;
-
-        if (l_offset+sizeof (uint64_t)> a_pkt->data_size) {log_it(L_ERROR, "Broken GDB element: can't read 'value_length' field");
-                                                           DAP_DEL_Z(l_obj->group); DAP_DEL_Z(l_obj->key); break;} // Check for buffer boundries
-        memcpy(&l_obj->value_len, a_pkt->data + l_offset, sizeof(uint64_t));
-        l_offset += sizeof(uint64_t);
-
-        if (l_offset + l_obj->value_len > a_pkt->data_size || !l_obj->value_len) {log_it(L_ERROR, "Broken GDB element: can't read 'value' field");
-                                                          DAP_DEL_Z(l_obj->group); DAP_DEL_Z(l_obj->key);break;} // Check for buffer boundries
-        l_obj->value = DAP_NEW_Z_SIZE(uint8_t, l_obj->value_len);
-        memcpy((char*)l_obj->value, a_pkt->data + l_offset, l_obj->value_len);
-        l_offset += l_obj->value_len;
-    }
-    if (a_pkt->data_size != l_offset) {
-        if (l_store_obj)
-            dap_store_obj_free(l_store_obj, l_cur_count);
-        return NULL;
-    }
-    // Return the number of completely filled dap_store_obj_t structures
-    // because l_cur_count may be less than l_count due to too little memory
-    if(a_store_obj_count)
-        *a_store_obj_count = l_cur_count;
-    return l_store_obj;
-}
-
-#endif
-
-
-
-
-
-
 dap_store_obj_t *dap_global_db_pkt_deserialize(const dap_global_db_pkt_t *a_pkt, size_t *a_store_obj_count)
 {
 uint32_t l_count, l_cur_count;
@@ -794,4 +860,3 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
 
     return l_store_obj_arr;
 }
-

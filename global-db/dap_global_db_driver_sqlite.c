@@ -164,7 +164,7 @@ struct timespec tmo = {0};
 
     /* No free connection at the moment, so, prepare to wait a condition ... */
 
-    clock_gettime(CLOCK_REALTIME, &tmo);
+    clock_gettime(CLOCK_MONOTONIC, &tmo);
     tmo.tv_sec += DAP_SQLITE_CONN_TIMEOUT;
     s_conn_free_present = false;
     l_rc = 0;
