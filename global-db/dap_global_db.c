@@ -397,30 +397,7 @@ int dap_global_db_get_del_ts(const char * a_group, const char *a_key,dap_global_
  */
 static bool s_msg_opcode_get_del_ts(struct queue_io_msg * a_msg)
 {
-    uint64_t l_timestamp = 0;
-    dap_store_obj_t l_store_obj_del = { 0 };
-    char l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
-    size_t l_count_out = 0;
-    dap_store_obj_t *l_obj;
-
-    if(a_msg->key && a_msg->group){
-        l_store_obj_del.key = a_msg->key;
-        dap_snprintf(l_group, sizeof(l_group) - 1,  "%s.del", a_msg->group);
-        l_store_obj_del.group = l_group;
-
-        if (dap_global_db_driver_is(l_store_obj_del.group, l_store_obj_del.key))
-        {
-            if ( (l_obj = dap_global_db_driver_read(l_store_obj_del.group, l_store_obj_del.key, &l_count_out)) )
-            {
-                if ( (l_count_out > 1) )
-                    log_it(L_WARNING, "Got more then 1 records (%zu) for group '%s'", l_count_out, l_group);
-
-                l_timestamp = l_obj->timestamp;
-                dap_store_obj_free(l_obj, l_count_out);
-            }
-        }
-    }
-
+    dap_nanotime_t l_timestamp = dap_global_db_get_del_ts_unsafe(a_msg->group, a_msg->key);
     if(l_timestamp){
         if(a_msg->callback_result)
             a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_SUCCESS, a_msg->group, a_msg->key,
@@ -430,6 +407,28 @@ static bool s_msg_opcode_get_del_ts(struct queue_io_msg * a_msg)
         a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_NO_RESULTS, a_msg->group, a_msg->key,
                                NULL, 0, 0,0, a_msg->callback_arg );
     return true;
+}
+
+dap_nanotime_t dap_global_db_get_del_ts_unsafe(const char *a_group, const char *a_key)
+{
+    dap_store_obj_t *l_store_obj_del = NULL;
+    dap_nanotime_t l_timestamp = 0;
+    char l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
+    size_t l_count_out = 0;
+
+    if (a_key && a_group) {
+        dap_snprintf(l_group, sizeof(l_group) - 1,  "%s.del", a_group);
+        if (dap_global_db_driver_is(l_group, a_key)) {
+            l_store_obj_del = dap_global_db_driver_read(l_group, a_key, &l_count_out);
+            if (l_store_obj_del) {
+                if (l_count_out != 1)
+                    log_it(L_WARNING, "Got not 1 records (%zu) for group '%s'", l_count_out, l_group);
+                l_timestamp = l_store_obj_del->timestamp;
+                dap_store_obj_free(l_store_obj_del, l_count_out);
+            }
+        }
+    }
+    return l_timestamp;
 }
 
 /**
@@ -800,7 +799,7 @@ int dap_global_db_set_raw(dap_store_obj_t * a_store_objs, size_t a_store_objs_co
     l_msg->callback_arg = a_arg;
     l_msg->callback_results_raw = a_callback;
 
-    l_msg->values_raw = dap_store_obj_copy(a_store_objs,a_store_objs_count) ;
+    l_msg->values_raw = dap_store_obj_copy(a_store_objs, a_store_objs_count) ;
     l_msg->values_raw_total = a_store_objs_count;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
