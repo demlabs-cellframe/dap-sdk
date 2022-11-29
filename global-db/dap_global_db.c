@@ -727,6 +727,7 @@ static bool s_msg_opcode_set(struct queue_io_msg * a_msg)
     l_store_data.value =  a_msg->value;
     l_store_data.group = (char*) a_msg->group;
     l_store_data.timestamp = l_ts_now;
+    l_store_data.type = DAP_DB$K_OPTYPE_ADD;
 
     int l_res = dap_global_db_driver_apply(&l_store_data, 1);
 

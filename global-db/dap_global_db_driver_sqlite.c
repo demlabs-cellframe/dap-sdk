@@ -60,7 +60,7 @@ extern  int g_dap_global_db_debug_more;                                     /* E
 static char s_filename_db [MAX_PATH];
 
 static pthread_mutex_t s_conn_free_mtx = PTHREAD_MUTEX_INITIALIZER;         /* Lock to coordinate access to the free connections pool */
-static pthread_cond_t s_conn_free_cnd;                                      /* To signaling to waites of the free connection */
+static pthread_cond_t s_conn_free_cnd = PTHREAD_COND_INITIALIZER;           /* To signaling to waites of the free connection */
 static bool s_conn_free_present = true;
 
 
@@ -164,7 +164,7 @@ struct timespec tmo = {0};
 
     /* No free connection at the moment, so, prepare to wait a condition ... */
 
-    clock_gettime(CLOCK_MONOTONIC, &tmo);
+    clock_gettime(CLOCK_REALTIME, &tmo);
     tmo.tv_sec += DAP_SQLITE_CONN_TIMEOUT;
     s_conn_free_present = false;
     l_rc = 0;
@@ -1164,12 +1164,6 @@ char l_errbuf[255] = {0}, *l_error_message = NULL;
     }
 
     DAP_DEL_Z(l_filename_dir);
-
-    pthread_condattr_t l_cond_attr;
-    pthread_condattr_init(&l_cond_attr);
-    pthread_condattr_setclock(&l_cond_attr, CLOCK_MONOTONIC);
-    pthread_cond_init(&s_conn_free_cnd, &l_cond_attr);
-    pthread_condattr_destroy(&l_cond_attr);
 
     /* Create a pool of connection */
     for (int i = 0; i < DAP_SQLITE_POOL_COUNT; i++)

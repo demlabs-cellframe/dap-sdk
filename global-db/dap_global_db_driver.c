@@ -89,7 +89,7 @@ int l_ret = -1;
     if (s_used_driver[0] )
         dap_db_driver_deinit();
 
-    s_db_drvmode_async = a_mode_async;
+    s_db_drvmode_async = 0; //a_mode_async; - not applicable now, need to remove it
 
     // Fill callbacks with zeros
     memset(&s_drv_callback, 0, sizeof(dap_db_driver_callbacks_t));
