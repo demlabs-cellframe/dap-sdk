@@ -586,7 +586,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
                     a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
                 }
             }
-            else if ((l_errno != EAGAIN) && (l_errno != EWOULDBLOCK) )  // we use blocked socket for now but who knows...
+            else if ((l_read_errno != EAGAIN) && (l_read_errno != EWOULDBLOCK) )  // we use blocked socket for now but who knows...
                 log_it(L_ERROR, "Can't read message from pipe");
 #endif
 
@@ -849,9 +849,9 @@ static void *dap_events_socket_buf_thread(void *arg)
     while (l_lifecycle) {
         while (l_res < 1 && l_count++ < 3) {
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-            l_sock = l_item->es->fd2;
+            l_sock = l_es->fd2;
 #elif defined(DAP_EVENTS_CAPS_QUEUE_MQUEUE)
-            l_sock = l_item->es->mqd;
+            l_sock = l_es->mqd;
 #endif
             // wait max 5 min
             l_res = wait_send_socket(l_sock, 300000);
