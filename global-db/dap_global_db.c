@@ -562,10 +562,10 @@ int dap_global_db_get_all(const char * a_group,size_t a_results_page_size, dap_g
 static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
 {
     size_t l_values_count = a_msg->values_page_size;
-    size_t l_values_remains = dap_global_db_driver_count(a_msg->group, a_msg->values_raw_last_id + 1);
-    dap_store_obj_t *l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->values_raw_last_id + 1, &l_values_count);
+    size_t l_values_remains = dap_global_db_driver_count(a_msg->group, a_msg->values_raw_last_id);
+    dap_store_obj_t *l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->values_raw_last_id, &l_values_count);
     if (l_store_objs && l_values_count)
-        a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id;
+        a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id + 1;
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values from total %zu",
                                                    a_msg->group, l_values_count, l_values_remains);
     dap_global_db_obj_t *l_objs = NULL;
@@ -646,10 +646,10 @@ int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t 
 static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg)
 {
     size_t l_values_count = a_msg->values_page_size;
-    size_t l_values_remains = dap_global_db_driver_count(a_msg->group, a_msg->values_raw_last_id + 1);
-    dap_store_obj_t *l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->values_raw_last_id + 1, &l_values_count);
+    size_t l_values_remains = dap_global_db_driver_count(a_msg->group, a_msg->values_raw_last_id);
+    dap_store_obj_t *l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->values_raw_last_id, &l_values_count);
     if (l_store_objs && l_values_count)
-        a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id;
+        a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id + 1;
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all raw request from group %s recieved %zu values from total %zu",
                                                    a_msg->group, l_values_count, l_values_remains);
     // Call callback if present
