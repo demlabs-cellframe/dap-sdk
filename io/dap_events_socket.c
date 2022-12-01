@@ -965,6 +965,8 @@ int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t * a_es_input, 
  */
 int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
 {
+    assert(a_arg);
+
     int l_ret = -1024, l_errno=0;
 
     if (g_debug_reactor)

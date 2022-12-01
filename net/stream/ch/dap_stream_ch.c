@@ -102,8 +102,8 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
         if(l_ch_new->proc->new_callback)
             l_ch_new->proc->new_callback(l_ch_new,NULL);
 
-        a_stream->channel[l_ch_new->stream->channel_count] = l_ch_new;
-        a_stream->channel_count++;
+        a_stream->channel = DAP_REALLOC(a_stream->channel, sizeof(dap_stream_ch_t *) * (a_stream->channel_count + 1));
+        a_stream->channel[l_ch_new->stream->channel_count++] = l_ch_new;
 
         return l_ch_new;
     }else{
@@ -129,16 +129,22 @@ void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
     if (a_ch->proc)
         if (a_ch->proc->delete_callback)
             a_ch->proc->delete_callback(a_ch, NULL);
-    a_ch->stream->channel[a_ch->stream->channel_count--] = NULL;
+    assert(!a_ch->internal);
+
+    size_t l_ch_index = 0;
+    for (; l_ch_index < a_ch->stream->channel_count; l_ch_index++)
+        if (a_ch->stream->channel[l_ch_index] == a_ch)
+            break;
+    assert(l_ch_index < a_ch->stream->channel_count);
+    a_ch->stream->channel_count--;
+    // Channels shift for escape void channels in array
+    for (size_t i = l_ch_index; i < a_ch->stream->channel_count; i++)
+        a_ch->stream->channel[i] = a_ch->stream->channel[i + 1];
+    if (!a_ch->stream->channel_count)
+        DAP_DEL_Z(a_ch->stream->channel);
+
     pthread_mutex_unlock(&a_ch->mutex);
-
     pthread_mutex_destroy(&a_ch->mutex);
-
-/* fixed raise, but probably may be memory leak!
-    if(ch->internal){
-        free(ch->internal);
-    }
-*/
     DAP_DELETE(a_ch);
 }
 
@@ -195,6 +201,7 @@ void dap_stream_ch_set_ready_to_write_unsafe(dap_stream_ch_t * ch,bool is_ready)
     }
 }
 
+/*
 static void s_print_workers_channels()
 {
     uint32_t l_worker_count = dap_events_thread_get_count();
@@ -220,3 +227,4 @@ static void s_print_workers_channels()
     }
     return;
 }
+*/

@@ -190,8 +190,12 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
         *l_store_obj_dst = *l_store_obj_src;
         l_store_obj_dst->group = dap_strdup(l_store_obj_src->group);
         l_store_obj_dst->key = dap_strdup(l_store_obj_src->key);
-        if(l_store_obj_src->value && l_store_obj_src->value_len)
-            l_store_obj_dst->value = DAP_DUP_SIZE(l_store_obj_src->value, l_store_obj_src->value_len);
+        if (l_store_obj_src->value) {
+            if (!l_store_obj->value_len)
+                log_it(L_WARNING, "Inconsistent global DB object copy requested");
+            else
+                l_store_obj_dst->value = DAP_DUP_SIZE(l_store_obj_src->value, l_store_obj_src->value_len);
+        }
     }
 
     return l_store_obj;

@@ -174,7 +174,7 @@ static int s_db_add_sync_group(dap_list_t **a_grp_list, dap_sync_group_item_t *a
 static void *s_list_thread_proc(void *arg)
 {
     dap_db_log_list_t *l_dap_db_log_list = (dap_db_log_list_t *)arg;
-    uint32_t l_time_store_lim_hours = dap_config_get_item_uint32_default(g_config, "resources", "dap_global_db_time_store_limit", 72);
+    uint32_t l_time_store_lim_hours = dap_config_get_item_uint32_default(g_config, "global_db", "time_store_limit", 72);
     uint64_t l_limit_time = l_time_store_lim_hours ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
     for (dap_list_t *l_groups = l_dap_db_log_list->groups; l_groups; l_groups = dap_list_next(l_groups)) {
         dap_db_log_list_group_t *l_group_cur = (dap_db_log_list_group_t *)l_groups->data;
@@ -195,10 +195,9 @@ static void *s_list_thread_proc(void *arg)
             size_t l_item_count = min(64, l_group_cur->count);
             dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, l_item_start, &l_item_count);
             pthread_mutex_lock(&l_dap_db_log_list->list_mutex);
-            if (!l_dap_db_log_list->is_process){
+            if (!l_dap_db_log_list->is_process) {
                 pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
-                if(l_objs)
-                    dap_store_obj_free(l_objs, l_item_count);
+                dap_store_obj_free(l_objs, l_item_count);
                 return NULL;
             }
             pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);

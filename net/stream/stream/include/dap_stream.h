@@ -68,7 +68,7 @@ typedef struct dap_stream {
     uint8_t buf[STREAM_BUF_SIZE_MAX];
     uint8_t pkt_cache[STREAM_BUF_SIZE_MAX];
 
-    dap_stream_ch_t *channel[255]; // TODO reduce channels to 16 to economy memory
+    dap_stream_ch_t **channel;
     size_t channel_count;
 
     size_t frame_sent; // Frame counter
