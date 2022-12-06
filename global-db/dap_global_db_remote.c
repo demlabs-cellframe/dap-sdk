@@ -490,7 +490,7 @@ bool	l_ret;
                                     true, NULL, NULL)) == 0 ) {
         dap_snprintf(l_key, sizeof(l_key) - 1, "cur_node_addr_%s_time", a_net_name);
         l_ret = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, l_key, &a_expire_time, sizeof(time_t),
-                                   true, NULL, NULL);
+                                   true, NULL, NULL) == DAP_GLOBAL_DB_RC_SUCCESS;
     }
 
     return l_ret;
