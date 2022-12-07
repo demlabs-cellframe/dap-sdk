@@ -81,8 +81,7 @@ typedef struct dap_global_db_obj {
     uint8_t *value;
     size_t value_len;
     bool is_pinned;
-
-} DAP_ALIGN_PACKED dap_global_db_obj_t;
+} dap_global_db_obj_t;
 
 typedef void (*dap_global_db_callback_t) (dap_global_db_context_t * a_global_db_context, void * a_arg);
 
