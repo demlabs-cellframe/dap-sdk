@@ -827,9 +827,9 @@ static bool s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
         if(l_ret == 0) {
             for(;  i < a_msg->values_raw_total ; i++ ) {
                 if (a_msg->values_raw[i].type == DAP_DB$K_OPTYPE_ADD)
-                    l_res_del = s_record_del_history_del(a_msg->values_raw[i].key , a_msg->values_raw[i].group);
+                    l_res_del = s_record_del_history_del(a_msg->values_raw[i].group, a_msg->values_raw[i].key);
                 else if (a_msg->values_raw[i].type == DAP_DB$K_OPTYPE_DEL)
-                    l_res_del = s_record_del_history_add((char*)a_msg->values_raw[i].key, a_msg->values_raw[i].group,
+                    l_res_del = s_record_del_history_add(a_msg->values_raw[i].group, (char*)a_msg->values_raw[i].key,
                                                          a_msg->values_raw[i].timestamp);
                 if (!l_res_del) {
                     s_change_notify(s_context_global_db, &a_msg->values_raw[i]);
@@ -900,7 +900,7 @@ static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
             l_store_obj.value = a_msg->values[i].value;
             l_store_obj.value_len = a_msg->values[i].value_len;
             l_store_obj.timestamp = a_msg->values[i].timestamp;
-            s_record_del_history_del(a_msg->values[i].key, a_msg->group);
+            s_record_del_history_del(a_msg->group, a_msg->values[i].key);
             l_ret = dap_global_db_driver_add(&l_store_obj,1);
             s_change_notify(s_context_global_db, &l_store_obj);
         }
@@ -961,7 +961,7 @@ static bool s_msg_opcode_pin(struct queue_io_msg * a_msg)
         l_store_obj->flags |= RECORD_PINNED;
         int l_res = dap_global_db_driver_add(l_store_obj,1);
         if(l_res == 0){
-            s_record_del_history_del(a_msg->key, a_msg->group);
+            s_record_del_history_del(a_msg->group, a_msg->key);
             s_change_notify(s_context_global_db, l_store_obj);
         }else
             log_it(L_ERROR,"Can't save pinned gdb data, code %d ", l_res);
@@ -1023,7 +1023,7 @@ static bool s_msg_opcode_unpin(struct queue_io_msg * a_msg)
         l_store_obj->flags ^= RECORD_PINNED;
         int l_res = dap_global_db_driver_add(l_store_obj,1);
         if(l_res == 0){
-            s_record_del_history_del(a_msg->key, a_msg->group);
+            s_record_del_history_del(a_msg->group, a_msg->key);
             s_change_notify(s_context_global_db, l_store_obj);
         }else
             log_it(L_ERROR,"Can't save pinned gdb data, code %d ", l_res);
@@ -1671,9 +1671,9 @@ static void s_queue_io_callback( dap_events_socket_t * a_es, void * a_arg)
  */
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t * a_store_obj)
 {
-dap_list_t *l_items_list = dap_global_db_get_sync_groups_all();
-    while (l_items_list) {
-        for (dap_list_t *it = dap_global_db_get_sync_groups_all(); it; it = it->next) {
+    dap_list_t *l_items_list = dap_global_db_get_sync_groups_all();
+    do {
+        for (dap_list_t *it = l_items_list; it; it = it->next) {
             dap_sync_group_item_t *l_sync_group_item = (dap_sync_group_item_t *)it->data;
             if (dap_fnmatch(l_sync_group_item->group_mask, a_store_obj->group, 0))
                 continue;
@@ -1681,9 +1681,9 @@ dap_list_t *l_items_list = dap_global_db_get_sync_groups_all();
                  l_sync_group_item->callback_notify(a_context, a_store_obj, l_sync_group_item->callback_arg);
             return;
         }
-        l_items_list = (l_items_list ==  dap_global_db_get_sync_groups_all()) ?
-                    dap_global_db_get_sync_groups_extra_all() : NULL;
-    }
+        l_items_list = (l_items_list == dap_global_db_get_sync_groups_all()) ?
+                                        dap_global_db_get_sync_groups_extra_all() : NULL;
+    } while (l_items_list);
 }
 
 
