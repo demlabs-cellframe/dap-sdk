@@ -422,6 +422,13 @@ ssize_t     olen = 0, len = 0;
 struct tm _tm;
 struct timespec now;
 
+    if ( ((int) a_ll == -1) )
+        return;
+
+    if ( (a_ll < s_dap_log_level) )
+        return;
+
+
 	clock_gettime(CLOCK_REALTIME, &now);
 
 #ifdef	WIN32
