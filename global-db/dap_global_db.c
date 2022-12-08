@@ -1125,10 +1125,9 @@ dap_global_db_obj_t *l_obj;
     if ( !a_objs || !a_count )                                              /* Sanity checks */
         return;
 
-    for(l_obj = a_objs; a_count--; l_obj++)                                 /* Run over array's elements */
-    {
-        DAP_DELETE(l_obj->key);
-        DAP_DELETE(l_obj->value);
+    for(l_obj = a_objs; a_count--; l_obj++) {                               /* Run over array's elements */
+        DAP_DEL_Z(l_obj->key);
+        DAP_DEL_Z(l_obj->value);
     }
 
     DAP_DELETE(a_objs);                                                     /* Finaly kill the the array */
