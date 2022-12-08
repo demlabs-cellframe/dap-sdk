@@ -1097,8 +1097,8 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
                 l_client_pvt->uplink_protocol_version = l_remote_protocol_version;
                 log_it(L_DEBUG, "Uplink protocol version %u", l_remote_protocol_version);
             } else
-                log_it(L_WARNING, "No uplink protocol version, use legacy version %d"
-                        , l_client_pvt->uplink_protocol_version = 22);
+                log_it(L_WARNING, "No uplink protocol version, use default version %d"
+                        , l_client_pvt->uplink_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT);
 
             if(strlen(l_stream_id) < 13) {
                 //log_it(L_DEBUG, "Stream server id %s, stream key length(base64 encoded) %u"

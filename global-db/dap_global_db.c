@@ -822,7 +822,7 @@ static bool s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
     int l_ret = -1;
     size_t i=0;
     if(a_msg->values_raw_total>0){
-        l_ret = dap_global_db_driver_add(a_msg->values_raw,a_msg->values_raw_total);
+        l_ret = dap_global_db_driver_apply(a_msg->values_raw,a_msg->values_raw_total);
         int l_res_del = 0;
         if(l_ret == 0) {
             for(;  i < a_msg->values_raw_total ; i++ ) {
@@ -1125,10 +1125,9 @@ dap_global_db_obj_t *l_obj;
     if ( !a_objs || !a_count )                                              /* Sanity checks */
         return;
 
-    for(l_obj = a_objs; a_count--; l_obj++)                                 /* Run over array's elements */
-    {
-        DAP_DELETE(l_obj->key);
-        DAP_DELETE(l_obj->value);
+    for(l_obj = a_objs; a_count--; l_obj++) {                               /* Run over array's elements */
+        DAP_DEL_Z(l_obj->key);
+        DAP_DEL_Z(l_obj->value);
     }
 
     DAP_DELETE(a_objs);                                                     /* Finaly kill the the array */
