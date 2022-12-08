@@ -1671,9 +1671,9 @@ static void s_queue_io_callback( dap_events_socket_t * a_es, void * a_arg)
  */
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t * a_store_obj)
 {
-dap_list_t *l_items_list = dap_global_db_get_sync_groups_all();
-    while (l_items_list) {
-        for (dap_list_t *it = dap_global_db_get_sync_groups_all(); it; it = it->next) {
+    dap_list_t *l_items_list = dap_global_db_get_sync_groups_all();
+    do {
+        for (dap_list_t *it = l_items_list; it; it = it->next) {
             dap_sync_group_item_t *l_sync_group_item = (dap_sync_group_item_t *)it->data;
             if (dap_fnmatch(l_sync_group_item->group_mask, a_store_obj->group, 0))
                 continue;
@@ -1681,9 +1681,9 @@ dap_list_t *l_items_list = dap_global_db_get_sync_groups_all();
                  l_sync_group_item->callback_notify(a_context, a_store_obj, l_sync_group_item->callback_arg);
             return;
         }
-        l_items_list = (l_items_list ==  dap_global_db_get_sync_groups_all()) ?
-                    dap_global_db_get_sync_groups_extra_all() : NULL;
-    }
+        l_items_list = (l_items_list == dap_global_db_get_sync_groups_all()) ?
+                                        dap_global_db_get_sync_groups_extra_all() : NULL;
+    } while (l_items_list);
 }
 
 
