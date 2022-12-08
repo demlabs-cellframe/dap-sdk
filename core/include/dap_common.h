@@ -169,6 +169,7 @@ typedef struct iovec {
     void    *iov_base; /* Data */
     size_t  iov_len; /* ... and its' size */
 } iovec_t;
+#define HAVE_STRUCT_IOVEC 1
 typedef HANDLE dap_file_handle_t;
 typedef DWORD dap_errnum_t;
 #define dap_fileclose CloseHandle
