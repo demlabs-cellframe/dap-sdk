@@ -822,7 +822,7 @@ static bool s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
     int l_ret = -1;
     size_t i=0;
     if(a_msg->values_raw_total>0){
-        l_ret = dap_global_db_driver_add(a_msg->values_raw,a_msg->values_raw_total);
+        l_ret = dap_global_db_driver_apply(a_msg->values_raw,a_msg->values_raw_total);
         int l_res_del = 0;
         if(l_ret == 0) {
             for(;  i < a_msg->values_raw_total ; i++ ) {
