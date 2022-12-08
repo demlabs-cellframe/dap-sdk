@@ -111,12 +111,13 @@ void dap_server_delete(dap_server_t *a_server)
     }
     if(a_server->delete_callback)
         a_server->delete_callback(a_server,NULL);
-    if( a_server->address )
-        DAP_DELETE(a_server->address );
+
     if( a_server->_inheritor )
         DAP_DELETE( a_server->_inheritor );
+
     pthread_mutex_destroy(&a_server->started_mutex);
     pthread_cond_destroy(&a_server->started_cond);
+
     DAP_DELETE(a_server);
 }
 
@@ -184,7 +185,8 @@ dap_server_t* dap_server_new(const char * a_addr, uint16_t a_port, dap_server_ty
 #ifndef DAP_OS_WINDOWS
     l_server->socket_listener=-1; // To diff it from 0 fd
 #endif
-    l_server->address = a_addr ? strdup(a_addr) : strdup("0.0.0.0"); // If NULL we listen everything
+
+    strncpy(l_server->address, a_addr ? a_addr : "0.0.0.0", sizeof(l_server->address) ); // If NULL we listen everything
     l_server->port = a_port;
     l_server->type = a_type;
 

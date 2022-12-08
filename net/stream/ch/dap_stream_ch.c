@@ -257,7 +257,7 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
 
         return l_ch_new;
     }else{
-        log_it(L_WARNING, "Unknown stream processor with id %uc",a_id);
+        log_it(L_WARNING, "Unknown stream processor with id %uc", a_id);
         return NULL;
     }
 }

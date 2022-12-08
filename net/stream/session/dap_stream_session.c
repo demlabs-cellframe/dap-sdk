@@ -41,6 +41,8 @@ static dap_stream_session_t *s_sessions = NULL;
 static pthread_mutex_t s_sessions_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 
+
+
 int stream_session_close2(dap_stream_session_t * s);
 static void * session_check(void * data);
 
@@ -75,19 +77,16 @@ dap_list_t* dap_stream_session_get_list_sessions(void)
 {
     dap_list_t *l_list = NULL;
     dap_stream_session_t *current, *tmp;
+
     pthread_mutex_lock(&s_sessions_mutex);
     HASH_ITER(hh, s_sessions, current, tmp)
-    {
         l_list = dap_list_append(l_list, current);
-        //dap_chain_net_srv_stream_session_t * l_srv_session = current->_inheritor;
-        //if(l_srv_session) {
-            //dap_net_stats_t *l_stats = DAP_NEW(dap_net_stats_t);
-            //memcpy(l_stats, l_srv_session->stats);
-            //l_list = dap_list_append(l_list, l_stats);
-        //}
-    }
+
+    /* pthread_mutex_lock(&s_sessions_mutex); Don't forget do it some out-of-here !!! */
+
     return l_list;
 }
+
 
 void dap_stream_session_get_list_sessions_unlock(void)
 {
@@ -128,7 +127,7 @@ unsigned int session_id = 0, session_id_new = 0;
        l_stm_sess->time_created = time(NULL);
        l_stm_sess->create_empty = true;
 
-       log_it(L_INFO, "Created session context [stm_sess:%p, id:%u, ts:%d]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
+       log_it(L_INFO, "Created session context [stm_sess:%p, id:%u, ts:%ld]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
 
        return l_stm_sess;
 }
@@ -204,7 +203,7 @@ dap_stream_session_t *l_stm_sess;
     HASH_DEL(s_sessions, l_stm_sess);
     dap_stream_session_unlock();
 
-    log_it(L_INFO, "Delete session context [stm_sess:%p, id:%u, ts:%d]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
+    log_it(L_INFO, "Delete session context [stm_sess:%p, id:%u, ts:%ld]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
 
     if (l_stm_sess->callback_delete)
         l_stm_sess->callback_delete(l_stm_sess, NULL);

@@ -148,7 +148,7 @@ dap_http_header_t *l_new_header;
     l_len = l_strlen - (l_pval - ht_line);                                  /* Compute a length of data after ':' */
     for (; isspace(*l_pval) && l_len; l_pval++, l_len-- );                  /* Skip possible whitespaces on begin ... */
 
-    l_valuelen = l_len > 2 ? l_len - 2 : 0;                                                /* Exclude CRLF at end of HTTP header field */
+    l_valuelen = l_len > 2 ? l_len - 2 : 0;                                 /* Exclude CRLF at end of HTTP header field */
 
     switch (l_ht->ht_field_code )
     {
@@ -201,7 +201,7 @@ dap_http_header_t *l_new_header;
  * @param value Header's value
  * @return Pointer to the new HTTP header's structure
  */
-dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const char *a_name, const char *a_value)
+inline dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const char *a_name, const char *a_value)
 {
     dap_http_header_t *l_new_header = DAP_NEW_Z(dap_http_header_t);
 

@@ -372,7 +372,7 @@ void    *s_th_memstat_show  (void *a_arg)
  */
 int dap_events_wait( )
 {
-#ifdef DAP_SYS_DEBUG                                                    /* @RRL: 6901, 7202 Start of memstat show at interval basis */
+#ifdef  DAP_SYS_DEBUG                                                    /* @RRL: 6901, 7202 Start of memstat show at interval basis */
 pthread_attr_t  l_tattr;
 pthread_t       l_tid;
 

@@ -256,7 +256,7 @@ int l_rc;
 
     log_it(L_NOTICE,"Initialized events socket module");
 
-#if   DAP_SYS_DEBUG
+#ifdef  DAP_SYS_DEBUG
     for (int i = 0; i < MEMSTAT$K_NR; i++)
         dap_memstat_reg(&s_memstat[i]);
 #endif

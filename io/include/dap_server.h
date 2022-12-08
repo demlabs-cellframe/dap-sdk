@@ -65,9 +65,10 @@ typedef void (*dap_server_callback_t)( struct dap_server *,void * arg ); // Call
 
 typedef struct dap_server {
 
-  dap_server_type_t type; // Server's type
-  uint16_t port; // Listen port
-  char *address; // Listen address
+  dap_server_type_t type;                   // Server's type
+  uint16_t  port;                           // Listen port
+  char      address[INET6_ADDRSTRLEN];      // Listen address
+
 #ifdef DAP_OS_WINDOWS
   SOCKET socket_listener;
 #else
