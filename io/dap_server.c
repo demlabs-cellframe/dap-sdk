@@ -386,12 +386,12 @@ static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket
     assert(l_server);
 
     dap_events_socket_t * l_es_new = NULL;
-    log_it(L_DEBUG, "Listening socket (binded on %s:%u) got new incoming connection",l_server->address,l_server->port);
-    log_it(L_DEBUG, "Accepted new connection (sock %"DAP_FORMAT_SOCKET" from %"DAP_FORMAT_SOCKET")", a_remote_socket, a_es->socket);
+    log_it(L_DEBUG, "[es:%p] Listening socket (binded on %s:%u) got new incomming connection", a_es, l_server->address,l_server->port);
+    log_it(L_DEBUG, "[es:%p] Accepted new connection (sock %"DAP_FORMAT_SOCKET" from %"DAP_FORMAT_SOCKET")", a_es, a_remote_socket, a_es->socket);
     l_es_new = s_es_server_create(a_remote_socket,&l_server->client_callbacks,l_server);
     //l_es_new->is_dont_reset_write_flag = true; // By default all income connection has this flag
     getnameinfo(a_remote_addr,a_remote_addr_size, l_es_new->hostaddr
-                ,256, l_es_new->service,sizeof(l_es_new->service),
+                 ,DAP_EVSOCK$SZ_HOSTNAME, l_es_new->service, DAP_EVSOCK$SZ_SERVICE,
                 NI_NUMERICHOST | NI_NUMERICSERV);
     if (!l_es_new->hostaddr){
         struct in_addr l_addr_remote;
@@ -443,9 +443,8 @@ static dap_events_socket_t * s_es_server_create(int a_sock, dap_events_socket_ca
         ret = dap_events_socket_wrap_no_add(a_sock, a_callbacks);
         ret->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
         ret->server = a_server;
-        ret->hostaddr   = DAP_NEW_Z_SIZE(char, 256);
-        ret->service    = DAP_NEW_Z_SIZE(char, 54);
-
+        memset(ret->hostaddr, 0, sizeof(ret->hostaddr));
+        memset(ret->service, 0, sizeof(ret->service));
     } else {
         log_it(L_CRITICAL,"Accept error: %s",strerror(errno));
     }

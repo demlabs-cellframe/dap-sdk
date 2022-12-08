@@ -37,8 +37,10 @@
 
 #define LOG_TAG "dap_stream_session"
 
-dap_stream_session_t * sessions=NULL;
-pthread_mutex_t sessions_mutex = PTHREAD_MUTEX_INITIALIZER;
+static dap_stream_session_t *s_sessions = NULL;
+static pthread_mutex_t s_sessions_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+
 int stream_session_close2(dap_stream_session_t * s);
 static void * session_check(void * data);
 
@@ -52,17 +54,17 @@ void dap_stream_session_deinit()
 {
     dap_stream_session_t *current, *tmp;
     log_it(L_INFO,"Destroy all the sessions");
-    pthread_mutex_lock(&sessions_mutex);
-      HASH_ITER(hh, sessions, current, tmp) {
+    pthread_mutex_lock(&s_sessions_mutex);
+      HASH_ITER(hh, s_sessions, current, tmp) {
           // Clang bug at this, current should change at every loop cycle
-          HASH_DEL(sessions,current);
+          HASH_DEL(s_sessions,current);
           if (current->callback_delete)
               current->callback_delete(current, NULL);
           if (current->_inheritor )
               DAP_DELETE(current->_inheritor);
           DAP_DELETE(current);
       }
-    pthread_mutex_unlock(&sessions_mutex);
+    pthread_mutex_unlock(&s_sessions_mutex);
 }
 
 /**
@@ -73,8 +75,8 @@ dap_list_t* dap_stream_session_get_list_sessions(void)
 {
     dap_list_t *l_list = NULL;
     dap_stream_session_t *current, *tmp;
-    pthread_mutex_lock(&sessions_mutex);
-    HASH_ITER(hh, sessions, current, tmp)
+    pthread_mutex_lock(&s_sessions_mutex);
+    HASH_ITER(hh, s_sessions, current, tmp)
     {
         l_list = dap_list_append(l_list, current);
         //dap_chain_net_srv_stream_session_t * l_srv_session = current->_inheritor;
@@ -89,7 +91,7 @@ dap_list_t* dap_stream_session_get_list_sessions(void)
 
 void dap_stream_session_get_list_sessions_unlock(void)
 {
-    pthread_mutex_unlock(&sessions_mutex);
+    pthread_mutex_unlock(&s_sessions_mutex);
 }
 
 static void * session_check(void * data)
@@ -100,25 +102,35 @@ static void * session_check(void * data)
 
 dap_stream_session_t * dap_stream_session_pure_new()
 {
-    dap_stream_session_t * ret=NULL;
+dap_stream_session_t *l_stm_sess, *l_stm_tmp;
+unsigned int session_id = 0, session_id_new = 0;
 
-    unsigned int session_id=0,session_id_new=0;
-    do{
-        session_id_new=session_id=rand()+rand()*0x100+rand()*0x10000+rand()*0x01000000;
-        HASH_FIND_INT(sessions,&session_id_new,ret);
-    }while(ret);
-    log_it(L_INFO,"Creating new session id %u",session_id);
-    ret=DAP_NEW_Z(dap_stream_session_t);
-    pthread_mutex_init(&ret->mutex, NULL);
-    ret->id=session_id;
-    ret->time_created=time(NULL);
-    ret->create_empty=true;
-    ret->enc_type = 0x01; // Default encryption type
-    log_it(L_DEBUG,"Timestamp %u",(unsigned int) ret->time_created);
-    pthread_mutex_lock(&sessions_mutex);
-    HASH_ADD_INT(sessions,id,ret);
-    pthread_mutex_unlock(&sessions_mutex);
-    return ret;
+    if ( !(l_stm_sess = DAP_NEW_Z(dap_stream_session_t)) )              /* Preallocate new session context */
+           return  log_it(L_ERROR, "Cannot alocate memory for a new session context, errno=%d", errno), NULL;
+
+       /*
+        * Generate session id, check uniqueness against sessions hash table,
+        * add new session id into the table
+        */
+       pthread_mutex_lock(&s_sessions_mutex);
+
+       do {
+           session_id_new = session_id = rand() + rand() * 0x100 + rand() * 0x10000 + rand() * 0x01000000;
+           HASH_FIND_INT(s_sessions, &session_id_new, l_stm_tmp);
+       } while(l_stm_tmp);
+
+       l_stm_sess->id = session_id;
+       HASH_ADD_INT(s_sessions, id, l_stm_sess);
+       pthread_mutex_unlock(&s_sessions_mutex);                            /* Unlock ASAP ! */
+
+       /* Prefill session context with data ... */
+       pthread_mutex_init(&l_stm_sess->mutex, NULL);
+       l_stm_sess->time_created = time(NULL);
+       l_stm_sess->create_empty = true;
+
+       log_it(L_INFO, "Created session context [stm_sess:%p, id:%u, ts:%d]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
+
+       return l_stm_sess;
 }
 
 dap_stream_session_t * dap_stream_session_new(unsigned int media_id, bool open_preview)
@@ -140,7 +152,7 @@ dap_stream_session_t *dap_stream_session_id_mt( unsigned int id )
 {
     dap_stream_session_t *ret;
     dap_stream_session_lock();
-    HASH_FIND_INT( sessions, &id, ret );
+    HASH_FIND_INT( s_sessions, &id, ret );
     dap_stream_session_unlock();
     return ret;
 }
@@ -153,7 +165,7 @@ dap_stream_session_t *dap_stream_session_id_mt( unsigned int id )
 dap_stream_session_t *dap_stream_session_id_unsafe( unsigned int id )
 {
     dap_stream_session_t *ret;
-    HASH_FIND_INT( sessions, &id, ret );
+    HASH_FIND_INT( s_sessions, &id, ret );
     return ret;
 }
 
@@ -162,7 +174,7 @@ dap_stream_session_t *dap_stream_session_id_unsafe( unsigned int id )
  */
 void dap_stream_session_lock()
 {
-    pthread_mutex_lock(&sessions_mutex);
+    pthread_mutex_lock(&s_sessions_mutex);
 }
 
 /**
@@ -170,39 +182,41 @@ void dap_stream_session_lock()
  */
 void dap_stream_session_unlock()
 {
-    pthread_mutex_unlock(&sessions_mutex);
+    pthread_mutex_unlock(&s_sessions_mutex);
 }
 
 
 int dap_stream_session_close_mt(unsigned int id)
 {
-    log_it(L_INFO,"Close session id %u", id);
+dap_stream_session_t *l_stm_sess;
 
-//    dap_stream_session_list();
+    log_it(L_INFO, "Close session id %u ...", id);
+
     dap_stream_session_lock();
-    dap_stream_session_t *l_s = dap_stream_session_id_unsafe( id );
-    if(!l_s) {
-        log_it(L_WARNING, "Session id %u not found", id);
+    if ( !(l_stm_sess = dap_stream_session_id_unsafe( id )) )
+    {
         dap_stream_session_unlock();
+        log_it(L_WARNING, "Session id %u not found", id);
+
         return -1;
     }
 
-    int ret = stream_session_close2(l_s);
+    HASH_DEL(s_sessions, l_stm_sess);
     dap_stream_session_unlock();
-    return ret;
+
+    log_it(L_INFO, "Delete session context [stm_sess:%p, id:%u, ts:%d]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
+
+    if (l_stm_sess->callback_delete)
+        l_stm_sess->callback_delete(l_stm_sess, NULL);
+
+    if (l_stm_sess->_inheritor )
+        DAP_DELETE(l_stm_sess->_inheritor);
+
+    DAP_DELETE(l_stm_sess);
+
+    return  0;
 }
 
-int stream_session_close2(dap_stream_session_t * a_session)
-{
-//    log_it(L_INFO,"Close session");
-    HASH_DEL(sessions,a_session);
-    if (a_session->callback_delete)
-        a_session->callback_delete(a_session, NULL);
-    if (a_session->_inheritor )
-        DAP_DELETE(a_session->_inheritor);
-    DAP_DELETE(a_session);
-    return 0;
-}
 
 /**
  * @brief dap_stream_session_open

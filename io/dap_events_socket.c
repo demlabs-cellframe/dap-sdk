@@ -123,6 +123,129 @@ bool s_remove_and_delete_unsafe_delayed_delete_callback(void * a_arg);
 static pthread_attr_t s_attr_detached;                                      /* Thread's creation attribute = DETACHED ! */
 
 
+#ifdef   DAP_SYS_DEBUG
+enum    {MEMSTAT$K_EVSOCK, MEMSTAT$K_BUF_IN, MEMSTAT$K_BUF_OUT, MEMSTAT$K_BUF_OUT_EXT, MEMSTAT$K_NR};
+static  dap_memstat_rec_t   s_memstat [MEMSTAT$K_NR] = {
+    {.fac_len = sizeof(LOG_TAG) - 1, .fac_name = {LOG_TAG}, .alloc_sz = sizeof(dap_events_socket_t)},
+    {.fac_len = sizeof(LOG_TAG ".buf_in") - 1, .fac_name = {LOG_TAG ".buf_in"}, .alloc_sz = DAP_EVENTS_SOCKET_BUF},
+    {.fac_len = sizeof(LOG_TAG ".buf_out") - 1, .fac_name = {LOG_TAG ".buf_out"}, .alloc_sz = DAP_EVENTS_SOCKET_BUF},
+    {.fac_len = sizeof(LOG_TAG ".buf_out_ext") - 1, .fac_name = {LOG_TAG ".buf_out_ext"}, .alloc_sz = DAP_EVENTS_SOCKET_BUF_LIMIT}
+};
+#endif  /* DAP_SYS_DEBUG */
+
+typedef struct __dap_stream_ch_rec__ {
+    dap_events_socket_t     *es;
+    UT_hash_handle          hh;
+} dap_evsock_rec_t;
+
+static dap_evsock_rec_t     *s_evsocks = NULL;                          /* @RRL:  A has table to track using of events sockets context */
+static pthread_rwlock_t     s_evsocks_lock = PTHREAD_RWLOCK_INITIALIZER;
+
+
+/*
+ *   DESCRIPTION: Allocate a new <dap_events_socket> context, add record into the hash table to track usage
+ *      of the contexts.
+ *
+ *   INPUTS:
+ *      NONE
+ *
+ *   IMPLICITE INPUTS:
+ *      s_evsocks;      A hash table
+ *
+ *   OUTPUTS:
+ *      NONE
+ *
+ *   IMPLICITE OUTPUTS:
+ *      s_evsocks
+ *
+ *   RETURNS:
+ *      non-NULL        A has been allocated <dap_events_socket> context
+ *      NULL:           See <errno>
+ */
+static inline dap_events_socket_t *s_dap_evsock_alloc (void)
+{
+int     l_rc;
+dap_events_socket_t *l_es;
+dap_evsock_rec_t    *l_es_rec;
+
+    if ( !(l_es = DAP_NEW_Z( dap_events_socket_t )) )                   /* Allocate memory for new dap_events_socket context and the record */
+        return  log_it(L_CRITICAL, "Cannot allocate memory for <dap_events_socket> context, errno=%d", errno), NULL;
+
+    if ( !(l_es_rec = DAP_NEW_Z( dap_evsock_rec_t )) )                  /* Allocate memory for new record */
+        return  log_it(L_CRITICAL, "Cannot allocate memory for record, errno=%d", errno),
+                DAP_DELETE(l_es), NULL;
+
+    l_es_rec->es = l_es;                                                /* Fill new track record */
+
+                                                                        /* Add new record into the hash table */
+    l_rc = pthread_rwlock_wrlock(&s_evsocks_lock);
+    assert(!l_rc);
+    HASH_ADD(hh, s_evsocks, es, sizeof(dap_events_socket_t *), l_es_rec );
+    l_rc = pthread_rwlock_unlock(&s_evsocks_lock);
+    assert(!l_rc);
+
+    debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is allocated", l_es);
+
+    return  l_es;
+}
+
+/*
+ *   DESCRIPTION: Release has been allocated dap_events_context. Check firstly against hash table.
+ *
+ *   INPUTS:
+ *      a_marker:       An comment for the record, ASCIZ
+ *
+ *   IMPLICITE INPUTS:
+ *      s_evsocks;      A hash table
+ *
+ *   OUTPUT:
+ *      NONE
+ *
+ *   IMPLICITE OUTPUTS:
+ *      s_evsocks
+ *
+ *   RETURNS:
+ *      0:          a_es contains valid pointer
+ *      <errno>
+ */
+static inline int s_dap_evsock_free (
+                dap_events_socket_t *a_es
+                        )
+{
+int     l_rc;
+dap_evsock_rec_t    *l_es_rec = NULL;
+
+    /*
+     * Add new record into the hash table
+     */
+    l_rc = pthread_rwlock_wrlock(&s_evsocks_lock);
+    assert(!l_rc);
+
+    HASH_FIND(hh, s_evsocks, &a_es, sizeof(dap_events_socket_t *), l_es_rec );
+    if ( l_es_rec && (l_es_rec->es == a_es) )
+        HASH_DELETE(hh, s_evsocks, l_es_rec);                           /* Remove record from the table */
+
+    l_rc = pthread_rwlock_unlock(&s_evsocks_lock);
+    assert(!l_rc);
+
+    if ( !l_es_rec )
+        log_it(L_ERROR, "dap_events_socket:%p - no record found!", a_es);
+    else {
+        DAP_DELETE(l_es_rec->es);
+        DAP_DELETE(l_es_rec);
+
+        debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is released", a_es);
+    }
+
+    return  0;  /* SS$_SUCCESS */
+}
+
+
+
+
+
+
+
 /**
  * @brief dap_events_socket_init Init clients module
  * @return Zero if ok others if no
@@ -133,12 +256,18 @@ int l_rc;
 
     log_it(L_NOTICE,"Initialized events socket module");
 
+#if   DAP_SYS_DEBUG
+    for (int i = 0; i < MEMSTAT$K_NR; i++)
+        dap_memstat_reg(&s_memstat[i]);
+#endif
+
+
     /*
      * @RRL: #6157
      * Use this thread's attribute to eliminate resource consuming by terminated threads
      */
-    assert ( !(l_rc = pthread_attr_init(&s_attr_detached)) );
-    assert ( !(l_rc = pthread_attr_setdetachstate(&s_attr_detached, PTHREAD_CREATE_DETACHED)) );
+    l_rc = pthread_attr_init(&s_attr_detached);
+    l_rc = pthread_attr_setdetachstate(&s_attr_detached, PTHREAD_CREATE_DETACHED);
 
 #if defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
 #include <sys/time.h>
@@ -156,7 +285,7 @@ int l_rc;
         fclose(l_mq_msg_max);
     } else {
         log_it(L_ERROR, "Сan't open /proc/sys/fs/mqueue/msg_max file for writing, errno=%d", errno);
-    }  
+    }
 #endif
     dap_timerfd_init();
     return 0;
@@ -198,26 +327,32 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( int a_sock, dap_events_socke
 {
     assert(a_callbacks);
 
-    dap_events_socket_t *l_ret = DAP_NEW_Z( dap_events_socket_t );
-    if (!l_ret)
+    dap_events_socket_t *l_es = s_dap_evsock_alloc(); /* @RRL: #6901 */
+    if (!l_es)
         return NULL;
 
-    l_ret->socket = a_sock;
-    l_ret->uuid = dap_uuid_generate_uint64();
+    l_es->socket = a_sock;
+    l_es->uuid = dap_uuid_generate_uint64();
     if (a_callbacks)
-        l_ret->callbacks = *a_callbacks;
-    l_ret->flags = DAP_SOCK_READY_TO_READ;
+        l_es->callbacks = *a_callbacks;
+    l_es->flags = DAP_SOCK_READY_TO_READ;
 
-    l_ret->buf_in_size_max = DAP_EVENTS_SOCKET_BUF;
-    l_ret->buf_out_size_max = DAP_EVENTS_SOCKET_BUF;
+    l_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF;
+    l_es->buf_out_size_max = DAP_EVENTS_SOCKET_BUF;
 
-    l_ret->buf_in     = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_ret->buf_in_size_max + 1);
-    l_ret->buf_out    = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_ret->buf_out_size_max + 1);
-    l_ret->buf_in_size = l_ret->buf_out_size = 0;
+    l_es->buf_in     = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max + 1);
+    l_es->buf_out    = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max + 1);
+
+#ifdef   DAP_SYS_DEBUG
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].alloc_nr, 1);
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_IN].alloc_nr, 1);
+#endif
+
+    l_es->buf_in_size = l_es->buf_out_size = 0;
     #if defined(DAP_EVENTS_CAPS_EPOLL)
     l_ret->ev_base_flags = EPOLLERR | EPOLLRDHUP | EPOLLHUP;
     #elif defined(DAP_EVENTS_CAPS_POLL)
-    l_ret->poll_base_flags = POLLERR | POLLRDHUP | POLLHUP;
+    l_es->poll_base_flags = POLLERR | POLLRDHUP | POLLHUP;
     #elif defined(DAP_EVENTS_CAPS_KQUEUE)
         l_ret->kqueue_event_catched_data.esocket = l_ret;
         l_ret->kqueue_base_flags = 0;
@@ -226,7 +361,7 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( int a_sock, dap_events_socke
 
     //log_it( L_DEBUG,"Dap event socket wrapped around %d sock a_events = %X", a_sock, a_events );
 
-    return l_ret;
+    return l_es;
 }
 
 /**
@@ -364,8 +499,7 @@ dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, da
         return NULL;
     }
     l_es->type = a_type ;
-    if(g_debug_reactor)
-        log_it(L_DEBUG,"Created socket %"DAP_FORMAT_SOCKET" type %d", l_sock,l_es->type);
+    debug_if(g_debug_reactor, L_DEBUG,"Created socket %"DAP_FORMAT_SOCKET" type %d", l_sock,l_es->type);
     return l_es;
 }
 
@@ -407,13 +541,19 @@ static void s_socket_type_queue_ptr_input_callback_delete(dap_events_socket_t * 
  */
 dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket_t* a_es)
 {
-    dap_events_socket_t * l_es = DAP_NEW_Z(dap_events_socket_t);
+     dap_events_socket_t *l_es = s_dap_evsock_alloc(); /* @RRL: #6901 */
 
     l_es->type = DESCRIPTOR_TYPE_QUEUE;
     l_es->buf_out_size_max = DAP_QUEUE_MAX_MSGS * sizeof(void*);
     l_es->buf_out       = DAP_NEW_Z_SIZE(byte_t,l_es->buf_out_size_max );
     l_es->buf_in_size_max = DAP_QUEUE_MAX_MSGS * sizeof(void*);
     l_es->buf_in       = DAP_NEW_Z_SIZE(byte_t,l_es->buf_in_size_max );
+
+#ifdef   DAP_SYS_DEBUG
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].alloc_nr, 1);
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_IN].alloc_nr, 1);
+#endif
+
     //l_es->buf_out_size  = 8 * sizeof(void*);
     l_es->uuid = dap_uuid_generate_uint64();
     l_es->pipe_out = a_es;
@@ -478,7 +618,7 @@ dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket
 #endif
     if (pos < 0) {
         log_it(L_ERROR, "Message queue path error");
-        DAP_DELETE(l_es);
+        s_dap_evsock_free(l_es);
         return NULL;
     }
 
@@ -1230,8 +1370,9 @@ dap_events_socket_t * dap_events_socket_wrap2( dap_server_t *a_server, int a_soc
     assert( a_callbacks );
     assert( a_server );
 
-    //log_it( L_DEBUG,"Dap event socket wrapped around %d sock", a_sock );
-    dap_events_socket_t * l_es = DAP_NEW_Z( dap_events_socket_t ); if (!l_es) return NULL;
+    dap_events_socket_t * l_es = s_dap_evsock_alloc ();
+    if (!l_es)
+        return NULL;
 
     l_es->socket = a_sock;
     l_es->server = a_server;
@@ -1242,6 +1383,12 @@ dap_events_socket_t * dap_events_socket_wrap2( dap_server_t *a_server, int a_soc
     l_es->buf_in = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max+1);
     l_es->buf_out = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max+1);
     l_es->buf_in_size = l_es->buf_out_size = 0;
+
+#ifdef   DAP_SYS_DEBUG
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].alloc_nr, 1);
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_IN].alloc_nr, 1);
+#endif
+
     l_es->flags = DAP_SOCK_READY_TO_READ;
     l_es->last_time_active = l_es->last_ping_request = time( NULL );
 
@@ -1260,7 +1407,7 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
     if ( a_is_ready ){
         a_esocket->flags |= DAP_SOCK_READY_TO_READ;
     }else{
-        a_esocket->flags ^= DAP_SOCK_READY_TO_READ;
+        a_esocket->flags &= ~DAP_SOCK_READY_TO_READ;
     }
 #ifdef DAP_EVENTS_CAPS_EVENT_KEVENT
     if( a_esocket->type != DESCRIPTOR_TYPE_EVENT &&
@@ -1312,7 +1459,7 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
     if ( a_is_ready )
         a_esocket->flags |= DAP_SOCK_READY_TO_WRITE;
     else
-        a_esocket->flags ^= DAP_SOCK_READY_TO_WRITE;
+        a_esocket->flags &= ~DAP_SOCK_READY_TO_WRITE;
 
 #ifdef DAP_EVENTS_CAPS_EVENT_KEVENT
     if( a_esocket->type != DESCRIPTOR_TYPE_EVENT &&
@@ -1445,10 +1592,11 @@ void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_p
     DAP_DEL_Z(a_esocket->_pvt)
     DAP_DEL_Z(a_esocket->buf_in)
     DAP_DEL_Z(a_esocket->buf_out)
-    DAP_DEL_Z(a_esocket->remote_addr_str)
-    DAP_DEL_Z(a_esocket->remote_addr_str6)
-    DAP_DEL_Z(a_esocket->hostaddr)
-    DAP_DEL_Z(a_esocket->service)
+
+#ifdef   DAP_SYS_DEBUG
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].free_nr, 1);
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_IN].free_nr, 1);
+#endif
 
     DAP_DEL_Z( a_esocket )
 }

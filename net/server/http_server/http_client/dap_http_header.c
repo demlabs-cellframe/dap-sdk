@@ -181,11 +181,11 @@ dap_http_header_t *l_new_header;
         return log_it(L_ERROR, "No memory for new AV element: '%.*s'/'%.*s'",
                         (int) l_namelen, l_pname, (int) l_valuelen, l_pval), -ENOMEM;
 
-    l_new_header->name = DAP_CALLOC(l_namelen + 1, sizeof(char));
     memcpy(l_new_header->name, l_pname, l_new_header->namesz = l_namelen);
+    l_new_header->name[l_new_header->namesz] = '\0';
 
-    l_new_header->value = DAP_CALLOC(l_valuelen + 1, sizeof(char));
     memcpy(l_new_header->value, l_pval, l_new_header->valuesz = l_valuelen);
+    l_new_header->value[l_new_header->valuesz] = '\0';
 
     DL_APPEND(cl_ht->in_headers, l_new_header);
 
@@ -204,18 +204,18 @@ dap_http_header_t *l_new_header;
 dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const char *a_name, const char *a_value)
 {
     dap_http_header_t *l_new_header = DAP_NEW_Z(dap_http_header_t);
-    l_new_header->name = dap_strdup(a_name);
-    l_new_header->value = dap_strdup(a_value);
+
+    l_new_header->namesz = strnlen(a_name, DAP_HTTP$SZ_FIELD_NAME);
+    memcpy(l_new_header->name, a_name, l_new_header->namesz);
+
+    l_new_header->valuesz = strnlen(a_value, DAP_HTTP$SZ_FIELD_VALUE);
+    memcpy(l_new_header->value, a_value, l_new_header->valuesz);
+
     DL_APPEND(*a_top, l_new_header);
+
     return l_new_header;
-
 }
 
-
-struct dap_http_header* dap_http_out_header_add(dap_http_client_t *ht, const char *name, const char *value)
-{
-    return dap_http_header_add(&ht->out_headers,name,value);
-}
 
 
 /**
@@ -245,8 +245,6 @@ dap_http_header_t * dap_http_out_header_add_f(dap_http_client_t *ht, const char 
 void dap_http_header_remove(dap_http_header_t **a_top, dap_http_header_t *a_hdr)
 {
     DL_DELETE(*a_top, a_hdr);
-    DAP_DELETE(a_hdr->name);
-    DAP_DELETE(a_hdr->value);
     DAP_DELETE(a_hdr);
 
 }
@@ -268,7 +266,7 @@ void print_dap_http_headers(dap_http_header_t * a_ht)
 dap_http_header_t *dap_http_header_find( dap_http_header_t *ht, const char *name )
 {
     for(; ht; ht = ht->next)
-        if( strcmp(ht->name, name) == 0 )
+        if( strncmp(ht->name, name, ht->namesz) == 0 )
             return ht;
 
     return  NULL;
@@ -281,13 +279,16 @@ dap_http_header_t *dap_http_header_find( dap_http_header_t *ht, const char *name
  */
 dap_http_header_t * dap_http_headers_dup(dap_http_header_t * a_top)
 {
-    dap_http_header_t * l_hdr=NULL, * l_ret = NULL;
+    dap_http_header_t *l_hdr = NULL, *l_ret = NULL;
 
     DL_FOREACH(a_top,l_hdr){
         dap_http_header_t * l_hdr_copy = DAP_NEW_Z(dap_http_header_t);
-        l_hdr_copy->name = dap_strdup(l_hdr->name);
-        l_hdr_copy->value = dap_strdup(l_hdr->value);
-        DL_APPEND(l_ret,l_hdr_copy);
+
+        memcpy(l_hdr_copy->name, l_hdr->name, l_hdr_copy->namesz = l_hdr->namesz);
+        memcpy(l_hdr_copy->value, l_hdr->value, l_hdr_copy->valuesz = l_hdr->valuesz);
+
+
+        DL_APPEND(l_ret, l_hdr_copy);
     }
 
     return l_ret;

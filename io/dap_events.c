@@ -220,7 +220,7 @@ void dap_cpu_assign_thread_on(uint32_t a_cpu_id)
  * @return Zero if ok others if no
  */
 int dap_events_init( uint32_t a_threads_count, size_t a_conn_timeout )
-{  
+{
 #ifdef __WIN32
     WSADATA wsaData;
     int ret = WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -350,12 +350,39 @@ lb_err:
     return l_ret;
 }
 
+
+
+#ifdef  DAP_SYS_DEBUG
+void    *s_th_memstat_show  (void *a_arg)
+{
+(void) a_arg;
+
+    while ( 1 )
+    {
+        for ( int j = 5; (j = sleep(j)); );                             /* Hibernate for 5 seconds ... */
+        dap_memstat_show ();
+    }
+}
+#endif
+
+
 /**
  * @brief dap_events_wait
  * @return
  */
 int dap_events_wait( )
 {
+#ifdef DAP_SYS_DEBUG                                                    /* @RRL: 6901, 7202 Start of memstat show at interval basis */
+pthread_attr_t  l_tattr;
+pthread_t       l_tid;
+
+    pthread_attr_init(&l_tattr);
+    pthread_attr_setdetachstate(&l_tattr, PTHREAD_CREATE_DETACHED);
+    pthread_create(&l_tid, &l_tattr, s_th_memstat_show, NULL);
+
+#endif
+
+
     for( uint32_t i = 0; i < s_threads_count; i++ ) {
         void *ret;
         pthread_t l_thread_id = s_workers[i]->context->thread_id;

@@ -239,14 +239,17 @@ typedef struct dap_events_socket {
     dap_events_socket_t * pipe_out; // Pipe socket with data for output
 
     // Stored string representation
-    char *hostaddr;
-    char *service;
+#define DAP_EVSOCK$SZ_HOSTNAME  256
+#define DAP_EVSOCK$SZ_SERVICE   64
+
+    char hostaddr[DAP_EVSOCK$SZ_HOSTNAME + 1];
+    char service [DAP_EVSOCK$SZ_SERVICE + 1];
 
     // Remote address, port and others
     struct sockaddr_in remote_addr;
-    char *remote_addr_str;
-    char *remote_addr_str6;
-    short remote_port;
+    char    remote_addr_str [INET_ADDRSTRLEN + 1];
+    char    remote_addr_str6[INET6_ADDRSTRLEN + 1];
+    short   remote_port;
 
 
     // Links to related objects

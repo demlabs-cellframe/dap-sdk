@@ -62,7 +62,10 @@ void    *l_str;
  */
 dap_string_t * dap_string_sized_new(size_t a_dfl_size)
 {
-    dap_string_t *l_string = DAP_NEW(dap_string_t);
+    dap_string_t *l_string = DAP_NEW_Z(dap_string_t);
+
+    if ( !l_string )
+        return  NULL;
 
     l_string->allocated_len = 0;
     l_string->len = 0;
