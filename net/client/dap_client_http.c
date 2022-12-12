@@ -432,14 +432,14 @@ static void s_client_http_delete(dap_client_http_pvt_t * a_http_pvt)
         return;
     }
 
-    DAP_DEL_Z(a_http_pvt->method)
-    DAP_DEL_Z(a_http_pvt->request_content_type)
-    DAP_DEL_Z(a_http_pvt->cookie)
-    DAP_DEL_Z(a_http_pvt->response)
-    DAP_DEL_Z(a_http_pvt->path)
-    DAP_DEL_Z(a_http_pvt->request)
-    DAP_DEL_Z(a_http_pvt->request_custom_headers)
-    DAP_DEL_Z(a_http_pvt)
+    DAP_DEL_Z(a_http_pvt->method);
+    DAP_DEL_Z(a_http_pvt->request_content_type);
+    DAP_DEL_Z(a_http_pvt->cookie);
+    DAP_DEL_Z(a_http_pvt->response);
+    DAP_DEL_Z(a_http_pvt->path);
+    DAP_DEL_Z(a_http_pvt->request);
+    DAP_DEL_Z(a_http_pvt->request_custom_headers);
+    DAP_DEL_Z(a_http_pvt);
 }
 
 

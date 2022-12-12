@@ -195,7 +195,13 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
   #define DAP_DUP_SIZE(a, s)    memcpy(malloc(s), a, s)
 #endif
 
-#define DAP_DEL_Z(a)            if (a) { DAP_DELETE((void *)a); (a) = NULL; }
+#define DAP_DEL_Z(a)            \
+do {                            \
+    if (a) {                    \
+        DAP_DELETE((void *)a);  \
+        (a) = NULL;             \
+    }                           \
+} while (0)
 
 DAP_STATIC_INLINE unsigned long dap_pagesize() {
     static int s = 0;

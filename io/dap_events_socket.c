@@ -1587,18 +1587,18 @@ void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_p
 {
     dap_events_socket_descriptor_close(a_esocket);
     if (!a_preserve_inheritor )
-        DAP_DEL_Z(a_esocket->_inheritor)
+        DAP_DEL_Z(a_esocket->_inheritor);
 
-    DAP_DEL_Z(a_esocket->_pvt)
-    DAP_DEL_Z(a_esocket->buf_in)
-    DAP_DEL_Z(a_esocket->buf_out)
+    DAP_DEL_Z(a_esocket->_pvt);
+    DAP_DEL_Z(a_esocket->buf_in);
+    DAP_DEL_Z(a_esocket->buf_out);
 
 #ifdef   DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].free_nr, 1);
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_IN].free_nr, 1);
 #endif
 
-    DAP_DEL_Z( a_esocket )
+    DAP_DEL_Z( a_esocket );
 }
 
 

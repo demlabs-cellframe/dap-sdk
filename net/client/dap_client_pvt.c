@@ -198,7 +198,7 @@ void dap_client_pvt_delete_unsafe(dap_client_pvt_t * a_client_pvt)
     if(a_client_pvt->stream_key)
         dap_enc_key_delete(a_client_pvt->stream_key);
 
-    DAP_DEL_Z(a_client_pvt)
+    DAP_DEL_Z(a_client_pvt);
 }
 
 /**
@@ -261,7 +261,7 @@ static bool s_stream_timer_timeout_check(void * a_arg)
         if(s_debug_more)
             log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid_ptr);
 
-    DAP_DEL_Z(l_es_uuid_ptr)
+    DAP_DEL_Z(l_es_uuid_ptr);
     return false;
 }
 

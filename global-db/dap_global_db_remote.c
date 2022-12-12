@@ -770,7 +770,7 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
     if (!l_store_obj_arr || !l_size)
     {
         log_it(L_ERROR, "Invalid size: can't allocate %"DAP_UINT64_FORMAT_U" bytes, errno=%d", l_size, errno);
-        DAP_DEL_Z(l_store_obj_arr)
+        DAP_DEL_Z(l_store_obj_arr);
         return NULL;
     }
 
