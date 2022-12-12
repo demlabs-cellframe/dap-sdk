@@ -354,7 +354,7 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( int a_sock, dap_events_socke
     #elif defined(DAP_EVENTS_CAPS_POLL)
     l_es->poll_base_flags = POLLERR | POLLRDHUP | POLLHUP;
     #elif defined(DAP_EVENTS_CAPS_KQUEUE)
-        l_es->kqueue_event_catched_data.esocket = l_ret;
+        l_es->kqueue_event_catched_data.esocket = l_es;
         l_es->kqueue_base_flags = 0;
         l_es->kqueue_base_filter = 0;
     #endif
