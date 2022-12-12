@@ -350,13 +350,13 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( int a_sock, dap_events_socke
 
     l_es->buf_in_size = l_es->buf_out_size = 0;
     #if defined(DAP_EVENTS_CAPS_EPOLL)
-    l_ret->ev_base_flags = EPOLLERR | EPOLLRDHUP | EPOLLHUP;
+    l_es->ev_base_flags = EPOLLERR | EPOLLRDHUP | EPOLLHUP;
     #elif defined(DAP_EVENTS_CAPS_POLL)
     l_es->poll_base_flags = POLLERR | POLLRDHUP | POLLHUP;
     #elif defined(DAP_EVENTS_CAPS_KQUEUE)
-        l_ret->kqueue_event_catched_data.esocket = l_ret;
-        l_ret->kqueue_base_flags = 0;
-        l_ret->kqueue_base_filter = 0;
+        l_es->kqueue_event_catched_data.esocket = l_ret;
+        l_es->kqueue_base_flags = 0;
+        l_es->kqueue_base_filter = 0;
     #endif
 
     //log_it( L_DEBUG,"Dap event socket wrapped around %d sock a_events = %X", a_sock, a_events );
