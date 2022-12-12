@@ -83,10 +83,7 @@ void dap_http_cache_delete(dap_http_cache_t * a_http_cache)
 
        DL_FOREACH_SAFE(a_http_cache->headers,l_hdr,l_tmp){
            DL_DELETE(a_http_cache->headers,l_hdr);
-           if(l_hdr->name)
-               DAP_DELETE(l_hdr->name);
-           if(l_hdr->value)
-               DAP_DELETE(l_hdr->value);
+
            DAP_DELETE(l_hdr);
        }
        DAP_DELETE(a_http_cache);

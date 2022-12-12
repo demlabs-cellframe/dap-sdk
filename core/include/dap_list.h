@@ -35,7 +35,7 @@ typedef struct __dap_slist__ {
                     int     nr;                                             /* A number of elements in list  */
 } dap_slist_t;
 
-#define     $DAP_SLIST_INITALIZER {NULL, NULL, 0}
+#define     $DAP_SLIST_INITALIZER {NULL, NULL, 0}                           /* Macro to statical initialization of the <dap_slist_t> */
 
 /*
  *  DESCRIPTION: Form and add new element into the list with data.

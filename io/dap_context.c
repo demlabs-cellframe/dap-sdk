@@ -265,7 +265,8 @@ static void *s_context_thread(void *a_arg)
             default:;
         }
 
-        pthread_setschedparam(pthread_self(), l_sched_policy,&l_sched_params);
+        pthread_t l_tid = pthread_self();
+        pthread_setschedparam(l_tid, l_sched_policy, &l_sched_params);
     }
 #endif
 

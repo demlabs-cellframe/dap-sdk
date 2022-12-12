@@ -55,7 +55,7 @@
 #include "dap_client_pvt.h"
 
 #define LOG_TAG "dap_stream"
-#define HEADER_WITH_SIZE_FIELD 12  //This count of bytes enough for allocate memory for stream packet
+
 
 static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *l_pkt, size_t l_pkt_size);
 
@@ -93,6 +93,15 @@ static bool s_detect_loose_packet(dap_stream_t * a_stream);
 
 dap_enc_key_type_t s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAES;
 
+
+#ifdef  DAP_SYS_DEBUG
+enum    {MEMSTAT$K_STM, MEMSTAT$K_NR};
+static  dap_memstat_rec_t   s_memstat [MEMSTAT$K_NR] = {
+    {.fac_len = sizeof(LOG_TAG) - 1, .fac_name = {LOG_TAG}, .alloc_sz = sizeof(dap_stream_t)},
+};
+#endif
+
+
 void s_dap_stream_load_preferred_encryption_type(dap_config_t * a_config){
     const char * l_preferred_encryption_name = dap_config_get_item_str(a_config, "stream", "preferred_encryption");
     if(l_preferred_encryption_name){
@@ -126,6 +135,12 @@ int dap_stream_init(dap_config_t * a_config)
     s_dap_stream_load_preferred_encryption_type(a_config);
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config,"general","debug_dump_stream_headers",false);
     s_debug = dap_config_get_item_bool_default(g_config,"stream","debug",false);
+
+#ifdef  DAP_SYS_DEBUG
+    for (int i = 0; i < MEMSTAT$K_NR; i++)
+        dap_memstat_reg(&s_memstat[i]);
+#endif
+
     log_it(L_NOTICE,"Init streaming module");
 
     return 0;
@@ -197,15 +212,18 @@ void stream_states_update(struct dap_stream *a_stream)
  */
 dap_stream_t * stream_new_udp(dap_events_socket_t * a_esocket)
 {
-    dap_stream_t * ret=(dap_stream_t*) calloc(1,sizeof(dap_stream_t));
+    dap_stream_t * l_stm = DAP_NEW_Z(dap_stream_t);
+    assert(l_stm);
 
-    ret->esocket = a_esocket;
-    ret->buf_defrag_size = 0;
+#ifdef  DAP_SYS_DEBUG
+    s_memstat[MEMSTAT$K_STM].alloc_nr += 1;
+#endif
 
-    a_esocket->_inheritor = ret;
+    l_stm ->esocket = a_esocket;
+    a_esocket->_inheritor = l_stm ;
 
     log_it(L_NOTICE,"New stream instance udp");
-    return ret;
+    return l_stm ;
 }
 
 /**
@@ -265,6 +283,11 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
 {
     dap_stream_t *l_ret = DAP_NEW_Z(dap_stream_t);
 
+#ifdef  DAP_SYS_DEBUG
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
+#endif
+
+
     l_ret->esocket = a_http_client->esocket;
     l_ret->stream_worker = (dap_stream_worker_t *)a_http_client->esocket->context->worker->_inheritor;
     l_ret->conn_http = a_http_client;
@@ -293,6 +316,12 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
 dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_esocket)
 {
     dap_stream_t *l_ret = DAP_NEW_Z(dap_stream_t);
+
+#ifdef  DAP_SYS_DEBUG
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
+#endif
+
+
     l_ret->esocket = a_esocket;
     l_ret->esocket_uuid = a_esocket->uuid;
     l_ret->is_client_to_uplink = true;
@@ -318,8 +347,12 @@ void dap_stream_delete(dap_stream_t *a_stream)
 
     if(a_stream->session)
         dap_stream_session_close_mt(a_stream->session->id); // TODO make stream close after timeout, not momentaly
-    a_stream->session = NULL;
-    a_stream->esocket = NULL;
+
+#ifdef  DAP_SYS_DEBUG
+    atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].free_nr, 1);
+#endif
+
+
     DAP_DELETE(a_stream);
     log_it(L_NOTICE,"Stream connection is over");
 }
