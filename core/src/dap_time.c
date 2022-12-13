@@ -46,13 +46,13 @@ int clock_gettime(clockid_t clock_id, struct timespec *spec)
 
 
 // Create time from second
-dap_nanotime_t dap_nanotime_from_sec(uint32_t a_time)
+dap_nanotime_t dap_nanotime_from_sec(dap_time_t a_time)
 {
     return (dap_nanotime_t)a_time * DAP_NSEC_PER_SEC;
 }
 
 // Get seconds from time
-long dap_gdb_time_to_sec(dap_nanotime_t a_time)
+dap_time_t dap_nanotime_to_sec(dap_nanotime_t a_time)
 {
     return a_time / DAP_NSEC_PER_SEC;
 }
@@ -63,7 +63,7 @@ long dap_gdb_time_to_sec(dap_nanotime_t a_time)
  */
 dap_time_t dap_time_now(void)
 {
-    return time(NULL);
+    return (dap_time_t)time(NULL);
 }
 
 /**

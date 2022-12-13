@@ -16,10 +16,10 @@ typedef uint64_t dap_time_t;
 // time in nanoseconds
 typedef uint64_t dap_nanotime_t;
 
-// Create gdb time from second
-dap_nanotime_t dap_nanotime_from_sec(uint32_t a_time);
-// Get seconds from gdb time
-long dap_gdb_time_to_sec(dap_nanotime_t a_time);
+// Create nanotime from second
+dap_nanotime_t dap_nanotime_from_sec(dap_time_t a_time);
+// Get seconds from nanotime
+dap_time_t dap_nanotime_to_sec(dap_nanotime_t a_time);
 
 /**
  * @brief dap_chain_time_now Get current time in seconds since January 1, 1970 (UTC)
