@@ -691,6 +691,11 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
         return -666;
     }
+
+    if (!a_group || !a_key) {
+        log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
+        return -1;
+    }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_SET;
     l_msg->group = dap_strdup(a_group);
@@ -761,6 +766,10 @@ static bool s_msg_opcode_set(struct queue_io_msg * a_msg)
  */
 int dap_global_db_set_unsafe(dap_global_db_context_t * a_global_db_context, const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value )
 {
+    if (!a_group || !a_key) {
+        log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
+        return -1;
+    }
     dap_store_obj_t l_store_data = { 0 };
     dap_nanotime_t l_ts_now = dap_nanotime_now();
     l_store_data.key = (char *)a_key ;
