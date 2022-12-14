@@ -37,6 +37,7 @@ HEADERS += $$PWD/src/XKCP/lib/common/config.h \
     $$PWD/include/dap_enc_salsa2012.h \
     $$PWD/include/dap_enc_SEED.h \
     $$PWD/include/dap_enc_newhope.h \
+    $$PWD/include/dap_enc_kyber.h \
     $$PWD/include/dap_crypto_common.h \
     $$PWD/include/dap_cert.h \
     $$PWD/include/dap_cert_file.h \
@@ -64,6 +65,7 @@ SOURCES += $$PWD/src/dap_enc.c \
     $$PWD/src/dap_enc_tesla.c \
     $$PWD/src/dap_enc_base58.c \
     $$PWD/src/dap_enc_dilithium.c \
+    $$PWD/src/dap_enc_kyber.c \
     $$PWD/src/dap_enc_ringct20.c \
     $$PWD/src/dap_enc_salsa2012.c \
     $$PWD/src/dap_enc_ca.c \

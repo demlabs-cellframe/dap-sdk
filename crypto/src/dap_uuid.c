@@ -21,13 +21,20 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include <time.h>
-#include <stdatomic.h>
 
 #include "KeccakHash.h"
 #include "SimpleFIPS202.h"
 #include "dap_uuid.h"
 #include "dap_rand.h"
-#include "dap_math_ops.h"
+
+#ifndef __cplusplus
+# include <stdatomic.h>
+#else
+# include <atomic>
+# define _Atomic(X) std::atomic< X >
+#define atomic_bool _Atomic(bool)
+#define atomic_uint _Atomic(uint)
+#endif
 
 #define LOG_TAG "dap_uuid"
 

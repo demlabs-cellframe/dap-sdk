@@ -19,7 +19,7 @@ include_directories(${PROJECT_NAME} include/)
 add_library(${PROJECT_NAME} STATIC ${HTTP_SERVER_SRCS} ${HTTP_SERVER_HDRS})
 target_include_directories(${PROJECT_NAME} INTERFACE . http_client/include/)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../../3rdparty/uthash/src)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/uthash/src)
 
 if(DARWIN)
     target_include_directories(${PROJECT_NAME} PRIVATE /usr/local/include)

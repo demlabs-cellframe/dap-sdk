@@ -7,7 +7,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include "fips202.h"
+#include "fips202_kyber.h"
 
 #define NROUNDS 24
 #define ROL(a, offset) ((a << offset) ^ (a >> (64-offset)))
