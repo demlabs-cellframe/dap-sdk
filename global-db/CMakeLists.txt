@@ -4,8 +4,15 @@ project (dap_global_db C)
 file(GLOB dap_global_db_SRC *.c)
 file(GLOB dap_global_db_HDR include/*.h)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/cuttdb ${CMAKE_CURRENT_BINARY_DIR}/../3rdparty/cuttdb)
-set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_chain dap_chain_net sqlite3 dap_cuttdb json-c)
+set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_chain dap_chain_net)
+
+if(BUILD_WITH_GDB_DRIVER_SQLITE)
+    set(dap_global_db_LIBS ${dap_global_db_LIBS} sqlite3 json-c)
+    add_definitions("-DDAP_GDB_ENGINE_SQLITE3")
+else()
+    list(FILTER dap_global_db_SRC EXCLUDE REGEX "sqlite")
+    list(FILTER dap_global_db_HDR EXCLUDE REGEX "sqlite")
+endif()
 
 if(BUILD_WITH_GDB_DRIVER_MDBX)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/libmdbx ${CMAKE_CURRENT_BINARY_DIR}/../3rdparty/libmdbx EXCLUDE_FROM_ALL)

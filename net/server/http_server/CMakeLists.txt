@@ -3,8 +3,22 @@ project (dap_http_server C)
 
 include_directories(http_client/include)
 
-file(GLOB HTTP_SERVER_SRCS FILES *.c http_client/*.c)
-file(GLOB HTTP_SERVER_HDRS FILES include/*.h http_client/include/*.h)
+if(ANDROID)
+    file(GLOB HTTP_SERVER_SRCS FILES
+        dap_http.c
+        dap_http_cache.c
+        dap_http_simple.c
+        http_client/*.c)
+    file(GLOB HTTP_SERVER_HDRS FILES
+        include/dap_http.h
+        include/dap_http_cache.h
+        include/dap_http_simple.h
+        include/http_status_code.h
+        http_client/include/*.h)
+else()
+    file(GLOB HTTP_SERVER_SRCS FILES *.c http_client/*.c)
+    file(GLOB HTTP_SERVER_HDRS FILES include/*.h http_client/include/*.h)
+endif()
 
 if(WIN32)
     add_definitions ("-DUNDEBUG")
@@ -47,7 +61,10 @@ if(WIN32)
 )
 endif()
 
-if(UNIX)
+if(ANDROID)
+    target_link_libraries(${PROJECT_NAME} dap_core dap_io json-c)
+    target_include_directories(${PROJECT_NAME} PUBLIC ${IPUTILS_INCLUDE_DIRS})
+elseif(UNIX)
   target_link_libraries(${PROJECT_NAME} dap_core dap_io magic json-c)
   target_include_directories(${PROJECT_NAME} PUBLIC ${IPUTILS_INCLUDE_DIRS})
 endif()
