@@ -2,10 +2,10 @@
 #include <stdint.h>
 #include "params.h"
 #include "indcpa.h"
-#include "poly.h"
+#include "poly_kyber.h"
 #include "polyvec.h"
 #include "rand/dap_rand.h"
-#include "ntt.h"
+#include "ntt_kyber.h"
 #include "symmetric.h"
 
 /*************************************************

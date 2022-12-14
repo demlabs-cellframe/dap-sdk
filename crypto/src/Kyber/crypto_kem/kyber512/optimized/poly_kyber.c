@@ -1,8 +1,8 @@
 #include <stdint.h>
 #include "params.h"
-#include "poly.h"
-#include "ntt.h"
-#include "reduce.h"
+#include "poly_kyber.h"
+#include "ntt_kyber.h"
+#include "reduce_kyber.h"
 #include "cbd.h"
 #include "symmetric.h"
 

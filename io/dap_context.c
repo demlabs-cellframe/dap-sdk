@@ -26,7 +26,6 @@
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
-#include <stdatomic.h>
 
 #if ! defined (_GNU_SOURCE)
 #define _GNU_SOURCE         /* See feature_test_macros(7) */

@@ -42,7 +42,7 @@ void kyber_aes256ctr_prf(uint8_t *out,
 
 #else
 
-#include "fips202.h"
+#include "fips202_kyber.h"
 
 typedef keccak_state xof_state;
 

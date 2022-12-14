@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include "params.h"
-#include "poly.h"
+#include "poly_kyber.h"
 
 typedef struct{
   poly vec[KYBER_K];

@@ -1,7 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "params.h"
-#include "fips202.h"
+#include "fips202_kyber.h"
 #include "symmetric.h"
 
 /*************************************************

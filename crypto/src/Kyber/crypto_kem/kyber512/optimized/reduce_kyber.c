@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include "params.h"
-#include "reduce.h"
+#include "reduce_kyber.h"
 
 /*************************************************
 * Name:        montgomery_reduce

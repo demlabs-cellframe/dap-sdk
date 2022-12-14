@@ -16,7 +16,7 @@ endif()
 add_library(${PROJECT_NAME} STATIC ${DAP_ENC_SERVER_SRCS} ${DAP_ENC_SERVER_HDRS})
 target_include_directories(${PROJECT_NAME} INTERFACE . include/)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../../3rdparty/uthash/src)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/uthash/src)
 
 if(WIN32)
   target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_http_server json-c

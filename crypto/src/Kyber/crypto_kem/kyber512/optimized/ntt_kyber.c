@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include "params.h"
-#include "ntt.h"
-#include "reduce.h"
+#include "ntt_kyber.h"
+#include "reduce_kyber.h"
 
 /* Code to generate zetas and zetas_inv used in the number-theoretic transform:
 
