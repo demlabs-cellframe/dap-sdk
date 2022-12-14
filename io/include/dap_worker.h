@@ -23,7 +23,6 @@
 #pragma once
 
 #include <pthread.h>
-#include <stdatomic.h>
 #include "dap_events_socket.h"
 #include "dap_proc_queue.h"
 #include "dap_common.h"

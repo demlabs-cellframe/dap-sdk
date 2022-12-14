@@ -1,6 +1,6 @@
 #include <stdint.h>
 #include "params.h"
-#include "poly.h"
+#include "poly_kyber.h"
 #include "polyvec.h"
 
 /*************************************************

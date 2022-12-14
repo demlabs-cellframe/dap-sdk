@@ -175,6 +175,79 @@ void dap_client_http_set_connect_timeout_ms(uint64_t a_timeout_ms)
 }
 
 /**
+ * @brief s_http_connected
+ * @param a_esocket
+ */
+static void s_http_connected(dap_events_socket_t * a_esocket)
+{
+    assert(a_esocket);
+    dap_client_http_pvt_t * l_http_pvt = PVT(a_esocket);
+    assert(l_http_pvt);
+    assert(l_http_pvt->worker);
+
+    log_it(L_INFO, "Remote address connected (%s:%u) with sock_id %"DAP_FORMAT_SOCKET, l_http_pvt->uplink_addr, l_http_pvt->uplink_port, a_esocket->socket);
+    // add to dap_worker
+    dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
+    *l_es_uuid_ptr = a_esocket->uuid;
+    if(dap_timerfd_start_on_worker(l_http_pvt->worker, (unsigned long)s_client_timeout_read_after_connect_ms, s_timer_timeout_after_connected_check, l_es_uuid_ptr) == NULL ){
+	DAP_DELETE(l_es_uuid_ptr);
+	log_it(L_ERROR, "Can't run timerfo after connection check on worker id %u", l_http_pvt->worker->id);
+    }
+
+    char l_request_headers[1024] = { [0]='\0' };
+    int l_offset = 0;
+    size_t l_offset2 = sizeof(l_request_headers);
+    if(l_http_pvt->request && (dap_strcmp(l_http_pvt->method, "POST") == 0 || dap_strcmp(l_http_pvt->method, "POST_ENC") == 0)) {
+	//log_it(L_DEBUG, "POST request with %u bytes of decoded data", a_request_size);
+
+	l_offset += l_http_pvt->request_content_type
+	        ? dap_snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", l_http_pvt->request_content_type)
+	        : 0;
+
+	// Add custom headers
+	l_offset += l_http_pvt->request_custom_headers
+	        ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_http_pvt->request_custom_headers)
+	        : 0;
+
+	// Setup cookie header
+	l_offset += l_http_pvt->cookie
+	        ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_http_pvt->cookie)
+	        : 0;
+
+	// Set request size as Content-Length header
+	l_offset += dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", l_http_pvt->request_size);
+    }
+
+    // adding string for GET request
+    char l_get_str[l_http_pvt->request_size + 2];
+    l_get_str[0] = '\0';
+    if(! dap_strcmp(l_http_pvt->method, "GET") ) {
+	// We hide our request and mask them as possible
+	l_offset += dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "User-Agent: Mozilla\r\n");
+	l_offset += l_http_pvt->request_custom_headers
+	        ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_http_pvt->request_custom_headers)
+	        : 0;
+	l_offset += l_http_pvt->cookie
+	        ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_http_pvt->cookie)
+	        : 0;
+
+	if ((l_http_pvt->request_size && l_http_pvt->request_size))
+	    dap_snprintf(l_get_str, sizeof(l_get_str), "?%s", l_http_pvt->request) ;
+    }
+
+    // send header
+    dap_events_socket_write_f_unsafe( a_esocket, "%s /%s%s HTTP/1.1\r\n"
+            "Host: %s\r\n"
+            "%s"
+            "\r\n",
+            l_http_pvt->method, l_http_pvt->path, l_get_str, l_http_pvt->uplink_addr, l_request_headers);
+    // send data for POST request
+    if (l_http_pvt->request && l_http_pvt->request_size) {
+	dap_events_socket_write_unsafe( a_esocket, l_http_pvt->request, l_http_pvt->request_size);
+    }
+}
+
+/**
  * @brief s_timer_timeout_after_connected_check
  * @param a_arg
  * @return
@@ -614,7 +687,7 @@ int dap_client_http_request_custom (
             if (!dap_timerfd_start_on_worker(l_http_pvt->worker,s_client_timeout_ms, s_timer_timeout_check, l_ev_uuid_ptr)) {
                 log_it(L_ERROR,"Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
                        l_http_pvt->worker->id, *l_ev_uuid_ptr);
-                DAP_DEL_Z(l_ev_uuid_ptr)
+		DAP_DEL_Z(l_ev_uuid_ptr);
             }
             return 0;
         } else {
@@ -682,80 +755,6 @@ static void s_http_ssl_connected(dap_events_socket_t * a_esocket)
     dap_timerfd_start_on_worker(l_http_pvt->worker, s_client_timeout_ms, s_timer_timeout_check, l_ev_socket_handler);
 }
 #endif
-
-/**
- * @brief s_http_connected
- * @param a_esocket
- */
-static void s_http_connected(dap_events_socket_t * a_esocket)
-{
-    assert(a_esocket);
-    dap_client_http_pvt_t * l_http_pvt = PVT(a_esocket);
-    assert(l_http_pvt);
-    assert(l_http_pvt->worker);
-
-    log_it(L_INFO, "Remote address connected (%s:%u) with sock_id %"DAP_FORMAT_SOCKET, l_http_pvt->uplink_addr, l_http_pvt->uplink_port, a_esocket->socket);
-    // add to dap_worker
-    dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-    *l_es_uuid_ptr = a_esocket->uuid;
-    if(dap_timerfd_start_on_worker(l_http_pvt->worker, (unsigned long)s_client_timeout_read_after_connect_ms, s_timer_timeout_after_connected_check, l_es_uuid_ptr) == NULL ){
-        DAP_DELETE(l_es_uuid_ptr);
-        log_it(L_ERROR, "Can't run timerfo after connection check on worker id %u", l_http_pvt->worker->id);
-    }
-
-    char l_request_headers[1024] = { [0]='\0' };
-    int l_offset = 0;
-    size_t l_offset2 = sizeof(l_request_headers);
-    if(l_http_pvt->request && (dap_strcmp(l_http_pvt->method, "POST") == 0 || dap_strcmp(l_http_pvt->method, "POST_ENC") == 0)) {
-        //log_it(L_DEBUG, "POST request with %u bytes of decoded data", a_request_size);
-
-        l_offset += l_http_pvt->request_content_type
-                ? dap_snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", l_http_pvt->request_content_type)
-                : 0;
-
-        // Add custom headers
-        l_offset += l_http_pvt->request_custom_headers
-                ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_http_pvt->request_custom_headers)
-                : 0;
-
-        // Setup cookie header
-        l_offset += l_http_pvt->cookie
-                ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_http_pvt->cookie)
-                : 0;
-
-        // Set request size as Content-Length header
-        l_offset += dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", l_http_pvt->request_size);
-    }
-
-    // adding string for GET request
-    char l_get_str[l_http_pvt->request_size + 2];
-    l_get_str[0] = '\0';
-    if(! dap_strcmp(l_http_pvt->method, "GET") ) {
-        // We hide our request and mask them as possible
-        l_offset += dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "User-Agent: Mozilla\r\n");
-        l_offset += l_http_pvt->request_custom_headers
-                ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_http_pvt->request_custom_headers)
-                : 0;
-        l_offset += l_http_pvt->cookie
-                ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_http_pvt->cookie)
-                : 0;
-
-        if ((l_http_pvt->request_size && l_http_pvt->request_size))
-            dap_snprintf(l_get_str, sizeof(l_get_str), "?%s", l_http_pvt->request) ;
-    }
-
-    // send header
-    dap_events_socket_write_f_unsafe( a_esocket, "%s /%s%s HTTP/1.1\r\n"
-            "Host: %s\r\n"
-            "%s"
-            "\r\n",
-            l_http_pvt->method, l_http_pvt->path, l_get_str, l_http_pvt->uplink_addr, l_request_headers);
-    // send data for POST request
-    if (l_http_pvt->request && l_http_pvt->request_size) {
-        dap_events_socket_write_unsafe( a_esocket, l_http_pvt->request, l_http_pvt->request_size);
-    }
-}
-
 
 /**
  * @brief dap_client_http_request
