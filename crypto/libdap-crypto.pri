@@ -1,4 +1,3 @@
-include (src/defeo_scheme/defeo.pri)
 include (src/iaes/iaes.pri)
 include (src/oaes/oaes.pri)
 include (src/GOST/GOST.pri)
@@ -27,7 +26,6 @@ HEADERS += $$PWD/src/XKCP/lib/common/config.h \
     $$PWD/include/dap_enc_GOST.h \
     $$PWD/include/dap_enc_msrln.h \
     $$PWD/include/dap_enc_key.h \
-    $$PWD/include/dap_enc_defeo.h \
     $$PWD/include/dap_enc_picnic.h \
     $$PWD/include/dap_enc_bliss.h \
     $$PWD/include/dap_enc_tesla.h \
@@ -59,7 +57,6 @@ SOURCES += $$PWD/src/dap_enc.c \
     $$PWD/src/dap_enc_GOST.c \
     $$PWD/src/dap_enc_msrln.c \
     $$PWD/src/dap_enc_key.c \
-    $$PWD/src/dap_enc_defeo.c \
     $$PWD/src/dap_enc_picnic.c \
     $$PWD/src/dap_enc_bliss.c \
     $$PWD/src/dap_enc_tesla.c \

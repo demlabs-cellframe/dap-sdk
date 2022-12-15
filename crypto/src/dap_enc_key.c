@@ -31,7 +31,6 @@
 #include "dap_enc_SEED.h"
 
 #include "dap_enc_msrln.h"
-#include "dap_enc_defeo.h"
 #include "dap_enc_picnic.h"
 #include "dap_enc_bliss.h"
 #include "dap_enc_tesla.h"
@@ -233,22 +232,6 @@ struct dap_enc_key_callbacks{
         .new_from_data_public_callback =   dap_enc_kyber512_key_new_from_data_public,
         .gen_key_public = NULL,
         .gen_key_public_size = NULL,
-        .enc_out_size = NULL,
-        .dec_out_size = NULL,
-        .sign_get = NULL,
-        .sign_verify = NULL
-    },
-    [DAP_ENC_KEY_TYPE_DEFEO]={
-        .name = "DEFEO",
-        .enc = NULL,
-        .dec = NULL,
-        .gen_key_public = NULL,
-        .gen_key_public_size = NULL,
-        .gen_bob_shared_key = dap_enc_defeo_gen_bob_shared_key,
-        .gen_alice_shared_key = dap_enc_defeo_gen_alice_shared_key,
-        .new_callback = dap_enc_defeo_key_new,
-        .delete_callback = dap_enc_defeo_key_delete,
-        .new_generate_callback = dap_enc_defeo_key_new_generate,
         .enc_out_size = NULL,
         .dec_out_size = NULL,
         .sign_get = NULL,

@@ -67,7 +67,6 @@ typedef enum dap_enc_key_type{
                                                // (Costello, Naehrig, Longa, CRYPTO 2016, https://eprint.iacr.org/2016/413)
                                                // using the implementation of Microsoft Research
                                                // https://www.microsoft.com/en-us/research/project/sidh-library/
-                           DAP_ENC_KEY_TYPE_DEFEO , // Key exchange from the supersingular isogeny Diffie-Hellman problem
 
                            DAP_ENC_KEY_TYPE_MSRLN,
 
