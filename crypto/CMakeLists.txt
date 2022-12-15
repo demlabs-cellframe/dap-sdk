@@ -15,7 +15,6 @@ file( GLOB CRYPTO_SRCS
       src/seed/*.c
       src/sha3/*.c
       src/msrln/*.c
-      src/defeo_scheme/*.c
       src/newhope/*.c
       src/sig_bliss/*.c
       src/sig_tesla/*.c
@@ -35,7 +34,6 @@ file( GLOB CRYPTO_HEADERS
       src/seed/*.h
       src/sha3/*.h
       src/msrln/*.h
-      src/defeo_scheme/*.h
       src/newhope/*.h
       src/sig_bliss/*.h
       src/sig_tesla/*.h
@@ -103,7 +101,7 @@ endif()
 
 add_library(${PROJECT_NAME} STATIC ${CRYPTO_SRCS} ${XKCP_SRCS} ${XKCP_SRCS2} ${CRYPTO_HEADERS} )
 
-target_include_directories(dap_crypto PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/defeo_scheme src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src include)
+target_include_directories(dap_crypto PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src include)
 target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/)
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
