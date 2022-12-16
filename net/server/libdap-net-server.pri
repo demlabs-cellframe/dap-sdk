@@ -7,14 +7,20 @@ darwin{
     include (../../../3rdparty/libmagic-darwin/file/libmagic.pri)
 }
 
+#cli_server
+HEADERS += $$PWD/cli_server/include/dap_cli_server.h
+
+SOURCES += $$PWD/cli_server/dap_cli_server.c
+
+
 #enc_server
 HEADERS += $$PWD/enc_server/include/dap_enc_http.h \
     $$PWD/enc_server/include/dap_enc_ks.h
 
 SOURCES += $$PWD/enc_server/dap_enc_http.c \
     $$PWD/enc_server/dap_enc_ks.c
-    
-#http_server    
+
+#http_server
 HEADERS += $$PWD/http_server/include/dap_http.h \
     $$PWD/http_server/include/dap_http_cache.h \
     $$PWD/http_server/include/dap_http_folder.h \
@@ -32,9 +38,9 @@ HEADERS += $$PWD/notify_server/include/dap_notify_srv.h
 SOURCES += $$PWD/notify_server/src/dap_notify_srv.c
 
 include (../server/http_server/http_client/http.pri)
-    
-    
-#json_rpc    
+
+
+#json_rpc
 HEADERS += $$PWD/json_rpc/include/dap_json_rpc.h \
     $$PWD/json_rpc/include/dap_json_rpc_errors.h \
     $$PWD/json_rpc/include/dap_json_rpc_notification.h \
@@ -52,6 +58,6 @@ SOURCES += $$PWD/json_rpc/src/dap_json_rpc.c \
     $$PWD/json_rpc/src/dap_json_rpc_request_handler.c \
     $$PWD/json_rpc/src/dap_json_rpc_response.c \
     $$PWD/json_rpc/src/dap_json_rpc_response_handler.c
-    
+
 INCLUDEPATH += $$PWD/include
 
