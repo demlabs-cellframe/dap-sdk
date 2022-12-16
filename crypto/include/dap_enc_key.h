@@ -62,12 +62,6 @@ typedef enum dap_enc_key_type{
                                                 //  Using the reference C implementation of NewHope
                                                 // from https://github.com/tpoeppelmann/newhop
                                                 // https://eprint.iacr.org/2015/1092
-
-                           DAP_ENC_KEY_TYPE_SIDH_CLN16 , // Key exchange from the supersingular isogeny Diffie-Hellman problem
-                                               // (Costello, Naehrig, Longa, CRYPTO 2016, https://eprint.iacr.org/2016/413)
-                                               // using the implementation of Microsoft Research
-                                               // https://www.microsoft.com/en-us/research/project/sidh-library/
-
                            DAP_ENC_KEY_TYPE_MSRLN,
 
                            DAP_ENC_KEY_TYPE_RLWE_MSRLN16,
@@ -87,11 +81,6 @@ typedef enum dap_enc_key_type{
                                                 // Bos, Costello, Ducas, Mironov, Naehrig, Nikolaenko, Raghunathan, Stebila
                                                 // ACM Conference on Computer and Communications Security 2016
                                                 // https://eprint.iacr.org/2016/659
-
-                           DAP_ENC_KEY_TYPE_SIDH_IQC_REF, // key exchange from the supersingular isogeny Diffie-Hellman problem
-                                                 // (De Feo, Jao, Plût, J. Math. Cryptol. 8(3):209, 2014
-                                                 // https://eprint.iacr.org/2011/506
-                                                 //
                            DAP_ENC_KEY_TYPE_CODE_MCBITS, // "McBits": key exchange from the error correcting codes,
                                                 // specifically Niederreiter's form of McEliece public key encryption
                                                 //  using hidden Goppa codes (Bernstein, Chou, Schwabe, CHES 2013, https://eprint.iacr.org/2015/610)
