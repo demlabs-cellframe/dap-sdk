@@ -290,7 +290,7 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
                     l_es->callbacks.error_callback(l_es,ETIMEDOUT);
                 }
                 log_it(L_INFO, "Close streaming socket %s (%"DAP_FORMAT_SOCKET") by timeout",
-                       l_es->remote_addr_str ? l_es->remote_addr_str : "", l_es->socket);
+                       l_es->remote_addr_str, l_es->socket);
                 dap_client_delete_unsafe(l_client_pvt->client);
             }else
                 if(s_debug_more)
