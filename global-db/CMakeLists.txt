@@ -8,7 +8,10 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/cuttdb ${CMAKE_CURRENT_
 set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_chain dap_chain_net sqlite3 dap_cuttdb json-c)
 
 if(BUILD_WITH_GDB_DRIVER_MDBX)
+    set(SAVED_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})
+    set(CMAKE_MESSAGE_LOG_LEVEL WARNING)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/libmdbx ${CMAKE_CURRENT_BINARY_DIR}/../3rdparty/libmdbx EXCLUDE_FROM_ALL)
+    set(CMAKE_MESSAGE_LOG_LEVEL ${SAVED_CMAKE_MESSAGE_LOG_LEVEL})
     file(GLOB dap_global_db_SRC ${dap_global_db_SRC} dap_global_db_driver_mdbx.c)
     file(GLOB dap_global_db_HRR ${dap_global_db_HDR} include/dap_global_db_driver_mdbx.h)
     set(dap_global_db_LIBS ${dap_global_db_LIBS} mdbx-static)
