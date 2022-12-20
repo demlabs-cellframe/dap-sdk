@@ -1591,7 +1591,7 @@ void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_p
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_IN].free_nr, 1);
 #endif
 
-    DAP_DEL_Z( a_esocket );
+    s_dap_evsock_free( a_esocket );
 }
 
 

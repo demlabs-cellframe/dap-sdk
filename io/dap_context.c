@@ -488,16 +488,12 @@ static int s_thread_loop(dap_context_t * a_context)
             if (l_kevent_selected->flags & EV_EOF)
                 l_flag_rdhup = true;
             l_cur = (dap_events_socket_t*) l_kevent_selected->udata;
-        }
 
-        if( !l_cur) {
-            log_it(L_WARNING, "dap_events_socket was destroyed earlier");
-            continue;
+            if (l_kevent_selected->filter == EVFILT_TIMER && l_es->type != DESCRIPTOR_TYPE_TIMER) {
+                log_it(L_WARNING, "Filer type and socket descriptor type mismatch");
+                continue;
+            }
         }
-        // Previously deleted socket, its really bad when it appears
-        if(l_cur->socket == 0 && l_cur->type == 0 ){
-        }
-
 
         l_cur->kqueue_event_catched = l_kevent_selected;
 #ifndef DAP_OS_DARWIN
@@ -509,10 +505,14 @@ static int s_thread_loop(dap_context_t * a_context)
 #else
 #error "Unimplemented fetch esocket after poll"
 #endif
-            if(!l_cur || (l_cur->context && l_cur->context != a_context)) {
-                log_it(L_WARNING, "dap_events_socket was destroyed earlier");
+
+            // Previously deleted socket, its really bad when it appears
+            if (!l_cur || !l_cur->context || l_cur->context != a_context ||
+                    l_cur->socket == INVALID_SOCKET || l_cur->fd == -1 || l_cur->fd2 == -1) {
+                log_it(L_ATT, "dap_events_socket was destroyed earlier");
                 continue;
             }
+
             if(g_debug_reactor) {
                 log_it(L_DEBUG, "--Context #%u esocket %p uuid 0x%016"DAP_UINT64_FORMAT_x" type %d fd=%"DAP_FORMAT_SOCKET" flags=0x%0X (%s:%s:%s:%s:%s:%s:%s:%s)--",
                        a_context->id, l_cur, l_cur->uuid, l_cur->type, l_cur->socket,
@@ -801,7 +801,7 @@ static int s_thread_loop(dap_context_t * a_context)
                         }
                     } else {
                         if(g_debug_reactor)
-                            log_it(L_NOTICE, "SSL handshake done with %s", l_cur->remote_addr_str ? l_cur->remote_addr_str: "(NULL)");
+                            log_it(L_NOTICE, "SSL handshake done with %s", l_cur->remote_addr_str);
                         l_cur->flags ^= DAP_SOCK_CONNECTING;
                         if (l_cur->callbacks.connected_callback)
                             l_cur->callbacks.connected_callback(l_cur);
@@ -813,16 +813,15 @@ static int s_thread_loop(dap_context_t * a_context)
 
                     getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno, &l_error_len);
                     if(l_errno == EINPROGRESS) {
-                        log_it(L_DEBUG, "Connecting with %s in progress...", l_cur->remote_addr_str ? l_cur->remote_addr_str: "(NULL)");
+                        log_it(L_DEBUG, "Connecting with %s in progress...", l_cur->remote_addr_str);
                     }else if (l_errno){
                         strerror_r(l_errno, l_error_buf, sizeof (l_error_buf));
-                        log_it(L_ERROR,"Connecting error with %s: \"%s\" (code %d)", l_cur->remote_addr_str ? l_cur->remote_addr_str: "(NULL)",
+                        log_it(L_ERROR,"Connecting error with %s: \"%s\" (code %d)", l_cur->remote_addr_str,
                                l_error_buf, l_errno);
                         if ( l_cur->callbacks.error_callback )
                             l_cur->callbacks.error_callback(l_cur, l_errno);
                     }else{
-                        if(g_debug_reactor)
-                            log_it(L_NOTICE, "Connected with %s",l_cur->remote_addr_str ? l_cur->remote_addr_str: "(NULL)");
+                        debug_if(g_debug_reactor, L_NOTICE, "Connected with %s",l_cur->remote_addr_str);
                         l_cur->flags ^= DAP_SOCK_CONNECTING;
                         if (l_cur->callbacks.connected_callback)
                             l_cur->callbacks.connected_callback(l_cur);
@@ -1028,7 +1027,7 @@ static int s_thread_loop(dap_context_t * a_context)
                 if (l_cur->buf_out_size == 0) {
                     if(g_debug_reactor)
                         log_it(L_INFO, "Process signal to close %s sock %"DAP_FORMAT_SOCKET" (ptr %p uuid 0x%016"DAP_UINT64_FORMAT_x") type %d [context #%u]",
-                           l_cur->remote_addr_str ? l_cur->remote_addr_str : "", l_cur->socket, l_cur, l_cur->uuid,
+                           l_cur->remote_addr_str, l_cur->socket, l_cur, l_cur->uuid,
                                l_cur->type, a_context->id);
 
                     for (ssize_t nn = n + 1; nn < l_sockets_max; nn++) { // Check for current selection if it has event duplication
@@ -1064,7 +1063,7 @@ static int s_thread_loop(dap_context_t * a_context)
                 } else {
                     if(g_debug_reactor)
                         log_it(L_INFO, "Got signal to close %s sock %"DAP_FORMAT_SOCKET" [context #%u] type %d but buffer is not empty(%zu)",
-                           l_cur->remote_addr_str ? l_cur->remote_addr_str : "", l_cur->socket, l_cur->type, a_context->id,
+                           l_cur->remote_addr_str, l_cur->socket, l_cur->type, a_context->id,
                            l_cur->buf_out_size);
                 }
             }
@@ -1390,7 +1389,11 @@ int dap_context_remove( dap_events_socket_t * a_es)
     } //else
       //  log_it( L_DEBUG,"Removed epoll's event from context #%u", l_context->id );
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
-    if (a_es->socket != -1 && a_es->type != DESCRIPTOR_TYPE_EVENT && a_es->type != DESCRIPTOR_TYPE_QUEUE && a_es->type != DESCRIPTOR_TYPE_TIMER){
+    if (a_es->socket == -1) {
+        log_it(L_ERROR, "Trying to remove bad socket from kqueue, a_es=%p", a_es);
+    } else {
+        if (a_es->type == DESCRIPTOR_TYPE_EVENT && a_es->type == DESCRIPTOR_TYPE_QUEUE)
+            log_it(L_WARNING, "Removing basis type socket from worker %p", a_worker);
     for (ssize_t n = l_context->esocket_current+1; n< l_context->esockets_selected; n++ ){
         struct kevent * l_kevent_selected = &l_context->kqueue_events_selected[n];
         dap_events_socket_t * l_cur = NULL;
@@ -1428,7 +1431,7 @@ int dap_context_remove( dap_events_socket_t * a_es)
         kevent( l_context->kqueue_fd,l_event,1,NULL,0,NULL); // If this filter is not set up - no warnings
 
 
-        if(a_es->flags & DAP_SOCK_READY_TO_WRITE){
+        /*if(a_es->flags & DAP_SOCK_READY_TO_WRITE){
             EV_SET(l_event, a_es->socket, EVFILT_WRITE ,EV_DELETE, 0,0,a_es);
             if ( kevent( l_context->kqueue_fd,l_event,1,NULL,0,NULL) == -1 ) {
                 int l_errno = errno;
@@ -1447,7 +1450,7 @@ int dap_context_remove( dap_events_socket_t * a_es)
                 log_it( L_ERROR,"Can't remove event socket's handler %d from the kqueue %d filter EVFILT_READ \"%s\" (%d)", a_es->socket,
                     l_context->kqueue_fd, l_errbuf, l_errno);
             }
-        }
+        }*/ // No flags checked with EV_DELETE operation
 
     }
 }
