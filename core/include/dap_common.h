@@ -543,6 +543,12 @@ DAP_INLINE uint64_t dap_hex_to_uint(const char *arr, short size) {
 
 extern char *g_sys_dir_path;
 
+
+int cellframe_node_Main ( int argc, const char **argv );
+
+
+
+
 //int dap_common_init( const char * a_log_file );
 int dap_common_init( const char *console_title, const char *a_log_file, const char *a_log_dirpath );
 int wdap_common_init( const char *console_title, const wchar_t *a_wlog_file);
