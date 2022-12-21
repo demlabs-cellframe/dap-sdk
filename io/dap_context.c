@@ -26,6 +26,7 @@
 #include <string.h>
 #include <assert.h>
 #include <errno.h>
+#include <stdatomic.h>
 
 #if ! defined (_GNU_SOURCE)
 #define _GNU_SOURCE         /* See feature_test_macros(7) */
@@ -128,15 +129,15 @@ dap_context_t * dap_context_new(int a_type)
 {
    dap_context_t * l_context = DAP_NEW_Z(dap_context_t);
    static atomic_uint_fast64_t s_context_id_max = 0;
-   l_context->id = s_context_id_max;
+   l_context->id = atomic_fetch_add(&s_context_id_max, 1);
    l_context->type = a_type;
-   s_context_id_max++;
 
    l_context->event_exit = dap_context_create_event( NULL, s_event_exit_callback);
 
    pthread_rwlock_wrlock(&s_contexts_rwlock);
    s_contexts = dap_list_prepend(s_contexts,l_context);
    pthread_rwlock_unlock(&s_contexts_rwlock);
+
    return l_context;
 }
 
@@ -315,7 +316,6 @@ static void *s_context_thread(void *a_arg)
     pthread_cond_destroy(&l_context->started_cond);
     pthread_mutex_destroy(&l_context->started_mutex);
     DAP_DELETE(l_context);
-
 
     return NULL;
 }
