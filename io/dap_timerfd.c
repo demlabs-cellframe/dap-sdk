@@ -173,6 +173,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     }
     l_events_socket->socket = l_tfd;
 #elif defined (DAP_OS_BSD)
+    l_events_socket->flags = 0;
     l_events_socket->kqueue_base_flags = EV_ONESHOT;
     l_events_socket->kqueue_base_filter = EVFILT_TIMER;
     l_events_socket->socket = arc4random();
@@ -181,11 +182,10 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     // Usualy we don't need exactly 1-5-10 seconds so let it be so
     // TODO make absolute timer without power-saving flags
     l_events_socket->kqueue_base_fflags = NOTE_BACKGROUND;
-    l_events_socket->kqueue_data =(int64_t) a_timeout_ms;
 #else
     l_events_socket->kqueue_base_fflags = NOTE_MSECONDS;
-    l_events_socket->kqueue_data =(int64_t) a_timeout_ms;
 #endif
+    l_events_socket->kqueue_data = (int64_t)a_timeout_ms;
 
 #elif defined (DAP_OS_WINDOWS)
     l_timerfd->th = NULL;
@@ -274,8 +274,10 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
     if(l_timer_fd && l_timer_fd->callback && l_timer_fd->callback(l_timer_fd->callback_arg)) {
         s_timerfd_reset(l_timer_fd, a_event_sock);
     } else {  
-#ifdef _WIN32
+#if defined (DAP_OS_WINDOWS)
         DeleteTimerQueueTimer(hTimerQueue, l_timer_fd->th, NULL);
+#elif defined (DAP_OS_BSD)
+        l_timerfd->events_socket->kqueue_base_filter = EVFILT_EMPTY;
 #endif
         l_timer_fd->events_socket->flags |= DAP_SOCK_SIGNAL_CLOSE;
     }
