@@ -307,7 +307,8 @@ int dap_events_start()
 
         s_workers[i] = l_worker;
 
-        l_ret = dap_context_run(l_worker->context,i,DAP_CONTEXT_POLICY_FIFO,-1, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED, dap_worker_context_callback_started,
+        l_ret = dap_context_run(l_worker->context, i, DAP_CONTEXT_POLICY_FIFO, DAP_CONTEXT_PRIORITY_HIGH,
+                                DAP_CONTEXT_FLAG_WAIT_FOR_STARTED, dap_worker_context_callback_started,
                                 dap_worker_context_callback_stopped, l_worker);
         if(l_ret != 0){
             log_it(L_CRITICAL, "Can't run worker #%u",i);
@@ -417,7 +418,7 @@ uint32_t dap_events_worker_get_index_min() {
         log_it(L_CRITICAL, "Event socket reactor has not been fired, use dap_events_init() first");
         return -1;
     }
-    for(uint32_t i = 1; i < s_threads_count; i++) {
+    for(uint32_t i = 0; i < s_threads_count; i++) {
         if (s_workers[min]->context->event_sockets_count > s_workers[i]->context->event_sockets_count)
             min = i;
     }
