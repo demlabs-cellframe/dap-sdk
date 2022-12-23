@@ -35,6 +35,7 @@
 #include "dap_enc_bliss.h"
 #include "dap_enc_tesla.h"
 #include "dap_enc_dilithium.h"
+#include "dap_enc_falcon.h"
 #include "dap_enc_newhope.h"
 #include "dap_enc_kyber.h"
 
@@ -347,7 +348,25 @@ struct dap_enc_key_callbacks{
         .dec_out_size = NULL,
         .sign_get = NULL,
         .sign_verify = NULL
-    }
+    },
+    [DAP_ENC_KEY_TYPE_SIG_FALCON]={
+        .name = "SIG_FALCON",
+        .enc = NULL,
+        .dec = NULL,
+        .enc_na = dap_enc_sig_falcon_get_sign,
+        .dec_na = dap_enc_sig_falcon_verify_sign,
+        .gen_key_public = NULL,
+        .gen_key_public_size = NULL,
+        .gen_bob_shared_key = NULL,
+        .gen_alice_shared_key = NULL,
+        .new_callback = dap_enc_sig_falcon_key_new,
+        .delete_callback = dap_enc_sig_falcon_key_delete,
+        .new_generate_callback = dap_enc_sig_falcon_key_new_generate,
+        .enc_out_size = NULL,
+        .dec_out_size = NULL,
+        .sign_get = NULL,
+        .sign_verify = NULL
+    },
 };
 
 const size_t c_callbacks_size = sizeof(s_callbacks) / sizeof(s_callbacks[0]);

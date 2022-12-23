@@ -108,6 +108,7 @@ typedef enum dap_enc_key_type{
                                                // Post-Quantum Zero-Knowledge and Signatures from Symmetric-Key Primitives
 
                            DAP_ENC_KEY_TYPE_SIG_DILITHIUM,
+                           DAP_ENC_KEY_TYPE_SIG_FALCON,
 
                            DAP_ENC_KEY_TYPE_SIG_RINGCT20,//ring signature for confidentional transaction
 
