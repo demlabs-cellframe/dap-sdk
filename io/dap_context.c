@@ -262,11 +262,11 @@ static void *s_context_thread(void *a_arg)
 #else
     if (l_msg->sched_policy != DAP_CONTEXT_POLICY_DEFAULT) {
         struct sched_param l_sched_params = {0};
-        int l_sched_policy = SCHED_IDLE;
+        int l_sched_policy;
 
-        switch(l_msg->sched_policy){
-            case DAP_CONTEXT_POLICY_FIFO: l_sched_policy = SCHED_FIFO; break;
-            case DAP_CONTEXT_POLICY_ROUND_ROBIN: l_sched_policy = SCHED_RR; break;
+        switch(l_msg->sched_policy) {
+        case DAP_CONTEXT_POLICY_FIFO: l_sched_policy = SCHED_FIFO; break;
+        case DAP_CONTEXT_POLICY_ROUND_ROBIN: l_sched_policy = SCHED_RR; break;
         default:
 #if defined (DAP_OS_LINUX)
             l_sched_policy = SCHED_BATCH;
@@ -281,10 +281,10 @@ static void *s_context_thread(void *a_arg)
             l_priority = (l_prio_max - l_prio_min) / 2;
             break;
         case DAP_CONTEXT_PRIORITY_HIGH:
-            l_priority = l_prio_max - l_prio_max / 5;
+            l_priority = l_prio_max - (l_prio_max / 5);
             break;
         case DAP_CONTEXT_PRIORITY_LOW:
-            l_priority = l_prio_min + l_prio_max / 5;
+            l_priority = l_prio_min + (l_prio_max / 5);
         }
         if (l_priority < l_prio_min)
             l_priority = l_prio_min;
@@ -514,7 +514,7 @@ static int s_thread_loop(dap_context_t * a_context)
                 l_flag_rdhup = true;
             l_cur = (dap_events_socket_t*) l_kevent_selected->udata;
 
-            if (l_kevent_selected->filter == EVFILT_TIMER && l_es->type != DESCRIPTOR_TYPE_TIMER) {
+            if (l_kevent_selected->filter == EVFILT_TIMER && l_cur->type != DESCRIPTOR_TYPE_TIMER) {
                 log_it(L_WARNING, "Filer type and socket descriptor type mismatch");
                 continue;
             }
@@ -1449,7 +1449,7 @@ int dap_context_remove( dap_events_socket_t * a_es)
     if (a_es->socket == -1) {
         log_it(L_ERROR, "Trying to remove bad socket from kqueue, a_es=%p", a_es);
     } else if (a_es->type == DESCRIPTOR_TYPE_EVENT || a_es->type == DESCRIPTOR_TYPE_QUEUE) {
-        log_it(L_ERROR, "Removing non-kqueue socket from worker %p is impossible", a_worker);
+        log_it(L_ERROR, "Removing non-kqueue socket from context %u is impossible", l_context->id);
     } else if (a_es->type == DESCRIPTOR_TYPE_TIMER && a_es->kqueue_base_filter == EVFILT_EMPTY) {
         // Nothing to do, it was already removed from kqueue cause of one shot strategy
     } else {

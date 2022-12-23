@@ -101,6 +101,10 @@ typedef int SOCKET;
 #define EPOLL_HANDLE  int
 #elif defined (DAP_EVENTS_CAPS_POLL)
 #include <poll.h>
+#elif defined (DAP_EVENTS_CAPS_KQUEUE)
+#ifndef EVFILT_EMPTY
+#define EVFILT_EMPTY -13
+#endif
 #endif
 
 #define BIT( x ) ( 1 << x )
