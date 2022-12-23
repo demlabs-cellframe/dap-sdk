@@ -277,7 +277,7 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
 #if defined (DAP_OS_WINDOWS)
         DeleteTimerQueueTimer(hTimerQueue, l_timer_fd->th, NULL);
 #elif defined (DAP_OS_BSD)
-        l_timerfd->events_socket->kqueue_base_filter = EVFILT_EMPTY;
+        l_timer_fd->events_socket->kqueue_base_filter = EVFILT_EMPTY;
 #endif
         l_timer_fd->events_socket->flags |= DAP_SOCK_SIGNAL_CLOSE;
     }
