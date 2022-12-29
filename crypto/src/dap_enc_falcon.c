@@ -60,3 +60,83 @@ void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *ke
         return;
     }
 }
+
+size_t dap_enc_sig_falcon_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size) {
+    //todo: need to use shared shake256 context
+
+    int retcode;
+    int logn = 0;
+    if (s_falcon_sign_degree == FALCON_512) {
+        logn = 9;
+    }
+    else if (s_falcon_sign_degree == FALCON_1024) {
+        logn = 10;
+    }
+    else {
+        log_it(L_ERROR, "Unknown falcon sign degree");
+        return -1;
+    }
+
+    shake256_context* rng = NULL;
+    retcode = shake256_init_prng_from_system(rng);
+    if (retcode != 0) {
+        log_it(L_ERROR, "Failed to initialize PRNG");
+        return retcode;
+    }
+
+    uint8_t tmp[FALCON_TMPSIZE_SIGNDYN(logn)];
+
+    //TODO: get sig_type from anywhere
+    retcode = falcon_sign_dyn(
+            rng,
+            signature, &signature_size, FALCON_SIG_COMPRESSED,
+            key->priv_key_data, key->priv_key_data_size,
+            msg, msg_size,
+            tmp, FALCON_TMPSIZE_SIGNDYN(logn)
+            );
+    if (retcode != 0) {
+        log_it(L_ERROR, "Failed to sign message");
+        return retcode;
+    }
+}
+
+size_t dap_enc_sig_falcon_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
+                                      const size_t signature_size) {
+    int retcode;
+    int logn = 0;
+    if (s_falcon_sign_degree == FALCON_512) {
+        logn = 9;
+    }
+    else if (s_falcon_sign_degree == FALCON_1024) {
+        logn = 10;
+    }
+    else {
+        log_it(L_ERROR, "Unknown falcon sign degree");
+        return -1;
+    }
+
+    uint8_t tmp[FALCON_TMPSIZE_VERIFY(logn)];
+
+    retcode = falcon_verify(
+            signature, signature_size, FALCON_SIG_COMPRESSED,
+            key->pub_key_data, key->pub_key_data_size,
+            msg, msg_size,
+            tmp, FALCON_TMPSIZE_VERIFY(logn)
+            );
+    if (retcode != 0) {
+        log_it(L_ERROR, "Failed to verify signature");
+        return retcode;
+    }
+}
+
+void dap_enc_sig_falcon_key_delete(struct dap_enc_key *key) {
+
+    if (key->priv_key_data) {
+        memset(key->priv_key_data, 0, key->priv_key_data_size);
+        DAP_DEL_Z(key->priv_key_data);
+    }
+    if (key->pub_key_data) {
+        memset(key->pub_key_data, 0, key->pub_key_data_size);
+        DAP_DEL_Z(key->pub_key_data);
+    }
+}
