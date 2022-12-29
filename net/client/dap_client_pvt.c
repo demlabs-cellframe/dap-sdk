@@ -90,7 +90,6 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_internal);
 // ENC stage callbacks
 static void s_enc_init_response(dap_client_t *, void *, size_t);
 static void s_enc_init_error(dap_client_t *, int);
-static bool s_enc_init_delay_before_request_timer_callback(void*);
 
 // STREAM_CTL stage callbacks
 static void s_stream_ctl_response(dap_client_t *, void *, size_t);
@@ -98,7 +97,6 @@ static void s_stream_ctl_error(dap_client_t *, int);
 static void s_stage_stream_streaming(dap_client_t * a_client, void* arg);
 
 // STREAM stage callbacks
-static void s_stream_response(dap_client_t *, void *, size_t);
 static void s_request_response(void * a_response, size_t a_response_size, void * a_obj);
 static void s_request_error(int, void *);
 
@@ -145,7 +143,6 @@ void dap_client_pvt_deinit()
  */
 void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
 {
-    a_client_pvt->uuid = dap_uuid_generate_uint64();
     a_client_pvt->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012 ;
     a_client_pvt->session_key_open_type = DAP_ENC_KEY_TYPE_MSRLN ;
     a_client_pvt->session_key_block_size = 32;
@@ -153,41 +150,27 @@ void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
     a_client_pvt->stage = STAGE_BEGIN; // start point of state machine
     a_client_pvt->stage_status = STAGE_STATUS_DONE;
     a_client_pvt->uplink_protocol_version = DAP_PROTOCOL_VERSION;
-    // add to list
-    dap_client_pvt_hh_add_unsafe(a_client_pvt);
 }
 
 /**
  * @brief dap_client_pvt_delete_unsafe
  * @param a_client_pvt
  */
-void dap_client_pvt_delete_unsafe(dap_client_pvt_t * a_client_pvt)
+void dap_client_pvt_delete(dap_client_pvt_t * a_client_pvt)
 {
     assert(a_client_pvt);
 
-    if (!dap_client_pvt_find(a_client_pvt->uuid)) {
-        if(s_debug_more)
-            log_it(L_DEBUG, "dap_client_pvt 0x%p already deleted", a_client_pvt);
-        return;
-    }
     if(a_client_pvt->delete_callback)
         a_client_pvt->delete_callback(a_client_pvt->client, NULL);
     if (a_client_pvt->stream_es) {
         dap_events_socket_remove_and_delete_unsafe(a_client_pvt->stream_es, true);
     }
-    // delete from list
-    dap_client_pvt_hh_del_unsafe(a_client_pvt);
     if(s_debug_more)
         log_it(L_INFO, "dap_client_pvt_delete 0x%p", a_client_pvt);
 
-    if(a_client_pvt->uplink_addr)
-        DAP_DELETE(a_client_pvt->uplink_addr);
 
     if(a_client_pvt->session_key_id)
         DAP_DELETE(a_client_pvt->session_key_id);
-
-    if(a_client_pvt->active_channels)
-        DAP_DELETE(a_client_pvt->active_channels);
 
     if(a_client_pvt->session_key)
         dap_enc_key_delete(a_client_pvt->session_key);
@@ -248,7 +231,7 @@ static bool s_stream_timer_timeout_check(void * a_arg)
                     l_es->callbacks.error_callback(l_es,ETIMEDOUT);
                 }
                 log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout",
-                       l_es->remote_addr_str ? l_es->remote_addr_str : "", l_es->socket, l_es->type);
+                       l_es->remote_addr_str, l_es->socket, l_es->type);
                 dap_client_delete_unsafe(l_client_pvt->client);
             } else {
                 log_it(L_ERROR,"Connecting timeout for unexistent client");
@@ -307,26 +290,6 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
     DAP_DEL_Z(l_es_uuid_ptr);
     return false;
 }
-
-/**
- * @brief s_enc_init_delay_before_request_timer_callback
- * @param a_arg
- * @return
- */
-static bool s_enc_init_delay_before_request_timer_callback(void * a_arg)
-{
-    assert (a_arg);
-    dap_events_socket_uuid_t* l_es_uuid_ptr = (dap_events_socket_uuid_t*) a_arg;
-    dap_worker_t * l_worker = dap_worker_get_current();
-    dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid_ptr);
-    if(l_es){
-        dap_client_pvt_t *l_client_pvt = DAP_ESOCKET_CLIENT_PVT(l_es);
-        s_stage_status_after(l_client_pvt);
-    }
-    DAP_DEL_Z(l_es_uuid_ptr);
-    return false;
-}
-
 
 /**
  * @brief s_client_internal_stage_status_proc
@@ -1159,34 +1122,6 @@ static void s_stream_ctl_error(dap_client_t * a_client, int a_error)
 
     s_stage_status_after(l_client_pvt);
 
-}
-
-//
-/**
- * @brief s_stream_response STREAM stage callbacks
- * @param a_client
- * @param a_data
- * @param a_data_size
- */
-static void s_stream_response(dap_client_t * a_client, void * a_data, size_t a_data_size)
-{
-    dap_client_pvt_t * l_client_pvt = DAP_CLIENT_PVT(a_client);
-    assert(l_client_pvt);
-    if(s_debug_more)
-        log_it(L_DEBUG, "STREAM response %zu bytes length recieved", a_data_size);
-//    char * l_response_str = DAP_NEW_Z_SIZE(char, a_data_size + 1);
-//    memcpy(l_response_str, a_data, a_data_size);
-
-    if(l_client_pvt->stage == STAGE_STREAM_CONNECTED) { // We are on the right stage
-        l_client_pvt->stage_status = STAGE_STATUS_DONE;
-        s_stage_status_after(l_client_pvt);
-    }
-    else {
-        log_it(L_WARNING, "Expected to be stage STREAM_CONNECTED but current stage is %s (%s)",
-                dap_client_get_stage_str(a_client), dap_client_get_stage_status_str(a_client));
-        l_client_pvt->stage_status = STAGE_STATUS_ERROR;
-    }
-    s_stage_status_after(l_client_pvt);
 }
 
 /**

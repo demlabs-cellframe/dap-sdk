@@ -46,11 +46,11 @@ typedef enum dap_client_stage {
 
 typedef enum dap_client_stage_status {
     STAGE_STATUS_NONE=0,
-    // Enc init stage
     STAGE_STATUS_IN_PROGRESS,
     STAGE_STATUS_ABORTING,
     STAGE_STATUS_ERROR,
     STAGE_STATUS_DONE,
+    STAGE_STATUS_COMPLETE
 } dap_client_stage_status_t;
 
 typedef enum dap_client_error {
@@ -70,20 +70,34 @@ typedef enum dap_client_error {
     ERROR_NETWORK_CONNECTION_TIMEOUT
 } dap_client_error_t;
 
+typedef struct dap_client dap_client_t;
+
+typedef void (*dap_client_callback_t) (dap_client_t *, void *);
+typedef void (*dap_client_callback_int_t) (dap_client_t *, void *, int);
+typedef void (*dap_client_callback_data_size_t) (dap_client_t *, void *, size_t);
+
 /**
  * @brief The dap_client struct
  */
-typedef struct dap_client{
-    pthread_mutex_t mutex;
-    void * _internal;
-    void * _inheritor;
-    uint64_t pvt_uuid;
-    dap_events_socket_uuid_t es_uuid;
-} dap_client_t;
+typedef struct dap_client {
+    char *active_channels;
 
-typedef void (*dap_client_callback_t) (dap_client_t *, void*);
-typedef void (*dap_client_callback_int_t) (dap_client_t *, int);
-typedef void (*dap_client_callback_data_size_t) (dap_client_t *, void *, size_t);
+    char *uplink_addr;
+    uint16_t uplink_port;
+
+    dap_cert_t *auth_cert;
+
+    bool always_reconnect; // Always reconnect ever number of tries are over
+    bool connect_on_demand; // Automatically connect with writing request
+
+    dap_client_stage_t stage_target;
+    dap_client_callback_t stage_target_done_callback;
+    dap_client_callback_int_t stage_target_error_callback;
+    void *stage_target_callback_arg;
+
+    void *_internal;
+    void *_inheritor;
+} dap_client_t;
 
 #define DAP_UPLINK_PATH_ENC_INIT         "enc_init"
 #define DAP_UPLINK_PATH_STREAM_CTL       "stream_ctl"
