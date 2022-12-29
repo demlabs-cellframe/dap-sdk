@@ -783,6 +783,28 @@ static inline const char *dap_get_arch() { //Get current architecture, detectx n
         #endif
     }
 
+
+/*
+ *  Old school Item Lists structures like TSD/TLV but ...
+ */
+typedef struct __dap_item_list_element_2__ {                            /* This structure is supposed to be used to pass ILE2 as an input argument */
+
+        int         code;                                               /* Code of the item */
+        size_t      sz;                                                 /* Length of the data */
+        void        *data;                                              /* An address with the data area */
+} dap_ile2_t;
+
+typedef struct __dap_item_list_element_3__ {                            /* ILE3 is supposed to be used as an output argument */
+
+        int         code;                                               /* Code of the item */
+        size_t      sz;                                                 /* A size of the data area */
+        void        *data;                                              /* An area to accept data */
+        size_t      *retlen;                                            /* Actual length of returned data */
+} dap_ile3_t;
+
+#define     ILENULL {-1, 0, NULL}                                        /* An End-Of-Items-List terminator */
+
+
 #ifdef __MINGW32__
 int exec_silent(const char *a_cmd);
 #endif

@@ -30,6 +30,12 @@ typedef struct dap_tsd {
     byte_t data[];
 } DAP_ALIGN_PACKED dap_tsd_t;
 
+
+size_t      dap_tsd_put(uint16_t a_type, const void * a_data, size_t a_data_size, void *a_dst, size_t a_dst_sz);
+size_t      dap_tsd_get(void *a_src, size_t a_src_sz, uint16_t *a_type, void *a_data, size_t *a_data_size);
+
+
+
 dap_tsd_t   *dap_tsd_create(uint16_t a_type,  const void * a_data, size_t a_data_size);
 dap_tsd_t   *dap_tsd_find(byte_t * a_data, size_t a_data_size,uint16_t a_type);
 

@@ -72,11 +72,16 @@ void dap_stream_ch_proc_add(uint8_t id,dap_stream_ch_callback_t new_callback,dap
                           dap_stream_ch_callback_t packet_out_callback
                           )
 {
-   s_proc[id].id=id;
-   s_proc[id].new_callback=new_callback;
-   s_proc[id].delete_callback=delete_callback;
-   s_proc[id].packet_in_callback=packet_in_callback;
-   s_proc[id].packet_out_callback=packet_out_callback;
+
+    if ( s_proc[id].flags  )
+        return  log_it(L_ERROR, "Channel #%d has been allocated/used", id);
+
+    s_proc[id].flags |= 0x000000001;
+    s_proc[id].id = id;
+    s_proc[id].new_callback = new_callback;
+    s_proc[id].delete_callback = delete_callback;
+    s_proc[id].packet_in_callback = packet_in_callback;
+    s_proc[id].packet_out_callback = packet_out_callback;
 }
 
 /**

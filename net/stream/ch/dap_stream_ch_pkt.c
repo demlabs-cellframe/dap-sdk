@@ -159,7 +159,7 @@ size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch
         return 0;
     dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
     l_msg->ch_uuid = a_ch_uuid;
-    l_msg->ch_pkt_type = a_type; 
+    l_msg->ch_pkt_type = a_type;
     if (a_data && a_data_size)
         l_msg->data = DAP_DUP_SIZE(a_data, a_data_size);
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
@@ -185,19 +185,22 @@ size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch
  * @param a_data_size
  * @return
  */
-size_t dap_stream_ch_pkt_write_inter(dap_events_socket_t * a_queue_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_data, size_t a_data_size)
+size_t dap_stream_ch_pkt_write_inter(dap_events_socket_t * a_es, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_data, size_t a_data_size)
 {
     dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
+
     l_msg->ch_uuid = a_ch_uuid;
     l_msg->ch_pkt_type = a_type;
+
     if (a_data && a_data_size)
         l_msg->data = DAP_DUP_SIZE(a_data, a_data_size);
+
     l_msg->data_size = a_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
-    int l_ret= dap_events_socket_queue_ptr_send_to_input(a_queue_input, l_msg );
+    int l_ret= dap_events_socket_queue_ptr_send_to_input(a_es, l_msg );
     if (l_ret!=0){
-        log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
+        log_it(L_ERROR, "[es:%p] Wasn't send pointer to queue: code %d", l_ret);
         DAP_DEL_Z(l_msg->data);
         DAP_DELETE(l_msg);
         return 0;

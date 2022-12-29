@@ -179,7 +179,7 @@ static void  *s_log_thread_proc(void *arg);
 
 typedef struct log_str_t {
     char str[STR_LOG_BUF_MAX];
-    unsigned int offset;
+    unsigned int offset, len;
     struct log_str_t *prev, *next;
 } log_str_t;
 
@@ -313,13 +313,16 @@ void dap_common_deinit( ) {
  * @param arg
  * @return
  */
-static void *s_log_thread_proc(void *arg) {
+static void *s_log_thread_proc(void *arg)
+{
     (void) arg;
+
     for ( ; !s_log_term_signal; ) {
         pthread_mutex_lock(&s_log_mutex);
         for ( ; s_log_count == 0 && !s_log_term_signal; ) {
             pthread_cond_wait(&s_log_cond, &s_log_mutex);
         }
+
         if (s_log_count) {
             log_str_t *elem, *tmp;
             if(s_log_file) {
@@ -357,11 +360,14 @@ static void *s_log_thread_proc(void *arg) {
  * @param ll
  * @param fmt
  */
-void _log_it(const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
+void _log_it(const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...)
+{
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
         return;
+
     log_str_t *l_log_string = DAP_NEW_Z(log_str_t);
     size_t offset2 = sizeof(l_log_string->str) - 2;
+
     strncpy(l_log_string->str, s_ansi_seq_color[a_ll], offset2);
     l_log_string->offset = s_ansi_seq_color_len[a_ll];
     s_update_log_time(l_log_string->str + l_log_string->offset);
@@ -374,9 +380,11 @@ void _log_it(const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, 
     offset = (l_offset < offset2) ? offset + l_offset : offset;
     offset2 = (l_offset < offset2) ? offset2 - offset : 0;
     va_end( va );
+
     char *dummy = (offset2 == 0) ? memcpy(&l_log_string->str[sizeof(l_log_string->str) - 6], "...\n\0", 5)
         : memcpy(&l_log_string->str[offset], "\n", 1);
     UNUSED(dummy);
+
     pthread_mutex_lock(&s_log_mutex);
     DL_APPEND(s_log_buffer, l_log_string);
     ++s_log_count;
@@ -425,7 +433,9 @@ struct timespec now;
         return;
 
     if ( (a_ll < s_dap_log_level) )
+    {
         return;
+    }
 
 
 	clock_gettime(CLOCK_REALTIME, &now);

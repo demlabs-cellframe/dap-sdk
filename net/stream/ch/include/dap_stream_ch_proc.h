@@ -26,8 +26,9 @@
 
 
 typedef struct dap_stream_ch_proc{
-    uint8_t id; // Channel type id
-    uint8_t enc_type; // Encryption type
+    uint8_t id;                                 // Channel type id
+    uint8_t enc_type;                           // Encryption type
+        int flags;                              /* Non-zero , slot has been used/allocated */
 
     dap_stream_ch_callback_t new_callback;
     dap_stream_ch_callback_t delete_callback;
