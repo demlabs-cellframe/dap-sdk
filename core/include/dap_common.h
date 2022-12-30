@@ -544,6 +544,8 @@ DAP_INLINE uint64_t dap_hex_to_uint(const char *arr, short size) {
 extern char *g_sys_dir_path;
 
 
+
+int cellframe_node_started_add_cb ( void (*a_rtn) (void *), void *a_arg);
 int cellframe_node_Main ( int argc, const char **argv );
 
 
