@@ -26,23 +26,27 @@ typedef enum DAP_FALCON_SIGN_TYPE {
 typedef struct {
     falcon_kind_t kind;
     falcon_sign_degree_t degree;
+    falcon_sign_type_t type;
 } falcon_param_t;
 
 typedef struct {
     falcon_kind_t kind;
     falcon_sign_degree_t degree;
+    falcon_sign_type_t type;
     unsigned char* data;
 } falcon_private_key_t;
 
 typedef struct {
     falcon_kind_t kind;
     falcon_sign_degree_t degree;
+    falcon_sign_type_t type;
     unsigned char* data;
 } falcon_public_key_t;
 
 typedef struct {
     falcon_kind_t kind;
     falcon_sign_degree_t degree;
+    falcon_sign_type_t type;
     unsigned char* sig_data;
     uint64_t sig_len;
 } falcon_signature_t;
