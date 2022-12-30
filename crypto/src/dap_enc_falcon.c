@@ -41,6 +41,11 @@ void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *ke
     }
     size_t tmp[FALCON_TMPSIZE_KEYGEN(logn)];
 
+    key->pub_key_data_size = FALCON_PUBKEY_SIZE(logn);
+    key->priv_key_data_size = FALCON_PRIVKEY_SIZE(logn);
+    key->pub_key_data = calloc(key->pub_key_data_size, sizeof(uint8_t));
+    key->priv_key_data = calloc(key->priv_key_data_size, sizeof(uint8_t));
+
 
     shake256_context rng;
     retcode = shake256_init_prng_from_system(&rng);
