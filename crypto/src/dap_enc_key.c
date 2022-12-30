@@ -500,6 +500,9 @@ uint8_t* dap_enc_key_serealize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         data = dap_enc_dilithium_write_public_key(a_key->pub_key_data, a_buflen_out);
         break;
+    case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        data = dap_enc_falcon_write_public_key(a_key->pub_key_data, a_buflen_out);
+        break;
     default:
         data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
         memcpy(data, a_key->pub_key_data, a_key->pub_key_data_size);

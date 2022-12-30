@@ -8,24 +8,41 @@
 #include "dap_crypto_common.h"
 
 
-typedef enum { FALCON_COMPRESSED, FALCON_PADDED, FALCON_CT } falcon_kind_t;
+typedef enum {
+    FALCON_COMPRESSED,
+    FALCON_PADDED,
+    FALCON_CT
+} falcon_kind_t;
+
+typedef enum DAP_FALCON_SIGN_DEGREE {
+    FALCON_512 = 9, FALCON_1024 = 10
+} falcon_sign_degree_t;
+
+typedef enum DAP_FALCON_SIGN_TYPE {
+    FALCON_DYNAMIC,
+    FALCON_TREE
+} falcon_sign_type_t;
 
 typedef struct {
     falcon_kind_t kind;
+    falcon_sign_degree_t degree;
 } falcon_param_t;
 
 typedef struct {
     falcon_kind_t kind;
+    falcon_sign_degree_t degree;
     unsigned char* data;
 } falcon_private_key_t;
 
 typedef struct {
     falcon_kind_t kind;
+    falcon_sign_degree_t degree;
     unsigned char* data;
 } falcon_public_key_t;
 
 typedef struct {
     falcon_kind_t kind;
+    falcon_sign_degree_t degree;
     unsigned char* sig_data;
     uint64_t sig_len;
 } falcon_signature_t;
