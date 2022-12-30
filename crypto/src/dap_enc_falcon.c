@@ -42,15 +42,15 @@ void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *ke
     size_t tmp[FALCON_TMPSIZE_KEYGEN(logn)];
 
 
-    shake256_context* rng = NULL;
-    retcode = shake256_init_prng_from_system(rng);
+    shake256_context rng;
+    retcode = shake256_init_prng_from_system(&rng);
     if (retcode != 0) {
         log_it(L_ERROR, "Failed to initialize PRNG");
         return;
     }
 
     retcode = falcon_keygen_make(
-            rng,
+            &rng,
             logn,
             &key->priv_key_data, key->priv_key_data_size,
             &key->pub_key_data, key->pub_key_data_size,
@@ -77,8 +77,8 @@ size_t dap_enc_sig_falcon_get_sign(struct dap_enc_key* key, const void* msg, con
         return -1;
     }
 
-    shake256_context* rng = NULL;
-    retcode = shake256_init_prng_from_system(rng);
+    shake256_context rng;
+    retcode = shake256_init_prng_from_system(&rng);
     if (retcode != 0) {
         log_it(L_ERROR, "Failed to initialize PRNG");
         return retcode;
@@ -88,7 +88,7 @@ size_t dap_enc_sig_falcon_get_sign(struct dap_enc_key* key, const void* msg, con
 
     //TODO: get sig_type from anywhere
     retcode = falcon_sign_dyn(
-            rng,
+            &rng,
             signature, &signature_size, FALCON_SIG_COMPRESSED,
             key->priv_key_data, key->priv_key_data_size,
             msg, msg_size,
