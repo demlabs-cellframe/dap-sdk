@@ -105,33 +105,33 @@ void dap_stream_ctl_add_proc(struct dap_http * sh, const char * url)
  * @param cl_st HTTP server instance
  * @param arg Not used
  */
-void s_proc(struct dap_http_simple *a_http_simple, void * a_arg)
+void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void * a_arg)
 {
     http_status_code_t * return_code = (http_status_code_t*)a_arg;
 
    // unsigned int proto_version;
-    dap_stream_session_t * ss=NULL;
+    dap_stream_session_t *l_stream_session = NULL;
    // unsigned int action_cmd=0;
     bool l_new_session = false;
 
     enc_http_delegate_t *l_dg = enc_http_request_decode(a_http_simple);
 
     if(l_dg){
-        size_t l_channels_str_size = sizeof(ss->active_channels);
-        char l_channels_str[sizeof(ss->active_channels)];
+        size_t l_channels_str_size = sizeof(l_stream_session->active_channels);
+        char l_channels_str[sizeof(l_stream_session->active_channels)];
         dap_enc_key_type_t l_enc_type = s_socket_forward_key.type;
         size_t l_enc_key_size = 32;
         int l_enc_headers = 0;
         bool l_is_legacy=true;
-        char * l_tok_tmp = l_dg->url_path;
-        char * l_tok = strtok_r(l_dg->url_path, ",",&l_tok_tmp)   ;
-        do {
-            char * l_subtok_tmp = NULL;
-            char * l_subtok_name = strtok_r(l_tok, "=",&l_subtok_tmp);
-            char * l_subtok_value = strtok_r(NULL, "=",&l_subtok_tmp);
-            if (l_subtok_value){
+        char *l_tok_tmp;
+        char *l_tok = strtok_r(l_dg->url_path, ",", &l_tok_tmp);
+        while (l_tok) {
+            char *l_subtok_name = l_tok;
+            char *l_subtok_value = strchr(l_tok, '=');
+            if (l_subtok_value) {
+                *l_subtok_value++ = '\0';
                 //log_it(L_DEBUG, "tok = %s value =%s",l_subtok_name,l_subtok_value);
-                if ( strcmp(l_subtok_name,"channels")==0 ){
+                if (strcmp(l_subtok_name,"channels")==0 ){
                     strncpy(l_channels_str,l_subtok_value,sizeof (l_channels_str)-1);
                     //log_it(L_DEBUG,"Param: channels=%s",l_channels_str);
                 }else if(strcmp(l_subtok_name,"enc_type")==0){
@@ -139,18 +139,19 @@ void s_proc(struct dap_http_simple *a_http_simple, void * a_arg)
                     //log_it(L_DEBUG,"Param: enc_type=%s",dap_enc_get_type_name(l_enc_type));
                     l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_key_size")==0){
+                    // TODO impliment enc_key_size influence
                     l_enc_key_size = (size_t) atoi(l_subtok_value);
                     if (l_enc_key_size > l_dg->request_size )
                         l_enc_key_size = 32;
-                    //log_it(L_DEBUG,"Param: enc_type=%s",dap_enc_get_type_name(l_enc_type));
+                    //log_it(L_DEBUG,"Param: enc_key_size=%d", l_enc_key_size);
                     l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_headers")==0){
                     l_enc_headers = atoi(l_subtok_value);
                     //log_it(L_DEBUG,"Param: enc_headers=%d",l_enc_headers);
                 }
             }
-            l_tok = strtok_r(NULL, ",",&l_tok_tmp)   ;
-        } while(l_tok);
+            l_tok = strtok_r(NULL, ",", &l_tok_tmp);
+        }
         l_new_session = true;
         if(l_is_legacy){
             log_it(L_INFO, "legacy encryption mode used (OAES)");
@@ -159,12 +160,22 @@ void s_proc(struct dap_http_simple *a_http_simple, void * a_arg)
         }else
             log_it(L_DEBUG,"Encryption type %s (enc headers %d)",dap_enc_get_type_name(l_enc_type), l_enc_headers);
 
+        dap_http_header_t *l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
+        dap_enc_ks_key_t *l_ks_key = NULL;
+        if (l_hdr_key_id) {
+            l_ks_key = dap_enc_ks_find(l_hdr_key_id->value);
+            if (!l_ks_key) {
+                log_it(L_WARNING, "Key with ID %s not found", l_hdr_key_id->value);
+                *return_code = Http_Status_BadRequest;
+                return;
+            }
+        }
         if(l_new_session){
-            ss = dap_stream_session_pure_new();
-            strncpy(ss->active_channels, l_channels_str, l_channels_str_size);
-            char *key_str = calloc(1, KEX_KEY_STR_SIZE+1);
-            dap_random_string_fill(key_str, KEX_KEY_STR_SIZE);
-            ss->key = dap_enc_key_new_generate( l_enc_type, key_str, KEX_KEY_STR_SIZE,
+            l_stream_session = dap_stream_session_pure_new();
+            strncpy(l_stream_session->active_channels, l_channels_str, l_channels_str_size);
+            char *l_key_str = DAP_NEW_Z_SIZE(char, KEX_KEY_STR_SIZE + 1);
+            dap_random_string_fill(l_key_str, KEX_KEY_STR_SIZE);
+            l_stream_session->key = dap_enc_key_new_generate( l_enc_type, l_key_str, KEX_KEY_STR_SIZE,
                                                NULL, 0, s_socket_forward_key.size);
             dap_http_header_t *l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
             if (l_hdr_key_id) {
@@ -174,17 +185,18 @@ void s_proc(struct dap_http_simple *a_http_simple, void * a_arg)
                     *return_code = Http_Status_BadRequest;
                     return;
                 }
-                ss->acl = l_ks_key->acl_list;
+                l_stream_session->acl = l_ks_key->acl_list;
             }
             if (l_is_legacy)
-                enc_http_reply_f(l_dg,"%u %s",ss->id, key_str);
+                enc_http_reply_f(l_dg, "%u %s", l_stream_session->id, l_key_str);
             else
-                enc_http_reply_f(l_dg,"%u %s %u %d %d",ss->id, key_str, DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
+                enc_http_reply_f(l_dg, "%u %s %u %d %d", l_stream_session->id, l_key_str,
+                                       DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
             *return_code = Http_Status_OK;
 
-            log_it(L_INFO," New stream session %u initialized",ss->id);
+            log_it(L_INFO," New stream session %u initialized",l_stream_session->id);
 
-            free(key_str);
+            DAP_DELETE(l_key_str);
         }else{
             log_it(L_ERROR,"Wrong request: \"%s\"",l_dg->in_query);
             *return_code = Http_Status_BadRequest;
@@ -192,6 +204,7 @@ void s_proc(struct dap_http_simple *a_http_simple, void * a_arg)
         }
 
         enc_http_reply_encode(a_http_simple,l_dg);
+        dap_enc_ks_delete(l_hdr_key_id->value);
         enc_http_delegate_delete(l_dg);
     }else{
         log_it(L_ERROR,"No encryption layer was initialized well");

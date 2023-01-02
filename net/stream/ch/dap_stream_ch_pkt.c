@@ -77,23 +77,24 @@ size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_
 {
     if (!a_worker)
         return 0;
-    va_list ap;
-    va_start(ap,a_format);
-    int l_data_size = dap_vsnprintf(NULL,0,a_format,ap);
+    va_list ap, ap_copy;
+    va_start(ap, a_format);
+    va_copy(ap_copy, ap);
+    int l_data_size = dap_vsnprintf(NULL, 0, a_format, ap);
     if (l_data_size <0 ){
         log_it(L_ERROR,"Can't write out formatted data '%s' with values",a_format);
-        va_end(ap);
+        va_end(ap_copy);
         return 0;
     }
-
+    l_data_size++; // include trailing 0
     dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
     l_msg->ch_uuid = a_ch_uuid;
     l_msg->ch_pkt_type = a_type;
-    l_msg->data = DAP_NEW_SIZE(void,l_data_size);
+    l_msg->data = DAP_NEW_SIZE(void, l_data_size);
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
-    l_data_size = dap_vsnprintf(l_msg->data,0,a_format,ap);
-    va_end(ap);
+    l_data_size = dap_vsprintf(l_msg->data, a_format, ap_copy);
+    va_end(ap_copy);
 
     int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_ch_io, l_msg);
     if (l_ret!=0){
@@ -116,23 +117,25 @@ size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_
  */
 size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t * a_queue  , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char * a_format,...)
 {
-    va_list ap;
-    va_start(ap,a_format);
-    int l_data_size = dap_vsnprintf(NULL,0,a_format,ap);
-    if (l_data_size <0 ){
+    va_list ap, ap_copy;
+    va_start(ap, a_format);
+    va_copy(ap_copy, ap);
+    int l_data_size = dap_vsnprintf(NULL, 0, a_format, ap);
+    va_end(ap);
+    if (l_data_size < 0) {
         log_it(L_ERROR,"Can't write out formatted data '%s' with values",a_format);
-        va_end(ap);
+        va_end(ap_copy);
         return 0;
     }
-
-    dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
+    l_data_size++; // include trailing 0
+    dap_stream_worker_msg_io_t *l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
     l_msg->ch_uuid = a_ch_uuid;
     l_msg->ch_pkt_type = a_type;
-    l_msg->data = DAP_NEW_SIZE(void,l_data_size);
+    l_msg->data = DAP_NEW_SIZE(void, l_data_size);
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
-    l_data_size = dap_vsnprintf(l_msg->data,0,a_format,ap);
-    va_end(ap);
+    l_data_size = dap_vsprintf(l_msg->data, a_format, ap_copy);
+    va_end(ap_copy);
 
     int l_ret= dap_events_socket_queue_ptr_send_to_input(a_queue , l_msg );
     if (l_ret!=0){
@@ -285,13 +288,23 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
  * @param a_str
  * @return
  */
-size_t dap_stream_ch_pkt_write_f_unsafe(dap_stream_ch_t * a_ch, uint8_t a_type, const char * a_str,...)
+ssize_t dap_stream_ch_pkt_write_f_unsafe(dap_stream_ch_t *a_ch, uint8_t a_type, const char *a_format, ...)
 {
-    char l_buf[4096];
-    va_list ap;
-    va_start(ap,a_str);
-    dap_vsnprintf(l_buf,sizeof(l_buf),a_str,ap);
+    va_list ap, ap_copy;
+    va_start(ap, a_format);
+    va_copy(ap_copy, ap);
+    int l_data_size = dap_vsnprintf(NULL, 0, a_format, ap);
     va_end(ap);
-    size_t ret=dap_stream_ch_pkt_write_unsafe(a_ch,a_type,l_buf,strlen(l_buf));
-    return ret;
+    if (l_data_size < 0) {
+        log_it(L_ERROR,"Can't write out formatted data '%s' with values",a_format);
+        va_end(ap_copy);
+        return l_data_size;
+    }
+    l_data_size++; // include trailing 0
+    char *l_data = DAP_NEW_SIZE(void, l_data_size);
+    dap_vsprintf(l_data, a_format, ap_copy);
+    va_end(ap_copy);
+    size_t l_ret = dap_stream_ch_pkt_write_unsafe(a_ch, a_type, l_data, l_data_size);
+    DAP_DELETE(l_data);
+    return l_ret;
 }

@@ -57,7 +57,7 @@ static inline struct dap_http_header* dap_http_out_header_add(dap_http_client_t 
     return dap_http_header_add(&ht->out_headers, name, value);
 }
 
-dap_http_header_t * dap_http_out_header_add_f(dap_http_client_t *ht, const char *name, const char *value, ...);
+DAP_PRINTF_ATTR(3, 4) dap_http_header_t *dap_http_out_header_add_f(dap_http_client_t *ht, const char *name, const char *value, ...);
 
 dap_http_header_t *dap_http_header_find(dap_http_header_t * ht, const char*name);
 

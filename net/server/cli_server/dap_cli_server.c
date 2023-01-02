@@ -774,7 +774,7 @@ char    *str_header;
                 if(l_cmd){
                     while(list) {
                         char *str_cmd_prev = str_cmd;
-                        str_cmd = dap_strdup_printf("%s;%s", str_cmd, list->data);
+                        str_cmd = dap_strdup_printf("%s;%s", str_cmd, (char *)list->data);
                         list = dap_list_next(list);
                         DAP_DELETE(str_cmd_prev);
                     }
@@ -811,7 +811,7 @@ char    *str_header;
                   reply_body = dap_strdup_printf("%d\r\n%s\r\n", res, (str_reply) ? str_reply : "");
                 // return the result of the command function
                 char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
-                                                    "Content-Length: %d\r\n\r\n"
+                                                    "Content-Length: %zu\r\n\r\n"
                                                     "%s", strlen(reply_body), reply_body);
                 size_t l_reply_step = 32768;
                 size_t l_reply_len = strlen(reply_str);
@@ -819,7 +819,7 @@ char    *str_header;
 
                 while(l_reply_rest) {
                     size_t l_send_bytes = min(l_reply_step, l_reply_rest);
-                    int ret = send(newsockfd, reply_str + l_reply_len - l_reply_rest, l_send_bytes, 0);
+                    int ret = send(newsockfd, reply_str + l_reply_len - l_reply_rest, l_send_bytes, MSG_NOSIGNAL);
                     if(ret<=0)
                         break;
                     l_reply_rest-=l_send_bytes;
@@ -889,7 +889,6 @@ void dap_cli_server_cmd_set_reply_text(char **str_reply, const char *str, ...)
 {
     if(str_reply) {
         if(*str_reply) {
-            assert( *str_reply );
             DAP_DELETE(*str_reply);
             *str_reply = NULL;
         }

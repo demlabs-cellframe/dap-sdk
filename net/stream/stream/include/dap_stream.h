@@ -33,7 +33,7 @@
 #include "dap_timerfd.h"
 
 #define CHUNK_SIZE_MAX (3 * 1024)
-#define STREAM_BUF_SIZE_MAX DAP_STREAM_PKT_SIZE_MAX * 4
+#define STREAM_BUF_SIZE_MAX DAP_STREAM_PKT_SIZE_MAX
 #define STREAM_KEEPALIVE_TIMEOUT 3   // How  often send keeplive messages (seconds)
 
 typedef struct dap_stream_ch dap_stream_ch_t;
@@ -62,11 +62,8 @@ typedef struct dap_stream {
     size_t buf_fragments_size_total;// Full size of all fragments
     size_t buf_fragments_size_filled;// Received size
 
-    uint8_t buf_defrag[STREAM_BUF_SIZE_MAX];
-    uint64_t buf_defrag_size;
-
     uint8_t buf[STREAM_BUF_SIZE_MAX];
-    uint8_t pkt_cache[STREAM_BUF_SIZE_MAX];
+    uint8_t pkt_cache[DAP_EVENTS_SOCKET_BUF_SIZE];
 
     dap_stream_ch_t **channel;
     size_t channel_count;
@@ -105,5 +102,3 @@ void dap_stream_es_rw_states_update(struct dap_stream *a_stream);
 void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
-
-

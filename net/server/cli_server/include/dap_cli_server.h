@@ -58,7 +58,7 @@ int dap_cli_server_init(bool a_debug_more,const char * a_socket_path_or_address,
 void dap_cli_server_deinit();
 
 void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex);
-void dap_cli_server_cmd_set_reply_text(char **str_reply, const char *str, ...);
+DAP_PRINTF_ATTR(2, 3) void dap_cli_server_cmd_set_reply_text(char **str_reply, const char *str, ...);
 int dap_cli_server_cmd_find_option_val( char** argv, int arg_start, int arg_end, const char *opt_name, const char **opt_value);
 int dap_cli_server_cmd_check_option( char** argv, int arg_start, int arg_end, const char *opt_name);
 void dap_cli_server_cmd_apply_overrides(const char * a_name, const dap_cli_server_cmd_override_t a_overrides);

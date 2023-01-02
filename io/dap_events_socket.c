@@ -126,8 +126,8 @@ static pthread_attr_t s_attr_detached;                                      /* T
 enum    {MEMSTAT$K_EVSOCK, MEMSTAT$K_BUF_IN, MEMSTAT$K_BUF_OUT, MEMSTAT$K_BUF_OUT_EXT, MEMSTAT$K_NR};
 static  dap_memstat_rec_t   s_memstat [MEMSTAT$K_NR] = {
     {.fac_len = sizeof(LOG_TAG) - 1, .fac_name = {LOG_TAG}, .alloc_sz = sizeof(dap_events_socket_t)},
-    {.fac_len = sizeof(LOG_TAG ".buf_in") - 1, .fac_name = {LOG_TAG ".buf_in"}, .alloc_sz = DAP_EVENTS_SOCKET_BUF},
-    {.fac_len = sizeof(LOG_TAG ".buf_out") - 1, .fac_name = {LOG_TAG ".buf_out"}, .alloc_sz = DAP_EVENTS_SOCKET_BUF},
+    {.fac_len = sizeof(LOG_TAG ".buf_in") - 1, .fac_name = {LOG_TAG ".buf_in"}, .alloc_sz = DAP_EVENTS_SOCKET_BUF_SIZE},
+    {.fac_len = sizeof(LOG_TAG ".buf_out") - 1, .fac_name = {LOG_TAG ".buf_out"}, .alloc_sz = DAP_EVENTS_SOCKET_BUF_SIZE},
     {.fac_len = sizeof(LOG_TAG ".buf_out_ext") - 1, .fac_name = {LOG_TAG ".buf_out_ext"}, .alloc_sz = DAP_EVENTS_SOCKET_BUF_LIMIT}
 };
 #endif  /* DAP_SYS_DEBUG */
@@ -330,8 +330,8 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( int a_sock, dap_events_socke
         l_es->callbacks = *a_callbacks;
     l_es->flags = DAP_SOCK_READY_TO_READ;
 
-    l_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF;
-    l_es->buf_out_size_max = DAP_EVENTS_SOCKET_BUF;
+    l_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
+    l_es->buf_out_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
 
     l_es->buf_in     = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max + 1);
     l_es->buf_out    = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max + 1);
@@ -1372,7 +1372,7 @@ dap_events_socket_t * dap_events_socket_wrap2( dap_server_t *a_server, int a_soc
     l_es->uuid = dap_uuid_generate_uint64();
     if (a_callbacks)
         l_es->callbacks = *a_callbacks;
-    l_es->buf_out_size_max = l_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF;
+    l_es->buf_out_size_max = l_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
     l_es->buf_in = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max+1);
     l_es->buf_out = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max+1);
     l_es->buf_in_size = l_es->buf_out_size = 0;
@@ -1757,10 +1757,10 @@ size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_eve
         va_end(ap_copy);
         return 0;
     }
-
+    l_data_size++; // include trailing 0
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
     l_msg->esocket_uuid = a_es_uuid;
-    l_msg->data = DAP_NEW_SIZE(void,l_data_size);
+    l_msg->data = DAP_NEW_SIZE(void, l_data_size);
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
     l_data_size = dap_vsprintf(l_msg->data,a_format,ap_copy);
@@ -1794,10 +1794,11 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
         va_end(ap_copy);
         return 0;
     }
+    l_data_size++; // include trailing 0
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
     l_msg->esocket_uuid = a_es_uuid;
     l_msg->data_size = l_data_size;
-    l_msg->data = DAP_NEW_SIZE(void,l_data_size);
+    l_msg->data = DAP_NEW_SIZE(void, l_data_size);
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
     l_data_size = dap_vsprintf(l_msg->data,a_format,ap_copy);
     va_end(ap_copy);
@@ -1819,7 +1820,7 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
  * @param a_data_size Size of data to write
  * @return Number of bytes that were placed into the buffer
  */
-size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void * a_data, size_t a_data_size)
+size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size)
 {
     if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE)
         return 0;
@@ -1848,27 +1849,30 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void * a_
  * @param a_format Format
  * @return Number of bytes that were placed into the buffer
  */
-size_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char * a_format,...)
+ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...)
 {
-    size_t l_max_data_size = a_es->buf_out_size_max - a_es->buf_out_size;
-    if (! l_max_data_size)
-        return 0;
     if(!a_es->buf_out){
         log_it(L_ERROR,"Can't write formatted data to NULL buffer output");
         return 0;
     }
 
-    va_list l_ap;
-    va_start(l_ap, a_format);
-    int l_ret=dap_vsnprintf( ((char*)a_es->buf_out) + a_es->buf_out_size, l_max_data_size, a_format, l_ap);
-    va_end(l_ap);
-    if(l_ret > 0) {
-        a_es->buf_out_size += (unsigned int)l_ret;
-    } else {
+    va_list ap, ap_copy;
+    va_start(ap, a_format);
+    va_copy(ap_copy, ap);
+    ssize_t l_ret = dap_vsnprintf(NULL, 0, a_format, ap);
+    va_end(ap);
+    if (l_ret < 0) {
+        va_end(ap_copy);
         log_it(L_ERROR,"Can't write out formatted data '%s'", a_format);
+        return l_ret;
     }
-    dap_events_socket_set_writable_unsafe(a_es, true);
-    return (l_ret > 0) ? (unsigned int)l_ret : 0;
+    size_t l_buf_size = l_ret + 1;
+    char *l_buf = DAP_NEW_Z_SIZE(char, l_buf_size);
+    dap_vsprintf(l_buf, a_format, ap_copy);
+    va_end(ap_copy);
+    l_ret = dap_events_socket_write_unsafe(a_es, l_buf, l_buf_size);
+    DAP_DELETE(l_buf);
+    return l_ret;
 }
 
 /**

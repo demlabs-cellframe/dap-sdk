@@ -23,8 +23,10 @@
 #pragma once
 #include <stdint.h>
 
+#include "dap_common.h"
+
 int dap_notify_server_init();
 void dap_notify_server_deinit();
-int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char * a_format,...);
+DAP_PRINTF_ATTR(2, 3) int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char *a_format, ...);
 int dap_notify_server_send_mt(const char * a_data);
-int dap_notify_server_send_f_mt(const char * a_format,...);
+DAP_PRINTF_ATTR(1, 2) int dap_notify_server_send_f_mt(const char *a_format, ...);
