@@ -162,12 +162,11 @@ void dap_enc_ks_delete(const char *id)
     log_it(L_WARNING, "Can't delete key by id: %s. Key not found", id);
 }
 
-void _enc_key_free(dap_enc_ks_key_t **ptr)
+static void s_enc_key_free(dap_enc_ks_key_t **ptr)
 {
     if (*ptr){
         if((*ptr)->key)
             dap_enc_key_delete((*ptr)->key);
-        free (*ptr);
-        //*ptr = NULL; //not need
+        DAP_DELETE(*ptr);
     }
 }

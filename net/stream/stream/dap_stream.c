@@ -291,7 +291,6 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
     l_ret->esocket = a_http_client->esocket;
     l_ret->stream_worker = (dap_stream_worker_t *)a_http_client->esocket->context->worker->_inheritor;
     l_ret->conn_http = a_http_client;
-    l_ret->buf_defrag_size = 0;
     l_ret->seq_id = 0;
     l_ret->client_last_seq_id_packet = (size_t)-1;
     // Start server keep-alive timer
