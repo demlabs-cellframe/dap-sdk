@@ -41,81 +41,80 @@ typedef enum dap_enc_data_type{DAP_ENC_DATA_TYPE_RAW,
 
 
 
-typedef enum dap_enc_key_type{
+typedef enum dap_enc_key_type {
 
-                           DAP_ENC_KEY_TYPE_INVALID = -1,
-                           DAP_ENC_KEY_TYPE_IAES, // Symmetric AES
-                           DAP_ENC_KEY_TYPE_OAES,// from https://github.com/monero-project/monero/tree/master/src/crypto
+    DAP_ENC_KEY_TYPE_INVALID = -1,
+    DAP_ENC_KEY_TYPE_NULL = 0, // avoid using it: 0 is a DAP_ENC_KEY_TYPE_NULL and DAP_ENC_KEY_TYPE_IAES at the same time
+    DAP_ENC_KEY_TYPE_IAES = 0, // Symmetric AES
+    DAP_ENC_KEY_TYPE_OAES = 1,// from https://github.com/monero-project/monero/tree/master/src/crypto
 
-                           DAP_ENC_KEY_TYPE_BF_CBC,// BlowFish CBCmode
-                           DAP_ENC_KEY_TYPE_BF_OFB,//BlowFish OFBmode
+    DAP_ENC_KEY_TYPE_BF_CBC = 2,// BlowFish CBCmode
+    DAP_ENC_KEY_TYPE_BF_OFB = 3,//BlowFish OFBmode
 
-                           DAP_ENC_KEY_TYPE_GOST_OFB,//GOST28147_89
-                           DAP_ENC_KEY_TYPE_KUZN_OFB,//GOST28147_14
+    DAP_ENC_KEY_TYPE_GOST_OFB = 4,//GOST28147_89
+    DAP_ENC_KEY_TYPE_KUZN_OFB = 5,//GOST28147_14
 
-                           DAP_ENC_KEY_TYPE_SALSA2012,//SALSA2012//http://www.ecrypt.eu.org/stream/salsa20pf.html//https://ianix.com/pub/salsa20-deployment.html
+    DAP_ENC_KEY_TYPE_SALSA2012 = 6,//SALSA2012//http://www.ecrypt.eu.org/stream/salsa20pf.html//https://ianix.com/pub/salsa20-deployment.html
 
-                           DAP_ENC_KEY_TYPE_SEED_OFB,//SEED Cipher in OFB mode
+    DAP_ENC_KEY_TYPE_SEED_OFB = 7,//SEED Cipher in OFB mode
 
-                           DAP_ENC_KEY_TYPE_RLWE_NEWHOPE_CPA_KEM, // "NewHope": key exchange from the ring learning with errors problem
-                                                //  (Alkim, Ducas, Pöppelmann, Schwabe, USENIX Security 2016 )
-                                                //  Using the reference C implementation of NewHope
-                                                // from https://github.com/tpoeppelmann/newhop
-                                                // https://eprint.iacr.org/2015/1092
-                           DAP_ENC_KEY_TYPE_MSRLN,
+    DAP_ENC_KEY_TYPE_RLWE_NEWHOPE_CPA_KEM = 8, // "NewHope": key exchange from the ring learning with errors problem
+                        //  (Alkim, Ducas, Pöppelmann, Schwabe, USENIX Security 2016 )
+                        //  Using the reference C implementation of NewHope
+                        // from https://github.com/tpoeppelmann/newhop
+                        // https://eprint.iacr.org/2015/1092
+    DAP_ENC_KEY_TYPE_MSRLN = 11,
 
-                           DAP_ENC_KEY_TYPE_RLWE_MSRLN16,
-                            //DAP_ENC_KEY_TYPE_RLWE_MSRLN16, // Microsoft Research implementation of Peikert's ring-LWE key exchange
-                                                // (Longa, Naehrig, CANS 2016, https://eprint.iacr.org/2016/504)
-                                                // based on the implementation of Alkim, Ducas, Pöppelmann, and Schwabe,
-                                                // with improvements from Longa and Naehrig,
-                                                //  https://www.microsoft.com/en-us/research/project/lattice-cryptography-library/
+    DAP_ENC_KEY_TYPE_RLWE_MSRLN16 = 12, // Microsoft Research implementation of Peikert's ring-LWE key exchange
+                        // (Longa, Naehrig, CANS 2016, https://eprint.iacr.org/2016/504)
+                        // based on the implementation of Alkim, Ducas, Pöppelmann, and Schwabe,
+                        // with improvements from Longa and Naehrig,
+                        //  https://www.microsoft.com/en-us/research/project/lattice-cryptography-library/
 
 
-                           DAP_ENC_KEY_TYPE_RLWE_BCNS15, // key exchange from the ring learning with errors problem
-                                                     // (Bos, Costello, Naehrig, Stebila,
-                                                     // IEEE Symposium on Security & Privacy 2015,
-                                                     // https://eprint.iacr.org/2014/599)
+    DAP_ENC_KEY_TYPE_RLWE_BCNS15 = 13, // key exchange from the ring learning with errors problem
+                             // (Bos, Costello, Naehrig, Stebila,
+                             // IEEE Symposium on Security & Privacy 2015,
+                             // https://eprint.iacr.org/2014/599)
 
-                           DAP_ENC_KEY_TYPE_LWE_FRODO ,  // "Frodo": key exchange from the learning with errors problem
-                                                // Bos, Costello, Ducas, Mironov, Naehrig, Nikolaenko, Raghunathan, Stebila
-                                                // ACM Conference on Computer and Communications Security 2016
-                                                // https://eprint.iacr.org/2016/659
-                           DAP_ENC_KEY_TYPE_CODE_MCBITS, // "McBits": key exchange from the error correcting codes,
-                                                // specifically Niederreiter's form of McEliece public key encryption
-                                                //  using hidden Goppa codes (Bernstein, Chou, Schwabe, CHES 2013, https://eprint.iacr.org/2015/610)
-                                                // using the implementation of McBits from https://www.win.tue.nl/~tchou/mcbits/
+    DAP_ENC_KEY_TYPE_LWE_FRODO = 14,  // "Frodo": key exchange from the learning with errors problem
+                        // Bos, Costello, Ducas, Mironov, Naehrig, Nikolaenko, Raghunathan, Stebila
+                        // ACM Conference on Computer and Communications Security 2016
+                        // https://eprint.iacr.org/2016/659
+    DAP_ENC_KEY_TYPE_CODE_MCBITS = 15, // "McBits": key exchange from the error correcting codes,
+                        // specifically Niederreiter's form of McEliece public key encryption
+                        //  using hidden Goppa codes (Bernstein, Chou, Schwabe, CHES 2013, https://eprint.iacr.org/2015/610)
+                        // using the implementation of McBits from https://www.win.tue.nl/~tchou/mcbits/
 
-                           DAP_ENC_KEY_TYPE_NTRU,   // NTRU: key transport using NTRU public key encryption
-                                               // (Hoffstein, Pipher, Silverman, ANTS 1998) with the EES743EP1 parameter set
-                                               //  wrapper around the implementation from the NTRU Open Source project
-                                               // https://github.com/NTRUOpenSourceProject/NTRUEncrypt)
+    DAP_ENC_KEY_TYPE_NTRU = 16,   // NTRU: key transport using NTRU public key encryption
+                       // (Hoffstein, Pipher, Silverman, ANTS 1998) with the EES743EP1 parameter set
+                       //  wrapper around the implementation from the NTRU Open Source project
+                       // https://github.com/NTRUOpenSourceProject/NTRUEncrypt)
 
-                           DAP_ENC_KEY_TYPE_MLWE_KYBER, // Kyber: a CCA-secure module-lattice-based key exchange mechanism
-                                               // (Bos, Ducas, Kiltz, Lepoint, Lyubashevsky, Schwabe, Shanck, Stehlé)
-                                               // Real World Crypto 2017, https://eprint.iacr.org/2017/634)
-                                               // using the reference C implementation of Kyber from pq-crystals/kyber
-                           DAP_ENC_KEY_TYPE_SIG_PICNIC,  // signature based on zero-knowledge proof as specified in
-                                               // Post-Quantum Zero-Knowledge and Signatures from Symmetric-Key Primitives
-                                               // (Melissa Chase and David Derler and Steven Goldfeder and Claudio Orlandi
-                                               // and Sebastian Ramacher and Christian Rechberger and Daniel Slamanig and Greg Zaverucha
-                                               // https://eprint.iacr.org/2017/279.pdf), using the optimized implemenation
-                                               //  from https://github.com/IAIK/Picnic
-                           DAP_ENC_KEY_TYPE_SIG_BLISS,  // signature based on zero-knowledge proof as specified in
-                                               // Post-Quantum Zero-Knowledge and Signatures from Symmetric-Key Primitives
+    DAP_ENC_KEY_TYPE_MLWE_KYBER = 17, // Kyber: a CCA-secure module-lattice-based key exchange mechanism
+                       // (Bos, Ducas, Kiltz, Lepoint, Lyubashevsky, Schwabe, Shanck, Stehlé)
+                       // Real World Crypto 2017, https://eprint.iacr.org/2017/634)
+                       // using the reference C implementation of Kyber from pq-crystals/kyber
+    DAP_ENC_KEY_TYPE_SIG_PICNIC = 18,  // signature based on zero-knowledge proof as specified in
+                       // Post-Quantum Zero-Knowledge and Signatures from Symmetric-Key Primitives
+                       // (Melissa Chase and David Derler and Steven Goldfeder and Claudio Orlandi
+                       // and Sebastian Ramacher and Christian Rechberger and Daniel Slamanig and Greg Zaverucha
+                       // https://eprint.iacr.org/2017/279.pdf), using the optimized implemenation
+                       //  from https://github.com/IAIK/Picnic
+    DAP_ENC_KEY_TYPE_SIG_BLISS = 19,  // signature based on zero-knowledge proof as specified in
+                       // Post-Quantum Zero-Knowledge and Signatures from Symmetric-Key Primitives
 
-                           DAP_ENC_KEY_TYPE_SIG_TESLA,  // signature based on Ring_LWE problem with zero-knowledge proof as specified in
-                                               // Post-Quantum Zero-Knowledge and Signatures from Symmetric-Key Primitives
+    DAP_ENC_KEY_TYPE_SIG_TESLA = 20,  // signature based on Ring_LWE problem with zero-knowledge proof as specified in
+                       // Post-Quantum Zero-Knowledge and Signatures from Symmetric-Key Primitives
 
-                           DAP_ENC_KEY_TYPE_SIG_DILITHIUM,
+    DAP_ENC_KEY_TYPE_SIG_DILITHIUM = 21,
 
-                           DAP_ENC_KEY_TYPE_SIG_RINGCT20,//ring signature for confidentional transaction
+    DAP_ENC_KEY_TYPE_SIG_RINGCT20 = 22,//ring signature for confidentional transaction
 
-                           DAP_ENC_KEY_TYPE_KEM_KYBER512, // NIST Kyber KEM implementation
-                           DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_KEM_KYBER512,
-                           DAP_ENC_KEY_TYPE_NULL = 0 // avoid using it: 0 is a DAP_ENC_KEY_TYPE_NULL and DAP_ENC_KEY_TYPE_IAES at the same time
+    DAP_ENC_KEY_TYPE_KEM_KYBER512 = 23, // NIST Kyber KEM implementation
+    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_KEM_KYBER512,
 
-                         }  dap_enc_key_type_t;
+} dap_enc_key_type_t;
 
 struct dap_enc_key;
 
