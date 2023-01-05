@@ -21,11 +21,9 @@ size_t dap_enc_sig_falcon_verify_sign(struct dap_enc_key* key, const void* msg, 
         const size_t signature_size);
 
 void dap_enc_sig_falcon_key_delete(struct dap_enc_key *key);
-size_t dap_enc_sig_falcon_key_pub_output_size(struct dap_enc_key *l_key);
-int dap_enc_sig_falcon_key_pub_output(struct dap_enc_key *l_key, void* l_output);
 
-uint8_t* dap_enc_sig_falcon_write_signature(falcon_signature_t* a_sign, size_t *a_sign_out);
-falcon_signature_t* dap_enc_falcon_read_signature(uint8_t* a_buf, size_t a_buflen);
+uint8_t* dap_enc_falcon_write_signature(const falcon_signature_t* a_sign, size_t *a_sign_out);
+falcon_signature_t* dap_enc_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen);
 
 uint8_t* dap_enc_falcon_write_private_key(const falcon_private_key_t* a_private_key, size_t* a_buflen_out);
 uint8_t* dap_enc_falcon_write_public_key(const falcon_public_key_t* a_public_key, size_t* a_buflen_out);

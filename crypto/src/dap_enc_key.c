@@ -408,6 +408,9 @@ uint8_t* dap_enc_key_serealize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         data = dap_enc_dilithium_write_signature((dilithium_signature_t*)a_sign, a_sign_len);
         break;
+    case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        data = dap_enc_falcon_write_signature((falcon_signature_t *) a_sign, a_sign_len);
+        break;
     default:
         data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
         memcpy(data, a_sign, *a_sign_len);
@@ -440,6 +443,10 @@ uint8_t* dap_enc_key_deserealize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         data = (uint8_t*)dap_enc_dilithium_read_signature(a_sign, *a_sign_len);
         *a_sign_len = sizeof(dilithium_signature_t);
+        break;
+    case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        data = (uint8_t*)dap_enc_falcon_read_signature(a_sign, *a_sign_len);
+        *a_sign_len = sizeof(falcon_signature_t);
         break;
     default:
         data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
@@ -568,6 +575,16 @@ int dap_enc_key_deserealize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
             return -1;
         }
         a_key->priv_key_data_size = sizeof(dilithium_private_key_t);
+        break;
+    case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        falcon_private_key_delete((falcon_private_key_t *) a_key->priv_key_data);
+        a_key->priv_key_data = (uint8_t*) dap_enc_falcon_read_private_key(a_buf, a_buflen);
+        if(!a_key->priv_key_data)
+        {
+            a_key->priv_key_data_size = 0;
+            return -1;
+        }
+        a_key->priv_key_data_size = sizeof(falcon_private_key_t);
         break;
     default:
         DAP_DELETE(a_key->priv_key_data);

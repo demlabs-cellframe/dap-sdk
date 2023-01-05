@@ -97,7 +97,7 @@ void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *ke
 }
 
 size_t dap_enc_sig_falcon_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size) {
-    //todo: need to use shared shake256 context
+    //todo: do we need to use shared shake256 context?
 
     int retcode;
     int logn = s_falcon_sign_degree;
@@ -344,7 +344,7 @@ falcon_public_key_t* dap_enc_falcon_read_public_key(const uint8_t* a_buf, size_t
     return l_public_key;
 }
 
-uint8_t* dap_enc_sig_falcon_write_signature(falcon_signature_t* a_sign, size_t *a_sign_out) {
+uint8_t* dap_enc_falcon_write_signature(const falcon_signature_t* a_sign, size_t *a_sign_out) {
 
     if (!a_sign) {
         log_it(L_ERROR, "::write_signature() a_sign is NULL");
@@ -374,7 +374,7 @@ uint8_t* dap_enc_sig_falcon_write_signature(falcon_signature_t* a_sign, size_t *
     return l_buf;
 
 }
-falcon_signature_t* dap_enc_falcon_read_signature(uint8_t* a_buf, size_t a_buflen) {
+falcon_signature_t* dap_enc_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen) {
     if (!a_buf) {
         log_it(L_ERROR, "::read_signature() a_buf is NULL");
         return NULL;
