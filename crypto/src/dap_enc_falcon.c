@@ -224,6 +224,11 @@ uint8_t* dap_enc_falcon_write_private_key(const falcon_private_key_t* a_private_
 }
 
 void falcon_private_and_public_keys_delete(falcon_private_key_t* privateKey, falcon_public_key_t* publicKey) {
+    falcon_private_key_delete(privateKey);
+    falcon_public_key_delete(publicKey);
+}
+
+void falcon_private_key_delete(falcon_private_key_t* privateKey) {
     if (privateKey) {
         memset(privateKey->data, 0, FALCON_PRIVKEY_SIZE(privateKey->degree));
         DAP_DEL_Z(privateKey->data);
@@ -231,11 +236,15 @@ void falcon_private_and_public_keys_delete(falcon_private_key_t* privateKey, fal
         privateKey->type = 0;
         privateKey->kind = 0;
     }
+}
+
+void falcon_public_key_delete(falcon_public_key_t* publicKey) {
     if (publicKey) {
         memset(publicKey->data, 0, FALCON_PUBKEY_SIZE(publicKey->degree));
         DAP_DEL_Z(publicKey->data);
-        privateKey->degree = 0;
-        privateKey->type = 0;
-        privateKey->kind = 0;
+        publicKey->degree = 0;
+        publicKey->type = 0;
+        publicKey->kind = 0;
     }
 }
+
