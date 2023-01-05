@@ -689,6 +689,18 @@ int dap_enc_key_deserealize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         }
         a_key->pub_key_data_size = sizeof(dilithium_public_key_t);
         break;
+    case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        if ( a_key->pub_key_data )
+            falcon_public_key_delete((falcon_public_key_t *) a_key->pub_key_data);
+
+        a_key->pub_key_data = (uint8_t*) dap_enc_falcon_read_public_key(a_buf, a_buflen);
+        if(!a_key->pub_key_data)
+        {
+            a_key->pub_key_data_size = 0;
+            return -1;
+        }
+        a_key->pub_key_data_size = sizeof(falcon_public_key_t);
+        break;
     default:
         DAP_DELETE(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
