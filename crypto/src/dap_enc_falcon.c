@@ -223,6 +223,128 @@ uint8_t* dap_enc_falcon_write_private_key(const falcon_private_key_t* a_private_
     return l_buf;
 }
 
+falcon_private_key_t* dap_enc_falcon_read_private_key(const uint8_t* a_buf, size_t a_buflen) {
+    if (!a_buf) {
+        log_it(L_ERROR, "::read_private_key() a_buf is NULL");
+        return NULL;
+    }
+
+    if (a_buflen < (sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type))) {
+        log_it(L_ERROR, "::read_private_key() a_buflen %zd is smaller than first four fields(%zd)", a_buflen, (sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type)));
+        return NULL;
+    }
+
+    uint64_t l_buflen = 0;
+    falcon_sign_degree_t l_degree = 0;
+    falcon_kind_t l_kind = 0;
+    falcon_sign_type_t l_type = 0;
+
+
+    memcpy(&l_buflen, a_buf, sizeof(uint64_t));
+
+    if (l_buflen != a_buflen) {
+        log_it(L_ERROR, "::read_private_key() a_buflen %zd is not equal to l_buflen %zd", a_buflen, l_buflen);
+        return NULL;
+    }
+
+    memcpy(&l_degree, a_buf + sizeof(uint64_t), sizeof(s_falcon_sign_degree));
+
+    if (l_degree != FALCON_512 && l_degree != FALCON_1024) { // we are now supporting only 512 and 1024 degrees
+        log_it(L_ERROR, "::read_private_key() l_degree %d is not supported", l_degree);
+        return NULL;
+    }
+
+    if (a_buflen != (sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type) + FALCON_PRIVKEY_SIZE(l_degree))) {
+        log_it(L_ERROR, "::read_private_key() a_buflen %zd is not equal to expected size %zd", a_buflen, (sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type) + FALCON_PRIVKEY_SIZE(l_degree)));
+        return NULL;
+    }
+
+    memcpy(&l_kind, a_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree), sizeof(s_falcon_kind));
+
+    if (l_kind != FALCON_COMPRESSED && l_kind != FALCON_PADDED && l_kind != FALCON_CT) { // we are now supporting only 512 and 1024 degrees
+        log_it(L_ERROR, "::read_private_key() l_kind %d is not supported", l_kind);
+        return NULL;
+    }
+
+    memcpy(&l_type, a_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind), sizeof(s_falcon_type));
+
+    if (l_type != FALCON_DYNAMIC && l_type != FALCON_TREE) { // we are now supporting only 512 and 1024 degrees
+        log_it(L_ERROR, "::read_private_key() l_type %d is not supported", l_type);
+        return NULL;
+    }
+
+    falcon_private_key_t* l_private_key = DAP_NEW_Z(falcon_private_key_t);
+    l_private_key->degree = l_degree;
+    l_private_key->kind = l_kind;
+    l_private_key->type = l_type;
+    l_private_key->data = DAP_NEW_Z_SIZE(uint8_t, FALCON_PRIVKEY_SIZE(l_degree));
+
+    memcpy(l_private_key->data, a_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type), FALCON_PRIVKEY_SIZE(l_degree));
+
+    return l_private_key;
+}
+
+falcon_public_key_t* dap_enc_falcon_read_public_key(const uint8_t* a_buf, size_t a_buflen) {
+    if (!a_buf) {
+        log_it(L_ERROR, "::read_public_key() a_buf is NULL");
+        return NULL;
+    }
+
+    if (a_buflen < (sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type))) {
+        log_it(L_ERROR, "::read_public_key() a_buflen %zd is smaller than first four fields(%zd)", a_buflen, (sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type)));
+        return NULL;
+    }
+
+    uint64_t l_buflen = 0;
+    falcon_sign_degree_t l_degree = 0;
+    falcon_kind_t l_kind = 0;
+    falcon_sign_type_t l_type = 0;
+
+    memcpy(&l_buflen, a_buf, sizeof(uint64_t));
+
+    if (l_buflen != a_buflen) {
+        log_it(L_ERROR, "::read_public_key() a_buflen %zd is not equal to l_buflen %zd", a_buflen, l_buflen);
+        return NULL;
+    }
+
+    memcpy(&l_degree, a_buf + sizeof(uint64_t), sizeof(s_falcon_sign_degree));
+
+    if (l_degree != FALCON_512 && l_degree != FALCON_1024) { // we are now supporting only 512 and 1024 degrees
+        log_it(L_ERROR, "::read_public_key() l_degree %d is not supported", l_degree);
+        return NULL;
+    }
+
+    if (a_buflen != (sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type) + FALCON_PUBKEY_SIZE(l_degree))) {
+        log_it(L_ERROR, "::read_public_key() a_buflen %zd is not equal to expected size %zd", a_buflen, (sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type) + FALCON_PUBKEY_SIZE(l_degree)));
+        return NULL;
+    }
+
+    memcpy(&l_kind, a_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree), sizeof(s_falcon_kind));
+
+    if (l_kind != FALCON_COMPRESSED && l_kind != FALCON_PADDED && l_kind != FALCON_CT) { // we are now supporting only 512 and 1024 degrees
+        log_it(L_ERROR, "::read_public_key() l_kind %d is not supported", l_kind);
+        return NULL;
+    }
+
+    memcpy(&l_type, a_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind), sizeof(s_falcon_type));
+
+    if (l_type != FALCON_DYNAMIC && l_type != FALCON_TREE) { // we are now supporting only 512 and 1024 degrees
+        log_it(L_ERROR, "::read_public_key() l_type %d is not supported", l_type);
+        return NULL;
+    }
+
+    falcon_public_key_t* l_public_key = DAP_NEW_Z(falcon_public_key_t);
+    l_public_key->degree = l_degree;
+    l_public_key->kind = l_kind;
+    l_public_key->type = l_type;
+    l_public_key->data = DAP_NEW_Z_SIZE(uint8_t, FALCON_PUBKEY_SIZE(l_degree));
+
+    memcpy(l_public_key->data, a_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type), FALCON_PUBKEY_SIZE(l_degree));
+
+    return l_public_key;
+}
+
+
 void falcon_private_and_public_keys_delete(falcon_private_key_t* privateKey, falcon_public_key_t* publicKey) {
     falcon_private_key_delete(privateKey);
     falcon_public_key_delete(publicKey);
