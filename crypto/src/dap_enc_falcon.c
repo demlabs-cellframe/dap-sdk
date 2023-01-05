@@ -48,9 +48,6 @@ void dap_enc_sig_falcon_key_new(struct dap_enc_key *key) {
 void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *kex_buf, size_t kex_size,
         const void* seed, size_t seed_size, size_t key_size) {
 
-    //todo: For now we use static buffer for key generation
-    // need to implement in-place key generation
-
     key->type = DAP_ENC_KEY_TYPE_SIG_FALCON;
     key->enc = NULL;
     key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_get_sign;
@@ -61,14 +58,14 @@ void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *ke
     unsigned int logn = s_falcon_sign_degree;
     size_t tmp[FALCON_TMPSIZE_KEYGEN(logn)];
 
-    key->pub_key_data_size = FALCON_PUBKEY_SIZE(logn) + sizeof(falcon_kind_t) + sizeof(falcon_sign_degree_t) + sizeof(falcon_sign_type_t);
-    key->priv_key_data_size = FALCON_PRIVKEY_SIZE(logn) + sizeof(falcon_kind_t) + sizeof(falcon_sign_degree_t) + sizeof(falcon_sign_type_t);
+    key->pub_key_data_size = sizeof(falcon_public_key_t);
+    key->priv_key_data_size = sizeof(falcon_private_key_t);
     key->pub_key_data = malloc(key->pub_key_data_size);
     key->priv_key_data = malloc(key->priv_key_data_size);
 
 
-    uint8_t privkey[FALCON_PRIVKEY_SIZE(logn)];
-    uint8_t pubkey[FALCON_PUBKEY_SIZE(logn)];
+    uint8_t* privkey = calloc(1, FALCON_PRIVKEY_SIZE(logn));
+    uint8_t* pubkey = calloc(1, FALCON_PUBKEY_SIZE(logn));
 
     falcon_private_key_t privateKey = {s_falcon_kind, s_falcon_sign_degree, s_falcon_type, privkey};
     falcon_public_key_t publicKey = {s_falcon_kind, s_falcon_sign_degree, s_falcon_type, pubkey};
@@ -90,27 +87,13 @@ void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *ke
             );
     if (retcode != 0) {
         falcon_private_and_public_keys_delete(&privateKey, &publicKey);
-        memset(privkey, 0, sizeof(privkey));
-        memset(pubkey, 0, sizeof(pubkey));
         log_it(L_ERROR, "Failed to generate falcon key");
         return;
     }
 
-    memcpy(key->priv_key_data, (const void*) &privateKey.kind, sizeof(falcon_kind_t));
-    memcpy(key->priv_key_data + sizeof(falcon_kind_t), (const void*) &privateKey.degree, sizeof(s_falcon_sign_degree));
-    memcpy(key->priv_key_data + sizeof(falcon_kind_t) + sizeof(falcon_sign_degree_t), (const void*) &privateKey.type, sizeof(s_falcon_type));
-    memcpy(key->priv_key_data + sizeof(falcon_kind_t) + sizeof(falcon_sign_degree_t) + sizeof(falcon_sign_type_t), (const void*) privateKey.data,
-           FALCON_PRIVKEY_SIZE(logn));
+    memcpy(key->priv_key_data, &privateKey, sizeof(falcon_private_key_t));
+    memcpy(key->pub_key_data, &publicKey, sizeof(falcon_public_key_t));
 
-    memcpy(key->priv_key_data, (const void*) &publicKey.kind, sizeof(falcon_kind_t));
-    memcpy(key->priv_key_data + sizeof(falcon_kind_t), (const void*) &publicKey.degree, sizeof(s_falcon_sign_degree));
-    memcpy(key->priv_key_data + sizeof(falcon_kind_t) + sizeof(falcon_sign_degree_t), (const void*) &publicKey.type, sizeof(s_falcon_type));
-    memcpy(key->priv_key_data + sizeof(falcon_kind_t) + sizeof(falcon_sign_degree_t) + sizeof(falcon_sign_type_t), (const void*) publicKey.data,
-           FALCON_PUBKEY_SIZE(logn));
-
-    memset(privkey, 0, sizeof(privkey));
-    memset(pubkey, 0, sizeof(pubkey));
-//    falcon_private_and_public_keys_delete(&privateKey, &publicKey);
 }
 
 size_t dap_enc_sig_falcon_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size) {
@@ -189,12 +172,17 @@ uint8_t* dap_enc_falcon_write_public_key(const falcon_public_key_t* a_public_key
             sizeof(s_falcon_kind) +
             sizeof(s_falcon_type) +
             FALCON_PUBKEY_SIZE(a_public_key->degree);
+
     uint8_t* l_buf = DAP_NEW_Z_SIZE(uint8_t, l_buflen);
+    falcon_kind_t l_kind = a_public_key->kind;
+    falcon_sign_degree_t l_degree = a_public_key->degree;
+    falcon_sign_type_t l_type = a_public_key->type;
     memcpy(l_buf, &l_buflen, sizeof(uint64_t));
-    memcpy(l_buf + sizeof(uint64_t), &s_falcon_sign_degree, sizeof(s_falcon_sign_degree));
-    memcpy(l_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree), &s_falcon_kind, sizeof(s_falcon_kind));
-    memcpy(l_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind), &s_falcon_type, sizeof(s_falcon_type));
+    memcpy(l_buf + sizeof(uint64_t), &l_degree, sizeof(s_falcon_sign_degree));
+    memcpy(l_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree), &l_kind, sizeof(s_falcon_kind));
+    memcpy(l_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind), &l_type, sizeof(s_falcon_type));
     memcpy(l_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type), a_public_key->data, FALCON_PUBKEY_SIZE(a_public_key->degree));
+    
 
     if(a_buflen_out) {
         *a_buflen_out = l_buflen;
@@ -207,9 +195,15 @@ void falcon_private_and_public_keys_delete(falcon_private_key_t* privateKey, fal
     if (privateKey) {
         memset(privateKey->data, 0, FALCON_PRIVKEY_SIZE(privateKey->degree));
         DAP_DEL_Z(privateKey->data);
+        privateKey->degree = 0;
+        privateKey->type = 0;
+        privateKey->kind = 0;
     }
     if (publicKey) {
         memset(publicKey->data, 0, FALCON_PUBKEY_SIZE(publicKey->degree));
         DAP_DEL_Z(publicKey->data);
+        privateKey->degree = 0;
+        privateKey->type = 0;
+        privateKey->kind = 0;
     }
 }
