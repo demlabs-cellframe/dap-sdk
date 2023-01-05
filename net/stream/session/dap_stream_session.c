@@ -93,11 +93,6 @@ void dap_stream_session_get_list_sessions_unlock(void)
     pthread_mutex_unlock(&s_sessions_mutex);
 }
 
-static void * session_check(void * data)
-{
-    return NULL;
-}
-
 
 dap_stream_session_t * dap_stream_session_pure_new()
 {
@@ -208,8 +203,10 @@ dap_stream_session_t *l_stm_sess;
     if (l_stm_sess->callback_delete)
         l_stm_sess->callback_delete(l_stm_sess, NULL);
 
-    if (l_stm_sess->_inheritor )
-        DAP_DELETE(l_stm_sess->_inheritor);
+    DAP_DEL_Z(l_stm_sess->_inheritor);
+    if (l_stm_sess->key)
+        dap_enc_key_delete(l_stm_sess->key);
+    DAP_DEL_Z(l_stm_sess->acl);
 
     DAP_DELETE(l_stm_sess);
 

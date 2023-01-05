@@ -432,7 +432,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                         l_suburl = dap_strdup_printf("stream_ctl,channels=%s",
                                                      a_client_pvt->active_channels);
                     }else{
-                        l_suburl = dap_strdup_printf("channels=%s,enc_type=%d,enc_key_size=%d,enc_headers=%d",
+                        l_suburl = dap_strdup_printf("channels=%s,enc_type=%d,enc_key_size=%zu,enc_headers=%d",
                                                      a_client_pvt->active_channels,a_client_pvt->session_key_type,
                                                      a_client_pvt->session_key_block_size,0 );
                     }

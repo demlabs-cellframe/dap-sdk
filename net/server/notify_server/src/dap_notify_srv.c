@@ -121,15 +121,23 @@ int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char * a_format,.
         return -10;
     }
     dap_events_socket_t * l_input = s_notify_server_queue_inter[a_worker_id];
-    va_list va;
-    va_start(va, a_format);
-    size_t l_str_size=dap_vsnprintf(NULL,0,a_format,va);
-    va_end(va);
-    char * l_str = DAP_NEW_SIZE(char,l_str_size+1);
-    va_start(va, a_format);
-    dap_vsnprintf(l_str,l_str_size+1,a_format,va);
-    va_end(va);
-    return dap_events_socket_queue_ptr_send_to_input(l_input,l_str);
+    va_list ap, ap_copy;
+    va_start(ap, a_format);
+    va_copy(ap_copy, ap);
+    ssize_t l_str_size = dap_vsnprintf(NULL, 0, a_format, ap);
+    va_end(ap);
+    if (l_str_size < 0) {
+        va_end(ap_copy);
+        log_it(L_ERROR,"Can't write out formatted data '%s'", a_format);
+        return l_str_size;
+    }
+    l_str_size++; // include trailing 0
+    char *l_str = DAP_NEW_SIZE(char, l_str_size);
+    dap_vsprintf(l_str, a_format, ap_copy);
+    va_end(ap_copy);
+    int l_ret = dap_events_socket_queue_ptr_send_to_input(l_input, l_str);
+    DAP_DELETE(l_str);
+    return l_ret;
 }
 
 /**
@@ -150,19 +158,27 @@ int dap_notify_server_send_mt(const char *a_data)
  * @param a_format
  * @return
  */
-int dap_notify_server_send_f_mt(const char * a_format,...)
+int dap_notify_server_send_f_mt(const char *a_format, ...)
 {
     if(!s_notify_server_queue) // If not initialized - nothing to notify
         return 0;
-    va_list va;
-    va_start(va, a_format);
-    size_t l_str_size=dap_vsnprintf(NULL,0,a_format,va);
-    va_end(va);
-    char * l_str = DAP_NEW_SIZE(char,l_str_size+1);
-    va_start(va, a_format);
-    dap_vsnprintf(l_str,l_str_size+1,a_format,va);
-    va_end(va);
-    return dap_events_socket_queue_ptr_send(s_notify_server_queue ,l_str);
+    va_list ap, ap_copy;
+    va_start(ap, a_format);
+    va_copy(ap_copy, ap);
+    ssize_t l_str_size = dap_vsnprintf(NULL, 0, a_format, ap);
+    va_end(ap);
+    if (l_str_size < 0) {
+        va_end(ap_copy);
+        log_it(L_ERROR,"Can't write out formatted data '%s'", a_format);
+        return l_str_size;
+    }
+    l_str_size++; // include trailing 0
+    char *l_str = DAP_NEW_SIZE(char, l_str_size);
+    dap_vsprintf(l_str, a_format, ap_copy);
+    va_end(ap_copy);
+    int l_ret = dap_events_socket_queue_ptr_send(s_notify_server_queue, l_str);
+    DAP_DELETE(l_str);
+    return l_ret;
 }
 
 /**

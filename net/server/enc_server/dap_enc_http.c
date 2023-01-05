@@ -252,27 +252,21 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
  */
 void enc_http_reply_encode(struct dap_http_simple *a_http_simple,enc_http_delegate_t * a_http_delegate)
 {
-    dap_enc_key_t * key = dap_enc_ks_find_http(a_http_simple->http_client);
-    if( key == NULL ) {
-        log_it(L_ERROR, "Can't find http key.");
+    if (!a_http_delegate->response)
         return;
-    }
-    if(a_http_delegate->response){
 
-        if(a_http_simple->reply)
-            free(a_http_simple->reply);
+    if(a_http_simple->reply)
+        DAP_DELETE(a_http_simple->reply);
 
-        size_t l_reply_size_max = dap_enc_code_out_size(a_http_delegate->key,
-                                                          a_http_delegate->response_size,
-                                                          DAP_ENC_DATA_TYPE_RAW);
+    size_t l_reply_size_max = dap_enc_code_out_size(a_http_delegate->key,
+                                                      a_http_delegate->response_size,
+                                                      DAP_ENC_DATA_TYPE_RAW);
 
-        a_http_simple->reply = DAP_NEW_SIZE(void,l_reply_size_max);
-        a_http_simple->reply_size = dap_enc_code( a_http_delegate->key,
-                                                  a_http_delegate->response, a_http_delegate->response_size,
-                                                  a_http_simple->reply, l_reply_size_max,
-                                                  DAP_ENC_DATA_TYPE_RAW);
-    }
-
+    a_http_simple->reply = DAP_NEW_SIZE(void,l_reply_size_max);
+    a_http_simple->reply_size = dap_enc_code( a_http_delegate->key,
+                                              a_http_delegate->response, a_http_delegate->response_size,
+                                              a_http_simple->reply, l_reply_size_max,
+                                              DAP_ENC_DATA_TYPE_RAW);
 }
 
 void enc_http_delegate_delete(enc_http_delegate_t * dg)
@@ -298,21 +292,23 @@ size_t enc_http_reply(enc_http_delegate_t * dg, void * data, size_t data_size)
     return wb;
 }
 
-size_t enc_http_reply_f(enc_http_delegate_t * dg, const char * data, ...)
+size_t enc_http_reply_f(enc_http_delegate_t *a_http_delegate, const char *a_data, ...)
 {
-    va_list ap;
-    va_start(ap, data);
-    int mem_size = dap_vsnprintf(0, 0, data, ap);
-
+    va_list ap, ap_copy;
+    va_start(ap, a_data);
+    va_copy(ap_copy, ap);
+    int mem_size = dap_vsnprintf(NULL, 0, a_data, ap) + 1;
     va_end(ap);
-    char *buf = (char*)malloc(sizeof(char) * mem_size + 1);
-    if(buf) {
-        va_start(ap, data);
-        dap_vsprintf(buf, data, ap);
-        va_end(ap);
-        return enc_http_reply(dg,buf,mem_size);
-    }else
-        log_it(L_ERROR, "Can not memmory allocate");
-    return 0;
+    char *l_buf = DAP_NEW_SIZE(char, mem_size);
+    if (!l_buf) {
+        va_end(ap_copy);
+        log_it(L_ERROR, "Can not allocate memory");
+        return 0;
+    }
+    dap_vsprintf(l_buf, a_data, ap_copy);
+    va_end(ap_copy);
+    size_t l_ret = enc_http_reply(a_http_delegate, l_buf, mem_size);
+    DAP_DELETE(l_buf);
+    return l_ret;
 }
 

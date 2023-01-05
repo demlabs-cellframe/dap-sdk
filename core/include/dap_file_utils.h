@@ -25,6 +25,8 @@
 #include "utlist.h"
 #include <dirent.h>
 
+#include "dap_common.h"
+
 #ifndef _DAP_FILE_UTILS_H_
 #define _DAP_FILE_UTILS_H_
 
@@ -143,7 +145,7 @@ bool dap_file_get_contents(const char *filename, char **contents, size_t *length
  * Returns: (type filename) (transfer full): a newly-allocated string that
  *     must be freed with DAP_DELETE().
  */
-char* dap_build_path(const char *separator, const char *first_element, ...);
+char *dap_build_path(const char *separator, const char *first_element, ...);
 
 /*
  * Creates a filename from a series of elements using the correct

@@ -177,9 +177,9 @@ size_t dap_proc_thread_stream_ch_write_f_inter(dap_proc_thread_t * a_thread,dap_
         va_end(ap_copy);
         return 0;
     }
-
+    l_data_size++; // include trailing 0
     dap_events_socket_t * l_es_io_input = l_thread_stream->queue_ch_io_input[a_worker->id];
-    char * l_data = DAP_NEW_SIZE(char,l_data_size+1);
+    char * l_data = DAP_NEW_SIZE(char,l_data_size);
     if (!l_data){
         va_end(ap_copy);
         return -1;
@@ -188,11 +188,9 @@ size_t dap_proc_thread_stream_ch_write_f_inter(dap_proc_thread_t * a_thread,dap_
     va_end(ap_copy);
 
     size_t l_ret = dap_stream_ch_pkt_write_inter(l_es_io_input,a_ch_uuid,a_type, l_data, l_data_size);
+    DAP_DELETE(l_data);
 
-    // TODO Make this code platform-independent
-#ifndef DAP_EVENTS_CAPS_EVENT_KEVENT
     l_es_io_input->flags |= DAP_SOCK_READY_TO_WRITE;
-    dap_proc_thread_esocket_update_poll_flags(a_thread, l_es_io_input);
-#endif
+    dap_context_poll_update(l_es_io_input);
     return l_ret;
 }

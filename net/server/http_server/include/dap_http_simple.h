@@ -81,14 +81,14 @@ void dap_http_simple_module_deinit(void);
 // ATTENTION: Last parameter must be NULL
 // example call: dap_http_simple_set_supported_user_agents("DapVpnClient/2.2", "Mozila/5.0", NULL);
 // returns false if operation not successful
-int dap_http_simple_set_supported_user_agents( const char *str_agents, ... );
+int dap_http_simple_set_supported_user_agents(const char *str_agents, ...);
 
 // if this function was called. We checking version only supported user-agents
 // other will pass automatically ( and request with without user-agents field too )
 // Affects the behavior of the internal function _is_user_agent_supported
 void dap_http_simple_set_pass_unknown_user_agents(int pass );
 
-size_t dap_http_simple_reply( dap_http_simple_t *shs, void *data, size_t data_size );
-size_t dap_http_simple_reply_f( dap_http_simple_t *shs, const char *data, ... );
+size_t dap_http_simple_reply( dap_http_simple_t *a_http_simple, void *a_data, size_t a_data_size);
+DAP_PRINTF_ATTR(2, 3) size_t dap_http_simple_reply_f(dap_http_simple_t *a_http_simple, const char *a_format, ... );
 dap_http_cache_t * dap_http_simple_make_cache_from_reply(dap_http_simple_t * a_http_simple , time_t a_ts_expire );
 
