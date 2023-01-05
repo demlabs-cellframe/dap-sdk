@@ -425,6 +425,8 @@ uint8_t* dap_enc_key_serealize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
  */
 uint8_t* dap_enc_key_deserealize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len)
 {
+
+    //todo: why are we changing a_sign_len after we have already used it in a function call?
     uint8_t *data = NULL;
     switch (a_key_type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
@@ -466,6 +468,9 @@ uint8_t* dap_enc_key_serealize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         data = dap_enc_dilithium_write_private_key(a_key->priv_key_data, a_buflen_out);
+        break;
+    case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        data = dap_enc_falcon_write_private_key(a_key->priv_key_data, a_buflen_out);
         break;
     default:
         data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);

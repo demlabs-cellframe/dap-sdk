@@ -182,7 +182,39 @@ uint8_t* dap_enc_falcon_write_public_key(const falcon_public_key_t* a_public_key
     memcpy(l_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree), &l_kind, sizeof(s_falcon_kind));
     memcpy(l_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind), &l_type, sizeof(s_falcon_type));
     memcpy(l_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type), a_public_key->data, FALCON_PUBKEY_SIZE(a_public_key->degree));
-    
+
+
+    if(a_buflen_out) {
+        *a_buflen_out = l_buflen;
+    }
+
+    return l_buf;
+}
+
+uint8_t* dap_enc_falcon_write_private_key(const falcon_private_key_t* a_private_key, size_t* a_buflen_out) {
+    //Serialized key have format:
+    // 8 first bytes - size of overall serialized key
+    // 4 bytes - degree of key
+    // 4 bytes - kind of key
+    // 4 bytes - type of key
+    // n bytes - private key data
+
+    uint64_t l_buflen =
+            sizeof(uint64_t) +
+            sizeof(s_falcon_sign_degree) +
+            sizeof(s_falcon_kind) +
+            sizeof(s_falcon_type) +
+            FALCON_PRIVKEY_SIZE(a_private_key->degree);
+
+    uint8_t* l_buf = DAP_NEW_Z_SIZE(uint8_t, l_buflen);
+    falcon_kind_t l_kind = a_private_key->kind;
+    falcon_sign_degree_t l_degree = a_private_key->degree;
+    falcon_sign_type_t l_type = a_private_key->type;
+    memcpy(l_buf, &l_buflen, sizeof(uint64_t));
+    memcpy(l_buf + sizeof(uint64_t), &l_degree, sizeof(s_falcon_sign_degree));
+    memcpy(l_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree), &l_kind, sizeof(s_falcon_kind));
+    memcpy(l_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind), &l_type, sizeof(s_falcon_type));
+    memcpy(l_buf + sizeof(uint64_t) + sizeof(s_falcon_sign_degree) + sizeof(s_falcon_kind) + sizeof(s_falcon_type), a_private_key->data, FALCON_PRIVKEY_SIZE(a_private_key->degree));
 
     if(a_buflen_out) {
         *a_buflen_out = l_buflen;
