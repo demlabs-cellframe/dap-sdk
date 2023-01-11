@@ -14,6 +14,7 @@ include (src/ringct20/ringct20.pri)
 include (src/seed/seed.pri)
 include (src/newhope/newhope.pri)
 include (src/Kyber/crypto_kem/kyber512/optimized/kyber512.pri)
+include (src/falcon/falcon.pri)
 
 DEFINES += KeccakP1600timesN_excluded
 
@@ -47,7 +48,8 @@ HEADERS += $$PWD/src/XKCP/lib/common/config.h \
     $$PWD/include/dap_hash_keccak.h \
     $$PWD/src/XKCP/lib/high/Keccak/FIPS202/SimpleFIPS202.h \
     $$PWD/src/XKCP/lib/high/Keccak/SP800-185/SP800-185.h \
-    $$PWD/src/XKCP/lib/high/common/Phases.h
+    $$PWD/src/XKCP/lib/high/common/Phases.h \
+    $$PWD/include/dap_enc_falcon.h \
 
 SOURCES += $$PWD/src/dap_enc.c \
     $$PWD/src/dap_enc_base64.c \
@@ -78,7 +80,8 @@ SOURCES += $$PWD/src/dap_enc.c \
     $$PWD/src/dap_enc_newhope.c \
     $$PWD/src/XKCP/lib/high/Keccak/FIPS202/SimpleFIPS202.c \
     $$PWD/src/XKCP/lib/high/Keccak/SP800-185/SP800-185.c \
-    $$PWD/src/XKCP/lib/high/Keccak/SP800-185/SP800-185.inc
+    $$PWD/src/XKCP/lib/high/Keccak/SP800-185/SP800-185.inc \
+    $$PWD/src/dap_enc_falcon.c \
 
 
 INCLUDEPATH += $$PWD/include $$PWD/../ $$PWD/src $$PWD/src/XKCP/lib/high/Keccak/FIPS202 $$PWD/src/XKCP/lib/high/Keccak/SP800-185 $$PWD/src/XKCP/lib/high/common $$PWD/src/XKCP/lib/common
