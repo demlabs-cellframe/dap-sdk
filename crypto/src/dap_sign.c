@@ -111,6 +111,7 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
         case SIG_TYPE_TESLA: return DAP_ENC_KEY_TYPE_SIG_TESLA;
         case SIG_TYPE_PICNIC: return DAP_ENC_KEY_TYPE_SIG_PICNIC;
         case SIG_TYPE_DILITHIUM: return DAP_ENC_KEY_TYPE_SIG_DILITHIUM;
+        case SIG_TYPE_FALCON: return DAP_ENC_KEY_TYPE_SIG_FALCON;
         default: return DAP_ENC_KEY_TYPE_INVALID;
     }
 }
@@ -175,11 +176,14 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
         l_sign_type.type = SIG_TYPE_PICNIC;
     }else if ( dap_strcmp (a_type_str,"sig_dil") == 0){
         l_sign_type.type = SIG_TYPE_DILITHIUM;
+    }else if ( dap_strcmp (a_type_str, "sig_falcon") == 0) {
+        l_sign_type.type = SIG_TYPE_FALCON;
     }else if ( dap_strcmp (a_type_str,"sig_multi") == 0){
         l_sign_type.type = SIG_TYPE_MULTI_CHAINED;
     }else if ( dap_strcmp (a_type_str,"sig_multi2") == 0){
         l_sign_type.type = SIG_TYPE_MULTI_COMBINED;
-    }else{
+    }
+    else {
         log_it(L_WARNING, "Wrong sign type string \"%s\"", a_type_str ? a_type_str : "(null)");
     }
     return l_sign_type;
