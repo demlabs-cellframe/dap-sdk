@@ -128,7 +128,7 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
         while (l_tok) {
             char *l_subtok_name = l_tok;
             char *l_subtok_value = strchr(l_tok, '=');
-            if (l_subtok_value) {
+            if (l_subtok_value && l_subtok_value != l_subtok_name) {
                 *l_subtok_value++ = '\0';
                 //log_it(L_DEBUG, "tok = %s value =%s",l_subtok_name,l_subtok_value);
                 if (strcmp(l_subtok_name,"channels")==0 ){

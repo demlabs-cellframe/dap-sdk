@@ -219,8 +219,10 @@ dap_stream_t * stream_new_udp(dap_events_socket_t * a_esocket)
     s_memstat[MEMSTAT$K_STM].alloc_nr += 1;
 #endif
 
-    l_stm ->esocket = a_esocket;
-    a_esocket->_inheritor = l_stm ;
+    l_stm->esocket = a_esocket;
+    l_stm->esocket = a_esocket;
+    l_stm->esocket_uuid = a_esocket->uuid;
+    a_esocket->_inheritor = l_stm;
 
     log_it(L_NOTICE,"New stream instance udp");
     return l_stm ;
@@ -289,6 +291,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
 
 
     l_ret->esocket = a_http_client->esocket;
+    l_ret->esocket_uuid = a_http_client->esocket->uuid;
     l_ret->stream_worker = (dap_stream_worker_t *)a_http_client->esocket->context->worker->_inheritor;
     l_ret->conn_http = a_http_client;
     l_ret->seq_id = 0;
@@ -330,28 +333,33 @@ dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_esocket)
 }
 
 /**
- * @brief dap_stream_delete
+ * @brief dap_stream_delete_unsafe
  * @param a_stream
  */
-void dap_stream_delete(dap_stream_t *a_stream)
+void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 {
     if(a_stream == NULL) {
         log_it(L_ERROR,"stream delete NULL instance");
         return;
     }
 
-    while (a_stream->channel_count) {
+    while (a_stream->channel_count)
         dap_stream_ch_delete(a_stream->channel[a_stream->channel_count - 1]);
-    }
 
     if(a_stream->session)
         dap_stream_session_close_mt(a_stream->session->id); // TODO make stream close after timeout, not momentaly
+
+    if (a_stream->esocket) {
+        a_stream->esocket->callbacks.delete_callback = NULL; // Prevent to remove twice
+        dap_events_socket_remove_and_delete_unsafe(a_stream->esocket, true);
+    }
 
 #ifdef  DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].free_nr, 1);
 #endif
 
-
+    DAP_DEL_Z(a_stream->buf_fragments);
+    DAP_DEL_Z(a_stream->pkt_buf_in);
     DAP_DELETE(a_stream);
     log_it(L_NOTICE,"Stream connection is over");
 }
@@ -366,10 +374,11 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
     UNUSED(a_arg);
     assert (a_esocket);
 
-    dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
-    dap_stream_t *l_stream = DAP_STREAM(l_http_client);
-    l_http_client->_inheritor = NULL; // To prevent double free
-    dap_stream_delete(l_stream);
+    dap_stream_t *l_stm = DAP_STREAM(a_esocket);
+    a_esocket->_inheritor = NULL; // To prevent double free
+    l_stm->esocket = NULL;
+    l_stm->esocket_uuid = 0;
+    dap_stream_delete_unsafe(l_stm);
 }
 
 /**
@@ -610,9 +619,14 @@ static void s_http_client_data_read(dap_http_client_t * a_http_client, void * ar
  * @brief stream_delete Delete stream and free its resources
  * @param sid Stream id
  */
-static void s_http_client_delete(dap_http_client_t * a_http_client, void * arg)
+static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
 {
-    s_esocket_callback_delete(a_http_client->esocket,arg);
+    UNUSED(a_arg);
+    dap_stream_t *l_stm = DAP_STREAM(a_http_client);
+    a_http_client->_inheritor = NULL; // To prevent double free
+    l_stm->esocket = NULL;
+    l_stm->esocket_uuid = 0;
+    dap_stream_delete_unsafe(l_stm);
 }
 
 /**
@@ -642,20 +656,16 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
     size_t l_buf_in_size = a_stream->esocket->buf_in_size;
 
     // Save the received data to stream memory
-    if(!a_stream->pkt_buf_in)
-    {
-        a_stream->pkt_buf_in = DAP_NEW_SIZE(struct dap_stream_pkt, l_buf_in_size);
+    if (!a_stream->pkt_buf_in) {
+        a_stream->pkt_buf_in = DAP_DUP_SIZE(l_buf_in, l_buf_in_size);
         a_stream->pkt_buf_in_data_size = l_buf_in_size;
         memcpy(a_stream->pkt_buf_in, l_buf_in, l_buf_in_size);
-    }
-    else {
-        debug_if(s_dump_packet_headers, L_DEBUG, "dap_stream_data_proc_read() Receive previously unprocessed data %zu bytes + new %zu bytes", a_stream->pkt_buf_in_data_size, l_buf_in_size);
+    } else {
+        debug_if(s_dump_packet_headers, L_DEBUG, "dap_stream_data_proc_read() Receive previously unprocessed data %zu bytes + new %zu bytes",
+                                                  a_stream->pkt_buf_in_data_size, l_buf_in_size);
         // The current data is added to rest of the previous package
-        byte_t *l_tmp = DAP_NEW_SIZE(byte_t, a_stream->pkt_buf_in_data_size + l_buf_in_size);
-        memcpy(l_tmp, a_stream->pkt_buf_in, a_stream->pkt_buf_in_data_size);
-        memcpy(l_tmp + a_stream->pkt_buf_in_data_size, l_buf_in, l_buf_in_size);
-        DAP_DELETE(a_stream->pkt_buf_in);
-        a_stream->pkt_buf_in = (dap_stream_pkt_t*) l_tmp;
+        a_stream->pkt_buf_in = DAP_REALLOC(a_stream->pkt_buf_in, a_stream->pkt_buf_in_data_size + l_buf_in_size);
+        memcpy((byte_t *)a_stream->pkt_buf_in + a_stream->pkt_buf_in_data_size, l_buf_in, l_buf_in_size);
         // Increase the size of pkt_buf_in
         a_stream->pkt_buf_in_data_size += l_buf_in_size;
     }
@@ -745,18 +755,20 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             break;
         }
         if(l_dec_pkt_size != l_fragm_pkt->size + sizeof(dap_stream_fragment_pkt_t)) {
-            debug_if(s_dump_packet_headers, L_WARNING, "Input: decoded packet has bad size = %zu, decoded size = %zu", l_fragm_pkt->size + sizeof(dap_stream_fragment_pkt_t), l_dec_pkt_size);
+            debug_if(s_dump_packet_headers, L_WARNING, "Input: decoded packet has bad size = %zu, decoded size = %zu",
+                     l_fragm_pkt->size + sizeof(dap_stream_fragment_pkt_t), l_dec_pkt_size);
             l_is_clean_fragments = true;
             break;
         }
 
         if(a_stream->buf_fragments_size_filled != l_fragm_pkt->mem_shift) {
-            debug_if(s_dump_packet_headers, L_WARNING, "Input: wrong fragment position %u, have to be %zu. Drop packet", l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
+            debug_if(s_dump_packet_headers, L_WARNING, "Input: wrong fragment position %u, have to be %zu. Drop packet",
+                     l_fragm_pkt->mem_shift, a_stream->buf_fragments_size_filled);
             l_is_clean_fragments = true;
             break;
         } else {
             if(!a_stream->buf_fragments || a_stream->buf_fragments_size_total < l_fragm_pkt->full_size) {
-                DAP_DELETE(a_stream->buf_fragments);
+                DAP_DEL_Z(a_stream->buf_fragments);
                 a_stream->buf_fragments = DAP_NEW_SIZE(uint8_t, l_fragm_pkt->full_size);
                 a_stream->buf_fragments_size_total = l_fragm_pkt->full_size;
             }
@@ -797,8 +809,9 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             if(l_ch) {
                 l_ch->stat.bytes_read += l_ch_pkt->hdr.size;
                 if(l_ch->proc && l_ch->proc->packet_in_callback) {
-                    debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"DAP_UINT64_FORMAT_X" enc_type=0x%02X", (char ) l_ch_pkt->hdr.id,
-                             l_ch_pkt->hdr.size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type);
+                    debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
+                                                            DAP_UINT64_FORMAT_X" enc_type=0x%02X", (char)l_ch_pkt->hdr.id,
+                                                            l_ch_pkt->hdr.size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type);
                     l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
                 }
             } else{
@@ -811,11 +824,9 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         }
     } break;
     case STREAM_PKT_TYPE_SERVICE_PACKET: {
-        stream_srv_pkt_t * srv_pkt = DAP_NEW(stream_srv_pkt_t);
-        memcpy(srv_pkt, a_pkt->data,sizeof(stream_srv_pkt_t));
-        uint32_t session_id = srv_pkt->session_id;
-        check_session(session_id,a_stream->esocket);
-        DAP_DELETE(srv_pkt);
+        stream_srv_pkt_t *l_srv_pkt = (stream_srv_pkt_t *)a_pkt->data;
+        uint32_t l_session_id = l_srv_pkt->session_id;
+        check_session(l_session_id, a_stream->esocket);
     } break;
     case STREAM_PKT_TYPE_KEEPALIVE: {
         //log_it(L_DEBUG, "Keep alive check recieved");
@@ -887,9 +898,13 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
     if(l_es) {
         dap_stream_t *l_stream = NULL;
         if (a_server_side) {
-            dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(l_es);
-            assert(l_http_client);
-            l_stream = DAP_STREAM(l_http_client);
+            if (l_es->type == DESCRIPTOR_TYPE_SOCKET_UDP)
+                l_stream = DAP_STREAM(l_es);
+            else {
+                dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(l_es);
+                assert(l_http_client);
+                l_stream = DAP_STREAM(l_http_client);
+            }
         } else {
             dap_client_pvt_t *l_client_pvt = DAP_ESOCKET_CLIENT_PVT(l_es);
             assert(l_client_pvt);

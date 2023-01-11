@@ -1562,7 +1562,7 @@ void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
 #else
     if ( a_esocket->socket && (a_esocket->socket != -1)) {      
 #ifdef DAP_OS_BSD
-        if(a_esocket->type == DESCRIPTOR_TYPE_TIMER)
+        if(a_esocket->type != DESCRIPTOR_TYPE_TIMER)
 #endif
             close( a_esocket->socket );
         if( a_esocket->fd2 > 0 ){
@@ -1822,8 +1822,13 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
  */
 size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size)
 {
+    if (!a_es) {
+        log_it(L_ERROR, "NULL esocket with write unsafe opertion");
+        return 0;
+    }
     if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE)
         return 0;
+
     if ( (a_es->buf_out_size + a_data_size) > a_es->buf_out_size_max) {
         if ((a_es->buf_out_size_max + a_data_size) > DAP_EVENTS_SOCKET_BUF_LIMIT) {
             log_it(L_ERROR, "Write esocket (%p) buffer overflow data_size=%zu/max=%zu", a_es, a_data_size, a_es->buf_out_size_max);
