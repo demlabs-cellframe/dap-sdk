@@ -57,12 +57,11 @@ typedef struct dap_client_pvt {
     dap_client_stage_t stage;
     dap_client_stage_status_t stage_status;
     dap_client_error_t last_error;
-    dap_client_callback_t stage_status_callback;
+
     dap_client_callback_t stage_status_done_callback;
     dap_client_callback_t stage_status_error_callback;
-    dap_client_callback_t delete_callback;
 
-    int stage_errors;
+    int reconnect_attempts;
 
     bool is_encrypted;
     bool is_encrypted_headers;
@@ -72,10 +71,10 @@ typedef struct dap_client_pvt {
 
     dap_client_callback_data_size_t request_response_callback;
     dap_client_callback_int_t request_error_callback;
+    void *callback_arg;
 } dap_client_pvt_t;
 
 #define DAP_CLIENT_PVT(a) (a ? (dap_client_pvt_t*) a->_internal : NULL)
-#define DAP_ESOCKET_CLIENT_PVT(a) (a ? (dap_client_pvt_t *)a->_inheritor : NULL)
 
 int dap_client_pvt_init();
 void dap_client_pvt_deinit();
@@ -92,5 +91,5 @@ void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char
                                      dap_client_callback_int_t a_error_proc);
 
 void dap_client_pvt_new(dap_client_pvt_t *a_client_internal);
-void dap_client_pvt_delete(dap_client_pvt_t *a_client_pvt);
+void dap_client_pvt_delete_unsafe(dap_client_pvt_t *a_client_pvt);
 

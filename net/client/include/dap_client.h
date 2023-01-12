@@ -66,8 +66,11 @@ typedef enum dap_client_error {
     ERROR_STREAM_RESPONSE_WRONG,
     ERROR_STREAM_RESPONSE_TIMEOUT,
     ERROR_STREAM_FREEZED,
+    ERROR_STREAM_ABORTED,
     ERROR_NETWORK_CONNECTION_REFUSE,
-    ERROR_NETWORK_CONNECTION_TIMEOUT
+    ERROR_NETWORK_CONNECTION_TIMEOUT,
+    ERROR_WRONG_STAGE,
+    ERROR_WRONG_ADDRESS
 } dap_client_error_t;
 
 typedef struct dap_client dap_client_t;
@@ -93,11 +96,14 @@ typedef struct dap_client {
     dap_client_stage_t stage_target;
     dap_client_callback_t stage_target_done_callback;
     dap_client_callback_int_t stage_target_error_callback;
-    void *stage_target_callback_arg;
+    void *callbacks_arg;
+    dap_client_callback_t delete_callback;
 
     void *_internal;
     void *_inheritor;
 } dap_client_t;
+
+#define DAP_ESOCKET_CLIENT(a) (a ? (dap_client_t *)a->_inheritor : NULL)
 
 #define DAP_UPLINK_PATH_ENC_INIT         "enc_init"
 #define DAP_UPLINK_PATH_STREAM_CTL       "stream_ctl"
@@ -113,8 +119,9 @@ extern "C" {
 int dap_client_init();
 void dap_client_deinit();
 
-dap_client_t * dap_client_new( dap_client_callback_t a_stage_status_callback
-                              , dap_client_callback_t a_stage_status_error_callback );
+dap_client_t *dap_client_new(dap_client_callback_t a_delete_callback,
+                             dap_client_callback_t a_stage_status_error_callback,
+                             void *a_callbacks_arg);
 
 void dap_client_set_uplink_unsafe(dap_client_t * a_client,const char* a_addr, uint16_t a_port);
 const char* dap_client_get_uplink_addr_unsafe(dap_client_t * a_client);

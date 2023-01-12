@@ -450,9 +450,10 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
  * @param data
  * @param data_size
  */
-size_t dap_http_simple_reply(dap_http_simple_t *a_http_simple, void *a_data, size_t a_data_size )
+size_t dap_http_simple_reply(dap_http_simple_t *a_http_simple, void *a_data, size_t a_data_size)
 {
-size_t l_data_copy_size = (a_data_size > (a_http_simple->reply_size_max - a_http_simple->reply_size) ) ? (a_http_simple->reply_size_max - a_http_simple->reply_size) : a_data_size;
+    size_t l_data_copy_size = (a_data_size > (a_http_simple->reply_size_max - a_http_simple->reply_size) ) ?
+                                    (a_http_simple->reply_size_max - a_http_simple->reply_size) : a_data_size;
 
     memcpy(a_http_simple->reply_byte + a_http_simple->reply_size, a_data, l_data_copy_size );
 
@@ -484,18 +485,23 @@ dap_http_cache_t * dap_http_simple_make_cache_from_reply(dap_http_simple_t * a_h
  * @param shs
  * @param data
  */
-size_t dap_http_simple_reply_f(dap_http_simple_t * shs, const char * data, ... )
+size_t dap_http_simple_reply_f(dap_http_simple_t *a_http_simple, const char *a_format, ... )
 {
-  char buf[4096];
-  va_list va;
-  int vret;
+    va_list ap, ap_copy;
+    va_start(ap, a_format);
+    va_copy(ap_copy, ap);
+    ssize_t l_buf_size = dap_vsnprintf(NULL, 0, a_format, ap);
+    va_end(ap);
 
-  va_start(va,data);
-  vret = dap_vsnprintf( buf, sizeof(buf) - 1, data, va );
-  va_end(va);
+    if (l_buf_size++ < 0) {
+        va_end(ap_copy);
+        return 0;
+    }
+    char *l_buf = DAP_NEW_SIZE(char, l_buf_size);
+    dap_vsprintf(l_buf, a_format, ap_copy);
+    va_end(ap_copy);
 
-  if ( vret > 0 )
-    return dap_http_simple_reply( shs, buf, vret );
-  else
-    return 0;
+    size_t l_ret = dap_http_simple_reply(a_http_simple, l_buf, l_buf_size);
+    DAP_DELETE(l_buf);
+    return l_ret;
 }

@@ -70,14 +70,17 @@ void dap_client_deinit()
  * @param a_stage_status_error_callback
  * @return
  */
-dap_client_t * dap_client_new( dap_client_callback_t a_stage_status_callback
-                              ,dap_client_callback_t a_stage_status_error_callback )
+dap_client_t *dap_client_new(dap_client_callback_t a_delete_callback,
+                             dap_client_callback_t a_stage_status_error_callback,
+                             void *a_callbacks_arg)
 {
     // ALLOC MEM FOR dap_client
     dap_client_t *l_client = DAP_NEW_Z(dap_client_t);
     if (!l_client)
         goto MEM_ALLOC_ERR;
 
+    l_client->delete_callback = a_delete_callback;
+    l_client->callbacks_arg = a_callbacks_arg;
     l_client->_internal  = DAP_NEW_Z(dap_client_pvt_t);
     if (!l_client->_internal)
         goto MEM_ALLOC_ERR;
@@ -85,7 +88,6 @@ dap_client_t * dap_client_new( dap_client_callback_t a_stage_status_callback
     // CONSTRUCT dap_client object
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     l_client_pvt->client = l_client;
-    l_client_pvt->stage_status_callback = a_stage_status_callback;
     l_client_pvt->stage_status_error_callback = a_stage_status_error_callback;
     l_client_pvt->worker = dap_events_worker_get_auto();
 
@@ -188,12 +190,26 @@ void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_chain_net_na
  * @brief s_client_delete
  * @param a_client
  */
-void dap_client_delete(dap_client_t * a_client)
+void dap_client_delete_unsafe(dap_client_t *a_client)
 {
-    dap_client_pvt_delete( DAP_CLIENT_PVT(a_client) );
+    if(a_client->delete_callback)
+        a_client->delete_callback(a_client, a_client->callbacks_arg);
+    dap_client_pvt_delete_unsafe( DAP_CLIENT_PVT(a_client) );
     DAP_DEL_Z(a_client->uplink_addr);
     DAP_DEL_Z(a_client->active_channels);
     DAP_DELETE(a_client);
+}
+
+
+void s_client_delete_on_worker(UNUSED_ATTR dap_worker_t *a_worker, void *a_arg)
+{
+    dap_client_delete_unsafe(a_arg);
+}
+
+void dap_client_delete_mt(dap_client_t *a_client)
+{
+    dap_worker_t *l_worker = DAP_CLIENT_PVT(a_client)->worker;
+    dap_worker_exec_callback_on(l_worker, s_client_delete_on_worker, a_client);
 }
 
 /**
@@ -263,7 +279,7 @@ static void s_stage_fsm_operator_unsafe(dap_client_t * a_client, void * a_arg)
         l_client_internal->stage_status_done_callback = NULL;
         l_client_internal->stage_status = STAGE_STATUS_DONE;
         if (a_client->stage_target_done_callback)
-            a_client->stage_target_done_callback(a_client, a_client->stage_target_callback_arg);
+            a_client->stage_target_done_callback(a_client, a_client->callbacks_arg);
         return;
     }
 

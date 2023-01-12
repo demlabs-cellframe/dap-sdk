@@ -163,11 +163,11 @@ typedef struct dap_events_socket_callbacks {
     void *arg;                                                              /* Callbacks argument */
 } dap_events_socket_callbacks_t;
 
-#define DAP_STREAM_PKT_FRAGMENT_SIZE  (64 * 1024)
-#define DAP_STREAM_PKT_SIZE_MAX     (2 * 1024 * 1024)
-#define DAP_EVENTS_SOCKET_BUF       DAP_STREAM_PKT_SIZE_MAX
-#define DAP_EVENTS_SOCKET_BUF_LIMIT (DAP_STREAM_PKT_SIZE_MAX * 4)
-#define DAP_QUEUE_MAX_MSGS          1024
+#define DAP_STREAM_PKT_FRAGMENT_SIZE    (64 * 1024)
+#define DAP_STREAM_PKT_SIZE_MAX         (4 * 1024 * 1024)
+#define DAP_EVENTS_SOCKET_BUF_SIZE      (DAP_STREAM_PKT_FRAGMENT_SIZE * 16)
+#define DAP_EVENTS_SOCKET_BUF_LIMIT     DAP_STREAM_PKT_SIZE_MAX
+#define DAP_QUEUE_MAX_MSGS              1024
 
 typedef enum {
     DESCRIPTOR_TYPE_SOCKET_CLIENT = 0,
@@ -342,8 +342,8 @@ int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value
 void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_preserve_inheritor);
 void dap_events_socket_delete_mt(dap_worker_t * a_worker, dap_events_socket_uuid_t a_es_uuid);
 
-dap_events_socket_t *dap_events_socket_wrap_no_add( int a_sock, dap_events_socket_callbacks_t *a_callbacks );
-dap_events_socket_t * dap_events_socket_wrap2( dap_server_t *a_server, int a_sock, dap_events_socket_callbacks_t *a_callbacks );
+dap_events_socket_t *dap_events_socket_wrap_no_add(SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);
+dap_events_socket_t * dap_events_socket_wrap2( dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks );
 
 void dap_events_socket_assign_on_worker_mt(dap_events_socket_t * a_es, struct dap_worker * a_worker);
 void dap_events_socket_assign_on_worker_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_es);
@@ -354,8 +354,8 @@ void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t * a_e
 void dap_events_socket_set_readable_unsafe(dap_events_socket_t * sc,bool is_ready);
 void dap_events_socket_set_writable_unsafe(dap_events_socket_t * sc,bool is_ready);
 
-size_t dap_events_socket_write_unsafe(dap_events_socket_t *sc, const void * data, size_t data_size);
-size_t dap_events_socket_write_f_unsafe(dap_events_socket_t *sc, const char * format,...);
+size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size);
+DAP_PRINTF_ATTR(2, 3) ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...);
 
 // MT variants less
 void dap_events_socket_set_readable_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready);
@@ -368,10 +368,10 @@ size_t dap_events_socket_write(dap_events_socket_uuid_t a_es_uuid, const void * 
 
 
 size_t dap_events_socket_write_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, const void * a_data, size_t a_data_size);
-size_t dap_events_socket_write_f_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, const char * a_format,...);
+DAP_PRINTF_ATTR(3, 4) size_t dap_events_socket_write_f_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, const char * a_format,...);
 
 size_t dap_events_socket_write_inter(dap_events_socket_t * a_es_input, dap_events_socket_uuid_t a_es_uuid, const void * a_data, size_t a_data_size);
-size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_events_socket_uuid_t a_es_uuid,const char * a_format,...);
+DAP_PRINTF_ATTR(3, 4) size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_events_socket_uuid_t a_es_uuid,const char * a_format,...);
 
 void dap_events_socket_remove_and_delete_mt( dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid);
 void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool preserve_inheritor );

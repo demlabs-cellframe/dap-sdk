@@ -63,9 +63,10 @@ dap_string_t* dap_string_overwrite_len(dap_string_t *string, size_t pos, const c
 dap_string_t* dap_string_erase(dap_string_t *string, ssize_t pos, ssize_t len);
 
 void dap_string_vprintf(dap_string_t *string, const char *format, va_list args);
-DAP_PRINTF_ATTR(2, 3) void dap_string_printf(dap_string_t *string, const char *format, ...);
 void dap_string_append_vprintf(dap_string_t *string, const char *format, va_list args);
 void dap_string_prepend_vprintf(dap_string_t *string, const char *format, va_list args);
+
+DAP_PRINTF_ATTR(2, 3) void dap_string_printf(dap_string_t *string, const char *format, ...);
 DAP_PRINTF_ATTR(2, 3) void dap_string_append_printf(dap_string_t *string, const char *format, ...);
 DAP_PRINTF_ATTR(2, 3) void dap_string_prepend_printf(dap_string_t *string, const char *format, ...);
 

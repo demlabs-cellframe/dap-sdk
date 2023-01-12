@@ -70,7 +70,7 @@ int enc_http_init(void);
 void enc_http_deinit(void);
 
 size_t enc_http_reply(enc_http_delegate_t * dg, void * data, size_t data_size);
-size_t enc_http_reply_f(enc_http_delegate_t * dg, const char * data, ...);
+DAP_PRINTF_ATTR(2, 3) size_t enc_http_reply_f(enc_http_delegate_t *a_http_delegate, const char * a_data, ...);
 
 void dap_enc_http_set_acl_callback(dap_enc_acl_callback_t a_callback);
 
