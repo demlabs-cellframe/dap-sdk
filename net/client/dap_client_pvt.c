@@ -542,8 +542,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
 
                     a_client_pvt->stage_status = STAGE_STATUS_DONE;
                     s_stage_status_after(a_client_pvt);
-                }
-                    break;
+                } break;
                 case STAGE_STREAM_STREAMING: {
                     log_it(L_INFO, "Go to stage STAGE_STREAM_STREAMING");
                     a_client_pvt->reconnect_attempts = 0;
@@ -551,9 +550,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     a_client_pvt->stage_status = STAGE_STATUS_DONE;
                     s_stage_status_after(a_client_pvt);
 
-                }
-                    break;
-
+                } break;
                 default: {
                     log_it(L_ERROR, "Undefined proccessing actions for stage status %s",
                             dap_client_stage_status_str(a_client_pvt->stage_status));
@@ -573,38 +570,31 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
             if(a_client_pvt->stage_status_error_callback)
                 a_client_pvt->stage_status_error_callback(a_client_pvt->client, (void*) l_is_last_attempt);
 
-            if(a_client_pvt->client->stage_target == STAGE_STREAM_ABORT) {
-                a_client_pvt->stage = STAGE_STREAM_ABORT;
-                a_client_pvt->stage_status = STAGE_STATUS_ABORTING;
-            } else {
-                if(!l_is_last_attempt ) {
-                    a_client_pvt->stage = STAGE_ENC_INIT;
-                    // Trying the step again
-                    a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
-                    log_it(L_INFO, "Reconnect attempt %d in 0.3 seconds with %s:%u", a_client_pvt->reconnect_attempts,
-                           a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
-                    // small delay before next request
-                    if(dap_timerfd_start_on_worker(a_client_pvt->worker, 300, (dap_timerfd_callback_t) s_stage_status_after,
-                                                   a_client_pvt) == NULL){
-                        log_it(L_ERROR,"Can't run timer for small delay before the next enc_init request");
-                    }
-                } else {
-                    if (a_client_pvt->client->always_reconnect) {
-                        log_it(L_INFO, "Too many attempts, reconnect attempt in %d seconds with %s:%u", s_timeout * 3,
-                               a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);                    // Trying the step again
-                        a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
-                        a_client_pvt->reconnect_attempts = 0;
-
-                        // bigger delay before next request
-                        if(dap_timerfd_start_on_worker(a_client_pvt->worker, s_timeout * 3000,(dap_timerfd_callback_t) s_stage_status_after,
-                                                       a_client_pvt ) == NULL){
-                            log_it(L_ERROR,"Can't run timer for bigger delay before the next enc_init request");
-                        }
-                    } else {
-                        log_it(L_ERROR, "Connect to %s:%u failed", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
-                        dap_client_delete_mt(a_client_pvt->client);
-                    }
+            if(!l_is_last_attempt ) {
+                a_client_pvt->stage = STAGE_ENC_INIT;
+                // Trying the step again
+                a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
+                log_it(L_INFO, "Reconnect attempt %d in 0.3 seconds with %s:%u", a_client_pvt->reconnect_attempts,
+                       a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                // small delay before next request
+                if(dap_timerfd_start_on_worker(a_client_pvt->worker, 300, (dap_timerfd_callback_t) s_stage_status_after,
+                                               a_client_pvt) == NULL){
+                    log_it(L_ERROR,"Can't run timer for small delay before the next enc_init request");
                 }
+            } else {
+                if (a_client_pvt->client->always_reconnect) {
+                    log_it(L_INFO, "Too many attempts, reconnect attempt in %d seconds with %s:%u", s_timeout * 3,
+                           a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);                    // Trying the step again
+                    a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
+                    a_client_pvt->reconnect_attempts = 0;
+
+                    // bigger delay before next request
+                    if(dap_timerfd_start_on_worker(a_client_pvt->worker, s_timeout * 3000,(dap_timerfd_callback_t) s_stage_status_after,
+                                                   a_client_pvt ) == NULL){
+                        log_it(L_ERROR,"Can't run timer for bigger delay before the next enc_init request");
+                    }
+                } else
+                    log_it(L_ERROR, "Connect to %s:%u failed", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
             }
         }
         break;
@@ -1118,6 +1108,12 @@ static void s_stream_es_callback_connected(dap_events_socket_t * a_es)
 static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ATTR void *a_arg)
 {
     log_it(L_INFO, "Stream events socket delete callback");
+    dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+    l_client_pvt->stage_status = STAGE_STATUS_ERROR;
+    l_client_pvt->last_error = ERROR_STREAM_ABORTED;
+    l_client_pvt->stream->esocket = NULL;
+    s_stage_status_after(l_client_pvt);
     a_es->_inheritor = NULL; // To prevent delete in reactor
 }
 

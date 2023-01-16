@@ -40,8 +40,7 @@ typedef enum dap_client_stage {
     STAGE_STREAM_CTL=2,
     STAGE_STREAM_SESSION=3,
     STAGE_STREAM_CONNECTED=4,
-    STAGE_STREAM_STREAMING=5,
-    STAGE_STREAM_ABORT=10
+    STAGE_STREAM_STREAMING=5
 } dap_client_stage_t;
 
 typedef enum dap_client_stage_status {
@@ -123,9 +122,9 @@ dap_client_t *dap_client_new(dap_client_callback_t a_delete_callback,
                              dap_client_callback_t a_stage_status_error_callback,
                              void *a_callbacks_arg);
 
-void dap_client_set_uplink_unsafe(dap_client_t * a_client,const char* a_addr, uint16_t a_port);
-const char* dap_client_get_uplink_addr_unsafe(dap_client_t * a_client);
-uint16_t dap_client_get_uplink_port_unsafe(dap_client_t * a_client);
+DAP_STATIC_INLINE void dap_client_set_uplink_unsafe(dap_client_t *a_client, const char *a_addr, uint16_t a_port) { a_client->uplink_addr = (char *)a_addr; a_client->uplink_port = a_port; }
+DAP_STATIC_INLINE const char* dap_client_get_uplink_addr_unsafe(dap_client_t *a_client) { return a_client->uplink_addr; }
+DAP_STATIC_INLINE uint16_t dap_client_get_uplink_port_unsafe(dap_client_t *a_client) { return a_client->uplink_port; }
 
 
 dap_enc_key_t * dap_client_get_key_stream(dap_client_t * a_client);
