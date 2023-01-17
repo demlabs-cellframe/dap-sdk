@@ -25,6 +25,7 @@
 #include "dap_client_pvt.h"
 #include "dap_client_http.h"
 #include "dap_stream_ch_proc.h"
+#include "dap_stream_ch_pkt.h"
 #include "dap_stream_worker.h"
 
 #define LOG_TAG "dap_client"
@@ -145,6 +146,58 @@ void dap_client_set_active_channels_unsafe (dap_client_t * a_client, const char 
     a_client->active_channels = dap_strdup(a_active_channels);
 }
 
+ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size)
+{
+    if (!a_client->active_channels || !strchr(a_client->active_channels, a_ch_id))
+        return -1;
+    dap_stream_ch_t *l_ch = dap_client_get_stream_ch_unsafe(a_client, a_ch_id);
+    if (l_ch)
+        return dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
+    if (a_client->connect_on_demand) {
+        dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
+        a_client->stage_target = STAGE_STREAM_STREAMING;
+        dap_client_pvt_queue_add(l_client_pvt, a_ch_id, a_type, a_data, a_data_size);
+        dap_client_pvt_stage_transaction_begin(l_client_pvt,
+                                               STAGE_BEGIN,
+                                               s_stage_fsm_operator_unsafe);
+        return 0;
+    }
+    return -2;
+}
+
+struct dap_client_write_args {
+    dap_client_t *client;
+    char ch_id;
+    uint8_t type;
+    size_t data_size;
+    byte_t data[];
+};
+
+static void s_client_write_on_worker(UNUSED_ATTR dap_worker_t *a_worker, void *a_arg)
+{
+    struct dap_client_write_args *l_args = a_arg;
+    dap_client_write_unsafe(l_args->client, l_args->ch_id, l_args->type, l_args->data, l_args->data_size);
+    DAP_DELETE(a_arg);
+
+}
+
+int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size)
+{
+    if (DAP_CLIENT_PVT(a_client)->is_removing)
+        return -1;
+    struct dap_client_write_args *l_args = DAP_NEW_SIZE(struct dap_client_write_args, sizeof(struct dap_client_write_args) + a_data_size);
+    l_args->client = a_client;
+    l_args->ch_id = a_ch_id;
+    l_args->type = a_type;
+    l_args->data_size = a_data_size;
+    memcpy(l_args->data, a_data, a_data_size);
+
+    dap_worker_exec_callback_on(DAP_CLIENT_PVT(a_client)->worker, s_client_write_on_worker, l_args);
+
+    return 0;
+}
+
+
 /**
  * @brief dap_client_set_auth_cert
  * @param a_client
@@ -208,8 +261,60 @@ void s_client_delete_on_worker(UNUSED_ATTR dap_worker_t *a_worker, void *a_arg)
 
 void dap_client_delete_mt(dap_client_t *a_client)
 {
+    DAP_CLIENT_PVT(a_client)->is_removing = true;
     dap_worker_t *l_worker = DAP_CLIENT_PVT(a_client)->worker;
     dap_worker_exec_callback_on(l_worker, s_client_delete_on_worker, a_client);
+}
+
+struct go_stage_arg {
+    dap_client_t *client;
+    dap_client_stage_t stage_target;
+    dap_client_callback_t stage_end_callback;
+};
+
+/**
+ * @brief s_go_stage_on_client_worker_unsafe
+ * @param a_worker
+ * @param a_arg
+ */
+static void s_go_stage_on_client_worker_unsafe(UNUSED_ATTR dap_worker_t *a_worker, void *a_arg)
+{
+    assert(a_arg);
+    struct go_stage_arg *l_args = a_arg;
+    dap_client_stage_t l_stage_target = l_args->stage_target;
+    dap_client_callback_t l_stage_end_callback = l_args->stage_end_callback;
+    dap_client_t *l_client = l_args->client;
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+
+    l_client->stage_target_done_callback = l_stage_end_callback;
+    dap_client_stage_t l_cur_stage = l_client_pvt->stage;
+    dap_client_stage_status_t l_cur_stage_status = l_client_pvt->stage_status;
+    if (l_cur_stage_status == STAGE_STATUS_COMPLETE) {
+        assert(l_client_pvt->stage == l_client->stage_target);
+        if (l_client->stage_target == l_stage_target) {
+            log_it(L_DEBUG, "Already have target state %s", dap_client_stage_str(l_stage_target));
+            if (l_stage_end_callback)
+                l_stage_end_callback(l_client, NULL);
+            return;
+        }
+        if (l_client->stage_target < l_stage_target) {
+            l_client->stage_target = l_stage_target;
+            log_it(L_DEBUG, "Start transitions chain for client %p -> %p from %s to %s", l_client_pvt, l_client,
+                   dap_client_stage_str(l_cur_stage) , dap_client_stage_str(l_stage_target));
+            dap_client_pvt_stage_transaction_begin(l_client_pvt,
+                                                   l_cur_stage + 1,
+                                                   s_stage_fsm_operator_unsafe);
+            return;
+        }
+    }
+
+    l_client->stage_target = l_stage_target;
+    log_it(L_DEBUG, "Clear clinet state, then start transitions chain for client %p -> %p from %s to %s", l_client_pvt, l_client,
+           dap_client_stage_str(l_cur_stage) , dap_client_stage_str(l_stage_target));
+    dap_client_pvt_stage_transaction_begin(l_client_pvt,
+                                           STAGE_BEGIN,
+                                           s_stage_fsm_operator_unsafe);
+    DAP_DELETE(a_arg);
 }
 
 /**
@@ -217,7 +322,7 @@ void dap_client_delete_mt(dap_client_t *a_client)
  * @param a_client
  * @param a_stage_end
  */
-void dap_client_go_stage(dap_client_t * a_client, dap_client_stage_t a_stage_target, dap_client_callback_t a_stage_end_callback)
+void dap_client_go_stage(dap_client_t *a_client, dap_client_stage_t a_stage_target, dap_client_callback_t a_stage_end_callback)
 {
     // ----- check parameters -----
     if(NULL == a_client) {
@@ -226,41 +331,17 @@ void dap_client_go_stage(dap_client_t * a_client, dap_client_stage_t a_stage_tar
     }
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
 
-    if (NULL == l_client_pvt) {
-        log_it(L_ERROR, "dap_client_go_stage, client_pvt == NULL");
+    if (NULL == l_client_pvt || l_client_pvt->is_removing) {
+        log_it(L_ERROR, "dap_client_go_stage, client_pvt not exists or removing");
         return;
     }
 
-    a_client->stage_target_done_callback = a_stage_end_callback;
-    dap_client_stage_t l_cur_stage = l_client_pvt->stage;
-    dap_client_stage_status_t l_cur_stage_status = l_client_pvt->stage_status;
-    if (l_cur_stage_status == STAGE_STATUS_COMPLETE) {
-        assert(l_client_pvt->stage == a_client->stage_target);
-        if (a_client->stage_target == a_stage_target) {
-            log_it(L_DEBUG, "Already have target state %s", dap_client_stage_str(a_stage_target));
-            if (a_stage_end_callback)
-                a_stage_end_callback(a_client, NULL);
-            return;
-        }
-        if (a_client->stage_target < a_stage_target) {
-            a_client->stage_target = a_stage_target;
-            log_it(L_DEBUG, "Start transitions chain for client %p -> %p from %s to %s", l_client_pvt, a_client,
-                   dap_client_stage_str(l_cur_stage) , dap_client_stage_str(a_stage_target));
-            dap_client_pvt_stage_transaction_begin(l_client_pvt,
-                                                   l_cur_stage + 1,
-                                                   s_stage_fsm_operator_unsafe);
-            return;
-        }
-    }
-
-    a_client->stage_target = a_stage_target;
-    log_it(L_DEBUG, "Clear clinet state, then start transitions chain for client %p -> %p from %s to %s", l_client_pvt, a_client,
-           dap_client_stage_str(l_cur_stage) , dap_client_stage_str(a_stage_target));
-    dap_client_pvt_stage_transaction_begin(l_client_pvt,
-                                           STAGE_BEGIN,
-                                           s_stage_fsm_operator_unsafe);
+    struct go_stage_arg *l_stage_arg = DAP_NEW_Z(struct go_stage_arg); if (! l_stage_arg) return;
+    l_stage_arg->stage_end_callback = a_stage_end_callback;
+    l_stage_arg->stage_target = a_stage_target;
+    l_stage_arg->client = a_client;
+    dap_worker_exec_callback_on(l_client_pvt->worker, s_go_stage_on_client_worker_unsafe, l_stage_arg);
 }
-
 /**
  * @brief s_stage_fsm_operator_unsafe
  * @param a_client
@@ -423,7 +504,6 @@ const char * dap_client_stage_str(dap_client_stage_t a_stage)
         case STAGE_STREAM_SESSION: return "STREAM_SESSION";
         case STAGE_STREAM_CONNECTED: return "STREAM_CONNECTED";
         case STAGE_STREAM_STREAMING: return "STREAM";
-        case STAGE_STREAM_ABORT: return "ABORT";
         default: return "UNDEFINED";
     }
 }

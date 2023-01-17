@@ -149,6 +149,46 @@ void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
     a_client_pvt->uplink_protocol_version = DAP_PROTOCOL_VERSION;
 }
 
+
+static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
+{
+    if (a_client_pvt->stream) {
+        dap_stream_delete_unsafe(a_client_pvt->stream);
+        a_client_pvt->stream = NULL;
+        a_client_pvt->stream_es = NULL;
+        a_client_pvt->stream_id[0] = 0;
+        a_client_pvt->stream_key = NULL;
+    }
+
+    DAP_DEL_Z(a_client_pvt->session_key_id);
+    if (a_client_pvt->session_key_open) {
+        dap_enc_key_delete(a_client_pvt->session_key_open);
+        a_client_pvt->session_key_open = NULL;
+    }
+    if (a_client_pvt->session_key) {
+        dap_enc_key_delete(a_client_pvt->session_key);
+        a_client_pvt->session_key = NULL;
+    }
+    a_client_pvt->session_key_block_size = 0;
+    a_client_pvt->session_key_open_type = 0;
+    a_client_pvt->session_key_type = 0;
+
+    a_client_pvt->is_closed_by_timeout = false;
+    a_client_pvt->is_encrypted = false;
+    a_client_pvt->is_encrypted_headers = false;
+    a_client_pvt->is_close_session = false;
+    a_client_pvt->uplink_protocol_version = 0;
+    a_client_pvt->remote_protocol_version = 0;
+    a_client_pvt->ts_last_active = 0;
+    a_client_pvt->reconnect_attempts = 0;
+
+    dap_list_free_full(a_client_pvt->pkt_queue, NULL);
+
+    a_client_pvt->last_error = ERROR_NO_ERROR;
+    a_client_pvt->stage = STAGE_BEGIN;
+    a_client_pvt->stage_status = STAGE_STATUS_DONE;
+}
+
 /**
  * @brief dap_client_pvt_delete_unsafe
  * @param a_client_pvt
@@ -156,19 +196,8 @@ void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
 void dap_client_pvt_delete_unsafe(dap_client_pvt_t * a_client_pvt)
 {
     assert(a_client_pvt);
-    debug_if(s_debug_more, L_INFO, "dap_client_pvt_delete 0x%p", a_client_pvt);
-
-    if (a_client_pvt->stream)
-        dap_stream_delete_unsafe(a_client_pvt->stream);
-
-    DAP_DEL_Z(a_client_pvt->session_key_id);
-
-    if (a_client_pvt->session_key_open)
-        dap_enc_key_delete(a_client_pvt->session_key_open);
-
-    if (a_client_pvt->session_key)
-        dap_enc_key_delete(a_client_pvt->session_key);
-
+    debug_if(s_debug_more, L_INFO, "dap_client_pvt_delete 0x%p", a_client_pvt);  
+    s_client_internal_clean(a_client_pvt);
     DAP_DELETE(a_client_pvt);
 }
 
@@ -273,6 +302,16 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
     return false;
 }
 
+void dap_client_pvt_queue_add(dap_client_pvt_t *a_client_pvt, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size)
+{
+    dap_client_pkt_queue_elm_t *l_pkt = DAP_NEW_SIZE(dap_client_pkt_queue_elm_t, sizeof(dap_client_pkt_queue_elm_t) + a_data_size);
+    l_pkt->ch_id = a_ch_id;
+    l_pkt->type = a_type;
+    l_pkt->data_size = a_data_size;
+    memcpy(l_pkt->data, a_data, a_data_size);
+    a_client_pvt->pkt_queue = dap_list_append(a_client_pvt->pkt_queue, l_pkt);
+}
+
 /**
  * @brief s_client_internal_stage_status_proc
  * @param a_client
@@ -290,44 +329,11 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
 
     switch (l_stage_status) {
         case STAGE_STATUS_IN_PROGRESS: {
-            if (a_client_pvt->client->stage_target == STAGE_BEGIN) {
-                if (a_client_pvt->stream) {
-                    dap_stream_delete_unsafe(a_client_pvt->stream);
-                    a_client_pvt->stream = NULL;
-                    a_client_pvt->stream_es = NULL;
-                    a_client_pvt->stream_id[0] = 0;
-                    a_client_pvt->stream_key = NULL;
-                }
-
-                DAP_DEL_Z(a_client_pvt->session_key_id);
-                if (a_client_pvt->session_key_open) {
-                    dap_enc_key_delete(a_client_pvt->session_key_open);
-                    a_client_pvt->session_key_open = NULL;
-                }
-                if (a_client_pvt->session_key) {
-                    dap_enc_key_delete(a_client_pvt->session_key);
-                    a_client_pvt->session_key = NULL;
-                }
-                a_client_pvt->session_key_block_size = 0;
-                a_client_pvt->session_key_open_type = 0;
-                a_client_pvt->session_key_type = 0;
-
-                a_client_pvt->is_closed_by_timeout = false;
-                a_client_pvt->is_encrypted = false;
-                a_client_pvt->is_encrypted_headers = false;
-                a_client_pvt->is_close_session = false;
-                a_client_pvt->uplink_protocol_version = 0;
-                a_client_pvt->remote_protocol_version = 0;
-                a_client_pvt->ts_last_active = 0;
-                a_client_pvt->reconnect_attempts = 0;
-
-                a_client_pvt->last_error = ERROR_NO_ERROR;
-                a_client_pvt->stage = STAGE_BEGIN;
-                a_client_pvt->stage_status = STAGE_STATUS_DONE;
-                s_stage_status_after(a_client_pvt);
-                return false;
-            }
             switch (l_stage) {
+                case STAGE_BEGIN:
+                    s_client_internal_clean(a_client_pvt);
+                    s_stage_status_after(a_client_pvt);
+                    return false;
                 case STAGE_ENC_INIT: {
                     log_it(L_INFO, "Go to stage ENC: prepare the request");
 
@@ -563,15 +569,13 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
 
         case STAGE_STATUS_ERROR: {
             // limit the number of attempts
-            a_client_pvt->reconnect_attempts++;
-            bool l_is_last_attempt = a_client_pvt->reconnect_attempts > s_max_attempts ? true : false;
+            bool l_is_last_attempt = ++a_client_pvt->reconnect_attempts > s_max_attempts ? true : false;
 
             log_it(L_ERROR, "Error state(%s), doing callback if present", dap_client_error_str(a_client_pvt->last_error));
             if(a_client_pvt->stage_status_error_callback)
-                a_client_pvt->stage_status_error_callback(a_client_pvt->client, (void*) l_is_last_attempt);
+                a_client_pvt->stage_status_error_callback(a_client_pvt->client, (void *)l_is_last_attempt);
 
             if(!l_is_last_attempt ) {
-                a_client_pvt->stage = STAGE_ENC_INIT;
                 // Trying the step again
                 a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
                 log_it(L_INFO, "Reconnect attempt %d in 0.3 seconds with %s:%u", a_client_pvt->reconnect_attempts,
@@ -583,18 +587,21 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                 }
             } else {
                 if (a_client_pvt->client->always_reconnect) {
-                    log_it(L_INFO, "Too many attempts, reconnect attempt in %d seconds with %s:%u", s_timeout * 3,
+                    log_it(L_INFO, "Too many attempts, reconnect attempt in %d seconds with %s:%u", s_timeout,
                            a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);                    // Trying the step again
                     a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
                     a_client_pvt->reconnect_attempts = 0;
-
                     // bigger delay before next request
-                    if(dap_timerfd_start_on_worker(a_client_pvt->worker, s_timeout * 3000,(dap_timerfd_callback_t) s_stage_status_after,
-                                                   a_client_pvt ) == NULL){
+                    if(dap_timerfd_start_on_worker(a_client_pvt->worker, s_timeout * 1000, (dap_timerfd_callback_t) s_stage_status_after,
+                                                   a_client_pvt ) == NULL) {
                         log_it(L_ERROR,"Can't run timer for bigger delay before the next enc_init request");
                     }
                 } else
                     log_it(L_ERROR, "Connect to %s:%u failed", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+            }
+            if (a_client_pvt->stage_status != STAGE_STATUS_ERROR) {
+                s_client_internal_clean(a_client_pvt);
+                a_client_pvt->stage = STAGE_ENC_INIT;
             }
         }
         break;
@@ -602,9 +609,18 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
             log_it(L_INFO, "Stage status %s is done", dap_client_stage_str(a_client_pvt->stage));
             bool l_is_last_stage = (a_client_pvt->stage == a_client_pvt->client->stage_target);
             if (l_is_last_stage) {
+                a_client_pvt->stage_status = STAGE_STATUS_COMPLETE;
                 if (a_client_pvt->client->stage_target_done_callback) {
                     log_it(L_NOTICE, "Stage %s is achieved", dap_client_stage_str(a_client_pvt->stage));
                     a_client_pvt->client->stage_target_done_callback(a_client_pvt->client, NULL);
+                }
+                if (a_client_pvt->stage == STAGE_STREAM_STREAMING) {
+                    // Send all pkts in queue
+                    for (dap_list_t *it = a_client_pvt->pkt_queue; it; it = it->next) {
+                        dap_client_pkt_queue_elm_t *l_pkt = it->data;
+                        dap_client_write_unsafe(a_client_pvt->client, l_pkt->ch_id, l_pkt->type, l_pkt->data, l_pkt->data_size);
+                    }
+                    dap_list_free_full(a_client_pvt->pkt_queue, NULL);
                 }
             } else if (a_client_pvt->stage_status_done_callback) {
                 // go to next stage
@@ -619,6 +635,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
 
     return false;
 }
+
 
 /**
  * @brief dap_client_internal_stage_transaction_begin

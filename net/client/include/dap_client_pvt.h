@@ -69,10 +69,21 @@ typedef struct dap_client_pvt {
     bool is_closed_by_timeout;
     time_t ts_last_active;
 
+    bool is_removing;
+
     dap_client_callback_data_size_t request_response_callback;
     dap_client_callback_int_t request_error_callback;
     void *callback_arg;
+
+    dap_list_t *pkt_queue;
 } dap_client_pvt_t;
+
+typedef struct dap_client_pkt_queue_elm {
+    char ch_id;
+    uint8_t type;
+    size_t data_size;
+    byte_t data[];
+} dap_client_pkt_queue_elm_t;
 
 #define DAP_CLIENT_PVT(a) (a ? (dap_client_pvt_t*) a->_internal : NULL)
 
@@ -92,4 +103,4 @@ void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char
 
 void dap_client_pvt_new(dap_client_pvt_t *a_client_internal);
 void dap_client_pvt_delete_unsafe(dap_client_pvt_t *a_client_pvt);
-
+void dap_client_pvt_queue_add(dap_client_pvt_t *a_client_pvt, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
