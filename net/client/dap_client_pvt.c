@@ -145,7 +145,7 @@ void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
     a_client_pvt->session_key_block_size = 32;
 
     a_client_pvt->stage = STAGE_BEGIN; // start point of state machine
-    a_client_pvt->stage_status = STAGE_STATUS_DONE;
+    a_client_pvt->stage_status = STAGE_STATUS_COMPLETE;
     a_client_pvt->uplink_protocol_version = DAP_PROTOCOL_VERSION;
 }
 
@@ -186,7 +186,7 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
 
     a_client_pvt->last_error = ERROR_NO_ERROR;
     a_client_pvt->stage = STAGE_BEGIN;
-    a_client_pvt->stage_status = STAGE_STATUS_DONE;
+    a_client_pvt->stage_status = STAGE_STATUS_COMPLETE;
 }
 
 /**
@@ -334,6 +334,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     s_client_internal_clean(a_client_pvt);
                     s_stage_status_after(a_client_pvt);
                     return false;
+
                 case STAGE_ENC_INIT: {
                     log_it(L_INFO, "Go to stage ENC: prepare the request");
 
@@ -411,8 +412,8 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     log_it(L_DEBUG, "Sent enc request for streaming");
 
                     DAP_DELETE(l_suburl);
-                }
-                    break;
+                } break;
+
                 case STAGE_STREAM_SESSION: {
                     log_it(L_INFO, "Go to stage STREAM_SESSION: process the state ops");
 
@@ -524,6 +525,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     if (a_client_pvt->stage_status == STAGE_STATUS_ERROR)
                         s_stage_status_after(a_client_pvt);
                 } break;
+
                 case STAGE_STREAM_CONNECTED: {
                     log_it(L_INFO, "Go to stage STAGE_STREAM_CONNECTED");
                     if(!a_client_pvt->stream){
@@ -549,6 +551,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     a_client_pvt->stage_status = STAGE_STATUS_DONE;
                     s_stage_status_after(a_client_pvt);
                 } break;
+
                 case STAGE_STREAM_STREAMING: {
                     log_it(L_INFO, "Go to stage STAGE_STREAM_STREAMING");
                     a_client_pvt->reconnect_attempts = 0;
@@ -557,6 +560,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     s_stage_status_after(a_client_pvt);
 
                 } break;
+
                 default: {
                     log_it(L_ERROR, "Undefined proccessing actions for stage status %s",
                             dap_client_stage_status_str(a_client_pvt->stage_status));
@@ -564,8 +568,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     s_stage_status_after(a_client_pvt); // be carefull to not to loop!
                 }
             }
-        }
-        break;
+        } break;
 
         case STAGE_STATUS_ERROR: {
             // limit the number of attempts
@@ -603,8 +606,8 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                 s_client_internal_clean(a_client_pvt);
                 a_client_pvt->stage = STAGE_ENC_INIT;
             }
-        }
-        break;
+        } break;
+
         case STAGE_STATUS_DONE: {
             log_it(L_INFO, "Stage status %s is done", dap_client_stage_str(a_client_pvt->stage));
             bool l_is_last_stage = (a_client_pvt->stage == a_client_pvt->client->stage_target);
@@ -626,7 +629,9 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                 // go to next stage
                 a_client_pvt->stage_status_done_callback(a_client_pvt->client, NULL);
             }
-        }
+        } break;
+
+        case STAGE_STATUS_COMPLETE:
             break;
         default:
             log_it(L_ERROR, "Undefined proccessing actions for stage status %s",

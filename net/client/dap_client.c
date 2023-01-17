@@ -111,7 +111,7 @@ MEM_ALLOC_ERR:
  * @param a_addr
  * @param a_port
  */
-void dap_client_set_uplink(dap_client_t * a_client,const char* a_addr, uint16_t a_port)
+void dap_client_set_uplink_unsafe(dap_client_t * a_client,const char* a_addr, uint16_t a_port)
 {
     if(a_addr == NULL){
         log_it(L_ERROR,"Address is NULL for dap_client_set_uplink");
