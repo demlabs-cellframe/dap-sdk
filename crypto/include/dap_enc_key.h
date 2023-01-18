@@ -112,9 +112,19 @@ typedef enum dap_enc_key_type {
 
     DAP_ENC_KEY_TYPE_KEM_KYBER512 = 23, // NIST Kyber KEM implementation
     DAP_ENC_KEY_TYPE_SIG_FALCON = 24, 
-    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_FALCON,
 
+    // QApp PQLR library integration
+    DAP_ENC_KEY_TYPE_PQLR_SIG_DILITHIUM = 1021,
+    DAP_ENC_KEY_TYPE_PQLR_SIG_FALCON = 1024,
+    DAP_ENC_KEY_TYPE_PQLR_SIG_SPHINCS = 1025,
+    DAP_ENC_KEY_TYPE_PQLR_KEM_SABER = 1051,
+    DAP_ENC_KEY_TYPE_PQLR_KEM_MCELIECE = 1052,
+    DAP_ENC_KEY_TYPE_PQLR_KEM_NEWHOPE = 1058,
+
+    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_PQLR_KEM_NEWHOPE,
 } dap_enc_key_type_t;
+
+
 
 struct dap_enc_key;
 
@@ -210,6 +220,7 @@ typedef struct dap_enc_key {
     size_t pbkListsize;
     dap_enc_get_allpbk_list getallpbkList;
 
+    void * _pvt; // PVT part of the object
 
     void * _inheritor; // WARNING! Inheritor must have only serealizeble/deserializeble data (copy)
     size_t _inheritor_size;
@@ -230,6 +241,32 @@ typedef struct dap_enc_key_serealize {
     unsigned char pub_key_data[MAX_ENC_KEY_SIZE];
     unsigned char inheritor[MAX_INHERITOR_SIZE];
 } dap_enc_key_serealize_t;
+
+typedef struct dap_enc_key_callbacks{
+    const char * name;
+    dap_enc_callback_dataop_t enc;
+    dap_enc_callback_dataop_t dec;
+    dap_enc_callback_dataop_na_t enc_na;
+    dap_enc_callback_dataop_na_t dec_na;
+    dap_enc_callback_dataop_na_ext_t dec_na_ext;
+
+    dap_enc_callback_sign_op_t sign_get;
+    dap_enc_callback_sign_op_t sign_verify;
+
+    dap_enc_callback_gen_key_public_t gen_key_public;
+    dap_enc_callback_key_size_t gen_key_public_size;
+
+    dap_enc_callback_calc_out_size enc_out_size;
+    dap_enc_callback_calc_out_size dec_out_size;
+
+    dap_enc_gen_bob_shared_key gen_bob_shared_key;
+    dap_enc_gen_alice_shared_key gen_alice_shared_key;
+
+    dap_enc_callback_new new_callback;
+    dap_enc_callback_data_t new_from_data_public_callback;
+    dap_enc_callback_new_generate new_generate_callback;
+    dap_enc_callback_delete delete_callback;
+} dap_enc_key_callbacks_t;
 
 #ifdef __cplusplus
 extern "C" {
