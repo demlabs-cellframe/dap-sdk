@@ -773,7 +773,7 @@ static int s_thread_loop(dap_context_t * a_context)
                                 continue;
                             }
                         }else{
-                            log_it(L_WARNING, "We have incomming %zd data but no read callback on socket %"DAP_FORMAT_SOCKET", removing from read set",
+                            log_it(L_WARNING, "We have incoming %zd data but no read callback on socket %"DAP_FORMAT_SOCKET", removing from read set",
                                    l_bytes_read, l_cur->socket);
                             dap_events_socket_set_readable_unsafe(l_cur,false);
                         }
