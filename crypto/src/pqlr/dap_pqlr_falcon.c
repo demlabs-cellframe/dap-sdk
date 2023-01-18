@@ -91,7 +91,7 @@ size_t dap_pqlr_falcon_create_sign(dap_enc_key_t* a_key, const void * a_msg, con
 {
     size_t l_sign_size = falcon_get_signature_bytes_len(PVT(a_key));
     if(a_signature_size< l_sign_size){
-        log_it(L_ERROR, "Need at least %zd for Crystal-Dilithium signature", l_sign_size);
+        log_it(L_ERROR, "Need at least %zd for Falcon signature", l_sign_size);
         return 0;
     }
 
