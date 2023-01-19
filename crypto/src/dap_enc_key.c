@@ -903,6 +903,9 @@ void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         dilithium_signature_delete((dilithium_signature_t*)a_sig_buf);
         break;
+    case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        DAP_DELETE(((falcon_signature_t *)a_sig_buf)->sig_data);
+        break;
     default:
         break;
     }

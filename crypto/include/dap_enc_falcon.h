@@ -30,4 +30,6 @@ uint8_t* dap_enc_falcon_write_public_key(const falcon_public_key_t* a_public_key
 falcon_private_key_t* dap_enc_falcon_read_private_key(const uint8_t* a_buf, size_t a_buflen);
 falcon_public_key_t* dap_enc_falcon_read_public_key(const uint8_t* a_buf, size_t a_buflen);
 
+DAP_STATIC_INLINE size_t dap_enc_falcon_calc_signature_unserialized_size() { return sizeof(falcon_signature_t); }
+
 #endif //_DAP_ENC_FALCON_H
