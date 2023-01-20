@@ -169,18 +169,13 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
         dap_enc_key_delete(a_client_pvt->session_key);
         a_client_pvt->session_key = NULL;
     }
-    a_client_pvt->session_key_block_size = 0;
-    a_client_pvt->session_key_open_type = 0;
-    a_client_pvt->session_key_type = 0;
 
     a_client_pvt->is_closed_by_timeout = false;
     a_client_pvt->is_encrypted = false;
     a_client_pvt->is_encrypted_headers = false;
     a_client_pvt->is_close_session = false;
-    a_client_pvt->uplink_protocol_version = 0;
     a_client_pvt->remote_protocol_version = 0;
     a_client_pvt->ts_last_active = 0;
-    a_client_pvt->reconnect_attempts = 0;
 
     dap_list_free_full(a_client_pvt->pkt_queue, NULL);
 
@@ -243,7 +238,7 @@ static bool s_stream_timer_timeout_check(void * a_arg)
     dap_worker_t *l_worker = dap_worker_get_current();
     assert(l_worker);
 
-    dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid_ptr);
+    dap_events_socket_t *l_es = dap_context_find(l_worker->context, *l_es_uuid_ptr);
     if(l_es){
         if (l_es->flags & DAP_SOCK_CONNECTING ){
             dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
@@ -251,10 +246,10 @@ static bool s_stream_timer_timeout_check(void * a_arg)
             log_it(L_WARNING,"Connecting timeout for stream uplink request http://%s:%u/, possible network problems or host is down",
                    l_client->uplink_addr, l_client->uplink_port);
             l_client_pvt->is_closed_by_timeout = true;
-            if(l_es->callbacks.error_callback)
-                l_es->callbacks.error_callback(l_es, ETIMEDOUT);
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout", l_es->remote_addr_str, l_es->socket, l_es->type);
-            dap_events_socket_remove_and_delete_unsafe(l_es, true);
+            // Esocket wiil be removed here!
+            if (l_es->callbacks.error_callback)
+                l_es->callbacks.error_callback(l_es, ETIMEDOUT);
         }else
             if(s_debug_more)
                 log_it(L_DEBUG,"Socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
@@ -332,6 +327,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
             switch (l_stage) {
                 case STAGE_BEGIN:
                     s_client_internal_clean(a_client_pvt);
+                    a_client_pvt->reconnect_attempts = 0;
                     s_stage_status_after(a_client_pvt);
                     return false;
 
@@ -604,6 +600,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
             }
             if (a_client_pvt->stage_status != STAGE_STATUS_ERROR) {
                 s_client_internal_clean(a_client_pvt);
+                a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
                 a_client_pvt->stage = STAGE_ENC_INIT;
             }
         } break;
@@ -633,6 +630,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
 
         case STAGE_STATUS_COMPLETE:
             break;
+
         default:
             log_it(L_ERROR, "Undefined proccessing actions for stage status %s",
                     dap_client_stage_status_str(a_client_pvt->stage_status));
@@ -811,8 +809,7 @@ static void s_request_response(void * a_response, size_t a_response_size, void *
 {
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);
-    //int l_ref = dap_client_pvt_get_ref(a_client_internal);
-    if(l_client_pvt->is_encrypted) {
+    if (l_client_pvt->is_encrypted && l_client_pvt->session_key) {
         size_t l_response_dec_size_max = a_response_size ? a_response_size * 2 + 16 : 0;
         char * l_response_dec = a_response_size ? DAP_NEW_Z_SIZE(char, l_response_dec_size_max) : NULL;
         size_t l_response_dec_size = 0;

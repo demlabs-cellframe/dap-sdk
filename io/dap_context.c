@@ -1423,8 +1423,8 @@ int dap_context_remove( dap_events_socket_t * a_es)
     }
 
     l_context->event_sockets_count--;
-    if(a_es->socket != 0 && a_es->socket != INVALID_SOCKET )
-       HASH_DELETE(hh,l_context->esockets, a_es);
+    if (a_es->socket)
+       HASH_DELETE(hh, l_context->esockets, a_es);
 
 #if defined(DAP_EVENTS_CAPS_EPOLL)
 
