@@ -40,37 +40,15 @@
 #include "dap_enc_kyber.h"
 
 #include "dap_enc_ringct20.h"
-
+#ifdef DAP_PQRL
+#include "dap_pqrl.h"
+#endif
 
 #include "dap_enc_key.h"
 
 #undef LOG_TAG
 #define LOG_TAG "dap_enc_key"
-struct dap_enc_key_callbacks{
-    const char * name;
-    dap_enc_callback_dataop_t enc;
-    dap_enc_callback_dataop_t dec;
-    dap_enc_callback_dataop_na_t enc_na;
-    dap_enc_callback_dataop_na_t dec_na;
-    dap_enc_callback_dataop_na_ext_t dec_na_ext;
-
-    dap_enc_callback_sign_op_t sign_get;
-    dap_enc_callback_sign_op_t sign_verify;
-
-    dap_enc_callback_gen_key_public_t gen_key_public;
-    dap_enc_callback_key_size_t gen_key_public_size;
-
-    dap_enc_callback_calc_out_size enc_out_size;
-    dap_enc_callback_calc_out_size dec_out_size;
-
-    dap_enc_gen_bob_shared_key gen_bob_shared_key;
-    dap_enc_gen_alice_shared_key gen_alice_shared_key;
-
-    dap_enc_callback_new new_callback;
-    dap_enc_callback_data_t new_from_data_public_callback;
-    dap_enc_callback_new_generate new_generate_callback;
-    dap_enc_callback_delete delete_callback;
-} s_callbacks[]={
+dap_enc_key_callbacks_t s_callbacks[]={
     //-Symmetric ciphers----------------------
     // AES
     [DAP_ENC_KEY_TYPE_IAES]={
@@ -367,6 +345,13 @@ struct dap_enc_key_callbacks{
         .sign_get = NULL,
         .sign_verify = NULL
     },
+
+    [DAP_ENC_KEY_TYPE_PQLR_SIG_DILITHIUM] = {0},
+    [DAP_ENC_KEY_TYPE_PQLR_SIG_FALCON] = {0},
+    [DAP_ENC_KEY_TYPE_PQLR_SIG_SPHINCS] = {0},
+    [DAP_ENC_KEY_TYPE_PQLR_KEM_SABER] = {0},
+    [DAP_ENC_KEY_TYPE_PQLR_KEM_MCELIECE] = {0},
+    [DAP_ENC_KEY_TYPE_PQLR_KEM_NEWHOPE] = {0},
 };
 
 const size_t c_callbacks_size = sizeof(s_callbacks) / sizeof(s_callbacks[0]);
@@ -376,6 +361,10 @@ const size_t c_callbacks_size = sizeof(s_callbacks) / sizeof(s_callbacks[0]);
  */
 int dap_enc_key_init()
 {
+#ifdef DAP_PQRL
+    if( dap_pqrl_init(s_callbacks) != 0 )
+        return -1;
+#endif
     return 0;
 }
 
@@ -384,6 +373,9 @@ int dap_enc_key_init()
  */
 void dap_enc_key_deinit()
 {
+#ifdef DAP_PQRL
+    dap_pqrl_deinit();
+#endif
 
 }
 
@@ -910,6 +902,9 @@ void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         dilithium_signature_delete((dilithium_signature_t*)a_sig_buf);
+        break;
+    case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        DAP_DELETE(((falcon_signature_t *)a_sig_buf)->sig_data);
         break;
     default:
         break;
