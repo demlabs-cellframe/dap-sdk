@@ -623,6 +623,8 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
 {
     UNUSED(a_arg);
     dap_stream_t *l_stm = DAP_STREAM(a_http_client);
+    if (!l_stm)
+        return;
     a_http_client->_inheritor = NULL; // To prevent double free
     l_stm->esocket = NULL;
     l_stm->esocket_uuid = 0;
