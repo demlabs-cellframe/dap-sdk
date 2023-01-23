@@ -25,6 +25,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "dap_client.h"
+#include "dap_client_http.h"
 #include "dap_stream.h"
 #include "dap_events_socket.h"
 #include "dap_cert.h"
@@ -40,7 +41,7 @@ typedef struct dap_client_pvt {
     dap_events_socket_t *stream_es;
 
     dap_worker_t *worker;
-    dap_http_client_t *http_client;
+    dap_client_http_t *http_client;
 
     dap_enc_key_type_t session_key_type;
     dap_enc_key_type_t session_key_open_type;

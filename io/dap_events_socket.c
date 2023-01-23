@@ -1539,12 +1539,10 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
 {
     assert(a_es);
 
+    if( a_es->callbacks.delete_callback )
+        a_es->callbacks.delete_callback( a_es, a_es->callbacks.arg ); // Init internal structure
     //log_it( L_DEBUG, "es is going to be removed from the lists and free the memory (0x%016X)", a_es );
     dap_context_remove(a_es);
-
-    if( a_es->callbacks.delete_callback )
-        a_es->callbacks.delete_callback( a_es, NULL ); // Init internal structure
-
     //log_it( L_DEBUG, "dap_events_socket wrapped around %d socket is removed", a_es->socket );
     dap_events_socket_delete_unsafe(a_es, preserve_inheritor);
 

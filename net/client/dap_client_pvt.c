@@ -60,9 +60,6 @@
 #include "dap_uuid.h"
 
 #include "dap_timerfd.h"
-//#include "dap_http_client_simple.h"
-#include "dap_client_http.h"
-#include "dap_client.h"
 #include "dap_client_pvt.h"
 #include "dap_server.h"
 #include "dap_stream.h"
@@ -152,6 +149,10 @@ void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
 
 static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
 {
+    if (a_client_pvt->http_client) {
+        dap_client_http_close_unsafe(a_client_pvt->http_client);
+        a_client_pvt->http_client = NULL;
+    }
     if (a_client_pvt->stream) {
         dap_stream_delete_unsafe(a_client_pvt->stream);
         a_client_pvt->stream = NULL;
@@ -674,10 +675,11 @@ int dap_client_pvt_request(dap_client_pvt_t * a_client_internal, const char * a_
     a_client_internal->request_response_callback = a_response_proc;
     a_client_internal->request_error_callback = a_response_error;
     a_client_internal->is_encrypted = false;
-    return dap_client_http_request(a_client_internal->worker, a_client_internal->client->uplink_addr,
+    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker, a_client_internal->client->uplink_addr,
                                             a_client_internal->client->uplink_port,
                                             a_request ? "POST" : "GET", "text/text", a_path, a_request,
                                             a_request_size, NULL, s_request_response, s_request_error, a_client_internal, NULL);
+    return a_client_internal->http_client == NULL;
 }
 
 /**
@@ -774,7 +776,8 @@ void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char
     if (a_client_internal->is_close_session)
         dap_snprintf(l_custom + l_off, l_size_required - l_off, "%s\r\n", "SessionCloseAfterRequest: true");
 
-    dap_client_http_request(a_client_internal->worker, a_client_internal->client->uplink_addr, a_client_internal->client->uplink_port,
+    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker, a_client_internal->client->uplink_addr,
+                            a_client_internal->client->uplink_port,
                             a_request ? "POST" : "GET", "text/text",
                             l_path, l_request_enc, l_request_enc_size, NULL,
                             s_request_response, s_request_error, a_client_internal, l_custom);
@@ -794,7 +797,7 @@ static void s_request_error(int a_err_code, void * a_obj)
 {
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);
-
+    l_client_pvt->http_client = NULL;
     if (l_client_pvt && l_client_pvt->request_error_callback)
           l_client_pvt->request_error_callback(l_client_pvt->client, l_client_pvt->callback_arg, a_err_code);
 }
@@ -809,6 +812,7 @@ static void s_request_response(void * a_response, size_t a_response_size, void *
 {
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);
+    l_client_pvt->http_client = NULL;
     if (l_client_pvt->is_encrypted && l_client_pvt->session_key) {
         size_t l_response_dec_size_max = a_response_size ? a_response_size * 2 + 16 : 0;
         char * l_response_dec = a_response_size ? DAP_NEW_Z_SIZE(char, l_response_dec_size_max) : NULL;
