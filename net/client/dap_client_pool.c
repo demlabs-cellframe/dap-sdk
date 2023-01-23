@@ -37,7 +37,7 @@ struct dap_client_list{
 };
 
 
-void s_stage_status_callback(dap_client_t * a_client, void* a_arg);
+void s_delete_callback(dap_client_t * a_client, void* a_arg);
 void s_stage_status_error_callback(dap_client_t * a_client, void* a_arg);
 
 /**
@@ -61,12 +61,11 @@ void dap_client_pool_deinit()
  */
 dap_client_t * dap_client_pool_new(const char * a_client_id)
 {
-    dap_client_t * l_client = dap_client_new(s_stage_status_callback
-                                  , s_stage_status_error_callback );
+    dap_client_t * l_client = dap_client_new(s_delete_callback, s_stage_status_error_callback, (void *)a_client_id);
     return  l_client;
 }
 
-void s_stage_status_callback(dap_client_t * a_client, void* a_arg)
+void s_delete_callback(dap_client_t * a_client, void* a_arg)
 {
 
 }

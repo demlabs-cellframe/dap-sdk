@@ -101,6 +101,8 @@
   #define UNUSED(x) (void)(x)
 #endif
 
+#define UNUSED_ATTR __attribute__((__unused__))
+
 #ifndef ROUNDUP
   #define ROUNDUP(n,width) (((n) + (width) - 1) & ~(unsigned)((width) - 1))
 #endif
