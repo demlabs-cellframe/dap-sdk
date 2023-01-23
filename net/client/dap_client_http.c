@@ -236,15 +236,17 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     }
 
     // send header
-    dap_events_socket_write_f_unsafe( a_esocket, "%s /%s%s HTTP/1.1\r\n"
-            "Host: %s\r\n"
-            "%s"
-            "\r\n",
-            l_http_pvt->method, l_http_pvt->path, l_get_str, l_http_pvt->uplink_addr, l_request_headers);
+    ssize_t l_wrote = dap_events_socket_write_f_unsafe(a_esocket,
+                                                    "%s /%s%s HTTP/1.1\r\n"
+                                                    "Host: %s\r\n"
+                                                    "%s\r\n",
+                                                    l_http_pvt->method, l_http_pvt->path,
+                                                    l_get_str, l_http_pvt->uplink_addr, l_request_headers);
+    if (l_wrote > 0)        // Exclude trailing zero
+        a_esocket->buf_out_size--;
     // send data for POST request
-    if (l_http_pvt->request && l_http_pvt->request_size) {
-	dap_events_socket_write_unsafe( a_esocket, l_http_pvt->request, l_http_pvt->request_size);
-    }
+    if (l_http_pvt->request && l_http_pvt->request_size)
+        dap_events_socket_write_unsafe( a_esocket, l_http_pvt->request, l_http_pvt->request_size);
 }
 
 /**
@@ -618,7 +620,7 @@ int dap_client_http_request_custom (
     l_http_pvt->path = dap_strdup(a_path);
     l_http_pvt->request_content_type = dap_strdup(a_request_content_type);
 
-    l_http_pvt->request = DAP_NEW_Z_SIZE(byte_t, a_request_size+1);
+    l_http_pvt->request = DAP_NEW_Z_SIZE(byte_t, a_request_size + 1);
     if (! l_http_pvt->request)
         return -4;
     l_http_pvt->request_size = a_request_size;
