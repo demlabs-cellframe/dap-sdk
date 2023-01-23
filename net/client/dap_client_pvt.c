@@ -430,7 +430,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
 #ifdef DAP_OS_WINDOWS
                     u_long l_socket_flags = 1;
                     if (ioctlsocket(l_stream_socket, (long)FIONBIO, &l_socket_flags) == SOCKET_ERROR) {
-                        log_it(L_ERROR, "Can't set socket %zu to nonblocking mode, error %d", a_client_pvt->stream_socket, WSAGetLastError());
+                        log_it(L_ERROR, "Can't set socket %zu to nonblocking mode, error %d", l_stream_socket, WSAGetLastError());
                     }
 #else
                     // Get socket flags
