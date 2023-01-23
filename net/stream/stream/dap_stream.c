@@ -522,8 +522,9 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
 
 static void s_client_callback_worker_assign(dap_events_socket_t * a_esocket, dap_worker_t * a_worker)
 {
-    dap_client_pvt_t *l_client_pvt = DAP_ESOCKET_CLIENT_PVT(a_esocket);
-    assert(l_client_pvt);
+    dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_esocket);
+    assert(l_client);
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     dap_stream_t *l_stream = l_client_pvt->stream;
     assert(l_stream);
     // Start client keepalive timer or restart it, if it was unassigned before
@@ -540,8 +541,9 @@ static void s_client_callback_worker_assign(dap_events_socket_t * a_esocket, dap
 static void s_client_callback_worker_unassign(dap_events_socket_t * a_esocket, dap_worker_t * a_worker)
 {
     UNUSED(a_worker);
-    dap_client_pvt_t *l_client_pvt = DAP_ESOCKET_CLIENT_PVT(a_esocket);
-    assert(l_client_pvt);
+    dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_esocket);
+    assert(l_client);
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     dap_stream_t *l_stream = l_client_pvt->stream;
     assert(l_stream);
     DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
@@ -599,7 +601,7 @@ static void s_esocket_write(dap_events_socket_t* a_esocket , void * a_arg){
  * @param a_esocket DAP client instance
  * @param arg Not used
  */
-static void s_udp_esocket_new(dap_events_socket_t* a_esocket, void * a_arg)
+static void s_udp_esocket_new(dap_events_socket_t* a_esocket, UNUSED_ATTR void * a_arg)
 {
     stream_new_udp(a_esocket);
 }
@@ -908,8 +910,9 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
                 l_stream = DAP_STREAM(l_http_client);
             }
         } else {
-            dap_client_pvt_t *l_client_pvt = DAP_ESOCKET_CLIENT_PVT(l_es);
-            assert(l_client_pvt);
+            dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
+            assert(l_client);
+            dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
             l_stream = l_client_pvt->stream;
         }
         assert(l_stream);

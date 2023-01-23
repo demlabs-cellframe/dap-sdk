@@ -45,50 +45,11 @@
 
 #define DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX 65536 //40960
 
-typedef struct dap_http_client_internal {
-
-    dap_client_http_callback_data_t response_callback;
-    dap_client_http_callback_error_t error_callback;
-    void *callbacks_arg;
-
-    byte_t *request;
-    size_t request_size;
-    size_t request_sent_size;
-    bool is_over_ssl;
-
-    int socket;
-
-    bool is_header_read;
-    bool is_closed_by_timeout;
-    bool were_callbacks_called;
-    size_t header_length;
-    size_t content_length;
-    time_t ts_last_read;
-    uint8_t *response;
-    size_t response_size;
-    size_t response_size_max;
-
-    // Request args
-    char uplink_addr[INET_ADDRSTRLEN];
-    uint16_t uplink_port;
-    char *method;
-    char *request_content_type;
-    char * path;
-    char *cookie;
-    char *request_custom_headers; // Custom headers
-
-    // Request vars
-    dap_worker_t * worker;
-
-} dap_client_http_pvt_t;
-
-#define PVT(a) (a ? (dap_client_http_pvt_t *) (a)->_inheritor : NULL)
-
 static void s_http_connected(dap_events_socket_t * a_esocket); // Connected
 #ifndef DAP_NET_CLIENT_NO_SSL
 static void s_http_ssl_connected(dap_events_socket_t * a_esocket); // connected SSL callback
 #endif
-static void s_client_http_delete(dap_client_http_pvt_t * a_http_pvt);
+static void s_client_http_delete(dap_client_http_t * a_http_pvt);
 static void s_http_read(dap_events_socket_t * a_es, void * arg);
 static void s_http_error(dap_events_socket_t * a_es, int a_arg);
 static bool s_timer_timeout_check(void * a_arg);
@@ -97,7 +58,7 @@ static bool s_timer_timeout_after_connected_check(void * a_arg);
 
 static bool s_debug_more=false;
 static uint64_t s_client_timeout_ms                     = 20000;
-static uint64_t s_client_timeout_read_after_connect_ms       = 5000;
+static uint64_t s_client_timeout_read_after_connect_ms  = 5000;
 static uint32_t s_max_attempts = 5;
 
 #ifndef DAP_NET_CLIENT_NO_SSL
@@ -181,58 +142,59 @@ void dap_client_http_set_connect_timeout_ms(uint64_t a_timeout_ms)
 static void s_http_connected(dap_events_socket_t * a_esocket)
 {
     assert(a_esocket);
-    dap_client_http_pvt_t * l_http_pvt = PVT(a_esocket);
-    assert(l_http_pvt);
-    assert(l_http_pvt->worker);
+    dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(a_esocket);
+    assert(l_client_http);
+    assert(l_client_http->worker);
 
-    log_it(L_INFO, "Remote address connected (%s:%u) with sock_id %"DAP_FORMAT_SOCKET, l_http_pvt->uplink_addr, l_http_pvt->uplink_port, a_esocket->socket);
+    log_it(L_INFO, "Remote address connected (%s:%u) with sock_id %"DAP_FORMAT_SOCKET, l_client_http->uplink_addr, l_client_http->uplink_port, a_esocket->socket);
     // add to dap_worker
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
     *l_es_uuid_ptr = a_esocket->uuid;
-    if(dap_timerfd_start_on_worker(l_http_pvt->worker, (unsigned long)s_client_timeout_read_after_connect_ms, s_timer_timeout_after_connected_check, l_es_uuid_ptr) == NULL ){
-	DAP_DELETE(l_es_uuid_ptr);
-	log_it(L_ERROR, "Can't run timerfo after connection check on worker id %u", l_http_pvt->worker->id);
+    l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, (unsigned long)s_client_timeout_read_after_connect_ms, s_timer_timeout_after_connected_check, l_es_uuid_ptr);
+    if (!l_client_http->timer) {
+        DAP_DELETE(l_es_uuid_ptr);
+        log_it(L_ERROR, "Can't run timerfo after connection check on worker id %u", l_client_http->worker->id);
     }
 
     char l_request_headers[1024] = { [0]='\0' };
     int l_offset = 0;
     size_t l_offset2 = sizeof(l_request_headers);
-    if(l_http_pvt->request && (dap_strcmp(l_http_pvt->method, "POST") == 0 || dap_strcmp(l_http_pvt->method, "POST_ENC") == 0)) {
+    if(l_client_http->request && (dap_strcmp(l_client_http->method, "POST") == 0 || dap_strcmp(l_client_http->method, "POST_ENC") == 0)) {
 	//log_it(L_DEBUG, "POST request with %u bytes of decoded data", a_request_size);
 
-	l_offset += l_http_pvt->request_content_type
-	        ? dap_snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", l_http_pvt->request_content_type)
+    l_offset += l_client_http->request_content_type
+            ? dap_snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", l_client_http->request_content_type)
 	        : 0;
 
 	// Add custom headers
-	l_offset += l_http_pvt->request_custom_headers
-	        ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_http_pvt->request_custom_headers)
+    l_offset += l_client_http->request_custom_headers
+            ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
 	        : 0;
 
 	// Setup cookie header
-	l_offset += l_http_pvt->cookie
-	        ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_http_pvt->cookie)
+    l_offset += l_client_http->cookie
+            ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
 	        : 0;
 
 	// Set request size as Content-Length header
-	l_offset += dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", l_http_pvt->request_size);
+    l_offset += dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", l_client_http->request_size);
     }
 
     // adding string for GET request
-    char l_get_str[l_http_pvt->request_size + 2];
+    char l_get_str[l_client_http->request_size + 2];
     l_get_str[0] = '\0';
-    if(! dap_strcmp(l_http_pvt->method, "GET") ) {
+    if(! dap_strcmp(l_client_http->method, "GET") ) {
 	// We hide our request and mask them as possible
 	l_offset += dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "User-Agent: Mozilla\r\n");
-	l_offset += l_http_pvt->request_custom_headers
-	        ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_http_pvt->request_custom_headers)
+    l_offset += l_client_http->request_custom_headers
+            ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
 	        : 0;
-	l_offset += l_http_pvt->cookie
-	        ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_http_pvt->cookie)
+    l_offset += l_client_http->cookie
+            ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
 	        : 0;
 
-	if ((l_http_pvt->request_size && l_http_pvt->request_size))
-	    dap_snprintf(l_get_str, sizeof(l_get_str), "?%s", l_http_pvt->request) ;
+    if ((l_client_http->request_size && l_client_http->request_size))
+        dap_snprintf(l_get_str, sizeof(l_get_str), "?%s", l_client_http->request) ;
     }
 
     // send header
@@ -240,13 +202,13 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
                                                     "%s /%s%s HTTP/1.1\r\n"
                                                     "Host: %s\r\n"
                                                     "%s\r\n",
-                                                    l_http_pvt->method, l_http_pvt->path,
-                                                    l_get_str, l_http_pvt->uplink_addr, l_request_headers);
+                                                    l_client_http->method, l_client_http->path,
+                                                    l_get_str, l_client_http->uplink_addr, l_request_headers);
     if (l_wrote > 0)        // Exclude trailing zero
         a_esocket->buf_out_size--;
     // send data for POST request
-    if (l_http_pvt->request && l_http_pvt->request_size)
-        dap_events_socket_write_unsafe( a_esocket, l_http_pvt->request, l_http_pvt->request_size);
+    if (l_client_http->request && l_client_http->request_size)
+        dap_events_socket_write_unsafe( a_esocket, l_client_http->request, l_client_http->request_size);
 }
 
 /**
@@ -263,20 +225,22 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
     assert(l_worker);
     dap_events_socket_t * l_es = dap_context_find( l_worker->context, *l_es_uuid_ptr);
     if(l_es){
-        dap_client_http_pvt_t * l_http_pvt = PVT(l_es);
-        assert(l_http_pvt);
-        if ( time(NULL)- l_http_pvt->ts_last_read >= (time_t) s_client_timeout_read_after_connect_ms){
+        dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(l_es);
+        assert(l_client_http);
+        if ( time(NULL)- l_client_http->ts_last_read >= (time_t) s_client_timeout_read_after_connect_ms){
             log_it(L_WARNING, "Timeout for reading after connect for request http://%s:%u/%s, possible uplink is on heavy load or DPI between you",
-                   l_http_pvt->uplink_addr, l_http_pvt->uplink_port, l_http_pvt->path);
-            if(l_http_pvt->error_callback) {
-                l_http_pvt->error_callback(ETIMEDOUT, l_http_pvt->callbacks_arg);
-                l_http_pvt->were_callbacks_called = true;
+                   l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path);
+            l_client_http->timer = NULL;
+            if(l_client_http->error_callback) {
+                l_client_http->error_callback(ETIMEDOUT, l_client_http->callbacks_arg);
+                l_client_http->were_callbacks_called = true;
             }
-            l_http_pvt->is_closed_by_timeout = true;
+            l_client_http->is_closed_by_timeout = true;
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout",
-                   l_es->remote_addr_str ? l_es->remote_addr_str : "", l_es->socket, l_es->type);
+                   l_es->remote_addr_str, l_es->socket, l_es->type);
             dap_events_socket_remove_and_delete_unsafe(l_es, true);
-        }
+        } else
+            return true;
     }else{
         if(s_debug_more)
             log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid_ptr);
@@ -301,16 +265,17 @@ static bool s_timer_timeout_check(void * a_arg)
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
     if(l_es){
         if (l_es->flags & DAP_SOCK_CONNECTING ){
-            dap_client_http_pvt_t * l_http_pvt = PVT(l_es);
+            dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(l_es);
+            l_client_http->timer = NULL;
             log_it(L_WARNING,"Connecting timeout for request http://%s:%u/%s, possible network problems or host is down",
-                   l_http_pvt->uplink_addr, l_http_pvt->uplink_port, l_http_pvt->path);
-            if(l_http_pvt->error_callback) {
-                l_http_pvt->error_callback(ETIMEDOUT, l_http_pvt->callbacks_arg);
-                l_http_pvt->were_callbacks_called = true;
+                   l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path);
+            if(l_client_http->error_callback) {
+                l_client_http->error_callback(ETIMEDOUT, l_client_http->callbacks_arg);
+                l_client_http->were_callbacks_called = true;
             }
-            l_http_pvt->is_closed_by_timeout = true;
+            l_client_http->is_closed_by_timeout = true;
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout",
-                   l_es->remote_addr_str ? l_es->remote_addr_str : "", l_es->socket, l_es->type);
+                   l_es->remote_addr_str, l_es->socket, l_es->type);
             dap_events_socket_remove_and_delete_unsafe(l_es, true);
         }else
             if(s_debug_more)
@@ -331,67 +296,65 @@ static bool s_timer_timeout_check(void * a_arg)
 static void s_http_read(dap_events_socket_t * a_es, void * arg)
 {
     UNUSED(arg);
-    dap_client_http_pvt_t * l_http_pvt = PVT(a_es);
-    if(!l_http_pvt) {
+    dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(a_es);
+    if(!l_client_http) {
         log_it(L_ERROR, "s_http_read: l_client_http_internal is NULL!");
         return;
     }
-    l_http_pvt->ts_last_read = time(NULL);
+    l_client_http->ts_last_read = time(NULL);
     // read data
-    l_http_pvt->response_size += dap_events_socket_pop_from_buf_in(a_es,
-            l_http_pvt->response + l_http_pvt->response_size,
-            l_http_pvt->response_size_max - l_http_pvt->response_size);
+    l_client_http->response_size += dap_events_socket_pop_from_buf_in(a_es,
+            l_client_http->response + l_client_http->response_size,
+            l_client_http->response_size_max - l_client_http->response_size);
 
     // if buffer is overfull then read once more
-    if(l_http_pvt->response_size >= DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX) {
-        log_it(L_ERROR, "s_http_read response_size(%zu) overfull!!!", l_http_pvt->response_size);
+    if(l_client_http->response_size >= DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX) {
+        log_it(L_ERROR, "s_http_read response_size(%zu) overfull!!!", l_client_http->response_size);
     }
 
     // search http header
-    if(!l_http_pvt->is_header_read && l_http_pvt->response_size > 4
-            && !l_http_pvt->content_length) {
-        for(size_t l_pos = 0; l_pos < l_http_pvt->response_size - 4; l_pos++) {
-            uint8_t *l_str = l_http_pvt->response + l_pos;
+    if(!l_client_http->is_header_read && l_client_http->response_size > 4
+            && !l_client_http->content_length) {
+        for(size_t l_pos = 0; l_pos < l_client_http->response_size - 4; l_pos++) {
+            uint8_t *l_str = l_client_http->response + l_pos;
             if(!dap_strncmp((const char*) l_str, "\r\n\r\n", 4)) {
-                l_http_pvt->header_length = l_pos + 4;
-                l_http_pvt->is_header_read = true;
-                //dap_events_socket_shrink_buf_in(a_es, l_client_internal->header_size);
+                l_client_http->header_length = l_pos + 4;
+                l_client_http->is_header_read = true;
                 break;
             }
         }
     }
     // process http header
-    if(l_http_pvt->is_header_read) {
+    if(l_client_http->is_header_read) {
         const char *l_token = "Content-Length: ";
-        char *l_content_len_ptr = strstr((char*)l_http_pvt->response, l_token);
+        char *l_content_len_ptr = strstr((char*)l_client_http->response, l_token);
         if (l_content_len_ptr) {
-            l_http_pvt->content_length = atoi(l_content_len_ptr + strlen(l_token));
-            l_http_pvt->is_header_read = false;
+            l_client_http->content_length = atoi(l_content_len_ptr + strlen(l_token));
+            l_client_http->is_header_read = false;
         }
     }
 
     // process data
-    if(l_http_pvt->content_length) {
-        l_http_pvt->is_header_read = false;
+    if(l_client_http->content_length) {
+        l_client_http->is_header_read = false;
 
         // received not enough data
-        if(l_http_pvt->content_length
-                > (l_http_pvt->response_size - l_http_pvt->header_length)) {
+        if(l_client_http->content_length
+                > (l_client_http->response_size - l_client_http->header_length)) {
             return;
         }else{
             // process data
-            if(l_http_pvt->response_callback)
-                l_http_pvt->response_callback(
-                        l_http_pvt->response + l_http_pvt->header_length,
-                        l_http_pvt->content_length, //l_client_internal->response_size - l_client_internal->header_size,
-                        l_http_pvt->callbacks_arg);
-            l_http_pvt->response_size -= l_http_pvt->header_length;
-            l_http_pvt->response_size -= l_http_pvt->content_length;
-            l_http_pvt->header_length = 0;
-            l_http_pvt->content_length = 0;
-            l_http_pvt->were_callbacks_called = true;
+            if(l_client_http->response_callback)
+                l_client_http->response_callback(
+                        l_client_http->response + l_client_http->header_length,
+                        l_client_http->content_length,
+                        l_client_http->callbacks_arg);
+            l_client_http->response_size -= l_client_http->header_length;
+            l_client_http->response_size -= l_client_http->content_length;
+            l_client_http->header_length = 0;
+            l_client_http->content_length = 0;
+            l_client_http->were_callbacks_called = true;
             a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-            //dap_events_socket_remove_and_delete_unsafe(a_es, true);
         }
 
     }
@@ -423,7 +386,7 @@ static void s_http_error(dap_events_socket_t * a_es, int a_errno)
     }else
         log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET" error: %s (code %d)", a_es->socket, l_errbuf, a_errno);
 
-    dap_client_http_pvt_t * l_client_http_internal = PVT(a_es);
+    dap_client_http_t * l_client_http_internal = DAP_CLIENT_HTTP(a_es);
 
     if(!l_client_http_internal) {
         log_it(L_ERROR, "s_http_write: l_client_http_internal is NULL!");
@@ -445,7 +408,7 @@ static void s_http_error(dap_events_socket_t * a_es, int a_errno)
 static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
 {
     (void) a_arg;
-    dap_client_http_pvt_t * l_client_http_internal = PVT(a_es);
+    dap_client_http_t * l_client_http_internal = DAP_CLIENT_HTTP(a_es);
     if(l_client_http_internal == NULL){
         log_it(L_WARNING, "For some reasons internal object is NULL");
         return;
@@ -496,7 +459,7 @@ static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
  * @brief s_client_http_delete
  * @param a_http_pvt
  */
-static void s_client_http_delete(dap_client_http_pvt_t * a_http_pvt)
+static void s_client_http_delete(dap_client_http_t * a_http_pvt)
 {
     // call from dap_events_socket_delete(ev_socket, true);
     if(s_debug_more)
@@ -535,24 +498,23 @@ static void s_client_http_delete(dap_client_http_pvt_t * a_http_pvt)
  * @param a_custom_headers
  * @param a_over_ssl
  */
-int dap_client_http_request_custom (
-                dap_worker_t * a_worker,
-                const char *a_uplink_addr,
-                uint16_t a_uplink_port,
-                const char *a_method,
-                const char *a_request_content_type,
-                const char * a_path,
-                const void *a_request,
-                size_t a_request_size,
-                char *a_cookie,
-        dap_client_http_callback_data_t a_response_callback,
-        dap_client_http_callback_error_t a_error_callback,
-                void *a_callbacks_arg,
-                char *a_custom_headers,
-                bool a_over_ssl
-            )
+dap_client_http_t * dap_client_http_request_custom (
+                            dap_worker_t * a_worker,
+                            const char *a_uplink_addr,
+                            uint16_t a_uplink_port,
+                            const char *a_method,
+                            const char *a_request_content_type,
+                            const char * a_path,
+                            const void *a_request,
+                            size_t a_request_size,
+                            char *a_cookie,
+                            dap_client_http_callback_data_t a_response_callback,
+                            dap_client_http_callback_error_t a_error_callback,
+                            void *a_callbacks_arg,
+                            char *a_custom_headers,
+                            bool a_over_ssl
+                            )
 {
-
     //log_it(L_DEBUG, "HTTP request on url '%s:%d'", a_uplink_addr, a_uplink_port);
     static dap_events_socket_callbacks_t l_s_callbacks = {
         .connected_callback = s_http_connected,
@@ -576,7 +538,7 @@ int dap_client_http_request_custom (
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
 #endif
-        return -1;
+        return NULL;
     }
     // Get socket flags
 #if defined DAP_OS_WINDOWS
@@ -590,7 +552,7 @@ int dap_client_http_request_custom (
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
 
-        return -2;
+        return NULL;
     }
     // Make it non-block
     if (fcntl( l_socket, F_SETFL,l_socket_flags| O_NONBLOCK) == -1){
@@ -598,7 +560,7 @@ int dap_client_http_request_custom (
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
 
-        return -3;
+        return NULL;
     }
 #endif
     // set socket param
@@ -610,31 +572,31 @@ int dap_client_http_request_custom (
 
     log_it(L_DEBUG,"Created client request socket %"DAP_FORMAT_SOCKET, l_socket);
     // create private struct
-    dap_client_http_pvt_t *l_http_pvt = DAP_NEW_Z(dap_client_http_pvt_t);
-    l_ev_socket->_inheritor = l_http_pvt;
-    l_http_pvt->error_callback = a_error_callback;
-    l_http_pvt->response_callback = a_response_callback;
+    dap_client_http_t *l_client_http = DAP_NEW_Z(dap_client_http_t);
+    l_ev_socket->_inheritor = l_client_http;
+    l_client_http->error_callback = a_error_callback;
+    l_client_http->response_callback = a_response_callback;
     //l_client_http_internal->socket = l_socket;
-    l_http_pvt->callbacks_arg = a_callbacks_arg;
-    l_http_pvt->method = dap_strdup(a_method);
-    l_http_pvt->path = dap_strdup(a_path);
-    l_http_pvt->request_content_type = dap_strdup(a_request_content_type);
+    l_client_http->callbacks_arg = a_callbacks_arg;
+    l_client_http->method = dap_strdup(a_method);
+    l_client_http->path = dap_strdup(a_path);
+    l_client_http->request_content_type = dap_strdup(a_request_content_type);
 
-    l_http_pvt->request = DAP_NEW_Z_SIZE(byte_t, a_request_size + 1);
-    if (! l_http_pvt->request)
-        return -4;
-    l_http_pvt->request_size = a_request_size;
-    memcpy(l_http_pvt->request, a_request, a_request_size);
+    l_client_http->request = DAP_NEW_Z_SIZE(byte_t, a_request_size + 1);
+    if (! l_client_http->request)
+        return NULL;
+    l_client_http->request_size = a_request_size;
+    memcpy(l_client_http->request, a_request, a_request_size);
 
-    strncpy(l_http_pvt->uplink_addr, a_uplink_addr, INET_ADDRSTRLEN);
-    l_http_pvt->uplink_port = a_uplink_port;
-    l_http_pvt->cookie = a_cookie;
-    l_http_pvt->request_custom_headers = dap_strdup(a_custom_headers);
+    strncpy(l_client_http->uplink_addr, a_uplink_addr, INET_ADDRSTRLEN);
+    l_client_http->uplink_port = a_uplink_port;
+    l_client_http->cookie = a_cookie;
+    l_client_http->request_custom_headers = dap_strdup(a_custom_headers);
 
-    l_http_pvt->response_size_max = DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX;
-    l_http_pvt->response = (uint8_t*) DAP_NEW_Z_SIZE(uint8_t, DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX);
-    l_http_pvt->worker = a_worker;
-    l_http_pvt->is_over_ssl = a_over_ssl;
+    l_client_http->response_size_max = DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX;
+    l_client_http->response = (uint8_t*) DAP_NEW_Z_SIZE(uint8_t, DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX);
+    l_client_http->worker = a_worker;
+    l_client_http->is_over_ssl = a_over_ssl;
 
 
     // get struct in_addr from ip_str
@@ -643,13 +605,13 @@ int dap_client_http_request_custom (
     if(!l_ev_socket->remote_addr.sin_addr.s_addr) {
         if(dap_net_resolve_host(a_uplink_addr, AF_INET, (struct sockaddr*) &l_ev_socket->remote_addr.sin_addr) < 0) {
             log_it(L_ERROR, "Wrong remote address '%s:%u'", a_uplink_addr, a_uplink_port);
-            s_client_http_delete( l_http_pvt);
+            s_client_http_delete( l_client_http);
             l_ev_socket->_inheritor = NULL;
             dap_events_socket_delete_unsafe( l_ev_socket, true);
             if(a_error_callback)
                 a_error_callback(errno, a_callbacks_arg);
 
-            return -5;
+            return NULL;
         }
     }
     strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET_ADDRSTRLEN);
@@ -669,77 +631,81 @@ int dap_client_http_request_custom (
     int l_err = connect(l_socket, (struct sockaddr *) &l_ev_socket->remote_addr, sizeof(struct sockaddr_in));
     if (l_err == 0){
         log_it(L_DEBUG, "Connected momentaly with %s:%u!", a_uplink_addr, a_uplink_port);
-        l_http_pvt->worker = a_worker?a_worker: dap_events_worker_get_auto();
+        l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
+        l_client_http->es = l_ev_socket;
         if (a_over_ssl) {
 #ifndef DAP_NET_CLIENT_NO_SSL
             s_http_ssl_connected(l_ev_socket);
 #endif
         }
-        return 0;
+        return l_client_http;
     }
 #ifdef DAP_OS_WINDOWS
     else if(l_err == SOCKET_ERROR) {
         int l_err2 = WSAGetLastError();
         if (l_err2 == WSAEWOULDBLOCK) {
             log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
-            l_http_pvt->worker = a_worker?a_worker: dap_events_worker_get_auto();
-            dap_worker_add_events_socket(l_ev_socket,l_http_pvt->worker);
+            l_client_http->worker = a_worker?a_worker: dap_events_worker_get_auto();
+            dap_worker_add_events_socket(l_ev_socket,l_client_http->worker);
             dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
             *l_ev_uuid_ptr = l_ev_socket->uuid;
-            if (!dap_timerfd_start_on_worker(l_http_pvt->worker,s_client_timeout_ms, s_timer_timeout_check, l_ev_uuid_ptr)) {
+            l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, s_timer_timeout_check, l_ev_uuid_ptr);
+            if (!l_client_http->timer) {
                 log_it(L_ERROR,"Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
-                       l_http_pvt->worker->id, *l_ev_uuid_ptr);
+                       l_client_http->worker->id, *l_ev_uuid_ptr);
 		DAP_DEL_Z(l_ev_uuid_ptr);
             }
-            return 0;
+            return l_client_http;
         } else {
             log_it(L_ERROR, "Socket %zu connecting error: %d", l_ev_socket->socket, l_err2);
-            s_client_http_delete( l_http_pvt);
+            s_client_http_delete( l_client_http);
             l_ev_socket->_inheritor = NULL;
             dap_events_socket_delete_unsafe( l_ev_socket, true);
             if(a_error_callback)
                 a_error_callback(l_err2, a_callbacks_arg);
-            return -6;
+            return NULL;
         }
     }
 #else
     else if( errno == EINPROGRESS && l_err == -1){
         log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
-        l_http_pvt->worker = a_worker?a_worker: dap_events_worker_get_auto();
-        dap_worker_add_events_socket(l_ev_socket,l_http_pvt->worker);
+        l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
+        l_client_http->es = l_ev_socket;
+        dap_worker_add_events_socket(l_ev_socket, l_client_http->worker);
         dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         *l_ev_uuid_ptr = l_ev_socket->uuid;
-        if(dap_timerfd_start_on_worker(l_http_pvt->worker,s_client_timeout_ms, s_timer_timeout_check,l_ev_uuid_ptr) == NULL){
+        l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, s_timer_timeout_check, l_ev_uuid_ptr);
+        if (!l_client_http->timer) {
             log_it(L_ERROR,"Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
-                   l_http_pvt->worker->id, *l_ev_uuid_ptr);
+                   l_client_http->worker->id, *l_ev_uuid_ptr);
             DAP_DEL_Z(l_ev_uuid_ptr);
         }
-        return 0;
+        return l_client_http;
     }
     else{
         char l_errbuf[128];
         l_errbuf[0] = '\0';
         strerror_r(l_err, l_errbuf, sizeof (l_errbuf));
         log_it(L_ERROR, "Connecting error: \"%s\" (code %d)", l_errbuf, l_err);
-        s_client_http_delete( l_http_pvt);
+        s_client_http_delete( l_client_http);
         l_ev_socket->_inheritor = NULL;
         dap_events_socket_delete_unsafe( l_ev_socket, true);
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
 
-        return -6;
+        return NULL;
     }
 #endif
-    return -7;
+    return NULL;
 }
 
 #ifndef DAP_NET_CLIENT_NO_SSL
 static void s_http_ssl_connected(dap_events_socket_t * a_esocket)
 {
     assert(a_esocket);
-    dap_client_http_pvt_t * l_http_pvt = PVT(a_esocket);
-    assert(l_http_pvt);
-    dap_worker_t *l_worker = l_http_pvt->worker;
+    dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(a_esocket);
+    assert(l_client_http);
+    dap_worker_t *l_worker = l_client_http->worker;
     assert(l_worker);
 
     WOLFSSL *l_ssl = wolfSSL_new(s_ctx);
@@ -754,7 +720,7 @@ static void s_http_ssl_connected(dap_events_socket_t * a_esocket)
     dap_events_socket_handle_t * l_ev_socket_handler = DAP_NEW_Z(dap_events_socket_handle_t);
     l_ev_socket_handler->esocket = a_esocket;
     l_ev_socket_handler->esocket_uuid = a_esocket->uuid;
-    dap_timerfd_start_on_worker(l_http_pvt->worker, s_client_timeout_ms, s_timer_timeout_check, l_ev_socket_handler);
+    l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker,s_client_timeout_ms, s_timer_timeout_check, l_ev_socket_handler);
 }
 #endif
 
@@ -774,7 +740,7 @@ static void s_http_ssl_connected(dap_events_socket_t * a_esocket)
  * @param a_callbacks_arg
  * @param a_custom_headers
  */
-int dap_client_http_request(dap_worker_t * a_worker,const char *a_uplink_addr, uint16_t a_uplink_port, const char * a_method,
+dap_client_http_t *dap_client_http_request(dap_worker_t * a_worker,const char *a_uplink_addr, uint16_t a_uplink_port, const char * a_method,
         const char* a_request_content_type, const char * a_path, const void *a_request, size_t a_request_size,
         char * a_cookie, dap_client_http_callback_data_t a_response_callback,
         dap_client_http_callback_error_t a_error_callback, void *a_callbacks_arg, char *a_custom_headers)
@@ -782,4 +748,12 @@ int dap_client_http_request(dap_worker_t * a_worker,const char *a_uplink_addr, u
     return dap_client_http_request_custom(a_worker, a_uplink_addr, a_uplink_port, a_method, a_request_content_type, a_path,
             a_request, a_request_size, a_cookie, a_response_callback, a_error_callback, a_callbacks_arg,
             a_custom_headers, false);
+}
+
+void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
+{
+    if (a_client_http->timer)
+        dap_timerfd_delete(a_client_http->timer);
+    dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);
+    s_client_http_delete(a_client_http);
 }

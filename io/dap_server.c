@@ -395,12 +395,10 @@ static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket
     getnameinfo(a_remote_addr,a_remote_addr_size, l_es_new->hostaddr
                  ,DAP_EVSOCK$SZ_HOSTNAME, l_es_new->service, DAP_EVSOCK$SZ_SERVICE,
                 NI_NUMERICHOST | NI_NUMERICSERV);
-    if (!l_es_new->hostaddr){
-        struct in_addr l_addr_remote;
-        l_addr_remote.s_addr = ((struct sockaddr_in *) a_remote_addr)->sin_addr.s_addr;
-        inet_ntop(AF_INET,&l_addr_remote,l_es_new->hostaddr,sizeof (l_addr_remote) );
-    }
-    log_it(L_INFO,"Connection accepted from %s (%s)", l_es_new->hostaddr, l_es_new->service );
+    struct in_addr l_addr_remote;
+    l_addr_remote.s_addr = ((struct sockaddr_in *) a_remote_addr)->sin_addr.s_addr;
+    inet_ntop(AF_INET, &l_addr_remote, l_es_new->hostaddr, sizeof(l_addr_remote));
+    log_it(L_INFO, "Connection accepted from %s (%s)", l_es_new->hostaddr, l_es_new->service);
     dap_worker_t *l_worker = dap_events_worker_get_auto();
     if (l_worker->id == a_es->worker->id) {
 #ifdef DAP_OS_UNIX
@@ -439,14 +437,9 @@ static dap_events_socket_t * s_es_server_create(int a_sock, dap_events_socket_ca
 {
     dap_events_socket_t * ret = NULL;
     if (a_sock > 0)  {
-        // set it nonblock
-        //fcntl(a_sock, F_SETFL, O_NONBLOCK);
-
         ret = dap_events_socket_wrap_no_add(a_sock, a_callbacks);
         ret->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
         ret->server = a_server;
-        memset(ret->hostaddr, 0, sizeof(ret->hostaddr));
-        memset(ret->service, 0, sizeof(ret->service));
     } else {
         log_it(L_CRITICAL,"Accept error: %s",strerror(errno));
     }

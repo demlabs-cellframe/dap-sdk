@@ -316,7 +316,7 @@ void __stdcall mq_receive_cb(HRESULT hr, QUEUEHANDLE qh, DWORD timeout
  * @param a_callbacks
  * @return
  */
-dap_events_socket_t *dap_events_socket_wrap_no_add( int a_sock, dap_events_socket_callbacks_t *a_callbacks )
+dap_events_socket_t *dap_events_socket_wrap_no_add( SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks )
 {
     assert(a_callbacks);
 
@@ -1358,7 +1358,7 @@ void dap_events_socket_delete_mt(dap_worker_t * a_worker, dap_events_socket_uuid
  * @param a_callbacks
  * @return
  */
-dap_events_socket_t * dap_events_socket_wrap2( dap_server_t *a_server, int a_sock, dap_events_socket_callbacks_t *a_callbacks )
+dap_events_socket_t * dap_events_socket_wrap2( dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks )
 {
     assert( a_callbacks );
     assert( a_server );
@@ -1539,12 +1539,10 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
 {
     assert(a_es);
 
+    if( a_es->callbacks.delete_callback )
+        a_es->callbacks.delete_callback( a_es, a_es->callbacks.arg ); // Init internal structure
     //log_it( L_DEBUG, "es is going to be removed from the lists and free the memory (0x%016X)", a_es );
     dap_context_remove(a_es);
-
-    if( a_es->callbacks.delete_callback )
-        a_es->callbacks.delete_callback( a_es, NULL ); // Init internal structure
-
     //log_it( L_DEBUG, "dap_events_socket wrapped around %d socket is removed", a_es->socket );
     dap_events_socket_delete_unsafe(a_es, preserve_inheritor);
 
