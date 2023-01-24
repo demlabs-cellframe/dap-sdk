@@ -239,14 +239,14 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
 
     dap_stream_ch_pkt_hdr_t l_hdr = {
         .id         = a_ch->proc->id,
-        .size       = (uint32_t)a_data_size,
+        .data_size  = (uint32_t)a_data_size,
         .type       = a_type,
         .enc_type   = a_ch->proc->enc_type,
         .seq_id     = a_ch->stream->seq_id++
     };
 
     debug_if(dap_stream_get_dump_packet_headers(), L_INFO, "Outgoing channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"DAP_UINT64_FORMAT_X" enc_type=0x%02hhX",
-        (char) l_hdr.id, l_hdr.size, l_hdr.type, l_hdr.seq_id , l_hdr.enc_type);
+        (char) l_hdr.id, l_hdr.data_size, l_hdr.type, l_hdr.seq_id , l_hdr.enc_type);
 
     if (l_data_size > 0 && l_data_size <= DAP_STREAM_PKT_FRAGMENT_SIZE) {
         memcpy(l_buf, &l_hdr, sizeof(dap_stream_ch_pkt_hdr_t));

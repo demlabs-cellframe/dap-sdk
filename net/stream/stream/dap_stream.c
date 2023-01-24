@@ -794,8 +794,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                 ? a_stream->buf_fragments_size_total
                 : dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, sizeof(a_stream->pkt_cache));
 
-        if (l_dec_pkt_size != l_ch_pkt->hdr.size + sizeof(l_ch_pkt->hdr)) {
-            log_it(L_WARNING, "Input: decoded packet has bad size = %zu, decoded size = %zu", l_ch_pkt->hdr.size + sizeof(l_ch_pkt->hdr), l_dec_pkt_size);
+        if (l_dec_pkt_size != l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr)) {
+            log_it(L_WARNING, "Input: decoded packet has bad size = %zu, decoded size = %zu", l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr), l_dec_pkt_size);
             l_is_clean_fragments = true;
             break;
         }
@@ -811,11 +811,11 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                 }
             }
             if(l_ch) {
-                l_ch->stat.bytes_read += l_ch_pkt->hdr.size;
+                l_ch->stat.bytes_read += l_ch_pkt->hdr.data_size;
                 if(l_ch->proc && l_ch->proc->packet_in_callback) {
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X", (char)l_ch_pkt->hdr.id,
-                                                            l_ch_pkt->hdr.size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type);
+                                                            l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type);
                     l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
                 }
             } else{
