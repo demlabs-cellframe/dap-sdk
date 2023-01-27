@@ -28,7 +28,6 @@
 #include "dap_common.h"
 #include "dap_enc_ca.h"
 #include "dap_enc_key.h"
-#include "dap_pkey.h"
 #include "dap_hash.h"
 #include "dap_string.h"
 
@@ -159,11 +158,8 @@ size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t * a_key,size_
 //int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size
 //                                 , void * a_output, size_t a_output_size );
 
-
 dap_sign_type_t dap_sign_type_from_key_type( dap_enc_key_type_t a_key_type);
 dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type);
-
-dap_sign_type_t dap_pkey_type_from_sign( dap_pkey_type_t a_pkey_type);
 
 uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_out);
 uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out);
