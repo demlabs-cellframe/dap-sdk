@@ -1,5 +1,6 @@
 #include "dap_rand.h"
 #include <stdlib.h>
+#include "shishua.h"
 
 #if defined(_WIN32)
     #include <windows.h>
@@ -113,4 +114,9 @@ int randombytes(void* random_array, unsigned int nbytes)
 #endif
 
     return passed;
+}
+
+uint256_t dap_pseudo_random_seed(uint256_t a_seed)
+{
+
 }

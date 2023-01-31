@@ -318,6 +318,7 @@ if(UNIX)
   target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 m)
 endif()
 
+target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
 
 if(BUILD_CRYPTO_TESTS)
     enable_testing()
