@@ -116,7 +116,33 @@ int randombytes(void* random_array, unsigned int nbytes)
     return passed;
 }
 
-uint256_t dap_pseudo_random_seed(uint256_t a_seed)
-{
+/*** Custom uint256 pseudo-random generator section ***/
 
+#define DAP_SHISHUA_BUFF_SIZE 4
+
+static prng_state s_shishua_state = {0};
+static uint256_t s_shishua_out[DAP_SHISHUA_BUFF_SIZE];
+static atomic_uint_fast8_t s_shishua_idx = 0;
+
+// Set the seed for pseudo-random generator with uint256 format
+void dap_pseudo_random_seed(uint256_t a_seed)
+{
+    uint64_t l_seed[4] = {a_seed._hi.a, a_seed._hi.b, a_seed._lo.a, a_seed._lo.b};
+    prng_init(&s_shishua_state, l_seed);
+}
+
+// Get a next pseudo-random number in 0..a_rand_max range inclusive
+uint256_t dap_pseudo_random_get(uint256_t a_rand_max)
+{
+    uint256_t l_tmp, l_ret, l_rand_ceil;
+    atomic_uint_fast8_t l_prev_idx = atomic_fetch_add(&s_shishua_idx, 1);
+    int l_buf_pos = l_prev_idx % DAP_SHISHUA_BUFF_SIZE;
+    if (l_buf_pos == 0)
+        prng_gen(&s_shishua_state, (uint8_t *)s_shishua_out, DAP_SHISHUA_BUFF_SIZE * sizeof(uint256_t));
+    uint256_t l_out_raw = s_shishua_out[l_buf_pos];
+    if (EQUAL_256(a_rand_max, uint256_max))
+        return l_out_raw;
+    SUM_256_256(a_rand_max, uint256_1, &l_rand_ceil);
+    divmod_impl_256(l_out_raw, l_rand_ceil, &l_tmp, &l_ret);
+    return l_ret;
 }
