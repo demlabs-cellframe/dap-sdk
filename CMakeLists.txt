@@ -91,3 +91,5 @@ endif()
 #    enable_testing()
 #    add_subdirectory(test)
 #endif()
+
+add_subdirectory(examples)
