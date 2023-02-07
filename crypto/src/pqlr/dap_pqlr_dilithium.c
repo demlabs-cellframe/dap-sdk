@@ -74,6 +74,17 @@ void dap_pqlr_dilithium_key_new_generate( dap_enc_key_t* a_key, const void* a_ke
 }
 
 /**
+ * @brief dap_pqlr_dilithium_calc_signature_size
+ * @param a_key
+ * @return
+ */
+size_t dap_pqlr_dilithium_calc_signature_size(dap_enc_key_t* a_key)
+{
+    return dilithium_get_signature_bytes_len(PVT(a_key));
+}
+
+
+/**
  * @brief dap_pqlr_dilithium_create_sign
  * @param a_key
  * @param a_msg

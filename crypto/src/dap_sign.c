@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include "dap_common.h"
+#include "dap_enc_key.h"
 #include "dap_strfuncs.h"
 #include "dap_hash.h"
 #include "dap_sign.h"
@@ -34,6 +35,13 @@
 #include "dap_enc_picnic.h"
 #include "dap_enc_dilithium.h"
 #include "dap_enc_falcon.h"
+
+#ifdef DAP_PQLR
+#include "dap_pqrl_dilithium.h"
+#include "dap_pqrl_falcon.h"
+#include "dap_pqrl_sphincs.h"
+#endif
+
 #include "dap_list.h"
 
 #define LOG_TAG "dap_sign"
@@ -74,6 +82,9 @@ size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t * a_key, size
         case DAP_ENC_KEY_TYPE_SIG_TESLA: l_sign_size = dap_enc_tesla_calc_signature_size(); break;
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: l_sign_size = dap_enc_dilithium_calc_signature_unserialized_size(); break;
         case DAP_ENC_KEY_TYPE_SIG_FALCON: l_sign_size = dap_enc_falcon_calc_signature_unserialized_size(); break;
+#ifdef DAP_PQRL
+    case DAP_ENC_KEY_TYPE_SIG_PQLR_DILITHIUM: l_sign_size = dap_pqlr_dilithium_calc_signature_size(a_key); break;
+#endif
         default : return 0;
 
     }
