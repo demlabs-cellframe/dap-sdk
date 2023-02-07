@@ -58,6 +58,8 @@ file( GLOB XKCP_SRCS
 set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src include)
 add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
 
+option (DAP_PQLR "PQRL Intergration" OFF)
+
 if ( DAP_PQLR)
     message("[*] Building with QApp PQLR libraty from path ${DAP_PQLR}")
     IF (POLICY CMP0074) # using PackageName_ROOT as prefix

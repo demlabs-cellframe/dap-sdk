@@ -346,12 +346,15 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .sign_verify = NULL
     },
 
+#ifdef DAP_PQLR
     [DAP_ENC_KEY_TYPE_PQLR_SIG_DILITHIUM] = {0},
     [DAP_ENC_KEY_TYPE_PQLR_SIG_FALCON] = {0},
     [DAP_ENC_KEY_TYPE_PQLR_SIG_SPHINCS] = {0},
     [DAP_ENC_KEY_TYPE_PQLR_KEM_SABER] = {0},
     [DAP_ENC_KEY_TYPE_PQLR_KEM_MCELIECE] = {0},
     [DAP_ENC_KEY_TYPE_PQLR_KEM_NEWHOPE] = {0},
+#endif
+
 };
 
 const size_t c_callbacks_size = sizeof(s_callbacks) / sizeof(s_callbacks[0]);
