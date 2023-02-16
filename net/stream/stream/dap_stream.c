@@ -601,7 +601,7 @@ static void s_esocket_write(dap_events_socket_t* a_esocket , void * a_arg){
  * @param a_esocket DAP client instance
  * @param arg Not used
  */
-static void s_udp_esocket_new(dap_events_socket_t* a_esocket, UNUSED_ATTR void * a_arg)
+static void s_udp_esocket_new(dap_events_socket_t* a_esocket, UNUSED_ARG void * a_arg)
 {
     stream_new_udp(a_esocket);
 }

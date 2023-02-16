@@ -325,7 +325,7 @@ void dap_timerfd_reset(dap_timerfd_t *a_timerfd)
     if (a_timerfd->worker){
         dap_worker_exec_callback_on(a_timerfd->worker,s_timerfd_reset_worker_callback, a_timerfd);
     }else if (a_timerfd->proc_thread)
-        dap_proc_thread_add_callback_mt(a_timerfd->proc_thread,s_timerfd_reset_proc_thread_callback, a_timerfd, DAP_PROC_PRI_NORMAL );
+        dap_proc_queue_add_callback_mt(a_timerfd->proc_thread,s_timerfd_reset_proc_thread_callback, a_timerfd, DAP_PROC_PRI_NORMAL );
     else
         log_it(L_WARNING,"Timer's context undefined, cant' reset it");
 }
