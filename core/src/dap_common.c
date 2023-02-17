@@ -78,7 +78,7 @@
 #ifndef DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = {};
 const uint128_t uint128_1 = {.hi = 0, .lo = 1};
-const uint128_t uint128_max = {.hi = UINT64_MAX, .lo = UINT64_MAX}
+const uint128_t uint128_max = {.hi = UINT64_MAX, .lo = UINT64_MAX};
 #else // DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = 0;
 const uint128_t uint128_1 = 1;
