@@ -5,9 +5,9 @@
 #include "falcon/falcon_params.h"
 
 
-void dap_enc_sig_falcon_set_degree(enum DAP_FALCON_SIGN_DEGREE a_falcon_sign_degree);
+void dap_enc_sig_falcon_set_degree(falcon_sign_degree_t a_falcon_sign_degree);
 void dap_enc_sig_falcon_set_kind(falcon_kind_t a_falcon_kind);
-void dap_enc_sig_falcon_set_type(enum DAP_FALCON_SIGN_TYPE a_falcon_sign_type);
+void dap_enc_sig_falcon_set_type(falcon_sign_type_t a_falcon_sign_type);
 
 void dap_enc_sig_falcon_key_new(struct dap_enc_key *key);
 
