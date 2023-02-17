@@ -56,22 +56,32 @@ typedef struct uint256_t {
         struct {
             uint128_t hi;
             uint128_t lo;
-        };
+        } DAP_ALIGN_PACKED;
+        struct {
+            struct {
+                uint64_t a;
+                uint64_t b;
+            } DAP_ALIGN_PACKED _hi;
+            struct {
+                uint64_t a;
+                uint64_t b;
+            } DAP_ALIGN_PACKED _lo;
+        } DAP_ALIGN_PACKED;
         struct {
             struct {
                 uint32_t c;
                 uint32_t d;
                 uint32_t a;
                 uint32_t b;
-            } __hi;
+            } DAP_ALIGN_PACKED __hi;
             struct {
                 uint32_t c;
                 uint32_t d;
                 uint32_t a;
                 uint32_t b;
-            }__lo;
-        };
-    };
+            } DAP_ALIGN_PACKED __lo;
+        } DAP_ALIGN_PACKED;
+    } DAP_ALIGN_PACKED;
 } DAP_ALIGN_PACKED uint256_t;
 
 typedef struct uint512_t {
@@ -93,11 +103,10 @@ extern "C" {
 
 extern const uint128_t uint128_0;
 extern const uint128_t uint128_1;
+extern const uint128_t uint128_max;
 extern const uint256_t uint256_0;
 extern const uint256_t uint256_1;
-
-//todo: implement uintX_max
-//extern const uint256_t uint256_max;
+extern const uint256_t uint256_max;
 extern const uint512_t uint512_0;
 
 static inline uint128_t GET_128_FROM_64(uint64_t n) {

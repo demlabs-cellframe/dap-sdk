@@ -977,7 +977,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
  * @param a_client
  * @param a_err_code
  */
-static void s_enc_init_error(dap_client_t * a_client, UNUSED_ATTR void *a_arg, int a_err_code)
+static void s_enc_init_error(dap_client_t * a_client, UNUSED_ARG void *a_arg, int a_err_code)
 {
     dap_client_pvt_t * l_client_pvt = DAP_CLIENT_PVT(a_client);
     log_it(L_ERROR, "ENC: Can't init ecnryption session, err code %d", a_err_code);
@@ -1083,7 +1083,7 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
  * @param a_client
  * @param a_error
  */
-static void s_stream_ctl_error(dap_client_t * a_client, UNUSED_ATTR void *a_arg, int a_error)
+static void s_stream_ctl_error(dap_client_t * a_client, UNUSED_ARG void *a_arg, int a_error)
 {
     log_it(L_WARNING, "STREAM_CTL error %d", a_error);
 
@@ -1106,7 +1106,7 @@ static void s_stream_ctl_error(dap_client_t * a_client, UNUSED_ATTR void *a_arg,
  * @param a_client
  * @param arg
  */
-static void s_stage_stream_streaming(UNUSED_ATTR dap_client_t *a_client, UNUSED_ATTR void *a_arg)
+static void s_stage_stream_streaming(UNUSED_ARG dap_client_t *a_client, UNUSED_ARG void *a_arg)
 {
     log_it(L_INFO, "Stream  is opened");
 }
@@ -1128,7 +1128,7 @@ static void s_stream_es_callback_connected(dap_events_socket_t * a_es)
  * @param a_es
  * @param arg
  */
-static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ATTR void *a_arg)
+static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ARG void *a_arg)
 {
     log_it(L_INFO, "Stream events socket delete callback");
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
@@ -1192,7 +1192,7 @@ static void s_stream_es_callback_read(dap_events_socket_t * a_es, void * arg)
  * @param a_es
  * @param arg
  */
-static void s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ATTR void *a_arg)
+static void s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ARG void *a_arg)
 {
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
