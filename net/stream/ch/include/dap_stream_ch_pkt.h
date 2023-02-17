@@ -35,14 +35,13 @@ typedef struct dap_stream_ch_pkt_hdr{
     uint8_t type; // general, command, info, signal and etc
     uint8_t padding;
     uint64_t seq_id; // Sequence id or position id
-//    uint64_t seq
-    uint32_t size;
-}  __attribute__((packed)) dap_stream_ch_pkt_hdr_t;
+    uint32_t data_size;
+} DAP_ALIGN_PACKED dap_stream_ch_pkt_hdr_t;
 
 typedef struct dap_stream_ch_pkt{
     dap_stream_ch_pkt_hdr_t hdr;
     uint8_t data[];
-} __attribute__((packed)) dap_stream_ch_pkt_t;
+} DAP_ALIGN_PACKED dap_stream_ch_pkt_t;
 
 typedef void (*dap_stream_ch_callback_packet_t)(void *, uint8_t, dap_stream_ch_pkt_t *, void *);
 

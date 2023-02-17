@@ -424,7 +424,3 @@ void dap_proc_thread_worker_exec_callback_inter(dap_proc_thread_t * a_thread, si
     debug_if(g_debug_reactor, L_INFO, "Msg with arg %p -> worker %zu", a_arg, a_worker_id);
     dap_events_socket_queue_ptr_send_to_input(a_thread->queue_callback_input[a_worker_id], l_msg);
 }
-
-
-
-

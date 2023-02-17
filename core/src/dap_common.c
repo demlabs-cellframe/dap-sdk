@@ -78,17 +78,17 @@
 #ifndef DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = {};
 const uint128_t uint128_1 = {.hi = 0, .lo = 1};
+const uint128_t uint128_max = {.hi = UINT64_MAX, .lo = UINT64_MAX}
 #else // DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = 0;
 const uint128_t uint128_1 = 1;
+const uint128_t uint128_max = ((uint128_t)((int128_t)-1L));
 #endif // DAP_GLOBAL_IS_INT128
 
 const uint256_t uint256_0 = {};
-#ifndef DAP_GLOBAL_IS_INT128
-const uint256_t uint256_1 = {.hi = {}, .lo = {.hi = 0, .lo = 1}};
-#else // DAP_GLOBAL_IS_INT128
-const uint256_t uint256_1 = {.hi = 0, .lo = 1};
-#endif // DAP_GLOBAL_IS_INT128
+const uint256_t uint256_1 = {.hi = uint128_0, .lo = uint128_1};
+const uint256_t uint256_max = {.hi = uint128_max, .lo = uint128_max};
+
 const uint512_t uint512_0 = {};
 
 static const char *s_log_level_tag[ 16 ] = {
@@ -1179,71 +1179,6 @@ void dap_interval_timer_delete(dap_interval_timer_t a_timer) {
         DAP_FREE(l_timer);
     }
     pthread_rwlock_unlock(&s_timers_rwlock);
-}
-
-char **dap_parse_items(const char *a_str, char a_delimiter, int *a_count, const int a_only_digit)
-{
-    int l_count_temp = *a_count = 0;
-    int l_len_str = strlen(a_str);
-    if (l_len_str == 0) return NULL;
-    char *s, *l_temp_str;
-    s = l_temp_str = dap_strdup(a_str);
-
-    int l_buf = 0;
-    for (int i = 0; i < l_len_str; i++) {
-        if (s[i] == a_delimiter && !l_buf) {
-            s[i] = 0;
-            continue;
-        }
-        if (s[i] == a_delimiter && l_buf) {
-            s[i] = 0;
-            l_buf = 0;
-            continue;
-        }
-        if (!dap_is_alpha(s[i]) && l_buf) {
-            s[i] = 0;
-            l_buf = 0;
-            continue;
-        }
-        if (!dap_is_alpha(s[i]) && !l_buf) {
-            s[i] = 0;
-            continue;
-        }
-        if (a_only_digit) {
-            if (dap_is_digit(s[i])) {
-                l_buf++;
-                if (l_buf == 1) l_count_temp++;
-                continue;
-            }
-        } else if (dap_is_alpha(s[i])) {
-            l_buf++;
-            if (l_buf == 1) l_count_temp++;
-            continue;
-        }
-        if (!dap_is_alpha(s[i])) {
-            l_buf = 0;
-            s[i] = 0;
-            continue;
-        }
-    }
-
-    s = l_temp_str;
-    if (l_count_temp == 0) {
-        free (l_temp_str);
-        return NULL;
-    }
-
-    char **lines = DAP_CALLOC(l_count_temp, sizeof (void *));
-    for (int i = 0; i < l_count_temp; i++) {
-        while (*s == 0) s++;
-        lines[i] = strdup(s);
-        s = strchr(s, '\0');
-        s++;
-    }
-
-    free (l_temp_str);
-    *a_count = l_count_temp;
-    return lines;
 }
 
 ssize_t dap_readv(dap_file_handle_t a_hf, iovec_t const *a_bufs, int a_bufs_num, dap_errnum_t *a_err)

@@ -154,28 +154,6 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
 }
 
 /**
- * @brief convert public key type (dap_pkey_type_t) to dap_sign_type_t type
- * 
- * @param a_pkey_type dap_pkey_type_t key type
- * @return dap_sign_type_t 
- */
-dap_sign_type_t dap_pkey_type_from_sign( dap_pkey_type_t a_pkey_type)
-{
-    dap_sign_type_t l_sign_type={0};
-    switch (a_pkey_type.type){
-        case PKEY_TYPE_SIGN_BLISS: l_sign_type.type = SIG_TYPE_BLISS; break;
-        case PKEY_TYPE_SIGN_PICNIC: l_sign_type.type = SIG_TYPE_PICNIC; break;
-        case PKEY_TYPE_SIGN_TESLA: l_sign_type.type = SIG_TYPE_TESLA; break;
-        case PKEY_TYPE_SIGN_DILITHIUM : l_sign_type.type = SIG_TYPE_DILITHIUM; break;
-        case PKEY_TYPE_SIGN_FALCON : l_sign_type.type = SIG_TYPE_FALCON; break;
-        case PKEY_TYPE_MULTI: l_sign_type.type = SIG_TYPE_MULTI_CHAINED; break;
-        case PKEY_TYPE_NULL: l_sign_type.type = SIG_TYPE_NULL; break;
-    }
-    return l_sign_type;
-}
-
-
-/**
  * @brief convert string to dap_sign_type_t type
  * 
  * @param a_type_str const char * algorithm type [sig_bliss,sig_tesla,sig_picnic,sig_dil,sig_multi2,sig_multi]
@@ -395,7 +373,6 @@ bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t * a_sign_h
  */
 bool dap_sign_match_pkey_signs(dap_sign_t *l_sign1, dap_sign_t *l_sign2)
 {
-    dap_chain_hash_fast_t l_hash_pkey;
     size_t l_pkey_ser_size1 = 0, l_pkey_ser_size2 = 0;
     // Get public key from sign
     const uint8_t *l_pkey_ser1 = dap_sign_get_pkey(l_sign1, &l_pkey_ser_size1);
