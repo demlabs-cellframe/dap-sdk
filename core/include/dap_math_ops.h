@@ -1067,18 +1067,37 @@ static inline void DIV_256_COIN(uint256_t a, uint256_t b, uint256_t *res)
         *res = uint256_0;
         return;
     }
-    int counter = 0;
+    int counter_integer = 0;
+    int counter_fraction = 0;
     uint256_t a_copy = a;
     uint256_t ten18 = GET_256_FROM_64(1000000000000000000ULL);
-    uint256_t ten = GET_256_FROM_64(10l);
+    uint256_t ten = GET_256_FROM_64(10L);
+    uint256_t rem = uint256_0;
+    uint256_t loan = GET_256_FROM_64(1L);
     while (compare256(a_copy, b) < 0) {
-        counter++;
+        counter_integer++;
         MULT_256_256(a_copy, ten, &a_copy);
     }
-    DIV_256(a_copy, b, &a_copy);
+//    DIV_256(a_copy, b, &a_copy);
+
+    divmod_impl_256(a_copy, b, &a_copy, &rem);
+    uint256_t fraction = uint256_0;
+    uint256_t tmp = uint256_0;
+    while (compare256(rem, ten) >= 0 && counter_fraction < 18) {
+        counter_fraction++;
+        MULT_256_256(fraction, ten, &fraction);
+        MULT_256_256(rem, ten, &rem);
+        divmod_impl_256(rem, b, &tmp, &rem);
+        SUM_256_256(fraction, tmp, &fraction);
+    }
     MULT_256_256(a_copy, ten18, &a_copy);
-    uint256_t loan = GET_256_FROM_64(1l);
-    while(counter--) {
+    while (counter_fraction < 18) {
+        counter_fraction++;
+        MULT_256_256(fraction, ten, &fraction);
+    }
+    SUM_256_256(a_copy, fraction, &a_copy);
+
+    while(counter_integer--) {
         MULT_256_256(loan, ten, &loan); //maybe we should use same table as in dap_chain_common.c instead of cycle ?
     }
     DIV_256(a_copy, loan, &a_copy);
