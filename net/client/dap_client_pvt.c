@@ -179,6 +179,7 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
     a_client_pvt->ts_last_active = 0;
 
     dap_list_free_full(a_client_pvt->pkt_queue, NULL);
+    a_client_pvt->pkt_queue = NULL;
 
     a_client_pvt->last_error = ERROR_NO_ERROR;
     a_client_pvt->stage = STAGE_BEGIN;
@@ -486,7 +487,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                                 sizeof(struct sockaddr_in))) ==0) {
                             log_it(L_INFO, "Connected momentaly with %s:%u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                             // add to dap_worker
-                            dap_worker_add_events_socket( a_client_pvt->stream_es, l_worker);
+                            dap_worker_add_events_socket(l_worker, a_client_pvt->stream_es);
 
                             // Add check timer
                             assert(a_client_pvt->stream_es);
@@ -512,7 +513,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                             log_it(L_INFO, "Connecting stream to remote %s:%u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                             // add to dap_worker
                             assert (a_client_pvt->stream_es);
-                            dap_worker_add_events_socket( a_client_pvt->stream_es, l_worker);
+                            dap_worker_add_events_socket(l_worker, a_client_pvt->stream_es);
                             dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
                             *l_stream_es_uuid_ptr = a_client_pvt->stream_es->uuid;
                             dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,

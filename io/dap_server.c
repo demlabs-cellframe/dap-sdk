@@ -307,7 +307,7 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
 #endif
             l_es->_inheritor = a_server;
             pthread_mutex_lock(&a_server->started_mutex);
-            dap_worker_add_events_socket( l_es, l_w );
+            dap_worker_add_events_socket( l_w, l_es );
             while (!a_server->started)
                 pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
             pthread_mutex_unlock(&a_server->started_mutex);
@@ -332,7 +332,7 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
         l_es->type = a_server->type == SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
         l_es->_inheritor = a_server;
         pthread_mutex_lock(&a_server->started_mutex);
-        dap_worker_add_events_socket( l_es, l_w );
+        dap_worker_add_events_socket( l_w, l_es );
         while (!a_server->started)
             pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
         pthread_mutex_unlock(&a_server->started_mutex);

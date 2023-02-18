@@ -155,8 +155,12 @@ ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint
         return dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
     if (a_client->connect_on_demand) {
         dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
-        a_client->stage_target = STAGE_STREAM_STREAMING;
         dap_client_pvt_queue_add(l_client_pvt, a_ch_id, a_type, a_data, a_data_size);
+        if (a_client->stage_target == STAGE_STREAM_STREAMING &&
+                    l_client_pvt->stage_status == STAGE_STATUS_IN_PROGRESS)
+            // Already going to aimed target stage
+            return 0;
+        a_client->stage_target = STAGE_STREAM_STREAMING;
         dap_client_pvt_stage_transaction_begin(l_client_pvt,
                                                STAGE_BEGIN,
                                                s_stage_fsm_operator_unsafe);
