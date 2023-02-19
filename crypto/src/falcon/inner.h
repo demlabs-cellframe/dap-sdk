@@ -307,6 +307,10 @@
 #endif
 // yyyAVX2-
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Some computations with floating-point elements, in particular
  * rounding to the nearest integer, rely on operations using _exactly_
@@ -401,6 +405,11 @@ set_fpu_cw(unsigned x)
 #define restrict   __restrict
 #endif
 #endif
+
+#ifdef __cplusplus
+#define restrict   __restrict
+#endif
+
 // yyyPQCLEAN-
 
 /* ==================================================================== */
@@ -1162,5 +1171,10 @@ TARGET_AVX2
 int Zf(gaussian0_sampler)(prng *p);
 
 /* ==================================================================== */
+
+#ifdef __cplusplus
+}
+#endif
+
 
 #endif
