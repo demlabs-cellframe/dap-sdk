@@ -555,8 +555,8 @@ int dap_global_db_get_all(const char * a_group, size_t a_results_page_size UNUSE
 }
 
 static int s_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
-    dap_store_obj_t *l_obj1 = (dap_store_obj_t *)a_obj1,
-            *l_obj2 = (dap_store_obj_t *)a_obj2;
+    dap_store_obj_t *l_obj1 = (dap_store_obj_t*)a_obj1,
+                    *l_obj2 = (dap_store_obj_t*)a_obj2;
     return l_obj2->timestamp < l_obj1->timestamp
             ? 1
             : l_obj2->timestamp > l_obj1->timestamp
@@ -579,7 +579,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
                                                    a_msg->group, l_values_count);
     dap_global_db_obj_t *l_objs = NULL;
     // Form objs from store_objs
-    if (l_store_objs) {
+   if (l_store_objs) {
         if (l_values_count > 1)
             qsort(l_store_objs, l_values_count, sizeof(dap_store_obj_t), s_db_compare_by_ts);
         l_objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, sizeof(dap_global_db_obj_t) * l_values_count);
@@ -724,15 +724,17 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
  */
 static bool s_msg_opcode_set(struct queue_io_msg * a_msg)
 {
-    dap_store_obj_t l_store_data = { 0 };
     dap_nanotime_t l_ts_now = dap_nanotime_now();
-    l_store_data.key = a_msg->key ;
-    l_store_data.flags =a_msg->value_is_pinned ? RECORD_PINNED : 0 ;
-    l_store_data.value_len = a_msg->value_length;
-    l_store_data.value =  a_msg->value;
-    l_store_data.group = (char*) a_msg->group;
-    l_store_data.timestamp = l_ts_now;
-    l_store_data.type = DAP_DB$K_OPTYPE_ADD;
+    dap_store_obj_t l_store_data = {
+        .timestamp  = l_ts_now,
+        .type       = DAP_DB$K_OPTYPE_ADD,
+        .flags      = a_msg->value_is_pinned ? RECORD_PINNED : 0,
+        .group      = a_msg->group,
+        .key        = a_msg->key,
+        .key_len    = strlen(a_msg->key),
+        .value      = a_msg->value,
+        .value_len  = a_msg->value_length
+    };
 
     int l_res = dap_global_db_driver_apply(&l_store_data, 1);
 
@@ -750,8 +752,7 @@ static bool s_msg_opcode_set(struct queue_io_msg * a_msg)
                                    a_msg->value, a_msg->value_length, l_ts_now,
                                    a_msg->value_is_pinned , a_msg->callback_arg );
     }
-    if(a_msg->value)
-        DAP_DELETE(a_msg->value);
+    DAP_DEL_Z(a_msg->value);
     return true;
 }
 
@@ -768,18 +769,20 @@ static bool s_msg_opcode_set(struct queue_io_msg * a_msg)
 int dap_global_db_set_unsafe(dap_global_db_context_t * a_global_db_context, const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value )
 {
     if (!a_group || !a_key) {
-        log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
+        log_it(L_ERROR, "Trying to set GDB object with NULL group or key param");
         return -1;
     }
-    dap_store_obj_t l_store_data = { 0 };
     dap_nanotime_t l_ts_now = dap_nanotime_now();
-    l_store_data.key = (char *)a_key ;
-    l_store_data.flags = a_pin_value ? RECORD_PINNED : 0 ;
-    l_store_data.value_len =  a_value_length;
-    l_store_data.value = (uint8_t *)a_value;
-    l_store_data.group = (char*) a_group;
-    l_store_data.timestamp = l_ts_now;
-    l_store_data.type = DAP_DB$K_OPTYPE_ADD;
+    dap_store_obj_t l_store_data = {
+        .timestamp  = l_ts_now,
+        .type       = DAP_DB$K_OPTYPE_ADD,
+        .flags      = a_pin_value ? RECORD_PINNED : 0,
+        .group      = (char*)a_group,
+        .key        = (char*)a_key,
+        .key_len    = strlen(a_key),
+        .value      = (byte_t*)a_value,
+        .value_len =  a_value_length
+    };
 
     int l_res = dap_global_db_driver_apply(&l_store_data, 1);
     if (l_res == 0) {
@@ -898,25 +901,26 @@ int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_
 static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
 {
     int l_ret = -1;
-    size_t i=0;
-    if(a_msg->values_count>0){
-        dap_store_obj_t l_store_obj = {};
+    size_t i = 0;
+    if (a_msg->values_count > 0) {
         l_ret = 0;
-        for(;  i < a_msg->values_count && l_ret == 0  ; i++ ) {
-            l_store_obj.type = DAP_DB$K_OPTYPE_ADD;
-            l_store_obj.flags = a_msg->values[i].is_pinned;
-            l_store_obj.key =  a_msg->values[i].key;
-            l_store_obj.key_len = strlen(a_msg->values[i].key);
-            l_store_obj.group = a_msg->group;
-            l_store_obj.value = a_msg->values[i].value;
-            l_store_obj.value_len = a_msg->values[i].value_len;
-            l_store_obj.timestamp = a_msg->values[i].timestamp;
+        for (; i < a_msg->values_count && l_ret == 0; ++i) {
+            dap_store_obj_t l_store_obj = {
+                .timestamp  = a_msg->values[i].timestamp,
+                .type       = DAP_DB$K_OPTYPE_ADD,
+                .flags      = a_msg->values[i].is_pinned,
+                .group      = a_msg->group,
+                .key        = a_msg->values[i].key,
+                .key_len    = strlen(a_msg->values[i].key),
+                .value      = a_msg->values[i].value,
+                .value_len  = a_msg->values[i].value_len
+            };
             s_record_del_history_del(a_msg->group, a_msg->values[i].key);
-            l_ret = dap_global_db_driver_add(&l_store_obj,1);
+            l_ret = dap_global_db_driver_add(&l_store_obj, 1);
             s_change_notify(s_context_global_db, &l_store_obj);
         }
     }
-    if(a_msg->callback_results){
+    if (a_msg->callback_results) {
         a_msg->callback_results(s_context_global_db,
                                 l_ret == 0 ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR,
                                 a_msg->group, i, a_msg->values_count,
@@ -1769,7 +1773,7 @@ static void s_queue_io_msg_delete( struct queue_io_msg * a_msg)
     case MSG_OPCODE_SET_MULTIPLE:
         DAP_DEL_Z(a_msg->group);
     case MSG_OPCODE_SET_RAW:
-    default:;
+    default: break;
     }
     DAP_DELETE(a_msg);
 }
