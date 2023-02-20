@@ -35,8 +35,7 @@ dap_list_t *dap_list_alloc(void)
  */
 void dap_list_free(dap_list_t *list)
 {
-    while(list)
-    {
+    while(list) {
         dap_list_t *next = list->next;
         DAP_DELETE(list);
         list = next;
@@ -66,13 +65,14 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
 {
     dap_list_t *l_list = a_list;
     while (l_list) {
-        if(a_free_func)
+        dap_list_t *l_next = l_list->next;
+        if (a_free_func)
             a_free_func(l_list->data);
         else
             DAP_DELETE(l_list->data);
-        l_list = l_list->next;
+        DAP_DELETE(l_list);
+        l_list = l_next;
     }
-    dap_list_free(a_list);
 }
 
 /**

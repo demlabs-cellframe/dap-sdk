@@ -173,7 +173,7 @@ struct dap_client_write_args {
     byte_t data[];
 };
 
-static void s_client_write_on_worker(UNUSED_ATTR dap_worker_t *a_worker, void *a_arg)
+static void s_client_write_on_worker(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
 {
     struct dap_client_write_args *l_args = a_arg;
     dap_client_write_unsafe(l_args->client, l_args->ch_id, l_args->type, l_args->data, l_args->data_size);
@@ -254,7 +254,7 @@ void dap_client_delete_unsafe(dap_client_t *a_client)
 }
 
 
-void s_client_delete_on_worker(UNUSED_ATTR dap_worker_t *a_worker, void *a_arg)
+void s_client_delete_on_worker(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
 {
     dap_client_delete_unsafe(a_arg);
 }
@@ -277,7 +277,7 @@ struct go_stage_arg {
  * @param a_worker
  * @param a_arg
  */
-static void s_go_stage_on_client_worker_unsafe(UNUSED_ATTR dap_worker_t *a_worker, void *a_arg)
+static void s_go_stage_on_client_worker_unsafe(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
 {
     assert(a_arg);
     struct go_stage_arg *l_args = a_arg;
