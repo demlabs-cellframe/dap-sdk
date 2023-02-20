@@ -45,7 +45,7 @@ void dap_cpu_monitor_deinit()
 
 }
 
-static void _deserealize_proc_stat(char *line, proc_stat_line_t *stat)
+static void _deserialize_proc_stat(char *line, proc_stat_line_t *stat)
 {
     sscanf(line,"%s %zu %zu %zu %zu %zu %zu %zu %zu %zu %zu",
            stat->cpu, &stat->user, &stat->nice, &stat->system, &stat->idle,
@@ -78,7 +78,7 @@ dap_cpu_stats_t dap_cpu_get_stats()
     /** get summary cpu stat **/
     size_t mem_size;
     getline(&line, &mem_size, _proc_stat);
-    _deserealize_proc_stat(line, &stat);
+    _deserialize_proc_stat(line, &stat);
 
     _cpu_stats.cpu_summary.idle_time = stat.idle;
     _cpu_stats.cpu_summary.total_time = stat.total;
@@ -86,7 +86,7 @@ dap_cpu_stats_t dap_cpu_get_stats()
 
     for(unsigned i = 0; i < _cpu_stats.cpu_cores_count; i++) {
         getline(&line, &mem_size, _proc_stat);
-        _deserealize_proc_stat(line, &stat);
+        _deserialize_proc_stat(line, &stat);
         _cpu_stats.cpus[i].idle_time = stat.idle;
         _cpu_stats.cpus[i].total_time = stat.total;
         _cpu_stats.cpus[i].ncpu = i;
