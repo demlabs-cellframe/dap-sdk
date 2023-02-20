@@ -56,32 +56,22 @@ typedef struct uint256_t {
         struct {
             uint128_t hi;
             uint128_t lo;
-        } DAP_ALIGN_PACKED;
-        struct {
-            struct {
-                uint64_t a;
-                uint64_t b;
-            } DAP_ALIGN_PACKED _hi;
-            struct {
-                uint64_t a;
-                uint64_t b;
-            } DAP_ALIGN_PACKED _lo;
-        } DAP_ALIGN_PACKED;
+        };
         struct {
             struct {
                 uint32_t c;
                 uint32_t d;
                 uint32_t a;
                 uint32_t b;
-            } DAP_ALIGN_PACKED __hi;
+            } __hi;
             struct {
                 uint32_t c;
                 uint32_t d;
                 uint32_t a;
                 uint32_t b;
-            } DAP_ALIGN_PACKED __lo;
-        } DAP_ALIGN_PACKED;
-    } DAP_ALIGN_PACKED;
+            }__lo;
+        };
+    };
 } DAP_ALIGN_PACKED uint256_t;
 
 typedef struct uint512_t {
@@ -103,10 +93,11 @@ extern "C" {
 
 extern const uint128_t uint128_0;
 extern const uint128_t uint128_1;
-extern const uint128_t uint128_max;
 extern const uint256_t uint256_0;
 extern const uint256_t uint256_1;
-extern const uint256_t uint256_max;
+
+//todo: implement uintX_max
+//extern const uint256_t uint256_max;
 extern const uint512_t uint512_0;
 
 static inline uint128_t GET_128_FROM_64(uint64_t n) {
@@ -1092,7 +1083,7 @@ static inline void DIV_256_COIN(uint256_t a, uint256_t b, uint256_t *res)
     divmod_impl_256(a_copy, b, &a_copy, &rem);
     uint256_t fraction = uint256_0;
     uint256_t tmp = uint256_0;
-    while (compare256(rem, ten) >= 0 && counter_fraction < 18) {
+    while (compare256(rem, uint256_0) > 0 && counter_fraction < 18) {
         counter_fraction++;
         MULT_256_256(fraction, ten, &fraction);
         MULT_256_256(rem, ten, &rem);
