@@ -623,6 +623,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                         dap_client_write_unsafe(a_client_pvt->client, l_pkt->ch_id, l_pkt->type, l_pkt->data, l_pkt->data_size);
                     }
                     dap_list_free_full(a_client_pvt->pkt_queue, NULL);
+                    a_client_pvt->pkt_queue = NULL;
                 }
             } else if (a_client_pvt->stage_status_done_callback) {
                 // go to next stage
