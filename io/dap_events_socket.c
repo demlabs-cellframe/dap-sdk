@@ -366,7 +366,7 @@ void dap_events_socket_assign_on_worker_mt(dap_events_socket_t * a_es, struct da
 {
     a_es->last_ping_request = time(NULL);
    // log_it(L_DEBUG, "Assigned %p on worker %u", a_es, a_worker->id);
-    dap_worker_add_events_socket(a_es,a_worker);
+    dap_worker_add_events_socket(a_worker, a_es);
 }
 
 void dap_events_socket_assign_on_worker_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_es)
@@ -400,7 +400,7 @@ void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t * a_e
     if (a_es->callbacks.worker_unassign_callback)
         a_es->callbacks.worker_unassign_callback(a_es, l_worker);
 
-    dap_worker_add_events_socket(a_es, a_worker_new);
+    dap_worker_add_events_socket(a_worker_new, a_es);
 }
 
 /**
