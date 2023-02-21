@@ -646,7 +646,7 @@ dap_client_http_t * dap_client_http_request_custom (
         if (l_err2 == WSAEWOULDBLOCK) {
             log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
             l_client_http->worker = a_worker?a_worker: dap_events_worker_get_auto();
-            dap_worker_add_events_socket(l_ev_socket,l_client_http->worker);
+            dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
             dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
             *l_ev_uuid_ptr = l_ev_socket->uuid;
             l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, s_timer_timeout_check, l_ev_uuid_ptr);
@@ -671,7 +671,7 @@ dap_client_http_t * dap_client_http_request_custom (
         log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
         l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
         l_client_http->es = l_ev_socket;
-        dap_worker_add_events_socket(l_ev_socket, l_client_http->worker);
+        dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         *l_ev_uuid_ptr = l_ev_socket->uuid;
         l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, s_timer_timeout_check, l_ev_uuid_ptr);
@@ -755,5 +755,4 @@ void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
     if (a_client_http->timer)
         dap_timerfd_delete(a_client_http->timer);
     dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);
-    s_client_http_delete(a_client_http);
 }
