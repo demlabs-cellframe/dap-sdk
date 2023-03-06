@@ -21,6 +21,7 @@ file( GLOB CRYPTO_SRCS
       src/sig_picnic/*.c
       src/sig_dilithium/*.c
       src/ringct20/*.c
+      src/falcon/*.c
 )
 
 file( GLOB CRYPTO_HEADERS
@@ -40,7 +41,9 @@ file( GLOB CRYPTO_HEADERS
       src/sig_picnic/*.h
       src/sig_dilithium/*.h
       src/ringct20/*.h
+      src/falcon/*.h
       include/*.h
+
 )
 
 enable_language(ASM)
@@ -52,8 +55,24 @@ file( GLOB XKCP_SRCS
   src/XKCP/lib/high/Keccak/FIPS202/SimpleFIPS202.c
 )
 
+set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src include)
 add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
 
+option (DAP_PQLR "PQRL Intergration" OFF)
+
+if ( DAP_PQLR)
+    message("[*] Building with QApp PQLR libraty from path ${DAP_PQLR}")
+    IF (POLICY CMP0074) # using PackageName_ROOT as prefix
+        CMAKE_POLICY(SET CMP0074 NEW)
+    ENDIF()
+    FIND_PACKAGE(PQLR REQUIRED)
+    message ("[ ] Include dir: ${PQLR_INCLUDE_DIR}")
+    INCLUDE_DIRECTORIES(${PQLR_INCLUDE_DIR})
+
+    file(GLOB DAP_PQLR_SRC src/pqlr/*.c src/pqlr/*.h)
+    #set(CRYPTO_INCLUDE_PRIVATE ${CRYPTO_INCLUDE_PRIVATE} ${DAP_PQRL}/include )
+    add_definitions("-DDAP_PQLR")
+endif()
 
 if(WIN32)
   if(BUILD_64)
@@ -99,9 +118,21 @@ endif()
 
 
 
-add_library(${PROJECT_NAME} STATIC ${CRYPTO_SRCS} ${XKCP_SRCS} ${XKCP_SRCS2} ${CRYPTO_HEADERS} )
+add_library(${PROJECT_NAME} STATIC ${CRYPTO_SRCS} ${XKCP_SRCS} ${XKCP_SRCS2} ${CRYPTO_HEADERS} ${DAP_PQLR_SRC} )
 
-target_include_directories(dap_crypto PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src include)
+if (DAP_PQRL)
+
+    TARGET_LINK_LIBRARIES(dap_crypto ${PQLR_DILITHIUM_LIBRARIES})
+
+    IF(WIN32)
+        ADD_CUSTOM_COMMAND(TARGET dap_crypto POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+            "${PQLR_BINARY_DIR}/pqlr.dll"
+            "$<TARGET_FILE_DIR:dap_crypto>")
+    ENDIF()
+endif()
+
+target_include_directories(dap_crypto PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
 target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/)
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
@@ -289,6 +320,7 @@ if(UNIX)
   target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 json-c m)
 endif()
 
+target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
 
 if(BUILD_CRYPTO_TESTS)
     enable_testing()

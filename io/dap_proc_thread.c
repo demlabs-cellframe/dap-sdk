@@ -394,9 +394,9 @@ int dap_proc_thread_esocket_write_f_inter(dap_proc_thread_t * a_thread,dap_worke
         va_end(ap_copy);
         return 0;
     }
-
+    l_data_size++; // include trailing 0
     dap_events_socket_t * l_es_io_input = a_thread->queue_io_input[a_worker->id];
-    char * l_data = DAP_NEW_SIZE(char,l_data_size+1);
+    char * l_data = DAP_NEW_SIZE(char, l_data_size);
     if (!l_data){
         va_end(ap_copy);
         return -1;
@@ -424,7 +424,3 @@ void dap_proc_thread_worker_exec_callback_inter(dap_proc_thread_t * a_thread, si
     debug_if(g_debug_reactor, L_INFO, "Msg with arg %p -> worker %zu", a_arg, a_worker_id);
     dap_events_socket_queue_ptr_send_to_input(a_thread->queue_callback_input[a_worker_id], l_msg);
 }
-
-
-
-

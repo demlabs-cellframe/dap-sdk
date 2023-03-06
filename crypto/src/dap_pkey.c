@@ -28,7 +28,6 @@
 #define LOG_TAG "chain_key"
 //static dap_pkey_t m_dap_pkey_null={0}; // For sizeof nothing more
 
-
 /**
  * @brief 
  * convert encryption key to public key
@@ -37,25 +36,16 @@
  */
 dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key)
 {
-    dap_pkey_type_t l_type;
-    if (a_key->pub_key_data_size > 0 ){
-        switch (a_key->type) {
-            case DAP_ENC_KEY_TYPE_SIG_BLISS:
-                l_type.type = PKEY_TYPE_SIGN_BLISS; break;
-            case DAP_ENC_KEY_TYPE_SIG_TESLA:
-                l_type.type = PKEY_TYPE_SIGN_TESLA; break;
-            case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-                l_type.type = PKEY_TYPE_SIGN_PICNIC; break;
-            case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-                l_type.type = PKEY_TYPE_SIGN_DILITHIUM; break;
-            default:
-                log_it(L_WARNING,"No serialization preset");
-                return NULL;
+    if (a_key->pub_key_data_size > 0) {
+        dap_pkey_type_t l_type = dap_pkey_type_from_enc_key_type(a_key->type);
+        if (l_type.type == PKEY_TYPE_NULL) {
+            log_it(L_WARNING, "No serialization preset");
+            return NULL;
         }
         size_t l_pub_key_size;
         uint8_t *l_pkey = dap_enc_key_serealize_pub_key(a_key, &l_pub_key_size);
         if (!l_pkey) {
-            log_it(L_WARNING,"Serialization failed");
+            log_it(L_WARNING, "Serialization failed");
             return NULL;
         }
         dap_pkey_t *l_ret = DAP_NEW_SIZE(dap_pkey_t, sizeof(dap_pkey_t) + l_pub_key_size);
@@ -64,9 +54,16 @@ dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key)
         memcpy(&l_ret->pkey, l_pkey, l_pub_key_size);
         DAP_DELETE(l_pkey);
         return l_ret;
-    }else{
+    } else {
         log_it(L_WARNING, "No public key in the input enc_key object");
         return NULL;
     }
     return NULL;
+}
+
+bool dap_pkey_compare_with_sign(dap_pkey_t *a_pkey, dap_sign_t *a_sign)
+{
+    return (dap_pkey_type_to_enc_key_type(a_pkey->header.type) == dap_sign_type_to_key_type(a_sign->header.type) &&
+            a_pkey->header.size == a_sign->header.sign_pkey_size &&
+            !memcmp(a_pkey->pkey, a_sign->pkey_n_sign, a_pkey->header.size));
 }

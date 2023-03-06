@@ -315,7 +315,8 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 {
     UNUSED(a_arg);
 
-    char *l_peol, *l_cp;
+    byte_t *l_peol;
+    char *l_cp;
     int l_len, l_ret;
     size_t read_bytes = 0;
 
@@ -331,6 +332,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
     */
 
 //  log_it( L_DEBUG, "dap_http_client_read..." );
+    unsigned l_iter_count = 0;
     do{
         debug_if(s_debug_http, L_DEBUG, "HTTP client in state read %d taked bytes in input %"DAP_UINT64_FORMAT_U, l_http_client->state_read, a_esocket->buf_in_size );
 
@@ -350,15 +352,14 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                     if ( *(l_peol - 1) != CR )                              /* Check CR at previous position */
                         l_peol = NULL;
 
-                if ( !l_peol )
-                    {
-                        log_it( L_ERROR, "Start-line '%.*s' is not terminated by CRLF pair", (int) a_esocket->buf_in_size, a_esocket->buf_in);
-                        s_report_error_and_restart( a_esocket, l_http_client );
-                        break;
-                    }
+                if ( !l_peol ) {
+                    log_it( L_ERROR, "Start-line '%.*s' is not terminated by CRLF pair", (int) a_esocket->buf_in_size, a_esocket->buf_in);
+                    s_report_error_and_restart( a_esocket, l_http_client );
+                    break;
+                }
 
                 l_peol++;                                                   /* Count terminal  <LF> */
-                l_len = l_peol - (char*)a_esocket->buf_in;                  /* <l_len> - actual data length of the HTTP's start-line  */
+                l_len = l_peol - a_esocket->buf_in;                         /* <l_len> - actual data length of the HTTP's start-line  */
 
                                                                             /* Parse HTTP's start-line */
                 if ( 0 > s_http_start_line_parse(l_http_client, (char *) a_esocket->buf_in, l_len) ) {
@@ -448,7 +449,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                     }
 
                 l_peol++;                                                   /* Count terminal  <LF> */
-                l_len = l_peol - (char*) a_esocket->buf_in;
+                l_len = l_peol - a_esocket->buf_in;
 
                 if ( 0 > (l_ret = dap_http_header_parse( l_http_client, (char *) a_esocket->buf_in, l_len )) ) {
                     log_it( L_WARNING, "Input: not a valid header '%.*s'", l_len, a_esocket->buf_in );
@@ -511,6 +512,11 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 a_esocket->buf_in_size = 0;
             } break;
         } // switch
+        if (l_iter_count++ > 1000) {
+            log_it(L_ERROR, "Indefinite loop in DAP HTTP client read");
+            s_report_error_and_restart( a_esocket, l_http_client );
+            break;
+        }
     } while (a_esocket->buf_in_size);
 //  log_it( L_DEBUG, "dap_http_client_read...exit" );
 //  Sleep(100);

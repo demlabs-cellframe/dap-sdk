@@ -118,7 +118,7 @@ dap_slist_elm_t *l_elm;
 
 typedef void (*dap_callback_destroyed_t)(void* data);
 typedef void (*dap_callback_t)(void* data, void* user_data);
-typedef void* (*dap_callback_copy_t)(const void * src, void* data);
+typedef void * (*dap_callback_copy_t)(const void * src, void* data);
 typedef int (*dap_callback_compare_t)(const void * a, const void * b);
 typedef int (*dap_callback_compare_data_t)(const void * a, const void * b, void* user_data);
 

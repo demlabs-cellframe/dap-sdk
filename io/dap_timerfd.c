@@ -98,7 +98,7 @@ dap_timerfd_t* dap_timerfd_start_on_worker(dap_worker_t * a_worker, uint64_t a_t
 {
     dap_timerfd_t* l_timerfd = dap_timerfd_create( a_timeout_ms, a_callback, a_callback_arg);
     if(l_timerfd){
-        dap_worker_add_events_socket(l_timerfd->events_socket, a_worker);
+        dap_worker_add_events_socket(a_worker, l_timerfd->events_socket);
         l_timerfd->worker = a_worker;
         return l_timerfd;
     }else{
@@ -118,6 +118,7 @@ dap_timerfd_t* dap_timerfd_start_on_worker(dap_worker_t * a_worker, uint64_t a_t
 dap_timerfd_t* dap_timerfd_start_on_proc_thread(dap_proc_thread_t * a_proc_thread, uint64_t a_timeout_ms, dap_timerfd_callback_t a_callback, void *a_callback_arg)
 {
     dap_timerfd_t* l_timerfd = dap_timerfd_create( a_timeout_ms, a_callback, a_callback_arg);
+    // TODO make realization
     return l_timerfd;
 }
 
@@ -178,10 +179,8 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     l_events_socket->kqueue_base_filter = EVFILT_TIMER;
     l_events_socket->socket = arc4random();
 #ifdef DAP_OS_DARWIN
-    // We have all timers not accurate but more power safe
-    // Usualy we don't need exactly 1-5-10 seconds so let it be so
-    // TODO make absolute timer without power-saving flags
-    l_events_socket->kqueue_base_fflags = NOTE_BACKGROUND;
+    // We have all timers not critical accurate but more power safe
+    l_events_socket->kqueue_base_fflags = 0U;
 #else
     l_events_socket->kqueue_base_fflags = NOTE_MSECONDS;
 #endif
@@ -326,7 +325,7 @@ void dap_timerfd_reset(dap_timerfd_t *a_timerfd)
     if (a_timerfd->worker){
         dap_worker_exec_callback_on(a_timerfd->worker,s_timerfd_reset_worker_callback, a_timerfd);
     }else if (a_timerfd->proc_thread)
-        dap_proc_thread_add_callback_mt(a_timerfd->proc_thread,s_timerfd_reset_proc_thread_callback, a_timerfd, DAP_PROC_PRI_NORMAL );
+        dap_proc_queue_add_callback_mt(a_timerfd->proc_thread,s_timerfd_reset_proc_thread_callback, a_timerfd, DAP_PROC_PRI_NORMAL );
     else
         log_it(L_WARNING,"Timer's context undefined, cant' reset it");
 }
@@ -343,6 +342,6 @@ void dap_timerfd_delete(dap_timerfd_t *a_timerfd)
 #ifdef _WIN32
     DeleteTimerQueueTimer(hTimerQueue, a_timerfd->th, NULL);
 #endif
-    if (a_timerfd->events_socket->context->worker)
+    if (a_timerfd->events_socket->context)
         dap_events_socket_remove_and_delete_mt(a_timerfd->events_socket->context->worker, a_timerfd->esocket_uuid);
 }

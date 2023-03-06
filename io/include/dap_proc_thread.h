@@ -59,14 +59,15 @@ bool dap_proc_thread_assign_on_worker_inter(dap_proc_thread_t * a_thread, dap_wo
 
 int dap_proc_thread_esocket_write_inter(dap_proc_thread_t * a_thread,dap_worker_t * a_worker,  dap_events_socket_uuid_t a_es_uuid,
                                         const void * a_data, size_t a_data_size);
-int dap_proc_thread_esocket_write_f_inter(dap_proc_thread_t * a_thread,dap_worker_t * a_worker,  dap_events_socket_uuid_t a_es_uuid,
-                                        const char * a_format,...);
+
+DAP_PRINTF_ATTR(4, 5) int dap_proc_thread_esocket_write_f_inter(dap_proc_thread_t *a_thread,
+                                                                dap_worker_t *a_worker,
+                                                                dap_events_socket_uuid_t a_es_uuid,
+                                                                const char *a_format,
+                                                                ...);
 
 typedef void (*dap_proc_worker_callback_t)(dap_worker_t *,void *);
 
 void dap_proc_thread_worker_exec_callback_inter(dap_proc_thread_t * a_thread, size_t a_worker_id, dap_proc_worker_callback_t a_callback, void * a_arg);
 
 int dap_proc_thread_assign_esocket_unsafe(dap_proc_thread_t * a_thread, dap_events_socket_t * a_esocket);
-
-
-#define dap_proc_thread_esocket_update_poll_flags(a, b) dap_context_poll_update(b)

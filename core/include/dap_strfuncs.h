@@ -54,13 +54,13 @@ int dap_strncmp(const char *a_str1, const char *a_str2, size_t a_n);
 // duplicates a string
 char* dap_strdup(const char *a_str);
 char* dap_strdup_vprintf(const char *a_format, va_list a_args);
-char* dap_strdup_printf(const char *a_format, ...);
+DAP_PRINTF_ATTR(1, 2) char *dap_strdup_printf(const char *a_format, ...);
 
 char* dap_stpcpy(char *a_dest, const char *a_src);
 char* dap_strstr_len(const char *a_haystack, ssize_t a_haystack_len, const char *a_needle);
 // concatenates all of str_array's strings, sliding in an optional separator, the returned string is newly allocated.
 char* dap_strjoinv(const char *a_separator, char **a_str_array);
-char* dap_strjoin(const char *a_separator, ...);
+char *dap_strjoin(const char *a_separator, ...);
 // split up string into max_tokens tokens at delimiter and return a newly allocated string array
 char** dap_strsplit(const char *a_string, const char *a_delimiter, int a_max_tokens);
 size_t dap_str_countv(char **a_str_array);

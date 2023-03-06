@@ -25,6 +25,7 @@
 #include "dap_client_pvt.h"
 #include "dap_client_http.h"
 #include "dap_stream_ch_proc.h"
+#include "dap_stream_ch_pkt.h"
 #include "dap_stream_worker.h"
 
 #define LOG_TAG "dap_client"
@@ -32,7 +33,6 @@
 // FSM realization: thats callback executes after the every stage is done
 // and have to select the next one stage
 static void s_stage_fsm_operator_unsafe(dap_client_t *, void *);
-static void s_stage_done_delete(dap_client_t * a_client, void * a_arg);
 
 /**
  * @brief dap_client_init
@@ -71,16 +71,17 @@ void dap_client_deinit()
  * @param a_stage_status_error_callback
  * @return
  */
-dap_client_t * dap_client_new( dap_client_callback_t a_stage_status_callback
-                              ,dap_client_callback_t a_stage_status_error_callback )
+dap_client_t *dap_client_new(dap_client_callback_t a_delete_callback,
+                             dap_client_callback_t a_stage_status_error_callback,
+                             void *a_callbacks_arg)
 {
     // ALLOC MEM FOR dap_client
     dap_client_t *l_client = DAP_NEW_Z(dap_client_t);
     if (!l_client)
         goto MEM_ALLOC_ERR;
 
-    pthread_mutex_init(&l_client->mutex, NULL);
-
+    l_client->delete_callback = a_delete_callback;
+    l_client->callbacks_arg = a_callbacks_arg;
     l_client->_internal  = DAP_NEW_Z(dap_client_pvt_t);
     if (!l_client->_internal)
         goto MEM_ALLOC_ERR;
@@ -88,23 +89,19 @@ dap_client_t * dap_client_new( dap_client_callback_t a_stage_status_callback
     // CONSTRUCT dap_client object
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     l_client_pvt->client = l_client;
-    l_client_pvt->stage_status_callback = a_stage_status_callback;
     l_client_pvt->stage_status_error_callback = a_stage_status_error_callback;
     l_client_pvt->worker = dap_events_worker_get_auto();
 
     dap_client_pvt_new(l_client_pvt);
-    l_client->pvt_uuid = l_client_pvt->uuid;
 
     return l_client;
 
 MEM_ALLOC_ERR:
     log_it(L_ERROR, "dap_client_new can not allocate memory");
-    if (l_client)
-        if(l_client->_internal)
-            DAP_DELETE(l_client->_internal);
-
-    if (l_client)
-        DAP_DELETE (l_client);
+    if (l_client) {
+        DAP_DEL_Z(l_client->_internal);
+        DAP_DELETE(l_client);
+    }
     return NULL;
 }
 
@@ -120,28 +117,17 @@ void dap_client_set_uplink_unsafe(dap_client_t * a_client,const char* a_addr, ui
         log_it(L_ERROR,"Address is NULL for dap_client_set_uplink");
         return;
     }
+    if (!a_port) {
+        log_it(L_ERROR,"Port is zero for dap_client_set_uplink");
+        return;
+    }
     if(a_client == NULL){
         log_it(L_ERROR,"Client is NULL for dap_client_set_uplink");
         return;
     }
-    DAP_DEL_Z(DAP_CLIENT_PVT(a_client)->uplink_addr);
-    DAP_CLIENT_PVT(a_client)->uplink_addr = strdup(a_addr);
-    DAP_CLIENT_PVT(a_client)->uplink_port = a_port;
-}
-
-/**
- * @brief dap_client_get_uplink_addr
- * @param a_client
- * @return
- */
-const char* dap_client_get_uplink_addr_unsafe(dap_client_t * a_client)
-{
-    if(a_client == NULL){
-        log_it(L_ERROR,"Client is NULL for dap_client_get_uplink");
-        return NULL;
-    }
-    const char * l_ret = DAP_CLIENT_PVT(a_client)->uplink_addr;
-    return l_ret;
+    DAP_DEL_Z(a_client->uplink_addr);
+    a_client->uplink_addr = strdup(a_addr);
+    a_client->uplink_port = a_port;
 }
 
 /**
@@ -156,35 +142,65 @@ void dap_client_set_active_channels_unsafe (dap_client_t * a_client, const char 
         return;
     }
 
-    if ( DAP_CLIENT_PVT(a_client)->active_channels )
-        DAP_DELETE(DAP_CLIENT_PVT(a_client)->active_channels );
-    DAP_CLIENT_PVT(a_client)->active_channels =  a_active_channels? dap_strdup( a_active_channels) : NULL;
+    DAP_DEL_Z(a_client->active_channels);
+    a_client->active_channels = dap_strdup(a_active_channels);
 }
 
-/**
- * @brief dap_client_get_uplink_port
- * @param a_client
- * @return
- */
-uint16_t dap_client_get_uplink_port_unsafe(dap_client_t * a_client)
+ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size)
 {
-    if(a_client == NULL){
-        log_it(L_ERROR,"Client is NULL for dap_client_get_uplink_port");
+    if (!a_client->active_channels || !strchr(a_client->active_channels, a_ch_id))
+        return -1;
+    dap_stream_ch_t *l_ch = dap_client_get_stream_ch_unsafe(a_client, a_ch_id);
+    if (l_ch)
+        return dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
+    if (a_client->connect_on_demand) {
+        dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
+        dap_client_pvt_queue_add(l_client_pvt, a_ch_id, a_type, a_data, a_data_size);
+        if (a_client->stage_target == STAGE_STREAM_STREAMING &&
+                    l_client_pvt->stage_status == STAGE_STATUS_IN_PROGRESS)
+            // Already going to aimed target stage
+            return 0;
+        a_client->stage_target = STAGE_STREAM_STREAMING;
+        dap_client_pvt_stage_transaction_begin(l_client_pvt,
+                                               STAGE_BEGIN,
+                                               s_stage_fsm_operator_unsafe);
         return 0;
     }
-
-    return DAP_CLIENT_PVT(a_client)->uplink_port;
+    return -2;
 }
 
-void dap_client_set_auth_cert_unsafe(dap_client_t * a_client, dap_cert_t *a_cert)
+struct dap_client_write_args {
+    dap_client_t *client;
+    char ch_id;
+    uint8_t type;
+    size_t data_size;
+    byte_t data[];
+};
+
+static void s_client_write_on_worker(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
 {
-    if(a_client == NULL){
-        log_it(L_ERROR,"Client is NULL for dap_client_set_auth_cert");
-        return;
-    }
+    struct dap_client_write_args *l_args = a_arg;
+    dap_client_write_unsafe(l_args->client, l_args->ch_id, l_args->type, l_args->data, l_args->data_size);
+    DAP_DELETE(a_arg);
 
-    DAP_CLIENT_PVT(a_client)->auth_cert = a_cert;
 }
+
+int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size)
+{
+    if (DAP_CLIENT_PVT(a_client)->is_removing)
+        return -1;
+    struct dap_client_write_args *l_args = DAP_NEW_SIZE(struct dap_client_write_args, sizeof(struct dap_client_write_args) + a_data_size);
+    l_args->client = a_client;
+    l_args->ch_id = a_ch_id;
+    l_args->type = a_type;
+    l_args->data_size = a_data_size;
+    memcpy(l_args->data, a_data, a_data_size);
+
+    dap_worker_exec_callback_on(DAP_CLIENT_PVT(a_client)->worker, s_client_write_on_worker, l_args);
+
+    return 0;
+}
+
 
 /**
  * @brief dap_client_set_auth_cert
@@ -224,40 +240,38 @@ void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_chain_net_na
             return;
         }
     }
-    if (l_cert)
-        dap_client_set_auth_cert_unsafe(a_client, l_cert);
+    a_client->auth_cert = l_cert;
 }
 
 /**
  * @brief s_client_delete
  * @param a_client
  */
-void dap_client_delete_unsafe(dap_client_t * a_client)
+void dap_client_delete_unsafe(dap_client_t *a_client)
 {
-    if ( DAP_CLIENT_PVT(a_client)->refs_count ==0 ){
-        dap_client_pvt_delete_unsafe( DAP_CLIENT_PVT(a_client) );
-        pthread_mutex_destroy(&a_client->mutex);
-        DAP_DEL_Z(a_client);
-    } else
-        DAP_CLIENT_PVT(a_client)->is_to_delete = true;
-}
-
-/**
- * @brief s_stage_begin_before_delete
- * @param a_client
- * @param a_arg
- */
-static void s_stage_done_delete(dap_client_t * a_client, void * a_arg)
-{
-    (void) a_arg;
-    if (a_client)
-        pthread_mutex_destroy(&a_client->mutex);
+    if(a_client->delete_callback)
+        a_client->delete_callback(a_client, a_client->callbacks_arg);
+    dap_client_pvt_delete_unsafe( DAP_CLIENT_PVT(a_client) );
+    DAP_DEL_Z(a_client->uplink_addr);
+    DAP_DEL_Z(a_client->active_channels);
+    DAP_DELETE(a_client);
 }
 
 
-struct go_stage_arg{
-    bool flag_delete_after;// Delete after stage achievement
-    uint64_t client_pvt_uuid;
+void s_client_delete_on_worker(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
+{
+    dap_client_delete_unsafe(a_arg);
+}
+
+void dap_client_delete_mt(dap_client_t *a_client)
+{
+    DAP_CLIENT_PVT(a_client)->is_removing = true;
+    dap_worker_t *l_worker = DAP_CLIENT_PVT(a_client)->worker;
+    dap_worker_exec_callback_on(l_worker, s_client_delete_on_worker, a_client);
+}
+
+struct go_stage_arg {
+    dap_client_t *client;
     dap_client_stage_t stage_target;
     dap_client_callback_t stage_end_callback;
 };
@@ -267,143 +281,71 @@ struct go_stage_arg{
  * @param a_worker
  * @param a_arg
  */
-static void s_go_stage_on_client_worker_unsafe(dap_worker_t * a_worker,void * a_arg)
+static void s_go_stage_on_client_worker_unsafe(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
 {
-    (void) a_worker;
     assert(a_arg);
-    struct go_stage_arg* l_args = (struct go_stage_arg*) a_arg;
+    struct go_stage_arg *l_args = a_arg;
     dap_client_stage_t l_stage_target = l_args->stage_target;
-    dap_client_callback_t l_stage_end_callback= l_args->stage_end_callback;
+    dap_client_callback_t l_stage_end_callback = l_args->stage_end_callback;
+    dap_client_t *l_client = l_args->client;
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
 
-    dap_client_pvt_t * l_client_pvt = dap_client_pvt_find( l_args->client_pvt_uuid);
-    // Check if its not present now and exit if its already deleted
-    if ( !l_client_pvt){
-        log_it (L_NOTICE, "Client is not present in global table, exit s_go_stage_on_client_worker_unsafe()");
-        goto lb_exit;
-    }
-    // Wrong worker
-    if( l_client_pvt->worker != a_worker) {
-        log_it (L_NOTICE, "Wrong worker for client thats differs from what is present in client_pvt, exit s_go_stage_on_client_worker_unsafe()");
-        goto lb_exit;
-    }
-
-    dap_client_t *l_client = l_client_pvt->client;
-    bool l_flag_delete_after = l_args->flag_delete_after ;// Delete after stage achievement
-
-    l_client_pvt->is_to_delete = l_flag_delete_after;
-    if (!l_client || l_client->_internal != l_client_pvt) {
-        log_it(L_WARNING,"Client is NULL or corrupted, why? Refs %u", l_client_pvt->refs_count);
-        if ( l_client_pvt->refs_count ==0 ){
-            dap_client_pvt_delete_unsafe(l_client_pvt);
-        } else
-            l_client_pvt->is_to_delete = true;
-        goto lb_exit;
-    }
-
+    l_client->stage_target_done_callback = l_stage_end_callback;
     dap_client_stage_t l_cur_stage = l_client_pvt->stage;
-    dap_client_stage_status_t l_cur_stage_status= l_client_pvt->stage_status;
-    if (l_stage_target == l_cur_stage){
-        switch ( l_cur_stage_status) {
-            case STAGE_STATUS_DONE:
-                log_it(L_DEBUG, "Already have target state %s", dap_client_stage_str(l_stage_target));
-                if (l_stage_end_callback) {
-                    l_stage_end_callback(l_client, NULL);
-                }
-            break;
-            case STAGE_STATUS_ERROR:
-                log_it(L_DEBUG, "Already moving target state %s, but status is error (%s)", dap_client_stage_str(l_stage_target),
-                       dap_client_get_error_str(l_client));
-            break;
-            case STAGE_STATUS_IN_PROGRESS:
-                log_it(L_DEBUG, "Already moving target state %s", dap_client_stage_str(l_stage_target));
-            break;
-            default:
-                log_it(L_WARNING, "Unprocessed stage status %s for go to stage %s scheme ",  dap_client_stage_str(l_stage_target),
-                       dap_client_stage_status_str( l_cur_stage_status));
+    dap_client_stage_status_t l_cur_stage_status = l_client_pvt->stage_status;
+    if (l_cur_stage_status == STAGE_STATUS_COMPLETE) {
+        assert(l_client_pvt->stage == l_client->stage_target);
+        if (l_client->stage_target == l_stage_target) {
+            log_it(L_DEBUG, "Already have target state %s", dap_client_stage_str(l_stage_target));
+            if (l_stage_end_callback)
+                l_stage_end_callback(l_client, NULL);
+            return;
         }
-        l_client_pvt->refs_count--;
-        dap_client_delete_unsafe(l_client);
-        goto lb_exit;
+        if (l_client->stage_target < l_stage_target) {
+            l_client->stage_target = l_stage_target;
+            log_it(L_DEBUG, "Start transitions chain for client %p -> %p from %s to %s", l_client_pvt, l_client,
+                   dap_client_stage_str(l_cur_stage) , dap_client_stage_str(l_stage_target));
+            dap_client_pvt_stage_transaction_begin(l_client_pvt,
+                                                   l_cur_stage + 1,
+                                                   s_stage_fsm_operator_unsafe);
+            return;
+        }
     }
-    log_it(L_DEBUG, "Start transitions chain for client %p -> %p from %s to %s", l_client_pvt, l_client,
+
+    l_client->stage_target = l_stage_target;
+    log_it(L_DEBUG, "Clear clinet state, then start transitions chain for client %p -> %p from %s to %s", l_client_pvt, l_client,
            dap_client_stage_str(l_cur_stage) , dap_client_stage_str(l_stage_target));
-    l_client_pvt->stage_target = l_stage_target;
-    l_client_pvt->stage_target_done_callback = l_stage_end_callback;
-    if (l_stage_target < l_cur_stage) {
-        dap_client_pvt_stage_transaction_begin(l_client_pvt, STAGE_BEGIN, NULL);
-    }
-    l_cur_stage = l_client_pvt->stage;
-    l_cur_stage_status= l_client_pvt->stage_status;
-    if (l_stage_target != l_cur_stage ){ // Going to stages downstairs
-        switch(l_cur_stage_status ){
-            case STAGE_STATUS_ABORTING:
-                log_it(L_ERROR, "Already aborting the stage %s"
-                        , dap_client_stage_str(l_cur_stage));
-            break;
-            case STAGE_STATUS_IN_PROGRESS:{
-                log_it(L_WARNING, "Status progress the stage %s"
-                        , dap_client_stage_str(l_cur_stage));
-            }break;
-            case STAGE_STATUS_DONE:
-            case STAGE_STATUS_ERROR:
-            default: {
-                dap_client_pvt_stage_transaction_begin(l_client_pvt,
-                                                       l_cur_stage + 1,
-                                                       s_stage_fsm_operator_unsafe);
-            }
-        }
-    }
-    l_client_pvt->refs_count--;
-    if ( l_client_pvt->is_to_delete )
-        dap_client_delete_unsafe(l_client);
-lb_exit:
-    DAP_DELETE(l_args);
+    dap_client_pvt_stage_transaction_begin(l_client_pvt,
+                                           STAGE_BEGIN,
+                                           s_stage_fsm_operator_unsafe);
+    DAP_DELETE(a_arg);
 }
+
 /**
  * @brief dap_client_go_stage
  * @param a_client
  * @param a_stage_end
  */
-void dap_client_go_stage(dap_client_t * a_client, dap_client_stage_t a_stage_target, dap_client_callback_t a_stage_end_callback)
+void dap_client_go_stage(dap_client_t *a_client, dap_client_stage_t a_stage_target, dap_client_callback_t a_stage_end_callback)
 {
     // ----- check parameters -----
     if(NULL == a_client) {
         log_it(L_ERROR, "dap_client_go_stage, a_client == NULL");
         return;
     }
-    dap_client_pvt_t * l_client_pvt = dap_client_pvt_find(a_client->pvt_uuid);
+    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
 
-    if (NULL == l_client_pvt) {
-        log_it(L_ERROR, "dap_client_go_stage, client_pvt == NULL");
+    if (NULL == l_client_pvt || l_client_pvt->is_removing) {
+        log_it(L_ERROR, "dap_client_go_stage, client_pvt not exists or removing");
         return;
     }
 
     struct go_stage_arg *l_stage_arg = DAP_NEW_Z(struct go_stage_arg); if (! l_stage_arg) return;
     l_stage_arg->stage_end_callback = a_stage_end_callback;
     l_stage_arg->stage_target = a_stage_target;
-    l_stage_arg->client_pvt_uuid = a_client->pvt_uuid;
+    l_stage_arg->client = a_client;
     dap_worker_exec_callback_on(l_client_pvt->worker, s_go_stage_on_client_worker_unsafe, l_stage_arg);
 }
-
-/**
- * @brief dap_client_go_delete
- * @param a_client
- */
-void dap_client_delete_mt(dap_client_t * a_client)
-{
-    assert(a_client);
-    dap_client_pvt_t * l_client_pvt = dap_client_pvt_find(a_client->pvt_uuid);
-    assert(l_client_pvt);
-
-    struct go_stage_arg *l_stage_arg = DAP_NEW(struct go_stage_arg); if (! l_stage_arg) return;
-    l_stage_arg->stage_end_callback  = s_stage_done_delete ;
-    l_stage_arg->stage_target = STAGE_BEGIN ;
-    l_stage_arg->client_pvt_uuid = a_client->pvt_uuid;
-    l_stage_arg->flag_delete_after = true;
-    dap_worker_exec_callback_on(l_client_pvt->worker, s_go_stage_on_client_worker_unsafe, l_stage_arg);
-}
-
-
 /**
  * @brief s_stage_fsm_operator_unsafe
  * @param a_client
@@ -413,31 +355,27 @@ static void s_stage_fsm_operator_unsafe(dap_client_t * a_client, void * a_arg)
 {
     UNUSED(a_arg);
     assert(a_client);
-    dap_client_pvt_t * l_client_internal = dap_client_pvt_find(a_client->pvt_uuid);
+    dap_client_pvt_t * l_client_internal = DAP_CLIENT_PVT(a_client);
     assert(l_client_internal);
 
-    if ( l_client_internal->is_to_delete ){ // If we're switched once to delete and smbd else switched to another state - we restore target
-        l_client_internal->stage_target = STAGE_BEGIN;
-        l_client_internal->stage_target_done_callback = s_stage_done_delete;
-    }
-
-    if (l_client_internal->stage_target == l_client_internal->stage){
+    if (a_client->stage_target == l_client_internal->stage){
         log_it(L_WARNING, "FSM Op: current stage %s is same as target one, nothing to do",
               dap_client_stage_str( l_client_internal->stage ) );
         l_client_internal->stage_status_done_callback = NULL;
-
+        l_client_internal->stage_status = STAGE_STATUS_DONE;
+        if (a_client->stage_target_done_callback)
+            a_client->stage_target_done_callback(a_client, a_client->callbacks_arg);
         return;
     }
 
-    int step = (l_client_internal->stage_target > l_client_internal->stage)?1:-1;
-    dap_client_stage_t l_stage_next = l_client_internal->stage+step;
+    assert(a_client->stage_target > l_client_internal->stage);
+    dap_client_stage_t l_stage_next = l_client_internal->stage + 1;
     log_it(L_NOTICE, "FSM Op: current stage %s, go to %s (target %s)"
            ,dap_client_stage_str(l_client_internal->stage), dap_client_stage_str(l_stage_next)
-           ,dap_client_stage_str(l_client_internal->stage_target));
+           ,dap_client_stage_str(a_client->stage_target));
     dap_client_pvt_stage_transaction_begin(l_client_internal,
                                                 l_stage_next, s_stage_fsm_operator_unsafe
                                                 );
-
 }
 
 
@@ -455,14 +393,14 @@ static void s_stage_fsm_operator_unsafe(dap_client_t * a_client, void * a_arg)
 void dap_client_request_enc_unsafe(dap_client_t * a_client, const char * a_path, const char * a_suburl,const char* a_query, void * a_request, size_t a_request_size,
                                 dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error )
 {
-    dap_client_pvt_t * l_client_internal = dap_client_pvt_find(a_client->pvt_uuid);
+    dap_client_pvt_t * l_client_internal = DAP_CLIENT_PVT(a_client);
     dap_client_pvt_request_enc(l_client_internal, a_path, a_suburl, a_query,a_request,a_request_size, a_response_proc,a_response_error);
 }
 
 void dap_client_request_unsafe(dap_client_t * a_client, const char * a_full_path, void * a_request, size_t a_request_size,
                                 dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error )
 {
-    dap_client_pvt_t * l_client_internal = dap_client_pvt_find(a_client->pvt_uuid);
+    dap_client_pvt_t * l_client_internal = DAP_CLIENT_PVT(a_client);
     dap_client_pvt_request(l_client_internal, a_full_path, a_request, a_request_size, a_response_proc, a_response_error);
 }
 
@@ -496,10 +434,6 @@ const char * dap_client_error_str(dap_client_error_t a_client_error)
  */
 const char * dap_client_get_error_str(dap_client_t * a_client)
 {
-    if(a_client == NULL || dap_client_pvt_find(a_client->pvt_uuid) == NULL) {
-        log_it(L_ERROR,"Client is NULL for dap_client_get_error_str");
-        return NULL;
-    }
     return dap_client_error_str( DAP_CLIENT_PVT(a_client)->last_error );
 }
 /**
@@ -541,6 +475,7 @@ const char * dap_client_stage_status_str(dap_client_stage_status_t a_stage_statu
         case STAGE_STATUS_IN_PROGRESS: return "IN_PROGRESS";
         case STAGE_STATUS_ERROR: return "ERROR";
         case STAGE_STATUS_DONE: return "DONE";
+        case STAGE_STATUS_COMPLETE: return "COMPLETE";
         default: return "UNDEFINED";
     }
 }
@@ -573,7 +508,6 @@ const char * dap_client_stage_str(dap_client_stage_t a_stage)
         case STAGE_STREAM_SESSION: return "STREAM_SESSION";
         case STAGE_STREAM_CONNECTED: return "STREAM_CONNECTED";
         case STAGE_STREAM_STREAMING: return "STREAM";
-        case STAGE_STREAM_ABORT: return "ABORT";
         default: return "UNDEFINED";
     }
 }
@@ -584,7 +518,7 @@ const char * dap_client_stage_str(dap_client_stage_t a_stage)
  */
 dap_client_stage_status_t dap_client_get_stage_status(dap_client_t * a_client)
 {
-    return (a_client && dap_client_pvt_find(a_client->pvt_uuid)) ? DAP_CLIENT_PVT(a_client)->stage_status : STAGE_STATUS_NONE;
+    return (a_client && DAP_CLIENT_PVT(a_client)) ? DAP_CLIENT_PVT(a_client)->stage_status : STAGE_STATUS_NONE;
 }
 
 /**
@@ -593,7 +527,7 @@ dap_client_stage_status_t dap_client_get_stage_status(dap_client_t * a_client)
  * @return
  */
 dap_enc_key_t * dap_client_get_key_stream(dap_client_t * a_client){
-    return (a_client && dap_client_pvt_find(a_client->pvt_uuid)) ? DAP_CLIENT_PVT(a_client)->stream_key : NULL;
+    return (a_client && DAP_CLIENT_PVT(a_client)) ? DAP_CLIENT_PVT(a_client)->stream_key : NULL;
 }
 
 
@@ -609,7 +543,7 @@ dap_stream_t * dap_client_get_stream(dap_client_t * a_client)
         return NULL;
     }
 
-    dap_client_pvt_t * l_client_internal = dap_client_pvt_find(a_client->pvt_uuid);
+    dap_client_pvt_t * l_client_internal = DAP_CLIENT_PVT(a_client);
     return (l_client_internal) ? l_client_internal->stream : NULL;
 }
 
@@ -624,7 +558,7 @@ dap_stream_worker_t * dap_client_get_stream_worker(dap_client_t * a_client)
         log_it(L_ERROR,"Client is NULL for dap_client_get_stream_worker");
         return NULL;
     }
-    dap_client_pvt_t * l_client_internal = dap_client_pvt_find(a_client->pvt_uuid);
+    dap_client_pvt_t * l_client_internal = DAP_CLIENT_PVT(a_client);
     return (l_client_internal) ? l_client_internal->stream_worker : NULL;
 
 }
@@ -632,7 +566,7 @@ dap_stream_worker_t * dap_client_get_stream_worker(dap_client_t * a_client)
 dap_stream_ch_t * dap_client_get_stream_ch_unsafe(dap_client_t * a_client, uint8_t a_ch_id)
 {
     dap_stream_ch_t * l_ch = NULL;
-    dap_client_pvt_t * l_client_internal = a_client ? dap_client_pvt_find(a_client->pvt_uuid) : NULL;
+    dap_client_pvt_t * l_client_internal = a_client ? DAP_CLIENT_PVT(a_client) : NULL;
     if(l_client_internal && l_client_internal->stream && l_client_internal->stream_es)
         for(size_t i = 0; i < l_client_internal->stream->channel_count; i++) {
             if(l_client_internal->stream->channel[i]->proc->id == a_ch_id) {
@@ -650,7 +584,7 @@ dap_stream_ch_t * dap_client_get_stream_ch_unsafe(dap_client_t * a_client, uint8
  */
 const char * dap_client_get_stream_id(dap_client_t * a_client)
 {
-    if(!(a_client || !dap_client_pvt_find(a_client->pvt_uuid)))
+    if(!(a_client || !DAP_CLIENT_PVT(a_client)))
         return NULL;
     return DAP_CLIENT_PVT(a_client)->stream_id;
 }
@@ -663,7 +597,7 @@ const char * dap_client_get_stream_id(dap_client_t * a_client)
 bool dap_client_get_is_always_reconnect(dap_client_t * a_client)
 {
     assert(a_client);
-    return DAP_CLIENT_PVT(a_client)->is_always_reconnect;
+    return a_client->always_reconnect;
 }
 
 /**
@@ -674,7 +608,7 @@ bool dap_client_get_is_always_reconnect(dap_client_t * a_client)
 void dap_client_set_is_always_reconnect(dap_client_t * a_client, bool a_value)
 {
     assert(a_client);
-    DAP_CLIENT_PVT(a_client)->is_always_reconnect = a_value;
+    a_client->always_reconnect = a_value;
 }
 
 /**
@@ -684,6 +618,5 @@ void dap_client_set_is_always_reconnect(dap_client_t * a_client, bool a_value)
  */
 dap_client_t * dap_client_from_esocket(dap_events_socket_t * a_esocket)
 {
-   dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_esocket->_inheritor;
-   return l_client_pvt?l_client_pvt->client: NULL;
+   return (dap_client_t *) a_esocket->_inheritor;
 }

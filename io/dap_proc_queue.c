@@ -251,7 +251,7 @@ dap_proc_queue_msg_t *l_msg;
  * @param a_callback_arg
  * @return
  */
-int dap_proc_thread_add_callback_mt(dap_proc_thread_t * a_thread, dap_proc_queue_callback_t a_callback, void * a_callback_arg, int a_pri)
+int dap_proc_queue_add_callback_mt(dap_proc_thread_t * a_thread, dap_proc_queue_callback_t a_callback, void * a_callback_arg, int a_pri)
 {
     dap_proc_queue_msg_t *l_msg;
 

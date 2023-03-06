@@ -186,11 +186,11 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
         // Prepare timer
         struct timespec l_timeout;
         clock_gettime(CLOCK_REALTIME, &l_timeout);
-        l_timeout.tv_sec+=DAP_CONTEXT_WAIT_FOR_STARTED_TIME;
+        l_timeout.tv_sec += DAP_CONTEXT_WAIT_FOR_STARTED_TIME;
         // Lock started mutex and try to run a thread
         pthread_mutex_lock(&a_context->started_mutex);
 
-        l_ret = pthread_create( &a_context->thread_id , NULL, s_context_thread, l_msg);
+        l_ret = pthread_create(&a_context->thread_id, NULL, s_context_thread, l_msg);
 
         if(l_ret == 0){ // If everything is good we're waiting for DAP_CONTEXT_WAIT_FOR_STARTED_TIME seconds
             while (!a_context->started && !l_ret)
@@ -773,7 +773,7 @@ static int s_thread_loop(dap_context_t * a_context)
                                 continue;
                             }
                         }else{
-                            log_it(L_WARNING, "We have incomming %zd data but no read callback on socket %"DAP_FORMAT_SOCKET", removing from read set",
+                            log_it(L_WARNING, "We have incoming %zd data but no read callback on socket %"DAP_FORMAT_SOCKET", removing from read set",
                                    l_bytes_read, l_cur->socket);
                             dap_events_socket_set_readable_unsafe(l_cur,false);
                         }
@@ -1423,8 +1423,8 @@ int dap_context_remove( dap_events_socket_t * a_es)
     }
 
     l_context->event_sockets_count--;
-    if(a_es->socket != 0 && a_es->socket != INVALID_SOCKET )
-       HASH_DELETE(hh,l_context->esockets, a_es);
+    if (a_es->socket)
+       HASH_DELETE(hh, l_context->esockets, a_es);
 
 #if defined(DAP_EVENTS_CAPS_EPOLL)
 

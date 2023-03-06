@@ -40,17 +40,15 @@ typedef enum dap_client_stage {
     STAGE_STREAM_CTL=2,
     STAGE_STREAM_SESSION=3,
     STAGE_STREAM_CONNECTED=4,
-    STAGE_STREAM_STREAMING=5,
-    STAGE_STREAM_ABORT=10
+    STAGE_STREAM_STREAMING=5
 } dap_client_stage_t;
 
 typedef enum dap_client_stage_status {
     STAGE_STATUS_NONE=0,
-    // Enc init stage
     STAGE_STATUS_IN_PROGRESS,
-    STAGE_STATUS_ABORTING,
     STAGE_STATUS_ERROR,
     STAGE_STATUS_DONE,
+    STAGE_STATUS_COMPLETE
 } dap_client_stage_status_t;
 
 typedef enum dap_client_error {
@@ -66,24 +64,44 @@ typedef enum dap_client_error {
     ERROR_STREAM_RESPONSE_WRONG,
     ERROR_STREAM_RESPONSE_TIMEOUT,
     ERROR_STREAM_FREEZED,
+    ERROR_STREAM_ABORTED,
     ERROR_NETWORK_CONNECTION_REFUSE,
-    ERROR_NETWORK_CONNECTION_TIMEOUT
+    ERROR_NETWORK_CONNECTION_TIMEOUT,
+    ERROR_WRONG_STAGE,
+    ERROR_WRONG_ADDRESS
 } dap_client_error_t;
+
+typedef struct dap_client dap_client_t;
+
+typedef void (*dap_client_callback_t) (dap_client_t *, void *);
+typedef void (*dap_client_callback_int_t) (dap_client_t *, void *, int);
+typedef void (*dap_client_callback_data_size_t) (dap_client_t *, void *, size_t);
 
 /**
  * @brief The dap_client struct
  */
-typedef struct dap_client{
-    pthread_mutex_t mutex;
-    void * _internal;
-    void * _inheritor;
-    uint64_t pvt_uuid;
-    dap_events_socket_uuid_t es_uuid;
+typedef struct dap_client {
+    char *active_channels;
+
+    char *uplink_addr;
+    uint16_t uplink_port;
+
+    dap_cert_t *auth_cert;
+
+    bool always_reconnect; // Always reconnect ever number of tries are over
+    bool connect_on_demand; // Automatically connect with writing request
+
+    dap_client_stage_t stage_target;
+    dap_client_callback_t stage_target_done_callback;
+    dap_client_callback_int_t stage_target_error_callback;
+    void *callbacks_arg;
+    dap_client_callback_t delete_callback;
+
+    void *_internal;
+    void *_inheritor;
 } dap_client_t;
 
-typedef void (*dap_client_callback_t) (dap_client_t *, void*);
-typedef void (*dap_client_callback_int_t) (dap_client_t *, int);
-typedef void (*dap_client_callback_data_size_t) (dap_client_t *, void *, size_t);
+#define DAP_ESOCKET_CLIENT(a) (a ? (dap_client_t *)a->_inheritor : NULL)
 
 #define DAP_UPLINK_PATH_ENC_INIT         "enc_init"
 #define DAP_UPLINK_PATH_STREAM_CTL       "stream_ctl"
@@ -99,19 +117,22 @@ extern "C" {
 int dap_client_init();
 void dap_client_deinit();
 
-dap_client_t * dap_client_new( dap_client_callback_t a_stage_status_callback
-                              , dap_client_callback_t a_stage_status_error_callback );
+dap_client_t *dap_client_new(dap_client_callback_t a_delete_callback,
+                             dap_client_callback_t a_stage_status_error_callback,
+                             void *a_callbacks_arg);
+
+DAP_STATIC_INLINE const char* dap_client_get_uplink_addr_unsafe(dap_client_t *a_client) { return a_client->uplink_addr; }
+DAP_STATIC_INLINE uint16_t dap_client_get_uplink_port_unsafe(dap_client_t *a_client) { return a_client->uplink_port; }
 
 void dap_client_set_uplink_unsafe(dap_client_t * a_client,const char* a_addr, uint16_t a_port);
-const char* dap_client_get_uplink_addr_unsafe(dap_client_t * a_client);
-uint16_t dap_client_get_uplink_port_unsafe(dap_client_t * a_client);
-
-
 dap_enc_key_t * dap_client_get_key_stream(dap_client_t * a_client);
 
 void dap_client_go_stage(dap_client_t * a_client, dap_client_stage_t a_stage_end, dap_client_callback_t a_stage_end_callback);
 void dap_client_delete_mt(dap_client_t * a_client);
 void dap_client_delete_unsafe(dap_client_t * a_client);
+
+ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
+int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
 
 void dap_client_request_enc_unsafe(dap_client_t * a_client, const char * a_path,const char * a_suburl,const char* a_query, void * a_request, size_t a_request_size,
                                 dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error);
