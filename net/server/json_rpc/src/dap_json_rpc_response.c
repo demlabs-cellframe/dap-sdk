@@ -60,7 +60,7 @@ void dap_json_rpc_response_send(dap_json_rpc_response_t *a_response, dap_http_si
     json_object_object_add(l_jobj, "id", l_obj_id);
     json_object_object_add(l_jobj, "error", l_obj_error);
     str_response = json_object_to_json_string(l_jobj);
-    dap_http_simple_reply(a_client, str_response, strlen(str_response));
+    dap_http_simple_reply(a_client, (void *)str_response, strlen(str_response));
     json_object_put(l_jobj);
 }
 
