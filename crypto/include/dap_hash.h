@@ -107,7 +107,7 @@ static inline bool dap_hash_fast_is_blank( dap_hash_fast_t *a_hash )
 }
 
 
-DAP_STATIC_INLINE int dap_chain_hash_fast_to_str( dap_hash_fast_t *a_hash, char *a_str, size_t a_str_max )
+DAP_STATIC_INLINE int dap_chain_hash_fast_to_str(const dap_hash_fast_t *a_hash, char *a_str, size_t a_str_max )
 {
     if(! a_hash )
         return -1;
@@ -124,7 +124,7 @@ DAP_STATIC_INLINE int dap_chain_hash_fast_to_str( dap_hash_fast_t *a_hash, char 
 
 #define dap_hash_fast_to_str dap_chain_hash_fast_to_str
 
-DAP_STATIC_INLINE char *dap_chain_hash_fast_to_str_new(dap_hash_fast_t * a_hash)
+DAP_STATIC_INLINE char *dap_chain_hash_fast_to_str_new(const dap_hash_fast_t *a_hash)
 {
     const size_t c_hash_str_size = DAP_CHAIN_HASH_FAST_STR_SIZE;
     char * ret = DAP_NEW_Z_SIZE(char, c_hash_str_size + 1);
