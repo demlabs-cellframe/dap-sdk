@@ -235,7 +235,7 @@ void dap_set_log_tag_width(size_t a_width) {
         dap_fprintf(stderr,"Can't set width %zd", a_width);
         return;
     }
-    dap_snprintf(s_log_tag_fmt_str,sizeof (s_log_tag_fmt_str), "[%%%zds]\t",a_width);
+    snprintf(s_log_tag_fmt_str,sizeof (s_log_tag_fmt_str), "[%%%zds]\t",a_width);
 }
 
 
@@ -366,11 +366,11 @@ void _log_it(const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, 
     l_log_string->offset = s_ansi_seq_color_len[a_ll];
     s_update_log_time(l_log_string->str + l_log_string->offset);
     size_t offset = strlen(l_log_string->str);
-    offset += dap_snprintf(l_log_string->str + offset, offset2, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
+    offset += snprintf(l_log_string->str + offset, offset2, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
     offset2 -= offset;
     va_list va;
     va_start( va, a_fmt );
-    size_t l_offset = dap_vsnprintf(l_log_string->str + offset, offset2, a_fmt, va);
+    size_t l_offset = vsnprintf(l_log_string->str + offset, offset2, a_fmt, va);
     offset = (l_offset < offset2) ? offset + l_offset : offset;
     offset2 = (l_offset < offset2) ? offset2 - offset : 0;
     va_end( va );

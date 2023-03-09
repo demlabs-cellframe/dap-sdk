@@ -561,7 +561,7 @@ void dap_http_client_write( dap_events_socket_t * a_esocket, void *a_arg )
             }
 
             log_it( L_INFO," HTTP response with %u status code", l_http_client->reply_status_code );
-            l_http_client->esocket->buf_out_size += dap_snprintf((char *) l_http_client->esocket->buf_out + l_http_client->esocket->buf_out_size,
+            l_http_client->esocket->buf_out_size += snprintf((char *) l_http_client->esocket->buf_out + l_http_client->esocket->buf_out_size,
                                                                  l_http_client->esocket->buf_out_size_max - l_http_client->esocket->buf_out_size,
                             "HTTP/1.1 %u %s" CRLF,
                             l_http_client->reply_status_code, l_http_client->reply_reason_phrase[0] ?
@@ -574,7 +574,7 @@ void dap_http_client_write( dap_events_socket_t * a_esocket, void *a_arg )
             dap_http_header_add( &l_http_client->out_headers, "Date", l_buf );
 
             for ( hdr = l_http_client->out_headers; hdr; hdr = l_http_client->out_headers ) {
-                l_http_client->esocket->buf_out_size += dap_snprintf((char *) l_http_client->esocket->buf_out + l_http_client->esocket->buf_out_size,
+                l_http_client->esocket->buf_out_size += snprintf((char *) l_http_client->esocket->buf_out + l_http_client->esocket->buf_out_size,
                                                                     l_http_client->esocket->buf_out_size_max - l_http_client->esocket->buf_out_size,
                                                                     "%s: %s" CRLF, hdr->name, hdr->value);
                 dap_http_header_remove( &l_http_client->out_headers, hdr );
@@ -640,7 +640,7 @@ void dap_http_client_out_header_generate(dap_http_client_t *a_http_client)
             log_it(L_DEBUG,"Output: Content-Type = '%s'",a_http_client->out_content_type);
         }
         if ( a_http_client->out_content_length ) {
-            dap_snprintf(buf,sizeof(buf),"%zu",a_http_client->out_content_length);
+            snprintf(buf,sizeof(buf),"%zu",a_http_client->out_content_length);
             dap_http_header_add(&a_http_client->out_headers,"Content-Length",buf);
             log_it(L_DEBUG,"Output: Content-Length = %zu",a_http_client->out_content_length);
         }

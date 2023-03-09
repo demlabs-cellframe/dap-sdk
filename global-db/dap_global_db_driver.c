@@ -107,7 +107,7 @@ int l_ret = -1;
 
     // Compose path
     char l_db_path_ext[strlen(a_driver_name) + strlen(a_filename_db) + 6];
-    dap_snprintf(l_db_path_ext, sizeof(l_db_path_ext), "%s/gdb-%s", a_filename_db, a_driver_name);
+    snprintf(l_db_path_ext, sizeof(l_db_path_ext), "%s/gdb-%s", a_filename_db, a_driver_name);
 
    // Check for engine
     if(!dap_strcmp(s_used_driver, "ldb"))

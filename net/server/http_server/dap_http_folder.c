@@ -197,7 +197,7 @@ void dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
   cl_ht_file->client=cl_ht;
 
   // Produce local path for file to open
-  dap_snprintf(cl_ht_file->local_path,sizeof(cl_ht_file->local_path),"%s/%s", up_folder->local_path, cl_ht->url_path );
+  snprintf(cl_ht_file->local_path,sizeof(cl_ht_file->local_path),"%s/%s", up_folder->local_path, cl_ht->url_path );
   log_it(L_DEBUG, "Check %s file", cl_ht_file->local_path);
 
 #ifndef _WIN32
