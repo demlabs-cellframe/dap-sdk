@@ -358,6 +358,24 @@ typedef int dap_spinlock_t;
 #define __USE_MINGW_ANSI_STDIO 1
 #endif
 
+// Deprecated funstions, just for compatibility
+#define dap_sscanf      sscanf
+#define dap_vsscanf     vsscanf
+#define dap_scanf       scanf
+#define dap_vscanf      vscanf
+#define dap_fscanf      fscanf
+#define dap_vfscanf     vfscanf
+#define dap_sprintf     sprintf
+#define dap_snprintf    snprintf
+#define dap_printf      printf
+#define dap_vprintf     vprintf
+#define dap_fprintf     fprintf
+#define dap_vfprintf    vfprintf
+#define dap_vsprintf    vsprintf
+#define dap_vsnprintf   vsnprintf
+#define dap_asprintf    asprintf
+#define dap_vasprintf   vasprintf
+
 #if defined __GNUC__ || defined __clang__
 #ifdef __MINGW_PRINTF_FORMAT
 #define DAP_PRINTF_ATTR(format_index, args_index) \
