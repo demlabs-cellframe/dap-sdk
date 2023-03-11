@@ -844,7 +844,7 @@ void dap_string_append_vprintf(dap_string_t *string, const char *format, va_list
     dap_return_if_fail(string != NULL);
     dap_return_if_fail(format != NULL);
 
-    len = dap_vasprintf(&buf, format, args);
+    len = vasprintf(&buf, format, args);
     if ( (ssize_t)len < 0 )                    /* Got negative/error ? Return to caller */
         return;
 
@@ -857,7 +857,7 @@ void dap_string_append_vprintf(dap_string_t *string, const char *format, va_list
         memcpy(string->str + string->len, buf, len + 1);
         string->len += len;
     } else {
-        len = dap_sprintf(l_buf, l_oom, __func__ );
+        len = sprintf(l_buf, l_oom, __func__ );
         if ( (string->str = DAP_NEW_SIZE(char, sizeof(l_buf ))) )
             memcpy(string->str, l_buf , len);
     }
@@ -885,7 +885,7 @@ void dap_string_prepend_vprintf(dap_string_t *a_string, const char *a_format, va
     dap_return_if_fail(a_string != NULL);
     dap_return_if_fail(a_format != NULL);
 
-    len = dap_vasprintf(&buf, a_format, a_args);
+    len = vasprintf(&buf, a_format, a_args);
     if ( (ssize_t)len < 0 )                    /* Got negative/error ? Return to caller */
         return;
 

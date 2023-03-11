@@ -369,7 +369,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     debug_if(s_debug_more, L_DEBUG, "ENC request size %zu", l_data_str_enc_size);
 
                     char l_enc_init_url[1024] = { '\0' };
-                    dap_snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
+                    snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
                                  "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd",
                                  a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, l_key_size,
                                  a_client_pvt->session_key_block_size );
@@ -386,7 +386,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     char l_request[16];
                     size_t l_request_size;
 
-                    l_request_size = dap_snprintf(l_request, sizeof(l_request), "%d",  DAP_CLIENT_PROTOCOL_VERSION);
+                    l_request_size = snprintf(l_request, sizeof(l_request), "%d",  DAP_CLIENT_PROTOCOL_VERSION);
 
                     debug_if(s_debug_more, L_DEBUG, "STREAM_CTL request size %zu", l_request_size);
 
@@ -761,11 +761,11 @@ void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char
     if(a_path) {
         if(l_sub_url_size){
             if(l_query_size){
-                dap_snprintf(l_path, l_path_size, "%s/%s?%s", a_path?a_path:"",
+                snprintf(l_path, l_path_size, "%s/%s?%s", a_path?a_path:"",
                              l_sub_url_enc?l_sub_url_enc:"",
                                    l_query_enc?l_query_enc:"");
             }else{
-                dap_snprintf(l_path, l_path_size, "%s/%s", a_path, l_sub_url_enc);
+                snprintf(l_path, l_path_size, "%s/%s", a_path, l_sub_url_enc);
             }
         } else {
             dap_stpcpy(l_path, a_path);
@@ -774,9 +774,9 @@ void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char
 
     size_t l_size_required = a_client_internal->session_key_id ? strlen(a_client_internal->session_key_id) + 40 : 40;
     char *l_custom = DAP_NEW_Z_SIZE(char, l_size_required);
-    size_t l_off = dap_snprintf(l_custom, l_size_required, "KeyID: %s\r\n", a_client_internal->session_key_id ? a_client_internal->session_key_id : "NULL");
+    size_t l_off = snprintf(l_custom, l_size_required, "KeyID: %s\r\n", a_client_internal->session_key_id ? a_client_internal->session_key_id : "NULL");
     if (a_client_internal->is_close_session)
-        dap_snprintf(l_custom + l_off, l_size_required - l_off, "%s\r\n", "SessionCloseAfterRequest: true");
+        snprintf(l_custom + l_off, l_size_required - l_off, "%s\r\n", "SessionCloseAfterRequest: true");
 
     a_client_internal->http_client = dap_client_http_request(a_client_internal->worker, a_client_internal->client->uplink_addr,
                             a_client_internal->client->uplink_port,

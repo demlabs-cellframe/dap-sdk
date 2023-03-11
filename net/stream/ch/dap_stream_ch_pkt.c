@@ -80,7 +80,7 @@ size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_
     va_list ap, ap_copy;
     va_start(ap, a_format);
     va_copy(ap_copy, ap);
-    int l_data_size = dap_vsnprintf(NULL, 0, a_format, ap);
+    int l_data_size = vsnprintf(NULL, 0, a_format, ap);
     if (l_data_size <0 ){
         log_it(L_ERROR,"Can't write out formatted data '%s' with values",a_format);
         va_end(ap_copy);
@@ -93,7 +93,7 @@ size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_
     l_msg->data = DAP_NEW_SIZE(void, l_data_size);
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
-    l_data_size = dap_vsprintf(l_msg->data, a_format, ap_copy);
+    l_data_size = vsprintf(l_msg->data, a_format, ap_copy);
     va_end(ap_copy);
 
     int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_ch_io, l_msg);
@@ -120,7 +120,7 @@ size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t * a_queue  , dap_stre
     va_list ap, ap_copy;
     va_start(ap, a_format);
     va_copy(ap_copy, ap);
-    int l_data_size = dap_vsnprintf(NULL, 0, a_format, ap);
+    int l_data_size = vsnprintf(NULL, 0, a_format, ap);
     va_end(ap);
     if (l_data_size < 0) {
         log_it(L_ERROR,"Can't write out formatted data '%s' with values",a_format);
@@ -134,7 +134,7 @@ size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t * a_queue  , dap_stre
     l_msg->data = DAP_NEW_SIZE(void, l_data_size);
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
-    l_data_size = dap_vsprintf(l_msg->data, a_format, ap_copy);
+    l_data_size = vsprintf(l_msg->data, a_format, ap_copy);
     va_end(ap_copy);
 
     int l_ret= dap_events_socket_queue_ptr_send_to_input(a_queue , l_msg );
@@ -293,7 +293,7 @@ ssize_t dap_stream_ch_pkt_write_f_unsafe(dap_stream_ch_t *a_ch, uint8_t a_type, 
     va_list ap, ap_copy;
     va_start(ap, a_format);
     va_copy(ap_copy, ap);
-    int l_data_size = dap_vsnprintf(NULL, 0, a_format, ap);
+    int l_data_size = vsnprintf(NULL, 0, a_format, ap);
     va_end(ap);
     if (l_data_size < 0) {
         log_it(L_ERROR,"Can't write out formatted data '%s' with values",a_format);
@@ -302,7 +302,7 @@ ssize_t dap_stream_ch_pkt_write_f_unsafe(dap_stream_ch_t *a_ch, uint8_t a_type, 
     }
     l_data_size++; // include trailing 0
     char *l_data = DAP_NEW_SIZE(void, l_data_size);
-    dap_vsprintf(l_data, a_format, ap_copy);
+    vsprintf(l_data, a_format, ap_copy);
     va_end(ap_copy);
     size_t l_ret = dap_stream_ch_pkt_write_unsafe(a_ch, a_type, l_data, l_data_size);
     DAP_DELETE(l_data);

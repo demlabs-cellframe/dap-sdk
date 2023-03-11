@@ -335,12 +335,12 @@ void dap_cbuf_print(dap_cbuf_t cBuf, bool hex)
                 c = b[i];
         }
         if(hex)
-            dap_sprintf(str+i*2, "%02X|",c);
+            sprintf(str+i*2, "%02X|",c);
         else
-            dap_sprintf(str+i*2, "%c|",c);
+            sprintf(str+i*2, "%c|",c);
     }
 
-    dap_printf("CircularBuffer: %s <size %zu dataSize:%zu>\n",
+    printf("CircularBuffer: %s <size %zu dataSize:%zu>\n",
            str,dap_cbuf_get_size(cBuf),dap_cbuf_get_size_max(cBuf));
     free(str);
 }

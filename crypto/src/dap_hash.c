@@ -46,8 +46,8 @@ int dap_chain_hash_fast_from_hex_str( const char *a_hex_str, dap_chain_hash_fast
     if ( l_hash_str_len + 1 == c_hash_str_size ){
         for(size_t l_offset = 2; l_offset < l_hash_str_len; l_offset += 2) {
             char l_byte;
-            if(dap_sscanf(a_hex_str + l_offset, "%02hhx", &l_byte) != 1) {
-                if(dap_sscanf(a_hex_str + l_offset, "%02hhx", &l_byte) != 1) {
+            if(sscanf(a_hex_str + l_offset, "%02hhx", &l_byte) != 1) {
+                if(sscanf(a_hex_str + l_offset, "%02hhx", &l_byte) != 1) {
                     log_it(L_ERROR, "dap_chain_str_to_hash_fast parse error: offset=%zu, hash_str_len=%zu, str=\"%2s\"",
                             l_offset, l_hash_str_len, a_hex_str + l_offset);
                     return -10 * ((int) l_offset); // Wrong char

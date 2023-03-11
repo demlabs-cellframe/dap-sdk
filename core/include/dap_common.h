@@ -351,44 +351,42 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 //#define DAP_LOG_HISTORY_BUFFER_SIZE (DAP_LOG_HISTORY_STR_SIZE * DAP_LOG_HISTORY_MAX_STRINGS)
 //#define DAP_LOG_HISTORY_M           (DAP_LOG_HISTORY_MAX_STRINGS - 1)
 
-#ifdef _WIN32
-  #define dap_sscanf            __mingw_sscanf
-  #define dap_vsscanf           __mingw_vsscanf
-  #define dap_scanf             __mingw_scanf
-  #define dap_vscanf            __mingw_vscanf
-  #define dap_fscanf            __mingw_fscanf
-  #define dap_vfscanf           __mingw_vfscanf
-  #define dap_sprintf           __mingw_sprintf
-  #define dap_snprintf          __mingw_snprintf
-  #define dap_printf            __mingw_printf
-  #define dap_vprintf           __mingw_vprintf
-  #define dap_fprintf           __mingw_fprintf
-  #define dap_vfprintf          __mingw_vfprintf
-  #define dap_vsprintf          __mingw_vsprintf
-  #define dap_vsnprintf         __mingw_vsnprintf
-  #define dap_asprintf          __mingw_asprintf
-  #define dap_vasprintf         __mingw_vasprintf
-#else
-  #define dap_sscanf            sscanf
-  #define dap_vsscanf           vsscanf
-  #define dap_scanf             scanf
-  #define dap_vscanf            vscanf
-  #define dap_fscanf            fscanf
-  #define dap_vfscanf           vfscanf
-  #define dap_sprintf           sprintf
-  #define dap_snprintf          snprintf
-  #define dap_printf            printf
-  #define dap_vprintf           vprintf
-  #define dap_fprintf           fprintf
-  #define dap_vfprintf          vfprintf
-  #define dap_vsprintf          vsprintf
-  #define dap_vsnprintf         vsnprintf
-  #define dap_asprintf          asprintf
-  #define dap_vasprintf         vasprintf
-#endif
-
 typedef uint8_t byte_t;
 typedef int dap_spinlock_t;
+
+#ifdef _WIN32
+#define __USE_MINGW_ANSI_STDIO 1
+#endif
+
+// Deprecated funstions, just for compatibility
+#define dap_sscanf      sscanf
+#define dap_vsscanf     vsscanf
+#define dap_scanf       scanf
+#define dap_vscanf      vscanf
+#define dap_fscanf      fscanf
+#define dap_vfscanf     vfscanf
+#define dap_sprintf     sprintf
+#define dap_snprintf    snprintf
+#define dap_printf      printf
+#define dap_vprintf     vprintf
+#define dap_fprintf     fprintf
+#define dap_vfprintf    vfprintf
+#define dap_vsprintf    vsprintf
+#define dap_vsnprintf   vsnprintf
+#define dap_asprintf    asprintf
+#define dap_vasprintf   vasprintf
+
+#if defined __GNUC__ || defined __clang__
+#ifdef __MINGW_PRINTF_FORMAT
+#define DAP_PRINTF_ATTR(format_index, args_index) \
+    __attribute__ ((format (gnu_printf, format_index, args_index)))
+#else
+#define DAP_PRINTF_ATTR(format_index, args_index) \
+    __attribute__ ((format (printf, format_index, args_index)))
+#endif
+#else /* __GNUC__ */
+#define DAP_PRINTF_ATTR(format_index, args_index)
+#endif /* __GNUC__ */
 
 /**
  * @brief The log_level enum
@@ -408,14 +406,6 @@ typedef enum dap_log_level {
   L_TOTAL,
 
 } dap_log_level_t;
-
-typedef struct dap_log_history_str_s {
-
-  time_t    t;
-  uint8_t   *str;
-  uint32_t  len;
-
-} dap_log_history_str_t;
 
 typedef void *dap_interval_timer_t;
 typedef void (*dap_timer_callback_t)(void *param);
@@ -500,18 +490,9 @@ static const uint16_t s_ascii_table_data[256] = {
 #define dap_ascii_isalnum(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_ALNUM)
 #define dap_ascii_isdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_DIGIT)
 
-void dap_sleep( uint32_t ms );
-
-DAP_STATIC_INLINE bool DAP_AtomicTryLock( dap_spinlock_t *lock )
-{
-    return (__sync_lock_test_and_set(lock, 1) == 0);
-}
-
 DAP_STATIC_INLINE void DAP_AtomicLock( dap_spinlock_t *lock )
 {
-    while ( !DAP_AtomicTryLock(lock) ) {
-        dap_sleep( 0 );
-    }
+    __sync_lock_test_and_set(lock, 1);
 }
 
 DAP_STATIC_INLINE void DAP_AtomicUnlock( dap_spinlock_t *lock )
@@ -548,19 +529,6 @@ void dap_common_deinit(void);
 void dap_log_set_max_item(unsigned int a_max);
 // get logs from list
 char *dap_log_get_item(time_t a_start_time, int a_limit);
-
-#if defined __GNUC__ || defined __clang__
-#ifdef __MINGW_PRINTF_FORMAT
-#define DAP_PRINTF_ATTR(format_index, args_index) \
-    __attribute__ ((format (gnu_printf, format_index, args_index)))
-#else
-#define DAP_PRINTF_ATTR(format_index, args_index) \
-    __attribute__ ((format (printf, format_index, args_index)))
-#endif
-#else /* __GNUC__ */
-#define DAP_PRINTF_ATTR(format_index, args_index)
-#endif /* __GNUC__ */
-
 
 DAP_PRINTF_ATTR(3, 4) void _log_it( const char * log_tag, enum dap_log_level, const char * format, ... );
 #define log_it(_log_level, ...) _log_it( LOG_TAG, _log_level, ##__VA_ARGS__)

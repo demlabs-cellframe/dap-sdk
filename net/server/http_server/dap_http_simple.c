@@ -490,7 +490,7 @@ size_t dap_http_simple_reply_f(dap_http_simple_t *a_http_simple, const char *a_f
     va_list ap, ap_copy;
     va_start(ap, a_format);
     va_copy(ap_copy, ap);
-    ssize_t l_buf_size = dap_vsnprintf(NULL, 0, a_format, ap);
+    ssize_t l_buf_size = vsnprintf(NULL, 0, a_format, ap);
     va_end(ap);
 
     if (l_buf_size++ < 0) {
@@ -498,7 +498,7 @@ size_t dap_http_simple_reply_f(dap_http_simple_t *a_http_simple, const char *a_f
         return 0;
     }
     char *l_buf = DAP_NEW_SIZE(char, l_buf_size);
-    dap_vsprintf(l_buf, a_format, ap_copy);
+    vsprintf(l_buf, a_format, ap_copy);
     va_end(ap_copy);
 
     size_t l_ret = dap_http_simple_reply(a_http_simple, l_buf, l_buf_size);

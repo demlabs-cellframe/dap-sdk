@@ -100,7 +100,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         dap_enc_key_type_t l_enc_block_type = DAP_ENC_KEY_TYPE_IAES;
         size_t l_pkey_exchange_size=MSRLN_PKA_BYTES;
         size_t l_block_key_size=32;
-        dap_sscanf(cl_st->http_client->in_query_string, "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu",
+        sscanf(cl_st->http_client->in_query_string, "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu",
                                       &l_enc_block_type,&l_pkey_exchange_type,&l_pkey_exchange_size,&l_block_key_size);
 
         log_it(L_DEBUG, "Stream encryption: %s\t public key exchange: %s",dap_enc_get_type_name(l_enc_block_type),
@@ -297,7 +297,7 @@ size_t enc_http_reply_f(enc_http_delegate_t *a_http_delegate, const char *a_data
     va_list ap, ap_copy;
     va_start(ap, a_data);
     va_copy(ap_copy, ap);
-    int mem_size = dap_vsnprintf(NULL, 0, a_data, ap) + 1;
+    int mem_size = vsnprintf(NULL, 0, a_data, ap) + 1;
     va_end(ap);
     char *l_buf = DAP_NEW_SIZE(char, mem_size);
     if (!l_buf) {
@@ -305,7 +305,7 @@ size_t enc_http_reply_f(enc_http_delegate_t *a_http_delegate, const char *a_data
         log_it(L_ERROR, "Can not allocate memory");
         return 0;
     }
-    dap_vsprintf(l_buf, a_data, ap_copy);
+    vsprintf(l_buf, a_data, ap_copy);
     va_end(ap_copy);
     size_t l_ret = enc_http_reply(a_http_delegate, l_buf, mem_size);
     DAP_DELETE(l_buf);
