@@ -60,10 +60,3 @@ dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key)
     }
     return NULL;
 }
-
-bool dap_pkey_compare_with_sign(dap_pkey_t *a_pkey, dap_sign_t *a_sign)
-{
-    return (dap_pkey_type_to_enc_key_type(a_pkey->header.type) == dap_sign_type_to_key_type(a_sign->header.type) &&
-            a_pkey->header.size == a_sign->header.sign_pkey_size &&
-            !memcmp(a_pkey->pkey, a_sign->pkey_n_sign, a_pkey->header.size));
-}

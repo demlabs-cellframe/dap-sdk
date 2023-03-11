@@ -1748,7 +1748,7 @@ size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_eve
     va_list ap, ap_copy;
     va_start(ap,a_format);
     va_copy(ap_copy, ap);
-    int l_data_size = dap_vsnprintf(NULL,0,a_format,ap);
+    int l_data_size = vsnprintf(NULL,0,a_format,ap);
     va_end(ap);
     if (l_data_size <0 ){
         log_it(L_ERROR,"Can't write out formatted data '%s' with values",a_format);
@@ -1761,7 +1761,7 @@ size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_eve
     l_msg->data = DAP_NEW_SIZE(void, l_data_size);
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
-    l_data_size = dap_vsprintf(l_msg->data,a_format,ap_copy);
+    l_data_size = vsprintf(l_msg->data,a_format,ap_copy);
     va_end(ap_copy);
 
     int l_ret= dap_events_socket_queue_ptr_send_to_input(a_es_input, l_msg );
@@ -1785,7 +1785,7 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
     va_list ap, ap_copy;
     va_start(ap,a_format);
     va_copy(ap_copy, ap);
-    int l_data_size = dap_vsnprintf(NULL,0,a_format,ap);
+    int l_data_size = vsnprintf(NULL,0,a_format,ap);
     va_end(ap);
     if (l_data_size <0 ){
         log_it(L_ERROR, "Write f mt: can't write out formatted data '%s' with values", a_format);
@@ -1798,7 +1798,7 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
     l_msg->data_size = l_data_size;
     l_msg->data = DAP_NEW_SIZE(void, l_data_size);
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
-    l_data_size = dap_vsprintf(l_msg->data,a_format,ap_copy);
+    l_data_size = vsprintf(l_msg->data,a_format,ap_copy);
     va_end(ap_copy);
 
     int l_ret= dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg );
@@ -1862,7 +1862,7 @@ ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *
     va_list ap, ap_copy;
     va_start(ap, a_format);
     va_copy(ap_copy, ap);
-    ssize_t l_ret = dap_vsnprintf(NULL, 0, a_format, ap);
+    ssize_t l_ret = vsnprintf(NULL, 0, a_format, ap);
     va_end(ap);
     if (l_ret < 0) {
         va_end(ap_copy);
@@ -1871,7 +1871,7 @@ ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *
     }
     size_t l_buf_size = l_ret + 1;
     char *l_buf = DAP_NEW_Z_SIZE(char, l_buf_size);
-    dap_vsprintf(l_buf, a_format, ap_copy);
+    vsprintf(l_buf, a_format, ap_copy);
     va_end(ap_copy);
     l_ret = dap_events_socket_write_unsafe(a_es, l_buf, l_buf_size);
     DAP_DELETE(l_buf);

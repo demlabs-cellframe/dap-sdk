@@ -163,21 +163,21 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
 	//log_it(L_DEBUG, "POST request with %u bytes of decoded data", a_request_size);
 
     l_offset += l_client_http->request_content_type
-            ? dap_snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", l_client_http->request_content_type)
+            ? snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", l_client_http->request_content_type)
 	        : 0;
 
 	// Add custom headers
     l_offset += l_client_http->request_custom_headers
-            ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
+            ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
 	        : 0;
 
 	// Setup cookie header
     l_offset += l_client_http->cookie
-            ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
+            ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
 	        : 0;
 
 	// Set request size as Content-Length header
-    l_offset += dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", l_client_http->request_size);
+    l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", l_client_http->request_size);
     }
 
     // adding string for GET request
@@ -185,16 +185,16 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     l_get_str[0] = '\0';
     if(! dap_strcmp(l_client_http->method, "GET") ) {
 	// We hide our request and mask them as possible
-	l_offset += dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "User-Agent: Mozilla\r\n");
+	l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "User-Agent: Mozilla\r\n");
     l_offset += l_client_http->request_custom_headers
-            ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
+            ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
 	        : 0;
     l_offset += l_client_http->cookie
-            ? dap_snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
+            ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
 	        : 0;
 
     if ((l_client_http->request_size && l_client_http->request_size))
-        dap_snprintf(l_get_str, sizeof(l_get_str), "?%s", l_client_http->request) ;
+        snprintf(l_get_str, sizeof(l_get_str), "?%s", l_client_http->request) ;
     }
 
     // send header

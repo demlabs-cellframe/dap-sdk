@@ -170,7 +170,7 @@ size_t dap_proc_thread_stream_ch_write_f_inter(dap_proc_thread_t * a_thread,dap_
     va_list ap, ap_copy;
     va_start(ap,a_format);
     va_copy(ap_copy, ap);
-    int l_data_size = dap_vsnprintf(NULL,0,a_format,ap);
+    int l_data_size = vsnprintf(NULL,0,a_format,ap);
     va_end(ap);
     if (l_data_size <0 ){
         log_it(L_ERROR,"Can't write out formatted data '%s' with values",a_format);
@@ -184,7 +184,7 @@ size_t dap_proc_thread_stream_ch_write_f_inter(dap_proc_thread_t * a_thread,dap_
         va_end(ap_copy);
         return -1;
     }
-    l_data_size = dap_vsprintf(l_data,a_format,ap_copy);
+    l_data_size = vsprintf(l_data,a_format,ap_copy);
     va_end(ap_copy);
 
     size_t l_ret = dap_stream_ch_pkt_write_inter(l_es_io_input,a_ch_uuid,a_type, l_data, l_data_size);

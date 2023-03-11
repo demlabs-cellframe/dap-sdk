@@ -417,7 +417,7 @@ dap_nanotime_t dap_global_db_get_del_ts_unsafe(const char *a_group, const char *
     size_t l_count_out = 0;
 
     if (a_key && a_group) {
-        dap_snprintf(l_group, sizeof(l_group) - 1,  "%s.del", a_group);
+        snprintf(l_group, sizeof(l_group) - 1,  "%s.del", a_group);
         if (dap_global_db_driver_is(l_group, a_key)) {
             l_store_obj_del = dap_global_db_driver_read(l_group, a_key, &l_count_out);
             if (l_store_obj_del) {
@@ -1713,7 +1713,7 @@ int	l_res = 0;
        return -1;
 
    store_data.key = (char *)a_key;
-   dap_snprintf(l_group, sizeof(l_group) - 1, "%s.del", a_group);
+   snprintf(l_group, sizeof(l_group) - 1, "%s.del", a_group);
    store_data.group = l_group;
 
    if ( dap_global_db_driver_is(store_data.group, store_data.key) )
@@ -1737,7 +1737,7 @@ int l_res = -1;
 
     store_data.key = a_key;
     // group = parent group + '.del'
-    dap_snprintf(l_group, sizeof(l_group) - 1, "%s.del", a_group);
+    snprintf(l_group, sizeof(l_group) - 1, "%s.del", a_group);
     store_data.group = l_group;
     store_data.timestamp = a_timestamp;
 

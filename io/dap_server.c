@@ -155,7 +155,7 @@ dap_server_t* dap_server_new_local(const char * a_path, const char* a_mode, dap_
 
     mode_t l_listen_unix_socket_permissions = 0770;
     if (a_mode){
-        dap_sscanf(a_mode,"%ou", &l_listen_unix_socket_permissions );
+        sscanf(a_mode,"%ou", &l_listen_unix_socket_permissions );
     }
 
 

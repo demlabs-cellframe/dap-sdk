@@ -417,7 +417,7 @@ int dap_cli_server_init(bool a_debug_more,const char * a_socket_path_or_address,
     if ( l_listen_unix_socket_path && l_listen_unix_socket_permissions ) {
         if ( l_listen_unix_socket_permissions_str ) {
             uint16_t l_perms;
-            dap_sscanf(l_listen_unix_socket_permissions_str,"%ho", &l_perms);
+            sscanf(l_listen_unix_socket_permissions_str,"%ho", &l_perms);
             l_listen_unix_socket_permissions = l_perms;
         }
         log_it( L_INFO, "Console interace on path %s (%04o) ", l_listen_unix_socket_path, l_listen_unix_socket_permissions );
@@ -556,7 +556,7 @@ void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a
 static inline void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex)
 {
     dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
-    dap_snprintf(l_cmd_item->name,sizeof (l_cmd_item->name),"%s",a_name);
+    snprintf(l_cmd_item->name,sizeof (l_cmd_item->name),"%s",a_name);
     l_cmd_item->doc = strdup( a_doc);
     l_cmd_item->doc_ex = strdup( a_doc_ex);
     if (a_arg_func) {
