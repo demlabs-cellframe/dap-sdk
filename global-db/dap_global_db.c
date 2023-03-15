@@ -532,7 +532,7 @@ static bool s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
  * @param a_arg
  * @return
  */
-int dap_global_db_get_all(const char * a_group,size_t a_results_page_size, dap_global_db_callback_results_t a_callback, void * a_arg )
+int dap_global_db_get_all(const char * a_group, size_t a_results_page_size UNUSED_ARG, dap_global_db_callback_results_t a_callback, void * a_arg )
 {
     // TODO make usable a_results_page_size
     if(s_context_global_db == NULL){
@@ -554,6 +554,16 @@ int dap_global_db_get_all(const char * a_group,size_t a_results_page_size, dap_g
     return l_ret;
 }
 
+static int s_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
+    dap_store_obj_t *l_obj1 = (dap_store_obj_t *)a_obj1,
+            *l_obj2 = (dap_store_obj_t *)a_obj2;
+    return l_obj2->timestamp < l_obj1->timestamp
+            ? 1
+            : l_obj2->timestamp > l_obj1->timestamp
+              ? -1
+              : 0; // should never occur...
+}
+
 /**
  * @brief s_msg_opcode_get_all
  * @param a_msg
@@ -561,22 +571,23 @@ int dap_global_db_get_all(const char * a_group,size_t a_results_page_size, dap_g
  */
 static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
 {
-    size_t l_values_count = a_msg->values_page_size;
-    size_t l_values_remains = dap_global_db_driver_count(a_msg->group, a_msg->values_raw_last_id);
-    dap_store_obj_t *l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->values_raw_last_id, &l_values_count);
+    size_t l_values_count;
+    dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_msg->group, NULL, &l_values_count);
     if (l_store_objs && l_values_count)
         a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id + 1;
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values from total %zu",
-                                                   a_msg->group, l_values_count, l_values_remains);
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values",
+                                                   a_msg->group, l_values_count);
     dap_global_db_obj_t *l_objs = NULL;
     // Form objs from store_objs
-    if(l_store_objs){
-        l_objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t,sizeof(dap_global_db_obj_t)*l_values_count);
+    if (l_store_objs) {
+        if (l_values_count > 1)
+            qsort(l_store_objs, l_values_count, sizeof(dap_store_obj_t), s_db_compare_by_ts);
+        l_objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, sizeof(dap_global_db_obj_t) * l_values_count);
         for(size_t i = 0; i < l_values_count; i++){
             l_objs[i].id = l_store_objs[i].id;
             l_objs[i].is_pinned = l_store_objs[i].flags & RECORD_PINNED;
-            l_objs[i].key = dap_strdup(l_store_objs[i].key);
-            l_objs[i].value = DAP_DUP_SIZE(l_store_objs[i].value, l_store_objs[i].value_len);
+            l_objs[i].key = (char *)l_store_objs[i].key;
+            l_objs[i].value = l_store_objs[i].value;
             l_objs[i].value_len = l_store_objs[i].value_len;
             l_objs[i].timestamp = l_store_objs[i].timestamp;
         }
@@ -589,18 +600,8 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
                                 a_msg->group, a_msg->values_total, l_values_count,
                                 l_objs, a_msg->callback_arg);
     // Clean memory
-    dap_store_obj_free(l_store_objs,l_values_count);
-    dap_global_db_objs_delete(l_objs,l_values_count);
-
-    // Here we also check if the reply was with zero values. To prevent endless loop we don't resend query request in such cases
-    if (l_values_count && l_values_count != l_values_remains) {
-        // Have to process callback again
-        int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,a_msg);
-        debug_if(g_dap_global_db_debug_more, L_NOTICE, "Resending get all request values_remains:%zu", l_values_remains);
-        if (!l_ret)
-            return false; // Don't delete it because it just sent again to the queue{
-        log_it(L_ERROR, "Can't resend i/o message for opcode GET_ALL values_remains:%zu error code %d", l_values_remains, l_ret);
-    }
+    DAP_DEL_Z(l_objs);
+    dap_store_obj_free(l_store_objs, l_values_count);
     return true; // All values are sent
 }
 
