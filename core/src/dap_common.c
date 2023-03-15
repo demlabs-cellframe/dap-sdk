@@ -22,50 +22,29 @@
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #define _POSIX_THREAD_SAFE_FUNCTIONS
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h> /* 'nanosleep' */
-#include <unistd.h> /* 'pipe', 'read', 'write' */
-#include <string.h>
-#include <stdarg.h>
-#include <assert.h>
-#include <stdint.h>
-#include <ctype.h>
+#include "dap_common.h"
+#include "dap_strfuncs.h"
+#include "dap_string.h"
+#include "dap_list.h"
+#include "dap_file_utils.h"
 #include "utlist.h"
 #include "uthash.h"
-//#include <errno.h>
-
 
 #ifdef DAP_OS_ANDROID
   #include <android/log.h>
 #endif
 
 #ifndef _WIN32
-
-  #include <pthread.h>
   #include <syslog.h>
   #include <signal.h>
   #include <sys/syscall.h>
   #include <sys/uio.h>
 #else // WIN32
-
-  #include <stdlib.h>
   #include <processthreadsapi.h>
   #include <process.h>
-  #include <pthread.h>
-
   #include "win32/dap_console_manager.h"
-
-  #define popen _popen
-  #define pclose _pclose
 #endif
 
-#include "dap_common.h"
-#include "dap_strfuncs.h"
-#include "dap_string.h"
-#include "dap_list.h"
-#include "dap_file_utils.h"
-#include "dap_lut.h"
 
 #define DAP_LOG_USE_SPINLOCK    0
 #define DAP_LOG_HISTORY         1

@@ -1,6 +1,5 @@
 #pragma once
 #include <stdint.h>
-#include <stdio.h>
 #include "assert.h"
 
 #ifndef __STDC_FORMAT_MACROS
