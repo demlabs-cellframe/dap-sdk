@@ -571,7 +571,7 @@ static int s_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
  */
 static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
 {
-    size_t l_values_count;
+    size_t l_values_count = 0;
     dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_msg->group, NULL, &l_values_count);
     if (l_store_objs && l_values_count)
         a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id + 1;
