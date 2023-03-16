@@ -1253,15 +1253,18 @@ static void s_sync_op_result_callback (dap_global_db_context_t * a_global_db_con
  */
 int dap_global_db_set_sync(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value )
 {
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return dap_global_db_set_unsafe(s_context_global_db, a_group, a_key, a_value, a_value_length, a_pin_value);
+
     struct sync_op_result * l_args = DAP_NEW_Z(struct sync_op_result);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "set sync call executes for group \"%s\" key \"%s\"", a_group, a_key);
 
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
-    dap_global_db_set(a_group, a_key,a_value,a_value_length, a_pin_value, s_sync_op_result_callback, l_args);
-    while (!l_args->called)
-        pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    if (!dap_global_db_set(a_group, a_key, a_value, a_value_length, a_pin_value, s_sync_op_result_callback, l_args))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -1339,7 +1342,7 @@ int dap_global_db_del_sync(const char * a_group, const char *a_key )
         while (!l_args->called)
             pthread_cond_wait(&l_args->cond, &l_args->mutex);
     else
-        l_args->result = -777;
+        l_args->result = DAP_GLOBAL_DB_RC_ERROR;
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);

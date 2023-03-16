@@ -168,19 +168,41 @@ dap_global_db_obj_t *dap_global_db_objs_copy(dap_global_db_obj_t *a_objs, size_t
 void dap_global_db_objs_delete(dap_global_db_obj_t *a_objs, size_t a_count);
 
 // === Sync functions ===
+byte_t* dap_global_db_get_sync(const char * a_group,const char *a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t * a_ts);
+//int dap_global_db_get_raw(const char * a_group, const char *a_key,dap_global_db_callback_result_raw_t a_callback, void * a_arg );
 
+//int dap_global_db_get_del_ts(const char * a_group, const char *a_key,dap_global_db_callback_result_t a_callback, void * a_arg );
+//int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t a_callback, void * a_arg );
+//int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_result_raw_t a_callback, void * a_arg );
 dap_global_db_obj_t* dap_global_db_get_all_sync(const char *a_group, size_t *a_objs_count);
 dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count);
-int dap_global_db_set_sync(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value );
+
+int dap_global_db_set_sync(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value);
+//int dap_global_db_set_raw(dap_store_obj_t * a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void * a_arg );
+
 int dap_global_db_pin_sync(const char * a_group, const char *a_key);
 int dap_global_db_unpin_sync(const char * a_group, const char *a_key);
-
-byte_t* dap_global_db_get_sync(const char * a_group,const char *a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t * a_ts);
 int dap_global_db_del_sync(const char * a_group, const char *a_key);
 int dap_global_db_flush_sync();
 
 // ==== Unsafe functions (for own context call only) ===
 dap_global_db_context_t * dap_global_db_context_current();
-int dap_global_db_del_unsafe(dap_global_db_context_t * a_global_db_context, const char * a_group, const char *a_key);
-int dap_global_db_set_unsafe(dap_global_db_context_t * a_global_db_context, const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value );
+
+//byte_t* dap_global_db_get_sync(const char * a_group,const char *a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t * a_ts);
+//int dap_global_db_get_raw(const char * a_group, const char *a_key,dap_global_db_callback_result_raw_t a_callback, void * a_arg );
+
 dap_nanotime_t dap_global_db_get_del_ts_unsafe(const char *a_group, const char *a_key);
+//int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t a_callback, void * a_arg );
+//int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_result_raw_t a_callback, void * a_arg );
+//dap_global_db_obj_t* dap_global_db_get_all_sync(const char *a_group, size_t *a_objs_count);
+//dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count);
+
+int dap_global_db_set_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group, const char *a_key,
+                             const void *a_value, const size_t a_value_length, bool a_pin_value);
+//int dap_global_db_set_raw(dap_store_obj_t * a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void * a_arg );
+
+//int dap_global_db_pin_sync(const char * a_group, const char *a_key);
+//int dap_global_db_unpin_sync(const char * a_group, const char *a_key);
+int dap_global_db_del_unsafe(dap_global_db_context_t * a_global_db_context, const char * a_group, const char *a_key);
+//int dap_global_db_flush_sync();
+
