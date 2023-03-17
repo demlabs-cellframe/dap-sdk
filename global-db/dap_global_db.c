@@ -54,7 +54,6 @@ enum queue_io_msg_opcode{
     MSG_OPCODE_SET_RAW,
     MSG_OPCODE_SET_MULTIPLE,
     MSG_OPCODE_PIN,
-    MSG_OPCODE_UNPIN,
     MSG_OPCODE_DELETE,
     MSG_OPCODE_FLUSH,
     MSG_OPCODE_CONTEXT_EXEC
@@ -156,10 +155,8 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg);
 static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg);
 static bool s_msg_opcode_set(struct queue_io_msg * a_msg);
 static bool s_msg_opcode_set_raw(struct queue_io_msg * a_msg);
-
 static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg);
 static bool s_msg_opcode_pin(struct queue_io_msg * a_msg);
-static bool s_msg_opcode_unpin(struct queue_io_msg * a_msg);
 static bool s_msg_opcode_delete(struct queue_io_msg * a_msg);
 static bool s_msg_opcode_flush(struct queue_io_msg * a_msg);
 static bool s_msg_opcode_context_exec(struct queue_io_msg * a_msg);
@@ -256,6 +253,40 @@ void dap_global_db_deinit()
 }
 
 /**
+ * @brief dap_global_db_context_current
+ * @return
+ */
+dap_global_db_context_t * dap_global_db_context_current()
+{
+    dap_context_t * l_context = dap_context_current();
+    if(l_context->type == DAP_CONTEXT_TYPE_GLOBAL_DB)
+        return (dap_global_db_context_t *) l_context->_inheritor;
+    else
+        return NULL;
+
+}
+
+/* *** Get functions group *** */
+
+byte_t *dap_global_db_get_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group,
+                                 const char *a_key, size_t *a_data_size,
+                                 bool *a_is_pinned, dap_nanotime_t *a_ts)
+{
+    dap_store_obj_t *l_store_obj = dap_global_db_get_raw_unsafe(a_global_db_context, a_group, a_key);
+    if (!l_store_obj)
+        return NULL;
+    if (a_data_size)
+        *a_data_size = l_store_obj->value_len;
+    if (a_is_pinned)
+        *a_is_pinned = l_store_obj->flags & RECORD_PINNED;
+    if (a_ts)
+        *a_ts = l_store_obj->timestamp;
+    byte_t *l_res = DAP_DUP_SIZE(l_store_obj->value, l_store_obj->value_len);
+    dap_store_obj_free_one(l_store_obj);
+    return l_res;
+}
+
+/**
  * @brief dap_global_db_get
  * @details Get record value from GlobalDB group by key
  * @param a_group
@@ -268,7 +299,7 @@ int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_cal
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get");
-        return -666;
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_GET;
@@ -293,20 +324,117 @@ int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_cal
  */
 static bool s_msg_opcode_get(struct queue_io_msg * a_msg)
 {
-    size_t l_count_records = 0;
-    dap_store_obj_t *l_store_obj = dap_global_db_driver_read( a_msg->group,
-                                                                     a_msg->key,
-                                                                     &l_count_records);
-    if(l_store_obj != NULL && l_count_records>=1){
+    size_t l_value_len = 0;
+    bool l_pinned = false;
+    dap_nanotime_t l_ts = 0;
+    byte_t *l_value = dap_global_db_get_unsafe(s_context_global_db, a_msg->group, a_msg->key, &l_value_len, &l_pinned, &l_ts);
+    if (l_value && l_value_len) {
         if(a_msg->callback_result)
-            a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_SUCCESS, l_store_obj->group, l_store_obj->key,
-                               l_store_obj->value, l_store_obj->value_len, l_store_obj->timestamp,
-                               l_store_obj->flags & RECORD_PINNED, a_msg->callback_arg );
-        dap_store_obj_free(l_store_obj,l_count_records);
+            a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_SUCCESS, a_msg->group, a_msg->key,
+                               l_value, l_value_len, l_ts,
+                               l_pinned, a_msg->callback_arg);
+        DAP_DELETE(l_value);
     }else if(a_msg->callback_result)
         a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_NO_RESULTS, a_msg->group, a_msg->key,
-                               NULL, 0, 0,0, a_msg->callback_arg );
+                               NULL, 0, 0,0, a_msg->callback_arg);
     return true;
+}
+
+/**
+ * @brief The store_obj_get struct
+ */
+struct obj_get {
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    bool called;
+    byte_t *data;
+    size_t data_size;
+    dap_nanotime_t ts;
+    bool is_pinned;
+    char *key;
+};
+
+/**
+ * @brief s_store_obj_get_callback
+ * @param a_global_db_context
+ * @param a_rc
+ * @param a_group
+ * @param a_key
+ * @param a_value
+ * @param a_value_size
+ * @param a_value_ts
+ * @param a_is_pinned
+ * @param a_arg
+ */
+static void s_obj_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
+                               UNUSED_ARG int a_rc, UNUSED_ARG const char *a_group,
+                               const char *a_key, const void *a_value,
+                               const size_t a_value_size, dap_nanotime_t a_value_ts,
+                               bool a_is_pinned, void *a_arg)
+{
+    struct obj_get* l_args = (struct obj_get *) a_arg;
+    assert(l_args);
+
+    if( a_value && a_value_size){
+        l_args->data = DAP_DUP_SIZE(a_value, a_value_size);
+        l_args->data_size = a_value_size;
+        l_args->ts = a_value_ts;
+        l_args->is_pinned = a_is_pinned;
+        l_args->key = (char *)a_key;
+    }
+    pthread_mutex_lock(&l_args->mutex);
+    l_args->called = true;
+    pthread_cond_broadcast(&l_args->cond);
+    pthread_mutex_unlock(&l_args->mutex);
+}
+
+/**
+ * @brief dap_global_db_gr_get_sync
+ * @param a_group
+ * @param a_key
+ * @param a_data_size
+ * @param a_is_pinned
+ * @param a_ts
+ * @return
+ */
+byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t *a_ts)
+{
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return dap_global_db_get_unsafe(s_context_global_db, a_group, a_key, a_data_size, a_is_pinned, a_ts);
+
+    struct obj_get *l_args = DAP_NEW_Z(struct obj_get);
+    pthread_mutex_init(&l_args->mutex, NULL);
+    pthread_cond_init(&l_args->cond, NULL);
+    pthread_mutex_lock(&l_args->mutex);
+    if (!dap_global_db_get(a_group,a_key, s_obj_get_callback, l_args))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    pthread_mutex_unlock(&l_args->mutex);
+    pthread_mutex_destroy(&l_args->mutex);
+    pthread_cond_destroy(&l_args->cond);
+
+    byte_t *l_ret = l_args->data;
+    if (l_ret) {
+        if (a_data_size)
+            *a_data_size = l_args->data_size;
+        if (a_is_pinned)
+            *a_is_pinned = l_args->is_pinned;
+        if (a_ts)
+            *a_ts = l_args->ts;
+    }
+    DAP_DELETE(l_args);
+    return l_ret;
+}
+
+/* *** Get raw functions group *** */
+
+dap_store_obj_t *dap_global_db_get_raw_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context, const char *a_group, const char *a_key)
+{
+    size_t l_count_records = 0;
+    dap_store_obj_t *l_res = dap_global_db_driver_read(a_group, a_key, &l_count_records);
+    if (l_count_records > 1)
+        log_it(L_WARNING, "Get more than one global DB object by one key is unexpected");
+    return l_res;
 }
 
 /**
@@ -317,11 +445,11 @@ static bool s_msg_opcode_get(struct queue_io_msg * a_msg)
  * @param a_arg
  * @return
  */
-int dap_global_db_get_raw(const char * a_group, const char *a_key,dap_global_db_callback_result_raw_t a_callback, void * a_arg )
+int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_callback_result_raw_t a_callback, void *a_arg)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get");
-        return -666;
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_GET_RAW;
@@ -346,18 +474,85 @@ int dap_global_db_get_raw(const char * a_group, const char *a_key,dap_global_db_
  */
 static bool s_msg_opcode_get_raw(struct queue_io_msg * a_msg)
 {
-    size_t l_count_records = 0;
-    dap_store_obj_t *l_store_obj = dap_global_db_driver_read( a_msg->group,
-                                                                     a_msg->key,
-                                                                     &l_count_records);
-
+    dap_store_obj_t *l_store_obj = dap_global_db_get_raw_unsafe(s_context_global_db, a_msg->group, a_msg->key);
 
     if(a_msg->callback_result_raw)
         a_msg->callback_result_raw(s_context_global_db, l_store_obj ? DAP_GLOBAL_DB_RC_SUCCESS:
                                                                       DAP_GLOBAL_DB_RC_NO_RESULTS,
                                                         l_store_obj, a_msg->callback_arg );
-    dap_store_obj_free(l_store_obj,l_count_records);
+    dap_store_obj_free_one(l_store_obj);
     return true;
+}
+
+/**
+ * @brief The objs_get struct
+ */
+struct obj_raw_get {
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    bool called;
+    dap_store_obj_t *obj;
+};
+
+static void s_obj_raw_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
+                                   UNUSED_ARG int a_rc, dap_store_obj_t *a_value, void *a_arg)
+{
+    struct obj_raw_get *l_args = (struct obj_raw_get *)a_arg;
+    l_args->obj = dap_store_obj_copy(a_value, 1);
+    pthread_mutex_lock(&l_args->mutex);
+    l_args->called = true;
+    pthread_cond_broadcast(&l_args->cond);
+    pthread_mutex_unlock(&l_args->mutex);
+}
+
+/**
+ * @brief Sync (blocking) function for retrieving raw GDB
+ * @param a_group
+ * @param a_fist_id
+ * @param a_objs_count
+ * @return Group's objects
+ */
+dap_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_key)
+{
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return dap_global_db_get_raw_unsafe(s_context_global_db, a_group, a_key);
+
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_raw sync call executes for group \"%s\"", a_group);
+    struct obj_raw_get *l_args = DAP_NEW_Z(struct obj_raw_get);
+    pthread_mutex_init(&l_args->mutex, NULL);
+    pthread_cond_init(&l_args->cond, NULL);
+    pthread_mutex_lock(&l_args->mutex);
+    if (!dap_global_db_get_raw(a_group, a_key, s_obj_raw_get_callback, l_args))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    pthread_mutex_unlock(&l_args->mutex);
+    pthread_mutex_destroy(&l_args->mutex);
+    pthread_cond_destroy(&l_args->cond);
+
+    dap_store_obj_t *l_ret = l_args->obj;
+    DAP_DELETE(l_args);
+    return l_ret;
+}
+
+/* *** Get_del_ts functions group *** */
+
+dap_nanotime_t dap_global_db_get_del_ts_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group, const char *a_key)
+{
+    dap_store_obj_t *l_store_obj_del = NULL;
+    dap_nanotime_t l_timestamp = 0;
+    char l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
+
+    if (a_key && a_group) {
+        snprintf(l_group, sizeof(l_group) - 1,  "%s.del", a_group);
+        if (dap_global_db_driver_is(l_group, a_key)) {
+            l_store_obj_del = dap_global_db_get_raw_unsafe(a_global_db_context, l_group, a_key);
+            if (l_store_obj_del) {
+                l_timestamp = l_store_obj_del->timestamp;
+                dap_store_obj_free_one(l_store_obj_del);
+            }
+        }
+    }
+    return l_timestamp;
 }
 
 /**
@@ -368,11 +563,11 @@ static bool s_msg_opcode_get_raw(struct queue_io_msg * a_msg)
  * @param a_arg
  * @return
  */
-int dap_global_db_get_del_ts(const char * a_group, const char *a_key,dap_global_db_callback_result_t a_callback, void * a_arg )
+int dap_global_db_get_del_ts(const char *a_group, const char *a_key,dap_global_db_callback_result_t a_callback, void *a_arg)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get");
-        return -666;
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_GET_DEL_TS;
@@ -386,7 +581,7 @@ int dap_global_db_get_del_ts(const char * a_group, const char *a_key,dap_global_
         log_it(L_ERROR, "Can't exec get_del_ts request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
     }else
-        debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent get_del_ts request for \"%s\" group \"%s\" key" , a_group, a_key);
+        debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent get_del_ts request for \"%s\" group \"%s\" key", a_group, a_key);
     return l_ret;
 }
 
@@ -397,7 +592,7 @@ int dap_global_db_get_del_ts(const char * a_group, const char *a_key,dap_global_
  */
 static bool s_msg_opcode_get_del_ts(struct queue_io_msg * a_msg)
 {
-    dap_nanotime_t l_timestamp = dap_global_db_get_del_ts_unsafe(a_msg->group, a_msg->key);
+    dap_nanotime_t l_timestamp = dap_global_db_get_del_ts_unsafe(s_context_global_db, a_msg->group, a_msg->key);
     if(l_timestamp){
         if(a_msg->callback_result)
             a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_SUCCESS, a_msg->group, a_msg->key,
@@ -409,26 +604,77 @@ static bool s_msg_opcode_get_del_ts(struct queue_io_msg * a_msg)
     return true;
 }
 
-dap_nanotime_t dap_global_db_get_del_ts_unsafe(const char *a_group, const char *a_key)
-{
-    dap_store_obj_t *l_store_obj_del = NULL;
-    dap_nanotime_t l_timestamp = 0;
-    char l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
-    size_t l_count_out = 0;
+/**
+ * @brief The objs_get struct
+ */
+struct del_ts_get {
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    bool called;
+    dap_nanotime_t timestamp;
+};
 
-    if (a_key && a_group) {
-        snprintf(l_group, sizeof(l_group) - 1,  "%s.del", a_group);
-        if (dap_global_db_driver_is(l_group, a_key)) {
-            l_store_obj_del = dap_global_db_driver_read(l_group, a_key, &l_count_out);
-            if (l_store_obj_del) {
-                if (l_count_out != 1)
-                    log_it(L_WARNING, "Got not 1 records (%zu) for group '%s'", l_count_out, l_group);
-                l_timestamp = l_store_obj_del->timestamp;
-                dap_store_obj_free(l_store_obj_del, l_count_out);
-            }
-        }
-    }
-    return l_timestamp;
+static void s_del_ts_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
+                                  UNUSED_ARG int a_rc, UNUSED_ARG const char *a_group,
+                                  UNUSED_ARG const char *a_key, UNUSED_ARG const void *a_value,
+                                  UNUSED_ARG const size_t a_value_size, dap_nanotime_t a_value_ts,
+                                  UNUSED_ARG bool a_is_pinned, void *a_arg)
+{
+    struct del_ts_get *l_args = (struct del_ts_get *)a_arg;
+    l_args->timestamp = a_value_ts;
+    pthread_mutex_lock(&l_args->mutex);
+    l_args->called = true;
+    pthread_cond_broadcast(&l_args->cond);
+    pthread_mutex_unlock(&l_args->mutex);
+}
+
+/**
+ * @brief Sync (blocking) function for retrieving timestamp of object deletion
+ * @param a_group
+ * @param a_key
+ */
+dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_key)
+{
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return dap_global_db_get_del_ts_unsafe(s_context_global_db, a_group, a_key);
+
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_del_ts sync call executed for group \"%s\"", a_group);
+    struct del_ts_get *l_args = DAP_NEW_Z(struct del_ts_get);
+    pthread_mutex_init(&l_args->mutex, NULL);
+    pthread_cond_init(&l_args->cond, NULL);
+    pthread_mutex_lock(&l_args->mutex);
+    if (!dap_global_db_get_del_ts(a_group, a_key, s_del_ts_get_callback, l_args))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    pthread_mutex_unlock(&l_args->mutex);
+    pthread_mutex_destroy(&l_args->mutex);
+    pthread_cond_destroy(&l_args->cond);
+
+    dap_nanotime_t l_ret = l_args->timestamp;
+    DAP_DELETE(l_args);
+    return l_ret;
+}
+
+/* *** Get_last functions group *** */
+
+byte_t *dap_global_db_get_last_unsafe(dap_global_db_context_t *a_global_db_context,
+                                      const char *a_group, char **a_key, size_t *a_data_size,
+                                      bool *a_is_pinned, dap_nanotime_t *a_ts)
+{
+    dap_store_obj_t *l_store_obj = dap_global_db_get_last_raw_unsafe(a_global_db_context, a_group);
+    if (!l_store_obj)
+        return NULL;
+    if (a_key)
+        *a_key = dap_strdup(l_store_obj->key);
+    if (a_data_size)
+        *a_data_size = l_store_obj->value_len;
+    if (a_is_pinned)
+        *a_is_pinned = l_store_obj->flags & RECORD_PINNED;
+    if (a_ts)
+        *a_ts = l_store_obj->timestamp;
+    byte_t *l_res = DAP_DUP_SIZE(l_store_obj->value, l_store_obj->value_len);
+    dap_store_obj_free_one(l_store_obj);
+    return l_res;
 }
 
 /**
@@ -443,7 +689,7 @@ int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get_last");
-        return -666;
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_GET_LAST;
@@ -467,17 +713,70 @@ int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t
  */
 static bool s_msg_opcode_get_last(struct queue_io_msg * a_msg)
 {
-    dap_store_obj_t *l_store_obj = dap_global_db_driver_read_last(a_msg->group);
-    if(l_store_obj){
+    size_t l_value_len = 0;
+    bool l_pinned = false;
+    dap_nanotime_t l_ts = 0;
+    char *l_key = NULL;
+    byte_t *l_value = dap_global_db_get_last_unsafe(s_context_global_db, a_msg->group, &l_key, &l_value_len, &l_pinned, &l_ts);
+    if (l_value && l_value_len) {
         if(a_msg->callback_result)
-            a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_SUCCESS, l_store_obj->group, l_store_obj->key,
-                               l_store_obj->value, l_store_obj->value_len, l_store_obj->timestamp,
-                               l_store_obj->flags & RECORD_PINNED, a_msg->callback_arg );
-        dap_store_obj_free(l_store_obj,1);
+            a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_SUCCESS, a_msg->group, l_key,
+                               l_value, l_value_len, l_ts,
+                               l_pinned, a_msg->callback_arg);
+        DAP_DELETE(l_value);
     }else if(a_msg->callback_result)
-        a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_NO_RESULTS, a_msg->group, a_msg->key,
+        a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_NO_RESULTS, a_msg->group, l_key,
                                NULL, 0, 0,0, a_msg->callback_arg );
     return true;
+}
+
+/**
+ * @brief dap_global_db_get_last_sync
+ * @param a_group
+ * @param a_key
+ * @param a_data_size
+ * @param a_is_pinned
+ * @param a_ts
+ * @return
+ */
+byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t *a_ts)
+{
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return dap_global_db_get_last_unsafe(s_context_global_db, a_group, a_key, a_data_size, a_is_pinned, a_ts);
+
+    struct obj_get *l_args = DAP_NEW_Z(struct obj_get);
+    pthread_mutex_init(&l_args->mutex, NULL);
+    pthread_cond_init(&l_args->cond, NULL);
+    pthread_mutex_lock(&l_args->mutex);
+    if (!dap_global_db_get_last(a_group, s_obj_get_callback, l_args))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    pthread_mutex_unlock(&l_args->mutex);
+    pthread_mutex_destroy(&l_args->mutex);
+    pthread_cond_destroy(&l_args->cond);
+
+    byte_t *l_ret = l_args->data;
+    if (l_ret) {
+        if (a_key)
+            *a_key = l_args->key;
+        else
+            DAP_DEL_Z(l_args->key);
+        if (a_data_size)
+            *a_data_size = l_args->data_size;
+        if (a_is_pinned)
+            *a_is_pinned = l_args->is_pinned;
+        if (a_ts)
+            *a_ts = l_args->ts;
+    }
+    DAP_DELETE(l_args);
+    return l_ret;
+}
+
+/* *** Get_last_raw functions group *** */
+
+dap_store_obj_t *dap_global_db_get_last_raw_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context, const char *a_group)
+{
+    return dap_global_db_driver_read_last(a_group);
 }
 
 /**
@@ -491,7 +790,7 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get_last");
-        return -666;
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_GET_LAST_RAW;
@@ -515,14 +814,82 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
  */
 static bool s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
 {
-    dap_store_obj_t *l_store_obj = dap_global_db_driver_read_last(a_msg->group);
+    dap_store_obj_t *l_store_obj = dap_global_db_get_last_raw_unsafe(s_context_global_db, a_msg->group);
     if(a_msg->callback_result)
         a_msg->callback_result_raw(s_context_global_db, l_store_obj ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS, l_store_obj, a_msg->callback_arg);
     dap_store_obj_free(l_store_obj, 1);
     return true;
 }
 
+/**
+ * @brief Sync (blocking) function for retrieving raw GDB
+ * @param a_group
+ * @param a_fist_id
+ * @param a_objs_count
+ * @return Group's objects
+ */
+dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
+{
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return dap_global_db_get_last_raw_unsafe(s_context_global_db, a_group);
 
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_raw sync call executes for group \"%s\"", a_group);
+    struct obj_raw_get *l_args = DAP_NEW_Z(struct obj_raw_get);
+    pthread_mutex_init(&l_args->mutex, NULL);
+    pthread_cond_init(&l_args->cond, NULL);
+    pthread_mutex_lock(&l_args->mutex);
+    if (!dap_global_db_get_last_raw(a_group, s_obj_raw_get_callback, l_args))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    pthread_mutex_unlock(&l_args->mutex);
+    pthread_mutex_destroy(&l_args->mutex);
+    pthread_cond_destroy(&l_args->cond);
+
+    dap_store_obj_t *l_ret = l_args->obj;
+    DAP_DELETE(l_args);
+    return l_ret;
+}
+
+/* *** Get_all functions group *** */
+
+
+static int s_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
+    dap_store_obj_t *l_obj1 = (dap_store_obj_t *)a_obj1,
+            *l_obj2 = (dap_store_obj_t *)a_obj2;
+    return l_obj2->timestamp < l_obj1->timestamp
+            ? 1
+            : l_obj2->timestamp > l_obj1->timestamp
+              ? -1
+              : 0; // should never occur...
+}
+
+dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
+                                                  const char *a_group, size_t *a_objs_count)
+{
+    size_t l_values_count = 0;
+    dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count);
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values",
+                                                   a_group, l_values_count);
+    dap_global_db_obj_t *l_objs = NULL;
+    // Form objs from store_objs
+    if (l_store_objs) {
+        if (l_values_count > 1)
+            qsort(l_store_objs, l_values_count, sizeof(dap_store_obj_t), s_db_compare_by_ts);
+        l_objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, sizeof(dap_global_db_obj_t) * l_values_count);
+        for(size_t i = 0; i < l_values_count; i++){
+            l_objs[i].id = l_store_objs[i].id;
+            l_objs[i].is_pinned = l_store_objs[i].flags & RECORD_PINNED;
+            l_objs[i].key = (char *)l_store_objs[i].key;
+            l_objs[i].value = l_store_objs[i].value;
+            l_objs[i].value_len = l_store_objs[i].value_len;
+            l_objs[i].timestamp = l_store_objs[i].timestamp;
+        }
+    }
+    dap_store_obj_free(l_store_objs, l_values_count);
+    if (a_objs_count)
+        *a_objs_count = l_values_count;
+    return l_objs;
+}
 
 /**
  * @brief dap_global_db_get_all Get all records from the group
@@ -532,12 +899,12 @@ static bool s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
  * @param a_arg
  * @return
  */
-int dap_global_db_get_all(const char * a_group, size_t a_results_page_size UNUSED_ARG, dap_global_db_callback_results_t a_callback, void * a_arg )
+int dap_global_db_get_all(const char * a_group, UNUSED_ARG size_t a_results_page_size, dap_global_db_callback_results_t a_callback, void * a_arg)
 {
     // TODO make usable a_results_page_size
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get_all");
-        return -666;
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_GET_ALL;
@@ -554,16 +921,6 @@ int dap_global_db_get_all(const char * a_group, size_t a_results_page_size UNUSE
     return l_ret;
 }
 
-static int s_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
-    dap_store_obj_t *l_obj1 = (dap_store_obj_t *)a_obj1,
-            *l_obj2 = (dap_store_obj_t *)a_obj2;
-    return l_obj2->timestamp < l_obj1->timestamp
-            ? 1
-            : l_obj2->timestamp > l_obj1->timestamp
-              ? -1
-              : 0; // should never occur...
-}
-
 /**
  * @brief s_msg_opcode_get_all
  * @param a_msg
@@ -572,26 +929,7 @@ static int s_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
 static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
 {
     size_t l_values_count = 0;
-    dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_msg->group, NULL, &l_values_count);
-    if (l_store_objs && l_values_count)
-        a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id + 1;
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values",
-                                                   a_msg->group, l_values_count);
-    dap_global_db_obj_t *l_objs = NULL;
-    // Form objs from store_objs
-    if (l_store_objs) {
-        if (l_values_count > 1)
-            qsort(l_store_objs, l_values_count, sizeof(dap_store_obj_t), s_db_compare_by_ts);
-        l_objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, sizeof(dap_global_db_obj_t) * l_values_count);
-        for(size_t i = 0; i < l_values_count; i++){
-            l_objs[i].id = l_store_objs[i].id;
-            l_objs[i].is_pinned = l_store_objs[i].flags & RECORD_PINNED;
-            l_objs[i].key = (char *)l_store_objs[i].key;
-            l_objs[i].value = l_store_objs[i].value;
-            l_objs[i].value_len = l_store_objs[i].value_len;
-            l_objs[i].timestamp = l_store_objs[i].timestamp;
-        }
-    }
+    dap_global_db_obj_t *l_objs = dap_global_db_get_all_unsafe(s_context_global_db, a_msg->group, &l_values_count);
 
     // Call callback if present
     if(a_msg->callback_results)
@@ -601,8 +939,84 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
                                 l_objs, a_msg->callback_arg);
     // Clean memory
     DAP_DEL_Z(l_objs);
-    dap_store_obj_free(l_store_objs, l_values_count);
+
     return true; // All values are sent
+}
+
+/**
+ * @brief The objs_get struct
+ */
+struct objs_get{
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    bool called;
+    dap_global_db_obj_t * objs;
+    size_t objs_count;
+};
+
+/**
+ * @brief s_objs_get_callback
+ * @param a_global_db_context
+ * @param a_rc
+ * @param a_group
+ * @param a_key
+ * @param a_values_total
+ * @param a_values_shift
+ * @param a_values_count
+ * @param a_values
+ * @param a_arg
+ */
+static void s_objs_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
+                                UNUSED_ARG int a_rc, UNUSED_ARG const char *a_group,
+                                UNUSED_ARG const size_t a_values_total, const size_t a_values_count,
+                                dap_global_db_obj_t *a_values, void *a_arg)
+{
+    struct objs_get * l_args = (struct objs_get *) a_arg;
+    l_args->objs = dap_global_db_objs_copy(a_values, a_values_count);
+    l_args->objs_count = a_values_count;
+    pthread_mutex_lock(&l_args->mutex);
+    l_args->called = true;
+    pthread_cond_broadcast(&l_args->cond);
+    pthread_mutex_unlock(&l_args->mutex);
+}
+
+/**
+ * @brief Sync (blocking) function for retrieving of list of GDB content
+ * @param a_group
+ * @param a_fist_id
+ * @param a_objs_count
+ * @return Group's objects
+ */
+dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_objs_count)
+{
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return dap_global_db_get_all_unsafe(s_context_global_db, a_group, a_objs_count);
+
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all sync call executes for group \"%s\"", a_group);
+    struct objs_get *l_args = DAP_NEW_Z(struct objs_get);
+    pthread_mutex_init(&l_args->mutex, NULL);
+    pthread_cond_init(&l_args->cond, NULL);
+    pthread_mutex_lock(&l_args->mutex);
+    if (!dap_global_db_get_all(a_group, 0, s_objs_get_callback, l_args))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    pthread_mutex_unlock(&l_args->mutex);
+    pthread_mutex_destroy(&l_args->mutex);
+    pthread_cond_destroy(&l_args->cond);
+
+    dap_global_db_obj_t *l_ret = l_args->objs;
+    if (l_args->objs_count)
+        *a_objs_count = l_args->objs_count;
+    DAP_DELETE(l_args);
+    return l_ret;
+}
+
+/* *** Get_all_raw functions group *** */
+
+dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
+                                                  const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
+{
+    return dap_global_db_driver_cond_read(a_group, a_first_id, a_objs_count);
 }
 
 /**
@@ -614,13 +1028,14 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
  * @param a_arg
  * @return
  */
-int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t a_results_page_size, dap_global_db_callback_results_raw_t a_callback, void * a_arg )
+int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t a_results_page_size,
+                              dap_global_db_callback_results_raw_t a_callback, void * a_arg)
 {
     // TODO make usable a_results_page_size
 
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get_all");
-        return -666;
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_GET_ALL_RAW ;
@@ -648,7 +1063,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg)
 {
     size_t l_values_count = a_msg->values_page_size;
     size_t l_values_remains = dap_global_db_driver_count(a_msg->group, a_msg->values_raw_last_id);
-    dap_store_obj_t *l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->values_raw_last_id, &l_values_count);
+    dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_msg->group, a_msg->values_last_id, &l_values_count);
     if (l_store_objs && l_values_count)
         a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id + 1;
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all raw request from group %s recieved %zu values from total %zu",
@@ -674,6 +1089,104 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg)
     return true; // All values are sent
 }
 
+/**
+ * @brief The store_objs_get struct
+ */
+struct store_objs_get{
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    bool called;
+    dap_store_obj_t *objs;
+    size_t objs_count;
+};
+
+static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
+                                        UNUSED_ARG int a_rc, UNUSED_ARG const char *a_group,
+                                        const size_t a_values_total, const size_t a_values_count,
+                                        dap_store_obj_t *a_values, void *a_arg)
+{
+    struct store_objs_get *l_args = (struct store_objs_get *)a_arg;
+    // TODO make incremental copy
+    l_args->objs = dap_store_obj_copy(a_values, a_values_count);
+    l_args->objs_count += a_values_count;
+    if (a_values_count != a_values_total)
+        return;
+    pthread_mutex_lock(&l_args->mutex);
+    l_args->called = true;
+    pthread_cond_broadcast(&l_args->cond);
+    pthread_mutex_unlock(&l_args->mutex);
+}
+
+dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
+{
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return dap_global_db_get_all_raw_unsafe(s_context_global_db, a_group, a_first_id, a_objs_count);
+
+    struct store_objs_get * l_args = DAP_NEW_Z(struct store_objs_get);
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all_raw sync call executes for group %s", a_group);
+
+    pthread_mutex_init(&l_args->mutex,NULL);
+    pthread_cond_init(&l_args->cond,NULL);
+    pthread_mutex_lock(&l_args->mutex);
+    if (!dap_global_db_get_all_raw(a_group, a_first_id, a_objs_count ? *a_objs_count : 0,
+                                   s_get_all_raw_sync_callback, l_args))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    pthread_mutex_unlock(&l_args->mutex);
+    pthread_mutex_destroy(&l_args->mutex);
+    pthread_cond_destroy(&l_args->cond);
+
+    dap_store_obj_t * l_ret = l_args->objs;
+    if (a_objs_count)
+        *a_objs_count = l_args->objs_count;
+    DAP_DELETE(l_args);
+    return l_ret;
+
+}
+
+/* *** Set functions group *** */
+
+int s_set_unsafe_with_ts(dap_global_db_context_t *a_global_db_context, const char *a_group, const char *a_key, const void *a_value,
+                             const size_t a_value_length, bool a_pin_value, dap_nanotime_t a_timestamp)
+{
+    if (!a_group || !a_key) {
+        log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
+        return -1;
+    }
+    dap_store_obj_t l_store_data = { 0 };
+
+    l_store_data.key = (char *)a_key ;
+    l_store_data.flags = a_pin_value ? RECORD_PINNED : 0 ;
+    l_store_data.value_len =  a_value_length;
+    l_store_data.value = (uint8_t *)a_value;
+    l_store_data.group = (char*) a_group;
+    l_store_data.timestamp = a_timestamp;
+    l_store_data.type = DAP_DB$K_OPTYPE_ADD;
+
+    int l_res = dap_global_db_driver_apply(&l_store_data, 1);
+    if (l_res == 0) {
+        s_record_del_history_del(a_group, a_key);
+        s_change_notify(a_global_db_context, &l_store_data);
+    }
+    return l_res;
+}
+
+/**
+ * @brief dap_global_db_set_unsafe
+ * @param a_global_db_context
+ * @param a_group
+ * @param a_key
+ * @param a_value
+ * @param a_value_length
+ * @param a_pin_value
+ * @return
+ */
+int dap_global_db_set_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group, const char *a_key, const void *a_value,
+                             const size_t a_value_length, bool a_pin_value)
+{
+    dap_nanotime_t l_ts_now = dap_nanotime_now();
+    return s_set_unsafe_with_ts(a_global_db_context, a_group, a_key, a_value, a_value_length, a_pin_value, l_ts_now);
+}
 
 /**
  * @brief Set GlobalDB record, identified with group and key
@@ -690,7 +1203,7 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
-        return -666;
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
 
     if (!a_group || !a_key) {
@@ -724,21 +1237,10 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
  */
 static bool s_msg_opcode_set(struct queue_io_msg * a_msg)
 {
-    dap_store_obj_t l_store_data = { 0 };
     dap_nanotime_t l_ts_now = dap_nanotime_now();
-    l_store_data.key = a_msg->key ;
-    l_store_data.flags =a_msg->value_is_pinned ? RECORD_PINNED : 0 ;
-    l_store_data.value_len = a_msg->value_length;
-    l_store_data.value =  a_msg->value;
-    l_store_data.group = (char*) a_msg->group;
-    l_store_data.timestamp = l_ts_now;
-    l_store_data.type = DAP_DB$K_OPTYPE_ADD;
-
-    int l_res = dap_global_db_driver_apply(&l_store_data, 1);
-
+    int l_res = s_set_unsafe_with_ts(s_context_global_db, a_msg->group, a_msg->key, a_msg->value,
+                                     a_msg->value_length, a_msg->value_is_pinned, l_ts_now);
     if (l_res == 0) {
-        s_record_del_history_del(a_msg->group, a_msg->key);
-        s_change_notify(s_context_global_db, &l_store_data);
         if(a_msg->callback_result)
             a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_SUCCESS, a_msg->group, a_msg->key,
                                    a_msg->value, a_msg->value_length, l_ts_now,
@@ -750,45 +1252,100 @@ static bool s_msg_opcode_set(struct queue_io_msg * a_msg)
                                    a_msg->value, a_msg->value_length, l_ts_now,
                                    a_msg->value_is_pinned , a_msg->callback_arg );
     }
-    if(a_msg->value)
-        DAP_DELETE(a_msg->value);
     return true;
 }
 
 /**
- * @brief dap_global_db_set_unsafe
+ * @brief The objs_set struct
+ */
+struct sync_op_result{
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+    bool called;
+    int result;
+};
+
+/**
+ * @brief s_objs_set_callback
  * @param a_global_db_context
+ * @param a_rc
+ * @param a_group
+ * @param a_key
+ * @param a_value
+ * @param a_value_len
+ * @param a_value_ts
+ * @param a_is_pinned
+ * @param a_arg
+ */
+static void s_sync_op_result_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_context, int a_rc,
+                                      UNUSED_ARG const char *a_group, UNUSED_ARG const char *a_key,
+                                      UNUSED_ARG const void *a_value, UNUSED_ARG const size_t a_value_len,
+                                      UNUSED_ARG dap_nanotime_t a_value_ts, UNUSED_ARG bool a_is_pinned,
+                                      void * a_arg)
+{
+    struct sync_op_result *l_args = (struct sync_op_result *)a_arg;
+    l_args->result = a_rc;
+    pthread_mutex_lock(&l_args->mutex);
+    l_args->called = true;
+    pthread_cond_broadcast(&l_args->cond);
+    pthread_mutex_unlock(&l_args->mutex);
+}
+
+/**
+ * @brief Set value into the GlobalDB and waits for result
  * @param a_group
  * @param a_key
  * @param a_value
  * @param a_value_length
  * @param a_pin_value
- * @return
+ * @return 0 if success others if not
  */
-int dap_global_db_set_unsafe(dap_global_db_context_t * a_global_db_context, const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value )
+int dap_global_db_set_sync(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value)
 {
-    if (!a_group || !a_key) {
-        log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
-        return -1;
-    }
-    dap_store_obj_t l_store_data = { 0 };
-    dap_nanotime_t l_ts_now = dap_nanotime_now();
-    l_store_data.key = (char *)a_key ;
-    l_store_data.flags = a_pin_value ? RECORD_PINNED : 0 ;
-    l_store_data.value_len =  a_value_length;
-    l_store_data.value = (uint8_t *)a_value;
-    l_store_data.group = (char*) a_group;
-    l_store_data.timestamp = l_ts_now;
-    l_store_data.type = DAP_DB$K_OPTYPE_ADD;
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return dap_global_db_set_unsafe(s_context_global_db, a_group, a_key, a_value, a_value_length, a_pin_value);
 
-    int l_res = dap_global_db_driver_apply(&l_store_data, 1);
-    if (l_res == 0) {
-        s_record_del_history_del( a_group, a_key);
-        s_change_notify(a_global_db_context, &l_store_data);
-    }
-    return l_res;
+    struct sync_op_result *l_args = DAP_NEW_Z(struct sync_op_result);
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "set sync call executes for group \"%s\" key \"%s\"", a_group, a_key);
+
+    pthread_mutex_init(&l_args->mutex,NULL);
+    pthread_cond_init(&l_args->cond,NULL);
+    pthread_mutex_lock(&l_args->mutex);
+    if (!dap_global_db_set(a_group, a_key, a_value, a_value_length, a_pin_value, s_sync_op_result_callback, l_args))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    else
+        l_args->result = DAP_GLOBAL_DB_RC_ERROR;
+    pthread_mutex_unlock(&l_args->mutex);
+    pthread_mutex_destroy(&l_args->mutex);
+    pthread_cond_destroy(&l_args->cond);
+
+    int l_ret = l_args->result;
+    DAP_DELETE(l_args);
+    return l_ret;
 }
 
+/* *** Set_raw functions group *** */
+
+int dap_global_db_set_raw_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
+{
+    int l_ret = dap_global_db_driver_apply(a_store_objs, a_store_objs_count);
+    if (l_ret == 0) {
+        for (size_t i = 0; i < a_store_objs_count; i++) {
+            int l_res_del = 0;
+            if (a_store_objs[i].type == DAP_DB$K_OPTYPE_ADD)
+                l_res_del = s_record_del_history_del(a_store_objs[i].group, a_store_objs[i].key);
+            else if (a_store_objs[i].type == DAP_DB$K_OPTYPE_DEL)
+                l_res_del = s_record_del_history_add(a_store_objs[i].group, (char*)a_store_objs[i].key,
+                                                     a_store_objs[i].timestamp);
+            if (!l_res_del) {
+                s_change_notify(a_global_db_context, &a_store_objs[i]);
+            }
+        }
+    }else
+        log_it(L_ERROR,"Can't save raw gdb data, code %d ", l_ret);
+    return l_ret;
+}
 
 /**
  * @brief dap_global_db_set_raw
@@ -798,11 +1355,11 @@ int dap_global_db_set_unsafe(dap_global_db_context_t * a_global_db_context, cons
  * @param a_arg
  * @return
  */
-int dap_global_db_set_raw(dap_store_obj_t * a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void * a_arg )
+int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void * a_arg )
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
-        return -666;
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_SET_RAW;
@@ -830,33 +1387,55 @@ int dap_global_db_set_raw(dap_store_obj_t * a_store_objs, size_t a_store_objs_co
 static bool s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
 {
     int l_ret = -1;
-    size_t i=0;
-    if(a_msg->values_raw_total>0){
-        l_ret = dap_global_db_driver_apply(a_msg->values_raw,a_msg->values_raw_total);
-        int l_res_del = 0;
-        if(l_ret == 0) {
-            for(;  i < a_msg->values_raw_total ; i++ ) {
-                if (a_msg->values_raw[i].type == DAP_DB$K_OPTYPE_ADD)
-                    l_res_del = s_record_del_history_del(a_msg->values_raw[i].group, a_msg->values_raw[i].key);
-                else if (a_msg->values_raw[i].type == DAP_DB$K_OPTYPE_DEL)
-                    l_res_del = s_record_del_history_add(a_msg->values_raw[i].group, (char*)a_msg->values_raw[i].key,
-                                                         a_msg->values_raw[i].timestamp);
-                if (!l_res_del) {
-                    s_change_notify(s_context_global_db, &a_msg->values_raw[i]);
-                }
-            }
-        }else
-            log_it(L_ERROR,"Can't save raw gdb data, code %d ", l_ret);
-    }
-    if(a_msg->callback_results_raw){
+    if (a_msg->values_raw_total > 0)
+        l_ret = dap_global_db_set_raw_unsafe(s_context_global_db, a_msg->values_raw, a_msg->values_raw_total);
+    if (a_msg->callback_results_raw)
         a_msg->callback_results_raw(s_context_global_db,
                                     l_ret == 0 ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR,
                                     a_msg->group, a_msg->values_raw_total, a_msg->values_raw_total,
                                     a_msg->values_raw, a_msg->callback_arg);
-    }
-    dap_store_obj_free(a_msg->values_raw, a_msg->values_raw_total);
     return true;
 }
+
+static void s_sync_op_raw_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_context, int a_rc,
+                                   UNUSED_ARG const char *a_group, UNUSED_ARG const size_t a_values_current,
+                                   UNUSED_ARG const size_t a_values_count, UNUSED_ARG dap_store_obj_t *a_values,
+                                   void *a_arg)
+{
+    struct sync_op_result *l_args = (struct sync_op_result *)a_arg;
+    l_args->result = a_rc;
+    pthread_mutex_lock(&l_args->mutex);
+    l_args->called = true;
+    pthread_cond_broadcast(&l_args->cond);
+    pthread_mutex_unlock(&l_args->mutex);
+}
+
+int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
+{
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return dap_global_db_set_raw_unsafe(s_context_global_db, a_store_objs, a_store_objs_count);
+
+    struct sync_op_result *l_args = DAP_NEW_Z(struct sync_op_result);
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "set_raw sync call executes");
+
+    pthread_mutex_init(&l_args->mutex,NULL);
+    pthread_cond_init(&l_args->cond,NULL);
+    pthread_mutex_lock(&l_args->mutex);
+    if (!dap_global_db_set_raw(a_store_objs, a_store_objs_count, s_sync_op_raw_callback, l_args))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    else
+        l_args->result = DAP_GLOBAL_DB_RC_ERROR;
+    pthread_mutex_unlock(&l_args->mutex);
+    pthread_mutex_destroy(&l_args->mutex);
+    pthread_cond_destroy(&l_args->cond);
+
+    int l_ret = l_args->result;
+    DAP_DELETE(l_args);
+    return l_ret;
+}
+
+/* *** Set_multiple_zc functions group *** */
 
 /**
  * @brief dap_global_db_set_multiple_zc Set multiple values, without duplication (zero copy, values are freed after set callback execution )
@@ -871,7 +1450,7 @@ int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
-        return -666;
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_SET_MULTIPLE;
@@ -927,19 +1506,45 @@ static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
     return true;
 }
 
-/**
- * @brief dap_global_db_pin
- * @param a_group
- * @param a_key
- * @param a_callback
- * @param a_arg
- * @return
- */
-int dap_global_db_pin(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void * a_arg )
+/* *** Pin/unpin functions group *** */
+
+int s_db_object_pin_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group, const char *a_key, bool a_pin)
+{
+    int l_res = DAP_GLOBAL_DB_RC_NO_RESULTS;
+    dap_store_obj_t *l_store_obj = dap_global_db_get_raw_unsafe(a_global_db_context, a_group, a_key);
+    if (l_store_obj) {
+        if (a_pin)
+            l_store_obj->flags |= RECORD_PINNED;
+        else
+            l_store_obj->flags ^= RECORD_PINNED;
+        l_res = dap_global_db_set_raw_unsafe(a_global_db_context, l_store_obj, 1);
+        if (l_res == 0) {
+            s_record_del_history_del(a_group, a_key);
+            s_change_notify(a_global_db_context, l_store_obj);
+        } else {
+            log_it(L_ERROR,"Can't save pinned gdb data, code %d ", l_res);
+            l_res = DAP_GLOBAL_DB_RC_ERROR;
+        }
+    }
+    dap_store_obj_free_one(l_store_obj);
+    return l_res;
+}
+
+int dap_global_db_pin_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group, const char *a_key)
+{
+    return s_db_object_pin_unsafe(a_global_db_context, a_group, a_key, true);
+}
+
+int dap_global_db_unpin_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group, const char *a_key)
+{
+    return s_db_object_pin_unsafe(a_global_db_context, a_group, a_key, false);
+}
+
+int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg, bool a_pin)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_pin");
-        return -666;
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_PIN;
@@ -947,13 +1552,15 @@ int dap_global_db_pin(const char * a_group, const char *a_key, dap_global_db_cal
     l_msg->key = dap_strdup(a_key);
     l_msg->callback_arg = a_arg;
     l_msg->callback_result = a_callback;
+    l_msg->value_is_pinned = a_pin;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
     if (l_ret != 0){
-        log_it(L_ERROR, "Can't exec pin request, code %d", l_ret);
+        log_it(L_ERROR, "Can't exec %s request, code %d", a_pin ? "pin" : "unpin", l_ret);
         s_queue_io_msg_delete(l_msg);
     }else
-        debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent pin request for \"%s\" group \"%s\" key" , a_group, a_key);
+        debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent %s request for \"%s\" group \"%s\" key",
+                                                       a_pin ? "pin" : "unpin", a_group, a_key);
     return l_ret;
 }
 
@@ -964,30 +1571,25 @@ int dap_global_db_pin(const char * a_group, const char *a_key, dap_global_db_cal
  */
 static bool s_msg_opcode_pin(struct queue_io_msg * a_msg)
 {
-    size_t l_count_records = 0;
-    dap_store_obj_t *l_store_obj = dap_global_db_driver_read( a_msg->group,
-                                                                     a_msg->key,
-                                                                     &l_count_records);
-    if(l_store_obj != NULL && l_count_records>=1){
-        l_store_obj->flags |= RECORD_PINNED;
-        int l_res = dap_global_db_driver_add(l_store_obj,1);
-        if(l_res == 0){
-            s_record_del_history_del(a_msg->group, a_msg->key);
-            s_change_notify(s_context_global_db, l_store_obj);
-        }else
-            log_it(L_ERROR,"Can't save pinned gdb data, code %d ", l_res);
-
-        if(a_msg->callback_result)
-            a_msg->callback_result(s_context_global_db, l_res == 0? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR, l_store_obj->group, l_store_obj->key,
-                               l_store_obj->value, l_store_obj->value_len, l_store_obj->timestamp,
-                               l_store_obj->flags & RECORD_PINNED, a_msg->callback_arg );
-        dap_store_obj_free(l_store_obj,l_count_records);
-    }else if(a_msg->callback_result)
-        a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_NO_RESULTS, a_msg->group, a_msg->key,
-                               NULL, 0, 0,0, a_msg->callback_arg );
+    int l_res = s_db_object_pin_unsafe(s_context_global_db, a_msg->group, a_msg->key, a_msg->value_is_pinned);
+    if (a_msg->callback_result)
+        a_msg->callback_result(s_context_global_db, l_res, a_msg->group, a_msg->key,
+                               NULL, 0, 0, a_msg->value_is_pinned, a_msg->callback_arg);
     return true;
 }
 
+/**
+ * @brief dap_global_db_pin
+ * @param a_group
+ * @param a_key
+ * @param a_callback
+ * @param a_arg
+ * @return
+ */
+int dap_global_db_pin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg)
+{
+    return s_db_object_pin(a_group, a_key, a_callback, a_arg, true);
+}
 /**
  * @brief dap_global_db_unpin
  * @param a_group
@@ -996,60 +1598,87 @@ static bool s_msg_opcode_pin(struct queue_io_msg * a_msg)
  * @param a_arg
  * @return
  */
-int dap_global_db_unpin(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void * a_arg )
+int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg)
 {
-    if(s_context_global_db == NULL){
-        log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_unpin");
-        return -666;
-    }
-    struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
-    l_msg->opcode = MSG_OPCODE_UNPIN;
-    l_msg->group = dap_strdup(a_group);
-    l_msg->key = dap_strdup(a_key);
-    l_msg->callback_arg = a_arg;
-    l_msg->callback_result = a_callback;
+    return s_db_object_pin(a_group, a_key, a_callback, a_arg, false);
+}
 
-    int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
-    if (l_ret != 0){
-        log_it(L_ERROR, "Can't exec unpin request, code %d", l_ret);
-        s_queue_io_msg_delete(l_msg);
-    }else
-        debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent unpin request for \"%s\" group \"%s\" key" , a_group, a_key);
+int s_db_object_pin_sync(const char *a_group, const char *a_key, bool a_pin)
+{
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return s_db_object_pin_unsafe(s_context_global_db, a_group, a_key, a_pin);
 
+    struct sync_op_result * l_args = DAP_NEW_Z(struct sync_op_result);
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "%s sync call executes for group \"%s\" key \"%s\"",
+                                                  a_pin ? "pin" : "unpin", a_group, a_key);
+    pthread_mutex_init(&l_args->mutex,NULL);
+    pthread_cond_init(&l_args->cond,NULL);
+    pthread_mutex_lock(&l_args->mutex);
+    if (!s_db_object_pin(a_group, a_key, s_sync_op_result_callback, l_args, a_pin))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    else
+        l_args->result = DAP_GLOBAL_DB_RC_ERROR;
+    pthread_mutex_unlock(&l_args->mutex);
+    pthread_mutex_destroy(&l_args->mutex);
+    pthread_cond_destroy(&l_args->cond);
+
+    int l_ret = l_args->result ;
+    DAP_DELETE(l_args);
     return l_ret;
 }
 
 /**
- * @brief s_msg_opcode_unpin
- * @param a_msg
+ * @brief dap_global_db_pin_sync
+ * @param a_group
+ * @param a_key
  * @return
  */
-static bool s_msg_opcode_unpin(struct queue_io_msg * a_msg)
+int dap_global_db_pin_sync(const char *a_group, const char *a_key)
 {
-    size_t l_count_records = 0;
-    dap_store_obj_t *l_store_obj = dap_global_db_driver_read( a_msg->group,
-                                                                     a_msg->key,
-                                                                     &l_count_records);
-    if(l_store_obj != NULL && l_count_records>=1){
-        l_store_obj->flags ^= RECORD_PINNED;
-        int l_res = dap_global_db_driver_add(l_store_obj,1);
-        if(l_res == 0){
-            s_record_del_history_del(a_msg->group, a_msg->key);
-            s_change_notify(s_context_global_db, l_store_obj);
-        }else
-            log_it(L_ERROR,"Can't save pinned gdb data, code %d ", l_res);
-
-        if(a_msg->callback_result)
-            a_msg->callback_result(s_context_global_db, l_res == 0? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR, l_store_obj->group, l_store_obj->key,
-                               l_store_obj->value, l_store_obj->value_len, l_store_obj->timestamp,
-                               l_store_obj->flags & RECORD_PINNED, a_msg->callback_arg );
-        dap_store_obj_free(l_store_obj,l_count_records);
-    }else if(a_msg->callback_result)
-        a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_NO_RESULTS, a_msg->group, a_msg->key,
-                               NULL, 0, 0,0, a_msg->callback_arg );
-    return true;
+    return s_db_object_pin_sync(a_group, a_key, true);
 }
 
+/**
+ * @brief dap_global_db_unpin_sync
+ * @param a_group
+ * @param a_key
+ * @return
+ */
+int dap_global_db_unpin_sync(const char *a_group, const char *a_key)
+{
+    return s_db_object_pin_sync(a_group, a_key, false);
+}
+
+/* *** Del functions group *** */
+
+/**
+ * @brief dap_global_db_del_unsafe
+ * @param a_group
+ * @param a_key
+ * @return
+ */
+int dap_global_db_del_unsafe(dap_global_db_context_t *a_global_db_context, const char * a_group, const char *a_key)
+{
+    dap_store_obj_t l_store_obj = {};
+
+    l_store_obj.key = a_key;
+    l_store_obj.group = (char *)a_group;
+    l_store_obj.type = DAP_DB$K_OPTYPE_DEL;
+    l_store_obj.timestamp = dap_nanotime_now();
+
+    int l_res = dap_global_db_driver_apply(&l_store_obj, 1);
+
+    if (a_key) {
+        if (l_res >= 0)
+            // add to Del group
+            l_res = s_record_del_history_add(l_store_obj.group, (char *)l_store_obj.key, l_store_obj.timestamp);
+        // do not add to history if l_res=1 (already deleted)
+        if (!l_res)
+            s_change_notify(a_global_db_context, &l_store_obj);
+    }
+    return l_res;
+}
 /**
  * @brief dap_global_db_delete
  * @param a_group
@@ -1060,9 +1689,9 @@ static bool s_msg_opcode_unpin(struct queue_io_msg * a_msg)
  */
 int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void * a_arg )
 {
-    if(s_context_global_db == NULL){
-        log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_delete");
-        return -666;
+    if (s_context_global_db == NULL) {
+        log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_del");
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_DELETE;
@@ -1088,7 +1717,6 @@ int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_cal
  */
 static bool s_msg_opcode_delete(struct queue_io_msg * a_msg)
 {
-
     int l_res = dap_global_db_del_unsafe(s_context_global_db, a_msg->group, a_msg->key);
 
     if(a_msg->callback_result){
@@ -1100,6 +1728,110 @@ static bool s_msg_opcode_delete(struct queue_io_msg * a_msg)
 
     return true;
 }
+
+/**
+ * @brief dap_global_db_del_sync
+ * @param a_group
+ * @param a_key
+ * @return
+ */
+int dap_global_db_del_sync(const char *a_group, const char *a_key)
+{
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return dap_global_db_del_unsafe(s_context_global_db, a_group, a_key);
+
+    struct sync_op_result *l_args = DAP_NEW_Z(struct sync_op_result);
+    pthread_mutex_init(&l_args->mutex,NULL);
+    pthread_cond_init(&l_args->cond,NULL);
+    pthread_mutex_lock(&l_args->mutex);
+    if (!dap_global_db_del(a_group, a_key, s_sync_op_result_callback, l_args))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    else
+        l_args->result = DAP_GLOBAL_DB_RC_ERROR;
+    pthread_mutex_unlock(&l_args->mutex);
+    pthread_mutex_destroy(&l_args->mutex);
+    pthread_cond_destroy(&l_args->cond);
+
+    int l_ret = l_args->result ;
+    DAP_DELETE(l_args);
+    return l_ret;
+}
+
+/* *** Flush functions group *** */
+
+/**
+ * @brief dap_global_db_flush_sync
+ * @return
+ */
+int dap_global_db_flush_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context)
+{
+    return dap_db_driver_flush();
+}
+
+/**
+ * @brief dap_global_db_flush
+ * @param a_callback
+ * @param a_arg
+ * @return
+ */
+int dap_global_db_flush(dap_global_db_callback_result_t a_callback, void * a_arg)
+{
+    if(s_context_global_db == NULL){
+        log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_delete");
+        return DAP_GLOBAL_DB_RC_ERROR;
+    }
+    struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    l_msg->opcode = MSG_OPCODE_FLUSH;
+    l_msg->callback_arg = a_arg;
+    l_msg->callback_result = a_callback;
+
+    int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
+    if (l_ret != 0){
+        log_it(L_ERROR, "Can't exec flush request, code %d", l_ret);
+        s_queue_io_msg_delete(l_msg);
+    }
+    return l_ret;
+}
+
+/**
+ * @brief s_msg_opcode_flush
+ * @param a_msg
+ * @return
+ */
+static bool s_msg_opcode_flush(struct queue_io_msg * a_msg)
+{
+    int l_res = dap_global_db_flush_unsafe(s_context_global_db);
+    if (a_msg->callback_result)
+        a_msg->callback_result(s_context_global_db, l_res ? DAP_GLOBAL_DB_RC_ERROR : DAP_GLOBAL_DB_RC_SUCCESS,
+                                NULL, NULL, NULL, 0, 0, false, a_msg->callback_arg);
+    return true;
+}
+
+int dap_global_db_flush_sync()
+{
+    if (dap_context_current()->_inheritor == s_context_global_db)
+        return dap_global_db_flush_unsafe(s_context_global_db);
+
+    struct sync_op_result *l_args = DAP_NEW_Z(struct sync_op_result);
+    pthread_mutex_init(&l_args->mutex,NULL);
+    pthread_cond_init(&l_args->cond,NULL);
+    pthread_mutex_lock(&l_args->mutex);
+    if (!dap_global_db_flush(s_sync_op_result_callback, l_args))
+        while (!l_args->called)
+            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+    else
+        l_args->result = DAP_GLOBAL_DB_RC_ERROR;
+    pthread_mutex_unlock(&l_args->mutex);
+    pthread_mutex_destroy(&l_args->mutex);
+    pthread_cond_destroy(&l_args->cond);
+
+    int l_ret = l_args->result ;
+    DAP_DELETE(l_args);
+    return l_ret;
+}
+
+/* *** Other functions *** */
 
 /**
  * @brief Copies memory of an objs array.
@@ -1145,433 +1877,6 @@ dap_global_db_obj_t *l_obj;
 }
 
 /**
- * @brief The objs_get struct
- */
-struct objs_get{
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-    bool called;
-    dap_global_db_obj_t * objs;
-    size_t objs_count;
-};
-
-/**
- * @brief s_objs_get_callback
- * @param a_global_db_context
- * @param a_rc
- * @param a_group
- * @param a_key
- * @param a_values_total
- * @param a_values_shift
- * @param a_values_count
- * @param a_values
- * @param a_arg
- */
-static void s_objs_get_callback(dap_global_db_context_t *a_global_db_context,
-                                int a_rc, const char *a_group,
-                                const size_t a_values_total, const size_t a_values_count,
-                                dap_global_db_obj_t *a_values, void *a_arg)
-{
-    struct objs_get * l_args = (struct objs_get *) a_arg;
-    l_args->objs = dap_global_db_objs_copy(a_values, a_values_count);
-    l_args->objs_count = a_values_count;
-    pthread_mutex_lock(&l_args->mutex);
-    l_args->called = true;
-    pthread_cond_broadcast(&l_args->cond);
-    pthread_mutex_unlock(&l_args->mutex);
-}
-
-/**
- * @brief Sync (blocking) function for retrieving of list of GDB content
- * @param a_group
- * @param a_fist_id
- * @param a_objs_count
- * @return Group's objects
- */
-dap_global_db_obj_t* dap_global_db_get_all_sync(const char *a_group, size_t *a_objs_count)
-{
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all sync call executes for group \"%s\"", a_group);
-    struct objs_get * l_args = DAP_NEW_Z(struct objs_get);
-    pthread_mutex_init(&l_args->mutex,NULL);
-    pthread_cond_init(&l_args->cond,NULL);
-    pthread_mutex_lock(&l_args->mutex);
-    dap_global_db_get_all(a_group, 0,s_objs_get_callback, l_args);
-    while (!l_args->called)
-        pthread_cond_wait(&l_args->cond, &l_args->mutex);
-    pthread_mutex_unlock(&l_args->mutex);
-    pthread_mutex_destroy(&l_args->mutex);
-    pthread_cond_destroy(&l_args->cond);
-
-    dap_global_db_obj_t * l_ret = l_args->objs;
-    if(l_args->objs_count)
-        *a_objs_count = l_args->objs_count;
-    DAP_DELETE(l_args);
-    return l_ret;
-}
-
-
-/**
- * @brief The objs_set struct
- */
-struct sync_op_result{
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-    bool called;
-    int result;
-};
-
-/**
- * @brief s_objs_set_callback
- * @param a_global_db_context
- * @param a_rc
- * @param a_group
- * @param a_key
- * @param a_value
- * @param a_value_len
- * @param a_value_ts
- * @param a_is_pinned
- * @param a_arg
- */
-static void s_sync_op_result_callback (dap_global_db_context_t * a_global_db_context,int a_rc, const char * a_group, const char * a_key, const void * a_value, const size_t a_value_len, dap_nanotime_t a_value_ts, bool a_is_pinned, void * a_arg)
-{
-    struct sync_op_result * l_args = (struct sync_op_result *) a_arg;
-    l_args->result = a_rc;
-    pthread_mutex_lock(&l_args->mutex);
-    l_args->called = true;
-    pthread_cond_broadcast(&l_args->cond);
-    pthread_mutex_unlock(&l_args->mutex);
-}
-
-/**
- * @brief Put value into the GlobalDB and waits for result
- * @param a_group
- * @param a_key
- * @param a_value
- * @param a_value_length
- * @param a_pin_value
- * @return 0 if success others if not
- */
-int dap_global_db_set_sync(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value )
-{
-    if (dap_context_current()->_inheritor == s_context_global_db)
-        return dap_global_db_set_unsafe(s_context_global_db, a_group, a_key, a_value, a_value_length, a_pin_value);
-
-    struct sync_op_result * l_args = DAP_NEW_Z(struct sync_op_result);
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "set sync call executes for group \"%s\" key \"%s\"", a_group, a_key);
-
-    pthread_mutex_init(&l_args->mutex,NULL);
-    pthread_cond_init(&l_args->cond,NULL);
-    pthread_mutex_lock(&l_args->mutex);
-    if (!dap_global_db_set(a_group, a_key, a_value, a_value_length, a_pin_value, s_sync_op_result_callback, l_args))
-        while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
-    pthread_mutex_unlock(&l_args->mutex);
-    pthread_mutex_destroy(&l_args->mutex);
-    pthread_cond_destroy(&l_args->cond);
-
-    int l_ret = l_args->result ;
-    DAP_DELETE(l_args);
-    return l_ret;
-}
-
-/**
- * @brief dap_global_db_pin_sync
- * @param a_group
- * @param a_key
- * @return
- */
-int dap_global_db_pin_sync(const char * a_group, const char *a_key)
-{
-    struct sync_op_result * l_args = DAP_NEW_Z(struct sync_op_result);
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "pin sync call executes for group \"%s\" key \"%s\"", a_group, a_key);
-
-    pthread_mutex_init(&l_args->mutex,NULL);
-    pthread_cond_init(&l_args->cond,NULL);
-    pthread_mutex_lock(&l_args->mutex);
-    dap_global_db_pin(a_group, a_key, s_sync_op_result_callback, l_args);
-    while (!l_args->called)
-        pthread_cond_wait(&l_args->cond, &l_args->mutex);
-    pthread_mutex_unlock(&l_args->mutex);
-    pthread_mutex_destroy(&l_args->mutex);
-    pthread_cond_destroy(&l_args->cond);
-
-    int l_ret = l_args->result ;
-    DAP_DELETE(l_args);
-    return l_ret;
-}
-
-/**
- * @brief dap_global_db_unpin_sync
- * @param a_group
- * @param a_key
- * @return
- */
-int dap_global_db_unpin_sync(const char * a_group, const char *a_key)
-{
-    struct sync_op_result * l_args = DAP_NEW_Z(struct sync_op_result);
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "pin sync call executes for group \"%s\" key \"%s\"", a_group, a_key);
-
-    pthread_mutex_init(&l_args->mutex,NULL);
-    pthread_cond_init(&l_args->cond,NULL);
-    pthread_mutex_lock(&l_args->mutex);
-    dap_global_db_unpin(a_group, a_key, s_sync_op_result_callback, l_args);
-    while (!l_args->called)
-        pthread_cond_wait(&l_args->cond, &l_args->mutex);
-    pthread_mutex_unlock(&l_args->mutex);
-    pthread_mutex_destroy(&l_args->mutex);
-    pthread_cond_destroy(&l_args->cond);
-
-    int l_ret = l_args->result ;
-    DAP_DELETE(l_args);
-    return l_ret;
-}
-
-/**
- * @brief dap_global_db_del_sync
- * @param a_group
- * @param a_key
- * @return
- */
-int dap_global_db_del_sync(const char * a_group, const char *a_key )
-{
-    struct sync_op_result * l_args = DAP_NEW_Z(struct sync_op_result);
-    pthread_mutex_init(&l_args->mutex,NULL);
-    pthread_cond_init(&l_args->cond,NULL);
-    pthread_mutex_lock(&l_args->mutex);
-    if (dap_global_db_del(a_group, a_key, s_sync_op_result_callback, l_args) == 0)
-        while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
-    else
-        l_args->result = DAP_GLOBAL_DB_RC_ERROR;
-    pthread_mutex_unlock(&l_args->mutex);
-    pthread_mutex_destroy(&l_args->mutex);
-    pthread_cond_destroy(&l_args->cond);
-
-    int l_ret = l_args->result ;
-    DAP_DELETE(l_args);
-    return l_ret;
-}
-
-/**
- * @brief The store_obj_get struct
- */
-struct store_obj_get{
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-    bool called;
-    byte_t * data;
-    size_t data_size;
-    dap_nanotime_t ts;
-    bool is_pinned;
-};
-
-/**
- * @brief s_store_obj_get_callback
- * @param a_global_db_context
- * @param a_rc
- * @param a_group
- * @param a_key
- * @param a_value
- * @param a_value_size
- * @param a_value_ts
- * @param a_is_pinned
- * @param a_arg
- */
-static void s_store_obj_get_callback (dap_global_db_context_t * a_global_db_context,int a_rc, const char * a_group, const char * a_key,
-                                 const void * a_value, const size_t a_value_size, dap_nanotime_t a_value_ts,
-                                 bool a_is_pinned, void * a_arg)
-{
-    struct store_obj_get * l_args = (struct store_obj_get *) a_arg;
-    assert(l_args);
-
-    if( a_value && a_value_size){
-        l_args->data = DAP_DUP_SIZE(a_value, a_value_size);
-        l_args->data_size = a_value_size;
-        l_args->ts = a_value_ts;
-        l_args->is_pinned = a_is_pinned;
-    }
-    pthread_mutex_lock(&l_args->mutex);
-    l_args->called = true;
-    pthread_cond_broadcast(&l_args->cond);
-    pthread_mutex_unlock(&l_args->mutex);
-}
-
-/**
- * @brief dap_global_db_gr_get_sync
- * @param a_group
- * @param a_key
- * @param a_data_size
- * @param a_is_pinned
- * @param a_ts
- * @return
- */
-byte_t* dap_global_db_get_sync(const char * a_group,const char *a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t * a_ts)
-{
-    struct store_obj_get * l_args = DAP_NEW_Z(struct store_obj_get);
-    pthread_mutex_init(&l_args->mutex,NULL);
-    pthread_cond_init(&l_args->cond,NULL);
-    pthread_mutex_lock(&l_args->mutex);
-    dap_global_db_get(a_group,a_key, s_store_obj_get_callback, l_args);
-    while (!l_args->called)
-        pthread_cond_wait(&l_args->cond, &l_args->mutex);
-    pthread_mutex_unlock(&l_args->mutex);
-    pthread_mutex_destroy(&l_args->mutex);
-    pthread_cond_destroy(&l_args->cond);
-
-    byte_t * l_ret = l_args->data;
-    if( l_ret ){
-        if( a_data_size)
-            *a_data_size = l_args->data_size;
-        if( a_is_pinned)
-            *a_is_pinned = l_args->is_pinned;
-        if( a_ts)
-            *a_ts = l_args->ts;
-    }
-    DAP_DELETE(l_args);
-    return l_ret;
-}
-
-
-/**
- * @brief The store_objs_get struct
- */
-struct store_objs_get{
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-    bool called;
-    dap_store_obj_t * objs;
-    size_t objs_count;
-};
-
-static void s_get_all_raw_sync_callback(dap_global_db_context_t *a_global_db_context,
-                                        int a_rc, const char *a_group,
-                                        const size_t a_values_total, const size_t a_values_count,
-                                        dap_store_obj_t *a_values, void *a_arg)
-{
-    struct store_objs_get * l_args = (struct store_objs_get *) a_arg;
-    l_args->objs = dap_store_obj_copy(a_values, a_values_count);
-    l_args->objs_count = a_values_count;
-    pthread_mutex_lock(&l_args->mutex);
-    l_args->called = true;
-    pthread_cond_broadcast(&l_args->cond);
-    pthread_mutex_unlock(&l_args->mutex);
-}
-
-dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
-{
-    struct store_objs_get * l_args = DAP_NEW_Z(struct store_objs_get);
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all_raw sync call executes for group %s", a_group);
-
-    pthread_mutex_init(&l_args->mutex,NULL);
-    pthread_cond_init(&l_args->cond,NULL);
-    pthread_mutex_lock(&l_args->mutex);
-    dap_global_db_get_all_raw(a_group, a_first_id,0,s_get_all_raw_sync_callback, l_args);
-    while (!l_args->called)
-        pthread_cond_wait(&l_args->cond, &l_args->mutex);
-    pthread_mutex_unlock(&l_args->mutex);
-    pthread_mutex_destroy(&l_args->mutex);
-    pthread_cond_destroy(&l_args->cond);
-
-    dap_store_obj_t * l_ret = l_args->objs;
-    if(l_args->objs_count)
-        *a_objs_count = l_args->objs_count;
-    DAP_DELETE(l_args);
-    return l_ret;
-
-}
-
-/**
- * @brief dap_global_db_context_current
- * @return
- */
-dap_global_db_context_t * dap_global_db_context_current()
-{
-    dap_context_t * l_context = dap_context_current();
-    if(l_context->type == DAP_CONTEXT_TYPE_GLOBAL_DB)
-        return (dap_global_db_context_t *) l_context->_inheritor;
-    else
-        return NULL;
-
-}
-/**
- * @brief dap_global_db_del_unsafe
- * @param a_group
- * @param a_key
- * @return
- */
-int dap_global_db_del_unsafe(dap_global_db_context_t *a_global_db_context, const char * a_group, const char *a_key)
-{
-    dap_store_obj_t l_store_obj = {};
-
-    l_store_obj.key = a_key;
-    l_store_obj.group = (char *)a_group;
-    l_store_obj.type = DAP_DB$K_OPTYPE_DEL;
-    l_store_obj.timestamp = dap_nanotime_now();
-
-    int l_res = dap_global_db_driver_apply(&l_store_obj, 1);
-
-    if (a_key) {
-        if (l_res >= 0)
-            // add to Del group
-            l_res = s_record_del_history_add(l_store_obj.group, (char *)l_store_obj.key, l_store_obj.timestamp);
-        // do not add to history if l_res=1 (already deleted)
-        if (!l_res)
-            s_change_notify(a_global_db_context, &l_store_obj);
-    }
-    return l_res;
-}
-
-/**
- * @brief dap_global_db_flush_sync
- * @return
- */
-int dap_global_db_flush_sync()
-{
-    return dap_db_driver_flush();
-}
-
-/**
- * @brief dap_global_db_flush
- * @param a_callback
- * @param a_arg
- * @return
- */
-int dap_global_db_flush( dap_global_db_callback_result_t a_callback, void * a_arg )
-{
-    if(s_context_global_db == NULL){
-        log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_delete");
-        return -666;
-    }
-    struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
-    l_msg->opcode = MSG_OPCODE_FLUSH;
-    l_msg->callback_arg = a_arg;
-    l_msg->callback_result = a_callback;
-
-    int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
-    if (l_ret != 0){
-        log_it(L_ERROR, "Can't exec flush request, code %d", l_ret);
-        s_queue_io_msg_delete(l_msg);
-    }
-    return l_ret;
-}
-
-/**
- * @brief s_msg_opcode_flush
- * @param a_msg
- * @return
- */
-static bool s_msg_opcode_flush(struct queue_io_msg * a_msg)
-{
-    int l_res = dap_db_driver_flush();
-    if(a_msg->callback_result){
-        a_msg->callback_result(s_context_global_db,  l_res==0 ? DAP_GLOBAL_DB_RC_SUCCESS:
-                                        DAP_GLOBAL_DB_RC_ERROR,
-                                NULL,NULL,NULL, 0, 0 , false, a_msg->callback_arg );
-    }
-    return true;
-}
-
-/**
  * @brief Execute callback in GlobalDB context
  * @param a_callback  Callback function
  * @param arg Custom argument
@@ -1581,7 +1886,7 @@ int dap_global_db_context_exec (dap_global_db_callback_t a_callback, void * a_ar
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_context_exec");
-        return -666;
+        return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_CONTEXT_EXEC;
@@ -1628,7 +1933,6 @@ static const char *s_msg_opcode_to_str(enum queue_io_msg_opcode a_opcode)
         case MSG_OPCODE_SET_MULTIPLE:   return "SET_MULTIPLE";
         case MSG_OPCODE_SET_RAW:        return "SET_RAW";
         case MSG_OPCODE_PIN:            return "PIN";
-        case MSG_OPCODE_UNPIN:          return "UNPIN";
         case MSG_OPCODE_DELETE:         return "DELETE";
         case MSG_OPCODE_FLUSH:          return "FLUSH";
         case MSG_OPCODE_CONTEXT_EXEC:   return "CONTEXT_EXEC";
@@ -1663,7 +1967,6 @@ static void s_queue_io_callback( dap_events_socket_t * a_es, void * a_arg)
         case MSG_OPCODE_SET_MULTIPLE: l_msg_delete = s_msg_opcode_set_multiple_zc(l_msg); break;
         case MSG_OPCODE_SET_RAW:      l_msg_delete = s_msg_opcode_set_raw(l_msg); break;
         case MSG_OPCODE_PIN:          l_msg_delete = s_msg_opcode_pin(l_msg); break;
-        case MSG_OPCODE_UNPIN:        l_msg_delete = s_msg_opcode_unpin(l_msg); break;
         case MSG_OPCODE_DELETE:       l_msg_delete = s_msg_opcode_delete(l_msg); break;
         case MSG_OPCODE_FLUSH:        l_msg_delete = s_msg_opcode_flush(l_msg); break;
         case MSG_OPCODE_CONTEXT_EXEC: l_msg_delete = s_msg_opcode_context_exec(l_msg); break;
@@ -1756,13 +2059,13 @@ int l_res = -1;
  */
 static void s_queue_io_msg_delete( struct queue_io_msg * a_msg)
 {
-    switch(a_msg->opcode) {
+    switch(a_msg->opcode) {    
+    case MSG_OPCODE_SET:
+        DAP_DEL_Z(a_msg->value);
     case MSG_OPCODE_GET:
     case MSG_OPCODE_GET_RAW:
     case MSG_OPCODE_GET_DEL_TS:
-    case MSG_OPCODE_SET:
     case MSG_OPCODE_PIN:
-    case MSG_OPCODE_UNPIN:
     case MSG_OPCODE_DELETE:
         DAP_DEL_Z(a_msg->key);
     case MSG_OPCODE_GET_LAST:
@@ -1771,7 +2074,9 @@ static void s_queue_io_msg_delete( struct queue_io_msg * a_msg)
     case MSG_OPCODE_GET_ALL_RAW:
     case MSG_OPCODE_SET_MULTIPLE:
         DAP_DEL_Z(a_msg->group);
+        break;
     case MSG_OPCODE_SET_RAW:
+        dap_store_obj_free(a_msg->values_raw, a_msg->values_raw_total);
     default:;
     }
     DAP_DELETE(a_msg);
