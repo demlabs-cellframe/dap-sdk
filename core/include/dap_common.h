@@ -184,28 +184,28 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #else
 #define DAP_MALLOC(p)         malloc(p)
 #define DAP_FREE(p)           free(p)
-#define DAP_CALLOC(p, s)      ({ size_t s1 = (size_t)(s); s1 > 0 ? calloc(p, s1) : NULL; })
-#define DAP_ALMALLOC(p, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? _dap_aligned_alloc(p, s1) : NULL; })
-#define DAP_ALREALLOC(p, s)   ({ size_t s1 = (size_t)(s); s1 > 0 ?  _dap_aligned_realloc(p, s1) : NULL; })
+#define DAP_CALLOC(p, s)      ({ size_t s1 = (size_t)(s); s1 > 0 ? calloc(p, s1) : DAP_CAST_REINT(void, NULL); })
+#define DAP_ALMALLOC(p, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? _dap_aligned_alloc(p, s1) : DAP_CAST_REINT(void, NULL); })
+#define DAP_ALREALLOC(p, s)   ({ size_t s1 = (size_t)(s); s1 > 0 ?  _dap_aligned_realloc(p, s1) : DAP_CAST_REINT(void, NULL); })
 #define DAP_ALFREE(p)         _dap_aligned_free(p)
 #define DAP_PAGE_ALMALLOC(p)  _dap_page_aligned_alloc(p)
 #define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
 #define DAP_NEW(t)            DAP_CAST_REINT(t, malloc(sizeof(t)))
-#define DAP_NEW_SIZE(t, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_REINT(t, malloc(s1)) : NULL; })
- /* Auto memory! */
+#define DAP_NEW_SIZE(t, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_REINT(t, malloc(s1)) : DAP_CAST_REINT(void, NULL); })
+ /* Auto memory! Do not inline! */
 #define DAP_NEW_S(t)          DAP_CAST_REINT(t, alloca(sizeof(t)))
-#define DAP_NEW_S_SIZE(t, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_REINT(t, alloca(s1)) : NULL; })
-
+#define DAP_NEW_S_SIZE(t, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_REINT(t, alloca(s1)) : DAP_CAST_REINT(void, NULL); })
+/* ... */
 #define DAP_NEW_Z(t)          DAP_CAST_REINT(t, calloc(1, sizeof(t)))
-#define DAP_NEW_Z_SIZE(t, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_REINT(t, calloc(1, s1)) : NULL; })
-#define DAP_REALLOC(t, s)     ({ size_t s1 = (size_t)(s); s1 > 0 ? realloc(t, s1) : ({ DAP_DEL_Z(t); NULL; }); })
+#define DAP_NEW_Z_SIZE(t, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_REINT(t, calloc(1, s1)) : DAP_CAST_REINT(void, NULL); })
+#define DAP_REALLOC(t, s)     ({ size_t s1 = (size_t)(s); s1 > 0 ? realloc(t, s1) : ({ DAP_DEL_Z(t); DAP_CAST_REINT(void, NULL); }); })
 #define DAP_DELETE(p)         free((void*)p)
-#define DAP_DUP(p)            ({ void *p1 = p ? calloc(1, sizeof(*p)) : NULL; p1 ? memcpy(p1, p, sizeof(*p)) : NULL; })
-#define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (size_t)(s); void *p1 = p && (s1 > 0) ? calloc(1, s1) : NULL; p1 ? memcpy(p1, p, s1) : NULL; })
+#define DAP_DUP(p)            ({ void *p1 = p ? calloc(1, sizeof(*p)) : NULL; p1 ? memcpy(p1, p, sizeof(*p)) : DAP_CAST_REINT(void, NULL); })
+#define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (size_t)(s); void *p1 = p && (s1 > 0) ? calloc(1, s1) : NULL; p1 ? memcpy(p1, p, s1) : DAP_CAST_REINT(void, NULL); })
 
 #endif
 
-#define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
+#define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = DAP_CAST_REINT(void, NULL); } } while (0);
 
 DAP_STATIC_INLINE unsigned long dap_pagesize() {
     static int s = 0;
