@@ -1071,7 +1071,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg)
     if(a_msg->callback_results_raw)
         a_msg->callback_results_raw(s_context_global_db,
                                     l_store_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
-                                    a_msg->group, l_values_count, l_values_remains,
+                                    a_msg->group, l_values_remains, l_values_count,
                                     l_store_objs, a_msg->callback_arg);
     // Clean memory
     dap_store_obj_free(l_store_objs,l_values_count);
