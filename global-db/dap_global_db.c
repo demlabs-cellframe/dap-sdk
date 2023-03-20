@@ -253,16 +253,15 @@ void dap_global_db_deinit()
 }
 
 /**
- * @brief dap_global_db_context_current
+ * @brief dap_global_db_context_current()
  * @return
  */
 dap_global_db_context_t * dap_global_db_context_current()
 {
-    dap_context_t * l_context = dap_context_current();
-    if(l_context->type == DAP_CONTEXT_TYPE_GLOBAL_DB)
-        return (dap_global_db_context_t *) l_context->_inheritor;
-    else
-        return NULL;
+    dap_context_t *l_context = dap_context_current();
+    if (l_context && l_context->type == DAP_CONTEXT_TYPE_GLOBAL_DB)
+        return (dap_global_db_context_t *)l_context->_inheritor;
+    return NULL;
 
 }
 
@@ -399,7 +398,7 @@ static void s_obj_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_c
  */
 byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t *a_ts)
 {
-    if (dap_context_current()->_inheritor == s_context_global_db)
+    if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_get_unsafe(s_context_global_db, a_group, a_key, a_data_size, a_is_pinned, a_ts);
 
     struct obj_get *l_args = DAP_NEW_Z(struct obj_get);
@@ -514,7 +513,7 @@ static void s_obj_raw_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_
  */
 dap_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_key)
 {
-    if (dap_context_current()->_inheritor == s_context_global_db)
+    if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_get_raw_unsafe(s_context_global_db, a_group, a_key);
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_raw sync call executes for group \"%s\"", a_group);
@@ -635,7 +634,7 @@ static void s_del_ts_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_d
  */
 dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_key)
 {
-    if (dap_context_current()->_inheritor == s_context_global_db)
+    if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_get_del_ts_unsafe(s_context_global_db, a_group, a_key);
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_del_ts sync call executed for group \"%s\"", a_group);
@@ -741,7 +740,7 @@ static bool s_msg_opcode_get_last(struct queue_io_msg * a_msg)
  */
 byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t *a_ts)
 {
-    if (dap_context_current()->_inheritor == s_context_global_db)
+    if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_get_last_unsafe(s_context_global_db, a_group, a_key, a_data_size, a_is_pinned, a_ts);
 
     struct obj_get *l_args = DAP_NEW_Z(struct obj_get);
@@ -830,7 +829,7 @@ static bool s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
  */
 dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
 {
-    if (dap_context_current()->_inheritor == s_context_global_db)
+    if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_get_last_raw_unsafe(s_context_global_db, a_group);
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_raw sync call executes for group \"%s\"", a_group);
@@ -989,7 +988,7 @@ static void s_objs_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_
  */
 dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_objs_count)
 {
-    if (dap_context_current()->_inheritor == s_context_global_db)
+    if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_get_all_unsafe(s_context_global_db, a_group, a_objs_count);
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all sync call executes for group \"%s\"", a_group);
@@ -1119,7 +1118,7 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
 
 dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
 {
-    if (dap_context_current()->_inheritor == s_context_global_db)
+    if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_get_all_raw_unsafe(s_context_global_db, a_group, a_first_id, a_objs_count);
 
     struct store_objs_get * l_args = DAP_NEW_Z(struct store_objs_get);
@@ -1302,7 +1301,7 @@ static void s_sync_op_result_callback(UNUSED_ARG dap_global_db_context_t *a_glob
  */
 int dap_global_db_set_sync(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value)
 {
-    if (dap_context_current()->_inheritor == s_context_global_db)
+    if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_set_unsafe(s_context_global_db, a_group, a_key, a_value, a_value_length, a_pin_value);
 
     struct sync_op_result *l_args = DAP_NEW_Z(struct sync_op_result);
@@ -1412,7 +1411,7 @@ static void s_sync_op_raw_callback(UNUSED_ARG dap_global_db_context_t *a_global_
 
 int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
-    if (dap_context_current()->_inheritor == s_context_global_db)
+    if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_set_raw_unsafe(s_context_global_db, a_store_objs, a_store_objs_count);
 
     struct sync_op_result *l_args = DAP_NEW_Z(struct sync_op_result);
@@ -1605,7 +1604,7 @@ int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_ca
 
 int s_db_object_pin_sync(const char *a_group, const char *a_key, bool a_pin)
 {
-    if (dap_context_current()->_inheritor == s_context_global_db)
+    if (dap_global_db_context_current() == s_context_global_db)
         return s_db_object_pin_unsafe(s_context_global_db, a_group, a_key, a_pin);
 
     struct sync_op_result * l_args = DAP_NEW_Z(struct sync_op_result);
@@ -1737,7 +1736,7 @@ static bool s_msg_opcode_delete(struct queue_io_msg * a_msg)
  */
 int dap_global_db_del_sync(const char *a_group, const char *a_key)
 {
-    if (dap_context_current()->_inheritor == s_context_global_db)
+    if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_del_unsafe(s_context_global_db, a_group, a_key);
 
     struct sync_op_result *l_args = DAP_NEW_Z(struct sync_op_result);
@@ -1810,7 +1809,7 @@ static bool s_msg_opcode_flush(struct queue_io_msg * a_msg)
 
 int dap_global_db_flush_sync()
 {
-    if (dap_context_current()->_inheritor == s_context_global_db)
+    if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_flush_unsafe(s_context_global_db);
 
     struct sync_op_result *l_args = DAP_NEW_Z(struct sync_op_result);
