@@ -69,8 +69,8 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
         if (a_free_func)
             a_free_func(l_list->data);
         else
-            DAP_DELETE(l_list->data);
-        DAP_DELETE(l_list);
+            DAP_DEL_Z(l_list->data);
+        DAP_DEL_Z(l_list);
         l_list = l_next;
     }
 }

@@ -247,20 +247,24 @@ void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_chain_net_na
  * @brief s_client_delete
  * @param a_client
  */
-void dap_client_delete_unsafe(dap_client_t *a_client)
+void dap_client_delete_unsafe(dap_client_t **a_client)
 {
-    if(a_client->delete_callback)
-        a_client->delete_callback(a_client, a_client->callbacks_arg);
-    dap_client_pvt_delete_unsafe( DAP_CLIENT_PVT(a_client) );
-    DAP_DEL_Z(a_client->uplink_addr);
-    DAP_DEL_Z(a_client->active_channels);
-    DAP_DELETE(a_client);
+    if((*a_client)->delete_callback)
+        (*a_client)->delete_callback(*a_client, (*a_client)->callbacks_arg);
+    if(DAP_CLIENT_PVT((*a_client))){
+//        dap_client_pvt_t ** l_client_pvt = (*a_client)->_internal;
+        dap_client_pvt_delete_unsafe(&((*a_client)->_internal));
+    }
+
+    DAP_DEL_Z((*a_client)->uplink_addr);
+    DAP_DEL_Z((*a_client)->active_channels);
+    DAP_DEL_Z(*a_client);
 }
 
 
 void s_client_delete_on_worker(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
 {
-    dap_client_delete_unsafe(a_arg);
+    dap_client_delete_unsafe(&a_arg);
 }
 
 void dap_client_delete_mt(dap_client_t *a_client)

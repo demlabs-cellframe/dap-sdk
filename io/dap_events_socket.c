@@ -230,8 +230,8 @@ dap_evsock_rec_t    *l_es_rec = NULL;
     if ( !l_es_rec )
         log_it(L_ERROR, "dap_events_socket:%p - no record found!", a_es);
     else {
-        DAP_DELETE(l_es_rec->es);
-        DAP_DELETE(l_es_rec);
+        DAP_DEL_Z(l_es_rec->es);
+        DAP_DEL_Z(l_es_rec);
 
         debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is released", a_es);
     }

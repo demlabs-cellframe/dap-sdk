@@ -190,12 +190,12 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
  * @brief dap_client_pvt_delete_unsafe
  * @param a_client_pvt
  */
-void dap_client_pvt_delete_unsafe(dap_client_pvt_t * a_client_pvt)
+void dap_client_pvt_delete_unsafe(dap_client_pvt_t **a_client_pvt)
 {
-    assert(a_client_pvt);
-    debug_if(s_debug_more, L_INFO, "dap_client_pvt_delete 0x%p", a_client_pvt);  
-    s_client_internal_clean(a_client_pvt);
-    DAP_DELETE(a_client_pvt);
+    assert(*a_client_pvt);
+    debug_if(s_debug_more, L_INFO, "dap_client_pvt_delete 0x%p", *a_client_pvt);
+    s_client_internal_clean(*a_client_pvt);
+    DAP_DEL_Z(*a_client_pvt);
 }
 
 /**

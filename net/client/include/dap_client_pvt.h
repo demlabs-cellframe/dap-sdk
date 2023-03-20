@@ -103,5 +103,5 @@ void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char
                                      dap_client_callback_int_t a_error_proc);
 
 void dap_client_pvt_new(dap_client_pvt_t *a_client_internal);
-void dap_client_pvt_delete_unsafe(dap_client_pvt_t *a_client_pvt);
+void dap_client_pvt_delete_unsafe(dap_client_pvt_t **a_client_pvt);
 void dap_client_pvt_queue_add(dap_client_pvt_t *a_client_pvt, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
