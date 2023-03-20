@@ -878,8 +878,8 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
         for(size_t i = 0; i < l_values_count; i++){
             l_objs[i].id = l_store_objs[i].id;
             l_objs[i].is_pinned = l_store_objs[i].flags & RECORD_PINNED;
-            l_objs[i].key = (char *)l_store_objs[i].key;
-            l_objs[i].value = l_store_objs[i].value;
+            l_objs[i].key = dap_strdup(l_store_objs[i].key);
+            l_objs[i].value = DAP_DUP_SIZE(l_store_objs[i].value, l_store_objs[i].value_len);
             l_objs[i].value_len = l_store_objs[i].value_len;
             l_objs[i].timestamp = l_store_objs[i].timestamp;
         }
