@@ -360,7 +360,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 
     DAP_DEL_Z(a_stream->buf_fragments);
     DAP_DEL_Z(a_stream->pkt_buf_in);
-    DAP_DELETE(a_stream);
+    DAP_DEL_Z(a_stream);
     log_it(L_NOTICE,"Stream connection is over");
 }
 

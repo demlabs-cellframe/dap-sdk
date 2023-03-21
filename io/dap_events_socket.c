@@ -1610,7 +1610,7 @@ void dap_events_socket_remove_and_delete_mt(dap_worker_t * a_w,  dap_events_sock
 
     if(dap_events_socket_queue_ptr_send( a_w->queue_es_delete, l_es_uuid_ptr ) != 0 ){
         log_it(L_ERROR,"Can't send %"DAP_UINT64_FORMAT_U" uuid in queue",a_es_uuid);
-        DAP_DELETE(l_es_uuid_ptr);
+        DAP_DEL_Z(l_es_uuid_ptr);
     }
 }
 
