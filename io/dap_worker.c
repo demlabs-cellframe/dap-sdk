@@ -322,6 +322,7 @@ static bool s_socket_all_check_activity( void * a_arg)
                     l_es->callbacks.error_callback(l_es, ETIMEDOUT);
                 }
                 dap_events_socket_remove_and_delete_unsafe(l_es,false);
+                HASH_DEL(l_worker->context->esockets, l_es);
             }
         }
         l_esockets_counter++;
