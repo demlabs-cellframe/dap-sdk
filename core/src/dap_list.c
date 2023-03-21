@@ -50,7 +50,7 @@ void dap_list_free(dap_list_t *list)
  */
 void dap_list_free1(dap_list_t *list)
 {
-    DAP_DELETE(list);
+    DAP_DEL_Z(list);
 }
 
 /**
