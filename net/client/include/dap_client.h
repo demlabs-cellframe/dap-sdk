@@ -129,7 +129,7 @@ dap_enc_key_t * dap_client_get_key_stream(dap_client_t * a_client);
 
 void dap_client_go_stage(dap_client_t * a_client, dap_client_stage_t a_stage_end, dap_client_callback_t a_stage_end_callback);
 void dap_client_delete_mt(dap_client_t * a_client);
-void dap_client_delete_unsafe(dap_client_t **a_client);
+void dap_client_delete_unsafe(dap_client_t *a_client);
 
 ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
 int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
@@ -159,6 +159,7 @@ const char * dap_client_get_auth_cookie(dap_client_t * a_client);
 dap_stream_t * dap_client_get_stream(dap_client_t * a_client);
 dap_stream_worker_t * dap_client_get_stream_worker(dap_client_t * a_client);
 dap_stream_ch_t * dap_client_get_stream_ch_unsafe(dap_client_t * a_client, uint8_t a_ch_id);
+dap_stream_ch_t ** dap_client_get_pointer_stream_ch_unsafe(dap_client_t * a_client, uint8_t a_ch_id);
 const char * dap_client_get_stream_id(dap_client_t * a_client);
 void dap_client_set_active_channels_unsafe (dap_client_t * a_client, const char * a_active_channels);
 void dap_client_set_auth_cert_unsafe(dap_client_t * a_client, dap_cert_t *a_cert);

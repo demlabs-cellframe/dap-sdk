@@ -247,24 +247,24 @@ void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_chain_net_na
  * @brief s_client_delete
  * @param a_client
  */
-void dap_client_delete_unsafe(dap_client_t **a_client)
+void dap_client_delete_unsafe(dap_client_t *a_client)
 {
-    if((*a_client)->delete_callback)
-        (*a_client)->delete_callback(*a_client, (*a_client)->callbacks_arg);
-    if(DAP_CLIENT_PVT((*a_client))){
-//        dap_client_pvt_t ** l_client_pvt = (*a_client)->_internal;
-        dap_client_pvt_delete_unsafe(&((*a_client)->_internal));
+    if(a_client->delete_callback)
+        a_client->delete_callback(a_client, a_client->callbacks_arg);
+    if(DAP_CLIENT_PVT(a_client)){
+        dap_client_pvt_t *l_client_pvt = (dap_client_pvt_t*)(a_client->_internal);
+        dap_client_pvt_delete_unsafe(l_client_pvt);
     }
 
-    DAP_DEL_Z((*a_client)->uplink_addr);
-    DAP_DEL_Z((*a_client)->active_channels);
-    DAP_DEL_Z(*a_client);
+    DAP_DEL_Z(a_client->uplink_addr);
+    DAP_DEL_Z(a_client->active_channels);
+    DAP_DEL_Z(a_client);
 }
 
 
 void s_client_delete_on_worker(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
 {
-    dap_client_delete_unsafe(&a_arg);
+    dap_client_delete_unsafe(a_arg);
 }
 
 void dap_client_delete_mt(dap_client_t *a_client)
@@ -575,6 +575,20 @@ dap_stream_ch_t * dap_client_get_stream_ch_unsafe(dap_client_t * a_client, uint8
         for(size_t i = 0; i < l_client_internal->stream->channel_count; i++) {
             if(l_client_internal->stream->channel[i]->proc->id == a_ch_id) {
                 l_ch = l_client_internal->stream->channel[i];
+                break;
+            }
+        }
+    return l_ch;
+}
+
+dap_stream_ch_t ** dap_client_get_pointer_stream_ch_unsafe(dap_client_t * a_client, uint8_t a_ch_id)
+{
+    dap_stream_ch_t ** l_ch = NULL;
+    dap_client_pvt_t * l_client_internal = a_client ? DAP_CLIENT_PVT(a_client) : NULL;
+    if(l_client_internal && l_client_internal->stream && l_client_internal->stream_es)
+        for(size_t i = 0; i < l_client_internal->stream->channel_count; i++) {
+            if(l_client_internal->stream->channel[i]->proc->id == a_ch_id) {
+                l_ch = &l_client_internal->stream->channel[i];
                 break;
             }
         }
