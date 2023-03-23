@@ -154,7 +154,7 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
     if(!a_store_obj || !a_store_count)
         return NULL;
 
-    if ( !(l_store_obj = DAP_NEW_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * a_store_count)) )
+    if ( !(l_store_obj = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * a_store_count)) )
          return NULL;
 
     l_store_obj_dst = l_store_obj;
