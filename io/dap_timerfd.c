@@ -289,12 +289,13 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
  */
 static void s_timerfd_reset_worker_callback( dap_worker_t * a_worker, void * a_arg )
 {
-    dap_timerfd_t *l_timerfd = (dap_timerfd_t *) a_arg;
+    assert(a_arg);
+    dap_events_socket_uuid_t *l_uuid = a_arg;
     dap_events_socket_t *l_sock = NULL;
-    l_sock = dap_context_find(a_worker->context, l_timerfd->esocket_uuid);
+    l_sock = dap_context_find(a_worker->context, *l_uuid);
     if (l_sock)
-        s_timerfd_reset(l_timerfd, l_sock);
-
+        s_timerfd_reset(l_sock->_inheritor, l_sock);
+    DAP_DELETE(l_uuid);
 }
 
 /**
@@ -305,11 +306,13 @@ static void s_timerfd_reset_worker_callback( dap_worker_t * a_worker, void * a_a
  */
 static bool s_timerfd_reset_proc_thread_callback( dap_proc_thread_t * a_thread, void * a_arg )
 {
-    dap_timerfd_t *l_timerfd = (dap_timerfd_t *) a_arg;
+    assert(a_arg);
+    dap_events_socket_uuid_t *l_uuid = a_arg;
     dap_events_socket_t *l_sock = NULL;
-    l_sock = dap_context_find(a_thread->context, l_timerfd->esocket_uuid);
+    l_sock = dap_context_find(a_thread->context, *l_uuid);
     if (l_sock)
-        s_timerfd_reset(l_timerfd, l_sock);
+        s_timerfd_reset(l_sock->_inheritor, l_sock);
+    DAP_DELETE(l_uuid);
     return true;
 }
 
@@ -322,10 +325,14 @@ void dap_timerfd_reset(dap_timerfd_t *a_timerfd)
 {
     if (!a_timerfd)
         return;
-    if (a_timerfd->worker){
-        dap_worker_exec_callback_on(a_timerfd->worker,s_timerfd_reset_worker_callback, a_timerfd);
-    }else if (a_timerfd->proc_thread)
-        dap_proc_queue_add_callback_mt(a_timerfd->proc_thread,s_timerfd_reset_proc_thread_callback, a_timerfd, DAP_PROC_PRI_NORMAL );
+    if (a_timerfd->worker) {
+        dap_events_socket_uuid_t *l_uuid = DAP_DUP(&a_timerfd->esocket_uuid);
+        dap_worker_exec_callback_on(a_timerfd->worker,s_timerfd_reset_worker_callback, l_uuid);
+    } else if (a_timerfd->proc_thread) {
+        dap_events_socket_uuid_t *l_uuid = DAP_DUP(&a_timerfd->esocket_uuid);
+        dap_proc_queue_add_callback_mt(a_timerfd->proc_thread,s_timerfd_reset_proc_thread_callback,\
+                                       l_uuid, DAP_PROC_PRI_NORMAL);
+    }
     else
         log_it(L_WARNING,"Timer's context undefined, cant' reset it");
 }

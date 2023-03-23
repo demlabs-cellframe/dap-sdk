@@ -149,6 +149,8 @@ void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
 
 static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
 {
+    dap_timerfd_delete(a_client_pvt->reconnect_timer);
+
     if (a_client_pvt->http_client) {
         dap_client_http_close_unsafe(a_client_pvt->http_client);
         a_client_pvt->http_client = NULL;
@@ -582,10 +584,10 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                 log_it(L_INFO, "Reconnect attempt %d in 0.3 seconds with %s:%u", a_client_pvt->reconnect_attempts,
                        a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                 // small delay before next request
-                if(dap_timerfd_start_on_worker(a_client_pvt->worker, 300, (dap_timerfd_callback_t) s_stage_status_after,
-                                               a_client_pvt) == NULL){
-                    log_it(L_ERROR,"Can't run timer for small delay before the next enc_init request");
-                }
+                a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
+                            a_client_pvt->worker, 300, (dap_timerfd_callback_t)s_stage_status_after, a_client_pvt);
+                if (!a_client_pvt->reconnect_timer)
+                    log_it(L_ERROR ,"Can't run timer for small delay before the next enc_init request");
             } else {
                 if (a_client_pvt->client->always_reconnect) {
                     log_it(L_INFO, "Too many attempts, reconnect attempt in %d seconds with %s:%u", s_timeout,
@@ -593,10 +595,10 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
                     a_client_pvt->reconnect_attempts = 0;
                     // bigger delay before next request
-                    if(dap_timerfd_start_on_worker(a_client_pvt->worker, s_timeout * 1000, (dap_timerfd_callback_t) s_stage_status_after,
-                                                   a_client_pvt ) == NULL) {
+                    a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
+                                a_client_pvt->worker, s_timeout * 1000, (dap_timerfd_callback_t)s_stage_status_after, a_client_pvt);
+                    if (!a_client_pvt->reconnect_timer)
                         log_it(L_ERROR,"Can't run timer for bigger delay before the next enc_init request");
-                    }
                 } else
                     log_it(L_ERROR, "Connect to %s:%u failed", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
             }
