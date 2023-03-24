@@ -82,7 +82,7 @@ static bool s_debug_more = false;
 static time_t s_client_timeout_active_after_connect_seconds = 15;
 
 
-static bool s_stage_status_after(dap_client_pvt_t * a_client_internal);
+static void s_stage_status_after(dap_client_pvt_t * a_client_internal);
 
 // ENC stage callbacks
 static void s_enc_init_response(dap_client_t *a_client, void *a_data, size_t a_data_size);
@@ -193,8 +193,11 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
 void dap_client_pvt_delete_unsafe(dap_client_pvt_t * a_client_pvt)
 {
     assert(a_client_pvt);
-    debug_if(s_debug_more, L_INFO, "dap_client_pvt_delete 0x%p", a_client_pvt);  
-    dap_timerfd_delete(a_client_pvt->reconnect_timer);
+    debug_if(s_debug_more, L_INFO, "dap_client_pvt_delete 0x%p", a_client_pvt);
+    if (a_client_pvt->reconnect_timer) {
+        dap_timerfd_delete(a_client_pvt->reconnect_timer);
+        a_client_pvt->reconnect_timer = NULL;
+    }
     s_client_internal_clean(a_client_pvt);
     DAP_DELETE(a_client_pvt);
 }
@@ -310,14 +313,22 @@ void dap_client_pvt_queue_add(dap_client_pvt_t *a_client_pvt, const char a_ch_id
     a_client_pvt->pkt_queue = dap_list_append(a_client_pvt->pkt_queue, l_pkt);
 }
 
+static bool s_timer_reconnect_callback(void *a_arg)
+{
+    assert(a_arg);
+    ((dap_client_pvt_t *)a_arg)->reconnect_timer = NULL;
+    s_stage_status_after(a_arg);
+    return false;
+}
+
 /**
  * @brief s_client_internal_stage_status_proc
  * @param a_client
  */
-static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
+static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
 {
     if (!a_client_pvt)
-        return false;
+        return;
     dap_worker_t * l_worker= a_client_pvt->worker;
     assert(l_worker);
     assert(l_worker->_inheritor);
@@ -332,7 +343,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     s_client_internal_clean(a_client_pvt);
                     a_client_pvt->reconnect_attempts = 0;
                     s_stage_status_after(a_client_pvt);
-                    return false;
+                    return;
 
                 case STAGE_ENC_INIT: {
                     log_it(L_INFO, "Go to stage ENC: prepare the request");
@@ -531,7 +542,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                         s_stage_status_after(a_client_pvt);
-                        return false;
+                        return;
                     }
 
                     size_t l_count_channels = dap_strlen(a_client_pvt->client->active_channels);
@@ -584,7 +595,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                        a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                 // small delay before next request
                 a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
-                            a_client_pvt->worker, 300, (dap_timerfd_callback_t)s_stage_status_after, a_client_pvt);
+                            a_client_pvt->worker, 300, s_timer_reconnect_callback, a_client_pvt);
                 if (!a_client_pvt->reconnect_timer)
                     log_it(L_ERROR ,"Can't run timer for small delay before the next enc_init request");
             } else {
@@ -595,7 +606,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     a_client_pvt->reconnect_attempts = 0;
                     // bigger delay before next request
                     a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
-                                a_client_pvt->worker, s_timeout * 1000, (dap_timerfd_callback_t)s_stage_status_after, a_client_pvt);
+                                a_client_pvt->worker, s_timeout * 1000, s_timer_reconnect_callback, a_client_pvt);
                     if (!a_client_pvt->reconnect_timer)
                         log_it(L_ERROR,"Can't run timer for bigger delay before the next enc_init request");
                 } else
@@ -640,7 +651,7 @@ static bool s_stage_status_after(dap_client_pvt_t * a_client_pvt)
                     dap_client_stage_status_str(a_client_pvt->stage_status));
     }
 
-    return false;
+    return;
 }
 
 
