@@ -411,19 +411,25 @@ void dap_client_request_unsafe(dap_client_t * a_client, const char * a_full_path
  */
 const char * dap_client_error_str(dap_client_error_t a_client_error)
 {
-    switch(a_client_error){
-        case ERROR_OUT_OF_MEMORY: return "OUT_OF_MEMORY";
-        case ERROR_ENC_NO_KEY: return "ENC_NO_KEY";
-        case ERROR_ENC_WRONG_KEY: return "ENC_WRONG_KEY";
-        case ERROR_ENC_SESSION_CLOSED:  return "ENC_SESSION_CLOSED";
-        case ERROR_STREAM_RESPONSE_WRONG: return "STREAM_RESPONSE_WRONG";
-        case ERROR_STREAM_RESPONSE_TIMEOUT: return "STREAM_RESPONSE_TIMEOUT";
-        case ERROR_STREAM_FREEZED: return "STREAM_FREEZED";
-        case ERROR_STREAM_CTL_ERROR: return "STREAM_CTL_ERROR";
-        case ERROR_STREAM_CTL_ERROR_AUTH: return "STREAM_CTL_ERROR_AUTH";
-        case ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT: return "STREAM_CTL_ERROR_RESPONSE_FORMAT";
-        case ERROR_NETWORK_CONNECTION_TIMEOUT: return "NETWORK_CONNECTION_TIMEOUT";
-        default : return "UNDEFINED";
+    switch (a_client_error) {
+    case ERROR_NO_ERROR: return "NO_ERROR";
+    case ERROR_OUT_OF_MEMORY: return "OUT_OF_MEMORY";
+    case ERROR_ENC_NO_KEY: return "ENC_NO_KEY";
+    case ERROR_ENC_WRONG_KEY: return "ENC_WRONG_KEY";
+    case ERROR_ENC_SESSION_CLOSED:  return "ENC_SESSION_CLOSED";
+    case ERROR_STREAM_CTL_ERROR: return "STREAM_CTL_ERROR";
+    case ERROR_STREAM_CTL_ERROR_AUTH: return "STREAM_CTL_ERROR_AUTH";
+    case ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT: return "STREAM_CTL_ERROR_RESPONSE_FORMAT";
+    case ERROR_STREAM_CONNECT: return "STREAM_CONNECTION_ERROR";
+    case ERROR_STREAM_RESPONSE_WRONG: return "STREAM_RESPONSE_WRONG";
+    case ERROR_STREAM_RESPONSE_TIMEOUT: return "STREAM_RESPONSE_TIMEOUT";
+    case ERROR_STREAM_FREEZED: return "STREAM_FREEZED";
+    case ERROR_STREAM_ABORTED: return "STREAM_ABORTED";
+    case ERROR_NETWORK_CONNECTION_REFUSE: return "NETWORK_CONNECTION_REFUSED";
+    case ERROR_NETWORK_CONNECTION_TIMEOUT: return "NETWORK_CONNECTION_TIMEOUT";
+    case ERROR_WRONG_STAGE: return "INCORRECT_CLIENT_STAGE";
+    case ERROR_WRONG_ADDRESS: return "INCORRECT_CLIENT_ADDRESS";
+    default : return "UNDEFINED";
     }
 }
 

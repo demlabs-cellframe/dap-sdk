@@ -1522,7 +1522,7 @@ void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_
     dap_events_socket_uuid_w_data_t * l_es_handler = DAP_NEW_Z(dap_events_socket_uuid_w_data_t);
     l_es_handler->esocket_uuid = a_es->uuid;
     l_es_handler->value = a_preserve_inheritor ? 1 : 0;
-    dap_events_socket_descriptor_close(a_es);
+    //dap_events_socket_descriptor_close(a_es);
 
     dap_worker_t * l_worker = a_es->context->worker;
     dap_context_remove(a_es);

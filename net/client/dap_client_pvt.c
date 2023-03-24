@@ -149,8 +149,6 @@ void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
 
 static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
 {
-    dap_timerfd_delete(a_client_pvt->reconnect_timer);
-
     if (a_client_pvt->http_client) {
         dap_client_http_close_unsafe(a_client_pvt->http_client);
         a_client_pvt->http_client = NULL;
@@ -196,6 +194,7 @@ void dap_client_pvt_delete_unsafe(dap_client_pvt_t * a_client_pvt)
 {
     assert(a_client_pvt);
     debug_if(s_debug_more, L_INFO, "dap_client_pvt_delete 0x%p", a_client_pvt);  
+    dap_timerfd_delete(a_client_pvt->reconnect_timer);
     s_client_internal_clean(a_client_pvt);
     DAP_DELETE(a_client_pvt);
 }
@@ -1139,6 +1138,7 @@ static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ARG vo
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
     l_client_pvt->last_error = ERROR_STREAM_ABORTED;
+    l_client_pvt->stream->esocket->callbacks.delete_callback = NULL;
     l_client_pvt->stream->esocket = NULL;
     s_stage_status_after(l_client_pvt);
     a_es->_inheritor = NULL; // To prevent delete in reactor
@@ -1241,6 +1241,8 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
         l_client_pvt->last_error = ERROR_STREAM_RESPONSE_WRONG;
     }
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
-
+    l_client_pvt->stream->esocket->callbacks.delete_callback = NULL;
+    l_client_pvt->stream->esocket = NULL;
     s_stage_status_after(l_client_pvt);
+    a_es->_inheritor = NULL; // To prevent delete in reactor
 }
