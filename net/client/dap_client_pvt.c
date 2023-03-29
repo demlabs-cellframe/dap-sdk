@@ -153,7 +153,7 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
         dap_client_http_close_unsafe(a_client_pvt->http_client);
         a_client_pvt->http_client = NULL;
     }
-    if (a_client_pvt->stream) {
+    if (a_client_pvt->stream_es) {
         dap_stream_delete_unsafe(a_client_pvt->stream);
         a_client_pvt->stream = NULL;
         a_client_pvt->stream_es = NULL;
@@ -195,7 +195,7 @@ void dap_client_pvt_delete_unsafe(dap_client_pvt_t * a_client_pvt)
     assert(a_client_pvt);
     debug_if(s_debug_more, L_INFO, "dap_client_pvt_delete 0x%p", a_client_pvt);
     if (a_client_pvt->reconnect_timer) {
-        dap_timerfd_delete(a_client_pvt->reconnect_timer);
+        dap_timerfd_delete_unsafe(a_client_pvt->reconnect_timer);
         a_client_pvt->reconnect_timer = NULL;
     }
     s_client_internal_clean(a_client_pvt);
@@ -1146,11 +1146,15 @@ static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ARG vo
 {
     log_it(L_INFO, "Stream events socket delete callback");
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
+    if (!l_client)
+        return;
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
     l_client_pvt->last_error = ERROR_STREAM_ABORTED;
-    l_client_pvt->stream->esocket->callbacks.delete_callback = NULL;
-    l_client_pvt->stream->esocket = NULL;
+    l_client_pvt->stream = NULL;
+    l_client_pvt->stream_es = NULL;
+    l_client_pvt->stream_id[0] = 0;
+    l_client_pvt->stream_key = NULL;
     s_stage_status_after(l_client_pvt);
     a_es->_inheritor = NULL; // To prevent delete in reactor
 }
@@ -1252,8 +1256,10 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
         l_client_pvt->last_error = ERROR_STREAM_RESPONSE_WRONG;
     }
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
-    l_client_pvt->stream->esocket->callbacks.delete_callback = NULL;
-    l_client_pvt->stream->esocket = NULL;
+    l_client_pvt->stream = NULL;
+    l_client_pvt->stream_es = NULL;
+    l_client_pvt->stream_id[0] = 0;
+    l_client_pvt->stream_key = NULL;
     s_stage_status_after(l_client_pvt);
     a_es->_inheritor = NULL; // To prevent delete in reactor
 }

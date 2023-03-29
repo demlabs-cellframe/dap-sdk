@@ -293,8 +293,7 @@ static void s_go_stage_on_client_worker_unsafe(UNUSED_ARG dap_worker_t *a_worker
     l_client->stage_target_done_callback = l_stage_end_callback;
     dap_client_stage_t l_cur_stage = l_client_pvt->stage;
     dap_client_stage_status_t l_cur_stage_status = l_client_pvt->stage_status;
-    if (l_cur_stage_status == STAGE_STATUS_COMPLETE) {
-        assert(l_client_pvt->stage == l_client->stage_target);
+    if (l_cur_stage_status == STAGE_STATUS_COMPLETE && l_client_pvt->stage == l_client->stage_target) {
         if (l_client->stage_target == l_stage_target) {
             log_it(L_DEBUG, "Already have target state %s", dap_client_stage_str(l_stage_target));
             if (l_stage_end_callback)

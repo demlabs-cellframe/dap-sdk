@@ -150,7 +150,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     l_timerfd->callback         = a_callback;
     l_timerfd->callback_arg     = a_callback_arg;
     l_timerfd->events_socket    = l_events_socket;
-    l_timerfd->esocket_uuid = l_events_socket->uuid;
+    l_timerfd->esocket_uuid     = l_events_socket->uuid;
     
 #if defined DAP_OS_LINUX
     struct itimerspec l_ts;
@@ -226,7 +226,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     return l_timerfd;
 }
 
-static inline void s_timerfd_reset(dap_timerfd_t *a_timerfd, dap_events_socket_t *a_es)
+void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
 {
 #if defined DAP_OS_LINUX
     struct itimerspec l_ts;
@@ -256,7 +256,7 @@ static inline void s_timerfd_reset(dap_timerfd_t *a_timerfd, dap_events_socket_t
 #endif
 
 #ifndef DAP_OS_BSD
-    dap_events_socket_set_readable_unsafe(a_es, true);
+    dap_events_socket_set_readable_unsafe(a_timerfd->events_socket, true);
 #endif
 }
 
@@ -271,14 +271,14 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
         return;
     // run user's callback
     if(l_timer_fd && l_timer_fd->callback && l_timer_fd->callback(l_timer_fd->callback_arg)) {
-        s_timerfd_reset(l_timer_fd, a_event_sock);
+        dap_timerfd_reset_unsafe(l_timer_fd);
     } else {  
 #if defined (DAP_OS_WINDOWS)
         DeleteTimerQueueTimer(hTimerQueue, l_timer_fd->th, NULL);
 #elif defined (DAP_OS_BSD)
         l_timer_fd->events_socket->kqueue_base_filter = EVFILT_EMPTY;
 #endif
-        l_timer_fd->events_socket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        a_event_sock->flags |= DAP_SOCK_SIGNAL_CLOSE;
     }
 }
 
@@ -294,7 +294,7 @@ static void s_timerfd_reset_worker_callback( dap_worker_t * a_worker, void * a_a
     dap_events_socket_t *l_sock = NULL;
     l_sock = dap_context_find(a_worker->context, *l_uuid);
     if (l_sock)
-        s_timerfd_reset(l_sock->_inheritor, l_sock);
+        dap_timerfd_reset_unsafe(l_sock->_inheritor);
     DAP_DELETE(l_uuid);
 }
 
@@ -311,7 +311,7 @@ static bool s_timerfd_reset_proc_thread_callback( dap_proc_thread_t * a_thread, 
     dap_events_socket_t *l_sock = NULL;
     l_sock = dap_context_find(a_thread->context, *l_uuid);
     if (l_sock)
-        s_timerfd_reset(l_sock->_inheritor, l_sock);
+        dap_timerfd_reset_unsafe(l_sock->_inheritor);
     DAP_DELETE(l_uuid);
     return true;
 }
@@ -321,16 +321,16 @@ static bool s_timerfd_reset_proc_thread_callback( dap_proc_thread_t * a_thread, 
  * @brief dap_timerfd_reset
  * @param a_tfd
  */
-void dap_timerfd_reset(dap_timerfd_t *a_timerfd)
+void dap_timerfd_reset_mt(dap_timerfd_t *a_timerfd)
 {
     if (!a_timerfd)
         return;
     if (a_timerfd->worker) {
         dap_events_socket_uuid_t *l_uuid = DAP_DUP(&a_timerfd->esocket_uuid);
-        dap_worker_exec_callback_on(a_timerfd->worker,s_timerfd_reset_worker_callback, l_uuid);
+        dap_worker_exec_callback_on(a_timerfd->worker, s_timerfd_reset_worker_callback, l_uuid);
     } else if (a_timerfd->proc_thread) {
         dap_events_socket_uuid_t *l_uuid = DAP_DUP(&a_timerfd->esocket_uuid);
-        dap_proc_queue_add_callback_mt(a_timerfd->proc_thread,s_timerfd_reset_proc_thread_callback,\
+        dap_proc_queue_add_callback_mt(a_timerfd->proc_thread, s_timerfd_reset_proc_thread_callback,
                                        l_uuid, DAP_PROC_PRI_NORMAL);
     }
     else
@@ -342,13 +342,31 @@ void dap_timerfd_reset(dap_timerfd_t *a_timerfd)
  * @param a_tfd
  * @param a_callback
  */
-void dap_timerfd_delete(dap_timerfd_t *a_timerfd)
+static void s_timerfd_delete(dap_timerfd_t *a_timerfd, bool a_unsafe)
 {
     if (!a_timerfd)
         return; 
 #ifdef _WIN32
     DeleteTimerQueueTimer(hTimerQueue, a_timerfd->th, NULL);
 #endif
-    if (a_timerfd->events_socket->context)
-        dap_events_socket_remove_and_delete_mt(a_timerfd->events_socket->context->worker, a_timerfd->esocket_uuid);
+    if (a_timerfd->events_socket->context) {
+        if (a_unsafe)
+            dap_events_socket_remove_and_delete_unsafe(a_timerfd->events_socket, false);
+        else
+            dap_events_socket_remove_and_delete_mt(a_timerfd->events_socket->context->worker,
+                                                   a_timerfd->esocket_uuid);
+    }
+    else
+        DAP_DELETE(a_timerfd);
 }
+
+void dap_timerfd_delete_mt(dap_timerfd_t *a_timerfd)
+{
+    s_timerfd_delete(a_timerfd, false);
+}
+
+void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
+{
+    s_timerfd_delete(a_timerfd, true);
+}
+

@@ -516,7 +516,7 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
     dap_stream_t * l_stream = DAP_STREAM(l_http_client);
     assert(l_stream);
     DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
-    dap_timerfd_delete(l_stream->keepalive_timer);
+    dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
     l_stream->keepalive_timer = NULL;
 }
 
@@ -547,7 +547,7 @@ static void s_client_callback_worker_unassign(dap_events_socket_t * a_esocket, d
     dap_stream_t *l_stream = l_client_pvt->stream;
     assert(l_stream);
     DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
-    dap_timerfd_delete(l_stream->keepalive_timer);
+    dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
     l_stream->keepalive_timer = NULL;
 }
 
@@ -840,7 +840,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         dap_events_socket_write_unsafe(a_stream->esocket, &l_ret_pkt, sizeof(l_ret_pkt));
         // Reset client keepalive timer
         if (a_stream->keepalive_timer) {
-            dap_timerfd_reset(a_stream->keepalive_timer);
+            dap_timerfd_reset_unsafe(a_stream->keepalive_timer);
         }
     } break;
     case STREAM_PKT_TYPE_ALIVE:
