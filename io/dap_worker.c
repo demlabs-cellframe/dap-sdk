@@ -303,7 +303,7 @@ static bool s_socket_all_check_activity( void * a_arg)
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
     dap_events_socket_t *l_es = NULL, *tmp = NULL;
-    time_t l_curtime = time(NULL);
+    time_t l_curtime = time(NULL); // + 1000;
     //dap_ctime_r(&l_curtime, l_curtimebuf);
     //log_it(L_DEBUG,"Check sockets activity on worker #%u at %s", l_worker->id, l_curtimebuf);
     size_t l_esockets_counter = 0;
@@ -398,6 +398,7 @@ void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker
  */
 void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg)
 {
+    assert(a_worker);
     dap_worker_msg_callback_t * l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
     l_msg->callback = a_callback;
     l_msg->arg = a_arg;

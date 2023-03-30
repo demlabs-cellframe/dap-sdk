@@ -754,5 +754,6 @@ void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
 {
     if (a_client_http->timer)
         dap_timerfd_delete_unsafe(a_client_http->timer);
+    a_client_http->es->callbacks.delete_callback = NULL;
     dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);
 }
