@@ -707,13 +707,12 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
                 log_it(L_DEBUG, "%s code received, do nothing on this loop",
                        l_read_errno == EAGAIN? "EAGAIN": l_read_errno == EWOULDBLOCK ? "EWOULDBLOCK": "UNKNOWN" );
 #else
-            void * l_queue_ptr = NULL;
             char l_body[DAP_QUEUE_MAX_MSGS] = { '\0' };
             ssize_t l_read_ret = read( a_esocket->fd, &l_queue_ptr,sizeof (void *));
             if(l_read_ret > 0) {
                 debug_if(g_debug_reactor, L_NOTICE, "Got %ld bytes from pipe", l_read_ret);
                 for (long shift = 0; shift < l_read_ret; shift += sizeof(void*)) {
-                    l_queue_ptr = *(void **)(l_body + shift);
+                    void *l_queue_ptr = *(void **)(l_body + shift);
                     a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
                 }
             }
@@ -728,7 +727,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
                  ((l_ret = mq_receive(a_esocket->mqd, l_body + l_shift, sizeof(void*), NULL)) == sizeof(void*)) && ((size_t)l_shift < sizeof(l_body) - sizeof(void*));
                  l_shift += l_ret)
             {
-                l_queue_ptr = *(void**)(l_body + l_shift);
+                void *l_queue_ptr = *(void**)(l_body + l_shift);
                 a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
             }
             if (l_ret == -1) {
@@ -760,15 +759,15 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
                 log_it(L_ERROR, "Error in esocket queue_ptr:\"%s\" code %d", l_errbuf, l_errno);
                 return -1;
             }
-            #if defined (DAP_EVENTS_CAPS_AIO)
+#if defined (DAP_EVENTS_CAPS_AIO)
             if(l_ret != sizeof(l_queue_ptr_aio) ){
                 log_it(L_ERROR, "Wrong AIO message in MQ, expected to have %zd but received %zd",
                        sizeof (l_queue_ptr_aio), l_ret);
                 return -1;
             }
-            l_queue_ptr = l_queue_ptr_aio.ptr;
+            void *l_queue_ptr = l_queue_ptr_aio.ptr;
             DAP_DELETE(l_queue_ptr_aio.self); // Clear send buffer
-            #endif
+#endif
             a_esocket->callbacks.queue_ptr_callback (a_esocket, l_queue_ptr);
 #elif defined DAP_EVENTS_CAPS_MSMQ
             /*
@@ -813,14 +812,14 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
             if(l_read > 0) {
                 debug_if(g_debug_reactor, L_NOTICE, "Got %ld bytes from socket", l_read);
                 for (long shift = 0; shift < l_read; shift += sizeof(void*)) {
-                    l_queue_ptr = *(void **)(a_esocket->buf_in + shift);
+                    void *l_queue_ptr = *(void **)(a_esocket->buf_in + shift);
                     a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
                 }
             }
             else if ((l_errno != EAGAIN) && (l_errno != EWOULDBLOCK))  // we use blocked socket for now but who knows...
                 log_it(L_ERROR, "Can't read message from socket");
 #elif defined DAP_EVENTS_CAPS_KQUEUE
-        l_queue_ptr = (void*) a_esocket->kqueue_event_catched_data.data;
+        void *l_queue_ptr = a_esocket->kqueue_event_catched_data.data;
         if(g_debug_reactor)
             log_it(L_INFO,"Queue ptr received %p ptr on input", l_queue_ptr);
         if(a_esocket->callbacks.queue_ptr_callback)
@@ -837,7 +836,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
 
             a_esocket->callbacks.queue_callback(a_esocket, l_queue_ptr, l_queue_ptr_size);
 #elif !defined(DAP_OS_WINDOWS)
-            size_t l_read = read(a_esocket->socket, a_esocket->buf_in, a_esocket->buf_in_size_max );
+            read(a_esocket->socket, a_esocket->buf_in, a_esocket->buf_in_size_max );
 #endif
         }
     }else{
@@ -846,7 +845,6 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
     }
     return 0;
 }
-
 
 /**
  * @brief dap_events_socket_create_type_event_mt

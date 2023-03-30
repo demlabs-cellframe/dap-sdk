@@ -230,6 +230,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
 
 void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
 {
+    assert(a_timerfd);
     debug_if(l_debug_timer, L_ATT, "Reset timer on socket %d", a_timerfd->events_socket->socket);
 #if defined DAP_OS_LINUX
     struct itimerspec l_ts;
@@ -243,9 +244,9 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
         log_it(L_WARNING, "Reset timerfd failed: timerfd_settime() errno=%d\n", errno);
     }
 #elif defined (DAP_OS_BSD)
-    dap_events_socket_t l_es = a_timerfd->events_socket;
+    dap_events_socket_t *l_es = a_timerfd->events_socket;
     // Re-add timer in context
-    dap_context_t * l_context = l_es->context;
+    dap_context_t *l_context = l_es->context;
     l_es->context = NULL;
     dap_context_add(l_context, l_es);
 #elif defined (DAP_OS_WINDOWS)
