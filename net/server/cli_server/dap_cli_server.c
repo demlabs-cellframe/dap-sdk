@@ -888,10 +888,7 @@ static void* s_thread_main_func(void *args)
 void dap_cli_server_cmd_set_reply_text(char **str_reply, const char *str, ...)
 {
     if(str_reply) {
-        if(*str_reply) {
-            DAP_DELETE(*str_reply);
-            *str_reply = NULL;
-        }
+        DAP_DEL_Z(*str_reply);
         va_list args;
         va_start(args, str);
         *str_reply = dap_strdup_vprintf(str, args); //*str_reply = dap_strdup(str);
