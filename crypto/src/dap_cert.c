@@ -433,10 +433,7 @@ int dap_cert_save_to_folder(dap_cert_t * a_cert, const char *a_file_dir_path)
  */
 dap_pkey_t * dap_cert_to_pkey(dap_cert_t * a_cert)
 {
-    if ( a_cert )
-        return dap_pkey_from_enc_key( a_cert->enc_key );
-    else
-        return NULL;
+    return a_cert ? dap_pkey_from_enc_key(a_cert->enc_key) : NULL;
 }
 
 /**
