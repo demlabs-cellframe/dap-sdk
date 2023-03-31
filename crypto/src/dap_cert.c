@@ -262,6 +262,7 @@ dap_cert_t * dap_cert_generate(const char * a_cert_name
                                            , const char * a_file_path,dap_enc_key_type_t a_key_type )
 {
     dap_cert_t * l_cert = dap_cert_generate_mem(a_cert_name,a_key_type);
+    dap_cert_add(l_cert);
     if ( l_cert){
         if ( dap_cert_file_save(l_cert, a_file_path) == 0 ){
             return l_cert;
@@ -345,13 +346,24 @@ dap_cert_t * dap_cert_new(const char * a_name)
     dap_cert_t * l_ret = DAP_NEW_Z(dap_cert_t);
     l_ret->_pvt = DAP_NEW_Z(dap_cert_pvt_t);
     snprintf(l_ret->name,sizeof(l_ret->name),"%s",a_name);
-
-    dap_cert_item_t * l_cert_item = DAP_NEW_Z(dap_cert_item_t);
-    snprintf(l_cert_item->name,sizeof(l_cert_item->name),"%s",a_name);
-    l_cert_item->cert = l_ret;
-    HASH_ADD_STR(s_certs,name,l_cert_item);
-
     return l_ret;
+}
+
+int dap_cert_add(dap_cert_t *a_cert)
+{
+    if (!a_cert)
+        return -2;
+    dap_cert_item_t *l_cert_item;
+    HASH_FIND_STR(s_certs, a_cert->name, l_cert_item);
+    if (l_cert_item) {
+        log_it(L_WARNING, "Certificate with name %s already present in memory", a_cert->name);
+        return -1;
+    }
+    l_cert_item = DAP_NEW_Z(dap_cert_item_t);
+    snprintf(l_cert_item->name, sizeof(l_cert_item->name), "%s", a_cert->name);
+    l_cert_item->cert = a_cert;
+    HASH_ADD_STR(s_certs, name, l_cert_item);
+    return 0;
 }
 
 /**
