@@ -1,6 +1,6 @@
 #include "dap_rand.h"
 #include <stdlib.h>
-#define SHISHUA_TARGET 0    // SHISHUA_TARGET_SCALAR
+//#define SHISHUA_TARGET 0    // SHISHUA_TARGET_SCALAR
 #include "shishua.h"
 
 #if defined(_WIN32)
@@ -130,6 +130,7 @@ void dap_pseudo_random_seed(uint256_t a_seed)
 {
     uint64_t l_seed[4] = {a_seed._hi.a, a_seed._hi.b, a_seed._lo.a, a_seed._lo.b};
     prng_init(&s_shishua_state, l_seed);
+    s_shishua_idx = 0;
 }
 
 // Get a next pseudo-random number in 0..a_rand_max range inclusive
