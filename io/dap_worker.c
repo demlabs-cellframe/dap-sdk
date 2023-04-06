@@ -92,6 +92,7 @@ void dap_worker_context_callback_started( dap_context_t * a_context, void *a_arg
 
     l_worker->timer_check_activity = dap_timerfd_create (s_connection_timeout * 1000 / 2,
                                                         s_socket_all_check_activity, l_worker);
+    l_worker->timer_check_activity->worker = l_worker;
     dap_worker_add_events_socket_unsafe(l_worker, l_worker->timer_check_activity->events_socket);
 
 }
@@ -198,7 +199,7 @@ static void s_queue_delete_es_callback( dap_events_socket_t * a_es, void * a_arg
         //l_es->flags |= DAP_SOCK_SIGNAL_CLOSE; // Send signal to socket to kill
         dap_events_socket_remove_and_delete_unsafe(l_es,false);
     }else
-        log_it(L_INFO, "While we were sending the delete() message, esocket %"DAP_UINT64_FORMAT_U" has been disconnected ", *l_es_uuid_ptr);
+        debug_if(g_debug_reactor, L_INFO, "While we were sending the delete() message, esocket %"DAP_UINT64_FORMAT_U" has been disconnected ", *l_es_uuid_ptr);
     DAP_DELETE(l_es_uuid_ptr);
 }
 
@@ -302,7 +303,7 @@ static bool s_socket_all_check_activity( void * a_arg)
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
     dap_events_socket_t *l_es = NULL, *tmp = NULL;
-    time_t l_curtime= time(NULL);
+    time_t l_curtime = time(NULL); // + 1000;
     //dap_ctime_r(&l_curtime, l_curtimebuf);
     //log_it(L_DEBUG,"Check sockets activity on worker #%u at %s", l_worker->id, l_curtimebuf);
     size_t l_esockets_counter = 0;
@@ -313,18 +314,18 @@ static bool s_socket_all_check_activity( void * a_arg)
                    l_worker->context->event_sockets_count, l_esockets_count,l_esockets_counter +1 );
                 break;
         }
-        if (l_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT){
-            if ( !(l_es->flags & DAP_SOCK_SIGNAL_CLOSE) &&
-                 (  l_curtime >=  (l_es->last_time_active + s_connection_timeout) ) && !l_es->no_close ) {
-                log_it( L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (diff %"DAP_UINT64_FORMAT_U" ), closing...",
-                                l_es->socket, l_curtime -  (time_t)l_es->last_time_active - s_connection_timeout );
-                if (l_es->callbacks.error_callback) {
-                    l_es->callbacks.error_callback(l_es, ETIMEDOUT);
-                }
-                dap_events_socket_remove_and_delete_unsafe(l_es,false);
+        if (l_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT &&
+                !(l_es->flags & DAP_SOCK_SIGNAL_CLOSE) &&
+                 l_curtime >= l_es->last_time_active + s_connection_timeout &&
+                !l_es->no_close) {
+            log_it( L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (diff %"DAP_UINT64_FORMAT_U" ), closing...",
+                            l_es->socket, l_curtime -  (time_t)l_es->last_time_active - s_connection_timeout );
+            if (l_es->callbacks.error_callback) {
+                l_es->callbacks.error_callback(l_es, ETIMEDOUT);
             }
-        }
-        l_esockets_counter++;
+            dap_events_socket_remove_and_delete_unsafe(l_es,false);
+        } else  // Do not modify counter if socket was removed
+            l_esockets_counter++;
     }
     return true;
 }
@@ -397,6 +398,7 @@ void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker
  */
 void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg)
 {
+    assert(a_worker);
     dap_worker_msg_callback_t * l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
     l_msg->callback = a_callback;
     l_msg->arg = a_arg;

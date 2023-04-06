@@ -348,6 +348,8 @@ dap_cert_t* dap_cert_file_load(const char * a_cert_file_path)
             goto lb_exit;
         }else{
             l_ret = dap_cert_mem_load(l_data,l_file_size);
+            if (l_ret)
+                dap_cert_add(l_ret);
         }
         DAP_DELETE(l_data);
     }

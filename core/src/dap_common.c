@@ -406,8 +406,7 @@ struct timespec now;
     if ( (a_ll < s_dap_log_level) )
         return;
 
-
-	clock_gettime(CLOCK_REALTIME, &now);
+    clock_gettime(CLOCK_REALTIME, &now);
 
 #ifdef	WIN32
 	localtime_s(&_tm, (time_t *)&now);
