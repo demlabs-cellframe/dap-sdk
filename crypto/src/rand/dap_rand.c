@@ -133,7 +133,7 @@ void dap_pseudo_random_seed(uint256_t a_seed)
 }
 
 // Get a next pseudo-random number in 0..a_rand_max range inclusive
-uint256_t dap_pseudo_random_get(uint256_t a_rand_max)
+uint256_t dap_pseudo_random_get(uint256_t a_rand_max, uint256_t *a_raw_result)
 {
     uint256_t l_tmp, l_ret, l_rand_ceil;
     atomic_uint_fast8_t l_prev_idx = atomic_fetch_add(&s_shishua_idx, 1);
@@ -143,6 +143,8 @@ uint256_t dap_pseudo_random_get(uint256_t a_rand_max)
     if (IS_ZERO_256(a_rand_max))
         return uint256_0;
     uint256_t l_out_raw = s_shishua_out[l_buf_pos];
+    if (a_raw_result)
+        *a_raw_result = l_out_raw;
     if (EQUAL_256(a_rand_max, uint256_max))
         return l_out_raw;
     SUM_256_256(a_rand_max, uint256_1, &l_rand_ceil);
