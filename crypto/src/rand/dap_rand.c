@@ -121,7 +121,7 @@ int randombytes(void* random_array, unsigned int nbytes)
 #define DAP_SHISHUA_BUFF_SIZE 4
 
 static prng_state s_shishua_state = {0};
-static uint256_t s_shishua_out[DAP_SHISHUA_BUFF_SIZE];
+static uint256_t s_shishua_out[DAP_SHISHUA_BUFF_SIZE] __attribute__ ((aligned (64)));
 static atomic_uint_fast8_t s_shishua_idx = 0;
 
 // Set the seed for pseudo-random generator with uint256 format
