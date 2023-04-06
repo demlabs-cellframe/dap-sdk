@@ -1,5 +1,6 @@
 #include "dap_rand.h"
 #include <stdlib.h>
+#define SHISHUA_TARGET 0    // SHISHUA_TARGET_SCALAR
 #include "shishua.h"
 
 #if defined(_WIN32)
