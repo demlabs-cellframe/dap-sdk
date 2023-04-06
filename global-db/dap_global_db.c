@@ -1476,25 +1476,26 @@ int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_
 static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
 {
     int l_ret = -1;
-    size_t i=0;
-    if(a_msg->values_count>0){
-        dap_store_obj_t l_store_obj = {};
+    size_t i = 0;
+    if (a_msg->values_count > 0) {
         l_ret = 0;
-        for(;  i < a_msg->values_count && l_ret == 0  ; i++ ) {
-            l_store_obj.type = DAP_DB$K_OPTYPE_ADD;
-            l_store_obj.flags = a_msg->values[i].is_pinned;
-            l_store_obj.key =  a_msg->values[i].key;
-            l_store_obj.key_len = strlen(a_msg->values[i].key);
-            l_store_obj.group = a_msg->group;
-            l_store_obj.value = a_msg->values[i].value;
-            l_store_obj.value_len = a_msg->values[i].value_len;
-            l_store_obj.timestamp = a_msg->values[i].timestamp;
+        for (; i < a_msg->values_count && l_ret == 0; ++i) {
+            dap_store_obj_t l_store_obj = {
+                .timestamp  = a_msg->values[i].timestamp,
+                .type       = DAP_DB$K_OPTYPE_ADD,
+                .flags      = a_msg->values[i].is_pinned,
+                .group      = a_msg->group,
+                .key        = a_msg->values[i].key,
+                .key_len    = strlen(a_msg->values[i].key),
+                .value      = a_msg->values[i].value,
+                .value_len  = a_msg->values[i].value_len
+            };
             s_record_del_history_del(a_msg->group, a_msg->values[i].key);
-            l_ret = dap_global_db_driver_add(&l_store_obj,1);
+            l_ret = dap_global_db_driver_add(&l_store_obj, 1);
             s_change_notify(s_context_global_db, &l_store_obj);
         }
     }
-    if(a_msg->callback_results){
+    if (a_msg->callback_results) {
         a_msg->callback_results(s_context_global_db,
                                 l_ret == 0 ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR,
                                 a_msg->group, i, a_msg->values_count,
@@ -2076,7 +2077,8 @@ static void s_queue_io_msg_delete( struct queue_io_msg * a_msg)
         break;
     case MSG_OPCODE_SET_RAW:
         dap_store_obj_free(a_msg->values_raw, a_msg->values_raw_total);
-    default:;
+        break;
+    default: break;
     }
     DAP_DELETE(a_msg);
 }
