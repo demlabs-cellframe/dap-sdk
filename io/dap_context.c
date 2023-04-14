@@ -934,7 +934,9 @@ static int s_thread_loop(dap_context_t * a_context)
                             case DESCRIPTOR_TYPE_QUEUE:
                                 if (l_cur->flags & DAP_SOCK_QUEUE_PTR && l_cur->buf_out_size>= sizeof (void*)) {
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-                                    l_bytes_sent = write(l_cur->fd, l_cur->buf_out, sizeof(void *)); // We send pointer by pointer
+                                    l_bytes_sent = write(l_cur->fd, l_cur->buf_out, /* sizeof(void *) */ l_cur->buf_out_size);
+                                    l_errno = l_bytes_sent < (ssize_t)l_cur->buf_out_size ? errno : 0;
+                                    debug_if(l_errno, L_ERROR, "Writing to pipe %lu bytes failed, sent %lu only...", l_cur->buf_out_size, l_bytes_sent);
 #elif defined (DAP_EVENTS_CAPS_QUEUE_POSIX)
                                     l_bytes_sent = mq_send(a_es->mqd, (const char *)&a_arg,sizeof (a_arg),0);
 #elif defined DAP_EVENTS_CAPS_MSMQ
