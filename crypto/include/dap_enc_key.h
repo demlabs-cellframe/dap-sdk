@@ -226,7 +226,7 @@ typedef struct dap_enc_key {
 
     void * _pvt; // PVT part of the object
 
-    void * _inheritor; // WARNING! Inheritor must have only serealizeble/deserializeble data (copy)
+    void * _inheritor; // WARNING! Inheritor must have only serializeble/deserializeble data (copy)
     size_t _inheritor_size;
 } dap_enc_key_t;
 
@@ -234,7 +234,7 @@ typedef struct dap_enc_key {
 #define MAX_INHERITOR_SIZE 2048
 
 // struct for serelization/deseralization keys in binary storage
-typedef struct dap_enc_key_serealize {
+typedef struct dap_enc_key_serialize {
     size_t priv_key_data_size;
     size_t pub_key_data_size;
     size_t inheritor_size;
@@ -244,7 +244,7 @@ typedef struct dap_enc_key_serealize {
     unsigned char priv_key_data[MAX_ENC_KEY_SIZE];
     unsigned char pub_key_data[MAX_ENC_KEY_SIZE];
     unsigned char inheritor[MAX_INHERITOR_SIZE];
-} dap_enc_key_serealize_t;
+} dap_enc_key_serialize_t;
 
 typedef struct dap_enc_key_callbacks{
     const char * name;
@@ -284,16 +284,16 @@ dap_enc_key_type_t dap_enc_key_type_find_by_name(const char * a_name);
 size_t dap_enc_key_get_enc_size(dap_enc_key_t * a_key, const size_t buf_in_size);
 size_t dap_enc_key_get_dec_size(dap_enc_key_t * a_key, const size_t buf_in_size);
 
-uint8_t* dap_enc_key_serealize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len);
-uint8_t* dap_enc_key_deserealize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len);
-uint8_t* dap_enc_key_serealize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_out);
-uint8_t* dap_enc_key_serealize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_out);
-int dap_enc_key_deserealize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
-int dap_enc_key_deserealize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
-int dap_enc_key_deserealize_pub_key_old(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
+uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len);
+uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len);
+uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_out);
+uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_out);
+int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
+int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
+int dap_enc_key_deserialize_pub_key_old(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
 
-dap_enc_key_serealize_t* dap_enc_key_serealize(dap_enc_key_t * key);
-dap_enc_key_t* dap_enc_key_deserealize(const void *buf, size_t buf_size);
+dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t * key);
+dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t buf_size);
 dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key);
 
 // allocate memory for key struct
