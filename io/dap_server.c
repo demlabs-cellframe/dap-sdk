@@ -79,6 +79,9 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
 static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr* a_remote_addr);
 static void s_es_server_error(dap_events_socket_t *a_es, int a_arg);
 static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg);
+
+static dap_server_t* s_default_server = NULL;
+
 /**
  * @brief dap_server_init
  * @return
@@ -94,6 +97,16 @@ int dap_server_init()
  */
 void dap_server_deinit()
 {
+}
+
+void dap_server_set_default(dap_server_t* a_server)
+{
+    s_default_server = a_server;
+}
+
+dap_server_t* dap_server_get_default()
+{
+    return s_default_server;
 }
 
 /**

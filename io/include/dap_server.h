@@ -98,6 +98,9 @@ typedef struct dap_server {
 int dap_server_init( ); // Init server module
 void  dap_server_deinit( void ); // Deinit server module
 
+void dap_server_set_default(dap_server_t* a_server);
+dap_server_t* dap_server_get_default();
+
 dap_server_t* dap_server_new(const char * a_addr, uint16_t a_port, dap_server_type_t a_type, dap_events_socket_callbacks_t *a_callbacks);
 dap_server_t* dap_server_new_local(const char * a_path, const char * a_mode, dap_events_socket_callbacks_t *a_callbacks);
 
