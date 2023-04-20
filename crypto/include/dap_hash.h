@@ -65,7 +65,7 @@ int dap_chain_hash_fast_from_base58_str(const char *a_base58_str,  dap_chain_has
  * @return true
  * @return false
  */
-static inline bool dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_hash_fast_t *a_hash_out )
+DAP_STATIC_INLINE bool dap_hash_fast( const void *a_data_in, size_t a_data_in_size, dap_hash_fast_t *a_hash_out )
 {
     if ( (a_data_in == NULL) || (a_data_in_size == 0) || (a_hash_out == NULL) )
         return false;
@@ -85,7 +85,7 @@ static inline bool dap_hash_fast( const void *a_data_in, size_t a_data_in_size, 
  * @param a_hash2 - dap_hash_fast_t hash2
  * @return
  */
-static inline bool dap_hash_fast_compare(dap_hash_fast_t *a_hash1, dap_hash_fast_t *a_hash2)
+DAP_STATIC_INLINE bool dap_hash_fast_compare(dap_hash_fast_t *a_hash1, dap_hash_fast_t *a_hash2)
 {
     if(!a_hash1 || !a_hash2)
         return false;
@@ -100,7 +100,7 @@ static inline bool dap_hash_fast_compare(dap_hash_fast_t *a_hash1, dap_hash_fast
  * @return false
  */
 
-static inline bool dap_hash_fast_is_blank( dap_hash_fast_t *a_hash )
+DAP_STATIC_INLINE bool dap_hash_fast_is_blank( dap_hash_fast_t *a_hash )
 {
     static dap_hash_fast_t l_blank_hash = {};
     return dap_hash_fast_compare( a_hash, &l_blank_hash);
@@ -126,9 +126,8 @@ DAP_STATIC_INLINE int dap_chain_hash_fast_to_str(const dap_hash_fast_t *a_hash, 
 
 DAP_STATIC_INLINE char *dap_chain_hash_fast_to_str_new(const dap_hash_fast_t *a_hash)
 {
-    const size_t c_hash_str_size = DAP_CHAIN_HASH_FAST_STR_SIZE;
-    char * ret = DAP_NEW_Z_SIZE(char, c_hash_str_size + 1);
-    if(dap_chain_hash_fast_to_str( a_hash, ret, c_hash_str_size ) < 0 )
+    char *ret = DAP_NEW_Z_SIZE(char, DAP_CHAIN_HASH_FAST_STR_SIZE);
+    if (dap_chain_hash_fast_to_str(a_hash, ret, DAP_CHAIN_HASH_FAST_STR_SIZE) < 0)
         DAP_DEL_Z(ret);
     return ret;
 }
@@ -141,7 +140,7 @@ DAP_STATIC_INLINE char *dap_chain_hash_fast_to_str_new(const dap_hash_fast_t *a_
  * @param a_data_size
  * @return
  */
-static inline char * dap_hash_fast_str_new( const void *a_data, size_t a_data_size )
+DAP_STATIC_INLINE char *dap_hash_fast_str_new( const void *a_data, size_t a_data_size )
 {
     if(!a_data || !a_data_size)
         return NULL;
@@ -160,6 +159,11 @@ static inline char * dap_hash_fast_str_new( const void *a_data, size_t a_data_si
 
 }
 
+#define dap_get_data_hash_str_static(data,data_size,strname) \
+    char strname[DAP_CHAIN_HASH_FAST_STR_SIZE]; \
+    do { dap_hash_fast_t dummy_hash; \
+    dap_hash_fast(data,data_size,&dummy_hash); \
+    dap_chain_hash_fast_to_str(&dummy_hash,strname,DAP_CHAIN_HASH_FAST_STR_SIZE); } while (0)
 
 #ifdef __cplusplus
 }
