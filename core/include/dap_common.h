@@ -200,7 +200,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 /* ... */
 #define DAP_NEW_Z(t)          DAP_CAST_PTR(t, calloc(1, sizeof(t)))
 #define DAP_NEW_Z_SIZE(t, s)  ((size_t)(s) != 0 ? DAP_CAST_PTR(t, calloc(1, (s))) : DAP_NULL_PTR(t))
-#define DAP_REALLOC(s1, s2)   ((size_t)(s2) != 0 ? realloc((s1), (s2)) : ({ if (s1) free(s1); NULL; }))
+#define DAP_REALLOC(s1, s2)   ((size_t)(s2) != 0 ? realloc((s1), (s2)) : ({ if (s1) free(s1); DAP_NULL_PTR(void); }))
 #define DAP_DELETE(p)         free((void *)(p))
 #define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? malloc(sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : NULL; })
 #define DAP_DUP_SIZE(p, s)    ({ void *p1 = (p) && (size_t)(s) > 0 ? malloc(s) : NULL; p1 ? memcpy(p1, (p), (s)) : NULL; })
