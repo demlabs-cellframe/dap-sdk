@@ -504,6 +504,7 @@ static const uint16_t s_ascii_table_data[256] = {
 #define dap_ascii_isalpha(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_ALPHA)
 #define dap_ascii_isalnum(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_ALNUM)
 #define dap_ascii_isdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_DIGIT)
+#define dap_ascii_isxdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_XDIGIT)
 
 DAP_STATIC_INLINE void DAP_AtomicLock( dap_spinlock_t *lock )
 {
@@ -699,6 +700,7 @@ static inline void * dap_mempcpy(void * a_dest,const void * a_src,size_t n)
 
 DAP_STATIC_INLINE int dap_is_alpha(char c) { return dap_ascii_isalnum(c); }
 DAP_STATIC_INLINE int dap_is_digit(char c) { return dap_ascii_isdigit(c); }
+DAP_STATIC_INLINE int dap_is_xdigit(char c) {return dap_ascii_isxdigit(c);}
 DAP_STATIC_INLINE int dap_is_alpha_and_(char c) { return dap_is_alpha(c) || c == '_'; }
 char **dap_parse_items(const char *a_str, char a_delimiter, int *a_count, const int a_only_digit);
 
