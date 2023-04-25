@@ -115,8 +115,10 @@
 #ifdef __cplusplus
 #define DAP_CAST_PTR(t,v) reinterpret_cast<t*>(v)
 #else
-#define DAP_CAST_PTR(t,v) v
+#define DAP_CAST_PTR(t,v) (t*)(v)
 #endif
+
+#define DAP_NULL_PTR(t) DAP_CAST_PTR(t, NULL)
 
 #if DAP_USE_RPMALLOC
   #include "rpmalloc.h"
@@ -138,7 +140,7 @@
 
 #include    <assert.h>
 
-#define     MEMSTAT$SZ_NAME     63
+#define     MEMSTAT$SZ_NAME     63            dap_global_db_del_sync(l_gdb_group, l_objs[i].key);
 #define     MEMSTAT$K_MAXNR     8192
 #define     MEMSTAT$K_MINTOLOG  (32*1024)
 
@@ -184,26 +186,26 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #else
 #define DAP_MALLOC(p)         malloc(p)
 #define DAP_FREE(p)           free(p)
-#define DAP_CALLOC(p, s)      ({ size_t s1 = (size_t)(s); s1 > 0 ? calloc(p, s1) : DAP_CAST_PTR(void, NULL); })
-#define DAP_ALMALLOC(p, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? _dap_aligned_alloc(p, s1) : DAP_CAST_PTR(void, NULL); })
-#define DAP_ALREALLOC(p, s)   ({ size_t s1 = (size_t)(s); s1 > 0 ?  _dap_aligned_realloc(p, s1) : DAP_CAST_PTR(void, NULL); })
+#define DAP_CALLOC(p, s)      ((size_t)(s) == 0 ? NULL : calloc((p), (s)))
+#define DAP_ALMALLOC(p, s)    ((size_t)(s) == 0 ? NULL : _dap_aligned_alloc((p), (s)))
+#define DAP_ALREALLOC(p, s)   ((size_t)(s) == 0 ? NULL : _dap_aligned_realloc((p), (s)))
 #define DAP_ALFREE(p)         _dap_aligned_free(p)
 #define DAP_PAGE_ALMALLOC(p)  _dap_page_aligned_alloc(p)
 #define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
 #define DAP_NEW(t)            DAP_CAST_PTR(t, malloc(sizeof(t)))
-#define DAP_NEW_SIZE(t, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, malloc(s1)) : DAP_CAST_PTR(void, NULL); })
+#define DAP_NEW_SIZE(t, s)    ((size_t)(s) == 0 ? DAP_NULL_PTR(t) : DAP_CAST_PTR(t, malloc(s)))
  /* Auto memory! Do not inline! */
 #define DAP_NEW_STACK(t)            DAP_CAST_PTR(t, alloca(sizeof(t)))
-#define DAP_NEW_STACK_SIZE(t, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, alloca(s1)) : DAP_CAST_PTR(void, NULL); })
+#define DAP_NEW_STACK_SIZE(t, s)    ((size_t)(s) == 0 ? DAP_NULL_PTR(t) : DAP_CAST_PTR(t, alloca(s)))
 /* ... */
 #define DAP_NEW_Z(t)          DAP_CAST_PTR(t, calloc(1, sizeof(t)))
-#define DAP_NEW_Z_SIZE(t, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, calloc(1, s1)) : DAP_CAST_PTR(void, NULL); })
-#define DAP_REALLOC(t, s)     ({ size_t s1 = (size_t)(s); s1 > 0 ? realloc(t, s1) : ({ DAP_DEL_Z(t); DAP_CAST_PTR(void, NULL); }); })
-#define DAP_DELETE(p)         free((void*)(p))
-#define DAP_DUP(p)            ({ void *p1 = p ? calloc(1, sizeof(*p)) : NULL; p1 ? memcpy(p1, p, sizeof(*p)) : DAP_CAST_PTR(void, NULL); })
-#define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (size_t)(s); void *p1 = p && (s1 > 0) ? calloc(1, s1) : NULL; p1 ? memcpy(p1, p, s1) : DAP_CAST_PTR(void, NULL); })
+#define DAP_NEW_Z_SIZE(t, s)  ((size_t)(s) != 0 ? DAP_CAST_PTR(t, calloc(1, (s))) : DAP_NULL_PTR(t))
+#define DAP_REALLOC(s1, s2)   ((size_t)(s2) != 0 ? realloc((s1), (s2)) : ({ if (s1) free(s1); DAP_NULL_PTR(void); }))
+#define DAP_DELETE(p)         free((void *)(p))
+#define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? malloc(sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : NULL; })
+#define DAP_DUP_SIZE(p, s)    ({ void *p1 = (p) && (size_t)(s) > 0 ? malloc(s) : NULL; p1 ? memcpy(p1, (p), (s)) : NULL; })
 #endif
-#define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = DAP_CAST_PTR(void, NULL); } } while (0);
+#define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
 
 DAP_STATIC_INLINE unsigned long dap_pagesize() {
     static int s = 0;
@@ -504,6 +506,7 @@ static const uint16_t s_ascii_table_data[256] = {
 #define dap_ascii_isalpha(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_ALPHA)
 #define dap_ascii_isalnum(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_ALNUM)
 #define dap_ascii_isdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_DIGIT)
+#define dap_ascii_isxdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_XDIGIT)
 
 DAP_STATIC_INLINE void DAP_AtomicLock( dap_spinlock_t *lock )
 {
@@ -699,6 +702,7 @@ static inline void * dap_mempcpy(void * a_dest,const void * a_src,size_t n)
 
 DAP_STATIC_INLINE int dap_is_alpha(char c) { return dap_ascii_isalnum(c); }
 DAP_STATIC_INLINE int dap_is_digit(char c) { return dap_ascii_isdigit(c); }
+DAP_STATIC_INLINE int dap_is_xdigit(char c) {return dap_ascii_isxdigit(c);}
 DAP_STATIC_INLINE int dap_is_alpha_and_(char c) { return dap_is_alpha(c) || c == '_'; }
 char **dap_parse_items(const char *a_str, char a_delimiter, int *a_count, const int a_only_digit);
 
