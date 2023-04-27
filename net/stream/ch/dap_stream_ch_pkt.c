@@ -225,13 +225,6 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         log_it(L_WARNING, "Channel PROC is NULL ptr");
         return 0;
     }
-    //log_it(L_DEBUG,"Output: Has %u bytes of %c type for %c channel id",data_size, (char)type, (char) ch->proc->id );
-
-
-
-//    size_t l_ret=dap_stream_pkt_write_unsafe(a_ch->stream,l_buf_selected,a_data_size+sizeof(l_hdr));
-//    a_ch->stat.bytes_write+=a_data_size;
-//    dap_stream_ch_set_ready_to_write_unsafe(a_ch, true);
 
     size_t  l_ret = 0, l_data_size,
             l_max_size = l_data_size = a_data_size + sizeof(dap_stream_ch_pkt_hdr_t);
@@ -249,7 +242,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         (char) l_hdr.id, l_hdr.data_size, l_hdr.type, l_hdr.seq_id , l_hdr.enc_type);
 
     if (l_data_size > 0 && l_data_size <= DAP_STREAM_PKT_FRAGMENT_SIZE) {
-        memcpy(l_buf, &l_hdr, sizeof(dap_stream_ch_pkt_hdr_t));
+        *(dap_stream_ch_pkt_hdr_t*)l_buf = l_hdr;
         memcpy(l_buf + sizeof(dap_stream_ch_pkt_hdr_t), a_data, a_data_size);
         l_ret = dap_stream_pkt_write_unsafe(a_ch->stream, STREAM_PKT_TYPE_DATA_PACKET, l_buf, l_data_size);
     } else if (l_data_size > DAP_STREAM_PKT_FRAGMENT_SIZE) {
