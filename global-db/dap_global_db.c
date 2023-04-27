@@ -401,7 +401,7 @@ byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a
     if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_get_unsafe(s_context_global_db, a_group, a_key, a_data_size, a_is_pinned, a_ts);
 
-    struct obj_get *l_args = DAP_NEW_STACK(struct obj_get);
+    struct obj_get *l_args = DAP_NEW_Z(struct obj_get);
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
@@ -420,7 +420,9 @@ byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a
         if (a_ts)
             *a_ts = l_args->ts;
     }
-    return l_args->data;
+    byte_t *l_ret = l_args->data;
+    DAP_DELETE(l_args);
+    return l_ret;
 }
 
 /* *** Get raw functions group *** */
@@ -515,7 +517,7 @@ dap_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_k
         return dap_global_db_get_raw_unsafe(s_context_global_db, a_group, a_key);
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_raw sync call executes for group \"%s\"", a_group);
-    struct obj_raw_get *l_args = DAP_NEW_STACK(struct obj_raw_get);
+    struct obj_raw_get *l_args = DAP_NEW_Z(struct obj_raw_get);
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
@@ -526,7 +528,9 @@ dap_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_k
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    return l_args->obj;
+    dap_store_obj_t *l_ret = l_args->obj;
+    DAP_DELETE(l_args);
+    return l_ret;
 }
 
 /* *** Get_del_ts functions group *** */
@@ -634,7 +638,7 @@ dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_
         return dap_global_db_get_del_ts_unsafe(s_context_global_db, a_group, a_key);
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_del_ts sync call executed for group \"%s\"", a_group);
-    struct del_ts_get *l_args = DAP_NEW_STACK(struct del_ts_get);
+    struct del_ts_get *l_args = DAP_NEW_Z(struct del_ts_get);
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
@@ -645,7 +649,9 @@ dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    return l_args->timestamp;
+    dap_nanotime_t l_ret = l_args->timestamp;
+    DAP_DELETE(l_ret);
+    return l_ret;
 }
 
 /* *** Get_last functions group *** */
@@ -737,7 +743,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
     if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_get_last_unsafe(s_context_global_db, a_group, a_key, a_data_size, a_is_pinned, a_ts);
 
-    struct obj_get *l_args = DAP_NEW_STACK(struct obj_get);
+    struct obj_get *l_args = DAP_NEW_Z(struct obj_get);
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
@@ -761,7 +767,9 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
             *a_ts = l_args->ts;
     }
 
-    return l_args->data;
+    byte_t *l_ret = l_args->data;
+    DAP_DELETE(l_args);
+    return l_ret;
 }
 
 /* *** Get_last_raw functions group *** */
@@ -826,7 +834,7 @@ dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
         return dap_global_db_get_last_raw_unsafe(s_context_global_db, a_group);
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_raw sync call executes for group \"%s\"", a_group);
-    struct obj_raw_get *l_args = DAP_NEW_STACK(struct obj_raw_get);
+    struct obj_raw_get *l_args = DAP_NEW_Z(struct obj_raw_get);
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
@@ -837,7 +845,9 @@ dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    return l_args->obj;
+    dap_store_obj_t *l_ret = l_args->obj;
+    DAP_DELETE(l_args);
+    return l_ret;
 }
 
 /* *** Get_all functions group *** */
@@ -983,7 +993,7 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
         return dap_global_db_get_all_unsafe(s_context_global_db, a_group, a_objs_count);
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all sync call executes for group \"%s\"", a_group);
-    struct objs_get *l_args = DAP_NEW_STACK(struct objs_get);
+    struct objs_get *l_args = DAP_NEW_Z(struct objs_get);
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
@@ -995,7 +1005,10 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
     pthread_cond_destroy(&l_args->cond);
     if (l_args->objs_count)
         *a_objs_count = l_args->objs_count;
-    return l_args->objs;
+
+    dap_global_db_obj_t *l_ret = l_args->objs;
+    DAP_DELETE(l_args);
+    return l_ret;
 }
 
 /* *** Get_all_raw functions group *** */
@@ -1109,7 +1122,7 @@ dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_
     if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_get_all_raw_unsafe(s_context_global_db, a_group, a_first_id, a_objs_count);
 
-    struct store_objs_get * l_args = DAP_NEW_STACK(struct store_objs_get);
+    struct store_objs_get * l_args = DAP_NEW_Z(struct store_objs_get);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all_raw sync call executes for group %s", a_group);
 
     pthread_mutex_init(&l_args->mutex,NULL);
@@ -1125,7 +1138,9 @@ dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_
     if (a_objs_count)
         *a_objs_count = l_args->objs_count;
 
-    return l_args->objs;
+    dap_store_obj_t *l_ret = l_args->objs;
+    DAP_DELETE(l_args);
+    return l_ret;
 }
 
 /* *** Set functions group *** */
@@ -1289,7 +1304,7 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
     if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_set_unsafe(s_context_global_db, a_group, a_key, a_value, a_value_length, a_pin_value);
 
-    struct sync_op_result *l_args = DAP_NEW_STACK(struct sync_op_result);
+    struct sync_op_result *l_args = DAP_NEW_Z(struct sync_op_result);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "set sync call executes for group \"%s\" key \"%s\"", a_group, a_key);
 
     pthread_mutex_init(&l_args->mutex,NULL);
@@ -1304,7 +1319,9 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    return l_args->result;
+    int l_ret = l_args->result;
+    DAP_DELETE(l_args);
+    return l_ret;
 }
 
 /* *** Set_raw functions group *** */
@@ -1397,7 +1414,7 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
     if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_set_raw_unsafe(s_context_global_db, a_store_objs, a_store_objs_count);
 
-    struct sync_op_result *l_args = DAP_NEW_STACK(struct sync_op_result);
+    struct sync_op_result *l_args = DAP_NEW_Z(struct sync_op_result);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "set_raw sync call executes");
 
     pthread_mutex_init(&l_args->mutex,NULL);
@@ -1412,7 +1429,9 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    return l_args->result;
+    int l_ret = l_args->result;
+    DAP_DELETE(l_args);
+    return l_ret;
 }
 
 /* *** Set_multiple_zc functions group *** */
@@ -1588,7 +1607,7 @@ int s_db_object_pin_sync(const char *a_group, const char *a_key, bool a_pin)
     if (dap_global_db_context_current() == s_context_global_db)
         return s_db_object_pin_unsafe(s_context_global_db, a_group, a_key, a_pin);
 
-    struct sync_op_result * l_args = DAP_NEW_STACK(struct sync_op_result);
+    struct sync_op_result * l_args = DAP_NEW_Z(struct sync_op_result);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "%s sync call executes for group \"%s\" key \"%s\"",
                                                   a_pin ? "pin" : "unpin", a_group, a_key);
     pthread_mutex_init(&l_args->mutex,NULL);
@@ -1603,7 +1622,9 @@ int s_db_object_pin_sync(const char *a_group, const char *a_key, bool a_pin)
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    return l_args->result ;
+    int l_ret = l_args->result;
+    DAP_DELETE(l_args);
+    return l_ret;
 }
 
 /**
@@ -1717,7 +1738,7 @@ int dap_global_db_del_sync(const char *a_group, const char *a_key)
     if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_del_unsafe(s_context_global_db, a_group, a_key);
 
-    struct sync_op_result *l_args = DAP_NEW_STACK(struct sync_op_result);
+    struct sync_op_result *l_args = DAP_NEW_Z(struct sync_op_result);
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
@@ -1730,7 +1751,9 @@ int dap_global_db_del_sync(const char *a_group, const char *a_key)
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    return l_args->result ;
+    int l_ret = l_args->result;
+    DAP_DELETE(l_args);
+    return l_ret;
 }
 
 /* *** Flush functions group *** */
@@ -1788,7 +1811,7 @@ int dap_global_db_flush_sync()
     if (dap_global_db_context_current() == s_context_global_db)
         return dap_global_db_flush_unsafe(s_context_global_db);
 
-    struct sync_op_result *l_args = DAP_NEW_STACK(struct sync_op_result);
+    struct sync_op_result *l_args = DAP_NEW_Z(struct sync_op_result);
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
@@ -1801,7 +1824,9 @@ int dap_global_db_flush_sync()
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    return l_args->result ;
+    int l_ret = l_args->result;
+    DAP_DELETE(l_args);
+    return l_ret;
 }
 
 /* *** Other functions *** */
