@@ -194,11 +194,11 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_NEW_SIZE(t, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, malloc(s1)) : DAP_CAST_PTR(t, NULL); })
  /* Auto memory! Do not inline! */
 #define DAP_NEW_STACK(t)            DAP_CAST_PTR(t, alloca(sizeof(t)))
-#define DAP_NEW_STACK_SIZE(t, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, alloca(s1)) : DAP_CAST_PTR(void, NULL); })
+#define DAP_NEW_STACK_SIZE(t, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, alloca(s1)) : DAP_CAST_PTR(t, NULL); })
 /* ... */
 #define DAP_NEW_Z(t)          DAP_CAST_PTR(t, calloc(1, sizeof(t)))
 #define DAP_NEW_Z_SIZE(t, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, calloc(1, s1)) : DAP_CAST_PTR(t, NULL); })
-#define DAP_REALLOC(t, s)     ({ size_t s1 = (size_t)(s); s1 > 0 ? realloc(t, s1) : ({ DAP_DEL_Z(t); DAP_CAST_PTR(t, NULL); }); })
+#define DAP_REALLOC(p, s)     ({ size_t s1 = (size_t)(s); s1 > 0 ? realloc(p, s1) : ({ DAP_DEL_Z(p); DAP_CAST_PTR(void, NULL); }); })
 #define DAP_DELETE(p)         free((void*)(p))
 #define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? malloc(sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : DAP_CAST_PTR(void, NULL); })
 #define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (size_t)(s); void *p1 = (p) && (s1 > 0) ? malloc(s1) : NULL; p1 ? memcpy(p1, (p), s1) : DAP_CAST_PTR(void, NULL); })
