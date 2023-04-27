@@ -221,15 +221,13 @@ dap_cert_t * dap_cert_generate_mem_with_seed(const char * a_cert_name, dap_enc_k
         const void* a_seed, size_t a_seed_size)
 {
     dap_enc_key_t *l_enc_key = dap_enc_key_new_generate(a_key_type, NULL, 0, a_seed, a_seed_size, 0);
-    if ( l_enc_key ){
+    if (l_enc_key) {
         dap_cert_t * l_cert = dap_cert_new(a_cert_name);
         l_cert->enc_key = l_enc_key;
         if (a_seed && a_seed_size) {
-            dap_chain_hash_fast_t l_seed_hash;
-            dap_hash_fast(a_seed, a_seed_size, &l_seed_hash);
-            char *l_hash_str = dap_chain_hash_fast_to_str_new(&l_seed_hash);
+            char *l_hash_str;
+            dap_get_data_hash_str_static(a_seed, a_seed_size, l_hash_str);
             log_it(L_DEBUG, "Certificate generated with seed hash %s", l_hash_str);
-            DAP_FREE(l_hash_str);
         }
         return l_cert;
     } else {

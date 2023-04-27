@@ -982,40 +982,37 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
         dap_string_append_printf(a_str_out, "\tType: %s\n",
                                  dap_sign_type_to_str(a_sign->header.type));
         if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)){
-            char *l_hash_str = NULL;
-            if (!dap_strcmp(a_hash_out_type, "hex"))
-                l_hash_str = dap_chain_hash_fast_to_str_new(&l_hash_pkey);
-            else
-                l_hash_str = dap_enc_base58_encode_hash_to_str(&l_hash_pkey);
+            char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
+                    ? dap_enc_base58_encode_hash_to_str(&l_hash_pkey)
+                    : dap_chain_hash_fast_to_str_new(&l_hash_pkey);
             dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", l_hash_str);
             DAP_DELETE(l_hash_str);
-
         }
         dap_string_append_printf(a_str_out, "\tPublic key size: %u\n"
                                             "\tSignature size: %u\n",
                                  a_sign->header.sign_pkey_size,
                                  a_sign->header.sign_size);
-    }else {
+    } else {
         dap_string_append_printf(a_str_out, "! Signature has data, corrupted or not valid\n");
     }
 }
 
-json_object* dap_sign_to_json(const dap_sign_t *a_sign){
-    if (a_sign) {
-        json_object *l_object = json_object_new_object();
-        json_object *l_obj_type_sign = json_object_new_string(dap_sign_type_to_str(a_sign->header.type));
-        json_object_object_add(l_object, "type", l_obj_type_sign);
-        dap_chain_hash_fast_t l_hash_pkey = {};
-        if (dap_sign_get_pkey_hash((dap_sign_t *) a_sign, &l_hash_pkey)) {
-            char *l_hash = dap_chain_hash_fast_to_str_new(&l_hash_pkey);
-            json_object *l_obj_pkey_hash = json_object_new_string(l_hash);
-            json_object_object_add(l_object, "pkeyHash", l_obj_pkey_hash);
-        }
-        json_object *l_obj_pkey_size = json_object_new_uint64(a_sign->header.sign_pkey_size);
-        json_object *l_obj_sign_size = json_object_new_uint64(a_sign->header.sign_size);
-        json_object_object_add(l_object, "signPkeySize", l_obj_pkey_size);
-        json_object_object_add(l_object, "signSize", l_obj_sign_size);
-        return l_object;
+json_object* dap_sign_to_json(const dap_sign_t *a_sign) {
+    if (!a_sign)
+        return NULL;
+    json_object *l_object = json_object_new_object();
+    json_object *l_obj_type_sign = json_object_new_string(dap_sign_type_to_str(a_sign->header.type));
+    json_object_object_add(l_object, "type", l_obj_type_sign);
+    dap_chain_hash_fast_t l_hash_pkey = {};
+    if (dap_sign_get_pkey_hash((dap_sign_t *) a_sign, &l_hash_pkey)) {
+        char l_hash[DAP_CHAIN_HASH_FAST_STR_SIZE];
+        dap_chain_hash_fast_to_str(&l_hash_pkey, l_hash, sizeof(l_hash));
+        json_object *l_obj_pkey_hash = json_object_new_string(l_hash);
+        json_object_object_add(l_object, "pkeyHash", l_obj_pkey_hash);
     }
-    return NULL;
+    json_object *l_obj_pkey_size = json_object_new_uint64(a_sign->header.sign_pkey_size);
+    json_object *l_obj_sign_size = json_object_new_uint64(a_sign->header.sign_size);
+    json_object_object_add(l_object, "signPkeySize", l_obj_pkey_size);
+    json_object_object_add(l_object, "signSize", l_obj_sign_size);
+    return l_object;
 }
