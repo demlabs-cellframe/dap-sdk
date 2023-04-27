@@ -383,14 +383,14 @@ void dap_enc_key_deinit()
 }
 
 /**
- * @brief dap_enc_key_serealize_sign
+ * @brief dap_enc_key_serialize_sign
  *
  * @param a_key_type
  * @param a_sign
  * @param a_sign_len [in/out]
  * @return allocates memory with private key
  */
-uint8_t* dap_enc_key_serealize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len)
+uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len)
 {
     uint8_t *data = NULL;
     switch (a_key_type) {
@@ -414,14 +414,14 @@ uint8_t* dap_enc_key_serealize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
 }
 
 /**
- * @brief dap_enc_key_serealize_sign
+ * @brief dap_enc_key_serialize_sign
  *
  * @param a_key_type
  * @param a_sign
  * @param a_sign_len [in/out]
  * @return allocates memory with private key
  */
-uint8_t* dap_enc_key_deserealize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len)
+uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len)
 {
 
     //todo: why are we changing a_sign_len after we have already used it in a function call?
@@ -452,13 +452,13 @@ uint8_t* dap_enc_key_deserealize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
 
 
 /**
- * @brief dap_enc_key_serealize_priv_key
+ * @brief dap_enc_key_serialize_priv_key
  *
  * @param a_key
  * @param a_buflen_out
  * @return allocates memory with private key
  */
-uint8_t* dap_enc_key_serealize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
+uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
 {
     uint8_t *data = NULL;
     switch (a_key->type) {
@@ -484,13 +484,13 @@ uint8_t* dap_enc_key_serealize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
 }
 
 /**
- * @brief dap_enc_key_serealize_pub_key
+ * @brief dap_enc_key_serialize_pub_key
  *
  * @param a_key
  * @param a_buflen_out
  * @return allocates memory with private key
  */
-uint8_t* dap_enc_key_serealize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
+uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
 {
     uint8_t *data = NULL;
     if ( a_key->pub_key_data == NULL ){
@@ -519,14 +519,14 @@ uint8_t* dap_enc_key_serealize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
     return data;
 }
 /**
- * @brief dap_enc_key_deserealize_priv_key
+ * @brief dap_enc_key_deserialize_priv_key
  *
  * @param a_key
  * @param a_buf
  * @param a_buflen_out
  * @return 0 Ok, -1 error
  */
-int dap_enc_key_deserealize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen)
+int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen)
 {
     if(!a_key || !a_buf)
         return -1;
@@ -590,7 +590,7 @@ int dap_enc_key_deserealize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
     return 0;
 }
 
-int dap_enc_key_deserealize_pub_key_old(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen)
+int dap_enc_key_deserialize_pub_key_old(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen)
 {
     if(!a_key || !a_buf)
         return -1;
@@ -647,14 +647,14 @@ int dap_enc_key_deserealize_pub_key_old(dap_enc_key_t *a_key, const uint8_t *a_b
 }
 
 /**
- * @brief dap_enc_key_deserealize_pub_key
+ * @brief dap_enc_key_deserialize_pub_key
  *
  * @param a_key
  * @param a_buf
  * @param a_buflen_out
  * @return 0 Ok, -1 error
  */
-int dap_enc_key_deserealize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen)
+int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen)
 {
     if(!a_key || !a_buf)
         return -1;
@@ -723,13 +723,13 @@ int dap_enc_key_deserealize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
 }
 
 /**
- * @brief dap_enc_key_serealize
+ * @brief dap_enc_key_serialize
  * @param key
- * @return allocates dap_enc_key_serealize_t* dont remember use free()
+ * @return allocates dap_enc_key_serialize_t* dont remember use free()
  */
-dap_enc_key_serealize_t* dap_enc_key_serealize(dap_enc_key_t * key)
+dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t * key)
 {
-    dap_enc_key_serealize_t *result = DAP_NEW_Z(dap_enc_key_serealize_t);
+    dap_enc_key_serialize_t *result = DAP_NEW_Z(dap_enc_key_serialize_t);
     result->priv_key_data_size = key->priv_key_data_size;
     result->pub_key_data_size = key->pub_key_data_size;
     result->last_used_timestamp = key->last_used_timestamp;
@@ -771,18 +771,18 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
 }
 
 /**
- * @brief dap_enc_key_deserealize
+ * @brief dap_enc_key_deserialize
  * @param buf
  * @param buf_size
  * @return allocates dap_enc_key_t*. Use dap_enc_key_delete for free memory
  */
-dap_enc_key_t* dap_enc_key_deserealize(const void *buf, size_t buf_size)
+dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t buf_size)
 {
-    if(buf_size != sizeof (dap_enc_key_serealize_t)) {
-        log_it(L_ERROR, "Key can't be deserealize. buf_size(%zu) != sizeof (dap_enc_key_serealize_t)(%zu)",buf_size,sizeof (dap_enc_key_serealize_t));
+    if(buf_size != sizeof (dap_enc_key_serialize_t)) {
+        log_it(L_ERROR, "Key can't be deserialize. buf_size(%zu) != sizeof (dap_enc_key_serialize_t)(%zu)",buf_size,sizeof (dap_enc_key_serialize_t));
         return NULL;
     }
-    const dap_enc_key_serealize_t *in_key = (const dap_enc_key_serealize_t *)buf;
+    const dap_enc_key_serialize_t *in_key = (const dap_enc_key_serialize_t *)buf;
     dap_enc_key_t *result = dap_enc_key_new(in_key->type);
     result->last_used_timestamp = in_key->last_used_timestamp;
     result->priv_key_data_size = in_key->priv_key_data_size;

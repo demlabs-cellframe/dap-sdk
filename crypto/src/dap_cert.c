@@ -221,15 +221,13 @@ dap_cert_t * dap_cert_generate_mem_with_seed(const char * a_cert_name, dap_enc_k
         const void* a_seed, size_t a_seed_size)
 {
     dap_enc_key_t *l_enc_key = dap_enc_key_new_generate(a_key_type, NULL, 0, a_seed, a_seed_size, 0);
-    if ( l_enc_key ){
+    if (l_enc_key) {
         dap_cert_t * l_cert = dap_cert_new(a_cert_name);
         l_cert->enc_key = l_enc_key;
         if (a_seed && a_seed_size) {
-            dap_chain_hash_fast_t l_seed_hash;
-            dap_hash_fast(a_seed, a_seed_size, &l_seed_hash);
-            char *l_hash_str = dap_chain_hash_fast_to_str_new(&l_seed_hash);
+            char *l_hash_str;
+            dap_get_data_hash_str_static(a_seed, a_seed_size, l_hash_str);
             log_it(L_DEBUG, "Certificate generated with seed hash %s", l_hash_str);
-            DAP_FREE(l_hash_str);
         }
         return l_cert;
     } else {
@@ -465,7 +463,7 @@ int dap_cert_compare_with_sign (dap_cert_t * a_cert,const dap_sign_t * a_sign)
         int l_ret;
         size_t l_pub_key_size = 0;
         // serialize public key
-        uint8_t *l_pub_key = dap_enc_key_serealize_pub_key(a_cert->enc_key, &l_pub_key_size);
+        uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_cert->enc_key, &l_pub_key_size);
         if ( l_pub_key_size == a_sign->header.sign_pkey_size){
             l_ret = memcmp ( l_pub_key, a_sign->pkey_n_sign, a_sign->header.sign_pkey_size );
         }else

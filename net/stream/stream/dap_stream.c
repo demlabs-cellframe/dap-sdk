@@ -823,10 +823,10 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             if(l_ch) {
                 l_ch->stat.bytes_read += l_ch_pkt->hdr.data_size;
                 if(l_ch->proc && l_ch->proc->packet_in_callback) {
+                    l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type);
-                    l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
                 }
             } else{
                 log_it(L_WARNING, "Input: unprocessed channel packet id '%c'",(char) l_ch_pkt->hdr.id );
@@ -844,9 +844,10 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     } break;
     case STREAM_PKT_TYPE_KEEPALIVE: {
         //log_it(L_DEBUG, "Keep alive check recieved");
-        dap_stream_pkt_hdr_t l_ret_pkt = {};
-        l_ret_pkt.type = STREAM_PKT_TYPE_ALIVE;
-        memcpy(l_ret_pkt.sig, c_dap_stream_sig, sizeof(l_ret_pkt.sig));
+        dap_stream_pkt_hdr_t l_ret_pkt = {
+            .type = STREAM_PKT_TYPE_ALIVE
+        };
+        memcpy(l_ret_pkt.sig, c_dap_stream_sig, sizeof(c_dap_stream_sig));
         dap_events_socket_write_unsafe(a_stream->esocket, &l_ret_pkt, sizeof(l_ret_pkt));
         // Reset client keepalive timer
         if (a_stream->keepalive_timer) {
@@ -864,8 +865,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     DAP_DEL_Z(a_stream->pkt_cache);
     if(l_is_clean_fragments) {
         DAP_DEL_Z(a_stream->buf_fragments);
-        a_stream->buf_fragments_size_total = 0;
-        a_stream->buf_fragments_size_filled = 0;
+        a_stream->buf_fragments_size_total = a_stream->buf_fragments_size_filled = 0;
     }
 }
 

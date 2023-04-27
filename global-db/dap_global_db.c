@@ -412,8 +412,7 @@ byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    byte_t *l_ret = l_args->data;
-    if (l_ret) {
+    if (l_args->data) {
         if (a_data_size)
             *a_data_size = l_args->data_size;
         if (a_is_pinned)
@@ -421,6 +420,7 @@ byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a
         if (a_ts)
             *a_ts = l_args->ts;
     }
+    byte_t *l_ret = l_args->data;
     DAP_DELETE(l_args);
     return l_ret;
 }
@@ -754,8 +754,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    byte_t *l_ret = l_args->data;
-    if (l_ret) {
+    if (l_args->data) {
         if (a_key)
             *a_key = l_args->key;
         else
@@ -767,6 +766,8 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
         if (a_ts)
             *a_ts = l_args->ts;
     }
+
+    byte_t *l_ret = l_args->data;
     DAP_DELETE(l_args);
     return l_ret;
 }
@@ -1002,10 +1003,10 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
-
-    dap_global_db_obj_t *l_ret = l_args->objs;
     if (l_args->objs_count)
         *a_objs_count = l_args->objs_count;
+
+    dap_global_db_obj_t *l_ret = l_args->objs;
     DAP_DELETE(l_args);
     return l_ret;
 }
@@ -1134,13 +1135,12 @@ dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
-
-    dap_store_obj_t * l_ret = l_args->objs;
     if (a_objs_count)
         *a_objs_count = l_args->objs_count;
+
+    dap_store_obj_t *l_ret = l_args->objs;
     DAP_DELETE(l_args);
     return l_ret;
-
 }
 
 /* *** Set functions group *** */
@@ -1622,7 +1622,7 @@ int s_db_object_pin_sync(const char *a_group, const char *a_key, bool a_pin)
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    int l_ret = l_args->result ;
+    int l_ret = l_args->result;
     DAP_DELETE(l_args);
     return l_ret;
 }
@@ -1659,18 +1659,17 @@ int dap_global_db_unpin_sync(const char *a_group, const char *a_key)
  */
 int dap_global_db_del_unsafe(dap_global_db_context_t *a_global_db_context, const char * a_group, const char *a_key)
 {
-    dap_store_obj_t l_store_obj = {};
-
-    l_store_obj.key = a_key;
-    l_store_obj.group = (char *)a_group;
-    l_store_obj.type = DAP_DB$K_OPTYPE_DEL;
-    l_store_obj.timestamp = dap_nanotime_now();
+    dap_store_obj_t l_store_obj = {
+        .key        = a_key,
+        .group      = (char*)a_group,
+        .type       = DAP_DB$K_OPTYPE_DEL,
+        .timestamp  = dap_nanotime_now()
+    };
 
     int l_res = dap_global_db_driver_apply(&l_store_obj, 1);
 
     if (a_key) {
         if (l_res >= 0)
-            // add to Del group
             l_res = s_record_del_history_add(l_store_obj.group, (char *)l_store_obj.key, l_store_obj.timestamp);
         // do not add to history if l_res=1 (already deleted)
         if (!l_res)
@@ -1752,7 +1751,7 @@ int dap_global_db_del_sync(const char *a_group, const char *a_key)
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    int l_ret = l_args->result ;
+    int l_ret = l_args->result;
     DAP_DELETE(l_args);
     return l_ret;
 }
@@ -1825,7 +1824,7 @@ int dap_global_db_flush_sync()
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
 
-    int l_ret = l_args->result ;
+    int l_ret = l_args->result;
     DAP_DELETE(l_args);
     return l_ret;
 }
@@ -2011,21 +2010,18 @@ static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t 
 */
 static int s_record_del_history_del(const char *a_group, const char *a_key)
 {
-dap_store_obj_t store_data = {0};
-char	l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
-int	l_res = 0;
+    if (!a_key)
+        return -1;
+    char l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
+    dap_snprintf(l_group, sizeof(l_group) - 1, "%s.del", a_group);
+    dap_store_obj_t store_data = {
+        .key        = (char*)a_key,
+        .group      = l_group
+    };
 
-   if(!a_key)
-       return -1;
-
-   store_data.key = (char *)a_key;
-   snprintf(l_group, sizeof(l_group) - 1, "%s.del", a_group);
-   store_data.group = l_group;
-
-   if ( dap_global_db_driver_is(store_data.group, store_data.key) )
-       l_res = dap_global_db_driver_delete(&store_data, 1);
-
-   return  l_res;
+    return dap_global_db_driver_is(store_data.group, store_data.key)
+            ? dap_global_db_driver_delete(&store_data, 1)
+            : 0;
 }
 
 /**
@@ -2037,19 +2033,14 @@ int	l_res = 0;
  */
 static int s_record_del_history_add(char *a_group, char *a_key, uint64_t a_timestamp)
 {
-dap_store_obj_t store_data = {0};
-char	l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
-int l_res = -1;
-
-    store_data.key = a_key;
-    // group = parent group + '.del'
-    snprintf(l_group, sizeof(l_group) - 1, "%s.del", a_group);
-    store_data.group = l_group;
-    store_data.timestamp = a_timestamp;
-
-    l_res = dap_global_db_driver_add(&store_data, 1);
-
-    return  l_res;
+    char l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
+    dap_snprintf(l_group, sizeof(l_group) - 1, "%s.del", a_group);
+    dap_store_obj_t store_data = {
+        .key        = a_key,
+        .group      = l_group,
+        .timestamp = a_timestamp
+    };
+    return dap_global_db_driver_add(&store_data, 1);
 }
 
 /**

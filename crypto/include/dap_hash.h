@@ -89,7 +89,7 @@ DAP_STATIC_INLINE bool dap_hash_fast_compare(dap_hash_fast_t *a_hash1, dap_hash_
 {
     if(!a_hash1 || !a_hash2)
         return false;
-    return  (!memcmp(a_hash1, a_hash2, sizeof(dap_hash_fast_t))); /*0 - true, <> 0 - false */
+    return !memcmp(a_hash1, a_hash2, sizeof(dap_hash_fast_t)); /* 0 - true, <> 0 - false */
 }
 
 /**
@@ -103,7 +103,7 @@ DAP_STATIC_INLINE bool dap_hash_fast_compare(dap_hash_fast_t *a_hash1, dap_hash_
 DAP_STATIC_INLINE bool dap_hash_fast_is_blank( dap_hash_fast_t *a_hash )
 {
     static dap_hash_fast_t l_blank_hash = {};
-    return dap_hash_fast_compare( a_hash, &l_blank_hash);
+    return dap_hash_fast_compare(a_hash, &l_blank_hash);
 }
 
 
@@ -117,7 +117,7 @@ DAP_STATIC_INLINE int dap_chain_hash_fast_to_str(const dap_hash_fast_t *a_hash, 
         return -3;
     a_str[0] = '0';
     a_str[1] = 'x';
-    a_str[ DAP_CHAIN_HASH_FAST_STR_SIZE - 1 ] = 0;
+    a_str[ DAP_CHAIN_HASH_FAST_STR_SIZE - 1 ] = '\0';
     dap_htoa64((a_str + 2), a_hash->raw, DAP_CHAIN_HASH_FAST_SIZE);
     return DAP_CHAIN_HASH_FAST_STR_SIZE;
 }
@@ -145,22 +145,17 @@ DAP_STATIC_INLINE char *dap_hash_fast_str_new( const void *a_data, size_t a_data
     if(!a_data || !a_data_size)
         return NULL;
 
-    dap_chain_hash_fast_t l_hash;
-    memset(&l_hash, 0, sizeof(dap_chain_hash_fast_t));
+    dap_chain_hash_fast_t l_hash = { };
     dap_hash_fast(a_data, a_data_size, &l_hash);
-    size_t a_str_max = (sizeof(l_hash.raw) + 1) * 2 + 2; /* heading 0x */
-    char *a_str = DAP_NEW_Z_SIZE(char, a_str_max);
-    size_t hash_len = (size_t)dap_chain_hash_fast_to_str(&l_hash, a_str, a_str_max);
-    if(!hash_len) {
-        DAP_DELETE(a_str);
-        return NULL;
-    }
-    return a_str;
-
+    char *a_str = DAP_NEW_Z_SIZE(char, DAP_CHAIN_HASH_FAST_STR_SIZE);
+    if (dap_chain_hash_fast_to_str(&l_hash, a_str, DAP_CHAIN_HASH_FAST_STR_SIZE) > 0)
+        return a_str;
+    DAP_DELETE(a_str);
+    return NULL;
 }
 
 #define dap_get_data_hash_str_static(data,data_size,strname) \
-    char strname[DAP_CHAIN_HASH_FAST_STR_SIZE]; \
+    strname = DAP_NEW_STACK_SIZE(char, DAP_CHAIN_HASH_FAST_STR_SIZE); \
     do { dap_hash_fast_t dummy_hash; \
     dap_hash_fast(data,data_size,&dummy_hash); \
     dap_chain_hash_fast_to_str(&dummy_hash,strname,DAP_CHAIN_HASH_FAST_STR_SIZE); } while (0)
