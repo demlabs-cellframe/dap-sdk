@@ -148,7 +148,7 @@ DAP_STATIC_INLINE char *dap_hash_fast_str_new( const void *a_data, size_t a_data
     dap_chain_hash_fast_t l_hash = { };
     dap_hash_fast(a_data, a_data_size, &l_hash);
     char *a_str = DAP_NEW_Z_SIZE(char, DAP_CHAIN_HASH_FAST_STR_SIZE);
-    if (dap_chain_hash_fast_to_str(&l_hash, a_str, DAP_CHAIN_HASH_FAST_STR_SIZE))
+    if (dap_chain_hash_fast_to_str(&l_hash, a_str, DAP_CHAIN_HASH_FAST_STR_SIZE) > 0)
         return a_str;
     DAP_DELETE(a_str);
     return NULL;
