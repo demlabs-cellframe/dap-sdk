@@ -1424,9 +1424,14 @@ int dap_context_remove( dap_events_socket_t * a_es)
         return -1;
     }
 
-    l_context->event_sockets_count--;
-    if (a_es->socket)
-       HASH_DELETE(hh, l_context->esockets, a_es);
+    dap_events_socket_t *l_es = NULL;
+    HASH_FIND(hh, l_context->esockets, &a_es->uuid, sizeof(a_es->uuid), l_es);
+    if (!l_es || l_es != a_es)
+        log_it(L_ERROR, "Try to remove unexistent socket %p", a_es);
+    else {
+        l_context->event_sockets_count--;
+        HASH_DELETE(hh, l_context->esockets, a_es);
+    }
 
 #if defined(DAP_EVENTS_CAPS_EPOLL)
 
