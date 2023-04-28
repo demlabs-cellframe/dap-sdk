@@ -118,8 +118,6 @@
 #define DAP_CAST_PTR(t,v) (t*)(v)
 #endif
 
-#define DAP_NULL_PTR(t) DAP_CAST_PTR(t, NULL)
-
 #if DAP_USE_RPMALLOC
   #include "rpmalloc.h"
   #define DAP_MALLOC(a)         rpmalloc(a)
@@ -186,24 +184,24 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #else
 #define DAP_MALLOC(p)         malloc(p)
 #define DAP_FREE(p)           free(p)
-#define DAP_CALLOC(p, s)      ((size_t)(s) == 0 ? NULL : calloc((p), (s)))
-#define DAP_ALMALLOC(p, s)    ((size_t)(s) == 0 ? NULL : _dap_aligned_alloc((p), (s)))
-#define DAP_ALREALLOC(p, s)   ((size_t)(s) == 0 ? NULL : _dap_aligned_realloc((p), (s)))
+#define DAP_CALLOC(p, s)      ({ size_t s1 = (size_t)(s); s1 > 0 ? calloc(p, s1) : DAP_CAST_PTR(void, NULL); })
+#define DAP_ALMALLOC(p, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? _dap_aligned_alloc(p, s1) : DAP_CAST_PTR(void, NULL); })
+#define DAP_ALREALLOC(p, s)   ({ size_t s1 = (size_t)(s); s1 > 0 ? _dap_aligned_realloc(p, s1) :  DAP_CAST_PTR(void, NULL); })
 #define DAP_ALFREE(p)         _dap_aligned_free(p)
 #define DAP_PAGE_ALMALLOC(p)  _dap_page_aligned_alloc(p)
 #define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
 #define DAP_NEW(t)            DAP_CAST_PTR(t, malloc(sizeof(t)))
-#define DAP_NEW_SIZE(t, s)    ((size_t)(s) == 0 ? DAP_NULL_PTR(t) : DAP_CAST_PTR(t, malloc(s)))
+#define DAP_NEW_SIZE(t, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, malloc(s1)) : DAP_CAST_PTR(t, NULL); })
  /* Auto memory! Do not inline! */
 #define DAP_NEW_STACK(t)            DAP_CAST_PTR(t, alloca(sizeof(t)))
-#define DAP_NEW_STACK_SIZE(t, s)    ((size_t)(s) == 0 ? DAP_NULL_PTR(t) : DAP_CAST_PTR(t, alloca(s)))
+#define DAP_NEW_STACK_SIZE(t, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, alloca(s1)) : DAP_CAST_PTR(t, NULL); })
 /* ... */
 #define DAP_NEW_Z(t)          DAP_CAST_PTR(t, calloc(1, sizeof(t)))
-#define DAP_NEW_Z_SIZE(t, s)  ((size_t)(s) != 0 ? DAP_CAST_PTR(t, calloc(1, (s))) : DAP_NULL_PTR(t))
-#define DAP_REALLOC(s1, s2)   ((size_t)(s2) != 0 ? realloc((s1), (s2)) : ({ if (s1) free(s1); DAP_NULL_PTR(void); }))
-#define DAP_DELETE(p)         free((void *)(p))
-#define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? malloc(sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : NULL; })
-#define DAP_DUP_SIZE(p, s)    ({ void *p1 = (p) && (size_t)(s) > 0 ? malloc(s) : NULL; p1 ? memcpy(p1, (p), (s)) : NULL; })
+#define DAP_NEW_Z_SIZE(t, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, calloc(1, s1)) : DAP_CAST_PTR(t, NULL); })
+#define DAP_REALLOC(p, s)     ({ size_t s1 = (size_t)(s); s1 > 0 ? realloc(p, s1) : ({ DAP_DEL_Z(p); DAP_CAST_PTR(void, NULL); }); })
+#define DAP_DELETE(p)         free((void*)(p))
+#define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? malloc(sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : DAP_CAST_PTR(void, NULL); })
+#define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (size_t)(s); void *p1 = (p) && (s1 > 0) ? malloc(s1) : NULL; p1 ? memcpy(p1, (p), s1) : DAP_CAST_PTR(void, NULL); })
 #endif
 #define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
 
