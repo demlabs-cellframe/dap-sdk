@@ -193,6 +193,7 @@ static void *s_list_thread_proc(void *arg)
         dap_nanotime_t l_time_allowed = dap_nanotime_now() + dap_nanotime_from_sec(3600 * 24); // to be sure the timestamp is invalid
         while (l_group_cur->count && l_dap_db_log_list->is_process) { // Number of records to be synchronized
             size_t l_item_count = 0;//min(64, l_group_cur->count);
+            size_t l_objs_total_size = 0;
             dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, l_item_start, &l_item_count);
             if (!l_dap_db_log_list->is_process) {
                 dap_store_obj_free(l_objs, l_item_count);
@@ -232,11 +233,15 @@ static void *s_list_thread_proc(void *arg)
                 dap_store_packet_change_id(l_pkt, l_cur_id);
                 l_list_obj->pkt = l_pkt;
                 l_list = dap_list_append(l_list, l_list_obj);
+                l_objs_total_size += dap_db_log_list_obj_get_size(l_list_obj);
             }
             dap_store_obj_free(l_objs, l_item_count);
             pthread_mutex_lock(&l_dap_db_log_list->list_mutex);
             // add l_list to items_list
             l_dap_db_log_list->items_list = dap_list_concat(l_dap_db_log_list->items_list, l_list);
+            l_dap_db_log_list->size += l_objs_total_size;
+            while (l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE)
+                pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
             pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
         }
         DAP_DEL_Z(l_del_group_name_replace);
@@ -415,7 +420,12 @@ dap_db_log_list_obj_t *dap_db_log_list_get(dap_db_log_list_t *a_db_log_list)
         a_db_log_list->items_list = dap_list_remove_link(a_db_log_list->items_list, l_list);
         a_db_log_list->items_rest--;
         l_ret = l_list->data;
+        size_t l_old_size = a_db_log_list->size;
+        a_db_log_list->size -= dap_db_log_list_obj_get_size(l_ret);
         DAP_DELETE(l_list);
+        if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE &&
+                a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE)
+            pthread_cond_signal(&a_db_log_list->cond);
     }
     pthread_mutex_unlock(&a_db_log_list->list_mutex);
     //log_it(L_DEBUG, "get item n=%d", a_db_log_list->items_number - a_db_log_list->items_rest);
