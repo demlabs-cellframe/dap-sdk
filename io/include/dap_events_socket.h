@@ -163,7 +163,7 @@ typedef struct dap_events_socket_callbacks {
     void *arg;                                                              /* Callbacks argument */
 } dap_events_socket_callbacks_t;
 
-#define DAP_STREAM_PKT_FRAGMENT_SIZE    (64 * 1024)
+#define DAP_STREAM_PKT_FRAGMENT_SIZE    (16 * 1024)
 #ifdef DAP_TPS_TEST
 #define DAP_STREAM_PKT_SIZE_MAX         (128 * 1024 * 1024)
 #else
