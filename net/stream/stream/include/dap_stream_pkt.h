@@ -41,25 +41,25 @@ typedef struct dap_stream_pkt_hdr{
     uint8_t type;      // Packet type
     uint64_t src_addr; // Source address ( vasya@domain.net )
     uint64_t dst_addr; // Destination address ( general#domain.net )
-}  __attribute__((packed)) dap_stream_pkt_hdr_t;
+} DAP_ALIGN_PACKED dap_stream_pkt_hdr_t;
 
 typedef struct dap_stream_fragment_pkt{
     uint32_t size; // fragment size
     uint32_t mem_shift; // fragment shift inside origin packet
     uint32_t full_size; // full origin packet size
     uint8_t data[];
-} __attribute__((packed)) dap_stream_fragment_pkt_t;
+} DAP_ALIGN_PACKED dap_stream_fragment_pkt_t;
 
 typedef struct dap_stream_pkt{
     dap_stream_pkt_hdr_t hdr;
     uint8_t data[];
-}  __attribute__((packed)) dap_stream_pkt_t;
+} DAP_ALIGN_PACKED dap_stream_pkt_t;
 
 typedef struct stream_srv_pkt{
     uint32_t session_id;
     uint8_t enc_type;
     uint32_t coockie;
-} __attribute__((packed)) stream_srv_pkt_t;
+} DAP_ALIGN_PACKED stream_srv_pkt_t;
 
 extern const uint8_t c_dap_stream_sig[8];
 

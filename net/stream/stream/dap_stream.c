@@ -141,6 +141,11 @@ int dap_stream_init(dap_config_t * a_config)
         dap_memstat_reg(&s_memstat[i]);
 #endif
 
+#ifdef DAP_STREAM_TEST
+#include "dap_stream_test.h"
+    dap_stream_test_run("127.0.0.1", 8090, 3500, 1);
+#endif
+
     log_it(L_NOTICE,"Init streaming module");
 
     return 0;
