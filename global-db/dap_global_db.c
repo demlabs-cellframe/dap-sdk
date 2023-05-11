@@ -1130,10 +1130,16 @@ dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += 5;
     if (!dap_global_db_get_all_raw(a_group, a_first_id, a_objs_count ? *a_objs_count : 0,
                                    s_get_all_raw_sync_callback, l_args))
         while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB get all raw operation timeout");
+                break;
+            }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
