@@ -16,6 +16,8 @@
 #define GDB_SYNC_ALWAYS_FROM_ZERO       // For debug purposes
 // for dap_db_log_list_xxx()
 
+#define DAP_DB_LOG_LIST_MAX_SIZE    (256 * 1024)
+
 typedef struct dap_chain dap_chain_t;
 typedef struct dap_chain_net dap_chain_net_t;
 
@@ -53,12 +55,19 @@ typedef struct dap_db_log_list {
     size_t items_rest; // rest items to read from items_list
     size_t items_number; // total items after reading from db
     dap_list_t *groups;
+    size_t size;
+    pthread_cond_t cond;
     pthread_t thread;
     pthread_mutex_t list_mutex;
 } dap_db_log_list_t;
 
 void dap_global_db_sync_init();
 void dap_global_db_sync_deinit();
+
+DAP_STATIC_INLINE size_t dap_db_log_list_obj_get_size(dap_db_log_list_obj_t *a_obj)
+{
+    return sizeof(dap_db_log_list_obj_t) + sizeof(dap_global_db_pkt_t) + a_obj->pkt->data_size;
+}
 
 /**
  * Setup callbacks and filters

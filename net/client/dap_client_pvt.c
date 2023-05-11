@@ -178,9 +178,6 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
     a_client_pvt->remote_protocol_version = 0;
     a_client_pvt->ts_last_active = 0;
 
-    dap_list_free_full(a_client_pvt->pkt_queue, NULL);
-    a_client_pvt->pkt_queue = NULL;
-
     a_client_pvt->last_error = ERROR_NO_ERROR;
     a_client_pvt->stage = STAGE_BEGIN;
     a_client_pvt->stage_status = STAGE_STATUS_COMPLETE;

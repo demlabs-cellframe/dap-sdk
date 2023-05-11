@@ -271,6 +271,8 @@ byte_t *dap_global_db_get_unsafe(dap_global_db_context_t *a_global_db_context, c
                                  const char *a_key, size_t *a_data_size,
                                  bool *a_is_pinned, dap_nanotime_t *a_ts)
 {
+
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "get call executes for group \"%s\" and key \"%s\"", a_group, a_key);
     dap_store_obj_t *l_store_obj = dap_global_db_get_raw_unsafe(a_global_db_context, a_group, a_key);
     if (!l_store_obj)
         return NULL;
