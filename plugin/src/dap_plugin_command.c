@@ -76,7 +76,7 @@ static int s_command_handler(int a_argc, char **a_argv, char **a_str_reply)
                                   l_str, "|\t",l_manifest->name, "\t|\t", l_manifest->version, "\t|\t", l_manifest->author, "\t|\n", NULL);
 
             }
-            dap_cli_server_cmd_set_reply_text(a_str_reply, l_str);
+            dap_cli_server_cmd_set_reply_text(a_str_reply, "%s", l_str);
         }break;
         case CMD_SHOW_NAME:
             if(!l_cmd_arg){
