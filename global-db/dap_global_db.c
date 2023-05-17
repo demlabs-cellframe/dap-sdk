@@ -1127,7 +1127,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg)
     // Clean memory
     dap_store_obj_free(l_store_objs,l_values_count);
 
-    // Here we also check if the reply was with zero values. To prevent endless loop we don't resend query request in such cases
+    /*// Here we also check if the reply was with zero values. To prevent endless loop we don't resend query request in such cases
     if (l_values_count && l_values_count != l_values_remains) {
         // Have to process callback again
         int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,a_msg);
@@ -1135,7 +1135,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg)
         if (!l_ret)
             return false; // Don't delete it because it just sent again to the queue{
         log_it(L_ERROR, "Can't resend i/o message for opcode GET_ALL_RAW values_remains:%zu error code %d", l_values_remains, l_ret);
-    }
+    }*/
     return true; // All values are sent
 }
 
@@ -1160,8 +1160,9 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
     // TODO make incremental copy
     l_args->objs = dap_store_obj_copy(a_values, a_values_count);
     l_args->objs_count += a_values_count;
-    if (a_values_count != a_values_total)
-        return;
+    if (a_values_count != a_values_total) {
+        log_it(L_WARNING, "Got only %zu records from %zu", a_values_count, a_values_total);
+    }
     pthread_mutex_lock(&l_args->mutex);
     if (!l_args->timeout) {
         l_args->called = true;

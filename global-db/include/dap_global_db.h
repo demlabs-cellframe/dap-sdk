@@ -30,7 +30,7 @@
 
 #define DAP_GLOBAL_DB_VERSION               2
 #define DAP_GLOBAL_DB_LOCAL_GENERAL         "local.general"
-#define DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT     10 // seconds
+#define DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT     5 // seconds
 
 // GlobalDB own context custom extension
 typedef struct dap_global_db_context

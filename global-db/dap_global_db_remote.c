@@ -194,7 +194,7 @@ static void *s_list_thread_proc(void *arg)
         while (l_group_cur->count && l_dap_db_log_list->is_process) { // Number of records to be synchronized
             size_t l_item_count = 0;//min(64, l_group_cur->count);
             size_t l_objs_total_size = 0;
-            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, l_item_start, &l_item_count);
+            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, 0, &l_item_count);
             if (!l_dap_db_log_list->is_process) {
                 dap_store_obj_free(l_objs, l_item_count);
                 return NULL;
@@ -204,7 +204,7 @@ static void *s_list_thread_proc(void *arg)
                 break;
             // set new start pos = lastitem pos + 1
             l_item_start = l_objs[l_item_count - 1].id + 1;
-            l_group_cur->count -= l_item_count;
+            l_group_cur->count = 0; //-= l_item_count;
             dap_list_t *l_list = NULL;
             for (size_t i = 0; i < l_item_count; i++) {
                 dap_store_obj_t *l_obj_cur = l_objs + i;
