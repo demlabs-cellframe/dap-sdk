@@ -981,6 +981,7 @@ struct objs_get{
     pthread_mutex_t mutex;
     pthread_cond_t cond;
     bool called;
+    bool timeout;
     dap_global_db_obj_t *objs;
     size_t objs_count;
 };
@@ -1006,9 +1007,17 @@ static void s_objs_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_
     l_args->objs = dap_global_db_objs_copy(a_values, a_values_count);
     l_args->objs_count = a_values_count;
     pthread_mutex_lock(&l_args->mutex);
-    l_args->called = true;
-    pthread_cond_signal(&l_args->cond);
-    pthread_mutex_unlock(&l_args->mutex);
+    if (!l_args->timeout) {
+        l_args->called = true;
+        pthread_cond_signal(&l_args->cond);
+        pthread_mutex_unlock(&l_args->mutex);
+    } else {
+        dap_global_db_objs_delete(l_args->objs, l_args->objs_count);
+        pthread_mutex_unlock(&l_args->mutex);
+        pthread_mutex_destroy(&l_args->mutex);
+        pthread_cond_destroy(&l_args->cond);
+        DAP_DELETE(l_args);
+    }
 }
 
 /**
@@ -1037,12 +1046,16 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
                 log_it(L_ERROR, "Global DB get all operation timeout");
                 break;
             }
+    if (!l_args->called) {
+        l_args->timeout = true;
+        pthread_mutex_unlock(&l_args->mutex);
+        return NULL;
+    }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
     if (a_objs_count)
         *a_objs_count = l_args->objs_count;
-
     dap_global_db_obj_t *l_ret = l_args->objs;
     DAP_DELETE(l_args);
     return l_ret;
@@ -1133,6 +1146,7 @@ struct store_objs_get{
     pthread_mutex_t mutex;
     pthread_cond_t cond;
     bool called;
+    bool timeout;
     dap_store_obj_t *objs;
     size_t objs_count;
 };
@@ -1149,9 +1163,17 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
     if (a_values_count != a_values_total)
         return;
     pthread_mutex_lock(&l_args->mutex);
-    l_args->called = true;
-    pthread_cond_signal(&l_args->cond);
-    pthread_mutex_unlock(&l_args->mutex);
+    if (!l_args->timeout) {
+        l_args->called = true;
+        pthread_cond_signal(&l_args->cond);
+        pthread_mutex_unlock(&l_args->mutex);
+    } else {
+        dap_store_obj_free(l_args->objs, l_args->objs_count);
+        pthread_mutex_unlock(&l_args->mutex);
+        pthread_mutex_destroy(&l_args->mutex);
+        pthread_cond_destroy(&l_args->cond);
+        DAP_DELETE(l_args);
+    }
 }
 
 dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
@@ -1175,14 +1197,17 @@ dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_
                 log_it(L_ERROR, "Global DB get all raw operation timeout");
                 break;
             }
+    if (!l_args->called) {
+        l_args->timeout = true;
+        pthread_mutex_unlock(&l_args->mutex);
+        return NULL;
+    }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
     if (a_objs_count)
         *a_objs_count = l_args->objs_count;
-
     dap_store_obj_t *l_ret = l_args->objs;
-    DAP_DELETE(l_args);
     return l_ret;
 }
 
