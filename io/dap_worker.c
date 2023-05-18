@@ -302,7 +302,7 @@ static bool s_socket_all_check_activity( void * a_arg)
 {
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
-    time_t l_curtime = time(NULL) + 1000;
+    time_t l_curtime = time(NULL); // + 1000;
     //dap_ctime_r(&l_curtime, l_curtimebuf);
     //log_it(L_DEBUG,"Check sockets activity on worker #%u at %s", l_worker->id, l_curtimebuf);
     bool l_removed;
