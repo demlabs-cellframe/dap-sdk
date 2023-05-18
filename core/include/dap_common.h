@@ -22,8 +22,6 @@
     You should have received a copy of the GNU General Public License
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
-//#define _XOPEN_SOURCE 700
-
 #pragma once
 #ifndef __STDC_WANT_LIB_EXT1__
 #define __STDC_WANT_LIB_EXT1__ 1
@@ -48,7 +46,14 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <time.h>
+#ifdef __USE_GNU
+# undef __USE_GNU
+# define NEED_GNU_REENABLE
+#endif
 #include <string.h>
+#ifdef NEED_GNU_REENABLE
+# define __USE_GNU
+#endif
 #include <assert.h>
 #include <ctype.h>
 #include <pthread.h>
