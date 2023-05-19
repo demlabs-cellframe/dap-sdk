@@ -228,7 +228,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
 
     size_t  l_ret = 0, l_data_size,
             l_max_size = l_data_size = a_data_size + sizeof(dap_stream_ch_pkt_hdr_t);
-    byte_t *l_buf = DAP_NEW_STACK_SIZE(byte_t, l_max_size); /* a_ch->buf; */
+    byte_t *l_buf = DAP_NEW_Z_SIZE(byte_t, l_max_size); /* a_ch->buf; */
 
     dap_stream_ch_pkt_hdr_t l_hdr = {
         .id         = a_ch->proc->id,
