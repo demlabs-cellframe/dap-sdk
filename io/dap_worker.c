@@ -158,6 +158,7 @@ static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg)
         case DESCRIPTOR_TYPE_SOCKET_UDP:
         case DESCRIPTOR_TYPE_SOCKET_CLIENT:
         case DESCRIPTOR_TYPE_SOCKET_LISTENING:{
+            l_es_new->last_time_active = time(NULL);
 #if defined (DAP_OS_UNIX) && defined (SO_INCOMING_CPU)
             int l_cpu = l_worker->context->cpu_id;
             setsockopt(l_es_new->socket , SOL_SOCKET, SO_INCOMING_CPU, &l_cpu, sizeof(l_cpu));
@@ -168,7 +169,6 @@ static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg)
     int l_ret = dap_context_add(l_context, l_es_new);
     l_es_new->worker = l_worker;
 
-    l_es_new->last_time_active = time(NULL);
     // We need to differ new and reassigned esockets. If its new - is_initialized is false
     if ( ! l_es_new->is_initalized ){
         if (l_es_new->callbacks.new_callback)

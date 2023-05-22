@@ -21,19 +21,7 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <time.h>
-#include <stdlib.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
-#include <stdbool.h>
-#include <unistd.h>
-#include <dirent.h>
-#include <errno.h>
-#include <assert.h>
-#include <fcntl.h>
+#include "dap_common.h"
 
 #ifdef WIN32
 #include <winsock2.h>
@@ -46,9 +34,6 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #endif
-
-#include <pthread.h>
-
 #include <json-c/json.h>
 
 #include "dap_enc_key.h"
@@ -1232,15 +1217,18 @@ static void s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ARG vo
  */
 static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
 {
+    if (!a_es->_inheritor) {
+        log_it(L_WARNING, "No client with client stream erro callback");
+        return;
+    }
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
 
     char l_errbuf[128];
-    l_errbuf[0]='\0';
     if (a_error)
-        strerror_r(a_error,l_errbuf,sizeof (l_errbuf));
+        strerror_r(a_error, l_errbuf, sizeof(l_errbuf));
     else
-        strncpy(l_errbuf,"Unknown Error",sizeof(l_errbuf)-1);
+        strncpy(l_errbuf, "Unknown error", sizeof(l_errbuf) - 1);
 
     log_it(L_WARNING, "STREAM error \"%s\" (code %d)", l_errbuf, a_error);
 

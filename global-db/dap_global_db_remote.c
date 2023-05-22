@@ -194,7 +194,7 @@ static void *s_list_thread_proc(void *arg)
         while (l_group_cur->count && l_dap_db_log_list->is_process) { // Number of records to be synchronized
             size_t l_item_count = 0;//min(64, l_group_cur->count);
             size_t l_objs_total_size = 0;
-            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, l_item_start, &l_item_count);
+            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, 0, &l_item_count);
             if (!l_dap_db_log_list->is_process) {
                 dap_store_obj_free(l_objs, l_item_count);
                 return NULL;
@@ -204,7 +204,7 @@ static void *s_list_thread_proc(void *arg)
                 break;
             // set new start pos = lastitem pos + 1
             l_item_start = l_objs[l_item_count - 1].id + 1;
-            l_group_cur->count -= l_item_count;
+            l_group_cur->count = 0; //-= l_item_count;
             dap_list_t *l_list = NULL;
             for (size_t i = 0; i < l_item_count; i++) {
                 dap_store_obj_t *l_obj_cur = l_objs + i;
@@ -240,7 +240,7 @@ static void *s_list_thread_proc(void *arg)
             // add l_list to items_list
             l_dap_db_log_list->items_list = dap_list_concat(l_dap_db_log_list->items_list, l_list);
             l_dap_db_log_list->size += l_objs_total_size;
-            while (l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE)
+            while (l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE && l_dap_db_log_list->is_process)
                 pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
             pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
         }
@@ -363,6 +363,7 @@ dap_db_log_list_t* dap_db_log_list_start(dap_chain_net_t *l_net, dap_chain_node_
     }
     l_dap_db_log_list->is_process = true;
     pthread_mutex_init(&l_dap_db_log_list->list_mutex, NULL);
+    pthread_cond_init(&l_dap_db_log_list->cond, NULL);
     pthread_create(&l_dap_db_log_list->thread, NULL, s_list_thread_proc, l_dap_db_log_list);
     return l_dap_db_log_list;
 }
@@ -459,6 +460,7 @@ void dap_db_log_list_delete(dap_db_log_list_t *a_db_log_list)
     if(a_db_log_list->thread) {
         pthread_mutex_lock(&a_db_log_list->list_mutex);
         a_db_log_list->is_process = false;
+        pthread_cond_signal(&a_db_log_list->cond);
         pthread_mutex_unlock(&a_db_log_list->list_mutex);
         pthread_join(a_db_log_list->thread, NULL);
     }
