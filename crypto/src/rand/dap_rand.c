@@ -102,15 +102,22 @@ int randombytes(void* random_array, unsigned int nbytes)
         } while (lock == -1);
     }
 
-    while (n > 0) {
-        do {
-            r = read(lock, random_array+count, n);
-            if (r == -1) {
-                delay(0xFFFF);
-            }
-        } while (r == -1);
-        count += r;
-        n -= r;
+//    while (n > 0) {
+//        do {
+//            r = read(lock, random_array+count, n);
+//            if (r == -1) {
+//                delay(0xFFFF);
+//            }
+//        } while (r == -1);
+//        count += r;
+//        n -= r;
+//    }
+
+    for(int i = 0; i < n;){
+        r = read(lock, (char*)random_array+i, 1);
+        if (r > 0){
+            i++;
+        }
     }
 #endif
 

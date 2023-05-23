@@ -116,7 +116,7 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t * a_stream, uint8_t a_type, cons
     a_stream->is_active = true;
     size_t ret = 0;
     size_t data_enc_size = dap_enc_code_out_size(a_stream->session->key, a_data_size, DAP_ENC_DATA_TYPE_RAW);
-    byte_t *l_buf = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_pkt_hdr_t) + data_enc_size);
+    byte_t *l_buf = DAP_NEW_STACK_SIZE(byte_t, sizeof(dap_stream_pkt_hdr_t) + data_enc_size);
     dap_stream_pkt_hdr_t *l_pkt_hdr = (dap_stream_pkt_hdr_t*)l_buf;
     l_pkt_hdr->type = a_type;
     memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
@@ -125,7 +125,7 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t * a_stream, uint8_t a_type, cons
                                              data_enc_size,
                                              DAP_ENC_DATA_TYPE_RAW);
     ret = dap_events_socket_write_unsafe(a_stream->esocket, l_buf, sizeof(dap_stream_pkt_hdr_t) + l_pkt_hdr->size);
-    DAP_DELETE(l_buf);
+    // DAP_DELETE(l_buf);
     return ret;
 }
 
