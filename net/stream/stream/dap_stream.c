@@ -812,7 +812,6 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         if (l_dec_pkt_size != l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr)) {
             log_it(L_WARNING, "Input: decoded packet has bad size = %zu, decoded size = %zu", l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr), l_dec_pkt_size);
             l_is_clean_fragments = true;
-            DAP_DEL_Z(a_stream->pkt_cache);
             break;
         }
 
