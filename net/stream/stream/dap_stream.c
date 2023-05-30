@@ -53,6 +53,8 @@
 #include "dap_http_header.h"
 #include "dap_stream_worker.h"
 #include "dap_client_pvt.h"
+#include "dap_strfuncs.h"
+#include "uthash.h"
 
 #define LOG_TAG "dap_stream"
 
@@ -91,7 +93,90 @@ bool dap_stream_get_dump_packet_headers(){ return  s_dump_packet_headers; }
 
 static bool s_detect_loose_packet(dap_stream_t * a_stream);
 
+enum dap_stream_type{
+    DAP_STREAM_UPLINK,
+    DAP_STREAM_DOWNLINK
+};
+
+dap_stream_connection_t *s_dap_stream_uplink; // FROM ME TO CLIENT
+dap_stream_connection_t *s_dap_stream_downlink; // FROM CLIENT TO ME
+
 dap_enc_key_type_t s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAES;
+
+void dap_stream_connections_added(dap_stream_t *a_stream, enum dap_stream_type a_type) {
+    dap_stream_connection_t *l_connect = DAP_NEW(dap_stream_connection_t);
+    l_connect->stream = a_stream;
+    if (a_type == DAP_STREAM_DOWNLINK) {
+        HASH_ADD(hh, s_dap_stream_downlink, stream, sizeof(dap_stream_t), l_connect);
+    }
+    else if (a_type == DAP_STREAM_UPLINK) {
+        HASH_ADD(hh, s_dap_stream_uplink, stream, sizeof(dap_stream_t), l_connect);
+    }
+}
+void dap_stream_connections_removed(dap_stream_t *a_stream) {
+    dap_stream_connection_t *l_current, *l_tmp;
+    HASH_ITER(hh, s_dap_stream_uplink, l_current, l_tmp) {
+        if (a_stream == l_current->stream) {
+            HASH_DEL(s_dap_stream_uplink, l_current);
+        }
+    }
+    HASH_ITER(hh, s_dap_stream_downlink, l_current, l_tmp) {
+        if (a_stream == l_current->stream) {
+            HASH_DEL(s_dap_stream_downlink, l_current);
+        }
+    }
+}
+
+dap_stream_connection_t **dap_stream_connections_get_streams(size_t *a_count_streams, enum dap_stream_type a_type){
+    if (!a_count_streams)
+        return NULL;
+    dap_stream_connection_t *l_table_connection = NULL;
+    if (a_type == DAP_STREAM_UPLINK) {
+        l_table_connection = s_dap_stream_uplink;
+    } else if (a_type == DAP_STREAM_DOWNLINK) {
+        l_table_connection = s_dap_stream_downlink;
+    }
+    size_t l_count_streams = HASH_COUNT(l_table_connection);
+    if (l_count_streams == 0)
+        return NULL;
+    dap_stream_connection_t **l_connections = DAP_NEW_Z_SIZE(dap_stream_connection_t*, l_count_streams);
+    l_count_streams = 0;
+    dap_stream_connection_t *l_current, *l_tmp;
+    HASH_ITER(hh, l_table_connection, l_current, l_tmp) {
+        l_connections[l_count_streams] = l_current;
+        l_count_streams++;
+    }
+    *a_count_streams = l_count_streams;
+    return  l_connections;
+}
+
+dap_stream_connection_t **dap_stream_connections_get_uplinks(size_t *a_count_streams) {
+    if (!a_count_streams)
+        return NULL;
+    dap_stream_connection_t **l_connections  = dap_stream_connections_get_streams(a_count_streams, DAP_STREAM_UPLINK);
+    for (size_t i =0; i < *a_count_streams; i++) {
+        l_connections[i]->address = l_connections[i]->stream->esocket->hostaddr[0] == '\0' ?
+                l_connections[i]->stream->esocket->service : l_connections[i]->stream->esocket->hostaddr;
+        l_connections[i]->port = l_connections[i]->stream->esocket->remote_port;
+    }
+    return l_connections;
+}
+
+dap_stream_connection_t **dap_stream_connections_get_downlinks(size_t *a_count_streams){
+    if (!a_count_streams)
+        return NULL;
+    dap_stream_connection_t **l_connections  = dap_stream_connections_get_streams(a_count_streams, DAP_STREAM_DOWNLINK);
+    for (size_t i = 0; i < *a_count_streams; i++) {
+        if (l_connections[i]->stream->esocket->hostaddr[0] != '\0') {
+            l_connections[i]->address = l_connections[i]->stream->esocket->hostaddr;
+        } else {
+            l_connections[i]->address = l_connections[i]->stream->esocket->remote_addr_str[0] == '\0' ?
+                                        l_connections[i]->stream->esocket->remote_addr_str6 : l_connections[i]->stream->esocket->remote_addr_str;
+        }
+        l_connections[i]->port = 0;
+    }
+    return l_connections;
+}
 
 
 #ifdef  DAP_SYS_DEBUG
@@ -135,6 +220,8 @@ int dap_stream_init(dap_config_t * a_config)
     s_dap_stream_load_preferred_encryption_type(a_config);
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config,"general","debug_dump_stream_headers",false);
     s_debug = dap_config_get_item_bool_default(g_config,"stream","debug",false);
+    s_dap_stream_uplink = NULL;
+    s_dap_stream_downlink = NULL;
 
 #ifdef  DAP_SYS_DEBUG
     for (int i = 0; i < MEMSTAT$K_NR; i++)
@@ -311,6 +398,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
     l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
     a_http_client->_inheritor = l_ret;
+    dap_stream_connections_added(l_ret, DAP_STREAM_DOWNLINK);
     log_it(L_NOTICE,"New stream instance");
     return l_ret;
 }
@@ -334,6 +422,7 @@ dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_esocket)
     l_ret->is_client_to_uplink = true;
     l_ret->esocket->callbacks.worker_assign_callback = s_client_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_client_callback_worker_unassign;
+    dap_stream_connections_added(l_ret, DAP_STREAM_UPLINK);
     return l_ret;
 }
 
@@ -365,6 +454,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 
     DAP_DEL_Z(a_stream->buf_fragments);
     DAP_DEL_Z(a_stream->pkt_buf_in);
+    dap_stream_connections_removed(a_stream);
     DAP_DELETE(a_stream);
     log_it(L_NOTICE,"Stream connection is over");
 }
