@@ -152,6 +152,10 @@ typedef struct dap_pkey{
 
 dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key);
 
+bool dap_pkey_match(dap_pkey_t *a_pkey1, dap_pkey_t *a_pkey2);
+
+bool dap_pkey_get_hash(dap_pkey_t *a_pkey, dap_chain_hash_fast_t *a_out_hash);
+
 DAP_STATIC_INLINE bool dap_pkey_compare_with_sign(dap_pkey_t *a_pkey, dap_sign_t *a_sign)
 {
     return (dap_pkey_type_to_enc_key_type(a_pkey->header.type) == dap_sign_type_to_key_type(a_sign->header.type) &&
@@ -165,3 +169,5 @@ DAP_STATIC_INLINE bool dap_pkey_compare(dap_pkey_t *a_pkey1, dap_pkey_t *a_pkey2
             a_pkey1->header.size == a_pkey2->header.size &&
             !memcmp(a_pkey1->pkey, a_pkey2->pkey, a_pkey1->header.size));
 }
+
+dap_pkey_t *dap_pkey_get_from_sign_deserialization(dap_sign_t *a_sign);
