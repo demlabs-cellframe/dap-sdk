@@ -101,20 +101,29 @@ enum dap_stream_type{
 dap_stream_connection_t *s_dap_stream_uplink; // FROM ME TO CLIENT
 dap_stream_connection_t *s_dap_stream_downlink; // FROM CLIENT TO ME
 
+pthread_mutex_t s_dap_stream_uplink_table_mutex;
+pthread_mutex_t s_dap_stream_downlink_table_mutex;
+
 dap_enc_key_type_t s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAES;
 
 void dap_stream_connections_added(dap_stream_t *a_stream, enum dap_stream_type a_type) {
     dap_stream_connection_t *l_connect = DAP_NEW(dap_stream_connection_t);
     l_connect->stream = a_stream;
     if (a_type == DAP_STREAM_DOWNLINK) {
+        pthread_mutex_lock(&s_dap_stream_downlink_table_mutex);
         HASH_ADD(hh, s_dap_stream_downlink, stream, sizeof(dap_stream_t), l_connect);
+        pthread_mutex_unlock(&s_dap_stream_downlink_table_mutex);
     }
     else if (a_type == DAP_STREAM_UPLINK) {
+        pthread_mutex_lock(&s_dap_stream_uplink_table_mutex);
         HASH_ADD(hh, s_dap_stream_uplink, stream, sizeof(dap_stream_t), l_connect);
+        pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
     }
 }
 void dap_stream_connections_removed(dap_stream_t *a_stream) {
     dap_stream_connection_t *l_current, *l_tmp;
+    pthread_mutex_lock(&s_dap_stream_downlink_table_mutex);
+    pthread_mutex_lock(&s_dap_stream_uplink_table_mutex);
     HASH_ITER(hh, s_dap_stream_uplink, l_current, l_tmp) {
         if (a_stream == l_current->stream) {
             HASH_DEL(s_dap_stream_uplink, l_current);
@@ -125,11 +134,15 @@ void dap_stream_connections_removed(dap_stream_t *a_stream) {
             HASH_DEL(s_dap_stream_downlink, l_current);
         }
     }
+    pthread_mutex_unlock(&s_dap_stream_downlink_table_mutex);
+    pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
 }
 
 dap_stream_connection_t **dap_stream_connections_get_streams(size_t *a_count_streams, enum dap_stream_type a_type){
     if (!a_count_streams)
         return NULL;
+    pthread_mutex_lock(&s_dap_stream_downlink_table_mutex);
+    pthread_mutex_lock(&s_dap_stream_uplink_table_mutex);
     dap_stream_connection_t *l_table_connection = NULL;
     if (a_type == DAP_STREAM_UPLINK) {
         l_table_connection = s_dap_stream_uplink;
@@ -137,8 +150,11 @@ dap_stream_connection_t **dap_stream_connections_get_streams(size_t *a_count_str
         l_table_connection = s_dap_stream_downlink;
     }
     size_t l_count_streams = HASH_COUNT(l_table_connection);
-    if (l_count_streams == 0)
+    if (l_count_streams == 0) {
+        pthread_mutex_unlock(&s_dap_stream_downlink_table_mutex);
+        pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
         return NULL;
+    }
     dap_stream_connection_t **l_connections = DAP_NEW_Z_SIZE(dap_stream_connection_t*, l_count_streams);
     l_count_streams = 0;
     dap_stream_connection_t *l_current, *l_tmp;
@@ -147,6 +163,8 @@ dap_stream_connection_t **dap_stream_connections_get_streams(size_t *a_count_str
         l_count_streams++;
     }
     *a_count_streams = l_count_streams;
+    pthread_mutex_unlock(&s_dap_stream_downlink_table_mutex);
+    pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
     return  l_connections;
 }
 
@@ -155,9 +173,13 @@ dap_stream_connection_t **dap_stream_connections_get_uplinks(size_t *a_count_str
         return NULL;
     dap_stream_connection_t **l_connections  = dap_stream_connections_get_streams(a_count_streams, DAP_STREAM_UPLINK);
     for (size_t i =0; i < *a_count_streams; i++) {
-        l_connections[i]->address = l_connections[i]->stream->esocket->hostaddr[0] == '\0' ?
-                l_connections[i]->stream->esocket->service : l_connections[i]->stream->esocket->hostaddr;
-        l_connections[i]->port = l_connections[i]->stream->esocket->remote_port;
+        if (l_connections[i]->stream->esocket->hostaddr[0] != '\0') {
+            l_connections[i]->address = l_connections[i]->stream->esocket->hostaddr;
+        } else {
+            l_connections[i]->address = l_connections[i]->stream->esocket->remote_addr_str[0] == '\0' ?
+                                        l_connections[i]->stream->esocket->remote_addr_str6 : l_connections[i]->stream->esocket->remote_addr_str;
+        }
+        l_connections[i]->port = (short)htons(l_connections[i]->stream->esocket->remote_addr.sin_port);
     }
     return l_connections;
 }
@@ -173,7 +195,7 @@ dap_stream_connection_t **dap_stream_connections_get_downlinks(size_t *a_count_s
             l_connections[i]->address = l_connections[i]->stream->esocket->remote_addr_str[0] == '\0' ?
                                         l_connections[i]->stream->esocket->remote_addr_str6 : l_connections[i]->stream->esocket->remote_addr_str;
         }
-        l_connections[i]->port = 0;
+        l_connections[i]->port = (short)htons(l_connections[i]->stream->esocket->remote_addr.sin_port);
     }
     return l_connections;
 }
@@ -222,6 +244,8 @@ int dap_stream_init(dap_config_t * a_config)
     s_debug = dap_config_get_item_bool_default(g_config,"stream","debug",false);
     s_dap_stream_uplink = NULL;
     s_dap_stream_downlink = NULL;
+    pthread_mutex_init(&s_dap_stream_uplink_table_mutex, NULL);
+    pthread_mutex_init(&s_dap_stream_downlink_table_mutex, NULL);
 
 #ifdef  DAP_SYS_DEBUG
     for (int i = 0; i < MEMSTAT$K_NR; i++)
@@ -244,6 +268,8 @@ int dap_stream_init(dap_config_t * a_config)
 void dap_stream_deinit()
 {
     dap_stream_ch_deinit( );
+    pthread_mutex_destroy(&s_dap_stream_uplink_table_mutex);
+    pthread_mutex_destroy(&s_dap_stream_downlink_table_mutex);
 }
 
 /**
