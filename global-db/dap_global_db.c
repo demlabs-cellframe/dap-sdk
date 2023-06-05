@@ -1229,6 +1229,12 @@ int s_set_unsafe_with_ts(dap_global_db_context_t *a_global_db_context, const cha
     l_store_data.value = (uint8_t *)a_value;
     l_store_data.group = (char*) a_group;
     l_store_data.timestamp = a_timestamp;
+    l_store_data.group_len = dap_strlen(l_store_data.group);
+    if (a_key == NULL) {
+        l_store_data.key_len = 0;
+    } else {
+        l_store_data.key_len = dap_strlen(l_store_data.key);
+    }
     l_store_data.type = DAP_DB$K_OPTYPE_ADD;
 
     int l_res = dap_global_db_driver_apply(&l_store_data, 1);
