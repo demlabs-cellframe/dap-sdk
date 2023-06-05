@@ -107,6 +107,7 @@ pthread_mutex_t s_dap_stream_downlink_table_mutex;
 dap_enc_key_type_t s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAES;
 
 void dap_stream_connections_added(dap_stream_t *a_stream, enum dap_stream_type a_type) {
+    return; // TODO make thread-safe access to link HTs
     dap_stream_connection_t *l_connect = DAP_NEW(dap_stream_connection_t);
     l_connect->stream = a_stream;
     if (a_type == DAP_STREAM_DOWNLINK) {

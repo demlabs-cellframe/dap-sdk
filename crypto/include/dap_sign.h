@@ -167,7 +167,7 @@ size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t * a_key,size_
 dap_sign_type_t dap_sign_type_from_key_type( dap_enc_key_type_t a_key_type);
 dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type);
 
-uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_out);
+uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_size);
 uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out);
 bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t * a_sign_hash);
 bool dap_sign_match_pkey_signs(dap_sign_t *l_sign1, dap_sign_t *l_sign2);
