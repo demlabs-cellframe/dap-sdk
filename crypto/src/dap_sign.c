@@ -318,12 +318,12 @@ dap_sign_t * dap_sign_pack(dap_enc_key_t *a_key, const void * a_sign_ser, const 
  * @param a_sign_out  a_sign->header.sign_size
  * @return uint8_t* 
  */
-uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_out)
+uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_size)
 {
     if(!a_sign)
         return NULL;
-    if(a_sign_out)
-        *a_sign_out = a_sign->header.sign_size;
+    if (a_sign_size)
+        *a_sign_size = a_sign->header.sign_size;
     return a_sign->pkey_n_sign + a_sign->header.sign_pkey_size;
 }
 
