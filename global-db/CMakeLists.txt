@@ -5,7 +5,7 @@ file(GLOB dap_global_db_SRC *.c)
 file(GLOB dap_global_db_HDR include/*.h)
 
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/cuttdb ${CMAKE_CURRENT_BINARY_DIR}/../3rdparty/cuttdb)
-set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_chain dap_chain_net sqlite3 dap_cuttdb json-c)
+set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream sqlite3 dap_cuttdb json-c)
 
 if(BUILD_WITH_GDB_DRIVER_MDBX)
     set(SAVED_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})

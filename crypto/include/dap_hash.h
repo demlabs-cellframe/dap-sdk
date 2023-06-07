@@ -23,10 +23,6 @@
     along with any CellFrame SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
-#include <stddef.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <assert.h>
 
 #include "dap_common.h"
 #include "dap_hash_keccak.h"
