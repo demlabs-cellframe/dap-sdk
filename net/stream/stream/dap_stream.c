@@ -92,13 +92,13 @@ bool dap_stream_get_dump_packet_headers(){ return  s_dump_packet_headers; }
 
 static bool s_detect_loose_packet(dap_stream_t * a_stream);
 
-enum dap_stream_type{
+enum dap_stream_type {
     DAP_STREAM_UPLINK,
     DAP_STREAM_DOWNLINK
 };
 
-static dap_stream_connection_t *s_dap_stream_uplink; // FROM ME TO CLIENT
-static dap_stream_connection_t *s_dap_stream_downlink; // FROM CLIENT TO ME
+static dap_stream_connection_t *s_dap_stream_uplink = NULL; // to server
+static dap_stream_connection_t *s_dap_stream_downlink = NULL; // from client
 
 static pthread_mutex_t s_dap_stream_uplink_table_mutex;
 static pthread_mutex_t s_dap_stream_downlink_table_mutex;
@@ -107,16 +107,20 @@ dap_enc_key_type_t s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAE
 
 static void s_stream_connections_added(dap_stream_t *a_stream, enum dap_stream_type a_type)
 {
-
     dap_stream_connection_t *l_connect = DAP_NEW(dap_stream_connection_t);
     l_connect->stream = a_stream;
     if (a_type == DAP_STREAM_DOWNLINK) {
+        l_connect->address = a_stream->esocket->hostaddr;
+        l_connect->port = atoi(a_stream->esocket->service);
         pthread_mutex_lock(&s_dap_stream_downlink_table_mutex);
-        HASH_ADD(hh, s_dap_stream_downlink, stream, sizeof(dap_stream_t), l_connect);
+        HASH_ADD(hh, s_dap_stream_downlink, stream, sizeof(dap_stream_t *), l_connect);
         pthread_mutex_unlock(&s_dap_stream_downlink_table_mutex);
     } else if (a_type == DAP_STREAM_UPLINK) {
+        l_connect->address = a_stream->esocket->remote_addr_str[0] == '\0' ?
+                               a_stream->esocket->remote_addr_str6 : a_stream->esocket->remote_addr_str;
+        l_connect->port = htons(a_stream->esocket->remote_addr.sin_port);
         pthread_mutex_lock(&s_dap_stream_uplink_table_mutex);
-        HASH_ADD(hh, s_dap_stream_uplink, stream, sizeof(dap_stream_t), l_connect);
+        HASH_ADD(hh, s_dap_stream_uplink, stream, sizeof(dap_stream_t *), l_connect);
         pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
     } else {
         log_it(L_ERROR, "Unknown stream connection type %d", a_type);
@@ -147,8 +151,6 @@ static void s_stream_connections_removed(dap_stream_t *a_stream)
 
 static dap_stream_connection_t **s_stream_connections_get_streams(size_t *a_count_streams, enum dap_stream_type a_type)
 {
-    if (!a_count_streams)
-        return NULL;
     pthread_mutex_lock(&s_dap_stream_downlink_table_mutex);
     pthread_mutex_lock(&s_dap_stream_uplink_table_mutex);
     dap_stream_connection_t *l_table_connection = NULL;
@@ -170,7 +172,8 @@ static dap_stream_connection_t **s_stream_connections_get_streams(size_t *a_coun
         l_connections[l_count_streams] = l_current;
         l_count_streams++;
     }
-    *a_count_streams = l_count_streams;
+    if (a_count_streams)
+        *a_count_streams = l_count_streams;
     pthread_mutex_unlock(&s_dap_stream_downlink_table_mutex);
     pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
     return  l_connections;
@@ -178,36 +181,12 @@ static dap_stream_connection_t **s_stream_connections_get_streams(size_t *a_coun
 
 dap_stream_connection_t **dap_stream_connections_get_uplinks(size_t *a_count_streams)
 {
-    if (!a_count_streams)
-        return NULL;
-    dap_stream_connection_t **l_connections  = s_stream_connections_get_streams(a_count_streams, DAP_STREAM_UPLINK);
-    for (size_t i =0; i < *a_count_streams; i++) {
-        if (l_connections[i]->stream->esocket->hostaddr[0] != '\0') {
-            l_connections[i]->address = l_connections[i]->stream->esocket->hostaddr;
-        } else {
-            l_connections[i]->address = l_connections[i]->stream->esocket->remote_addr_str[0] == '\0' ?
-                                        l_connections[i]->stream->esocket->remote_addr_str6 : l_connections[i]->stream->esocket->remote_addr_str;
-        }
-        l_connections[i]->port = (short)htons(l_connections[i]->stream->esocket->remote_addr.sin_port);
-    }
-    return l_connections;
+    return s_stream_connections_get_streams(a_count_streams, DAP_STREAM_UPLINK);
 }
 
 dap_stream_connection_t **dap_stream_connections_get_downlinks(size_t *a_count_streams)
 {
-    if (!a_count_streams)
-        return NULL;
-    dap_stream_connection_t **l_connections  = s_stream_connections_get_streams(a_count_streams, DAP_STREAM_DOWNLINK);
-    for (size_t i = 0; i < *a_count_streams; i++) {
-        if (l_connections[i]->stream->esocket->hostaddr[0] != '\0') {
-            l_connections[i]->address = l_connections[i]->stream->esocket->hostaddr;
-        } else {
-            l_connections[i]->address = l_connections[i]->stream->esocket->remote_addr_str[0] == '\0' ?
-                                        l_connections[i]->stream->esocket->remote_addr_str6 : l_connections[i]->stream->esocket->remote_addr_str;
-        }
-        l_connections[i]->port = (short)htons(l_connections[i]->stream->esocket->remote_addr.sin_port);
-    }
-    return l_connections;
+    return s_stream_connections_get_streams(a_count_streams, DAP_STREAM_DOWNLINK);
 }
 
 
