@@ -165,7 +165,7 @@ static dap_stream_connection_t **s_stream_connections_get_streams(size_t *a_coun
         pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
         return NULL;
     }
-    dap_stream_connection_t **l_connections = DAP_NEW_Z_SIZE(dap_stream_connection_t*, l_count_streams);
+    dap_stream_connection_t **l_connections = DAP_NEW_Z_SIZE(dap_stream_connection_t*, l_count_streams * sizeof(dap_stream_connection_t*));
     l_count_streams = 0;
     dap_stream_connection_t *l_current, *l_tmp;
     HASH_ITER(hh, l_table_connection, l_current, l_tmp) {
