@@ -210,14 +210,8 @@ size_t dap_enc_base58_encode(const void * a_in, size_t a_in_size, char * a_out)
 char* dap_enc_base58_encode_to_str(const void * a_in, size_t a_in_size)
 {
     size_t l_out_size = DAP_ENC_BASE58_ENCODE_SIZE (a_in_size);
-    char * l_out = DAP_NEW_Z_SIZE(char, l_out_size + 1);//+ 3); no prefix needed
-    size_t l_size = dap_enc_base58_encode(a_in, a_in_size, l_out);//l_out+2); no prefix needed
-    if(!l_size || !l_out){
-        DAP_DELETE(l_out);
-        return NULL;
-    }
-    // no prefix needed
-    // memcpy(l_out, "0x", 2);
+    char * l_out = DAP_NEW_Z_SIZE(char, l_out_size + 1);
+    dap_enc_base58_encode(a_in, a_in_size, l_out);
     return l_out;
 }
 

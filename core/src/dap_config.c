@@ -158,7 +158,7 @@ dap_config_t * dap_config_load(const char * a_file_path)
                         //    l_buf_pos_line_end--;
                         if(l_buf_pos_line_end != l_buf_pos_line_start ){ // Line detected
                             char *l_line = NULL;
-                            size_t l_line_length = 0;
+                            uint32_t l_line_length = 0;
                             size_t j;
 
                             // Trimming spaces and skip the line if commented
