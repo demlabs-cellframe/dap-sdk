@@ -38,7 +38,6 @@
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 
-#ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
 #include <pwd.h>
 
 #define LOG_TAG "db_pgsql"
@@ -641,4 +640,3 @@ int dap_db_driver_pgsql_flush()
     s_pgsql_free_connection(l_conn);
     return l_ret;
 }
-#endif
