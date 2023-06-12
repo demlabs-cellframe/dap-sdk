@@ -1000,7 +1000,7 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
     if(s_debug_more)
         log_it(L_DEBUG, "STREAM_CTL response %zu bytes length recieved", a_data_size);
     char * l_response_str = DAP_NEW_Z_SIZE(char, a_data_size + 1);
-    memcpy(l_response_str, a_data, a_data_size);
+    memcpy(l_response_str, a_data, (uint32_t)a_data_size);
 
     if(a_data_size < 4) {
         log_it(L_ERROR, "STREAM_CTL Wrong reply: '%s'", l_response_str);

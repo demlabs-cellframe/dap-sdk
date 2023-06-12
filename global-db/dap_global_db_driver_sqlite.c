@@ -1146,7 +1146,7 @@ char l_errbuf[255] = {0}, *l_error_message = NULL;
 
     // Check paths and create them if nessesary
     char * l_filename_dir = dap_path_get_dirname(a_filename_db);
-    strncpy(s_filename_db, a_filename_db, sizeof(s_filename_db) );
+    strncpy(s_filename_db, a_filename_db, sizeof(s_filename_db) - 1);
 
     if ( !dap_dir_test(l_filename_dir) ){
         log_it(L_NOTICE, "No directory %s, trying to create...",l_filename_dir);

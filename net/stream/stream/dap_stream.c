@@ -53,6 +53,8 @@
 #include "dap_http_header.h"
 #include "dap_stream_worker.h"
 #include "dap_client_pvt.h"
+#include "dap_strfuncs.h"
+#include "uthash.h"
 
 #define LOG_TAG "dap_stream"
 
@@ -78,7 +80,6 @@ static void s_udp_esocket_new(dap_events_socket_t* a_esocket,void * a_arg);
 
 // Internal functions
 static dap_stream_t * s_stream_new(dap_http_client_t * a_http_client); // Create new stream
-static void s_http_client_new(dap_http_client_t * a_esocket, void * a_arg) { }
 static void s_http_client_delete(dap_http_client_t * a_esocket, void * a_arg);
 
 static bool s_callback_server_keepalive(void *a_arg);
@@ -91,7 +92,102 @@ bool dap_stream_get_dump_packet_headers(){ return  s_dump_packet_headers; }
 
 static bool s_detect_loose_packet(dap_stream_t * a_stream);
 
+enum dap_stream_type {
+    DAP_STREAM_UPLINK,
+    DAP_STREAM_DOWNLINK
+};
+
+static dap_stream_connection_t *s_dap_stream_uplink = NULL; // to server
+static dap_stream_connection_t *s_dap_stream_downlink = NULL; // from client
+
+static pthread_mutex_t s_dap_stream_uplink_table_mutex;
+static pthread_mutex_t s_dap_stream_downlink_table_mutex;
+
 dap_enc_key_type_t s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAES;
+
+static void s_stream_connections_added(dap_stream_t *a_stream, enum dap_stream_type a_type)
+{
+    dap_stream_connection_t *l_connect = DAP_NEW(dap_stream_connection_t);
+    l_connect->stream = a_stream;
+    if (a_type == DAP_STREAM_DOWNLINK) {
+        l_connect->address = a_stream->esocket->hostaddr;
+        l_connect->port = atoi(a_stream->esocket->service);
+        pthread_mutex_lock(&s_dap_stream_downlink_table_mutex);
+        HASH_ADD(hh, s_dap_stream_downlink, stream, sizeof(dap_stream_t *), l_connect);
+        pthread_mutex_unlock(&s_dap_stream_downlink_table_mutex);
+    } else if (a_type == DAP_STREAM_UPLINK) {
+        l_connect->address = a_stream->esocket->remote_addr_str[0] == '\0' ?
+                               a_stream->esocket->remote_addr_str6 : a_stream->esocket->remote_addr_str;
+        l_connect->port = htons(a_stream->esocket->remote_addr.sin_port);
+        pthread_mutex_lock(&s_dap_stream_uplink_table_mutex);
+        HASH_ADD(hh, s_dap_stream_uplink, stream, sizeof(dap_stream_t *), l_connect);
+        pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
+    } else {
+        log_it(L_ERROR, "Unknown stream connection type %d", a_type);
+        DAP_DELETE(l_connect);
+    }
+}
+
+static void s_stream_connections_removed(dap_stream_t *a_stream)
+{
+    dap_stream_connection_t *l_current, *l_tmp;
+    pthread_mutex_lock(&s_dap_stream_downlink_table_mutex);
+    pthread_mutex_lock(&s_dap_stream_uplink_table_mutex);
+    HASH_ITER(hh, s_dap_stream_uplink, l_current, l_tmp) {
+        if (!a_stream || a_stream == l_current->stream) {
+            HASH_DEL(s_dap_stream_uplink, l_current);
+            DAP_DELETE(l_current);
+        }
+    }
+    HASH_ITER(hh, s_dap_stream_downlink, l_current, l_tmp) {
+        if (!a_stream || a_stream == l_current->stream) {
+            HASH_DEL(s_dap_stream_downlink, l_current);
+            DAP_DELETE(l_current);
+        }
+    }
+    pthread_mutex_unlock(&s_dap_stream_downlink_table_mutex);
+    pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
+}
+
+static dap_stream_connection_t **s_stream_connections_get_streams(size_t *a_count_streams, enum dap_stream_type a_type)
+{
+    pthread_mutex_lock(&s_dap_stream_downlink_table_mutex);
+    pthread_mutex_lock(&s_dap_stream_uplink_table_mutex);
+    dap_stream_connection_t *l_table_connection = NULL;
+    if (a_type == DAP_STREAM_UPLINK) {
+        l_table_connection = s_dap_stream_uplink;
+    } else if (a_type == DAP_STREAM_DOWNLINK) {
+        l_table_connection = s_dap_stream_downlink;
+    }
+    size_t l_count_streams = HASH_COUNT(l_table_connection);
+    if (l_count_streams == 0) {
+        pthread_mutex_unlock(&s_dap_stream_downlink_table_mutex);
+        pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
+        return NULL;
+    }
+    dap_stream_connection_t **l_connections = DAP_NEW_Z_SIZE(dap_stream_connection_t*, l_count_streams * sizeof(dap_stream_connection_t*));
+    l_count_streams = 0;
+    dap_stream_connection_t *l_current, *l_tmp;
+    HASH_ITER(hh, l_table_connection, l_current, l_tmp) {
+        l_connections[l_count_streams] = l_current;
+        l_count_streams++;
+    }
+    if (a_count_streams)
+        *a_count_streams = l_count_streams;
+    pthread_mutex_unlock(&s_dap_stream_downlink_table_mutex);
+    pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
+    return  l_connections;
+}
+
+dap_stream_connection_t **dap_stream_connections_get_uplinks(size_t *a_count_streams)
+{
+    return s_stream_connections_get_streams(a_count_streams, DAP_STREAM_UPLINK);
+}
+
+dap_stream_connection_t **dap_stream_connections_get_downlinks(size_t *a_count_streams)
+{
+    return s_stream_connections_get_streams(a_count_streams, DAP_STREAM_DOWNLINK);
+}
 
 
 #ifdef  DAP_SYS_DEBUG
@@ -102,7 +198,8 @@ static  dap_memstat_rec_t   s_memstat [MEMSTAT$K_NR] = {
 #endif
 
 
-void s_dap_stream_load_preferred_encryption_type(dap_config_t * a_config){
+void s_dap_stream_load_preferred_encryption_type(dap_config_t * a_config)
+{
     const char * l_preferred_encryption_name = dap_config_get_item_str(a_config, "stream", "preferred_encryption");
     if(l_preferred_encryption_name){
         dap_enc_key_type_t l_found_key_type = dap_enc_key_type_find_by_name(l_preferred_encryption_name);
@@ -113,7 +210,8 @@ void s_dap_stream_load_preferred_encryption_type(dap_config_t * a_config){
     log_it(L_NOTICE,"ecryption type is set to %s", dap_enc_get_type_name(s_stream_get_preferred_encryption_type));
 }
 
-dap_enc_key_type_t dap_stream_get_preferred_encryption_type(){
+dap_enc_key_type_t dap_stream_get_preferred_encryption_type()
+{
     return s_stream_get_preferred_encryption_type;
 }
 
@@ -135,6 +233,10 @@ int dap_stream_init(dap_config_t * a_config)
     s_dap_stream_load_preferred_encryption_type(a_config);
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config,"general","debug_dump_stream_headers",false);
     s_debug = dap_config_get_item_bool_default(g_config,"stream","debug",false);
+    s_dap_stream_uplink = NULL;
+    s_dap_stream_downlink = NULL;
+    pthread_mutex_init(&s_dap_stream_uplink_table_mutex, NULL);
+    pthread_mutex_init(&s_dap_stream_downlink_table_mutex, NULL);
 
 #ifdef  DAP_SYS_DEBUG
     for (int i = 0; i < MEMSTAT$K_NR; i++)
@@ -157,6 +259,9 @@ int dap_stream_init(dap_config_t * a_config)
 void dap_stream_deinit()
 {
     dap_stream_ch_deinit( );
+    s_stream_connections_removed(NULL); // Remove all connections from HTs
+    pthread_mutex_destroy(&s_dap_stream_uplink_table_mutex);
+    pthread_mutex_destroy(&s_dap_stream_downlink_table_mutex);
 }
 
 /**
@@ -166,9 +271,10 @@ void dap_stream_deinit()
  */
 void dap_stream_add_proc_http(struct dap_http * a_http, const char * a_url)
 {
-    dap_http_add_proc(a_http,a_url
-                      ,NULL, // _internal
-                      s_http_client_new, // New
+    dap_http_add_proc(a_http,
+                      a_url,
+                      NULL, // _internal
+                      NULL, // New
                       s_http_client_delete, // Delete
                       s_http_client_headers_read, // Headers read
                       s_http_client_headers_write, // Headerts write
@@ -311,6 +417,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
     l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
     a_http_client->_inheritor = l_ret;
+    s_stream_connections_added(l_ret, DAP_STREAM_DOWNLINK);
     log_it(L_NOTICE,"New stream instance");
     return l_ret;
 }
@@ -334,6 +441,7 @@ dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_esocket)
     l_ret->is_client_to_uplink = true;
     l_ret->esocket->callbacks.worker_assign_callback = s_client_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_client_callback_worker_unassign;
+    s_stream_connections_added(l_ret, DAP_STREAM_UPLINK);
     return l_ret;
 }
 
@@ -365,6 +473,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 
     DAP_DEL_Z(a_stream->buf_fragments);
     DAP_DEL_Z(a_stream->pkt_buf_in);
+    s_stream_connections_removed(a_stream);
     DAP_DELETE(a_stream);
     log_it(L_NOTICE,"Stream connection is over");
 }

@@ -268,6 +268,7 @@ static int s_start(dap_plugin_manifest_t * a_manifest)
         struct plugin_module * l_module = DAP_NEW_Z(struct plugin_module);
         l_module->pvt_data = l_pvt_data;
         strncpy(l_module->name, a_manifest->name, sizeof(l_module->name)-1);
+        l_module->name[sizeof(l_module->name) - 1] = '\0';  // Warning avoid
         l_module->type = l_type;
         l_module->manifest = a_manifest;
         HASH_ADD_STR(s_modules,name,l_module);

@@ -588,7 +588,7 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->request_size = a_request_size;
     memcpy(l_client_http->request, a_request, a_request_size);
 
-    strncpy(l_client_http->uplink_addr, a_uplink_addr, INET_ADDRSTRLEN);
+    strncpy(l_client_http->uplink_addr, a_uplink_addr, INET_ADDRSTRLEN - 1);
     l_client_http->uplink_port = a_uplink_port;
     l_client_http->cookie = a_cookie;
     l_client_http->request_custom_headers = dap_strdup(a_custom_headers);

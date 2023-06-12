@@ -25,20 +25,18 @@
 #include "dap_config.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
-#include "dap_chain_common.h"
 #include "dap_time.h"
 #include "dap_context.h"
 #include "dap_worker.h"
 #include "dap_stream_worker.h"
 #include "dap_proc_thread.h"
-#define LOG_TAG "dap_global_db"
-
 #include "dap_global_db.h"
 #include "dap_global_db_remote.h"
 #include "dap_global_db_driver.h"
 
-int g_dap_global_db_debug_more = false;                                         /* Enable extensible debug output */
+#define LOG_TAG "dap_global_db"
 
+int g_dap_global_db_debug_more = false;                                         /* Enable extensible debug output */
 
 // Queue I/O message op code
 enum queue_io_msg_opcode{
@@ -113,16 +111,11 @@ struct queue_io_msg{
 
 };
 
-static uint32_t s_global_db_version = 0; // Current GlobalDB version
 static pthread_cond_t s_check_db_cond = PTHREAD_COND_INITIALIZER; // Check version condition
 static pthread_mutex_t s_check_db_mutex = PTHREAD_MUTEX_INITIALIZER; // Check version condition mutex
 #define INVALID_RETCODE +100500
 static int s_check_db_ret = INVALID_RETCODE; // Check version return value
 
-static const char * s_storage_path = NULL; // GlobalDB storage path
-static const char * s_driver_name = NULL; // GlobalDB driver name
-
-static dap_context_t * s_context = NULL;  // GlobalDB own context
 static dap_global_db_context_t *s_context_global_db = NULL; // GlobalDB own context custom extension
 
 // Version check& update functiosn
@@ -171,10 +164,6 @@ static int s_record_del_history_del(const char *a_group, const char *a_key);
 // Call notificators
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t *a_store_obj);
 
-
-
-
-
 /**
  * @brief dap_global_db_init
  * @param a_path
@@ -188,42 +177,57 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
 
     dap_global_db_sync_init();
 
-    if ( a_storage_path == NULL && s_storage_path == NULL ){
+    if (a_storage_path == NULL) {
         log_it(L_CRITICAL, "Can't initialize GlobalDB without storage path");
+        return -1;
     }
 
-    if ( a_driver_name == NULL && s_driver_name == NULL ){
+    if ( a_driver_name == NULL) {
         log_it(L_CRITICAL, "Can't initialize GlobalDB without driver name");
+        return -2;
     }
-
-    // For reinitialization it could be NULL but s_storage_path and s_driver_name have to be defined before
-
-    if(a_storage_path)
-        s_storage_path = dap_strdup(a_storage_path);
-
-    if(a_driver_name)
-        s_driver_name = dap_strdup(a_driver_name);
 
     // Debug config
     g_dap_global_db_debug_more = dap_config_get_item_bool_default(g_config, "global_db", "debug_more", false);
 
-
-    // Driver initalization
-    if( (l_rc = dap_db_driver_init(s_driver_name, s_storage_path, true))  )
-        return  log_it(L_CRITICAL, "Hadn't initialized DB driver \"%s\" on path \"%s\", code: %d",
-                       s_driver_name, s_storage_path, l_rc), l_rc;
-
     // Create and run its own context
-    if(s_context == NULL){
-        s_context = dap_context_new(DAP_CONTEXT_TYPE_GLOBAL_DB);
-        s_context->_inheritor = s_context_global_db = DAP_NEW_Z(struct dap_global_db_context);
-        s_context_global_db->context = s_context;
-        if (dap_context_run(s_context, -1, DAP_CONTEXT_POLICY_DEFAULT, 0, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED,
-                            s_context_callback_started, s_context_callback_stopped, NULL) != 0 ){
+    if (s_context_global_db == NULL) {
+        s_context_global_db = DAP_NEW_Z(struct dap_global_db_context);
+        s_context_global_db->context = dap_context_new(DAP_CONTEXT_TYPE_GLOBAL_DB);
+        s_context_global_db->context->_inheritor = s_context_global_db;
+        if (dap_context_run(s_context_global_db->context, -1, DAP_CONTEXT_POLICY_DEFAULT,
+                            0, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED,
+                            s_context_callback_started, s_context_callback_stopped, NULL) != 0) {
             l_rc = -2;
             goto lb_return;
         }
+        dap_global_db_instance_t *l_dbi = DAP_NEW_Z(dap_global_db_instance_t);
+
+        l_dbi->storage_path = dap_strdup(a_storage_path);
+        l_dbi->driver_name = dap_strdup(a_driver_name);
+
+        uint16_t l_size_ban_list = 0, l_size_white_list = 0;
+        char **l_ban_list = dap_config_get_array_str(g_config, "global_db", "ban_list_sync_groups", &l_size_ban_list);
+        for (int i = 0; i < l_size_ban_list; i++)
+            l_dbi->blacklist = dap_list_append(l_dbi->blacklist, dap_strdup(l_ban_list[i]));
+        char **l_white_list = dap_config_get_array_str(g_config, "global_db", "white_list_sync_groups", &l_size_white_list);
+        for (int i = 0; i < l_size_ban_list; i++) {
+            l_dbi->whitelist = dap_list_append(l_dbi->whitelist, dap_strdup(l_white_list[i]));
+            l_dbi->whitelist = dap_list_append(l_dbi->whitelist, dap_strdup_printf("%s.del", l_white_list[i]));
+        }
+
+        l_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 72);
+
+        s_context_global_db->instance = l_dbi;
     }
+
+    // Driver initalization
+    if( (l_rc = dap_db_driver_init(s_context_global_db->instance->driver_name,
+                                   s_context_global_db->instance->storage_path, true))  )
+        return  log_it(L_CRITICAL, "Hadn't initialized DB driver \"%s\" on path \"%s\", code: %d",
+                       s_context_global_db->instance->driver_name, s_context_global_db->instance->storage_path, l_rc), l_rc;
+
+
 
     // Check version and update if need it
     if(!s_is_check_version){
@@ -248,6 +252,16 @@ lb_return:
  */
 void dap_global_db_deinit()
 {
+    if (s_context_global_db) {
+        dap_context_stop_n_kill(s_context_global_db->context);
+        DAP_DELETE(s_context_global_db->context);
+        dap_list_free_full(s_context_global_db->instance->blacklist, NULL);
+        dap_list_free_full(s_context_global_db->instance->whitelist, NULL);
+        DAP_DEL_Z(s_context_global_db->instance->driver_name);
+        DAP_DEL_Z(s_context_global_db->instance->storage_path);
+        DAP_DEL_Z(s_context_global_db->instance);
+        DAP_DEL_Z(s_context_global_db);
+    }
     dap_db_driver_deinit();
     dap_global_db_sync_deinit();
 }
@@ -262,7 +276,11 @@ dap_global_db_context_t * dap_global_db_context_current()
     if (l_context && l_context->type == DAP_CONTEXT_TYPE_GLOBAL_DB)
         return (dap_global_db_context_t *)l_context->_inheritor;
     return NULL;
+}
 
+dap_global_db_context_t *dap_global_db_context_get_default()
+{
+    return s_context_global_db;
 }
 
 /* *** Get functions group *** */
@@ -1229,6 +1247,12 @@ int s_set_unsafe_with_ts(dap_global_db_context_t *a_global_db_context, const cha
     l_store_data.value = (uint8_t *)a_value;
     l_store_data.group = (char*) a_group;
     l_store_data.timestamp = a_timestamp;
+    l_store_data.group_len = dap_strlen(l_store_data.group);
+    if (a_key == NULL) {
+        l_store_data.key_len = 0;
+    } else {
+        l_store_data.key_len = dap_strlen(l_store_data.key);
+    }
     l_store_data.type = DAP_DB$K_OPTYPE_ADD;
 
     int l_res = dap_global_db_driver_apply(&l_store_data, 1);
@@ -2287,9 +2311,11 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
 
     if(a_errno != 0){ // No DB at all
         log_it(L_NOTICE, "No GlobalDB version at all, creating the new GlobalDB from scratch");
-        s_global_db_version = DAP_GLOBAL_DB_VERSION;
-        if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version", &s_global_db_version, sizeof(uint16_t),false,
-                          s_check_db_version_callback_set, NULL) ) != 0){
+        a_global_db_context->instance->version = DAP_GLOBAL_DB_VERSION;
+        if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",
+                                      &a_global_db_context->instance->version,
+                                      sizeof(uint16_t), false,
+                                      s_check_db_version_callback_set, NULL) ) != 0){
             log_it(L_NOTICE, "Can't set GlobalDB version, code %d", res);
             goto lb_exit;
         }
@@ -2298,27 +2324,29 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
     }
 
     if (a_value_len == sizeof(uint16_t))
-        s_global_db_version = *(uint16_t *)a_value;
+        a_global_db_context->instance->version = *(uint16_t *)a_value;
 
-    if( s_global_db_version < DAP_GLOBAL_DB_VERSION) {
+    if( a_global_db_context->instance->version < DAP_GLOBAL_DB_VERSION) {
         log_it(L_NOTICE, "GlobalDB version %u, but %u required. The current database will be recreated",
-               s_global_db_version, DAP_GLOBAL_DB_VERSION);
+               a_global_db_context->instance->version, DAP_GLOBAL_DB_VERSION);
         dap_global_db_deinit();
         // Database path
         const char *l_storage_path = dap_config_get_item_str(g_config, "resources", "dap_global_db_path");
         // Delete database
         if(dap_file_test(l_storage_path) || dap_dir_test(l_storage_path)) {
             // Backup filename: backup_global_db_ver.X_DATE_TIME.zip
-            char now[255];
+            char l_ts_now_str[255];
             time_t t = time(NULL);
-            strftime(now, 200, "%y.%m.%d-%H_%M_%S", localtime(&t));
+            strftime(l_ts_now_str, 200, "%y.%m.%d-%H_%M_%S", localtime(&t));
 #ifdef DAP_BUILD_WITH_ZIP
             char *l_output_file_name = dap_strdup_printf("backup_%s_ver.%d_%s.zip", dap_path_get_basename(l_storage_path), l_gdb_version, now);
             char *l_output_file_path = dap_build_filename(l_storage_path, "../", l_output_file_name, NULL);
             // Create backup as ZIP file
             if(dap_zip_directory(l_storage_path, l_output_file_path)) {
 #else
-            char *l_output_file_name = dap_strdup_printf("backup_%s_ver.%d_%s.tar", dap_path_get_basename(s_storage_path), s_global_db_version, now);
+            char *l_output_file_name = dap_strdup_printf("backup_%s_ver.%d_%s.tar",
+                                                         dap_path_get_basename(a_global_db_context->instance->storage_path),
+                                                         a_global_db_context->instance->version, l_ts_now_str);
             char *l_output_file_path = dap_build_filename(l_storage_path, "../", l_output_file_name, NULL);
             // Create backup as TAR file
             if(dap_tar_directory(l_storage_path, l_output_file_path)) {
@@ -2327,7 +2355,7 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
                 dap_rm_rf(l_storage_path);
             }
             else {
-                log_it(L_ERROR, "Can't backup GlobalDB version %d", s_global_db_version);
+                log_it(L_ERROR, "Can't backup GlobalDB version %d", a_global_db_context->instance->version);
                 res = -2;
                 goto lb_exit;
             }
@@ -2338,20 +2366,23 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
         res = dap_global_db_init(NULL, NULL);
         // Save current db version
         if(!res) {
-            s_global_db_version = DAP_GLOBAL_DB_VERSION;
-            if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version", &s_global_db_version, sizeof(uint16_t),false,
-                              s_check_db_version_callback_set, NULL) ) != 0){
+            a_global_db_context->instance->version = DAP_GLOBAL_DB_VERSION;
+            if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",
+                                          &a_global_db_context->instance->version,
+                                          sizeof(uint16_t), false,
+                                          s_check_db_version_callback_set, NULL) ) != 0){
                 log_it(L_NOTICE, "Can't set GlobalDB version, code %d", res);
                 goto lb_exit;
             }
             return; // In this case the condition broadcast should happens in s_check_db_version_callback_set()
         }
-    } else if(s_global_db_version > DAP_GLOBAL_DB_VERSION) {
-        log_it(L_ERROR, "GlobalDB version %d is newer than supported version %d", s_global_db_version, DAP_GLOBAL_DB_VERSION);
+    } else if(a_global_db_context->instance->version > DAP_GLOBAL_DB_VERSION) {
+        log_it(L_ERROR, "GlobalDB version %d is newer than supported version %d",
+                            a_global_db_context->instance->version, DAP_GLOBAL_DB_VERSION);
         res = -1;
     }
     else {
-        log_it(L_NOTICE, "GlobalDB version %d", s_global_db_version);
+        log_it(L_NOTICE, "GlobalDB version %d", a_global_db_context->instance->version);
     }
 lb_exit:
     pthread_mutex_lock(&s_check_db_mutex); //    To be sure thats we're on pthread_cond_wait() line
@@ -2379,7 +2410,7 @@ static void s_check_db_version_callback_set (dap_global_db_context_t * a_global_
         log_it(L_ERROR, "Can't process request for DB version, error code %d", a_errno);
         l_res = a_errno;
     } else
-        log_it(L_NOTICE, "GlobalDB version updated to %d", s_global_db_version);
+        log_it(L_NOTICE, "GlobalDB version updated to %d", a_global_db_context->instance->version);
 
     pthread_mutex_lock(&s_check_db_mutex); //  in calling thread
     s_check_db_ret = l_res;
