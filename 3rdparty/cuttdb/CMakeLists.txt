@@ -15,7 +15,10 @@ list(FILTER cuttdb_src EXCLUDE REGEX "server.")
 list(FILTER cuttdb_src EXCLUDE REGEX "dump.")
 list(FILTER cuttdb_src EXCLUDE REGEX "builddb.")
 list(FILTER cuttdb_src EXCLUDE REGEX "test_mt.")
-list(FILTER cuttdb_src EXCLUDE REGEX "mman.")
+
+if(UNIX)
+   list(FILTER cuttdb_src EXCLUDE REGEX "mman.")
+endif()
 
 add_library(${PROJECT_NAME} STATIC ${cuttdb_src})
 set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE C)

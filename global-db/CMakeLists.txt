@@ -4,7 +4,6 @@ project (dap_global_db C)
 file(GLOB dap_global_db_SRC *.c)
 file(GLOB dap_global_db_HDR include/*.h)
 
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/cuttdb ${CMAKE_CURRENT_BINARY_DIR}/../3rdparty/cuttdb)
 set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream sqlite3 dap_cuttdb json-c)
 
 if(BUILD_WITH_GDB_DRIVER_MDBX)
@@ -24,6 +23,14 @@ endif()
 if(BUILD_WITH_GDB_DRIVER_PGSQL)
     set(dap_global_db_LIBS ${dap_global_db_LIBS} pq)
     add_definitions("-DDAP_CHAIN_GDB_ENGINE_PGSQL")
+endif()
+
+if(BUILD_WITH_GDB_DRIVER_CUTTDB)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/cuttdb ${CMAKE_CURRENT_BINARY_DIR}/../3rdparty/cuttdb)
+    add_definitions("-DDAP_CHAIN_GDB_ENGINE_CUTTDB")
+else()
+    list(FILTER dap_global_db_SRC EXCLUDE REGEX "cdb")
+    list(FILTER dap_global_db_HDR EXCLUDE REGEX "cdb")
 endif()
 
 add_library(${PROJECT_NAME} STATIC ${dap_global_db_SRC} ${dap_global_db_HDR})
