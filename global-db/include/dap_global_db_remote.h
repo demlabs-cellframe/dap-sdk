@@ -53,6 +53,8 @@ typedef struct dap_db_log_list {
     size_t items_rest; // rest items to read from items_list
     size_t items_number; // total items after reading from db
     dap_list_t *groups;
+    size_t size;
+    pthread_cond_t cond;
     pthread_t thread;
     pthread_mutex_t list_mutex;
 } dap_db_log_list_t;

@@ -415,6 +415,10 @@ dap_db_log_list_obj_t *dap_db_log_list_get(dap_db_log_list_t *a_db_log_list)
         a_db_log_list->items_list = dap_list_remove_link(a_db_log_list->items_list, l_list);
         a_db_log_list->items_rest--;
         l_ret = l_list->data;
+        size_t l_old_size = a_db_log_list->size;
+        a_db_log_list->size -= sizeof(dap_db_log_list_obj_t) + sizeof(dap_store_obj_pkt_t) + l_ret->pkt->data_size;
+        if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE && a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE)
+            pthread_cond_signal(&a_db_log_list->cond)
         DAP_DELETE(l_list);
     }
     pthread_mutex_unlock(&a_db_log_list->list_mutex);
@@ -449,6 +453,7 @@ void dap_db_log_list_delete(dap_db_log_list_t *a_db_log_list)
     if(a_db_log_list->thread) {
         pthread_mutex_lock(&a_db_log_list->list_mutex);
         a_db_log_list->is_process = false;
+        pthread_cond_signal(&a_db_log_list->cond);
         pthread_mutex_unlock(&a_db_log_list->list_mutex);
         pthread_join(a_db_log_list->thread, NULL);
     }
