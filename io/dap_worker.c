@@ -158,6 +158,7 @@ static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg)
         case DESCRIPTOR_TYPE_SOCKET_UDP:
         case DESCRIPTOR_TYPE_SOCKET_CLIENT:
         case DESCRIPTOR_TYPE_SOCKET_LISTENING:{
+            l_es_new->last_time_active = time(NULL);
 #if defined (DAP_OS_UNIX) && defined (SO_INCOMING_CPU)
             int l_cpu = l_worker->context->cpu_id;
             setsockopt(l_es_new->socket , SOL_SOCKET, SO_INCOMING_CPU, &l_cpu, sizeof(l_cpu));
@@ -168,7 +169,6 @@ static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg)
     int l_ret = dap_context_add(l_context, l_es_new);
     l_es_new->worker = l_worker;
 
-    l_es_new->last_time_active = time(NULL);
     // We need to differ new and reassigned esockets. If its new - is_initialized is false
     if ( ! l_es_new->is_initalized ){
         if (l_es_new->callbacks.new_callback)
@@ -302,31 +302,35 @@ static bool s_socket_all_check_activity( void * a_arg)
 {
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
-    dap_events_socket_t *l_es = NULL, *tmp = NULL;
     time_t l_curtime = time(NULL); // + 1000;
     //dap_ctime_r(&l_curtime, l_curtimebuf);
     //log_it(L_DEBUG,"Check sockets activity on worker #%u at %s", l_worker->id, l_curtimebuf);
-    size_t l_esockets_counter = 0;
-    u_int l_esockets_count = HASH_CNT(hh, l_worker->context->esockets);
-    HASH_ITER(hh, l_worker->context->esockets, l_es, tmp ) {
-        if (l_esockets_counter >= l_worker->context->event_sockets_count || l_esockets_counter >= l_esockets_count){
-            log_it(L_ERROR, "Something wrong with context's esocket table: %u esockets in context, %u in table but we're on %zu iteration",
-                   l_worker->context->event_sockets_count, l_esockets_count,l_esockets_counter +1 );
-                break;
-        }
-        if (l_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT &&
-                !(l_es->flags & DAP_SOCK_SIGNAL_CLOSE) &&
-                 l_curtime >= l_es->last_time_active + s_connection_timeout &&
-                !l_es->no_close) {
-            log_it( L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (diff %"DAP_UINT64_FORMAT_U" ), closing...",
-                            l_es->socket, l_curtime -  (time_t)l_es->last_time_active - s_connection_timeout );
-            if (l_es->callbacks.error_callback) {
-                l_es->callbacks.error_callback(l_es, ETIMEDOUT);
+    bool l_removed;
+    do {
+        l_removed = false;
+        size_t l_esockets_counter = 0;
+        for (dap_events_socket_t *l_es = l_worker->context->esockets; l_es; l_es = l_es->hh.next) {
+            u_int l_esockets_count = HASH_CNT(hh, l_worker->context->esockets);
+            if (l_esockets_counter >= l_worker->context->event_sockets_count || l_esockets_counter++ >= l_esockets_count){
+                log_it(L_ERROR, "Something wrong with context's esocket table: %u esockets in context, %u in table but we're on %zu iteration",
+                       l_worker->context->event_sockets_count, l_esockets_count, l_esockets_counter);
+                    break;
             }
-            dap_events_socket_remove_and_delete_unsafe(l_es,false);
-        } else  // Do not modify counter if socket was removed
-            l_esockets_counter++;
-    }
+            if (l_es->type == DESCRIPTOR_TYPE_SOCKET_CLIENT &&
+                    !(l_es->flags & DAP_SOCK_SIGNAL_CLOSE) &&
+                     l_curtime >= l_es->last_time_active + s_connection_timeout &&
+                    !l_es->no_close) {
+                log_it( L_INFO, "Socket %"DAP_FORMAT_SOCKET" timeout (diff %"DAP_UINT64_FORMAT_U" ), closing...",
+                                l_es->socket, l_curtime -  (time_t)l_es->last_time_active - s_connection_timeout );
+                if (l_es->callbacks.error_callback) {
+                    l_es->callbacks.error_callback(l_es, ETIMEDOUT);
+                }
+                dap_events_socket_remove_and_delete_unsafe(l_es,false);
+                l_removed = true;
+                break;  // Start new cycle from beginning (cause next socket might been removed too)
+            }
+        }
+    } while (l_removed);
     return true;
 }
 

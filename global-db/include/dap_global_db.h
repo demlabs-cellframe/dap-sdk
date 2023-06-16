@@ -21,8 +21,7 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
-#include <stddef.h>
-#include <stdbool.h>
+
 #include "dap_common.h"
 #include "dap_time.h"
 #include "dap_context.h"
@@ -30,10 +29,22 @@
 
 #define DAP_GLOBAL_DB_VERSION               2
 #define DAP_GLOBAL_DB_LOCAL_GENERAL         "local.general"
+#define DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT     5 // seconds
+
+// Global DB instance with settings data
+typedef struct dap_global_db_instance {
+    uint32_t version;           // Current GlobalDB version
+    const char *storage_path;   // GlobalDB storage path
+    const char *driver_name;    // GlobalDB driver name
+    dap_list_t *whitelist;
+    dap_list_t *blacklist;
+    uint32_t store_time_limit;
+} dap_global_db_instance_t;
 
 // GlobalDB own context custom extension
-typedef struct dap_global_db_context
-{
+typedef struct dap_global_db_context {
+    dap_global_db_instance_t *instance; // A way to access DB config settings like whitelist etc.
+
     dap_events_socket_t * queue_io; // I/O queue for GlobalDB i/o requests
 
     dap_events_socket_t ** queue_worker_callback_input; // Worker callback queue input
@@ -139,6 +150,8 @@ void dap_global_db_deinit();
 
 // For context unification sometimes we need to exec inside GlobalDB context
 int dap_global_db_context_exec(dap_global_db_callback_t a_callback, void * a_arg);
+
+dap_global_db_context_t *dap_global_db_context_get_default();
 
 // Copy global_db_obj array
 dap_global_db_obj_t *dap_global_db_objs_copy(dap_global_db_obj_t *a_objs, size_t a_count);

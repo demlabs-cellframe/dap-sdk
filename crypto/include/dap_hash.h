@@ -23,10 +23,6 @@
     along with any CellFrame SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
-#include <stddef.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <assert.h>
 
 #include "dap_common.h"
 #include "dap_hash_keccak.h"
@@ -34,10 +30,9 @@
 #include "KeccakHash.h"
 #include "SimpleFIPS202.h"
 
-#define DAP_HASH_FAST_SIZE  32
-#define DAP_CHAIN_HASH_FAST_SIZE    32
-#define DAP_CHAIN_HASH_FAST_STR_SIZE (DAP_CHAIN_HASH_FAST_SIZE * 2 + 2 /* heading 0x */ + 1 /*trailing zero*/)
-#define DAP_CHAIN_HASH_MAX_SIZE 63
+#define DAP_HASH_FAST_SIZE          32
+#define DAP_CHAIN_HASH_FAST_SIZE    DAP_HASH_FAST_SIZE
+#define DAP_CHAIN_HASH_FAST_STR_SIZE (DAP_HASH_FAST_SIZE * 2 + 2 /* heading 0x */ + 1 /*trailing zero*/)
 
 typedef enum dap_hash_type {
     DAP_HASH_TYPE_KECCAK = 0,
@@ -106,6 +101,13 @@ DAP_STATIC_INLINE bool dap_hash_fast_is_blank( dap_hash_fast_t *a_hash )
     return dap_hash_fast_compare(a_hash, &l_blank_hash);
 }
 
+DAP_STATIC_INLINE void dap_chain_hash_fast_to_str_do(const dap_hash_fast_t *a_hash, char *a_str)
+{
+    a_str[0] = '0';
+    a_str[1] = 'x';
+    a_str[ DAP_CHAIN_HASH_FAST_STR_SIZE - 1 ] = '\0';
+    dap_htoa64((a_str + 2), a_hash->raw, DAP_CHAIN_HASH_FAST_SIZE);
+}
 
 DAP_STATIC_INLINE int dap_chain_hash_fast_to_str(const dap_hash_fast_t *a_hash, char *a_str, size_t a_str_max )
 {
@@ -115,10 +117,7 @@ DAP_STATIC_INLINE int dap_chain_hash_fast_to_str(const dap_hash_fast_t *a_hash, 
         return -2;
     if( a_str_max < DAP_CHAIN_HASH_FAST_STR_SIZE )
         return -3;
-    a_str[0] = '0';
-    a_str[1] = 'x';
-    a_str[ DAP_CHAIN_HASH_FAST_STR_SIZE - 1 ] = '\0';
-    dap_htoa64((a_str + 2), a_hash->raw, DAP_CHAIN_HASH_FAST_SIZE);
+    dap_chain_hash_fast_to_str_do(a_hash, a_str);
     return DAP_CHAIN_HASH_FAST_STR_SIZE;
 }
 
@@ -126,10 +125,12 @@ DAP_STATIC_INLINE int dap_chain_hash_fast_to_str(const dap_hash_fast_t *a_hash, 
 
 DAP_STATIC_INLINE char *dap_chain_hash_fast_to_str_new(const dap_hash_fast_t *a_hash)
 {
-    char *ret = DAP_NEW_Z_SIZE(char, DAP_CHAIN_HASH_FAST_STR_SIZE);
-    if (dap_chain_hash_fast_to_str(a_hash, ret, DAP_CHAIN_HASH_FAST_STR_SIZE) < 0)
-        DAP_DEL_Z(ret);
-    return ret;
+    if (!a_hash)
+        return NULL;
+    char *l_ret = DAP_NEW_Z_SIZE(char, DAP_CHAIN_HASH_FAST_STR_SIZE);
+    // Avoid compiler warning with NULL '%s' argument
+    dap_chain_hash_fast_to_str_do(a_hash, l_ret);
+    return l_ret;
 }
 
 #define dap_hash_fast_to_str_new dap_chain_hash_fast_to_str_new

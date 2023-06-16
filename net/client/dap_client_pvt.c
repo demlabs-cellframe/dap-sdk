@@ -21,19 +21,7 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <time.h>
-#include <stdlib.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
-#include <stdbool.h>
-#include <unistd.h>
-#include <dirent.h>
-#include <errno.h>
-#include <assert.h>
-#include <fcntl.h>
+#include "dap_common.h"
 
 #ifdef WIN32
 #include <winsock2.h>
@@ -46,9 +34,6 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #endif
-
-#include <pthread.h>
-
 #include <json-c/json.h>
 
 #include "dap_enc_key.h"
@@ -177,9 +162,6 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
     a_client_pvt->is_close_session = false;
     a_client_pvt->remote_protocol_version = 0;
     a_client_pvt->ts_last_active = 0;
-
-    dap_list_free_full(a_client_pvt->pkt_queue, NULL);
-    a_client_pvt->pkt_queue = NULL;
 
     a_client_pvt->last_error = ERROR_NO_ERROR;
     a_client_pvt->stage = STAGE_BEGIN;
@@ -1018,7 +1000,7 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
     if(s_debug_more)
         log_it(L_DEBUG, "STREAM_CTL response %zu bytes length recieved", a_data_size);
     char * l_response_str = DAP_NEW_Z_SIZE(char, a_data_size + 1);
-    memcpy(l_response_str, a_data, a_data_size);
+    memcpy(l_response_str, a_data, (uint32_t)a_data_size);
 
     if(a_data_size < 4) {
         log_it(L_ERROR, "STREAM_CTL Wrong reply: '%s'", l_response_str);
@@ -1235,15 +1217,18 @@ static void s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ARG vo
  */
 static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
 {
+    if (!a_es->_inheritor) {
+        log_it(L_WARNING, "No client with client stream erro callback");
+        return;
+    }
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
 
     char l_errbuf[128];
-    l_errbuf[0]='\0';
     if (a_error)
-        strerror_r(a_error,l_errbuf,sizeof (l_errbuf));
+        strerror_r(a_error, l_errbuf, sizeof(l_errbuf));
     else
-        strncpy(l_errbuf,"Unknown Error",sizeof(l_errbuf)-1);
+        strncpy(l_errbuf, "Unknown error", sizeof(l_errbuf) - 1);
 
     log_it(L_WARNING, "STREAM error \"%s\" (code %d)", l_errbuf, a_error);
 

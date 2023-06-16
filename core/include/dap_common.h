@@ -22,8 +22,6 @@
     You should have received a copy of the GNU General Public License
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
-//#define _XOPEN_SOURCE 700
-
 #pragma once
 #ifndef __STDC_WANT_LIB_EXT1__
 #define __STDC_WANT_LIB_EXT1__ 1
@@ -48,7 +46,14 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <time.h>
+#ifdef __USE_GNU
+# undef __USE_GNU
+# define NEED_GNU_REENABLE
+#endif
 #include <string.h>
+#ifdef NEED_GNU_REENABLE
+# define __USE_GNU
+#endif
 #include <assert.h>
 #include <ctype.h>
 #include <pthread.h>
@@ -192,9 +197,9 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
 #define DAP_NEW(t)            DAP_CAST_PTR(t, malloc(sizeof(t)))
 #define DAP_NEW_SIZE(t, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, malloc(s1)) : DAP_CAST_PTR(t, NULL); })
- /* Auto memory! Do not inline! */
+ /* Auto memory! Do not inline! Do not modify the size in-call! */
 #define DAP_NEW_STACK(t)            DAP_CAST_PTR(t, alloca(sizeof(t)))
-#define DAP_NEW_STACK_SIZE(t, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, alloca(s1)) : DAP_CAST_PTR(t, NULL); })
+#define DAP_NEW_STACK_SIZE(t, s)    DAP_CAST_PTR(t, (size_t)(s) > 0 ? alloca((size_t)(s)) : NULL)
 /* ... */
 #define DAP_NEW_Z(t)          DAP_CAST_PTR(t, calloc(1, sizeof(t)))
 #define DAP_NEW_Z_SIZE(t, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, calloc(1, s1)) : DAP_CAST_PTR(t, NULL); })

@@ -6,14 +6,10 @@
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_string.h"
-#include "dap_chain.h"
-#include "dap_chain_net.h"
 #include "dap_time.h"
+#include "dap_hash.h"
 
 #define LOG_TAG "dap_global_db_remote"
-
-// Default time of a node address expired in hours
-#define NODE_TIME_EXPIRED_DEFAULT 720
 
 static dap_list_t *s_sync_group_items = NULL;
 static dap_list_t *s_sync_group_extra_items = NULL;
@@ -174,7 +170,7 @@ static int s_db_add_sync_group(dap_list_t **a_grp_list, dap_sync_group_item_t *a
 static void *s_list_thread_proc(void *arg)
 {
     dap_db_log_list_t *l_dap_db_log_list = (dap_db_log_list_t *)arg;
-    uint32_t l_time_store_lim_hours = dap_config_get_item_uint32_default(g_config, "global_db", "time_store_limit", 72);
+    uint32_t l_time_store_lim_hours = l_dap_db_log_list->db_context->instance->store_time_limit;
     uint64_t l_limit_time = l_time_store_lim_hours ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
     for (dap_list_t *l_groups = l_dap_db_log_list->groups; l_groups; l_groups = dap_list_next(l_groups)) {
         dap_db_log_list_group_t *l_group_cur = (dap_db_log_list_group_t *)l_groups->data;
@@ -193,7 +189,8 @@ static void *s_list_thread_proc(void *arg)
         dap_nanotime_t l_time_allowed = dap_nanotime_now() + dap_nanotime_from_sec(3600 * 24); // to be sure the timestamp is invalid
         while (l_group_cur->count && l_dap_db_log_list->is_process) { // Number of records to be synchronized
             size_t l_item_count = 0;//min(64, l_group_cur->count);
-            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, l_item_start, &l_item_count);
+            size_t l_objs_total_size = 0;
+            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, 0, &l_item_count);
             if (!l_dap_db_log_list->is_process) {
                 dap_store_obj_free(l_objs, l_item_count);
                 return NULL;
@@ -203,7 +200,7 @@ static void *s_list_thread_proc(void *arg)
                 break;
             // set new start pos = lastitem pos + 1
             l_item_start = l_objs[l_item_count - 1].id + 1;
-            l_group_cur->count -= l_item_count;
+            l_group_cur->count = 0; //-= l_item_count;
             dap_list_t *l_list = NULL;
             for (size_t i = 0; i < l_item_count; i++) {
                 dap_store_obj_t *l_obj_cur = l_objs + i;
@@ -232,11 +229,15 @@ static void *s_list_thread_proc(void *arg)
                 dap_store_packet_change_id(l_pkt, l_cur_id);
                 l_list_obj->pkt = l_pkt;
                 l_list = dap_list_append(l_list, l_list_obj);
+                l_objs_total_size += dap_db_log_list_obj_get_size(l_list_obj);
             }
             dap_store_obj_free(l_objs, l_item_count);
             pthread_mutex_lock(&l_dap_db_log_list->list_mutex);
             // add l_list to items_list
             l_dap_db_log_list->items_list = dap_list_concat(l_dap_db_log_list->items_list, l_list);
+            l_dap_db_log_list->size += l_objs_total_size;
+            while (l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE && l_dap_db_log_list->is_process)
+                pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
             pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
         }
         DAP_DEL_Z(l_del_group_name_replace);
@@ -259,23 +260,20 @@ static void *s_list_thread_proc(void *arg)
  * @param a_flags flags
  * @return Returns a pointer to the log list structure if successful, otherwise NULL pointer.
  */
-dap_db_log_list_t* dap_db_log_list_start(dap_chain_net_t *l_net, dap_chain_node_addr_t a_addr, int a_flags)
+dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node_addr, int a_flags)
 {
 #ifdef GDB_SYNC_ALWAYS_FROM_ZERO
     a_flags |= F_DB_LOG_SYNC_FROM_ZERO;
 #endif
 
-    const char *l_net_name = NULL;
-    if(l_net && l_net->pub.name && l_net->pub.name[0]!='\0') {
-        l_net_name = l_net->pub.name;
-    }
-
-    //log_it(L_DEBUG, "Start loading db list_write...");
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "Start loading db list_write...");
     dap_db_log_list_t *l_dap_db_log_list = DAP_NEW_Z(dap_db_log_list_t);
+    l_dap_db_log_list->db_context = dap_global_db_context_get_default();
+
     // Add groups for the selected network only
-    dap_list_t *l_groups_masks = dap_chain_db_get_sync_groups(l_net_name);
+    dap_list_t *l_groups_masks = dap_chain_db_get_sync_groups(a_net_name);
     if (a_flags & F_DB_LOG_ADD_EXTRA_GROUPS) {
-        dap_list_t *l_extra_groups_masks = dap_chain_db_get_sync_extra_groups(l_net_name);
+        dap_list_t *l_extra_groups_masks = dap_chain_db_get_sync_extra_groups(a_net_name);
         l_groups_masks = dap_list_concat(l_groups_masks, l_extra_groups_masks);
     }
     dap_list_t *l_groups_names = NULL;
@@ -285,57 +283,22 @@ dap_db_log_list_t* dap_db_log_list_start(dap_chain_net_t *l_net, dap_chain_node_
     }
     dap_list_free(l_groups_masks);
 
-    static int16_t s_size_ban_list = -1;
-    static char **s_ban_list = NULL;
-
-    static int16_t s_size_white_list = -1;
-    static char **s_white_list = NULL;
-    static char **s_white_list_del = NULL;
-
-    if (s_size_ban_list == -1)
-        s_ban_list = dap_config_get_array_str(g_config, "stream_ch_chain", "ban_list_sync_groups", (uint16_t *)&s_size_ban_list);
-    if (s_size_white_list == -1) {
-        s_white_list = dap_config_get_array_str(g_config, "stream_ch_chain", "white_list_sync_groups", (uint16_t *)&s_size_white_list);
-        if (s_size_white_list > 0) {
-            s_white_list_del = DAP_NEW_SIZE(char *, s_size_white_list * sizeof(char *));
-            for (int i = 0; i < s_size_white_list; i++) {
-                s_white_list_del[i] = dap_strdup_printf("%s.del", s_white_list[i]);
-            }
-        }
-    }
-
-    /* delete if not condition */
-    if (s_size_white_list > 0) {
+    // Check for banned/whitelisted groups
+    dap_global_db_instance_t *l_dbi = l_dap_db_log_list->db_context->instance;
+    if (l_dbi->whitelist || l_dbi->blacklist) {
+        dap_list_t *l_used_list = l_dbi->whitelist ? l_dbi->whitelist : l_dbi->blacklist;
         for (dap_list_t *l_group = l_groups_names; l_group; ) {
             bool l_found = false;
-            for (int i = 0; i < s_size_white_list; i++) {
-                if (!dap_fnmatch(s_white_list[i], l_group->data, FNM_NOESCAPE) ||
-                        !dap_fnmatch(s_white_list_del[i], l_group->data, FNM_NOESCAPE)) {
+            for (dap_list_t *it = l_used_list; it; it = it->next) {
+                if (!dap_fnmatch(it->data, l_group->data, FNM_NOESCAPE)) {
                     l_found = true;
                     break;
                 }
             }
-            if (!l_found) {
-                dap_list_t *l_tmp = l_group->next;
+            dap_list_t *l_tmp = l_group->next;
+            if (l_used_list == l_dbi->whitelist ? !l_found : l_found)
                 l_groups_names = dap_list_delete_link(l_groups_names, l_group);
-                l_group = l_tmp;
-            } else
-                l_group = dap_list_next(l_group);
-        }
-    } else if (s_size_ban_list > 0) {
-        for (dap_list_t *l_group = l_groups_names; l_group; ) {
-            bool l_found = false;
-            for (int i = 0; i < s_size_ban_list; i++) {
-                if (!dap_fnmatch(s_ban_list[i], l_group->data, FNM_NOESCAPE)) {
-                    dap_list_t *l_tmp = l_group->next;
-                    l_groups_names = dap_list_delete_link(l_groups_names, l_group);
-                    l_group = l_tmp;
-                    l_found = true;
-                    break;
-                }
-            }
-            if (l_found) continue;
-            l_group = dap_list_next(l_group);
+            l_group = l_tmp;
         }
     }
 
@@ -346,7 +309,7 @@ dap_db_log_list_t* dap_db_log_list_start(dap_chain_net_t *l_net, dap_chain_node_
         if (a_flags & F_DB_LOG_SYNC_FROM_ZERO)
             l_sync_group->last_id_synced = 0;
         else
-            l_sync_group->last_id_synced = dap_db_get_last_id_remote(a_addr.uint64, l_sync_group->name);
+            l_sync_group->last_id_synced = dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
         l_sync_group->count = dap_global_db_driver_count(l_sync_group->name, l_sync_group->last_id_synced + 1);
         l_dap_db_log_list->items_number += l_sync_group->count;
         l_group->data = (void *)l_sync_group;
@@ -358,6 +321,7 @@ dap_db_log_list_t* dap_db_log_list_start(dap_chain_net_t *l_net, dap_chain_node_
     }
     l_dap_db_log_list->is_process = true;
     pthread_mutex_init(&l_dap_db_log_list->list_mutex, NULL);
+    pthread_cond_init(&l_dap_db_log_list->cond, NULL);
     pthread_create(&l_dap_db_log_list->thread, NULL, s_list_thread_proc, l_dap_db_log_list);
     return l_dap_db_log_list;
 }
@@ -416,10 +380,11 @@ dap_db_log_list_obj_t *dap_db_log_list_get(dap_db_log_list_t *a_db_log_list)
         a_db_log_list->items_rest--;
         l_ret = l_list->data;
         size_t l_old_size = a_db_log_list->size;
-        a_db_log_list->size -= sizeof(dap_db_log_list_obj_t) + sizeof(dap_store_obj_pkt_t) + l_ret->pkt->data_size;
-        if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE && a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE)
-            pthread_cond_signal(&a_db_log_list->cond)
+        a_db_log_list->size -= dap_db_log_list_obj_get_size(l_ret);
         DAP_DELETE(l_list);
+        if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE &&
+                a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE)
+            pthread_cond_signal(&a_db_log_list->cond);
     }
     pthread_mutex_unlock(&a_db_log_list->list_mutex);
     //log_it(L_DEBUG, "get item n=%d", a_db_log_list->items_number - a_db_log_list->items_rest);
@@ -464,117 +429,6 @@ void dap_db_log_list_delete(dap_db_log_list_t *a_db_log_list)
 }
 
 /**
- * @brief Sets a current node adress.
- * @param a_address a current node adress
- * @param a_net_name a net name string
- * @return True if success, otherwise false
- */
-static bool dap_db_set_cur_node_addr_common(uint64_t a_address, char *a_net_name, time_t a_expire_time)
-{
-char	l_key [DAP_GLOBAL_DB_KEY_MAX];
-bool	l_ret;
-
-    if(!a_net_name)
-        return false;
-
-    snprintf(l_key, sizeof(l_key) - 1, "cur_node_addr_%s", a_net_name);
-
-    if ( (l_ret = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, l_key, &a_address, sizeof(a_address),
-                                    true, NULL, NULL)) == 0 ) {
-        snprintf(l_key, sizeof(l_key) - 1, "cur_node_addr_%s_time", a_net_name);
-        l_ret = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, l_key, &a_expire_time, sizeof(time_t),
-                                   true, NULL, NULL) == DAP_GLOBAL_DB_RC_SUCCESS;
-    }
-
-    return l_ret;
-}
-
-/**
- * @brief Sets an adress of a current node and no expire time.
- *
- * @param a_address an adress of a current node
- * @param a_net_name a net name string
- * @return Returns true if siccessful, otherwise false
- */
-bool dap_db_set_cur_node_addr(uint64_t a_address, char *a_net_name )
-{
-    return dap_db_set_cur_node_addr_common(a_address,a_net_name,0);
-}
-
-/**
- * @brief Sets an address of a current node and expire time.
- *
- * @param a_address an address of a current node
- * @param a_net_name a net name string
- * @return Returns true if successful, otherwise false
- */
-bool dap_db_set_cur_node_addr_exp(uint64_t a_address, char *a_net_name )
-{
-    return dap_db_set_cur_node_addr_common(a_address,a_net_name, time(NULL));
-}
-
-/**
- * @brief Gets an adress of current node by a net name.
- *
- * @param a_net_name a net name string
- * @return Returns an adress if successful, otherwise 0.
- */
-uint64_t dap_chain_net_get_cur_node_addr_gdb_sync(char *a_net_name)
-{
-char	l_key[DAP_GLOBAL_DB_KEY_MAX], l_key_time[DAP_GLOBAL_DB_KEY_MAX];
-uint8_t *l_node_addr_data, *l_node_time_data;
-size_t l_node_addr_len = 0, l_node_time_len = 0;
-uint64_t l_node_addr_ret = 0;
-time_t l_node_time = 0;
-
-    if(!a_net_name)
-        return 0;
-
-    snprintf(l_key, sizeof(l_key) - 1, "cur_node_addr_%s", a_net_name);
-    snprintf(l_key_time, sizeof(l_key_time) - 1, "cur_node_addr_%s_time", a_net_name);
-
-    l_node_addr_data = dap_global_db_get_sync(DAP_GLOBAL_DB_LOCAL_GENERAL, l_key, &l_node_addr_len, NULL, NULL);
-    l_node_time_data = dap_global_db_get_sync(DAP_GLOBAL_DB_LOCAL_GENERAL, l_key_time, &l_node_time_len, NULL, NULL);
-
-    if(l_node_addr_data && (l_node_addr_len == sizeof(uint64_t)) )
-        l_node_addr_ret = *( (uint64_t *) l_node_addr_data );
-
-    if(l_node_time_data && (l_node_time_len == sizeof(time_t)) )
-        l_node_time = *( (time_t *) l_node_time_data );
-
-    DAP_DELETE(l_node_addr_data);
-    DAP_DELETE(l_node_time_data);
-
-    // time delta in seconds
-    static int64_t addr_time_expired = -1;
-    // read time-expired
-
-    if(addr_time_expired == -1) {
-        dap_string_t *l_cfg_path = dap_string_new("network/");
-        dap_string_append(l_cfg_path, a_net_name);
-        dap_config_t *l_cfg;
-
-        if((l_cfg = dap_config_open(l_cfg_path->str)) == NULL) {
-            log_it(L_ERROR, "Can't open default network config");
-            addr_time_expired = 0;
-        } else {
-            addr_time_expired = 3600 *
-                    dap_config_get_item_int64_default(l_cfg, "general", "node-addr-expired",
-                    NODE_TIME_EXPIRED_DEFAULT);
-        }
-        dap_string_free(l_cfg_path, true);
-    }
-
-    time_t l_dt = time(NULL) - l_node_time;
-    //NODE_TIME_EXPIRED
-    if(l_node_time && l_dt > addr_time_expired) {
-        l_node_addr_ret = 0;
-    }
-
-    return l_node_addr_ret;
-}
-
-/**
  * @brief Sets last id of a remote node.
  *
  * @param a_node_addr a node adress
@@ -587,7 +441,7 @@ bool dap_db_set_last_id_remote(uint64_t a_node_addr, uint64_t a_id, char *a_grou
 char	l_key[DAP_GLOBAL_DB_KEY_MAX];
 
     snprintf(l_key, sizeof(l_key) - 1, "%"DAP_UINT64_FORMAT_U"%s", a_node_addr, a_group);
-    return dap_global_db_set(GROUP_LOCAL_NODE_LAST_ID,l_key, &a_id, sizeof(uint64_t), true, NULL, NULL ) == 0;
+    return dap_global_db_set(GROUP_LOCAL_NODE_LAST_ID,l_key, &a_id, sizeof(uint64_t), false, NULL, NULL ) == 0;
 }
 
 /**
@@ -612,39 +466,6 @@ uint64_t dap_db_get_last_id_remote(uint64_t a_node_addr, char *a_group)
     return l_ret_id;
 }
 
-/**
- * @brief Sets the last hash of a remote node.
- *
- * @param a_node_addr a node adress
- * @param a_chain a pointer to the chain stucture
- * @param a_hash a
- * @return true
- * @return false
- */
-bool dap_db_set_last_hash_remote(uint64_t a_node_addr, dap_chain_t *a_chain, dap_chain_hash_fast_t *a_hash)
-{
-char	l_key[DAP_GLOBAL_DB_KEY_MAX];
-
-    snprintf(l_key, sizeof(l_key) - 1, "%"DAP_UINT64_FORMAT_U"%s%s", a_node_addr, a_chain->net_name, a_chain->name);
-    return dap_global_db_set(GROUP_LOCAL_NODE_LAST_ID, l_key, a_hash, sizeof(dap_chain_hash_fast_t), true, NULL, NULL ) == 0;
-}
-
-/**
- * @brief Gets the last hash of a remote node.
- *
- * @param a_node_addr a node adress
- * @param a_chain a pointer to a chain structure
- * @return Returns a hash if successful.
- */
-dap_chain_hash_fast_t *dap_db_get_last_hash_remote(uint64_t a_node_addr, dap_chain_t *a_chain)
-{
-    char *l_node_chain_str = dap_strdup_printf("%ju%s%s", a_node_addr, a_chain->net_name, a_chain->name);
-    size_t l_hash_len = 0;
-    byte_t *l_hash = dap_global_db_get_sync(GROUP_LOCAL_NODE_LAST_ID,(const char*)l_node_chain_str, &l_hash_len,
-                                                 NULL, NULL);
-    DAP_DELETE(l_node_chain_str);
-    return (dap_chain_hash_fast_t *)l_hash;
-}
 
 /**
  * @brief Gets a size of an object.

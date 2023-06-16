@@ -25,20 +25,18 @@
 #include "dap_config.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
-#include "dap_chain_common.h"
 #include "dap_time.h"
 #include "dap_context.h"
 #include "dap_worker.h"
 #include "dap_stream_worker.h"
 #include "dap_proc_thread.h"
-#define LOG_TAG "dap_global_db"
-
 #include "dap_global_db.h"
 #include "dap_global_db_remote.h"
 #include "dap_global_db_driver.h"
 
-int g_dap_global_db_debug_more = false;                                         /* Enable extensible debug output */
+#define LOG_TAG "dap_global_db"
 
+int g_dap_global_db_debug_more = false;                                         /* Enable extensible debug output */
 
 // Queue I/O message op code
 enum queue_io_msg_opcode{
@@ -113,16 +111,11 @@ struct queue_io_msg{
 
 };
 
-static uint32_t s_global_db_version = 0; // Current GlobalDB version
 static pthread_cond_t s_check_db_cond = PTHREAD_COND_INITIALIZER; // Check version condition
 static pthread_mutex_t s_check_db_mutex = PTHREAD_MUTEX_INITIALIZER; // Check version condition mutex
 #define INVALID_RETCODE +100500
 static int s_check_db_ret = INVALID_RETCODE; // Check version return value
 
-static const char * s_storage_path = NULL; // GlobalDB storage path
-static const char * s_driver_name = NULL; // GlobalDB driver name
-
-static dap_context_t * s_context = NULL;  // GlobalDB own context
 static dap_global_db_context_t *s_context_global_db = NULL; // GlobalDB own context custom extension
 
 // Version check& update functiosn
@@ -171,10 +164,6 @@ static int s_record_del_history_del(const char *a_group, const char *a_key);
 // Call notificators
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t *a_store_obj);
 
-
-
-
-
 /**
  * @brief dap_global_db_init
  * @param a_path
@@ -188,42 +177,57 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
 
     dap_global_db_sync_init();
 
-    if ( a_storage_path == NULL && s_storage_path == NULL ){
+    if (a_storage_path == NULL) {
         log_it(L_CRITICAL, "Can't initialize GlobalDB without storage path");
+        return -1;
     }
 
-    if ( a_driver_name == NULL && s_driver_name == NULL ){
+    if ( a_driver_name == NULL) {
         log_it(L_CRITICAL, "Can't initialize GlobalDB without driver name");
+        return -2;
     }
-
-    // For reinitialization it could be NULL but s_storage_path and s_driver_name have to be defined before
-
-    if(a_storage_path)
-        s_storage_path = dap_strdup(a_storage_path);
-
-    if(a_driver_name)
-        s_driver_name = dap_strdup(a_driver_name);
 
     // Debug config
     g_dap_global_db_debug_more = dap_config_get_item_bool_default(g_config, "global_db", "debug_more", false);
 
-
-    // Driver initalization
-    if( (l_rc = dap_db_driver_init(s_driver_name, s_storage_path, true))  )
-        return  log_it(L_CRITICAL, "Hadn't initialized DB driver \"%s\" on path \"%s\", code: %d",
-                       s_driver_name, s_storage_path, l_rc), l_rc;
-
     // Create and run its own context
-    if(s_context == NULL){
-        s_context = dap_context_new(DAP_CONTEXT_TYPE_GLOBAL_DB);
-        s_context->_inheritor = s_context_global_db = DAP_NEW_Z(struct dap_global_db_context);
-        s_context_global_db->context = s_context;
-        if (dap_context_run(s_context, -1, DAP_CONTEXT_POLICY_DEFAULT, 0, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED,
-                            s_context_callback_started, s_context_callback_stopped, NULL) != 0 ){
+    if (s_context_global_db == NULL) {
+        s_context_global_db = DAP_NEW_Z(struct dap_global_db_context);
+        s_context_global_db->context = dap_context_new(DAP_CONTEXT_TYPE_GLOBAL_DB);
+        s_context_global_db->context->_inheritor = s_context_global_db;
+        if (dap_context_run(s_context_global_db->context, -1, DAP_CONTEXT_POLICY_DEFAULT,
+                            0, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED,
+                            s_context_callback_started, s_context_callback_stopped, NULL) != 0) {
             l_rc = -2;
             goto lb_return;
         }
+        dap_global_db_instance_t *l_dbi = DAP_NEW_Z(dap_global_db_instance_t);
+
+        l_dbi->storage_path = dap_strdup(a_storage_path);
+        l_dbi->driver_name = dap_strdup(a_driver_name);
+
+        uint16_t l_size_ban_list = 0, l_size_white_list = 0;
+        char **l_ban_list = dap_config_get_array_str(g_config, "global_db", "ban_list_sync_groups", &l_size_ban_list);
+        for (int i = 0; i < l_size_ban_list; i++)
+            l_dbi->blacklist = dap_list_append(l_dbi->blacklist, dap_strdup(l_ban_list[i]));
+        char **l_white_list = dap_config_get_array_str(g_config, "global_db", "white_list_sync_groups", &l_size_white_list);
+        for (int i = 0; i < l_size_ban_list; i++) {
+            l_dbi->whitelist = dap_list_append(l_dbi->whitelist, dap_strdup(l_white_list[i]));
+            l_dbi->whitelist = dap_list_append(l_dbi->whitelist, dap_strdup_printf("%s.del", l_white_list[i]));
+        }
+
+        l_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 72);
+
+        s_context_global_db->instance = l_dbi;
     }
+
+    // Driver initalization
+    if( (l_rc = dap_db_driver_init(s_context_global_db->instance->driver_name,
+                                   s_context_global_db->instance->storage_path, true))  )
+        return  log_it(L_CRITICAL, "Hadn't initialized DB driver \"%s\" on path \"%s\", code: %d",
+                       s_context_global_db->instance->driver_name, s_context_global_db->instance->storage_path, l_rc), l_rc;
+
+
 
     // Check version and update if need it
     if(!s_is_check_version){
@@ -248,6 +252,16 @@ lb_return:
  */
 void dap_global_db_deinit()
 {
+    if (s_context_global_db) {
+        dap_context_stop_n_kill(s_context_global_db->context);
+        DAP_DELETE(s_context_global_db->context);
+        dap_list_free_full(s_context_global_db->instance->blacklist, NULL);
+        dap_list_free_full(s_context_global_db->instance->whitelist, NULL);
+        DAP_DEL_Z(s_context_global_db->instance->driver_name);
+        DAP_DEL_Z(s_context_global_db->instance->storage_path);
+        DAP_DEL_Z(s_context_global_db->instance);
+        DAP_DEL_Z(s_context_global_db);
+    }
     dap_db_driver_deinit();
     dap_global_db_sync_deinit();
 }
@@ -262,7 +276,11 @@ dap_global_db_context_t * dap_global_db_context_current()
     if (l_context && l_context->type == DAP_CONTEXT_TYPE_GLOBAL_DB)
         return (dap_global_db_context_t *)l_context->_inheritor;
     return NULL;
+}
 
+dap_global_db_context_t *dap_global_db_context_get_default()
+{
+    return s_context_global_db;
 }
 
 /* *** Get functions group *** */
@@ -271,6 +289,8 @@ byte_t *dap_global_db_get_unsafe(dap_global_db_context_t *a_global_db_context, c
                                  const char *a_key, size_t *a_data_size,
                                  bool *a_is_pinned, dap_nanotime_t *a_ts)
 {
+
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "get call executes for group \"%s\" and key \"%s\"", a_group, a_key);
     dap_store_obj_t *l_store_obj = dap_global_db_get_raw_unsafe(a_global_db_context, a_group, a_key);
     if (!l_store_obj)
         return NULL;
@@ -383,7 +403,7 @@ static void s_obj_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_c
     }
     pthread_mutex_lock(&l_args->mutex);
     l_args->called = true;
-    pthread_cond_broadcast(&l_args->cond);
+    pthread_cond_signal(&l_args->cond);
     pthread_mutex_unlock(&l_args->mutex);
 }
 
@@ -405,9 +425,15 @@ byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
     if (!dap_global_db_get(a_group,a_key, s_obj_get_callback, l_args))
         while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB get operation timeout");
+                break;
+            }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -500,7 +526,7 @@ static void s_obj_raw_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_
     l_args->obj = dap_store_obj_copy(a_value, 1);
     pthread_mutex_lock(&l_args->mutex);
     l_args->called = true;
-    pthread_cond_broadcast(&l_args->cond);
+    pthread_cond_signal(&l_args->cond);
     pthread_mutex_unlock(&l_args->mutex);
 }
 
@@ -521,9 +547,15 @@ dap_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_k
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
     if (!dap_global_db_get_raw(a_group, a_key, s_obj_raw_get_callback, l_args))
         while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB get raw operation timeout");
+                break;
+            }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -623,7 +655,7 @@ static void s_del_ts_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_d
     l_args->timestamp = a_value_ts;
     pthread_mutex_lock(&l_args->mutex);
     l_args->called = true;
-    pthread_cond_broadcast(&l_args->cond);
+    pthread_cond_signal(&l_args->cond);
     pthread_mutex_unlock(&l_args->mutex);
 }
 
@@ -642,9 +674,15 @@ dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
     if (!dap_global_db_get_del_ts(a_group, a_key, s_del_ts_get_callback, l_args))
         while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB get del ts operation timeout");
+                break;
+            }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -747,9 +785,15 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
     if (!dap_global_db_get_last(a_group, s_obj_get_callback, l_args))
         while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB get last operation timeout");
+                break;
+            }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -838,9 +882,15 @@ dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
     if (!dap_global_db_get_last_raw(a_group, s_obj_raw_get_callback, l_args))
         while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB get last raw operation timeout");
+                break;
+            }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -938,8 +988,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
                                 a_msg->group, a_msg->values_total, l_values_count,
                                 l_objs, a_msg->callback_arg);
     // Clean memory
-    DAP_DEL_Z(l_objs);
-
+    dap_global_db_objs_delete(l_objs, l_values_count);
     return true; // All values are sent
 }
 
@@ -950,7 +999,8 @@ struct objs_get{
     pthread_mutex_t mutex;
     pthread_cond_t cond;
     bool called;
-    dap_global_db_obj_t * objs;
+    bool timeout;
+    dap_global_db_obj_t *objs;
     size_t objs_count;
 };
 
@@ -975,9 +1025,17 @@ static void s_objs_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_
     l_args->objs = dap_global_db_objs_copy(a_values, a_values_count);
     l_args->objs_count = a_values_count;
     pthread_mutex_lock(&l_args->mutex);
-    l_args->called = true;
-    pthread_cond_broadcast(&l_args->cond);
-    pthread_mutex_unlock(&l_args->mutex);
+    if (!l_args->timeout) {
+        l_args->called = true;
+        pthread_cond_signal(&l_args->cond);
+        pthread_mutex_unlock(&l_args->mutex);
+    } else {
+        dap_global_db_objs_delete(l_args->objs, l_args->objs_count);
+        pthread_mutex_unlock(&l_args->mutex);
+        pthread_mutex_destroy(&l_args->mutex);
+        pthread_cond_destroy(&l_args->cond);
+        DAP_DELETE(l_args);
+    }
 }
 
 /**
@@ -997,15 +1055,25 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
     if (!dap_global_db_get_all(a_group, 0, s_objs_get_callback, l_args))
         while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB get all operation timeout");
+                break;
+            }
+    if (!l_args->called) {
+        l_args->timeout = true;
+        pthread_mutex_unlock(&l_args->mutex);
+        return NULL;
+    }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
-    if (l_args->objs_count)
+    if (a_objs_count)
         *a_objs_count = l_args->objs_count;
-
     dap_global_db_obj_t *l_ret = l_args->objs;
     DAP_DELETE(l_args);
     return l_ret;
@@ -1077,7 +1145,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg)
     // Clean memory
     dap_store_obj_free(l_store_objs,l_values_count);
 
-    // Here we also check if the reply was with zero values. To prevent endless loop we don't resend query request in such cases
+    /*// Here we also check if the reply was with zero values. To prevent endless loop we don't resend query request in such cases
     if (l_values_count && l_values_count != l_values_remains) {
         // Have to process callback again
         int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,a_msg);
@@ -1085,7 +1153,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg)
         if (!l_ret)
             return false; // Don't delete it because it just sent again to the queue{
         log_it(L_ERROR, "Can't resend i/o message for opcode GET_ALL_RAW values_remains:%zu error code %d", l_values_remains, l_ret);
-    }
+    }*/
     return true; // All values are sent
 }
 
@@ -1096,6 +1164,7 @@ struct store_objs_get{
     pthread_mutex_t mutex;
     pthread_cond_t cond;
     bool called;
+    bool timeout;
     dap_store_obj_t *objs;
     size_t objs_count;
 };
@@ -1109,12 +1178,21 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
     // TODO make incremental copy
     l_args->objs = dap_store_obj_copy(a_values, a_values_count);
     l_args->objs_count += a_values_count;
-    if (a_values_count != a_values_total)
-        return;
+    if (a_values_count != a_values_total) {
+        log_it(L_WARNING, "Got only %zu records from %zu", a_values_count, a_values_total);
+    }
     pthread_mutex_lock(&l_args->mutex);
-    l_args->called = true;
-    pthread_cond_broadcast(&l_args->cond);
-    pthread_mutex_unlock(&l_args->mutex);
+    if (!l_args->timeout) {
+        l_args->called = true;
+        pthread_cond_signal(&l_args->cond);
+        pthread_mutex_unlock(&l_args->mutex);
+    } else {
+        dap_store_obj_free(l_args->objs, l_args->objs_count);
+        pthread_mutex_unlock(&l_args->mutex);
+        pthread_mutex_destroy(&l_args->mutex);
+        pthread_cond_destroy(&l_args->cond);
+        DAP_DELETE(l_args);
+    }
 }
 
 dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
@@ -1128,18 +1206,27 @@ dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
     if (!dap_global_db_get_all_raw(a_group, a_first_id, a_objs_count ? *a_objs_count : 0,
                                    s_get_all_raw_sync_callback, l_args))
         while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB get all raw operation timeout");
+                break;
+            }
+    if (!l_args->called) {
+        l_args->timeout = true;
+        pthread_mutex_unlock(&l_args->mutex);
+        return NULL;
+    }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
     if (a_objs_count)
         *a_objs_count = l_args->objs_count;
-
     dap_store_obj_t *l_ret = l_args->objs;
-    DAP_DELETE(l_args);
     return l_ret;
 }
 
@@ -1160,6 +1247,12 @@ int s_set_unsafe_with_ts(dap_global_db_context_t *a_global_db_context, const cha
     l_store_data.value = (uint8_t *)a_value;
     l_store_data.group = (char*) a_group;
     l_store_data.timestamp = a_timestamp;
+    l_store_data.group_len = dap_strlen(l_store_data.group);
+    if (a_key == NULL) {
+        l_store_data.key_len = 0;
+    } else {
+        l_store_data.key_len = dap_strlen(l_store_data.key);
+    }
     l_store_data.type = DAP_DB$K_OPTYPE_ADD;
 
     int l_res = dap_global_db_driver_apply(&l_store_data, 1);
@@ -1286,7 +1379,7 @@ static void s_sync_op_result_callback(UNUSED_ARG dap_global_db_context_t *a_glob
     l_args->result = a_rc;
     pthread_mutex_lock(&l_args->mutex);
     l_args->called = true;
-    pthread_cond_broadcast(&l_args->cond);
+    pthread_cond_signal(&l_args->cond);
     pthread_mutex_unlock(&l_args->mutex);
 }
 
@@ -1310,10 +1403,17 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
-    if (!dap_global_db_set(a_group, a_key, a_value, a_value_length, a_pin_value, s_sync_op_result_callback, l_args))
-        while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
-    else
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
+    if (!dap_global_db_set(a_group, a_key, a_value, a_value_length, a_pin_value, s_sync_op_result_callback, l_args)) {
+        while (!l_args->called) {
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB set operation timeout");
+                break;
+            }
+        }
+     } else
         l_args->result = DAP_GLOBAL_DB_RC_ERROR;
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
@@ -1405,7 +1505,7 @@ static void s_sync_op_raw_callback(UNUSED_ARG dap_global_db_context_t *a_global_
     l_args->result = a_rc;
     pthread_mutex_lock(&l_args->mutex);
     l_args->called = true;
-    pthread_cond_broadcast(&l_args->cond);
+    pthread_cond_signal(&l_args->cond);
     pthread_mutex_unlock(&l_args->mutex);
 }
 
@@ -1420,10 +1520,16 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
-    if (!dap_global_db_set_raw(a_store_objs, a_store_objs_count, s_sync_op_raw_callback, l_args))
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
+    if (!dap_global_db_set_raw(a_store_objs, a_store_objs_count, s_sync_op_raw_callback, l_args)) {
         while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
-    else
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB set raw operation timeout");
+                break;
+            }
+     } else
         l_args->result = DAP_GLOBAL_DB_RC_ERROR;
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
@@ -1613,10 +1719,16 @@ int s_db_object_pin_sync(const char *a_group, const char *a_key, bool a_pin)
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
-    if (!s_db_object_pin(a_group, a_key, s_sync_op_result_callback, l_args, a_pin))
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
+    if (!s_db_object_pin(a_group, a_key, s_sync_op_result_callback, l_args, a_pin)) {
         while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
-    else
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB get all raw operation timeout");
+                break;
+            }
+    } else
         l_args->result = DAP_GLOBAL_DB_RC_ERROR;
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
@@ -1742,10 +1854,16 @@ int dap_global_db_del_sync(const char *a_group, const char *a_key)
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
-    if (!dap_global_db_del(a_group, a_key, s_sync_op_result_callback, l_args))
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
+    if (!dap_global_db_del(a_group, a_key, s_sync_op_result_callback, l_args)) {
         while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
-    else
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB del operation timeout");
+                break;
+            }
+    } else
         l_args->result = DAP_GLOBAL_DB_RC_ERROR;
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
@@ -1815,10 +1933,16 @@ int dap_global_db_flush_sync()
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
-    if (!dap_global_db_flush(s_sync_op_result_callback, l_args))
+    struct timespec l_timeout;
+    clock_gettime(CLOCK_REALTIME, &l_timeout);
+    l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
+    if (!dap_global_db_flush(s_sync_op_result_callback, l_args)) {
         while (!l_args->called)
-            pthread_cond_wait(&l_args->cond, &l_args->mutex);
-    else
+            if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
+                log_it(L_ERROR, "Global DB get all raw operation timeout");
+                break;
+            }
+    } else
         l_args->result = DAP_GLOBAL_DB_RC_ERROR;
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
@@ -2187,9 +2311,11 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
 
     if(a_errno != 0){ // No DB at all
         log_it(L_NOTICE, "No GlobalDB version at all, creating the new GlobalDB from scratch");
-        s_global_db_version = DAP_GLOBAL_DB_VERSION;
-        if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version", &s_global_db_version, sizeof(uint16_t),false,
-                          s_check_db_version_callback_set, NULL) ) != 0){
+        a_global_db_context->instance->version = DAP_GLOBAL_DB_VERSION;
+        if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",
+                                      &a_global_db_context->instance->version,
+                                      sizeof(uint16_t), false,
+                                      s_check_db_version_callback_set, NULL) ) != 0){
             log_it(L_NOTICE, "Can't set GlobalDB version, code %d", res);
             goto lb_exit;
         }
@@ -2198,27 +2324,29 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
     }
 
     if (a_value_len == sizeof(uint16_t))
-        s_global_db_version = *(uint16_t *)a_value;
+        a_global_db_context->instance->version = *(uint16_t *)a_value;
 
-    if( s_global_db_version < DAP_GLOBAL_DB_VERSION) {
+    if( a_global_db_context->instance->version < DAP_GLOBAL_DB_VERSION) {
         log_it(L_NOTICE, "GlobalDB version %u, but %u required. The current database will be recreated",
-               s_global_db_version, DAP_GLOBAL_DB_VERSION);
+               a_global_db_context->instance->version, DAP_GLOBAL_DB_VERSION);
         dap_global_db_deinit();
         // Database path
         const char *l_storage_path = dap_config_get_item_str(g_config, "resources", "dap_global_db_path");
         // Delete database
         if(dap_file_test(l_storage_path) || dap_dir_test(l_storage_path)) {
             // Backup filename: backup_global_db_ver.X_DATE_TIME.zip
-            char now[255];
+            char l_ts_now_str[255];
             time_t t = time(NULL);
-            strftime(now, 200, "%y.%m.%d-%H_%M_%S", localtime(&t));
+            strftime(l_ts_now_str, 200, "%y.%m.%d-%H_%M_%S", localtime(&t));
 #ifdef DAP_BUILD_WITH_ZIP
             char *l_output_file_name = dap_strdup_printf("backup_%s_ver.%d_%s.zip", dap_path_get_basename(l_storage_path), l_gdb_version, now);
             char *l_output_file_path = dap_build_filename(l_storage_path, "../", l_output_file_name, NULL);
             // Create backup as ZIP file
             if(dap_zip_directory(l_storage_path, l_output_file_path)) {
 #else
-            char *l_output_file_name = dap_strdup_printf("backup_%s_ver.%d_%s.tar", dap_path_get_basename(s_storage_path), s_global_db_version, now);
+            char *l_output_file_name = dap_strdup_printf("backup_%s_ver.%d_%s.tar",
+                                                         dap_path_get_basename(a_global_db_context->instance->storage_path),
+                                                         a_global_db_context->instance->version, l_ts_now_str);
             char *l_output_file_path = dap_build_filename(l_storage_path, "../", l_output_file_name, NULL);
             // Create backup as TAR file
             if(dap_tar_directory(l_storage_path, l_output_file_path)) {
@@ -2227,7 +2355,7 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
                 dap_rm_rf(l_storage_path);
             }
             else {
-                log_it(L_ERROR, "Can't backup GlobalDB version %d", s_global_db_version);
+                log_it(L_ERROR, "Can't backup GlobalDB version %d", a_global_db_context->instance->version);
                 res = -2;
                 goto lb_exit;
             }
@@ -2238,25 +2366,28 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
         res = dap_global_db_init(NULL, NULL);
         // Save current db version
         if(!res) {
-            s_global_db_version = DAP_GLOBAL_DB_VERSION;
-            if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version", &s_global_db_version, sizeof(uint16_t),false,
-                              s_check_db_version_callback_set, NULL) ) != 0){
+            a_global_db_context->instance->version = DAP_GLOBAL_DB_VERSION;
+            if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",
+                                          &a_global_db_context->instance->version,
+                                          sizeof(uint16_t), false,
+                                          s_check_db_version_callback_set, NULL) ) != 0){
                 log_it(L_NOTICE, "Can't set GlobalDB version, code %d", res);
                 goto lb_exit;
             }
             return; // In this case the condition broadcast should happens in s_check_db_version_callback_set()
         }
-    } else if(s_global_db_version > DAP_GLOBAL_DB_VERSION) {
-        log_it(L_ERROR, "GlobalDB version %d is newer than supported version %d", s_global_db_version, DAP_GLOBAL_DB_VERSION);
+    } else if(a_global_db_context->instance->version > DAP_GLOBAL_DB_VERSION) {
+        log_it(L_ERROR, "GlobalDB version %d is newer than supported version %d",
+                            a_global_db_context->instance->version, DAP_GLOBAL_DB_VERSION);
         res = -1;
     }
     else {
-        log_it(L_NOTICE, "GlobalDB version %d", s_global_db_version);
+        log_it(L_NOTICE, "GlobalDB version %d", a_global_db_context->instance->version);
     }
 lb_exit:
     pthread_mutex_lock(&s_check_db_mutex); //    To be sure thats we're on pthread_cond_wait() line
     s_check_db_ret = res;
-    pthread_cond_broadcast(&s_check_db_cond);
+    pthread_cond_signal(&s_check_db_cond);
     pthread_mutex_unlock(&s_check_db_mutex); //  in calling thread
 }
 
@@ -2279,10 +2410,10 @@ static void s_check_db_version_callback_set (dap_global_db_context_t * a_global_
         log_it(L_ERROR, "Can't process request for DB version, error code %d", a_errno);
         l_res = a_errno;
     } else
-        log_it(L_NOTICE, "GlobalDB version updated to %d", s_global_db_version);
+        log_it(L_NOTICE, "GlobalDB version updated to %d", a_global_db_context->instance->version);
 
     pthread_mutex_lock(&s_check_db_mutex); //  in calling thread
     s_check_db_ret = l_res;
-    pthread_cond_broadcast(&s_check_db_cond);
+    pthread_cond_signal(&s_check_db_cond);
     pthread_mutex_unlock(&s_check_db_mutex); //  in calling thread
 }

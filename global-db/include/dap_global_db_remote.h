@@ -1,8 +1,7 @@
 #pragma once
 
-#include <stdbool.h>
-#include <time.h>
-#include "dap_chain_common.h"
+#include "dap_common.h"
+#include "dap_hash.h"
 #include "dap_global_db_driver.h"
 #include "dap_global_db.h"
 
@@ -16,8 +15,7 @@
 #define GDB_SYNC_ALWAYS_FROM_ZERO       // For debug purposes
 // for dap_db_log_list_xxx()
 
-typedef struct dap_chain dap_chain_t;
-typedef struct dap_chain_net dap_chain_net_t;
+#define DAP_DB_LOG_LIST_MAX_SIZE    (256 * 1024)
 
 typedef void (*dap_store_obj_callback_notify_t) (dap_global_db_context_t *a_context, dap_store_obj_t *a_obj, void * a_arg);
 
@@ -57,10 +55,16 @@ typedef struct dap_db_log_list {
     pthread_cond_t cond;
     pthread_t thread;
     pthread_mutex_t list_mutex;
+    dap_global_db_context_t *db_context;
 } dap_db_log_list_t;
 
 void dap_global_db_sync_init();
 void dap_global_db_sync_deinit();
+
+DAP_STATIC_INLINE size_t dap_db_log_list_obj_get_size(dap_db_log_list_obj_t *a_obj)
+{
+    return sizeof(dap_db_log_list_obj_t) + sizeof(dap_global_db_pkt_t) + a_obj->pkt->data_size;
+}
 
 /**
  * Setup callbacks and filters
@@ -73,19 +77,10 @@ dap_list_t *dap_chain_db_get_sync_extra_groups(const char *a_net_name);
 dap_list_t * dap_global_db_get_sync_groups_all();
 dap_list_t * dap_global_db_get_sync_groups_extra_all();
 
-// Set addr for current node
-bool dap_db_set_cur_node_addr(uint64_t a_address, char *a_net_name);
-bool dap_db_set_cur_node_addr_exp(uint64_t a_address, char *a_net_name );
-uint64_t dap_chain_net_get_cur_node_addr_gdb_sync(char *a_net_name);
-
 // Set last id for remote node
 bool dap_db_set_last_id_remote(uint64_t a_node_addr, uint64_t a_id, char *a_group);
 // Get last id for remote node
 uint64_t dap_db_get_last_id_remote(uint64_t a_node_addr, char *a_group);
-// Set last hash for chain for remote node
-bool dap_db_set_last_hash_remote(uint64_t a_node_addr, dap_chain_t *a_chain, dap_chain_hash_fast_t *a_hash);
-// Get last hash for chain for remote node
-dap_chain_hash_fast_t *dap_db_get_last_hash_remote(uint64_t a_node_addr, dap_chain_t *a_chain);
 
 dap_global_db_pkt_t *dap_store_packet_single(dap_store_obj_t *a_store_obj);
 dap_global_db_pkt_t *dap_store_packet_multiple(dap_global_db_pkt_t *a_old_pkt, dap_global_db_pkt_t *a_new_pkt);
@@ -95,7 +90,7 @@ char *dap_store_packet_get_group(dap_global_db_pkt_t *a_pkt);
 uint64_t dap_store_packet_get_id(dap_global_db_pkt_t *a_pkt);
 void dap_store_packet_change_id(dap_global_db_pkt_t *a_pkt, uint64_t a_id);
 
-dap_db_log_list_t* dap_db_log_list_start(dap_chain_net_t *l_net, dap_chain_node_addr_t a_addr, int a_flags);
+dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node_addr, int a_flags);
 size_t dap_db_log_list_get_count(dap_db_log_list_t *a_db_log_list);
 size_t dap_db_log_list_get_count_rest(dap_db_log_list_t *a_db_log_list);
 dap_db_log_list_obj_t *dap_db_log_list_get(dap_db_log_list_t *a_db_log_list);

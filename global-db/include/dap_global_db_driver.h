@@ -32,8 +32,6 @@
 #include "dap_time.h"
 #include "dap_list.h"
 #include "dap_global_db.h"
-#include <stddef.h>
-#include <stdint.h>
 
 #define DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX   128UL                               /* A maximum size of group name */
 #define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL                              /* A maximum number of groups */
@@ -45,9 +43,6 @@ enum RECORD_FLAGS {
     RECORD_COMMON = 0,    // 0000
     RECORD_PINNED = 1,    // 0001
 };
-
-
-
 
 typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t*);
 typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *,const char *, size_t *);
