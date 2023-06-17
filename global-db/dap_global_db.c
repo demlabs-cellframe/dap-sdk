@@ -166,7 +166,7 @@ static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t 
 
 // Saves GDB callig context
 static dap_global_db_callback_arg_uid l_max_uid = 0;
-dap_global_db_callback_arg_uid dap_global_db_save_callback_data(dap_global_db_context_t *a_global_db_context, void* a_data) {
+dap_global_db_callback_arg_uid _s_dap_global_db_save_callback_data(dap_global_db_context_t *a_global_db_context, void* a_data) {
     dap_global_db_args_data_callbacks_t *l_arg = DAP_NEW(dap_global_db_args_data_callbacks_t);
     l_arg->data = a_data;
     pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
@@ -176,7 +176,7 @@ dap_global_db_callback_arg_uid dap_global_db_save_callback_data(dap_global_db_co
     pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
     return l_arg->uid;
 }
-void *dap_global_db_find_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid a_uid) {
+void *_s_dap_global_db_find_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid a_uid) {
     dap_global_db_args_data_callbacks_t *l_find = NULL;
     void *ret = NULL;
     pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
@@ -185,7 +185,7 @@ void *dap_global_db_find_callback_data(dap_global_db_context_t *a_global_db_cont
     pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
     return ret;
 }
-void *dap_global_db_remove_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid a_uid) {
+void *_s_dap_global_db_remove_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid a_uid) {
     void *ret = NULL;
     dap_global_db_args_data_callbacks_t *l_current, *l_tmp;
     pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
@@ -272,6 +272,8 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
         if ( (l_rc = s_check_db_version()) )
             return  log_it(L_ERROR, "GlobalDB version changed, please export or remove old version!"), l_rc;
     }
+    pthread_mutex_init(&s_context_global_db->data_callbacks_mutex, NULL);
+    s_context_global_db->data_callbacks = NULL;
 
 lb_return:
     if (l_rc == 0 )
