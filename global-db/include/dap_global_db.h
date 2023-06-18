@@ -159,7 +159,7 @@ int dap_global_db_init(const char * a_path, const char * a_driver);
 void dap_global_db_deinit();
 
 // For context unification sometimes we need to exec inside GlobalDB context
-int dap_global_db_context_exec(dap_global_db_callback_t a_callback, void * a_arg);
+int dap_global_db_context_exec(dap_global_db_callback_t a_callback, dap_global_db_callback_arg_uid a_arg_uid);
 
 dap_global_db_context_t *dap_global_db_context_get_default();
 
@@ -170,24 +170,30 @@ dap_global_db_obj_t *dap_global_db_objs_copy(dap_global_db_obj_t *a_objs, size_t
 void dap_global_db_objs_delete(dap_global_db_obj_t *a_objs, size_t a_count);
 
 // === Async functions ===
-int dap_global_db_get(const char * a_group, const char *a_key,dap_global_db_callback_result_t a_callback, void * a_arg );
-int dap_global_db_get_raw(const char * a_group, const char *a_key,dap_global_db_callback_result_raw_t a_callback, void * a_arg );
+int dap_global_db_get(const char * a_group, const char *a_key,dap_global_db_callback_result_t a_callback,
+                      dap_global_db_callback_arg_uid a_arg_uid);
+int dap_global_db_get_raw(const char * a_group, const char *a_key,dap_global_db_callback_result_raw_t a_callback,
+                          dap_global_db_callback_arg_uid a_arg_uid);
 
-int dap_global_db_get_del_ts(const char * a_group, const char *a_key,dap_global_db_callback_result_t a_callback, void * a_arg );
-int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t a_callback, void * a_arg );
-int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_result_raw_t a_callback, void * a_arg );
-int dap_global_db_get_all(const char * a_group, size_t l_results_page_size, dap_global_db_callback_results_t a_callback, void * a_arg );
-int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t l_results_page_size, dap_global_db_callback_results_raw_t a_callback, void * a_arg );
+int dap_global_db_get_del_ts(const char * a_group, const char *a_key,dap_global_db_callback_result_t a_callback,
+                             dap_global_db_callback_arg_uid a_arg_uid);
+int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t a_callback,
+                           dap_global_db_callback_arg_uid a_arg_uid);
+int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_result_raw_t a_callback,
+                               dap_global_db_callback_arg_uid a_arg_uid);
+int dap_global_db_get_all(const char * a_group, size_t l_results_page_size, dap_global_db_callback_results_t a_callback,
+                          dap_global_db_callback_arg_uid a_arg_uid);
+int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t l_results_page_size, dap_global_db_callback_results_raw_t a_callback, dap_global_db_callback_arg_uid a_arg_uid);
 
-int dap_global_db_set(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value, dap_global_db_callback_result_t a_callback, void * a_arg );
-int dap_global_db_set_raw(dap_store_obj_t * a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void * a_arg );
+int dap_global_db_set(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value, dap_global_db_callback_result_t a_callback, dap_global_db_callback_arg_uid a_arg_uid);
+int dap_global_db_set_raw(dap_store_obj_t * a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, dap_global_db_callback_arg_uid a_arg_uid);
 
 // Set multiple. In callback writes total processed objects to a_values_total and a_values_count to the a_values_count as well
-int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_values, size_t a_values_count, dap_global_db_callback_results_t a_callback, void * a_arg );
-int dap_global_db_pin(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void * a_arg );
-int dap_global_db_unpin(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void * a_arg );
-int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void * a_arg );
-int dap_global_db_flush( dap_global_db_callback_result_t a_callback, void * a_arg );
+int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_values, size_t a_values_count, dap_global_db_callback_results_t a_callback, dap_global_db_callback_arg_uid  a_arg_uid);
+int dap_global_db_pin(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, dap_global_db_callback_arg_uid a_args_uid);
+int dap_global_db_unpin(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, dap_global_db_callback_arg_uid a_args_uid);
+int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, dap_global_db_callback_arg_uid a_arg_uid);
+int dap_global_db_flush( dap_global_db_callback_result_t a_callback, dap_global_db_callback_arg_uid a_arg_uid);
 
 // === Sync functions ===
 byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t *a_ts);

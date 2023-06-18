@@ -71,7 +71,7 @@ struct queue_io_msg{
         dap_global_db_callback_results_raw_t callback_results_raw;
     };
     // Custom argument passed to the callback
-    void *  callback_arg;
+    dap_global_db_callback_arg_uid  callback_arg_uid;
     union{
         struct{ // Raw get request
             uint64_t values_raw_last_id;
@@ -170,6 +170,8 @@ dap_global_db_callback_arg_uid _s_dap_global_db_save_callback_data(dap_global_db
     dap_global_db_args_data_callbacks_t *l_arg = DAP_NEW(dap_global_db_args_data_callbacks_t);
     l_arg->data = a_data;
     pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
+    if (l_max_uid == 0)
+        l_max_uid++;
     l_arg->uid = l_max_uid;
     l_max_uid++;
     HASH_ADD(hh, a_global_db_context->data_callbacks, uid, sizeof(dap_global_db_callback_arg_uid), l_arg);
@@ -351,7 +353,7 @@ byte_t *dap_global_db_get_unsafe(dap_global_db_context_t *a_global_db_context, c
  * @param a_arg
  * @return
  */
-int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void * a_arg )
+int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, dap_global_db_callback_arg_uid a_arg_uid)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get");
@@ -362,7 +364,7 @@ int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_cal
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
     l_msg->callback_result = a_callback;
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
     if (l_ret != 0){
@@ -388,11 +390,16 @@ static bool s_msg_opcode_get(struct queue_io_msg * a_msg)
         if(a_msg->callback_result)
             a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_SUCCESS, a_msg->group, a_msg->key,
                                l_value, l_value_len, l_ts,
-                               l_pinned, a_msg->callback_arg);
+                               l_pinned,
+                               a_msg->callback_arg_uid == 0 ? NULL : _s_dap_global_db_remove_callback_data(
+                                       s_context_global_db,
+                                       a_msg->callback_arg_uid));
         DAP_DELETE(l_value);
     }else if(a_msg->callback_result)
         a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_NO_RESULTS, a_msg->group, a_msg->key,
-                               NULL, 0, 0,0, a_msg->callback_arg);
+                               NULL, 0, 0,0,
+                               a_msg->callback_arg_uid == 0 ? NULL : _s_dap_global_db_remove_callback_data(
+                                       s_context_global_db, a_msg->callback_arg_uid));
     return true;
 }
 
@@ -462,13 +469,15 @@ byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
+    dap_global_db_callback_arg_uid l_arg_uid = _s_dap_global_db_save_callback_data(s_context_global_db, l_args);
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    if (!dap_global_db_get(a_group,a_key, s_obj_get_callback, l_args))
+    if (!dap_global_db_get(a_group,a_key, s_obj_get_callback, l_arg_uid))
         while (!l_args->called)
             if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
                 log_it(L_ERROR, "Global DB get operation timeout");
+                _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
                 break;
             }
     pthread_mutex_unlock(&l_args->mutex);
@@ -507,7 +516,8 @@ dap_store_obj_t *dap_global_db_get_raw_unsafe(UNUSED_ARG dap_global_db_context_t
  * @param a_arg
  * @return
  */
-int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_callback_result_raw_t a_callback, void *a_arg)
+int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_callback_result_raw_t a_callback,
+                          dap_global_db_callback_arg_uid a_arg_uid)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get");
@@ -518,7 +528,7 @@ int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
     l_msg->callback_result_raw = a_callback;
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
     if (l_ret != 0){
@@ -541,7 +551,10 @@ static bool s_msg_opcode_get_raw(struct queue_io_msg * a_msg)
     if(a_msg->callback_result_raw)
         a_msg->callback_result_raw(s_context_global_db, l_store_obj ? DAP_GLOBAL_DB_RC_SUCCESS:
                                                                       DAP_GLOBAL_DB_RC_NO_RESULTS,
-                                                        l_store_obj, a_msg->callback_arg );
+                                                        l_store_obj,
+                                                        a_msg->callback_arg_uid == 0 ? NULL :
+                                                        _s_dap_global_db_remove_callback_data(
+                                                                s_context_global_db, a_msg->callback_arg_uid));
     dap_store_obj_free_one(l_store_obj);
     return true;
 }
@@ -584,13 +597,15 @@ dap_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_k
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
+    dap_global_db_callback_arg_uid l_arg_uid = _s_dap_global_db_save_callback_data(s_context_global_db, l_args);
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    if (!dap_global_db_get_raw(a_group, a_key, s_obj_raw_get_callback, l_args))
+    if (!dap_global_db_get_raw(a_group, a_key, s_obj_raw_get_callback, l_arg_uid))
         while (!l_args->called)
             if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
                 log_it(L_ERROR, "Global DB get raw operation timeout");
+                _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
                 break;
             }
     pthread_mutex_unlock(&l_args->mutex);
@@ -631,7 +646,8 @@ dap_nanotime_t dap_global_db_get_del_ts_unsafe(dap_global_db_context_t *a_global
  * @param a_arg
  * @return
  */
-int dap_global_db_get_del_ts(const char *a_group, const char *a_key,dap_global_db_callback_result_t a_callback, void *a_arg)
+int dap_global_db_get_del_ts(const char *a_group, const char *a_key,dap_global_db_callback_result_t a_callback,
+                             dap_global_db_callback_arg_uid a_arg_uid)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get");
@@ -642,7 +658,7 @@ int dap_global_db_get_del_ts(const char *a_group, const char *a_key,dap_global_d
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
     l_msg->callback_result = a_callback;
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
     if (l_ret != 0){
@@ -665,10 +681,13 @@ static bool s_msg_opcode_get_del_ts(struct queue_io_msg * a_msg)
         if(a_msg->callback_result)
             a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_SUCCESS, a_msg->group, a_msg->key,
                                NULL, 0, l_timestamp,
-                               false, a_msg->callback_arg );
+                               false,
+                               a_msg->callback_arg_uid == 0 ? NULL :
+                               _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     }else if(a_msg->callback_result)
         a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_NO_RESULTS, a_msg->group, a_msg->key,
-                               NULL, 0, 0,0, a_msg->callback_arg );
+                               NULL, 0, 0,0, a_msg->callback_arg_uid == 0 ? NULL :
+                               _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     return true;
 }
 
@@ -711,13 +730,15 @@ dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
+    dap_global_db_callback_arg_uid l_arg_uid = _s_dap_global_db_save_callback_data(s_context_global_db, l_args);
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    if (!dap_global_db_get_del_ts(a_group, a_key, s_del_ts_get_callback, l_args))
+    if (!dap_global_db_get_del_ts(a_group, a_key, s_del_ts_get_callback, l_arg_uid))
         while (!l_args->called)
             if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
                 log_it(L_ERROR, "Global DB get del ts operation timeout");
+                _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
                 break;
             }
     pthread_mutex_unlock(&l_args->mutex);
@@ -759,7 +780,8 @@ byte_t *dap_global_db_get_last_unsafe(dap_global_db_context_t *a_global_db_conte
  * @param a_arg
  * @return
  */
-int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t a_callback, void * a_arg )
+int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t a_callback,
+                           dap_global_db_callback_arg_uid a_arg_uid)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get_last");
@@ -768,7 +790,7 @@ int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_GET_LAST;
     l_msg->group = dap_strdup(a_group);
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
     l_msg->callback_result = a_callback;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
@@ -796,11 +818,13 @@ static bool s_msg_opcode_get_last(struct queue_io_msg * a_msg)
         if(a_msg->callback_result)
             a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_SUCCESS, a_msg->group, l_key,
                                l_value, l_value_len, l_ts,
-                               l_pinned, a_msg->callback_arg);
+                               l_pinned, a_msg->callback_arg_uid == 0 ? NULL :
+                               _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
         DAP_DELETE(l_value);
     }else if(a_msg->callback_result)
         a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_NO_RESULTS, a_msg->group, l_key,
-                               NULL, 0, 0,0, a_msg->callback_arg );
+                               NULL, 0, 0,0, a_msg->callback_arg_uid == 0 ? NULL :
+                               _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     return true;
 }
 
@@ -822,13 +846,15 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
+    dap_global_db_callback_arg_uid l_arg_uid = _s_dap_global_db_save_callback_data(s_context_global_db, l_args);
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    if (!dap_global_db_get_last(a_group, s_obj_get_callback, l_args))
+    if (!dap_global_db_get_last(a_group, s_obj_get_callback, l_arg_uid))
         while (!l_args->called)
             if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
                 log_it(L_ERROR, "Global DB get last operation timeout");
+                _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
                 break;
             }
     pthread_mutex_unlock(&l_args->mutex);
@@ -867,7 +893,8 @@ dap_store_obj_t *dap_global_db_get_last_raw_unsafe(UNUSED_ARG dap_global_db_cont
  * @param a_arg
  * @return
  */
-int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_result_raw_t a_callback, void * a_arg )
+int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_result_raw_t a_callback,
+                               dap_global_db_callback_arg_uid a_arg_uid)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get_last");
@@ -876,7 +903,7 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_GET_LAST_RAW;
     l_msg->group = dap_strdup(a_group);
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
     l_msg->callback_result_raw = a_callback;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
@@ -897,7 +924,7 @@ static bool s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
 {
     dap_store_obj_t *l_store_obj = dap_global_db_get_last_raw_unsafe(s_context_global_db, a_msg->group);
     if(a_msg->callback_result)
-        a_msg->callback_result_raw(s_context_global_db, l_store_obj ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS, l_store_obj, a_msg->callback_arg);
+        a_msg->callback_result_raw(s_context_global_db, l_store_obj ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS, l_store_obj, a_msg->callback_arg_uid == 0 ? NULL : _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     dap_store_obj_free(l_store_obj, 1);
     return true;
 }
@@ -919,13 +946,15 @@ dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
+    dap_global_db_callback_arg_uid l_arg_uid = _s_dap_global_db_save_callback_data(s_context_global_db, l_args);
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    if (!dap_global_db_get_last_raw(a_group, s_obj_raw_get_callback, l_args))
+    if (!dap_global_db_get_last_raw(a_group, s_obj_raw_get_callback, l_arg_uid))
         while (!l_args->called)
             if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
                 log_it(L_ERROR, "Global DB get last raw operation timeout");
+                _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
                 break;
             }
     pthread_mutex_unlock(&l_args->mutex);
@@ -986,7 +1015,7 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
  * @param a_arg
  * @return
  */
-int dap_global_db_get_all(const char * a_group, UNUSED_ARG size_t a_results_page_size, dap_global_db_callback_results_t a_callback, void * a_arg)
+int dap_global_db_get_all(const char * a_group, UNUSED_ARG size_t a_results_page_size, dap_global_db_callback_results_t a_callback, dap_global_db_callback_arg_uid a_arg_uid)
 {
     // TODO make usable a_results_page_size
     if(s_context_global_db == NULL){
@@ -996,7 +1025,7 @@ int dap_global_db_get_all(const char * a_group, UNUSED_ARG size_t a_results_page
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_GET_ALL;
     l_msg->group = dap_strdup(a_group);
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
     l_msg->callback_results = a_callback;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
@@ -1023,7 +1052,9 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
         a_msg->callback_results(s_context_global_db,
                                 l_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
                                 a_msg->group, a_msg->values_total, l_values_count,
-                                l_objs, a_msg->callback_arg);
+                                l_objs,
+                                a_msg->callback_arg_uid == 0 ? NULL :
+                                _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     // Clean memory
     dap_global_db_objs_delete(l_objs, l_values_count);
     return true; // All values are sent
@@ -1092,13 +1123,15 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
     pthread_mutex_init(&l_args->mutex, NULL);
     pthread_cond_init(&l_args->cond, NULL);
     pthread_mutex_lock(&l_args->mutex);
+    dap_global_db_callback_arg_uid l_arg_uid = _s_dap_global_db_save_callback_data(s_context_global_db, l_args);
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    if (!dap_global_db_get_all(a_group, 0, s_objs_get_callback, l_args))
+    if (!dap_global_db_get_all(a_group, 0, s_objs_get_callback, l_arg_uid))
         while (!l_args->called)
             if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
                 log_it(L_ERROR, "Global DB get all operation timeout");
+                _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
                 break;
             }
     if (!l_args->called) {
@@ -1134,7 +1167,8 @@ dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_conte
  * @return
  */
 int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t a_results_page_size,
-                              dap_global_db_callback_results_raw_t a_callback, void * a_arg)
+                              dap_global_db_callback_results_raw_t a_callback,
+                              dap_global_db_callback_arg_uid a_arg_uid)
 {
     // TODO make usable a_results_page_size
 
@@ -1147,7 +1181,7 @@ int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t 
     l_msg->group = dap_strdup(a_group);
     l_msg->values_raw_last_id = a_first_id;
     l_msg->values_page_size = a_results_page_size;
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
     l_msg->callback_results_raw = a_callback;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
@@ -1178,7 +1212,8 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg)
         a_msg->callback_results_raw(s_context_global_db,
                                     l_store_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
                                     a_msg->group, l_values_remains, l_values_count,
-                                    l_store_objs, a_msg->callback_arg);
+                                    l_store_objs, a_msg->callback_arg_uid == 0 ? NULL :
+                                    _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     // Clean memory
     dap_store_obj_free(l_store_objs,l_values_count);
 
@@ -1243,18 +1278,21 @@ dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
+    dap_global_db_callback_arg_uid l_arg_uid = _s_dap_global_db_save_callback_data(s_context_global_db, l_args);
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
     if (!dap_global_db_get_all_raw(a_group, a_first_id, a_objs_count ? *a_objs_count : 0,
-                                   s_get_all_raw_sync_callback, l_args))
+                                   s_get_all_raw_sync_callback, l_arg_uid))
         while (!l_args->called)
             if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
                 log_it(L_ERROR, "Global DB get all raw operation timeout");
+                _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
                 break;
             }
     if (!l_args->called) {
         l_args->timeout = true;
+        _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
         pthread_mutex_unlock(&l_args->mutex);
         return NULL;
     }
@@ -1328,7 +1366,7 @@ int dap_global_db_set_unsafe(dap_global_db_context_t *a_global_db_context, const
  * @param a_arg Argument passed to the callback
  * @return 0 if success, error code if not
  */
-int dap_global_db_set(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value, dap_global_db_callback_result_t a_callback, void * a_arg )
+int dap_global_db_set(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value, dap_global_db_callback_result_t a_callback, dap_global_db_callback_arg_uid a_arg_uid)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
@@ -1346,7 +1384,7 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
     l_msg->value = DAP_DUP_SIZE(a_value, a_value_length);
     l_msg->value_length = a_value_length;
     l_msg->value_is_pinned = a_pin_value;
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
     l_msg->callback_result = a_callback;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
@@ -1373,13 +1411,17 @@ static bool s_msg_opcode_set(struct queue_io_msg * a_msg)
         if(a_msg->callback_result)
             a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_SUCCESS, a_msg->group, a_msg->key,
                                    a_msg->value, a_msg->value_length, l_ts_now,
-                                   a_msg->value_is_pinned , a_msg->callback_arg );
+                                   a_msg->value_is_pinned ,
+                                   a_msg->callback_arg_uid == 0 ? NULL :
+                                   _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     } else {
         log_it(L_ERROR, "Save error for %s:%s code %d", a_msg->group,a_msg->key, l_res);
         if(a_msg->callback_result)
             a_msg->callback_result(s_context_global_db, DAP_GLOBAL_DB_RC_ERROR , a_msg->group, a_msg->key,
                                    a_msg->value, a_msg->value_length, l_ts_now,
-                                   a_msg->value_is_pinned , a_msg->callback_arg );
+                                   a_msg->value_is_pinned ,
+                                   a_msg->callback_arg_uid == 0 ? NULL :
+                                   _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     }
     return true;
 }
@@ -1440,13 +1482,15 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
+    dap_global_db_callback_arg_uid l_args_uid = _s_dap_global_db_save_callback_data(s_context_global_db, l_args);
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    if (!dap_global_db_set(a_group, a_key, a_value, a_value_length, a_pin_value, s_sync_op_result_callback, l_args)) {
+    if (!dap_global_db_set(a_group, a_key, a_value, a_value_length, a_pin_value, s_sync_op_result_callback, l_args_uid)) {
         while (!l_args->called) {
             if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
                 log_it(L_ERROR, "Global DB set operation timeout");
+                _s_dap_global_db_remove_callback_data(s_context_global_db, l_args_uid);
                 break;
             }
         }
@@ -1491,7 +1535,7 @@ int dap_global_db_set_raw_unsafe(dap_global_db_context_t *a_global_db_context, d
  * @param a_arg
  * @return
  */
-int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void * a_arg )
+int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, dap_global_db_callback_arg_uid a_arg_uid)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
@@ -1499,7 +1543,7 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_SET_RAW;
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
     l_msg->callback_results_raw = a_callback;
 
     l_msg->values_raw = dap_store_obj_copy(a_store_objs, a_store_objs_count) ;
@@ -1529,7 +1573,8 @@ static bool s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
         a_msg->callback_results_raw(s_context_global_db,
                                     l_ret == 0 ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR,
                                     a_msg->group, a_msg->values_raw_total, a_msg->values_raw_total,
-                                    a_msg->values_raw, a_msg->callback_arg);
+                                    a_msg->values_raw, a_msg->callback_arg_uid == 0 ? NULL: _s_dap_global_db_remove_callback_data(
+                                            s_context_global_db, a_msg->callback_arg_uid));
     return true;
 }
 
@@ -1557,17 +1602,21 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
+    dap_global_db_callback_arg_uid l_arg_uid = _s_dap_global_db_save_callback_data(s_context_global_db, l_args);
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    if (!dap_global_db_set_raw(a_store_objs, a_store_objs_count, s_sync_op_raw_callback, l_args)) {
+    if (!dap_global_db_set_raw(a_store_objs, a_store_objs_count, s_sync_op_raw_callback, l_arg_uid)) {
         while (!l_args->called)
             if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
                 log_it(L_ERROR, "Global DB set raw operation timeout");
+                _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
                 break;
             }
-     } else
+     } else {
         l_args->result = DAP_GLOBAL_DB_RC_ERROR;
+        _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
+    }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -1588,7 +1637,7 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
  * @param a_arg
  * @return
  */
-int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_values, size_t a_values_count, dap_global_db_callback_results_t a_callback, void * a_arg )
+int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_values, size_t a_values_count, dap_global_db_callback_results_t a_callback, dap_global_db_callback_arg_uid  a_arg_uid)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
@@ -1599,7 +1648,7 @@ int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_
     l_msg->group = dap_strdup(a_group);
     l_msg->values = a_values;
     l_msg->values_count = a_values_count;
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
     l_msg->callback_results = a_callback;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
@@ -1641,7 +1690,9 @@ static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
         a_msg->callback_results(s_context_global_db,
                                 l_ret == 0 ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR,
                                 a_msg->group, i, a_msg->values_count,
-                                a_msg->values, a_msg->callback_arg);
+                                a_msg->values,
+                                a_msg->callback_arg_uid == 0 ? NULL :
+                                _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     }
     dap_global_db_objs_delete( a_msg->values, a_msg->values_count);
 
@@ -1682,7 +1733,7 @@ int dap_global_db_unpin_unsafe(dap_global_db_context_t *a_global_db_context, con
     return s_db_object_pin_unsafe(a_global_db_context, a_group, a_key, false);
 }
 
-int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg, bool a_pin)
+int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, dap_global_db_callback_arg_uid a_arg_uid, bool a_pin)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_pin");
@@ -1692,7 +1743,7 @@ int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callba
     l_msg->opcode = MSG_OPCODE_PIN;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
     l_msg->callback_result = a_callback;
     l_msg->value_is_pinned = a_pin;
 
@@ -1716,7 +1767,9 @@ static bool s_msg_opcode_pin(struct queue_io_msg * a_msg)
     int l_res = s_db_object_pin_unsafe(s_context_global_db, a_msg->group, a_msg->key, a_msg->value_is_pinned);
     if (a_msg->callback_result)
         a_msg->callback_result(s_context_global_db, l_res, a_msg->group, a_msg->key,
-                               NULL, 0, 0, a_msg->value_is_pinned, a_msg->callback_arg);
+                               NULL, 0, 0, a_msg->value_is_pinned,
+                               a_msg->callback_arg_uid == 0 ? NULL :
+                               _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     return true;
 }
 
@@ -1728,9 +1781,9 @@ static bool s_msg_opcode_pin(struct queue_io_msg * a_msg)
  * @param a_arg
  * @return
  */
-int dap_global_db_pin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg)
+int dap_global_db_pin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, dap_global_db_callback_arg_uid a_arg_uid)
 {
-    return s_db_object_pin(a_group, a_key, a_callback, a_arg, true);
+    return s_db_object_pin(a_group, a_key, a_callback, a_arg_uid, true);
 }
 /**
  * @brief dap_global_db_unpin
@@ -1740,9 +1793,9 @@ int dap_global_db_pin(const char *a_group, const char *a_key, dap_global_db_call
  * @param a_arg
  * @return
  */
-int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg)
+int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, dap_global_db_callback_arg_uid a_args_uid)
 {
-    return s_db_object_pin(a_group, a_key, a_callback, a_arg, false);
+    return s_db_object_pin(a_group, a_key, a_callback, a_args_uid, false);
 }
 
 int s_db_object_pin_sync(const char *a_group, const char *a_key, bool a_pin)
@@ -1756,17 +1809,21 @@ int s_db_object_pin_sync(const char *a_group, const char *a_key, bool a_pin)
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
+    dap_global_db_callback_arg_uid l_arg_uid = _s_dap_global_db_save_callback_data(s_context_global_db, l_args);
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    if (!s_db_object_pin(a_group, a_key, s_sync_op_result_callback, l_args, a_pin)) {
+    if (!s_db_object_pin(a_group, a_key, s_sync_op_result_callback, l_arg_uid, a_pin)) {
         while (!l_args->called)
             if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
                 log_it(L_ERROR, "Global DB get all raw operation timeout");
+                _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
                 break;
             }
-    } else
+    } else {
         l_args->result = DAP_GLOBAL_DB_RC_ERROR;
+        _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
+    }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -1834,7 +1891,7 @@ int dap_global_db_del_unsafe(dap_global_db_context_t *a_global_db_context, const
  * @param a_arg
  * @return
  */
-int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void * a_arg )
+int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, dap_global_db_callback_arg_uid a_arg_uid)
 {
     if (s_context_global_db == NULL) {
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_del");
@@ -1844,7 +1901,7 @@ int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_cal
     l_msg->opcode = MSG_OPCODE_DELETE;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
     l_msg->callback_result = a_callback;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
@@ -1870,7 +1927,9 @@ static bool s_msg_opcode_delete(struct queue_io_msg * a_msg)
         a_msg->callback_result(s_context_global_db,  l_res==0 ? DAP_GLOBAL_DB_RC_SUCCESS:
                                         DAP_GLOBAL_DB_RC_ERROR,
                                 a_msg->group, a_msg->key,
-                               NULL, 0, 0 , false, a_msg->callback_arg );
+                               NULL, 0, 0 , false,
+                               a_msg->callback_arg_uid == 0 ? NULL :
+                               _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     }
 
     return true;
@@ -1891,13 +1950,15 @@ int dap_global_db_del_sync(const char *a_group, const char *a_key)
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
+    dap_global_db_callback_arg_uid l_arg_uid = _s_dap_global_db_save_callback_data(s_context_global_db, l_args);
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    if (!dap_global_db_del(a_group, a_key, s_sync_op_result_callback, l_args)) {
+    if (!dap_global_db_del(a_group, a_key, s_sync_op_result_callback, l_arg_uid)) {
         while (!l_args->called)
             if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
                 log_it(L_ERROR, "Global DB del operation timeout");
+                _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
                 break;
             }
     } else
@@ -1928,7 +1989,7 @@ int dap_global_db_flush_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_c
  * @param a_arg
  * @return
  */
-int dap_global_db_flush(dap_global_db_callback_result_t a_callback, void * a_arg)
+int dap_global_db_flush(dap_global_db_callback_result_t a_callback, dap_global_db_callback_arg_uid a_arg_uid)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_delete");
@@ -1936,7 +1997,7 @@ int dap_global_db_flush(dap_global_db_callback_result_t a_callback, void * a_arg
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_FLUSH;
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
     l_msg->callback_result = a_callback;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
@@ -1957,7 +2018,9 @@ static bool s_msg_opcode_flush(struct queue_io_msg * a_msg)
     int l_res = dap_global_db_flush_unsafe(s_context_global_db);
     if (a_msg->callback_result)
         a_msg->callback_result(s_context_global_db, l_res ? DAP_GLOBAL_DB_RC_ERROR : DAP_GLOBAL_DB_RC_SUCCESS,
-                                NULL, NULL, NULL, 0, 0, false, a_msg->callback_arg);
+                                NULL, NULL, NULL, 0, 0, false,
+                                a_msg->callback_arg_uid == 0 ? NULL :
+                                _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     return true;
 }
 
@@ -1970,17 +2033,21 @@ int dap_global_db_flush_sync()
     pthread_mutex_init(&l_args->mutex,NULL);
     pthread_cond_init(&l_args->cond,NULL);
     pthread_mutex_lock(&l_args->mutex);
+    dap_global_db_callback_arg_uid l_arg_uid = _s_dap_global_db_save_callback_data(s_context_global_db, l_args);
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
     l_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    if (!dap_global_db_flush(s_sync_op_result_callback, l_args)) {
+    if (!dap_global_db_flush(s_sync_op_result_callback, l_arg_uid)) {
         while (!l_args->called)
             if (pthread_cond_timedwait(&l_args->cond, &l_args->mutex, &l_timeout) == ETIMEDOUT) {
                 log_it(L_ERROR, "Global DB get all raw operation timeout");
+                _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
                 break;
             }
-    } else
+    } else {
         l_args->result = DAP_GLOBAL_DB_RC_ERROR;
+        _s_dap_global_db_remove_callback_data(s_context_global_db, l_arg_uid);
+    }
     pthread_mutex_unlock(&l_args->mutex);
     pthread_mutex_destroy(&l_args->mutex);
     pthread_cond_destroy(&l_args->cond);
@@ -2041,7 +2108,7 @@ dap_global_db_obj_t *l_obj;
  * @param arg Custom argument
  * @return 0 if success, others if not
  */
-int dap_global_db_context_exec (dap_global_db_callback_t a_callback, void * a_arg)
+int dap_global_db_context_exec(dap_global_db_callback_t a_callback, dap_global_db_callback_arg_uid a_arg_uid)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_context_exec");
@@ -2049,7 +2116,7 @@ int dap_global_db_context_exec (dap_global_db_callback_t a_callback, void * a_ar
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     l_msg->opcode = MSG_OPCODE_CONTEXT_EXEC;
-    l_msg->callback_arg = a_arg;
+    l_msg->callback_arg_uid = a_arg_uid;
     l_msg->callback = a_callback;
 
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
@@ -2069,7 +2136,8 @@ int dap_global_db_context_exec (dap_global_db_callback_t a_callback, void * a_ar
 static bool s_msg_opcode_context_exec(struct queue_io_msg * a_msg)
 {
     if(a_msg->callback)
-        a_msg->callback(s_context_global_db, a_msg->callback_arg );
+        a_msg->callback(s_context_global_db, a_msg->callback_arg_uid == 0 ? NULL :
+            _s_dap_global_db_remove_callback_data(s_context_global_db, a_msg->callback_arg_uid));
     return true;
 }
 
@@ -2317,7 +2385,7 @@ static int s_check_db_version()
 {
     int l_ret;
     pthread_mutex_lock(&s_check_db_mutex);
-    l_ret = dap_global_db_get(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",s_check_db_version_callback_get, NULL);
+    l_ret = dap_global_db_get(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",s_check_db_version_callback_get, 0);
     if (l_ret == 0){
         while (s_check_db_ret == INVALID_RETCODE)
             pthread_cond_wait(&s_check_db_cond, &s_check_db_mutex);
@@ -2352,7 +2420,7 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
         if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",
                                       &a_global_db_context->instance->version,
                                       sizeof(uint16_t), false,
-                                      s_check_db_version_callback_set, NULL) ) != 0){
+                                      s_check_db_version_callback_set, 0) ) != 0){
             log_it(L_NOTICE, "Can't set GlobalDB version, code %d", res);
             goto lb_exit;
         }
@@ -2407,7 +2475,7 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
             if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",
                                           &a_global_db_context->instance->version,
                                           sizeof(uint16_t), false,
-                                          s_check_db_version_callback_set, NULL) ) != 0){
+                                          s_check_db_version_callback_set, 0) ) != 0){
                 log_it(L_NOTICE, "Can't set GlobalDB version, code %d", res);
                 goto lb_exit;
             }
