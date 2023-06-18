@@ -155,6 +155,9 @@ typedef void (*dap_global_db_callback_results_raw_t) (dap_global_db_context_t * 
 
 extern int g_dap_global_db_debug_more;
 
+dap_global_db_callback_arg_uid dap_global_db_save_callback_data(void* a_data);
+void *dap_global_db_remove_callback_data(dap_global_db_callback_arg_uid a_uid);
+
 int dap_global_db_init(const char * a_path, const char * a_driver);
 void dap_global_db_deinit();
 

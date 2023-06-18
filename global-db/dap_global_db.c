@@ -178,6 +178,9 @@ dap_global_db_callback_arg_uid _s_dap_global_db_save_callback_data(dap_global_db
     pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
     return l_arg->uid;
 }
+dap_global_db_callback_arg_uid dap_global_db_save_callback_data(void* a_data) {
+    return _s_dap_global_db_save_callback_data(s_context_global_db, a_data);
+}
 void *_s_dap_global_db_find_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid a_uid) {
     dap_global_db_args_data_callbacks_t *l_find = NULL;
     void *ret = NULL;
@@ -199,6 +202,10 @@ void *_s_dap_global_db_remove_callback_data(dap_global_db_context_t *a_global_db
     }
     pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
     return ret;
+}
+
+void *dap_global_db_remove_callback_data(dap_global_db_callback_arg_uid a_uid) {
+    return _s_dap_global_db_remove_callback_data(s_context_global_db, a_uid);
 }
 
 /**
