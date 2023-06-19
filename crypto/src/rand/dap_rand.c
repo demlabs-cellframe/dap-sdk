@@ -114,9 +114,9 @@ int randombytes(void* random_array, unsigned int nbytes)
 //    }
 
     for(int i = 0; i < n;){
-        r = read(lock, (char*)random_array+i, 1);
-        if (r > 0){
-            i++;
+        r = read(lock, (char*)random_array+i, n);
+        if (r >= 0){
+            i += r;
         }
     }
 
