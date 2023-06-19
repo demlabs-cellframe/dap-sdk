@@ -321,7 +321,7 @@ static  int s_db_mdbx_deinit(void)
         dap_assert( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
 
         HASH_DEL(s_db_ctxs, l_db_ctx);                                      /* Delete DB context from the hash-table */
-        DAP_DELETE(l_db_ctx);                                               /* Release memory of DB context area */
+        // DAP_DELETE(l_db_ctx);                                               /* Release memory of DB context area */
     }
 
     if (s_mdbx_env)
