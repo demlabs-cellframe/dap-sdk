@@ -1224,7 +1224,19 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
 
-    char l_errbuf[128];
+    char l_errbuf[128] = {0};
+    if (!l_client_pvt)
+    {
+        debug_if(s_debug_more, L_WARNING, "[es:%p] l_client_pvt is NULL", a_es);
+        return;
+    }/*
+    uint64_t l_uid = l_client_pvt->uuid;
+    if ( !(l_client_pvt = dap_client_pvt_find(l_uid)) )
+    {
+        log_it(L_ERROR, "[es:%p] no client with UUID:%016"DAP_UINT64_FORMAT_X, a_es, l_uid);
+                return;
+            }
+    }*/
     if (a_error)
         strerror_r(a_error, l_errbuf, sizeof(l_errbuf));
     else

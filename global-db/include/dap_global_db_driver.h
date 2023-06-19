@@ -34,7 +34,7 @@
 #include "dap_global_db.h"
 
 #define DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX   128UL                               /* A maximum size of group name */
-#define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL                              /* A maximum number of groups */
+#define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      4096UL                              /* A maximum number of groups */
 #define DAP_GLOBAL_DB_KEY_MAX               512UL                               /* A limit for the key's length in DB */
 #define DAP_GLOBAL_DB_MAX_OBJS              8192UL                              /* A maximum number of objects to be returned by
                                                                                     read_srore_obj() */
