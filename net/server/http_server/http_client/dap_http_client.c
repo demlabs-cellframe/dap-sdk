@@ -248,7 +248,7 @@ const char ht_ver [] = "HTTP/1.";                                           /* W
     ** /issues/6099?issue_count=148 HTTP/1.1   -> "/issues/6099"
     */
     l_cp_start = l_cp_end;
-    for ( ; (*l_cp_start != '/') && l_len; l_cp_start++, l_buf_len--);      /* Skip possible anti-DPI whitespaces to '/' */
+    for ( ; (*l_cp_start != '/') && l_len && l_buf_len; l_cp_start++, l_buf_len--);      /* Skip possible anti-DPI whitespaces to '/' */
     l_cp_end = l_cp_start;
     for ( ; (*l_cp_end != '?') && !isspace(*l_cp_end) && l_buf_len; l_cp_end++, l_buf_len--); /* Run over <path> up to first <space> or '?' */
 
