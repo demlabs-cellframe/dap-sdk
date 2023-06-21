@@ -128,8 +128,6 @@ void dap_client_set_uplink_unsafe(dap_client_t * a_client,const char* a_addr, ui
     DAP_DEL_Z(a_client->uplink_addr);
     a_client->uplink_addr = strdup(a_addr);
     a_client->uplink_port = a_port;
-
-    return;
 }
 
 /**

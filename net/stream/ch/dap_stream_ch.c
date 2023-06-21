@@ -280,7 +280,7 @@ void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
     if (a_ch->proc)
         if (a_ch->proc->delete_callback)
             a_ch->proc->delete_callback(a_ch, NULL);
-
+    assert(!a_ch->internal);
 
     size_t l_ch_index = 0;
     for (; l_ch_index < a_ch->stream->channel_count; l_ch_index++)
