@@ -488,6 +488,7 @@ static void s_obj_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_c
     struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback*)a_arg;
     assert(l_args);
     if(s_global_db_find_callback_data(a_global_db_context, l_args->hdr.uid)) {
+        pthread_mutex_lock(&l_args->hdr.mutex);
         if (a_value && a_value_size) {
             l_args->get.data = DAP_DUP_SIZE(a_value, a_value_size);
             l_args->get.data_size = a_value_size;
@@ -495,7 +496,6 @@ static void s_obj_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_c
             l_args->get.is_pinned = a_is_pinned;
             l_args->get.key = (char *) a_key;
         }
-        pthread_mutex_lock(&l_args->hdr.mutex);
         l_args->hdr.called = true;
         pthread_cond_signal(&l_args->hdr.cond);
         pthread_mutex_unlock(&l_args->hdr.mutex);
@@ -597,8 +597,8 @@ static void s_obj_raw_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_
 {
     struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback*)a_arg;
     if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
-        l_args->get_raw.obj = dap_store_obj_copy(a_value, 1);
         pthread_mutex_lock(&l_args->hdr.mutex);
+        l_args->get_raw.obj = dap_store_obj_copy(a_value, 1);
         l_args->hdr.called = true;
         pthread_cond_signal(&l_args->hdr.cond);
         pthread_mutex_unlock(&l_args->hdr.mutex);
@@ -706,8 +706,8 @@ static void s_del_ts_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_d
 {
     struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback *)a_arg;
     if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
-        l_args->del_ts.timestamp = a_value_ts;
         pthread_mutex_lock(&l_args->hdr.mutex);
+        l_args->del_ts.timestamp = a_value_ts;
         l_args->hdr.called = true;
         pthread_cond_signal(&l_args->hdr.cond);
         pthread_mutex_unlock(&l_args->hdr.mutex);
@@ -1027,17 +1027,12 @@ static void s_objs_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_
 {
     struct sync_obj_data_callback* l_args = (struct sync_obj_data_callback *)a_arg;
     if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
+        pthread_mutex_lock(&l_args->hdr.mutex);
         l_args->get_objs.objs = dap_global_db_objs_copy(a_values, a_values_count);
         l_args->get_objs.objs_count = a_values_count;
-        pthread_mutex_lock(&l_args->hdr.mutex);
-        if (!l_args->hdr.called) {
-            l_args->hdr.called = true;
-            pthread_cond_signal(&l_args->hdr.cond);
-            pthread_mutex_unlock(&l_args->hdr.mutex);
-        } else {
-            dap_global_db_objs_delete(l_args->get_objs.objs, l_args->get_objs.objs_count);
-            s_global_db_obj_data_callback_destroy(l_args);
-        }
+        l_args->hdr.called = true;
+        pthread_cond_signal(&l_args->hdr.cond);
+        pthread_mutex_unlock(&l_args->hdr.mutex);
     }
 }
 
@@ -1156,21 +1151,16 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
 {
     struct sync_obj_data_callback *l_callback = (struct sync_obj_data_callback*)a_arg;
     if (s_global_db_find_callback_data(s_context_global_db, l_callback->hdr.uid)) {
+        pthread_mutex_lock(&l_callback->hdr.mutex);
         // TODO make incremental copy
         l_callback->get_store_objs.objs = dap_store_obj_copy(a_values, a_values_count);
         l_callback->get_objs.objs_count += a_values_count;
         if (a_values_count != a_values_total) {
             log_it(L_WARNING, "Got only %zu records from %zu", a_values_count, a_values_total);
         }
-        pthread_mutex_lock(&l_callback->hdr.mutex);
-        if (!l_callback->hdr.called) {
-            l_callback->hdr.called = true;
-            pthread_cond_signal(&l_callback->hdr.cond);
-            pthread_mutex_unlock(&l_callback->hdr.mutex);
-        } else {
-            dap_store_obj_free(l_callback->get_store_objs.objs, l_callback->get_store_objs.objs_count);
-            s_global_db_obj_data_callback_destroy(l_callback);
-        }
+        l_callback->hdr.called = true;
+        pthread_cond_signal(&l_callback->hdr.cond);
+        pthread_mutex_unlock(&l_callback->hdr.mutex);
     }
 }
 
@@ -1334,8 +1324,8 @@ static void s_sync_op_result_callback(UNUSED_ARG dap_global_db_context_t *a_glob
 {
     struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback*)a_arg;
     if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
-        l_args->op_result.result = a_rc;
         pthread_mutex_lock(&l_args->hdr.mutex);
+        l_args->op_result.result = a_rc;
         l_args->hdr.called = true;
         pthread_cond_signal(&l_args->hdr.cond);
         pthread_mutex_unlock(&l_args->hdr.mutex);
@@ -1447,11 +1437,13 @@ static void s_sync_op_raw_callback(UNUSED_ARG dap_global_db_context_t *a_global_
                                    void *a_arg)
 {
     struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback*)a_arg;
-    l_args->op_result.result = a_rc;
-    pthread_mutex_lock(&l_args->hdr.mutex);
-    l_args->hdr.called = true;
-    pthread_cond_signal(&l_args->hdr.cond);
-    pthread_mutex_unlock(&l_args->hdr.mutex);
+    if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
+        pthread_mutex_lock(&l_args->hdr.mutex);
+        l_args->op_result.result = a_rc;
+        l_args->hdr.called = true;
+        pthread_cond_signal(&l_args->hdr.cond);
+        pthread_mutex_unlock(&l_args->hdr.mutex);
+    }
 }
 
 int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
