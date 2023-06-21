@@ -92,7 +92,6 @@ int randombytes(void* random_array, unsigned int nbytes)
     return passed;
 #else
     int r, n = (int)nbytes, count = 0;
-    
     if (lock == -1) {
         do {
             lock = open("/dev/urandom", O_RDONLY);
@@ -102,16 +101,15 @@ int randombytes(void* random_array, unsigned int nbytes)
         } while (lock == -1);
     }
 
-    while (n > 0) {
-        do {
-            r = read(lock, random_array+count, n);
-            if (r == -1) {
-                delay(0xFFFF);
-            }
-        } while (r == -1);
-        count += r;
-        n -= r;
+    for(int i = 0; i < n;){
+        r = read(lock, (char*)random_array+i, n);
+        if (r >= 0){
+            i += r;
+        } else{
+            delay(0xFFFF);
+        }
     }
+
 #endif
 
     return passed;
