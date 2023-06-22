@@ -257,6 +257,7 @@ static void s_global_db_obj_data_callback_wait(struct sync_obj_data_callback* a_
         if (pthread_cond_timedwait(&a_obj->hdr.cond, &a_obj->hdr.mutex, &a_obj->hdr.timer_timeout) == ETIMEDOUT) {
             log_it(L_ERROR, "Global DB %s operation timeout", a_module);
             if (!a_obj->hdr.called) a_obj->hdr.timeout = true;
+            s_global_db_remove_callback_data(s_context_global_db, a_obj->hdr.uid);
             break;
         }
 }
@@ -265,7 +266,6 @@ static void s_global_db_obj_data_callback_destroy(struct sync_obj_data_callback*
     pthread_mutex_unlock(&a_obj->hdr.mutex);
     pthread_mutex_destroy(&a_obj->hdr.mutex);
     pthread_cond_destroy(&a_obj->hdr.cond);
-    s_global_db_remove_callback_data(s_context_global_db, a_obj->hdr.uid);
     DAP_DELETE(a_obj);
 }
 
