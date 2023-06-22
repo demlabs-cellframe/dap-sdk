@@ -254,7 +254,6 @@ void dap_global_db_deinit()
 {
     if (s_context_global_db) {
         dap_context_stop_n_kill(s_context_global_db->context);
-        DAP_DELETE(s_context_global_db->context);
         dap_list_free_full(s_context_global_db->instance->blacklist, NULL);
         dap_list_free_full(s_context_global_db->instance->whitelist, NULL);
         DAP_DEL_Z(s_context_global_db->instance->driver_name);
