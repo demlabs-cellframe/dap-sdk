@@ -256,6 +256,7 @@ static void s_global_db_obj_data_callback_wait(struct sync_obj_data_callback* a_
     while (!a_obj->hdr.called)
         if (pthread_cond_timedwait(&a_obj->hdr.cond, &a_obj->hdr.mutex, &a_obj->hdr.timer_timeout) == ETIMEDOUT) {
             log_it(L_ERROR, "Global DB %s operation timeout", a_module);
+            if (!a_obj->hdr.called) a_obj->hdr.timeout = true;
             break;
         }
 }
@@ -489,6 +490,10 @@ static void s_obj_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_c
     assert(l_args);
     if(s_global_db_find_callback_data(a_global_db_context, l_args->hdr.uid)) {
         pthread_mutex_lock(&l_args->hdr.mutex);
+        if (l_args->hdr.timeout) {
+            s_global_db_obj_data_callback_destroy(l_args);
+            return;
+        }
         if (a_value && a_value_size) {
             l_args->get.data = DAP_DUP_SIZE(a_value, a_value_size);
             l_args->get.data_size = a_value_size;
@@ -529,7 +534,7 @@ byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a
             *a_ts = l_args->get.ts;
     }
     byte_t *l_ret = l_args->get.data;
-    s_global_db_obj_data_callback_destroy(l_args);
+    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -598,6 +603,10 @@ static void s_obj_raw_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_
     struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback*)a_arg;
     if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
         pthread_mutex_lock(&l_args->hdr.mutex);
+        if (l_args->hdr.timeout) {
+            s_global_db_obj_data_callback_destroy(l_args);
+            return;
+        }
         l_args->get_raw.obj = dap_store_obj_copy(a_value, 1);
         l_args->hdr.called = true;
         pthread_cond_signal(&l_args->hdr.cond);
@@ -623,7 +632,7 @@ dap_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_k
         s_global_db_obj_data_callback_wait(l_args, "get_raw");
 
     dap_store_obj_t *l_ret = l_args->get_raw.obj;
-    s_global_db_obj_data_callback_destroy(l_args);
+    if (l_args->hdr.timeout != false) s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -707,6 +716,10 @@ static void s_del_ts_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_d
     struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback *)a_arg;
     if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
         pthread_mutex_lock(&l_args->hdr.mutex);
+        if (l_args->hdr.timeout) {
+            s_global_db_obj_data_callback_destroy(l_args);
+            return;
+        }
         l_args->del_ts.timestamp = a_value_ts;
         l_args->hdr.called = true;
         pthread_cond_signal(&l_args->hdr.cond);
@@ -730,7 +743,7 @@ dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_
         s_global_db_obj_data_callback_wait(l_args, "del_ts");
 
     dap_nanotime_t l_ret = l_args->del_ts.timestamp;
-    s_global_db_obj_data_callback_destroy(l_args);
+    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -841,7 +854,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
     }
 
     byte_t *l_ret = l_args->get.data;
-    s_global_db_obj_data_callback_destroy(l_args);
+    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -912,7 +925,7 @@ dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
         s_global_db_obj_data_callback_wait(l_args, "last_raw");
 
     dap_store_obj_t *l_ret = l_args->get_raw.obj;
-    s_global_db_obj_data_callback_destroy(l_args);
+    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1028,6 +1041,10 @@ static void s_objs_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_
     struct sync_obj_data_callback* l_args = (struct sync_obj_data_callback *)a_arg;
     if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
         pthread_mutex_lock(&l_args->hdr.mutex);
+        if (l_args->hdr.timeout) {
+            s_global_db_obj_data_callback_destroy(l_args);
+            return;
+        }
         l_args->get_objs.objs = dap_global_db_objs_copy(a_values, a_values_count);
         l_args->get_objs.objs_count = a_values_count;
         l_args->hdr.called = true;
@@ -1058,7 +1075,7 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
     if (a_objs_count)
         *a_objs_count = l_args->get_objs.objs_count;
     dap_global_db_obj_t *l_ret = l_args->get_objs.objs;
-    s_global_db_obj_data_callback_destroy(l_args);
+    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1152,6 +1169,10 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
     struct sync_obj_data_callback *l_callback = (struct sync_obj_data_callback*)a_arg;
     if (s_global_db_find_callback_data(s_context_global_db, l_callback->hdr.uid)) {
         pthread_mutex_lock(&l_callback->hdr.mutex);
+        if (l_callback->hdr.timeout) {
+            s_global_db_obj_data_callback_destroy(l_callback);
+            return;
+        }
         // TODO make incremental copy
         l_callback->get_store_objs.objs = dap_store_obj_copy(a_values, a_values_count);
         l_callback->get_objs.objs_count += a_values_count;
@@ -1176,8 +1197,6 @@ dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_
                                    s_get_all_raw_sync_callback, l_args))
         s_global_db_obj_data_callback_wait(l_args, "get_all_raw");
     if (!l_args->hdr.called) {
-        l_args->hdr.timeout = true;
-        s_global_db_obj_data_callback_destroy(l_args);
         return NULL;
     }
     if (a_objs_count)
@@ -1325,6 +1344,10 @@ static void s_sync_op_result_callback(UNUSED_ARG dap_global_db_context_t *a_glob
     struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback*)a_arg;
     if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
         pthread_mutex_lock(&l_args->hdr.mutex);
+        if (l_args->hdr.timeout) {
+            s_global_db_obj_data_callback_destroy(l_args);
+            return;
+        }
         l_args->op_result.result = a_rc;
         l_args->hdr.called = true;
         pthread_cond_signal(&l_args->hdr.cond);
@@ -1355,7 +1378,7 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
         l_args->op_result.result = DAP_GLOBAL_DB_RC_ERROR;
 
     int l_ret = l_args->op_result.result;
-    s_global_db_obj_data_callback_destroy(l_args);
+    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1439,6 +1462,10 @@ static void s_sync_op_raw_callback(UNUSED_ARG dap_global_db_context_t *a_global_
     struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback*)a_arg;
     if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
         pthread_mutex_lock(&l_args->hdr.mutex);
+        if (l_args->hdr.timeout) {
+            s_global_db_obj_data_callback_destroy(l_args);
+            return;
+        }
         l_args->op_result.result = a_rc;
         l_args->hdr.called = true;
         pthread_cond_signal(&l_args->hdr.cond);
@@ -1460,7 +1487,7 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
         l_args->op_result.result = DAP_GLOBAL_DB_RC_ERROR;
 
     int l_ret = l_args->op_result.result;
-    s_global_db_obj_data_callback_destroy(l_args);
+    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1646,7 +1673,7 @@ int s_db_object_pin_sync(const char *a_group, const char *a_key, bool a_pin)
         l_args->op_result.result = DAP_GLOBAL_DB_RC_ERROR;
 
     int l_ret = l_args->op_result.result;
-    s_global_db_obj_data_callback_destroy(l_args);
+    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1768,7 +1795,7 @@ int dap_global_db_del_sync(const char *a_group, const char *a_key)
         l_args->op_result.result = DAP_GLOBAL_DB_RC_ERROR;
 
     int l_ret = l_args->op_result.result;
-    s_global_db_obj_data_callback_destroy(l_args);
+    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1834,7 +1861,7 @@ int dap_global_db_flush_sync()
         l_args->op_result.result = DAP_GLOBAL_DB_RC_ERROR;
 
     int l_ret = l_args->op_result.result;
-    s_global_db_obj_data_callback_destroy(l_args);
+    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
