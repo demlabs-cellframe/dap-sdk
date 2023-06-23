@@ -310,7 +310,7 @@ static  int s_db_mdbx_deinit(void)
 
     HASH_ITER(hh, s_db_ctxs, l_db_ctx, l_tmp)                               /* run over the hash table of the DB contexts */
     {
-
+        
         dap_assert( !pthread_mutex_lock(&l_db_ctx->dbi_mutex) );
         if (l_db_ctx->txn)                                                  /* Commit, close table */
             mdbx_txn_commit(l_db_ctx->txn);

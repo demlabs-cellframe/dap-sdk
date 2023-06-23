@@ -248,13 +248,11 @@ lb_return:
 }
 
 /**
- * @brief dap_global_db_deinit
+ * @brief kill context thread and clean context
  */
-void dap_global_db_deinit()
-{
+void dap_global_db_context_deinit() {
     if (s_context_global_db) {
         dap_context_stop_n_kill(s_context_global_db->context);
-        DAP_DELETE(s_context_global_db->context);
         dap_list_free_full(s_context_global_db->instance->blacklist, NULL);
         dap_list_free_full(s_context_global_db->instance->whitelist, NULL);
         DAP_DEL_Z(s_context_global_db->instance->driver_name);
@@ -262,6 +260,13 @@ void dap_global_db_deinit()
         DAP_DEL_Z(s_context_global_db->instance);
         DAP_DEL_Z(s_context_global_db);
     }
+}
+
+/**
+ * @brief dap_global_db_deinit, after fix ticket 9030 need add dap_global_db_context_deinit() 
+ */
+void dap_global_db_deinit() {
+    // dap_global_db_context_deinit()
     dap_db_driver_deinit();
     dap_global_db_sync_deinit();
 }
@@ -2258,6 +2263,7 @@ static void s_context_callback_started( dap_context_t * a_context, void *a_arg)
 static void s_context_callback_stopped( dap_context_t * a_context, void *a_arg)
 {
     // Fullful arrays with queue inputs
+    // Check ticket 9030
     for (uint32_t i = 0; i < dap_events_thread_get_count(); i++){
         dap_events_socket_remove_and_delete_unsafe(s_context_global_db->queue_worker_io_input[i], true);
         dap_events_socket_remove_and_delete_unsafe(s_context_global_db->queue_worker_callback_input[i], true);

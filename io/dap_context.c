@@ -330,7 +330,7 @@ static void *s_context_thread(void *a_arg)
 
     log_it(L_NOTICE,"Exiting context #%u", l_context->id);
     dap_context_remove(l_context->event_exit);
-    dap_events_socket_delete_unsafe(l_context->event_exit, false);
+    dap_events_socket_delete_unsafe(l_context->event_exit, false);  // check ticket 9030
 
     // Removes from the list
     pthread_rwlock_wrlock(&s_contexts_rwlock);
