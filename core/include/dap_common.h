@@ -36,18 +36,23 @@
 #include <fcntl.h>
 #define pipe(pfds) _pipe(pfds, 4096, _O_BINARY)
 #define strerror_r(arg1, arg2, arg3) strerror_s(arg2, arg3, arg1)
-#else
-#include <unistd.h>
+#define popen _popen
+#define pclose _pclose
 #endif
 
-#include <string.h>
-#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <stdarg.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
+#include <unistd.h>
 #include <time.h>
+#include <string.h>
+#include <assert.h>
+#include <ctype.h>
+#include <pthread.h>
+
 #ifndef __cplusplus
 # include <stdatomic.h>
 #else
@@ -108,9 +113,9 @@
 #endif
 
 #ifdef __cplusplus
-#define DAP_CAST_REINT(t,v) reinterpret_cast<t*>(v)
+#define DAP_CAST_PTR(t,v) reinterpret_cast<t*>(v)
 #else
-#define DAP_CAST_REINT(t,v) ((t*) v)
+#define DAP_CAST_PTR(t,v) (t*)(v)
 #endif
 
 #if DAP_USE_RPMALLOC
@@ -133,7 +138,7 @@
 
 #include    <assert.h>
 
-#define     MEMSTAT$SZ_NAME     63
+#define     MEMSTAT$SZ_NAME     63            dap_global_db_del_sync(l_gdb_group, l_objs[i].key);
 #define     MEMSTAT$K_MAXNR     8192
 #define     MEMSTAT$K_MINTOLOG  (32*1024)
 
@@ -177,33 +182,28 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
     #define DAP_DUP_SIZE(a, s)    memcpy(s_vm_get(__func__, __LINE__, s), a, s)
 
 #else
-  #define DAP_MALLOC(a)         malloc(a)
-  #define DAP_FREE(a)           free(a)
-  #define DAP_CALLOC(a, b)      calloc(a, b)
-  #define DAP_ALMALLOC(a, b)    _dap_aligned_alloc(a, b)
-  #define DAP_ALREALLOC(a, b)   _dap_aligned_realloc(a, b)
-  #define DAP_ALFREE(a)         _dap_aligned_free(a, b)
-  #define DAP_PAGE_ALMALLOC(a)  _dap_page_aligned_alloc(a)
-  #define DAP_PAGE_ALFREE(a)    _dap_page_aligned_free(a)
-  #define DAP_NEW( a )          DAP_CAST_REINT(a, malloc(sizeof(a)) )
-  #define DAP_NEW_SIZE(a, b)    DAP_CAST_REINT(a, malloc(b) )
-  #define DAP_NEW_STACK( a )        DAP_CAST_REINT(a, alloca(sizeof(a)) )
-  #define DAP_NEW_STACK_SIZE(a, b)  DAP_CAST_REINT(a, alloca(b) )
-  #define DAP_NEW_Z( a )        DAP_CAST_REINT(a, calloc(1,sizeof(a)))
-  #define DAP_NEW_Z_SIZE(a, b)  DAP_CAST_REINT(a, calloc(1,b))
-  #define DAP_REALLOC(a, b)     realloc(a,b)
-  #define DAP_DELETE(a)         free((void *)a)
-  #define DAP_DUP(a)            memcpy(malloc(sizeof(*a)), a, sizeof(*a))
-  #define DAP_DUP_SIZE(a, s)    memcpy(malloc(s), a, s)
+#define DAP_MALLOC(p)         malloc(p)
+#define DAP_FREE(p)           free(p)
+#define DAP_CALLOC(p, s)      ({ size_t s1 = (size_t)(s); s1 > 0 ? calloc(p, s1) : DAP_CAST_PTR(void, NULL); })
+#define DAP_ALMALLOC(p, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? _dap_aligned_alloc(p, s1) : DAP_CAST_PTR(void, NULL); })
+#define DAP_ALREALLOC(p, s)   ({ size_t s1 = (size_t)(s); s1 > 0 ? _dap_aligned_realloc(p, s1) :  DAP_CAST_PTR(void, NULL); })
+#define DAP_ALFREE(p)         _dap_aligned_free(p)
+#define DAP_PAGE_ALMALLOC(p)  _dap_page_aligned_alloc(p)
+#define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
+#define DAP_NEW(t)            DAP_CAST_PTR(t, malloc(sizeof(t)))
+#define DAP_NEW_SIZE(t, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, malloc(s1)) : DAP_CAST_PTR(t, NULL); })
+ /* Auto memory! Do not inline! Do not modify the size in-call! */
+#define DAP_NEW_STACK(t)            DAP_CAST_PTR(t, alloca(sizeof(t)))
+#define DAP_NEW_STACK_SIZE(t, s)    DAP_CAST_PTR(t, (size_t)(s) > 0 ? alloca((size_t)(s)) : NULL)
+/* ... */
+#define DAP_NEW_Z(t)          DAP_CAST_PTR(t, calloc(1, sizeof(t)))
+#define DAP_NEW_Z_SIZE(t, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, calloc(1, s1)) : DAP_CAST_PTR(t, NULL); })
+#define DAP_REALLOC(p, s)     ({ size_t s1 = (size_t)(s); s1 > 0 ? realloc(p, s1) : ({ DAP_DEL_Z(p); DAP_CAST_PTR(void, NULL); }); })
+#define DAP_DELETE(p)         free((void*)(p))
+#define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? malloc(sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : DAP_CAST_PTR(void, NULL); })
+#define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (size_t)(s); void *p1 = (p) && (s1 > 0) ? malloc(s1) : NULL; p1 ? memcpy(p1, (p), s1) : DAP_CAST_PTR(void, NULL); })
 #endif
-
-#define DAP_DEL_Z(a)            \
-do {                            \
-    if (a) {                    \
-        DAP_DELETE((void *)a);  \
-        (a) = NULL;             \
-    }                           \
-} while (0)
+#define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
 
 DAP_STATIC_INLINE unsigned long dap_pagesize() {
     static int s = 0;
@@ -351,44 +351,38 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 //#define DAP_LOG_HISTORY_BUFFER_SIZE (DAP_LOG_HISTORY_STR_SIZE * DAP_LOG_HISTORY_MAX_STRINGS)
 //#define DAP_LOG_HISTORY_M           (DAP_LOG_HISTORY_MAX_STRINGS - 1)
 
-#ifdef _WIN32
-  #define dap_sscanf            __mingw_sscanf
-  #define dap_vsscanf           __mingw_vsscanf
-  #define dap_scanf             __mingw_scanf
-  #define dap_vscanf            __mingw_vscanf
-  #define dap_fscanf            __mingw_fscanf
-  #define dap_vfscanf           __mingw_vfscanf
-  #define dap_sprintf           __mingw_sprintf
-  #define dap_snprintf          __mingw_snprintf
-  #define dap_printf            __mingw_printf
-  #define dap_vprintf           __mingw_vprintf
-  #define dap_fprintf           __mingw_fprintf
-  #define dap_vfprintf          __mingw_vfprintf
-  #define dap_vsprintf          __mingw_vsprintf
-  #define dap_vsnprintf         __mingw_vsnprintf
-  #define dap_asprintf          __mingw_asprintf
-  #define dap_vasprintf         __mingw_vasprintf
-#else
-  #define dap_sscanf            sscanf
-  #define dap_vsscanf           vsscanf
-  #define dap_scanf             scanf
-  #define dap_vscanf            vscanf
-  #define dap_fscanf            fscanf
-  #define dap_vfscanf           vfscanf
-  #define dap_sprintf           sprintf
-  #define dap_snprintf          snprintf
-  #define dap_printf            printf
-  #define dap_vprintf           vprintf
-  #define dap_fprintf           fprintf
-  #define dap_vfprintf          vfprintf
-  #define dap_vsprintf          vsprintf
-  #define dap_vsnprintf         vsnprintf
-  #define dap_asprintf          asprintf
-  #define dap_vasprintf         vasprintf
-#endif
-
 typedef uint8_t byte_t;
 typedef int dap_spinlock_t;
+
+// Deprecated funstions, just for compatibility
+#define dap_sscanf      sscanf
+#define dap_vsscanf     vsscanf
+#define dap_scanf       scanf
+#define dap_vscanf      vscanf
+#define dap_fscanf      fscanf
+#define dap_vfscanf     vfscanf
+#define dap_sprintf     sprintf
+#define dap_snprintf    snprintf
+#define dap_printf      printf
+#define dap_vprintf     vprintf
+#define dap_fprintf     fprintf
+#define dap_vfprintf    vfprintf
+#define dap_vsprintf    vsprintf
+#define dap_vsnprintf   vsnprintf
+#define dap_asprintf    asprintf
+#define dap_vasprintf   vasprintf
+
+#if defined (__GNUC__) || defined (__clang__)
+#ifdef __MINGW_PRINTF_FORMAT
+#define DAP_PRINTF_ATTR(format_index, args_index) \
+    __attribute__ ((format (__MINGW_PRINTF_FORMAT, format_index, args_index)))
+#else
+#define DAP_PRINTF_ATTR(format_index, args_index) \
+    __attribute__ ((format (printf, format_index, args_index)))
+#endif
+#else /* __GNUC__ */
+#define DAP_PRINTF_ATTR(format_index, args_index)
+#endif /* __GNUC__ */
 
 /**
  * @brief The log_level enum
@@ -409,14 +403,6 @@ typedef enum dap_log_level {
 
 } dap_log_level_t;
 
-typedef struct dap_log_history_str_s {
-
-  time_t    t;
-  uint8_t   *str;
-  uint32_t  len;
-
-} dap_log_history_str_t;
-
 typedef void *dap_interval_timer_t;
 typedef void (*dap_timer_callback_t)(void *param);
 
@@ -435,8 +421,27 @@ extern "C" {
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
+static const DAP_ALIGNED(16) uint16_t htoa_lut256[ 256 ] = {
 
-extern uint16_t htoa_lut256[ 256 ];
+  0x3030, 0x3130, 0x3230, 0x3330, 0x3430, 0x3530, 0x3630, 0x3730, 0x3830, 0x3930, 0x4130, 0x4230, 0x4330, 0x4430, 0x4530,
+  0x4630, 0x3031, 0x3131, 0x3231, 0x3331, 0x3431, 0x3531, 0x3631, 0x3731, 0x3831, 0x3931, 0x4131, 0x4231, 0x4331, 0x4431,
+  0x4531, 0x4631, 0x3032, 0x3132, 0x3232, 0x3332, 0x3432, 0x3532, 0x3632, 0x3732, 0x3832, 0x3932, 0x4132, 0x4232, 0x4332,
+  0x4432, 0x4532, 0x4632, 0x3033, 0x3133, 0x3233, 0x3333, 0x3433, 0x3533, 0x3633, 0x3733, 0x3833, 0x3933, 0x4133, 0x4233,
+  0x4333, 0x4433, 0x4533, 0x4633, 0x3034, 0x3134, 0x3234, 0x3334, 0x3434, 0x3534, 0x3634, 0x3734, 0x3834, 0x3934, 0x4134,
+  0x4234, 0x4334, 0x4434, 0x4534, 0x4634, 0x3035, 0x3135, 0x3235, 0x3335, 0x3435, 0x3535, 0x3635, 0x3735, 0x3835, 0x3935,
+  0x4135, 0x4235, 0x4335, 0x4435, 0x4535, 0x4635, 0x3036, 0x3136, 0x3236, 0x3336, 0x3436, 0x3536, 0x3636, 0x3736, 0x3836,
+  0x3936, 0x4136, 0x4236, 0x4336, 0x4436, 0x4536, 0x4636, 0x3037, 0x3137, 0x3237, 0x3337, 0x3437, 0x3537, 0x3637, 0x3737,
+  0x3837, 0x3937, 0x4137, 0x4237, 0x4337, 0x4437, 0x4537, 0x4637, 0x3038, 0x3138, 0x3238, 0x3338, 0x3438, 0x3538, 0x3638,
+  0x3738, 0x3838, 0x3938, 0x4138, 0x4238, 0x4338, 0x4438, 0x4538, 0x4638, 0x3039, 0x3139, 0x3239, 0x3339, 0x3439, 0x3539,
+  0x3639, 0x3739, 0x3839, 0x3939, 0x4139, 0x4239, 0x4339, 0x4439, 0x4539, 0x4639, 0x3041, 0x3141, 0x3241, 0x3341, 0x3441,
+  0x3541, 0x3641, 0x3741, 0x3841, 0x3941, 0x4141, 0x4241, 0x4341, 0x4441, 0x4541, 0x4641, 0x3042, 0x3142, 0x3242, 0x3342,
+  0x3442, 0x3542, 0x3642, 0x3742, 0x3842, 0x3942, 0x4142, 0x4242, 0x4342, 0x4442, 0x4542, 0x4642, 0x3043, 0x3143, 0x3243,
+  0x3343, 0x3443, 0x3543, 0x3643, 0x3743, 0x3843, 0x3943, 0x4143, 0x4243, 0x4343, 0x4443, 0x4543, 0x4643, 0x3044, 0x3144,
+  0x3244, 0x3344, 0x3444, 0x3544, 0x3644, 0x3744, 0x3844, 0x3944, 0x4144, 0x4244, 0x4344, 0x4444, 0x4544, 0x4644, 0x3045,
+  0x3145, 0x3245, 0x3345, 0x3445, 0x3545, 0x3645, 0x3745, 0x3845, 0x3945, 0x4145, 0x4245, 0x4345, 0x4445, 0x4545, 0x4645,
+  0x3046, 0x3146, 0x3246, 0x3346, 0x3446, 0x3546, 0x3646, 0x3746, 0x3846, 0x3946, 0x4146, 0x4246, 0x4346, 0x4446, 0x4546,
+  0x4646
+};
 
 #define dap_htoa64( out, in, len ) \
 {\
@@ -499,19 +504,11 @@ static const uint16_t s_ascii_table_data[256] = {
 #define dap_ascii_isalpha(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_ALPHA)
 #define dap_ascii_isalnum(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_ALNUM)
 #define dap_ascii_isdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_DIGIT)
-
-void dap_sleep( uint32_t ms );
-
-DAP_STATIC_INLINE bool DAP_AtomicTryLock( dap_spinlock_t *lock )
-{
-    return (__sync_lock_test_and_set(lock, 1) == 0);
-}
+#define dap_ascii_isxdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_XDIGIT)
 
 DAP_STATIC_INLINE void DAP_AtomicLock( dap_spinlock_t *lock )
 {
-    while ( !DAP_AtomicTryLock(lock) ) {
-        dap_sleep( 0 );
-    }
+    __sync_lock_test_and_set(lock, 1);
 }
 
 DAP_STATIC_INLINE void DAP_AtomicUnlock( dap_spinlock_t *lock )
@@ -548,19 +545,6 @@ void dap_common_deinit(void);
 void dap_log_set_max_item(unsigned int a_max);
 // get logs from list
 char *dap_log_get_item(time_t a_start_time, int a_limit);
-
-#if defined __GNUC__ || defined __clang__
-#ifdef __MINGW_PRINTF_FORMAT
-#define DAP_PRINTF_ATTR(format_index, args_index) \
-    __attribute__ ((format (gnu_printf, format_index, args_index)))
-#else
-#define DAP_PRINTF_ATTR(format_index, args_index) \
-    __attribute__ ((format (printf, format_index, args_index)))
-#endif
-#else /* __GNUC__ */
-#define DAP_PRINTF_ATTR(format_index, args_index)
-#endif /* __GNUC__ */
-
 
 DAP_PRINTF_ATTR(3, 4) void _log_it( const char * log_tag, enum dap_log_level, const char * format, ... );
 #define log_it(_log_level, ...) _log_it( LOG_TAG, _log_level, ##__VA_ARGS__)
@@ -716,6 +700,7 @@ static inline void * dap_mempcpy(void * a_dest,const void * a_src,size_t n)
 
 DAP_STATIC_INLINE int dap_is_alpha(char c) { return dap_ascii_isalnum(c); }
 DAP_STATIC_INLINE int dap_is_digit(char c) { return dap_ascii_isdigit(c); }
+DAP_STATIC_INLINE int dap_is_xdigit(char c) {return dap_ascii_isxdigit(c);}
 DAP_STATIC_INLINE int dap_is_alpha_and_(char c) { return dap_is_alpha(c) || c == '_'; }
 char **dap_parse_items(const char *a_str, char a_delimiter, int *a_count, const int a_only_digit);
 

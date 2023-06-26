@@ -251,7 +251,7 @@ dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
     size_t l_sign_unserialized_size = dap_sign_create_output_unserialized_calc_size(a_key, a_output_wish_size);
     if(l_sign_unserialized_size > 0) {
         size_t l_pub_key_size = 0;
-        uint8_t *l_pub_key = dap_enc_key_serealize_pub_key(a_key, &l_pub_key_size);
+        uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
         if(!l_pub_key)
             return NULL;
         uint8_t* l_sign_unserialized = DAP_NEW_Z_SIZE(uint8_t, l_sign_unserialized_size);
@@ -263,7 +263,7 @@ dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
             return NULL;
         } else {
             size_t l_sign_ser_size = l_sign_unserialized_size;
-            uint8_t *l_sign_ser = dap_enc_key_serealize_sign(a_key->type, l_sign_unserialized, &l_sign_ser_size);
+            uint8_t *l_sign_ser = dap_enc_key_serialize_sign(a_key->type, l_sign_unserialized, &l_sign_ser_size);
             if ( l_sign_ser ){
                 dap_sign_t * l_ret = DAP_NEW_Z_SIZE(dap_sign_t,
                         sizeof(dap_sign_hdr_t) + l_sign_ser_size + l_pub_key_size);
@@ -398,7 +398,7 @@ bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size) {
 }
 
 /**
- * @brief get deserealized pub key from dap_sign_t 
+ * @brief get deserialized pub key from dap_sign_t
  * 
  * @param a_chain_sign dap_sign_t object
  * @return dap_enc_key_t* 
@@ -412,7 +412,7 @@ dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign)
     uint8_t *l_pkey = dap_sign_get_pkey(a_chain_sign, &l_pkey_size);
     dap_enc_key_t * l_ret =  dap_enc_key_new(l_type);
     // deserialize public key
-    dap_enc_key_deserealize_pub_key(l_ret, l_pkey, l_pkey_size);
+    dap_enc_key_deserialize_pub_key(l_ret, l_pkey, l_pkey_size);
     return l_ret;
 }
 
@@ -444,7 +444,7 @@ int dap_sign_verify(dap_sign_t * a_chain_sign, const void * a_data, const size_t
 
     size_t l_sign_data_size = a_chain_sign->header.sign_size;
     // deserialize signature
-    uint8_t * l_sign_data = dap_enc_key_deserealize_sign(l_key->type, l_sign_data_ser, &l_sign_data_size);
+    uint8_t * l_sign_data = dap_enc_key_deserialize_sign(l_key->type, l_sign_data_ser, &l_sign_data_size);
 
     if ( ! l_sign_data ){
         log_it(L_WARNING,"Incorrect signature, can't deserialize signature's data");
@@ -982,20 +982,37 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
         dap_string_append_printf(a_str_out, "\tType: %s\n",
                                  dap_sign_type_to_str(a_sign->header.type));
         if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)){
-            char *l_hash_str = NULL;
-            if (!dap_strcmp(a_hash_out_type, "hex"))
-                l_hash_str = dap_chain_hash_fast_to_str_new(&l_hash_pkey);
-            else
-                l_hash_str = dap_enc_base58_encode_hash_to_str(&l_hash_pkey);
+            char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
+                    ? dap_enc_base58_encode_hash_to_str(&l_hash_pkey)
+                    : dap_chain_hash_fast_to_str_new(&l_hash_pkey);
             dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", l_hash_str);
             DAP_DELETE(l_hash_str);
-
         }
         dap_string_append_printf(a_str_out, "\tPublic key size: %u\n"
                                             "\tSignature size: %u\n",
                                  a_sign->header.sign_pkey_size,
                                  a_sign->header.sign_size);
-    }else {
+    } else {
         dap_string_append_printf(a_str_out, "! Signature has data, corrupted or not valid\n");
     }
+}
+
+json_object* dap_sign_to_json(const dap_sign_t *a_sign) {
+    if (!a_sign)
+        return NULL;
+    json_object *l_object = json_object_new_object();
+    json_object *l_obj_type_sign = json_object_new_string(dap_sign_type_to_str(a_sign->header.type));
+    json_object_object_add(l_object, "type", l_obj_type_sign);
+    dap_chain_hash_fast_t l_hash_pkey = {};
+    if (dap_sign_get_pkey_hash((dap_sign_t *) a_sign, &l_hash_pkey)) {
+        char l_hash[DAP_CHAIN_HASH_FAST_STR_SIZE];
+        dap_chain_hash_fast_to_str(&l_hash_pkey, l_hash, sizeof(l_hash));
+        json_object *l_obj_pkey_hash = json_object_new_string(l_hash);
+        json_object_object_add(l_object, "pkeyHash", l_obj_pkey_hash);
+    }
+    json_object *l_obj_pkey_size = json_object_new_uint64(a_sign->header.sign_pkey_size);
+    json_object *l_obj_sign_size = json_object_new_uint64(a_sign->header.sign_size);
+    json_object_object_add(l_object, "signPkeySize", l_obj_pkey_size);
+    json_object_object_add(l_object, "signSize", l_obj_sign_size);
+    return l_object;
 }

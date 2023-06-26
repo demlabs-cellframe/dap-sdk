@@ -70,5 +70,8 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
 dap_timerfd_t* dap_timerfd_start(uint64_t a_timeout_ms, dap_timerfd_callback_t a_callback, void *callback_arg);
 dap_timerfd_t* dap_timerfd_start_on_worker(dap_worker_t * a_worker, uint64_t a_timeout_ms, dap_timerfd_callback_t a_callback, void *a_callback_arg);
 dap_timerfd_t* dap_timerfd_start_on_proc_thread(dap_proc_thread_t * a_proc_thread, uint64_t a_timeout_ms, dap_timerfd_callback_t a_callback, void *a_callback_arg);
-void dap_timerfd_delete(dap_timerfd_t *l_timerfd);
-void dap_timerfd_reset(dap_timerfd_t *a_timerfd);
+void dap_timerfd_delete_mt(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid);
+void dap_timerfd_reset_mt(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid);
+void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd);
+void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd);
+

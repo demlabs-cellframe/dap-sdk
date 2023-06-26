@@ -27,7 +27,7 @@ int main() {
         dap_pseudo_random_seed(seed);
         uint256_t* a = malloc(NUMBER_OF_ELEMENTS * sizeof(uint256_t));
         for (int j = 0; j < NUMBER_OF_ELEMENTS; j++) {
-            a[j] = dap_pseudo_random_get(uint256_max);
+            a[j] = dap_pseudo_random_get(uint256_max, NULL);
         }
         to_file(a, NUMBER_OF_ELEMENTS, f);
         free(a);

@@ -221,15 +221,13 @@ dap_cert_t * dap_cert_generate_mem_with_seed(const char * a_cert_name, dap_enc_k
         const void* a_seed, size_t a_seed_size)
 {
     dap_enc_key_t *l_enc_key = dap_enc_key_new_generate(a_key_type, NULL, 0, a_seed, a_seed_size, 0);
-    if ( l_enc_key ){
+    if (l_enc_key) {
         dap_cert_t * l_cert = dap_cert_new(a_cert_name);
         l_cert->enc_key = l_enc_key;
         if (a_seed && a_seed_size) {
-            dap_chain_hash_fast_t l_seed_hash;
-            dap_hash_fast(a_seed, a_seed_size, &l_seed_hash);
-            char *l_hash_str = dap_chain_hash_fast_to_str_new(&l_seed_hash);
+            char *l_hash_str;
+            dap_get_data_hash_str_static(a_seed, a_seed_size, l_hash_str);
             log_it(L_DEBUG, "Certificate generated with seed hash %s", l_hash_str);
-            DAP_FREE(l_hash_str);
         }
         return l_cert;
     } else {
@@ -262,6 +260,7 @@ dap_cert_t * dap_cert_generate(const char * a_cert_name
                                            , const char * a_file_path,dap_enc_key_type_t a_key_type )
 {
     dap_cert_t * l_cert = dap_cert_generate_mem(a_cert_name,a_key_type);
+    dap_cert_add(l_cert);
     if ( l_cert){
         if ( dap_cert_file_save(l_cert, a_file_path) == 0 ){
             return l_cert;
@@ -344,14 +343,25 @@ dap_cert_t * dap_cert_new(const char * a_name)
 {
     dap_cert_t * l_ret = DAP_NEW_Z(dap_cert_t);
     l_ret->_pvt = DAP_NEW_Z(dap_cert_pvt_t);
-    dap_snprintf(l_ret->name,sizeof(l_ret->name),"%s",a_name);
-
-    dap_cert_item_t * l_cert_item = DAP_NEW_Z(dap_cert_item_t);
-    dap_snprintf(l_cert_item->name,sizeof(l_cert_item->name),"%s",a_name);
-    l_cert_item->cert = l_ret;
-    HASH_ADD_STR(s_certs,name,l_cert_item);
-
+    snprintf(l_ret->name,sizeof(l_ret->name),"%s",a_name);
     return l_ret;
+}
+
+int dap_cert_add(dap_cert_t *a_cert)
+{
+    if (!a_cert)
+        return -2;
+    dap_cert_item_t *l_cert_item;
+    HASH_FIND_STR(s_certs, a_cert->name, l_cert_item);
+    if (l_cert_item) {
+        log_it(L_WARNING, "Certificate with name %s already present in memory", a_cert->name);
+        return -1;
+    }
+    l_cert_item = DAP_NEW_Z(dap_cert_item_t);
+    snprintf(l_cert_item->name, sizeof(l_cert_item->name), "%s", a_cert->name);
+    l_cert_item->cert = a_cert;
+    HASH_ADD_STR(s_certs, name, l_cert_item);
+    return 0;
 }
 
 /**
@@ -390,7 +400,7 @@ dap_cert_t * dap_cert_add_file(const char * a_cert_name,const char *a_folder_pat
 {
     size_t l_cert_path_length = strlen(a_cert_name)+8+strlen(a_folder_path);
     char * l_cert_path = DAP_NEW_Z_SIZE(char,l_cert_path_length);
-    dap_snprintf(l_cert_path,l_cert_path_length,"%s/%s.dcert",a_folder_path,a_cert_name);
+    snprintf(l_cert_path,l_cert_path_length,"%s/%s.dcert",a_folder_path,a_cert_name);
     if( access( l_cert_path, F_OK ) == -1 ) {
         log_it (L_ERROR, "File %s is not exists! ", l_cert_path);
         DAP_DELETE(l_cert_path);
@@ -418,7 +428,7 @@ int dap_cert_save_to_folder(dap_cert_t * a_cert, const char *a_file_dir_path)
     const char * l_cert_name = a_cert->name;
     size_t l_cert_path_length = strlen(l_cert_name)+8+strlen(a_file_dir_path);
     char * l_cert_path = DAP_NEW_Z_SIZE(char,l_cert_path_length);
-    dap_snprintf(l_cert_path,l_cert_path_length,"%s/%s.dcert",a_file_dir_path,l_cert_name);
+    snprintf(l_cert_path,l_cert_path_length,"%s/%s.dcert",a_file_dir_path,l_cert_name);
     ret = dap_cert_file_save(a_cert,l_cert_path);
     DAP_DELETE( l_cert_path);
     return ret;
@@ -453,7 +463,7 @@ int dap_cert_compare_with_sign (dap_cert_t * a_cert,const dap_sign_t * a_sign)
         int l_ret;
         size_t l_pub_key_size = 0;
         // serialize public key
-        uint8_t *l_pub_key = dap_enc_key_serealize_pub_key(a_cert->enc_key, &l_pub_key_size);
+        uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_cert->enc_key, &l_pub_key_size);
         if ( l_pub_key_size == a_sign->header.sign_pkey_size){
             l_ret = memcmp ( l_pub_key, a_sign->pkey_n_sign, a_sign->header.sign_pkey_size );
         }else
@@ -484,17 +494,19 @@ size_t dap_cert_count_cert_sign(dap_cert_t * a_cert)
  * @brief show certificate information
  * @param a_cert dap_cert_t certificate object
  */
-void dap_cert_dump(dap_cert_t * a_cert)
+char *dap_cert_dump(dap_cert_t *a_cert)
 {
-    dap_printf ("Certificate name: %s\n",a_cert->name);
-    dap_printf ("Signature type: %s\n", dap_sign_type_to_str( dap_sign_type_from_key_type(a_cert->enc_key->type) ) );
-    dap_printf ("Private key size: %zu\n",a_cert->enc_key->priv_key_data_size);
-    dap_printf ("Public key size: %zu\n", a_cert->enc_key->pub_key_data_size);
+    dap_string_t *l_ret = dap_string_new("");
+    dap_string_append_printf(l_ret, "Certificate name: %s\n", a_cert->name);
+    dap_string_append_printf(l_ret, "Signature type: %s\n",
+                             dap_sign_type_to_str(dap_sign_type_from_key_type(a_cert->enc_key->type)));
+    dap_string_append_printf(l_ret, "Private key size: %zu\n", a_cert->enc_key->priv_key_data_size);
+    dap_string_append_printf(l_ret, "Public key size: %zu\n", a_cert->enc_key->pub_key_data_size);
     size_t l_meta_items_cnt = dap_binary_tree_count(a_cert->metadata);
-    dap_printf ("Metadata section count: %zu\n", l_meta_items_cnt);
-    dap_printf ("Certificates signatures chain size: %zu\n",dap_cert_count_cert_sign (a_cert));
+    dap_string_append_printf(l_ret, "Metadata section count: %zu\n", l_meta_items_cnt);
+    dap_string_append_printf(l_ret, "Certificates signatures chain size: %zu\n", dap_cert_count_cert_sign (a_cert));
     if (l_meta_items_cnt) {
-        printf ("Metadata sections\n");
+        dap_string_append(l_ret, "Metadata sections\n");
         dap_list_t *l_meta_list = dap_binary_tree_inorder_list(a_cert->metadata);
         dap_list_t *l_meta_list_item = dap_list_first(l_meta_list);
         while (l_meta_list_item) {
@@ -503,17 +515,17 @@ void dap_cert_dump(dap_cert_t * a_cert)
             switch (l_meta_item->type) {
             case DAP_CERT_META_STRING:
                 l_str = strndup((char *)l_meta_item->value, l_meta_item->length);
-                printf("%s\t%u\t%u\t%s\n", l_meta_item->key, l_meta_item->type, l_meta_item->length, l_str);
+                dap_string_append_printf(l_ret, "%s\t%u\t%u\t%s\n", l_meta_item->key, l_meta_item->type, l_meta_item->length, l_str);
                 free(l_str);
                 break;
             case DAP_CERT_META_INT:
             case DAP_CERT_META_BOOL:
-                printf("%s\t%u\t%u\t%u\n", l_meta_item->key, l_meta_item->type, l_meta_item->length, *(uint32_t *)l_meta_item->value);
+                dap_string_append_printf(l_ret, "%s\t%u\t%u\t%u\n", l_meta_item->key, l_meta_item->type, l_meta_item->length, *(uint32_t *)l_meta_item->value);
                 break;
             default:
                 l_str = l_meta_item->length ? DAP_NEW_Z_SIZE(char, l_meta_item->length * 2 + 1) : NULL;
                 dap_bin2hex(l_str, l_meta_item->value, l_meta_item->length);
-                printf("%s\t%u\t%u\t%s\n", l_meta_item->key, l_meta_item->type, l_meta_item->length, l_str);
+                dap_string_append_printf(l_ret, "%s\t%u\t%u\t%s\n", l_meta_item->key, l_meta_item->type, l_meta_item->length, l_str);
                 DAP_DELETE(l_str);
                 break;
             }
@@ -521,6 +533,7 @@ void dap_cert_dump(dap_cert_t * a_cert)
         }
         dap_list_free(l_meta_list);
     }
+    return dap_string_free(l_ret, false);
 }
 
 /**

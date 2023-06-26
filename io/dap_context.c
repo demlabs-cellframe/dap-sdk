@@ -751,7 +751,6 @@ static int s_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_QUEUE:
                         dap_events_socket_queue_proc_input_unsafe(l_cur);
                         dap_events_socket_set_writable_unsafe(l_cur, false);
-//                    break;
                         continue;
                     case DESCRIPTOR_TYPE_EVENT:
                         dap_events_socket_event_proc_input_unsafe(l_cur);
@@ -828,10 +827,11 @@ static int s_thread_loop(dap_context_t * a_context)
                 if(g_debug_reactor)
                     log_it(L_DEBUG, "RDHUP event on esocket %p (%"DAP_FORMAT_SOCKET") type %d", l_cur, l_cur->socket, l_cur->type);
             }
-
+            if (l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)
+                l_flag_write = false;
             // If its outgoing connection
-            if ((l_flag_write && !l_cur->server && l_cur->flags & DAP_SOCK_CONNECTING && l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT) ||
-                  (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL && l_cur->flags & DAP_SOCK_CONNECTING)) {
+            if (l_flag_write && ((!l_cur->server && l_cur->flags & DAP_SOCK_CONNECTING && l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT) ||
+                  (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL && l_cur->flags & DAP_SOCK_CONNECTING))) {
                 if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL) {
 #ifndef DAP_NET_CLIENT_NO_SSL
                     WOLFSSL *l_ssl = SSL(l_cur);
@@ -934,7 +934,9 @@ static int s_thread_loop(dap_context_t * a_context)
                             case DESCRIPTOR_TYPE_QUEUE:
                                 if (l_cur->flags & DAP_SOCK_QUEUE_PTR && l_cur->buf_out_size>= sizeof (void*)) {
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-                                    l_bytes_sent = write(l_cur->fd, l_cur->buf_out, sizeof(void *)); // We send pointer by pointer
+                                    l_bytes_sent = write(l_cur->fd, l_cur->buf_out, /* sizeof(void *) */ l_cur->buf_out_size);
+                                    l_errno = l_bytes_sent < (ssize_t)l_cur->buf_out_size ? errno : 0;
+                                    debug_if(l_errno, L_ERROR, "Writing to pipe %lu bytes failed, sent %lu only...", l_cur->buf_out_size, l_bytes_sent);
 #elif defined (DAP_EVENTS_CAPS_QUEUE_POSIX)
                                     l_bytes_sent = mq_send(a_es->mqd, (const char *)&a_arg,sizeof (a_arg),0);
 #elif defined DAP_EVENTS_CAPS_MSMQ
@@ -1422,9 +1424,14 @@ int dap_context_remove( dap_events_socket_t * a_es)
         return -1;
     }
 
-    l_context->event_sockets_count--;
-    if (a_es->socket)
-       HASH_DELETE(hh, l_context->esockets, a_es);
+    dap_events_socket_t *l_es = NULL;
+    HASH_FIND(hh, l_context->esockets, &a_es->uuid, sizeof(a_es->uuid), l_es);
+    if (!l_es || l_es != a_es)
+        log_it(L_ERROR, "Try to remove unexistent socket %p", a_es);
+    else {
+        l_context->event_sockets_count--;
+        HASH_DELETE(hh, l_context->esockets, a_es);
+    }
 
 #if defined(DAP_EVENTS_CAPS_EPOLL)
 

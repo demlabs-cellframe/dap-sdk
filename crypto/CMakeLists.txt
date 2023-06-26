@@ -313,11 +313,11 @@ if(UNIX)
 endif()
 
 if(WIN32)
-  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512)
+  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 json-c)
 endif()
 
 if(UNIX)
-  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 m)
+  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 json-c m)
 endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)

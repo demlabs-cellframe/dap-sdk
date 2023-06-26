@@ -192,7 +192,8 @@ static void *s_list_thread_proc(void *arg)
         uint64_t l_item_start = l_group_cur->last_id_synced + 1;
         dap_nanotime_t l_time_allowed = dap_nanotime_now() + dap_nanotime_from_sec(3600 * 24); // to be sure the timestamp is invalid
         while (l_group_cur->count && l_dap_db_log_list->is_process) { // Number of records to be synchronized
-            size_t l_item_count = min(64, l_group_cur->count);
+            size_t l_item_count = 0;//min(64, l_group_cur->count);
+            size_t l_objs_total_size = 0;
             dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, l_item_start, &l_item_count);
             if (!l_dap_db_log_list->is_process) {
                 dap_store_obj_free(l_objs, l_item_count);
@@ -232,11 +233,15 @@ static void *s_list_thread_proc(void *arg)
                 dap_store_packet_change_id(l_pkt, l_cur_id);
                 l_list_obj->pkt = l_pkt;
                 l_list = dap_list_append(l_list, l_list_obj);
+                l_objs_total_size += dap_db_log_list_obj_get_size(l_list_obj);
             }
             dap_store_obj_free(l_objs, l_item_count);
             pthread_mutex_lock(&l_dap_db_log_list->list_mutex);
             // add l_list to items_list
             l_dap_db_log_list->items_list = dap_list_concat(l_dap_db_log_list->items_list, l_list);
+            l_dap_db_log_list->size += l_objs_total_size;
+            while (l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE && l_dap_db_log_list->is_process)
+                pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
             pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
         }
         DAP_DEL_Z(l_del_group_name_replace);
@@ -358,6 +363,7 @@ dap_db_log_list_t* dap_db_log_list_start(dap_chain_net_t *l_net, dap_chain_node_
     }
     l_dap_db_log_list->is_process = true;
     pthread_mutex_init(&l_dap_db_log_list->list_mutex, NULL);
+    pthread_cond_init(&l_dap_db_log_list->cond, NULL);
     pthread_create(&l_dap_db_log_list->thread, NULL, s_list_thread_proc, l_dap_db_log_list);
     return l_dap_db_log_list;
 }
@@ -415,7 +421,12 @@ dap_db_log_list_obj_t *dap_db_log_list_get(dap_db_log_list_t *a_db_log_list)
         a_db_log_list->items_list = dap_list_remove_link(a_db_log_list->items_list, l_list);
         a_db_log_list->items_rest--;
         l_ret = l_list->data;
+        size_t l_old_size = a_db_log_list->size;
+        a_db_log_list->size -= dap_db_log_list_obj_get_size(l_ret);
         DAP_DELETE(l_list);
+        if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE &&
+                a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE)
+            pthread_cond_signal(&a_db_log_list->cond);
     }
     pthread_mutex_unlock(&a_db_log_list->list_mutex);
     //log_it(L_DEBUG, "get item n=%d", a_db_log_list->items_number - a_db_log_list->items_rest);
@@ -449,6 +460,7 @@ void dap_db_log_list_delete(dap_db_log_list_t *a_db_log_list)
     if(a_db_log_list->thread) {
         pthread_mutex_lock(&a_db_log_list->list_mutex);
         a_db_log_list->is_process = false;
+        pthread_cond_signal(&a_db_log_list->cond);
         pthread_mutex_unlock(&a_db_log_list->list_mutex);
         pthread_join(a_db_log_list->thread, NULL);
     }
@@ -472,11 +484,11 @@ bool	l_ret;
     if(!a_net_name)
         return false;
 
-    dap_snprintf(l_key, sizeof(l_key) - 1, "cur_node_addr_%s", a_net_name);
+    snprintf(l_key, sizeof(l_key) - 1, "cur_node_addr_%s", a_net_name);
 
     if ( (l_ret = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, l_key, &a_address, sizeof(a_address),
                                     true, NULL, NULL)) == 0 ) {
-        dap_snprintf(l_key, sizeof(l_key) - 1, "cur_node_addr_%s_time", a_net_name);
+        snprintf(l_key, sizeof(l_key) - 1, "cur_node_addr_%s_time", a_net_name);
         l_ret = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, l_key, &a_expire_time, sizeof(time_t),
                                    true, NULL, NULL) == DAP_GLOBAL_DB_RC_SUCCESS;
     }
@@ -525,8 +537,8 @@ time_t l_node_time = 0;
     if(!a_net_name)
         return 0;
 
-    dap_snprintf(l_key, sizeof(l_key) - 1, "cur_node_addr_%s", a_net_name);
-    dap_snprintf(l_key_time, sizeof(l_key_time) - 1, "cur_node_addr_%s_time", a_net_name);
+    snprintf(l_key, sizeof(l_key) - 1, "cur_node_addr_%s", a_net_name);
+    snprintf(l_key_time, sizeof(l_key_time) - 1, "cur_node_addr_%s_time", a_net_name);
 
     l_node_addr_data = dap_global_db_get_sync(DAP_GLOBAL_DB_LOCAL_GENERAL, l_key, &l_node_addr_len, NULL, NULL);
     l_node_time_data = dap_global_db_get_sync(DAP_GLOBAL_DB_LOCAL_GENERAL, l_key_time, &l_node_time_len, NULL, NULL);
@@ -581,7 +593,7 @@ bool dap_db_set_last_id_remote(uint64_t a_node_addr, uint64_t a_id, char *a_grou
 {
 char	l_key[DAP_GLOBAL_DB_KEY_MAX];
 
-    dap_snprintf(l_key, sizeof(l_key) - 1, "%"DAP_UINT64_FORMAT_U"%s", a_node_addr, a_group);
+    snprintf(l_key, sizeof(l_key) - 1, "%"DAP_UINT64_FORMAT_U"%s", a_node_addr, a_group);
     return dap_global_db_set(GROUP_LOCAL_NODE_LAST_ID,l_key, &a_id, sizeof(uint64_t), true, NULL, NULL ) == 0;
 }
 
@@ -620,7 +632,7 @@ bool dap_db_set_last_hash_remote(uint64_t a_node_addr, dap_chain_t *a_chain, dap
 {
 char	l_key[DAP_GLOBAL_DB_KEY_MAX];
 
-    dap_snprintf(l_key, sizeof(l_key) - 1, "%"DAP_UINT64_FORMAT_U"%s%s", a_node_addr, a_chain->net_name, a_chain->name);
+    snprintf(l_key, sizeof(l_key) - 1, "%"DAP_UINT64_FORMAT_U"%s%s", a_node_addr, a_chain->net_name, a_chain->name);
     return dap_global_db_set(GROUP_LOCAL_NODE_LAST_ID, l_key, a_hash, sizeof(dap_chain_hash_fast_t), true, NULL, NULL ) == 0;
 }
 

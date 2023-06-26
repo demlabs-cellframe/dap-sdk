@@ -155,8 +155,12 @@ ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint
         return dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
     if (a_client->connect_on_demand) {
         dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
-        a_client->stage_target = STAGE_STREAM_STREAMING;
         dap_client_pvt_queue_add(l_client_pvt, a_ch_id, a_type, a_data, a_data_size);
+        if (a_client->stage_target == STAGE_STREAM_STREAMING &&
+                    l_client_pvt->stage_status == STAGE_STATUS_IN_PROGRESS)
+            // Already going to aimed target stage
+            return 0;
+        a_client->stage_target = STAGE_STREAM_STREAMING;
         dap_client_pvt_stage_transaction_begin(l_client_pvt,
                                                STAGE_BEGIN,
                                                s_stage_fsm_operator_unsafe);
@@ -289,8 +293,7 @@ static void s_go_stage_on_client_worker_unsafe(UNUSED_ARG dap_worker_t *a_worker
     l_client->stage_target_done_callback = l_stage_end_callback;
     dap_client_stage_t l_cur_stage = l_client_pvt->stage;
     dap_client_stage_status_t l_cur_stage_status = l_client_pvt->stage_status;
-    if (l_cur_stage_status == STAGE_STATUS_COMPLETE) {
-        assert(l_client_pvt->stage == l_client->stage_target);
+    if (l_cur_stage_status == STAGE_STATUS_COMPLETE && l_client_pvt->stage == l_client->stage_target) {
         if (l_client->stage_target == l_stage_target) {
             log_it(L_DEBUG, "Already have target state %s", dap_client_stage_str(l_stage_target));
             if (l_stage_end_callback)
@@ -407,19 +410,25 @@ void dap_client_request_unsafe(dap_client_t * a_client, const char * a_full_path
  */
 const char * dap_client_error_str(dap_client_error_t a_client_error)
 {
-    switch(a_client_error){
-        case ERROR_OUT_OF_MEMORY: return "OUT_OF_MEMORY";
-        case ERROR_ENC_NO_KEY: return "ENC_NO_KEY";
-        case ERROR_ENC_WRONG_KEY: return "ENC_WRONG_KEY";
-        case ERROR_ENC_SESSION_CLOSED:  return "ENC_SESSION_CLOSED";
-        case ERROR_STREAM_RESPONSE_WRONG: return "STREAM_RESPONSE_WRONG";
-        case ERROR_STREAM_RESPONSE_TIMEOUT: return "STREAM_RESPONSE_TIMEOUT";
-        case ERROR_STREAM_FREEZED: return "STREAM_FREEZED";
-        case ERROR_STREAM_CTL_ERROR: return "STREAM_CTL_ERROR";
-        case ERROR_STREAM_CTL_ERROR_AUTH: return "STREAM_CTL_ERROR_AUTH";
-        case ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT: return "STREAM_CTL_ERROR_RESPONSE_FORMAT";
-        case ERROR_NETWORK_CONNECTION_TIMEOUT: return "NETWORK_CONNECTION_TIMEOUT";
-        default : return "UNDEFINED";
+    switch (a_client_error) {
+    case ERROR_NO_ERROR: return "NO_ERROR";
+    case ERROR_OUT_OF_MEMORY: return "OUT_OF_MEMORY";
+    case ERROR_ENC_NO_KEY: return "ENC_NO_KEY";
+    case ERROR_ENC_WRONG_KEY: return "ENC_WRONG_KEY";
+    case ERROR_ENC_SESSION_CLOSED:  return "ENC_SESSION_CLOSED";
+    case ERROR_STREAM_CTL_ERROR: return "STREAM_CTL_ERROR";
+    case ERROR_STREAM_CTL_ERROR_AUTH: return "STREAM_CTL_ERROR_AUTH";
+    case ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT: return "STREAM_CTL_ERROR_RESPONSE_FORMAT";
+    case ERROR_STREAM_CONNECT: return "STREAM_CONNECTION_ERROR";
+    case ERROR_STREAM_RESPONSE_WRONG: return "STREAM_RESPONSE_WRONG";
+    case ERROR_STREAM_RESPONSE_TIMEOUT: return "STREAM_RESPONSE_TIMEOUT";
+    case ERROR_STREAM_FREEZED: return "STREAM_FREEZED";
+    case ERROR_STREAM_ABORTED: return "STREAM_ABORTED";
+    case ERROR_NETWORK_CONNECTION_REFUSE: return "NETWORK_CONNECTION_REFUSED";
+    case ERROR_NETWORK_CONNECTION_TIMEOUT: return "NETWORK_CONNECTION_TIMEOUT";
+    case ERROR_WRONG_STAGE: return "INCORRECT_CLIENT_STAGE";
+    case ERROR_WRONG_ADDRESS: return "INCORRECT_CLIENT_ADDRESS";
+    default : return "UNDEFINED";
     }
 }
 

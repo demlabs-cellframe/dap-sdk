@@ -43,7 +43,7 @@ dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key)
             return NULL;
         }
         size_t l_pub_key_size;
-        uint8_t *l_pkey = dap_enc_key_serealize_pub_key(a_key, &l_pub_key_size);
+        uint8_t *l_pkey = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
         if (!l_pkey) {
             log_it(L_WARNING, "Serialization failed");
             return NULL;
@@ -59,11 +59,4 @@ dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key)
         return NULL;
     }
     return NULL;
-}
-
-bool dap_pkey_compare_with_sign(dap_pkey_t *a_pkey, dap_sign_t *a_sign)
-{
-    return (dap_pkey_type_to_enc_key_type(a_pkey->header.type) == dap_sign_type_to_key_type(a_sign->header.type) &&
-            a_pkey->header.size == a_sign->header.sign_pkey_size &&
-            !memcmp(a_pkey->pkey, a_sign->pkey_n_sign, a_pkey->header.size));
 }

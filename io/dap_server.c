@@ -79,6 +79,9 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
 static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr* a_remote_addr);
 static void s_es_server_error(dap_events_socket_t *a_es, int a_arg);
 static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg);
+
+static dap_server_t* s_default_server = NULL;
+
 /**
  * @brief dap_server_init
  * @return
@@ -94,6 +97,16 @@ int dap_server_init()
  */
 void dap_server_deinit()
 {
+}
+
+void dap_server_set_default(dap_server_t* a_server)
+{
+    s_default_server = a_server;
+}
+
+dap_server_t* dap_server_get_default()
+{
+    return s_default_server;
 }
 
 /**
@@ -155,7 +168,7 @@ dap_server_t* dap_server_new_local(const char * a_path, const char* a_mode, dap_
 
     mode_t l_listen_unix_socket_permissions = 0770;
     if (a_mode){
-        dap_sscanf(a_mode,"%ou", &l_listen_unix_socket_permissions );
+        sscanf(a_mode,"%ou", &l_listen_unix_socket_permissions );
     }
 
 
@@ -307,7 +320,7 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
 #endif
             l_es->_inheritor = a_server;
             pthread_mutex_lock(&a_server->started_mutex);
-            dap_worker_add_events_socket( l_es, l_w );
+            dap_worker_add_events_socket( l_w, l_es );
             while (!a_server->started)
                 pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
             pthread_mutex_unlock(&a_server->started_mutex);
@@ -332,7 +345,7 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
         l_es->type = a_server->type == SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
         l_es->_inheritor = a_server;
         pthread_mutex_lock(&a_server->started_mutex);
-        dap_worker_add_events_socket( l_es, l_w );
+        dap_worker_add_events_socket( l_w, l_es );
         while (!a_server->started)
             pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
         pthread_mutex_unlock(&a_server->started_mutex);

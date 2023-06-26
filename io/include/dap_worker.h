@@ -102,12 +102,20 @@ static inline dap_worker_t * dap_worker_get_current(){
 static inline int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socket_t *a_esocket)
 {
     int err = dap_context_add(a_worker->context, a_esocket);
-    if (!err)
+    if (!err) {
         a_esocket->is_initalized = true;
+        switch (a_esocket->type) {
+        case DESCRIPTOR_TYPE_SOCKET_UDP:
+        case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+        case DESCRIPTOR_TYPE_SOCKET_LISTENING:
+            a_esocket->last_time_active = time(NULL);
+        default:;
+        }
+    }
     return err;
 }
 
-void dap_worker_add_events_socket(dap_events_socket_t * a_events_socket, dap_worker_t * a_worker);
+void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket);
 void dap_worker_add_events_socket_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_events_socket);
 dap_worker_t *dap_worker_add_events_socket_auto( dap_events_socket_t * a_events_socket );
 void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg);

@@ -15,7 +15,9 @@
 #define HAVE_DLFCN_H
 
 /* Define to 1 if you have the <endian.h> header file. */
+#ifndef DAP_OS_WINDOWS
 #define HAVE_ENDIAN_H
+#endif
 
 /* Define to 1 if you have the <fcntl.h> header file. */
 #define HAVE_FCNTL_H
@@ -48,7 +50,9 @@
 #define HAVE_STRING_H
 
 /* Define to 1 if you have the <syslog.h> header file. */
+#ifndef DAP_OS_WINDOWS
 #define HAVE_SYSLOG_H 1
+#endif
 
 /* Define to 1 if you have the <sys/cdefs.h> header file. */
 #define HAVE_SYS_CDEFS_H
@@ -129,7 +133,9 @@
 #define HAVE_STRNCASECMP 1
 
 /* Define to 1 if you have the `uselocale' function. */
+#ifndef DAP_OS_WINDOWS
 #define HAVE_USELOCALE
+#endif
 
 /* Define to 1 if you have the `vasprintf' function. */
 #define HAVE_VASPRINTF
@@ -141,11 +147,13 @@
 #define HAVE_VSNPRINTF
 
 /* Define to 1 if you have the `vsyslog' function. */
+#ifndef DAP_OS_WINDOWS
 #define HAVE_VSYSLOG 1
+#endif
 
-#ifdef DAP_OS_ANDROID
+#if defined (DAP_OS_ANDROID)
 #define ENABLE_RDRAND
-#else
+#elif !defined (DAP_OS_WINDOWS)
 /* Define if you have the `getrandom' function. */
 #define HAVE_GETRANDOM
 #endif

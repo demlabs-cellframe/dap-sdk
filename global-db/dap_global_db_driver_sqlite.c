@@ -327,7 +327,7 @@ char    *l_error_message, l_query[512];
     if ( !(l_conn = s_sqlite_get_connection()) )
         return log_it(L_ERROR, "Error create group table '%s'", a_table_name), -ENOENT;
 
-    dap_snprintf(l_query, sizeof(l_query) - 1,
+    snprintf(l_query, sizeof(l_query) - 1,
                     "CREATE TABLE IF NOT EXISTs '%s'(id INTEGER NOT NULL PRIMARY KEY, key TEXT KEY, hash BLOB, ts INTEGER KEY, value BLOB)",
                     a_table_name);
 
@@ -339,7 +339,7 @@ char    *l_error_message, l_query[512];
     }
 
     // create unique index - key
-    dap_snprintf(l_query, sizeof(l_query) - 1,
+    snprintf(l_query, sizeof(l_query) - 1,
                  "CREATE UNIQUE INDEX IF NOT EXISTS 'idx_key_%s' ON '%s' (key)", a_table_name,
                 a_table_name);
 

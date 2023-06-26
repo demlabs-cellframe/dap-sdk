@@ -208,15 +208,6 @@ void dap_http_simple_set_pass_unknown_user_agents(int pass)
     is_unknown_user_agents_pass = pass;
 }
 
-inline static bool s_is_supported_user_agents_list_setted(void)
-{
-  user_agents_item_t * tmp;
-  int cnt = 0;
-  LL_COUNT(user_agents_list, tmp, cnt);
-
-  return cnt;
-}
-
 static void s_esocket_worker_write_callback(dap_worker_t *a_worker, void *a_arg)
 {
     UNUSED(a_worker);
@@ -315,23 +306,25 @@ static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void * a_arg )
 
     http_status_code_t return_code = (http_status_code_t)0;
 
-    if(s_is_supported_user_agents_list_setted() == true) {
-        dap_http_header_t *header = dap_http_header_find(l_http_simple->http_client->in_headers, "User-Agent");
-        if (!header && !is_unknown_user_agents_pass) {
-            const char error_msg[] = "Not found User-Agent HTTP header";
-            s_write_response_bad_request(l_http_simple, error_msg);
+    user_agents_item_t *l_tmp;
+    int l_cnt = 0;
+    LL_COUNT(user_agents_list, l_tmp, l_cnt);
+    if (l_cnt) {
+        dap_http_header_t *l_header = dap_http_header_find(l_http_simple->http_client->in_headers, "User-Agent");
+        if (!l_header && !is_unknown_user_agents_pass) {
+            const char l_error_msg[] = "Not found User-Agent HTTP header";
+            s_write_response_bad_request(l_http_simple, l_error_msg);
             s_write_data_to_socket(a_thread, l_http_simple);
             return true;
         }
 
-        if(header)
-            if(s_is_user_agent_supported(header->value) == false) {
-                log_it(L_DEBUG, "Not supported user agent in request: %s", header->value);
-                const char* error_msg = "User-Agent version not supported. Update your software";
-                s_write_response_bad_request(l_http_simple, error_msg);
-                s_write_data_to_socket(a_thread, l_http_simple);
-                return true;
-            }
+        if (l_header && s_is_user_agent_supported(l_header->value) == false) {
+            log_it(L_DEBUG, "Not supported user agent in request: %s", l_header->value);
+            const char *l_error_msg = "User-Agent version not supported. Update your software";
+            s_write_response_bad_request(l_http_simple, l_error_msg);
+            s_write_data_to_socket(a_thread, l_http_simple);
+            return true;
+        }
     }
 
     DAP_HTTP_SIMPLE_URL_PROC(l_http_simple->http_client->proc)->proc_callback(l_http_simple,&return_code);
@@ -490,7 +483,7 @@ size_t dap_http_simple_reply_f(dap_http_simple_t *a_http_simple, const char *a_f
     va_list ap, ap_copy;
     va_start(ap, a_format);
     va_copy(ap_copy, ap);
-    ssize_t l_buf_size = dap_vsnprintf(NULL, 0, a_format, ap);
+    ssize_t l_buf_size = vsnprintf(NULL, 0, a_format, ap);
     va_end(ap);
 
     if (l_buf_size++ < 0) {
@@ -498,7 +491,7 @@ size_t dap_http_simple_reply_f(dap_http_simple_t *a_http_simple, const char *a_f
         return 0;
     }
     char *l_buf = DAP_NEW_SIZE(char, l_buf_size);
-    dap_vsprintf(l_buf, a_format, ap_copy);
+    vsprintf(l_buf, a_format, ap_copy);
     va_end(ap_copy);
 
     size_t l_ret = dap_http_simple_reply(a_http_simple, l_buf, l_buf_size);
