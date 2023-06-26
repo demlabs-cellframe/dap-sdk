@@ -48,6 +48,8 @@ typedef union dap_chain_hash_fast{
     uint8_t raw[DAP_CHAIN_HASH_FAST_SIZE];
 } DAP_ALIGN_PACKED dap_chain_hash_fast_t;
 typedef dap_chain_hash_fast_t dap_hash_fast_t;
+typedef dap_hash_fast_t dap_hash_t;
+
 
 #ifdef __cplusplus
 extern "C" {
