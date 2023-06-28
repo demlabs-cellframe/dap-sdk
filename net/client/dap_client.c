@@ -201,6 +201,15 @@ int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_ty
     return 0;
 }
 
+static void s_client_queue_clear_on_worker(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
+{
+    dap_client_pvt_queue_clear(DAP_CLIENT_PVT((dap_client_t *)a_arg));
+}
+
+void dap_client_queue_clear(dap_client_t *a_client)
+{
+    dap_worker_exec_callback_on(DAP_CLIENT_PVT(a_client)->worker, s_client_queue_clear_on_worker, a_client);
+}
 
 /**
  * @brief dap_client_set_auth_cert

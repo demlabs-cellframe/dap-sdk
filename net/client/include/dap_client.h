@@ -133,6 +133,7 @@ void dap_client_delete_unsafe(dap_client_t * a_client);
 
 ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
 int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
+void dap_client_queue_clear(dap_client_t *a_client);
 
 void dap_client_request_enc_unsafe(dap_client_t * a_client, const char * a_path,const char * a_suburl,const char* a_query, void * a_request, size_t a_request_size,
                                 dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error);

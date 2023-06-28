@@ -87,7 +87,7 @@ typedef struct dap_client_pkt_queue_elm {
     byte_t data[];
 } dap_client_pkt_queue_elm_t;
 
-#define DAP_CLIENT_PVT(a) (a ? (dap_client_pvt_t*) a->_internal : NULL)
+#define DAP_CLIENT_PVT(a) ((a) ? (dap_client_pvt_t *)(a)->_internal : NULL)
 
 int dap_client_pvt_init();
 void dap_client_pvt_deinit();
@@ -106,3 +106,4 @@ void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char
 void dap_client_pvt_new(dap_client_pvt_t *a_client_internal);
 void dap_client_pvt_delete_unsafe(dap_client_pvt_t *a_client_pvt);
 void dap_client_pvt_queue_add(dap_client_pvt_t *a_client_pvt, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
+int dap_client_pvt_queue_clear(dap_client_pvt_t *a_client_pvt);

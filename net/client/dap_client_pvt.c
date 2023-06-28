@@ -295,6 +295,15 @@ void dap_client_pvt_queue_add(dap_client_pvt_t *a_client_pvt, const char a_ch_id
     a_client_pvt->pkt_queue = dap_list_append(a_client_pvt->pkt_queue, l_pkt);
 }
 
+int dap_client_pvt_queue_clear(dap_client_pvt_t *a_client_pvt)
+{
+    if (!a_client_pvt->pkt_queue)
+        return -2;
+    dap_list_free_full(a_client_pvt->pkt_queue, NULL);
+    a_client_pvt->pkt_queue = NULL;
+    return 0;
+}
+
 static bool s_timer_reconnect_callback(void *a_arg)
 {
     assert(a_arg);
