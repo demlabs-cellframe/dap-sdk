@@ -8,5 +8,5 @@ add_library(${PROJECT_NAME} STATIC ${DAP_NOTIFY_SRV_SRCS} ${DAP_NOTIFY_SRV_HDRS}
 target_include_directories(${PROJECT_NAME} INTERFACE . include/)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_io json-c )
+target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json-c )
 
