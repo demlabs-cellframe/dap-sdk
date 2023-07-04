@@ -24,18 +24,6 @@
 #define INT_TO_POINTER(i)   ((void*)  (i))
 #define UINT_TO_POINTER(u)  ((void*)  (u))
 
-#undef  max
-#define max(a, b)  (((a) > (b)) ? (a) : (b))
-
-#undef  min
-#define min(a, b)  (((a) < (b)) ? (a) : (b))
-
-#undef  abs
-#define abs(a)     (((a) < 0) ? -(a) : (a))
-
-#undef  clamp
-#define clamp(x, low, high)  (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
-
 #ifdef __cplusplus
 extern "C" {
 #endif

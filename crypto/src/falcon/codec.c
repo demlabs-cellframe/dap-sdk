@@ -477,7 +477,7 @@ Zf(comp_decode)(
  * coefficients. Here are some statistics gathered over many
  * generated key pairs (10000 or more for each degree):
  *
- *   log(n)     n   max(f,g)   std(f,g)   max(F,G)   std(F,G)
+ *   log(n)     n   MAX(f,g)   std(f,g)   MAX(F,G)   std(F,G)
  *      1       2     129       56.31       143       60.02
  *      2       4     123       40.93       160       46.52
  *      3       8      97       28.97       159       38.01

@@ -167,7 +167,7 @@ char    l_buf[1024] = {0};
     else {
         while ( !(l_rc = mdbx_cursor_get (l_cursor, &l_key_iov, &l_data_iov, MDBX_NEXT )) )
             {
-            l_rc = dap_bin2hex (l_buf, l_data_iov.iov_base, min(l_data_iov.iov_len, 72) );
+            l_rc = dap_bin2hex (l_buf, l_data_iov.iov_base, MIN(l_data_iov.iov_len, 72) );
 
             debug_if(g_dap_global_db_debug_more, L_DEBUG, "[0:%zu]: '%.*s' = [0:%zu]: '%.*s'",
                     l_key_iov.iov_len, (int) l_key_iov.iov_len, (char *) l_key_iov.iov_base,
@@ -1187,7 +1187,7 @@ MDBX_stat   l_stat;
         else if ( !l_stat.ms_entries )                                      /* Nothing to retrieve , table contains no record */
             break;
 
-        if ( !(  l_count_out = min(l_stat.ms_entries, l_count_out)) ) {
+        if ( !(  l_count_out = MIN(l_stat.ms_entries, l_count_out)) ) {
             debug_if(g_dap_global_db_debug_more, L_WARNING, "No object (-s) to be retrieved from the group '%s'", a_group);
             break;
         }

@@ -3859,8 +3859,8 @@ node_largedata_pgno(const MDBX_node *const __restrict node) {
  *  - Dupsort values itself are a keys in a dupsort-subdb and couldn't be longer
  *    than the KEYLEN_MAX. But dupsort node must not great than LEAF_NODE_MAX,
  *    since dupsort value couldn't be placed on a large/overflow page:
- *       DUPSORT_DATALEN_MAX = min(KEYLEN_MAX,
- *                                 max(DATALEN_NO_OVERFLOW, sizeof(MDBX_db));
+ *       DUPSORT_DATALEN_MAX = MIN(KEYLEN_MAX,
+ *                                 MAX(DATALEN_NO_OVERFLOW, sizeof(MDBX_db));
  */
 
 #define PAGEROOM(pagesize) ((pagesize)-PAGEHDRSZ)
