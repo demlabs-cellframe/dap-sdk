@@ -4,7 +4,7 @@ project (dap_global_db C)
 file(GLOB dap_global_db_SRC *.c)
 file(GLOB dap_global_db_HDR include/*.h)
 
-set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream sqlite3 json-c)
+set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream sqlite3 dap_json-c)
 
 if(BUILD_WITH_GDB_DRIVER_MDBX)
     set(SAVED_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})
