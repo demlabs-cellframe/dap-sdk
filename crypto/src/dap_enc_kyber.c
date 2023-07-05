@@ -1,11 +1,9 @@
 #include "dap_common.h"
-#include "dap_enc_key.h"
 #include "dap_enc_kyber.h"
-#include "kyber512.h"
-#include "symmetric.h"
+
 
 #define LOG_TAG "dap_enc_kyber"
-
+#include "symmetric.h"
 /**
  * @brief dap_enc_kyber_key_new
  * @param a_key

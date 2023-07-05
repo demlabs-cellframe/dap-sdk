@@ -312,12 +312,14 @@ if(UNIX)
   endif()
 endif()
 
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
+
 if(WIN32)
-  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 json-c)
+  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c)
 endif()
 
 if(UNIX)
-  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 json-c m)
+  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c m)
 endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)

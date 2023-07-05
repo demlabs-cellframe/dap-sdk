@@ -24,21 +24,21 @@
 #define INT_TO_POINTER(i)   ((void*)  (i))
 #define UINT_TO_POINTER(u)  ((void*)  (u))
 
-#undef  max
-#define max(a, b)  (((a) > (b)) ? (a) : (b))
-
-#undef  min
-#define min(a, b)  (((a) < (b)) ? (a) : (b))
-
-#undef  abs
-#define abs(a)     (((a) < 0) ? -(a) : (a))
-
-#undef  clamp
-#define clamp(x, low, high)  (((x) > (high)) ? (high) : (((x) < (low)) ? (low) : (x)))
-
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#undef  max
+#define max(a,b) \
+  ({ size_t _a = (a); \
+      size_t _b = (b); \
+    _a > _b ? _a : _b; })
+
+#undef  min
+#define min(a,b) \
+  ({ size_t _a = (a); \
+      size_t _b = (b); \
+    _a < _b ? _a : _b; })
 
 #ifdef _WIN32
 char *strptime(const char *buff, const char *fmt, struct tm *tm);
