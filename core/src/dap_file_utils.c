@@ -562,10 +562,8 @@ static bool get_contents_stdio(const char *filename, FILE *f, char **contents, s
     char *tmp;
     assert(f != NULL);
     while(!feof(f)) {
-        int save_errno;
 
         bytes = fread(buf, 1, sizeof(buf), f);
-        save_errno = errno;
 
         if(total_bytes > ULONG_MAX - bytes)
             goto file_too_large;

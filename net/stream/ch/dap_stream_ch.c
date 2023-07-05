@@ -153,6 +153,10 @@ dap_stm_ch_rec_t    *l_rec;
 #endif
     l_rc = pthread_rwlock_unlock(&s_stm_ch_lock);
     assert(!l_rc);
+#ifndef DAP_DEBUG
+    UNUSED(l_rc);
+#endif
+
 
     debug_if(g_debug_reactor, L_NOTICE, "dap_stream_ch_t:%p - is allocated", l_stm_ch);
 
@@ -198,6 +202,9 @@ dap_stm_ch_rec_t    *l_rec = NULL;
 
     l_rc = pthread_rwlock_unlock(&s_stm_ch_lock);
     assert(!l_rc);
+#ifndef DAP_DEBUG
+    UNUSED(l_rc);
+#endif
 
     if ( !l_rec )
         log_it(L_ERROR, "dap_stream_ch_t:%p - no record found!", a_stm_ch);

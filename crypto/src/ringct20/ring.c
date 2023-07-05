@@ -381,11 +381,6 @@ void MIMO_LRCT_Hash(/*int *pTable, */poly_ringct20 *cn, poly_ringct20 *a, poly_r
 	unsigned char bpoly[NEWHOPE_RINGCT20_POLYBYTES] = { 0 };
     unsigned char bt[NEWHOPE_RINGCT20_POLYCOMPRESSEDBYTES] = { 0 };
 	int i;
-	int tmpTable[NEWHOPE_RINGCT20_N] = { 0 };
-	for ( i = 0; i < NEWHOPE_RINGCT20_N; i++)
-	{
-		tmpTable[i] = i;
-	}
     Keccak_HashInitialize_SHA3_KDF(&ctx, NEWHOPE_RINGCT20_POLYCOMPRESSEDBYTES);//Keccak_HashInitialize_SHA3_256(&ctx);//SHA256_Init(&ctx);
 	////H(L)
 	for (i = 0; i < beta; i++)

@@ -23,6 +23,11 @@
 */
 #pragma once
 
+#undef CRYPTO_SECRETKEYBYTES
+#undef CRYPTO_PUBLICKEYBYTES
+#undef CRYPTO_CIPHERTEXTBYTES
+#undef CRYPTO_BYTES
+#undef CRYPTO_ALGNAME
 #include "newhope/newhope_cpakem.h"
 #include "dap_enc_key.h"
 

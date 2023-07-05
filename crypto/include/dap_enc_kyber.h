@@ -5,6 +5,11 @@
 extern "C" {
 #endif
 
+#undef CRYPTO_SECRETKEYBYTES
+#undef CRYPTO_PUBLICKEYBYTES
+#undef CRYPTO_CIPHERTEXTBYTES
+#undef CRYPTO_BYTES
+#undef CRYPTO_ALGNAME
 #include "kyber512.h"
 #include "kem.h"
 

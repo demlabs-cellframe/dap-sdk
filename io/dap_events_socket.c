@@ -182,6 +182,10 @@ dap_evsock_rec_t    *l_es_rec;
     HASH_ADD(hh, s_evsocks, es, sizeof(dap_events_socket_t *), l_es_rec );
     l_rc = pthread_rwlock_unlock(&s_evsocks_lock);
     assert(!l_rc);
+#ifndef DAP_DEBUG
+    UNUSED(l_rc);
+#endif
+
 
     debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is allocated", l_es);
 
@@ -226,7 +230,9 @@ dap_evsock_rec_t    *l_es_rec = NULL;
 
     l_rc = pthread_rwlock_unlock(&s_evsocks_lock);
     assert(!l_rc);
-
+#ifndef DAP_DEBUG
+    UNUSED(l_rc);
+#endif
     if ( !l_es_rec )
         log_it(L_ERROR, "dap_events_socket:%p - no record found!", a_es);
     else {
@@ -245,8 +251,6 @@ dap_evsock_rec_t    *l_es_rec = NULL;
  */
 int     dap_events_socket_init( void )
 {
-int l_rc;
-
     log_it(L_NOTICE,"Initialized events socket module");
 
 #ifdef  DAP_SYS_DEBUG
@@ -259,8 +263,8 @@ int l_rc;
      * @RRL: #6157
      * Use this thread's attribute to eliminate resource consuming by terminated threads
      */
-    l_rc = pthread_attr_init(&s_attr_detached);
-    l_rc = pthread_attr_setdetachstate(&s_attr_detached, PTHREAD_CREATE_DETACHED);
+    pthread_attr_init(&s_attr_detached);
+    pthread_attr_setdetachstate(&s_attr_detached, PTHREAD_CREATE_DETACHED);
 
 #if defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
 #include <sys/time.h>

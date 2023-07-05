@@ -563,10 +563,6 @@ dap_client_http_t * dap_client_http_request_custom (
         return NULL;
     }
 #endif
-    // set socket param
-    struct timeval timeout;
-    timeout.tv_sec = 10;
-    timeout.tv_usec = 0;
 
     dap_events_socket_t *l_ev_socket = dap_events_socket_wrap_no_add(l_socket, &l_s_callbacks);
 

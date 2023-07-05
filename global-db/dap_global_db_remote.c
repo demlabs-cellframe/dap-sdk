@@ -200,6 +200,8 @@ static void *s_list_thread_proc(void *arg)
                 break;
             // set new start pos = lastitem pos + 1
             l_item_start = l_objs[l_item_count - 1].id + 1;
+            // TODO
+            UNUSED(l_item_start);
             l_group_cur->count = 0; //-= l_item_count;
             dap_list_t *l_list = NULL;
             for (size_t i = 0; i < l_item_count; i++) {
@@ -568,7 +570,7 @@ unsigned char *pdata;
 dap_store_obj_t *dap_global_db_pkt_deserialize(const dap_global_db_pkt_t *a_pkt, size_t *a_store_obj_count)
 {
 uint32_t l_count, l_cur_count;
-uint64_t l_offset, l_size ;
+uint64_t l_size;
 unsigned char *pdata, *pdata_end;
 dap_store_obj_t *l_store_obj_arr, *l_obj;
 
@@ -576,7 +578,6 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         return NULL;
 
     l_count = a_pkt->obj_count;
-    l_offset = 0;
     l_size = l_count <= UINT16_MAX ? l_count * sizeof(struct dap_store_obj) : 0;
 
     l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_size);

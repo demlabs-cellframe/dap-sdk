@@ -194,7 +194,9 @@ int     l_rc;
     s_conn_free_present = true;
     l_rc = pthread_cond_signal(&s_conn_free_cnd);
     l_rc = pthread_mutex_unlock(&s_conn_free_mtx);
-
+#ifndef DAP_DEBUG
+    UNUSED(l_rc);
+#endif
     return  0;
 }
 
