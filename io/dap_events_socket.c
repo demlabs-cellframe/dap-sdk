@@ -415,6 +415,10 @@ void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t * a_e
  */
 void dap_events_socket_reassign_between_workers_mt(dap_worker_t * a_worker_old, dap_events_socket_t * a_es, dap_worker_t * a_worker_new)
 {
+    if(a_es == NULL || a_worker_new == NULL || a_worker_old == NULL){
+        log_it(L_ERROR, "Argument is not initialized, can't call dap_events_socket_reassign_between_workers_mt");
+        return;
+    }
     dap_worker_msg_reassign_t * l_msg = DAP_NEW_Z(dap_worker_msg_reassign_t);
     l_msg->esocket = a_es;
     l_msg->esocket_uuid = a_es->uuid;

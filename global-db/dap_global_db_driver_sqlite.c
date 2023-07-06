@@ -693,6 +693,10 @@ int dap_db_driver_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
  */
 static void fill_one_item(const char *a_group, dap_store_obj_t *a_obj, SQLITE_ROW_VALUE *a_row)
 {
+    if(a_obj == NULL){
+        log_it(L_ERROR, "Object is not initialized, can't call fill_one_item");
+        return;
+    }
     a_obj->group = dap_strdup(a_group);
 
     for(int l_iCol = 0; l_iCol < a_row->count; l_iCol++) {
