@@ -22,7 +22,9 @@ if ("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
             -DCMAKE_MAKE_PROGRAM=D:/android-sdk/cmake/3.22.1/bin/ninja.exe
             -G=Ninja)
     else()
-        set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND})
+        set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND}
+            -DCMAKE_MAKE_PROGRAM=D:/msys64/mingw64/bin/ninja.exe
+            -G=Ninja)
     endif()
 elseif(ANDROID)
     set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} -E env PATH=$ENV{PATH}
