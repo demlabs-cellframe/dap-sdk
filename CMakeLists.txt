@@ -19,11 +19,9 @@ if ("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
             -DANDROID_ABI=arm64-v8a
             -DANDROID_PLATFORM=${ANDROID_PLATFORM}
             -DCMAKE_TOOLCHAIN_FILE=D:/android-sdk/ndk/21.4.7075529/build/cmake/android.toolchain.cmake
-            -DCMAKE_MAKE_PROGRAM=D:/android-sdk/cmake/3.22.1/bin/ninja.exe
             -G=Ninja)
     else()
         set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND}
-            -DCMAKE_MAKE_PROGRAM=D:/msys64/mingw64/bin/ninja.exe
             -G=Ninja)
     endif()
 elseif(ANDROID)
