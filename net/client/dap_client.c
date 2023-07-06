@@ -148,8 +148,10 @@ void dap_client_set_active_channels_unsafe (dap_client_t * a_client, const char 
 
 ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size)
 {
-    if (!a_client->active_channels || !strchr(a_client->active_channels, a_ch_id))
+    if (!a_client->active_channels || !strchr(a_client->active_channels, a_ch_id) || !a_client) {
+        log_it(L_ERROR,"Arguments is NULL for dap_client_write_unsafe");
         return -1;
+    }
     dap_stream_ch_t *l_ch = dap_client_get_stream_ch_unsafe(a_client, a_ch_id);
     if (l_ch)
         return dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);

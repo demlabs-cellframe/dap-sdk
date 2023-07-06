@@ -107,6 +107,9 @@ void dilithium_private_and_public_keys_delete(dilithium_private_key_t *private_k
 
 static int32_t dilithium_private_and_public_keys_init(dilithium_private_key_t *private_key, dilithium_public_key_t *public_key, dilithium_param_t *p){
 
+    if (p == NULL)
+        return -1;
+
     unsigned char *f = NULL, *g = NULL;
 
     f = calloc(p->CRYPTO_PUBLICKEYBYTES, sizeof(unsigned char));

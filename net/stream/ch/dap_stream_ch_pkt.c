@@ -158,8 +158,10 @@ size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t * a_queue  , dap_stre
  */
 size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_data, size_t a_data_size)
 {
-    if (!a_worker)
+    if (!a_worker || !a_data) {
+        log_it(L_ERROR, "Arguments is NULL for dap_stream_ch_pkt_write_mt");
         return 0;
+    }
     dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
     l_msg->ch_uuid = a_ch_uuid;
     l_msg->ch_pkt_type = a_type; 
