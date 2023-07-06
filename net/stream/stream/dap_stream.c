@@ -767,7 +767,7 @@ void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready)
 size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
 {
     dap_stream_pkt_t *l_pkt = NULL;
-    if(!a_stream || !a_stream->esocket || !a_stream->esocket->buf_in)
+    if(!a_stream || !a_stream->esocket || !a_stream->esocket->buf_in) {
         log_it(L_ERROR, "Arguments is NULL for dap_stream_data_proc_read");
         return 0;
     }
