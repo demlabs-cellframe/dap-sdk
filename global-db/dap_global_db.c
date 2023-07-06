@@ -253,6 +253,10 @@ static struct sync_obj_data_callback* s_global_db_obj_data_callback_new() {
 }
 
 static void s_global_db_obj_data_callback_wait(struct sync_obj_data_callback* a_obj, const char *a_module) {
+    if (!a_obj) {
+        log_it(L_ERROR, "Object is NULL %s, can't call s_global_db_obj_data_callback_wait", a_obj);
+        return;
+    }
     while (!a_obj->hdr.called)
         if (pthread_cond_timedwait(&a_obj->hdr.cond, &a_obj->hdr.mutex, &a_obj->hdr.timer_timeout) == ETIMEDOUT) {
             log_it(L_ERROR, "Global DB %s operation timeout", a_module);
@@ -405,8 +409,10 @@ byte_t *dap_global_db_get_unsafe(dap_global_db_context_t *a_global_db_context, c
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get call executes for group \"%s\" and key \"%s\"", a_group, a_key);
     dap_store_obj_t *l_store_obj = dap_global_db_get_raw_unsafe(a_global_db_context, a_group, a_key);
-    if (!l_store_obj)
+    if (!l_store_obj) {
+        // log_it(L_ERROR, "%s is not found", a_key);
         return NULL;
+    }
     if (a_data_size)
         *a_data_size = l_store_obj->value_len;
     if (a_is_pinned)
@@ -759,8 +765,10 @@ byte_t *dap_global_db_get_last_unsafe(dap_global_db_context_t *a_global_db_conte
                                       bool *a_is_pinned, dap_nanotime_t *a_ts)
 {
     dap_store_obj_t *l_store_obj = dap_global_db_get_last_raw_unsafe(a_global_db_context, a_group);
-    if (!l_store_obj)
+    if (!l_store_obj) {
+        log_it(L_ERROR, "l_store_ibj is not initialized, can't call dap_global_db_get_last_unsafe");
         return NULL;
+    }
     if (a_key)
         *a_key = dap_strdup(l_store_obj->key);
     if (a_data_size)
@@ -1275,6 +1283,11 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
+        return DAP_GLOBAL_DB_RC_ERROR;
+    }
+
+    if(a_value == NULL){
+        log_it(L_ERROR, "Value data is not initialized, can't call dap_global_db_set");
         return DAP_GLOBAL_DB_RC_ERROR;
     }
 
