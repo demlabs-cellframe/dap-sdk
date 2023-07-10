@@ -9,7 +9,8 @@ set(JSON-C-CONFIG_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json-c/
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
     -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-    -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME})
+    -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
+    -DCMAKE_GENERATOR=${CMAKE_GENERATOR})
 
 ##TODO: customize for universal platforms
 if ("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
@@ -19,7 +20,6 @@ if ("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
             -DANDROID_ABI=arm64-v8a
             -DANDROID_PLATFORM=${ANDROID_PLATFORM}
             -DCMAKE_TOOLCHAIN_FILE=D:/android-sdk/ndk/21.4.7075529/build/cmake/android.toolchain.cmake
-            -DCMAKE_MAKE_PROGRAM=D:/android-sdk/cmake/3.22.1/bin/ninja.exe
             -G=Ninja)
     else()
         set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND})
@@ -32,7 +32,7 @@ elseif(ANDROID)
         -DANDROID_PLATFORM=${ANDROID_PLATFORM}
         -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
 else()
-    set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} -E env PATH=$ENV{PATH} ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND})
+    set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND})
 endif()
 
 message("json-c build cmd ${JSON-C-CONFIG_COMMAND}")
