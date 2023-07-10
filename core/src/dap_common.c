@@ -948,6 +948,19 @@ size_t dap_hex2bin(uint8_t *a_out, const char *a_in, size_t a_len)
 }
 
 /**
+ * Checking all chars in string is hex digits.
+ */
+int dap_is_hex_string(char *a_in, size_t a_len) {
+    if (!a_in || !a_len)
+        return -1;
+    int l_res = 0;
+    while (*a_in && !l_res && a_len--) {
+        l_res = !isxdigit(*a_in++);
+    }
+    return l_res;
+}
+
+/**
  * Convert string to digit
  */
 void dap_digit_from_string(const char *num_str, void *raw, size_t raw_len)
