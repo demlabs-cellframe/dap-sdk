@@ -236,7 +236,7 @@ static void *s_list_thread_proc(void *arg)
                 l_obj_cur->id = 0;
                 dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(l_obj_cur);
                 dap_hash_fast(l_pkt->data, l_pkt->data_size, &l_list_obj->hash);
-                dap_store_packet_change_id(l_pkt, l_cur_id);
+                dap_global_db_pkt_change_id(l_pkt, l_cur_id);
                 l_list_obj->pkt = l_pkt;
                 l_list = dap_list_append(l_list, l_list_obj);
                 l_objs_total_size += dap_db_log_list_obj_get_size(l_list_obj);
@@ -519,11 +519,11 @@ dap_global_db_pkt_t *dap_global_db_pkt_pack(dap_global_db_pkt_t *a_old_pkt, dap_
  * @param a_id id
  * @return (none)
  */
-void dap_store_packet_change_id(dap_global_db_pkt_t *a_pkt, uint64_t a_id)
+void dap_global_db_pkt_change_id(dap_global_db_pkt_t *a_pkt, uint64_t a_id)
 {
     uint16_t l_gr_len = *(uint16_t*)(a_pkt->data + sizeof(uint32_t));
     size_t l_id_offset = sizeof(uint32_t) + sizeof(uint16_t) + l_gr_len;
-    memcpy(a_pkt->data + l_id_offset, &a_id, sizeof(uint64_t));
+    *(uint64_t *)(a_pkt->data + l_id_offset) = a_id;
 }
 
 /**
