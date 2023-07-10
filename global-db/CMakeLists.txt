@@ -4,7 +4,7 @@ project (dap_global_db C)
 file(GLOB dap_global_db_SRC *.c)
 file(GLOB dap_global_db_HDR include/*.h)
 
-set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream sqlite3 dap_json-c)
+set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream dap_json-c)
 
 if(BUILD_WITH_GDB_DRIVER_MDBX)
     set(SAVED_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})
@@ -24,6 +24,14 @@ if(BUILD_WITH_GDB_DRIVER_PGSQL)
 else()
     list(FILTER dap_global_db_SRC EXCLUDE REGEX "pgsql")
     list(FILTER dap_global_db_HDR EXCLUDE REGEX "pgsql")
+endif()
+
+if(BUILD_WITH_GDB_DRIVER_SQLITE)
+    set(dap_global_db_LIBS ${dap_global_db_LIBS} sqlite3)
+    add_definitions("-DDAP_CHAIN_GDB_ENGINE_SQLITE")
+else()
+    list(FILTER dap_global_db_SRC EXCLUDE REGEX "sqlite")
+    list(FILTER dap_global_db_HDR EXCLUDE REGEX "sqlite")
 endif()
 
 if(BUILD_WITH_GDB_DRIVER_CUTTDB)
