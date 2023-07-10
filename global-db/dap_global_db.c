@@ -1285,12 +1285,6 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
         return DAP_GLOBAL_DB_RC_ERROR;
     }
-
-    if(a_value == NULL){
-        log_it(L_ERROR, "Value data is not initialized, can't call dap_global_db_set");
-        return DAP_GLOBAL_DB_RC_ERROR;
-    }
-
     if (!a_group || !a_key) {
         log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
         return -1;
