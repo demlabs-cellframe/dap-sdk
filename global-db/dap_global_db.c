@@ -254,7 +254,7 @@ static struct sync_obj_data_callback* s_global_db_obj_data_callback_new() {
 
 static void s_global_db_obj_data_callback_wait(struct sync_obj_data_callback* a_obj, const char *a_module) {
     if (!a_obj) {
-        log_it(L_ERROR, "Object is NULL %s, can't call s_global_db_obj_data_callback_wait", a_obj);
+        log_it(L_ERROR, "Object is NULL, can't call s_global_db_obj_data_callback_wait");
         return;
     }
     while (!a_obj->hdr.called)
@@ -1285,12 +1285,6 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
         return DAP_GLOBAL_DB_RC_ERROR;
     }
-
-    if(a_value == NULL){
-        log_it(L_ERROR, "Value data is not initialized, can't call dap_global_db_set");
-        return DAP_GLOBAL_DB_RC_ERROR;
-    }
-
     if (!a_group || !a_key) {
         log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
         return -1;
@@ -2040,21 +2034,15 @@ static void s_queue_io_callback( dap_events_socket_t * a_es, void * a_arg)
  */
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t * a_store_obj)
 {
-    dap_list_t *l_items_list = dap_global_db_get_sync_groups_all();
-    do {
-        for (dap_list_t *it = l_items_list; it; it = it->next) {
-            dap_sync_group_item_t *l_sync_group_item = (dap_sync_group_item_t *)it->data;
-            if (dap_fnmatch(l_sync_group_item->group_mask, a_store_obj->group, 0))
-                continue;
-            if(l_sync_group_item->callback_notify)
-                 l_sync_group_item->callback_notify(a_context, a_store_obj, l_sync_group_item->callback_arg);
-            return;
-        }
-        l_items_list = (l_items_list == dap_global_db_get_sync_groups_all()) ?
-                                        dap_global_db_get_sync_groups_extra_all() : NULL;
-    } while (l_items_list);
+    dap_list_t *l_items_list = dap_global_db_get_notify_groups(a_context->instance);
+    for (dap_list_t *it = l_items_list; it; it = it->next) {
+        dap_global_db_notify_item_t *l_notify_item = it->data;
+        if (dap_fnmatch(l_notify_item->group_mask, a_store_obj->group, 0))
+            continue;
+        if (l_notify_item->callback_notify)
+             l_notify_item->callback_notify(a_context, a_store_obj, l_notify_item->callback_arg);
+    }
 }
-
 
 /*
 * @brief s_record_del_history_del Deletes info about the deleted object from the database

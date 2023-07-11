@@ -950,7 +950,7 @@ size_t dap_hex2bin(uint8_t *a_out, const char *a_in, size_t a_len)
 /**
  * Checking all chars in string is hex digits.
  */
-int dap_is_hex_string(char *a_in, size_t a_len) {
+int dap_is_hex_string(const char *a_in, size_t a_len) {
     if (!a_in || !a_len)
         return -1;
     int l_res = 0;
