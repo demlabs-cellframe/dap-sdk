@@ -112,7 +112,7 @@ dap_list_t * dap_list_append(dap_list_t *list, void* data)
 
     new_list = dap_list_alloc();
     if (!new_list) { // Out of memory
-        log_it(L_CRITICAL, "DANGER! Out of memory!");
+        log_it(L_CRITICAL, "DANGER! Out of memory in dap_list_append!");
         return list;
     }
     new_list->data = data;
