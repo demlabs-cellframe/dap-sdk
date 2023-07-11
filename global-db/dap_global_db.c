@@ -26,6 +26,7 @@
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 #include "dap_time.h"
+#include "dap_uuid.h"
 #include "dap_context.h"
 #include "dap_worker.h"
 #include "dap_stream_worker.h"
@@ -206,8 +207,6 @@ typedef struct sync_obj_data_callback {
 } sync_obj_data_callback_t;
 
 // Saves GDB callig context
-static dap_global_db_callback_arg_uid_t l_max_uid = 0;
-
 static struct sync_obj_data_callback *s_global_db_find_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid_t a_uid)
 {
     struct sync_obj_data_callback *l_found = NULL;
@@ -221,10 +220,7 @@ static struct sync_obj_data_callback *s_global_db_obj_data_callback_new()
     pthread_cond_init(&l_callback->hdr.cond, NULL);
     clock_gettime(CLOCK_REALTIME, &l_callback->hdr.timer_timeout);
     l_callback->hdr.timer_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    if (l_max_uid == 0)
-        l_max_uid++;
-    l_callback->uid = l_max_uid;
-    l_max_uid++;
+    l_callback->uid = dap_uuid_generate_uint64();
     pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
     HASH_ADD(hh, s_context_global_db->data_callbacks, uid, sizeof(dap_global_db_callback_arg_uid_t), l_callback);
     return l_callback;
@@ -1059,7 +1055,7 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all sync call executes for group \"%s\"", a_group);
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    if (!dap_global_db_get_all(a_group, 0, s_objs_get_callback, DAP_DUP(&l_args)))
+    if (!dap_global_db_get_all(a_group, 0, s_objs_get_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "get_all");
     if (a_objs_count)
         *a_objs_count = l_args->get_objs.objs_count;
@@ -1362,7 +1358,8 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "set sync call executes for group \"%s\" key \"%s\"", a_group, a_key);
 
-    if (!dap_global_db_set(a_group, a_key, a_value, a_value_length, a_pin_value, s_sync_op_result_callback, DAP_DUP(&l_args->uid))) {
+    if (!dap_global_db_set(a_group, a_key, a_value, a_value_length, a_pin_value,
+                           s_sync_op_result_callback, DAP_DUP(&l_args->uid))) {
         s_global_db_obj_data_callback_wait(l_args, "set");
      } else
         l_args->op_result.result = DAP_GLOBAL_DB_RC_ERROR;
