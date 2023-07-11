@@ -47,6 +47,7 @@ typedef struct dap_global_db_instance {
     dap_list_t *whitelist;
     dap_list_t *blacklist;
     uint32_t store_time_limit;
+    dap_list_t *notify_groups;
 } dap_global_db_instance_t;
 
 // GlobalDB own context custom extension
