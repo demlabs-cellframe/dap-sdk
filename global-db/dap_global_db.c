@@ -1182,12 +1182,10 @@ dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_
     if (!dap_global_db_get_all_raw(a_group, a_first_id, a_objs_count ? *a_objs_count : 0,
                                    s_get_all_raw_sync_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "get_all_raw");
-    if (!l_args->hdr.called) {
-        return NULL;
-    }
     if (a_objs_count)
         *a_objs_count = l_args->get_store_objs.objs_count;
     dap_store_obj_t *l_ret = l_args->get_store_objs.objs;
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
