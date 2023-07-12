@@ -40,6 +40,10 @@ dap_http_user_agent_ptr_t dap_http_user_agent_new(const char* a_name,
     }
 
     dap_http_user_agent_ptr_t l_res = DAP_NEW_Z(struct dap_http_user_agent);
+    if (!l_res) {
+        log_it(L_ERROR, "Memory allocation error in dap_http_user_agent_new");
+        return NULL;
+    }
     l_res->name = dap_strdup(a_name);
     l_res->comment = dap_strdup(a_comment);
     l_res->major_version = a_major_version;
@@ -83,6 +87,10 @@ dap_http_user_agent_ptr_t dap_http_user_agent_new_from_str(const char* a_user_ag
     /* PARSE LINE successful */
 
     l_result = DAP_NEW_Z(struct dap_http_user_agent);
+    if (!l_result) {
+        log_it (L_ERROR, "Memory allocation error in dap_http_user_agent_new_from_str");
+        goto END;
+    }
     l_result->name = dap_strdup(l_name);
     l_result->comment = dap_strdup(comment);
     l_result->major_version = (unsigned int) atoi(l_major);

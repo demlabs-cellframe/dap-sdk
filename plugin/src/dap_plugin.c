@@ -266,6 +266,10 @@ static int s_start(dap_plugin_manifest_t * a_manifest)
         DAP_DELETE(l_err_str);
     }else{ // Successfully
         struct plugin_module * l_module = DAP_NEW_Z(struct plugin_module);
+        if (!l_module) {
+            log_it(L_ERROR, "Memory allocation error in s_start");
+            return -1;
+        }
         l_module->pvt_data = l_pvt_data;
         strncpy(l_module->name, a_manifest->name, sizeof(l_module->name)-1);
         l_module->name[sizeof(l_module->name) - 1] = '\0';  // Warning avoid

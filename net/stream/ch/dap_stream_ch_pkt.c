@@ -88,9 +88,18 @@ size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_
     }
     l_data_size++; // include trailing 0
     dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_stream_ch_pkt_write_f_mt");
+        return 0;
+    }
     l_msg->ch_uuid = a_ch_uuid;
     l_msg->ch_pkt_type = a_type;
     l_msg->data = DAP_NEW_SIZE(void, l_data_size);
+    if (!l_msg->data) {
+        log_it(L_ERROR, "Memory allocation error in dap_stream_ch_pkt_write_f_mt");
+        DAP_DELETE(l_msg);
+        return 0;
+    }
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
     l_data_size = vsprintf(l_msg->data, a_format, ap_copy);
@@ -129,9 +138,18 @@ size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t * a_queue  , dap_stre
     }
     l_data_size++; // include trailing 0
     dap_stream_worker_msg_io_t *l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_stream_ch_pkt_write_mt");
+        return 0;
+    }
     l_msg->ch_uuid = a_ch_uuid;
     l_msg->ch_pkt_type = a_type;
     l_msg->data = DAP_NEW_SIZE(void, l_data_size);
+    if (!l_msg->data) {
+        log_it(L_ERROR, "Memory allocation error in dap_stream_ch_pkt_write_mt");
+        DAP_DELETE(l_msg);
+        return 0;
+    }
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
     l_data_size = vsprintf(l_msg->data, a_format, ap_copy);
@@ -161,6 +179,10 @@ size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch
     if (!a_worker)
         return 0;
     dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_stream_ch_pkt_write_mt");
+        return 0;
+    }
     l_msg->ch_uuid = a_ch_uuid;
     l_msg->ch_pkt_type = a_type; 
     if (a_data && a_data_size)
@@ -191,6 +213,10 @@ size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch
 size_t dap_stream_ch_pkt_write_inter(dap_events_socket_t * a_queue_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_data, size_t a_data_size)
 {
     dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_stream_ch_pkt_write_inter");
+        return 0;
+    }
     l_msg->ch_uuid = a_ch_uuid;
     l_msg->ch_pkt_type = a_type;
     if (a_data && a_data_size)
@@ -299,6 +325,11 @@ ssize_t dap_stream_ch_pkt_write_f_unsafe(dap_stream_ch_t *a_ch, uint8_t a_type, 
     }
     l_data_size++; // include trailing 0
     char *l_data = DAP_NEW_SIZE(void, l_data_size);
+    if (!l_data) {
+        log_it(L_ERROR, "Memory allocation error in dap_stream_ch_pkt_write_f_unsafe");
+        va_end(ap_copy);
+        return l_data_size--;
+    }
     vsprintf(l_data, a_format, ap_copy);
     va_end(ap_copy);
     size_t l_ret = dap_stream_ch_pkt_write_unsafe(a_ch, a_type, l_data, l_data_size);
