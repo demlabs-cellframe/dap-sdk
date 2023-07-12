@@ -167,6 +167,10 @@ dap_http_url_proc_t * dap_http_add_proc(dap_http_t *a_http, const char *a_url_pa
                       )
 {
     dap_http_url_proc_t *l_url_proc = DAP_NEW_Z(dap_http_url_proc_t);
+    if (!l_url_proc) {
+        log_it(L_ERROR, "Memory allocation error in dap_http_add_proc");
+        return NULL;
+    }
 
     strncpy( l_url_proc->url, a_url_path, sizeof(l_url_proc->url)-1 );
 

@@ -164,6 +164,10 @@ uint8_t* dap_enc_sig_bliss_write_signature(bliss_signature_t* a_sign, size_t *a_
     size_t l_buflen = sizeof(size_t) + sizeof(bliss_kind_t) + p.n * 2 * sizeof(int32_t) + p.kappa * sizeof(int32_t);
 
     uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_buflen);
+    if (!l_buf) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_sig_bliss_write_signature");
+        return NULL;
+    }
     memcpy(l_buf, &l_buflen, sizeof(size_t));
     l_shift_mem += sizeof(size_t);
     memcpy(l_buf + l_shift_mem, &a_sign->kind, sizeof(bliss_kind_t));
@@ -196,6 +200,10 @@ bliss_signature_t* dap_enc_sig_bliss_read_signature(const uint8_t *a_buf, size_t
         return NULL ;
 
     bliss_signature_t* l_sign = DAP_NEW(bliss_signature_t);
+    if (!l_sign) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_sig_bliss_read_signature");
+        return NULL;
+    }
     l_sign->kind = kind;
     l_sign->z1 = DAP_NEW_SIZE(int32_t, p.n * sizeof(int32_t));
     l_sign->z2 = DAP_NEW_SIZE(int32_t, p.n * sizeof(int32_t));
@@ -220,6 +228,10 @@ uint8_t* dap_enc_sig_bliss_write_private_key(const bliss_private_key_t* a_privat
     size_t l_shift_mem = 0;
     size_t l_buflen = sizeof(size_t) + sizeof(bliss_kind_t) + 3 * p.n * sizeof(int32_t);
     uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_buflen);
+    if (!l_buf) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_sig_bliss_write_private_key");
+        return NULL;
+    }
     memcpy(l_buf, &l_buflen, sizeof(size_t));
     l_shift_mem += sizeof(size_t);
     memcpy(l_buf + l_shift_mem, &a_private_key->kind, sizeof(bliss_kind_t));
@@ -247,6 +259,10 @@ uint8_t* dap_enc_sig_bliss_write_public_key(const bliss_public_key_t* a_public_k
     size_t l_shift_mem = 0;
     size_t l_buflen = sizeof(size_t) + sizeof(bliss_kind_t) + p.n * sizeof(int32_t);
     uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_buflen);
+    if (!l_buf) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_sig_bliss_write_public_key");
+        return NULL;
+    }
     memcpy(l_buf, &l_buflen, sizeof(size_t));
     l_shift_mem += sizeof(size_t);
     memcpy(l_buf + l_shift_mem, &a_public_key->kind, sizeof(bliss_kind_t));
@@ -274,6 +290,10 @@ bliss_private_key_t* dap_enc_sig_bliss_read_private_key(const uint8_t *a_buf, si
         return NULL;
 
     bliss_private_key_t* l_private_key = DAP_NEW(bliss_private_key_t);
+    if (!l_private_key) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_sig_bliss_read_private_key");
+        return NULL;
+    }
     l_private_key->kind = kind;
 
     l_private_key->s1 = DAP_NEW_SIZE(int32_t, p.n * sizeof(int32_t));
@@ -304,9 +324,17 @@ bliss_public_key_t* dap_enc_sig_bliss_read_public_key(const uint8_t *a_buf, size
     if(!bliss_params_init(&p, kind))
         return NULL;
     bliss_public_key_t* l_public_key = DAP_NEW(bliss_public_key_t);
+    if (!l_public_key) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_sig_bliss_read_public_key");
+        return NULL;
+    }
     l_public_key->kind = kind;
 
     l_public_key->a = DAP_NEW_SIZE(int32_t, p.n * sizeof(int32_t));
+    if (!l_public_key->a) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_sig_bliss_read_public_key");
+        return NULL;
+    }
     memcpy(l_public_key->a, a_buf + sizeof(size_t) + sizeof(bliss_kind_t), p.n * sizeof(int32_t));
     return l_public_key;
 }

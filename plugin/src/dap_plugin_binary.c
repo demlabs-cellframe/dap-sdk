@@ -83,6 +83,10 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
     if(a_manifest == s_manifest) // Its our own manifest, do nothing we're already loaded
         return 0;
     struct binary_pvt_data * l_pvt_data= DAP_NEW_Z(struct binary_pvt_data);
+    if (!l_pvt_data) {
+        log_it(L_ERROR, "Memory allocation error in s_type_callback_load");
+        return 0;
+    }
     *a_pvt_data = l_pvt_data;
 #if defined (DAP_OS_UNIX) && !defined (__ANDROID__)
 

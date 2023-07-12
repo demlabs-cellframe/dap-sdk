@@ -117,6 +117,10 @@ int dap_http_folder_add( dap_http_t *sh, const char *url_path, const char *local
   log_it( L_NOTICE, "File service for %s => %s ", url_path, local_path );
 
   dap_http_url_proc_folder_t *up_folder = (dap_http_url_proc_folder_t *)calloc( 1, sizeof(dap_http_url_proc_folder_t) );
+  if (!up_folder) {
+    log_it(L_ERROR, "Memory allocation error in dap_http_folder_add");
+    return -1;
+  }
   strncpy( up_folder->local_path, local_path, sizeof(up_folder->local_path)-1 );
 
   up_folder->mime_detector = magic_open( MAGIC_SYMLINK | MAGIC_MIME | MAGIC_PRESERVE_ATIME );

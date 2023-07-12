@@ -11,6 +11,10 @@ int dap_json_rpc_response_registration_with_id(uint64_t a_id, dap_json_rpc_respo
     HASH_FIND_INT(s_response_handlers, &a_id, l_handler);
     if (l_handler == NULL){
         l_handler = DAP_NEW(dap_json_rpc_response_handler_t);
+        if (!l_handler) {
+            log_it(L_ERROR, "Memory allocation error in dap_json_rpc_response_registration_with_id");
+            return -1;
+        }
         l_handler->id = a_id;
         l_handler->func = func;
         HASH_ADD_INT(s_response_handlers, id, l_handler);

@@ -133,6 +133,11 @@ int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char * a_format,.
     }
     l_str_size++; // include trailing 0
     char *l_str = DAP_NEW_SIZE(char, l_str_size);
+    if (!l_str) {
+        va_end(ap_copy);
+        log_it(L_ERROR,"Memory allocation error in dap_notify_server_send_f_inter");
+        return NULL;
+    }
     vsprintf(l_str, a_format, ap_copy);
     va_end(ap_copy);
     int l_ret = dap_events_socket_queue_ptr_send_to_input(l_input, l_str);
@@ -174,6 +179,11 @@ int dap_notify_server_send_f_mt(const char *a_format, ...)
     }
     l_str_size++; // include trailing 0
     char *l_str = DAP_NEW_SIZE(char, l_str_size);
+    if (!l_str) {
+        va_end(ap_copy);
+        log_it(L_ERROR,"Memory allocation error in dap_notify_server_send_f_mt");
+        return NULL;
+    }
     vsprintf(l_str, a_format, ap_copy);
     va_end(ap_copy);
     int l_ret = dap_events_socket_queue_ptr_send(s_notify_server_queue, l_str);
@@ -225,6 +235,11 @@ static void s_notify_server_callback_new(dap_events_socket_t * a_es, void * a_ar
         l_hh_new->worker_id = a_es->context->worker->id;
     }else {
         l_hh_new = DAP_NEW_Z(dap_events_socket_handler_hh_t);
+        if (!l_hh_new) {
+            log_it(L_ERROR, "Memory allocation error in s_notify_server_callback_new");
+            pthread_rwlock_unlock(&s_notify_server_clients_mutex);
+            return;
+        }
         l_hh_new->esocket = a_es;
         l_hh_new->uuid = a_es->uuid;
         l_hh_new->worker_id = a_es->context->worker->id;

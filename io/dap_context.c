@@ -127,6 +127,10 @@ void dap_context_deinit()
 dap_context_t * dap_context_new(int a_type)
 {
    dap_context_t * l_context = DAP_NEW_Z(dap_context_t);
+   if (!l_context) {
+        log_it(L_ERROR, "Memory allocation error in dap_context_new");
+        return NULL;
+   }
    static atomic_uint_fast64_t s_context_id_max = 0;
    l_context->id = s_context_id_max;
    l_context->type = a_type;
@@ -1887,6 +1891,10 @@ dap_events_socket_t * dap_context_create_pipe(dap_context_t * a_context, dap_eve
 #else
     UNUSED(a_flags);
     dap_events_socket_t * l_es = DAP_NEW_Z(dap_events_socket_t);
+    if (!l_es) {
+        log_it(L_ERROR, "Memory allocation error in dap_context_create_pipe");
+        return NULL;
+    }
     l_es->type = DESCRIPTOR_TYPE_PIPE;
     l_es->uuid = dap_uuid_generate_uint64();
     l_es->callbacks.read_callback = a_callback; // Arm event callback

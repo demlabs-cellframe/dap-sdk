@@ -53,6 +53,10 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
     a_key->last_used_timestamp = time(NULL);
 
     uint8_t * id_concat_kex = (uint8_t *) malloc(kex_size + seed_size);
+    if (!id_concat_kex) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_aes_key_generate");
+        return;
+    }
 
     memcpy(id_concat_kex,seed, seed_size);
     memcpy(id_concat_kex + seed_size, kex_buf, kex_size);

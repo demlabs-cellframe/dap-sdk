@@ -384,6 +384,10 @@ void dap_worker_add_events_socket_inter(dap_events_socket_t * a_es_input, dap_ev
 void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker_callback_t a_callback, void * a_arg)
 {
     dap_worker_msg_callback_t * l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_worker_exec_callback_on");
+        return;
+    }
     l_msg->callback = a_callback;
     l_msg->arg = a_arg;
     int l_ret=dap_events_socket_queue_ptr_send_to_input (a_es_input ,l_msg );
@@ -404,6 +408,10 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
 {
     assert(a_worker);
     dap_worker_msg_callback_t * l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_worker_exec_callback_on");
+        return;
+    }
     l_msg->callback = a_callback;
     l_msg->arg = a_arg;
     int l_ret=dap_events_socket_queue_ptr_send( a_worker->queue_callback,l_msg );
