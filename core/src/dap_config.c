@@ -209,7 +209,7 @@ dap_config_t * dap_config_load(const char * a_file_path)
                                     char l_param_name[sizeof(l_section_current->name)];
                                     size_t l_param_name_size=0;
                                     size_t l_param_value_size=0;
-                                    char l_param_value[1024];
+                                    char l_param_value[262144];
                                     l_param_name[0] = 0;
                                     l_param_value[0] = 0;
                                     for ( j = 0; j < l_line_length; j++ ){ // Parse param name
