@@ -762,6 +762,10 @@ static void s_db_apply_obj(dap_global_db_context_t *a_global_db_context, void *a
 int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
 {
     struct gdb_apply_args *l_args =  DAP_NEW_Z(struct gdb_apply_args);
+    if (!l_args) {
+        log_it(L_ERROR, "Memory allocation error in s_gdb_in_pkt_proc_callback");
+        return -1;
+    }
     l_args->obj = dap_store_obj_copy(a_obj, 1);
     l_args->callback = a_callback;
     l_args->cb_arg = a_arg;
