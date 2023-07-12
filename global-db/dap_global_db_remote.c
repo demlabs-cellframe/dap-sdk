@@ -45,6 +45,10 @@ void dap_global_db_sync_deinit()
 void dap_global_db_add_sync_group(const char *a_net_name, const char *a_group_prefix, dap_store_obj_callback_notify_t a_callback, void *a_arg)
 {
     dap_sync_group_item_t *l_item = DAP_NEW_Z(dap_sync_group_item_t);
+    if (!l_item) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_add_sync_group");
+        return;
+    }
     l_item->net_name = dap_strdup(a_net_name);
     l_item->group_mask = dap_strdup_printf("%s.*", a_group_prefix);
     l_item->callback_notify = a_callback;
@@ -63,6 +67,10 @@ void dap_global_db_add_sync_group(const char *a_net_name, const char *a_group_pr
 void dap_global_db_add_sync_extra_group(const char *a_net_name, const char *a_group_mask, dap_store_obj_callback_notify_t a_callback, void *a_arg)
 {
     dap_sync_group_item_t* l_item = DAP_NEW_Z(dap_sync_group_item_t);
+    if (!l_item) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_add_sync_extra_group");
+        return;
+    }
     l_item->net_name = dap_strdup(a_net_name);
     l_item->group_mask = dap_strdup(a_group_mask);
     l_item->callback_notify = a_callback;
@@ -224,6 +232,11 @@ static void *s_list_thread_proc(void *arg)
                     l_obj_cur->group = dap_strdup(l_del_group_name_replace);
                 }
                 dap_db_log_list_obj_t *l_list_obj = DAP_NEW_Z(dap_db_log_list_obj_t);
+                if (!l_list_obj) {
+                    log_it(L_ERROR, "Memory allocation error in s_list_thread_proc");
+                    dap_store_obj_free(l_objs, l_item_count);
+                    return NULL;
+                }
                 uint64_t l_cur_id = l_obj_cur->id;
                 l_obj_cur->id = 0;
                 dap_global_db_pkt_t *l_pkt = dap_store_packet_single(l_obj_cur);
@@ -270,6 +283,10 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Start loading db list_write...");
     dap_db_log_list_t *l_dap_db_log_list = DAP_NEW_Z(dap_db_log_list_t);
+    if (!l_dap_db_log_list) {
+            log_it(L_ERROR, "Memory allocation error in dap_db_log_list_start");
+            return NULL;
+        }
     l_dap_db_log_list->db_context = dap_global_db_context_get_default();
 
     // Add groups for the selected network only
@@ -307,6 +324,11 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
     l_dap_db_log_list->groups = l_groups_names; // repalce name of group with group item
     for (dap_list_t *l_group = l_dap_db_log_list->groups; l_group; l_group = dap_list_next(l_group)) {
         dap_db_log_list_group_t *l_sync_group = DAP_NEW_Z(dap_db_log_list_group_t);
+        if (!l_sync_group) {
+            log_it(L_ERROR, "Memory allocation error in dap_db_log_list_start");
+            DAP_DEL_Z(l_dap_db_log_list);
+            return NULL;
+        }
         l_sync_group->name = (char *)l_group->data;
         if (a_flags & F_DB_LOG_SYNC_FROM_ZERO)
             l_sync_group->last_id_synced = 0;
@@ -616,6 +638,11 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         if ( (pdata + l_obj->group_len) > pdata_end )
             {log_it(L_ERROR, "Broken GDB element: can't read 'group' field"); break;}
         l_obj->group = DAP_NEW_Z_SIZE(char, l_obj->group_len + 1);
+        if (!l_obj->group) {
+            log_it(L_ERROR, "Memory allocation error in dap_global_db_pkt_deserialize");
+            DAP_DEL_Z(l_store_obj_arr);
+            return NULL;
+        }
         memcpy(l_obj->group, pdata, l_obj->group_len);
         pdata += l_obj->group_len;
 
@@ -646,6 +673,12 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
             {log_it(L_ERROR, "Broken GDB element: 'key_length' field is out from allocated memory"); break;}
 
         l_obj->key_byte = DAP_NEW_SIZE(byte_t, l_obj->key_len + 1);
+        if (!l_obj->key_byte) {
+            log_it(L_ERROR, "Memory allocation error in dap_global_db_pkt_deserialize");
+            DAP_DEL_Z(l_obj->group);
+            DAP_DEL_Z(l_store_obj_arr);
+            return NULL;
+        }
         memcpy( l_obj->key_byte, pdata, l_obj->key_len);
         l_obj->key_byte[l_obj->key_len] = '\0';
         pdata += l_obj->key_len;
@@ -660,6 +693,13 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
             if ( (pdata + l_obj->value_len) > pdata_end )
                 {log_it(L_ERROR, "Broken GDB element: can't read 'value' field"); break;}
             l_obj->value = DAP_NEW_SIZE(uint8_t, l_obj->value_len);
+            if (!l_obj->value) {
+                log_it(L_ERROR, "Memory allocation error in dap_global_db_pkt_deserialize");
+                DAP_DEL_Z(l_obj->key_byte);
+                DAP_DEL_Z(l_obj->group);
+                DAP_DEL_Z(l_store_obj_arr);
+                return NULL;
+            }
             memcpy(l_obj->value, pdata, l_obj->value_len);
             pdata += l_obj->value_len;
         }

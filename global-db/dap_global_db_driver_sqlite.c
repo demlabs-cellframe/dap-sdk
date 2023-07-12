@@ -836,6 +836,14 @@ dap_store_obj_t* dap_db_driver_sqlite_read_cond_store_obj(const char *a_group, u
             if(l_count_out >= l_count_sized) {
                 l_count_sized += 10;
                 l_obj = DAP_REALLOC(l_obj, sizeof(dap_store_obj_t) * (uint64_t)l_count_sized);
+                if (!l_obj) {
+                    log_it(L_ERROR, "Memory allocation error in dap_db_driver_sqlite_read_cond_store_obj");
+                    s_dap_db_driver_sqlite_query_free(l_res);
+                    s_dap_db_driver_sqlite_free(l_error_message);
+                    s_sqlite_free_connection(l_conn);
+                    s_dap_db_driver_sqlite_row_free(l_row);
+                    return NULL;
+                }
                 memset(l_obj + l_count_out, 0, sizeof(dap_store_obj_t) * (uint64_t)(l_count_sized - l_count_out));
             }
             // fill current item
@@ -919,6 +927,13 @@ dap_store_obj_t* dap_db_driver_sqlite_read_store_obj(const char *a_group, const 
             if(l_count_out >= l_count_sized) {
                 l_count_sized += 10;
                 l_obj = DAP_REALLOC(l_obj, sizeof(dap_store_obj_t) * l_count_sized);
+                if (!l_obj) {
+                    log_it(L_ERROR, "Memory allocation error in dap_db_driver_sqlite_read_store_obj");
+                    s_dap_db_driver_sqlite_query_free(l_res);
+                    s_sqlite_free_connection(l_conn);
+                    s_dap_db_driver_sqlite_row_free(l_row);
+                    return NULL;
+                }
                 memset(l_obj + l_count_out, 0, sizeof(dap_store_obj_t) * (l_count_sized - l_count_out));
             }
             // fill currrent item

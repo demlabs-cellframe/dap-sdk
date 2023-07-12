@@ -163,6 +163,10 @@ dap_list_t *dap_list_prepend(dap_list_t *list, void* data)
     dap_list_t *new_list;
 
     new_list = dap_list_alloc();
+    if (!new_list) {
+        log_it(L_ERROR, "Memory allocation error in dap_list_prepend");
+        return list;
+    }
     new_list->data = data;
     new_list->next = list;
 
@@ -206,6 +210,10 @@ dap_list_t *dap_list_insert(dap_list_t *list, void* data, int position)
         return dap_list_append(list, data);
 
     new_list = dap_list_alloc();
+    if (!new_list) {
+        log_it(L_ERROR, "Memory allocation error in dap_list_insert");
+        return list;
+    }
     new_list->data = data;
     new_list->prev = tmp_list->prev;
     tmp_list->prev->next = new_list;
@@ -231,6 +239,10 @@ dap_list_t *dap_list_insert_before(dap_list_t *list, dap_list_t *sibling, void* 
     if(!list)
     {
         list = dap_list_alloc();
+        if (!list) {
+            log_it(L_ERROR, "Memory allocation error in dap_list_insert_before");
+            return NULL;
+        }
         list->data = data;
         dap_return_val_if_fail(sibling == NULL, list);
         return list;
@@ -240,6 +252,10 @@ dap_list_t *dap_list_insert_before(dap_list_t *list, dap_list_t *sibling, void* 
         dap_list_t *node;
 
         node = dap_list_alloc();
+        if (!node) {
+            log_it(L_ERROR, "Memory allocation error in dap_list_insert_before");
+            return NULL;
+        }
         node->data = data;
         node->prev = sibling->prev;
         node->next = sibling;
@@ -264,6 +280,10 @@ dap_list_t *dap_list_insert_before(dap_list_t *list, dap_list_t *sibling, void* 
             last = last->next;
 
         last->next = dap_list_alloc();
+        if (!last->next) {
+            log_it(L_ERROR, "Memory allocation error in dap_list_insert_before");
+            return NULL;
+        }
         last->next->data = data;
         last->next->prev = last;
         last->next->next = NULL;
@@ -499,10 +519,16 @@ dap_list_t *dap_list_copy_deep(dap_list_t *list, dap_callback_copy_t func, void*
     while (list) {
         if (new_list) {
             last->next = dap_list_alloc();
+            if (!last->next) {
+                return NULL;
+            }
             last->next->prev = last;
             last = last->next;
         } else
             new_list = last = dap_list_alloc();
+            if (!new_list) {
+                return NULL;
+            }
         if (func)
             last->data = func(list->data, user_data);
         else

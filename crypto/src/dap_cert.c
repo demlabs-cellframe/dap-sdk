@@ -107,7 +107,10 @@ size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs,
     // init certs array
     dap_cert_t **l_certs;
     *a_certs = l_certs = DAP_NEW_Z_SIZE(dap_cert_t*, (*a_certs_size) * sizeof(dap_cert_t*) );
-
+    if (!l_certs) {
+        log_it(L_ERROR, "Memory allocatin error in dap_cert_parse_str_list");
+        return 0;
+    }
     // Second pass we parse them all
     strcpy(l_certs_str_dup, a_certs_str);
     l_cert_str = strtok_r(l_certs_str_dup, ",", &l_certs_tmp_ptrs);
@@ -198,6 +201,10 @@ int dap_cert_add_cert_sign(dap_cert_t * a_cert, dap_cert_t * a_cert_signer)
 {
     if (a_cert->enc_key->pub_key_data_size && a_cert->enc_key->pub_key_data) {
         dap_sign_item_t * l_sign_item = DAP_NEW_Z(dap_sign_item_t);
+        if (!l_sign_item) {
+            log_it(L_ERROR, "Memory allocation error in dap_cert_add_cert_sign");
+            return -1;
+        }
         l_sign_item->sign = dap_cert_sign (a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_data_size,0);
         DL_APPEND ( PVT(a_cert)->signs, l_sign_item );
         return 0;
@@ -342,6 +349,10 @@ dap_list_t *dap_cert_get_all_mem()
 dap_cert_t * dap_cert_new(const char * a_name)
 {
     dap_cert_t * l_ret = DAP_NEW_Z(dap_cert_t);
+    if (!l_ret) {
+        log_it(L_ERROR, "Memory allocation error in dap_cert_new");
+        return NULL;
+    }
     l_ret->_pvt = DAP_NEW_Z(dap_cert_pvt_t);
     snprintf(l_ret->name,sizeof(l_ret->name),"%s",a_name);
     return l_ret;
@@ -358,6 +369,10 @@ int dap_cert_add(dap_cert_t *a_cert)
         return -1;
     }
     l_cert_item = DAP_NEW_Z(dap_cert_item_t);
+    if (!l_cert_item) {
+        log_it(L_ERROR, "Memory allocation error in dap_cert_add");
+        return -2;
+    }
     snprintf(l_cert_item->name, sizeof(l_cert_item->name), "%s", a_cert->name);
     l_cert_item->cert = a_cert;
     HASH_ADD_STR(s_certs, name, l_cert_item);
