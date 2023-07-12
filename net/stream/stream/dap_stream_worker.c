@@ -76,13 +76,26 @@ int dap_stream_worker_init()
             return -4;
         }
         struct proc_thread_stream * l_thread_stream = DAP_NEW_Z(struct proc_thread_stream);
-        if (!l_thread_stream)
+        if (!l_thread_stream){
+            log_it(L_ERROR, "Memory allocation error in dap_stream_worker_init");
             return -7;
+        }
         l_proc_thread->_inheritor = l_thread_stream;
         l_thread_stream->queue_ch_io_input = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof (dap_events_socket_t*)*l_worker_count);
+        if (!l_thread_stream->queue_ch_io_input) {
+            log_it(L_ERROR, "Memory allocation error in dap_stream_worker_init");
+            DAP_DEL_Z(l_thread_stream);
+            return -7;
+        }
         dap_worker_t *l_worker_inp = dap_events_worker_get(i);
         dap_stream_worker_t *l_stream_worker_inp = (dap_stream_worker_t *)l_worker_inp->_inheritor;
         l_stream_worker_inp->queue_ch_io_input = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * l_worker_count);
+        if (!l_stream_worker_inp->queue_ch_io_input) {
+            log_it(L_ERROR, "Memory allocation error in dap_stream_worker_init");
+            DAP_DEL_Z(l_thread_stream->queue_ch_io_input);
+            DAP_DEL_Z(l_thread_stream);
+            return -7;
+        }
         for (uint32_t j = 0; j < l_worker_count; j++) {
             dap_worker_t * l_worker = dap_events_worker_get(j);
             dap_stream_worker_t *l_stream_worker = (dap_stream_worker_t*) l_worker->_inheritor;

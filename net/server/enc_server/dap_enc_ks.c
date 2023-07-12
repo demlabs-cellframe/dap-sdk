@@ -125,6 +125,10 @@ dap_enc_key_t * dap_enc_ks_find_http(struct dap_http_client * a_http_client)
 dap_enc_ks_key_t * dap_enc_ks_new()
 {
     dap_enc_ks_key_t * ret = DAP_NEW_Z(dap_enc_ks_key_t);
+    if (!ret) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_ks_new");
+        return NULL;
+    }
     s_gen_session_id(ret->id);
     pthread_mutex_init(&ret->mutex,NULL);
     return ret;
@@ -143,6 +147,10 @@ bool dap_enc_ks_save_in_storage(dap_enc_ks_key_t* key)
 dap_enc_ks_key_t * dap_enc_ks_add(struct dap_enc_key * key)
 {
     dap_enc_ks_key_t * ret = DAP_NEW_Z(dap_enc_ks_key_t);
+    if (!ret) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_ks_add");
+        return NULL;
+    }
     ret->key = key;
     pthread_mutex_init(&ret->mutex, NULL);
     s_gen_session_id(ret->id);

@@ -11,6 +11,10 @@ int dap_json_rpc_notification_registration(const char *a_method, notification_ha
     HASH_FIND_STR(s_handler_notifications, a_method, l_handler);
     if (l_handler == 0){
         l_handler = DAP_NEW(dap_json_rpc_notification_handler_t);
+        if (!l_handler) {
+            log_it(L_ERROR, "Memory allocation error in dap_json_rpc_notification_registration");
+            return -1;
+        }
         l_handler->method = dap_strdup(a_method);
         l_handler->func = a_notification_func;
         HASH_ADD_STR(s_handler_notifications, method, l_handler);

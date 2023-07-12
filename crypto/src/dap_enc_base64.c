@@ -275,6 +275,9 @@ char * dap_enc_strdup_to_base64(const char * a_string){
     size_t l_string_len = strlen(a_string);
     size_t l_string_base64_len = DAP_ENC_BASE64_ENCODE_SIZE(l_string_len) + 1;
     char * l_string_base64 = DAP_NEW_SIZE(char, l_string_base64_len);
+    if (!l_string_base64) {
+        return NULL;
+    }
     size_t l_string_base64_len_res = dap_enc_base64_encode(a_string, l_string_len, l_string_base64, DAP_ENC_DATA_TYPE_B64);
     l_string_base64[l_string_base64_len_res] = '\0';
     return l_string_base64;

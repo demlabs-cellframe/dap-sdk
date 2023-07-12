@@ -25,6 +25,10 @@ void dap_json_rpc_error_deinit(void)
 dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_create()
 {
     dap_json_rpc_error_JSON_t *l_json = DAP_NEW(dap_json_rpc_error_JSON_t);
+    if (!l_json) {
+        log_it(L_ERROR, "Memory allocation error in dap_json_rpc_error_JSON_create");
+        return NULL;
+    }
     l_json->obj_msg = NULL;
     l_json->obj_code = NULL;
     return l_json;
@@ -38,6 +42,10 @@ void dap_json_rpc_error_JSON_free(dap_json_rpc_error_JSON_t *a_error_json)
 dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_add_data(int code, const char *msg)
 {
     dap_json_rpc_error_JSON_t *l_json_err = dap_json_rpc_error_JSON_create();
+    if (!l_json_err) {
+        log_it(L_ERROR, "Memory allocation error in dap_json_rpc_error_JSON_add_data");
+        return NULL;
+    }
     l_json_err->obj_code = json_object_new_int(code);
     l_json_err->obj_msg = json_object_new_string(msg);
     return l_json_err;
@@ -49,6 +57,10 @@ int dap_json_rpc_error_add(int a_code_error, const char *a_msg)
     if (l_el_search != NULL)
         return 1;
     dap_json_rpc_error_t *l_error = DAP_NEW(dap_json_rpc_error_t);
+    if(!l_error) {
+        log_it(L_ERROR, "Memory allocation error in dap_json_rpc_error_add");
+        return 1;
+    }
     l_error->code_error = a_code_error;
     l_error->msg = dap_strdup(a_msg);
     LL_APPEND(s_errors, l_error);
@@ -108,6 +120,10 @@ void dap_json_rpc_add_standart_erros(void)
 dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(json_object *a_jobj)
 {
     dap_json_rpc_error_t *l_error = DAP_NEW(dap_json_rpc_error_t);
+    if (!l_error) {
+        log_it(L_ERROR, "Memory allocation error in dap_json_rpc_create_from_json_object");
+        return NULL;
+    }
     json_object *l_jobj_code_eror = json_object_object_get(a_jobj, "code");
     json_object *l_jobj_msg = json_object_object_get(a_jobj, "message");
     l_error->code_error = json_object_get_int64(l_jobj_code_eror);

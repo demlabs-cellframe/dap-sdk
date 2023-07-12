@@ -149,6 +149,10 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     log_it(L_INFO, "Remote address connected (%s:%u) with sock_id %"DAP_FORMAT_SOCKET, l_client_http->uplink_addr, l_client_http->uplink_port, a_esocket->socket);
     // add to dap_worker
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
+    if (!l_es_uuid_ptr) {
+        log_it(L_ERROR, "Memory allocation error in s_http_connected");
+        return;
+    }
     *l_es_uuid_ptr = a_esocket->uuid;
     l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, (unsigned long)s_client_timeout_read_after_connect_ms, s_timer_timeout_after_connected_check, l_es_uuid_ptr);
     if (!l_client_http->timer) {
@@ -577,6 +581,10 @@ dap_client_http_t * dap_client_http_request_custom (
     log_it(L_DEBUG,"Created client request socket %"DAP_FORMAT_SOCKET, l_socket);
     // create private struct
     dap_client_http_t *l_client_http = DAP_NEW_Z(dap_client_http_t);
+    if (!l_client_http) {
+        log_it(L_ERROR, "Memory allocation error in dap_client_http_request_custom");
+        return NULL;
+    }
     l_ev_socket->_inheritor = l_client_http;
     l_client_http->error_callback = a_error_callback;
     l_client_http->response_callback = a_response_callback;
@@ -587,6 +595,11 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->request_content_type = dap_strdup(a_request_content_type);
 
     l_client_http->request = DAP_NEW_Z_SIZE(byte_t, a_request_size + 1);
+    if (!l_client_http->request) {
+        log_it(L_ERROR, "Memory allocation error in dap_client_http_request_custom");
+        DAP_DEL_Z(l_client_http);
+        return NULL;
+    }
     if (! l_client_http->request)
         return NULL;
     l_client_http->request_size = a_request_size;
@@ -599,6 +612,12 @@ dap_client_http_t * dap_client_http_request_custom (
 
     l_client_http->response_size_max = DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX;
     l_client_http->response = (uint8_t*) DAP_NEW_Z_SIZE(uint8_t, DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX);
+    if (!l_client_http->response) {
+        log_it(L_ERROR, "Memory allocation error in dap_client_http_request_custom");
+        DAP_DEL_Z(l_client_http->request);
+        DAP_DEL_Z(l_client_http);
+        return NULL;
+    }
     l_client_http->worker = a_worker;
     l_client_http->is_over_ssl = a_over_ssl;
 
@@ -677,6 +696,13 @@ dap_client_http_t * dap_client_http_request_custom (
         l_client_http->es = l_ev_socket;
         dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
+        if (!l_ev_uuid_ptr) {
+            log_it(L_ERROR, "Memory allocation error in dap_client_http_request_custom");
+            DAP_DEL_Z(l_client_http->response);
+            DAP_DEL_Z(l_client_http->request);
+            DAP_DEL_Z(l_client_http);
+            return NULL;
+        }
         *l_ev_uuid_ptr = l_ev_socket->uuid;
         l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, s_timer_timeout_check, l_ev_uuid_ptr);
         if (!l_client_http->timer) {

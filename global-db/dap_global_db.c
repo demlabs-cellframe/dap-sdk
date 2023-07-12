@@ -165,7 +165,46 @@ static int s_record_del_history_del(const char *a_group, const char *a_key);
 // Call notificators
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t *a_store_obj);
 
-typedef uint64_t dap_global_db_callback_arg_uid_t;
+// Saves GDB callig context
+static dap_global_db_callback_arg_uid l_max_uid = 0;
+static dap_global_db_callback_arg_uid s_global_db_save_callback_data(dap_global_db_context_t *a_global_db_context, void* a_data) {
+    dap_global_db_args_data_callbacks_t *l_arg = DAP_NEW(dap_global_db_args_data_callbacks_t);
+    if (!l_arg) {
+        log_it(L_ERROR, "Memory allocation error in s_global_db_save_callback_data");
+        return NULL;
+    }
+    l_arg->data = a_data;
+    pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
+    if (l_max_uid == 0)
+        l_max_uid++;
+    l_arg->uid = l_max_uid;
+    l_max_uid++;
+    HASH_ADD(hh, a_global_db_context->data_callbacks, uid, sizeof(dap_global_db_callback_arg_uid), l_arg);
+    pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
+    return l_arg->uid;
+}
+static void *s_global_db_find_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid a_uid) {
+    dap_global_db_args_data_callbacks_t *l_find = NULL;
+    void *ret = NULL;
+    pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
+    HASH_FIND(hh, a_global_db_context->data_callbacks, &a_uid, sizeof(dap_global_db_callback_arg_uid), l_find);
+    ret = l_find ? l_find->data : NULL;
+    pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
+    return ret;
+}
+static void *s_global_db_remove_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid a_uid) {
+    void *ret = NULL;
+    dap_global_db_args_data_callbacks_t *l_current, *l_tmp;
+    pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
+    HASH_ITER(hh,a_global_db_context->data_callbacks, l_current, l_tmp) {
+        if (l_current->uid == a_uid) {
+            ret = l_current->data;
+            HASH_DEL(a_global_db_context->data_callbacks, l_current);
+        }
+    }
+    pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
+    return ret;
+}
 
 /**
  * @brief A structure for storing callback data for synchronous calls.
@@ -217,6 +256,11 @@ static struct sync_obj_data_callback *s_global_db_find_callback_data(dap_global_
 static struct sync_obj_data_callback *s_global_db_obj_data_callback_new()
 {
     struct sync_obj_data_callback *l_callback = DAP_NEW_Z(struct sync_obj_data_callback);
+    if (!l_callback) {
+        log_it(L_ERROR, "Memory allocation error in s_global_db_obj_data_callback_new");
+        return NULL;
+    }
+    pthread_mutex_init(&l_callback->hdr.mutex, NULL);
     pthread_cond_init(&l_callback->hdr.cond, NULL);
     clock_gettime(CLOCK_REALTIME, &l_callback->hdr.timer_timeout);
     l_callback->hdr.timer_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
@@ -274,6 +318,11 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
     // Create and run its own context
     if (s_context_global_db == NULL) {
         s_context_global_db = DAP_NEW_Z(struct dap_global_db_context);
+        if (!s_context_global_db) {
+            log_it(L_ERROR, "Memory allocation error in dap_global_db_init");
+            l_rc = -5;
+            goto lb_return;
+        }
         s_context_global_db->context = dap_context_new(DAP_CONTEXT_TYPE_GLOBAL_DB);
         s_context_global_db->context->_inheritor = s_context_global_db;
         if (dap_context_run(s_context_global_db->context, -1, DAP_CONTEXT_POLICY_DEFAULT,
@@ -283,6 +332,12 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
             goto lb_return;
         }
         dap_global_db_instance_t *l_dbi = DAP_NEW_Z(dap_global_db_instance_t);
+        if (!l_dbi) {
+            log_it(L_ERROR, "Memory allocation error in dap_global_db_init");
+            DAP_DEL_Z(s_context_global_db);
+            l_rc = -5;
+            goto lb_return;
+        }
 
         l_dbi->storage_path = dap_strdup(a_storage_path);
         l_dbi->driver_name = dap_strdup(a_driver_name);
@@ -412,6 +467,10 @@ int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_cal
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
@@ -547,6 +606,10 @@ int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_raw");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET_RAW;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
@@ -656,6 +719,10 @@ int dap_global_db_get_del_ts(const char *a_group, const char *a_key,dap_global_d
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_del_ts");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET_DEL_TS;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
@@ -771,6 +838,10 @@ int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_last");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET_LAST;
     l_msg->group = dap_strdup(a_group);
     l_msg->callback_arg = a_arg;
@@ -866,6 +937,10 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_last_raw");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET_LAST_RAW;
     l_msg->group = dap_strdup(a_group);
     l_msg->callback_arg = a_arg;
@@ -973,6 +1048,10 @@ int dap_global_db_get_all(const char * a_group, UNUSED_ARG size_t a_results_page
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_all");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET_ALL;
     l_msg->group = dap_strdup(a_group);
     l_msg->callback_arg = a_arg;
@@ -1091,6 +1170,10 @@ int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t 
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_all_raw");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET_ALL_RAW ;
     l_msg->group = dap_strdup(a_group);
     l_msg->values_raw_last_id = a_first_id;
@@ -1261,6 +1344,10 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
         return -1;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_set");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_SET;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
@@ -1404,6 +1491,10 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_set_raw");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_SET_RAW;
     l_msg->callback_arg = a_arg;
     l_msg->callback_results_raw = a_callback;
@@ -1495,6 +1586,10 @@ int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_set_multiple_zc");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_SET_MULTIPLE;
     l_msg->group = dap_strdup(a_group);
     l_msg->values = a_values;
@@ -1589,6 +1684,10 @@ int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callba
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in s_db_object_pin");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_PIN;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
@@ -1728,6 +1827,10 @@ int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_cal
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_del");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_DELETE;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
@@ -1809,6 +1912,10 @@ int dap_global_db_flush(dap_global_db_callback_result_t a_callback, void * a_arg
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_flush");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_FLUSH;
     l_msg->callback_arg = a_arg;
     l_msg->callback_result = a_callback;
@@ -1909,6 +2016,10 @@ int dap_global_db_context_exec (dap_global_db_callback_t a_callback, void * a_ar
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_context_exec");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_CONTEXT_EXEC;
     l_msg->callback_arg = a_arg;
     l_msg->callback = a_callback;

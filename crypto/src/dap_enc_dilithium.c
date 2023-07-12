@@ -178,6 +178,10 @@ dilithium_signature_t* dap_enc_dilithium_read_signature(uint8_t *a_buf, size_t a
         return NULL ;
 
     dilithium_signature_t* l_sign = DAP_NEW_Z(dilithium_signature_t);
+    if (!l_sign) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_dilithium_read_signature");
+        return NULL;
+    }
     l_sign->kind = kind;
     l_sign->sig_len = *(uint64_t*)(a_buf + l_shift_mem);
     l_shift_mem += sizeof(uint64_t);
@@ -217,6 +221,10 @@ uint8_t* dap_enc_dilithium_write_private_key(const dilithium_private_key_t* a_pr
 
     uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_SECRETKEYBYTES;
     byte_t *l_buf = DAP_NEW_Z_SIZE(byte_t, l_buflen);
+    if (!l_buf) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_dilithium_write_private_key");
+        return NULL;
+    }
     memcpy(l_buf, &l_buflen, sizeof(uint64_t));
     uint32_t l_kind = a_private_key->kind;
     memcpy(l_buf + sizeof(uint64_t), &l_kind, sizeof(uint32_t));
@@ -235,6 +243,10 @@ uint8_t* dap_enc_dilithium_write_public_key(const dilithium_public_key_t* a_publ
 
     uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_PUBLICKEYBYTES;
     uint8_t *l_buf = DAP_NEW_Z_SIZE(byte_t, l_buflen);
+    if (!l_buf) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_dilithium_write_public_key");
+        return NULL;
+    }
     memcpy(l_buf, &l_buflen, sizeof(uint64_t));
     uint32_t l_kind = a_public_key->kind;
     memcpy(l_buf + sizeof(uint64_t), &l_kind, sizeof(uint32_t));
@@ -273,6 +285,10 @@ dilithium_private_key_t* dap_enc_dilithium_read_private_key(const uint8_t *a_buf
     }
 
     dilithium_private_key_t* l_private_key = DAP_NEW(dilithium_private_key_t);
+    if (!l_private_key) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_dilithium_read_private_key");
+        return NULL;
+    }
     l_private_key->kind = kind;
 
     l_private_key->data = DAP_NEW_SIZE(byte_t, p.CRYPTO_SECRETKEYBYTES);
