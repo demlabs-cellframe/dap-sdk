@@ -1,4 +1,4 @@
-set(DAP_SDK_NATIVE_VERSION "2.3-0")
+set(DAP_SDK_NATIVE_VERSION "2.2-2")
 
 include(ExternalProject)
 
