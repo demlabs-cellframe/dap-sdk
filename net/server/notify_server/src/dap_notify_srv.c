@@ -136,7 +136,7 @@ int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char * a_format,.
     if (!l_str) {
         va_end(ap_copy);
         log_it(L_ERROR,"Memory allocation error in dap_notify_server_send_f_inter");
-        return NULL;
+        return -1;
     }
     vsprintf(l_str, a_format, ap_copy);
     va_end(ap_copy);
@@ -182,7 +182,7 @@ int dap_notify_server_send_f_mt(const char *a_format, ...)
     if (!l_str) {
         va_end(ap_copy);
         log_it(L_ERROR,"Memory allocation error in dap_notify_server_send_f_mt");
-        return NULL;
+        return -1;
     }
     vsprintf(l_str, a_format, ap_copy);
     va_end(ap_copy);

@@ -165,47 +165,7 @@ static int s_record_del_history_del(const char *a_group, const char *a_key);
 // Call notificators
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t *a_store_obj);
 
-// Saves GDB callig context
-static dap_global_db_callback_arg_uid l_max_uid = 0;
-static dap_global_db_callback_arg_uid s_global_db_save_callback_data(dap_global_db_context_t *a_global_db_context, void* a_data) {
-    dap_global_db_args_data_callbacks_t *l_arg = DAP_NEW(dap_global_db_args_data_callbacks_t);
-    if (!l_arg) {
-        log_it(L_ERROR, "Memory allocation error in s_global_db_save_callback_data");
-        return NULL;
-    }
-    l_arg->data = a_data;
-    pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
-    if (l_max_uid == 0)
-        l_max_uid++;
-    l_arg->uid = l_max_uid;
-    l_max_uid++;
-    HASH_ADD(hh, a_global_db_context->data_callbacks, uid, sizeof(dap_global_db_callback_arg_uid), l_arg);
-    pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
-    return l_arg->uid;
-}
-static void *s_global_db_find_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid a_uid) {
-    dap_global_db_args_data_callbacks_t *l_find = NULL;
-    void *ret = NULL;
-    pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
-    HASH_FIND(hh, a_global_db_context->data_callbacks, &a_uid, sizeof(dap_global_db_callback_arg_uid), l_find);
-    ret = l_find ? l_find->data : NULL;
-    pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
-    return ret;
-}
-static void *s_global_db_remove_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid a_uid) {
-    void *ret = NULL;
-    dap_global_db_args_data_callbacks_t *l_current, *l_tmp;
-    pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
-    HASH_ITER(hh,a_global_db_context->data_callbacks, l_current, l_tmp) {
-        if (l_current->uid == a_uid) {
-            ret = l_current->data;
-            HASH_DEL(a_global_db_context->data_callbacks, l_current);
-        }
-    }
-    pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
-    return ret;
-}
-
+typedef uint64_t dap_global_db_callback_arg_uid_t;
 /**
  * @brief A structure for storing callback data for synchronous calls.
  */
@@ -260,7 +220,6 @@ static struct sync_obj_data_callback *s_global_db_obj_data_callback_new()
         log_it(L_ERROR, "Memory allocation error in s_global_db_obj_data_callback_new");
         return NULL;
     }
-    pthread_mutex_init(&l_callback->hdr.mutex, NULL);
     pthread_cond_init(&l_callback->hdr.cond, NULL);
     clock_gettime(CLOCK_REALTIME, &l_callback->hdr.timer_timeout);
     l_callback->hdr.timer_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
