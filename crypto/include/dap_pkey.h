@@ -154,6 +154,8 @@ dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key);
 
 bool dap_pkey_match(dap_pkey_t *a_pkey1, dap_pkey_t *a_pkey2);
 
+bool dap_pkey_match_sign(dap_pkey_t *a_pkey, dap_sign_t *a_sign);
+
 bool dap_pkey_get_hash(dap_pkey_t *a_pkey, dap_chain_hash_fast_t *a_out_hash);
 
 DAP_STATIC_INLINE bool dap_pkey_compare_with_sign(dap_pkey_t *a_pkey, dap_sign_t *a_sign)

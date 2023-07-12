@@ -815,6 +815,10 @@ void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char
  */
 static void s_request_error(int a_err_code, void * a_obj)
 {
+    if (a_obj == NULL) {
+        log_it(L_ERROR,"Object is NULL for s_request_error");
+        return;
+    }
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);
     l_client_pvt->http_client = NULL;
@@ -1160,6 +1164,10 @@ static void s_stream_es_callback_connected(dap_events_socket_t * a_es)
 static void s_stream_es_callback_delete(dap_events_socket_t *a_es, UNUSED_ARG void *a_arg)
 {
     log_it(L_INFO, "Stream events socket delete callback");
+    if (a_es == NULL) {
+        log_it(L_ERROR,"Esocket is NULL for s_stream_es_callback_delete");
+        return;
+    }
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     if (!l_client)
         return;
@@ -1250,7 +1258,7 @@ static void s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ARG vo
  */
 static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
 {
-    if (!a_es->_inheritor) {
+    if (!a_es->_inheritor || !a_es ) {
         log_it(L_WARNING, "No client with client stream erro callback");
         return;
     }

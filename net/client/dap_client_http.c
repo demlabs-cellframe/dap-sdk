@@ -372,6 +372,10 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
  */
 static void s_http_error(dap_events_socket_t * a_es, int a_errno)
 {
+    if (a_es == NULL) {
+        log_it(L_ERROR,"Esocket is NULL for s_http_error");
+        return;
+    }
     char l_errbuf[128];
     l_errbuf[0] = '\0';
     if (a_errno == ETIMEDOUT){
@@ -411,6 +415,10 @@ static void s_http_error(dap_events_socket_t * a_es, int a_errno)
  */
 static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
 {
+    if (a_es == NULL) {
+        log_it(L_ERROR,"Esocket is NULL for s_es_delete");
+        return;
+    }
     (void) a_arg;
     dap_client_http_t * l_client_http_internal = DAP_CLIENT_HTTP(a_es);
     if(l_client_http_internal == NULL){

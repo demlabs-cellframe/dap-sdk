@@ -871,12 +871,12 @@ bool dap_multi_sign_hash_data(dap_multi_sign_t *a_sign, const void *a_data, cons
  */
 dap_multi_sign_t *dap_multi_sign_create(dap_multi_sign_params_t *a_params, const void *a_data, const size_t a_data_size)
 {
-    if (a_params->type.type != SIG_TYPE_MULTI_CHAINED) {
-        log_it (L_ERROR, "Unsupported multi-signature type");
-        return NULL;
-    }
     if (!a_params || !a_params->total_count) {
         log_it (L_ERROR, "Wrong parameters of multi-signature");
+        return NULL;
+    }
+    if (a_params->type.type != SIG_TYPE_MULTI_CHAINED) {
+        log_it (L_ERROR, "Unsupported multi-signature type");
         return NULL;
     }
     dap_multi_sign_t *l_sign = DAP_NEW_Z(dap_multi_sign_t);
