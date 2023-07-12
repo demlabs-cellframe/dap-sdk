@@ -514,6 +514,11 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
     while (entry != NULL){
         if (strcmp(entry->d_name, "..") != 0 && strcmp(entry->d_name, ".") != 0 && entry->d_type == DT_DIR){
             element = (dap_list_name_directories_t *)malloc(sizeof(dap_list_name_directories_t));
+            if (!element) {
+                log_it(L_ERROR, "Memory allocation error in dap_path_get_dirname");
+                closedir(dir);
+                return NULL;
+            }
             element->name_directory = dap_strdup(entry->d_name);
             LL_APPEND(list, element);
         }
@@ -1289,6 +1294,11 @@ char* dap_get_current_dir(void)
     {
         DAP_DELETE(buffer);
         buffer = DAP_NEW_SIZE(char, max_len + 1);
+        if (!buffer) {
+            log_it(L_ERROR, "Memory allocation error in dap_get_current_dir");
+            DAP_DEL_Z(dir);
+            return NULL;
+        }
         *buffer = 0;
         dir = getcwd(buffer, max_len);
 

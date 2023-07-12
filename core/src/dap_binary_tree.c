@@ -103,6 +103,9 @@ static dap_binary_tree_t *s_tree_insert(dap_binary_tree_t *a_elm, dap_binary_tre
 {
     if (a_elm == NULL) {
         dap_binary_tree_t* l_elm = DAP_NEW_Z(dap_binary_tree_t);
+        if (!l_elm) {
+            return NULL;
+        }
         l_elm->left = l_elm->right = NULL;
         l_elm->key = a_key;
         l_elm->data = a_data;

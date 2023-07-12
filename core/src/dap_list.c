@@ -790,6 +790,10 @@ static dap_list_t* dap_list_insert_sorted_real(dap_list_t *list, void* data, dap
     if(!list)
     {
         new_list = dap_list_alloc();
+        if (!new_list) {
+            log_it(L_ERROR, "Memory allocation error in dap_list_insert_sorted_real");
+            return NULL;
+        }
         new_list->data = data;
         return new_list;
     }
@@ -804,6 +808,10 @@ static dap_list_t* dap_list_insert_sorted_real(dap_list_t *list, void* data, dap
     }
 
     new_list = dap_list_alloc();
+    if (!new_list) {
+        log_it(L_ERROR, "Memory allocation error in dap_list_insert_sorted_real");
+        return NULL;
+    }
     new_list->data = data;
 
     if((!tmp_list->next) && (cmp > 0))
