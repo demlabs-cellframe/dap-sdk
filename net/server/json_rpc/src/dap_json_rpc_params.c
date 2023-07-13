@@ -16,6 +16,10 @@ void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a
 {
     log_it(L_DEBUG, "Add data in params");
     dap_json_rpc_param_t *l_param = DAP_NEW(dap_json_rpc_param_t);
+    if (!l_param) {
+        log_it(L_ERROR, "Memory allocation error in dap_json_rpc_params_add_data");
+        return;
+    }
     //l_param->name_param = dap_strdup(a_name);
     l_param->type = a_type;
     size_t l_len_value;

@@ -419,6 +419,10 @@ int dap_proc_thread_esocket_write_f_inter(dap_proc_thread_t * a_thread,dap_worke
 void dap_proc_thread_worker_exec_callback_inter(dap_proc_thread_t * a_thread, size_t a_worker_id, dap_worker_callback_t a_callback, void * a_arg)
 {
     dap_worker_msg_callback_t *l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_proc_thread_worker_exec_callback_inter");
+        return;
+    }
     l_msg->callback = a_callback;
     l_msg->arg = a_arg;
     debug_if(g_debug_reactor, L_INFO, "Msg with arg %p -> worker %zu", a_arg, a_worker_id);

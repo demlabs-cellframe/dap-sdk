@@ -42,8 +42,17 @@ dap_http_cache_t * dap_http_cache_update(struct dap_http_url_proc * a_url_proc, 
                                          time_t a_ts_expire )
 {
     dap_http_cache_t * l_ret = DAP_NEW_Z(dap_http_cache_t);
+    if (!l_ret) {
+        log_it(L_ERROR, "Memory allocation error in dap_http_cache_update");
+        return NULL;
+    }
     if(a_body_size){
         l_ret->body = DAP_NEW_SIZE(byte_t,a_body_size);
+        if (!l_ret->body) {
+            log_it(L_ERROR, "Memory allocation error in dap_http_cache_update");
+            DAP_DEL_Z(l_ret);
+            return NULL;
+        }
         memcpy(l_ret->body,a_body,a_body_size);
         l_ret->body_size = a_body_size;
     }

@@ -608,6 +608,9 @@ static dap_slist* dap_slist_prepend(dap_slist *a_list, void* a_data)
     dap_slist *l_new_list;
 
     l_new_list = DAP_NEW_Z(dap_slist);
+    if (!l_new_list) {
+        return NULL;
+    }
     l_new_list->data = a_data;
     l_new_list->next = a_list;
 
@@ -757,6 +760,9 @@ char** dap_strdupv(const char **a_str_array)
             ++l_i;
 
         l_retval = DAP_NEW_SIZE(char*, (l_i + 1) * sizeof(char*));
+        if (!l_retval) {
+            return NULL;
+        }
 
         l_i = 0;
         while(a_str_array[l_i])

@@ -674,6 +674,10 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
 dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t * key)
 {
     dap_enc_key_serialize_t *result = DAP_NEW_Z(dap_enc_key_serialize_t);
+    if (!result) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_key_serialize");
+        return NULL;
+    }
     result->priv_key_data_size = key->priv_key_data_size;
     result->pub_key_data_size = key->pub_key_data_size;
     result->last_used_timestamp = key->last_used_timestamp;
@@ -696,18 +700,40 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
         return NULL;
     }
     dap_enc_key_t *l_ret = dap_enc_key_new(a_key->type);
+    if (!l_ret) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_key_dup");
+        return NULL;
+    }
     if (a_key->priv_key_data_size) {
         l_ret->priv_key_data = DAP_NEW_Z_SIZE(byte_t, a_key->priv_key_data_size);
+        if (!l_ret->priv_key_data) {
+            log_it(L_ERROR, "Memory allocation error in dap_enc_key_dup");
+            DAP_DEL_Z(l_ret);
+            return NULL;
+        }
         l_ret->priv_key_data_size = a_key->priv_key_data_size;
         memcpy(l_ret->priv_key_data, a_key->priv_key_data, a_key->priv_key_data_size);
     }
     if (a_key->pub_key_data_size) {
         l_ret->pub_key_data = DAP_NEW_Z_SIZE(byte_t, a_key->pub_key_data_size);
+        if (!l_ret->pub_key_data) {
+            log_it(L_ERROR, "Memory allocation error in dap_enc_key_dup");
+            DAP_DEL_Z(l_ret->priv_key_data);
+            DAP_DEL_Z(l_ret);
+            return NULL;
+        }
         l_ret->pub_key_data_size =  a_key->pub_key_data_size;
         memcpy(l_ret->pub_key_data, a_key->pub_key_data, a_key->pub_key_data_size);
     }
     if(a_key->_inheritor_size) {
         l_ret->_inheritor = DAP_NEW_Z_SIZE(byte_t, a_key->_inheritor_size);
+        if (!l_ret->_inheritor) {
+            log_it(L_ERROR, "Memory allocation error in dap_enc_key_dup");
+            DAP_DEL_Z(l_ret->priv_key_data);
+            DAP_DEL_Z(l_ret->pub_key_data);
+            DAP_DEL_Z(l_ret);
+            return NULL;
+        }
         l_ret->_inheritor_size = a_key->_inheritor_size;
         memcpy(l_ret->_inheritor, a_key->_inheritor, a_key->_inheritor_size);
     }
@@ -728,6 +754,10 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t buf_size)
     }
     const dap_enc_key_serialize_t *in_key = (const dap_enc_key_serialize_t *)buf;
     dap_enc_key_t *result = dap_enc_key_new(in_key->type);
+    if (!result) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_key_deserialize");
+        return NULL;
+    }
     result->last_used_timestamp = in_key->last_used_timestamp;
     result->priv_key_data_size = in_key->priv_key_data_size;
     result->pub_key_data_size = in_key->pub_key_data_size;
@@ -735,12 +765,30 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t buf_size)
     DAP_DEL_Z(result->priv_key_data);
     DAP_DEL_Z(result->pub_key_data);
     result->priv_key_data = DAP_NEW_Z_SIZE(byte_t, result->priv_key_data_size);
+    if (!result->priv_key_data) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_key_deserialize");
+        DAP_DEL_Z(result);
+        return NULL;
+    }
     memcpy(result->priv_key_data, in_key->priv_key_data, result->priv_key_data_size);
     result->pub_key_data = DAP_NEW_Z_SIZE(byte_t, result->pub_key_data_size);
+    if (!result->pub_key_data) {
+        log_it(L_ERROR, "Memory allocation error in dap_enc_key_deserialize");
+        DAP_DEL_Z(result->priv_key_data);
+        DAP_DEL_Z(result);
+        return NULL;
+    }
     memcpy(result->pub_key_data, in_key->pub_key_data, result->pub_key_data_size);
     if(in_key->inheritor_size) {
         DAP_DEL_Z(result->_inheritor);
         result->_inheritor = DAP_NEW_Z_SIZE(byte_t, in_key->inheritor_size );
+        if (!result->pub_key_data) {
+            log_it(L_ERROR, "Memory allocation error in dap_enc_key_deserialize");
+            DAP_DEL_Z(result->priv_key_data);
+            DAP_DEL_Z(result->pub_key_data);
+            DAP_DEL_Z(result);
+            return NULL;
+        }
         memcpy(result->_inheritor, in_key->inheritor, in_key->inheritor_size);
     } else {
         result->_inheritor = NULL;
