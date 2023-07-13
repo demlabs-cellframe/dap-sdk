@@ -16,6 +16,9 @@ int dap_json_rpc_request_init(const char *a_url_service)
 dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_json_rpc_params_t *a_params, int64_t a_id)
 {
     dap_json_rpc_request_t *l_request = DAP_NEW(dap_json_rpc_request_t);
+    if (!l_request) {
+        log_it(L_ERROR, "Memory allocation error in dap_json_rpc_request_creation");
+    }
     l_request->method = dap_strdup(a_method);
     l_request->params = a_params;
     l_request->id = a_id;
@@ -31,6 +34,10 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
     json_object *l_jobj_method = NULL;
     json_object *l_jobj_params = NULL;
     dap_json_rpc_request_t *l_request = DAP_NEW_Z(dap_json_rpc_request_t);
+    if (!l_request) {
+        log_it(L_ERROR, "Memory allocation error in dap_json_rpc_request_from_json");
+        return NULL;
+    }
     l_request->params = NULL;
     bool l_err_parse_request = false;
     if (l_jterr == json_tokener_success){

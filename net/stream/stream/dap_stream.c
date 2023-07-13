@@ -108,6 +108,10 @@ dap_enc_key_type_t s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAE
 static void s_stream_connections_added(dap_stream_t *a_stream, enum dap_stream_type a_type)
 {
     dap_stream_connection_t *l_connect = DAP_NEW(dap_stream_connection_t);
+    if (!l_connect) {
+        log_it(L_ERROR, "Memory allocation error in s_stream_connections_added");
+        return;
+    }
     l_connect->stream = a_stream;
     if (a_type == DAP_STREAM_DOWNLINK) {
         l_connect->address = a_stream->esocket->hostaddr;
@@ -166,6 +170,12 @@ static dap_stream_connection_t **s_stream_connections_get_streams(size_t *a_coun
         return NULL;
     }
     dap_stream_connection_t **l_connections = DAP_NEW_Z_SIZE(dap_stream_connection_t*, l_count_streams * sizeof(dap_stream_connection_t*));
+    if (!l_connections) {
+        log_it(L_ERROR, "Memory allocation error in s_stream_connections_get_streams");
+        pthread_mutex_unlock(&s_dap_stream_downlink_table_mutex);
+        pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
+        return NULL;
+    }
     l_count_streams = 0;
     dap_stream_connection_t *l_current, *l_tmp;
     HASH_ITER(hh, l_table_connection, l_current, l_tmp) {
@@ -395,6 +405,10 @@ void check_session( unsigned int a_id, dap_events_socket_t *a_esocket )
 dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
 {
     dap_stream_t *l_ret = DAP_NEW_Z(dap_stream_t);
+    if (!l_ret) {
+        log_it(L_ERROR, "Memory allocation error in s_stream_new");
+        return NULL;
+    }
 
 #ifdef  DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
@@ -409,6 +423,11 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
     l_ret->client_last_seq_id_packet = (size_t)-1;
     // Start server keep-alive timer
     dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
+    if (!l_es_uuid) {
+        log_it(L_ERROR, "Memory allocation error in s_stream_new");
+        DAP_DEL_Z(l_ret);
+        return NULL;
+    }
     *l_es_uuid = l_ret->esocket->uuid;
     l_ret->keepalive_timer = dap_timerfd_start_on_worker(l_ret->esocket->context->worker,
                                                          STREAM_KEEPALIVE_TIMEOUT * 1000,
@@ -430,6 +449,10 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
 dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_esocket)
 {
     dap_stream_t *l_ret = DAP_NEW_Z(dap_stream_t);
+    if (!l_ret) {
+        log_it(L_ERROR, "Memory allocation error in dap_stream_new_es_client");
+        return NULL;
+    }
 
 #ifdef  DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
@@ -524,6 +547,12 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg)
                 log_it(L_INFO,"Session id %u was found with channels = %s",id,ss->active_channels);
                 if(dap_stream_session_open(ss)==0){ // Create new stream
                     dap_stream_t * sid = s_stream_new(a_http_client);
+                    if (!sid) {
+                        log_it(L_ERROR, "Memory allocation error in s_http_client_headers_read");
+                        a_http_client->reply_status_code=404;
+                        strcpy(a_http_client->reply_reason_phrase,"Memory allocation error in s_http_client_headers_read");
+                        return;
+                    }
                     sid->session=ss;
                     dap_http_header_t *header = dap_http_header_find(a_http_client->in_headers, "Service-Key");
                     if (header)
@@ -609,6 +638,10 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
     // Restart server keepalive timer if it was unassigned before
     if (!l_stream->keepalive_timer) {
         dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
+        if (!l_es_uuid) {
+            log_it(L_ERROR, "Memory allocation error in s_esocket_callback_worker_assign");
+            return;
+        }
         *l_es_uuid = a_esocket->uuid;
         l_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
                                                                 STREAM_KEEPALIVE_TIMEOUT * 1000,
@@ -644,6 +677,10 @@ static void s_client_callback_worker_assign(dap_events_socket_t * a_esocket, dap
     // Start client keepalive timer or restart it, if it was unassigned before
     if (!l_stream->keepalive_timer) {
         dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
+        if (!l_es_uuid) {
+            log_it(L_ERROR, "Memory allocation error in s_client_callback_worker_assign");
+            return;
+        }
         *l_es_uuid = a_esocket->uuid;
         l_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
                                                                 STREAM_KEEPALIVE_TIMEOUT * 1000,
@@ -767,8 +804,10 @@ void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready)
 size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
 {
     dap_stream_pkt_t *l_pkt = NULL;
-    if(!a_stream || !a_stream->esocket)
+    if(!a_stream || !a_stream->esocket || !a_stream->esocket->buf_in) {
+        log_it(L_ERROR, "Arguments is NULL for dap_stream_data_proc_read");
         return 0;
+    }
 
     byte_t *l_buf_in = a_stream->esocket->buf_in;
     size_t l_buf_in_size = a_stream->esocket->buf_in_size;

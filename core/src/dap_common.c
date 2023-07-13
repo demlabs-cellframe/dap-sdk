@@ -340,6 +340,9 @@ void _log_it(const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, 
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
         return;
     log_str_t *l_log_string = DAP_NEW_Z(log_str_t);
+    if (!l_log_string) {
+        return;
+    }
     size_t offset2 = sizeof(l_log_string->str) - 2;
     strncpy(l_log_string->str, s_ansi_seq_color[a_ll], offset2);
     l_log_string->offset = s_ansi_seq_color_len[a_ll];
@@ -587,7 +590,17 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
 	log_str_t *elem, *tmp;
 	elem = tmp = NULL;
 	char *l_buf = DAP_CALLOC(STR_LOG_BUF_MAX, a_limit);
+    if (!l_buf) {
+        log_it(L_ERROR, "Memory allocation error in dap_log_get_item");
+        DAP_FREE(l_buf);
+        return NULL;
+    }
 	char *l_line = DAP_CALLOC(1, STR_LOG_BUF_MAX + 1);
+    if (!l_line) {
+        log_it(L_ERROR, "Memory allocation error in dap_log_get_item");
+        DAP_FREE(l_buf);
+        return NULL;
+    }
 	char *s = l_buf;
 
 	//char *l_log_file = dap_strdup_printf("%s/var/log/%s.log", g_sys_dir_path, dap_get_appname());
@@ -948,6 +961,19 @@ size_t dap_hex2bin(uint8_t *a_out, const char *a_in, size_t a_len)
 }
 
 /**
+ * Checking all chars in string is hex digits.
+ */
+int dap_is_hex_string(const char *a_in, size_t a_len) {
+    if (!a_in || !a_len)
+        return -1;
+    int l_res = 0;
+    while (*a_in && !l_res && a_len--) {
+        l_res = !isxdigit(*a_in++);
+    }
+    return l_res;
+}
+
+/**
  * Convert string to digit
  */
 void dap_digit_from_string(const char *num_str, void *raw, size_t raw_len)
@@ -1102,6 +1128,10 @@ static void s_bsd_callback(void *a_arg)
  */
 dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_callback_t a_callback, void *a_param) {
     dap_timer_interface_t *l_timer_obj = DAP_NEW_Z(dap_timer_interface_t);
+    if (!l_timer_obj) {
+        log_it(L_ERROR, "Memory allocation error in dap_interval_timer_create");
+        return NULL;
+    }
     l_timer_obj->callback   = a_callback;
     l_timer_obj->param      = a_param;
 #if (defined _WIN32)

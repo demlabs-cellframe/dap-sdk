@@ -31,13 +31,7 @@
 #define DAP_GLOBAL_DB_LOCAL_GENERAL         "local.general"
 #define DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT     5 // seconds
 
-typedef uint64_t dap_global_db_callback_arg_uid;
-
-typedef struct dap_global_db_args_data_callbacks{
-    dap_global_db_callback_arg_uid uid;
-    void *data;
-    UT_hash_handle hh;
-}dap_global_db_args_data_callbacks_t;
+typedef struct sync_obj_data_callback sync_obj_data_callback_t;
 
 // Global DB instance with settings data
 typedef struct dap_global_db_instance {
@@ -47,6 +41,7 @@ typedef struct dap_global_db_instance {
     dap_list_t *whitelist;
     dap_list_t *blacklist;
     uint32_t store_time_limit;
+    dap_list_t *notify_groups;
 } dap_global_db_instance_t;
 
 // GlobalDB own context custom extension
@@ -62,7 +57,8 @@ typedef struct dap_global_db_context {
 
     dap_context_t * context; // parent pointer
 
-    dap_global_db_args_data_callbacks_t *data_callbacks;
+    // _pvt
+    sync_obj_data_callback_t *data_callbacks;
     pthread_mutex_t data_callbacks_mutex;
 } dap_global_db_context_t;
 

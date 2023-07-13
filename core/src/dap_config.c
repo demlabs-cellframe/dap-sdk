@@ -172,6 +172,12 @@ dap_config_t * dap_config_load(const char * a_file_path)
                             }
                             if( l_line_length ){
                                 l_line = DAP_NEW_SIZE(char,l_line_length+1);
+                                if (!l_line) {
+                                    log_it(L_ERROR, "Memory allocation error in dap_config_load");
+                                    DAP_DELETE(l_ret);
+                                    fclose(f);
+                                    return NULL;
+                                }
                                 memcpy(l_line,buf+j,l_line_length);
                                 l_line[l_line_length] = 0;
 
@@ -184,6 +190,14 @@ dap_config_t * dap_config_load(const char * a_file_path)
                                     // log_it(L_DEBUG,"Config section '%s'",l_section_name);
 
                                     dap_config_item_t * l_item_section = DAP_NEW_Z(dap_config_item_t);
+                                    if(!l_item_section) {
+                                        log_it(L_ERROR, "Memory allocation error in dap_config_load");
+                                        free(l_section_name);
+                                        DAP_DELETE(l_line);
+                                        DAP_DELETE(l_ret);
+                                        fclose(f);
+                                        return NULL;
+                                    }
                                     strncpy(l_item_section->name,l_section_name,sizeof(l_item_section->name)-1);
                                     l_item_section->item_next = l_config_internal->item_root;
                                     l_config_internal->item_root = l_item_section;
@@ -195,7 +209,7 @@ dap_config_t * dap_config_load(const char * a_file_path)
                                     char l_param_name[sizeof(l_section_current->name)];
                                     size_t l_param_name_size=0;
                                     size_t l_param_value_size=0;
-                                    char l_param_value[1024];
+                                    char l_param_value[262144];
                                     l_param_name[0] = 0;
                                     l_param_value[0] = 0;
                                     for ( j = 0; j < l_line_length; j++ ){ // Parse param name
@@ -250,13 +264,27 @@ dap_config_t * dap_config_load(const char * a_file_path)
                                             values[l_param_value_size-2] = 0;
 
                                             dap_config_item_t * l_item = DAP_NEW_Z(dap_config_item_t);
-
+                                            if (!l_item) {
+                                                log_it(L_ERROR, "Memory allocation error in dap_config_load");
+                                                DAP_DELETE(l_line);
+                                                DAP_DELETE(l_ret);
+                                                fclose(f);
+                                                return NULL;
+                                            }
                                             strncpy(l_item->name,l_param_name,sizeof(l_item->name));
                                             l_item->item_next = l_section_current->childs;
                                             l_item->is_array = true;
                                             l_section_current->childs = l_item;
                                             l_item->array_length = get_array_length(l_param_value);
                                             l_item->data_str_array = (char**) malloc (sizeof(char*) * l_item->array_length);
+                                            if (!l_item->data_str_array) {
+                                                log_it(L_ERROR, "Memory allocation error in dap_config_load");
+                                                DAP_DELETE(l_item);
+                                                DAP_DELETE(l_line);
+                                                DAP_DELETE(l_ret);
+                                                fclose(f);
+                                                return NULL;
+                                            }
                                             // parsing items in array
                                             int j = 0;
                                             char * l_tmp = NULL;
@@ -278,6 +306,13 @@ dap_config_t * dap_config_load(const char * a_file_path)
                                             l_item->array_length = j;
                                         } else {
                                             dap_config_item_t * l_item = DAP_NEW_Z(dap_config_item_t);
+                                            if (!l_item) {
+                                                log_it(L_ERROR, "Memory allocation error in dap_config_load");
+                                                DAP_DELETE(l_line);
+                                                DAP_DELETE(l_ret);
+                                                fclose(f);
+                                                return NULL;
+                                            }
 
                                             strncpy(l_item->name,l_param_name,sizeof(l_item->name));
                                             l_item->item_next = l_section_current->childs;

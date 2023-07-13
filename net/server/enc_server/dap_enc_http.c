@@ -47,7 +47,7 @@
 #include "dap_enc_base64.h"
 #include "dap_enc_msrln.h"
 #include "include/http_status_code.h"
-#include <json-c/json.h>
+#include "json.h"
 
 
 #define LOG_TAG "dap_enc_http"
@@ -192,6 +192,11 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
     dap_enc_key_t * l_key= dap_enc_ks_find_http(a_http_simple->http_client);
     if(l_key){
         enc_http_delegate_t * dg = DAP_NEW_Z(enc_http_delegate_t);
+        if (!dg) {
+            log_it(L_ERROR, "Memory allocation error in enc_http_request_decode");
+            DAP_DEL_Z(dg);
+            return NULL;
+        }
         dg->key=l_key;
         dg->http=a_http_simple->http_client;
        // dg->isOk=true;
@@ -204,6 +209,11 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         if(a_http_simple->request_size){
             size_t l_dg_request_size_max = a_http_simple->request_size;
             dg->request= DAP_NEW_SIZE( void , l_dg_request_size_max+1);
+            if (!dg->request) {
+                log_it(L_ERROR, "Memory allocation error in enc_http_request_decode");
+                DAP_DEL_Z(dg);
+                return NULL;
+            }
             dg->request_size=dap_enc_decode(l_key, a_http_simple->request, a_http_simple->request_size,dg->request,
                                             l_dg_request_size_max, DAP_ENC_DATA_TYPE_RAW);
             dg->request_str[dg->request_size] = 0;
@@ -221,6 +231,12 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         size_t l_url_path_size_max = strlen(a_http_simple->http_client->url_path);
         if(l_url_path_size_max){
             dg->url_path= DAP_NEW_SIZE(char,l_url_path_size_max+1);
+            if (!dg->url_path) {
+                log_it(L_ERROR, "Memory allocation error in enc_http_request_decode");
+                DAP_DEL_Z(dg->request);
+                DAP_DEL_Z(dg);
+                return NULL;
+            }
             dg->url_path_size=dap_enc_decode(l_key, a_http_simple->http_client->url_path,l_url_path_size_max,dg->url_path, l_url_path_size_max, l_enc_type);
             dg->url_path[dg->url_path_size] = 0;
             log_it(L_DEBUG,"URL path after decode '%s'",dg->url_path );
@@ -231,11 +247,26 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
 
         if(l_in_query_size){
             dg->in_query= DAP_NEW_SIZE(char, l_in_query_size+1);
+            if (!dg->in_query) {
+                log_it(L_ERROR, "Memory allocation error in enc_http_request_decode");
+                DAP_DEL_Z(dg->request);
+                DAP_DEL_Z(dg->url_path);
+                DAP_DEL_Z(dg);
+                return NULL;
+            }
             dg->in_query_size=dap_enc_decode(l_key, a_http_simple->http_client->in_query_string,l_in_query_size,dg->in_query,l_in_query_size,  l_enc_type);
             dg->in_query[dg->in_query_size] = 0;
             log_it(L_DEBUG,"Query string after decode '%s'",dg->in_query);
         }
         dg->response = calloc(1,a_http_simple->reply_size_max+1);
+        if (!dg->response) {
+            log_it(L_ERROR, "Memory allocation error in enc_http_request_decode");
+            DAP_DEL_Z(dg->in_query);
+            DAP_DEL_Z(dg->request);
+            DAP_DEL_Z(dg->url_path);
+            DAP_DEL_Z(dg);
+            return NULL;
+        }
         dg->response_size_max=a_http_simple->reply_size_max;
 
         return dg;

@@ -107,6 +107,9 @@ void dilithium_private_and_public_keys_delete(dilithium_private_key_t *private_k
 
 static int32_t dilithium_private_and_public_keys_init(dilithium_private_key_t *private_key, dilithium_public_key_t *public_key, dilithium_param_t *p){
 
+    if (p == NULL)
+        return -1;
+
     unsigned char *f = NULL, *g = NULL;
 
     f = calloc(p->CRYPTO_PUBLICKEYBYTES, sizeof(unsigned char));
@@ -204,6 +207,9 @@ int dilithium_crypto_sign_keypair(dilithium_public_key_t *public_key, dilithium_
 int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, unsigned long long mlen, const dilithium_private_key_t *private_key)
 {
     dilithium_param_t *p = DAP_NEW_Z(dilithium_param_t);
+    if (!p) {
+        return -1;
+    }
     if (! dilithium_params_init( p, private_key->kind)) {
         free(p);
         return 1;
@@ -322,6 +328,9 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
         return -1;
 
     dilithium_param_t *p = malloc(sizeof(dilithium_param_t));
+    if (!p) {
+        return -7;
+    }
     if (! dilithium_params_init( p, public_key->kind)) {
         free(p);
         return -2;
@@ -356,6 +365,10 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
     }
 
     unsigned char *tmp_m = malloc(CRHBYTES + mlen);
+    if (!tmp_m) {
+        free(p);
+        return -8;
+    }
     if(sig->sig_data != m)
         for(i = 0; i < mlen; ++i)
             tmp_m[CRHBYTES + i] = m[i];

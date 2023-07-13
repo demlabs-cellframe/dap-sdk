@@ -69,6 +69,12 @@ bool dap_pkey_match(dap_pkey_t *a_pkey1, dap_pkey_t *a_pkey2) {
     return false;
 }
 
+bool dap_pkey_match_sign(dap_pkey_t *a_pkey, dap_sign_t *a_sign)
+{
+    return a_pkey->header.size == a_sign->header.sign_pkey_size &&
+            !memcmp(a_pkey->pkey, a_sign->pkey_n_sign, a_pkey->header.size);
+}
+
 bool dap_pkey_get_hash(dap_pkey_t *a_pkey, dap_chain_hash_fast_t *a_out_hash){
     if (!a_pkey || !a_out_hash)
         return false;

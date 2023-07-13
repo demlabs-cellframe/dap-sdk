@@ -415,7 +415,15 @@ void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t * a_e
  */
 void dap_events_socket_reassign_between_workers_mt(dap_worker_t * a_worker_old, dap_events_socket_t * a_es, dap_worker_t * a_worker_new)
 {
+    if(a_es == NULL || a_worker_new == NULL || a_worker_old == NULL){
+        log_it(L_ERROR, "Argument is not initialized, can't call dap_events_socket_reassign_between_workers_mt");
+        return;
+    }
     dap_worker_msg_reassign_t * l_msg = DAP_NEW_Z(dap_worker_msg_reassign_t);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_events_socket_reassign_between_workers_mt");
+        return;
+    }
     l_msg->esocket = a_es;
     l_msg->esocket_uuid = a_es->uuid;
     l_msg->worker_new = a_worker_new;
@@ -1108,9 +1116,18 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
 #if defined (DAP_EVENTS_CAPS_AIO)
     struct queue_ptr_aio * l_ptr_aio = DAP_NEW_Z(struct queue_ptr_aio);
+    if (!l_ptr_aio) {
+        log_it(L_ERROR, "Memory allocation error in dap_events_socket_queue_ptr_send");
+        return 0;
+    }
     l_ptr_aio->self = l_ptr_aio;
     l_ptr_aio->ptr = a_arg;
     l_ptr_aio->aiocb = DAP_NEW_Z(struct aiocb);
+    if (!l_ptr_aio) {
+        log_it(L_ERROR, "Memory allocation error in dap_events_socket_queue_ptr_send");
+        DAP_DEL_Z(l_ptr_aio);
+        return 0;
+    }
     l_ptr_aio->aiocb->aio_fildes = a_es->fd2;
     l_ptr_aio->aiocb->aio_buf = l_ptr_aio;
     l_ptr_aio->aiocb->aio_nbytes = sizeof(*l_ptr_aio);
@@ -1154,6 +1171,10 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
 #if defined (DAP_EVENTS_CAPS_AIO)
     struct aiocb l_aio_op = {0};
     struct queue_ptr_aio * l_ptr_aio = DAP_NEW(struct queue_ptr_aio);
+    if (!l_ptr_aio) {
+        log_it(L_ERROR, "Memory allocation error in dap_events_socket_queue_ptr_send");
+        return 0;
+    }
     l_ptr_aio->self = l_ptr_aio;
     l_ptr_aio->ptr = a_arg;
     l_aio_op.aio_fildes = a_es->mqd;
@@ -1342,6 +1363,10 @@ int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value
 void dap_events_socket_delete_mt(dap_worker_t * a_worker, dap_events_socket_uuid_t a_es_uuid)
 {
     dap_events_socket_uuid_t * l_es_uuid_ptr= DAP_NEW_Z(dap_events_socket_uuid_t);
+    if (!l_es_uuid_ptr) {
+        log_it(L_ERROR, "Memory allocation error in dap_events_socket_delete_mt");
+        return;
+    }
     *l_es_uuid_ptr = a_es_uuid;
 
     int l_ret= dap_events_socket_queue_ptr_send( a_worker->queue_es_delete, l_es_uuid_ptr );
@@ -1519,6 +1544,10 @@ bool s_remove_and_delete_unsafe_delayed_delete_callback(void * a_arg)
 void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_es, bool a_preserve_inheritor )
 {
     dap_events_socket_uuid_w_data_t * l_es_handler = DAP_NEW_Z(dap_events_socket_uuid_w_data_t);
+    if (!l_es_handler) {
+        log_it(L_ERROR, "Memory allocation error in dap_events_socket_remove_and_delete_unsafe_delayed");
+        return;
+    }
     l_es_handler->esocket_uuid = a_es->uuid;
     l_es_handler->value = a_preserve_inheritor ? 1 : 0;
     //dap_events_socket_descriptor_close(a_es);
@@ -1605,6 +1634,10 @@ void dap_events_socket_remove_and_delete_mt(dap_worker_t * a_w,  dap_events_sock
 {
     assert(a_w);
     dap_events_socket_uuid_t * l_es_uuid_ptr= DAP_NEW_Z(dap_events_socket_uuid_t);
+    if (!l_es_uuid_ptr) {
+        log_it(L_ERROR, "Memory allocation error in dap_events_socket_remove_and_delete_mt");
+        return;
+    }
     *l_es_uuid_ptr = a_es_uuid;
 
     if(dap_events_socket_queue_ptr_send( a_w->queue_es_delete, l_es_uuid_ptr ) != 0 ){
@@ -1756,8 +1789,17 @@ size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_eve
     }
     l_data_size++; // include trailing 0
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_events_socket_write_f_inter");
+        return 0;
+    }
     l_msg->esocket_uuid = a_es_uuid;
     l_msg->data = DAP_NEW_SIZE(void, l_data_size);
+    if (!l_msg->data) {
+        log_it(L_ERROR, "Memory allocation error in dap_events_socket_write_f_inter");
+        DAP_DEL_Z(l_msg);
+        return 0;
+    }
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
     l_data_size = vsprintf(l_msg->data,a_format,ap_copy);
@@ -1793,9 +1835,18 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
     }
     l_data_size++; // include trailing 0
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_events_socket_write_f_mt");
+        return 0;
+    }
     l_msg->esocket_uuid = a_es_uuid;
     l_msg->data_size = l_data_size;
     l_msg->data = DAP_NEW_SIZE(void, l_data_size);
+    if (!l_msg->data) {
+        log_it(L_ERROR, "Memory allocation error in dap_events_socket_write_f_mt");
+        DAP_DEL_Z(l_msg);
+        return 0;
+    }
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
     l_data_size = vsprintf(l_msg->data,a_format,ap_copy);
     va_end(ap_copy);
@@ -1868,6 +1919,10 @@ ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *
     }
     size_t l_buf_size = l_ret + 1;
     char *l_buf = DAP_NEW_Z_SIZE(char, l_buf_size);
+    if (!l_buf) {
+        log_it(L_ERROR, "Memory allocation error in dap_events_socket_write_f_unsafe");
+        return 0;
+    }
     vsprintf(l_buf, a_format, ap_copy);
     va_end(ap_copy);
     l_ret = dap_events_socket_write_unsafe(a_es, l_buf, l_buf_size);

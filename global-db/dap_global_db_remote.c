@@ -42,13 +42,16 @@ void dap_global_db_sync_deinit()
  * @param a_arg a pointer to an argument
  * @return (none)
  */
-void dap_global_db_add_sync_group(const char *a_net_name, const char *a_group_prefix, dap_store_obj_callback_notify_t a_callback, void *a_arg)
+void dap_global_db_add_sync_group(const char *a_net_name, const char *a_group_mask, dap_store_obj_callback_notify_t a_callback, void *a_arg)
 {
     dap_sync_group_item_t *l_item = DAP_NEW_Z(dap_sync_group_item_t);
+    if (!l_item) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_add_sync_group");
+        return;
+    }
     l_item->net_name = dap_strdup(a_net_name);
-    l_item->group_mask = dap_strdup_printf("%s.*", a_group_prefix);
-    l_item->callback_notify = a_callback;
-    l_item->callback_arg = a_arg;
+    l_item->group_mask = dap_strdup_printf("%s.*", a_group_mask);
+    dap_global_db_add_notify_group_mask(dap_global_db_context_get_default()->instance, a_group_mask, a_callback, a_arg);
     s_db_add_sync_group(&s_sync_group_items, l_item);
 }
 
@@ -63,11 +66,14 @@ void dap_global_db_add_sync_group(const char *a_net_name, const char *a_group_pr
 void dap_global_db_add_sync_extra_group(const char *a_net_name, const char *a_group_mask, dap_store_obj_callback_notify_t a_callback, void *a_arg)
 {
     dap_sync_group_item_t* l_item = DAP_NEW_Z(dap_sync_group_item_t);
+    if (!l_item) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_add_sync_extra_group");
+        return;
+    }
     l_item->net_name = dap_strdup(a_net_name);
     l_item->group_mask = dap_strdup(a_group_mask);
-    l_item->callback_notify = a_callback;
-    l_item->callback_arg = a_arg;
     s_db_add_sync_group(&s_sync_group_extra_items, l_item);
+    dap_global_db_add_notify_group_mask(dap_global_db_context_get_default()->instance, a_group_mask, a_callback, a_arg);
 }
 
 /**
@@ -112,22 +118,32 @@ dap_list_t* dap_chain_db_get_sync_extra_groups(const char *a_net_name)
     return l_list_out;
 }
 
-/**
- * @brief dap_global_db_get_sync_groups_all
- * @return
- */
-dap_list_t * dap_global_db_get_sync_groups_all()
+// New notificators & sync mechanics (cluster architecture)
+
+int dap_global_db_add_notify_group_mask(dap_global_db_instance_t *a_dbi, const char *a_group_mask, dap_store_obj_callback_notify_t a_callback, void *a_arg)
 {
-    return s_sync_group_items;
+    if (!a_callback) {
+        log_it(L_ERROR, "Trying to set NULL callback for mask %s", a_group_mask);
+        return -1;
+    }
+    for (dap_list_t *it = a_dbi->notify_groups; it; it = it->next) {
+        dap_global_db_notify_item_t *l_item = it->data;
+        if (!dap_strcmp(l_item->group_mask, a_group_mask)) {
+            log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_group_mask);
+            return -2;
+        }
+    }
+    dap_global_db_notify_item_t *l_item_new = DAP_NEW_Z(dap_global_db_notify_item_t);
+    l_item_new->group_mask = dap_strdup(a_group_mask);
+    l_item_new->callback_notify = a_callback;
+    l_item_new->callback_arg = a_arg;
+    a_dbi->notify_groups = dap_list_append(a_dbi->notify_groups, l_item_new);
+    return 0;
 }
 
-/**
- * @brief dap_global_db_get_sync_groups_extra_all
- * @return
- */
-dap_list_t * dap_global_db_get_sync_groups_extra_all()
+dap_list_t *dap_global_db_get_notify_groups(dap_global_db_instance_t *a_dbi)
 {
-    return s_sync_group_extra_items;
+    return a_dbi->notify_groups;
 }
 
 /**
@@ -224,11 +240,16 @@ static void *s_list_thread_proc(void *arg)
                     l_obj_cur->group = dap_strdup(l_del_group_name_replace);
                 }
                 dap_db_log_list_obj_t *l_list_obj = DAP_NEW_Z(dap_db_log_list_obj_t);
+                if (!l_list_obj) {
+                    log_it(L_ERROR, "Memory allocation error in s_list_thread_proc");
+                    dap_store_obj_free(l_objs, l_item_count);
+                    return NULL;
+                }
                 uint64_t l_cur_id = l_obj_cur->id;
                 l_obj_cur->id = 0;
-                dap_global_db_pkt_t *l_pkt = dap_store_packet_single(l_obj_cur);
+                dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(l_obj_cur);
                 dap_hash_fast(l_pkt->data, l_pkt->data_size, &l_list_obj->hash);
-                dap_store_packet_change_id(l_pkt, l_cur_id);
+                dap_global_db_pkt_change_id(l_pkt, l_cur_id);
                 l_list_obj->pkt = l_pkt;
                 l_list = dap_list_append(l_list, l_list_obj);
                 l_objs_total_size += dap_db_log_list_obj_get_size(l_list_obj);
@@ -270,6 +291,10 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Start loading db list_write...");
     dap_db_log_list_t *l_dap_db_log_list = DAP_NEW_Z(dap_db_log_list_t);
+    if (!l_dap_db_log_list) {
+            log_it(L_ERROR, "Memory allocation error in dap_db_log_list_start");
+            return NULL;
+        }
     l_dap_db_log_list->db_context = dap_global_db_context_get_default();
 
     // Add groups for the selected network only
@@ -307,6 +332,11 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
     l_dap_db_log_list->groups = l_groups_names; // repalce name of group with group item
     for (dap_list_t *l_group = l_dap_db_log_list->groups; l_group; l_group = dap_list_next(l_group)) {
         dap_db_log_list_group_t *l_sync_group = DAP_NEW_Z(dap_db_log_list_group_t);
+        if (!l_sync_group) {
+            log_it(L_ERROR, "Memory allocation error in dap_db_log_list_start");
+            DAP_DEL_Z(l_dap_db_log_list);
+            return NULL;
+        }
         l_sync_group->name = (char *)l_group->data;
         if (a_flags & F_DB_LOG_SYNC_FROM_ZERO)
             l_sync_group->last_id_synced = 0;
@@ -489,7 +519,7 @@ static size_t dap_db_get_size_pdap_store_obj_t(pdap_store_obj_t store_obj)
  * @param a_new_pkt a pointer to the new object
  * @return Returns a pointer to the multiple object
  */
-dap_global_db_pkt_t *dap_store_packet_multiple(dap_global_db_pkt_t *a_old_pkt, dap_global_db_pkt_t *a_new_pkt)
+dap_global_db_pkt_t *dap_global_db_pkt_pack(dap_global_db_pkt_t *a_old_pkt, dap_global_db_pkt_t *a_new_pkt)
 {
     if (!a_new_pkt)
         return a_old_pkt;
@@ -511,11 +541,11 @@ dap_global_db_pkt_t *dap_store_packet_multiple(dap_global_db_pkt_t *a_old_pkt, d
  * @param a_id id
  * @return (none)
  */
-void dap_store_packet_change_id(dap_global_db_pkt_t *a_pkt, uint64_t a_id)
+void dap_global_db_pkt_change_id(dap_global_db_pkt_t *a_pkt, uint64_t a_id)
 {
     uint16_t l_gr_len = *(uint16_t*)(a_pkt->data + sizeof(uint32_t));
     size_t l_id_offset = sizeof(uint32_t) + sizeof(uint16_t) + l_gr_len;
-    memcpy(a_pkt->data + l_id_offset, &a_id, sizeof(uint64_t));
+    *(uint64_t *)(a_pkt->data + l_id_offset) = a_id;
 }
 
 /**
@@ -523,7 +553,7 @@ void dap_store_packet_change_id(dap_global_db_pkt_t *a_pkt, uint64_t a_id)
  * @param a_store_obj a pointer to the object to be serialized
  * @return Returns a pointer to the packed sructure if successful, otherwise NULL.
  */
-dap_global_db_pkt_t *dap_store_packet_single(dap_store_obj_t *a_store_obj)
+dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
 {
 int len;
 unsigned char *pdata;
@@ -589,8 +619,6 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         return NULL;
     }
 
-
-
     pdata = (unsigned char *) a_pkt->data;                                  /* Set <pdata> to begin of payload */
     pdata_end = pdata + a_pkt->data_size;                                   /* Set <pdata_end> to end of payload area
                                                                               will be used to prevent out-of-buffer case */
@@ -616,6 +644,11 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         if ( (pdata + l_obj->group_len) > pdata_end )
             {log_it(L_ERROR, "Broken GDB element: can't read 'group' field"); break;}
         l_obj->group = DAP_NEW_Z_SIZE(char, l_obj->group_len + 1);
+        if (!l_obj->group) {
+            log_it(L_ERROR, "Memory allocation error in dap_global_db_pkt_deserialize");
+            DAP_DEL_Z(l_store_obj_arr);
+            return NULL;
+        }
         memcpy(l_obj->group, pdata, l_obj->group_len);
         pdata += l_obj->group_len;
 
@@ -646,6 +679,12 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
             {log_it(L_ERROR, "Broken GDB element: 'key_length' field is out from allocated memory"); break;}
 
         l_obj->key_byte = DAP_NEW_SIZE(byte_t, l_obj->key_len + 1);
+        if (!l_obj->key_byte) {
+            log_it(L_ERROR, "Memory allocation error in dap_global_db_pkt_deserialize");
+            DAP_DEL_Z(l_obj->group);
+            DAP_DEL_Z(l_store_obj_arr);
+            return NULL;
+        }
         memcpy( l_obj->key_byte, pdata, l_obj->key_len);
         l_obj->key_byte[l_obj->key_len] = '\0';
         pdata += l_obj->key_len;
@@ -660,6 +699,13 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
             if ( (pdata + l_obj->value_len) > pdata_end )
                 {log_it(L_ERROR, "Broken GDB element: can't read 'value' field"); break;}
             l_obj->value = DAP_NEW_SIZE(uint8_t, l_obj->value_len);
+            if (!l_obj->value) {
+                log_it(L_ERROR, "Memory allocation error in dap_global_db_pkt_deserialize");
+                DAP_DEL_Z(l_obj->key_byte);
+                DAP_DEL_Z(l_obj->group);
+                DAP_DEL_Z(l_store_obj_arr);
+                return NULL;
+            }
             memcpy(l_obj->value, pdata, l_obj->value_len);
             pdata += l_obj->value_len;
         }
@@ -673,4 +719,95 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         *a_store_obj_count = l_count;
 
     return l_store_obj_arr;
+}
+
+int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_obj,
+                                          dap_global_db_callback_results_raw_t a_callback, void *a_arg)
+{
+    // timestamp for exist obj
+    dap_nanotime_t l_timestamp_cur = 0;
+    // Record is pinned or not
+    bool l_is_pinned_cur = false;
+    if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
+        dap_store_obj_t *l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
+        if (l_read_obj) {
+            l_timestamp_cur = l_read_obj->timestamp;
+            l_is_pinned_cur = l_read_obj->flags & RECORD_PINNED;
+            dap_store_obj_free_one(l_read_obj);
+        }
+    }
+    // Do not overwrite pinned records
+    if (l_is_pinned_cur) {
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
+                                a_obj->type != DAP_DB$K_OPTYPE_DEL ? "remove" : "rewrite", a_obj->group, a_obj->key);
+        DAP_DELETE(a_arg);
+        return -1;
+    }
+    // Deleted time
+    dap_nanotime_t l_timestamp_del = dap_global_db_get_del_ts_unsafe(a_global_db_context, a_obj->group, a_obj->key);
+    // Limit time
+    uint32_t l_time_store_lim_hours = a_global_db_context->instance->store_time_limit;
+    uint64_t l_limit_time = l_time_store_lim_hours ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
+    //check whether to apply the received data into the database
+    bool l_apply = false;
+    // check the applied object newer that we have stored or erased
+    if (a_obj->timestamp > (uint64_t)l_timestamp_del &&
+            a_obj->timestamp > (uint64_t)l_timestamp_cur &&
+            (a_obj->type != DAP_DB$K_OPTYPE_DEL || a_obj->timestamp > l_limit_time)) {
+        l_apply = true;
+    }
+    if (g_dap_global_db_debug_more) {
+        char l_ts_str[50];
+        dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
+        log_it(L_DEBUG, "Unpacked log history: type='%c' (0x%02hhX) group=\"%s\" key=\"%s\""
+                " timestamp=\"%s\" value_len=%" DAP_UINT64_FORMAT_U,
+                (char )a_obj->type, (char)a_obj->type, a_obj->group,
+                a_obj->key, l_ts_str, a_obj->value_len);
+    }
+    if (!l_apply) {
+        if (g_dap_global_db_debug_more) {
+            if (a_obj->timestamp <= (uint64_t)l_timestamp_cur)
+                log_it(L_WARNING, "New data not applied, because newly object exists");
+            if (a_obj->timestamp <= (uint64_t)l_timestamp_del)
+                log_it(L_WARNING, "New data not applied, because newly object is deleted");
+            if ((a_obj->type == DAP_DB$K_OPTYPE_DEL && a_obj->timestamp <= l_limit_time))
+                log_it(L_WARNING, "New data not applied, because object is too old");
+        }
+        DAP_DELETE(a_arg);
+        return -2;
+    }
+    // save data to global_db
+    if (dap_global_db_set_raw(a_obj, 1, a_callback, a_arg) != 0) {
+        DAP_DELETE(a_arg);
+        log_it(L_ERROR, "Can't send save GlobalDB request");
+        return -3;
+    }
+    return 0;
+}
+
+struct gdb_apply_args {
+    dap_store_obj_t *obj;
+    dap_global_db_callback_results_raw_t callback;
+    void *cb_arg;
+};
+
+static void s_db_apply_obj(dap_global_db_context_t *a_global_db_context, void *a_arg)
+{
+    struct gdb_apply_args *l_args = a_arg;
+    dap_global_db_remote_apply_obj_unsafe(a_global_db_context, l_args->obj, l_args->callback, l_args->cb_arg);
+    dap_store_obj_free_one(l_args->obj);
+    DAP_DELETE(l_args);
+}
+
+int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
+{
+    struct gdb_apply_args *l_args =  DAP_NEW_Z(struct gdb_apply_args);
+    if (!l_args) {
+        log_it(L_ERROR, "Memory allocation error in s_gdb_in_pkt_proc_callback");
+        return -1;
+    }
+    l_args->obj = dap_store_obj_copy(a_obj, 1);
+    l_args->callback = a_callback;
+    l_args->cb_arg = a_arg;
+    return dap_global_db_context_exec(s_db_apply_obj, l_args);
 }

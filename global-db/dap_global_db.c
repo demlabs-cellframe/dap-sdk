@@ -26,6 +26,7 @@
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 #include "dap_time.h"
+#include "dap_uuid.h"
 #include "dap_context.h"
 #include "dap_worker.h"
 #include "dap_stream_worker.h"
@@ -164,54 +165,15 @@ static int s_record_del_history_del(const char *a_group, const char *a_key);
 // Call notificators
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t *a_store_obj);
 
-// Saves GDB callig context
-static dap_global_db_callback_arg_uid l_max_uid = 0;
-static dap_global_db_callback_arg_uid s_global_db_save_callback_data(dap_global_db_context_t *a_global_db_context, void* a_data) {
-    dap_global_db_args_data_callbacks_t *l_arg = DAP_NEW(dap_global_db_args_data_callbacks_t);
-    l_arg->data = a_data;
-    pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
-    if (l_max_uid == 0)
-        l_max_uid++;
-    l_arg->uid = l_max_uid;
-    l_max_uid++;
-    HASH_ADD(hh, a_global_db_context->data_callbacks, uid, sizeof(dap_global_db_callback_arg_uid), l_arg);
-    pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
-    return l_arg->uid;
-}
-static void *s_global_db_find_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid a_uid) {
-    dap_global_db_args_data_callbacks_t *l_find = NULL;
-    void *ret = NULL;
-    pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
-    HASH_FIND(hh, a_global_db_context->data_callbacks, &a_uid, sizeof(dap_global_db_callback_arg_uid), l_find);
-    ret = l_find ? l_find->data : NULL;
-    pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
-    return ret;
-}
-static void *s_global_db_remove_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid a_uid) {
-    void *ret = NULL;
-    dap_global_db_args_data_callbacks_t *l_current, *l_tmp;
-    pthread_mutex_lock(&a_global_db_context->data_callbacks_mutex);
-    HASH_ITER(hh,a_global_db_context->data_callbacks, l_current, l_tmp) {
-        if (l_current->uid == a_uid) {
-            ret = l_current->data;
-            HASH_DEL(a_global_db_context->data_callbacks, l_current);
-        }
-    }
-    pthread_mutex_unlock(&a_global_db_context->data_callbacks_mutex);
-    return ret;
-}
-
+typedef uint64_t dap_global_db_callback_arg_uid_t;
 /**
  * @brief A structure for storing callback data for synchronous calls.
  */
-struct sync_obj_data_callback {
+typedef struct sync_obj_data_callback {
     struct {
-        pthread_mutex_t mutex;
         pthread_cond_t cond;
         bool called;
-        bool timeout;
         struct timespec timer_timeout;
-        dap_global_db_callback_arg_uid uid;
     } hdr;
     union {
         struct {
@@ -239,34 +201,51 @@ struct sync_obj_data_callback {
             dap_nanotime_t timestamp;
         } del_ts;
     };
-};
+    dap_global_db_callback_arg_uid_t uid;
+    UT_hash_handle hh;
+} sync_obj_data_callback_t;
 
-static struct sync_obj_data_callback* s_global_db_obj_data_callback_new() {
+// Saves GDB callig context
+static struct sync_obj_data_callback *s_global_db_find_callback_data(dap_global_db_context_t *a_global_db_context, dap_global_db_callback_arg_uid_t a_uid)
+{
+    struct sync_obj_data_callback *l_found = NULL;
+    HASH_FIND(hh, a_global_db_context->data_callbacks, &a_uid, sizeof(dap_global_db_callback_arg_uid_t), l_found);
+    return l_found;
+}
+
+static struct sync_obj_data_callback *s_global_db_obj_data_callback_new()
+{
     struct sync_obj_data_callback *l_callback = DAP_NEW_Z(struct sync_obj_data_callback);
-    pthread_mutex_init(&l_callback->hdr.mutex, NULL);
+    if (!l_callback) {
+        log_it(L_ERROR, "Memory allocation error in s_global_db_obj_data_callback_new");
+        return NULL;
+    }
     pthread_cond_init(&l_callback->hdr.cond, NULL);
-    pthread_mutex_lock(&l_callback->hdr.mutex);
     clock_gettime(CLOCK_REALTIME, &l_callback->hdr.timer_timeout);
     l_callback->hdr.timer_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
-    l_callback->hdr.uid = s_global_db_save_callback_data(s_context_global_db, l_callback);
+    l_callback->uid = dap_uuid_generate_uint64();
+    pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
+    HASH_ADD(hh, s_context_global_db->data_callbacks, uid, sizeof(dap_global_db_callback_arg_uid_t), l_callback);
     return l_callback;
 }
 
-static void s_global_db_obj_data_callback_wait(struct sync_obj_data_callback* a_obj, const char *a_module) {
-    while (!a_obj->hdr.called)
-        if (pthread_cond_timedwait(&a_obj->hdr.cond, &a_obj->hdr.mutex, &a_obj->hdr.timer_timeout) == ETIMEDOUT) {
-            log_it(L_ERROR, "Global DB %s operation timeout", a_module);
-            if (!a_obj->hdr.called) a_obj->hdr.timeout = true;
-            s_global_db_remove_callback_data(s_context_global_db, a_obj->hdr.uid);
-            break;
-        }
+static void s_global_db_obj_data_callback_destroy(struct sync_obj_data_callback *a_obj)
+{
+    HASH_DEL(s_context_global_db->data_callbacks, a_obj);
+    DAP_DELETE(a_obj);
+    pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }
 
-static void s_global_db_obj_data_callback_destroy(struct sync_obj_data_callback* a_obj) {
-    pthread_mutex_unlock(&a_obj->hdr.mutex);
-    pthread_mutex_destroy(&a_obj->hdr.mutex);
-    pthread_cond_destroy(&a_obj->hdr.cond);
-    DAP_DELETE(a_obj);
+static void s_global_db_obj_data_callback_wait(struct sync_obj_data_callback* a_obj, const char *a_module) {
+    if (!a_obj) {
+        log_it(L_ERROR, "Object is NULL, can't call s_global_db_obj_data_callback_wait");
+        return;
+    }
+    while (!a_obj->hdr.called)
+        if (pthread_cond_timedwait(&a_obj->hdr.cond, &s_context_global_db->data_callbacks_mutex, &a_obj->hdr.timer_timeout) == ETIMEDOUT) {
+            log_it(L_ERROR, "Global DB %s operation timeout", a_module);
+            break;
+        }
 }
 
 /**
@@ -298,6 +277,11 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
     // Create and run its own context
     if (s_context_global_db == NULL) {
         s_context_global_db = DAP_NEW_Z(struct dap_global_db_context);
+        if (!s_context_global_db) {
+            log_it(L_ERROR, "Memory allocation error in dap_global_db_init");
+            l_rc = -5;
+            goto lb_return;
+        }
         s_context_global_db->context = dap_context_new(DAP_CONTEXT_TYPE_GLOBAL_DB);
         s_context_global_db->context->_inheritor = s_context_global_db;
         if (dap_context_run(s_context_global_db->context, -1, DAP_CONTEXT_POLICY_DEFAULT,
@@ -307,6 +291,12 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
             goto lb_return;
         }
         dap_global_db_instance_t *l_dbi = DAP_NEW_Z(dap_global_db_instance_t);
+        if (!l_dbi) {
+            log_it(L_ERROR, "Memory allocation error in dap_global_db_init");
+            DAP_DEL_Z(s_context_global_db);
+            l_rc = -5;
+            goto lb_return;
+        }
 
         l_dbi->storage_path = dap_strdup(a_storage_path);
         l_dbi->driver_name = dap_strdup(a_driver_name);
@@ -405,8 +395,10 @@ byte_t *dap_global_db_get_unsafe(dap_global_db_context_t *a_global_db_context, c
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get call executes for group \"%s\" and key \"%s\"", a_group, a_key);
     dap_store_obj_t *l_store_obj = dap_global_db_get_raw_unsafe(a_global_db_context, a_group, a_key);
-    if (!l_store_obj)
+    if (!l_store_obj) {
+        // log_it(L_ERROR, "%s is not found", a_key);
         return NULL;
+    }
     if (a_data_size)
         *a_data_size = l_store_obj->value_len;
     if (a_is_pinned)
@@ -434,6 +426,10 @@ int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_cal
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
@@ -491,25 +487,25 @@ static void s_obj_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_c
                                const size_t a_value_size, dap_nanotime_t a_value_ts,
                                bool a_is_pinned, void *a_arg)
 {
-    struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback*)a_arg;
-    assert(l_args);
-    if(s_global_db_find_callback_data(a_global_db_context, l_args->hdr.uid)) {
-        pthread_mutex_lock(&l_args->hdr.mutex);
-        if (l_args->hdr.timeout) {
-            s_global_db_obj_data_callback_destroy(l_args);
-            return;
-        }
-        if (a_value && a_value_size) {
-            l_args->get.data = DAP_DUP_SIZE(a_value, a_value_size);
-            l_args->get.data_size = a_value_size;
-            l_args->get.ts = a_value_ts;
-            l_args->get.is_pinned = a_is_pinned;
-            l_args->get.key = (char *) a_key;
-        }
-        l_args->hdr.called = true;
-        pthread_cond_signal(&l_args->hdr.cond);
-        pthread_mutex_unlock(&l_args->hdr.mutex);
+    assert(a_arg);
+    dap_global_db_callback_arg_uid_t *l_uid = a_arg;
+    pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
+    struct sync_obj_data_callback *l_args = s_global_db_find_callback_data(a_global_db_context, *l_uid);
+    DAP_DELETE(l_uid);
+    if (!l_args) {
+        pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
+        return;
     }
+    if (a_value && a_value_size) {
+        l_args->get.data = DAP_DUP_SIZE(a_value, a_value_size);
+        l_args->get.data_size = a_value_size;
+        l_args->get.ts = a_value_ts;
+        l_args->get.is_pinned = a_is_pinned;
+        l_args->get.key = (char *) a_key;
+    }
+    l_args->hdr.called = true;
+    pthread_cond_signal(&l_args->hdr.cond);
+    pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }
 
 /**
@@ -527,7 +523,7 @@ byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a
         return dap_global_db_get_unsafe(s_context_global_db, a_group, a_key, a_data_size, a_is_pinned, a_ts);
 
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    if (!dap_global_db_get(a_group,a_key, s_obj_get_callback, l_args))
+    if (!dap_global_db_get(a_group,a_key, s_obj_get_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "get");
 
     if (l_args->get.data) {
@@ -539,7 +535,7 @@ byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a
             *a_ts = l_args->get.ts;
     }
     byte_t *l_ret = l_args->get.data;
-    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -569,6 +565,10 @@ int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_raw");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET_RAW;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
@@ -605,18 +605,19 @@ static bool s_msg_opcode_get_raw(struct queue_io_msg * a_msg)
 static void s_obj_raw_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
                                    UNUSED_ARG int a_rc, dap_store_obj_t *a_value, void *a_arg)
 {
-    struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback*)a_arg;
-    if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
-        pthread_mutex_lock(&l_args->hdr.mutex);
-        if (l_args->hdr.timeout) {
-            s_global_db_obj_data_callback_destroy(l_args);
-            return;
-        }
-        l_args->get_raw.obj = dap_store_obj_copy(a_value, 1);
-        l_args->hdr.called = true;
-        pthread_cond_signal(&l_args->hdr.cond);
-        pthread_mutex_unlock(&l_args->hdr.mutex);
+    assert(a_arg);
+    dap_global_db_callback_arg_uid_t *l_uid = a_arg;
+    pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
+    struct sync_obj_data_callback *l_args = s_global_db_find_callback_data(a_global_db_context, *l_uid);
+    DAP_DELETE(l_uid);
+    if (!l_args) {
+        pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
+        return;
     }
+    l_args->get_raw.obj = dap_store_obj_copy(a_value, 1);
+    l_args->hdr.called = true;
+    pthread_cond_signal(&l_args->hdr.cond);
+    pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }
 
 /**
@@ -633,11 +634,11 @@ dap_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_k
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_raw sync call executes for group \"%s\"", a_group);
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    if (!dap_global_db_get_raw(a_group, a_key, s_obj_raw_get_callback, l_args))
+    if (!dap_global_db_get_raw(a_group, a_key, s_obj_raw_get_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "get_raw");
 
     dap_store_obj_t *l_ret = l_args->get_raw.obj;
-    if (l_args->hdr.timeout != false) s_global_db_obj_data_callback_destroy(l_args);
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -677,6 +678,10 @@ int dap_global_db_get_del_ts(const char *a_group, const char *a_key,dap_global_d
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_del_ts");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET_DEL_TS;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
@@ -718,18 +723,19 @@ static void s_del_ts_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_d
                                   UNUSED_ARG const size_t a_value_size, dap_nanotime_t a_value_ts,
                                   UNUSED_ARG bool a_is_pinned, void *a_arg)
 {
-    struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback *)a_arg;
-    if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
-        pthread_mutex_lock(&l_args->hdr.mutex);
-        if (l_args->hdr.timeout) {
-            s_global_db_obj_data_callback_destroy(l_args);
-            return;
-        }
-        l_args->del_ts.timestamp = a_value_ts;
-        l_args->hdr.called = true;
-        pthread_cond_signal(&l_args->hdr.cond);
-        pthread_mutex_unlock(&l_args->hdr.mutex);
+    assert(a_arg);
+    dap_global_db_callback_arg_uid_t *l_uid = a_arg;
+    pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
+    struct sync_obj_data_callback *l_args = s_global_db_find_callback_data(a_global_db_context, *l_uid);
+    DAP_DELETE(l_uid);
+    if (!l_args) {
+        pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
+        return;
     }
+    l_args->del_ts.timestamp = a_value_ts;
+    l_args->hdr.called = true;
+    pthread_cond_signal(&l_args->hdr.cond);
+    pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }
 
 /**
@@ -744,11 +750,11 @@ dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_del_ts sync call executed for group \"%s\"", a_group);
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    if (!dap_global_db_get_del_ts(a_group, a_key, s_del_ts_get_callback, l_args))
+    if (!dap_global_db_get_del_ts(a_group, a_key, s_del_ts_get_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "del_ts");
 
     dap_nanotime_t l_ret = l_args->del_ts.timestamp;
-    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -759,8 +765,10 @@ byte_t *dap_global_db_get_last_unsafe(dap_global_db_context_t *a_global_db_conte
                                       bool *a_is_pinned, dap_nanotime_t *a_ts)
 {
     dap_store_obj_t *l_store_obj = dap_global_db_get_last_raw_unsafe(a_global_db_context, a_group);
-    if (!l_store_obj)
+    if (!l_store_obj) {
+        log_it(L_ERROR, "l_store_ibj is not initialized, can't call dap_global_db_get_last_unsafe");
         return NULL;
+    }
     if (a_key)
         *a_key = dap_strdup(l_store_obj->key);
     if (a_data_size)
@@ -789,6 +797,10 @@ int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_last");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET_LAST;
     l_msg->group = dap_strdup(a_group);
     l_msg->callback_arg = a_arg;
@@ -842,7 +854,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
         return dap_global_db_get_last_unsafe(s_context_global_db, a_group, a_key, a_data_size, a_is_pinned, a_ts);
 
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    if (!dap_global_db_get_last(a_group, s_obj_get_callback, l_args))
+    if (!dap_global_db_get_last(a_group, s_obj_get_callback, DAP_DUP(&l_args)))
         s_global_db_obj_data_callback_wait(l_args, "get_last");
 
     if (l_args->get.data) {
@@ -859,7 +871,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
     }
 
     byte_t *l_ret = l_args->get.data;
-    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -884,6 +896,10 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_last_raw");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET_LAST_RAW;
     l_msg->group = dap_strdup(a_group);
     l_msg->callback_arg = a_arg;
@@ -926,11 +942,11 @@ dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_raw sync call executes for group \"%s\"", a_group);
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    if (!dap_global_db_get_last_raw(a_group, s_obj_raw_get_callback, l_args))
+    if (!dap_global_db_get_last_raw(a_group, s_obj_raw_get_callback, DAP_DUP(&l_args)))
         s_global_db_obj_data_callback_wait(l_args, "last_raw");
 
     dap_store_obj_t *l_ret = l_args->get_raw.obj;
-    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -991,6 +1007,10 @@ int dap_global_db_get_all(const char * a_group, UNUSED_ARG size_t a_results_page
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_all");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET_ALL;
     l_msg->group = dap_strdup(a_group);
     l_msg->callback_arg = a_arg;
@@ -1043,19 +1063,20 @@ static void s_objs_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_
                                 UNUSED_ARG const size_t a_values_total, const size_t a_values_count,
                                 dap_global_db_obj_t *a_values, void *a_arg)
 {
-    struct sync_obj_data_callback* l_args = (struct sync_obj_data_callback *)a_arg;
-    if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
-        pthread_mutex_lock(&l_args->hdr.mutex);
-        if (l_args->hdr.timeout) {
-            s_global_db_obj_data_callback_destroy(l_args);
-            return;
-        }
-        l_args->get_objs.objs = dap_global_db_objs_copy(a_values, a_values_count);
-        l_args->get_objs.objs_count = a_values_count;
-        l_args->hdr.called = true;
-        pthread_cond_signal(&l_args->hdr.cond);
-        pthread_mutex_unlock(&l_args->hdr.mutex);
+    assert(a_arg);
+    dap_global_db_callback_arg_uid_t *l_uid = a_arg;
+    pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
+    struct sync_obj_data_callback *l_args = s_global_db_find_callback_data(a_global_db_context, *l_uid);
+    DAP_DELETE(l_uid);
+    if (!l_args) {
+        pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
+        return;
     }
+    l_args->get_objs.objs = dap_global_db_objs_copy(a_values, a_values_count);
+    l_args->get_objs.objs_count = a_values_count;
+    l_args->hdr.called = true;
+    pthread_cond_signal(&l_args->hdr.cond);
+    pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }
 
 /**
@@ -1072,15 +1093,12 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all sync call executes for group \"%s\"", a_group);
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    if (!dap_global_db_get_all(a_group, 0, s_objs_get_callback, l_args))
+    if (!dap_global_db_get_all(a_group, 0, s_objs_get_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "get_all");
-    if (!l_args->hdr.called) {
-        l_args->hdr.timeout = true;
-    }
     if (a_objs_count)
         *a_objs_count = l_args->get_objs.objs_count;
     dap_global_db_obj_t *l_ret = l_args->get_objs.objs;
-    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1111,6 +1129,10 @@ int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t 
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_all_raw");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_GET_ALL_RAW ;
     l_msg->group = dap_strdup(a_group);
     l_msg->values_raw_last_id = a_first_id;
@@ -1171,23 +1193,24 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
                                         const size_t a_values_total, const size_t a_values_count,
                                         dap_store_obj_t *a_values, void *a_arg)
 {
-    struct sync_obj_data_callback *l_callback = (struct sync_obj_data_callback*)a_arg;
-    if (s_global_db_find_callback_data(s_context_global_db, l_callback->hdr.uid)) {
-        pthread_mutex_lock(&l_callback->hdr.mutex);
-        if (l_callback->hdr.timeout) {
-            s_global_db_obj_data_callback_destroy(l_callback);
-            return;
-        }
-        // TODO make incremental copy
-        l_callback->get_store_objs.objs = dap_store_obj_copy(a_values, a_values_count);
-        l_callback->get_objs.objs_count += a_values_count;
-        if (a_values_count != a_values_total) {
-            log_it(L_WARNING, "Got only %zu records from %zu", a_values_count, a_values_total);
-        }
-        l_callback->hdr.called = true;
-        pthread_cond_signal(&l_callback->hdr.cond);
-        pthread_mutex_unlock(&l_callback->hdr.mutex);
+    assert(a_arg);
+    dap_global_db_callback_arg_uid_t *l_uid = a_arg;
+    pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
+    struct sync_obj_data_callback *l_args = s_global_db_find_callback_data(a_global_db_context, *l_uid);
+    DAP_DELETE(l_uid);
+    if (!l_args) {
+        pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
+        return;
     }
+    // TODO make incremental copy
+    l_args->get_store_objs.objs = dap_store_obj_copy(a_values, a_values_count);
+    l_args->get_objs.objs_count += a_values_count;
+    if (a_values_count != a_values_total) {
+        log_it(L_WARNING, "Got only %zu records from %zu", a_values_count, a_values_total);
+    }
+    l_args->hdr.called = true;
+    pthread_cond_signal(&l_args->hdr.cond);
+    pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }
 
 dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
@@ -1199,14 +1222,12 @@ dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all_raw sync call executes for group %s", a_group);
 
     if (!dap_global_db_get_all_raw(a_group, a_first_id, a_objs_count ? *a_objs_count : 0,
-                                   s_get_all_raw_sync_callback, l_args))
+                                   s_get_all_raw_sync_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "get_all_raw");
-    if (!l_args->hdr.called) {
-        return NULL;
-    }
     if (a_objs_count)
         *a_objs_count = l_args->get_store_objs.objs_count;
     dap_store_obj_t *l_ret = l_args->get_store_objs.objs;
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1277,12 +1298,15 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
         return DAP_GLOBAL_DB_RC_ERROR;
     }
-
     if (!a_group || !a_key) {
         log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
         return -1;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_set");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_SET;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
@@ -1346,18 +1370,19 @@ static void s_sync_op_result_callback(UNUSED_ARG dap_global_db_context_t *a_glob
                                       UNUSED_ARG dap_nanotime_t a_value_ts, UNUSED_ARG bool a_is_pinned,
                                       void * a_arg)
 {
-    struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback*)a_arg;
-    if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
-        pthread_mutex_lock(&l_args->hdr.mutex);
-        if (l_args->hdr.timeout) {
-            s_global_db_obj_data_callback_destroy(l_args);
-            return;
-        }
-        l_args->op_result.result = a_rc;
-        l_args->hdr.called = true;
-        pthread_cond_signal(&l_args->hdr.cond);
-        pthread_mutex_unlock(&l_args->hdr.mutex);
+    assert(a_arg);
+    dap_global_db_callback_arg_uid_t *l_uid = a_arg;
+    pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
+    struct sync_obj_data_callback *l_args = s_global_db_find_callback_data(a_global_db_context, *l_uid);
+    DAP_DELETE(l_uid);
+    if (!l_args) {
+        pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
+        return;
     }
+    l_args->op_result.result = a_rc;
+    l_args->hdr.called = true;
+    pthread_cond_signal(&l_args->hdr.cond);
+    pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }
 
 /**
@@ -1377,13 +1402,14 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "set sync call executes for group \"%s\" key \"%s\"", a_group, a_key);
 
-    if (!dap_global_db_set(a_group, a_key, a_value, a_value_length, a_pin_value, s_sync_op_result_callback, l_args)) {
+    if (!dap_global_db_set(a_group, a_key, a_value, a_value_length, a_pin_value,
+                           s_sync_op_result_callback, DAP_DUP(&l_args->uid))) {
         s_global_db_obj_data_callback_wait(l_args, "set");
      } else
         l_args->op_result.result = DAP_GLOBAL_DB_RC_ERROR;
 
     int l_ret = l_args->op_result.result;
-    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1424,6 +1450,10 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_set_raw");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_SET_RAW;
     l_msg->callback_arg = a_arg;
     l_msg->callback_results_raw = a_callback;
@@ -1464,18 +1494,19 @@ static void s_sync_op_raw_callback(UNUSED_ARG dap_global_db_context_t *a_global_
                                    UNUSED_ARG const size_t a_values_count, UNUSED_ARG dap_store_obj_t *a_values,
                                    void *a_arg)
 {
-    struct sync_obj_data_callback *l_args = (struct sync_obj_data_callback*)a_arg;
-    if (s_global_db_find_callback_data(s_context_global_db, l_args->hdr.uid)) {
-        pthread_mutex_lock(&l_args->hdr.mutex);
-        if (l_args->hdr.timeout) {
-            s_global_db_obj_data_callback_destroy(l_args);
-            return;
-        }
-        l_args->op_result.result = a_rc;
-        l_args->hdr.called = true;
-        pthread_cond_signal(&l_args->hdr.cond);
-        pthread_mutex_unlock(&l_args->hdr.mutex);
+    assert(a_arg);
+    dap_global_db_callback_arg_uid_t *l_uid = a_arg;
+    pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
+    struct sync_obj_data_callback *l_args = s_global_db_find_callback_data(a_global_db_context, *l_uid);
+    DAP_DELETE(l_uid);
+    if (!l_args) {
+        pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
+        return;
     }
+    l_args->op_result.result = a_rc;
+    l_args->hdr.called = true;
+    pthread_cond_signal(&l_args->hdr.cond);
+    pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }
 
 int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
@@ -1486,13 +1517,13 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "set_raw sync call executes");
 
-    if (!dap_global_db_set_raw(a_store_objs, a_store_objs_count, s_sync_op_raw_callback, l_args)) {
+    if (!dap_global_db_set_raw(a_store_objs, a_store_objs_count, s_sync_op_raw_callback, DAP_DUP(&l_args->uid))) {
         s_global_db_obj_data_callback_wait(l_args, "set_raw");
      } else
         l_args->op_result.result = DAP_GLOBAL_DB_RC_ERROR;
 
     int l_ret = l_args->op_result.result;
-    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1514,6 +1545,10 @@ int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_set_multiple_zc");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_SET_MULTIPLE;
     l_msg->group = dap_strdup(a_group);
     l_msg->values = a_values;
@@ -1608,6 +1643,10 @@ int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callba
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in s_db_object_pin");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_PIN;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
@@ -1672,13 +1711,13 @@ int s_db_object_pin_sync(const char *a_group, const char *a_key, bool a_pin)
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "%s sync call executes for group \"%s\" key \"%s\"",
                                                   a_pin ? "pin" : "unpin", a_group, a_key);
-    if (!s_db_object_pin(a_group, a_key, s_sync_op_result_callback, l_args, a_pin)) {
+    if (!s_db_object_pin(a_group, a_key, s_sync_op_result_callback, DAP_DUP(&l_args->uid), a_pin)) {
         s_global_db_obj_data_callback_wait(l_args, "pin");
     } else
         l_args->op_result.result = DAP_GLOBAL_DB_RC_ERROR;
 
     int l_ret = l_args->op_result.result;
-    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1747,6 +1786,10 @@ int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_cal
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_del");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_DELETE;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
@@ -1794,13 +1837,13 @@ int dap_global_db_del_sync(const char *a_group, const char *a_key)
         return dap_global_db_del_unsafe(s_context_global_db, a_group, a_key);
 
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    if (!dap_global_db_del(a_group, a_key, s_sync_op_result_callback, l_args)) {
+    if (!dap_global_db_del(a_group, a_key, s_sync_op_result_callback, DAP_DUP(&l_args->uid))) {
         s_global_db_obj_data_callback_wait(l_args, "del");
     } else
         l_args->op_result.result = DAP_GLOBAL_DB_RC_ERROR;
 
     int l_ret = l_args->op_result.result;
-    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1828,6 +1871,10 @@ int dap_global_db_flush(dap_global_db_callback_result_t a_callback, void * a_arg
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_flush");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_FLUSH;
     l_msg->callback_arg = a_arg;
     l_msg->callback_result = a_callback;
@@ -1860,13 +1907,13 @@ int dap_global_db_flush_sync()
         return dap_global_db_flush_unsafe(s_context_global_db);
 
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    if (!dap_global_db_flush(s_sync_op_result_callback, l_args)) {
+    if (!dap_global_db_flush(s_sync_op_result_callback, DAP_DUP(&l_args->uid))) {
         s_global_db_obj_data_callback_wait(l_args, "flush");
     } else
         l_args->op_result.result = DAP_GLOBAL_DB_RC_ERROR;
 
     int l_ret = l_args->op_result.result;
-    if (l_args->hdr.timeout == false) s_global_db_obj_data_callback_destroy(l_args);
+    s_global_db_obj_data_callback_destroy(l_args);
     return l_ret;
 }
 
@@ -1928,6 +1975,10 @@ int dap_global_db_context_exec (dap_global_db_callback_t a_callback, void * a_ar
         return DAP_GLOBAL_DB_RC_ERROR;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
+    if (!l_msg) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_context_exec");
+        return -1;
+    }
     l_msg->opcode = MSG_OPCODE_CONTEXT_EXEC;
     l_msg->callback_arg = a_arg;
     l_msg->callback = a_callback;
@@ -2027,21 +2078,15 @@ static void s_queue_io_callback( dap_events_socket_t * a_es, void * a_arg)
  */
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t * a_store_obj)
 {
-    dap_list_t *l_items_list = dap_global_db_get_sync_groups_all();
-    do {
-        for (dap_list_t *it = l_items_list; it; it = it->next) {
-            dap_sync_group_item_t *l_sync_group_item = (dap_sync_group_item_t *)it->data;
-            if (dap_fnmatch(l_sync_group_item->group_mask, a_store_obj->group, 0))
-                continue;
-            if(l_sync_group_item->callback_notify)
-                 l_sync_group_item->callback_notify(a_context, a_store_obj, l_sync_group_item->callback_arg);
-            return;
-        }
-        l_items_list = (l_items_list == dap_global_db_get_sync_groups_all()) ?
-                                        dap_global_db_get_sync_groups_extra_all() : NULL;
-    } while (l_items_list);
+    dap_list_t *l_items_list = dap_global_db_get_notify_groups(a_context->instance);
+    for (dap_list_t *it = l_items_list; it; it = it->next) {
+        dap_global_db_notify_item_t *l_notify_item = it->data;
+        if (dap_fnmatch(l_notify_item->group_mask, a_store_obj->group, 0))
+            continue;
+        if (l_notify_item->callback_notify)
+             l_notify_item->callback_notify(a_context, a_store_obj, l_notify_item->callback_arg);
+    }
 }
-
 
 /*
 * @brief s_record_del_history_del Deletes info about the deleted object from the database

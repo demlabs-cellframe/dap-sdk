@@ -10,6 +10,10 @@ int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t
     HASH_FIND_STR(s_handler_hash_table, a_name, l_handler);
     if (l_handler == NULL){
         l_handler = DAP_NEW(dap_json_rpc_request_handler_t);
+        if (!l_handler) {
+            log_it(L_ERROR, "Memory allocation error in dap_json_rpc_registration_request_handler");
+            return -1;
+        }
         l_handler->name = dap_strdup(a_name);
         l_handler->func = a_func;
         HASH_ADD_STR(s_handler_hash_table, name, l_handler);
@@ -40,6 +44,10 @@ void dap_json_rpc_request_handler(dap_json_rpc_request_t *a_request,  dap_http_s
         dap_json_rpc_notification_handler(a_request->method, a_request->params);
     } else {
         dap_json_rpc_response_t *l_response = DAP_NEW(dap_json_rpc_response_t);
+        if (!l_response) {
+            log_it(L_ERROR, "Memory allocation error in dap_json_rpc_request_handler");
+            return;
+        }
         l_response->id = a_request->id;
         dap_json_rpc_request_handler_t *l_handler = NULL;
         HASH_FIND_STR(s_handler_hash_table, a_request->method, l_handler);

@@ -40,8 +40,8 @@ See more details here <http://www.gnu.org/licenses/>.
 #include <pthread.h>
 
 #include "utlist.h"
-#include "json-c/json.h"
-#include "json-c/json_object.h"
+#include "json.h"
+#include "json_object.h"
 
 #include "dap_common.h"
 #include "dap_config.h"
@@ -109,6 +109,10 @@ void dap_http_simple_module_deinit( void )
 struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_t *a_http, const char *a_url_path, size_t a_reply_size_max, dap_http_simple_callback_t a_callback )
 {
     dap_http_simple_url_proc_t *l_url_proc = DAP_NEW_Z( dap_http_simple_url_proc_t );
+    if (!l_url_proc) {
+        log_it (L_ERROR, "Memory allocation error in dap_http_simple_proc_add");
+        return NULL;
+    }
 
     l_url_proc->proc_callback = a_callback;
     l_url_proc->reply_size_max = a_reply_size_max;
@@ -189,6 +193,12 @@ int dap_http_simple_set_supported_user_agents( const char *user_agents, ... )
     }
 
     user_agents_item_t *item = calloc( 1, sizeof (user_agents_item_t) );
+    if (!item) {
+        log_it(L_ERROR, "Memory allocation error in dap_http_simple_set_supported_user_agents");
+        va_end(argptr);
+        s_free_user_agents_list();
+        return 0;
+    }
 
     item->user_agent = user_agent;
     LL_APPEND( user_agents_list, item );
