@@ -359,15 +359,14 @@ void dap_config_close(dap_config_t * a_config)
             l_item->childs = l_item_child->item_next;
             if(l_item_child->is_array) {
                 for(int i = 0; i< l_item_child->array_length; i++)
-                    free(l_item_child->data_str_array[i]);
-                free(l_item_child->data_str_array);
+                    DAP_DELETE(l_item_child->data_str_array[i]);
+                DAP_DELETE(l_item_child->data_str_array);
             } else if (l_item_child->data_str) {
                 DAP_DELETE(l_item_child->data_str);
             }
             DAP_DELETE(l_item_child);
             l_item_child = l_item->childs;
         }
-
         if(l_item->data_str) {
             DAP_DELETE(l_item->data_str);
         }
@@ -375,9 +374,9 @@ void dap_config_close(dap_config_t * a_config)
         l_item = DAP_CONFIG_INTERNAL(a_config)->item_root;
     }
 
-    free(DAP_CONFIG_INTERNAL(a_config)->path);
-    free(a_config->_internal);
-    free(a_config);
+    DAP_DELETE(DAP_CONFIG_INTERNAL(a_config)->path);
+    DAP_DELETE(a_config->_internal);
+    DAP_DELETE(a_config);
 
 }
 
