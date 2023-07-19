@@ -15,7 +15,7 @@ dap_config_t * g_config = NULL;
 /**
  * @brief The dap_config_item struct
  */
-typedef struct dap_config_item{
+typedef struct dap_config_item {
     char name[64];
     struct dap_config_item * childs;
     struct dap_config_item * item_next;
@@ -35,8 +35,7 @@ typedef struct dap_config_item{
 } dap_config_item_t;
 
 
-typedef struct dap_config_internal
-{
+typedef struct dap_config_internal {
     dap_config_item_t * item_root;
     char * path;
 } dap_config_internal_t;
@@ -113,7 +112,7 @@ dap_config_t * dap_config_open(const char * a_name)
         char *l_config_path = DAP_NEW_SIZE(char,l_config_path_size_max);
         snprintf(l_config_path,l_config_path_size_max, "%s/%s.cfg",s_configs_path,a_name);
         l_ret = dap_config_load(l_config_path);
-//        DAP_DELETE(l_config_path);
+        DAP_DELETE(l_config_path);
     }else{
         log_it(L_ERROR,"Config name is NULL");
     }
