@@ -106,14 +106,13 @@ static uint16_t get_array_length(const char* str) {
 dap_config_t * dap_config_open(const char * a_name)
 {
     dap_config_t * l_ret = NULL;
-    if ( a_name ){
+    if ( a_name ) {
         log_it(L_DEBUG,"Looking for config name %s...",a_name);
         size_t l_config_path_size_max = strlen(a_name)+6+strlen(s_configs_path);
         char *l_config_path = DAP_NEW_SIZE(char,l_config_path_size_max);
         snprintf(l_config_path,l_config_path_size_max, "%s/%s.cfg",s_configs_path,a_name);
         l_ret = dap_config_load(l_config_path);
-        DAP_DELETE(l_config_path);
-    }else{
+    } else {
         log_it(L_ERROR,"Config name is NULL");
     }
     return l_ret;
@@ -145,10 +144,10 @@ dap_config_t * dap_config_load(const char * a_file_path)
         size_t l_buf_pos_line_end=0;
         dap_config_item_t * l_section_current = NULL ;
         bool l_is_space_now = false;
-        while ( feof(f)==0){ // Break on lines
+        while( !feof(f) ){ // Break on lines
             size_t i;
-            l_global_offset +=  (l_buf_size = fread(buf, 1, buf_len, f) );
-            for (i=0; i< l_buf_size; i++){
+            l_global_offset += (l_buf_size = fread(buf, 1, buf_len, f) );
+            for (i = 0; i < l_buf_size; i++){
                 if( (buf[i] == '\r') || (buf[i] == '\n' ) ){
                     if( ! l_is_space_now){
                         l_buf_pos_line_end = i;
@@ -377,7 +376,6 @@ void dap_config_close(dap_config_t * a_config)
     DAP_DELETE(DAP_CONFIG_INTERNAL(a_config)->path);
     DAP_DELETE(a_config->_internal);
     DAP_DELETE(a_config);
-
 }
 
 /**
