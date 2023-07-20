@@ -45,6 +45,7 @@ typedef struct dap_cli_cmd{
     union {
         dap_cli_server_cmd_callback_t func; /* Function to call to do the job. */
         dap_cli_server_cmd_callback_ex_t func_ex; /* Function with additional arg to call to do the job. */
+
     };
     void *arg_func; /* additional argument of function*/
     char *doc; /* Documentation for this function.  */
@@ -59,10 +60,11 @@ void dap_cli_server_deinit();
 
 void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex);
 DAP_PRINTF_ATTR(2, 3) void dap_cli_server_cmd_set_reply_text(char **str_reply, const char *str, ...);
+void dap_cli_server_cmd_reply_send(SOCKET newsockfd, char * str_reply);
 int dap_cli_server_cmd_find_option_val( char** argv, int arg_start, int arg_end, const char *opt_name, const char **opt_value);
 int dap_cli_server_cmd_check_option( char** argv, int arg_start, int arg_end, const char *opt_name);
 void dap_cli_server_cmd_apply_overrides(const char * a_name, const dap_cli_server_cmd_override_t a_overrides);
 
 dap_cli_cmd_t* dap_cli_server_cmd_get_first();
 dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name);
-int is_long_cmd(char** l_argv);
+int is_long_cmd(const char * a_name);
