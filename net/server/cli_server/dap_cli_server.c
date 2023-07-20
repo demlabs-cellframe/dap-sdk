@@ -793,6 +793,13 @@ char    *str_header;
                     // exec command
 
                     char **l_argv = dap_strsplit(str_cmd, ";", -1);
+                    log_it(L_WARNING, "l_argv %s", l_argv[0]);
+                    if(is_long_cmd(l_argv)) {
+                        log_it(L_WARNING,"INSIDE IS LONG");
+                    } else {
+                        log_it(L_WARNING,"OUTSIDE IS LONG");
+                    }
+                    
                     // Call the command function
                     if(l_cmd &&  l_argv && l_cmd->func) {
                         if (l_cmd->arg_func) {
@@ -849,6 +856,28 @@ char    *str_header;
         log_it(L_DEBUG, "close connection=%d sockfd=%"DAP_FORMAT_SOCKET, cs, newsockfd);
 
     return NULL;
+}
+
+
+/**
+/// @brief parse commands with long output
+/// @param l_argv 
+/// @return 0 not long, 1 is long
+*/
+int is_long_cmd(char** l_argv) {
+    const char* long_cmd[] = {"tx_history", "mempool_list", "ledger"};
+    for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
+        if (!strcmp(l_argv[0], long_cmd[i])) {
+            if (!strcmp(long_cmd[i], "ledger") && l_argv[1] && !strcmp(l_argv[1], "tx")) {
+                log_it(L_DEBUG, "Long command %s", l_argv[0]);
+                return 1;
+            } else if (strcmp(long_cmd[i], "ledger")){
+                log_it(L_DEBUG, "Long command %s", l_argv[0]);
+                return 1;
+            }
+        }
+    }
+    return 0;
 }
 
 /**
