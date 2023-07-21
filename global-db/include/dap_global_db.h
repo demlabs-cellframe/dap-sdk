@@ -81,15 +81,12 @@ typedef struct dap_store_obj {
 
     union {
         const char *key;
-        byte_t * key_byte;
+        byte_t *key_byte;
     };
     uint64_t key_len;
 
     uint8_t *value;
     uint64_t value_len;
-
-    dap_proc_queue_callback_t callback_proc_thread;                                           /* (Async mode only!) A call back to be called on request completion */
-    void *callback_proc_thread_arg;                                                     /* (Async mode only!) An argument of the callback rotine */
 } dap_store_obj_t, *pdap_store_obj_t;
 
 typedef struct dap_global_db_obj {
