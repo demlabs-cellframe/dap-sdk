@@ -97,18 +97,20 @@ static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_c
         }
         case 2: {   // Find header end and throw out header
             const char *l_head_end_str = "\r\n\r\n";
+
             char *l_str_ptr = strstr(l_cmd->cmd_res, l_head_end_str);
+
+
+
             if (l_str_ptr) {
                 l_str_ptr += strlen(l_head_end_str);
                 size_t l_head_size = l_str_ptr - l_cmd->cmd_res;
+                l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_cur + l_cmd->cmd_res_len + 1);
+
                 memmove(&l_cmd->cmd_res[l_cmd->cmd_res_cur], l_str_ptr, l_cmd->cmd_res_len);
-
-
-
-
-                if(l_cmd->cmd_res_cur < l_cmd->cmd_res_len) {
-                    l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_cur + l_cmd->cmd_res_len + 1);
-                l_cmd->cmd_res_cur -= l_head_size;
+                // if(l_cmd->cmd_res_cur < l_cmd->cmd_res_len) {
+                //     l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_cur + l_cmd->cmd_res_len + 1);
+                // l_cmd->cmd_res_cur -= l_head_size;
                 // read rest of data
                     while((l_cmd->cmd_res_len - l_cmd->cmd_res_cur) > 0) {
                         ssize_t l_recv_len = recv(*socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], l_cmd->cmd_res_len, 0);
@@ -116,7 +118,7 @@ static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_c
                             break;
                         l_cmd->cmd_res_cur += l_recv_len;
                     }
-                }
+                // }
                 if (long_cmd) {
                         *long_flag = 1;
                         s_status = 1;
