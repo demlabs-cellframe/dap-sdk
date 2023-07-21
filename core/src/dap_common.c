@@ -367,8 +367,7 @@ void _log_it(const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, 
 }
 
 void dap_cli_server_cmd_reply_send(SOCKET newsockfd, char * str_reply){
-    char *reply_body;
-    reply_body = dap_strdup_printf("\r\n%s\r\n", (str_reply) ? str_reply : "");
+    char *reply_body = dap_strdup_printf("\r\n%s\r\n", (str_reply) ? str_reply : "");
     // return the result of the command function
     char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                         "Content-Length: %zu\r\n"
@@ -377,6 +376,7 @@ void dap_cli_server_cmd_reply_send(SOCKET newsockfd, char * str_reply){
     size_t l_reply_step = 32768;
     size_t l_reply_len = strlen(reply_str);
     size_t l_reply_rest = l_reply_len;
+    log_it(L_WARNING, "send = %s", reply_str);
 
     while(l_reply_rest) {
         size_t l_send_bytes = min(l_reply_step, l_reply_rest);
@@ -386,7 +386,7 @@ void dap_cli_server_cmd_reply_send(SOCKET newsockfd, char * str_reply){
         l_reply_rest-=l_send_bytes;
     };
 
-    DAP_DELETE(str_reply);
+    // DAP_DELETE(str_reply);
     DAP_DELETE(reply_str);
     DAP_DELETE(reply_body);
 

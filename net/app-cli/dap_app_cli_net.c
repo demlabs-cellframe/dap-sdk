@@ -54,13 +54,13 @@
 static int s_status;
 
 //staic function to receive http data
-static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_cli_cmd_state_t *l_cmd)
+static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_cli_cmd_state_t *l_cmd, int * long_flag)
 {
     ssize_t l_recv_len = recv(*socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], DAP_CLI_HTTP_RESPONSE_SIZE_MAX, 0);
-    if (l_recv_len == 0) {
-        s_status = DAP_CLI_ERROR_INCOMPLETE;
-        return;
-    }
+    // if (l_recv_len == 0) {
+    //     s_status = DAP_CLI_ERROR_INCOMPLETE;
+    //     return;
+    // }
     if (l_recv_len == -1) {
 #ifdef DAP_OS_WINDOWS
         int l_errno = WSAGetLastError();
@@ -74,9 +74,12 @@ static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_c
         }
         return;
     }
+    char* long_cmd = NULL;
     l_cmd->cmd_res_cur +=(size_t) l_recv_len;
     switch (s_status) {
         case 1: {   // Find content length
+            const char *long_reply = "Part reply";
+            long_cmd = strstr(l_cmd->cmd_res, long_reply);
             const char *l_cont_len_str = "Content-Length: ";
             char *l_str_ptr = strstr(l_cmd->cmd_res, l_cont_len_str);
             if (l_str_ptr && strstr(l_str_ptr, "\r\n")) {
@@ -86,7 +89,7 @@ static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_c
                     break;
                 }
                 else {
-                    s_status++;
+                        s_status++;
                 }
             } else {
                 break;
@@ -98,19 +101,43 @@ static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_c
             if (l_str_ptr) {
                 l_str_ptr += strlen(l_head_end_str);
                 size_t l_head_size = l_str_ptr - l_cmd->cmd_res;
-                memmove(l_cmd->cmd_res, l_str_ptr, l_cmd->cmd_res_cur - l_head_size);
+                memmove(&l_cmd->cmd_res[l_cmd->cmd_res_cur], l_str_ptr, l_cmd->cmd_res_len);
+
+
+
+
+                if(l_cmd->cmd_res_cur < l_cmd->cmd_res_len) {
+                    l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_cur + l_cmd->cmd_res_len + 1);
                 l_cmd->cmd_res_cur -= l_head_size;
                 // read rest of data
-                if(l_cmd->cmd_res_cur < l_cmd->cmd_res_len) {
-                    l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_len + 1);
                     while((l_cmd->cmd_res_len - l_cmd->cmd_res_cur) > 0) {
-                        ssize_t l_recv_len = recv(*socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], l_cmd->cmd_res_len - l_cmd->cmd_res_cur, 0);
+                        ssize_t l_recv_len = recv(*socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], l_cmd->cmd_res_len, 0);
                         if(l_recv_len <= 0)
                             break;
                         l_cmd->cmd_res_cur += l_recv_len;
                     }
                 }
-                s_status++;
+                if (long_cmd) {
+                        *long_flag = 1;
+                        s_status = 1;
+                        // if (l_cmd->cmd_res) {
+                        //     char **l_str = dap_strsplit(l_cmd->cmd_res, "\r\n", 1);
+                        //     int l_cnt = dap_str_countv(l_str);
+                        //     char *l_str_reply = NULL;
+                        //     if (l_cnt == 2) {
+                        //         //long l_err_code = strtol(l_str[0], NULL, 10);
+                        //         l_str_reply = l_str[1];
+                        //     }
+                        //     printf("%s\n", (l_str_reply) ? l_str_reply : "no response");
+                        //     dap_strfreev(l_str);
+                        //     DAP_DEL_Z(l_cmd->cmd_res);
+                        //     l_cmd->cmd_res = DAP_NEW_Z_SIZE(char, DAP_CLI_HTTP_RESPONSE_SIZE_MAX);
+                        //     l_cmd->cmd_res_cur = 0;
+                        //     l_cmd->cmd_res_len = 0;
+                        // }
+                        break;
+                } else 
+                    s_status++;
             } else {
                 break;
             }
@@ -238,8 +265,13 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
     //wait for command execution
     time_t l_start_time = time(NULL);
     s_status = 1;
+    int long_flag = 0;
     while(s_status > 0) {
-        dap_app_cli_http_read(a_socket, a_cmd);
+        dap_app_cli_http_read(a_socket, a_cmd, &long_flag);
+        if (long_flag) {
+            l_start_time = time(NULL);
+            long_flag = 0;
+        }
         if (time(NULL) - l_start_time > DAP_CLI_HTTP_TIMEOUT)
             s_status = DAP_CLI_ERROR_TIMEOUT;
     }
