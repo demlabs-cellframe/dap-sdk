@@ -51,7 +51,7 @@ void dap_global_db_add_sync_group(const char *a_net_name, const char *a_group_ma
     }
     l_item->net_name = dap_strdup(a_net_name);
     l_item->group_mask = dap_strdup_printf("%s.*", a_group_mask);
-    dap_global_db_add_notify_group_mask(dap_global_db_context_get_default()->instance, a_group_mask, a_callback, a_arg);
+    dap_global_db_add_notify_group_mask(dap_global_db_context_get_default()->instance, l_item->group_mask, a_callback, a_arg);
     s_db_add_sync_group(&s_sync_group_items, l_item);
 }
 
