@@ -724,7 +724,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
             char l_body[PIPE_BUF] = { '\0' };
             ssize_t l_read_ret = read(a_esocket->fd, l_body, PIPE_BUF);
             if(l_read_ret > 0) {
-                debug_if(l_read_ret > (ssize_t)sizeof(void*), L_MSG, "Read %ld bytes from pipe", l_read_ret);
+                debug_if(l_read_ret > (ssize_t)sizeof(void*), L_MSG, "[!] Read %ld bytes from pipe [es %d]", l_read_ret, a_esocket->fd2);
                 for (long shift = 0; shift < l_read_ret; shift += sizeof(void*)) {
                     void *l_queue_ptr = *(void**)(l_body + shift);
                     a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
@@ -1003,12 +1003,12 @@ static void *s_dap_events_socket_buf_thread(void *arg)
             int l_errno = errno;
 
             if (l_write_ret == (ssize_t)l_es->buf_out_size) {
-                debug_if(l_write_ret > (ssize_t)sizeof(void*), L_MSG, "[!] Sent all %lu data to pipe in thread", l_write_ret);
+                debug_if(l_write_ret > (ssize_t)sizeof(void*), L_MSG, "[!] Sent all %lu bytes to pipe [es %d]", l_write_ret, l_sock);
                 l_es->buf_out_size = 0;
                 l_lifecycle = false;
             } else {
                 if (l_write_ret) {
-                    log_it(L_MSG, "[!] Sent %lu / %lu data to pipe in thread", l_write_ret, l_es->buf_out_size);
+                    log_it(L_MSG, "[!] Sent %lu / %lu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
                     l_es->buf_out_size -= l_write_ret;
                     memmove(l_es->buf_out, l_es->buf_out + l_write_ret, l_es->buf_out_size);
                 } else {
@@ -1043,8 +1043,8 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
     if (a_es->buf_out_size_max < a_es->buf_out_size + sizeof(void*)) {
         a_es->buf_out_size_max += l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-    } else if (a_es->buf_out_size + sizeof(void*) <= a_es->buf_out_size_max / 4) {
-        a_es->buf_out_size_max /= 2;
+    } else if ((a_es->buf_out_size + sizeof(void*) <= l_basic_buf_size / 2) && (a_es->buf_out_size_max > l_basic_buf_size)) {
+        a_es->buf_out_size_max = l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
     }
     *(void**)(a_es->buf_out + a_es->buf_out_size) = a_arg;
