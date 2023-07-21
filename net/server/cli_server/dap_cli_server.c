@@ -543,7 +543,8 @@ void dap_cli_server_deinit()
 void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex)
 {
     if (is_long_cmd(a_name)) {
-        s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, 1, a_doc, a_doc_ex);
+        void * newsockfd = 1;
+        s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, newsockfd, a_doc, a_doc_ex);
     } else 
         s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex);
 }
@@ -799,7 +800,7 @@ char    *str_header;
                     // Call the command function
                     if(l_cmd &&  l_argv && l_cmd->func) {
                         if (is_long_cmd(l_argv[0])) {
-                            l_cmd->arg_func = newsockfd;
+                            l_cmd->arg_func = &newsockfd;
                         }
                         if (l_cmd->arg_func) {
                             res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
@@ -857,32 +858,6 @@ char    *str_header;
     return NULL;
 }
 
-void dap_cli_server_cmd_reply_send(SOCKET newsockfd, char * str_reply){
-    char *reply_body;
-    reply_body = dap_strdup_printf("\r\n%s\r\n", (str_reply) ? str_reply : "");
-    // return the result of the command function
-    char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
-                                        "Content-Length: %zu\r\n"
-                                        "Part send\r\n\r\n"
-                                        "%s    ///YOU DID IT", strlen(reply_body), reply_body);
-    size_t l_reply_step = 32768;
-    size_t l_reply_len = strlen(reply_str);
-    size_t l_reply_rest = l_reply_len;
-
-    while(l_reply_rest) {
-        size_t l_send_bytes = min(l_reply_step, l_reply_rest);
-        int ret = send(newsockfd, reply_str + l_reply_len - l_reply_rest, l_send_bytes, MSG_NOSIGNAL);
-        if(ret<=0)
-            break;
-        l_reply_rest-=l_send_bytes;
-    };
-
-    DAP_DELETE(str_reply);
-    DAP_DELETE(reply_str);
-    DAP_DELETE(reply_body);
-
-}
-
 
 /**
 /// @brief parse commands with long output
@@ -890,7 +865,7 @@ void dap_cli_server_cmd_reply_send(SOCKET newsockfd, char * str_reply){
 /// @return 0 not long, 1 is long
 */
 int is_long_cmd(const char * a_name) {
-    const char* long_cmd[] = {"tx_history", "mempool_list", "ledger"};
+    const char* long_cmd[] = {"tx_history"}; //, "mempool_list", "ledger"};
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
             return 1;
