@@ -134,6 +134,10 @@ int dap_global_db_add_notify_group_mask(dap_global_db_instance_t *a_dbi, const c
         }
     }
     dap_global_db_notify_item_t *l_item_new = DAP_NEW_Z(dap_global_db_notify_item_t);
+    if (!l_item_new) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_add_notify_group_mask");
+        return -1;
+    }
     l_item_new->group_mask = dap_strdup(a_group_mask);
     l_item_new->callback_notify = a_callback;
     l_item_new->callback_arg = a_arg;
