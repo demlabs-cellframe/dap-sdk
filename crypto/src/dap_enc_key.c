@@ -782,7 +782,7 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t buf_size)
     if(in_key->inheritor_size) {
         DAP_DEL_Z(result->_inheritor);
         result->_inheritor = DAP_NEW_Z_SIZE(byte_t, in_key->inheritor_size );
-        if (!result->pub_key_data) {
+        if (!result->_inheritor) {
             log_it(L_ERROR, "Memory allocation error in dap_enc_key_deserialize");
             DAP_DEL_Z(result->priv_key_data);
             DAP_DEL_Z(result->pub_key_data);

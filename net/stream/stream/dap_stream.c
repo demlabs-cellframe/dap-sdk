@@ -335,12 +335,15 @@ dap_stream_t * stream_new_udp(dap_events_socket_t * a_esocket)
 {
     dap_stream_t * l_stm = DAP_NEW_Z(dap_stream_t);
     assert(l_stm);
+    if (!l_stm) {
+        log_it(L_ERROR, "Memory allocation error in stream_new_udp");
+        return NULL;
+    }
 
 #ifdef  DAP_SYS_DEBUG
     s_memstat[MEMSTAT$K_STM].alloc_nr += 1;
 #endif
 
-    l_stm->esocket = a_esocket;
     l_stm->esocket = a_esocket;
     l_stm->esocket_uuid = a_esocket->uuid;
     a_esocket->_inheritor = l_stm;

@@ -406,6 +406,10 @@ byte_t *dap_global_db_get_unsafe(dap_global_db_context_t *a_global_db_context, c
     if (a_ts)
         *a_ts = l_store_obj->timestamp;
     byte_t *l_res = DAP_DUP_SIZE(l_store_obj->value, l_store_obj->value_len);
+    if (!l_res) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_unsafe");
+        return NULL;
+    }
     dap_store_obj_free_one(l_store_obj);
     return l_res;
 }
@@ -778,6 +782,11 @@ byte_t *dap_global_db_get_last_unsafe(dap_global_db_context_t *a_global_db_conte
     if (a_ts)
         *a_ts = l_store_obj->timestamp;
     byte_t *l_res = DAP_DUP_SIZE(l_store_obj->value, l_store_obj->value_len);
+    if (!l_res) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_get_last_unsafe");
+        dap_store_obj_free_one(l_store_obj);
+        return NULL;
+    }
     dap_store_obj_free_one(l_store_obj);
     return l_res;
 }
@@ -976,11 +985,20 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
         if (l_values_count > 1)
             qsort(l_store_objs, l_values_count, sizeof(dap_store_obj_t), s_db_compare_by_ts);
         l_objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, sizeof(dap_global_db_obj_t) * l_values_count);
+        if (!l_objs) {
+            goto mem_clear;
+        }
         for(size_t i = 0; i < l_values_count; i++){
             l_objs[i].id = l_store_objs[i].id;
             l_objs[i].is_pinned = l_store_objs[i].flags & RECORD_PINNED;
             l_objs[i].key = dap_strdup(l_store_objs[i].key);
+            if (!l_objs[i].key) {
+                goto mem_clear;
+            }
             l_objs[i].value = DAP_DUP_SIZE(l_store_objs[i].value, l_store_objs[i].value_len);
+            if (!l_objs[i].value) {
+                goto mem_clear;
+            }
             l_objs[i].value_len = l_store_objs[i].value_len;
             l_objs[i].timestamp = l_store_objs[i].timestamp;
         }
@@ -989,6 +1007,16 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
     if (a_objs_count)
         *a_objs_count = l_values_count;
     return l_objs;
+
+mem_clear:
+    log_it(L_ERROR, "Memory allocation error in dap_global_db_get_all_unsafe");
+    for(size_t j = 0; j < l_values_count && l_objs; j++) {
+        DAP_DEL_Z(l_objs[j].key);
+        DAP_DEL_Z(l_objs[j].value);
+    }
+    DAP_DEL_Z(l_objs);
+    dap_store_obj_free(l_store_objs, l_values_count);
+    return NULL;
 }
 
 /**
@@ -1298,7 +1326,7 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
         return DAP_GLOBAL_DB_RC_ERROR;
     }
-    if (!a_group || !a_key) {
+    if (!a_group || !a_key || !a_value) {
         log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
         return -1;
     }
@@ -1311,6 +1339,13 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
     l_msg->value = DAP_DUP_SIZE(a_value, a_value_length);
+    if (!l_msg->value) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_set");
+        DAP_DEL_Z(l_msg->group);
+        DAP_DEL_Z(l_msg->key);
+        DAP_DEL_Z(l_msg);
+        return -1;
+    }
     l_msg->value_length = a_value_length;
     l_msg->value_is_pinned = a_pin_value;
     l_msg->callback_arg = a_arg;
