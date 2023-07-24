@@ -728,7 +728,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
             char l_body[PIPE_BUF] = { '\0' };
             ssize_t l_read_ret = read(a_esocket->fd, l_body, PIPE_BUF);
             if(l_read_ret > 0) {
-                debug_if(l_read_ret > (ssize_t)sizeof(void*), L_MSG, "[!] Read %ld bytes from pipe [es %d]", l_read_ret, a_esocket->fd2);
+                //debug_if(l_read_ret > (ssize_t)sizeof(void*), L_MSG, "[!] Read %ld bytes from pipe [es %d]", l_read_ret, a_esocket->fd2);
                 for (long shift = 0; shift < l_read_ret; shift += sizeof(void*)) {
                     void *l_queue_ptr = *(void**)(l_body + shift);
                     a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
@@ -937,9 +937,10 @@ void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket)
         log_it(L_ERROR, "Event socket %"DAP_FORMAT_SOCKET" accepted data but callback is NULL ", a_esocket->socket);
 }
 
-#if (!defined DAP_EVENTS_CAPS_AIO) || (defined DAP_CAPS_AIO_THREADS)
+//#if (!defined DAP_EVENTS_CAPS_AIO) || (defined DAP_CAPS_AIO_THREADS)
 
-static pthread_rwlock_t *s_bufout_rwlock = NULL;
+#ifdef DAP_EVENTS_CAPS_QUEUE_PIPE2
+
 /**
  *  Waits on the socket
  *  return 0: timeout, 1: may send data, -1 error
@@ -979,6 +980,7 @@ static int s_wait_send_socket(SOCKET a_sockfd, long timeout_ms)
     return -1;
 }
 
+
 /**
  * @brief dap_events_socket_buf_thread
  * @param arg
@@ -1007,12 +1009,12 @@ static void *s_dap_events_socket_buf_thread(void *arg)
             int l_errno = errno;
 
             if (l_write_ret == (ssize_t)l_es->buf_out_size) {
-                debug_if(l_write_ret > (ssize_t)sizeof(void*), L_MSG, "[!] Sent all %lu bytes to pipe [es %d]", l_write_ret, l_sock);
+                //debug_if(l_write_ret > (ssize_t)sizeof(void*), L_MSG, "[!] Sent all %lu bytes to pipe [es %d]", l_write_ret, l_sock);
                 l_es->buf_out_size = 0;
                 l_lifecycle = false;
             } else {
                 if (l_write_ret) {
-                    log_it(L_MSG, "[!] Sent %lu / %lu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
+                    //log_it(L_MSG, "[!] Sent %lu / %lu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
                     l_es->buf_out_size -= l_write_ret;
                     memmove(l_es->buf_out, l_es->buf_out + l_write_ret, l_es->buf_out_size);
                 } else {
