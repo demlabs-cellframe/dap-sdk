@@ -370,8 +370,8 @@ void dap_cli_server_cmd_reply_send(SOCKET newsockfd, char * str_reply){
     char *reply_body = dap_strdup_printf("\r\n%s\r\n", (str_reply) ? str_reply : "");
     // return the result of the command function
     char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
-                                        "Content-Length: %zu\r\n"
-                                        "Part reply\r\n\r\n"
+                                        "Part reply\r\n"
+                                        "Content-Length: %zu\r\n\r\n"
                                         "%s", strlen(reply_body), reply_body);
     size_t l_reply_step = 32768;
     size_t l_reply_len = strlen(reply_str);
