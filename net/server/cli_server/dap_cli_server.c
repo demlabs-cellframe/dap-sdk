@@ -865,7 +865,7 @@ char    *str_header;
 /// @return 0 not long, 1 is long
 */
 int is_long_cmd(const char * a_name) {
-    const char* long_cmd[] = {"tx_history"}; //, "mempool_list", "ledger"};
+    const char* long_cmd[] = {"tx_history" "mempool_list", "ledger"};
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
             return 1;
