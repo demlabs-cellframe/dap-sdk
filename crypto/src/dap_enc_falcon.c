@@ -339,6 +339,7 @@ falcon_private_key_t* dap_enc_falcon_read_private_key(const uint8_t *a_buf, size
     l_private_key->data = DAP_NEW_Z_SIZE(uint8_t, FALCON_PRIVKEY_SIZE(l_degree));
     if (!l_private_key->data) {
         log_it(L_ERROR, "Memory allocation error in dap_enc_falcon_read_private_key");
+        DAP_DEL_Z(l_private_key);
         return NULL;
     }
     memcpy(l_private_key->data, l_ptr, FALCON_PRIVKEY_SIZE(l_degree));
@@ -404,6 +405,7 @@ falcon_public_key_t* dap_enc_falcon_read_public_key(const uint8_t* a_buf, size_t
     l_public_key->data = DAP_NEW_Z_SIZE(uint8_t, FALCON_PUBKEY_SIZE(l_degree));
     if (!l_public_key->data) {
         log_it(L_ERROR, "Memory allocation error in dap_enc_falcon_read_public_key");
+        DAP_DEL_Z(l_public_key);
         return NULL;
     }
     memcpy(l_public_key->data, l_ptr, FALCON_PUBKEY_SIZE(l_degree));

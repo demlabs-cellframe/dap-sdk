@@ -134,6 +134,10 @@ int dap_global_db_add_notify_group_mask(dap_global_db_instance_t *a_dbi, const c
         }
     }
     dap_global_db_notify_item_t *l_item_new = DAP_NEW_Z(dap_global_db_notify_item_t);
+    if (!l_item_new) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_add_notify_group_mask");
+        return -1;
+    }
     l_item_new->group_mask = dap_strdup(a_group_mask);
     l_item_new->callback_notify = a_callback;
     l_item_new->callback_arg = a_arg;
@@ -721,6 +725,25 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
     return l_store_obj_arr;
 }
 
+static int s_global_db_check_group_mask_check(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_obj,
+                                              dap_list_t *a_masks) {
+    if (!a_global_db_context || !a_obj || !a_masks) {
+        debug_if(g_dap_global_db_debug_more, L_DEBUG, "The s_global_db_check_group_mask_check function cannot accept "
+                                                      "NULL values.");
+        return -1;
+    }
+    for (dap_list_t *i = a_masks; i; i = i->next) {
+        dap_sync_group_item_t *l_item = (dap_sync_group_item_t*)i->data;
+        if (!dap_fnmatch(l_item->group_mask, a_obj->group, 0)){
+            debug_if(g_dap_global_db_debug_more, L_DEBUG, "Group %s match mask %s.", a_obj->group, l_item->group_mask);
+            return 0;
+        }
+        debug_if(g_dap_global_db_debug_more, L_DEBUG, "Group %s does not match mask %s.", a_obj->group, l_item->group_mask);
+    }
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "Group %s does not match any of the masks.", a_obj->group);
+    return -2;
+}
+
 int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_obj,
                                           dap_global_db_callback_results_raw_t a_callback, void *a_arg)
 {
@@ -728,6 +751,12 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     dap_nanotime_t l_timestamp_cur = 0;
     // Record is pinned or not
     bool l_is_pinned_cur = false;
+    if (s_global_db_check_group_mask_check(a_global_db_context, a_obj, s_sync_group_items) &&
+        s_global_db_check_group_mask_check(a_global_db_context, a_obj, s_sync_group_extra_items)) {
+        log_it(L_WARNING, "An entry in the group %s was rejected because the group name did not match any of the masks.", a_obj->group);
+        DAP_DELETE(a_arg);
+        return -4;
+    }
     if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
         dap_store_obj_t *l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
         if (l_read_obj) {

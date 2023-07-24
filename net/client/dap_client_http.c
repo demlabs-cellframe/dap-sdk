@@ -142,9 +142,17 @@ void dap_client_http_set_connect_timeout_ms(uint64_t a_timeout_ms)
 static void s_http_connected(dap_events_socket_t * a_esocket)
 {
     assert(a_esocket);
+    if (!a_esocket) {
+        log_it(L_ERROR, "Invalid arguments in s_http_connected");
+        return;
+    }
     dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(a_esocket);
     assert(l_client_http);
     assert(l_client_http->worker);
+    if (!l_client_http || !l_client_http->worker) {
+        log_it(L_ERROR, "Invalid arguments in s_http_connected");
+        return;
+    }
 
     log_it(L_INFO, "Remote address connected (%s:%u) with sock_id %"DAP_FORMAT_SOCKET, l_client_http->uplink_addr, l_client_http->uplink_port, a_esocket->socket);
     // add to dap_worker
@@ -197,7 +205,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
             ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
 	        : 0;
 
-    if ((l_client_http->request_size && l_client_http->request_size))
+    if ((l_client_http->request && l_client_http->request_size))
         snprintf(l_get_str, sizeof(l_get_str), "?%s", l_client_http->request) ;
     }
 

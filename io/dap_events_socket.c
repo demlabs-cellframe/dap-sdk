@@ -324,6 +324,10 @@ void __stdcall mq_receive_cb(HRESULT hr, QUEUEHANDLE qh, DWORD timeout
 dap_events_socket_t *dap_events_socket_wrap_no_add( SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks )
 {
     assert(a_callbacks);
+    if (!a_callbacks) {
+        log_it(L_CRITICAL, "Invalid arguments in dap_events_socket_wrap_no_add");
+        return NULL;
+    }
 
     dap_events_socket_t *l_es = s_dap_evsock_alloc(); /* @RRL: #6901 */
     if (!l_es)
@@ -1128,7 +1132,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     l_ptr_aio->self = l_ptr_aio;
     l_ptr_aio->ptr = a_arg;
     l_ptr_aio->aiocb = DAP_NEW_Z(struct aiocb);
-    if (!l_ptr_aio) {
+    if (!l_ptr_aio->aiocb) {
         log_it(L_ERROR, "Memory allocation error in dap_events_socket_queue_ptr_send");
         DAP_DEL_Z(l_ptr_aio);
         return 0;
@@ -1401,6 +1405,10 @@ dap_events_socket_t * dap_events_socket_wrap2( dap_server_t *a_server, SOCKET a_
 {
     assert( a_callbacks );
     assert( a_server );
+    if (!a_callbacks || !a_server) {
+        log_it(L_CRITICAL, "Invalid arguments in dap_events_socket_wrap2");
+        return NULL;
+    }
 
     dap_events_socket_t * l_es = s_dap_evsock_alloc ();
     if (!l_es)
