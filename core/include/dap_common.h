@@ -58,8 +58,6 @@
 #include <ctype.h>
 #include <pthread.h>
 //for long command reply
-#include <sys/socket.h>
-#include <netinet/in.h>
 typedef int SOCKET;
 
 #ifndef __cplusplus
