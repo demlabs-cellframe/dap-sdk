@@ -819,30 +819,31 @@ char    *str_header;
                     str_reply = dap_strdup_printf("can't recognize command=%s", str_cmd);
                     log_it(L_ERROR,"Reply string: \"%s\"", str_reply);
                 }
-                char *reply_body;
-                if(l_verbose)
-                  reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");
-                else
-                  reply_body = dap_strdup_printf("%d\r\n%s\r\n", res, (str_reply) ? str_reply : "");
-                // return the result of the command function
-                char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
-                                                    "Content-Length: %zu\r\n\r\n"
-                                                    "%s", strlen(reply_body), reply_body);
-                size_t l_reply_step = 32768;
-                size_t l_reply_len = strlen(reply_str);
-                size_t l_reply_rest = l_reply_len;
+                if (str_reply) {
+                    char *reply_body;
+                    if(l_verbose)
+                    reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");
+                    else
+                    reply_body = dap_strdup_printf("%d\r\n%s\r\n", res, (str_reply) ? str_reply : "");
+                    // return the result of the command function
+                    char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
+                                                        "Content-Length: %zu\r\n\r\n"
+                                                        "%s", strlen(reply_body), reply_body);
+                    size_t l_reply_step = 32768;
+                    size_t l_reply_len = strlen(reply_str);
+                    size_t l_reply_rest = l_reply_len;
 
-                while(l_reply_rest) {
-                    size_t l_send_bytes = min(l_reply_step, l_reply_rest);
-                    int ret = send(newsockfd, reply_str + l_reply_len - l_reply_rest, l_send_bytes, MSG_NOSIGNAL);
-                    if(ret<=0)
-                        break;
-                    l_reply_rest-=l_send_bytes;
-                };
-
+                    while(l_reply_rest) {
+                        size_t l_send_bytes = min(l_reply_step, l_reply_rest);
+                        int ret = send(newsockfd, reply_str + l_reply_len - l_reply_rest, l_send_bytes, MSG_NOSIGNAL);
+                        if(ret<=0)
+                            break;
+                        l_reply_rest-=l_send_bytes;
+                    };
+                    DAP_DELETE(reply_str);
+                    DAP_DELETE(reply_body);
+                }
                 DAP_DELETE(str_reply);
-                DAP_DELETE(reply_str);
-                DAP_DELETE(reply_body);
 
                 DAP_DELETE(str_cmd);
             }
@@ -873,22 +874,6 @@ int is_long_cmd(const char * a_name) {
     }
     return 0;
 }
-// int is_long_cmd(char** l_argv) {
-//     const char* long_cmd[] = {"tx_history", "mempool_list", "ledger"};
-//     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
-//         if (!strcmp(l_argv[0], long_cmd[i])) {
-//             //ledger tx
-//             if (!strcmp(long_cmd[i], "ledger") && l_argv[1] && !strcmp(l_argv[1], "tx")) {
-//                 log_it(L_DEBUG, "Long command %s", l_argv[0]);
-//                 return 1;
-//             } else if (strcmp(long_cmd[i], "ledger")){
-//                 log_it(L_DEBUG, "Long command %s", l_argv[0]);
-//                 return 1;
-//             }
-//         }
-//     }
-//     return 0;
-// }
 
 /**
  * @brief thread_main_func
