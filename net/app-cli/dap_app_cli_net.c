@@ -57,11 +57,6 @@ static int s_status;
 static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_cli_cmd_state_t *l_cmd, int * long_flag)
 {
     ssize_t l_recv_len = recv(*socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], DAP_CLI_HTTP_RESPONSE_SIZE_MAX, 0);
-    // if (l_recv_len == 0) {
-    //     s_status = DAP_CLI_ERROR_INCOMPLETE;
-    //     return;
-    // }
-    // printf("FULLLLLL\n\n%s\n\n\nFULLLLLL", l_cmd->cmd_res);
     if (l_recv_len == -1) {
 #ifdef DAP_OS_WINDOWS
         int l_errno = WSAGetLastError();
@@ -139,6 +134,7 @@ static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_c
                 s_status = 0;
             else {
                 *long_flag = 1;
+                s_status = 1;
             }
             break;
         }
