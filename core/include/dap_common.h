@@ -58,6 +58,10 @@
 #include <ctype.h>
 #include <pthread.h>
 //for long command reply
+#ifdef DAP_OS_UNIX
+#include <sys/socket.h>
+#include <netinet/in.h>
+#endif
 typedef int SOCKET;
 
 #ifndef __cplusplus
