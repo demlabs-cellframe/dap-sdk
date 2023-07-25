@@ -58,7 +58,6 @@
 #include <ctype.h>
 #include <pthread.h>
 //for long command reply
-#include <poll.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 typedef int SOCKET;
