@@ -61,8 +61,8 @@
 #ifdef DAP_OS_UNIX
 #include <sys/socket.h>
 #include <netinet/in.h>
-#endif
 typedef int SOCKET;
+#endif
 
 #ifndef __cplusplus
 # include <stdatomic.h>
