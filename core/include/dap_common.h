@@ -63,6 +63,9 @@
 #include <netinet/in.h>
 typedef int SOCKET;
 #endif
+#ifdef DAP_OS_WINDOWS
+#define MSG_NOSIGNAL 0
+#endif
 
 #ifndef __cplusplus
 # include <stdatomic.h>
