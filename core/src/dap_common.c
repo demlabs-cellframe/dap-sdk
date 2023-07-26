@@ -1429,6 +1429,23 @@ dap_memstat_rec_t   *l_memstat_rec;
     }
 }
 
-
-
 #endif  /* DAP_SYS_DEBUG */
+
+/**
+ * @brief dap_del_z_all
+ * DAP_FREE n args
+ * @param int a_count - count deleted args
+ * @param void* a_to_delete
+ */
+void dap_delete(int a_count, void* a_to_delete, ...)
+{
+    va_list l_args_list;
+    va_start(l_args_list, a_to_delete);
+    void *l_to_delete = a_to_delete;
+    while (a_count-- > 0) {
+        if (l_to_delete)
+            DAP_FREE(l_to_delete);
+        l_to_delete = va_arg(l_args_list, void*);
+    }
+    va_end(l_args_list);
+}

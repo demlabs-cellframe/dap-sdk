@@ -168,7 +168,6 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 
 
     #define DAP_FREE(a)         s_vm_free(__func__, __LINE__, (void *) a)
-    #define DAP_DELETE(a)       s_vm_free(__func__, __LINE__, (void *) a)
 
     #define DAP_MALLOC(a)       s_vm_get(__func__, __LINE__, a)
     #define DAP_CALLOC(a, b)    s_vm_get_z(__func__, __LINE__, a, b)
@@ -204,11 +203,14 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_NEW_Z(t)          DAP_CAST_PTR(t, calloc(1, sizeof(t)))
 #define DAP_NEW_Z_SIZE(t, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, calloc(1, s1)) : DAP_CAST_PTR(t, NULL); })
 #define DAP_REALLOC(p, s)     ({ size_t s1 = (size_t)(s); s1 > 0 ? realloc(p, s1) : ({ DAP_DEL_Z(p); DAP_CAST_PTR(void, NULL); }); })
-#define DAP_DELETE(p)         free((void*)(p))
 #define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? malloc(sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : DAP_CAST_PTR(void, NULL); })
 #define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (size_t)(s); void *p1 = (p) && (s1 > 0) ? malloc(s1) : NULL; p1 ? memcpy(p1, (p), s1) : DAP_CAST_PTR(void, NULL); })
 #endif
 #define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
+
+#define VA_NARGS_IMPL(_1, _2, _3, _4, _5, _6, _7, _8, _9, N, ...) N
+#define VA_NARGS(...) VA_NARGS_IMPL(__VA_ARGS__, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+#define DAP_DELETE(...) dap_delete(VA_NARGS(__VA_ARGS__), __VA_ARGS__)
 
 DAP_STATIC_INLINE unsigned long dap_pagesize() {
     static int s = 0;
@@ -765,3 +767,5 @@ int exec_silent(const char *a_cmd);
 #ifdef __cplusplus
 }
 #endif
+
+void dap_delete(int a_count, void* a_to_delete, ...);
