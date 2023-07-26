@@ -208,8 +208,8 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #endif
 #define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
 
-#define VA_NARGS_IMPL(_1, _2, _3, _4, _5, _6, _7, _8, _9, N, ...) N
-#define VA_NARGS(...) VA_NARGS_IMPL(__VA_ARGS__, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+#define VA_NARGS_IMPL(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, N, ...) N
+#define VA_NARGS(...) VA_NARGS_IMPL(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 #define DAP_DELETE(...) dap_delete(VA_NARGS(__VA_ARGS__), __VA_ARGS__)
 
 DAP_STATIC_INLINE unsigned long dap_pagesize() {

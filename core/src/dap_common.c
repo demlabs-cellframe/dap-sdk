@@ -1439,12 +1439,17 @@ dap_memstat_rec_t   *l_memstat_rec;
  */
 void dap_delete(int a_count, void* a_to_delete, ...)
 {
+    if (a_count <= 0) {
+        log_it(L_ERROR, "Wrong count in DAP_DELETE macros, maybe many args?");
+        return;
+    }
     va_list l_args_list;
     va_start(l_args_list, a_to_delete);
     void *l_to_delete = a_to_delete;
     while (a_count-- > 0) {
-        if (l_to_delete)
-            DAP_FREE(l_to_delete);
+        // if (l_to_delete)
+            // DAP_FREE(l_to_delete);
+            printf("%p\n", l_to_delete);
         l_to_delete = va_arg(l_args_list, void*);
     }
     va_end(l_args_list);
