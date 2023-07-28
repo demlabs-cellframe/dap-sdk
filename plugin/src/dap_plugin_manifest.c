@@ -302,8 +302,10 @@ static void s_manifest_delete(dap_plugin_manifest_t *a_manifest)
     DAP_DELETE(a_manifest->version);
     DAP_DELETE(a_manifest->author);
     DAP_DELETE(a_manifest->description);
+    DAP_DEL_Z(a_manifest->type);
+    DAP_DEL_Z(a_manifest->path);
     if(a_manifest->dependencies_names){
-        for(size_t i = 0; i< a_manifest->dependencies_count; i++)
+        for(size_t i = 0; i< a_manifest->dependencies_count; ++i)
             DAP_DELETE(a_manifest->dependencies_names[i]);
         DAP_DELETE(a_manifest->dependencies_names);
     }
@@ -311,6 +313,11 @@ static void s_manifest_delete(dap_plugin_manifest_t *a_manifest)
     HASH_ITER(hh,a_manifest->dependencies,l_dep,l_tmp){
         HASH_DELETE(hh, a_manifest->dependencies, l_dep);
         DAP_DELETE(l_dep);
+    }
+    if (a_manifest->params) {
+        for(size_t i = 0; i < a_manifest->params_count; ++i)
+            DAP_DELETE(a_manifest->params[i]);
+        DAP_DELETE(a_manifest->params);
     }
     DAP_DELETE(a_manifest);
 }
