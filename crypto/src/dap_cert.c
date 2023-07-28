@@ -97,6 +97,10 @@ size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs,
 {
     char * l_certs_tmp_ptrs = NULL;
     char * l_certs_str_dup = strdup(a_certs_str);
+    if (!l_certs_str_dup) {
+        log_it(L_ERROR, "Memory allocatin error in dap_cert_parse_str_list");
+        return 0;
+    }
     char *l_cert_str = strtok_r(l_certs_str_dup, ",", &l_certs_tmp_ptrs);
 
     // First we just calc items

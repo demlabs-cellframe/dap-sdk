@@ -526,9 +526,8 @@ dap_list_t *dap_list_copy_deep(dap_list_t *list, dap_callback_copy_t func, void*
             last = last->next;
         } else
             new_list = last = dap_list_alloc();
-        if (!new_list) {
+        if (!new_list)
             return NULL;
-        }
         if (func)
             last->data = func(list->data, user_data);
         else

@@ -226,9 +226,17 @@ static void s_stream_connected(dap_client_pvt_t * a_client_pvt)
 static bool s_stream_timer_timeout_check(void * a_arg)
 {
     assert(a_arg);
+    if (!a_arg) {
+        log_it(L_ERROR, "Invalid arguments in s_stream_timer_timeout_check");
+        return false;
+    }
     dap_events_socket_uuid_t *l_es_uuid_ptr = (dap_events_socket_uuid_t*) a_arg;
     dap_worker_t *l_worker = dap_worker_get_current();
     assert(l_worker);
+    if (!l_worker) {
+        log_it(L_ERROR, "Invalid arguments in s_stream_timer_timeout_check");
+        return false;
+    }
 
     dap_events_socket_t *l_es = dap_context_find(l_worker->context, *l_es_uuid_ptr);
     if(l_es){

@@ -376,7 +376,6 @@ void dap_cli_server_cmd_reply_send(SOCKET newsockfd, char * str_reply){
     size_t l_reply_step = 32768;
     size_t l_reply_len = strlen(reply_str);
     size_t l_reply_rest = l_reply_len;
-    log_it(L_WARNING, "send = %s", reply_str);
 
     while(l_reply_rest) {
         size_t l_send_bytes = min(l_reply_step, l_reply_rest);
@@ -385,8 +384,6 @@ void dap_cli_server_cmd_reply_send(SOCKET newsockfd, char * str_reply){
             break;
         l_reply_rest-=l_send_bytes;
     };
-
-    // DAP_DEL_Z(str_reply);
     DAP_DELETE(reply_str);
     DAP_DELETE(reply_body);
 
@@ -618,7 +615,6 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
 	char *l_buf = DAP_CALLOC(STR_LOG_BUF_MAX, a_limit);
     if (!l_buf) {
         log_it(L_ERROR, "Memory allocation error in dap_log_get_item");
-        DAP_FREE(l_buf);
         return NULL;
     }
 	char *l_line = DAP_CALLOC(1, STR_LOG_BUF_MAX + 1);

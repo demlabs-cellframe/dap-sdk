@@ -57,7 +57,7 @@ typedef int SOCKET;
     #define DAP_EVENTS_CAPS_QUEUE_PIPE2
     //#define DAP_EVENTS_CAPS_QUEUE_MQUEUE
     #define DAP_EVENTS_CAPS_EVENT_EVENTFD
-    #define DAP_EVENTS_CAPS_AIO
+    //#define DAP_EVENTS_CAPS_AIO
     //#define DAP_EVENTS_CAPS_AIO_THREADS
     #include <netinet/in.h>
     #include <sys/eventfd.h>
@@ -80,7 +80,7 @@ typedef int SOCKET;
     #define DAP_EVENTS_CAPS_EPOLL
     #define DAP_EVENTS_CAPS_QUEUE_WEVENT
     #define DAP_EVENTS_CAPS_EVENT_WEVENT
-    #define DAP_EVENTS_CAPS_AIO_THREADS
+    //#define DAP_EVENTS_CAPS_AIO_THREADS
     //#define DAP_EVENTS_CAPS_PIPE_POSIX
     #define DAP_EVENTS_CAPS_MSMQ
     #ifndef INET_ADDRSTRLEN
@@ -245,6 +245,9 @@ typedef struct dap_events_socket {
     size_t buf_out_size; // size of data that is in the output buffer
     size_t buf_out_size_max; // max size of data
     dap_events_socket_t * pipe_out; // Pipe socket with data for output
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+    pthread_rwlock_t buf_out_lock;
+#endif
 
     // Stored string representation
 #define DAP_EVSOCK$SZ_HOSTNAME  256
