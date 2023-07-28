@@ -299,7 +299,6 @@ char* dap_plugin_manifests_get_list_dependencies(dap_plugin_manifest_t *a_elemen
  */
 static void s_manifest_delete(dap_plugin_manifest_t *a_manifest)
 {
-    DAP_DELETE(a_manifest->name);
     DAP_DELETE(a_manifest->version);
     DAP_DELETE(a_manifest->author);
     DAP_DELETE(a_manifest->description);
@@ -314,7 +313,6 @@ static void s_manifest_delete(dap_plugin_manifest_t *a_manifest)
         DAP_DELETE(l_dep);
     }
     DAP_DELETE(a_manifest);
-
 }
 
 /**
