@@ -386,7 +386,7 @@ void dap_cli_server_cmd_reply_send(SOCKET newsockfd, char * str_reply){
         l_reply_rest-=l_send_bytes;
     };
 
-    DAP_DEL_Z(str_reply);
+    // DAP_DEL_Z(str_reply);
     DAP_DELETE(reply_str);
     DAP_DELETE(reply_body);
 
