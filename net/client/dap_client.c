@@ -260,6 +260,10 @@ void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_chain_net_na
  */
 void dap_client_delete_unsafe(dap_client_t *a_client)
 {
+    if(!a_client) {
+        log_it(L_CRITICAL, "Invalid arguments in dap_client_delete_unsafe");
+        return;
+    }
     if(a_client->delete_callback)
         a_client->delete_callback(a_client, a_client->callbacks_arg);
     dap_client_pvt_delete_unsafe( DAP_CLIENT_PVT(a_client) );
@@ -295,6 +299,10 @@ struct go_stage_arg {
 static void s_go_stage_on_client_worker_unsafe(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
 {
     assert(a_arg);
+    if (!a_arg) {
+        log_it(L_ERROR, "Invalid arguments in s_go_stage_on_client_worker_unsafe");
+        return;
+    }
     struct go_stage_arg *l_args = a_arg;
     dap_client_stage_t l_stage_target = l_args->stage_target;
     dap_client_callback_t l_stage_end_callback = l_args->stage_end_callback;
@@ -365,8 +373,16 @@ static void s_stage_fsm_operator_unsafe(dap_client_t * a_client, void * a_arg)
 {
     UNUSED(a_arg);
     assert(a_client);
+    if (!a_client) {
+        log_it(L_ERROR, "Invalid arguments in s_stage_fsm_operator_unsafe");
+        return;
+    }
     dap_client_pvt_t * l_client_internal = DAP_CLIENT_PVT(a_client);
     assert(l_client_internal);
+    if (!l_client_internal) {
+        log_it(L_ERROR, "Crucial argument is NULL in s_stage_fsm_operator_unsafe");
+        return;
+    }
 
     if (a_client->stage_target == l_client_internal->stage){
         log_it(L_WARNING, "FSM Op: current stage %s is same as target one, nothing to do",

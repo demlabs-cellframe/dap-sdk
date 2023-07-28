@@ -615,7 +615,6 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
 	char *l_buf = DAP_CALLOC(STR_LOG_BUF_MAX, a_limit);
     if (!l_buf) {
         log_it(L_ERROR, "Memory allocation error in dap_log_get_item");
-        DAP_FREE(l_buf);
         return NULL;
     }
 	char *l_line = DAP_CALLOC(1, STR_LOG_BUF_MAX + 1);

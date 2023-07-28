@@ -51,7 +51,7 @@ void dap_global_db_add_sync_group(const char *a_net_name, const char *a_group_ma
     }
     l_item->net_name = dap_strdup(a_net_name);
     l_item->group_mask = dap_strdup_printf("%s.*", a_group_mask);
-    dap_global_db_add_notify_group_mask(dap_global_db_context_get_default()->instance, a_group_mask, a_callback, a_arg);
+    dap_global_db_add_notify_group_mask(dap_global_db_context_get_default()->instance, l_item->group_mask, a_callback, a_arg);
     s_db_add_sync_group(&s_sync_group_items, l_item);
 }
 
@@ -134,6 +134,10 @@ int dap_global_db_add_notify_group_mask(dap_global_db_instance_t *a_dbi, const c
         }
     }
     dap_global_db_notify_item_t *l_item_new = DAP_NEW_Z(dap_global_db_notify_item_t);
+    if (!l_item_new) {
+        log_it(L_ERROR, "Memory allocation error in dap_global_db_add_notify_group_mask");
+        return -1;
+    }
     l_item_new->group_mask = dap_strdup(a_group_mask);
     l_item_new->callback_notify = a_callback;
     l_item_new->callback_arg = a_arg;

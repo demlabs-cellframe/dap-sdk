@@ -55,6 +55,7 @@ int dap_cert_file_save(dap_cert_t * a_cert, const char * a_cert_file_path)
             size_t l_retbytes;
             if ( (l_retbytes = fwrite(l_data,1,l_data_size,l_file)) != l_data_size ){
                 log_it(L_ERROR, "Can't write %u bytes on disk (processed only %zu)!", l_data_size,l_retbytes);
+                fclose(l_file);
                 return -3;
             }
             fclose(l_file);
