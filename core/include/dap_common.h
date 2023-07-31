@@ -58,6 +58,16 @@
 #include <ctype.h>
 #include <pthread.h>
 
+//for long command reply
+#ifdef DAP_OS_UNIX
+#include <sys/socket.h>
+#include <netinet/in.h>
+#endif
+#ifdef DAP_OS_WINDOWS
+#define MSG_NOSIGNAL 0
+#endif
+typedef int SOCKET;
+
 #ifndef __cplusplus
 # include <stdatomic.h>
 #else
@@ -698,6 +708,9 @@ void dap_interval_timer_delete(dap_interval_timer_t a_timer);
 int dap_interval_timer_disable(dap_interval_timer_t a_timer);
 void dap_interval_timer_init();
 void dap_interval_timer_deinit();
+
+//long commands reply send
+void dap_cli_server_cmd_reply_send(SOCKET newsockfd, char * str_reply);
 
 static inline void * dap_mempcpy(void * a_dest,const void * a_src,size_t n)
 {

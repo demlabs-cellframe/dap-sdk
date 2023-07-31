@@ -65,3 +65,4 @@ void dap_cli_server_cmd_apply_overrides(const char * a_name, const dap_cli_serve
 
 dap_cli_cmd_t* dap_cli_server_cmd_get_first();
 dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name);
+int is_long_cmd(const char * a_name);

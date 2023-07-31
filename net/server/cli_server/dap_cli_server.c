@@ -542,6 +542,10 @@ void dap_cli_server_deinit()
  */
 void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex)
 {
+    if (is_long_cmd(a_name)) {
+        void * newsockfd = 1;
+        s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, newsockfd, a_doc, a_doc_ex);
+    } else 
     s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex);
 }
 
@@ -796,6 +800,9 @@ char    *str_header;
                     // Call the command function
                     if(l_cmd &&  l_argv && l_cmd->func) {
                         if (l_cmd->arg_func) {
+                        if (is_long_cmd(l_argv[0])) {
+                            l_cmd->arg_func = &newsockfd;
+                        }
                             res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
                         } else {
                             res = l_cmd->func(argc, l_argv, &str_reply);
@@ -812,30 +819,32 @@ char    *str_header;
                     str_reply = dap_strdup_printf("can't recognize command=%s", str_cmd);
                     log_it(L_ERROR,"Reply string: \"%s\"", str_reply);
                 }
-                char *reply_body;
-                if(l_verbose)
-                  reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");
-                else
-                  reply_body = dap_strdup_printf("%d\r\n%s\r\n", res, (str_reply) ? str_reply : "");
-                // return the result of the command function
-                char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
-                                                    "Content-Length: %zu\r\n\r\n"
-                                                    "%s", strlen(reply_body), reply_body);
-                size_t l_reply_step = 32768;
-                size_t l_reply_len = strlen(reply_str);
-                size_t l_reply_rest = l_reply_len;
+                if (str_reply) {
+                    char *reply_body;
+                    if(l_verbose)
+                    reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");
+                    else
+                    reply_body = dap_strdup_printf("%d\r\n%s\r\n", res, (str_reply) ? str_reply : "");
+                    // return the result of the command function
+                    char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
+                                                        "Content-Length: %zu\r\n\r\n"
+                                                        "%s", strlen(reply_body), reply_body);
+                    size_t l_reply_step = 32768;
+                    size_t l_reply_len = strlen(reply_str);
+                    size_t l_reply_rest = l_reply_len;
 
-                while(l_reply_rest) {
-                    size_t l_send_bytes = min(l_reply_step, l_reply_rest);
-                    int ret = send(newsockfd, reply_str + l_reply_len - l_reply_rest, l_send_bytes, MSG_NOSIGNAL);
-                    if(ret<=0)
-                        break;
-                    l_reply_rest-=l_send_bytes;
-                };
+                    while(l_reply_rest) {
+                        size_t l_send_bytes = min(l_reply_step, l_reply_rest);
+                        int ret = send(newsockfd, reply_str + l_reply_len - l_reply_rest, l_send_bytes, MSG_NOSIGNAL);
+                        if(ret<=0)
+                            break;
+                        l_reply_rest-=l_send_bytes;
+                    };
 
-                DAP_DELETE(str_reply);
-                DAP_DELETE(reply_str);
-                DAP_DELETE(reply_body);
+                    DAP_DELETE(str_reply);
+                    DAP_DELETE(reply_str);
+                    DAP_DELETE(reply_body);
+                }
 
                 DAP_DELETE(str_cmd);
             }
@@ -849,6 +858,21 @@ char    *str_header;
         log_it(L_DEBUG, "close connection=%d sockfd=%"DAP_FORMAT_SOCKET, cs, newsockfd);
 
     return NULL;
+}
+
+/**
+/// @brief parse commands with long output
+/// @param l_argv 
+/// @return 0 not long, 1 is long
+*/
+int is_long_cmd(const char * a_name) {
+    const char* long_cmd[] = {"tx_history", "mempool_list", "ledger"};
+    for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
+        if (!strcmp(a_name, long_cmd[i])) {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /**
