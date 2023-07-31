@@ -62,11 +62,11 @@
 #ifdef DAP_OS_UNIX
 #include <sys/socket.h>
 #include <netinet/in.h>
+typedef int SOCKET;
 #endif
 #ifdef DAP_OS_WINDOWS
 #define MSG_NOSIGNAL 0
 #endif
-typedef int SOCKET;
 
 #ifndef __cplusplus
 # include <stdatomic.h>
