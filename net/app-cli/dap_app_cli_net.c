@@ -23,7 +23,7 @@
  along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-//#include <dap_client.h>
+// #include <dap_client.h>
 
 #include <stdlib.h>
 #include <sys/types.h>
@@ -53,115 +53,146 @@
 
 static int s_status;
 
-//staic function to receive http data
-static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_cli_cmd_state_t *l_cmd, int * long_flag)
+// staic function to receive http data
+static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_cli_cmd_state_t *l_cmd, int *long_flag)
 {
     ssize_t l_recv_len = recv(*socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], DAP_CLI_HTTP_RESPONSE_SIZE_MAX, 0);
-    if (l_recv_len == 0) {
+    if (l_recv_len == 0)
+    {
         s_status = DAP_CLI_ERROR_INCOMPLETE;
         return;
     }
-    if (l_recv_len == -1) {
+    if (l_recv_len == -1)
+    {
 #ifdef DAP_OS_WINDOWS
         int l_errno = WSAGetLastError();
-        if (l_errno == WSAEWOULDBLOCK) {
+        if (l_errno == WSAEWOULDBLOCK)
+        {
 #else
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+        {
 #endif
             s_status = DAP_CLI_ERROR_TIMEOUT;
-        } else {
+        }
+        else
+        {
             s_status = DAP_CLI_ERROR_SOCKET;
         }
         return;
     }
-    char * long_cmd = NULL;
-    l_cmd->cmd_res_cur +=(size_t) l_recv_len;
-    switch (s_status) {
-        case 1: {   //Partial reply of long answer
-            const char *long_reply = "Part reply";
-            long_cmd = strstr(l_cmd->cmd_res, long_reply);
-            if (long_cmd) {
-                s_status = 4;
-                break;
-            } else {  // Find content length
-                const char *l_cont_len_str = "Content-Length: ";
-                char *l_str_ptr = strstr(l_cmd->cmd_res, l_cont_len_str);
-                if (l_str_ptr && strstr(l_str_ptr, "\r\n")) {
-                    l_cmd->cmd_res_len = atoi(l_str_ptr + strlen(l_cont_len_str));
-                    if (l_cmd->cmd_res_len == 0) {
-                        s_status = DAP_CLI_ERROR_FORMAT;
-                        break;
-                    }
-                    else {
-                        s_status++;
-                    }
-                } else {
+    char *long_cmd = NULL;
+    l_cmd->cmd_res_cur += (size_t)l_recv_len;
+    switch (s_status)
+    {
+    case 1:
+    { // Partial reply of long answer
+        const char *long_reply = "Part reply";
+        long_cmd = strstr(l_cmd->cmd_res, long_reply);
+        if (long_cmd)
+        {
+            s_status = 4;
+            break;
+        }
+        else
+        { // Find content length
+            const char *l_cont_len_str = "Content-Length: ";
+            char *l_str_ptr = strstr(l_cmd->cmd_res, l_cont_len_str);
+            if (l_str_ptr && strstr(l_str_ptr, "\r\n"))
+            {
+                l_cmd->cmd_res_len = atoi(l_str_ptr + strlen(l_cont_len_str));
+                if (l_cmd->cmd_res_len == 0)
+                {
+                    s_status = DAP_CLI_ERROR_FORMAT;
                     break;
                 }
-             }
-        }
-        case 2: {   // Find header end and throw out header
-            const char *l_head_end_str = "\r\n\r\n";
-            char *l_str_ptr = strstr(l_cmd->cmd_res, l_head_end_str);
-            if (l_str_ptr) {
-                l_str_ptr += strlen(l_head_end_str);
-                size_t l_head_size = l_str_ptr - l_cmd->cmd_res;
-                memmove(l_cmd->cmd_res, l_str_ptr, l_cmd->cmd_res_cur - l_head_size);
-                l_cmd->cmd_res_cur -= l_head_size;
-                // read rest of data
-                if(l_cmd->cmd_res_cur < l_cmd->cmd_res_len) {
-                    l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_len + 1);
-                    while((l_cmd->cmd_res_len - l_cmd->cmd_res_cur) > 0) {
-                        ssize_t l_recv_len = recv(*socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], l_cmd->cmd_res_len - l_cmd->cmd_res_cur, 0);
-                        if(l_recv_len <= 0)
-                            break;
-                        l_cmd->cmd_res_cur += l_recv_len;
-                    }
+                else
+                {
+                    s_status++;
                 }
-                s_status++;
-            } else {
+            }
+            else
+            {
                 break;
             }
         }
-        default:
-        case 3: {   // Complete command reply
-            if (l_cmd->cmd_res_cur == l_cmd->cmd_res_len) {
-                l_cmd->cmd_res[l_cmd->cmd_res_cur] = 0;
-                s_status = 0;
-            } else {
-                s_status = DAP_CLI_ERROR_FORMAT;
+    }
+    case 2:
+    { // Find header end and throw out header
+        const char *l_head_end_str = "\r\n\r\n";
+        char *l_str_ptr = strstr(l_cmd->cmd_res, l_head_end_str);
+        if (l_str_ptr)
+        {
+            l_str_ptr += strlen(l_head_end_str);
+            size_t l_head_size = l_str_ptr - l_cmd->cmd_res;
+            memmove(l_cmd->cmd_res, l_str_ptr, l_cmd->cmd_res_cur - l_head_size);
+            l_cmd->cmd_res_cur -= l_head_size;
+            // read rest of data
+            if (l_cmd->cmd_res_cur < l_cmd->cmd_res_len)
+            {
+                l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_len + 1);
+                while ((l_cmd->cmd_res_len - l_cmd->cmd_res_cur) > 0)
+                {
+                    ssize_t l_recv_len = recv(*socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], l_cmd->cmd_res_len - l_cmd->cmd_res_cur, 0);
+                    if (l_recv_len <= 0)
+                        break;
+                    l_cmd->cmd_res_cur += l_recv_len;
+                }
             }
-        } break;
-        case 4: {   //Parse long answer
-            int long_reply_end = long_reply_parse(l_cmd, l_cmd->cmd_res);
-            if (long_reply_end) 
-                s_status = 0;
-            else {
-                *long_flag = 1;
-                s_status = 1;
-            }
+            s_status++;
+        }
+        else
+        {
             break;
         }
     }
+    default:
+    case 3:
+    { // Complete command reply
+        if (l_cmd->cmd_res_cur == l_cmd->cmd_res_len)
+        {
+            l_cmd->cmd_res[l_cmd->cmd_res_cur] = 0;
+            s_status = 0;
+        }
+        else
+        {
+            s_status = DAP_CLI_ERROR_FORMAT;
+        }
+    }
+    break;
+    case 4:
+    { // Parse long answer
+        int long_reply_end = long_reply_parse(l_cmd, l_cmd->cmd_res);
+        if (long_reply_end)
+            s_status = 0;
+        else
+        {
+            *long_flag = 1;
+            s_status = 1;
+        }
+        break;
+    }
+    }
 }
-
 
 /**
  * @brief long_reply_parse
  * @details parse and combine long reply
  * @param l_cmd
- * @param str 
+ * @param str
  * @return reply with end flag - 1, else - 0
  */
-int long_reply_parse(dap_app_cli_cmd_state_t *l_cmd, char * str) {
+int long_reply_parse(dap_app_cli_cmd_state_t *l_cmd, char *str)
+{
     const char *l_head_end_str = "\r\n\r\n";
     const char *l_cont_len_str = "Content-Length: ";
     char *l_str_ptr = strstr(str, l_head_end_str);
-    char* last_position = str;
+    char *last_position = str;
     size_t res_len = 0;
-    while (l_str_ptr) {
+    while (l_str_ptr)
+    {
         char *l_length_ptr = strstr(last_position, l_cont_len_str);
-        if (l_length_ptr && strstr(l_length_ptr, "\r\n")) {
+        if (l_length_ptr && strstr(l_length_ptr, "\r\n"))
+        {
             res_len = atoi(l_length_ptr + strlen(l_cont_len_str));
         }
         l_str_ptr += strlen(l_head_end_str);
@@ -171,8 +202,9 @@ int long_reply_parse(dap_app_cli_cmd_state_t *l_cmd, char * str) {
     }
     const char *l_end_str = "ENDLONG";
     char *l_end_ptr = strstr(str, l_end_str);
-    if (l_end_ptr) {
-        memset(l_end_ptr, 0, 7);
+    if (l_end_ptr)
+    {
+        memset(l_end_ptr, 0, 8);
         return 1;
     }
     return 0;
@@ -184,23 +216,25 @@ int long_reply_parse(dap_app_cli_cmd_state_t *l_cmd, char * str) {
  * @param a_socket_path
  * @return if connect established, else NULL
  */
-dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
+dap_app_cli_connect_param_t *dap_app_cli_connect(const char *a_socket_path)
 {
     // set socket param
     int buffsize = DAP_CLI_HTTP_RESPONSE_SIZE_MAX;
 #ifdef WIN32
     // TODO connect to the named pipe "\\\\.\\pipe\\node_cli.pipe"
-    uint16_t l_cli_port = dap_config_get_item_uint16 ( g_config, "conserver", "listen_port_tcp");
+    uint16_t l_cli_port = dap_config_get_item_uint16(g_config, "conserver", "listen_port_tcp");
     if (!l_cli_port)
         return NULL;
     SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);
 #else
-    if (!a_socket_path) {
+    if (!a_socket_path)
+    {
         return NULL;
     }
     // create socket
     int l_socket = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (l_socket < 0) {
+    if (l_socket < 0)
+    {
         return NULL;
     }
     struct timeval l_to = {DAP_CLI_HTTP_TIMEOUT, 0};
@@ -209,25 +243,26 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
     int l_addr_len;
 #ifdef WIN32
     struct sockaddr_in l_remote_addr = {
-        .sin_family = AF_INET, .sin_port = l_cli_port, .sin_addr = {{ .S_addr = htonl(INADDR_LOOPBACK) }}
-    };
+        .sin_family = AF_INET, .sin_port = l_cli_port, .sin_addr = {{.S_addr = htonl(INADDR_LOOPBACK)}}};
     l_addr_len = sizeof(struct sockaddr_in);
 #else
     struct sockaddr_un l_remote_addr;
-    l_remote_addr.sun_family =  AF_UNIX;
+    l_remote_addr.sun_family = AF_UNIX;
     strcpy(l_remote_addr.sun_path, a_socket_path);
     l_addr_len = SUN_LEN(&l_remote_addr);
 #endif
-    if (connect(l_socket, (struct sockaddr *)&l_remote_addr, l_addr_len) == SOCKET_ERROR) {
+    if (connect(l_socket, (struct sockaddr *)&l_remote_addr, l_addr_len) == SOCKET_ERROR)
+    {
 #ifdef __WIN32
-            _set_errno(WSAGetLastError());
+        _set_errno(WSAGetLastError());
 #endif
         printf("Socket connection err: %d\n", errno);
         closesocket(l_socket);
         return NULL;
     }
     dap_app_cli_connect_param_t *l_ret = DAP_NEW(dap_app_cli_connect_param_t);
-    if (!l_ret) {
+    if (!l_ret)
+    {
         closesocket(l_socket);
         printf("Memory allocation error in dap_app_cli_connect");
         return NULL;
@@ -238,11 +273,13 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
 
 /* if cli command argument contains one of the following symbol
  argument is going to be encoded to base64 */
-static const char* s_dap_app_cli_forbidden_symbols[] = {"\r\n", ";", ""};
+static const char *s_dap_app_cli_forbidden_symbols[] = {"\r\n", ";", ""};
 
-bool s_dap_app_cli_cmd_contains_forbidden_symbol(const char * a_cmd_param){
-    for(int i = 0; s_dap_app_cli_forbidden_symbols[i][0] != '\0'; i++){
-        if(strstr(a_cmd_param, s_dap_app_cli_forbidden_symbols[i]))
+bool s_dap_app_cli_cmd_contains_forbidden_symbol(const char *a_cmd_param)
+{
+    for (int i = 0; s_dap_app_cli_forbidden_symbols[i][0] != '\0'; i++)
+    {
+        if (strstr(a_cmd_param, s_dap_app_cli_forbidden_symbols[i]))
             return true;
     }
     return false;
@@ -253,24 +290,31 @@ bool s_dap_app_cli_cmd_contains_forbidden_symbol(const char * a_cmd_param){
  *
  * return 0 if OK, else error code
  */
-int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli_cmd_state_t *a_cmd )
+int dap_app_cli_post_command(dap_app_cli_connect_param_t *a_socket, dap_app_cli_cmd_state_t *a_cmd)
 {
-    if(!a_socket || !a_cmd || !a_cmd->cmd_name) {
+    if (!a_socket || !a_cmd || !a_cmd->cmd_name)
+    {
         assert(0);
         return -1;
     }
     a_cmd->cmd_res = DAP_NEW_Z_SIZE(char, DAP_CLI_HTTP_RESPONSE_SIZE_MAX);
     a_cmd->cmd_res_cur = 0;
     dap_string_t *l_cmd_data = dap_string_new(a_cmd->cmd_name);
-    if (a_cmd->cmd_param) {
-        for (int i = 0; i < a_cmd->cmd_param_count; i++) {
-            if (a_cmd->cmd_param[i]) {
+    if (a_cmd->cmd_param)
+    {
+        for (int i = 0; i < a_cmd->cmd_param_count; i++)
+        {
+            if (a_cmd->cmd_param[i])
+            {
                 dap_string_append(l_cmd_data, "\r\n");
-                if(s_dap_app_cli_cmd_contains_forbidden_symbol(a_cmd->cmd_param[i])){
-                    char * l_cmd_param_base64 = dap_enc_strdup_to_base64(a_cmd->cmd_param[i]);
+                if (s_dap_app_cli_cmd_contains_forbidden_symbol(a_cmd->cmd_param[i]))
+                {
+                    char *l_cmd_param_base64 = dap_enc_strdup_to_base64(a_cmd->cmd_param[i]);
                     dap_string_append(l_cmd_data, l_cmd_param_base64);
                     DAP_DELETE(l_cmd_param_base64);
-                }else{
+                }
+                else
+                {
                     dap_string_append(l_cmd_data, a_cmd->cmd_param[i]);
                 }
             }
@@ -283,29 +327,35 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
                                    "Content-Type: text/text\r\n"
                                    "Content-Length: %zu\r\n"
                                    "\r\n"
-                                   "%s", l_cmd_data->len, l_cmd_data->str);
+                                   "%s",
+                      l_cmd_data->len, l_cmd_data->str);
     send(*a_socket, l_post_data->str, l_post_data->len, 0);
 
-    //wait for command execution
+    // wait for command execution
     time_t l_start_time = time(NULL);
     s_status = 1;
     int long_flag = 0;
-    while(s_status > 0) {
+    while (s_status > 0)
+    {
         dap_app_cli_http_read(a_socket, a_cmd, &long_flag);
         // Partial output of a long answer
-        if (long_flag) {
+        if (long_flag)
+        {
             l_start_time = time(NULL);
             long_flag = 0;
-            if (a_cmd->cmd_res) {
+            if (a_cmd->cmd_res)
+            {
                 char **l_str = dap_strsplit(a_cmd->cmd_res, "\r\n", 1);
                 int l_cnt = dap_str_countv(l_str);
                 char *l_str_reply = NULL;
-                if (l_cnt == 2) {
+                if (l_cnt == 2)
+                {
                     l_str_reply = l_str[1];
                 }
                 printf("%s\n", l_str_reply);
                 dap_strfreev(l_str);
-                DAP_DEL_Z(a_cmd->cmd_res);
+                printf("ADLGAL:GAL:GJ\n");
+                memset(a_cmd->cmd_res, '\0', a_cmd->cmd_res_cur);
                 a_cmd->cmd_res_cur = 0;
             }
         }
@@ -313,18 +363,20 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
             s_status = DAP_CLI_ERROR_TIMEOUT;
     }
     // process result
-    if (a_cmd->cmd_res && !s_status) {
+    if (a_cmd->cmd_res && !s_status)
+    {
         char **l_str = dap_strsplit(a_cmd->cmd_res, "\r\n", 1);
         int l_cnt = dap_str_countv(l_str);
         char *l_str_reply = NULL;
-        if (l_cnt == 2) {
-            //long l_err_code = strtol(l_str[0], NULL, 10);
+        if (l_cnt == 2)
+        {
+            // long l_err_code = strtol(l_str[0], NULL, 10);
             l_str_reply = l_str[1];
         }
         printf("%s\n", (l_str_reply) ? l_str_reply : "no response");
         dap_strfreev(l_str);
     }
-    DAP_DELETE(a_cmd->cmd_res);
+    DAP_DEL_Z(a_cmd->cmd_res);
     dap_string_free(l_cmd_data, true);
     dap_string_free(l_post_data, true);
     return s_status;
