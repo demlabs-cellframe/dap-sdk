@@ -162,12 +162,12 @@ static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_c
     case 4:
     { // Parse long answer
         int long_reply_end = long_reply_parse(l_cmd, l_cmd->cmd_res);
-        if (long_reply_end)
+        if (long_reply_end) {
             s_status = 0;
-        else
-        {
             *long_flag = 1;
+        } else {
             s_status = 1;
+            *long_flag = 1;
         }
         break;
     }
@@ -181,34 +181,32 @@ static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_c
  * @param str
  * @return reply with end flag - 1, else - 0
  */
-int long_reply_parse(dap_app_cli_cmd_state_t *l_cmd, char *str)
-{
-    const char *l_head_end_str = "\r\n\r\n";
+int long_reply_parse(dap_app_cli_cmd_state_t *l_cmd, char * cmd_res) {
+    const char *l_head_end_str = "\t\r\tlong\t\r\t";
     const char *l_cont_len_str = "Content-Length: ";
-    char *l_str_ptr = strstr(str, l_head_end_str);
-    char *last_position = str;
+    char* last_position = cmd_res;
+    char *l_str_ptr = strstr(last_position, l_head_end_str);
     size_t res_len = 0;
-    while (l_str_ptr)
-    {
+    while (l_str_ptr) {
         char *l_length_ptr = strstr(last_position, l_cont_len_str);
-        if (l_length_ptr && strstr(l_length_ptr, "\r\n"))
-        {
+        if (l_length_ptr && strstr(l_length_ptr, "\r\n")) {
             res_len = atoi(l_length_ptr + strlen(l_cont_len_str));
         }
         l_str_ptr += strlen(l_head_end_str);
         memmove(last_position, l_str_ptr, DAP_CLI_HTTP_RESPONSE_SIZE_MAX);
-        last_position = last_position + res_len - 2;
-        l_str_ptr = strstr(str, l_head_end_str);
+        last_position = last_position + res_len;
+        // if (last_position)
+        l_str_ptr = strstr(last_position, l_head_end_str);
     }
     const char *l_end_str = "ENDLONG";
-    char *l_end_ptr = strstr(str, l_end_str);
-    if (l_end_ptr)
-    {
-        memset(l_end_ptr, 0, 8);
+    char *l_end_ptr = strstr(cmd_res, l_end_str);
+    if (l_end_ptr) {
+        memset(l_end_ptr, 0, 7);
         return 1;
     }
     return 0;
 }
+
 
 /**
  * @brief dap_app_cli_connect
@@ -334,8 +332,8 @@ int dap_app_cli_post_command(dap_app_cli_connect_param_t *a_socket, dap_app_cli_
     // wait for command execution
     time_t l_start_time = time(NULL);
     s_status = 1;
-    int long_flag = 0;
-    while (s_status > 0)
+    int long_flag = 0, dap_no_del = 1;
+    do
     {
         dap_app_cli_http_read(a_socket, a_cmd, &long_flag);
         // Partial output of a long answer
@@ -345,25 +343,17 @@ int dap_app_cli_post_command(dap_app_cli_connect_param_t *a_socket, dap_app_cli_
             long_flag = 0;
             if (a_cmd->cmd_res)
             {
-                char **l_str = dap_strsplit(a_cmd->cmd_res, "\r\n", 1);
-                int l_cnt = dap_str_countv(l_str);
-                char *l_str_reply = NULL;
-                if (l_cnt == 2)
-                {
-                    l_str_reply = l_str[1];
-                }
-                printf("%s\n", l_str_reply);
-                dap_strfreev(l_str);
-                printf("ADLGAL:GAL:GJ\n");
+                printf("%s\n", a_cmd->cmd_res);
                 memset(a_cmd->cmd_res, '\0', a_cmd->cmd_res_cur);
                 a_cmd->cmd_res_cur = 0;
+                dap_no_del = 0;
             }
         }
         if (time(NULL) - l_start_time > DAP_CLI_HTTP_TIMEOUT && !a_cmd->cmd_res)
             s_status = DAP_CLI_ERROR_TIMEOUT;
-    }
+    } while (s_status > 0);
     // process result
-    if (a_cmd->cmd_res && !s_status)
+    if (a_cmd->cmd_res && !s_status && dap_no_del)
     {
         char **l_str = dap_strsplit(a_cmd->cmd_res, "\r\n", 1);
         int l_cnt = dap_str_countv(l_str);
@@ -376,7 +366,8 @@ int dap_app_cli_post_command(dap_app_cli_connect_param_t *a_socket, dap_app_cli_
         printf("%s\n", (l_str_reply) ? l_str_reply : "no response");
         dap_strfreev(l_str);
     }
-    DAP_DEL_Z(a_cmd->cmd_res);
+    if (dap_no_del)
+        DAP_DEL_Z(a_cmd->cmd_res);
     dap_string_free(l_cmd_data, true);
     dap_string_free(l_post_data, true);
     return s_status;

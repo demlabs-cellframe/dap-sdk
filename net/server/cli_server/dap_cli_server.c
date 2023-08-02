@@ -732,7 +732,7 @@ char* s_get_next_str( SOCKET nSocket, int *dwLen, const char *stop_str, bool del
 static void* s_thread_one_client_func(void *args)
 {
 SOCKET  newsockfd = (SOCKET) (intptr_t) args;
-int     str_len, marker = 0, timeout = 5000, argc = 0, is_data;
+int     str_len, marker = 0, timeout = 5000, argc = 0, is_data; //, is_long = 0;
 dap_list_t *cmd_param_list = NULL;
 char    *str_header;
 
@@ -800,9 +800,9 @@ char    *str_header;
                     // Call the command function
                     if(l_cmd &&  l_argv && l_cmd->func) {
                         if (l_cmd->arg_func) {
-                        if (is_long_cmd(l_argv[0])) {
-                            l_cmd->arg_func = &newsockfd;
-                        }
+                            if (is_long_cmd(l_argv[0])) {
+                                l_cmd->arg_func = &newsockfd;
+                            }
                             res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
                         } else {
                             res = l_cmd->func(argc, l_argv, &str_reply);
@@ -819,7 +819,7 @@ char    *str_header;
                     str_reply = dap_strdup_printf("can't recognize command=%s", str_cmd);
                     log_it(L_ERROR,"Reply string: \"%s\"", str_reply);
                 }
-                if (str_reply) {
+                if ( str_reply ) {
                     char *reply_body;
                     if(l_verbose)
                     reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");

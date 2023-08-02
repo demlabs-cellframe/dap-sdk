@@ -375,12 +375,11 @@ void dap_cli_server_cmd_reply_send(SOCKET newsockfd, char * str_reply){
     char *reply_body = dap_strdup_printf("\r\n%s\r\n", (str_reply) ? str_reply : "");
     char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                         "Part reply\r\n"
-                                        "Content-Length: %zu\r\n\r\n"
+                                        "Content-Length: %zu\t\r\tlong\t\r\t"
                                         "%s", strlen(reply_body), reply_body);
     size_t l_reply_step = 32768;
     size_t l_reply_len = strlen(reply_str);
     size_t l_reply_rest = l_reply_len;
-
     while(l_reply_rest) {
         size_t l_send_bytes = min(l_reply_step, l_reply_rest);
         int ret = send(newsockfd, reply_str + l_reply_len - l_reply_rest, l_send_bytes, MSG_NOSIGNAL);
