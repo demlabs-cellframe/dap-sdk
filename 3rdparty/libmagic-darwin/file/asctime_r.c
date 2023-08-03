@@ -8,7 +8,7 @@ FILE_RCSID("@(#)$File: ascmagic.c,v 1.84 2011/12/08 12:38:24 rrt Exp $")
 #include <string.h>
 
 /* asctime_r is not thread-safe anyway */
-char *
+/*char *
 asctime_r(const struct tm *t, char *dst)
 {
 	char *p = asctime(t);
@@ -16,4 +16,4 @@ asctime_r(const struct tm *t, char *dst)
 		return NULL;
 	memcpy(dst, p, 26);
 	return dst;
-}
+}*/
