@@ -523,8 +523,8 @@ static int s_thread_loop(dap_context_t * a_context)
                 continue;
             }
         }
-
-        l_cur->kqueue_event_catched = l_kevent_selected;
+        if (l_cur)
+            l_cur->kqueue_event_catched = l_kevent_selected;
 #ifndef DAP_OS_DARWIN
             u_int l_cur_flags = l_kevent_selected->flags;
 #else
@@ -1406,9 +1406,13 @@ lb_exit:
     }else{
         a_es->context = a_context;
         // Add in context HT
+        dap_events_socket_t * l_a_es_found = NULL;
         if (a_es->socket!=0 && a_es->socket != INVALID_SOCKET){
-            HASH_ADD(hh, a_context->esockets, uuid, sizeof(a_es->uuid), a_es );
-            a_context->event_sockets_count++;
+            HASH_FIND(hh, a_context->esockets, &a_es->uuid, sizeof(a_es->uuid), l_a_es_found);
+            if (!l_a_es_found){
+                HASH_ADD(hh, a_context->esockets, uuid, sizeof(a_es->uuid), a_es ); 
+                a_context->event_sockets_count++;
+            } 
         }
         return 0;
     }
