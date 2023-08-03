@@ -1453,25 +1453,10 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
 
 int dap_global_db_set_raw_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
-    int q = 0;
-
-    if (
-        !(strcmp(a_store_objs->group, "riemann.chain-main.mempool") &&
-        strcmp(a_store_objs->group, "riemann.chain-main.mempool") &&
-        strcmp(a_store_objs->group, "riemann.chain-main.mempo\300{\361\210\373\177") &&
-        strcmp(a_store_objs->group, "global.users.statistic") &&
-        strcmp(a_store_objs->group, "riemann.nodes") &&
-        strcmp(a_store_objs->group, "global.users.sta") &&
-        strcmp(a_store_objs->group, "global.u\001ers.sta\240\316-\260\b\177") && 
-        strcmp(a_store_objs->group, "riemann.service.orders") &&
-        strcmp(a_store_objs->group, "riemann.nodes.aliases") &&
-        strcmp(a_store_objs->group, "riemann.chain-zerochain.mempool"))
-        ) {
-            if (!strcmp(a_store_objs->group, "riemann.service.orders"))
-                // return 0;
-                q = 2;
-        }
-
+    if (dap_chain_net_srv_check_store_obj(a_store_objs) > 0) {
+        log_it(L_ERROR, "Order not add, service node is not validator");
+        return -1;
+    }
 
     int l_ret = dap_global_db_driver_apply(a_store_objs, a_store_objs_count);
     if (l_ret == 0) {
@@ -1501,27 +1486,13 @@ int dap_global_db_set_raw_unsafe(dap_global_db_context_t *a_global_db_context, d
  */
 int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void * a_arg )
 {
-    int q = 0;
-    if (
-        !(strcmp(a_store_objs->group, "riemann.chain-main.mempool") &&
-        strcmp(a_store_objs->group, "riemann.chain-main.mempool") &&
-        strcmp(a_store_objs->group, "riemann.chain-main.mempo\300{\361\210\373\177") &&
-        strcmp(a_store_objs->group, "global.users.statistic") &&
-        strcmp(a_store_objs->group, "riemann.nodes") &&
-        strcmp(a_store_objs->group, "global.users.sta") &&
-        strcmp(a_store_objs->group, "global.u\001ers.sta\240\316-\260\b\177") && 
-        strcmp(a_store_objs->group, "riemann.service.orders") &&
-        strcmp(a_store_objs->group, "riemann.nodes.aliases") &&
-        strcmp(a_store_objs->group, "riemann.chain-zerochain.mempool"))
-        ) {
-            if (!strcmp(a_store_objs->group, "riemann.service.orders"))
-                // return 0;
-                q = 2;
-        }
-    dap_global_db_obj_t *l_orders = dap_global_db_get_all_sync(a_store_objs->group, &l_orders_count);
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
         return DAP_GLOBAL_DB_RC_ERROR;
+    }
+    if (dap_chain_net_srv_check_store_obj(a_store_objs) > 0) {
+        log_it(L_ERROR, "Order not add, service node is not validator");
+        return -1;
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
