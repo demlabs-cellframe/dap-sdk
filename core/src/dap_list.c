@@ -164,7 +164,7 @@ dap_list_t *dap_list_prepend(dap_list_t *list, void* data)
 
     new_list = dap_list_alloc();
     if (!new_list) {
-        log_it(L_ERROR, "Memory allocation error in dap_list_prepend");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return list;
     }
     new_list->data = data;
@@ -211,7 +211,7 @@ dap_list_t *dap_list_insert(dap_list_t *list, void* data, int position)
 
     new_list = dap_list_alloc();
     if (!new_list) {
-        log_it(L_ERROR, "Memory allocation error in dap_list_insert");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return list;
     }
     new_list->data = data;
@@ -240,7 +240,7 @@ dap_list_t *dap_list_insert_before(dap_list_t *list, dap_list_t *sibling, void* 
     {
         list = dap_list_alloc();
         if (!list) {
-            log_it(L_ERROR, "Memory allocation error in dap_list_insert_before");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             return NULL;
         }
         list->data = data;
@@ -253,7 +253,7 @@ dap_list_t *dap_list_insert_before(dap_list_t *list, dap_list_t *sibling, void* 
 
         node = dap_list_alloc();
         if (!node) {
-            log_it(L_ERROR, "Memory allocation error in dap_list_insert_before");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             return NULL;
         }
         node->data = data;
@@ -281,7 +281,7 @@ dap_list_t *dap_list_insert_before(dap_list_t *list, dap_list_t *sibling, void* 
 
         last->next = dap_list_alloc();
         if (!last->next) {
-            log_it(L_ERROR, "Memory allocation error in dap_list_insert_before");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             return NULL;
         }
         last->next->data = data;
@@ -816,7 +816,7 @@ static dap_list_t* dap_list_insert_sorted_real(dap_list_t *list, void* data, dap
     {
         new_list = dap_list_alloc();
         if (!new_list) {
-            log_it(L_ERROR, "Memory allocation error in dap_list_insert_sorted_real");
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             return NULL;
         }
         new_list->data = data;
@@ -834,7 +834,7 @@ static dap_list_t* dap_list_insert_sorted_real(dap_list_t *list, void* data, dap
 
     new_list = dap_list_alloc();
     if (!new_list) {
-        log_it(L_ERROR, "Memory allocation error in dap_list_insert_sorted_real");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
     new_list->data = data;

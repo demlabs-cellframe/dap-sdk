@@ -420,7 +420,7 @@ void dap_proc_thread_worker_exec_callback_inter(dap_proc_thread_t * a_thread, si
 {
     dap_worker_msg_callback_t *l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
     if (!l_msg) {
-        log_it(L_ERROR, "Memory allocation error in dap_proc_thread_worker_exec_callback_inter");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return;
     }
     l_msg->callback = a_callback;
