@@ -385,7 +385,7 @@ void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker
 {
     dap_worker_msg_callback_t * l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
     if (!l_msg) {
-        log_it(L_ERROR, "Memory allocation error in dap_worker_exec_callback_on");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return;
     }
     l_msg->callback = a_callback;
@@ -409,7 +409,7 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
     assert(a_worker);
     dap_worker_msg_callback_t * l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
     if (!l_msg) {
-        log_it(L_ERROR, "Memory allocation error in dap_worker_exec_callback_on");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return;
     }
     l_msg->callback = a_callback;

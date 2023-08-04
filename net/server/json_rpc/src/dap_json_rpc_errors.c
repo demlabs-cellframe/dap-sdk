@@ -26,7 +26,7 @@ dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_create()
 {
     dap_json_rpc_error_JSON_t *l_json = DAP_NEW(dap_json_rpc_error_JSON_t);
     if (!l_json) {
-        log_it(L_ERROR, "Memory allocation error in dap_json_rpc_error_JSON_create");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
     l_json->obj_msg = NULL;
@@ -43,7 +43,7 @@ dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_add_data(int code, const cha
 {
     dap_json_rpc_error_JSON_t *l_json_err = dap_json_rpc_error_JSON_create();
     if (!l_json_err) {
-        log_it(L_ERROR, "Memory allocation error in dap_json_rpc_error_JSON_add_data");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
     l_json_err->obj_code = json_object_new_int(code);
@@ -58,7 +58,7 @@ int dap_json_rpc_error_add(int a_code_error, const char *a_msg)
         return 1;
     dap_json_rpc_error_t *l_error = DAP_NEW(dap_json_rpc_error_t);
     if(!l_error) {
-        log_it(L_ERROR, "Memory allocation error in dap_json_rpc_error_add");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return 1;
     }
     l_error->code_error = a_code_error;
@@ -121,7 +121,7 @@ dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(json_object *a_jobj)
 {
     dap_json_rpc_error_t *l_error = DAP_NEW(dap_json_rpc_error_t);
     if (!l_error) {
-        log_it(L_ERROR, "Memory allocation error in dap_json_rpc_create_from_json_object");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
     json_object *l_jobj_code_eror = json_object_object_get(a_jobj, "code");
