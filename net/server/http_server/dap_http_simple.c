@@ -313,7 +313,14 @@ static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void * a_arg )
      dap_http_simple_t *l_http_simple = (dap_http_simple_t*) a_arg;
     log_it(L_DEBUG, "dap http simple proc");
 //  Sleep(300);
-
+    if (!l_http_simple->http_client) {
+        log_it(L_ERROR, "[!] HTTP client is already deleted!");
+        return true;
+    }
+    if (!l_http_simple->reply_byte) {
+        log_it(L_ERROR, "[!] HTTP client is corrupted!");
+        return true;
+    }
     http_status_code_t return_code = (http_status_code_t)0;
 
     user_agents_item_t *l_tmp;
@@ -358,6 +365,7 @@ static void s_http_client_delete( dap_http_client_t *a_http_client, void *arg )
     if (l_http_simple) {
         DAP_DEL_Z(l_http_simple->request);
         DAP_DEL_Z(l_http_simple->reply_byte);
+        l_http_simple->http_client = NULL;
     }
 }
 
