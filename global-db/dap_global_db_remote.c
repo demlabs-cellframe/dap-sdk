@@ -806,7 +806,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
         return -2;
     }
     // save data to global_db
-    if (dap_global_db_set_raw(a_obj, 1, a_callback, a_arg) != 0) {
+    if (dap_global_db_set_raw(a_obj, 1, a_callback, a_arg)) {
         DAP_DELETE(a_arg);
         log_it(L_ERROR, "Can't send save GlobalDB request");
         return -3;
