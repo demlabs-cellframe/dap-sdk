@@ -110,7 +110,7 @@ struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_t *a_http, const c
 {
     dap_http_simple_url_proc_t *l_url_proc = DAP_NEW_Z( dap_http_simple_url_proc_t );
     if (!l_url_proc) {
-        log_it (L_ERROR, "Memory allocation error in dap_http_simple_proc_add");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
 
@@ -194,7 +194,7 @@ int dap_http_simple_set_supported_user_agents( const char *user_agents, ... )
 
     user_agents_item_t *item = calloc( 1, sizeof (user_agents_item_t) );
     if (!item) {
-        log_it(L_ERROR, "Memory allocation error in dap_http_simple_set_supported_user_agents");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         va_end(argptr);
         s_free_user_agents_list();
         return 0;
@@ -313,7 +313,14 @@ static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void * a_arg )
      dap_http_simple_t *l_http_simple = (dap_http_simple_t*) a_arg;
     log_it(L_DEBUG, "dap http simple proc");
 //  Sleep(300);
-
+    if (!l_http_simple->http_client) {
+        log_it(L_ERROR, "[!] HTTP client is already deleted!");
+        return true;
+    }
+    if (!l_http_simple->reply_byte) {
+        log_it(L_ERROR, "[!] HTTP client is corrupted!");
+        return true;
+    }
     http_status_code_t return_code = (http_status_code_t)0;
 
     user_agents_item_t *l_tmp;
@@ -358,6 +365,7 @@ static void s_http_client_delete( dap_http_client_t *a_http_client, void *arg )
     if (l_http_simple) {
         DAP_DEL_Z(l_http_simple->request);
         DAP_DEL_Z(l_http_simple->reply_byte);
+        l_http_simple->http_client = NULL;
     }
 }
 

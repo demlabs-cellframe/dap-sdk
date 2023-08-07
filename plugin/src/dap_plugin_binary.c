@@ -84,7 +84,7 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
         return 0;
     struct binary_pvt_data * l_pvt_data= DAP_NEW_Z(struct binary_pvt_data);
     if (!l_pvt_data) {
-        log_it(L_ERROR, "Memory allocation error in s_type_callback_load");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return 0;
     }
     *a_pvt_data = l_pvt_data;

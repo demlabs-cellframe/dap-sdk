@@ -591,12 +591,12 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
 	elem = tmp = NULL;
 	char *l_buf = DAP_CALLOC(STR_LOG_BUF_MAX, a_limit);
     if (!l_buf) {
-        log_it(L_ERROR, "Memory allocation error in dap_log_get_item");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
 	char *l_line = DAP_CALLOC(1, STR_LOG_BUF_MAX + 1);
     if (!l_line) {
-        log_it(L_ERROR, "Memory allocation error in dap_log_get_item");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         DAP_FREE(l_buf);
         return NULL;
     }
@@ -1128,7 +1128,7 @@ static void s_bsd_callback(void *a_arg)
 dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_callback_t a_callback, void *a_param) {
     dap_timer_interface_t *l_timer_obj = DAP_NEW_Z(dap_timer_interface_t);
     if (!l_timer_obj) {
-        log_it(L_ERROR, "Memory allocation error in dap_interval_timer_create");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
     l_timer_obj->callback   = a_callback;
