@@ -17,7 +17,7 @@ void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a
     log_it(L_DEBUG, "Add data in params");
     dap_json_rpc_param_t *l_param = DAP_NEW(dap_json_rpc_param_t);
     if (!l_param) {
-        log_it(L_ERROR, "Memory allocation error in dap_json_rpc_params_add_data");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return;
     }
     //l_param->name_param = dap_strdup(a_name);
@@ -30,16 +30,31 @@ void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a
     case TYPE_PARAM_BOOLEAN:
         l_len_value = sizeof(bool);
         l_param->value_param = DAP_NEW(bool);
+        if (!l_param->value_param) {
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            DAP_DEL_Z(l_param);
+            return;
+        }
         memcpy(l_param->value_param, a_value, l_len_value);
         break;
     case TYPE_PARAM_INTEGER:
         l_len_value = sizeof(int64_t);
         l_param->value_param = DAP_NEW(int64_t);
+        if (!l_param->value_param) {
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            DAP_DEL_Z(l_param);
+            return;
+        }
         memcpy(l_param->value_param, a_value, l_len_value);
         break;
     case TYPE_PARAM_DOUBLE:
         l_len_value = sizeof(double);
         l_param->value_param = DAP_NEW(double);
+        if (!l_param->value_param) {
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            DAP_DEL_Z(l_param);
+            return;
+        }
         memcpy(l_param->value_param, a_value, l_len_value);
         break;
     default:

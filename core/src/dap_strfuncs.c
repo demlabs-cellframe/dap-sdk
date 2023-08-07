@@ -886,6 +886,10 @@ char* dap_strup(const char *a_str, ssize_t a_len)
         a_len = strlen(a_str);
 
     l_result = strndup(a_str, a_len);
+    if (!l_result) {
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        return NULL;
+    }
     for(l_s = l_result; *l_s; l_s++)
         *l_s = toupper(*l_s);
 
@@ -914,6 +918,10 @@ char* dap_strdown(const char *a_str, ssize_t a_len)
         a_len = strlen(a_str);
 
     l_result = strndup(a_str, a_len);
+    if (!l_result) {
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        return NULL;
+    }
     for(l_s = l_result; *l_s; l_s++)
         *l_s = tolower(*l_s);
 

@@ -128,7 +128,7 @@ dap_context_t * dap_context_new(int a_type)
 {
    dap_context_t * l_context = DAP_NEW_Z(dap_context_t);
    if (!l_context) {
-        log_it(L_ERROR, "Memory allocation error in dap_context_new");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
    }
    static atomic_uint_fast64_t s_context_id_max = 0;
@@ -1575,10 +1575,12 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     l_es->uuid = dap_uuid_generate_uint64();
 
     l_es->callbacks.queue_ptr_callback = a_callback; // Arm event callback
-    l_es->buf_in_size_max = DAP_QUEUE_MAX_MSGS * sizeof(void*);
-    l_es->buf_in = DAP_NEW_Z_SIZE(byte_t,l_es->buf_in_size_max);
-    l_es->buf_out = NULL;
-
+    l_es->buf_in_size_max = l_es->buf_out_size_max = DAP_QUEUE_MAX_MSGS * sizeof(void*);
+    l_es->buf_in = DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max);
+    l_es->buf_out = DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max);
+#if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+    pthread_rwlock_init(&l_es->buf_out_lock, NULL);
+#endif
 #if defined(DAP_EVENTS_CAPS_EPOLL)
     l_es->ev_base_flags = EPOLLIN | EPOLLERR | EPOLLRDHUP | EPOLLHUP;
 #elif defined(DAP_EVENTS_CAPS_POLL)
@@ -1892,7 +1894,7 @@ dap_events_socket_t * dap_context_create_pipe(dap_context_t * a_context, dap_eve
     UNUSED(a_flags);
     dap_events_socket_t * l_es = DAP_NEW_Z(dap_events_socket_t);
     if (!l_es) {
-        log_it(L_ERROR, "Memory allocation error in dap_context_create_pipe");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
     l_es->type = DESCRIPTOR_TYPE_PIPE;

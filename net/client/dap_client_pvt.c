@@ -202,7 +202,7 @@ static void s_stream_connected(dap_client_pvt_t * a_client_pvt)
     s_stage_status_after(a_client_pvt);
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid_ptr) {
-        log_it(L_ERROR, "Memory allocation error in s_stream_connected");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return;
     }
     assert(a_client_pvt->stream_es);
@@ -226,9 +226,17 @@ static void s_stream_connected(dap_client_pvt_t * a_client_pvt)
 static bool s_stream_timer_timeout_check(void * a_arg)
 {
     assert(a_arg);
+    if (!a_arg) {
+        log_it(L_ERROR, "Invalid arguments in s_stream_timer_timeout_check");
+        return false;
+    }
     dap_events_socket_uuid_t *l_es_uuid_ptr = (dap_events_socket_uuid_t*) a_arg;
     dap_worker_t *l_worker = dap_worker_get_current();
     assert(l_worker);
+    if (!l_worker) {
+        log_it(L_ERROR, "Invalid arguments in s_stream_timer_timeout_check");
+        return false;
+    }
 
     dap_events_socket_t *l_es = dap_context_find(l_worker->context, *l_es_uuid_ptr);
     if(l_es){
@@ -497,7 +505,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                             assert(a_client_pvt->stream_es);
                             dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
                             if (!l_stream_es_uuid_ptr) {
-                                log_it(L_ERROR, "Memory allocation error in s_stage_status_after");
+                                log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
                                 a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                                 a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                                 s_stage_status_after(a_client_pvt);
@@ -527,7 +535,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                             dap_worker_add_events_socket(l_worker, a_client_pvt->stream_es);
                             dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
                             if (!l_stream_es_uuid_ptr) {
-                                log_it(L_ERROR, "Memory allocation error in s_stage_status_after");
+                                log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
                                 a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                                 a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                                 s_stage_status_after(a_client_pvt);
@@ -1029,7 +1037,7 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
         log_it(L_DEBUG, "STREAM_CTL response %zu bytes length recieved", a_data_size);
     char * l_response_str = DAP_NEW_Z_SIZE(char, a_data_size + 1);
     if (!l_response_str) {
-        log_it(L_ERROR, "Memory allocation error in s_stream_ctl_response");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return;
     }
     memcpy(l_response_str, a_data, (uint32_t)a_data_size);
@@ -1049,7 +1057,7 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
         char l_stream_id[26] = { 0 };
         char *l_stream_key = DAP_NEW_Z_SIZE(char, 4096 * 3);
         if (!l_stream_key) {
-            log_it(L_ERROR, "Memory allocation error in s_stream_ctl_response");
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             DAP_DEL_Z(l_response_str);
             return;
         }

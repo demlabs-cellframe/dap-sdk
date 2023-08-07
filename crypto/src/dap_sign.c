@@ -650,7 +650,7 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
     }
     dap_multi_sign_t *l_sign = DAP_NEW(dap_multi_sign_t);
     if (!l_sign) {
-        log_it(L_ERROR, "Memory allocation error in dap_multi_sign_deserialize");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
     size_t l_mem_shift = sizeof(size_t);
@@ -663,7 +663,7 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
     if(l_sign->sign_count)
         l_sign->key_seq = DAP_NEW_Z_SIZE(dap_multi_sign_keys_t, l_sign->sign_count * sizeof(dap_multi_sign_keys_t));
     if (!l_sign->key_seq) {
-        log_it(L_ERROR, "Memory allocation error in dap_multi_sign_deserialize");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         DAP_DEL_Z(l_sign);
         return NULL;
     }
@@ -676,8 +676,8 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
     size_t l_pkeys_size = 0, l_signes_size = 0;
     if(l_sign->sign_count){
         l_sign->meta = DAP_NEW_Z_SIZE(dap_multi_sign_meta_t, l_sign->sign_count * sizeof(dap_multi_sign_meta_t));
-        if (!l_sign->key_seq) {
-            log_it(L_ERROR, "Memory allocation error in dap_multi_sign_deserialize");
+        if (!l_sign->meta) {
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             DAP_DEL_Z(l_sign->key_seq);
             DAP_DEL_Z(l_sign);
             return NULL;
@@ -694,7 +694,7 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
     if(l_sign->total_count){
         l_sign->key_hashes = DAP_NEW_Z_SIZE(dap_chain_hash_fast_t, l_sign->total_count * sizeof(dap_chain_hash_fast_t));
         if (!l_sign->key_hashes) {
-            log_it(L_ERROR, "Memory allocation error in dap_multi_sign_deserialize");
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             DAP_DEL_Z(l_sign->key_seq);
             DAP_DEL_Z(l_sign->meta);
             DAP_DEL_Z(l_sign);
@@ -709,7 +709,7 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
     if(l_pkeys_size){
         l_sign->pub_keys = DAP_NEW_Z_SIZE(uint8_t, l_pkeys_size);
         if (!l_sign->pub_keys) {
-            log_it(L_ERROR, "Memory allocation error in dap_multi_sign_deserialize");
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             DAP_DEL_Z(l_sign->key_seq);
             DAP_DEL_Z(l_sign->key_hashes);
             DAP_DEL_Z(l_sign->meta);
@@ -727,7 +727,7 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
     if(l_signes_size){
         l_sign->sign_data = DAP_NEW_Z_SIZE(uint8_t, l_signes_size);
         if (!l_sign->sign_data) {
-            log_it(L_ERROR, "Memory allocation error in dap_multi_sign_deserialize");
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             DAP_DEL_Z(l_sign->key_seq);
             DAP_DEL_Z(l_sign->key_hashes);
             DAP_DEL_Z(l_sign->pub_keys);
@@ -758,21 +758,21 @@ dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type,
 {
     dap_multi_sign_params_t *l_params = DAP_NEW(dap_multi_sign_params_t);
     if (!l_params) {
-        log_it(L_ERROR, "Memory allocation error in dap_multi_sign_params_make");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
     l_params->type.type = a_type;
     l_params->total_count = a_total_count;
     l_params->keys = DAP_NEW_SIZE(dap_enc_key_t *, a_total_count * sizeof(dap_enc_key_t *));
     if (!l_params->keys) {
-        log_it(L_ERROR, "Memory allocation error in dap_multi_sign_params_make");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         DAP_DEL_Z(l_params);
         return NULL;
     }
     l_params->sign_count = a_sign_count;
     l_params->key_seq = DAP_NEW_SIZE(uint8_t, a_sign_count);
     if (!l_params->key_seq) {
-        log_it(L_ERROR, "Memory allocation error in dap_multi_sign_params_make");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         DAP_DEL_Z(l_params->keys);
         DAP_DEL_Z(l_params);
         return NULL;
@@ -821,7 +821,7 @@ bool dap_multi_sign_hash_data(dap_multi_sign_t *a_sign, const void *a_data, cons
     //types missunderstanding?
     uint8_t *l_concatenated_hash = DAP_NEW_SIZE(uint8_t, 3 * sizeof(dap_chain_hash_fast_t));
     if (!l_concatenated_hash) {
-        log_it(L_ERROR, "Memory allocation error in dap_multi_sign_hash_data");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return false;
     }
     if (!dap_hash_fast(a_data, a_data_size, a_hash)) {
@@ -832,7 +832,7 @@ bool dap_multi_sign_hash_data(dap_multi_sign_t *a_sign, const void *a_data, cons
     uint32_t l_meta_data_size = sizeof(dap_sign_type_t) + 2 * sizeof(uint8_t) + a_sign->sign_count * sizeof(dap_multi_sign_keys_t);
     uint8_t *l_meta_data = DAP_NEW_SIZE(uint8_t, l_meta_data_size);
     if (!l_meta_data) {
-        log_it(L_ERROR, "Memory allocation error in dap_multi_sign_hash_data");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         DAP_DELETE(l_concatenated_hash);
         return false;
     }
@@ -881,14 +881,15 @@ dap_multi_sign_t *dap_multi_sign_create(dap_multi_sign_params_t *a_params, const
     }
     dap_multi_sign_t *l_sign = DAP_NEW_Z(dap_multi_sign_t);
     if (!l_sign) {
-        log_it(L_ERROR, "Memory allocation error in dap_multi_sign_create");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
     l_sign->type = a_params->type;
     l_sign->total_count = a_params->total_count;
     l_sign->key_hashes = DAP_NEW_Z_SIZE(dap_chain_hash_fast_t, a_params->total_count * sizeof(dap_chain_hash_fast_t));
     if (!l_sign->key_hashes) {
-        log_it(L_ERROR, "Memory allocation error in dap_multi_sign_create");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        dap_multi_sign_delete(l_sign);
         return NULL;
     }
     for (int i = 0; i < a_params->total_count; i++) {
@@ -984,7 +985,7 @@ int dap_multi_sign_verify(dap_multi_sign_t *a_sign, const void *a_data, const si
         dap_sign_t *l_step_sign = DAP_NEW_Z_SIZE(dap_sign_t,
                 sizeof(dap_sign_hdr_t) + l_pkey_size + l_sign_size);
         if (!l_step_sign) {
-            log_it(L_ERROR, "Memory allocation error in dap_multi_sign_verify");
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             return -1;
         }
         l_step_sign->header.type = a_sign->key_seq[i].type;

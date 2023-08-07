@@ -64,7 +64,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_builtin(const char *a_name, const
 
     l_manifest = DAP_NEW_Z(dap_plugin_manifest_t);
     if (!l_manifest) {
-        log_it(L_ERROR, "Memory allocation error in dap_plugin_manifest_add_builtin");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
     strncpy(l_manifest->name,a_name, sizeof(l_manifest->name)-1);
@@ -105,6 +105,10 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     fseek(l_json_file, 0, SEEK_END);
     size_t size_file = (size_t)ftell(l_json_file);
     char *l_json_data = DAP_NEW_SIZE(char, size_file);
+    if (!l_json_data) {
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        return NULL;
+    }
     rewind(l_json_file);
     fread(l_json_data, sizeof(char), size_file, l_json_file);
     fclose(l_json_file);
@@ -119,18 +123,36 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     json_object *l_json_params = NULL;
     json_object *l_json_type = NULL;
 
-    if (!json_object_object_get_ex(l_json_obj, "name", &l_json_name))
+    if (!json_object_object_get_ex(l_json_obj, "name", &l_json_name)){
+        DAP_DELETE(l_json_data);
+        DAP_FREE(l_json_obj);
         return NULL;
-    if (!json_object_object_get_ex(l_json_obj, "type", &l_json_type))
+    }
+    if (!json_object_object_get_ex(l_json_obj, "type", &l_json_type)){
+        DAP_DELETE(l_json_data);
+        DAP_FREE(l_json_obj);
         return NULL;
-    if (!json_object_object_get_ex(l_json_obj, "version", &l_json_version))
+    }
+    if (!json_object_object_get_ex(l_json_obj, "version", &l_json_version)){
+        DAP_DELETE(l_json_data);
+        DAP_FREE(l_json_obj);
         return NULL;
-    if (!json_object_object_get_ex(l_json_obj, "dependencies", &l_json_dependencies))
+    }
+    if (!json_object_object_get_ex(l_json_obj, "dependencies", &l_json_dependencies)){
+        DAP_DELETE(l_json_data);
+        DAP_FREE(l_json_obj);
         return NULL;
-    if (!json_object_object_get_ex(l_json_obj, "author", &l_json_author))
+    }
+    if (!json_object_object_get_ex(l_json_obj, "author", &l_json_author)){
+        DAP_DELETE(l_json_data);
+        DAP_FREE(l_json_obj);
         return NULL;
-    if (!json_object_object_get_ex(l_json_obj, "description", &l_json_description))
+    }
+    if (!json_object_object_get_ex(l_json_obj, "description", &l_json_description)){
+        DAP_DELETE(l_json_data);
+        DAP_FREE(l_json_obj);
         return NULL;
+    }
     json_object_object_get_ex(l_json_obj, "params", &l_json_params);
     json_object_object_get_ex(l_json_obj, "path", &l_json_path);
 
@@ -144,6 +166,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     if(l_manifest){
         log_it(L_ERROR, "Plugin name \"%s\" is already present", l_name);
         DAP_DELETE(l_json_data);
+        DAP_FREE(l_json_obj);
         return NULL;
     }
 
@@ -158,6 +181,12 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     // Read dependencies;
     if(l_dependencies_count){
         l_dependencies_names = DAP_NEW_SIZE(char*, sizeof(char*)* l_dependencies_count );
+        if (!l_dependencies_names) {
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            DAP_DELETE(l_json_data);
+            DAP_FREE(l_json_obj);
+            return NULL;
+        }
         for (size_t i = 0; i <  l_dependencies_count; i++){
             l_dependencies_names[i] = dap_strdup(json_object_get_string(json_object_array_get_idx(l_json_dependencies, i)));
         }
@@ -166,6 +195,13 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     // Read additional params
     if(l_params_count){
         l_params = DAP_NEW_SIZE(char*, sizeof(char*)* l_params_count );
+        if (!l_params) {
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            DAP_DELETE(l_json_data);
+            DAP_DELETE(l_dependencies_names);
+            DAP_FREE(l_json_obj);
+            return NULL;
+        }
         for (size_t i = 0; i < l_params_count; i++){
             l_params[i] = dap_strdup(json_object_get_string(json_object_array_get_idx(l_json_params, i)));
         }
@@ -174,8 +210,11 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     // Create manifest itself
     l_manifest = DAP_NEW_Z(dap_plugin_manifest_t);
     if (!l_manifest) {
-        log_it(L_ERROR, "Memory allocation error in dap_plugin_manifest_add_from_file");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         DAP_DELETE(l_json_data);
+        DAP_DELETE(l_dependencies_names);
+        DAP_DELETE(l_params);
+        DAP_FREE(l_json_obj);
         return NULL;
     }
     strncpy(l_manifest->name,l_name, sizeof(l_manifest->name)-1);

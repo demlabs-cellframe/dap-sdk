@@ -118,7 +118,7 @@ int dap_http_folder_add( dap_http_t *sh, const char *url_path, const char *local
 
   dap_http_url_proc_folder_t *up_folder = (dap_http_url_proc_folder_t *)calloc( 1, sizeof(dap_http_url_proc_folder_t) );
   if (!up_folder) {
-    log_it(L_ERROR, "Memory allocation error in dap_http_folder_add");
+    log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
     return -1;
   }
   strncpy( up_folder->local_path, local_path, sizeof(up_folder->local_path)-1 );

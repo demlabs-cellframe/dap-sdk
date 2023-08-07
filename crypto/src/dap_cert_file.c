@@ -55,6 +55,7 @@ int dap_cert_file_save(dap_cert_t * a_cert, const char * a_cert_file_path)
             size_t l_retbytes;
             if ( (l_retbytes = fwrite(l_data,1,l_data_size,l_file)) != l_data_size ){
                 log_it(L_ERROR, "Can't write %u bytes on disk (processed only %zu)!", l_data_size,l_retbytes);
+                fclose(l_file);
                 return -3;
             }
             fclose(l_file);
@@ -149,13 +150,13 @@ void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t
         if (l_meta_arr == NULL) {
             l_meta_arr = DAP_NEW(dap_cert_metadata_t *);
             if (!l_meta_arr) {
-                log_it(L_ERROR, "Memory allocation error in dap_cert_deserialize_meta");
+                log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
                 return;
             }
         } else {
             l_meta_arr = DAP_REALLOC(l_meta_arr, (l_meta_items_count + 1) * sizeof(dap_cert_metadata_t *));
             if (!l_meta_arr) {
-                log_it(L_ERROR, "Memory allocation error in dap_cert_deserialize_meta");
+                log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
                 return;
             }
         }
