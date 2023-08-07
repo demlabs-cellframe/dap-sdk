@@ -165,6 +165,8 @@ static int s_record_del_history_del(const char *a_group, const char *a_key);
 // Call notificators
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t *a_store_obj);
 
+int dap_chain_net_srv_check_store_obj(dap_store_obj_t *a_store_obj);
+
 typedef uint64_t dap_global_db_callback_arg_uid_t;
 /**
  * @brief A structure for storing callback data for synchronous calls.
