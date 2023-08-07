@@ -1087,8 +1087,11 @@ int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t * a_es_input, 
         EV_SET(&l_event,a_es_input->socket+arc4random()  , EVFILT_USER,EV_ADD | EV_ONESHOT, NOTE_FFNOP | NOTE_TRIGGER ,0, l_es_w_data);
         if(l_es->context)
             l_ret=kevent(l_es->context->kqueue_fd,&l_event,1,NULL,0,NULL);
-        else
+        else{
             l_ret=-100;
+            DAP_DELETE(l_es_w_data);
+        }
+
         if(l_ret != -1 ){
             return 0;
         }else{
@@ -1815,6 +1818,7 @@ size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_eve
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
     if (!l_msg) {
         log_it(L_ERROR, "Memory allocation error in dap_events_socket_write_f_inter");
+        va_end(ap_copy);
         return 0;
     }
     l_msg->esocket_uuid = a_es_uuid;
@@ -1822,6 +1826,7 @@ size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_eve
     if (!l_msg->data) {
         log_it(L_ERROR, "Memory allocation error in dap_events_socket_write_f_inter");
         DAP_DEL_Z(l_msg);
+        va_end(ap_copy);
         return 0;
     }
     l_msg->data_size = l_data_size;
@@ -1945,7 +1950,8 @@ ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *
     char *l_buf = DAP_NEW_Z_SIZE(char, l_buf_size);
     if (!l_buf) {
         log_it(L_ERROR, "Memory allocation error in dap_events_socket_write_f_unsafe");
-        return 0;
+        va_end(ap_copy);
+       return 0;
     }
     vsprintf(l_buf, a_format, ap_copy);
     va_end(ap_copy);
