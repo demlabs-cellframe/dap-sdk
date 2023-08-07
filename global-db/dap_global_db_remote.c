@@ -86,13 +86,11 @@ dap_list_t* dap_chain_db_get_sync_groups(const char *a_net_name)
     if(!a_net_name)
         return dap_list_copy(s_sync_group_items);
 
-    dap_list_t *l_list_out = NULL;
-    dap_list_t *l_list_group = s_sync_group_items;
-    while(l_list_group) {
-        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*) l_list_group->data)->net_name)) {
-            l_list_out = dap_list_append(l_list_out, l_list_group->data);
+    dap_list_t *l_list_out = NULL, *l_item;
+    DL_FOREACH(s_sync_group_items, l_item) {
+        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*)l_item->data)->net_name)) {
+            l_list_out = dap_list_append(l_list_out, l_item->data);
         }
-        l_list_group = dap_list_next(l_list_group);
     }
     return l_list_out;
 }
@@ -107,13 +105,11 @@ dap_list_t* dap_chain_db_get_sync_extra_groups(const char *a_net_name)
     if(!a_net_name)
         return dap_list_copy(s_sync_group_extra_items);
 
-    dap_list_t *l_list_out = NULL;
-    dap_list_t *l_list_group = s_sync_group_extra_items;
-    while(l_list_group) {
-        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*) l_list_group->data)->net_name)) {
-            l_list_out = dap_list_append(l_list_out, l_list_group->data);
+    dap_list_t *l_list_out = NULL, *l_item;
+    DL_FOREACH(s_sync_group_extra_items, l_item) {
+        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*)l_item->data)->net_name)) {
+            l_list_out = dap_list_append(l_list_out, l_item->data);
         }
-        l_list_group = dap_list_next(l_list_group);
     }
     return l_list_out;
 }
@@ -161,6 +157,11 @@ static void s_clear_sync_grp(void *a_elm)
     DAP_DELETE(l_item);
 }
 
+static int s_cb_cmp_items(const void *i_1, const void *i_2) {
+    return dap_strcmp(((dap_sync_group_item_t*)i_1)->group_mask, ((dap_sync_group_item_t*)i_2)->group_mask)
+            || dap_strcmp(((dap_sync_group_item_t*)i_1)->net_name, ((dap_sync_group_item_t*)i_2)->net_name);
+}
+
 /**
  * @brief s_db_add_sync_group
  * @param a_grp_list
@@ -169,13 +170,11 @@ static void s_clear_sync_grp(void *a_elm)
  */
 static int s_db_add_sync_group(dap_list_t **a_grp_list, dap_sync_group_item_t *a_item)
 {
-    for (dap_list_t *it = *a_grp_list; it; it = it->next) {
-        dap_sync_group_item_t *l_item = (dap_sync_group_item_t *)it->data;
-        if (!dap_strcmp(l_item->group_mask, a_item->group_mask) && !dap_strcmp(l_item->net_name, a_item->net_name)) {
-            log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_item->group_mask);
-            s_clear_sync_grp(a_item);
-            return -1;
-        }
+    dap_list_t *l_item = dap_list_find(*a_grp_list, a_item, s_cb_cmp_items);
+    if (l_item) {
+        log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_item->group_mask);
+        s_clear_sync_grp(a_item);
+        return -1;
     }
     *a_grp_list = dap_list_append(*a_grp_list, a_item);
     return 0;
@@ -318,6 +317,22 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
     dap_global_db_instance_t *l_dbi = l_dap_db_log_list->db_context->instance;
     if (l_dbi->whitelist || l_dbi->blacklist) {
         dap_list_t *l_used_list = l_dbi->whitelist ? l_dbi->whitelist : l_dbi->blacklist;
+        dap_list_t *l_group, *l_tmp;
+        DL_FOREACH_SAFE(l_groups_names, l_group, l_tmp) {
+            dap_list_t *l_used_el;
+            bool l_match = false;
+            DL_FOREACH(l_used_list, l_used_el) {
+                if (!dap_fnmatch(l_used_el->data, l_group->data, FNM_NOESCAPE)) {
+                    l_match = true;
+                    break;
+                }
+            }
+            if (l_used_list == l_dbi->whitelist ? !l_match : l_match) {
+                DL_DELETE(l_groups_names, l_group);
+                DAP_FREE(l_group);
+            }
+        }
+
         for (dap_list_t *l_group = l_groups_names; l_group; ) {
             bool l_found = false;
             for (dap_list_t *it = l_used_list; it; it = it->next) {

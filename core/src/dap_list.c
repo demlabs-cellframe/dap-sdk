@@ -14,7 +14,7 @@
  * dap_list_alloc:
  * Returns: a pointer to the newly-allocated DapList element
  **/
-dap_list_t *dap_list_alloc_no_z(void)
+/*dap_list_t *dap_list_alloc_no_z(void)
 {
     dap_list_t *list = DAP_NEW(dap_list_t);
     return list;
@@ -24,7 +24,7 @@ dap_list_t *dap_list_alloc(void)
 {
     dap_list_t *list = DAP_NEW_Z(dap_list_t);
     return list;
-}
+}*/
 
 /**
  * dap_list_free:
@@ -33,12 +33,17 @@ dap_list_t *dap_list_alloc(void)
  * If list elements contain dynamically-allocated memory, you should
  * either use dap_list_free_full() or free them manually first.
  */
-void dap_list_free(dap_list_t *list)
+void dap_list_free(dap_list_t *a_list)
 {
-    while(list) {
+    /*while(list) {
         dap_list_t *next = list->next;
         DAP_DELETE(list);
         list = next;
+    }*/
+    dap_list_t *l_el, *l_tmp;
+    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
+        DL_DELETE(a_list, l_el);
+        DAP_DELETE(l_el);
     }
 }
 
@@ -48,10 +53,10 @@ void dap_list_free(dap_list_t *list)
  * Frees one DapList element.
  * It is usually used after dap_list_remove_link().
  */
-void dap_list_free1(dap_list_t *list)
+/*void dap_list_free1(dap_list_t *list)
 {
     DAP_DEL_Z(list);
-}
+}*/
 
 /**
  * dap_list_free_full:
@@ -63,7 +68,7 @@ void dap_list_free1(dap_list_t *list)
  */
 void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func)
 {
-    dap_list_t *l_list = a_list;
+    /*dap_list_t *l_list = a_list;
     while (l_list) {
         dap_list_t *l_next = l_list->next;
         if (a_free_func)
@@ -72,6 +77,13 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
             DAP_DEL_Z(l_list->data);
         DAP_DELETE(l_list);
         l_list = l_next;
+    }*/
+    dap_list_t *l_el, *l_tmp;
+    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
+        DL_DELETE(a_list, l_el);
+        if (l_el->data)
+            a_free_func ? a_free_func(l_el->data) : DAP_DELETE(l_el->data);
+        DAP_DELETE(l_el);
     }
 }
 
@@ -105,9 +117,9 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
  *
  * Returns: either @list or the new start of the DapList if @list was %NULL
  */
-dap_list_t * dap_list_append(dap_list_t *list, void* data)
+dap_list_t *dap_list_append(dap_list_t *a_list, void* a_data)
 {
-    dap_list_t *new_list;
+    /*dap_list_t *new_list;
     dap_list_t *last;
 
     new_list = dap_list_alloc();
@@ -121,7 +133,7 @@ dap_list_t * dap_list_append(dap_list_t *list, void* data)
     if (list)
     {
         last = dap_list_last(list);
-        /* assert (last != NULL); */
+        // assert (last != NULL);
         last->next = new_list;
         new_list->prev = last;
 
@@ -131,7 +143,10 @@ dap_list_t * dap_list_append(dap_list_t *list, void* data)
     {
         new_list->prev = NULL;
         return new_list;
-    }
+    }*/
+    dap_list_t *l_el = DAP_NEW_Z(dap_list_t);
+    l_el->data = a_data;
+    return ({ DL_APPEND(a_list, l_el); a_list; });
 }
 
 /**
@@ -158,9 +173,9 @@ dap_list_t * dap_list_append(dap_list_t *list, void* data)
  * Returns: a pointer to the newly prepended element, which is the new
  *     start of the DapList
  */
-dap_list_t *dap_list_prepend(dap_list_t *list, void* data)
+dap_list_t *dap_list_prepend(dap_list_t *a_list, void *a_data)
 {
-    dap_list_t *new_list;
+    /*dap_list_t *new_list;
 
     new_list = dap_list_alloc();
     if (!new_list) {
@@ -180,7 +195,10 @@ dap_list_t *dap_list_prepend(dap_list_t *list, void* data)
     else
         new_list->prev = NULL;
 
-    return new_list;
+    return new_list;*/
+    dap_list_t *l_el = DAP_NEW_Z(dap_list_t);
+    l_el->data = a_data;
+    return ({ DL_PREPEND(a_list, l_el); a_list; });
 }
 
 /**
@@ -195,9 +213,9 @@ dap_list_t *dap_list_prepend(dap_list_t *list, void* data)
  *
  * Returns: the (possibly changed) start of the DapList
  */
-dap_list_t *dap_list_insert(dap_list_t *list, void* data, int position)
+dap_list_t *dap_list_insert(dap_list_t *a_list, void* a_data, uint64_t a_position)
 {
-    dap_list_t *new_list;
+    /*dap_list_t *new_list;
     dap_list_t *tmp_list;
 
     if(position < 0)
@@ -220,7 +238,13 @@ dap_list_t *dap_list_insert(dap_list_t *list, void* data, int position)
     new_list->next = tmp_list;
     tmp_list->prev = new_list;
 
-    return list;
+    return list;*/
+    if (!a_position)
+        return dap_list_append(a_list, a_data);
+    dap_list_t  *l_el = DAP_NEW_Z(dap_list_t),
+                *l_pos = dap_list_nth(a_list, a_position);
+    l_el->data = a_data;
+    return ({ DL_PREPEND_ELEM(a_list, l_pos, l_el); a_list; });
 }
 
 /**
@@ -234,7 +258,7 @@ dap_list_t *dap_list_insert(dap_list_t *list, void* data, int position)
  *
  * Returns: the (possibly changed) start of the DapList
  */
-dap_list_t *dap_list_insert_before(dap_list_t *list, dap_list_t *sibling, void* data)
+/*dap_list_t *dap_list_insert_before(dap_list_t *list, dap_list_t *sibling, void* data)
 {
     if(!list)
     {
@@ -290,7 +314,7 @@ dap_list_t *dap_list_insert_before(dap_list_t *list, dap_list_t *sibling, void* 
 
         return list;
     }
-}
+}*/
 
 /**
  * dap_list_concat:
@@ -311,9 +335,9 @@ dap_list_t *dap_list_insert_before(dap_list_t *list, dap_list_t *sibling, void* 
  *
  * Returns: the start of the new DapList, which equals @list1 if not %NULL
  */
-dap_list_t *dap_list_concat(dap_list_t *list1, dap_list_t *list2)
+dap_list_t *dap_list_concat(dap_list_t *a_list1, dap_list_t *a_list2)
 {
-    dap_list_t *tmp_list;
+    /*dap_list_t *tmp_list;
 
     if(list2)
     {
@@ -325,7 +349,8 @@ dap_list_t *dap_list_concat(dap_list_t *list1, dap_list_t *list2)
         list2->prev = tmp_list;
     }
 
-    return list1;
+    return list1;*/
+    return ({ DL_CONCAT(a_list1, a_list2); a_list1; });
 }
 
 /**
@@ -339,9 +364,9 @@ dap_list_t *dap_list_concat(dap_list_t *list1, dap_list_t *list2)
  *
  * Returns: the (possibly changed) start of the DapList
  */
-dap_list_t *dap_list_remove(dap_list_t *list, const void * data)
+dap_list_t *dap_list_remove(dap_list_t *a_list, const void *a_data)
 {
-    dap_list_t *tmp;
+    /*dap_list_t *tmp;
 
     tmp = list;
     while(tmp)
@@ -355,7 +380,16 @@ dap_list_t *dap_list_remove(dap_list_t *list, const void * data)
             break;
         }
     }
-    return list;
+    return list;*/
+    dap_list_t *l_el, *l_tmp;
+    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
+        if (l_el->data == a_data) {
+            DL_DELETE(a_list, l_el);
+            DAP_DELETE(l_el);
+            break;
+        }
+    }
+    return a_list;
 }
 
 /**
@@ -370,9 +404,9 @@ dap_list_t *dap_list_remove(dap_list_t *list, const void * data)
  *
  * Returns: the (possibly changed) start of the DapList
  */
-dap_list_t *dap_list_remove_all(dap_list_t *list, const void * data)
+dap_list_t *dap_list_remove_all(dap_list_t *a_list, const void *a_data)
 {
-    dap_list_t *tmp = list;
+    /*dap_list_t *tmp = list;
 
     while(tmp)
     {
@@ -395,7 +429,15 @@ dap_list_t *dap_list_remove_all(dap_list_t *list, const void * data)
             tmp = next;
         }
     }
-    return list;
+    return list;*/
+    dap_list_t *l_el, *l_tmp;
+    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
+        if (l_el->data == a_data) {
+            DL_DELETE(a_list, l_el);
+            DAP_DELETE(l_el);
+        }
+    }
+    return a_list;
 }
 
 /**
@@ -418,9 +460,9 @@ dap_list_t *dap_list_remove_all(dap_list_t *list, const void * data)
  *
  * Returns: the (possibly changed) start of the DapList
  */
-inline dap_list_t *dap_list_remove_link(dap_list_t *list, dap_list_t *link)
+inline dap_list_t *dap_list_remove_link(dap_list_t *a_list, dap_list_t *a_link)
 {
-    if (link == NULL)
+    /*if (link == NULL)
         return list;
 
     if (link->prev)
@@ -444,7 +486,8 @@ inline dap_list_t *dap_list_remove_link(dap_list_t *list, dap_list_t *link)
     link->next = NULL;
     link->prev = NULL;
 
-    return list;
+    return list;*/
+    return ({ DL_DELETE(a_list, a_link); a_list; });
 }
 
 /**
@@ -458,11 +501,12 @@ inline dap_list_t *dap_list_remove_link(dap_list_t *list, dap_list_t *link)
  *
  * Returns: the (possibly changed) start of the DapList
  */
-dap_list_t *dap_list_delete_link(dap_list_t *list, dap_list_t *link)
+dap_list_t *dap_list_delete_link(dap_list_t *a_list, dap_list_t *a_link)
 {
-    list = dap_list_remove_link(list, link);
+    /*list = dap_list_remove_link(list, link);
     dap_list_free1(link);
-    return list;
+    return list; */
+    return ({ DL_DELETE(a_list, a_link); DAP_DELETE(a_link); a_list; });
 }
 
 /**
@@ -478,9 +522,9 @@ dap_list_t *dap_list_delete_link(dap_list_t *list, dap_list_t *link)
  *
  * Returns: the start of the new list that holds the same data as @list
  */
-dap_list_t *dap_list_copy(dap_list_t *list)
+dap_list_t *dap_list_copy(dap_list_t *a_list)
 {
-    return dap_list_copy_deep(list, NULL, NULL);
+    return dap_list_copy_deep(a_list, NULL, NULL);
 }
 
 /**
@@ -512,9 +556,9 @@ dap_list_t *dap_list_copy(dap_list_t *list)
  * Returns: the start of the new list that holds a full copy of @list,
  *     use dap_list_free_full() to free it
  */
-dap_list_t *dap_list_copy_deep(dap_list_t *list, dap_callback_copy_t func, void* user_data)
+dap_list_t *dap_list_copy_deep(dap_list_t *a_list, dap_callback_copy_t a_func, void *a_user_data)
 {
-    dap_list_t *last, *new_list = NULL;
+    /*dap_list_t *last, *new_list = NULL;
 
     while (list) {
         if (new_list) {
@@ -535,7 +579,18 @@ dap_list_t *dap_list_copy_deep(dap_list_t *list, dap_callback_copy_t func, void*
         list = list->next;
     }
 
-    return new_list;
+    return new_list;*/
+    dap_list_t *l_deep_copy = NULL, *l_el, *l_el_copy;
+    if (!a_func) {
+        DL_FOREACH(a_list, l_el) {
+            l_deep_copy = dap_list_append(l_deep_copy, l_el->data);
+        }
+    } else {
+        DL_FOREACH(a_list, l_el) {
+            l_deep_copy = dap_list_append(l_deep_copy, a_func(l_el->data, a_user_data));
+        }
+    }
+    return l_deep_copy;
 }
 
 /**
@@ -547,7 +602,7 @@ dap_list_t *dap_list_copy_deep(dap_list_t *list, dap_callback_copy_t func, void*
  *
  * Returns: the start of the reversed DapList
  */
-dap_list_t * dap_list_reverse(dap_list_t *list)
+/*dap_list_t * dap_list_reverse(dap_list_t *list)
 {
     dap_list_t *last;
 
@@ -561,7 +616,7 @@ dap_list_t * dap_list_reverse(dap_list_t *list)
     }
 
     return last;
-}
+}*/
 
 /**
  * dap_list_nth:
@@ -573,12 +628,12 @@ dap_list_t * dap_list_reverse(dap_list_t *list)
  * Returns: the element, or %NULL if the position is off
  *     the end of the DapList
  */
-dap_list_t *dap_list_nth(dap_list_t *list, unsigned int n)
+dap_list_t *dap_list_nth(dap_list_t *a_list, uint64_t n)
 {
-    while((n-- > 0) && list)
-        list = list->next;
+    while((n-- > 0) && a_list)
+        a_list = a_list->next;
 
-    return list;
+    return a_list;
 }
 
 /**
@@ -591,12 +646,12 @@ dap_list_t *dap_list_nth(dap_list_t *list, unsigned int n)
  * Returns: the element, or %NULL if the position is 
  *     off the end of the DapList
  */
-dap_list_t *dap_list_nth_prev(dap_list_t *list, unsigned int n)
+dap_list_t *dap_list_nth_prev(dap_list_t *a_list, uint64_t n)
 {
-    while((n-- > 0) && list)
-        list = list->prev;
+    while((n-- > 0) && a_list)
+        a_list = a_list->prev;
 
-    return list;
+    return a_list;
 }
 
 /**
@@ -609,12 +664,9 @@ dap_list_t *dap_list_nth_prev(dap_list_t *list, unsigned int n)
  * Returns: the element's data, or %NULL if the position
  *     is off the end of the DapList
  */
-void* dap_list_nth_data(dap_list_t *list, unsigned int n)
+void* dap_list_nth_data(dap_list_t *a_list, uint64_t n)
 {
-    while((n-- > 0) && list)
-        list = list->next;
-
-    return list ? list->data : NULL ;
+    return dap_list_nth(a_list, n)->data;
 }
 
 /**
@@ -626,16 +678,21 @@ void* dap_list_nth_data(dap_list_t *list, unsigned int n)
  *
  * Returns: the found DapList element, or %NULL if it is not found
  */
-dap_list_t *dap_list_find(dap_list_t *list, const void * data)
+dap_list_t *dap_list_find(dap_list_t *a_list, const void *a_data, dap_callback_compare_t a_cmp)
 {
-    while(list)
+    dap_list_t *l_el = NULL;
+    return a_cmp
+            ? ({ dap_list_t l_sought = { .data = (void*)a_data }; DL_SEARCH(a_list, l_el, &l_sought, a_cmp); })
+            : ({ DL_SEARCH_SCALAR(a_list, l_el, data, a_data); }),
+    l_el;
+    /*while(list)
     {
         if(list->data == data)
             break;
         list = list->next;
     }
 
-    return list;
+    return list;*/
 }
 
 /**
@@ -654,7 +711,7 @@ dap_list_t *dap_list_find(dap_list_t *list, const void * data)
  *
  * Returns: the found DapList element, or %NULL if it is not found
  */
-dap_list_t *dap_list_find_custom(dap_list_t *list, const void * data, dap_callback_compare_t func)
+/*dap_list_t *dap_list_find_custom(dap_list_t *list, const void * data, dap_callback_compare_t func)
 {
     dap_return_val_if_fail(func != NULL, list);
 
@@ -666,7 +723,7 @@ dap_list_t *dap_list_find_custom(dap_list_t *list, const void * data, dap_callba
     }
 
     return NULL ;
-}
+} */
 
 /**
  * dap_list_position:
@@ -679,19 +736,15 @@ dap_list_t *dap_list_find_custom(dap_list_t *list, const void * data, dap_callba
  * Returns: the position of the element in the DapList,
  *     or -1 if the element is not found
  */
-int dap_list_position(dap_list_t *list, dap_list_t *llink)
+int dap_list_position(dap_list_t *a_list, dap_list_t *a_link)
 {
-    int i;
-
-    i = 0;
-    while(list)
-    {
-        if(list == llink)
+    int i = 0;
+    dap_list_t *l_el;
+    DL_FOREACH(a_list, l_el) {
+        if (l_el == a_link)
             return i;
-        i++;
-        list = list->next;
+        ++i;
     }
-
     return -1;
 }
 
@@ -706,19 +759,15 @@ int dap_list_position(dap_list_t *list, dap_list_t *llink)
  * Returns: the index of the element containing the data,
  *     or -1 if the data is not found
  */
-int dap_list_index(dap_list_t *list, const void * data)
+int dap_list_index(dap_list_t *a_list, const void *a_data)
 {
-    int i;
-
-    i = 0;
-    while(list)
-    {
-        if(list->data == data)
+    int i = 0;
+    dap_list_t *l_el;
+    DL_FOREACH(a_list, l_el) {
+        if (l_el->data == a_data)
             return i;
-        i++;
-        list = list->next;
+        ++i;
     }
-
     return -1;
 }
 
@@ -731,15 +780,9 @@ int dap_list_index(dap_list_t *list, const void * data)
  * Returns: the last element in the DapList,
  *     or %NULL if the DapList has no elements
  */
-dap_list_t * dap_list_last(dap_list_t *list)
+dap_list_t * dap_list_last(dap_list_t *a_list)
 {
-    if(list)
-    {
-        while(list && list->next)
-            list = list->next;
-    }
-
-    return list;
+    return dap_list_first(a_list)->prev;
 }
 
 /**
@@ -751,15 +794,14 @@ dap_list_t * dap_list_last(dap_list_t *list)
  * Returns: the first element in the DapList,
  *     or %NULL if the DapList has no elements
  */
-dap_list_t *dap_list_first(dap_list_t *list)
+dap_list_t *dap_list_first(dap_list_t *a_list)
 {
-    if(list)
-    {
-        while(list->prev)
-            list = list->prev;
-    }
+    if (!a_list)
+        return NULL;
+    while (a_list->prev->next)
+        a_list = a_list->prev;
 
-    return list;
+    return a_list;
 }
 
 /**
@@ -772,9 +814,9 @@ dap_list_t *dap_list_first(dap_list_t *list)
  *
  * Returns: the number of elements in the DapList
  */
-unsigned int dap_list_length(dap_list_t *list)
+uint64_t dap_list_length(dap_list_t *a_list)
 {
-    unsigned int length;
+    /*unsigned int length;
 
     length = 0;
     while(list)
@@ -783,7 +825,10 @@ unsigned int dap_list_length(dap_list_t *list)
         list = list->next;
     }
 
-    return length;
+    return length;*/
+    dap_list_t *l_el;
+    uint64_t l_len;
+    return ({ DL_COUNT(a_list, l_el, l_len); l_len; });
 }
 
 /**
@@ -794,17 +839,17 @@ unsigned int dap_list_length(dap_list_t *list)
  *
  * Calls a function for each element of a DapList.
  */
-void dap_list_foreach(dap_list_t *list, dap_callback_t func, void* user_data)
+/*void dap_list_foreach(dap_list_t *a_list, dap_callback_t a_func, void *a_user_data)
 {
-    while(list)
+    while(a_list)
     {
-        dap_list_t *next = list->next;
-        (*func)(list->data, user_data);
-        list = next;
+        dap_list_t *next = a_list->next;
+        (*a_func)(a_list->data, a_user_data);
+        a_list = next;
     }
-}
+}*/
 
-static dap_list_t* dap_list_insert_sorted_real(dap_list_t *list, void* data, dap_callback_compare_data_t func, void* user_data)
+/* static dap_list_t* dap_list_insert_sorted_real(dap_list_t *a_list, void *a_data, dap_callback_compare_data_t a_func, void *a_user_data)
 {
     dap_list_t *tmp_list = list;
     dap_list_t *new_list;
@@ -858,7 +903,7 @@ static dap_list_t* dap_list_insert_sorted_real(dap_list_t *list, void* data, dap
         return new_list;
     else
         return list;
-}
+} */
 
 /**
  * dap_list_insert_sorted:
@@ -879,9 +924,12 @@ static dap_list_t* dap_list_insert_sorted_real(dap_list_t *list, void* data, dap
  *
  * Returns: the (possibly changed) start of the DapList
  */
-dap_list_t *dap_list_insert_sorted(dap_list_t *list, void* data, dap_callback_compare_data_t func)
+dap_list_t *dap_list_insert_sorted(dap_list_t *a_list, void *a_data, dap_callback_compare_t a_func)
 {
-    return dap_list_insert_sorted_real(list, data, func, NULL);
+    dap_list_t *l_new_el = DAP_NEW_Z(dap_list_t);
+    l_new_el->data = a_data;
+    return ({ DL_INSERT_INORDER(a_list, l_new_el, a_func); a_list; });
+    //return dap_list_insert_sorted_real(list, data, func, NULL);
 }
 
 /**
@@ -904,12 +952,12 @@ dap_list_t *dap_list_insert_sorted(dap_list_t *list, void* data, dap_callback_co
  *
  * Returns: the (possibly changed) start of the DapList
  */
-dap_list_t * dap_list_insert_sorted_with_data(dap_list_t *list, void* data, dap_callback_compare_data_t func, void* user_data)
+/*dap_list_t * dap_list_insert_sorted_with_data(dap_list_t *list, void* data, dap_callback_compare_data_t func, void* user_data)
 {
     return dap_list_insert_sorted_real(list, data, func, user_data);
-}
+}*/
 
-static dap_list_t *dap_list_sort_merge(dap_list_t *l1, dap_list_t *l2, dap_callback_compare_data_t compare_func, void* user_data)
+/*static dap_list_t *dap_list_sort_merge(dap_list_t *l1, dap_list_t *l2, dap_callback_compare_data_t compare_func, void* user_data)
 {
     dap_list_t list, *l, *lprev;
     int cmp;
@@ -966,7 +1014,7 @@ static dap_list_t *dap_list_sort_real(dap_list_t *list, dap_callback_compare_dat
             dap_list_sort_real(l2, compare_func, user_data),
             compare_func,
             user_data);
-}
+} */
 
 /**
  * dap_list_sort:
@@ -995,9 +1043,10 @@ static dap_list_t *dap_list_sort_real(dap_list_t *list, dap_callback_compare_dat
  * Returns: negative value if @a < @b; zero if @a = @b; positive
  *          value if @a > @b
  */
-dap_list_t *dap_list_sort(dap_list_t *list, dap_callback_compare_data_t compare_func)
+dap_list_t *dap_list_sort(dap_list_t *a_list, dap_callback_compare_t a_cmp)
 {
-    return dap_list_sort_real(list, compare_func, NULL);
+    //return dap_list_sort_real(list, compare_func, NULL);
+    return ({ DL_SORT(a_list, a_cmp); a_list; });
 }
 
 /**
@@ -1025,7 +1074,7 @@ dap_list_t *dap_list_sort(dap_list_t *list, dap_callback_compare_data_t compare_
  * Returns: negative value if @a < @b; zero if @a = @b; positive
  *          value if @a > @b
  */
-dap_list_t *dap_list_sort_with_data(dap_list_t *list, dap_callback_compare_data_t compare_func, void* user_data)
+/*dap_list_t *dap_list_sort_with_data(dap_list_t *list, dap_callback_compare_data_t compare_func, void* user_data)
 {
     return dap_list_sort_real(list, compare_func, user_data);
-}
+}*/
