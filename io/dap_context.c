@@ -518,13 +518,13 @@ static int s_thread_loop(dap_context_t * a_context)
                 l_flag_rdhup = true;
             l_cur = (dap_events_socket_t*) l_kevent_selected->udata;
 
-            if (l_kevent_selected->filter == EVFILT_TIMER && l_cur->type != DESCRIPTOR_TYPE_TIMER) {
+            if (l_cur && l_kevent_selected->filter == EVFILT_TIMER && l_cur->type != DESCRIPTOR_TYPE_TIMER) {
                 log_it(L_WARNING, "Filer type and socket descriptor type mismatch");
                 continue;
             }
         }
-
-        l_cur->kqueue_event_catched = l_kevent_selected;
+        if (l_cur)
+            l_cur->kqueue_event_catched = l_kevent_selected;
 #ifndef DAP_OS_DARWIN
             u_int l_cur_flags = l_kevent_selected->flags;
 #else
@@ -1406,8 +1406,13 @@ lb_exit:
     }else{
         a_es->context = a_context;
         // Add in context HT
+        dap_events_socket_t * l_a_es_found = NULL;
         if (a_es->socket!=0 && a_es->socket != INVALID_SOCKET){
-            HASH_ADD(hh, a_context->esockets, uuid, sizeof(a_es->uuid), a_es );
+            HASH_FIND(hh, a_context->esockets, &a_es->uuid, sizeof(a_es->uuid), l_a_es_found);
+            if (l_a_es_found) {
+                HASH_DEL(a_context->esockets, l_a_es_found);
+            }
+            HASH_ADD(hh, a_context->esockets, uuid, sizeof(a_es->uuid), a_es ); 
             a_context->event_sockets_count++;
         }
         return 0;
@@ -1587,7 +1592,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     l_es->poll_base_flags = POLLIN | POLLERR | POLLRDHUP | POLLHUP;
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
     l_es->kqueue_event_catched_data.esocket = l_es;
-    l_es->kqueue_base_flags =  EV_ONESHOT;
+    //l_es->kqueue_base_flags =  EV_ONESHOT;
     l_es->kqueue_base_fflags = NOTE_FFNOP | NOTE_TRIGGER;
     l_es->kqueue_base_filter = EVFILT_USER;
     l_es->socket = arc4random();
