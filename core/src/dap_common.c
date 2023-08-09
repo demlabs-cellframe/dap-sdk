@@ -336,7 +336,7 @@ static void *s_log_thread_proc(void *arg) {
  * @param ll
  * @param fmt
  */
-void _log_it(const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
+void _log_it( const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
         return;
     log_str_t *l_log_string = DAP_NEW_Z(log_str_t);

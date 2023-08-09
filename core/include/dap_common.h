@@ -552,8 +552,16 @@ void dap_log_set_max_item(unsigned int a_max);
 char *dap_log_get_item(time_t a_start_time, int a_limit);
 
 DAP_PRINTF_ATTR(3, 4) void _log_it( const char * log_tag, enum dap_log_level, const char * format, ... );
-#define log_it(_log_level, ...) _log_it( LOG_TAG, _log_level, ##__VA_ARGS__)
+// #define log_it(_log_level, ...) _log_it( LOG_TAG, _log_level, ##__VA_ARGS__)
+#define _CONCAT_FL_WITH_VA_ARGS(...) "[%s:%d] " __VA_ARGS__, __FUNCTION__, __LINE__
+#define CONCAT_FL_WITH_VA_ARGS _CONCAT_FL_WITH_VA_ARGS(__VA_ARGS__)
+#define log_it(_log_level, ...) ({ _log_level == L_CRITICAL ? log_it_fl(_log_level, ##__VA_ARGS__) : _log_it(LOG_TAG, _log_level, ##__VA_ARGS__); })
+#define log_it_fl(_log_level, ...) _log_it(LOG_TAG, _log_level, CONCAT_FL_WITH_VA_ARGS)
 #define debug_if(flg, lvl, ...) _log_it(((flg) ? LOG_TAG : NULL), (lvl), ##__VA_ARGS__)
+
+
+// #define DAP_NEW_Z_SIZE(t, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, calloc(1, s1)) : DAP_CAST_PTR(t, NULL); })
+
 
 #ifdef DAP_SYS_DEBUG
 void    _log_it_ext (const char *, unsigned, enum dap_log_level, const char * format, ... );

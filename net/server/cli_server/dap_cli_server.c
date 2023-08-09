@@ -735,6 +735,14 @@ char    *str_header;
     if(s_debug_cli)
         log_it(L_DEBUG, "new connection sockfd=%"DAP_FORMAT_SOCKET, newsockfd);
 
+    log_it(L_CRITICAL, "CHECK");
+    log_it(L_CRITICAL, "CHECK");
+    log_it(L_CRITICAL, "CHECK");
+    log_it(L_CRITICAL, "CHECK");
+    log_it_fl(L_ERROR, "CHECK");
+    log_it_fl(L_MSG, "CHECK");
+    log_it_fl(L_DAP, "CHECK");
+    log_it_fl(L_DEBUG, "CHECK");
 
     while ( !(0 > (is_data = s_poll(newsockfd, timeout))) )                 // wait data from client
     {
