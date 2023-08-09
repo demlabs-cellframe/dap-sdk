@@ -64,7 +64,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_builtin(const char *a_name, const
 
     l_manifest = DAP_NEW_Z(dap_plugin_manifest_t);
     if (!l_manifest) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     strncpy(l_manifest->name,a_name, sizeof(l_manifest->name)-1);
@@ -106,7 +106,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     size_t size_file = (size_t)ftell(l_json_file);
     char *l_json_data = DAP_NEW_SIZE(char, size_file);
     if (!l_json_data) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     rewind(l_json_file);
@@ -182,7 +182,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     if(l_dependencies_count){
         l_dependencies_names = DAP_NEW_SIZE(char*, sizeof(char*)* l_dependencies_count );
         if (!l_dependencies_names) {
-            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             DAP_DELETE(l_json_data);
             DAP_FREE(l_json_obj);
             return NULL;
@@ -196,7 +196,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     if(l_params_count){
         l_params = DAP_NEW_SIZE(char*, sizeof(char*)* l_params_count );
         if (!l_params) {
-            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             DAP_DELETE(l_json_data);
             DAP_DELETE(l_dependencies_names);
             DAP_FREE(l_json_obj);
@@ -210,7 +210,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     // Create manifest itself
     l_manifest = DAP_NEW_Z(dap_plugin_manifest_t);
     if (!l_manifest) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         DAP_DELETE(l_json_data);
         DAP_DELETE(l_dependencies_names);
         DAP_DELETE(l_params);
