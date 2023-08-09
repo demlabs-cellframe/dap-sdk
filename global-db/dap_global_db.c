@@ -996,9 +996,8 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
                 goto mem_clear;
             }
             l_objs[i].value = DAP_DUP_SIZE(l_store_objs[i].value, l_store_objs[i].value_len);
-            if (!l_objs[i].value) {
+            if (!l_objs[i].value && l_store_objs[i].value)
                 goto mem_clear;
-            }
             l_objs[i].value_len = l_store_objs[i].value_len;
             l_objs[i].timestamp = l_store_objs[i].timestamp;
         }
@@ -1326,7 +1325,7 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
         return DAP_GLOBAL_DB_RC_ERROR;
     }
-    if (!a_group || !a_key || !a_value) {
+    if (!a_group || !a_key) {
         log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
         return -1;
     }
@@ -1339,7 +1338,7 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
     l_msg->value = DAP_DUP_SIZE(a_value, a_value_length);
-    if (!l_msg->value) {
+    if (!l_msg->value && a_value) {
         log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         DAP_DEL_Z(l_msg->group);
         DAP_DEL_Z(l_msg->key);
