@@ -122,12 +122,12 @@ static void s_queue_esocket_callback( dap_events_socket_t * a_es, void * a_msg)
 
     assert ( a_es );
     if ( !(l_queue = (dap_proc_queue_t*) a_es->_inheritor) ) {
-        log_it(L_CRITICAL, "%s: a_es: %p, l_queue is NULL", __PRETTY_FUNCTION__, a_es);
+        log_it(L_CRITICAL, "a_es: %p, l_queue is NULL", a_es);
         return;
     }
 
     if ( !(l_msg = (dap_proc_queue_msg_t*) a_msg) ) {
-        log_it(L_CRITICAL, "%s: a_es: %p, a_msg is NULL", __PRETTY_FUNCTION__, a_es);
+        log_it(L_CRITICAL, "a_es: %p, a_msg is NULL", a_es);
         return;
     }
 

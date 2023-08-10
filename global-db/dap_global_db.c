@@ -1338,13 +1338,8 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
     l_msg->value = DAP_DUP_SIZE(a_value, a_value_length);
-<<<<<<< global-db/dap_global_db.c
     if (!l_msg->value && a_value) {
         log_it(L_CRITICAL, "Memory allocation error");
-=======
-    if (!l_msg->value && a_value) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
->>>>>>> global-db/dap_global_db.c
         DAP_DEL_Z(l_msg->group);
         DAP_DEL_Z(l_msg->key);
         DAP_DEL_Z(l_msg);
