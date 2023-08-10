@@ -348,11 +348,9 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
     l_log_string->offset = s_ansi_seq_color_len[a_ll];
     s_update_log_time(l_log_string->str + l_log_string->offset);
     size_t offset = strlen(l_log_string->str);
-    if (strlen(func_name) > 0 && line_num > 0) {
-        offset += snprintf(l_log_string->str + offset, offset2, "%s[%s] [%s:%d] ", s_log_level_tag[a_ll], a_log_tag, func_name, line_num);
-    } else {
-        offset += snprintf(l_log_string->str + offset, offset2, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
-    }
+    offset += func_name
+            ? snprintf(l_log_string->str + offset, offset2, "%s[%s] [%s:%d] ", s_log_level_tag[a_ll], a_log_tag, func_name, line_num)
+            : snprintf(l_log_string->str + offset, offset2, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
     offset2 -= offset;
     va_list va;
     va_start( va, a_fmt );
