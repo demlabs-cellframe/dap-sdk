@@ -17,7 +17,7 @@ dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_
 {
     dap_json_rpc_request_t *l_request = DAP_NEW(dap_json_rpc_request_t);
     if (!l_request) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
     }
     l_request->method = dap_strdup(a_method);
     l_request->params = a_params;
@@ -35,7 +35,7 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
     json_object *l_jobj_params = NULL;
     dap_json_rpc_request_t *l_request = DAP_NEW_Z(dap_json_rpc_request_t);
     if (!l_request) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     l_request->params = NULL;
