@@ -179,7 +179,7 @@ dap_list_t *dap_list_prepend(dap_list_t *a_list, void *a_data)
 
     new_list = dap_list_alloc();
     if (!new_list) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return list;
     }
     new_list->data = data;
@@ -229,7 +229,7 @@ dap_list_t *dap_list_insert(dap_list_t *a_list, void* a_data, uint64_t a_positio
 
     new_list = dap_list_alloc();
     if (!new_list) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return list;
     }
     new_list->data = data;
@@ -264,7 +264,7 @@ dap_list_t *dap_list_insert(dap_list_t *a_list, void* a_data, uint64_t a_positio
     {
         list = dap_list_alloc();
         if (!list) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
             return NULL;
         }
         list->data = data;
@@ -277,7 +277,7 @@ dap_list_t *dap_list_insert(dap_list_t *a_list, void* a_data, uint64_t a_positio
 
         node = dap_list_alloc();
         if (!node) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
             return NULL;
         }
         node->data = data;
@@ -305,7 +305,7 @@ dap_list_t *dap_list_insert(dap_list_t *a_list, void* a_data, uint64_t a_positio
 
         last->next = dap_list_alloc();
         if (!last->next) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
             return NULL;
         }
         last->next->data = data;
@@ -861,7 +861,7 @@ uint64_t dap_list_length(dap_list_t *a_list)
     {
         new_list = dap_list_alloc();
         if (!new_list) {
-            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return NULL;
         }
         new_list->data = data;
@@ -879,7 +879,7 @@ uint64_t dap_list_length(dap_list_t *a_list)
 
     new_list = dap_list_alloc();
     if (!new_list) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     new_list->data = data;

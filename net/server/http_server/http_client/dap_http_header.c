@@ -205,7 +205,7 @@ inline dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const c
 {
     dap_http_header_t *l_new_header = DAP_NEW_Z(dap_http_header_t);
     if (!l_new_header) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
 
@@ -288,7 +288,7 @@ dap_http_header_t * dap_http_headers_dup(dap_http_header_t * a_top)
     DL_FOREACH(a_top,l_hdr){
         dap_http_header_t * l_hdr_copy = DAP_NEW_Z(dap_http_header_t);
         if (!l_hdr_copy) {
-            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return l_ret;
         }
 

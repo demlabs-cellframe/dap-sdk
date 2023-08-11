@@ -135,7 +135,7 @@ int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char * a_format,.
     char *l_str = DAP_NEW_SIZE(char, l_str_size);
     if (!l_str) {
         va_end(ap_copy);
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return -1;
     }
     vsprintf(l_str, a_format, ap_copy);
@@ -181,7 +181,7 @@ int dap_notify_server_send_f_mt(const char *a_format, ...)
     char *l_str = DAP_NEW_SIZE(char, l_str_size);
     if (!l_str) {
         va_end(ap_copy);
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return -1;
     }
     vsprintf(l_str, a_format, ap_copy);
@@ -236,7 +236,7 @@ static void s_notify_server_callback_new(dap_events_socket_t * a_es, void * a_ar
     }else {
         l_hh_new = DAP_NEW_Z(dap_events_socket_handler_hh_t);
         if (!l_hh_new) {
-            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             pthread_rwlock_unlock(&s_notify_server_clients_mutex);
             return;
         }

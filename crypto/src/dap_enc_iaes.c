@@ -54,7 +54,7 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
 
     uint8_t * id_concat_kex = (uint8_t *) malloc(kex_size + seed_size);
     if (!id_concat_kex) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return;
     }
 
@@ -130,7 +130,7 @@ size_t dap_enc_iaes256_cbc_decrypt_fast(struct dap_enc_key * a_key, const void *
 
     size_t l_padding_size = ((uint8_t *)data)[a_in_size - 1];
     if(l_padding_size > a_in_size){
-        log_it(L_WARNING, "%s: padding size is %zu while whole message is just %zu", __PRETTY_FUNCTION__, l_padding_size, a_in_size);
+        log_it(L_CRITICAL, "Padding size is %zu while whole message is just %zu", l_padding_size, a_in_size);
         return 0;
     }else{
         return a_in_size - l_padding_size;

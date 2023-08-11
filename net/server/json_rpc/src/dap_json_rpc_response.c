@@ -72,7 +72,7 @@ dap_json_rpc_response_t *dap_json_rpc_response_from_json(char *a_data_json)
     json_object *l_jobj_id = json_object_object_get(l_jobj, "id");
     dap_json_rpc_response_t *l_response = DAP_NEW(dap_json_rpc_response_t);
     if (!l_response) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     l_response->id = json_object_get_int64(l_jobj_id);
