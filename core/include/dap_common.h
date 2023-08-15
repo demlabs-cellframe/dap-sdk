@@ -210,6 +210,10 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #endif
 #define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
 
+#ifndef __cplusplus
+#define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))
+#endif
+
 DAP_STATIC_INLINE unsigned long dap_pagesize() {
     static int s = 0;
     if (s)
