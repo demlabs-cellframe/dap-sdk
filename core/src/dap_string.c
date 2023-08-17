@@ -155,7 +155,7 @@ char* dap_string_free(dap_string_t *a_string, bool a_free_segment)
 {
     char *l_segment;
 
-    dap_return_val_if_fail(a_string != NULL, NULL);
+    dap_return_val_if_pass(a_string == NULL, NULL);
 
     if(a_free_segment)
     {

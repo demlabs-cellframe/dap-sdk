@@ -32,6 +32,7 @@
 
 #define DAP_HASH_FAST_SIZE          32
 #define DAP_CHAIN_HASH_FAST_SIZE    DAP_HASH_FAST_SIZE
+#define DAP_CHAIN_HASH_FAST_STR_LEN (DAP_HASH_FAST_SIZE * 2 + 2 /* heading 0x */)
 #define DAP_CHAIN_HASH_FAST_STR_SIZE (DAP_HASH_FAST_SIZE * 2 + 2 /* heading 0x */ + 1 /*trailing zero*/)
 
 typedef enum dap_hash_type {
