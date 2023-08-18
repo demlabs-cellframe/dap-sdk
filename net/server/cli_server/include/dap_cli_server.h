@@ -29,6 +29,7 @@
 #include "dap_common.h"
 #include "dap_config.h"
 #include "uthash.h"
+#include "dap_json_rpc.h"
 
 typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, char **str_reply);
 typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, char **str_reply);

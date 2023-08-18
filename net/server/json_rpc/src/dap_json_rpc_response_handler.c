@@ -18,7 +18,7 @@ int dap_json_rpc_response_registration_with_id(uint64_t a_id, dap_json_rpc_respo
         l_handler->id = a_id;
         l_handler->func = func;
         HASH_ADD_INT(s_response_handlers, id, l_handler);
-        log_it(L_NOTICE, "Registrayion handler response with id: %"DAP_UINT64_FORMAT_U, a_id);
+        log_it(L_NOTICE, "Registration handler response with id: %"DAP_UINT64_FORMAT_U, a_id);
         return 0;
     }
     return 1;
@@ -36,7 +36,7 @@ void dap_json_rpc_response_unregistration(uint64_t a_id)
     if (l_handler != NULL){
         HASH_DEL(s_response_handlers, l_handler);
         DAP_FREE(l_handler);
-        log_it(L_NOTICE, "Unregistrayion handler response with id: %"DAP_UINT64_FORMAT_U, a_id);
+        log_it(L_NOTICE, "Unregistration handler response with id: %"DAP_UINT64_FORMAT_U, a_id);
     }
 }
 

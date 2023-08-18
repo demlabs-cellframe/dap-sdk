@@ -4,6 +4,18 @@
 
 static dap_json_rpc_request_handler_t *s_handler_hash_table = NULL;
 
+/**
+ * Register a JSON-RPC request handler function.
+ *
+ * This function registers a handler function to process a specific JSON-RPC request.
+ * The handler function is associated with a unique name that corresponds to the type
+ * of JSON-RPC request it can handle. The handler function is stored in a hash table
+ * for efficient lookup and retrieval.
+ *
+ * @param a_name The unique name associated with the JSON-RPC request type.
+ * @param a_func A pointer to the handler function that will process the request.
+ * @return 0 on success, -1 on memory allocation error, or 1 if a handler with the same name already exists.
+ */
 int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t *a_func)
 {
     dap_json_rpc_request_handler_t *l_handler;
@@ -22,6 +34,7 @@ int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t
     }
     return 1;
 }
+
 int dap_json_rpc_unregistration_request_handler(const char *a_name)
 {
     dap_json_rpc_request_handler_t *l_handler;
@@ -53,7 +66,7 @@ void dap_json_rpc_request_handler(dap_json_rpc_request_t *a_request,  dap_http_s
         HASH_FIND_STR(s_handler_hash_table, a_request->method, l_handler);
         if (l_handler == NULL){
             dap_json_rpc_error_t *l_err = dap_json_rpc_error_search_by_code(1);
-            l_response->type_result = TYPE_RESPONSE_NULL;
+            l_response->type = TYPE_RESPONSE_NULL;
             l_response->error = l_err;
             log_it(L_NOTICE, "Can't processing the request. Handler %s not registration. ", a_request->method);
         } else {

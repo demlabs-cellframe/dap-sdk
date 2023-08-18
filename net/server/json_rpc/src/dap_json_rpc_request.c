@@ -25,6 +25,27 @@ dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_
     return l_request;
 }
 
+void dap_json_rpc_request_free(dap_json_rpc_request_t *request) {
+    if (request) {
+        DAP_DEL_Z(request->method);
+        if (request->params) 
+            dap_json_rpc_params_remove_all(request->params);
+        DAP_FREE(request);
+    }
+}
+
+
+/**
+ * Convert a JSON-formatted string to a dap_json_rpc_request_t structure.
+ *
+ * This function parses a JSON-formatted string representing a JSON-RPC request
+ * and populates a dap_json_rpc_request_t structure with the extracted data.
+ *
+ * @param a_data The JSON-formatted string representing the JSON-RPC request.
+ * @return A pointer to a dap_json_rpc_request_t structure on success,
+ *         or NULL on failure (memory allocation or parsing error).
+ *         Memory is properly cleaned up in case of failure.
+ */
 dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
 {
     log_it(L_DEBUG, "Translation JSON string to struct dap_json_rpc_request");
@@ -71,11 +92,15 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
     return l_request;
 
 }
+
 char *dap_json_rpc_request_to_json(const dap_json_rpc_request_t *a_request)
 {
     log_it(L_DEBUG, "Translation struct dap_json_rpc_request to JSON string");
-    char *l_str = dap_strjoin(NULL, "{\"method=\":", "\"", a_request->method, "\"", "\"", "\"params\":",
-                              dap_json_rpc_params_get_string_json(a_request->params), ", \"id\": ", a_request->id, "}", NULL);
+    char *l_str = dap_strdup_printf("{\"method\":\"%s\", \"params\":%s, \"id\":\"%llu\" }",
+                                    a_request->method, dap_json_rpc_params_get_string_json(a_request->params), a_request->id);
+    // char *res_str = dap_strdup_printf("{\"size:\":%d, %s", strlen(l_str), l_str);
+    // char *l_str = dap_strjoin(NULL, "{\"method\":", "\"", a_request->method, "\"", ", \"params\":",
+    //                           dap_json_rpc_params_get_string_json(a_request->params), ", \"id\": ", a_request->id, "}", NULL);
     return l_str;
 }
 
@@ -90,3 +115,26 @@ void dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, dap_json_rpc_r
     dap_client_http_request(NULL,a_uplink_addr, a_uplink_port, "POST", "application/json", s_url_service, l_str, strlen(l_str),
                             NULL, dap_json_rpc_response_accepted, func_error, NULL, NULL);
 }
+
+// char *dap_json_rpc_request_to_send_str(const dap_json_rpc_request_t *a_request)
+// {
+//     log_it(L_DEBUG, "Translation struct dap_json_rpc_request to JSON string");
+//     char *l_str = dap_strdup_printf("\"method\":%s, \"params\":%s, \"id\":%llu }",
+//                                     a_request->method, dap_json_rpc_params_get_string_json(a_request->params), a_request->id);
+//     char *res_str = dap_strdup_printf("{\"size:\":%d, %s", strlen(l_str), l_str);
+//     return res_str;
+// }
+
+// int dap_json_rpc_request_send_to_server( char * cmd_name, char ** cmd_param, SOCKET *a_socket) {
+//     dap_json_rpc_params_t * params = dap_json_rpc_params_create();
+//     dap_json_rpc_params_add_data(params, cmd_param, TYPE_PARAM_STRING);
+//     uint64_t l_id_response = dap_json_rpc_response_registration(response_handler);
+//     dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(cmd_name, params, l_id_response);
+//     char * send_str = dap_json_rpc_request_to_send_str(a_request);
+//     ssize_t ret = send(*a_socket, send_str, strlen(send_str), 0);
+//     if (ret != (ssize_t)strlen(send_str)) {
+//         log_it(L_ERROR, "Error sending to server");
+//         return -1;
+//     }
+//     return 0;
+// }

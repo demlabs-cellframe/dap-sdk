@@ -2,6 +2,14 @@
 
 #define LOG_TAG "dap_json_rpc_params"
 
+dap_json_rpc_param_t* dap_json_rpc_create_param(void * data, dap_json_rpc_type_param_t type)
+{
+    dap_json_rpc_param_t *param = DAP_NEW(dap_json_rpc_param_t);
+    param->value_param = data;
+    param->type = type;
+    return param;
+}
+
 dap_json_rpc_params_t* dap_json_rpc_params_create(void)
 {
     dap_json_rpc_params_t *l_params = DAP_NEW(dap_json_rpc_params_t);
@@ -10,7 +18,20 @@ dap_json_rpc_params_t* dap_json_rpc_params_create(void)
     return l_params;
 }
 
-
+/**
+ * Add a parameter with data to a JSON-RPC parameters object.
+ *
+ * This function adds a new parameter to the JSON-RPC parameters object `a_params`
+ * with the provided data value `a_value` and the specified parameter type `a_type`.
+ *
+ * @param a_params Pointer to the JSON-RPC parameters object.
+ * @param a_value Pointer to the data value to be added as a parameter.
+ * @param a_type Type of the parameter to be added: TYPE_PARAM_NULL,
+                                                    TYPE_PARAM_STRING,
+                                                    TYPE_PARAM_INTEGER,
+                                                    TYPE_PARAM_DOUBLE,
+                                                    TYPE_PARAM_BOOLEAN
+ */
 void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a_value,
                                   dap_json_rpc_type_param_t a_type)
 {
@@ -63,6 +84,7 @@ void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a
     }
     dap_json_rpc_params_add_param(a_params, l_param);
 }
+
 void dap_json_rpc_params_add_param(dap_json_rpc_params_t *a_params, dap_json_rpc_param_t *a_param)
 {
     uint32_t l_len_new_params = a_params->lenght + 1;
@@ -78,7 +100,6 @@ void dap_json_rpc_params_add_param(dap_json_rpc_params_t *a_params, dap_json_rpc
 
 void dap_json_rpc_params_remove_all(dap_json_rpc_params_t *a_params)
 {
-    log_it(L_DEBUG, "Clean params");
     for (uint32_t i=0x0 ; i < dap_json_rpc_params_lenght(a_params); i++){
         dap_json_rpc_param_remove(a_params->params[i]);
     }
@@ -152,8 +173,19 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *
 char *dap_json_rpc_params_get_string_json(dap_json_rpc_params_t * a_params)
 {
     log_it(L_NOTICE, "Translation struct params to JSON string");
+
+    if (!a_params) {
+        log_it(L_CRITICAL, "Invalid input parameters");
+        return NULL;
+    }
     json_object *l_jobj_array = json_object_new_array();
-    for (uint32_t i = 0; i <= a_params->lenght; i++){
+
+    if (!l_jobj_array) {
+        log_it(L_CRITICAL, "Failed to create JSON array");
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i <= a_params->lenght - 1; i++){
         json_object *l_jobj_tmp = NULL;
         switch (a_params->params[i]->type) {
         case TYPE_PARAM_NULL:
@@ -171,10 +203,15 @@ char *dap_json_rpc_params_get_string_json(dap_json_rpc_params_t * a_params)
         case TYPE_PARAM_BOOLEAN:
             l_jobj_tmp = json_object_new_boolean(*((bool*)a_params->params[i]->value_param));
             break;
+        default:
+            log_it(L_CRITICAL, "Invalid parameter type");
+            json_object_put(l_jobj_array);
+            return NULL;
         }
         json_object_array_add(l_jobj_array, l_jobj_tmp);
-        json_object_put(l_jobj_tmp);
+        // json_object_put(l_jobj_tmp);
     };
-    char *l_str = dap_strjoin(NULL, "\"params\":", json_object_to_json_string(l_jobj_array), NULL);
+    char *l_str = dap_strjoin(NULL, json_object_to_json_string(l_jobj_array), NULL);
+    json_object_put(l_jobj_array);
     return l_str;
 }
