@@ -315,9 +315,10 @@ char* dap_strdup(const char *a_str)
             l_new_str = DAP_NEW_SIZE(char, l_length);
             if (l_new_str)
                 memcpy(l_new_str, a_str, l_length);
+            else
+                log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         }
     }
-
     return l_new_str;
 }
 
