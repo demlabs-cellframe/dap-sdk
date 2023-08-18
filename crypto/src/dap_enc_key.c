@@ -392,25 +392,29 @@ void dap_enc_key_deinit()
  */
 uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len)
 {
-    uint8_t *data = NULL;
+    uint8_t *l_data = NULL;
     switch (a_key_type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        data = dap_enc_sig_bliss_write_signature((bliss_signature_t*)a_sign, a_sign_len);
+        l_data = dap_enc_sig_bliss_write_signature((bliss_signature_t*)a_sign, a_sign_len);
         break;
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        data = dap_enc_tesla_write_signature((tesla_signature_t*)a_sign, a_sign_len);
+        l_data = dap_enc_tesla_write_signature((tesla_signature_t*)a_sign, a_sign_len);
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        data = dap_enc_dilithium_write_signature((dilithium_signature_t*)a_sign, a_sign_len);
+        l_data = dap_enc_dilithium_write_signature((dilithium_signature_t*)a_sign, a_sign_len);
         break;
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        data = dap_enc_falcon_write_signature((falcon_signature_t *) a_sign, a_sign_len);
+        l_data = dap_enc_falcon_write_signature((falcon_signature_t *) a_sign, a_sign_len);
         break;
     default:
-        data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
-        memcpy(data, a_sign, *a_sign_len);
+        l_data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
+        if(!l_data) {
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            return NULL;
+        }
+        memcpy(l_data, a_sign, *a_sign_len);
     }
-    return data;
+    return l_data;
 }
 
 /**
@@ -425,29 +429,33 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
 {
 
     //todo: why are we changing a_sign_len after we have already used it in a function call?
-    uint8_t *data = NULL;
+    uint8_t *l_data = NULL;
     switch (a_key_type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        data = (uint8_t*)dap_enc_sig_bliss_read_signature(a_sign, *a_sign_len);
+        l_data = (uint8_t*)dap_enc_sig_bliss_read_signature(a_sign, *a_sign_len);
         *a_sign_len = sizeof(bliss_signature_t);
         break;
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        data = (uint8_t*)dap_enc_tesla_read_signature(a_sign, *a_sign_len);
+        l_data = (uint8_t*)dap_enc_tesla_read_signature(a_sign, *a_sign_len);
         *a_sign_len = sizeof(tesla_signature_t);
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        data = (uint8_t*)dap_enc_dilithium_read_signature(a_sign, *a_sign_len);
+        l_data = (uint8_t*)dap_enc_dilithium_read_signature(a_sign, *a_sign_len);
         *a_sign_len = sizeof(dilithium_signature_t);
         break;
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        data = (uint8_t*)dap_enc_falcon_read_signature(a_sign, *a_sign_len);
+        l_data = (uint8_t*)dap_enc_falcon_read_signature(a_sign, *a_sign_len);
         *a_sign_len = sizeof(falcon_signature_t);
         break;
     default:
-        data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
-        memcpy(data, a_sign, *a_sign_len);
+        l_data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
+        if(!l_data) {
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            return NULL;
+        }
+        memcpy(l_data, a_sign, *a_sign_len);
     }
-    return data;
+    return l_data;
 }
 
 
@@ -460,27 +468,31 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
  */
 uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
 {
-    uint8_t *data = NULL;
+    uint8_t *l_data = NULL;
     switch (a_key->type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        data = dap_enc_sig_bliss_write_private_key(a_key->priv_key_data, a_buflen_out);
+        l_data = dap_enc_sig_bliss_write_private_key(a_key->priv_key_data, a_buflen_out);
         break;
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        data = dap_enc_tesla_write_private_key(a_key->priv_key_data, a_buflen_out);
+        l_data = dap_enc_tesla_write_private_key(a_key->priv_key_data, a_buflen_out);
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        data = dap_enc_dilithium_write_private_key(a_key->priv_key_data, a_buflen_out);
+        l_data = dap_enc_dilithium_write_private_key(a_key->priv_key_data, a_buflen_out);
         break;
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        data = dap_enc_falcon_write_private_key(a_key->priv_key_data, a_buflen_out);
+        l_data = dap_enc_falcon_write_private_key(a_key->priv_key_data, a_buflen_out);
         break;
     default:
-        data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
-        memcpy(data, a_key->priv_key_data, a_key->priv_key_data_size);
+        l_data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
+        if(!l_data) {
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            return NULL;
+        }
+        memcpy(l_data, a_key->priv_key_data, a_key->priv_key_data_size);
         if(a_buflen_out)
             *a_buflen_out = a_key->priv_key_data_size;
     }
-    return data;
+    return l_data;
 }
 
 /**
@@ -492,31 +504,35 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
  */
 uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
 {
-    uint8_t *data = NULL;
+    uint8_t *l_data = NULL;
     if ( a_key->pub_key_data == NULL ){
         log_it(L_ERROR, "Public key is NULL");
         return NULL;
     }
     switch (a_key->type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        data = dap_enc_sig_bliss_write_public_key(a_key->pub_key_data, a_buflen_out);
+        l_data = dap_enc_sig_bliss_write_public_key(a_key->pub_key_data, a_buflen_out);
         break;
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        data = dap_enc_tesla_write_public_key(a_key->pub_key_data, a_buflen_out);
+        l_data = dap_enc_tesla_write_public_key(a_key->pub_key_data, a_buflen_out);
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        data = dap_enc_dilithium_write_public_key(a_key->pub_key_data, a_buflen_out);
+        l_data = dap_enc_dilithium_write_public_key(a_key->pub_key_data, a_buflen_out);
         break;
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        data = dap_enc_falcon_write_public_key(a_key->pub_key_data, a_buflen_out);
+        l_data = dap_enc_falcon_write_public_key(a_key->pub_key_data, a_buflen_out);
         break;
     default:
-        data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
-        memcpy(data, a_key->pub_key_data, a_key->pub_key_data_size);
+        l_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
+        if(!l_data) {
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            return NULL;
+        }
+        memcpy(l_data, a_key->pub_key_data, a_key->pub_key_data_size);
         if(a_buflen_out)
             *a_buflen_out = a_key->pub_key_data_size;
     }
-    return data;
+    return l_data;
 }
 /**
  * @brief dap_enc_key_deserialize_priv_key
@@ -558,6 +574,10 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         DAP_DELETE(a_key->priv_key_data);
         a_key->priv_key_data_size = a_buflen;
         a_key->priv_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
+        if(!a_key->priv_key_data) {
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            return -1;
+        }
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
         dap_enc_sig_picnic_update(a_key);
         break;
@@ -585,6 +605,10 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         DAP_DELETE(a_key->priv_key_data);
         a_key->priv_key_data_size = a_buflen;
         a_key->priv_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
+        if(!a_key->priv_key_data) {
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            return -1;
+        }
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
     }
     return 0;
@@ -630,6 +654,10 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         DAP_DELETE(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
         a_key->pub_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
+        if(!a_key->priv_key_data) {
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            return -1;
+        }
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
         dap_enc_sig_picnic_update(a_key);
         break;
@@ -661,6 +689,10 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         DAP_DELETE(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
         a_key->pub_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
+        if(!a_key->priv_key_data) {
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            return -1;
+        }
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
     }
     return 0;
@@ -671,22 +703,22 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
  * @param key
  * @return allocates dap_enc_key_serialize_t* dont remember use free()
  */
-dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t * key)
+dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t *a_key)
 {
-    dap_enc_key_serialize_t *result = DAP_NEW_Z(dap_enc_key_serialize_t);
-    if (!result) {
-        log_it(L_CRITICAL, "Memory allocation error");
+    dap_enc_key_serialize_t *l_ret = DAP_NEW_Z(dap_enc_key_serialize_t);
+    if (!l_ret) {
+        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
-    result->priv_key_data_size = key->priv_key_data_size;
-    result->pub_key_data_size = key->pub_key_data_size;
-    result->last_used_timestamp = key->last_used_timestamp;
-    result->inheritor_size = key->_inheritor_size;
-    result->type = key->type;
-    memcpy(result->priv_key_data, key->priv_key_data, key->priv_key_data_size);
-    memcpy(result->pub_key_data, key->pub_key_data, key->pub_key_data_size);
-    memcpy(result->inheritor, key->_inheritor, key->_inheritor_size);
-    return result;
+    l_ret->priv_key_data_size = a_key->priv_key_data_size;
+    l_ret->pub_key_data_size = a_key->pub_key_data_size;
+    l_ret->last_used_timestamp = a_key->last_used_timestamp;
+    l_ret->inheritor_size = a_key->_inheritor_size;
+    l_ret->type = a_key->type;
+    memcpy(l_ret->priv_key_data, a_key->priv_key_data, a_key->priv_key_data_size);
+    memcpy(l_ret->pub_key_data, a_key->pub_key_data, a_key->pub_key_data_size);
+    memcpy(l_ret->inheritor, a_key->_inheritor, a_key->_inheritor_size);
+    return l_ret;
 }
 
 /**
@@ -701,13 +733,13 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
     }
     dap_enc_key_t *l_ret = dap_enc_key_new(a_key->type);
     if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
     if (a_key->priv_key_data_size) {
         l_ret->priv_key_data = DAP_NEW_Z_SIZE(byte_t, a_key->priv_key_data_size);
         if (!l_ret->priv_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             DAP_DEL_Z(l_ret);
             return NULL;
         }
@@ -717,7 +749,7 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
     if (a_key->pub_key_data_size) {
         l_ret->pub_key_data = DAP_NEW_Z_SIZE(byte_t, a_key->pub_key_data_size);
         if (!l_ret->pub_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             DAP_DEL_Z(l_ret->priv_key_data);
             DAP_DEL_Z(l_ret);
             return NULL;
@@ -728,7 +760,7 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
     if(a_key->_inheritor_size) {
         l_ret->_inheritor = DAP_NEW_Z_SIZE(byte_t, a_key->_inheritor_size);
         if (!l_ret->_inheritor) {
-            log_it(L_CRITICAL, "Memory allocation error");
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             DAP_DEL_Z(l_ret->priv_key_data);
             DAP_DEL_Z(l_ret->pub_key_data);
             DAP_DEL_Z(l_ret);
@@ -746,54 +778,54 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
  * @param buf_size
  * @return allocates dap_enc_key_t*. Use dap_enc_key_delete for free memory
  */
-dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t buf_size)
+dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
 {
-    if(buf_size != sizeof (dap_enc_key_serialize_t)) {
-        log_it(L_ERROR, "Key can't be deserialize. buf_size(%zu) != sizeof (dap_enc_key_serialize_t)(%zu)",buf_size,sizeof (dap_enc_key_serialize_t));
+    if(a_buf_size != sizeof (dap_enc_key_serialize_t)) {
+        log_it(L_ERROR, "Key can't be deserialize. buf_size(%zu) != sizeof (dap_enc_key_serialize_t)(%zu)", a_buf_size, sizeof(dap_enc_key_serialize_t));
         return NULL;
     }
     const dap_enc_key_serialize_t *in_key = (const dap_enc_key_serialize_t *)buf;
-    dap_enc_key_t *result = dap_enc_key_new(in_key->type);
-    if (!result) {
-        log_it(L_CRITICAL, "Memory allocation error");
+    dap_enc_key_t *l_ret = dap_enc_key_new(in_key->type);
+    if (!l_ret) {
+        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
-    result->last_used_timestamp = in_key->last_used_timestamp;
-    result->priv_key_data_size = in_key->priv_key_data_size;
-    result->pub_key_data_size = in_key->pub_key_data_size;
-    result->_inheritor_size = in_key->inheritor_size;
-    DAP_DEL_Z(result->priv_key_data);
-    DAP_DEL_Z(result->pub_key_data);
-    result->priv_key_data = DAP_NEW_Z_SIZE(byte_t, result->priv_key_data_size);
-    if (!result->priv_key_data) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_DEL_Z(result);
+    l_ret->last_used_timestamp = in_key->last_used_timestamp;
+    l_ret->priv_key_data_size = in_key->priv_key_data_size;
+    l_ret->pub_key_data_size = in_key->pub_key_data_size;
+    l_ret->_inheritor_size = in_key->inheritor_size;
+    DAP_DEL_Z(l_ret->priv_key_data);
+    DAP_DEL_Z(l_ret->pub_key_data);
+    l_ret->priv_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->priv_key_data_size);
+    if (!l_ret->priv_key_data) {
+        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        DAP_DEL_Z(l_ret);
         return NULL;
     }
-    memcpy(result->priv_key_data, in_key->priv_key_data, result->priv_key_data_size);
-    result->pub_key_data = DAP_NEW_Z_SIZE(byte_t, result->pub_key_data_size);
-    if (!result->pub_key_data) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_DEL_Z(result->priv_key_data);
-        DAP_DEL_Z(result);
+    memcpy(l_ret->priv_key_data, in_key->priv_key_data, l_ret->priv_key_data_size);
+    l_ret->pub_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->pub_key_data_size);
+    if (!l_ret->pub_key_data) {
+        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        DAP_DEL_Z(l_ret->priv_key_data);
+        DAP_DEL_Z(l_ret);
         return NULL;
     }
-    memcpy(result->pub_key_data, in_key->pub_key_data, result->pub_key_data_size);
+    memcpy(l_ret->pub_key_data, in_key->pub_key_data, l_ret->pub_key_data_size);
     if(in_key->inheritor_size) {
-        DAP_DEL_Z(result->_inheritor);
-        result->_inheritor = DAP_NEW_Z_SIZE(byte_t, in_key->inheritor_size );
-        if (!result->_inheritor) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(result->priv_key_data);
-            DAP_DEL_Z(result->pub_key_data);
-            DAP_DEL_Z(result);
+        DAP_DEL_Z(l_ret->_inheritor);
+        l_ret->_inheritor = DAP_NEW_Z_SIZE(byte_t, in_key->inheritor_size );
+        if (!l_ret->_inheritor) {
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            DAP_DEL_Z(l_ret->priv_key_data);
+            DAP_DEL_Z(l_ret->pub_key_data);
+            DAP_DEL_Z(l_ret);
             return NULL;
         }
-        memcpy(result->_inheritor, in_key->inheritor, in_key->inheritor_size);
+        memcpy(l_ret->_inheritor, in_key->inheritor, in_key->inheritor_size);
     } else {
-        result->_inheritor = NULL;
+        l_ret->_inheritor = NULL;
     }
-    return result;
+    return l_ret;
 }
 
 /**
@@ -803,16 +835,20 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t buf_size)
  */
 dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type)
 {
-    dap_enc_key_t * ret = NULL;
+    dap_enc_key_t * l_ret = NULL;
     if ((size_t)a_key_type < c_callbacks_size) {
-        ret = DAP_NEW_Z(dap_enc_key_t);
+        l_ret = DAP_NEW_Z(dap_enc_key_t);
+        if (!l_ret) {
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            return NULL;
+        }
         if(s_callbacks[a_key_type].new_callback){
-            s_callbacks[a_key_type].new_callback(ret);
+            s_callbacks[a_key_type].new_callback(l_ret);
         }
     }
-    if(ret)
-        ret->type = a_key_type;
-    return ret;
+    if(l_ret)
+        l_ret->type = a_key_type;
+    return l_ret;
 }
 
 /**
@@ -825,18 +861,18 @@ dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type)
  * @param key_size - can be NULL ( generate size by default )
  * @return
  */
-dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t a_key_type, const void *kex_buf,
-                                        size_t kex_size, const void* seed,
-                                        size_t seed_size, size_t key_size)
+dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
+                                        size_t a_kex_size, const void* a_seed,
+                                        size_t a_seed_size, size_t a_key_size)
 {
-    dap_enc_key_t * ret = NULL;
+    dap_enc_key_t * l_ret = NULL;
     if ((size_t)a_key_type < c_callbacks_size) {
-        ret = dap_enc_key_new(a_key_type);
+        l_ret = dap_enc_key_new(a_key_type);
         if(s_callbacks[a_key_type].new_generate_callback) {
-            s_callbacks[a_key_type].new_generate_callback( ret, kex_buf, kex_size, seed, seed_size, key_size);
+            s_callbacks[a_key_type].new_generate_callback( l_ret, a_kex_buf, a_kex_size, a_seed, a_seed_size, a_key_size);
         }
     }
-    return ret;
+    return l_ret;
 }
 
 /**
@@ -926,19 +962,19 @@ void dap_enc_key_delete(dap_enc_key_t * a_key)
     DAP_DELETE(a_key);
 }
 
-size_t dap_enc_key_get_enc_size(dap_enc_key_t * a_key, const size_t buf_in_size)
+size_t dap_enc_key_get_enc_size(dap_enc_key_t * a_key, const size_t a_buf_in_size)
 {
     if(s_callbacks[a_key->type].enc_out_size) {
-        return s_callbacks[a_key->type].enc_out_size(buf_in_size);
+        return s_callbacks[a_key->type].enc_out_size(a_buf_in_size);
     }
     log_it(L_ERROR, "enc_out_size not realize for current key type");
     return 0;
 }
 
-size_t dap_enc_key_get_dec_size(dap_enc_key_t * a_key, const size_t buf_in_size)
+size_t dap_enc_key_get_dec_size(dap_enc_key_t * a_key, const size_t a_buf_in_size)
 {
     if(s_callbacks[a_key->type].dec_out_size) {
-        return s_callbacks[a_key->type].dec_out_size(buf_in_size);
+        return s_callbacks[a_key->type].dec_out_size(a_buf_in_size);
     }
     log_it(L_ERROR, "dec_out_size not realize for current key type");
     return 0;
