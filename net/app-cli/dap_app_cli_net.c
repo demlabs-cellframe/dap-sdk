@@ -175,7 +175,7 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
         closesocket(l_socket);
         return NULL;
     }
-    dap_app_cli_connect_param_t *l_ret = DAP_NEW(dap_app_cli_connect_param_t);
+    dap_app_cli_connect_param_t *l_ret = DAP_NEW_Z(dap_app_cli_connect_param_t);
     if (!l_ret) {
         closesocket(l_socket);
         printf("Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
