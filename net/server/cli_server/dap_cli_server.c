@@ -754,9 +754,10 @@ char    *str_header;
             log_it(L_ERROR, "HTTP request without length");
             break;
         }
+        DAP_FREE(str_header);
 
         char * str_json_command = malloc(sizeof(char)*data_len);
-
+        // receiving request
         int recv_res = recv(newsockfd, str_json_command, data_len, 0);
         if (recv_res != data_len) {
             printf("[s_recv] recv()->%d, errno: %d\n", recv_res, errno);
@@ -809,10 +810,12 @@ char    *str_header;
                 reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");
             else
                 reply_body = dap_strdup_printf("%d\r\n%s\r\n", res, (str_reply) ? str_reply : "");
+            dap_json_rpc_response_t* response = dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id);
+            const char* response_string = dap_json_rpc_response_to_string(response);
             // return the result of the command function
             char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                                 "Content-Length: %zu\r\n\r\n"
-                                                "%s", strlen(reply_body), reply_body);
+                                                "%s", strlen(response_string), response_string);
             size_t l_reply_step = 32768;
             size_t l_reply_len = strlen(reply_str);
             size_t l_reply_rest = l_reply_len;
@@ -828,9 +831,10 @@ char    *str_header;
             DAP_DELETE(str_reply);
             DAP_DELETE(reply_str);
             DAP_DELETE(reply_body);
-
-            DAP_DELETE(str_cmd);
+            // DAP_DELETE(str_cmd);
+            dap_json_rpc_request_free(request);
         }
+        // str_cmd is freed here 
         break;
     }
     // close connection

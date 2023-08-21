@@ -256,21 +256,31 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
     s_status = 1;
     while(s_status > 0) {
         dap_app_cli_http_read(a_socket, a_cmd);
-        if (time(NULL) - l_start_time > DAP_CLI_HTTP_TIMEOUT)
+        if (time(NULL) - l_start_time > DAP_CLI_HTTP_TIMEOUT && !a_cmd->cmd_res)
             s_status = DAP_CLI_ERROR_TIMEOUT;
     }
     // process result
-    if (a_cmd->cmd_res && !s_status) {
-        char **l_str = dap_strsplit(a_cmd->cmd_res, "\r\n", 1);
-        int l_cnt = dap_str_countv(l_str);
-        char *l_str_reply = NULL;
-        if (l_cnt == 2) {
-            //long l_err_code = strtol(l_str[0], NULL, 10);
-            l_str_reply = l_str[1];
+    if (!s_status && a_cmd->cmd_res) {
+        dap_json_rpc_response_t* response = dap_json_rpc_response_from_string(a_cmd->cmd_res);
+        if (l_id_response != response->id) {
+            printf("Wrong response from server\n");
+            return -1;
         }
-        printf("%s\n", (l_str_reply) ? l_str_reply : "no response");
-        dap_strfreev(l_str);
+        if (dap_json_rpc_response_printf_result(response) != 0) {
+            printf("Something wrong with response\n");
+        }
     }
+    // if (a_cmd->cmd_res && !s_status) {
+    //     char **l_str = dap_strsplit(a_cmd->cmd_res, "\r\n", 1);
+    //     int l_cnt = dap_str_countv(l_str);
+    //     char *l_str_reply = NULL;
+    //     if (l_cnt == 2) {
+    //         //long l_err_code = strtol(l_str[0], NULL, 10);
+    //         l_str_reply = l_str[1];
+    //     }
+    //     printf("%s\n", (l_str_reply) ? l_str_reply : "no response");
+    //     dap_strfreev(l_str);
+    // }
     DAP_DELETE(a_cmd->cmd_res);
     dap_string_free(l_cmd_data, true);
     dap_string_free(l_post_data, true);

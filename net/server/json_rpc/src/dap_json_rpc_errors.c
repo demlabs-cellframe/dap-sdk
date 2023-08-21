@@ -10,6 +10,7 @@ int dap_json_rpc_error_init(void)
     s_errors = NULL;
     return  0;
 }
+
 void dap_json_rpc_error_deinit(void)
 {
     dap_json_rpc_error_t *err, *tmp;

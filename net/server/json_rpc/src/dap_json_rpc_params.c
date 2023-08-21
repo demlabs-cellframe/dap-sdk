@@ -127,8 +127,8 @@ dap_json_rpc_type_param_t dap_json_rpc_params_get_type_param(dap_json_rpc_params
 
 void dap_json_rpc_param_remove(dap_json_rpc_param_t *param)
 {
-    DAP_FREE(param->value_param);
-    DAP_FREE(param);
+    DAP_DEL_Z(param->value_param);
+    DAP_DEL_Z(param);
 }
 
 dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *a_array_list)
