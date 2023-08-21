@@ -420,7 +420,7 @@ extern "C" {
 #endif
 
 #ifndef MAX_PATH
-#define MAX_PATH 120
+#define MAX_PATH 1024
 #endif
 
 #ifndef MAX
