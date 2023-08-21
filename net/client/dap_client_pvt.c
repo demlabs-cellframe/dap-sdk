@@ -351,7 +351,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 case STAGE_ENC_INIT: {
                     log_it(L_INFO, "Go to stage ENC: prepare the request");
 
-                    if (!a_client_pvt->client->uplink_addr || !a_client_pvt->client->uplink_addr[0] || !!a_client_pvt->client->uplink_port) {
+                    if (!a_client_pvt->client->uplink_addr || !a_client_pvt->client->uplink_addr[0] || !a_client_pvt->client->uplink_port) {
                         log_it(L_ERROR, "Wrong remote address %s : %u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_WRONG_ADDRESS;
