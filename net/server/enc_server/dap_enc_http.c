@@ -201,7 +201,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
     if(l_key){
         enc_http_delegate_t * dg = DAP_NEW_Z(enc_http_delegate_t);
         if (!dg) {
-            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             DAP_DEL_Z(dg);
             return NULL;
         }
@@ -218,7 +218,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
             size_t l_dg_request_size_max = a_http_simple->request_size;
             dg->request= DAP_NEW_SIZE( void , l_dg_request_size_max+1);
             if (!dg->request) {
-                log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+                log_it(L_CRITICAL, "Memory allocation error");
                 DAP_DEL_Z(dg);
                 return NULL;
             }
@@ -240,7 +240,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         if(l_url_path_size_max){
             dg->url_path= DAP_NEW_SIZE(char,l_url_path_size_max+1);
             if (!dg->url_path) {
-                log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+                log_it(L_CRITICAL, "Memory allocation error");
                 DAP_DEL_Z(dg->request);
                 DAP_DEL_Z(dg);
                 return NULL;
@@ -256,7 +256,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         if(l_in_query_size){
             dg->in_query= DAP_NEW_SIZE(char, l_in_query_size+1);
             if (!dg->in_query) {
-                log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+                log_it(L_CRITICAL, "Memory allocation error");
                 DAP_DEL_Z(dg->request);
                 DAP_DEL_Z(dg->url_path);
                 DAP_DEL_Z(dg);
@@ -268,7 +268,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         }
         dg->response = calloc(1,a_http_simple->reply_size_max+1);
         if (!dg->response) {
-            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             DAP_DEL_Z(dg->in_query);
             DAP_DEL_Z(dg->request);
             DAP_DEL_Z(dg->url_path);
