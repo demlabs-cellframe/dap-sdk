@@ -761,7 +761,7 @@ char    *str_header;
         char * str_json_command = malloc(sizeof(char)*data_len);
         int recv_res = recv(newsockfd, str_json_command, data_len, 0);
         if (recv_res != data_len) {
-            printf("[s_recv] recv()->%d, errno: %d\n", recv_res, errno);
+            printf("The received data size: %d differs from the readed data size ->%d, errno: %d\n", data_len, recv_res, errno);
             break;
         }
         dap_json_rpc_request_t * request = dap_json_rpc_request_from_json(str_json_command);
