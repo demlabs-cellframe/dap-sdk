@@ -4,18 +4,6 @@
 
 static dap_json_rpc_request_handler_t *s_handler_hash_table = NULL;
 
-/**
- * Register a JSON-RPC request handler function.
- *
- * This function registers a handler function to process a specific JSON-RPC request.
- * The handler function is associated with a unique name that corresponds to the type
- * of JSON-RPC request it can handle. The handler function is stored in a hash table
- * for efficient lookup and retrieval.
- *
- * @param a_name The unique name associated with the JSON-RPC request type.
- * @param a_func A pointer to the handler function that will process the request.
- * @return 0 on success, -1 on memory allocation error, or 1 if a handler with the same name already exists.
- */
 int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t *a_func)
 {
     dap_json_rpc_request_handler_t *l_handler;

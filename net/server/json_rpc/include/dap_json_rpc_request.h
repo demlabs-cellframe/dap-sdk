@@ -43,11 +43,36 @@ typedef struct dap_json_rpc_request
 
 int dap_json_rpc_request_init(const char *a_url_service);
 
+/**
+ * Create a new dap_json_rpc_request_t instance.
+ *
+ * @param a_method
+ * @param a_params
+ * @param a_id The ID associated with the request.
+ * @return A pointer to the newly allocated dap_json_rpc_request_t instance,
+ *         or NULL on memory allocation error.
+ */
 dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_json_rpc_params_t *a_params, int64_t a_id);
 
-dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data);
-char *dap_json_rpc_request_to_json(const dap_json_rpc_request_t *a_request);
 void dap_json_rpc_request_free(dap_json_rpc_request_t *request);
+
+/**
+ * Convert a JSON-formatted string to a dap_json_rpc_request_t structure.
+ *
+ * @param a_data The JSON-formatted string representing the JSON-RPC request.
+ * @return A pointer to a dap_json_rpc_request_t structure,
+ *         or NULL on failure
+ */
+dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data);
+
+/**
+ * Convert dap_json_rpc_request_t to JSON string representation.
+ *
+ * @param a_request The dap_json_rpc_request_t structure to be converted.
+ * @return A JSON string representation of the request, 
+ *         or NULL on failure.
+ */
+char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_request);
 
 void dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, dap_json_rpc_response_handler_func_t *response_handler,
                                const char *a_uplink_addr, const uint16_t a_uplink_port,

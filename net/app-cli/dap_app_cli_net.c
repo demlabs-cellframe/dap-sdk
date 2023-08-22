@@ -235,7 +235,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
     dap_json_rpc_params_add_data(params, l_cmd_data->str, TYPE_PARAM_STRING);
     uint64_t l_id_response = dap_json_rpc_response_get_new_id();
     dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(a_cmd->cmd_name, params, l_id_response);
-    char * request_str = dap_json_rpc_request_to_json(a_request);
+    char * request_str = dap_json_rpc_request_to_json_string(a_request);
 
     dap_string_t *l_post_data = dap_string_new("");
     dap_string_printf(l_post_data, "POST /connect HTTP/1.1\r\n"

@@ -746,6 +746,7 @@ char    *str_header;
         if ( !(str_header = s_get_next_str(newsockfd, &str_len, "\r\n\r\n", true, timeout)) )
             break;                                                          // bad format
 
+        // Parsing content length from HTTP header
         const char *l_cont_len_str = "Content-Length: ";
         char *l_str_ptr = strstr(str_header, l_cont_len_str);
         if (l_str_ptr) {
@@ -756,8 +757,8 @@ char    *str_header;
         }
         DAP_FREE(str_header);
 
+        // Receiving request data
         char * str_json_command = malloc(sizeof(char)*data_len);
-        // receiving request
         int recv_res = recv(newsockfd, str_json_command, data_len, 0);
         if (recv_res != data_len) {
             printf("[s_recv] recv()->%d, errno: %d\n", recv_res, errno);
@@ -781,10 +782,9 @@ char    *str_header;
                     l_cmd->overrides.log_cmd_call(str_cmd);
                 else
                     log_it(L_DEBUG, "execute command=%s", str_cmd);
-                // exec command
 
                 char **l_argv = dap_strsplit(str_cmd, ";", -1);
-                //count argc
+                // Count argc
                 while (l_argv[argc] != NULL) argc++;
                 // Call the command function
                 if(l_cmd &&  l_argv && l_cmd->func) {
@@ -832,9 +832,9 @@ char    *str_header;
             DAP_DELETE(reply_str);
             DAP_DELETE(reply_body);
             // DAP_DELETE(str_cmd);
+            // str_cmd is freed here 
             dap_json_rpc_request_free(request);
         }
-        // str_cmd is freed here 
         break;
     }
     // close connection

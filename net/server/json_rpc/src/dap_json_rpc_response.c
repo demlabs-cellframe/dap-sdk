@@ -13,10 +13,14 @@ dap_json_rpc_response_t *dap_json_rpc_response_init()
 }
 
 dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rpc_response_type_result_t type, int64_t id) {
+
     dap_json_rpc_error_init();
+
     dap_json_rpc_response_t *response = DAP_NEW(dap_json_rpc_response_t);
-    if (!response)
+    if (!response) {
         log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    }
 
     response->id = id;
     response->type = type;
@@ -146,18 +150,28 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
     }
     json_object* result_id = NULL;
     json_object_object_get_ex(jobj, "id", &result_id);
-
     response->id = json_object_get_int64(result_id);
 
     json_object_put(jobj);
     return response;
 }
 
+
+/**
+ * Print the result of a JSON-RPC response to the console.
+ *
+ * @param response A pointer to the dap_json_rpc_response_t instance.
+ * @return 0 on success, 
+ *         -1 if the response is empty, 
+ *         -2 if the JSON object is NULL,
+ *         and -3 if the JSON object length is 0.
+ */
 int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response) {
     if (!response) {
         printf("Empty response");
         return -1;
     }
+
     switch (response->type) {
         case TYPE_RESPONSE_STRING:
             printf("%s\n", response->result_string);
@@ -180,13 +194,14 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response) {
                 return -2;
             }
 
-            if (json_object_object_length(response->result_json_object) < 0) {
+            if (json_object_object_length(response->result_json_object) <= 0) {
                 printf("Json Object length is 0\n");
-                return -2;
+                return -3;
             }
 
             json_object_object_foreach(response->result_json_object, key, val) {
                 printf("%s:", key);
+
                 if (json_object_is_type(val, json_type_string)) {
                     printf("%s,\n", json_object_get_string(val));
                 } else if (json_object_is_type(val, json_type_int)) {
