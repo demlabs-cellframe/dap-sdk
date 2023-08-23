@@ -111,21 +111,17 @@ MEM_ALLOC_ERR:
  * @param a_addr
  * @param a_port
  */
-void dap_client_set_uplink_unsafe(dap_client_t * a_client,const char* a_addr, uint16_t a_port)
+void dap_client_set_uplink_unsafe(dap_client_t *a_client, const char *a_addr, uint16_t a_port)
 {
-    if(a_addr == NULL){
-        log_it(L_ERROR,"Address is NULL for dap_client_set_uplink");
-        return;
-    }
-    if (!a_port) {
-        log_it(L_ERROR,"Port is zero for dap_client_set_uplink");
-        return;
-    }
-    if(a_client == NULL){
-        log_it(L_ERROR,"Client is NULL for dap_client_set_uplink");
+    if (!a_client) {
+        log_it(L_CRITICAL, "Invalid client");
         return;
     }
     DAP_DEL_Z(a_client->uplink_addr);
+    if(!a_addr || !a_addr[0] || !a_port) {
+        log_it(L_ERROR, "Can't set uplink, invalid IP and/or port");
+        return;
+    }
     a_client->uplink_addr = strdup(a_addr);
     a_client->uplink_port = a_port;
 }
