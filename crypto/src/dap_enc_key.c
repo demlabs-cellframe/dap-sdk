@@ -654,10 +654,10 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         DAP_DELETE(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
         a_key->pub_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
-        // if(!a_key->priv_key_data) {
-        //     log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        //     return -1;
-        // }
+        if(!a_key->priv_key_data) {
+            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            return -1;
+        }
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
         dap_enc_sig_picnic_update(a_key);
         break;
