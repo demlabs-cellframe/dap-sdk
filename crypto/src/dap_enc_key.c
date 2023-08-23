@@ -484,10 +484,10 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
         break;
     default:
         l_data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
-        if(!l_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-            return NULL;
-        }
+        // if(!l_data) {
+        //     log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        //     return NULL;
+        // }
         memcpy(l_data, a_key->priv_key_data, a_key->priv_key_data_size);
         if(a_buflen_out)
             *a_buflen_out = a_key->priv_key_data_size;
@@ -524,10 +524,10 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
         break;
     default:
         l_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
-        if(!l_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-            return NULL;
-        }
+        // if(!l_data) {
+        //     log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        //     return NULL;
+        // }
         memcpy(l_data, a_key->pub_key_data, a_key->pub_key_data_size);
         if(a_buflen_out)
             *a_buflen_out = a_key->pub_key_data_size;
@@ -574,10 +574,10 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         DAP_DELETE(a_key->priv_key_data);
         a_key->priv_key_data_size = a_buflen;
         a_key->priv_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
-        if(!a_key->priv_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-            return -1;
-        }
+        // if(!a_key->priv_key_data) {
+        //     log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        //     return -1;
+        // }
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
         dap_enc_sig_picnic_update(a_key);
         break;
@@ -605,10 +605,10 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         DAP_DELETE(a_key->priv_key_data);
         a_key->priv_key_data_size = a_buflen;
         a_key->priv_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
-        if(!a_key->priv_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-            return -1;
-        }
+        // if(!a_key->priv_key_data) {
+        //     log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        //     return -1;
+        // }
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
     }
     return 0;
@@ -654,10 +654,10 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         DAP_DELETE(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
         a_key->pub_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
-        if(!a_key->priv_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-            return -1;
-        }
+        // if(!a_key->priv_key_data) {
+        //     log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        //     return -1;
+        // }
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
         dap_enc_sig_picnic_update(a_key);
         break;
@@ -689,10 +689,10 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         DAP_DELETE(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
         a_key->pub_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
-        if(!a_key->priv_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-            return -1;
-        }
+        // if(!a_key->priv_key_data) {
+        //     log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        //     return -1;
+        // }
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
     }
     return 0;
