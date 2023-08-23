@@ -456,10 +456,10 @@ int dap_cert_save_to_folder(dap_cert_t *a_cert, const char *a_file_dir_path)
     const char * l_cert_name = a_cert->name;
     size_t l_cert_path_length = strlen(l_cert_name) + 8 + strlen(a_file_dir_path);
     char * l_cert_path = DAP_NEW_Z_SIZE(char, l_cert_path_length);
-    if(!l_cert_path) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        return -1;
-    }
+    // if(!l_cert_path) {
+    //     log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+    //     return -1;
+    // }
     snprintf(l_cert_path,l_cert_path_length,"%s/%s.dcert", a_file_dir_path, l_cert_name);
     l_ret = dap_cert_file_save(a_cert, l_cert_path);
     DAP_DELETE(l_cert_path);
@@ -556,10 +556,10 @@ char *dap_cert_dump(dap_cert_t *a_cert)
                 break;
             default:
                 l_str = l_meta_item->length ? DAP_NEW_Z_SIZE(char, l_meta_item->length * 2 + 1) : NULL;
-                if (l_meta_item->length && !l_str) {
-                    log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-                    break;
-                }
+                // if (l_meta_item->length && !l_str) {
+                //     log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+                //     break;
+                // }
                 dap_bin2hex(l_str, l_meta_item->value, l_meta_item->length);
                 dap_string_append_printf(l_ret, "%s\t%u\t%u\t%s\n", l_meta_item->key, l_meta_item->type, l_meta_item->length, l_str);
                 DAP_DELETE(l_str);
@@ -640,10 +640,10 @@ dap_cert_metadata_t *dap_cert_new_meta(const char *a_key, dap_cert_metadata_type
     }
     size_t l_meta_item_size = sizeof(dap_cert_metadata_t) + a_value_size + strlen(a_key) + 1;
     dap_cert_metadata_t *l_new_meta = DAP_NEW_SIZE(void, l_meta_item_size);
-    if(!l_new_meta) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        return NULL;
-    }
+    // if(!l_new_meta) {
+    //     log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+    //     return NULL;
+    // }
     l_new_meta->length = a_value_size;
     l_new_meta->type = a_type;
     memcpy((void *)l_new_meta->value, a_value, a_value_size);

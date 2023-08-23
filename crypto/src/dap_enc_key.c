@@ -408,10 +408,10 @@ uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
         break;
     default:
         l_data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
-        if(!l_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-            return NULL;
-        }
+        // if(!l_data) {
+        //     log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        //     return NULL;
+        // }
         memcpy(l_data, a_sign, *a_sign_len);
     }
     return l_data;
@@ -449,10 +449,10 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
         break;
     default:
         l_data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
-        if(!l_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-            return NULL;
-        }
+        // if(!l_data) {
+        //     log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        //     return NULL;
+        // }
         memcpy(l_data, a_sign, *a_sign_len);
     }
     return l_data;
