@@ -2112,14 +2112,9 @@ static void s_queue_io_callback( dap_events_socket_t * a_es, void * a_arg)
  */
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t * a_store_obj)
 {
-    dap_list_t *l_items_list = dap_global_db_get_notify_groups(a_context->instance);
-    for (dap_list_t *it = l_items_list; it; it = it->next) {
-        dap_global_db_notify_item_t *l_notify_item = it->data;
-        if (dap_fnmatch(l_notify_item->group_mask, a_store_obj->group, 0))
-            continue;
-        if (l_notify_item->callback_notify)
-             l_notify_item->callback_notify(a_context, a_store_obj, l_notify_item->callback_arg);
-    }
+    dap_global_db_notify_item_t *l_notify_item = dap_global_db_get_notify_group(a_context->instance, a_store_obj->group);
+    if (l_notify_item && l_notify_item->callback_notify)
+        l_notify_item->callback_notify(a_context, a_store_obj, l_notify_item->callback_arg);
 }
 
 /*

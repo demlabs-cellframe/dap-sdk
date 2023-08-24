@@ -30,6 +30,7 @@ typedef struct dap_global_db_notify_item {
     char *group_mask;
     dap_store_obj_callback_notify_t callback_notify;
     void *callback_arg;
+    uint64_t ttl;
 } dap_global_db_notify_item_t;
 
 typedef struct dap_global_db_pkt {
@@ -83,8 +84,8 @@ dap_list_t * dap_global_db_get_sync_groups_all();
 dap_list_t * dap_global_db_get_sync_groups_extra_all();
 
 // Notificated groups. Automaticaly added with add_sync_groups
-int dap_global_db_add_notify_group_mask(dap_global_db_instance_t *a_dbi, const char *a_group_mask, dap_store_obj_callback_notify_t a_callback, void *a_arg);
-dap_list_t *dap_global_db_get_notify_groups(dap_global_db_instance_t *a_dbi);
+int dap_global_db_add_notify_group_mask(dap_global_db_instance_t *a_dbi, const char *a_group_mask, dap_store_obj_callback_notify_t a_callback, void *a_arg, uint64_t a_ttl);
+dap_global_db_notify_item_t *dap_global_db_get_notify_group(dap_global_db_instance_t *a_dbi, const char *a_group_name);
 
 // Set last id for remote node
 bool dap_db_set_last_id_remote(uint64_t a_node_addr, uint64_t a_id, char *a_group);
