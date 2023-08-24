@@ -194,12 +194,11 @@ static void *s_list_thread_proc(void *arg)
     uint64_t l_limit_time = l_time_store_lim_hours ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
     for (dap_list_t *l_groups = l_dap_db_log_list->groups; l_groups; l_groups = dap_list_next(l_groups)) {
         dap_db_log_list_group_t *l_group_cur = (dap_db_log_list_group_t *)l_groups->data;
-        char *l_del_group_name_replace = NULL;
+        char l_del_group_name_replace[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
         char l_obj_type;
         if (!dap_fnmatch("*.del", l_group_cur->name, 0)) {
             l_obj_type = DAP_DB$K_OPTYPE_DEL;
             size_t l_del_name_len = strlen(l_group_cur->name) - 4; //strlen(".del");
-            l_del_group_name_replace = DAP_NEW_SIZE(char, l_del_name_len + 1);
             memcpy(l_del_group_name_replace, l_group_cur->name, l_del_name_len);
             l_del_group_name_replace[l_del_name_len] = '\0';
         } else {
@@ -207,7 +206,8 @@ static void *s_list_thread_proc(void *arg)
         }
         uint64_t l_item_start = l_group_cur->last_id_synced + 1;
         dap_nanotime_t l_time_allowed = dap_nanotime_now() + dap_nanotime_from_sec(3600 * 24); // to be sure the timestamp is invalid
-        while (l_group_cur->count && l_dap_db_log_list->is_process) { // Number of records to be synchronized
+        while (l_group_cur->count && l_dap_db_log_list->is_process) {
+            // Number of records to be synchronized
             size_t l_item_count = 0;//min(64, l_group_cur->count);
             size_t l_objs_total_size = 0;
             dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, 0, &l_item_count);
@@ -267,7 +267,6 @@ static void *s_list_thread_proc(void *arg)
                 pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
             pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
         }
-        DAP_DEL_Z(l_del_group_name_replace);
         if (!l_dap_db_log_list->is_process)
             return NULL;
     }
