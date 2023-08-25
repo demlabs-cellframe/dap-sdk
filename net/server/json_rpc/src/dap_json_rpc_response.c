@@ -39,7 +39,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
         case TYPE_RESPONSE_NULL:
             break;
         default:
-            log_it(L_ERROR, "Wrong resonse type");
+            log_it(L_ERROR, "Wrong response type");
             DAP_FREE(response);
             return NULL;
     }
@@ -156,16 +156,6 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
     return response;
 }
 
-
-/**
- * Print the result of a JSON-RPC response to the console.
- *
- * @param response A pointer to the dap_json_rpc_response_t instance.
- * @return 0 on success, 
- *         -1 if the response is empty, 
- *         -2 if the JSON object is NULL,
- *         and -3 if the JSON object length is 0.
- */
 int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response) {
     if (!response) {
         printf("Empty response");
