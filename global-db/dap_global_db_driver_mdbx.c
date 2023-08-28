@@ -827,11 +827,10 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_
     l_count_out = (a_count_out && *a_count_out) ? *a_count_out : DAP_GLOBAL_DB_MAX_OBJS;
     l_count_out = MIN(l_count_out, DAP_GLOBAL_DB_MAX_OBJS);
     /* Iterate cursor to retrieve records from DB */
-    for (int i = l_count_out; i && (MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_mdbx_iter->cursor, &l_key, &l_data, MDBX_NEXT))); i--)
-    {
+    for (int i = l_count_out; i && (MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_mdbx_iter->cursor, &l_key, &l_data, MDBX_NEXT))); i--) {
         /*
-            * Expand a memory for new <store object> structure
-            */
+        * Expand a memory for new <store object> structure
+        */
         ++l_cnt;
         if ( !(l_obj_arr = DAP_REALLOC(l_obj_arr, l_cnt * sizeof(dap_store_obj_t))) ) {
             log_it(L_ERROR, "Cannot expand area to keep %zu <store objects>", l_cnt);

@@ -46,7 +46,7 @@ enum RECORD_FLAGS {
 
 typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t*);
 typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *,const char *, size_t *);
-typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(const char *,uint64_t , size_t *);
+typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(const char *,dap_db_iter_t* , size_t *);
 typedef dap_store_obj_t* (*dap_db_driver_read_last_callback_t)(const char *);
 typedef size_t (*dap_db_driver_read_count_callback_t)(const char *,uint64_t);
 typedef dap_list_t* (*dap_db_driver_get_groups_callback_t)(const char *);
