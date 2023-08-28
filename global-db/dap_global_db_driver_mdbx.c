@@ -98,7 +98,7 @@ static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const cha
 static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, uint64_t a_id, size_t *a_count_out);
 static size_t           s_db_mdbx_read_count_store(const char *a_group, uint64_t a_id);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
-static dap_db_iter_t  *s_db_mdbx_iter_create();
+static dap_db_iter_t  *s_db_mdbx_iter_create(const char *a_group);
 
 
 static MDBX_env *s_mdbx_env;                                                /* MDBX's context area */
@@ -537,16 +537,50 @@ static  int s_db_mdbx_flush(void)
  *  RETURNS:
  *      !NULL - SUCCESS
  */
-static dap_db_iter_t *s_db_mdbx_iter_create()
+static dap_db_iter_t *s_db_mdbx_iter_create(const char *a_group)
 {
+    int l_rc = 0;
+    dap_db_ctx_t *l_db_ctx = NULL;
+    MDBX_cursor *l_cursor = NULL;
+
+    if (!a_group)                                                           /* Sanity check */
+        return NULL;
+
+    if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group)) )                    /* Get DB Context for group/table */
+        return NULL;
+
+    dap_assert ( !pthread_mutex_lock(&l_db_ctx->dbi_mutex));
+
+    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) ) {
+        dap_assert( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
+        return  log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
+    }
+
+    // create mdbx iter
     dap_db_mbdbx_iter_t *l_mdbx_iter = DAP_NEW_Z(dap_db_mbdbx_iter_t);
-    if (!l_mdbx_iter)
+    if (!l_mdbx_iter) {
         log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-    
+        return NULL;
+    }
+
+    /* Initialize MDBX cursor context area */
+    if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor)) ) {
+        log_it (L_ERROR, "mdbx_cursor_open: (%d) %s", l_rc, mdbx_strerror(l_rc));
+    }
+
+    mdbx_txn_commit(l_db_ctx->txn);
+    dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
+
+
+    // create return object
     dap_db_iter_t *l_ret = DAP_NEW_Z(dap_db_iter_t);
-    if (!l_ret)
+    if (!l_ret) {
         log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-    
+        DAP_DELETE(l_mdbx_iter);
+        return NULL;
+    }
+    // get generated value
+    l_mdbx_iter->cursor = l_cursor;
     l_ret->db_type = DAP_GLOBAL_DB_TYPE_MDBX;
     l_ret->db_iter = l_mdbx_iter;
 
