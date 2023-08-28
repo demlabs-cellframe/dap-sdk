@@ -107,7 +107,7 @@ typedef enum dap_global_db_type {
 
 // db element iterator
 typedef struct dap_db_iter {
-    dap_global_db_type_t type;
+    dap_global_db_type_t db_type;
     void *db_iter;
 } dap_db_iter_t;
 

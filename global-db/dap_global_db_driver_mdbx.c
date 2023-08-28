@@ -98,6 +98,7 @@ static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const cha
 static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, uint64_t a_id, size_t *a_count_out);
 static size_t           s_db_mdbx_read_count_store(const char *a_group, uint64_t a_id);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
+static dap_db_iter_t  *s_db_mdbx_iter_create();
 
 
 static MDBX_env *s_mdbx_env;                                                /* MDBX's context area */
@@ -464,6 +465,7 @@ size_t     l_upper_limit_of_db_size = 16;
     a_drv_dpt->is_obj              = s_db_mdbx_is_obj;
     a_drv_dpt->deinit              = s_db_mdbx_deinit;
     a_drv_dpt->flush               = s_db_mdbx_flush;
+    a_drv_dpt->iter_create         = s_db_mdbx_iter_create;
 
     /*
      * MDBX support transactions but on the current circuimstance we will not get
@@ -521,6 +523,34 @@ dap_db_ctx_t *l_db_ctx = NULL;
 static  int s_db_mdbx_flush(void)
 {
     return  log_it(L_DEBUG, "Flushing resident part of the MDBX to disk"), 0;
+}
+
+/*
+ *  DESCRIPTION: Action routine - create iterator with position on first element
+ *
+ *  INPUTS:
+ *      NONE
+ *
+ *  OUTPUTS:
+ *      NONE
+ *
+ *  RETURNS:
+ *      !NULL - SUCCESS
+ */
+static dap_db_iter_t *s_db_mdbx_iter_create()
+{
+    dap_db_mbdbx_iter_t *l_mdbx_iter = DAP_NEW_Z(dap_db_mbdbx_iter_t);
+    if (!l_mdbx_iter)
+        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+    
+    dap_db_iter_t *l_ret = DAP_NEW_Z(dap_db_iter_t);
+    if (!l_ret)
+        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+    
+    l_ret->db_type = DAP_GLOBAL_DB_TYPE_MDBX;
+    l_ret->db_iter = l_mdbx_iter;
+
+    return l_ret;
 }
 
 /*
