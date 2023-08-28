@@ -330,9 +330,14 @@ dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group)
 dap_store_obj_t* dap_global_db_driver_cond_read(const char *a_group, uint64_t id, size_t *a_count_out)
 {
     dap_store_obj_t *l_ret = NULL;
+    dap_db_iter_t *l_iter = NULL;
+    if(s_drv_callback.iter_create)
+        l_iter = s_drv_callback.iter_create(a_group);
     // read records using the selected database engine
     if(s_drv_callback.read_cond_store_obj)
-        l_ret = s_drv_callback.read_cond_store_obj(a_group, id, a_count_out);
+        l_ret = s_drv_callback.read_cond_store_obj(a_group, l_iter, a_count_out);
+    if(s_drv_callback.iter_delete)
+        s_drv_callback.iter_delete(l_iter);
     return l_ret;
 }
 

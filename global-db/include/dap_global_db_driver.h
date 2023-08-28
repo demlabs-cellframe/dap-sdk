@@ -52,7 +52,8 @@ typedef size_t (*dap_db_driver_read_count_callback_t)(const char *,uint64_t);
 typedef dap_list_t* (*dap_db_driver_get_groups_callback_t)(const char *);
 typedef bool (*dap_db_driver_is_obj_callback_t)(const char *, const char *);
 typedef int (*dap_db_driver_callback_t)(void);
-typedef dap_db_iter_t* (*dap_db_driver_create_iter_callback_t)(const char *);
+typedef dap_db_iter_t* (*dap_db_driver_iter_create_callback_t)(const char *);
+typedef void (*dap_db_driver_iter_delete_callback_t)(dap_db_iter_t*);
 
 typedef struct dap_db_driver_callbacks {
     dap_db_driver_write_callback_t      apply_store_obj;                    /* Performs an DB's action like: INSERT/DELETE/UPDATE for the given
@@ -73,7 +74,8 @@ typedef struct dap_db_driver_callbacks {
     dap_db_driver_callback_t            deinit;
     dap_db_driver_callback_t            flush;
 
-    dap_db_driver_create_iter_callback_t    iter_create;
+    dap_db_driver_iter_create_callback_t    iter_create;
+    dap_db_driver_iter_delete_callback_t    iter_delete;
 } dap_db_driver_callbacks_t;
 
 
