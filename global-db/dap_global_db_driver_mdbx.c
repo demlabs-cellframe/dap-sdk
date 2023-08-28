@@ -74,6 +74,11 @@ typedef struct __db_ctx__ {
         UT_hash_handle hh;
 } dap_db_ctx_t;
 
+// mdbx element iterator
+typedef struct dap_db_mbdbx_iter {
+    MDBX_cursor *cursor;
+} dap_db_mbdbx_iter_t;
+
 static pthread_mutex_t s_db_ctx_mutex = PTHREAD_MUTEX_INITIALIZER;          /* A mutex  for working with a DB context */
 
 

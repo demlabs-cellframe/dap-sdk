@@ -98,6 +98,19 @@ typedef struct dap_global_db_obj {
     bool is_pinned;
 } dap_global_db_obj_t;
 
+// db type for iterator
+typedef enum dap_global_db_type {
+    DAP_GLOBAL_DB_TYPE_UNDEFINED = 0,
+    DAP_GLOBAL_DB_TYPE_MDBX = 1,
+    DAP_GLOBAL_DB_TYPE_SQLITE,
+} dap_global_db_type_t;
+
+// db element iterator
+typedef struct dap_db_iter {
+    dap_global_db_type_t type;
+    void *db_iter;
+} dap_db_iter_t;
+
 typedef void (*dap_global_db_callback_t) (dap_global_db_context_t * a_global_db_context, void * a_arg);
 
 /**
