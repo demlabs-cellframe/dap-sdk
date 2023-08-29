@@ -52,8 +52,13 @@ dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_add_data(int code, const cha
     return l_json_err;
 }
 
-int dap_json_rpc_error_add(int a_code_error, const char *a_msg)
+int dap_json_rpc_error_add(int a_code_error, const char *msg, ...)
 {
+    va_list args;
+    va_start(args, msg);
+    const char *a_msg = dap_strdup_vprintf(msg, args); //*str_reply = dap_strdup(str);
+    va_end(args);
+
     dap_json_rpc_error_t *l_el_search =dap_json_rpc_error_search_by_code(a_code_error);
     if (l_el_search != NULL)
         return 1;

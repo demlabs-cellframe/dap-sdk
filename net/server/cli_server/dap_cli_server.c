@@ -722,6 +722,17 @@ char* s_get_next_str( SOCKET nSocket, int *dwLen, const char *stop_str, bool del
     return NULL;
 }
 
+int json_commands(const char * a_name) {
+    const char* long_cmd[] = {"tx_history"};
+    for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
+        if (!strcmp(a_name, long_cmd[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+
 /**
  * threading function for processing a request from a client
  */
@@ -777,6 +788,7 @@ char    *str_header;
             char *str_cmd = dap_json_rpc_params_get(params, 0);
             int res = -1;
             char *str_reply = NULL;
+            json_object* json_res = NULL;
             if(l_cmd){
                 if(l_cmd->overrides.log_cmd_call)
                     l_cmd->overrides.log_cmd_call(str_cmd);
@@ -790,6 +802,8 @@ char    *str_header;
                 if(l_cmd &&  l_argv && l_cmd->func) {
                     if (l_cmd->arg_func) {
                         res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
+                    } else if (json_commands(cmd_name)) {
+                        res = l_cmd->func(argc, l_argv, json_res);
                     } else {
                         res = l_cmd->func(argc, l_argv, &str_reply);
                     }
@@ -806,11 +820,21 @@ char    *str_header;
                 log_it(L_ERROR,"Reply string: \"%s\"", str_reply);
             }
             char *reply_body;
-            if(l_verbose)
-                reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");
+            if(l_verbose) {
+                if (str_reply) {
+                    reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");
+                } else {
+                    json_object_object_add_ex(json_res, "ret_code", res, 0);
+                }
+            }
             else
                 reply_body = dap_strdup_printf("%d\r\n%s\r\n", res, (str_reply) ? str_reply : "");
-            dap_json_rpc_response_t* response = dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id);
+            dap_json_rpc_response_t* response;
+            if (str_reply) {
+                response = dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id);
+            } else {
+                response = dap_json_rpc_response_create(json_res, TYPE_RESPONSE_JSON, request->id);
+            }
             const char* response_string = dap_json_rpc_response_to_string(response);
             // return the result of the command function
             char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
