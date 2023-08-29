@@ -91,8 +91,12 @@ int dap_global_db_driver_apply(dap_store_obj_t *a_store_obj, size_t a_store_coun
 int dap_global_db_driver_add(pdap_store_obj_t a_store_obj, size_t a_store_count);
 int dap_global_db_driver_delete(pdap_store_obj_t a_store_obj, size_t a_store_count);
 dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group);
-dap_store_obj_t* dap_global_db_driver_cond_read(const char *a_group, uint64_t id, size_t *a_count_out);
+// dap_store_obj_t* dap_global_db_driver_cond_read(const char *a_group, uint64_t id, size_t *a_count_out);
+dap_store_obj_t* dap_global_db_driver_cond_read(const char *a_group, dap_db_iter_t* a_iter, size_t *a_count_out);
 dap_store_obj_t* dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out);
 bool dap_global_db_driver_is(const char *a_group, const char *a_key);
 size_t dap_global_db_driver_count(const char *a_group, uint64_t id);
 dap_list_t* dap_global_db_driver_get_groups_by_mask(const char *a_group_mask);
+
+dap_db_iter_t *dap_global_db_driver_iter_create(const char *a_group);
+void dap_global_db_driver_iter_delete(dap_db_iter_t* a_iter);

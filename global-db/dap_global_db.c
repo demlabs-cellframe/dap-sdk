@@ -1134,7 +1134,13 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
                                                   const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
 {
-    return dap_global_db_driver_cond_read(a_group, a_first_id, a_objs_count);
+    if (!a_global_db_context || !a_group || !a_objs_count)
+        return NULL;
+    dap_store_obj_t *l_ret = NULL;
+    dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_group);
+    l_ret = dap_global_db_driver_cond_read(a_group, l_iter, a_objs_count);
+    dap_global_db_driver_iter_delete(l_iter);
+    return l_ret;
 }
 
 /**

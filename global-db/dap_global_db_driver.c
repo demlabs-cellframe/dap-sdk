@@ -319,27 +319,43 @@ dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group)
     return l_ret;
 }
 
-/**
- * @brief Reads several objects from a database by a_group and id.
- * @param a_group the group name string
- * @param a_id id
- * @param a_count_out[in] a number of objects to be read, if 0 - no limits
- * @param a_count_out[out] a count of objects that were read
- * @return If successful, a pointer to an objects, otherwise NULL.
- */
-dap_store_obj_t* dap_global_db_driver_cond_read(const char *a_group, uint64_t id, size_t *a_count_out)
+dap_store_obj_t* dap_global_db_driver_cond_read(const char *a_group, dap_db_iter_t* a_iter, size_t *a_count_out)
 {
+    if (!a_group || !a_iter || !a_count_out)
+        return NULL;
+
     dap_store_obj_t *l_ret = NULL;
-    dap_db_iter_t *l_iter = NULL;
-    if(s_drv_callback.iter_create)
-        l_iter = s_drv_callback.iter_create(a_group);
+
     // read records using the selected database engine
     if(s_drv_callback.read_cond_store_obj)
-        l_ret = s_drv_callback.read_cond_store_obj(a_group, l_iter, a_count_out);
-    if(s_drv_callback.iter_delete)
-        s_drv_callback.iter_delete(l_iter);
+        l_ret = s_drv_callback.read_cond_store_obj(a_group, a_iter, a_count_out);
     return l_ret;
 }
+
+/**
+ * @brief Create iterator to the first element in the a_group database.
+ * @param a_group the group name string
+ * @return If successful, a pointer to an iterator, otherwise NULL.
+ */
+dap_db_iter_t *dap_global_db_driver_iter_create(const char *a_group)
+{
+    if (!a_group || !s_drv_callback.iter_create)
+        return NULL;
+    return s_drv_callback.iter_create(a_group);
+}
+
+/**
+ * @brief Delete iterator and free memory
+ * @param a_iter deleting itaretor
+ * @return -.
+ */
+void dap_global_db_driver_iter_delete(dap_db_iter_t* a_iter)
+{
+    if (!a_iter || !s_drv_callback.iter_delete)
+        return;
+    s_drv_callback.iter_delete(a_iter);
+}
+
 
 /**
  * @brief Reads several objects from a database by a_group and a_key.
