@@ -1132,15 +1132,11 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 /* *** Get_all_raw functions group *** */
 
 dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
-                                                  const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
+                                                  const char *a_group, dap_db_iter_t* a_iter, size_t *a_objs_count)
 {
     if (!a_global_db_context || !a_group || !a_objs_count)
         return NULL;
-    dap_store_obj_t *l_ret = NULL;
-    dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_group);
-    l_ret = dap_global_db_driver_cond_read(a_group, l_iter, a_objs_count);
-    dap_global_db_driver_iter_delete(l_iter);
-    return l_ret;
+    return dap_global_db_driver_cond_read(a_group, a_iter, a_objs_count);
 }
 
 /**
@@ -1187,11 +1183,16 @@ int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t 
  * @param a_msg
  * @return
  */
-static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg)
+static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
 {
+    if (!a_msg)
+        return false;
     size_t l_values_count = a_msg->values_page_size;
     size_t l_values_remains = dap_global_db_driver_count(a_msg->group, a_msg->values_raw_last_id);
-    dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_msg->group, a_msg->values_last_id, &l_values_count);
+
+    dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_msg->group);
+    dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_msg->group, l_iter, &l_values_count);
+    dap_global_db_driver_iter_delete(l_iter);
     if (l_store_objs && l_values_count)
         a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id + 1;
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all raw request from group %s recieved %zu values from total %zu",
@@ -1248,8 +1249,12 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
 
 dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
 {
-    if (dap_global_db_context_current() == s_context_global_db)
-        return dap_global_db_get_all_raw_unsafe(s_context_global_db, a_group, a_first_id, a_objs_count);
+    if (dap_global_db_context_current() == s_context_global_db) {
+        dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_group);
+        dap_store_obj_t *l_ret = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_group, l_iter, a_objs_count);
+        dap_global_db_driver_iter_delete(l_iter);
+        return l_ret;
+    }
 
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all_raw sync call executes for group %s", a_group);

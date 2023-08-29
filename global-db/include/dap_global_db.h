@@ -228,7 +228,7 @@ byte_t *dap_global_db_get_last_unsafe(dap_global_db_context_t *a_global_db_conte
 dap_store_obj_t *dap_global_db_get_last_raw_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group);
 dap_global_db_obj_t *dap_global_db_get_all_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group, size_t *a_objs_count);
 dap_store_obj_t* dap_global_db_get_all_raw_unsafe(dap_global_db_context_t *a_global_db_context,
-                                                  const char *a_group, uint64_t a_first_id, size_t *a_objs_count);
+                                                  const char *a_group, dap_db_iter_t* a_iter, size_t *a_objs_count);
 
 int dap_global_db_set_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group, const char *a_key,
                              const void *a_value, const size_t a_value_length, bool a_pin_value);
