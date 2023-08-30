@@ -1193,6 +1193,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
     dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_msg->group);
     dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_msg->group, l_iter, &l_values_count);
     dap_global_db_driver_iter_delete(l_iter);
+
     if (l_store_objs && l_values_count)
         a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id + 1;
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all raw request from group %s recieved %zu values from total %zu",
@@ -1247,19 +1248,19 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
     pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }
 
-dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
+dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, dap_db_iter_t *a_iter, size_t *a_objs_count)
 {
+    dap_return_val_if_pass(!a_group || !a_iter || !a_objs_count, NULL);
+
     if (dap_global_db_context_current() == s_context_global_db) {
-        dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_group);
-        dap_store_obj_t *l_ret = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_group, l_iter, a_objs_count);
-        dap_global_db_driver_iter_delete(l_iter);
+        dap_store_obj_t *l_ret = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_group, a_iter, a_objs_count);
         return l_ret;
     }
 
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all_raw sync call executes for group %s", a_group);
 
-    if (!dap_global_db_get_all_raw(a_group, a_first_id, a_objs_count ? *a_objs_count : 0,
+    if (!dap_global_db_get_all_raw(a_group, 0, a_objs_count ? *a_objs_count : 0,
                                    s_get_all_raw_sync_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "get_all_raw");
     if (a_objs_count)
@@ -1972,8 +1973,7 @@ int dap_global_db_flush_sync()
  */
 dap_global_db_obj_t *dap_global_db_objs_copy(dap_global_db_obj_t *a_objs, size_t a_count)
 {   /* Sanity checks */
-    if (!a_objs || !a_count)
-        return NULL;
+    dap_return_val_if_pass(!a_objs || !a_count, NULL);
 
     dap_global_db_obj_t *l_ret = DAP_NEW_Z_SIZE(dap_global_db_obj_t, a_count * sizeof(dap_global_db_obj_t));
     /* Run over array's elements */
