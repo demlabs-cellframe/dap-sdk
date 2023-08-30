@@ -1918,12 +1918,14 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void * a_
         while (a_es->buf_out_size_max < a_es->buf_out_size)
             a_es->buf_out_size_max += l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
+        l_cur_buf_ptr = a_es->buf_out + a_es->buf_out_size - a_data_size;
         log_it(L_DEBUG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu",
                a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if (a_es->buf_out_size_max > l_basic_buf_size &&
                     a_es->buf_out_size <= a_es->buf_out_size_max >> 1) {
         a_es->buf_out_size_max >>= 1;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
+        l_cur_buf_ptr = a_es->buf_out + a_es->buf_out_size - a_data_size;
         log_it(L_DEBUG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
                a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
