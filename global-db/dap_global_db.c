@@ -77,6 +77,7 @@ struct queue_io_msg{
         struct{ // Raw get request
             uint64_t values_raw_last_id;
             uint64_t values_page_size;
+            dap_db_iter_t* data_base_iter;
         };
         struct{ //Raw set request
             dap_store_obj_t * values_raw;
@@ -1148,7 +1149,7 @@ dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_conte
  * @param a_arg
  * @return
  */
-int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t a_results_page_size,
+int dap_global_db_get_all_raw(const char * a_group, dap_db_iter_t* a_iter, size_t a_results_page_size,
                               dap_global_db_callback_results_raw_t a_callback, void * a_arg)
 {
     // TODO make usable a_results_page_size
@@ -1164,7 +1165,8 @@ int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t 
     }
     l_msg->opcode = MSG_OPCODE_GET_ALL_RAW ;
     l_msg->group = dap_strdup(a_group);
-    l_msg->values_raw_last_id = a_first_id;
+    l_msg->values_raw_last_id = 0;
+    l_msg->data_base_iter = a_iter;
     l_msg->values_page_size = a_results_page_size;
     l_msg->callback_arg = a_arg;
     l_msg->callback_results_raw = a_callback;
@@ -1188,11 +1190,9 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
     if (!a_msg)
         return false;
     size_t l_values_count = a_msg->values_page_size;
-    size_t l_values_remains = dap_global_db_driver_count(a_msg->group, a_msg->values_raw_last_id);
+    size_t l_values_remains = dap_global_db_driver_count(a_msg->group, a_msg->data_base_iter);
 
-    dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_msg->group);
-    dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_msg->group, l_iter, &l_values_count);
-    dap_global_db_driver_iter_delete(l_iter);
+    dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_msg->group, a_msg->data_base_iter, &l_values_count);
 
     if (l_store_objs && l_values_count)
         a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id + 1;
@@ -1260,7 +1260,7 @@ dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, dap_db_iter
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all_raw sync call executes for group %s", a_group);
 
-    if (!dap_global_db_get_all_raw(a_group, 0, a_objs_count ? *a_objs_count : 0,
+    if (!dap_global_db_get_all_raw(a_group, a_iter, a_objs_count ? *a_objs_count : 0,
                                    s_get_all_raw_sync_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "get_all_raw");
     if (a_objs_count)

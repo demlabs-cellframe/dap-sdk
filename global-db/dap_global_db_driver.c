@@ -277,15 +277,15 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
 /**
  * @brief Gets a number of stored objects in a database by a_group and id.
  * @param a_group the group name string
- * @param a_id id
+ * @param a_iter data base iterator
  * @return Returns a number of objects.
  */
-size_t dap_global_db_driver_count(const char *a_group, uint64_t id)
+size_t dap_global_db_driver_count(const char *a_group, dap_db_iter_t* a_iter)
 {
     size_t l_count_out = 0;
     // read the number of items
     if(s_drv_callback.read_count_store)
-        l_count_out = s_drv_callback.read_count_store(a_group, id);
+        l_count_out = s_drv_callback.read_count_store(a_group, a_iter);
     return l_count_out;
 }
 
@@ -319,6 +319,13 @@ dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group)
     return l_ret;
 }
 
+/**
+ * @brief Read elements starting grom iterator
+ * @param a_group the group name
+ * @param a_iter data base iterator
+ * @param a_count_out elements count
+ * @return If successful, a pointer to the object, otherwise NULL.
+ */
 dap_store_obj_t* dap_global_db_driver_cond_read(const char *a_group, dap_db_iter_t* a_iter, size_t *a_count_out)
 {
     if (!a_group || !a_iter || !a_count_out)
