@@ -1075,7 +1075,7 @@ static int s_thread_loop(dap_context_t * a_context)
 
             if (l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)
             {
-                if (l_cur->buf_out_size == 0) {
+                if (l_cur->buf_out_size == 0 || !l_flag_write) {
                     if(g_debug_reactor)
                         log_it(L_INFO, "Process signal to close %s sock %"DAP_FORMAT_SOCKET" (ptr %p uuid 0x%016"DAP_UINT64_FORMAT_x") type %d [context #%u]",
                            l_cur->remote_addr_str, l_cur->socket, l_cur, l_cur->uuid,
