@@ -1799,7 +1799,7 @@ int dap_global_db_del_unsafe(dap_global_db_context_t *a_global_db_context, const
     if (a_key) {
         if (l_res >= 0)
             l_res = s_record_del_history_add(l_store_obj.group, (char *)l_store_obj.key, l_store_obj.timestamp);
-        // do not add to history if l_res=1 (already deleted)
+        // do not notify group deletion or deletion error
         if (!l_res)
             s_change_notify(a_global_db_context, &l_store_obj);
     }
@@ -2148,6 +2148,8 @@ static int s_record_del_history_del(const char *a_group, const char *a_key)
  */
 static int s_record_del_history_add(char *a_group, char *a_key, uint64_t a_timestamp)
 {
+    if (!a_group || !a_key)
+        return -1;
     char l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
     dap_snprintf(l_group, sizeof(l_group) - 1, "%s.del", a_group);
     dap_store_obj_t store_data = {
