@@ -60,6 +60,7 @@
 
 #include "mdbx.h"                                                           /* LibMDBX API */
 #define LOG_TAG "dap_global_db_mdbx"
+#define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_MDBX
 
 
 /** Struct for a MDBX DB context */
@@ -96,7 +97,7 @@ static int              s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj)
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group);
 static bool s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out);
-static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_db_iter_t *, size_t *a_count_out);
+static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_db_iter_t *a_iter, size_t *a_count_out);
 static size_t           s_db_mdbx_read_count_store(const char *a_group, uint64_t a_id);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
 static dap_db_iter_t    *s_db_mdbx_iter_create(const char *a_group);
@@ -528,17 +529,11 @@ static  int s_db_mdbx_flush(void)
     return  log_it(L_DEBUG, "Flushing resident part of the MDBX to disk"), 0;
 }
 
-/*
- *  DESCRIPTION: Action routine - create iterator with position on first element
+/**
+ * @brief Create iterator with position on first element
  *
- *  INPUTS:
- *      NONE
- *
- *  OUTPUTS:
- *      NONE
- *
- *  RETURNS:
- *      !NULL - SUCCESS
+ * @param a_group a group name string
+ * @return If successful, a pointer to an objects, otherwise NULL.
  */
 static dap_db_iter_t *s_db_mdbx_iter_create(const char *a_group)
 {
@@ -599,16 +594,25 @@ static dap_db_iter_t *s_db_mdbx_iter_create(const char *a_group)
     l_mdbx_iter->key = l_key;
     l_mdbx_iter->ctx = l_db_ctx;
 
-    l_ret->db_type = DAP_GLOBAL_DB_TYPE_MDBX;
+    l_ret->db_type = DAP_GLOBAL_DB_TYPE_CURRENT;
     l_ret->db_iter = l_mdbx_iter;
 
     return l_ret;
 }
 
+/**
+ * @brief Delete iterator and memory free
+ * @param a_iter deleting iterator
+ * @return -
+ */
 static void s_db_mdbx_iter_delete(dap_db_iter_t *a_iter)
 {   
     if (!a_iter)
         return;
+    if (a_iter->db_type != DAP_GLOBAL_DB_TYPE_CURRENT) {
+        log_it(L_ERROR, "Trying delete iterator from another data base");
+        return;
+    }
     DAP_DEL_Z(a_iter->db_iter);
     DAP_DEL_Z(a_iter);
 }
@@ -779,10 +783,8 @@ dap_store_obj_t *l_obj;
  *  INPUTS:
  *      a_group:    A group/table to looking in
  *      a_key:      A key of record to looked for
- *
  *  OUTPUTS:
  *      NONE
- *
  *  RETURNS
  *      1   -   SUCCESS, record is exist
  *      0   - Record-No-Found
@@ -820,16 +822,25 @@ MDBX_val    l_key, l_data;
     return ( l_rc == MDBX_SUCCESS );    /*0 - RNF, 1 - SUCCESS */
 }
 
+/**
+ * @brief Reads some objects from a database by conditions
+ *
+ * @param a_group a group name string
+ * @param a_iter iterator to looked for item
+ * @param a_count_out[in] a number of objects to be read, if equals 0 reads with no limits
+ * @param a_count_out[out] a number of objects that were read
+ * @return If successful, a pointer to an objects, otherwise NULL.
+ */
 static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_db_iter_t *a_iter, size_t *a_count_out)
 {
     dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_group || !a_count_out, NULL);                                       /* Sanity check */
 
     int l_rc = 0;
-    MDBX_val    l_key = {0}, l_data = {0};
+    dap_db_mdbx_iter_t* l_mdbx_iter = (dap_db_mdbx_iter_t*)a_iter->db_iter;
+    MDBX_val    l_data = {0};
     MDBX_cursor* l_cursor = NULL;
     dap_store_obj_t *l_obj = NULL, *l_obj_arr = NULL;
     size_t  l_cnt = 0, l_count_out = 0;
-    dap_db_mdbx_iter_t* l_mdbx_iter = (dap_db_mdbx_iter_t*)a_iter->db_iter;
 
     /* Limit a number of objects to be returned */
     l_count_out = (a_count_out && *a_count_out) ? *a_count_out : DAP_GLOBAL_DB_MAX_OBJS;
@@ -850,7 +861,7 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_
         return NULL;
     }
 
-    for (int i = l_count_out; i && (MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))); i--) {
+    for (int i = l_count_out; i && (MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_cursor, &l_mdbx_iter->key, &l_data, MDBX_NEXT))); i--) {
         /*
         * Expand a memory for new <store object> structure
         */
@@ -864,7 +875,7 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_
         l_obj = l_obj_arr + (l_cnt - 1);                                /* Point <l_obj> to last array's element */
         memset(l_obj, 0, sizeof(dap_store_obj_t));
 
-        if (s_fill_store_obj(a_group, &l_key, &l_data, l_obj)) {
+        if (s_fill_store_obj(a_group, &l_mdbx_iter->key, &l_data, l_obj)) {
             l_rc = MDBX_PROBLEM;
             break;
         }
