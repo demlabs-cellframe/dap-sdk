@@ -51,7 +51,7 @@ void dap_global_db_add_sync_group(const char *a_net_name, const char *a_group_ma
     }
     l_item->net_name = dap_strdup(a_net_name);
     l_item->group_mask = dap_strdup_printf("%s.*", a_group_mask);
-    dap_global_db_add_notify_group_mask(dap_global_db_context_get_default()->instance, l_item->group_mask, a_callback, a_arg);
+    dap_global_db_add_notify_group_mask(dap_global_db_context_get_default()->instance, l_item->group_mask, a_callback, a_arg, 0);
     s_db_add_sync_group(&s_sync_group_items, l_item);
 }
 
@@ -73,7 +73,7 @@ void dap_global_db_add_sync_extra_group(const char *a_net_name, const char *a_gr
     l_item->net_name = dap_strdup(a_net_name);
     l_item->group_mask = dap_strdup(a_group_mask);
     s_db_add_sync_group(&s_sync_group_extra_items, l_item);
-    dap_global_db_add_notify_group_mask(dap_global_db_context_get_default()->instance, a_group_mask, a_callback, a_arg);
+    dap_global_db_add_notify_group_mask(dap_global_db_context_get_default()->instance, a_group_mask, a_callback, a_arg, 0);
 }
 
 /**
@@ -120,7 +120,7 @@ dap_list_t* dap_chain_db_get_sync_extra_groups(const char *a_net_name)
 
 // New notificators & sync mechanics (cluster architecture)
 
-int dap_global_db_add_notify_group_mask(dap_global_db_instance_t *a_dbi, const char *a_group_mask, dap_store_obj_callback_notify_t a_callback, void *a_arg)
+int dap_global_db_add_notify_group_mask(dap_global_db_instance_t *a_dbi, const char *a_group_mask, dap_store_obj_callback_notify_t a_callback, void *a_arg, uint64_t a_ttl)
 {
     if (!a_callback) {
         log_it(L_ERROR, "Trying to set NULL callback for mask %s", a_group_mask);
@@ -141,13 +141,19 @@ int dap_global_db_add_notify_group_mask(dap_global_db_instance_t *a_dbi, const c
     l_item_new->group_mask = dap_strdup(a_group_mask);
     l_item_new->callback_notify = a_callback;
     l_item_new->callback_arg = a_arg;
+    l_item_new->ttl = a_ttl;
     a_dbi->notify_groups = dap_list_append(a_dbi->notify_groups, l_item_new);
     return 0;
 }
 
-dap_list_t *dap_global_db_get_notify_groups(dap_global_db_instance_t *a_dbi)
+dap_global_db_notify_item_t *dap_global_db_get_notify_group(dap_global_db_instance_t *a_dbi, const char *a_group_name)
 {
-    return a_dbi->notify_groups;
+    for (dap_list_t *it = a_dbi->notify_groups; it; it = it->next) {
+        dap_global_db_notify_item_t *l_notify_item = it->data;
+        if (!dap_fnmatch(l_notify_item->group_mask, a_group_name, 0))
+            return l_notify_item;
+    }
+    return NULL;
 }
 
 /**
@@ -194,12 +200,11 @@ static void *s_list_thread_proc(void *arg)
     uint64_t l_limit_time = l_time_store_lim_hours ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
     for (dap_list_t *l_groups = l_dap_db_log_list->groups; l_groups; l_groups = dap_list_next(l_groups)) {
         dap_db_log_list_group_t *l_group_cur = (dap_db_log_list_group_t *)l_groups->data;
-        char *l_del_group_name_replace = NULL;
+        char l_del_group_name_replace[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
         char l_obj_type;
         if (!dap_fnmatch("*.del", l_group_cur->name, 0)) {
             l_obj_type = DAP_DB$K_OPTYPE_DEL;
             size_t l_del_name_len = strlen(l_group_cur->name) - 4; //strlen(".del");
-            l_del_group_name_replace = DAP_NEW_SIZE(char, l_del_name_len + 1);
             memcpy(l_del_group_name_replace, l_group_cur->name, l_del_name_len);
             l_del_group_name_replace[l_del_name_len] = '\0';
         } else {
@@ -207,7 +212,8 @@ static void *s_list_thread_proc(void *arg)
         }
         uint64_t l_item_start = l_group_cur->last_id_synced + 1;
         dap_nanotime_t l_time_allowed = dap_nanotime_now() + dap_nanotime_from_sec(3600 * 24); // to be sure the timestamp is invalid
-        while (l_group_cur->count && l_dap_db_log_list->is_process) { // Number of records to be synchronized
+        while (l_group_cur->count && l_dap_db_log_list->is_process) {
+            // Number of records to be synchronized
             size_t l_item_count = 0;//min(64, l_group_cur->count);
             size_t l_objs_total_size = 0;
             dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, 0, &l_item_count);
@@ -267,7 +273,6 @@ static void *s_list_thread_proc(void *arg)
                 pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
             pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
         }
-        DAP_DEL_Z(l_del_group_name_replace);
         if (!l_dap_db_log_list->is_process)
             return NULL;
     }
@@ -733,11 +738,13 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     // Record is pinned or not
     bool l_is_pinned_cur = false;
     bool l_match_mask = false;
+    uint64_t l_ttl = 0;
     for (dap_list_t *it = a_global_db_context->instance->notify_groups; it; it = it->next) {
         dap_global_db_notify_item_t *l_item = it->data;
         if (!dap_fnmatch(l_item->group_mask, a_obj->group, 0)) {
             debug_if(g_dap_global_db_debug_more, L_DEBUG, "Group %s match mask %s.", a_obj->group, l_item->group_mask);
             l_match_mask = true;
+            l_ttl = l_item->ttl;
             break;
         }
     }
@@ -764,16 +771,16 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     // Deleted time
     dap_nanotime_t l_timestamp_del = dap_global_db_get_del_ts_unsafe(a_global_db_context, a_obj->group, a_obj->key);
     // Limit time
-    uint32_t l_time_store_lim_hours = a_global_db_context->instance->store_time_limit;
+    uint32_t l_time_store_lim_hours = l_ttl ? l_ttl : a_global_db_context->instance->store_time_limit;
     uint64_t l_limit_time = l_time_store_lim_hours ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
     //check whether to apply the received data into the database
     bool l_apply = false;
     // check the applied object newer that we have stored or erased
     if (a_obj->timestamp > (uint64_t)l_timestamp_del &&
-            a_obj->timestamp > (uint64_t)l_timestamp_cur &&
-            (a_obj->type != DAP_DB$K_OPTYPE_DEL || a_obj->timestamp > l_limit_time)) {
+            a_obj->timestamp > (uint64_t)l_timestamp_cur)
         l_apply = true;
-    }
+    if ((l_ttl || a_obj->type == DAP_DB$K_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time)
+        l_apply = false;
     if (g_dap_global_db_debug_more) {
         char l_ts_str[50];
         dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
@@ -788,7 +795,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                 log_it(L_WARNING, "New data not applied, because newly object exists");
             if (a_obj->timestamp <= (uint64_t)l_timestamp_del)
                 log_it(L_WARNING, "New data not applied, because newly object is deleted");
-            if ((a_obj->type == DAP_DB$K_OPTYPE_DEL && a_obj->timestamp <= l_limit_time))
+            if (a_obj->timestamp <= l_limit_time)
                 log_it(L_WARNING, "New data not applied, because object is too old");
         }
         DAP_DELETE(a_arg);
