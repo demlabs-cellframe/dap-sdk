@@ -145,7 +145,7 @@ char *rl_readline(const char *prompt)
     int value_size = 3, value_len = 0;
     char *value = DAP_NEW_Z_SIZE(char, value_size + 1);
     if (!value) {
-        printf("Memory allocation error in rl_readline");
+        printf("Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
 
@@ -165,7 +165,7 @@ char *rl_readline(const char *prompt)
             value_size += 32;
             value = realloc(value, value_size + 1);
             if (!value) {
-                printf("Memory allocation error in rl_readline");
+                printf("Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
                 return NULL;
             }
         }

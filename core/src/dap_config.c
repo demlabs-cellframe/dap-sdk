@@ -138,13 +138,13 @@ dap_config_t * dap_config_load(const char * a_file_path)
         log_it(L_DEBUG,"Opened config %s",a_file_path);
         l_ret = DAP_NEW_Z(dap_config_t);
         if (!l_ret) {
-            log_it(L_ERROR, "Memory allocation error in dap_config_load");
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             fclose(f);
             return NULL;
         }
         dap_config_internal_t * l_config_internal = DAP_NEW_Z(dap_config_internal_t);
         if (!l_config_internal) {
-            log_it(L_ERROR, "Memory allocation error in dap_config_load");
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             fclose(f);
             DAP_DELETE(l_ret);
             return NULL;
@@ -184,7 +184,7 @@ dap_config_t * dap_config_load(const char * a_file_path)
                             if( l_line_length ){
                                 l_line = DAP_NEW_SIZE(char,l_line_length+1);
                                 if (!l_line) {
-                                    log_it(L_ERROR, "Memory allocation error in dap_config_load");
+                                    log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
                                     DAP_DEL_Z(l_config_internal);
                                     DAP_DELETE(l_ret);
                                     fclose(f);
@@ -198,7 +198,7 @@ dap_config_t * dap_config_load(const char * a_file_path)
                                     //log_it(L_DEBUG, "Raw line '%s'",l_line);
                                     char * l_section_name = strdup(l_line+1);
                                     if (!l_section_name) {
-                                        log_it(L_ERROR, "Memory allocation error in dap_config_load");
+                                        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
                                         DAP_DEL_Z(l_config_internal);
                                         DAP_DELETE(l_line);
                                         DAP_DELETE(l_ret);
@@ -211,7 +211,7 @@ dap_config_t * dap_config_load(const char * a_file_path)
 
                                     dap_config_item_t * l_item_section = DAP_NEW_Z(dap_config_item_t);
                                     if(!l_item_section) {
-                                        log_it(L_ERROR, "Memory allocation error in dap_config_load");
+                                        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
                                         free(l_section_name);
                                         DAP_DEL_Z(l_config_internal);
                                         DAP_DELETE(l_line);
@@ -286,7 +286,7 @@ dap_config_t * dap_config_load(const char * a_file_path)
 
                                             dap_config_item_t * l_item = DAP_NEW_Z(dap_config_item_t);
                                             if (!l_item) {
-                                                log_it(L_ERROR, "Memory allocation error in dap_config_load");
+                                                log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
                                                 DAP_DEL_Z(l_config_internal);
                                                 DAP_DELETE(l_line);
                                                 DAP_DELETE(l_ret);
@@ -300,7 +300,7 @@ dap_config_t * dap_config_load(const char * a_file_path)
                                             l_item->array_length = get_array_length(l_param_value);
                                             l_item->data_str_array = (char**) malloc (sizeof(char*) * l_item->array_length);
                                             if (!l_item->data_str_array) {
-                                                log_it(L_ERROR, "Memory allocation error in dap_config_load");
+                                                log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
                                                 DAP_DEL_Z(l_config_internal);
                                                 DAP_DELETE(l_item);
                                                 DAP_DELETE(l_line);
@@ -330,7 +330,7 @@ dap_config_t * dap_config_load(const char * a_file_path)
                                         } else {
                                             dap_config_item_t * l_item = DAP_NEW_Z(dap_config_item_t);
                                             if (!l_item) {
-                                                log_it(L_ERROR, "Memory allocation error in dap_config_load");
+                                                log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
                                                 DAP_DEL_Z(l_config_internal);
                                                 DAP_DELETE(l_line);
                                                 DAP_DELETE(l_ret);

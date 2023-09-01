@@ -109,7 +109,7 @@ static void s_stream_connections_added(dap_stream_t *a_stream, enum dap_stream_t
 {
     dap_stream_connection_t *l_connect = DAP_NEW(dap_stream_connection_t);
     if (!l_connect) {
-        log_it(L_ERROR, "Memory allocation error in s_stream_connections_added");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return;
     }
     l_connect->stream = a_stream;
@@ -171,7 +171,7 @@ static dap_stream_connection_t **s_stream_connections_get_streams(size_t *a_coun
     }
     dap_stream_connection_t **l_connections = DAP_NEW_Z_SIZE(dap_stream_connection_t*, l_count_streams * sizeof(dap_stream_connection_t*));
     if (!l_connections) {
-        log_it(L_ERROR, "Memory allocation error in s_stream_connections_get_streams");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         pthread_mutex_unlock(&s_dap_stream_downlink_table_mutex);
         pthread_mutex_unlock(&s_dap_stream_uplink_table_mutex);
         return NULL;
@@ -336,7 +336,7 @@ dap_stream_t * stream_new_udp(dap_events_socket_t * a_esocket)
     dap_stream_t * l_stm = DAP_NEW_Z(dap_stream_t);
     assert(l_stm);
     if (!l_stm) {
-        log_it(L_ERROR, "Memory allocation error in stream_new_udp");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
 
@@ -409,7 +409,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
 {
     dap_stream_t *l_ret = DAP_NEW_Z(dap_stream_t);
     if (!l_ret) {
-        log_it(L_ERROR, "Memory allocation error in s_stream_new");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
 
@@ -427,7 +427,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
     // Start server keep-alive timer
     dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid) {
-        log_it(L_ERROR, "Memory allocation error in s_stream_new");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         DAP_DEL_Z(l_ret);
         return NULL;
     }
@@ -453,7 +453,7 @@ dap_stream_t* dap_stream_new_es_client(dap_events_socket_t * a_esocket)
 {
     dap_stream_t *l_ret = DAP_NEW_Z(dap_stream_t);
     if (!l_ret) {
-        log_it(L_ERROR, "Memory allocation error in dap_stream_new_es_client");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
 
@@ -551,9 +551,8 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg)
                 if(dap_stream_session_open(ss)==0){ // Create new stream
                     dap_stream_t * sid = s_stream_new(a_http_client);
                     if (!sid) {
-                        log_it(L_ERROR, "Memory allocation error in s_http_client_headers_read");
+                        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
                         a_http_client->reply_status_code=404;
-                        strcpy(a_http_client->reply_reason_phrase,"Memory allocation error in s_http_client_headers_read");
                         return;
                     }
                     sid->session=ss;
@@ -642,7 +641,7 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
     if (!l_stream->keepalive_timer) {
         dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
         if (!l_es_uuid) {
-            log_it(L_ERROR, "Memory allocation error in s_esocket_callback_worker_assign");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             return;
         }
         *l_es_uuid = a_esocket->uuid;
@@ -681,7 +680,7 @@ static void s_client_callback_worker_assign(dap_events_socket_t * a_esocket, dap
     if (!l_stream->keepalive_timer) {
         dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
         if (!l_es_uuid) {
-            log_it(L_ERROR, "Memory allocation error in s_client_callback_worker_assign");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             return;
         }
         *l_es_uuid = a_esocket->uuid;

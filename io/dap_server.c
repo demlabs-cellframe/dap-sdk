@@ -147,7 +147,7 @@ dap_server_t* dap_server_new_local(const char * a_path, const char* a_mode, dap_
 #ifdef DAP_OS_UNIX
     dap_server_t *l_server =  DAP_NEW_Z(dap_server_t);
     if (!l_server) {
-        log_it(L_ERROR, "Memory allocation error in dap_server_new");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
     l_server->socket_listener=-1; // To diff it from 0 fd
@@ -200,7 +200,7 @@ dap_server_t* dap_server_new(const char * a_addr, uint16_t a_port, dap_server_ty
 {
     dap_server_t *l_server =  DAP_NEW_Z(dap_server_t);
     if (!l_server) {
-        log_it(L_ERROR, "Memory allocation error in dap_server_new");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
     }
 #ifndef DAP_OS_WINDOWS
