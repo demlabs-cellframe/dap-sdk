@@ -141,7 +141,7 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
 {
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
     if (!l_msg) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return 0;
     }
     dap_stream_pkt_hdr_t *l_pkt_hdr;
@@ -149,7 +149,7 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
     l_msg->data_size = 16-a_data_size%16+a_data_size+sizeof(*l_pkt_hdr);
     l_msg->data = DAP_NEW_SIZE(void,l_msg->data_size);
     if (!l_msg) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         DAP_DEL_Z(l_msg);
         return 0;
     }

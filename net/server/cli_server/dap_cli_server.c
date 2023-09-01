@@ -557,7 +557,7 @@ static inline void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback
 {
     dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
     if (!l_cmd_item) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return;
     }
     snprintf(l_cmd_item->name,sizeof (l_cmd_item->name),"%s",a_name);
@@ -661,7 +661,7 @@ char* s_get_next_str( SOCKET nSocket, int *dwLen, const char *stop_str, bool del
     size_t lpszBuffer_len = 256;
     char *lpszBuffer = DAP_NEW_Z_SIZE(char, lpszBuffer_len);
     if (!lpszBuffer) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     // received string will not be larger than MAX_REPLY_LEN
@@ -734,7 +734,6 @@ char    *str_header;
 
     if(s_debug_cli)
         log_it(L_DEBUG, "new connection sockfd=%"DAP_FORMAT_SOCKET, newsockfd);
-
 
     while ( !(0 > (is_data = s_poll(newsockfd, timeout))) )                 // wait data from client
     {

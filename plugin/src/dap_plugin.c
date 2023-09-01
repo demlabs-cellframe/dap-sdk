@@ -267,7 +267,7 @@ static int s_start(dap_plugin_manifest_t * a_manifest)
     }else{ // Successfully
         struct plugin_module * l_module = DAP_NEW_Z(struct plugin_module);
         if (!l_module) {
-            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return -1;
         }
         l_module->pvt_data = l_pvt_data;

@@ -515,7 +515,7 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
         if (strcmp(entry->d_name, "..") != 0 && strcmp(entry->d_name, ".") != 0 && entry->d_type == DT_DIR){
             element = (dap_list_name_directories_t *)malloc(sizeof(dap_list_name_directories_t));
             if (!element) {
-                log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+                log_it(L_CRITICAL, "Memory allocation error");
                 closedir(dir);
                 return NULL;
             }
@@ -1295,7 +1295,7 @@ char* dap_get_current_dir(void)
         DAP_DELETE(buffer);
         buffer = DAP_NEW_SIZE(char, max_len + 1);
         if (!buffer) {
-            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             DAP_DEL_Z(dir);
             return NULL;
         }

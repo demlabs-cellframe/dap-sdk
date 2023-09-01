@@ -336,7 +336,7 @@ static void *s_log_thread_proc(void *arg) {
  * @param ll
  * @param fmt
  */
-void _log_it(const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
+void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
         return;
     log_str_t *l_log_string = DAP_NEW_Z(log_str_t);
@@ -348,7 +348,9 @@ void _log_it(const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, 
     l_log_string->offset = s_ansi_seq_color_len[a_ll];
     s_update_log_time(l_log_string->str + l_log_string->offset);
     size_t offset = strlen(l_log_string->str);
-    offset += snprintf(l_log_string->str + offset, offset2, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
+    offset += func_name
+            ? snprintf(l_log_string->str + offset, offset2, "%s[%s] [%s:%d] ", s_log_level_tag[a_ll], a_log_tag, func_name, line_num)
+            : snprintf(l_log_string->str + offset, offset2, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
     offset2 -= offset;
     va_list va;
     va_start( va, a_fmt );
@@ -591,12 +593,12 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
 	elem = tmp = NULL;
 	char *l_buf = DAP_CALLOC(STR_LOG_BUF_MAX, a_limit);
     if (!l_buf) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
 	char *l_line = DAP_CALLOC(1, STR_LOG_BUF_MAX + 1);
     if (!l_line) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         DAP_FREE(l_buf);
         return NULL;
     }
@@ -1128,7 +1130,7 @@ static void s_bsd_callback(void *a_arg)
 dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_callback_t a_callback, void *a_param) {
     dap_timer_interface_t *l_timer_obj = DAP_NEW_Z(dap_timer_interface_t);
     if (!l_timer_obj) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     l_timer_obj->callback   = a_callback;
