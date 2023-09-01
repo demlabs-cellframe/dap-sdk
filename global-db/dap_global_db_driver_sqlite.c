@@ -214,7 +214,7 @@ int     l_rc;
  *
  * @return Returns 0 if successful.
  */
-int dap_db_driver_sqlite_deinit(void)
+int s_db_sqlite_deinit(void)
 {
         pthread_mutex_lock(&s_db_mtx);
         for (int i = 0; i < DAP_SQLITE_POOL_COUNT; i++) {
@@ -518,7 +518,7 @@ int s_dap_db_driver_sqlite_vacuum(sqlite3 *l_db)
  *
  * @return Returns 0 if successful, otherwise -1.
  */
-static int s_dap_db_driver_sqlite_start_transaction(void)
+static int s_db_sqlite_start_transaction(void)
 {
 int l_rc;
 
@@ -553,7 +553,7 @@ int l_rc;
  *
  * @return Returns 0 if successful, otherwise -1.
  */
-static int s_dap_db_driver_sqlite_end_transaction(void)
+static int s_db_sqlite_end_transaction(void)
 {
 int l_rc;
 struct conn_pool_item *l_conn;
@@ -618,7 +618,7 @@ static inline char *s_sqlite_make_table_name(const char *a_group_name)
  * @param a_store_obj a pointer to the object structure
  * @return Returns 0 if successful.
  */
-int dap_db_driver_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
+int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
 {
     if(!a_store_obj || !a_store_obj->group )
         return -1;
@@ -742,7 +742,7 @@ static void s_fill_one_item(const char *a_group, dap_store_obj_t *a_obj, SQLITE_
  * @param a_group a group name string
  * @return Returns a pointer to the object.
  */
-dap_store_obj_t* dap_db_driver_sqlite_read_last_store_obj(const char *a_group)
+dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group)
 {
 dap_store_obj_t *l_obj = NULL;
 char *l_error_message = NULL;
@@ -796,16 +796,16 @@ struct conn_pool_item *l_conn;
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-dap_store_obj_t* dap_db_driver_sqlite_read_cond_store_obj(const char *a_group, dap_db_iter_t *a_iter, size_t *a_count_out)
+dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out)
 {
-    dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_group, NULL);                                       /* Sanity check */
+    dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_iter->db_group, NULL);                                       /* Sanity check */
 
     dap_store_obj_t *l_obj = NULL;
     char *l_error_message = NULL;
     sqlite3_stmt *l_res;
     dap_db_sqlite_iter_t* l_iter = (dap_db_sqlite_iter_t*)a_iter->db_iter;
 
-    char * l_table_name = s_sqlite_make_table_name(a_group);
+    char * l_table_name = s_sqlite_make_table_name(a_iter->db_group);
     // no limit
     int l_count_out = 0;
     if(a_count_out)
@@ -862,7 +862,7 @@ dap_store_obj_t* dap_db_driver_sqlite_read_cond_store_obj(const char *a_group, d
             }
             // fill current item
             dap_store_obj_t *l_obj_cur = l_obj + l_count_out;
-            s_fill_one_item(a_group, l_obj_cur, l_row);
+            s_fill_one_item(a_iter->db_group, l_obj_cur, l_row);
             l_count_out++;
         }
         s_dap_db_driver_sqlite_row_free(l_row);
@@ -888,7 +888,7 @@ dap_store_obj_t* dap_db_driver_sqlite_read_cond_store_obj(const char *a_group, d
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-dap_store_obj_t* dap_db_driver_sqlite_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out)
+dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out)
 {
     struct conn_pool_item *l_conn = s_sqlite_get_connection();
 
@@ -976,7 +976,7 @@ dap_store_obj_t* dap_db_driver_sqlite_read_store_obj(const char *a_group, const 
  * @param a_group_mask a group name mask
  * @return Returns a pointer to a list of group names.
  */
-dap_list_t* dap_db_driver_sqlite_get_groups_by_mask(const char *a_group_mask)
+dap_list_t* s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
 {
     struct conn_pool_item *l_conn = s_sqlite_get_connection();
 
@@ -1014,7 +1014,7 @@ dap_list_t* dap_db_driver_sqlite_get_groups_by_mask(const char *a_group_mask)
  * @param a_id id starting from which the quantity is calculated
  * @return Returns a number of objects.
  */
-size_t dap_db_driver_sqlite_read_count_store(const char *a_group, uint64_t a_id)
+size_t s_db_sqlite_read_count_store(const char *a_group, uint64_t a_id)
 {
     struct conn_pool_item *l_conn = s_sqlite_get_connection();
 
@@ -1054,7 +1054,7 @@ size_t dap_db_driver_sqlite_read_count_store(const char *a_group, uint64_t a_id)
  * @param a_key a object key string
  * @return Returns true if it is, false it's not.
  */
-bool dap_db_driver_sqlite_is_obj(const char *a_group, const char *a_key)
+bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
 {
     struct conn_pool_item *l_conn = s_sqlite_get_connection();
 
@@ -1119,7 +1119,7 @@ int     l_rc;
  *
  * @return Returns 0 if successful.
  */
-static int s_dap_db_driver_sqlite_flush()
+static int s_db_sqlite_flush()
 {
     struct conn_pool_item *l_conn = s_sqlite_get_connection();
 
@@ -1232,19 +1232,19 @@ char l_errbuf[255] = {0}, *l_error_message = NULL;
     // *PRAGMA page_size = bytes; // page size DB; it is reasonable to make it equal to the size of the disk cluster 4096
     // *PRAGMA cache_size = -kibibytes; // by default it is equal to 2000 pages of database
     //
-    a_drv_callback->apply_store_obj = dap_db_driver_sqlite_apply_store_obj;
-    a_drv_callback->read_store_obj = dap_db_driver_sqlite_read_store_obj;
-    a_drv_callback->read_cond_store_obj = dap_db_driver_sqlite_read_cond_store_obj;
-    a_drv_callback->read_last_store_obj = dap_db_driver_sqlite_read_last_store_obj;
-    a_drv_callback->transaction_start = s_dap_db_driver_sqlite_start_transaction;
-    a_drv_callback->transaction_end = s_dap_db_driver_sqlite_end_transaction;
-    a_drv_callback->get_groups_by_mask  = dap_db_driver_sqlite_get_groups_by_mask;
-    a_drv_callback->read_count_store = dap_db_driver_sqlite_read_count_store;
-    a_drv_callback->is_obj = dap_db_driver_sqlite_is_obj;
-    a_drv_callback->deinit = dap_db_driver_sqlite_deinit;
-    a_drv_callback->flush = s_dap_db_driver_sqlite_flush;
-    a_drv_callback->iter_create = s_db_sqlite_iter_create;
-    a_drv_callback->iter_delete = s_db_sqlite_iter_delete;
+    a_drv_callback->apply_store_obj         = s_db_sqlite_apply_store_obj;
+    a_drv_callback->read_store_obj          = s_db_sqlite_read_store_obj;
+    a_drv_callback->read_cond_store_obj     = s_db_sqlite_read_cond_store_obj;
+    a_drv_callback->read_last_store_obj     = s_db_sqlite_read_last_store_obj;
+    a_drv_callback->transaction_start       = s_db_sqlite_start_transaction;
+    a_drv_callback->transaction_end         = s_db_sqlite_end_transaction;
+    a_drv_callback->get_groups_by_mask      = s_db_sqlite_get_groups_by_mask;
+    a_drv_callback->read_count_store        = s_db_sqlite_read_count_store;
+    a_drv_callback->is_obj                  = s_db_sqlite_is_obj;
+    a_drv_callback->deinit                  = s_db_sqlite_deinit;
+    a_drv_callback->flush                   = s_db_sqlite_flush;
+    a_drv_callback->iter_create             = s_db_sqlite_iter_create;
+    a_drv_callback->iter_delete             = s_db_sqlite_iter_delete;
 
 end:
     return l_ret;
@@ -1256,7 +1256,7 @@ end:
  * @param a_group a group name string
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-static dap_db_iter_t *s_db_sqlite_iter_create()
+static dap_db_iter_t *s_db_sqlite_iter_create(const char *a_group)
 {
     // create sqlite iter
     dap_db_sqlite_iter_t *l_sqlite_iter = DAP_NEW_Z(dap_db_sqlite_iter_t);
@@ -1270,6 +1270,14 @@ static dap_db_iter_t *s_db_sqlite_iter_create()
     if (!l_ret) {
         log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         DAP_DELETE(l_sqlite_iter);
+        return NULL;
+    }
+
+    l_ret->db_group = dap_strdup(a_group);
+    if (!l_ret->db_group) {
+        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        DAP_DELETE(l_sqlite_iter);
+        DAP_DELETE(l_ret);
         return NULL;
     }
 

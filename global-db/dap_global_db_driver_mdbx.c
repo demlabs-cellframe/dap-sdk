@@ -97,7 +97,7 @@ static int              s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj)
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group);
 static bool s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out);
-static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_db_iter_t *a_iter, size_t *a_count_out);
+static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out);
 static size_t           s_db_mdbx_read_count_store(const char *a_group, uint64_t a_id);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
 static dap_db_iter_t    *s_db_mdbx_iter_create(const char *a_group);
@@ -546,7 +546,7 @@ static dap_db_iter_t *s_db_mdbx_iter_create(const char *a_group)
 
     if (!l_db_ctx)                    /* Get DB Context for group/table */
         return NULL;
-
+    
     // create mdbx iter
     dap_db_mdbx_iter_t *l_mdbx_iter = DAP_NEW_Z(dap_db_mdbx_iter_t);
     if (!l_mdbx_iter) {
@@ -559,6 +559,14 @@ static dap_db_iter_t *s_db_mdbx_iter_create(const char *a_group)
     if (!l_ret) {
         log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         DAP_DELETE(l_mdbx_iter);
+        return NULL;
+    }
+
+    l_ret->db_group = dap_strdup(a_group);
+    if (!l_ret->db_group) {
+        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        DAP_DELETE(l_mdbx_iter);
+        DAP_DELETE(l_ret);
         return NULL;
     }
 
@@ -614,6 +622,7 @@ static void s_db_mdbx_iter_delete(dap_db_iter_t *a_iter)
         return;
     }
     DAP_DEL_Z(a_iter->db_iter);
+    DAP_DEL_Z(a_iter->db_group);
     DAP_DEL_Z(a_iter);
 }
 
@@ -831,9 +840,9 @@ MDBX_val    l_key, l_data;
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_db_iter_t *a_iter, size_t *a_count_out)
+static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out)
 {
-    dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_group || !a_count_out, NULL);                                       /* Sanity check */
+    dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_iter->db_group, NULL);                                       /* Sanity check */
 
     int l_rc = 0;
     dap_db_mdbx_iter_t* l_mdbx_iter = (dap_db_mdbx_iter_t*)a_iter->db_iter;
@@ -875,7 +884,7 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_
         l_obj = l_obj_arr + (l_cnt - 1);                                /* Point <l_obj> to last array's element */
         memset(l_obj, 0, sizeof(dap_store_obj_t));
 
-        if (s_fill_store_obj(a_group, &l_mdbx_iter->key, &l_data, l_obj)) {
+        if (s_fill_store_obj(a_iter->db_group, &l_mdbx_iter->key, &l_data, l_obj)) {
             l_rc = MDBX_PROBLEM;
             break;
         }

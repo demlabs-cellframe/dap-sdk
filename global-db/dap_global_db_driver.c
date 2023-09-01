@@ -326,16 +326,16 @@ dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group)
  * @param a_count_out elements count
  * @return If successful, a pointer to the object, otherwise NULL.
  */
-dap_store_obj_t* dap_global_db_driver_cond_read(const char *a_group, dap_db_iter_t* a_iter, size_t *a_count_out)
+dap_store_obj_t* dap_global_db_driver_cond_read(dap_db_iter_t* a_iter, size_t *a_count_out)
 {
-    if (!a_group || !a_iter || !a_count_out)
+    if (!a_iter)
         return NULL;
 
     dap_store_obj_t *l_ret = NULL;
 
     // read records using the selected database engine
     if(s_drv_callback.read_cond_store_obj)
-        l_ret = s_drv_callback.read_cond_store_obj(a_group, a_iter, a_count_out);
+        l_ret = s_drv_callback.read_cond_store_obj(a_iter, a_count_out);
     return l_ret;
 }
 

@@ -212,7 +212,7 @@ static void *s_list_thread_proc(void *arg)
             size_t l_objs_total_size = 0;
 
             dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(l_group_cur->name);
-            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, l_iter, &l_item_count);
+            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_iter, &l_item_count);
             dap_global_db_driver_iter_delete(l_iter);
             
             if (!l_dap_db_log_list->is_process) {

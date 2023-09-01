@@ -1133,11 +1133,11 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 /* *** Get_all_raw functions group *** */
 
 dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
-                                                  const char *a_group, dap_db_iter_t* a_iter, size_t *a_objs_count)
+                                                  dap_db_iter_t* a_iter, size_t *a_objs_count)
 {
-    if (!a_global_db_context || !a_group || !a_objs_count)
+    if (!a_global_db_context || !a_iter)
         return NULL;
-    return dap_global_db_driver_cond_read(a_group, a_iter, a_objs_count);
+    return dap_global_db_driver_cond_read(a_iter, a_objs_count);
 }
 
 /**
@@ -1149,11 +1149,14 @@ dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_conte
  * @param a_arg
  * @return
  */
-int dap_global_db_get_all_raw(const char * a_group, dap_db_iter_t* a_iter, size_t a_results_page_size,
+int dap_global_db_get_all_raw(dap_db_iter_t* a_iter, size_t a_results_page_size,
                               dap_global_db_callback_results_raw_t a_callback, void * a_arg)
 {
     // TODO make usable a_results_page_size
-
+    if (!a_iter || !a_iter->db_group) {
+        log_it(L_ERROR, "Empty db iterator");
+        return DAP_GLOBAL_DB_RC_ERROR;
+    }
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get_all");
         return DAP_GLOBAL_DB_RC_ERROR;
@@ -1164,7 +1167,7 @@ int dap_global_db_get_all_raw(const char * a_group, dap_db_iter_t* a_iter, size_
         return -1;
     }
     l_msg->opcode = MSG_OPCODE_GET_ALL_RAW ;
-    l_msg->group = dap_strdup(a_group);
+    l_msg->group = dap_strdup(a_iter->db_group);
     l_msg->values_raw_last_id = 0;
     l_msg->data_base_iter = *a_iter;
     l_msg->values_page_size = a_results_page_size;
@@ -1176,7 +1179,7 @@ int dap_global_db_get_all_raw(const char * a_group, dap_db_iter_t* a_iter, size_
         log_it(L_ERROR, "Can't exec get_all_raw request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
     }else
-        debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent get_all request for \"%s\" group", a_group);
+        debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent get_all request for \"%s\" group", a_iter->db_group);
     return l_ret;
 }
 
@@ -1192,7 +1195,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
     size_t l_values_count = a_msg->values_page_size;
     size_t l_values_remains = dap_global_db_driver_count(a_msg->group, a_msg->values_raw_last_id);
 
-    dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_msg->group, &a_msg->data_base_iter, &l_values_count);
+    dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, &a_msg->data_base_iter, &l_values_count);
 
     if (l_store_objs && l_values_count)
         a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id + 1;
@@ -1248,19 +1251,19 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
     pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }
 
-dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, dap_db_iter_t *a_iter, size_t *a_objs_count)
+dap_store_obj_t* dap_global_db_get_all_raw_sync(dap_db_iter_t *a_iter, size_t *a_objs_count)
 {
-    dap_return_val_if_pass(!a_group || !a_iter || !a_objs_count, NULL);
+    dap_return_val_if_pass(!a_iter || !a_iter->db_group, NULL);
 
     if (dap_global_db_context_current() == s_context_global_db) {
-        dap_store_obj_t *l_ret = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_group, a_iter, a_objs_count);
+        dap_store_obj_t *l_ret = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_iter, a_objs_count);
         return l_ret;
     }
 
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all_raw sync call executes for group %s", a_group);
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all_raw sync call executes for group %s", a_iter->db_group);
 
-    if (!dap_global_db_get_all_raw(a_group, a_iter, a_objs_count ? *a_objs_count : 0,
+    if (!dap_global_db_get_all_raw(a_iter, a_objs_count ? *a_objs_count : 0,
                                    s_get_all_raw_sync_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "get_all_raw");
     if (a_objs_count)
