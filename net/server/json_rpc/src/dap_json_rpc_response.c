@@ -14,13 +14,18 @@ dap_json_rpc_response_t *dap_json_rpc_response_init()
 
 dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rpc_response_type_result_t type, int64_t id) {
 
-    dap_json_rpc_error_init();
+    if (!result) {
+        log_it(L_CRITICAL, "Invalid arguments");
+        return NULL;
+    }
 
     dap_json_rpc_response_t *response = DAP_NEW(dap_json_rpc_response_t);
     if (!response) {
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
+
+    dap_json_rpc_error_init();
 
     response->id = id;
     response->type = type;

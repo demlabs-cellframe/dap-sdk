@@ -788,7 +788,7 @@ char    *str_header;
             char *str_cmd = dap_json_rpc_params_get(params, 0);
             int res = -1;
             char *str_reply = NULL;
-            json_object* json_res = NULL;
+            json_object* json_com_res = json_object_new_array();
             if(l_cmd){
                 if(l_cmd->overrides.log_cmd_call)
                     l_cmd->overrides.log_cmd_call(str_cmd);
@@ -803,7 +803,7 @@ char    *str_header;
                     if (l_cmd->arg_func) {
                         res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
                     } else if (json_commands(cmd_name)) {
-                        res = l_cmd->func(argc, l_argv, json_res);
+                        res = l_cmd->func(argc, l_argv, json_com_res);
                     } else {
                         res = l_cmd->func(argc, l_argv, &str_reply);
                     }
@@ -824,16 +824,21 @@ char    *str_header;
                 if (str_reply) {
                     reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");
                 } else {
-                    json_object_object_add_ex(json_res, "ret_code", res, 0);
+                    json_object* json_res = json_object_new_int(res);
+                    json_object_object_add(json_com_res, "ret_code", json_res);
                 }
             }
-            else
-                reply_body = dap_strdup_printf("%d\r\n%s\r\n", res, (str_reply) ? str_reply : "");
+            else{
+                if (str_reply) {
+                    reply_body = dap_strdup_printf("%d\r\n%s\r\n", res, (str_reply) ? str_reply : "");
+                } 
+            }
+
             dap_json_rpc_response_t* response;
             if (str_reply) {
                 response = dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id);
             } else {
-                response = dap_json_rpc_response_create(json_res, TYPE_RESPONSE_JSON, request->id);
+                response = dap_json_rpc_response_create(json_com_res, TYPE_RESPONSE_JSON, request->id);
             }
             const char* response_string = dap_json_rpc_response_to_string(response);
             // return the result of the command function
