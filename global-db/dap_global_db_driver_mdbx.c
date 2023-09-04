@@ -680,6 +680,7 @@ struct  __record_suffix__   *l_suff;
         else {
             DAP_DELETE(a_obj->group);
             DAP_DELETE(a_obj->key);
+            log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
             return log_it (L_ERROR, "Cannot allocate a memory for store object value, errno=%d", errno), -7;
         }
     }
@@ -712,30 +713,22 @@ dap_store_obj_t *s_db_mdbx_read_last_store_obj(const char* a_group)
 {
 int l_rc;
 dap_db_ctx_t *l_db_ctx;
-MDBX_val    l_key={0}, l_data={0}, l_last_data={0}, l_last_key={0};
+MDBX_val    l_key={0}, l_data={0};
 MDBX_cursor *l_cursor = NULL;
-struct  __record_suffix__   *l_suff;
-uint64_t    l_id;
 dap_store_obj_t *l_obj;
 
-    if (!a_group)                                                           /* Sanity check */
-        return NULL;
-
-    if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group)) )                    /* Get DB Context for group/table */
-        return NULL;
+     /* Sanity check and Get DB Context for group/table*/
+    dap_return_val_if_pass(!a_group || !(l_db_ctx = s_get_db_ctx_for_group(a_group)), NULL)
 
     dap_assert ( !pthread_mutex_lock(&l_db_ctx->dbi_mutex) );
 
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) )
-    {
+    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) ) {
         dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
         return  log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     }
 
     do {
         l_cursor = NULL;
-        l_id  = 0;
-        l_last_key = l_last_data = (MDBX_val) {0, 0};
 
         if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor)) ) {
           log_it (L_ERROR, "mdbx_cursor_open: (%d) %s", l_rc, mdbx_strerror(l_rc));
@@ -745,25 +738,14 @@ dap_store_obj_t *l_obj;
         /* Iterate cursor to retrieve records from DB - select a <key> and <data> pair
         ** with maximal <id>
         */
-        while ( MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT)) )
-        {
-            l_suff = (struct __record_suffix__ *) (l_data.iov_base + l_data.iov_len - sizeof(struct __record_suffix__));
-            if ( l_id < l_suff->id )
-            {
-                l_id = l_suff->id;
-                l_last_key = l_key;                                         /* <l_last_key> point to real key area in the MDBX DB */
-                l_last_data = l_data;                                       /* <l_last_data> point to real data area in the MDBX DB */
-            }
-        }
+        l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_LAST);
 
     } while (0);
 
-    if (l_cursor)                                                           /* Release uncesessary MDBX cursor area,
-                                                                              but keep transaction !!! */
-        mdbx_cursor_close(l_cursor);
+    if (l_cursor)                                                           // Release uncesessary MDBX cursor area,
+        mdbx_cursor_close(l_cursor);                                        //but keep transaction !!!
 
-    if ( !(l_last_key.iov_len || l_data.iov_len) )                          /* Not found anything  - return NULL */
-    {
+    if ( !(l_key.iov_len || l_data.iov_len) ) {                        /* Not found anything  - return NULL */
         mdbx_txn_commit(l_db_ctx->txn);
         dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
         return  NULL;
@@ -775,8 +757,9 @@ dap_store_obj_t *l_obj;
             l_rc = MDBX_PROBLEM;
             DAP_DEL_Z(l_obj);
         }
-    } else
+    } else {
         l_rc = MDBX_PROBLEM, log_it (L_ERROR, "Cannot allocate a memory for store object, errno=%d", errno);
+    }
 
     mdbx_txn_commit(l_db_ctx->txn);
     dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
