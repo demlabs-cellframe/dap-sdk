@@ -205,7 +205,6 @@ static void *s_list_thread_proc(void *arg)
         } else {
             l_obj_type = DAP_DB$K_OPTYPE_ADD;
         }
-        uint64_t l_item_start = l_group_cur->last_id_synced + 1;
         dap_nanotime_t l_time_allowed = dap_nanotime_now() + dap_nanotime_from_sec(3600 * 24); // to be sure the timestamp is invalid
         while (l_group_cur->count && l_dap_db_log_list->is_process) { // Number of records to be synchronized
             size_t l_item_count = 0;//min(64, l_group_cur->count);
@@ -222,10 +221,6 @@ static void *s_list_thread_proc(void *arg)
             // go to next group
             if (!l_objs)
                 break;
-            // set new start pos = lastitem pos + 1
-            l_item_start = l_objs[l_item_count - 1].id + 1;
-            // TODO
-            UNUSED(l_item_start);
             l_group_cur->count = 0; //-= l_item_count;
             dap_list_t *l_list = NULL;
             for (size_t i = 0; i < l_item_count; i++) {
@@ -346,10 +341,11 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
             return NULL;
         }
         l_sync_group->name = (char *)l_group->data;
-        if (a_flags & F_DB_LOG_SYNC_FROM_ZERO)
-            l_sync_group->last_id_synced = 0;
-        else
-            l_sync_group->last_id_synced = dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
+        // Need change after iterator applying
+        // if (a_flags & F_DB_LOG_SYNC_FROM_ZERO)
+        //     l_sync_group->last_id_synced = 0;
+        // else
+        //     l_sync_group->last_id_synced = dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
         dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(l_sync_group->name);
         l_sync_group->count = dap_global_db_driver_count(l_iter);
         dap_global_db_driver_iter_delete(l_iter);

@@ -78,7 +78,6 @@ typedef struct __db_ctx__ {
 // mdbx element iterator
 typedef struct dap_db_mbdbx_iter {
     MDBX_val    key;
-    dap_db_ctx_t *ctx;
 } dap_db_mdbx_iter_t;
 
 static pthread_mutex_t s_db_ctx_mutex = PTHREAD_MUTEX_INITIALIZER;          /* A mutex  for working with a DB context */
@@ -600,7 +599,6 @@ static dap_db_iter_t *s_db_mdbx_iter_create(const char *a_group)
 
     // get generated values
     l_mdbx_iter->key = l_key;
-    l_mdbx_iter->ctx = l_db_ctx;
 
     l_ret->db_type = DAP_GLOBAL_DB_TYPE_CURRENT;
     l_ret->db_iter = l_mdbx_iter;
@@ -848,22 +846,25 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, si
     MDBX_cursor* l_cursor = NULL;
     dap_store_obj_t *l_obj = NULL, *l_obj_arr = NULL;
     size_t  l_cnt = 0, l_count_out = 0;
+    dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_iter->db_group);
+    dap_return_val_if_pass(!l_db_ctx, NULL);                                       /* Sanity check */
+
 
     /* Limit a number of objects to be returned */
     l_count_out = (a_count_out && *a_count_out) ? *a_count_out : DAP_GLOBAL_DB_MAX_OBJS;
     l_count_out = MIN(l_count_out, DAP_GLOBAL_DB_MAX_OBJS);
     /* Iterate cursor to retrieve records from DB */
 
-    dap_assert ( !pthread_mutex_lock(&l_mdbx_iter->ctx->dbi_mutex));
+    dap_assert ( !pthread_mutex_lock(&l_db_ctx->dbi_mutex));
 
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_mdbx_iter->ctx->txn)) ) {
-        dap_assert( !pthread_mutex_unlock(&l_mdbx_iter->ctx->dbi_mutex) );
+    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) ) {
+        dap_assert( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
         log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc));
         return NULL;
     }
 
     /* Initialize MDBX cursor context area */
-    if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_mdbx_iter->ctx->txn, l_mdbx_iter->ctx->dbi, &l_cursor)) ) {
+    if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor)) ) {
         log_it (L_ERROR, "mdbx_cursor_open: (%d) %s", l_rc, mdbx_strerror(l_rc));
         return NULL;
     }
@@ -893,8 +894,8 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, si
     }
 
     mdbx_cursor_close(l_cursor);
-    mdbx_txn_commit(l_mdbx_iter->ctx->txn);
-    dap_assert ( !pthread_mutex_unlock(&l_mdbx_iter->ctx->dbi_mutex) );
+    mdbx_txn_commit(l_db_ctx->txn);
+    dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
 
     if(a_count_out)
         *a_count_out = l_cnt;
@@ -915,16 +916,19 @@ size_t  s_db_mdbx_read_count_store(dap_db_iter_t *a_iter)
     MDBX_cursor* l_cursor = NULL;
     size_t  l_ret_count = 0;
 
-    dap_assert ( !pthread_mutex_lock(&l_mdbx_iter->ctx->dbi_mutex));
+    dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_iter->db_group);
+    dap_return_val_if_pass(!l_db_ctx, NULL); 
 
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_mdbx_iter->ctx->txn)) ) {
-        dap_assert( !pthread_mutex_unlock(&l_mdbx_iter->ctx->dbi_mutex) );
+    dap_assert ( !pthread_mutex_lock(&l_db_ctx->dbi_mutex));
+
+    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) ) {
+        dap_assert( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
         log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc));
         return NULL;
     }
 
     /* Initialize MDBX cursor context area */
-    if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_mdbx_iter->ctx->txn, l_mdbx_iter->ctx->dbi, &l_cursor)) ) {
+    if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor)) ) {
         log_it (L_ERROR, "mdbx_cursor_open: (%d) %s", l_rc, mdbx_strerror(l_rc));
         return NULL;
     }
@@ -938,8 +942,8 @@ size_t  s_db_mdbx_read_count_store(dap_db_iter_t *a_iter)
     }
 
     mdbx_cursor_close(l_cursor);
-    mdbx_txn_commit(l_mdbx_iter->ctx->txn);
-    dap_assert ( !pthread_mutex_unlock(&l_mdbx_iter->ctx->dbi_mutex) );
+    mdbx_txn_commit(l_db_ctx->txn);
+    dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
 
     return l_ret_count;
 }
