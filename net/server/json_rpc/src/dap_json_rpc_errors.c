@@ -74,6 +74,19 @@ int dap_json_rpc_error_add(int a_code_error, const char *msg, ...)
     return 0;
 }
 
+json_object * dap_json_rpc_error_get(){
+    json_object* json_arr_errors = json_object_new_array();
+    dap_json_rpc_error_t * error = NULL;
+    LL_FOREACH(s_errors, error) {
+        json_object_array_add(json_arr_errors, json_object_new_string(dap_json_rpc_error_get_json(error)));
+    }
+    if (json_object_array_length(json_arr_errors) > 0) {
+        return json_arr_errors;
+    } else {
+        return NULL;
+    }
+}
+
 int _dap_json_rpc_error_cmp_by_code(dap_json_rpc_error_t *a_error, int a_code_error)
 {
     if (a_error->code_error == a_code_error)

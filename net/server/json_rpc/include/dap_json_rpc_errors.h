@@ -55,6 +55,8 @@ dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_add_data(int code, const cha
 
 int dap_json_rpc_error_add(int a_code_error, const char *msg, ...);
 
+json_object * dap_json_rpc_error_get();
+
 dap_json_rpc_error_t *dap_json_rpc_error_search_by_code(int a_code_error);
 
 char *dap_json_rpc_error_get_json(dap_json_rpc_error_t *a_error);
