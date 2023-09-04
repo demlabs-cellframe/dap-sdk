@@ -64,7 +64,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *l_pk
 // Callbacks for HTTP client
 static void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg); // Prepare stream when all headers are read
 
-static void s_http_client_headers_write(dap_http_client_t * a_http_client, void * a_arg); // Output headers
+static bool s_http_client_headers_write(dap_http_client_t * a_http_client, void * a_arg); // Output headers
 static void s_http_client_data_write(dap_http_client_t * a_http_client, void * a_arg); // Write the data
 static void s_http_client_data_read(dap_http_client_t * a_http_client, void * a_arg); // Read the data
 
@@ -591,7 +591,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg)
  * @param sh HTTP client instance
  * @param arg Not used
  */
-static void s_http_client_headers_write(dap_http_client_t * a_http_client, void *a_arg)
+static bool s_http_client_headers_write(dap_http_client_t * a_http_client, void *a_arg)
 {
     (void) a_arg;
     //log_it(L_DEBUG,"s_http_client_headers_write()");
@@ -608,6 +608,7 @@ static void s_http_client_headers_write(dap_http_client_t * a_http_client, void 
         a_http_client->state_read=DAP_HTTP_CLIENT_STATE_DATA;
         dap_events_socket_set_readable_unsafe(a_http_client->esocket,true);
     }
+    return false;
 }
 
 /**
