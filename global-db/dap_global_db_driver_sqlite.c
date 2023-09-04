@@ -1014,17 +1014,17 @@ dap_list_t* s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
  * @param a_id id starting from which the quantity is calculated
  * @return Returns a number of objects.
  */
-size_t s_db_sqlite_read_count_store(const char *a_group, uint64_t a_id)
+size_t s_db_sqlite_read_count_store(dap_db_iter_t *a_iter)
 {
     struct conn_pool_item *l_conn = s_sqlite_get_connection();
 
-    if(!a_group || !l_conn)
-        return 0;
+    dap_return_val_if_pass(!l_conn || !a_iter || !a_iter->db_iter || !a_iter->db_group, 0);  
 
-    sqlite3_stmt *l_res;
+    sqlite3_stmt *l_res = NULL;
+    dap_db_sqlite_iter_t* l_sqlite_iter = (dap_db_sqlite_iter_t*)a_iter->db_iter;
 
-    char * l_table_name = s_sqlite_make_table_name(a_group);
-    char *l_str_query = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE id>='%lld'", l_table_name, a_id);
+    char * l_table_name = s_sqlite_make_table_name(a_iter->db_group);
+    char *l_str_query = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE id>='%lld'", l_table_name, l_sqlite_iter->id);
     int l_ret = s_dap_db_driver_sqlite_query(l_conn->conn, l_str_query, &l_res, NULL);
     sqlite3_free(l_str_query);
     DAP_DEL_Z(l_table_name);
