@@ -350,7 +350,10 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
             l_sync_group->last_id_synced = 0;
         else
             l_sync_group->last_id_synced = dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
-        l_sync_group->count = dap_global_db_driver_count(l_sync_group->name, l_sync_group->last_id_synced + 1);
+        dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(l_sync_group->name);
+        l_sync_group->count = dap_global_db_driver_count(l_iter);
+        dap_global_db_driver_iter_delete(l_iter);
+
         l_dap_db_log_list->items_number += l_sync_group->count;
         l_group->data = (void *)l_sync_group;
     }

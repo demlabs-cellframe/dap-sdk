@@ -1193,7 +1193,9 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
     if (!a_msg)
         return false;
     size_t l_values_count = a_msg->values_page_size;
-    size_t l_values_remains = dap_global_db_driver_count(a_msg->group, a_msg->values_raw_last_id);
+    dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_msg->group);
+    size_t l_values_remains = dap_global_db_driver_count(l_iter);
+    dap_global_db_driver_iter_delete(l_iter);
 
     dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, &a_msg->data_base_iter, &l_values_count);
 
