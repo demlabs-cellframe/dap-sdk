@@ -71,7 +71,6 @@ static bool s_conn_free_present = true;
 
 // iterators part
 static dap_db_iter_t    *s_db_sqlite_iter_create();
-static void             s_db_sqlite_iter_delete(dap_db_iter_t* a_iter);
 
 static pthread_mutex_t s_db_mtx = PTHREAD_MUTEX_INITIALIZER;
 
@@ -1244,7 +1243,6 @@ char l_errbuf[255] = {0}, *l_error_message = NULL;
     a_drv_callback->deinit                  = s_db_sqlite_deinit;
     a_drv_callback->flush                   = s_db_sqlite_flush;
     a_drv_callback->iter_create             = s_db_sqlite_iter_create;
-    a_drv_callback->iter_delete             = s_db_sqlite_iter_delete;
 
 end:
     return l_ret;
@@ -1286,21 +1284,4 @@ static dap_db_iter_t *s_db_sqlite_iter_create(const char *a_group)
     l_ret->db_iter = l_sqlite_iter;
 
     return l_ret;
-}
-
-/**
- * @brief Delete iterator and memory free
- * @param a_iter deleting iterator
- * @return -
- */
-static void s_db_sqlite_iter_delete(dap_db_iter_t *a_iter)
-{   
-    if (!a_iter)
-        return;
-    if (a_iter->db_type != DAP_GLOBAL_DB_TYPE_CURRENT) {
-        log_it(L_ERROR, "Trying delete iterator from another data base");
-        return;
-    }
-    DAP_DEL_Z(a_iter->db_iter);
-    DAP_DEL_Z(a_iter);
 }

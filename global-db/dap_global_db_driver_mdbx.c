@@ -100,7 +100,6 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, si
 static size_t           s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
 static dap_db_iter_t    *s_db_mdbx_iter_create(const char *a_group);
-static void             s_db_mdbx_iter_delete(dap_db_iter_t* a_iter);
 
 
 static MDBX_env *s_mdbx_env;                                                /* MDBX's context area */
@@ -468,7 +467,6 @@ size_t     l_upper_limit_of_db_size = 16;
     a_drv_dpt->deinit              = s_db_mdbx_deinit;
     a_drv_dpt->flush               = s_db_mdbx_flush;
     a_drv_dpt->iter_create         = s_db_mdbx_iter_create;
-    a_drv_dpt->iter_delete         = s_db_mdbx_iter_delete;
 
     /*
      * MDBX support transactions but on the current circuimstance we will not get
@@ -604,24 +602,6 @@ static dap_db_iter_t *s_db_mdbx_iter_create(const char *a_group)
     l_ret->db_iter = l_mdbx_iter;
 
     return l_ret;
-}
-
-/**
- * @brief Delete iterator and memory free
- * @param a_iter deleting iterator
- * @return -
- */
-static void s_db_mdbx_iter_delete(dap_db_iter_t *a_iter)
-{   
-    if (!a_iter)
-        return;
-    if (a_iter->db_type != DAP_GLOBAL_DB_TYPE_CURRENT) {
-        log_it(L_ERROR, "Trying delete iterator from another data base");
-        return;
-    }
-    DAP_DEL_Z(a_iter->db_iter);
-    DAP_DEL_Z(a_iter->db_group);
-    DAP_DEL_Z(a_iter);
 }
 
 /*
@@ -821,7 +801,12 @@ MDBX_val    l_key, l_data;
  */
 static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out)
 {
-    dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_iter->db_group, NULL);                                       /* Sanity check */
+    dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_iter->db_group, NULL);                                    /* Sanity check */
+
+    if (a_iter->db_type != DAP_GLOBAL_DB_TYPE_CURRENT) {
+        log_it(L_ERROR, "Trying use iterator from another data base in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        return NULL;
+    }
 
     int l_rc = 0;
     dap_db_mdbx_iter_t* l_mdbx_iter = (dap_db_mdbx_iter_t*)a_iter->db_iter;
@@ -893,6 +878,11 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, si
 size_t  s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter)
 {
     dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_iter->db_group, 0);                                       /* Sanity check */
+
+    if (a_iter->db_type != DAP_GLOBAL_DB_TYPE_CURRENT) {
+        log_it(L_ERROR, "Trying use iterator from another data base in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        return 0;
+    }
 
     int l_rc = 0;
     dap_db_mdbx_iter_t* l_mdbx_iter = (dap_db_mdbx_iter_t*)a_iter->db_iter;

@@ -358,9 +358,11 @@ dap_db_iter_t *dap_global_db_driver_iter_create(const char *a_group)
  */
 void dap_global_db_driver_iter_delete(dap_db_iter_t* a_iter)
 {
-    if (!a_iter || !s_drv_callback.iter_delete)
-        return;
-    s_drv_callback.iter_delete(a_iter);
+    dap_return_if_pass(!a_iter);
+
+    DAP_DEL_Z(a_iter->db_iter);
+    DAP_DEL_Z(a_iter->db_group);
+    DAP_DEL_Z(a_iter);
 }
 
 
