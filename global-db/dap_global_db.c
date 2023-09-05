@@ -1192,12 +1192,16 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
     dap_return_val_if_pass(!a_msg, false);
 
     size_t l_values_count = a_msg->values_page_size;
+
+    // use incomig iter inly after applying iters on all nodes
     dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_msg->group);
     size_t l_values_remains = dap_global_db_driver_count(l_iter);
     dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, l_iter, &l_values_count);
     dap_global_db_driver_iter_delete(l_iter);
-    // use incomig iter inly after applying iters on all nodes
-    // dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, &a_msg->data_base_iter, &l_values_count);
+    /*use incomig iter inly after applying iters on all nodes
+    size_t l_values_remains = dap_global_db_driver_count(&a_msg->data_base_iter);
+    dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, &a_msg->data_base_iter, &l_values_count);
+    */
     if (l_store_objs && l_values_count)
         a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id + 1;
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all raw request from group %s recieved %zu values from total %zu",
