@@ -70,7 +70,7 @@ static pthread_cond_t s_conn_free_cnd = PTHREAD_COND_INITIALIZER;           /* T
 static bool s_conn_free_present = true;
 
 // iterators part
-static dap_db_iter_t    *s_db_sqlite_iter_create();
+static int s_db_sqlite_iter_create(dap_db_iter_t *a_iter);
 
 static pthread_mutex_t s_db_mtx = PTHREAD_MUTEX_INITIALIZER;
 
@@ -1254,34 +1254,19 @@ end:
  * @param a_group a group name string
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-static dap_db_iter_t *s_db_sqlite_iter_create(const char *a_group)
+static int s_db_sqlite_iter_create(dap_db_iter_t *a_iter)
 {
+    dap_return_val_if_pass(!a_iter || !a_iter->db_group, -1);
     // create sqlite iter
     dap_db_sqlite_iter_t *l_sqlite_iter = DAP_NEW_Z(dap_db_sqlite_iter_t);
     if (!l_sqlite_iter) {
         log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        return NULL;
-    }
-    
-    // create return object
-    dap_db_iter_t *l_ret = DAP_NEW_Z(dap_db_iter_t);
-    if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        DAP_DELETE(l_sqlite_iter);
-        return NULL;
-    }
-
-    l_ret->db_group = dap_strdup(a_group);
-    if (!l_ret->db_group) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        DAP_DELETE(l_sqlite_iter);
-        DAP_DELETE(l_ret);
-        return NULL;
+        return -1;
     }
 
     // get generated values
-    l_ret->db_type = DAP_GLOBAL_DB_TYPE_CURRENT;
-    l_ret->db_iter = l_sqlite_iter;
+    a_iter->db_type = DAP_GLOBAL_DB_TYPE_CURRENT;
+    a_iter->db_iter = l_sqlite_iter;
 
-    return l_ret;
+    return 0;
 }

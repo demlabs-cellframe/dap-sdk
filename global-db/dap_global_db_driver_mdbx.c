@@ -99,7 +99,7 @@ static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const cha
 static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out);
 static size_t           s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
-static dap_db_iter_t    *s_db_mdbx_iter_create(const char *a_group);
+static int              s_db_mdbx_iter_create(dap_db_iter_t *a_iter);
 
 
 static MDBX_env *s_mdbx_env;                                                /* MDBX's context area */
@@ -532,63 +532,35 @@ static  int s_db_mdbx_flush(void)
  * @param a_group a group name string
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-static dap_db_iter_t *s_db_mdbx_iter_create(const char *a_group)
+static int s_db_mdbx_iter_create(dap_db_iter_t *a_iter)
 {
-    dap_return_val_if_pass(!a_group, NULL);                                      /* Sanity check */
+    dap_return_val_if_pass(!a_iter || !a_iter->db_group, -1);                              /* Sanity check */
 
     int l_rc = 0;
-    dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
+    dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_iter->db_group);
     MDBX_cursor *l_cursor = NULL;
     MDBX_val l_key = {0};
 
-    if (!l_db_ctx)                    /* Get DB Context for group/table */
-        return NULL;
+    dap_return_val_if_pass(!l_db_ctx, -1)                    /* Get DB Context for group/table */
     
     // create mdbx iter
     dap_db_mdbx_iter_t *l_mdbx_iter = DAP_NEW_Z(dap_db_mdbx_iter_t);
     if (!l_mdbx_iter) {
         log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        return NULL;
-    }
-    
-    // create return object
-    dap_db_iter_t *l_ret = DAP_NEW_Z(dap_db_iter_t);
-    if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        DAP_DELETE(l_mdbx_iter);
-        return NULL;
-    }
-
-    l_ret->db_group = dap_strdup(a_group);
-    if (!l_ret->db_group) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        DAP_DELETE(l_mdbx_iter);
-        DAP_DELETE(l_ret);
-        return NULL;
+        return -1;
     }
 
     dap_assert ( !pthread_mutex_lock(&l_db_ctx->dbi_mutex));
 
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) ) {
-        dap_assert( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
-        log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        DAP_DELETE(l_mdbx_iter);
-        DAP_DELETE(l_ret);
-        return NULL;
-    }
-
     /* Initialize MDBX cursor context area */
-    if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor)) ) {
-        log_it (L_ERROR, "mdbx_cursor_open: (%d) %s", l_rc, mdbx_strerror(l_rc));
-    }
-
-// mdbx_cursor_first
-    if (MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_key, NULL, MDBX_FIRST))) {
+    if (
+        MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) || 
+        MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor)) ||
+        MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_key, NULL, MDBX_FIRST))) {
         dap_assert( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
-        log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc));
+        log_it (L_ERROR, "mdbx_txn: (%d) %s", l_rc, mdbx_strerror(l_rc));
         DAP_DELETE(l_mdbx_iter);
-        DAP_DELETE(l_ret);
-        return NULL;
+        return -1;
     }
 
     mdbx_cursor_close(l_cursor);
@@ -598,10 +570,10 @@ static dap_db_iter_t *s_db_mdbx_iter_create(const char *a_group)
     // get generated values
     l_mdbx_iter->key = l_key;
 
-    l_ret->db_type = DAP_GLOBAL_DB_TYPE_CURRENT;
-    l_ret->db_iter = l_mdbx_iter;
+    a_iter->db_type = DAP_GLOBAL_DB_TYPE_CURRENT;
+    a_iter->db_iter = (void*)l_mdbx_iter;
 
-    return l_ret;
+    return 0;
 }
 
 /*

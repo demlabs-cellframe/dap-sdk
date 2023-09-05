@@ -348,7 +348,27 @@ dap_db_iter_t *dap_global_db_driver_iter_create(const char *a_group)
 {
     if (!a_group || !s_drv_callback.iter_create)
         return NULL;
-    return s_drv_callback.iter_create(a_group);
+    
+    // create return object
+    dap_db_iter_t *l_ret = DAP_NEW_Z(dap_db_iter_t);
+    if (!l_ret) {
+        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        return NULL;
+    }
+
+    l_ret->db_group = dap_strdup(a_group);
+    if (!l_ret->db_group) {
+        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
+    if (s_drv_callback.iter_create(l_ret)) {
+        log_it(L_ERROR, "Error iterator create in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        DAP_DELETE(l_ret->db_group);
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
+    return l_ret;
 }
 
 /**
