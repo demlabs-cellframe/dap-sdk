@@ -97,7 +97,7 @@ static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group);
 static bool s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out);
 static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out);
-static size_t           s_db_mdbx_read_count_store(dap_db_iter_t *a_iter);
+static size_t           s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
 static dap_db_iter_t    *s_db_mdbx_iter_create(const char *a_group);
 static void             s_db_mdbx_iter_delete(dap_db_iter_t* a_iter);
@@ -890,12 +890,13 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, si
  * @param a_iter started iterator
  * @return count of has been found record.
  */
-size_t  s_db_mdbx_read_count_store(dap_db_iter_t *a_iter)
+size_t  s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter)
 {
     dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_iter->db_group, 0);                                       /* Sanity check */
 
     int l_rc = 0;
     dap_db_mdbx_iter_t* l_mdbx_iter = (dap_db_mdbx_iter_t*)a_iter->db_iter;
+    MDBX_val l_key = l_mdbx_iter->key;
     MDBX_cursor* l_cursor = NULL;
     size_t  l_ret_count = 0;
 
@@ -916,7 +917,7 @@ size_t  s_db_mdbx_read_count_store(dap_db_iter_t *a_iter)
         return NULL;
     }
 
-    while ((MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_cursor, &l_mdbx_iter->key, NULL, MDBX_NEXT)))) {
+    while ((MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_cursor, &l_key, NULL, MDBX_NEXT)))) {
         ++l_ret_count;
     }
 

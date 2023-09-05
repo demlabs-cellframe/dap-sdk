@@ -73,7 +73,6 @@ struct queue_io_msg{
     };
     // Custom argument passed to the callback
     void *  callback_arg;
-    dap_db_iter_t data_base_iter;
     union{
         struct{ // Raw get request
             uint64_t values_raw_last_id;
@@ -110,7 +109,7 @@ struct queue_io_msg{
             char * key; // Key
         };
     };
-
+    dap_db_iter_t data_base_iter;
 };
 
 static pthread_cond_t s_check_db_cond = PTHREAD_COND_INITIALIZER; // Check version condition
@@ -1190,15 +1189,15 @@ int dap_global_db_get_all_raw(dap_db_iter_t* a_iter, size_t a_results_page_size,
  */
 static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
 {
-    if (!a_msg)
-        return false;
+    dap_return_val_if_pass(!a_msg, false);
+
     size_t l_values_count = a_msg->values_page_size;
     dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_msg->group);
     size_t l_values_remains = dap_global_db_driver_count(l_iter);
+    dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, l_iter, &l_values_count);
     dap_global_db_driver_iter_delete(l_iter);
-
-    dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, &a_msg->data_base_iter, &l_values_count);
-
+    // use incomig iter inly after applying iters on all nodes
+    // dap_store_obj_t *l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, &a_msg->data_base_iter, &l_values_count);
     if (l_store_objs && l_values_count)
         a_msg->values_raw_last_id = l_store_objs[l_values_count - 1].id + 1;
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all raw request from group %s recieved %zu values from total %zu",

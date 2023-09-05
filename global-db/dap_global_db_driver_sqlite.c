@@ -1008,13 +1008,13 @@ dap_list_t* s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
 }
 
 /**
- * @brief Reads a number of objects from a s_db database by a_group and a_id
+ * @brief Reads a number of objects from a s_db database by a iterator
  *
  * @param a_group a group name string
  * @param a_id id starting from which the quantity is calculated
  * @return Returns a number of objects.
  */
-size_t s_db_sqlite_read_count_store(dap_db_iter_t *a_iter)
+size_t s_db_sqlite_read_count_store(const dap_db_iter_t *a_iter)
 {
     struct conn_pool_item *l_conn = s_sqlite_get_connection();
 

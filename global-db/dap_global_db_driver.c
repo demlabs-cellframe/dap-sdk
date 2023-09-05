@@ -280,7 +280,7 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
  * @param a_iter data base iterator
  * @return Returns a number of objects.
  */
-size_t dap_global_db_driver_count(dap_db_iter_t *a_iter)
+size_t dap_global_db_driver_count(const dap_db_iter_t *a_iter)
 {
     size_t l_count_out = 0;
     // read the number of items
