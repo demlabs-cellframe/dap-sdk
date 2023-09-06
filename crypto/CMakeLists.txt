@@ -43,8 +43,10 @@ file( GLOB CRYPTO_HEADERS
       src/ringct20/*.h
       src/falcon/*.h
       include/*.h
-
 )
+
+set_source_files_properties(src/sig_picnic/picnic_impl.c PROPERTIES COMPILE_FLAGS -Wno-stringop-overflow)
+set_source_files_properties(src/sha3/fips202.c PROPERTIES COMPILE_FLAGS -Warray-parameter=0)
 
 enable_language(ASM)
 

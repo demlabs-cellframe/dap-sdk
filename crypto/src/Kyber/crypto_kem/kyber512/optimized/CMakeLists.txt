@@ -5,6 +5,8 @@ set(CMAKE_C_STANDARD 11)
 
 add_definitions ("-D_GNU_SOURCE")
 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Warray-parameter=0 -Wno-stringop-overflow")
+
 file(GLOB DAP_CRYPTO_KYBER512_SOURCES
     aes256ctr.c
     cbd.c
