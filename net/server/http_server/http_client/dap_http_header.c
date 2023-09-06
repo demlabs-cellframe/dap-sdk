@@ -248,6 +248,8 @@ dap_http_header_t * dap_http_out_header_add_f(dap_http_client_t *ht, const char 
  */
 void dap_http_header_remove(dap_http_header_t **a_top, dap_http_header_t *a_hdr)
 {
+    if (!a_top)
+        return;
     DL_DELETE(*a_top, a_hdr);
     DAP_DELETE(a_hdr);
 
