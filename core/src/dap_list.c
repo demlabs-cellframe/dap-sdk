@@ -67,7 +67,7 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
  * // This is a list of strings.
  * string_list = dap_list_append (string_list, "first");
  * string_list = dap_list_append (string_list, "second");
- * 
+ *
  * // This is a list of integers.
  * number_list = dap_list_append (number_list, INT_TO_POINTER (27));
  * number_list = dap_list_append (number_list, INT_TO_POINTER (14));
@@ -347,7 +347,7 @@ dap_list_t *dap_list_nth(dap_list_t *a_list, uint64_t n)
  *
  * Gets the element @n places before @list.
  *
- * Returns: the element, or %NULL if the position is 
+ * Returns: the element, or %NULL if the position is
  *     off the end of the DapList
  */
 dap_list_t *dap_list_nth_prev(dap_list_t *a_list, uint64_t n)
@@ -386,9 +386,8 @@ dap_list_t *dap_list_find(dap_list_t *a_list, const void *a_data, dap_callback_c
 {
     dap_list_t *l_el = NULL;
     return a_cmp
-            ? ({ dap_list_t l_sought = { .data = (void*)a_data }; DL_SEARCH(a_list, l_el, &l_sought, a_cmp); })
-            : ({ DL_SEARCH_SCALAR(a_list, l_el, data, a_data); }),
-    l_el;
+            ? ({ dap_list_t l_sought = { .data = (void*)a_data }; DL_SEARCH(a_list, l_el, &l_sought, a_cmp); l_el; })
+            : ({ DL_SEARCH_SCALAR(a_list, l_el, data, a_data); l_el; });
 }
 
 /**
