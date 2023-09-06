@@ -70,7 +70,7 @@ int dap_json_rpc_error_add(int a_code_error, const char *msg, ...)
     l_error->code_error = a_code_error;
     l_error->msg = dap_strdup(a_msg);
     LL_APPEND(s_errors, l_error);
-    log_it(L_NOTICE, "Registration type error. Code error: %d message: %s", a_code_error, a_msg);
+    log_it(L_ERROR, "Registration type error. Code error: %d message: %s", a_code_error, a_msg);
     return 0;
 }
 
