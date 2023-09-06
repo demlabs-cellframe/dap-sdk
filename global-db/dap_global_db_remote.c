@@ -736,6 +736,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     // timestamp for exist obj
     dap_nanotime_t l_timestamp_cur = 0;
     // Record is pinned or not
+    dap_store_obj_t *l_read_obj = NULL;
     bool l_is_pinned_cur = false;
     bool l_match_mask = false;
     uint64_t l_ttl = 0;
@@ -750,24 +751,20 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     }
     if (!l_match_mask) {
         log_it(L_WARNING, "An entry in the group %s was rejected because the group name did not match any of the masks.", a_obj->group);
-        DAP_DELETE(a_arg);
+        DAP_DEL_Z(a_arg);
         return -4;
     }
     if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
-        dap_store_obj_t *l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
+        l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
         if (l_read_obj) {
             l_timestamp_cur = l_read_obj->timestamp;
-            l_is_pinned_cur = l_read_obj->flags & RECORD_PINNED;
-            dap_store_obj_free_one(l_read_obj);
+            if (l_read_obj->flags & RECORD_PINNED)
+                l_is_pinned_cur = true;
+            else
+                dap_store_obj_free_one(l_read_obj);
         }
     }
-    // Do not overwrite pinned records
-    if (l_is_pinned_cur) {
-        debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
-                                a_obj->type != DAP_DB$K_OPTYPE_DEL ? "remove" : "rewrite", a_obj->group, a_obj->key);
-        DAP_DELETE(a_arg);
-        return -1;
-    }
+
     // Deleted time
     dap_nanotime_t l_timestamp_del = dap_global_db_get_del_ts_unsafe(a_global_db_context, a_obj->group, a_obj->key);
     // Limit time
@@ -798,12 +795,24 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
             if (a_obj->timestamp <= l_limit_time)
                 log_it(L_WARNING, "New data not applied, because object is too old");
         }
-        DAP_DELETE(a_arg);
+        if (l_is_pinned_cur)
+            dap_store_obj_free_one(l_read_obj);
+        DAP_DEL_Z(a_arg);
         return -2;
     }
-    // save data to global_db
-    if (dap_global_db_set_raw(a_obj, 1, a_callback, a_arg) != 0) {
-        DAP_DELETE(a_arg);
+    // Do not overwrite pinned records
+    if (l_is_pinned_cur) {
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
+                                a_obj->type != DAP_DB$K_OPTYPE_DEL ? "remove" : "rewrite", a_obj->group, a_obj->key);
+        l_read_obj->timestamp = a_obj->timestamp + 1;
+        l_read_obj->type = DAP_DB$K_OPTYPE_ADD;
+        dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
+        dap_store_obj_free_one(l_read_obj);
+        DAP_DEL_Z(a_arg);
+        return -1;
+    } else if (dap_global_db_set_raw(a_obj, 1, a_callback, a_arg) != 0) {
+        // save data to global_db
+        DAP_DEL_Z(a_arg);
         log_it(L_ERROR, "Can't send save GlobalDB request");
         return -3;
     }
