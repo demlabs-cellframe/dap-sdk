@@ -830,7 +830,7 @@ char    *str_header;
             }
             else{
                 if (str_reply) {
-                    reply_body = dap_strdup_printf("%d\r\n%s\r\n", res, (str_reply) ? str_reply : "");
+                    reply_body = dap_strdup_printf("%s", (str_reply) ? str_reply : "");
                 } 
             }
 
