@@ -109,19 +109,17 @@ int timespec_diff(struct timespec *a_start, struct timespec *a_stop, struct time
 {
     if(!a_start || !a_stop)
         return 0;
-    if(!a_result) {
-        struct timespec l_time_tmp = { 0 };
-        a_result = &l_time_tmp;
-    }
-    if((a_stop->tv_nsec - a_start->tv_nsec) < 0) {
-        a_result->tv_sec = a_stop->tv_sec - a_start->tv_sec - 1;
-        a_result->tv_nsec = a_stop->tv_nsec - a_start->tv_nsec + 1000000000;
+    struct timespec l_time_tmp = {};
+    struct timespec *l_result = a_result ? a_result : &l_time_tmp;
+    if ((a_stop->tv_nsec - a_start->tv_nsec) < 0) {
+        l_result->tv_sec = a_stop->tv_sec - a_start->tv_sec - 1;
+        l_result->tv_nsec = a_stop->tv_nsec - a_start->tv_nsec + 1000000000;
     } else {
-        a_result->tv_sec = a_stop->tv_sec - a_start->tv_sec;
-        a_result->tv_nsec = a_stop->tv_nsec - a_start->tv_nsec;
+        l_result->tv_sec = a_stop->tv_sec - a_start->tv_sec;
+        l_result->tv_nsec = a_stop->tv_nsec - a_start->tv_nsec;
     }
 
-    return (a_result->tv_sec * 1000 + a_result->tv_nsec / 1000000);
+    return (l_result->tv_sec * 1000 + l_result->tv_nsec / 1000000);
 }
 
 /**
