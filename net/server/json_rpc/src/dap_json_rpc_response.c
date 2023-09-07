@@ -67,6 +67,7 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
             case TYPE_RESPONSE_DOUBLE:
             case TYPE_RESPONSE_BOOLEAN:
             case TYPE_RESPONSE_NULL:
+            case TYPE_RESPONSE_ERROR:
                 // No specific cleanup needed for these response types
                 break;
             default:

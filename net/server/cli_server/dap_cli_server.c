@@ -859,10 +859,11 @@ char    *str_header;
 
             DAP_DELETE(str_reply);
             DAP_DELETE(reply_str);
-            DAP_DELETE(reply_body);
+            // DAP_DELETE(reply_body);
             // DAP_DELETE(str_cmd);
-            // str_cmd is freed here 
+            // str_cmd and reply_body are freed here 
             dap_json_rpc_request_free(request);
+            dap_json_rpc_response_free(response);
         }
         break;
     }
