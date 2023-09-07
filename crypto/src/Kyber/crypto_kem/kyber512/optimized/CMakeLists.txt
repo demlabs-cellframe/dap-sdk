@@ -5,7 +5,10 @@ set(CMAKE_C_STANDARD 11)
 
 add_definitions ("-D_GNU_SOURCE")
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Warray-parameter=0 -Wno-stringop-overflow")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-stringop-overflow")
+if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.2)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Warray-parameter=0")
+endif()
 
 file(GLOB DAP_CRYPTO_KYBER512_SOURCES
     aes256ctr.c
