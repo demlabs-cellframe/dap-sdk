@@ -54,12 +54,6 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
  *
  * Note that the return value is the new start of the list,
  * if @list was empty; make sure you store the new value.
- *
- * dap_list_append() has to traverse the entire list to find the end,
- * which is inefficient when adding multiple elements. A common idiom
- * to avoid the inefficiency is to use dap_list_prepend() and reverse
- * the list with dap_list_reverse() when all elements have been added.
- *
  * |[<!-- language="C" -->
  * // Notice that these are initialized to the empty list.
  * DapList *string_list = NULL, *number_list = NULL;

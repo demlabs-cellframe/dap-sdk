@@ -163,9 +163,14 @@ static void s_clear_sync_grp(void *a_elm)
     DAP_DELETE(l_item);
 }
 
-static int s_cb_cmp_items(const void *i_1, const void *i_2) {
-    return dap_strcmp(((dap_sync_group_item_t*)i_1)->group_mask, ((dap_sync_group_item_t*)i_2)->group_mask)
-            || dap_strcmp(((dap_sync_group_item_t*)i_1)->net_name, ((dap_sync_group_item_t*)i_2)->net_name);
+static int s_cb_cmp_items(const void *a_list_elem, const void *a_item) {
+    dap_sync_group_item_t   *l_item1 = (dap_sync_group_item_t*)((dap_list_t*)a_list_elem)->data,
+                            *l_item2 = (dap_sync_group_item_t*)a_item;
+    if (!l_item1 || !l_item2) {
+        log_it(L_CRITICAL, "Invalid arg");
+        return -1;
+    }
+    return dap_strcmp(l_item1->group_mask, l_item2->group_mask) || dap_strcmp(l_item1->net_name, l_item2->net_name);
 }
 
 /**
