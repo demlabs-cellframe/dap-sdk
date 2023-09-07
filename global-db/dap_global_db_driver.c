@@ -228,7 +228,7 @@ dap_store_obj_t *l_store_obj_cur;
         s_drv_callback.transaction_start();
 
     if(s_drv_callback.apply_store_obj)
-        for(int i = a_store_count; (!l_ret) && (i--); l_store_obj_cur++) {
+        for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
             if ( 1 == (l_ret = s_drv_callback.apply_store_obj(l_store_obj_cur)) )
                 log_it(L_INFO, "[%p] Item is missing (may be already deleted) %s/%s", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key);
             else if (l_ret < 0)

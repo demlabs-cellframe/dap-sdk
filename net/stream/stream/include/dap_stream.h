@@ -80,13 +80,6 @@ typedef struct dap_stream {
 
 } dap_stream_t;
 
-typedef struct dap_stream_connection{
-    dap_stream_t *stream;
-    char *address;
-    short port;
-    UT_hash_handle hh;
-}dap_stream_connection_t;
-
 typedef void (*dap_stream_callback)(dap_stream_t *, void *);
 
 #define DAP_STREAM(a) ((dap_stream_t *) (a)->_inheritor )
@@ -111,6 +104,3 @@ void dap_stream_es_rw_states_update(struct dap_stream *a_stream);
 void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
-
-dap_stream_connection_t **dap_stream_connections_get_uplinks(size_t *a_count_streams);
-dap_stream_connection_t **dap_stream_connections_get_downlinks(size_t *a_count_streams);

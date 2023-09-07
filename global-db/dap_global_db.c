@@ -1472,19 +1472,19 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
 int dap_global_db_set_raw_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
     int l_ret = dap_global_db_driver_apply(a_store_objs, a_store_objs_count);
-    if (l_ret == 0) {
+    if (l_ret >= 0) {
         for (size_t i = 0; i < a_store_objs_count; i++) {
             int l_res_del = 0;
             if (a_store_objs[i].type == DAP_DB$K_OPTYPE_ADD)
                 l_res_del = s_record_del_history_del(a_store_objs[i].group, a_store_objs[i].key);
             else if (a_store_objs[i].type == DAP_DB$K_OPTYPE_DEL)
-                l_res_del = s_record_del_history_add(a_store_objs[i].group, (char*)a_store_objs[i].key,
+                l_res_del = s_record_del_history_add(a_store_objs[i].group, (char *)a_store_objs[i].key,
                                                      a_store_objs[i].timestamp);
-            if (!l_res_del) {
+            if (!l_res_del && !l_ret) {
                 s_change_notify(a_global_db_context, &a_store_objs[i]);
             }
         }
-    }else
+    } else
         log_it(L_ERROR,"Can't save raw gdb data, code %d ", l_ret);
     return l_ret;
 }
@@ -1819,7 +1819,7 @@ int dap_global_db_del_unsafe(dap_global_db_context_t *a_global_db_context, const
     if (a_key) {
         if (l_res >= 0)
             l_res = s_record_del_history_add(l_store_obj.group, (char *)l_store_obj.key, l_store_obj.timestamp);
-        // do not add to history if l_res=1 (already deleted)
+        // do not notify group deletion or deletion error
         if (!l_res)
             s_change_notify(a_global_db_context, &l_store_obj);
     }
@@ -2131,14 +2131,9 @@ static void s_queue_io_callback( dap_events_socket_t * a_es, void * a_arg)
  */
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t * a_store_obj)
 {
-    dap_list_t *l_items_list = dap_global_db_get_notify_groups(a_context->instance);
-    for (dap_list_t *it = l_items_list; it; it = it->next) {
-        dap_global_db_notify_item_t *l_notify_item = it->data;
-        if (dap_fnmatch(l_notify_item->group_mask, a_store_obj->group, 0))
-            continue;
-        if (l_notify_item->callback_notify)
-             l_notify_item->callback_notify(a_context, a_store_obj, l_notify_item->callback_arg);
-    }
+    dap_global_db_notify_item_t *l_notify_item = dap_global_db_get_notify_group(a_context->instance, a_store_obj->group);
+    if (l_notify_item && l_notify_item->callback_notify)
+        l_notify_item->callback_notify(a_context, a_store_obj, l_notify_item->callback_arg);
 }
 
 /*
@@ -2172,6 +2167,8 @@ static int s_record_del_history_del(const char *a_group, const char *a_key)
  */
 static int s_record_del_history_add(char *a_group, char *a_key, uint64_t a_timestamp)
 {
+    if (!a_group || !a_key)
+        return -1;
     char l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
     dap_snprintf(l_group, sizeof(l_group) - 1, "%s.del", a_group);
     dap_store_obj_t store_data = {
