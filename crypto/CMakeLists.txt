@@ -46,7 +46,9 @@ file( GLOB CRYPTO_HEADERS
 )
 
 set_source_files_properties(src/sig_picnic/picnic_impl.c PROPERTIES COMPILE_FLAGS -Wno-stringop-overflow)
-set_source_files_properties(src/sha3/fips202.c PROPERTIES COMPILE_FLAGS -Warray-parameter=0)
+if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.2)
+    set_source_files_properties(src/sha3/fips202.c PROPERTIES COMPILE_FLAGS -Warray-parameter=0)
+endif()
 
 enable_language(ASM)
 
