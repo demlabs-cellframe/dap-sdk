@@ -1073,15 +1073,14 @@ struct  __record_suffix__   *l_suff;
 
 
         if ( l_rc != MDBX_SUCCESS ) {                                       /* Check result of mdbx_drop/del */
-            if ( MDBX_SUCCESS != (l_rc = mdbx_txn_abort(l_db_ctx->txn)) )
-                l_rc2 = -EIO, log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        }
-        else if ( MDBX_SUCCESS != (l_rc = mdbx_txn_commit(l_db_ctx->txn)) )
-            l_rc2 = -EIO, log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", l_rc, mdbx_strerror(l_rc));
+            if ( MDBX_SUCCESS != (l_rc2 = mdbx_txn_abort(l_db_ctx->txn)) )
+                log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
+        } else if ( MDBX_SUCCESS != (l_rc2 = mdbx_txn_commit(l_db_ctx->txn)) )
+            log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
 
         dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
 
-        return ( l_rc2 == MDBX_SUCCESS ) ? 0 : -EIO;
+        return ( l_rc2 == MDBX_SUCCESS ) ? l_rc : -EIO;
     } /* DAP_DB$K_OPTYPE_DEL */
 
 
