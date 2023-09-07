@@ -109,6 +109,7 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
             json_object_object_add(jobj, "result", NULL);
             break;
     }
+
     if (response->type == TYPE_RESPONSE_ERROR) {
         json_object_object_add(jobj, "errors", response->json_arr_errors);
     } else {
@@ -127,14 +128,16 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
 dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_string) {
     json_object* jobj = json_tokener_parse(json_string);
     if (!jobj) {
-        log_it(L_ERROR, "Error parsing JSON string");
+        // log_it(L_ERROR, "Error parsing JSON string");
+        printf("Error parsing JSON string");
         return NULL;
     }
 
     dap_json_rpc_response_t* response = malloc(sizeof(dap_json_rpc_response_t));
     if (!response) {
         json_object_put(jobj);
-        log_it(L_CRITICAL, "Memmory allocation error");
+        // log_it(L_CRITICAL, "Memmory allocation error");
+        printf( "Memmory allocation error");
         return NULL;
     }
 
@@ -160,6 +163,9 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
                 case TYPE_RESPONSE_JSON:
                     response->result_json_object = json_object_get(result_obj);
                     break;
+                case TYPE_RESPONSE_ERROR:
+                    json_object_object_get_ex(jobj, "errors", &result_obj);
+                    response->json_arr_errors = json_object_get(result_obj);
                 case TYPE_RESPONSE_NULL:
                     break;
             }
@@ -171,6 +177,67 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
 
     json_object_put(jobj);
     return response;
+}
+
+void printJsonObject(struct json_object *obj, int indent_level) {
+    enum json_type type = json_object_get_type(obj);
+
+    switch (type) {
+        case json_type_object: {
+            json_object_object_foreach(obj, key, val) {
+                for (int i = 0; i <= indent_level; i++) {
+                    printf("    "); // indentation level
+                }
+                printf("\"%s\": ", key);
+                printJsonValue(val, key, indent_level + 1);
+                printf("\n");
+            }
+            for (int i = 0; i < indent_level; i++) {
+                printf("    ");
+            }
+            break;
+        }
+        case json_type_array: {
+            int length = json_object_array_length(obj);
+            for (int i = 0; i < length; i++) {
+                struct json_object *item = json_object_array_get_idx(obj, i);
+                printJsonValue(item, NULL, indent_level + 1);
+                printf("\n");
+            }
+            for (int i = 0; i < indent_level; i++) {
+                printf("    ");
+            }
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+void printJsonValue(struct json_object *obj, const char *key, int indent_level) {
+    enum json_type type = json_object_get_type(obj);
+
+    switch (type) {
+        case json_type_string:
+            printf("\"%s\"", json_object_get_string(obj));
+            break;
+        case json_type_int:
+            printf("%d", json_object_get_int(obj));
+            break;
+        case json_type_double:
+            printf("%lf", json_object_get_double(obj));
+            break;
+        case json_type_boolean:
+            printf("%s", json_object_get_boolean(obj) ? "true" : "false");
+            break;
+        case json_type_object:
+        case json_type_array:
+            printf("\n");
+            printJsonObject(obj, indent_level);
+            break;
+        default:
+            break;
+    }
 }
 
 int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response) {
@@ -193,31 +260,44 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response) {
             printf("%s\n", response->result_boolean ? "true" : "false");
             break;
         case TYPE_RESPONSE_NULL:
-            printf("Response type is NULL\n");
+            printf("response type is NULL\n");
             break;
         case TYPE_RESPONSE_JSON:
-            if (response->result_json_object) {
-                printf("Json Object is NULL\n");
+            if (!response->result_json_object) {
+                printf("json object is NULL\n");
                 return -2;
             }
 
-            if (json_object_object_length(response->result_json_object) <= 0) {
-                printf("Json Object length is 0\n");
+            if (json_object_array_length(response->result_json_object) <= 0) {
+                printf("json response length is 0\n");
                 return -3;
             }
 
-            json_object_object_foreach(response->result_json_object, key, val) {
-                printf("%s:", key);
-
-                if (json_object_is_type(val, json_type_string)) {
-                    printf("%s,\n", json_object_get_string(val));
-                } else if (json_object_is_type(val, json_type_int)) {
-                    printf("%lld,\n", (long long int)json_object_get_int64(val));
-                } else if (json_object_is_type(val, json_type_double)) {
-                    printf("%lf,\n", json_object_get_double(val));
-                } else if (json_object_is_type(val, json_type_boolean)) {
-                    printf("%s,\n", json_object_get_boolean(val) ? "true" : "false");
-                }
+            int result_count = json_object_array_length(response->result_json_object);
+            for (int i = 0; i < result_count; i++) {
+                    struct json_object * json_obj_result = json_object_array_get_idx(response->result_json_object, i);
+                    printJsonObject(json_obj_result, 0);
+                    json_object_put(json_obj_result);
+            }
+            break;
+        case TYPE_RESPONSE_ERROR:
+            if (!response->json_arr_errors) {
+                printf("json errors is NULL");
+                return -4;
+            }
+            int errors_count = json_object_array_length(response->json_arr_errors);
+            for (int i = 0; i < errors_count; i++) {
+                    struct json_object *json_obj = json_object_array_get_idx(response->json_arr_errors, i);
+                    struct json_object *error_obj;
+                    if (json_object_object_get_ex(json_obj, "error", &error_obj)) {
+                        struct json_object *code_obj, *message_obj;
+                        if (json_object_object_get_ex(error_obj, "code", &code_obj) &&
+                            json_object_object_get_ex(error_obj, "message", &message_obj)) {
+                            int code = json_object_get_int(code_obj);
+                            const char *message = json_object_get_string(message_obj);
+                            printf("Error %d: %s\n", code, message);
+                        }
+                    }
             }
             break;
     }
@@ -291,7 +371,7 @@ dap_json_rpc_response_t *dap_json_rpc_response_from_json(char *a_data_json)
 {
     json_object *l_jobj = json_tokener_parse(a_data_json);
     json_object *l_jobj_result = json_object_object_get(l_jobj, "result");
-    json_object *l_jobj_error = json_object_object_get(l_jobj, "error");
+    json_object *l_jobj_error = json_object_object_get(l_jobj, "errors");
     json_object *l_jobj_id = json_object_object_get(l_jobj, "id");
     dap_json_rpc_response_t *l_response = DAP_NEW(dap_json_rpc_response_t);
     if (!l_response) {

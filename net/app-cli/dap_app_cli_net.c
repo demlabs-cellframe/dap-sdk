@@ -249,7 +249,6 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
         printf("Error sending to server");
         return -1;
     }
-    dap_json_rpc_request_free(a_request);
 
     //wait for command execution
     time_t l_start_time = time(NULL);
@@ -269,19 +268,10 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
         if (dap_json_rpc_response_printf_result(response) != 0) {
             printf("Something wrong with response\n");
         }
+        // dap_json_rpc_response_free(response);
     }
-    // if (a_cmd->cmd_res && !s_status) {
-    //     char **l_str = dap_strsplit(a_cmd->cmd_res, "\r\n", 1);
-    //     int l_cnt = dap_str_countv(l_str);
-    //     char *l_str_reply = NULL;
-    //     if (l_cnt == 2) {
-    //         //long l_err_code = strtol(l_str[0], NULL, 10);
-    //         l_str_reply = l_str[1];
-    //     }
-    //     printf("%s\n", (l_str_reply) ? l_str_reply : "no response");
-    //     dap_strfreev(l_str);
-    // }
     DAP_DELETE(a_cmd->cmd_res);
+    dap_json_rpc_request_free(a_request);
     dap_string_free(l_cmd_data, true);
     dap_string_free(l_post_data, true);
     return s_status;

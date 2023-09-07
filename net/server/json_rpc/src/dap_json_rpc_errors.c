@@ -65,7 +65,7 @@ int dap_json_rpc_error_add(int a_code_error, const char *msg, ...)
     dap_json_rpc_error_t *l_error = DAP_NEW(dap_json_rpc_error_t);
     if(!l_error) {
         log_it(L_CRITICAL, "Memory allocation error");
-        return 1;
+        return 2;
     }
     l_error->code_error = a_code_error;
     l_error->msg = dap_strdup(a_msg);
@@ -78,7 +78,7 @@ json_object * dap_json_rpc_error_get(){
     json_object* json_arr_errors = json_object_new_array();
     dap_json_rpc_error_t * error = NULL;
     LL_FOREACH(s_errors, error) {
-        json_object_array_add(json_arr_errors, json_object_new_string(dap_json_rpc_error_get_json(error)));
+        json_object_array_add(json_arr_errors, dap_json_rpc_error_get_json(error));
     }
     if (json_object_array_length(json_arr_errors) > 0) {
         return json_arr_errors;
@@ -105,7 +105,19 @@ dap_json_rpc_error_t *dap_json_rpc_error_search_by_code(int a_code_error)
     return l_element;
 }
 
-char *dap_json_rpc_error_get_json(dap_json_rpc_error_t *a_error)
+json_object *dap_json_rpc_error_get_json(dap_json_rpc_error_t *a_error)
+{
+    json_object *l_jobj_code = json_object_new_int64(a_error->code_error);
+    json_object *l_jobj_msg = json_object_new_string(a_error->msg);
+    json_object *l_jobj = json_object_new_object();
+    json_object_object_add(l_jobj, "code", l_jobj_code);
+    json_object_object_add(l_jobj, "message", l_jobj_msg);
+    json_object *l_jobj_err = json_object_new_object();
+    json_object_object_add(l_jobj_err, "error", l_jobj);
+    return l_jobj_err;
+}
+
+char *dap_json_rpc_error_get_json_str(dap_json_rpc_error_t *a_error)
 {
     log_it(L_NOTICE, "Translation JSON string to struct dap_json_rpc_error");
     json_object *l_jobj_code = json_object_new_int64(a_error->code_error);
