@@ -758,13 +758,18 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
         return -4;
     }
     if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
-        l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
+        dap_db_iter_t *l_iter = dap_global_db_driver_iter_get(a_obj);
+        l_read_obj = dap_global_db_driver_read(l_iter);
+        dap_global_db_driver_iter_delete(l_iter);
+        
         if (l_read_obj) {
             l_timestamp_cur = l_read_obj->timestamp;
             if (l_read_obj->flags & RECORD_PINNED)
                 l_is_pinned_cur = true;
-            else
+            else {
                 dap_store_obj_free_one(l_read_obj);
+                l_read_obj = NULL;
+            }
         }
     }
 

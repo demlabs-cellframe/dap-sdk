@@ -1266,7 +1266,7 @@ static int s_db_sqlite_iter_create(dap_db_iter_t *a_iter)
 
     // get generated values
     a_iter->db_type = DAP_GLOBAL_DB_TYPE_CURRENT;
-    a_iter->db_iter = l_sqlite_iter;
+    a_iter->db_iter = (void *)l_sqlite_iter;
 
     return 0;
 }

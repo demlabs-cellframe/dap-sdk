@@ -328,8 +328,7 @@ dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group)
  */
 dap_store_obj_t* dap_global_db_driver_cond_read(dap_db_iter_t* a_iter, size_t *a_count_out)
 {
-    if (!a_iter)
-        return NULL;
+    dap_return_val_if_pass(!a_iter, NULL);  // if !a_count_out readd all itmens, no need check
 
     dap_store_obj_t *l_ret = NULL;
 
@@ -346,8 +345,7 @@ dap_store_obj_t* dap_global_db_driver_cond_read(dap_db_iter_t* a_iter, size_t *a
  */
 dap_db_iter_t *dap_global_db_driver_iter_create(const char *a_group)
 {
-    if (!a_group || !s_drv_callback.iter_create)
-        return NULL;
+    dap_return_val_if_pass(!a_group || !s_drv_callback.iter_create, NULL);
     
     // create return object
     dap_db_iter_t *l_ret = DAP_NEW_Z(dap_db_iter_t);
@@ -363,7 +361,7 @@ dap_db_iter_t *dap_global_db_driver_iter_create(const char *a_group)
         return NULL;
     }
     if (s_drv_callback.iter_create(l_ret)) {
-        log_it(L_ERROR, "Error iterator create in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_ERROR, "Error iterator create with group %s in %s, line %d", l_ret->db_group,__PRETTY_FUNCTION__, __LINE__);
         DAP_DELETE(l_ret->db_group);
         DAP_DELETE(l_ret);
         return NULL;
@@ -395,12 +393,14 @@ void dap_global_db_driver_iter_delete(dap_db_iter_t* a_iter)
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-dap_store_obj_t* dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *a_count_out)
+dap_store_obj_t* dap_global_db_driver_read(const dap_db_iter_t *a_iter)
 {
+    dap_return_val_if_pass(!a_iter, NULL);
+    
     dap_store_obj_t *l_ret = NULL;
     // read records using the selected database engine
     if(s_drv_callback.read_store_obj)
-        l_ret = s_drv_callback.read_store_obj(a_group, a_key, a_count_out);
+        l_ret = s_drv_callback.read_store_obj(a_iter);
     return l_ret;
 }
 
@@ -417,4 +417,22 @@ bool dap_global_db_driver_is(const char *a_group, const char *a_key)
         return s_drv_callback.is_obj(a_group, a_key);
     else
         return false;
+}
+
+/**
+ * @brief Get iterator to dap_store_obj_t.
+ * @param a_group a group name string
+ * @param a_key a object key string
+ * @return Returns true if it is, false otherwise.
+ */
+dap_db_iter_t *dap_global_db_driver_iter_get(const dap_store_obj_t* a_store_obj)
+{
+    dap_return_val_if_pass(!a_store_obj || !a_store_obj->group || !a_store_obj->key || !s_drv_callback.iter_get, NULL);
+    dap_db_iter_t* l_ret = dap_global_db_driver_iter_create(a_store_obj->group);
+    dap_return_val_if_pass(!l_ret, NULL);
+    // if all pass return iterator
+    dap_return_val_if_pass(!s_drv_callback.iter_get(a_store_obj, l_ret), l_ret);
+    // else memory free and NULL retun
+    dap_global_db_driver_iter_delete(l_ret);
+    return  NULL;
 }
