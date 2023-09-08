@@ -130,7 +130,7 @@ dap_list_t *dap_list_prepend(dap_list_t *a_list, void *a_data)
 dap_list_t *dap_list_insert(dap_list_t *a_list, void* a_data, uint64_t a_position)
 {
     if (!a_position)
-        return dap_list_append(a_list, a_data);
+        return dap_list_prepend(a_list, a_data);
     dap_list_t  *l_el = DAP_NEW_Z(dap_list_t),
                 *l_pos = dap_list_nth(a_list, a_position);
     if (!l_el) {
@@ -303,15 +303,9 @@ dap_list_t *dap_list_copy(dap_list_t *a_list)
  */
 dap_list_t *dap_list_copy_deep(dap_list_t *a_list, dap_callback_copy_t a_func, void *a_user_data)
 {
-    dap_list_t *l_deep_copy = NULL, *l_el, *l_el_copy;
-    if (!a_func) {
-        DL_FOREACH(a_list, l_el) {
-            l_deep_copy = dap_list_append(l_deep_copy, l_el->data);
-        }
-    } else {
-        DL_FOREACH(a_list, l_el) {
-            l_deep_copy = dap_list_append(l_deep_copy, a_func(l_el->data, a_user_data));
-        }
+    dap_list_t *l_deep_copy = NULL, *l_el;
+    DL_FOREACH(a_list, l_el) {
+        l_deep_copy = dap_list_append(l_deep_copy, a_func ? a_func(l_el->data, a_user_data) : l_el->data);
     }
     return l_deep_copy;
 }
