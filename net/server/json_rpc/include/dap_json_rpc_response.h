@@ -33,12 +33,13 @@ extern "C"{
 #endif
 
 typedef enum dap_json_rpc_response_type_result{
-    TYPE_RESPONSE_NULL,
     TYPE_RESPONSE_STRING,
+    TYPE_RESPONSE_NULL,
+    TYPE_RESPONSE_JSON,
     TYPE_RESPONSE_INTEGER,
     TYPE_RESPONSE_DOUBLE,
     TYPE_RESPONSE_BOOLEAN,
-    TYPE_RESPONSE_JSON
+    TYPE_RESPONSE_ERROR
 }dap_json_rpc_response_type_result_t;
 
 typedef struct dap_json_rpc_response_JSON
@@ -53,7 +54,7 @@ void dap_json_rpc_request_JSON_free(dap_json_rpc_request_JSON_t *l_request_JSON)
 
 typedef struct dap_json_rpc_response
 {
-    dap_json_rpc_response_type_result_t type_result;
+    dap_json_rpc_response_type_result_t type;
     union {
         char* result_string;
         int64_t result_int;
@@ -61,16 +62,68 @@ typedef struct dap_json_rpc_response
         bool result_boolean;
         json_object *result_json_object;
     };
-    dap_json_rpc_error_t* error;
-    int64_t id;
+    json_object* json_arr_errors;
+    uint64_t id;
 }dap_json_rpc_response_t;
 
+/**
+ * Create a new JSON-RPC response structure.
+ *
+ * @param result A pointer to the dap_json_rpc_response_t
+ * @param type The response type : TYPE_RESPONSE_NULL,
+ *                                 TYPE_RESPONSE_STRING,
+ *                                 TYPE_RESPONSE_INTEGER,
+ *                                 TYPE_RESPONSE_DOUBLE,
+ *                                 TYPE_RESPONSE_BOOLEAN,
+ *                                 TYPE_RESPONSE_JSON
+ * @param id The unique identifier associated with the REQUEST ID.
+ * @return A pointer to the newly created `dap_json_rpc_response_t` structure. Don't forget about dap_json_rpc_response_free.
+ *         Return NULL in case of memory allocation failure, an unsupported response type,
+ *         or if `TYPE_RESPONSE_NULL` is specified as the response type.
+ */
+dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rpc_response_type_result_t type, int64_t id);
 
+/**
+ * Free the dap_json_rpc_response_t structure.
+ * @param response A pointer to the JSON-RPC response structure to be freed.
+ */
 void dap_json_rpc_response_free(dap_json_rpc_response_t *a_response);
 
-void dap_json_rpc_response_send(dap_json_rpc_response_t *a_response, dap_http_simple_t *a_client);
+/**
+ * Convert a dap_json_rpc_response_t structure to a JSON string.
+ *
+ * @param response A pointer to the dap_json_rpc_response_t.
+ * @return A pointer to the created dap_json_rpc_response_t string representation, 
+ *         or NULL if parsing or memory allocation fails.
+ */
+char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response);
 
-dap_json_rpc_response_t *dap_json_rpc_response_from_json(char *a_data_json);
+/**
+ * Convert a JSON string representation to a dap_json_rpc_response_t structure.
+ *
+ * @param json_string The JSON-formatted string.
+ * @return A pointer to a DYNAMICALLY allocated dap_json_rpc_response_t structure
+ *                                      created from the parsed JSON string.
+ *         Returns NULL if the JSON parsing fails or memory allocation fails
+ *                                      during structure creation.
+ */
+dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_string);
+
+void printJsonObject(struct json_object *obj, int indent_level);
+void printJsonValue(struct json_object *obj, const char *key, int indent_level);
+
+/**
+ * Prints the result of a JSON-RPC response to the standard output.
+ *
+ * @param response A pointer to the dap_json_rpc_response_t instance.
+ * @return 0 on success, 
+ *         -1 if the response is empty, 
+ *         -2 if the JSON object is NULL,
+ *         and -3 if the JSON object length is 0.
+ */
+int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response);
+
+void dap_json_rpc_response_send(dap_json_rpc_response_t *a_response, dap_http_simple_t *a_client);
 
 
 #ifdef __cplusplus
