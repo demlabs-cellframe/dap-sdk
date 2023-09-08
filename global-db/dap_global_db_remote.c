@@ -163,9 +163,9 @@ static void s_clear_sync_grp(void *a_elm)
     DAP_DELETE(l_item);
 }
 
-static int s_cb_cmp_items(const void *a_list_elem, const void *a_item) {
+static int s_cb_cmp_items(const void *a_list_elem, const void *a_item_elem) {
     dap_sync_group_item_t   *l_item1 = (dap_sync_group_item_t*)((dap_list_t*)a_list_elem)->data,
-                            *l_item2 = (dap_sync_group_item_t*)a_item;
+                            *l_item2 = (dap_sync_group_item_t*)((dap_list_t*)a_item_elem)->data;
     if (!l_item1 || !l_item2) {
         log_it(L_CRITICAL, "Invalid arg");
         return -1;
