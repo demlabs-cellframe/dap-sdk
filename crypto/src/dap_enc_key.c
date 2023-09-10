@@ -409,7 +409,7 @@ uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
     default:
         l_data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
         if(!l_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return NULL;
         }
         memcpy(l_data, a_sign, *a_sign_len);
@@ -450,7 +450,7 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
     default:
         l_data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
         if(!l_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return NULL;
         }
         memcpy(l_data, a_sign, *a_sign_len);
@@ -485,7 +485,7 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
     default:
         l_data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
         if(!l_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return NULL;
         }
         memcpy(l_data, a_key->priv_key_data, a_key->priv_key_data_size);
@@ -525,7 +525,7 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
     default:
         l_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
         if(!l_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return NULL;
         }
         memcpy(l_data, a_key->pub_key_data, a_key->pub_key_data_size);
@@ -575,7 +575,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data_size = a_buflen;
         a_key->priv_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
         if(!a_key->priv_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return -1;
         }
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
@@ -606,7 +606,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data_size = a_buflen;
         a_key->priv_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
         if(!a_key->priv_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return -1;
         }
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
@@ -655,7 +655,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         a_key->pub_key_data_size = a_buflen;
         a_key->pub_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
         if(!a_key->pub_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return -1;
         }
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
@@ -690,7 +690,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         a_key->pub_key_data_size = a_buflen;
         a_key->pub_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
         if(!a_key->pub_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return -1;
         }
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
@@ -707,7 +707,7 @@ dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t *a_key)
 {
     dap_enc_key_serialize_t *l_ret = DAP_NEW_Z(dap_enc_key_serialize_t);
     if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     l_ret->priv_key_data_size = a_key->priv_key_data_size;
@@ -733,13 +733,13 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
     }
     dap_enc_key_t *l_ret = dap_enc_key_new(a_key->type);
     if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     if (a_key->priv_key_data_size) {
         l_ret->priv_key_data = DAP_NEW_Z_SIZE(byte_t, a_key->priv_key_data_size);
         if (!l_ret->priv_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             DAP_DEL_Z(l_ret);
             return NULL;
         }
@@ -749,7 +749,7 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
     if (a_key->pub_key_data_size) {
         l_ret->pub_key_data = DAP_NEW_Z_SIZE(byte_t, a_key->pub_key_data_size);
         if (!l_ret->pub_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             DAP_DEL_Z(l_ret->priv_key_data);
             DAP_DEL_Z(l_ret);
             return NULL;
@@ -760,7 +760,7 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
     if(a_key->_inheritor_size) {
         l_ret->_inheritor = DAP_NEW_Z_SIZE(byte_t, a_key->_inheritor_size);
         if (!l_ret->_inheritor) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             DAP_DEL_Z(l_ret->priv_key_data);
             DAP_DEL_Z(l_ret->pub_key_data);
             DAP_DEL_Z(l_ret);
@@ -787,7 +787,7 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
     const dap_enc_key_serialize_t *in_key = (const dap_enc_key_serialize_t *)buf;
     dap_enc_key_t *l_ret = dap_enc_key_new(in_key->type);
     if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     l_ret->last_used_timestamp = in_key->last_used_timestamp;
@@ -798,14 +798,14 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
     DAP_DEL_Z(l_ret->pub_key_data);
     l_ret->priv_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->priv_key_data_size);
     if (!l_ret->priv_key_data) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         DAP_DEL_Z(l_ret);
         return NULL;
     }
     memcpy(l_ret->priv_key_data, in_key->priv_key_data, l_ret->priv_key_data_size);
     l_ret->pub_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->pub_key_data_size);
     if (!l_ret->pub_key_data) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         DAP_DEL_Z(l_ret->priv_key_data);
         DAP_DEL_Z(l_ret);
         return NULL;
@@ -815,7 +815,7 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
         DAP_DEL_Z(l_ret->_inheritor);
         l_ret->_inheritor = DAP_NEW_Z_SIZE(byte_t, in_key->inheritor_size );
         if (!l_ret->_inheritor) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             DAP_DEL_Z(l_ret->priv_key_data);
             DAP_DEL_Z(l_ret->pub_key_data);
             DAP_DEL_Z(l_ret);
@@ -839,7 +839,7 @@ dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type)
     if ((size_t)a_key_type < c_callbacks_size) {
         l_ret = DAP_NEW_Z(dap_enc_key_t);
         if (!l_ret) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return NULL;
         }
         if(s_callbacks[a_key_type].new_callback){

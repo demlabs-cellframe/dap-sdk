@@ -206,7 +206,7 @@ int dap_cert_add_cert_sign(dap_cert_t * a_cert, dap_cert_t * a_cert_signer)
     if (a_cert->enc_key->pub_key_data_size && a_cert->enc_key->pub_key_data) {
         dap_sign_item_t * l_sign_item = DAP_NEW_Z(dap_sign_item_t);
         if (!l_sign_item) {
-            log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+            log_it(L_CRITICAL, "Memory allocation error");
             return -1;
         }
         l_sign_item->sign = dap_cert_sign (a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_data_size,0);
@@ -354,7 +354,7 @@ dap_cert_t * dap_cert_new(const char * a_name)
 {
     dap_cert_t * l_ret = DAP_NEW_Z(dap_cert_t);
     if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     l_ret->_pvt = DAP_NEW_Z(dap_cert_pvt_t);
@@ -379,7 +379,7 @@ int dap_cert_add(dap_cert_t *a_cert)
     }
     l_cert_item = DAP_NEW_Z(dap_cert_item_t);
     if (!l_cert_item) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return -2;
     }
     snprintf(l_cert_item->name, sizeof(l_cert_item->name), "%s", a_cert->name);
@@ -422,25 +422,19 @@ void dap_cert_delete(dap_cert_t * a_cert)
  */
 dap_cert_t *dap_cert_add_file(const char *a_cert_name,const char *a_folder_path)
 {
-    size_t l_cert_path_length = strlen(a_cert_name)+8+strlen(a_folder_path);
-    char * l_cert_path = DAP_NEW_Z_SIZE(char,l_cert_path_length);
-    if(!l_cert_path) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+    const size_t l_cert_path_length = strlen(a_cert_name) + strlen(a_folder_path) + strlen("/.dcert") + 1;
+    if (l_cert_path_length > MAX_PATH) {
+        log_it(L_CRITICAL, "Path size %zu exeeds maximum", l_cert_path_length);
         return NULL;
     }
-    snprintf(l_cert_path,l_cert_path_length,"%s/%s.dcert",a_folder_path,a_cert_name);
+    char l_cert_path[l_cert_path_length];
+    memset(l_cert_path, '\0', l_cert_path_length);
+    snprintf(l_cert_path, l_cert_path_length, "%s/%s.dcert", a_folder_path, a_cert_name);
     if( access( l_cert_path, F_OK ) == -1 ) {
-        log_it (L_ERROR, "File %s is not exists! ", l_cert_path);
-        DAP_DELETE(l_cert_path);
+        log_it (L_ERROR, "File %s does not exist", l_cert_path);
         exit(-701);
     }
-    dap_cert_t * l_cert;
-    l_cert = dap_cert_file_load(l_cert_path);
-    if (l_cert == NULL){
-        log_it (L_ERROR, "File %s is corrupted or wrong format ", l_cert_path);
-    }
-    DAP_DELETE(l_cert_path);
-    return l_cert;
+    return dap_cert_file_load(l_cert_path);
 }
 
 /**
@@ -454,16 +448,15 @@ int dap_cert_save_to_folder(dap_cert_t *a_cert, const char *a_file_dir_path)
 {
     int l_ret = 0;
     const char * l_cert_name = a_cert->name;
-    size_t l_cert_path_length = strlen(l_cert_name) + 8 + strlen(a_file_dir_path);
-    char * l_cert_path = DAP_NEW_Z_SIZE(char, l_cert_path_length);
-    if(!l_cert_path) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        return -1;
+    const size_t l_cert_path_length = strlen(l_cert_name) + strlen(a_file_dir_path) + strlen("/.dcert") + 1;
+    if (l_cert_path_length > MAX_PATH) {
+        log_it(L_CRITICAL, "Path size %zu exeeds maximum", l_cert_path_length);
+        return -4;
     }
-    snprintf(l_cert_path,l_cert_path_length,"%s/%s.dcert", a_file_dir_path, l_cert_name);
-    l_ret = dap_cert_file_save(a_cert, l_cert_path);
-    DAP_DELETE(l_cert_path);
-    return l_ret;
+    char l_cert_path[l_cert_path_length];
+    memset(l_cert_path, '\0', l_cert_path_length);
+    snprintf(l_cert_path,l_cert_path_length, "%s/%s.dcert", a_file_dir_path, l_cert_name);
+    return dap_cert_file_save(a_cert, l_cert_path);
 }
 
 /**
@@ -475,10 +468,7 @@ int dap_cert_save_to_folder(dap_cert_t *a_cert, const char *a_file_dir_path)
  */
 dap_pkey_t *dap_cert_to_pkey(dap_cert_t *a_cert)
 {
-    if ( a_cert )
-        return dap_pkey_from_enc_key( a_cert->enc_key );
-    else
-        return NULL;
+    return a_cert && a_cert->enc_key ? dap_pkey_from_enc_key(a_cert->enc_key) : NULL;
 }
 
 /**
@@ -557,7 +547,7 @@ char *dap_cert_dump(dap_cert_t *a_cert)
             default:
                 l_str = l_meta_item->length ? DAP_NEW_Z_SIZE(char, l_meta_item->length * 2 + 1) : NULL;
                 if (l_meta_item->length && !l_str) {
-                    log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+                    log_it(L_CRITICAL, "Memory allocation error");
                     break;
                 }
                 dap_bin2hex(l_str, l_meta_item->value, l_meta_item->length);

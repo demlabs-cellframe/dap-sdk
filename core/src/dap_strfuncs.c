@@ -307,19 +307,7 @@ int dap_strncmp(const char *a_str1, const char *a_str2, size_t a_n)
 
 char* dap_strdup(const char *a_str)
 {
-    char *l_new_str = NULL;
-
-    if(a_str){
-        size_t l_length = (size_t) (strlen(a_str) + 1);
-        if(l_length){
-            l_new_str = DAP_NEW_SIZE(char, l_length);
-            if (l_new_str)
-                memcpy(l_new_str, a_str, l_length);
-            else
-                log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        }
-    }
-    return l_new_str;
+    return DAP_DUP_SIZE(a_str, strlen(a_str) + 1);
 }
 
 /**
