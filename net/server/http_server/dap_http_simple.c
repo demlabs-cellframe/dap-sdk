@@ -68,6 +68,7 @@ static void s_http_simple_delete( dap_http_simple_t *a_http_simple);
 
 static void s_http_client_headers_read( dap_http_client_t *cl_ht, void *arg );
 static void s_http_client_data_read( dap_http_client_t * cl_ht, void *arg );
+static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *arg);
 static void s_http_client_data_write( dap_http_client_t * a_http_client, void *a_arg );
 static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void *a_arg );
 
@@ -121,7 +122,7 @@ struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_t *a_http, const c
                      l_url_proc, // Internal structure
                      NULL, // Contrustor
                      s_http_client_delete, //  Destructor
-                     s_http_client_headers_read, NULL, // Headers read, write
+                     s_http_client_headers_read, s_http_client_headers_write, // Headers read, write
                      s_http_client_data_read, s_http_client_data_write, // Data read, write
                      NULL); // errror
 }
@@ -244,9 +245,20 @@ static void s_esocket_worker_write_callback(dap_worker_t *a_worker, void *a_arg)
 
 inline static void s_write_data_to_socket(dap_proc_thread_t *a_thread, dap_http_simple_t *a_simple)
 {
-    dap_http_client_out_header_generate(a_simple->http_client);
     a_simple->http_client->state_write = DAP_HTTP_CLIENT_STATE_START;
     dap_proc_thread_worker_exec_callback_inter(a_thread, a_simple->worker->id, s_esocket_worker_write_callback, a_simple);
+}
+
+static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg) {
+    (void)a_arg;
+    dap_http_simple_t  *l_hs = DAP_HTTP_SIMPLE(cl_ht);
+    if (cl_ht->reply_status_code == 200) {
+        for (dap_http_header_t *i = l_hs->ext_headers; i; i = i->next) {
+            dap_http_out_header_add(cl_ht, i->name, i->value);
+            log_it(L_DEBUG, "Added http header. %s: %s", i->name, i->value);
+        }
+    }
+    return !l_hs->generate_default_header;
 }
 
 
@@ -363,6 +375,9 @@ static void s_http_client_delete( dap_http_client_t *a_http_client, void *arg )
     dap_http_simple_t * l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
 
     if (l_http_simple) {
+        for (dap_http_header_t *i = l_http_simple->ext_headers; i ;i = i->next){
+            dap_http_header_remove(&l_http_simple->ext_headers, i);
+        }
         DAP_DEL_Z(l_http_simple->request);
         DAP_DEL_Z(l_http_simple->reply_byte);
         l_http_simple->http_client = NULL;
@@ -374,6 +389,7 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void *
     (void) a_arg;
     a_http_client->_inheritor = DAP_NEW_Z( dap_http_simple_t );
     dap_http_simple_t * l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
+    l_http_simple->generate_default_header = true;
     //  log_it(L_DEBUG,"dap_http_simple_headers_read");
     //  Sleep(300);
 
@@ -516,4 +532,8 @@ size_t dap_http_simple_reply_f(dap_http_simple_t *a_http_simple, const char *a_f
     size_t l_ret = dap_http_simple_reply(a_http_simple, l_buf, l_buf_size);
     DAP_DELETE(l_buf);
     return l_ret;
+}
+
+void dap_http_simple_set_flag_generate_default_header(dap_http_simple_t *a_http_simple, bool flag){
+    a_http_simple->generate_default_header = flag;
 }
