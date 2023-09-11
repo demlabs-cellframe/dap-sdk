@@ -41,10 +41,6 @@ typedef struct dap_app_cli_cmd_state {
 #ifdef __cplusplus
 extern "C" {
 #endif
-/**
- * Clear and delete memory of structure cmd_state
- */
-void dap_app_cli_free_cmd_state(dap_app_cli_cmd_state_t *cmd);
 
 int dap_app_cli_main(const char * a_app_name, const char * a_socket_path, int argc, char **argv);
 
