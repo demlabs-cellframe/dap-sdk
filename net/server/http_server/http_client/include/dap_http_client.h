@@ -35,6 +35,7 @@ typedef enum dap_http_client_state{
 } dap_http_client_state_t;
 
 typedef void (*dap_http_client_callback_t) (struct dap_http_client *,void * arg); // Callback for specific client operations
+typedef bool (*dap_http_client_callback_ret_boolean_t) (struct dap_http_client *,void * arg); // Callback for specific client operations
 typedef void (*dap_http_client_callback_error_t) (struct dap_http_client *,int); // Callback for specific client operations
 
 

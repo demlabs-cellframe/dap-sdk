@@ -240,7 +240,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
     s_status = 1;
     while(s_status > 0) {
         dap_app_cli_http_read(a_socket, a_cmd);
-        if (time(NULL) - l_start_time > DAP_CLI_HTTP_TIMEOUT)
+        if ((time(NULL) - l_start_time > DAP_CLI_HTTP_TIMEOUT)&&!a_cmd->cmd_res)
             s_status = DAP_CLI_ERROR_TIMEOUT;
     }
     // process result
