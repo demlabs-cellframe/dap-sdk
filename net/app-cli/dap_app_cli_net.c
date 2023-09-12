@@ -268,7 +268,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
         if (dap_json_rpc_response_printf_result(response) != 0) {
             printf("Something wrong with response\n");
         }
-    dap_json_rpc_response_free(response);
+        dap_json_rpc_response_free(response);
     }
     // DAP_DELETE(a_cmd->cmd_res);
     dap_json_rpc_request_free(a_request);

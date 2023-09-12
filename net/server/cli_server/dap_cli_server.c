@@ -542,6 +542,11 @@ void dap_cli_server_deinit()
  */
 void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex)
 {
+    if (json_commands(a_name)) {
+        json_object * a_arg_func = json_object_new_object();
+        s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, a_arg_func, a_doc, a_doc_ex);
+        json_object_put(a_arg_func);
+    }
     s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex);
 }
 
@@ -799,10 +804,10 @@ char    *str_header;
                 while (l_argv[argc] != NULL) argc++;
                 // Call the command function
                 if(l_cmd &&  l_argv && l_cmd->func) {
-                    if (l_cmd->arg_func) {
+                    if (json_commands(cmd_name)) {
+                        res = l_cmd->func_ex(argc, l_argv, &json_com_res, NULL);
+                    } else if (l_cmd->arg_func) {
                         res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
-                    } else if (json_commands(cmd_name)) {
-                        res = l_cmd->func(argc, l_argv, json_com_res);
                     } else {
                         res = l_cmd->func(argc, l_argv, &str_reply);
                     }
@@ -818,13 +823,15 @@ char    *str_header;
                 str_reply = dap_strdup_printf("can't recognize command=%s", str_cmd);
                 log_it(L_ERROR,"Reply string: \"%s\"", str_reply);
             }
-            char *reply_body;
+            char *reply_body = NULL;
+            // -verbose 
             if(l_verbose) {
                 if (str_reply) {
                     reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");
                 } else {
-                    json_object* json_res = json_object_new_int(res);
-                    json_object_object_add(json_com_res, "ret_code", json_res);
+                    json_object* json_res = json_object_new_object();
+                    json_object_object_add(json_res, "ret_code", json_object_new_int(res));
+                    json_object_array_add(json_com_res, json_res);
                 }
             }
             else{
@@ -832,15 +839,16 @@ char    *str_header;
                     reply_body = dap_strdup_printf("%s", (str_reply) ? str_reply : "");
                 } 
             }
-
-            dap_json_rpc_response_t* response;
-            if (str_reply) {
+            
+            // create response 
+            dap_json_rpc_response_t* response = NULL;
+            if (reply_body) {
                 response = dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id);
             } else {
                 response = dap_json_rpc_response_create(json_com_res, TYPE_RESPONSE_JSON, request->id);
             }
             const char* response_string = dap_json_rpc_response_to_string(response);
-            // return the result of the command function
+            // send the result of the command function
             char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                                 "Content-Length: %zu\r\n\r\n"
                                                 "%s", strlen(response_string), response_string);
@@ -856,13 +864,14 @@ char    *str_header;
                 l_reply_rest-=l_send_bytes;
             };
 
-            DAP_DELETE(str_reply);
-            DAP_DELETE(reply_str);
             // DAP_DELETE(reply_body);
             // DAP_DELETE(str_cmd);
             // str_cmd and reply_body are freed here 
-            dap_json_rpc_request_free(request);
             dap_json_rpc_response_free(response);
+            dap_json_rpc_request_free(request);
+            DAP_DEL_Z(response_string);
+            DAP_DELETE(str_reply);
+            DAP_DELETE(reply_str);
         }
         break;
     }
