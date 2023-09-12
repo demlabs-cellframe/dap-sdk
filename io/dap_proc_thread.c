@@ -165,9 +165,10 @@ static void s_proc_event_callback(dap_events_socket_t * a_esocket, uint64_t __at
 {
     dap_proc_thread_t   *l_thread;
     dap_proc_queue_item_t *l_item;
-    int     l_rc, l_is_anybody_in_queue, l_is_finished, l_iter_cnt, l_cur_pri,
+    int     //l_rc,
+            l_is_anybody_in_queue, l_is_finished, l_iter_cnt, l_cur_pri,
             l_is_processed;
-    size_t  l_size;
+    //size_t  l_size;
     dap_proc_queue_t    *l_queue;
 
     debug_if (g_debug_reactor, L_DEBUG, "--> Proc event callback start, a_esocket:%p ", a_esocket);
@@ -188,7 +189,7 @@ static void s_proc_event_callback(dap_events_socket_t * a_esocket, uint64_t __at
         l_is_processed = 0;
         for (l_cur_pri = (DAP_PROC_PRI_MAX - 1); l_cur_pri; l_iter_cnt++ )                          /* Run from higest to lowest ... */
         {
-            if ( !l_queue->list[l_cur_pri].items.nr) {                       /* A lockless quick check */
+            if (!dap_list_length(l_queue->list[l_cur_pri].items)) {
                 l_cur_pri--;
                 continue;
             }
@@ -198,13 +199,10 @@ static void s_proc_event_callback(dap_events_socket_t * a_esocket, uint64_t __at
                 break;
 
 //            pthread_mutex_lock(&l_queue->list[l_cur_pri].lock);                 /* Protect list from other threads */
-            l_rc = dap_slist_get4head(&l_queue->list[l_cur_pri].items, (void **) &l_item, &l_size);
+            dap_list_t *l_item_elem = l_queue->list[l_cur_pri].items;
+            l_item = (dap_proc_queue_item_t*)l_item_elem->data;
+            l_queue->list[l_cur_pri].items = dap_list_remove_link(l_queue->list[l_cur_pri].items, l_item_elem);
 //            pthread_mutex_unlock(&l_queue->list[l_cur_pri].lock);
-
-            if  ( l_rc == -ENOENT ) {                                           /* Queue is empty ? */
-                debug_if (g_debug_reactor, L_DEBUG, "a_esocket:%p - nothing to do at prio: %d ", a_esocket, l_cur_pri);
-                continue;
-            }
 
             debug_if (g_debug_reactor, L_INFO, "Proc event callback (l_item: %p) : %p/%p, prio=%d, iteration=%d",
                            l_item, l_item->callback, l_item->callback_arg, l_cur_pri, l_iter_cnt);
@@ -215,9 +213,9 @@ static void s_proc_event_callback(dap_events_socket_t * a_esocket, uint64_t __at
             debug_if (g_debug_reactor, L_INFO, "Proc event callback: %p/%p, prio=%d, iteration=%d - is %sfinished",
                                l_item->callback, l_item->callback_arg, l_cur_pri, l_iter_cnt, l_is_finished ? "" : "not ");
 
-            if ( !(l_is_finished) ) {                                       /* Put entry back to queue to repeat of execution */
+            if ( !(l_is_finished) ) {
                 pthread_mutex_lock(&l_queue->list[l_cur_pri].lock);
-                l_rc = dap_slist_add2tail(&l_queue->list[l_cur_pri].items, l_item, l_size);
+                l_queue->list[l_cur_pri].items = dap_list_append(l_queue->list[l_cur_pri].items, l_item);
                 pthread_mutex_unlock(&l_queue->list[l_cur_pri].lock);
             }
             else    {
@@ -228,7 +226,7 @@ static void s_proc_event_callback(dap_events_socket_t * a_esocket, uint64_t __at
 
 
     for (l_cur_pri = (DAP_PROC_PRI_MAX - 1); l_cur_pri; l_cur_pri--)
-        l_is_anybody_in_queue += l_queue->list[l_cur_pri].items.nr;
+        l_is_anybody_in_queue += dap_list_length(l_queue->list[l_cur_pri].items);
 
     if ( l_is_anybody_in_queue )                                          /* Arm event if we have something to proc again */
         dap_events_socket_event_signal(a_esocket, 1);
