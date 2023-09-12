@@ -23,6 +23,18 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 */
 #include "dap_global_db.h"
 #include "dap_global_db_ch.h"
+#include "dap_stream_ch_proc.h"
+
+#define LOG_TAG "dap_stream_ch_global_db"
+
+static void s_stream_ch_new(dap_stream_ch_t *a_ch, void *a_arg);
+static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg);
+static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg);
+static void s_stream_ch_packet_out(dap_stream_ch_t *a_ch, void *a_arg);
+static void s_stream_ch_io_complete(dap_events_socket_t *a_es, void *a_arg, int a_errno);
+static void s_stream_ch_write_error_unsafe(dap_stream_ch_t *a_ch, uint64_t a_net_id, uint64_t a_chain_id, uint64_t a_cell_id, const char * a_err_string);
+
+static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb);
 
 /**
  * @brief dap_stream_ch_gdb_init
@@ -77,8 +89,7 @@ static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg)
     UNUSED(a_arg);
     dap_stream_ch_gdb_t *l_ch_gdb = DAP_STREAM_CH_GDB(a_ch);
     if (l_ch_gdb->callback_notify_packet_out)
-        l_ch_gdb->callback_notify_packet_out(l_ch_gdb, DAP_STREAM_CH_CHAIN_PKT_TYPE_DELETE, NULL, 0,
-                                               l_ch_gdb->callback_notify_arg);
+        l_ch_gdb->callback_notify_packet_out(l_ch_gdb, DAP_STREAM_CH_GDB_PKT_TYPE_DELETE, NULL, l_ch_gdb->callback_notify_arg);
     s_ch_gdb_go_idle(l_ch_gdb);
     debug_if(g_dap_global_db_debug_more, L_NOTICE, "Destroyed GDB sync channel %p with internal data %p", a_ch, l_ch_gdb);
     DAP_DEL_Z(a_ch->internal);
@@ -97,7 +108,7 @@ static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb)
     debug_if(g_dap_global_db_debug_more, L_INFO, "Go in DAP_STREAM_CH_GDB_STATE_IDLE");
 
     // Cleanup after request
-    memset(&a_ch_chain->request, 0, sizeof(a_ch_chain->request));
+    /*memset(&a_ch_chain->request, 0, sizeof(a_ch_chain->request));
     memset(&a_ch_chain->request_hdr, 0, sizeof(a_ch_chain->request_hdr));
     if (a_ch_chain->request_atom_iter && a_ch_chain->request_atom_iter->chain &&
             a_ch_chain->request_atom_iter->chain->callback_atom_iter_delete) {
@@ -114,5 +125,20 @@ static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb)
     }
     a_ch_chain->remote_atoms = NULL;
     a_ch_chain->sent_breaks = 0;
-    s_free_log_list_gdb(a_ch_chain);
+    s_free_log_list_gdb(a_ch_chain);*/
+}
+
+static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
+{
+
+}
+
+static void s_stream_ch_packet_out(dap_stream_ch_t *a_ch, void *a_arg)
+{
+
+}
+
+static void s_stream_ch_io_complete(dap_events_socket_t *a_es, void *a_arg, int a_errno)
+{
+
 }

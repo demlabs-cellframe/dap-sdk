@@ -299,14 +299,7 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 #endif
 }
 
-/*
- * 23: added support for encryption key type parameter and option to encrypt headers
- * 24: Update hashes protocol
-*/
-#define DAP_PROTOCOL_VERSION          24
-#define DAP_PROTOCOL_VERSION_DEFAULT  24 // used if version is not explicitly specified
-
-#define DAP_CLIENT_PROTOCOL_VERSION   24
+/* Crossplatform print formats for integers and others */
 
 #if (__SIZEOF_LONG__ == 4) || defined (DAP_OS_DARWIN)
 #define DAP_UINT64_FORMAT_X  "llX"
@@ -515,6 +508,9 @@ static const uint16_t s_ascii_table_data[256] = {
 #define dap_ascii_isdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_DIGIT)
 #define dap_ascii_isxdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_XDIGIT)
 
+
+
+
 DAP_STATIC_INLINE void DAP_AtomicLock( dap_spinlock_t *lock )
 {
     __sync_lock_test_and_set(lock, 1);
@@ -716,6 +712,74 @@ DAP_STATIC_INLINE int dap_is_digit(char c) { return dap_ascii_isdigit(c); }
 DAP_STATIC_INLINE int dap_is_xdigit(char c) {return dap_ascii_isxdigit(c);}
 DAP_STATIC_INLINE int dap_is_alpha_and_(char c) { return dap_is_alpha(c) || c == '_'; }
 char **dap_parse_items(const char *a_str, char a_delimiter, int *a_count, const int a_only_digit);
+
+/*
+ * 23: added support for encryption key type parameter and option to encrypt headers
+ * 24: Update hashes protocol
+*/
+#define DAP_PROTOCOL_VERSION          24
+#define DAP_PROTOCOL_VERSION_DEFAULT  24 // used if version is not explicitly specified
+
+#define DAP_CLIENT_PROTOCOL_VERSION   24
+
+/**
+  * @struct Node address
+  *
+  */
+typedef union dap_stream_node_addr {
+    uint64_t uint64;
+    uint16_t words[sizeof(uint64_t)/2];
+    uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
+} DAP_ALIGN_PACKED dap_stream_node_addr_t;
+
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
+#define NODE_ADDR_FP_ARGS(a)  a->words[2],a->words[3],a->words[0],a->words[1]
+#define NODE_ADDR_FPS_ARGS(a)  &a->words[2],&a->words[3],&a->words[0],&a->words[1]
+#define NODE_ADDR_FP_ARGS_S(a)  a.words[2],a.words[3],a.words[0],a.words[1]
+#define NODE_ADDR_FPS_ARGS_S(a)  &a.words[2],&a.words[3],&a.words[0],&a.words[1]
+#else
+#define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
+#define NODE_ADDR_FP_ARGS(a)  a->words[3],a->words[2],a->words[1],a->words[0]
+#define NODE_ADDR_FPS_ARGS(a)  &a->words[3],&a->words[2],&a->words[1],&a->words[0]
+#define NODE_ADDR_FP_ARGS_S(a)  a.words[3],a.words[2],a.words[1],a.words[0]
+#define NODE_ADDR_FPS_ARGS_S(a)  &a.words[3],&a.words[2],&a.words[1],&a.words[0]
+#endif
+
+DAP_STATIC_INLINE bool dap_stream_node_addr_str_check(const char *a_addr_str)
+{
+    if (!a_addr_str)
+        return false;
+    size_t l_str_len = strlen(a_addr_str);
+    if (l_str_len == 22) {
+        for (int n =0; n < 22; n+= 6) {
+            if (!dap_is_xdigit(a_addr_str[n]) || !dap_is_xdigit(a_addr_str[n + 1]) ||
+                !dap_is_xdigit(a_addr_str[n + 2]) || !dap_is_xdigit(a_addr_str[n + 3])) {
+                return false;
+            }
+        }
+        for (int n = 4; n < 18; n += 6) {
+            if (a_addr_str[n] != ':' || a_addr_str[n + 1] != ':')
+                return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str)
+{
+    if (!a_addr || !a_addr_str){
+        return -1;
+    }
+    if (sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4)
+        return 0;
+    if (sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, &a_addr->uint64) == 1)
+        return 0;
+    return -1;
+}
+
+DAP_STATIC_INLINE bool dap_stream_node_addr_not_null(dap_stream_node_addr_t * a_addr) { return a_addr->uint64 != 0; }
 
 unsigned int dap_crc32c(unsigned int crc, const void *buf, size_t buflen);
 

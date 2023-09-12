@@ -29,13 +29,15 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_worker.h"
 
-enum {
+enum dap_stream_ch_gdb_state {
     DAP_STREAM_CH_GDB_STATE_IDLE,
     DAP_STREAM_CH_GDB_STATE_UPDATE,
     DAP_STREAM_CH_GDB_STATE_SYNC,
     DAP_STREAM_CH_GDB_STATE_UPDATE_REMOTE,
     DAP_STREAM_CH_GDB_STATE_SYNC_REMOTE
-} dap_stream_ch_gdb_state;
+};
+
+#define DAP_STREAM_CH_GDB_PKT_TYPE_DELETE 0xFE
 
 typedef struct dap_stream_ch_gdb_pkt {
     uint8_t version;
