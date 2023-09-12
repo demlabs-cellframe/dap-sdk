@@ -65,6 +65,9 @@ typedef struct dap_http_simple {
 
     char reply_mime[256];
 
+    dap_http_header_t *ext_headers;
+    bool generate_default_header;
+
    // dap_http_simple_callback_t reply_proc_post_callback;
 } dap_http_simple_t;
 
@@ -91,4 +94,5 @@ void dap_http_simple_set_pass_unknown_user_agents(int pass );
 size_t dap_http_simple_reply( dap_http_simple_t *a_http_simple, void *a_data, size_t a_data_size);
 DAP_PRINTF_ATTR(2, 3) size_t dap_http_simple_reply_f(dap_http_simple_t *a_http_simple, const char *a_format, ... );
 dap_http_cache_t * dap_http_simple_make_cache_from_reply(dap_http_simple_t * a_http_simple , time_t a_ts_expire );
+void dap_http_simple_set_flag_generate_default_header(dap_http_simple_t *a_http_simple, bool flag);
 
