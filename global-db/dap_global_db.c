@@ -165,6 +165,8 @@ static int s_record_del_history_del(const char *a_group, const char *a_key);
 
 // Call notificators
 static void s_change_notify(dap_global_db_context_t *a_context, dap_store_obj_t *a_store_obj);
+// convert dap_store_obj_t to dap_global_db_obj_t
+static dap_global_db_obj_t* s_objs_from_store_objs(const dap_store_obj_t *a_store_objs, size_t a_values_count);
 
 typedef uint64_t dap_global_db_callback_arg_uid_t;
 /**
@@ -982,43 +984,11 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
     dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values",
                                                    a_group, l_values_count);
-    dap_global_db_obj_t *l_objs = NULL;
-    // Form objs from store_objs
-    if (l_store_objs) {
-        if (l_values_count > 1)
-            qsort(l_store_objs, l_values_count, sizeof(dap_store_obj_t), s_db_compare_by_ts);
-        l_objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, sizeof(dap_global_db_obj_t) * l_values_count);
-        if (!l_objs) {
-            goto mem_clear;
-        }
-        for(size_t i = 0; i < l_values_count; i++){
-            l_objs[i].id = l_store_objs[i].id;
-            l_objs[i].is_pinned = l_store_objs[i].flags & RECORD_PINNED;
-            l_objs[i].key = dap_strdup(l_store_objs[i].key);
-            if (!l_objs[i].key) {
-                goto mem_clear;
-            }
-            l_objs[i].value = DAP_DUP_SIZE(l_store_objs[i].value, l_store_objs[i].value_len);
-            if (!l_objs[i].value && l_store_objs[i].value)
-                goto mem_clear;
-            l_objs[i].value_len = l_store_objs[i].value_len;
-            l_objs[i].timestamp = l_store_objs[i].timestamp;
-        }
-    }
+    dap_global_db_obj_t *l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
     dap_store_obj_free(l_store_objs, l_values_count);
     if (a_objs_count)
         *a_objs_count = l_values_count;
     return l_objs;
-
-mem_clear:
-        log_it(L_CRITICAL, "Memory allocation error");
-    for(size_t j = 0; j < l_values_count && l_objs; j++) {
-        DAP_DEL_Z(l_objs[j].key);
-        DAP_DEL_Z(l_objs[j].value);
-    }
-    DAP_DEL_Z(l_objs);
-    dap_store_obj_free(l_store_objs, l_values_count);
-    return NULL;
 }
 
 /**
@@ -1052,8 +1022,7 @@ int dap_global_db_get_all(const char * a_group, size_t a_results_page_size, dap_
 
     int l_ret = 0;
 
-    // for (size_t i = 0; (i < l_total_records) && !l_ret; i += a_results_page_size)
-        l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
+    l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
     if (l_ret != 0){
         log_it(L_ERROR, "Can't exec get_all request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -1069,42 +1038,30 @@ int dap_global_db_get_all(const char * a_group, size_t a_results_page_size, dap_
  */
 static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
 {
-    size_t l_values_count = 0, l_total_counted = 0;
+    size_t l_values_count = a_msg->values_page_size, l_total_counted = 0;
     dap_global_db_obj_t *l_objs= NULL;
     dap_store_obj_t *l_store_objs = NULL;
     size_t l_total_records = dap_global_db_driver_count(a_msg->p_data_base_iter);
-    if (a_msg->values_page_size >= l_total_records)
+    l_objs = dap_global_db_get_all_unsafe(s_context_global_db, a_msg->group, &l_values_count);
+    if (a_msg->values_page_size >= l_total_records || !a_msg->values_page_size) {
         l_objs = dap_global_db_get_all_unsafe(s_context_global_db, a_msg->group, &l_values_count);
-    else {
-        for (size_t i = 0; i < l_total_records; i += a_msg->values_page_size) {
+        if(a_msg->callback_results)
+                a_msg->callback_results(s_context_global_db,
+                                l_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
+                                a_msg->group, l_total_records, l_values_count,
+                                l_objs, a_msg->callback_arg);
+            dap_store_obj_free(l_store_objs, l_values_count);
+    } else {
+        // for (size_t i = 0; i < l_total_records; i += a_msg->values_page_size) {
+        for (size_t i = 0; i < 1; i++) {
             l_values_count = a_msg->values_page_size;
             l_store_objs = dap_global_db_driver_cond_read(a_msg->p_data_base_iter, &l_values_count);
-                // Clean memory
-            // Form objs from store_objs
-            if (l_store_objs) {
-                if (l_values_count > 1)
-                    qsort(l_store_objs, l_values_count, sizeof(dap_store_obj_t), s_db_compare_by_ts);
-                l_objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, sizeof(dap_global_db_obj_t) * l_values_count);
-                // if (!l_objs) {
-                //     goto mem_clear;
-                // }
-                for(size_t i = 0; i < l_values_count; i++){
-                    l_objs[i].id = l_store_objs[i].id;
-                    l_objs[i].is_pinned = l_store_objs[i].flags & RECORD_PINNED;
-                    l_objs[i].key = dap_strdup(l_store_objs[i].key);
-                    // if (!l_objs[i].key) {
-                    //     goto mem_clear;
-                    // }
-                    l_objs[i].value = DAP_DUP_SIZE(l_store_objs[i].value, l_store_objs[i].value_len);
-                    // if (!l_objs[i].value && l_store_objs[i].value)
-                    //     goto mem_clear;
-                    l_objs[i].value_len = l_store_objs[i].value_len;
-                    l_objs[i].timestamp = l_store_objs[i].timestamp;
-                }
-            }
+
+            l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
+           
                 // Call callback if present
-            if (i + a_msg->values_page_size > l_total_records)
-                l_total_records = 0;
+            // if (i + a_msg->values_page_size > l_total_records)
+            //     l_total_records = 0;
             if(a_msg->callback_results)
                 a_msg->callback_results(s_context_global_db,
                                 l_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
@@ -1146,7 +1103,7 @@ static void s_objs_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_
     }
 
     if (!l_args->get_objs.objs) {
-        l_args->get_objs.objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, a_values_total ? a_values_total : 1);
+        l_args->get_objs.objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, (a_values_total ? a_values_total : 1) * sizeof(dap_global_db_obj_t));
     }
     dap_global_db_objs_copy(l_args->get_objs.objs + l_args->get_objs.objs_count, a_values, a_values_count);
 
@@ -1173,7 +1130,7 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all sync call executes for group \"%s\"", a_group);
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    if (!dap_global_db_get_all(a_group, 10, s_objs_get_callback, DAP_DUP(&l_args->uid)))
+    if (!dap_global_db_get_all(a_group, 50, s_objs_get_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "get_all");
     if (a_objs_count)
         *a_objs_count = l_args->get_objs.objs_count;
@@ -2475,4 +2432,50 @@ static void s_check_db_version_callback_set (dap_global_db_context_t * a_global_
     s_check_db_ret = l_res;
     pthread_cond_signal(&s_check_db_cond);
     pthread_mutex_unlock(&s_check_db_mutex); //  in calling thread
+}
+
+/**
+ * @brief s_objs_from_store_objs
+ * @details convert dap_store_obj_t to dap_global_db_obj_t
+ * @param a_store_objs src dap_store_obj_t pointer
+ * @param a_values_count count records inarray
+ * @return pointer if not error, else NULL
+ */
+
+dap_global_db_obj_t* s_objs_from_store_objs(const dap_store_obj_t *a_store_objs, size_t a_values_count) {
+    
+    dap_return_val_if_pass(!a_store_objs, NULL);
+    
+    dap_global_db_obj_t *l_objs = NULL;
+
+    if (a_values_count > 1)
+        qsort(a_store_objs, a_values_count, sizeof(dap_store_obj_t), s_db_compare_by_ts);
+    l_objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, sizeof(dap_global_db_obj_t) *a_values_count);
+    if (!l_objs) {
+        goto mem_clear;
+    }
+    for(size_t i = 0; i < a_values_count; i++){
+        l_objs[i].id = a_store_objs[i].id;
+        l_objs[i].is_pinned = a_store_objs[i].flags & RECORD_PINNED;
+        l_objs[i].key = dap_strdup(a_store_objs[i].key);
+        if (!l_objs[i].key) {
+            goto mem_clear;
+        }
+        l_objs[i].value = DAP_DUP_SIZE(a_store_objs[i].value, a_store_objs[i].value_len);
+        if (!l_objs[i].value && a_store_objs[i].value)
+            goto mem_clear;
+        l_objs[i].value_len = a_store_objs[i].value_len;
+        l_objs[i].timestamp = a_store_objs[i].timestamp;
+    }
+
+    return l_objs;
+
+    mem_clear:
+    log_it(L_CRITICAL, "Memory allocation error");
+    for(size_t j = 0; j < a_values_count && l_objs; j++) {
+        DAP_DEL_Z(l_objs[j].key);
+        DAP_DEL_Z(l_objs[j].value);
+    }
+    DAP_DEL_Z(l_objs);
+    return NULL;
 }
