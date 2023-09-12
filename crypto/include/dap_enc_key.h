@@ -280,9 +280,9 @@ int dap_enc_key_init(void);
 void dap_enc_key_deinit(void);
 
 const char *dap_enc_get_type_name(dap_enc_key_type_t a_key_type);
-dap_enc_key_type_t dap_enc_key_type_find_by_name(const char * a_name);
-size_t dap_enc_key_get_enc_size(dap_enc_key_t * a_key, const size_t buf_in_size);
-size_t dap_enc_key_get_dec_size(dap_enc_key_t * a_key, const size_t buf_in_size);
+dap_enc_key_type_t dap_enc_key_type_find_by_name(const char *a_name);
+size_t dap_enc_key_get_enc_size(dap_enc_key_t * a_key, const size_t a_buf_in_size);
+size_t dap_enc_key_get_dec_size(dap_enc_key_t * a_key, const size_t a_buf_in_size);
 
 uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len);
 uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len);
@@ -292,18 +292,18 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
 int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
 int dap_enc_key_deserialize_pub_key_old(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
 
-dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t * key);
-dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t buf_size);
-dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key);
+dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t *a_key);
+dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size);
+dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t *a_key);
 
 // allocate memory for key struct
 dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type);
 
 
 // default gen key
-dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t key_type, const void *kex_buf,
-                                                      size_t kex_size, const void* seed,
-                                                      size_t seed_size, size_t key_size);
+dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
+                                                      size_t a_kex_size, const void *a_seed,
+                                                      size_t a_seed_size, size_t a_key_size);
 
 // update struct dap_enc_key_t after insert foreign keys
 void dap_enc_key_update(dap_enc_key_t *a_key);
@@ -313,10 +313,10 @@ dap_enc_key_t *dap_enc_gen_pub_key_from_priv(struct dap_enc_key *a_key, void **p
 
 
 size_t dap_enc_gen_key_public_size (dap_enc_key_t *a_key);
-int dap_enc_gen_key_public (dap_enc_key_t *a_key, void * a_output);
+int dap_enc_gen_key_public (dap_enc_key_t *a_key, void *a_output);
 
 void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_buf);
-void dap_enc_key_delete(dap_enc_key_t * a_key);
+void dap_enc_key_delete(dap_enc_key_t *a_key);
 
 #ifdef __cplusplus
 }

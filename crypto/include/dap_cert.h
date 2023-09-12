@@ -50,10 +50,10 @@ typedef struct dap_cert_metadata {
 } dap_cert_metadata_t;
 
 typedef struct dap_cert {
-    dap_enc_key_t * enc_key;
+    dap_enc_key_t *enc_key;
     char name[DAP_CERT_ITEM_NAME_MAX];
-    void * _pvt;
-    dap_binary_tree_t * metadata;
+    void *_pvt;
+    dap_binary_tree_t *metadata;
 } dap_cert_t;
 
 #ifdef __cplusplus
@@ -62,47 +62,47 @@ extern "C" {
 
 int dap_cert_init();
 
-dap_cert_t * dap_cert_new(const char * a_name);
+dap_cert_t *dap_cert_new(const char *a_name);
 int dap_cert_add(dap_cert_t *a_cert);
 
-size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs, size_t * a_certs_size);
+size_t dap_cert_parse_str_list(const char *a_certs_str, dap_cert_t ***a_certs, size_t *a_certs_size);
 
-dap_cert_t * dap_cert_generate(const char * a_cert_name,const char * a_file_path,dap_enc_key_type_t a_key_type );
+dap_cert_t *dap_cert_generate(const char *a_cert_name,const char *a_file_path,dap_enc_key_type_t a_key_type );
 
-dap_cert_t * dap_cert_generate_mem_with_seed(const char * a_cert_name, dap_enc_key_type_t a_key_type,
-        const void* a_seed, size_t a_seed_size);
-dap_cert_t * dap_cert_generate_mem(const char * a_cert_name, dap_enc_key_type_t a_key_type );
+dap_cert_t *dap_cert_generate_mem_with_seed(const char *a_cert_name, dap_enc_key_type_t a_key_type,
+        const void *a_seed, size_t a_seed_size);
+dap_cert_t *dap_cert_generate_mem(const char *a_cert_name, dap_enc_key_type_t a_key_type );
 
 
-dap_cert_t * dap_cert_add_file(const char * a_cert_name,const char *a_folder_path);
-int dap_cert_save_to_folder(dap_cert_t * a_cert, const char *a_file_dir_path);
-const char* dap_cert_get_folder(int a_n_folder_path);
+dap_cert_t *dap_cert_add_file(const char *a_cert_name,const char *a_folder_path);
+int dap_cert_save_to_folder(dap_cert_t *a_cert, const char *a_file_dir_path);
+const char *dap_cert_get_folder(int a_n_folder_path);
 void dap_cert_add_folder(const char *a_folder_path);
 char *dap_cert_dump(dap_cert_t *a_cert);
-dap_pkey_t * dap_cert_to_pkey(dap_cert_t * a_cert);
+dap_pkey_t *dap_cert_to_pkey(dap_cert_t *a_cert);
 
 dap_cert_t *dap_cert_find_by_name(const char *a_cert_name);
 dap_list_t *dap_cert_get_all_mem();
 
-dap_sign_t * dap_cert_sign(dap_cert_t * a_cert, const void * a_data, size_t a_data_size, size_t a_output_size_wished );
+dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, size_t a_output_size_wished );
 
-int dap_cert_compare_with_sign (dap_cert_t * a_cert,const dap_sign_t * a_sign);
+int dap_cert_compare_with_sign (dap_cert_t *a_cert,const dap_sign_t *a_sign);
 
 
-size_t dap_cert_sign_output_size(dap_cert_t * a_cert, size_t a_size_wished);
+size_t dap_cert_sign_output_size(dap_cert_t *a_cert, size_t a_size_wished);
 
 
 //int dap_cert_sign_output(dap_cert_t * a_cert, const void * a_data, size_t a_data_size
 //                                        , void * a_output , size_t a_output_size);
 
 
-int dap_cert_add_cert_sign(dap_cert_t * a_cert, dap_cert_t * a_cert_signer);
+int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer);
 
-size_t dap_cert_count_cert_sign(dap_cert_t * a_cert);
+size_t dap_cert_count_cert_sign(dap_cert_t *a_cert);
 
 void dap_cert_deinit();
 
-void dap_cert_delete(dap_cert_t * a_cert);
+void dap_cert_delete(dap_cert_t *a_cert);
 void dap_cert_delete_by_name(const char * a_cert_name);
 
 dap_cert_metadata_t *dap_cert_new_meta(const char *a_key, dap_cert_metadata_type_t a_type, void *a_value, size_t a_value_size);
