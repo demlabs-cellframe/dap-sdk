@@ -173,7 +173,7 @@ int dap_global_db_context_exec(dap_global_db_callback_t a_callback, void * a_arg
 dap_global_db_context_t *dap_global_db_context_get_default();
 
 // Copy global_db_obj array
-dap_global_db_obj_t *dap_global_db_objs_copy(dap_global_db_obj_t *a_objs, size_t a_count);
+dap_global_db_obj_t *dap_global_db_objs_copy(dap_global_db_obj_t *a_objs_dest, const dap_global_db_obj_t *a_objs_src, size_t a_count);
 
 // Clear global_db_obj array
 void dap_global_db_objs_delete(dap_global_db_obj_t *a_objs, size_t a_count);
