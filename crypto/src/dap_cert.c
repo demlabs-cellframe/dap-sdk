@@ -98,7 +98,7 @@ size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs,
     char * l_certs_tmp_ptrs = NULL;
     char * l_certs_str_dup = strdup(a_certs_str);
     if (!l_certs_str_dup) {
-        log_it(L_ERROR, "Memory allocatin error in dap_cert_parse_str_list");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return 0;
     }
     char *l_cert_str = strtok_r(l_certs_str_dup, ",", &l_certs_tmp_ptrs);
@@ -112,7 +112,7 @@ size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs,
     dap_cert_t **l_certs;
     *a_certs = l_certs = DAP_NEW_Z_SIZE(dap_cert_t*, (*a_certs_size) * sizeof(dap_cert_t*) );
     if (!l_certs) {
-        log_it(L_ERROR, "Memory allocatin error in dap_cert_parse_str_list");
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return 0;
     }
     // Second pass we parse them all
@@ -358,6 +358,11 @@ dap_cert_t * dap_cert_new(const char * a_name)
         return NULL;
     }
     l_ret->_pvt = DAP_NEW_Z(dap_cert_pvt_t);
+    if(!l_ret->_pvt) {
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
     snprintf(l_ret->name,sizeof(l_ret->name),"%s",a_name);
     return l_ret;
 }
@@ -415,23 +420,21 @@ void dap_cert_delete(dap_cert_t * a_cert)
  * @param a_folder_path const char * certificate path
  * @return dap_cert_t
  */
-dap_cert_t * dap_cert_add_file(const char * a_cert_name,const char *a_folder_path)
+dap_cert_t *dap_cert_add_file(const char *a_cert_name,const char *a_folder_path)
 {
-    size_t l_cert_path_length = strlen(a_cert_name)+8+strlen(a_folder_path);
-    char * l_cert_path = DAP_NEW_Z_SIZE(char,l_cert_path_length);
-    snprintf(l_cert_path,l_cert_path_length,"%s/%s.dcert",a_folder_path,a_cert_name);
+    const size_t l_cert_path_length = strlen(a_cert_name) + strlen(a_folder_path) + strlen("/.dcert") + 1;
+    if (l_cert_path_length > MAX_PATH) {
+        log_it(L_CRITICAL, "Path size %zu exeeds maximum", l_cert_path_length);
+        return NULL;
+    }
+    char l_cert_path[l_cert_path_length];
+    memset(l_cert_path, '\0', l_cert_path_length);
+    snprintf(l_cert_path, l_cert_path_length, "%s/%s.dcert", a_folder_path, a_cert_name);
     if( access( l_cert_path, F_OK ) == -1 ) {
-        log_it (L_ERROR, "File %s is not exists! ", l_cert_path);
-        DAP_DELETE(l_cert_path);
+        log_it (L_ERROR, "File %s does not exist", l_cert_path);
         exit(-701);
     }
-    dap_cert_t * l_cert;
-    l_cert = dap_cert_file_load(l_cert_path);
-    if (l_cert == NULL){
-        log_it (L_ERROR, "File %s is corrupted or wrong format ", l_cert_path);
-    }
-    DAP_DELETE(l_cert_path);
-    return l_cert;
+    return dap_cert_file_load(l_cert_path);
 }
 
 /**
@@ -441,16 +444,19 @@ dap_cert_t * dap_cert_add_file(const char * a_cert_name,const char *a_folder_pat
  * @param a_file_dir_path const char * path to directory with certificate
  * @return int
  */
-int dap_cert_save_to_folder(dap_cert_t * a_cert, const char *a_file_dir_path)
+int dap_cert_save_to_folder(dap_cert_t *a_cert, const char *a_file_dir_path)
 {
-    int ret = 0;
+    int l_ret = 0;
     const char * l_cert_name = a_cert->name;
-    size_t l_cert_path_length = strlen(l_cert_name)+8+strlen(a_file_dir_path);
-    char * l_cert_path = DAP_NEW_Z_SIZE(char,l_cert_path_length);
-    snprintf(l_cert_path,l_cert_path_length,"%s/%s.dcert",a_file_dir_path,l_cert_name);
-    ret = dap_cert_file_save(a_cert,l_cert_path);
-    DAP_DELETE( l_cert_path);
-    return ret;
+    const size_t l_cert_path_length = strlen(l_cert_name) + strlen(a_file_dir_path) + strlen("/.dcert") + 1;
+    if (l_cert_path_length > MAX_PATH) {
+        log_it(L_CRITICAL, "Path size %zu exeeds maximum", l_cert_path_length);
+        return -4;
+    }
+    char l_cert_path[l_cert_path_length];
+    memset(l_cert_path, '\0', l_cert_path_length);
+    snprintf(l_cert_path,l_cert_path_length, "%s/%s.dcert", a_file_dir_path, l_cert_name);
+    return dap_cert_file_save(a_cert, l_cert_path);
 }
 
 /**
@@ -460,12 +466,9 @@ int dap_cert_save_to_folder(dap_cert_t * a_cert, const char *a_file_dir_path)
  * @param a_cert dap_cert_t certificate object
  * @return dap_pkey_t
  */
-dap_pkey_t * dap_cert_to_pkey(dap_cert_t * a_cert)
+dap_pkey_t *dap_cert_to_pkey(dap_cert_t *a_cert)
 {
-    if ( a_cert )
-        return dap_pkey_from_enc_key( a_cert->enc_key );
-    else
-        return NULL;
+    return a_cert && a_cert->enc_key ? dap_pkey_from_enc_key(a_cert->enc_key) : NULL;
 }
 
 /**
@@ -475,9 +478,9 @@ dap_pkey_t * dap_cert_to_pkey(dap_cert_t * a_cert)
  * @param a_sign dap_sign_t * dap_sign_t object (signed block or event)
  * @return int
  */
-int dap_cert_compare_with_sign (dap_cert_t * a_cert,const dap_sign_t * a_sign)
+int dap_cert_compare_with_sign (dap_cert_t *a_cert,const dap_sign_t *a_sign)
 {
-    dap_return_val_if_fail(a_cert && a_cert->enc_key && a_sign, -4);
+    dap_return_val_if_pass(!a_cert || !a_cert->enc_key || !a_sign, -4);
     if ( dap_sign_type_from_key_type( a_cert->enc_key->type ).type == a_sign->header.type.type ){
         int l_ret;
         size_t l_pub_key_size = 0;
@@ -543,6 +546,10 @@ char *dap_cert_dump(dap_cert_t *a_cert)
                 break;
             default:
                 l_str = l_meta_item->length ? DAP_NEW_Z_SIZE(char, l_meta_item->length * 2 + 1) : NULL;
+                if (l_meta_item->length && !l_str) {
+                    log_it(L_CRITICAL, "Memory allocation error");
+                    break;
+                }
                 dap_bin2hex(l_str, l_meta_item->value, l_meta_item->length);
                 dap_string_append_printf(l_ret, "%s\t%u\t%u\t%s\n", l_meta_item->key, l_meta_item->type, l_meta_item->length, l_str);
                 DAP_DELETE(l_str);
@@ -561,10 +568,10 @@ char *dap_cert_dump(dap_cert_t *a_cert)
  * @param a_n_folder_path
  * @return const char*
  */
-const char* dap_cert_get_folder(int a_n_folder_path)
+const char *dap_cert_get_folder(int a_n_folder_path)
 {
-    char **p = utarray_eltptr(s_cert_folders, (u_int)a_n_folder_path);
-    return *p;
+    char **l_p = utarray_eltptr(s_cert_folders, (u_int)a_n_folder_path);
+    return *l_p;
 }
 
 
@@ -577,9 +584,9 @@ void dap_cert_add_folder(const char *a_folder_path)
 {
     utarray_push_back(s_cert_folders, &a_folder_path);
     dap_mkdir_with_parents(a_folder_path);
-    DIR * l_dir = opendir(a_folder_path);
+    DIR *l_dir = opendir(a_folder_path);
     if( l_dir ) {
-        struct dirent * l_dir_entry;
+        struct dirent *l_dir_entry;
         while((l_dir_entry=readdir(l_dir))!=NULL){
             const char * l_filename = l_dir_entry->d_name;
             size_t l_filename_len = strlen (l_filename);
@@ -589,7 +596,7 @@ void dap_cert_add_folder(const char *a_folder_path)
                 const char l_suffix[]=".dcert";
                 size_t l_suffix_len = strlen(l_suffix);
                 if (strncmp(l_filename+ l_filename_len-l_suffix_len,l_suffix,l_suffix_len) == 0 ){
-                    char * l_cert_name = dap_strdup(l_filename);
+                    char *l_cert_name = dap_strdup(l_filename);
                     l_cert_name[l_filename_len-l_suffix_len] = '\0'; // Remove suffix
                     // Load the cert file
                     //log_it(L_DEBUG,"Trying to load %s",l_filename);
@@ -601,8 +608,9 @@ void dap_cert_add_folder(const char *a_folder_path)
         closedir(l_dir);
 
         log_it(L_NOTICE, "Added folder %s",a_folder_path);
-    }else
+    } else {
         log_it(L_WARNING, "Can't add folder %s to cert manager",a_folder_path);
+    }
 }
 
 /**
@@ -622,6 +630,10 @@ dap_cert_metadata_t *dap_cert_new_meta(const char *a_key, dap_cert_metadata_type
     }
     size_t l_meta_item_size = sizeof(dap_cert_metadata_t) + a_value_size + strlen(a_key) + 1;
     dap_cert_metadata_t *l_new_meta = DAP_NEW_SIZE(void, l_meta_item_size);
+    if(!l_new_meta) {
+        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        return NULL;
+    }
     l_new_meta->length = a_value_size;
     l_new_meta->type = a_type;
     memcpy((void *)l_new_meta->value, a_value, a_value_size);
