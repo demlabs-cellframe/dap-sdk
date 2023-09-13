@@ -110,7 +110,6 @@ struct queue_io_msg{
         };
     };
     dap_db_iter_t data_base_iter;
-    dap_db_iter_t *p_data_base_iter;
 };
 
 static pthread_cond_t s_check_db_cond = PTHREAD_COND_INITIALIZER; // Check version condition
@@ -1006,28 +1005,32 @@ int dap_global_db_get_all(const char * a_group, size_t a_results_page_size, dap_
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get_all");
         return DAP_GLOBAL_DB_RC_ERROR;
     }
+
+    int l_ret = -1;
     dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_group);
+    dap_return_val_if_pass(!l_iter, l_ret);
 
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
         log_it(L_CRITICAL, "Memory allocation error");
-        return -1;
+        return l_ret;
     }
     l_msg->opcode = MSG_OPCODE_GET_ALL;
     l_msg->group = dap_strdup(a_group);
     l_msg->callback_arg = a_arg;
     l_msg->callback_results = a_callback;
-    l_msg->p_data_base_iter = l_iter;
+    l_msg->data_base_iter = *l_iter;
     l_msg->values_page_size = a_results_page_size;
 
-    int l_ret = 0;
-
     l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
+
     if (l_ret != 0){
         log_it(L_ERROR, "Can't exec get_all request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
-    }else
+    } else
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent get_all request for \"%s\" group", a_group);
+    
+    // dap_global_db_driver_iter_delete(l_iter);
     return l_ret;
 }
 
@@ -1041,7 +1044,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
     size_t l_values_count = a_msg->values_page_size, l_total_counted = 0;
     dap_global_db_obj_t *l_objs= NULL;
     dap_store_obj_t *l_store_objs = NULL;
-    size_t l_total_records = dap_global_db_driver_count(a_msg->p_data_base_iter);
+    size_t l_total_records = dap_global_db_driver_count(&a_msg->data_base_iter);
     if (a_msg->values_page_size >= l_total_records || !a_msg->values_page_size) {
         l_objs = dap_global_db_get_all_unsafe(s_context_global_db, a_msg->group, &l_values_count);
         if(a_msg->callback_results)
@@ -1055,7 +1058,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
     } else {
         for (size_t i = 0; i < l_total_records; i += a_msg->values_page_size) {
             l_values_count = i + a_msg->values_page_size < l_total_records ? a_msg->values_page_size : l_total_records - i;
-            l_store_objs = dap_global_db_driver_cond_read(a_msg->p_data_base_iter, &l_values_count);
+            l_store_objs = dap_global_db_driver_cond_read(&a_msg->data_base_iter, &l_values_count);
 
             l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
            
@@ -1129,7 +1132,7 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all sync call executes for group \"%s\"", a_group);
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    if (!dap_global_db_get_all(a_group, 19, s_objs_get_callback, DAP_DUP(&l_args->uid)))
+    if (!dap_global_db_get_all(a_group, 1, s_objs_get_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "get_all");
     if (a_objs_count)
         *a_objs_count = l_args->get_objs.objs_count;

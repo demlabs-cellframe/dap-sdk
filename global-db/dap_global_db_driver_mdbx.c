@@ -535,40 +535,10 @@ static  int s_db_mdbx_flush(void)
 static int s_db_mdbx_iter_create(dap_db_iter_t *a_iter)
 {
     dap_return_val_if_pass(!a_iter || !a_iter->db_group, -1);                              /* Sanity check */
-
-    int l_rc = 0;
-    dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_iter->db_group);
-    MDBX_cursor *l_cursor = NULL;
-    MDBX_val l_key = {0};
-
-    dap_return_val_if_pass(!l_db_ctx, -1)                    /* Get DB Context for group/table */
-    
-    // create mdbx iter
     dap_db_mdbx_iter_t *l_mdbx_iter = DAP_NEW_Z(dap_db_mdbx_iter_t);
-    if (!l_mdbx_iter) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        return -1;
-    }
 
-    dap_assert ( !pthread_mutex_lock(&l_db_ctx->dbi_mutex));
-
-    /* Initialize MDBX cursor context area */
-    if (
-        MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) || 
-        MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor)) ||
-        MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_key, NULL, MDBX_FIRST))) {
-        dap_assert( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
-        log_it (L_ERROR, "mdbx_txn: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        DAP_DELETE(l_mdbx_iter);
-        return -1;
-    }
-
-    mdbx_cursor_close(l_cursor);
-    mdbx_txn_commit(l_db_ctx->txn);
-    dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
-
-    // get generated values
-    l_mdbx_iter->key = l_key;
+    l_mdbx_iter->key.iov_base = NULL;
+    l_mdbx_iter->key.iov_len = 0;
 
     a_iter->db_type = DAP_GLOBAL_DB_TYPE_CURRENT;
     a_iter->db_iter = (void*)l_mdbx_iter;
@@ -773,7 +743,7 @@ MDBX_val    l_key, l_data;
  */
 static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out)
 {
-    dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_iter->db_group, NULL);                                    /* Sanity check */
+    dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_iter->db_group, NULL);  /* Sanity check, if !a_count_out return all items*/
 
     if (a_iter->db_type != DAP_GLOBAL_DB_TYPE_CURRENT) {
         log_it(L_ERROR, "Trying use iterator from another data base in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
@@ -789,7 +759,6 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, si
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_iter->db_group);
     dap_return_val_if_pass(!l_db_ctx, NULL);                                       /* Sanity check */
 
-
     /* Limit a number of objects to be returned */
     l_count_out = (a_count_out && *a_count_out) ? *a_count_out : DAP_GLOBAL_DB_MAX_OBJS;
     l_count_out = MIN(l_count_out, DAP_GLOBAL_DB_MAX_OBJS);
@@ -797,15 +766,18 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, si
 
     dap_assert ( !pthread_mutex_lock(&l_db_ctx->dbi_mutex));
 
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) ) {
-        dap_assert( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
-        log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        return NULL;
-    }
-
     /* Initialize MDBX cursor context area */
-    if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor)) ) {
-        log_it (L_ERROR, "mdbx_cursor_open: (%d) %s", l_rc, mdbx_strerror(l_rc));
+    if (
+        MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) || 
+        MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor)) ||
+        l_mdbx_iter->key.iov_base && (MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_mdbx_iter->key, NULL, MDBX_SET_RANGE)))
+        ) {
+        if (l_cursor)
+            mdbx_cursor_close(l_cursor);
+        mdbx_txn_commit(l_db_ctx->txn);
+
+        dap_assert( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
+        log_it (L_ERROR, "mdbx_txn: (%d) %s", l_rc, mdbx_strerror(l_rc));
         return NULL;
     }
 
