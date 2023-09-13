@@ -1006,9 +1006,7 @@ int dap_global_db_get_all(const char * a_group, size_t a_results_page_size, dap_
         return DAP_GLOBAL_DB_RC_ERROR;
     }
 
-    int l_ret = -1;
-    dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_group);
-    dap_return_val_if_pass(!l_iter, l_ret);
+    int l_ret = 0;
 
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
@@ -1019,7 +1017,6 @@ int dap_global_db_get_all(const char * a_group, size_t a_results_page_size, dap_
     l_msg->group = dap_strdup(a_group);
     l_msg->callback_arg = a_arg;
     l_msg->callback_results = a_callback;
-    l_msg->data_base_iter = *l_iter;
     l_msg->values_page_size = a_results_page_size;
 
     l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
@@ -1029,8 +1026,7 @@ int dap_global_db_get_all(const char * a_group, size_t a_results_page_size, dap_
         s_queue_io_msg_delete(l_msg);
     } else
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent get_all request for \"%s\" group", a_group);
-    
-    // dap_global_db_driver_iter_delete(l_iter);
+
     return l_ret;
 }
 
@@ -1040,40 +1036,44 @@ int dap_global_db_get_all(const char * a_group, size_t a_results_page_size, dap_
  * @return
  */
 static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
-{
-    size_t l_values_count = a_msg->values_page_size, l_total_counted = 0;
+{  
+    bool l_ret = true;
+    dap_return_val_if_pass(!a_msg, false);
+
+    size_t l_values_count = a_msg->values_page_size;
     dap_global_db_obj_t *l_objs= NULL;
     dap_store_obj_t *l_store_objs = NULL;
-    size_t l_total_records = dap_global_db_driver_count(&a_msg->data_base_iter);
+
+    dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_msg->group);
+    dap_return_val_if_pass(!l_iter, false);
+
+    size_t l_total_records = dap_global_db_driver_count(l_iter);
     if (a_msg->values_page_size >= l_total_records || !a_msg->values_page_size) {
         l_objs = dap_global_db_get_all_unsafe(s_context_global_db, a_msg->group, &l_values_count);
         if(a_msg->callback_results)
-                a_msg->callback_results(s_context_global_db,
+            l_ret = !a_msg->callback_results(s_context_global_db,
                                 l_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
                                 a_msg->group, l_total_records, l_values_count,
                                 l_objs, a_msg->callback_arg);
         dap_global_db_objs_delete(l_objs, l_values_count);
     } else {
-        for (size_t i = 0; i < l_total_records; i += a_msg->values_page_size) {
+        for (size_t i = 0; (i < l_total_records) && l_ret; i += a_msg->values_page_size) {
             l_values_count = i + a_msg->values_page_size < l_total_records ? a_msg->values_page_size : l_total_records - i;
-            l_store_objs = dap_global_db_driver_cond_read(&a_msg->data_base_iter, &l_values_count);
+            l_store_objs = dap_global_db_driver_cond_read(l_iter, &l_values_count);
 
             l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
            
                 // Call callback if present
-            // if (i + a_msg->values_page_size > l_total_records)
-            //     l_total_records = 0;
             if(a_msg->callback_results)
-                a_msg->callback_results(s_context_global_db,
+            l_ret = !a_msg->callback_results(s_context_global_db,
                                 l_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
                                 a_msg->group, l_total_records, l_values_count,
                                 l_objs, a_msg->callback_arg);
             dap_store_obj_free(l_store_objs, l_values_count);
             dap_global_db_objs_delete(l_objs, l_values_count);
-            l_total_counted += l_values_count;
         }
     }
-    return true; // All values are sent
+    return l_ret; // All values are sent
 }
 
 /**
@@ -1100,7 +1100,7 @@ static bool s_objs_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_
     struct sync_obj_data_callback *l_args = s_global_db_find_callback_data(a_global_db_context, *l_uid);
     if (!l_args) {
         pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
-        return;
+        return false;
     }
 
     if (!l_args->get_objs.objs) {
