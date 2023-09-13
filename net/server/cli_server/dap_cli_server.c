@@ -813,14 +813,16 @@ char    *str_header;
                     }
                 } else if (l_cmd) {
                     log_it(L_WARNING,"NULL arguments for input for command \"%s\"", str_cmd);
+                    dap_json_rpc_error_add(-1, "NULL arguments for input for command \"%s\"", str_cmd);
                 }else {
                     log_it(L_WARNING,"No function for command \"%s\" but it registred?!", str_cmd);
+                    dap_json_rpc_error_add(-1, "No function for command \"%s\" but it registred?!", str_cmd);
                 }
                 // find '-verbose' command
                 l_verbose = dap_cli_server_cmd_find_option_val(l_argv, 1, argc, "-verbose", NULL);
                 dap_strfreev(l_argv);
             } else {
-                str_reply = dap_strdup_printf("can't recognize command=%s", str_cmd);
+                dap_json_rpc_error_add(-1, "can't recognize command=%s", str_cmd);
                 log_it(L_ERROR,"Reply string: \"%s\"", str_reply);
             }
             char *reply_body = NULL;
