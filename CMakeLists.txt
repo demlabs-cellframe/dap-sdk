@@ -130,6 +130,5 @@ include_directories(3rdparty/crc32c_adler)
 #            DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/)
 #    enable_testing()
 #    add_subdirectory(test)
+#    add_subdirectory(examples)
 #endif()
-
-add_subdirectory(examples)
