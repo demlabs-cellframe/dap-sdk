@@ -139,7 +139,7 @@ typedef void (*dap_global_db_callback_result_raw_t) (dap_global_db_context_t * a
  *  @arg a_arg Custom argument
  *  @return none.
  */
-typedef void (*dap_global_db_callback_results_t) (dap_global_db_context_t *a_global_db_context,
+typedef bool (*dap_global_db_callback_results_t) (dap_global_db_context_t *a_global_db_context,
                                                   int a_rc, const char *a_group,
                                                   const size_t a_values_total, const size_t a_values_count,
                                                   dap_global_db_obj_t *a_values, void *a_arg);

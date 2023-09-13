@@ -1052,8 +1052,6 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
                                 l_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
                                 a_msg->group, l_total_records, l_values_count,
                                 l_objs, a_msg->callback_arg);
-            dap_store_obj_free(l_store_objs, l_values_count);
-        
         dap_global_db_objs_delete(l_objs, l_values_count);
     } else {
         for (size_t i = 0; i < l_total_records; i += a_msg->values_page_size) {
@@ -1089,8 +1087,9 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
  * @param a_values_count
  * @param a_values
  * @param a_arg
+ * @return true if ok, false if error
  */
-static void s_objs_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
+static bool s_objs_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
                                 UNUSED_ARG int a_rc, UNUSED_ARG const char *a_group,
                                 const size_t a_values_total, const size_t a_values_count,
                                 dap_global_db_obj_t *a_values, void *a_arg)
@@ -1116,6 +1115,7 @@ static void s_objs_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_
     }
     pthread_cond_signal(&l_args->hdr.cond);
     pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
+    return l_args->hdr.called;
 }
 
 /**
