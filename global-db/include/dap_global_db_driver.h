@@ -81,6 +81,7 @@ int     dap_db_driver_init(const char *driver_name, const char *a_filename_db, i
 void    dap_db_driver_deinit(void);
 
 dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count);
+dap_store_obj_t* dap_global_db_store_objs_copy(dap_store_obj_t *, const dap_store_obj_t *, size_t);
 void    dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count);
 DAP_STATIC_INLINE void dap_store_obj_free_one(dap_store_obj_t *a_store_obj) { return dap_store_obj_free(a_store_obj, 1); }
 int     dap_db_driver_flush(void);

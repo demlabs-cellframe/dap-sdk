@@ -184,6 +184,25 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
     return l_store_obj;
 }
 
+dap_store_obj_t* dap_global_db_store_objs_copy(dap_store_obj_t *a_store_objs_dest, const dap_store_obj_t *a_store_objs_src, size_t a_store_count)
+{
+    dap_return_val_if_pass(!a_store_objs_dest || !a_store_objs_src || !a_store_count, NULL);
+
+    /* Run over array's elements */
+    for (dap_store_obj_t *l_obj = a_store_objs_src, *l_cur = a_store_objs_dest; a_store_count--; l_cur++, l_obj++) {
+        *l_cur = *l_obj;
+        l_cur->group = dap_strdup(l_obj->group);
+        l_cur->key = dap_strdup(l_obj->key);
+        if (l_obj->value) {
+            if (l_obj->value_len)
+                l_cur->value = DAP_DUP_SIZE(l_obj->value, l_obj->value_len);
+            else
+                log_it(L_WARNING, "Inconsistent global DB object copy requested");
+        }
+    }
+    return a_store_objs_dest;
+}
+
 /**
  * @brief Deallocates memory of objects.
  * @param a_store_obj a pointer to objects
