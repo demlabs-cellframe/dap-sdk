@@ -394,7 +394,7 @@ bool dap_sign_match_pkey_signs(dap_sign_t *l_sign1, dap_sign_t *l_sign2)
  */
 bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size) {
     return (a_sign->header.sign_size) && (a_sign->header.sign_pkey_size) && (a_sign->header.type.type != SIG_TYPE_NULL)
-           && (a_sign->header.sign_size + a_sign->header.sign_pkey_size + sizeof(*a_sign) <= a_max_sign_size);
+           && ((uint64_t)a_sign->header.sign_size + a_sign->header.sign_pkey_size + sizeof(*a_sign) <= (uint64_t)a_max_sign_size);
 }
 
 /**

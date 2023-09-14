@@ -27,6 +27,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_time.h"
 #include "dap_cluster.h"
 
+#define DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT 1024
+
 typedef struct dap_global_db_cluster dap_global_db_cluster_t;
 
 typedef struct dap_global_db_cluster {
@@ -45,9 +47,9 @@ typedef struct dap_global_db_pkt {
     uint16_t group_len;
     uint16_t key_len;
     uint32_t value_len;
-    uint32_t sign_len;
+    uint32_t data_len;
     uint32_t crc;
-    uint8_t data[];
+    byte_t data[];
 } DAP_ALIGN_PACKED dap_global_db_pkt_t;
 
 DAP_STATIC_INLINE size_t dap_global_db_pkt_get_size(dap_global_db_pkt_t *a_pkt)
@@ -58,5 +60,9 @@ DAP_STATIC_INLINE size_t dap_global_db_pkt_get_size(dap_global_db_pkt_t *a_pkt)
 typedef struct dap_global_db_pkt_pack {
     uint64_t data_size;
     uint32_t obj_count;
-    uint8_t data[];
+    byte_t data[];
 } DAP_ALIGN_PACKED dap_global_db_pkt_pack_t;
+
+dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old_pkt, dap_global_db_pkt_t *a_new_pkt);
+dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj);
+dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count);

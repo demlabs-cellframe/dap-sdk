@@ -21,8 +21,11 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
+
+#include "dap_global_db.h"
 #include "dap_global_db_cluster.h"
 #include "dap_strfuncs.h"
+#include "dap_sign.h"
 
 /**
  * @brief Multiples data into a_old_pkt structure from a_new_pkt structure.
@@ -53,13 +56,12 @@ dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old
  */
 dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
 {
-    if (!a_store_obj)
-        return NULL;
+    dap_return_val_if_fail(a_store_obj, NULL);
 
     size_t l_group_len = dap_strlen(a_store_obj->group);
     size_t l_key_len = dap_strlen(a_store_obj->key);
     size_t l_sign_len = dap_sign_get_size(a_store_obj->sign);
-    size_t l_data_size_out = l_group_len + l_key_len + l_sign_len + a_store_obj->value_len;
+    size_t l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len + l_sign_len;
     dap_global_db_pkt_t *l_pkt = DAP_NEW_SIZE(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t));
 
     /* Fill packet header */
@@ -68,6 +70,7 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     l_pkt->key_len = l_key_len;
     l_pkt->value_len = a_store_obj->value_len;
     l_pkt->crc = a_store_obj->crc;
+    l_pkt->total_len = l_data_size_out;
 
     /* Put serialized data into the payload part of the packet */
     byte_t *l_data_ptr = l_pkt->data;
@@ -87,126 +90,103 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
  * @param store_obj_count[out] a number of deserialized objects in the array
  * @return Returns a pointer to the first object in the array, if successful; otherwise NULL.
  */
-dap_store_obj_t *dap_global_db_pkt_deserialize(const dap_global_db_pkt_t *a_pkt, size_t *a_store_obj_count)
+dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count)
 {
-uint32_t l_count, l_cur_count;
-uint64_t l_size;
-unsigned char *pdata, *pdata_end;
-dap_store_obj_t *l_store_obj_arr, *l_obj;
+    dap_return_val_if_fail(a_pkt && a_pkt->data_size >= sizeof(dap_global_db_pkt_t), NULL);
 
-    if(!a_pkt || a_pkt->data_size < sizeof(dap_global_db_pkt_t))
+    uint32_t l_count = a_pkt->obj_count;
+    size_t l_size = l_count <= DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT ? l_count * sizeof(struct dap_store_obj) : 0;
+
+    if (!!l_size) {
+        log_it(L_ERROR, "Invalid size: packet pack total size is zero", l_size, errno);
         return NULL;
-
-    l_count = a_pkt->obj_count;
-    l_size = l_count <= UINT16_MAX ? l_count * sizeof(struct dap_store_obj) : 0;
-
-    l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_size);
-
-    if (!l_store_obj_arr || !l_size)
-    {
-        log_it(L_ERROR, "Invalid size: can't allocate %"DAP_UINT64_FORMAT_U" bytes, errno=%d", l_size, errno);
-        DAP_DEL_Z(l_store_obj_arr);
+    }
+    dap_store_obj_t *l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_size);
+    if (l_store_obj_arr) {
+        log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
 
-    pdata = (unsigned char *) a_pkt->data;                                  /* Set <pdata> to begin of payload */
-    pdata_end = pdata + a_pkt->data_size;                                   /* Set <pdata_end> to end of payload area
-                                                                              will be used to prevent out-of-buffer case */
-    l_obj = l_store_obj_arr;
+    byte_t *l_data_ptr = (byte_t *)a_pkt->data;                                 /* Set <l_data_ptr> to begin of payload */
+    byte_t *l_data_end = l_data_ptr + a_pkt->data_size;                         /* Set <l_data_end> to end of payload area
+                                                                                will be used to prevent out-of-buffer case */
+    uint32_t l_cur_count = 0;
+    for (dap_store_obj_t *l_obj = l_store_obj_arr; l_cur_count < l_count; l_cur_count++, l_obj++) {
+        dap_global_db_pkt_t *l_pkt = (dap_global_db_pkt_t *)l_data_ptr;
+        if (l_data_ptr + sizeof(dap_global_db_pkt_t) > l_data_end ||            /* Check for buffer boundaries */
+                l_pkt->data + l_pkt->data_len > l_data_end ||
+                l_pkt->group_len + l_pkt->key_len + l_pkt->value_len + sizeof(dap_sign_t) >= l_pkt->data_len) {
+            log_it(L_ERROR, "Broken GDB element: can't read packet #", l_cur_count);
+            goto exit;
+        }
+        if (!l_pkt->group_len) {
+            log_it(L_ERROR, "Broken GDB element: 'group_len' field is zero");
+            goto exit;
+        }
+        if (!l_pkt->key_len) {
+            log_it(L_ERROR, "Broken GDB element: 'key_len' field is zero");
+            goto exit;
+        }
+        l_obj->timestamp = l_pkt->timestamp;
+        l_obj->value_len = l_pkt->value_len;
+        l_obj->crc = l_pkt->crc;
+        l_data_ptr = l_pkt->data;
 
-    for ( l_cur_count = l_count ; l_cur_count; l_cur_count--, l_obj++ )
-    {
-        if ( (pdata  + sizeof (uint32_t)) > pdata_end )                     /* Check for buffer boundaries */
-            {log_it(L_ERROR, "Broken GDB element: can't read 'type' field"); break;}
-        l_obj->type = *((uint32_t *) pdata);
-        pdata += sizeof(uint32_t);
-
-
-        if ( (pdata  + sizeof (uint16_t)) > pdata_end )
-            {log_it(L_ERROR, "Broken GDB element: can't read 'group_length' field"); break;}
-        l_obj->group_len = *((uint16_t *) pdata);
-        pdata += sizeof(uint16_t);
-
-        if ( !l_obj->group_len )
-            {log_it(L_ERROR, "Broken GDB element: 'group_len' field is zero"); break;}
-
-
-        if ( (pdata + l_obj->group_len) > pdata_end )
-            {log_it(L_ERROR, "Broken GDB element: can't read 'group' field"); break;}
-        l_obj->group = DAP_NEW_Z_SIZE(char, l_obj->group_len + 1);
+        l_obj->group = DAP_DUP_SIZE(l_data_ptr, l_pkt->group_len + sizeof(char));
         if (!l_obj->group) {
-        log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_store_obj_arr);
-            return NULL;
-        }
-        memcpy(l_obj->group, pdata, l_obj->group_len);
-        pdata += l_obj->group_len;
-
-
-
-        if ( (pdata + sizeof (uint64_t)) > pdata_end )
-            {log_it(L_ERROR, "Broken GDB element: can't read 'id' field"); break;}
-        l_obj->id = *((uint64_t *) pdata);
-        pdata += sizeof(uint64_t);
-
-
-
-        if ( (pdata + sizeof (uint64_t)) > pdata_end )
-            {log_it(L_ERROR, "Broken GDB element: can't read 'timestamp' field");  break;}
-        l_obj->timestamp = *((uint64_t *) pdata);
-        pdata += sizeof(uint64_t);
-
-
-        if ( (pdata + sizeof (uint16_t)) > pdata_end)
-            {log_it(L_ERROR, "Broken GDB element: can't read 'key_length' field"); break;}
-        l_obj->key_len = *((uint16_t *) pdata);
-        pdata += sizeof(uint16_t);
-
-        if ( !l_obj->key_len )
-            {log_it(L_ERROR, "Broken GDB element: 'key_length' field is zero"); break;}
-
-        if ((pdata + l_obj->key_len) > pdata_end)
-            {log_it(L_ERROR, "Broken GDB element: 'key_length' field is out from allocated memory"); break;}
-
-        l_obj->key_byte = DAP_NEW_SIZE(byte_t, l_obj->key_len + 1);
-        if (!l_obj->key_byte) {
             log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_obj->group);
-            DAP_DEL_Z(l_store_obj_arr);
-            return NULL;
+            goto exit;
         }
-        memcpy( l_obj->key_byte, pdata, l_obj->key_len);
-        l_obj->key_byte[l_obj->key_len] = '\0';
-        pdata += l_obj->key_len;
+        l_obj->group[l_pkt->group_len] = '\0';
+        l_data_ptr += l_pkt->group_len;
 
+        l_obj->key = DAP_DUP_SIZE(l_data_ptr, l_pkt->key_len + sizeof(char));
+        if (!l_obj->key) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            DAP_DELETE(l_obj->group);
+            goto exit;
+        }
+        l_obj->key[l_pkt->key_len] = '\0';
+        l_data_ptr += l_pkt->key_len;
 
-        if ( (pdata + sizeof (uint64_t)) > pdata_end )
-            {log_it(L_ERROR, "Broken GDB element: can't read 'value_length' field"); break;}
-        l_obj->value_len = *((uint64_t *) pdata);
-        pdata += sizeof(uint64_t);
-
-        if (l_obj->value_len) {
-            if ( (pdata + l_obj->value_len) > pdata_end )
-                {log_it(L_ERROR, "Broken GDB element: can't read 'value' field"); break;}
-            l_obj->value = DAP_NEW_SIZE(uint8_t, l_obj->value_len);
+        if (l_pkt->value_len) {
+            l_obj->value = DAP_DUP_SIZE(l_data_ptr, l_pkt->value_len);
             if (!l_obj->value) {
                 log_it(L_CRITICAL, "Memory allocation error");
-                DAP_DEL_Z(l_obj->key_byte);
-                DAP_DEL_Z(l_obj->group);
-                DAP_DEL_Z(l_store_obj_arr);
-                return NULL;
+                DAP_DELETE(l_obj->group);
+                DAP_DELETE(l_obj->key);
+                goto exit;
             }
-            memcpy(l_obj->value, pdata, l_obj->value_len);
-            pdata += l_obj->value_len;
+            l_data_ptr += l_pkt->value_len;
         }
+
+        dap_sign_t *l_sign = (dap_sign_t *)l_data_ptr;
+        size_t l_sign_size_expected = l_pkt->data_len - l_pkt->group_len - l_pkt->key_len - l_pkt->value_len;
+        size_t l_sign_size = dap_sign_get_size(l_sign);
+        if (l_sign_size != l_sign_size_expected) {
+            log_it(L_ERROR, "Broken GDB element: sign size %zu isn't equal expected size %u", l_sign_size, l_sign_size_expected);
+            DAP_DELETE(l_obj->group);
+            DAP_DELETE(l_obj->key);
+            DAP_DEL_Z(l_obj->value);
+            goto exit;
+        }
+        l_obj->sign = DAP_DUP_SIZE(l_sign, l_sign_len);
+        if (!l_sign) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            DAP_DELETE(l_obj->group);
+            DAP_DELETE(l_obj->key);
+            DAP_DEL_Z(l_obj->value);
+            goto exit;
+        }
+        l_data_ptr += l_sign_size;
     }
 
-    assert(pdata <= pdata_end);
-
+    assert(l_data_ptr = l_data_end);
+exit:
     // Return the number of completely filled dap_store_obj_t structures
     // because l_cur_count may be less than l_count due to too little memory
     if (a_store_obj_count)
-        *a_store_obj_count = l_count;
+        *a_store_obj_count = l_cur_count;
 
     return l_store_obj_arr;
 }
