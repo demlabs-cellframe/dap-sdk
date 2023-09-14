@@ -12,10 +12,8 @@
 #define LOG_TAG "dap_enc_gost"
 
 void dap_enc_gost_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
-        size_t kex_size, const void * seed, size_t seed_size, size_t key_size)
+        size_t kex_size, const void * seed, size_t seed_size, UNUSED_ARG size_t key_size)
 {
-    debug_if(key_size < 32, L_WARNING, "GOST key cannot be less than 32 bytes");
-
     a_key->last_used_timestamp = time(NULL);
     a_key->priv_key_data_size = 32;
     a_key->priv_key_data = DAP_NEW_SIZE(uint8_t, a_key->priv_key_data_size);

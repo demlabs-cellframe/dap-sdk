@@ -159,7 +159,7 @@ dap_http_url_proc_t * dap_http_add_proc(dap_http_t *a_http, const char *a_url_pa
                       ,dap_http_client_callback_t a_new_callback
                       ,dap_http_client_callback_t a_delete_callback
                       ,dap_http_client_callback_t a_headers_read_callback
-                      ,dap_http_client_callback_t a_headers_write_callback
+                      ,dap_http_client_callback_ret_boolean_t a_headers_write_callback
                       ,dap_http_client_callback_t a_data_read_callback
                       ,dap_http_client_callback_t a_data_write_callback
                       ,dap_http_client_callback_error_t a_error_callback

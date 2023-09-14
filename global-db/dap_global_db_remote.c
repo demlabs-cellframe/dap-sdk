@@ -86,13 +86,11 @@ dap_list_t* dap_chain_db_get_sync_groups(const char *a_net_name)
     if(!a_net_name)
         return dap_list_copy(s_sync_group_items);
 
-    dap_list_t *l_list_out = NULL;
-    dap_list_t *l_list_group = s_sync_group_items;
-    while(l_list_group) {
-        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*) l_list_group->data)->net_name)) {
-            l_list_out = dap_list_append(l_list_out, l_list_group->data);
+    dap_list_t *l_list_out = NULL, *l_item;
+    DL_FOREACH(s_sync_group_items, l_item) {
+        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*)l_item->data)->net_name)) {
+            l_list_out = dap_list_append(l_list_out, l_item->data);
         }
-        l_list_group = dap_list_next(l_list_group);
     }
     return l_list_out;
 }
@@ -107,13 +105,11 @@ dap_list_t* dap_chain_db_get_sync_extra_groups(const char *a_net_name)
     if(!a_net_name)
         return dap_list_copy(s_sync_group_extra_items);
 
-    dap_list_t *l_list_out = NULL;
-    dap_list_t *l_list_group = s_sync_group_extra_items;
-    while(l_list_group) {
-        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*) l_list_group->data)->net_name)) {
-            l_list_out = dap_list_append(l_list_out, l_list_group->data);
+    dap_list_t *l_list_out = NULL, *l_item;
+    DL_FOREACH(s_sync_group_extra_items, l_item) {
+        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*)l_item->data)->net_name)) {
+            l_list_out = dap_list_append(l_list_out, l_item->data);
         }
-        l_list_group = dap_list_next(l_list_group);
     }
     return l_list_out;
 }
@@ -167,6 +163,16 @@ static void s_clear_sync_grp(void *a_elm)
     DAP_DELETE(l_item);
 }
 
+static int s_cb_cmp_items(const void *a_list_elem, const void *a_item_elem) {
+    dap_sync_group_item_t   *l_item1 = (dap_sync_group_item_t*)((dap_list_t*)a_list_elem)->data,
+                            *l_item2 = (dap_sync_group_item_t*)((dap_list_t*)a_item_elem)->data;
+    if (!l_item1 || !l_item2) {
+        log_it(L_CRITICAL, "Invalid arg");
+        return -1;
+    }
+    return dap_strcmp(l_item1->group_mask, l_item2->group_mask) || dap_strcmp(l_item1->net_name, l_item2->net_name);
+}
+
 /**
  * @brief s_db_add_sync_group
  * @param a_grp_list
@@ -175,13 +181,11 @@ static void s_clear_sync_grp(void *a_elm)
  */
 static int s_db_add_sync_group(dap_list_t **a_grp_list, dap_sync_group_item_t *a_item)
 {
-    for (dap_list_t *it = *a_grp_list; it; it = it->next) {
-        dap_sync_group_item_t *l_item = (dap_sync_group_item_t *)it->data;
-        if (!dap_strcmp(l_item->group_mask, a_item->group_mask) && !dap_strcmp(l_item->net_name, a_item->net_name)) {
-            log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_item->group_mask);
-            s_clear_sync_grp(a_item);
-            return -1;
-        }
+    dap_list_t *l_item = dap_list_find(*a_grp_list, a_item, s_cb_cmp_items);
+    if (l_item) {
+        log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_item->group_mask);
+        s_clear_sync_grp(a_item);
+        return -1;
     }
     *a_grp_list = dap_list_append(*a_grp_list, a_item);
     return 0;
@@ -323,6 +327,22 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
     dap_global_db_instance_t *l_dbi = l_dap_db_log_list->db_context->instance;
     if (l_dbi->whitelist || l_dbi->blacklist) {
         dap_list_t *l_used_list = l_dbi->whitelist ? l_dbi->whitelist : l_dbi->blacklist;
+        dap_list_t *l_group, *l_tmp;
+        DL_FOREACH_SAFE(l_groups_names, l_group, l_tmp) {
+            dap_list_t *l_used_el;
+            bool l_match = false;
+            DL_FOREACH(l_used_list, l_used_el) {
+                if (!dap_fnmatch(l_used_el->data, l_group->data, FNM_NOESCAPE)) {
+                    l_match = true;
+                    break;
+                }
+            }
+            if (l_used_list == l_dbi->whitelist ? !l_match : l_match) {
+                DL_DELETE(l_groups_names, l_group);
+                DAP_FREE(l_group);
+            }
+        }
+
         for (dap_list_t *l_group = l_groups_names; l_group; ) {
             bool l_found = false;
             for (dap_list_t *it = l_used_list; it; it = it->next) {
@@ -736,6 +756,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     // timestamp for exist obj
     dap_nanotime_t l_timestamp_cur = 0;
     // Record is pinned or not
+    dap_store_obj_t *l_read_obj = NULL;
     bool l_is_pinned_cur = false;
     bool l_match_mask = false;
     uint64_t l_ttl = 0;
@@ -750,24 +771,20 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     }
     if (!l_match_mask) {
         log_it(L_WARNING, "An entry in the group %s was rejected because the group name did not match any of the masks.", a_obj->group);
-        DAP_DELETE(a_arg);
+        DAP_DEL_Z(a_arg);
         return -4;
     }
     if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
-        dap_store_obj_t *l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
+        l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
         if (l_read_obj) {
             l_timestamp_cur = l_read_obj->timestamp;
-            l_is_pinned_cur = l_read_obj->flags & RECORD_PINNED;
-            dap_store_obj_free_one(l_read_obj);
+            if (l_read_obj->flags & RECORD_PINNED)
+                l_is_pinned_cur = true;
+            else
+                dap_store_obj_free_one(l_read_obj);
         }
     }
-    // Do not overwrite pinned records
-    if (l_is_pinned_cur) {
-        debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
-                                a_obj->type != DAP_DB$K_OPTYPE_DEL ? "remove" : "rewrite", a_obj->group, a_obj->key);
-        DAP_DELETE(a_arg);
-        return -1;
-    }
+
     // Deleted time
     dap_nanotime_t l_timestamp_del = dap_global_db_get_del_ts_unsafe(a_global_db_context, a_obj->group, a_obj->key);
     // Limit time
@@ -798,12 +815,24 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
             if (a_obj->timestamp <= l_limit_time)
                 log_it(L_WARNING, "New data not applied, because object is too old");
         }
-        DAP_DELETE(a_arg);
+        if (l_is_pinned_cur)
+            dap_store_obj_free_one(l_read_obj);
+        DAP_DEL_Z(a_arg);
         return -2;
     }
-    // save data to global_db
-    if (dap_global_db_set_raw(a_obj, 1, a_callback, a_arg) != 0) {
-        DAP_DELETE(a_arg);
+    // Do not overwrite pinned records
+    if (l_is_pinned_cur) {
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
+                                a_obj->type != DAP_DB$K_OPTYPE_DEL ? "remove" : "rewrite", a_obj->group, a_obj->key);
+        l_read_obj->timestamp = a_obj->timestamp + 1;
+        l_read_obj->type = DAP_DB$K_OPTYPE_ADD;
+        dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
+        dap_store_obj_free_one(l_read_obj);
+        DAP_DEL_Z(a_arg);
+        return -1;
+    } else if (dap_global_db_set_raw(a_obj, 1, a_callback, a_arg) != 0) {
+        // save data to global_db
+        DAP_DEL_Z(a_arg);
         log_it(L_ERROR, "Can't send save GlobalDB request");
         return -3;
     }

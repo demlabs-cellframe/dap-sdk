@@ -93,7 +93,7 @@ static int s_thread_loop(dap_context_t * a_context);
 static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags);
 
 pthread_rwlock_t s_contexts_rwlock = PTHREAD_RWLOCK_INITIALIZER;
-dap_list_t * s_contexts;
+dap_list_t * s_contexts = NULL;
 /**
  * @brief dap_context_init
  * @return
