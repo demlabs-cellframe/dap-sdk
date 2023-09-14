@@ -701,7 +701,7 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
  */
 static void s_fill_one_item(const char *a_group, dap_store_obj_t *a_obj, SQLITE_ROW_VALUE *a_row)
 {
-    if(a_obj == NULL){
+    if(!a_obj){
         log_it(L_ERROR, "Object is not initialized, can't call fill_one_item");
         return;
     }
@@ -795,7 +795,7 @@ struct conn_pool_item *l_conn;
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out)
+dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp)
 {
     dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_iter->db_group, NULL);                                       /* Sanity check */
 
@@ -811,11 +811,11 @@ dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *
         l_count_out = (int)*a_count_out;
     char *l_str_query = NULL;
     if (l_count_out) {
-        l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' WHERE id>='%lld' ORDER BY id ASC LIMIT %d",
-                l_table_name, l_iter->id, l_count_out);
+        l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' WHERE id>='%lld' AND ts>'%lld' ORDER BY id ASC LIMIT %d",
+                l_table_name, l_iter->id, a_timestamp, l_count_out);
     } else {
-        l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' WHERE id>='%lld' ORDER BY id ASC",
-                l_table_name, l_iter->id);
+        l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' WHERE id>='%lld' AND ts>'%lld'  ORDER BY id ASC",
+                l_table_name, l_iter->id, a_timestamp);
     }
     struct conn_pool_item *l_conn = s_sqlite_get_connection();
     if(!l_conn) {
