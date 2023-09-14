@@ -727,7 +727,10 @@ char* s_get_next_str( SOCKET nSocket, int *dwLen, const char *stop_str, bool del
     return NULL;
 }
 int json_commands(const char * a_name) {
-    const char* long_cmd[] = {"tx_history"};
+    const char* long_cmd[] = {
+            "tx_history",
+            "mempool_list"
+    };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
             return 1;
