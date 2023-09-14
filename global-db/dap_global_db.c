@@ -109,6 +109,7 @@ struct queue_io_msg{
             char * key; // Key
         };
     };
+    dap_nanotime_t timestamp;
 };
 
 static pthread_cond_t s_check_db_cond = PTHREAD_COND_INITIALIZER; // Check version condition
@@ -997,7 +998,7 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
  * @param a_arg
  * @return
  */
-int dap_global_db_get_all(const char * a_group, size_t a_results_page_size, dap_global_db_callback_results_t a_callback, void * a_arg)
+int dap_global_db_get_all(const char * a_group, size_t a_results_page_size, dap_nanotime_t a_timestamp, dap_global_db_callback_results_t a_callback, void * a_arg)
 {
     // TODO make usable a_results_page_size
     if(s_context_global_db == NULL){
@@ -1017,6 +1018,7 @@ int dap_global_db_get_all(const char * a_group, size_t a_results_page_size, dap_
     l_msg->callback_arg = a_arg;
     l_msg->callback_results = a_callback;
     l_msg->values_page_size = a_results_page_size;
+    l_msg->timestamp = a_timestamp;
 
     l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
 
@@ -1037,14 +1039,18 @@ int dap_global_db_get_all(const char * a_group, size_t a_results_page_size, dap_
 static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
 {  
     dap_return_val_if_pass(!a_msg, false);
-    bool l_ret = true;
 
+    dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_msg->group);
+    if (!l_iter) {
+        log_it(L_ERROR, "Iterator cration error");
+        return false;
+    }
+
+    bool l_ret = true;
     size_t l_values_count = a_msg->values_page_size;
     dap_global_db_obj_t *l_objs= NULL;
     dap_store_obj_t *l_store_objs = NULL;
-
-    dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_msg->group);
-    dap_return_val_if_pass(!l_iter, false);
+    dap_nanotime_t l_timestamp = a_msg->timestamp;
 
     size_t l_total_records = dap_global_db_driver_count(l_iter);
     if (a_msg->values_page_size >= l_total_records || !a_msg->values_page_size) {
@@ -1058,7 +1064,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
     } else {
         for (size_t i = 0; (i < l_total_records) && l_ret; i += a_msg->values_page_size) {
             l_values_count = i + a_msg->values_page_size < l_total_records ? a_msg->values_page_size : l_total_records - i;
-            l_store_objs = dap_global_db_driver_cond_read(l_iter, &l_values_count);
+            l_store_objs = dap_global_db_driver_cond_read(l_iter, &l_values_count, l_timestamp);
 
             l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
            
@@ -1098,7 +1104,6 @@ static bool s_get_all_sync_callback(UNUSED_ARG dap_global_db_context_t *a_global
     pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
     struct sync_obj_data_callback *l_args = s_global_db_find_callback_data(a_global_db_context, *l_uid);
     if (!l_args) {
-        DAP_DELETE(l_uid);
         pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
         return false;
     }
@@ -1132,7 +1137,7 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get_all sync call executes for group \"%s\"", a_group);
     struct sync_obj_data_callback *l_args = s_global_db_obj_data_callback_new();
-    if (!dap_global_db_get_all(a_group, 1, s_get_all_sync_callback, DAP_DUP(&l_args->uid)))
+    if (!dap_global_db_get_all(a_group, 1, 0, s_get_all_sync_callback, DAP_DUP(&l_args->uid)))
         s_global_db_obj_data_callback_wait(l_args, "get_all");
     if (a_objs_count)
         *a_objs_count = l_args->get_objs.objs_count;
@@ -1149,7 +1154,7 @@ dap_store_obj_t *dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_conte
     dap_return_val_if_pass(!a_global_db_context || !a_group, NULL);
     
     dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_group);
-    dap_store_obj_t *l_ret = dap_global_db_driver_cond_read(l_iter, a_objs_count);
+    dap_store_obj_t *l_ret = dap_global_db_driver_cond_read(l_iter, a_objs_count, 0);
     dap_global_db_driver_iter_delete(l_iter);
     return l_ret;
 }
@@ -1225,7 +1230,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
     } else {
         for (size_t i = 0; (i < l_total_records) && l_ret; i += a_msg->values_page_size) {
             l_values_count = i + a_msg->values_page_size < l_total_records ? a_msg->values_page_size : l_total_records - i;
-            l_store_objs = dap_global_db_driver_cond_read(l_iter, &l_values_count);
+            l_store_objs = dap_global_db_driver_cond_read(l_iter, &l_values_count, 0);
            
                 // Call callback if present
             if(a_msg->callback_results)
@@ -1258,7 +1263,6 @@ static bool s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
     pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
     struct sync_obj_data_callback *l_args = s_global_db_find_callback_data(a_global_db_context, *l_uid);
     if (!l_args) {
-        DAP_DELETE(l_uid);
         pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
         return false;
     }

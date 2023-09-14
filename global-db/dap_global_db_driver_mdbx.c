@@ -96,7 +96,7 @@ static int              s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj)
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group);
 static bool s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out);
-static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out);
+static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp);
 static size_t           s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
 static int              s_db_mdbx_iter_create(dap_db_iter_t *a_iter);
@@ -536,6 +536,10 @@ static int s_db_mdbx_iter_create(dap_db_iter_t *a_iter)
 {
     dap_return_val_if_pass(!a_iter || !a_iter->db_group, -1);                              /* Sanity check */
     dap_db_mdbx_iter_t *l_mdbx_iter = DAP_NEW_Z(dap_db_mdbx_iter_t);
+    if (!l_mdbx_iter) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    }
 
     l_mdbx_iter->key.iov_base = NULL;
     l_mdbx_iter->key.iov_len = 0;
@@ -741,7 +745,7 @@ MDBX_val    l_key, l_data;
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out)
+static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp)
 {
     dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_iter->db_group, NULL);  /* Sanity check, if !a_count_out return all items*/
 
@@ -764,6 +768,11 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, si
     l_count_out = MIN(l_count_out, DAP_GLOBAL_DB_MAX_OBJS);
     /* Iterate cursor to retrieve records from DB */
 
+    if (!(l_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * l_count_out))) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    }
+
     dap_assert ( !pthread_mutex_lock(&l_db_ctx->dbi_mutex));
 
     /* Initialize MDBX cursor context area */
@@ -779,26 +788,26 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, si
         dap_assert( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
         log_it (L_ERROR, "mdbx_txn: (%d) %s", l_rc, mdbx_strerror(l_rc));
         return NULL;
-    }
+    }  
 
     for (int i = l_count_out; i && (MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_cursor, &l_mdbx_iter->key, &l_data, MDBX_NEXT))); i--) {
-        /*
-        * Expand a memory for new <store object> structure
-        */
-        ++l_cnt;
-        if ( !(l_obj_arr = DAP_REALLOC(l_obj_arr, l_cnt * sizeof(dap_store_obj_t))) ) {
-            log_it(L_ERROR, "Cannot expand area to keep %zu <store objects>", l_cnt);
-            l_rc = MDBX_PROBLEM;
-            break;
-        }
 
-        l_obj = l_obj_arr + (l_cnt - 1);                                /* Point <l_obj> to last array's element */
+        l_obj = l_obj_arr + l_cnt;  /* Point <l_obj> to last array's element */
         memset(l_obj, 0, sizeof(dap_store_obj_t));
 
         if (s_fill_store_obj(a_iter->db_group, &l_mdbx_iter->key, &l_data, l_obj)) {
             l_rc = MDBX_PROBLEM;
             break;
         }
+        l_cnt += (l_obj->timestamp > a_timestamp);  // add if yangest
+    }
+    // cut unused memory
+    if(!l_cnt) {
+        DAP_DEL_Z(l_obj_arr);
+        l_obj_arr = NULL;
+    } else if (l_cnt < l_count_out && !(l_obj_arr = DAP_REALLOC(l_obj_arr, sizeof(dap_store_obj_t) * l_cnt))) {
+        log_it(L_ERROR, "Cannot cut area to keep %zu <store objects>", l_cnt);
+        l_rc = MDBX_PROBLEM;
     }
 
     if ( (MDBX_SUCCESS != l_rc) && (l_rc != MDBX_NOTFOUND) ) {
