@@ -56,6 +56,7 @@ static struct conn_pool_item {
 // sqlite element iterator
 typedef struct dap_db_sqlite_iter {
     uint64_t id;
+    bool used;
 } dap_db_sqlite_iter_t;
 
 static struct conn_pool_item *s_trans = NULL;                               /* SQL context of outstanding  transaction */
@@ -811,11 +812,11 @@ dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *
         l_count_out = (int)*a_count_out;
     char *l_str_query = NULL;
     if (l_count_out) {
-        l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' WHERE id>='%lld' AND ts>'%lld' ORDER BY id ASC LIMIT %d",
-                l_table_name, l_iter->id, a_timestamp, l_count_out);
+        l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' WHERE id%s'%lld' AND ts>'%lld' ORDER BY id ASC LIMIT %d",
+                l_table_name, l_iter->used ? ">":">=", l_iter->id, a_timestamp, l_count_out);
     } else {
-        l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' WHERE id>='%lld' AND ts>'%lld'  ORDER BY id ASC",
-                l_table_name, l_iter->id, a_timestamp);
+        l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' WHERE id%s'%lld' AND ts>'%lld'  ORDER BY id ASC",
+                l_table_name, l_iter->used ? ">":">=", l_iter->id, a_timestamp);
     }
     struct conn_pool_item *l_conn = s_sqlite_get_connection();
     if(!l_conn) {
@@ -870,8 +871,10 @@ dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *
     s_dap_db_driver_sqlite_query_free(l_res);
     s_sqlite_free_connection(l_conn);
 
-    if (l_count_out > 0)
+    if (l_count_out > 0) {
         l_iter->id = l_obj[l_count_out - 1].id;
+        l_iter->used = true;
+    }
 
     if(a_count_out) 
         *a_count_out = (size_t)l_count_out;
@@ -1260,9 +1263,12 @@ static int s_db_sqlite_iter_create(dap_db_iter_t *a_iter)
     // create sqlite iter
     dap_db_sqlite_iter_t *l_sqlite_iter = DAP_NEW_Z(dap_db_sqlite_iter_t);
     if (!l_sqlite_iter) {
-        log_it(L_CRITICAL, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        log_it(L_CRITICAL, "Memory allocation error");
         return -1;
     }
+
+    l_sqlite_iter->id = 0;
+    l_sqlite_iter->used = false;
 
     // get generated values
     a_iter->db_type = DAP_GLOBAL_DB_TYPE_CURRENT;
