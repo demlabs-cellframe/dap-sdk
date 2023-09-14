@@ -104,13 +104,13 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     }
     fseek(l_json_file, 0, SEEK_END);
     size_t size_file = (size_t)ftell(l_json_file);
-    char *l_json_data = DAP_NEW_SIZE(char, size_file);
+    char *l_json_data = DAP_NEW_Z_SIZE(char, size_file + 1);
     if (!l_json_data) {
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     rewind(l_json_file);
-    fread(l_json_data, sizeof(char), size_file, l_json_file);
+    fread(l_json_data, size_file, 1, l_json_file);
     fclose(l_json_file);
     //Parse JSON
     json_object *l_json_obj = json_tokener_parse(l_json_data);

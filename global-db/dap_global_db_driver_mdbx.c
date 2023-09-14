@@ -366,7 +366,7 @@ int l_rc;
 MDBX_txn    *l_txn;
 MDBX_cursor *l_cursor;
 MDBX_val    l_key_iov, l_data_iov;
-dap_slist_t l_slist = {0};
+dap_list_t  *l_slist = NULL;
 char        *l_cp;
 size_t     l_upper_limit_of_db_size = 16;
 
@@ -438,7 +438,7 @@ size_t     l_upper_limit_of_db_size = 16;
             /* Form a simple list of the group/table name to be used after */
             l_cp = dap_strdup(l_data_iov.iov_base);                         /* We expect an ASCIZ string as the table name */
             l_data_iov.iov_len = strlen(l_cp);
-            dap_slist_add2tail(&l_slist, l_cp, l_data_iov.iov_len);
+            l_slist = dap_list_append(l_slist, l_cp);
             }
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "--- End-Of-List  ---");
         }
@@ -447,10 +447,12 @@ size_t     l_upper_limit_of_db_size = 16;
 
 
     /* Run over the list and create/open group/tables and DB context ... */
-    while ( !dap_slist_get4head (&l_slist, &l_data_iov.iov_base, &l_data_iov.iov_len) )
-    {
+    dap_list_t *l_el, *l_tmp;
+    DL_FOREACH_SAFE(l_slist, l_el, l_tmp) {
+        l_data_iov.iov_base = l_el->data;
         s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE);
-        DAP_DELETE(l_data_iov.iov_base);
+        DL_DELETE(l_slist, l_el);
+        DAP_DELETE(l_el);
     }
 
     /*

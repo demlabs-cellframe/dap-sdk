@@ -39,11 +39,11 @@ dap_list_t *dap_binary_tree_inorder_list(dap_binary_tree_t *a_tree_root) {
     if (!a_tree_root) {
         return NULL;
     }
-    dap_list_t *l_tmp = dap_list_alloc();
+    dap_list_t *l_tmp = NULL;
     s_list_construct(l_tmp, a_tree_root);
     dap_list_t *l_list = l_tmp->next;
     l_list->prev = NULL;
-    dap_list_free1(l_tmp);
+    dap_list_free(l_tmp);
     return l_list;
 }
 

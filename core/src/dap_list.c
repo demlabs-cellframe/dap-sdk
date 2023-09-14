@@ -11,46 +11,19 @@
 #define LOG_TAG "dap_list"
 
 /**
- * dap_list_alloc:
- * Returns: a pointer to the newly-allocated DapList element
- **/
-dap_list_t *dap_list_alloc_no_z(void)
-{
-    dap_list_t *list = DAP_NEW(dap_list_t);
-    return list;
-}
-
-dap_list_t *dap_list_alloc(void)
-{
-    dap_list_t *list = DAP_NEW_Z(dap_list_t);
-    return list;
-}
-
-/**
  * dap_list_free:
  * Frees all of the memory used by a DapList.
  * The freed elements are returned to the slice allocator.
  * If list elements contain dynamically-allocated memory, you should
  * either use dap_list_free_full() or free them manually first.
  */
-void dap_list_free(dap_list_t *list)
+void dap_list_free(dap_list_t *a_list)
 {
-    while(list) {
-        dap_list_t *next = list->next;
-        DAP_DELETE(list);
-        list = next;
+    dap_list_t *l_el, *l_tmp;
+    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
+        DL_DELETE(a_list, l_el);
+        DAP_DELETE(l_el);
     }
-}
-
-/**
- * dap_list_free_1:
- *
- * Frees one DapList element.
- * It is usually used after dap_list_remove_link().
- */
-void dap_list_free1(dap_list_t *list)
-{
-    DAP_DEL_Z(list);
 }
 
 /**
@@ -63,15 +36,12 @@ void dap_list_free1(dap_list_t *list)
  */
 void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func)
 {
-    dap_list_t *l_list = a_list;
-    while (l_list) {
-        dap_list_t *l_next = l_list->next;
-        if (a_free_func)
-            a_free_func(l_list->data);
-        else
-            DAP_DEL_Z(l_list->data);
-        DAP_DELETE(l_list);
-        l_list = l_next;
+    dap_list_t *l_el, *l_tmp;
+    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
+        DL_DELETE(a_list, l_el);
+        if (l_el->data)
+            a_free_func ? a_free_func(l_el->data) : DAP_DELETE(l_el->data);
+        DAP_DELETE(l_el);
     }
 }
 
@@ -84,12 +54,6 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
  *
  * Note that the return value is the new start of the list,
  * if @list was empty; make sure you store the new value.
- *
- * dap_list_append() has to traverse the entire list to find the end,
- * which is inefficient when adding multiple elements. A common idiom
- * to avoid the inefficiency is to use dap_list_prepend() and reverse
- * the list with dap_list_reverse() when all elements have been added.
- *
  * |[<!-- language="C" -->
  * // Notice that these are initialized to the empty list.
  * DapList *string_list = NULL, *number_list = NULL;
@@ -97,7 +61,7 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
  * // This is a list of strings.
  * string_list = dap_list_append (string_list, "first");
  * string_list = dap_list_append (string_list, "second");
- * 
+ *
  * // This is a list of integers.
  * number_list = dap_list_append (number_list, INT_TO_POINTER (27));
  * number_list = dap_list_append (number_list, INT_TO_POINTER (14));
@@ -105,33 +69,15 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
  *
  * Returns: either @list or the new start of the DapList if @list was %NULL
  */
-dap_list_t * dap_list_append(dap_list_t *list, void* data)
+dap_list_t *dap_list_append(dap_list_t *a_list, void* a_data)
 {
-    dap_list_t *new_list;
-    dap_list_t *last;
-
-    new_list = dap_list_alloc();
-    if (!new_list) { // Out of memory
-        log_it(L_CRITICAL, "DANGER! Out of memory in dap_list_append!");
-        return list;
+    dap_list_t *l_el = DAP_NEW_Z(dap_list_t);
+    if (!l_el) {
+        log_it(L_CRITICAL, "Out of memory");
+        return a_list;
     }
-    new_list->data = data;
-    new_list->next = NULL;
-
-    if (list)
-    {
-        last = dap_list_last(list);
-        /* assert (last != NULL); */
-        last->next = new_list;
-        new_list->prev = last;
-
-        return list;
-    }
-    else
-    {
-        new_list->prev = NULL;
-        return new_list;
-    }
+    l_el->data = a_data;
+    return ({ DL_APPEND(a_list, l_el); a_list; });
 }
 
 /**
@@ -158,29 +104,15 @@ dap_list_t * dap_list_append(dap_list_t *list, void* data)
  * Returns: a pointer to the newly prepended element, which is the new
  *     start of the DapList
  */
-dap_list_t *dap_list_prepend(dap_list_t *list, void* data)
+dap_list_t *dap_list_prepend(dap_list_t *a_list, void *a_data)
 {
-    dap_list_t *new_list;
-
-    new_list = dap_list_alloc();
-    if (!new_list) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return list;
+    dap_list_t *l_el = DAP_NEW_Z(dap_list_t);
+    if (!l_el) {
+        log_it(L_CRITICAL, "Out of memory");
+        return a_list;
     }
-    new_list->data = data;
-    new_list->next = list;
-
-    if(list)
-    {
-        new_list->prev = list->prev;
-        if(list->prev)
-            list->prev->next = new_list;
-        list->prev = new_list;
-    }
-    else
-        new_list->prev = NULL;
-
-    return new_list;
+    l_el->data = a_data;
+    return ({ DL_PREPEND(a_list, l_el); a_list; });
 }
 
 /**
@@ -195,101 +127,18 @@ dap_list_t *dap_list_prepend(dap_list_t *list, void* data)
  *
  * Returns: the (possibly changed) start of the DapList
  */
-dap_list_t *dap_list_insert(dap_list_t *list, void* data, int position)
+dap_list_t *dap_list_insert(dap_list_t *a_list, void* a_data, uint64_t a_position)
 {
-    dap_list_t *new_list;
-    dap_list_t *tmp_list;
-
-    if(position < 0)
-        return dap_list_append(list, data);
-    else if(position == 0)
-        return dap_list_prepend(list, data);
-
-    tmp_list = dap_list_nth(list,(unsigned int) position);
-    if(!tmp_list)
-        return dap_list_append(list, data);
-
-    new_list = dap_list_alloc();
-    if (!new_list) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return list;
+    if (!a_position)
+        return dap_list_prepend(a_list, a_data);
+    dap_list_t  *l_el = DAP_NEW_Z(dap_list_t),
+                *l_pos = dap_list_nth(a_list, a_position);
+    if (!l_el) {
+        log_it(L_CRITICAL, "Out of memory");
+        return a_list;
     }
-    new_list->data = data;
-    new_list->prev = tmp_list->prev;
-    tmp_list->prev->next = new_list;
-    new_list->next = tmp_list;
-    tmp_list->prev = new_list;
-
-    return list;
-}
-
-/**
- * dap_list_insert_before:
- * @list: a pointer to a DapList, this must point to the top of the list
- * @sibling: the list element before which the new element
- *     is inserted or %NULL to insert at the end of the list
- * @data: the data for the new element
- *
- * Inserts a new element into the list before the given position.
- *
- * Returns: the (possibly changed) start of the DapList
- */
-dap_list_t *dap_list_insert_before(dap_list_t *list, dap_list_t *sibling, void* data)
-{
-    if(!list)
-    {
-        list = dap_list_alloc();
-        if (!list) {
-        log_it(L_CRITICAL, "Memory allocation error");
-            return NULL;
-        }
-        list->data = data;
-        dap_return_val_if_fail(sibling == NULL, list);
-        return list;
-    }
-    else if(sibling)
-    {
-        dap_list_t *node;
-
-        node = dap_list_alloc();
-        if (!node) {
-        log_it(L_CRITICAL, "Memory allocation error");
-            return NULL;
-        }
-        node->data = data;
-        node->prev = sibling->prev;
-        node->next = sibling;
-        sibling->prev = node;
-        if(node->prev)
-        {
-            node->prev->next = node;
-            return list;
-        }
-        else
-        {
-            dap_return_val_if_fail(sibling == list, node);
-            return node;
-        }
-    }
-    else
-    {
-        dap_list_t *last;
-
-        last = list;
-        while(last->next)
-            last = last->next;
-
-        last->next = dap_list_alloc();
-        if (!last->next) {
-        log_it(L_CRITICAL, "Memory allocation error");
-            return NULL;
-        }
-        last->next->data = data;
-        last->next->prev = last;
-        last->next->next = NULL;
-
-        return list;
-    }
+    l_el->data = a_data;
+    return ({ DL_PREPEND_ELEM(a_list, l_pos, l_el); a_list; });
 }
 
 /**
@@ -311,21 +160,9 @@ dap_list_t *dap_list_insert_before(dap_list_t *list, dap_list_t *sibling, void* 
  *
  * Returns: the start of the new DapList, which equals @list1 if not %NULL
  */
-dap_list_t *dap_list_concat(dap_list_t *list1, dap_list_t *list2)
+dap_list_t *dap_list_concat(dap_list_t *a_list1, dap_list_t *a_list2)
 {
-    dap_list_t *tmp_list;
-
-    if(list2)
-    {
-        tmp_list = dap_list_last(list1);
-        if(tmp_list)
-            tmp_list->next = list2;
-        else
-            list1 = list2;
-        list2->prev = tmp_list;
-    }
-
-    return list1;
+    return ({ DL_CONCAT(a_list1, a_list2); a_list1; });
 }
 
 /**
@@ -339,23 +176,17 @@ dap_list_t *dap_list_concat(dap_list_t *list1, dap_list_t *list2)
  *
  * Returns: the (possibly changed) start of the DapList
  */
-dap_list_t *dap_list_remove(dap_list_t *list, const void * data)
+dap_list_t *dap_list_remove(dap_list_t *a_list, const void *a_data)
 {
-    dap_list_t *tmp;
-
-    tmp = list;
-    while(tmp)
-    {
-        if(tmp->data != data)
-            tmp = tmp->next;
-        else
-        {
-            list = dap_list_remove_link(list, tmp);
-            dap_list_free1(tmp);
+    dap_list_t *l_el, *l_tmp;
+    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
+        if (l_el->data == a_data) {
+            DL_DELETE(a_list, l_el);
+            DAP_DELETE(l_el);
             break;
         }
     }
-    return list;
+    return a_list;
 }
 
 /**
@@ -370,32 +201,16 @@ dap_list_t *dap_list_remove(dap_list_t *list, const void * data)
  *
  * Returns: the (possibly changed) start of the DapList
  */
-dap_list_t *dap_list_remove_all(dap_list_t *list, const void * data)
+dap_list_t *dap_list_remove_all(dap_list_t *a_list, const void *a_data)
 {
-    dap_list_t *tmp = list;
-
-    while(tmp)
-    {
-        if(tmp->data != data)
-            tmp = tmp->next;
-        else
-        {
-            dap_list_t *next = tmp->next;
-
-            if(tmp->prev)
-                tmp->prev->next = next;
-            else
-                list = next;
-            if(next)
-                next->prev = tmp->prev;
-
-            if (tmp == list)
-                list = NULL;
-            dap_list_free1(tmp);
-            tmp = next;
+    dap_list_t *l_el, *l_tmp;
+    DL_FOREACH_SAFE(a_list, l_el, l_tmp) {
+        if (l_el->data == a_data) {
+            DL_DELETE(a_list, l_el);
+            DAP_DELETE(l_el);
         }
     }
-    return list;
+    return a_list;
 }
 
 /**
@@ -418,33 +233,9 @@ dap_list_t *dap_list_remove_all(dap_list_t *list, const void * data)
  *
  * Returns: the (possibly changed) start of the DapList
  */
-inline dap_list_t *dap_list_remove_link(dap_list_t *list, dap_list_t *link)
+inline dap_list_t *dap_list_remove_link(dap_list_t *a_list, dap_list_t *a_link)
 {
-    if (link == NULL)
-        return list;
-
-    if (link->prev)
-    {
-        if (link->prev->next == link)
-            link->prev->next = link->next;
-        else
-            log_it(L_ERROR, "corrupted double-linked list detected");
-    }
-    if (link->next)
-    {
-        if (link->next->prev == link)
-            link->next->prev = link->prev;
-        else
-            log_it(L_ERROR, "corrupted double-linked list detected");
-    }
-
-    if (link == list)
-        list = list->next;
-
-    link->next = NULL;
-    link->prev = NULL;
-
-    return list;
+    return ({ DL_DELETE(a_list, a_link); a_list; });
 }
 
 /**
@@ -458,11 +249,9 @@ inline dap_list_t *dap_list_remove_link(dap_list_t *list, dap_list_t *link)
  *
  * Returns: the (possibly changed) start of the DapList
  */
-dap_list_t *dap_list_delete_link(dap_list_t *list, dap_list_t *link)
+dap_list_t *dap_list_delete_link(dap_list_t *a_list, dap_list_t *a_link)
 {
-    list = dap_list_remove_link(list, link);
-    dap_list_free1(link);
-    return list;
+    return ({ DL_DELETE(a_list, a_link); DAP_DELETE(a_link); a_list; });
 }
 
 /**
@@ -478,9 +267,9 @@ dap_list_t *dap_list_delete_link(dap_list_t *list, dap_list_t *link)
  *
  * Returns: the start of the new list that holds the same data as @list
  */
-dap_list_t *dap_list_copy(dap_list_t *list)
+dap_list_t *dap_list_copy(dap_list_t *a_list)
 {
-    return dap_list_copy_deep(list, NULL, NULL);
+    return dap_list_copy_deep(a_list, NULL, NULL);
 }
 
 /**
@@ -512,54 +301,12 @@ dap_list_t *dap_list_copy(dap_list_t *list)
  * Returns: the start of the new list that holds a full copy of @list,
  *     use dap_list_free_full() to free it
  */
-dap_list_t *dap_list_copy_deep(dap_list_t *list, dap_callback_copy_t func, void* user_data)
+dap_list_t *dap_list_copy_deep(dap_list_t *a_list, dap_callback_copy_t a_func, void *a_user_data)
 {
-    dap_list_t *last, *new_list = NULL;
-
-    while (list) {
-        if (new_list) {
-            last->next = dap_list_alloc();
-            if (!last->next)
-                return NULL;
-            last->next->prev = last;
-            last = last->next;
-        } else
-            new_list = last = dap_list_alloc();
-        if (!new_list)
-            return NULL;
-        if (func)
-            last->data = func(list->data, user_data);
-        else
-            last->data = list->data;
-        list = list->next;
-    }
-
-    return new_list;
-}
-
-/**
- * dap_list_reverse:
- * @list: a DapList, this must point to the top of the list
- *
- * Reverses a DapList.
- * It simply switches the next and prev pointers of each element.
- *
- * Returns: the start of the reversed DapList
- */
-dap_list_t * dap_list_reverse(dap_list_t *list)
-{
-    dap_list_t *last;
-
-    last = NULL;
-    while(list)
-    {
-        last = list;
-        list = last->next;
-        last->next = last->prev;
-        last->prev = list;
-    }
-
-    return last;
+    dap_list_t *l_deep_copy = NULL, *l_el;
+    DL_FOREACH(a_list, l_el)
+        l_deep_copy = dap_list_append(l_deep_copy, a_func ? a_func(l_el->data, a_user_data) : l_el->data);
+    return l_deep_copy;
 }
 
 /**
@@ -572,12 +319,12 @@ dap_list_t * dap_list_reverse(dap_list_t *list)
  * Returns: the element, or %NULL if the position is off
  *     the end of the DapList
  */
-dap_list_t *dap_list_nth(dap_list_t *list, unsigned int n)
+dap_list_t *dap_list_nth(dap_list_t *a_list, uint64_t n)
 {
-    while((n-- > 0) && list)
-        list = list->next;
+    while((n-- > 0) && a_list)
+        a_list = a_list->next;
 
-    return list;
+    return a_list;
 }
 
 /**
@@ -587,15 +334,15 @@ dap_list_t *dap_list_nth(dap_list_t *list, unsigned int n)
  *
  * Gets the element @n places before @list.
  *
- * Returns: the element, or %NULL if the position is 
+ * Returns: the element, or %NULL if the position is
  *     off the end of the DapList
  */
-dap_list_t *dap_list_nth_prev(dap_list_t *list, unsigned int n)
+dap_list_t *dap_list_nth_prev(dap_list_t *a_list, uint64_t n)
 {
-    while((n-- > 0) && list)
-        list = list->prev;
+    while((n-- > 0) && a_list)
+        a_list = a_list->prev;
 
-    return list;
+    return a_list;
 }
 
 /**
@@ -608,12 +355,9 @@ dap_list_t *dap_list_nth_prev(dap_list_t *list, unsigned int n)
  * Returns: the element's data, or %NULL if the position
  *     is off the end of the DapList
  */
-void* dap_list_nth_data(dap_list_t *list, unsigned int n)
+void* dap_list_nth_data(dap_list_t *a_list, uint64_t n)
 {
-    while((n-- > 0) && list)
-        list = list->next;
-
-    return list ? list->data : NULL ;
+    return dap_list_nth(a_list, n)->data;
 }
 
 /**
@@ -625,46 +369,12 @@ void* dap_list_nth_data(dap_list_t *list, unsigned int n)
  *
  * Returns: the found DapList element, or %NULL if it is not found
  */
-dap_list_t *dap_list_find(dap_list_t *list, const void * data)
+dap_list_t *dap_list_find(dap_list_t *a_list, const void *a_data, dap_callback_compare_t a_cmp)
 {
-    while(list)
-    {
-        if(list->data == data)
-            break;
-        list = list->next;
-    }
-
-    return list;
-}
-
-/**
- * dap_list_find_custom:
- * @list: a DapList, this must point to the top of the list
- * @data: user data passed to the function
- * @func: the function to call for each element.
- *     It should return 0 when the desired element is found
- *
- * Finds an element in a DapList, using a supplied function to
- * find the desired element. It iterates over the list, calling
- * the given function which should return 0 when the desired
- * element is found. The function takes two const pointer arguments,
- * the DapList element's data as the first argument and the
- * given user data.
- *
- * Returns: the found DapList element, or %NULL if it is not found
- */
-dap_list_t *dap_list_find_custom(dap_list_t *list, const void * data, dap_callback_compare_t func)
-{
-    dap_return_val_if_fail(func != NULL, list);
-
-    while(list)
-    {
-        if(!func(list->data, data))
-            return list;
-        list = list->next;
-    }
-
-    return NULL ;
+    dap_list_t *l_el = NULL;
+    return a_cmp
+            ? ({ dap_list_t l_sought = { .data = (void*)a_data }; DL_SEARCH(a_list, l_el, &l_sought, a_cmp); l_el; })
+            : ({ DL_SEARCH_SCALAR(a_list, l_el, data, a_data); l_el; });
 }
 
 /**
@@ -678,19 +388,15 @@ dap_list_t *dap_list_find_custom(dap_list_t *list, const void * data, dap_callba
  * Returns: the position of the element in the DapList,
  *     or -1 if the element is not found
  */
-int dap_list_position(dap_list_t *list, dap_list_t *llink)
+int dap_list_position(dap_list_t *a_list, dap_list_t *a_link)
 {
-    int i;
-
-    i = 0;
-    while(list)
-    {
-        if(list == llink)
+    int i = 0;
+    dap_list_t *l_el;
+    DL_FOREACH(a_list, l_el) {
+        if (l_el == a_link)
             return i;
-        i++;
-        list = list->next;
+        ++i;
     }
-
     return -1;
 }
 
@@ -705,19 +411,15 @@ int dap_list_position(dap_list_t *list, dap_list_t *llink)
  * Returns: the index of the element containing the data,
  *     or -1 if the data is not found
  */
-int dap_list_index(dap_list_t *list, const void * data)
+int dap_list_index(dap_list_t *a_list, const void *a_data)
 {
-    int i;
-
-    i = 0;
-    while(list)
-    {
-        if(list->data == data)
+    int i = 0;
+    dap_list_t *l_el;
+    DL_FOREACH(a_list, l_el) {
+        if (l_el->data == a_data)
             return i;
-        i++;
-        list = list->next;
+        ++i;
     }
-
     return -1;
 }
 
@@ -730,15 +432,9 @@ int dap_list_index(dap_list_t *list, const void * data)
  * Returns: the last element in the DapList,
  *     or %NULL if the DapList has no elements
  */
-dap_list_t * dap_list_last(dap_list_t *list)
+dap_list_t * dap_list_last(dap_list_t *a_list)
 {
-    if(list)
-    {
-        while(list && list->next)
-            list = list->next;
-    }
-
-    return list;
+    return dap_list_first(a_list)->prev;
 }
 
 /**
@@ -750,15 +446,13 @@ dap_list_t * dap_list_last(dap_list_t *list)
  * Returns: the first element in the DapList,
  *     or %NULL if the DapList has no elements
  */
-dap_list_t *dap_list_first(dap_list_t *list)
+dap_list_t *dap_list_first(dap_list_t *a_list)
 {
-    if(list)
-    {
-        while(list->prev)
-            list = list->prev;
-    }
-
-    return list;
+    if (!a_list)
+        return NULL;
+    while (a_list->prev->next)
+        a_list = a_list->prev;
+    return a_list;
 }
 
 /**
@@ -771,92 +465,11 @@ dap_list_t *dap_list_first(dap_list_t *list)
  *
  * Returns: the number of elements in the DapList
  */
-unsigned int dap_list_length(dap_list_t *list)
+uint64_t dap_list_length(dap_list_t *a_list)
 {
-    unsigned int length;
-
-    length = 0;
-    while(list)
-    {
-        length++;
-        list = list->next;
-    }
-
-    return length;
-}
-
-/**
- * dap_list_foreach:
- * @list: a DapList, this must point to the top of the list
- * @func: the function to call with each element's data
- * @user_data: user data to pass to the function
- *
- * Calls a function for each element of a DapList.
- */
-void dap_list_foreach(dap_list_t *list, dap_callback_t func, void* user_data)
-{
-    while(list)
-    {
-        dap_list_t *next = list->next;
-        (*func)(list->data, user_data);
-        list = next;
-    }
-}
-
-static dap_list_t* dap_list_insert_sorted_real(dap_list_t *list, void* data, dap_callback_compare_data_t func, void* user_data)
-{
-    dap_list_t *tmp_list = list;
-    dap_list_t *new_list;
-    int cmp;
-
-    dap_return_val_if_fail(func != NULL, list);
-
-    if(!list)
-    {
-        new_list = dap_list_alloc();
-        if (!new_list) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            return NULL;
-        }
-        new_list->data = data;
-        return new_list;
-    }
-
-    cmp = func(data, tmp_list->data, user_data);
-
-    while((tmp_list->next) && (cmp > 0))
-    {
-        tmp_list = tmp_list->next;
-
-        cmp = func(data, tmp_list->data, user_data);
-    }
-
-    new_list = dap_list_alloc();
-    if (!new_list) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
-    new_list->data = data;
-
-    if((!tmp_list->next) && (cmp > 0))
-            {
-        tmp_list->next = new_list;
-        new_list->prev = tmp_list;
-        return list;
-    }
-
-    if(tmp_list->prev)
-    {
-        tmp_list->prev->next = new_list;
-        new_list->prev = tmp_list->prev;
-    }
-    new_list->next = tmp_list;
-    tmp_list->prev = new_list;
-
-    if(tmp_list == list)
-        return new_list;
-    else
-        return list;
+    dap_list_t *l_el;
+    uint64_t l_len;
+    return ({ DL_COUNT(a_list, l_el, l_len); l_len; });
 }
 
 /**
@@ -878,93 +491,11 @@ static dap_list_t* dap_list_insert_sorted_real(dap_list_t *list, void* data, dap
  *
  * Returns: the (possibly changed) start of the DapList
  */
-dap_list_t *dap_list_insert_sorted(dap_list_t *list, void* data, dap_callback_compare_data_t func)
+dap_list_t *dap_list_insert_sorted(dap_list_t *a_list, void *a_data, dap_callback_compare_t a_func)
 {
-    return dap_list_insert_sorted_real(list, data, func, NULL);
-}
-
-/**
- * dap_list_insert_sorted_with_data:
- * @list: a pointer to a DapList, this must point to the top of the
- *     already sorted list
- * @data: the data for the new element
- * @func: the function to compare elements in the list. It should
- *     return a number > 0 if the first parameter  comes after the
- *     second parameter in the sort order.
- * @user_data: user data to pass to comparison function
- *
- * Inserts a new element into the list, using the given comparison
- * function to determine its position.
- *
- * If you are adding many new elements to a list, and the number of
- * new elements is much larger than the length of the list, use
- * dap_list_prepend() to add the new items and sort the list afterwards
- * with dap_list_sort().
- *
- * Returns: the (possibly changed) start of the DapList
- */
-dap_list_t * dap_list_insert_sorted_with_data(dap_list_t *list, void* data, dap_callback_compare_data_t func, void* user_data)
-{
-    return dap_list_insert_sorted_real(list, data, func, user_data);
-}
-
-static dap_list_t *dap_list_sort_merge(dap_list_t *l1, dap_list_t *l2, dap_callback_compare_data_t compare_func, void* user_data)
-{
-    dap_list_t list, *l, *lprev;
-    int cmp;
-
-    l = &list;
-    lprev = NULL;
-
-    while(l1 && l2)
-    {
-        cmp = compare_func(l1->data, l2->data, user_data);
-
-        if(cmp <= 0)
-                {
-            l->next = l1;
-            l1 = l1->next;
-        }
-        else
-        {
-            l->next = l2;
-            l2 = l2->next;
-        }
-        l = l->next;
-        l->prev = lprev;
-        lprev = l;
-    }
-    l->next = l1 ? l1 : l2;
-    l->next->prev = l;
-
-    return list.next;
-}
-
-static dap_list_t *dap_list_sort_real(dap_list_t *list, dap_callback_compare_data_t compare_func, void* user_data)
-{
-    dap_list_t *l1, *l2;
-
-    if(!list)
-        return NULL ;
-    if(!list->next)
-        return list;
-
-    l1 = list;
-    l2 = list->next;
-
-    while((l2 = l2->next) != NULL )
-    {
-        if((l2 = l2->next) == NULL)
-            break;
-        l1 = l1->next;
-    }
-    l2 = l1->next;
-    l1->next = NULL;
-
-    return dap_list_sort_merge(dap_list_sort_real(list, compare_func, user_data),
-            dap_list_sort_real(l2, compare_func, user_data),
-            compare_func,
-            user_data);
+    dap_list_t *l_new_el = DAP_NEW_Z(dap_list_t);
+    l_new_el->data = a_data;
+    return ({ DL_INSERT_INORDER(a_list, l_new_el, a_func); a_list; });
 }
 
 /**
@@ -994,37 +525,7 @@ static dap_list_t *dap_list_sort_real(dap_list_t *list, dap_callback_compare_dat
  * Returns: negative value if @a < @b; zero if @a = @b; positive
  *          value if @a > @b
  */
-dap_list_t *dap_list_sort(dap_list_t *list, dap_callback_compare_data_t compare_func)
+dap_list_t *dap_list_sort(dap_list_t *a_list, dap_callback_compare_t a_cmp)
 {
-    return dap_list_sort_real(list, compare_func, NULL);
-}
-
-/**
- * dap_list_sort_with_data:
- * @list: a DapList, this must point to the top of the list
- * @compare_func: comparison function
- * @user_data: user data to pass to comparison function
- *
- * Like dap_list_sort(), but the comparison function accepts
- * a user data argument.
- *
- * Returns: the (possibly changed) start of the DapList
- */
-/**
- * DapCompareFunc:
- * @a: a value
- * @b: a value to compare with
- * @user_data: user data
- *
- * Specifies the type of a comparison function used to compare two
- * values.  The function should return a negative integer if the first
- * value comes before the second, 0 if they are equal, or a positive
- * integer if the first value comes after the second.
- *
- * Returns: negative value if @a < @b; zero if @a = @b; positive
- *          value if @a > @b
- */
-dap_list_t *dap_list_sort_with_data(dap_list_t *list, dap_callback_compare_data_t compare_func, void* user_data)
-{
-    return dap_list_sort_real(list, compare_func, user_data);
+    return ({ DL_SORT(a_list, a_cmp); a_list; });
 }

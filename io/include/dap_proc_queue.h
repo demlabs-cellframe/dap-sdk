@@ -54,8 +54,8 @@ typedef struct dap_proc_queue_item{
     dap_proc_queue_callback_t callback;                                     /* An address of the action routine */
                         void *callback_arg;                                 /* Address of the action routine argument */
 
-    struct dap_proc_queue_item *prev;                                       /* Links to back and forward entries */
-    struct dap_proc_queue_item *next;
+    //struct dap_proc_queue_item *prev;                                       /* Links to back and forward entries */
+    //struct dap_proc_queue_item *next;
 } dap_proc_queue_item_t;
 
 typedef struct dap_proc_queue{
@@ -64,7 +64,8 @@ typedef struct dap_proc_queue{
 
         struct {
             pthread_mutex_t     lock;                                           /* To coordinate access to the queuee's entries */
-            dap_slist_t         items;                                          /* List of the queue' entries */
+            //dap_slist_t         items;                                          /* List of the queue' entries */
+            dap_list_t          *items;
         } list [DAP_PROC_PRI_MAX];                                          /* An array of list according of priority numbers */
 } dap_proc_queue_t;
 
