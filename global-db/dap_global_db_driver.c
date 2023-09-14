@@ -184,6 +184,25 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
     return l_store_obj;
 }
 
+dap_store_obj_t* dap_global_db_store_objs_copy(dap_store_obj_t *a_store_objs_dest, const dap_store_obj_t *a_store_objs_src, size_t a_store_count)
+{
+    dap_return_val_if_pass(!a_store_objs_dest || !a_store_objs_src || !a_store_count, NULL);
+
+    /* Run over array's elements */
+    for (dap_store_obj_t *l_obj = a_store_objs_src, *l_cur = a_store_objs_dest; a_store_count--; l_cur++, l_obj++) {
+        *l_cur = *l_obj;
+        l_cur->group = dap_strdup(l_obj->group);
+        l_cur->key = dap_strdup(l_obj->key);
+        if (l_obj->value) {
+            if (l_obj->value_len)
+                l_cur->value = DAP_DUP_SIZE(l_obj->value, l_obj->value_len);
+            else
+                log_it(L_WARNING, "Inconsistent global DB object copy requested");
+        }
+    }
+    return a_store_objs_dest;
+}
+
 /**
  * @brief Deallocates memory of objects.
  * @param a_store_obj a pointer to objects
@@ -277,15 +296,15 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
 /**
  * @brief Gets a number of stored objects in a database by a_group and id.
  * @param a_group the group name string
- * @param a_id id
+ * @param a_iter data base iterator
  * @return Returns a number of objects.
  */
-size_t dap_global_db_driver_count(const char *a_group, uint64_t id)
+size_t dap_global_db_driver_count(const dap_db_iter_t *a_iter)
 {
     size_t l_count_out = 0;
     // read the number of items
     if(s_drv_callback.read_count_store)
-        l_count_out = s_drv_callback.read_count_store(a_group, id);
+        l_count_out = s_drv_callback.read_count_store(a_iter);
     return l_count_out;
 }
 
@@ -320,21 +339,69 @@ dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group)
 }
 
 /**
- * @brief Reads several objects from a database by a_group and id.
- * @param a_group the group name string
- * @param a_id id
- * @param a_count_out[in] a number of objects to be read, if 0 - no limits
- * @param a_count_out[out] a count of objects that were read
- * @return If successful, a pointer to an objects, otherwise NULL.
+ * @brief Read elements starting grom iterator
+ * @param a_group the group name
+ * @param a_iter data base iterator
+ * @param a_count_out elements count
+ * @return If successful, a pointer to the object, otherwise NULL.
  */
-dap_store_obj_t* dap_global_db_driver_cond_read(const char *a_group, uint64_t id, size_t *a_count_out)
+dap_store_obj_t* dap_global_db_driver_cond_read(dap_db_iter_t* a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp)
 {
+    dap_return_val_if_pass(!a_iter, NULL);
+
     dap_store_obj_t *l_ret = NULL;
     // read records using the selected database engine
     if(s_drv_callback.read_cond_store_obj)
-        l_ret = s_drv_callback.read_cond_store_obj(a_group, id, a_count_out);
+        l_ret = s_drv_callback.read_cond_store_obj(a_iter, a_count_out, a_timestamp);
     return l_ret;
 }
+
+/**
+ * @brief Create iterator to the first element in the a_group database.
+ * @param a_group the group name string
+ * @return If successful, a pointer to an iterator, otherwise NULL.
+ */
+dap_db_iter_t *dap_global_db_driver_iter_create(const char *a_group)
+{
+    if (!a_group || !s_drv_callback.iter_create)
+        return NULL;
+    
+    // create return object
+    dap_db_iter_t *l_ret = DAP_NEW_Z(dap_db_iter_t);
+    if (!l_ret) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    }
+
+    l_ret->db_group = dap_strdup(a_group);
+    if (!l_ret->db_group) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
+    if (s_drv_callback.iter_create(l_ret)) {
+        log_it(L_ERROR, "Error iterator create in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        DAP_DELETE(l_ret->db_group);
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
+    return l_ret;
+}
+
+/**
+ * @brief Delete iterator and free memory
+ * @param a_iter deleting itaretor
+ * @return -.
+ */
+void dap_global_db_driver_iter_delete(dap_db_iter_t* a_iter)
+{
+    dap_return_if_pass(!a_iter);
+
+    DAP_DEL_Z(a_iter->db_iter);
+    DAP_DEL_Z(a_iter->db_group);
+    DAP_DEL_Z(a_iter);
+}
+
 
 /**
  * @brief Reads several objects from a database by a_group and a_key.
