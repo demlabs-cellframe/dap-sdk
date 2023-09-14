@@ -46,12 +46,13 @@ enum RECORD_FLAGS {
 
 typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t*);
 typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *,const char *, size_t *);
-typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(const char *,uint64_t , size_t *);
+typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(dap_db_iter_t *, size_t *, dap_nanotime_t);
 typedef dap_store_obj_t* (*dap_db_driver_read_last_callback_t)(const char *);
-typedef size_t (*dap_db_driver_read_count_callback_t)(const char *,uint64_t);
+typedef size_t (*dap_db_driver_read_count_callback_t)(const dap_db_iter_t *);
 typedef dap_list_t* (*dap_db_driver_get_groups_callback_t)(const char *);
 typedef bool (*dap_db_driver_is_obj_callback_t)(const char *, const char *);
 typedef int (*dap_db_driver_callback_t)(void);
+typedef int (*dap_db_driver_iter_create_callback_t)(dap_db_iter_t *);
 
 typedef struct dap_db_driver_callbacks {
     dap_db_driver_write_callback_t      apply_store_obj;                    /* Performs an DB's action like: INSERT/DELETE/UPDATE for the given
@@ -71,6 +72,8 @@ typedef struct dap_db_driver_callbacks {
 
     dap_db_driver_callback_t            deinit;
     dap_db_driver_callback_t            flush;
+
+    dap_db_driver_iter_create_callback_t    iter_create;
 } dap_db_driver_callbacks_t;
 
 
@@ -78,6 +81,7 @@ int     dap_db_driver_init(const char *driver_name, const char *a_filename_db, i
 void    dap_db_driver_deinit(void);
 
 dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count);
+dap_store_obj_t* dap_global_db_store_objs_copy(dap_store_obj_t *, const dap_store_obj_t *, size_t);
 void    dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count);
 DAP_STATIC_INLINE void dap_store_obj_free_one(dap_store_obj_t *a_store_obj) { return dap_store_obj_free(a_store_obj, 1); }
 int     dap_db_driver_flush(void);
@@ -86,8 +90,11 @@ int dap_global_db_driver_apply(dap_store_obj_t *a_store_obj, size_t a_store_coun
 int dap_global_db_driver_add(pdap_store_obj_t a_store_obj, size_t a_store_count);
 int dap_global_db_driver_delete(pdap_store_obj_t a_store_obj, size_t a_store_count);
 dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group);
-dap_store_obj_t* dap_global_db_driver_cond_read(const char *a_group, uint64_t id, size_t *a_count_out);
+dap_store_obj_t* dap_global_db_driver_cond_read(dap_db_iter_t* a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp);
 dap_store_obj_t* dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out);
 bool dap_global_db_driver_is(const char *a_group, const char *a_key);
-size_t dap_global_db_driver_count(const char *a_group, uint64_t id);
+size_t dap_global_db_driver_count(const dap_db_iter_t *a_iter);
 dap_list_t* dap_global_db_driver_get_groups_by_mask(const char *a_group_mask);
+
+dap_db_iter_t *dap_global_db_driver_iter_create(const char *a_group);
+void dap_global_db_driver_iter_delete(dap_db_iter_t* a_iter);

@@ -86,13 +86,11 @@ dap_list_t* dap_chain_db_get_sync_groups(const char *a_net_name)
     if(!a_net_name)
         return dap_list_copy(s_sync_group_items);
 
-    dap_list_t *l_list_out = NULL;
-    dap_list_t *l_list_group = s_sync_group_items;
-    while(l_list_group) {
-        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*) l_list_group->data)->net_name)) {
-            l_list_out = dap_list_append(l_list_out, l_list_group->data);
+    dap_list_t *l_list_out = NULL, *l_item;
+    DL_FOREACH(s_sync_group_items, l_item) {
+        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*)l_item->data)->net_name)) {
+            l_list_out = dap_list_append(l_list_out, l_item->data);
         }
-        l_list_group = dap_list_next(l_list_group);
     }
     return l_list_out;
 }
@@ -107,13 +105,11 @@ dap_list_t* dap_chain_db_get_sync_extra_groups(const char *a_net_name)
     if(!a_net_name)
         return dap_list_copy(s_sync_group_extra_items);
 
-    dap_list_t *l_list_out = NULL;
-    dap_list_t *l_list_group = s_sync_group_extra_items;
-    while(l_list_group) {
-        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*) l_list_group->data)->net_name)) {
-            l_list_out = dap_list_append(l_list_out, l_list_group->data);
+    dap_list_t *l_list_out = NULL, *l_item;
+    DL_FOREACH(s_sync_group_extra_items, l_item) {
+        if(!dap_strcmp(a_net_name, ((dap_sync_group_item_t*)l_item->data)->net_name)) {
+            l_list_out = dap_list_append(l_list_out, l_item->data);
         }
-        l_list_group = dap_list_next(l_list_group);
     }
     return l_list_out;
 }
@@ -167,6 +163,16 @@ static void s_clear_sync_grp(void *a_elm)
     DAP_DELETE(l_item);
 }
 
+static int s_cb_cmp_items(const void *a_list_elem, const void *a_item_elem) {
+    dap_sync_group_item_t   *l_item1 = (dap_sync_group_item_t*)((dap_list_t*)a_list_elem)->data,
+                            *l_item2 = (dap_sync_group_item_t*)((dap_list_t*)a_item_elem)->data;
+    if (!l_item1 || !l_item2) {
+        log_it(L_CRITICAL, "Invalid arg");
+        return -1;
+    }
+    return dap_strcmp(l_item1->group_mask, l_item2->group_mask) || dap_strcmp(l_item1->net_name, l_item2->net_name);
+}
+
 /**
  * @brief s_db_add_sync_group
  * @param a_grp_list
@@ -175,13 +181,11 @@ static void s_clear_sync_grp(void *a_elm)
  */
 static int s_db_add_sync_group(dap_list_t **a_grp_list, dap_sync_group_item_t *a_item)
 {
-    for (dap_list_t *it = *a_grp_list; it; it = it->next) {
-        dap_sync_group_item_t *l_item = (dap_sync_group_item_t *)it->data;
-        if (!dap_strcmp(l_item->group_mask, a_item->group_mask) && !dap_strcmp(l_item->net_name, a_item->net_name)) {
-            log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_item->group_mask);
-            s_clear_sync_grp(a_item);
-            return -1;
-        }
+    dap_list_t *l_item = dap_list_find(*a_grp_list, a_item, s_cb_cmp_items);
+    if (l_item) {
+        log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_item->group_mask);
+        s_clear_sync_grp(a_item);
+        return -1;
     }
     *a_grp_list = dap_list_append(*a_grp_list, a_item);
     return 0;
@@ -210,13 +214,16 @@ static void *s_list_thread_proc(void *arg)
         } else {
             l_obj_type = DAP_DB$K_OPTYPE_ADD;
         }
-        uint64_t l_item_start = l_group_cur->last_id_synced + 1;
         dap_nanotime_t l_time_allowed = dap_nanotime_now() + dap_nanotime_from_sec(3600 * 24); // to be sure the timestamp is invalid
         while (l_group_cur->count && l_dap_db_log_list->is_process) {
             // Number of records to be synchronized
             size_t l_item_count = 0;//min(64, l_group_cur->count);
             size_t l_objs_total_size = 0;
-            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, 0, &l_item_count);
+
+            dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(l_group_cur->name);
+            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_iter, &l_item_count);
+            dap_global_db_driver_iter_delete(l_iter);
+            
             if (!l_dap_db_log_list->is_process) {
                 dap_store_obj_free(l_objs, l_item_count);
                 return NULL;
@@ -224,10 +231,6 @@ static void *s_list_thread_proc(void *arg)
             // go to next group
             if (!l_objs)
                 break;
-            // set new start pos = lastitem pos + 1
-            l_item_start = l_objs[l_item_count - 1].id + 1;
-            // TODO
-            UNUSED(l_item_start);
             l_group_cur->count = 0; //-= l_item_count;
             dap_list_t *l_list = NULL;
             for (size_t i = 0; i < l_item_count; i++) {
@@ -323,6 +326,22 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
     dap_global_db_instance_t *l_dbi = l_dap_db_log_list->db_context->instance;
     if (l_dbi->whitelist || l_dbi->blacklist) {
         dap_list_t *l_used_list = l_dbi->whitelist ? l_dbi->whitelist : l_dbi->blacklist;
+        dap_list_t *l_group, *l_tmp;
+        DL_FOREACH_SAFE(l_groups_names, l_group, l_tmp) {
+            dap_list_t *l_used_el;
+            bool l_match = false;
+            DL_FOREACH(l_used_list, l_used_el) {
+                if (!dap_fnmatch(l_used_el->data, l_group->data, FNM_NOESCAPE)) {
+                    l_match = true;
+                    break;
+                }
+            }
+            if (l_used_list == l_dbi->whitelist ? !l_match : l_match) {
+                DL_DELETE(l_groups_names, l_group);
+                DAP_FREE(l_group);
+            }
+        }
+
         for (dap_list_t *l_group = l_groups_names; l_group; ) {
             bool l_found = false;
             for (dap_list_t *it = l_used_list; it; it = it->next) {
@@ -347,11 +366,15 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
             return NULL;
         }
         l_sync_group->name = (char *)l_group->data;
-        if (a_flags & F_DB_LOG_SYNC_FROM_ZERO)
-            l_sync_group->last_id_synced = 0;
-        else
-            l_sync_group->last_id_synced = dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
-        l_sync_group->count = dap_global_db_driver_count(l_sync_group->name, l_sync_group->last_id_synced + 1);
+        // Need change after iterator applying
+        // if (a_flags & F_DB_LOG_SYNC_FROM_ZERO)
+        //     l_sync_group->last_id_synced = 0;
+        // else
+        //     l_sync_group->last_id_synced = dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
+        dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(l_sync_group->name);
+        l_sync_group->count = dap_global_db_driver_count(l_iter);
+        dap_global_db_driver_iter_delete(l_iter);
+
         l_dap_db_log_list->items_number += l_sync_group->count;
         l_group->data = (void *)l_sync_group;
     }

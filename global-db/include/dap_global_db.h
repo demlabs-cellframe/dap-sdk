@@ -98,6 +98,20 @@ typedef struct dap_global_db_obj {
     bool is_pinned;
 } dap_global_db_obj_t;
 
+// db type for iterator
+typedef enum dap_global_db_type {
+    DAP_GLOBAL_DB_TYPE_UNDEFINED = 0,
+    DAP_GLOBAL_DB_TYPE_MDBX = 1,
+    DAP_GLOBAL_DB_TYPE_SQLITE,
+} dap_global_db_type_t;
+
+// db element iterator
+typedef struct dap_db_iter {
+    dap_global_db_type_t db_type;
+    const char *db_group;
+    void *db_iter;
+} dap_db_iter_t;
+
 typedef void (*dap_global_db_callback_t) (dap_global_db_context_t * a_global_db_context, void * a_arg);
 
 /**
@@ -125,7 +139,7 @@ typedef void (*dap_global_db_callback_result_raw_t) (dap_global_db_context_t * a
  *  @arg a_arg Custom argument
  *  @return none.
  */
-typedef void (*dap_global_db_callback_results_t) (dap_global_db_context_t *a_global_db_context,
+typedef bool (*dap_global_db_callback_results_t) (dap_global_db_context_t *a_global_db_context,
                                                   int a_rc, const char *a_group,
                                                   const size_t a_values_total, const size_t a_values_count,
                                                   dap_global_db_obj_t *a_values, void *a_arg);
@@ -138,7 +152,7 @@ typedef void (*dap_global_db_callback_results_t) (dap_global_db_context_t *a_glo
  *  @arg a_values Current items (page of items)
  *  @return none.
  */
-typedef void (*dap_global_db_callback_results_raw_t) (dap_global_db_context_t * a_global_db_context,
+typedef bool (*dap_global_db_callback_results_raw_t) (dap_global_db_context_t * a_global_db_context,
                                                       int a_rc, const char *a_group,
                                                       const size_t a_values_current, const size_t a_values_count,
                                                       dap_store_obj_t *a_values, void *a_arg);
@@ -159,7 +173,7 @@ int dap_global_db_context_exec(dap_global_db_callback_t a_callback, void * a_arg
 dap_global_db_context_t *dap_global_db_context_get_default();
 
 // Copy global_db_obj array
-dap_global_db_obj_t *dap_global_db_objs_copy(dap_global_db_obj_t *a_objs, size_t a_count);
+dap_global_db_obj_t *dap_global_db_objs_copy(dap_global_db_obj_t *a_objs_dest, const dap_global_db_obj_t *a_objs_src, size_t a_count);
 
 // Clear global_db_obj array
 void dap_global_db_objs_delete(dap_global_db_obj_t *a_objs, size_t a_count);
@@ -172,7 +186,7 @@ int dap_global_db_get_del_ts(const char * a_group, const char *a_key,dap_global_
 int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t a_callback, void * a_arg );
 int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_result_raw_t a_callback, void * a_arg );
 int dap_global_db_get_all(const char * a_group, size_t l_results_page_size, dap_global_db_callback_results_t a_callback, void * a_arg );
-int dap_global_db_get_all_raw(const char * a_group, uint64_t a_first_id, size_t l_results_page_size, dap_global_db_callback_results_raw_t a_callback, void * a_arg );
+int dap_global_db_get_all_raw(const char * a_group, size_t l_results_page_size, dap_nanotime_t a_timestamp, dap_global_db_callback_results_raw_t a_callback, void * a_arg );
 
 int dap_global_db_set(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value, dap_global_db_callback_result_t a_callback, void * a_arg );
 int dap_global_db_set_raw(dap_store_obj_t * a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void * a_arg );
@@ -192,7 +206,7 @@ dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_
 byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t *a_ts);
 dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group);
 dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_objs_count);
-dap_store_obj_t *dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count);
+dap_store_obj_t *dap_global_db_get_all_raw_sync(const char *a_group, size_t *a_objs_count);
 
 int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *a_value, const size_t a_value_length, bool a_pin_value);
 int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_objs_count);
@@ -215,7 +229,7 @@ byte_t *dap_global_db_get_last_unsafe(dap_global_db_context_t *a_global_db_conte
 dap_store_obj_t *dap_global_db_get_last_raw_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group);
 dap_global_db_obj_t *dap_global_db_get_all_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group, size_t *a_objs_count);
 dap_store_obj_t* dap_global_db_get_all_raw_unsafe(dap_global_db_context_t *a_global_db_context,
-                                                  const char *a_group, uint64_t a_first_id, size_t *a_objs_count);
+                                                  const char *a_group, size_t *a_objs_count);
 
 int dap_global_db_set_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group, const char *a_key,
                              const void *a_value, const size_t a_value_length, bool a_pin_value);

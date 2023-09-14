@@ -102,12 +102,11 @@ int execute_line(dap_app_cli_connect_param_t *cparam, char *line)
 
     // Call the function
     if(argc > 0) {
-        dap_app_cli_cmd_state_t cmd;
-        memset(&cmd, 0, sizeof(dap_app_cli_cmd_state_t));
-        cmd.cmd_name = (char *) argv[0];
-        cmd.cmd_param_count = argc - 1;
-        if(cmd.cmd_param_count > 0)
-            cmd.cmd_param = (char**) (argv + 1);
+        dap_app_cli_cmd_state_t cmd = {
+            .cmd_name           = (char*)argv[0],
+            .cmd_param_count    = argc - 1,
+            .cmd_param          = argc - 1 > 0 ? (char**)(argv + 1) : NULL
+        };
         // Send command
         int res = dap_app_cli_post_command(cparam, &cmd);
         DAP_DELETE(argv);
@@ -117,20 +116,6 @@ int execute_line(dap_app_cli_connect_param_t *cparam, char *line)
         fprintf(stderr, "No command\n");
         return -1;
     }
-}
-
-/**
- * Clear and delete memory of structure cmd_state
- */
-void dap_app_cli_free_cmd_state(dap_app_cli_cmd_state_t *cmd) {
-    if(!cmd->cmd_param)
-        return;
-    for(int i = 0; i < cmd->cmd_param_count; i++)
-            {
-        DAP_DELETE(cmd->cmd_param[i]);
-    }
-    DAP_DELETE(cmd->cmd_res);
-    DAP_DELETE(cmd);
 }
 
 /**
@@ -198,12 +183,11 @@ int dap_app_cli_main(const char * a_app_name, const char * a_socket_path, int a_
 
     if(a_argc > 1){
         // Call the function
-        dap_app_cli_cmd_state_t cmd;
-        memset(&cmd, 0, sizeof(dap_app_cli_cmd_state_t));
-        cmd.cmd_name = strdup(a_argv[1]);
-        cmd.cmd_param_count = a_argc - 2;
-        if(cmd.cmd_param_count > 0)
-            cmd.cmd_param = (char**) (a_argv + 2);
+        dap_app_cli_cmd_state_t cmd = {
+            .cmd_name           = (char*)a_argv[1],
+            .cmd_param_count    = a_argc - 2,
+            .cmd_param          = a_argc - 2 > 0 ? (char**)(a_argv + 2) : NULL
+        };
         // Send command
         int res = dap_app_cli_post_command(cparam, &cmd);
         dap_app_cli_disconnect(cparam);
