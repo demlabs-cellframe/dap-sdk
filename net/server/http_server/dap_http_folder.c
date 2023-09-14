@@ -63,7 +63,7 @@ typedef struct dap_http_file{
 #define DAP_HTTP_FILE(a) ((dap_http_file_t*) (a)->_inheritor )
 
 void dap_http_folder_headers_read( dap_http_client_t *cl_ht, void *arg );
-void dap_http_folder_headers_write( dap_http_client_t *cl_ht, void *arg );
+bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void *arg );
 void dap_http_folder_data_read( dap_http_client_t *cl_ht, void *arg );
 void dap_http_folder_data_write( dap_http_client_t *cl_ht, void *arg );
 
@@ -188,7 +188,7 @@ time_t FileTimeToUnixTime( FILETIME ft )
  * @param cl_ht HTTP client instane
  * @param arg Not used
  */
-void dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
+bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
 {
   (void) arg;
   // Get specific data for folder URL processor
@@ -267,7 +267,7 @@ void dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
     }
   }
 
-  return;
+  return false;
 
 err:
 
@@ -275,7 +275,7 @@ err:
   cl_ht->reply_status_code = 404;
   strncpy( cl_ht->reply_reason_phrase, "Not Found", sizeof(cl_ht->reply_reason_phrase)-1 );
 
-  return;
+  return false;
 }
 
 /**
