@@ -107,7 +107,7 @@ typedef struct dap_client {
 #define DAP_UPLINK_PATH_STREAM_CTL       "stream_ctl"
 #define DAP_UPLINK_PATH_STREAM           "stream"
 #define DAP_UPLINK_PATH_LICENSE          "license"
-//#define DAP_UPLINK_PATH_NODE_LIST        "nodelist"
+#define DAP_UPLINK_PATH_NODE_LIST        "nodelist"
 #define DAP_UPLINK_PATH_BALANCER         "balancer"
 
 #ifdef __cplusplus
