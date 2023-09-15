@@ -967,8 +967,8 @@ dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
 
 
 static int s_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
-    dap_store_obj_t *l_obj1 = (dap_store_obj_t *)a_obj1,
-            *l_obj2 = (dap_store_obj_t *)a_obj2;
+    dap_global_db_obj_t *l_obj1 = (dap_global_db_obj_t *)a_obj1,
+            *l_obj2 = (dap_global_db_obj_t *)a_obj2;
     return l_obj2->timestamp < l_obj1->timestamp
             ? 1
             : l_obj2->timestamp > l_obj1->timestamp
@@ -984,6 +984,8 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values",
                                                    a_group, l_values_count);
     dap_global_db_obj_t *l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
+    if (l_values_count > 1)
+        qsort(l_objs, l_values_count, sizeof(dap_global_db_obj_t), s_db_compare_by_ts);
     dap_store_obj_free(l_store_objs, l_values_count);
     if (a_objs_count)
         *a_objs_count = l_values_count;
@@ -1114,6 +1116,8 @@ static bool s_get_all_sync_callback(UNUSED_ARG dap_global_db_context_t *a_global
 
     l_args->get_objs.objs_count += a_values_count;
     if (l_args->get_objs.objs_count >= a_values_total) {
+        if (l_args->get_objs.objs_count > 1)
+            qsort(l_args->get_objs.objs, l_args->get_objs.objs_count, sizeof(dap_global_db_obj_t), s_db_compare_by_ts);
         l_args->hdr.called = true;
         DAP_DELETE(l_uid);
     }
@@ -2482,8 +2486,6 @@ dap_global_db_obj_t* s_objs_from_store_objs(const dap_store_obj_t *a_store_objs,
     
     dap_global_db_obj_t *l_objs = NULL;
 
-    if (a_values_count > 1)
-        qsort(a_store_objs, a_values_count, sizeof(dap_store_obj_t), s_db_compare_by_ts);
     l_objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, sizeof(dap_global_db_obj_t) *a_values_count);
     if (!l_objs) {
         goto mem_clear;
