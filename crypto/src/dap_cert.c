@@ -312,26 +312,40 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
         return NULL;
     dap_cert_item_t *l_cert_item = NULL;
     dap_cert_t *l_ret = NULL;
-    HASH_FIND_STR(s_certs, a_cert_name, l_cert_item);
-    if (l_cert_item ) {
-        l_ret = l_cert_item->cert ;
+
+    char* l_cert_name = (char*)a_cert_name;
+    size_t l_cert_name_len = strlen(a_cert_name);
+    for (unsigned int i = 0; i < l_cert_name_len; i++){
+        if (l_cert_name[i]=='\\')
+            l_cert_name[i]='/';
+    }
+
+    if(strstr(l_cert_name, "/")){
+        // find external certificate
+        char *l_cert_path = dap_strjoin("", l_cert_name, ".dcert", (char *)NULL);
+        l_ret = dap_cert_file_load(l_cert_name);
+        DAP_DELETE(l_cert_path);
     } else {
-        uint16_t l_ca_folders_size = 0;
-        char **l_ca_folders;
-        char *l_cert_path = NULL;
-        l_ca_folders = dap_config_get_array_str(g_config, "resources", "ca_folders", &l_ca_folders_size);
-        for (uint16_t i = 0; i < l_ca_folders_size; ++i) {
-            l_cert_path = dap_strjoin("", l_ca_folders[i], "/", a_cert_name, ".dcert", (char *)NULL);
-            l_ret = dap_cert_file_load(l_cert_path);
-            DAP_DELETE(l_cert_path);
-            if (l_ret)
-                break;
+        HASH_FIND_STR(s_certs, a_cert_name, l_cert_item);
+        if (l_cert_item ) {
+            l_ret = l_cert_item->cert ;
+        } else {
+            uint16_t l_ca_folders_size = 0;
+            char **l_ca_folders;
+            char *l_cert_path = NULL;
+            l_ca_folders = dap_config_get_array_str(g_config, "resources", "ca_folders", &l_ca_folders_size);
+            for (uint16_t i = 0; i < l_ca_folders_size; ++i) {
+                l_cert_path = dap_strjoin("", l_ca_folders[i], "/", a_cert_name, ".dcert", (char *)NULL);
+                l_ret = dap_cert_file_load(l_cert_path);
+                DAP_DELETE(l_cert_path);
+                if (l_ret)
+                    break;
+            }
         }
     }
     if (!l_ret)
         log_it(L_DEBUG, "Can't load cert '%s'", a_cert_name);
     return l_ret;
-
 }
 
 dap_list_t *dap_cert_get_all_mem()
