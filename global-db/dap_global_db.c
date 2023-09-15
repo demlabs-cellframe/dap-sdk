@@ -1050,21 +1050,20 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
     size_t l_values_count = a_msg->values_page_size;
     dap_global_db_obj_t *l_objs= NULL;
     dap_store_obj_t *l_store_objs = NULL;
-    dap_nanotime_t l_timestamp = a_msg->timestamp;
 
-    size_t l_total_records = dap_global_db_driver_count(l_iter);
+    size_t l_total_records = dap_global_db_driver_count(l_iter, 0);
     if (a_msg->values_page_size >= l_total_records || !a_msg->values_page_size) {
         l_objs = dap_global_db_get_all_unsafe(s_context_global_db, a_msg->group, &l_values_count);
         if(a_msg->callback_results)
             l_ret = !a_msg->callback_results(s_context_global_db,
                                 l_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
-                                a_msg->group, l_total_records, l_values_count,
+                                a_msg->group, l_values_count, l_values_count,
                                 l_objs, a_msg->callback_arg);
         dap_global_db_objs_delete(l_objs, l_values_count);
     } else {
-        for (size_t i = 0; (i < l_total_records) && l_ret; i += a_msg->values_page_size) {
+        for (size_t i = 0; (i < l_total_records) && l_ret; i += l_values_count) {
             l_values_count = i + a_msg->values_page_size < l_total_records ? a_msg->values_page_size : l_total_records - i;
-            l_store_objs = dap_global_db_driver_cond_read(l_iter, &l_values_count, l_timestamp);
+            l_store_objs = dap_global_db_driver_cond_read(l_iter, &l_values_count, 0);
 
             l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
            
@@ -1222,7 +1221,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
     dap_store_obj_t *l_store_objs = NULL;
     dap_nanotime_t l_timestamp = a_msg->timestamp;
 
-    size_t l_total_records = dap_global_db_driver_count(l_iter);
+    size_t l_total_records = dap_global_db_driver_count(l_iter, l_timestamp);
     if (a_msg->values_page_size >= l_total_records || !a_msg->values_page_size) {
         l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_msg->group, &l_values_count);
         if(a_msg->callback_results)
@@ -2018,7 +2017,8 @@ dap_global_db_obj_t *dap_global_db_objs_copy(dap_global_db_obj_t *a_objs_dest, c
     dap_return_val_if_pass(!a_objs_dest || !a_objs_src || !a_count, NULL);
 
     /* Run over array's elements */
-    for (dap_global_db_obj_t *l_obj = a_objs_src, *l_cur = a_objs_dest; a_count--; l_cur++, l_obj++) {
+    const dap_global_db_obj_t *l_obj = a_objs_src;
+    for (dap_global_db_obj_t *l_cur = a_objs_dest; a_count--; l_cur++, l_obj++) {
         *l_cur = *l_obj;
         l_cur->key = dap_strdup(l_obj->key);
         if (l_obj->value) {

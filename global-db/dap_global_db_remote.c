@@ -220,9 +220,7 @@ static void *s_list_thread_proc(void *arg)
             size_t l_item_count = 0;//min(64, l_group_cur->count);
             size_t l_objs_total_size = 0;
 
-            dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(l_group_cur->name);
-            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_iter, &l_item_count);
-            dap_global_db_driver_iter_delete(l_iter);
+            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, &l_item_count);
             
             if (!l_dap_db_log_list->is_process) {
                 dap_store_obj_free(l_objs, l_item_count);
@@ -372,7 +370,7 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
         // else
         //     l_sync_group->last_id_synced = dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
         dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(l_sync_group->name);
-        l_sync_group->count = dap_global_db_driver_count(l_iter);
+        l_sync_group->count = dap_global_db_driver_count(l_iter, 0);
         dap_global_db_driver_iter_delete(l_iter);
 
         l_dap_db_log_list->items_number += l_sync_group->count;
