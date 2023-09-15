@@ -540,7 +540,7 @@ static int s_db_mdbx_iter_create(dap_db_iter_t *a_iter)
     dap_db_mdbx_iter_t *l_mdbx_iter = DAP_NEW_Z(dap_db_mdbx_iter_t);
     if (!l_mdbx_iter) {
         log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
+        return -1;
     }
 
     l_mdbx_iter->key.iov_base = NULL;
@@ -781,7 +781,7 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, si
     if (
         MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) || 
         MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor)) ||
-        l_mdbx_iter->key.iov_base && (MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_mdbx_iter->key, NULL, MDBX_SET_RANGE)))
+        (l_mdbx_iter->key.iov_base && (MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_mdbx_iter->key, NULL, MDBX_SET_RANGE))))
         ) {
         if (l_cursor)
             mdbx_cursor_close(l_cursor);
@@ -848,11 +848,11 @@ size_t  s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter, dap_nanotime_t a
     size_t  l_ret_count = 0;
 
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_iter->db_group);
-    dap_return_val_if_pass(!l_db_ctx, NULL); 
+    dap_return_val_if_pass(!l_db_ctx, 0); 
 
     if (!(l_obj = DAP_NEW_Z(dap_store_obj_t))) {
         log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
+        return 0;
     }
 
     dap_assert ( !pthread_mutex_lock(&l_db_ctx->dbi_mutex));
@@ -865,7 +865,7 @@ size_t  s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter, dap_nanotime_t a
         dap_assert( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
         log_it (L_ERROR, "mdbx_txn: (%d) %s", l_rc, mdbx_strerror(l_rc));
         DAP_DEL_Z(l_obj);
-        return NULL;
+        return 0;
     }
 
     while ((MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT)))) {
