@@ -322,8 +322,12 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
 
     if(strstr(l_cert_name, "/")){
         // find external certificate
-        char *l_cert_path = dap_strjoin("", l_cert_name, ".dcert", (char *)NULL);
-        l_ret = dap_cert_file_load(l_cert_name);
+        char *l_cert_path = NULL;
+        if (!strstr(l_cert_name, ".dcert"))
+            l_cert_path = dap_strjoin("", l_cert_name, ".dcert", (char *)NULL);
+        else
+            l_cert_path = dap_strjoin("", l_cert_name, (char *)NULL);
+        l_ret = dap_cert_file_load(l_cert_path);
         DAP_DELETE(l_cert_path);
     } else {
         HASH_FIND_STR(s_certs, a_cert_name, l_cert_item);
