@@ -189,7 +189,8 @@ dap_store_obj_t* dap_global_db_store_objs_copy(dap_store_obj_t *a_store_objs_des
     dap_return_val_if_pass(!a_store_objs_dest || !a_store_objs_src || !a_store_count, NULL);
 
     /* Run over array's elements */
-    for (dap_store_obj_t *l_obj = a_store_objs_src, *l_cur = a_store_objs_dest; a_store_count--; l_cur++, l_obj++) {
+    const dap_store_obj_t *l_obj = a_store_objs_src;
+    for (dap_store_obj_t *l_cur = a_store_objs_dest; a_store_count--; l_cur++, l_obj++) {
         *l_cur = *l_obj;
         l_cur->group = dap_strdup(l_obj->group);
         l_cur->key = dap_strdup(l_obj->key);
@@ -299,12 +300,12 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
  * @param a_iter data base iterator
  * @return Returns a number of objects.
  */
-size_t dap_global_db_driver_count(const dap_db_iter_t *a_iter)
+size_t dap_global_db_driver_count(const dap_db_iter_t *a_iter, dap_nanotime_t a_timestamp)
 {
     size_t l_count_out = 0;
     // read the number of items
     if(s_drv_callback.read_count_store)
-        l_count_out = s_drv_callback.read_count_store(a_iter);
+        l_count_out = s_drv_callback.read_count_store(a_iter, a_timestamp);
     return l_count_out;
 }
 
