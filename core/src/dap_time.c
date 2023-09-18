@@ -85,7 +85,7 @@ dap_nanotime_t dap_nanotime_now(void)
  *
  * Pauses the current thread for the given number of microseconds.
  */
-void dap_usleep(dap_time_t a_microseconds)
+void dap_usleep(uint64_t a_microseconds)
 {
 #ifdef DAP_OS_WINDOWS
     Sleep (a_microseconds / 1000);

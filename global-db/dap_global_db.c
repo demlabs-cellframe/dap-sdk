@@ -1509,7 +1509,7 @@ int dap_global_db_set_raw_unsafe(dap_global_db_context_t *a_global_db_context, d
             int l_res_del = 0;
             if (a_store_objs[i].type == DAP_DB$K_OPTYPE_ADD)
                 l_res_del = s_record_del_history_del(a_store_objs[i].group, a_store_objs[i].key);
-            else if (a_store_objs[i].type == DAP_DB$K_OPTYPE_DEL)
+            else if (a_store_objs[i].type == DAP_GLOBAL_DB_OPTYPE_DEL)
                 l_res_del = s_record_del_history_add(a_store_objs[i].group, (char *)a_store_objs[i].key,
                                                      a_store_objs[i].timestamp);
             if (!l_res_del && !l_ret) {
@@ -1843,7 +1843,7 @@ int dap_global_db_del_unsafe(dap_global_db_context_t *a_global_db_context, const
     dap_store_obj_t l_store_obj = {
         .key        = a_key,
         .group      = (char*)a_group,
-        .type       = DAP_DB$K_OPTYPE_DEL,
+        .type       = DAP_GLOBAL_DB_OPTYPE_DEL,
         .timestamp  = dap_nanotime_now()
     };
 

@@ -22,10 +22,10 @@ You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include "dap_global_db.h"
 #include "dap_global_db_cluster.h"
 #include "dap_strfuncs.h"
 #include "dap_sign.h"
+#include "crc32c_adler/crc32c_adler.h"
 
 /**
  * @brief Multiples data into a_old_pkt structure from a_new_pkt structure.
@@ -63,6 +63,10 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     size_t l_sign_len = dap_sign_get_size(a_store_obj->sign);
     size_t l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len + l_sign_len;
     dap_global_db_pkt_t *l_pkt = DAP_NEW_SIZE(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t));
+    if (!l_pkt) {
+        log_it(L_CRITICAL, "Insufficient memory");
+        return NULL;
+    }
 
     /* Fill packet header */
     l_pkt->timestamp = a_store_obj->timestamp;
@@ -82,6 +86,20 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
 
     assert(l_data_ptr - l_pkt->data == l_data_size_out);
     return l_pkt;
+}
+
+uint32_t dap_store_obj_checksum(dap_store_obj_t *a_obj)
+{
+    dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_obj);
+    if (!l_pkt) {
+        log_it(L_ERROR, "Can't serialize global DB object");
+        return 0;
+    }
+    uint32_t l_ret = crc32c(CRC32C_INIT,
+                            (byte_t *)l_pkt + sizeof(uint32_t),
+                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint32_t));
+    DAP_DELETE(l_pkt);
+    return l_ret;
 }
 
 /**
@@ -116,7 +134,7 @@ dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_pack_t *a_pkt, 
         if (l_data_ptr + sizeof(dap_global_db_pkt_t) > l_data_end ||            /* Check for buffer boundaries */
                 l_pkt->data + l_pkt->data_len > l_data_end ||
                 l_pkt->group_len + l_pkt->key_len + l_pkt->value_len + sizeof(dap_sign_t) >= l_pkt->data_len) {
-            log_it(L_ERROR, "Broken GDB element: can't read packet #", l_cur_count);
+            log_it(L_ERROR, "Broken GDB element: can't read packet #%u", l_cur_count);
             goto exit;
         }
         if (!l_pkt->group_len) {

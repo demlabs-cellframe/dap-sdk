@@ -26,6 +26,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #include "dap_time.h"
 #include "dap_cluster.h"
+#include "dap_global_db.h"
 
 #define DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT 1024
 
@@ -43,18 +44,18 @@ typedef struct dap_global_db_cluster {
 } dap_global_db_cluster_t;
 
 typedef struct dap_global_db_pkt {
+    uint32_t crc;   // Must be first for compute
     dap_nanotime_t timestamp;
     uint16_t group_len;
     uint16_t key_len;
     uint32_t value_len;
     uint32_t data_len;
-    uint32_t crc;
     byte_t data[];
 } DAP_ALIGN_PACKED dap_global_db_pkt_t;
 
 DAP_STATIC_INLINE size_t dap_global_db_pkt_get_size(dap_global_db_pkt_t *a_pkt)
 {
-    return siezof(*a_pkt) + a_pkt->group_len + a_pkt->key_len + a_pkt->sign_len;
+    return siezof(*a_pkt) + a_pkt->data_len;
 }
 
 typedef struct dap_global_db_pkt_pack {

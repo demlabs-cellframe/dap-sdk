@@ -207,7 +207,7 @@ static void *s_list_thread_proc(void *arg)
         char l_del_group_name_replace[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
         char l_obj_type;
         if (!dap_fnmatch("*.del", l_group_cur->name, 0)) {
-            l_obj_type = DAP_DB$K_OPTYPE_DEL;
+            l_obj_type = DAP_GLOBAL_DB_OPTYPE_DEL;
             size_t l_del_name_len = strlen(l_group_cur->name) - 4; //strlen(".del");
             memcpy(l_del_group_name_replace, l_group_cur->name, l_del_name_len);
             l_del_group_name_replace[l_del_name_len] = '\0';
@@ -244,7 +244,7 @@ static void *s_list_thread_proc(void *arg)
                     dap_global_db_driver_delete(l_obj_cur, 1);
                     continue;       // the object is broken
                 }
-                if (l_obj_type == DAP_DB$K_OPTYPE_DEL) {
+                if (l_obj_type == DAP_GLOBAL_DB_OPTYPE_DEL) {
                     if (l_limit_time && l_obj_cur->timestamp < l_limit_time) {
                         dap_global_db_driver_delete(l_obj_cur, 1);
                         continue;
@@ -537,7 +537,7 @@ uint64_t dap_db_get_last_id_remote(uint64_t a_node_addr, char *a_group)
  * @param store_obj a pointer to the object
  * @return Returns the size.
  */
-static size_t dap_db_get_size_pdap_store_obj_t(pdap_store_obj_t store_obj)
+static size_t dap_db_get_size_dap_store_obj_t *(dap_store_obj_t * store_obj)
 {
     size_t size = sizeof(uint32_t) + 2 * sizeof(uint16_t) +
             3 * sizeof(uint64_t) + dap_strlen(store_obj->group) +
@@ -593,7 +593,7 @@ unsigned char *pdata;
     if (!a_store_obj)
         return NULL;
 
-    uint32_t l_data_size_out = dap_db_get_size_pdap_store_obj_t(a_store_obj);
+    uint32_t l_data_size_out = dap_db_get_size_dap_store_obj_t *(a_store_obj);
     dap_global_db_pkt_t *l_pkt = DAP_NEW_SIZE(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t));
 
     /* Fill packet header */
@@ -799,7 +799,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     if (a_obj->timestamp > (uint64_t)l_timestamp_del &&
             a_obj->timestamp > (uint64_t)l_timestamp_cur)
         l_apply = true;
-    if ((l_ttl || a_obj->type == DAP_DB$K_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time)
+    if ((l_ttl || a_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time)
         l_apply = false;
     if (g_dap_global_db_debug_more) {
         char l_ts_str[50];
@@ -826,7 +826,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     // Do not overwrite pinned records
     if (l_is_pinned_cur) {
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
-                                a_obj->type != DAP_DB$K_OPTYPE_DEL ? "remove" : "rewrite", a_obj->group, a_obj->key);
+                                a_obj->type != DAP_GLOBAL_DB_OPTYPE_DEL ? "remove" : "rewrite", a_obj->group, a_obj->key);
         l_read_obj->timestamp = a_obj->timestamp + 1;
         l_read_obj->type = DAP_DB$K_OPTYPE_ADD;
         dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);

@@ -31,18 +31,47 @@
 
 #include "dap_time.h"
 #include "dap_list.h"
-#include "dap_global_db.h"
 
 #define DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX   128UL                               /* A maximum size of group name */
 #define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL                              /* A maximum number of groups */
 #define DAP_GLOBAL_DB_KEY_MAX               512UL                               /* A limit for the key's length in DB */
-#define DAP_GLOBAL_DB_MAX_OBJS              32768UL                              /* A maximum number of objects to be returned by
-                                                                                    read_srore_obj() */
-
+#define DAP_GLOBAL_DB_MAX_OBJS              32768UL                             /* A maximum number of objects to be returned by
+                                                                                   read_srore_obj() */
 enum RECORD_FLAGS {
     RECORD_COMMON = 0,    // 0000
     RECORD_PINNED = 1,    // 0001
 };
+
+enum dap_global_db_optype {
+    DAP_GLOBAL_DB_OPTYPE_ADD  = 0x61,    /* 'a', */                             /* Operation Type = INSERT/ADD */
+    DAP_GLOBAL_DB_OPTYPE_DEL  = 0x64,    /* 'd', */                             /*  -- // -- DELETE */
+};
+
+typedef struct dap_store_obj {
+    enum dap_global_db_optype type;
+    char *group;
+    char *key;
+    byte_t *value;
+    size_t value_len;
+    dap_nanotime_t timestamp;
+    uint8_t flags;
+    byte_t *sign;
+    uint32_t crc;
+} dap_store_obj_t;
+
+// db type for iterator
+typedef enum dap_global_db_iter_type {
+    DAP_GLOBAL_DB_TYPE_UNDEFINED = 0,
+    DAP_GLOBAL_DB_TYPE_MDBX = 1,
+    DAP_GLOBAL_DB_TYPE_SQLITE
+} dap_global_db_iter_type_t;
+
+// db element iterator
+typedef struct dap_db_iter {
+    dap_global_db_iter_type_t db_type;
+    const char *db_group;
+    void *db_iter;
+} dap_db_iter_t;
 
 typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t*);
 typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *,const char *, size_t *);
@@ -80,6 +109,7 @@ typedef struct dap_db_driver_callbacks {
 int     dap_db_driver_init(const char *driver_name, const char *a_filename_db, int a_mode_async);
 void    dap_db_driver_deinit(void);
 
+uint32_t dap_store_obj_checksum(dap_store_obj_t *a_obj);
 dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count);
 dap_store_obj_t* dap_global_db_store_objs_copy(dap_store_obj_t *, const dap_store_obj_t *, size_t);
 void    dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count);
@@ -87,8 +117,8 @@ DAP_STATIC_INLINE void dap_store_obj_free_one(dap_store_obj_t *a_store_obj) { re
 int     dap_db_driver_flush(void);
 
 int dap_global_db_driver_apply(dap_store_obj_t *a_store_obj, size_t a_store_count);
-int dap_global_db_driver_add(pdap_store_obj_t a_store_obj, size_t a_store_count);
-int dap_global_db_driver_delete(pdap_store_obj_t a_store_obj, size_t a_store_count);
+int dap_global_db_driver_add(dap_store_obj_t *a_store_obj, size_t a_store_count);
+int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_count);
 dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group);
 dap_store_obj_t* dap_global_db_driver_cond_read(dap_db_iter_t* a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp);
 dap_store_obj_t* dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out);

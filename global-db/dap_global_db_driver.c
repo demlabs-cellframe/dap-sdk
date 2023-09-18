@@ -267,7 +267,7 @@ dap_store_obj_t *l_store_obj_cur;
  * @param a_store_count a number of added objects
  * @return Returns 0 if sucseesful.
  */
-int dap_global_db_driver_add(pdap_store_obj_t a_store_obj, size_t a_store_count)
+int dap_global_db_driver_add(dap_store_obj_t *a_store_obj, size_t a_store_count)
 {
 dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
@@ -283,12 +283,12 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
  * @param a_store_count a number of deleted objects
  * @return Returns 0 if sucseesful.
  */
-int dap_global_db_driver_delete(pdap_store_obj_t a_store_obj, size_t a_store_count)
+int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_count)
 {
 dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
     for(int i = a_store_count; i--; l_store_obj_cur++)
-        l_store_obj_cur->type = DAP_DB$K_OPTYPE_DEL;
+        l_store_obj_cur->type = DAP_GLOBAL_DB_OPTYPE_DEL;
 
     return dap_global_db_driver_apply(a_store_obj, a_store_count);
 }

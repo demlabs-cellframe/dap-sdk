@@ -26,6 +26,7 @@
 #include "dap_time.h"
 #include "dap_context.h"
 #include "dap_proc_queue.h"
+#include "dap_global_db_driver.h"
 
 #define DAP_GLOBAL_DB_VERSION               2
 #define DAP_GLOBAL_DB_LOCAL_GENERAL         "local.general"
@@ -64,53 +65,13 @@ typedef struct dap_global_db_context {
 
 #define DAP_CONTEXT_TYPE_GLOBAL_DB   100
 
-enum    {
-    DAP_DB$K_OPTYPE_ADD  = 0x61,    /* 'a', */                              /* Operation Type = INSERT/ADD */
-    DAP_DB$K_OPTYPE_DEL  = 0x64,    /* 'd', */                              /*  -- // -- DELETE */
-    DAP_DB$K_OPTYPE_RETR = 0x72,    /* 'r', */                              /*  -- // -- RETRIEVE/GET */
-};
-
-typedef struct dap_store_obj {
-    uint64_t id;
-    dap_nanotime_t timestamp;
-    uint32_t type;                                                          /* Operation type: ADD/DELETE, see DAP_DB$K_OPTYPE_* constants */
-    uint8_t flags;                                                          /* RECORD_FLAGS */
-
-    char *group;
-    uint64_t group_len;
-
-    union {
-        const char *key;
-        byte_t *key_byte;
-    };
-    uint64_t key_len;
-
-    uint8_t *value;
-    uint64_t value_len;
-} dap_store_obj_t, *pdap_store_obj_t;
-
 typedef struct dap_global_db_obj {
-    uint64_t id;
-    char *key;
     dap_nanotime_t timestamp;
+    char *key;
     uint8_t *value;
     size_t value_len;
     bool is_pinned;
 } dap_global_db_obj_t;
-
-// db type for iterator
-typedef enum dap_global_db_type {
-    DAP_GLOBAL_DB_TYPE_UNDEFINED = 0,
-    DAP_GLOBAL_DB_TYPE_MDBX = 1,
-    DAP_GLOBAL_DB_TYPE_SQLITE,
-} dap_global_db_type_t;
-
-// db element iterator
-typedef struct dap_db_iter {
-    dap_global_db_type_t db_type;
-    const char *db_group;
-    void *db_iter;
-} dap_db_iter_t;
 
 typedef void (*dap_global_db_callback_t) (dap_global_db_context_t * a_global_db_context, void * a_arg);
 
