@@ -681,7 +681,7 @@ struct conn_pool_item *l_conn;
         return NULL;
 
     char * l_table_name = s_sqlite_make_table_name(a_group);
-    char *l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' ORDER BY id DESC LIMIT 1", l_table_name);
+    char *l_str_query = sqlite3_mprintf("SELECT key,timestamp,value FROM '%s' ORDER BY timestamp DESC LIMIT 1", l_table_name);
     int l_ret = sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_res, NULL);
     sqlite3_free(l_str_query);
     DAP_DEL_Z(l_table_name);
@@ -726,26 +726,20 @@ dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *
     char *l_error_message = NULL;
     sqlite3_stmt *l_res = NULL;
     dap_db_sqlite_iter_t* l_iter = (dap_db_sqlite_iter_t*)a_iter->db_iter;
+    struct conn_pool_item *l_conn = s_sqlite_get_connection();
+    if(!l_conn)
+        return NULL;
 
     char * l_table_name = s_sqlite_make_table_name(a_iter->db_group);
     // no limit
     int l_count_out = 0;
     if(a_count_out)
         l_count_out = (int)*a_count_out;
-    char *l_str_query = NULL;
-    if (l_count_out) {
-        l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' WHERE id%s'%lld' AND ts>'%lld' ORDER BY id ASC LIMIT %d",
-                l_table_name, l_iter->used ? ">":">=", l_iter->id, a_timestamp, l_count_out);
-    } else {
-        l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' WHERE id%s'%lld' AND ts>'%lld'  ORDER BY id ASC",
-                l_table_name, l_iter->used ? ">":">=", l_iter->id, a_timestamp);
-    }
-    struct conn_pool_item *l_conn = s_sqlite_get_connection();
-    if(!l_conn) {
-        if (l_str_query) sqlite3_free(l_str_query);
-        return NULL;
-    }
-
+    char l_str_limit[64] = {};
+    if (l_count_out)
+        snprintf(l_str_limit, 64, " LIMIT %d", l_count_out);
+    char *l_str_query = sqlite3_mprintf("SELECT key,timestamp,value FROM '%s' WHERE timestamp>'%lld' ORDER BY key %s",
+                                                                        l_table_name, a_timestamp, l_str_limit);
     int l_ret = sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_res, NULL);
     sqlite3_free(l_str_query);
     DAP_DEL_Z(l_table_name);
@@ -791,12 +785,10 @@ dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *
     sqlite3_finalize(l_res);
     s_sqlite_free_connection(l_conn);
 
-    if (l_count_out > 0) {
-        l_iter->id = l_obj[l_count_out - 1].id;
-        l_iter->used = true;
-    }
+    if (l_count_out > 0)
+        l_iter->timestamp = l_obj[l_count_out - 1].timestamp;
 
-    if(a_count_out) 
+    if (a_count_out)
         *a_count_out = (size_t)l_count_out;
 
     return l_obj;
@@ -822,25 +814,16 @@ dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_k
     char * l_table_name = s_sqlite_make_table_name(a_group);
     // no limit
     uint64_t l_count_out = 0;
-    if(a_count_out)
+    if (a_count_out)
         l_count_out = *a_count_out;
+    char l_str_limit[64] = {};
+    if (l_count_out)
+        snprintf(l_str_limit, 64, " LIMIT %d", l_count_out);
     char *l_str_query;
-    if (a_key) {
-        if (l_count_out) {
-            l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' WHERE key='%s' ORDER BY id ASC LIMIT %d",
-                    l_table_name, a_key, l_count_out);
-        } else {
-            l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' WHERE key='%s' ORDER BY id ASC",
-                    l_table_name, a_key);
-        }
-    } else {
-        if (l_count_out) {
-            l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' ORDER BY id ASC LIMIT %d",
-                    l_table_name, l_count_out);
-        } else {
-            l_str_query = sqlite3_mprintf("SELECT id,ts,key,value FROM '%s' ORDER BY id ASC", l_table_name);
-        }
-    }
+    if (a_key)
+        l_str_query = sqlite3_mprintf("SELECT key,timestamp,value FROM '%s' WHERE key='%s'", l_table_name, a_key);
+    else
+        l_str_query = sqlite3_mprintf("SELECT key,timestamp,value FROM '%s' ORDER BY key%s", l_table_name, a_key, l_str_limit);
     int l_ret = sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_res, NULL);
     sqlite3_free(l_str_query);
     DAP_DEL_Z(l_table_name);
@@ -944,7 +927,7 @@ size_t s_db_sqlite_read_count_store(const dap_db_iter_t *a_iter)
     dap_db_sqlite_iter_t* l_sqlite_iter = (dap_db_sqlite_iter_t*)a_iter->db_iter;
 
     char * l_table_name = s_sqlite_make_table_name(a_iter->db_group);
-    char *l_str_query = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE id>='%lld'", l_table_name, l_sqlite_iter->id);
+    char *l_str_query = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE timestamp > '%lld'", l_table_name, l_sqlite_iter->timestamp);
     int l_ret = sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_res, NULL);
     sqlite3_free(l_str_query);
     DAP_DEL_Z(l_table_name);
