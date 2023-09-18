@@ -924,7 +924,6 @@ static  int s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj)
 int     l_rc = 0, l_rc2;
 dap_db_ctx_t *l_db_ctx;
 MDBX_val    l_key, l_data;
-char    *l_val;
 
     if ( !a_store_obj || !a_store_obj->group)                               /* Sanity checks ... */
         return -EINVAL;
@@ -965,11 +964,15 @@ char    *l_val;
             a_store_obj->crc = dap_store_obj_checksum(a_store_obj);
         l_record->crc = a_store_obj->crc;
         if (!a_store_obj->sign) {
+            pthread_mutex_unlock(&l_db_ctx->dbi_mutex);
+            DAP_DELETE(l_record);
             log_it(L_ERROR, "Global DB store object unsigned");
             return MDBX_EINVAL;
         }
         l_record->sign_len = dap_sign_get_size(a_store_obj->sign);
         if (!a_store_obj->sign_len) {
+            pthread_mutex_unlock(&l_db_ctx->dbi_mutex);
+            DAP_DELETE(l_record);
             log_it(L_ERROR, "Global DB store object sign corrupted");
             return MDBX_EINVAL;
         }
@@ -983,7 +986,7 @@ char    *l_val;
         /* So, finaly: BEGIN transaction, do INSERT, COMMIT or ABORT ... */
         if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_db_ctx->txn)) ) {
             dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
-            return  DAP_FREE(l_val), log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), -EIO;
+            return  DAP_FREE(l_record), log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), -EIO;
         }
         if ( MDBX_SUCCESS != (l_rc = mdbx_put(l_db_ctx->txn, l_db_ctx->dbi, &l_key, &l_data, 0)) ) {
             log_it (L_ERROR, "mdbx_put: (%d) %s", l_rc, mdbx_strerror(l_rc));
@@ -993,7 +996,7 @@ char    *l_val;
         else if ( MDBX_SUCCESS != (l_rc = mdbx_txn_commit(l_db_ctx->txn)) )
             log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", l_rc, mdbx_strerror(l_rc));
         dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
-        return DAP_FREE(l_val), (( l_rc == MDBX_SUCCESS ) ? 0 : -EIO);
+        return DAP_FREE(l_record), (( l_rc == MDBX_SUCCESS ) ? 0 : -EIO);
     } /* DAP_GLOBAL_DB_OPTYPE_ADD */
 
     if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) {

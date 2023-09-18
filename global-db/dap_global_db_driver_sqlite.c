@@ -104,6 +104,17 @@ typedef struct _sqlite_row_value_
     SQLITE_VALUE *val; // array of field values
 } SQLITE_ROW_VALUE;
 
+/*
+ * SQLite record structure
+ */
+struct DAP_ALIGN_PACKED driver_record {
+    uint64_t        value_len;                                              /* Length of value part */
+    uint8_t         flags;                                                  /* Flag of the record : see RECORD_FLAGS enums */
+    uint32_t        crc;                                                    /* Object integrity */
+    uint64_t        sign_len;                                               /* Size control */
+    byte_t          value_n_sign[];                                         /* Serialized form */
+};
+
 /**
  * @brief Closes a SQLite database.
  *
@@ -276,7 +287,7 @@ static int s_db_driver_sqlite_exec(sqlite3 *a_db, const char *l_query, byte_t *a
         l_rc = sqlite3_step(l_stmt);
         if (l_rc != SQLITE_BUSY)
             break;
-        if (g_dap_global_db_debug_more )
+        if (g_dap_global_db_debug_more)
             log_it(L_WARNING, "SQL error: %d(%s), sqlite step retry for %s",
                                 sqlite3_errcode(a_db), sqlite3_errmsg(a_db), l_query);
         dap_usleep(500 * 1000);                                             /* Wait 0.5 sec */
@@ -306,7 +317,7 @@ char l_query[512];
         return log_it(L_ERROR, "Error create group table '%s'", a_table_name), -ENOENT;
 
     snprintf(l_query, sizeof(l_query) - 1,
-                    "CREATE TABLE IF NOT EXISTS '%s'(key TEXT NOT NULL PRIMARY KEY, timestamp BIGINT KEY, value BLOB)",
+                    "CREATE TABLE IF NOT EXISTS '%s'(key TEXT UNIQUE NOT NULL PRIMARY KEY, timestamp BIGINT KEY, value BLOB)",
                     a_table_name);
 
     if ( (l_rc = s_db_driver_sqlite_exec(l_conn->conn, l_query, NULL, 0)) != SQLITE_OK ) {
@@ -510,20 +521,53 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
 {
     if (!a_store_obj || !a_store_obj->group )
         return -1;
-
-    char *l_query = NULL;
-    char *l_error_message = NULL;
     // execute request
     struct conn_pool_item *l_conn = s_sqlite_get_connection();
     if (!l_conn)
         return -2;
 
+    char *l_query = NULL;
+    size_t l_record_len;
+    struct driver_record *l_record;
     char *l_table_name = s_sqlite_make_table_name(a_store_obj->group);
     if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD) {
-        if (!a_store_obj->key)
-            return -1;
-        else //add one record
-            l_query = sqlite3_mprintf("INSERT INTO '%s' VALUES('%s', '%lld', ?)", l_table_name, a_store_obj->key, a_store_obj->timestamp);
+        if (!a_store_obj->key) {
+            log_it(L_ERROR, "Global DB store object unsigned");
+            l_ret = -3;
+            goto ret_n_free;
+        }
+        else { //add one record
+            l_query = sqlite3_mprintf("INSERT OR REPLACE INTO '%s' VALUES('%s', '%lld', ?)",
+                                                  l_table_name, a_store_obj->key, a_store_obj->timestamp);
+            /* Compute a length of the area to keep record */
+            l_record_len = sizeof(struct driver_record) + a_store_obj->value_len + dap_sign_get_size(a_store_obj->sign);
+            l_record = DAP_NEW_Z_SIZE(char, l_record_len);
+            if (!l_record) {
+                log_it(L_ERROR, "Cannot allocate memory for new records, %zu octets, errno=%d", l_record_len, errno);
+                l_ret = -4;
+                goto ret_n_free;
+            }
+            l_record->value_len = a_store_obj->value_len;
+            l_record->flags = a_store_obj->flags;
+            if (!a_store_obj->crc)
+                a_store_obj->crc = dap_store_obj_checksum(a_store_obj);
+            l_record->crc = a_store_obj->crc;
+            if (!a_store_obj->sign) {
+                log_it(L_ERROR, "Global DB store object unsigned");
+                l_ret = -5;
+                goto ret_n_free;
+            }
+            l_record->sign_len = dap_sign_get_size(a_store_obj->sign);
+            if (!a_store_obj->sign_len) {
+                log_it(L_ERROR, "Global DB store object sign corrupted");
+                l_ret = -6;
+                goto ret_n_free;
+            }
+            if (a_store_obj->value_len)                                                 /* Put <value> into the record */
+                memcpy(l_record->value_n_sign, a_store_obj->value, a_store_obj->value_len);
+                                                                                        /* Put the authorization sign */
+            memcpy(l_record->value_n_sign + a_store_obj->value_len, a_store_obj->sign, l_record->sign_len);
+        }
     } else if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) {
         if (a_store_obj->key) //delete one record
             l_query = sqlite3_mprintf("DELETE FROM '%s' WHERE key = '%s'", l_table_name, a_store_obj->key);
@@ -531,40 +575,22 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_query = sqlite3_mprintf("DROP TABLE IF EXISTS '%s'", l_table_name);
     } else {
         log_it(L_ERROR, "Unknown store_obj type '0x%x'", a_store_obj->type);
-        return -1;
+        l_ret = -7;
+        goto ret_n_free;
     }
-    int l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, NULL, 0);
+    int l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, (byte_t *)l_record, l_record_len);
 
-    if(l_ret == SQLITE_ERROR) {
-        sqlite3_free(l_error_message);
-        l_error_message = NULL;
+    if (l_ret == SQLITE_ERROR && a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD) {
         // create table
         s_dap_db_driver_sqlite_create_group_table(l_table_name);
         // repeat request
-        l_ret = s__db_driver_sqlite_exec(l_conn->conn, l_query, &l_error_message);
-
+        l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, (byte_t *)l_record, l_record_len);
     }
-    // entry with the same hash is already present
-    if(l_ret == SQLITE_CONSTRAINT) {
-        sqlite3_free(l_error_message);
-        l_error_message = NULL;
-        //replace one record
-        char *l_blob_value = s_dap_db_driver_get_string_from_blob(a_store_obj->value, (int)a_store_obj->value_len);
-        char *l_query_replace = sqlite3_mprintf("REPLACE INTO '%s' values(NULL, '%s', x'', '%lld', x'%s')",
-                                   l_table_name, a_store_obj->key, a_store_obj->timestamp, l_blob_value);
-        sqlite3_free(l_blob_value);
-        l_ret = s_dap_db_driver_sqlite_exec(l_conn->conn, l_query_replace, &l_error_message);
-        sqlite3_free(l_query_replace);
-
-    }
-    // missing database
-    if(l_ret != SQLITE_OK) {
-        log_it(L_ERROR, "SQLite apply error: %s", l_error_message);
-        sqlite3_free(l_error_message);
-        l_ret = -1;
-    }
+ret_n_free:
+    DAP_DEL_Z(l_record);
     s_sqlite_free_connection(l_conn);
-    sqlite3_free(l_query);
+    if (l_query)
+        sqlite3_free(l_query);
     DAP_DELETE(l_table_name);
     return l_ret;
 }
@@ -587,21 +613,45 @@ static void s_fill_one_item(const char *a_group, dap_store_obj_t *a_obj, SQLITE_
     for(int l_iCol = 0; l_iCol < a_row->count; l_iCol++) {
         SQLITE_VALUE *l_cur_val = a_row->val + l_iCol;
         switch (l_iCol) {
-        case 0:
-            if(l_cur_val->type == SQLITE_INTEGER)
-                a_obj->id = (uint64_t)l_cur_val->val.val_int64;
-            break; // id
         case 1:
-            if(l_cur_val->type == SQLITE_INTEGER)
-                a_obj->timestamp = l_cur_val->val.val_int64;
-            break; // ts
-        case 2:
             if(l_cur_val->type == SQLITE_TEXT)
                 a_obj->key = dap_strdup(l_cur_val->val.val_str);
             break; // key
+        case 2:
+            if(l_cur_val->type == SQLITE_INTEGER)
+                a_obj->timestamp = l_cur_val->val.val_int64;
+            break; // ts
         case 3:
-            if(l_cur_val->type == SQLITE_BLOB)
-            {
+            if(l_cur_val->type == SQLITE_BLOB) {
+                struct driver_record *l_record = a_data->iov_base;
+                if (a_data->iov_len < sizeof(*l_record) || // Do not intersct bounds of readed array, check it twice
+                        a_data->iov_len < sizeof(*l_record) + l_record->sign_len + l_record->value_len ||
+                        l_record->sign_len == 0) {
+                    log_it(L_ERROR, "Corrupted global DB record internal value");
+                    break;
+                }
+                a_obj->value_len = l_record->value_len;
+                a_obj->flags = l_record->flags;
+                a_obj->crc = l_record->crc;
+                if (a_obj->value_len &&
+                        !(a_obj->value = DAP_DUP_SIZE(l_record->value_n_sign, a_obj->value_len))) {
+                    DAP_DELETE(a_obj->group);
+                    DAP_DELETE(a_obj->key);
+                    log_it(L_CRITICAL, "Cannot allocate a memory for store object value");
+                    break;
+                }
+                dap_sign_t *l_sign = (dap_sign_t *)(l_record->value_n_sign + l_record->value_len);
+                if (dap_sign_get_size(l_sign) != l_record->sign_len ||
+                        !(a_obj->sign = DAP_DUP_SIZE(l_sign, l_record->sign_len))) {
+                    DAP_DELETE(a_obj->group);
+                    DAP_DELETE(a_obj->key);
+                    DAP_DEL_Z(a_obj->value);
+                    if (dap_sign_get_size(l_sign) != l_record->sign_len)
+                        log_it(L_ERROR, "Corrupted global DB record internal value");
+                    else
+                        log_it(L_CRITICAL, "Cannot allocate a memory for store object value");
+                    break;
+                }
                 a_obj->value_len = (size_t) l_cur_val->len;
                 a_obj->value = DAP_NEW_SIZE(uint8_t, a_obj->value_len);
                 memcpy((byte_t *)a_obj->value, l_cur_val->val.val_blob, a_obj->value_len);
