@@ -110,7 +110,7 @@ dap_config_t * dap_config_open(const char * a_name)
     if ( a_name ){
         log_it(L_DEBUG,"Looking for config name %s...",a_name);
         size_t l_config_path_size_max = strlen(a_name)+6+strlen(s_configs_path);
-        char *l_config_path = DAP_NEW_SIZE(char,l_config_path_size_max);
+        char *l_config_path = DAP_NEW_Z_SIZE(char,l_config_path_size_max);
         snprintf(l_config_path,l_config_path_size_max, "%s/%s.cfg",s_configs_path,a_name);
         l_ret = dap_config_load(l_config_path);
 //        DAP_DELETE(l_config_path);
