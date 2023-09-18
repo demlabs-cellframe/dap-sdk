@@ -97,7 +97,7 @@ static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group);
 static bool s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out);
 static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp);
-static size_t           s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter);
+static size_t           s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter, dap_nanotime_t a_timestamp);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
 static int              s_db_mdbx_iter_create(dap_db_iter_t *a_iter);
 
@@ -540,7 +540,7 @@ static int s_db_mdbx_iter_create(dap_db_iter_t *a_iter)
     dap_db_mdbx_iter_t *l_mdbx_iter = DAP_NEW_Z(dap_db_mdbx_iter_t);
     if (!l_mdbx_iter) {
         log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
+        return -1;
     }
 
     l_mdbx_iter->key.iov_base = NULL;
@@ -781,7 +781,7 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, si
     if (
         MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) || 
         MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor)) ||
-        l_mdbx_iter->key.iov_base && (MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_mdbx_iter->key, NULL, MDBX_SET_RANGE)))
+        (l_mdbx_iter->key.iov_base && (MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_mdbx_iter->key, NULL, MDBX_SET_RANGE))))
         ) {
         if (l_cursor)
             mdbx_cursor_close(l_cursor);
@@ -830,7 +830,7 @@ static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_db_iter_t *a_iter, si
  * @param a_iter started iterator
  * @return count of has been found record.
  */
-size_t  s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter)
+size_t  s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter, dap_nanotime_t a_timestamp)
 {
     dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_iter->db_group, 0);                                       /* Sanity check */
 
@@ -841,29 +841,40 @@ size_t  s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter)
 
     int l_rc = 0;
     dap_db_mdbx_iter_t* l_mdbx_iter = (dap_db_mdbx_iter_t*)a_iter->db_iter;
-    MDBX_val l_key = l_mdbx_iter->key;
+    MDBX_val l_key = l_mdbx_iter->key, l_data = {0};
     MDBX_cursor* l_cursor = NULL;
+    dap_store_obj_t *l_obj = NULL;
+    struct __record_suffix__ *l_suff = NULL;
     size_t  l_ret_count = 0;
 
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_iter->db_group);
-    dap_return_val_if_pass(!l_db_ctx, NULL); 
+    dap_return_val_if_pass(!l_db_ctx, 0); 
+
+    if (!(l_obj = DAP_NEW_Z(dap_store_obj_t))) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return 0;
+    }
 
     dap_assert ( !pthread_mutex_lock(&l_db_ctx->dbi_mutex));
 
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) ) {
+    if ( 
+        MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) ||
+        MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor))
+        ) {
+        mdbx_txn_commit(l_db_ctx->txn);
         dap_assert( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
-        log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        return NULL;
+        log_it (L_ERROR, "mdbx_txn: (%d) %s", l_rc, mdbx_strerror(l_rc));
+        DAP_DEL_Z(l_obj);
+        return 0;
     }
 
-    /* Initialize MDBX cursor context area */
-    if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_db_ctx->txn, l_db_ctx->dbi, &l_cursor)) ) {
-        log_it (L_ERROR, "mdbx_cursor_open: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        return NULL;
-    }
-
-    while ((MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_cursor, &l_key, NULL, MDBX_NEXT)))) {
-        ++l_ret_count;
+    while ((MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT)))) {
+        if (l_data.iov_len < sizeof(struct __record_suffix__)) {
+            log_it(L_ERROR, "Too small length of global DB record internal value, must be at least %zu", sizeof(struct __record_suffix__));
+            continue;
+        }
+        l_suff = (struct __record_suffix__ *) ((&l_data)->iov_base + l_data.iov_len - sizeof(struct __record_suffix__));
+        l_ret_count += (l_suff->ts > a_timestamp);  // count if yangest
     }
 
     if ( (MDBX_SUCCESS != l_rc) && (l_rc != MDBX_NOTFOUND) ) {
@@ -873,6 +884,7 @@ size_t  s_db_mdbx_read_count_store(const dap_db_iter_t *a_iter)
     mdbx_cursor_close(l_cursor);
     mdbx_txn_commit(l_db_ctx->txn);
     dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
+    dap_store_obj_free(l_obj, 1);
 
     return l_ret_count;
 }
@@ -1111,30 +1123,21 @@ MDBX_val    l_key, l_data;
 MDBX_cursor *l_cursor;
 MDBX_stat   l_stat;
 
-    if (!a_group)                                                           /* Sanity check */
-        return NULL;
-
-    if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group)) )                    /* Get DB Context for group/table */
-        return NULL;
-
+    dap_return_val_if_pass(!a_group || !(l_db_ctx = s_get_db_ctx_for_group(a_group)), NULL); /* Sanity check */
 
     dap_assert ( !pthread_mutex_lock(&l_db_ctx->dbi_mutex) );
 
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) )
-    {
+    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_db_ctx->txn)) ) {
         dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
         return  log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     }
 
-
     if ( a_count_out )
         *a_count_out = 0;
-
     /*
      *  Perfroms a find/get a record with the given key
      */
-    if ( a_key )
-    {
+    if ( a_key ) {
         l_key.iov_base = (void *) a_key;                                    /* Fill IOV for MDBX key */
         l_key.iov_len =  strlen(a_key);
 
