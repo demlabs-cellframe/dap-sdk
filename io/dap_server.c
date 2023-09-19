@@ -405,7 +405,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket
     socklen_t a_remote_addr_size = sizeof(*a_remote_addr);
     a_es->buf_in_size = 0; // It should be 1 so we reset it to 0
     //log_it(L_DEBUG, "Server socket %d is active",i);
-    dap_server_t * l_server = (dap_server_t*) a_es->_inheritor;
+    dap_server_t *l_server = (dap_server_t*)a_es->_inheritor;
     assert(l_server);
 
     dap_events_socket_t * l_es_new = NULL;
@@ -413,11 +413,9 @@ static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket
     log_it(L_DEBUG, "[es:%p] Accepted new connection (sock %"DAP_FORMAT_SOCKET" from %"DAP_FORMAT_SOCKET")", a_es, a_remote_socket, a_es->socket);
     l_es_new = s_es_server_create(a_remote_socket,&l_server->client_callbacks,l_server);
     //l_es_new->is_dont_reset_write_flag = true; // By default all income connection has this flag
-    getnameinfo(a_remote_addr,a_remote_addr_size, l_es_new->hostaddr
-                 ,DAP_EVSOCK$SZ_HOSTNAME, l_es_new->service, DAP_EVSOCK$SZ_SERVICE,
-                NI_NUMERICHOST | NI_NUMERICSERV);
-    struct in_addr l_addr_remote;
-    l_addr_remote.s_addr = ((struct sockaddr_in *) a_remote_addr)->sin_addr.s_addr;
+    getnameinfo(a_remote_addr,a_remote_addr_size, l_es_new->hostaddr, DAP_EVSOCK$SZ_HOSTNAME,
+                l_es_new->service, DAP_EVSOCK$SZ_SERVICE, NI_NUMERICHOST | NI_NUMERICSERV);
+    struct in_addr l_addr_remote = ((struct sockaddr_in*)a_remote_addr)->sin_addr;
     inet_ntop(AF_INET, &l_addr_remote, l_es_new->hostaddr, sizeof(l_addr_remote));
     log_it(L_INFO, "Connection accepted from %s (%s)", l_es_new->hostaddr, l_es_new->service);
     dap_worker_t *l_worker = dap_events_worker_get_auto();
