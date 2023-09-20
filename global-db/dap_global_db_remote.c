@@ -710,7 +710,7 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
             {log_it(L_ERROR, "Broken GDB element: can't read 'value_length' field"); break;}
         memcpy(&l_obj->value_len, pdata, sizeof(uint64_t)); pdata += sizeof(uint64_t);
 
-        if (!(l_obj->value = DAP_DUP_SIZE(pdata, l_obj->value_len))) {
+        if (l_obj->value_len && !(l_obj->value = DAP_DUP_SIZE(pdata, l_obj->value_len))) {
             log_it(L_CRITICAL, "Memory allocation error");
             DAP_DEL_Z(l_obj->key_byte);
             DAP_DEL_Z(l_obj->group);
