@@ -1617,6 +1617,7 @@ static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
             l_store_obj.key =  a_msg->values[i].key;
             l_store_obj.key_len = strlen(a_msg->values[i].key);
             l_store_obj.group = a_msg->group;
+            l_store_obj.group_len = dap_strlen(a_msg->group);
             l_store_obj.value = a_msg->values[i].value;
             l_store_obj.value_len = a_msg->values[i].value_len;
             l_store_obj.timestamp = a_msg->values[i].timestamp;

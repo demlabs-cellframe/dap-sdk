@@ -205,8 +205,8 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_NEW_Z_SIZE(t, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? DAP_CAST_PTR(t, calloc(1, s1)) : DAP_CAST_PTR(t, NULL); })
 #define DAP_REALLOC(p, s)     ({ size_t s1 = (size_t)(s); s1 > 0 ? realloc(p, s1) : ({ DAP_DEL_Z(p); DAP_CAST_PTR(void, NULL); }); })
 #define DAP_DELETE(p)         free((void*)(p))
-#define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? malloc(sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : DAP_CAST_PTR(void, NULL); })
-#define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (p) ? (size_t)(s) : 0; void *p1 = (p) && (s1 > 0) ? malloc(s1) : NULL; p1 ? memcpy(p1, (p), s1) : DAP_CAST_PTR(void, NULL); })
+#define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? calloc(1, sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : DAP_CAST_PTR(void, NULL); })
+#define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (p) ? (size_t)(s) : 0; void *p1 = (p) && (s1 > 0) ? calloc(1, s1) : NULL; p1 ? memcpy(p1, (p), s1) : DAP_CAST_PTR(void, NULL); })
 #endif
 #define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
 
@@ -454,22 +454,22 @@ static const DAP_ALIGNED(16) uint16_t htoa_lut256[ 256 ] = {
 
 #define dap_htoa64( out, in, len ) \
 {\
-  uintptr_t  _len = len; \
-  uint16_t *__restrict _out = (uint16_t *__restrict)out; \
-  uint64_t *__restrict _in  = (uint64_t *__restrict)in;\
+  uintptr_t  _len = len, _shift = 0; \
+  byte_t *__restrict _in  = (byte_t *__restrict)in, *__restrict _out = (byte_t *__restrict)out;\
 \
   while ( _len ) {\
-    uint64_t  _val = *_in ++;\
-    _out[0] = htoa_lut256[  _val & 0x00000000000000FF ];\
-    _out[1] = htoa_lut256[ (_val & 0x000000000000FF00) >> 8 ];\
-    _out[2] = htoa_lut256[ (_val & 0x0000000000FF0000) >> 16 ];\
-    _out[3] = htoa_lut256[ (_val & 0x00000000FF000000) >> 24 ];\
-    _out[4] = htoa_lut256[ (_val & 0x000000FF00000000) >> 32 ];\
-    _out[5] = htoa_lut256[ (_val & 0x0000FF0000000000) >> 40 ];\
-    _out[6] = htoa_lut256[ (_val & 0x00FF000000000000) >> 48 ];\
-    _out[7] = htoa_lut256[ (_val & 0xFF00000000000000) >> 56 ];\
-    _out += 8;\
+    uint64_t _val; \
+    memcpy(&_val, _in, sizeof(uint64_t));\
+    byte_t *__out = (byte_t*)&(uint16_t[]){ \
+        htoa_lut256[  _val & 0x00000000000000FF ], htoa_lut256[ (_val & 0x000000000000FF00) >> 8 ], \
+        htoa_lut256[ (_val & 0x0000000000FF0000) >> 16 ], htoa_lut256[ (_val & 0x00000000FF000000) >> 24 ], \
+        htoa_lut256[ (_val & 0x000000FF00000000) >> 32 ], htoa_lut256[ (_val & 0x0000FF0000000000) >> 40 ], \
+        htoa_lut256[ (_val & 0x00FF000000000000) >> 48 ], htoa_lut256[ (_val & 0xFF00000000000000) >> 56 ] \
+    }; \
+    memcpy(_out + _shift, __out, 16); \
+    _in += 8;\
     _len -= 8;\
+    _shift += 16;\
   }\
 }
 
