@@ -539,8 +539,8 @@ static size_t dap_db_get_size_pdap_store_obj_t(pdap_store_obj_t store_obj)
     return sizeof(uint32_t)
             + 2 * sizeof(uint16_t)
             + 3 * sizeof(uint64_t)
-            + dap_strlen(store_obj->group) + 1
-            + dap_strlen(store_obj->key) + 1
+            + dap_strlen(store_obj->group) /* + 1 */
+            + dap_strlen(store_obj->key) /* + 1 */
             + store_obj->value_len;
 }
 
