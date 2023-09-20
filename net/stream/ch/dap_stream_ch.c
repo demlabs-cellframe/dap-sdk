@@ -146,7 +146,7 @@ dap_stm_ch_rec_t    *l_rec;
                                                                             /* Add new record into the hash table */
     l_rc = pthread_rwlock_wrlock(&s_stm_ch_lock);
     assert(!l_rc);
-    HASH_ADD(hh, s_stm_chs, stm_ch, sizeof(dap_events_socket_t *), l_rec );
+    HASH_ADD(hh, s_stm_chs, stm_ch, sizeof(dap_stream_ch_t *), l_rec );
 
 #ifdef  DAP_SYS_DEBUG
     s_memstat[MEMSTAT$K_STM_CH].alloc_nr += 1;
