@@ -396,7 +396,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     char l_data_str[l_data_str_size_max + 1];
                     memset(l_data_str, 0, sizeof(l_data_str));
                     // DAP_ENC_DATA_TYPE_B64_URLSAFE not need because send it by POST request
-                    size_t l_data_str_enc_size = dap_enc_base64_encode(l_data, l_key_size + l_sign_size, l_data_str, DAP_ENC_DATA_TYPE_B64);
+                    size_t l_data_str_enc_size = dap_enc_base64_encode(l_data, l_key_size + l_sign_size + l_node_sign_size, l_data_str, DAP_ENC_DATA_TYPE_B64);
 
                     debug_if(s_debug_more, L_DEBUG, "ENC request size %zu", l_data_str_enc_size);
 
