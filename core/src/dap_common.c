@@ -277,7 +277,9 @@ int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename
         }
         //dap_stpcpy(s_log_file_path, a_log_filename);
     }
+#ifdef DAP_LOG_BUFFERIZED
     pthread_create( &s_log_thread, NULL, s_log_thread_proc, NULL );
+#endif
     return 0;
 }
 

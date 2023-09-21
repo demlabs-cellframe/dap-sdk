@@ -460,13 +460,13 @@ static const DAP_ALIGNED(16) uint16_t htoa_lut256[ 256 ] = {
   while ( _len ) {\
     uint64_t _val; \
     memcpy(&_val, _in, sizeof(uint64_t));\
-    byte_t *__out = (byte_t*)&(uint16_t[]){ \
+    byte_t *_out2 = (byte_t*)&(uint16_t[]){ \
         htoa_lut256[  _val & 0x00000000000000FF ], htoa_lut256[ (_val & 0x000000000000FF00) >> 8 ], \
         htoa_lut256[ (_val & 0x0000000000FF0000) >> 16 ], htoa_lut256[ (_val & 0x00000000FF000000) >> 24 ], \
         htoa_lut256[ (_val & 0x000000FF00000000) >> 32 ], htoa_lut256[ (_val & 0x0000FF0000000000) >> 40 ], \
         htoa_lut256[ (_val & 0x00FF000000000000) >> 48 ], htoa_lut256[ (_val & 0xFF00000000000000) >> 56 ] \
     }; \
-    memcpy(_out + _shift, __out, 16); \
+    memcpy(_out + _shift, _out2, 16); \
     _in += 8;\
     _len -= 8;\
     _shift += 16;\
