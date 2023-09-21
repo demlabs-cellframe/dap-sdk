@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.1)
 project (dap_global_db C)
 
-file(GLOB dap_global_db_SRC dap_global_db.c dap_global_db_driver.c dap_global_db_remote.c dap_global_db_ch.c dap_global_db_cluster.c)
+file(GLOB dap_global_db_SRC dap_global_db.c dap_global_db_driver.c dap_global_db_ch.c dap_global_db_cluster.c)
 file(GLOB dap_global_db_HDR include/*.h)
 
 set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream dap_json-c)

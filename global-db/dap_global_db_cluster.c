@@ -27,6 +27,16 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_sign.h"
 #include "crc32c_adler/crc32c_adler.h"
 
+int dap_global_db_cluster_init()
+{
+
+}
+
+void dap_global_db_cluster_deinit()
+{
+
+}
+
 /**
  * @brief Multiples data into a_old_pkt structure from a_new_pkt structure.
  * @param a_old_pkt a pointer to the old object
@@ -207,4 +217,64 @@ exit:
         *a_store_obj_count = l_cur_count;
 
     return l_store_obj_arr;
+}
+
+dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group)
+{
+
+}
+
+void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj)
+{
+
+}
+
+dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_net_name,
+                                                   const char *a_group_mask, uint64_t a_ttl,
+                                                   dap_store_obj_callback_notify_t a_callback, void *a_callback_arg)
+{
+    if (!a_callback) {
+        log_it(L_ERROR, "Trying to set NULL callback for mask %s", a_group_mask);
+        return NULL;
+    }
+    dap_global_db_cluster_t *it;
+    DL_FOREACH(a_dbi->clusters, it) {
+        if (!dap_strcmp(it->group_mask, a_group_mask)) {
+            log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_group_mask);
+            return NULL;
+        }
+    }
+    dap_global_db_cluster_t *l_cluster = DAP_NEW_Z(dap_global_db_cluster_t);
+    if (!l_cluster) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    }
+    l_cluster->member_cluster = dap_cluster_new(0);
+    if (!l_cluster->member_cluster) {
+        log_it(L_ERROR, "Can't create member cluster");
+        DAP_DELETE(l_cluster);
+        return NULL;
+    }
+    l_cluster->group_mask = dap_strdup(a_group_mask);
+    if (!l_cluster->group_mask) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        dap_cluster_delete(l_cluster->member_cluster);
+        DAP_DELETE(l_cluster);
+        return NULL;
+    }
+    if (a_net_name) {
+        l_cluster->mnemonim = dap_strdup(a_net_name);
+        if (!l_cluster->mnemonim) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            dap_cluster_delete(l_cluster->member_cluster);
+            DAP_DELETE(l_cluster->groups_mask);
+            DAP_DELETE(l_cluster);
+            return NULL;
+        }
+    }
+    l_cluster->callback_notify = a_callback;
+    l_cluster->callback_arg = a_callback_arg;
+    l_cluster->ttl = a_ttl;
+    DL_APPEND(a_dbi->clusters, l_cluster);
+    return l_cluster;
 }

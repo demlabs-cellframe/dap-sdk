@@ -31,12 +31,12 @@
 
 #include "dap_time.h"
 #include "dap_list.h"
+#include "dap_sign.h"
 
 #define DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX   128UL                               /* A maximum size of group name */
 #define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL                              /* A maximum number of groups */
 #define DAP_GLOBAL_DB_KEY_MAX               512UL                               /* A limit for the key's length in DB */
-#define DAP_GLOBAL_DB_MAX_OBJS              32768UL                             /* A maximum number of objects to be returned by
-                                                                                   read_srore_obj() */
+
 enum RECORD_FLAGS {
     RECORD_COMMON = 0,    // 0000
     RECORD_PINNED = 1,    // 0001
@@ -67,21 +67,21 @@ typedef enum dap_global_db_iter_type {
 } dap_global_db_iter_type_t;
 
 // db element iterator
-typedef struct dap_db_iter {
+typedef struct dap_global_db_iter {
     dap_global_db_iter_type_t db_type;
     const char *db_group;
     void *db_iter;
-} dap_db_iter_t;
+} dap_global_db_iter_t;
 
-typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t*);
-typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *,const char *, size_t *);
-typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(dap_db_iter_t *, size_t *, dap_nanotime_t);
-typedef dap_store_obj_t* (*dap_db_driver_read_last_callback_t)(const char *);
-typedef size_t (*dap_db_driver_read_count_callback_t)(const dap_db_iter_t *);
-typedef dap_list_t* (*dap_db_driver_get_groups_callback_t)(const char *);
-typedef bool (*dap_db_driver_is_obj_callback_t)(const char *, const char *);
+typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t *a_store_obj);
+typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *a_group, const char *a_key, size_t *a_count_out);
+typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(dap_global_db_iter_t *a_iter, size_t *a_count, dap_nanotime_t a_timestamp);
+typedef dap_store_obj_t* (*dap_db_driver_read_last_callback_t)(const char *a_group);
+typedef size_t (*dap_db_driver_read_count_callback_t)(const char * a_group, dap_nanotime_t a_timestamp);
+typedef dap_list_t* (*dap_db_driver_get_groups_callback_t)(const char *a_mask);
+typedef bool (*dap_db_driver_is_obj_callback_t)(const char *a_group, const char *a_key);
 typedef int (*dap_db_driver_callback_t)(void);
-typedef int (*dap_db_driver_iter_create_callback_t)(dap_db_iter_t *);
+typedef int (*dap_db_driver_iter_create_callback_t)(dap_global_db_iter_t *a_iter);
 
 typedef struct dap_db_driver_callbacks {
     dap_db_driver_write_callback_t      apply_store_obj;                    /* Performs an DB's action like: INSERT/DELETE/UPDATE for the given
@@ -120,11 +120,11 @@ int dap_global_db_driver_apply(dap_store_obj_t *a_store_obj, size_t a_store_coun
 int dap_global_db_driver_add(dap_store_obj_t *a_store_obj, size_t a_store_count);
 int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_count);
 dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group);
-dap_store_obj_t* dap_global_db_driver_cond_read(dap_db_iter_t* a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp);
+dap_store_obj_t* dap_global_db_driver_cond_read(dap_global_db_iter_t* a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp);
 dap_store_obj_t* dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out);
 bool dap_global_db_driver_is(const char *a_group, const char *a_key);
-size_t dap_global_db_driver_count(const dap_db_iter_t *a_iter);
+size_t dap_global_db_driver_count(const dap_global_db_iter_t *a_iter, dap_nanotime_t a_timestamp);
 dap_list_t* dap_global_db_driver_get_groups_by_mask(const char *a_group_mask);
 
-dap_db_iter_t *dap_global_db_driver_iter_create(const char *a_group);
-void dap_global_db_driver_iter_delete(dap_db_iter_t* a_iter);
+dap_global_db_iter_t *dap_global_db_driver_iter_create(const char *a_group);
+void dap_global_db_driver_iter_delete(dap_global_db_iter_t* a_iter);

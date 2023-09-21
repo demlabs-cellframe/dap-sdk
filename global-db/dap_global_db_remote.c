@@ -212,7 +212,7 @@ static void *s_list_thread_proc(void *arg)
             memcpy(l_del_group_name_replace, l_group_cur->name, l_del_name_len);
             l_del_group_name_replace[l_del_name_len] = '\0';
         } else {
-            l_obj_type = DAP_DB$K_OPTYPE_ADD;
+            l_obj_type = DAP_GLOBAL_DB_OPTYPE_ADD;
         }
         dap_nanotime_t l_time_allowed = dap_nanotime_now() + dap_nanotime_from_sec(3600 * 24); // to be sure the timestamp is invalid
         while (l_group_cur->count && l_dap_db_log_list->is_process) {
@@ -220,9 +220,7 @@ static void *s_list_thread_proc(void *arg)
             size_t l_item_count = 0;//min(64, l_group_cur->count);
             size_t l_objs_total_size = 0;
 
-            dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(l_group_cur->name);
-            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_iter, &l_item_count);
-            dap_global_db_driver_iter_delete(l_iter);
+            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, &l_item_count);
             
             if (!l_dap_db_log_list->is_process) {
                 dap_store_obj_free(l_objs, l_item_count);
@@ -371,8 +369,8 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
         //     l_sync_group->last_id_synced = 0;
         // else
         //     l_sync_group->last_id_synced = dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
-        dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(l_sync_group->name);
-        l_sync_group->count = dap_global_db_driver_count(l_iter);
+        dap_global_db_iter_t *l_iter = dap_global_db_driver_iter_create(l_sync_group->name);
+        l_sync_group->count = dap_global_db_driver_count(l_iter, 0);
         dap_global_db_driver_iter_delete(l_iter);
 
         l_dap_db_log_list->items_number += l_sync_group->count;
@@ -828,7 +826,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
                                 a_obj->type != DAP_GLOBAL_DB_OPTYPE_DEL ? "remove" : "rewrite", a_obj->group, a_obj->key);
         l_read_obj->timestamp = a_obj->timestamp + 1;
-        l_read_obj->type = DAP_DB$K_OPTYPE_ADD;
+        l_read_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
         dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
         dap_store_obj_free_one(l_read_obj);
         DAP_DEL_Z(a_arg);

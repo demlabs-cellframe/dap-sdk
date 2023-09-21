@@ -189,7 +189,8 @@ dap_store_obj_t* dap_global_db_store_objs_copy(dap_store_obj_t *a_store_objs_des
     dap_return_val_if_pass(!a_store_objs_dest || !a_store_objs_src || !a_store_count, NULL);
 
     /* Run over array's elements */
-    for (dap_store_obj_t *l_obj = a_store_objs_src, *l_cur = a_store_objs_dest; a_store_count--; l_cur++, l_obj++) {
+    const dap_store_obj_t *l_obj = a_store_objs_src;
+    for (dap_store_obj_t *l_cur = a_store_objs_dest; a_store_count--; l_cur++, l_obj++) {
         *l_cur = *l_obj;
         l_cur->group = dap_strdup(l_obj->group);
         l_cur->key = dap_strdup(l_obj->key);
@@ -272,7 +273,7 @@ int dap_global_db_driver_add(dap_store_obj_t *a_store_obj, size_t a_store_count)
 dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
     for(int i = a_store_count; i--; l_store_obj_cur++)
-        l_store_obj_cur->type = DAP_DB$K_OPTYPE_ADD;
+        l_store_obj_cur->type = DAP_GLOBAL_DB_OPTYPE_ADD;
 
     return dap_global_db_driver_apply(a_store_obj, a_store_count);
 }
@@ -299,12 +300,12 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
  * @param a_iter data base iterator
  * @return Returns a number of objects.
  */
-size_t dap_global_db_driver_count(const dap_db_iter_t *a_iter)
+size_t dap_global_db_driver_count(const dap_global_db_iter_t *a_iter, dap_nanotime_t a_timestamp)
 {
     size_t l_count_out = 0;
     // read the number of items
     if(s_drv_callback.read_count_store)
-        l_count_out = s_drv_callback.read_count_store(a_iter);
+        l_count_out = s_drv_callback.read_count_store(a_iter, a_timestamp);
     return l_count_out;
 }
 
@@ -345,7 +346,7 @@ dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group)
  * @param a_count_out elements count
  * @return If successful, a pointer to the object, otherwise NULL.
  */
-dap_store_obj_t* dap_global_db_driver_cond_read(dap_db_iter_t* a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp)
+dap_store_obj_t* dap_global_db_driver_cond_read(dap_global_db_iter_t* a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp)
 {
     dap_return_val_if_pass(!a_iter, NULL);
 
@@ -361,13 +362,13 @@ dap_store_obj_t* dap_global_db_driver_cond_read(dap_db_iter_t* a_iter, size_t *a
  * @param a_group the group name string
  * @return If successful, a pointer to an iterator, otherwise NULL.
  */
-dap_db_iter_t *dap_global_db_driver_iter_create(const char *a_group)
+dap_global_db_iter_t *dap_global_db_driver_iter_create(const char *a_group)
 {
     if (!a_group || !s_drv_callback.iter_create)
         return NULL;
     
     // create return object
-    dap_db_iter_t *l_ret = DAP_NEW_Z(dap_db_iter_t);
+    dap_global_db_iter_t *l_ret = DAP_NEW_Z(dap_global_db_iter_t);
     if (!l_ret) {
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
@@ -393,7 +394,7 @@ dap_db_iter_t *dap_global_db_driver_iter_create(const char *a_group)
  * @param a_iter deleting itaretor
  * @return -.
  */
-void dap_global_db_driver_iter_delete(dap_db_iter_t* a_iter)
+void dap_global_db_driver_iter_delete(dap_global_db_iter_t* a_iter)
 {
     dap_return_if_pass(!a_iter);
 

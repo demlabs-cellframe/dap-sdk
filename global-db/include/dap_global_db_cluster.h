@@ -32,6 +32,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 typedef struct dap_global_db_cluster dap_global_db_cluster_t;
 
+typedef void (*dap_store_obj_callback_notify_t)(dap_global_db_context_t *a_context, dap_store_obj_t *a_obj, void *a_arg);
+
 typedef struct dap_global_db_cluster {
     const char *mnemonim;
     const char *groups_mask;
@@ -55,7 +57,7 @@ typedef struct dap_global_db_pkt {
 
 DAP_STATIC_INLINE size_t dap_global_db_pkt_get_size(dap_global_db_pkt_t *a_pkt)
 {
-    return siezof(*a_pkt) + a_pkt->data_len;
+    return sizeof(*a_pkt) + a_pkt->data_len;
 }
 
 typedef struct dap_global_db_pkt_pack {
@@ -67,3 +69,7 @@ typedef struct dap_global_db_pkt_pack {
 dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old_pkt, dap_global_db_pkt_t *a_new_pkt);
 dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj);
 dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count);
+int dap_global_db_cluster_init();
+void dap_global_db_cluster_deinit();
+dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group);
+void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj);

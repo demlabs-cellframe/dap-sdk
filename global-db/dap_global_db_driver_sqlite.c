@@ -53,11 +53,6 @@ static struct conn_pool_item {
         atomic_ullong  usage;                                                  /* Usage counter */
 } s_conn_pool [DAP_SQLITE_POOL_COUNT];                                      /* Preallocate a storage for the SQLITE connections  */
 
-// sqlite element iterator
-typedef struct dap_db_sqlite_iter {
-    dap_nanotime_t timestamp;
-} dap_db_sqlite_iter_t;
-
 static struct conn_pool_item *s_trans = NULL;                               /* SQL context of outstanding  transaction */
 static pthread_mutex_t s_trans_mtx = PTHREAD_MUTEX_INITIALIZER;
 
@@ -70,7 +65,7 @@ static pthread_cond_t s_conn_free_cnd = PTHREAD_COND_INITIALIZER;           /* T
 static bool s_conn_free_present = true;
 
 // iterators part
-static int s_db_sqlite_iter_create(dap_db_iter_t *a_iter);
+static int s_db_sqlite_iter_create(dap_global_db_iter_t *a_iter);
 
 static pthread_mutex_t s_db_mtx = PTHREAD_MUTEX_INITIALIZER;
 
@@ -718,14 +713,13 @@ struct conn_pool_item *l_conn;
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp)
+dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_global_db_iter_t *a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp)
 {
     dap_return_val_if_pass(!a_iter || !a_iter->db_iter || !a_iter->db_group, NULL);                                       /* Sanity check */
 
     dap_store_obj_t *l_obj = NULL;
     char *l_error_message = NULL;
     sqlite3_stmt *l_res = NULL;
-    dap_db_sqlite_iter_t* l_iter = (dap_db_sqlite_iter_t*)a_iter->db_iter;
     struct conn_pool_item *l_conn = s_sqlite_get_connection();
     if(!l_conn)
         return NULL;
@@ -738,8 +732,10 @@ dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *
     char l_str_limit[64] = {};
     if (l_count_out)
         snprintf(l_str_limit, 64, " LIMIT %d", l_count_out);
-    char *l_str_query = sqlite3_mprintf("SELECT key,timestamp,value FROM '%s' WHERE timestamp>'%lld' ORDER BY key %s",
-                                                                        l_table_name, a_timestamp, l_str_limit);
+    char *l_str_query = sqlite3_mprintf("SELECT key,timestamp,value FROM '%s'"
+                                        " WHERE key>'%s' AND timestamp>'%lld' ORDER BY key%s",
+                                                                        l_table_name, (char *)a_iter->db_iter,
+                                                                        a_timestamp, l_str_limit);
     int l_ret = sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_res, NULL);
     sqlite3_free(l_str_query);
     DAP_DEL_Z(l_table_name);
@@ -785,9 +781,10 @@ dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_db_iter_t *a_iter, size_t *
     sqlite3_finalize(l_res);
     s_sqlite_free_connection(l_conn);
 
-    if (l_count_out > 0)
-        l_iter->timestamp = l_obj[l_count_out - 1].timestamp;
-
+    if (l_count_out > 0) {
+        DAP_DELETE(a_iter->db_iter);
+        a_iter->dp_iter = dap_strdup(l_obj[l_count_out - 1].key);
+    }
     if (a_count_out)
         *a_count_out = (size_t)l_count_out;
 
@@ -812,35 +809,28 @@ dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_k
     dap_store_obj_t *l_obj = NULL;
     sqlite3_stmt *l_res = NULL;
     char * l_table_name = s_sqlite_make_table_name(a_group);
-    // no limit
-    uint64_t l_count_out = 0;
-    if (a_count_out)
-        l_count_out = *a_count_out;
-    char l_str_limit[64] = {};
-    if (l_count_out)
-        snprintf(l_str_limit, 64, " LIMIT %d", l_count_out);
     char *l_str_query;
     if (a_key)
         l_str_query = sqlite3_mprintf("SELECT key,timestamp,value FROM '%s' WHERE key='%s'", l_table_name, a_key);
-    else
-        l_str_query = sqlite3_mprintf("SELECT key,timestamp,value FROM '%s' ORDER BY key%s", l_table_name, a_key, l_str_limit);
+    else // no limit
+        l_str_query = sqlite3_mprintf("SELECT key,timestamp,value FROM '%s' ORDER BY key", l_table_name);
     int l_ret = sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_res, NULL);
     sqlite3_free(l_str_query);
     DAP_DEL_Z(l_table_name);
-    if(l_ret != SQLITE_OK) {
+    if (l_ret != SQLITE_OK) {
         log_it(L_ERROR, "SQLite read error %d(%s)\n", sqlite3_errcode(a_conn->conn), sqlite3_errmsg(a_conn->conn));
         s_sqlite_free_connection(l_conn);
         return NULL;
     }
 
     SQLITE_ROW_VALUE *l_row = NULL;
-    l_count_out = 0;
+    size_t l_count_out = 0;
     uint64_t l_count_sized = 0;
     do {
         l_ret = s_dap_db_driver_sqlite_fetch_array(l_res, &l_row);
-        if(l_ret != SQLITE_ROW && l_ret != SQLITE_DONE)
-        {
-           // log_it(L_ERROR, "read l_ret=%d, %s\n", sqlite3_errcode(s_db), sqlite3_errmsg(s_db));
+        if (l_ret != SQLITE_ROW && l_ret != SQLITE_DONE) {
+            log_it(L_ERROR, "SQLite read error array %d(%s)\n", sqlite3_errcode(s_db), sqlite3_errmsg(s_db));
+            break;
         }
         if(l_ret == SQLITE_ROW && l_row) {
             // realloc memory
@@ -867,7 +857,7 @@ dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_k
     sqlite3_finalize(l_res);
     s_sqlite_free_connection(l_conn);
 
-    if(a_count_out)
+    if (a_count_out)
         *a_count_out = l_count_out;
 
     return l_obj;
@@ -917,17 +907,15 @@ dap_list_t* s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
  * @param a_id id starting from which the quantity is calculated
  * @return Returns a number of objects.
  */
-size_t s_db_sqlite_read_count_store(const dap_db_iter_t *a_iter)
+size_t s_db_sqlite_read_count_store(const char *a_group, dap_nanotime_t a_timestamp)
 {
     struct conn_pool_item *l_conn = s_sqlite_get_connection();
 
-    dap_return_val_if_pass(!l_conn || !a_iter || !a_iter->db_iter || !a_iter->db_group, 0);  
+    dap_return_val_if_fail(l_conn && a_group, 0);
 
     sqlite3_stmt *l_res = NULL;
-    dap_db_sqlite_iter_t* l_sqlite_iter = (dap_db_sqlite_iter_t*)a_iter->db_iter;
-
-    char * l_table_name = s_sqlite_make_table_name(a_iter->db_group);
-    char *l_str_query = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE timestamp > '%lld'", l_table_name, l_sqlite_iter->timestamp);
+    char * l_table_name = s_sqlite_make_table_name(a_group);
+    char *l_str_query = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE timestamp > '%lld'", l_table_name, a_timestamp);
     int l_ret = sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_res, NULL);
     sqlite3_free(l_str_query);
     DAP_DEL_Z(l_table_name);
@@ -1155,22 +1143,17 @@ end:
  * @param a_group a group name string
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-static int s_db_sqlite_iter_create(dap_db_iter_t *a_iter)
+static int s_db_sqlite_iter_create(dap_global_db_iter_t *a_iter)
 {
     dap_return_val_if_pass(!a_iter || !a_iter->db_group, -1);
     // create sqlite iter
-    dap_db_sqlite_iter_t *l_sqlite_iter = DAP_NEW_Z(dap_db_sqlite_iter_t);
+    char *l_sqlite_iter = DAP_NEW_Z(char);
     if (!l_sqlite_iter) {
         log_it(L_CRITICAL, "Memory allocation error");
         return -1;
     }
-
-    l_sqlite_iter->id = 0;
-    l_sqlite_iter->used = false;
-
     // get generated values
     a_iter->db_type = DAP_GLOBAL_DB_TYPE_CURRENT;
     a_iter->db_iter = l_sqlite_iter;
-
     return 0;
 }

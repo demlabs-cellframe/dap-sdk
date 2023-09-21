@@ -23,10 +23,12 @@
 #pragma once
 
 #include "dap_common.h"
+#include "dap_enc_key.h"
 #include "dap_time.h"
 #include "dap_context.h"
 #include "dap_proc_queue.h"
 #include "dap_global_db_driver.h"
+#include "dap_global_db_cluster.h"
 
 #define DAP_GLOBAL_DB_VERSION               2
 #define DAP_GLOBAL_DB_LOCAL_GENERAL         "local.general"
@@ -42,7 +44,8 @@ typedef struct dap_global_db_instance {
     dap_list_t *whitelist;
     dap_list_t *blacklist;
     uint32_t store_time_limit;
-    dap_list_t *notify_groups;
+    dap_global_db_cluster_t *clusters;
+    dap_enc_key_t *signing_key;
 } dap_global_db_instance_t;
 
 // GlobalDB own context custom extension
