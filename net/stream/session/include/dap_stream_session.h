@@ -78,7 +78,7 @@ void dap_stream_session_get_list_sessions_unlock(void);
 dap_stream_session_t * dap_stream_session_pure_new();
 dap_stream_session_t * dap_stream_session_new(unsigned int media_id, bool open_preview);
 dap_stream_session_t * dap_stream_session_id_mt(unsigned int id);
-dap_stream_session_t *dap_stream_session_id_unsafe( unsigned int id );
+dap_stream_session_t *dap_stream_session_id_unsafe(unsigned int id);
 void dap_stream_session_lock();
 void dap_stream_session_unlock();
 

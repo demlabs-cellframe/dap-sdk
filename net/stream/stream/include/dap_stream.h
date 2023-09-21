@@ -41,6 +41,11 @@
 typedef struct dap_stream_ch dap_stream_ch_t;
 typedef struct dap_stream_worker dap_stream_worker_t;
 
+typedef enum dap_stream_sign_group {
+    UNSIGNED = 0,
+    BASE_NODE_SIGN,
+} dap_stream_sign_group_t;
+
 typedef struct dap_stream {
     int id;
     dap_stream_session_t * session;
@@ -77,6 +82,8 @@ typedef struct dap_stream {
     size_t client_last_seq_id_packet;
 
     struct dap_stream *prev, *next;
+
+    dap_stream_sign_group_t sign_group;
 
 } dap_stream_t;
 

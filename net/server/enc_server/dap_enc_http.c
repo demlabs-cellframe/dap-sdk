@@ -51,6 +51,7 @@
 #include "json.h"
 #include "dap_enc_http_ban_list_client.h"
 #include "dap_cert.h"
+#include "dap_strfuncs.h"
 
 
 #define LOG_TAG "dap_enc_http"
@@ -110,14 +111,16 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         dap_enc_key_type_t l_enc_block_type = DAP_ENC_KEY_TYPE_IAES;
         size_t l_pkey_exchange_size=MSRLN_PKA_BYTES;
         size_t l_block_key_size=32;
-        sscanf(cl_st->http_client->in_query_string, "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu",
-                                      &l_enc_block_type,&l_pkey_exchange_type,&l_pkey_exchange_size,&l_block_key_size);
+        int l_protocol_version = 0;
+        sscanf(cl_st->http_client->in_query_string, "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu,protococ_version=%d",
+                                      &l_enc_block_type,&l_pkey_exchange_type,&l_pkey_exchange_size,&l_block_key_size, &l_protocol_version);
 
         log_it(L_DEBUG, "Stream encryption: %s\t public key exchange: %s",dap_enc_get_type_name(l_enc_block_type),
                dap_enc_get_type_name(l_pkey_exchange_type));
         uint8_t alice_msg[cl_st->request_size];
         size_t l_decode_len = dap_enc_base64_decode(cl_st->request, cl_st->request_size, alice_msg, DAP_ENC_DATA_TYPE_B64);
         dap_chain_hash_fast_t l_sign_hash = { };
+        dap_chain_hash_fast_t l_hash = {0};
         if (l_decode_len > l_pkey_exchange_size + sizeof(dap_sign_hdr_t)) {
             /* Message contains pubkey and serialized sign */
             dap_sign_t *l_sign = (dap_sign_t *)&alice_msg[l_pkey_exchange_size];
@@ -125,7 +128,6 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             int l_verify_ret = dap_sign_verify_all(l_sign, l_sign_size, alice_msg, l_pkey_exchange_size);
             
             dap_enc_key_t *l_key = dap_sign_to_enc_key(l_sign);
-            dap_chain_hash_fast_t l_hash;
             size_t l_pub_key_data_size = 0;
             uint8_t *l_pub_key_data = NULL;
             l_pub_key_data = dap_enc_key_serialize_pub_key(l_key, &l_pub_key_data_size);
@@ -160,7 +162,8 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                     (void**) &l_pkey_exchange_key->pub_key_data);
         }
 
-        dap_enc_ks_key_t * l_enc_key_ks = dap_enc_ks_new();
+        dap_enc_ks_key_t *l_enc_key_ks = dap_enc_ks_new();
+        dap_return_val_if_pass(!l_enc_key_ks, NULL);
         if (s_acl_callback) {
             l_enc_key_ks->acl_list = s_acl_callback(&l_sign_hash);
         } else {
@@ -186,6 +189,8 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                                                l_pkey_exchange_key->priv_key_data, // shared key
                                                l_pkey_exchange_key->priv_key_data_size,
                                                l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE, l_block_key_size);
+        memcpy(l_enc_key_ks->node_addr_hash.raw, l_hash.raw, sizeof(l_hash.raw));  // add info about node
+        l_enc_key_ks->protocol_version = l_protocol_version;
         dap_enc_ks_save_in_storage(l_enc_key_ks);
 
         char encrypt_id[DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1];
