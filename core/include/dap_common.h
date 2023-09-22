@@ -513,6 +513,7 @@ static const uint16_t s_ascii_table_data[256] = {
 #define dap_ascii_isalpha(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_ALPHA)
 #define dap_ascii_isalnum(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_ALNUM)
 #define dap_ascii_isdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_DIGIT)
+#define dap_ascii_isprint(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_PRINT)
 #define dap_ascii_isxdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_XDIGIT)
 
 DAP_STATIC_INLINE void DAP_AtomicLock( dap_spinlock_t *lock )

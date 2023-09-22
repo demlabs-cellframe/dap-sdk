@@ -759,11 +759,18 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
         l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
         if (l_read_obj) {
-            l_timestamp_cur = l_read_obj->timestamp;
-            if (l_read_obj->flags & RECORD_PINNED)
-                l_is_pinned_cur = true;
-            else
+            if (!dap_global_db_isalnum_group_key(l_read_obj)) {
+                log_it(L_CRITICAL, "Delete broken object");
+                dap_global_db_del_sync(l_read_obj->group, l_read_obj->key);
                 dap_store_obj_free_one(l_read_obj);
+                l_read_obj = NULL;
+            } else {
+                l_timestamp_cur = l_read_obj->timestamp;
+                if (l_read_obj->flags & RECORD_PINNED)
+                    l_is_pinned_cur = true;
+                else
+                    dap_store_obj_free_one(l_read_obj);
+            }
         }
     }
 
@@ -779,6 +786,8 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
             a_obj->timestamp > (uint64_t)l_timestamp_cur)
         l_apply = true;
     if ((l_ttl || a_obj->type == DAP_DB$K_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time)
+        l_apply = false;
+    if (!l_read_obj)
         l_apply = false;
     if (g_dap_global_db_debug_more) {
         char l_ts_str[50];
@@ -796,6 +805,8 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                 log_it(L_WARNING, "New data not applied, because newly object is deleted");
             if (a_obj->timestamp <= l_limit_time)
                 log_it(L_WARNING, "New data not applied, because object is too old");
+            if (!l_read_obj)
+                log_it(L_CRITICAL, "Corrupted data");
         }
         if (l_is_pinned_cur)
             dap_store_obj_free_one(l_read_obj);

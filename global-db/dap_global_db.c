@@ -555,6 +555,12 @@ dap_store_obj_t *dap_global_db_get_raw_unsafe(UNUSED_ARG dap_global_db_context_t
     dap_store_obj_t *l_res = dap_global_db_driver_read(a_group, a_key, &l_count_records);
     if (l_count_records > 1)
         log_it(L_WARNING, "Get more than one global DB object by one key is unexpected");
+    if (!dap_global_db_isalnum_group_key(l_res)) {
+        log_it(L_CRITICAL, "Delete broken object");
+        dap_global_db_del_sync(l_res->group, l_res->key);
+        dap_store_obj_free_one(l_res);
+        l_res = NULL;
+    }
     return l_res;
 }
 
@@ -892,7 +898,14 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
 
 dap_store_obj_t *dap_global_db_get_last_raw_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context, const char *a_group)
 {
-    return dap_global_db_driver_read_last(a_group);
+    dap_store_obj_t *l_ret = dap_global_db_driver_read_last(a_group);
+    if (!dap_global_db_isalnum_group_key(l_ret)) {
+        log_it(L_CRITICAL, "Delete broken object");
+        dap_global_db_del_sync(l_ret->group, l_ret->key);
+        dap_store_obj_free_one(l_ret);
+        l_ret = NULL;
+    }
+    return l_ret;
 }
 
 /**
@@ -993,6 +1006,13 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
             goto mem_clear;
         }
         for(size_t i = 0; i < l_values_count; i++){
+            if (!dap_global_db_isalnum_group_key(&l_store_objs[i])) {
+                log_it(L_CRITICAL, "Delete broken object");
+                dap_global_db_del_sync(l_store_objs[i].group, l_store_objs[i].key);
+                --l_values_count;
+                --i;
+                continue;
+            }
             l_objs[i].id = l_store_objs[i].id;
             l_objs[i].is_pinned = l_store_objs[i].flags & RECORD_PINNED;
             l_objs[i].key = dap_strdup(l_store_objs[i].key);
@@ -1138,7 +1158,29 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
                                                   const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
 {
-    return dap_global_db_driver_cond_read(a_group, a_first_id, a_objs_count);
+    dap_store_obj_t* l_ret = dap_global_db_driver_cond_read(a_group, a_first_id, a_objs_count);
+    if (a_objs_count) {
+        size_t l_cur_i = 0;
+        for (dap_store_obj_t* l_cur = l_ret; l_cur_i < *a_objs_count; ++l_cur, ++l_cur_i) {
+            if (!dap_global_db_isalnum_group_key(l_cur)) {
+                log_it(L_CRITICAL, "Delete broken object");
+                dap_global_db_del_sync(l_cur->group, l_cur->key);
+                DAP_DEL_Z(l_cur->group);
+                DAP_DEL_Z(l_cur->key);
+                DAP_DEL_Z(l_cur->value);
+                if (l_cur_i != *a_objs_count - 1) {
+                    memmove(l_cur, l_cur + 1, (*a_objs_count - l_cur_i) * sizeof(dap_store_obj_t));
+                }
+                --*a_objs_count;
+                l_ret = DAP_REALLOC(l_ret, *a_objs_count * sizeof(dap_store_obj_t));
+                if (!l_ret)
+                    break;
+                --l_cur_i;
+                --l_cur;
+            }
+        }
+    }
+    return l_ret;
 }
 
 /**
@@ -1271,6 +1313,7 @@ int s_set_unsafe_with_ts(dap_global_db_context_t *a_global_db_context, const cha
         log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
         return -1;
     }
+
     dap_store_obj_t l_store_data = { 0 };
 
     l_store_data.key = (char *)a_key ;
@@ -2415,4 +2458,30 @@ static void s_check_db_version_callback_set (dap_global_db_context_t * a_global_
     s_check_db_ret = l_res;
     pthread_cond_signal(&s_check_db_cond);
     pthread_mutex_unlock(&s_check_db_mutex); //  in calling thread
+}
+
+bool dap_global_db_isalnum_group_key(dap_store_obj_t* a_obj) {
+    bool ret = true;
+    for (char *c = (char*)a_obj->key; *c; ++c) {
+        if (!dap_ascii_isprint(*c)) {
+            ret = false;
+            break;
+        }
+    }
+
+    for (char *c = (char*)a_obj->group; *c; ++c) {
+        if (!dap_ascii_isprint(*c)) {
+            ret = false;
+            break;
+        }
+    }
+
+    if (!ret) {
+        char l_ts[128] = { '\0' };
+        dap_gbd_time_to_str_rfc822(l_ts, sizeof(l_ts), a_obj->timestamp);
+        log_it(L_MSG, "[!] Corrupted object %s (decalred len %zu / actual len %zu) : %s (decalred len %zu / actual len %zu), ts %s",
+               a_obj->group, a_obj->group_len, dap_strlen(a_obj->group),
+               a_obj->key, a_obj->key_len, dap_strlen(a_obj->key), l_ts);
+    }
+    return ret;
 }
