@@ -805,7 +805,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                 log_it(L_WARNING, "New data not applied, because newly object is deleted");
             if (a_obj->timestamp <= l_limit_time)
                 log_it(L_WARNING, "New data not applied, because object is too old");
-            if (!l_read_obj)
+            if (!l_read_obj && a_obj->type != DAP_DB$K_OPTYPE_DEL)
                 log_it(L_CRITICAL, "Corrupted data");
         }
         if (l_is_pinned_cur)
