@@ -2461,6 +2461,8 @@ static void s_check_db_version_callback_set (dap_global_db_context_t * a_global_
 }
 
 bool dap_global_db_isalnum_group_key(dap_store_obj_t* a_obj) {
+    if (!a_obj)
+        return true;
     bool ret = true;
     for (char *c = (char*)a_obj->key; *c; ++c) {
         if (!dap_ascii_isprint(*c)) {
