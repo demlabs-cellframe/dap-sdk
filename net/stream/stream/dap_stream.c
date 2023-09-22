@@ -943,6 +943,25 @@ static bool s_detect_loose_packet(dap_stream_t * a_stream) {
     return l_count_lost_packets < 0;
 }
 
+dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es)
+{
+    dap_stream_t *l_stream = NULL;
+    if (a_es->server) {
+        if (a_es->type == DESCRIPTOR_TYPE_SOCKET_UDP)
+            l_stream = DAP_STREAM(a_es);
+        else {
+            dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_es);
+            assert(l_http_client);
+            l_stream = DAP_STREAM(l_http_client);
+        }
+    } else {
+        dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
+        assert(l_client);
+        dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+        l_stream = l_client_pvt->stream;
+    }
+    return l_stream;
+}
 
 /**
  * @brief s_callback_keepalive
@@ -957,21 +976,8 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
     dap_worker_t * l_worker = dap_worker_get_current();
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
     if(l_es) {
-        dap_stream_t *l_stream = NULL;
-        if (a_server_side) {
-            if (l_es->type == DESCRIPTOR_TYPE_SOCKET_UDP)
-                l_stream = DAP_STREAM(l_es);
-            else {
-                dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(l_es);
-                assert(l_http_client);
-                l_stream = DAP_STREAM(l_http_client);
-            }
-        } else {
-            dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
-            assert(l_client);
-            dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
-            l_stream = l_client_pvt->stream;
-        }
+        assert(a_server_side == !!l_es->server);
+        dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
         assert(l_stream);
         if (l_stream->is_active) {
             l_stream->is_active = false;

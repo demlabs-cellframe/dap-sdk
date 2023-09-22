@@ -28,7 +28,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_cluster.h"
 #include "dap_global_db.h"
 
-#define DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT 1024
+#define DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT    1024
+#define DAP_GLOBAL_DB_CLUSTER_ANY           "global" // This mnemonim is for globally broadcasting grops
 
 typedef struct dap_global_db_cluster dap_global_db_cluster_t;
 
@@ -71,5 +72,8 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj);
 dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count);
 int dap_global_db_cluster_init();
 void dap_global_db_cluster_deinit();
-dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group);
+dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group_name);
 void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj);
+dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim,
+                                                   const char *a_group_mask, uint64_t a_ttl,
+                                                   dap_store_obj_callback_notify_t a_callback, void *a_callback_arg);

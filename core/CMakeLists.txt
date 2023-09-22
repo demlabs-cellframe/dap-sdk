@@ -60,7 +60,7 @@ if (BUILD_WITH_ZIP)
     add_definitions ("-DDAP_BUILD_WITH_ZIP")
 endif()
 
-target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES} dap_crypto)
+target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES})
 
 if(BUILD_DAP_TESTS)
     enable_testing()

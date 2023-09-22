@@ -529,3 +529,13 @@ dap_list_t *dap_list_sort(dap_list_t *a_list, dap_callback_compare_t a_cmp)
 {
     return ({ DL_SORT(a_list, a_cmp); a_list; });
 }
+
+static int s_random_compare(UNUSED_ARG dap_list_t *a_list1, UNUSED_ARG dap_list_t *a_list2)
+{
+    return rand() % 2 ? -1 : 1;
+}
+
+dap_list_t *dap_list_shuffle(dap_list_t *a_list)
+{
+    return dap_list_sort(a_list, s_random_compare);
+}

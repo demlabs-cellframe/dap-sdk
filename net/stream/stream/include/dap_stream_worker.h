@@ -29,6 +29,7 @@
 typedef struct dap_stream_worker {
     dap_worker_t * worker;
     dap_events_socket_t *queue_ch_io; // IO queue for channels
+    dap_events_socket_t *queue_ch_send; // send queue for channels
     dap_events_socket_t **queue_ch_io_input; // IO queue inputs for channels
     dap_stream_ch_t * channels; // Client channels assigned on worker. Unsafe list, operate only in worker's context
     pthread_rwlock_t channels_rwlock;
@@ -44,6 +45,14 @@ typedef struct dap_stream_worker_msg_io {
     void * data;
     size_t data_size;
 } dap_stream_worker_msg_io_t;
+
+typedef struct dap_stream_worker_msg_send {
+    dap_events_socket_uuid_t uuid;
+    char ch_id;
+    uint8_t ch_pkt_type;
+    const void *data;
+    size_t data_size;
+} dap_stream_worker_msg_send_t;
 
 int dap_stream_worker_init();
 

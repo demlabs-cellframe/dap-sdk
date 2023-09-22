@@ -21,7 +21,8 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
-#include "dap_cluster.h"
+#include "dap_stream_cluster.h"
+#include "dap_list.h"
 
 #define LOG_TAG "dap_cluster"
 
@@ -44,7 +45,7 @@ dap_cluster_t *dap_cluster_find(dap_guuid_t a_cluster_id)
  * @param a_options
  * @return
  */
-dap_cluster_t *dap_cluster_new(dap_cluster_options_t *a_options)
+dap_cluster_t *dap_cluster_new(dap_cluster_role_t *a_role)
 {
     dap_cluster_t *l_ret = DAP_NEW_Z(dap_cluster_t);
     if (!l_ret) {
@@ -52,7 +53,7 @@ dap_cluster_t *dap_cluster_new(dap_cluster_options_t *a_options)
         return NULL;
     }
     pthread_rwlock_init(&l_ret->members_lock, NULL);
-    l_ret->options = a_options;
+    l_ret->options = a_role;
     dap_cluster_t *l_check = NULL;
     do {
         l_ret->guuid = dap_guuid_new();
@@ -91,7 +92,7 @@ void dap_cluster_delete(dap_cluster_t *a_cluster)
  * @param a_member
  * @return
  */
-dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, dap_cluster_role_t a_role, void *a_info)
+dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, dap_cluster_member_role_t a_role, void *a_info)
 {
     dap_cluster_member_t *l_member = NULL;
     pthread_rwlock_wrlock(&a_cluster->members_lock);
@@ -108,15 +109,15 @@ dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_strea
         return NULL;
     }
     *l_member = (dap_cluster_member_t) {
-        .addr = *a_addr,
-        .cluster = a_cluster,
-        .role = a_role,
-        .info = a_info
+        .addr       = *a_addr,
+        .cluster    = a_cluster,
+        .role       = a_role,
+        .info       = a_info
     };
     HASH_ADD(hh, a_cluster->members, addr, sizeof(*a_addr), l_member);
     pthread_rwlock_unlock(&a_cluster->members_lock);
-    if (l_member->cluster->members_callback)
-        l_member->cluster->members_callback(a_cluster, l_member, DAP_CLUSTER_MEMBER_ADD);
+    if (l_member->cluster->members_add_callback)
+        l_member->cluster->members_add_callback(a_cluster, l_member);
     return l_member;
 }
 
@@ -134,8 +135,8 @@ void dap_cluster_member_delete(dap_cluster_member_t *a_member)
 
 static void s_cluster_member_delete(dap_cluster_member_t *a_member)
 {
-    if (a_member->cluster->members_callback)
-        a_member->cluster->members_callback(a_member->cluster, a_member, DAP_CLUSTER_MEMBER_DELETE);
+    if (a_member->cluster->members_delete_callback)
+        a_member->cluster->members_delete_callback(a_member->cluster, a_member);
     HASH_DEL(a_member->cluster, a_member);
     DAP_DEL_Z(a_member->info);
     DAP_DELETE(a_member);
@@ -154,4 +155,32 @@ dap_cluster_member_t *dap_cluster_member_find(dap_cluster_t *a_cluster, dap_stre
     HASH_FIND(hh, a_cluster->members, a_member_addr, sizeof(*a_member_addr), l_member);
     pthread_rwlock_unlock(&a_cluster->members_lock);
     return l_member;
+}
+
+dap_list_t *dap_cluster_get_shuffle_members(dap_cluster_t *a_cluster)
+{
+    dap_list_t *l_ret = NULL;
+    pthread_rwlock_rdlock(&a_cluster->members_lock);
+    for (dap_cluster_member_t *it = a_cluster->members; it; it = it->hh.next)
+        l_ret = dap_list_append(l_ret, it);
+    pthread_rwlock_unlock(&a_cluster->members_lock);
+    return dap_list_shuffle(l_ret);
+}
+
+void dap_cluster_send_on_worker_callback()
+
+void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
+{
+    dap_list_t *l_link_list = dap_cluster_get_shuffle_members(a_cluster);
+    int l_links_used = 0;
+    for (dap_list_t *it = l_link_list; it; it = it->next) {
+        dap_events_socket_uuid_t l_uuid;
+        if (dap_stream_find_by_addr(it->addr, &l_uuid))
+        if (++l_links_used >= DAP_CLUSTER_OPTIMUM_LINKS)
+            break;
+    }
+    dap_list_free(l_link_list);
+    dap_stream_ch_t *l_ch = dap_client_get_stream_ch_unsafe(a_client, a_ch_id);
+    if (l_ch)
+        return dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
 }

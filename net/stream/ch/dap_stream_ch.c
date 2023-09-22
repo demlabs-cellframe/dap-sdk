@@ -17,25 +17,9 @@
     You should have received a copy of the GNU Lesser General Public License
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <time.h>
-#include <stdlib.h>
-#include <stddef.h>
-#include <stdint.h>
-
-#ifdef WIN32
-#include <winsock2.h>
-#include <windows.h>
-#include <mswsock.h>
-#include <ws2tcpip.h>
-#include <io.h>
-#endif
-
-#include <pthread.h>
-
 #include "dap_common.h"
+#include "dap_net.h"
+#include "dap_strfuncs.h"
 #include "dap_events.h"
 #include "dap_events_socket.h"
 #include "dap_http_client.h"
@@ -45,6 +29,7 @@
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_worker.h"
+#include <pthread.h>
 
 #define LOG_TAG "dap_stream_ch"
 
@@ -358,6 +343,15 @@ void dap_stream_ch_set_ready_to_write_unsafe(dap_stream_ch_t * ch,bool is_ready)
             ch->stream->conn_http->state_write=DAP_HTTP_CLIENT_STATE_DATA;
         dap_events_socket_set_writable_unsafe(ch->stream->esocket, is_ready);
     }
+}
+
+dap_stream_ch_t *dap_stream_ch_by_id_unsafe(dap_stream_t *a_stream, const char a_ch_id)
+{
+    dap_return_val_if_fail(a_stream, NULL);
+    for (size_t i = 0; i < a_stream->channel_count; i++)
+        if (a_stream->channel[i]->proc->id == a_ch_id)
+            return a_stream->channel[i];
+    return NULL;
 }
 
 /*

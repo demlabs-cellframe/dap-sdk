@@ -37,12 +37,12 @@ enum dap_stream_ch_gdb_state {
     DAP_STREAM_CH_GDB_STATE_SYNC_REMOTE
 };
 
-#define DAP_STREAM_CH_GDB_PKT_TYPE_DELETE 0xFE
+#define DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP   0xC4
+#define DAP_STREAM_CH_GDB_PKT_TYPE_DELETE   0xFE
 
 typedef struct dap_stream_ch_gdb_pkt {
     uint8_t version;
-    uint8_t type;
-    uint8_t padding[6];
+    uint8_t padding[7];
     dap_stream_node_addr_t sender_addr;
     dap_stream_node_addr_t receiver_addr;
     uint8_t data[];
@@ -76,3 +76,5 @@ typedef struct dap_stream_ch_gdb {
 #define DAP_STREAM_CH_GDB(a) ((dap_stream_ch_gdb_t *) ((a)->internal) )
 #define DAP_STREAM_CH(a) ((dap_stream_ch_t *)((a)->_inheritor))
 #define DAP_STREAM_CH_GDB_ID 'G'
+
+dap_stream_ch_gdb_pkt_t *dap_global_db_ch_pkt_new()

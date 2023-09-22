@@ -27,59 +27,52 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include <pthread.h>
 #include "uthash.h"
 #include "dap_guuid.h"
+#include "dap_list.h"
+
+#define DAP_CLUSTER_OPTIMUM_LINKS   3
 
 typedef struct dap_cluster dap_cluster_t;
 
-// Role in cluster, could be combination of different roles at same time
-typedef uint16_t dap_cluster_role_t;
-
-// Client can only join to the cluster
-#define DAP_CLUSTER_ROLE_CLIENT     0x0001
-// Host owns cluster and can operate it as he wants
-#define DAP_CLUSTER_ROLE_HOST       0x0002
-// Operator has limited set of permissions for cluster operations
-#define DAP_CLUSTER_ROLE_OPERATOR   0x0004
-// Server accepts connections from clients, exchanges with content info
-// and provide service for others
-#define DAP_CLUSTER_ROLE_SERVER     0x0100
-// Balancer split connections and content between servers
-#define DAP_CLUSTER_ROLE_BALANCER   0x0200
-
-#define DAP_CLUSTER_ROLE_ALL        0xFFFF
+typedef enum dap_cluster_member_role {
+    DAP_CLUSTER_MEMBER_ROLE_GUEST,  // Minimal access
+    DAP_CLUSTER_MEMBER_ROLE_USER,   // Standard access
+    DAP_CLUSTER_MEMBER_ROLE_ROOT    // Priveledged access
+} dap_cluster_member_role_t;
 
 typedef struct dap_cluster_member {
     dap_stream_node_addr_t addr;    // Member addr, HT key
-    dap_cluster_role_t role;        // Member role & access rights
+    dap_cluster_member_role_t role; // Member role & access rights
     dap_cluster_t *cluster;         // Cluster pointer
     void *info;                     // Member info pointer
     UT_hash_handle hh;
 } dap_cluster_member_t;
+typedef void (*dap_cluster_change_callback_t)(dap_cluster_t *a_cluster, dap_cluster_member_t *a_member);
 
-typedef enum dap_cluster_member_op {
-    DAP_CLUSTER_MEMBER_ADD,
-    DAP_CLUSTER_MEMBER_DELETE
-} dap_cluster_member_op_t;
-
-typedef void (*dap_cluster_change_callback_t)(dap_cluster_t *a_cluster, dap_cluster_member_t *a_member, dap_cluster_member_op_t a_operation);
-
-typedef void dap_cluster_options_t;
+// Role in cluster
+typedef enum dap_cluster_role {
+    DAP_CLUSTER_ROLE_EMBEDDED = 0,   // Default role, passive link managment
+    DAP_CLUSTER_ROLE_AUTONOMIC       // Role for active internal independent link managment
+} dap_cluster_role_t;
 
 typedef struct dap_cluster {
     dap_guuid_t guuid;
+    dap_cluster_role_t role;
     pthread_rwlock_t members_lock;
     dap_cluster_member_t *members;
-    dap_cluster_options_t *options;
-    dap_cluster_change_callback_t members_callback;
+    dap_cluster_change_callback_t members_add_callback;
+    dap_cluster_change_callback_t members_delete_callback;
     void *_inheritor;
     UT_hash_handle hh;
 } dap_cluster_t;
 
 // Cluster common funcs
-dap_cluster_t *dap_cluster_new(dap_cluster_options_t *a_options);
+dap_cluster_t *dap_cluster_new(dap_cluster_role_t *a_role);
 void dap_cluster_delete(dap_cluster_t *a_cluster);
 dap_cluster_t *dap_cluster_find(dap_guuid_t a_guuid);
 
 // Member funcs
-dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, dap_cluster_role_t a_role, void *a_info);
+dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, dap_cluster_member_role_t a_role, void *a_info);
 dap_cluster_member_t *dap_cluster_member_find(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
 void dap_cluster_member_delete(dap_cluster_member_t *a_member);
+void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
+dap_list_t *dap_cluster_get_shuffle_members(dap_cluster_t *a_cluster);

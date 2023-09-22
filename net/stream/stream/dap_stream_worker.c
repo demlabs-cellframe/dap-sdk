@@ -36,6 +36,7 @@ struct proc_thread_stream{
 };
 
 static void s_ch_io_callback(dap_events_socket_t * a_es, void * a_msg);
+static void s_ch_send_callback(dap_events_socket_t *a_es, void *a_msg);
 
 /**
  * @brief dap_stream_worker_init
@@ -64,6 +65,9 @@ int dap_stream_worker_init()
         l_stream_worker->queue_ch_io = dap_events_socket_create_type_queue_ptr_mt( l_worker, s_ch_io_callback);
         if(! l_stream_worker->queue_ch_io)
             return -6;
+        l_stream_worker->queue_ch_send = dap_events_socket_create_type_queue_ptr_mt(l_worker, s_ch_send_callback);
+        if (!l_stream_worker->queue_ch_send)
+            return -7;
     }
     for (uint32_t i = 0; i < l_worker_count; i++){
         dap_proc_thread_t * l_proc_thread  = dap_proc_thread_get(i);
@@ -143,6 +147,36 @@ static void s_ch_io_callback(dap_events_socket_t * a_es, void * a_msg)
         dap_stream_ch_set_ready_to_write_unsafe(l_msg_ch, false);
     if (l_msg->data_size && l_msg->data) {
         dap_stream_ch_pkt_write_unsafe(l_msg_ch, l_msg->ch_pkt_type, l_msg->data, l_msg->data_size);
+        DAP_DELETE(l_msg->data);
+    }
+    DAP_DELETE(l_msg);
+}
+
+static void s_ch_send_callback(dap_events_socket_t *a_es, void *a_msg)
+{
+    dap_stream_worker_msg_send_t *l_msg = (dap_stream_worker_msg_send_t *)a_msg;
+    assert(l_msg);
+    // Check if it was removed from the list
+    dap_events_socket_t *l_es = dap_context_find(a_es->context, l_msg->uuid);
+    if (!l_es) {
+        log_it(L_DEBUG, "We got i/o message for client thats now not in list");
+        goto ret_n_clear;
+    }
+    dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
+    if (!l_stream) {
+        log_it(L_ERROR, "No stream found by events socket descriptor "DAP_FORMAT_ESOCKET_UUID, l_es->uuid);
+        goto ret_n_clear;
+    }
+    dap_stream_ch_t *l_ch = dap_stream_ch_by_id_unsafe(l_stream, l_msg->ch_id);
+    if (!l_ch) {
+        log_it(L_WARNING, "Stream found, but not setup channel '%С'", l_msg->ch_id);
+        goto ret_n_clear;
+    }
+    dap_stream_ch_pkt_write_unsafe(l_ch, l_msg->ch_pkt_type, l_msg->data, l_msg->data_size);
+    DAP_DEL_Z(l_msg->data);
+ret_n_clear:
+    if (l_msg->data) {
+        log_it(L_DEBUG, "Lost %zu data", l_msg->data_size);
         DAP_DELETE(l_msg->data);
     }
     DAP_DELETE(l_msg);

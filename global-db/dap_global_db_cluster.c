@@ -219,17 +219,23 @@ exit:
     return l_store_obj_arr;
 }
 
-dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group)
+dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group_name)
 {
-
+    dap_global_db_cluster *it;
+    DL_FOREACH(a_dbi->clusters, it)
+        if (!dap_fnmatch(it->group_mask, a_group_name, 0))
+            return it;
 }
 
 void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj)
 {
-
+    dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_store_obj);
+    dap_cluster_broadcast(dap_strcmp(a_cluster->mnemonim, DAP_GLOBAL_DB_CLUSTER_ANY) ? a_cluster->member_cluster : NULL,
+                          DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP, l_pkt, dap_global_db_pkt_get_size(l_pkt));
+    DAP_DELETE(l_pkt);
 }
 
-dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_net_name,
+dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim,
                                                    const char *a_group_mask, uint64_t a_ttl,
                                                    dap_store_obj_callback_notify_t a_callback, void *a_callback_arg)
 {
@@ -263,7 +269,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         return NULL;
     }
     if (a_net_name) {
-        l_cluster->mnemonim = dap_strdup(a_net_name);
+        l_cluster->mnemonim = dap_strdup(a_mnemonim);
         if (!l_cluster->mnemonim) {
             log_it(L_CRITICAL, "Memory allocation error");
             dap_cluster_delete(l_cluster->member_cluster);
