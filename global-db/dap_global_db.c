@@ -220,8 +220,11 @@ static struct sync_obj_data_callback *s_global_db_obj_data_callback_new()
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
-    pthread_cond_init(&l_callback->hdr.cond, NULL);
-    clock_gettime(CLOCK_REALTIME, &l_callback->hdr.timer_timeout);
+    pthread_condattr_t attr;
+    pthread_condattr_init(&attr);
+    pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    pthread_cond_init(&l_callback->hdr.cond, &attr);
+    clock_gettime(CLOCK_MONOTONIC, &l_callback->hdr.timer_timeout);
     l_callback->hdr.timer_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
     l_callback->uid = dap_uuid_generate_uint64();
     pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
@@ -232,6 +235,7 @@ static struct sync_obj_data_callback *s_global_db_obj_data_callback_new()
 static void s_global_db_obj_data_callback_destroy(struct sync_obj_data_callback *a_obj)
 {
     HASH_DEL(s_context_global_db->data_callbacks, a_obj);
+    pthread_cond_destroy(&a_obj->hdr.cond);
     DAP_DELETE(a_obj);
     pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }

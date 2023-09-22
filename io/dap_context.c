@@ -184,12 +184,15 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
     // If we have to wait for started thread (and initialization inside )
     if( a_flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED){
         // Init kernel objects
+        pthread_condattr_t attr;
+        pthread_condattr_init(&attr);
+        pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
         pthread_mutex_init(&a_context->started_mutex, NULL);
-        pthread_cond_init( &a_context->started_cond, NULL);
+        pthread_cond_init( &a_context->started_cond, &attr);
 
         // Prepare timer
         struct timespec l_timeout;
-        clock_gettime(CLOCK_REALTIME, &l_timeout);
+        clock_gettime(CLOCK_MONOTONIC, &l_timeout);
         l_timeout.tv_sec += DAP_CONTEXT_WAIT_FOR_STARTED_TIME;
         // Lock started mutex and try to run a thread
         pthread_mutex_lock(&a_context->started_mutex);
