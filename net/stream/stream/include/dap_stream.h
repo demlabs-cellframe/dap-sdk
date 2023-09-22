@@ -111,3 +111,8 @@ void dap_stream_es_rw_states_update(struct dap_stream *a_stream);
 void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
+
+// autorization stream block
+int dap_stream_add_node_in_hash_tab(dap_chain_hash_fast_t a_node_addr, unsigned int a_session_id, dap_stream_t *a_stream);
+int dap_stream_delete_node_in_hash_tab(dap_chain_hash_fast_t a_node_addr);
+int dap_stream_add_stream_in_hash_tab(dap_stream_t *a_stream);
