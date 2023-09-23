@@ -417,7 +417,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket
                 l_es_new->service, DAP_EVSOCK$SZ_SERVICE, NI_NUMERICHOST | NI_NUMERICSERV);
     struct in_addr l_addr_remote = ((struct sockaddr_in*)a_remote_addr)->sin_addr;
     inet_ntop(AF_INET, &l_addr_remote, l_es_new->hostaddr, sizeof(l_addr_remote));
-    log_it(L_INFO, "Connection accepted from %s (%s)", l_es_new->hostaddr, l_es_new->service);
+    log_it(L_INFO, "Connection accepted from %s : %s", l_es_new->hostaddr, l_es_new->service);
     dap_worker_t *l_worker = dap_events_worker_get_auto();
     if (l_worker->id == a_es->worker->id) {
 #ifdef DAP_OS_UNIX
