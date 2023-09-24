@@ -735,13 +735,8 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
 int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_obj,
                                           dap_global_db_callback_results_raw_t a_callback, void *a_arg)
 {
-    // timestamp for exist obj
     dap_nanotime_t l_timestamp_cur = 0;
-    // Record is pinned or not
-    dap_store_obj_t *l_read_obj = NULL;
-    bool l_is_pinned_cur = false;
-    bool l_match_mask = false;
-    bool l_broken = false;
+    bool l_match_mask = false, l_broken = false, l_is_pinned_cur = false;
     uint64_t l_ttl = 0;
     for (dap_list_t *it = a_global_db_context->instance->notify_groups; it; it = it->next) {
         dap_global_db_notify_item_t *l_item = it->data;
@@ -761,13 +756,13 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
         l_broken = true;
     }
 
+    dap_store_obj_t *l_read_obj = NULL;
     if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
+        if (l_broken) {
+            l_read_obj = DAP_INT_TO_POINTER(0xBAD);
+        } else {
         l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
         if (l_read_obj) {
-            if (l_broken) {
-                dap_store_obj_free_one(l_read_obj);
-                l_read_obj = DAP_INT_TO_POINTER(0x666);
-            } else {
                 l_timestamp_cur = l_read_obj->timestamp;
                 if (l_read_obj->flags & RECORD_PINNED)
                     l_is_pinned_cur = true;
@@ -776,7 +771,6 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                     l_read_obj = NULL;
                 }
             }
-
         }
     }
 
@@ -803,10 +797,11 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                 a_obj->key, l_ts_str, a_obj->value_len);
     }
 
-    if (l_read_obj == DAP_INT_TO_POINTER(0x666)) {
-        log_it(L_CRITICAL, "Corrupted object must be deleted");
-        a_obj->type = DAP_DB$K_OPTYPE_DEL;
-        l_apply = true;
+    if (l_read_obj == DAP_INT_TO_POINTER(0xBAD)) {
+        log_it(L_CRITICAL, "Existing corrupted object must be deleted");
+        dap_global_db_del(a_obj->group, a_obj->key, NULL, NULL);
+        DAP_DEL_Z(a_arg);
+        return -1;
     } else if (l_broken && a_obj->type != DAP_DB$K_OPTYPE_DEL)
         l_apply = false;
 
@@ -835,10 +830,6 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
         l_read_obj->type = DAP_DB$K_OPTYPE_ADD;
         dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
         dap_store_obj_free_one(l_read_obj);
-        DAP_DEL_Z(a_arg);
-        return -1;
-    } else if (l_broken) {
-        dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
         DAP_DEL_Z(a_arg);
         return -1;
     } else if (dap_global_db_set_raw(a_obj, 1, a_callback, a_arg) != 0) {
