@@ -736,7 +736,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                                           dap_global_db_callback_results_raw_t a_callback, void *a_arg)
 {
     dap_nanotime_t l_timestamp_cur = 0;
-    bool l_match_mask = false, l_broken = false, l_is_pinned_cur = false;
+    bool l_match_mask = false, l_is_pinned_cur = false;
     uint64_t l_ttl = 0;
     for (dap_list_t *it = a_global_db_context->instance->notify_groups; it; it = it->next) {
         dap_global_db_notify_item_t *l_item = it->data;
@@ -752,17 +752,27 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
         DAP_DEL_Z(a_arg);
         return -4;
     }
-    if (!dap_global_db_isalnum_group_key(a_obj)) {
-        l_broken = true;
+
+    if (g_dap_global_db_debug_more) {
+        char l_ts_str[64] = { '\0' };
+        dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
+        log_it(L_DEBUG, "Unpacked log history: type='%c' (0x%02hhX) group=\"%s\" key=\"%s\""
+                " timestamp=\"%s\" value_len=%" DAP_UINT64_FORMAT_U,
+                (char)a_obj->type, (char)a_obj->type, a_obj->group,
+                a_obj->key, l_ts_str, a_obj->value_len);
     }
+
+    bool l_broken = !dap_global_db_isalnum_group_key(a_obj);
 
     dap_store_obj_t *l_read_obj = NULL;
     if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
         if (l_broken) {
-            l_read_obj = DAP_INT_TO_POINTER(0xBAD);
+            log_it(L_NOTICE, "Found this object in DB, delete it");
+            dap_global_db_del(a_obj->group, a_obj->key, NULL, NULL);
+            DAP_DEL_Z(a_arg);
+            return -1;
         } else {
-        l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
-        if (l_read_obj) {
+            if ((l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL))) {
                 l_timestamp_cur = l_read_obj->timestamp;
                 if (l_read_obj->flags & RECORD_PINNED)
                     l_is_pinned_cur = true;
@@ -782,27 +792,10 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     //check whether to apply the received data into the database
     bool l_apply = false;
     // check the applied object newer that we have stored or erased
-    if (a_obj->timestamp > (uint64_t)l_timestamp_del &&
-            a_obj->timestamp > (uint64_t)l_timestamp_cur)
+    if (a_obj->timestamp > (uint64_t)l_timestamp_del && a_obj->timestamp > (uint64_t)l_timestamp_cur)
         l_apply = true;
-    if ((l_ttl || a_obj->type == DAP_DB$K_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time)
-        l_apply = false;
 
-    if (g_dap_global_db_debug_more) {
-        char l_ts_str[50];
-        dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
-        log_it(L_DEBUG, "Unpacked log history: type='%c' (0x%02hhX) group=\"%s\" key=\"%s\""
-                " timestamp=\"%s\" value_len=%" DAP_UINT64_FORMAT_U,
-                (char )a_obj->type, (char)a_obj->type, a_obj->group,
-                a_obj->key, l_ts_str, a_obj->value_len);
-    }
-
-    if (l_read_obj == DAP_INT_TO_POINTER(0xBAD)) {
-        log_it(L_CRITICAL, "Existing corrupted object must be deleted");
-        dap_global_db_del(a_obj->group, a_obj->key, NULL, NULL);
-        DAP_DEL_Z(a_arg);
-        return -1;
-    } else if (l_broken && a_obj->type != DAP_DB$K_OPTYPE_DEL)
+    if (((l_ttl || a_obj->type == DAP_DB$K_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time) || l_broken)
         l_apply = false;
 
     if (!l_apply) {
@@ -817,8 +810,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                 log_it(L_WARNING, "New data not applied, because object is corrupted");
             }
         }
-        if (l_is_pinned_cur)
-            dap_store_obj_free_one(l_read_obj);
+        dap_store_obj_free(l_read_obj, (int)l_is_pinned_cur);
         DAP_DEL_Z(a_arg);
         return -2;
     }
