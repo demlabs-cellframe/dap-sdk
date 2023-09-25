@@ -1028,7 +1028,7 @@ static bool s_callback_server_keepalive(void *a_arg)
  * @param a_protocol_version - client protocol version
  * @return  0 if ok others if not
  */
-int dap_stream_add_node_in_hash_tab(dap_stream_node_addr_t *a_node, unsigned int a_session_id, dap_stream_t *a_stream)
+int dap_stream_add_node_in_hash_tab(dap_stream_node_addr_t *a_node, unsigned int a_session_id)
 {
     dap_return_val_if_pass(!a_node, -1);
     authorized_stream_t *l_a_stream = DAP_NEW_Z(authorized_stream_t);
@@ -1038,15 +1038,33 @@ int dap_stream_add_node_in_hash_tab(dap_stream_node_addr_t *a_node, unsigned int
     }
     memcpy(&l_a_stream->node, a_node, sizeof(a_node));
     l_a_stream->session_id = a_session_id;
-    l_a_stream->stream = a_stream;
-    if(a_stream) {
-        l_a_stream->esocket_uuid = a_stream->esocket_uuid;
-        l_a_stream->stream_worker = a_stream->stream_worker;
-    }
    
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_ADD(hh, s_authorized_streams, node, sizeof(l_a_stream->node), l_a_stream);
+    HASH_ADD(hh, s_authorized_streams, session_id, sizeof(l_a_stream->session_id), l_a_stream);
     assert(!pthread_rwlock_unlock(&s_steams_lock));
+}
+
+/**
+ * @brief dap_stream_add_stream_in_hash_tab Adding autorized stream to hash table
+ * @param a_old - old session value id
+ * @param a_new - new session value id
+ * @return  0 if ok others if not
+ */
+int dap_stream_change_id_in_hash_tab(unsigned int a_old, unsigned int a_new)
+{
+    dap_return_val_if_pass(a_old == a_new, -1);
+    authorized_stream_t *l_a_stream = NULL, *l_a_stream_tmp = NULL;
+    int l_ret = -1;
+    assert(!pthread_rwlock_wrlock(&s_steams_lock));
+    HASH_FIND(hh, s_authorized_streams, &a_old, sizeof(a_old), l_a_stream);
+    if (l_a_stream) {
+        HASH_DEL(s_authorized_streams, l_a_stream);
+        l_a_stream->session_id = a_new;
+        HASH_ADD(hh, s_authorized_streams, session_id, sizeof(l_a_stream->session_id), l_a_stream);
+        l_ret = 0;
+    }
+    assert(!pthread_rwlock_unlock(&s_steams_lock));
+    return l_ret;
 }
 
 /**
@@ -1061,17 +1079,17 @@ int dap_stream_add_stream_in_hash_tab(dap_stream_t *a_stream)
     authorized_stream_t *l_a_stream = NULL, *l_a_stream_tmp = NULL;
     int l_ret = -1;
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_ITER(hh, s_authorized_streams, l_a_stream, l_a_stream_tmp) {
-        if (l_a_stream->session_id == a_stream->session->id) {
-            if(l_a_stream->stream)
-                log_it(L_WARNING,"Replacing stream from %p to %p stream in hash tab with", l_a_stream->stream, a_stream);
-            l_a_stream->stream = a_stream;
-            l_a_stream->esocket_uuid = a_stream->esocket_uuid;
-            l_a_stream->stream_worker = a_stream->stream_worker;
-            memcpy(&a_stream->node, &l_a_stream->node, sizeof(a_stream->node));
-            l_ret = 0;
-            break;
-        }
+    HASH_FIND(hh, s_authorized_streams, &a_stream->session->id, sizeof(a_stream->session->id), l_a_stream);
+    if (l_a_stream) {
+        if(l_a_stream->stream)
+            log_it(L_WARNING,"Replacing stream from %p to %p stream in hash tab with", l_a_stream->stream, a_stream);
+        l_a_stream->stream = a_stream;
+        l_a_stream->esocket_uuid = a_stream->esocket_uuid;
+        l_a_stream->stream_worker = a_stream->stream_worker;
+        a_stream->node = &l_a_stream->node;
+        HASH_DEL(s_authorized_streams, l_a_stream);
+        HASH_ADD(hh, s_authorized_streams, node, sizeof(l_a_stream->node), l_a_stream);
+        l_ret = 0;
     }
     assert(!pthread_rwlock_unlock(&s_steams_lock));
     return l_ret;
@@ -1083,11 +1101,12 @@ int dap_stream_add_stream_in_hash_tab(dap_stream_t *a_stream)
  * @param a_node - autorrized node address
  * @return  0 if ok others if not
  */
-int dap_stream_delete_node_in_hash_tab(dap_stream_node_addr_t a_node)
+int dap_stream_delete_node_in_hash_tab(dap_stream_node_addr_t* a_node)
 {
+    dap_return_val_if_pass(!a_node, -1);
     authorized_stream_t *l_a_stream = NULL;
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_FIND(hh, s_authorized_streams, &a_node, sizeof(a_node), l_a_stream);
+    HASH_FIND(hh, s_authorized_streams, a_node, sizeof(*a_node), l_a_stream);
     dap_return_val_if_pass(!l_a_stream, -1);  // return if not finded
     HASH_DEL(s_authorized_streams, l_a_stream);
     DAP_DEL_Z(l_a_stream);

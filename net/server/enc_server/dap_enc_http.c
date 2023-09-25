@@ -203,9 +203,11 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         l_node_addr->addr.words[0] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 2);
         l_node_addr->uplink = false;
 
-        l_enc_key_ks->node = l_node_addr;
         l_enc_key_ks->protocol_version = l_protocol_version;
+        l_enc_key_ks->session_id = rand() * 0x100 + rand() * 0x10000 + rand() * 0x01000000;
         dap_enc_ks_save_in_storage(l_enc_key_ks);
+        dap_stream_add_node_in_hash_tab(l_node_addr, l_enc_key_ks->session_id);
+        DAP_DEL_Z(l_node_addr);
 
         char encrypt_id[DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1];
 

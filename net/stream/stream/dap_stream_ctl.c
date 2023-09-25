@@ -186,7 +186,7 @@ void s_stream_ctl_proc(struct dap_http_simple *a_http_simple, void *a_arg)
                     return;
                 }
                 l_stream_session->acl = l_ks_key->acl_list;
-                dap_stream_add_node_in_hash_tab(l_ks_key->node, l_stream_session->id, NULL);
+                dap_stream_change_id_in_hash_tab(l_ks_key->session_id, l_stream_session->id);
             }
             if (l_is_legacy)
                 enc_http_reply_f(l_dg, "%u %s", l_stream_session->id, l_key_str);
