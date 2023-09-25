@@ -46,6 +46,15 @@ typedef enum dap_stream_sign_group {
     BASE_NODE_SIGN,
 } dap_stream_sign_group_t;
 
+// typedef struct dap_stream_node_addr {
+//     union {
+//         uint64_t uint64;
+//         uint16_t words[sizeof(uint64_t)/2];
+//         uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
+//     } addr;
+//     bool uplink;
+// } dap_stream_node_addr_t;
+
 typedef struct dap_stream {
     int id;
     dap_stream_session_t * session;
@@ -84,7 +93,7 @@ typedef struct dap_stream {
     struct dap_stream *prev, *next;
 
     dap_stream_sign_group_t sign_group;
-    dap_chain_hash_fast_t node_addr;
+    dap_stream_node_addr_t node;
 
 } dap_stream_t;
 
@@ -114,6 +123,6 @@ void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready);
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
 
 // autorization stream block
-int dap_stream_add_node_in_hash_tab(dap_chain_hash_fast_t a_node_addr, unsigned int a_session_id, dap_stream_t *a_stream);
-int dap_stream_delete_node_in_hash_tab(dap_chain_hash_fast_t a_node_addr);
+int dap_stream_add_node_in_hash_tab(dap_stream_node_addr_t* a_node, unsigned int a_session_id, dap_stream_t *a_stream);
+int dap_stream_delete_node_in_hash_tab(dap_stream_node_addr_t a_node);
 int dap_stream_add_stream_in_hash_tab(dap_stream_t *a_stream);

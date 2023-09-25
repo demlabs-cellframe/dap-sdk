@@ -132,7 +132,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             uint8_t *l_pub_key_data = NULL;
             l_pub_key_data = dap_enc_key_serialize_pub_key(l_key, &l_pub_key_data_size);
             if(l_pub_key_data_size > 0 && dap_hash_fast(l_pub_key_data, l_pub_key_data_size, &l_hash) == 1) {
-                printf("!!!!!!!!!!!!!!%04X::%04X::%04X::%04X\n",
+                log_it(L_INFO, "Income connection from node %04X::%04X::%04X::%04X\n",
                         (uint16_t) *(uint16_t*) (l_hash.raw),
                         (uint16_t) *(uint16_t*) (l_hash.raw + 2),
                         (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 4),
@@ -163,7 +163,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         }
 
         dap_enc_ks_key_t *l_enc_key_ks = dap_enc_ks_new();
-        dap_return_val_if_pass(!l_enc_key_ks, NULL);
+        dap_return_if_pass(!l_enc_key_ks);
         if (s_acl_callback) {
             l_enc_key_ks->acl_list = s_acl_callback(&l_sign_hash);
         } else {
@@ -189,7 +189,21 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                                                l_pkey_exchange_key->priv_key_data, // shared key
                                                l_pkey_exchange_key->priv_key_data_size,
                                                l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE, l_block_key_size);
-        memcpy(l_enc_key_ks->node_addr_hash.raw, l_hash.raw, sizeof(l_hash.raw));  // add info about node
+        
+        dap_stream_node_addr_t *l_node_addr = DAP_NEW_Z(dap_stream_node_addr_t);
+        if (!l_node_addr) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            *return_code = Http_Status_InternalServerError;
+            return;
+        }
+
+        l_node_addr->addr.words[3] = (uint16_t) *(uint16_t*) (l_hash.raw);
+        l_node_addr->addr.words[2] = (uint16_t) *(uint16_t*) (l_hash.raw + 2);
+        l_node_addr->addr.words[1] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 4);
+        l_node_addr->addr.words[0] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 2);
+        l_node_addr->uplink = false;
+
+        l_enc_key_ks->node = l_node_addr;
         l_enc_key_ks->protocol_version = l_protocol_version;
         dap_enc_ks_save_in_storage(l_enc_key_ks);
 

@@ -175,6 +175,7 @@ static void s_enc_key_free(dap_enc_ks_key_t **ptr)
     if (*ptr){
         if((*ptr)->key)
             dap_enc_key_delete((*ptr)->key);
+        DAP_DEL_Z((*ptr)->node);
         DAP_DELETE(*ptr);
     }
 }

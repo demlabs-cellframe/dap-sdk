@@ -773,3 +773,13 @@ int exec_silent(const char *a_cmd);
 #ifdef __cplusplus
 }
 #endif
+
+// temporary, need here to testing
+typedef struct dap_stream_node_addr {
+    union {
+        uint64_t uint64;
+        uint16_t words[sizeof(uint64_t)/2];
+        uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
+    } addr;
+    bool uplink;
+} dap_stream_node_addr_t;
