@@ -227,8 +227,16 @@ dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t
             return it;
 }
 
+DAP_STATIC_INLINE s_object_is_new(dap_store_obj_t *a_store_obj)
+{
+    dap_nanotime_t l_time_diff = a_store_obj->timestamp - dap_nanotime_now();
+    return l_time_diff < DAP_GLOBAL_DB_CLUSTER_BROADCAST_LIFETIME * 1000000000UL;
+}
+
 void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj)
 {
+    if (!s_object_is_new(a_store_obj))
+        return;         // Send new rumors only
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_store_obj);
     dap_cluster_broadcast(dap_strcmp(a_cluster->mnemonim, DAP_GLOBAL_DB_CLUSTER_ANY) ? a_cluster->member_cluster : NULL,
                           DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP, l_pkt, dap_global_db_pkt_get_size(l_pkt));

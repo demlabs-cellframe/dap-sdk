@@ -23,6 +23,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 */
 #include "dap_stream_cluster.h"
 #include "dap_list.h"
+#include "dap_events_socket.h"
+#include "dap_stream_worker.h"
 
 #define LOG_TAG "dap_cluster"
 
@@ -157,30 +159,30 @@ dap_cluster_member_t *dap_cluster_member_find(dap_cluster_t *a_cluster, dap_stre
     return l_member;
 }
 
-dap_list_t *dap_cluster_get_shuffle_members(dap_cluster_t *a_cluster)
+dap_list_t *dap_cluster_get_shuffle_addrs(dap_cluster_t *a_cluster)
 {
+    dap_return_val_if_fail(a_cluster, NULL);
     dap_list_t *l_ret = NULL;
     pthread_rwlock_rdlock(&a_cluster->members_lock);
     for (dap_cluster_member_t *it = a_cluster->members; it; it = it->hh.next)
-        l_ret = dap_list_append(l_ret, it);
+        l_ret = dap_list_append(l_ret, DAP_DUP(&it->addr));
     pthread_rwlock_unlock(&a_cluster->members_lock);
     return dap_list_shuffle(l_ret);
 }
 
-void dap_cluster_send_on_worker_callback()
-
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
 {
-    dap_list_t *l_link_list = dap_cluster_get_shuffle_members(a_cluster);
+    dap_list_t *l_link_list = a_cluster ? dap_cluster_get_shuffle_addrs(a_cluster) : dap_stream_get_shuffle_addrs();
     int l_links_used = 0;
     for (dap_list_t *it = l_link_list; it; it = it->next) {
-        dap_events_socket_uuid_t l_uuid;
-        if (dap_stream_find_by_addr(it->addr, &l_uuid))
-        if (++l_links_used >= DAP_CLUSTER_OPTIMUM_LINKS)
-            break;
+        dap_stream_node_addr_t *l_addr = it->data;
+        dap_worker_t *l_worker = NULL;
+        dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(l_addr, &l_worker);
+        if (l_worker) {
+            dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_uuid, a_ch_id, a_type, a_data, a_data_size);
+            if (++l_links_used >= DAP_CLUSTER_OPTIMUM_LINKS)
+                break;
+        }
     }
-    dap_list_free(l_link_list);
-    dap_stream_ch_t *l_ch = dap_client_get_stream_ch_unsafe(a_client, a_ch_id);
-    if (l_ch)
-        return dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
+    dap_list_free_full(l_link_list, NULL);
 }

@@ -25,12 +25,12 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #pragma once
 
 #include "dap_time.h"
-#include "dap_cluster.h"
+#include "dap_stream_cluster.h"
 #include "dap_global_db.h"
 
-#define DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT    1024
-#define DAP_GLOBAL_DB_CLUSTER_ANY           "global" // This mnemonim is for globally broadcasting grops
-
+#define DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT            1024
+#define DAP_GLOBAL_DB_CLUSTER_ANY                   "global" // This mnemonim is for globally broadcasting grops
+#define DAP_GLOBAL_DB_CLUSTER_BROADCAST_LIFETIME    15      // Seconds
 typedef struct dap_global_db_cluster dap_global_db_cluster_t;
 
 typedef void (*dap_store_obj_callback_notify_t)(dap_global_db_context_t *a_context, dap_store_obj_t *a_obj, void *a_arg);
