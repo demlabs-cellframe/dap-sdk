@@ -84,6 +84,7 @@ typedef struct dap_stream {
     struct dap_stream *prev, *next;
 
     dap_stream_sign_group_t sign_group;
+    dap_chain_hash_fast_t node_addr;
 
 } dap_stream_t;
 
