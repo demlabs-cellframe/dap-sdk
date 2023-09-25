@@ -998,62 +998,68 @@ static void *s_dap_events_socket_buf_thread(void *arg)
         log_it(L_ERROR, "NULL esocket in queue service thread");
         pthread_exit(0);
     }
-    int l_res = 0;
     SOCKET l_sock = INVALID_SOCKET;
-    bool l_lifecycle = true;
-    while (l_lifecycle) {
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
         l_sock = l_es->fd2;
 #elif defined(DAP_EVENTS_CAPS_QUEUE_MQUEUE)
         l_sock = l_es->mqd;
 #endif
-        l_res = s_wait_send_socket(l_sock, 0);
-        if (!l_res) {
+    while (1) {
+        if (!s_wait_send_socket(l_sock, 0)) {
             pthread_rwlock_wrlock(&l_es->buf_out_lock);
             ssize_t l_write_ret = write(l_sock, l_es->buf_out, MIN(PIPE_BUF, l_es->buf_out_size));
-            int l_errno = errno;
-            if (l_write_ret % sizeof(arg)) {
-                log_it(L_CRITICAL, "[!] Sent unaligned chunk [%ld bytes] to pipe, possible data corruption!", l_write_ret);
-            }
-            if (l_write_ret == (ssize_t)l_es->buf_out_size) {
-                //debug_if(l_write_ret > (ssize_t)sizeof(void*), L_MSG, "[!] Sent all %lu bytes to pipe [es %d]", l_write_ret, l_sock);
-                l_es->buf_out_size = 0;
-                l_lifecycle = false;
-            } else {
-                if (l_write_ret) {
-                    //log_it(L_MSG, "[!] Sent %lu / %lu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
-                    l_es->buf_out_size -= l_write_ret;
-                    memmove(l_es->buf_out, l_es->buf_out + l_write_ret, l_es->buf_out_size);
-                } else {
-                    log_it(L_ERROR, "[!] Can't write data to pipe! Errno %d", l_errno);
+            if (!l_write_ret) {
+                switch (errno) {
+                case EAGAIN:
+                    pthread_rwlock_unlock(&l_es->buf_out_lock);
+                    continue;
+                default:
+                    log_it(L_CRITICAL, "[!] Can't write data to pipe! Errno %d", errno);
+                    l_es->buf_out_size = 0;
+                    pthread_rwlock_unlock(&l_es->buf_out_lock);
+                    pthread_exit(NULL);
                 }
+            } else if (l_write_ret == (ssize_t)l_es->buf_out_size) {
+                debug_if(g_debug_reactor, L_DEBUG, "[!] Sent all %lu bytes to pipe [es %d]", l_write_ret, l_sock);
+                l_es->buf_out_size = 0;
+                pthread_rwlock_unlock(&l_es->buf_out_lock);
+                break;
+            } else {
+                debug_if(g_debug_reactor, L_DEBUG, "[!] Sent %lu / %lu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
+                l_es->buf_out_size -= l_write_ret;
+                memmove(l_es->buf_out, l_es->buf_out + l_write_ret, l_es->buf_out_size);
             }
+
+            if (l_write_ret % sizeof(arg))
+                log_it(L_CRITICAL, "[!] Sent unaligned chunk [%ld bytes] to pipe, possible data corruption!", l_write_ret);
             pthread_rwlock_unlock(&l_es->buf_out_lock);
         }
     }
-    pthread_exit(0);
-    return NULL;
+    pthread_exit(NULL);
 }
 
 static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
 {
     static atomic_uint_fast64_t l_thd_count;
-    int     l_rc;
-    pthread_t l_thread;
-    const size_t l_basic_buf_size = DAP_QUEUE_MAX_MSGS * sizeof(void*);
+    static const size_t l_basic_buf_size = DAP_QUEUE_MAX_MSGS * sizeof(void*);
     pthread_rwlock_wrlock(&a_es->buf_out_lock);
     if (!a_es->buf_out_size) {
+        if (write(a_es->fd2, &a_arg, sizeof(a_arg)) == sizeof(a_arg)) {
+            pthread_rwlock_unlock(&a_es->buf_out_lock);
+            return;
+        }
+        int l_rc;
+        pthread_t l_thread;
         atomic_fetch_add(&l_thd_count, 1);
         if ((l_rc = pthread_create(&l_thread, &s_attr_detached /* @RRL: #6157 */, s_dap_events_socket_buf_thread, a_es))) {
             log_it(L_ERROR, "[#%"DAP_UINT64_FORMAT_U"] Cannot start thread, drop a_es: %p, a_arg: %p, rc: %d",
                    atomic_load(&l_thd_count), a_es, a_arg, l_rc);
+            pthread_rwlock_unlock(&a_es->buf_out_lock);
             return;
-            debug_if(g_debug_reactor, L_DEBUG, "[#%"DAP_UINT64_FORMAT_U"] Created thread %"DAP_UINT64_FORMAT_x", a_es: %p, a_arg: %p",
+        }
+        debug_if(g_debug_reactor, L_DEBUG, "[#%"DAP_UINT64_FORMAT_U"] Created thread %"DAP_UINT64_FORMAT_x", a_es: %p, a_arg: %p",
                      atomic_load(&l_thd_count), l_thread, a_es, a_arg);
-            }
-    }
-
-    if (a_es->buf_out_size_max < a_es->buf_out_size + sizeof(void*)) {
+    } else if (a_es->buf_out_size_max < a_es->buf_out_size + sizeof(void*)) {
         a_es->buf_out_size_max += l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
         log_it(L_MSG, "[!] Increase capacity to %lu, actual size: %lu", a_es->buf_out_size_max, a_es->buf_out_size);
@@ -1617,7 +1623,7 @@ void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
     if ( a_esocket->socket && (a_esocket->socket != INVALID_SOCKET)) {
         closesocket( a_esocket->socket );
 #else
-    if ( a_esocket->socket && (a_esocket->socket != -1)) {      
+    if ( a_esocket->socket && (a_esocket->socket != -1)) {
 #ifdef DAP_OS_BSD
         if(a_esocket->type != DESCRIPTOR_TYPE_TIMER)
 #endif
