@@ -316,7 +316,7 @@ uint8_t* dap_cert_mem_save(dap_cert_t * a_cert, uint32_t *a_cert_size_out)
         l_data_offset += l_priv_key_data_size;
     }
 
-    if (l_metadata_size) {
+    if (l_metadata && l_metadata_size) {
         memcpy(l_data + l_data_offset, l_metadata, l_metadata_size);
         l_data_offset += l_metadata_size;
     }
@@ -326,7 +326,7 @@ lb_exit:
         DAP_DELETE(l_priv_key_data);
     }
     if ( l_metadata_size ) {
-        DAP_DELETE(l_metadata);
+        DAP_DEL_Z(l_metadata);
     }
 
     //log_it(L_NOTICE,"Certificate \"%s\" successfully serialized",a_cert->name);
