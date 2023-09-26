@@ -41,12 +41,15 @@ if(UNIX)
     if(DARWIN)
         add_subdirectory(src/darwin)
         set(CORE_LIBRARIES ${CORE_LIBRARIES} dap_core_darwin)
-    else()
-        set(CORE_LIBRARIES ${CORE_LIBRARIES} rt)
     endif()
     if(ANDROID)
         add_subdirectory(src/android)
         set(CORE_LIBRARIES ${CORE_LIBRARIES} dap_core_android)
+    
+    if(UNIX AND NOT ANDROID AND NOT DARWIN)
+        set(CORE_LIBRARIES ${CORE_LIBRARIES} rt)
+    endif()
+    
     endif()
 endif()
 
