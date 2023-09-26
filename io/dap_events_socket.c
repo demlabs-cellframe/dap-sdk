@@ -1117,9 +1117,10 @@ int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t * a_es_input, 
 #elif defined(DAP_EVENTS_CAPS_AIO)
     return dap_events_socket_queue_ptr_send(a_es_input->pipe_out,a_arg);
 #else
-    void * l_arg = a_arg;
-    return dap_events_socket_write_unsafe(a_es_input, &l_arg, sizeof(l_arg))
-            == sizeof(l_arg) ? 0 : -1;
+    //void * l_arg = a_arg;
+    //return dap_events_socket_write_unsafe(a_es_input, &a_arg, sizeof(a_arg))
+    //        == sizeof(a_arg) ? 0 : -1;
+    return dap_events_socket_queue_ptr_send(a_es_input->pipe_out,a_arg);
 #endif
 }
 
@@ -1160,6 +1161,8 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     // Bufferize all messages to prevent random reordering when writing to pipe
     s_add_ptr_to_buf(a_es, a_arg);
     return 0;
+    //return dap_events_socket_write_unsafe(a_es, &a_arg, sizeof(a_arg))
+    //        == sizeof(a_arg) ? 0 : -1;
     /*if ((l_ret = write(a_es->fd2, &a_arg, sizeof(a_arg)) == sizeof(a_arg))) {
         debug_if(g_debug_reactor, L_NOTICE, "send %d bytes to pipe", l_ret);
         return 0;
@@ -1905,21 +1908,32 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
  * @param a_data_size Size of data to write
  * @return Number of bytes that were placed into the buffer
  */
-size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void * a_data, size_t a_data_size)
+size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size)
 {
     if (!a_es) {
         log_it(L_ERROR, "Attemp to write into NULL esocket!");
         return 0;
     }
     if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
-        debug_if(g_debug_reactor, L_NOTICE,
-                 "Trying to write into closing socket %"DAP_FORMAT_SOCKET, a_es->fd);
+        debug_if(g_debug_reactor, L_NOTICE, "Trying to write into closing socket %"DAP_FORMAT_SOCKET, a_es->fd);
         return 0;
     }
 
     static const size_t l_basic_buf_size = DAP_EVENTS_SOCKET_BUF_LIMIT / 4;
-    void *l_cur_buf_ptr = a_es->buf_out + a_es->buf_out_size;
+
+    if (a_es->buf_out_size_max < a_es->buf_out_size + a_data_size) {
+        a_es->buf_out_size_max += MAX(l_basic_buf_size, a_data_size);
+        a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
+        log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %lu, actual size: %lu", a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
+    } else if ((a_es->buf_out_size + a_data_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
+        a_es->buf_out_size_max = l_basic_buf_size;
+        a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
+        log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
+               a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
+    }
+    memcpy(a_es->buf_out + a_es->buf_out_size, a_data, a_data_size);
     a_es->buf_out_size += a_data_size;
+    /*a_es->buf_out_size += a_data_size;
     if (a_es->buf_out_size_max < a_es->buf_out_size) {
         while (a_es->buf_out_size_max < a_es->buf_out_size)
             a_es->buf_out_size_max += l_basic_buf_size;
@@ -1935,7 +1949,7 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void * a_
         log_it(L_DEBUG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
                a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
-    memcpy(l_cur_buf_ptr, a_data, a_data_size);
+    memcpy(l_cur_buf_ptr, a_data, a_data_size);*/
     dap_events_socket_set_writable_unsafe(a_es, true);
     return a_data_size;
 }

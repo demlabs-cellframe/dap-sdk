@@ -1586,6 +1586,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     l_es->buf_in = DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max);
     l_es->buf_out = DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max);
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+
     pthread_rwlock_init(&l_es->buf_out_lock, NULL);
 #endif
 #if defined(DAP_EVENTS_CAPS_EPOLL)
