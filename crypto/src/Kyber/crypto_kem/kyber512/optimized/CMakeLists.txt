@@ -48,7 +48,11 @@ file(GLOB DAP_CRYPTO_KYBER512_HEADERS
 
 add_library(${PROJECT_NAME} STATIC ${DAP_CRYPTO_KYBER512_HEADERS} ${DAP_CRYPTO_KYBER512_SOURCES})
 
-target_link_libraries(${PROJECT_NAME} dap_core dap_crypto pthread)
+target_link_libraries(${PROJECT_NAME} dap_core dap_crypto )
+
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} pthread)
+endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC .)
 

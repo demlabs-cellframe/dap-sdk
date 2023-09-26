@@ -48,7 +48,7 @@ if(WIN32)
 endif()
 
 if(UNIX)
-  target_link_libraries(${PROJECT_NAME} dap_core dap_io magic dap_json-c)
+  target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json-c)
   target_include_directories(${PROJECT_NAME} PUBLIC ${IPUTILS_INCLUDE_DIRS})
 endif()
 
