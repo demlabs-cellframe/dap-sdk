@@ -40,10 +40,9 @@ dap_list_t *dap_binary_tree_inorder_list(dap_binary_tree_t *a_tree_root) {
         return NULL;
     }
     dap_list_t *l_tmp = NULL;
-
     s_list_construct(l_tmp, a_tree_root);
     dap_list_t *l_list = NULL;
-    if(l_tmp->next == NULL)
+    if(l_tmp && l_tmp->next)
         l_list = l_tmp->next;
     else
         return NULL;
