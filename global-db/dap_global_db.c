@@ -289,7 +289,7 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
         s_context_global_db->context = dap_context_new(DAP_CONTEXT_TYPE_GLOBAL_DB);
         s_context_global_db->context->_inheritor = s_context_global_db;
         if (dap_context_run(s_context_global_db->context, -1, DAP_CONTEXT_POLICY_DEFAULT,
-                            0, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED,
+                            DAP_CONTEXT_PRIORITY_HIGH, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED,
                             s_context_callback_started, s_context_callback_stopped, NULL) != 0) {
             l_rc = -2;
             goto lb_return;
