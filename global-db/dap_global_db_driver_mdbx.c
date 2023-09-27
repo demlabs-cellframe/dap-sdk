@@ -950,8 +950,11 @@ MDBX_val    l_key, l_data;
         l_record->timestamp = a_store_obj->timestamp;
         l_record->value_len = a_store_obj->value_len;
         l_record->flags = a_store_obj->flags;
-        if (!a_store_obj->crc)
-            a_store_obj->crc = dap_store_obj_checksum(a_store_obj);
+        if (!a_store_obj->crc) {
+            DAP_DELETE(l_record);
+            log_it(L_ERROR, "Global DB store object corrupted");
+            return MDBX_EINVAL;
+        }
         l_record->crc = a_store_obj->crc;
         if (!a_store_obj->sign) {
             pthread_mutex_unlock(&l_db_ctx->dbi_mutex);

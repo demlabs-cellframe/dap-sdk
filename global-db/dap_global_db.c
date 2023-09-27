@@ -1370,7 +1370,7 @@ static int s_set_unsafe_with_ts(dap_global_db_context_t *a_global_db_context, co
     l_store_data.value = (uint8_t *)a_value;
     l_store_data.group = (char *)a_group;
     l_store_data.timestamp = a_timestamp;
-    l_store_data.sign = dap_sign_create(a_global_db_context->instance->signing_key, a_key, strlen(a_key), 0);
+    l_store_data.sign = dap_store_obj_sign(&l_store_data, a_global_db_context->instance->signing_key, &l_store_data.crc);
     if (!l_store_data.sign) {
         log_it(L_ERROR, "Can't sign new global DB object group %s key %s", a_group, a_key);
         return -2;

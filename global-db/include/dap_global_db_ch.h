@@ -37,8 +37,10 @@ enum dap_stream_ch_gdb_state {
     DAP_STREAM_CH_GDB_STATE_SYNC_REMOTE
 };
 
-#define DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP   0xC4
-#define DAP_STREAM_CH_GDB_PKT_TYPE_DELETE   0xFE
+enum dap_global_db_cluster_pkt_type {
+    DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP = 0xC4,                   // This is type for epidemic update broadcast btw cluster members
+    DAP_STREAM_CH_GDB_PKT_TYPE_PERIODIC
+};
 
 typedef struct dap_stream_ch_gdb_pkt {
     uint8_t version;

@@ -544,18 +544,20 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             }
             l_record->value_len = a_store_obj->value_len;
             l_record->flags = a_store_obj->flags;
-            if (!a_store_obj->crc)
-                a_store_obj->crc = dap_store_obj_checksum(a_store_obj);
+            if (!a_store_obj->crc) {
+                log_it(L_ERROR, "Global DB store object corrupted");
+                l_ret = -5;
+            }
             l_record->crc = a_store_obj->crc;
             if (!a_store_obj->sign) {
                 log_it(L_ERROR, "Global DB store object unsigned");
-                l_ret = -5;
+                l_ret = -6;
                 goto ret_n_free;
             }
             l_record->sign_len = dap_sign_get_size(a_store_obj->sign);
             if (!a_store_obj->sign_len) {
                 log_it(L_ERROR, "Global DB store object sign corrupted");
-                l_ret = -6;
+                l_ret = -7;
                 goto ret_n_free;
             }
             if (a_store_obj->value_len)                                                 /* Put <value> into the record */
@@ -570,7 +572,7 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_query = sqlite3_mprintf("DROP TABLE IF EXISTS '%s'", l_table_name);
     } else {
         log_it(L_ERROR, "Unknown store_obj type '0x%x'", a_store_obj->type);
-        l_ret = -7;
+        l_ret = -8;
         goto ret_n_free;
     }
     int l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, (byte_t *)l_record, l_record_len);
