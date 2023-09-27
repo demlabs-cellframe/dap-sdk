@@ -205,7 +205,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
 
         l_enc_key_ks->protocol_version = l_protocol_version;
         dap_enc_ks_save_in_storage(l_enc_key_ks);
-        dap_stream_add_node_in_hash_tab(l_node_addr, l_enc_key_ks);
+        dap_stream_add_addr(l_node_addr, l_enc_key_ks);
         DAP_DEL_Z(l_node_addr);
 
         char encrypt_id[DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1];

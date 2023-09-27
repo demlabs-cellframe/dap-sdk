@@ -390,7 +390,7 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket)
  * @param a_stream
  */
 void dap_stream_delete_unsafe(dap_stream_t *a_stream)
-{
+{  
     if(!a_stream) {
         log_it(L_ERROR,"stream delete NULL instance");
         return;
@@ -411,6 +411,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].free_nr, 1);
 #endif
 
+    dap_stream_delete_addr(a_stream->node);
     DAP_DEL_Z(a_stream->buf_fragments);
     DAP_DEL_Z(a_stream->pkt_buf_in);
     DAP_DELETE(a_stream);
@@ -486,7 +487,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg)
                     dap_events_socket_set_writable_unsafe(a_http_client->esocket,true); // Dirty hack, because previous function shouldn't
                     //                                                                    // set write flag off but it does!
 
-                    dap_stream_add_stream_in_hash_tab(l_sid);
+                    dap_stream_add_stream_info(l_sid, l_sid->session->id);
                 }else{
                     log_it(L_ERROR,"Can't open session id %u", l_id);
                     a_http_client->reply_status_code=404;
@@ -697,7 +698,6 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
     a_http_client->_inheritor = NULL; // To prevent double free
     l_stm->esocket = NULL;
     l_stm->esocket_uuid = 0;
-    dap_stream_delete_node_in_hash_tab(l_stm->node);
     dap_stream_delete_unsafe(l_stm);
 }
 
@@ -1025,14 +1025,14 @@ static bool s_callback_server_keepalive(void *a_arg)
 }
 
 /**
- * @brief dap_stream_add_node_in_hash_tab Adding autorized stream to hash table
+ * @brief dap_stream_add_addr Adding autorized stream to hash table
  * @param a_node - autorrized node address
  * @param a_id - pointer use as ID
  * @param a_stream - using stream
  * @param a_protocol_version - client protocol version
  * @return  0 if ok others if not
  */
-int dap_stream_add_node_in_hash_tab(dap_stream_addr_t *a_addr, void *a_id)
+int dap_stream_add_addr(dap_stream_addr_t *a_addr, void *a_id)
 {
     dap_return_val_if_pass(!a_addr, -1);
     authorized_stream_t *l_a_stream = DAP_NEW_Z(authorized_stream_t);
@@ -1049,18 +1049,18 @@ int dap_stream_add_node_in_hash_tab(dap_stream_addr_t *a_addr, void *a_id)
 }
 
 /**
- * @brief dap_stream_change_id_in_hash_table change session id in hash table
+ * @brief dap_stream_change_id change session id in hash table
  * @param a_old - old session value id
  * @param a_new - new session value id
  * @return  0 if ok others if not
  */
-int dap_stream_change_id_in_hash_tab(void *a_old, unsigned long a_new)
+int dap_stream_change_id(void *a_old, uint64_t a_new)
 {
     dap_return_val_if_pass(!a_old, -1);
     authorized_stream_t *l_a_stream = NULL;
     int l_ret = -1;
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_FIND(hh, s_prep_authorized_streams, &a_old, sizeof(l_a_stream->id), l_a_stream);
+    HASH_FIND(hh, s_prep_authorized_streams, &a_old, sizeof(a_old), l_a_stream);
     if (l_a_stream) {
         HASH_DEL(s_prep_authorized_streams, l_a_stream);
         l_a_stream->id.num = a_new;
@@ -1072,17 +1072,17 @@ int dap_stream_change_id_in_hash_tab(void *a_old, unsigned long a_new)
 }
 
 /**
- * @brief dap_stream_add_stream_in_hash_tab Adding autorized stream to hash table
+ * @brief dap_stream_add_stream_info Adding autorized stream to hash table
  * @param a_stream - using stream
  * @return  0 if ok others if not
  */
-int dap_stream_add_stream_in_hash_tab(dap_stream_t *a_stream)
+int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id)
 {
     dap_return_val_if_pass(!a_stream, -1);
     authorized_stream_t *l_a_stream = NULL;
     int l_ret = -1;
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_FIND(hh, s_prep_authorized_streams, &(a_stream->session->id), sizeof(l_a_stream->id), l_a_stream);
+    HASH_FIND(hh, s_prep_authorized_streams, &a_id, sizeof(a_id), l_a_stream);
     if (l_a_stream) {
         if(l_a_stream->stream)
             log_it(L_WARNING,"Replacing stream from %p to %p stream in hash tab with", l_a_stream->stream, a_stream);
@@ -1099,12 +1099,12 @@ int dap_stream_add_stream_in_hash_tab(dap_stream_t *a_stream)
 }
 
 /**
- * @brief dap_stream_delete_node_in_hash_tab Delete autorized stream from hash table
+ * @brief dap_stream_delete_addr Delete autorized stream from hash table
  * and memory free
  * @param a_node - autorrized node address
  * @return  0 if ok others if not
  */
-int dap_stream_delete_node_in_hash_tab(dap_stream_addr_t* a_addr)
+int dap_stream_delete_addr(dap_stream_addr_t* a_addr)
 {
     dap_return_val_if_pass(!a_addr, -1);
     authorized_stream_t *l_a_stream = NULL;
@@ -1118,9 +1118,39 @@ int dap_stream_delete_node_in_hash_tab(dap_stream_addr_t* a_addr)
 }
 
 /**
- * @brief dap_stream_delete_node_in_hash_tab find a_stream with current node
+ * @brief dap_stream_delete_prep_addr Delete preparing autorized stream from hash table
+ * and memory free
+ * @param a_num_id - num value session ID
+ * @param a_pointer_id - pointer value session ID
+ * @return  0 if ok others if not
+ */
+int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id)
+{
+    dap_return_val_if_pass(!a_num_id && !a_pointer_id, -1);
+    authorized_stream_t *l_a_stream = NULL;
+    assert(!pthread_rwlock_wrlock(&s_steams_lock));
+        if(a_num_id) {
+            HASH_FIND(hh, s_prep_authorized_streams, &a_num_id, sizeof(a_num_id), l_a_stream);
+            if (l_a_stream) {
+                HASH_DEL(s_prep_authorized_streams, l_a_stream);
+                DAP_DEL_Z(l_a_stream);
+            }
+        }
+        if(a_pointer_id) {
+            HASH_FIND(hh, s_prep_authorized_streams, &a_pointer_id, sizeof(a_pointer_id), l_a_stream);
+            if (l_a_stream) {
+                HASH_DEL(s_prep_authorized_streams, l_a_stream);
+                DAP_DEL_Z(l_a_stream);
+            }
+        }
+    assert(!pthread_rwlock_unlock(&s_steams_lock));
+    return 0;
+}
+
+/**
+ * @brief dap_stream_find_by_addr find a_stream with current node
  * @param a_addr - autorrized node address
- * @param a_addr - pointer to worker
+ * @param a_worker - pointer to worker
  * @return  esocket_uuid if ok 0 if not
  */
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_addr_t a_addr, dap_worker_t **a_worker)

@@ -122,8 +122,9 @@ void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready);
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
 
 // autorization stream block
-int dap_stream_add_node_in_hash_tab(dap_stream_addr_t *a_addr, void *a_id);
-int dap_stream_delete_node_in_hash_tab(dap_stream_addr_t* a_addr);
-int dap_stream_add_stream_in_hash_tab(dap_stream_t *a_stream);
-int dap_stream_change_id_in_hash_tab(void  *a_old, unsigned long a_new);
+int dap_stream_add_addr(dap_stream_addr_t *a_addr, void *a_id);
+int dap_stream_delete_addr(dap_stream_addr_t* a_addr);
+int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
+int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
+int dap_stream_change_id(void  *a_old, unsigned long a_new);
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_addr_t a_addr, dap_worker_t **a_worker);
