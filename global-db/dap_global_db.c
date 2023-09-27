@@ -1189,7 +1189,7 @@ dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_conte
                 DAP_DEL_Z(l_cur->key);
                 DAP_DEL_Z(l_cur->value);
                 --*a_objs_count;
-                if (l_cur_i != *a_objs_count - 1) {
+                if (l_cur_i != *a_objs_count) {
                     memmove(l_cur, l_cur + 1, (*a_objs_count - l_cur_i) * sizeof(dap_store_obj_t));
                 }
                 l_ret = DAP_REALLOC(l_ret, *a_objs_count * sizeof(dap_store_obj_t));
