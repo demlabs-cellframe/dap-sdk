@@ -143,6 +143,10 @@ static char s_last_error[LAST_ERROR_MAX]    = {'\0'},
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
 
+#define STR_LOG_BUF_MAX                       1000
+
+// Try some non-blocking file i/o...
+#ifdef DAP_LOG_BUFFERIZED
 #if DAP_LOG_USE_SPINLOCK
     static dap_spinlock_t log_spinlock;
 #else
@@ -151,10 +155,9 @@ static FILE *s_log_file = NULL;
 static pthread_cond_t s_log_cond = PTHREAD_COND_INITIALIZER;
 static volatile int s_log_count = 0;
 
+
 static pthread_t s_log_thread = 0;
 static void  *s_log_thread_proc(void *arg);
-
-#define STR_LOG_BUF_MAX                       1000
 
 typedef struct log_str_t {
     char str[STR_LOG_BUF_MAX];
@@ -163,13 +166,17 @@ typedef struct log_str_t {
 } log_str_t;
 
 static log_str_t *s_log_buffer = NULL;
+
+#endif
+
 static char* s_appname = NULL;
 
-DAP_STATIC_INLINE void s_update_log_time(char *a_datetime_str) {
+DAP_STATIC_INLINE int s_update_log_time(char *a_datetime_str) {
     time_t t = time(NULL);
     struct tm tmptime;
     if(localtime_r(&t, &tmptime))
-        strftime(a_datetime_str, 32, "[%x-%X]", &tmptime);
+        return strftime(a_datetime_str, 32, "[%x-%X]", &tmptime);
+    return 0;
 }
 
 /**
@@ -241,10 +248,13 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
             fprintf( stderr, "Can't open log file %s \n", a_log_file_path );
             return -1;   //switch off show log in cosole if file not open
         }
+        setbuf(s_log_file, NULL);
         dap_stpcpy(s_log_dir_path,  a_log_dirpath);
         dap_stpcpy(s_log_file_path, a_log_file_path);
     }
+#ifdef DAP_LOG_BUFFERIZED
     pthread_create( &s_log_thread, NULL, s_log_thread_proc, NULL );
+#endif
     return 0;
 }
 
@@ -267,7 +277,9 @@ int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename
         }
         //dap_stpcpy(s_log_file_path, a_log_filename);
     }
+#ifdef DAP_LOG_BUFFERIZED
     pthread_create( &s_log_thread, NULL, s_log_thread_proc, NULL );
+#endif
     return 0;
 }
 
@@ -277,11 +289,13 @@ int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename
  * @brief dap_common_deinit Deinitialise
  */
 void dap_common_deinit( ) {
+#ifdef DAP_LOG_BUFFERIZED
     pthread_mutex_lock(&s_log_mutex);
     s_log_term_signal = true;
     pthread_cond_signal(&s_log_cond);
     pthread_mutex_unlock(&s_log_mutex);
     pthread_join(s_log_thread, NULL);
+#endif
     if (s_log_file)
         fclose(s_log_file);
 }
@@ -292,6 +306,8 @@ void dap_common_deinit( ) {
  * @param arg
  * @return
  */
+
+#ifdef DAP_LOG_BUFFERIZED
 static void *s_log_thread_proc(void *arg) {
     (void) arg;
     for ( ; !s_log_term_signal; ) {
@@ -329,6 +345,7 @@ static void *s_log_thread_proc(void *arg) {
     }
     return NULL;
 }
+#endif
 
 /**
  * @brief _log_it
@@ -339,6 +356,7 @@ static void *s_log_thread_proc(void *arg) {
 void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
         return;
+#ifdef DAP_LOG_BUFFERIZED
     log_str_t *l_log_string = DAP_NEW_Z(log_str_t);
     if (!l_log_string) {
         return;
@@ -358,14 +376,39 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
     offset = (l_offset < offset2) ? offset + l_offset : offset;
     offset2 = (l_offset < offset2) ? offset2 - offset : 0;
     va_end( va );
-    char *dummy = (offset2 == 0) ? memcpy(&l_log_string->str[sizeof(l_log_string->str) - 6], "...\n\0", 5)
+    volatile char *dummy = (offset2 == 0) ? memcpy(&l_log_string->str[sizeof(l_log_string->str) - 6], "...\n\0", 5)
         : memcpy(&l_log_string->str[offset], "\n", 1);
-    UNUSED(dummy);
     pthread_mutex_lock(&s_log_mutex);
     DL_APPEND(s_log_buffer, l_log_string);
     ++s_log_count;
     pthread_cond_signal(&s_log_cond);
     pthread_mutex_unlock(&s_log_mutex);
+#else
+    char log_str[STR_LOG_BUF_MAX] = { '\0' };
+    size_t offset = 0;
+    memcpy(log_str, s_ansi_seq_color[a_ll], s_ansi_seq_color_len[a_ll]);
+    offset = s_ansi_seq_color_len[a_ll] + s_update_log_time(log_str + s_ansi_seq_color_len[a_ll]);
+    offset += func_name
+            ? snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s][%s:%d] ", s_log_level_tag[a_ll], a_log_tag, func_name, line_num)
+            : snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
+    va_list va;
+    va_start(va, a_fmt);
+    if (offset < STR_LOG_BUF_MAX) {
+        size_t l_offset = vsnprintf(log_str + offset, STR_LOG_BUF_MAX - offset, a_fmt, va);
+        offset += l_offset;
+    }
+    va_end(va);
+    char *pos = offset < STR_LOG_BUF_MAX
+            ? memcpy(&log_str[offset--], "\n", 1) + 1
+            : memcpy(&log_str[STR_LOG_BUF_MAX - 5], "...\n\0", 5) + 5;
+    offset = pos - log_str;
+    if (s_log_file) {
+        fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
+        fwrite(log_str, offset, 1, stdout);
+        fflush(stdout);
+    }
+
+#endif
 }
 
 
@@ -584,11 +627,7 @@ static int s_check_and_fill_buffer_log(char **m, struct tm *a_tm_st, char *a_tmp
  */
 char *dap_log_get_item(time_t a_start_time, int a_limit)
 {
-#if 0
-    UNUSED(a_start_time);
-    UNUSED(a_limit);
-#endif
-
+#ifdef DAP_LOG_BUFFERIZED
 	log_str_t *elem, *tmp;
 	elem = tmp = NULL;
 	char *l_buf = DAP_CALLOC(STR_LOG_BUF_MAX, a_limit);
@@ -634,6 +673,9 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
 	DAP_FREE(l_line);
 
     return l_buf;
+#else
+    return NULL;
+#endif
 }
 
 /**

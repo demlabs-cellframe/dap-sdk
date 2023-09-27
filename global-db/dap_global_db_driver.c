@@ -227,13 +227,19 @@ dap_store_obj_t *l_store_obj_cur;
     if (a_store_count > 1 && s_drv_callback.transaction_start)
         s_drv_callback.transaction_start();
 
-    if(s_drv_callback.apply_store_obj)
+    if(s_drv_callback.apply_store_obj) {
         for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
+            if ((l_store_obj_cur->type == DAP_DB$K_OPTYPE_ADD) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
+                log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i, a_store_count);
+                l_ret = -666;
+                break;
+            }
             if ( 1 == (l_ret = s_drv_callback.apply_store_obj(l_store_obj_cur)) )
                 log_it(L_INFO, "[%p] Item is missing (may be already deleted) %s/%s", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key);
             else if (l_ret < 0)
                 log_it(L_ERROR, "[%p] Can't write item %s/%s (code %d)", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key, l_ret);
         }
+    }
 
     if(a_store_count > 1 && s_drv_callback.transaction_end)
         s_drv_callback.transaction_end();
