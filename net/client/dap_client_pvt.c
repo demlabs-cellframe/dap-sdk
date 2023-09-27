@@ -1168,6 +1168,10 @@ static void s_stream_es_callback_connected(dap_events_socket_t * a_es)
 {
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
+    if (!l_client_pvt) {
+        log_it(L_ERROR, "Invalid client!");
+        return;
+    }
     s_stream_connected(l_client_pvt);
 }
 

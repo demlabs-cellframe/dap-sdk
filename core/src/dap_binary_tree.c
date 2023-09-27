@@ -26,11 +26,11 @@
 
 
 
-static void s_list_construct(dap_list_t *a_list, dap_binary_tree_t *a_elm)
+static void s_list_construct(dap_list_t **a_list, dap_binary_tree_t *a_elm)
 {
     if (a_elm != NULL) {
         s_list_construct(a_list, a_elm->left);
-        dap_list_append(a_list, a_elm->data);
+        *a_list = dap_list_append(*a_list, a_elm->data);
         s_list_construct(a_list, a_elm->right);
     }
 }
@@ -39,11 +39,13 @@ dap_list_t *dap_binary_tree_inorder_list(dap_binary_tree_t *a_tree_root) {
     if (!a_tree_root) {
         return NULL;
     }
-    dap_list_t *l_tmp = NULL;
-    s_list_construct(l_tmp, a_tree_root);
+    /*dap_list_t *l_tmp = NULL;
+    s_list_construct(&l_tmp, a_tree_root);
     dap_list_t *l_list = l_tmp->next;
     l_list->prev = NULL;
-    dap_list_free(l_tmp);
+    dap_list_free(l_tmp);*/
+    dap_list_t *l_list = NULL;
+    s_list_construct(&l_list, a_tree_root);
     return l_list;
 }
 
@@ -61,42 +63,29 @@ static dap_binary_tree_t *s_tree_search(dap_binary_tree_t *a_elm, dap_binary_tre
 void *dap_binary_tree_search(dap_binary_tree_t *a_tree_root, dap_binary_tree_key_t a_key)
 {
     dap_binary_tree_t *l_res = s_tree_search(a_tree_root, a_key);
-    if (l_res) {
-        return l_res->data;
-    }
-    return NULL;
+    return l_res ? l_res->data : NULL;
 }
 
 static dap_binary_tree_t *s_tree_minimum(dap_binary_tree_t *a_elm)
 {
-  if (a_elm->left == NULL)
-     return a_elm;
-  return s_tree_minimum(a_elm->left);
+  return !a_elm->left ? a_elm : s_tree_minimum(a_elm->left);
 }
 
 void *dap_binary_tree_minimum(dap_binary_tree_t *a_tree_root)
 {
     dap_binary_tree_t *l_res = s_tree_minimum(a_tree_root);
-    if (l_res) {
-        return l_res->data;
-    }
-    return NULL;
+    return l_res ? l_res->data : NULL;
 }
 
 static dap_binary_tree_t *s_tree_maximum(dap_binary_tree_t *a_elm)
 {
-  if (a_elm->right == NULL)
-     return a_elm;
-  return s_tree_maximum(a_elm->right);
+  return !a_elm->right ? a_elm : s_tree_maximum(a_elm->right);
 }
 
 void *dap_binary_tree_maximum(dap_binary_tree_t *a_tree_root)
 {
     dap_binary_tree_t *l_res = s_tree_maximum(a_tree_root);
-    if (l_res) {
-        return l_res->data;
-    }
-    return NULL;
+    return l_res ? l_res->data : NULL;
 }
 
 static dap_binary_tree_t *s_tree_insert(dap_binary_tree_t *a_elm, dap_binary_tree_key_t a_key, void *a_data)
