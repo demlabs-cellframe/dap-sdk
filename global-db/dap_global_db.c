@@ -562,12 +562,6 @@ dap_store_obj_t *dap_global_db_get_raw_unsafe(UNUSED_ARG dap_global_db_context_t
     dap_store_obj_t *l_res = dap_global_db_driver_read(a_group, a_key, &l_count_records);
     if (l_count_records > 1)
         log_it(L_WARNING, "Get more than one global DB object by one key is unexpected");
-    if (!dap_global_db_isalnum_group_key(l_res)) {
-        log_it(L_CRITICAL, "Delete broken object");
-        dap_global_db_del_sync(l_res->group, l_res->key);
-        dap_store_obj_free_one(l_res);
-        l_res = NULL;
-    }
     return l_res;
 }
 
@@ -906,12 +900,6 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
 dap_store_obj_t *dap_global_db_get_last_raw_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context, const char *a_group)
 {
     dap_store_obj_t *l_ret = dap_global_db_driver_read_last(a_group);
-    if (!dap_global_db_isalnum_group_key(l_ret)) {
-        log_it(L_CRITICAL, "Delete broken object");
-        dap_global_db_del_sync(l_ret->group, l_ret->key);
-        dap_store_obj_free_one(l_ret);
-        l_ret = NULL;
-    }
     return l_ret;
 }
 
@@ -2494,7 +2482,7 @@ static void s_check_db_version_callback_set (dap_global_db_context_t * a_global_
     pthread_mutex_unlock(&s_check_db_mutex); //  in calling thread
 }
 
-bool s_global_db_isalnum_group_key(const dap_store_obj_t* a_obj)
+bool dap_global_db_isalnum_group_key(const dap_store_obj_t* a_obj)
 {
     if (!a_obj)
         return true;
@@ -2541,7 +2529,7 @@ dap_global_db_obj_t* s_objs_from_store_objs(const dap_store_obj_t *a_store_objs,
         goto mem_clear;
     }
     for(size_t i = 0; i < a_values_count; i++){
-        if (!s_global_db_isalnum_group_key(a_store_objs + i)) {
+        if (!dap_global_db_isalnum_group_key(a_store_objs + i)) {
             log_it(L_ERROR, "Delete broken object");
             //dap_global_db_del_sync(l_store_objs[i].group, l_store_objs[i].key);
             continue;
