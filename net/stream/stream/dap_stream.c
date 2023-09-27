@@ -72,6 +72,7 @@ typedef struct authorized_stream {
 } authorized_stream_t;
 
 static authorized_stream_t *s_authorized_streams = NULL;
+static authorized_stream_t *s_prep_authorized_streams = NULL;
 static pthread_rwlock_t     s_steams_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *l_pkt, size_t l_pkt_size);
@@ -1043,7 +1044,7 @@ int dap_stream_add_node_in_hash_tab(dap_stream_addr_t *a_addr, void *a_id)
     l_a_stream->id.pointer = a_id;
 
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-        HASH_ADD(hh, s_authorized_streams, id, sizeof(l_a_stream->id), l_a_stream);
+        HASH_ADD(hh, s_prep_authorized_streams, id, sizeof(l_a_stream->id), l_a_stream);
     assert(!pthread_rwlock_unlock(&s_steams_lock));
 }
 
@@ -1059,11 +1060,11 @@ int dap_stream_change_id_in_hash_tab(void *a_old, unsigned long a_new)
     authorized_stream_t *l_a_stream = NULL;
     int l_ret = -1;
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_FIND(hh, s_authorized_streams, &a_old, sizeof(l_a_stream->id), l_a_stream);
+    HASH_FIND(hh, s_prep_authorized_streams, &a_old, sizeof(l_a_stream->id), l_a_stream);
     if (l_a_stream) {
-        HASH_DEL(s_authorized_streams, l_a_stream);
+        HASH_DEL(s_prep_authorized_streams, l_a_stream);
         l_a_stream->id.num = a_new;
-        HASH_ADD(hh, s_authorized_streams, id, sizeof(l_a_stream->id), l_a_stream);
+        HASH_ADD(hh, s_prep_authorized_streams, id, sizeof(l_a_stream->id), l_a_stream);
         l_ret = 0;
     }
     assert(!pthread_rwlock_unlock(&s_steams_lock));
@@ -1078,10 +1079,10 @@ int dap_stream_change_id_in_hash_tab(void *a_old, unsigned long a_new)
 int dap_stream_add_stream_in_hash_tab(dap_stream_t *a_stream)
 {
     dap_return_val_if_pass(!a_stream, -1);
-    authorized_stream_t *l_a_stream = NULL, *l_a_stream_tmp = NULL;
+    authorized_stream_t *l_a_stream = NULL;
     int l_ret = -1;
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_FIND(hh, s_authorized_streams, &(a_stream->session->id), sizeof(l_a_stream->id), l_a_stream);
+    HASH_FIND(hh, s_prep_authorized_streams, &(a_stream->session->id), sizeof(l_a_stream->id), l_a_stream);
     if (l_a_stream) {
         if(l_a_stream->stream)
             log_it(L_WARNING,"Replacing stream from %p to %p stream in hash tab with", l_a_stream->stream, a_stream);
@@ -1089,7 +1090,7 @@ int dap_stream_add_stream_in_hash_tab(dap_stream_t *a_stream)
         l_a_stream->esocket_uuid = a_stream->esocket_uuid;
         l_a_stream->stream_worker = a_stream->stream_worker;
         a_stream->node = &l_a_stream->node;
-        HASH_DEL(s_authorized_streams, l_a_stream);
+        HASH_DEL(s_prep_authorized_streams, l_a_stream);
         HASH_ADD(hh, s_authorized_streams, node, sizeof(l_a_stream->node), l_a_stream);
         l_ret = 0;
     }
@@ -1122,7 +1123,7 @@ int dap_stream_delete_node_in_hash_tab(dap_stream_addr_t* a_addr)
  * @param a_addr - pointer to worker
  * @return  esocket_uuid if ok 0 if not
  */
-dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_addr_t a_addr, dap_worker_t ** a_worker)
+dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_addr_t a_addr, dap_worker_t **a_worker)
 {
     dap_return_val_if_pass(!a_worker, 0);
     authorized_stream_t *l_a_stream = NULL;

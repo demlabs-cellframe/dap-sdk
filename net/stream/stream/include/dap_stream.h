@@ -126,4 +126,4 @@ int dap_stream_add_node_in_hash_tab(dap_stream_addr_t *a_addr, void *a_id);
 int dap_stream_delete_node_in_hash_tab(dap_stream_addr_t* a_addr);
 int dap_stream_add_stream_in_hash_tab(dap_stream_t *a_stream);
 int dap_stream_change_id_in_hash_tab(void  *a_old, unsigned long a_new);
-dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_addr_t a_addr, dap_worker_t ** a_worker);
+dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_addr_t a_addr, dap_worker_t **a_worker);
