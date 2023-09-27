@@ -142,7 +142,7 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
         dap_stream_delete_unsafe(a_client_pvt->stream);
         a_client_pvt->stream = NULL;
         a_client_pvt->stream_es = NULL;
-        a_client_pvt->stream_id[0] = 0;
+        a_client_pvt->stream_id = 0;
         a_client_pvt->stream_key = NULL;
     }
 
@@ -419,7 +419,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     size_t l_request_size;
 
                     l_request_size = snprintf(l_request, sizeof(l_request), "%d",  DAP_CLIENT_PROTOCOL_VERSION);
-
+ 
                     debug_if(s_debug_more, L_DEBUG, "STREAM_CTL request size %zu", l_request_size);
 
                     char *l_suburl;
@@ -430,7 +430,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     if(l_least_common_dap_protocol < 23){
                         l_suburl = dap_strdup_printf("stream_ctl,channels=%s",
                                                      a_client_pvt->client->active_channels);
-                    }else{
+                    } else {
                         l_suburl = dap_strdup_printf("channels=%s,enc_type=%d,enc_key_size=%zu,enc_headers=%d",
                                                      a_client_pvt->client->active_channels, a_client_pvt->session_key_type,
                                                      a_client_pvt->session_key_block_size, 0);
@@ -581,7 +581,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         dap_stream_ch_new(a_client_pvt->stream, (uint8_t)a_client_pvt->client->active_channels[i]);
 
                     char l_full_path[2048];
-                    snprintf(l_full_path, sizeof(l_full_path) - 1, "%s/globaldb?session_id=%s", DAP_UPLINK_PATH_STREAM,
+                    snprintf(l_full_path, sizeof(l_full_path) - 1, "%s/globaldb?session_id=%u", DAP_UPLINK_PATH_STREAM,
                                                 dap_client_get_stream_id(a_client_pvt->client));
 
                     dap_events_socket_write_f_unsafe( a_client_pvt->stream_es, "GET /%s HTTP/1.1\r\n"
@@ -598,6 +598,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->reconnect_attempts = 0;
 
                     a_client_pvt->stage_status = STAGE_STATUS_DONE;
+                    dap_stream_add_stream_in_hash_tab(a_client_pvt->stream);
                     s_stage_status_after(a_client_pvt);
 
                 } break;
@@ -1004,7 +1005,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
         uint8_t *l_pub_key_data = dap_enc_key_serialize_pub_key(l_key, &l_pub_key_data_size);
         dap_chain_hash_fast_t l_hash;
         if(l_pub_key_data_size > 0 && dap_hash_fast(l_pub_key_data, l_pub_key_data_size, &l_hash) == 1) {
-            printf("!!!!!!!!!!!%04X::%04X::%04X::%04X\n",
+            log_it(L_INFO, "ENC_INIT_RESPONCE to node %04X::%04X::%04X::%04X\n",
                     (uint16_t) *(uint16_t*) (l_hash.raw),
                     (uint16_t) *(uint16_t*) (l_hash.raw + 2),
                     (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 4),
@@ -1033,6 +1034,14 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             log_it(L_WARNING, "ENC: initialized encryption but current stage is %s (%s)",
                     dap_client_get_stage_str(a_client), dap_client_get_stage_status_str(a_client));
         }
+        dap_stream_addr_t *l_node_addr = DAP_NEW_Z(dap_stream_addr_t);
+        l_node_addr->addr.words[3] = (uint16_t) *(uint16_t*) (l_hash.raw);
+        l_node_addr->addr.words[2] = (uint16_t) *(uint16_t*) (l_hash.raw + 2);
+        l_node_addr->addr.words[1] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 4);
+        l_node_addr->addr.words[0] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 2);
+        l_node_addr->uplink = true;
+        dap_stream_add_node_in_hash_tab(l_node_addr, l_client_pvt->session_key);
+        DAP_DEL_Z(l_node_addr);
     }
     if (l_client_pvt->last_error == ERROR_NO_ERROR)
         l_client_pvt->stage_status = STAGE_STATUS_DONE;
@@ -1095,7 +1104,6 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
         s_stage_status_after(l_client_pvt);
     } else {
         int l_arg_count;
-        char l_stream_id[26] = { 0 };
         char *l_stream_key = DAP_NEW_Z_SIZE(char, 4096 * 3);
         if (!l_stream_key) {
             log_it(L_CRITICAL, "Memory allocation error");
@@ -1105,9 +1113,10 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
         uint32_t l_remote_protocol_version;
         dap_enc_key_type_t l_enc_type = l_client_pvt->session_key_type;
         int l_enc_headers = 0;
+        uint32_t l_stream_id_int = 0;
 
-        l_arg_count = sscanf(l_response_str, "%25s %4096s %u %d %d"
-                , l_stream_id, l_stream_key, &l_remote_protocol_version, &l_enc_type, &l_enc_headers);
+        l_arg_count = sscanf(l_response_str, "%u %4096s %u %d %d"
+                , &l_stream_id_int, l_stream_key, &l_remote_protocol_version, &l_enc_type, &l_enc_headers);
         if(l_arg_count < 2) {
             log_it(L_WARNING, "STREAM_CTL Need at least 2 arguments in reply (got %d)", l_arg_count);
             l_client_pvt->last_error = ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT;
@@ -1122,17 +1131,16 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
                 log_it(L_WARNING, "No uplink protocol version, use default version %d"
                         , l_client_pvt->uplink_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT);
 
-            if(strlen(l_stream_id) < 13) {
+            if(l_stream_id_int) {
                 //log_it(L_DEBUG, "Stream server id %s, stream key length(base64 encoded) %u"
                 //       ,l_stream_id,strlen(l_stream_key) );
-                log_it(L_DEBUG, "Stream server id %s", l_stream_id);
+                log_it(L_DEBUG, "Stream server id %u", l_stream_id_int);
 
                 // Delete old key if present
                 if(l_client_pvt->stream_key)
                     dap_enc_key_delete(l_client_pvt->stream_key);
 
-                strncpy(l_client_pvt->stream_id, (char *)l_stream_id, sizeof(l_client_pvt->stream_id) -1 );
-                l_client_pvt->stream_id[sizeof(l_client_pvt->stream_id) - 1] = '\0';
+                l_client_pvt->stream_id = l_stream_id_int;
                 l_client_pvt->stream_key =
                         dap_enc_key_new_generate(l_enc_type, l_stream_key, strlen(l_stream_key), NULL, 0,
                                 32);
@@ -1147,6 +1155,7 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
                             dap_client_get_stage_str(a_client), dap_client_get_stage_status_str(a_client));
 
                 }
+                dap_stream_change_id_in_hash_tab(l_client_pvt->session_key, l_client_pvt->stream->session->id);
             } else {
                 log_it(L_WARNING, "Wrong stream id response");
                 l_client_pvt->last_error = ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT;

@@ -610,7 +610,7 @@ dap_stream_ch_t * dap_client_get_stream_ch_unsafe(dap_client_t * a_client, uint8
  * @param a_client
  * @return
  */
-const char * dap_client_get_stream_id(dap_client_t * a_client)
+uint32_t dap_client_get_stream_id(dap_client_t * a_client)
 {
     if(!(a_client || !DAP_CLIENT_PVT(a_client)))
         return NULL;
