@@ -222,12 +222,7 @@ static struct sync_obj_data_callback *s_global_db_obj_data_callback_new()
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
-<<<<<<< HEAD
-    l_callback->get_objs.objs = NULL;
-    l_callback->get_objs.objs_count = 0;
-    pthread_cond_init(&l_callback->hdr.cond, NULL);
-    clock_gettime(CLOCK_REALTIME, &l_callback->hdr.timer_timeout);
-=======
+
     pthread_condattr_t attr;
     pthread_condattr_init(&attr);
 #ifndef DAP_OS_DARWIN
@@ -235,7 +230,8 @@ static struct sync_obj_data_callback *s_global_db_obj_data_callback_new()
 #endif
     pthread_cond_init(&l_callback->hdr.cond, &attr);
     clock_gettime(CLOCK_MONOTONIC, &l_callback->hdr.timer_timeout);
->>>>>>> hotfix-9516
+    l_callback->get_objs.objs = NULL;
+    l_callback->get_objs.objs_count = 0;
     l_callback->hdr.timer_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
     l_callback->uid = dap_uuid_generate_uint64();
     pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
@@ -1006,43 +1002,10 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
     size_t l_values_count = 0;
     dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values",
-                                                   a_group, l_values_count);
-<<<<<<< HEAD
+                                                    a_group, l_values_count);
     dap_global_db_obj_t *l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
     if (l_values_count > 1)
         qsort(l_objs, l_values_count, sizeof(dap_global_db_obj_t), s_db_compare_by_ts);
-=======
-    dap_global_db_obj_t *l_objs = NULL;
-    // Form objs from store_objs
-    if (l_store_objs) {
-        if (l_values_count > 1)
-            qsort(l_store_objs, l_values_count, sizeof(dap_store_obj_t), s_db_compare_by_ts);
-        l_objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, sizeof(dap_global_db_obj_t) * l_values_count);
-        if (!l_objs) {
-            goto mem_clear;
-        }
-        for(size_t i = 0; i < l_values_count; i++){
-            if (!dap_global_db_isalnum_group_key(&l_store_objs[i])) {
-                log_it(L_CRITICAL, "Delete broken object");
-                dap_global_db_del_sync(l_store_objs[i].group, l_store_objs[i].key);
-                --l_values_count;
-                --i;
-                continue;
-            }
-            l_objs[i].id = l_store_objs[i].id;
-            l_objs[i].is_pinned = l_store_objs[i].flags & RECORD_PINNED;
-            l_objs[i].key = dap_strdup(l_store_objs[i].key);
-            if (!l_objs[i].key) {
-                goto mem_clear;
-            }
-            l_objs[i].value = DAP_DUP_SIZE(l_store_objs[i].value, l_store_objs[i].value_len);
-            if (!l_objs[i].value && l_store_objs[i].value)
-                goto mem_clear;
-            l_objs[i].value_len = l_store_objs[i].value_len;
-            l_objs[i].timestamp = l_store_objs[i].timestamp;
-        }
-    }
->>>>>>> hotfix-9516
     dap_store_obj_free(l_store_objs, l_values_count);
     if (a_objs_count)
         *a_objs_count = l_values_count;
@@ -1211,36 +1174,11 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 dap_store_obj_t *dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
                                                   const char* a_group, size_t *a_objs_count)
 {
-<<<<<<< HEAD
     dap_return_val_if_pass(!a_global_db_context || !a_group, NULL);
     
     dap_db_iter_t *l_iter = dap_global_db_driver_iter_create(a_group);
     dap_store_obj_t *l_ret = dap_global_db_driver_cond_read(l_iter, a_objs_count, 0);
     dap_global_db_driver_iter_delete(l_iter);
-=======
-    dap_store_obj_t* l_ret = dap_global_db_driver_cond_read(a_group, a_first_id, a_objs_count);
-    if (a_objs_count) {
-        size_t l_cur_i = 0;
-        for (dap_store_obj_t* l_cur = l_ret; l_cur_i < *a_objs_count; ++l_cur, ++l_cur_i) {
-            if (!dap_global_db_isalnum_group_key(l_cur)) {
-                log_it(L_CRITICAL, "Delete broken object");
-                dap_global_db_del_sync(l_cur->group, l_cur->key);
-                DAP_DEL_Z(l_cur->group);
-                DAP_DEL_Z(l_cur->key);
-                DAP_DEL_Z(l_cur->value);
-                if (l_cur_i != *a_objs_count - 1) {
-                    memmove(l_cur, l_cur + 1, (*a_objs_count - l_cur_i) * sizeof(dap_store_obj_t));
-                }
-                --*a_objs_count;
-                l_ret = DAP_REALLOC(l_ret, *a_objs_count * sizeof(dap_store_obj_t));
-                if (!l_ret)
-                    break;
-                --l_cur_i;
-                --l_cur;
-            }
-        }
-    }
->>>>>>> hotfix-9516
     return l_ret;
 }
 
@@ -1311,7 +1249,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
     if (a_msg->values_page_size >= l_total_records || !a_msg->values_page_size) {
         l_store_objs = dap_global_db_get_all_raw_unsafe(s_context_global_db, a_msg->group, &l_values_count);
         if(a_msg->callback_results)
-            l_ret = !a_msg->callback_results(s_context_global_db,
+            l_ret = !a_msg->callback_results_raw(s_context_global_db,
                                 l_store_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
                                 a_msg->group, l_total_records, l_values_count,
                                 l_store_objs, a_msg->callback_arg);
@@ -1323,7 +1261,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
            
                 // Call callback if present
             if(a_msg->callback_results)
-            l_ret = !a_msg->callback_results(s_context_global_db,
+            l_ret = !a_msg->callback_results_raw(s_context_global_db,
                                 l_store_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
                                 a_msg->group, l_total_records, l_values_count,
                                 l_store_objs, a_msg->callback_arg);
@@ -2556,7 +2494,7 @@ static void s_check_db_version_callback_set (dap_global_db_context_t * a_global_
     pthread_mutex_unlock(&s_check_db_mutex); //  in calling thread
 }
 
-bool dap_global_db_isalnum_group_key(dap_store_obj_t* a_obj)
+bool s_global_db_isalnum_group_key(const dap_store_obj_t* a_obj)
 {
     if (!a_obj)
         return true;
@@ -2603,11 +2541,9 @@ dap_global_db_obj_t* s_objs_from_store_objs(const dap_store_obj_t *a_store_objs,
         goto mem_clear;
     }
     for(size_t i = 0; i < a_values_count; i++){
-        if (!dap_global_db_isalnum_group_key(&l_store_objs[i])) {
+        if (!s_global_db_isalnum_group_key(a_store_objs + i)) {
             log_it(L_ERROR, "Delete broken object");
             //dap_global_db_del_sync(l_store_objs[i].group, l_store_objs[i].key);
-            --l_values_count;
-            --i;
             continue;
         }
         l_objs[i].id = a_store_objs[i].id;
@@ -2634,6 +2570,3 @@ dap_global_db_obj_t* s_objs_from_store_objs(const dap_store_obj_t *a_store_objs,
     DAP_DEL_Z(l_objs);
     return NULL;
 }
-=======
-
->>>>>>> hotfix-9516
