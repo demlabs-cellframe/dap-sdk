@@ -60,7 +60,7 @@
 #define LOG_TAG "dap_stream"
 
 typedef struct authorized_stream {
-    dap_stream_node_addr_t node;
+    dap_stream_addr_t node;
     unsigned int session_id;
     dap_stream_t *stream;
     dap_events_socket_uuid_t esocket_uuid;
@@ -1028,24 +1028,24 @@ static bool s_callback_server_keepalive(void *a_arg)
  * @param a_protocol_version - client protocol version
  * @return  0 if ok others if not
  */
-int dap_stream_add_node_in_hash_tab(dap_stream_node_addr_t *a_node, unsigned int a_session_id)
+int dap_stream_add_node_in_hash_tab(dap_stream_addr_t *a_addr, unsigned int a_session_id)
 {
-    dap_return_val_if_pass(!a_node, -1);
+    dap_return_val_if_pass(!a_addr, -1);
     authorized_stream_t *l_a_stream = DAP_NEW_Z(authorized_stream_t);
     if(!l_a_stream) {
         log_it(L_CRITICAL, "Memory allocation error");
         return -1;
     }
-    memcpy(&l_a_stream->node, a_node, sizeof(a_node));
+    memcpy(&l_a_stream->node, a_addr, sizeof(*a_addr));
     l_a_stream->session_id = a_session_id;
-   
+
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_ADD(hh, s_authorized_streams, session_id, sizeof(l_a_stream->session_id), l_a_stream);
+        HASH_ADD(hh, s_authorized_streams, session_id, sizeof(l_a_stream->session_id), l_a_stream);
     assert(!pthread_rwlock_unlock(&s_steams_lock));
 }
 
 /**
- * @brief dap_stream_add_stream_in_hash_tab Adding autorized stream to hash table
+ * @brief dap_stream_change_id_in_hash_table change session id in hash table
  * @param a_old - old session value id
  * @param a_new - new session value id
  * @return  0 if ok others if not
@@ -1101,15 +1101,33 @@ int dap_stream_add_stream_in_hash_tab(dap_stream_t *a_stream)
  * @param a_node - autorrized node address
  * @return  0 if ok others if not
  */
-int dap_stream_delete_node_in_hash_tab(dap_stream_node_addr_t* a_node)
+int dap_stream_delete_node_in_hash_tab(dap_stream_addr_t* a_addr)
 {
-    dap_return_val_if_pass(!a_node, -1);
+    dap_return_val_if_pass(!a_addr, -1);
     authorized_stream_t *l_a_stream = NULL;
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_FIND(hh, s_authorized_streams, a_node, sizeof(*a_node), l_a_stream);
-    dap_return_val_if_pass(!l_a_stream, -1);  // return if not finded
-    HASH_DEL(s_authorized_streams, l_a_stream);
-    DAP_DEL_Z(l_a_stream);
+        HASH_FIND(hh, s_authorized_streams, a_addr, sizeof(*a_addr), l_a_stream);
+        dap_return_val_if_pass(!l_a_stream, -1);  // return if not finded
+        HASH_DEL(s_authorized_streams, l_a_stream);
+        DAP_DEL_Z(l_a_stream);
     assert(!pthread_rwlock_unlock(&s_steams_lock));
     return 0;
+}
+
+/**
+ * @brief dap_stream_delete_node_in_hash_tab find a_stream with current node
+ * @param a_addr - autorrized node address
+ * @param a_addr - pointer to worker
+ * @return  esocket_uuid if ok 0 if not
+ */
+dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_addr_t a_addr, dap_worker_t ** a_worker)
+{
+    dap_return_val_if_pass(!a_worker, 0);
+    authorized_stream_t *l_a_stream = NULL;
+    assert(!pthread_rwlock_wrlock(&s_steams_lock));
+        HASH_FIND(hh, s_authorized_streams, &a_addr, sizeof(a_addr), l_a_stream);
+    assert(!pthread_rwlock_unlock(&s_steams_lock));
+    dap_return_val_if_pass(!l_a_stream, 0);  // return if not finded
+    *a_worker = l_a_stream->stream_worker;
+    return l_a_stream->esocket_uuid;
 }

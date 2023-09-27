@@ -190,7 +190,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                                                l_pkey_exchange_key->priv_key_data_size,
                                                l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE, l_block_key_size);
         
-        dap_stream_node_addr_t *l_node_addr = DAP_NEW_Z(dap_stream_node_addr_t);
+        dap_stream_addr_t *l_node_addr = DAP_NEW_Z(dap_stream_addr_t);
         if (!l_node_addr) {
             log_it(L_CRITICAL, "Memory allocation error");
             *return_code = Http_Status_InternalServerError;
