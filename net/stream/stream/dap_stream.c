@@ -61,7 +61,10 @@
 
 typedef struct authorized_stream {
     dap_stream_addr_t node;
-    unsigned int session_id;
+    union {
+        unsigned long num;
+        void *pointer;
+    } id;
     dap_stream_t *stream;
     dap_events_socket_uuid_t esocket_uuid;
     dap_stream_worker_t *stream_worker;
@@ -1023,12 +1026,12 @@ static bool s_callback_server_keepalive(void *a_arg)
 /**
  * @brief dap_stream_add_node_in_hash_tab Adding autorized stream to hash table
  * @param a_node - autorrized node address
- * @param a_session_id - client session ID
+ * @param a_id - pointer use as ID
  * @param a_stream - using stream
  * @param a_protocol_version - client protocol version
  * @return  0 if ok others if not
  */
-int dap_stream_add_node_in_hash_tab(dap_stream_addr_t *a_addr, unsigned int a_session_id)
+int dap_stream_add_node_in_hash_tab(dap_stream_addr_t *a_addr, void *a_id)
 {
     dap_return_val_if_pass(!a_addr, -1);
     authorized_stream_t *l_a_stream = DAP_NEW_Z(authorized_stream_t);
@@ -1037,10 +1040,10 @@ int dap_stream_add_node_in_hash_tab(dap_stream_addr_t *a_addr, unsigned int a_se
         return -1;
     }
     memcpy(&l_a_stream->node, a_addr, sizeof(*a_addr));
-    l_a_stream->session_id = a_session_id;
+    l_a_stream->id.pointer = a_id;
 
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-        HASH_ADD(hh, s_authorized_streams, session_id, sizeof(l_a_stream->session_id), l_a_stream);
+        HASH_ADD(hh, s_authorized_streams, id, sizeof(l_a_stream->id), l_a_stream);
     assert(!pthread_rwlock_unlock(&s_steams_lock));
 }
 
@@ -1050,17 +1053,17 @@ int dap_stream_add_node_in_hash_tab(dap_stream_addr_t *a_addr, unsigned int a_se
  * @param a_new - new session value id
  * @return  0 if ok others if not
  */
-int dap_stream_change_id_in_hash_tab(unsigned int a_old, unsigned int a_new)
+int dap_stream_change_id_in_hash_tab(void *a_old, unsigned long a_new)
 {
-    dap_return_val_if_pass(a_old == a_new, -1);
-    authorized_stream_t *l_a_stream = NULL, *l_a_stream_tmp = NULL;
+    dap_return_val_if_pass(!a_old, -1);
+    authorized_stream_t *l_a_stream = NULL;
     int l_ret = -1;
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_FIND(hh, s_authorized_streams, &a_old, sizeof(a_old), l_a_stream);
+    HASH_FIND(hh, s_authorized_streams, &a_old, sizeof(l_a_stream->id), l_a_stream);
     if (l_a_stream) {
         HASH_DEL(s_authorized_streams, l_a_stream);
-        l_a_stream->session_id = a_new;
-        HASH_ADD(hh, s_authorized_streams, session_id, sizeof(l_a_stream->session_id), l_a_stream);
+        l_a_stream->id.num = a_new;
+        HASH_ADD(hh, s_authorized_streams, id, sizeof(l_a_stream->id), l_a_stream);
         l_ret = 0;
     }
     assert(!pthread_rwlock_unlock(&s_steams_lock));
@@ -1069,7 +1072,6 @@ int dap_stream_change_id_in_hash_tab(unsigned int a_old, unsigned int a_new)
 
 /**
  * @brief dap_stream_add_stream_in_hash_tab Adding autorized stream to hash table
- * @param a_session_id - client session ID to look up
  * @param a_stream - using stream
  * @return  0 if ok others if not
  */
@@ -1079,7 +1081,7 @@ int dap_stream_add_stream_in_hash_tab(dap_stream_t *a_stream)
     authorized_stream_t *l_a_stream = NULL, *l_a_stream_tmp = NULL;
     int l_ret = -1;
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_FIND(hh, s_authorized_streams, &a_stream->session->id, sizeof(a_stream->session->id), l_a_stream);
+    HASH_FIND(hh, s_authorized_streams, &(a_stream->session->id), sizeof(l_a_stream->id), l_a_stream);
     if (l_a_stream) {
         if(l_a_stream->stream)
             log_it(L_WARNING,"Replacing stream from %p to %p stream in hash tab with", l_a_stream->stream, a_stream);
