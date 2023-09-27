@@ -1014,6 +1014,7 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values",
                                                    a_group, l_values_count);
     dap_global_db_obj_t *l_objs = NULL;
+    size_t i = 0, j = 0;
     // Form objs from store_objs
     if (l_store_objs) {
         if (l_values_count > 1)
@@ -1022,11 +1023,10 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
         if (!l_objs) {
             goto mem_clear;
         }
-        for(size_t i = 0; i < l_values_count; i++){
-            if (!dap_global_db_isalnum_group_key(&l_store_objs[i])) {
+        for (i = 0, j = 0; j < l_values_count; ++i, ++j){
+            if (!dap_global_db_isalnum_group_key(&l_store_objs[j])) {
                 log_it(L_CRITICAL, "Delete broken object");
-                dap_global_db_del_sync(l_store_objs[i].group, l_store_objs[i].key);
-                --l_values_count;
+                dap_global_db_del_sync(l_store_objs[j].group, l_store_objs[j].key);
                 --i;
                 continue;
             }
@@ -1045,7 +1045,7 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
     }
     dap_store_obj_free(l_store_objs, l_values_count);
     if (a_objs_count)
-        *a_objs_count = l_values_count;
+        *a_objs_count = i;
     return l_objs;
 
 mem_clear:
@@ -1179,7 +1179,7 @@ dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_conte
                                                   const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
 {
     dap_store_obj_t* l_ret = dap_global_db_driver_cond_read(a_group, a_first_id, a_objs_count);
-    if (a_objs_count) {
+    if (a_objs_count && *a_objs_count) {
         size_t l_cur_i = 0;
         for (dap_store_obj_t* l_cur = l_ret; l_cur_i < *a_objs_count; ++l_cur, ++l_cur_i) {
             if (!dap_global_db_isalnum_group_key(l_cur)) {
@@ -1188,10 +1188,10 @@ dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_conte
                 DAP_DEL_Z(l_cur->group);
                 DAP_DEL_Z(l_cur->key);
                 DAP_DEL_Z(l_cur->value);
+                --*a_objs_count;
                 if (l_cur_i != *a_objs_count - 1) {
                     memmove(l_cur, l_cur + 1, (*a_objs_count - l_cur_i) * sizeof(dap_store_obj_t));
                 }
-                --*a_objs_count;
                 l_ret = DAP_REALLOC(l_ret, *a_objs_count * sizeof(dap_store_obj_t));
                 if (!l_ret)
                     break;
