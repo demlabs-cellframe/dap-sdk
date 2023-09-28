@@ -138,16 +138,21 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         /* Verify all signs */
         dap_sign_t *l_sign = NULL;
         size_t l_bias = l_pkey_exchange_size;
-        for(size_t i = 0; i < l_sign_count; ++i) {
+        size_t l_sign_validated_count = 0;
+        for(; l_sign_validated_count < l_sign_count && l_bias < l_decode_len; ++l_sign_validated_count) {
             l_sign = (dap_sign_t *)&alice_msg[l_bias];
-            size_t l_l_sign_size = dap_sign_get_size(l_sign);
-            int l_verify_ret = dap_sign_verify_all(l_sign, l_l_sign_size, alice_msg, l_pkey_exchange_size);
+            int l_verify_ret = dap_sign_verify_all(l_sign, l_decode_len - l_bias, alice_msg, l_pkey_exchange_size);
             if (l_verify_ret) {
                 log_it(L_ERROR, "Can't authorize, sign verification didn't pass (err %d)", l_verify_ret);
                 *return_code = Http_Status_Unauthorized;
                 return;
             }
-            l_bias += l_l_sign_size;
+            l_bias += dap_sign_get_size(l_sign);
+        }
+        if (l_sign_validated_count != l_sign_count) {
+            log_it(L_ERROR, "Can't authorize all %zu signs", l_sign_count);
+            *return_code = Http_Status_Unauthorized;
+            return;
         }
 
         dap_enc_key_t* l_pkey_exchange_key = dap_enc_key_new(l_pkey_exchange_type);
