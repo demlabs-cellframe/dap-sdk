@@ -1117,10 +1117,7 @@ int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t * a_es_input, 
 #elif defined(DAP_EVENTS_CAPS_AIO)
     return dap_events_socket_queue_ptr_send(a_es_input->pipe_out,a_arg);
 #else
-    //void * l_arg = a_arg;
-    //return dap_events_socket_write_unsafe(a_es_input, &a_arg, sizeof(a_arg))
-    //        == sizeof(a_arg) ? 0 : -1;
-    return dap_events_socket_queue_ptr_send(a_es_input->pipe_out,a_arg);
+    return dap_events_socket_write_unsafe(a_es_input, &a_arg, sizeof(a_arg)) == sizeof(a_arg) ? 0 : -1;
 #endif
 }
 
