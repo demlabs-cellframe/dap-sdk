@@ -1183,18 +1183,18 @@ dap_stream_addr_t *dap_stream_get_addr_from_sign(dap_sign_t *a_sign, bool a_upli
     
     dap_return_val_if_fail(l_pub_key_data_size > 0 && dap_hash_fast(l_pub_key_data, l_pub_key_data_size, &l_hash) == 1, NULL);
 
-    dap_stream_addr_t *l_addr = DAP_NEW_Z(dap_stream_addr_t);
-    if (!l_addr) {
+    dap_stream_addr_t *l_ret = DAP_NEW_Z(dap_stream_addr_t);
+    if (!l_ret) {
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
-    l_addr->addr.words[3] = (uint16_t) *(uint16_t*) (l_hash.raw);
-    l_addr->addr.words[2] = (uint16_t) *(uint16_t*) (l_hash.raw + 2);
-    l_addr->addr.words[1] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 4);
-    l_addr->addr.words[0] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 2);
-    l_addr->uplink = a_uplink;
+    l_ret->addr.words[3] = (uint16_t) *(uint16_t*) (l_hash.raw);
+    l_ret->addr.words[2] = (uint16_t) *(uint16_t*) (l_hash.raw + 2);
+    l_ret->addr.words[1] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 4);
+    l_ret->addr.words[0] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 2);
+    l_ret->uplink = a_uplink;
 
     log_it(L_INFO, "Verified stream sign from node %04X::%04X::%04X::%04X\n",
-                l_addr->addr.words[3], l_addr->addr.words[2], l_addr->addr.words[1], l_addr->addr.words[0]);
-    return l_addr;
+                l_ret->addr.words[3], l_ret->addr.words[2], l_ret->addr.words[1], l_ret->addr.words[0]);
+    return l_ret;
 }

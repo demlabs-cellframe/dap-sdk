@@ -56,6 +56,7 @@
 #define LOG_TAG "dap_enc_http"
 
 typedef struct dap_stream_addr dap_stream_addr_t;
+dap_stream_addr_t *dap_stream_get_addr_from_sign(dap_sign_t *a_sign, bool a_uplink);
 
 static dap_enc_acl_callback_t s_acl_callback = NULL;
 
@@ -77,7 +78,8 @@ static void _enc_http_write_reply(struct dap_http_simple *cl_st,
     struct json_object *jobj = json_object_new_object();
     json_object_object_add(jobj, "encrypt_id", json_object_new_string(a_encrypt_id));
     json_object_object_add(jobj, "encrypt_msg", json_object_new_string(a_encrypt_msg));
-    json_object_object_add(jobj, "node_sign", json_object_new_string(a_node_sign));
+    if (a_node_sign)
+        json_object_object_add(jobj, "node_sign", json_object_new_string(a_node_sign));
     json_object_object_add(jobj, "dap_protocol_version", json_object_new_int(DAP_PROTOCOL_VERSION));
     const char* json_str = json_object_to_json_string(jobj);
     dap_http_simple_reply(cl_st, (void*) json_str,
@@ -122,26 +124,30 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         uint8_t alice_msg[cl_st->request_size];
         size_t l_decode_len = dap_enc_base64_decode(cl_st->request, cl_st->request_size, alice_msg, DAP_ENC_DATA_TYPE_B64);
         dap_chain_hash_fast_t l_sign_hash = {0};
-        if (!l_protocol_version && !l_sign_count && l_decode_len > l_pkey_exchange_size + sizeof(dap_sign_hdr_t))
-            l_sign_count = 1;
-
-        if (l_decode_len != l_pkey_exchange_size + l_sign_count * sizeof(dap_sign_t)) {
-            /* No sign inside */
-            log_it(L_WARNING, "Wrong message size, with a valid signs %zu must be = %zu", l_sign_count, l_pkey_exchange_size + l_sign_count * sizeof(dap_sign_t));
-            *return_code = Http_Status_BadRequest;
-            return;
+        if (!l_protocol_version && !l_sign_count) {
+            if (l_decode_len > l_pkey_exchange_size + sizeof(dap_sign_hdr_t)) {
+                l_sign_count = 1;
+            } else if (l_decode_len != l_pkey_exchange_size) {
+                /* No sign inside */
+                log_it(L_WARNING, "Wrong message size, without a valid sign must be = %zu", l_pkey_exchange_size);
+                *return_code = Http_Status_BadRequest;
+                return;
+            }
         }
 
         /* Verify all signs */
         dap_sign_t *l_sign = NULL;
+        size_t l_bias = l_pkey_exchange_size;
         for(size_t i = 0; i < l_sign_count; ++i) {
-            l_sign = (dap_sign_t *)&alice_msg[l_pkey_exchange_size + i * sizeof(dap_sign_t)];
-            int l_verify_ret = dap_sign_verify_all(l_sign, sizeof(dap_sign_t), alice_msg, l_pkey_exchange_size);
+            l_sign = (dap_sign_t *)&alice_msg[l_bias];
+            size_t l_l_sign_size = dap_sign_get_size(l_sign);
+            int l_verify_ret = dap_sign_verify_all(l_sign, l_l_sign_size, alice_msg, l_pkey_exchange_size);
             if (l_verify_ret) {
                 log_it(L_ERROR, "Can't authorize, sign verification didn't pass (err %d)", l_verify_ret);
                 *return_code = Http_Status_Unauthorized;
                 return;
             }
+            l_bias += l_l_sign_size;
         }
 
         dap_enc_key_t* l_pkey_exchange_key = dap_enc_key_new(l_pkey_exchange_type);
