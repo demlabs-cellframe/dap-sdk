@@ -23,6 +23,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 */
 
 #include "dap_global_db_cluster.h"
+#include "dap_global_db_pkt.h"
 #include "dap_strfuncs.h"
 #include "dap_sign.h"
 #include "crc32c_adler/crc32c_adler.h"

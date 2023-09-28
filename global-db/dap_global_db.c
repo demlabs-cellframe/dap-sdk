@@ -219,10 +219,16 @@ static struct sync_obj_data_callback *s_global_db_obj_data_callback_new()
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
+
+    pthread_condattr_t attr;
+    pthread_condattr_init(&attr);
+#ifndef DAP_OS_DARWIN
+    pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+#endif
+    pthread_cond_init(&l_callback->hdr.cond, &attr);
+    clock_gettime(CLOCK_MONOTONIC, &l_callback->hdr.timer_timeout);
     l_callback->get_objs.objs = NULL;
     l_callback->get_objs.objs_count = 0;
-    pthread_cond_init(&l_callback->hdr.cond, NULL);
-    clock_gettime(CLOCK_REALTIME, &l_callback->hdr.timer_timeout);
     l_callback->hdr.timer_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
     l_callback->uid = dap_uuid_generate_uint64();
     pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
@@ -233,6 +239,7 @@ static struct sync_obj_data_callback *s_global_db_obj_data_callback_new()
 static void s_global_db_obj_data_callback_destroy(struct sync_obj_data_callback *a_obj)
 {
     HASH_DEL(s_context_global_db->data_callbacks, a_obj);
+    pthread_cond_destroy(&a_obj->hdr.cond);
     DAP_DELETE(a_obj);
     pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }
@@ -284,7 +291,7 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
         s_context_global_db->context = dap_context_new(DAP_CONTEXT_TYPE_GLOBAL_DB);
         s_context_global_db->context->_inheritor = s_context_global_db;
         if (dap_context_run(s_context_global_db->context, -1, DAP_CONTEXT_POLICY_DEFAULT,
-                            0, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED,
+                            DAP_CONTEXT_PRIORITY_HIGH, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED,
                             s_context_callback_started, s_context_callback_stopped, NULL) != 0) {
             l_rc = -2;
             goto lb_return;
@@ -935,7 +942,8 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
 
 dap_store_obj_t *dap_global_db_get_last_raw_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context, const char *a_group)
 {
-    return dap_global_db_driver_read_last(a_group);
+    dap_store_obj_t *l_ret = dap_global_db_driver_read_last(a_group);
+    return l_ret;
 }
 
 /**
@@ -1025,7 +1033,7 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
     size_t l_values_count = 0;
     dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values",
-                                                   a_group, l_values_count);
+                                                    a_group, l_values_count);
     dap_global_db_obj_t *l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
     if (l_values_count > 1)
         qsort(l_objs, l_values_count, sizeof(dap_global_db_obj_t), s_db_compare_by_ts);
@@ -1362,6 +1370,7 @@ static int s_set_unsafe_with_ts(dap_global_db_context_t *a_global_db_context, co
         log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
         return -1;
     }
+
     dap_store_obj_t l_store_data = { 0 };
     l_store_data.type = DAP_GLOBAL_DB_OPTYPE_ADD;
     l_store_data.key = (char *)a_key ;
@@ -1709,6 +1718,7 @@ static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
             l_store_obj.key =  a_msg->values[i].key;
             l_store_obj.key_len = strlen(a_msg->values[i].key);
             l_store_obj.group = a_msg->group;
+            l_store_obj.group_len = dap_strlen(a_msg->group);
             l_store_obj.value = a_msg->values[i].value;
             l_store_obj.value_len = a_msg->values[i].value_len;
             l_store_obj.timestamp = a_msg->values[i].timestamp;
@@ -2452,6 +2462,34 @@ static void s_check_db_version_callback_set (dap_global_db_context_t * a_global_
     pthread_mutex_unlock(&s_check_db_mutex); //  in calling thread
 }
 
+bool dap_global_db_isalnum_group_key(const dap_store_obj_t* a_obj)
+{
+    if (!a_obj)
+        return true;
+    bool ret = true;
+    for (char *c = (char*)a_obj->key; *c; ++c) {
+        if (!dap_ascii_isprint(*c)) {
+            ret = false;
+            break;
+        }
+    }
+
+    for (char *c = (char*)a_obj->group; *c; ++c) {
+        if (!dap_ascii_isprint(*c)) {
+            ret = false;
+            break;
+        }
+    }
+
+    if (!ret) {
+        char l_ts[128] = { '\0' };
+        dap_gbd_time_to_str_rfc822(l_ts, sizeof(l_ts), a_obj->timestamp);
+        log_it(L_MSG, "[!] Corrupted object %s (decalred len %zu / actual len %zu) : %s (decalred len %zu / actual len %zu), ts %s",
+               a_obj->group, a_obj->group_len, dap_strlen(a_obj->group),
+               a_obj->key, a_obj->key_len, dap_strlen(a_obj->key), l_ts);
+    }
+    return ret;
+}
 /**
  * @brief s_objs_from_store_objs
  * @details convert dap_store_obj_t to dap_global_db_obj_t
@@ -2472,6 +2510,11 @@ dap_global_db_obj_t* s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_
         return NULL;
     }
     for(size_t i = 0; i < a_values_count; i++){
+        if (!dap_global_db_isalnum_group_key(a_store_objs + i)) {
+            log_it(L_ERROR, "Delete broken object");
+            //dap_global_db_del_sync(l_store_objs[i].group, l_store_objs[i].key);
+            continue;
+        }
         l_objs[i].is_pinned = a_store_objs[i].flags & RECORD_PINNED;
         l_objs[i].key = a_store_objs[i].key;
         l_objs[i].value = a_store_objs[i].value;

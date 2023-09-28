@@ -50,23 +50,36 @@ dap_tsd_t * dap_tsd_create(uint16_t a_type, const void * a_data, size_t a_data_s
  * @param a_typeid
  * @return
  */
-dap_tsd_t* dap_tsd_find(byte_t * a_data, size_t a_data_size,uint16_t a_type)
+dap_tsd_t* dap_tsd_find(byte_t *a_data, size_t a_data_size, uint16_t a_type)
 {
     dap_tsd_t * l_ret = NULL;
-    for(size_t l_offset=0; l_offset<a_data_size; ){
-        dap_tsd_t * l_tsd =(dap_tsd_t*) (a_data + l_offset);
+    for (size_t l_offset = 0; l_offset < a_data_size; ) {
+        dap_tsd_t *l_tsd = (dap_tsd_t*)(a_data + l_offset);
         size_t l_tsd_size = dap_tsd_size(l_tsd);
-        if( !l_tsd_size || l_tsd_size +l_offset > a_data_size){
+        if( !l_tsd_size || l_tsd_size + l_offset > a_data_size) {
             break;
         }
-
-        if ( l_tsd->type == a_type ){
+        if ( l_tsd->type == a_type ) {
             l_ret = l_tsd;
             break;
         }
-
-        l_offset+=l_tsd_size;
+        l_offset += l_tsd_size;
     }
     return l_ret;
+}
 
+dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type) {
+    dap_list_t *l_ret = NULL;
+    for (size_t l_offset = 0; l_offset < a_data_size; ) {
+        dap_tsd_t *l_tsd = (dap_tsd_t*)(a_data + l_offset);
+        size_t l_tsd_size = dap_tsd_size(l_tsd);
+        if( !l_tsd_size || l_tsd_size + l_offset > a_data_size) {
+            break;
+        }
+        if ( l_tsd->type == a_type ) {
+            l_ret = dap_list_append(l_ret, l_tsd);
+        }
+        l_offset += l_tsd_size;
+    }
+    return l_ret;
 }
