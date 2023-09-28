@@ -801,12 +801,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     // check the applied object newer that we have stored or erased
     if (a_obj->timestamp > (uint64_t)l_timestamp_del && a_obj->timestamp > (uint64_t)l_timestamp_cur)
         l_apply = true;
-<<<<<<< HEAD
     if ((l_ttl || a_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time)
-=======
-
-    if (((l_ttl || a_obj->type == DAP_DB$K_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time) || l_broken)
->>>>>>> develop
         l_apply = false;
 
     if (!l_apply) {

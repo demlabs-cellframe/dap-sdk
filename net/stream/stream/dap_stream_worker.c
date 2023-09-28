@@ -28,13 +28,6 @@
 
 #define LOG_TAG "dap_stream_worker"
 
-struct proc_thread_stream{
-    dap_proc_thread_t * proc_thread;
-    dap_events_socket_t ** queue_ch_io_input; // Inputs for ch assign queues
-    dap_stream_ch_t * channels; // Client channels assigned on worker. Unsafe list, operate only in worker's context
-    pthread_rwlock_t channels_rwlock;
-};
-
 static void s_ch_io_callback(dap_events_socket_t * a_es, void * a_msg);
 static void s_ch_send_callback(dap_events_socket_t *a_es, void *a_msg);
 
@@ -70,27 +63,6 @@ int dap_stream_worker_init()
             return -7;
     }
     for (uint32_t i = 0; i < l_worker_count; i++){
-        dap_proc_thread_t * l_proc_thread  = dap_proc_thread_get(i);
-        if (!l_proc_thread) {
-            log_it(L_CRITICAL,"Can't init stream proc thread,- proc thread don't exist");
-            return -3;
-        }
-        if (l_proc_thread->_inheritor){
-            log_it(L_CRITICAL,"Can't init stream worker, core worker has already inheritor");
-            return -4;
-        }
-        struct proc_thread_stream * l_thread_stream = DAP_NEW_Z(struct proc_thread_stream);
-        if (!l_thread_stream){
-            log_it(L_CRITICAL, "Memory allocation error");
-            return -7;
-        }
-        l_proc_thread->_inheritor = l_thread_stream;
-        l_thread_stream->queue_ch_io_input = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof (dap_events_socket_t*)*l_worker_count);
-        if (!l_thread_stream->queue_ch_io_input) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_thread_stream);
-            return -7;
-        }
         dap_worker_t *l_worker_inp = dap_events_worker_get(i);
         dap_stream_worker_t *l_stream_worker_inp = (dap_stream_worker_t *)l_worker_inp->_inheritor;
         l_stream_worker_inp->queue_ch_io_input = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * l_worker_count);
@@ -103,8 +75,6 @@ int dap_stream_worker_init()
         for (uint32_t j = 0; j < l_worker_count; j++) {
             dap_worker_t * l_worker = dap_events_worker_get(j);
             dap_stream_worker_t *l_stream_worker = (dap_stream_worker_t*) l_worker->_inheritor;
-            l_thread_stream->queue_ch_io_input[j] = dap_events_socket_queue_ptr_create_input(l_stream_worker->queue_ch_io);
-            dap_proc_thread_assign_esocket_unsafe(l_proc_thread, l_thread_stream->queue_ch_io_input[j]);
             l_stream_worker_inp->queue_ch_io_input[j] = dap_events_socket_queue_ptr_create_input(l_stream_worker->queue_ch_io);
             dap_events_socket_assign_on_worker_mt(l_stream_worker_inp->queue_ch_io_input[j], l_worker_inp);
         }
@@ -180,64 +150,4 @@ ret_n_clear:
         DAP_DELETE(l_msg->data);
     }
     DAP_DELETE(l_msg);
-}
-
-/**
- * @brief dap_proc_thread_stream_ch_write_inter
- * @param a_thread
- * @param a_worker
- * @param a_ch_uuid
- * @param a_type
- * @param a_data
- * @param a_data_size
- * @return
- */
-size_t dap_proc_thread_stream_ch_write_inter(dap_proc_thread_t * a_thread,dap_worker_t * a_worker, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type,
-                                        const void * a_data, size_t a_data_size)
-{
-    struct proc_thread_stream * l_thread_stream = (struct proc_thread_stream *) a_thread->_inheritor;
-    dap_events_socket_t* l_es_input = l_thread_stream->queue_ch_io_input[a_worker->id];
-    size_t l_ret = dap_stream_ch_pkt_write_inter(l_es_input,a_ch_uuid,a_type,a_data,a_data_size);
-    return l_ret;
-}
-
-/**
- * @brief dap_proc_thread_stream_ch_write_f_inter
- * @param a_thread
- * @param a_worker
- * @param a_ch_uuid
- * @param a_type
- * @param a_format
- * @return
- */
-size_t dap_proc_thread_stream_ch_write_f_inter(dap_proc_thread_t * a_thread,dap_worker_t * a_worker,  dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type,
-                                        const char * a_format,...)
-{
-    struct proc_thread_stream * l_thread_stream = (struct proc_thread_stream *) a_thread->_inheritor;
-    va_list ap, ap_copy;
-    va_start(ap,a_format);
-    va_copy(ap_copy, ap);
-    int l_data_size = vsnprintf(NULL,0,a_format,ap);
-    va_end(ap);
-    if (l_data_size <0 ){
-        log_it(L_ERROR,"Can't write out formatted data '%s' with values",a_format);
-        va_end(ap_copy);
-        return 0;
-    }
-    l_data_size++; // include trailing 0
-    dap_events_socket_t * l_es_io_input = l_thread_stream->queue_ch_io_input[a_worker->id];
-    char * l_data = DAP_NEW_SIZE(char,l_data_size);
-    if (!l_data){
-        va_end(ap_copy);
-        return -1;
-    }
-    l_data_size = vsprintf(l_data,a_format,ap_copy);
-    va_end(ap_copy);
-
-    size_t l_ret = dap_stream_ch_pkt_write_inter(l_es_io_input,a_ch_uuid,a_type, l_data, l_data_size);
-    DAP_DELETE(l_data);
-
-    l_es_io_input->flags |= DAP_SOCK_READY_TO_WRITE;
-    dap_context_poll_update(l_es_io_input);
-    return l_ret;
 }

@@ -332,16 +332,6 @@ void dap_timerfd_reset_mt(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uui
     dap_worker_exec_callback_on(a_worker, s_timerfd_reset_worker_callback, l_uuid);
 }
 
-
-void dap_timerfd_reset_proc_thread_mt(dap_proc_thread_t *a_proc_thread, dap_events_socket_uuid_t *a_uuid)
-{
-    if (!a_proc_thread || !a_uuid)
-        return;
-    dap_events_socket_uuid_t *l_uuid = DAP_DUP(a_uuid);
-    dap_proc_queue_add_callback_mt(a_proc_thread, s_timerfd_reset_proc_thread_callback,
-                                   l_uuid, DAP_PROC_PRI_NORMAL);
-}
-
 /**
  * @brief dap_timerfd_stop
  * @param a_tfd

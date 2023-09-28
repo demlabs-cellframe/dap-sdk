@@ -232,7 +232,20 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
 void dap_context_stop_n_kill(dap_context_t * a_context)
 {
     pthread_t l_thread_id = a_context->thread_id;
-    dap_events_socket_event_signal(a_context->event_exit, 1);
+    switch (a_context->type) {
+    case DAP_CONTEXT_TYPE_WORKER:
+        dap_events_socket_event_signal(DAP_WORKER(a_context)->event_exit, 1);
+        break;
+    case DAP_CONTEXT_TYPE_PROC_THREAD: {
+        dap_proc_thread_t *l_thread = DAP_PROC_THREAD(a_context);
+        pthread_mutex_lock(&l_thread->queue_lock);
+        a_context->signal_exit = true;
+        pthread_cond_signal(&l_thread->queue_event);
+        pthread_mutex_unlock(&l_thread->queue_lock);
+    }
+    default:
+        break;
+    }
     pthread_join(l_thread_id, NULL);
 }
 
@@ -305,41 +318,48 @@ static void *s_context_thread(void *a_arg)
 #endif // DAP_OS_WINDOWS
 
     if(s_thread_init(l_context)!=0){
-        // Can't initialize
-        if(l_msg->flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED ) {
-            pthread_mutex_lock(&l_context->started_mutex);
-            l_context->started = true;
-            pthread_cond_broadcast(&l_context->started_cond);
-            pthread_mutex_unlock(&l_context->started_mutex);
-        }
-        return NULL;
+
     }
     // Now we're running and initalized for sure, so we can assign flags to the current context
     l_context->running_flags = l_msg->flags;
 
-    // Add pre-defined queues and events
-    dap_context_add(l_context, l_context->event_exit);
+    if (l_context->type = DAP_CONTEXT_TYPE_WORKER)
+        // Add pre-defined queues and events
+        dap_context_add(l_context, l_context->event_exit);
 
     l_context->is_running = true;
     // Started callback execution
-    l_msg->callback_started(l_context, l_msg->callback_arg);
-
-    // Initialization success
-    if(l_msg->flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED ){
+    if (l_msg->callback_started &&
+            l_msg->callback_started(l_context, l_msg->callback_arg))
+        // Can't initialize
+        l_context->signal_exit = true;
+    if (l_msg->flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED) {
         pthread_mutex_lock(&l_context->started_mutex); // If we're too fast and calling thread haven't switched on cond_wait line
         l_context->started = true;
         pthread_cond_broadcast(&l_context->started_cond);
         pthread_mutex_unlock(&l_context->started_mutex);
     }
-
-    s_thread_loop(l_context);
-
+    if (l_context->signal_exit)
+        return NULL;
+    // Initialization success
+    switch (l_context->type) {
+    case DAP_CONTEXT_TYPE_WORKER:
+        dap_worker_thread_loop(l_context);
+        break;
+    case DAP_CONTEXT_TYPE_PROC_THREAD:
+        dap_proc_thread_loop(l_context);
+    default:
+        break;
+    }
     // Stopped callback execution
-    l_msg->callback_stopped(l_context, l_msg->callback_arg);
+    if (l_msg->callback_stopped)
+        l_msg->callback_stopped(l_context, l_msg->callback_arg);
 
     log_it(L_NOTICE,"Exiting context #%u", l_context->id);
-    dap_context_remove(l_context->event_exit);
-    dap_events_socket_delete_unsafe(l_context->event_exit, false);  // check ticket 9030
+    if (l_context->type = DAP_CONTEXT_TYPE_WORKER) {
+        dap_context_remove(l_context->event_exit);
+        dap_events_socket_delete_unsafe(l_context->event_exit, false);  // check ticket 9030
+    }
 
     // Removes from the list
     pthread_rwlock_wrlock(&s_contexts_rwlock);

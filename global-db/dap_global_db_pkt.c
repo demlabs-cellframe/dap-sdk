@@ -124,7 +124,7 @@ bool dap_global_db_pkt_check_sign_crc(dap_global_db_pkt_t *a_packet)
     dap_return_val_if_fail(a_packet, false);
     dap_sign_t *l_sign = (dap_sign_t *)(a_packet->data + a_packet->group_len + a_packet->key_len + a_packet->value_len);
     if (dap_sign_verify(l_sign, (byte_t *)a_packet + sizeof(uint32_t),
-                            dap_global_db_pkt_get_size(a_packet) - sizeof(uint32_t)))
+                            dap_global_db_pkt_get_size(a_packet) - sizeof(uint32_t)) == 1)
         return false;
     uint32_t l_checksum = crc32c(CRC32C_INIT, (byte_t *)l_packet + sizeof(uint32_t),
                                         dap_global_db_pkt_get_size(l_packet) - sizeof(uint32_t));

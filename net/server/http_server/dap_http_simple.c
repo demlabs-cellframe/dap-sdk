@@ -243,10 +243,10 @@ static void s_esocket_worker_write_callback(dap_worker_t *a_worker, void *a_arg)
     dap_http_client_write(l_es, NULL);
 }
 
-inline static void s_write_data_to_socket(dap_proc_thread_t *a_thread, dap_http_simple_t *a_simple)
+inline static void s_write_data_to_socket(UNUSED_ARG dap_proc_thread_t *a_thread, dap_http_simple_t *a_simple)
 {
     a_simple->http_client->state_write = DAP_HTTP_CLIENT_STATE_START;
-    dap_proc_thread_worker_exec_callback_inter(a_thread, a_simple->worker->id, s_esocket_worker_write_callback, a_simple);
+    dap_worker_exec_callback_on(dap_events_worker_get(a_simple->worker->id), s_esocket_worker_write_callback, a_simple);
 }
 
 static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg) {
@@ -424,7 +424,7 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void *
         log_it( L_DEBUG, "No data section, execution proc callback" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         a_http_client->esocket->_inheritor = NULL;
-        dap_proc_queue_add_callback_inter(l_http_simple->worker->proc_queue_input, s_proc_queue_callback, l_http_simple);
+        dap_proc_thread_add_callback_pri(l_http_simple->worker->proc_queue_input, s_proc_queue_callback, l_http_simple, DAP_QUEUE_MSG_PRIORITY_HIGH);
 
     }
 }
@@ -467,7 +467,7 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
         log_it( L_INFO,"Data for http_simple_request collected" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         a_http_client->esocket->_inheritor = NULL;
-        dap_proc_queue_add_callback_inter( l_http_simple->worker->proc_queue_input , s_proc_queue_callback, l_http_simple);
+        dap_proc_thread_add_callback( l_http_simple->worker->proc_queue_input , s_proc_queue_callback, l_http_simple);
     }
 }
 

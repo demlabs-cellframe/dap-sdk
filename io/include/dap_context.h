@@ -24,18 +24,18 @@
 
 #include <pthread.h>
 #include <uthash.h>
-#include "dap_events_socket.h"
-#include "dap_proc_queue.h"
 #include "dap_common.h"
+#include "dap_events_socket.h"
+#include "dap_proc_thread.h"
+#include "dap_worker.h"
 
-typedef struct dap_worker dap_worker_t;
-typedef struct dap_proc_thread dap_proc_thread_t;
 typedef struct dap_context dap_context_t;
-typedef void (*dap_context_callback_t) (dap_context_t *,void * ); // Callback for specific client operations
-typedef struct dap_context_msg_callback_{
-    dap_context_t * context;
+ // Callback for specific client operations like custom init/deinit
+typedef int (*dap_context_callback_t)(dap_context_t *a_context, void *a_arg);
+typedef struct dap_context_msg_callback {
+    dap_context_t *context;
     dap_context_callback_t callback;
-    void * arg;
+    void *arg;
 } dap_context_msg_callback_t;
 
 typedef struct dap_context_msg_run{
@@ -49,61 +49,22 @@ typedef struct dap_context_msg_run{
     void * callback_arg;
 } dap_context_msg_run_t;
 
+enum dap_context_type {
+    DAP_CONTEXT_TYPE_WORKER,
+    DAP_CONTEXT_TYPE_PROC_THREAD
+};
+
 typedef struct dap_context {
     uint32_t id;  // Context ID
+    int cpu_id; // CPU id (if assigned)      
+    pthread_t thread_id; // Thread id
 
-    int cpu_id; // CPU id (if assigned)
-    // Compatibility fields, in future should be replaced with _inheritor
-    dap_proc_thread_t * proc_thread; // If the context belongs to proc_thread
-    dap_worker_t * worker; // If the context belongs to worker
     int type; // Context type
 
     // pthread-related fields
     pthread_cond_t started_cond; // Fires when thread started and pre-loop callback executes
     pthread_mutex_t started_mutex; // related with started_cond
     bool started;
-    pthread_t thread_id; // Thread id
-
-
-    /// Platform-specific fields
-#if defined DAP_EVENTS_CAPS_MSMQ
-    HANDLE msmq_events[MAXIMUM_WAIT_OBJECTS];
-#endif
-#ifdef DAP_EVENTS_CAPS_AIO
-    dap_slist_t garbage_list;
-#endif
-#if defined DAP_EVENTS_CAPS_EPOLL
-    EPOLL_HANDLE epoll_fd;
-    struct epoll_event epoll_events[ DAP_EVENTS_SOCKET_MAX];
-#elif defined ( DAP_EVENTS_CAPS_POLL)
-    int poll_fd;
-    struct pollfd * poll;
-    dap_events_socket_t ** poll_esocket;
-    atomic_uint poll_count;
-    size_t poll_count_max;
-    bool poll_compress; // Some of fd's became NULL so arrays need to be reassigned
-#elif defined (DAP_EVENTS_CAPS_KQUEUE)
-    int kqueue_fd;
-    struct kevent * kqueue_events_selected;
-    struct kevent * kqueue_events;
-    size_t kqueue_events_count;
-
-    int kqueue_events_count_max;
-    int kqueue_events_selected_count_max;
-#else
-#error "Not defined worker for your platform"
-#endif
-    ssize_t esocket_current; // Currently selected esocket
-    ssize_t esockets_selected; // Currently selected number of esockets
-
-    atomic_uint event_sockets_count;
-    dap_events_socket_t *esockets; // Hashmap of event sockets
-
-    dap_events_socket_t * event_exit;
-
-    dap_events_socket_t **queue_es; // Queues
-    dap_events_socket_t ***queue_es_input; // Input for others queues
-    size_t queues_es_count;
 
     // Signal to exit
     bool signal_exit;
@@ -112,9 +73,8 @@ typedef struct dap_context {
     uint32_t running_flags; // Flags passed for _run function
 
     // Inheritor
-    void * _inheritor;
+    void * _inheritor;  // dap_proc_thread_t, dap_worker_t
 } dap_context_t;
-
 
 // Waiting for started before exit _run function/
 // ATTENTION: callback_started() executed just before exit a _run function

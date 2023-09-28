@@ -131,7 +131,87 @@ static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb)
 
 static void s_process_gossip_msg(dap_global_db_context_t *a_global_db_context, void *a_arg)
 {
+    dap_nanotime_t l_timestamp_cur = 0;
+    bool l_match_mask = false, l_is_pinned_cur = false;
+    uint64_t l_ttl = 0;
+    for (dap_list_t *it = a_global_db_context->instance->notify_groups; it; it = it->next) {
+        dap_global_db_notify_item_t *l_item = it->data;
+        if (!dap_fnmatch(l_item->group_mask, a_obj->group, 0)) {
+            debug_if(g_dap_global_db_debug_more, L_DEBUG, "Group %s match mask %s.", a_obj->group, l_item->group_mask);
+            l_match_mask = true;
+            l_ttl = l_item->ttl;
+            break;
+        }
+    }
+    if (!l_match_mask) {
+        log_it(L_WARNING, "An entry in the group %s was rejected because the group name did not match any of the masks.", a_obj->group);
+        DAP_DEL_Z(a_arg);
+        return -4;
+    }
 
+    if (g_dap_global_db_debug_more) {
+        char l_ts_str[64] = { '\0' };
+        dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
+        log_it(L_DEBUG, "Unpacked log history: type='%c' (0x%02hhX) group=\"%s\" key=\"%s\""
+                " timestamp=\"%s\" value_len=%" DAP_UINT64_FORMAT_U,
+                (char)a_obj->type, (char)a_obj->type, a_obj->group,
+                a_obj->key, l_ts_str, a_obj->value_len);
+    }
+
+    bool l_broken = !dap_global_db_isalnum_group_key(a_obj);
+
+    dap_store_obj_t *l_read_obj = NULL;
+    if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
+        if (l_broken) {
+            log_it(L_NOTICE, "Found this object in DB, delete it");
+            dap_global_db_del(a_obj->group, a_obj->key, NULL, NULL);
+            DAP_DEL_Z(a_arg);
+            return -1;
+        } else {
+            if ((l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL))) {
+                l_timestamp_cur = l_read_obj->timestamp;
+                if (l_read_obj->flags & RECORD_PINNED)
+                    l_is_pinned_cur = true;
+                else {
+                    dap_store_obj_free_one(l_read_obj);
+                    l_read_obj = NULL;
+                }
+            }
+        }
+    }
+
+    // Deleted time
+    dap_nanotime_t l_timestamp_del = dap_global_db_get_del_ts_unsafe(a_global_db_context, a_obj->group, a_obj->key);
+    // Limit time
+    uint32_t l_time_store_lim_hours = l_ttl ? l_ttl : a_global_db_context->instance->store_time_limit;
+    uint64_t l_limit_time = l_time_store_lim_hours ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
+    //check whether to apply the received data into the database
+    bool l_apply = false;
+    // check the applied object newer that we have stored or erased
+    if (a_obj->timestamp > (uint64_t)l_timestamp_del && a_obj->timestamp > (uint64_t)l_timestamp_cur)
+        l_apply = true;
+    if ((l_ttl || a_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time)
+        l_apply = false;
+
+    if (!l_apply) {
+        if (g_dap_global_db_debug_more) {
+            if (a_obj->timestamp <= (uint64_t)l_timestamp_cur)
+                log_it(L_WARNING, "New data not applied, because newly object exists");
+            if (a_obj->timestamp <= (uint64_t)l_timestamp_del)
+                log_it(L_WARNING, "New data not applied, because newly object is deleted");
+            if (a_obj->timestamp <= l_limit_time)
+                log_it(L_WARNING, "New data not applied, because object is too old");
+            if (l_broken) {
+                log_it(L_WARNING, "New data not applied, because object is corrupted");
+            }
+        }
+        dap_store_obj_free(l_read_obj, (int)l_is_pinned_cur);
+        DAP_DEL_Z(a_arg);
+        return -2;
+    }
+    // Do not overwrite pinned records
+
+    DAP_DELETE(a_arg);
 }
 
 static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
@@ -174,7 +254,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             struct sync_request *l_sync_request = dap_stream_ch_chain_create_sync_request(l_chain_pkt, a_ch);
             l_ch_chain->stats_request_gdb_processed = 0;
             l_ch_chain->request_hdr = l_chain_pkt->hdr;
-            dap_proc_queue_add_callback_inter(a_ch->stream_worker->worker->proc_queue_input, s_sync_update_gdb_proc_callback, l_sync_request);
+            dap_proc_thread_add_callback(a_ch->stream_worker->worker->proc_queue_input, s_sync_update_gdb_proc_callback, l_sync_request);
         } break;
 
         // Response with metadata organized in TSD
@@ -286,7 +366,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                 if (l_chain_pkt_data_size == sizeof(dap_stream_ch_chain_sync_request_t))
                     l_ch_chain->request = *(dap_stream_ch_chain_sync_request_t*)l_chain_pkt->data;
                 struct sync_request *l_sync_request = dap_stream_ch_chain_create_sync_request(l_chain_pkt, a_ch);
-                dap_proc_queue_add_callback_inter(a_ch->stream_worker->worker->proc_queue_input, s_sync_out_gdb_proc_callback, l_sync_request);
+                dap_proc_thread_add_callback(a_ch->stream_worker->worker->proc_queue_input, s_sync_out_gdb_proc_callback, l_sync_request);
             }else{
                 log_it(L_WARNING, "DAP_STREAM_CH_CHAIN_PKT_TYPE_SYNC_GLOBAL_DB: Wrong chain packet size %zd when expected %zd", l_chain_pkt_data_size, sizeof(l_ch_chain->request));
                 s_stream_ch_write_error_unsafe(a_ch, l_chain_pkt->hdr.net_id.uint64,
@@ -319,7 +399,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                 dap_chain_pkt_item_t *l_pkt_item = &l_sync_request->pkt;
                 l_pkt_item->pkt_data = DAP_DUP_SIZE(l_chain_pkt->data, l_chain_pkt_data_size);
                 l_pkt_item->pkt_data_size = l_chain_pkt_data_size;
-                dap_proc_queue_add_callback_inter(a_ch->stream_worker->worker->proc_queue_input, s_gdb_in_pkt_proc_callback, l_sync_request);
+                dap_proc_thread_add_callback(a_ch->stream_worker->worker->proc_queue_input, s_gdb_in_pkt_proc_callback, l_sync_request);
             } else {
                 log_it(L_WARNING, "Packet with GLOBAL_DB atom has zero body size");
                 s_stream_ch_write_error_unsafe(a_ch, l_chain_pkt->hdr.net_id.uint64,
