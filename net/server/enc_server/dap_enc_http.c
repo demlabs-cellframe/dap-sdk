@@ -53,8 +53,9 @@
 #include "dap_cert.h"
 #include "dap_strfuncs.h"
 
-
 #define LOG_TAG "dap_enc_http"
+
+typedef struct dap_stream_addr dap_stream_addr_t;
 
 static dap_enc_acl_callback_t s_acl_callback = NULL;
 
@@ -112,43 +113,35 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         size_t l_pkey_exchange_size=MSRLN_PKA_BYTES;
         size_t l_block_key_size=32;
         int l_protocol_version = 0;
-        sscanf(cl_st->http_client->in_query_string, "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu,protococ_version=%d",
-                                      &l_enc_block_type,&l_pkey_exchange_type,&l_pkey_exchange_size,&l_block_key_size, &l_protocol_version);
+        size_t l_sign_count = 0;
+        sscanf(cl_st->http_client->in_query_string, "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu,protocol_version=%d,sign_count=%zu",
+                                      &l_enc_block_type,&l_pkey_exchange_type,&l_pkey_exchange_size,&l_block_key_size, &l_protocol_version, &l_sign_count);
 
         log_it(L_DEBUG, "Stream encryption: %s\t public key exchange: %s",dap_enc_get_type_name(l_enc_block_type),
                dap_enc_get_type_name(l_pkey_exchange_type));
         uint8_t alice_msg[cl_st->request_size];
         size_t l_decode_len = dap_enc_base64_decode(cl_st->request, cl_st->request_size, alice_msg, DAP_ENC_DATA_TYPE_B64);
-        dap_chain_hash_fast_t l_sign_hash = { };
-        dap_chain_hash_fast_t l_hash = {0};
-        if (l_decode_len > l_pkey_exchange_size + sizeof(dap_sign_hdr_t)) {
-            /* Message contains pubkey and serialized sign */
-            dap_sign_t *l_sign = (dap_sign_t *)&alice_msg[l_pkey_exchange_size];
-            size_t l_sign_size = l_decode_len - l_pkey_exchange_size;
-            int l_verify_ret = dap_sign_verify_all(l_sign, l_sign_size, alice_msg, l_pkey_exchange_size);
-            
-            dap_enc_key_t *l_key = dap_sign_to_enc_key(l_sign);
-            size_t l_pub_key_data_size = 0;
-            uint8_t *l_pub_key_data = NULL;
-            l_pub_key_data = dap_enc_key_serialize_pub_key(l_key, &l_pub_key_data_size);
-            if(l_pub_key_data_size > 0 && dap_hash_fast(l_pub_key_data, l_pub_key_data_size, &l_hash) == 1) {
-                log_it(L_INFO, "Income connection from node %04X::%04X::%04X::%04X\n",
-                        (uint16_t) *(uint16_t*) (l_hash.raw),
-                        (uint16_t) *(uint16_t*) (l_hash.raw + 2),
-                        (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 4),
-                        (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 2));
-            }
+        dap_chain_hash_fast_t l_sign_hash = {0};
+        if (!l_protocol_version && !l_sign_count && l_decode_len > l_pkey_exchange_size + sizeof(dap_sign_hdr_t))
+            l_sign_count = 1;
 
+        if (l_decode_len != l_pkey_exchange_size + l_sign_count * sizeof(dap_sign_t)) {
+            /* No sign inside */
+            log_it(L_WARNING, "Wrong message size, with a valid signs %zu must be = %zu", l_sign_count, l_pkey_exchange_size + l_sign_count * sizeof(dap_sign_t));
+            *return_code = Http_Status_BadRequest;
+            return;
+        }
+
+        /* Verify all signs */
+        dap_sign_t *l_sign = NULL;
+        for(size_t i = 0; i < l_sign_count; ++i) {
+            l_sign = (dap_sign_t *)&alice_msg[l_pkey_exchange_size + i * sizeof(dap_sign_t)];
+            int l_verify_ret = dap_sign_verify_all(l_sign, sizeof(dap_sign_t), alice_msg, l_pkey_exchange_size);
             if (l_verify_ret) {
                 log_it(L_ERROR, "Can't authorize, sign verification didn't pass (err %d)", l_verify_ret);
                 *return_code = Http_Status_Unauthorized;
                 return;
             }
-        } else if (l_decode_len != l_pkey_exchange_size) {
-            /* No sign inside */
-            log_it(L_WARNING, "Wrong message size, without a valid sign must be = %zu", l_pkey_exchange_size);
-            *return_code = Http_Status_BadRequest;
-            return;
         }
 
         dap_enc_key_t* l_pkey_exchange_key = dap_enc_key_new(l_pkey_exchange_type);
@@ -169,51 +162,48 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         } else {
             log_it(L_DEBUG, "Callback for ACL is not set, pass anauthorized");
         }
-        
-        dap_cert_t *l_node_cert = dap_cert_find_by_name("node-addr");
-        dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, 0);
-        size_t l_node_sign_size = dap_sign_get_size(l_node_sign);
 
         char encrypt_msg[DAP_ENC_BASE64_ENCODE_SIZE(l_pkey_exchange_key->pub_key_data_size) + 1];
-        char node_sign[DAP_ENC_BASE64_ENCODE_SIZE(l_node_sign_size) + 1];
 
         memset(encrypt_msg, 0, sizeof(encrypt_msg));
-        memset(node_sign, 0, sizeof(node_sign));
         memcpy(encrypt_msg, l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size);
-        memcpy(node_sign, l_node_sign, l_node_sign_size);
         
         size_t encrypt_msg_size = dap_enc_base64_encode(l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, encrypt_msg, DAP_ENC_DATA_TYPE_B64);
-        l_node_sign_size = dap_enc_base64_encode(l_node_sign, l_node_sign_size, node_sign, DAP_ENC_DATA_TYPE_B64);
-
+        
         l_enc_key_ks->key = dap_enc_key_new_generate(l_enc_block_type,
                                                l_pkey_exchange_key->priv_key_data, // shared key
                                                l_pkey_exchange_key->priv_key_data_size,
                                                l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE, l_block_key_size);
         
-        dap_stream_addr_t *l_node_addr = DAP_NEW_Z(dap_stream_addr_t);
-        if (!l_node_addr) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            *return_code = Http_Status_InternalServerError;
-            return;
-        }
-
-        l_node_addr->addr.words[3] = (uint16_t) *(uint16_t*) (l_hash.raw);
-        l_node_addr->addr.words[2] = (uint16_t) *(uint16_t*) (l_hash.raw + 2);
-        l_node_addr->addr.words[1] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 4);
-        l_node_addr->addr.words[0] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 2);
-        l_node_addr->uplink = false;
 
         l_enc_key_ks->protocol_version = l_protocol_version;
         dap_enc_ks_save_in_storage(l_enc_key_ks);
-        dap_stream_add_addr(l_node_addr, l_enc_key_ks);
-        DAP_DEL_Z(l_node_addr);
 
         char encrypt_id[DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1];
 
         size_t encrypt_id_size = dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), encrypt_id, DAP_ENC_DATA_TYPE_B64);
         encrypt_id[encrypt_id_size] = '\0';
 
-        _enc_http_write_reply(cl_st, encrypt_id, encrypt_msg, node_sign);
+        // save verified node addr and generate own sign
+        char* l_node_sign = NULL;
+        if (l_protocol_version && l_sign_count) {
+            dap_stream_addr_t *l_node_addr = dap_stream_get_addr_from_sign(l_sign, false);
+            dap_stream_add_addr(l_node_addr, l_enc_key_ks);
+            DAP_DEL_Z(l_node_addr);
+
+            dap_cert_t *l_node_cert = dap_cert_find_by_name("node-addr");
+            dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, 0);
+            size_t l_node_sign_size = dap_sign_get_size(l_node_sign);
+
+            char node_sign[DAP_ENC_BASE64_ENCODE_SIZE(l_node_sign_size) + 1];
+            memset(node_sign, 0, sizeof(node_sign));
+            memcpy(node_sign, l_node_sign, l_node_sign_size);
+            l_node_sign_size = dap_enc_base64_encode(l_node_sign, l_node_sign_size, node_sign, DAP_ENC_DATA_TYPE_B64);
+            node_sign[l_node_sign_size] = '\0';
+            l_node_sign = node_sign;
+        }
+
+        _enc_http_write_reply(cl_st, encrypt_id, encrypt_msg, l_node_sign);
 
         dap_enc_key_delete(l_pkey_exchange_key);
 

@@ -31,6 +31,7 @@
 #include "dap_config.h"
 #include "dap_stream_session.h"
 #include "dap_timerfd.h"
+#include "dap_sign.h"
 
 /*  #define CHUNK_SIZE_MAX (3 * 1024)
     #define STREAM_BUF_SIZE_MAX DAP_STREAM_PKT_SIZE_MAX
@@ -46,14 +47,14 @@ typedef enum dap_stream_sign_group {
     BASE_NODE_SIGN,
 } dap_stream_sign_group_t;
 
-// typedef struct dap_stream_node_addr {
-//     union {
-//         uint64_t uint64;
-//         uint16_t words[sizeof(uint64_t)/2];
-//         uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
-//     } addr;
-//     bool uplink;
-// } dap_stream_node_addr_t;
+typedef struct dap_stream_addr {
+    union {
+        uint64_t uint64;
+        uint16_t words[sizeof(uint64_t)/2];
+        uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
+    } addr;
+    bool uplink;
+} dap_stream_addr_t;
 
 typedef struct dap_stream {
     int id;
@@ -128,3 +129,4 @@ int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 int dap_stream_change_id(void  *a_old, unsigned long a_new);
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_addr_t a_addr, dap_worker_t **a_worker);
+dap_stream_addr_t *dap_stream_get_addr_from_sign(dap_sign_t *a_sign, bool a_uplink);
