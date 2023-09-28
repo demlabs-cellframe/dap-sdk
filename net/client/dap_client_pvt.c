@@ -372,10 +372,12 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     dap_cert_t *l_cert = a_client_pvt->client->auth_cert;
                     dap_sign_t *l_sign = NULL;
                     size_t l_sign_size = 0;
+                    size_t l_sign_count = 1;
 
                     if (l_cert) {
                         l_sign = dap_sign_create(l_cert->enc_key, a_client_pvt->session_key_open->pub_key_data, l_key_size, 0);
                         l_sign_size = dap_sign_get_size(l_sign);
+                        l_sign_count++;
                     }
                     // add node sign
                     dap_cert_t *l_node_cert = dap_cert_find_by_name("node-addr");
@@ -402,9 +404,9 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
 
                     char l_enc_init_url[1024] = { '\0' };
                     snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
-                                 "/gd4y5yh78w42aaaghaaaqqq" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd",
+                                 "/gd4y5yh78w42aaaghaaaqqq" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd,protocol_version=%d,sign_count=%zu",
                                  a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, l_key_size,
-                                 a_client_pvt->session_key_block_size );
+                                 a_client_pvt->session_key_block_size,  DAP_CLIENT_PROTOCOL_VERSION, l_sign_count);
                     int l_res = dap_client_pvt_request(a_client_pvt, l_enc_init_url,
                             l_data_str, l_data_str_enc_size, s_enc_init_response, s_enc_init_error);
                     // bad request
@@ -999,22 +1001,6 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
         }
         DAP_DEL_Z(l_bob_message_b64);
 
-        uint8_t l_node_sign[strlen(l_node_sign_b64) + 1];
-        size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_node_sign, DAP_ENC_DATA_TYPE_B64);
-        dap_sign_t *l_sign = (dap_sign_t *)l_node_sign;
-        int q = dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size);
-        dap_enc_key_t *l_key = dap_sign_to_enc_key(l_sign);
-        size_t l_pub_key_data_size = 0;
-        uint8_t *l_pub_key_data = dap_enc_key_serialize_pub_key(l_key, &l_pub_key_data_size);
-        dap_chain_hash_fast_t l_hash;
-        if(l_pub_key_data_size > 0 && dap_hash_fast(l_pub_key_data, l_pub_key_data_size, &l_hash) == 1) {
-            log_it(L_INFO, "ENC_INIT_RESPONCE to node %04X::%04X::%04X::%04X\n",
-                    (uint16_t) *(uint16_t*) (l_hash.raw),
-                    (uint16_t) *(uint16_t*) (l_hash.raw + 2),
-                    (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 4),
-                    (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 2));
-        }
-
         if (l_client_pvt->last_error == ERROR_NO_ERROR) {
             size_t l_rc = l_client_pvt->session_key_open->gen_alice_shared_key(
                     l_client_pvt->session_key_open, l_client_pvt->session_key_open->priv_key_data,
@@ -1024,7 +1010,6 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
                 l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
             }
         }
-        DAP_DEL_Z(l_bob_message);
         if (l_client_pvt->last_error == ERROR_NO_ERROR) {
             l_client_pvt->session_key = dap_enc_key_new_generate(l_client_pvt->session_key_type,
                     l_client_pvt->session_key_open->priv_key_data, // shared key
@@ -1037,14 +1022,18 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             log_it(L_WARNING, "ENC: initialized encryption but current stage is %s (%s)",
                     dap_client_get_stage_str(a_client), dap_client_get_stage_status_str(a_client));
         }
-        dap_stream_addr_t *l_node_addr = DAP_NEW_Z(dap_stream_addr_t);
-        l_node_addr->addr.words[3] = (uint16_t) *(uint16_t*) (l_hash.raw);
-        l_node_addr->addr.words[2] = (uint16_t) *(uint16_t*) (l_hash.raw + 2);
-        l_node_addr->addr.words[1] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 4);
-        l_node_addr->addr.words[0] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 2);
-        l_node_addr->uplink = true;
-        dap_stream_add_addr(l_node_addr, l_client_pvt->session_key);
-        DAP_DEL_Z(l_node_addr);
+        if (l_client_pvt->last_error == ERROR_NO_ERROR && l_node_sign_b64) {
+            uint8_t l_node_sign[strlen(l_node_sign_b64) + 1];
+            size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_node_sign, DAP_ENC_DATA_TYPE_B64);
+            dap_sign_t *l_sign = (dap_sign_t *)l_node_sign;
+            if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
+                dap_stream_addr_t *l_node_addr = dap_stream_get_addr_from_sign(l_sign, true);
+                dap_stream_add_addr(l_node_addr, l_client_pvt->session_key);
+                DAP_DEL_Z(l_node_addr);
+            }
+            DAP_DEL_Z(l_node_sign_b64);
+        }
+        DAP_DEL_Z(l_bob_message);
     }
     if (l_client_pvt->last_error == ERROR_NO_ERROR)
         l_client_pvt->stage_status = STAGE_STATUS_DONE;

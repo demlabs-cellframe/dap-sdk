@@ -65,7 +65,6 @@ typedef struct authorized_stream {
         unsigned long num;
         void *pointer;
     } id;
-    dap_stream_t *stream;
     dap_events_socket_uuid_t esocket_uuid;
     dap_stream_worker_t *stream_worker;
     UT_hash_handle hh;
@@ -1084,9 +1083,7 @@ int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id)
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
     HASH_FIND(hh, s_prep_authorized_streams, &a_id, sizeof(a_id), l_a_stream);
     if (l_a_stream) {
-        if(l_a_stream->stream)
-            log_it(L_WARNING,"Replacing stream from %p to %p stream in hash tab with", l_a_stream->stream, a_stream);
-        l_a_stream->stream = a_stream;
+            // log_it(L_WARNING,"Replacing stream from %p to %p stream in hash tab with", l_a_stream->stream, a_stream);
         l_a_stream->esocket_uuid = a_stream->esocket_uuid;
         l_a_stream->stream_worker = a_stream->stream_worker;
         a_stream->node = &l_a_stream->node;
