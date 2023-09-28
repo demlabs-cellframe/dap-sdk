@@ -226,7 +226,7 @@ static struct sync_obj_data_callback *s_global_db_obj_data_callback_new()
     pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
 #endif
     pthread_cond_init(&l_callback->hdr.cond, &attr);
-    clock_gettime(CLOCK_MONOTONIC, &l_callback->hdr.timer_timeout);
+    clock_gettime(CLOCK_REALTIME, &l_callback->hdr.timer_timeout);
     l_callback->hdr.timer_timeout.tv_sec += DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT;
     l_callback->uid = dap_uuid_generate_uint64();
     pthread_mutex_lock(&s_context_global_db->data_callbacks_mutex);
