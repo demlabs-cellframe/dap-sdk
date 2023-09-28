@@ -196,7 +196,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         encrypt_id[encrypt_id_size] = '\0';
 
         // save verified node addr and generate own sign
-        char* l_node_sign = NULL;
+        char* l_node_sign_msg = NULL;
         if (l_protocol_version && l_sign_count) {
             dap_stream_addr_t *l_node_addr = dap_stream_get_addr_from_sign(l_sign, false);
             dap_stream_add_addr(l_node_addr, l_enc_key_ks);
@@ -205,16 +205,21 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             dap_cert_t *l_node_cert = dap_cert_find_by_name("node-addr");
             dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, 0);
             size_t l_node_sign_size = dap_sign_get_size(l_node_sign);
+            size_t l_node_sign_size_new = DAP_ENC_BASE64_ENCODE_SIZE(l_node_sign_size) + 1;
 
-            char node_sign[DAP_ENC_BASE64_ENCODE_SIZE(l_node_sign_size) + 1];
-            memset(node_sign, 0, sizeof(node_sign));
-            memcpy(node_sign, l_node_sign, l_node_sign_size);
-            l_node_sign_size = dap_enc_base64_encode(l_node_sign, l_node_sign_size, node_sign, DAP_ENC_DATA_TYPE_B64);
-            node_sign[l_node_sign_size] = '\0';
-            l_node_sign = node_sign;
+            l_node_sign_msg = DAP_NEW_SIZE(char, l_node_sign_size_new);
+            if (!l_node_sign_msg) {
+                log_it(L_CRITICAL, "Memory allocation error");
+                dap_enc_key_delete(l_pkey_exchange_key);
+                *return_code = Http_Status_InternalServerError;
+                return;
+            }
+            memcpy(l_node_sign_msg, l_node_sign, l_node_sign_size);
+            l_node_sign_size = dap_enc_base64_encode(l_node_sign, l_node_sign_size, l_node_sign_msg, DAP_ENC_DATA_TYPE_B64);
+            l_node_sign_msg[l_node_sign_size] = '\0';
         }
 
-        _enc_http_write_reply(cl_st, encrypt_id, encrypt_msg, l_node_sign);
+        _enc_http_write_reply(cl_st, encrypt_id, encrypt_msg, l_node_sign_msg);
 
         dap_enc_key_delete(l_pkey_exchange_key);
 
