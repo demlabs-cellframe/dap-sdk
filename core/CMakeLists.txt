@@ -45,12 +45,12 @@ if(UNIX)
     if(ANDROID)
         add_subdirectory(src/android)
         set(CORE_LIBRARIES ${CORE_LIBRARIES} dap_core_android)
-    
+    endif()
+
     if(UNIX AND NOT ANDROID AND NOT DARWIN)
         set(CORE_LIBRARIES ${CORE_LIBRARIES} rt)
     endif()
     
-    endif()
 endif()
 
 if (WIN32)
