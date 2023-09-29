@@ -27,7 +27,6 @@
 #include "stdbool.h"
 #include "dap_hash.h"
 
-typedef struct dap_stream_node_addr dap_stream_node_addr_t;
 
 #define DAP_ENC_KS_KEY_ID_SIZE 33
 struct dap_http_client;
@@ -38,7 +37,6 @@ typedef struct dap_enc_ks_key{
     time_t time_created;
     pthread_mutex_t mutex;
     uint8_t *acl_list;
-    int protocol_version;  // protocol_version income connection
     UT_hash_handle hh; // makes this structure hashable with UTHASH library
 } dap_enc_ks_key_t;
 
