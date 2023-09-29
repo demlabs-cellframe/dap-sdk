@@ -23,6 +23,7 @@ This file is part of DAP SDK the open source project
 #pragma once
 #include "dap_common.h"
 #include "dap_strfuncs.h"
+#include "dap_list.h"
 
 typedef struct dap_tsd {
     uint16_t type;
@@ -30,12 +31,16 @@ typedef struct dap_tsd {
     byte_t data[];
 } DAP_ALIGN_PACKED dap_tsd_t;
 
-dap_tsd_t * dap_tsd_create(uint16_t a_type,  const void * a_data, size_t a_data_size);
-dap_tsd_t* dap_tsd_find(byte_t * a_data, size_t a_data_size,uint16_t a_type);
+dap_tsd_t *dap_tsd_create   (uint16_t a_type, const void *a_data, size_t a_data_size);
+dap_tsd_t *dap_tsd_find     (byte_t *a_data, size_t a_data_size, uint16_t a_type);
+dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type);
 
-#define dap_tsd_create_scalar(type,value) dap_tsd_create (type, &value, sizeof(value) )
+#define dap_tsd_create_scalar(type,value) dap_tsd_create(type, &value, sizeof(value))
 #define dap_tsd_get_scalar(a,typeconv) ( a->size >= sizeof(typeconv) ? *((typeconv*) a->data) : (typeconv) {0})
 #define dap_tsd_get_object(a,typeconv) ( a->size >= sizeof(typeconv) ? ((typeconv*) a->data) : (typeconv *) {0})
+
+#define _dap_tsd_get_scalar(tsd,dest) ({ tsd->size >= sizeof(*dest) ? memcpy(dest, tsd->data, sizeof(*dest)) : NULL; *dest; })
+#define _dap_tsd_get_object(tsd,desttype) ( tsd->size >= sizeof(desttype) ? DAP_CAST_PTR(desttype,tsd->data) : DAP_CAST_PTR(desttype, NULL) )
 
 #define DAP_TSD_CORRUPTED_STRING "<CORRUPTED STRING>"
 // NULL-terminated string

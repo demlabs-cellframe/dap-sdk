@@ -46,7 +46,6 @@ typedef union dap_chain_hash_fast{
 typedef dap_chain_hash_fast_t dap_hash_fast_t;
 typedef dap_hash_fast_t dap_hash_t;
 
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -108,8 +107,8 @@ DAP_STATIC_INLINE void dap_chain_hash_fast_to_str_do(const dap_hash_fast_t *a_ha
 {
     a_str[0] = '0';
     a_str[1] = 'x';
-    a_str[ DAP_CHAIN_HASH_FAST_STR_SIZE - 1 ] = '\0';
     dap_htoa64((a_str + 2), a_hash->raw, DAP_CHAIN_HASH_FAST_SIZE);
+    a_str[ DAP_CHAIN_HASH_FAST_STR_SIZE - 1 ] = '\0';
 }
 
 DAP_STATIC_INLINE int dap_chain_hash_fast_to_str(const dap_hash_fast_t *a_hash, char *a_str, size_t a_str_max )

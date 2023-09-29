@@ -537,10 +537,12 @@ uint64_t dap_db_get_last_id_remote(uint64_t a_node_addr, char *a_group)
  */
 static size_t dap_db_get_size_pdap_store_obj_t(pdap_store_obj_t store_obj)
 {
-    size_t size = sizeof(uint32_t) + 2 * sizeof(uint16_t) +
-            3 * sizeof(uint64_t) + dap_strlen(store_obj->group) +
-            dap_strlen(store_obj->key) + store_obj->value_len;
-    return size;
+    return sizeof(uint32_t)
+            + 2 * sizeof(uint16_t)
+            + 3 * sizeof(uint64_t)
+            + dap_strlen(store_obj->group) /* + 1 */
+            + dap_strlen(store_obj->key) /* + 1 */
+            + store_obj->value_len;
 }
 
 /**
@@ -553,14 +555,12 @@ dap_global_db_pkt_t *dap_global_db_pkt_pack(dap_global_db_pkt_t *a_old_pkt, dap_
 {
     if (!a_new_pkt)
         return a_old_pkt;
-    if (a_old_pkt)
-        a_old_pkt = (dap_global_db_pkt_t *)DAP_REALLOC(a_old_pkt,
-                                                       a_old_pkt->data_size + a_new_pkt->data_size + sizeof(dap_global_db_pkt_t));
-    else
-        a_old_pkt = DAP_NEW_Z_SIZE(dap_global_db_pkt_t, a_new_pkt->data_size + sizeof(dap_global_db_pkt_t));
+    a_old_pkt = a_old_pkt
+            ? DAP_REALLOC(a_old_pkt, sizeof(dap_global_db_pkt_t) + a_old_pkt->data_size + a_new_pkt->data_size)
+            : DAP_NEW_Z_SIZE(dap_global_db_pkt_t, sizeof(dap_global_db_pkt_t) + a_new_pkt->data_size);
     memcpy(a_old_pkt->data + a_old_pkt->data_size, a_new_pkt->data, a_new_pkt->data_size);
     a_old_pkt->data_size += a_new_pkt->data_size;
-    a_old_pkt->obj_count++;
+    ++a_old_pkt->obj_count;
     return a_old_pkt;
 }
 
@@ -575,7 +575,7 @@ void dap_global_db_pkt_change_id(dap_global_db_pkt_t *a_pkt, uint64_t a_id)
 {
     uint16_t l_gr_len = *(uint16_t*)(a_pkt->data + sizeof(uint32_t));
     size_t l_id_offset = sizeof(uint32_t) + sizeof(uint16_t) + l_gr_len;
-    *(uint64_t *)(a_pkt->data + l_id_offset) = a_id;
+    memcpy(a_pkt->data + l_id_offset, &a_id, sizeof(a_id));
 }
 
 /**
@@ -585,39 +585,33 @@ void dap_global_db_pkt_change_id(dap_global_db_pkt_t *a_pkt, uint64_t a_id)
  */
 dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
 {
-int len;
-unsigned char *pdata;
+    byte_t *pdata;
 
     if (!a_store_obj)
         return NULL;
 
     uint32_t l_data_size_out = dap_db_get_size_pdap_store_obj_t(a_store_obj);
-    dap_global_db_pkt_t *l_pkt = DAP_NEW_SIZE(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t));
+    dap_global_db_pkt_t *l_pkt = DAP_NEW_Z_SIZE(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t));
 
     /* Fill packet header */
     l_pkt->data_size = l_data_size_out;
     l_pkt->obj_count = 1;
     l_pkt->timestamp = 0;
-
+    uint16_t l_group_len = dap_strlen(a_store_obj->group), l_key_len = dap_strlen(a_store_obj->key);
     /* Put serialized data into the payload part of the packet */
     pdata = l_pkt->data;
-    *( (uint32_t *) pdata) =  a_store_obj->type;                pdata += sizeof(uint32_t);
-
-    len = dap_strlen(a_store_obj->group);
-    *( (uint16_t *) pdata) = (uint16_t) len;                    pdata += sizeof(uint16_t);
-    memcpy(pdata, a_store_obj->group, len);                     pdata += len;
-
-    *( (uint64_t *) pdata) = a_store_obj->id;                   pdata += sizeof(uint64_t);
-    *( (uint64_t *) pdata) = a_store_obj->timestamp;            pdata += sizeof(uint64_t);
-
-    len = dap_strlen(a_store_obj->key);
-    *( (uint16_t *) pdata) = (uint16_t) len;                    pdata += sizeof(uint16_t);
-    memcpy(pdata, a_store_obj->key, len);                       pdata += len;
-
-    *( (uint64_t *) pdata) = a_store_obj->value_len;            pdata += sizeof(uint64_t);
-    memcpy(pdata, a_store_obj->value, a_store_obj->value_len);  pdata += a_store_obj->value_len;
-
-    assert( (uint32_t)(pdata - l_pkt->data) == l_data_size_out);
+    memcpy(pdata,   &a_store_obj->type,     sizeof(uint32_t));      pdata += sizeof(uint32_t);
+    memcpy(pdata,   &l_group_len,           sizeof(uint16_t));      pdata += sizeof(uint16_t);
+    memcpy(pdata,   a_store_obj->group,     l_group_len /* + 1 */); pdata += l_group_len /* + 1 */;
+    memcpy(pdata,   &a_store_obj->id,       sizeof(uint64_t));      pdata += sizeof(uint64_t);
+    memcpy(pdata,   &a_store_obj->timestamp,sizeof(uint64_t));      pdata += sizeof(uint64_t);
+    memcpy(pdata,   &l_key_len,             sizeof(uint16_t));      pdata += sizeof(uint16_t);
+    memcpy(pdata,   a_store_obj->key,       l_key_len /* + 1 */);   pdata += l_key_len /* + 1 */;
+    memcpy(pdata,   &a_store_obj->value_len,sizeof(uint64_t));      pdata += sizeof(uint64_t);
+    memcpy(pdata,   a_store_obj->value,     a_store_obj->value_len);pdata += a_store_obj->value_len;
+    if ((uint32_t)(pdata - l_pkt->data) != l_data_size_out) {
+        log_it(L_MSG, "! Inconsistent global_db packet! %u != %u", (uint32_t)(pdata - l_pkt->data), l_data_size_out);
+    }
     return l_pkt;
 }
 
@@ -631,7 +625,7 @@ dap_store_obj_t *dap_global_db_pkt_deserialize(const dap_global_db_pkt_t *a_pkt,
 {
 uint32_t l_count, l_cur_count;
 uint64_t l_size;
-unsigned char *pdata, *pdata_end;
+byte_t *pdata, *pdata_end;
 dap_store_obj_t *l_store_obj_arr, *l_obj;
 
     if(!a_pkt || a_pkt->data_size < sizeof(dap_global_db_pkt_t))
@@ -649,58 +643,50 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         return NULL;
     }
 
-    pdata = (unsigned char *) a_pkt->data;                                  /* Set <pdata> to begin of payload */
+    pdata = (byte_t*)a_pkt->data;                                  /* Set <pdata> to begin of payload */
     pdata_end = pdata + a_pkt->data_size;                                   /* Set <pdata_end> to end of payload area
                                                                               will be used to prevent out-of-buffer case */
     l_obj = l_store_obj_arr;
 
-    for ( l_cur_count = l_count ; l_cur_count; l_cur_count--, l_obj++ )
-    {
+    for ( l_cur_count = l_count ; l_cur_count; --l_cur_count, ++l_obj ) {
         if ( (pdata  + sizeof (uint32_t)) > pdata_end )                     /* Check for buffer boundaries */
             {log_it(L_ERROR, "Broken GDB element: can't read 'type' field"); break;}
-        l_obj->type = *((uint32_t *) pdata);
-        pdata += sizeof(uint32_t);
-
+        memcpy(&l_obj->type, pdata, sizeof(uint32_t)); pdata += sizeof(uint32_t);
 
         if ( (pdata  + sizeof (uint16_t)) > pdata_end )
             {log_it(L_ERROR, "Broken GDB element: can't read 'group_length' field"); break;}
-        l_obj->group_len = *((uint16_t *) pdata);
-        pdata += sizeof(uint16_t);
+        memcpy(&l_obj->group_len, pdata, sizeof(uint16_t)); pdata += sizeof(uint16_t);
 
         if ( !l_obj->group_len )
             {log_it(L_ERROR, "Broken GDB element: 'group_len' field is zero"); break;}
 
-
         if ( (pdata + l_obj->group_len) > pdata_end )
             {log_it(L_ERROR, "Broken GDB element: can't read 'group' field"); break;}
+
         l_obj->group = DAP_NEW_Z_SIZE(char, l_obj->group_len + 1);
-        if (!l_obj->group) {
-        log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_store_obj_arr);
-            return NULL;
+        memcpy(l_obj->group, pdata, l_obj->group_len); pdata += l_obj->group_len;
+
+        /*
+        l_obj->group = dap_strdup((char*)pdata); pdata += l_obj->group_len + 1;
+        if (dap_strlen(l_obj->group) != l_obj->group_len) {
+            log_it(L_ERROR, "Broken GDB element: inconsistent 'group' field, length mismatch %zu != %zu",
+                   dap_strlen(l_obj->group), l_obj->group_len);
+            DAP_DELETE(l_obj->group);
+            break;
         }
-        memcpy(l_obj->group, pdata, l_obj->group_len);
-        pdata += l_obj->group_len;
-
-
+        */ // Protocol version update needed...
 
         if ( (pdata + sizeof (uint64_t)) > pdata_end )
             {log_it(L_ERROR, "Broken GDB element: can't read 'id' field"); break;}
-        l_obj->id = *((uint64_t *) pdata);
-        pdata += sizeof(uint64_t);
-
-
+        memcpy(&l_obj->id, pdata, sizeof(uint64_t)); pdata += sizeof(uint64_t);
 
         if ( (pdata + sizeof (uint64_t)) > pdata_end )
             {log_it(L_ERROR, "Broken GDB element: can't read 'timestamp' field");  break;}
-        l_obj->timestamp = *((uint64_t *) pdata);
-        pdata += sizeof(uint64_t);
-
+        memcpy(&l_obj->timestamp, pdata, sizeof(uint64_t)); pdata += sizeof(uint64_t);
 
         if ( (pdata + sizeof (uint16_t)) > pdata_end)
             {log_it(L_ERROR, "Broken GDB element: can't read 'key_length' field"); break;}
-        l_obj->key_len = *((uint16_t *) pdata);
-        pdata += sizeof(uint16_t);
+        memcpy(&l_obj->key_len, pdata, sizeof(uint16_t)); pdata += sizeof(uint16_t);
 
         if ( !l_obj->key_len )
             {log_it(L_ERROR, "Broken GDB element: 'key_length' field is zero"); break;}
@@ -708,40 +694,36 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         if ((pdata + l_obj->key_len) > pdata_end)
             {log_it(L_ERROR, "Broken GDB element: 'key_length' field is out from allocated memory"); break;}
 
-        l_obj->key_byte = DAP_NEW_SIZE(byte_t, l_obj->key_len + 1);
-        if (!l_obj->key_byte) {
+        l_obj->key = DAP_NEW_Z_SIZE(char, l_obj->key_len + 1);
+        memcpy((char*)l_obj->key, pdata, l_obj->key_len); pdata += l_obj->key_len;
+        /*
+        l_obj->key = dap_strdup((char*)pdata); pdata += l_obj->key_len + 1;
+        if (dap_strlen(l_obj->key) != l_obj->key_len) {
+            log_it(L_ERROR, "Broken GDB element: inconsistent 'key' field, length mismatch %zu != %zu",
+                   dap_strlen(l_obj->group), l_obj->group_len);
+            DAP_DELETE(l_obj->group);
+            DAP_DELETE(l_obj->key);
+            break;
+        }
+        */ // Protocol version update needed...
+
+        if ( (pdata + sizeof (uint64_t)) > pdata_end )
+            {log_it(L_ERROR, "Broken GDB element: can't read 'value_length' field"); break;}
+        memcpy(&l_obj->value_len, pdata, sizeof(uint64_t)); pdata += sizeof(uint64_t);
+
+        if (l_obj->value_len && !(l_obj->value = DAP_DUP_SIZE(pdata, l_obj->value_len))) {
             log_it(L_CRITICAL, "Memory allocation error");
+            DAP_DEL_Z(l_obj->key_byte);
             DAP_DEL_Z(l_obj->group);
             DAP_DEL_Z(l_store_obj_arr);
             return NULL;
         }
-        memcpy( l_obj->key_byte, pdata, l_obj->key_len);
-        l_obj->key_byte[l_obj->key_len] = '\0';
-        pdata += l_obj->key_len;
-
-
-        if ( (pdata + sizeof (uint64_t)) > pdata_end )
-            {log_it(L_ERROR, "Broken GDB element: can't read 'value_length' field"); break;}
-        l_obj->value_len = *((uint64_t *) pdata);
-        pdata += sizeof(uint64_t);
-
-        if (l_obj->value_len) {
-            if ( (pdata + l_obj->value_len) > pdata_end )
-                {log_it(L_ERROR, "Broken GDB element: can't read 'value' field"); break;}
-            l_obj->value = DAP_NEW_SIZE(uint8_t, l_obj->value_len);
-            if (!l_obj->value) {
-                log_it(L_CRITICAL, "Memory allocation error");
-                DAP_DEL_Z(l_obj->key_byte);
-                DAP_DEL_Z(l_obj->group);
-                DAP_DEL_Z(l_store_obj_arr);
-                return NULL;
-            }
-            memcpy(l_obj->value, pdata, l_obj->value_len);
-            pdata += l_obj->value_len;
-        }
+        pdata += l_obj->value_len;
     }
 
-    assert(pdata <= pdata_end);
+    if (pdata != pdata_end) {
+        log_it(L_MSG, "! Unprocessed data left: %zu bytes", pdata_end - pdata);
+    }
 
     // Return the number of completely filled dap_store_obj_t structures
     // because l_cur_count may be less than l_count due to too little memory
@@ -754,12 +736,8 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
 int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_obj,
                                           dap_global_db_callback_results_raw_t a_callback, void *a_arg)
 {
-    // timestamp for exist obj
     dap_nanotime_t l_timestamp_cur = 0;
-    // Record is pinned or not
-    dap_store_obj_t *l_read_obj = NULL;
-    bool l_is_pinned_cur = false;
-    bool l_match_mask = false;
+    bool l_match_mask = false, l_is_pinned_cur = false;
     uint64_t l_ttl = 0;
     for (dap_list_t *it = a_global_db_context->instance->notify_groups; it; it = it->next) {
         dap_global_db_notify_item_t *l_item = it->data;
@@ -775,14 +753,35 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
         DAP_DEL_Z(a_arg);
         return -4;
     }
+
+    if (g_dap_global_db_debug_more) {
+        char l_ts_str[64] = { '\0' };
+        dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
+        log_it(L_DEBUG, "Unpacked log history: type='%c' (0x%02hhX) group=\"%s\" key=\"%s\""
+                " timestamp=\"%s\" value_len=%" DAP_UINT64_FORMAT_U,
+                (char)a_obj->type, (char)a_obj->type, a_obj->group,
+                a_obj->key, l_ts_str, a_obj->value_len);
+    }
+
+    bool l_broken = !dap_global_db_isalnum_group_key(a_obj);
+
+    dap_store_obj_t *l_read_obj = NULL;
     if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
-        l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
-        if (l_read_obj) {
-            l_timestamp_cur = l_read_obj->timestamp;
-            if (l_read_obj->flags & RECORD_PINNED)
-                l_is_pinned_cur = true;
-            else
-                dap_store_obj_free_one(l_read_obj);
+        if (l_broken) {
+            log_it(L_NOTICE, "Found this object in DB, delete it");
+            dap_global_db_del(a_obj->group, a_obj->key, NULL, NULL);
+            DAP_DEL_Z(a_arg);
+            return -1;
+        } else {
+            if ((l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL))) {
+                l_timestamp_cur = l_read_obj->timestamp;
+                if (l_read_obj->flags & RECORD_PINNED)
+                    l_is_pinned_cur = true;
+                else {
+                    dap_store_obj_free_one(l_read_obj);
+                    l_read_obj = NULL;
+                }
+            }
         }
     }
 
@@ -794,19 +793,12 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     //check whether to apply the received data into the database
     bool l_apply = false;
     // check the applied object newer that we have stored or erased
-    if (a_obj->timestamp > (uint64_t)l_timestamp_del &&
-            a_obj->timestamp > (uint64_t)l_timestamp_cur)
+    if (a_obj->timestamp > (uint64_t)l_timestamp_del && a_obj->timestamp > (uint64_t)l_timestamp_cur)
         l_apply = true;
-    if ((l_ttl || a_obj->type == DAP_DB$K_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time)
+
+    if (((l_ttl || a_obj->type == DAP_DB$K_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time) || l_broken)
         l_apply = false;
-    if (g_dap_global_db_debug_more) {
-        char l_ts_str[50];
-        dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
-        log_it(L_DEBUG, "Unpacked log history: type='%c' (0x%02hhX) group=\"%s\" key=\"%s\""
-                " timestamp=\"%s\" value_len=%" DAP_UINT64_FORMAT_U,
-                (char )a_obj->type, (char)a_obj->type, a_obj->group,
-                a_obj->key, l_ts_str, a_obj->value_len);
-    }
+
     if (!l_apply) {
         if (g_dap_global_db_debug_more) {
             if (a_obj->timestamp <= (uint64_t)l_timestamp_cur)
@@ -815,24 +807,32 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                 log_it(L_WARNING, "New data not applied, because newly object is deleted");
             if (a_obj->timestamp <= l_limit_time)
                 log_it(L_WARNING, "New data not applied, because object is too old");
+            if (l_broken) {
+                log_it(L_WARNING, "New data not applied, because object is corrupted");
+            }
         }
-        if (l_is_pinned_cur)
-            dap_store_obj_free_one(l_read_obj);
+        dap_store_obj_free(l_read_obj, (int)l_is_pinned_cur);
         DAP_DEL_Z(a_arg);
         return -2;
     }
     // Do not overwrite pinned records
     if (l_is_pinned_cur) {
-        debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
-                                a_obj->type != DAP_DB$K_OPTYPE_DEL ? "remove" : "rewrite", a_obj->group, a_obj->key);
-        l_read_obj->timestamp = a_obj->timestamp + 1;
-        l_read_obj->type = DAP_DB$K_OPTYPE_ADD;
-        dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
+        int l_ret = 0;
+        if (a_obj->timestamp - l_read_obj->timestamp == 1 && a_obj->type == DAP_DB$K_OPTYPE_ADD) {
+            log_it(L_MSG, "[!] Repinning occured, unpin %s : %s", a_obj->group, a_obj->key);
+            l_ret = dap_global_db_set_raw(a_obj, 1, a_callback, a_arg);
+        } else {
+            debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
+                                    a_obj->type != DAP_DB$K_OPTYPE_DEL ? "remove" : "rewrite", a_obj->group, a_obj->key);
+            l_read_obj->timestamp = a_obj->timestamp + 1;
+            l_read_obj->type = DAP_DB$K_OPTYPE_ADD;
+            dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
+            l_ret = -1;
+        }
         dap_store_obj_free_one(l_read_obj);
         DAP_DEL_Z(a_arg);
-        return -1;
+        return l_ret;
     } else if (dap_global_db_set_raw(a_obj, 1, a_callback, a_arg) != 0) {
-        // save data to global_db
         DAP_DEL_Z(a_arg);
         log_it(L_ERROR, "Can't send save GlobalDB request");
         return -3;

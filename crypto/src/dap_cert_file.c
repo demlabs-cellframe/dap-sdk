@@ -378,6 +378,8 @@ lb_exit:
  */
 dap_cert_t* dap_cert_mem_load(const void * a_data, size_t a_data_size)
 {
+    if (!a_data)
+        return NULL;
     dap_cert_t * l_ret = NULL;
     const uint8_t * l_data = (const uint8_t *) a_data;
     uint32_t l_data_offset = 0;

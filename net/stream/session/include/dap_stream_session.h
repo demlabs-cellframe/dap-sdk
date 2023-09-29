@@ -42,8 +42,7 @@ typedef void (*dap_stream_session_callback_t)( dap_stream_session_t *,void*);
 
 struct dap_stream_session {
     bool create_empty;
-    unsigned int id;
-    unsigned int media_id;
+    uint32_t id, media_id;
 
     dap_enc_key_t * key;
 
@@ -75,13 +74,13 @@ void dap_stream_session_deinit();
 dap_list_t* dap_stream_session_get_list_sessions(void);
 void dap_stream_session_get_list_sessions_unlock(void);
 
-dap_stream_session_t * dap_stream_session_pure_new();
-dap_stream_session_t * dap_stream_session_new(unsigned int media_id, bool open_preview);
-dap_stream_session_t * dap_stream_session_id_mt(unsigned int id);
-dap_stream_session_t *dap_stream_session_id_unsafe(unsigned int id);
+dap_stream_session_t *dap_stream_session_pure_new();
+dap_stream_session_t *dap_stream_session_new(uint32_t media_id, bool open_preview);
+dap_stream_session_t *dap_stream_session_id_mt(uint32_t a_id);
+dap_stream_session_t *dap_stream_session_id_unsafe(uint32_t id);
 void dap_stream_session_lock();
 void dap_stream_session_unlock();
 
 int dap_stream_session_open(dap_stream_session_t * a_session); /*Lock for opening for single client , return 0 if ok*/
-int dap_stream_session_close_mt(unsigned int id);
+int dap_stream_session_close_mt(uint32_t id);
 

@@ -34,6 +34,7 @@
 
 #include "dap_common.h"
 #include "dap_stream_session.h"
+#include "rand/dap_rand.h"
 
 #define LOG_TAG "dap_stream_session"
 
@@ -97,7 +98,7 @@ void dap_stream_session_get_list_sessions_unlock(void)
 dap_stream_session_t * dap_stream_session_pure_new()
 {
 dap_stream_session_t *l_stm_sess, *l_stm_tmp;
-unsigned int session_id = 0, session_id_new = 0;
+uint32_t session_id = 0;
 
     if ( !(l_stm_sess = DAP_NEW_Z(dap_stream_session_t)) )              /* Preallocate new session context */
            return  log_it(L_ERROR, "Cannot alocate memory for a new session context, errno=%d", errno), NULL;
@@ -109,12 +110,12 @@ unsigned int session_id = 0, session_id_new = 0;
        pthread_mutex_lock(&s_sessions_mutex);
 
        do {
-           session_id_new = session_id = rand() + rand() * 0x100 + rand() * 0x10000 + rand() * 0x01000000;
-           HASH_FIND_INT(s_sessions, &session_id_new, l_stm_tmp);
+           session_id = random_uint32_t(RAND_MAX);
+           HASH_FIND(hh, s_sessions, &session_id, sizeof(uint32_t), l_stm_tmp);
        } while(l_stm_tmp);
 
        l_stm_sess->id = session_id;
-       HASH_ADD_INT(s_sessions, id, l_stm_sess);
+       HASH_ADD(hh, s_sessions, id, sizeof(uint32_t), l_stm_sess);
        pthread_mutex_unlock(&s_sessions_mutex);                            /* Unlock ASAP ! */
 
        /* Prefill session context with data ... */
@@ -142,11 +143,11 @@ dap_stream_session_t * dap_stream_session_new(unsigned int media_id, bool open_p
  * @param id
  * @return
  */
-dap_stream_session_t *dap_stream_session_id_mt( unsigned int a_id )
+dap_stream_session_t *dap_stream_session_id_mt(uint32_t a_id)
 {
     dap_stream_session_t *l_ret = NULL;
     dap_stream_session_lock();
-    HASH_FIND_INT( s_sessions, &a_id, l_ret );
+    HASH_FIND(hh, s_sessions, &a_id, sizeof(uint32_t), l_ret);
     dap_stream_session_unlock();
     return l_ret;
 }
@@ -156,10 +157,10 @@ dap_stream_session_t *dap_stream_session_id_mt( unsigned int a_id )
  * @param id
  * @return
  */
-dap_stream_session_t *dap_stream_session_id_unsafe( unsigned int id )
+dap_stream_session_t *dap_stream_session_id_unsafe(uint32_t id )
 {
     dap_stream_session_t *ret;
-    HASH_FIND_INT( s_sessions, &id, ret );
+    HASH_FIND(hh, s_sessions, &id, sizeof(uint32_t), ret);
     return ret;
 }
 
@@ -180,7 +181,7 @@ void dap_stream_session_unlock()
 }
 
 
-int dap_stream_session_close_mt(unsigned int id)
+int dap_stream_session_close_mt(uint32_t id)
 {
 dap_stream_session_t *l_stm_sess;
 

@@ -104,7 +104,10 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
     log_it(L_DEBUG,"Proc enc http request");
     http_status_code_t * return_code = (http_status_code_t*)arg;
 
-    if (dap_enc_http_ban_list_client_check_ipv4(cl_st->http_client->esocket->remote_addr.sin_addr)) {
+    struct in_addr ip_addr_client_v4;
+    inet_pton(AF_INET, cl_st->esocket->hostaddr, &ip_addr_client_v4);
+
+    if (dap_enc_http_ban_list_client_check_ipv4(ip_addr_client_v4)) {
         *return_code = Http_Status_Forbidden;
         return;
     }
