@@ -1131,14 +1131,16 @@ int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full)
     authorized_stream_t *l_a_stream = NULL;
     assert(!pthread_rwlock_wrlock(&s_steams_lock));
         HASH_FIND(hh, s_authorized_streams, &a_addr, sizeof(a_addr), l_a_stream);
-        dap_return_val_if_pass(!l_a_stream, -1);  // return if not finded
-        HASH_DEL(s_authorized_streams, l_a_stream);
-        DAP_DEL_Z(l_a_stream);
+        if (l_a_stream) {
+            HASH_DEL(s_authorized_streams, l_a_stream);
+            DAP_DEL_Z(l_a_stream);
+        }
         if (a_full){
             HASH_FIND(hh, s_authorized_streams_dublicate, &a_addr, sizeof(a_addr), l_a_stream);
-            dap_return_val_if_pass(!l_a_stream, -1);  // return if not finded
-            HASH_DEL(s_authorized_streams_dublicate, l_a_stream);
-            DAP_DEL_Z(l_a_stream);
+            if (l_a_stream) {
+                HASH_DEL(s_authorized_streams_dublicate, l_a_stream);
+                DAP_DEL_Z(l_a_stream);
+            }
         }
     assert(!pthread_rwlock_unlock(&s_steams_lock));
     return 0;
