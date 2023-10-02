@@ -75,6 +75,8 @@ static authorized_stream_t *s_authorized_streams_dublicate = NULL;
 static authorized_stream_t *s_prep_authorized_streams = NULL;
 static pthread_rwlock_t     s_steams_lock = PTHREAD_RWLOCK_INITIALIZER;
 
+static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream);
+
 static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *l_pkt, size_t l_pkt_size);
 
 // Callbacks for HTTP client
@@ -95,7 +97,7 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
 static void s_udp_esocket_new(dap_events_socket_t* a_esocket,void * a_arg);
 
 // Internal functions
-static dap_stream_t * s_stream_new(dap_http_client_t * a_http_client, dap_stream_session_t *a_session); // Create new stream
+static dap_stream_t * s_stream_new(dap_http_client_t * a_http_client); // Create new stream
 static void s_http_client_delete(dap_http_client_t * a_esocket, void * a_arg);
 
 static bool s_callback_server_keepalive(void *a_arg);
@@ -316,7 +318,7 @@ void check_session( unsigned int a_id, dap_events_socket_t *a_esocket )
  * @brief stream_new Create new stream instance for HTTP client
  * @return New stream_t instance
  */
-dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_session_t *a_session)
+dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
 {
     dap_stream_t *l_ret = DAP_NEW_Z(dap_stream_t);
     if (!l_ret) {
@@ -328,18 +330,13 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_session_
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
 #endif
 
-    if(!a_session)
-        l_ret->sign_group = UNSIGNED;
-    else
-        l_ret->sign_group = BASE_NODE_SIGN;
-
     l_ret->esocket = a_http_client->esocket;
     l_ret->esocket_uuid = a_http_client->esocket->uuid;
     l_ret->stream_worker = (dap_stream_worker_t *)a_http_client->esocket->context->worker->_inheritor;
     l_ret->conn_http = a_http_client;
     l_ret->seq_id = 0;
     l_ret->client_last_seq_id_packet = (size_t)-1;
-    l_ret->session = a_session;
+    l_ret->sign_group = UNSIGNED;
     // Start server keep-alive timer
     dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid) {
@@ -462,12 +459,13 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg)
             } else {
                 log_it(L_INFO,"Session id %u was found with channels = %s", l_id, l_ss->active_channels);
                 if(!dap_stream_session_open(l_ss)){ // Create new stream
-                    dap_stream_t *l_sid = s_stream_new(a_http_client, l_ss);
+                    dap_stream_t *l_sid = s_stream_new(a_http_client);
                     if (!l_sid) {
                         log_it(L_CRITICAL, "Memory allocation error");
                         a_http_client->reply_status_code=404;
                         return;
                     }
+                    l_sid->session = l_ss;
                     dap_http_header_t *header = dap_http_header_find(a_http_client->in_headers, "Service-Key");
                     if (header)
                         l_ss->service_key = strdup(header->value);
@@ -1078,7 +1076,7 @@ int dap_stream_change_id(void *a_old, uint64_t a_new)
  * @param a_stream - using stream
  * @return  0 if ok others if not
  */
-static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream)
+int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream)
 {
     dap_return_val_if_pass(!a_hash_table || !a_item || !a_stream, -1);
     authorized_stream_t *l_a_stream = NULL;
@@ -1090,6 +1088,7 @@ static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stre
     a_item->esocket_uuid = a_stream->esocket_uuid;
     a_item->stream_worker = a_stream->stream_worker;
     a_stream->node.uint64 = a_item->node.uint64;
+    a_stream->sign_group = BASE_NODE_SIGN;
     HASH_ADD(hh, *a_hash_table, node, sizeof(a_item->node), a_item);
     return 0;
 }
