@@ -412,7 +412,7 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
 }
 
 
-#ifdef DAP_SYS_DEBUG
+
 
 unsigned dap_gettid()
 {
@@ -424,12 +424,13 @@ unsigned dap_gettid()
 #elif defined (DAP_OS_WINDOWS)
     return (unsigned) GetCurrentThreadId();
 #elif defined(DAP_OS_LINUX)
-    return syscall(SYS_gettid);;
+    return syscall(SYS_gettid);
 #else
 #error "Not defined dap_gettid() for your platform"
 #endif
 }
 
+#ifdef DAP_SYS_DEBUG
 const	char spaces[74] = {"                                                                          "};
 #define PID_FMT "%6d"
 
