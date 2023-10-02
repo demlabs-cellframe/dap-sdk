@@ -43,7 +43,7 @@
 #include "dap_strfuncs.h"
 #include "dap_cert.h"
 #include "dap_uuid.h"
-
+#include "dap_context.h"
 #include "dap_timerfd.h"
 #include "dap_client_pvt.h"
 #include "dap_server.h"
@@ -209,7 +209,7 @@ static void s_stream_connected(dap_client_pvt_t * a_client_pvt)
 
     *l_es_uuid_ptr = a_client_pvt->stream_es->uuid;
 
-    if( dap_timerfd_start_on_worker(a_client_pvt->stream_es->context->worker,
+    if( dap_timerfd_start_on_worker(a_client_pvt->stream_es->worker,
                                     s_client_timeout_active_after_connect_seconds * 1024,
                                     s_stream_timer_timeout_after_connected_check,
                                     l_es_uuid_ptr) == NULL) {

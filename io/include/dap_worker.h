@@ -23,13 +23,12 @@
 #pragma once
 
 #include <pthread.h>
-#include "dap_events_socket.h"
-#include "dap_proc_queue.h"
 #include "dap_common.h"
-#include "dap_events.h"
-#include "dap_context.h"
+#include "dap_events_socket.h"
 
+typedef struct dap_context dap_context_t;
 typedef struct dap_timerfd dap_timerfd_t;
+typedef struct dap_proc_thread dap_proc_thread_t;
 typedef struct dap_worker {
     uint32_t  id;
     dap_proc_thread_t *proc_queue_input;
@@ -54,46 +53,6 @@ typedef struct dap_worker {
     dap_timerfd_t * timer_check_activity;
 
     dap_context_t *context;
-
-    /// Platform-specific fields
-#if defined DAP_EVENTS_CAPS_MSMQ
-    HANDLE msmq_events[MAXIMUM_WAIT_OBJECTS];
-#endif
-#ifdef DAP_EVENTS_CAPS_AIO
-    dap_slist_t garbage_list;
-#endif
-#if defined DAP_EVENTS_CAPS_EPOLL
-    EPOLL_HANDLE epoll_fd;
-    struct epoll_event epoll_events[ DAP_EVENTS_SOCKET_MAX];
-#elif defined ( DAP_EVENTS_CAPS_POLL)
-    int poll_fd;
-    struct pollfd * poll;
-    dap_events_socket_t ** poll_esocket;
-    atomic_uint poll_count;
-    size_t poll_count_max;
-    bool poll_compress; // Some of fd's became NULL so arrays need to be reassigned
-#elif defined (DAP_EVENTS_CAPS_KQUEUE)
-    int kqueue_fd;
-    struct kevent * kqueue_events_selected;
-    struct kevent * kqueue_events;
-    size_t kqueue_events_count;
-
-    int kqueue_events_count_max;
-    int kqueue_events_selected_count_max;
-#else
-#error "Not defined worker for your platform"
-#endif
-    ssize_t esocket_current; // Currently selected esocket
-    ssize_t esockets_selected; // Currently selected number of esockets
-
-    atomic_uint event_sockets_count;
-    dap_events_socket_t *esockets; // Hashmap of event sockets
-
-    dap_events_socket_t * event_exit;
-
-    dap_events_socket_t **queue_es; // Queues
-    dap_events_socket_t ***queue_es_input; // Input for others queues
-    size_t queues_es_count;
 
     void * _inheritor;
 } dap_worker_t;
@@ -136,22 +95,7 @@ static inline dap_worker_t * dap_worker_get_current(){
     return (dap_worker_t*) pthread_getspecific(g_pth_key_worker);
 }
 
-static inline int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socket_t *a_esocket)
-{
-    int err = dap_context_add(a_worker->context, a_esocket);
-    if (!err) {
-        a_esocket->is_initalized = true;
-        switch (a_esocket->type) {
-        case DESCRIPTOR_TYPE_SOCKET_UDP:
-        case DESCRIPTOR_TYPE_SOCKET_CLIENT:
-        case DESCRIPTOR_TYPE_SOCKET_LISTENING:
-            a_esocket->last_time_active = time(NULL);
-        default:;
-        }
-    }
-    return err;
-}
-
+int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socket_t *a_esocket);
 void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket);
 void dap_worker_add_events_socket_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_events_socket);
 dap_worker_t *dap_worker_add_events_socket_auto( dap_events_socket_t * a_events_socket );
@@ -159,9 +103,9 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
 void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker_callback_t a_callback, void * a_arg);
 bool dap_worker_check_esocket_polled_now(); // Check if esocket is right now polled and present in list
 // Context callbacks
-void dap_worker_context_callback_started( dap_context_t * a_context, void *a_arg);
-void dap_worker_context_callback_stopped( dap_context_t * a_context, void *a_arg);
-
+int dap_worker_context_callback_started( dap_context_t * a_context, void *a_arg);
+int dap_worker_context_callback_stopped( dap_context_t * a_context, void *a_arg);
+int dap_worker_thread_loop(dap_context_t * a_context);
 
 #ifdef __cplusplus
 }

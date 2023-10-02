@@ -38,7 +38,7 @@
 #include "dap_common.h"
 #include "dap_timerfd.h"
 #include "dap_events.h"
-
+#include "dap_context.h"
 #include "dap_events.h"
 #include "dap_stream.h"
 #include "dap_stream_pkt.h"
@@ -315,7 +315,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
 
     l_ret->esocket = a_http_client->esocket;
     l_ret->esocket_uuid = a_http_client->esocket->uuid;
-    l_ret->stream_worker = (dap_stream_worker_t *)a_http_client->esocket->context->worker->_inheritor;
+    l_ret->stream_worker = (dap_stream_worker_t *)a_http_client->esocket->worker->_inheritor;
     l_ret->conn_http = a_http_client;
     l_ret->seq_id = 0;
     l_ret->client_last_seq_id_packet = (size_t)-1;
@@ -327,7 +327,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
         return NULL;
     }
     *l_es_uuid = l_ret->esocket->uuid;
-    l_ret->keepalive_timer = dap_timerfd_start_on_worker(l_ret->esocket->context->worker,
+    l_ret->keepalive_timer = dap_timerfd_start_on_worker(l_ret->esocket->worker,
                                                          STREAM_KEEPALIVE_TIMEOUT * 1000,
                                                          (dap_timerfd_callback_t)s_callback_server_keepalive,
                                                          l_es_uuid);

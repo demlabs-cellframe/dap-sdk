@@ -73,6 +73,12 @@
 #include "portable_endian.h"
 
 #define BIT( x ) ( 1 << x )
+
+#define dap_return_if_fail(expr)            {if(!(expr)) {return;}}
+#define dap_return_val_if_fail(expr,val)    {if(!(expr)) {return (val);}}
+#define dap_return_if_pass(expr)            {if(expr) {return;}}
+#define dap_return_val_if_pass(expr,val)    {if(expr) {return (val);}}
+
 // Stuffs an integer into a pointer type
 #define DAP_INT_TO_POINTER(i) ((void*) (size_t) (i))
 // Extracts an integer from a pointer

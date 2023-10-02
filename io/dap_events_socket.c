@@ -401,7 +401,7 @@ void dap_events_socket_assign_on_worker_inter(dap_events_socket_t * a_es_input, 
  */
 void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t * a_es, dap_worker_t * a_worker_new)
 {
-    dap_worker_t *l_worker = a_es->context->worker;
+    dap_worker_t *l_worker = a_es->worker;
     log_it(L_DEBUG, "Reassign between %u->%u workers: %p (%d)  ", l_worker->id, a_worker_new->id, a_es, a_es->fd );
 
     dap_context_remove(a_es);
@@ -1592,7 +1592,7 @@ void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_
     l_es_handler->value = a_preserve_inheritor ? 1 : 0;
     //dap_events_socket_descriptor_close(a_es);
 
-    dap_worker_t * l_worker = a_es->context->worker;
+    dap_worker_t * l_worker = a_es->worker;
     dap_context_remove(a_es);
     a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
     dap_timerfd_start_on_worker(l_worker, s_delayed_ops_timeout_ms,

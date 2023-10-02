@@ -39,6 +39,7 @@
 #include "dap_worker.h"
 #include "dap_events_socket.h"
 #include "dap_timerfd.h"
+#include "dap_context.h"
 
 #define LOG_TAG "dap_timerfd"
 static void s_es_callback_timer(struct dap_events_socket *a_event_sock);

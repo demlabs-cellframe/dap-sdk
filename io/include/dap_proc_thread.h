@@ -25,13 +25,12 @@
 
 #include <pthread.h>
 #include "dap_common.h"
-#include "dap_context.h"
-#include "dap_list.h"                                                       /* Simple List routines */
-#include "dap_proc_thread.h"
 
-typedef bool (*dap_proc_queue_callback_t)(struct dap_proc_queue_t *, void *);// Callback for processor. Returns true if
-                                                                            // we want to stop callback execution and
-                                                                            // not to go on next loop
+typedef struct dap_proc_thread dap_proc_thread_t;
+typedef struct dap_context dap_context_t;
+/// Callback for processor. Returns TRUE for repeat
+typedef bool (*dap_proc_queue_callback_t)(dap_proc_thread_t *a_thread, void *a_arg);
+
 enum dap_queue_msg_priority {
     DAP_QUEUE_MSG_PRIORITY_0 = 0,                                           /* Lowest priority (Idle)  */
     DAP_QUEUE_MSG_PRIORITY_IDLE = DAP_QUEUE_MSG_PRIORITY_0,                 /* Don't use Idle if u are not sure that understand how it works */
@@ -45,7 +44,7 @@ enum dap_queue_msg_priority {
     DAP_QUEUE_MSG_PRIORITY_3 = 3,                                           /* Higest priority */
     DAP_QUEUE_MSG_PRIORITY_HIGH = DAP_QUEUE_MSG_PRIORITY_3,
 
-    DAP_QUEUE_MSG_PRIORITY_COUNT = 4                                          /* End-of-list marker */
+    DAP_QUEUE_MSG_PRIORITY_COUNT = 4                                        /* End-of-list marker */
 };
 
 typedef struct dap_proc_queue_item {
@@ -67,12 +66,12 @@ typedef struct dap_proc_thread {
 
 int dap_proc_thread_init(uint32_t a_threads_count);
 void dap_proc_thread_deinit();
+int dap_proc_thread_loop(dap_context_t *a_context);
 
 dap_proc_thread_t *dap_proc_thread_get(uint32_t a_thread_number);
 dap_proc_thread_t *dap_proc_thread_get_auto();
-
-int dap_proc_thread_add_callback_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, enum dap_queue_msg_priority a_priority);
-DAP_STATIC_INLINE dap_proc_thread_add_callback(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg)
+int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, enum dap_queue_msg_priority a_priority);
+DAP_STATIC_INLINE int dap_proc_thread_callback_add(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg)
 {
-    return dap_proc_thread_add_callback_pri(a_thread, a_callback, a_callback_arg, DAP_QUEUE_MSG_PRIORITY_NORMAL);
+    return dap_proc_thread_callback_add_pri(a_thread, a_callback, a_callback_arg, DAP_QUEUE_MSG_PRIORITY_NORMAL);
 }

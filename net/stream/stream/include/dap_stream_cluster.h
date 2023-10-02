@@ -66,7 +66,7 @@ typedef struct dap_cluster {
 } dap_cluster_t;
 
 // Cluster common funcs
-dap_cluster_t *dap_cluster_new(dap_cluster_role_t *a_role);
+dap_cluster_t *dap_cluster_new(dap_cluster_role_t a_role);
 void dap_cluster_delete(dap_cluster_t *a_cluster);
 dap_cluster_t *dap_cluster_find(dap_guuid_t a_guuid);
 

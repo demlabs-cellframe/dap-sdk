@@ -35,7 +35,6 @@ typedef int SOCKET;
 
 #include <pthread.h>
 #include "uthash.h"
-
 #include "dap_common.h"
 #include "dap_math_ops.h"
 

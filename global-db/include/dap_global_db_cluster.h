@@ -31,7 +31,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #define DAP_GLOBAL_DB_CLUSTER_ANY                   "global"    // This mnemonim is for globally broadcasting grops
 #define DAP_GLOBAL_DB_CLUSTER_BROADCAST_LIFETIME    15          // Seconds
 
-typedef void (*dap_store_obj_callback_notify_t)(dap_global_db_context_t *a_context, dap_store_obj_t *a_obj, void *a_arg);
+typedef void (*dap_store_obj_callback_notify_t)(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_obj, void *a_arg);
 
 typedef struct dap_global_db_cluster {
     const char *mnemonim;

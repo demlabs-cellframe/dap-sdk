@@ -26,7 +26,6 @@
 #include "dap_enc_key.h"
 #include "dap_time.h"
 #include "dap_context.h"
-#include "dap_proc_queue.h"
 #include "dap_global_db_driver.h"
 #include "dap_global_db_cluster.h"
 
@@ -48,26 +47,6 @@ typedef struct dap_global_db_instance {
     dap_enc_key_t *signing_key;
 } dap_global_db_instance_t;
 
-// GlobalDB own context custom extension
-typedef struct dap_global_db_context {
-    dap_global_db_instance_t *instance; // A way to access DB config settings like whitelist etc.
-
-    dap_events_socket_t * queue_io; // I/O queue for GlobalDB i/o requests
-
-    dap_events_socket_t ** queue_worker_callback_input; // Worker callback queue input
-    dap_events_socket_t ** queue_worker_io_input; // Worker io queue input
-    dap_events_socket_t ** queue_worker_ch_io_input; // Worker ch io queue input
-    dap_events_socket_t ** queue_proc_thread_callback_input; // Worker callback queue input
-
-    dap_context_t * context; // parent pointer
-
-    // _pvt
-    sync_obj_data_callback_t *data_callbacks;
-    pthread_mutex_t data_callbacks_mutex;
-} dap_global_db_context_t;
-
-#define DAP_CONTEXT_TYPE_GLOBAL_DB   100
-
 typedef struct dap_global_db_obj {
     dap_nanotime_t timestamp;
     char *key;
@@ -76,13 +55,13 @@ typedef struct dap_global_db_obj {
     bool is_pinned;
 } dap_global_db_obj_t;
 
-typedef void (*dap_global_db_callback_t) (dap_global_db_context_t * a_global_db_context, void * a_arg);
+typedef void (*dap_global_db_callback_t)(dap_global_db_instance_t *a_dbi, void * a_arg);
 
 /**
  *  @brief callback for single result
  *  @arg a_rc DAP_GLOBAL_DB_RC_SUCCESS if success others if not
  */
-typedef void (*dap_global_db_callback_result_t) (dap_global_db_context_t * a_global_db_context,int a_rc, const char * a_group, const char * a_key, const void * a_value,
+typedef void (*dap_global_db_callback_result_t)(dap_global_db_instance_t *a_dbi, int a_rc, const char * a_group, const char * a_key, const void * a_value,
                                                  const size_t a_value_size, dap_nanotime_t a_value_ts, bool a_is_pinned, void * a_arg);
 
 /**
@@ -90,7 +69,7 @@ typedef void (*dap_global_db_callback_result_t) (dap_global_db_context_t * a_glo
  *  @arg a_rc DAP_GLOBAL_DB_RC_SUCCESS if success others if not
  *  @return none.
  */
-typedef void (*dap_global_db_callback_result_raw_t) (dap_global_db_context_t * a_global_db_context,int a_rc, dap_store_obj_t * a_store_obj, void * a_arg);
+typedef void (*dap_global_db_callback_result_raw_t)(dap_global_db_instance_t *a_dbi, int a_rc, dap_store_obj_t * a_store_obj, void * a_arg);
 
 
 /**
@@ -103,7 +82,7 @@ typedef void (*dap_global_db_callback_result_raw_t) (dap_global_db_context_t * a
  *  @arg a_arg Custom argument
  *  @return none.
  */
-typedef bool (*dap_global_db_callback_results_t) (dap_global_db_context_t *a_global_db_context,
+typedef bool (*dap_global_db_callback_results_t)(dap_global_db_instance_t *a_dbi,
                                                   int a_rc, const char *a_group,
                                                   const size_t a_values_total, const size_t a_values_count,
                                                   dap_global_db_obj_t *a_values, void *a_arg);
@@ -116,7 +95,7 @@ typedef bool (*dap_global_db_callback_results_t) (dap_global_db_context_t *a_glo
  *  @arg a_values Current items (page of items)
  *  @return none.
  */
-typedef bool (*dap_global_db_callback_results_raw_t) (dap_global_db_context_t * a_global_db_context,
+typedef bool (*dap_global_db_callback_results_raw_t) (dap_global_db_instance_t *a_dbi,
                                                       int a_rc, const char *a_group,
                                                       const size_t a_values_current, const size_t a_values_count,
                                                       dap_store_obj_t *a_values, void *a_arg);
@@ -155,12 +134,13 @@ int dap_global_db_get_all_raw(const char * a_group, size_t l_results_page_size, 
 int dap_global_db_set(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value, dap_global_db_callback_result_t a_callback, void * a_arg );
 int dap_global_db_set_raw(dap_store_obj_t * a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void * a_arg );
 
-// Set multiple. In callback writes total processed objects to a_values_total and a_values_count to the a_values_count as well
-int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_values, size_t a_values_count, dap_global_db_callback_results_t a_callback, void * a_arg );
 int dap_global_db_pin(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void * a_arg );
 int dap_global_db_unpin(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void * a_arg );
 int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void * a_arg );
 int dap_global_db_flush( dap_global_db_callback_result_t a_callback, void * a_arg );
+
+// Set multiple. In callback writes total processed objects to a_values_total and a_values_count to the a_values_count as well
+int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_values, size_t a_values_count, dap_global_db_callback_results_t a_callback, void * a_arg );
 
 // === Sync functions ===
 byte_t *dap_global_db_get_sync(const char *a_group, const char *a_key, size_t *a_data_size, bool *a_is_pinned, dap_nanotime_t *a_ts);

@@ -20,9 +20,10 @@
     You should have received a copy of the GNU General Public License
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
+#include "dap_common.h"
 #include "dap_events.h"
 #include "dap_events_socket.h"
-#include "dap_common.h"
+#include "dap_context.h"
 #include "dap_stream_worker.h"
 #include "dap_stream_ch_pkt.h"
 
@@ -68,9 +69,7 @@ int dap_stream_worker_init()
         l_stream_worker_inp->queue_ch_io_input = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * l_worker_count);
         if (!l_stream_worker_inp->queue_ch_io_input) {
             log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_thread_stream->queue_ch_io_input);
-            DAP_DEL_Z(l_thread_stream);
-            return -7;
+            return -8;
         }
         for (uint32_t j = 0; j < l_worker_count; j++) {
             dap_worker_t * l_worker = dap_events_worker_get(j);
@@ -89,7 +88,7 @@ int dap_stream_worker_init()
  */
 static void s_ch_io_callback(dap_events_socket_t * a_es, void * a_msg)
 {
-    dap_stream_worker_t * l_stream_worker = DAP_STREAM_WORKER( a_es->context->worker );
+    dap_stream_worker_t * l_stream_worker = DAP_STREAM_WORKER( a_es->worker );
     dap_stream_worker_msg_io_t * l_msg = (dap_stream_worker_msg_io_t*) a_msg;
 
     assert(l_msg);
@@ -139,7 +138,7 @@ static void s_ch_send_callback(dap_events_socket_t *a_es, void *a_msg)
     }
     dap_stream_ch_t *l_ch = dap_stream_ch_by_id_unsafe(l_stream, l_msg->ch_id);
     if (!l_ch) {
-        log_it(L_WARNING, "Stream found, but not setup channel '%С'", l_msg->ch_id);
+        log_it(L_WARNING, "Stream found, but not setup channel '%c'", l_msg->ch_id);
         goto ret_n_clear;
     }
     dap_stream_ch_pkt_write_unsafe(l_ch, l_msg->ch_pkt_type, l_msg->data, l_msg->data_size);

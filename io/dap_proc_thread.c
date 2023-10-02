@@ -22,19 +22,19 @@
 */
 #include <errno.h>
 #include <pthread.h>
-#include "dap_events_socket.h"
-#include "dap_config.h"
-#include "dap_list.h"
+#include <utlist.h>
+#include "dap_strfuncs.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
+#include "dap_context.h"
 
 #define LOG_TAG "dap_proc_thread"
 
 static uint32_t s_threads_count = 0;
-static dap_proc_thread_t * s_threads = NULL;
+static dap_proc_thread_t *s_threads = NULL;
 
-static void s_context_callback_started(dap_context_t *a_context, void *a_arg);
-static void s_context_callback_stopped(dap_context_t *a_context, void *a_arg);
+static int s_context_callback_started(dap_context_t *a_context, void *a_arg);
+static int s_context_callback_stopped(dap_context_t *a_context, void *a_arg);
 
 /**
  * @brief dap_proc_thread_init
@@ -44,8 +44,8 @@ static void s_context_callback_stopped(dap_context_t *a_context, void *a_arg);
 
 int dap_proc_thread_init(uint32_t a_threads_count)
 {
-    s_threads_count = a_threads_count ? a_threads_count : dap_get_cpu_count( );
-    s_threads = DAP_NEW_Z_SIZE(dap_proc_thread_t, sizeof (dap_proc_thread_t)* s_threads_count);
+    s_threads_count = a_threads_count ? a_threads_count : dap_get_cpu_count();
+    s_threads = DAP_NEW_Z_SIZE(dap_proc_thread_t, sizeof(dap_proc_thread_t) * s_threads_count);
     for (uint32_t i = 0; i < s_threads_count; i++) {
         dap_proc_thread_t *l_thread = s_threads + i;
         l_thread->context = dap_context_new(DAP_CONTEXT_TYPE_PROC_THREAD);
@@ -66,13 +66,9 @@ int dap_proc_thread_init(uint32_t a_threads_count)
  */
 void dap_proc_thread_deinit()
 {
-    int l_rc = 0;
-    size_t l_sz = 0;
-    dap_proc_thread_t *l_proc_thread = NULL;
-
-    for (uint32_t i = s_threads_count; i--; ){
+    for (uint32_t i = s_threads_count; i--; )
         dap_context_stop_n_kill(s_threads[i].context);
-    }
+    DAP_DEL_Z(s_threads);
 }
 
 /**
@@ -106,18 +102,18 @@ dap_proc_thread_t *dap_proc_thread_get_auto()
     return &s_threads[l_id_min];
 }
 
-int dap_proc_thread_add_callback_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback,
+int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback,
                               void *a_callback_arg, enum dap_queue_msg_priority a_priority)
 {
     dap_return_val_if_fail(a_callback && a_priority >= DAP_QUEUE_MSG_PRIORITY_0 && a_priority < DAP_QUEUE_MSG_PRIORITY_COUNT, -1);
-    dap_proc_thread_t l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
+    dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
     dap_proc_queue_item_t *l_item = DAP_NEW_Z(dap_proc_queue_item_t);
     if (!l_item) {
         log_it(L_CRITICAL, "Insufficient memory");
         return -2;
     }
-    l_item = (dap_proc_queue_item_t){ .callback = a_callback,
-                                      .callback_arg = a_callback_arg};
+    *l_item = (dap_proc_queue_item_t){ .callback = a_callback,
+                                       .callback_arg = a_callback_arg};
     pthread_mutex_lock(&l_thread->queue_lock);
     DL_APPEND(l_thread->queue[a_priority], l_item);
     l_thread->proc_queue_size++;
@@ -128,7 +124,7 @@ int dap_proc_thread_add_callback_pri(dap_proc_thread_t *a_thread, dap_proc_queue
 
 static dap_proc_queue_item_t *s_proc_queue_pull(dap_proc_thread_t *a_thread)
 {
-    if (!l_thread->proc_queue_size)
+    if (!a_thread->proc_queue_size)
         return NULL;
     dap_proc_queue_item_t *l_item = NULL;
     int i = DAP_QUEUE_MSG_PRIORITY_COUNT - 1;
@@ -156,6 +152,7 @@ int dap_proc_thread_loop(dap_context_t *a_context)
             l_item->callback(l_thread, l_item->callback_arg);
         DAP_DEL_Z(l_item);
     } while (!a_context->signal_exit);
+    return 0;
 }
 
 /**
@@ -163,7 +160,7 @@ int dap_proc_thread_loop(dap_context_t *a_context)
  * @param a_context
  * @param a_arg
  */
-static void s_context_callback_started(dap_context_t *a_context, void *a_arg)
+static int s_context_callback_started(UNUSED_ARG dap_context_t *a_context, void *a_arg)
 {
     dap_proc_thread_t *l_thread = a_arg;
     assert(l_thread);
@@ -173,6 +170,7 @@ static void s_context_callback_started(dap_context_t *a_context, void *a_arg)
     dap_worker_t * l_worker_related = dap_events_worker_get(l_thread->context->cpu_id);
     assert(l_worker_related);
     l_worker_related->proc_queue_input = l_thread;
+    return 0;
 }
 
 /**
@@ -180,7 +178,7 @@ static void s_context_callback_started(dap_context_t *a_context, void *a_arg)
  * @param a_context
  * @param a_arg
  */
-static void s_context_callback_stopped(UNUSED_ARG dap_context_t *a_context, void *a_arg)
+static int s_context_callback_stopped(UNUSED_ARG dap_context_t *a_context, void *a_arg)
 {
     dap_proc_thread_t *l_thread = a_arg;
     assert(l_thread);
@@ -193,5 +191,5 @@ static void s_context_callback_stopped(UNUSED_ARG dap_context_t *a_context, void
     pthread_cond_destroy(&l_thread->queue_event);
     pthread_mutex_unlock(&l_thread->queue_lock);
     pthread_mutex_destroy(&l_thread->queue_lock);
-
+    return 0;
 }

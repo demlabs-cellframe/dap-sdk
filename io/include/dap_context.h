@@ -26,8 +26,6 @@
 #include <uthash.h>
 #include "dap_common.h"
 #include "dap_events_socket.h"
-#include "dap_proc_thread.h"
-#include "dap_worker.h"
 
 typedef struct dap_context dap_context_t;
  // Callback for specific client operations like custom init/deinit
@@ -74,6 +72,44 @@ typedef struct dap_context {
 
     // Inheritor
     void * _inheritor;  // dap_proc_thread_t, dap_worker_t
+
+/* *** TODO Move this part to dap_worker_t context subtype *** */
+struct {
+    /// Platform-specific fields
+#if defined DAP_EVENTS_CAPS_MSMQ
+    HANDLE msmq_events[MAXIMUM_WAIT_OBJECTS];
+#endif
+#ifdef DAP_EVENTS_CAPS_AIO
+    dap_slist_t garbage_list;
+#endif
+#if defined DAP_EVENTS_CAPS_EPOLL
+    EPOLL_HANDLE epoll_fd;
+    struct epoll_event epoll_events[ DAP_EVENTS_SOCKET_MAX];
+#elif defined (DAP_EVENTS_CAPS_POLL)
+    int poll_fd;
+    struct pollfd * poll;
+    dap_events_socket_t ** poll_esocket;
+    atomic_uint poll_count;
+    size_t poll_count_max;
+    bool poll_compress; // Some of fd's became NULL so arrays need to be reassigned
+#elif defined (DAP_EVENTS_CAPS_KQUEUE)
+    int kqueue_fd;
+    struct kevent * kqueue_events_selected;
+    struct kevent * kqueue_events;
+    size_t kqueue_events_count;
+
+    int kqueue_events_count_max;
+    int kqueue_events_selected_count_max;
+#else
+#error "Not defined worker for your platform"
+#endif
+    ssize_t esocket_current; // Currently selected esocket
+    ssize_t esockets_selected; // Currently selected number of esockets
+
+    atomic_uint event_sockets_count;
+    dap_events_socket_t *esockets; // Hashmap of event sockets
+    dap_events_socket_t *event_exit;
+};
 } dap_context_t;
 
 // Waiting for started before exit _run function/
@@ -133,7 +169,7 @@ static inline dap_context_t * dap_context_current()
     return (dap_context_t*) pthread_getspecific(g_dap_context_pth_key);
 }
 
-/// ALL THIS FUNCTIONS ARE UNSAFE ! CALL THEM ONLY INSIDE THEIR OWN CONTEXT!!
+/// ALL THIS FUNCTIONS ARE UNSAFE AND SHOULD BE MOVED TO DAP_WORKER SUBTYPE! CALL THEM ONLY INSIDE THEIR OWN CONTEXT!!
 
 int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es );
 int dap_context_remove( dap_events_socket_t * a_es);

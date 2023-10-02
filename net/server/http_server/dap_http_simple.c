@@ -53,7 +53,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_http_simple.h"
 #include "dap_enc_key.h"
 #include "dap_http_user_agent.h"
-
+#include "dap_context.h"
 
 #include "../enc_server/include/dap_enc_ks.h"
 #include "../enc_server/include/dap_enc_http.h"
@@ -396,7 +396,7 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void *
     l_http_simple->esocket = a_http_client->esocket;
     l_http_simple->esocket_uuid = a_http_client->esocket->uuid;
     l_http_simple->http_client = a_http_client;
-    l_http_simple->worker = a_http_client->esocket->context->worker;
+    l_http_simple->worker = a_http_client->esocket->worker;
     l_http_simple->reply_size_max = DAP_HTTP_SIMPLE_URL_PROC( a_http_client->proc )->reply_size_max;
     l_http_simple->reply_byte = DAP_NEW_Z_SIZE(uint8_t, DAP_HTTP_SIMPLE(a_http_client)->reply_size_max );
 
@@ -424,7 +424,7 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void *
         log_it( L_DEBUG, "No data section, execution proc callback" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         a_http_client->esocket->_inheritor = NULL;
-        dap_proc_thread_add_callback_pri(l_http_simple->worker->proc_queue_input, s_proc_queue_callback, l_http_simple, DAP_QUEUE_MSG_PRIORITY_HIGH);
+        dap_proc_thread_callback_add_pri(l_http_simple->worker->proc_queue_input, s_proc_queue_callback, l_http_simple, DAP_QUEUE_MSG_PRIORITY_HIGH);
 
     }
 }
@@ -467,7 +467,7 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
         log_it( L_INFO,"Data for http_simple_request collected" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         a_http_client->esocket->_inheritor = NULL;
-        dap_proc_thread_add_callback( l_http_simple->worker->proc_queue_input , s_proc_queue_callback, l_http_simple);
+        dap_proc_thread_callback_add( l_http_simple->worker->proc_queue_input , s_proc_queue_callback, l_http_simple);
     }
 }
 

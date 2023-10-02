@@ -83,7 +83,9 @@
 #include "dap_context.h"
 #include "dap_list.h"
 #include "dap_worker.h"
-#include "dap_events_socket.h"
+#include "dap_events.h"
+#include "dap_proc_thread.h"
+#include "dap_worker.h"
 
 pthread_key_t g_dap_context_pth_key; // Thread-specific object with pointer on current context
 
@@ -234,7 +236,7 @@ void dap_context_stop_n_kill(dap_context_t * a_context)
     pthread_t l_thread_id = a_context->thread_id;
     switch (a_context->type) {
     case DAP_CONTEXT_TYPE_WORKER:
-        dap_events_socket_event_signal(DAP_WORKER(a_context)->event_exit, 1);
+        dap_events_socket_event_signal(a_context->event_exit, 1);
         break;
     case DAP_CONTEXT_TYPE_PROC_THREAD: {
         dap_proc_thread_t *l_thread = DAP_PROC_THREAD(a_context);
@@ -317,16 +319,14 @@ static void *s_context_thread(void *a_arg)
     }
 #endif // DAP_OS_WINDOWS
 
-    if(s_thread_init(l_context)!=0){
-
-    }
+    pthread_setspecific(g_dap_context_pth_key, l_context);
     // Now we're running and initalized for sure, so we can assign flags to the current context
     l_context->running_flags = l_msg->flags;
 
-    if (l_context->type = DAP_CONTEXT_TYPE_WORKER)
+    if (l_context->type == DAP_CONTEXT_TYPE_WORKER) {
         // Add pre-defined queues and events
         dap_context_add(l_context, l_context->event_exit);
-
+    }
     l_context->is_running = true;
     // Started callback execution
     if (l_msg->callback_started &&
@@ -356,7 +356,7 @@ static void *s_context_thread(void *a_arg)
         l_msg->callback_stopped(l_context, l_msg->callback_arg);
 
     log_it(L_NOTICE,"Exiting context #%u", l_context->id);
-    if (l_context->type = DAP_CONTEXT_TYPE_WORKER) {
+    if (l_context->type == DAP_CONTEXT_TYPE_WORKER) {
         dap_context_remove(l_context->event_exit);
         dap_events_socket_delete_unsafe(l_context->event_exit, false);  // check ticket 9030
     }
@@ -374,61 +374,12 @@ static void *s_context_thread(void *a_arg)
     return NULL;
 }
 
-
-/**
- * @brief dap_context_thread_init
+/** Need be moved back to worker
+ * @brief dap_worker_thread_loop
  * @param a_context
  * @return
  */
-static int s_thread_init(dap_context_t * a_context)
-{
-    pthread_setspecific(g_dap_context_pth_key, a_context);
-
-#if defined(DAP_EVENTS_CAPS_KQUEUE)
-    a_context->kqueue_fd = kqueue();
-
-    if (a_context->kqueue_fd == -1 ){
-        int l_errno = errno;
-        char l_errbuf[255];
-        strerror_r(l_errno,l_errbuf,sizeof(l_errbuf));
-        log_it (L_CRITICAL,"Can't create kqueue(): '%s' code %d",l_errbuf,l_errno);
-        return -1;
-    }
-
-    a_context->kqueue_events_selected_count_max = 100;
-    a_context->kqueue_events_count_max = DAP_EVENTS_SOCKET_MAX;
-    a_context->kqueue_events_selected = DAP_NEW_Z_SIZE(struct kevent, a_context->kqueue_events_selected_count_max *sizeof(struct kevent));
-#elif defined(DAP_EVENTS_CAPS_POLL)
-    a_context->poll_count_max = DAP_EVENTS_SOCKET_MAX;
-    a_context->poll = DAP_NEW_Z_SIZE(struct pollfd,a_context->poll_count_max*sizeof (struct pollfd));
-    a_context->poll_esocket = DAP_NEW_Z_SIZE(dap_events_socket_t*,a_context->poll_count_max*sizeof (dap_events_socket_t*));
-#elif defined(DAP_EVENTS_CAPS_EPOLL)
-        a_context->epoll_fd = epoll_create( DAP_MAX_EVENTS_COUNT );
-        //log_it(L_DEBUG, "Created event_fd %d for context %u", a_context->epoll_fd,i);
-#ifdef DAP_OS_WINDOWS
-        if (!a_context->epoll_fd) {
-            int l_errno = WSAGetLastError();
-#else
-        if ( a_context->epoll_fd == -1 ) {
-            int l_errno = errno;
-#endif
-            char l_errbuf[128];
-            strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-            log_it(L_CRITICAL, "Error create epoll fd: %s (%d)", l_errbuf, l_errno);
-            return -1;
-        }
-#else
-#error "Unimplemented dap_context_init for this platform"
-#endif
-    return 0;
-}
-
-/**
- * @brief s_thread_loop
- * @param a_context
- * @return
- */
-static int s_thread_loop(dap_context_t * a_context)
+int dap_worker_thread_loop(dap_context_t * a_context)
 {
     int l_errno = 0, l_selected_sockets = 0;
     dap_events_socket_t *l_cur = NULL;
@@ -1322,9 +1273,9 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
         log_it(L_WARNING, "Can't add NULL esocket to the context");
         return -1;
     }
-    if(a_context == NULL){
-        log_it(L_WARNING, "Can't add esocket to the NULL context");
-        return -1;
+    if (a_context == NULL || a_context->type != DAP_CONTEXT_TYPE_WORKER) {
+        log_it(L_WARNING, "Can't add esocket to the bad context");
+        return -2;
     }
 
     if(g_debug_reactor){
@@ -1363,6 +1314,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
     a_context->poll_esocket[a_context->poll_count] = a_es;
     a_context->poll_count++;
     a_es->context = a_context;
+    a_es->worker = DAP_WORKER(a_context);
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     if ( a_es->type == DESCRIPTOR_TYPE_QUEUE ){
         goto lb_exit;

@@ -24,7 +24,6 @@
 #pragma once
 #include <pthread.h>
 #include "uthash.h"
-#include "dap_events_socket.h"
 #include "dap_server.h"
 #include "dap_worker.h"
 #define DAP_MAX_EVENTS_COUNT    8192

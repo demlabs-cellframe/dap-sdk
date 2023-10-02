@@ -25,6 +25,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_list.h"
 #include "dap_events_socket.h"
 #include "dap_stream_worker.h"
+#include "dap_stream_ch_pkt.h"
 
 #define LOG_TAG "dap_cluster"
 
@@ -47,7 +48,7 @@ dap_cluster_t *dap_cluster_find(dap_guuid_t a_cluster_id)
  * @param a_options
  * @return
  */
-dap_cluster_t *dap_cluster_new(dap_cluster_role_t *a_role)
+dap_cluster_t *dap_cluster_new(dap_cluster_role_t a_role)
 {
     dap_cluster_t *l_ret = DAP_NEW_Z(dap_cluster_t);
     if (!l_ret) {
@@ -55,7 +56,7 @@ dap_cluster_t *dap_cluster_new(dap_cluster_role_t *a_role)
         return NULL;
     }
     pthread_rwlock_init(&l_ret->members_lock, NULL);
-    l_ret->options = a_role;
+    l_ret->role = a_role;
     dap_cluster_t *l_check = NULL;
     do {
         l_ret->guuid = dap_guuid_new();
@@ -83,7 +84,6 @@ void dap_cluster_delete(dap_cluster_t *a_cluster)
     HASH_ITER(hh, a_cluster->members, l_member, l_tmp)
         s_cluster_member_delete(l_member);
     pthread_rwlock_unlock(&a_cluster->members_lock);
-    DAP_DEL_Z(a_cluster->options);
     assert(!a_cluster->_inheritor);
     DAP_DELETE(a_cluster);
 }
@@ -169,6 +169,8 @@ dap_list_t *dap_cluster_get_shuffle_addrs(dap_cluster_t *a_cluster)
     pthread_rwlock_unlock(&a_cluster->members_lock);
     return dap_list_shuffle(l_ret);
 }
+
+static dap_list_t *dap_stream_get_shuffle_addrs() { return NULL; } // for build pass
 
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
 {

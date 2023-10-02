@@ -254,7 +254,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             struct sync_request *l_sync_request = dap_stream_ch_chain_create_sync_request(l_chain_pkt, a_ch);
             l_ch_chain->stats_request_gdb_processed = 0;
             l_ch_chain->request_hdr = l_chain_pkt->hdr;
-            dap_proc_thread_add_callback(a_ch->stream_worker->worker->proc_queue_input, s_sync_update_gdb_proc_callback, l_sync_request);
+            dap_proc_thread_callback_add(a_ch->stream_worker->worker->proc_queue_input, s_sync_update_gdb_proc_callback, l_sync_request);
         } break;
 
         // Response with metadata organized in TSD
@@ -366,7 +366,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                 if (l_chain_pkt_data_size == sizeof(dap_stream_ch_chain_sync_request_t))
                     l_ch_chain->request = *(dap_stream_ch_chain_sync_request_t*)l_chain_pkt->data;
                 struct sync_request *l_sync_request = dap_stream_ch_chain_create_sync_request(l_chain_pkt, a_ch);
-                dap_proc_thread_add_callback(a_ch->stream_worker->worker->proc_queue_input, s_sync_out_gdb_proc_callback, l_sync_request);
+                dap_proc_thread_callback_add(a_ch->stream_worker->worker->proc_queue_input, s_sync_out_gdb_proc_callback, l_sync_request);
             }else{
                 log_it(L_WARNING, "DAP_STREAM_CH_CHAIN_PKT_TYPE_SYNC_GLOBAL_DB: Wrong chain packet size %zd when expected %zd", l_chain_pkt_data_size, sizeof(l_ch_chain->request));
                 s_stream_ch_write_error_unsafe(a_ch, l_chain_pkt->hdr.net_id.uint64,
@@ -399,7 +399,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                 dap_chain_pkt_item_t *l_pkt_item = &l_sync_request->pkt;
                 l_pkt_item->pkt_data = DAP_DUP_SIZE(l_chain_pkt->data, l_chain_pkt_data_size);
                 l_pkt_item->pkt_data_size = l_chain_pkt_data_size;
-                dap_proc_thread_add_callback(a_ch->stream_worker->worker->proc_queue_input, s_gdb_in_pkt_proc_callback, l_sync_request);
+                dap_proc_thread_callback_add(a_ch->stream_worker->worker->proc_queue_input, s_gdb_in_pkt_proc_callback, l_sync_request);
             } else {
                 log_it(L_WARNING, "Packet with GLOBAL_DB atom has zero body size");
                 s_stream_ch_write_error_unsafe(a_ch, l_chain_pkt->hdr.net_id.uint64,
