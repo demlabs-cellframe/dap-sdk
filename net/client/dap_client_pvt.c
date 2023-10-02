@@ -1027,9 +1027,8 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_node_sign, DAP_ENC_DATA_TYPE_B64);
             dap_sign_t *l_sign = (dap_sign_t *)l_node_sign;
             if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
-                dap_stream_addr_t *l_node_addr = dap_stream_get_addr_from_sign(l_sign, true);
+                dap_stream_node_addr_t l_node_addr = dap_stream_get_addr_from_sign(l_sign);
                 dap_stream_add_addr(l_node_addr, l_client_pvt->session_key);
-                DAP_DEL_Z(l_node_addr);
             }
             DAP_DEL_Z(l_node_sign_b64);
         }

@@ -27,7 +27,6 @@
 #include "stdbool.h"
 #include "dap_hash.h"
 
-
 #define DAP_ENC_KS_KEY_ID_SIZE 33
 struct dap_http_client;
 typedef struct dap_enc_key dap_enc_key_t;

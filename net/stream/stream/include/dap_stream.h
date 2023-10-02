@@ -47,15 +47,6 @@ typedef enum dap_stream_sign_group {
     BASE_NODE_SIGN,
 } dap_stream_sign_group_t;
 
-typedef struct dap_stream_addr {
-    union {
-        uint64_t uint64;
-        uint16_t words[sizeof(uint64_t)/2];
-        uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
-    } addr;
-    bool uplink;
-} dap_stream_addr_t;
-
 typedef struct dap_stream {
     int id;
     dap_stream_session_t * session;
@@ -94,7 +85,7 @@ typedef struct dap_stream {
     struct dap_stream *prev, *next;
 
     dap_stream_sign_group_t sign_group;
-    dap_stream_addr_t* node;
+    dap_stream_node_addr_t node;
 } dap_stream_t;
 
 typedef void (*dap_stream_callback)(dap_stream_t *, void *);
@@ -123,10 +114,10 @@ void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready);
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
 
 // autorization stream block
-int dap_stream_add_addr(dap_stream_addr_t *a_addr, void *a_id);
-int dap_stream_delete_addr(dap_stream_addr_t* a_addr);
+int dap_stream_add_addr(dap_stream_node_addr_t a_addr, void *a_id);
+int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full);
 int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 int dap_stream_change_id(void  *a_old, unsigned long a_new);
-dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_addr_t a_addr, dap_worker_t **a_worker);
-dap_stream_addr_t *dap_stream_get_addr_from_sign(dap_sign_t *a_sign, bool a_uplink);
+dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t a_addr, dap_worker_t **a_worker);
+dap_stream_node_addr_t dap_stream_get_addr_from_sign(dap_sign_t *a_sign);
