@@ -1078,19 +1078,19 @@ int dap_stream_change_id(void *a_old, uint64_t a_new)
  * @param a_stream - using stream
  * @return  0 if ok others if not
  */
-static int s_add_stream_info(authorized_stream_t *a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream)
+static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream)
 {
     dap_return_val_if_pass(!a_hash_table || !a_item || !a_stream, -1);
     authorized_stream_t *l_a_stream = NULL;
-    HASH_FIND(hh, a_hash_table, &a_item->node, sizeof(a_item->node), l_a_stream);
+    HASH_FIND(hh, *a_hash_table, &a_item->node, sizeof(a_item->node), l_a_stream);
     if (l_a_stream){
-         log_it(L_WARNING,"Trying replace stream in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(l_a_stream->node));
+        log_it(L_WARNING,"Trying replace stream in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(l_a_stream->node));
         return -1;
     }
     a_item->esocket_uuid = a_stream->esocket_uuid;
     a_item->stream_worker = a_stream->stream_worker;
     a_stream->node.uint64 = a_item->node.uint64;
-    HASH_ADD(hh, a_hash_table, node, sizeof(a_item->node), a_item);
+    HASH_ADD(hh, *a_hash_table, node, sizeof(a_item->node), a_item);
     return 0;
 }
 
@@ -1109,8 +1109,8 @@ int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id)
     HASH_FIND(hh, s_prep_authorized_streams, &a_id, sizeof(a_id), l_a_stream);
     if (l_a_stream) {
         HASH_DEL(s_prep_authorized_streams, l_a_stream);
-        if(s_add_stream_info(s_authorized_streams, l_a_stream, a_stream) &&
-            s_add_stream_info(s_authorized_streams_dublicate, l_a_stream, a_stream)) {
+        if(s_add_stream_info(&s_authorized_streams, l_a_stream, a_stream) &&
+            s_add_stream_info(&s_authorized_streams_dublicate, l_a_stream, a_stream)) {
             DAP_DELETE(l_a_stream);  // free memory if we have dublicates in both tables
             l_ret = -1;
         }
