@@ -29,6 +29,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_worker.h"
 
+#define DAP_GLOBAL_DB_TASK_PRIORITY DAP_QUEUE_MSG_PRIORITY_LOW
+
 enum dap_stream_ch_gdb_state {
     DAP_STREAM_CH_GDB_STATE_IDLE,
     DAP_STREAM_CH_GDB_STATE_UPDATE,

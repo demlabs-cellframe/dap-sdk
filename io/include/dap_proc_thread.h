@@ -32,17 +32,15 @@ typedef struct dap_context dap_context_t;
 typedef bool (*dap_proc_queue_callback_t)(dap_proc_thread_t *a_thread, void *a_arg);
 
 enum dap_queue_msg_priority {
-    DAP_QUEUE_MSG_PRIORITY_0 = 0,                                           /* Lowest priority (Idle)  */
-    DAP_QUEUE_MSG_PRIORITY_IDLE = DAP_QUEUE_MSG_PRIORITY_0,                 /* Don't use Idle if u are not sure that understand how it works */
+    DAP_QUEUE_MSG_PRIORITY_IDLE = 0,                                        /* Lowest priority (Idle). Don't use Idle if u are not sure that understand how it works */
+    DAP_QUEUE_MSG_PRIORITY_MIN = DAP_QUEUE_MSG_PRIORITY_IDLE,
 
-    DAP_QUEUE_MSG_PRIORITY_1 = 1,                                           /* Low priority */
-    DAP_QUEUE_MSG_PRIORITY_LOW = DAP_QUEUE_MSG_PRIORITY_1,
+    DAP_QUEUE_MSG_PRIORITY_LOW = 1,                                         /* Low priority */
 
-    DAP_QUEUE_MSG_PRIORITY_2 = 2,
-    DAP_QUEUE_MSG_PRIORITY_NORMAL = DAP_QUEUE_MSG_PRIORITY_2,               /* Default priority for any queue's entry, has assigned implicitly */
+    DAP_QUEUE_MSG_PRIORITY_NORMAL = 2,                                      /* Default priority for any queue's entry, has assigned implicitly */
 
-    DAP_QUEUE_MSG_PRIORITY_3 = 3,                                           /* Higest priority */
-    DAP_QUEUE_MSG_PRIORITY_HIGH = DAP_QUEUE_MSG_PRIORITY_3,
+    DAP_QUEUE_MSG_PRIORITY_HIGH = 3,                                        /* Higest priority */
+    DAP_QUEUE_MSG_PRIORITY_MAX = DAP_QUEUE_MSG_PRIORITY_HIGH,
 
     DAP_QUEUE_MSG_PRIORITY_COUNT = 4                                        /* End-of-list marker */
 };

@@ -105,7 +105,7 @@ dap_proc_thread_t *dap_proc_thread_get_auto()
 int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback,
                               void *a_callback_arg, enum dap_queue_msg_priority a_priority)
 {
-    dap_return_val_if_fail(a_callback && a_priority >= DAP_QUEUE_MSG_PRIORITY_0 && a_priority < DAP_QUEUE_MSG_PRIORITY_COUNT, -1);
+    dap_return_val_if_fail(a_callback && a_priority >= DAP_QUEUE_MSG_PRIORITY_MIN && a_priority <= DAP_QUEUE_MSG_PRIORITY_MAX, -1);
     dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
     dap_proc_queue_item_t *l_item = DAP_NEW_Z(dap_proc_queue_item_t);
     if (!l_item) {
@@ -122,19 +122,24 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
     return 0;
 }
 
-static dap_proc_queue_item_t *s_proc_queue_pull(dap_proc_thread_t *a_thread)
+static dap_proc_queue_item_t *s_proc_queue_pull(dap_proc_thread_t *a_thread, int *a_priority)
 {
     if (!a_thread->proc_queue_size)
         return NULL;
     dap_proc_queue_item_t *l_item = NULL;
-    int i = DAP_QUEUE_MSG_PRIORITY_COUNT - 1;
+    int i = DAP_QUEUE_MSG_PRIORITY_MAX;
     for (; !l_item && i >= 0; i--)
-        l_item = a_thread->queue[i];
-    if (l_item)
-        DL_DELETE(a_thread->queue[i + 1], l_item);
-    else
-        log_it(L_ERROR, "Not found item in message queue with size %"DAP_UINT64_FORMAT_U,
-                                                            a_thread->proc_queue_size--);
+        if ((l_item = a_thread->queue[i]))
+            break;
+    if (l_item) {
+        DL_DELETE(a_thread->queue[i], l_item);
+        a_thread->proc_queue_size--;
+        if (a_priority)
+            *a_priority = i;
+    } else
+        log_it(L_ERROR, "No item found in all piority levels of"
+                        " message queue with size %"DAP_UINT64_FORMAT_U,
+                                                 a_thread->proc_queue_size);
     return l_item;
 }
 
@@ -143,13 +148,15 @@ int dap_proc_thread_loop(dap_context_t *a_context)
     dap_proc_thread_t *l_thread = DAP_PROC_THREAD(a_context);
     do {
         pthread_mutex_lock(&l_thread->queue_lock);
-        dap_proc_queue_item_t *l_item;
+        dap_proc_queue_item_t *l_item = NULL;
+        int l_item_priority = 0;
         while (!a_context->signal_exit &&
-               !(l_item = s_proc_queue_pull(l_thread)))
+               !(l_item = s_proc_queue_pull(l_thread, &l_item_priority)))
             pthread_cond_wait(&l_thread->queue_event, &l_thread->queue_lock);
         pthread_mutex_unlock(&l_thread->queue_lock);
-        if (!a_context->signal_exit)
-            l_item->callback(l_thread, l_item->callback_arg);
+        if (!a_context->signal_exit &&
+                l_item->callback(l_thread, l_item->callback_arg))
+            dap_proc_thread_callback_add_pri(l_thread, l_item->callback, l_item->callback_arg, l_item_priority);
         DAP_DEL_Z(l_item);
     } while (!a_context->signal_exit);
     return 0;
@@ -160,7 +167,7 @@ int dap_proc_thread_loop(dap_context_t *a_context)
  * @param a_context
  * @param a_arg
  */
-static int s_context_callback_started(UNUSED_ARG dap_context_t *a_context, void *a_arg)
+static int s_context_callback_started(dap_context_t UNUSED_ARG *a_context, void *a_arg)
 {
     dap_proc_thread_t *l_thread = a_arg;
     assert(l_thread);
@@ -178,7 +185,7 @@ static int s_context_callback_started(UNUSED_ARG dap_context_t *a_context, void 
  * @param a_context
  * @param a_arg
  */
-static int s_context_callback_stopped(UNUSED_ARG dap_context_t *a_context, void *a_arg)
+static int s_context_callback_stopped(dap_context_t UNUSED_ARG *a_context, void *a_arg)
 {
     dap_proc_thread_t *l_thread = a_arg;
     assert(l_thread);

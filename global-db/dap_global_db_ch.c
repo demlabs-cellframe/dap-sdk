@@ -25,6 +25,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db_ch.h"
 #include "dap_global_db_pkt.h"
 #include "dap_stream_ch_proc.h"
+#include "dap_global_db_cluster.h"
 
 #define LOG_TAG "dap_stream_ch_global_db"
 
@@ -129,26 +130,16 @@ static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb)
     s_free_log_list_gdb(a_ch_chain);*/
 }
 
-static void s_process_gossip_msg(dap_global_db_context_t *a_global_db_context, void *a_arg)
+static void s_process_gossip_msg(dap_proc_thread_t *a_thread, void *a_arg)
 {
+    dap_store_obj_t *l_obj = a_arg;
+    dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_obj->group);
+    if (!l_cluster) {
+        log_it(L_WARNING, "An entry in the group %s was rejected because the group name doesn't match any mask.", a_obj->group);
+        return false;
+    }
     dap_nanotime_t l_timestamp_cur = 0;
-    bool l_match_mask = false, l_is_pinned_cur = false;
-    uint64_t l_ttl = 0;
-    for (dap_list_t *it = a_global_db_context->instance->notify_groups; it; it = it->next) {
-        dap_global_db_notify_item_t *l_item = it->data;
-        if (!dap_fnmatch(l_item->group_mask, a_obj->group, 0)) {
-            debug_if(g_dap_global_db_debug_more, L_DEBUG, "Group %s match mask %s.", a_obj->group, l_item->group_mask);
-            l_match_mask = true;
-            l_ttl = l_item->ttl;
-            break;
-        }
-    }
-    if (!l_match_mask) {
-        log_it(L_WARNING, "An entry in the group %s was rejected because the group name did not match any of the masks.", a_obj->group);
-        DAP_DEL_Z(a_arg);
-        return -4;
-    }
-
+    l_is_pinned_cur = false;
     if (g_dap_global_db_debug_more) {
         char l_ts_str[64] = { '\0' };
         dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
@@ -157,8 +148,6 @@ static void s_process_gossip_msg(dap_global_db_context_t *a_global_db_context, v
                 (char)a_obj->type, (char)a_obj->type, a_obj->group,
                 a_obj->key, l_ts_str, a_obj->value_len);
     }
-
-    bool l_broken = !dap_global_db_isalnum_group_key(a_obj);
 
     dap_store_obj_t *l_read_obj = NULL;
     if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
@@ -231,7 +220,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             log_it(L_WARNING, "Wrong Global DB gossip packet rejected");
             break;
         }
-        dap_global_db_context_exec(s_process_gossip_msg, l_pkt);
+        dap_proc_thread_callback_add_pri(NULL, s_process_gossip_msg, l_pkt, DAP_GLOBAL_DB_TASK_PRIORITY);
     } break;
         // Request for gdbs list update
         case DAP_STREAM_CH_CHAIN_PKT_TYPE_UPDATE_GLOBAL_DB_REQ:{

@@ -249,7 +249,7 @@ lb_return:
 /**
  * @brief kill context thread and clean context
  */
-void dap_global_db_context_deinit()
+void dap_global_db_instance_deinit()
 {
     dap_return_if_fail(s_dbi)
     dap_list_free_full(s_dbi->blacklist, NULL);
@@ -259,11 +259,16 @@ void dap_global_db_context_deinit()
     DAP_DEL_Z(s_dbi);
 }
 
+inline dap_global_db_instance_t *dap_global_db_instance_get_default()
+{
+    return s_dbi;
+}
+
 /**
- * @brief dap_global_db_deinit, after fix ticket 9030 need add dap_global_db_context_deinit() 
+ * @brief dap_global_db_deinit, after fix ticket 9030 need add dap_global_db_instance_deinit()
  */
 void dap_global_db_deinit() {
-    dap_global_db_context_deinit();
+    dap_global_db_instance_deinit();
     dap_db_driver_deinit();
     dap_global_db_cluster_deinit();
 }

@@ -108,7 +108,9 @@ extern int g_dap_global_db_debug_more;
 
 int dap_global_db_init(const char * a_path, const char * a_driver);
 void dap_global_db_deinit();
-void dap_global_db_context_deinit();
+
+void dap_global_db_instance_deinit();
+dap_global_db_instance_t *dap_global_db_instance_get_default();
 
 // For context unification sometimes we need to exec inside GlobalDB context
 int dap_global_db_context_exec(dap_global_db_callback_t a_callback, void * a_arg);
