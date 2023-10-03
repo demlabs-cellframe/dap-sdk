@@ -1134,11 +1134,14 @@ int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full)
             HASH_DEL(s_authorized_streams, l_a_stream);
             DAP_DEL_Z(l_a_stream);
         }
-        if (a_full){
-            HASH_FIND(hh, s_authorized_streams_dublicate, &a_addr, sizeof(a_addr), l_a_stream);
-            if (l_a_stream) {
-                HASH_DEL(s_authorized_streams_dublicate, l_a_stream);
+        // if full - clean all, if not - transfer from dublicate to main table
+        HASH_FIND(hh, s_authorized_streams_dublicate, &a_addr, sizeof(a_addr), l_a_stream);
+        if (l_a_stream) {
+            HASH_DEL(s_authorized_streams_dublicate, l_a_stream);
+            if (a_full) {
                 DAP_DEL_Z(l_a_stream);
+            } else {
+                HASH_ADD(hh, s_authorized_streams, node, sizeof(l_a_stream->node), l_a_stream);
             }
         }
     assert(!pthread_rwlock_unlock(&s_steams_lock));
