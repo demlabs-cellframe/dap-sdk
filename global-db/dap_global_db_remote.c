@@ -221,10 +221,10 @@ static void *s_list_thread_proc(void *arg)
             size_t l_item_count = 0;//min(64, l_group_cur->count);
             size_t l_objs_total_size = 0;
             dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, 0, &l_item_count);
-            if (!l_dap_db_log_list->is_process) {
+            /*if (!l_dap_db_log_list->is_process) {
                 dap_store_obj_free(l_objs, l_item_count);
                 return NULL;
-            }
+            }*/
             // go to next group
             if (!l_objs)
                 break;
@@ -434,21 +434,19 @@ dap_db_log_list_obj_t *dap_db_log_list_get(dap_db_log_list_t *a_db_log_list)
     pthread_mutex_lock(&a_db_log_list->list_mutex);
     int l_is_process = a_db_log_list->is_process;
     // check first item
-    dap_list_t *l_list = a_db_log_list->items_list;
     dap_db_log_list_obj_t *l_ret = NULL;
-    if (l_list) {
-        a_db_log_list->items_list = dap_list_remove_link(a_db_log_list->items_list, l_list);
-        a_db_log_list->items_rest--;
-        l_ret = l_list->data;
+    dap_list_t *l_first_elem = a_db_log_list->items_list;
+    if (l_first_elem) {
+        l_ret = l_first_elem->data;
         size_t l_old_size = a_db_log_list->size;
+        a_db_log_list->items_list = dap_list_delete_link(a_db_log_list->items_list, l_first_elem);
+        a_db_log_list->items_rest--;
         a_db_log_list->size -= dap_db_log_list_obj_get_size(l_ret);
-        DAP_DELETE(l_list);
-        if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE &&
-                a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE)
+
+        if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE && a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE)
             pthread_cond_signal(&a_db_log_list->cond);
     }
     pthread_mutex_unlock(&a_db_log_list->list_mutex);
-    //log_it(L_DEBUG, "get item n=%d", a_db_log_list->items_number - a_db_log_list->items_rest);
     return l_ret ? l_ret : DAP_INT_TO_POINTER(l_is_process);
 }
 
