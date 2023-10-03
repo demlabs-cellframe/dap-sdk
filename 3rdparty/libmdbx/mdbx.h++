@@ -13,14 +13,6 @@
 ///  - AppleClang, but without C++20 concepts.
 ///
 
-///
-/// The origin has been migrated to https://gitflic.ru/project/erthink/libmdbx
-/// since on 2022-04-15 the Github administration, without any warning nor
-/// explanation, deleted libmdbx along with a lot of other projects,
-/// simultaneously blocking access for many developers.
-/// For the same reason Github is blacklisted forever.
-///
-
 #pragma once
 
 /* Workaround for modern libstdc++ with CLANG < 4.x */
@@ -209,23 +201,14 @@
 #endif
 #endif /* MDBX_CXX20_UNLIKELY */
 
-#ifndef MDBX_HAVE_CXX20_CONCEPTS
+#ifndef MDBX_CXX20_CONCEPT
 #if defined(DOXYGEN) ||                                                        \
     (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
-     (!defined(__clang__) || __has_include(<concepts>) ||                      \
-  (defined(__cpp_lib_concepts) && __cpp_lib_concepts >= 202002L)))
-#if __has_include(<concepts>) ||                                               \
-  (defined(__cpp_lib_concepts) && __cpp_lib_concepts >= 202002L)
-#include <concepts>
-#endif /* <concepts> */
-#define MDBX_HAVE_CXX20_CONCEPTS 1
-#else
-#define MDBX_HAVE_CXX20_CONCEPTS 0
-#endif
-#endif /* MDBX_HAVE_CXX20_CONCEPTS */
-
-#ifndef MDBX_CXX20_CONCEPT
-#if MDBX_HAVE_CXX20_CONCEPTS
+     (!defined(__clang__) ||                                                   \
+      (__clang_major__ >= 12 && !defined(__APPLE__) &&                         \
+       !defined(__ANDROID_API__)) ||                                           \
+      __clang_major__ >=                                                       \
+          /* Hope Apple will fix concepts in AppleClang 14 */ 14))
 #define MDBX_CXX20_CONCEPT(CONCEPT, NAME) CONCEPT NAME
 #else
 #define MDBX_CXX20_CONCEPT(CONCEPT, NAME) typename NAME
@@ -233,7 +216,13 @@
 #endif /* MDBX_CXX20_CONCEPT */
 
 #ifndef MDBX_ASSERT_CXX20_CONCEPT_SATISFIED
-#if MDBX_HAVE_CXX20_CONCEPTS
+#if defined(DOXYGEN) ||                                                        \
+    (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
+     (!defined(__clang__) ||                                                   \
+      (__clang_major__ >= 12 && !defined(__APPLE__) &&                         \
+       !defined(__ANDROID_API__)) ||                                           \
+      __clang_major__ >=                                                       \
+          /* Hope Apple will fix concepts in AppleClang 14 */ 14))
 #define MDBX_ASSERT_CXX20_CONCEPT_SATISFIED(CONCEPT, TYPE)                     \
   static_assert(CONCEPT<TYPE>)
 #else
@@ -267,7 +256,7 @@ namespace mdbx {
 // To enable all kinds of an compiler optimizations we use a byte-like type
 // that don't presumes aliases for pointers as does the `char` type and its
 // derivatives/typedefs.
-// Please see todo4recovery://erased_by_github/libmdbx/issues/263
+// Please see https://github.com/erthink/libmdbx/issues/263
 // for reasoning of the use of `char8_t` type and switching to `__restrict__`.
 using byte = char8_t;
 #else
@@ -512,7 +501,13 @@ static MDBX_CXX20_CONSTEXPR void *memcpy(void *dest, const void *src,
                                          size_t bytes) noexcept;
 //------------------------------------------------------------------------------
 
-#if MDBX_HAVE_CXX20_CONCEPTS
+#if defined(DOXYGEN) ||                                                        \
+    (defined(__cpp_concepts) && __cpp_concepts >= 201907L &&                   \
+     (!defined(__clang__) ||                                                   \
+      (__clang_major__ >= 12 && !defined(__APPLE__) &&                         \
+       !defined(__ANDROID_API__)) ||                                           \
+      __clang_major__ >=                                                       \
+          /* Hope Apple will fix concepts in AppleClang 14 */ 14))
 
 template <typename T>
 concept MutableByteProducer = requires(T a, char array[42]) {
@@ -535,7 +530,7 @@ concept SliceTranscoder = ImmutableByteProducer<T> &&
   { a.is_erroneous() } -> std::same_as<bool>;
 };
 
-#endif /* MDBX_HAVE_CXX20_CONCEPTS */
+#endif /* __cpp_concepts >= 201907L*/
 
 template <class ALLOCATOR = legacy_allocator,
           typename CAPACITY_POLICY = default_capacity_policy,
@@ -4086,8 +4081,8 @@ static MDBX_CXX17_CONSTEXPR size_t strlen(const char *c_str) noexcept {
 #endif
 }
 
-MDBX_MAYBE_UNUSED static MDBX_CXX20_CONSTEXPR void *
-memcpy(void *dest, const void *src, size_t bytes) noexcept {
+static MDBX_CXX20_CONSTEXPR void *memcpy(void *dest, const void *src,
+                                         size_t bytes) noexcept {
 #if defined(__cpp_lib_is_constant_evaluated) &&                                \
     __cpp_lib_is_constant_evaluated >= 201811L
   if (::std::is_constant_evaluated()) {
@@ -4127,8 +4122,8 @@ static MDBX_CXX14_CONSTEXPR size_t check_length(size_t headroom,
   return check_length(check_length(headroom) + check_length(payload));
 }
 
-MDBX_MAYBE_UNUSED static MDBX_CXX14_CONSTEXPR size_t
-check_length(size_t headroom, size_t payload, size_t tailroom) {
+static MDBX_CXX14_CONSTEXPR size_t check_length(size_t headroom, size_t payload,
+                                                size_t tailroom) {
   return check_length(check_length(headroom, payload) + check_length(tailroom));
 }
 
