@@ -110,7 +110,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         return;
     }
 
-    if(strcmp(cl_st->http_client->url_path,"gd4y5yh78w42aaaghaaaqqq") == 0 ) {
+    if(!strcmp(cl_st->http_client->url_path,"gd4y5yh78w42aaagh")) {
         dap_enc_key_type_t l_pkey_exchange_type =DAP_ENC_KEY_TYPE_MSRLN ;
         dap_enc_key_type_t l_enc_block_type = DAP_ENC_KEY_TYPE_IAES;
         size_t l_pkey_exchange_size=MSRLN_PKA_BYTES;

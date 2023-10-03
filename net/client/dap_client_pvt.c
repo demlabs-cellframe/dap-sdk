@@ -404,7 +404,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
 
                     char l_enc_init_url[1024] = { '\0' };
                     snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
-                                 "/gd4y5yh78w42aaaghaaaqqq" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd,protocol_version=%d,sign_count=%zu",
+                                 "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd,protocol_version=%d,sign_count=%zu",
                                  a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, l_key_size,
                                  a_client_pvt->session_key_block_size,  DAP_CLIENT_PROTOCOL_VERSION, l_sign_count);
                     int l_res = dap_client_pvt_request(a_client_pvt, l_enc_init_url,
@@ -1333,6 +1333,8 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
     }
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
     l_client_pvt->stream->esocket = NULL; // Prevent to delete twice
+    if (l_client_pvt->stream && l_client_pvt->stream->node.uint64)
+        dap_stream_delete_addr(l_client_pvt->stream->node, false);
     s_stage_status_after(l_client_pvt);
     a_es->_inheritor = NULL; // To prevent delete in reactor
 }
