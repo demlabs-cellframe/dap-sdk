@@ -157,8 +157,18 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
         return false;
     }
     // Limit time
--    uint32_t l_time_store_lim_hours = l_ttl ? l_ttl : a_global_db_context->instance->store_time_limit;
--    uint64_t l_limit_time = l_time_store_lim_hours ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
+    uint64_t l_time_store_lim_sec = l_cluster->ttl ? l_cluster->ttl : l_cluster->dbi->store_time_limit * 3600ULL;
+    uint64_t l_limit_time = l_time_store_lim_sec ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_sec) : 0;
+    if (l_limit_time && l_obj->timestamp < l_limit_time) {
+        if (g_dap_global_db_debug_more) {
+            char l_ts_str[64] = { '\0' };
+            dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
+            log_it(L_NOTICE, "Rejected too old object with group %s and key %s and timestamp %s",
+                                            l_obj->group, l_obj->key, l_ts_str);
+        }
+        dap_store_obj_free_one(l_obj);
+        return false;
+    }
 
     if (g_dap_global_db_debug_more) {
         char l_ts_str[64] = { '\0' };
@@ -261,7 +271,7 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
     }
     switch (dap_store_obj_driver_hash_compare(l_read_obj, l_obj)) {
     case -1:        // Existed obj is older
-        debug_if(g_dap_global_db_debug_more, L_NOTICE, "Applied new global DB record with group %s and key %s",
+        debug_if(g_dap_global_db_debug_more, L_INFO, "Applied new global DB record with group %s and key %s",
                                                                     l_obj->group, l_obj->key);
         dap_global_db_driver_apply(l_obj, 1);
         break;

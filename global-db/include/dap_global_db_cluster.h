@@ -56,7 +56,7 @@ typedef struct dap_global_db_cluster {
     const char *groups_mask;
     dap_cluster_t *member_cluster;
     dap_global_db_role_t default_role;
-    uint64_t ttl;
+    uint64_t ttl;                   // Time-to-life for objects in this cluster, in seconds
     bool owner_root_access;         // deny if false, grant overwise
     dap_store_obj_callback_notify_t callback_notify;
     void *callback_arg;

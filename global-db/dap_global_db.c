@@ -210,8 +210,8 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
             s_dbi->whitelist = dap_list_append(s_dbi->whitelist, dap_strdup(l_white_list[i]));
             s_dbi->whitelist = dap_list_append(s_dbi->whitelist, dap_strdup_printf("%s" DAP_GLOBAL_DB_DEL_SUFFIX, l_white_list[i]));
         }
-
-        s_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 72);
+        // One year for deleted objects in undefinite objects lifetime
+        s_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 365 * 24);
     }
 
     // Driver initalization
