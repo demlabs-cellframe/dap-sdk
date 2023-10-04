@@ -126,9 +126,15 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
     DAP_DELETE(a_cluster);
 }
 
-int dap_global_db_cluster_member_add(const char *a_mnemonim, dap_stream_node_addr_t a_node_addr, dap_global_db_role_t a_role)
+int dap_global_db_cluster_member_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim,
+                                     dap_stream_node_addr_t a_node_addr, dap_global_db_role_t a_role)
 {
-
+    dap_global_db_cluster *it;
+    int l_clusters_added = 0;
+    DL_FOREACH(a_dbi->clusters, it)
+        if (!dap_strcmp(it->mnemonim, a_mnemonim))
+            l_cluster_added += dap_cluster_member_add(it->member_cluster, a_node_addr, a_role, NULL) ? 0 : 1;
+    return l_clusters_added;
 }
 
 struct object_extender {

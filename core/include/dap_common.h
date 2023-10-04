@@ -305,6 +305,16 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 #endif
 }
 
+/*
+ * 23: added support for encryption key type parameter and option to encrypt headers
+ * 24: Update hashes protocol
+ * 25: Added node sign
+*/
+#define DAP_PROTOCOL_VERSION          25
+#define DAP_PROTOCOL_VERSION_DEFAULT  24 // used if version is not explicitly specified
+
+#define DAP_CLIENT_PROTOCOL_VERSION   25
+
 /* Crossplatform print formats for integers and others */
 
 #if (__SIZEOF_LONG__ == 4) || defined (DAP_OS_DARWIN)
@@ -718,15 +728,6 @@ DAP_STATIC_INLINE int dap_is_digit(char c) { return dap_ascii_isdigit(c); }
 DAP_STATIC_INLINE int dap_is_xdigit(char c) {return dap_ascii_isxdigit(c);}
 DAP_STATIC_INLINE int dap_is_alpha_and_(char c) { return dap_is_alpha(c) || c == '_'; }
 char **dap_parse_items(const char *a_str, char a_delimiter, int *a_count, const int a_only_digit);
-
-/*
- * 23: added support for encryption key type parameter and option to encrypt headers
- * 24: Update hashes protocol
-*/
-#define DAP_PROTOCOL_VERSION          24
-#define DAP_PROTOCOL_VERSION_DEFAULT  24 // used if version is not explicitly specified
-
-#define DAP_CLIENT_PROTOCOL_VERSION   24
 
 /**
   * @struct Node address

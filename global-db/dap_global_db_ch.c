@@ -142,7 +142,7 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
         dap_store_obj_free_one(l_obj);
         return false;
     }
-    int l_stream_role = dap_cluster_member_find_role(l_cluster->member_cluster, (dap_stream_node_addr_t *)l_obj->ext);
+    int l_stream_role = dap_cluster_member_find_role(l_cluster->member_cluster, *(dap_stream_node_addr_t *)l_obj->ext);
     if (l_stream_role == -1 && l_cluster->default_role == DAP_GDB_MEMBER_ROLE_NOBODY) {
         debug_if(g_dap_global_db_debug_more, L_WARNING,
                  "Node with addr "NODE_ADDR_FP_STR" isn't a member of closed cluster %s", l_cluster->mnemonim);

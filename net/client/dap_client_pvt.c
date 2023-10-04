@@ -68,6 +68,8 @@ static time_t s_client_timeout_active_after_connect_seconds = 15;
 
 
 static void s_stage_status_after(dap_client_pvt_t * a_client_internal);
+static int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *a_size, const void* a_signing_data, size_t a_signing_size);
+static int s_json_multy_obj_parse_str(const char *a_key, const char *a_val, int a_count, ...);
 
 // ENC stage callbacks
 static void s_enc_init_response(dap_client_t *a_client, void *a_data, size_t a_data_size);
@@ -142,7 +144,7 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
         dap_stream_delete_unsafe(a_client_pvt->stream);
         a_client_pvt->stream = NULL;
         a_client_pvt->stream_es = NULL;
-        a_client_pvt->stream_id[0] = 0;
+        a_client_pvt->stream_id = 0;
         a_client_pvt->stream_key = NULL;
     }
 
@@ -325,6 +327,33 @@ static bool s_timer_reconnect_callback(void *a_arg)
 }
 
 /**
+ * @brief s_add_cert_sign_to_data
+ * @param a_cert - certificate to get sign
+ * @param a_size - input/output data size
+ * @param a_data - input/output data
+ * @param a_signing_data - signing data
+ * @param a_signing_size - signing data size
+ */
+int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *a_size, const void* a_signing_data, size_t a_signing_size)
+{
+    dap_return_val_if_pass(!a_cert || !a_size || !a_data, 0);
+
+    dap_sign_t *l_sign = dap_sign_create(a_cert->enc_key, a_signing_data, a_signing_size, 0);
+    dap_return_val_if_pass(!l_sign, 0);
+
+    size_t l_sign_size = dap_sign_get_size(l_sign);
+    *a_data = DAP_REALLOC(*a_data, (*a_size + l_sign_size) * sizeof(uint8_t));
+    if (!*a_data) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return 0;
+    }
+    memcpy(*a_data + *a_size, l_sign, l_sign_size);
+    *a_size += l_sign_size;
+    DAP_DELETE(l_sign);
+    return 1;
+}
+
+/**
  * @brief s_client_internal_stage_status_proc
  * @param a_client
  */
@@ -368,38 +397,34 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         a_client_pvt->last_error = ERROR_OUT_OF_MEMORY;
                         break;
                     }
-                    size_t l_key_size = a_client_pvt->session_key_open->pub_key_data_size;
-                    dap_cert_t *l_cert = a_client_pvt->client->auth_cert;
-                    dap_sign_t *l_sign = NULL;
-                    size_t l_sign_size = 0;
-                    if (l_cert) {
-                        l_sign = dap_sign_create(l_cert->enc_key, a_client_pvt->session_key_open->pub_key_data, l_key_size, 0);
-                        l_sign_size = dap_sign_get_size(l_sign);
-                    }
-                    uint8_t l_data[l_key_size + l_sign_size];
-                    memset(l_data, 0, sizeof(l_data));
-                    memcpy(l_data,a_client_pvt->session_key_open->pub_key_data, l_key_size);
-                    if (l_sign) {
-                        memcpy(l_data + l_key_size, l_sign, l_sign_size);
-                    }
-                    size_t l_data_str_size_max = DAP_ENC_BASE64_ENCODE_SIZE(l_key_size + l_sign_size);
-                    char l_data_str[l_data_str_size_max + 1];
-                    memset(l_data_str, 0, sizeof(l_data_str));
+                    size_t l_data_size = a_client_pvt->session_key_open->pub_key_data_size;
+                    uint8_t *l_data = DAP_NEW_Z_SIZE(uint8_t, l_data_size);
+                    memcpy(l_data, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size);
+
+                    dap_cert_t *l_node_cert = dap_cert_find_by_name("node-addr");
+                    size_t l_sign_count = s_add_cert_sign_to_data(a_client_pvt->client->auth_cert, &l_data, &l_data_size, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size) +
+                                            s_add_cert_sign_to_data(l_node_cert, &l_data, &l_data_size, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size);
+                
+
+                    size_t l_data_str_size_max = DAP_ENC_BASE64_ENCODE_SIZE(l_data_size);
+                    char *l_data_str = DAP_NEW_Z_SIZE(char, l_data_str_size_max + 1);
                     // DAP_ENC_DATA_TYPE_B64_URLSAFE not need because send it by POST request
-                    size_t l_data_str_enc_size = dap_enc_base64_encode(l_data, l_key_size + l_sign_size, l_data_str, DAP_ENC_DATA_TYPE_B64);
+                    size_t l_data_str_enc_size = dap_enc_base64_encode(l_data, l_data_size, l_data_str, DAP_ENC_DATA_TYPE_B64);
 
                     debug_if(s_debug_more, L_DEBUG, "ENC request size %zu", l_data_str_enc_size);
 
                     char l_enc_init_url[1024] = { '\0' };
                     snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
-                                 "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd",
-                                 a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, l_key_size,
-                                 a_client_pvt->session_key_block_size );
+                                 "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd,protocol_version=%d,sign_count=%zu",
+                                 a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, a_client_pvt->session_key_open->pub_key_data_size,
+                                 a_client_pvt->session_key_block_size,  DAP_CLIENT_PROTOCOL_VERSION, l_sign_count);
                     int l_res = dap_client_pvt_request(a_client_pvt, l_enc_init_url,
                             l_data_str, l_data_str_enc_size, s_enc_init_response, s_enc_init_error);
                     // bad request
                     if (l_res < 0)
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                    DAP_DEL_Z(l_data);
+                    DAP_DEL_Z(l_data_str);
                 } break;
 
                 case STAGE_STREAM_CTL: {
@@ -409,7 +434,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     size_t l_request_size;
 
                     l_request_size = snprintf(l_request, sizeof(l_request), "%d",  DAP_CLIENT_PROTOCOL_VERSION);
-
+ 
                     debug_if(s_debug_more, L_DEBUG, "STREAM_CTL request size %zu", l_request_size);
 
                     char *l_suburl;
@@ -420,7 +445,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     if(l_least_common_dap_protocol < 23){
                         l_suburl = dap_strdup_printf("stream_ctl,channels=%s",
                                                      a_client_pvt->client->active_channels);
-                    }else{
+                    } else {
                         l_suburl = dap_strdup_printf("channels=%s,enc_type=%d,enc_key_size=%zu,enc_headers=%d",
                                                      a_client_pvt->client->active_channels, a_client_pvt->session_key_type,
                                                      a_client_pvt->session_key_block_size, 0);
@@ -519,6 +544,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                                 return;
                             }
                             *l_stream_es_uuid_ptr  = a_client_pvt->stream_es->uuid;
+                            dap_stream_change_id(a_client_pvt->session_key, a_client_pvt->stream_id);  // change id in hash tab
                             dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
                                                         s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                         }
@@ -535,7 +561,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                             dap_events_socket_delete_unsafe(a_client_pvt->stream_es, true);
                             a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                             a_client_pvt->last_error = ERROR_STREAM_CONNECT;
-                        }else{
+                        } else {
                             log_it(L_INFO, "Connecting stream to remote %s:%u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                             // add to dap_worker
                             assert (a_client_pvt->stream_es);
@@ -549,6 +575,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                                 return;
                             }
                             *l_stream_es_uuid_ptr = a_client_pvt->stream_es->uuid;
+                            dap_stream_change_id(a_client_pvt->session_key, a_client_pvt->stream_id);  // change id in hash tab
                             dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
                                                         s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                         }
@@ -562,6 +589,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     if(!a_client_pvt->stream){
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
+                        dap_stream_delete_prep_addr(a_client_pvt->stream_id, NULL);
                         s_stage_status_after(a_client_pvt);
                         return;
                     }
@@ -571,7 +599,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         dap_stream_ch_new(a_client_pvt->stream, (uint8_t)a_client_pvt->client->active_channels[i]);
 
                     char l_full_path[2048];
-                    snprintf(l_full_path, sizeof(l_full_path) - 1, "%s/globaldb?session_id=%s", DAP_UPLINK_PATH_STREAM,
+                    snprintf(l_full_path, sizeof(l_full_path) - 1, "%s/globaldb?session_id=%u", DAP_UPLINK_PATH_STREAM,
                                                 dap_client_get_stream_id(a_client_pvt->client));
 
                     dap_events_socket_write_f_unsafe( a_client_pvt->stream_es, "GET /%s HTTP/1.1\r\n"
@@ -588,6 +616,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->reconnect_attempts = 0;
 
                     a_client_pvt->stage_status = STAGE_STATUS_DONE;
+                    dap_stream_add_stream_info(a_client_pvt->stream, a_client_pvt->stream_id);
                     s_stage_status_after(a_client_pvt);
 
                 } break;
@@ -878,6 +907,32 @@ static void s_request_response(void * a_response, size_t a_response_size, void *
 }
 
 /**
+ * @brief s_json_str_multy_obj_parse - check a_key and copy a_val to args. Args count should be even.
+ * @param a_key - compare key
+ * @param a_val - coping value
+ * @param a_count - args count
+ * @return count of success copies
+ */
+int s_json_multy_obj_parse_str(const char *a_key, const char *a_val, int a_count, ...)
+{
+    dap_return_val_if_pass(!a_key || !a_val || a_count % 2, 0);
+    int l_ret = 0;
+    va_list l_args;
+    va_start(l_args, a_count);
+    for (int i = 0; i < a_count / 2; ++i) {
+        const char *l_key = va_arg(l_args, const char *);
+        char **l_pointer = va_arg(l_args, char **);
+        if(!strcmp(a_key, l_key)) {
+            DAP_DEL_Z(*l_pointer);
+            *l_pointer = dap_strdup(a_val);
+            l_ret++;
+        }
+    }
+    va_end(l_args);
+    return l_ret;
+}
+
+/**
  * @brief s_enc_init_response
  * @param a_client
  * @param a_response
@@ -907,7 +962,8 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
 
         char *l_session_id_b64 = NULL;
         char *l_bob_message_b64 = NULL;
-        int json_parse_count = 0;
+        char *l_node_sign_b64 = NULL;
+        int l_json_parse_count = 0;
         struct json_object *jobj = json_tokener_parse((const char *) a_data);
         if(jobj) {
             // parse encrypt_id & encrypt_msg
@@ -915,24 +971,16 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             {
                 if(json_object_get_type(val) == json_type_string) {
                     const char *l_str = json_object_get_string(val);
-                    if(!strcmp(key, "encrypt_id")) {
-                        DAP_DEL_Z(l_session_id_b64);
-                        l_session_id_b64 = DAP_NEW_Z_SIZE(char, strlen(l_str) + 1);
-                        strcpy(l_session_id_b64, l_str);
-                        json_parse_count++;
-                    }
-                    if(!strcmp(key, "encrypt_msg")) {
-                        DAP_DEL_Z(l_bob_message_b64);
-                        l_bob_message_b64 = DAP_NEW_Z_SIZE(char, strlen(l_str) + 1);
-                        strcpy(l_bob_message_b64, l_str);
-                        json_parse_count++;
-                    }
+                    l_json_parse_count += s_json_multy_obj_parse_str( key, l_str, 6,
+                                            "encrypt_id", &l_session_id_b64, 
+                                            "encrypt_msg",  &l_bob_message_b64,
+                                            "node_sign", &l_node_sign_b64);
                 }
                 if(json_object_get_type(val) == json_type_int) {
                     int val_int = json_object_get_int(val);
                     if(!strcmp(key, "dap_protocol_version")) {
                         l_client_pvt->remote_protocol_version = val_int;
-                        json_parse_count++;
+                        l_json_parse_count++;
                     }
                 }
             }
@@ -941,7 +989,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             if(!l_client_pvt->remote_protocol_version)
                 l_client_pvt->remote_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT;
         }
-        if (json_parse_count < 2 || json_parse_count > 3) {
+        if (l_json_parse_count < 2 || l_json_parse_count > 4) {
             l_client_pvt->last_error = ERROR_ENC_NO_KEY;
             log_it(L_ERROR, "ENC: Wrong response (size %zu data '%s')", a_data_size, (char* ) a_data);
         }
@@ -977,6 +1025,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             }
         }
         DAP_DEL_Z(l_bob_message_b64);
+
         if (l_client_pvt->last_error == ERROR_NO_ERROR) {
             size_t l_rc = l_client_pvt->session_key_open->gen_alice_shared_key(
                     l_client_pvt->session_key_open, l_client_pvt->session_key_open->priv_key_data,
@@ -986,7 +1035,6 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
                 l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
             }
         }
-        DAP_DEL_Z(l_bob_message);
         if (l_client_pvt->last_error == ERROR_NO_ERROR) {
             l_client_pvt->session_key = dap_enc_key_new_generate(l_client_pvt->session_key_type,
                     l_client_pvt->session_key_open->priv_key_data, // shared key
@@ -999,6 +1047,20 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             log_it(L_WARNING, "ENC: initialized encryption but current stage is %s (%s)",
                     dap_client_get_stage_str(a_client), dap_client_get_stage_status_str(a_client));
         }
+        if (l_client_pvt->last_error == ERROR_NO_ERROR && l_node_sign_b64) {
+            dap_sign_t *l_sign = (dap_sign_t *)DAP_NEW_Z_SIZE(uint8_t, strlen(l_node_sign_b64) + 1);
+            if (!l_sign){
+                log_it(L_CRITICAL, "Memory allocation error");
+            }
+            size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_sign, DAP_ENC_DATA_TYPE_B64);
+            if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
+                dap_stream_add_addr(dap_stream_get_addr_from_sign(l_sign), l_client_pvt->session_key);
+            } else {
+                log_it(L_WARNING, "ENC: Invalid node sign");
+            }
+        }
+        DAP_DEL_Z(l_node_sign_b64);
+        DAP_DEL_Z(l_bob_message);
     }
     if (l_client_pvt->last_error == ERROR_NO_ERROR)
         l_client_pvt->stage_status = STAGE_STATUS_DONE;
@@ -1061,7 +1123,6 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
         s_stage_status_after(l_client_pvt);
     } else {
         int l_arg_count;
-        char l_stream_id[26] = { 0 };
         char *l_stream_key = DAP_NEW_Z_SIZE(char, 4096 * 3);
         if (!l_stream_key) {
             log_it(L_CRITICAL, "Memory allocation error");
@@ -1071,9 +1132,10 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
         uint32_t l_remote_protocol_version;
         dap_enc_key_type_t l_enc_type = l_client_pvt->session_key_type;
         int l_enc_headers = 0;
+        uint32_t l_stream_id_int = 0;
 
-        l_arg_count = sscanf(l_response_str, "%25s %4096s %u %d %d"
-                , l_stream_id, l_stream_key, &l_remote_protocol_version, &l_enc_type, &l_enc_headers);
+        l_arg_count = sscanf(l_response_str, "%u %4096s %u %d %d"
+                , &l_stream_id_int, l_stream_key, &l_remote_protocol_version, &l_enc_type, &l_enc_headers);
         if(l_arg_count < 2) {
             log_it(L_WARNING, "STREAM_CTL Need at least 2 arguments in reply (got %d)", l_arg_count);
             l_client_pvt->last_error = ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT;
@@ -1088,17 +1150,16 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
                 log_it(L_WARNING, "No uplink protocol version, use default version %d"
                         , l_client_pvt->uplink_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT);
 
-            if(strlen(l_stream_id) < 13) {
+            if(l_stream_id_int) {
                 //log_it(L_DEBUG, "Stream server id %s, stream key length(base64 encoded) %u"
                 //       ,l_stream_id,strlen(l_stream_key) );
-                log_it(L_DEBUG, "Stream server id %s", l_stream_id);
+                log_it(L_DEBUG, "Stream server id %u", l_stream_id_int);
 
                 // Delete old key if present
                 if(l_client_pvt->stream_key)
                     dap_enc_key_delete(l_client_pvt->stream_key);
 
-                strncpy(l_client_pvt->stream_id, (char *)l_stream_id, sizeof(l_client_pvt->stream_id) -1 );
-                l_client_pvt->stream_id[sizeof(l_client_pvt->stream_id) - 1] = '\0';
+                l_client_pvt->stream_id = l_stream_id_int;
                 l_client_pvt->stream_key =
                         dap_enc_key_new_generate(l_enc_type, l_stream_key, strlen(l_stream_key), NULL, 0,
                                 32);
@@ -1144,6 +1205,7 @@ static void s_stream_ctl_error(dap_client_t * a_client, UNUSED_ARG void *a_arg, 
         l_client_pvt->last_error = ERROR_STREAM_CTL_ERROR;
     }
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
+    dap_stream_delete_prep_addr(0, l_client_pvt->session_key);
 
     s_stage_status_after(l_client_pvt);
 
@@ -1299,6 +1361,8 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
     }
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
     l_client_pvt->stream->esocket = NULL; // Prevent to delete twice
+    if (l_client_pvt->stream && l_client_pvt->stream->node.uint64)
+        dap_stream_delete_addr(l_client_pvt->stream->node, false);
     s_stage_status_after(l_client_pvt);
     a_es->_inheritor = NULL; // To prevent delete in reactor
 }
