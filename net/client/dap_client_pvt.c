@@ -325,6 +325,29 @@ static bool s_timer_reconnect_callback(void *a_arg)
 }
 
 /**
+ * @brief s_add_cert_sign_to_data
+ * @param a_cert - certificate to get sign
+ * @param a_size - input/output data size
+ * @param a_data - input/output data
+ * @param a_signing_data - signing data
+ * @param a_signing_size - signing data size
+ */
+static int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *a_size, const void* a_signing_data, size_t a_signing_size)
+{
+    dap_return_val_if_pass(!a_cert || !a_size || !a_data, 0);
+
+    dap_sign_t *l_sign = dap_sign_create(a_cert->enc_key, a_signing_data, a_signing_size, 0);
+    dap_return_val_if_pass(!l_sign, 0);
+
+    size_t l_sign_size = dap_sign_get_size(l_sign);
+    *a_data = DAP_REALLOC(*a_data, (*a_size + l_sign_size) * sizeof(uint8_t));
+    memcpy(*a_data + *a_size, l_sign, l_sign_size);
+    *a_size += l_sign_size;
+    DAP_DELETE(l_sign);
+    return 1;
+}
+
+/**
  * @brief s_client_internal_stage_status_proc
  * @param a_client
  */
@@ -368,50 +391,34 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         a_client_pvt->last_error = ERROR_OUT_OF_MEMORY;
                         break;
                     }
-                    size_t l_key_size = a_client_pvt->session_key_open->pub_key_data_size;
-                    dap_cert_t *l_cert = a_client_pvt->client->auth_cert;
-                    dap_sign_t *l_sign = NULL;
-                    size_t l_sign_size = 0;
-                    size_t l_sign_count = 1;
+                    size_t l_data_size = a_client_pvt->session_key_open->pub_key_data_size;
+                    uint8_t *l_data = DAP_NEW_Z_SIZE(uint8_t, l_data_size);
+                    memcpy(l_data, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size);
 
-                    if (l_cert) {
-                        l_sign = dap_sign_create(l_cert->enc_key, a_client_pvt->session_key_open->pub_key_data, l_key_size, 0);
-                        l_sign_size = dap_sign_get_size(l_sign);
-                        l_sign_count++;
-                    }
-                    // add node sign
                     dap_cert_t *l_node_cert = dap_cert_find_by_name("node-addr");
-                    dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key, a_client_pvt->session_key_open->pub_key_data, l_key_size, 0);
-                    size_t l_node_sign_size = dap_sign_get_size(l_node_sign);
+                    size_t l_sign_count = s_add_cert_sign_to_data(a_client_pvt->client->auth_cert, &l_data, &l_data_size, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size) +
+                                            s_add_cert_sign_to_data(l_node_cert, &l_data, &l_data_size, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size);
+                
 
-                    uint8_t l_data[l_key_size + l_sign_size + l_node_sign_size];
-                    memset(l_data, 0, sizeof(l_data));
-                    memcpy(l_data, a_client_pvt->session_key_open->pub_key_data, l_key_size);
-                    if (l_sign) {
-                        memcpy(l_data + l_key_size, l_sign, l_sign_size);
-                    }
-                    if (l_node_sign) {
-                        memcpy(l_data + l_key_size + l_sign_size, l_node_sign, l_node_sign_size);
-                    }
-
-                    size_t l_data_str_size_max = DAP_ENC_BASE64_ENCODE_SIZE(l_key_size + l_sign_size + l_node_sign_size);
-                    char l_data_str[l_data_str_size_max + 1];
-                    memset(l_data_str, 0, sizeof(l_data_str));
+                    size_t l_data_str_size_max = DAP_ENC_BASE64_ENCODE_SIZE(l_data_size);
+                    char *l_data_str = DAP_NEW_Z_SIZE(char, l_data_str_size_max + 1);
                     // DAP_ENC_DATA_TYPE_B64_URLSAFE not need because send it by POST request
-                    size_t l_data_str_enc_size = dap_enc_base64_encode(l_data, l_key_size + l_sign_size + l_node_sign_size, l_data_str, DAP_ENC_DATA_TYPE_B64);
+                    size_t l_data_str_enc_size = dap_enc_base64_encode(l_data, l_data_size, l_data_str, DAP_ENC_DATA_TYPE_B64);
 
                     debug_if(s_debug_more, L_DEBUG, "ENC request size %zu", l_data_str_enc_size);
 
                     char l_enc_init_url[1024] = { '\0' };
                     snprintf(l_enc_init_url, sizeof(l_enc_init_url), DAP_UPLINK_PATH_ENC_INIT
                                  "/gd4y5yh78w42aaagh" "?enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zd,block_key_size=%zd,protocol_version=%d,sign_count=%zu",
-                                 a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, l_key_size,
+                                 a_client_pvt->session_key_type, a_client_pvt->session_key_open_type, a_client_pvt->session_key_open->pub_key_data_size,
                                  a_client_pvt->session_key_block_size,  DAP_CLIENT_PROTOCOL_VERSION, l_sign_count);
                     int l_res = dap_client_pvt_request(a_client_pvt, l_enc_init_url,
                             l_data_str, l_data_str_enc_size, s_enc_init_response, s_enc_init_error);
                     // bad request
                     if (l_res < 0)
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                    DAP_DEL_Z(l_data);
+                    DAP_DEL_Z(l_data_str);
                 } break;
 
                 case STAGE_STREAM_CTL: {
