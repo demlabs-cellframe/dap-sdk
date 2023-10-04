@@ -68,6 +68,7 @@ static time_t s_client_timeout_active_after_connect_seconds = 15;
 
 
 static void s_stage_status_after(dap_client_pvt_t * a_client_internal);
+static int s_json_multy_obj_parse_str(const char *a_key, const char *a_val, int a_count, ...);
 
 // ENC stage callbacks
 static void s_enc_init_response(dap_client_t *a_client, void *a_data, size_t a_data_size);
@@ -341,6 +342,10 @@ static int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, s
 
     size_t l_sign_size = dap_sign_get_size(l_sign);
     *a_data = DAP_REALLOC(*a_data, (*a_size + l_sign_size) * sizeof(uint8_t));
+    if (!*a_data) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return 0;
+    }
     memcpy(*a_data + *a_size, l_sign, l_sign_size);
     *a_size += l_sign_size;
     DAP_DELETE(l_sign);
@@ -901,6 +906,32 @@ static void s_request_response(void * a_response, size_t a_response_size, void *
 }
 
 /**
+ * @brief s_json_str_multy_obj_parse - check a_key and copy a_val to args. Args count should be even.
+ * @param a_key - compare key
+ * @param a_val - coping value
+ * @param a_count - args count
+ * @return count of success copies
+ */
+int s_json_multy_obj_parse_str(const char *a_key, const char *a_val, int a_count, ...)
+{
+    dap_return_val_if_pass(!a_key || !a_val || a_count % 2, 0);
+    int l_ret = 0;
+    va_list l_args;
+    va_start(l_args, a_count);
+    for (int i = 0; i < a_count / 2; ++i) {
+        const char *l_key = va_arg(l_args, const char *);
+        char **l_pointer = va_arg(l_args, char **);
+        if(!strcmp(a_key, l_key)) {
+            DAP_DEL_Z(*l_pointer);
+            *l_pointer = dap_strdup(a_val);
+            l_ret++;
+        }
+    }
+    va_end(l_args);
+    return l_ret;
+}
+
+/**
  * @brief s_enc_init_response
  * @param a_client
  * @param a_response
@@ -931,7 +962,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
         char *l_session_id_b64 = NULL;
         char *l_bob_message_b64 = NULL;
         char *l_node_sign_b64 = NULL;
-        int json_parse_count = 0;
+        int l_json_parse_count = 0;
         struct json_object *jobj = json_tokener_parse((const char *) a_data);
         if(jobj) {
             // parse encrypt_id & encrypt_msg
@@ -939,30 +970,16 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             {
                 if(json_object_get_type(val) == json_type_string) {
                     const char *l_str = json_object_get_string(val);
-                    if(!strcmp(key, "encrypt_id")) {
-                        DAP_DEL_Z(l_session_id_b64);
-                        l_session_id_b64 = DAP_NEW_Z_SIZE(char, strlen(l_str) + 1);
-                        strcpy(l_session_id_b64, l_str);
-                        json_parse_count++;
-                    }
-                    if(!strcmp(key, "encrypt_msg")) {
-                        DAP_DEL_Z(l_bob_message_b64);
-                        l_bob_message_b64 = DAP_NEW_Z_SIZE(char, strlen(l_str) + 1);
-                        strcpy(l_bob_message_b64, l_str);
-                        json_parse_count++;
-                    }
-                    if(!strcmp(key, "node_sign")) {
-                        DAP_DEL_Z(l_node_sign_b64);
-                        l_node_sign_b64 = DAP_NEW_Z_SIZE(char, strlen(l_str) + 1);
-                        strcpy(l_node_sign_b64, l_str);
-                        json_parse_count++;
-                    }
+                    l_json_parse_count += s_json_multy_obj_parse_str( key, l_str, 6,
+                                            "encrypt_id", &l_session_id_b64, 
+                                            "encrypt_msg",  &l_bob_message_b64,
+                                            "node_sign", &l_node_sign_b64);
                 }
                 if(json_object_get_type(val) == json_type_int) {
                     int val_int = json_object_get_int(val);
                     if(!strcmp(key, "dap_protocol_version")) {
                         l_client_pvt->remote_protocol_version = val_int;
-                        json_parse_count++;
+                        l_json_parse_count++;
                     }
                 }
             }
@@ -971,7 +988,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             if(!l_client_pvt->remote_protocol_version)
                 l_client_pvt->remote_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT;
         }
-        if (json_parse_count < 2 || json_parse_count > 4) {
+        if (l_json_parse_count < 2 || l_json_parse_count > 4) {
             l_client_pvt->last_error = ERROR_ENC_NO_KEY;
             log_it(L_ERROR, "ENC: Wrong response (size %zu data '%s')", a_data_size, (char* ) a_data);
         }
@@ -1030,15 +1047,18 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
                     dap_client_get_stage_str(a_client), dap_client_get_stage_status_str(a_client));
         }
         if (l_client_pvt->last_error == ERROR_NO_ERROR && l_node_sign_b64) {
-            uint8_t l_node_sign[strlen(l_node_sign_b64) + 1];
-            size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_node_sign, DAP_ENC_DATA_TYPE_B64);
-            dap_sign_t *l_sign = (dap_sign_t *)l_node_sign;
-            if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
-                dap_stream_node_addr_t l_node_addr = dap_stream_get_addr_from_sign(l_sign);
-                dap_stream_add_addr(l_node_addr, l_client_pvt->session_key);
+            dap_sign_t *l_sign = (dap_sign_t *)DAP_NEW_Z_SIZE(uint8_t, strlen(l_node_sign_b64) + 1);
+            if (!l_sign){
+                log_it(L_CRITICAL, "Memory allocation error");
             }
-            DAP_DEL_Z(l_node_sign_b64);
+            size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_sign, DAP_ENC_DATA_TYPE_B64);
+            if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
+                dap_stream_add_addr(dap_stream_get_addr_from_sign(l_sign), l_client_pvt->session_key);
+            } else {
+                log_it(L_WARNING, "ENC: Invalid node sign");
+            }
         }
+        DAP_DEL_Z(l_node_sign_b64);
         DAP_DEL_Z(l_bob_message);
     }
     if (l_client_pvt->last_error == ERROR_NO_ERROR)
