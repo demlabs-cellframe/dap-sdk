@@ -180,6 +180,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             !(encrypt_msg = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(l_pkey_exchange_key->pub_key_data_size) + 1)) ||
             !(encrypt_id = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1))
         ) {
+            log_it(L_CRITICAL, "Memory allocation error");
             dap_enc_key_delete(l_pkey_exchange_key);
             *return_code = Http_Status_InternalServerError;
             return;

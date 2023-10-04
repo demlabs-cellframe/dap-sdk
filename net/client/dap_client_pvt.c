@@ -68,6 +68,7 @@ static time_t s_client_timeout_active_after_connect_seconds = 15;
 
 
 static void s_stage_status_after(dap_client_pvt_t * a_client_internal);
+static int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *a_size, const void* a_signing_data, size_t a_signing_size);
 static int s_json_multy_obj_parse_str(const char *a_key, const char *a_val, int a_count, ...);
 
 // ENC stage callbacks
@@ -333,7 +334,7 @@ static bool s_timer_reconnect_callback(void *a_arg)
  * @param a_signing_data - signing data
  * @param a_signing_size - signing data size
  */
-static int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *a_size, const void* a_signing_data, size_t a_signing_size)
+int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *a_size, const void* a_signing_data, size_t a_signing_size)
 {
     dap_return_val_if_pass(!a_cert || !a_size || !a_data, 0);
 

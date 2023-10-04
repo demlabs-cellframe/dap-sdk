@@ -28,7 +28,6 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_events_socket.h"
 #include "dap_http.h"
 #include "dap_uuid.h"
-#include "dap_hash.h"
 //#define DAP_HTTP_SIMPLE_REQUEST_MAX 100000
 // number of simultaneous http requests
 #define DAP_HTTP_SIMPLE_REQUEST_MAX 65536
