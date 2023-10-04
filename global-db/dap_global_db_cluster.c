@@ -26,6 +26,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db_pkt.h"
 #include "dap_strfuncs.h"
 #include "dap_sign.h"
+#include "dap_proc_thread.h"
 #include "crc32c_adler/crc32c_adler.h"
 
 int dap_global_db_cluster_init()
@@ -63,8 +64,9 @@ void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_sto
 }
 
 dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim,
-                                                   const char *a_group_mask, uint64_t a_ttl,
-                                                   dap_store_obj_callback_notify_t a_callback, void *a_callback_arg)
+                                                   const char *a_group_mask, uint64_t a_ttl, bool a_owner_access,
+                                                   dap_store_obj_callback_notify_t a_callback, void *a_callback_arg,
+                                                   dap_global_db_role_t a_default_role)
 {
     if (!a_callback) {
         log_it(L_ERROR, "Trying to set NULL callback for mask %s", a_group_mask);
@@ -108,6 +110,45 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->callback_notify = a_callback;
     l_cluster->callback_arg = a_callback_arg;
     l_cluster->ttl = a_ttl;
+    l_cluster->default_role = a_default_role;
+    l_cluster->owner_root_access = a_owner_access;
+    l_cluster->dbi = a_dbi;
     DL_APPEND(a_dbi->clusters, l_cluster);
     return l_cluster;
+}
+
+void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
+{
+    dap_cluster_delete(a_cluster->member_cluster);
+    DAP_DEL_Z(a_cluster->mnemonim);
+    DAP_DEL_Z(a_cluster->groups_mask);
+    DL_DELETE(a_cluster->dbi->clusters, a_cluster);
+    DAP_DELETE(a_cluster);
+}
+
+int dap_global_db_cluster_member_add(const char *a_mnemonim, dap_stream_node_addr_t a_node_addr, dap_global_db_role_t a_role)
+{
+
+}
+
+struct object_extender {
+    dap_global_db_instance_t *dbi;
+    dap_global_db_cluster_t *cluster;
+};
+
+static bool s_db_cluster_notify_on_proc_thread(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+{
+    dap_store_obj_t *l_store_obj = a_arg;
+    struct object_extender *l_ext = (struct object_extender *)l_store_obj->ext;
+    dap_global_db_cluster_t *l_db_cluser = l_ext->cluster;
+    l_db_cluser->callback_notify(l_ext->dbi, l_store_obj, l_db_cluster->callback_arg);
+    dap_store_obj_free_one(l_store_obj);
+    return false;
+}
+
+void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj)
+{
+    struct object_extender l_ext = { .dbi = a_dbi, .cluster = a_cluster };
+    dap_store_obj_t *l_store_obj = dap_store_obj_copy_ext(a_store_obj, l_ext, sizeof(struct object_extender));
+    dap_proc_thread_callback_add_pri(NULL, s_db_cluster_notify_on_proc_thread, l_store_obj, DAP_QUEUE_MSG_PRIORITY_LOW);
 }

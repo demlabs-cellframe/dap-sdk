@@ -60,8 +60,6 @@ enum queue_io_msg_opcode{
     MSG_OPCODE_CONTEXT_EXEC
 };
 
-#define DEL_SUFFIX ".del"
-
 // Queue i/o message
 struct queue_io_msg{
     enum queue_io_msg_opcode opcode; // Opcode
@@ -142,20 +140,19 @@ static const char *s_msg_opcode_to_str(enum queue_io_msg_opcode a_opcode);
 static void s_queue_io_callback( dap_events_socket_t * a_es, void * a_arg);
 
 // Queue i/o message processing functions
-static bool s_msg_opcode_get(struct queue_io_msg * a_msg);
-static bool s_msg_opcode_get_raw(struct queue_io_msg * a_msg);
-static bool s_msg_opcode_get_del_ts(struct queue_io_msg * a_msg);
-static bool s_msg_opcode_get_last(struct queue_io_msg * a_msg);
-static bool s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg);
+static void s_msg_opcode_get(struct queue_io_msg * a_msg);
+static void s_msg_opcode_get_raw(struct queue_io_msg * a_msg);
+static void s_msg_opcode_get_del_ts(struct queue_io_msg * a_msg);
+static void s_msg_opcode_get_last(struct queue_io_msg * a_msg);
+static void s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg);
 static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg);
 static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg);
-static bool s_msg_opcode_set(struct queue_io_msg * a_msg);
-static bool s_msg_opcode_set_raw(struct queue_io_msg * a_msg);
-static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg);
-static bool s_msg_opcode_pin(struct queue_io_msg * a_msg);
-static bool s_msg_opcode_delete(struct queue_io_msg * a_msg);
-static bool s_msg_opcode_flush(struct queue_io_msg * a_msg);
-static bool s_msg_opcode_context_exec(struct queue_io_msg * a_msg);
+static void s_msg_opcode_set(struct queue_io_msg * a_msg);
+static void s_msg_opcode_set_raw(struct queue_io_msg * a_msg);
+static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg);
+static void s_msg_opcode_pin(struct queue_io_msg * a_msg);
+static void s_msg_opcode_delete(struct queue_io_msg * a_msg);
+static void s_msg_opcode_flush(struct queue_io_msg * a_msg);
 
 // Free memor for queue i/o message
 static void s_queue_io_msg_delete( struct queue_io_msg * a_msg);
@@ -211,7 +208,7 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
         char **l_white_list = dap_config_get_array_str(g_config, "global_db", "white_list_sync_groups", &l_size_white_list);
         for (int i = 0; i < l_size_ban_list; i++) {
             s_dbi->whitelist = dap_list_append(s_dbi->whitelist, dap_strdup(l_white_list[i]));
-            s_dbi->whitelist = dap_list_append(s_dbi->whitelist, dap_strdup_printf("%s" DEL_SUFFIX, l_white_list[i]));
+            s_dbi->whitelist = dap_list_append(s_dbi->whitelist, dap_strdup_printf("%s" DAP_GLOBAL_DB_DEL_SUFFIX, l_white_list[i]));
         }
 
         s_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 72);
@@ -277,8 +274,8 @@ static int s_change_commit_notify(dap_global_db_instance_t *a_dbi, dap_store_obj
 {
     dap_return_val_if_fail(a_store_obj && a_store_obj->group && a_store_obj->key, -1);
     assert(a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD);
-    // Delete antinonim in opposit group, if any
-    const char l_del_suffix[] = DEL_SUFFIX;
+    // Delete antinonim in opposite group, if any
+    const char l_del_suffix[] = DAP_GLOBAL_DB_DEL_SUFFIX;
     char l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX], *l_basic_group = NULL;
     size_t l_group_len = strlen(a_store_obj->group);
     size_t l_unsuffixed_len = l_group_len - sizeof(l_del_suffix) + 1;
@@ -289,7 +286,7 @@ static int s_change_commit_notify(dap_global_db_instance_t *a_dbi, dap_store_obj
         l_basic_group = l_group;
         a_store_obj->type = DAP_GLOBAL_DB_OPTYPE_DEL;
     } else {
-        snprintf(l_group, sizeof(l_group) - 1, "%s" DEL_SUFFIX, a_store_obj->group);
+        snprintf(l_group, sizeof(l_group) - 1, "%s" DAP_GLOBAL_DB_DEL_SUFFIX, a_store_obj->group);
         l_basic_group = a_store_obj->group;
     }
     dap_store_obj_t store_data = {
@@ -312,7 +309,7 @@ static int s_change_commit_notify(dap_global_db_instance_t *a_dbi, dap_store_obj
             // Notify others in user space format
             char *l_old_group_ptr = a_store_obj->group;
             a_store_obj->group = l_basic_group;
-            l_cluster->callback_notify(a_dbi, a_store_obj, l_cluster->callback_arg);
+            dap_global_db_cluster_notify(l_cluster, a_store_obj);
             a_store_obj->group = l_old_group_ptr;
             a_store_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
         }
@@ -336,7 +333,7 @@ byte_t *dap_global_db_get_sync(const char *a_group,
     if (a_data_size)
         *a_data_size = l_store_obj->value_len;
     if (a_is_pinned)
-        *a_is_pinned = l_store_obj->flags & RECORD_PINNED;
+        *a_is_pinned = l_store_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED;
     if (a_ts)
         *a_ts = l_store_obj->timestamp;
     byte_t *l_res = DAP_DUP_SIZE(l_store_obj->value, l_store_obj->value_len);
@@ -389,7 +386,7 @@ int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_cal
  * @param a_msg
  * @return
  */
-static bool s_msg_opcode_get(struct queue_io_msg * a_msg)
+static void s_msg_opcode_get(struct queue_io_msg * a_msg)
 {
     size_t l_value_len = 0;
     bool l_pinned = false;
@@ -404,7 +401,6 @@ static bool s_msg_opcode_get(struct queue_io_msg * a_msg)
     }else if(a_msg->callback_result)
         a_msg->callback_result(a_msg->dbi, DAP_GLOBAL_DB_RC_NO_RESULTS, a_msg->group, a_msg->key,
                                NULL, 0, 0,0, a_msg->callback_arg);
-    return true;
 }
 
 /* *** Get raw functions group *** */
@@ -458,7 +454,7 @@ int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_
  * @param a_msg
  * @return
  */
-static bool s_msg_opcode_get_raw(struct queue_io_msg * a_msg)
+static void s_msg_opcode_get_raw(struct queue_io_msg * a_msg)
 {
     dap_store_obj_t *l_store_obj = dap_global_db_get_raw_sync(a_msg->group, a_msg->key);
 
@@ -467,7 +463,6 @@ static bool s_msg_opcode_get_raw(struct queue_io_msg * a_msg)
                                                                       DAP_GLOBAL_DB_RC_NO_RESULTS,
                                                         l_store_obj, a_msg->callback_arg );
     dap_store_obj_free_one(l_store_obj);
-    return true;
 }
 
 
@@ -480,7 +475,7 @@ dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_
     char l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
 
     if (a_key && a_group) {
-        snprintf(l_group, sizeof(l_group) - 1,  "%s" DEL_SUFFIX, a_group);
+        snprintf(l_group, sizeof(l_group) - 1,  "%s" DAP_GLOBAL_DB_DEL_SUFFIX, a_group);
         if (dap_global_db_driver_is(l_group, a_key)) {
             l_store_obj_del = dap_global_db_get_raw_sync(l_group, a_key);
             if (l_store_obj_del) {
@@ -532,7 +527,7 @@ int dap_global_db_get_del_ts(const char *a_group, const char *a_key,dap_global_d
  * @param a_msg
  * @return
  */
-static bool s_msg_opcode_get_del_ts(struct queue_io_msg * a_msg)
+static void s_msg_opcode_get_del_ts(struct queue_io_msg * a_msg)
 {
     dap_nanotime_t l_timestamp = dap_global_db_get_del_ts_sync(a_msg->group, a_msg->key);
     if(l_timestamp){
@@ -543,7 +538,6 @@ static bool s_msg_opcode_get_del_ts(struct queue_io_msg * a_msg)
     }else if(a_msg->callback_result)
         a_msg->callback_result(a_msg->dbi, DAP_GLOBAL_DB_RC_NO_RESULTS, a_msg->group, a_msg->key,
                                NULL, 0, 0,0, a_msg->callback_arg );
-    return true;
 }
 
 /* *** Get_last functions group *** */
@@ -561,7 +555,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
     if (a_data_size)
         *a_data_size = l_store_obj->value_len;
     if (a_is_pinned)
-        *a_is_pinned = l_store_obj->flags & RECORD_PINNED;
+        *a_is_pinned = l_store_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED;
     if (a_ts)
         *a_ts = l_store_obj->timestamp;
     byte_t *l_res = DAP_DUP_SIZE(l_store_obj->value, l_store_obj->value_len);
@@ -613,7 +607,7 @@ int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t
  * @param a_msg
  * @return
  */
-static bool s_msg_opcode_get_last(struct queue_io_msg * a_msg)
+static void s_msg_opcode_get_last(struct queue_io_msg * a_msg)
 {
     size_t l_value_len = 0;
     bool l_pinned = false;
@@ -629,7 +623,6 @@ static bool s_msg_opcode_get_last(struct queue_io_msg * a_msg)
     }else if(a_msg->callback_result)
         a_msg->callback_result(a_msg->dbi, DAP_GLOBAL_DB_RC_NO_RESULTS, a_msg->group, l_key,
                                NULL, 0, 0,0, a_msg->callback_arg );
-    return true;
 }
 
 /* *** Get_last_raw functions group *** */
@@ -678,13 +671,12 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
  * @param a_msg
  * @return
  */
-static bool s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
+static void s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
 {
     dap_store_obj_t *l_store_obj = dap_global_db_get_last_raw_sync(a_msg->group);
     if(a_msg->callback_result)
         a_msg->callback_result_raw(a_msg->dbi, l_store_obj ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS, l_store_obj, a_msg->callback_arg);
     dap_store_obj_free(l_store_obj, 1);
-    return true;
 }
 
 
@@ -772,7 +764,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
         return false;
     }
 
-    bool l_ret = true;
+    bool l_ret = false;
     size_t l_values_count = a_msg->values_page_size;
     dap_global_db_obj_t *l_objs= NULL;
     dap_store_obj_t *l_store_objs = NULL;
@@ -780,8 +772,8 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
     size_t l_total_records = dap_global_db_driver_count(l_iter, 0);
     if (a_msg->values_page_size >= l_total_records || !a_msg->values_page_size) {
         l_objs = dap_global_db_get_all_sync(a_msg->group, &l_values_count);
-        if(a_msg->callback_results)
-            l_ret = !a_msg->callback_results(a_msg->dbi,
+        if (a_msg->callback_results)
+            l_ret = a_msg->callback_results(a_msg->dbi,
                                 l_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
                                 a_msg->group, l_values_count, l_values_count,
                                 l_objs, a_msg->callback_arg);
@@ -794,8 +786,8 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
             l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
            
                 // Call callback if present
-            if(a_msg->callback_results)
-            l_ret = !a_msg->callback_results(a_msg->dbi,
+            if (a_msg->callback_results)
+                l_ret = a_msg->callback_results(a_msg->dbi,
                                 l_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
                                 a_msg->group, l_total_records, l_values_count,
                                 l_objs, a_msg->callback_arg);
@@ -877,7 +869,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
         return false;
     }
 
-    bool l_ret = true;
+    bool l_ret = false;
     size_t l_values_count = a_msg->values_page_size;
     dap_store_obj_t *l_store_objs = NULL;
     dap_nanotime_t l_timestamp = a_msg->timestamp;
@@ -885,8 +877,8 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
     size_t l_total_records = dap_global_db_driver_count(l_iter, l_timestamp);
     if (a_msg->values_page_size >= l_total_records || !a_msg->values_page_size) {
         l_store_objs = dap_global_db_get_all_raw_sync(a_msg->group, &l_values_count);
-        if(a_msg->callback_results)
-            l_ret = !a_msg->callback_results_raw(s_dbi,
+        if (a_msg->callback_results)
+            l_ret = a_msg->callback_results_raw(s_dbi,
                                 l_store_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
                                 a_msg->group, l_total_records, l_values_count,
                                 l_store_objs, a_msg->callback_arg);
@@ -896,8 +888,8 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
             l_values_count = i + a_msg->values_page_size < l_total_records ? a_msg->values_page_size : l_total_records - i;
             l_store_objs = dap_global_db_driver_cond_read(l_iter, &l_values_count, l_timestamp);
             // Call callback if present
-            if(a_msg->callback_results)
-            l_ret = !a_msg->callback_results_raw(s_dbi,
+            if (a_msg->callback_results)
+                l_ret = a_msg->callback_results_raw(s_dbi,
                                 l_store_objs ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_NO_RESULTS,
                                 a_msg->group, l_total_records, l_values_count,
                                 l_store_objs, a_msg->callback_arg);
@@ -918,7 +910,7 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
     dap_store_obj_t l_store_data = { 0 };
     l_store_data.type = DAP_GLOBAL_DB_OPTYPE_ADD;
     l_store_data.key = (char *)a_key ;
-    l_store_data.flags = a_pin_value ? RECORD_PINNED : 0 ;
+    l_store_data.flags = a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0 ;
     l_store_data.value_len =  a_value_length;
     l_store_data.value = (uint8_t *)a_value;
     l_store_data.group = (char *)a_group;
@@ -1010,7 +1002,7 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
  * @param a_msg
  * @return
  */
-static bool s_msg_opcode_set(struct queue_io_msg * a_msg)
+static void s_msg_opcode_set(struct queue_io_msg * a_msg)
 {
     dap_nanotime_t l_ts_now = dap_nanotime_now();
     int l_res = s_set_sync_with_ts(a_msg->dbi, a_msg->group, a_msg->key, a_msg->value,
@@ -1027,7 +1019,6 @@ static bool s_msg_opcode_set(struct queue_io_msg * a_msg)
                                    a_msg->value, a_msg->value_length, l_ts_now,
                                    a_msg->value_is_pinned, a_msg->callback_arg);
     }
-    return true;
 }
 
 /* *** Set_raw functions group *** */
@@ -1039,7 +1030,7 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
         dap_store_obj_t *l_obj = a_store_objs + i;
         if (l_obj->type != DAP_GLOBAL_DB_OPTYPE_ADD) {
             // Oh, it's compability code for old sync protocol
-            char *l_target_group = dap_strdup_printf("%s" DEL_SUFFIX, l_obj->group);
+            char *l_target_group = dap_strdup_printf("%s" DAP_GLOBAL_DB_DEL_SUFFIX, l_obj->group);
             DAP_DELETE(l_obj->group);
             l_obj->group = l_target_group;
         }
@@ -1098,7 +1089,7 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
  * @param a_msg
  * @return
  */
-static bool s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
+static void s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
 {
     int l_ret = -1;
     if (a_msg->values_raw_total > 0)
@@ -1108,7 +1099,6 @@ static bool s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
                                     l_ret == 0 ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR,
                                     a_msg->group, a_msg->values_raw_total, a_msg->values_raw_total,
                                     a_msg->values_raw, a_msg->callback_arg);
-    return true;
 }
 
 /* *** Set_multiple_zc functions group *** */
@@ -1155,7 +1145,7 @@ int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_
  * @param a_msg
  * @return
  */
-static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
+static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
 {
     int l_ret = -1;
     size_t i=0;
@@ -1182,8 +1172,6 @@ static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
                                 a_msg->values, a_msg->callback_arg);
     }
     dap_global_db_objs_delete( a_msg->values, a_msg->values_count);
-
-    return true;
 }
 
 /* *** Pin/unpin functions group *** */
@@ -1194,9 +1182,9 @@ int s_db_object_pin_sync(dap_global_db_instance_t *a_dbi, const char *a_group, c
     dap_store_obj_t *l_store_obj = dap_global_db_get_raw_unsafe(a_dbi, a_group, a_key);
     if (l_store_obj) {
         if (a_pin)
-            l_store_obj->flags |= RECORD_PINNED;
+            l_store_obj->flags |= DAP_GLOBAL_DB_RECORD_PINNED;
         else
-            l_store_obj->flags ^= RECORD_PINNED;
+            l_store_obj->flags ^= DAP_GLOBAL_DB_RECORD_PINNED;
         l_store_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
         l_res = dap_global_db_set_raw_unsafe(a_dbi, l_store_obj, 1);
         if (!l_res)
@@ -1254,13 +1242,12 @@ int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callba
  * @param a_msg
  * @return
  */
-static bool s_msg_opcode_pin(struct queue_io_msg * a_msg)
+static void s_msg_opcode_pin(struct queue_io_msg * a_msg)
 {
     int l_res = s_db_object_pin_sync(a_msg->dbi, a_msg->group, a_msg->key, a_msg->value_is_pinned);
     if (a_msg->callback_result)
         a_msg->callback_result(s_dbi, l_res, a_msg->group, a_msg->key,
                                NULL, 0, 0, a_msg->value_is_pinned, a_msg->callback_arg);
-    return true;
 }
 
 /**
@@ -1305,7 +1292,7 @@ static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_gr
 {
     dap_store_obj_t l_store_obj = {
         .key        = a_key,
-        .group      = dap_strdup_printf("%s" DEL_SUFFIX, a_group),
+        .group      = dap_strdup_printf("%s" DAP_GLOBAL_DB_DEL_SUFFIX, a_group),
         .type       = a_key ? DAP_GLOBAL_DB_OPTYPE_ADD : DAP_GLOBAL_DB_OPTYPE_DEL,
         .timestamp  = dap_nanotime_now(),
         .sign       = a_key ? (byte_t *)dap_sign_create(a_dbi->signing_key,
@@ -1365,7 +1352,7 @@ int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_cal
  * @param a_msg
  * @return
  */
-static bool s_msg_opcode_delete(struct queue_io_msg * a_msg)
+static void s_msg_opcode_delete(struct queue_io_msg * a_msg)
 {
     int l_res = dap_global_db_del_sync(a_msg->group, a_msg->key);
 
@@ -1375,8 +1362,6 @@ static bool s_msg_opcode_delete(struct queue_io_msg * a_msg)
                                 a_msg->group, a_msg->key,
                                NULL, 0, 0 , false, a_msg->callback_arg );
     }
-
-    return true;
 }
 
 /* *** Flush functions group *** */
@@ -1425,13 +1410,12 @@ int dap_global_db_flush(dap_global_db_callback_result_t a_callback, void * a_arg
  * @param a_msg
  * @return
  */
-static bool s_msg_opcode_flush(struct queue_io_msg * a_msg)
+static void s_msg_opcode_flush(struct queue_io_msg * a_msg)
 {
     int l_res = dap_global_db_flush_sync();
     if (a_msg->callback_result)
         a_msg->callback_result(a_msg->dbi, l_res ? DAP_GLOBAL_DB_RC_ERROR : DAP_GLOBAL_DB_RC_SUCCESS,
                                 NULL, NULL, NULL, 0, 0, false, a_msg->callback_arg);
-    return true;
 }
 
 /* *** Other functions *** */
@@ -1515,36 +1499,40 @@ static const char *s_msg_opcode_to_str(enum queue_io_msg_opcode a_opcode)
  * @param a_es
  * @param a_arg
  */
-static void s_queue_io_callback(dap_proc_thread_t UNUSED_ARG *a_thread, void * a_arg)
+static bool s_queue_io_callback(dap_proc_thread_t UNUSED_ARG *a_thread, void * a_arg)
 {
     struct queue_io_msg * l_msg = (struct queue_io_msg *) a_arg;
-    bool l_msg_delete = false; // if msg resent again it shouldn't be deleted in the end of callback
+    bool l_repeat = false;
     assert(l_msg);
 
     debug_if(g_dap_global_db_debug_more, L_NOTICE, "Received GlobalDB I/O message with opcode %s", s_msg_opcode_to_str(l_msg->opcode) );
 
     switch(l_msg->opcode){
-        case MSG_OPCODE_GET:          l_msg_delete = s_msg_opcode_get(l_msg); break;
-        case MSG_OPCODE_GET_RAW:      l_msg_delete = s_msg_opcode_get_raw(l_msg); break;
-        case MSG_OPCODE_GET_LAST:     l_msg_delete = s_msg_opcode_get_last(l_msg); break;
-        case MSG_OPCODE_GET_LAST_RAW: l_msg_delete = s_msg_opcode_get_last_raw(l_msg); break;
-        case MSG_OPCODE_GET_DEL_TS:   l_msg_delete = s_msg_opcode_get_del_ts(l_msg); break;
-        case MSG_OPCODE_GET_ALL:      l_msg_delete = s_msg_opcode_get_all(l_msg); break;
-        case MSG_OPCODE_GET_ALL_RAW:  l_msg_delete = s_msg_opcode_get_all_raw(l_msg); break;
-        case MSG_OPCODE_SET:          l_msg_delete = s_msg_opcode_set(l_msg); break;
-        case MSG_OPCODE_SET_MULTIPLE: l_msg_delete = s_msg_opcode_set_multiple_zc(l_msg); break;
-        case MSG_OPCODE_SET_RAW:      l_msg_delete = s_msg_opcode_set_raw(l_msg); break;
-        case MSG_OPCODE_PIN:          l_msg_delete = s_msg_opcode_pin(l_msg); break;
-        case MSG_OPCODE_DELETE:       l_msg_delete = s_msg_opcode_delete(l_msg); break;
-        case MSG_OPCODE_FLUSH:        l_msg_delete = s_msg_opcode_flush(l_msg); break;
-        case MSG_OPCODE_CONTEXT_EXEC: l_msg_delete = s_msg_opcode_context_exec(l_msg); break;
+        case MSG_OPCODE_GET:            s_msg_opcode_get(l_msg); break;
+        case MSG_OPCODE_GET_RAW:        s_msg_opcode_get_raw(l_msg); break;
+        case MSG_OPCODE_GET_LAST:       s_msg_opcode_get_last(l_msg); break;
+        case MSG_OPCODE_GET_LAST_RAW:   s_msg_opcode_get_last_raw(l_msg); break;
+        case MSG_OPCODE_GET_DEL_TS:     s_msg_opcode_get_del_ts(l_msg); break;
+        case MSG_OPCODE_GET_ALL:        if (s_msg_opcode_get_all(l_msg))
+                                            return true;
+                                        break;
+        case MSG_OPCODE_GET_ALL_RAW:    if (s_msg_opcode_get_all(l_msg))
+                                            return true;
+                                        break;
+        case MSG_OPCODE_SET:            s_msg_opcode_set(l_msg); break;
+        case MSG_OPCODE_SET_MULTIPLE:   s_msg_opcode_set_multiple_zc(l_msg); break;
+        case MSG_OPCODE_SET_RAW:        s_msg_opcode_set_raw(l_msg); break;
+        case MSG_OPCODE_PIN:            s_msg_opcode_pin(l_msg); break;
+        case MSG_OPCODE_DELETE:         s_msg_opcode_delete(l_msg); break;
+        case MSG_OPCODE_FLUSH:          s_msg_opcode_flush(l_msg); break;
+        case MSG_OPCODE_CONTEXT_EXEC:   s_msg_opcode_context_exec(l_msg); break;
         default:{
             log_it(L_WARNING, "Message with undefined opcode %d received in queue_io",
                    l_msg->opcode);
         }
     }
-    if( l_msg_delete )
-        s_queue_io_msg_delete(l_msg);
+    s_queue_io_msg_delete(l_msg);
+    return false;
 }
 
 /**
@@ -1747,7 +1735,7 @@ dap_global_db_obj_t* s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_
             dap_global_db_del_sync(l_store_objs[i].group, l_store_objs[i].key);
             continue;
         }
-        l_objs[i].is_pinned = a_store_objs[i].flags & RECORD_PINNED;
+        l_objs[i].is_pinned = a_store_objs[i].flags & DAP_GLOBAL_DB_RECORD_PINNED;
         l_objs[i].key = a_store_objs[i].key;
         l_objs[i].value = a_store_objs[i].value;
         l_objs[i].value_len = a_store_objs[i].value_len;
@@ -1758,5 +1746,3 @@ dap_global_db_obj_t* s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_
     DAP_DELETE(a_store_objs);
     return l_objs;
 }
-
-#undef DEL_SUFFIX

@@ -319,19 +319,17 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
  * @brief dap_http_simple_proc Execute procession callback and switch to write state
  * @param cl_sh HTTP simple client instance
  */
-static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void * a_arg )
+static bool s_proc_queue_callback(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
 {
-    (void) a_thread;
      dap_http_simple_t *l_http_simple = (dap_http_simple_t*) a_arg;
     log_it(L_DEBUG, "dap http simple proc");
-//  Sleep(300);
     if (!l_http_simple->http_client) {
         log_it(L_ERROR, "[!] HTTP client is already deleted!");
-        return true;
+        return false;
     }
     if (!l_http_simple->reply_byte) {
         log_it(L_ERROR, "[!] HTTP client is corrupted!");
-        return true;
+        return false;
     }
     http_status_code_t return_code = (http_status_code_t)0;
 
@@ -344,7 +342,7 @@ static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void * a_arg )
             const char l_error_msg[] = "Not found User-Agent HTTP header";
             s_write_response_bad_request(l_http_simple, l_error_msg);
             s_write_data_to_socket(a_thread, l_http_simple);
-            return true;
+            return false;
         }
 
         if (l_header && s_is_user_agent_supported(l_header->value) == false) {
@@ -352,7 +350,7 @@ static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void * a_arg )
             const char *l_error_msg = "User-Agent version not supported. Update your software";
             s_write_response_bad_request(l_http_simple, l_error_msg);
             s_write_data_to_socket(a_thread, l_http_simple);
-            return true;
+            return false;
         }
     }
 
@@ -367,7 +365,7 @@ static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void * a_arg )
         l_http_simple->http_client->reply_status_code = Http_Status_InternalServerError;
     }
     s_write_data_to_socket(a_thread, l_http_simple);
-    return true;
+    return false;
 }
 
 static void s_http_client_delete( dap_http_client_t *a_http_client, void *arg )

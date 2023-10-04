@@ -94,7 +94,7 @@ void dap_cluster_delete(dap_cluster_t *a_cluster)
  * @param a_member
  * @return
  */
-dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, dap_cluster_member_role_t a_role, void *a_info)
+dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, int a_role, void *a_info)
 {
     dap_cluster_member_t *l_member = NULL;
     pthread_rwlock_wrlock(&a_cluster->members_lock);
@@ -150,13 +150,22 @@ static void s_cluster_member_delete(dap_cluster_member_t *a_member)
  * @param a_member_id
  * @return
  */
-dap_cluster_member_t *dap_cluster_member_find(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr)
+dap_cluster_member_t *dap_cluster_member_find_unsafe(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr)
 {
     dap_cluster_member_t *l_member = NULL;
     pthread_rwlock_rdlock(&a_cluster->members_lock);
     HASH_FIND(hh, a_cluster->members, a_member_addr, sizeof(*a_member_addr), l_member);
     pthread_rwlock_unlock(&a_cluster->members_lock);
     return l_member;
+}
+
+int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr)
+{
+    dap_cluster_member_t *l_member = NULL;
+    pthread_rwlock_rdlock(&a_cluster->members_lock);
+    HASH_FIND(hh, a_cluster->members, a_member_addr, sizeof(*a_member_addr), l_member);
+    pthread_rwlock_unlock(&a_cluster->members_lock);
+    return l_member ? l_member->role : 0;
 }
 
 dap_list_t *dap_cluster_get_shuffle_addrs(dap_cluster_t *a_cluster)

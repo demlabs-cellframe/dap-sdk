@@ -822,13 +822,6 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     }
     // Do not overwrite pinned records
     if (l_is_pinned_cur) {
-<<<<<<< HEAD
-        debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
-                                a_obj->type != DAP_GLOBAL_DB_OPTYPE_DEL ? "remove" : "rewrite", a_obj->group, a_obj->key);
-        l_read_obj->timestamp = a_obj->timestamp + 1;
-        l_read_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
-        dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
-=======
         int l_ret = 0;
         if (a_obj->timestamp - l_read_obj->timestamp == 1 && a_obj->type == DAP_DB$K_OPTYPE_ADD) {
             log_it(L_MSG, "[!] Repinning occured, unpin %s : %s", a_obj->group, a_obj->key);
@@ -841,7 +834,6 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
             dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
             l_ret = -1;
         }
->>>>>>> develop
         dap_store_obj_free_one(l_read_obj);
         DAP_DEL_Z(a_arg);
         return l_ret;

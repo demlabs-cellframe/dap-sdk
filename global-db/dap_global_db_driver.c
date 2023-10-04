@@ -150,13 +150,26 @@ int dap_db_driver_flush(void)
     return s_drv_callback.flush();
 }
 
+static void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, dap_store_obj_t *a_store_obj_src)
+{
+    *a_store_obj_dst = *a_store_obj_src;
+    a_store_obj_dst->group = dap_strdup(a_store_obj_src->group);
+    a_store_obj_dst->key = dap_strdup(a_store_obj_src->key);
+    if (a_store_obj_src->value) {
+        if (!l_store_obj->value_len)
+            log_it(L_WARNING, "Inconsistent global DB object copy requested");
+        else
+            a_store_obj_dst->value = DAP_DUP_SIZE(a_store_obj_src->value, a_store_obj_src->value_len);
+    }
+}
+
 /**
  * @brief Copies objects from a_store_obj.
  * @param a_store_obj a pointer to the source objects
  * @param a_store_count a number of objects
  * @return A pointer to the copied objects.
  */
-dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count)
+dap_store_obj_t *dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count)
 {
 dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
@@ -168,20 +181,18 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
     l_store_obj_dst = l_store_obj;
     l_store_obj_src = a_store_obj;
-
-    for( int i =  a_store_count; i--; l_store_obj_dst++, l_store_obj_src++) {
-        *l_store_obj_dst = *l_store_obj_src;
-        l_store_obj_dst->group = dap_strdup(l_store_obj_src->group);
-        l_store_obj_dst->key = dap_strdup(l_store_obj_src->key);
-        if (l_store_obj_src->value) {
-            if (!l_store_obj->value_len)
-                log_it(L_WARNING, "Inconsistent global DB object copy requested");
-            else
-                l_store_obj_dst->value = DAP_DUP_SIZE(l_store_obj_src->value, l_store_obj_src->value_len);
-        }
-    }
-
+    for (int i = a_store_count; i--; l_store_obj_dst++, l_store_obj_src++)
+        s_store_obj_copy_one(l_store_obj_dst, l_store_obj_src);
     return l_store_obj;
+}
+
+dap_store_obj_t *dap_store_obj_copy_ext(dap_store_obj_t *a_store_obj, void *a_ext, size_t a_ext_size)
+{
+    dap_store_obj_t *l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + a_ext_size);
+    s_store_obj_copy_one(l_ret, a_store_obj);
+    if (a_ext_size)
+        memcpy(l_ret->ext, a_ext, a_ext_size);
+    return l_ret;
 }
 
 dap_store_obj_t* dap_global_db_store_objs_copy(dap_store_obj_t *a_store_objs_dest, const dap_store_obj_t *a_store_objs_src, size_t a_store_count)
@@ -441,4 +452,10 @@ bool dap_global_db_driver_is(const char *a_group, const char *a_key)
         return s_drv_callback.is_obj(a_group, a_key);
     else
         return false;
+}
+
+bool dap_global_db_driver_is_hash(const char *a_group, const dap_global_db_driver_hash_t *a_hash)
+{
+    // TODO 9575
+    return false;
 }

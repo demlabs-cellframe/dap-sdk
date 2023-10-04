@@ -139,12 +139,12 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
         log_it(L_ERROR, "Broken GDB element: size is incorrect");
         return NULL;
     }
-    if (!a_pkt->group_len) {
-        log_it(L_ERROR, "Broken GDB element: 'group_len' field is zero");
+    if (!a_pkt->group_len || a_pkt->group_len > DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX) {
+        log_it(L_ERROR, "Broken GDB element: 'group_len' field is incorrect");
         return NULL;
     }
-    if (!a_pkt->key_len) {
-        log_it(L_ERROR, "Broken GDB element: 'key_len' field is zero");
+    if (!a_pkt->key_len || a_pkt->key_len > DAP_GLOBAL_DB_KEY_SIZE_MAX) {
+        log_it(L_ERROR, "Broken GDB element: 'key_len' field is incorrect");
         return NULL;
     }
     a_obj->timestamp = a_pkt->timestamp;
@@ -201,14 +201,15 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
     return l_data_ptr + l_sign_size;
 }
 
-dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_t a_pkt_size)
+dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_t a_pkt_size, dap_stream_node_addr_t a_addr)
 {
     dap_return_val_if_fail(a_pkt, NULL);
-    dap_store_obj_t *l_ret = DAP_NEW_Z(dap_store_obj_t);
+    dap_store_obj_t *l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + sizeof(dap_stream_node_addr_t));
     if (!s_fill_one_store_obj(a_pkt, l_ret, a_pkt_size)) {
         log_it(L_ERROR, "Broken GDB element: can't read GOSSIP packet");
         DAP_DEL_Z(l_ret);
     }
+    *(dap_stream_node_addr_t *)l_ret->ext = a_addr;
     return l_ret;
 }
 

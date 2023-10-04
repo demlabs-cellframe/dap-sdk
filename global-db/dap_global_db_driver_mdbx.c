@@ -94,7 +94,7 @@ static int              s_db_mdbx_deinit();
 static int              s_db_mdbx_flush(void);
 static int              s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj);
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group);
-static bool s_db_mdbx_is_obj(const char *a_group, const char *a_key);
+static bool             s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out);
 static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(dap_global_db_iter_t *a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp);
 static size_t           s_db_mdbx_read_count_store(const char *a_group, dap_nanotime_t a_timestamp);
@@ -902,7 +902,7 @@ MDBX_val    l_key, l_data;
         if( !a_store_obj->key )
             return -ENOENT;
         l_key.iov_base = (void *)a_store_obj->key;                                  /* Fill IOV for MDBX key */
-        l_key.iov_len =  a_store_obj->key_len ? a_store_obj->key_len : strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_MAX);
+        l_key.iov_len =  a_store_obj->key_len ? a_store_obj->key_len : strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX);
 
         /* Compute a length of the area to keep record */
         size_t l_record_len = sizeof(struct driver_record) + a_store_obj->value_len + dap_sign_get_size(a_store_obj->sign);
@@ -957,7 +957,7 @@ MDBX_val    l_key, l_data;
             return  log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), -ENOENT;
         if ( a_store_obj->key ) {                                                       /* Delete record */
             l_key.iov_base = (void *) a_store_obj->key;
-            l_key.iov_len =  a_store_obj->key_len ? a_store_obj->key_len : strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_MAX);
+            l_key.iov_len =  a_store_obj->key_len ? a_store_obj->key_len : strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX);
             if ( MDBX_SUCCESS != (l_rc = mdbx_del(l_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND)
                 log_it (L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc));
             l_rc = (l_rc == MDBX_NOTFOUND) ? 1 : l_rc;                                  /* Not found? It's OK */

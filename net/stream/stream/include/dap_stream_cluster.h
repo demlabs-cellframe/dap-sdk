@@ -33,15 +33,9 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 typedef struct dap_cluster dap_cluster_t;
 
-typedef enum dap_cluster_member_role {
-    DAP_CLUSTER_MEMBER_ROLE_GUEST,  // Minimal access
-    DAP_CLUSTER_MEMBER_ROLE_USER,   // Standard access
-    DAP_CLUSTER_MEMBER_ROLE_ROOT    // Priveledged access
-} dap_cluster_member_role_t;
-
 typedef struct dap_cluster_member {
     dap_stream_node_addr_t addr;    // Member addr, HT key
-    dap_cluster_member_role_t role; // Member role & access rights
+    int role;                       // Member role & access rights (user-defined enum)
     dap_cluster_t *cluster;         // Cluster pointer
     void *info;                     // Member info pointer
     UT_hash_handle hh;
@@ -71,8 +65,9 @@ void dap_cluster_delete(dap_cluster_t *a_cluster);
 dap_cluster_t *dap_cluster_find(dap_guuid_t a_guuid);
 
 // Member funcs
-dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, dap_cluster_member_role_t a_role, void *a_info);
-dap_cluster_member_t *dap_cluster_member_find(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
+dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, int a_role, void *a_info);
+dap_cluster_member_t *dap_cluster_member_find_unsafe(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
+int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
 void dap_cluster_member_delete(dap_cluster_member_t *a_member);
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
 dap_list_t *dap_cluster_get_shuffle_members(dap_cluster_t *a_cluster);

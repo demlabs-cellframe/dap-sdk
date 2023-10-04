@@ -103,7 +103,7 @@ dap_proc_thread_t *dap_proc_thread_get_auto()
 }
 
 int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback,
-                              void *a_callback_arg, enum dap_queue_msg_priority a_priority)
+                                     void *a_callback_arg, dap_queue_msg_priority_t a_priority)
 {
     dap_return_val_if_fail(a_callback && a_priority >= DAP_QUEUE_MSG_PRIORITY_MIN && a_priority <= DAP_QUEUE_MSG_PRIORITY_MAX, -1);
     dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();

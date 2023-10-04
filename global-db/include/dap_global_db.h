@@ -32,6 +32,7 @@
 #define DAP_GLOBAL_DB_VERSION               2
 #define DAP_GLOBAL_DB_LOCAL_GENERAL         "local.general"
 #define DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT     5 // seconds
+#define DAP_GLOBAL_DB_DEL_SUFFIX            ".del"
 
 typedef struct sync_obj_data_callback sync_obj_data_callback_t;
 
