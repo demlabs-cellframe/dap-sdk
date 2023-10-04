@@ -143,13 +143,13 @@ dap_stream_session_t * dap_stream_session_new(unsigned int media_id, bool open_p
  * @param id
  * @return
  */
-dap_stream_session_t *dap_stream_session_id_mt(uint32_t id )
+dap_stream_session_t *dap_stream_session_id_mt(uint32_t a_id)
 {
-    dap_stream_session_t *ret;
+    dap_stream_session_t *l_ret = NULL;
     dap_stream_session_lock();
-    HASH_FIND(hh, s_sessions, &id, sizeof(uint32_t), ret);
+    HASH_FIND(hh, s_sessions, &a_id, sizeof(uint32_t), l_ret);
     dap_stream_session_unlock();
-    return ret;
+    return l_ret;
 }
 
 /**

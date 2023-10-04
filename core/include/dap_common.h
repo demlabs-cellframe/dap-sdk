@@ -302,11 +302,12 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 /*
  * 23: added support for encryption key type parameter and option to encrypt headers
  * 24: Update hashes protocol
+ * 25: Added node sign
 */
-#define DAP_PROTOCOL_VERSION          24
+#define DAP_PROTOCOL_VERSION          25
 #define DAP_PROTOCOL_VERSION_DEFAULT  24 // used if version is not explicitly specified
 
-#define DAP_CLIENT_PROTOCOL_VERSION   24
+#define DAP_CLIENT_PROTOCOL_VERSION   25
 
 #if (__SIZEOF_LONG__ == 4) || defined (DAP_OS_DARWIN)
 #define DAP_UINT64_FORMAT_X  "llX"
@@ -772,3 +773,23 @@ int exec_silent(const char *a_cmd);
 #ifdef __cplusplus
 }
 #endif
+
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
+#define NODE_ADDR_FP_ARGS(a)  a->words[2],a->words[3],a->words[0],a->words[1]
+#define NODE_ADDR_FPS_ARGS(a)  &a->words[2],&a->words[3],&a->words[0],&a->words[1]
+#define NODE_ADDR_FP_ARGS_S(a)  a.words[2],a.words[3],a.words[0],a.words[1]
+#define NODE_ADDR_FPS_ARGS_S(a)  &a.words[2],&a.words[3],&a.words[0],&a.words[1]
+#else
+#define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
+#define NODE_ADDR_FP_ARGS(a)  a->words[3],a->words[2],a->words[1],a->words[0]
+#define NODE_ADDR_FPS_ARGS(a)  &a->words[3],&a->words[2],&a->words[1],&a->words[0]
+#define NODE_ADDR_FP_ARGS_S(a)  a.words[3],a.words[2],a.words[1],a.words[0]
+#define NODE_ADDR_FPS_ARGS_S(a)  &a.words[3],&a.words[2],&a.words[1],&a.words[0]
+#endif
+
+typedef union dap_stream_node_addr {
+    uint64_t uint64;
+    uint16_t words[sizeof(uint64_t)/2];
+    uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
+} DAP_ALIGN_PACKED dap_stream_node_addr_t;

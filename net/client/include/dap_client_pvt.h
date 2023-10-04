@@ -50,7 +50,7 @@ typedef struct dap_client_pvt {
     dap_enc_key_t *session_key_open; // Open assymetric keys exchange
     dap_enc_key_t *session_key; // Symmetric private key for session encryption
     dap_enc_key_t *stream_key; // Stream private key for stream encryption
-    char stream_id[25];
+    uint32_t stream_id;
     char *session_key_id;
     uint32_t uplink_protocol_version;
     uint32_t remote_protocol_version;
