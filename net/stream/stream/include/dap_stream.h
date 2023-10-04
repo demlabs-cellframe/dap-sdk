@@ -31,6 +31,7 @@
 #include "dap_config.h"
 #include "dap_stream_session.h"
 #include "dap_timerfd.h"
+#include "dap_sign.h"
 
 /*  #define CHUNK_SIZE_MAX (3 * 1024)
     #define STREAM_BUF_SIZE_MAX DAP_STREAM_PKT_SIZE_MAX
@@ -40,6 +41,11 @@
 
 typedef struct dap_stream_ch dap_stream_ch_t;
 typedef struct dap_stream_worker dap_stream_worker_t;
+
+typedef enum dap_stream_sign_group {
+    UNSIGNED = 0,
+    BASE_NODE_SIGN,
+} dap_stream_sign_group_t;
 
 typedef struct dap_stream {
     int id;
@@ -78,6 +84,8 @@ typedef struct dap_stream {
 
     struct dap_stream *prev, *next;
 
+    dap_stream_sign_group_t sign_group;
+    dap_stream_node_addr_t node;
 } dap_stream_t;
 
 typedef void (*dap_stream_callback)(dap_stream_t *, void *);
@@ -104,3 +112,12 @@ void dap_stream_es_rw_states_update(struct dap_stream *a_stream);
 void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
+
+// autorization stream block
+int dap_stream_add_addr(dap_stream_node_addr_t a_addr, void *a_id);
+int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full);
+int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
+int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
+int dap_stream_change_id(void  *a_old, uint64_t a_new);
+dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t a_addr, dap_worker_t **a_worker);
+dap_stream_node_addr_t dap_stream_get_addr_from_sign(dap_sign_t *a_sign);
