@@ -191,6 +191,81 @@ static int s_db_add_sync_group(dap_list_t **a_grp_list, dap_sync_group_item_t *a
     return 0;
 }
 
+static void *s_list_thread_proc2(void *arg) {
+    dap_db_log_list_t *l_dap_db_log_list = (dap_db_log_list_t*)arg;
+    uint32_t l_time_store_lim_hours = l_dap_db_log_list->db_context->instance->store_time_limit;
+    uint64_t l_limit_time = l_time_store_lim_hours ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
+    dap_list_t *l_group_elem;
+    DL_FOREACH(l_dap_db_log_list->groups, l_group_elem) {
+        dap_db_log_list_group_t *l_group = (dap_db_log_list_group_t*)l_group_elem->data;
+        char l_obj_type = dap_fnmatch("*.del", l_group->name, 0) ? DAP_DB$K_OPTYPE_ADD : DAP_DB$K_OPTYPE_DEL;
+        dap_nanotime_t l_time_allowed = dap_nanotime_now() + dap_nanotime_from_sec(3600 * 24);
+        size_t l_item_count = 0, l_objs_total_size = 0;
+        //uint64_t l_item_start = l_group->last_id_synced + 1;
+        dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group->name, 0, &l_item_count);
+        if (!l_objs)
+            break;
+        for (size_t i = 0; i < l_item_count; ++i) {
+            --l_group->count;
+            dap_store_obj_t *l_obj_cur = l_objs + i;
+            if (!l_obj_cur)
+                continue;
+            if (l_obj_cur->timestamp >> 32 == 0 || l_obj_cur->timestamp > l_time_allowed || !l_obj_cur->group) {
+                dap_global_db_driver_delete(l_obj_cur, 1);
+                continue;       // the object is broken
+            }
+            l_obj_cur->type = l_obj_type;
+            switch (l_obj_type) {
+            case DAP_DB$K_OPTYPE_DEL:
+                if (l_limit_time && l_obj_cur->timestamp < l_limit_time) {
+                    dap_global_db_driver_delete(l_obj_cur, 1);
+                    continue;
+                }
+                DAP_DELETE(l_obj_cur->group);
+                l_obj_cur->group = dap_strdup_printf("%.*s", (int)dap_strlen(l_group->name) - 4, l_group->name);
+                break;
+            case DAP_DB$K_OPTYPE_ADD:
+                break;
+            default:
+                break;
+            }
+            pthread_mutex_lock(&l_dap_db_log_list->list_mutex);
+            while (l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE && l_dap_db_log_list->is_process)
+                pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
+            if (!l_dap_db_log_list->is_process) {
+                pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
+                l_group_elem = dap_list_last(l_dap_db_log_list->groups);
+                break;
+            }
+            dap_db_log_list_obj_t *l_list_obj = DAP_NEW_Z(dap_db_log_list_obj_t);
+            if (!l_list_obj) {
+                log_it(L_CRITICAL, "Memory allocation error");
+                l_dap_db_log_list->is_process = false;
+                pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
+                dap_store_obj_free(l_objs, l_item_count);
+                pthread_exit(NULL);
+            }
+            uint64_t l_cur_id = l_obj_cur->id;
+            l_obj_cur->id = 0;
+            dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(l_obj_cur);
+            DAP_DEL_Z(l_obj_cur->group);
+            DAP_DEL_Z(l_obj_cur->key);
+            DAP_DEL_Z(l_obj_cur->value); /* Cleanup to free some memory... */
+            dap_global_db_pkt_change_id(l_pkt, l_cur_id);
+            dap_hash_fast(l_pkt->data, l_pkt->data_size, &l_list_obj->hash);
+            l_list_obj->pkt = l_pkt;
+            l_dap_db_log_list->items_list = dap_list_append(l_dap_db_log_list->items_list, l_list_obj);
+            l_dap_db_log_list->size += dap_db_log_list_obj_get_size(l_list_obj);
+            if (!l_group_elem->next && !l_group->count)
+                // The very last one, we're finished
+                l_dap_db_log_list->is_process = false;
+            pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
+        }
+        dap_store_obj_free(l_objs, l_item_count);
+    }
+    pthread_exit(NULL);
+}
+
 /**
  * @brief A function for a thread for reading a log list
  *
@@ -383,7 +458,7 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
     l_dap_db_log_list->is_process = true;
     pthread_mutex_init(&l_dap_db_log_list->list_mutex, NULL);
     pthread_cond_init(&l_dap_db_log_list->cond, NULL);
-    pthread_create(&l_dap_db_log_list->thread, NULL, s_list_thread_proc, l_dap_db_log_list);
+    pthread_create(&l_dap_db_log_list->thread, NULL, s_list_thread_proc2, l_dap_db_log_list);
     return l_dap_db_log_list;
 }
 
@@ -438,12 +513,12 @@ dap_db_log_list_obj_t **dap_db_log_list_get_multiple(dap_db_log_list_t *a_db_log
             if (!(--l_count))
                 break;
         }
-        if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE && a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE)
-            pthread_cond_signal(&a_db_log_list->cond);
         if (l_count) {
             *a_count -= l_count;
             l_ret = DAP_REALLOC_COUNT(l_ret, *a_count);
         }
+        if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE && a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE)
+            pthread_cond_signal(&a_db_log_list->cond);
     }
     pthread_mutex_unlock(&a_db_log_list->list_mutex);
     return l_ret ? l_ret : DAP_INT_TO_POINTER(l_is_process);
@@ -481,9 +556,9 @@ void dap_db_log_list_delete(dap_db_log_list_t *a_db_log_list)
         pthread_mutex_unlock(&a_db_log_list->list_mutex);
         pthread_join(a_db_log_list->thread, NULL);
     }
-    dap_list_free_full(a_db_log_list->groups, NULL);
     dap_list_free_full(a_db_log_list->items_list, (dap_callback_destroyed_t)s_dap_db_log_list_delete_item);
     pthread_mutex_destroy(&a_db_log_list->list_mutex);
+    dap_list_free_full(a_db_log_list->groups, NULL);
     DAP_DELETE(a_db_log_list);
 }
 
