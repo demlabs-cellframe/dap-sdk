@@ -134,7 +134,6 @@ static inline uint256_t GET_256_FROM_128(uint128_t n) {
     return output;
 }
 
-
 static inline bool EQUAL_128(uint128_t a_128_bit, uint128_t b_128_bit){
 #ifdef DAP_GLOBAL_IS_INT128
     return a_128_bit == b_128_bit;
@@ -142,7 +141,6 @@ static inline bool EQUAL_128(uint128_t a_128_bit, uint128_t b_128_bit){
     return a_128_bit.lo==b_128_bit.lo && a_128_bit.hi==b_128_bit.hi;
 #endif
 }
-
 
 static inline bool IS_ZERO_128(uint128_t a_128_bit){
     return EQUAL_128(a_128_bit, uint128_0);
@@ -164,7 +162,6 @@ static inline bool EQUAL_256(uint256_t a_256_bit, uint256_t b_256_bit){
 static inline bool IS_ZERO_256(uint256_t a_256_bit){
     return EQUAL_256(a_256_bit, uint256_0);//a_256_bit.lo == (uint128_t)0;
 }
-
 
 static inline uint128_t AND_128(uint128_t a_128_bit,uint128_t b_128_bit){
 
@@ -256,7 +253,6 @@ static inline void RIGHT_SHIFT_128(uint128_t a_128_bit,uint128_t* b_128_bit,int 
     }
 #endif
 }
-
 
 static inline void LEFT_SHIFT_256(uint256_t a_256_bit,uint256_t* b_256_bit,int n){
 
@@ -393,13 +389,6 @@ static inline int MULT_64_64(uint64_t a_64_bit,uint64_t b_64_bit,uint64_t* c_64_
     return overflow_flag;
 }
 
-//
-//static inline void SUM_64_128(uint64_t a_64_bit,uint64_t b_64_bit,uint128_t* c_128_bit ) {
-//int overflow_flag;
-//c_128_bit->lo=a_64_bit+b_64_bit;
-//c_128_bit->hi=(c_128_bit->lo<a_64_bit);}
-
-
 //Mixed precision: add a uint64_t into a uint128_t
 static inline int ADD_64_INTO_128(uint64_t a_64_bit,uint128_t *c_128_bit )
 {
@@ -419,7 +408,6 @@ static inline int ADD_64_INTO_128(uint64_t a_64_bit,uint128_t *c_128_bit )
 #endif
     return overflow_flag;
 }
-
 
 static inline int SUM_128_128(uint128_t a_128_bit,uint128_t b_128_bit,uint128_t* c_128_bit)
 {
@@ -459,8 +447,6 @@ static inline int SUBTRACT_128_128(uint128_t a_128_bit, uint128_t b_128_bit, uin
     return underflow_flag;
 }
 
-
-//
 //Mixed precision: add a uint128_t into a uint256_t
 static inline int ADD_128_INTO_256(uint128_t a_128_bit,uint256_t* c_256_bit) {
     int overflow_flag=0;
@@ -572,7 +558,6 @@ static inline int ADD_256_INTO_512(uint256_t a_256_bit,uint512_t* c_512_bit) {
     return overflow_flag;
 }
 
-
 static inline void MULT_64_128(uint64_t a_64_bit, uint64_t b_64_bit, uint128_t* c_128_bit)
 {
 #ifdef DAP_GLOBAL_IS_INT128
@@ -598,8 +583,6 @@ static inline void MULT_64_128(uint64_t a_64_bit, uint64_t b_64_bit, uint128_t* 
     c_128_bit->lo = (prod_hi << 32) + w3;
 #endif
 }
-
-
 
 static inline void MULT_128_256(uint128_t a_128_bit,uint128_t b_128_bit,uint256_t* c_256_bit ) {
 #ifdef DAP_GLOBAL_IS_INT128
@@ -655,7 +638,6 @@ static inline void MULT_128_256(uint128_t a_128_bit,uint128_t b_128_bit,uint256_
 #endif
 }
 
-// MULT_128_128_NEW
 static inline int MULT_128_128(uint128_t a_128_bit, uint128_t b_128_bit, uint128_t* c_128_bit){
     int overflow_flag=0;
 
@@ -674,70 +656,6 @@ static inline int MULT_128_128(uint128_t a_128_bit, uint128_t b_128_bit, uint128
 #endif
     return overflow_flag;
 }
-
-
-// incorrect
-// static inline int MULT_128_128(uint128_t a_128_bit,uint128_t b_128_bit,uint128_t* accum_128_bit) {
-//     uint64_t A=(b_128_bit.lo & lo_32)*(a_128_bit.hi & lo_32);
-//     uint64_t B_32_64=((b_128_bit.lo & lo_32)*(a_128_bit.hi & hi_32))&hi_32;
-//     uint64_t C_32_64=((b_128_bit.lo & hi_32)*(a_128_bit.hi & lo_32))&hi_32;
-//     uint64_t E=(a_128_bit.lo & lo_32)*(b_128_bit.hi & lo_32);
-//     uint64_t F_32_64=((a_128_bit.lo & lo_32)*(b_128_bit.hi & hi_32))&hi_32;
-//     uint64_t G_32_64=((a_128_bit.lo & hi_32)*(b_128_bit.hi & lo_32))&hi_32;
-
-//     //initialization of overflow counter
-//     int overflow_ctr=0;
-
-//      //checking of overflow from ".hi terms"
-//     int overflow_from_hi_calc=0;
-//     overflow_from_hi_calc=(a_128_bit.hi*b_128_bit.hi>0);
-//     overflow_ctr+=overflow_from_hi_calc;
-
-//     //product of two ".lo" terms
-//     MULT_64_128(a_128_bit.lo,b_128_bit.lo,accum_128_bit);
-
-//     int overflow=0;
-//     uint64_t temp=0;
-
-//     overflow=SUM_64_64(A,temp,&accum_128_bit->hi);
-//     printf("accum_128_bit->hi after add in of A %" PRIu64 "\n",accum_128_bit->hi);
-
-//     overflow_ctr+=overflow;
-//     temp=accum_128_bit->hi;
-//     overflow=0;
-
-//     overflow=SUM_64_64(B_32_64,temp,&accum_128_bit->hi);
-//     overflow_ctr+=overflow;
-//     temp=accum_128_bit->hi;
-//     overflow=0;
-
-//     overflow=SUM_64_64(C_32_64,temp,&accum_128_bit->hi);
-//     overflow_ctr+=overflow;
-//     temp=accum_128_bit->hi;
-//     overflow=0;
-
-//     overflow=SUM_64_64(E,temp,&accum_128_bit->hi);
-//     overflow_ctr+=overflow;
-//     temp=accum_128_bit->hi;
-//     overflow=0;
-
-//     overflow=SUM_64_64(F_32_64,temp,&accum_128_bit->hi);
-//     overflow_ctr+=overflow;
-//     temp=accum_128_bit->hi;
-//     overflow=0;
-
-//     overflow=SUM_64_64(G_32_64,temp,&accum_128_bit->hi);
-//     overflow_ctr+=overflow;
-//     temp=accum_128_bit->hi;
-//     overflow=0;
-
-//     if(overflow_ctr>0){
-//         overflow=1;}
-//     else{overflow=0;}
-
-//     return overflow;
-// }
-
 
 // we have test fails for this function with 512 bit, need to check it out if using it with 512 bit space
 // But with 256 bit sapce it works correct
@@ -776,6 +694,12 @@ static inline void MULT_256_512(uint256_t a_256_bit,uint256_t b_256_bit,uint512_
     UNUSED(dummy_overflow);
 }
 
+/* Multiplicates 256-bit value to fixed-point value, represented as 256-bit value
+ * @param a_val
+ * @param a_mult
+ * @param result is a fixed-point value, represented as 256-bit value
+ * @return
+ */
 static inline int MULT_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint256_t* accum_256_bit){
     int overflow=0;
     int equal_flag=0;
@@ -790,81 +714,6 @@ static inline int MULT_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint256_t
     return overflow;
 }
 
-// incorrect
-// static inline int MULT_256_256_NEW(uint256_t a_256_bit,uint256_t b_256_bit,uint256_t* accum_256_bit){
-
-//     uint128_t two_0_coeff={.hi=0,.lo=0};
-//     MULT_64_128(a_256_bit.lo.lo,b_256_bit.lo.lo,&two_0_coeff);
-//     accum_256_bit->lo.lo=two_0_coeff.lo;
-
-//     uint128_t two_64_coeff={.hi=0,.lo=0};
-//     uint128_t two_64_coeff_one={.hi=0,.lo=0};
-//     MULT_64_128(a_256_bit.lo.hi,b_256_bit.lo.lo,&two_64_coeff_one);
-//     uint128_t two_64_coeff_two={.hi=0,.lo=0};
-//     MULT_64_128(a_256_bit.lo.lo,b_256_bit.lo.hi,&two_64_coeff_two);
-//     uint128_t two_64_coeff_sum={.hi=0,.lo=0};
-//     int dummy_overflow=0;
-//     dummy_overflow=SUM_128_128(two_64_coeff_one,two_64_coeff_two,&two_64_coeff_sum);
-//     if (two_64_coeff_sum.lo+two_0_coeff.hi<two_64_coeff_sum.lo){
-
-//         two_64_coeff.lo=two_64_coeff_sum.lo+two_0_coeff.hi;
-//         two_64_coeff.hi=1+two_64_coeff_sum.hi;}
-//     else{
-//         two_64_coeff.lo=two_64_coeff_sum.lo+two_0_coeff.hi;
-//         two_64_coeff.hi=two_64_coeff_sum.hi;
-//     }
-//     accum_256_bit->lo.hi=two_64_coeff.lo;
-
-
-//     uint128_t two_128_coeff={.hi=0,.lo=0};
-//     uint128_t two_128_coeff_one={.hi=0,.lo=0};
-//     MULT_64_128(a_256_bit.lo.lo,b_256_bit.hi.lo,&two_128_coeff_one);
-//     uint128_t two_128_coeff_two={.hi=0,.lo=0};
-//     MULT_64_128(a_256_bit.hi.lo,b_256_bit.lo.lo,&two_128_coeff_two);
-//     uint128_t two_128_coeff_three={.hi=0,.lo=0};
-//     MULT_64_128(a_256_bit.lo.hi,b_256_bit.lo.hi,&two_128_coeff_three);
-//     uint128_t two_128_coeff_sum_one={.hi=0,.lo=0};
-//     dummy_overflow=SUM_128_128(two_128_coeff_one,two_128_coeff_two,&two_128_coeff_sum_one);
-//     uint128_t two_128_coeff_sum_two={.hi=0,.lo=0};
-//     dummy_overflow=SUM_128_128(two_128_coeff_sum_one,two_128_coeff_three,&two_128_coeff_sum_two);
-
-//     if (two_128_coeff_sum_two.lo+two_64_coeff.hi<two_128_coeff_sum_two.lo){
-
-//         two_128_coeff.lo=two_128_coeff_sum_two.lo+two_64_coeff.hi;
-//         two_128_coeff.hi=1+two_128_coeff_sum_two.hi;}
-//     else{
-//         two_128_coeff.lo=two_128_coeff_sum_two.lo+two_64_coeff.hi;
-//         two_128_coeff.hi=two_128_coeff_sum_two.hi;
-//     }
-//     accum_256_bit->hi.lo=two_128_coeff.lo;
-
-//    uint64_t two_192_coeff=0;
-//    uint64_t two_192_coeff_one=0;
-//    int overflow_two_192_coeff_one=0;
-//    overflow_two_192_coeff_one=MULT_64_64(a_256_bit.hi.hi,b_256_bit.lo.lo,&two_192_coeff_one);
-//    uint64_t two_192_coeff_two=0;
-//    int overflow_two_192_coeff_two=0;
-//    overflow_two_192_coeff_two=MULT_64_64(a_256_bit.lo.lo,b_256_bit.hi.hi,&two_192_coeff_two);
-//    uint64_t two_192_coeff_three=0;
-//    int overflow_two_192_coeff_three=0;
-//    overflow_two_192_coeff_three=MULT_64_64(a_256_bit.lo.hi,b_256_bit.hi.lo,&two_192_coeff_three);
-//    uint64_t two_192_coeff_four=0;
-//    int overflow_two_192_coeff_four=0;
-//    overflow_two_192_coeff_four=MULT_64_64(a_256_bit.hi.lo,b_256_bit.lo.hi,&two_192_coeff_four);
-//    uint64_t two_192_coeff_sum_one=0;
-//    int overflow_two_192_coeff_sum_one=0;
-
-//    overflow_two_192_coeff_sum_one=SUM_64_64(two_192_coeff_one,two_192_coeff_two,&two_192_coeff_sum_one);
-//    uint64_t two_192_coeff_sum_two=0;
-//    int overflow_two_192_coeff_sum_two=0;
-//    overflow_two_192_coeff_sum_two=SUM_64_64(two_192_coeff_three,two_192_coeff_four,&two_192_coeff_sum_two);
-//    int overflow_two_192_coeff_sum=0;
-//    overflow_two_192_coeff_sum=SUM_64_64(two_192_coeff_sum_one,two_192_coeff_sum_two,&two_192_coeff);
-
-//     return 0;
-// }
-
-//#ifndef DAP_GLOBAL_IS_INT128
 // > ret 1
 // == ret 0
 // < ret -1
@@ -1032,16 +881,6 @@ static inline void DIV_256(uint256_t a_256_bit, uint256_t b_256_bit, uint256_t* 
     uint256_t l_remainder = uint256_0;
     divmod_impl_256(a_256_bit, b_256_bit, &l_ret, &l_remainder);
     *c_256_bit = l_ret;
-}
-
-/* Multiplicates 256-bit value to fixed-point value, represented as 256-bit value
- * @param a_val
- * @param a_mult
- * @param result is a fixed-point value, represented as 256-bit value
- * @return
- */
-static inline int MULT_256_FRAC_FRAC(uint256_t a_val, uint256_t a_mult, uint256_t* result) {
-    return MULT_256_256(a_val, a_mult, result);
 }
 
 /**

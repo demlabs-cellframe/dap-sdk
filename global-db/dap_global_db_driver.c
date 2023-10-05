@@ -39,7 +39,6 @@
 #include "dap_file_utils.h"
 #include "dap_strfuncs.h"
 #include "dap_hash.h"
-#include "dap_proc_queue.h"
 #include "dap_events.h"
 #include "dap_list.h"
 #include "dap_common.h"
@@ -156,7 +155,7 @@ static void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, dap_store_obj
     a_store_obj_dst->group = dap_strdup(a_store_obj_src->group);
     a_store_obj_dst->key = dap_strdup(a_store_obj_src->key);
     if (a_store_obj_src->value) {
-        if (!l_store_obj->value_len)
+        if (!a_store_obj_src->value_len)
             log_it(L_WARNING, "Inconsistent global DB object copy requested");
         else
             a_store_obj_dst->value = DAP_DUP_SIZE(a_store_obj_src->value, a_store_obj_src->value_len);
@@ -260,7 +259,7 @@ dap_store_obj_t *l_store_obj_cur;
 
     if(s_drv_callback.apply_store_obj) {
         for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
-            if ((l_store_obj_cur->type == DAP_DB$K_OPTYPE_ADD) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
+            if ((l_store_obj_cur->type == DAP_GLOBAL_DB_OPTYPE_ADD) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
                 log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i, a_store_count);
                 l_ret = -666;
                 break;
@@ -317,12 +316,12 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
  * @param a_iter data base iterator
  * @return Returns a number of objects.
  */
-size_t dap_global_db_driver_count(const dap_global_db_iter_t *a_iter, dap_nanotime_t a_timestamp)
+size_t dap_global_db_driver_count(const char *a_group, dap_nanotime_t a_timestamp)
 {
     size_t l_count_out = 0;
     // read the number of items
     if(s_drv_callback.read_count_store)
-        l_count_out = s_drv_callback.read_count_store(a_iter, a_timestamp);
+        l_count_out = s_drv_callback.read_count_store(a_group, a_timestamp);
     return l_count_out;
 }
 

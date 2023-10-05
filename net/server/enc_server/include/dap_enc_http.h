@@ -63,7 +63,6 @@ typedef struct enc_http_delegate{
     struct dap_http_client *http;
 } enc_http_delegate_t;
 
-typedef void (*dap_enc_http_callback_t) (enc_http_delegate_t *,void *); // Callback for specific client operations
 typedef uint8_t *(* dap_enc_acl_callback_t) (dap_chain_hash_fast_t *);   // Callback for access list for private chain networks
 
 int enc_http_init(void);

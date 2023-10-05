@@ -54,11 +54,11 @@ typedef struct dap_global_db_driver_hash {
 
 typedef struct dap_store_obj {
     char *group;                    // Name of database table analogue (key-value DB have no 'table' defined)
-    char *key;                      // Unique database key
+    const char *key;                // Unique database key
     byte_t *value;                  // Database value corresponsing with database key
     size_t value_len;               // Length of database value
     uint8_t flags;                  // Now it is only 'pinned' flag, pointed to record can be removed only by author
-    byte_t *sign;                   // Crypto sign for authentication and security checks
+    dap_sign_t *sign;               // Crypto sign for authentication and security checks
     dap_nanotime_t timestamp;       // Timestamp of record creation, in nanoseconds since EPOCH
     uint32_t crc;                   // Integrity control
     dap_global_db_optype_t type;    // Operation type - for event notifiers
@@ -144,7 +144,7 @@ dap_store_obj_t* dap_global_db_driver_cond_read(dap_global_db_iter_t* a_iter, si
 dap_store_obj_t* dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out);
 bool dap_global_db_driver_is(const char *a_group, const char *a_key);
 bool dap_global_db_driver_is_hash(const char *a_group, const dap_global_db_driver_hash_t *a_hash);
-size_t dap_global_db_driver_count(const dap_global_db_iter_t *a_iter, dap_nanotime_t a_timestamp);
+size_t dap_global_db_driver_count(const char *a_group, dap_nanotime_t a_timestamp);
 dap_list_t* dap_global_db_driver_get_groups_by_mask(const char *a_group_mask);
 
 dap_global_db_iter_t *dap_global_db_driver_iter_create(const char *a_group);

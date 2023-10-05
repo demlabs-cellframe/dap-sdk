@@ -530,7 +530,7 @@ dap_list_t *dap_list_sort(dap_list_t *a_list, dap_callback_compare_t a_cmp)
     return ({ DL_SORT(a_list, a_cmp); a_list; });
 }
 
-static int s_random_compare(UNUSED_ARG dap_list_t *a_list1, UNUSED_ARG dap_list_t *a_list2)
+static int s_random_compare(dap_list_t UNUSED_ARG *a_list1, dap_list_t UNUSED_ARG *a_list2)
 {
     return rand() % 2 ? -1 : 1;
 }

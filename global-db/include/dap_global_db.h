@@ -25,16 +25,14 @@
 #include "dap_common.h"
 #include "dap_enc_key.h"
 #include "dap_time.h"
-#include "dap_context.h"
 #include "dap_global_db_driver.h"
-#include "dap_global_db_cluster.h"
 
 #define DAP_GLOBAL_DB_VERSION               2
 #define DAP_GLOBAL_DB_LOCAL_GENERAL         "local.general"
 #define DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT     5 // seconds
 #define DAP_GLOBAL_DB_DEL_SUFFIX            ".del"
 
-typedef struct sync_obj_data_callback sync_obj_data_callback_t;
+typedef struct dap_global_db_cluster dap_global_db_cluster_t;
 
 // Global DB instance with settings data
 typedef struct dap_global_db_instance {
@@ -49,10 +47,10 @@ typedef struct dap_global_db_instance {
 } dap_global_db_instance_t;
 
 typedef struct dap_global_db_obj {
-    dap_nanotime_t timestamp;
-    char *key;
+    const char *key;
     uint8_t *value;
     size_t value_len;
+    dap_nanotime_t timestamp;
     bool is_pinned;
 } dap_global_db_obj_t;
 
@@ -116,8 +114,6 @@ dap_global_db_instance_t *dap_global_db_instance_get_default();
 // For context unification sometimes we need to exec inside GlobalDB context
 int dap_global_db_context_exec(dap_global_db_callback_t a_callback, void * a_arg);
 
-dap_global_db_context_t *dap_global_db_context_get_default();
-
 // Copy global_db_obj array
 dap_global_db_obj_t *dap_global_db_objs_copy(dap_global_db_obj_t *a_objs_dest, const dap_global_db_obj_t *a_objs_src, size_t a_count);
 
@@ -162,7 +158,5 @@ int dap_global_db_pin_sync(const char * a_group, const char *a_key);
 int dap_global_db_unpin_sync(const char * a_group, const char *a_key);
 int dap_global_db_del_sync(const char * a_group, const char *a_key);
 int dap_global_db_flush_sync();
-
-dap_global_db_context_t * dap_global_db_context_current();
 
 bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj);

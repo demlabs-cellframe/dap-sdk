@@ -132,7 +132,7 @@ static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb)
     s_free_log_list_gdb(a_ch_chain);*/
 }
 
-static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+static bool s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
 {
     assert(a_arg);
     dap_store_obj_t *l_obj = a_arg;
@@ -142,15 +142,16 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
         dap_store_obj_free_one(l_obj);
         return false;
     }
-    int l_stream_role = dap_cluster_member_find_role(l_cluster->member_cluster, *(dap_stream_node_addr_t *)l_obj->ext);
+    int l_stream_role = dap_cluster_member_find_role(l_cluster->member_cluster, (dap_stream_node_addr_t *)l_obj->ext);
     if (l_stream_role == -1 && l_cluster->default_role == DAP_GDB_MEMBER_ROLE_NOBODY) {
         debug_if(g_dap_global_db_debug_more, L_WARNING,
-                 "Node with addr "NODE_ADDR_FP_STR" isn't a member of closed cluster %s", l_cluster->mnemonim);
+                 "Node with addr "NODE_ADDR_FP_STR" isn't a member of closed cluster %s",
+                 NODE_ADDR_FP_ARGS((dap_stream_node_addr_t *)l_obj->ext), l_cluster->mnemonim);
         dap_store_obj_free_one(l_obj);
         return false;
     }
     dap_global_db_driver_hash_t l_obj_drv_hash = dap_store_obj_get_driver_hash(l_obj);
-    if (dap_global_db_driver_is_hash(a_obj->group, &l_obj_drv_hash)) {
+    if (dap_global_db_driver_is_hash(l_obj->group, &l_obj_drv_hash)) {
         debug_if(g_dap_global_db_debug_more, L_NOTICE, "Rejected duplicate object with group %s and key %s",
                                             l_obj->group, l_obj->key);
         dap_store_obj_free_one(l_obj);
@@ -162,7 +163,7 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
     if (l_limit_time && l_obj->timestamp < l_limit_time) {
         if (g_dap_global_db_debug_more) {
             char l_ts_str[64] = { '\0' };
-            dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
+            dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(l_obj->timestamp));
             log_it(L_NOTICE, "Rejected too old object with group %s and key %s and timestamp %s",
                                             l_obj->group, l_obj->key, l_ts_str);
         }
@@ -172,7 +173,7 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
 
     if (g_dap_global_db_debug_more) {
         char l_ts_str[64] = { '\0' };
-        dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
+        dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(l_obj->timestamp));
         char l_hash_str[DAP_HASH_FAST_STR_SIZE];
         dap_hash_fast_t l_sign_hash;
         if (!l_obj->sign || !dap_sign_get_pkey_hash(l_obj->sign, &l_sign_hash))
@@ -180,13 +181,13 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
         else
            dap_hash_fast_to_str(&l_sign_hash, l_hash_str, DAP_HASH_FAST_STR_SIZE);
         log_it(L_DEBUG, "Unpacked log history: group=\"%s\" key=\"%s\""
-                " timestamp=\"%s\" value_len=% signer_hash=%s" DAP_UINT64_FORMAT_U,
-                a_obj->group, a_obj->key, l_ts_str, a_obj->value_len, l_sign_hash_str);
+                " timestamp=\"%s\" value_len=%"DAP_UINT64_FORMAT_U" signer_hash=%s" ,
+                l_obj->group, l_obj->key, l_ts_str, l_obj->value_len, l_hash_str);
     }
     dap_global_db_role_t l_signer_role = DAP_GDB_MEMBER_ROLE_NOBODY;
     if (l_obj->sign) {
         dap_stream_node_addr_t l_signer_addr = dap_stream_get_addr_from_sign(l_obj->sign);
-        l_signer_role = dap_cluster_member_find_role(l_cluster->member_cluster, l_signer_addr);
+        l_signer_role = dap_cluster_member_find_role(l_cluster->member_cluster, &l_signer_addr);
     }
     if (l_signer_role == DAP_GDB_MEMBER_ROLE_NOBODY)
         l_signer_role = l_cluster->default_role;
@@ -196,7 +197,7 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
                                                         "with signer role %s and requered role %s",
                                                             l_obj->group, l_obj->key,
                                                             dap_global_db_cluster_role_str(l_signer_role),
-                                                            dap_global_db_cluster_role_str(l_reqired_role));
+                                                            dap_global_db_cluster_role_str(l_required_role));
         dap_store_obj_free_one(l_obj);
         return false;
     }
@@ -207,7 +208,7 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
     size_t l_group_len = strlen(l_obj->group);
     size_t l_unsuffixed_len = l_group_len - sizeof(l_del_suffix) + 1;
     if (l_group_len >= sizeof(l_del_suffix) &&
-            !strcmp(l_del_suffix, a_store_obj->group + l_unsuffixed_len)) {
+            !strcmp(l_del_suffix, l_obj->group + l_unsuffixed_len)) {
         // It is a group for object destroyers
         l_obj_type = DAP_GLOBAL_DB_OPTYPE_DEL;
         // Only root members can destroy
@@ -220,7 +221,7 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
     }
     dap_store_obj_t *l_read_obj = NULL;
     if (dap_global_db_driver_is(l_basic_group, l_obj->key)) {
-        l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
+        l_read_obj = dap_global_db_driver_read(l_obj->group, l_obj->key, NULL);
         if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED && l_obj_type == DAP_GLOBAL_DB_OPTYPE_ADD) {
             debug_if(g_dap_global_db_debug_more, L_NOTICE, "Pinned record with group %s and key %s won't be overwritten",
                      l_read_obj->group, l_read_obj->key);
@@ -230,7 +231,7 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
     }
     if (dap_global_db_driver_is(l_del_group, l_obj->key)) {
         if (l_read_obj) {   // Conflict, object is present in both tables
-            dap_store_obj_t *l_read_del = dap_global_db_driver_read(l_del, l_obj->key, NULL);
+            dap_store_obj_t *l_read_del = dap_global_db_driver_read(l_del_group, l_obj->key, NULL);
             switch (dap_store_obj_driver_hash_compare(l_read_obj, l_read_del)) {
             case -1:        // Basic obj is older
                 if (!(l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED)) {
@@ -248,7 +249,7 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
                                                         DAP_GLOBAL_DB_DEL_SUFFIX" will be erased",
                                                             l_read_obj->group, l_read_obj->key);
             case 1:         // Deleted object is older
-                debug_if(g_global_db_debug_more, L_WARNING,
+                debug_if(g_dap_global_db_debug_more, L_WARNING,
                          "DB record with group %s and key %s will be destroyed to avoid a conflict",
                                                                 l_read_del->group, l_read_del->key);
                 dap_global_db_driver_delete(l_read_del, 1);
@@ -266,7 +267,7 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
                                                         "with signer role %s and required role %s",
                                                             l_obj->group, l_obj->key,
                                                             dap_global_db_cluster_role_str(l_signer_role),
-                                                            dap_global_db_cluster_role_str(l_reqired_role));
+                                                            dap_global_db_cluster_role_str(l_required_role));
         goto free_n_exit;
     }
     switch (dap_store_obj_driver_hash_compare(l_read_obj, l_obj)) {
@@ -281,7 +282,7 @@ static void s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
         break;
     case 1:         // Received object is older
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "DB record with group %s and key %s is not applied. It's older than existed record with same key",
-                                                        l_read_del->group, l_read_del->key);
+                                                        l_obj->group, l_obj->key);
         break;
     }
 free_n_exit:
@@ -303,7 +304,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         return;
     }
     dap_stream_ch_pkt_t * l_ch_pkt = (dap_stream_ch_pkt_t *)a_arg;
-    s_chain_timer_reset(l_ch_chain);
+    //s_chain_timer_reset(l_ch_chain);
     switch (l_ch_pkt->hdr.type) {
     case DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP: {
         dap_global_db_pkt_t *l_pkt = (dap_global_db_pkt_t *)l_ch_pkt->data;
@@ -314,10 +315,13 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         }
         dap_proc_thread_callback_add_pri(NULL, s_process_gossip_msg, l_obj, DAP_GLOBAL_DB_TASK_PRIORITY);
     } break;
+    default:
+        log_it(L_WARNING, "Unknown global DB packet type %hhu", l_ch_pkt->hdr.type);
+        break;
+    }
+}
 
-
-
-
+/*
 
 
 
@@ -415,11 +419,11 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                     l_hash_item->size = l_element->size;
                     HASH_ADD_BYHASHVALUE(hh, l_ch_chain->remote_gdbs, hash, sizeof(l_hash_item->hash),
                                          l_hash_item_hashv, l_hash_item);
-                    /*if (s_debug_more){
+                    if (s_debug_more){
                         char l_hash_str[72]={ [0]='\0'};
                         dap_chain_hash_fast_to_str(&l_hash_item->hash,l_hash_str,sizeof (l_hash_str));
                         log_it(L_DEBUG,"In: Updated remote hash gdb list with %s ", l_hash_str);
-                    }*/
+                    }
                 }
             }
         } break;
@@ -530,8 +534,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                 log_it(L_INFO, "In:  FIRST_GLOBAL_DB_GROUP pkt net 0x%016"DAP_UINT64_FORMAT_x" chain 0x%016"DAP_UINT64_FORMAT_x" cell 0x%016"DAP_UINT64_FORMAT_x,
                                 l_chain_pkt->hdr.net_id.uint64, l_chain_pkt->hdr.chain_id.uint64, l_chain_pkt->hdr.cell_id.uint64);
         } break;
-
-}
+    */
 
 static void s_stream_ch_packet_out(dap_stream_ch_t *a_ch, void *a_arg)
 {

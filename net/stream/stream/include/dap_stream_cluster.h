@@ -40,6 +40,7 @@ typedef struct dap_cluster_member {
     void *info;                     // Member info pointer
     UT_hash_handle hh;
 } dap_cluster_member_t;
+
 typedef void (*dap_cluster_change_callback_t)(dap_cluster_t *a_cluster, dap_cluster_member_t *a_member);
 
 // Role in cluster
@@ -65,9 +66,9 @@ void dap_cluster_delete(dap_cluster_t *a_cluster);
 dap_cluster_t *dap_cluster_find(dap_guuid_t a_guuid);
 
 // Member funcs
-dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t a_addr, int a_role, void *a_info);
+dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, int a_role, void *a_info);
 dap_cluster_member_t *dap_cluster_member_find_unsafe(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
-int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_t a_member_addr);
+int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
 void dap_cluster_member_delete(dap_cluster_member_t *a_member);
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
 dap_list_t *dap_cluster_get_shuffle_members(dap_cluster_t *a_cluster);

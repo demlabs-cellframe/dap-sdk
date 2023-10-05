@@ -23,6 +23,12 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 */
 
 #include "dap_global_db_pkt.h"
+#include "dap_sign.h"
+#include "dap_strfuncs.h"
+#include <string.h>
+#include "crc32c_adler/crc32c_adler.h"
+
+#define LOG_TAG "dap_global_db_pkt"
 
 /**
  * @brief Multiples data into a_old_pkt structure from a_new_pkt structure.
@@ -40,7 +46,7 @@ dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old
         l_old_pkt = (dap_global_db_pkt_pack_t *)DAP_REALLOC(a_old_pkt, a_old_pkt->data_size + sizeof(dap_global_db_pkt_pack_t) + l_add_size);
     else
         l_old_pkt = DAP_NEW_Z_SIZE(dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_add_size);
-    memcpy(l_old_pkt->data + l_old_pkt->data_size, l_new_pkt, l_add_size);
+    memcpy(l_old_pkt->data + l_old_pkt->data_size, a_new_pkt, l_add_size);
     l_old_pkt->data_size += l_add_size;
     l_old_pkt->obj_count++;
     return l_old_pkt;
@@ -71,21 +77,21 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     l_pkt->key_len = l_key_len;
     l_pkt->value_len = a_store_obj->value_len;
     l_pkt->crc = a_store_obj->crc;
-    l_pkt->total_len = l_data_size_out;
+    l_pkt->data_len = l_data_size_out;
 
     /* Put serialized data into the payload part of the packet */
-    byte_t *l_data_ptr = l_pkt->data;
+    char *l_data_ptr = (char *)l_pkt->data;
     l_data_ptr = dap_stpcpy(l_data_ptr, a_store_obj->group);
     l_data_ptr = dap_stpcpy(l_data_ptr, a_store_obj->key);
     if (a_store_obj->value_len)
-        l_data_ptr = mempcpy(l_data_ptr, a_store_obj->value, a_store_obj->value_len);
-    l_data_ptr = mempcpy(l_data_ptr, a_store_obj->sign, l_sign_len);
+        l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->value, a_store_obj->value_len);
+    l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->sign, l_sign_len);
 
-    assert(l_data_ptr - l_pkt->data == l_data_size_out);
+    assert((size_t)((byte_t *)l_data_ptr - l_pkt->data) == l_data_size_out);
     return l_pkt;
 }
 
-dap_sign_t* dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uint32_t *a_checksum)
+dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uint32_t *a_checksum)
 {
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_obj);
     if (!l_pkt) {
@@ -126,8 +132,8 @@ bool dap_global_db_pkt_check_sign_crc(dap_global_db_pkt_t *a_packet)
     if (dap_sign_verify(l_sign, (byte_t *)a_packet + sizeof(uint32_t),
                             dap_global_db_pkt_get_size(a_packet) - sizeof(uint32_t)) == 1)
         return false;
-    uint32_t l_checksum = crc32c(CRC32C_INIT, (byte_t *)l_packet + sizeof(uint32_t),
-                                        dap_global_db_pkt_get_size(l_packet) - sizeof(uint32_t));
+    uint32_t l_checksum = crc32c(CRC32C_INIT, (byte_t *)a_packet + sizeof(uint32_t),
+                                        dap_global_db_pkt_get_size(a_packet) - sizeof(uint32_t));
     return l_checksum == a_packet->crc;
 }
 
@@ -150,7 +156,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
     a_obj->timestamp = a_pkt->timestamp;
     a_obj->value_len = a_pkt->value_len;
     a_obj->crc = a_pkt->crc;
-    byte_t l_data_ptr = a_pkt->data;
+    byte_t *l_data_ptr = a_pkt->data;
 
     a_obj->group = DAP_DUP_SIZE(l_data_ptr, a_pkt->group_len + sizeof(char));
     if (!a_obj->group) {
@@ -166,7 +172,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
         DAP_DELETE(a_obj->group);
         return NULL;
     }
-    a_obj->key[a_pkt->key_len] = '\0';
+    ((char *)a_obj->key)[a_pkt->key_len] = '\0';
     l_data_ptr += a_pkt->key_len;
 
     if (a_pkt->value_len) {
@@ -184,13 +190,13 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
     size_t l_sign_size_expected = a_pkt->data_len - a_pkt->group_len - a_pkt->key_len - a_pkt->value_len;
     size_t l_sign_size = dap_sign_get_size(l_sign);
     if (l_sign_size != l_sign_size_expected) {
-        log_it(L_ERROR, "Broken GDB element: sign size %zu isn't equal expected size %u", l_sign_size, l_sign_size_expected);
+        log_it(L_ERROR, "Broken GDB element: sign size %zu isn't equal expected size %zu", l_sign_size, l_sign_size_expected);
         DAP_DELETE(a_obj->group);
         DAP_DELETE(a_obj->key);
         DAP_DEL_Z(a_obj->value);
         return NULL;
     }
-    a_obj->sign = DAP_DUP_SIZE(l_sign, l_sign_len);
+    a_obj->sign = (dap_sign_t *)DAP_DUP_SIZE(l_sign, l_sign_size);
     if (!l_sign) {
         log_it(L_CRITICAL, "Memory allocation error");
         DAP_DELETE(a_obj->group);
@@ -226,12 +232,12 @@ dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_
     uint32_t l_count = a_pkt->obj_count;
     size_t l_size = l_count <= DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT ? l_count * sizeof(struct dap_store_obj) : 0;
 
-    if (!!l_size) {
-        log_it(L_ERROR, "Invalid size: packet pack total size is zero", l_size, errno);
+    if (!l_size) {
+        log_it(L_ERROR, "Invalid size: packet pack total size is zero");
         return NULL;
     }
     dap_store_obj_t *l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_size);
-    if (l_store_obj_arr) {
+    if (!l_store_obj_arr) {
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
@@ -248,7 +254,7 @@ dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_
         }
     }
     if (l_data_ptr)
-        assert(l_data_ptr = l_data_end);
+        assert(l_data_ptr == l_data_end);
     // Return the number of completely filled dap_store_obj_t structures
     if (a_store_obj_count)
         *a_store_obj_count = l_cur_count;

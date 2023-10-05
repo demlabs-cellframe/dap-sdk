@@ -17,7 +17,7 @@
 
 #define DAP_DB_LOG_LIST_MAX_SIZE    (256 * 1024)
 
-typedef void (*dap_store_obj_callback_notify_t) (dap_global_db_context_t *a_context, dap_store_obj_t *a_obj, void * a_arg);
+typedef void (*dap_store_obj_callback_notify_t) (dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_obj, void * a_arg);
 
 // Callback table item
 typedef struct dap_sync_group_item {
@@ -105,6 +105,6 @@ size_t dap_db_log_list_get_count(dap_db_log_list_t *a_db_log_list);
 size_t dap_db_log_list_get_count_rest(dap_db_log_list_t *a_db_log_list);
 dap_db_log_list_obj_t *dap_db_log_list_get(dap_db_log_list_t *a_db_log_list);
 void dap_db_log_list_delete(dap_db_log_list_t *a_db_log_list);
-int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_obj,
+int dap_global_db_remote_apply_obj_unsafe(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_obj,
                                           dap_global_db_callback_results_raw_t a_callback, void *a_arg);
 int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, dap_global_db_callback_results_raw_t a_callback, void *a_arg);

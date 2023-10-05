@@ -193,7 +193,7 @@ static int s_context_callback_stopped(dap_context_t UNUSED_ARG *a_context, void 
     // cleanup queue
     pthread_mutex_lock(&l_thread->queue_lock);
     while (l_thread->proc_queue_size)
-        if (!s_proc_queue_pull(l_thread))
+        if (!s_proc_queue_pull(l_thread, NULL))
             break;
     pthread_cond_destroy(&l_thread->queue_event);
     pthread_mutex_unlock(&l_thread->queue_lock);

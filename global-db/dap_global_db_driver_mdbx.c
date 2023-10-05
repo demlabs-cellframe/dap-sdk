@@ -204,7 +204,6 @@ static dap_db_ctx_t *s_cre_db_ctx_for_group(const char *a_group, int a_flags)
 int l_rc;
 dap_db_ctx_t *l_db_ctx, *l_db_ctx2;
 size_t l_name_len;
-uint64_t l_seq;
 MDBX_val    l_key_iov, l_data_iov;
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Init group/table '%s', flags: %#x ...", a_group, a_flags);
@@ -231,17 +230,12 @@ MDBX_val    l_key_iov, l_data_iov;
     /*
     ** Start transaction, create table, commit.
     */
-    MDBX_txn l_txn;
+    MDBX_txn *l_txn;
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
     if  ( MDBX_SUCCESS != (l_rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) )
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
-
-    /* MDBX sequence is started from zero, zero is not so good for our case,
-     * so we just increment a current (may be is not zero) sequence for <dbi>
-     */
-    mdbx_dbi_sequence (l_txn, l_db_ctx->dbi, &l_seq, 1);
 
     /*
      * Save new subDB name into the master table
@@ -389,7 +383,6 @@ size_t     l_upper_limit_of_db_size = 16;
      *
      * So, Create (If)/Open a master DB (table) to keep  list of subDBs (group/table/subDB name)
     */
-    MDBX_txn l_txn;
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), -EIO;
 
@@ -551,11 +544,10 @@ int s_fill_store_obj(const char *a_group, MDBX_val *a_key, MDBX_val *a_data, dap
     if (!a_obj->group)
         return log_it(L_CRITICAL, "Cannot allocate a memory for store object group"), -3;
 
-    a_obj->key_len = a_key->iov_len;
-    if (!a_obj->key_len)
+    if (!a_key->iov_len)
         return log_it(L_ERROR, "Zero length of global DB record key"), -4;
-    if ( (a_obj->key = DAP_NEW_Z_SIZE(char, a_obj->key_len + 1)) )
-        memcpy((char *) a_obj->key, a_key->iov_base, a_obj->key_len);
+    if ( (a_obj->key = DAP_NEW_Z_SIZE(char, a_key->iov_len + 1)) )
+        memcpy((char *)a_obj->key, a_key->iov_base, a_key->iov_len);
     else {
         DAP_DELETE(a_obj->group);
         return log_it(L_CRITICAL, "Cannot allocate a memory for store object key"), -5;
@@ -577,7 +569,7 @@ int s_fill_store_obj(const char *a_group, MDBX_val *a_key, MDBX_val *a_data, dap
     }
     dap_sign_t *l_sign = (dap_sign_t *)(l_record->value_n_sign + l_record->value_len);
     if (dap_sign_get_size(l_sign) != l_record->sign_len ||
-            !(a_obj->sign = DAP_DUP_SIZE(l_sign, l_record->sign_len))) {
+            !(a_obj->sign = (dap_sign_t *)DAP_DUP_SIZE(l_sign, l_record->sign_len))) {
         DAP_DELETE(a_obj->group);
         DAP_DELETE(a_obj->key);
         DAP_DEL_Z(a_obj->value);
@@ -616,13 +608,13 @@ dap_store_obj_t *l_obj;
      /* Sanity check and Get DB Context for group/table*/
     dap_return_val_if_pass(!a_group || !(l_db_ctx = s_get_db_ctx_for_group(a_group)), NULL)
 
-    MDBX_txn l_txn;
+    MDBX_txn *l_txn;
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
     if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor)) ) {
-      log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", l_rc, mdbx_strerror(l_rc));
-      break;
+        log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", l_rc, mdbx_strerror(l_rc));
+        return NULL;
     }
 
     /* Iterate cursor to retieve records from DB - select a <key> and <data> pair
@@ -685,7 +677,7 @@ MDBX_val    l_key, l_data;
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group)) )                    /* Get DB Context for group/table */
         return 0;
 
-    MDBX_txn l_txn;
+    MDBX_txn *l_txn;
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
        return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), 0;
 
@@ -725,7 +717,7 @@ static dap_store_obj_t *s_db_mdbx_read_cond_store_obj(dap_global_db_iter_t *a_it
     dap_return_val_if_pass(!l_db_ctx, NULL);                                       /* Sanity check */
 
     /* Initialize MDBX cursor context area */
-    MDBX_txn l_txn;
+    MDBX_txn *l_txn;
     if (MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) ||
                 MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor))) {
         log_it (L_ERROR, "mdbx_txn: (%d) %s", l_rc, mdbx_strerror(l_rc));
@@ -733,7 +725,7 @@ static dap_store_obj_t *s_db_mdbx_read_cond_store_obj(dap_global_db_iter_t *a_it
     }
     MDBX_val *l_key = (MDBX_val *)a_iter->db_iter;
     if (l_key->iov_base)
-        l_rc = mdbx_cursor_get(l_cursor, &l_key, NULL, MDBX_SET_RANGE);
+        l_rc = mdbx_cursor_get(l_cursor, l_key, NULL, MDBX_SET_RANGE);
 
     if (a_count_out && *a_count_out)
         l_count_out = *a_count_out;
@@ -757,9 +749,9 @@ static dap_store_obj_t *s_db_mdbx_read_cond_store_obj(dap_global_db_iter_t *a_it
         }
     }
     // cut unused memory
-    if (!l_count_current)
+    if (!l_count_current) {
         DAP_DEL_Z(l_obj_arr);
-    else if (l_count_current < l_count_out && !(l_obj_arr = DAP_REALLOC(l_obj_arr, sizeof(dap_store_obj_t) * l_count_current))) {
+    } else if (l_count_current < l_count_out && !(l_obj_arr = DAP_REALLOC(l_obj_arr, sizeof(dap_store_obj_t) * l_count_current))) {
         log_it(L_ERROR, "Cannot cut area to keep %zu <store objects>", l_count_current);
         l_rc = MDBX_PROBLEM;
     }
@@ -784,19 +776,14 @@ size_t s_db_mdbx_read_count_store(const char *a_group, dap_nanotime_t a_timestam
 {
     dap_return_val_if_fail(a_group, 0);                                       /* Sanity check */
 
-    if (a_iter->db_type != DAP_GLOBAL_DB_TYPE_CURRENT) {
-        log_it(L_ERROR, "Trying use iterator from another data base in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        return 0;
-    }
 
     int l_rc = 0;
-    dap_db_mdbx_iter_t* l_mdbx_iter = (dap_db_mdbx_iter_t*)a_iter->db_iter;
-    MDBX_val l_key = l_mdbx_iter->key, l_data = {0};
+    MDBX_val l_key = {}, l_data = {};
     MDBX_cursor* l_cursor = NULL;
     dap_store_obj_t *l_obj = NULL;
     size_t  l_ret_count = 0;
 
-    dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_iter->db_group);
+    dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
     dap_return_val_if_pass(!l_db_ctx, 0); 
 
     if (!(l_obj = DAP_NEW_Z(dap_store_obj_t))) {
@@ -804,7 +791,7 @@ size_t s_db_mdbx_read_count_store(const char *a_group, dap_nanotime_t a_timestam
         return 0;
     }
 
-    MDBX_txn l_txn;
+    MDBX_txn *l_txn;
     if ( 
         MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) ||
         MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor))
@@ -886,6 +873,7 @@ static  int s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj)
 int     l_rc = 0, l_rc2;
 dap_db_ctx_t *l_db_ctx;
 MDBX_val    l_key, l_data;
+MDBX_txn *l_txn;
 
     if ( !a_store_obj || !a_store_obj->group)                                       /* Sanity checks ... */
         return -EINVAL;
@@ -902,11 +890,11 @@ MDBX_val    l_key, l_data;
         if( !a_store_obj->key )
             return -ENOENT;
         l_key.iov_base = (void *)a_store_obj->key;                                  /* Fill IOV for MDBX key */
-        l_key.iov_len =  a_store_obj->key_len ? a_store_obj->key_len : strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX);
+        l_key.iov_len =  strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX);
 
         /* Compute a length of the area to keep record */
         size_t l_record_len = sizeof(struct driver_record) + a_store_obj->value_len + dap_sign_get_size(a_store_obj->sign);
-        struct driver_record *l_record = DAP_NEW_Z_SIZE(char, l_record_len);
+        struct driver_record *l_record = DAP_NEW_Z_SIZE(struct driver_record, l_record_len);
         if (!l_record) {
             log_it(L_ERROR, "Cannot allocate memory for new records, %zu octets, errno=%d", l_record_len, errno);
             return MDBX_PANIC;
@@ -926,7 +914,7 @@ MDBX_val    l_key, l_data;
             return MDBX_EINVAL;
         }
         l_record->sign_len = dap_sign_get_size(a_store_obj->sign);
-        if (!a_store_obj->sign_len) {
+        if (!l_record->sign_len) {
             DAP_DELETE(l_record);
             log_it(L_ERROR, "Global DB store object sign corrupted");
             return MDBX_EINVAL;
@@ -939,7 +927,6 @@ MDBX_val    l_key, l_data;
         l_data.iov_len = l_record_len;
 
         /* So, finaly: BEGIN transaction, do INSERT, COMMIT or ABORT ... */
-        MDBX_txn l_txn;
         if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
             return DAP_FREE(l_record), log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), -EIO;
         if ( MDBX_SUCCESS != (l_rc = mdbx_put(l_txn, l_db_ctx->dbi, &l_key, &l_data, 0)) ) {
@@ -957,7 +944,7 @@ MDBX_val    l_key, l_data;
             return  log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), -ENOENT;
         if ( a_store_obj->key ) {                                                       /* Delete record */
             l_key.iov_base = (void *) a_store_obj->key;
-            l_key.iov_len =  a_store_obj->key_len ? a_store_obj->key_len : strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX);
+            l_key.iov_len =  strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX);
             if ( MDBX_SUCCESS != (l_rc = mdbx_del(l_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND)
                 log_it (L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc));
             l_rc = (l_rc == MDBX_NOTFOUND) ? 1 : l_rc;                                  /* Not found? It's OK */
@@ -1003,7 +990,7 @@ MDBX_cursor *l_cursor;
 MDBX_stat   l_stat;
 
     dap_return_val_if_pass(!a_group || !(l_db_ctx = s_get_db_ctx_for_group(a_group)), NULL); /* Sanity check */
-    MDBX_txn l_txn;
+    MDBX_txn *l_txn;
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 

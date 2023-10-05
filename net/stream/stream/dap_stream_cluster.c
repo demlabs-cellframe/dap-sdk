@@ -94,7 +94,7 @@ void dap_cluster_delete(dap_cluster_t *a_cluster)
  * @param a_member
  * @return
  */
-dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t a_addr, int a_role, void *a_info)
+dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, int a_role, void *a_info)
 {
     dap_cluster_member_t *l_member = NULL;
     pthread_rwlock_wrlock(&a_cluster->members_lock);
@@ -159,7 +159,7 @@ dap_cluster_member_t *dap_cluster_member_find_unsafe(dap_cluster_t *a_cluster, d
     return l_member;
 }
 
-int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_t a_member_addr)
+int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr)
 {
     dap_cluster_member_t *l_member = NULL;
     pthread_rwlock_rdlock(&a_cluster->members_lock);
@@ -187,8 +187,9 @@ void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t
     int l_links_used = 0;
     for (dap_list_t *it = l_link_list; it; it = it->next) {
         dap_stream_node_addr_t *l_addr = it->data;
+        assert(l_addr);
         dap_worker_t *l_worker = NULL;
-        dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(l_addr, &l_worker);
+        dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(*l_addr, &l_worker);
         if (l_worker) {
             dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_uuid, a_ch_id, a_type, a_data, a_data_size);
             if (++l_links_used >= DAP_CLUSTER_OPTIMUM_LINKS)

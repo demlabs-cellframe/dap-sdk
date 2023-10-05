@@ -22,16 +22,19 @@ You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "dap_global_db.h"
 #include "dap_global_db_cluster.h"
 #include "dap_global_db_pkt.h"
+#include "dap_global_db_ch.h"
 #include "dap_strfuncs.h"
 #include "dap_sign.h"
 #include "dap_proc_thread.h"
-#include "crc32c_adler/crc32c_adler.h"
+
+#define LOG_TAG "dap_global_db_cluster"
 
 int dap_global_db_cluster_init()
 {
-
+    return 0;
 }
 
 void dap_global_db_cluster_deinit()
@@ -41,13 +44,14 @@ void dap_global_db_cluster_deinit()
 
 dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group_name)
 {
-    dap_global_db_cluster *it;
+    dap_global_db_cluster_t *it;
     DL_FOREACH(a_dbi->clusters, it)
-        if (!dap_fnmatch(it->group_mask, a_group_name, 0))
+        if (!dap_fnmatch(it->groups_mask, a_group_name, 0))
             return it;
+    return NULL;
 }
 
-DAP_STATIC_INLINE s_object_is_new(dap_store_obj_t *a_store_obj)
+DAP_STATIC_INLINE bool s_object_is_new(dap_store_obj_t *a_store_obj)
 {
     dap_nanotime_t l_time_diff = a_store_obj->timestamp - dap_nanotime_now();
     return l_time_diff < DAP_GLOBAL_DB_CLUSTER_BROADCAST_LIFETIME * 1000000000UL;
@@ -74,7 +78,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     }
     dap_global_db_cluster_t *it;
     DL_FOREACH(a_dbi->clusters, it) {
-        if (!dap_strcmp(it->group_mask, a_group_mask)) {
+        if (!dap_strcmp(it->groups_mask, a_group_mask)) {
             log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_group_mask);
             return NULL;
         }
@@ -90,14 +94,14 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         DAP_DELETE(l_cluster);
         return NULL;
     }
-    l_cluster->group_mask = dap_strdup(a_group_mask);
-    if (!l_cluster->group_mask) {
+    l_cluster->groups_mask = dap_strdup(a_group_mask);
+    if (!l_cluster->groups_mask) {
         log_it(L_CRITICAL, "Memory allocation error");
         dap_cluster_delete(l_cluster->member_cluster);
         DAP_DELETE(l_cluster);
         return NULL;
     }
-    if (a_net_name) {
+    if (a_mnemonim) {
         l_cluster->mnemonim = dap_strdup(a_mnemonim);
         if (!l_cluster->mnemonim) {
             log_it(L_CRITICAL, "Memory allocation error");
@@ -129,32 +133,25 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
 int dap_global_db_cluster_member_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim,
                                      dap_stream_node_addr_t a_node_addr, dap_global_db_role_t a_role)
 {
-    dap_global_db_cluster *it;
+    dap_global_db_cluster_t *it;
     int l_clusters_added = 0;
     DL_FOREACH(a_dbi->clusters, it)
         if (!dap_strcmp(it->mnemonim, a_mnemonim))
-            l_cluster_added += dap_cluster_member_add(it->member_cluster, a_node_addr, a_role, NULL) ? 0 : 1;
+            l_clusters_added += dap_cluster_member_add(it->member_cluster, &a_node_addr, a_role, NULL) ? 0 : 1;
     return l_clusters_added;
 }
-
-struct object_extender {
-    dap_global_db_instance_t *dbi;
-    dap_global_db_cluster_t *cluster;
-};
 
 static bool s_db_cluster_notify_on_proc_thread(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
 {
     dap_store_obj_t *l_store_obj = a_arg;
-    struct object_extender *l_ext = (struct object_extender *)l_store_obj->ext;
-    dap_global_db_cluster_t *l_db_cluser = l_ext->cluster;
-    l_db_cluser->callback_notify(l_ext->dbi, l_store_obj, l_db_cluster->callback_arg);
+    dap_global_db_cluster_t *l_db_cluster = *(dap_global_db_cluster_t **)l_store_obj->ext;
+    l_db_cluster->callback_notify(l_db_cluster->dbi, l_store_obj, l_db_cluster->callback_arg);
     dap_store_obj_free_one(l_store_obj);
     return false;
 }
 
 void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj)
 {
-    struct object_extender l_ext = { .dbi = a_dbi, .cluster = a_cluster };
-    dap_store_obj_t *l_store_obj = dap_store_obj_copy_ext(a_store_obj, l_ext, sizeof(struct object_extender));
+    dap_store_obj_t *l_store_obj = dap_store_obj_copy_ext(a_store_obj, &a_cluster, sizeof(void *));
     dap_proc_thread_callback_add_pri(NULL, s_db_cluster_notify_on_proc_thread, l_store_obj, DAP_QUEUE_MSG_PRIORITY_LOW);
 }
