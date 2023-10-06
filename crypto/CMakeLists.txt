@@ -4,6 +4,30 @@ project (dap_crypto)
 # fix implicit declaration warnings
 add_definitions ("-D_GNU_SOURCE")
 
+# define sphincs hash params
+    #choose one hashtype
+    if(NOT DEFINED SPHINCS_HASH_TYPE)
+        #set(SPHINCS_HASH_TYPE "sphincs-haraka-128f")
+        #set(SPHINCS_HASH_TYPE "sphincs-haraka-128s")
+        #set(SPHINCS_HASH_TYPE "sphincs-haraka-192f")
+        #set(SPHINCS_HASH_TYPE "sphincs-haraka-192s")
+        #set(SPHINCS_HASH_TYPE "sphincs-haraka-256f")
+        #set(SPHINCS_HASH_TYPE "sphincs-haraka-256s")
+        #set(SPHINCS_HASH_TYPE "sphincs-sha2-128f")
+        #set(SPHINCS_HASH_TYPE "sphincs-sha2-128s")
+        #set(SPHINCS_HASH_TYPE "sphincs-sha2-192f")
+        #set(SPHINCS_HASH_TYPE "sphincs-sha2-192s")
+        #set(SPHINCS_HASH_TYPE "sphincs-sha2-256f")
+        #set(SPHINCS_HASH_TYPE "sphincs-sha2-256s")
+        #set(SPHINCS_HASH_TYPE "sphincs-shake-128f")
+        #set(SPHINCS_HASH_TYPE "sphincs-shake-128s")
+        #set(SPHINCS_HASH_TYPE "sphincs-shake-192f")
+        #set(SPHINCS_HASH_TYPE "sphincs-shake-192s")
+            set(SPHINCS_HASH_TYPE "sphincs-shake-256f")
+        #set(SPHINCS_HASH_TYPE "sphincs-shake-256s")
+    endif()
+    add_definitions ("-DPARAMS=${SPHINCS_HASH_TYPE}")
+
 file( GLOB CRYPTO_SRCS
       src/*.c
       src/rand/*.c
@@ -22,6 +46,15 @@ file( GLOB CRYPTO_SRCS
       src/sig_dilithium/*.c
       src/ringct20/*.c
       src/falcon/*.c
+      src/sphincs_plus/address.c 
+      src/sphincs_plus/randombytes.c 
+      src/sphincs_plus/merkle.c 
+      src/sphincs_plus/wots.c 
+      src/sphincs_plus/wotsx1.c 
+      src/sphincs_plus/utils.c 
+      src/sphincs_plus/utilsx1.c 
+      src/sphincs_plus/fors.c 
+      src/sphincs_plus/sign.c
 )
 
 file( GLOB CRYPTO_HEADERS
@@ -42,6 +75,7 @@ file( GLOB CRYPTO_HEADERS
       src/sig_dilithium/*.h
       src/ringct20/*.h
       src/falcon/*.h
+      src/sphincs_plus/*.h
       include/*.h
 )
 
