@@ -26,7 +26,15 @@ add_definitions ("-D_GNU_SOURCE")
             set(SPHINCS_HASH_TYPE "sphincs-shake-256f")
         #set(SPHINCS_HASH_TYPE "sphincs-shake-256s")
     endif()
+
+    #choose one thash
+    if(NOT DEFINED SPHINCS_HASH_TYPE)
+            set(SPHINCS_THASH "robust")
+        #set(SPHINCS_THASH "simple")
+    endif()
+
     add_definitions ("-DPARAMS=${SPHINCS_HASH_TYPE}")
+    add_definitions ("-DTHASH=${SPHINCS_THASH}")
 
 file( GLOB CRYPTO_SRCS
       src/*.c
@@ -75,9 +83,53 @@ file( GLOB CRYPTO_HEADERS
       src/sig_dilithium/*.h
       src/ringct20/*.h
       src/falcon/*.h
-      src/sphincs_plus/*.h
+      src/sphincs_plus/params.h 
+      src/sphincs_plus/address.h 
+      src/sphincs_plus/randombytes.h 
+      src/sphincs_plus/merkle.h 
+      src/sphincs_plus/wots.h 
+      src/sphincs_plus/wotsx1.h 
+      src/sphincs_plus/utils.h 
+      src/sphincs_plus/utilsx1.h 
+      src/sphincs_plus/fors.h 
+      src/sphincs_plus/api.h  
+      src/sphincs_plus/hash.h 
+      src/sphincs_plus/thash.h
       include/*.h
 )
+
+#add needed files
+if(SPHINCS_HASH_TYPE MATCHES "shake")
+    file( GLOB SPHINCS_SRCS
+        src/sphincs_plus/haraka.c 
+        src/sphincs_plus/hash_shake.c 
+        src/sphincs_plus/thash_shake_${THASH}.c
+    )
+
+    file( GLOB SPHINCS_HEADERS
+        src/sphincs_plus/fips202.h
+    )
+elseif(SPHINCS_HASH_TYPE MATCHES "haraka")
+    file( GLOB SPHINCS_SRCS
+        src/sphincs_plus/haraka.c 
+        src/sphincs_plus/hash_haraka.c 
+        src/sphincs_plus/thash_haraka_${THASH}.c
+    )
+
+    file( GLOB SPHINCS_HEADERS
+        src/sphincs_plus/haraka.h
+    )
+elseif(SPHINCS_HASH_TYPE MATCHES "sha2")
+    file( GLOB SPHINCS_SRCS
+        src/sphincs_plus/sha2.c 
+        src/sphincs_plus/hash_sha2.c 
+        src/sphincs_plus/thash_sha2_${THASH}.c
+    )
+
+    file( GLOB SPHINCS_HEADERS
+        src/sphincs_plus/sha2.h
+    )
+endif()
 
 set_source_files_properties(src/sig_picnic/picnic_impl.c PROPERTIES COMPILE_FLAGS -Wno-stringop-overflow)
 if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.2)
@@ -156,7 +208,7 @@ endif()
 
 
 
-add_library(${PROJECT_NAME} STATIC ${CRYPTO_SRCS} ${XKCP_SRCS} ${XKCP_SRCS2} ${CRYPTO_HEADERS} ${DAP_PQLR_SRC} )
+add_library(${PROJECT_NAME} STATIC ${CRYPTO_SRCS} ${XKCP_SRCS} ${XKCP_SRCS2} ${CRYPTO_HEADERS} ${DAP_PQLR_SRC} ${SPHINCS_SRCS} ${SPHINCS_HEADERS} )
 
 if (DAP_PQRL)
 
