@@ -233,7 +233,7 @@ static void *s_list_thread_proc2(void *arg) {
                 break;
             case DAP_DB$K_OPTYPE_ADD:
                 if (l_obj_cur->timestamp < l_two_weeks_ago) {
-                    dap_global_db_driver_delete(l_obj_cur, 1);
+                    dap_global_db_del_sync(l_obj_cur->group, l_obj_cur->key);
                     continue;
                 }
                 break;
