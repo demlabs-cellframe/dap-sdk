@@ -15,7 +15,7 @@
 #define GDB_SYNC_ALWAYS_FROM_ZERO       // For debug purposes
 // for dap_db_log_list_xxx()
 
-#define DAP_DB_LOG_LIST_MAX_SIZE    (256 * 1024)
+#define DAP_DB_LOG_LIST_MAX_SIZE 0xfffff
 
 typedef void (*dap_store_obj_callback_notify_t) (dap_global_db_context_t *a_context, dap_store_obj_t *a_obj, void * a_arg);
 
@@ -53,7 +53,7 @@ typedef struct dap_db_log_list_obj {
 
 typedef struct dap_db_log_list {
     dap_list_t *items_list;
-    bool is_process;
+    _Atomic(bool) is_process;
     _Atomic(size_t) items_number, items_rest;
     dap_list_t *groups;
     size_t size;
