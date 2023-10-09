@@ -1,5 +1,3 @@
-
-#include "dilithium_params.h"
 #include "dap_enc_falcon.h"
 #include "falcon.h"
 

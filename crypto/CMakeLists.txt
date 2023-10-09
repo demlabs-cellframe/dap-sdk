@@ -5,67 +5,67 @@ project (dap_crypto)
 add_definitions ("-D_GNU_SOURCE")
 
 # define sphincs hash params
-    #choose one hashtype
+    # choose one hashtype
     if(NOT DEFINED SPHINCS_HASH_TYPE)
-        #set(SPHINCS_HASH_TYPE "sphincs-haraka-128f")
-        #set(SPHINCS_HASH_TYPE "sphincs-haraka-128s")
-        #set(SPHINCS_HASH_TYPE "sphincs-haraka-192f")
-        #set(SPHINCS_HASH_TYPE "sphincs-haraka-192s")
-        #set(SPHINCS_HASH_TYPE "sphincs-haraka-256f")
-        #set(SPHINCS_HASH_TYPE "sphincs-haraka-256s")
-        #set(SPHINCS_HASH_TYPE "sphincs-sha2-128f")
-        #set(SPHINCS_HASH_TYPE "sphincs-sha2-128s")
-        #set(SPHINCS_HASH_TYPE "sphincs-sha2-192f")
-        #set(SPHINCS_HASH_TYPE "sphincs-sha2-192s")
-        #set(SPHINCS_HASH_TYPE "sphincs-sha2-256f")
-        #set(SPHINCS_HASH_TYPE "sphincs-sha2-256s")
-        #set(SPHINCS_HASH_TYPE "sphincs-shake-128f")
-        #set(SPHINCS_HASH_TYPE "sphincs-shake-128s")
-        #set(SPHINCS_HASH_TYPE "sphincs-shake-192f")
-        #set(SPHINCS_HASH_TYPE "sphincs-shake-192s")
+        # set(SPHINCS_HASH_TYPE "sphincs-haraka-128f")
+        # set(SPHINCS_HASH_TYPE "sphincs-haraka-128s")
+        # set(SPHINCS_HASH_TYPE "sphincs-haraka-192f")
+        # set(SPHINCS_HASH_TYPE "sphincs-haraka-192s")
+        # set(SPHINCS_HASH_TYPE "sphincs-haraka-256f")
+        # set(SPHINCS_HASH_TYPE "sphincs-haraka-256s")
+        # set(SPHINCS_HASH_TYPE "sphincs-sha2-128f")
+        # set(SPHINCS_HASH_TYPE "sphincs-sha2-128s")
+        # set(SPHINCS_HASH_TYPE "sphincs-sha2-192f")
+        # set(SPHINCS_HASH_TYPE "sphincs-sha2-192s")
+        # set(SPHINCS_HASH_TYPE "sphincs-sha2-256f")
+        # set(SPHINCS_HASH_TYPE "sphincs-sha2-256s")
+        # set(SPHINCS_HASH_TYPE "sphincs-shake-128f")
+        # set(SPHINCS_HASH_TYPE "sphincs-shake-128s")
+        # set(SPHINCS_HASH_TYPE "sphincs-shake-192f")
+        # set(SPHINCS_HASH_TYPE "sphincs-shake-192s")
             set(SPHINCS_HASH_TYPE "sphincs-shake-256f")
-        #set(SPHINCS_HASH_TYPE "sphincs-shake-256s")
+        # set(SPHINCS_HASH_TYPE "sphincs-shake-256s")
     endif()
 
-    #choose one thash
+    # choose one thash
     if(NOT DEFINED SPHINCS_HASH_TYPE)
             set(SPHINCS_THASH "robust")
-        #set(SPHINCS_THASH "simple")
+        # set(SPHINCS_THASH "simple")
     endif()
 
     add_definitions ("-DPARAMS=${SPHINCS_HASH_TYPE}")
     add_definitions ("-DTHASH=${SPHINCS_THASH}")
 
-#add needed files
+# add needed files
 if(SPHINCS_HASH_TYPE MATCHES "shake")
     file( GLOB SPHINCS_SRCS
-        src/sphincs_plus/fips202.c 
-        src/sphincs_plus/hash_shake.c 
-        src/sphincs_plus/thash_shake_${THASH}.c
+        src/sphincsplus/fips202.c 
+        src/sphincsplus/hash_shake.c 
+        src/sphincsplus/thash_shake_${THASH}.c
     )
 
     file( GLOB SPHINCS_HEADERS
-        src/sphincs_plus/fips202.h
+        src/sphincsplus/fips202.h
     )
 elseif(SPHINCS_HASH_TYPE MATCHES "haraka")
     file( GLOB SPHINCS_SRCS
-        src/sphincs_plus/haraka.c 
-        src/sphincs_plus/hash_haraka.c 
-        src/sphincs_plus/thash_haraka_${THASH}.c
+        src/sphincsplus/haraka.c 
+        src/sphincsplus/hash_haraka.c 
+        src/sphincsplus/thash_haraka_${THASH}.c
     )
 
     file( GLOB SPHINCS_HEADERS
-        src/sphincs_plus/haraka.h
+        src/sphincsplus/haraka.h
     )
 elseif(SPHINCS_HASH_TYPE MATCHES "sha2")
     file( GLOB SPHINCS_SRCS
-        src/sphincs_plus/sha2.c 
-        src/sphincs_plus/hash_sha2.c 
-        src/sphincs_plus/thash_sha2_${THASH}.c
+        src/sphincsplus/sha2.c 
+        src/sphincsplus/hash_sha2.c 
+        src/sphincsplus/thash_sha2_${THASH}.c
     )
 
     file( GLOB SPHINCS_HEADERS
-        src/sphincs_plus/sha2.h
+        src/sphincsplus/sha2.h
     )
 endif()
 
@@ -87,17 +87,16 @@ file( GLOB CRYPTO_SRCS
       src/sig_dilithium/*.c
       src/ringct20/*.c
       src/falcon/*.c
-      src/sphincs_plus/address.c 
-      src/sphincs_plus/randombytes.c 
-      src/sphincs_plus/merkle.c 
-      src/sphincs_plus/wots.c 
-      src/sphincs_plus/wotsx1.c 
-      src/sphincs_plus/utils.c 
-      src/sphincs_plus/utilsx1.c 
-      src/sphincs_plus/fors.c 
-      src/sphincs_plus/sign.c
+      src/sphincsplus/address.c 
+      src/sphincsplus/randombytes.c 
+      src/sphincsplus/merkle.c 
+      src/sphincsplus/wots.c 
+      src/sphincsplus/wotsx1.c 
+      src/sphincsplus/utils.c 
+      src/sphincsplus/utilsx1.c 
+      src/sphincsplus/fors.c 
+      src/sphincsplus/sign.c
       ${SPHINCS_SRCS}
-
 )
 
 file( GLOB CRYPTO_HEADERS
@@ -118,18 +117,20 @@ file( GLOB CRYPTO_HEADERS
       src/sig_dilithium/*.h
       src/ringct20/*.h
       src/falcon/*.h
-      src/sphincs_plus/params.h 
-      src/sphincs_plus/address.h 
-      src/sphincs_plus/randombytes.h 
-      src/sphincs_plus/merkle.h 
-      src/sphincs_plus/wots.h 
-      src/sphincs_plus/wotsx1.h 
-      src/sphincs_plus/utils.h 
-      src/sphincs_plus/utilsx1.h 
-      src/sphincs_plus/fors.h 
-      src/sphincs_plus/api.h  
-      src/sphincs_plus/hash.h 
-      src/sphincs_plus/thash.h
+      src/sphincsplus/params.h 
+      src/sphincsplus/address.h 
+      src/sphincsplus/randombytes.h 
+      src/sphincsplus/merkle.h 
+      src/sphincsplus/wots.h 
+      src/sphincsplus/wotsx1.h 
+      src/sphincsplus/utils.h 
+      src/sphincsplus/utilsx1.h 
+      src/sphincsplus/fors.h 
+      src/sphincsplus/api.h  
+      src/sphincsplus/hash.h 
+      src/sphincsplus/thash.h
+      src/sphincsplus/rng.h
+      src/sphincsplus/api.h
       ${SPHINCS_HEADERS}
       include/*.h
 )
