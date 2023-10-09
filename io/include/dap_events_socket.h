@@ -297,7 +297,7 @@ typedef struct dap_events_socket {
 
     void *_inheritor; // Inheritor data to specific client type, usualy states for state machine
     void *_pvt; //Private section, different for different types
-    UT_hash_handle hh; // Handle for local CPU storage on worker or proc_thread
+    UT_hash_handle hh, hh2; // Handle for local CPU storage on worker or proc_thread AND for total amount
 } dap_events_socket_t; // Node of bidirectional list of clients
 typedef dap_events_socket_t dap_esocket_t;
 
