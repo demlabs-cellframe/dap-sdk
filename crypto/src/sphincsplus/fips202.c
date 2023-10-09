@@ -547,9 +547,9 @@ void shake256_inc_squeeze(uint8_t *output, size_t outlen, uint64_t *s_inc) {
  *                                            into s
  *              - size_t inlen: length of input in bytes
  **************************************************/
-void shake256_absorb(uint64_t *s, const uint8_t *input, size_t inlen) {
-    keccak_absorb(s, SHAKE256_RATE, input, inlen, 0x1F);
-}
+// void shake256_absorb(uint64_t *s, const uint8_t *input, size_t inlen) {
+//     keccak_absorb(s, SHAKE256_RATE, input, inlen, 0x1F);
+// }
 
 /*************************************************
  * Name:        shake256_squeezeblocks
@@ -563,9 +563,9 @@ void shake256_absorb(uint64_t *s, const uint8_t *input, size_t inlen) {
  *                                (written to output)
  *              - uint64_t *s: pointer to input/output Keccak state
  **************************************************/
-void shake256_squeezeblocks(uint8_t *output, size_t nblocks, uint64_t *s) {
-    keccak_squeezeblocks(output, nblocks, s, SHAKE256_RATE);
-}
+// void shake256_squeezeblocks(uint8_t *output, size_t nblocks, uint64_t *s) {
+//     keccak_squeezeblocks(output, nblocks, s, SHAKE256_RATE);
+// }
 
 /*************************************************
  * Name:        shake256
@@ -577,22 +577,22 @@ void shake256_squeezeblocks(uint8_t *output, size_t nblocks, uint64_t *s) {
  *              - const uint8_t *input: pointer to input
  *              - size_t inlen: length of input in bytes
  **************************************************/
-void shake256(uint8_t *output, size_t outlen,
-              const uint8_t *input, size_t inlen) {
-    size_t nblocks = outlen / SHAKE256_RATE;
-    uint8_t t[SHAKE256_RATE];
-    uint64_t s[25];
+// void shake256(uint8_t *output, size_t outlen,
+//               const uint8_t *input, size_t inlen) {
+//     size_t nblocks = outlen / SHAKE256_RATE;
+//     uint8_t t[SHAKE256_RATE];
+//     uint64_t s[25];
 
-    shake256_absorb(s, input, inlen);
-    shake256_squeezeblocks(output, nblocks, s);
+//     shake256_absorb(s, input, inlen);
+//     shake256_squeezeblocks(output, nblocks, s);
 
-    output += nblocks * SHAKE256_RATE;
-    outlen -= nblocks * SHAKE256_RATE;
+//     output += nblocks * SHAKE256_RATE;
+//     outlen -= nblocks * SHAKE256_RATE;
 
-    if (outlen) {
-        shake256_squeezeblocks(t, 1, s);
-        for (size_t i = 0; i < outlen; ++i) {
-            output[i] = t[i];
-        }
-    }
-}
+//     if (outlen) {
+//         shake256_squeezeblocks(t, 1, s);
+//         for (size_t i = 0; i < outlen; ++i) {
+//             output[i] = t[i];
+//         }
+//     }
+// }

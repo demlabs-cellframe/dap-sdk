@@ -41,7 +41,7 @@ if(SPHINCS_HASH_TYPE MATCHES "shake")
     file( GLOB SPHINCS_SRCS
         src/sphincsplus/fips202.c 
         src/sphincsplus/hash_shake.c 
-        src/sphincsplus/thash_shake_${THASH}.c
+        src/sphincsplus/thash_shake_${SPHINCS_THASH}.c
     )
 
     file( GLOB SPHINCS_HEADERS
@@ -51,7 +51,7 @@ elseif(SPHINCS_HASH_TYPE MATCHES "haraka")
     file( GLOB SPHINCS_SRCS
         src/sphincsplus/haraka.c 
         src/sphincsplus/hash_haraka.c 
-        src/sphincsplus/thash_haraka_${THASH}.c
+        src/sphincsplus/thash_haraka_${SPHINCS_THASH}.c
     )
 
     file( GLOB SPHINCS_HEADERS
@@ -61,7 +61,7 @@ elseif(SPHINCS_HASH_TYPE MATCHES "sha2")
     file( GLOB SPHINCS_SRCS
         src/sphincsplus/sha2.c 
         src/sphincsplus/hash_sha2.c 
-        src/sphincsplus/thash_sha2_${THASH}.c
+        src/sphincsplus/thash_sha2_${SPHINCS_THASH}.c
     )
 
     file( GLOB SPHINCS_HEADERS
@@ -129,8 +129,6 @@ file( GLOB CRYPTO_HEADERS
       src/sphincsplus/api.h  
       src/sphincsplus/hash.h 
       src/sphincsplus/thash.h
-      src/sphincsplus/rng.h
-      src/sphincsplus/api.h
       ${SPHINCS_HEADERS}
       include/*.h
 )
@@ -149,7 +147,7 @@ file( GLOB XKCP_SRCS
   src/XKCP/lib/high/Keccak/FIPS202/SimpleFIPS202.c
 )
 
-set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src include)
+set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sphincsplus src include)
 add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
 
 option (DAP_PQLR "PQRL Intergration" OFF)

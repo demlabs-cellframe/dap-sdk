@@ -16,7 +16,7 @@
 /*
  * Returns the length of a secret key, in bytes
  */
-unsigned long long crypto_sign_secretkeybytes(void)
+unsigned long long sphincsplus_crypto_sign_secretkeybytes(void)
 {
     return CRYPTO_SECRETKEYBYTES;
 }
@@ -24,7 +24,7 @@ unsigned long long crypto_sign_secretkeybytes(void)
 /*
  * Returns the length of a public key, in bytes
  */
-unsigned long long crypto_sign_publickeybytes(void)
+unsigned long long sphincsplus_crypto_sign_publickeybytes(void)
 {
     return CRYPTO_PUBLICKEYBYTES;
 }
@@ -32,7 +32,7 @@ unsigned long long crypto_sign_publickeybytes(void)
 /*
  * Returns the length of a signature, in bytes
  */
-unsigned long long crypto_sign_bytes(void)
+unsigned long long sphincsplus_crypto_sign_bytes(void)
 {
     return CRYPTO_BYTES;
 }
@@ -40,7 +40,7 @@ unsigned long long crypto_sign_bytes(void)
 /*
  * Returns the length of the seed required to generate a key pair, in bytes
  */
-unsigned long long crypto_sign_seedbytes(void)
+unsigned long long sphincsplus_crypto_sign_seedbytes(void)
 {
     return CRYPTO_SEEDBYTES;
 }
@@ -50,7 +50,7 @@ unsigned long long crypto_sign_seedbytes(void)
  * Format sk: [SK_SEED || SK_PRF || PUB_SEED || root]
  * Format pk: [PUB_SEED || root]
  */
-int crypto_sign_seed_keypair(unsigned char *pk, unsigned char *sk,
+int sphincsplus_crypto_sign_seed_keypair(unsigned char *pk, unsigned char *sk,
                              const unsigned char *seed)
 {
     spx_ctx ctx;
@@ -80,11 +80,11 @@ int crypto_sign_seed_keypair(unsigned char *pk, unsigned char *sk,
  * Format sk: [SK_SEED || SK_PRF || PUB_SEED || root]
  * Format pk: [PUB_SEED || root]
  */
-int crypto_sign_keypair(unsigned char *pk, unsigned char *sk)
+int sphincsplus_crypto_sign_keypair(unsigned char *pk, unsigned char *sk)
 {
   unsigned char seed[CRYPTO_SEEDBYTES];
   randombytes(seed, CRYPTO_SEEDBYTES);
-  crypto_sign_seed_keypair(pk, sk, seed);
+  sphincsplus_crypto_sign_seed_keypair(pk, sk, seed);
 
   return 0;
 }
@@ -92,7 +92,7 @@ int crypto_sign_keypair(unsigned char *pk, unsigned char *sk)
 /**
  * Returns an array containing a detached signature.
  */
-int crypto_sign_signature(uint8_t *sig, size_t *siglen,
+int sphincsplus_crypto_sign_signature(uint8_t *sig, size_t *siglen,
                           const uint8_t *m, size_t mlen, const uint8_t *sk)
 {
     spx_ctx ctx;
@@ -160,7 +160,7 @@ int crypto_sign_signature(uint8_t *sig, size_t *siglen,
 /**
  * Verifies a detached signature and message under a given public key.
  */
-int crypto_sign_verify(const uint8_t *sig, size_t siglen,
+int sphincsplus_crypto_sign_verify(const uint8_t *sig, size_t siglen,
                        const uint8_t *m, size_t mlen, const uint8_t *pk)
 {
     spx_ctx ctx;
@@ -243,13 +243,13 @@ int crypto_sign_verify(const uint8_t *sig, size_t siglen,
 /**
  * Returns an array containing the signature followed by the message.
  */
-int crypto_sign(unsigned char *sm, unsigned long long *smlen,
+int sphincsplus_crypto_sign(unsigned char *sm, unsigned long long *smlen,
                 const unsigned char *m, unsigned long long mlen,
                 const unsigned char *sk)
 {
     size_t siglen;
 
-    crypto_sign_signature(sm, &siglen, m, (size_t)mlen, sk);
+    sphincsplus_crypto_sign_signature(sm, &siglen, m, (size_t)mlen, sk);
 
     memmove(sm + SPX_BYTES, m, mlen);
     *smlen = siglen + mlen;
@@ -260,7 +260,7 @@ int crypto_sign(unsigned char *sm, unsigned long long *smlen,
 /**
  * Verifies a given signature-message pair under a given public key.
  */
-int crypto_sign_open(unsigned char *m, unsigned long long *mlen,
+int sphincsplus_crypto_sign_open(unsigned char *m, unsigned long long *mlen,
                      const unsigned char *sm, unsigned long long smlen,
                      const unsigned char *pk)
 {
@@ -274,7 +274,7 @@ int crypto_sign_open(unsigned char *m, unsigned long long *mlen,
 
     *mlen = smlen - SPX_BYTES;
 
-    if (crypto_sign_verify(sm, SPX_BYTES, sm + SPX_BYTES, (size_t)*mlen, pk)) {
+    if (sphincsplus_crypto_sign_verify(sm, SPX_BYTES, sm + SPX_BYTES, (size_t)*mlen, pk)) {
         memset(m, 0, smlen);
         *mlen = 0;
         return -1;

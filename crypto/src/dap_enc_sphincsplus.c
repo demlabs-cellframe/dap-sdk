@@ -1,4 +1,5 @@
 #include "dap_enc_sphincsplus.h"
+#include "api.h"
 
 #define LOG_TAG "dap_enc_sig_sphincsplus"
 
@@ -35,12 +36,12 @@
 // }
 
 
-// void dap_enc_sig_falcon_key_new(struct dap_enc_key *key) {
-//     key->type = DAP_ENC_KEY_TYPE_SIG_FALCON;
-//     key->enc = NULL;
-//     key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_get_sign;
-//     key->dec_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_verify_sign;
-// }
+void dap_enc_sig_sphincsplus_key_new(struct dap_enc_key *key) {
+    key->type = DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
+    key->enc = NULL;
+    key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_sphincsplus_get_sign;
+    key->dec_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_sphincsplus_verify_sign;
+}
 
 // void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *kex_buf, size_t kex_size,
 //         const void* seed, size_t seed_size, size_t key_size) {
@@ -100,100 +101,39 @@
 
 // }
 
-// size_t dap_enc_sig_falcon_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size)
-// {
+size_t dap_enc_sig_sphincsplus_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size)
+{
 
-//     if (signature_size != sizeof(falcon_signature_t)) {
-//         log_it(L_ERROR, "Invalid falcon signature size");
-//         return -10;
-//     }
-//     int retcode;
-//     //todo: do we need to use shared shake256 context?
-//     shake256_context rng;
-//     retcode = shake256_init_prng_from_system(&rng);
-//     if (retcode != 0) {
-//         log_it(L_ERROR, "Failed to initialize PRNG");
-//         return retcode;
-//     }
+    // if(signature_size < sizeof(dilithium_signature_t)) {
+    //     log_it(L_ERROR, "bad signature size");
+    //     return 0;
+    // }
 
-//     if (key->priv_key_data_size != sizeof(falcon_private_key_t)) {
-//         log_it(L_ERROR, "Invalid falcon key");
-//         return -11;
-//     }
-//     falcon_private_key_t *privateKey = key->priv_key_data;
+    int l_sig_len = 0;
 
-//     size_t tmpsize = privateKey->type == FALCON_DYNAMIC ?
-//                 FALCON_TMPSIZE_SIGNDYN(privateKey->degree) :
-//                 FALCON_TMPSIZE_SIGNTREE(privateKey->degree);
+    sphincsplus_crypto_sign(signature, &l_sig_len, (const unsigned char *) msg, msg_size, key->priv_key_data);
+        
+    return l_sig_len;
+}
 
-//     uint8_t tmp[tmpsize];
+size_t dap_enc_sig_sphincsplus_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, const void* signature,
+                                      const size_t signature_size)
+{
+    int l_ret = 0;
+    // l_ret = sphincsplus_crypto_sign_verify(signature, signature_size, msg, msg_size, key->pub_key_data);
+    
+    // if(signature_size < sizeof(dilithium_signature_t)) {
+    //     log_it(L_ERROR, "bad signature size");
+    //     return 0;
+    // }
+    // int l_ret = dilithium_crypto_sign_open( (unsigned char *) msg, msg_size, (dilithium_signature_t *) signature, key->pub_key_data);
+    // if( l_ret != 0)
+    //     log_it(L_WARNING,"Wrong signature, can't open with code %d", l_ret);
 
-//     falcon_signature_t *sig = signature;
-//     sig->degree = privateKey->degree;
-//     sig->kind = privateKey->kind;
-//     sig->type = privateKey->type;
-//     size_t sig_len = 0;
-//     switch (privateKey->kind) {
-//     case FALCON_COMPRESSED:
-//         sig_len = FALCON_SIG_COMPRESSED_MAXSIZE(privateKey->degree);
-//         break;
-//     case FALCON_PADDED:
-//         sig_len = FALCON_SIG_PADDED_SIZE(privateKey->degree);
-//         break;
-//     case FALCON_CT:
-//         sig_len = FALCON_SIG_CT_SIZE(privateKey->degree);
-//     default:
-//         break;
-//     }
-
-//     if (sig_len)
-//         sig->sig_data = DAP_NEW_SIZE(byte_t, sig_len);
-
-//     retcode = falcon_sign_dyn(
-//             &rng,
-//             sig->sig_data, &sig_len, privateKey->kind,
-//             privateKey->data, FALCON_PRIVKEY_SIZE(privateKey->degree),
-//             msg, msg_size,
-//             tmp, tmpsize
-//             );
-//     sig->sig_len = sig_len;
-
-//     if (retcode != 0)
-//         log_it(L_ERROR, "Failed to sign message");
-//     return retcode;
-// }
-
-// size_t dap_enc_sig_falcon_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
-//                                       const size_t signature_size)
-// {
-
-//     if (key->pub_key_data_size != sizeof(falcon_private_key_t)) {
-//         log_it(L_ERROR, "Invalid falcon key");
-//         return -11;
-//     }
-//     falcon_private_key_t *publicKey = key->pub_key_data;
-//     int logn = publicKey->degree;
-
-//     uint8_t tmp[FALCON_TMPSIZE_VERIFY(logn)];
-
-//     falcon_signature_t *sig = signature;
-//     if (sizeof(falcon_signature_t) != signature_size ||
-//             sig->degree != publicKey->degree ||
-//             sig->kind != publicKey->kind ||
-//             sig->type != publicKey->type)
-//         return -1;
-
-//     int retcode = falcon_verify(
-//             sig->sig_data, sig->sig_len, publicKey->kind,
-//             publicKey->data, FALCON_PUBKEY_SIZE(publicKey->degree),
-
-//             msg, msg_size,
-//             tmp, FALCON_TMPSIZE_VERIFY(logn)
-//             );
-//     if (retcode != 0)
-//         log_it(L_ERROR, "Failed to verify signature");
-//     return retcode;
-// }
+    if (l_ret != 0)
+        log_it(L_ERROR, "Failed to verify signature");
+    return l_ret;
+}
 
 // void dap_enc_sig_falcon_key_delete(struct dap_enc_key *key) {
 

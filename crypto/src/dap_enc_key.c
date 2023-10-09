@@ -38,6 +38,7 @@
 #include "dap_enc_falcon.h"
 #include "dap_enc_newhope.h"
 #include "dap_enc_kyber.h"
+#include "dap_enc_sphincsplus.h"
 
 #include "dap_enc_ringct20.h"
 #ifdef DAP_PQRL
@@ -349,13 +350,13 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .name =                             "SIG_SPHINCSPLUS",
         .enc =                              NULL,
         .dec =                              NULL,
-        .enc_na =                           dap_enc_sig_falcon_get_sign,
-        .dec_na =                           dap_enc_sig_falcon_verify_sign,
+        .enc_na =                           dap_enc_sig_sphincsplus_get_sign,
+        .dec_na =                           dap_enc_sig_sphincsplus_verify_sign,
         .gen_key_public =                   NULL,
         .gen_key_public_size =              NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
-        .new_callback =                     dap_enc_sig_falcon_key_new,
+        .new_callback =                     dap_enc_sig_sphincsplus_key_new,
         .delete_callback =                  dap_enc_sig_falcon_key_delete,
         .new_generate_callback =            dap_enc_sig_falcon_key_new_generate,
         .enc_out_size =                     NULL,
