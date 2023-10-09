@@ -36,6 +36,39 @@ add_definitions ("-D_GNU_SOURCE")
     add_definitions ("-DPARAMS=${SPHINCS_HASH_TYPE}")
     add_definitions ("-DTHASH=${SPHINCS_THASH}")
 
+#add needed files
+if(SPHINCS_HASH_TYPE MATCHES "shake")
+    file( GLOB SPHINCS_SRCS
+        src/sphincs_plus/fips202.c 
+        src/sphincs_plus/hash_shake.c 
+        src/sphincs_plus/thash_shake_${THASH}.c
+    )
+
+    file( GLOB SPHINCS_HEADERS
+        src/sphincs_plus/fips202.h
+    )
+elseif(SPHINCS_HASH_TYPE MATCHES "haraka")
+    file( GLOB SPHINCS_SRCS
+        src/sphincs_plus/haraka.c 
+        src/sphincs_plus/hash_haraka.c 
+        src/sphincs_plus/thash_haraka_${THASH}.c
+    )
+
+    file( GLOB SPHINCS_HEADERS
+        src/sphincs_plus/haraka.h
+    )
+elseif(SPHINCS_HASH_TYPE MATCHES "sha2")
+    file( GLOB SPHINCS_SRCS
+        src/sphincs_plus/sha2.c 
+        src/sphincs_plus/hash_sha2.c 
+        src/sphincs_plus/thash_sha2_${THASH}.c
+    )
+
+    file( GLOB SPHINCS_HEADERS
+        src/sphincs_plus/sha2.h
+    )
+endif()
+
 file( GLOB CRYPTO_SRCS
       src/*.c
       src/rand/*.c
@@ -63,6 +96,8 @@ file( GLOB CRYPTO_SRCS
       src/sphincs_plus/utilsx1.c 
       src/sphincs_plus/fors.c 
       src/sphincs_plus/sign.c
+      ${SPHINCS_SRCS}
+
 )
 
 file( GLOB CRYPTO_HEADERS
@@ -95,41 +130,9 @@ file( GLOB CRYPTO_HEADERS
       src/sphincs_plus/api.h  
       src/sphincs_plus/hash.h 
       src/sphincs_plus/thash.h
+      ${SPHINCS_HEADERS}
       include/*.h
 )
-
-#add needed files
-if(SPHINCS_HASH_TYPE MATCHES "shake")
-    file( GLOB SPHINCS_SRCS
-        src/sphincs_plus/haraka.c 
-        src/sphincs_plus/hash_shake.c 
-        src/sphincs_plus/thash_shake_${THASH}.c
-    )
-
-    file( GLOB SPHINCS_HEADERS
-        src/sphincs_plus/fips202.h
-    )
-elseif(SPHINCS_HASH_TYPE MATCHES "haraka")
-    file( GLOB SPHINCS_SRCS
-        src/sphincs_plus/haraka.c 
-        src/sphincs_plus/hash_haraka.c 
-        src/sphincs_plus/thash_haraka_${THASH}.c
-    )
-
-    file( GLOB SPHINCS_HEADERS
-        src/sphincs_plus/haraka.h
-    )
-elseif(SPHINCS_HASH_TYPE MATCHES "sha2")
-    file( GLOB SPHINCS_SRCS
-        src/sphincs_plus/sha2.c 
-        src/sphincs_plus/hash_sha2.c 
-        src/sphincs_plus/thash_sha2_${THASH}.c
-    )
-
-    file( GLOB SPHINCS_HEADERS
-        src/sphincs_plus/sha2.h
-    )
-endif()
 
 set_source_files_properties(src/sig_picnic/picnic_impl.c PROPERTIES COMPILE_FLAGS -Wno-stringop-overflow)
 if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.2)
@@ -208,7 +211,7 @@ endif()
 
 
 
-add_library(${PROJECT_NAME} STATIC ${CRYPTO_SRCS} ${XKCP_SRCS} ${XKCP_SRCS2} ${CRYPTO_HEADERS} ${DAP_PQLR_SRC} ${SPHINCS_SRCS} ${SPHINCS_HEADERS} )
+add_library(${PROJECT_NAME} STATIC ${CRYPTO_SRCS} ${XKCP_SRCS} ${XKCP_SRCS2} ${CRYPTO_HEADERS} ${DAP_PQLR_SRC} )
 
 if (DAP_PQRL)
 
