@@ -36,100 +36,75 @@
 // }
 
 
-void dap_enc_sig_sphincsplus_key_new(struct dap_enc_key *key) {
-    key->type = DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
-    key->enc = NULL;
-    key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_sphincsplus_get_sign;
-    key->dec_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_sphincsplus_verify_sign;
+void dap_enc_sig_sphincsplus_key_new(struct dap_enc_key *a_key) {
+    a_key->type = DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
+    a_key->enc = NULL;
+    a_key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_sphincsplus_get_sign;
+    a_key->dec_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_sphincsplus_verify_sign;
 }
 
-// void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *kex_buf, size_t kex_size,
-//         const void* seed, size_t seed_size, size_t key_size) {
+void dap_enc_sig_sphincsplus_key_new_generate(struct dap_enc_key *a_key, const void *a_kex_buf, size_t a_kex_size,
+        const void *a_seed, size_t a_seed_size, size_t a_key_size) {
 
-//     key->type = DAP_ENC_KEY_TYPE_SIG_FALCON;
-//     key->enc = NULL;
-//     key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_get_sign;
-//     key->dec_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_verify_sign;
+    (void) a_kex_buf;
+    (void) a_kex_size;
+    (void) a_key_size;
+    
+    // seed norming
+    unsigned long long l_key_size = sphincsplus_crypto_sign_seedbytes();
+    unsigned char l_seedbuf[l_key_size];
 
+    if(a_seed && a_seed_size > 0) {
+        SHA3_256((unsigned char *) l_seedbuf, (const unsigned char *) a_seed, a_seed_size);
+    } else {
+        randombytes(l_seedbuf, l_key_size);
+    }
+    // creating key pair
+    dap_enc_sig_sphincsplus_key_new(a_key);
 
-//     int retcode = 0;
-//     unsigned int logn = s_falcon_sign_degree;
-//     size_t tmp[FALCON_TMPSIZE_KEYGEN(logn)];
+    a_key->priv_key_data_size = sphincsplus_crypto_sign_secretkeybytes();
+    a_key->pub_key_data_size = sphincsplus_crypto_sign_publickeybytes();
+    if ( !(a_key->priv_key_data = malloc(a_key->priv_key_data_size)) || !(a_key->pub_key_data = malloc(a_key->pub_key_data_size)) ) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    };
 
-//     key->pub_key_data_size = sizeof(falcon_public_key_t);
-//     key->priv_key_data_size = sizeof(falcon_private_key_t);
-//     key->pub_key_data = malloc(key->pub_key_data_size);
-//     if (!key->pub_key_data) {
-//         log_it(L_CRITICAL, "Memory allocation error");
-//         return;
-//     }
-//     key->priv_key_data = malloc(key->priv_key_data_size);
-//     if (!key->priv_key_data) {
-//         log_it(L_CRITICAL, "Memory allocation error");
-//         return;
-//     }
+    int l_ret = sphincsplus_crypto_sign_seed_keypair(
+            (unsigned char *)a_key->pub_key_data,
+            (unsigned char *)a_key->priv_key_data,
+            l_seedbuf);
+    if(l_ret != 0) {
+        DAP_DEL_Z(a_key->priv_key_data);
+        DAP_DEL_Z(a_key->pub_key_data);
+        log_it(L_CRITICAL, "Error generating Sphincs key pair");
+        return;
+    }
 
-//     uint8_t* privkey = calloc(1, FALCON_PRIVKEY_SIZE(logn));
-//     uint8_t* pubkey = calloc(1, FALCON_PUBKEY_SIZE(logn));
+}
 
-//     falcon_private_key_t privateKey = {s_falcon_kind, s_falcon_sign_degree, s_falcon_type, privkey};
-//     falcon_public_key_t publicKey = {s_falcon_kind, s_falcon_sign_degree, s_falcon_type, pubkey};
+size_t dap_enc_sig_sphincsplus_get_sign(struct dap_enc_key *a_key, const void *a_msg, const size_t a_msg_size,
+        void *a_sign, const size_t a_sign_size){
 
-//     shake256_context rng;
-//     retcode = shake256_init_prng_from_system(&rng);
-//     if (retcode != 0) {
-//         log_it(L_ERROR, "Failed to initialize PRNG");
-//         return;
-//     }
-//     retcode = falcon_keygen_make(
-//             &rng,
-//             logn,
-//             privateKey.data, FALCON_PRIVKEY_SIZE(logn),
-//             publicKey.data, FALCON_PUBKEY_SIZE(logn),
-// //            key->priv_key_data, key->priv_key_data_size,
-// //            key->pub_key_data, key->pub_key_data_size,
-//             tmp, FALCON_TMPSIZE_KEYGEN(logn)
-//             );
-//     if (retcode != 0) {
-//         falcon_private_and_public_keys_delete(&privateKey, &publicKey);
-//         log_it(L_ERROR, "Failed to generate falcon key");
-//         return;
-//     }
+    if(a_sign_size < sphincsplus_crypto_sign_bytes()) {
+        log_it(L_ERROR, "Bad signature size");
+        return 0;
+    }
 
-//     memcpy(key->priv_key_data, &privateKey, sizeof(falcon_private_key_t));
-//     memcpy(key->pub_key_data, &publicKey, sizeof(falcon_public_key_t));
-
-// }
-
-size_t dap_enc_sig_sphincsplus_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size)
-{
-
-    // if(signature_size < sizeof(dilithium_signature_t)) {
-    //     log_it(L_ERROR, "bad signature size");
-    //     return 0;
-    // }
-
-    int l_sig_len = 0;
-
-    sphincsplus_crypto_sign(signature, &l_sig_len, (const unsigned char *) msg, msg_size, key->priv_key_data);
+    unsigned long long l_sig_len = 0;
+    sphincsplus_crypto_sign(a_sign, &l_sig_len, (const unsigned char *)a_msg, a_msg_size, a_key->priv_key_data);
         
     return l_sig_len;
 }
 
-size_t dap_enc_sig_sphincsplus_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, const void* signature,
-                                      const size_t signature_size)
+size_t dap_enc_sig_sphincsplus_verify_sign(struct dap_enc_key *a_key, const void *a_msg, const size_t a_msg_size, const void *a_sign,
+        const size_t a_sign_size)
 {
-    int l_ret = 0;
-    // l_ret = sphincsplus_crypto_sign_verify(signature, signature_size, msg, msg_size, key->pub_key_data);
-    
-    // if(signature_size < sizeof(dilithium_signature_t)) {
-    //     log_it(L_ERROR, "bad signature size");
-    //     return 0;
-    // }
-    // int l_ret = dilithium_crypto_sign_open( (unsigned char *) msg, msg_size, (dilithium_signature_t *) signature, key->pub_key_data);
-    // if( l_ret != 0)
-    //     log_it(L_WARNING,"Wrong signature, can't open with code %d", l_ret);
+    if(a_sign_size < sphincsplus_crypto_sign_bytes()) {
+        log_it(L_ERROR, "Bad signature size");
+        return 0;
+    }
 
+    int l_ret = sphincsplus_crypto_sign_verify(a_sign, a_sign_size, a_msg, a_msg_size, a_key->pub_key_data);
     if (l_ret != 0)
         log_it(L_ERROR, "Failed to verify signature");
     return l_ret;

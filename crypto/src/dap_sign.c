@@ -148,6 +148,7 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
         case SIG_TYPE_PICNIC: return "sig_picnic";
         case SIG_TYPE_DILITHIUM: return "sig_dil";
         case SIG_TYPE_FALCON: return "sig_falcon";
+        case SIG_TYPE_SPHINCSPLUS: return "sig_sphincs";
         case SIG_TYPE_MULTI_COMBINED: return "sig_multi2";
         case SIG_TYPE_MULTI_CHAINED: return "sig_multi";
         default: return "UNDEFINED";//DAP_ENC_KEY_TYPE_NULL;
@@ -164,19 +165,21 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
 dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
 {
     dap_sign_type_t l_sign_type = {0};
-    if ( dap_strcmp (a_type_str,"sig_bliss") == 0 ){
+    if ( !dap_strcmp (a_type_str,"sig_bliss") ){
         l_sign_type.type = SIG_TYPE_BLISS;
-    } else if ( dap_strcmp (a_type_str,"sig_tesla") == 0){
+    } else if ( !dap_strcmp (a_type_str,"sig_tesla") ){
         l_sign_type.type = SIG_TYPE_TESLA;
-    } else if ( dap_strcmp (a_type_str,"sig_picnic") == 0){
+    } else if ( !dap_strcmp (a_type_str,"sig_picnic") ){
         l_sign_type.type = SIG_TYPE_PICNIC;
-    }else if ( dap_strcmp (a_type_str,"sig_dil") == 0){
+    }else if ( !dap_strcmp (a_type_str,"sig_dil") ){
         l_sign_type.type = SIG_TYPE_DILITHIUM;
-    }else if ( dap_strcmp (a_type_str, "sig_falcon") == 0) {
+    }else if ( !dap_strcmp (a_type_str, "sig_falcon") ) {
         l_sign_type.type = SIG_TYPE_FALCON;
-    }else if ( dap_strcmp (a_type_str,"sig_multi") == 0){
+    }else if ( !dap_strcmp (a_type_str, "sig_sphincs") ) {
+        l_sign_type.type = SIG_TYPE_SPHINCSPLUS;
+    }else if ( !dap_strcmp (a_type_str,"sig_multi") ){
         l_sign_type.type = SIG_TYPE_MULTI_CHAINED;
-    }else if ( dap_strcmp (a_type_str,"sig_multi2") == 0){
+    }else if ( !dap_strcmp (a_type_str,"sig_multi2") ){
         l_sign_type.type = SIG_TYPE_MULTI_COMBINED;
     }
     else {
@@ -207,6 +210,7 @@ static int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, con
         case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
                 // For PICNIC a_output_size should decrease
             //*a_output_size = dap_enc_sig_dilithium_get_sign(a_key,a_data,a_data_size,a_output,sizeof(dilithium_signature_t));
             a_key->enc_na(a_key, a_data, a_data_size, a_output, *a_output_size);

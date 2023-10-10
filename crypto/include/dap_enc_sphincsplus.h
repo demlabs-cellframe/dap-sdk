@@ -8,16 +8,16 @@
 // void dap_enc_sig_falcon_set_kind(falcon_kind_t a_falcon_kind);
 // void dap_enc_sig_falcon_set_type(falcon_sign_type_t a_falcon_sign_type);
 
-void dap_enc_sig_sphincsplus_key_new(struct dap_enc_key *key);
+void dap_enc_sig_sphincsplus_key_new(struct dap_enc_key *a_key);
 
-// void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *kex_buf, size_t kex_size,
-//         const void* seed, size_t seed_size, size_t key_size);
+void dap_enc_sig_sphincsplus_key_new_generate(struct dap_enc_key *a_key, const void *a_kex_buf, size_t a_kex_size,
+        const void *a_seed, size_t a_seed_size, size_t a_key_size);
 
-size_t dap_enc_sig_sphincsplus_get_sign(struct dap_enc_key* key, const void * msg, const size_t msg_size,
-        void* signature, const size_t signature_size);
+size_t dap_enc_sig_sphincsplus_get_sign(struct dap_enc_key *a_key, const void *a_msg, const size_t a_msg_size,
+        void *a_sign, const size_t a_sign_size);
 
-size_t dap_enc_sig_sphincsplus_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, const void* signature,
-        const size_t signature_size);
+size_t dap_enc_sig_sphincsplus_verify_sign(struct dap_enc_key *a_key, const void *a_msg, const size_t a_msg_size, const void *a_sign,
+        const size_t a_sign_size);
 
 // void dap_enc_sig_falcon_key_delete(struct dap_enc_key *key);
 
