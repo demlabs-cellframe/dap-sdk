@@ -1075,7 +1075,7 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
 {
     dap_return_if_fail(a_stream);
     DL_DELETE(s_streams, a_stream);
-    assert(!pthread_rwlock_wrlock(&s_streams_lock));
+    pthread_rwlock_wrlock(&s_streams_lock);
     if (a_stream->node.uint64) {
         // It's an authorized stream, try to replace it in hastable
         HASH_DEL(s_streams, a_stream);
@@ -1084,18 +1084,18 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
             if (l_stream->node.uint64 == a_stream->node.uint64)
                 s_stream_add_to_hashtable(l_stream);
     }
-    assert(!pthread_rwlock_unlock(&s_streams_lock));
+    pthread_rwlock_unlock(&s_streams_lock);
 }
 
 int s_stream_add_to_list(dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream, -1);
     int l_ret = 0;
-    assert(!pthread_rwlock_wrlock(&s_streams_lock));
+    pthread_rwlock_wrlock(&s_streams_lock);
     DL_APPEND(s_streams, a_stream);
     if (a_stream->node.uint64)
         l_ret = s_stream_add_to_hashtable(a_stream);
-    assert(!pthread_rwlock_unlock(&s_streams_lock));
+    pthread_rwlock_unlock(&s_streams_lock);
     return l_ret;
 }
 
@@ -1110,13 +1110,13 @@ int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id)
     dap_return_val_if_pass(!a_stream, -1);
     authorized_stream_t *l_auth_stream = NULL;
     int l_ret = 0;
-    assert(!pthread_rwlock_wrlock(&s_streams_lock));
+    pthread_rwlock_wrlock(&s_streams_lock);
     HASH_FIND(hh, s_prep_authorized_streams, &a_id, sizeof(a_id), l_auth_stream);
     if (l_auth_stream && l_auth_stream->node.uint64) {
         a_stream->node.uint64 = l_auth_stream->node.uint64;
         s_stream_add_to_hashtable(a_stream);
     }
-    assert(!pthread_rwlock_unlock(&s_streams_lock));
+    pthread_rwlock_unlock(&s_streams_lock);
     return l_ret;
 }
 
@@ -1158,7 +1158,7 @@ int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id)
  */
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t a_addr, dap_worker_t **a_worker)
 {
-    dap_return_val_if_pass(!a_worker, 0);
+    dap_return_val_if_fail(a_addr, 0);
     dap_stream_t *l_auth_stream = NULL;
     dap_events_socket_uuid_t l_ret = {};
     assert(!pthread_rwlock_wrlock(&s_streams_lock));
@@ -1167,7 +1167,8 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t a_addr, 
         if (a_worker)
             *a_worker = l_auth_stream->stream_worker->worker;
         l_ret = l_auth_stream->esocket_uuid;
-    }
+    } else if (a_worker)
+        *a_worker = NULL;
     assert(!pthread_rwlock_unlock(&s_streams_lock));
     return l_ret;
 }
@@ -1202,9 +1203,8 @@ dap_stream_node_addr_t dap_stream_get_addr_from_sign(dap_sign_t *a_sign) {
 int dap_stream_get_link_info(dap_stream_node_addr_t a_addr, dap_stream_info_t *a_out_info)
 {
     typedef struct dap_stream_info {
-        dap_stream_node_addr_t addr;
-        struct in_addr ipv4;
-        struct in6_addr ipv6;
+        dap_stream_node_addr_t node_addr;
+        char *remote_addr_str;
         uint16_t port;
         char *channels;
         size_t total_packets_sent;
@@ -1212,6 +1212,21 @@ int dap_stream_get_link_info(dap_stream_node_addr_t a_addr, dap_stream_info_t *a
         dap_events_socket_uuid_t esocket_uuid;
         dap_stream_worker_t *stream_worker;
     } dap_stream_info_t;
+
+    dap_stream_t *l_auth_stream = NULL;
+    dap_return_val_if_fail(a_addr && a_out_info, -1);
+    pthread_rwlock_wrlock(&s_streams_lock);
+    HASH_FIND(hh, s_authorized_streams, &a_addr, sizeof(a_addr), l_auth_stream);
+    if (!l_auth_stream)
+        return -2;
+    a_out_info->node_addr = l_auth_stream->node;
+    a_out_info->remote_addr_str = dap_strdup(l_auth_stream->esocket->remote_addr_str);
+
+    assert(l_auth_stream->node.uint64 == a_addr.uint64);
+    pthread_rwlock_unlock(&s_streams_lock);
+    return l_ret;
+
+
     dap_chain_net_add_downlink(l_net, l_ch->stream_worker, l_ch->uuid, l_ch->stream->esocket_uuid,
                                l_ch->stream->esocket->hostaddr[0]
             ? l_ch->stream->esocket->hostaddr : l_ch->stream->esocket->remote_addr_str,

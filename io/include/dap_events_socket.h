@@ -130,7 +130,7 @@ typedef void (*dap_events_socket_callback_event_t) (dap_events_socket_t *, uint6
 typedef void (*dap_events_socket_callback_pipe_t) (dap_events_socket_t *,const void * , size_t); // Callback for specific client operations
 typedef void (*dap_events_socket_callback_queue_ptr_t) (dap_events_socket_t *, void *); // Callback for specific client operations
 typedef void (*dap_events_socket_callback_timer_t) (dap_events_socket_t * ); // Callback for specific client operations
-typedef void (*dap_events_socket_callback_accept_t) (dap_events_socket_t * , SOCKET, struct sockaddr* ); // Callback for accept of new connection
+typedef void (*dap_events_socket_callback_accept_t) (dap_events_socket_t *, SOCKET, struct sockaddr_storage *); // Callback for accept of new connection
 typedef void (*dap_events_socket_callback_connected_t) (dap_events_socket_t * ); // Callback for connected client connection
 typedef void (*dap_events_socket_worker_callback_t) (dap_events_socket_t *,dap_worker_t * ); // Callback for specific client operations
 
@@ -247,23 +247,14 @@ typedef struct dap_events_socket {
     pthread_rwlock_t buf_out_lock;
 #endif
 
-    // Stored string representation
-#define DAP_EVSOCK$SZ_HOSTNAME  256
-#define DAP_EVSOCK$SZ_SERVICE   64
-
-    char hostaddr[DAP_EVSOCK$SZ_HOSTNAME + 1];
-    char service [DAP_EVSOCK$SZ_SERVICE + 1];
-
     // Remote address, port and others
     struct sockaddr_in remote_addr;
-    char    remote_addr_str[INET_ADDRSTRLEN + 1];
-    char    remote_addr_str6[INET6_ADDRSTRLEN + 1];
-    short   remote_port;
+    struct sockaddr_in6 remote_addr_v6;
+    char remote_addr_str[INET6_ADDRSTRLEN + 1];
 
     // Links to related objects
-    dap_context_t * context;
-    dap_worker_t* worker;
-    struct dap_proc_thread_t *proc_thread; // If assigned on dap_proc_thread_t object
+    dap_context_t *context;
+    dap_worker_t *worker;
     dap_server_t *server; // If this socket assigned with server
 
     // Platform specific things

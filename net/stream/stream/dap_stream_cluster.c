@@ -189,7 +189,7 @@ void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t
         assert(l_addr);
         dap_worker_t *l_worker = NULL;
         dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(*l_addr, &l_worker);
-        if (l_worker) {
+        if (l_worker && l_uuid) {
             dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_uuid, a_ch_id, a_type, a_data, a_data_size);
             if (++l_links_used >= DAP_CLUSTER_OPTIMUM_LINKS)
                 break;

@@ -78,9 +78,8 @@ typedef struct dap_stream {
 } dap_stream_t;
 
 typedef struct dap_stream_info {
-    dap_stream_node_addr_t addr;
-    struct in_addr ipv4;
-    struct in6_addr ipv6;
+    dap_stream_node_addr_t node_addr;
+    char *remote_addr_str;
     uint16_t port;
     char *channels;
     size_t total_packets_sent;

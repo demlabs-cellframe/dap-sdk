@@ -76,7 +76,7 @@
 static dap_events_socket_t * s_es_server_create(int a_sock,
                                              dap_events_socket_callbacks_t * a_callbacks, dap_server_t * a_server);
 static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *a_callbacks );
-static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr* a_remote_addr);
+static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket, sockaddr_storage *a_remote_addr);
 static void s_es_server_error(dap_events_socket_t *a_es, int a_arg);
 static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg);
 
@@ -115,13 +115,6 @@ dap_server_t* dap_server_get_default()
  */
 void dap_server_delete(dap_server_t *a_server)
 {
-    while (a_server->es_listeners) {
-        dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
-        dap_events_socket_remove_and_delete_mt(l_es->worker, l_es->uuid); // TODO unsafe moment. Replace storage to uuids
-        dap_list_t *l_tmp = a_server->es_listeners;
-        a_server->es_listeners = l_tmp->next;
-        DAP_DELETE(l_tmp);
-    }
     if(a_server->delete_callback)
         a_server->delete_callback(a_server,NULL);
 
@@ -142,46 +135,13 @@ void dap_server_delete(dap_server_t *a_server)
  * @param a_callbacks
  * @return
  */
-dap_server_t* dap_server_new_local(const char * a_path, const char* a_mode, dap_events_socket_callbacks_t *a_callbacks)
+dap_server_t *dap_server_new_local(const char *a_path, const char *a_mode, dap_events_socket_callbacks_t *a_callbacks)
 {
 #ifdef DAP_OS_UNIX
-    dap_server_t *l_server =  DAP_NEW_Z(dap_server_t);
-    if (!l_server) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
-    l_server->socket_listener=-1; // To diff it from 0 fd
-    l_server->type = SERVER_LOCAL;
-    l_server->socket_listener = socket(AF_LOCAL, SOCK_STREAM, 0);
-    if (l_server->socket_listener < 0) {
-        int l_errno = errno;
-        log_it (L_ERROR,"Socket error %s (%d)",strerror(l_errno), l_errno);
-        DAP_DELETE(l_server);
-        return NULL;
-    }
-
-    log_it(L_NOTICE,"Listen socket %d created...", l_server->socket_listener);
-
-    // Set path
-    if(a_path){
-        l_server->listener_path.sun_family =  AF_UNIX;
-        strncpy(l_server->listener_path.sun_path,a_path,sizeof(l_server->listener_path.sun_path)-1);
-        if ( access( a_path , R_OK) != -1 )
-            unlink( a_path );
-    }
-
     mode_t l_listen_unix_socket_permissions = 0770;
-    if (a_mode){
+    if (a_mode)
         sscanf(a_mode,"%ou", &l_listen_unix_socket_permissions );
-    }
-
-
-    if(s_server_run(l_server,a_callbacks)==0){
-        if(a_path)
-            chmod(a_path,l_listen_unix_socket_permissions);
-        return l_server;
-    }else
-        return NULL;
+    return dap_server_new(a_path, l_listen_unix_socket_permissions, DAP_SERVER_LOCAL, a_callbacks);
 #else
     log_it(L_ERROR, "Local server is not implemented for your platform");
     return NULL;
@@ -203,50 +163,113 @@ dap_server_t* dap_server_new(const char * a_addr, uint16_t a_port, dap_server_ty
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
-#ifndef DAP_OS_WINDOWS
-    l_server->socket_listener=-1; // To diff it from 0 fd
-#endif
-
-    strncpy(l_server->address, a_addr ? a_addr : "0.0.0.0", sizeof(l_server->address) ); // If NULL we listen everything
-    l_server->port = a_port;
     l_server->type = a_type;
-
-    if(l_server->type == SERVER_TCP)
+    if (l_server->type != DAP_SERVER_LOCAL)
+        l_server->port = a_port;
+    // Create socket
+    l_server->socket_listener = INVALID_SOCKET;
+    switch (l_server->type) {
+    case DAP_SERVER_TCP:
         l_server->socket_listener = socket(AF_INET, SOCK_STREAM, 0);
-    else if (l_server->type == SERVER_UDP)
+        break;
+    case DAP_SERVER_TCP_V6:
+        l_server->socket_listener = socket(AF_INET6, SOCK_STREAM, 0);
+        break;
+    case DAP_SERVER_UDP:
         l_server->socket_listener = socket(AF_INET, SOCK_DGRAM, 0);
+        break;
+#ifdef DAP_OS_UNIX
+    case DAP_SERVER_LOCAL:
+        l_server->socket_listener = socket(AF_LOCAL, SOCK_STREAM, 0);
+        break;
+#endif
+    default:
+        log_it(L_ERROR, "Specified server type is not implemented for your platform");
+        DAP_DELETE(l_server);
+        return NULL;
+    }
 #ifdef DAP_OS_WINDOWS
     if (l_server->socket_listener == INVALID_SOCKET) {
         log_it(L_ERROR, "Socket error: %d", WSAGetLastError());
 #else
     if (l_server->socket_listener < 0) {
         int l_errno = errno;
-        log_it (L_ERROR,"Socket error %s (%d)",strerror(l_errno), l_errno);
+        log_it (L_ERROR,"Socket error %s (%d)", strerror(l_errno), l_errno);
 #endif
         DAP_DELETE(l_server);
         return NULL;
     }
 
     log_it(L_NOTICE,"Listen socket %"DAP_FORMAT_SOCKET" created...", l_server->socket_listener);
-    int reuse=1;
-
+    int reuse = 1;
     if (setsockopt(l_server->socket_listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) < 0)
         log_it(L_WARNING, "Can't set up REUSEADDR flag to the socket");
-    reuse=1;
+    reuse = 1;
 #ifdef SO_REUSEPORT
     if (setsockopt(l_server->socket_listener, SOL_SOCKET, SO_REUSEPORT, (const char*)&reuse, sizeof(reuse)) < 0)
         log_it(L_WARNING, "Can't set up REUSEPORT flag to the socket");
 #endif
 
-//create socket
-    l_server->listener_addr.sin_family = AF_INET;
-    l_server->listener_addr.sin_port = htons(l_server->port);
-    inet_pton(AF_INET, l_server->address, &(l_server->listener_addr.sin_addr));
+    void *l_addr_ptr = NULL;
+    char *l_addr = a_addr;
+    switch (l_server->type) {
+    case DAP_SERVER_TCP:
+    case DAP_SERVER_UDP:
+        if (!l_addr)
+            l_addr = "0.0.0.0";
+        l_server->listener_addr.sin_family = AF_INET;
+        l_server->listener_addr.sin_port = htons(l_server->port);
+        l_addr_ptr = &l_server->listener_addr.sin_addr;
+        break;
+    case DAP_SERVER_TCP_V6:
+        if (!l_addr)
+            l_addr = "::0";
+        l_server->listener_addr_v6.sin_family = AF_INET6;
+        l_server->listener_addr_v6.sin_port = htons(l_server->port);
+        l_addr_ptr = &l_server->listener_addr_v6.sin6_addr;
+    default:
+        break;
+    }
 
-    if(s_server_run(l_server,a_callbacks)==0)
-        return l_server;
-    else
-        return NULL;
+    if (l_server->type != DAP_SERVER_LOCAL) {
+        if (inet_pton(AF_INET, l_addr, &l_addr_ptr) <= 0) {
+            log_it(L_ERROR, "Can't convert address %s to digital form", l_addr);
+            goto clean_n_quit;
+        }
+        strncpy(l_server->address, l_addr, sizeof(l_server->address)); // If NULL we listen everything
+    }
+#ifdef DAP_OS_UNIX
+    else {
+        if (!a_addr) {
+            log_it(L_ERROR, "Listener path unspecified");
+            goto clean_n_quit;
+        }
+        l_server->listener_path.sun_family = AF_UNIX;
+        strncpy(l_server->listener_path.sun_path, a_path, sizeof(l_server->listener_path.sun_path) - 1);
+        if (access(l_server->listener_path.sun_path, R_OK) == -1) {
+            log_it(L_ERROR, "Listener path %s is unavailable", l_server->listener_path.sun_path);
+            goto clean_n_quit;
+        }
+        unlink(l_server->listener_path.sun_path);
+    }
+#endif
+
+    if (s_server_run(l_server,a_callbacks))
+        goto clean_n_quit;
+
+#ifdef DAP_OS_UNIX
+    if (l_server->type == DAP_SERVER_LOCAL) {
+        mode_t l_listen_unix_socket_permissions = a_port;
+        chmod(l_server->listener_path.sun_path, l_listen_unix_socket_permissions);
+    }
+#endif
+
+    return l_server;
+
+clean_n_quit:
+    closesocket(l_server->socket_listener);
+    DAP_DELETE(l_server);
+    return NULL;
 }
 
 /**
@@ -316,8 +339,6 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
         dap_worker_t *l_w = dap_events_worker_get(l_worker_id);
         assert(l_w);
         dap_events_socket_t * l_es = dap_events_socket_wrap2( a_server, a_server->socket_listener, &l_callbacks);
-        a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
-
         if (l_es) {
             l_es->type = a_server->type == SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
             // Prepare for multi thread listening
@@ -349,7 +370,6 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
             l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
         #endif
         #endif
-        a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
         l_es->type = a_server->type == SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
         l_es->_inheritor = a_server;
         pthread_mutex_lock(&a_server->started_mutex);
@@ -400,7 +420,7 @@ static void s_es_server_error(dap_events_socket_t *a_es, int a_arg)
  * @param a_remote_socket
  * @param a_remote_addr
  */
-static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr *a_remote_addr)
+static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr)
 {
     socklen_t a_remote_addr_size = sizeof(*a_remote_addr);
     a_es->buf_in_size = 0; // It should be 1 so we reset it to 0

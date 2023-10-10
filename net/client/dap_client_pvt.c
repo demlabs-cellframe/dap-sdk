@@ -1360,8 +1360,6 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
     }
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
     l_client_pvt->stream->esocket = NULL; // Prevent to delete twice
-    if (l_client_pvt->stream && l_client_pvt->stream->node.uint64)
-        dap_stream_delete_addr(l_client_pvt->stream->node, false);
     s_stage_status_after(l_client_pvt);
     a_es->_inheritor = NULL; // To prevent delete in reactor
 }
