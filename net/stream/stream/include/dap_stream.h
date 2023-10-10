@@ -42,12 +42,8 @@
 typedef struct dap_stream_ch dap_stream_ch_t;
 typedef struct dap_stream_worker dap_stream_worker_t;
 
-typedef enum dap_stream_sign_group {
-    UNSIGNED = 0,
-    BASE_NODE_SIGN,
-} dap_stream_sign_group_t;
-
 typedef struct dap_stream {
+    dap_stream_node_addr_t node;
     int id;
     dap_stream_session_t * session;
     dap_events_socket_t * esocket; // Connection
@@ -59,7 +55,7 @@ typedef struct dap_stream {
     bool is_active;
 
     char * service_key;
-    bool is_client_to_uplink ;
+    bool is_client_to_uplink;
 
     struct dap_stream_pkt * in_pkt;
     struct dap_stream_pkt *pkt_buf_in;
@@ -70,23 +66,28 @@ typedef struct dap_stream {
     size_t buf_fragments_size_total;// Full size of all fragments
     size_t buf_fragments_size_filled;// Received size
 
-    //uint8_t buf[STREAM_BUF_SIZE_MAX];
-    //uint8_t pkt_cache[DAP_EVENTS_SOCKET_BUF_SIZE];
-
     dap_stream_ch_t **channel;
     size_t channel_count;
-
-    size_t frame_sent; // Frame counter
 
     size_t seq_id;
     size_t stream_size;
     size_t client_last_seq_id_packet;
 
+    UT_hash_handle hh;
     struct dap_stream *prev, *next;
-
-    dap_stream_sign_group_t sign_group;
-    dap_stream_node_addr_t node;
 } dap_stream_t;
+
+typedef struct dap_stream_info {
+    dap_stream_node_addr_t addr;
+    struct in_addr ipv4;
+    struct in6_addr ipv6;
+    uint16_t port;
+    char *channels;
+    size_t total_packets_sent;
+    bool is_uplink;
+    dap_events_socket_uuid_t esocket_uuid;
+    dap_stream_worker_t *stream_worker;
+} dap_stream_info_t;
 
 typedef void (*dap_stream_callback)(dap_stream_t *, void *);
 
@@ -108,7 +109,6 @@ size_t dap_stream_data_proc_write(dap_stream_t * a_stream);
 void dap_stream_delete_unsafe(dap_stream_t * a_stream);
 void dap_stream_proc_pkt_in(dap_stream_t * sid);
 
-void dap_stream_es_rw_states_update(struct dap_stream *a_stream);
 void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
@@ -119,6 +119,7 @@ int dap_stream_add_addr(dap_stream_node_addr_t a_addr, void *a_id);
 int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full);
 int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
-int dap_stream_change_id(void  *a_old, uint64_t a_new);
+int dap_stream_change_id(void *a_old, uint64_t a_new);
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t a_addr, dap_worker_t **a_worker);
 dap_stream_node_addr_t dap_stream_get_addr_from_sign(dap_sign_t *a_sign);
+int dap_stream_get_link_info(dap_stream_node_addr_t a_addr, dap_stream_info_t *a_out_info);

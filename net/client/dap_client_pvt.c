@@ -506,7 +506,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->stream_es->_inheritor = a_client_pvt->client;
                     a_client_pvt->stream = dap_stream_new_es_client(a_client_pvt->stream_es);
                     assert(a_client_pvt->stream);
-                    a_client_pvt->stream->is_client_to_uplink = true;
                     a_client_pvt->stream->session = dap_stream_session_pure_new(); // may be from in packet?
 
                     // new added, whether it is necessary?

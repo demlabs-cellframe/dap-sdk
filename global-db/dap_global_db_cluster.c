@@ -22,6 +22,7 @@ You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "dap_common.h"
 #include "dap_global_db.h"
 #include "dap_global_db_cluster.h"
 #include "dap_global_db_pkt.h"
@@ -42,11 +43,29 @@ void dap_global_db_cluster_deinit()
 
 }
 
+static bool s_group_match_mask(const char *a_group, const char *a_mask)
+{
+    dap_return_val_if_fail(a_group && a_mask && *a_group && *a_mask, false);
+    const char *l_group_tail = a_group + strlen(a_group);           // Pointer to trailng zero
+    if (!strcmp(l_group_tail - sizeof(DAP_GLOBAL_DB_DEL_SUFFIX), DAP_GLOBAL_DB_DEL_SUFFIX))
+        l_group_tail -= sizeof(DAP_GLOBAL_DB_DEL_SUFFIX);           // Pointer to '.' of .del group suffix
+    const char *l_mask_tail = a_mask + strlen(a_mask);
+    const char *l_group_it = a_group, *l_mask_it = a_mask;
+    const char *l_wildcard = strchr(a_mask, '*');
+    while (l_mask_it < (l_wildcard ? l_wildcard : l_mask_tail) &&
+                l_group_it < l_group_tail)
+        if (l_group_it++ != l_mask_it++)
+            return false;
+    if (l_mask_it == l_wildcard && ++l_mask_it < l_mask_tail)
+        return strstr(l_group_it, l_mask_it);
+    return true;
+}
+
 dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group_name)
 {
     dap_global_db_cluster_t *it;
     DL_FOREACH(a_dbi->clusters, it)
-        if (!dap_fnmatch(it->groups_mask, a_group_name, 0))
+        if (s_group_match_mask(a_group_name, it->groups_mask))
             return it;
     return NULL;
 }

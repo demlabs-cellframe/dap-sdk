@@ -256,10 +256,9 @@ typedef struct dap_events_socket {
 
     // Remote address, port and others
     struct sockaddr_in remote_addr;
-    char    remote_addr_str [INET_ADDRSTRLEN + 1];
+    char    remote_addr_str[INET_ADDRSTRLEN + 1];
     char    remote_addr_str6[INET6_ADDRSTRLEN + 1];
     short   remote_port;
-
 
     // Links to related objects
     dap_context_t * context;

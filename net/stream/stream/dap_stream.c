@@ -60,20 +60,18 @@
 #define LOG_TAG "dap_stream"
 
 typedef struct authorized_stream {
-    dap_stream_node_addr_t node;
     union {
         unsigned long num;
         void *pointer;
     } id;
-    dap_events_socket_uuid_t esocket_uuid;
-    dap_stream_worker_t *stream_worker;
+    dap_stream_node_addr_t node;
     UT_hash_handle hh;
 } authorized_stream_t;
 
-static authorized_stream_t *s_authorized_streams = NULL;
-static authorized_stream_t *s_authorized_streams_dublicate = NULL;
-static authorized_stream_t *s_prep_authorized_streams = NULL;
-static pthread_rwlock_t     s_steams_lock = PTHREAD_RWLOCK_INITIALIZER;
+static pthread_rwlock_t     s_streams_lock = PTHREAD_RWLOCK_INITIALIZER;    // Lock for all tables and list under
+static authorized_stream_t  *s_prep_authorized_streams = NULL;              // Authorized streams
+static dap_stream_t         *s_authorized_streams = NULL;                   // Hashtable by addr
+static dap_stream_t         *s_streams = NULL;                              // Double-linked list
 
 static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream);
 
@@ -109,9 +107,6 @@ static bool s_debug = false;
 bool dap_stream_get_dump_packet_headers(){ return  s_dump_packet_headers; }
 
 static bool s_detect_loose_packet(dap_stream_t * a_stream);
-
-static pthread_mutex_t s_dap_stream_uplink_table_mutex;
-static pthread_mutex_t s_dap_stream_downlink_table_mutex;
 
 dap_enc_key_type_t s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAES;
 
@@ -159,9 +154,6 @@ int dap_stream_init(dap_config_t * a_config)
     s_dap_stream_load_preferred_encryption_type(a_config);
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config,"general","debug_dump_stream_headers",false);
     s_debug = dap_config_get_item_bool_default(g_config,"stream","debug",false);
-    pthread_mutex_init(&s_dap_stream_uplink_table_mutex, NULL);
-    pthread_mutex_init(&s_dap_stream_downlink_table_mutex, NULL);
-
 #ifdef  DAP_SYS_DEBUG
     for (int i = 0; i < MEMSTAT$K_NR; i++)
         dap_memstat_reg(&s_memstat[i]);
@@ -183,8 +175,6 @@ int dap_stream_init(dap_config_t * a_config)
 void dap_stream_deinit()
 {
     dap_stream_ch_deinit( );
-    pthread_mutex_destroy(&s_dap_stream_uplink_table_mutex);
-    pthread_mutex_destroy(&s_dap_stream_downlink_table_mutex);
 }
 
 /**
@@ -222,10 +212,10 @@ void dap_stream_add_proc_udp(dap_server_t *a_udp_server)
 }
 
 /**
- * @brief stream_states_update
+ * @brief s_stream_states_update
  * @param a_stream stream instance
  */
-void stream_states_update(struct dap_stream *a_stream)
+static void s_stream_states_update(dap_stream_t *a_stream)
 {
     if(a_stream->conn_http)
         a_stream->conn_http->state_write=DAP_HTTP_CLIENT_STATE_START;
@@ -260,17 +250,17 @@ dap_stream_t * stream_new_udp(dap_events_socket_t * a_esocket)
     l_stm->esocket = a_esocket;
     l_stm->esocket_uuid = a_esocket->uuid;
     a_esocket->_inheritor = l_stm;
-
+    s_stream_add_to_list(l_stm);
     log_it(L_NOTICE,"New stream instance udp");
     return l_stm ;
 }
 
 /**
- * @brief check_session CHeck session status, open if need
+ * @brief s_check_session CHeck session status, open if need
  * @param id session id
- * @param cl DAP client structure
+ * @param a_esocket stream event socket
  */
-void check_session( unsigned int a_id, dap_events_socket_t *a_esocket )
+static void s_check_session( unsigned int a_id, dap_events_socket_t *a_esocket )
 {
     dap_stream_session_t *l_session = NULL;
 
@@ -308,7 +298,7 @@ void check_session( unsigned int a_id, dap_events_socket_t *a_esocket )
         if ( l_session->active_channels[i])
             dap_stream_ch_new( l_stream, l_session->active_channels[i] );
 
-    stream_states_update( l_stream );
+    s_stream_states_update(l_stream);
 
     dap_events_socket_set_readable_unsafe( a_esocket, true );
 
@@ -336,7 +326,6 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
     l_ret->conn_http = a_http_client;
     l_ret->seq_id = 0;
     l_ret->client_last_seq_id_packet = (size_t)-1;
-    l_ret->sign_group = UNSIGNED;
     // Start server keep-alive timer
     dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid) {
@@ -352,6 +341,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
     l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
     a_http_client->_inheritor = l_ret;
+    s_stream_add_to_list(l_ret);
     log_it(L_NOTICE,"New stream instance");
     return l_ret;
 }
@@ -368,17 +358,15 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket)
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
-
 #ifdef  DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].alloc_nr, 1);
 #endif
-
-
     l_ret->esocket = a_esocket;
     l_ret->esocket_uuid = a_esocket->uuid;
     l_ret->is_client_to_uplink = true;
     l_ret->esocket->callbacks.worker_assign_callback = s_client_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_client_callback_worker_unassign;
+    s_stream_add_to_list(l_ret);
     return l_ret;
 }
 
@@ -408,7 +396,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].free_nr, 1);
 #endif
 
-    dap_stream_delete_addr(a_stream->node, true);
+    s_stream_delete_from_list(a_stream);
     DAP_DEL_Z(a_stream->buf_fragments);
     DAP_DEL_Z(a_stream->pkt_buf_in);
     DAP_DELETE(a_stream);
@@ -437,18 +425,12 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
  * @param a_http_client HTTP client structure
  * @param a_arg Not used
  */
-void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg)
+void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_ARG *a_arg)
 {
-    (void) a_arg;
-
-   // char * raw=0;
-   // int raw_size;
     unsigned int l_id=0;
-
     //log_it(L_DEBUG,"Prepare data stream");
     if(a_http_client->in_query_string[0]){
         log_it(L_INFO,"Query string [%s]",a_http_client->in_query_string);
-//        if(sscanf(cl_ht->in_query_string,"fj913htmdgaq-d9hf=%u",&id)==1){
         if(sscanf(a_http_client->in_query_string,"session_id=%u",&l_id) == 1 ||
                 sscanf(a_http_client->in_query_string,"fj913htmdgaq-d9hf=%u",&l_id) == 1) {
             dap_stream_session_t *l_ss = dap_stream_session_id_mt(l_id);
@@ -459,33 +441,31 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg)
             } else {
                 log_it(L_INFO,"Session id %u was found with channels = %s", l_id, l_ss->active_channels);
                 if(!dap_stream_session_open(l_ss)){ // Create new stream
-                    dap_stream_t *l_sid = s_stream_new(a_http_client);
-                    if (!l_sid) {
+                    dap_stream_t *l_stream = s_stream_new(a_http_client);
+                    if (!l_stream) {
                         log_it(L_CRITICAL, "Memory allocation error");
                         a_http_client->reply_status_code=404;
                         return;
                     }
-                    l_sid->session = l_ss;
+                    l_stream->session = l_ss;
                     dap_http_header_t *header = dap_http_header_find(a_http_client->in_headers, "Service-Key");
                     if (header)
                         l_ss->service_key = strdup(header->value);
                     size_t count_channels = strlen(l_ss->active_channels);
                     for(size_t i = 0; i < count_channels; i++) {
-                        dap_stream_ch_t * l_ch = dap_stream_ch_new(l_sid, l_ss->active_channels[i]);
+                        dap_stream_ch_t * l_ch = dap_stream_ch_new(l_stream, l_ss->active_channels[i]);
                         l_ch->ready_to_read = true;
-                        //l_sid->channel[i]->ready_to_write = true;
+                        //l_stream->channel[i]->ready_to_write = true;
                     }
 
                     a_http_client->reply_status_code=200;
                     strcpy(a_http_client->reply_reason_phrase,"OK");
-                    stream_states_update(l_sid);
+                    s_stream_states_update(l_stream);
                     a_http_client->state_read=DAP_HTTP_CLIENT_STATE_DATA;
                     a_http_client->state_write=DAP_HTTP_CLIENT_STATE_START;
                     dap_events_socket_set_readable_unsafe(a_http_client->esocket,true);
-                    dap_events_socket_set_writable_unsafe(a_http_client->esocket,true); // Dirty hack, because previous function shouldn't
-                    //                                                                    // set write flag off but it does!
-
-                    dap_stream_add_stream_info(l_sid, l_sid->session->id);
+                    dap_events_socket_set_writable_unsafe(a_http_client->esocket,true);
+                    dap_stream_add_stream_info(l_stream, l_stream->session->id);
                 }else{
                     log_it(L_ERROR,"Can't open session id %u", l_id);
                     a_http_client->reply_status_code=404;
@@ -550,6 +530,7 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
     assert(l_http_client);
     dap_stream_t * l_stream = DAP_STREAM(l_http_client);
     assert(l_stream);
+    s_stream_add_to_list(l_stream);
     // Restart server keepalive timer if it was unassigned before
     if (!l_stream->keepalive_timer) {
         dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
@@ -577,6 +558,7 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
     assert(l_http_client);
     dap_stream_t * l_stream = DAP_STREAM(l_http_client);
     assert(l_stream);
+    s_stream_delete_from_list(l_stream);
     DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
     dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
     l_stream->keepalive_timer = NULL;
@@ -589,6 +571,7 @@ static void s_client_callback_worker_assign(dap_events_socket_t * a_esocket, dap
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     dap_stream_t *l_stream = l_client_pvt->stream;
     assert(l_stream);
+    s_stream_add_to_list(l_stream);
     // Start client keepalive timer or restart it, if it was unassigned before
     if (!l_stream->keepalive_timer) {
         dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
@@ -612,6 +595,7 @@ static void s_client_callback_worker_unassign(dap_events_socket_t * a_esocket, d
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     dap_stream_t *l_stream = l_client_pvt->stream;
     assert(l_stream);
+    s_stream_delete_from_list(l_stream);
     DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
     dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
     l_stream->keepalive_timer = NULL;
@@ -908,7 +892,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     case STREAM_PKT_TYPE_SERVICE_PACKET: {
         stream_srv_pkt_t *l_srv_pkt = (stream_srv_pkt_t *)a_pkt->data;
         uint32_t l_session_id = l_srv_pkt->session_id;
-        check_session(l_session_id, a_stream->esocket);
+        s_check_session(l_session_id, a_stream->esocket);
     } break;
     case STREAM_PKT_TYPE_KEEPALIVE: {
         //log_it(L_DEBUG, "Keep alive check recieved");
@@ -1038,17 +1022,17 @@ static bool s_callback_server_keepalive(void *a_arg)
  */
 int dap_stream_add_addr(dap_stream_node_addr_t a_addr, void *a_id)
 {
-    authorized_stream_t *l_a_stream = DAP_NEW_Z(authorized_stream_t);
-    if(!l_a_stream) {
+    authorized_stream_t *l_auth_stream = DAP_NEW_Z(authorized_stream_t);
+    if(!l_auth_stream) {
         log_it(L_CRITICAL, "Memory allocation error");
         return -1;
     }
-    l_a_stream->node.uint64 = a_addr.uint64;
-    l_a_stream->id.pointer = a_id;
+    l_auth_stream->node.uint64 = a_addr.uint64;
+    l_auth_stream->id.pointer = a_id;
 
-    assert(!pthread_rwlock_wrlock(&s_steams_lock));
-        HASH_ADD(hh, s_prep_authorized_streams, id, sizeof(l_a_stream->id), l_a_stream);
-    assert(!pthread_rwlock_unlock(&s_steams_lock));
+    assert(!pthread_rwlock_wrlock(&s_streams_lock));
+        HASH_ADD(hh, s_prep_authorized_streams, id, sizeof(l_auth_stream->id), l_auth_stream);
+    assert(!pthread_rwlock_unlock(&s_streams_lock));
     return 0;
 }
 
@@ -1061,42 +1045,58 @@ int dap_stream_add_addr(dap_stream_node_addr_t a_addr, void *a_id)
 int dap_stream_change_id(void *a_old, uint64_t a_new)
 {
     dap_return_val_if_pass(!a_old, -1);
-    authorized_stream_t *l_a_stream = NULL;
+    authorized_stream_t *l_auth_stream = NULL;
     int l_ret = -1;
-    assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_FIND(hh, s_prep_authorized_streams, &a_old, sizeof(a_old), l_a_stream);
-    if (l_a_stream) {
-        HASH_DEL(s_prep_authorized_streams, l_a_stream);
-        l_a_stream->id.num = a_new;
-        HASH_ADD(hh, s_prep_authorized_streams, id, sizeof(l_a_stream->id), l_a_stream);
+    assert(!pthread_rwlock_wrlock(&s_streams_lock));
+    HASH_FIND(hh, s_prep_authorized_streams, &a_old, sizeof(a_old), l_auth_stream);
+    if (l_auth_stream) {
+        HASH_DEL(s_prep_authorized_streams, l_auth_stream);
+        l_auth_stream->id.num = a_new;
+        HASH_ADD(hh, s_prep_authorized_streams, id, sizeof(l_auth_stream->id), l_auth_stream);
         l_ret = 0;
     }
-    assert(!pthread_rwlock_unlock(&s_steams_lock));
+    assert(!pthread_rwlock_unlock(&s_streams_lock));
     return l_ret;
 }
 
-/**
- * @brief s_add_stream_info Adding autorized stream to target hash tables
- * @param a_hash_table - using hashtable
- * @param a_item - inserted item
- * @param a_stream - using stream
- * @return  0 if ok others if not
- */
-int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream)
+int s_stream_add_to_hashtable(dap_stream_t *a_stream)
 {
-    dap_return_val_if_pass(!a_hash_table || !a_item || !a_stream, -1);
-    authorized_stream_t *l_a_stream = NULL;
-    HASH_FIND(hh, *a_hash_table, &a_item->node, sizeof(a_item->node), l_a_stream);
-    if (l_a_stream){
-        log_it(L_WARNING,"Trying replace stream in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(l_a_stream->node));
+    dap_stream_t *l_double = NULL;
+    HASH_FIND(hh, s_streams, &a_stream->node, sizeof(a_stream->node), l_double);
+    if (l_double) {
+        log_it(L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(l_auth_stream->node));
         return -1;
     }
-    a_item->esocket_uuid = a_stream->esocket_uuid;
-    a_item->stream_worker = a_stream->stream_worker;
-    a_stream->node.uint64 = a_item->node.uint64;
-    a_stream->sign_group = BASE_NODE_SIGN;
-    HASH_ADD(hh, *a_hash_table, node, sizeof(a_item->node), a_item);
+    HASH_ADD(hh, s_streams, node, sizeof(a_stream->node), a_stream);
     return 0;
+}
+
+void s_stream_delete_from_list(dap_stream_t *a_stream)
+{
+    dap_return_if_fail(a_stream);
+    DL_DELETE(s_streams, a_stream);
+    assert(!pthread_rwlock_wrlock(&s_streams_lock));
+    if (a_stream->node.uint64) {
+        // It's an authorized stream, try to replace it in hastable
+        HASH_DEL(s_streams, a_stream);
+        dap_stream_t *l_stream;
+        DL_FOREACH(s_streams, l_stream)
+            if (l_stream->node.uint64 == a_stream->node.uint64)
+                s_stream_add_to_hashtable(l_stream);
+    }
+    assert(!pthread_rwlock_unlock(&s_streams_lock));
+}
+
+int s_stream_add_to_list(dap_stream_t *a_stream)
+{
+    dap_return_val_if_fail(a_stream, -1);
+    int l_ret = 0;
+    assert(!pthread_rwlock_wrlock(&s_streams_lock));
+    DL_APPEND(s_streams, a_stream);
+    if (a_stream->node.uint64)
+        l_ret = s_stream_add_to_hashtable(a_stream);
+    assert(!pthread_rwlock_unlock(&s_streams_lock));
+    return l_ret;
 }
 
 /**
@@ -1108,50 +1108,16 @@ int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id)
 {
     dap_return_val_if_pass(!a_stream, -1);
-    authorized_stream_t *l_a_stream = NULL;
+    authorized_stream_t *l_auth_stream = NULL;
     int l_ret = 0;
-    assert(!pthread_rwlock_wrlock(&s_steams_lock));
-    HASH_FIND(hh, s_prep_authorized_streams, &a_id, sizeof(a_id), l_a_stream);
-    if (l_a_stream) {
-        HASH_DEL(s_prep_authorized_streams, l_a_stream);
-        if(s_add_stream_info(&s_authorized_streams, l_a_stream, a_stream) &&
-            s_add_stream_info(&s_authorized_streams_dublicate, l_a_stream, a_stream)) {
-            DAP_DELETE(l_a_stream);  // free memory if we have dublicates in both tables
-            l_ret = -1;
-        }
+    assert(!pthread_rwlock_wrlock(&s_streams_lock));
+    HASH_FIND(hh, s_prep_authorized_streams, &a_id, sizeof(a_id), l_auth_stream);
+    if (l_auth_stream && l_auth_stream->node.uint64) {
+        a_stream->node.uint64 = l_auth_stream->node.uint64;
+        s_stream_add_to_hashtable(a_stream);
     }
-    assert(!pthread_rwlock_unlock(&s_steams_lock));
+    assert(!pthread_rwlock_unlock(&s_streams_lock));
     return l_ret;
-}
-
-/**
- * @brief dap_stream_delete_addr Delete autorized stream from hash table
- * and memory free
- * @param a_node - autorrized node address
- * @param a_full - search and delete stream in s_authorized_streams_dublicate
- * @return  0 if ok others if not
- */
-int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full)
-{
-    authorized_stream_t *l_a_stream = NULL;
-    assert(!pthread_rwlock_wrlock(&s_steams_lock));
-        HASH_FIND(hh, s_authorized_streams, &a_addr, sizeof(a_addr), l_a_stream);
-        if (l_a_stream) {
-            HASH_DEL(s_authorized_streams, l_a_stream);
-            DAP_DEL_Z(l_a_stream);
-        }
-        // if full - clean all, if not - transfer from dublicate to main table
-        HASH_FIND(hh, s_authorized_streams_dublicate, &a_addr, sizeof(a_addr), l_a_stream);
-        if (l_a_stream) {
-            HASH_DEL(s_authorized_streams_dublicate, l_a_stream);
-            if (a_full) {
-                DAP_DEL_Z(l_a_stream);
-            } else {
-                HASH_ADD(hh, s_authorized_streams, node, sizeof(l_a_stream->node), l_a_stream);
-            }
-        }
-    assert(!pthread_rwlock_unlock(&s_steams_lock));
-    return 0;
 }
 
 /**
@@ -1164,23 +1130,23 @@ int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full)
 int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id)
 {
     dap_return_val_if_pass(!a_num_id && !a_pointer_id, -1);
-    authorized_stream_t *l_a_stream = NULL;
-    assert(!pthread_rwlock_wrlock(&s_steams_lock));
+    authorized_stream_t *l_auth_stream = NULL;
+    assert(!pthread_rwlock_wrlock(&s_streams_lock));
         if(a_num_id) {
-            HASH_FIND(hh, s_prep_authorized_streams, &a_num_id, sizeof(a_num_id), l_a_stream);
-            if (l_a_stream) {
-                HASH_DEL(s_prep_authorized_streams, l_a_stream);
-                DAP_DEL_Z(l_a_stream);
+            HASH_FIND(hh, s_prep_authorized_streams, &a_num_id, sizeof(a_num_id), l_auth_stream);
+            if (l_auth_stream) {
+                HASH_DEL(s_prep_authorized_streams, l_auth_stream);
+                DAP_DEL_Z(l_auth_stream);
             }
         }
         if(a_pointer_id) {
-            HASH_FIND(hh, s_prep_authorized_streams, &a_pointer_id, sizeof(a_pointer_id), l_a_stream);
-            if (l_a_stream) {
-                HASH_DEL(s_prep_authorized_streams, l_a_stream);
-                DAP_DEL_Z(l_a_stream);
+            HASH_FIND(hh, s_prep_authorized_streams, &a_pointer_id, sizeof(a_pointer_id), l_auth_stream);
+            if (l_auth_stream) {
+                HASH_DEL(s_prep_authorized_streams, l_auth_stream);
+                DAP_DEL_Z(l_auth_stream);
             }
         }
-    assert(!pthread_rwlock_unlock(&s_steams_lock));
+    assert(!pthread_rwlock_unlock(&s_streams_lock));
     return 0;
 }
 
@@ -1193,13 +1159,17 @@ int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id)
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t a_addr, dap_worker_t **a_worker)
 {
     dap_return_val_if_pass(!a_worker, 0);
-    authorized_stream_t *l_a_stream = NULL;
-    assert(!pthread_rwlock_wrlock(&s_steams_lock));
-        HASH_FIND(hh, s_authorized_streams, &a_addr, sizeof(a_addr), l_a_stream);
-    assert(!pthread_rwlock_unlock(&s_steams_lock));
-    dap_return_val_if_pass(!l_a_stream, 0);  // return if not finded
-    *a_worker = l_a_stream->stream_worker->worker;
-    return l_a_stream->esocket_uuid;
+    dap_stream_t *l_auth_stream = NULL;
+    dap_events_socket_uuid_t l_ret = {};
+    assert(!pthread_rwlock_wrlock(&s_streams_lock));
+    HASH_FIND(hh, s_authorized_streams, &a_addr, sizeof(a_addr), l_auth_stream);
+    if (l_auth_stream) {
+        if (a_worker)
+            *a_worker = l_auth_stream->stream_worker->worker;
+        l_ret = l_auth_stream->esocket_uuid;
+    }
+    assert(!pthread_rwlock_unlock(&s_streams_lock));
+    return l_ret;
 }
 
 /**
@@ -1227,4 +1197,25 @@ dap_stream_node_addr_t dap_stream_get_addr_from_sign(dap_sign_t *a_sign) {
 
     log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_ret));
     return l_ret;
+}
+
+int dap_stream_get_link_info(dap_stream_node_addr_t a_addr, dap_stream_info_t *a_out_info)
+{
+    typedef struct dap_stream_info {
+        dap_stream_node_addr_t addr;
+        struct in_addr ipv4;
+        struct in6_addr ipv6;
+        uint16_t port;
+        char *channels;
+        size_t total_packets_sent;
+        bool is_uplink;
+        dap_events_socket_uuid_t esocket_uuid;
+        dap_stream_worker_t *stream_worker;
+    } dap_stream_info_t;
+    dap_chain_net_add_downlink(l_net, l_ch->stream_worker, l_ch->uuid, l_ch->stream->esocket_uuid,
+                               l_ch->stream->esocket->hostaddr[0]
+            ? l_ch->stream->esocket->hostaddr : l_ch->stream->esocket->remote_addr_str,
+            l_ch->stream->esocket->service[0]
+            ? strtoll(l_ch->stream->esocket->service, NULL, 10)
+            : l_ch->stream->esocket->remote_addr.sin_port);
 }

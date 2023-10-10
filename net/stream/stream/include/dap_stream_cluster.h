@@ -36,8 +36,9 @@ typedef struct dap_cluster dap_cluster_t;
 typedef struct dap_cluster_member {
     dap_stream_node_addr_t addr;    // Member addr, HT key
     int role;                       // Member role & access rights (user-defined enum)
-    dap_cluster_t *cluster;         // Cluster pointer
+    bool persistent;                // Persistent members won't be removed with its links
     void *info;                     // Member info pointer
+    dap_cluster_t *cluster;         // Cluster pointer
     UT_hash_handle hh;
 } dap_cluster_member_t;
 
@@ -72,3 +73,4 @@ int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_
 void dap_cluster_member_delete(dap_cluster_member_t *a_member);
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
 dap_list_t *dap_cluster_get_shuffle_members(dap_cluster_t *a_cluster);
+char *dap_cluster_get_links_info(dap_cluster_t *a_cluster);
