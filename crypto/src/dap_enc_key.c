@@ -446,7 +446,6 @@ uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
  */
 uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len)
 {
-
     //todo: why are we changing a_sign_len after we have already used it in a function call?
     uint8_t *l_data = NULL;
     switch (a_key_type) {
@@ -847,6 +846,45 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
     return l_ret;
 }
 
+void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
+                                        size_t a_kex_size, const void* a_seed,
+                                        size_t a_seed_size, size_t a_key_size) {
+    if (DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS != a_key_type)
+        return;
+
+    
+    dap_enc_key_t * l_key = NULL;
+    const char *l_msg = "This need sign";
+    unsigned char       pk[sphincsplus_crypto_sign_publickeybytes()], sk[sphincsplus_crypto_sign_secretkeybytes()];
+    unsigned char *l_smsg = DAP_NEW_Z_SIZE(unsigned char, dap_sphincsplus_crypto_sign_size());
+    size_t l_smsg_size = 0;
+    if ((size_t)a_key_type < c_callbacks_size) {
+        l_key = DAP_NEW_Z(dap_enc_key_t);
+        if (!l_key) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            return NULL;
+        }
+        if(s_callbacks[a_key_type].new_generate_callback) {
+            s_callbacks[a_key_type].new_generate_callback( l_key, a_kex_buf, a_kex_size, a_seed, a_seed_size, a_key_size);
+        }
+
+        printf("!!!!!!!!!!!!!!!Key created\n");
+        if(s_callbacks[a_key_type].enc_na){
+            l_smsg_size = s_callbacks[a_key_type].enc_na(l_key, l_msg, strlen(l_msg), l_smsg, 50000);
+        }
+        printf("!!!!!!!!!!!!!!!Msg signed\n");
+        if(s_callbacks[a_key_type].dec_na){
+
+            printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key, l_msg, strlen(l_msg), l_smsg, l_smsg_size));
+        }
+        printf("!!!!!!!!!!!!!!!Sign checked\n");
+        DAP_DEL_Z(l_key);
+
+    }
+
+
+}
+
 /**
  * @brief dap_enc_key_new
  * @param a_key_type
@@ -885,6 +923,7 @@ dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t a_key_type, const voi
                                         size_t a_seed_size, size_t a_key_size)
 {
     dap_enc_key_t * l_ret = NULL;
+    s_temp_test_key(a_key_type, a_kex_buf, a_kex_size, a_seed, a_seed_size, a_key_size);
     if ((size_t)a_key_type < c_callbacks_size) {
         l_ret = dap_enc_key_new(a_key_type);
         if(s_callbacks[a_key_type].new_generate_callback) {

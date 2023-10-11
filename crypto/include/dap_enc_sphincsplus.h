@@ -31,4 +31,9 @@ size_t dap_enc_sig_sphincsplus_verify_sign(struct dap_enc_key *a_key, const void
 
 // DAP_STATIC_INLINE size_t dap_enc_falcon_calc_signature_unserialized_size() { return sizeof(falcon_signature_t); }
 
+unsigned long long dap_sphincsplus_crypto_sign_secretkeybytes();
+unsigned long long dap_sphincsplus_crypto_sign_publickeybytes();
+unsigned long long dap_sphincsplus_crypto_sign_bytes();
+unsigned long long dap_sphincsplus_crypto_sign_seedbytes();
+
 #endif //_DAP_ENC_SPHINCSPLUS_H

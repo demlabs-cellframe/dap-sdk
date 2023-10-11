@@ -66,20 +66,15 @@ void dap_enc_sig_sphincsplus_key_new_generate(struct dap_enc_key *a_key, const v
     a_key->pub_key_data_size = sphincsplus_crypto_sign_publickeybytes();
     if ( !(a_key->priv_key_data = malloc(a_key->priv_key_data_size)) || !(a_key->pub_key_data = malloc(a_key->pub_key_data_size)) ) {
         log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
+        return;
     };
 
-    int l_ret = sphincsplus_crypto_sign_seed_keypair(
-            (unsigned char *)a_key->pub_key_data,
-            (unsigned char *)a_key->priv_key_data,
-            l_seedbuf);
-    if(l_ret != 0) {
+    if(sphincsplus_crypto_sign_seed_keypair((unsigned char *)a_key->pub_key_data, (unsigned char *)a_key->priv_key_data, l_seedbuf)) {
         DAP_DEL_Z(a_key->priv_key_data);
         DAP_DEL_Z(a_key->pub_key_data);
         log_it(L_CRITICAL, "Error generating Sphincs key pair");
         return;
     }
-
 }
 
 size_t dap_enc_sig_sphincsplus_get_sign(struct dap_enc_key *a_key, const void *a_msg, const size_t a_msg_size,
@@ -89,10 +84,26 @@ size_t dap_enc_sig_sphincsplus_get_sign(struct dap_enc_key *a_key, const void *a
         log_it(L_ERROR, "Bad signature size");
         return 0;
     }
+    sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign;
+    l_sign->sig_data = DAP_NEW_Z_SIZE(uint8_t, sphincsplus_crypto_sign_bytes());
+    if (!l_sign->sig_data) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return 0;
+    }
+    size_t l_sig_len = 0;
 
-    unsigned long long l_sig_len = 0;
-    sphincsplus_crypto_sign(a_sign, &l_sig_len, (const unsigned char *)a_msg, a_msg_size, a_key->priv_key_data);
-        
+    sphincsplus_crypto_sign_signature(l_sign->sig_data, &l_sig_len, (const unsigned char *)a_msg, a_msg_size, a_key->priv_key_data);
+
+    l_sign->sig_params.sSPX_BYTES = SPX_BYTES;
+    l_sign->sig_params.sSPX_D = SPX_D;
+    l_sign->sig_params.sSPX_FORS_BYTES = SPX_FORS_BYTES;
+    l_sign->sig_params.sSPX_FORS_MSG_BYTES = SPX_FORS_MSG_BYTES;
+    l_sign->sig_params.sSPX_N = SPX_N;
+    l_sign->sig_params.sSPX_TREE_HEIGHT = SPX_TREE_HEIGHT;
+    l_sign->sig_params.sSPX_WOTS_BYTES = SPX_WOTS_BYTES;
+    l_sign->sig_params.sSPX_WOTS_LEN = SPX_WOTS_LEN;
+    l_sign->sig_len = SPX_BYTES;
+
     return l_sig_len;
 }
 
@@ -103,11 +114,11 @@ size_t dap_enc_sig_sphincsplus_verify_sign(struct dap_enc_key *a_key, const void
         log_it(L_ERROR, "Bad signature size");
         return 0;
     }
-
-    int l_ret = sphincsplus_crypto_sign_verify(a_sign, a_sign_size, a_msg, a_msg_size, a_key->pub_key_data);
-    if (l_ret != 0)
+    sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign;
+    int l_ret = sphincsplus_crypto_sign_verify(l_sign->sig_data, l_sign->sig_len, a_msg, a_msg_size, a_key->pub_key_data);
+    if (l_ret)
         log_it(L_ERROR, "Failed to verify signature");
-    return l_ret;
+    return l_ret < 0 ? 0 : l_ret;
 }
 
 // void dap_enc_sig_falcon_key_delete(struct dap_enc_key *key) {
@@ -447,3 +458,34 @@ size_t dap_enc_sig_sphincsplus_verify_sign(struct dap_enc_key *a_key, const void
 //     }
 // }
 
+/*
+ * Returns the length of a secret key, in bytes
+ */
+unsigned long long dap_sphincsplus_crypto_sign_secretkeybytes()
+{
+    return sphincsplus_crypto_sign_secretkeybytes();
+}
+
+/*
+ * Returns the length of a public key, in bytes
+ */
+unsigned long long dap_sphincsplus_crypto_sign_publickeybytes()
+{
+    return sphincsplus_crypto_sign_publickeybytes();
+}
+
+/*
+ * Returns the length of a signature, in bytes
+ */
+unsigned long long dap_sphincsplus_crypto_sign_size()
+{
+    return sizeof(sphincsplus_signature_t);
+}
+
+/*
+ * Returns the length of the seed required to generate a key pair, in bytes
+ */
+unsigned long long dap_sphincsplus_crypto_sign_seedbytes()
+{
+    return sphincsplus_crypto_sign_seedbytes();
+}
