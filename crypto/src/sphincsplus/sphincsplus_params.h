@@ -14,11 +14,11 @@ typedef struct {
 
 ///==========================================================================================
 typedef struct {
-  unsigned char *data;
+  uint8_t *data;
 } sphincsplus_private_key_t;
 
 typedef struct {
-  unsigned char *data;
+  uint8_t *data;
 } sphincsplus_public_key_t;
 
 typedef struct {

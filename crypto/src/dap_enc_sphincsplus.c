@@ -170,106 +170,61 @@ void dap_enc_sig_sphincsplus_key_delete(struct dap_enc_key *key) {
 //     return l_buf;
 // }
 
-// uint8_t* dap_enc_falcon_write_private_key(const falcon_private_key_t* a_private_key, size_t* a_buflen_out) {
-//     //Serialized key have format:
-//     // 8 first bytes - size of overall serialized key
-//     // 4 bytes - degree of key
-//     // 4 bytes - kind of key
-//     // 4 bytes - type of key
-//     // n bytes - private key data
+/* Serialize a private key. */
+uint8_t* dap_enc_sphincsplus_write_private_key(const sphincsplus_private_key_t* a_private_key, size_t *a_buflen_out)
+{
+    if (!a_private_key)
+        return NULL;
+    size_t l_secret_length = dap_sphincsplus_crypto_sign_secretkeybytes();
+    uint64_t l_buflen = sizeof(uint64_t) + l_secret_length;
+    byte_t *l_buf = DAP_NEW_Z_SIZE(byte_t, l_buflen);
+    if (!l_buf) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    }
+    memcpy(l_buf, &l_buflen, sizeof(uint64_t));
+    memcpy(l_buf + sizeof(uint64_t), a_private_key->data, l_secret_length);
 
-//     uint64_t l_buflen =
-//             sizeof(uint64_t) +
-//             sizeof(uint32_t) * 3 +
-//             FALCON_PRIVKEY_SIZE(a_private_key->degree);
+    if(a_buflen_out)
+        *a_buflen_out = l_buflen;
+    return l_buf;
+}
 
-//     uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_buflen);
-//     if (!l_buf) {
-//         log_it(L_CRITICAL, "Memory allocation error");
-//         return NULL;
-//     }
-//     uint32_t l_degree = a_private_key->degree;
-//     uint32_t l_kind = a_private_key->kind;
-//     uint32_t l_type = a_private_key->type;
-//     uint8_t *l_ptr = l_buf;
-//     *(uint64_t *)l_ptr = l_buflen; l_ptr += sizeof(uint64_t);
-//     *(uint32_t *)l_ptr = l_degree; l_ptr += sizeof(uint32_t);
-//     *(uint32_t *)l_ptr = l_kind; l_ptr += sizeof(uint32_t);
-//     *(uint32_t *)l_ptr = l_type; l_ptr += sizeof(uint32_t);
-//     memcpy(l_ptr, a_private_key->data, FALCON_PRIVKEY_SIZE(a_private_key->degree));
-//     assert(l_ptr + FALCON_PRIVKEY_SIZE(a_private_key->degree) - l_buf == (int64_t)l_buflen);
+/* Deserialize a private key. */
+sphincsplus_private_key_t *dap_enc_sphincsplus_read_private_key(const uint8_t *a_buf, size_t a_buflen)
+{
+    if(!a_buf ){
+        return NULL;
+    }
 
-//     if(a_buflen_out)
-//         *a_buflen_out = l_buflen;
+    if(a_buflen < sizeof(uint64_t)){
+        log_it(L_ERROR,"::read_private_key() Buflen %zd is smaller than first two fields(%zd)", a_buflen,sizeof(uint64_t) );
+        return NULL;
+    }
+    
+    uint64_t l_buflen = 0;
+    size_t l_secret_length = dap_sphincsplus_crypto_sign_secretkeybytes();
 
-//     return l_buf;
-// }
+    memcpy(&l_buflen, a_buf, sizeof(uint64_t));
+    if(l_buflen != (uint64_t) a_buflen)
+        return NULL;
 
-// falcon_private_key_t* dap_enc_falcon_read_private_key(const uint8_t *a_buf, size_t a_buflen) {
-//     if (!a_buf) {
-//         log_it(L_ERROR, "::read_private_key() a_buf is NULL");
-//         return NULL;
-//     }
+    if(a_buflen < (sizeof(uint64_t) + l_secret_length) ){
+        log_it(L_ERROR,"::read_private_key() Buflen %zd is smaller than all fields together(%zd)", a_buflen,
+               sizeof(uint64_t) + l_secret_length );
+        return NULL;
+    }
 
-//     if (a_buflen < sizeof(uint32_t) * 3) {
-//         log_it(L_ERROR, "::read_private_key() a_buflen %"DAP_UINT64_FORMAT_U" is smaller than first four fields(%zu)", a_buflen, sizeof(uint32_t) * 3);
-//         return NULL;
-//     }
+    sphincsplus_private_key_t* l_ret = DAP_NEW(sphincsplus_private_key_t);
+    if (!l_ret) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    }
 
-//     uint64_t l_buflen = 0;
-//     uint32_t l_degree = 0;
-//     uint32_t l_kind = 0;
-//     uint32_t l_type = 0;
-//     uint8_t *l_ptr = (uint8_t *)a_buf;
-
-//     l_buflen = *(uint64_t *)l_ptr; l_ptr += sizeof(uint64_t);
-//     if (a_buflen < l_buflen) {
-//         log_it(L_ERROR, "::read_private_key() a_buflen %"DAP_UINT64_FORMAT_U" is less than l_buflen %"DAP_UINT64_FORMAT_U, a_buflen, l_buflen);
-//         return NULL;
-//     }
-
-//     l_degree = *(uint32_t *)l_ptr; l_ptr += sizeof(uint32_t);
-//     if (l_degree != FALCON_512 && l_degree != FALCON_1024) { // we are now supporting only 512 and 1024 degrees
-//         log_it(L_ERROR, "::read_private_key() degree %ul is not supported", l_degree);
-//         return NULL;
-//     }
-//     if (l_buflen != (sizeof(uint64_t) + sizeof(uint32_t) * 3 + FALCON_PRIVKEY_SIZE(l_degree))) {
-//         log_it(L_ERROR, "::read_private_key() buflen %"DAP_UINT64_FORMAT_U" is not equal to expected size %zu",
-//                a_buflen, sizeof(uint64_t) + sizeof(uint32_t) * 3 + FALCON_PRIVKEY_SIZE(l_degree));
-//         return NULL;
-//     }
-
-//     l_kind = *(uint32_t *)l_ptr; l_ptr += sizeof(uint32_t);
-//     if (l_kind != FALCON_COMPRESSED && l_kind != FALCON_PADDED && l_kind != FALCON_CT) { // we are now supporting only 512 and 1024 degrees
-//         log_it(L_ERROR, "::read_private_key() kind %ul is not supported", l_kind);
-//         return NULL;
-//     }
-
-//     l_type = *(uint32_t *)l_ptr; l_ptr += sizeof(uint32_t);
-//     if (l_type != FALCON_DYNAMIC && l_type != FALCON_TREE) { // we are now supporting only 512 and 1024 degrees
-//         log_it(L_ERROR, "::read_private_key() type %ul is not supported", l_type);
-//         return NULL;
-//     }
-
-//     falcon_private_key_t* l_private_key = DAP_NEW_Z(falcon_private_key_t);
-//     if (!l_private_key) {
-//         log_it(L_CRITICAL, "Memory allocation error");
-//         return NULL;
-//     }
-//     l_private_key->degree = l_degree;
-//     l_private_key->kind = l_kind;
-//     l_private_key->type = l_type;
-//     l_private_key->data = DAP_NEW_Z_SIZE(uint8_t, FALCON_PRIVKEY_SIZE(l_degree));
-//     if (!l_private_key->data) {
-//         log_it(L_CRITICAL, "Memory allocation error");
-//         DAP_DEL_Z(l_private_key);
-//         return NULL;
-//     }
-//     memcpy(l_private_key->data, l_ptr, FALCON_PRIVKEY_SIZE(l_degree));
-//     assert(l_ptr + FALCON_PRIVKEY_SIZE(l_degree) - a_buf == (int64_t)l_buflen);
-
-//     return l_private_key;
-// }
+    l_ret->data = DAP_NEW_SIZE(uint8_t, l_secret_length);
+    memcpy(l_ret->data, a_buf + sizeof(uint64_t), l_secret_length);
+    return l_ret;
+}
 
 // falcon_public_key_t* dap_enc_falcon_read_public_key(const uint8_t* a_buf, size_t a_buflen) {
 //     if (!a_buf) {

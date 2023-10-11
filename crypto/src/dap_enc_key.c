@@ -889,6 +889,23 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
         }
         printf("!!!!!!!!!!!!!!!Sign checked again\n");
 
+
+        size_t s_ser_sk_size = 0;
+        sphincsplus_private_key_t *l_sk = DAP_NEW_Z(sphincsplus_private_key_t);
+        l_sk->data = DAP_NEW_Z_SIZE(uint8_t, l_key->priv_key_data_size);
+        memcpy(l_sk->data, l_key->priv_key_data, l_key->priv_key_data_size);
+        uint8_t *l_ser_sk = dap_enc_sphincsplus_write_private_key(l_sk, &s_ser_sk_size);
+        l_key->priv_key_data = dap_enc_sphincsplus_read_private_key(l_ser_sk, s_ser_sk_size)->data;
+
+        if(s_callbacks[a_key_type].enc_na){
+            l_smsg_size = s_callbacks[a_key_type].enc_na(l_key, l_msg, strlen(l_msg), l_smsg, 50000);
+        }
+
+        if(s_callbacks[a_key_type].dec_na){
+            printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key, l_msg, strlen(l_msg), l_unser_sin, l_smsg_size));
+        }
+        printf("!!!!!!!!!!!!!!!Sign signed and checked again\n");
+
         if(s_callbacks[a_key_type].delete_callback){
             s_callbacks[a_key_type].delete_callback(l_key);
         }
