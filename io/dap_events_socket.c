@@ -170,26 +170,20 @@ dap_evsock_rec_t    *l_es_rec;
 
     if ( !(l_es = DAP_NEW_Z( dap_events_socket_t )) )                   /* Allocate memory for new dap_events_socket context and the record */
         return  log_it(L_CRITICAL, "Cannot allocate memory for <dap_events_socket> context, errno=%d", errno), NULL;
+    if (g_debug_reactor) {
+        if ( !(l_es_rec = DAP_NEW_Z( dap_evsock_rec_t )) )                  /* Allocate memory for new record */
+            return  log_it(L_CRITICAL, "Cannot allocate memory for record, errno=%d", errno),
+                    DAP_DELETE(l_es), NULL;
 
-    if ( !(l_es_rec = DAP_NEW_Z( dap_evsock_rec_t )) )                  /* Allocate memory for new record */
-        return  log_it(L_CRITICAL, "Cannot allocate memory for record, errno=%d", errno),
-                DAP_DELETE(l_es), NULL;
-
-    l_es_rec->es = l_es;                                                /* Fill new track record */
-
-                                                                        /* Add new record into the hash table */
-    l_rc = pthread_rwlock_wrlock(&s_evsocks_lock);
-    assert(!l_rc);
-    HASH_ADD(hh, s_evsocks, es, sizeof(dap_events_socket_t *), l_es_rec );
-    l_rc = pthread_rwlock_unlock(&s_evsocks_lock);
-    assert(!l_rc);
-#ifndef DAP_DEBUG
-    UNUSED(l_rc);
-#endif
-
-
-    debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is allocated", l_es);
-
+        l_es_rec->es = l_es;                                                /* Fill new track record */
+                                                                            /* Add new record into the hash table */
+        l_rc = pthread_rwlock_wrlock(&s_evsocks_lock);
+        assert(!l_rc);
+        HASH_ADD(hh, s_evsocks, es, sizeof(dap_events_socket_t *), l_es_rec );
+        l_rc = pthread_rwlock_unlock(&s_evsocks_lock);
+        assert(!l_rc);
+        log_it(L_NOTICE, "dap_events_socket:%p - is allocated", l_es);
+    }
     return  l_es;
 }
 
@@ -216,33 +210,25 @@ static inline int s_dap_evsock_free (
                 dap_events_socket_t *a_es
                         )
 {
-int     l_rc;
-dap_evsock_rec_t    *l_es_rec = NULL;
+    if (g_debug_reactor) {
+        dap_evsock_rec_t    *l_es_rec = NULL;
+        int l_rc = pthread_rwlock_wrlock(&s_evsocks_lock);
+        assert(!l_rc);
 
-    /*
-     * Add new record into the hash table
-     */
-    l_rc = pthread_rwlock_wrlock(&s_evsocks_lock);
-    assert(!l_rc);
+        HASH_FIND(hh, s_evsocks, &a_es, sizeof(dap_events_socket_t *), l_es_rec );
+        if ( l_es_rec && (l_es_rec->es == a_es) )
+            HASH_DELETE(hh, s_evsocks, l_es_rec);                           /* Remove record from the table */
 
-    HASH_FIND(hh, s_evsocks, &a_es, sizeof(dap_events_socket_t *), l_es_rec );
-    if ( l_es_rec && (l_es_rec->es == a_es) )
-        HASH_DELETE(hh, s_evsocks, l_es_rec);                           /* Remove record from the table */
-
-    l_rc = pthread_rwlock_unlock(&s_evsocks_lock);
-    assert(!l_rc);
-#ifndef DAP_DEBUG
-    UNUSED(l_rc);
-#endif
-    if ( !l_es_rec )
-        log_it(L_ERROR, "dap_events_socket:%p - no record found!", a_es);
-    else {
-        DAP_DELETE(l_es_rec->es);
-        DAP_DELETE(l_es_rec);
-
-        debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is released", a_es);
+        l_rc = pthread_rwlock_unlock(&s_evsocks_lock);
+        assert(!l_rc);
+        if ( !l_es_rec )
+            log_it(L_ERROR, "dap_events_socket:%p - no record found!", a_es);
+        else {
+            DAP_DELETE(l_es_rec);
+            log_it(L_NOTICE, "dap_events_socket:%p - is released", a_es);
+        }
     }
-
+    DAP_DELETE(a_es);
     return  0;  /* SS$_SUCCESS */
 }
 
@@ -475,7 +461,7 @@ dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, da
         case DESCRIPTOR_TYPE_SOCKET_UDP :
             l_sock_type = SOCK_DGRAM;
         break;
-        case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
+        case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
 #ifdef DAP_OS_UNIX
             l_sock_class = AF_LOCAL;
 #elif defined DAP_OS_WINDOWS
@@ -1413,35 +1399,40 @@ void dap_events_socket_delete_mt(dap_worker_t * a_worker, dap_events_socket_uuid
 }
 
 /**
- * @brief dap_events_socket_wrap2
+ * @brief dap_events_socket_wrap_listener
  * @param a_server
  * @param a_sock
  * @param a_callbacks
  * @return
  */
-dap_events_socket_t * dap_events_socket_wrap2( dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks )
+dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, dap_events_socket_callbacks_t *a_callbacks)
 {
     assert( a_callbacks );
     assert( a_server );
     if (!a_callbacks || !a_server) {
-        log_it(L_CRITICAL, "Invalid arguments in dap_events_socket_wrap2");
+        log_it(L_CRITICAL, "Invalid arguments in dap_events_socket_wrap_listener");
         return NULL;
     }
 
-    dap_events_socket_t * l_es = s_dap_evsock_alloc ();
+    dap_events_socket_t * l_es = s_dap_evsock_alloc();
     if (!l_es)
         return NULL;
 
-    l_es->socket = a_sock;
+    l_es->socket = a_server->socket_listener;
     l_es->server = a_server;
     l_es->uuid = dap_uuid_generate_uint64();
-    if (a_callbacks)
-        l_es->callbacks = *a_callbacks;
-    l_es->buf_out_size_max = l_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
-    l_es->buf_in = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max+1);
-    l_es->buf_out = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max+1);
-    l_es->buf_in_size = l_es->buf_out_size = 0;
-
+    l_es->callbacks = *a_callbacks;
+    l_es->_inheritor = a_server;
+    switch (a_server->type) {
+    case DAP_SERVER_UDP:
+        l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+        break;
+    case DAP_SERVER_LOCAL:
+        l_es->type = DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING;
+        break;
+    default:
+        l_es->type = DESCRIPTOR_TYPE_SOCKET_LISTENING;
+    }
 #ifdef   DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].alloc_nr, 1);
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_IN].alloc_nr, 1);

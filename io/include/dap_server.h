@@ -61,6 +61,18 @@ typedef enum dap_server_type {
     DAP_SERVER_LOCAL
 } dap_server_type_t;
 
+DAP_STATIC_INLINE const char *dap_server_type_str(dap_server_type_t a_type)
+{
+    switch (a_type) {
+    case DAP_SERVER_TCP: return "TCP/IPv4";
+    case DAP_SERVER_TCP_V6: return "TCP/IPv6";
+    case DAP_SERVER_UDP: return "UDP/IPv4";
+    case DAP_SERVER_LOCAL: return "UNIX LOCAL";
+    default:;
+    }
+    return "UNKNOWN";
+}
+
 struct dap_server;
 
 typedef void (*dap_server_callback_t)( struct dap_server *,void * arg ); // Callback for specific server's operations

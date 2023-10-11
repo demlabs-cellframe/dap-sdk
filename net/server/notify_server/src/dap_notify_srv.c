@@ -67,7 +67,7 @@ int dap_notify_server_init()
         s_notify_server = dap_server_new_local(l_notify_socket_path, l_notify_socket_path_mode, NULL);
     }else if (l_notify_socket_address && l_notify_socket_port ){
         s_notify_server = dap_server_new( l_notify_socket_address,
-                                            l_notify_socket_port, SERVER_TCP, NULL);
+                                            l_notify_socket_port, DAP_SERVER_TCP, NULL);
     }else{
         log_it(L_INFO,"Notify server is not configured, nothing to init but thats okay");
         return 0;

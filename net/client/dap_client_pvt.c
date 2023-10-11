@@ -515,7 +515,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
 
                     // connect
                     memset(&a_client_pvt->stream_es->remote_addr, 0, sizeof(a_client_pvt->stream_es->remote_addr));
-                    memset(a_client_pvt->stream_es->remote_addr_str6, 0, sizeof(a_client_pvt->stream_es->remote_addr_str6));
                     a_client_pvt->stream_es->remote_addr.sin_family = AF_INET;
                     a_client_pvt->stream_es->remote_addr.sin_port = htons(a_client_pvt->client->uplink_port);
                     if(inet_pton(AF_INET, a_client_pvt->client->uplink_addr, &(a_client_pvt->stream_es->remote_addr.sin_addr)) < 0) {

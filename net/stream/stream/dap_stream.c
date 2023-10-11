@@ -97,6 +97,8 @@ static void s_udp_esocket_new(dap_events_socket_t* a_esocket,void * a_arg);
 // Internal functions
 static dap_stream_t * s_stream_new(dap_http_client_t * a_http_client); // Create new stream
 static void s_http_client_delete(dap_http_client_t * a_esocket, void * a_arg);
+int s_stream_add_to_list(dap_stream_t *a_stream);
+void s_stream_delete_from_list(dap_stream_t *a_stream);
 
 static bool s_callback_server_keepalive(void *a_arg);
 static bool s_callback_client_keepalive(void *a_arg);
@@ -1064,7 +1066,7 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
     dap_stream_t *l_double = NULL;
     HASH_FIND(hh, s_streams, &a_stream->node, sizeof(a_stream->node), l_double);
     if (l_double) {
-        log_it(L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(l_auth_stream->node));
+        log_it(L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(a_stream->node));
         return -1;
     }
     HASH_ADD(hh, s_streams, node, sizeof(a_stream->node), a_stream);
@@ -1160,7 +1162,7 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t a_addr, 
 {
     dap_return_val_if_fail(a_addr, 0);
     dap_stream_t *l_auth_stream = NULL;
-    dap_events_socket_uuid_t l_ret = {};
+    dap_events_socket_uuid_t l_ret = 0;
     assert(!pthread_rwlock_wrlock(&s_streams_lock));
     HASH_FIND(hh, s_authorized_streams, &a_addr, sizeof(a_addr), l_auth_stream);
     if (l_auth_stream) {
@@ -1200,37 +1202,28 @@ dap_stream_node_addr_t dap_stream_get_addr_from_sign(dap_sign_t *a_sign) {
     return l_ret;
 }
 
+static void s_stream_fill_info(dap_stream_t *a_stream, dap_stream_info_t *a_out_info)
+{
+    a_out_info->node_addr = a_stream->node;
+    a_out_info->remote_addr_str = dap_strdup(a_stream->esocket->remote_addr_str);
+    a_out_info->remote_port = a_stream->esocket->remote_port;
+    a_out_info->channels = DAP_NEW_Z_SIZE(char, a_stream->channel_count + 1);
+    for (int i = 0; i < a_stream->channel_count; i++)
+        a_out_info->channels[i] = a_stream->channel[i]->proc->id;
+    a_out_info->total_packets_sent = a_stream->seq_id;
+    a_out_info->is_uplink = a_stream->is_client_to_uplink;
+}
+
 int dap_stream_get_link_info(dap_stream_node_addr_t a_addr, dap_stream_info_t *a_out_info)
 {
-    typedef struct dap_stream_info {
-        dap_stream_node_addr_t node_addr;
-        char *remote_addr_str;
-        uint16_t port;
-        char *channels;
-        size_t total_packets_sent;
-        bool is_uplink;
-        dap_events_socket_uuid_t esocket_uuid;
-        dap_stream_worker_t *stream_worker;
-    } dap_stream_info_t;
-
     dap_stream_t *l_auth_stream = NULL;
     dap_return_val_if_fail(a_addr && a_out_info, -1);
     pthread_rwlock_wrlock(&s_streams_lock);
     HASH_FIND(hh, s_authorized_streams, &a_addr, sizeof(a_addr), l_auth_stream);
     if (!l_auth_stream)
         return -2;
-    a_out_info->node_addr = l_auth_stream->node;
-    a_out_info->remote_addr_str = dap_strdup(l_auth_stream->esocket->remote_addr_str);
-
     assert(l_auth_stream->node.uint64 == a_addr.uint64);
+    s_stream_fill_info(l_auth_stream, a_out_info);
     pthread_rwlock_unlock(&s_streams_lock);
-    return l_ret;
-
-
-    dap_chain_net_add_downlink(l_net, l_ch->stream_worker, l_ch->uuid, l_ch->stream->esocket_uuid,
-                               l_ch->stream->esocket->hostaddr[0]
-            ? l_ch->stream->esocket->hostaddr : l_ch->stream->esocket->remote_addr_str,
-            l_ch->stream->esocket->service[0]
-            ? strtoll(l_ch->stream->esocket->service, NULL, 10)
-            : l_ch->stream->esocket->remote_addr.sin_port);
+    return 0;
 }

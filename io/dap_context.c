@@ -553,6 +553,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             if( l_flag_hup ) {
                 switch (l_cur->type ){
                 case DESCRIPTOR_TYPE_SOCKET_UDP:
+                case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                 case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
                     getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size);
 #ifndef DAP_OS_WINDOWS
@@ -599,15 +600,16 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
             if(l_flag_error) {
                 switch (l_cur->type ){
-                    case DESCRIPTOR_TYPE_SOCKET_LISTENING:
-                    case DESCRIPTOR_TYPE_SOCKET_CLIENT:
-                        getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size);
+                case DESCRIPTOR_TYPE_SOCKET_LISTENING:
+                case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+                case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+                    getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size);
 #ifdef DAP_OS_WINDOWS
-                        log_it(L_ERROR, "Winsock error: %d", l_sock_err);
+                    log_it(L_ERROR, "Winsock error: %d", l_sock_err);
 #else
-                        log_it(L_ERROR, "Socket error: %s", strerror(l_sock_err));
+                    log_it(L_ERROR, "Socket error: %s", strerror(l_sock_err));
 #endif
-                    default: ;
+                default: ;
                 }
                 dap_events_socket_set_readable_unsafe(l_cur, false);
                 dap_events_socket_set_writable_unsafe(l_cur, false);
@@ -676,13 +678,24 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
                     }
                     break;
-                    case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
+
                     case DESCRIPTOR_TYPE_SOCKET_LISTENING:
+#ifdef DAP_OS_UNIX
+                    case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
+#endif
                         // Accept connection
-                        if ( l_cur->callbacks.accept_callback){
+                        if (l_cur->callbacks.accept_callback) {
                             struct sockaddr_storage l_remote_addr;
+                            void *l_remote_addr_ptr = &l_remote_addr;
                             socklen_t l_remote_addr_size = sizeof(l_remote_addr);
-                            SOCKET l_remote_socket = accept(l_cur->socket, &l_remote_addr, &l_remote_addr_size);
+#ifdef DAP_OS_UNIX
+                            struct sockaddr_un l_remote_path;
+                            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING) {
+                                l_remote_addr_ptr = &l_remote_path;
+                                l_remote_addr_size = sizeof(l_remote_path);
+                            }
+#endif
+                            SOCKET l_remote_socket = accept(l_cur->socket, (struct sockaddr_in *)l_remote_addr_ptr, &l_remote_addr_size);
 #ifdef DAP_OS_WINDOWS
                             /*u_long l_mode = 1;
                             ioctlsocket((SOCKET)l_remote_socket, (long)FIONBIO, &l_mode); */
@@ -710,7 +723,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 }
                             }
 #endif
-                            l_cur->callbacks.accept_callback(l_cur, l_remote_socket, &l_remote_addr);
+                            l_cur->callbacks.accept_callback(l_cur, l_remote_socket, l_remote_addr_ptr);
                         }else
                             log_it(L_ERROR,"No accept_callback on listening socket");
                     break;
@@ -793,6 +806,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             // Possibly have data to read despite EPOLLRDHUP
             if (l_flag_rdhup){
                 switch (l_cur->type ){
+                    case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL:
@@ -877,6 +891,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
                 if ( l_cur->context && l_flag_write ){ // esocket wasn't unassigned in callback, we need some other ops with it
                         switch (l_cur->type){
+                            case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
                                 l_bytes_sent = send(l_cur->socket, (const char *)l_cur->buf_out,
                                                     l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
@@ -1021,7 +1036,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     }else{
                         //log_it(L_DEBUG, "Output: %u from %u bytes are sent ", l_bytes_sent,l_cur->buf_out_size);
                         if (l_bytes_sent) {
-                            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT  || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
+                            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
                                 l_cur->last_time_active = l_cur_time;
                             }
                             if ( l_bytes_sent <= (ssize_t) l_cur->buf_out_size ){

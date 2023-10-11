@@ -200,41 +200,30 @@ void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t
 
 char *dap_cluster_get_links_info(dap_cluster_t *a_cluster)
 {
+    dap_string_t *l_str_out = dap_string_new("");
     dap_stream_info_t l_link_info;
+    size_t l_uplinks_count = 0, l_downlinks_count = 0;
     pthread_rwlock_rdlock(&a_cluster->members_lock);
     for (dap_cluster_member_t *it = a_cluster->members; it; it = it->hh.next) {
+        memset(l_link_info, 0, sizeof(l_link_info));
         if (!dap_stream_get_link_info(it->addr, &l_link_info)) {
-
+            dap_string_append_printf(l_str_out, "|  %c  |\t"NODE_ADDR_FP_STR"\t|\t%s\t|\t%hu\t|\t%s\t|\t%zu\n",
+                                     l_link_info.is_uplink ? '↑' | '↓',
+                                     NODE_ADDR_FP_ARGS_S(l_link_info.node_addr),
+                                     l_link_info.remote_addr_str,
+                                     l_link_info.remote_port,
+                                     l_link_info.channels,
+                                     l_link_info.total_packets_sent
+                                     );
+            if (l_link_info.is_uplink)
+                l_uplinks_count++;
+            else
+                l_downlinks_count++;
+        }
+        DAP_DEL_Z(l_link_info.channels);
+        DAP_DEL_Z(l_link_info.remote_addr_str);
+    }
     pthread_rwlock_unlock(&a_cluster->members_lock);
-
-    pthread_mutex_lock(&l_net_pvt->uplinks_mutex);
-    dap_string_t *l_str_uplinks = dap_string_new("---------------------------\n"
-                                         "| ↑\\↓ |\t#\t|\t\tIP\t\t|\tPort\t|\n");
-    struct net_link *l_link, *l_link_tmp = NULL;
-    size_t l_up_count = 0;
-    HASH_ITER(hh, l_net_pvt->net_links, l_link, l_link_tmp) {
-        dap_string_append_printf(l_str_uplinks, "|  ↑  |\t%zu\t|\t%s\t\t|\t%u\t|\n",
-                                 ++l_up_count,
-                                 inet_ntoa(l_link->link_info->hdr.ext_addr_v4),
-                                 l_link->link_info->hdr.ext_port);
-    }
-
-
-    size_t l_down_count = 0;
-    dap_string_t *l_str_downlinks = dap_string_new("---------------------------\n"
-                                                 "| ↑\\↓ |\t#\t|\t\tIP\t\t|\tPort\t|\n");
-    pthread_mutex_unlock(&l_net_pvt->uplinks_mutex);
-    pthread_mutex_lock(&l_net_pvt->downlinks_mutex);
-    struct downlink *l_downlink = NULL, *l_downtmp = NULL;
-    HASH_ITER(hh, l_net_pvt->downlinks, l_downlink, l_downtmp) {
-        dap_string_append_printf(l_str_downlinks, "|  ↓  |\t%zu\t|\t%s\t\t|\t%u\t|\n",
-                                     ++l_down_count,
-                                     l_downlink->addr, l_downlink->port);
-    }
-    pthread_mutex_unlock(&l_net_pvt->downlinks_mutex);
-    char *l_res_str = dap_strdup_printf("Count links: %zu\n\nUplinks: %zu\n%s\n\nDownlinks: %zu\n%s\n",
-                                        l_up_count + l_down_count, l_up_count, l_str_uplinks->str,
-                                        l_down_count, l_str_downlinks->str);
-    dap_string_free(l_str_uplinks, true);
-    dap_string_free(l_str_downlinks, true);
+    dap_string_prepend_printf("Total links: %zu\tUplinks: %zu\tDownlinks: %zu\n",
+                                l_uplinks_count + l_downlinks_count, l_uplinks_count, l_downlinks_count);
 }

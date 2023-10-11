@@ -42,13 +42,14 @@ typedef int SOCKET;
 
 // Caps for different platforms
 #if defined (DAP_OS_ANDROID)
-#define DAP_EVENTS_CAPS_POLL
-#define DAP_EVENTS_CAPS_PIPE_POSIX
-#define DAP_EVENTS_CAPS_QUEUE_PIPE2
-#define DAP_EVENTS_CAPS_EVENT_EVENTFD
-#include <netinet/in.h>
-#include <sys/eventfd.h>
-#include <unistd.h>
+    #define DAP_EVENTS_CAPS_POLL
+    #define DAP_EVENTS_CAPS_PIPE_POSIX
+    #define DAP_EVENTS_CAPS_QUEUE_PIPE2
+    #define DAP_EVENTS_CAPS_EVENT_EVENTFD
+    #include <netinet/in.h>
+    #include <sys/eventfd.h>
+    #include <unistd.h>
+    #include <sys/un.h>
 #elif defined(DAP_OS_LINUX)
     //#define DAP_EVENTS_CAPS_EPOLL
     #define DAP_EVENTS_CAPS_POLL
@@ -61,6 +62,7 @@ typedef int SOCKET;
     #include <netinet/in.h>
     #include <sys/eventfd.h>
     #include <mqueue.h>
+    #include <sys/un.h>
 #elif defined (DAP_OS_BSD)
     #define DAP_EVENTS_CAPS_KQUEUE
     #define DAP_EVENTS_CAPS_PIPE_POSIX
@@ -68,12 +70,14 @@ typedef int SOCKET;
     #define DAP_EVENTS_CAPS_QUEUE_KEVENT
     #include <netinet/in.h>
     #include <sys/event.h>
+    #include <sys/un.h>
 #elif defined (DAP_OS_UNIX)
     #define DAP_EVENTS_CAPS_POLL
     #define DAP_EVENTS_CAPS_PIPE_POSIX
     #define DAP_EVENTS_CAPS_EVENT_PIPE
     #define DAP_EVENTS_CAPS_QUEUE_SOCKETPAIR
     #include <netinet/in.h>
+    #include <sys/un.h>
 #elif defined (DAP_OS_WINDOWS)
     #define DAP_EVENTS_CAPS_WEPOLL
     #define DAP_EVENTS_CAPS_EPOLL
@@ -180,7 +184,9 @@ typedef enum {
     DESCRIPTOR_TYPE_TIMER,
     DESCRIPTOR_TYPE_EVENT,
     DESCRIPTOR_TYPE_FILE,
+#ifdef DAP_OS_UNIX
     DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING,
+#endif
     DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT,
     DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL
 } dap_events_desc_type_t;
@@ -248,9 +254,15 @@ typedef struct dap_events_socket {
 #endif
 
     // Remote address, port and others
-    struct sockaddr_in remote_addr;
-    struct sockaddr_in6 remote_addr_v6;
-    char remote_addr_str[INET6_ADDRSTRLEN + 1];
+    union {
+        struct sockaddr_in remote_addr;
+        struct sockaddr_in6 remote_addr_v6;
+#ifdef DAP_OS_UNIX
+        struct sockaddr_un remote_path;
+#endif
+    };
+    char remote_addr_str[INET6_ADDRSTRLEN];
+    uint16_t remote_port;
 
     // Links to related objects
     dap_context_t *context;
@@ -338,7 +350,7 @@ void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_p
 void dap_events_socket_delete_mt(dap_worker_t * a_worker, dap_events_socket_uuid_t a_es_uuid);
 
 dap_events_socket_t *dap_events_socket_wrap_no_add(SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);
-dap_events_socket_t * dap_events_socket_wrap2( dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks );
+dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, dap_events_socket_callbacks_t *a_callbacks);
 
 void dap_events_socket_assign_on_worker_mt(dap_events_socket_t * a_es, struct dap_worker * a_worker);
 void dap_events_socket_assign_on_worker_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_es);

@@ -102,12 +102,12 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
     log_it(L_DEBUG,"Proc enc http request");
     http_status_code_t * return_code = (http_status_code_t*)arg;
 
-    struct in_addr ip_addr_client_v4;
-    inet_pton(AF_INET, cl_st->esocket->hostaddr, &ip_addr_client_v4);
-
-    if (dap_enc_http_ban_list_client_check_ipv4(ip_addr_client_v4)) {
-        *return_code = Http_Status_Forbidden;
-        return;
+    assert(cl_st->esocket->server);
+    if (cl_st->esocket->server->type == DAP_SERVER_TCP || cl_st->esocket->server->type == DAP_SERVER_UDP) {
+        if (dap_enc_http_ban_list_client_check_ipv4(cl_st->esocket->remote_addr.sin_addr)) {
+            *return_code = Http_Status_Forbidden;
+            return;
+        }
     }
 
     if(!strcmp(cl_st->http_client->url_path,"gd4y5yh78w42aaagh")) {
@@ -195,11 +195,12 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         dap_enc_ks_save_in_storage(l_enc_key_ks);
 
         size_t encrypt_id_size = dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), encrypt_id, DAP_ENC_DATA_TYPE_B64);
+        UNUSED(encrypt_id_size);
 
         // save verified node addr and generate own sign
         char* l_node_sign_msg = NULL;
         if (l_protocol_version && l_sign_count) {
-            dap_stream_add_addr(dap_stream_get_addr_from_sign(l_sign), l_enc_key_ks);
+            dap_stream_add_addr(dap_stream_get_addr_from_sign(l_sign), l_enc_key_ks);   // !TODO remove dependency from stream module
 
             dap_cert_t *l_node_cert = dap_cert_find_by_name("node-addr");
             dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, 0);

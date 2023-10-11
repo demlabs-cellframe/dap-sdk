@@ -80,12 +80,10 @@ typedef struct dap_stream {
 typedef struct dap_stream_info {
     dap_stream_node_addr_t node_addr;
     char *remote_addr_str;
-    uint16_t port;
+    uint16_t remote_port;
     char *channels;
     size_t total_packets_sent;
     bool is_uplink;
-    dap_events_socket_uuid_t esocket_uuid;
-    dap_stream_worker_t *stream_worker;
 } dap_stream_info_t;
 
 typedef void (*dap_stream_callback)(dap_stream_t *, void *);

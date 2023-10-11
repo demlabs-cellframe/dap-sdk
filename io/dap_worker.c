@@ -184,12 +184,6 @@ static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg)
         log_it(L_NOTICE, "Received event socket %p (ident %"DAP_FORMAT_SOCKET" type %d) to add on worker #%u",
                           l_es_new, l_es_new->socket, l_es_new->type, l_worker->id);
 
-    switch( l_es_new->type){
-        case DESCRIPTOR_TYPE_SOCKET_UDP: break;
-        case DESCRIPTOR_TYPE_SOCKET_CLIENT: break;
-        default:{}
-    }
-
 #ifdef DAP_EVENTS_CAPS_KQUEUE
     if(l_es_new->socket!=0 && l_es_new->socket != -1 &&
             l_es_new->type != DESCRIPTOR_TYPE_EVENT &&
