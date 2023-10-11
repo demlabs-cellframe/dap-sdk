@@ -121,17 +121,17 @@ size_t dap_enc_sig_sphincsplus_verify_sign(struct dap_enc_key *a_key, const void
     return l_ret < 0 ? 0 : l_ret;
 }
 
-// void dap_enc_sig_falcon_key_delete(struct dap_enc_key *key) {
+void dap_enc_sig_sphincsplus_key_delete(struct dap_enc_key *key) {
 
-//     if (key->priv_key_data) {
-//         memset(key->priv_key_data, 0, key->priv_key_data_size);
-//         DAP_DEL_Z(key->priv_key_data);
-//     }
-//     if (key->pub_key_data) {
-//         memset(key->pub_key_data, 0, key->pub_key_data_size);
-//         DAP_DEL_Z(key->pub_key_data);
-//     }
-// }
+    if (key->priv_key_data) {
+        memset(key->priv_key_data, 0, key->priv_key_data_size);
+        DAP_DEL_Z(key->priv_key_data);
+    }
+    if (key->pub_key_data) {
+        memset(key->pub_key_data, 0, key->pub_key_data_size);
+        DAP_DEL_Z(key->pub_key_data);
+    }
+}
 
 // // Serialize a public key into a buffer.
 // uint8_t* dap_enc_falcon_write_public_key(const falcon_public_key_t* a_public_key, size_t* a_buflen_out) {

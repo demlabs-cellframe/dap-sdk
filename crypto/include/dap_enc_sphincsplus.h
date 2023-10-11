@@ -19,7 +19,7 @@ size_t dap_enc_sig_sphincsplus_get_sign(struct dap_enc_key *a_key, const void *a
 size_t dap_enc_sig_sphincsplus_verify_sign(struct dap_enc_key *a_key, const void *a_msg, const size_t a_msg_size, const void *a_sign,
         const size_t a_sign_size);
 
-// void dap_enc_sig_falcon_key_delete(struct dap_enc_key *key);
+void dap_enc_sig_sphincsplus_key_delete(struct dap_enc_key *key);
 
 // uint8_t* dap_enc_falcon_write_signature(const falcon_signature_t* a_sign, size_t *a_sign_out);
 // falcon_signature_t* dap_enc_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen);

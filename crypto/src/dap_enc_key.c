@@ -357,7 +357,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_sphincsplus_key_new,
-        .delete_callback =                  dap_enc_sig_falcon_key_delete,
+        .delete_callback =                  dap_enc_sig_sphincsplus_key_delete,
         .new_generate_callback =            dap_enc_sig_sphincsplus_key_new_generate,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
@@ -874,10 +874,13 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
         }
         printf("!!!!!!!!!!!!!!!Msg signed\n");
         if(s_callbacks[a_key_type].dec_na){
-
             printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key, l_msg, strlen(l_msg), l_smsg, l_smsg_size));
         }
         printf("!!!!!!!!!!!!!!!Sign checked\n");
+        if(s_callbacks[a_key_type].delete_callback){
+            s_callbacks[a_key_type].delete_callback(l_key);
+        }
+        printf("!!!!!!!!!!!!!!!Key deleted\n");
         DAP_DEL_Z(l_key);
 
     }
