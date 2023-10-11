@@ -337,100 +337,91 @@ void dap_enc_sig_sphincsplus_key_delete(struct dap_enc_key *key) {
 //     return l_public_key;
 // }
 
-// uint8_t* dap_enc_falcon_write_signature(const falcon_signature_t* a_sign, size_t *a_sign_out) {
+/* Serialize a signature */
+uint8_t *dap_enc_sphincsplus_write_signature(const sphincsplus_signature_t *a_sign, size_t *a_size_out)
+{
+    if(!a_sign ) {
+        return NULL;
+    }
 
-//     if (!a_sign) {
-//         log_it(L_ERROR, "::write_signature() a_sign is NULL");
-//         return NULL;
-//     }
+    size_t l_shift_mem = 0;
+    uint64_t l_buflen = a_sign->sig_len + sizeof(uint64_t) * 2;
 
-//     size_t l_buflen = sizeof(uint64_t) * 2 + sizeof(uint32_t) * 3 + a_sign->sig_len;
-//     uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_buflen);
-//     if (!l_buf) {
-//         log_it(L_ERROR, "::write_signature() l_buf is NULL — memory allocation error");
-//         return NULL;
-//     }
+    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_buflen);
+    if(! l_buf)
+        return NULL;
 
-//     uint32_t l_degree = a_sign->degree;
-//     uint32_t l_kind = a_sign->kind;
-//     uint32_t l_type = a_sign->type;
-//     uint64_t l_sig_len = a_sign->sig_len;
-//     uint8_t *l_ptr = l_buf;
-//     *(uint64_t *)l_ptr = l_buflen; l_ptr += sizeof(uint64_t);
-//     *(uint32_t *)l_ptr = l_degree; l_ptr += sizeof(uint32_t);
-//     *(uint32_t *)l_ptr = l_kind; l_ptr += sizeof(uint32_t);
-//     *(uint32_t *)l_ptr = l_type; l_ptr += sizeof(uint32_t);
-//     *(uint64_t *)l_ptr = l_sig_len; l_ptr += sizeof(uint64_t);
-//     memcpy(l_ptr, a_sign->sig_data, a_sign->sig_len);
-//     assert(l_ptr + l_sig_len - l_buf == (int64_t)l_buflen);
+    memcpy(l_buf, &l_buflen, sizeof(uint64_t));
+    l_shift_mem += sizeof(uint64_t);
 
-//     if (a_sign_out)
-//         *a_sign_out = l_buflen;
+    memcpy(l_buf + l_shift_mem, &a_sign->sig_len, sizeof(uint64_t));
+    l_shift_mem += sizeof(uint64_t);
 
-//     return l_buf;
+    memcpy(l_buf + l_shift_mem, a_sign->sig_data, a_sign->sig_len );
+    l_shift_mem += a_sign->sig_len;
+    assert(l_shift_mem == l_buflen);
+    if(a_size_out)
+        *a_size_out = l_buflen;
+    return l_buf;
+}
 
-// }
-// falcon_signature_t* dap_enc_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen) {
-//     if (!a_buf) {
-//         log_it(L_ERROR, "::read_signature() a_buf is NULL");
-//         return NULL;
-//     }
+/* Deserialize a signature */
+sphincsplus_signature_t *dap_enc_sphincsplus_read_signature(const uint8_t *a_buf, size_t a_buflen)
+{
+    if (!a_buf){
+        log_it(L_ERROR,"::read_signature() NULL buffer on input");
+        return NULL;
+    }
+    if(a_buflen < sizeof(uint64_t) * 2){
+        log_it(L_ERROR,"::read_signature() Buflen %zd is smaller than first fields(%zd)", a_buflen,
+               sizeof(uint64_t) * 2);
+        return NULL;
+    }
 
-//     uint64_t l_buflen = 0;
-//     uint32_t l_degree = 0;
-//     uint32_t l_kind = 0;
-//     uint32_t l_type = 0;
-//     uint64_t l_sig_len = 0;
-//     uint8_t *l_ptr = (uint8_t *)a_buf;
+    uint64_t l_buflen;
+    memcpy(&l_buflen, a_buf, sizeof(uint64_t));
+    uint64_t l_shift_mem = sizeof(uint64_t);
+    if (l_buflen != a_buflen) {
+        if (l_buflen << 32 >> 32 != a_buflen) {
+            log_it(L_ERROR,"::read_public_key() Buflen field inside buffer is %"DAP_UINT64_FORMAT_U" when expected to be %"DAP_UINT64_FORMAT_U,
+                   l_buflen, (uint64_t)a_buflen);
+            return NULL;
+        }
+        l_shift_mem = sizeof(uint32_t);
+    }
 
-//     l_buflen = *(uint64_t *)l_ptr; l_ptr += sizeof(uint64_t);
-//     if (a_buflen != l_buflen) {
-//         log_it(L_ERROR, "::read_signature() a_buflen %zu is not equal to sign size (%"DAP_UINT64_FORMAT_U")",
-//                         a_buflen, l_buflen);
-//         return NULL;
-//     }
+    sphincsplus_signature_t* l_sign = DAP_NEW_Z(sphincsplus_signature_t);
+    if (!l_sign) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    }
 
-//     l_degree = *(uint32_t *)l_ptr; l_ptr += sizeof(uint32_t);
-//     if (l_degree != FALCON_512 && l_degree != FALCON_1024) { // we are now supporting only 512 and 1024 degrees
-//         log_it(L_ERROR, "::read_signature() l_degree %ul is not supported", l_degree);
-//         return NULL;
-//     }
+    memcpy(&l_sign->sig_len, a_buf + l_shift_mem, sizeof(uint64_t));
+    l_shift_mem += sizeof(uint64_t);
 
-//     l_kind = *(uint32_t *)l_ptr; l_ptr += sizeof(uint32_t);
-//     if (l_kind != FALCON_COMPRESSED && l_kind != FALCON_PADDED && l_kind != FALCON_CT) { // we are now supporting only compressed, padded and ct signatures
-//         log_it(L_ERROR, "::read_signature() l_kind %ul is not supported", l_kind);
-//         return NULL;
-//     }
+    if( l_sign->sig_len> (UINT64_MAX - l_shift_mem ) ){
+            log_it(L_ERROR,"::read_signature() Buflen inside signature %"DAP_UINT64_FORMAT_U" is too big ", l_sign->sig_len);
+            DAP_DELETE(l_sign);
+            return NULL;
+    }
 
-//     l_type = *(uint32_t *)l_ptr; l_ptr += sizeof(uint32_t);
-//     if (l_type != FALCON_DYNAMIC && l_type != FALCON_TREE) { // we are now supporting only sign and sign open signatures
-//         log_it(L_ERROR, "::read_signature() l_type %ul is not supported", l_type);
-//         return NULL;
-//     }
+    if( (uint64_t) a_buflen < (l_shift_mem + l_sign->sig_len) ){
+        log_it(L_ERROR,"::read_signature() Buflen %zd is smaller than all fields together(%"DAP_UINT64_FORMAT_U")", a_buflen,
+               l_shift_mem + l_sign->sig_len  );
+        DAP_DELETE(l_sign);
+        return NULL;
+    }
 
-//     l_sig_len = *(uint64_t *)l_ptr; l_ptr += sizeof(uint64_t);
-//     if (l_buflen != sizeof(uint64_t) * 2 + sizeof(uint32_t) * 3 + l_sig_len) {
-//         log_it(L_ERROR, "::read_signature() l_buflen %"DAP_UINT64_FORMAT_U" is not equal to expected size %zu",
-//                l_buflen, sizeof(uint64_t) * 2 + sizeof(uint32_t) * 3 + l_sig_len);
-//         return NULL;
-//     }
-
-//     falcon_signature_t *l_sign = DAP_NEW(falcon_signature_t);
-//     if (!l_sign) {
-//         log_it(L_CRITICAL, "Memory allocation error");
-//         return NULL;
-//     }
-
-//     l_sign->degree = l_degree;
-//     l_sign->kind = l_kind;
-//     l_sign->type = l_type;
-//     l_sign->sig_len = l_sig_len;
-//     l_sign->sig_data = DAP_NEW_SIZE(uint8_t, l_sig_len);
-//     memcpy(l_sign->sig_data, l_ptr, l_sig_len);
-//     assert(l_ptr + l_sig_len - a_buf == (int64_t)l_buflen);
-
-//     return l_sign;
-// }
+    l_sign->sig_data = DAP_NEW_SIZE(uint8_t, l_sign->sig_len);
+    if (!l_sign->sig_data){
+        log_it(L_ERROR,"::read_signature() Can't allocate sig_data %"DAP_UINT64_FORMAT_U" size", l_sign->sig_len);
+        DAP_DELETE(l_sign);
+        return NULL;
+    }else{
+        memcpy(l_sign->sig_data, a_buf + l_shift_mem, l_sign->sig_len);
+        return l_sign;
+    }
+}
 
 
 // void falcon_private_and_public_keys_delete(falcon_private_key_t* privateKey, falcon_public_key_t* publicKey) {

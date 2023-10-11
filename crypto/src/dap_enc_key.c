@@ -855,7 +855,7 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
     
     dap_enc_key_t * l_key = NULL;
     const char *l_msg = "This need sign";
-    unsigned char       pk[sphincsplus_crypto_sign_publickeybytes()], sk[sphincsplus_crypto_sign_secretkeybytes()];
+    unsigned char       pk[dap_sphincsplus_crypto_sign_publickeybytes()], sk[dap_sphincsplus_crypto_sign_secretkeybytes()];
     unsigned char *l_smsg = DAP_NEW_Z_SIZE(unsigned char, dap_sphincsplus_crypto_sign_size());
     size_t l_smsg_size = 0;
     if ((size_t)a_key_type < c_callbacks_size) {
@@ -877,11 +877,24 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
             printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key, l_msg, strlen(l_msg), l_smsg, l_smsg_size));
         }
         printf("!!!!!!!!!!!!!!!Sign checked\n");
+
+        size_t s_ser_size = 0;
+        uint8_t *l_ser_sin = dap_enc_sphincsplus_write_signature(l_smsg, &s_ser_size);
+
+        sphincsplus_signature_t *l_unser_sin = dap_enc_sphincsplus_read_signature(l_ser_sin, s_ser_size);
+        
+
+        if(s_callbacks[a_key_type].dec_na){
+            printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key, l_msg, strlen(l_msg), l_unser_sin, l_smsg_size));
+        }
+        printf("!!!!!!!!!!!!!!!Sign checked again\n");
+
         if(s_callbacks[a_key_type].delete_callback){
             s_callbacks[a_key_type].delete_callback(l_key);
         }
         printf("!!!!!!!!!!!!!!!Key deleted\n");
         DAP_DEL_Z(l_key);
+        
 
     }
 
