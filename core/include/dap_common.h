@@ -123,6 +123,8 @@
 #define DAP_CAST_PTR(t,v) (t*)(v)
 #endif
 
+static const char *g_error_memory_alloc = "Memory allocation error";
+
 #if DAP_USE_RPMALLOC
   #include "rpmalloc.h"
   #define DAP_MALLOC(a)         rpmalloc(a)
@@ -209,6 +211,16 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (p) ? (size_t)(s) : 0; void *p1 = (p) && (s1 > 0) ? calloc(1, s1) : NULL; p1 ? memcpy(p1, (p), s1) : DAP_CAST_PTR(void, NULL); })
 #endif
 #define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
+#define DAP_NEW_Z_RET(a, t)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); return; } } while (0);
+#define DAP_NEW_Z_RET_VAL(a, t, val)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); return val; } } while (0);
+#define DAP_NEW_Z_SIZE_RET(a, t, s)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); return; } } while (0);
+#define DAP_NEW_Z_SIZE_RET_VAL(a, t, s, val)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); return val; } } while (0);
+
+#define dap_return_if_fail(expr)            {if(!(expr)) {return;}}
+#define dap_return_val_if_fail(expr,val)    {if(!(expr)) {return (val);}}
+
+#define dap_return_if_pass(expr)            {if(expr) {return;}}
+#define dap_return_val_if_pass(expr,val)    {if(expr) {return (val);}}
 
 #ifndef __cplusplus
 #define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))
@@ -227,6 +239,8 @@ DAP_STATIC_INLINE unsigned long dap_pagesize() {
 #endif
     return s ? s : 4096;
 }
+
+uint8_t *dap_serialize_multy(size_t a_size, int a_count, ...);
 
 #ifdef DAP_OS_WINDOWS
 typedef struct iovec {

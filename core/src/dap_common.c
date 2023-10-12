@@ -1426,6 +1426,33 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
 #endif
 }
 
+/**
+ * @brief dap_serialize_multy - serialize args to one uint8_t *l_ret. Args count should be even.
+ * @param a_size - total out size
+ * @param a_count - args count, should be even
+ * @return pointer if pass, else NULL
+ */
+uint8_t *dap_serialize_multy(size_t a_size, int a_count, ...)
+{
+    dap_return_val_if_pass(!a_size || a_count % 2, NULL);
+
+    uint8_t *l_ret = NULL;
+    DAP_NEW_Z_SIZE_RET_VAL(l_ret, uint8_t, a_size, NULL);
+    size_t l_shift_mem = 0;
+    va_list l_args;
+    va_start(l_args, a_count);
+    for (int i = 0; i < a_count / 2; ++i) {
+        uint8_t *l_arg = va_arg(l_args, uint8_t *);
+        size_t l_size = va_arg(l_args, size_t);
+        memcpy(l_ret + l_shift_mem, l_arg, l_size);
+        l_shift_mem += l_size;
+    }
+    if (l_shift_mem != a_size) {
+        log_it(L_WARNING, "Error size in the object serialize. %zu != %zu", l_shift_mem, a_size);
+    }
+    va_end(l_args);
+    return l_ret;
+}
 
 #ifdef  DAP_SYS_DEBUG
 dap_memstat_rec_t    *g_memstat [MEMSTAT$K_MAXNR];                      /* Array to keep pointers to module/facility specific memstat vecros */

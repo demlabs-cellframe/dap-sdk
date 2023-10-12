@@ -21,7 +21,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
 size_t dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size,
         void *a_sign, const size_t a_sign_size);
 
-size_t dap_enc_sig_sphincsplus_verify_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size, const void *a_sign,
+size_t dap_enc_sig_sphincsplus_verify_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size, void *a_sign,
         const size_t a_sign_size);
 
 void dap_enc_sig_sphincsplus_key_delete(dap_enc_key_t *key);

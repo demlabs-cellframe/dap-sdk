@@ -15,12 +15,6 @@
 #include "dap_math_ops.h"
 #include "dap_fnmatch.h"
 
-#define dap_return_if_fail(expr)            {if(!(expr)) {return;}}
-#define dap_return_val_if_fail(expr,val)    {if(!(expr)) {return (val);}}
-
-#define dap_return_if_pass(expr)            {if(expr) {return;}}
-#define dap_return_val_if_pass(expr,val)    {if(expr) {return (val);}}
-
 #define POINTER_TO_INT(p)   ((int)   (p))
 #define POINTER_TO_UINT(p)  ((unsigned int)  (p))
 

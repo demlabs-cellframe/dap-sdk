@@ -114,7 +114,7 @@ size_t dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg,
     return l_sig_len;
 }
 
-size_t dap_enc_sig_sphincsplus_verify_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size, const void *a_sign,
+size_t dap_enc_sig_sphincsplus_verify_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size, void *a_sign,
         const size_t a_sign_size)
 {
     if(a_sign_size < sphincsplus_crypto_sign_bytes()) {
@@ -141,17 +141,11 @@ void dap_enc_sig_sphincsplus_key_delete(dap_enc_key_t *key) {
 /* Serialize a private key. */
 uint8_t* dap_enc_sphincsplus_write_private_key(const sphincsplus_private_key_t* a_private_key, size_t *a_buflen_out)
 {
-    if (!a_private_key)
-        return NULL;
+    dap_return_val_if_pass(!a_private_key, NULL);
+    
     size_t l_secret_length = dap_sphincsplus_crypto_sign_secretkeybytes();
     uint64_t l_buflen = sizeof(uint64_t) + l_secret_length;
-    byte_t *l_buf = DAP_NEW_Z_SIZE(byte_t, l_buflen);
-    if (!l_buf) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
-    memcpy(l_buf, &l_buflen, sizeof(uint64_t));
-    memcpy(l_buf + sizeof(uint64_t), a_private_key->data, l_secret_length);
+    uint8_t *l_buf = dap_serialize_multy(l_buflen, 4, &l_buflen, sizeof(uint64_t), a_private_key->data, l_secret_length);
 
     if(a_buflen_out)
         *a_buflen_out = l_buflen;
