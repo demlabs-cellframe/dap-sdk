@@ -853,14 +853,15 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
         return;
 
     
-    dap_enc_key_t * l_key = NULL;
+    dap_enc_key_t *l_key = NULL, *l_key_ser = NULL;
     const char *l_msg = "This need sign";
     unsigned char       pk[dap_sphincsplus_crypto_sign_publickeybytes()], sk[dap_sphincsplus_crypto_sign_secretkeybytes()];
     unsigned char *l_smsg = DAP_NEW_Z_SIZE(unsigned char, dap_sphincsplus_crypto_sign_size());
     size_t l_smsg_size = 0;
     if ((size_t)a_key_type < c_callbacks_size) {
         l_key = DAP_NEW_Z(dap_enc_key_t);
-        if (!l_key) {
+        l_key_ser = DAP_NEW_Z(dap_enc_key_t);
+        if (!l_key || !l_key_ser) {
             log_it(L_CRITICAL, "Memory allocation error");
             return NULL;
         }
@@ -891,14 +892,21 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
 
 
         size_t s_ser_sk_size = 0;
+        size_t s_ser_pk_size = 0;
         sphincsplus_private_key_t *l_sk = DAP_NEW_Z(sphincsplus_private_key_t);
-        l_sk->data = DAP_NEW_Z_SIZE(uint8_t, l_key->priv_key_data_size);
-        memcpy(l_sk->data, l_key->priv_key_data, l_key->priv_key_data_size);
-        uint8_t *l_ser_sk = dap_enc_sphincsplus_write_private_key(l_sk, &s_ser_sk_size);
-        l_key->priv_key_data = dap_enc_sphincsplus_read_private_key(l_ser_sk, s_ser_sk_size)->data;
+        sphincsplus_public_key_t *l_pk = DAP_NEW_Z(sphincsplus_public_key_t);
+
+        uint8_t *l_ser_sk = dap_enc_sphincsplus_write_private_key(l_key->priv_key_data, &s_ser_sk_size);
+        uint8_t *l_ser_pk = dap_enc_sphincsplus_write_public_key(l_key->pub_key_data, &s_ser_pk_size);
+        l_key_ser->priv_key_data = dap_enc_sphincsplus_read_private_key(l_ser_sk, s_ser_sk_size);
+        l_key_ser->pub_key_data = dap_enc_sphincsplus_read_public_key(l_ser_pk, s_ser_pk_size);
+
+        if(s_callbacks[a_key_type].dec_na){
+            printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key_ser, l_msg, strlen(l_msg), l_unser_sin, l_smsg_size));
+        }
 
         if(s_callbacks[a_key_type].enc_na){
-            l_smsg_size = s_callbacks[a_key_type].enc_na(l_key, l_msg, strlen(l_msg), l_smsg, 50000);
+            l_smsg_size = s_callbacks[a_key_type].enc_na(l_key_ser, l_msg, strlen(l_msg), l_smsg, 50000);
         }
 
         if(s_callbacks[a_key_type].dec_na){
@@ -907,6 +915,7 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
         printf("!!!!!!!!!!!!!!!Sign signed and checked again\n");
 
         if(s_callbacks[a_key_type].delete_callback){
+            s_callbacks[a_key_type].delete_callback(l_key);
             s_callbacks[a_key_type].delete_callback(l_key);
         }
         printf("!!!!!!!!!!!!!!!Key deleted\n");

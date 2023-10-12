@@ -78,7 +78,6 @@ void challenge(poly *c, const unsigned char mu[CRHBYTES], const polyveck *w1, di
 /********************************************************************************************/
 void dilithium_private_key_delete(dilithium_private_key_t *private_key)
 {
-
     if(private_key) {
         free(private_key->data);
         private_key->data = NULL;
@@ -89,18 +88,15 @@ void dilithium_private_key_delete(dilithium_private_key_t *private_key)
 void dilithium_public_key_delete(dilithium_public_key_t *public_key)
 {
     if(public_key) {
-        free(public_key->data);
-        public_key->data = NULL;
+        DAP_DEL_Z(public_key->data);
         //free(public_key);
     }
 }
 
-void dilithium_private_and_public_keys_delete(dilithium_private_key_t *private_key, dilithium_public_key_t *public_key){
-
-    free(private_key->data);
-    private_key->data = NULL;
-    free(public_key->data);
-    public_key->data = NULL;
+void dilithium_private_and_public_keys_delete(dilithium_private_key_t *private_key, dilithium_public_key_t *public_key)
+{
+    dilithium_private_key_delete(private_key);
+    dilithium_public_key_delete(public_key);
 }
 
 /********************************************************************************************/

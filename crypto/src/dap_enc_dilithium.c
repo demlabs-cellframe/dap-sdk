@@ -97,21 +97,12 @@ size_t dap_enc_sig_dilithium_verify_sign(struct dap_enc_key * key, const void * 
 
 void dap_enc_sig_dilithium_key_delete(struct dap_enc_key * key)
 {
-    if( key->priv_key_data && key->pub_key_data){
-        dilithium_private_and_public_keys_delete((dilithium_private_key_t *) key->priv_key_data,
-            (dilithium_public_key_t *) key->pub_key_data);
-        free(key->pub_key_data);
-        free(key->priv_key_data);
-        key->pub_key_data=NULL;
-        key->priv_key_data=NULL;
-    }else if ( key->pub_key_data ){
-        dilithium_public_key_delete((dilithium_public_key_t *) key->pub_key_data);
-        free(key->pub_key_data);
-        key->pub_key_data=NULL;
-    }else if ( key->priv_key_data ){
-        dilithium_private_key_delete((dilithium_private_key_t *) key->priv_key_data);
-        key->priv_key_data=NULL;
-    }
+    dilithium_private_and_public_keys_delete((dilithium_private_key_t *) key->priv_key_data,
+        (dilithium_public_key_t *) key->pub_key_data);
+
+    DAP_DEL_Z(key->pub_key_data);
+    // DAP_DEL_Z(key->priv_key_data);
+    key->priv_key_data = NULL;
 
 }
 

@@ -9,26 +9,30 @@
 // void dap_enc_sig_falcon_set_kind(falcon_kind_t a_falcon_kind);
 // void dap_enc_sig_falcon_set_type(falcon_sign_type_t a_falcon_sign_type);
 
-void dap_enc_sig_sphincsplus_key_new(struct dap_enc_key *a_key);
+void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key);
+void sphincsplus_public_key_delete(sphincsplus_public_key_t *a_pkey);
+void sphincsplus_private_key_delete(sphincsplus_private_key_t *a_skey);
+void sphincsplus_private_and_public_keys_delete(sphincsplus_private_key_t *a_skey,
+        sphincsplus_public_key_t *a_pkey);
 
-void dap_enc_sig_sphincsplus_key_new_generate(struct dap_enc_key *a_key, const void *a_kex_buf, size_t a_kex_size,
+void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_buf, size_t a_kex_size,
         const void *a_seed, size_t a_seed_size, size_t a_key_size);
 
-size_t dap_enc_sig_sphincsplus_get_sign(struct dap_enc_key *a_key, const void *a_msg, const size_t a_msg_size,
+size_t dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size,
         void *a_sign, const size_t a_sign_size);
 
-size_t dap_enc_sig_sphincsplus_verify_sign(struct dap_enc_key *a_key, const void *a_msg, const size_t a_msg_size, const void *a_sign,
+size_t dap_enc_sig_sphincsplus_verify_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size, const void *a_sign,
         const size_t a_sign_size);
 
-void dap_enc_sig_sphincsplus_key_delete(struct dap_enc_key *key);
+void dap_enc_sig_sphincsplus_key_delete(dap_enc_key_t *key);
 
 uint8_t *dap_enc_sphincsplus_write_signature(const sphincsplus_signature_t* a_sign, size_t *a_size_out);
 sphincsplus_signature_t *dap_enc_sphincsplus_read_signature(const uint8_t *a_buf, size_t a_buflen);
 
 uint8_t* dap_enc_sphincsplus_write_private_key(const sphincsplus_private_key_t* a_private_key, size_t *a_buflen_out);
-// uint8_t* dap_enc_falcon_write_public_key(const falcon_public_key_t* a_public_key, size_t* a_buflen_out);
+uint8_t* dap_enc_sphincsplus_write_public_key(const sphincsplus_public_key_t* a_public_key, size_t *a_buflen_out);
 sphincsplus_private_key_t *dap_enc_sphincsplus_read_private_key(const uint8_t *a_buf, size_t a_buflen);
-// falcon_public_key_t* dap_enc_falcon_read_public_key(const uint8_t* a_buf, size_t a_buflen);
+sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_buf, size_t a_buflen);
 
 // DAP_STATIC_INLINE size_t dap_enc_falcon_calc_signature_unserialized_size() { return sizeof(falcon_signature_t); }
 
