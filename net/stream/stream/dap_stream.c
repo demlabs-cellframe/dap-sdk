@@ -56,8 +56,12 @@
 #include "dap_strfuncs.h"
 #include "uthash.h"
 #include "dap_enc_ks.h"
+#include "dap_stream_cluster.h"
 
 #define LOG_TAG "dap_stream"
+
+// Globaly defined node address
+dap_stream_node_addr_t g_node_addr;
 
 typedef struct authorized_stream {
     union {
@@ -120,8 +124,12 @@ static  dap_memstat_rec_t   s_memstat [MEMSTAT$K_NR] = {
 };
 #endif
 
+dap_enc_key_type_t dap_stream_get_preferred_encryption_type()
+{
+    return s_stream_get_preferred_encryption_type;
+}
 
-void s_dap_stream_load_preferred_encryption_type(dap_config_t * a_config)
+void s_stream_load_preferred_encryption_type(dap_config_t * a_config)
 {
     const char * l_preferred_encryption_name = dap_config_get_item_str(a_config, "stream", "preferred_encryption");
     if(l_preferred_encryption_name){
@@ -133,11 +141,29 @@ void s_dap_stream_load_preferred_encryption_type(dap_config_t * a_config)
     log_it(L_NOTICE,"ecryption type is set to %s", dap_enc_get_type_name(s_stream_get_preferred_encryption_type));
 }
 
-dap_enc_key_type_t dap_stream_get_preferred_encryption_type()
+int s_stream_init_node_addr_cert()
 {
-    return s_stream_get_preferred_encryption_type;
-}
+    //const char * l_node_addr_type = dap_config_get_item_str_default(g_confi , "general", "node_addr_type", "auto");
 
+    dap_cert_t *l_addr_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
+    if (!l_addr_cert) {
+        const char *l_cert_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);
+        // create new cert
+        if(l_cert_folder) {
+            char *l_cert_path = dap_strdup_printf("%s/" DAP_STREAM_NODE_ADDR_CERT_NAME ".dcert", l_cert_folder);
+            l_addr_cert = dap_cert_generate(DAP_STREAM_NODE_ADDR_CERT_NAME, l_cert_path, DAP_STREAM_NODE_ADDR_CERT_TYPE);
+            DAP_DELETE(l_cert_path);
+        } else
+            return -1;
+    }
+    // Get certificate public key hash
+    dap_hash_fast_t l_node_addr_hash;
+    dap_cert_get_pkey_hash(l_addr_cert, &l_node_addr_hash);
+    // Copy fist two and last two octets of hash to fill node addr
+    memcpy(g_node_addr.raw, l_node_addr_hash.raw, sizeof(uint64_t) / 2);
+    memcpy(g_node_addr.raw + sizeof(uint64_t) / 2, l_node_addr_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - sizeof(uint64_t) / 2, sizeof(uint64_t) / 2);
+    return 0;
+}
 /**
  * @brief stream_init Init stream module
  * @return  0 if ok others if not
@@ -153,7 +179,8 @@ int dap_stream_init(dap_config_t * a_config)
         return -2;
     }
 
-    s_dap_stream_load_preferred_encryption_type(a_config);
+    s_stream_load_preferred_encryption_type(a_config);
+    s_stream_init_node_addr_cert();
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config,"general","debug_dump_stream_headers",false);
     s_debug = dap_config_get_item_bool_default(g_config,"stream","debug",false);
 #ifdef  DAP_SYS_DEBUG
@@ -1160,7 +1187,7 @@ int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id)
  */
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t a_addr, dap_worker_t **a_worker)
 {
-    dap_return_val_if_fail(a_addr, 0);
+    dap_return_val_if_fail(a_addr.uint64, 0);
     dap_stream_t *l_auth_stream = NULL;
     dap_events_socket_uuid_t l_ret = 0;
     assert(!pthread_rwlock_wrlock(&s_streams_lock));
@@ -1208,22 +1235,58 @@ static void s_stream_fill_info(dap_stream_t *a_stream, dap_stream_info_t *a_out_
     a_out_info->remote_addr_str = dap_strdup(a_stream->esocket->remote_addr_str);
     a_out_info->remote_port = a_stream->esocket->remote_port;
     a_out_info->channels = DAP_NEW_Z_SIZE(char, a_stream->channel_count + 1);
-    for (int i = 0; i < a_stream->channel_count; i++)
+    for (size_t i = 0; i < a_stream->channel_count; i++)
         a_out_info->channels[i] = a_stream->channel[i]->proc->id;
     a_out_info->total_packets_sent = a_stream->seq_id;
     a_out_info->is_uplink = a_stream->is_client_to_uplink;
 }
 
-int dap_stream_get_link_info(dap_stream_node_addr_t a_addr, dap_stream_info_t *a_out_info)
+dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count)
 {
-    dap_stream_t *l_auth_stream = NULL;
-    dap_return_val_if_fail(a_addr && a_out_info, -1);
+    dap_return_val_if_fail(s_streams, NULL);
     pthread_rwlock_wrlock(&s_streams_lock);
-    HASH_FIND(hh, s_authorized_streams, &a_addr, sizeof(a_addr), l_auth_stream);
-    if (!l_auth_stream)
-        return -2;
-    assert(l_auth_stream->node.uint64 == a_addr.uint64);
-    s_stream_fill_info(l_auth_stream, a_out_info);
+    dap_stream_t *it;
+    size_t l_streams_count = 0, i = 0;
+    if (a_cluster) {
+        pthread_rwlock_rdlock(&a_cluster->members_lock);
+        l_streams_count = HASH_COUNT(a_cluster->members);
+    } else
+        DL_COUNT(s_streams, it, l_streams_count);
+    if (!l_streams_count)
+        return 0;
+    dap_stream_info_t *l_ret = DAP_NEW_Z_SIZE(dap_stream_info_t, sizeof(dap_stream_info_t) * l_streams_count);
+    if (!l_ret) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        if (a_cluster)
+            pthread_rwlock_unlock(&a_cluster->members_lock);
+        return NULL;
+    }
+    if (a_cluster) {
+        for (dap_cluster_member_t *l_member = a_cluster->members; l_member; l_member = l_member->hh.next) {
+            HASH_FIND(hh, s_authorized_streams, &l_member->addr, sizeof(l_member->addr), it);
+            if (!it)
+                continue;
+            assert(it->node.uint64 == l_member->addr.uint64);
+            s_stream_fill_info(it, l_ret + i++);
+        }
+        pthread_rwlock_unlock(&a_cluster->members_lock);
+    } else {
+        DL_FOREACH(s_streams, it)
+            s_stream_fill_info(it, l_ret + i++);
+    }
     pthread_rwlock_unlock(&s_streams_lock);
-    return 0;
+    if (a_count)
+        *a_count = i - 1;
+    return l_ret;
+}
+
+void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count)
+{
+    dap_return_if_fail(a_info && a_count);
+    for (size_t i = 0; i < a_count; i++) {
+        dap_stream_info_t *it = a_info + i;
+        DAP_DEL_Z(it->remote_addr_str);
+        DAP_DEL_Z(it->channels);
+    }
+    DAP_DELETE(a_info);
 }

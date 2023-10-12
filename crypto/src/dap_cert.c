@@ -163,14 +163,14 @@ size_t dap_cert_sign_output_size(dap_cert_t * a_cert, size_t a_size_wished)
  * @param a_data
  * @param a_data_size
  * @param a_output
- * @param a_output_siz
+ * @param a_output_size
  * @return
  */
-/*int dap_cert_sign_output(dap_cert_t * a_cert, const void * a_data, size_t a_data_size,
-                                        void * a_output, size_t a_output_size)
+int dap_cert_sign_output(dap_cert_t * a_cert, const void * a_data, size_t a_data_size,
+                                        void * a_output, size_t *a_output_size)
 {
-    return dap_sign_create_output( a_cert->enc_key,a_data,a_data_size,a_output,a_output_size);
-}*/
+    return dap_sign_create_output( a_cert->enc_key, a_data, a_data_size, a_output, a_output_size);
+}
 
 /**
  * @brief
@@ -487,6 +487,18 @@ int dap_cert_save_to_folder(dap_cert_t *a_cert, const char *a_file_dir_path)
 dap_pkey_t *dap_cert_to_pkey(dap_cert_t *a_cert)
 {
     return a_cert && a_cert->enc_key ? dap_pkey_from_enc_key(a_cert->enc_key) : NULL;
+}
+
+int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_fast_t *a_out_hash)
+{
+    dap_return_val_if_fail(a_cert && a_cert->enc_key && a_cert->enc_key->pub_key_data &&
+                           a_cert->enc_key->pub_key_data_size && a_out_hash , -1);
+    size_t l_pub_key_size;
+    uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_cert->enc_key, &l_pub_key_size);
+    if (!l_pub_key || !l_pub_key_size)
+        return -2;
+    dap_hash_fast(l_pub_key, l_pub_key_size, a_out_hash);
+    return 0;
 }
 
 /**

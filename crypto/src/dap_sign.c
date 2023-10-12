@@ -193,8 +193,8 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
  * @param a_output_size size_t size of output buffer
  * @return int 
  */
-static int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size,
-        void * a_output, size_t *a_output_size)
+int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size,
+                           void * a_output, size_t *a_output_size)
 {
     if(!a_key || !a_key->priv_key_data || !a_key->priv_key_data_size){
         log_it (L_ERROR, "Can't find the private key to create signature");
@@ -286,29 +286,6 @@ dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
         }
     }
     return NULL;
-}
-
-/**
- * @brief create signed object header (dap_sign_t) from variables
- * 
- * @param a_key dap_enc_key_t key object
- * @param a_sign_ser signed data buffer
- * @param a_sign_ser_size buffer size
- * @param a_pkey public key
- * @param a_pub_key_size public key size
- * @return dap_sign_t* 
- */
-dap_sign_t * dap_sign_pack(dap_enc_key_t *a_key, const void * a_sign_ser, const size_t a_sign_ser_size, const void * a_pkey, const size_t a_pub_key_size)
-{
-    dap_sign_t * l_ret = DAP_NEW_Z_SIZE(dap_sign_t, sizeof(dap_sign_hdr_t) + a_sign_ser_size + a_pub_key_size);
-    // write serialized public key to dap_sign_t
-    memcpy(l_ret->pkey_n_sign, a_pkey, a_pub_key_size);
-    l_ret->header.type = dap_sign_type_from_key_type(a_key->type);
-    // write serialized signature to dap_sign_t
-    memcpy(l_ret->pkey_n_sign + a_pub_key_size, a_sign_ser, a_sign_ser_size);
-    l_ret->header.sign_pkey_size = (uint32_t) a_pub_key_size;
-    l_ret->header.sign_size = (uint32_t) a_sign_ser_size;
-    return l_ret;
 }
 
 /**

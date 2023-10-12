@@ -33,14 +33,13 @@
 #include "dap_timerfd.h"
 #include "dap_sign.h"
 
-/*  #define CHUNK_SIZE_MAX (3 * 1024)
-    #define STREAM_BUF_SIZE_MAX DAP_STREAM_PKT_SIZE_MAX
-*/
-
 #define STREAM_KEEPALIVE_TIMEOUT 3   // How  often send keeplive messages (seconds)
+#define DAP_STREAM_NODE_ADDR_CERT_NAME  "node-addr"
+#define DAP_STREAM_NODE_ADDR_CERT_TYPE DAP_ENC_KEY_TYPE_SIG_DILITHIUM
 
 typedef struct dap_stream_ch dap_stream_ch_t;
 typedef struct dap_stream_worker dap_stream_worker_t;
+typedef struct dap_cluster dap_cluster_t;
 
 typedef struct dap_stream {
     dap_stream_node_addr_t node;
@@ -90,6 +89,8 @@ typedef void (*dap_stream_callback)(dap_stream_t *, void *);
 
 #define DAP_STREAM(a) ((dap_stream_t *) (a)->_inheritor )
 
+extern dap_stream_node_addr_t g_node_addr;
+
 int dap_stream_init(dap_config_t * g_config);
 
 bool dap_stream_get_dump_packet_headers();
@@ -119,4 +120,5 @@ int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 int dap_stream_change_id(void *a_old, uint64_t a_new);
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t a_addr, dap_worker_t **a_worker);
 dap_stream_node_addr_t dap_stream_get_addr_from_sign(dap_sign_t *a_sign);
-int dap_stream_get_link_info(dap_stream_node_addr_t a_addr, dap_stream_info_t *a_out_info);
+dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count);
+void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count);

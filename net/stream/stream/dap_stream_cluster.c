@@ -198,32 +198,34 @@ void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t
     dap_list_free_full(l_link_list, NULL);
 }
 
+// Returns information about cluster links. For NULL cluster returns information about all node links
 char *dap_cluster_get_links_info(dap_cluster_t *a_cluster)
 {
     dap_string_t *l_str_out = dap_string_new("");
-    dap_stream_info_t l_link_info;
-    size_t l_uplinks_count = 0, l_downlinks_count = 0;
-    pthread_rwlock_rdlock(&a_cluster->members_lock);
-    for (dap_cluster_member_t *it = a_cluster->members; it; it = it->hh.next) {
-        memset(l_link_info, 0, sizeof(l_link_info));
-        if (!dap_stream_get_link_info(it->addr, &l_link_info)) {
-            dap_string_append_printf(l_str_out, "|  %c  |\t"NODE_ADDR_FP_STR"\t|\t%s\t|\t%hu\t|\t%s\t|\t%zu\n",
-                                     l_link_info.is_uplink ? '↑' | '↓',
-                                     NODE_ADDR_FP_ARGS_S(l_link_info.node_addr),
-                                     l_link_info.remote_addr_str,
-                                     l_link_info.remote_port,
-                                     l_link_info.channels,
-                                     l_link_info.total_packets_sent
+    size_t l_uplinks_count = 0, l_downlinks_count = 0, l_total_links_count = 0;
+    dap_stream_info_t *l_links_info = dap_stream_get_links_info(a_cluster, &l_total_links_count);
+    if (l_links_info) {
+        for (size_t i = 0; i < l_total_links_count; i++) {
+            dap_stream_info_t *l_link_info = l_links_info + i;
+            dap_string_append_printf(l_str_out, "|  %s  |\t"NODE_ADDR_FP_STR"\t|\t%s\t|\t%hu\t|\t%s\t|\t%zu\n",
+                                     l_link_info->is_uplink ? "↑" : "↓",
+                                     NODE_ADDR_FP_ARGS_S(l_link_info->node_addr),
+                                     l_link_info->remote_addr_str,
+                                     l_link_info->remote_port,
+                                     l_link_info->channels,
+                                     l_link_info->total_packets_sent
                                      );
-            if (l_link_info.is_uplink)
+            if (l_link_info->is_uplink)
                 l_uplinks_count++;
             else
                 l_downlinks_count++;
         }
-        DAP_DEL_Z(l_link_info.channels);
-        DAP_DEL_Z(l_link_info.remote_addr_str);
+        dap_stream_delete_links_info(l_links_info, l_total_links_count);
     }
-    pthread_rwlock_unlock(&a_cluster->members_lock);
-    dap_string_prepend_printf("Total links: %zu\tUplinks: %zu\tDownlinks: %zu\n",
-                                l_uplinks_count + l_downlinks_count, l_uplinks_count, l_downlinks_count);
+    assert(l_total_links_count == l_uplinks_count + l_downlinks_count);
+    dap_string_prepend_printf(l_str_out, "Total links: %zu\tUplinks: %zu\tDownlinks: %zu\n",
+                                l_total_links_count, l_uplinks_count, l_downlinks_count);
+    char *l_ret = l_str_out->str;
+    dap_string_free(l_str_out, false);
+    return l_ret;
 }
