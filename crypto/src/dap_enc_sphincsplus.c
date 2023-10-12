@@ -142,7 +142,7 @@ void dap_enc_sig_sphincsplus_key_delete(dap_enc_key_t *key) {
 uint8_t* dap_enc_sphincsplus_write_private_key(const sphincsplus_private_key_t* a_private_key, size_t *a_buflen_out)
 {
     dap_return_val_if_pass(!a_private_key, NULL);
-    
+
     size_t l_secret_length = dap_sphincsplus_crypto_sign_secretkeybytes();
     uint64_t l_buflen = sizeof(uint64_t) + l_secret_length;
     uint8_t *l_buf = dap_serialize_multy(l_buflen, 4, &l_buflen, sizeof(uint64_t), a_private_key->data, l_secret_length);
@@ -195,13 +195,7 @@ uint8_t *dap_enc_sphincsplus_write_public_key(const sphincsplus_public_key_t* a_
         return NULL;
     size_t l_public_length = dap_sphincsplus_crypto_sign_publickeybytes();
     uint64_t l_buflen = sizeof(uint64_t) + l_public_length;
-    byte_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_buflen);
-    if (!l_buf) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
-    memcpy(l_buf, &l_buflen, sizeof(uint64_t));
-    memcpy(l_buf + sizeof(uint64_t), a_public_key->data, l_public_length);
+    uint8_t *l_buf = dap_serialize_multy(l_buflen, 4, &l_buflen, sizeof(uint64_t), a_public_key->data, l_public_length);
 
     if(a_buflen_out)
         *a_buflen_out = l_buflen;
@@ -247,26 +241,15 @@ sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_b
 /* Serialize a signature */
 uint8_t *dap_enc_sphincsplus_write_signature(const sphincsplus_signature_t *a_sign, size_t *a_size_out)
 {
-    if(!a_sign ) {
-        return NULL;
-    }
+    dap_return_val_if_pass(!a_sign, NULL);
 
     size_t l_shift_mem = 0;
     uint64_t l_buflen = a_sign->sig_len + sizeof(uint64_t) * 2;
-
-    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_buflen);
-    if(! l_buf)
-        return NULL;
-
-    memcpy(l_buf, &l_buflen, sizeof(uint64_t));
-    l_shift_mem += sizeof(uint64_t);
-
-    memcpy(l_buf + l_shift_mem, &a_sign->sig_len, sizeof(uint64_t));
-    l_shift_mem += sizeof(uint64_t);
-
-    memcpy(l_buf + l_shift_mem, a_sign->sig_data, a_sign->sig_len );
-    l_shift_mem += a_sign->sig_len;
-    assert(l_shift_mem == l_buflen);
+    uint8_t *l_buf = dap_serialize_multy(l_buflen, 6, 
+                        &l_buflen, sizeof(uint64_t),
+                        &a_sign->sig_len, sizeof(uint64_t),
+                        a_sign->sig_data, a_sign->sig_len
+                        );
     if(a_size_out)
         *a_size_out = l_buflen;
     return l_buf;
