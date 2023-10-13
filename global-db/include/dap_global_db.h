@@ -99,9 +99,9 @@ typedef bool (*dap_global_db_callback_results_raw_t) (dap_global_db_instance_t *
                                                       const size_t a_values_current, const size_t a_values_count,
                                                       dap_store_obj_t *a_values, void *a_arg);
 // Return codes
-#define DAP_GLOBAL_DB_RC_SUCCESS         0
-#define DAP_GLOBAL_DB_RC_NO_RESULTS     -1
-#define DAP_GLOBAL_DB_RC_ERROR           -666
+#define DAP_GLOBAL_DB_RC_SUCCESS     0
+#define DAP_GLOBAL_DB_RC_NO_RESULTS -1
+#define DAP_GLOBAL_DB_RC_ERROR      -6
 
 extern int g_dap_global_db_debug_more;
 

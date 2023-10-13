@@ -158,7 +158,7 @@ static void s_msg_opcode_flush(struct queue_io_msg * a_msg);
 static void s_queue_io_msg_delete( struct queue_io_msg * a_msg);
 
 // convert dap_store_obj_t to dap_global_db_obj_t
-static dap_global_db_obj_t* s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_t a_values_count);
+static dap_global_db_obj_t* s_objs_from_store_objs(const dap_store_obj_t *a_store_objs, size_t a_values_count);
 
 /**
  * @brief dap_global_db_init
@@ -323,21 +323,16 @@ byte_t *dap_global_db_get_sync(const char *a_group,
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get call executes for group \"%s\" and key \"%s\"", a_group, a_key);
     dap_store_obj_t *l_store_obj = dap_global_db_get_raw_sync(a_group, a_key);
-    if (!l_store_obj) {
-        // log_it(L_ERROR, "%s is not found", a_key);
+    if (!l_store_obj)
         return NULL;
-    }
     if (a_data_size)
         *a_data_size = l_store_obj->value_len;
     if (a_is_pinned)
         *a_is_pinned = l_store_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED;
     if (a_ts)
         *a_ts = l_store_obj->timestamp;
-    byte_t *l_res = DAP_DUP_SIZE(l_store_obj->value, l_store_obj->value_len);
-    if (!l_res) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
+    byte_t *l_res = l_store_obj->value;
+    l_store_obj->value = NULL;
     dap_store_obj_free_one(l_store_obj);
     return l_res;
 }
@@ -461,7 +456,6 @@ static void s_msg_opcode_get_raw(struct queue_io_msg * a_msg)
                                                         l_store_obj, a_msg->callback_arg );
     dap_store_obj_free_one(l_store_obj);
 }
-
 
 /* *** Get_del_ts functions group *** */
 
@@ -676,9 +670,7 @@ static void s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
     dap_store_obj_free(l_store_obj, 1);
 }
 
-
 /* *** Get_all functions group *** */
-
 
 static int s_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
     dap_global_db_obj_t *l_obj1 = (dap_global_db_obj_t *)a_obj1,
@@ -695,13 +687,22 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
     size_t l_values_count = 0;
     dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values",
-                                                    a_group, l_values_count);
+                                                                            a_group, l_values_count);
     dap_global_db_obj_t *l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
     if (l_values_count > 1)
         qsort(l_objs, l_values_count, sizeof(dap_global_db_obj_t), s_db_compare_by_ts);
     if (a_objs_count)
-        *a_objs_count = l_values_count;
+        *a_objs_count = i;
     return l_objs;
+mem_clear:
+        log_it(L_CRITICAL, "Memory allocation error");
+    for(size_t j = 0; j < l_values_count && l_objs; j++) {
+        DAP_DEL_Z(l_objs[j].key);
+        DAP_DEL_Z(l_objs[j].value);
+    }
+    DAP_DEL_Z(l_objs);
+    dap_store_obj_free(l_store_objs, l_values_count);
+    return NULL;
 }
 
 /**

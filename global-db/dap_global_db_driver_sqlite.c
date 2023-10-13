@@ -1060,7 +1060,7 @@ sqlite3 *l_conn;
 char l_errbuf[255] = {0}, *l_error_message = NULL;
 
 
-    if ( sqlite3_threadsafe() && !sqlite3_config(SQLITE_CONFIG_SERIALIZED) )
+    if ( sqlite3_threadsafe() && !sqlite3_config(SQLITE_CONFIG_MULTITHREAD) )
         l_ret = sqlite3_initialize();
 
     if ( l_ret != SQLITE_OK ) {

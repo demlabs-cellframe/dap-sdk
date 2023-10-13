@@ -15,7 +15,7 @@
 #define GDB_SYNC_ALWAYS_FROM_ZERO       // For debug purposes
 // for dap_db_log_list_xxx()
 
-#define DAP_DB_LOG_LIST_MAX_SIZE    (256 * 1024)
+#define DAP_DB_LOG_LIST_MAX_SIZE 0xfffff
 
 typedef void (*dap_store_obj_callback_notify_t) (dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_obj, void * a_arg);
 
@@ -53,9 +53,8 @@ typedef struct dap_db_log_list_obj {
 
 typedef struct dap_db_log_list {
     dap_list_t *items_list;
-    bool is_process;
-    size_t items_rest; // rest items to read from items_list
-    size_t items_number; // total items after reading from db
+    _Atomic(bool) is_process;
+    _Atomic(size_t) items_number, items_rest;
     dap_list_t *groups;
     size_t size;
     pthread_cond_t cond;
@@ -101,9 +100,9 @@ uint64_t dap_store_packet_get_id(dap_global_db_pkt_t *a_pkt);
 void dap_global_db_pkt_change_id(dap_global_db_pkt_t *a_pkt, uint64_t a_id);
 
 dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node_addr, int a_flags);
-size_t dap_db_log_list_get_count(dap_db_log_list_t *a_db_log_list);
-size_t dap_db_log_list_get_count_rest(dap_db_log_list_t *a_db_log_list);
 dap_db_log_list_obj_t *dap_db_log_list_get(dap_db_log_list_t *a_db_log_list);
+dap_db_log_list_obj_t **dap_db_log_list_get_multiple(dap_db_log_list_t *a_db_log_list, size_t a_size_limit, size_t *a_count);
+
 void dap_db_log_list_delete(dap_db_log_list_t *a_db_log_list);
 int dap_global_db_remote_apply_obj_unsafe(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_obj,
                                           dap_global_db_callback_results_raw_t a_callback, void *a_arg);

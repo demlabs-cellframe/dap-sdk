@@ -36,7 +36,7 @@
  * top-level directory of the distribution or, alternatively, at
  * <http://www.OpenLDAP.org/license.html>. */
 
-#define MDBX_BUILD_SOURCERY c510b93d78b5848764f976ea67f06d278a7b99f141b4c98ceb095285f834f31c_v0_11_7_0_g40ec559c
+#define MDBX_BUILD_SOURCERY 62eacc68d08e21a1f4d18c16b6bea7510bae1d86d5a65d406b0db3a57e59a4b6_v0_11_6_39_gbb8f4318
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -72,8 +72,7 @@
 /*----------------------------------------------------------------------------*/
 
 /* Should be defined before any includes */
-#if !defined(_FILE_OFFSET_BITS) && !defined(__ANDROID_API__) &&                \
-    !defined(ANDROID)
+#ifndef _FILE_OFFSET_BITS
 #define _FILE_OFFSET_BITS 64
 #endif
 
@@ -907,14 +906,6 @@ typedef pthread_mutex_t mdbx_fastmutex_t;
 #define MDBX_WORDBITS 32
 #endif /* MDBX_WORDBITS */
 
-#if defined(__ANDROID_API__) || defined(ANDROID)
-#if defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS != MDBX_WORDBITS
-#error "_FILE_OFFSET_BITS != MDBX_WORDBITS" (_FILE_OFFSET_BITS != MDBX_WORDBITS)
-#elif defined(__FILE_OFFSET_BITS) && __FILE_OFFSET_BITS != MDBX_WORDBITS
-#error "__FILE_OFFSET_BITS != MDBX_WORDBITS" (__FILE_OFFSET_BITS != MDBX_WORDBITS)
-#endif
-#endif /* Android */
-
 /*----------------------------------------------------------------------------*/
 /* Compiler's includes for builtins/intrinsics */
 
@@ -1305,7 +1296,6 @@ MDBX_MAYBE_UNUSED static __inline uint32_t mdbx_getpid(void) {
 #if defined(_WIN32) || defined(_WIN64)
   return GetCurrentProcessId();
 #else
-  STATIC_ASSERT(sizeof(pid_t) <= sizeof(uint32_t));
   return getpid();
 #endif
 }
@@ -1320,20 +1310,6 @@ MDBX_MAYBE_UNUSED static __inline uintptr_t mdbx_thread_self(void) {
 #endif
   return (uintptr_t)thunk;
 }
-
-#if !defined(_WIN32) && !defined(_WIN64)
-#if defined(__ANDROID_API__) || defined(ANDROID) || defined(BIONIC)
-MDBX_INTERNAL_FUNC int mdbx_check_tid4bionic(void);
-#else
-static __inline int mdbx_check_tid4bionic(void) { return 0; }
-#endif /* __ANDROID_API__ || ANDROID) || BIONIC */
-
-MDBX_MAYBE_UNUSED static __inline int
-mdbx_pthread_mutex_lock(pthread_mutex_t *mutex) {
-  int err = mdbx_check_tid4bionic();
-  return unlikely(err) ? err : pthread_mutex_lock(mutex);
-}
-#endif /* !Windows */
 
 MDBX_INTERNAL_FUNC uint64_t mdbx_osal_monotime(void);
 MDBX_INTERNAL_FUNC uint64_t
@@ -1565,8 +1541,6 @@ typedef LSTATUS(WINAPI *MDBX_RegGetValueA)(HKEY hkey, LPCSTR lpSubKey,
                                            LPDWORD pdwType, PVOID pvData,
                                            LPDWORD pcbData);
 MDBX_INTERNAL_VAR MDBX_RegGetValueA mdbx_RegGetValueA;
-
-NTSYSAPI ULONG RtlRandomEx(PULONG Seed);
 
 #endif /* Windows */
 

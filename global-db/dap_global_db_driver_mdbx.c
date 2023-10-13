@@ -226,7 +226,6 @@ MDBX_val    l_key_iov, l_data_iov;
         return  log_it(L_ERROR, "Cannot allocate DB context for '%s', errno=%d", a_group, errno), NULL;
 
     memcpy(l_db_ctx->name,  a_group, l_db_ctx->namelen = l_name_len);             /* Store group name in the DB context */
-
     /*
     ** Start transaction, create table, commit.
     */
@@ -243,11 +242,9 @@ MDBX_val    l_key_iov, l_data_iov;
     l_data_iov.iov_base =  l_key_iov.iov_base = l_db_ctx->name;
     l_data_iov.iov_len = l_key_iov.iov_len = l_db_ctx->namelen + 1;    /* Count '\0' */
 
-    if ( MDBX_SUCCESS != (l_rc = mdbx_put(l_txn, s_db_master_dbi, &l_key_iov, &l_data_iov, MDBX_NOOVERWRITE ))
-         && (l_rc != MDBX_KEYEXIST) )
-    {
+    if (MDBX_SUCCESS != (l_rc = mdbx_put(l_txn, s_db_master_dbi, &l_key_iov, &l_data_iov, MDBX_NOOVERWRITE))
+         && (l_rc != MDBX_KEYEXIST)) {
         log_it (L_ERROR, "mdbx_put: (%d) %s", l_rc, mdbx_strerror(l_rc));
-
         if ( MDBX_SUCCESS != (l_rc = mdbx_txn_abort(l_txn)) )
             return  log_it(L_CRITICAL, "mdbx_txn_abort: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     }
@@ -634,7 +631,7 @@ dap_store_obj_t *l_obj;
     if (l_cursor)                                                           // Release uncesessary MDBX cursor area,
         mdbx_cursor_close(l_cursor);                                        //but keep transaction !!!
 
-    if (!l_last_key.iov_len || !l_last_data.iov_len) {                       /* Not found anything  - return NULL */
+    if (!l_last_key.iov_len || !l_last_data.iov_len) {                      /* Not found anything  - return NULL */
         mdbx_txn_commit(l_txn);
         return NULL;
     }
@@ -647,7 +644,6 @@ dap_store_obj_t *l_obj;
     } else {
         l_rc = MDBX_PROBLEM, log_it (L_ERROR, "Cannot allocate a memory for store object, errno=%d", errno);
     }
-
     mdbx_txn_commit(l_txn);
 
     return l_rc == MDBX_SUCCESS ? l_obj : NULL;
@@ -813,7 +809,6 @@ size_t s_db_mdbx_read_count_store(const char *a_group, dap_nanotime_t a_timestam
     mdbx_cursor_close(l_cursor);
     mdbx_txn_commit(l_txn);
     dap_store_obj_free(l_obj, 1);
-
     return l_ret_count;
 }
 
@@ -845,7 +840,7 @@ dap_db_ctx_t *l_db_ctx, *l_db_ctx2;
 
     HASH_ITER(hh, s_db_ctxs, l_db_ctx, l_db_ctx2) {
         if (!dap_fnmatch(a_group_mask, l_db_ctx->name, 0) )                 /* Name match a pattern/mask ? */
-            l_ret_list = dap_list_prepend(l_ret_list, dap_strdup(l_db_ctx->name)); /* Add group name to output list */
+            l_ret_list = dap_list_prepend(l_ret_list, l_db_ctx->name); /* Add group name to output list */
     }
 
     dap_assert ( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
@@ -1002,9 +997,7 @@ MDBX_stat   l_stat;
     if ( a_key ) {
         l_key.iov_base = (void *) a_key;                                    /* Fill IOV for MDBX key */
         l_key.iov_len =  strlen(a_key);
-
-        if ( MDBX_SUCCESS == (l_rc = mdbx_get(l_txn, l_db_ctx->dbi, &l_key, &l_data)) )
-        {
+        if (MDBX_SUCCESS == (l_rc = mdbx_get(l_txn, l_db_ctx->dbi, &l_key, &l_data))) {
             /* Found ! Make new <store_obj> */
             if ( !(l_obj = DAP_CALLOC(1, sizeof(dap_store_obj_t))) ) {
                 log_it (L_ERROR, "Cannot allocate a memory for store object key, errno=%d", errno);
@@ -1031,7 +1024,7 @@ MDBX_stat   l_stat;
          * Retrieve statistic for group/table, we need to compute a number of records can be retreived
          */
         l_rc2 = 0;
-        if ( MDBX_SUCCESS != (l_rc = mdbx_dbi_stat(l_txn, l_db_ctx->dbi, &l_stat, sizeof(MDBX_stat))) ) {
+        if (MDBX_SUCCESS != (l_rc = mdbx_dbi_stat(l_txn, l_db_ctx->dbi, &l_stat, sizeof(MDBX_stat)))) {
             log_it (L_ERROR, "mdbx_dbi_stat: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
             break;
         } else if (!l_stat.ms_entries) {                                    /* Nothing to retrieve , table contains no record */

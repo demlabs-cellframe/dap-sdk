@@ -113,7 +113,7 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
         return -2;
     }
     *l_item = (dap_proc_queue_item_t){ .callback = a_callback,
-                                       .callback_arg = a_callback_arg};
+                                       .callback_arg = a_callback_arg };
     pthread_mutex_lock(&l_thread->queue_lock);
     DL_APPEND(l_thread->queue[a_priority], l_item);
     l_thread->proc_queue_size++;

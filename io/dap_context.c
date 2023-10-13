@@ -196,7 +196,7 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
 
         // Prepare timer
         struct timespec l_timeout;
-        clock_gettime(CLOCK_MONOTONIC, &l_timeout);
+        clock_gettime(CLOCK_REALTIME, &l_timeout);
         l_timeout.tv_sec += DAP_CONTEXT_WAIT_FOR_STARTED_TIME;
         // Lock started mutex and try to run a thread
         pthread_mutex_lock(&a_context->started_mutex);
