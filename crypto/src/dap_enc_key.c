@@ -611,7 +611,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         break;
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         sphincsplus_private_key_delete((sphincsplus_private_key_t *) a_key->priv_key_data);
-        a_key->priv_key_data = (uint8_t*) dap_enc_falcon_read_private_key(a_buf, a_buflen);
+        a_key->priv_key_data = (uint8_t*) dap_enc_sphincsplus_read_private_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
             return -1;

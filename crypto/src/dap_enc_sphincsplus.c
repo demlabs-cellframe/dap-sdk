@@ -221,7 +221,7 @@ sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_b
         return NULL;
 
     if(a_buflen < (sizeof(uint64_t) + l_public_length) ){
-        log_it(L_ERROR,"::read_private_key() Buflen %zd is smaller than all fields together(%zd)", a_buflen,
+        log_it(L_ERROR,"::read_public_key() Buflen %zd is smaller than all fields together(%zd)", a_buflen,
                sizeof(uint64_t) + l_public_length );
         return NULL;
     }
