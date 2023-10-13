@@ -64,14 +64,13 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
     }
     // creating key pair
     dap_enc_sig_sphincsplus_key_new(a_key);
-    a_key->priv_key_data_size = sphincsplus_crypto_sign_secretkeybytes();
-    a_key->pub_key_data_size = sphincsplus_crypto_sign_publickeybytes();
+    a_key->priv_key_data_size = sizeof(sphincsplus_private_key_t);
+    a_key->pub_key_data_size = sizeof(sphincsplus_public_key_t);
 
-    if ( !(l_skey = DAP_NEW_Z(sphincsplus_private_key_t)) || !(l_pkey = DAP_NEW_Z(sphincsplus_public_key_t)) ) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return;
-    };
-    if ( !(l_skey->data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size)) || !(l_pkey->data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size)) ) {
+    DAP_NEW_Z_RET(l_skey, sphincsplus_private_key_t);
+    DAP_NEW_Z_RET(l_pkey, sphincsplus_public_key_t);
+
+    if ( !(l_skey->data = DAP_NEW_Z_SIZE(uint8_t, sphincsplus_crypto_sign_secretkeybytes())) || !(l_pkey->data = DAP_NEW_Z_SIZE(uint8_t, sphincsplus_crypto_sign_publickeybytes())) ) {
         log_it(L_CRITICAL, "Memory allocation error");
         DAP_DEL_Z(l_skey->data);
         DAP_DEL_Z(l_pkey->data);
@@ -143,7 +142,7 @@ uint8_t* dap_enc_sphincsplus_write_private_key(const sphincsplus_private_key_t* 
 {
     dap_return_val_if_pass(!a_private_key, NULL);
 
-    size_t l_secret_length = dap_sphincsplus_crypto_sign_secretkeybytes();
+    size_t l_secret_length = dap_enc_sphincsplus_crypto_sign_secretkeybytes();
     uint64_t l_buflen = sizeof(uint64_t) + l_secret_length;
     uint8_t *l_buf = dap_serialize_multy(l_buflen, 4, &l_buflen, sizeof(uint64_t), a_private_key->data, l_secret_length);
 
@@ -165,7 +164,7 @@ sphincsplus_private_key_t *dap_enc_sphincsplus_read_private_key(const uint8_t *a
     }
     
     uint64_t l_buflen = 0;
-    size_t l_secret_length = dap_sphincsplus_crypto_sign_secretkeybytes();
+    size_t l_secret_length = dap_enc_sphincsplus_crypto_sign_secretkeybytes();
 
     memcpy(&l_buflen, a_buf, sizeof(uint64_t));
     if(l_buflen != (uint64_t) a_buflen)
@@ -193,7 +192,7 @@ uint8_t *dap_enc_sphincsplus_write_public_key(const sphincsplus_public_key_t* a_
 {
     if (!a_public_key)
         return NULL;
-    size_t l_public_length = dap_sphincsplus_crypto_sign_publickeybytes();
+    size_t l_public_length = dap_enc_sphincsplus_crypto_sign_publickeybytes();
     uint64_t l_buflen = sizeof(uint64_t) + l_public_length;
     uint8_t *l_buf = dap_serialize_multy(l_buflen, 4, &l_buflen, sizeof(uint64_t), a_public_key->data, l_public_length);
 
@@ -215,7 +214,7 @@ sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_b
     }
     
     uint64_t l_buflen = 0;
-    size_t l_public_length = dap_sphincsplus_crypto_sign_publickeybytes();
+    size_t l_public_length = dap_enc_sphincsplus_crypto_sign_publickeybytes();
 
     memcpy(&l_buflen, a_buf, sizeof(uint64_t));
     if(l_buflen != (uint64_t) a_buflen)
@@ -337,7 +336,7 @@ void sphincsplus_public_key_delete(sphincsplus_public_key_t *a_pkey)
 /*
  * Returns the length of a secret key, in bytes
  */
-unsigned long long dap_sphincsplus_crypto_sign_secretkeybytes()
+unsigned long long dap_enc_sphincsplus_crypto_sign_secretkeybytes()
 {
     return sphincsplus_crypto_sign_secretkeybytes();
 }
@@ -345,23 +344,20 @@ unsigned long long dap_sphincsplus_crypto_sign_secretkeybytes()
 /*
  * Returns the length of a public key, in bytes
  */
-unsigned long long dap_sphincsplus_crypto_sign_publickeybytes()
+unsigned long long dap_enc_sphincsplus_crypto_sign_publickeybytes()
 {
     return sphincsplus_crypto_sign_publickeybytes();
 }
 
 /*
- * Returns the length of a signature, in bytes
- */
-unsigned long long dap_sphincsplus_crypto_sign_size()
-{
-    return sizeof(sphincsplus_signature_t);
-}
-
-/*
  * Returns the length of the seed required to generate a key pair, in bytes
  */
-unsigned long long dap_sphincsplus_crypto_sign_seedbytes()
+unsigned long long dap_enc_sphincsplus_crypto_sign_seedbytes()
 {
     return sphincsplus_crypto_sign_seedbytes();
+}
+
+size_t dap_enc_sphincsplus_calc_signature_unserialized_size()
+{
+    return sizeof(sphincsplus_signature_t); 
 }

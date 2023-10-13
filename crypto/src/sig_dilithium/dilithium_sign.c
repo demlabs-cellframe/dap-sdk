@@ -409,6 +409,5 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
 void dilithium_signature_delete(dilithium_signature_t *sig){
     assert(sig != NULL);
 
-    free(sig->sig_data);
-    sig->sig_data = NULL;
+    DAP_DEL_Z(sig->sig_data);
 }

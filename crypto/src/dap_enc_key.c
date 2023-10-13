@@ -465,12 +465,12 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
         l_data = (uint8_t*)dap_enc_falcon_read_signature(a_sign, *a_sign_len);
         *a_sign_len = sizeof(falcon_signature_t);
         break;
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        l_data = (uint8_t*)dap_enc_sphincsplus_read_signature(a_sign, *a_sign_len);
+        *a_sign_len = sizeof(sphincsplus_signature_t);
+        break;
     default:
-        l_data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
-        if(!l_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            return NULL;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, *a_sign_len, NULL);
         memcpy(l_data, a_sign, *a_sign_len);
     }
     return l_data;
@@ -500,12 +500,11 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
         l_data = dap_enc_falcon_write_private_key(a_key->priv_key_data, a_buflen_out);
         break;
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        l_data = dap_enc_sphincsplus_write_private_key(a_key->priv_key_data, a_buflen_out);
+        break;
     default:
-        l_data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
-        if(!l_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            return NULL;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->priv_key_data_size, NULL);
         memcpy(l_data, a_key->priv_key_data, a_key->priv_key_data_size);
         if(a_buflen_out)
             *a_buflen_out = a_key->priv_key_data_size;
@@ -540,12 +539,11 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
         l_data = dap_enc_falcon_write_public_key(a_key->pub_key_data, a_buflen_out);
         break;
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        l_data = dap_enc_sphincsplus_write_public_key(a_key->pub_key_data, a_buflen_out);
+        break;
     default:
-        l_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
-        if(!l_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            return NULL;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->pub_key_data_size, NULL);
         memcpy(l_data, a_key->pub_key_data, a_key->pub_key_data_size);
         if(a_buflen_out)
             *a_buflen_out = a_key->pub_key_data_size;
@@ -571,8 +569,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
             DAP_DELETE(a_key->pub_key_data);
         }
         a_key->priv_key_data = (uint8_t*) dap_enc_sig_bliss_read_private_key(a_buf, a_buflen);
-        if(!a_key->priv_key_data)
-        {
+        if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
             return -1;
         }
@@ -581,8 +578,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
         tesla_private_key_delete((tesla_private_key_t *) a_key->priv_key_data);
         a_key->priv_key_data = (uint8_t*) dap_enc_tesla_read_private_key(a_buf, a_buflen);
-        if(!a_key->priv_key_data)
-        {
+        if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
             return -1;
         }
@@ -591,19 +587,14 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
     case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         DAP_DELETE(a_key->priv_key_data);
         a_key->priv_key_data_size = a_buflen;
-        a_key->priv_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
-        if(!a_key->priv_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            return -1;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -1);
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
         dap_enc_sig_picnic_update(a_key);
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         dilithium_private_key_delete((dilithium_private_key_t *) a_key->priv_key_data);
         a_key->priv_key_data = (uint8_t*) dap_enc_dilithium_read_private_key(a_buf, a_buflen);
-        if(!a_key->priv_key_data)
-        {
+        if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
             return -1;
         }
@@ -612,21 +603,25 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
         falcon_private_key_delete((falcon_private_key_t *) a_key->priv_key_data);
         a_key->priv_key_data = (uint8_t*) dap_enc_falcon_read_private_key(a_buf, a_buflen);
-        if(!a_key->priv_key_data)
-        {
+        if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
             return -1;
         }
         a_key->priv_key_data_size = sizeof(falcon_private_key_t);
         break;
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        sphincsplus_private_key_delete((sphincsplus_private_key_t *) a_key->priv_key_data);
+        a_key->priv_key_data = (uint8_t*) dap_enc_falcon_read_private_key(a_buf, a_buflen);
+        if(!a_key->priv_key_data) {
+            a_key->priv_key_data_size = 0;
+            return -1;
+        }
+        a_key->priv_key_data_size = sizeof(sphincsplus_private_key_t);
+        break;
     default:
         DAP_DELETE(a_key->priv_key_data);
         a_key->priv_key_data_size = a_buflen;
-        a_key->priv_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->priv_key_data_size);
-        if(!a_key->priv_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            return -1;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -1);
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
     }
     return 0;
@@ -651,8 +646,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
             DAP_DELETE(a_key->pub_key_data);
         }
         a_key->pub_key_data = (uint8_t*) dap_enc_sig_bliss_read_public_key(a_buf, a_buflen);
-        if(!a_key->pub_key_data)
-        {
+        if(!a_key->pub_key_data) {
             a_key->pub_key_data_size = 0;
             return -1;
         }
@@ -661,8 +655,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
         tesla_public_key_delete((tesla_public_key_t *) a_key->pub_key_data);
         a_key->pub_key_data = (uint8_t*) dap_enc_tesla_read_public_key(a_buf, a_buflen);
-        if(!a_key->pub_key_data)
-        {
+        if(!a_key->pub_key_data) {
             a_key->pub_key_data_size = 0;
             return -1;
         }
@@ -671,11 +664,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
     case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         DAP_DELETE(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
-        a_key->pub_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
-        if(!a_key->pub_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            return -1;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1);
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
         dap_enc_sig_picnic_update(a_key);
         break;
@@ -684,8 +673,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
             dilithium_public_key_delete((dilithium_public_key_t *) a_key->pub_key_data);
 
         a_key->pub_key_data = (uint8_t*) dap_enc_dilithium_read_public_key(a_buf, a_buflen);
-        if(!a_key->pub_key_data)
-        {
+        if(!a_key->pub_key_data) {
             a_key->pub_key_data_size = 0;
             return -1;
         }
@@ -696,21 +684,27 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
             falcon_public_key_delete((falcon_public_key_t *) a_key->pub_key_data);
 
         a_key->pub_key_data = (uint8_t*) dap_enc_falcon_read_public_key(a_buf, a_buflen);
-        if(!a_key->pub_key_data)
-        {
+        if(!a_key->pub_key_data) {
             a_key->pub_key_data_size = 0;
             return -1;
         }
         a_key->pub_key_data_size = sizeof(falcon_public_key_t);
         break;
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        if ( a_key->pub_key_data )
+            sphincsplus_public_key_delete((sphincsplus_public_key_t *)a_key->pub_key_data);
+
+        a_key->pub_key_data = (uint8_t*) dap_enc_sphincsplus_read_public_key(a_buf, a_buflen);
+        if(!a_key->pub_key_data) {
+            a_key->pub_key_data_size = 0;
+            return -1;
+        }
+        a_key->pub_key_data_size = sizeof(sphincsplus_public_key_t);
+        break;
     default:
         DAP_DELETE(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
-        a_key->pub_key_data = DAP_NEW_Z_SIZE(uint8_t, a_key->pub_key_data_size);
-        if(!a_key->pub_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            return -1;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1);
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
     }
     return 0;
@@ -855,15 +849,15 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
     
     dap_enc_key_t *l_key = NULL, *l_key_ser = NULL;
     const char *l_msg = "This need sign";
-    unsigned char       pk[dap_sphincsplus_crypto_sign_publickeybytes()], sk[dap_sphincsplus_crypto_sign_secretkeybytes()];
-    unsigned char *l_smsg = DAP_NEW_Z_SIZE(unsigned char, dap_sphincsplus_crypto_sign_size());
+    unsigned char       pk[dap_enc_sphincsplus_crypto_sign_publickeybytes()], sk[dap_enc_sphincsplus_crypto_sign_secretkeybytes()];
+    unsigned char *l_smsg = DAP_NEW_Z_SIZE(unsigned char, dap_enc_sphincsplus_calc_signature_unserialized_size());
     size_t l_smsg_size = 0;
     if ((size_t)a_key_type < c_callbacks_size) {
         l_key = DAP_NEW_Z(dap_enc_key_t);
         l_key_ser = DAP_NEW_Z(dap_enc_key_t);
         if (!l_key || !l_key_ser) {
             log_it(L_CRITICAL, "Memory allocation error");
-            return NULL;
+            return;
         }
         if(s_callbacks[a_key_type].new_generate_callback) {
             s_callbacks[a_key_type].new_generate_callback( l_key, a_kex_buf, a_kex_size, a_seed, a_seed_size, a_key_size);
@@ -1036,6 +1030,9 @@ void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_
         break;
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
         DAP_DELETE(((falcon_signature_t *)a_sig_buf)->sig_data);
+        break;
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        DAP_DELETE(((sphincsplus_signature_t *)a_sig_buf)->sig_data);
         break;
     default:
         break;

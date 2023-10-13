@@ -34,11 +34,10 @@ uint8_t* dap_enc_sphincsplus_write_public_key(const sphincsplus_public_key_t* a_
 sphincsplus_private_key_t *dap_enc_sphincsplus_read_private_key(const uint8_t *a_buf, size_t a_buflen);
 sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_buf, size_t a_buflen);
 
-// DAP_STATIC_INLINE size_t dap_enc_falcon_calc_signature_unserialized_size() { return sizeof(falcon_signature_t); }
-
-unsigned long long dap_sphincsplus_crypto_sign_secretkeybytes();
-unsigned long long dap_sphincsplus_crypto_sign_publickeybytes();
-unsigned long long dap_sphincsplus_crypto_sign_bytes();
-unsigned long long dap_sphincsplus_crypto_sign_seedbytes();
+unsigned long long dap_enc_sphincsplus_crypto_sign_secretkeybytes();
+unsigned long long dap_enc_sphincsplus_crypto_sign_publickeybytes();
+unsigned long long dap_enc_sphincsplus_crypto_sign_bytes();
+unsigned long long dap_enc_sphincsplus_crypto_sign_seedbytes();
+size_t dap_enc_sphincsplus_calc_signature_unserialized_size();
 
 #endif //_DAP_ENC_SPHINCSPLUS_H
