@@ -35,12 +35,16 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 int dap_global_db_cluster_init()
 {
-    return 0;
+    return dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_ANY, DAP_GLOBAL_DB_CLUSTER_ANY ".*",
+                                     DAP_GLOBAL_DB_UNCLUSTERED_TTL, true, s_callback_unclustered_notify, dap_global_db_instance_get_default(),
+                                     DAP_GDB_MEMBER_ROLE_USER, DAP_CLUSTER_ROLE_EMBEDDED);
 }
 
 void dap_global_db_cluster_deinit()
 {
-
+    dap_global_db_cluster_t *it, *tmp;
+    DL_FOREACH_SAFE(dap_global_db_instance_get_default()->clusters, it, tmp)
+        dap_global_db_cluster_delete(it);
 }
 
 static bool s_group_match_mask(const char *a_group, const char *a_mask)
@@ -86,39 +90,39 @@ void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_sto
     DAP_DELETE(l_pkt);
 }
 
-dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim,
-                                                   const char *a_group_mask, uint64_t a_ttl, bool a_owner_access,
-                                                   dap_store_obj_callback_notify_t a_callback, void *a_callback_arg,
-                                                   dap_global_db_role_t a_default_role)
+int dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim,
+                              const char *a_group_mask, uint64_t a_ttl, bool a_owner_root_access,
+                              dap_store_obj_callback_notify_t a_callback, void *a_callback_arg,
+                              dap_global_db_role_t a_default_role, dap_cluster_role_t a_links_cluster_role)
 {
     if (!a_callback) {
         log_it(L_ERROR, "Trying to set NULL callback for mask %s", a_group_mask);
-        return NULL;
+        return -1;
     }
     dap_global_db_cluster_t *it;
     DL_FOREACH(a_dbi->clusters, it) {
         if (!dap_strcmp(it->groups_mask, a_group_mask)) {
             log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_group_mask);
-            return NULL;
+            return -2;
         }
     }
     dap_global_db_cluster_t *l_cluster = DAP_NEW_Z(dap_global_db_cluster_t);
     if (!l_cluster) {
         log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
+        return -3;
     }
-    l_cluster->member_cluster = dap_cluster_new(0);
+    l_cluster->member_cluster = dap_cluster_new(a_links_cluster_role);
     if (!l_cluster->member_cluster) {
         log_it(L_ERROR, "Can't create member cluster");
         DAP_DELETE(l_cluster);
-        return NULL;
+        return -4;
     }
     l_cluster->groups_mask = dap_strdup(a_group_mask);
     if (!l_cluster->groups_mask) {
         log_it(L_CRITICAL, "Memory allocation error");
         dap_cluster_delete(l_cluster->member_cluster);
         DAP_DELETE(l_cluster);
-        return NULL;
+        return -5;
     }
     if (a_mnemonim) {
         l_cluster->mnemonim = dap_strdup(a_mnemonim);
@@ -127,17 +131,17 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
             dap_cluster_delete(l_cluster->member_cluster);
             DAP_DELETE(l_cluster->groups_mask);
             DAP_DELETE(l_cluster);
-            return NULL;
+            return -6;
         }
     }
     l_cluster->callback_notify = a_callback;
     l_cluster->callback_arg = a_callback_arg;
     l_cluster->ttl = a_ttl;
     l_cluster->default_role = a_default_role;
-    l_cluster->owner_root_access = a_owner_access;
+    l_cluster->owner_root_access = a_owner_root_access;
     l_cluster->dbi = a_dbi;
     DL_APPEND(a_dbi->clusters, l_cluster);
-    return l_cluster;
+    return 0;
 }
 
 void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)

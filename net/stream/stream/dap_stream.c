@@ -178,12 +178,14 @@ int dap_stream_init(dap_config_t * a_config)
         log_it(L_CRITICAL, "Can't init stream worker extention submodule");
         return -2;
     }
-
+    if (s_stream_init_node_addr_cert()) {
+        log_it(L_ERROR, "Error init node-addr cert");
+        return -3;
+    }
     s_stream_load_preferred_encryption_type(a_config);
-    s_stream_init_node_addr_cert();
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config,"general","debug_dump_stream_headers",false);
     s_debug = dap_config_get_item_bool_default(g_config,"stream","debug",false);
-#ifdef  DAP_SYS_DEBUG
+#ifdef DAP_SYS_DEBUG
     for (int i = 0; i < MEMSTAT$K_NR; i++)
         dap_memstat_reg(&s_memstat[i]);
 #endif

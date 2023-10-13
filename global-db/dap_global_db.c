@@ -692,17 +692,8 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
     if (l_values_count > 1)
         qsort(l_objs, l_values_count, sizeof(dap_global_db_obj_t), s_db_compare_by_ts);
     if (a_objs_count)
-        *a_objs_count = i;
+        *a_objs_count = l_values_count;
     return l_objs;
-mem_clear:
-        log_it(L_CRITICAL, "Memory allocation error");
-    for(size_t j = 0; j < l_values_count && l_objs; j++) {
-        DAP_DEL_Z(l_objs[j].key);
-        DAP_DEL_Z(l_objs[j].value);
-    }
-    DAP_DEL_Z(l_objs);
-    dap_store_obj_free(l_store_objs, l_values_count);
-    return NULL;
 }
 
 /**
@@ -1721,7 +1712,7 @@ static void s_check_db_version_callback_set (dap_global_db_instance_t *a_dbi,int
  * @return pointer if not error, else NULL
  */
 
-dap_global_db_obj_t *s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_t a_values_count)
+dap_global_db_obj_t *s_objs_from_store_objs(const dap_store_obj_t *a_store_objs, size_t a_values_count)
 {
     dap_return_val_if_pass(!a_store_objs, NULL);
     
