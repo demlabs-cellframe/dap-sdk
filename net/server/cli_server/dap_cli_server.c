@@ -730,7 +730,8 @@ int json_commands(const char * a_name) {
     const char* long_cmd[] = {
             "tx_history",
             "mempool_list",
-            "mempool_proc"
+            "mempool_proc",
+            "mempool_proc_all"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
