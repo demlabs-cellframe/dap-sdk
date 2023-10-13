@@ -203,7 +203,7 @@ static void *s_list_thread_proc2(void *arg) {
         dap_nanotime_t  l_time_allowed = l_now + dap_nanotime_from_sec(24 * 3600),
                         l_two_weeks_ago = l_now - dap_nanotime_from_sec(15 * 24 * 3600);
         size_t l_item_count = 0, l_objs_total_size = 0;
-        dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group->name, 0, &l_item_count);
+        dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group->name, &l_item_count);
         if (!l_objs)
             continue;
         if (l_item_count != l_group->count) {
