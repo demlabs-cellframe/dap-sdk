@@ -184,8 +184,13 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
     // If we have to wait for started thread (and initialization inside )
     if( a_flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED){
         // Init kernel objects
+        pthread_condattr_t attr;
+        pthread_condattr_init(&attr);
+#ifndef DAP_OS_DARWIN
+        pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+#endif
         pthread_mutex_init(&a_context->started_mutex, NULL);
-        pthread_cond_init( &a_context->started_cond, NULL);
+        pthread_cond_init( &a_context->started_cond, &attr);
 
         // Prepare timer
         struct timespec l_timeout;
@@ -1583,6 +1588,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     l_es->buf_in = DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max);
     l_es->buf_out = DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max);
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
+
     pthread_rwlock_init(&l_es->buf_out_lock, NULL);
 #endif
 #if defined(DAP_EVENTS_CAPS_EPOLL)

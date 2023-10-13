@@ -143,9 +143,9 @@ typedef void (*dap_global_db_callback_results_raw_t) (dap_global_db_context_t * 
                                                       const size_t a_values_current, const size_t a_values_count,
                                                       dap_store_obj_t *a_values, void *a_arg);
 // Return codes
-#define DAP_GLOBAL_DB_RC_SUCCESS         0
-#define DAP_GLOBAL_DB_RC_NO_RESULTS     -1
-#define DAP_GLOBAL_DB_RC_ERROR           -666
+#define DAP_GLOBAL_DB_RC_SUCCESS     0
+#define DAP_GLOBAL_DB_RC_NO_RESULTS -1
+#define DAP_GLOBAL_DB_RC_ERROR      -6
 
 extern int g_dap_global_db_debug_more;
 
@@ -225,3 +225,5 @@ int dap_global_db_pin_unsafe(dap_global_db_context_t *a_global_db_context, const
 int dap_global_db_unpin_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group, const char *a_key);
 int dap_global_db_del_unsafe(dap_global_db_context_t *a_global_db_context, const char * a_group, const char *a_key);
 int dap_global_db_flush_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context);
+
+bool dap_global_db_isalnum_group_key(dap_store_obj_t*);
