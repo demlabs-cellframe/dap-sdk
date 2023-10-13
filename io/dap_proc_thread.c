@@ -201,7 +201,7 @@ static void s_proc_event_callback(dap_events_socket_t * a_esocket, uint64_t __at
 //            pthread_mutex_lock(&l_queue->list[l_cur_pri].lock);                 /* Protect list from other threads */
             dap_list_t *l_item_elem = l_queue->list[l_cur_pri].items;
             l_item = (dap_proc_queue_item_t*)l_item_elem->data;
-            l_queue->list[l_cur_pri].items = dap_list_remove_link(l_queue->list[l_cur_pri].items, l_item_elem);
+            l_queue->list[l_cur_pri].items = dap_list_delete_link(l_queue->list[l_cur_pri].items, l_item_elem);
 //            pthread_mutex_unlock(&l_queue->list[l_cur_pri].lock);
 
             debug_if (g_debug_reactor, L_INFO, "Proc event callback (l_item: %p) : %p/%p, prio=%d, iteration=%d",
