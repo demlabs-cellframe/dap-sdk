@@ -56,6 +56,11 @@ typedef struct dap_stream_ch{
     UT_hash_handle hh_worker;
 } dap_stream_ch_t;
 
+typedef struct dap_stream_ch_cachet {
+    dap_stream_worker_t *stream_worker;
+    dap_stream_ch_uuid_t uuid;
+} dap_stream_ch_cachet_t;
+
 int dap_stream_ch_init();
 void dap_stream_ch_deinit();
 
