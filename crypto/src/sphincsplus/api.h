@@ -17,22 +17,22 @@
 /*
  * Returns the length of a secret key, in bytes
  */
-unsigned long long sphincsplus_crypto_sign_secretkeybytes(void);
+uint64_t sphincsplus_crypto_sign_secretkeybytes(void);
 
 /*
  * Returns the length of a public key, in bytes
  */
-unsigned long long sphincsplus_crypto_sign_publickeybytes(void);
+uint64_t sphincsplus_crypto_sign_publickeybytes(void);
 
 /*
  * Returns the length of a signature, in bytes
  */
-unsigned long long sphincsplus_crypto_sign_bytes(void);
+uint64_t sphincsplus_crypto_sign_bytes(void);
 
 /*
  * Returns the length of the seed required to generate a key pair, in bytes
  */
-unsigned long long sphincsplus_crypto_sign_seedbytes(void);
+uint64_t sphincsplus_crypto_sign_seedbytes(void);
 
 /*
  * Generates a SPHINCS+ key pair given a seed.
@@ -64,15 +64,15 @@ int sphincsplus_crypto_sign_verify(const uint8_t *sig, size_t siglen,
 /**
  * Returns an array containing the signature followed by the message.
  */
-int sphincsplus_crypto_sign(unsigned char *sm, unsigned long long *smlen,
-                const unsigned char *m, unsigned long long mlen,
+int sphincsplus_crypto_sign(unsigned char *sm, uint64_t *smlen,
+                const unsigned char *m, uint64_t mlen,
                 const unsigned char *sk);
 
 /**
  * Verifies a given signature-message pair under a given public key.
  */
-int sphincsplus_crypto_sign_open(unsigned char *m, unsigned long long *mlen,
-                     const unsigned char *sm, unsigned long long smlen,
+int sphincsplus_crypto_sign_open(unsigned char *m, uint64_t *mlen,
+                     const unsigned char *sm, uint64_t smlen,
                      const unsigned char *pk);
 
 #endif

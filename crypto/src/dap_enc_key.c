@@ -350,8 +350,8 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .name =                             "SIG_SPHINCSPLUS",
         .enc =                              NULL,
         .dec =                              NULL,
-        .enc_na =                           dap_enc_sig_sphincsplus_get_sign,
-        .dec_na =                           dap_enc_sig_sphincsplus_verify_sign,
+        .enc_na =                           dap_enc_sig_sphincsplus_get_sign_msg,
+        .dec_na =                           dap_enc_sig_sphincsplus_open_sign_msg,
         .gen_key_public =                   NULL,
         .gen_key_public_size =              NULL,
         .gen_bob_shared_key =               NULL,
@@ -361,8 +361,8 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .new_generate_callback =            dap_enc_sig_sphincsplus_key_new_generate,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
-        .sign_get =                         NULL,
-        .sign_verify =                      NULL
+        .sign_get =                         dap_enc_sig_sphincsplus_get_sign,
+        .sign_verify =                      dap_enc_sig_sphincsplus_verify_sign
     },
 
 #ifdef DAP_PQLR
@@ -849,6 +849,7 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
     
     dap_enc_key_t *l_key = NULL, *l_key_ser = NULL;
     const char *l_msg = "This need sign";
+    char l_dec_msg[strlen(l_msg)];
     unsigned char       pk[dap_enc_sphincsplus_crypto_sign_publickeybytes()], sk[dap_enc_sphincsplus_crypto_sign_secretkeybytes()];
     unsigned char *l_smsg = DAP_NEW_Z_SIZE(unsigned char, dap_enc_sphincsplus_calc_signature_unserialized_size());
     size_t l_smsg_size = 0;
@@ -867,11 +868,11 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
         if(s_callbacks[a_key_type].enc_na){
             l_smsg_size = s_callbacks[a_key_type].enc_na(l_key, l_msg, strlen(l_msg), l_smsg, 50000);
         }
-        printf("!!!!!!!!!!!!!!!Msg signed\n");
+
         if(s_callbacks[a_key_type].dec_na){
-            printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key, l_msg, strlen(l_msg), l_smsg, l_smsg_size));
+            printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key, l_smsg, l_smsg_size, l_dec_msg, l_smsg_size));
         }
-        printf("!!!!!!!!!!!!!!!Sign checked\n");
+        printf("!!!!!!!!!!!!!!!Sign checked %s\n", l_dec_msg);
 
         size_t s_ser_size = 0;
         uint8_t *l_ser_sin = dap_enc_sphincsplus_write_signature(l_smsg, &s_ser_size);
@@ -880,9 +881,9 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
         
 
         if(s_callbacks[a_key_type].dec_na){
-            printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key, l_msg, strlen(l_msg), l_unser_sin, l_smsg_size));
+            printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key, l_unser_sin, l_smsg_size, l_dec_msg, l_smsg_size));
         }
-        printf("!!!!!!!!!!!!!!!Sign checked again\n");
+        printf("!!!!!!!!!!!!!!!Sign checked agai %s\n", l_dec_msg);
 
 
         size_t s_ser_sk_size = 0;
@@ -896,7 +897,7 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
         l_key_ser->pub_key_data = dap_enc_sphincsplus_read_public_key(l_ser_pk, s_ser_pk_size);
 
         if(s_callbacks[a_key_type].dec_na){
-            printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key_ser, l_msg, strlen(l_msg), l_unser_sin, l_smsg_size));
+            printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key_ser, l_unser_sin, l_smsg_size, l_dec_msg, l_smsg_size));
         }
 
         if(s_callbacks[a_key_type].enc_na){
@@ -904,9 +905,9 @@ void s_temp_test_key(dap_enc_key_type_t a_key_type, const void *a_kex_buf,
         }
 
         if(s_callbacks[a_key_type].dec_na){
-            printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key, l_msg, strlen(l_msg), l_unser_sin, l_smsg_size));
+            printf("result sign check %lu\n", s_callbacks[a_key_type].dec_na(l_key, l_unser_sin, l_smsg_size, l_dec_msg, l_smsg_size));
         }
-        printf("!!!!!!!!!!!!!!!Sign signed and checked again\n");
+        printf("!!!!!!!!!!!!!!!Sign signed and checked again %s\n", l_dec_msg);
 
         if(s_callbacks[a_key_type].delete_callback){
             s_callbacks[a_key_type].delete_callback(l_key);
