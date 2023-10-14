@@ -26,10 +26,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include <stdint.h>
 #include <pthread.h>
 #include "uthash.h"
-#include "dap_guuid.h"
 #include "dap_list.h"
-
-#define DAP_CLUSTER_OPTIMUM_LINKS   3
+#include "dap_guuid.h"
 
 typedef struct dap_cluster dap_cluster_t;
 
@@ -46,25 +44,28 @@ typedef void (*dap_cluster_change_callback_t)(dap_cluster_t *a_cluster, dap_clus
 
 // Role in cluster
 typedef enum dap_cluster_role {
-    DAP_CLUSTER_ROLE_EMBEDDED = 0,   // Default role, passive link managment
-    DAP_CLUSTER_ROLE_AUTONOMIC       // Role for active internal independent link managment
+    DAP_CLUSTER_ROLE_EMBEDDED = 0,  // Default role, passive link managment
+    DAP_CLUSTER_ROLE_AUTONOMIC,     // Role for mixed link management, passive by default, switching to active one for absent links
+    DAP_CLUSTER_ROLE_ISOLATED       // Role for active internal independent link managment
 } dap_cluster_role_t;
 
 typedef struct dap_cluster {
-    dap_guuid_t guuid;
-    dap_cluster_role_t role;
+    const char *mnemonim;           // Field for alternative cluster finding, unique
+    dap_guuid_t uuid;               // Unique cluster id
+    dap_cluster_role_t role;        // Link management role
     pthread_rwlock_t members_lock;
-    dap_cluster_member_t *members;
+    dap_cluster_member_t *members;  // Cluster members (by stream addr) and callbacks
     dap_cluster_change_callback_t members_add_callback;
     dap_cluster_change_callback_t members_delete_callback;
     void *_inheritor;
-    UT_hash_handle hh;
+    UT_hash_handle hh, hh_str;      // Handles for uuid and mnemonim storages
 } dap_cluster_t;
 
 // Cluster common funcs
-dap_cluster_t *dap_cluster_new(dap_cluster_role_t a_role);
+dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_cluster_role_t a_role);
 void dap_cluster_delete(dap_cluster_t *a_cluster);
-dap_cluster_t *dap_cluster_find(dap_guuid_t a_guuid);
+dap_cluster_t *dap_cluster_find(dap_guuid_t a_uuid);
+dap_cluster_t *dap_cluster_by_mnemonim(const char *a_mnemonim);
 
 // Member funcs
 dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, int a_role, void *a_info);

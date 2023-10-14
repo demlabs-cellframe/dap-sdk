@@ -33,11 +33,16 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_global_db_cluster"
 
+static void s_callback_unclustered_notify(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_obj, void *a_arg)
+{
+    // TODO set and call global changes notificators
+}
+
 int dap_global_db_cluster_init()
 {
-    return dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_ANY, DAP_GLOBAL_DB_CLUSTER_ANY ".*",
-                                     DAP_GLOBAL_DB_UNCLUSTERED_TTL, true, s_callback_unclustered_notify, dap_global_db_instance_get_default(),
-                                     DAP_GDB_MEMBER_ROLE_USER, DAP_CLUSTER_ROLE_EMBEDDED);
+    return !!dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_ANY, DAP_GLOBAL_DB_CLUSTER_ANY ".*",
+                                       DAP_GLOBAL_DB_UNCLUSTERED_TTL, true, s_callback_unclustered_notify, NULL,
+                                       DAP_GDB_MEMBER_ROLE_USER, DAP_CLUSTER_ROLE_EMBEDDED);
 }
 
 void dap_global_db_cluster_deinit()
@@ -85,83 +90,64 @@ void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_sto
     if (!s_object_is_new(a_store_obj))
         return;         // Send new rumors only
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_store_obj);
-    dap_cluster_broadcast(dap_strcmp(a_cluster->mnemonim, DAP_GLOBAL_DB_CLUSTER_ANY) ? a_cluster->member_cluster : NULL,
-                          DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP, l_pkt, dap_global_db_pkt_get_size(l_pkt));
+    dap_cluster_broadcast(a_cluster->member_cluster, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP, l_pkt, dap_global_db_pkt_get_size(l_pkt));
     DAP_DELETE(l_pkt);
 }
 
-int dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim,
-                              const char *a_group_mask, uint64_t a_ttl, bool a_owner_root_access,
-                              dap_store_obj_callback_notify_t a_callback, void *a_callback_arg,
-                              dap_global_db_role_t a_default_role, dap_cluster_role_t a_links_cluster_role)
+dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim,
+                                                   const char *a_group_mask, uint32_t a_ttl, bool a_owner_root_access,
+                                                   dap_store_obj_callback_notify_t a_callback, void *a_callback_arg,
+                                                   dap_global_db_role_t a_default_role, dap_cluster_role_t a_links_cluster_role)
 {
     if (!a_callback) {
         log_it(L_ERROR, "Trying to set NULL callback for mask %s", a_group_mask);
-        return -1;
+        return NULL;
     }
     dap_global_db_cluster_t *it;
     DL_FOREACH(a_dbi->clusters, it) {
         if (!dap_strcmp(it->groups_mask, a_group_mask)) {
             log_it(L_WARNING, "Group mask '%s' already present in the list, ignore it", a_group_mask);
-            return -2;
+            return NULL;
         }
     }
     dap_global_db_cluster_t *l_cluster = DAP_NEW_Z(dap_global_db_cluster_t);
     if (!l_cluster) {
         log_it(L_CRITICAL, "Memory allocation error");
-        return -3;
+        return NULL;
     }
-    l_cluster->member_cluster = dap_cluster_new(a_links_cluster_role);
+    // TODO set NULL for 'global' mnemonim
+    l_cluster->member_cluster = dap_cluster_by_mnemonim(a_mnemonim);
     if (!l_cluster->member_cluster) {
-        log_it(L_ERROR, "Can't create member cluster");
-        DAP_DELETE(l_cluster);
-        return -4;
+        l_cluster->member_cluster = dap_cluster_new(a_mnemonim, a_links_cluster_role);
+        if (!l_cluster->member_cluster) {
+            log_it(L_ERROR, "Can't create member cluster");
+            DAP_DELETE(l_cluster);
+            return NULL;
+        }
     }
     l_cluster->groups_mask = dap_strdup(a_group_mask);
     if (!l_cluster->groups_mask) {
         log_it(L_CRITICAL, "Memory allocation error");
         dap_cluster_delete(l_cluster->member_cluster);
         DAP_DELETE(l_cluster);
-        return -5;
-    }
-    if (a_mnemonim) {
-        l_cluster->mnemonim = dap_strdup(a_mnemonim);
-        if (!l_cluster->mnemonim) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            dap_cluster_delete(l_cluster->member_cluster);
-            DAP_DELETE(l_cluster->groups_mask);
-            DAP_DELETE(l_cluster);
-            return -6;
-        }
+        return NULL;
     }
     l_cluster->callback_notify = a_callback;
     l_cluster->callback_arg = a_callback_arg;
-    l_cluster->ttl = a_ttl;
+    l_cluster->ttl = (uint64_t)a_ttl * 3600;    // Convert to seconds
     l_cluster->default_role = a_default_role;
     l_cluster->owner_root_access = a_owner_root_access;
     l_cluster->dbi = a_dbi;
     DL_APPEND(a_dbi->clusters, l_cluster);
-    return 0;
+    return l_cluster;
 }
 
 void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
 {
     dap_cluster_delete(a_cluster->member_cluster);
-    DAP_DEL_Z(a_cluster->mnemonim);
     DAP_DEL_Z(a_cluster->groups_mask);
     DL_DELETE(a_cluster->dbi->clusters, a_cluster);
     DAP_DELETE(a_cluster);
-}
-
-int dap_global_db_cluster_member_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim,
-                                     dap_stream_node_addr_t a_node_addr, dap_global_db_role_t a_role)
-{
-    dap_global_db_cluster_t *it;
-    int l_clusters_added = 0;
-    DL_FOREACH(a_dbi->clusters, it)
-        if (!dap_strcmp(it->mnemonim, a_mnemonim))
-            l_clusters_added += dap_cluster_member_add(it->member_cluster, &a_node_addr, a_role, NULL) ? 0 : 1;
-    return l_clusters_added;
 }
 
 static bool s_db_cluster_notify_on_proc_thread(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)

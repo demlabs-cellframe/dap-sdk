@@ -29,26 +29,17 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_cluster"
 
-dap_cluster_t * s_clusters = NULL;
+dap_cluster_t *s_clusters = NULL, *s_cluster_mnemonims = NULL;
 pthread_rwlock_t s_clusters_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 
 static void s_cluster_member_delete(dap_cluster_member_t *a_member);
-
-dap_cluster_t *dap_cluster_find(dap_guuid_t a_cluster_id)
-{
-    dap_cluster_t *l_ret = NULL;
-    pthread_rwlock_rdlock(&s_clusters_rwlock);
-    HASH_FIND(hh, s_clusters, &a_cluster_id, sizeof(dap_guuid_t), l_ret);
-    pthread_rwlock_unlock(&s_clusters_rwlock);
-    return l_ret;
-}
 
 /**
  * @brief dap_cluster_new
  * @param a_options
  * @return
  */
-dap_cluster_t *dap_cluster_new(dap_cluster_role_t a_role)
+dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_cluster_role_t a_role)
 {
     dap_cluster_t *l_ret = DAP_NEW_Z(dap_cluster_t);
     if (!l_ret) {
@@ -57,13 +48,50 @@ dap_cluster_t *dap_cluster_new(dap_cluster_role_t a_role)
     }
     pthread_rwlock_init(&l_ret->members_lock, NULL);
     l_ret->role = a_role;
+    if (a_mnemonim) {
+        l_ret->mnemonim = strdup(a_mnemonim);
+        if (!l_ret->mnemonim) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            DAP_DELETE(l_ret);
+            return NULL;
+        }
+    }
     dap_cluster_t *l_check = NULL;
-    do {
-        l_ret->guuid = dap_guuid_new();
-        l_check = dap_cluster_find(l_ret->guuid);
-    } while (l_check);
     pthread_rwlock_wrlock(&s_clusters_rwlock);
-    HASH_ADD_KEYPTR(hh, s_clusters, &l_ret->guuid, sizeof(l_ret->guuid), l_ret);
+    if (a_mnemonim) {
+        HASH_FIND(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_check);
+        if (l_check) {
+            log_it(L_ERROR, "Mnemonim %s already in use", a_mnemonim);
+            DAP_DELETE(l_ret->mnemonim);
+            DAP_DELETE(l_ret);
+            return NULL;
+        }
+        HASH_ADD(hh_str, s_cluster_mnemonims, mnemonim, strlen(a_mnemonim), l_ret);
+    }
+    do {
+        l_ret->uuid = dap_guuid_new();
+        HASH_FIND(hh, s_clusters, &l_ret->uuid, sizeof(dap_guuid_t), l_check);
+    } while (l_check);
+    HASH_ADD(hh, s_clusters, uuid, sizeof(l_ret->uuid), l_ret);
+    pthread_rwlock_unlock(&s_clusters_rwlock);
+    return l_ret;
+}
+
+dap_cluster_t *dap_cluster_find(dap_guuid_t a_uuid)
+{
+    dap_cluster_t *l_ret = NULL;
+    pthread_rwlock_rdlock(&s_clusters_rwlock);
+    HASH_FIND(hh, s_clusters, &a_uuid, sizeof(dap_guuid_t), l_ret);
+    pthread_rwlock_unlock(&s_clusters_rwlock);
+    return l_ret;
+}
+
+dap_cluster_t *dap_cluster_by_mnemonim(const char *a_mnemonim)
+{
+    dap_return_val_if_fail(a_mnemonim, NULL);
+    dap_cluster_t *l_ret = NULL;
+    pthread_rwlock_rdlock(&s_clusters_rwlock);
+    HASH_FIND(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_ret);
     pthread_rwlock_unlock(&s_clusters_rwlock);
     return l_ret;
 }
@@ -78,6 +106,10 @@ void dap_cluster_delete(dap_cluster_t *a_cluster)
         return;
     pthread_rwlock_wrlock(&s_clusters_rwlock);
     HASH_DEL(s_clusters, a_cluster);
+    if (a_cluster->mnemonim) {
+        HASH_DELETE(hh_str, s_cluster_mnemonims, a_cluster);
+        DAP_DELETE(a_cluster->mnemonim);
+    }
     pthread_rwlock_unlock(&s_clusters_rwlock);
     dap_cluster_member_t *l_member, *l_tmp;
     pthread_rwlock_wrlock(&a_cluster->members_lock);
@@ -164,38 +196,23 @@ int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_
     pthread_rwlock_rdlock(&a_cluster->members_lock);
     HASH_FIND(hh, a_cluster->members, a_member_addr, sizeof(*a_member_addr), l_member);
     pthread_rwlock_unlock(&a_cluster->members_lock);
-    return l_member ? l_member->role : 0;
+    return l_member ? l_member->role : -1;
 }
-
-dap_list_t *dap_cluster_get_shuffle_addrs(dap_cluster_t *a_cluster)
-{
-    dap_return_val_if_fail(a_cluster, NULL);
-    dap_list_t *l_ret = NULL;
-    pthread_rwlock_rdlock(&a_cluster->members_lock);
-    for (dap_cluster_member_t *it = a_cluster->members; it; it = it->hh.next)
-        l_ret = dap_list_append(l_ret, DAP_DUP(&it->addr));
-    pthread_rwlock_unlock(&a_cluster->members_lock);
-    return dap_list_shuffle(l_ret);
-}
-
-static dap_list_t *dap_stream_get_shuffle_addrs() { return NULL; } // for build pass
 
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
 {
-    dap_list_t *l_link_list = a_cluster ? dap_cluster_get_shuffle_addrs(a_cluster) : dap_stream_get_shuffle_addrs();
-    int l_links_used = 0;
-    for (dap_list_t *it = l_link_list; it; it = it->next) {
-        dap_stream_node_addr_t *l_addr = it->data;
-        assert(l_addr);
-        dap_worker_t *l_worker = NULL;
-        dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(*l_addr, &l_worker);
-        if (l_worker && l_uuid) {
-            dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_uuid, a_ch_id, a_type, a_data, a_data_size);
-            if (++l_links_used >= DAP_CLUSTER_OPTIMUM_LINKS)
-                break;
-        }
+    if (!a_cluster) {
+        dap_stream_broadcast(a_ch_id, a_type, a_data, a_data_size);
+        return;
     }
-    dap_list_free_full(l_link_list, NULL);
+    pthread_rwlock_rdlock(&a_cluster->members_lock);
+    for (dap_cluster_member_t *it = a_cluster->members; it; it = it->hh.next) {
+        dap_worker_t *l_worker = NULL;
+        dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(&it->addr, &l_worker);
+        if (l_worker && l_uuid)
+            dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_uuid, a_ch_id, a_type, a_data, a_data_size);
+    }
+    pthread_rwlock_unlock(&a_cluster->members_lock);
 }
 
 // Returns information about cluster links. For NULL cluster returns information about all node links

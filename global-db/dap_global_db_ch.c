@@ -142,11 +142,12 @@ static bool s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
         dap_store_obj_free_one(l_obj);
         return false;
     }
-    int l_stream_role = dap_cluster_member_find_role(l_cluster->member_cluster, (dap_stream_node_addr_t *)l_obj->ext);
-    if (l_stream_role == -1 && l_cluster->default_role == DAP_GDB_MEMBER_ROLE_NOBODY) {
+    int l_stream_role = dap_cluster_member_find_role(l_cluster->role_cluster, (dap_stream_node_addr_t *)l_obj->ext);
+    if (l_stream_role == DAP_GDB_MEMBER_ROLE_INVALID &&
+            l_cluster->default_role == DAP_GDB_MEMBER_ROLE_NOBODY) {
         debug_if(g_dap_global_db_debug_more, L_WARNING,
                  "Node with addr "NODE_ADDR_FP_STR" isn't a member of closed cluster %s",
-                 NODE_ADDR_FP_ARGS((dap_stream_node_addr_t *)l_obj->ext), l_cluster->mnemonim);
+                 NODE_ADDR_FP_ARGS((dap_stream_node_addr_t *)l_obj->ext), l_cluster->member_cluster->mnemonim);
         dap_store_obj_free_one(l_obj);
         return false;
     }
@@ -184,12 +185,12 @@ static bool s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
                 " timestamp=\"%s\" value_len=%"DAP_UINT64_FORMAT_U" signer_hash=%s" ,
                 l_obj->group, l_obj->key, l_ts_str, l_obj->value_len, l_hash_str);
     }
-    dap_global_db_role_t l_signer_role = DAP_GDB_MEMBER_ROLE_NOBODY;
+    dap_global_db_role_t l_signer_role = DAP_GDB_MEMBER_ROLE_INVALID;
     if (l_obj->sign) {
         dap_stream_node_addr_t l_signer_addr = dap_stream_get_addr_from_sign(l_obj->sign);
-        l_signer_role = dap_cluster_member_find_role(l_cluster->member_cluster, &l_signer_addr);
+        l_signer_role = dap_cluster_member_find_role(l_cluster->role_cluster, &l_signer_addr);
     }
-    if (l_signer_role == DAP_GDB_MEMBER_ROLE_NOBODY)
+    if (l_signer_role == DAP_GDB_MEMBER_ROLE_INVALID)
         l_signer_role = l_cluster->default_role;
     dap_global_db_role_t l_required_role = DAP_GDB_MEMBER_ROLE_USER;
     if (l_signer_role < l_required_role) {
@@ -274,6 +275,7 @@ static bool s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
     case -1:        // Existed obj is older
         debug_if(g_dap_global_db_debug_more, L_INFO, "Applied new global DB record with group %s and key %s",
                                                                     l_obj->group, l_obj->key);
+        // Only the condition to apply new object
         dap_global_db_driver_apply(l_obj, 1);
         break;
     case 0:         // Objects the same, omg! Use the basic object
@@ -308,6 +310,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
     switch (l_ch_pkt->hdr.type) {
     case DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP: {
         dap_global_db_pkt_t *l_pkt = (dap_global_db_pkt_t *)l_ch_pkt->data;
+        // TODO implement #9699
         dap_store_obj_t *l_obj = dap_global_db_pkt_deserialize(l_pkt, l_ch_pkt->hdr.data_size, a_ch->stream->node);
         if (!l_obj || !dap_global_db_pkt_check_sign_crc(l_pkt)) {
             log_it(L_WARNING, "Wrong Global DB gossip packet rejected");

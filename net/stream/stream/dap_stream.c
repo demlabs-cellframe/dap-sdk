@@ -1187,13 +1187,13 @@ int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id)
  * @param a_worker - pointer to worker
  * @return  esocket_uuid if ok 0 if not
  */
-dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t a_addr, dap_worker_t **a_worker)
+dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr, dap_worker_t **a_worker)
 {
-    dap_return_val_if_fail(a_addr.uint64, 0);
+    dap_return_val_if_fail(a_addr && a_addr->uint64, 0);
     dap_stream_t *l_auth_stream = NULL;
     dap_events_socket_uuid_t l_ret = 0;
-    assert(!pthread_rwlock_wrlock(&s_streams_lock));
-    HASH_FIND(hh, s_authorized_streams, &a_addr, sizeof(a_addr), l_auth_stream);
+    assert(!pthread_rwlock_rdlock(&s_streams_lock));
+    HASH_FIND(hh, s_authorized_streams, a_addr, sizeof(*a_addr), l_auth_stream);
     if (l_auth_stream) {
         if (a_worker)
             *a_worker = l_auth_stream->stream_worker->worker;
@@ -1291,4 +1291,13 @@ void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count)
         DAP_DEL_Z(it->channels);
     }
     DAP_DELETE(a_info);
+}
+
+void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
+{
+    dap_stream_t *it;
+    pthread_rwlock_rdlock(&s_streams_lock);
+    DL_FOREACH(s_streams, it)
+        dap_stream_ch_pkt_send_mt(it->stream_worker, it->esocket_uuid, a_ch_id, a_type, a_data, a_data_size);
+    pthread_rwlock_unlock(&s_streams_lock);
 }

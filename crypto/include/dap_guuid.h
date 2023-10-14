@@ -24,7 +24,7 @@
 #include "dap_uuid.h"
 #include "dap_math_ops.h"
 
-typedef uint64_t dap_guuid_t;
+typedef uint128_t dap_guuid_t;
 static inline dap_guuid_t dap_guuid_new()
 {
     return (dap_guuid_t)dap_uuid_generate_uint128();
