@@ -483,17 +483,13 @@ int dap_sign_verify(dap_sign_t * a_chain_sign, const void * a_data, const size_t
         case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-            if((ssize_t)l_key->dec_na(l_key, l_verify_data, l_verify_data_size, l_sign_data, l_sign_data_size) < 0)
-                l_ret = 0;
-            else
-                l_ret = 1;
+            l_ret = !l_key->dec_na(l_key, l_verify_data, l_verify_data_size, l_sign_data, l_sign_data_size);
             break;
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
-            if(dap_enc_sig_bliss_verify_sign(l_key, l_verify_data, l_verify_data_size, l_sign_data, l_sign_data_size) != BLISS_B_NO_ERROR)
-                l_ret = 0;
-            else
-                l_ret = 1;
+            l_ret = dap_enc_sig_bliss_verify_sign(l_key, l_verify_data, l_verify_data_size, l_sign_data, l_sign_data_size);
+            break;
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+            l_ret = l_key->sign_verify(l_key, l_verify_data, l_verify_data_size, l_sign_data, l_sign_data_size);
             break;
         default:
             l_ret = -6;
@@ -965,7 +961,7 @@ dap_multi_sign_t *dap_multi_sign_create(dap_multi_sign_params_t *a_params, const
  * @param a_sign Pointer to multi-signature structure
  * @param a_data Pointer to message signed with this multi-signature
  * @param a_data_size Signed message size
- * @return 1 valid signature, 0 invalid signature, -1 verification error
+ * @return 0 valid signature, other verification error
  */
 int dap_multi_sign_verify(dap_multi_sign_t *a_sign, const void *a_data, const size_t a_data_size)
 {
@@ -1019,7 +1015,7 @@ int dap_multi_sign_verify(dap_multi_sign_t *a_sign, const void *a_data, const si
         }
         l_verified = dap_sign_verify(l_step_sign, &l_data_hash, sizeof(dap_chain_hash_fast_t));
         DAP_DELETE(l_step_sign);
-        if (l_verified != 1) {
+        if (l_verified) {
             return l_verified;
         }
     }

@@ -230,10 +230,8 @@ int dilithium_crypto_sign( dilithium_signature_t *sig, const unsigned char *m, u
     sig->sig_len = mlen + p->CRYPTO_BYTES;
     sig->sig_data = DAP_NEW_Z_SIZE(unsigned char, sig->sig_len);
 
-    for(i = 1; i <= mlen; ++i)
-        sig->sig_data[p->CRYPTO_BYTES + mlen - i] = m[mlen - i];
-    for(i = 0; i < CRHBYTES; ++i)
-        sig->sig_data[p->CRYPTO_BYTES - CRHBYTES + i] = tr[i];
+    memcpy(sig->sig_data + p->CRYPTO_BYTES, m, mlen);
+    memcpy(sig->sig_data + p->CRYPTO_BYTES - CRHBYTES, tr, CRHBYTES);
 
     //SHAKE256(mu, CRHBYTES, sig->sig_data + p->CRYPTO_BYTES - CRHBYTES, CRHBYTES + mlen);
     shake256(mu, CRHBYTES, sig->sig_data + p->CRYPTO_BYTES - CRHBYTES, CRHBYTES + mlen);

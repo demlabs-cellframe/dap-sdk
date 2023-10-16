@@ -50,7 +50,7 @@ static void test_signing_verifying_serial(void)
     dap_assert_PIF(sign, "Signing message and serialize");
 
     int verify = dap_sign_verify(sign, source, source_size);
-    dap_assert_PIF(verify == 1, "Deserialize and verifying signature");
+    dap_assert_PIF(!verify, "Deserialize and verifying signature");
 
     free(sign);
     dap_enc_key_delete(key);

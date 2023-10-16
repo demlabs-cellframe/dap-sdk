@@ -134,7 +134,7 @@ bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size);
  * @return
  */
 static inline bool dap_sign_verify_data (dap_sign_t * a_chain_sign, const void * a_data, const size_t a_data_size){
-    return dap_sign_verify(a_chain_sign, a_data, a_data_size) == 1;
+    return !dap_sign_verify(a_chain_sign, a_data, a_data_size);
 }
 
 /**

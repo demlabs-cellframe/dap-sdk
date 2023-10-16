@@ -46,7 +46,7 @@ static void test_signing_verifying(void)
     dap_assert_PIF(deserialized_sign, "Deserializing signature");
 
     int verify = dap_multi_sign_verify(deserialized_sign, source, source_size);
-    dap_assert_PIF(verify == 1, "Verifying signature");
+    dap_assert_PIF(!verify, "Verifying signature");
 
     dap_multi_sign_delete(deserialized_sign);
     dap_multi_sign_delete(sign);
