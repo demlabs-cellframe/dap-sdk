@@ -56,7 +56,7 @@ typedef void (*dap_store_obj_callback_notify_t)(dap_global_db_instance_t *a_dbi,
 
 typedef struct dap_global_db_cluster {
     const char *groups_mask;        // GDB cluster coverage area
-    dap_cluster_t *member_cluster;  // Cluster container for network links
+    dap_cluster_t *links_cluster;   // Cluster container for network links
     dap_cluster_t *role_cluster;    // Cluster container for members with especial roles
     dap_global_db_role_t default_role;  // Role assined for new membersadded with default one
     uint64_t ttl;                   // Time-to-life for objects in this cluster, in seconds

@@ -125,16 +125,23 @@ dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uin
 }
 
 /// Consume all security checks passed before by object deserializing
-bool dap_global_db_pkt_check_sign_crc(dap_global_db_pkt_t *a_packet)
+bool dap_global_db_pkt_check_sign_crc(dap_global_db_obj_t *a_obj)
 {
-    dap_return_val_if_fail(a_packet, false);
-    dap_sign_t *l_sign = (dap_sign_t *)(a_packet->data + a_packet->group_len + a_packet->key_len + a_packet->value_len);
-    if (dap_sign_verify(l_sign, (byte_t *)a_packet + sizeof(uint32_t),
-                            dap_global_db_pkt_get_size(a_packet) - sizeof(uint32_t)) == 1)
+    dap_return_val_if_fail(a_obj, false);
+    dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_obj);
+    if (!l_pkt)
         return false;
-    uint32_t l_checksum = crc32c(CRC32C_INIT, (byte_t *)a_packet + sizeof(uint32_t),
-                                        dap_global_db_pkt_get_size(a_packet) - sizeof(uint32_t));
-    return l_checksum == a_packet->crc;
+    bool l_ret = false;
+    dap_sign_t *l_sign = (dap_sign_t *)(l_pkt->data + l_pkt->group_len + l_pkt->key_len + l_pkt->value_len);
+    if (dap_sign_verify(l_sign, (byte_t *)l_pkt + sizeof(uint32_t),
+                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint32_t)) == 1) {
+        uint32_t l_checksum = crc32c(CRC32C_INIT, (byte_t *)l_pkt + sizeof(uint32_t),
+                                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint32_t));
+        l_ret = l_checksum == l_pkt->crc;
+    }
+    DAP_DELETE(l_pkt);
+    return l_ret;
+
 }
 
 static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t *a_obj, size_t a_bound_size)
@@ -207,14 +214,16 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
     return l_data_ptr + l_sign_size;
 }
 
+
 dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_t a_pkt_size, dap_stream_node_addr_t a_addr)
 {
     dap_return_val_if_fail(a_pkt, NULL);
     dap_store_obj_t *l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + sizeof(dap_stream_node_addr_t));
     if (!s_fill_one_store_obj(a_pkt, l_ret, a_pkt_size)) {
-        log_it(L_ERROR, "Broken GDB element: can't read GOSSIP packet");
+        log_it(L_ERROR, "Broken GDB element: can't read GOSSIP record packet");
         DAP_DEL_Z(l_ret);
     }
+    // Inject a_addr field into deserialized object to transfer it into callback (argument injecting)
     *(dap_stream_node_addr_t *)l_ret->ext = a_addr;
     return l_ret;
 }
@@ -225,7 +234,7 @@ dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_
  * @param store_obj_count[out] a number of deserialized objects in the array
  * @return Returns a pointer to the first object in the array, if successful; otherwise NULL.
  */
-dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count)
+dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count, dap_stream_node_addr_t a_addr)
 {
     dap_return_val_if_fail(a_pkt && a_pkt->data_size >= sizeof(dap_global_db_pkt_t), NULL);
 
@@ -236,7 +245,7 @@ dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_
         log_it(L_ERROR, "Invalid size: packet pack total size is zero");
         return NULL;
     }
-    dap_store_obj_t *l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_size);
+    dap_store_obj_t *l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t *, l_size);
     if (!l_store_obj_arr) {
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
@@ -245,13 +254,15 @@ dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_
     byte_t *l_data_ptr = (byte_t *)a_pkt->data;                                 /* Set <l_data_ptr> to begin of payload */
     byte_t *l_data_end = l_data_ptr + a_pkt->data_size;                         /* Set <l_data_end> to end of payload area
                                                                                 will be used to prevent out-of-buffer case */
-    uint32_t l_cur_count = 0;
-    for (dap_store_obj_t *l_obj = l_store_obj_arr; l_cur_count < l_count; l_cur_count++, l_obj++) {
-        l_data_ptr = s_fill_one_store_obj((dap_global_db_pkt_t *)l_data_ptr, l_obj, l_data_end - l_data_ptr);
+    for (uint32_t l_cur_count = 0; l_cur_count < l_count; l_cur_count++) {
+        l_store_obj_arr[i] = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + sizeof(dap_stream_node_addr_t));
+        l_data_ptr = s_fill_one_store_obj((dap_global_db_pkt_t *)l_data_ptr, l_store_obj_arr[i], l_data_end - l_data_ptr);
         if (!l_data_ptr) {
             log_it(L_ERROR, "Broken GDB element: can't read packet #%u", l_cur_count);
             break;
         }
+        // Inject a_addr field into deserialized object to transfer it into callback (argument injecting)
+        *(dap_stream_node_addr_t *)l_store_obj_arr[i]->ext = a_addr;
     }
     if (l_data_ptr)
         assert(l_data_ptr == l_data_end);

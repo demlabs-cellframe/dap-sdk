@@ -132,10 +132,16 @@ static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb)
     s_free_log_list_gdb(a_ch_chain);*/
 }
 
-static bool s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+static bool s_process_single_record(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
 {
-    assert(a_arg);
+    dap_return_val_if_fail(a_arg, false);
     dap_store_obj_t *l_obj = a_arg;
+
+    if (!dap_global_db_pkt_check_sign_crc(l_obj)) {
+        log_it(L_WARNING, "Global DB record packet sign verify or CRC check error for group %s and key %s", l_obj->group, l_obj->key);
+        dap_store_obj_free_one(l_obj);
+        return false;
+    }
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_obj->group);
     if (!l_cluster) {
         log_it(L_WARNING, "An entry in the group %s was rejected because the group name doesn't match any mask.", l_obj->group);
@@ -147,7 +153,7 @@ static bool s_process_gossip_msg(dap_proc_thread_t UNUSED_ARG *a_thread, void *a
             l_cluster->default_role == DAP_GDB_MEMBER_ROLE_NOBODY) {
         debug_if(g_dap_global_db_debug_more, L_WARNING,
                  "Node with addr "NODE_ADDR_FP_STR" isn't a member of closed cluster %s",
-                 NODE_ADDR_FP_ARGS((dap_stream_node_addr_t *)l_obj->ext), l_cluster->member_cluster->mnemonim);
+                 NODE_ADDR_FP_ARGS((dap_stream_node_addr_t *)l_obj->ext), l_cluster->links_cluster->mnemonim);
         dap_store_obj_free_one(l_obj);
         return false;
     }
@@ -308,16 +314,31 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
     dap_stream_ch_pkt_t * l_ch_pkt = (dap_stream_ch_pkt_t *)a_arg;
     //s_chain_timer_reset(l_ch_chain);
     switch (l_ch_pkt->hdr.type) {
+
     case DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP: {
-        dap_global_db_pkt_t *l_pkt = (dap_global_db_pkt_t *)l_ch_pkt->data;
+        dap_gossip_pkt_t *l_pkt = (dap_gossip_pkt_t *)l_ch_pkt->data;
         // TODO implement #9699
         dap_store_obj_t *l_obj = dap_global_db_pkt_deserialize(l_pkt, l_ch_pkt->hdr.data_size, a_ch->stream->node);
-        if (!l_obj || !dap_global_db_pkt_check_sign_crc(l_pkt)) {
+        if (!l_obj) {
             log_it(L_WARNING, "Wrong Global DB gossip packet rejected");
             break;
         }
-        dap_proc_thread_callback_add_pri(NULL, s_process_gossip_msg, l_obj, DAP_GLOBAL_DB_TASK_PRIORITY);
+        dap_proc_thread_callback_add_pri(NULL, s_process_single_record, l_obj, DAP_GLOBAL_DB_TASK_PRIORITY);
     } break;
+
+    case DAP_STREAM_CH_GDB_PKT_TYPE_RECORD_PACK: {
+        dap_global_db_pkt_pack_t *l_pkt = (dap_global_db_pkt_pack_t *)l_ch_pkt->data;
+        size_t l_objs_count = 0;
+        dap_store_obj_t **l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, l_objs_count, a_ch->stream->node);
+        if (!l_objs) {
+            log_it(L_WARNING, "Wrong Global DB record packet rejected");
+            break;
+        }
+        for (size_t i = 0; i < l_objs_count; i++)
+            dap_proc_thread_callback_add_pri(NULL, s_process_single_record, l_objs[i], DAP_GLOBAL_DB_TASK_PRIORITY);
+        DAP_DELETE(l_objs);
+    } break;
+
     default:
         log_it(L_WARNING, "Unknown global DB packet type %hhu", l_ch_pkt->hdr.type);
         break;

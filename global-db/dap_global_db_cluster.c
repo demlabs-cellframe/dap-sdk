@@ -90,7 +90,7 @@ void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_sto
     if (!s_object_is_new(a_store_obj))
         return;         // Send new rumors only
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_store_obj);
-    dap_cluster_broadcast(a_cluster->member_cluster, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP, l_pkt, dap_global_db_pkt_get_size(l_pkt));
+    dap_cluster_broadcast(a_cluster->links_cluster, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP, l_pkt, dap_global_db_pkt_get_size(l_pkt));
     DAP_DELETE(l_pkt);
 }
 
@@ -116,10 +116,10 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         return NULL;
     }
     // TODO set NULL for 'global' mnemonim
-    l_cluster->member_cluster = dap_cluster_by_mnemonim(a_mnemonim);
-    if (!l_cluster->member_cluster) {
-        l_cluster->member_cluster = dap_cluster_new(a_mnemonim, a_links_cluster_role);
-        if (!l_cluster->member_cluster) {
+    l_cluster->links_cluster = dap_cluster_by_mnemonim(a_mnemonim);
+    if (!l_cluster->links_cluster) {
+        l_cluster->links_cluster = dap_cluster_new(a_mnemonim, a_links_cluster_role);
+        if (!l_cluster->links_cluster) {
             log_it(L_ERROR, "Can't create member cluster");
             DAP_DELETE(l_cluster);
             return NULL;
@@ -128,7 +128,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->groups_mask = dap_strdup(a_group_mask);
     if (!l_cluster->groups_mask) {
         log_it(L_CRITICAL, "Memory allocation error");
-        dap_cluster_delete(l_cluster->member_cluster);
+        dap_cluster_delete(l_cluster->links_cluster);
         DAP_DELETE(l_cluster);
         return NULL;
     }
@@ -144,7 +144,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
 
 void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
 {
-    dap_cluster_delete(a_cluster->member_cluster);
+    dap_cluster_delete(a_cluster->links_cluster);
     DAP_DEL_Z(a_cluster->groups_mask);
     DL_DELETE(a_cluster->dbi->clusters, a_cluster);
     DAP_DELETE(a_cluster);

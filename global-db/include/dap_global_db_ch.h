@@ -40,6 +40,7 @@ enum dap_stream_ch_gdb_state {
 };
 
 enum dap_global_db_cluster_pkt_type {
+    DAP_STREAM_CH_GDB_PKT_TYPE_RECORD_PACK,
     DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP = 0xC4,                   // This is type for epidemic update broadcast between cluster members
     DAP_STREAM_CH_GDB_PKT_TYPE_PERIODIC,
     DAP_STREAM_CH_GDB_PKT_TYPE_DELETE
