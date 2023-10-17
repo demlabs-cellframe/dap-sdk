@@ -55,17 +55,14 @@ typedef struct dap_global_db_hash {
     uint32_t crc;
 } DAP_ALIGN_PACKED dap_global_db_hash_t;
 
-typedef struct dap_gossip_pkt {
+typedef struct dap_global_db_gossip_pkt {
     uint8_t version;
     byte_t padding[3];
     uint32_t route_len;
     uint64_t data_size;
-    union {
-        dap_hash_fast_t data_hash;
-        dap_global_db_hash_t record_hash;
-    } DAP_ALIGN_PACKED;
+    dap_global_db_hash_t record_hash;
     byte_t route_n_data;
-} DAP_ALIGN_PACKED dap_gossip_pkt_t;
+} DAP_ALIGN_PACKED dap_global_db_gossip_pkt_t;
 
 dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old_pkt, dap_global_db_pkt_t *a_new_pkt);
 dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj);

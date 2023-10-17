@@ -54,11 +54,6 @@ typedef struct dap_stream_ch_gdb_pkt {
     uint8_t data[];
 } DAP_ALIGN_PACKED dap_stream_ch_gdb_pkt_t;
 
-typedef struct dap_stream_ch_gdb_hash_item {
-    dap_hash_fast_t hash;
-    dap_nanotime_t timestamp;
-} DAP_ALIGN_PACKED dap_stream_ch_gdb_hash_item_t;
-
 typedef struct dap_stream_ch_gdb {
     void *_inheritor;
 
@@ -81,6 +76,6 @@ typedef struct dap_stream_ch_gdb {
 
 #define DAP_STREAM_CH_GDB(a) ((dap_stream_ch_gdb_t *) ((a)->internal) )
 #define DAP_STREAM_CH(a) ((dap_stream_ch_t *)((a)->_inheritor))
-#define DAP_STREAM_CH_GDB_ID 'G'
+#define DAP_STREAM_CH_GDB_ID 'D'
 
 dap_stream_ch_gdb_pkt_t *dap_global_db_ch_pkt_new();

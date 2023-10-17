@@ -199,7 +199,16 @@ int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_
     return l_member ? l_member->role : -1;
 }
 
-void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
+bool s_present_in_array(dap_stream_node_addr_t a_addr, dap_stream_node_addr_t *a_array, size_t a_array_size)
+{
+    for (size_t i = 0; i < a_array_size; i++)
+        if ((a_array + i)->uint64 == a_addr.uint64)
+            return true;
+    return false;
+}
+
+void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size,
+                           dap_stream_node_addr_t *a_exclude_aray, size_t a_exclude_array_size)
 {
     if (!a_cluster) {
         dap_stream_broadcast(a_ch_id, a_type, a_data, a_data_size);
@@ -207,6 +216,8 @@ void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t
     }
     pthread_rwlock_rdlock(&a_cluster->members_lock);
     for (dap_cluster_member_t *it = a_cluster->members; it; it = it->hh.next) {
+        if (s_present_in_array(it->addr, a_exclude_aray, a_exclude_array_size))
+            continue;
         dap_worker_t *l_worker = NULL;
         dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(&it->addr, &l_worker);
         if (l_worker && l_uuid)

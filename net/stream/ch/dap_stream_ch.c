@@ -56,13 +56,14 @@ int dap_stream_ch_init()
         log_it(L_CRITICAL,"Can't init stream channel packet submodule");
         return -1;
     }
-
+    if (dap_stream_ch_gossip_init() != 0) {
+        log_it(L_CRITICAL,"Can't init stream gossip channel");
+        return -1;
+    }
 #ifdef  DAP_SYS_DEBUG
     for (int i = 0; i < MEMSTAT$K_NR; i++)
         dap_memstat_reg(&s_memstat[i]);
 #endif
-
-
     log_it(L_NOTICE,"Module stream channel initialized");
     return 0;
 }
