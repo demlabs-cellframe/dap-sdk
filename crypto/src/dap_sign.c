@@ -210,17 +210,11 @@ static int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, con
     switch (a_key->type) {
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_PICNIC:
+        case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-                // For PICNIC a_output_size should decrease
-            //*a_output_size = dap_enc_sig_dilithium_get_sign(a_key,a_data,a_data_size,a_output,sizeof(dilithium_signature_t));
-            a_key->enc_na(a_key, a_data, a_data_size, a_output, *a_output_size);
-            return (*a_output_size > 0) ? 0 : -1;
-
-        case DAP_ENC_KEY_TYPE_SIG_BLISS:
-            return (dap_enc_sig_bliss_get_sign(a_key, a_data, a_data_size, a_output, *a_output_size) == BLISS_B_NO_ERROR)
-                   ? 0 : -1;
+            return a_key->sign_get(a_key, a_data, a_data_size, a_output, *a_output_size);
         default:
             return -1;
     }
@@ -481,14 +475,10 @@ int dap_sign_verify(dap_sign_t * a_chain_sign, const void * a_data, const size_t
 
     switch (l_key->type) {
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
+        case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
-            l_ret = !l_key->dec_na(l_key, l_verify_data, l_verify_data_size, l_sign_data, l_sign_data_size);
-            break;
-        case DAP_ENC_KEY_TYPE_SIG_BLISS:
-            l_ret = dap_enc_sig_bliss_verify_sign(l_key, l_verify_data, l_verify_data_size, l_sign_data, l_sign_data_size);
-            break;
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
             l_ret = l_key->sign_verify(l_key, l_verify_data, l_verify_data_size, l_sign_data, l_sign_data_size);
             break;

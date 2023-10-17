@@ -22,11 +22,11 @@ static void test_signing_verifying(void)
     uint8_t source[source_size];
     randombytes(source, source_size);
 
-    size_t siglen = key->enc_na(key, source, source_size, sig, max_signature_size);
-    dap_assert_PIF(siglen > 0, "Signing message");
+    int l_signed = key->sign_get(key, source, source_size, sig, max_signature_size);
+    dap_assert_PIF(!l_signed, "Signing message");
 
-    size_t verify = key->dec_na(key, source, source_size, sig, siglen);
-    dap_assert_PIF(!verify, "Verifying signature");
+    int l_verified = key->sign_verify(key, source, source_size, sig, max_signature_size);
+    dap_assert_PIF(!l_verified, "Verifying signature");
 
     dilithium_signature_delete((dilithium_signature_t*)sig);
     free(sig);

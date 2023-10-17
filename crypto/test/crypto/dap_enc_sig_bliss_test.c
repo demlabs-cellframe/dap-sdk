@@ -10,10 +10,10 @@ static void message_signature_simulation_test()
     uint8_t* msg = (uint8_t*)text;
     size_t msg_size = strlen(text);
 
-    dap_assert(dap_enc_sig_bliss_get_sign( key, msg, msg_size, &signature, sizeof(signature)) == BLISS_B_NO_ERROR,
+    dap_assert(!key->sign_get( key, msg, msg_size, &signature, sizeof(signature)),
                "Sign msg");
 
-    dap_assert(dap_enc_sig_bliss_verify_sign( key, msg, msg_size, &signature, sizeof(signature)) == BLISS_B_NO_ERROR,
+    dap_assert(!key->sign_verify( key, msg, msg_size, &signature, sizeof(signature)),
                "Verify msg")
 
     bliss_signature_delete(&signature);

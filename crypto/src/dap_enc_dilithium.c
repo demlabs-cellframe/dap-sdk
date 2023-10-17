@@ -19,14 +19,12 @@ void dap_enc_sig_dilithium_set_type(enum DAP_DILITHIUM_SIGN_SECURITY type)
     _dilithium_type = type;
 }
 
-void dap_enc_sig_dilithium_key_new(struct dap_enc_key *key) {
+void dap_enc_sig_dilithium_key_new(dap_enc_key_t *key) {
 
     key->type = DAP_ENC_KEY_TYPE_SIG_DILITHIUM;
     key->enc = NULL;
-    key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_dilithium_get_sign;
-    key->dec_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_dilithium_verify_sign;
-//    key->gen_bob_shared_key = (dap_enc_gen_bob_shared_key) dap_enc_sig_dilithium_get_sign;
-//    key->gen_alice_shared_key = (dap_enc_gen_alice_shared_key) dap_enc_sig_dilithium_verify_sign;
+    key->sign_get = (dap_enc_callback_sign_op_t) dap_enc_sig_dilithium_get_sign;
+    key->sign_verify = (dap_enc_callback_sign_op_t) dap_enc_sig_dilithium_verify_sign;
 }
 
 // generation key pair for sign Alice
@@ -34,7 +32,7 @@ void dap_enc_sig_dilithium_key_new(struct dap_enc_key *key) {
 // a_key->data  --- Alice's public key
 // alice_priv  ---  Alice's private key
 // alice_msg_len --- Alice's private key length
-void dap_enc_sig_dilithium_key_new_generate(struct dap_enc_key * key, const void *kex_buf,
+void dap_enc_sig_dilithium_key_new_generate(dap_enc_key_t * key, const void *kex_buf,
         size_t kex_size, const void * seed, size_t seed_size,
         size_t key_size)
 {
@@ -67,35 +65,32 @@ void dap_enc_sig_dilithium_key_new_generate(struct dap_enc_key * key, const void
     }
 }
 
-size_t dap_enc_sig_dilithium_get_sign(struct dap_enc_key * key, const void * msg,
-        const size_t msg_size, void * signature, const size_t signature_size)
+int dap_enc_sig_dilithium_get_sign(dap_enc_key_t *a_key, const void *a_msg,
+        const size_t a_msg_size, void *a_sig, const size_t a_sig_size)
 {
-    if(signature_size < sizeof(dilithium_signature_t)) {
+    if(a_sig_size < sizeof(dilithium_signature_t)) {
         log_it(L_ERROR, "bad signature size");
         return 0;
     }
 
-    if(!dilithium_crypto_sign((dilithium_signature_t *) signature, (const unsigned char *) msg, msg_size, key->priv_key_data))
-        return signature_size;
-    else
-        return 0;
+    return dilithium_crypto_sign((dilithium_signature_t *)a_sig, (const unsigned char *) a_msg, a_msg_size, a_key->priv_key_data);
 }
 
-size_t dap_enc_sig_dilithium_verify_sign(struct dap_enc_key * key, const void * msg,
-        const size_t msg_size, void * signature, const size_t signature_size)
+int dap_enc_sig_dilithium_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
+        const size_t a_msg_size, void *a_sig, const size_t a_sig_size)
 {
-    if(signature_size < sizeof(dilithium_signature_t)) {
+    if(a_sig_size < sizeof(dilithium_signature_t)) {
         log_it(L_ERROR, "bad signature size");
         return 0;
     }
-    int l_ret = dilithium_crypto_sign_open( (unsigned char *) msg, msg_size, (dilithium_signature_t *) signature, key->pub_key_data);
+    int l_ret = dilithium_crypto_sign_open( (unsigned char *)a_msg, a_msg_size, (dilithium_signature_t *)a_sig, a_key->pub_key_data);
     if(l_ret)
         log_it(L_WARNING,"Wrong signature, can't open with code %d", l_ret);
 
-    return l_ret < 0 ? 0 : msg_size;
+    return l_ret;
 }
 
-void dap_enc_sig_dilithium_key_delete(struct dap_enc_key * key)
+void dap_enc_sig_dilithium_key_delete(dap_enc_key_t * key)
 {
     dilithium_private_and_public_keys_delete((dilithium_private_key_t *) key->priv_key_data,
         (dilithium_public_key_t *) key->pub_key_data);
