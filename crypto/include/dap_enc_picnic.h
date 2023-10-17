@@ -43,11 +43,11 @@ void dap_enc_sig_picnic_key_new_generate(struct dap_enc_key * key, const void *k
         const void * seed, size_t seed_size,
         size_t key_size);
 
-size_t dap_enc_sig_picnic_get_sign(struct dap_enc_key * key, const void* message, size_t message_len,
-        void* signature, size_t signature_len);
+int dap_enc_sig_picnic_get_sign(struct dap_enc_key *a_key, const void *a_msg, size_t a_msg_len,
+        void *a_sig, size_t a_sig_len);
 
-size_t dap_enc_sig_picnic_verify_sign(struct dap_enc_key * key, const void* message, size_t message_len,
-        void* signature, size_t signature_len);
+int dap_enc_sig_picnic_verify_sign(struct dap_enc_key *a_key, const void *a_msg, size_t a_msg_len,
+        void* a_sig, size_t a_sig_len);
 
 size_t dap_enc_picnic_calc_signature_size(struct dap_enc_key *key);
 

@@ -240,8 +240,8 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .name =                             "PICNIC",
         .enc =                              NULL,
         .dec =                              NULL,
-        .enc_na =                           dap_enc_sig_picnic_get_sign, // dap_enc_picnic_enc_na
-        .dec_na =                           dap_enc_sig_picnic_verify_sign,// dap_enc_picnic_dec_na
+        .enc_na =                           NULL, // dap_enc_picnic_enc_na
+        .dec_na =                           NULL,// dap_enc_picnic_dec_na
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_picnic_key_new,
@@ -251,8 +251,8 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .new_generate_callback =            dap_enc_sig_picnic_key_new_generate,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
-        .sign_get =                         NULL,
-        .sign_verify =                      NULL
+        .sign_get =                         dap_enc_sig_picnic_get_sign,
+        .sign_verify =                      dap_enc_sig_picnic_verify_sign
     },
     [DAP_ENC_KEY_TYPE_SIG_BLISS]={
         .name =                             "SIG_BLISS",
@@ -797,32 +797,36 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
         return NULL;
     }
     const dap_enc_key_serialize_t *in_key = (const dap_enc_key_serialize_t *)buf;
+    // memory allocation block
+    
     dap_enc_key_t *l_ret = dap_enc_key_new(in_key->type);
-    if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
+    dap_return_val_if_pass(!l_ret, NULL);
+
     l_ret->last_used_timestamp = in_key->last_used_timestamp;
     l_ret->priv_key_data_size = in_key->priv_key_data_size;
     l_ret->pub_key_data_size = in_key->pub_key_data_size;
     l_ret->_inheritor_size = in_key->inheritor_size;
     DAP_DEL_Z(l_ret->priv_key_data);
     DAP_DEL_Z(l_ret->pub_key_data);
-    l_ret->priv_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->priv_key_data_size);
-    if (!l_ret->priv_key_data) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_DEL_Z(l_ret);
-        return NULL;
+    if (l_ret->priv_key_data_size) {
+        l_ret->priv_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->priv_key_data_size);
+        if (!l_ret->priv_key_data) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            DAP_DEL_Z(l_ret);
+            return NULL;
+        }
+        memcpy(l_ret->priv_key_data, in_key->priv_key_data, l_ret->priv_key_data_size);
     }
-    memcpy(l_ret->priv_key_data, in_key->priv_key_data, l_ret->priv_key_data_size);
-    l_ret->pub_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->pub_key_data_size);
-    if (!l_ret->pub_key_data) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_DEL_Z(l_ret->priv_key_data);
-        DAP_DEL_Z(l_ret);
-        return NULL;
+    if (l_ret->pub_key_data_size) {
+        l_ret->pub_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->pub_key_data_size);
+        if (!l_ret->pub_key_data) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            DAP_DEL_Z(l_ret->priv_key_data);
+            DAP_DEL_Z(l_ret);
+            return NULL;
+        }
+        memcpy(l_ret->pub_key_data, in_key->pub_key_data, l_ret->pub_key_data_size);
     }
-    memcpy(l_ret->pub_key_data, in_key->pub_key_data, l_ret->pub_key_data_size);
     if(in_key->inheritor_size) {
         DAP_DEL_Z(l_ret->_inheritor);
         l_ret->_inheritor = DAP_NEW_Z_SIZE(byte_t, in_key->inheritor_size );
@@ -849,11 +853,7 @@ dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type)
 {
     dap_enc_key_t * l_ret = NULL;
     if ((size_t)a_key_type < c_callbacks_size) {
-        l_ret = DAP_NEW_Z(dap_enc_key_t);
-        if (!l_ret) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            return NULL;
-        }
+        DAP_NEW_Z_RET_VAL(l_ret, dap_enc_key_t, NULL);
         if(s_callbacks[a_key_type].new_callback){
             s_callbacks[a_key_type].new_callback(l_ret);
         }

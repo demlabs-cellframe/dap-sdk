@@ -51,10 +51,12 @@ void dap_enc_sig_picnic_key_new(struct dap_enc_key *key) {
     key->enc = NULL;
     key->gen_bob_shared_key = NULL; //(dap_enc_gen_bob_shared_key) dap_enc_sig_picnic_get_sign;
     key->gen_alice_shared_key = NULL; //(dap_enc_gen_alice_shared_key) dap_enc_sig_picnic_verify_sign;
-    key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_picnic_get_sign;
-    key->dec_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_picnic_verify_sign;
+    key->sign_get = (dap_enc_callback_dataop_na_t) dap_enc_sig_picnic_get_sign;
+    key->sign_verify = (dap_enc_callback_dataop_na_t) dap_enc_sig_picnic_verify_sign;
     key->priv_key_data = NULL;
     key->pub_key_data = NULL;
+    key->dec_na = NULL;
+    key->enc_na = NULL;
 }
 
 void dap_enc_sig_picnic_key_delete(struct dap_enc_key *key)
@@ -101,83 +103,77 @@ void dap_enc_sig_picnic_key_new_generate(struct dap_enc_key * key, const void *k
         set_picnic_params_t(key);
 }
 
-size_t dap_enc_sig_picnic_get_sign(struct dap_enc_key * key, const void* message, size_t message_len,
-        void* signature, size_t signature_len)
+int dap_enc_sig_picnic_get_sign(struct dap_enc_key *a_key, const void *a_msg, size_t a_msg_len,
+        void *a_sig, size_t a_sig_len)
 {
-    int ret;
-    if(!check_picnic_params_t(key))
-        return -1;
-    picnic_privatekey_t* sk = key->priv_key_data;
-    signature_t* sig = (signature_t*) malloc(sizeof(signature_t));
+    // var init and first checks
+    dap_return_val_if_pass(!check_picnic_params_t(a_key), -1);
+    int l_ret = 0;
+    picnic_privatekey_t* sk = a_key->priv_key_data;
     paramset_t paramset;
+    dap_return_val_if_pass((l_ret = get_param_set(sk->params, &paramset)) != EXIT_SUCCESS, l_ret);
+    // memory alloc
+    signature_t *l_sig = NULL;
+    DAP_NEW_Z_RET_VAL(l_sig, signature_t, -1);
 
-    ret = get_param_set(sk->params, &paramset);
-    if(ret != EXIT_SUCCESS) {
-        free(sig);
+    allocateSignature(l_sig, &paramset);
+    dap_return_val_if_pass(!l_sig, -1);
+
+    l_ret = sign((uint32_t*) sk->data, (uint32_t*) sk->pk.ciphertext, (uint32_t*) sk->pk.plaintext, (const uint8_t*)a_msg,
+            a_msg_len, l_sig, &paramset);
+    if(l_ret != EXIT_SUCCESS) {
+        freeSignature(l_sig, &paramset);
+        DAP_DELETE(l_sig);
         return -1;
     }
-
-    allocateSignature(sig, &paramset);
-    if(sig == NULL) {
-        return -1;
-    }
-
-    ret = sign((uint32_t*) sk->data, (uint32_t*) sk->pk.ciphertext, (uint32_t*) sk->pk.plaintext, (const uint8_t*)message,
-            message_len, sig, &paramset);
-    if(ret != EXIT_SUCCESS) {
-        freeSignature(sig, &paramset);
-        free(sig);
-        return -1;
-    }
-    ret = serializeSignature(sig, (uint8_t*)signature, signature_len, &paramset);
-    if(ret == -1) {
-        freeSignature(sig, &paramset);
-        free(sig);
+    l_ret = serializeSignature(l_sig, (uint8_t*)a_sig, a_sig_len, &paramset);
+    if(l_ret == -1) {
+        freeSignature(l_sig, &paramset);
+        DAP_DELETE(l_sig);
         return -1;
     }
 //    *signature_len = ret;
-    freeSignature(sig, &paramset);
-    free(sig);
-    return ret;
+    freeSignature(l_sig, &paramset);
+    DAP_DELETE(l_sig);
+    return 0;
 }
 
-size_t dap_enc_sig_picnic_verify_sign(struct dap_enc_key * key, const void* message, size_t message_len,
-        void* signature, size_t signature_len)
+int dap_enc_sig_picnic_verify_sign(struct dap_enc_key *a_key, const void *a_msg, size_t a_msg_len,
+        void* a_sig, size_t a_sig_len)
 {
-    int ret;
-    if(!check_picnic_params_t(key))
-        return -1;
-    picnic_publickey_t* pk = key->pub_key_data;
+    // var init and first checks
+    dap_return_val_if_pass(!check_picnic_params_t(a_key), -1);
+    int l_ret = 0;
+    picnic_publickey_t* pk = a_key->pub_key_data;
     paramset_t paramset;
+    dap_return_val_if_pass((l_ret = get_param_set(pk->params, &paramset)) != EXIT_SUCCESS, l_ret);
+    // memory alloc
+    signature_t *l_sig = NULL;
+    DAP_NEW_Z_RET_VAL(l_sig, signature_t, -1);
 
-    ret = get_param_set(pk->params, &paramset);
-    if(ret != EXIT_SUCCESS)
-        return -1;
-
-    signature_t* sig = (signature_t*) malloc(sizeof(signature_t));
-    allocateSignature(sig, &paramset);
-    if(sig == NULL) {
-        return -1;
-    }
-
-    ret = deserializeSignature(sig, (const uint8_t*)signature, signature_len, &paramset);
-    if(ret != EXIT_SUCCESS) {
-        freeSignature(sig, &paramset);
-        free(sig);
+    allocateSignature(l_sig, &paramset);
+    if(!l_sig) {
         return -1;
     }
 
-    ret = verify(sig, (uint32_t*) pk->ciphertext,
-            (uint32_t*) pk->plaintext, (const uint8_t*)message, message_len, &paramset);
-    if(ret != EXIT_SUCCESS) {
+    l_ret = deserializeSignature(l_sig, (const uint8_t*)a_sig, a_sig_len, &paramset);
+    if(l_ret != EXIT_SUCCESS) {
+        freeSignature(l_sig, &paramset);
+        DAP_DELETE(l_sig);
+        return -1;
+    }
+
+    l_ret = verify(l_sig, (uint32_t*) pk->ciphertext,
+            (uint32_t*) pk->plaintext, (const uint8_t*)a_msg, a_msg_len, &paramset);
+    if(l_ret != EXIT_SUCCESS) {
         /* Signature is invalid, or verify function failed */
-        freeSignature(sig, &paramset);
-        free(sig);
+        freeSignature(l_sig, &paramset);
+        DAP_DELETE(l_sig);
         return -1;
     }
 
-    freeSignature(sig, &paramset);
-    free(sig);
+    freeSignature(l_sig, &paramset);
+    DAP_DELETE(l_sig);
     return 0;
 }
 
