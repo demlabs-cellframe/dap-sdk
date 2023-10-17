@@ -625,7 +625,9 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
 int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen)
 {
     if(!a_key || !a_buf)
+    {
         return -1;
+    }
     switch (a_key->type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
         if((a_key->pub_key_data)) {
@@ -967,7 +969,7 @@ size_t dap_enc_key_get_enc_size(dap_enc_key_t * a_key, const size_t a_buf_in_siz
     if(s_callbacks[a_key->type].enc_out_size) {
         return s_callbacks[a_key->type].enc_out_size(a_buf_in_size);
     }
-    log_it(L_ERROR, "enc_out_size not realize for current key type");
+    log_it(L_ERROR, "enc_out_size not realize for current key type %d", a_key->type);
     return 0;
 }
 
