@@ -35,6 +35,7 @@
 #include "dap_enc_picnic.h"
 #include "dap_enc_dilithium.h"
 #include "dap_enc_falcon.h"
+#include "dap_enc_sphincsplus.h"
 
 #ifdef DAP_PQLR
 #include "dap_pqrl_dilithium.h"

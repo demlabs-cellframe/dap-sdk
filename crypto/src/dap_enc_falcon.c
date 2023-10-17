@@ -39,8 +39,8 @@ void dap_enc_sig_falcon_set_type(falcon_sign_type_t a_falcon_type)
 void dap_enc_sig_falcon_key_new(struct dap_enc_key *key) {
     key->type = DAP_ENC_KEY_TYPE_SIG_FALCON;
     key->enc = NULL;
-    key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_get_sign;
-    key->dec_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_verify_sign;
+    key->sign_get = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_get_sign;
+    key->sign_verify = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_verify_sign;
 }
 
 void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *kex_buf, size_t kex_size,
@@ -48,8 +48,8 @@ void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *ke
 
     key->type = DAP_ENC_KEY_TYPE_SIG_FALCON;
     key->enc = NULL;
-    key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_get_sign;
-    key->dec_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_verify_sign;
+    key->sign_get = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_get_sign;
+    key->sign_verify = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_verify_sign;
 
 
     int retcode = 0;
@@ -101,27 +101,28 @@ void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *ke
 
 }
 
-size_t dap_enc_sig_falcon_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size)
+int dap_enc_sig_falcon_get_sign(struct dap_enc_key *a_key, const void *a_msg, const size_t a_msg_size, void* a_sig, const size_t a_signature_size)
 {
 
-    if (signature_size != sizeof(falcon_signature_t)) {
+    if (a_signature_size != sizeof(falcon_signature_t)) {
         log_it(L_ERROR, "Invalid falcon signature size");
         return -10;
     }
-    int retcode;
-    //todo: do we need to use shared shake256 context?
-    shake256_context rng;
-    retcode = shake256_init_prng_from_system(&rng);
-    if (retcode != 0) {
-        log_it(L_ERROR, "Failed to initialize PRNG");
-        return retcode;
-    }
 
-    if (key->priv_key_data_size != sizeof(falcon_private_key_t)) {
+    if (a_key->priv_key_data_size != sizeof(falcon_private_key_t)) {
         log_it(L_ERROR, "Invalid falcon key");
         return -11;
     }
-    falcon_private_key_t *privateKey = key->priv_key_data;
+
+    int l_ret = 0;
+    //todo: do we need to use shared shake256 context?
+    shake256_context l_rng;
+    if ((l_ret = shake256_init_prng_from_system(&l_rng))) {
+        log_it(L_ERROR, "Failed to initialize PRNG");
+        return l_ret;
+    }
+
+    falcon_private_key_t *privateKey = a_key->priv_key_data;
 
     size_t tmpsize = privateKey->type == FALCON_DYNAMIC ?
                 FALCON_TMPSIZE_SIGNDYN(privateKey->degree) :
@@ -129,71 +130,70 @@ size_t dap_enc_sig_falcon_get_sign(struct dap_enc_key* key, const void* msg, con
 
     uint8_t tmp[tmpsize];
 
-    falcon_signature_t *sig = signature;
-    sig->degree = privateKey->degree;
-    sig->kind = privateKey->kind;
-    sig->type = privateKey->type;
-    size_t sig_len = 0;
+    falcon_signature_t *l_sig = a_sig;
+    l_sig->degree = privateKey->degree;
+    l_sig->kind = privateKey->kind;
+    l_sig->type = privateKey->type;
+    size_t l_sig_len = 0;
     switch (privateKey->kind) {
-    case FALCON_COMPRESSED:
-        sig_len = FALCON_SIG_COMPRESSED_MAXSIZE(privateKey->degree);
-        break;
-    case FALCON_PADDED:
-        sig_len = FALCON_SIG_PADDED_SIZE(privateKey->degree);
-        break;
-    case FALCON_CT:
-        sig_len = FALCON_SIG_CT_SIZE(privateKey->degree);
-    default:
-        break;
+        case FALCON_COMPRESSED:
+            l_sig_len = FALCON_SIG_COMPRESSED_MAXSIZE(privateKey->degree);
+            break;
+        case FALCON_PADDED:
+            l_sig_len = FALCON_SIG_PADDED_SIZE(privateKey->degree);
+            break;
+        case FALCON_CT:
+            l_sig_len = FALCON_SIG_CT_SIZE(privateKey->degree);
+        default:
+            break;
     }
 
-    if (sig_len)
-        sig->sig_data = DAP_NEW_SIZE(byte_t, sig_len);
+    if (l_sig_len)
+        DAP_NEW_Z_SIZE_RET_VAL(l_sig->sig_data, byte_t, l_sig_len, -1);
 
-    retcode = falcon_sign_dyn(
-            &rng,
-            sig->sig_data, &sig_len, privateKey->kind,
+    l_ret = falcon_sign_dyn(
+            &l_rng,
+            l_sig->sig_data, &l_sig_len, privateKey->kind,
             privateKey->data, FALCON_PRIVKEY_SIZE(privateKey->degree),
-            msg, msg_size,
+            a_msg, a_msg_size,
             tmp, tmpsize
             );
-    sig->sig_len = sig_len;
+    l_sig->sig_len = l_sig_len;
 
-    if (retcode != 0)
+    if (l_ret)
         log_it(L_ERROR, "Failed to sign message");
-    return retcode;
+    return l_ret;
 }
 
-size_t dap_enc_sig_falcon_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
-                                      const size_t signature_size)
+int dap_enc_sig_falcon_verify_sign(struct dap_enc_key *a_key, const void *a_msg, const size_t a_msg_size, void *a_sig,
+                                      const size_t a_sig_size)
 {
 
-    if (key->pub_key_data_size != sizeof(falcon_private_key_t)) {
+    if (a_key->pub_key_data_size != sizeof(falcon_private_key_t)) {
         log_it(L_ERROR, "Invalid falcon key");
         return -11;
     }
-    falcon_private_key_t *publicKey = key->pub_key_data;
-    int logn = publicKey->degree;
+    falcon_public_key_t *l_pkey = a_key->pub_key_data;
+    int l_logn = l_pkey->degree;
 
-    uint8_t tmp[FALCON_TMPSIZE_VERIFY(logn)];
+    uint8_t l_tmp[FALCON_TMPSIZE_VERIFY(l_logn)];
 
-    falcon_signature_t *sig = signature;
-    if (sizeof(falcon_signature_t) != signature_size ||
-            sig->degree != publicKey->degree ||
-            sig->kind != publicKey->kind ||
-            sig->type != publicKey->type)
+    falcon_signature_t *l_sig = a_sig;
+    if (sizeof(falcon_signature_t) != a_sig_size ||
+            l_sig->degree != l_pkey->degree ||
+            l_sig->kind != l_pkey->kind ||
+            l_sig->type != l_pkey->type)
         return -1;
 
-    int retcode = falcon_verify(
-            sig->sig_data, sig->sig_len, publicKey->kind,
-            publicKey->data, FALCON_PUBKEY_SIZE(publicKey->degree),
-
-            msg, msg_size,
-            tmp, FALCON_TMPSIZE_VERIFY(logn)
+    int l_ret = falcon_verify(
+            l_sig->sig_data, l_sig->sig_len, l_pkey->kind,
+            l_pkey->data, FALCON_PUBKEY_SIZE(l_pkey->degree),
+            a_msg, a_msg_size,
+            l_tmp, FALCON_TMPSIZE_VERIFY(l_logn)
             );
-    if (retcode != 0)
+    if (l_ret)
         log_it(L_ERROR, "Failed to verify signature");
-    return retcode;
+    return l_ret;
 }
 
 void dap_enc_sig_falcon_key_delete(struct dap_enc_key *key) {

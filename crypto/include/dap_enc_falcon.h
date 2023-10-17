@@ -14,10 +14,10 @@ void dap_enc_sig_falcon_key_new(struct dap_enc_key *key);
 void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *kex_buf, size_t kex_size,
         const void* seed, size_t seed_size, size_t key_size);
 
-size_t dap_enc_sig_falcon_get_sign(struct dap_enc_key* key, const void * msg, const size_t msg_size,
+int dap_enc_sig_falcon_get_sign(struct dap_enc_key* key, const void * msg, const size_t msg_size,
         void* signature, const size_t signature_size);
 
-size_t dap_enc_sig_falcon_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
+int dap_enc_sig_falcon_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
         const size_t signature_size);
 
 void dap_enc_sig_falcon_key_delete(struct dap_enc_key *key);
