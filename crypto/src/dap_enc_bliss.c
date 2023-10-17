@@ -22,8 +22,8 @@ void dap_enc_sig_bliss_key_new(struct dap_enc_key *key) {
 
     key->type = DAP_ENC_KEY_TYPE_SIG_BLISS;
     key->enc = NULL;
-    //key->gen_bob_shared_key = (dap_enc_gen_bob_shared_key) dap_enc_sig_bliss_get_sign;
-    //key->gen_alice_shared_key = (dap_enc_gen_alice_shared_key) dap_enc_sig_bliss_verify_sign;
+    key->sign_get = (dap_enc_callback_sign_op_t)dap_enc_sig_bliss_get_sign;
+    key->sign_verify = (dap_enc_callback_sign_op_t)dap_enc_sig_bliss_verify_sign;
 }
 
 /**
@@ -61,7 +61,7 @@ int dap_enc_sig_bliss_key_pub_output(struct dap_enc_key *l_key, void * l_output)
 // a_key->data  --- Alice's public key
 // alice_priv  ---  Alice's private key
 // alice_msg_len --- Alice's private key length
-void dap_enc_sig_bliss_key_new_generate(struct dap_enc_key * a_key, const void *kex_buf,
+void dap_enc_sig_bliss_key_new_generate(struct dap_enc_key *a_key, const void *kex_buf,
         size_t kex_size, const void * seed, size_t seed_size,
         size_t key_size)
 {

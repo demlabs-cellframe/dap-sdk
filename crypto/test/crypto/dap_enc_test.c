@@ -384,7 +384,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
         sig_buf_size = sizeof(bliss_signature_t);
         sig_buf = calloc(sig_buf_size, 1);
-        is_sig = dap_enc_sig_bliss_get_sign(key, source_buf, source_size, sig_buf, sig_buf_size);
+        is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
         break;
     case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         sig_buf_size = dap_enc_picnic_calc_signature_size(key);
@@ -394,8 +394,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
         sig_buf_size = dap_enc_tesla_calc_signature_size();
         sig_buf = calloc(sig_buf_size, 1);
-        if(key->enc_na(key, source_buf, source_size, sig_buf, sig_buf_size) > 0)
-            is_sig = 1;
+        is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         sig_buf_size = dap_enc_dilithium_calc_signature_unserialized_size();
@@ -408,7 +407,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     }
     dap_enc_key_delete(key);
 
-    dap_assert_PIF(sig_buf_size>0 && !is_sig, "Check make signature");
+    dap_assert_PIF(sig_buf_size > 0 && !is_sig, "Check make signature");
 
     // serialize & deserialize signature
     size_t sig_buf_len = sig_buf_size;
@@ -422,8 +421,6 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     // decode by key2
     switch (key_type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        is_vefify = dap_enc_sig_bliss_verify_sign(key2, source_buf, source_size, sig_buf, sig_buf_size);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_PICNIC:
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:

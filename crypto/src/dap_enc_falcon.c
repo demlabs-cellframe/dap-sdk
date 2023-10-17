@@ -39,18 +39,14 @@ void dap_enc_sig_falcon_set_type(falcon_sign_type_t a_falcon_type)
 void dap_enc_sig_falcon_key_new(struct dap_enc_key *key) {
     key->type = DAP_ENC_KEY_TYPE_SIG_FALCON;
     key->enc = NULL;
-    key->sign_get = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_get_sign;
-    key->sign_verify = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_verify_sign;
+    key->sign_get = (dap_enc_callback_sign_op_t)dap_enc_sig_falcon_get_sign;
+    key->sign_verify = (dap_enc_callback_sign_op_t)dap_enc_sig_falcon_verify_sign;
 }
 
 void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *kex_buf, size_t kex_size,
         const void* seed, size_t seed_size, size_t key_size) {
 
-    key->type = DAP_ENC_KEY_TYPE_SIG_FALCON;
-    key->enc = NULL;
-    key->sign_get = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_get_sign;
-    key->sign_verify = (dap_enc_callback_dataop_na_t) dap_enc_sig_falcon_verify_sign;
-
+    dap_enc_sig_falcon_key_new(key);
 
     int retcode = 0;
     unsigned int logn = s_falcon_sign_degree;
