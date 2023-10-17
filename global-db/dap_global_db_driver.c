@@ -251,7 +251,7 @@ dap_store_obj_t *l_store_obj_cur;
         for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
             if ((l_store_obj_cur->type == DAP_DB$K_OPTYPE_ADD) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
                 log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i, a_store_count);
-                l_ret = -666;
+                l_ret = -9;
                 break;
             }
             if ( 1 == (l_ret = s_drv_callback.apply_store_obj(l_store_obj_cur)) )
