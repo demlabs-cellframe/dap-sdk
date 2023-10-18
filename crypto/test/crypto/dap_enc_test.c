@@ -9,6 +9,7 @@
 #include "dap_enc_picnic.h"
 #include "dap_enc_tesla.h"
 #include "dap_enc_dilithium.h"
+#include "dap_enc_falcon.h"
 #include "dap_enc.h"
 
 int get_cur_time_msec();
@@ -402,6 +403,12 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
         if(key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size) > 0)
             is_sig = 1;
         break;
+    case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        sig_buf_size = sizeof(falcon_signature_t);
+        sig_buf = calloc(sig_buf_size, 1);
+        if(key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size) > 0)
+            is_sig = 1;
+        break;
     default:
         sig_buf_size = 0;
     }
@@ -424,6 +431,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     case DAP_ENC_KEY_TYPE_SIG_PICNIC:
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+    case DAP_ENC_KEY_TYPE_SIG_FALCON:
         is_vefify = key2->sign_verify(key2, source_buf, source_size, sig_buf, sig_buf_size);
         break;
     default:
@@ -460,5 +468,7 @@ void dap_enc_tests_run() {
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_TESLA);
     dap_print_module_name("dap_enc_sig serialize->deserialize DILITHIUM");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_DILITHIUM);
+    dap_print_module_name("dap_enc_sig serialize->deserialize FALCON");
+    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_FALCON);
     cleanup_test_case();
 }

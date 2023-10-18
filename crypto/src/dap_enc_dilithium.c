@@ -107,20 +107,20 @@ size_t dap_enc_dilithium_calc_signature_unserialized_size(void)
 }
 
 /* Serialize a signature */
-uint8_t* dap_enc_dilithium_write_signature(dilithium_signature_t* a_sign, size_t *a_sign_out)
+uint8_t* dap_enc_dilithium_write_signature(dilithium_signature_t* a_sign, size_t *a_buflen_out)
 {
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
     dap_return_val_if_pass(!a_sign, NULL);
-
-    size_t l_shift_mem = 0;
+// func work
     uint64_t l_buflen = dap_enc_dilithium_calc_signagture_size(a_sign);
-
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8,
                         &l_buflen, sizeof(uint64_t),
                         &a_sign->kind, sizeof(uint32_t),
                         &a_sign->sig_len, sizeof(uint64_t),
                         a_sign->sig_data, a_sign->sig_len);
-    if(a_sign_out)
-        *a_sign_out = l_buflen;
+// out work
+    a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 
@@ -193,32 +193,37 @@ dilithium_signature_t* dap_enc_dilithium_read_signature(uint8_t *a_buf, size_t a
 /* Serialize a private key. */
 uint8_t* dap_enc_dilithium_write_private_key(const dilithium_private_key_t* a_private_key, size_t *a_buflen_out)
 {
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
     dilithium_param_t p;
     dap_return_val_if_pass(!a_private_key || !dilithium_params_init(&p, a_private_key->kind), NULL);
-
+// func work
     uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_SECRETKEYBYTES;
     byte_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
                         &l_buflen, sizeof(uint64_t),
                         &a_private_key->kind, sizeof(uint32_t),
                         a_private_key->data, p.CRYPTO_SECRETKEYBYTES);
-    if(a_buflen_out)
-        *a_buflen_out = l_buflen;
+// out work
+    a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 
 /* Serialize a public key. */
 uint8_t* dap_enc_dilithium_write_public_key(const dilithium_public_key_t* a_public_key, size_t *a_buflen_out)
 {
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
     dilithium_param_t p;
     dap_return_val_if_pass(!a_public_key || !dilithium_params_init(&p, a_public_key->kind), NULL);
-
+// func work
     uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_PUBLICKEYBYTES;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
                         &l_buflen, sizeof(uint64_t),
                         &a_public_key->kind, sizeof(uint32_t),
                         a_public_key->data, p.CRYPTO_PUBLICKEYBYTES);
-    if(a_buflen_out)
-        *a_buflen_out = l_buflen;
+    
+// out work
+    a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 

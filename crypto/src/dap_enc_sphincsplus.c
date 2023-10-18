@@ -164,14 +164,18 @@ void dap_enc_sig_sphincsplus_key_delete(dap_enc_key_t *key) {
 /* Serialize a private key. */
 uint8_t* dap_enc_sphincsplus_write_private_key(const sphincsplus_private_key_t* a_private_key, size_t *a_buflen_out)
 {
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
     dap_return_val_if_pass(!a_private_key, NULL);
-
+// func work
     size_t l_secret_length = dap_enc_sphincsplus_crypto_sign_secretkeybytes();
     uint64_t l_buflen = sizeof(uint64_t) + l_secret_length;
-    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 4, &l_buflen, sizeof(uint64_t), a_private_key->data, l_secret_length);
-
-    if(a_buflen_out)
-        *a_buflen_out = l_buflen;
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 4,
+        &l_buflen, sizeof(uint64_t), 
+        a_private_key->data, l_secret_length
+    );
+// out work
+    a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 
@@ -213,17 +217,21 @@ sphincsplus_private_key_t *dap_enc_sphincsplus_read_private_key(const uint8_t *a
     return l_ret;
 }
 
-/* Serialize a private key. */
+/* Serialize a public key. */
 uint8_t *dap_enc_sphincsplus_write_public_key(const sphincsplus_public_key_t* a_public_key, size_t *a_buflen_out)
 {
-    if (!a_public_key)
-        return NULL;
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
+    dap_return_val_if_pass(!a_public_key, NULL);
+// func work
     size_t l_public_length = dap_enc_sphincsplus_crypto_sign_publickeybytes();
     uint64_t l_buflen = sizeof(uint64_t) + l_public_length;
-    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 4, &l_buflen, sizeof(uint64_t), a_public_key->data, l_public_length);
-
-    if(a_buflen_out)
-        *a_buflen_out = l_buflen;
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 4, 
+        &l_buflen, sizeof(uint64_t), 
+        a_public_key->data, l_public_length
+    );
+// out work
+    a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 
@@ -266,19 +274,21 @@ sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_b
 }
 
 /* Serialize a signature */
-uint8_t *dap_enc_sphincsplus_write_signature(const sphincsplus_signature_t *a_sign, size_t *a_size_out)
+uint8_t *dap_enc_sphincsplus_write_signature(const sphincsplus_signature_t *a_sign, size_t *a_buflen_out)
 {
+// out work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
     dap_return_val_if_pass(!a_sign, NULL);
-
+// func work
     size_t l_shift_mem = 0;
     uint64_t l_buflen = a_sign->sig_len + sizeof(uint64_t) * 2;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6, 
-                        &l_buflen, sizeof(uint64_t),
-                        &a_sign->sig_len, sizeof(uint64_t),
-                        a_sign->sig_data, a_sign->sig_len
-                        );
-    if(a_size_out)
-        *a_size_out = l_buflen;
+        &l_buflen, sizeof(uint64_t),
+        &a_sign->sig_len, sizeof(uint64_t),
+        a_sign->sig_data, a_sign->sig_len
+    );
+// out work
+    a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 

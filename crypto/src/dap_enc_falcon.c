@@ -212,12 +212,14 @@ uint8_t* dap_enc_falcon_write_public_key(const falcon_public_key_t* a_public_key
     // 4 bytes - kind of key
     // 4 bytes - type of key
     // n bytes - public key data
-
+// in work   
+    a_buflen_out ? *a_buflen_out = 0 : 0;
+// func work
     uint64_t l_buflen =
             sizeof(uint64_t) +
             sizeof(uint32_t) * 3 +
-            FALCON_PUBKEY_SIZE(a_public_key->degree);
-
+            FALCON_PUBKEY_SIZE(a_public_key->degree
+    );
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
         &l_buflen, sizeof(uint64_t),
         &a_public_key->degree, sizeof(uint32_t),
@@ -225,10 +227,8 @@ uint8_t* dap_enc_falcon_write_public_key(const falcon_public_key_t* a_public_key
         &a_public_key->type, sizeof(uint32_t),
         a_public_key->data, FALCON_PUBKEY_SIZE(a_public_key->degree)
     );
-
-    if (a_buflen_out)
-        *a_buflen_out = l_buflen;
-
+// out work
+    a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 
@@ -239,12 +239,13 @@ uint8_t* dap_enc_falcon_write_private_key(const falcon_private_key_t* a_private_
     // 4 bytes - kind of key
     // 4 bytes - type of key
     // n bytes - private key data
-
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
+// func work
     uint64_t l_buflen =
             sizeof(uint64_t) +
             sizeof(uint32_t) * 3 +
             FALCON_PRIVKEY_SIZE(a_private_key->degree);
-
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
         &l_buflen, sizeof(uint64_t),
         &a_private_key->degree, sizeof(uint32_t),
@@ -252,10 +253,8 @@ uint8_t* dap_enc_falcon_write_private_key(const falcon_private_key_t* a_private_
         &a_private_key->type, sizeof(uint32_t),
         a_private_key->data, FALCON_PRIVKEY_SIZE(a_private_key->degree)
     );
-
-    if(a_buflen_out)
-        *a_buflen_out = l_buflen;
-
+// out work
+    a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 
@@ -391,13 +390,15 @@ falcon_public_key_t* dap_enc_falcon_read_public_key(const uint8_t* a_buf, size_t
     return l_public_key;
 }
 
-uint8_t* dap_enc_falcon_write_signature(const falcon_signature_t* a_sign, size_t *a_sign_out) {
-
+uint8_t* dap_enc_falcon_write_signature(const falcon_signature_t* a_sign, size_t *a_buflen_out)
+{
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
     if (!a_sign) {
         log_it(L_ERROR, "::write_signature() a_sign is NULL");
         return NULL;
     }
-
+// func work
     size_t l_buflen = sizeof(uint64_t) * 2 + sizeof(uint32_t) * 3 + a_sign->sig_len;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 12,
         &l_buflen, sizeof(uint64_t),
@@ -407,10 +408,8 @@ uint8_t* dap_enc_falcon_write_signature(const falcon_signature_t* a_sign, size_t
         &a_sign->sig_len, sizeof(uint64_t),
         a_sign->sig_data, a_sign->sig_len
     );
-
-    if (a_sign_out)
-        *a_sign_out = l_buflen;
-
+// out work
+    a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 falcon_signature_t* dap_enc_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen) {

@@ -154,13 +154,13 @@ void dap_enc_sig_bliss_key_delete(struct dap_enc_key *key)
 }
 
 /* Serialize a signature */
-uint8_t* dap_enc_sig_bliss_write_signature(bliss_signature_t* a_sign, size_t *a_sign_out)
+uint8_t* dap_enc_sig_bliss_write_signature(bliss_signature_t* a_sign, size_t *a_buflen_out)
 {
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
     bliss_param_t p;
-    if(!bliss_params_init(&p, a_sign->kind)) {
-        return NULL ;
-    }
-
+    dap_return_val_if_pass(!bliss_params_init(&p, a_sign->kind), NULL);
+// func work
     size_t l_buflen = sizeof(size_t) + sizeof(bliss_kind_t) + p.n * 2 * sizeof(int32_t) + p.kappa * sizeof(int32_t);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
         &l_buflen, sizeof(size_t),
@@ -169,8 +169,8 @@ uint8_t* dap_enc_sig_bliss_write_signature(bliss_signature_t* a_sign, size_t *a_
         a_sign->z2, p.n * sizeof(int32_t),
         a_sign->c, p.kappa * sizeof(int32_t)
     );
-    if(a_sign_out)
-        *a_sign_out = l_buflen;
+// out work
+    a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 
@@ -211,11 +211,11 @@ bliss_signature_t* dap_enc_sig_bliss_read_signature(const uint8_t *a_buf, size_t
 /* Serialize a private key. */
 uint8_t* dap_enc_sig_bliss_write_private_key(const bliss_private_key_t* a_private_key, size_t *a_buflen_out)
 {
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
     bliss_param_t p;
-    if(!bliss_params_init(&p, a_private_key->kind)) {
-        return NULL;
-    }
-
+    dap_return_val_if_pass(!bliss_params_init(&p, a_private_key->kind), NULL);
+// func work
     size_t l_buflen = sizeof(size_t) + sizeof(bliss_kind_t) + 3 * p.n * sizeof(int32_t);
     uint8_t *l_buf = dap_serialize_multy( NULL, l_buflen, 10,
         &l_buflen, sizeof(size_t),
@@ -224,28 +224,27 @@ uint8_t* dap_enc_sig_bliss_write_private_key(const bliss_private_key_t* a_privat
         a_private_key->s2, p.n * sizeof(int32_t),
         a_private_key->a, p.n * sizeof(int32_t)
     );
-    if(a_buflen_out)
-        *a_buflen_out = l_buflen;
+// out work
+    a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 
 /* Serialize a public key. */
 uint8_t* dap_enc_sig_bliss_write_public_key(const bliss_public_key_t* a_public_key, size_t *a_buflen_out)
 {
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
     bliss_param_t p;
-
-    if(!bliss_params_init(&p, a_public_key->kind)) {
-        return NULL;
-    }
-
+    dap_return_val_if_pass(!bliss_params_init(&p, a_public_key->kind), NULL);
+// func work
     size_t l_buflen = sizeof(size_t) + sizeof(bliss_kind_t) + p.n * sizeof(int32_t);
     uint8_t *l_buf = dap_serialize_multy( NULL, l_buflen, 6,
         &l_buflen, sizeof(size_t),
         &a_public_key->kind, sizeof(bliss_kind_t),
         a_public_key->a, p.n * sizeof(int32_t)
     );
-    if(a_buflen_out)
-        *a_buflen_out = l_buflen;
+// out work
+    a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 

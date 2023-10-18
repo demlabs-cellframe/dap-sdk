@@ -32,7 +32,7 @@ static inline size_t dap_enc_dilithium_calc_signagture_size(dilithium_signature_
     return sizeof(uint64_t) * 2 + sizeof(uint32_t) + a_sign->sig_len;
 }
 
-uint8_t* dap_enc_dilithium_write_signature(dilithium_signature_t* a_sign, size_t *a_sign_out);
+uint8_t* dap_enc_dilithium_write_signature(dilithium_signature_t* a_sign, size_t *a_buflen_out);
 dilithium_signature_t* dap_enc_dilithium_read_signature(uint8_t *a_buf, size_t a_buflen);
 dilithium_signature_t* dap_enc_dilithium_read_signature_old(uint8_t *a_buf, size_t a_buflen);
 dilithium_signature_t* dap_enc_dilithium_read_signature_old2(uint8_t *a_buf, size_t a_buflen);
