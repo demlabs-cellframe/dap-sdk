@@ -70,12 +70,10 @@ int dap_sign_init(uint8_t a_sign_hash_type_default)
  * @param a_output_wish_size size_t output size
  * @return size_t 
  */
-size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t * a_key, size_t a_output_wish_size )
+size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t * a_key, UNUSED_ARG size_t a_output_wish_size )
 {
-    (void)a_output_wish_size;
+    dap_return_val_if_pass(!a_key, 0);
 
-    if(!a_key)
-        return 0;
     size_t l_sign_size = 0;
     switch (a_key->type){
         case DAP_ENC_KEY_TYPE_SIG_BLISS: l_sign_size = sizeof(s_sign_bliss_null); break;
@@ -85,13 +83,11 @@ size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t * a_key, size
         case DAP_ENC_KEY_TYPE_SIG_FALCON: l_sign_size = dap_enc_falcon_calc_signature_unserialized_size(); break;
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_sign_size = dap_enc_sphincsplus_calc_signature_unserialized_size(); break;
 #ifdef DAP_PQRL
-    case DAP_ENC_KEY_TYPE_SIG_PQLR_DILITHIUM: l_sign_size = dap_pqlr_dilithium_calc_signature_size(a_key); break;
+        case DAP_ENC_KEY_TYPE_SIG_PQLR_DILITHIUM: l_sign_size = dap_pqlr_dilithium_calc_signature_size(a_key); break;
 #endif
         default : return 0;
-
     }
     return l_sign_size;
-    //return sizeof(s_sign_null->header)+ a_key->pub_key_data_size + l_sign_size;
 }
 
 

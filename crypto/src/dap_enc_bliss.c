@@ -22,8 +22,8 @@ void dap_enc_sig_bliss_key_new(struct dap_enc_key *key) {
 
     key->type = DAP_ENC_KEY_TYPE_SIG_BLISS;
     key->enc = NULL;
-    key->sign_get = (dap_enc_callback_sign_op_t)dap_enc_sig_bliss_get_sign;
-    key->sign_verify = (dap_enc_callback_sign_op_t)dap_enc_sig_bliss_verify_sign;
+    key->sign_get = dap_enc_sig_bliss_get_sign;
+    key->sign_verify = dap_enc_sig_bliss_verify_sign;
 }
 
 /**
@@ -121,7 +121,7 @@ int dap_enc_sig_bliss_get_sign(struct dap_enc_key * key, const void * msg,
 {
     if(signature_size < sizeof(bliss_signature_t)) {
         log_it(L_ERROR, "bad signature size");
-        return 0;
+        return -1;
     }
     uint8_t seed_tmp[SHA3_512_DIGEST_LENGTH];
     entropy_t entropy;
@@ -160,25 +160,15 @@ uint8_t* dap_enc_sig_bliss_write_signature(bliss_signature_t* a_sign, size_t *a_
     if(!bliss_params_init(&p, a_sign->kind)) {
         return NULL ;
     }
-    size_t l_shift_mem = 0;
+
     size_t l_buflen = sizeof(size_t) + sizeof(bliss_kind_t) + p.n * 2 * sizeof(int32_t) + p.kappa * sizeof(int32_t);
-
-    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_buflen);
-    if (!l_buf) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
-    memcpy(l_buf, &l_buflen, sizeof(size_t));
-    l_shift_mem += sizeof(size_t);
-    memcpy(l_buf + l_shift_mem, &a_sign->kind, sizeof(bliss_kind_t));
-    l_shift_mem += sizeof(bliss_kind_t);
-    memcpy(l_buf + l_shift_mem, a_sign->z1, p.n * sizeof(int32_t));
-    l_shift_mem += p.n * sizeof(int32_t);
-    memcpy(l_buf + l_shift_mem, a_sign->z2, p.n * sizeof(int32_t));
-    l_shift_mem += p.n * sizeof(int32_t);
-    memcpy(l_buf + l_shift_mem, a_sign->c, p.kappa * sizeof(int32_t));
-    l_shift_mem += p.kappa * sizeof(int32_t);
-
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
+        &l_buflen, sizeof(size_t),
+        &a_sign->kind, sizeof(bliss_kind_t),
+        a_sign->z1, p.n * sizeof(int32_t),
+        a_sign->z2, p.n * sizeof(int32_t),
+        a_sign->c, p.kappa * sizeof(int32_t)
+    );
     if(a_sign_out)
         *a_sign_out = l_buflen;
     return l_buf;
@@ -225,23 +215,15 @@ uint8_t* dap_enc_sig_bliss_write_private_key(const bliss_private_key_t* a_privat
     if(!bliss_params_init(&p, a_private_key->kind)) {
         return NULL;
     }
-    size_t l_shift_mem = 0;
+
     size_t l_buflen = sizeof(size_t) + sizeof(bliss_kind_t) + 3 * p.n * sizeof(int32_t);
-    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_buflen);
-    if (!l_buf) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
-    memcpy(l_buf, &l_buflen, sizeof(size_t));
-    l_shift_mem += sizeof(size_t);
-    memcpy(l_buf + l_shift_mem, &a_private_key->kind, sizeof(bliss_kind_t));
-    l_shift_mem += sizeof(bliss_kind_t);
-    memcpy(l_buf + l_shift_mem, a_private_key->s1, p.n * sizeof(int32_t));
-    l_shift_mem += p.n * sizeof(int32_t);
-    memcpy(l_buf + l_shift_mem, a_private_key->s2, p.n * sizeof(int32_t));
-    l_shift_mem += p.n * sizeof(int32_t);
-    memcpy(l_buf + l_shift_mem, a_private_key->a, p.n * sizeof(int32_t));
-    l_shift_mem += p.n * sizeof(int32_t);
+    uint8_t *l_buf = dap_serialize_multy( NULL, l_buflen, 10,
+        &l_buflen, sizeof(size_t),
+        &a_private_key->kind, sizeof(bliss_kind_t),
+        a_private_key->s1, p.n * sizeof(int32_t),
+        a_private_key->s2, p.n * sizeof(int32_t),
+        a_private_key->a, p.n * sizeof(int32_t)
+    );
     if(a_buflen_out)
         *a_buflen_out = l_buflen;
     return l_buf;
@@ -256,19 +238,12 @@ uint8_t* dap_enc_sig_bliss_write_public_key(const bliss_public_key_t* a_public_k
         return NULL;
     }
 
-    size_t l_shift_mem = 0;
     size_t l_buflen = sizeof(size_t) + sizeof(bliss_kind_t) + p.n * sizeof(int32_t);
-    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_buflen);
-    if (!l_buf) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
-    memcpy(l_buf, &l_buflen, sizeof(size_t));
-    l_shift_mem += sizeof(size_t);
-    memcpy(l_buf + l_shift_mem, &a_public_key->kind, sizeof(bliss_kind_t));
-    l_shift_mem += sizeof(bliss_kind_t);
-    memcpy(l_buf + l_shift_mem, a_public_key->a, p.n * sizeof(int32_t));
-    l_shift_mem += p.n * sizeof(int32_t);
+    uint8_t *l_buf = dap_serialize_multy( NULL, l_buflen, 6,
+        &l_buflen, sizeof(size_t),
+        &a_public_key->kind, sizeof(bliss_kind_t),
+        a_public_key->a, p.n * sizeof(int32_t)
+    );
     if(a_buflen_out)
         *a_buflen_out = l_buflen;
     return l_buf;

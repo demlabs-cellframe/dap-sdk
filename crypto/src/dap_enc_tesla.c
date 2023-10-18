@@ -19,8 +19,8 @@ void dap_enc_sig_tesla_key_new(dap_enc_key_t *key) {
 
     key->type = DAP_ENC_KEY_TYPE_SIG_TESLA;
     key->enc = NULL;
-    key->sign_get = (dap_enc_callback_sign_op_t) dap_enc_sig_tesla_get_sign;
-    key->sign_verify = (dap_enc_callback_sign_op_t) dap_enc_sig_tesla_verify_sign;
+    key->sign_get = dap_enc_sig_tesla_get_sign;
+    key->sign_verify = dap_enc_sig_tesla_verify_sign;
 }
 
 // generation key pair for sign Alice
@@ -78,7 +78,7 @@ int dap_enc_sig_tesla_get_sign(dap_enc_key_t *a_key, const void *a_msg,
 {
     if(a_sig_size < sizeof(tesla_signature_t)) {
         log_it(L_ERROR, "bad signature size");
-        return 0;
+        return -1;
     }
 
     return tesla_crypto_sign((tesla_signature_t *)a_sig, (const unsigned char *)a_msg, a_msg_size, a_key->priv_key_data);
@@ -112,24 +112,19 @@ size_t dap_enc_tesla_calc_signature_serialized_size(tesla_signature_t* a_sign)
 }
 
 /* Serialize a signature */
-uint8_t* dap_enc_tesla_write_signature(tesla_signature_t* a_sign, size_t *a_sign_out)
+uint8_t *dap_enc_tesla_write_signature(tesla_signature_t *a_sign, size_t *a_sign_out)
 {
-    if(!a_sign || *a_sign_out!=sizeof(tesla_signature_t)) {
-        return NULL ;
-    }
+    dap_return_val_if_pass(!a_sign || *a_sign_out != sizeof(tesla_signature_t), NULL);
+
     size_t l_shift_mem = 0;
     size_t l_buflen = dap_enc_tesla_calc_signature_serialized_size(a_sign);
 
-    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_buflen);
-    memcpy(l_buf, &l_buflen, sizeof(size_t));
-    l_shift_mem += sizeof(size_t);
-    memcpy(l_buf + l_shift_mem, &a_sign->kind, sizeof(tesla_kind_t));
-    l_shift_mem += sizeof(tesla_kind_t);
-    memcpy(l_buf + l_shift_mem, &a_sign->sig_len, sizeof(unsigned long long));
-    l_shift_mem += sizeof(unsigned long long);
-    memcpy(l_buf + l_shift_mem, a_sign->sig_data, a_sign->sig_len );
-    l_shift_mem += a_sign->sig_len ;
-
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8,
+        &l_buflen, sizeof(size_t),
+        &a_sign->kind, sizeof(tesla_kind_t),
+        &a_sign->sig_len, sizeof(unsigned long long),
+        a_sign->sig_data, a_sign->sig_len
+    );
     if(a_sign_out)
         *a_sign_out = l_buflen;
     return l_buf;
@@ -162,17 +157,17 @@ tesla_signature_t* dap_enc_tesla_read_signature(uint8_t *a_buf, size_t a_buflen)
 }
 
 /* Serialize a private key. */
-uint8_t* dap_enc_tesla_write_private_key(const tesla_private_key_t* a_private_key, size_t *a_buflen_out)
+uint8_t *dap_enc_tesla_write_private_key(const tesla_private_key_t *a_private_key, size_t *a_buflen_out)
 {
     tesla_param_t p;// = malloc(sizeof(tesla_param_t));
-    if(!tesla_params_init(&p, a_private_key->kind))
-        return NULL;
+    dap_return_val_if_pass(!tesla_params_init(&p, a_private_key->kind), NULL);
 
     size_t l_buflen = sizeof(size_t) + sizeof(tesla_kind_t) + p.CRYPTO_SECRETKEYBYTES; //CRYPTO_PUBLICKEYBYTES;
-    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_buflen);
-    memcpy(l_buf, &l_buflen, sizeof(size_t));
-    memcpy(l_buf + sizeof(size_t), &a_private_key->kind, sizeof(tesla_kind_t));
-    memcpy(l_buf + sizeof(size_t) + sizeof(tesla_kind_t), a_private_key->data, p.CRYPTO_SECRETKEYBYTES);
+    uint8_t *l_buf =  dap_serialize_multy(NULL, l_buflen, 6,
+        &l_buflen, sizeof(size_t),
+        &a_private_key->kind, sizeof(tesla_kind_t),
+        a_private_key->data, p.CRYPTO_SECRETKEYBYTES
+    );
     if(a_buflen_out)
         *a_buflen_out = l_buflen;
     return l_buf;
@@ -182,14 +177,14 @@ uint8_t* dap_enc_tesla_write_private_key(const tesla_private_key_t* a_private_ke
 uint8_t* dap_enc_tesla_write_public_key(const tesla_public_key_t* a_public_key, size_t *a_buflen_out)
 {
     tesla_param_t p;
-    if(!tesla_params_init(&p, a_public_key->kind))
-        return NULL;
+    dap_return_val_if_pass(!tesla_params_init(&p, a_public_key->kind), NULL);
 
     size_t l_buflen = sizeof(size_t) + sizeof(tesla_kind_t) + p.CRYPTO_PUBLICKEYBYTES;
-    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, l_buflen);
-    memcpy(l_buf, &l_buflen, sizeof(size_t));
-    memcpy(l_buf + sizeof(size_t), &a_public_key->kind, sizeof(tesla_kind_t));
-    memcpy(l_buf + sizeof(size_t) + sizeof(tesla_kind_t), a_public_key->data, p.CRYPTO_PUBLICKEYBYTES);
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
+        &l_buflen, sizeof(size_t),
+        &a_public_key->kind, sizeof(tesla_kind_t),
+        a_public_key->data, p.CRYPTO_PUBLICKEYBYTES
+    );
     if(a_buflen_out)
         *a_buflen_out = l_buflen;
     return l_buf;

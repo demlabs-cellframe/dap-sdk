@@ -1428,16 +1428,19 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
 
 /**
  * @brief dap_serialize_multy - serialize args to one uint8_t *l_ret. Args count should be even.
+ * @param a_data - pointer to write data, if NULL - allocate needed memory
  * @param a_size - total out size
  * @param a_count - args count, should be even
  * @return pointer if pass, else NULL
  */
-uint8_t *dap_serialize_multy(size_t a_size, int a_count, ...)
+uint8_t *dap_serialize_multy(uint8_t *a_data, size_t a_size, int a_count, ...)
 {
     dap_return_val_if_pass(!a_size || a_count % 2, NULL);
 
-    uint8_t *l_ret = NULL;
-    DAP_NEW_Z_SIZE_RET_VAL(l_ret, uint8_t, a_size, NULL);
+    uint8_t *l_ret = a_data;
+    // allocate memory, if need
+    if (!l_ret)
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret, uint8_t, a_size, NULL);
     size_t l_shift_mem = 0;
     va_list l_args;
     va_start(l_args, a_count);

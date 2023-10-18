@@ -51,8 +51,8 @@ void dap_enc_sig_picnic_key_new(dap_enc_key_t *key) {
     key->enc = NULL;
     key->gen_bob_shared_key = NULL; //(dap_enc_gen_bob_shared_key) dap_enc_sig_picnic_get_sign;
     key->gen_alice_shared_key = NULL; //(dap_enc_gen_alice_shared_key) dap_enc_sig_picnic_verify_sign;
-    key->sign_get = (dap_enc_callback_sign_op_t)dap_enc_sig_picnic_get_sign;
-    key->sign_verify = (dap_enc_callback_sign_op_t)dap_enc_sig_picnic_verify_sign;
+    key->sign_get = dap_enc_sig_picnic_get_sign;
+    key->sign_verify = dap_enc_sig_picnic_verify_sign;
     key->priv_key_data = NULL;
     key->pub_key_data = NULL;
     key->dec_na = NULL;

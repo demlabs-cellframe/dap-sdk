@@ -242,7 +242,7 @@ DAP_STATIC_INLINE unsigned long dap_pagesize() {
     return s ? s : 4096;
 }
 
-uint8_t *dap_serialize_multy(size_t a_size, int a_count, ...);
+uint8_t *dap_serialize_multy(uint8_t *a_data, size_t a_size, int a_count, ...);
 
 #ifdef DAP_OS_WINDOWS
 typedef struct iovec {

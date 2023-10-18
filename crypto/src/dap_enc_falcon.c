@@ -39,8 +39,8 @@ void dap_enc_sig_falcon_set_type(falcon_sign_type_t a_falcon_type)
 void dap_enc_sig_falcon_key_new(struct dap_enc_key *key) {
     key->type = DAP_ENC_KEY_TYPE_SIG_FALCON;
     key->enc = NULL;
-    key->sign_get = (dap_enc_callback_sign_op_t)dap_enc_sig_falcon_get_sign;
-    key->sign_verify = (dap_enc_callback_sign_op_t)dap_enc_sig_falcon_verify_sign;
+    key->sign_get = dap_enc_sig_falcon_get_sign;
+    key->sign_verify = dap_enc_sig_falcon_verify_sign;
 }
 
 void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *kex_buf, size_t kex_size,
@@ -218,22 +218,13 @@ uint8_t* dap_enc_falcon_write_public_key(const falcon_public_key_t* a_public_key
             sizeof(uint32_t) * 3 +
             FALCON_PUBKEY_SIZE(a_public_key->degree);
 
-    uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_buflen);
-    if (!l_buf) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
-    uint32_t l_degree = a_public_key->degree;
-    uint32_t l_kind = a_public_key->kind;
-    uint32_t l_type = a_public_key->type;
-
-    uint8_t *l_ptr = l_buf;
-    *(uint64_t *)l_ptr = l_buflen; l_ptr += sizeof(uint64_t);
-    *(uint32_t *)l_ptr = l_degree; l_ptr += sizeof(uint32_t);
-    *(uint32_t *)l_ptr = l_kind; l_ptr += sizeof(uint32_t);
-    *(uint32_t *)l_ptr = l_type; l_ptr += sizeof(uint32_t);
-    memcpy(l_ptr, a_public_key->data, FALCON_PUBKEY_SIZE(a_public_key->degree));
-    assert(l_ptr + FALCON_PUBKEY_SIZE(a_public_key->degree) - l_buf == (int64_t)l_buflen);
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
+        &l_buflen, sizeof(uint64_t),
+        &a_public_key->degree, sizeof(uint32_t),
+        &a_public_key->kind, sizeof(uint32_t),
+        &a_public_key->type, sizeof(uint32_t),
+        a_public_key->data, FALCON_PUBKEY_SIZE(a_public_key->degree)
+    );
 
     if (a_buflen_out)
         *a_buflen_out = l_buflen;
@@ -254,21 +245,13 @@ uint8_t* dap_enc_falcon_write_private_key(const falcon_private_key_t* a_private_
             sizeof(uint32_t) * 3 +
             FALCON_PRIVKEY_SIZE(a_private_key->degree);
 
-    uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_buflen);
-    if (!l_buf) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
-    uint32_t l_degree = a_private_key->degree;
-    uint32_t l_kind = a_private_key->kind;
-    uint32_t l_type = a_private_key->type;
-    uint8_t *l_ptr = l_buf;
-    *(uint64_t *)l_ptr = l_buflen; l_ptr += sizeof(uint64_t);
-    *(uint32_t *)l_ptr = l_degree; l_ptr += sizeof(uint32_t);
-    *(uint32_t *)l_ptr = l_kind; l_ptr += sizeof(uint32_t);
-    *(uint32_t *)l_ptr = l_type; l_ptr += sizeof(uint32_t);
-    memcpy(l_ptr, a_private_key->data, FALCON_PRIVKEY_SIZE(a_private_key->degree));
-    assert(l_ptr + FALCON_PRIVKEY_SIZE(a_private_key->degree) - l_buf == (int64_t)l_buflen);
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
+        &l_buflen, sizeof(uint64_t),
+        &a_private_key->degree, sizeof(uint32_t),
+        &a_private_key->kind, sizeof(uint32_t),
+        &a_private_key->type, sizeof(uint32_t),
+        a_private_key->data, FALCON_PRIVKEY_SIZE(a_private_key->degree)
+    );
 
     if(a_buflen_out)
         *a_buflen_out = l_buflen;
@@ -416,30 +399,19 @@ uint8_t* dap_enc_falcon_write_signature(const falcon_signature_t* a_sign, size_t
     }
 
     size_t l_buflen = sizeof(uint64_t) * 2 + sizeof(uint32_t) * 3 + a_sign->sig_len;
-    uint8_t *l_buf = DAP_NEW_Z_SIZE(uint8_t, l_buflen);
-    if (!l_buf) {
-        log_it(L_ERROR, "::write_signature() l_buf is NULL — memory allocation error");
-        return NULL;
-    }
-
-    uint32_t l_degree = a_sign->degree;
-    uint32_t l_kind = a_sign->kind;
-    uint32_t l_type = a_sign->type;
-    uint64_t l_sig_len = a_sign->sig_len;
-    uint8_t *l_ptr = l_buf;
-    *(uint64_t *)l_ptr = l_buflen; l_ptr += sizeof(uint64_t);
-    *(uint32_t *)l_ptr = l_degree; l_ptr += sizeof(uint32_t);
-    *(uint32_t *)l_ptr = l_kind; l_ptr += sizeof(uint32_t);
-    *(uint32_t *)l_ptr = l_type; l_ptr += sizeof(uint32_t);
-    *(uint64_t *)l_ptr = l_sig_len; l_ptr += sizeof(uint64_t);
-    memcpy(l_ptr, a_sign->sig_data, a_sign->sig_len);
-    assert(l_ptr + l_sig_len - l_buf == (int64_t)l_buflen);
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 12,
+        &l_buflen, sizeof(uint64_t),
+        &a_sign->degree, sizeof(uint32_t),
+        &a_sign->kind, sizeof(uint32_t),
+        &a_sign->type, sizeof(uint32_t),
+        &a_sign->sig_len, sizeof(uint64_t),
+        a_sign->sig_data, a_sign->sig_len
+    );
 
     if (a_sign_out)
         *a_sign_out = l_buflen;
 
     return l_buf;
-
 }
 falcon_signature_t* dap_enc_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen) {
     if (!a_buf) {
