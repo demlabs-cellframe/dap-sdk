@@ -734,6 +734,7 @@ int json_commands(const char * a_name) {
             "mempool_proc_all",
             "mempool_add_ca",
             "mempool_delete",
+            "mempool_check",
             "chain_ca_copy"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
