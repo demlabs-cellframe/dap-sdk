@@ -400,14 +400,17 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         sig_buf_size = dap_enc_dilithium_calc_signature_unserialized_size();
         sig_buf = calloc(sig_buf_size, 1);
-        if(key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size) > 0)
-            is_sig = 1;
+        is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
         break;
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
         sig_buf_size = sizeof(falcon_signature_t);
         sig_buf = calloc(sig_buf_size, 1);
-        if(key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size) > 0)
-            is_sig = 1;
+        is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
+        break;
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        sig_buf_size = 48;
+        sig_buf = calloc(sig_buf_size, 1);
+        is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
         break;
     default:
         sig_buf_size = 0;
@@ -432,6 +435,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         is_vefify = key2->sign_verify(key2, source_buf, source_size, sig_buf, sig_buf_size);
         break;
     default:
@@ -470,5 +474,7 @@ void dap_enc_tests_run() {
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_DILITHIUM);
     dap_print_module_name("dap_enc_sig serialize->deserialize FALCON");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_FALCON);
+    dap_print_module_name("dap_enc_sig serialize->deserialize SPHINCSPLUS");
+    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS);
     cleanup_test_case();
 }

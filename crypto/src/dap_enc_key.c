@@ -425,6 +425,9 @@ uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
         l_data = dap_enc_falcon_write_signature((falcon_signature_t *) a_sign, a_sign_len);
         break;
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        l_data = dap_enc_sphincsplus_write_signature((sphincsplus_signature_t *) a_sign, a_sign_len);
+        break;
     default:
         l_data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
         if(!l_data) {

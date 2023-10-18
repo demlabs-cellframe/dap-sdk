@@ -39,8 +39,10 @@
 void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {
     a_key->type = DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
     a_key->enc = NULL;
-    a_key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_sphincsplus_get_sign_msg;
-    a_key->dec_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_sphincsplus_open_sign_msg;
+    a_key->enc_na = dap_enc_sig_sphincsplus_get_sign_msg;
+    a_key->dec_na = dap_enc_sig_sphincsplus_open_sign_msg;
+    a_key->sign_get = dap_enc_sig_sphincsplus_get_sign;
+    a_key->sign_verify = dap_enc_sig_sphincsplus_verify_sign;
 }
 
 void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_buf, size_t a_kex_size,
@@ -95,7 +97,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
 int dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, const size_t a_msg_size,
         void *a_sign_out, const size_t a_out_size_max){
 
-    if(a_out_size_max < sphincsplus_crypto_sign_bytes()) {
+    if(a_out_size_max < sizeof(sphincsplus_signature_t)) {
         log_it(L_ERROR, "Bad signature size");
         return -1;
     }
