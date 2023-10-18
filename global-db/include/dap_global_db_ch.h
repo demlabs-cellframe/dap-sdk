@@ -26,6 +26,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_common.h"
 #include "dap_time.h"
 #include "dap_timerfd.h"
+#include "dap_global_db_pkt.h"
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_worker.h"
 
@@ -41,7 +42,6 @@ enum dap_stream_ch_gdb_state {
 
 enum dap_global_db_cluster_pkt_type {
     DAP_STREAM_CH_GDB_PKT_TYPE_RECORD_PACK,
-    DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP = 0xC4,                   // This is type for epidemic update broadcast between cluster members
     DAP_STREAM_CH_GDB_PKT_TYPE_PERIODIC,
     DAP_STREAM_CH_GDB_PKT_TYPE_DELETE
 };
@@ -60,7 +60,7 @@ typedef struct dap_stream_ch_gdb {
     enum dap_stream_ch_gdb_state state;
     uint64_t stats_request_gdb_processed;
 
-    dap_stream_ch_gdb_hash_item_t * remote_gdbs; // Remote gdbs
+    dap_global_db_hash_t *remote_gdbs; // Remote gdbs
 
     //dap_stream_ch_chain_pkt_hdr_t request_hdr;
     //dap_list_t *request_db_iter;

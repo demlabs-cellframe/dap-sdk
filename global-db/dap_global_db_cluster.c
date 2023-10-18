@@ -30,6 +30,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_strfuncs.h"
 #include "dap_sign.h"
 #include "dap_proc_thread.h"
+#include "dap_hash.h"
+#include "dap_stream_ch_gossip.h"
 
 #define LOG_TAG "dap_global_db_cluster"
 
@@ -79,18 +81,16 @@ dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t
     return NULL;
 }
 
-DAP_STATIC_INLINE bool s_object_is_new(dap_store_obj_t *a_store_obj)
-{
-    dap_nanotime_t l_time_diff = a_store_obj->timestamp - dap_nanotime_now();
-    return l_time_diff < DAP_GLOBAL_DB_CLUSTER_BROADCAST_LIFETIME * 1000000000UL;
-}
-
 void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj)
 {
-    if (!s_object_is_new(a_store_obj))
-        return;         // Send new rumors only
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_store_obj);
-    dap_cluster_broadcast(a_cluster->links_cluster, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP, l_pkt, dap_global_db_pkt_get_size(l_pkt));
+    union hash_convert {
+        dap_hash_fast_t gossip_hash;
+        dap_global_db_hash_t gdb_hash;
+    } l_hash_cvt = {};
+    l_hash_cvt.gdb_hash.timestamp = a_store_obj->timestamp;
+    l_hash_cvt.gdb_hash.crc = a_store_obj->crc;
+    dap_gossip_msg_issue(a_cluster->links_cluster, DAP_STREAM_CH_GDB_ID, l_pkt, dap_global_db_pkt_get_size(l_pkt), &l_hash_cvt.gossip_hash);
     DAP_DELETE(l_pkt);
 }
 

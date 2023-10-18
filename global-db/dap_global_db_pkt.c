@@ -125,7 +125,7 @@ dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uin
 }
 
 /// Consume all security checks passed before by object deserializing
-bool dap_global_db_pkt_check_sign_crc(dap_global_db_obj_t *a_obj)
+bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj)
 {
     dap_return_val_if_fail(a_obj, false);
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_obj);
@@ -245,7 +245,7 @@ dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a
         log_it(L_ERROR, "Invalid size: packet pack total size is zero");
         return NULL;
     }
-    dap_store_obj_t *l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t *, l_size);
+    dap_store_obj_t **l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t *, l_size);
     if (!l_store_obj_arr) {
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
@@ -254,11 +254,12 @@ dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a
     byte_t *l_data_ptr = (byte_t *)a_pkt->data;                                 /* Set <l_data_ptr> to begin of payload */
     byte_t *l_data_end = l_data_ptr + a_pkt->data_size;                         /* Set <l_data_end> to end of payload area
                                                                                 will be used to prevent out-of-buffer case */
-    for (uint32_t l_cur_count = 0; l_cur_count < l_count; l_cur_count++) {
+    uint32_t i;
+    for (i = 0; i < l_count; i++) {
         l_store_obj_arr[i] = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + sizeof(dap_stream_node_addr_t));
         l_data_ptr = s_fill_one_store_obj((dap_global_db_pkt_t *)l_data_ptr, l_store_obj_arr[i], l_data_end - l_data_ptr);
         if (!l_data_ptr) {
-            log_it(L_ERROR, "Broken GDB element: can't read packet #%u", l_cur_count);
+            log_it(L_ERROR, "Broken GDB element: can't read packet #%u", i);
             break;
         }
         // Inject a_addr field into deserialized object to transfer it into callback (argument injecting)
@@ -268,8 +269,8 @@ dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a
         assert(l_data_ptr == l_data_end);
     // Return the number of completely filled dap_store_obj_t structures
     if (a_store_obj_count)
-        *a_store_obj_count = l_cur_count;
-    if (!l_cur_count)
+        *a_store_obj_count = i;
+    if (!i)
         DAP_DEL_Z(l_store_obj_arr);
 
     return l_store_obj_arr;

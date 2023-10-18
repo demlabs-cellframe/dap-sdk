@@ -29,7 +29,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db.h"
 
 #define DAP_GLOBAL_DB_CLUSTER_ANY                   "global"    // This mnemonim is for globally broadcasting grops
-#define DAP_GLOBAL_DB_CLUSTER_BROADCAST_LIFETIME    15          // Seconds
 #define DAP_GLOBAL_DB_UNCLUSTERED_TTL               1           // Time-to-life for "global.*" mask, 1 hour by default
 
 typedef enum dap_global_db_role {

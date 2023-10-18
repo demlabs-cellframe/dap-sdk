@@ -40,11 +40,6 @@ static void s_stream_ch_write_error_unsafe(dap_stream_ch_t *a_ch, uint64_t a_net
 
 static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb);
 
-// For gossip checks callback
-static pthread_rwlock_t s_gossip_lock = PTHREAD_RWLOCK_INITIALIZER;
-static struct gossip_hashes *s_gossip_hashes = NULL;
-static bool s_gossip_check(void *a_hash, size_t a_hash_len);
-
 /**
  * @brief dap_stream_ch_gdb_init
  * @return
@@ -320,21 +315,10 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
     //s_chain_timer_reset(l_ch_chain);
     switch (l_ch_pkt->hdr.type) {
 
-    case DAP_STREAM_CH_GDB_PKT_TYPE_GOSSIP: {
-        dap_global_db_gossip_pkt *l_pkt = (dap_global_db_gossip_pkt *)l_ch_pkt->data;
-        // TODO implement #9699
-        dap_store_obj_t *l_obj = dap_global_db_pkt_deserialize(l_pkt, l_ch_pkt->hdr.data_size, a_ch->stream->node);
-        if (!l_obj) {
-            log_it(L_WARNING, "Wrong Global DB gossip packet rejected");
-            break;
-        }
-        dap_proc_thread_callback_add_pri(NULL, s_process_single_record, l_obj, DAP_GLOBAL_DB_TASK_PRIORITY);
-    } break;
-
     case DAP_STREAM_CH_GDB_PKT_TYPE_RECORD_PACK: {
         dap_global_db_pkt_pack_t *l_pkt = (dap_global_db_pkt_pack_t *)l_ch_pkt->data;
         size_t l_objs_count = 0;
-        dap_store_obj_t **l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, l_objs_count, a_ch->stream->node);
+        dap_store_obj_t **l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count, a_ch->stream->node);
         if (!l_objs) {
             log_it(L_WARNING, "Wrong Global DB record packet rejected");
             break;
