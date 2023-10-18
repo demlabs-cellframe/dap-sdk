@@ -25,6 +25,7 @@ void dap_enc_sig_dilithium_key_new(dap_enc_key_t *key) {
     key->enc = NULL;
     key->sign_get = dap_enc_sig_dilithium_get_sign;
     key->sign_verify = dap_enc_sig_dilithium_verify_sign;
+    key->ser_sign = dap_enc_dilithium_write_signature;
 }
 
 // generation key pair for sign Alice
@@ -107,18 +108,20 @@ size_t dap_enc_dilithium_calc_signature_unserialized_size(void)
 }
 
 /* Serialize a signature */
-uint8_t* dap_enc_dilithium_write_signature(dilithium_signature_t* a_sign, size_t *a_buflen_out)
+uint8_t *dap_enc_dilithium_write_signature(const void *a_sign, size_t *a_buflen_out)
 {
 // in work
     a_buflen_out ? *a_buflen_out = 0 : 0;
     dap_return_val_if_pass(!a_sign, NULL);
+    dilithium_signature_t *l_sign = (dilithium_signature_t *)a_sign;
 // func work
-    uint64_t l_buflen = dap_enc_dilithium_calc_signagture_size(a_sign);
+    uint64_t l_buflen = dap_enc_dilithium_calc_signagture_size(l_sign);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8,
-                        &l_buflen, sizeof(uint64_t),
-                        &a_sign->kind, sizeof(uint32_t),
-                        &a_sign->sig_len, sizeof(uint64_t),
-                        a_sign->sig_data, a_sign->sig_len);
+        &l_buflen, sizeof(uint64_t),
+        &l_sign->kind, sizeof(uint32_t),
+        &l_sign->sig_len, sizeof(uint64_t),
+        l_sign->sig_data, l_sign->sig_len
+    );
 // out work
     a_buflen_out ? *a_buflen_out = l_buflen : 0;
     return l_buf;

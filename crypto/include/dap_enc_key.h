@@ -187,6 +187,7 @@ typedef void (*dap_enc_callback_data_t)(dap_enc_key_t *, const void * , size_t);
 typedef void (*dap_enc_callback_size_t)(dap_enc_key_t *, size_t);
 typedef void (*dap_enc_callback_str_t)(dap_enc_key_t *, const char*);
 typedef char* (*dap_enc_callback_r_str_t)(dap_enc_key_t *);
+typedef uint8_t* (*dap_enc_callback_serialize_t)(const void *, size_t *);
 typedef size_t (*dap_enc_callback_calc_out_size)(const size_t);
 typedef size_t (*dap_enc_get_allpbk_list) (dap_enc_key_t *a_key, const void *allpbk_list, const int allpbk_num);
 
@@ -218,6 +219,10 @@ typedef struct dap_enc_key {
 
     dap_enc_gen_alice_shared_key gen_alice_shared_key;
     dap_enc_gen_bob_shared_key gen_bob_shared_key;
+
+    dap_enc_callback_serialize_t ser_sign;
+    dap_enc_callback_serialize_t ser_priv_key;
+    dap_enc_callback_serialize_t ser_pub_key;
 
     void *pbkListdata;
     size_t pbkListsize;
@@ -264,6 +269,10 @@ typedef struct dap_enc_key_callbacks{
 
     dap_enc_gen_bob_shared_key gen_bob_shared_key;
     dap_enc_gen_alice_shared_key gen_alice_shared_key;
+
+    dap_enc_callback_serialize_t ser_sign;
+    dap_enc_callback_serialize_t ser_priv_key;
+    dap_enc_callback_serialize_t ser_pub_key;
 
     dap_enc_callback_new new_callback;
     dap_enc_callback_data_t new_from_data_public_callback;

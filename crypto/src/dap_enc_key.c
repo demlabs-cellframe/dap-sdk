@@ -271,7 +271,8 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_key_public_size =              dap_enc_sig_bliss_key_pub_output_size,
 
         .enc_out_size =                     NULL,
-        .dec_out_size =                     NULL
+        .dec_out_size =                     NULL, 
+        .ser_sign =                         dap_enc_sig_bliss_write_signature
     },
     [DAP_ENC_KEY_TYPE_SIG_TESLA]={
         .name =                             "SIG_TESLA",
@@ -289,7 +290,8 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_tesla_get_sign,
-        .sign_verify =                      dap_enc_sig_tesla_verify_sign
+        .sign_verify =                      dap_enc_sig_tesla_verify_sign, 
+        .ser_sign =                         dap_enc_tesla_write_signature
     },
     [DAP_ENC_KEY_TYPE_SIG_DILITHIUM]={
         .name =                             "SIG_DILITHIUM",
@@ -307,7 +309,8 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_dilithium_get_sign,
-        .sign_verify =                      dap_enc_sig_dilithium_verify_sign
+        .sign_verify =                      dap_enc_sig_dilithium_verify_sign, 
+        .ser_sign =                         dap_enc_dilithium_write_signature
     },
     [DAP_ENC_KEY_TYPE_SIG_RINGCT20]={
         .name =                             "SIG_RINGCT20",
@@ -344,7 +347,8 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_falcon_get_sign,
-        .sign_verify =                      dap_enc_sig_falcon_verify_sign
+        .sign_verify =                      dap_enc_sig_falcon_verify_sign, 
+        .ser_sign =                         dap_enc_falcon_write_signature
     },
     [DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS]={
         .name =                             "SIG_SPHINCSPLUS",
@@ -362,7 +366,8 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_sphincsplus_get_sign,
-        .sign_verify =                      dap_enc_sig_sphincsplus_verify_sign
+        .sign_verify =                      dap_enc_sig_sphincsplus_verify_sign, 
+        .ser_sign =                         dap_enc_sphincsplus_write_signature
     },
 
 #ifdef DAP_PQLR
@@ -413,28 +418,17 @@ uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
 {
     uint8_t *l_data = NULL;
     switch (a_key_type) {
-    case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        l_data = dap_enc_sig_bliss_write_signature((bliss_signature_t*)a_sign, a_sign_len);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        l_data = dap_enc_tesla_write_signature((tesla_signature_t*)a_sign, a_sign_len);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        l_data = dap_enc_dilithium_write_signature((dilithium_signature_t*)a_sign, a_sign_len);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        l_data = dap_enc_falcon_write_signature((falcon_signature_t *) a_sign, a_sign_len);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        l_data = dap_enc_sphincsplus_write_signature((sphincsplus_signature_t *) a_sign, a_sign_len);
-        break;
-    default:
-        l_data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
-        if(!l_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            return NULL;
-        }
-        memcpy(l_data, a_sign, *a_sign_len);
+        case DAP_ENC_KEY_TYPE_SIG_BLISS:
+        case DAP_ENC_KEY_TYPE_SIG_TESLA:
+        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+            l_data = s_callbacks[a_key_type].ser_sign(a_sign, a_sign_len);
+            break;
+        default:
+            l_data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
+            DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, *a_sign_len, NULL);
+            memcpy(l_data, a_sign, *a_sign_len);
     }
     return l_data;
 }

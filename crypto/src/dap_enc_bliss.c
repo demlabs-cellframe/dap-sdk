@@ -24,6 +24,7 @@ void dap_enc_sig_bliss_key_new(struct dap_enc_key *key) {
     key->enc = NULL;
     key->sign_get = dap_enc_sig_bliss_get_sign;
     key->sign_verify = dap_enc_sig_bliss_verify_sign;
+    key->ser_sign = dap_enc_sig_bliss_write_signature;
 }
 
 /**
@@ -154,20 +155,21 @@ void dap_enc_sig_bliss_key_delete(struct dap_enc_key *key)
 }
 
 /* Serialize a signature */
-uint8_t* dap_enc_sig_bliss_write_signature(bliss_signature_t* a_sign, size_t *a_buflen_out)
+uint8_t *dap_enc_sig_bliss_write_signature(const void *a_sign, size_t *a_buflen_out)
 {
 // in work
     a_buflen_out ? *a_buflen_out = 0 : 0;
+    bliss_signature_t *l_sign = (bliss_signature_t *)a_sign;
     bliss_param_t p;
-    dap_return_val_if_pass(!bliss_params_init(&p, a_sign->kind), NULL);
+    dap_return_val_if_pass(!bliss_params_init(&p, l_sign->kind), NULL);
 // func work
     size_t l_buflen = sizeof(size_t) + sizeof(bliss_kind_t) + p.n * 2 * sizeof(int32_t) + p.kappa * sizeof(int32_t);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
         &l_buflen, sizeof(size_t),
-        &a_sign->kind, sizeof(bliss_kind_t),
-        a_sign->z1, p.n * sizeof(int32_t),
-        a_sign->z2, p.n * sizeof(int32_t),
-        a_sign->c, p.kappa * sizeof(int32_t)
+        &l_sign->kind, sizeof(bliss_kind_t),
+        l_sign->z1, p.n * sizeof(int32_t),
+        l_sign->z2, p.n * sizeof(int32_t),
+        l_sign->c, p.kappa * sizeof(int32_t)
     );
 // out work
     a_buflen_out ? *a_buflen_out = l_buflen : 0;

@@ -43,6 +43,7 @@ void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {
     a_key->dec_na = dap_enc_sig_sphincsplus_open_sign_msg;
     a_key->sign_get = dap_enc_sig_sphincsplus_get_sign;
     a_key->sign_verify = dap_enc_sig_sphincsplus_verify_sign;
+    a_key->ser_sign = dap_enc_sphincsplus_write_signature;
 }
 
 void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_buf, size_t a_kex_size,
@@ -276,18 +277,19 @@ sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_b
 }
 
 /* Serialize a signature */
-uint8_t *dap_enc_sphincsplus_write_signature(const sphincsplus_signature_t *a_sign, size_t *a_buflen_out)
+uint8_t *dap_enc_sphincsplus_write_signature(const void *a_sign, size_t *a_buflen_out)
 {
 // out work
     a_buflen_out ? *a_buflen_out = 0 : 0;
     dap_return_val_if_pass(!a_sign, NULL);
+    sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign;
 // func work
     size_t l_shift_mem = 0;
-    uint64_t l_buflen = a_sign->sig_len + sizeof(uint64_t) * 2;
+    uint64_t l_buflen = l_sign->sig_len + sizeof(uint64_t) * 2;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6, 
         &l_buflen, sizeof(uint64_t),
-        &a_sign->sig_len, sizeof(uint64_t),
-        a_sign->sig_data, a_sign->sig_len
+        &l_sign->sig_len, sizeof(uint64_t),
+        l_sign->sig_data, l_sign->sig_len
     );
 // out work
     a_buflen_out ? *a_buflen_out = l_buflen : 0;

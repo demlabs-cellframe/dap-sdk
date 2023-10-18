@@ -21,6 +21,7 @@ void dap_enc_sig_tesla_key_new(dap_enc_key_t *key) {
     key->enc = NULL;
     key->sign_get = dap_enc_sig_tesla_get_sign;
     key->sign_verify = dap_enc_sig_tesla_verify_sign;
+    key->ser_sign = dap_enc_tesla_write_signature;
 }
 
 // generation key pair for sign Alice
@@ -112,18 +113,19 @@ size_t dap_enc_tesla_calc_signature_serialized_size(tesla_signature_t* a_sign)
 }
 
 /* Serialize a signature */
-uint8_t *dap_enc_tesla_write_signature(tesla_signature_t *a_sign, size_t *a_buflen_out)
+uint8_t *dap_enc_tesla_write_signature(const void *a_sign, size_t *a_buflen_out)
 {
 // in work
     a_buflen_out ? *a_buflen_out = 0 : 0;
     dap_return_val_if_pass(!a_sign, NULL);
+    tesla_signature_t *l_sign = (tesla_signature_t *)a_sign;
 // func work
-    size_t l_buflen = dap_enc_tesla_calc_signature_serialized_size(a_sign);
+    size_t l_buflen = dap_enc_tesla_calc_signature_serialized_size(l_sign);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8,
         &l_buflen, sizeof(size_t),
-        &a_sign->kind, sizeof(tesla_kind_t),
-        &a_sign->sig_len, sizeof(unsigned long long),
-        a_sign->sig_data, a_sign->sig_len
+        &l_sign->kind, sizeof(tesla_kind_t),
+        &l_sign->sig_len, sizeof(unsigned long long),
+        l_sign->sig_data, l_sign->sig_len
     );
 // out work
     a_buflen_out ? *a_buflen_out = l_buflen : 0;
