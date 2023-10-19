@@ -73,12 +73,16 @@
 
 #define LOG_TAG "dap_server"
 
+static void s_es_server_new(dap_events_socket_t *a_es, void *a_arg);
 static dap_events_socket_t * s_es_server_create(int a_sock,
                                              dap_events_socket_callbacks_t * a_callbacks, dap_server_t * a_server);
 static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *a_callbacks );
+#ifdef DAP_EVENTS_CAPS_IOCP
+static void s_es_server_new_ex(dap_events_socket_t *a_es, void *a_arg);
+static void s_es_server_accept_ex(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr* a_remote_addr);
+#endif
 static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr* a_remote_addr);
 static void s_es_server_error(dap_events_socket_t *a_es, int a_arg);
-static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg);
 
 static dap_server_t* s_default_server = NULL;
 
@@ -196,7 +200,7 @@ dap_server_t* dap_server_new_local(const char * a_path, const char* a_mode, dap_
  * @param a_type
  * @return
  */
-dap_server_t* dap_server_new(const char * a_addr, uint16_t a_port, dap_server_type_t a_type, dap_events_socket_callbacks_t *a_callbacks)
+dap_server_t *dap_server_new(const char *a_addr, uint16_t a_port, dap_server_type_t a_type, dap_events_socket_callbacks_t *a_callbacks)
 {
     dap_server_t *l_server =  DAP_NEW_Z(dap_server_t);
     if (!l_server) {
@@ -205,16 +209,27 @@ dap_server_t* dap_server_new(const char * a_addr, uint16_t a_port, dap_server_ty
     }
 #ifndef DAP_OS_WINDOWS
     l_server->socket_listener=-1; // To diff it from 0 fd
+#else
+    l_server->socket_listener = INVALID_SOCKET;
 #endif
 
     strncpy(l_server->address, a_addr ? a_addr : "0.0.0.0", sizeof(l_server->address) ); // If NULL we listen everything
     l_server->port = a_port;
+    switch (a_type) {
+    case SERVER_TCP:
+        l_server->socket_listener = socket(AF_INET, SOCK_STREAM, 0);
+        break;
+    case SERVER_UDP:
+    case SERVER_LOCAL:
+        l_server->socket_listener = socket(AF_INET, SOCK_DGRAM, 0);
+        break;
+    default:
+        log_it(L_ERROR, "Unknown server type %d", a_type);
+        DAP_DELETE(l_server);
+        return NULL;
+    }
     l_server->type = a_type;
 
-    if(l_server->type == SERVER_TCP)
-        l_server->socket_listener = socket(AF_INET, SOCK_STREAM, 0);
-    else if (l_server->type == SERVER_UDP)
-        l_server->socket_listener = socket(AF_INET, SOCK_DGRAM, 0);
 #ifdef DAP_OS_WINDOWS
     if (l_server->socket_listener == INVALID_SOCKET) {
         log_it(L_ERROR, "Socket error: %d", WSAGetLastError());
@@ -232,21 +247,17 @@ dap_server_t* dap_server_new(const char * a_addr, uint16_t a_port, dap_server_ty
 
     if (setsockopt(l_server->socket_listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) < 0)
         log_it(L_WARNING, "Can't set up REUSEADDR flag to the socket");
-    reuse=1;
 #ifdef SO_REUSEPORT
+    reuse=1;
     if (setsockopt(l_server->socket_listener, SOL_SOCKET, SO_REUSEPORT, (const char*)&reuse, sizeof(reuse)) < 0)
         log_it(L_WARNING, "Can't set up REUSEPORT flag to the socket");
 #endif
 
-//create socket
     l_server->listener_addr.sin_family = AF_INET;
     l_server->listener_addr.sin_port = htons(l_server->port);
     inet_pton(AF_INET, l_server->address, &(l_server->listener_addr.sin_addr));
 
-    if(s_server_run(l_server,a_callbacks)==0)
-        return l_server;
-    else
-        return NULL;
+    return !s_server_run(l_server, a_callbacks) ? l_server : NULL;
 }
 
 /**
@@ -254,7 +265,7 @@ dap_server_t* dap_server_new(const char * a_addr, uint16_t a_port, dap_server_ty
  * @param a_server
  * @param a_callbacks
  */
-static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *a_callbacks )
+static int s_server_run(dap_server_t *a_server, dap_events_socket_callbacks_t *a_callbacks)
 {
     assert(a_server);
 
@@ -272,7 +283,7 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
 #endif
                 sizeof(a_server->listener_addr);
 
-    if(bind (a_server->socket_listener, l_listener_addr, l_listener_addr_len) < 0) {
+    if ( bind(a_server->socket_listener, l_listener_addr, l_listener_addr_len) == SOCKET_ERROR ) {
 #ifdef DAP_OS_WINDOWS
         log_it(L_ERROR,"Bind error: %d", WSAGetLastError());
         closesocket(a_server->socket_listener);
@@ -285,7 +296,7 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
         DAP_DELETE(a_server);
         return -1;
     } else {
-        log_it(L_INFO,"Binded %s:%u",a_server->address,a_server->port);
+        log_it(L_INFO, "Binded %s:%u", a_server->address, a_server->port);
         listen(a_server->socket_listener, SOMAXCONN);
     }
 #ifdef DAP_OS_WINDOWS
@@ -297,19 +308,59 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
     pthread_mutex_init(&a_server->started_mutex,NULL);
     pthread_cond_init(&a_server->started_cond,NULL);
 
+    dap_events_socket_callbacks_t l_callbacks = {
+#ifdef DAP_EVENTS_CAPS_IOCP
+        .accept_callback = s_es_server_accept_ex,
+        .new_callback    = s_es_server_new_ex,
+#else
+        .accept_callback = s_es_server_accept,
+        .new_callback    = s_es_server_new,
+#endif
+        .read_callback   = a_callbacks ? a_callbacks->read_callback     : NULL,
+        .write_callback  = a_callbacks ? a_callbacks->write_callback    : NULL,
+        .error_callback  = s_es_server_error
+    };
 
-
-    dap_events_socket_callbacks_t l_callbacks;
-    memset(&l_callbacks,0,sizeof (l_callbacks));
-    l_callbacks.new_callback = s_es_server_new;
-    l_callbacks.accept_callback = s_es_server_accept;
-    l_callbacks.error_callback = s_es_server_error;
-
-    if (a_callbacks) {
-        l_callbacks.read_callback = a_callbacks->read_callback;
-        l_callbacks.write_callback = a_callbacks->write_callback;
-        l_callbacks.error_callback = a_callbacks->error_callback;
+#ifdef DAP_EVENTS_CAPS_IOCP
+    DWORD l_bytes = 0;
+    if (a_server->type == SERVER_TCP) {
+        static GUID l_guid_AcceptEx             = WSAID_ACCEPTEX,
+                    l_guid_GetAcceptExSockaddrs = WSAID_GETACCEPTEXSOCKADDRS;
+        int l_ioctl = WSAIoctl(a_server->socket_listener, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                               &l_guid_AcceptEx, sizeof(l_guid_AcceptEx),
+                               &a_server->pfn_AcceptEx, sizeof(a_server->pfn_AcceptEx),
+                               &l_bytes, NULL, NULL);
+        if (l_ioctl == SOCKET_ERROR) {
+            log_it(L_ERROR, "Failed to load AcceptEx, errno %d", WSAGetLastError());
+            DAP_DELETE(a_server);
+            return -1;
+        }
+        l_bytes = 0;
+        l_ioctl = WSAIoctl(a_server->socket_listener, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                           &l_guid_GetAcceptExSockaddrs, sizeof(l_guid_GetAcceptExSockaddrs),
+                           &a_server->pfn_GetAcceptExSockaddrs, sizeof(a_server->pfn_GetAcceptExSockaddrs),
+                           &l_bytes, NULL, NULL);
+        if (l_ioctl == SOCKET_ERROR) {
+            log_it(L_ERROR, "Failed to load GetAcceptExSockaddrs, errno %d", WSAGetLastError());
+            DAP_DELETE(a_server);
+            return -1;
+        }
+        dap_events_socket_t *l_es_server = dap_events_socket_wrap2(a_server, a_server->socket_listener, &l_callbacks);
+        if (!l_es_server) {
+            log_it(L_ERROR, "Failed to wrap server listening socket");
+            DAP_DELETE(a_server);
+            return -1;
+        }
+        a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es_server);
+        l_es_server->type = a_server->type == SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
+        l_es_server->_inheritor = a_server;
+        pthread_mutex_lock(&a_server->started_mutex);
+        dap_worker_add_events_socket_auto(l_es_server);
+        while (!a_server->started)
+            pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
+        pthread_mutex_unlock(&a_server->started_mutex);
     }
+#endif
 
 #ifdef DAP_EVENTS_CAPS_EPOLL
     for(size_t l_worker_id = 0; l_worker_id < dap_events_thread_get_count() ; l_worker_id++){
@@ -400,6 +451,29 @@ static void s_es_server_error(dap_events_socket_t *a_es, int a_arg)
  * @param a_remote_socket
  * @param a_remote_addr
  */
+
+#ifdef DAP_EVENTS_CAPS_IOCP
+static void s_es_server_new_ex(dap_events_socket_t *a_es, void *a_arg) {
+    s_es_server_accept_ex(a_es, INVALID_SOCKET, NULL); // Initial AcceptEx
+    s_es_server_new(a_es, a_arg);
+}
+
+static void s_es_server_accept_ex(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr *a_remote_addr) {
+    if (a_remote_socket != INVALID_SOCKET) {
+        int l_opt = setsockopt(a_remote_socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)&a_es->socket, sizeof(a_es->socket));
+        if (l_opt == SOCKET_ERROR) {
+            log_it(L_ERROR, "setsockopt failed, errno %d", WSAGetLastError());
+            return;
+        }
+        s_es_server_accept(a_es, a_remote_socket, a_remote_addr);
+    }
+
+    // Accept the next connection...
+    dap_events_socket_set_readable_unsafe(a_es, true);
+}
+
+#endif
+
 static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr *a_remote_addr)
 {
     socklen_t a_remote_addr_size = sizeof(*a_remote_addr);
@@ -440,6 +514,9 @@ static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket
     } else {
         dap_worker_add_events_socket_auto(l_es_new);
     }
+#ifdef DAP_EVENTS_CAPS_IOCP
+    dap_events_socket_set_readable_unsafe(l_es_new, true);
+#endif
 }
 
 

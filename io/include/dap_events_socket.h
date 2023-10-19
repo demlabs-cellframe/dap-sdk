@@ -29,8 +29,6 @@ typedef int SOCKET;
 #define SOCKET_ERROR    -1  // for win32 =  (-1)
 #else
 #include <ws2tcpip.h>
-#include <mq.h>
-#define INVALID_SOCKET (SOCKET)(~0)
 #endif
 
 #include <pthread.h>
@@ -82,7 +80,8 @@ typedef int SOCKET;
     #define DAP_EVENTS_CAPS_EVENT_WEVENT
     //#define DAP_EVENTS_CAPS_AIO_THREADS
     //#define DAP_EVENTS_CAPS_PIPE_POSIX
-    #define DAP_EVENTS_CAPS_MSMQ
+    //#define DAP_EVENTS_CAPS_MSMQ
+    #define DAP_EVENTS_CAPS_IOCP
     #ifndef INET_ADDRSTRLEN
         #define INET_ADDRSTRLEN     16
     #endif
@@ -93,6 +92,10 @@ typedef int SOCKET;
 #define MSG_NOSIGNAL 0
 #endif
 
+#ifdef DAP_EVENTS_CAPS_IOCP
+#include <mswsock.h>
+#define MAX_IOCP_ENTRIES 0xf // Maximum count of IOCP entries to retireve at once
+#endif
 #if defined(DAP_EVENTS_CAPS_WEPOLL)
 #define EPOLL_HANDLE  HANDLE
 #include "wepoll.h"
@@ -175,16 +178,16 @@ typedef struct dap_events_socket_callbacks {
 
 typedef enum {
     DESCRIPTOR_TYPE_SOCKET_CLIENT = 0,
-    DESCRIPTOR_TYPE_SOCKET_UDP,
-    DESCRIPTOR_TYPE_SOCKET_LISTENING,
-    DESCRIPTOR_TYPE_QUEUE,
-    DESCRIPTOR_TYPE_PIPE,
-    DESCRIPTOR_TYPE_TIMER,
-    DESCRIPTOR_TYPE_EVENT,
-    DESCRIPTOR_TYPE_FILE,
-    DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING,
     DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT,
-    DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL
+    DESCRIPTOR_TYPE_SOCKET_LISTENING,
+    DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING,
+    DESCRIPTOR_TYPE_SOCKET_UDP,
+    DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL,
+    DESCRIPTOR_TYPE_FILE,
+    DESCRIPTOR_TYPE_PIPE,
+    DESCRIPTOR_TYPE_QUEUE, // all above are readable/writeable
+    DESCRIPTOR_TYPE_TIMER,
+    DESCRIPTOR_TYPE_EVENT
 } dap_events_desc_type_t;
 
 
@@ -210,17 +213,20 @@ typedef struct dap_events_socket {
         mqd_t mqd;
     };
     uint32_t mqd_id;
-#elif defined(DAP_EVENTS_CAPS_MSMQ)
+#elif defined(DAP_EVENTS_CAPS_IOCP)
     };
-    QUEUEHANDLE mqh, mqh_recv;
-    u_int mq_num;
-    u_short port;
-    HANDLE ev_timeout, ev_recv;
+    HANDLE h;
+    OVERLAPPED ol_in, ol_out;
+    HANDLE iocp;
+    SLIST_HEADER work_items;
 #else
     };
 #endif
 
-    int fd2;
+    union {
+        SOCKET socket2;
+        int fd2;
+    };
 
     dap_events_desc_type_t type;
     dap_events_socket_uuid_t uuid; // Unique UID
@@ -229,11 +235,15 @@ typedef struct dap_events_socket {
     size_t workers_es_size;           //  events socket with same socket
 
     // Flags. TODO  - rework in bool fields
-    uint32_t  flags;
+    uint32_t flags;
     bool no_close;
     atomic_bool is_initalized;
     bool was_reassigned; // Was reassigment at least once
 
+#ifdef DAP_EVENTS_CAPS_IOCP
+    char *buf_in, *buf_out;
+    DWORD buf_in_size, buf_in_size_max, buf_out_size, buf_out_size_max;
+#else
     // Input section
     byte_t  *buf_in;
     size_t buf_in_size_max; //  size of alloced buffer
@@ -244,6 +254,7 @@ typedef struct dap_events_socket {
     byte_t *buf_out;
     size_t buf_out_size; // size of data that is in the output buffer
     size_t buf_out_size_max; // max size of data
+#endif
     dap_events_socket_t * pipe_out; // Pipe socket with data for output
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
     pthread_rwlock_t buf_out_lock;
@@ -300,6 +311,13 @@ typedef struct dap_events_socket {
     UT_hash_handle hh, hh2; // Handle for local CPU storage on worker or proc_thread AND for total amount
 } dap_events_socket_t; // Node of bidirectional list of clients
 typedef dap_events_socket_t dap_esocket_t;
+
+#ifdef DAP_EVENTS_CAPS_IOCP
+typedef struct work_item {
+    SLIST_ENTRY entry;
+    void *data;
+} work_item_t;
+#endif
 
 #define SSL(a) (a ? (WOLFSSL *) (a)->_pvt : NULL)
 

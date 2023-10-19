@@ -69,6 +69,11 @@ typedef struct dap_server {
   uint16_t  port;                           // Listen port
   char      address[INET6_ADDRSTRLEN];      // Listen address
 
+#ifdef DAP_EVENTS_CAPS_IOCP
+  LPFN_ACCEPTEX             pfn_AcceptEx;
+  LPFN_GETACCEPTEXSOCKADDRS pfn_GetAcceptExSockaddrs;
+#endif
+
 #ifdef DAP_OS_WINDOWS
   SOCKET socket_listener;
 #else

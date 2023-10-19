@@ -94,7 +94,6 @@ void dap_worker_context_callback_started( dap_context_t * a_context, void *a_arg
                                                         s_socket_all_check_activity, l_worker);
     l_worker->timer_check_activity->worker = l_worker;
     dap_worker_add_events_socket_unsafe(l_worker, l_worker->timer_check_activity->events_socket);
-
 }
 
 /**
@@ -103,7 +102,7 @@ void dap_worker_context_callback_started( dap_context_t * a_context, void *a_arg
  * @param a_arg
  * @return
  */
-void dap_worker_context_callback_stopped( dap_context_t * a_context, void *a_arg)
+void dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
 {
     dap_worker_t *l_worker = (dap_worker_t *) a_arg;
     assert(l_worker);
@@ -341,20 +340,16 @@ static bool s_socket_all_check_activity( void * a_arg)
  */
 void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket)
 {
-    int l_ret = 0;
-    if (dap_worker_get_current() == a_worker)
-        l_ret = dap_worker_add_events_socket_unsafe(a_worker, a_events_socket);
-    else
-        l_ret = dap_events_socket_queue_ptr_send( a_worker->queue_es_new, a_events_socket );
+    int l_ret = dap_worker_get_current() == a_worker
+            ? dap_worker_add_events_socket_unsafe(a_worker, a_events_socket)
+            : dap_events_socket_queue_ptr_send(a_worker->queue_es_new, a_events_socket);
 
-    if(l_ret != 0 ){
-        char l_errbuf[128];
-        *l_errbuf = 0;
+    if (l_ret) {
+        char l_errbuf[128] = { '\0' };
         strerror_r(l_ret, l_errbuf, sizeof(l_errbuf));
-        if (dap_worker_get_current() == a_worker)
-            log_it(L_ERROR, "Can't assign esocket to worker: \"%s\"(code %d)", l_errbuf, l_ret);
-        else
-            log_it(L_ERROR, "Can't send pointer in queue: \"%s\"(code %d)", l_errbuf, l_ret);
+        log_it(L_ERROR, dap_worker_get_current() == a_worker
+               ? "Can't assign esocket to worker: \"%s\"(code %d)"
+               : "Can't send pointer in queue: \"%s\"(code %d)", l_errbuf, l_ret);
     } else
         debug_if(g_debug_reactor, L_DEBUG, "Worker add esocket %"DAP_FORMAT_SOCKET, a_events_socket->socket);
 }
@@ -421,7 +416,6 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
         strerror_r(l_ret,l_errbuf,sizeof (l_errbuf));
         log_it(L_ERROR, "Cant send pointer in queue: \"%s\"(code %d)", l_errbuf, l_ret);
     }
-
 }
 
 
@@ -430,14 +424,8 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
  * @param a_worker
  * @param a_events_socket
  */
-dap_worker_t *dap_worker_add_events_socket_auto( dap_events_socket_t *a_es)
+dap_worker_t *dap_worker_add_events_socket_auto(dap_events_socket_t *a_es)
 {
-//  struct epoll_event ev = {0};
-  dap_worker_t *l_worker = dap_events_worker_get_auto( );
-
-  dap_worker_add_events_socket(l_worker, a_es);
-  return l_worker;
+    dap_worker_t *l_worker = dap_events_worker_get_auto();
+    return dap_worker_add_events_socket(l_worker, a_es), l_worker;
 }
-
-
-

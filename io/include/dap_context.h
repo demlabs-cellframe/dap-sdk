@@ -66,8 +66,9 @@ typedef struct dap_context {
 
 
     /// Platform-specific fields
-#if defined DAP_EVENTS_CAPS_MSMQ
-    HANDLE msmq_events[MAXIMUM_WAIT_OBJECTS];
+#if defined DAP_EVENTS_CAPS_IOCP
+    HANDLE iocp;
+    OVERLAPPED ol;
 #endif
 #ifdef DAP_EVENTS_CAPS_AIO
     dap_slist_t garbage_list;
