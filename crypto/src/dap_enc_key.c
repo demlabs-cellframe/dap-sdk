@@ -272,7 +272,9 @@ dap_enc_key_callbacks_t s_callbacks[]={
 
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL, 
-        .ser_sign =                         dap_enc_sig_bliss_write_signature
+        .ser_sign =                         dap_enc_sig_bliss_write_signature, 
+        .ser_priv_key =                     dap_enc_sig_bliss_write_private_key, 
+        .ser_pub_key =                      dap_enc_sig_bliss_write_public_key
     },
     [DAP_ENC_KEY_TYPE_SIG_TESLA]={
         .name =                             "SIG_TESLA",
@@ -291,7 +293,9 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_tesla_get_sign,
         .sign_verify =                      dap_enc_sig_tesla_verify_sign, 
-        .ser_sign =                         dap_enc_tesla_write_signature
+        .ser_sign =                         dap_enc_tesla_write_signature, 
+        .ser_priv_key =                     dap_enc_tesla_write_private_key, 
+        .ser_pub_key =                      dap_enc_tesla_write_public_key
     },
     [DAP_ENC_KEY_TYPE_SIG_DILITHIUM]={
         .name =                             "SIG_DILITHIUM",
@@ -310,7 +314,9 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_dilithium_get_sign,
         .sign_verify =                      dap_enc_sig_dilithium_verify_sign, 
-        .ser_sign =                         dap_enc_dilithium_write_signature
+        .ser_sign =                         dap_enc_dilithium_write_signature, 
+        .ser_priv_key =                     dap_enc_dilithium_write_private_key, 
+        .ser_pub_key =                      dap_enc_dilithium_write_public_key
     },
     [DAP_ENC_KEY_TYPE_SIG_RINGCT20]={
         .name =                             "SIG_RINGCT20",
@@ -348,7 +354,9 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_falcon_get_sign,
         .sign_verify =                      dap_enc_sig_falcon_verify_sign, 
-        .ser_sign =                         dap_enc_falcon_write_signature
+        .ser_sign =                         dap_enc_falcon_write_signature, 
+        .ser_priv_key =                     dap_enc_falcon_write_private_key, 
+        .ser_pub_key =                      dap_enc_falcon_write_public_key
     },
     [DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS]={
         .name =                             "SIG_SPHINCSPLUS",
@@ -367,7 +375,9 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_sphincsplus_get_sign,
         .sign_verify =                      dap_enc_sig_sphincsplus_verify_sign, 
-        .ser_sign =                         dap_enc_sphincsplus_write_signature
+        .ser_sign =                         dap_enc_sphincsplus_write_signature, 
+        .ser_priv_key =                     dap_enc_sphincsplus_write_private_key, 
+        .ser_pub_key =                      dap_enc_sphincsplus_write_public_key
     },
 
 #ifdef DAP_PQLR
@@ -486,19 +496,11 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
     uint8_t *l_data = NULL;
     switch (a_key->type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        l_data = dap_enc_sig_bliss_write_private_key(a_key->priv_key_data, a_buflen_out);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        l_data = dap_enc_tesla_write_private_key(a_key->priv_key_data, a_buflen_out);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        l_data = dap_enc_dilithium_write_private_key(a_key->priv_key_data, a_buflen_out);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        l_data = dap_enc_falcon_write_private_key(a_key->priv_key_data, a_buflen_out);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        l_data = dap_enc_sphincsplus_write_private_key(a_key->priv_key_data, a_buflen_out);
+        l_data = a_key->ser_priv_key(a_key->priv_key_data, a_buflen_out);
         break;
     default:
         DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->priv_key_data_size, NULL);
@@ -518,26 +520,19 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
  */
 uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
 {
-    uint8_t *l_data = NULL;
-    if ( a_key->pub_key_data == NULL ){
+    if (!a_key->pub_key_data){
         log_it(L_ERROR, "Public key is NULL");
         return NULL;
     }
+    uint8_t *l_data = NULL;
+
     switch (a_key->type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        l_data = dap_enc_sig_bliss_write_public_key(a_key->pub_key_data, a_buflen_out);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        l_data = dap_enc_tesla_write_public_key(a_key->pub_key_data, a_buflen_out);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        l_data = dap_enc_dilithium_write_public_key(a_key->pub_key_data, a_buflen_out);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        l_data = dap_enc_falcon_write_public_key(a_key->pub_key_data, a_buflen_out);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        l_data = dap_enc_sphincsplus_write_public_key(a_key->pub_key_data, a_buflen_out);
+        l_data = a_key->ser_pub_key(a_key->pub_key_data, a_buflen_out);
         break;
     default:
         DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->pub_key_data_size, NULL);
@@ -714,11 +709,9 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
  */
 dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t *a_key)
 {
-    dap_enc_key_serialize_t *l_ret = DAP_NEW_Z(dap_enc_key_serialize_t);
-    if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
+    dap_enc_key_serialize_t *l_ret = NULL;
+    DAP_NEW_Z_RET_VAL(l_ret, dap_enc_key_serialize_t, NULL);
+
     l_ret->priv_key_data_size = a_key->priv_key_data_size;
     l_ret->pub_key_data_size = a_key->pub_key_data_size;
     l_ret->last_used_timestamp = a_key->last_used_timestamp;
@@ -741,10 +734,8 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
         return NULL;
     }
     dap_enc_key_t *l_ret = dap_enc_key_new(a_key->type);
-    if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
+    dap_return_val_if_pass(!l_ret, NULL);
+
     if (a_key->priv_key_data_size) {
         l_ret->priv_key_data = DAP_NEW_Z_SIZE(byte_t, a_key->priv_key_data_size);
         if (!l_ret->priv_key_data) {

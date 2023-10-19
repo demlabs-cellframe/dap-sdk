@@ -11,7 +11,7 @@ enum DAP_DILITHIUM_SIGN_SECURITY {
 
 void dap_enc_sig_dilithium_set_type(enum DAP_DILITHIUM_SIGN_SECURITY type);
 
-void dap_enc_sig_dilithium_key_new(dap_enc_key_t *key);
+void dap_enc_sig_dilithium_key_new(dap_enc_key_t *a_key);
 
 void dap_enc_sig_dilithium_key_new_generate(dap_enc_key_t * key, const void *kex_buf,
                                     size_t kex_size, const void * seed, size_t seed_size,
@@ -37,8 +37,8 @@ dilithium_signature_t* dap_enc_dilithium_read_signature(uint8_t *a_buf, size_t a
 dilithium_signature_t* dap_enc_dilithium_read_signature_old(uint8_t *a_buf, size_t a_buflen);
 dilithium_signature_t* dap_enc_dilithium_read_signature_old2(uint8_t *a_buf, size_t a_buflen);
 
-uint8_t* dap_enc_dilithium_write_private_key(const dilithium_private_key_t* a_private_key, size_t *a_buflen_out);
-uint8_t* dap_enc_dilithium_write_public_key(const dilithium_public_key_t* a_public_key, size_t *a_buflen_out);
+uint8_t *dap_enc_dilithium_write_private_key(const void *a_private_key, size_t *a_buflen_out);
+uint8_t *dap_enc_dilithium_write_public_key(const void *a_public_key, size_t *a_buflen_out);
 dilithium_private_key_t* dap_enc_dilithium_read_private_key(const uint8_t *a_buf, size_t a_buflen);
 dilithium_private_key_t* dap_enc_dilithium_read_private_key_old(const uint8_t *a_buf, size_t a_buflen);
 

@@ -44,6 +44,8 @@ void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {
     a_key->sign_get = dap_enc_sig_sphincsplus_get_sign;
     a_key->sign_verify = dap_enc_sig_sphincsplus_verify_sign;
     a_key->ser_sign = dap_enc_sphincsplus_write_signature;
+    a_key->ser_priv_key = dap_enc_sphincsplus_write_private_key;
+    a_key->ser_pub_key = dap_enc_sphincsplus_write_public_key;
 }
 
 void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_buf, size_t a_kex_size,
@@ -165,17 +167,18 @@ void dap_enc_sig_sphincsplus_key_delete(dap_enc_key_t *key) {
 }
 
 /* Serialize a private key. */
-uint8_t* dap_enc_sphincsplus_write_private_key(const sphincsplus_private_key_t* a_private_key, size_t *a_buflen_out)
+uint8_t *dap_enc_sphincsplus_write_private_key(const void *a_private_key, size_t *a_buflen_out)
 {
 // in work
     a_buflen_out ? *a_buflen_out = 0 : 0;
     dap_return_val_if_pass(!a_private_key, NULL);
+    sphincsplus_private_key_t *l_private_key = (sphincsplus_private_key_t *)a_private_key;
 // func work
     size_t l_secret_length = dap_enc_sphincsplus_crypto_sign_secretkeybytes();
     uint64_t l_buflen = sizeof(uint64_t) + l_secret_length;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 4,
         &l_buflen, sizeof(uint64_t), 
-        a_private_key->data, l_secret_length
+        l_private_key->data, l_secret_length
     );
 // out work
     a_buflen_out ? *a_buflen_out = l_buflen : 0;
@@ -221,17 +224,18 @@ sphincsplus_private_key_t *dap_enc_sphincsplus_read_private_key(const uint8_t *a
 }
 
 /* Serialize a public key. */
-uint8_t *dap_enc_sphincsplus_write_public_key(const sphincsplus_public_key_t* a_public_key, size_t *a_buflen_out)
+uint8_t *dap_enc_sphincsplus_write_public_key(const void* a_public_key, size_t *a_buflen_out)
 {
 // in work
     a_buflen_out ? *a_buflen_out = 0 : 0;
     dap_return_val_if_pass(!a_public_key, NULL);
+    sphincsplus_public_key_t *l_public_key = (sphincsplus_public_key_t *)a_public_key;
 // func work
     size_t l_public_length = dap_enc_sphincsplus_crypto_sign_publickeybytes();
     uint64_t l_buflen = sizeof(uint64_t) + l_public_length;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 4, 
         &l_buflen, sizeof(uint64_t), 
-        a_public_key->data, l_public_length
+        l_public_key->data, l_public_length
     );
 // out work
     a_buflen_out ? *a_buflen_out = l_buflen : 0;

@@ -33,8 +33,8 @@ void dap_enc_sig_sphincsplus_key_delete(dap_enc_key_t *key);
 uint8_t *dap_enc_sphincsplus_write_signature(const void *a_sign, size_t *a_buflen_out);
 sphincsplus_signature_t *dap_enc_sphincsplus_read_signature(const uint8_t *a_buf, size_t a_buflen);
 
-uint8_t *dap_enc_sphincsplus_write_private_key(const sphincsplus_private_key_t* a_private_key, size_t *a_buflen_out);
-uint8_t *dap_enc_sphincsplus_write_public_key(const sphincsplus_public_key_t* a_public_key, size_t *a_buflen_out);
+uint8_t *dap_enc_sphincsplus_write_private_key(const void *a_private_key, size_t *a_buflen_out);
+uint8_t *dap_enc_sphincsplus_write_public_key(const void* a_public_key, size_t *a_buflen_out);
 sphincsplus_private_key_t *dap_enc_sphincsplus_read_private_key(const uint8_t *a_buf, size_t a_buflen);
 sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_buf, size_t a_buflen);
 
