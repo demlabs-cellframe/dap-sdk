@@ -188,7 +188,7 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
 
 /**
  * @brief encrypt data
- * call a_key->enc_na or dap_enc_sig_bliss_get_sign
+ * call a_key->sign_get
  * @param a_key dap_enc_key_t key object
  * @param a_data const void * data
  * @param a_data_size const size_t size of data

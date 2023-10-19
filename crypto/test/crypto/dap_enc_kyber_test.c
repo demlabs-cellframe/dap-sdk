@@ -19,4 +19,5 @@ void key_kem_kyber512_transfer_simulation_test(void){
 int dap_enc_kyber_test_run(void) {
     dap_print_module_name("dap_enc_kyber_test_kem_kyber512");
     key_kem_kyber512_transfer_simulation_test();
+    return 0;
 }

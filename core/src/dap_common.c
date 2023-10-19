@@ -1427,6 +1427,28 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
 }
 
 /**
+ * @brief dap_del_z_all
+ * DAP_FREE n args
+ * @param int a_count - count deleted args
+ * @param void* a_to_delete
+ */
+void dap_delete_multy(int a_count, ...)
+{
+    if (a_count <= 0) {
+        log_it(L_ERROR, "Wrong count in DAP_DELETE macros, maybe many args?");
+        return;
+    }
+    va_list l_args_list;
+    va_start(l_args_list, a_count);
+    while (a_count > 0) {
+        void *l_to_delete = va_arg(l_args_list, void*);
+        DAP_DEL_Z(l_to_delete);
+        a_count--;
+    }
+    va_end(l_args_list);
+}
+
+/**
  * @brief dap_serialize_multy - serialize args to one uint8_t *l_ret. Args count should be even.
  * @param a_data - pointer to write data, if NULL - allocate needed memory
  * @param a_size - total out size
@@ -1440,7 +1462,7 @@ uint8_t *dap_serialize_multy(uint8_t *a_data, size_t a_size, int a_count, ...)
     uint8_t *l_ret = a_data;
     // allocate memory, if need
     if (!l_ret)
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret, uint8_t, a_size, NULL);
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret, uint8_t, a_size, NULL, NULL);
     size_t l_shift_mem = 0;
     va_list l_args;
     va_start(l_args, a_count);

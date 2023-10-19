@@ -124,6 +124,8 @@
 #endif
 
 static const char *g_error_memory_alloc = "Memory allocation error";
+void dap_delete_multy(int a_count, ...);
+uint8_t *dap_serialize_multy(uint8_t *a_data, size_t a_size, int a_count, ...);
 
 #if DAP_USE_RPMALLOC
   #include "rpmalloc.h"
@@ -212,11 +214,21 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? calloc(1, sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : DAP_CAST_PTR(void, NULL); })
 #define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (p) ? (size_t)(s) : 0; void *p1 = (p) && (s1 > 0) ? calloc(1, s1) : NULL; p1 ? memcpy(p1, (p), s1) : DAP_CAST_PTR(void, NULL); })
 #endif
+
+#define VA_NARGS_IMPL(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, N, ...) N
+#define VA_NARGS(...) VA_NARGS_IMPL(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+#define DAP_DEL_MULTY(...) dap_delete_multy(VA_NARGS(__VA_ARGS__), __VA_ARGS__)
+
 #define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
-#define DAP_NEW_Z_RET(a, t)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); return; } } while (0);
-#define DAP_NEW_Z_RET_VAL(a, t, val)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); return val; } } while (0);
-#define DAP_NEW_Z_SIZE_RET(a, t, s)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); return; } } while (0);
-#define DAP_NEW_Z_SIZE_RET_VAL(a, t, s, val)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); return val; } } while (0);
+// a - pointer to alloc
+// t - type return pointer
+// s - size to alloc
+// val - return value if error
+// ... what need free if error, if nothing  write NULL
+#define DAP_NEW_Z_RET(a, t, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
+#define DAP_NEW_Z_RET_VAL(a, t, ret_val, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
+#define DAP_NEW_Z_SIZE_RET(a, t, s, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
+#define DAP_NEW_Z_SIZE_RET_VAL(a, t, s, ret_val, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
 
 #define dap_return_if_fail(expr)            {if(!(expr)) {return;}}
 #define dap_return_val_if_fail(expr,val)    {if(!(expr)) {return (val);}}
@@ -241,8 +253,6 @@ DAP_STATIC_INLINE unsigned long dap_pagesize() {
 #endif
     return s ? s : 4096;
 }
-
-uint8_t *dap_serialize_multy(uint8_t *a_data, size_t a_size, int a_count, ...);
 
 #ifdef DAP_OS_WINDOWS
 typedef struct iovec {

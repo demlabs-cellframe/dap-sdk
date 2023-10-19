@@ -436,8 +436,7 @@ uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
             l_data = s_callbacks[a_key_type].ser_sign(a_sign, a_sign_len);
             break;
         default:
-            l_data = DAP_NEW_Z_SIZE(uint8_t, *a_sign_len);
-            DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, *a_sign_len, NULL);
+            DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, *a_sign_len, NULL, NULL);
             memcpy(l_data, a_sign, *a_sign_len);
     }
     return l_data;
@@ -477,7 +476,7 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
         *a_sign_len = sizeof(sphincsplus_signature_t);
         break;
     default:
-        DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, *a_sign_len, NULL);
+        DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, *a_sign_len, NULL, NULL);
         memcpy(l_data, a_sign, *a_sign_len);
     }
     return l_data;
@@ -503,7 +502,7 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
         l_data = a_key->ser_priv_key(a_key->priv_key_data, a_buflen_out);
         break;
     default:
-        DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->priv_key_data_size, NULL);
+        DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->priv_key_data_size, NULL, NULL);
         memcpy(l_data, a_key->priv_key_data, a_key->priv_key_data_size);
         if(a_buflen_out)
             *a_buflen_out = a_key->priv_key_data_size;
@@ -535,7 +534,7 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
         l_data = a_key->ser_pub_key(a_key->pub_key_data, a_buflen_out);
         break;
     default:
-        DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->pub_key_data_size, NULL);
+        DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->pub_key_data_size, NULL, NULL);
         memcpy(l_data, a_key->pub_key_data, a_key->pub_key_data_size);
         if(a_buflen_out)
             *a_buflen_out = a_key->pub_key_data_size;
@@ -579,7 +578,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
     case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         DAP_DELETE(a_key->priv_key_data);
         a_key->priv_key_data_size = a_buflen;
-        DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -1);
+        DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -1, NULL);
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
         dap_enc_sig_picnic_update(a_key);
         break;
@@ -613,7 +612,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
     default:
         DAP_DELETE(a_key->priv_key_data);
         a_key->priv_key_data_size = a_buflen;
-        DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -1);
+        DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -1, NULL);
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
     }
     return 0;
@@ -656,7 +655,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
     case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         DAP_DELETE(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
-        DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1);
+        DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1, NULL);
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
         dap_enc_sig_picnic_update(a_key);
         break;
@@ -696,7 +695,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
     default:
         DAP_DELETE(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
-        DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1);
+        DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1, NULL);
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
     }
     return 0;
@@ -710,7 +709,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
 dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t *a_key)
 {
     dap_enc_key_serialize_t *l_ret = NULL;
-    DAP_NEW_Z_RET_VAL(l_ret, dap_enc_key_serialize_t, NULL);
+    DAP_NEW_Z_RET_VAL(l_ret, dap_enc_key_serialize_t, NULL, NULL);
 
     l_ret->priv_key_data_size = a_key->priv_key_data_size;
     l_ret->pub_key_data_size = a_key->pub_key_data_size;
@@ -841,7 +840,7 @@ dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type)
 {
     dap_enc_key_t * l_ret = NULL;
     if ((size_t)a_key_type < c_callbacks_size) {
-        DAP_NEW_Z_RET_VAL(l_ret, dap_enc_key_t, NULL);
+        DAP_NEW_Z_RET_VAL(l_ret, dap_enc_key_t, NULL, NULL);
         if(s_callbacks[a_key_type].new_callback){
             s_callbacks[a_key_type].new_callback(l_ret);
         }
@@ -958,10 +957,10 @@ void dap_enc_key_delete(dap_enc_key_t * a_key)
         log_it(L_ERROR, "delete callback is null. Can be leak memory!");
     }
     /* a_key->_inheritor must be cleaned in delete_callback func */
-    if ( a_key->pub_key_data)
-        DAP_DELETE(a_key->pub_key_data);
-    if (a_key->priv_key_data )
-        DAP_DELETE(a_key->priv_key_data);
+    // if ( a_key->pub_key_data)
+    //     DAP_DELETE(a_key->pub_key_data);
+    // if (a_key->priv_key_data )
+    //     DAP_DELETE(a_key->priv_key_data);
     DAP_DELETE(a_key);
 }
 

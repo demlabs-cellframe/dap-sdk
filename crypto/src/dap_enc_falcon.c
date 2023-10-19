@@ -148,7 +148,7 @@ int dap_enc_sig_falcon_get_sign(dap_enc_key_t *a_key, const void *a_msg, const s
     }
 
     if (l_sig_len)
-        DAP_NEW_Z_SIZE_RET_VAL(l_sig->sig_data, byte_t, l_sig_len, -1);
+        DAP_NEW_Z_SIZE_RET_VAL(l_sig->sig_data, byte_t, l_sig_len, -1, NULL);
 
     l_ret = falcon_sign_dyn(
             &l_rng,
