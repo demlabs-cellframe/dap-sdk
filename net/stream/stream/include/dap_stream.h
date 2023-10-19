@@ -32,6 +32,8 @@
 #include "dap_stream_session.h"
 #include "dap_timerfd.h"
 #include "dap_sign.h"
+#include "dap_cert.h"
+#include "dap_pkey.h"
 
 #define STREAM_KEEPALIVE_TIMEOUT 3   // How  often send keeplive messages (seconds)
 #define DAP_STREAM_NODE_ADDR_CERT_NAME  "node-addr"
@@ -85,7 +87,47 @@ typedef struct dap_stream_info {
     bool is_uplink;
 } dap_stream_info_t;
 
-typedef void (*dap_stream_callback)(dap_stream_t *, void *);
+DAP_STATIC_INLINE bool dap_stream_node_addr_str_check(const char *a_addr_str)
+{
+    if (!a_addr_str)
+        return false;
+    size_t l_str_len = strlen(a_addr_str);
+    if (l_str_len == 22) {
+        for (int n =0; n < 22; n+= 6) {
+            if (!dap_is_xdigit(a_addr_str[n]) || !dap_is_xdigit(a_addr_str[n + 1]) ||
+                !dap_is_xdigit(a_addr_str[n + 2]) || !dap_is_xdigit(a_addr_str[n + 3])) {
+                return false;
+            }
+        }
+        for (int n = 4; n < 18; n += 6) {
+            if (a_addr_str[n] != ':' || a_addr_str[n + 1] != ':')
+                return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str)
+{
+    if (!a_addr || !a_addr_str){
+        return -1;
+    }
+    if (sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4)
+        return 0;
+    if (sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, &a_addr->uint64) == 1)
+        return 0;
+    return -1;
+}
+
+DAP_STATIC_INLINE bool dap_stream_node_addr_not_null(dap_stream_node_addr_t * a_addr) { return a_addr->uint64 != 0; }
+
+DAP_STATIC_INLINE void dap_stream_node_addr_from_hash(dap_hash_fast_t *a_hash, dap_stream_node_addr_t *a_node_addr)
+{
+    // Copy fist two and last two octets of hash to fill node addr
+    memcpy(a_node_addr->raw, a_hash->raw, sizeof(uint64_t) / 2);
+    memcpy(a_node_addr->raw + sizeof(uint64_t) / 2, a_hash->raw + DAP_CHAIN_HASH_FAST_SIZE - sizeof(uint64_t) / 2, sizeof(uint64_t) / 2);
+}
 
 #define DAP_STREAM(a) ((dap_stream_t *) (a)->_inheritor )
 
@@ -119,7 +161,9 @@ int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 int dap_stream_change_id(void *a_old, uint64_t a_new);
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr, dap_worker_t **a_worker);
-dap_stream_node_addr_t dap_stream_get_addr_from_sign(dap_sign_t *a_sign);
+dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign);
+dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert);
+dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey);
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count);
 void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count);
 void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);

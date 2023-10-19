@@ -55,7 +55,7 @@
 
 #define LOG_TAG "dap_enc_http"
 
-dap_stream_node_addr_t dap_stream_get_addr_from_sign(dap_sign_t *a_sign);
+dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign);
 
 static dap_enc_acl_callback_t s_acl_callback = NULL;
 
@@ -200,7 +200,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         // save verified node addr and generate own sign
         char* l_node_sign_msg = NULL;
         if (l_protocol_version && l_sign_count) {
-            dap_stream_add_addr(dap_stream_get_addr_from_sign(l_sign), l_enc_key_ks);   // !TODO remove dependency from stream module
+            dap_stream_add_addr(dap_stream_node_addr_from_sign(l_sign), l_enc_key_ks);   // !TODO remove dependency from stream module
 
             dap_cert_t *l_node_cert = dap_cert_find_by_name("node-addr");
             dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, 0);

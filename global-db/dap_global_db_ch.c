@@ -177,7 +177,7 @@ static bool s_process_single_record(dap_proc_thread_t UNUSED_ARG *a_thread, void
     }
     dap_global_db_role_t l_signer_role = DAP_GDB_MEMBER_ROLE_INVALID;
     if (l_obj->sign) {
-        dap_stream_node_addr_t l_signer_addr = dap_stream_get_addr_from_sign(l_obj->sign);
+        dap_stream_node_addr_t l_signer_addr = dap_stream_node_addr_from_sign(l_obj->sign);
         l_signer_role = dap_cluster_member_find_role(l_cluster->role_cluster, &l_signer_addr);
     }
     if (l_signer_role == DAP_GDB_MEMBER_ROLE_INVALID)

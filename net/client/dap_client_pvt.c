@@ -1052,7 +1052,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             }
             size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_sign, DAP_ENC_DATA_TYPE_B64);
             if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
-                dap_stream_add_addr(dap_stream_get_addr_from_sign(l_sign), l_client_pvt->session_key);
+                dap_stream_add_addr(dap_stream_node_addr_from_sign(l_sign), l_client_pvt->session_key);
             } else {
                 log_it(L_WARNING, "ENC: Invalid node sign");
             }

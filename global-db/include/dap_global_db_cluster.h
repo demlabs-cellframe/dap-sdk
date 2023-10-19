@@ -25,6 +25,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #pragma once
 
 #include "dap_time.h"
+#include "dap_stream.h"
 #include "dap_stream_cluster.h"
 #include "dap_global_db.h"
 

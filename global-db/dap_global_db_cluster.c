@@ -125,9 +125,17 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
             return NULL;
         }
     }
+    l_cluster->role_cluster = dap_cluster_new(NULL, DAP_CLUSTER_ROLE_VIRTUAL);
+    if (!l_cluster->role_cluster) {
+        log_it(L_ERROR, "Can't create member cluster");
+        dap_cluster_delete(l_cluster->links_cluster);
+        DAP_DELETE(l_cluster);
+        return NULL;
+    }
     l_cluster->groups_mask = dap_strdup(a_group_mask);
     if (!l_cluster->groups_mask) {
         log_it(L_CRITICAL, "Memory allocation error");
+        dap_cluster_delete(l_cluster->role_cluster);
         dap_cluster_delete(l_cluster->links_cluster);
         DAP_DELETE(l_cluster);
         return NULL;

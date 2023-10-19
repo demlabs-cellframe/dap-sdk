@@ -156,12 +156,7 @@ int s_stream_init_node_addr_cert()
         } else
             return -1;
     }
-    // Get certificate public key hash
-    dap_hash_fast_t l_node_addr_hash;
-    dap_cert_get_pkey_hash(l_addr_cert, &l_node_addr_hash);
-    // Copy fist two and last two octets of hash to fill node addr
-    memcpy(g_node_addr.raw, l_node_addr_hash.raw, sizeof(uint64_t) / 2);
-    memcpy(g_node_addr.raw + sizeof(uint64_t) / 2, l_node_addr_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - sizeof(uint64_t) / 2, sizeof(uint64_t) / 2);
+    g_node_addr = dap_stream_node_addr_from_cert(l_addr_cert);
     return 0;
 }
 /**
@@ -1058,7 +1053,7 @@ int dap_stream_add_addr(dap_stream_node_addr_t a_addr, void *a_id)
         log_it(L_CRITICAL, "Memory allocation error");
         return -1;
     }
-    l_auth_stream->node.uint64 = a_addr.uint64;
+    l_auth_stream->node = a_addr;
     l_auth_stream->id.pointer = a_id;
 
     assert(!pthread_rwlock_wrlock(&s_streams_lock));
@@ -1203,33 +1198,50 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr,
     assert(!pthread_rwlock_unlock(&s_streams_lock));
     return l_ret;
 }
-
 /**
- * @brief dap_stream_get_addr_from_sign create dap_stream_node_addr_t from dap_sign_t, need memory free
+ * @brief dap_stream_node_addr_from_sign create dap_stream_node_addr_t from dap_sign_t, need memory free
  * @param a_hash - pointer to hash_fast_t
  * @return  pointer if ok NULL if not
  */
-dap_stream_node_addr_t dap_stream_get_addr_from_sign(dap_sign_t *a_sign) {
-    
+dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign)
+{
     dap_stream_node_addr_t l_ret = {0};
     dap_return_val_if_pass(!a_sign, l_ret);
 
-    dap_enc_key_t *l_key = dap_sign_to_enc_key(a_sign);
-    dap_chain_hash_fast_t l_hash = {0};
-    size_t l_pub_key_data_size = 0;
-    uint8_t *l_pub_key_data = NULL;
-    l_pub_key_data = dap_enc_key_serialize_pub_key(l_key, &l_pub_key_data_size);
-    
-    dap_return_val_if_fail(l_pub_key_data_size > 0 && dap_hash_fast(l_pub_key_data, l_pub_key_data_size, &l_hash) == 1, l_ret);
-
-    l_ret.words[3] = (uint16_t) *(uint16_t*) (l_hash.raw);
-    l_ret.words[2] = (uint16_t) *(uint16_t*) (l_hash.raw + 2);
-    l_ret.words[1] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 4);
-    l_ret.words[0] = (uint16_t) *(uint16_t*) (l_hash.raw + DAP_CHAIN_HASH_FAST_SIZE - 2);
+    dap_hash_fast_t l_node_addr_hash;
+    dap_sign_get_pkey_hash(a_sign, &l_node_addr_hash);
+    dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
 
     log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_ret));
     return l_ret;
 }
+
+dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert)
+{
+    dap_stream_node_addr_t l_ret = {0};
+    dap_return_val_if_pass(!a_cert, l_ret);
+
+    // Get certificate public key hash
+    dap_hash_fast_t l_node_addr_hash;
+    dap_cert_get_pkey_hash(a_cert, &l_node_addr_hash);
+    dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
+
+    return l_ret;
+}
+
+dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey)
+{
+    dap_stream_node_addr_t l_ret = {0};
+    dap_return_val_if_pass(!a_pkey, l_ret);
+
+    // Get certificate public key hash
+    dap_hash_fast_t l_node_addr_hash;
+    dap_pkey_get_hash(a_pkey, &l_node_addr_hash);
+    dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
+
+    return l_ret;
+}
+
 
 static void s_stream_fill_info(dap_stream_t *a_stream, dap_stream_info_t *a_out_info)
 {
