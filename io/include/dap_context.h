@@ -69,11 +69,7 @@ typedef struct dap_context {
 #if defined DAP_EVENTS_CAPS_IOCP
     HANDLE iocp;
     OVERLAPPED ol;
-#endif
-#ifdef DAP_EVENTS_CAPS_AIO
-    dap_slist_t garbage_list;
-#endif
-#if defined DAP_EVENTS_CAPS_EPOLL
+#elif defined DAP_EVENTS_CAPS_EPOLL
     EPOLL_HANDLE epoll_fd;
     struct epoll_event epoll_events[ DAP_EVENTS_SOCKET_MAX];
 #elif defined ( DAP_EVENTS_CAPS_POLL)

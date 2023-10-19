@@ -419,14 +419,12 @@ static int s_thread_loop(dap_context_t * a_context)
     int l_errno = 0, l_selected_sockets = 0;
     dap_events_socket_t *l_cur = NULL;
 
-
-
 #ifdef DAP_EVENTS_CAPS_IOCP
     DWORD l_bytes = 0, l_entires_num = 0;
     OVERLAPPED_ENTRY l_ols[MAX_IOCP_ENTRIES];
     do {
         if (!GetQueuedCompletionStatusEx(a_context->iocp, l_ols, MAX_IOCP_ENTRIES, &l_entires_num, INFINITE, FALSE)) {
-            log_it(L_ERROR, "GetQueuedCompletionStatus failed, errno %d", WSAGetLastError());
+            log_it(L_ERROR, "GetQueuedCompletionStatus failed, errno %lu", GetLastError());
             continue;
         }
         for (ULONG i = 0; i < l_entires_num; ++i) {
@@ -436,6 +434,7 @@ static int s_thread_loop(dap_context_t * a_context)
                 continue;
             }
             l_cur = (dap_events_socket_t*)l_ols[i].lpCompletionKey;
+            log_it(L_MSG, "Dequeued %p", l_cur);
             if (!l_cur || !l_cur->context || l_cur->context != a_context) {
                 log_it(L_ATT, "An already destroyed es, skip it");
                 continue;
@@ -447,7 +446,7 @@ static int s_thread_loop(dap_context_t * a_context)
             uint32_t    flag_r_noclose = ~DAP_SOCK_SIGNAL_CLOSE & DAP_SOCK_READY_TO_READ,
                         flag_w_noclose = ~DAP_SOCK_SIGNAL_CLOSE & DAP_SOCK_READY_TO_WRITE;
 
-            if ((l_cur->flags & flag_r_noclose) == flag_r_noclose) {
+            if ((l_cur->flags && flag_r_noclose) == flag_r_noclose) {
                 DWORD flags = 0;
                 switch (l_cur->type) {
                 case DESCRIPTOR_TYPE_SOCKET_LISTENING: {
@@ -537,7 +536,7 @@ static int s_thread_loop(dap_context_t * a_context)
                 }
             }
 
-            if ((l_cur->flags & flag_w_noclose) == flag_w_noclose) {
+            if ((l_cur->flags && flag_w_noclose) == flag_w_noclose) {
                 // Write something OR check the status
                 // TODO: analyze flags...
                 if(!l_cur->server && l_cur->flags & DAP_SOCK_CONNECTING) {
@@ -1175,40 +1174,8 @@ static int s_thread_loop(dap_context_t * a_context)
                                     debug_if(l_errno, L_ERROR, "Writing to pipe %lu bytes failed, sent %lu only...", l_cur->buf_out_size, l_bytes_sent);
 #elif defined (DAP_EVENTS_CAPS_QUEUE_POSIX)
                                     l_bytes_sent = mq_send(a_es->mqd, (const char *)&a_arg,sizeof (a_arg),0);
-#elif defined DAP_EVENTS_CAPS_MSMQ
-                                    /* TODO: Windows-way message waiting and handling
-                                     *
-                                    DWORD l_mp_id = 0;
-                                    MQMSGPROPS    l_mps;
-                                    MQPROPVARIANT l_mpvar[1];
-                                    MSGPROPID     l_p_id[1];
-                                    HRESULT       l_mstatus[1];
-
-                                    l_p_id[l_mp_id] = PROPID_M_BODY;
-                                    l_mpvar[l_mp_id].vt = VT_VECTOR | VT_UI1;
-                                    l_mpvar[l_mp_id].caub.pElems = l_cur->buf_out;
-                                    l_mpvar[l_mp_id].caub.cElems = (u_long)sizeof(void*);
-                                    l_mp_id++;
-                                    l_mps.cProp = l_mp_id;
-                                    l_mps.aPropID = l_p_id;
-                                    l_mps.aPropVar = l_mpvar;
-                                    l_mps.aStatus = l_mstatus;
-                                    HRESULT hr = MQSendMessage(l_cur->mqh, &l_mps, MQ_NO_TRANSACTION);
-
-                                    if (hr != MQ_OK) {
-                                        l_errno = hr;
-                                        log_it(L_ERROR, "An error occured on sending message to queue, errno: %ld", hr);
-                                        break;
-                                    } else {
-                                        l_errno = WSAGetLastError();
-
-                                        if(dap_sendto(l_cur->socket, l_cur->port, NULL, 0) == SOCKET_ERROR) {
-                                            log_it(L_ERROR, "Write to socket error: %d", WSAGetLastError());
-                                        }
-                                        l_bytes_sent = sizeof(void*);
-                                    }
-                                    */
-                                    //l_bytes_sent = dap_sendto(l_cur->socket, l_cur->port, l_cur->buf_out, l_cur->buf_out_size);
+#elif defined DAP_EVENTS_CAPS_WEPOLL
+                                    l_bytes_sent = dap_sendto(l_cur->socket, l_cur->port, l_cur->buf_out, l_cur->buf_out_size);
                                     if (l_bytes_sent == SOCKET_ERROR) {
                                         log_it(L_ERROR, "Write to socket error: %d", WSAGetLastError());
                                     }
@@ -1380,10 +1347,9 @@ static int s_thread_loop(dap_context_t * a_context)
         }
 #endif
     } while(!a_context->signal_exit);
-
+#endif // IOCP
     log_it(L_ATT,"Context :%u finished", a_context->id);
     return 0;
-#endif // IOCP
 }
 
 /**
@@ -1537,11 +1503,13 @@ int dap_context_add(dap_context_t *a_context, dap_events_socket_t *a_es)
     if (a_es->socket != INVALID_SOCKET) {
         if (!(a_context->iocp = CreateIoCompletionPort((HANDLE)a_es->socket, a_context->iocp, (ULONG_PTR)a_es, 0))) {
                 DWORD l_err = GetLastError();
-                log_it(L_ERROR, "IOCP update failed, errno %lu", l_err);
+                log_it(L_ERROR, "IOCP update failed, errno %lu %llu", l_err, a_es->socket );
                 return l_err;
+        } else {
+            log_it(L_ATT, "[!] Socket %p of type %d added to IOCP", a_es, a_es->type);
         }
     } else {
-        log_it(L_ATT, "[!] Socket %p of type %d is not to be associated explicitly with IOCP, skeep eet", a_es, a_es->type);
+        //log_it(L_ATT, "[!] Socket %p of type %d is not to be associated explicitly with IOCP, skeep eet", a_es, a_es->type);
     }
 
     // Add in context HT
@@ -1943,7 +1911,7 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
         return NULL;
     }
 
-#elif defined DAP_EVENTS_CAPS_MSMQ
+#elif defined DAP_EVENTS_CAPS_WEPOLL
     l_es->socket        = socket(AF_INET, SOCK_DGRAM, 0);
 
     if (l_es->socket == INVALID_SOCKET) {
@@ -1969,74 +1937,8 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
     } else {
         int dummy = 100;
         getsockname(l_es->socket, (struct sockaddr*)&l_addr, &dummy);
-        //l_es->port = l_addr.sin_port;
+        l_es->port = l_addr.sin_port;
     }
-    /*
-    MQQUEUEPROPS   l_qps;
-    MQPROPVARIANT  l_qp_var[1];
-    QUEUEPROPID    l_qp_id[1];
-    HRESULT        l_q_status[1];
-
-    WCHAR l_pathname[MQ_MAX_Q_NAME_LEN - 10] = { 0 };
-    static atomic_uint s_queue_num = 0;
-    int pos = 0;
-#ifdef DAP_BRAND
-    pos = _snwprintf_s(l_pathname, sizeof(l_pathname)/sizeof(l_pathname[0]), _TRUNCATE, L".\\PRIVATE$\\" DAP_BRAND "mq%d", l_es->mq_num = s_queue_num++);
-#else
-    pos = _snwprintf_s(l_pathname, sizeof(l_pathname)/sizeof(l_pathname[0]), _TRUNCATE, L".\\PRIVATE$\\%hs_esmq%d", dap_get_appname(), l_es->mq_num = s_queue_num++);
-#endif
-    if (pos < 0) {
-        log_it(L_ERROR, "Message queue path error");
-        DAP_DELETE(l_es);
-        return NULL;
-    }
-    u_long l_p_id         = 0;
-    l_qp_id[l_p_id]       = PROPID_Q_PATHNAME;
-    l_qp_var[l_p_id].vt   = VT_LPWSTR;
-    l_qp_var[l_p_id].pwszVal = l_pathname;
-    l_p_id++;
-
-    l_qps.cProp     = l_p_id;
-    l_qps.aPropID   = l_qp_id;
-    l_qps.aPropVar  = l_qp_var;
-    l_qps.aStatus   = l_q_status;
-
-    WCHAR l_direct_name[MQ_MAX_Q_NAME_LEN]      = { 0 };
-    WCHAR l_format_name[sizeof(l_direct_name) - 10] = { 0 };
-    DWORD l_buflen = sizeof(l_format_name);
-    HRESULT hr = MQCreateQueue(NULL, &l_qps, l_format_name, &l_buflen);
-    if ((hr != MQ_OK) && (hr != MQ_ERROR_QUEUE_EXISTS) && (hr != MQ_INFORMATION_PROPERTY)) {
-        log_it(L_ERROR, "Can't create message queue for queue type, error: %ld", hr);
-        DAP_DELETE(l_es);
-        return NULL;
-    }
-    _snwprintf_s(l_direct_name, sizeof(l_direct_name)/sizeof(l_direct_name[0]), _TRUNCATE, L"DIRECT=OS:%ls", l_pathname);
-
-    hr = MQOpenQueue(l_direct_name, MQ_SEND_ACCESS, MQ_DENY_NONE, &(l_es->mqh));
-    if (hr == MQ_ERROR_QUEUE_NOT_FOUND) {
-        log_it(L_INFO, "Queue still not created, wait a bit...");
-        Sleep(300);
-        hr = MQOpenQueue(l_direct_name, MQ_SEND_ACCESS, MQ_DENY_NONE, &(l_es->mqh));
-        if (hr != MQ_OK) {
-            log_it(L_ERROR, "Can't open message queue for queue type, error: %ld", hr);
-            DAP_DELETE(l_es);
-            MQDeleteQueue(l_format_name);
-            return NULL;
-        }
-    }
-    hr = MQOpenQueue(l_direct_name, MQ_RECEIVE_ACCESS, MQ_DENY_NONE, &(l_es->mqh_recv));
-    if (hr != MQ_OK) {
-        log_it(L_ERROR, "Can't open message queue for queue type, error: %ld", hr);
-        DAP_DELETE(l_es);
-        MQCloseQueue(l_es->mqh);
-        MQDeleteQueue(l_format_name);
-        return NULL;
-    }
-    hr = MQPurgeQueue(l_es->mqh_recv);
-    if (hr != MQ_OK) {
-        log_it(L_DEBUG, "Message queue %u NOT purged, possible data corruption, err %ld", l_es->mq_num, hr);
-    }
-    */
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     // We don't create descriptor for kqueue at all
 #else

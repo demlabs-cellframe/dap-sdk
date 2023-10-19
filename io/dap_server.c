@@ -343,22 +343,8 @@ static int s_server_run(dap_server_t *a_server, dap_events_socket_callbacks_t *a
         if (l_ioctl == SOCKET_ERROR) {
             log_it(L_ERROR, "Failed to load GetAcceptExSockaddrs, errno %d", WSAGetLastError());
             DAP_DELETE(a_server);
-            return -1;
+            return -2;
         }
-        dap_events_socket_t *l_es_server = dap_events_socket_wrap2(a_server, a_server->socket_listener, &l_callbacks);
-        if (!l_es_server) {
-            log_it(L_ERROR, "Failed to wrap server listening socket");
-            DAP_DELETE(a_server);
-            return -1;
-        }
-        a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es_server);
-        l_es_server->type = a_server->type == SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
-        l_es_server->_inheritor = a_server;
-        pthread_mutex_lock(&a_server->started_mutex);
-        dap_worker_add_events_socket_auto(l_es_server);
-        while (!a_server->started)
-            pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
-        pthread_mutex_unlock(&a_server->started_mutex);
     }
 #endif
 
@@ -389,29 +375,26 @@ static int s_server_run(dap_server_t *a_server, dap_events_socket_callbacks_t *a
         }
     }
 #else
-    // or not
-    dap_worker_t *l_w = dap_events_worker_get_auto();
-    assert(l_w);
-    dap_events_socket_t * l_es = dap_events_socket_wrap2( a_server, a_server->socket_listener, &l_callbacks);
-    if (l_es) {
-        #ifdef DAP_EVENTS_CAPS_EPOLL
-            l_es->ev_base_flags = EPOLLIN;
-        #ifdef EPOLLEXCLUSIVE
-            l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
-        #endif
-        #endif
-        a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es);
-        l_es->type = a_server->type == SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
-        l_es->_inheritor = a_server;
-        pthread_mutex_lock(&a_server->started_mutex);
-        dap_worker_add_events_socket( l_w, l_es );
-        while (!a_server->started)
-            pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
-        pthread_mutex_unlock(&a_server->started_mutex);
-    } else {
-        log_it(L_WARNING, "Can't wrap event socket server");
+    dap_events_socket_t *l_es_server = dap_events_socket_wrap2(a_server, a_server->socket_listener, &l_callbacks);
+    if (!l_es_server) {
+        log_it(L_ERROR, "Failed to wrap server listening socket");
+        DAP_DELETE(a_server);
         return -3;
     }
+#ifdef DAP_EVENTS_CAPS_EPOLL
+    l_es->ev_base_flags = EPOLLIN;
+#ifdef EPOLLEXCLUSIVE
+    l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
+#endif
+#endif
+    a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es_server);
+    l_es_server->type = a_server->type == SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
+    l_es_server->_inheritor = a_server;
+    pthread_mutex_lock(&a_server->started_mutex);
+    dap_worker_add_events_socket_auto(l_es_server);
+    while (!a_server->started)
+        pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
+    pthread_mutex_unlock(&a_server->started_mutex);
 #endif
     return 0;
 }

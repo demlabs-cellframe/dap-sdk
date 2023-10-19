@@ -55,8 +55,6 @@ typedef int SOCKET;
     #define DAP_EVENTS_CAPS_QUEUE_PIPE2
     //#define DAP_EVENTS_CAPS_QUEUE_MQUEUE
     #define DAP_EVENTS_CAPS_EVENT_EVENTFD
-    //#define DAP_EVENTS_CAPS_AIO
-    //#define DAP_EVENTS_CAPS_AIO_THREADS
     #include <netinet/in.h>
     #include <sys/eventfd.h>
     #include <mqueue.h>
@@ -74,13 +72,8 @@ typedef int SOCKET;
     #define DAP_EVENTS_CAPS_QUEUE_SOCKETPAIR
     #include <netinet/in.h>
 #elif defined (DAP_OS_WINDOWS)
-    #define DAP_EVENTS_CAPS_WEPOLL
-    #define DAP_EVENTS_CAPS_EPOLL
-    #define DAP_EVENTS_CAPS_QUEUE_WEVENT
-    #define DAP_EVENTS_CAPS_EVENT_WEVENT
-    //#define DAP_EVENTS_CAPS_AIO_THREADS
-    //#define DAP_EVENTS_CAPS_PIPE_POSIX
-    //#define DAP_EVENTS_CAPS_MSMQ
+    //#define DAP_EVENTS_CAPS_WEPOLL
+    //#define DAP_EVENTS_CAPS_EPOLL
     #define DAP_EVENTS_CAPS_IOCP
     #ifndef INET_ADDRSTRLEN
         #define INET_ADDRSTRLEN     16
@@ -222,7 +215,7 @@ typedef struct dap_events_socket {
 #else
     };
 #endif
-
+    u_short port;
     union {
         SOCKET socket2;
         int fd2;
@@ -241,7 +234,7 @@ typedef struct dap_events_socket {
     bool was_reassigned; // Was reassigment at least once
 
 #ifdef DAP_EVENTS_CAPS_IOCP
-    char *buf_in, *buf_out;
+    byte_t *buf_in, *buf_out;
     DWORD buf_in_size, buf_in_size_max, buf_out_size, buf_out_size_max;
 #else
     // Input section
