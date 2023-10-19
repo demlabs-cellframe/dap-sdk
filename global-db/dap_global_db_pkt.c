@@ -215,7 +215,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
 }
 
 
-dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_t a_pkt_size, dap_stream_node_addr_t a_addr)
+dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_t a_pkt_size)
 {
     dap_return_val_if_fail(a_pkt, NULL);
     dap_store_obj_t *l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + sizeof(dap_stream_node_addr_t));
@@ -223,8 +223,6 @@ dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_
         log_it(L_ERROR, "Broken GDB element: can't read GOSSIP record packet");
         DAP_DEL_Z(l_ret);
     }
-    // Inject a_addr field into deserialized object to transfer it into callback (argument injecting)
-    *(dap_stream_node_addr_t *)l_ret->ext = a_addr;
     return l_ret;
 }
 
@@ -234,7 +232,7 @@ dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_
  * @param store_obj_count[out] a number of deserialized objects in the array
  * @return Returns a pointer to the first object in the array, if successful; otherwise NULL.
  */
-dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count, dap_stream_node_addr_t a_addr)
+dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count)
 {
     dap_return_val_if_fail(a_pkt && a_pkt->data_size >= sizeof(dap_global_db_pkt_t), NULL);
 
@@ -262,8 +260,6 @@ dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a
             log_it(L_ERROR, "Broken GDB element: can't read packet #%u", i);
             break;
         }
-        // Inject a_addr field into deserialized object to transfer it into callback (argument injecting)
-        *(dap_stream_node_addr_t *)l_store_obj_arr[i]->ext = a_addr;
     }
     if (l_data_ptr)
         assert(l_data_ptr == l_data_end);

@@ -896,7 +896,8 @@ MDBX_txn *l_txn;
         }
         l_record->timestamp = a_store_obj->timestamp;
         l_record->value_len = a_store_obj->value_len;
-        l_record->flags = a_store_obj->flags;
+        // Don't save NEW attribute
+        l_record->flags = a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW;
         if (!a_store_obj->crc) {
             DAP_DELETE(l_record);
             log_it(L_ERROR, "Global DB store object corrupted");

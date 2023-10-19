@@ -27,6 +27,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db_ch.h"
 #include "dap_global_db_pkt.h"
 #include "dap_stream_ch_proc.h"
+#include "dap_stream_ch_gossip.h"
 #include "dap_global_db_cluster.h"
 
 #define LOG_TAG "dap_stream_ch_global_db"
@@ -37,6 +38,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg);
 static void s_stream_ch_packet_out(dap_stream_ch_t *a_ch, void *a_arg);
 static void s_stream_ch_io_complete(dap_events_socket_t *a_es, void *a_arg, int a_errno);
 static void s_stream_ch_write_error_unsafe(dap_stream_ch_t *a_ch, uint64_t a_net_id, uint64_t a_chain_id, uint64_t a_cell_id, const char * a_err_string);
+static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size);
 
 static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb);
 
@@ -49,10 +51,7 @@ int dap_stream_ch_gdb_init()
     log_it(L_NOTICE, "Global DB exchange channel initialized");
     dap_stream_ch_proc_add(DAP_STREAM_CH_GDB_ID, s_stream_ch_new, s_stream_ch_delete, s_stream_ch_packet_in,
             s_stream_ch_packet_out);
-#ifdef DAP_SYS_DEBUG
-    for (int i = 0; i < MEMSTAT$K_NR; i++)
-        dap_memstat_reg(&s_memstat[i]);
-#endif
+    assert(!dap_stream_ch_gossip_callback_add(DAP_STREAM_CH_GDB_ID, s_gossip_payload_callback));
     return 0;
 }
 
@@ -77,9 +76,6 @@ void s_stream_ch_new(dap_stream_ch_t *a_ch, void *a_arg)
     }
     l_ch_gdb->_inheritor = a_ch;
     a_ch->stream->esocket->callbacks.write_finished_callback = s_stream_ch_io_complete;
-#ifdef  DAP_SYS_DEBUG
-    atomic_fetch_add(&s_memstat[MEMSTAT$K_STM_CH_CHAIN].alloc_nr, 1);
-#endif
     debug_if(g_dap_global_db_debug_more, L_NOTICE, "Created GDB sync channel %p with internal data %p", a_ch, l_ch_gdb);
 }
 
@@ -97,9 +93,6 @@ static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg)
     s_ch_gdb_go_idle(l_ch_gdb);
     debug_if(g_dap_global_db_debug_more, L_NOTICE, "Destroyed GDB sync channel %p with internal data %p", a_ch, l_ch_gdb);
     DAP_DEL_Z(a_ch->internal);
-#ifdef  DAP_SYS_DEBUG
-    atomic_fetch_add(&s_memstat[MEMSTAT$K_STM_CH_CHAIN].free_nr, 1);
-#endif
 }
 
 static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb)
@@ -145,15 +138,6 @@ static bool s_process_single_record(dap_proc_thread_t UNUSED_ARG *a_thread, void
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_obj->group);
     if (!l_cluster) {
         log_it(L_WARNING, "An entry in the group %s was rejected because the group name doesn't match any mask.", l_obj->group);
-        dap_store_obj_free_one(l_obj);
-        return false;
-    }
-    int l_stream_role = dap_cluster_member_find_role(l_cluster->role_cluster, (dap_stream_node_addr_t *)l_obj->ext);
-    if (l_stream_role == DAP_GDB_MEMBER_ROLE_INVALID &&
-            l_cluster->default_role == DAP_GDB_MEMBER_ROLE_NOBODY) {
-        debug_if(g_dap_global_db_debug_more, L_WARNING,
-                 "Node with addr "NODE_ADDR_FP_STR" isn't a member of closed cluster %s",
-                 NODE_ADDR_FP_ARGS((dap_stream_node_addr_t *)l_obj->ext), l_cluster->links_cluster->mnemonim);
         dap_store_obj_free_one(l_obj);
         return false;
     }
@@ -304,6 +288,17 @@ free_n_exit:
     return false;
 }
 
+static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size)
+{
+    dap_global_db_pkt_t *l_pkt = a_payload;
+    dap_store_obj_t *l_obj = dap_global_db_pkt_deserialize(l_pkt, a_payload_size);
+    if (!l_obj) {
+        log_it(L_WARNING, "Wrong Global DB gossip packet rejected");
+        return;
+    }
+    dap_proc_thread_callback_add_pri(NULL, s_process_single_record, l_obj, DAP_GLOBAL_DB_TASK_PRIORITY);
+}
+
 static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 {
     dap_stream_ch_gdb_t *l_ch_gdb = DAP_STREAM_CH_GDB(a_ch);
@@ -318,7 +313,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
     case DAP_STREAM_CH_GDB_PKT_TYPE_RECORD_PACK: {
         dap_global_db_pkt_pack_t *l_pkt = (dap_global_db_pkt_pack_t *)l_ch_pkt->data;
         size_t l_objs_count = 0;
-        dap_store_obj_t **l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count, a_ch->stream->node);
+        dap_store_obj_t **l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count);
         if (!l_objs) {
             log_it(L_WARNING, "Wrong Global DB record packet rejected");
             break;

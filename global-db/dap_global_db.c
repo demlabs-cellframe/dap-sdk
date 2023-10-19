@@ -297,11 +297,11 @@ static int s_change_commit_notify(dap_global_db_instance_t *a_dbi, dap_store_obj
         a_store_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
         return l_ret;
     }
-
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(a_dbi, l_basic_group);
     if (l_cluster) {
-        // Notify sync cluster first
-        dap_global_db_cluster_broadcast(l_cluster, a_store_obj);
+        if (a_store_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)
+            // Notify sync cluster first
+            dap_global_db_cluster_broadcast(l_cluster, a_store_obj);
         if (l_cluster->callback_notify) {
             // Notify others in user space format
             char *l_old_group_ptr = a_store_obj->group;
@@ -899,7 +899,7 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
     dap_store_obj_t l_store_data = { 0 };
     l_store_data.type = DAP_GLOBAL_DB_OPTYPE_ADD;
     l_store_data.key = (char *)a_key ;
-    l_store_data.flags = a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0 ;
+    l_store_data.flags = DAP_GLOBAL_DB_RECORD_NEW | a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0;
     l_store_data.value_len =  a_value_length;
     l_store_data.value = (uint8_t *)a_value;
     l_store_data.group = (char *)a_group;

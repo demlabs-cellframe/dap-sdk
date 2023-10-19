@@ -28,6 +28,7 @@
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_proc.h"
 #include "dap_stream_ch_pkt.h"
+#include "dap_stream_ch_gossip.h"
 #include "dap_stream_worker.h"
 #include <pthread.h>
 

@@ -543,7 +543,8 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
                 goto ret_n_free;
             }
             l_record->value_len = a_store_obj->value_len;
-            l_record->flags = a_store_obj->flags;
+            // Don't save NEW attribute
+            l_record->flags = a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW;
             if (!a_store_obj->crc) {
                 log_it(L_ERROR, "Global DB store object corrupted");
                 l_ret = -5;

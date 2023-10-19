@@ -37,9 +37,10 @@
 #define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL                              /* A maximum number of groups */
 #define DAP_GLOBAL_DB_KEY_SIZE_MAX          512UL                               /* A limit for the key's length in DB */
 
-enum RECORD_FLAGS {
+enum dap_global_db_record_flags {
     DAP_GLOBAL_DB_RECORD_COMMON = 0,
-    DAP_GLOBAL_DB_RECORD_PINNED = 1
+    DAP_GLOBAL_DB_RECORD_PINNED = 1,
+    DAP_GLOBAL_DB_RECORD_NEW = 2
 };
 
 typedef enum dap_global_db_optype {

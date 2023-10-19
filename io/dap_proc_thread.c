@@ -27,6 +27,7 @@
 #include "dap_events.h"
 #include "dap_proc_thread.h"
 #include "dap_context.h"
+#include "dap_timerfd.h"
 
 #define LOG_TAG "dap_proc_thread"
 
@@ -198,5 +199,34 @@ static int s_context_callback_stopped(dap_context_t UNUSED_ARG *a_context, void 
     pthread_cond_destroy(&l_thread->queue_event);
     pthread_mutex_unlock(&l_thread->queue_lock);
     pthread_mutex_destroy(&l_thread->queue_lock);
+    return 0;
+}
+
+struct timer_arg {
+    dap_proc_thread_t *thread;
+    dap_proc_queue_callback_t callback;
+    void *callback_arg;
+    dap_queue_msg_priority_t priority;
+};
+
+static bool s_timer_callback(void *a_arg)
+{
+    struct timer_arg *l_arg = a_arg;
+    dap_proc_thread_callback_add_pri(l_arg->thread, l_arg->callback, l_arg->callback_arg, l_arg->priority);
+    // Repeat after exit
+    return true;
+}
+
+int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, dap_queue_msg_priority_t a_priority)
+{
+    dap_return_val_if_fail(a_thread && a_thread->context && a_callback && a_timeout_ms, -1);
+    dap_worker_t *l_worker = dap_events_worker_get(a_thread->context->id);
+    if (!l_worker) {
+        log_it(L_CRITICAL, "Unexistent worker with ID corresonding to specified procedures thread ID %u", a_thread->context->id);
+        return -2;
+    }
+    struct timer_arg *l_timer_arg = DAP_NEW_Z(struct timer_arg);
+    *l_timer_arg = (struct timer_arg){ .thread = a_thread, .callback = a_callback, .callback_arg = a_callback_arg, .priority = a_priority };
+    dap_timerfd_start_on_worker(l_worker, a_timeout_ms, s_timer_callback, l_timer_arg);
     return 0;
 }

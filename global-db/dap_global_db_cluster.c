@@ -42,9 +42,10 @@ static void s_callback_unclustered_notify(dap_global_db_instance_t *a_dbi, dap_s
 
 int dap_global_db_cluster_init()
 {
+    // Pseudo-cluster for global scope
     return !!dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_ANY, DAP_GLOBAL_DB_CLUSTER_ANY ".*",
                                        DAP_GLOBAL_DB_UNCLUSTERED_TTL, true, s_callback_unclustered_notify, NULL,
-                                       DAP_GDB_MEMBER_ROLE_USER, DAP_CLUSTER_ROLE_EMBEDDED);
+                                       DAP_GDB_MEMBER_ROLE_GUEST, DAP_CLUSTER_ROLE_EMBEDDED);
 }
 
 void dap_global_db_cluster_deinit()
@@ -115,9 +116,8 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
-    // TODO set NULL for 'global' mnemonim
     l_cluster->links_cluster = dap_cluster_by_mnemonim(a_mnemonim);
-    if (!l_cluster->links_cluster) {
+    if (!l_cluster->links_cluster && dap_strcmp(DAP_GLOBAL_DB_CLUSTER_ANY, a_mnemonim)) {
         l_cluster->links_cluster = dap_cluster_new(a_mnemonim, a_links_cluster_role);
         if (!l_cluster->links_cluster) {
             log_it(L_ERROR, "Can't create member cluster");

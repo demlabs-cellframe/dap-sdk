@@ -22,6 +22,7 @@ You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include <string.h>
+#include "dap_events.h"
 #include "dap_strfuncs.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
@@ -31,21 +32,22 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_stream_ch_gossip"
 
-struct gossip_callback {
+static struct gossip_callback {
     uint8_t ch_id;
     dap_gossip_callback_payload_t callback_payload;
-};
-static dap_list_t *s_gossip_callbacks_list = NULL;
+    struct gossip_callback *prev, *next;
+} *s_gossip_callbacks_list = NULL;
 
-struct gossip_msg_item {
+static pthread_rwlock_t s_gossip_lock = PTHREAD_RWLOCK_INITIALIZER;
+static struct gossip_msg_item {
     dap_hash_t payload_hash;
     dap_nanotime_t timestamp;
     UT_hash_handle hh;
     byte_t message[];
-};
-static pthread_rwlock_t s_gossip_lock = PTHREAD_RWLOCK_INITIALIZER;
-static struct gossip_msg_item *s_gossip_last_msgs = NULL;
+} *s_gossip_last_msgs = NULL;
+dap_timerfd_t *s_gossip_timer = NULL;
 
+static bool s_callback_hashtable_maintenance(void *a_arg);
 static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg);
 /**
  * @brief dap_stream_ch_gdb_init
@@ -55,18 +57,60 @@ int dap_stream_ch_gossip_init()
 {
     log_it(L_NOTICE, "Global DB exchange channel initialized");
     dap_stream_ch_proc_add(DAP_STREAM_CH_GOSSIP_ID, NULL, NULL, s_stream_ch_packet_in, NULL);
+    s_gossip_timer = dap_timerfd_start(1000, s_callback_hashtable_maintenance, NULL);
     return 0;
 }
 
 void dap_stream_ch_gossip_deinit()
 {
-
+    if (s_gossip_timer)
+        dap_timerfd_delete_mt(s_gossip_timer->worker, s_gossip_timer->esocket_uuid);
+    struct gossip_msg_item *it, *tmp;
+    HASH_ITER(hh, s_gossip_last_msgs, it, tmp) {
+        HASH_DEL(s_gossip_last_msgs, it);
+        DAP_DELETE(it);
+    }
 }
 
-DAP_STATIC_INLINE bool s_object_is_new(struct gossip_msg_item *a_store_obj)
+static struct gossip_callback *s_get_callbacks_by_ch_id(const char a_ch_id)
 {
-    dap_nanotime_t l_time_diff = a_store_obj->timestamp - dap_nanotime_now();
-    return l_time_diff < DAP_GOSSIP_LIFETIME * 1000000000UL;
+    struct gossip_callback *l_callback;
+    DL_FOREACH(s_gossip_callbacks_list, l_callback)
+        if (l_callback->ch_id == a_ch_id)
+            return l_callback;
+    return NULL;
+}
+
+int dap_stream_ch_gossip_callback_add(const char a_ch_id, dap_gossip_callback_payload_t a_callback)
+{
+    if (s_get_callbacks_by_ch_id(a_ch_id)) {
+        log_it(L_ERROR, "Channel '%c' already set gossip callback. Alone callback per channel is allowed", a_ch_id);
+        return -1;
+    }
+    struct gossip_callback *l_callback_new = DAP_NEW_Z(struct gossip_callback);
+    if (!l_callback_new) {
+        log_it(L_CRITICAL, "Not enough memory");
+        return -2;
+    }
+    l_callback_new->ch_id = a_ch_id;
+    l_callback_new->callback_payload = a_callback;
+    DL_APPEND(s_gossip_callbacks_list, l_callback_new);
+    return 0;
+}
+
+static bool s_callback_hashtable_maintenance(void UNUSED_ARG *a_arg)
+{
+    pthread_rwlock_wrlock(&s_gossip_lock);
+    dap_nanotime_t l_time_now = dap_nanotime_now();
+    struct gossip_msg_item *it, *tmp;
+    HASH_ITER(hh, s_gossip_last_msgs, it, tmp) {
+        if (it->timestamp - l_time_now > DAP_GOSSIP_LIFETIME * 1000000000UL) {
+            HASH_DEL(s_gossip_last_msgs, it);
+            DAP_DELETE(it);
+        }
+    }
+    pthread_rwlock_unlock(&s_gossip_lock);
+    return true;
 }
 
 void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, void *a_payload, size_t a_payload_size, dap_hash_fast_t *a_payload_hash)
@@ -96,7 +140,7 @@ void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, void *a_
     l_msg->payload_ch_id = a_ch_id;
     l_msg->trace_len = sizeof(g_node_addr);
     l_msg->payload_len = a_payload_size;
-    l_msg->cluster_id = a_cluster->uuid;
+    l_msg->cluster_id = a_cluster ? a_cluster->uuid : uint128_0;
     l_msg->payload_hash = *a_payload_hash;
     *(dap_stream_node_addr_t *)l_msg->trace_n_payload = g_node_addr;
     memcpy(l_msg->trace_n_payload + l_msg->trace_len, a_payload, a_payload_size);
@@ -106,16 +150,6 @@ void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, void *a_
                           DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH,
                           a_payload_hash, sizeof(dap_hash_t),
                           &g_node_addr, 1);
-}
-
-static struct gossip_callback *s_get_callbacks_by_ch_id(const char a_ch_id)
-{
-    for (dap_list_t *it = s_gossip_callbacks_list; it; it = it->next) {
-        struct gossip_callback *l_callback = it->data;
-        if (l_callback->ch_id == a_ch_id)
-            return l_callback;
-    }
-    return NULL;
 }
 
 static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
@@ -189,6 +223,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             break;
         }
         l_item_new->payload_hash = l_msg->payload_hash;
+        l_item_new->timestamp = dap_nanotime_now();
         // Copy message and append g_node_addr to pathtrace
         dap_gossip_msg_t *l_msg_new = (dap_gossip_msg_t *)l_item_new->message;
         memcpy(l_msg_new, l_msg, sizeof(dap_gossip_msg_t) + l_msg->trace_len);
@@ -199,16 +234,18 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         pthread_rwlock_unlock(&s_gossip_lock);
         // Broadcast new message
         dap_cluster_t *l_links_cluster = dap_cluster_find(l_msg->cluster_id);
-        if (!l_links_cluster) {
+        if (l_links_cluster) {
+            dap_cluster_member_t *l_check = dap_cluster_member_find_unsafe(l_links_cluster, &a_ch->stream->node);
+            if (!l_check) {
+                log_it(L_WARNING, "Node with addr "NODE_ADDR_FP_STR" isn't a member of cluster %s",
+                                            NODE_ADDR_FP_ARGS_S(a_ch->stream->node), l_links_cluster->mnemonim);
+                break;
+            }
+        } else if (!compare128(l_msg->cluster_id, uint128_0)) {
             log_it(L_ERROR, "Can't find cluster for gossip message broadcasting");
             break;
         }
-        dap_cluster_member_t *l_check = dap_cluster_member_find_unsafe(l_links_cluster, &a_ch->stream->node);
-        if (!l_check) {
-            log_it(L_WARNING, "Node with addr "NODE_ADDR_FP_STR" isn't a member of cluster %s",
-                                        NODE_ADDR_FP_ARGS_S(a_ch->stream->node), l_links_cluster->mnemonim);
-            break;
-        }
+        // Allow NULL cluster for global scope broadcast
         dap_cluster_broadcast(l_links_cluster, DAP_STREAM_CH_GOSSIP_ID,
                               DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH,
                               &l_msg_new->payload_hash, sizeof(dap_hash_t),
