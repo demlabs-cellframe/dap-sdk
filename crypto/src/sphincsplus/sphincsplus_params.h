@@ -1,6 +1,8 @@
 #ifndef __SPHINCSPLUS_PARAMS__
 #define __SPHINCSPLUS_PARAMS__
 
+#include <stdint.h>
+
 typedef struct {
   uint32_t sSPX_D;
   uint32_t sSPX_N;

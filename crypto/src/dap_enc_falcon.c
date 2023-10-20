@@ -197,6 +197,8 @@ int dap_enc_sig_falcon_verify_sign(dap_enc_key_t *a_key, const void *a_msg, cons
 
 void dap_enc_sig_falcon_key_delete(dap_enc_key_t *key) {
 
+    falcon_private_and_public_keys_delete((falcon_private_key_t *)key->priv_key_data, (falcon_private_key_t *)key->pub_key_data);
+
     if (key->priv_key_data) {
         memset(key->priv_key_data, 0, key->priv_key_data_size);
         DAP_DEL_Z(key->priv_key_data);
@@ -506,5 +508,11 @@ void falcon_public_key_delete(falcon_public_key_t* publicKey) {
         publicKey->type = 0;
         publicKey->kind = 0;
     }
+}
+
+void falcon_signature_delete(falcon_signature_t *a_sig){
+    assert(a_sig);
+    DAP_DEL_Z(a_sig->sig_data);
+    a_sig->sig_len = 0;
 }
 

@@ -6,6 +6,8 @@
 #include "dap_enc_picnic_test.h"
 #include "dap_enc_tesla_test.h"
 #include "dap_enc_dilithium_test.h"
+#include "dap_enc_falcon_test.h"
+#include "dap_enc_sphincsplus_test.h"
 #include "dap_enc_ringct20_test.h"
 #include "dap_enc_kyber_test.h"
 #ifndef DAP_CRYPTO_MULTISIGN_TEST_OFF
@@ -46,6 +48,8 @@ int main(void) {
     dap_enc_picnic_tests_run();
     dap_enc_sig_bliss_tests_run();
     dap_enc_dilithium_tests_run();
+    dap_enc_falcon_tests_run();
+    dap_enc_sphincsplus_tests_run();
     dap_enc_msrln_tests_run();
     dap_enc_base64_tests_run();
     dap_enc_base58_tests_run();

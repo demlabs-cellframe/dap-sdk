@@ -957,11 +957,7 @@ void dap_enc_key_delete(dap_enc_key_t * a_key)
         log_it(L_ERROR, "delete callback is null. Can be leak memory!");
     }
     /* a_key->_inheritor must be cleaned in delete_callback func */
-    // if ( a_key->pub_key_data)
-    //     DAP_DELETE(a_key->pub_key_data);
-    // if (a_key->priv_key_data )
-    //     DAP_DELETE(a_key->priv_key_data);
-    DAP_DELETE(a_key);
+    DAP_DEL_MULTY(a_key->pub_key_data, a_key->priv_key_data, a_key);
 }
 
 size_t dap_enc_key_get_enc_size(dap_enc_key_t * a_key, const size_t a_buf_in_size)

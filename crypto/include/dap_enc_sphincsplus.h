@@ -2,7 +2,7 @@
 #define _DAP_ENC_SPHINCSPLUS_H
 
 #include "dap_enc_key.h"
-#include "sphincsplus_params.h"
+#include "sphincsplus/sphincsplus_params.h"
 
 
 // void dap_enc_sig_falcon_set_degree(falcon_sign_degree_t a_falcon_sign_degree);
@@ -14,6 +14,7 @@ void sphincsplus_public_key_delete(sphincsplus_public_key_t *a_pkey);
 void sphincsplus_private_key_delete(sphincsplus_private_key_t *a_skey);
 void sphincsplus_private_and_public_keys_delete(sphincsplus_private_key_t *a_skey,
         sphincsplus_public_key_t *a_pkey);
+void sphincsplus_signature_delete(sphincsplus_signature_t *a_sig);
 
 void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_buf, size_t a_kex_size,
         const void *a_seed, size_t a_seed_size, size_t a_key_size);

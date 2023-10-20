@@ -3,13 +3,7 @@
 #include "dap_enc_test.h"
 #include "dap_test.h"
 #include "rand/dap_rand.h"
-#include "dap_enc_key.h"
-#include "dap_enc_base64.h"
-#include "dap_enc_bliss.h"
-#include "dap_enc_picnic.h"
-#include "dap_enc_tesla.h"
-#include "dap_enc_dilithium.h"
-#include "dap_enc_falcon.h"
+#include "dap_sign.h"
 #include "dap_enc.h"
 
 int get_cur_time_msec();
@@ -382,38 +376,18 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     // encode by key
     int is_sig = 0, is_vefify = 0;
     switch (key_type) {
-    case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        sig_buf_size = sizeof(bliss_signature_t);
-        sig_buf = calloc(sig_buf_size, 1);
-        is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-        sig_buf_size = dap_enc_picnic_calc_signature_size(key);
-        sig_buf = calloc(sig_buf_size, 1);
-        is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        sig_buf_size = dap_enc_tesla_calc_signature_size();
-        sig_buf = calloc(sig_buf_size, 1);
-        is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        sig_buf_size = dap_enc_dilithium_calc_signature_unserialized_size();
-        sig_buf = calloc(sig_buf_size, 1);
-        is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        sig_buf_size = sizeof(falcon_signature_t);
-        sig_buf = calloc(sig_buf_size, 1);
-        is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        sig_buf_size = 48;
-        sig_buf = calloc(sig_buf_size, 1);
-        is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
-        break;
-    default:
-        sig_buf_size = 0;
+        case DAP_ENC_KEY_TYPE_SIG_BLISS:
+        case DAP_ENC_KEY_TYPE_SIG_PICNIC:
+        case DAP_ENC_KEY_TYPE_SIG_TESLA:
+        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+            sig_buf_size = dap_sign_create_output_unserialized_calc_size(key, 0);
+            sig_buf = calloc(sig_buf_size, 1);
+            is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
+            break;
+        default:
+            sig_buf_size = 0;
     }
     dap_enc_key_delete(key);
 

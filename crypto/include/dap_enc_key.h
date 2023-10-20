@@ -266,6 +266,7 @@ typedef struct dap_enc_key_callbacks{
 
     dap_enc_callback_calc_out_size enc_out_size;
     dap_enc_callback_calc_out_size dec_out_size;
+    dap_enc_callback_calc_out_size unser_sig_size;
 
     dap_enc_gen_bob_shared_key gen_bob_shared_key;
     dap_enc_gen_alice_shared_key gen_alice_shared_key;

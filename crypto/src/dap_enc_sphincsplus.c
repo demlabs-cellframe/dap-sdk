@@ -95,7 +95,7 @@ int dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg_in,
         return -1;
     }
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign_out;
-    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, sphincsplus_crypto_sign_bytes(), 0, NULL);
+    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, sphincsplus_crypto_sign_bytes(), -2, NULL);
 
     sphincsplus_private_key_t *l_skey = a_key->priv_key_data;
     return sphincsplus_crypto_sign_signature(l_sign->sig_data, &l_sign->sig_len, (const unsigned char *)a_msg_in, a_msg_size, l_skey->data);
@@ -120,9 +120,9 @@ size_t dap_enc_sig_sphincsplus_get_sign_msg(dap_enc_key_t *a_key, const void *a_
 int dap_enc_sig_sphincsplus_verify_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size, void *a_sign,
         const size_t a_sign_size)
 {
-    if(a_sign_size < sphincsplus_crypto_sign_bytes()) {
+    if(a_sign_size < sizeof(sphincsplus_signature_t)) {
         log_it(L_ERROR, "Bad signature size");
-        return 0;
+        return -1;
     }
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign;
     sphincsplus_private_key_t *l_pkey = a_key->pub_key_data;
@@ -152,7 +152,8 @@ void dap_enc_sig_sphincsplus_key_delete(dap_enc_key_t *key) {
     sphincsplus_private_and_public_keys_delete((sphincsplus_private_key_t *) key->priv_key_data,
         (sphincsplus_public_key_t *) key->pub_key_data);
 
-    DAP_DEL_MULTY(key->pub_key_data, key->priv_key_data);
+    DAP_DEL_Z(key->pub_key_data)
+    DAP_DEL_Z(key->priv_key_data);
 }
 
 /* Serialize a private key. */
@@ -346,6 +347,12 @@ void sphincsplus_public_key_delete(sphincsplus_public_key_t *a_pkey)
     if (a_pkey) {
         DAP_DEL_Z(a_pkey->data);
     }
+}
+
+void sphincsplus_signature_delete(sphincsplus_signature_t *a_sig){
+    assert(a_sig);
+    DAP_DEL_Z(a_sig->sig_data);
+    a_sig->sig_len = 0;
 }
 
 /*

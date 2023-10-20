@@ -129,6 +129,7 @@ file( GLOB CRYPTO_HEADERS
       src/sphincsplus/api.h  
       src/sphincsplus/hash.h 
       src/sphincsplus/thash.h
+      src/sphincsplus/sphincsplus_params.h
       ${SPHINCS_HEADERS}
       include/*.h
 )
