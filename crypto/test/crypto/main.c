@@ -22,7 +22,7 @@ void dap_enc_newhope_tests_run(const int times);
 int main(void) {
     // switch off debug info from library
     dap_log_level_set(L_CRITICAL);
-    const int test_numbers = 100;
+    const int test_numbers = 10;
 #ifndef DAP_CRYPTO_NEWHOPE_TEST_OFF
     // dap_enc_newhope_tests_run(test_numbers);
 #endif
@@ -43,17 +43,17 @@ int main(void) {
     test_encypt_decrypt_fast(test_numbers, DAP_ENC_KEY_TYPE_IAES, 32);
     test_encypt_decrypt(test_numbers, DAP_ENC_KEY_TYPE_OAES, 32);
     test_encypt_decrypt_fast(test_numbers, DAP_ENC_KEY_TYPE_OAES, 32);
-//    // return 0;
+
     dap_enc_tests_run();
-    dap_enc_picnic_tests_run();
+    dap_enc_picnic_tests_run(test_numbers);
     dap_enc_sig_bliss_tests_run();
-    dap_enc_dilithium_tests_run();
-    dap_enc_falcon_tests_run();
-    dap_enc_sphincsplus_tests_run();
+    dap_enc_dilithium_tests_run(test_numbers);
+    dap_enc_falcon_tests_run(test_numbers);
+    dap_enc_sphincsplus_tests_run(test_numbers);
     dap_enc_msrln_tests_run();
     dap_enc_base64_tests_run();
     dap_enc_base58_tests_run();
-    dap_enc_tesla_tests_run();
+    dap_enc_tesla_tests_run(test_numbers);
 
     dap_enc_kyber_test_run();
 

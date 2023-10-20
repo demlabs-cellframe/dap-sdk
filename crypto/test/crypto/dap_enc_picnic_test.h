@@ -4,4 +4,4 @@
 #include "dap_test.h"
 //#include "rand/dap_rand.h"
 
-void dap_enc_picnic_tests_run(void);
+void dap_enc_picnic_tests_run(int a_repeate);

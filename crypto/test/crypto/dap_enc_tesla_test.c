@@ -43,12 +43,13 @@ static void cleanup_test_case()
     dap_enc_key_deinit();
 }
 
-void dap_enc_tesla_tests_run()
+void dap_enc_tesla_tests_run(int a_repeate)
 {
     dap_print_module_name("dap_enc_tesla");
     init_test_case();
-
-    benchmark_mgs_time("Signing and verifying message 1 time", benchmark_test_time(test_signing_verifying, 1));
+    char l_msg[50] = {0};
+    sprintf(l_msg, "Signing and verifying message %d time", a_repeate);
+    benchmark_mgs_time(l_msg, benchmark_test_time(test_signing_verifying, a_repeate));
 
     cleanup_test_case();
 }
