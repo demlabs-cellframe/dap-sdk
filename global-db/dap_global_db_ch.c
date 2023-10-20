@@ -141,7 +141,7 @@ static bool s_process_single_record(dap_proc_thread_t UNUSED_ARG *a_thread, void
         dap_store_obj_free_one(l_obj);
         return false;
     }
-    dap_global_db_driver_hash_t l_obj_drv_hash = dap_store_obj_get_driver_hash(l_obj);
+    dap_global_db_driver_hash_t l_obj_drv_hash = dap_global_db_driver_hash_get(l_obj);
     if (dap_global_db_driver_is_hash(l_obj->group, &l_obj_drv_hash)) {
         debug_if(g_dap_global_db_debug_more, L_NOTICE, "Rejected duplicate object with group %s and key %s",
                                             l_obj->group, l_obj->key);

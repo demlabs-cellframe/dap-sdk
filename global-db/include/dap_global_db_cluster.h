@@ -68,11 +68,6 @@ typedef struct dap_global_db_cluster {
     struct dap_global_db_cluster *next;
 } dap_global_db_cluster_t;
 
-DAP_STATIC_INLINE dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *a_cluster, dap_stream_node_addr_t *a_node_addr, dap_global_db_role_t a_role)
-{
-    return dap_cluster_member_add(a_cluster->role_cluster, a_node_addr, a_role, NULL);
-}
-
 int dap_global_db_cluster_init();
 void dap_global_db_cluster_deinit();
 dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t *a_dbi, const char *a_group_name);
@@ -81,5 +76,6 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
                                                    const char *a_group_mask, uint32_t a_ttl, bool a_owner_root_access,
                                                    dap_store_obj_callback_notify_t a_callback, void *a_callback_arg,
                                                    dap_global_db_role_t a_default_role, dap_cluster_role_t a_links_cluster_role);
+dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *a_cluster, dap_stream_node_addr_t *a_node_addr, dap_global_db_role_t a_role);
 void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster);
 void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj);

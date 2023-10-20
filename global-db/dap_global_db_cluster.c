@@ -87,10 +87,9 @@ void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_sto
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_store_obj);
     union hash_convert {
         dap_hash_fast_t gossip_hash;
-        dap_global_db_hash_t gdb_hash;
+        dap_global_db_driver_hash_t gdb_hash;
     } l_hash_cvt = {};
-    l_hash_cvt.gdb_hash.timestamp = a_store_obj->timestamp;
-    l_hash_cvt.gdb_hash.crc = a_store_obj->crc;
+    l_hash_cvt.gdb_hash = dap_global_db_driver_hash_get(a_store_obj);
     dap_gossip_msg_issue(a_cluster->links_cluster, DAP_STREAM_CH_GDB_ID, l_pkt, dap_global_db_pkt_get_size(l_pkt), &l_hash_cvt.gossip_hash);
     DAP_DELETE(l_pkt);
 }
@@ -148,6 +147,15 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->dbi = a_dbi;
     DL_APPEND(a_dbi->clusters, l_cluster);
     return l_cluster;
+}
+
+dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *a_cluster, dap_stream_node_addr_t *a_node_addr, dap_global_db_role_t a_role)
+{
+    if (a_cluster->links_cluster &&
+            (a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
+             a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED))
+        dap_cluster_member_add(a_cluster->links_cluster, a_node_addr, a_role, NULL);
+    return dap_cluster_member_add(a_cluster->role_cluster, a_node_addr, a_role, NULL);
 }
 
 void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)

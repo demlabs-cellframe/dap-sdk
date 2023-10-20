@@ -1740,3 +1740,31 @@ dap_global_db_obj_t *s_objs_from_store_objs(const dap_store_obj_t *a_store_objs,
     DAP_DELETE(a_store_objs);
     return l_objs;
 }
+
+bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj)
+{
+    if (!a_obj)
+        return true;
+    bool ret = true;
+    for (char *c = (char*)a_obj->key; *c; ++c) {
+        if (!dap_ascii_isprint(*c)) {
+            ret = false;
+            break;
+        }
+    }
+
+    for (char *c = (char*)a_obj->group; *c; ++c) {
+        if (!dap_ascii_isprint(*c)) {
+            ret = false;
+            break;
+        }
+    }
+
+    if (!ret) {
+        char l_ts[128] = { '\0' };
+        dap_gbd_time_to_str_rfc822(l_ts, sizeof(l_ts), a_obj->timestamp);
+        log_it(L_MSG, "[!] Corrupted object %s (len %zu) : %s (len %zu), ts %s",
+               a_obj->group, dap_strlen(a_obj->group), a_obj->key, dap_strlen(a_obj->key), l_ts);
+    }
+    return ret;
+}

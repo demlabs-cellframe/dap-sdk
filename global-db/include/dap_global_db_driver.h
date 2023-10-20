@@ -66,17 +66,32 @@ typedef struct dap_store_obj {
     byte_t ext[];                   // For extra data transfer between sync callbacks
 } dap_store_obj_t;
 
-DAP_STATIC_INLINE dap_global_db_driver_hash_t dap_store_obj_get_driver_hash(dap_store_obj_t *a_obj)
+DAP_STATIC_INLINE dap_global_db_driver_hash_t dap_global_db_driver_hash_get(dap_store_obj_t *a_obj)
 {
     dap_global_db_driver_hash_t l_ret = {.bets = a_obj->timestamp, .becrc = a_obj->crc};
     return l_ret;
 }
 
+DAP_STATIC_INLINE int dap_global_db_driver_hash_compare(dap_global_db_driver_hash_t a_hash1, dap_global_db_driver_hash_t a_hash2)
+{
+    return memcmp(&a_hash1, &a_hash2, sizeof(dap_global_db_driver_hash_t));
+}
+
 DAP_STATIC_INLINE int dap_store_obj_driver_hash_compare(dap_store_obj_t *a_obj1, dap_store_obj_t *a_obj2)
 {
-    dap_global_db_driver_hash_t l_hash1 = dap_store_obj_get_driver_hash(a_obj1),
-                                l_hash2 = dap_store_obj_get_driver_hash(a_obj2);
-    return memcmp(&l_hash1, &l_hash2, sizeof(dap_global_db_driver_hash_t));
+    dap_global_db_driver_hash_t l_hash1 = dap_global_db_driver_hash_get(a_obj1),
+                                l_hash2 = dap_global_db_driver_hash_get(a_obj2);
+    return dap_global_db_driver_hash_compare(l_hash1, l_hash2);
+}
+
+DAP_STATIC_INLINE char *dap_global_db_driver_hash_print(dap_global_db_driver_hash_t a_hash)
+{
+    char *l_ret = DAP_NEW_Z_SIZE(char, sizeof(a_hash) * 2 + 3);
+    if (!l_ret)
+        return NULL;
+    strcpy(l_ret, "0x");
+    dap_bin2hex(l_ret + 2, &a_hash, sizeof(a_hash));
+    return l_ret;
 }
 
 // db type for iterator

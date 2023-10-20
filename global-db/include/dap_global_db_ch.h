@@ -60,7 +60,7 @@ typedef struct dap_stream_ch_gdb {
     enum dap_stream_ch_gdb_state state;
     uint64_t stats_request_gdb_processed;
 
-    dap_global_db_hash_t *remote_gdbs; // Remote gdbs
+    dap_global_db_driver_hash_t *remote_gdbs; // Remote gdbs
 
     //dap_stream_ch_chain_pkt_hdr_t request_hdr;
     //dap_list_t *request_db_iter;

@@ -50,11 +50,6 @@ typedef struct dap_global_db_pkt_pack {
     byte_t data[];
 } DAP_ALIGN_PACKED dap_global_db_pkt_pack_t;
 
-typedef struct dap_global_db_hash {
-    uint64_t timestamp;
-    uint32_t crc;
-} DAP_ALIGN_PACKED dap_global_db_hash_t;
-
 dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old_pkt, dap_global_db_pkt_t *a_new_pkt);
 dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj);
 dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count);
