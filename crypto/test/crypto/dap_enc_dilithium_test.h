@@ -3,4 +3,4 @@
 #include "dap_enc_key.h"
 #include "dap_test.h"
 
-void dap_enc_dilithium_tests_run(int a_repeate);
+void dap_enc_dilithium_tests_run(int a_times);

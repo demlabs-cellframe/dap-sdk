@@ -223,12 +223,15 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 // a - pointer to alloc
 // t - type return pointer
 // s - size to alloc
+// c - count element
 // val - return value if error
 // ... what need free if error, if nothing  write NULL
 #define DAP_NEW_Z_RET(a, t, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
 #define DAP_NEW_Z_RET_VAL(a, t, ret_val, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
 #define DAP_NEW_Z_SIZE_RET(a, t, s, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
 #define DAP_NEW_Z_SIZE_RET_VAL(a, t, s, ret_val, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
+#define DAP_NEW_Z_COUNT_RET(a, t, c, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
+#define DAP_NEW_Z_COUNT_RET_VAL(a, t, c, ret_val, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
 
 #define dap_return_if_fail(expr)            {if(!(expr)) {return;}}
 #define dap_return_val_if_fail(expr,val)    {if(!(expr)) {return (val);}}
