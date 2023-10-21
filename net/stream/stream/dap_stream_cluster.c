@@ -175,6 +175,25 @@ static void s_cluster_member_delete(dap_cluster_member_t *a_member)
     DAP_DELETE(a_member);
 }
 
+void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr)
+{
+    pthread_rwlock_rdlock(&s_clusters_rwlock);
+    for (dap_cluster_t *it = s_clusters; it; it = it->hh.next) {
+        // Check if cluster contains nonpersistent links
+        if (it->role == DAP_CLUSTER_ROLE_EMBEDDED) {
+            pthread_rwlock_wrlock(&it->members_lock);
+            dap_cluster_member_t *l_member = NULL;
+            HASH_FIND(hh, it->members, a_addr, sizeof(*a_addr), l_member);
+            if (l_member) {
+                HASH_DEL(it->members, l_member);
+                DAP_DELETE(l_member);
+            }
+            pthread_rwlock_unlock(&it->members_lock);
+        }
+    }
+    pthread_rwlock_unlock(&s_clusters_rwlock);
+}
+
 /**
  * @brief dap_cluster_member_find
  * @param a_cluster

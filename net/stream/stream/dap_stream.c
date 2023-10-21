@@ -1097,6 +1097,14 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
     return 0;
 }
 
+static bool s_callback_clusters_update(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+{
+    dap_stream_node_addr_t *l_addr = a_arg;
+    dap_cluster_link_delete_from_all(l_addr);
+    DAP_DELETE(a_arg);
+    return false;
+}
+
 void s_stream_delete_from_list(dap_stream_t *a_stream)
 {
     dap_return_if_fail(a_stream);
@@ -1106,9 +1114,18 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
         // It's an authorized stream, try to replace it in hastable
         HASH_DEL(s_streams, a_stream);
         dap_stream_t *l_stream;
-        DL_FOREACH(s_streams, l_stream)
-            if (l_stream->node.uint64 == a_stream->node.uint64)
+        bool l_replace_found = false;
+        DL_FOREACH(s_streams, l_stream) {
+            if (l_stream->node.uint64 == a_stream->node.uint64) {
                 s_stream_add_to_hashtable(l_stream);
+                l_replace_found = true;
+                break;
+            }
+        }
+        if (!l_replace_found) {
+            dap_stream_node_addr_t *l_addr_arg = DAP_DUP(&a_stream->node);
+            dap_proc_thread_callback_add(NULL, s_callback_clusters_update, l_addr_arg);
+        }
     }
     pthread_rwlock_unlock(&s_streams_lock);
 }
