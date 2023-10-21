@@ -520,7 +520,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
             case DESCRIPTOR_TYPE_SOCKET_UDP:
             case DESCRIPTOR_TYPE_SOCKET_LISTENING:
+#if DAP_OS_UNIX
             case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
+#endif
             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
             case DESCRIPTOR_TYPE_TIMER:
             case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL:
