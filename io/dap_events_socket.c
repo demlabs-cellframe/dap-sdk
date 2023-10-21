@@ -968,7 +968,7 @@ static void *s_dap_events_socket_buf_thread(void *arg)
         if (!s_wait_send_socket(l_sock, 0)) {
             pthread_rwlock_wrlock(&l_es->buf_out_lock);
             ssize_t l_write_ret = write(l_sock, l_es->buf_out, MIN(PIPE_BUF, l_es->buf_out_size));
-            if (!l_write_ret) {
+            if (l_write_ret == -1) {
                 switch (errno) {
                 case EAGAIN:
                     pthread_rwlock_unlock(&l_es->buf_out_lock);
@@ -984,7 +984,7 @@ static void *s_dap_events_socket_buf_thread(void *arg)
                 l_es->buf_out_size = 0;
                 pthread_rwlock_unlock(&l_es->buf_out_lock);
                 break;
-            } else {
+            } else if (l_write_ret) {
                 debug_if(g_debug_reactor, L_DEBUG, "[!] Sent %lu / %lu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
                 l_es->buf_out_size -= l_write_ret;
                 memmove(l_es->buf_out, l_es->buf_out + l_write_ret, l_es->buf_out_size);

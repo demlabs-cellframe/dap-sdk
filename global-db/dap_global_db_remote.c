@@ -310,7 +310,7 @@ static void *s_list_thread_proc(void *arg)
             if (!l_dap_db_log_list->is_process) {
                 dap_store_obj_free(l_objs, l_item_count);
                 return NULL;
-            }
+            }*/
             // go to next group
             if (!l_objs)
                 break;
