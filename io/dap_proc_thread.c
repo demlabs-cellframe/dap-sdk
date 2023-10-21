@@ -21,49 +21,21 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include <errno.h>
-
-#include "dap_events_socket.h"
-#include "dap_config.h"
-#include "dap_list.h"
+#include <pthread.h>
+#include <utlist.h>
+#include "dap_strfuncs.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
-#include "dap_server.h"
-
-#if defined(DAP_EVENTS_CAPS_EPOLL) && !defined(DAP_OS_WINDOWS)
-#include <sys/epoll.h>
-#elif defined DAP_OS_WINDOWS
-#include "wepoll.h"
-#elif defined (DAP_EVENTS_CAPS_POLL)
-#include <poll.h>
-#elif defined (DAP_EVENTS_CAPS_KQUEUE)
-
-#include <sys/event.h>
-#include <err.h>
-
-#ifndef DAP_OS_DARWIN
-#include <pthread_np.h>
-typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
-#else
-#define NOTE_READ NOTE_LOWAT
-#endif
-
-#ifndef MSG_NOSIGNAL
-#define MSG_NOSIGNAL SO_NOSIGPIPE
-#endif
-
-#else
-#error "Unimplemented poll for this platform"
-#endif
+#include "dap_context.h"
+#include "dap_timerfd.h"
 
 #define LOG_TAG "dap_proc_thread"
 
-static size_t s_threads_count = 0;
-static dap_proc_thread_t * s_threads = NULL;
+static uint32_t s_threads_count = 0;
+static dap_proc_thread_t *s_threads = NULL;
 
-static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags);
-
-static void s_context_callback_started( dap_context_t * a_context, void *a_arg);
-static void s_context_callback_stopped( dap_context_t * a_context, void *a_arg);
+static int s_context_callback_started(dap_context_t *a_context, void *a_arg);
+static int s_context_callback_stopped(dap_context_t *a_context, void *a_arg);
 
 /**
  * @brief dap_proc_thread_init
@@ -73,53 +45,31 @@ static void s_context_callback_stopped( dap_context_t * a_context, void *a_arg);
 
 int dap_proc_thread_init(uint32_t a_threads_count)
 {
-int l_ret = 0;
-
-    s_threads_count = a_threads_count ? a_threads_count : dap_get_cpu_count( );
-    s_threads = DAP_NEW_Z_SIZE(dap_proc_thread_t, sizeof (dap_proc_thread_t)* s_threads_count);
-
-    for (uint32_t i = 0; i < s_threads_count; i++ )
-    {
-        dap_proc_thread_t * l_thread = s_threads + i;
+    s_threads_count = a_threads_count ? a_threads_count : dap_get_cpu_count();
+    s_threads = DAP_NEW_Z_SIZE(dap_proc_thread_t, sizeof(dap_proc_thread_t) * s_threads_count);
+    for (uint32_t i = 0; i < s_threads_count; i++) {
+        dap_proc_thread_t *l_thread = s_threads + i;
         l_thread->context = dap_context_new(DAP_CONTEXT_TYPE_PROC_THREAD);
-        l_thread->context->proc_thread = l_thread;
-
-        if ((l_ret = dap_context_run(l_thread->context, i, DAP_CONTEXT_POLICY_TIMESHARING,
-                                     DAP_CONTEXT_PRIORITY_NORMAL, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED,
-                                     s_context_callback_started, s_context_callback_stopped, l_thread))) {
+        l_thread->context->_inheritor = l_thread;
+        int l_ret = dap_context_run(l_thread->context, i, DAP_CONTEXT_POLICY_TIMESHARING,
+                                    DAP_CONTEXT_PRIORITY_NORMAL, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED,
+                                    s_context_callback_started, s_context_callback_stopped, l_thread);
+        if (l_ret) {
             log_it(L_CRITICAL, "Create thread failed with code %d", l_ret);
             return l_ret;
         }
-
     }
-
-    return l_ret;
+    return 0;
 }
-
 
 /**
  * @brief dap_proc_thread_deinit
  */
 void dap_proc_thread_deinit()
 {
-    int l_rc = 0;
-    size_t l_sz = 0;
-    dap_proc_thread_t *l_proc_thread = NULL;
-
-    for (uint32_t i = s_threads_count; i--; ){
+    for (uint32_t i = s_threads_count; i--; )
         dap_context_stop_n_kill(s_threads[i].context);
-    }
-
-
-    // Signal to cancel working threads and wait for finish
-    // TODO: Android realization
-//#ifndef DAP_OS_ANDROID
-//    for (size_t i = 0; i < s_threads_count; i++ ){
-//        pthread_cancel(s_threads[i].thread_id);
-//        pthread_join(s_threads[i].thread_id, NULL);
-//    }
-//#endif
-
+    DAP_DEL_Z(s_threads);
 }
 
 /**
@@ -127,7 +77,7 @@ void dap_proc_thread_deinit()
  * @param a_cpu_id
  * @return
  */
-dap_proc_thread_t * dap_proc_thread_get(uint32_t a_cpu_id)
+dap_proc_thread_t *dap_proc_thread_get(uint32_t a_cpu_id)
 {
     return (a_cpu_id < s_threads_count) ? &s_threads[a_cpu_id] : NULL;
 }
@@ -136,139 +86,81 @@ dap_proc_thread_t * dap_proc_thread_get(uint32_t a_cpu_id)
  * @brief dap_proc_thread_get_auto
  * @return
  */
-dap_proc_thread_t * dap_proc_thread_get_auto()
+dap_proc_thread_t *dap_proc_thread_get_auto()
 {
-unsigned l_id_min = 0, l_size_min = UINT32_MAX, l_queue_size;
-
-    for (size_t i = 0; i < s_threads_count; i++ )
-    {
-        l_queue_size = atomic_load(&s_threads[i].proc_queue_size);
-
-        if( l_queue_size < l_size_min ){
-            l_size_min = l_queue_size;
-            l_id_min = i;
+    uint32_t l_id_start = rand() % s_threads_count,
+             l_id_min = l_id_start,
+             l_size_min = UINT32_MAX;
+    for (uint32_t i = l_id_start; i < s_threads_count + l_id_start; i++) {
+        uint32_t l_id_cur = i < s_threads_count ? i : i - s_threads_count;
+        if (s_threads[l_id_cur].proc_queue_size < l_size_min) {
+            l_size_min = s_threads[l_id_cur].proc_queue_size;
+            l_id_min = l_id_cur;
+            if (!l_size_min)
+                break;
         }
     }
-
     return &s_threads[l_id_min];
 }
 
-/**
- * @brief s_proc_event_callback - get from queue next element and execute action routine,
- *  repeat execution depending on status is returned by action routine.
- *
- * @param a_esocket
- * @param a_value
- *
- */
-static void s_proc_event_callback(dap_events_socket_t * a_esocket, uint64_t __attribute__((unused))  a_value)
+int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback,
+                                     void *a_callback_arg, dap_queue_msg_priority_t a_priority)
 {
-    dap_proc_thread_t   *l_thread;
-    dap_proc_queue_item_t *l_item;
-    int     //l_rc,
-            l_is_anybody_in_queue, l_is_finished, l_iter_cnt, l_cur_pri,
-            l_is_processed;
-    //size_t  l_size;
-    dap_proc_queue_t    *l_queue;
-
-    debug_if (g_debug_reactor, L_DEBUG, "--> Proc event callback start, a_esocket:%p ", a_esocket);
-
-    if ( !(l_thread = (dap_proc_thread_t *) a_esocket->_inheritor) )
-        {
-        log_it(L_ERROR, "NULL <dap_proc_thread_t> context is detected");
-        return;
-        }
-
-    l_iter_cnt = l_is_anybody_in_queue = 0;
-    /*@RRL:  l_iter_cnt = DAP_QUE$K_ITER_NR; */
-    l_queue = l_thread->proc_queue;
-
-    struct timespec l_time_start, l_time_end;
-    clock_gettime(CLOCK_REALTIME, &l_time_start);
-    do {
-        l_is_processed = 0;
-        for (l_cur_pri = (DAP_PROC_PRI_MAX - 1); l_cur_pri; l_iter_cnt++ )                          /* Run from higest to lowest ... */
-        {
-            if (!dap_list_length(l_queue->list[l_cur_pri].items)) {
-                l_cur_pri--;
-                continue;
-            }
-
-            clock_gettime(CLOCK_REALTIME, &l_time_end);
-            if (l_time_end.tv_sec > l_time_start.tv_sec)
-                break;
-
-//            pthread_mutex_lock(&l_queue->list[l_cur_pri].lock);                 /* Protect list from other threads */
-            dap_list_t *l_item_elem = l_queue->list[l_cur_pri].items;
-            l_item = (dap_proc_queue_item_t*)l_item_elem->data;
-            l_queue->list[l_cur_pri].items = dap_list_delete_link(l_queue->list[l_cur_pri].items, l_item_elem);
-//            pthread_mutex_unlock(&l_queue->list[l_cur_pri].lock);
-
-            debug_if (g_debug_reactor, L_INFO, "Proc event callback (l_item: %p) : %p/%p, prio=%d, iteration=%d",
-                           l_item, l_item->callback, l_item->callback_arg, l_cur_pri, l_iter_cnt);
-
-            l_is_processed += 1;
-            l_is_finished = l_item->callback(l_thread, l_item->callback_arg);
-
-            debug_if (g_debug_reactor, L_INFO, "Proc event callback: %p/%p, prio=%d, iteration=%d - is %sfinished",
-                               l_item->callback, l_item->callback_arg, l_cur_pri, l_iter_cnt, l_is_finished ? "" : "not ");
-
-            if ( !(l_is_finished) ) {
-                pthread_mutex_lock(&l_queue->list[l_cur_pri].lock);
-                l_queue->list[l_cur_pri].items = dap_list_append(l_queue->list[l_cur_pri].items, l_item);
-                pthread_mutex_unlock(&l_queue->list[l_cur_pri].lock);
-            }
-            else    {
-                DAP_DEL_Z(l_item);
-            }
-        }
-    } while ( l_is_processed );
-
-
-    for (l_cur_pri = (DAP_PROC_PRI_MAX - 1); l_cur_pri; l_cur_pri--)
-        l_is_anybody_in_queue += dap_list_length(l_queue->list[l_cur_pri].items);
-
-    if ( l_is_anybody_in_queue )                                          /* Arm event if we have something to proc again */
-        dap_events_socket_event_signal(a_esocket, 1);
-
-    debug_if(g_debug_reactor, L_DEBUG, "<-- Proc event callback end, items rest: %d, iterations: %d", l_is_anybody_in_queue, l_iter_cnt);
+    dap_return_val_if_fail(a_callback && a_priority >= DAP_QUEUE_MSG_PRIORITY_MIN && a_priority <= DAP_QUEUE_MSG_PRIORITY_MAX, -1);
+    dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
+    dap_proc_queue_item_t *l_item = DAP_NEW_Z(dap_proc_queue_item_t);
+    if (!l_item) {
+        log_it(L_CRITICAL, "Insufficient memory");
+        return -2;
+    }
+    *l_item = (dap_proc_queue_item_t){ .callback = a_callback,
+                                       .callback_arg = a_callback_arg };
+    pthread_mutex_lock(&l_thread->queue_lock);
+    DL_APPEND(l_thread->queue[a_priority], l_item);
+    l_thread->proc_queue_size++;
+    pthread_cond_signal(&l_thread->queue_event);
+    pthread_mutex_unlock(&l_thread->queue_lock);
+    return 0;
 }
 
-
-/**
- * @brief dap_proc_thread_assign_esocket_unsafe
- * @param a_thread
- * @param a_esocket
- * @return
- */
-int dap_proc_thread_assign_esocket_unsafe(dap_proc_thread_t * a_thread, dap_events_socket_t * a_esocket)
+static dap_proc_queue_item_t *s_proc_queue_pull(dap_proc_thread_t *a_thread, int *a_priority)
 {
-    assert(a_esocket);
-    assert(a_thread);
-    a_esocket->proc_thread = a_thread;
-    int l_ret = dap_context_add(a_thread->context, a_esocket);
-    if (l_ret)
-        log_it(L_CRITICAL,"Can't add event socket's handler to worker i/o poll mechanism with error %d", errno);
-    a_esocket->is_initalized = true;
-    return l_ret;
-}
-
-
-
-/**
- * @brief dap_proc_thread_create_queue_ptr
- * @details Call this function as others only from safe situation, or, thats better, from a_thread's context
- * @param a_thread
- * @param a_callback
- * @return
- */
-dap_events_socket_t * dap_proc_thread_create_queue_ptr(dap_proc_thread_t * a_thread, dap_events_socket_callback_queue_ptr_t a_callback)
-{
-    dap_events_socket_t * l_es = dap_context_create_queue(a_thread->context,a_callback);
-    if(l_es == NULL)
+    if (!a_thread->proc_queue_size)
         return NULL;
-    l_es->proc_thread = a_thread;
-    return l_es;
+    dap_proc_queue_item_t *l_item = NULL;
+    int i = DAP_QUEUE_MSG_PRIORITY_MAX;
+    for (; !l_item && i >= 0; i--)
+        if ((l_item = a_thread->queue[i]))
+            break;
+    if (l_item) {
+        DL_DELETE(a_thread->queue[i], l_item);
+        a_thread->proc_queue_size--;
+        if (a_priority)
+            *a_priority = i;
+    } else
+        log_it(L_ERROR, "No item found in all piority levels of"
+                        " message queue with size %"DAP_UINT64_FORMAT_U,
+                                                 a_thread->proc_queue_size);
+    return l_item;
+}
+
+int dap_proc_thread_loop(dap_context_t *a_context)
+{
+    dap_proc_thread_t *l_thread = DAP_PROC_THREAD(a_context);
+    do {
+        pthread_mutex_lock(&l_thread->queue_lock);
+        dap_proc_queue_item_t *l_item = NULL;
+        int l_item_priority = 0;
+        while (!a_context->signal_exit &&
+               !(l_item = s_proc_queue_pull(l_thread, &l_item_priority)))
+            pthread_cond_wait(&l_thread->queue_event, &l_thread->queue_lock);
+        pthread_mutex_unlock(&l_thread->queue_lock);
+        if (!a_context->signal_exit &&
+                l_item->callback(l_thread, l_item->callback_arg))
+            dap_proc_thread_callback_add_pri(l_thread, l_item->callback, l_item->callback_arg, l_item_priority);
+        DAP_DEL_Z(l_item);
+    } while (!a_context->signal_exit);
+    return 0;
 }
 
 /**
@@ -276,46 +168,17 @@ dap_events_socket_t * dap_proc_thread_create_queue_ptr(dap_proc_thread_t * a_thr
  * @param a_context
  * @param a_arg
  */
-static void s_context_callback_started( dap_context_t * a_context, void *a_arg)
+static int s_context_callback_started(dap_context_t UNUSED_ARG *a_context, void *a_arg)
 {
-    dap_proc_thread_t * l_thread = (dap_proc_thread_t*) a_arg;
+    dap_proc_thread_t *l_thread = a_arg;
     assert(l_thread);
-    l_thread->proc_queue = dap_proc_queue_create(l_thread);
-
+    pthread_mutex_init(&l_thread->queue_lock, NULL);
+    pthread_cond_init(&l_thread->queue_event, NULL);
     // Init proc_queue for related worker
     dap_worker_t * l_worker_related = dap_events_worker_get(l_thread->context->cpu_id);
     assert(l_worker_related);
-
-    l_worker_related->proc_queue = l_thread->proc_queue;
-    l_worker_related->proc_queue_input = dap_events_socket_queue_ptr_create_input(l_worker_related->proc_queue->esocket);
-
-    dap_events_socket_assign_on_worker_mt(l_worker_related->proc_queue_input,l_worker_related);
-
-    l_thread->proc_event = dap_context_create_event( a_context , s_proc_event_callback);
-    l_thread->proc_event->proc_thread = l_thread;
-
-    l_thread->proc_event->_inheritor = l_thread; // we pass thread through it
-
-    size_t l_workers_count= dap_events_thread_get_count();
-    assert(l_workers_count);
-    l_thread->queue_assign_input = DAP_NEW_Z_SIZE(dap_events_socket_t*, sizeof (dap_events_socket_t*)*l_workers_count  );
-    l_thread->queue_io_input = DAP_NEW_Z_SIZE(dap_events_socket_t*, sizeof (dap_events_socket_t*)*l_workers_count  );
-    l_thread->queue_callback_input = DAP_NEW_Z_SIZE(dap_events_socket_t*, sizeof (dap_events_socket_t*)*l_workers_count  );
-
-    assert(l_thread->queue_assign_input);
-    assert(l_thread->queue_io_input);
-    for (size_t n = 0; n < l_workers_count; n++) {
-        dap_worker_t *l_worker = dap_events_worker_get(n);
-        // Queue assign
-        l_thread->queue_assign_input[n] = dap_events_socket_queue_ptr_create_input(l_worker->queue_es_new);
-        dap_proc_thread_assign_esocket_unsafe(l_thread, l_thread->queue_assign_input[n]);
-        // Queue IO
-        l_thread->queue_io_input[n] = dap_events_socket_queue_ptr_create_input(l_worker->queue_es_io);
-        dap_proc_thread_assign_esocket_unsafe(l_thread, l_thread->queue_io_input[n]);
-        // Queue callback
-        l_thread->queue_callback_input[n] = dap_events_socket_queue_ptr_create_input(l_worker->queue_callback);
-        dap_proc_thread_assign_esocket_unsafe(l_thread, l_thread->queue_callback_input[n]);
-    }
+    l_worker_related->proc_queue_input = l_thread;
+    return 0;
 }
 
 /**
@@ -323,106 +186,47 @@ static void s_context_callback_started( dap_context_t * a_context, void *a_arg)
  * @param a_context
  * @param a_arg
  */
-static void s_context_callback_stopped( dap_context_t * a_context, void *a_arg)
+static int s_context_callback_stopped(dap_context_t UNUSED_ARG *a_context, void *a_arg)
 {
-    dap_proc_thread_t * l_thread = (dap_proc_thread_t*) a_arg;
+    dap_proc_thread_t *l_thread = a_arg;
     assert(l_thread);
     log_it(L_ATT, "Stop processing thread #%u", l_thread->context->cpu_id);
-    // cleanip inputs
-    for (size_t n=0; n<dap_events_thread_get_count(); n++){
-        dap_events_socket_delete_unsafe(l_thread->queue_assign_input[n], false);
-        dap_events_socket_delete_unsafe(l_thread->queue_io_input[n], false);
-        dap_events_socket_delete_unsafe(l_thread->queue_callback_input[n], false);
-    }
+    // cleanup queue
+    pthread_mutex_lock(&l_thread->queue_lock);
+    while (l_thread->proc_queue_size)
+        if (!s_proc_queue_pull(l_thread, NULL))
+            break;
+    pthread_cond_destroy(&l_thread->queue_event);
+    pthread_mutex_unlock(&l_thread->queue_lock);
+    pthread_mutex_destroy(&l_thread->queue_lock);
+    return 0;
 }
 
+struct timer_arg {
+    dap_proc_thread_t *thread;
+    dap_proc_queue_callback_t callback;
+    void *callback_arg;
+    dap_queue_msg_priority_t priority;
+};
 
-/**
- * @brief dap_proc_thread_assign_on_worker_inter
- * @param a_thread
- * @param a_worker
- * @param a_esocket
- * @return
- */
-bool dap_proc_thread_assign_on_worker_inter(dap_proc_thread_t * a_thread, dap_worker_t * a_worker, dap_events_socket_t *a_esocket  )
+static bool s_timer_callback(void *a_arg)
 {
-    dap_events_socket_t * l_es_assign_input = a_thread->queue_assign_input[a_worker->id];
-    if(g_debug_reactor)
-        log_it(L_DEBUG,"Remove esocket %p from proc thread and send it to worker #%u",a_esocket, a_worker->id);
-    dap_events_socket_assign_on_worker_inter(l_es_assign_input, a_esocket);
+    struct timer_arg *l_arg = a_arg;
+    dap_proc_thread_callback_add_pri(l_arg->thread, l_arg->callback, l_arg->callback_arg, l_arg->priority);
+    // Repeat after exit
     return true;
 }
 
-/**
- * @brief dap_proc_thread_esocket_write_inter
- * @param a_thread
- * @param a_worker
- * @param a_es_uuid
- * @param a_data
- * @param a_data_size
- * @return
- */
-int dap_proc_thread_esocket_write_inter(dap_proc_thread_t * a_thread,dap_worker_t * a_worker,   dap_events_socket_uuid_t a_es_uuid,
-                                        const void * a_data, size_t a_data_size)
+int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, dap_queue_msg_priority_t a_priority)
 {
-    dap_events_socket_t * l_es_io_input = a_thread->queue_io_input[a_worker->id];
-    dap_events_socket_write_inter(l_es_io_input,a_es_uuid, a_data, a_data_size);
+    dap_return_val_if_fail(a_thread && a_thread->context && a_callback && a_timeout_ms, -1);
+    dap_worker_t *l_worker = dap_events_worker_get(a_thread->context->id);
+    if (!l_worker) {
+        log_it(L_CRITICAL, "Unexistent worker with ID corresonding to specified procedures thread ID %u", a_thread->context->id);
+        return -2;
+    }
+    struct timer_arg *l_timer_arg = DAP_NEW_Z(struct timer_arg);
+    *l_timer_arg = (struct timer_arg){ .thread = a_thread, .callback = a_callback, .callback_arg = a_callback_arg, .priority = a_priority };
+    dap_timerfd_start_on_worker(l_worker, a_timeout_ms, s_timer_callback, l_timer_arg);
     return 0;
-}
-
-
-/**
- * @brief dap_proc_thread_esocket_write_f_inter
- * @param a_thread
- * @param a_worker
- * @param a_es_uuid,
- * @param a_format
- * @return
- */
-int dap_proc_thread_esocket_write_f_inter(dap_proc_thread_t * a_thread,dap_worker_t * a_worker,  dap_events_socket_uuid_t a_es_uuid,
-                                        const char * a_format,...)
-{
-    va_list ap, ap_copy;
-    va_start(ap,a_format);
-    va_copy(ap_copy, ap);
-    int l_data_size = vsnprintf(NULL,0,a_format,ap);
-    va_end(ap);
-    if (l_data_size <0 ){
-        log_it(L_ERROR,"Can't write out formatted data '%s' with values",a_format);
-        va_end(ap_copy);
-        return 0;
-    }
-    l_data_size++; // include trailing 0
-    dap_events_socket_t * l_es_io_input = a_thread->queue_io_input[a_worker->id];
-    char * l_data = DAP_NEW_SIZE(char, l_data_size);
-    if (!l_data){
-        va_end(ap_copy);
-        return -1;
-    }
-    l_data_size = vsprintf(l_data,a_format,ap_copy);
-    va_end(ap_copy);
-
-    dap_events_socket_write_inter(l_es_io_input, a_es_uuid, l_data, l_data_size);
-    DAP_DELETE(l_data);
-    return 0;
-}
-
-/**
- * @brief dap_proc_thread_worker_exec_callback
- * @param a_thread
- * @param a_worker_id
- * @param a_callback
- * @param a_arg
- */
-void dap_proc_thread_worker_exec_callback_inter(dap_proc_thread_t * a_thread, size_t a_worker_id, dap_worker_callback_t a_callback, void * a_arg)
-{
-    dap_worker_msg_callback_t *l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
-    if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return;
-    }
-    l_msg->callback = a_callback;
-    l_msg->arg = a_arg;
-    debug_if(g_debug_reactor, L_INFO, "Msg with arg %p -> worker %zu", a_arg, a_worker_id);
-    dap_events_socket_queue_ptr_send_to_input(a_thread->queue_callback_input[a_worker_id], l_msg);
 }

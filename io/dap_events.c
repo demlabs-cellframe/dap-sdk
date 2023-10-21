@@ -307,8 +307,7 @@ int dap_events_start()
 
         l_worker->id = i;
         l_worker->context = dap_context_new(DAP_CONTEXT_TYPE_WORKER);
-        l_worker->context->worker = l_worker;
-
+        l_worker->context->_inheritor = l_worker;
 
         s_workers[i] = l_worker;
 

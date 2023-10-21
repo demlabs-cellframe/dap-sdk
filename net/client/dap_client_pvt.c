@@ -43,7 +43,7 @@
 #include "dap_strfuncs.h"
 #include "dap_cert.h"
 #include "dap_uuid.h"
-
+#include "dap_context.h"
 #include "dap_timerfd.h"
 #include "dap_client_pvt.h"
 #include "dap_server.h"
@@ -211,7 +211,7 @@ static void s_stream_connected(dap_client_pvt_t * a_client_pvt)
 
     *l_es_uuid_ptr = a_client_pvt->stream_es->uuid;
 
-    if( dap_timerfd_start_on_worker(a_client_pvt->stream_es->context->worker,
+    if( dap_timerfd_start_on_worker(a_client_pvt->stream_es->worker,
                                     s_client_timeout_active_after_connect_seconds * 1024,
                                     s_stream_timer_timeout_after_connected_check,
                                     l_es_uuid_ptr) == NULL) {
@@ -506,7 +506,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->stream_es->_inheritor = a_client_pvt->client;
                     a_client_pvt->stream = dap_stream_new_es_client(a_client_pvt->stream_es);
                     assert(a_client_pvt->stream);
-                    a_client_pvt->stream->is_client_to_uplink = true;
                     a_client_pvt->stream->session = dap_stream_session_pure_new(); // may be from in packet?
 
                     // new added, whether it is necessary?
@@ -516,7 +515,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
 
                     // connect
                     memset(&a_client_pvt->stream_es->remote_addr, 0, sizeof(a_client_pvt->stream_es->remote_addr));
-                    memset(a_client_pvt->stream_es->remote_addr_str6, 0, sizeof(a_client_pvt->stream_es->remote_addr_str6));
                     a_client_pvt->stream_es->remote_addr.sin_family = AF_INET;
                     a_client_pvt->stream_es->remote_addr.sin_port = htons(a_client_pvt->client->uplink_port);
                     if(inet_pton(AF_INET, a_client_pvt->client->uplink_addr, &(a_client_pvt->stream_es->remote_addr.sin_addr)) < 0) {
@@ -1054,7 +1052,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             }
             size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_sign, DAP_ENC_DATA_TYPE_B64);
             if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
-                dap_stream_add_addr(dap_stream_get_addr_from_sign(l_sign), l_client_pvt->session_key);
+                dap_stream_add_addr(dap_stream_node_addr_from_sign(l_sign), l_client_pvt->session_key);
             } else {
                 log_it(L_WARNING, "ENC: Invalid node sign");
             }
@@ -1361,8 +1359,6 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
     }
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
     l_client_pvt->stream->esocket = NULL; // Prevent to delete twice
-    if (l_client_pvt->stream && l_client_pvt->stream->node.uint64)
-        dap_stream_delete_addr(l_client_pvt->stream->node, false);
     s_stage_status_after(l_client_pvt);
     a_es->_inheritor = NULL; // To prevent delete in reactor
 }

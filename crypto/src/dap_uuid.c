@@ -67,7 +67,6 @@ uint128_t dap_uuid_generate_uint128()
  */
 uint64_t dap_uuid_generate_uint64()
 {
-    uint32_t l_ts = (uint32_t) time(NULL);
     uint16_t l_input[4] = {
         [0] = dap_random_uint16(),
         [1] = time(NULL) & UINT16_MAX,      /*  time(NULL) % UINT16_MAX */
