@@ -692,7 +692,7 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
     if (l_values_count > 1)
         qsort(l_objs, l_values_count, sizeof(dap_global_db_obj_t), s_db_compare_by_ts);
     if (a_objs_count)
-        *a_objs_count = i;
+        *a_objs_count = l_values_count;
     return l_objs;
 }
 
