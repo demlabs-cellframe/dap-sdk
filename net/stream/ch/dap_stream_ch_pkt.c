@@ -191,7 +191,7 @@ size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch
         l_msg->data = DAP_DUP_SIZE(a_data, a_data_size);
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
     l_msg->data_size = a_data_size;
-    memcpy( l_msg->data, a_data, a_data_size);
+
     int l_ret= dap_events_socket_queue_ptr_send(a_worker->queue_ch_io , l_msg );
     if (l_ret!=0){
         log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
@@ -202,6 +202,33 @@ size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch
     return a_data_size;
 }
 
+size_t dap_stream_ch_pkt_send_mt(dap_stream_worker_t *a_worker, dap_events_socket_uuid_t a_uuid, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
+{
+    if (!a_worker || !a_data) {
+        log_it(L_ERROR, "Arguments is NULL for dap_stream_ch_pkt_write_mt");
+        return 0;
+    }
+    dap_stream_worker_msg_send_t *l_msg = DAP_NEW_Z(dap_stream_worker_msg_send_t);
+    if (!l_msg) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return 0;
+    }
+    l_msg->uuid = a_uuid;
+    l_msg->ch_pkt_type = a_type;
+    l_msg->ch_id = a_ch_id;
+    if (a_data && a_data_size)
+        l_msg->data = DAP_DUP_SIZE(a_data, a_data_size);
+    l_msg->data_size = a_data_size;
+
+    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_ch_send, l_msg);
+    if (l_ret) {
+        log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
+        DAP_DEL_Z(l_msg->data);
+        DAP_DELETE(l_msg);
+        return 0;
+    }
+    return a_data_size;
+}
 
 /**
  * @brief dap_stream_ch_pkt_write_inter

@@ -39,6 +39,7 @@
 #include "dap_worker.h"
 #include "dap_events_socket.h"
 #include "dap_timerfd.h"
+#include "dap_context.h"
 
 #define LOG_TAG "dap_timerfd"
 static void s_es_callback_timer(struct dap_events_socket *a_event_sock);
@@ -330,16 +331,6 @@ void dap_timerfd_reset_mt(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uui
         return;
     dap_events_socket_uuid_t *l_uuid = DAP_DUP(&a_uuid);
     dap_worker_exec_callback_on(a_worker, s_timerfd_reset_worker_callback, l_uuid);
-}
-
-
-void dap_timerfd_reset_proc_thread_mt(dap_proc_thread_t *a_proc_thread, dap_events_socket_uuid_t *a_uuid)
-{
-    if (!a_proc_thread || !a_uuid)
-        return;
-    dap_events_socket_uuid_t *l_uuid = DAP_DUP(a_uuid);
-    dap_proc_queue_add_callback_mt(a_proc_thread, s_timerfd_reset_proc_thread_callback,
-                                   l_uuid, DAP_PROC_PRI_NORMAL);
 }
 
 /**

@@ -53,7 +53,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_http_simple.h"
 #include "dap_enc_key.h"
 #include "dap_http_user_agent.h"
-
+#include "dap_context.h"
 
 #include "../enc_server/include/dap_enc_ks.h"
 #include "../enc_server/include/dap_enc_http.h"
@@ -243,10 +243,10 @@ static void s_esocket_worker_write_callback(dap_worker_t *a_worker, void *a_arg)
     dap_http_client_write(l_es, NULL);
 }
 
-inline static void s_write_data_to_socket(dap_proc_thread_t *a_thread, dap_http_simple_t *a_simple)
+inline static void s_write_data_to_socket(UNUSED_ARG dap_proc_thread_t *a_thread, dap_http_simple_t *a_simple)
 {
     a_simple->http_client->state_write = DAP_HTTP_CLIENT_STATE_START;
-    dap_proc_thread_worker_exec_callback_inter(a_thread, a_simple->worker->id, s_esocket_worker_write_callback, a_simple);
+    dap_worker_exec_callback_on(dap_events_worker_get(a_simple->worker->id), s_esocket_worker_write_callback, a_simple);
 }
 
 static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg) {
@@ -319,19 +319,17 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
  * @brief dap_http_simple_proc Execute procession callback and switch to write state
  * @param cl_sh HTTP simple client instance
  */
-static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void * a_arg )
+static bool s_proc_queue_callback(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
 {
-    (void) a_thread;
      dap_http_simple_t *l_http_simple = (dap_http_simple_t*) a_arg;
     log_it(L_DEBUG, "dap http simple proc");
-//  Sleep(300);
     if (!l_http_simple->http_client) {
         log_it(L_ERROR, "[!] HTTP client is already deleted!");
-        return true;
+        return false;
     }
     if (!l_http_simple->reply_byte) {
         log_it(L_ERROR, "[!] HTTP client is corrupted!");
-        return true;
+        return false;
     }
     http_status_code_t return_code = (http_status_code_t)0;
 
@@ -344,7 +342,7 @@ static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void * a_arg )
             const char l_error_msg[] = "Not found User-Agent HTTP header";
             s_write_response_bad_request(l_http_simple, l_error_msg);
             s_write_data_to_socket(a_thread, l_http_simple);
-            return true;
+            return false;
         }
 
         if (l_header && s_is_user_agent_supported(l_header->value) == false) {
@@ -352,7 +350,7 @@ static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void * a_arg )
             const char *l_error_msg = "User-Agent version not supported. Update your software";
             s_write_response_bad_request(l_http_simple, l_error_msg);
             s_write_data_to_socket(a_thread, l_http_simple);
-            return true;
+            return false;
         }
     }
 
@@ -367,7 +365,7 @@ static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void * a_arg )
         l_http_simple->http_client->reply_status_code = Http_Status_InternalServerError;
     }
     s_write_data_to_socket(a_thread, l_http_simple);
-    return true;
+    return false;
 }
 
 static void s_http_client_delete( dap_http_client_t *a_http_client, void *arg )
@@ -396,7 +394,7 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void *
     l_http_simple->esocket = a_http_client->esocket;
     l_http_simple->esocket_uuid = a_http_client->esocket->uuid;
     l_http_simple->http_client = a_http_client;
-    l_http_simple->worker = a_http_client->esocket->context->worker;
+    l_http_simple->worker = a_http_client->esocket->worker;
     l_http_simple->reply_size_max = DAP_HTTP_SIMPLE_URL_PROC( a_http_client->proc )->reply_size_max;
     l_http_simple->reply_byte = DAP_NEW_Z_SIZE(uint8_t, DAP_HTTP_SIMPLE(a_http_client)->reply_size_max );
 
@@ -424,7 +422,7 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void *
         log_it( L_DEBUG, "No data section, execution proc callback" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         a_http_client->esocket->_inheritor = NULL;
-        dap_proc_queue_add_callback_inter(l_http_simple->worker->proc_queue_input, s_proc_queue_callback, l_http_simple);
+        dap_proc_thread_callback_add_pri(l_http_simple->worker->proc_queue_input, s_proc_queue_callback, l_http_simple, DAP_QUEUE_MSG_PRIORITY_HIGH);
 
     }
 }
@@ -467,7 +465,7 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
         log_it( L_INFO,"Data for http_simple_request collected" );
         dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
         a_http_client->esocket->_inheritor = NULL;
-        dap_proc_queue_add_callback_inter( l_http_simple->worker->proc_queue_input , s_proc_queue_callback, l_http_simple);
+        dap_proc_thread_callback_add( l_http_simple->worker->proc_queue_input , s_proc_queue_callback, l_http_simple);
     }
 }
 
