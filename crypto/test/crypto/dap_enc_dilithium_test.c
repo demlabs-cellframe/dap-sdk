@@ -5,42 +5,54 @@
 
 #define LOG_TAG "dap_crypto_tests"
 
-static void test_signing_verifying(void)
+static void test_signing_verifying(int a_times, int *a_sig_time, int *a_verify_time)
 {
-    static size_t source_size = 0;
+
     size_t seed_size = sizeof(uint8_t);
     uint8_t seed[seed_size];
-
-    randombytes(seed, seed_size);
-
-    dap_enc_key_t* key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, NULL, 0, seed, seed_size, 0);
-
+    uint8_t **l_signs = NULL;
+    uint8_t **l_source = NULL;
+    dap_enc_key_t **l_keys = NULL;
+    size_t l_source_size[a_times];
     size_t max_signature_size = dap_enc_dilithium_calc_signature_unserialized_size();
-    uint8_t* sig = calloc(max_signature_size, 1);
 
-    int step = 1 + random_uint32_t( 20);
-    source_size += (size_t) step;
+    DAP_NEW_Z_COUNT_RET(l_signs, uint8_t*, a_times, NULL);
+    DAP_NEW_Z_COUNT_RET(l_source, uint8_t*, a_times, NULL);
+    DAP_NEW_Z_COUNT_RET(l_keys, dap_enc_key_t*, a_times, NULL);
 
-    uint8_t source[source_size];
-    randombytes(source, source_size);
+    int l_t1 = get_cur_time_msec();
 
-    int l_signed = key->sign_get(key, source, source_size, sig, max_signature_size);
-    dap_assert_PIF(!l_signed, "Signing message");
+    for (int i = 0; i < a_times; ++i) {
+        randombytes(seed, seed_size);
 
-    int l_verified = key->sign_verify(key, source, source_size, sig, max_signature_size);
-    dap_assert_PIF(!l_verified, "Verifying signature");
+        l_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, NULL, 0, seed, seed_size, 0);
+        DAP_NEW_Z_SIZE_RET(l_signs[i], uint8_t, max_signature_size, NULL);
 
-    dilithium_signature_delete((dilithium_signature_t*)sig);
-    free(sig);
-    dap_enc_key_delete(key);
+        l_source_size[i] = 1 + random_uint32_t(20);
+        DAP_NEW_Z_SIZE_RET(l_source[i], uint8_t, l_source_size[i], NULL);
+        randombytes(l_source[i], l_source_size[i]);
+
+        int l_signed = l_keys[i]->sign_get(l_keys[i], l_source[i], l_source_size[i], l_signs[i], max_signature_size);
+        dap_assert_PIF(!l_signed, "Signing message");
+    }
+
+    int l_t2 = get_cur_time_msec();
+    *a_sig_time = l_t2 - l_t1;
+
+    l_t1 = get_cur_time_msec();
+    for(int i = 0; i < a_times; ++i) {
+        int l_verified = l_keys[i]->sign_verify(l_keys[i], l_source[i], l_source_size[i], l_signs[i], max_signature_size);
+        dap_assert_PIF(!l_verified, "Verifying signature");
+        dap_enc_key_delete(l_keys[i]);
+        dilithium_signature_delete((dilithium_signature_t*)l_signs[i]);
+        free(l_signs[i]);
+    }
+    l_t2 = get_cur_time_msec();
+    *a_verify_time = l_t2 - l_t1;
+    DAP_DEL_MULTY(l_signs, l_source, l_keys);
 }
 
-static void test_verifying_serial(dap_sign_t **l_signs, int a_times)
-{
-
-}
-
-static void test_signing_serial(int a_times, int *a_sig_time, int *a_verify_time)
+static void test_signing_verifying_serial(int a_times, int *a_sig_time, int *a_verify_time)
 {
     size_t seed_size = sizeof(uint8_t);
     uint8_t seed[seed_size];
@@ -74,11 +86,12 @@ static void test_signing_serial(int a_times, int *a_sig_time, int *a_verify_time
     for(int i = 0; i < a_times; ++i) {
         int verify = dap_sign_verify(l_signs[i], l_source[i], l_source_size[i]);
         dap_assert_PIF(!verify, "Deserialize and verifying signature");
-
         free(l_signs[i]);
     }
     l_t2 = get_cur_time_msec();
     *a_verify_time = l_t2 - l_t1;
+
+    DAP_DEL_MULTY(l_signs, l_source);
 }
 
 static void init_test_case()
@@ -100,12 +113,18 @@ void dap_enc_dilithium_tests_run(int a_times)
     int l_sig_time = 0;
     int l_verify_time = 0;
 
-    test_signing_serial(a_times, &l_sig_time, &l_verify_time);
+    test_signing_verifying(a_times, &l_sig_time, &l_verify_time);
 
-    char l_msg[50] = {0};
-    sprintf(l_msg, "Signing and verifying message %d time", a_times);
+    char l_msg[120] = {0};
+    sprintf(l_msg, "Signing message %d times", a_times);
     benchmark_mgs_time(l_msg, l_sig_time);
-    sprintf(l_msg, "Signing and verifying message with serialization %d time", a_times);
+    sprintf(l_msg, "Verifying message %d times", a_times);
+    benchmark_mgs_time(l_msg, l_verify_time);
+
+    test_signing_verifying_serial(a_times, &l_sig_time, &l_verify_time);
+    sprintf(l_msg, "Signing message with serialization %d times", a_times);
+    benchmark_mgs_time(l_msg, l_sig_time);
+    sprintf(l_msg, "Verifying message with serialization %d times", a_times);
     benchmark_mgs_time(l_msg, l_verify_time);
 
     cleanup_test_case();
