@@ -109,7 +109,7 @@ static void cleanup_test_case()
 
 void dap_enc_falcon_tests_run(int a_times)
 {
-    dap_print_module_name("FALCOM");
+    dap_print_module_name("FALCON");
     init_test_case();
 
     int l_sig_time = 0;
