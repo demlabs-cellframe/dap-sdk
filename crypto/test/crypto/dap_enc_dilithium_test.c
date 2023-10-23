@@ -107,7 +107,7 @@ static void cleanup_test_case()
 
 void dap_enc_dilithium_tests_run(int a_times)
 {
-    dap_print_module_name("dap_enc_dilithium");
+    dap_print_module_name("DILITHIUM");
     init_test_case();
 
     int l_sig_time = 0;

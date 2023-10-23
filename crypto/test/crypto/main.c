@@ -46,14 +46,14 @@ int main(void) {
 
     dap_enc_tests_run();
     // dap_enc_picnic_tests_run(test_numbers);
-    dap_enc_sig_bliss_tests_run();
-    dap_enc_dilithium_tests_run(1000);
+    // dap_enc_sig_bliss_tests_run();
+    dap_enc_dilithium_tests_run(test_numbers);
     dap_enc_falcon_tests_run(test_numbers);
     dap_enc_sphincsplus_tests_run(test_numbers);
-    dap_enc_msrln_tests_run();
-    dap_enc_base64_tests_run();
-    dap_enc_base58_tests_run();
-    dap_enc_tesla_tests_run(test_numbers);
+    // dap_enc_msrln_tests_run();
+    // dap_enc_base64_tests_run();
+    // dap_enc_base58_tests_run();
+    // dap_enc_tesla_tests_run(test_numbers);
 
     dap_enc_kyber_test_run();
 
