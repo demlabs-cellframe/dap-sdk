@@ -14,7 +14,9 @@ static void test_signing_verifying(int a_times, int *a_sig_time, int *a_verify_t
     uint8_t **l_source = NULL;
     dap_enc_key_t **l_keys = NULL;
     size_t l_source_size[a_times];
-    size_t max_signature_size = dap_enc_sphincsplus_calc_signature_unserialized_size();
+    dap_enc_key_t *l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, NULL, 0, seed, seed_size, 0);
+    size_t max_signature_size = dap_sign_create_output_unserialized_calc_size(l_key, 0);
+    dap_enc_key_delete(l_key);
 
     DAP_NEW_Z_COUNT_RET(l_signs, uint8_t*, a_times, NULL);
     DAP_NEW_Z_COUNT_RET(l_source, uint8_t*, a_times, NULL);
@@ -45,7 +47,7 @@ static void test_signing_verifying(int a_times, int *a_sig_time, int *a_verify_t
         dap_assert_PIF(!l_verified, "Verifying signature");
         dap_enc_key_delete(l_keys[i]);
         sphincsplus_signature_delete((sphincsplus_signature_t*)l_signs[i]);
-        free(l_signs[i]);
+        DAP_DEL_MULTY(l_signs[i], l_source[i]);;
     }
     l_t2 = get_cur_time_msec();
     *a_verify_time = l_t2 - l_t1;
@@ -86,7 +88,7 @@ static void test_signing_verifying_serial(int a_times, int *a_sig_time, int *a_v
     for(int i = 0; i < a_times; ++i) {
         int verify = dap_sign_verify(l_signs[i], l_source[i], l_source_size[i]);
         dap_assert_PIF(!verify, "Deserialize and verifying signature");
-        free(l_signs[i]);
+        DAP_DEL_MULTY(l_signs[i], l_source[i]);;
     }
     l_t2 = get_cur_time_msec();
     *a_verify_time = l_t2 - l_t1;

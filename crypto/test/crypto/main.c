@@ -45,17 +45,17 @@ int main(void) {
     test_encypt_decrypt_fast(test_numbers, DAP_ENC_KEY_TYPE_OAES, 32);
 
     dap_enc_tests_run();
+    dap_enc_msrln_tests_run();
     // dap_enc_picnic_tests_run(test_numbers);
+    // dap_enc_base64_tests_run();
+    // dap_enc_base58_tests_run();
+    dap_enc_kyber_test_run(test_numbers);
+    dap_enc_tesla_tests_run(test_numbers);
     // dap_enc_sig_bliss_tests_run();
     dap_enc_dilithium_tests_run(test_numbers);
     dap_enc_falcon_tests_run(test_numbers);
     dap_enc_sphincsplus_tests_run(test_numbers);
-    // dap_enc_msrln_tests_run();
-    // dap_enc_base64_tests_run();
-    // dap_enc_base58_tests_run();
-    // dap_enc_tesla_tests_run(test_numbers);
 
-    dap_enc_kyber_test_run();
 
 #ifndef DAP_CRYPTO_MULTISIGN_TEST_OFF
     // dap_enc_multi_sign_tests_run();
