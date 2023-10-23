@@ -17,9 +17,7 @@ void key_kem_kyber512_transfer_simulation_test(int a_times, int *a_gen_time, int
 
     for (int i = 0; i < a_times; ++i) {
         randombytes(seed, seed_size);
-
         l_alice_keys[i] = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_KEM_KYBER512, NULL, 0, seed, seed_size, 0);
-
         dap_assert_PIF(l_alice_keys[i], "Key generate");
     }
 
