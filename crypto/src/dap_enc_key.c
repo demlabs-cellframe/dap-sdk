@@ -736,35 +736,17 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
     dap_return_val_if_pass(!l_ret, NULL);
 
     if (a_key->priv_key_data_size) {
-        l_ret->priv_key_data = DAP_NEW_Z_SIZE(byte_t, a_key->priv_key_data_size);
-        if (!l_ret->priv_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_ret);
-            return NULL;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->priv_key_data, byte_t, a_key->priv_key_data_size, NULL, l_ret);
         l_ret->priv_key_data_size = a_key->priv_key_data_size;
         memcpy(l_ret->priv_key_data, a_key->priv_key_data, a_key->priv_key_data_size);
     }
     if (a_key->pub_key_data_size) {
-        l_ret->pub_key_data = DAP_NEW_Z_SIZE(byte_t, a_key->pub_key_data_size);
-        if (!l_ret->pub_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_ret->priv_key_data);
-            DAP_DEL_Z(l_ret);
-            return NULL;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->pub_key_data, byte_t, a_key->pub_key_data_size, NULL, l_ret->priv_key_data, l_ret);
         l_ret->pub_key_data_size =  a_key->pub_key_data_size;
         memcpy(l_ret->pub_key_data, a_key->pub_key_data, a_key->pub_key_data_size);
     }
     if(a_key->_inheritor_size) {
-        l_ret->_inheritor = DAP_NEW_Z_SIZE(byte_t, a_key->_inheritor_size);
-        if (!l_ret->_inheritor) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_ret->priv_key_data);
-            DAP_DEL_Z(l_ret->pub_key_data);
-            DAP_DEL_Z(l_ret);
-            return NULL;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->_inheritor, byte_t, a_key->_inheritor_size, NULL, l_ret->pub_key_data, l_ret->priv_key_data, l_ret);
         l_ret->_inheritor_size = a_key->_inheritor_size;
         memcpy(l_ret->_inheritor, a_key->_inheritor, a_key->_inheritor_size);
     }
@@ -796,34 +778,16 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
     DAP_DEL_Z(l_ret->priv_key_data);
     DAP_DEL_Z(l_ret->pub_key_data);
     if (l_ret->priv_key_data_size) {
-        l_ret->priv_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->priv_key_data_size);
-        if (!l_ret->priv_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_ret);
-            return NULL;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->priv_key_data, byte_t, l_ret->priv_key_data_size, NULL, l_ret);
         memcpy(l_ret->priv_key_data, in_key->priv_key_data, l_ret->priv_key_data_size);
     }
     if (l_ret->pub_key_data_size) {
-        l_ret->pub_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->pub_key_data_size);
-        if (!l_ret->pub_key_data) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_ret->priv_key_data);
-            DAP_DEL_Z(l_ret);
-            return NULL;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->pub_key_data, byte_t, l_ret->pub_key_data, NULL, l_ret->priv_key_data, l_ret);
         memcpy(l_ret->pub_key_data, in_key->pub_key_data, l_ret->pub_key_data_size);
     }
     if(in_key->inheritor_size) {
         DAP_DEL_Z(l_ret->_inheritor);
-        l_ret->_inheritor = DAP_NEW_Z_SIZE(byte_t, in_key->inheritor_size );
-        if (!l_ret->_inheritor) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_ret->priv_key_data);
-            DAP_DEL_Z(l_ret->pub_key_data);
-            DAP_DEL_Z(l_ret);
-            return NULL;
-        }
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->_inheritor, byte_t, in_key->inheritor_size, NULL, l_ret->pub_key_data, l_ret->priv_key_data, l_ret);
         memcpy(l_ret->_inheritor, in_key->inheritor, in_key->inheritor_size);
     } else {
         l_ret->_inheritor = NULL;
@@ -997,5 +961,25 @@ dap_enc_key_type_t dap_enc_key_type_find_by_name(const char * a_name){
     }
     log_it(L_WARNING, "no key type with name %s", a_name);
     return DAP_ENC_KEY_TYPE_INVALID;
+}
+
+
+size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
+{
+    dap_return_val_if_pass(!a_key, 0);
+    size_t l_sign_size = 0;
+    switch (a_key->type){
+        case DAP_ENC_KEY_TYPE_SIG_BLISS: l_sign_size = sizeof(bliss_signature_t); break;
+        case DAP_ENC_KEY_TYPE_SIG_PICNIC: l_sign_size = dap_enc_picnic_calc_signature_size(a_key); break;
+        case DAP_ENC_KEY_TYPE_SIG_TESLA: l_sign_size = dap_enc_tesla_calc_signature_size(); break;
+        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: l_sign_size = dap_enc_dilithium_calc_signature_unserialized_size(); break;
+        case DAP_ENC_KEY_TYPE_SIG_FALCON: l_sign_size = dap_enc_falcon_calc_signature_unserialized_size(); break;
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_sign_size = dap_enc_sphincsplus_calc_signature_unserialized_size(); break;
+#ifdef DAP_PQRL
+        case DAP_ENC_KEY_TYPE_SIG_PQLR_DILITHIUM: l_sign_size = dap_pqlr_dilithium_calc_signature_size(a_key); break;
+#endif
+        default : return 0;
+    }
+    return l_sign_size;
 }
 

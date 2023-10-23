@@ -29,26 +29,11 @@
 #include "dap_strfuncs.h"
 #include "dap_hash.h"
 #include "dap_sign.h"
-#include "dap_enc_base58.h"
-#include "dap_enc_bliss.h"
-#include "dap_enc_tesla.h"
-#include "dap_enc_picnic.h"
-#include "dap_enc_dilithium.h"
-#include "dap_enc_falcon.h"
-#include "dap_enc_sphincsplus.h"
-
-#ifdef DAP_PQLR
-#include "dap_pqrl_dilithium.h"
-#include "dap_pqrl_falcon.h"
-#include "dap_pqrl_sphincs.h"
-#endif
 
 #include "dap_list.h"
 
 #define LOG_TAG "dap_sign"
 
-//static dap_sign_t * s_sign_null = NULL;
-static bliss_signature_t s_sign_bliss_null = {0};
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
 
 /**
@@ -70,24 +55,9 @@ int dap_sign_init(uint8_t a_sign_hash_type_default)
  * @param a_output_wish_size size_t output size
  * @return size_t 
  */
-size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t * a_key, UNUSED_ARG size_t a_output_wish_size )
-{
-    dap_return_val_if_pass(!a_key, 0);
-
-    size_t l_sign_size = 0;
-    switch (a_key->type){
-        case DAP_ENC_KEY_TYPE_SIG_BLISS: l_sign_size = sizeof(s_sign_bliss_null); break;
-        case DAP_ENC_KEY_TYPE_SIG_PICNIC: l_sign_size = dap_enc_picnic_calc_signature_size(a_key); break;
-        case DAP_ENC_KEY_TYPE_SIG_TESLA: l_sign_size = dap_enc_tesla_calc_signature_size(); break;
-        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: l_sign_size = dap_enc_dilithium_calc_signature_unserialized_size(); break;
-        case DAP_ENC_KEY_TYPE_SIG_FALCON: l_sign_size = dap_enc_falcon_calc_signature_unserialized_size(); break;
-        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_sign_size = dap_enc_sphincsplus_calc_signature_unserialized_size(); break;
-#ifdef DAP_PQRL
-        case DAP_ENC_KEY_TYPE_SIG_PQLR_DILITHIUM: l_sign_size = dap_pqlr_dilithium_calc_signature_size(a_key); break;
-#endif
-        default : return 0;
-    }
-    return l_sign_size;
+size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t *a_key, UNUSED_ARG size_t a_output_wish_size )
+{ 
+    return dap_enc_calc_signature_unserialized_size(a_key);
 }
 
 

@@ -290,6 +290,7 @@ const char *dap_enc_get_type_name(dap_enc_key_type_t a_key_type);
 dap_enc_key_type_t dap_enc_key_type_find_by_name(const char *a_name);
 size_t dap_enc_key_get_enc_size(dap_enc_key_t * a_key, const size_t a_buf_in_size);
 size_t dap_enc_key_get_dec_size(dap_enc_key_t * a_key, const size_t a_buf_in_size);
+size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key);
 
 uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len);
 uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len);

@@ -3,39 +3,6 @@
 
 #define LOG_TAG "dap_enc_sig_sphincsplus"
 
-// static falcon_sign_degree_t s_falcon_sign_degree = FALCON_512;
-// static falcon_kind_t s_falcon_kind = FALCON_COMPRESSED;
-// static falcon_sign_type_t s_falcon_type = FALCON_DYNAMIC;
-
-
-// void dap_enc_sig_falcon_set_degree(falcon_sign_degree_t a_falcon_sign_degree)
-// {
-//     if (a_falcon_sign_degree != FALCON_512 && a_falcon_sign_degree != FALCON_1024) {
-//         log_it(L_ERROR, "Wrong falcon degree");
-//         return;
-//     }
-//     s_falcon_sign_degree = a_falcon_sign_degree;
-// }
-
-// void dap_enc_sig_falcon_set_kind(falcon_kind_t a_falcon_kind)
-// {
-//     if (a_falcon_kind != FALCON_COMPRESSED && a_falcon_kind != FALCON_PADDED && a_falcon_kind != FALCON_CT) {
-//         log_it(L_ERROR, "Wrong falcon kind");
-//         return;
-//     }
-//     s_falcon_kind = a_falcon_kind;
-// }
-
-// void dap_enc_sig_falcon_set_type(falcon_sign_type_t a_falcon_type)
-// {
-//     if (a_falcon_type != FALCON_DYNAMIC && a_falcon_type != FALCON_TREE) {
-//         log_it(L_ERROR, "Wrong falcon type");
-//         return;
-//     }
-//     s_falcon_type = a_falcon_type;
-// }
-
-
 void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {
     a_key->type = DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
     a_key->enc = NULL;
