@@ -44,7 +44,6 @@ void dap_enc_sig_dilithium_key_new_generate(dap_enc_key_t * key, const void *kex
 
     dap_enc_sig_dilithium_set_type(DILITHIUM_MAX_SPEED);
 
-
     //int32_t type = 2;
     key->priv_key_data_size = sizeof(dilithium_private_key_t);
     key->pub_key_data_size = sizeof(dilithium_public_key_t);

@@ -3,6 +3,7 @@
 
 #define LOG_TAG "dap_enc_sig_sphincsplus"
 
+
 void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {
     a_key->type = DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
     a_key->enc = NULL;

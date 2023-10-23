@@ -5,7 +5,6 @@
 #include <stdint.h>
 
 #include "params.h"
-#include "sphincsplus_params.h"
 
 #define CRYPTO_ALGNAME "SPHINCS+"
 

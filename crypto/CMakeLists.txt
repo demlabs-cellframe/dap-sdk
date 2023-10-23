@@ -96,6 +96,7 @@ file( GLOB CRYPTO_SRCS
       src/sphincsplus/utilsx1.c 
       src/sphincsplus/fors.c 
       src/sphincsplus/sign.c
+      src/sphincsplus/sphincsplus_params.c
       ${SPHINCS_SRCS}
 )
 
