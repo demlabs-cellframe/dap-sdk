@@ -43,9 +43,6 @@ void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {
     a_key->dec_na = dap_enc_sig_sphincsplus_open_sign_msg;
     a_key->sign_get = dap_enc_sig_sphincsplus_get_sign;
     a_key->sign_verify = dap_enc_sig_sphincsplus_verify_sign;
-    a_key->ser_sign = dap_enc_sphincsplus_write_signature;
-    a_key->ser_priv_key = dap_enc_sphincsplus_write_private_key;
-    a_key->ser_pub_key = dap_enc_sphincsplus_write_public_key;
 }
 
 void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_buf, size_t a_kex_size,

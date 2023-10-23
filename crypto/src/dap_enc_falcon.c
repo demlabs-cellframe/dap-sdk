@@ -41,9 +41,6 @@ void dap_enc_sig_falcon_key_new(dap_enc_key_t *a_key) {
     a_key->enc = NULL;
     a_key->sign_get = dap_enc_sig_falcon_get_sign;
     a_key->sign_verify = dap_enc_sig_falcon_verify_sign;
-    a_key->ser_sign = dap_enc_falcon_write_signature;
-    a_key->ser_priv_key = dap_enc_falcon_write_private_key;
-    a_key->ser_pub_key = dap_enc_falcon_write_public_key;
 }
 
 void dap_enc_sig_falcon_key_new_generate(dap_enc_key_t *key, const void *kex_buf, size_t kex_size,

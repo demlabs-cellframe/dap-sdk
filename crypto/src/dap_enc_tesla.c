@@ -21,9 +21,6 @@ void dap_enc_sig_tesla_key_new(dap_enc_key_t *a_key) {
     a_key->enc = NULL;
     a_key->sign_get = dap_enc_sig_tesla_get_sign;
     a_key->sign_verify = dap_enc_sig_tesla_verify_sign;
-    a_key->ser_sign = dap_enc_tesla_write_signature;
-    a_key->ser_priv_key = dap_enc_tesla_write_private_key;
-    a_key->ser_pub_key = dap_enc_tesla_write_public_key;
 }
 
 // generation key pair for sign Alice

@@ -24,9 +24,6 @@ void dap_enc_sig_bliss_key_new(dap_enc_key_t *a_key) {
     a_key->enc = NULL;
     a_key->sign_get = dap_enc_sig_bliss_get_sign;
     a_key->sign_verify = dap_enc_sig_bliss_verify_sign;
-    a_key->ser_sign = dap_enc_sig_bliss_write_signature;
-    a_key->ser_priv_key = dap_enc_sig_bliss_write_private_key;
-    a_key->ser_pub_key = dap_enc_sig_bliss_write_public_key;
 }
 
 /**

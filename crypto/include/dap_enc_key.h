@@ -221,10 +221,6 @@ typedef struct dap_enc_key {
     dap_enc_gen_alice_shared_key gen_alice_shared_key;
     dap_enc_gen_bob_shared_key gen_bob_shared_key;
 
-    dap_enc_callback_serialize_t ser_sign;
-    dap_enc_callback_serialize_t ser_priv_key;
-    dap_enc_callback_serialize_t ser_pub_key;
-
     dap_enc_callback_calc_unser_size unser_sig_size;
 
     void *pbkListdata;

@@ -499,7 +499,7 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        l_data = a_key->ser_priv_key(a_key->priv_key_data, a_buflen_out);
+        l_data = s_callbacks[a_key->type].ser_priv_key(a_key->priv_key_data, a_buflen_out);
         break;
     default:
         DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->priv_key_data_size, NULL, NULL);
@@ -531,7 +531,7 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        l_data = a_key->ser_pub_key(a_key->pub_key_data, a_buflen_out);
+        l_data = s_callbacks[a_key->type].ser_pub_key(a_key->pub_key_data, a_buflen_out);
         break;
     default:
         DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->pub_key_data_size, NULL, NULL);

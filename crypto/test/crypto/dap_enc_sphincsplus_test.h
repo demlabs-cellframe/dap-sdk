@@ -1,6 +1,0 @@
-#pragma once
-#include "dap_enc_sphincsplus.h"
-#include "dap_enc_key.h"
-#include "dap_test.h"
-
-void dap_enc_sphincsplus_tests_run(int a_repeate);
