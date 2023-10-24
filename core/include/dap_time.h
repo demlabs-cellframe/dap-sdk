@@ -3,6 +3,10 @@
 #include <stddef.h>
 #include <time.h>
 
+#ifdef DAP_OS_WINDOWS
+#define localtime_r(a, b) localtime_s((b), (a))
+#endif
+
 #define DAP_END_OF_DAYS 4102444799
 // Constant to convert seconds to nanoseconds
 #define DAP_NSEC_PER_SEC 1000000000

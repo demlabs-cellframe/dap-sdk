@@ -1394,9 +1394,11 @@ dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, dap
     case DAP_SERVER_UDP:
         l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
         break;
+#ifdef DAP_OS_UNIX
     case DAP_SERVER_LOCAL:
         l_es->type = DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING;
         break;
+#endif
     default:
         l_es->type = DESCRIPTOR_TYPE_SOCKET_LISTENING;
     }

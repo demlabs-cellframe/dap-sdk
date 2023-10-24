@@ -346,7 +346,7 @@ static int s_server_run(dap_server_t *a_server, dap_events_socket_callbacks_t *a
         assert(l_w);
         dap_events_socket_t * l_es = dap_events_socket_wrap_listener(a_server, &l_callbacks);
         if (l_es) {
-            l_es->type = a_server->type == SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
+            l_es->type = a_server->type == DAP_SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
             // Prepare for multi thread listening
             l_es->ev_base_flags = EPOLLIN;
 #ifdef EPOLLEXCLUSIVE
@@ -434,7 +434,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     }
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &a_es_listener->callbacks);
     l_es_new->server = l_server;
-    sa_family_t l_family = a_remote_addr->ss_family;
+    unsigned short int l_family = a_remote_addr->ss_family;
 
     switch (l_family) {
 #ifdef DAP_OS_UNIX
