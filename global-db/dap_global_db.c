@@ -946,7 +946,7 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
  */
 int dap_global_db_set(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value, dap_global_db_callback_result_t a_callback, void * a_arg )
 {
-    if(s_dbi == NULL){
+    if (s_dbi == NULL) {
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_set");
         return DAP_GLOBAL_DB_RC_ERROR;
     }

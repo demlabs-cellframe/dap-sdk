@@ -92,7 +92,6 @@ pthread_key_t g_dap_context_pth_key; // Thread-specific object with pointer on c
 static void *s_context_thread(void *arg); // Context thread
 static int s_thread_init(dap_context_t * a_context);
 static int s_thread_loop(dap_context_t * a_context);
-static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags);
 
 pthread_rwlock_t s_contexts_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 dap_list_t * s_contexts = NULL;
@@ -137,8 +136,6 @@ dap_context_t * dap_context_new(int a_type)
    l_context->id = s_context_id_max;
    l_context->type = a_type;
    s_context_id_max++;
-
-   l_context->event_exit = dap_context_create_event( NULL, s_event_exit_callback);
 
    pthread_rwlock_wrlock(&s_contexts_rwlock);
    s_contexts = dap_list_prepend(s_contexts,l_context);
@@ -322,11 +319,6 @@ static void *s_context_thread(void *a_arg)
     pthread_setspecific(g_dap_context_pth_key, l_context);
     // Now we're running and initalized for sure, so we can assign flags to the current context
     l_context->running_flags = l_msg->flags;
-
-    if (l_context->type == DAP_CONTEXT_TYPE_WORKER) {
-        // Add pre-defined queues and events
-        dap_context_add(l_context, l_context->event_exit);
-    }
     l_context->is_running = true;
     // Started callback execution
     if (l_msg->callback_started &&
@@ -356,10 +348,6 @@ static void *s_context_thread(void *a_arg)
         l_msg->callback_stopped(l_context, l_msg->callback_arg);
 
     log_it(L_NOTICE,"Exiting context #%u", l_context->id);
-    if (l_context->type == DAP_CONTEXT_TYPE_WORKER) {
-        dap_context_remove(l_context->event_exit);
-        dap_events_socket_delete_unsafe(l_context->event_exit, false);  // check ticket 9030
-    }
 
     // Removes from the list
     pthread_rwlock_wrlock(&s_contexts_rwlock);
@@ -1142,20 +1130,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
     log_it(L_ATT,"Context :%u finished", a_context->id);
     return 0;
 }
-
-/**
- * @brief s_event_exit_callback
- * @param a_es
- * @param a_flags
- */
-static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags)
-{
-    (void) a_flags;
-    a_es->context->signal_exit = true;
-    if(g_debug_reactor)
-        log_it(L_DEBUG, "Context #%u signaled to exit", a_es->context->id);
-}
-
 
 /**
  * @brief dap_context_poll_update

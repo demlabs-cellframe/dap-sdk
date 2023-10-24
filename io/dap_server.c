@@ -434,7 +434,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     }
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &a_es_listener->callbacks);
     l_es_new->server = l_server;
-    sa_family_t l_family = *(sa_family_t *)a_remote_addr;
+    sa_family_t l_family = a_remote_addr->ss_family;
 
     switch (l_family) {
 #ifdef DAP_OS_UNIX

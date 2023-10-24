@@ -72,6 +72,19 @@ void dap_worker_deinit( )
 }
 
 /**
+ * @brief s_event_exit_callback
+ * @param a_es
+ * @param a_flags
+ */
+static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags)
+{
+    (void) a_flags;
+    a_es->context->signal_exit = true;
+    if (g_debug_reactor)
+        log_it(L_DEBUG, "Context #%u signaled to exit", a_es->context->id);
+}
+
+/**
  * @brief dap_worker_context_callback_started
  * @param a_context
  * @param a_arg
@@ -83,16 +96,6 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
     assert(l_worker);
     pthread_setspecific(g_pth_key_worker, l_worker);
 
-    l_worker->queue_es_new      = dap_context_create_queue(a_context, s_queue_add_es_callback);
-    l_worker->queue_es_delete   = dap_context_create_queue(a_context, s_queue_delete_es_callback);
-    l_worker->queue_es_io       = dap_context_create_queue(a_context, s_queue_es_io_callback);
-    l_worker->queue_es_reassign = dap_context_create_queue(a_context, s_queue_es_reassign_callback );
-    l_worker->queue_callback    = dap_context_create_queue(a_context, s_queue_callback_callback);
-
-    l_worker->timer_check_activity = dap_timerfd_create (s_connection_timeout * 1000 / 2,
-                                                        s_socket_all_check_activity, l_worker);
-    l_worker->timer_check_activity->worker = l_worker;
-    dap_worker_add_events_socket_unsafe(l_worker, l_worker->timer_check_activity->events_socket);
 #if defined(DAP_EVENTS_CAPS_KQUEUE)
     a_context->kqueue_fd = kqueue();
 
@@ -129,6 +132,17 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
 #else
 #error "Unimplemented dap_context_init for this platform"
 #endif
+    l_worker->queue_es_new      = dap_context_create_queue(a_context, s_queue_add_es_callback);
+    l_worker->queue_es_delete   = dap_context_create_queue(a_context, s_queue_delete_es_callback);
+    l_worker->queue_es_io       = dap_context_create_queue(a_context, s_queue_es_io_callback);
+    l_worker->queue_es_reassign = dap_context_create_queue(a_context, s_queue_es_reassign_callback );
+    l_worker->queue_callback    = dap_context_create_queue(a_context, s_queue_callback_callback);
+
+    l_worker->timer_check_activity = dap_timerfd_create (s_connection_timeout * 1000 / 2,
+                                                        s_socket_all_check_activity, l_worker);
+    l_worker->timer_check_activity->worker = l_worker;
+    dap_worker_add_events_socket_unsafe(l_worker, l_worker->timer_check_activity->events_socket);
+    a_context->event_exit = dap_context_create_event(a_context, s_event_exit_callback);
     return 0;
 }
 
@@ -138,8 +152,12 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
  * @param a_arg
  * @return
  */
-int dap_worker_context_callback_stopped(UNUSED_ARG dap_context_t *a_context, void *a_arg)
+int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
 {
+    //TODO add deinit code for queues and others
+    dap_context_remove(a_context->event_exit);
+    dap_events_socket_delete_unsafe(a_context->event_exit, false);  // check ticket 9030
+
     dap_worker_t *l_worker = a_arg;
     assert(l_worker);
     log_it(L_NOTICE,"Exiting thread #%u", l_worker->id);

@@ -151,6 +151,10 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
 
 dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *a_cluster, dap_stream_node_addr_t *a_node_addr, dap_global_db_role_t a_role)
 {
+    if (!a_cluster || !a_node_addr) {
+        log_it(L_ERROR, "Invalid argument with cluster member adding");
+        return NULL;
+    }
     if (a_cluster->links_cluster &&
             (a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
              a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED))

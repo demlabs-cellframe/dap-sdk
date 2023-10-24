@@ -143,8 +143,6 @@ void s_stream_load_preferred_encryption_type(dap_config_t * a_config)
 
 int s_stream_init_node_addr_cert()
 {
-    //const char * l_node_addr_type = dap_config_get_item_str_default(g_confi , "general", "node_addr_type", "auto");
-
     dap_cert_t *l_addr_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
     if (!l_addr_cert) {
         const char *l_cert_folder = dap_cert_get_folder(DAP_CERT_FOLDER_PATH_DEFAULT);

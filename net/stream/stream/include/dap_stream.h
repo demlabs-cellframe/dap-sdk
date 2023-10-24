@@ -124,9 +124,11 @@ DAP_STATIC_INLINE bool dap_stream_node_addr_not_null(dap_stream_node_addr_t * a_
 
 DAP_STATIC_INLINE void dap_stream_node_addr_from_hash(dap_hash_fast_t *a_hash, dap_stream_node_addr_t *a_node_addr)
 {
-    // Copy fist two and last two octets of hash to fill node addr
-    memcpy(a_node_addr->raw, a_hash->raw, sizeof(uint64_t) / 2);
-    memcpy(a_node_addr->raw + sizeof(uint64_t) / 2, a_hash->raw + DAP_CHAIN_HASH_FAST_SIZE - sizeof(uint64_t) / 2, sizeof(uint64_t) / 2);
+    // Copy fist four and last four octets of hash to fill node addr
+    a_node_addr->words[3] = *(uint16_t *)a_hash->raw;
+    a_node_addr->words[2] = *(uint16_t *)(a_hash->raw + sizeof(uint16_t));
+    a_node_addr->words[1] = *(uint16_t *)(a_hash->raw + DAP_CHAIN_HASH_FAST_SIZE - sizeof(uint16_t) * 2);
+    a_node_addr->words[0] = *(uint16_t *)(a_hash->raw + DAP_CHAIN_HASH_FAST_SIZE - sizeof(uint16_t));
 }
 
 #define DAP_STREAM(a) ((dap_stream_t *) (a)->_inheritor )
