@@ -3,6 +3,7 @@
 
 #define LOG_TAG "dap_enc_sig_sphincsplus"
 
+static const sphincsplus_config_t s_default_config = SPHINCSPLUS_SHAKE_128F;
 
 void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {
     a_key->type = DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
@@ -19,6 +20,11 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
     (void) a_kex_buf;
     (void) a_kex_size;
     (void) a_key_size;
+    
+    if (sphincsplus_set_config(s_default_config)) {
+        log_it(L_ERROR, "Can't apply sphincsplus config");
+        return;
+    }
 
     sphincsplus_private_key_t *l_skey = NULL;
     sphincsplus_public_key_t *l_pkey = NULL;
@@ -59,8 +65,16 @@ int dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg_in,
         log_it(L_ERROR, "Bad signature size");
         return -1;
     }
+
+    if (sphincsplus_set_config(s_default_config)) {
+        log_it(L_ERROR, "Can't apply sphincsplus config");
+        return -2;
+    }
+
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign_out;
-    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, sphincsplus_crypto_sign_bytes(), -2, NULL);
+    l_sign->sig_params = sphincsplus_get_params(s_default_config);
+
+    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, sphincsplus_crypto_sign_bytes(), -3, NULL);
 
     sphincsplus_private_key_t *l_skey = a_key->priv_key_data;
     return sphincsplus_crypto_sign_signature(l_sign->sig_data, &l_sign->sig_len, (const unsigned char *)a_msg_in, a_msg_size, l_skey->data);
@@ -71,9 +85,16 @@ size_t dap_enc_sig_sphincsplus_get_sign_msg(dap_enc_key_t *a_key, const void *a_
 
     if(a_out_size_max < sphincsplus_crypto_sign_bytes()) {
         log_it(L_ERROR, "Bad signature size");
-        return -1;
+        return 0;
     }
+
+    if (sphincsplus_set_config(s_default_config)) {
+        log_it(L_ERROR, "Can't apply sphincsplus config");
+        return 0;
+    }
+
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign_out;
+    l_sign->sig_params = sphincsplus_get_params(s_default_config);
     DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, sphincsplus_crypto_sign_bytes() + a_msg_size, 0, NULL);
 
     sphincsplus_private_key_t *l_skey = a_key->priv_key_data;
@@ -92,6 +113,10 @@ int dap_enc_sig_sphincsplus_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign;
     sphincsplus_private_key_t *l_pkey = a_key->pub_key_data;
 
+    if(sphincsplus_set_config(l_sign->sig_params.config)) {
+        log_it(L_ERROR, "Can't apply sphincsplus config");
+        return -2;
+    }
     return sphincsplus_crypto_sign_verify(l_sign->sig_data, l_sign->sig_len, a_msg, a_msg_size, l_pkey->data);
 }
 
@@ -105,6 +130,11 @@ size_t dap_enc_sig_sphincsplus_open_sign_msg(dap_enc_key_t *a_key, const void *a
     }
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign_in;
     sphincsplus_private_key_t *l_pkey = a_key->pub_key_data;
+
+    if(sphincsplus_set_config(l_sign->sig_params.config)) {
+        log_it(L_ERROR, "Can't apply sphincsplus config");
+        return 0;
+    }
 
     uint64_t l_res_size = 0;
     if (sphincsplus_crypto_sign_open(a_msg_out, &l_res_size, l_sign->sig_data, l_sign->sig_len, l_pkey->data))
@@ -233,9 +263,10 @@ uint8_t *dap_enc_sphincsplus_write_signature(const void *a_sign, size_t *a_bufle
     dap_return_val_if_pass(!a_sign, NULL);
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign;
 // func work
-    uint64_t l_buflen = l_sign->sig_len + sizeof(uint64_t) * 2;
-    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6, 
+    uint64_t l_buflen = l_sign->sig_len + sizeof(uint64_t) * 2 + sizeof(sphincsplus_param_t);
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8, 
         &l_buflen, sizeof(uint64_t),
+        &l_sign->sig_params, sizeof(sphincsplus_param_t),
         &l_sign->sig_len, sizeof(uint64_t),
         l_sign->sig_data, l_sign->sig_len
     );
@@ -271,6 +302,9 @@ sphincsplus_signature_t *dap_enc_sphincsplus_read_signature(const uint8_t *a_buf
 
     sphincsplus_signature_t* l_sign = NULL;
     DAP_NEW_Z_RET_VAL(l_sign, sphincsplus_signature_t, NULL, NULL);
+
+    memcpy(&l_sign->sig_params, a_buf + l_shift_mem, sizeof(sphincsplus_param_t));
+    l_shift_mem += sizeof(sphincsplus_param_t);
 
     memcpy(&l_sign->sig_len, a_buf + l_shift_mem, sizeof(uint64_t));
     l_shift_mem += sizeof(uint64_t);
