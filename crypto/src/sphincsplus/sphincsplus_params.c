@@ -37,7 +37,7 @@ const sphincsplus_offsets_t s_shake_offsets = {
     .spx_offset_tree_index = 28
 };
 
-const sphincsplus_param_t s_params[] = {
+const sphincsplus_base_params_t s_params[] = {
     [SPHINCSPLUS_HARAKA_128F] = {
         .config = SPHINCSPLUS_HARAKA_128F,
         .spx_n = 16,
@@ -256,31 +256,36 @@ const sphincsplus_param_t s_params[] = {
     },
 };
 
-int sphincsplus_set_params(const sphincsplus_param_t *a_params) {
-    
-    sphincsplus_param_t l_res = *a_params;
-    if (l_res.spx_full_height % l_res.spx_d) {
+int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params)
+{
+    if (!a_base_params) {
+        return -5;
+    }
+    if (!a_base_params->spx_d || a_base_params->spx_full_height % a_base_params->spx_d) {
         log_it(L_ERROR, "SPX_D should always divide SPX_FULL_HEIGHT");
         return -1;
     }
-    if (l_res.spx_wots_w == 256) {
+
+    sphincsplus_params_t l_res = {0};
+    l_res.base_params = *a_base_params;
+    if (a_base_params->spx_wots_w == 256) {
         l_res.spx_wots_logw = 8;
-        if (l_res.spx_n <= 1) {
+        if (a_base_params->spx_n <= 1) {
             l_res.spx_wots_len2 = 1;
-        } else if (l_res.spx_n <= 256) {
+        } else if (a_base_params->spx_n <= 256) {
             l_res.spx_wots_len2 = 2;
         } else {
             log_it(L_ERROR, "Did not precompute SPX_WOTS_LEN2 for n outside {2, .., 256}");
             return -3;
         }
-    } else if(l_res.spx_wots_w == 16) {
+    } else if(a_base_params->spx_wots_w == 16) {
         l_res.spx_wots_logw = 4;
 
-        if (l_res.spx_n <= 8) {
+        if (a_base_params->spx_n <= 8) {
             l_res.spx_wots_len2 = 2;
-        } else if (l_res.spx_n <= 136) {
+        } else if (a_base_params->spx_n <= 136) {
             l_res.spx_wots_len2 = 3;
-        } else if (l_res.spx_n <= 256) {
+        } else if (a_base_params->spx_n <= 256) {
             l_res.spx_wots_len2 = 4;
         } else {
             log_it(L_ERROR, "Did not precompute SPX_WOTS_LEN2 for n outside {2, .., 256}");
@@ -291,20 +296,21 @@ int sphincsplus_set_params(const sphincsplus_param_t *a_params) {
         return -2;
     }
 
-    l_res.spx_wots_len1 = (8 * l_res.spx_n) / l_res.spx_wots_logw;
+    l_res.spx_wots_len1 = (8 * a_base_params->spx_n) / l_res.spx_wots_logw;
     l_res.spx_wots_len = l_res.spx_wots_len1 + l_res.spx_wots_len2;
-    l_res.spx_wots_bytes = l_res.spx_wots_len*l_res.spx_n;
+    l_res.spx_wots_bytes = l_res.spx_wots_len * a_base_params->spx_n;
     l_res.spx_wots_pk_bytes = l_res.spx_wots_bytes;
     
-    l_res.spx_tree_height = l_res.spx_full_height / l_res.spx_d;
+    l_res.spx_tree_height = a_base_params->spx_full_height / a_base_params->spx_d;
 
-    l_res.spx_fors_msg_bytes = (l_res.spx_fors_height * l_res.spx_fors_trees + 7) / 8;
-    l_res.spx_fors_bytes = (l_res.spx_fors_height + 1) * l_res.spx_fors_trees * l_res.spx_n;
-    l_res.spx_fors_pk_bytes = l_res.spx_n;
+    l_res.spx_fors_msg_bytes = (a_base_params->spx_fors_height * a_base_params->spx_fors_trees + 7) / 8;
+    l_res.spx_fors_bytes = (a_base_params->spx_fors_height + 1) * a_base_params->spx_fors_trees * a_base_params->spx_n;
+    l_res.spx_fors_pk_bytes = a_base_params->spx_n;
 
-    l_res.spx_bytes = l_res.spx_n + l_res.spx_fors_bytes + l_res.spx_d * l_res.spx_wots_bytes + l_res.spx_full_height * l_res.spx_n;
-    l_res.spx_pk_bytes = 2 * l_res.spx_n;
-    l_res.spx_sk_bytes = 2 * l_res.spx_n + l_res.spx_pk_bytes;
+    l_res.spx_bytes = a_base_params->spx_n + l_res.spx_fors_bytes + a_base_params->spx_d * l_res.spx_wots_bytes + 
+                                        a_base_params->spx_full_height * a_base_params->spx_n;
+    l_res.spx_pk_bytes = 2 * a_base_params->spx_n;
+    l_res.spx_sk_bytes = 2 * a_base_params->spx_n + l_res.spx_pk_bytes;
 
     g_sphincsplus_params_current = l_res;
     return 0;
@@ -315,7 +321,7 @@ int sphincsplus_set_config(sphincsplus_config_t a_config) {
         log_it(L_ERROR, "Wrong sphincplus sig config");
         return -1;
     }
-    if (a_config == g_sphincsplus_params_current.config)
+    if (a_config == g_sphincsplus_params_current.base_params.config)
         return 0;
     return sphincsplus_set_params(&s_params[a_config]);
 }
@@ -328,6 +334,6 @@ int sphincsplus_get_params(const sphincsplus_config_t a_config, sphincsplus_sign
         log_it(L_ERROR, "Wrong sphincplus sig config");
         return -2;
     }
-    a_sign->sig_params = s_params[a_config];
+    a_sign->sig_params.base_params = s_params[a_config];
     return 0;
 }
