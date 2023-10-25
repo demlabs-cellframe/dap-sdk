@@ -121,7 +121,7 @@ typedef struct {
 
 int sphincsplus_set_config(sphincsplus_config_t a_config);
 int sphincsplus_set_params(const sphincsplus_param_t *a_params);
-sphincsplus_param_t sphincsplus_get_params(sphincsplus_config_t a_config);
+int sphincsplus_get_params(const sphincsplus_config_t a_config, sphincsplus_signature_t *a_sign);
 
 #endif  // __SPHINCSPLUS_PARAMS__
 

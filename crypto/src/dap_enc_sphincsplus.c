@@ -4,6 +4,7 @@
 #define LOG_TAG "dap_enc_sig_sphincsplus"
 
 static const sphincsplus_config_t s_default_config = SPHINCSPLUS_SHAKE_128F;
+static pthread_mutex_t s_sign_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {
     a_key->type = DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
@@ -72,12 +73,18 @@ int dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg_in,
     }
 
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign_out;
-    l_sign->sig_params = sphincsplus_get_params(s_default_config);
-
     DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, sphincsplus_crypto_sign_bytes(), -3, NULL);
-
     sphincsplus_private_key_t *l_skey = a_key->priv_key_data;
-    return sphincsplus_crypto_sign_signature(l_sign->sig_data, &l_sign->sig_len, (const unsigned char *)a_msg_in, a_msg_size, l_skey->data);
+
+    pthread_mutex_lock(&s_sign_mtx);
+        if (sphincsplus_get_params(s_default_config, l_sign)) {
+            pthread_mutex_unlock(&s_sign_mtx);
+            DAP_DELETE(l_sign->sig_data);
+            return -3;
+        }
+        int l_ret = sphincsplus_crypto_sign_signature(l_sign->sig_data, &l_sign->sig_len, (const unsigned char *)a_msg_in, a_msg_size, l_skey->data);
+    pthread_mutex_unlock(&s_sign_mtx);
+    return l_ret;
 }
 
 size_t dap_enc_sig_sphincsplus_get_sign_msg(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size,
@@ -94,12 +101,17 @@ size_t dap_enc_sig_sphincsplus_get_sign_msg(dap_enc_key_t *a_key, const void *a_
     }
 
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign_out;
-    l_sign->sig_params = sphincsplus_get_params(s_default_config);
     DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, sphincsplus_crypto_sign_bytes() + a_msg_size, 0, NULL);
-
     sphincsplus_private_key_t *l_skey = a_key->priv_key_data;
 
-    int l_ret = sphincsplus_crypto_sign(l_sign->sig_data, &l_sign->sig_len, (const unsigned char *)a_msg, a_msg_size, l_skey->data);
+    pthread_mutex_lock(&s_sign_mtx);
+        if (sphincsplus_get_params(s_default_config, l_sign)) {
+            pthread_mutex_unlock(&s_sign_mtx);
+            DAP_DELETE(l_sign->sig_data);
+            return 0;
+        }
+        int l_ret = sphincsplus_crypto_sign(l_sign->sig_data, &l_sign->sig_len, (const unsigned char *)a_msg, a_msg_size, l_skey->data);
+    pthread_mutex_unlock(&s_sign_mtx);
     return l_ret < 0 ? 0 : l_sign->sig_len;
 }
 
@@ -113,11 +125,15 @@ int dap_enc_sig_sphincsplus_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign;
     sphincsplus_private_key_t *l_pkey = a_key->pub_key_data;
 
-    if(sphincsplus_set_config(l_sign->sig_params.config)) {
-        log_it(L_ERROR, "Can't apply sphincsplus config");
-        return -2;
-    }
-    return sphincsplus_crypto_sign_verify(l_sign->sig_data, l_sign->sig_len, a_msg, a_msg_size, l_pkey->data);
+    pthread_mutex_lock(&s_sign_mtx);
+        if(sphincsplus_set_config(l_sign->sig_params.config)) {
+            log_it(L_ERROR, "Can't apply sphincsplus config");
+            pthread_mutex_unlock(&s_sign_mtx);
+            return -2;
+        }
+        int l_ret = sphincsplus_crypto_sign_verify(l_sign->sig_data, l_sign->sig_len, a_msg, a_msg_size, l_pkey->data);
+    pthread_mutex_unlock(&s_sign_mtx);
+    return l_ret;
 }
 
 
@@ -131,14 +147,16 @@ size_t dap_enc_sig_sphincsplus_open_sign_msg(dap_enc_key_t *a_key, const void *a
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign_in;
     sphincsplus_private_key_t *l_pkey = a_key->pub_key_data;
 
-    if(sphincsplus_set_config(l_sign->sig_params.config)) {
-        log_it(L_ERROR, "Can't apply sphincsplus config");
-        return 0;
-    }
-
-    uint64_t l_res_size = 0;
-    if (sphincsplus_crypto_sign_open(a_msg_out, &l_res_size, l_sign->sig_data, l_sign->sig_len, l_pkey->data))
-        log_it(L_ERROR, "Failed to verify signature");
+    pthread_mutex_lock(&s_sign_mtx);
+        if(sphincsplus_set_config(l_sign->sig_params.config)) {
+            log_it(L_ERROR, "Can't apply sphincsplus config");
+            pthread_mutex_unlock(&s_sign_mtx);
+            return 0;
+        }
+        uint64_t l_res_size = 0;
+        if (sphincsplus_crypto_sign_open(a_msg_out, &l_res_size, l_sign->sig_data, l_sign->sig_len, l_pkey->data))
+            log_it(L_ERROR, "Failed to verify signature");
+    pthread_mutex_unlock(&s_sign_mtx);
     return l_res_size;
 }
 

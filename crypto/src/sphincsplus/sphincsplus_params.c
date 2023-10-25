@@ -320,10 +320,14 @@ int sphincsplus_set_config(sphincsplus_config_t a_config) {
     return sphincsplus_set_params(&s_params[a_config]);
 }
 
-sphincsplus_param_t sphincsplus_get_params(sphincsplus_config_t a_config) {
+int sphincsplus_get_params(const sphincsplus_config_t a_config, sphincsplus_signature_t *a_sign) {
+    if(!a_sign) {
+        return -1;
+    }
     if(a_config <= SPHINCSPLUS_CONFIG_MIN_ARG || a_config >= SPHINCSPLUS_CONFIG_MAX_ARG) {
         log_it(L_ERROR, "Wrong sphincplus sig config");
-        return (sphincsplus_param_t){0};
+        return -2;
     }
-    return s_params[a_config];
+    a_sign->sig_params = s_params[a_config];
+    return 0;
 }
