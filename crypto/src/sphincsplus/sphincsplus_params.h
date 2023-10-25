@@ -66,6 +66,13 @@ typedef struct {
     uint32_t spx_bytes;
     uint32_t spx_pk_bytes;
     uint32_t spx_sk_bytes;
+    uint32_t spx_tree_bits;
+    uint32_t spx_tree_bytes;
+    uint32_t spx_leaf_bits;
+    uint32_t spx_leaf_bytes;
+    uint32_t spx_dgst_bytes;
+    uint32_t spx_shax_output_bytes;
+    uint32_t spx_shax_block_bytes;
 } sphincsplus_params_t;
 
 sphincsplus_params_t g_sphincsplus_params_current;
@@ -73,6 +80,19 @@ sphincsplus_params_t g_sphincsplus_params_current;
 #define SPHINCSPLUS_FLEX
 
 #ifdef SPHINCSPLUS_FLEX
+
+#define SPX_SHA256_BLOCK_BYTES 64
+#define SPX_SHA256_OUTPUT_BYTES 32  /* This does not necessarily equal SPX_N */
+#define SPX_SHA512_BLOCK_BYTES 128
+#define SPX_SHA512_OUTPUT_BYTES 64
+#define SPX_SHA256_ADDR_BYTES 22
+
+#if (SPX_SHA256_BLOCK_BYTES & (SPX_SHA256_BLOCK_BYTES - 1)) != 0
+    #error "Assumes that SPX_SHAX_BLOCK_BYTES is a power of 2"
+#endif
+#if (SPX_SHA512_BLOCK_BYTES & (SPX_SHA512_BLOCK_BYTES - 1)) != 0
+    #error "Assumes that SPX_SHAX_BLOCK_BYTES is a power of 2"
+#endif
 
 #define SPX_NAMESPACE(s)        SPX_##s
 #define SPX_N                   g_sphincsplus_params_current.base_params.spx_n
@@ -97,6 +117,12 @@ sphincsplus_params_t g_sphincsplus_params_current;
 #define SPX_PK_BYTES            g_sphincsplus_params_current.spx_pk_bytes
 #define SPX_SK_BYTES            g_sphincsplus_params_current.spx_sk_bytes
 
+#define SPX_TREE_BITS           g_sphincsplus_params_current.spx_tree_bits
+#define SPX_TREE_BYTES          g_sphincsplus_params_current.spx_tree_bytes
+#define SPX_LEAF_BITS           g_sphincsplus_params_current.spx_leaf_bits
+#define SPX_LEAF_BYTES          g_sphincsplus_params_current.spx_leaf_bytes
+#define SPX_DGST_BYTES          g_sphincsplus_params_current.spx_dgst_bytes
+
 #define SPX_OFFSET_LAYER        g_sphincsplus_params_current.base_params.offsets.spx_offset_layer
 #define SPX_OFFSET_TREE         g_sphincsplus_params_current.base_params.offsets.spx_offset_tree
 #define SPX_OFFSET_TYPE         g_sphincsplus_params_current.base_params.offsets.spx_offset_type
@@ -106,6 +132,9 @@ sphincsplus_params_t g_sphincsplus_params_current;
 #define SPX_OFFSET_HASH_ADDR    g_sphincsplus_params_current.base_params.offsets.spx_offset_hash_addr
 #define SPX_OFFSET_TREE_HGT     g_sphincsplus_params_current.base_params.offsets.spx_offset_tree_hgt
 #define SPX_OFFSET_TREE_INDEX   g_sphincsplus_params_current.base_params.offsets.spx_offset_tree_index
+
+#define SPX_SHAX_OUTPUT_BYTES   g_sphincsplus_params_current.spx_shax_output_bytes
+#define SPX_SHAX_BLOCK_BYTES    g_sphincsplus_params_current.spx_shax_block_bytes
 #endif
 
 ///==========================================================================================

@@ -7,7 +7,13 @@
 #include "utils.h"
 #include "sha2.h"
 
-#if SPX_SHA512
+#ifdef SPHINCSPLUS_FLEX
+#define USING_512 1
+#else
+#define USING_512 SPX_SHA512
+#endif
+
+#if USING_512
 static void thash_512(unsigned char *out, const unsigned char *in, unsigned int inblocks,
            const spx_ctx *ctx, uint32_t addr[8]);
 #endif
@@ -18,7 +24,7 @@ static void thash_512(unsigned char *out, const unsigned char *in, unsigned int 
 void thash(unsigned char *out, const unsigned char *in, unsigned int inblocks,
            const spx_ctx *ctx, uint32_t addr[8])
 {
-#if SPX_SHA512
+#if USING_512
     if (inblocks > 1) {
 	thash_512(out, in, inblocks, ctx, addr);
         return;
@@ -39,7 +45,7 @@ void thash(unsigned char *out, const unsigned char *in, unsigned int inblocks,
     memcpy(out, outbuf, SPX_N);
 }
 
-#if SPX_SHA512
+#if USING_512
 static void thash_512(unsigned char *out, const unsigned char *in, unsigned int inblocks,
            const spx_ctx *ctx, uint32_t addr[8])
 {

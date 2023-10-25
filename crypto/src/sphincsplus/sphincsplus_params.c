@@ -37,7 +37,7 @@ const sphincsplus_offsets_t s_shake_offsets = {
     .spx_offset_tree_index = 28
 };
 
-const sphincsplus_base_params_t s_params[] = {
+    const sphincsplus_base_params_t s_params[] = {
     [SPHINCSPLUS_HARAKA_128F] = {
         .config = SPHINCSPLUS_HARAKA_128F,
         .spx_n = 16,
@@ -268,6 +268,13 @@ int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params)
 
     sphincsplus_params_t l_res = {0};
     l_res.base_params = *a_base_params;
+#ifdef SPHINCSPLUS_FLEX
+    if (SPX_SHA256_OUTPUT_BYTES < a_base_params->spx_n) {
+        log_it(L_ERROR, "Linking against SHA-256 with N larger than 32 bytes is not supported");
+        return -7;
+    }
+#endif
+
     if (a_base_params->spx_wots_w == 256) {
         l_res.spx_wots_logw = 8;
         if (a_base_params->spx_n <= 1) {
@@ -311,6 +318,31 @@ int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params)
                                         a_base_params->spx_full_height * a_base_params->spx_n;
     l_res.spx_pk_bytes = 2 * a_base_params->spx_n;
     l_res.spx_sk_bytes = 2 * a_base_params->spx_n + l_res.spx_pk_bytes;
+
+    l_res.spx_tree_bits = l_res.spx_tree_height * (a_base_params->spx_d - 1);
+    if (l_res.spx_tree_bits > 64) {
+        log_it(L_ERROR, "For given height and depth, 64 bits cannot represent all subtrees");
+        return -6;
+    }
+    l_res.spx_tree_bytes = (l_res.spx_tree_bits + 7) / 8;
+    l_res.spx_leaf_bits = l_res.spx_tree_height;
+    l_res.spx_leaf_bytes = (l_res.spx_leaf_bits + 7) / 8;
+    l_res.spx_dgst_bytes = l_res.spx_fors_msg_bytes + l_res.spx_tree_bytes + l_res.spx_leaf_bytes; 
+
+#ifdef SPHINCSPLUS_FLEX
+    if (a_base_params->spx_n >= 24) {
+        l_res.spx_shax_output_bytes = SPX_SHA512_OUTPUT_BYTES;
+        l_res.spx_shax_block_bytes = SPX_SHA512_BLOCK_BYTES;
+    } else {
+        l_res.spx_shax_output_bytes = SPX_SHA256_OUTPUT_BYTES;
+        l_res.spx_shax_block_bytes = SPX_SHA256_BLOCK_BYTES;
+    }
+
+    if (a_base_params->spx_n > l_res.spx_shax_block_bytes) {
+        log_it(L_ERROR, "Currently only supports SPX_N of at most SPX_SHAX_BLOCK_BYTES");
+        return -8;
+    }
+#endif
 
     g_sphincsplus_params_current = l_res;
     return 0;

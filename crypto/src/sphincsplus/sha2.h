@@ -2,7 +2,7 @@
 #define SPX_SHA2_H
 
 #include "params.h"
-
+#ifndef SPHINCSPLUS_FLEX
 #define SPX_SHA256_BLOCK_BYTES 64
 #define SPX_SHA256_OUTPUT_BYTES 32  /* This does not necessarily equal SPX_N */
 
@@ -14,6 +14,7 @@
 #endif
 
 #define SPX_SHA256_ADDR_BYTES 22
+#endif
 
 #include <stddef.h>
 #include <stdint.h>

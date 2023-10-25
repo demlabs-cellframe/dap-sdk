@@ -60,12 +60,13 @@ void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
                   const spx_ctx *ctx)
 {
     (void)ctx;
+#ifndef SPHINCSPLUS_FLEX
 #define SPX_TREE_BITS (SPX_TREE_HEIGHT * (SPX_D - 1))
 #define SPX_TREE_BYTES ((SPX_TREE_BITS + 7) / 8)
 #define SPX_LEAF_BITS SPX_TREE_HEIGHT
 #define SPX_LEAF_BYTES ((SPX_LEAF_BITS + 7) / 8)
 #define SPX_DGST_BYTES (SPX_FORS_MSG_BYTES + SPX_TREE_BYTES + SPX_LEAF_BYTES)
-
+#endif
     unsigned char buf[SPX_DGST_BYTES];
     unsigned char *bufp = buf;
     uint64_t s_inc[26];
@@ -80,9 +81,9 @@ void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
     memcpy(digest, bufp, SPX_FORS_MSG_BYTES);
     bufp += SPX_FORS_MSG_BYTES;
 #ifndef SPHINCSPLUS_FLEX
-# if SPX_TREE_BITS > 64
+#if SPX_TREE_BITS > 64
     # error For given height and depth, 64 bits cannot represent all subtrees
-# endif
+#endif
 #endif
 
     *tree = bytes_to_ull(bufp, SPX_TREE_BYTES);

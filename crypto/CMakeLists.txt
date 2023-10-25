@@ -33,7 +33,7 @@ add_definitions ("-D_GNU_SOURCE")
         # set(SPHINCS_THASH "simple")
     endif()
 
-    add_definitions ("-DPARAMS=${SPHINCS_HASH_TYPE}")
+    # add_definitions ("-DPARAMS=${SPHINCS_HASH_TYPE}")
     add_definitions ("-DTHASH=${SPHINCS_THASH}")
 
 # add needed files
