@@ -1280,7 +1280,6 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
     if(a_es->flags & DAP_SOCK_READY_TO_WRITE )
         a_es->ev.events |= EPOLLOUT;
     a_es->ev.data.ptr = a_es;
-    a_es->context = a_context;
     int l_ret = epoll_ctl(a_context->epoll_fd, EPOLL_CTL_ADD, a_es->socket, &a_es->ev);
     if (l_ret != 0 ){
         l_is_error = true;
@@ -1304,8 +1303,6 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
 
     a_context->poll_esocket[a_context->poll_count] = a_es;
     a_context->poll_count++;
-    a_es->context = a_context;
-    a_es->worker = DAP_WORKER(a_context);
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     if ( a_es->type == DESCRIPTOR_TYPE_QUEUE ){
         goto lb_exit;
@@ -1367,11 +1364,12 @@ lb_exit:
         char l_errbuf[128];
         l_errbuf[0]=0;
         strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        log_it(L_ERROR,"Can't update client socket state on poll/epoll/kqueue fd %d: \"%s\" (%d)",
+        log_it(L_ERROR,"Can't update client socket state on poll/epoll/kqueue fd %" DAP_FORMAT_SOCKET ": \"%s\" (%d)",
             a_es->socket, l_errbuf, l_errno);
         return l_errno;
     }else{
         a_es->context = a_context;
+        a_es->worker = DAP_WORKER(a_context);
         // Add in context HT
         dap_events_socket_t * l_a_es_found = NULL;
         if (a_es->socket!=0 && a_es->socket != INVALID_SOCKET){
