@@ -152,6 +152,7 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 dap_store_obj_t *dap_global_db_get_all_raw_sync(const char *a_group, size_t *a_objs_count);
 
 int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *a_value, const size_t a_value_length, bool a_pin_value);
+// set raw with cluster roles and rights checks
 int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_objs_count);
 
 int dap_global_db_pin_sync(const char * a_group, const char *a_key);

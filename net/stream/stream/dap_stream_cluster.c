@@ -129,8 +129,9 @@ void dap_cluster_delete(dap_cluster_t *a_cluster)
 dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, int a_role, void *a_info)
 {
     dap_cluster_member_t *l_member = NULL;
+    dap_return_val_if_fail(a_cluster && a_addr, l_member);
     pthread_rwlock_wrlock(&a_cluster->members_lock);
-    HASH_FIND(hh,a_cluster->members, a_addr, sizeof(*a_addr), l_member);
+    HASH_FIND(hh, a_cluster->members, a_addr, sizeof(*a_addr), l_member);
     if (l_member) {
         pthread_rwlock_unlock(&a_cluster->members_lock);
         log_it(L_WARNING, "Trying to add member "NODE_ADDR_FP_STR" but its already present in cluster ",

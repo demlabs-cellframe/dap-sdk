@@ -231,6 +231,8 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
             return  log_it(L_ERROR, "GlobalDB version changed, please export or remove old version!"), l_rc;
     }
 
+    l_rc = dap_global_db_cluster_init();
+
 lb_return:
     if (l_rc == 0 )
         log_it(L_NOTICE, "GlobalDB initialized");
@@ -302,7 +304,7 @@ static int s_change_commit_notify(dap_global_db_instance_t *a_dbi, dap_store_obj
         if (a_store_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)
             // Notify sync cluster first
             dap_global_db_cluster_broadcast(l_cluster, a_store_obj);
-        if (l_cluster->callback_notify) {
+        if (l_cluster->notificators) {
             // Notify others in user space format
             char *l_old_group_ptr = a_store_obj->group;
             a_store_obj->group = l_basic_group;
@@ -311,6 +313,154 @@ static int s_change_commit_notify(dap_global_db_instance_t *a_dbi, dap_store_obj
             a_store_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
         }
     }
+    return l_ret;
+}
+
+static int s_store_obj_apply(dap_store_obj_t *a_obj)
+{
+    assert(a_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD);
+    dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), a_obj->group);
+    if (!l_cluster) {
+        log_it(L_WARNING, "An entry in the group %s was rejected because the group name doesn't match any cluster", a_obj->group);
+        return -11;
+    }
+    dap_global_db_driver_hash_t a_obj_drv_hash = dap_global_db_driver_hash_get(a_obj);
+    if (dap_global_db_driver_is_hash(a_obj->group, &a_obj_drv_hash)) {
+        debug_if(g_dap_global_db_debug_more, L_NOTICE, "Rejected duplicate object with group %s and key %s",
+                                            a_obj->group, a_obj->key);
+        return -12;
+    }
+    // Limit time
+    uint64_t l_time_store_lim_sec = l_cluster->ttl ? l_cluster->ttl : l_cluster->dbi->store_time_limit * 3600ULL;
+    uint64_t l_limit_time = l_time_store_lim_sec ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_sec) : 0;
+    if (l_limit_time && a_obj->timestamp < l_limit_time) {
+        if (g_dap_global_db_debug_more) {
+            char l_ts_str[64] = { '\0' };
+            dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
+            log_it(L_NOTICE, "Rejected too old object with group %s and key %s and timestamp %s",
+                                            a_obj->group, a_obj->key, l_ts_str);
+        }
+        return -13;
+    }
+
+    dap_global_db_role_t l_signer_role = DAP_GDB_MEMBER_ROLE_INVALID;
+    if (a_obj->sign) {
+        dap_stream_node_addr_t l_signer_addr = dap_stream_node_addr_from_sign(a_obj->sign);
+        debug_if(g_dap_global_db_debug_more, L_NOTICE, "Signer node addr "NODE_ADDR_FP_STR,
+                                                                        NODE_ADDR_FP_ARGS_S(l_signer_addr));
+        l_signer_role = dap_cluster_member_find_role(l_cluster->role_cluster, &l_signer_addr);
+    }
+    if (l_signer_role == DAP_GDB_MEMBER_ROLE_INVALID)
+        l_signer_role = l_cluster->default_role;
+    dap_global_db_role_t l_required_role = DAP_GDB_MEMBER_ROLE_USER;
+    if (l_signer_role < l_required_role) {
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Global DB record with group %s and key %s is rejected "
+                                                        "with signer role %s and requered role %s",
+                                                            a_obj->group, a_obj->key,
+                                                            dap_global_db_cluster_role_str(l_signer_role),
+                                                            dap_global_db_cluster_role_str(l_required_role));
+        return -14;
+    }
+    dap_global_db_optype_t l_obj_type = DAP_GLOBAL_DB_OPTYPE_ADD;
+    // Get object with same key and its antinonim from opposite group, if any
+    const char l_del_suffix[] = DAP_GLOBAL_DB_DEL_SUFFIX;
+    char *l_del_group = NULL, *l_basic_group = NULL;
+    size_t l_group_len = strlen(a_obj->group);
+    size_t l_unsuffixed_len = l_group_len - sizeof(l_del_suffix) + 1;
+    if (l_group_len >= sizeof(l_del_suffix) &&
+            !strcmp(l_del_suffix, a_obj->group + l_unsuffixed_len)) {
+        // It is a group for object destroyers
+        l_obj_type = DAP_GLOBAL_DB_OPTYPE_DEL;
+        // Only root members can destroy
+        l_required_role = DAP_GDB_MEMBER_ROLE_ROOT;
+        l_del_group = a_obj->group;
+        l_basic_group = strndup(a_obj->group, l_unsuffixed_len);
+    } else {
+        l_del_group = dap_strdup_printf("%s" DAP_GLOBAL_DB_DEL_SUFFIX, a_obj->group);
+        l_basic_group = a_obj->group;
+    }
+    dap_store_obj_t *l_read_obj = NULL;
+    int l_ret = 0;
+    if (dap_global_db_driver_is(l_basic_group, a_obj->key)) {
+        l_read_obj = dap_global_db_driver_read(l_basic_group, a_obj->key, NULL);
+        assert(l_read_obj);
+        if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED && l_obj_type == DAP_GLOBAL_DB_OPTYPE_ADD) {
+            debug_if(g_dap_global_db_debug_more, L_NOTICE, "Pinned record with group %s and key %s won't be overwritten",
+                     l_read_obj->group, l_read_obj->key);
+            l_ret = -15;
+            goto free_n_exit;
+        }
+        l_required_role = DAP_GDB_MEMBER_ROLE_ROOT; // Need to rewrite existed value
+    }
+    if (dap_global_db_driver_is(l_del_group, a_obj->key)) {
+        if (l_read_obj) {   // Conflict, object is present in both tables
+            dap_store_obj_t *l_read_del = dap_global_db_driver_read(l_del_group, a_obj->key, NULL);
+            assert(l_read_del);
+            switch (dap_store_obj_driver_hash_compare(l_read_obj, l_read_del)) {
+            case -1:        // Basic obj is older
+                if (!(l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED)) {
+                    log_it(L_WARNING, "DB record with group %s and key %s will be destroyed to avoid a conflict",
+                                                                l_read_obj->group, l_read_obj->key);
+                    dap_global_db_driver_delete(l_read_obj, 1);
+                    dap_global_db_cluster_notify(l_cluster, l_read_obj);
+                }
+                dap_store_obj_free_one(l_read_obj);
+                l_read_obj = l_read_del;
+                break;
+            case 0:         // Objects are the same, omg! Use the basic object
+                log_it(L_ERROR, "Duplicate record with group %s and key %s in both local tabels, "
+                                                        DAP_GLOBAL_DB_DEL_SUFFIX" will be erased",
+                                                            l_read_obj->group, l_read_obj->key);
+            case 1:         // Deleted object is older
+                debug_if(g_dap_global_db_debug_more, L_WARNING,
+                         "DB record with group %s and key %s will be destroyed to avoid a conflict",
+                                                                l_read_del->group, l_read_del->key);
+                dap_global_db_driver_delete(l_read_del, 1);
+                dap_store_obj_free_one(l_read_del);
+                break;
+            }
+        } else
+            l_read_obj = dap_global_db_driver_read(l_del_group, a_obj->key, NULL);
+    }
+    if (l_read_obj && l_cluster->owner_root_access &&
+            a_obj->sign && l_read_obj->sign &&
+            dap_sign_match_pkey_signs(a_obj->sign, l_read_obj->sign))
+        l_signer_role = DAP_GDB_MEMBER_ROLE_ROOT;
+    if (l_signer_role < l_required_role) {
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Global DB record with group %s and key %s is rejected "
+                                                        "with signer role %s and required role %s",
+                                                            a_obj->group, a_obj->key,
+                                                            dap_global_db_cluster_role_str(l_signer_role),
+                                                            dap_global_db_cluster_role_str(l_required_role));
+        l_ret = -16;
+        goto free_n_exit;
+    }
+    switch (dap_store_obj_driver_hash_compare(l_read_obj, a_obj)) {
+    case -1:        // Existed obj is older
+        debug_if(g_dap_global_db_debug_more, L_INFO, "Applied new global DB record with group %s and key %s",
+                                                                    a_obj->group, a_obj->key);
+        // Only the condition to apply new object
+        l_ret = dap_global_db_driver_apply(a_obj, 1);
+        s_change_commit_notify(dap_global_db_instance_get_default(), a_obj);
+        break;
+    case 0:         // Objects the same, omg! Use the basic object
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Duplicate record with group %s and key %s not dropped by hash filter",
+                                                                    a_obj->group, a_obj->key);
+        l_ret = -17;
+        break;
+    case 1:         // Received object is older
+        debug_if(g_dap_global_db_debug_more, L_DEBUG, "DB record with group %s and key %s is not applied. It's older than existed record with same key",
+                                                        a_obj->group, a_obj->key);
+        l_ret = -18;
+        break;
+    }
+free_n_exit:
+    if (l_obj_type == DAP_GLOBAL_DB_OPTYPE_DEL)
+        DAP_DELETE(l_basic_group);
+    else
+        DAP_DELETE(l_del_group);
+    if (l_read_obj)
+        dap_store_obj_free_one(l_read_obj);
     return l_ret;
 }
 
@@ -910,9 +1060,7 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
         return -2;
     }
 
-    int l_res = dap_global_db_driver_apply(&l_store_data, 1);
-    if (l_res == 0)
-        s_change_commit_notify(a_dbi, &l_store_data);
+    int l_res = s_store_obj_apply(&l_store_data);
     DAP_DELETE(l_store_data.sign);
     return l_res;
 }
@@ -1024,10 +1172,8 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
             l_obj->group = dap_strdup_printf("%s" DAP_GLOBAL_DB_DEL_SUFFIX, l_obj->group);
             l_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
         }
-        l_ret = dap_global_db_driver_add(l_obj, 1);
+        l_ret = s_store_obj_apply(l_obj);
         if (l_ret)
-            s_change_commit_notify(a_dbi, l_obj);
-        else
             log_it(L_ERROR, "Can't save raw gdb data, code %d ", l_ret);
         if (l_group_saved) {
             l_obj->type = DAP_GLOBAL_DB_OPTYPE_DEL;
@@ -1182,10 +1328,8 @@ int s_db_object_pin_sync(dap_global_db_instance_t *a_dbi, const char *a_group, c
         else
             l_store_obj->flags ^= DAP_GLOBAL_DB_RECORD_PINNED;
         l_store_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
-        l_res = dap_global_db_set_raw_sync(l_store_obj, 1);
-        if (!l_res)
-            s_change_commit_notify(a_dbi, l_store_obj);
-        else {
+        l_res = dap_global_db_driver_apply(l_store_obj, 1);
+        if (l_res) {
             log_it(L_ERROR,"Can't save pinned gdb data, code %d ", l_res);
             l_res = DAP_GLOBAL_DB_RC_ERROR;
         }
@@ -1290,11 +1434,12 @@ static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_gr
     if (a_key)
         l_store_obj.sign = dap_store_obj_sign(&l_store_obj, a_dbi->signing_key, &l_store_obj.crc);
 
-    int l_res = dap_global_db_driver_apply(&l_store_obj, 1);
-    if (a_key) {
-        if (l_res)
-            s_change_commit_notify(a_dbi, &l_store_obj);
-    } else {
+    int l_res = -1;
+    if (a_key)
+        l_res = s_store_obj_apply(&l_store_obj);
+    else {
+        // Drop .del table
+        l_res = dap_global_db_driver_apply(&l_store_obj, 1);
         // Drop main table too
         l_store_obj.group[dap_strlen(a_group)] = '\0';
         l_res = dap_global_db_driver_apply(&l_store_obj, 1);

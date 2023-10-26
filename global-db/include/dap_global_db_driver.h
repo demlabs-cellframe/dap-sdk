@@ -62,7 +62,7 @@ typedef struct dap_store_obj {
     dap_sign_t *sign;               // Crypto sign for authentication and security checks
     dap_nanotime_t timestamp;       // Timestamp of record creation, in nanoseconds since EPOCH
     uint32_t crc;                   // Integrity control
-    dap_global_db_optype_t type;    // Operation type - for event notifiers
+    dap_global_db_optype_t type;    // Operation type - for event notificators
     byte_t ext[];                   // For extra data transfer between sync callbacks
 } dap_store_obj_t;
 
@@ -79,6 +79,10 @@ DAP_STATIC_INLINE int dap_global_db_driver_hash_compare(dap_global_db_driver_has
 
 DAP_STATIC_INLINE int dap_store_obj_driver_hash_compare(dap_store_obj_t *a_obj1, dap_store_obj_t *a_obj2)
 {
+    if (!a_obj1)
+        return a_obj2 ? -1 : 0;
+    if (!a_obj2)
+        return 1;
     dap_global_db_driver_hash_t l_hash1 = dap_global_db_driver_hash_get(a_obj1),
                                 l_hash2 = dap_global_db_driver_hash_get(a_obj2);
     return dap_global_db_driver_hash_compare(l_hash1, l_hash2);
