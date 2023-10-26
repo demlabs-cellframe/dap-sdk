@@ -1,6 +1,7 @@
 #ifndef __SPHINCSPLUS_PARAMS__
 #define __SPHINCSPLUS_PARAMS__
 
+#pragma once
 #include <stdint.h>
 
 // not change, only add
