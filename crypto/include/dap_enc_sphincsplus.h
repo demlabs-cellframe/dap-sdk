@@ -4,11 +4,6 @@
 #include "dap_enc_key.h"
 #include "sphincsplus/sphincsplus_params.h"
 
-
-// void dap_enc_sig_falcon_set_degree(falcon_sign_degree_t a_falcon_sign_degree);
-// void dap_enc_sig_falcon_set_kind(falcon_kind_t a_falcon_kind);
-// void dap_enc_sig_falcon_set_type(falcon_sign_type_t a_falcon_sign_type);
-
 void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key);
 void sphincsplus_public_key_delete(sphincsplus_public_key_t *a_pkey);
 void sphincsplus_private_key_delete(sphincsplus_private_key_t *a_skey);
@@ -41,7 +36,6 @@ sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_b
 
 uint64_t dap_enc_sphincsplus_crypto_sign_secretkeybytes(sphincsplus_config_t a_config);
 uint64_t dap_enc_sphincsplus_crypto_sign_publickeybytes(sphincsplus_config_t a_config);
-// uint64_t dap_enc_sphincsplus_crypto_sign_bytes();
 uint64_t dap_enc_sphincsplus_crypto_sign_seedbytes(sphincsplus_config_t a_config);
 size_t dap_enc_sphincsplus_calc_signature_unserialized_size();
 

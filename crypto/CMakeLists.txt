@@ -4,68 +4,102 @@ project (dap_crypto)
 # fix implicit declaration warnings
 add_definitions ("-D_GNU_SOURCE")
 
+
+if(NOT DEFINED SPHINCS_FLEX)
 # define sphincs hash params
     # choose one hashtype
-    if(NOT DEFINED SPHINCS_HASH_TYPE)
-        # set(SPHINCS_HASH_TYPE "sphincs-haraka-128f")
-        # set(SPHINCS_HASH_TYPE "sphincs-haraka-128s")
-        # set(SPHINCS_HASH_TYPE "sphincs-haraka-192f")
-        # set(SPHINCS_HASH_TYPE "sphincs-haraka-192s")
-        # set(SPHINCS_HASH_TYPE "sphincs-haraka-256f")
-        # set(SPHINCS_HASH_TYPE "sphincs-haraka-256s")
-        # set(SPHINCS_HASH_TYPE "sphincs-sha2-128f")
-        # set(SPHINCS_HASH_TYPE "sphincs-sha2-128s")
-        # set(SPHINCS_HASH_TYPE "sphincs-sha2-192f")
-        # set(SPHINCS_HASH_TYPE "sphincs-sha2-192s")
-        # set(SPHINCS_HASH_TYPE "sphincs-sha2-256f")
-        # set(SPHINCS_HASH_TYPE "sphincs-sha2-256s")
-        # set(SPHINCS_HASH_TYPE "sphincs-shake-128f")
-        # set(SPHINCS_HASH_TYPE "sphincs-shake-128s")
-        # set(SPHINCS_HASH_TYPE "sphincs-shake-192f")
-        # set(SPHINCS_HASH_TYPE "sphincs-shake-192s")
-            set(SPHINCS_HASH_TYPE "sphincs-shake-256f")
-        # set(SPHINCS_HASH_TYPE "sphincs-shake-256s")
-    endif()
+    # set(SPHINCS_HASH_TYPE "sphincs-haraka-128f")
+    # set(SPHINCS_HASH_TYPE "sphincs-haraka-128s")
+    # set(SPHINCS_HASH_TYPE "sphincs-haraka-192f")
+    # set(SPHINCS_HASH_TYPE "sphincs-haraka-192s")
+    # set(SPHINCS_HASH_TYPE "sphincs-haraka-256f")
+    # set(SPHINCS_HASH_TYPE "sphincs-haraka-256s")
+    set(SPHINCS_HASH_TYPE "sphincs-sha2-128f")
+    # set(SPHINCS_HASH_TYPE "sphincs-sha2-128s")
+    # set(SPHINCS_HASH_TYPE "sphincs-sha2-192f")
+    # set(SPHINCS_HASH_TYPE "sphincs-sha2-192s")
+    # set(SPHINCS_HASH_TYPE "sphincs-sha2-256f")
+    # set(SPHINCS_HASH_TYPE "sphincs-sha2-256s")
+    # set(SPHINCS_HASH_TYPE "sphincs-shake-128f")
+    # set(SPHINCS_HASH_TYPE "sphincs-shake-128s")
+    # set(SPHINCS_HASH_TYPE "sphincs-shake-192f")
+    # set(SPHINCS_HASH_TYPE "sphincs-shake-192s")
+    # set(SPHINCS_HASH_TYPE "sphincs-shake-256f")
 
     # choose one thash
-    if(NOT DEFINED SPHINCS_HASH_TYPE)
-            set(SPHINCS_THASH "robust")
-        # set(SPHINCS_THASH "simple")
-    endif()
+    # set(SPHINCS_THASH "robust")
+    set(SPHINCS_THASH "simple")
 
-    # add_definitions ("-DPARAMS=${SPHINCS_HASH_TYPE}")
+    add_definitions ("-DPARAMS=${SPHINCS_HASH_TYPE}")
     add_definitions ("-DTHASH=${SPHINCS_THASH}")
+    
+    file( GLOB SPHINCS_BASE_SRCS
+        src/sphincsplus/address.c 
+        src/sphincsplus/randombytes.c 
+        src/sphincsplus/merkle.c 
+        src/sphincsplus/wots.c 
+        src/sphincsplus/wotsx1.c 
+        src/sphincsplus/utils.c 
+        src/sphincsplus/utilsx1.c 
+        src/sphincsplus/fors.c 
+        src/sphincsplus/sign.c
+        src/sphincsplus/sphincsplus_params.c
+    )
 
-# add needed files
-if(SPHINCS_HASH_TYPE MATCHES "shake")
+    file( GLOB SPHINCS_BASE_HEADERS
+        src/sphincsplus/params.h 
+        src/sphincsplus/address.h 
+        src/sphincsplus/randombytes.h 
+        src/sphincsplus/merkle.h 
+        src/sphincsplus/wots.h 
+        src/sphincsplus/wotsx1.h 
+        src/sphincsplus/utils.h 
+        src/sphincsplus/utilsx1.h 
+        src/sphincsplus/fors.h 
+        src/sphincsplus/api.h  
+        src/sphincsplus/hash.h 
+        src/sphincsplus/thash.h
+        src/sphincsplus/sphincsplus_params.h
+    )
+
+    # add needed files
+    if(SPHINCS_HASH_TYPE MATCHES "shake")
+        file( GLOB SPHINCS_SRCS
+            src/sphincsplus/fips202.c 
+            src/sphincsplus/hash_shake.c 
+            src/sphincsplus/thash_shake_${SPHINCS_THASH}.c
+        )
+
+        file( GLOB SPHINCS_HEADERS
+            src/sphincsplus/fips202.h
+        )
+    elseif(SPHINCS_HASH_TYPE MATCHES "haraka")
+        file( GLOB SPHINCS_SRCS
+            src/sphincsplus/haraka.c 
+            src/sphincsplus/hash_haraka.c 
+            src/sphincsplus/thash_haraka_${SPHINCS_THASH}.c
+        )
+
+        file( GLOB SPHINCS_HEADERS
+            src/sphincsplus/haraka.h
+        )
+    elseif(SPHINCS_HASH_TYPE MATCHES "sha2")
+        file( GLOB SPHINCS_SRCS
+            src/sphincsplus/sha2.c 
+            src/sphincsplus/hash_sha2.c 
+            src/sphincsplus/thash_sha2_${SPHINCS_THASH}.c
+        )
+
+        file( GLOB SPHINCS_HEADERS
+            src/sphincsplus/sha2.h
+        )
+    endif()
+else()
     file( GLOB SPHINCS_SRCS
-        src/sphincsplus/fips202.c 
-        src/sphincsplus/hash_shake.c 
-        src/sphincsplus/thash_shake_${SPHINCS_THASH}.c
+        src/sphincsplus/*.c
     )
-
     file( GLOB SPHINCS_HEADERS
-        src/sphincsplus/fips202.h
-    )
-elseif(SPHINCS_HASH_TYPE MATCHES "haraka")
-    file( GLOB SPHINCS_SRCS
-        src/sphincsplus/haraka.c 
-        src/sphincsplus/hash_haraka.c 
-        src/sphincsplus/thash_haraka_${SPHINCS_THASH}.c
-    )
-
-    file( GLOB SPHINCS_HEADERS
-        src/sphincsplus/haraka.h
-    )
-elseif(SPHINCS_HASH_TYPE MATCHES "sha2")
-    file( GLOB SPHINCS_SRCS
-        src/sphincsplus/sha2.c 
-        src/sphincsplus/hash_sha2.c 
-        src/sphincsplus/thash_sha2_${SPHINCS_THASH}.c
-    )
-
-    file( GLOB SPHINCS_HEADERS
-        src/sphincsplus/sha2.h
+        src/sphincsplus/*.h
     )
 endif()
 
@@ -87,18 +121,9 @@ file( GLOB CRYPTO_SRCS
       src/sig_dilithium/*.c
       src/ringct20/*.c
       src/falcon/*.c
-      src/sphincsplus/address.c 
-      src/sphincsplus/randombytes.c 
-      src/sphincsplus/merkle.c 
-      src/sphincsplus/wots.c 
-      src/sphincsplus/wotsx1.c 
-      src/sphincsplus/utils.c 
-      src/sphincsplus/utilsx1.c 
-      src/sphincsplus/fors.c 
-      src/sphincsplus/sign.c
-      src/sphincsplus/sphincsplus_params.c
+      ${SPHINCS_BASE_SRCS}
       ${SPHINCS_SRCS}
-)
+) 
 
 file( GLOB CRYPTO_HEADERS
       src/*.h
@@ -118,19 +143,7 @@ file( GLOB CRYPTO_HEADERS
       src/sig_dilithium/*.h
       src/ringct20/*.h
       src/falcon/*.h
-      src/sphincsplus/params.h 
-      src/sphincsplus/address.h 
-      src/sphincsplus/randombytes.h 
-      src/sphincsplus/merkle.h 
-      src/sphincsplus/wots.h 
-      src/sphincsplus/wotsx1.h 
-      src/sphincsplus/utils.h 
-      src/sphincsplus/utilsx1.h 
-      src/sphincsplus/fors.h 
-      src/sphincsplus/api.h  
-      src/sphincsplus/hash.h 
-      src/sphincsplus/thash.h
-      src/sphincsplus/sphincsplus_params.h
+      ${SPHINCS_BASE_HEADERS}
       ${SPHINCS_HEADERS}
       include/*.h
 )
