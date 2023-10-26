@@ -15,5 +15,4 @@ add_executable(rng_example rng_example.c)
 #        )
 
 target_link_libraries( rng_example
-        cellframe-sdk
-)
+        dap_core dap_crypto)
