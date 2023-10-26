@@ -259,51 +259,67 @@ const sphincsplus_offsets_t s_shake_offsets = {
     },
 };
 
-int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params)
-{
+static int s_sphincsplus_check_params(const sphincsplus_base_params_t *a_base_params) {
     if (!a_base_params) {
-        return -5;
-    }
-    if (!a_base_params->spx_d || a_base_params->spx_full_height % a_base_params->spx_d) {
-        log_it(L_ERROR, "SPX_D should always divide SPX_FULL_HEIGHT");
         return -1;
     }
 
-    sphincsplus_params_t l_res = {0};
-    l_res.base_params = *a_base_params;
+    if(memcmp(a_base_params, &s_params[a_base_params->config], sizeof(sphincsplus_base_params_t) - sizeof(sphincsplus_difficulty_t))) {
+        log_it(L_ERROR, "Differents between current config and checked");
+        return -2;
+    }
+
+
+    if (!a_base_params->spx_d || a_base_params->spx_full_height % a_base_params->spx_d) {
+        log_it(L_ERROR, "SPX_D should always divide SPX_FULL_HEIGHT");
+        return -3;
+    }
 #ifdef SPHINCSPLUS_FLEX
     if (SPX_SHA256_OUTPUT_BYTES < a_base_params->spx_n) {
         log_it(L_ERROR, "Linking against SHA-256 with N larger than 32 bytes is not supported");
-        return -7;
+        return -4;
     }
 #endif
+
+    if (a_base_params->spx_wots_w != 256 && a_base_params->spx_wots_w != 16) {
+        log_it(L_ERROR, "SPX_WOTS_W assumed 16 or 256");
+        return -5;
+    }
+
+    if (a_base_params->spx_n > 256) {
+        log_it(L_ERROR, "Did not precompute SPX_WOTS_LEN2 for n outside {2, .., 256}");
+        return -6;
+    }
+
+    return 0;
+}
+
+int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params)
+{
+    
+    if (s_sphincsplus_check_params(a_base_params))
+        return -1;
+
+    sphincsplus_params_t l_res = {0};
+    l_res.base_params = *a_base_params;
+
 
     if (a_base_params->spx_wots_w == 256) {
         l_res.spx_wots_logw = 8;
         if (a_base_params->spx_n <= 1) {
             l_res.spx_wots_len2 = 1;
-        } else if (a_base_params->spx_n <= 256) {
-            l_res.spx_wots_len2 = 2;
         } else {
-            log_it(L_ERROR, "Did not precompute SPX_WOTS_LEN2 for n outside {2, .., 256}");
-            return -3;
+            l_res.spx_wots_len2 = 2;
         }
-    } else if(a_base_params->spx_wots_w == 16) {
+    } else {
         l_res.spx_wots_logw = 4;
-
         if (a_base_params->spx_n <= 8) {
             l_res.spx_wots_len2 = 2;
         } else if (a_base_params->spx_n <= 136) {
             l_res.spx_wots_len2 = 3;
-        } else if (a_base_params->spx_n <= 256) {
-            l_res.spx_wots_len2 = 4;
         } else {
-            log_it(L_ERROR, "Did not precompute SPX_WOTS_LEN2 for n outside {2, .., 256}");
-            return -4;
+            l_res.spx_wots_len2 = 4;
         }
-    } else {
-        log_it(L_ERROR, "SPX_WOTS_W assumed 16 or 256");
-        return -2;
     }
 
     l_res.spx_wots_len1 = (8 * a_base_params->spx_n) / l_res.spx_wots_logw;
@@ -346,7 +362,6 @@ int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params)
         return -8;
     }
 #endif
-
     g_sphincsplus_params_current = l_res;
     return 0;
 }
