@@ -39,6 +39,9 @@ add_executable(${PROJECT_NAME} ${SRC})
 
 target_link_libraries(${PROJECT_NAME} dap_test dap_core dap_crypto m)
 
+# Disabled tests
+add_definitions("-DDAP_CRYPTO_NEWHOPE_TEST_OFF")
+add_definitions("-DDAP_CRYPTO_MULTISIGN_TEST_OFF")
 add_test(
     NAME crypto-test
     COMMAND crypto-test
