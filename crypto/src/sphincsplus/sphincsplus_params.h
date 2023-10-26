@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 
+// not change, only add
 typedef enum {
     SPHINCSPLUS_CONFIG_MIN_ARG,
     SPHINCSPLUS_HARAKA_128F,
@@ -26,6 +27,11 @@ typedef enum {
     SPHINCSPLUS_CONFIG_MAX_ARG,
 } sphincsplus_config_t;
 
+typedef enum {
+    SPHINCSPLUS_SIMPLE,
+    SPHINCSPLUS_ROBUST,
+} sphincsplus_difficulty_t;
+
 typedef struct {
     uint32_t spx_offset_layer;
     uint32_t spx_offset_tree;
@@ -40,6 +46,7 @@ typedef struct {
 
 typedef struct {
     sphincsplus_config_t config;
+    sphincsplus_difficulty_t difficulty;
     uint32_t spx_n;
     uint32_t spx_full_height;
     uint32_t spx_d;
@@ -135,6 +142,9 @@ sphincsplus_params_t g_sphincsplus_params_current;
 
 #define SPX_SHAX_OUTPUT_BYTES   g_sphincsplus_params_current.spx_shax_output_bytes
 #define SPX_SHAX_BLOCK_BYTES    g_sphincsplus_params_current.spx_shax_block_bytes
+
+#define SPHINCSPLUS_CONFIG      g_sphincsplus_params_current.base_params.config
+#define SPHINCSPLUS_DIFFICULTY  g_sphincsplus_params_current.base_params.difficulty
 #endif
 
 ///==========================================================================================

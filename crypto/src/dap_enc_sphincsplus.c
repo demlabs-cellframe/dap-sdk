@@ -3,7 +3,8 @@
 
 #define LOG_TAG "dap_enc_sig_sphincsplus"
 
-static const sphincsplus_config_t s_default_config = SPHINCSPLUS_SHA2_256F;
+static const sphincsplus_config_t s_default_config = SPHINCSPLUS_HARAKA_256F;
+static const sphincsplus_difficulty_t s_default_difficulty = SPHINCSPLUS_SIMPLE;
 static pthread_mutex_t s_sign_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {
@@ -267,7 +268,7 @@ uint8_t *dap_enc_sphincsplus_write_signature(const void *a_sign, size_t *a_bufle
     dap_return_val_if_pass(!a_sign, NULL);
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign;
 // func work
-    uint64_t l_buflen = l_sign->sig_len + sizeof(uint64_t) * 2 + sizeof(sphincsplus_params_t);
+    uint64_t l_buflen = l_sign->sig_len + sizeof(uint64_t) * 2 + sizeof(sphincsplus_base_params_t);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8, 
         &l_buflen, sizeof(uint64_t),
         &l_sign->sig_params.base_params, sizeof(sphincsplus_base_params_t),
