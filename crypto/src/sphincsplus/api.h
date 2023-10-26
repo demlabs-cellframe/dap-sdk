@@ -6,6 +6,10 @@
 
 #include "params.h"
 
+#ifdef SPHINCSPLUS_FLEX
+extern sphincsplus_params_t g_sphincsplus_params_current;
+#endif
+
 #define CRYPTO_ALGNAME "SPHINCS+"
 
 #define CRYPTO_SECRETKEYBYTES SPX_SK_BYTES
