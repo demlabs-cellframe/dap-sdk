@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "params.h"
+extern sphincsplus_params_t g_sphincsplus_params_current;
 
 typedef struct {
 #ifndef SPHINCSPLUS_FLEX

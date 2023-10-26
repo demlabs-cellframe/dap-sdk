@@ -9,9 +9,9 @@
 #include "address.h"
 #include "params.h"
 
-#ifdef SPHINCSPLUS_FLEX
+// #ifdef SPHINCSPLUS_FLEX
 extern sphincsplus_params_t g_sphincsplus_params_current;
-#endif
+// #endif
 
 /*
  * This generates a Merkle signature (WOTS signature followed by the Merkle

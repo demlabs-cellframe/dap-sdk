@@ -9,9 +9,9 @@
 #include "utils.h"
 #include "sha2.h"
 
-#ifdef SPHINCSPLUS_FLEX
+// #ifdef SPHINCSPLUS_FLEX
 extern sphincsplus_params_t g_sphincsplus_params_current;
-#endif
+// #endif
 
 static uint32_t load_bigendian_32(const uint8_t *x) {
     return (uint32_t)(x[3]) | (((uint32_t)(x[2])) << 8) |

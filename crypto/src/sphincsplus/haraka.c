@@ -36,6 +36,8 @@
 #include "haraka.h"
 #include "utils.h"
 
+extern sphincsplus_params_t g_sphincsplus_params_current;
+
 #define HARAKAS_RATE 32
 
 static const uint64_t haraka512_rc64[10][8] = {

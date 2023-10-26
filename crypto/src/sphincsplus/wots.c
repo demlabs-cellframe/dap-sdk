@@ -10,9 +10,7 @@
 #include "address.h"
 #include "params.h"
 
-#ifdef SPHINCSPLUS_FLEX
 extern sphincsplus_params_t g_sphincsplus_params_current;
-#endif
 
 // TODO clarify address expectations, and make them more uniform.
 // TODO i.e. do we expect types to be set already?

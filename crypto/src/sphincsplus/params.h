@@ -5,4 +5,5 @@
 #ifndef SPHINCSPLUS_FLEX
 #include xstr(params/params-PARAMS.h)
 #endif
+extern sphincsplus_params_t g_sphincsplus_params_current;
 

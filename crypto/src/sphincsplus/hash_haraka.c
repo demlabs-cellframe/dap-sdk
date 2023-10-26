@@ -8,9 +8,9 @@
 #include "haraka.h"
 #include "hash.h"
 
-#ifdef SPHINCSPLUS_FLEX
+// #ifdef SPHINCSPLUS_FLEX
 extern sphincsplus_params_t g_sphincsplus_params_current;
-#endif
+// #endif
 
 void initialize_hash_function(spx_ctx* ctx)
 {

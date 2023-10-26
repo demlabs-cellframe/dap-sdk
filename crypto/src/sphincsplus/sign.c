@@ -13,6 +13,7 @@
 #include "utils.h"
 #include "merkle.h"
 
+extern sphincsplus_params_t g_sphincsplus_params_current;
 
 /*
  * Returns the length of a secret key, in bytes
