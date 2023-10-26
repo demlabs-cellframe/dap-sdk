@@ -6,6 +6,10 @@
 #include "thash.h"
 #include "address.h"
 
+#ifdef SPHINCSPLUS_FLEX
+extern sphincsplus_params_t g_sphincsplus_params_current;
+#endif
+
 /*
  * Generate the entire Merkle tree, computing the authentication path for
  * leaf_idx, and the resulting root node using Merkle's TreeHash algorithm.

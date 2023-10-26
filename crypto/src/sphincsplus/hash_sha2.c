@@ -25,6 +25,8 @@
 #define shaX sha256
 #define mgf1_X mgf1_256
 #endif
+#else
+extern sphincsplus_params_t g_sphincsplus_params_current;
 #endif
 
 

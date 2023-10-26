@@ -9,6 +9,10 @@
 #include "thash.h"
 #include "address.h"
 
+#ifdef SPHINCSPLUS_FLEX
+extern sphincsplus_params_t g_sphincsplus_params_current;
+#endif
+
 static void fors_gen_sk(unsigned char *sk, const spx_ctx *ctx,
                         uint32_t fors_leaf_addr[8])
 {

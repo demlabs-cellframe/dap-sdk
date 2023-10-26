@@ -9,6 +9,7 @@
 
 #ifdef SPHINCSPLUS_FLEX
 #define USING_512 1
+extern sphincsplus_params_t g_sphincsplus_params_current;
 #else
 #define USING_512 SPX_SHA512
 #endif
