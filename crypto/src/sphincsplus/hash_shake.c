@@ -9,7 +9,11 @@
 
 /* For SHAKE256, there is no immediate reason to initialize at the start,
    so this function is an empty operation. */
+#ifndef SPHINCSPLUS_FLEX
 void initialize_hash_function(spx_ctx* ctx)
+#else
+void initialize_hash_function_shake(spx_ctx* ctx)
+#endif
 {
     (void)ctx; /* Suppress an 'unused parameter' warning. */
 }
@@ -17,8 +21,12 @@ void initialize_hash_function(spx_ctx* ctx)
 /*
  * Computes PRF(pk_seed, sk_seed, addr)
  */
+#ifndef SPHINCSPLUS_FLEX
 void prf_addr(unsigned char *out, const spx_ctx *ctx,
               const uint32_t addr[8])
+#else
+void prf_addr_shake(unsigned char *out, const spx_ctx *ctx, const uint32_t addr[8])
+#endif
 {
     unsigned char buf[2*SPX_N + SPX_ADDR_BYTES];
 
@@ -33,10 +41,17 @@ void prf_addr(unsigned char *out, const spx_ctx *ctx,
  * Computes the message-dependent randomness R, using a secret seed and an
  * optional randomization value as well as the message.
  */
-void gen_message_random(unsigned char *R, const unsigned char *sk_prf,
+#ifndef SPHINCSPLUS_FLEX
+void gen_message_random(unsigned char *R, const unsigned char* sk_prf,
                         const unsigned char *optrand,
                         const unsigned char *m, unsigned long long mlen,
                         const spx_ctx *ctx)
+#else
+void gen_message_random_shake(unsigned char *R, const unsigned char* sk_prf,
+                        const unsigned char *optrand,
+                        const unsigned char *m, unsigned long long mlen,
+                        const spx_ctx *ctx)
+#endif
 {
     (void)ctx;
     uint64_t s_inc[26];
@@ -54,10 +69,17 @@ void gen_message_random(unsigned char *R, const unsigned char *sk_prf,
  * Outputs the message digest and the index of the leaf. The index is split in
  * the tree index and the leaf index, for convenient copying to an address.
  */
+#ifndef SPHINCSPLUS_FLEX
 void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
                   const unsigned char *R, const unsigned char *pk,
                   const unsigned char *m, unsigned long long mlen,
                   const spx_ctx *ctx)
+#else
+void hash_message_shake(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
+                  const unsigned char *R, const unsigned char *pk,
+                  const unsigned char *m, unsigned long long mlen,
+                  const spx_ctx *ctx)
+#endif
 {
     (void)ctx;
 #ifndef SPHINCSPLUS_FLEX

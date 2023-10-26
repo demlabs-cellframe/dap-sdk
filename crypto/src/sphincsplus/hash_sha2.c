@@ -30,7 +30,11 @@
 
 /* For SHA, there is no immediate reason to initialize at the start,
    so this function is an empty operation. */
-void initialize_hash_function(spx_ctx *ctx)
+#ifndef SPHINCSPLUS_FLEX
+void initialize_hash_function(spx_ctx* ctx)
+#else
+void initialize_hash_function_sha2(spx_ctx* ctx)
+#endif
 {
     seed_state(ctx);
 }
@@ -38,8 +42,12 @@ void initialize_hash_function(spx_ctx *ctx)
 /*
  * Computes PRF(pk_seed, sk_seed, addr).
  */
+#ifndef SPHINCSPLUS_FLEX
 void prf_addr(unsigned char *out, const spx_ctx *ctx,
               const uint32_t addr[8])
+#else
+void prf_addr_sha2(unsigned char *out, const spx_ctx *ctx, const uint32_t addr[8])
+#endif
 {
     uint8_t sha2_state[40];
     unsigned char buf[SPX_SHA256_ADDR_BYTES + SPX_N];
@@ -65,7 +73,8 @@ void prf_addr(unsigned char *out, const spx_ctx *ctx,
  * prefix. This is necessary to prevent having to move the message around (and
  * allocate memory for it).
  */
-void gen_message_random(unsigned char *R, const unsigned char *sk_prf,
+#ifndef SPHINCSPLUS_FLEX
+void gen_message_random(unsigned char *R, const unsigned char* sk_prf,
                         const unsigned char *optrand,
                         const unsigned char *m, unsigned long long mlen,
                         const spx_ctx *ctx)
@@ -75,10 +84,8 @@ void gen_message_random(unsigned char *R, const unsigned char *sk_prf,
     unsigned char buf[SPX_SHAX_BLOCK_BYTES + SPX_SHAX_OUTPUT_BYTES];
     uint8_t state[8 + SPX_SHAX_OUTPUT_BYTES];
     size_t i;
-#ifndef SPHINCSPLUS_FLEX
 #if SPX_N > SPX_SHAX_BLOCK_BYTES
     #error "Currently only supports SPX_N of at most SPX_SHAX_BLOCK_BYTES"
-#endif
 #endif
 
     /* This implements HMAC-SHA */
@@ -86,37 +93,20 @@ void gen_message_random(unsigned char *R, const unsigned char *sk_prf,
         buf[i] = 0x36 ^ sk_prf[i];
     }
     memset(buf + SPX_N, 0x36, SPX_SHAX_BLOCK_BYTES - SPX_N);
-#ifndef SPHINCSPLUS_FLEX
+
     shaX_inc_init(state);
     shaX_inc_blocks(state, buf, 1);
-#else
-    if (SPX_N >= 24) {
-        sha512_inc_init(state);
-        sha512_inc_blocks(state, buf, 1);
-    } else {
-        sha256_inc_init(state);
-        sha256_inc_blocks(state, buf, 1);
-    } 
-#endif
 
     memcpy(buf, optrand, SPX_N);
 
     /* If optrand + message cannot fill up an entire block */
     if (SPX_N + mlen < SPX_SHAX_BLOCK_BYTES) {
         memcpy(buf + SPX_N, m, mlen);
-#ifndef SPHINCSPLUS_FLEX
         shaX_inc_finalize(buf + SPX_SHAX_BLOCK_BYTES, state,
                             buf, mlen + SPX_N);
-#else
-        if (SPX_N >= 24)
-            sha512_inc_finalize(buf + SPX_SHAX_BLOCK_BYTES, state, buf, mlen + SPX_N);
-        else
-            sha256_inc_finalize(buf + SPX_SHAX_BLOCK_BYTES, state, buf, mlen + SPX_N);
-#endif
     }
     /* Otherwise first fill a block, so that finalize only uses the message */
     else {
-#ifndef SPHINCSPLUS_FLEX
         memcpy(buf + SPX_N, m, SPX_SHAX_BLOCK_BYTES - SPX_N);
         shaX_inc_blocks(state, buf, 1);
 
@@ -124,7 +114,56 @@ void gen_message_random(unsigned char *R, const unsigned char *sk_prf,
         mlen -= SPX_SHAX_BLOCK_BYTES - SPX_N;
 
         shaX_inc_finalize(buf + SPX_SHAX_BLOCK_BYTES, state, m, mlen);
+    }
+
+    for (i = 0; i < SPX_N; i++) {
+        buf[i] = 0x5c ^ sk_prf[i];
+    }
+    memset(buf + SPX_N, 0x5c, SPX_SHAX_BLOCK_BYTES - SPX_N);
+    shaX(buf, buf, SPX_SHAX_BLOCK_BYTES + SPX_SHAX_OUTPUT_BYTES);
+    memcpy(R, buf, SPX_N);
+}
 #else
+void gen_message_random_sha2(unsigned char *R, const unsigned char* sk_prf,
+                        const unsigned char *optrand,
+                        const unsigned char *m, unsigned long long mlen,
+                        const spx_ctx *ctx)
+{
+    (void)ctx;
+
+    unsigned char buf[SPX_SHAX_BLOCK_BYTES + SPX_SHAX_OUTPUT_BYTES];
+    uint8_t state[8 + SPX_SHAX_OUTPUT_BYTES];
+    size_t i;
+
+    /* This implements HMAC-SHA */
+    for (i = 0; i < SPX_N; i++) {
+        buf[i] = 0x36 ^ sk_prf[i];
+    }
+    memset(buf + SPX_N, 0x36, SPX_SHAX_BLOCK_BYTES - SPX_N);
+
+    if (SPX_N >= 24) {
+        sha512_inc_init(state);
+        sha512_inc_blocks(state, buf, 1);
+    } else {
+        sha256_inc_init(state);
+        sha256_inc_blocks(state, buf, 1);
+    } 
+
+    memcpy(buf, optrand, SPX_N);
+
+    /* If optrand + message cannot fill up an entire block */
+    if (SPX_N + mlen < SPX_SHAX_BLOCK_BYTES) {
+        memcpy(buf + SPX_N, m, mlen);
+
+        if (SPX_N >= 24)
+            sha512_inc_finalize(buf + SPX_SHAX_BLOCK_BYTES, state, buf, mlen + SPX_N);
+        else
+            sha256_inc_finalize(buf + SPX_SHAX_BLOCK_BYTES, state, buf, mlen + SPX_N);
+
+    }
+    /* Otherwise first fill a block, so that finalize only uses the message */
+    else {
+
         memcpy(buf + SPX_N, m, SPX_SHAX_BLOCK_BYTES - SPX_N);
         if (SPX_N >= 24)
             sha512_inc_blocks(state, buf, 1);
@@ -136,50 +175,44 @@ void gen_message_random(unsigned char *R, const unsigned char *sk_prf,
             sha512_inc_finalize(buf + SPX_SHAX_BLOCK_BYTES, state, m, mlen);
         else
             sha256_inc_finalize(buf + SPX_SHAX_BLOCK_BYTES, state, m, mlen);
-#endif
     }
 
     for (i = 0; i < SPX_N; i++) {
         buf[i] = 0x5c ^ sk_prf[i];
     }
     memset(buf + SPX_N, 0x5c, SPX_SHAX_BLOCK_BYTES - SPX_N);
-#ifndef SPHINCSPLUS_FLEX
-    shaX(buf, buf, SPX_SHAX_BLOCK_BYTES + SPX_SHAX_OUTPUT_BYTES);
-#else
     if (SPX_N >= 24)
         sha512(buf, buf, SPX_SHAX_BLOCK_BYTES + SPX_SHAX_OUTPUT_BYTES);
     else
         sha256(buf, buf, SPX_SHAX_BLOCK_BYTES + SPX_SHAX_OUTPUT_BYTES);
-#endif
+
     memcpy(R, buf, SPX_N);
 }
+#endif
 
 /**
  * Computes the message hash using R, the public key, and the message.
  * Outputs the message digest and the index of the leaf. The index is split in
  * the tree index and the leaf index, for convenient copying to an address.
  */
+#ifndef SPHINCSPLUS_FLEX
 void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
                   const unsigned char *R, const unsigned char *pk,
                   const unsigned char *m, unsigned long long mlen,
                   const spx_ctx *ctx)
 {
     (void)ctx;
-#ifndef SPHINCSPLUS_FLEX
+
 #define SPX_TREE_BITS (SPX_TREE_HEIGHT * (SPX_D - 1))
 #define SPX_TREE_BYTES ((SPX_TREE_BITS + 7) / 8)
 #define SPX_LEAF_BITS SPX_TREE_HEIGHT
 #define SPX_LEAF_BYTES ((SPX_LEAF_BITS + 7) / 8)
 #define SPX_DGST_BYTES (SPX_FORS_MSG_BYTES + SPX_TREE_BYTES + SPX_LEAF_BYTES)
-#endif
-
     unsigned char seed[2*SPX_N + SPX_SHAX_OUTPUT_BYTES];
 
     /* Round to nearest multiple of SPX_SHAX_BLOCK_BYTES */
-#ifndef SPHINCSPLUS_FLEX
 #if (SPX_SHAX_BLOCK_BYTES & (SPX_SHAX_BLOCK_BYTES-1)) != 0
     #error "Assumes that SPX_SHAX_BLOCK_BYTES is a power of 2"
-#endif
 #endif
 #define SPX_INBLOCKS (((SPX_N + SPX_PK_BYTES + SPX_SHAX_BLOCK_BYTES - 1) & \
                         -SPX_SHAX_BLOCK_BYTES) / SPX_SHAX_BLOCK_BYTES)
@@ -188,14 +221,7 @@ void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
     unsigned char buf[SPX_DGST_BYTES];
     unsigned char *bufp = buf;
     uint8_t state[8 + SPX_SHAX_OUTPUT_BYTES];
-#ifndef SPHINCSPLUS_FLEX
     shaX_inc_init(state);
-#else
-    if (SPX_N >= 24)
-        sha512_inc_init(state);
-    else
-        sha256_inc_init(state);
-#endif
 
     // seed: SHA-X(R ‖ PK.seed ‖ PK.root ‖ M)
     memcpy(inbuf, R, SPX_N);
@@ -204,18 +230,10 @@ void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
     /* If R + pk + message cannot fill up an entire block */
     if (SPX_N + SPX_PK_BYTES + mlen < SPX_INBLOCKS * SPX_SHAX_BLOCK_BYTES) {
         memcpy(inbuf + SPX_N + SPX_PK_BYTES, m, mlen);
-#ifndef SPHINCSPLUS_FLEX
         shaX_inc_finalize(seed + 2*SPX_N, state, inbuf, SPX_N + SPX_PK_BYTES + mlen);
-#else
-        if (SPX_N >= 24)
-            sha512_inc_finalize(seed + 2*SPX_N, state, inbuf, SPX_N + SPX_PK_BYTES + mlen);
-        else
-            sha256_inc_finalize(seed + 2*SPX_N, state, inbuf, SPX_N + SPX_PK_BYTES + mlen);
-#endif
     }
     /* Otherwise first fill a block, so that finalize only uses the message */
     else {
-#ifndef SPHINCSPLUS_FLEX
         memcpy(inbuf + SPX_N + SPX_PK_BYTES, m,
                SPX_INBLOCKS * SPX_SHAX_BLOCK_BYTES - SPX_N - SPX_PK_BYTES);
         shaX_inc_blocks(state, inbuf, SPX_INBLOCKS);
@@ -223,7 +241,66 @@ void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
         m += SPX_INBLOCKS * SPX_SHAX_BLOCK_BYTES - SPX_N - SPX_PK_BYTES;
         mlen -= SPX_INBLOCKS * SPX_SHAX_BLOCK_BYTES - SPX_N - SPX_PK_BYTES;
         shaX_inc_finalize(seed + 2*SPX_N, state, m, mlen);
+    }
+
+    // H_msg: MGF1-SHA-X(R ‖ PK.seed ‖ seed)
+    memcpy(seed, R, SPX_N);
+    memcpy(seed + SPX_N, pk, SPX_N);
+
+    /* By doing this in two steps, we prevent hashing the message twice;
+       otherwise each iteration in MGF1 would hash the message again. */
+    mgf1_X(bufp, SPX_DGST_BYTES, seed, 2*SPX_N + SPX_SHAX_OUTPUT_BYTES);
+    memcpy(digest, bufp, SPX_FORS_MSG_BYTES);
+    bufp += SPX_FORS_MSG_BYTES;
+#if SPX_TREE_BITS > 64
+    #error For given height and depth, 64 bits cannot represent all subtrees
+#endif
+
+    *tree = bytes_to_ull(bufp, SPX_TREE_BYTES);
+    *tree &= (~(uint64_t)0) >> (64 - SPX_TREE_BITS);
+    bufp += SPX_TREE_BYTES;
+
+    *leaf_idx = (uint32_t)bytes_to_ull(bufp, SPX_LEAF_BYTES);
+    *leaf_idx &= (~(uint32_t)0) >> (32 - SPX_LEAF_BITS);
+}
 #else
+
+void hash_message_sha2(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
+                  const unsigned char *R, const unsigned char *pk,
+                  const unsigned char *m, unsigned long long mlen,
+                  const spx_ctx *ctx)
+{
+    (void)ctx;
+    unsigned char seed[2*SPX_N + SPX_SHAX_OUTPUT_BYTES];
+
+    /* Round to nearest multiple of SPX_SHAX_BLOCK_BYTES */
+#define SPX_INBLOCKS (((SPX_N + SPX_PK_BYTES + SPX_SHAX_BLOCK_BYTES - 1) & \
+                        -SPX_SHAX_BLOCK_BYTES) / SPX_SHAX_BLOCK_BYTES)
+    unsigned char inbuf[SPX_INBLOCKS * SPX_SHAX_BLOCK_BYTES];
+
+    unsigned char buf[SPX_DGST_BYTES];
+    unsigned char *bufp = buf;
+    uint8_t state[8 + SPX_SHAX_OUTPUT_BYTES];
+
+    if (SPX_N >= 24)
+        sha512_inc_init(state);
+    else
+        sha256_inc_init(state);
+
+    // seed: SHA-X(R ‖ PK.seed ‖ PK.root ‖ M)
+    memcpy(inbuf, R, SPX_N);
+    memcpy(inbuf + SPX_N, pk, SPX_PK_BYTES);
+
+    /* If R + pk + message cannot fill up an entire block */
+    if (SPX_N + SPX_PK_BYTES + mlen < SPX_INBLOCKS * SPX_SHAX_BLOCK_BYTES) {
+        memcpy(inbuf + SPX_N + SPX_PK_BYTES, m, mlen);
+        if (SPX_N >= 24)
+            sha512_inc_finalize(seed + 2*SPX_N, state, inbuf, SPX_N + SPX_PK_BYTES + mlen);
+        else
+            sha256_inc_finalize(seed + 2*SPX_N, state, inbuf, SPX_N + SPX_PK_BYTES + mlen);
+    }
+    /* Otherwise first fill a block, so that finalize only uses the message */
+    else {
         memcpy(inbuf + SPX_N + SPX_PK_BYTES, m,
                SPX_INBLOCKS * SPX_SHAX_BLOCK_BYTES - SPX_N - SPX_PK_BYTES);
         if (SPX_N >= 24)
@@ -237,7 +314,6 @@ void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
             sha512_inc_finalize(seed + 2*SPX_N, state, m, mlen);
         else
             sha256_inc_finalize(seed + 2*SPX_N, state, m, mlen);
-#endif
     }
 
     // H_msg: MGF1-SHA-X(R ‖ PK.seed ‖ seed)
@@ -246,22 +322,13 @@ void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
 
     /* By doing this in two steps, we prevent hashing the message twice;
        otherwise each iteration in MGF1 would hash the message again. */
-#ifndef SPHINCSPLUS_FLEX
-    mgf1_X(bufp, SPX_DGST_BYTES, seed, 2*SPX_N + SPX_SHAX_OUTPUT_BYTES);
-#else
     if (SPX_N >= 24)
         mgf1_512(bufp, SPX_DGST_BYTES, seed, 2*SPX_N + SPX_SHAX_OUTPUT_BYTES);
     else
         mgf1_256(bufp, SPX_DGST_BYTES, seed, 2*SPX_N + SPX_SHAX_OUTPUT_BYTES);
-#endif
 
     memcpy(digest, bufp, SPX_FORS_MSG_BYTES);
     bufp += SPX_FORS_MSG_BYTES;
-#ifndef SPHINCSPLUS_FLEX
-#if SPX_TREE_BITS > 64
-    #error For given height and depth, 64 bits cannot represent all subtrees
-#endif
-#endif
 
     *tree = bytes_to_ull(bufp, SPX_TREE_BYTES);
     *tree &= (~(uint64_t)0) >> (64 - SPX_TREE_BITS);
@@ -270,5 +337,6 @@ void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
     *leaf_idx = (uint32_t)bytes_to_ull(bufp, SPX_LEAF_BYTES);
     *leaf_idx &= (~(uint32_t)0) >> (32 - SPX_LEAF_BITS);
 }
+#endif
 
 

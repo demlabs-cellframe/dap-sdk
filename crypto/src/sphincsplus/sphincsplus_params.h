@@ -84,9 +84,9 @@ typedef struct {
 
 extern sphincsplus_params_t g_sphincsplus_params_current;
 
-#define SPHINCSPLUS_FLEX
+#ifdef SPHINCSPLUS_FLEX  //defined in cmake
 
-#ifdef SPHINCSPLUS_FLEX
+// SPX... - from sphincs libruary definitions, SPHINCSPLUS... - added definitions
 
 #define SPX_SHA256_BLOCK_BYTES 64
 #define SPX_SHA256_OUTPUT_BYTES 32  /* This does not necessarily equal SPX_N */

@@ -8,7 +8,11 @@
 #include "haraka.h"
 #include "hash.h"
 
+#ifndef SPHINCSPLUS_FLEX
 void initialize_hash_function(spx_ctx* ctx)
+#else
+void initialize_hash_function_haraka(spx_ctx* ctx)
+#endif
 {
     tweak_constants(ctx);
 }
@@ -16,8 +20,12 @@ void initialize_hash_function(spx_ctx* ctx)
 /*
  * Computes PRF(key, addr), given a secret key of SPX_N bytes and an address
  */
+#ifndef SPHINCSPLUS_FLEX
 void prf_addr(unsigned char *out, const spx_ctx *ctx,
               const uint32_t addr[8])
+#else
+void prf_addr_haraka(unsigned char *out, const spx_ctx *ctx, const uint32_t addr[8])
+#endif
 {
     /* Since SPX_N may be smaller than 32, we need temporary buffers. */
     unsigned char outbuf[32];
@@ -34,10 +42,17 @@ void prf_addr(unsigned char *out, const spx_ctx *ctx,
  * Computes the message-dependent randomness R, using a secret seed and an
  * optional randomization value as well as the message.
  */
+#ifndef SPHINCSPLUS_FLEX
 void gen_message_random(unsigned char *R, const unsigned char* sk_prf,
                         const unsigned char *optrand,
                         const unsigned char *m, unsigned long long mlen,
                         const spx_ctx *ctx)
+#else
+void gen_message_random_haraka(unsigned char *R, const unsigned char* sk_prf,
+                        const unsigned char *optrand,
+                        const unsigned char *m, unsigned long long mlen,
+                        const spx_ctx *ctx)
+#endif
 {
     uint8_t s_inc[65];
 
@@ -54,10 +69,17 @@ void gen_message_random(unsigned char *R, const unsigned char* sk_prf,
  * Outputs the message digest and the index of the leaf. The index is split in
  * the tree index and the leaf index, for convenient copying to an address.
  */
+#ifndef SPHINCSPLUS_FLEX
 void hash_message(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
                   const unsigned char *R, const unsigned char *pk,
                   const unsigned char *m, unsigned long long mlen,
                   const spx_ctx *ctx)
+#else
+void hash_message_haraka(unsigned char *digest, uint64_t *tree, uint32_t *leaf_idx,
+                  const unsigned char *R, const unsigned char *pk,
+                  const unsigned char *m, unsigned long long mlen,
+                  const spx_ctx *ctx)
+#endif
 {
 #ifndef SPHINCSPLUS_FLEX
 #define SPX_TREE_BITS (SPX_TREE_HEIGHT * (SPX_D - 1))
