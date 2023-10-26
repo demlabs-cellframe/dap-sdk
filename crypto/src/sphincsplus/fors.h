@@ -6,8 +6,6 @@
 #include "params.h"
 #include "context.h"
 
-extern sphincsplus_params_t g_sphincsplus_params_current;
-
 /**
  * Signs a message m, deriving the secret key from sk_seed and the FTS address.
  * Assumes m contains at least SPX_FORS_HEIGHT * SPX_FORS_TREES bits.

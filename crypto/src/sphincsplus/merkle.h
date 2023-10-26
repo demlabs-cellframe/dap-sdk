@@ -3,8 +3,6 @@
 
 #include <stdint.h>
 
-extern sphincsplus_params_t g_sphincsplus_params_current;
-
 /* Generate a Merkle signature (WOTS signature followed by the Merkle */
 /* authentication path) */
 #define merkle_sign SPX_NAMESPACE(merkle_sign)

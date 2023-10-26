@@ -5,7 +5,6 @@
 #include "params.h"
 #include "context.h"
 
-extern sphincsplus_params_t g_sphincsplus_params_current;
 
 /* To support MSVC use alloca() instead of VLAs. See #20. */
 #ifdef _MSC_VER

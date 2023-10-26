@@ -2,7 +2,6 @@
 #define WOTSX1_H_ 
 
 #include <string.h>
-extern sphincsplus_params_t g_sphincsplus_params_current;
 
 /*
  * This is here to provide an interface to the internal wots_gen_leafx1

@@ -5,8 +5,6 @@
 #include "context.h"
 #include "params.h"
 
-extern sphincsplus_params_t g_sphincsplus_params_current;
-
 #define initialize_hash_function SPX_NAMESPACE(initialize_hash_function)
 void initialize_hash_function(spx_ctx *ctx);
 
