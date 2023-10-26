@@ -30,7 +30,7 @@ void thash_sha2_robust(unsigned char *out, const unsigned char *in, unsigned int
 #endif
 {
 #if USING_512
-    if (inblocks > 1) {
+    if (SPX_SHA512 && inblocks > 1) {
 	thash_512(out, in, inblocks, ctx, addr);
         return;
     }

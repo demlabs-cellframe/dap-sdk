@@ -30,8 +30,8 @@ void thash_sha2_simple(unsigned char *out, const unsigned char *in, unsigned int
 #endif
 {
 #if USING_512
-    if (inblocks > 1) {
-	thash_512(out, in, inblocks, ctx, addr);
+    if (SPX_SHA512 && inblocks > 1) {
+	    thash_512(out, in, inblocks, ctx, addr);
         return;
     }
 #endif

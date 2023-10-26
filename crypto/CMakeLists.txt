@@ -5,7 +5,7 @@ project (dap_crypto)
 add_definitions ("-D_GNU_SOURCE")
 
 
-if(NOT DEFINED SPHINCS_FLEX)
+if(NOT DEFINED SPHINCSPLUS_FLEX)
 # define sphincs hash params
     # choose one hashtype
     # set(SPHINCS_HASH_TYPE "sphincs-haraka-128f")
@@ -95,6 +95,7 @@ if(NOT DEFINED SPHINCS_FLEX)
         )
     endif()
 else()
+    add_definitions ("-DSPHINCSPLUS_FLEX")
     file( GLOB SPHINCS_SRCS
         src/sphincsplus/*.c
     )
