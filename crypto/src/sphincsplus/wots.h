@@ -6,6 +6,8 @@
 #include "params.h"
 #include "context.h"
 
+extern sphincsplus_params_t g_sphincsplus_params_current;
+
 /**
  * Takes a WOTS signature and an n-byte message, computes a WOTS public key.
  *

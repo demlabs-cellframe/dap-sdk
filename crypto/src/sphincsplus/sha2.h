@@ -18,6 +18,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+extern sphincsplus_params_t g_sphincsplus_params_current;
 
 void sha256_inc_init(uint8_t *state);
 void sha256_inc_blocks(uint8_t *state, const uint8_t *in, size_t inblocks);

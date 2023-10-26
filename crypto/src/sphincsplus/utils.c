@@ -6,10 +6,6 @@
 #include "thash.h"
 #include "address.h"
 
-// #ifdef SPHINCSPLUS_FLEX
-extern sphincsplus_params_t g_sphincsplus_params_current;
-// #endif
-
 /**
  * Converts the value of 'in' to 'outlen' bytes in big-endian byte order.
  */

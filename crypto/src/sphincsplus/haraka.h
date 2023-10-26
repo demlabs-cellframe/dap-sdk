@@ -3,6 +3,8 @@
 
 #include "context.h"
 
+extern sphincsplus_params_t g_sphincsplus_params_current;
+
 /* Tweak constants with seed */
 #define tweak_constants SPX_NAMESPACE(tweak_constants)
 void tweak_constants(spx_ctx *ctx);

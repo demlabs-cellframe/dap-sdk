@@ -5,6 +5,8 @@
 #include "params.h"
 #include "context.h"
 
+extern sphincsplus_params_t g_sphincsplus_params_current;
+
 /**
  * For a given leaf index, computes the authentication path and the resulting
  * root node using Merkle's TreeHash algorithm.

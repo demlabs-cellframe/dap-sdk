@@ -14,7 +14,6 @@ extern sphincsplus_params_t g_sphincsplus_params_current;
 #define USING_512 SPX_SHA512
 #endif
 
-extern sphincsplus_params_t g_sphincsplus_params_current;
 
 #if USING_512
 static void thash_512(unsigned char *out, const unsigned char *in, unsigned int inblocks,

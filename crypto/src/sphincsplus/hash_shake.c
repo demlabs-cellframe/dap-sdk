@@ -7,10 +7,6 @@
 #include "hash.h"
 #include "fips202.h"
 
-// #ifdef SPHINCSPLUS_FLEX
-extern sphincsplus_params_t g_sphincsplus_params_current;
-// #endif
-
 /* For SHAKE256, there is no immediate reason to initialize at the start,
    so this function is an empty operation. */
 void initialize_hash_function(spx_ctx* ctx)

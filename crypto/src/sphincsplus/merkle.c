@@ -9,10 +9,6 @@
 #include "address.h"
 #include "params.h"
 
-// #ifdef SPHINCSPLUS_FLEX
-extern sphincsplus_params_t g_sphincsplus_params_current;
-// #endif
-
 /*
  * This generates a Merkle signature (WOTS signature followed by the Merkle
  * authentication path).  This is in this file because most of the complexity

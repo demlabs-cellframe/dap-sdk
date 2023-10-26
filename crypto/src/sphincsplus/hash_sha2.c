@@ -26,10 +26,6 @@
 #define mgf1_X mgf1_256
 #endif
 
-extern sphincsplus_params_t g_sphincsplus_params_current;
-
-
-
 /* For SHA, there is no immediate reason to initialize at the start,
    so this function is an empty operation. */
 void initialize_hash_function(spx_ctx *ctx)

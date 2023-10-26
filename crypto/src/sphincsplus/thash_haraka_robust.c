@@ -8,7 +8,6 @@
 
 #include "haraka.h"
 
-extern sphincsplus_params_t g_sphincsplus_params_current;
 
 /**
  * Takes an array of inblocks concatenated arrays of SPX_N bytes.

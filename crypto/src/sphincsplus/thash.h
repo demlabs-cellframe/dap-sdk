@@ -5,6 +5,7 @@
 #include "params.h"
 
 #include <stdint.h>
+extern sphincsplus_params_t g_sphincsplus_params_current;
 
 #define thash SPX_NAMESPACE(thash)
 void thash(unsigned char *out, const unsigned char *in, unsigned int inblocks,
