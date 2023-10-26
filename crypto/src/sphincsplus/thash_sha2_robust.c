@@ -21,8 +21,13 @@ static void thash_512(unsigned char *out, const unsigned char *in, unsigned int 
 /**
  * Takes an array of inblocks concatenated arrays of SPX_N bytes.
  */
+#ifndef SPHINCSPLUS_FLEX
 void thash(unsigned char *out, const unsigned char *in, unsigned int inblocks,
            const spx_ctx *ctx, uint32_t addr[8])
+#else
+void thash_sha2_robust(unsigned char *out, const unsigned char *in, unsigned int inblocks,
+           const spx_ctx *ctx, uint32_t addr[8])
+#endif
 {
 #if USING_512
     if (SPX_SHA512 && inblocks > 1) {
