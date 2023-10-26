@@ -1,9 +1,10 @@
+// This file to isolate g_sphincsplus_params_current
 #ifndef __SPHINCSPLUS_GLOBAL__
 #define __SPHINCSPLUS_GLOBAL__
 
 #include "sphincsplus_params.h"
 
-sphincsplus_params_t g_sphincsplus_params_current;
+static sphincsplus_params_t g_sphincsplus_params_current;
 
 #ifdef SPHINCSPLUS_FLEX  //defined in cmake
 

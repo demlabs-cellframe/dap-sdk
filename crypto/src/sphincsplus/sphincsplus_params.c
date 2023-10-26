@@ -4,6 +4,8 @@
 
 #define LOG_TAG "dap_enc_sig_sphincsplus_params"
 
+extern sphincsplus_params_t g_sphincsplus_params_current;
+
 const sphincsplus_offsets_t s_haraka_offsets = {
     .spx_offset_layer = 3,
     .spx_offset_tree = 8,
