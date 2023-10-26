@@ -115,7 +115,7 @@ int dap_enc_sig_sphincsplus_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
     sphincsplus_private_key_t *l_pkey = a_key->pub_key_data;
 
     pthread_mutex_lock(&s_sign_mtx);
-        if(sphincsplus_set_config(l_sign->sig_params.base_params.config)) {
+        if(sphincsplus_set_params(&l_sign->sig_params.base_params)) {
             pthread_mutex_unlock(&s_sign_mtx);
             return -2;
         }
@@ -136,7 +136,7 @@ size_t dap_enc_sig_sphincsplus_open_sign_msg(dap_enc_key_t *a_key, const void *a
     sphincsplus_private_key_t *l_pkey = a_key->pub_key_data;
 
     pthread_mutex_lock(&s_sign_mtx);
-        if(sphincsplus_set_config(l_sign->sig_params.base_params.config)) {
+        if(sphincsplus_set_params(&l_sign->sig_params.base_params)) {
             pthread_mutex_unlock(&s_sign_mtx);
             return 0;
         }
@@ -354,9 +354,10 @@ void sphincsplus_public_key_delete(sphincsplus_public_key_t *a_pkey)
 }
 
 void sphincsplus_signature_delete(sphincsplus_signature_t *a_sig){
-    assert(a_sig);
-    DAP_DEL_Z(a_sig->sig_data);
-    a_sig->sig_len = 0;
+    if (a_sig) {
+        DAP_DEL_Z(a_sig->sig_data);
+        a_sig->sig_len = 0;
+    }
 }
 
 /*

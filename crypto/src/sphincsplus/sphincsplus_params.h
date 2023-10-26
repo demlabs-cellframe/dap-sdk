@@ -46,7 +46,6 @@ typedef struct {
 
 typedef struct {
     sphincsplus_config_t config;
-    sphincsplus_difficulty_t difficulty;
     uint32_t spx_n;
     uint32_t spx_full_height;
     uint32_t spx_d;
@@ -56,6 +55,7 @@ typedef struct {
     uint32_t spx_addr_bytes;
     uint8_t spx_sha512;
     sphincsplus_offsets_t offsets;
+    sphincsplus_difficulty_t difficulty;
 } sphincsplus_base_params_t;
 
 typedef struct {
