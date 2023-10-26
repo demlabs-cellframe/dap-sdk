@@ -25,6 +25,7 @@
 #define shaX sha256
 #define mgf1_X mgf1_256
 #endif
+#endif
 
 /* For SHA, there is no immediate reason to initialize at the start,
    so this function is an empty operation. */
