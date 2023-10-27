@@ -6,7 +6,6 @@
 
 extern sphincsplus_params_t g_sphincsplus_params_current;
 
-#define SPHINCSPLUS_FLEX
 #ifdef SPHINCSPLUS_FLEX  //defined in cmake
 
 // SPX... - from sphincs libruary definitions, SPHINCSPLUS... - added definitions

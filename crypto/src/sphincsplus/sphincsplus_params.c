@@ -263,7 +263,7 @@ static int s_sphincsplus_check_params(const sphincsplus_base_params_t *a_base_pa
     if (!a_base_params) {
         return -1;
     }
-
+#ifdef SPHINCSPLUS_FLEX
     if(memcmp(a_base_params, &s_params[a_base_params->config], sizeof(sphincsplus_base_params_t) - sizeof(sphincsplus_difficulty_t))) {
         log_it(L_ERROR, "Differents between current config and checked");
         return -2;
@@ -274,12 +274,11 @@ static int s_sphincsplus_check_params(const sphincsplus_base_params_t *a_base_pa
         log_it(L_ERROR, "SPX_D should always divide SPX_FULL_HEIGHT");
         return -3;
     }
-#ifdef SPHINCSPLUS_FLEX
+
     if (SPX_SHA256_OUTPUT_BYTES < a_base_params->spx_n) {
         log_it(L_ERROR, "Linking against SHA-256 with N larger than 32 bytes is not supported");
         return -4;
     }
-#endif
 
     if (a_base_params->spx_wots_w != 256 && a_base_params->spx_wots_w != 16) {
         log_it(L_ERROR, "SPX_WOTS_W assumed 16 or 256");
@@ -290,16 +289,15 @@ static int s_sphincsplus_check_params(const sphincsplus_base_params_t *a_base_pa
         log_it(L_ERROR, "Did not precompute SPX_WOTS_LEN2 for n outside {2, .., 256}");
         return -6;
     }
-
+#endif
     return 0;
 }
 
 int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params)
 {
-    
     if (s_sphincsplus_check_params(a_base_params))
         return -1;
-
+#ifdef SPHINCSPLUS_FLEX
     sphincsplus_params_t l_res = {0};
     l_res.base_params = *a_base_params;
 
@@ -348,7 +346,6 @@ int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params)
     l_res.spx_leaf_bytes = (l_res.spx_leaf_bits + 7) / 8;
     l_res.spx_dgst_bytes = l_res.spx_fors_msg_bytes + l_res.spx_tree_bytes + l_res.spx_leaf_bytes; 
 
-#ifdef SPHINCSPLUS_FLEX
     if (a_base_params->spx_n >= 24) {
         l_res.spx_shax_output_bytes = SPX_SHA512_OUTPUT_BYTES;
         l_res.spx_shax_block_bytes = SPX_SHA512_BLOCK_BYTES;
@@ -361,8 +358,8 @@ int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params)
         log_it(L_ERROR, "Currently only supports SPX_N of at most SPX_SHAX_BLOCK_BYTES");
         return -8;
     }
-#endif
     g_sphincsplus_params_current = l_res;
+#endif
     return 0;
 }
 
