@@ -92,7 +92,7 @@ int sphincsplus_crypto_sign_keypair(unsigned char *pk, unsigned char *sk)
 /**
  * Returns an array containing a detached signature.
  */
-int sphincsplus_crypto_sign_signature(uint8_t *sig, size_t *siglen,
+int sphincsplus_crypto_sign_signature(uint8_t *sig, uint64_t *siglen,
                           const uint8_t *m, size_t mlen, const uint8_t *sk)
 {
     spx_ctx ctx;

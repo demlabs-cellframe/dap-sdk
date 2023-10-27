@@ -1,4 +1,5 @@
 #include "dap_enc_sphincsplus.h"
+#include "sphincsplus/randombytes.h"
 #include "api.h"
 
 #define LOG_TAG "dap_enc_sig_sphincsplus"

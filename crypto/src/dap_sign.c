@@ -29,6 +29,7 @@
 #include "dap_strfuncs.h"
 #include "dap_hash.h"
 #include "dap_sign.h"
+#include "dap_enc_base58.h"
 
 #include "dap_list.h"
 

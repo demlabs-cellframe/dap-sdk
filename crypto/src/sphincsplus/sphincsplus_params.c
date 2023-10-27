@@ -6,41 +6,41 @@
 
 sphincsplus_params_t g_sphincsplus_params_current;
 
-const sphincsplus_offsets_t s_haraka_offsets = {
-    .spx_offset_layer = 3,
-    .spx_offset_tree = 8,
-    .spx_offset_type = 19,
-    .spx_offset_kp_addr2 = 22,
-    .spx_offset_kp_addr1 = 23,
-    .spx_offset_chain_addr = 27,
-    .spx_offset_hash_addr = 31,
-    .spx_offset_tree_hgt = 27,
-    .spx_offset_tree_index = 28
-};
-const sphincsplus_offsets_t s_sha2_offsets = {
-    .spx_offset_layer = 0,
-    .spx_offset_tree = 1,
-    .spx_offset_type = 9,
-    .spx_offset_kp_addr2 = 12,
-    .spx_offset_kp_addr1 = 13,
-    .spx_offset_chain_addr = 17,
-    .spx_offset_hash_addr = 21,
-    .spx_offset_tree_hgt = 17,
-    .spx_offset_tree_index = 18
-};
-const sphincsplus_offsets_t s_shake_offsets = {
-    .spx_offset_layer = 3,
-    .spx_offset_tree = 8,
-    .spx_offset_type = 19,
-    .spx_offset_kp_addr2 = 22,
-    .spx_offset_kp_addr1 = 23,
-    .spx_offset_chain_addr = 27,
-    .spx_offset_hash_addr = 31,
-    .spx_offset_tree_hgt = 27,
-    .spx_offset_tree_index = 28
-};
+#define s_haraka_offsets {\
+    .spx_offset_layer = 3,\
+    .spx_offset_tree = 8,\
+    .spx_offset_type = 19,\
+    .spx_offset_kp_addr2 = 22,\
+    .spx_offset_kp_addr1 = 23,\
+    .spx_offset_chain_addr = 27,\
+    .spx_offset_hash_addr = 31,\
+    .spx_offset_tree_hgt = 27,\
+    .spx_offset_tree_index = 28\
+}
+#define s_sha2_offsets {\
+    .spx_offset_layer = 0,\
+    .spx_offset_tree = 1,\
+    .spx_offset_type = 9,\
+    .spx_offset_kp_addr2 = 12,\
+    .spx_offset_kp_addr1 = 13,\
+    .spx_offset_chain_addr = 17,\
+    .spx_offset_hash_addr = 21,\
+    .spx_offset_tree_hgt = 17,\
+    .spx_offset_tree_index = 18\
+}
+#define s_shake_offsets {\
+    .spx_offset_layer = 3,\
+    .spx_offset_tree = 8,\
+    .spx_offset_type = 19,\
+    .spx_offset_kp_addr2 = 22,\
+    .spx_offset_kp_addr1 = 23,\
+    .spx_offset_chain_addr = 27,\
+    .spx_offset_hash_addr = 31,\
+    .spx_offset_tree_hgt = 27,\
+    .spx_offset_tree_index = 28\
+}
 
-    const sphincsplus_base_params_t s_params[] = {
+static const sphincsplus_base_params_t s_params[] = {
     [SPHINCSPLUS_HARAKA_128F] = {
         .config = SPHINCSPLUS_HARAKA_128F,
         .spx_n = 16,
@@ -51,7 +51,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_haraka_offsets
+        .offsets = s_haraka_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_HARAKA_128S] = {
         .config = SPHINCSPLUS_HARAKA_128S,
@@ -63,7 +64,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_haraka_offsets
+        .offsets = s_haraka_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_HARAKA_192F] = {
         .config = SPHINCSPLUS_HARAKA_192F,
@@ -75,7 +77,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_haraka_offsets
+        .offsets = s_haraka_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_HARAKA_192S] = {
         .config = SPHINCSPLUS_HARAKA_192S,
@@ -87,7 +90,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_haraka_offsets
+        .offsets = s_haraka_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_HARAKA_256F] = {
         .config = SPHINCSPLUS_HARAKA_256F,
@@ -99,7 +103,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_haraka_offsets
+        .offsets = s_haraka_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_HARAKA_256S] = {
         .config = SPHINCSPLUS_HARAKA_256S,
@@ -111,7 +116,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_haraka_offsets
+        .offsets = s_haraka_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_SHA2_128F] = {
         .config = SPHINCSPLUS_SHA2_128F,
@@ -123,7 +129,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_sha2_offsets
+        .offsets = s_sha2_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_SHA2_128S] = {
         .config = SPHINCSPLUS_SHA2_128S,
@@ -135,7 +142,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_sha2_offsets
+        .offsets = s_sha2_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_SHA2_192F] = {
         .config = SPHINCSPLUS_SHA2_192F,
@@ -147,7 +155,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 1,
-        .offsets = s_sha2_offsets
+        .offsets = s_sha2_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_SHA2_192S] = {
         .config = SPHINCSPLUS_SHA2_192S,
@@ -159,7 +168,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 1,
-        .offsets = s_sha2_offsets
+        .offsets = s_sha2_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_SHA2_256F] = {
         .config = SPHINCSPLUS_SHA2_256F,
@@ -171,7 +181,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 1,
-        .offsets = s_sha2_offsets
+        .offsets = s_sha2_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_SHA2_256S] = {
         .config = SPHINCSPLUS_SHA2_256S,
@@ -183,7 +194,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 1,
-        .offsets = s_sha2_offsets
+        .offsets = s_sha2_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_SHAKE_128F] = {
         .config = SPHINCSPLUS_SHAKE_128F,
@@ -195,7 +207,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_shake_offsets
+        .offsets = s_shake_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_SHAKE_128S] = {
         .config = SPHINCSPLUS_SHAKE_128S,
@@ -207,7 +220,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_shake_offsets
+        .offsets = s_shake_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_SHAKE_192F] = {
         .config = SPHINCSPLUS_SHAKE_192F,
@@ -219,7 +233,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_shake_offsets
+        .offsets = s_shake_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_SHAKE_192S] = {
         .config = SPHINCSPLUS_SHAKE_192S,
@@ -231,7 +246,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_shake_offsets
+        .offsets = s_shake_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_SHAKE_256F] = {
         .config = SPHINCSPLUS_SHAKE_256F,
@@ -243,7 +259,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_shake_offsets
+        .offsets = s_shake_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
     [SPHINCSPLUS_SHAKE_256S] = {
         .config = SPHINCSPLUS_SHAKE_256S,
@@ -255,7 +272,8 @@ const sphincsplus_offsets_t s_shake_offsets = {
         .spx_wots_w = 16,
         .spx_addr_bytes = 32,
         .spx_sha512 = 0,
-        .offsets = s_shake_offsets
+        .offsets = s_shake_offsets,
+        .difficulty = SPHINCSPLUS_SIMPLE
     },
 };
 
