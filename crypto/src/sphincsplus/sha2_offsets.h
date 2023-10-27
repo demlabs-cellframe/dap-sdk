@@ -5,7 +5,7 @@
  * Offsets of various fields in the address structure when we use SHA2 as
  * the Sphincs+ hash function
  */
-
+#ifndef SPHINCSPLUS_FLEX
 #define SPX_OFFSET_LAYER     0   /* The byte used to specify the Merkle tree layer */
 #define SPX_OFFSET_TREE      1   /* The start of the 8 byte field used to specify the tree */
 #define SPX_OFFSET_TYPE      9   /* The byte used to specify the hash type (reason) */
@@ -17,5 +17,5 @@
 #define SPX_OFFSET_TREE_INDEX 18 /* The start of the 4 byte field used to specify the node in the FORS or Merkle tree */
 
 #define SPX_SHA2 1
-
+#endif
 #endif /* SHA2_OFFSETS_H_ */

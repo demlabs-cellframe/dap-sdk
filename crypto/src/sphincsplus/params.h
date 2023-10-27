@@ -1,8 +1,9 @@
 #define str(s) #s
 #define xstr(s) str(s)
 
-#include "sphincsplus_params.h"
-#ifndef SPHINCSPLUS_FLEX
+#ifdef SPHINCSPLUS_FLEX
+#include "sphincsplus_global.h"
+#else
 #include xstr(params/params-PARAMS.h)
 #endif
 

@@ -1,4 +1,5 @@
 #include "sphincsplus_params.h"
+#include "sphincsplus_global.h"
 #include "dap_common.h"
 
 #define LOG_TAG "dap_enc_sig_sphincsplus_params"

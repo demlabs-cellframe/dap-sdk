@@ -5,7 +5,7 @@
  * Offsets of various fields in the address structure when we use Haraka as
  * the Sphincs+ hash function
  */
-
+#ifndef SPHINCSPLUS_FLEX
 #define SPX_OFFSET_LAYER     3   /* The byte used to specify the Merkle tree layer */
 #define SPX_OFFSET_TREE      8   /* The start of the 8 byte field used to specify the tree */
 #define SPX_OFFSET_TYPE      19  /* The byte used to specify the hash type (reason) */
@@ -17,5 +17,6 @@
 #define SPX_OFFSET_TREE_INDEX 28 /* The start of the 4 byte field used to specify the node in the FORS or Merkle tree */
 
 #define SPX_HARAKA 1
+#endif
 
 #endif /* HARAKA_OFFSETS_H_ */
