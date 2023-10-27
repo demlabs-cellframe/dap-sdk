@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 project(crypto-test)
 # init CellFrame SDK
-add_definitions("-DDAP_VERSION=\"${CPACK_PACKAGE_VERSION_MAJOR}-${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}\"")
+#add_definitions("-DDAP_VERSION=\"${CPACK_PACKAGE_VERSION_MAJOR}-${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}\"")
 set(SUBMODULES_NO_BUILD ON)
 #include (../../../../cmake/OS_Detection.cmake)
 set(DAPSDK_MODULES "core crypto network-core network-client network-server")
