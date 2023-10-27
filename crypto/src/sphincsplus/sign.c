@@ -18,7 +18,7 @@
  */
 uint64_t sphincsplus_crypto_sign_secretkeybytes(void)
 {
-    return CRYPTO_SECRETKEYBYTES;
+    return SPX_CRYPTO_SECRETKEYBYTES;
 }
 
 /*
@@ -26,7 +26,7 @@ uint64_t sphincsplus_crypto_sign_secretkeybytes(void)
  */
 uint64_t sphincsplus_crypto_sign_publickeybytes(void)
 {
-    return CRYPTO_PUBLICKEYBYTES;
+    return SPX_CRYPTO_PUBLICKEYBYTES;
 }
 
 /*
@@ -34,7 +34,7 @@ uint64_t sphincsplus_crypto_sign_publickeybytes(void)
  */
 uint64_t sphincsplus_crypto_sign_bytes(void)
 {
-    return CRYPTO_BYTES;
+    return SPX_CRYPTO_BYTES;
 }
 
 /*
@@ -42,7 +42,7 @@ uint64_t sphincsplus_crypto_sign_bytes(void)
  */
 uint64_t sphincsplus_crypto_sign_seedbytes(void)
 {
-    return CRYPTO_SEEDBYTES;
+    return SPX_CRYPTO_SEEDBYTES;
 }
 
 /*
@@ -56,7 +56,7 @@ int sphincsplus_crypto_sign_seed_keypair(unsigned char *pk, unsigned char *sk,
     spx_ctx ctx;
 
     /* Initialize SK_SEED, SK_PRF and PUB_SEED from seed. */
-    memcpy(sk, seed, CRYPTO_SEEDBYTES);
+    memcpy(sk, seed, SPX_CRYPTO_SEEDBYTES);
 
     memcpy(pk, sk + 2*SPX_N, SPX_N);
 
@@ -82,8 +82,8 @@ int sphincsplus_crypto_sign_seed_keypair(unsigned char *pk, unsigned char *sk,
  */
 int sphincsplus_crypto_sign_keypair(unsigned char *pk, unsigned char *sk)
 {
-  unsigned char seed[CRYPTO_SEEDBYTES];
-  randombytes(seed, CRYPTO_SEEDBYTES);
+  unsigned char seed[SPX_CRYPTO_SEEDBYTES];
+  randombytes(seed, SPX_CRYPTO_SEEDBYTES);
   sphincsplus_crypto_sign_seed_keypair(pk, sk, seed);
 
   return 0;

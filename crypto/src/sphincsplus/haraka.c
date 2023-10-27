@@ -36,7 +36,7 @@
 #include "haraka.h"
 #include "utils.h"
 
-#define HARAKAS_RATE 32
+#define SPX_HARAKAS_RATE 32
 
 static const uint64_t haraka512_rc64[10][8] = {
     {0x24cf0ab9086f628b, 0xbdd6eeecc83b8382, 0xd96fb0306cdad0a7, 0xaace082ac8f95f89, 0x449d8e8870d7041f, 0x49bb2f80b2b3e2f8, 0x0569ae98d93bb258, 0x23dc9691e7d6a4b1},
@@ -435,7 +435,7 @@ static void br_aes_ct_bitslice_Sbox(uint32_t *q)
 
 static void br_aes_ct_ortho(uint32_t *q)
 {
-#define SWAPN_32(cl, ch, s, x, y)   do { \
+#define SPX_SWAPN_32(cl, ch, s, x, y)   do { \
         uint32_t a, b; \
         a = (x); \
         b = (y); \
@@ -443,24 +443,24 @@ static void br_aes_ct_ortho(uint32_t *q)
         (y) = ((a & (uint32_t)ch) >> (s)) | (b & (uint32_t)ch); \
     } while (0)
 
-#define SWAP2_32(x, y)   SWAPN_32(0x55555555, 0xAAAAAAAA, 1, x, y)
-#define SWAP4_32(x, y)   SWAPN_32(0x33333333, 0xCCCCCCCC, 2, x, y)
-#define SWAP8_32(x, y)   SWAPN_32(0x0F0F0F0F, 0xF0F0F0F0, 4, x, y)
+#define SPX_SWAP2_32(x, y)   SPX_SWAPN_32(0x55555555, 0xAAAAAAAA, 1, x, y)
+#define SPX_SWAP4_32(x, y)   SPX_SWAPN_32(0x33333333, 0xCCCCCCCC, 2, x, y)
+#define SPX_SWAP8_32(x, y)   SPX_SWAPN_32(0x0F0F0F0F, 0xF0F0F0F0, 4, x, y)
 
-    SWAP2_32(q[0], q[1]);
-    SWAP2_32(q[2], q[3]);
-    SWAP2_32(q[4], q[5]);
-    SWAP2_32(q[6], q[7]);
+    SPX_SWAP2_32(q[0], q[1]);
+    SPX_SWAP2_32(q[2], q[3]);
+    SPX_SWAP2_32(q[4], q[5]);
+    SPX_SWAP2_32(q[6], q[7]);
 
-    SWAP4_32(q[0], q[2]);
-    SWAP4_32(q[1], q[3]);
-    SWAP4_32(q[4], q[6]);
-    SWAP4_32(q[5], q[7]);
+    SPX_SWAP4_32(q[0], q[2]);
+    SPX_SWAP4_32(q[1], q[3]);
+    SPX_SWAP4_32(q[4], q[6]);
+    SPX_SWAP4_32(q[5], q[7]);
 
-    SWAP8_32(q[0], q[4]);
-    SWAP8_32(q[1], q[5]);
-    SWAP8_32(q[2], q[6]);
-    SWAP8_32(q[3], q[7]);
+    SPX_SWAP8_32(q[0], q[4]);
+    SPX_SWAP8_32(q[1], q[5]);
+    SPX_SWAP8_32(q[2], q[6]);
+    SPX_SWAP8_32(q[3], q[7]);
 }
 
 static inline void add_round_key32(uint32_t *q, const uint32_t *sk)
@@ -529,7 +529,7 @@ static inline void mix_columns32(uint32_t *q)
 
 static void br_aes_ct64_ortho(uint64_t *q)
 {
-#define SWAPN(cl, ch, s, x, y)   do { \
+#define SPX_SWAPN(cl, ch, s, x, y)   do { \
         uint64_t a, b; \
         a = (x); \
         b = (y); \
@@ -537,24 +537,24 @@ static void br_aes_ct64_ortho(uint64_t *q)
         (y) = ((a & (uint64_t)(ch)) >> (s)) | (b & (uint64_t)(ch)); \
     } while (0)
 
-#define SWAP2(x, y)    SWAPN(0x5555555555555555, 0xAAAAAAAAAAAAAAAA,  1, x, y)
-#define SWAP4(x, y)    SWAPN(0x3333333333333333, 0xCCCCCCCCCCCCCCCC,  2, x, y)
-#define SWAP8(x, y)    SWAPN(0x0F0F0F0F0F0F0F0F, 0xF0F0F0F0F0F0F0F0,  4, x, y)
+#define SPX_SWAP2(x, y)    SPX_SWAPN(0x5555555555555555, 0xAAAAAAAAAAAAAAAA,  1, x, y)
+#define SPX_SWAP4(x, y)    SPX_SWAPN(0x3333333333333333, 0xCCCCCCCCCCCCCCCC,  2, x, y)
+#define SPX_SWAP8(x, y)    SPX_SWAPN(0x0F0F0F0F0F0F0F0F, 0xF0F0F0F0F0F0F0F0,  4, x, y)
 
-    SWAP2(q[0], q[1]);
-    SWAP2(q[2], q[3]);
-    SWAP2(q[4], q[5]);
-    SWAP2(q[6], q[7]);
+    SPX_SWAP2(q[0], q[1]);
+    SPX_SWAP2(q[2], q[3]);
+    SPX_SWAP2(q[4], q[5]);
+    SPX_SWAP2(q[6], q[7]);
 
-    SWAP4(q[0], q[2]);
-    SWAP4(q[1], q[3]);
-    SWAP4(q[4], q[6]);
-    SWAP4(q[5], q[7]);
+    SPX_SWAP4(q[0], q[2]);
+    SPX_SWAP4(q[1], q[3]);
+    SPX_SWAP4(q[4], q[6]);
+    SPX_SWAP4(q[5], q[7]);
 
-    SWAP8(q[0], q[4]);
-    SWAP8(q[1], q[5]);
-    SWAP8(q[2], q[6]);
-    SWAP8(q[3], q[7]);
+    SPX_SWAP8(q[0], q[4]);
+    SPX_SWAP8(q[1], q[5]);
+    SPX_SWAP8(q[2], q[6]);
+    SPX_SWAP8(q[3], q[7]);
 }
 
 
@@ -750,7 +750,7 @@ static void haraka_S_squeezeblocks(unsigned char *h, unsigned long long nblocks,
 {
     while (nblocks > 0) {
         haraka512_perm(s, s, ctx);
-        memcpy(h, s, HARAKAS_RATE);
+        memcpy(h, s, SPX_HARAKAS_RATE);
         h += r;
         nblocks--;
     }
@@ -772,14 +772,14 @@ void haraka_S_inc_absorb(uint8_t *s_inc, const uint8_t *m, size_t mlen,
     size_t i;
 
     /* Recall that s_inc[64] is the non-absorbed bytes xored into the state */
-    while (mlen + s_inc[64] >= HARAKAS_RATE) {
-        for (i = 0; i < (size_t)(HARAKAS_RATE - s_inc[64]); i++) {
+    while (mlen + s_inc[64] >= SPX_HARAKAS_RATE) {
+        for (i = 0; i < (size_t)(SPX_HARAKAS_RATE - s_inc[64]); i++) {
             /* Take the i'th byte from message
                xor with the s_inc[64] + i'th byte of the state */
             s_inc[s_inc[64] + i] ^= m[i];
         }
-        mlen -= (size_t)(HARAKAS_RATE - s_inc[64]);
-        m += HARAKAS_RATE - (uint8_t)s_inc[64];
+        mlen -= (size_t)(SPX_HARAKAS_RATE - s_inc[64]);
+        m += SPX_HARAKAS_RATE - (uint8_t)s_inc[64];
         s_inc[64] = 0;
 
         haraka512_perm(s_inc, s_inc, ctx);
@@ -793,10 +793,10 @@ void haraka_S_inc_absorb(uint8_t *s_inc, const uint8_t *m, size_t mlen,
 
 void haraka_S_inc_finalize(uint8_t *s_inc)
 {
-    /* After haraka_S_inc_absorb, we are guaranteed that s_inc[64] < HARAKAS_RATE,
+    /* After haraka_S_inc_absorb, we are guaranteed that s_inc[64] < SPX_HARAKAS_RATE,
        so we can always use one more byte for p in the current state. */
     s_inc[s_inc[64]] ^= 0x1F;
-    s_inc[HARAKAS_RATE - 1] ^= 128;
+    s_inc[SPX_HARAKAS_RATE - 1] ^= 128;
     s_inc[64] = 0;
 }
 
@@ -809,7 +809,7 @@ void haraka_S_inc_squeeze(uint8_t *out, size_t outlen, uint8_t *s_inc,
     for (i = 0; i < outlen && i < s_inc[64]; i++) {
         /* There are s_inc[64] bytes left, so r - s_inc[64] is the first
            available byte. We consume from there, i.e., up to r. */
-        out[i] = (uint8_t)s_inc[(HARAKAS_RATE - s_inc[64] + i)];
+        out[i] = (uint8_t)s_inc[(SPX_HARAKAS_RATE - s_inc[64] + i)];
     }
     out += i;
     outlen -= i;
@@ -819,12 +819,12 @@ void haraka_S_inc_squeeze(uint8_t *out, size_t outlen, uint8_t *s_inc,
     while (outlen > 0) {
         haraka512_perm(s_inc, s_inc, ctx);
 
-        for (i = 0; i < outlen && i < HARAKAS_RATE; i++) {
+        for (i = 0; i < outlen && i < SPX_HARAKAS_RATE; i++) {
             out[i] = s_inc[i];
         }
         out += i;
         outlen -= i;
-        s_inc[64] = (uint8_t)(HARAKAS_RATE - i);
+        s_inc[64] = (uint8_t)(SPX_HARAKAS_RATE - i);
     }
 }
 

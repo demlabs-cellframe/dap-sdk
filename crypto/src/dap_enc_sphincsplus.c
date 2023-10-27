@@ -3,8 +3,8 @@
 
 #define LOG_TAG "dap_enc_sig_sphincsplus"
 
-static const sphincsplus_config_t s_default_config = SPHINCSPLUS_SHAKE_128F;
-static const sphincsplus_difficulty_t s_default_difficulty = SPHINCSPLUS_SIMPLE;
+static const sphincsplus_config_t s_default_config = SPHINCSPLUS_SHAKE_256F;
+static const sphincsplus_difficulty_t s_default_difficulty = SPHINCSPLUS_ROBUST;
 static pthread_mutex_t s_sign_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {
