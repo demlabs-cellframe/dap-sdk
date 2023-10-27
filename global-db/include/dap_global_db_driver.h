@@ -68,7 +68,7 @@ typedef struct dap_store_obj {
 
 DAP_STATIC_INLINE dap_global_db_driver_hash_t dap_global_db_driver_hash_get(dap_store_obj_t *a_obj)
 {
-    dap_global_db_driver_hash_t l_ret = {.bets = a_obj->timestamp, .becrc = a_obj->crc};
+    dap_global_db_driver_hash_t l_ret = { .bets = htobe64(a_obj->timestamp), .becrc = htobe32(a_obj->crc) };
     return l_ret;
 }
 
