@@ -125,7 +125,8 @@
 
 static const char *g_error_memory_alloc = "Memory allocation error";
 void dap_delete_multy(int a_count, ...);
-uint8_t *dap_serialize_multy(uint8_t *a_data, size_t a_size, int a_count, ...);
+uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...);
+int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, ...);
 
 #if DAP_USE_RPMALLOC
   #include "rpmalloc.h"
