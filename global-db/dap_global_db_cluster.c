@@ -195,6 +195,8 @@ int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster
         log_it(L_CRITICAL, "Not enough memory");
         return -2;
     }
+    l_notificator->callback_notify = a_callback;
+    l_notificator->callback_arg = a_callback_arg;
     DL_APPEND(a_cluster->notificators, l_notificator);
     return 0;
 }
