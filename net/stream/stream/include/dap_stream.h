@@ -34,10 +34,9 @@
 #include "dap_sign.h"
 #include "dap_cert.h"
 #include "dap_pkey.h"
+#include "dap_enc_ks.h"
 
 #define STREAM_KEEPALIVE_TIMEOUT 3   // How  often send keeplive messages (seconds)
-#define DAP_STREAM_NODE_ADDR_CERT_NAME  "node-addr"
-#define DAP_STREAM_NODE_ADDR_CERT_TYPE DAP_ENC_KEY_TYPE_SIG_DILITHIUM
 
 typedef struct dap_stream_ch dap_stream_ch_t;
 typedef struct dap_stream_worker dap_stream_worker_t;

@@ -169,7 +169,6 @@ static dap_global_db_obj_t* s_objs_from_store_objs(const dap_store_obj_t *a_stor
 int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
 {
     int l_rc = 0;
-    static bool s_is_check_version = false;
 
     if (a_storage_path == NULL) {
         log_it(L_CRITICAL, "Can't initialize GlobalDB without storage path");
@@ -195,7 +194,7 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
 
         s_dbi->storage_path = dap_strdup(a_storage_path);
         s_dbi->driver_name = dap_strdup(a_driver_name);
-        dap_cert_t *l_signing_cert = dap_cert_find_by_name("node-addr");
+        dap_cert_t *l_signing_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
         if (l_signing_cert)
             s_dbi->signing_key = l_signing_cert->enc_key;
         else
@@ -215,23 +214,17 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
     }
 
     // Driver initalization
-    if( (l_rc = dap_db_driver_init(s_dbi->driver_name,
-                                   s_dbi->storage_path, true))  )
-        return  log_it(L_CRITICAL, "Hadn't initialized DB driver \"%s\" on path \"%s\", code: %d",
+    if ( (l_rc = dap_db_driver_init(s_dbi->driver_name,
+                                   s_dbi->storage_path, true)) )
+        return log_it(L_CRITICAL, "Hadn't initialized DB driver \"%s\" on path \"%s\", code: %d",
                        s_dbi->driver_name, s_dbi->storage_path, l_rc), l_rc;
 
-
+    if ( (l_rc = dap_global_db_cluster_init()) )
+        return log_it(L_CRITICAL, "Can't initialize GlobalDD clusters"), l_rc;
 
     // Check version and update if need it
-    if(!s_is_check_version){
-
-        s_is_check_version = true;
-
-        if ( (l_rc = s_check_db_version()) )
-            return  log_it(L_ERROR, "GlobalDB version changed, please export or remove old version!"), l_rc;
-    }
-
-    l_rc = dap_global_db_cluster_init();
+    if ( (l_rc = s_check_db_version()) )
+        return  log_it(L_ERROR, "GlobalDB version changed, please export or remove old version!"), l_rc;
 
 lb_return:
     if (l_rc == 0 )
@@ -268,54 +261,6 @@ void dap_global_db_deinit() {
     dap_db_driver_deinit();
     dap_global_db_cluster_deinit();
 }
-
-static int s_change_commit_notify(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_obj)
-{
-    dap_return_val_if_fail(a_store_obj && a_store_obj->group && a_store_obj->key, -1);
-    assert(a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD);
-    // Delete antinonim in opposite group, if any
-    const char l_del_suffix[] = DAP_GLOBAL_DB_DEL_SUFFIX;
-    char l_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX], *l_basic_group = NULL;
-    size_t l_group_len = strlen(a_store_obj->group);
-    size_t l_unsuffixed_len = l_group_len - sizeof(l_del_suffix) + 1;
-    if (l_group_len >= sizeof(l_del_suffix) &&
-            !strcmp(l_del_suffix, a_store_obj->group + l_unsuffixed_len)) {
-        strncpy(l_group, a_store_obj->group, l_unsuffixed_len);
-        l_group[l_unsuffixed_len] = '\0';
-        l_basic_group = l_group;
-        a_store_obj->type = DAP_GLOBAL_DB_OPTYPE_DEL;
-    } else {
-        snprintf(l_group, sizeof(l_group) - 1, "%s" DAP_GLOBAL_DB_DEL_SUFFIX, a_store_obj->group);
-        l_basic_group = a_store_obj->group;
-    }
-    dap_store_obj_t store_data = {
-        .key        = (char*)a_store_obj->key,
-        .group      = l_group
-    };
-    int l_ret = 0;
-    if (dap_global_db_driver_is(store_data.group, store_data.key))
-        l_ret = dap_global_db_driver_delete(&store_data, 1);
-    else if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) {       // Do not notify for delete if deleted record not exists
-        a_store_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
-        return l_ret;
-    }
-    dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(a_dbi, l_basic_group);
-    if (l_cluster) {
-        if (a_store_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)
-            // Notify sync cluster first
-            dap_global_db_cluster_broadcast(l_cluster, a_store_obj);
-        if (l_cluster->notificators) {
-            // Notify others in user space format
-            char *l_old_group_ptr = a_store_obj->group;
-            a_store_obj->group = l_basic_group;
-            dap_global_db_cluster_notify(l_cluster, a_store_obj);
-            a_store_obj->group = l_old_group_ptr;
-            a_store_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
-        }
-    }
-    return l_ret;
-}
-
 static int s_store_obj_apply(dap_store_obj_t *a_obj)
 {
     assert(a_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD);
@@ -438,10 +383,29 @@ static int s_store_obj_apply(dap_store_obj_t *a_obj)
     switch (dap_store_obj_driver_hash_compare(l_read_obj, a_obj)) {
     case -1:        // Existed obj is older
         debug_if(g_dap_global_db_debug_more, L_INFO, "Applied new global DB record with group %s and key %s",
-                                                                    a_obj->group, a_obj->key);
+                                                                                        a_obj->group, a_obj->key);
         // Only the condition to apply new object
         l_ret = dap_global_db_driver_apply(a_obj, 1);
-        s_change_commit_notify(dap_global_db_instance_get_default(), a_obj);
+        if (l_read_obj) {
+            debug_if(g_dap_global_db_debug_more, L_INFO, "Deleted global DB record with group %s and same key",
+                                                                                        l_read_obj->group);
+            dap_global_db_driver_delete(l_read_obj, 1);
+        }
+        if (l_obj_type == DAP_GLOBAL_DB_OPTYPE_DEL && !l_read_obj)
+            // Do not notify for delete if deleted record not exists
+            break;
+        if (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)
+            // Notify sync cluster first in driver format
+            dap_global_db_cluster_broadcast(l_cluster, a_obj);
+        if (l_cluster->notificators) {
+            // Notify others in user space format
+            char *l_old_group_ptr = a_obj->group;
+            a_obj->group = l_basic_group;
+            a_obj->type = l_obj_type;
+            dap_global_db_cluster_notify(l_cluster, a_obj);
+            a_obj->group = l_old_group_ptr;
+            a_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
+        }
         break;
     case 0:         // Objects the same, omg! Use the basic object
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Duplicate record with group %s and key %s not dropped by hash filter",
@@ -1302,9 +1266,7 @@ static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
             l_store_obj.value = a_msg->values[i].value;
             l_store_obj.value_len = a_msg->values[i].value_len;
             l_store_obj.timestamp = a_msg->values[i].timestamp;
-            l_ret = dap_global_db_driver_add(&l_store_obj,1);
-            if (!l_ret)
-                s_change_commit_notify(s_dbi, &l_store_obj);
+            l_ret = s_store_obj_apply(&l_store_obj);
         }
     }
     if(a_msg->callback_results){

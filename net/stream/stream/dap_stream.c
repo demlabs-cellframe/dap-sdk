@@ -172,7 +172,7 @@ int dap_stream_init(dap_config_t * a_config)
         return -2;
     }
     if (s_stream_init_node_addr_cert()) {
-        log_it(L_ERROR, "Error init node-addr cert");
+        log_it(L_ERROR, "Can't initiazlize certificate containing secure node address");
         return -3;
     }
     s_stream_load_preferred_encryption_type(a_config);
@@ -1227,7 +1227,6 @@ dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign)
     dap_sign_get_pkey_hash(a_sign, &l_node_addr_hash);
     dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
 
-    log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_ret));
     return l_ret;
 }
 

@@ -401,7 +401,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     uint8_t *l_data = DAP_NEW_Z_SIZE(uint8_t, l_data_size);
                     memcpy(l_data, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size);
 
-                    dap_cert_t *l_node_cert = dap_cert_find_by_name("node-addr");
+                    dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
                     size_t l_sign_count = s_add_cert_sign_to_data(a_client_pvt->client->auth_cert, &l_data, &l_data_size, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size) +
                                             s_add_cert_sign_to_data(l_node_cert, &l_data, &l_data_size, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size);
                 
@@ -1052,10 +1052,11 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             }
             size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_sign, DAP_ENC_DATA_TYPE_B64);
             if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
-                dap_stream_add_addr(dap_stream_node_addr_from_sign(l_sign), l_client_pvt->session_key);
-            } else {
+                dap_stream_node_addr_t l_sign_addr = dap_stream_node_addr_from_sign(l_sign);
+                dap_stream_add_addr(l_sign_addr, l_client_pvt->session_key);
+                log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_sign_addr));
+            } else
                 log_it(L_WARNING, "ENC: Invalid node sign");
-            }
         }
         DAP_DEL_Z(l_node_sign_b64);
         DAP_DEL_Z(l_bob_message);

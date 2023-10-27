@@ -203,6 +203,7 @@ void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr)
  */
 dap_cluster_member_t *dap_cluster_member_find_unsafe(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr)
 {
+    dap_return_val_if_fail(a_cluster && a_member_addr, NULL);
     dap_cluster_member_t *l_member = NULL;
     pthread_rwlock_rdlock(&a_cluster->members_lock);
     HASH_FIND(hh, a_cluster->members, a_member_addr, sizeof(*a_member_addr), l_member);
@@ -212,6 +213,7 @@ dap_cluster_member_t *dap_cluster_member_find_unsafe(dap_cluster_t *a_cluster, d
 
 int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr)
 {
+    dap_return_val_if_fail(a_cluster && a_member_addr, -1);
     dap_cluster_member_t *l_member = NULL;
     pthread_rwlock_rdlock(&a_cluster->members_lock);
     HASH_FIND(hh, a_cluster->members, a_member_addr, sizeof(*a_member_addr), l_member);

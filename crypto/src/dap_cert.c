@@ -87,8 +87,7 @@ int dap_cert_init() // TODO deinit too
 /**
  * @brief
  * parse list of certificate from config file (if it is presented)
- * in current implementation this function is used when node certificate (node-addr.dcert) is not generated
- * @param a_certs_str const char * string with certificate name (node-addr)
+ * @param a_certs_str const char * string with certificate names
  * @param a_certs dap_cert_t *** array with certificates
  * @param a_certs_size size of certificate
  * @return size_t
