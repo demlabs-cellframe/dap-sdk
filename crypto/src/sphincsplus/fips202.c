@@ -10,8 +10,8 @@
 
 #include "fips202.h"
 
-#define NROUNDS 24
-#define ROL(a, offset) (((a) << (offset)) ^ ((a) >> (64 - (offset))))
+#define SPX_NROUNDS 24
+#define SPX_ROL(a, offset) (((a) << (offset)) ^ ((a) >> (64 - (offset))))
 
 /*************************************************
  * Name:        load64
@@ -46,7 +46,7 @@ static void store64(uint8_t *x, uint64_t u) {
 }
 
 /* Keccak round constants */
-static const uint64_t KeccakF_RoundConstants[NROUNDS] = {
+static const uint64_t KeccakF_RoundConstants[SPX_NROUNDS] = {
     0x0000000000000001ULL, 0x0000000000008082ULL,
     0x800000000000808aULL, 0x8000000080008000ULL,
     0x000000000000808bULL, 0x0000000080000001ULL,
@@ -111,7 +111,7 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
     Aso = state[23];
     Asu = state[24];
 
-    for (round = 0; round < NROUNDS; round += 2) {
+    for (round = 0; round < SPX_NROUNDS; round += 2) {
         //    prepareTheta
         BCa = Aba ^ Aga ^ Aka ^ Ama ^ Asa;
         BCe = Abe ^ Age ^ Ake ^ Ame ^ Ase;
@@ -120,22 +120,22 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
         BCu = Abu ^ Agu ^ Aku ^ Amu ^ Asu;
 
         // thetaRhoPiChiIotaPrepareTheta(round  , A, E)
-        Da = BCu ^ ROL(BCe, 1);
-        De = BCa ^ ROL(BCi, 1);
-        Di = BCe ^ ROL(BCo, 1);
-        Do = BCi ^ ROL(BCu, 1);
-        Du = BCo ^ ROL(BCa, 1);
+        Da = BCu ^ SPX_ROL(BCe, 1);
+        De = BCa ^ SPX_ROL(BCi, 1);
+        Di = BCe ^ SPX_ROL(BCo, 1);
+        Do = BCi ^ SPX_ROL(BCu, 1);
+        Du = BCo ^ SPX_ROL(BCa, 1);
 
         Aba ^= Da;
         BCa = Aba;
         Age ^= De;
-        BCe = ROL(Age, 44);
+        BCe = SPX_ROL(Age, 44);
         Aki ^= Di;
-        BCi = ROL(Aki, 43);
+        BCi = SPX_ROL(Aki, 43);
         Amo ^= Do;
-        BCo = ROL(Amo, 21);
+        BCo = SPX_ROL(Amo, 21);
         Asu ^= Du;
-        BCu = ROL(Asu, 14);
+        BCu = SPX_ROL(Asu, 14);
         Eba = BCa ^ ((~BCe) & BCi);
         Eba ^= KeccakF_RoundConstants[round];
         Ebe = BCe ^ ((~BCi) & BCo);
@@ -144,15 +144,15 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
         Ebu = BCu ^ ((~BCa) & BCe);
 
         Abo ^= Do;
-        BCa = ROL(Abo, 28);
+        BCa = SPX_ROL(Abo, 28);
         Agu ^= Du;
-        BCe = ROL(Agu, 20);
+        BCe = SPX_ROL(Agu, 20);
         Aka ^= Da;
-        BCi = ROL(Aka, 3);
+        BCi = SPX_ROL(Aka, 3);
         Ame ^= De;
-        BCo = ROL(Ame, 45);
+        BCo = SPX_ROL(Ame, 45);
         Asi ^= Di;
-        BCu = ROL(Asi, 61);
+        BCu = SPX_ROL(Asi, 61);
         Ega = BCa ^ ((~BCe) & BCi);
         Ege = BCe ^ ((~BCi) & BCo);
         Egi = BCi ^ ((~BCo) & BCu);
@@ -160,15 +160,15 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
         Egu = BCu ^ ((~BCa) & BCe);
 
         Abe ^= De;
-        BCa = ROL(Abe, 1);
+        BCa = SPX_ROL(Abe, 1);
         Agi ^= Di;
-        BCe = ROL(Agi, 6);
+        BCe = SPX_ROL(Agi, 6);
         Ako ^= Do;
-        BCi = ROL(Ako, 25);
+        BCi = SPX_ROL(Ako, 25);
         Amu ^= Du;
-        BCo = ROL(Amu, 8);
+        BCo = SPX_ROL(Amu, 8);
         Asa ^= Da;
-        BCu = ROL(Asa, 18);
+        BCu = SPX_ROL(Asa, 18);
         Eka = BCa ^ ((~BCe) & BCi);
         Eke = BCe ^ ((~BCi) & BCo);
         Eki = BCi ^ ((~BCo) & BCu);
@@ -176,15 +176,15 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
         Eku = BCu ^ ((~BCa) & BCe);
 
         Abu ^= Du;
-        BCa = ROL(Abu, 27);
+        BCa = SPX_ROL(Abu, 27);
         Aga ^= Da;
-        BCe = ROL(Aga, 36);
+        BCe = SPX_ROL(Aga, 36);
         Ake ^= De;
-        BCi = ROL(Ake, 10);
+        BCi = SPX_ROL(Ake, 10);
         Ami ^= Di;
-        BCo = ROL(Ami, 15);
+        BCo = SPX_ROL(Ami, 15);
         Aso ^= Do;
-        BCu = ROL(Aso, 56);
+        BCu = SPX_ROL(Aso, 56);
         Ema = BCa ^ ((~BCe) & BCi);
         Eme = BCe ^ ((~BCi) & BCo);
         Emi = BCi ^ ((~BCo) & BCu);
@@ -192,15 +192,15 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
         Emu = BCu ^ ((~BCa) & BCe);
 
         Abi ^= Di;
-        BCa = ROL(Abi, 62);
+        BCa = SPX_ROL(Abi, 62);
         Ago ^= Do;
-        BCe = ROL(Ago, 55);
+        BCe = SPX_ROL(Ago, 55);
         Aku ^= Du;
-        BCi = ROL(Aku, 39);
+        BCi = SPX_ROL(Aku, 39);
         Ama ^= Da;
-        BCo = ROL(Ama, 41);
+        BCo = SPX_ROL(Ama, 41);
         Ase ^= De;
-        BCu = ROL(Ase, 2);
+        BCu = SPX_ROL(Ase, 2);
         Esa = BCa ^ ((~BCe) & BCi);
         Ese = BCe ^ ((~BCi) & BCo);
         Esi = BCi ^ ((~BCo) & BCu);
@@ -215,22 +215,22 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
         BCu = Ebu ^ Egu ^ Eku ^ Emu ^ Esu;
 
         // thetaRhoPiChiIotaPrepareTheta(round+1, E, A)
-        Da = BCu ^ ROL(BCe, 1);
-        De = BCa ^ ROL(BCi, 1);
-        Di = BCe ^ ROL(BCo, 1);
-        Do = BCi ^ ROL(BCu, 1);
-        Du = BCo ^ ROL(BCa, 1);
+        Da = BCu ^ SPX_ROL(BCe, 1);
+        De = BCa ^ SPX_ROL(BCi, 1);
+        Di = BCe ^ SPX_ROL(BCo, 1);
+        Do = BCi ^ SPX_ROL(BCu, 1);
+        Du = BCo ^ SPX_ROL(BCa, 1);
 
         Eba ^= Da;
         BCa = Eba;
         Ege ^= De;
-        BCe = ROL(Ege, 44);
+        BCe = SPX_ROL(Ege, 44);
         Eki ^= Di;
-        BCi = ROL(Eki, 43);
+        BCi = SPX_ROL(Eki, 43);
         Emo ^= Do;
-        BCo = ROL(Emo, 21);
+        BCo = SPX_ROL(Emo, 21);
         Esu ^= Du;
-        BCu = ROL(Esu, 14);
+        BCu = SPX_ROL(Esu, 14);
         Aba = BCa ^ ((~BCe) & BCi);
         Aba ^= KeccakF_RoundConstants[round + 1];
         Abe = BCe ^ ((~BCi) & BCo);
@@ -239,15 +239,15 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
         Abu = BCu ^ ((~BCa) & BCe);
 
         Ebo ^= Do;
-        BCa = ROL(Ebo, 28);
+        BCa = SPX_ROL(Ebo, 28);
         Egu ^= Du;
-        BCe = ROL(Egu, 20);
+        BCe = SPX_ROL(Egu, 20);
         Eka ^= Da;
-        BCi = ROL(Eka, 3);
+        BCi = SPX_ROL(Eka, 3);
         Eme ^= De;
-        BCo = ROL(Eme, 45);
+        BCo = SPX_ROL(Eme, 45);
         Esi ^= Di;
-        BCu = ROL(Esi, 61);
+        BCu = SPX_ROL(Esi, 61);
         Aga = BCa ^ ((~BCe) & BCi);
         Age = BCe ^ ((~BCi) & BCo);
         Agi = BCi ^ ((~BCo) & BCu);
@@ -255,15 +255,15 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
         Agu = BCu ^ ((~BCa) & BCe);
 
         Ebe ^= De;
-        BCa = ROL(Ebe, 1);
+        BCa = SPX_ROL(Ebe, 1);
         Egi ^= Di;
-        BCe = ROL(Egi, 6);
+        BCe = SPX_ROL(Egi, 6);
         Eko ^= Do;
-        BCi = ROL(Eko, 25);
+        BCi = SPX_ROL(Eko, 25);
         Emu ^= Du;
-        BCo = ROL(Emu, 8);
+        BCo = SPX_ROL(Emu, 8);
         Esa ^= Da;
-        BCu = ROL(Esa, 18);
+        BCu = SPX_ROL(Esa, 18);
         Aka = BCa ^ ((~BCe) & BCi);
         Ake = BCe ^ ((~BCi) & BCo);
         Aki = BCi ^ ((~BCo) & BCu);
@@ -271,15 +271,15 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
         Aku = BCu ^ ((~BCa) & BCe);
 
         Ebu ^= Du;
-        BCa = ROL(Ebu, 27);
+        BCa = SPX_ROL(Ebu, 27);
         Ega ^= Da;
-        BCe = ROL(Ega, 36);
+        BCe = SPX_ROL(Ega, 36);
         Eke ^= De;
-        BCi = ROL(Eke, 10);
+        BCi = SPX_ROL(Eke, 10);
         Emi ^= Di;
-        BCo = ROL(Emi, 15);
+        BCo = SPX_ROL(Emi, 15);
         Eso ^= Do;
-        BCu = ROL(Eso, 56);
+        BCu = SPX_ROL(Eso, 56);
         Ama = BCa ^ ((~BCe) & BCi);
         Ame = BCe ^ ((~BCi) & BCo);
         Ami = BCi ^ ((~BCo) & BCu);
@@ -287,15 +287,15 @@ static void KeccakF1600_StatePermute(uint64_t *state) {
         Amu = BCu ^ ((~BCa) & BCe);
 
         Ebi ^= Di;
-        BCa = ROL(Ebi, 62);
+        BCa = SPX_ROL(Ebi, 62);
         Ego ^= Do;
-        BCe = ROL(Ego, 55);
+        BCe = SPX_ROL(Ego, 55);
         Eku ^= Du;
-        BCi = ROL(Eku, 39);
+        BCi = SPX_ROL(Eku, 39);
         Ema ^= Da;
-        BCo = ROL(Ema, 41);
+        BCo = SPX_ROL(Ema, 41);
         Ese ^= De;
-        BCu = ROL(Ese, 2);
+        BCu = SPX_ROL(Ese, 2);
         Asa = BCa ^ ((~BCe) & BCi);
         Ase = BCe ^ ((~BCi) & BCo);
         Asi = BCi ^ ((~BCo) & BCu);
@@ -525,15 +525,15 @@ void shake256_inc_init(uint64_t *s_inc) {
 }
 
 void shake256_inc_absorb(uint64_t *s_inc, const uint8_t *input, size_t inlen) {
-    keccak_inc_absorb(s_inc, SHAKE256_RATE, input, inlen);
+    keccak_inc_absorb(s_inc, SPX_SHAKE256_RATE, input, inlen);
 }
 
 void shake256_inc_finalize(uint64_t *s_inc) {
-    keccak_inc_finalize(s_inc, SHAKE256_RATE, 0x1F);
+    keccak_inc_finalize(s_inc, SPX_SHAKE256_RATE, 0x1F);
 }
 
 void shake256_inc_squeeze(uint8_t *output, size_t outlen, uint64_t *s_inc) {
-    keccak_inc_squeeze(output, outlen, s_inc, SHAKE256_RATE);
+    keccak_inc_squeeze(output, outlen, s_inc, SPX_SHAKE256_RATE);
 }
 
 /*************************************************
@@ -548,14 +548,14 @@ void shake256_inc_squeeze(uint8_t *output, size_t outlen, uint64_t *s_inc) {
  *              - size_t inlen: length of input in bytes
  **************************************************/
 // void shake256_absorb(uint64_t *s, const uint8_t *input, size_t inlen) {
-//     keccak_absorb(s, SHAKE256_RATE, input, inlen, 0x1F);
+//     keccak_absorb(s, SPX_SHAKE256_RATE, input, inlen, 0x1F);
 // }
 
 /*************************************************
  * Name:        shake256_squeezeblocks
  *
  * Description: Squeeze step of SHAKE256 XOF. Squeezes full blocks of
- *              SHAKE256_RATE bytes each. Modifies the state. Can be called
+ *              SPX_SHAKE256_RATE bytes each. Modifies the state. Can be called
  *              multiple times to keep squeezing, i.e., is incremental.
  *
  * Arguments:   - uint8_t *output: pointer to output blocks
@@ -564,7 +564,7 @@ void shake256_inc_squeeze(uint8_t *output, size_t outlen, uint64_t *s_inc) {
  *              - uint64_t *s: pointer to input/output Keccak state
  **************************************************/
 // void shake256_squeezeblocks(uint8_t *output, size_t nblocks, uint64_t *s) {
-//     keccak_squeezeblocks(output, nblocks, s, SHAKE256_RATE);
+//     keccak_squeezeblocks(output, nblocks, s, SPX_SHAKE256_RATE);
 // }
 
 /*************************************************
@@ -579,15 +579,15 @@ void shake256_inc_squeeze(uint8_t *output, size_t outlen, uint64_t *s_inc) {
  **************************************************/
 // void shake256(uint8_t *output, size_t outlen,
 //               const uint8_t *input, size_t inlen) {
-//     size_t nblocks = outlen / SHAKE256_RATE;
-//     uint8_t t[SHAKE256_RATE];
+//     size_t nblocks = outlen / SPX_SHAKE256_RATE;
+//     uint8_t t[SPX_SHAKE256_RATE];
 //     uint64_t s[25];
 
 //     shake256_absorb(s, input, inlen);
 //     shake256_squeezeblocks(output, nblocks, s);
 
-//     output += nblocks * SHAKE256_RATE;
-//     outlen -= nblocks * SHAKE256_RATE;
+//     output += nblocks * SPX_SHAKE256_RATE;
+//     outlen -= nblocks * SPX_SHAKE256_RATE;
 
 //     if (outlen) {
 //         shake256_squeezeblocks(t, 1, s);

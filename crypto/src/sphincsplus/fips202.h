@@ -4,10 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define SHAKE128_RATE 168
-#define SHAKE256_RATE 136
-#define SHA3_256_RATE 136
-#define SHA3_512_RATE 72
+#define SPX_SHAKE128_RATE 168
+#define SPX_SHAKE256_RATE 136
+#define SPX_SHA3_256_RATE 136
+#define SPX_SHA3_512_RATE 72
 
 void shake128_absorb(uint64_t *s, const uint8_t *input, size_t inlen);
 
