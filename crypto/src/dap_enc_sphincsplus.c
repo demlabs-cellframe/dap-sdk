@@ -3,7 +3,7 @@
 
 #define LOG_TAG "dap_enc_sig_sphincsplus"
 
-static const sphincsplus_config_t s_default_config = SPHINCSPLUS_SHA2_256F;
+static const sphincsplus_config_t s_default_config = SPHINCSPLUS_SHA2_128F;
 static pthread_mutex_t s_sign_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {

@@ -75,7 +75,7 @@ typedef struct {
     uint32_t spx_shax_block_bytes;
 } sphincsplus_params_t;
 
-sphincsplus_params_t g_sphincsplus_params_current;
+extern sphincsplus_params_t g_sphincsplus_params_current;
 
 #define SPHINCSPLUS_FLEX
 
