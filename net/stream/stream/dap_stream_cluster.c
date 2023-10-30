@@ -66,7 +66,7 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_cluster_role_t a_role
             DAP_DELETE(l_ret);
             return NULL;
         }
-        HASH_ADD(hh_str, s_cluster_mnemonims, mnemonim, strlen(a_mnemonim), l_ret);
+        HASH_ADD_KEYPTR(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_ret);
     }
     do {
         l_ret->uuid = dap_guuid_new();
