@@ -1086,12 +1086,12 @@ int dap_stream_change_id(void *a_old, uint64_t a_new)
 int s_stream_add_to_hashtable(dap_stream_t *a_stream)
 {
     dap_stream_t *l_double = NULL;
-    HASH_FIND(hh, s_streams, &a_stream->node, sizeof(a_stream->node), l_double);
+    HASH_FIND(hh, s_authorized_streams, &a_stream->node, sizeof(a_stream->node), l_double);
     if (l_double) {
         log_it(L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(a_stream->node));
         return -1;
     }
-    HASH_ADD(hh, s_streams, node, sizeof(a_stream->node), a_stream);
+    HASH_ADD(hh, s_authorized_streams, node, sizeof(a_stream->node), a_stream);
     return 0;
 }
 
@@ -1110,7 +1110,7 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
     pthread_rwlock_wrlock(&s_streams_lock);
     if (a_stream->node.uint64) {
         // It's an authorized stream, try to replace it in hastable
-        HASH_DEL(s_streams, a_stream);
+        HASH_DEL(s_authorized_streams, a_stream);
         dap_stream_t *l_stream;
         bool l_replace_found = false;
         DL_FOREACH(s_streams, l_stream) {
@@ -1321,9 +1321,8 @@ void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count)
 
 void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
 {
-    dap_stream_t *it;
     pthread_rwlock_rdlock(&s_streams_lock);
-    DL_FOREACH(s_streams, it)
+    for (dap_stream_t *it = s_authorized_streams; it; it = it->hh.next)
         dap_stream_ch_pkt_send_mt(it->stream_worker, it->esocket_uuid, a_ch_id, a_type, a_data, a_data_size);
     pthread_rwlock_unlock(&s_streams_lock);
 }

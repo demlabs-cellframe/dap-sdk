@@ -432,7 +432,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
 #endif
         return;
     }
-    l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &a_es_listener->callbacks);
+    l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
     l_es_new->server = l_server;
     unsigned short int l_family = a_remote_addr->ss_family;
 
