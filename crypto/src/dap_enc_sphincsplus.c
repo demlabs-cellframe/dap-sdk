@@ -41,8 +41,8 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
     a_key->priv_key_data_size = sizeof(sphincsplus_private_key_t);
     a_key->pub_key_data_size = sizeof(sphincsplus_public_key_t);
 
-    DAP_NEW_Z_RET(l_skey, sphincsplus_private_key_t, NULL);
-    DAP_NEW_Z_RET(l_pkey, sphincsplus_public_key_t, l_skey);
+    DAP_NEW_Z_SIZE_RET(l_skey, sphincsplus_private_key_t, a_key->priv_key_data_size, NULL);
+    DAP_NEW_Z_SIZE_RET(l_pkey, sphincsplus_public_key_t, a_key->pub_key_data_size, l_skey);
     DAP_NEW_Z_SIZE_RET(l_skey->data, uint8_t, dap_enc_sphincsplus_crypto_sign_secretkeybytes(s_default_config), l_skey, l_pkey);
     DAP_NEW_Z_SIZE_RET(l_pkey->data, uint8_t, dap_enc_sphincsplus_crypto_sign_publickeybytes(s_default_config), l_skey->data, l_skey, l_pkey);
 

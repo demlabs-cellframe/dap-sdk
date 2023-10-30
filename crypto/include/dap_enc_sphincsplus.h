@@ -37,6 +37,6 @@ sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_b
 uint64_t dap_enc_sphincsplus_crypto_sign_secretkeybytes(sphincsplus_config_t a_config);
 uint64_t dap_enc_sphincsplus_crypto_sign_publickeybytes(sphincsplus_config_t a_config);
 uint64_t dap_enc_sphincsplus_crypto_sign_seedbytes(sphincsplus_config_t a_config);
-size_t dap_enc_sphincsplus_calc_signature_unserialized_size();
+uint64_t dap_enc_sphincsplus_calc_signature_unserialized_size();
 
 #endif //_DAP_ENC_SPHINCSPLUS_H

@@ -123,7 +123,7 @@
 #define DAP_CAST_PTR(t,v) (t*)(v)
 #endif
 
-static const char *g_error_memory_alloc = "Memory allocation error";
+extern const char *g_error_memory_alloc;
 void dap_delete_multy(int a_count, ...);
 uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...);
 int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, ...);
