@@ -17,23 +17,23 @@ static int s_deserialised_sign_check(
 {
 
     if (a_buflen != a_des_buflen) {
-        log_it(L_ERROR, "::read_signature() Buflen %"DAP_UINT64_FORMAT_U" is not equal to sign size (%"DAP_UINT64_FORMAT_U")",
+        log_it(L_ERROR, "Buflen %"DAP_UINT64_FORMAT_U" is not equal to sign size (%"DAP_UINT64_FORMAT_U")",
                         a_buflen, a_des_buflen);
         return -1;
     }
 
     if (a_degree != FALCON_512 && a_degree != FALCON_1024) { // we are now supporting only 512 and 1024 degrees
-        log_it(L_ERROR, "::read_signature() Degree %ul is not supported", a_degree);
+        log_it(L_ERROR, "Degree %ul is not supported", a_degree);
         return -2;
     }
 
     if (a_kind != FALCON_COMPRESSED && a_kind != FALCON_PADDED && a_kind != FALCON_CT) { // we are now supporting only compressed, padded and ct signatures
-        log_it(L_ERROR, "::read_signature() Kind %ul is not supported", a_kind);
+        log_it(L_ERROR, "Kind %ul is not supported", a_kind);
         return -3;
     }
 
     if (a_type != FALCON_DYNAMIC && a_type != FALCON_TREE) { // we are now supporting only sign and sign open signatures
-        log_it(L_ERROR, "::read_signature() Type %ul is not supported", a_type);
+        log_it(L_ERROR, "Type %ul is not supported", a_type);
         return -4;
     }
     return 0;
@@ -298,7 +298,6 @@ falcon_private_key_t* dap_enc_falcon_read_private_key(const uint8_t *a_buf, size
 // func work
     uint64_t l_buflen = 0;
     uint64_t l_skey_len = a_buflen - sizeof(uint64_t) - sizeof(uint32_t) * 3;
-    dap_return_val_if_pass(l_skey_len > a_buflen, NULL);
 
     falcon_private_key_t *l_skey = NULL;
     DAP_NEW_Z_RET_VAL(l_skey, falcon_private_key_t, NULL, NULL);
@@ -333,7 +332,6 @@ falcon_public_key_t *dap_enc_falcon_read_public_key(const uint8_t *a_buf, size_t
 // func work
     uint64_t l_buflen = 0;
     uint64_t l_pkey_len = a_buflen - sizeof(uint64_t) - sizeof(uint32_t) * 3;
-    dap_return_val_if_pass(l_pkey_len > a_buflen, NULL);
 
     falcon_public_key_t *l_pkey = NULL;
     DAP_NEW_Z_RET_VAL(l_pkey, falcon_public_key_t, NULL, NULL);
@@ -388,6 +386,7 @@ falcon_signature_t* dap_enc_falcon_read_signature(const uint8_t* a_buf, size_t a
 // func work
     uint64_t l_buflen = 0;
     uint64_t l_sig_len = a_buflen - sizeof(uint64_t) * 2 - sizeof(uint32_t) * 3;
+
     falcon_signature_t *l_sign = NULL;
     DAP_NEW_Z_RET_VAL(l_sign, falcon_signature_t, NULL, NULL);
     DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, l_sig_len, NULL, l_sign);

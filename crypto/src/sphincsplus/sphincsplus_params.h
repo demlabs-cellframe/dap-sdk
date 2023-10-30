@@ -83,22 +83,25 @@ typedef struct {
 } sphincsplus_params_t;
 
 typedef struct {
+  sphincsplus_base_params_t params;
   uint8_t *data;
 } sphincsplus_private_key_t;
 
 typedef struct {
+  sphincsplus_base_params_t params;
   uint8_t *data;
 } sphincsplus_public_key_t;
 
 typedef struct {
-  sphincsplus_params_t sig_params;
+  sphincsplus_base_params_t sig_params;
   uint64_t sig_len;
   uint8_t *sig_data;
 } sphincsplus_signature_t;
 
 int sphincsplus_set_config(sphincsplus_config_t a_config);
 int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params);
-int sphincsplus_get_params(const sphincsplus_config_t a_config, sphincsplus_signature_t *a_sign);
+int sphincsplus_get_params(const sphincsplus_config_t a_config, sphincsplus_base_params_t *a_params);
+int sphincsplus_check_params(const sphincsplus_base_params_t *a_base_params);
 
 #endif  // __SPHINCSPLUS_PARAMS__
 
