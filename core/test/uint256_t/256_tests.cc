@@ -8,8 +8,8 @@
 using namespace std;
 #include <iostream>
 
-//#include "dap_chain_common.h"
 #include "dap_math_ops.h"
+#include "dap_math_convert.h"
 
 #include "gtest/gtest-spi.h"
 
@@ -149,7 +149,7 @@ TEST(InputTests, ZeroInputBase) {
 
 TEST_P(Parameterized64Input, Input) {
     uint64_t a = GetParam();
-    check_equality256(dap_chain_uint256_from(a), a);
+    check_equality256(GET_256_FROM_64(a), a);
 }
 INSTANTIATE_TEST_SUITE_P(OneBit, Parameterized64Input, testing::ValuesIn(one_bits));
 INSTANTIATE_TEST_SUITE_P(AllBit, Parameterized64Input, testing::ValuesIn(all_bits));
@@ -161,135 +161,135 @@ TEST(InputTests, ZeroInputFromString) {
 }
 
 TEST(InputTests, MaxInputFromString) {
-    uint256_t a = dap_chain_balance_scan(MAX64STR);
+    uint256_t a = dap_uint256_scan_uninteger(MAX64STR);
 
     check_equality256(a, MAX64STR);
 }
 
 TEST(InputTests, Min128FromString) {
-    uint256_t a = dap_chain_balance_scan(MIN128STR);
+    uint256_t a = dap_uint256_scan_uninteger(MIN128STR);
 
     check_equality256(a, MIN128STR);
 }
 
 TEST(InputTests, Max128FromString) {
-    uint256_t a = dap_chain_balance_scan(MAX128STR);
+    uint256_t a = dap_uint256_scan_uninteger(MAX128STR);
 
     check_equality256(a, MAX128STR);
 }
 
 TEST(InputTests, Min256FromString) {
-    uint256_t a = dap_chain_balance_scan(MIN256STR);
+    uint256_t a = dap_uint256_scan_uninteger(MIN256STR);
 
     check_equality256(a, MIN256STR);
 }
 
 TEST(InputTests, Max256FromString) {
-    uint256_t a = dap_chain_balance_scan(MAX256STR);
+    uint256_t a = dap_uint256_scan_uninteger(MAX256STR);
 
     check_equality256(a, MAX256STR);
 }
 
 TEST(InputTests, EmptyInput) {
-    uint256_t a = dap_chain_balance_scan("");
+    uint256_t a = dap_uint256_scan_uninteger("");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, NullInput) {
-    uint256_t a = dap_chain_balance_scan(NULL);
+    uint256_t a = dap_uint256_scan_uninteger(NULL);
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, TooLongInputSome) {
     //some decimal symbols more
-    uint256_t a = dap_chain_balance_scan("11579208923731619542357098500868790785326998466564056403945758400791312963993123465");
+    uint256_t a = dap_uint256_scan_uninteger("11579208923731619542357098500868790785326998466564056403945758400791312963993123465");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, TooLongInputOne) {
     //one decimal symbol more
-    uint256_t a = dap_chain_balance_scan("1157920892373161954235709850086879078532699846656405640394575840079131296399351");
+    uint256_t a = dap_uint256_scan_uninteger("1157920892373161954235709850086879078532699846656405640394575840079131296399351");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, OverflowTestLeastBit) {
     //one bit more (like decimal 6 instead of decimal 5 on last symbol)
-    uint256_t a = dap_chain_balance_scan("115792089237316195423570985008687907853269984665640564039457584007913129639936");
+    uint256_t a = dap_uint256_scan_uninteger("115792089237316195423570985008687907853269984665640564039457584007913129639936");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, OverflowTestsMostBit) {
     //2 instead of 1 one most-significant digit
-    uint256_t a = dap_chain_balance_scan("215792089237316195423570985008687907853269984665640564039457584007913129639935");
+    uint256_t a = dap_uint256_scan_uninteger("215792089237316195423570985008687907853269984665640564039457584007913129639935");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, OverflowTestsNotMostBit) {
     //2 instead of 1 one most-significant digit
-    uint256_t a = dap_chain_balance_scan("125792089237316195423570985008687907853269984665640564039457584007913129639935");
+    uint256_t a = dap_uint256_scan_uninteger("125792089237316195423570985008687907853269984665640564039457584007913129639935");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, NonDigitSymbolsInputHexadermical) {
-    uint256_t a = dap_chain_balance_scan("123a23");
+    uint256_t a = dap_uint256_scan_uninteger("123a23");
     //todo: check that this is logging
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, NonDigitSymbolsInputNonHexadermicalLead) {
-    uint256_t a = dap_chain_balance_scan("hhh123");
+    uint256_t a = dap_uint256_scan_uninteger("hhh123");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, NonDigitSymbolsInputNonHexadermicalTail) {
-    uint256_t a = dap_chain_balance_scan("11579208923731619542357098500868790785326998466564056403945758400791312963993q");
+    uint256_t a = dap_uint256_scan_uninteger("11579208923731619542357098500868790785326998466564056403945758400791312963993q");
 
     check_equality256(a, 0);
 }
 
 
 TEST(InputTests, LeadingZeroesOne) {
-    uint256_t a = dap_chain_balance_scan("01");
+    uint256_t a = dap_uint256_scan_uninteger("01");
 
     check_equality256(a, 1);
 }
 
 TEST(InputTests, LeadingZeroesMany) {
-    uint256_t a = dap_chain_balance_scan("0000000001");
+    uint256_t a = dap_uint256_scan_uninteger("0000000001");
 
     check_equality256(a, 1);
 }
 
 TEST(InputTests, LeadingZeroesAlot) {
     //exactly 78
-    uint256_t a = dap_chain_balance_scan("000000000000000000000000000000000000000000000000000000000000000000000000000001");
+    uint256_t a = dap_uint256_scan_uninteger("000000000000000000000000000000000000000000000000000000000000000000000000000001");
 
     check_equality256(a, 1);
 }
 
 TEST(InputTests, ScientificInputSimplePlus) {
-    uint256_t a = dap_chain_balance_scan("1.0e+10");
+    uint256_t a = dap_uint256_scan_uninteger("1.0e+10");
 
     check_equality256(a, 10000000000);
 }
 
 TEST(InputTests, ScientificInputSimple) {
-    uint256_t a = dap_chain_balance_scan("1.0e10");
+    uint256_t a = dap_uint256_scan_uninteger("1.0e10");
 
     check_equality256(a, 10000000000);
 }
 
 TEST(InputTests, ScientificInputSimpleCapital) {
-    uint256_t a = dap_chain_balance_scan("1.0E+10");
+    uint256_t a = dap_uint256_scan_uninteger("1.0E+10");
 
     check_equality256(a, 10000000000);
 }
@@ -297,7 +297,7 @@ TEST(InputTests, ScientificInputSimpleCapital) {
 TEST(DISABLED_InputTests, ScientificInputSimpleNotImportantZeroes) {
     //todo: turn this on, when we can handle this
 
-    uint256_t a = dap_chain_balance_scan("1.23456789000000e9");
+    uint256_t a = dap_uint256_scan_uninteger("1.23456789000000e9");
 
 
     check_equality256(a, 1234567890);
@@ -305,139 +305,139 @@ TEST(DISABLED_InputTests, ScientificInputSimpleNotImportantZeroes) {
 
 TEST(DISABLED_InputTests, ScientificInputSimpleNotImportantZeroesAtAll) {
 
-    uint256_t a = dap_chain_balance_scan("1.234000000000000000000000000000e+3");
+    uint256_t a = dap_uint256_scan_uninteger("1.234000000000000000000000000000e+3");
 
     check_equality256(a, 1234);
 }
 
 TEST(InputTests, ScientificInputSimpleMax64) {
-    uint256_t a = dap_chain_balance_scan("1.8446744073709551615e19");
+    uint256_t a = dap_uint256_scan_uninteger("1.8446744073709551615e19");
 
     check_equality256(a, 0xffffffffffffffff);
 }
 
 TEST(InputTests, ScientificInputSimpleMax64Plus) {
-    uint256_t a = dap_chain_balance_scan("1.8446744073709551615e+19");
+    uint256_t a = dap_uint256_scan_uninteger("1.8446744073709551615e+19");
 
     check_equality256(a, 0xffffffffffffffff);
 }
 
 TEST(InputTests, ScientificInputSimpleMin128) {
-    uint256_t a = dap_chain_balance_scan("1.8446744073709551616e19");
+    uint256_t a = dap_uint256_scan_uninteger("1.8446744073709551616e19");
 
     check_equality256(a, MIN128STR);
 }
 
 TEST(InputTests, ScientificIncputSimpleMin128Plus) {
-    uint256_t a = dap_chain_balance_scan("1.8446744073709551616e+19");
+    uint256_t a = dap_uint256_scan_uninteger("1.8446744073709551616e+19");
 
     check_equality256(a, MIN128STR);
 }
 
 TEST(InputTests, ScientificInputSimple128Max) {
-    uint256_t a = dap_chain_balance_scan("3.40282366920938463463374607431768211455e38");
+    uint256_t a = dap_uint256_scan_uninteger("3.40282366920938463463374607431768211455e38");
 
     check_equality256(a, MAX128STR);
 }
 
 TEST(InputTests, ScientificInputSimple256Min) {
-    uint256_t a = dap_chain_balance_scan("3.40282366920938463463374607431768211456e38");
+    uint256_t a = dap_uint256_scan_uninteger("3.40282366920938463463374607431768211456e38");
 
     check_equality256(a, MIN256STR);
 }
 
 TEST(InputTests, ScientificInputSimple256Max) {
-    uint256_t a = dap_chain_balance_scan("1.15792089237316195423570985008687907853269984665640564039457584007913129639935e77");
+    uint256_t a = dap_uint256_scan_uninteger("1.15792089237316195423570985008687907853269984665640564039457584007913129639935e77");
 
     check_equality256(a, MAX256STR);
 }
 
 TEST(InputTests, ScientificInputSimple256MaxPlus) {
-    uint256_t a = dap_chain_balance_scan("1.15792089237316195423570985008687907853269984665640564039457584007913129639935e+77");
+    uint256_t a = dap_uint256_scan_uninteger("1.15792089237316195423570985008687907853269984665640564039457584007913129639935e+77");
 
     check_equality256(a, MAX256STR);
 }
 
 TEST(InputTests, ScientificInputSimpleLessThanOne) {
-    uint256_t a = dap_chain_balance_scan("0.1e1");
+    uint256_t a = dap_uint256_scan_uninteger("0.1e1");
 
     check_equality256(a, 1);
 }
 
 TEST(InputTests, ScientificInputSimpleMoreThanTwo) {
-    uint256_t a = dap_chain_balance_scan("123.123e3");
+    uint256_t a = dap_uint256_scan_uninteger("123.123e3");
 
     check_equality256(a, 123123);
 }
 
 TEST(InputTests, ScientificInputSimpleMaxAndMoreThanTwo) {
-    uint256_t a = dap_chain_balance_scan("11579208923731619542357098500868790785326998466564056403945758400791.3129639935e10");
+    uint256_t a = dap_uint256_scan_uninteger("11579208923731619542357098500868790785326998466564056403945758400791.3129639935e10");
 
     check_equality256(a, MAX256STR);
 }
 
 TEST(InputTests, IncorrectScientificInputMorePluses) {
-    uint256_t a = dap_chain_balance_scan("1.0E+++10");
+    uint256_t a = dap_uint256_scan_uninteger("1.0E+++10");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, IncorrectScientificInputMoreExps) {
-    uint256_t a = dap_chain_balance_scan("1.0EEE+10");
+    uint256_t a = dap_uint256_scan_uninteger("1.0EEE+10");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, IncorrectScientificInputMoreDots) {
-    uint256_t a = dap_chain_balance_scan("1.1.1e3");
+    uint256_t a = dap_uint256_scan_uninteger("1.1.1e3");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, IncorrectScientificInputFractionPart){
     // with fraction part
-    uint256_t a = dap_chain_balance_scan("1.123e2");
+    uint256_t a = dap_uint256_scan_uninteger("1.123e2");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, TooLongScientificInputOneSymb) {
     //one symbol more
-    uint256_t a = dap_chain_balance_scan("1.157920892373161954235709850086879078532699846656405640394575840079131296399356e+78");
+    uint256_t a = dap_uint256_scan_uninteger("1.157920892373161954235709850086879078532699846656405640394575840079131296399356e+78");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, TooLongScientificInputTenSymbs) {
     //ten symbols more
-    uint256_t a = dap_chain_balance_scan("1.157920892373161954235709850086879078532699846656405640394575840079131296399351234567890e+88");
+    uint256_t a = dap_uint256_scan_uninteger("1.157920892373161954235709850086879078532699846656405640394575840079131296399351234567890e+88");
 
     check_equality256(a, 0);
 }
 
 
-//todo: make some more tests for better coverage (see coverage on dap_chain_balance_scan)
+//todo: make some more tests for better coverage (see coverage on dap_uint256_scan_uninteger)
 TEST(InputTests, OverflowScientificInputBigExp) {
-     uint256_t a = dap_chain_balance_scan("1.0e100");
+     uint256_t a = dap_uint256_scan_uninteger("1.0e100");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, OverflowScientificInputOneBit) {
     //last symb changed
-    uint256_t a = dap_chain_balance_scan("1.15792089237316195423570985008687907853269984665640564039457584007913129639936e+77");
+    uint256_t a = dap_uint256_scan_uninteger("1.15792089237316195423570985008687907853269984665640564039457584007913129639936e+77");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, OverflowScientificInputHighBit) {
-    uint256_t a = dap_chain_balance_scan("1.25792089237316195423570985008687907853269984665640564039457584007913129639935e+77");
+    uint256_t a = dap_uint256_scan_uninteger("1.25792089237316195423570985008687907853269984665640564039457584007913129639935e+77");
 
     check_equality256(a, 0);
 }
 
 TEST(InputTests, OverflowScientificInputHighBit2) {
-    uint256_t a = dap_chain_balance_scan("2.15792089237316195423570985008687907853269984665640564039457584007913129639935e+77");
+    uint256_t a = dap_uint256_scan_uninteger("2.15792089237316195423570985008687907853269984665640564039457584007913129639935e+77");
 
     check_equality256(a, 0);
 }
@@ -476,45 +476,45 @@ TEST_F(DISABLED_RandomInputTestsCoins, CoinsBase) {
 //
 //    uint256_t a = dap_chain_coins_to_balance(b.str().c_str());
 //
-//    ASSERT_STREQ(dap_chain_balance_to_coins(a), b.str().c_str());
+//    ASSERT_STREQ(dap_uint256_decimal_to_char(a), b.str().c_str());
 }
 
 
 TEST(OutputTests, ZeroOutputBase) {
     uint256_t zero = uint256_0;
-    ASSERT_STREQ(dap_chain_balance_print(zero), "0");
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(zero), "0");
 }
 
 TEST(OutputTests, Max64Output) {
     uint256_t max = GET_256_FROM_64(0xffffffffffffffff);
-    ASSERT_STREQ(dap_chain_balance_print(max), "18446744073709551615");
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(max), "18446744073709551615");
 }
 
 TEST(OutputTests, Min128Output) {
-    uint256_t min = dap_chain_balance_scan("18446744073709551616");
-    ASSERT_STREQ(dap_chain_balance_print(min), "18446744073709551616");
+    uint256_t min = dap_uint256_scan_uninteger("18446744073709551616");
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(min), "18446744073709551616");
 }
 
 TEST(OutputTests, Max128Output) {
-    uint256_t max = dap_chain_balance_scan("340282366920938463463374607431768211455");
-    ASSERT_STREQ(dap_chain_balance_print(max), "340282366920938463463374607431768211455");
+    uint256_t max = dap_uint256_scan_uninteger("340282366920938463463374607431768211455");
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(max), "340282366920938463463374607431768211455");
 }
 
 TEST(OutputTests, Min256Output) {
-    uint256_t min = dap_chain_balance_scan("340282366920938463463374607431768211456");
-    ASSERT_STREQ(dap_chain_balance_print(min), "340282366920938463463374607431768211456");
+    uint256_t min = dap_uint256_scan_uninteger("340282366920938463463374607431768211456");
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(min), "340282366920938463463374607431768211456");
 }
 
 TEST(OutputTests, Max256Output) {
-    uint256_t max = dap_chain_balance_scan("115792089237316195423570985008687907853269984665640564039457584007913129639935");
-    ASSERT_STREQ(dap_chain_balance_print(max), "115792089237316195423570985008687907853269984665640564039457584007913129639935");
+    uint256_t max = dap_uint256_scan_uninteger("115792089237316195423570985008687907853269984665640564039457584007913129639935");
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(max), "115792089237316195423570985008687907853269984665640564039457584007913129639935");
 }
 
 TEST_F(RandomOutputTests, Output256){
     bmp::uint256_t boost_a(gen256());
 
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
-    ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
 }
 
 TEST(InputTests, Get256From128) {
@@ -526,7 +526,7 @@ TEST(InputTests, Get256From128) {
 TEST_F(RandomInputTests, Input256) {
     bmp::uint256_t boost_a(gen256());
 
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
     check_equality256(a, boost_a);
 }
 
@@ -570,7 +570,7 @@ TEST(ComparisonTests, Equal256ZeroOne) {
 TEST(ComparisonTests, Equal256Min128Zero) {
     uint256_t a, b;
 
-    a = dap_chain_balance_scan(MIN128STR);
+    a = dap_uint256_scan_uninteger(MIN128STR);
     b = GET_256_FROM_64(0);
 
     ASSERT_FALSE(EQUAL_256(a, b));
@@ -579,8 +579,8 @@ TEST(ComparisonTests, Equal256Min128Zero) {
 TEST(ComparisonTests, Equal256Max64Min128) {
     uint256_t a, b;
 
-    a = dap_chain_balance_scan(MIN128STR);
-    b = dap_chain_balance_scan(MAX64STR);
+    a = dap_uint256_scan_uninteger(MIN128STR);
+    b = dap_uint256_scan_uninteger(MAX64STR);
 
     ASSERT_FALSE(EQUAL_256(a, b));
 }
@@ -588,8 +588,8 @@ TEST(ComparisonTests, Equal256Max64Min128) {
 TEST(ComparisonTests, Equal256Min128Min128) {
     uint256_t a, b;
 
-    a = dap_chain_balance_scan(MIN128STR);
-    b = dap_chain_balance_scan(MIN128STR);
+    a = dap_uint256_scan_uninteger(MIN128STR);
+    b = dap_uint256_scan_uninteger(MIN128STR);
 
     ASSERT_TRUE(EQUAL_256(a, b));
 }
@@ -597,8 +597,8 @@ TEST(ComparisonTests, Equal256Min128Min128) {
 TEST(ComparisonTests, Equal256Max128Min128){
     uint256_t a, b;
 
-    a = dap_chain_balance_scan(MAX128STR);
-    b = dap_chain_balance_scan(MIN128STR);
+    a = dap_uint256_scan_uninteger(MAX128STR);
+    b = dap_uint256_scan_uninteger(MIN128STR);
 
     ASSERT_FALSE(EQUAL_256(a, b));
 }
@@ -606,8 +606,8 @@ TEST(ComparisonTests, Equal256Max128Min128){
 TEST(ComparisonTests, Equal256Max128Min256) {
     uint256_t a, b;
 
-    a = dap_chain_balance_scan(MAX128STR);
-    b = dap_chain_balance_scan(MIN256STR);
+    a = dap_uint256_scan_uninteger(MAX128STR);
+    b = dap_uint256_scan_uninteger(MIN256STR);
 
     ASSERT_FALSE(EQUAL_256(a, b));
 
@@ -616,8 +616,8 @@ TEST(ComparisonTests, Equal256Max128Min256) {
 TEST(ComparisonTests, Equal256Max256Min256) {
     uint256_t a, b;
 
-    a = dap_chain_balance_scan(MAX256STR);
-    b = dap_chain_balance_scan(MIN256STR);
+    a = dap_uint256_scan_uninteger(MAX256STR);
+    b = dap_uint256_scan_uninteger(MIN256STR);
 
     ASSERT_FALSE(EQUAL_256(a, b));
 }
@@ -625,8 +625,8 @@ TEST(ComparisonTests, Equal256Max256Min256) {
 TEST(ComparisonTests, Equal256Max256Max256) {
     uint256_t a, b;
 
-    a = dap_chain_balance_scan(MAX256STR);
-    b = dap_chain_balance_scan(MAX256STR);
+    a = dap_uint256_scan_uninteger(MAX256STR);
+    b = dap_uint256_scan_uninteger(MAX256STR);
 
     ASSERT_TRUE(EQUAL_256(a, b));
 }
@@ -634,8 +634,8 @@ TEST(ComparisonTests, Equal256Max256Max256) {
 TEST(ComparisonTests, Equal256Max256Zero) {
     uint256_t a, b;
 
-    a = dap_chain_balance_scan(MAX256STR);
-    b = dap_chain_balance_scan("0");
+    a = dap_uint256_scan_uninteger(MAX256STR);
+    b = dap_uint256_scan_uninteger("0");
 
     ASSERT_FALSE(EQUAL_256(a, b));
 }
@@ -643,8 +643,8 @@ TEST(ComparisonTests, Equal256Max256Zero) {
 TEST_F(RandomComparisonTests, Equal256) {
     bmp::uint256_t boost_a(gen128());
 
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
-    uint256_t b = dap_chain_balance_scan(boost_a.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
+    uint256_t b = dap_uint256_scan_uninteger(boost_a.str().c_str());
 
     ASSERT_TRUE(EQUAL_256(a, b));
 }
@@ -722,19 +722,19 @@ TEST(ComparisonTests, IsZeroTest256FalseChangedHi){
 }
 
 TEST(ComparisonTests, IsZeroTest256TrueFromBalance) {
-    uint256_t a = dap_chain_balance_scan("0");
+    uint256_t a = dap_uint256_scan_uninteger("0");
 
     ASSERT_TRUE(IS_ZERO_256(a));
 }
 
 TEST(ComparisonTests, IsZeroTest256FalseFromBalanceMax128) {
-    uint256_t a = dap_chain_balance_scan(MAX128STR);
+    uint256_t a = dap_uint256_scan_uninteger(MAX128STR);
 
     ASSERT_FALSE(IS_ZERO_256(a));
 }
 
 TEST(ComparisonTests, IsZeroTest256FalseFromBalanceMax256) {
-    uint256_t a = dap_chain_balance_scan(MAX256STR);
+    uint256_t a = dap_uint256_scan_uninteger(MAX256STR);
 
     ASSERT_FALSE(IS_ZERO_256(a));
 }
@@ -742,7 +742,7 @@ TEST(ComparisonTests, IsZeroTest256FalseFromBalanceMax256) {
 TEST_F(RandomComparisonTests, IsZeroTest) {
     bmp::uint256_t boost_a(gen256());
 
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
 
     if (boost_a == 0) {
         ASSERT_TRUE(IS_ZERO_256(a));
@@ -810,8 +810,8 @@ TEST(BitTests, And256ZeroZero) {
     uint256_t c;
 
     //todo: shuld we use ASSERT_EQ with lo and hi? It would be bad for 32-bit only systems
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, a)), dap_chain_balance_print(uint256_0));
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, a)), dap_chain_balance_print(uint256_0));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, a)), dap_uint256_uninteger_to_char(uint256_0));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, a)), dap_uint256_uninteger_to_char(uint256_0));
 }
 
 TEST(BitTests, And256ZeroOne) {
@@ -820,8 +820,8 @@ TEST(BitTests, And256ZeroOne) {
     b = uint256_1;
     c = uint256_0;
 
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), dap_chain_balance_print(uint256_0));
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(b, a)), dap_chain_balance_print(uint256_0));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), dap_uint256_uninteger_to_char(uint256_0));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(b, a)), dap_uint256_uninteger_to_char(uint256_0));
 
 }
 
@@ -831,110 +831,110 @@ TEST(BitTests, And256OneOne) {
     b = uint256_1;
     c = uint256_0;
 
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), dap_chain_balance_print(uint256_1));
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(b, a)), dap_chain_balance_print(uint256_1));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), dap_uint256_uninteger_to_char(uint256_1));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(b, a)), dap_uint256_uninteger_to_char(uint256_1));
 }
 
 TEST(BitTests, And256Max64Zebra) {
     uint256_t a, b,c;
 
 
-    a = dap_chain_balance_scan(MAX64STR);               //0b1111111111111111111111111111111111111111111111111111111111111111
-    b = dap_chain_balance_scan("12297829382473034410"); //0b1010101010101010101010101010101010101010101010101010101010101010
+    a = dap_uint256_scan_uninteger(MAX64STR);               //0b1111111111111111111111111111111111111111111111111111111111111111
+    b = dap_uint256_scan_uninteger("12297829382473034410"); //0b1010101010101010101010101010101010101010101010101010101010101010
     c = b; //0b1010101010101010101010101010101010101010101010101010101010101010
 
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(b, a)), dap_uint256_uninteger_to_char(c));
 }
 
 TEST(BitTests, And256Max64Halves) {
     uint256_t a, b,c;
 
-    a = dap_chain_balance_scan(MAX64STR);               //0b1111111111111111111111111111111111111111111111111111111111111111
-    b = dap_chain_balance_scan("18446744069414584320");             //0b1111111111111111111111111111111100000000000000000000000000000000
+    a = dap_uint256_scan_uninteger(MAX64STR);               //0b1111111111111111111111111111111111111111111111111111111111111111
+    b = dap_uint256_scan_uninteger("18446744069414584320");             //0b1111111111111111111111111111111100000000000000000000000000000000
     c = b;             //0b1111111111111111111111111111111100000000000000000000000000000000
 
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(b, a)), dap_uint256_uninteger_to_char(c));
 }
 
 
 TEST(BitTests, And256Max64DiffHalves) {
     uint256_t a, b,c;
 
-    a = dap_chain_balance_scan("18446744069414584320");             //0b1111111111111111111111111111111100000000000000000000000000000000
-    b = dap_chain_balance_scan("4294967295");                       //0b0000000000000000000000000000000011111111111111111111111111111111
+    a = dap_uint256_scan_uninteger("18446744069414584320");             //0b1111111111111111111111111111111100000000000000000000000000000000
+    b = dap_uint256_scan_uninteger("4294967295");                       //0b0000000000000000000000000000000011111111111111111111111111111111
     c = uint256_0;
 
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(b, a)), dap_uint256_uninteger_to_char(c));
 }
 
 
 TEST(BitTests, And256Max128Zebra ) {
     uint256_t a, b,c;
 
-    a = dap_chain_balance_scan(MAX128STR);                                             //0b11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-    b = dap_chain_balance_scan("226854911280625642308916404954512140970");             //0b10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010
+    a = dap_uint256_scan_uninteger(MAX128STR);                                             //0b11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+    b = dap_uint256_scan_uninteger("226854911280625642308916404954512140970");             //0b10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010
     c = b;                                                                                      //0b10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010
 
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(b, a)), dap_uint256_uninteger_to_char(c));
 }
 
 TEST(BitTests, And256Max128Quarters) {
     uint256_t a, b,c;
 
-    a = dap_chain_balance_scan(MAX128STR);                                             //0b11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-    b = dap_chain_balance_scan("340282366841710300967557013907638845440");             //0b11111111111111111111111111111111000000000000000000000000000000001111111111111111111111111111111100000000000000000000000000000000
+    a = dap_uint256_scan_uninteger(MAX128STR);                                             //0b11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+    b = dap_uint256_scan_uninteger("340282366841710300967557013907638845440");             //0b11111111111111111111111111111111000000000000000000000000000000001111111111111111111111111111111100000000000000000000000000000000
     c = b;                                                                                       //0b11111111111111111111111111111111000000000000000000000000000000001111111111111111111111111111111100000000000000000000000000000000
 
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(b, a)), dap_uint256_uninteger_to_char(c));
 }
 
 TEST(BitTests, And256Max128Halves) {
     uint256_t a, b,c;
-    a = dap_chain_balance_scan(MAX128STR);                                             //0b11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-    b = dap_chain_balance_scan("340282366920938463444927863358058659840");              //0b11111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000
+    a = dap_uint256_scan_uninteger(MAX128STR);                                             //0b11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+    b = dap_uint256_scan_uninteger("340282366920938463444927863358058659840");              //0b11111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000
     c = b;
 
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(b, a)), dap_uint256_uninteger_to_char(c));
 }
 
 //TODO: add other tests, like diff halves
 
 TEST(BitTests, And256Max256Zebra) {
     uint256_t a, b,c;
-    a = dap_chain_balance_scan(MAX256STR);                                             //0b1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-    b = dap_chain_balance_scan("77194726158210796949047323339125271902179989777093709359638389338608753093290");             //0b10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010
+    a = dap_uint256_scan_uninteger(MAX256STR);                                             //0b1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+    b = dap_uint256_scan_uninteger("77194726158210796949047323339125271902179989777093709359638389338608753093290");             //0b10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010
     c = b;                                                                                      //0b10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010
 
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(b, a)), dap_uint256_uninteger_to_char(c));
 }
 
 TEST(BitTests, And256Max256Octets) {
     uint256_t a, b,c;
 
-    a = dap_chain_balance_scan(MAX256STR);                                             //0b1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-    b = dap_chain_balance_scan("115792089210356248762697446947946071893095522863849111501270640965525260206080");             //0b1111111111111111111111111111111100000000000000000000000000000000111111111111111111111111111111110000000000000000000000000000000011111111111111111111111111111111000000000000000000000000000000001111111111111111111111111111111100000000000000000000000000000000
+    a = dap_uint256_scan_uninteger(MAX256STR);                                             //0b1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+    b = dap_uint256_scan_uninteger("115792089210356248762697446947946071893095522863849111501270640965525260206080");             //0b1111111111111111111111111111111100000000000000000000000000000000111111111111111111111111111111110000000000000000000000000000000011111111111111111111111111111111000000000000000000000000000000001111111111111111111111111111111100000000000000000000000000000000
     c = b;                                                                                       //0b1111111111111111111111111111111100000000000000000000000000000000111111111111111111111111111111110000000000000000000000000000000011111111111111111111111111111111000000000000000000000000000000001111111111111111111111111111111100000000000000000000000000000000
 
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(b, a)), dap_uint256_uninteger_to_char(c));
 }
 
 TEST(BitTests, And256Max256Quarters) {
     uint256_t a, b,c;
 
-    a = dap_chain_balance_scan(MAX256STR);                                             //0b1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-    b = dap_chain_balance_scan("115792089237316195417293883273301227089774477609353836086800156426807153786880");              //0b1111111111111111111111111111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000
+    a = dap_uint256_scan_uninteger(MAX256STR);                                             //0b1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+    b = dap_uint256_scan_uninteger("115792089237316195417293883273301227089774477609353836086800156426807153786880");              //0b1111111111111111111111111111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000
     c = b;
 
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(b, a)), dap_uint256_uninteger_to_char(c));
 }
 
 //TODO: add other tests, like halves and diff halves
@@ -946,71 +946,71 @@ TEST(BitTests, Or256) {
 
 
     //todo: should we use ASSERT_EQ with lo and hi? It would be bad for 32-bit only systems
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(a, b)), dap_chain_balance_print(uint256_1));
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(b, a)), dap_chain_balance_print(uint256_1));
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(a, a)), dap_chain_balance_print(uint256_0));
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(b, b)), dap_chain_balance_print(uint256_1));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, b)), dap_uint256_uninteger_to_char(uint256_1));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(b, a)), dap_uint256_uninteger_to_char(uint256_1));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, a)), dap_uint256_uninteger_to_char(uint256_0));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(b, b)), dap_uint256_uninteger_to_char(uint256_1));
 
-    a = dap_chain_balance_scan(MAX64STR);               //0b1111111111111111111111111111111111111111111111111111111111111111
-    b = dap_chain_balance_scan("12297829382473034410"); //0b1010101010101010101010101010101010101010101010101010101010101010
+    a = dap_uint256_scan_uninteger(MAX64STR);               //0b1111111111111111111111111111111111111111111111111111111111111111
+    b = dap_uint256_scan_uninteger("12297829382473034410"); //0b1010101010101010101010101010101010101010101010101010101010101010
     c = a; //0b1111111111111111111111111111111111111111111111111111111111111111
 
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(b, a)), dap_uint256_uninteger_to_char(c));
 
-    b = dap_chain_balance_scan("18446744069414584320");             //0b1111111111111111111111111111111100000000000000000000000000000000
+    b = dap_uint256_scan_uninteger("18446744069414584320");             //0b1111111111111111111111111111111100000000000000000000000000000000
     c = a;             //0b1111111111111111111111111111111111111111111111111111111111111111
 
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(b, a)), dap_uint256_uninteger_to_char(c));
 
-    a = dap_chain_balance_scan("18446744069414584320");             //0b1111111111111111111111111111111100000000000000000000000000000000
-    b = dap_chain_balance_scan("4294967295");                       //0b0000000000000000000000000000000011111111111111111111111111111111
-    c = dap_chain_balance_scan(MAX64STR); //0b1111111111111111111111111111111111111111111111111111111111111111
-
-
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(b, a)), dap_chain_balance_print(c));
+    a = dap_uint256_scan_uninteger("18446744069414584320");             //0b1111111111111111111111111111111100000000000000000000000000000000
+    b = dap_uint256_scan_uninteger("4294967295");                       //0b0000000000000000000000000000000011111111111111111111111111111111
+    c = dap_uint256_scan_uninteger(MAX64STR); //0b1111111111111111111111111111111111111111111111111111111111111111
 
 
-    a = dap_chain_balance_scan(MAX128STR);                                             //0b11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-    b = dap_chain_balance_scan("226854911280625642308916404954512140970");             //0b10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(b, a)), dap_uint256_uninteger_to_char(c));
+
+
+    a = dap_uint256_scan_uninteger(MAX128STR);                                             //0b11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+    b = dap_uint256_scan_uninteger("226854911280625642308916404954512140970");             //0b10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010
     c = a;                                                                                      //0b11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
 
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(b, a)), dap_uint256_uninteger_to_char(c));
 
-    b = dap_chain_balance_scan("340282366841710300967557013907638845440");             //0b11111111111111111111111111111111000000000000000000000000000000001111111111111111111111111111111100000000000000000000000000000000
+    b = dap_uint256_scan_uninteger("340282366841710300967557013907638845440");             //0b11111111111111111111111111111111000000000000000000000000000000001111111111111111111111111111111100000000000000000000000000000000
     c = a;                                                                                       //0b11111111111111111111111111111111000000000000000000000000000000001111111111111111111111111111111100000000000000000000000000000000
 
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(b, a)), dap_uint256_uninteger_to_char(c));
 
 
-    b = dap_chain_balance_scan("340282366920938463444927863358058659840");              //0b11111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000
+    b = dap_uint256_scan_uninteger("340282366920938463444927863358058659840");              //0b11111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000
     c = a;
 
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(b, a)), dap_uint256_uninteger_to_char(c));
 
-    a = dap_chain_balance_scan(MAX256STR);                                             //0b1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
-    b = dap_chain_balance_scan("77194726158210796949047323339125271902179989777093709359638389338608753093290");             //0b10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010
+    a = dap_uint256_scan_uninteger(MAX256STR);                                             //0b1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
+    b = dap_uint256_scan_uninteger("77194726158210796949047323339125271902179989777093709359638389338608753093290");             //0b10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010
     c = a;                                                                                      //0b1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111
 
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(b, a)), dap_uint256_uninteger_to_char(c));
 
-    b = dap_chain_balance_scan("115792089210356248762697446947946071893095522863849111501270640965525260206080");             //0b1111111111111111111111111111111100000000000000000000000000000000111111111111111111111111111111110000000000000000000000000000000011111111111111111111111111111111000000000000000000000000000000001111111111111111111111111111111100000000000000000000000000000000
+    b = dap_uint256_scan_uninteger("115792089210356248762697446947946071893095522863849111501270640965525260206080");             //0b1111111111111111111111111111111100000000000000000000000000000000111111111111111111111111111111110000000000000000000000000000000011111111111111111111111111111111000000000000000000000000000000001111111111111111111111111111111100000000000000000000000000000000
     c = a;                                                                                       //0b1111111111111111111111111111111100000000000000000000000000000000111111111111111111111111111111110000000000000000000000000000000011111111111111111111111111111111000000000000000000000000000000001111111111111111111111111111111100000000000000000000000000000000
 
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(b, a)), dap_uint256_uninteger_to_char(c));
 
-    b = dap_chain_balance_scan("115792089237316195417293883273301227089774477609353836086800156426807153786880");              //0b1111111111111111111111111111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000
+    b = dap_uint256_scan_uninteger("115792089237316195417293883273301227089774477609353836086800156426807153786880");              //0b1111111111111111111111111111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000000000000000011111111111111111111111111111111111111111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000
     c = a;
 
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(a, b)), dap_chain_balance_print(c));
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(b, a)), dap_chain_balance_print(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, b)), dap_uint256_uninteger_to_char(c));
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(b, a)), dap_uint256_uninteger_to_char(c));
 
 
 
@@ -1021,79 +1021,79 @@ TEST(BitTests, CycleShifts) {
     uint256_t a = uint256_1;
 
     for (int i = 0; i < 256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
         LEFT_SHIFT_256(a, &a, 1);
         boost_a <<= 1;
     }
 
     boost_a = 2;
-    a = dap_chain_balance_scan("2");
+    a = dap_uint256_scan_uninteger("2");
 
     for (int i = 0; i < 256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
         LEFT_SHIFT_256(a, &a, 1);
         boost_a <<= 1;
     }
 
     boost_a = 3;
-    a = dap_chain_balance_scan("3");
+    a = dap_uint256_scan_uninteger("3");
 
     for (int i = 0; i < 256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
         LEFT_SHIFT_256(a, &a, 1);
         boost_a <<= 1;
     }
 
     boost_a = 7;
-    a = dap_chain_balance_scan("7");
+    a = dap_uint256_scan_uninteger("7");
 
     for (int i = 0; i < 256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
         LEFT_SHIFT_256(a, &a, 1);
         boost_a <<= 1;
     }
 
     boost_a = 9;
-    a = dap_chain_balance_scan("9");
+    a = dap_uint256_scan_uninteger("9");
 
     for (int i = 0; i < 256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
         LEFT_SHIFT_256(a, &a, 1);
         boost_a <<= 1;
     }
 
     boost_a = bmp::uint256_t(MAX256STR);
-    a = dap_chain_balance_scan(MAX256STR);
+    a = dap_uint256_scan_uninteger(MAX256STR);
 
     for (int i = 0; i<256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
         LEFT_SHIFT_256(a, &a, 1);
         boost_a <<= 1;
     }
 
     boost_a = bmp::uint256_t(MAX256STR);
-    a = dap_chain_balance_scan(MAX256STR);
+    a = dap_uint256_scan_uninteger(MAX256STR);
 
     for (int i = 0; i<256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
         RIGHT_SHIFT_256(a, &a, 1);
         boost_a >>= 1;
     }
 
     boost_a = bmp::uint256_t("57896044618658097711785492504343953926634992332820282019728792003956564819968"); //0b10...0
-    a = dap_chain_balance_scan("57896044618658097711785492504343953926634992332820282019728792003956564819968");
+    a = dap_uint256_scan_uninteger("57896044618658097711785492504343953926634992332820282019728792003956564819968");
 
     for (int i = 0; i<256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
         RIGHT_SHIFT_256(a, &a, 1);
         boost_a >>= 1;
     }
 
     boost_a = bmp::uint256_t("86844066927987146567678238756515930889952488499230423029593188005934847229952"); //0b110...0
-    a = dap_chain_balance_scan("86844066927987146567678238756515930889952488499230423029593188005934847229952");
+    a = dap_uint256_scan_uninteger("86844066927987146567678238756515930889952488499230423029593188005934847229952");
 
     for (int i = 0; i<256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
         RIGHT_SHIFT_256(a, &a, 1);
         boost_a >>= 1;
     }
@@ -1101,19 +1101,19 @@ TEST(BitTests, CycleShifts) {
 
 TEST_F(RandomBitTests, RandomShift) {
     bmp::uint256_t boost_a(gen256());
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
 
     for (int i = 0; i<256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
         RIGHT_SHIFT_256(a, &a, 1);
         boost_a >>= 1;
     }
 
     boost_a = bmp::uint256_t(gen128()); //only 128 bits
-    a = dap_chain_balance_scan(boost_a.str().c_str());
+    a = dap_uint256_scan_uninteger(boost_a.str().c_str());
 
     for (int i = 0; i<256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
         LEFT_SHIFT_256(a, &a, 1);
         boost_a <<= 1;
     }
@@ -1121,42 +1121,42 @@ TEST_F(RandomBitTests, RandomShift) {
 
 TEST_F(RandomBitTests, RandomShiftNotOne) {
     bmp::uint256_t boost_a(gen256());
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
 
     int sh = (int) gen128()%255;
 
     LEFT_SHIFT_256(a, &a, sh);
     boost_a <<= sh;
 
-    ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
 
     boost_a = bmp::uint256_t(gen256());
-    a = dap_chain_balance_scan(boost_a.str().c_str());
+    a = dap_uint256_scan_uninteger(boost_a.str().c_str());
 
     RIGHT_SHIFT_256(a, &a, sh);
     boost_a >>= sh;
 
-    ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
 }
 
 TEST_F(RandomBitTests, And) {
     bmp::uint256_t boost_a(gen256());
     bmp::uint256_t boost_b(gen256());
 
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
-    uint256_t b = dap_chain_balance_scan(boost_b.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
+    uint256_t b = dap_uint256_scan_uninteger(boost_b.str().c_str());
 
-    ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), (boost_a & boost_b).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), (boost_a & boost_b).str().c_str());
 }
 
 TEST_F(RandomBitTests, Or) {
     bmp::uint256_t boost_a(gen256());
     bmp::uint256_t boost_b(gen256());
 
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
-    uint256_t b = dap_chain_balance_scan(boost_b.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
+    uint256_t b = dap_uint256_scan_uninteger(boost_b.str().c_str());
 
-    ASSERT_STREQ(dap_chain_balance_print(OR_256(a, b)), (boost_a | boost_b).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, b)), (boost_a | boost_b).str().c_str());
 }
 
 
@@ -1164,11 +1164,11 @@ TEST_F(RandomBitTests, CiclycAnd) {
     bmp::uint256_t boost_a(gen256());
     bmp::uint256_t boost_b(gen256());
 
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
-    uint256_t b = dap_chain_balance_scan(boost_b.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
+    uint256_t b = dap_uint256_scan_uninteger(boost_b.str().c_str());
 
     for (int i = 0; i<256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(AND_256(a, b)), (boost_a & boost_b).str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(AND_256(a, b)), (boost_a & boost_b).str().c_str());
         RIGHT_SHIFT_256(a, &a, 1);
         RIGHT_SHIFT_256(b, &b, 1);
         boost_a >>= 1;
@@ -1180,11 +1180,11 @@ TEST_F(RandomBitTests, CiclycOr) {
     bmp::uint256_t boost_a(gen256());
     bmp::uint256_t boost_b(gen256());
 
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
-    uint256_t b = dap_chain_balance_scan(boost_b.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
+    uint256_t b = dap_uint256_scan_uninteger(boost_b.str().c_str());
 
     for (int i = 0; i<256; i++) {
-        ASSERT_STREQ(dap_chain_balance_print(OR_256(a, b)), (boost_a | boost_b).str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(OR_256(a, b)), (boost_a | boost_b).str().c_str());
         RIGHT_SHIFT_256(a, &a, 1);
         RIGHT_SHIFT_256(b, &b, 1);
         boost_a >>= 1;
@@ -1308,7 +1308,7 @@ TEST(BitTests, Incr256Two) {
 }
 
 TEST(BitTests, Incr256Max64) {
-    uint256_t a = dap_chain_balance_scan(MAX64STR);
+    uint256_t a = dap_uint256_scan_uninteger(MAX64STR);
 
     INCR_256(&a);
 
@@ -1326,35 +1326,35 @@ TEST(BitTests, Incr256Max64) {
 
 
 TEST(BitTests, Incr256Min128) {
-    uint256_t a = dap_chain_balance_scan(MIN128STR);
+    uint256_t a = dap_uint256_scan_uninteger(MIN128STR);
 
     INCR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), (bmp::uint256_t(MIN128STR)+1).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), (bmp::uint256_t(MIN128STR)+1).str().c_str());
 }
 
 TEST(BitTests, Incr256Max128) {
-    uint256_t a = dap_chain_balance_scan(MAX128STR);
+    uint256_t a = dap_uint256_scan_uninteger(MAX128STR);
 
     INCR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), (bmp::uint256_t(MAX128STR)+1).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), (bmp::uint256_t(MAX128STR)+1).str().c_str());
 }
 
 TEST(BitTests, Incr256Min256) {
-    uint256_t a = dap_chain_balance_scan(MIN256STR);
+    uint256_t a = dap_uint256_scan_uninteger(MIN256STR);
 
     INCR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), (bmp::uint256_t(MIN256STR)+1).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), (bmp::uint256_t(MIN256STR)+1).str().c_str());
 }
 
 TEST(BitTests, Incr256Max256) {
-    uint256_t a = dap_chain_balance_scan(MAX256STR);
+    uint256_t a = dap_uint256_scan_uninteger(MAX256STR);
 
     INCR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), (bmp::uint256_t(MAX256STR)+1).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), (bmp::uint256_t(MAX256STR)+1).str().c_str());
 }
 
 TEST(BitTests, Decr256One) {
@@ -1362,7 +1362,7 @@ TEST(BitTests, Decr256One) {
 
     DECR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), (bmp::uint256_t(0)-1).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), (bmp::uint256_t(0)-1).str().c_str());
 }
 
 TEST(BitTests, Decr256Two) {
@@ -1370,69 +1370,69 @@ TEST(BitTests, Decr256Two) {
 
     DECR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), (bmp::uint256_t(1)-1).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), (bmp::uint256_t(1)-1).str().c_str());
 
 }
 
 TEST(BitTests, Decr256Max64) {
-    uint256_t a = dap_chain_balance_scan(MAX64STR);
+    uint256_t a = dap_uint256_scan_uninteger(MAX64STR);
 
     DECR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), (bmp::uint256_t(MAX64STR)-1).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), (bmp::uint256_t(MAX64STR)-1).str().c_str());
 }
 
 
 TEST(BitTests, Decr256Min128) {
-    uint256_t a = dap_chain_balance_scan(MIN128STR);
+    uint256_t a = dap_uint256_scan_uninteger(MIN128STR);
 
     DECR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), (bmp::uint256_t(MIN128STR)-1).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), (bmp::uint256_t(MIN128STR)-1).str().c_str());
 }
 
 TEST(BitTests, Decr256Max128) {
-    uint256_t a = dap_chain_balance_scan(MAX128STR);
+    uint256_t a = dap_uint256_scan_uninteger(MAX128STR);
 
     DECR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), (bmp::uint256_t(MAX128STR)-1).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), (bmp::uint256_t(MAX128STR)-1).str().c_str());
 }
 
 TEST(BitTests, Decr256Min256) {
-    uint256_t a = dap_chain_balance_scan(MIN256STR);
+    uint256_t a = dap_uint256_scan_uninteger(MIN256STR);
 
     DECR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), (bmp::uint256_t(MIN256STR)-1).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), (bmp::uint256_t(MIN256STR)-1).str().c_str());
 }
 
 TEST(BitTests, Decr256Max256) {
-    uint256_t a = dap_chain_balance_scan(MAX256STR);
+    uint256_t a = dap_uint256_scan_uninteger(MAX256STR);
 
     DECR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), (bmp::uint256_t(MAX256STR)-1).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), (bmp::uint256_t(MAX256STR)-1).str().c_str());
 }
 
 TEST_F(RandomBitTests, Incr256) {
     bmp::uint256_t boost_a(gen256());
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
 
     boost_a++;
     INCR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
 }
 
 TEST_F(RandomBitTests, Decr256) {
     bmp::uint256_t boost_a(gen256());
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
 
     boost_a--;
     DECR_256(&a);
 
-    ASSERT_STREQ(dap_chain_balance_print(a), boost_a.str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(a), boost_a.str().c_str());
 }
 
 //Straight to 256-bit, exclude 64 and 128 for now
@@ -1481,7 +1481,7 @@ TEST(LegacyTests, Math) {
         l=4*density_index;
 
         //???
-//        dap_test_256_one = dap_chain_balance_scan((i + (j << 64) + (k << 128) + (l << 192)).str().c_str());
+//        dap_test_256_one = dap_uint256_scan_uninteger((i + (j << 64) + (k << 128) + (l << 192)).str().c_str());
 
 
 
@@ -1495,7 +1495,7 @@ TEST(LegacyTests, Math) {
         boost_test_256_one=boost_test_256_one_coeff_2_0 + boost_test_256_one_coeff_2_64*boost_two_64
                            +boost_test_256_one_coeff_2_128*boost_two_128+boost_test_256_one_coeff_2_192*boost_two_192;
 
-        dap_test_256_one = dap_chain_balance_scan(boost_test_256_one.str().c_str());
+        dap_test_256_one = dap_uint256_scan_uninteger(boost_test_256_one.str().c_str());
 
         i=max_64-(density_index+1);
         j=max_64-2*(density_index+1);
@@ -1513,7 +1513,7 @@ TEST(LegacyTests, Math) {
                            +boost_test_256_two_coeff_2_128*boost_two_128+boost_test_256_two_coeff_2_192*boost_two_192;
 
 
-        dap_test_256_two = dap_chain_balance_scan(boost_test_256_two.str().c_str());
+        dap_test_256_two = dap_uint256_scan_uninteger(boost_test_256_two.str().c_str());
 
 
 //        add(boost_add_256, i, j);
@@ -1521,7 +1521,7 @@ TEST(LegacyTests, Math) {
 //        boost_test_256_sum=add(boost_test_256_sum,boost_test_256_one,boost_test_256_two);
         boost_test_256_sum = boost_test_256_one + boost_test_256_two;
 
-        ASSERT_STREQ(dap_chain_balance_print(dap_test_256_sum), boost_test_256_sum.str().c_str());
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(dap_test_256_sum), boost_test_256_sum.str().c_str());
 
 
         }
@@ -1655,7 +1655,7 @@ TEST(LegacyTests, Uint256) {
         boost_test_256_one=boost_test_256_one_coeff_2_0 + boost_test_256_one_coeff_2_64*boost_two_64
                            +boost_test_256_one_coeff_2_128*boost_two_128+boost_test_256_one_coeff_2_192*boost_two_192;
 
-        dap_test_256_one = dap_chain_balance_scan(boost_test_256_one.str().c_str());
+        dap_test_256_one = dap_uint256_scan_uninteger(boost_test_256_one.str().c_str());
 //        boost_test_256_one_hi=boost_test_256_one_coeff_2_128+boost_two_64*boost_test_256_one_coeff_2_192;
 //        boost_test_256_one_lo=boost_test_256_one_coeff_2_0+boost_test_256_one_coeff_2_64*boost_two_64;
 
@@ -1675,11 +1675,11 @@ TEST(LegacyTests, Uint256) {
         boost_test_256_two=boost_test_256_two_coeff_2_0 + boost_test_256_two_coeff_2_64*boost_two_64
                            +boost_test_256_two_coeff_2_128*boost_two_128+boost_test_256_two_coeff_2_192*boost_two_192;
 
-        dap_test_256_two = dap_chain_balance_scan(boost_test_256_two.str().c_str());
+        dap_test_256_two = dap_uint256_scan_uninteger(boost_test_256_two.str().c_str());
         overflow_flag=SUM_256_256(dap_test_256_one,dap_test_256_two,&dap_test_256_sum);
         boost_test_256_sum = boost_test_256_one + boost_test_256_two;
 
-        ASSERT_STREQ(dap_chain_balance_print(dap_test_256_sum), boost_test_256_sum.str().c_str()) << "incorrect output for density index=" << density_index;
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(dap_test_256_sum), boost_test_256_sum.str().c_str()) << "incorrect output for density index=" << density_index;
 
 
 
@@ -1688,7 +1688,7 @@ TEST(LegacyTests, Uint256) {
         borrow_flag_256=SUBTRACT_256_256(dap_test_256_two,dap_test_256_one,&dap_test_256_sub);
         boost_test_256_sub = boost_test_256_two - boost_test_256_one;
 
-        ASSERT_STREQ(dap_chain_balance_print(dap_test_256_sub), boost_test_256_sub.str().c_str()) << "incorrect output for density index=" << density_index;
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(dap_test_256_sub), boost_test_256_sub.str().c_str()) << "incorrect output for density index=" << density_index;
 
 
         /////////////////////output of 256*256-->256//////////////////////
@@ -1697,7 +1697,7 @@ TEST(LegacyTests, Uint256) {
 
         boost_test_256_prod = (boost_test_256_one * boost_test_256_two);
 
-        ASSERT_STREQ(dap_chain_balance_print(dap_test_256_prod), boost_test_256_prod.str().c_str()) << "incorrect output for density index=" << density_index;
+        ASSERT_STREQ(dap_uint256_uninteger_to_char(dap_test_256_prod), boost_test_256_prod.str().c_str()) << "incorrect output for density index=" << density_index;
 
 
 //        multiply(boost_test_256_prod,boost_test_256_one,boost_test_256_two);
@@ -1817,8 +1817,8 @@ TEST(LegacyTests, Uint256) {
         boost_test_128_128_one=i+j*boost_two_64_for_128_calc;
         boost_test_128_128_two=max_64-(i+1)+(max_64-2*(j+1))*boost_two_64_for_128_calc;
 
-        dap_test_128_128_prod_one = dap_chain_balance_scan(boost_test_128_128_one.str().c_str()).lo;
-        dap_test_128_128_prod_two = dap_chain_balance_scan(boost_test_128_128_two.str().c_str()).lo;
+        dap_test_128_128_prod_one = dap_uint256_scan_uninteger(boost_test_128_128_one.str().c_str()).lo;
+        dap_test_128_128_prod_two = dap_uint256_scan_uninteger(boost_test_128_128_two.str().c_str()).lo;
 
 
         multiply(boost_test_128_128_prod, boost_test_128_128_one, boost_test_128_128_two);
@@ -1840,8 +1840,8 @@ TEST(LegacyTests, Uint256) {
 
         ///128 bit subtraction
 
-        dap_test_128_one = dap_chain_balance_scan(boost_test_128_one.str().c_str()).lo;
-        dap_test_128_two = dap_chain_balance_scan(boost_test_128_two.str().c_str()).lo;
+        dap_test_128_one = dap_uint256_scan_uninteger(boost_test_128_one.str().c_str()).lo;
+        dap_test_128_two = dap_uint256_scan_uninteger(boost_test_128_two.str().c_str()).lo;
 
         borrow_flag_128=SUBTRACT_128_128(dap_test_128_one,dap_test_128_two,&dap_test_128_sub);
         subtract(boost_test_128_sub,boost_test_128_one,boost_test_128_two);
@@ -1890,13 +1890,13 @@ TEST(LegacyTests, Uint256) {
         boost_test_128_256_one=i+j*boost_two_64_for_128_calc;
         boost_test_128_256_two=(max_64-(i+1))+(max_64-2*(j+1))*boost_two_64_for_128_calc;
 
-        dap_test_128_256_prod_one = dap_chain_balance_scan(boost_test_128_256_one.str().c_str()).lo;
-        dap_test_128_256_prod_two = dap_chain_balance_scan(boost_test_128_256_two.str().c_str()).lo;
+        dap_test_128_256_prod_one = dap_uint256_scan_uninteger(boost_test_128_256_one.str().c_str()).lo;
+        dap_test_128_256_prod_two = dap_uint256_scan_uninteger(boost_test_128_256_two.str().c_str()).lo;
 
         multiply(boost_test_128_256_prod, boost_test_128_256_one, boost_test_128_256_two);
         MULT_128_256(dap_test_128_256_prod_one,dap_test_128_256_prod_two,&dap_test_128_256_prod_prod);
 
-        ASSERT_EQ(bmp::uint256_t(dap_chain_balance_print(dap_test_128_256_prod_prod)), boost_test_128_256_prod) << boost_test_128_256_one << " * " << boost_test_128_256_two;
+        ASSERT_EQ(bmp::uint256_t(dap_uint256_uninteger_to_char(dap_test_128_256_prod_prod)), boost_test_128_256_prod) << boost_test_128_256_one << " * " << boost_test_128_256_two;
 
 
 
@@ -1923,8 +1923,8 @@ TEST(LegacyTests, Uint256) {
 //            boost_test_128_quot_one=i+j*boost_two_64_for_128_calc;
 //            boost_test_128_quot_two=(max_64-(i+1))+(max_64-2*(j+1))*boost_two_64_for_128_calc;
 //
-//            dap_test_128_quot_one = dap_chain_balance_scan(boost_test_128_quot_one.str().c_str()).lo;
-//            dap_test_128_quot_two = dap_chain_balance_scan(boost_test_128_quot_two.str().c_str()).lo;
+//            dap_test_128_quot_one = dap_uint256_scan_uninteger(boost_test_128_quot_one.str().c_str()).lo;
+//            dap_test_128_quot_two = dap_uint256_scan_uninteger(boost_test_128_quot_two.str().c_str()).lo;
 //
 //            divide_qr( boost_test_128_quot_two, boost_test_128_quot_one,boost_test_128_quot_quot,boost_test_128_quot_rem);
 //            divmod_impl_128(dap_test_128_quot_one,dap_test_128_quot_two,&dap_test_128_quot_quot, &dap_test_128_quot_rem);
@@ -1947,16 +1947,16 @@ TEST(MathTests, Sum256Zeroes) {
     string lhs = "0";
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256OneZero) {
@@ -1965,16 +1965,16 @@ TEST(MathTests, Sum256OneZero) {
     string lhs = "1";
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256OneOne) {
@@ -1983,16 +1983,16 @@ TEST(MathTests, Sum256OneOne) {
     string lhs = "1";
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256Min128Zero) {
@@ -2001,16 +2001,16 @@ TEST(MathTests, Sum256Min128Zero) {
     string lhs = MIN128STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256Min128One) {
@@ -2019,16 +2019,16 @@ TEST(MathTests, Sum256Min128One) {
     string lhs = MIN128STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256Min128Two) {
@@ -2037,16 +2037,16 @@ TEST(MathTests, Sum256Min128Two) {
     string lhs = MIN128STR;
     string rhs = "2";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256Max128Zero) {
@@ -2055,16 +2055,16 @@ TEST(MathTests, Sum256Max128Zero) {
     string lhs = MAX128STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256Max128One) {
@@ -2073,16 +2073,16 @@ TEST(MathTests, Sum256Max128One) {
     string lhs = MAX128STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256Max128Two) {
@@ -2091,16 +2091,16 @@ TEST(MathTests, Sum256Max128Two) {
     string lhs = MAX128STR;
     string rhs = "2";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256Min256Zero) {
@@ -2109,16 +2109,16 @@ TEST(MathTests, Sum256Min256Zero) {
     string lhs = MIN256STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256Min256One) {
@@ -2127,16 +2127,16 @@ TEST(MathTests, Sum256Min256One) {
     string lhs = MIN256STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256Min256Two) {
@@ -2145,16 +2145,16 @@ TEST(MathTests, Sum256Min256Two) {
     string lhs = MIN256STR;
     string rhs = "2";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256Max256Zero) {
@@ -2163,16 +2163,16 @@ TEST(MathTests, Sum256Max256Zero) {
     string lhs = MAX256STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sum256Max256One) {
@@ -2181,32 +2181,32 @@ TEST(MathTests, Sum256Max256One) {
     string lhs = MAX256STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) + bmp::uint256_t(rhs)).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) + bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST_F(RandomMathTests, Sum256) {
     bmp::uint256_t boost_a(gen256()), boost_b(gen256());
 
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
-    uint256_t b = dap_chain_balance_scan(boost_b.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
+    uint256_t b = dap_uint256_scan_uninteger(boost_b.str().c_str());
     uint256_t c = uint256_0;
 
     SUM_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (boost_a+boost_b).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (boost_a+boost_b).str().c_str());
 
     SUM_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (boost_b+boost_a).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (boost_b+boost_a).str().c_str());
 }
 
 /// SUBTRACTION
@@ -2217,16 +2217,16 @@ TEST(MathTests, Sub256Zeroes) {
     string lhs = "0";
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 
     SUBTRACT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) - bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) - bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256OneZero) {
@@ -2235,12 +2235,12 @@ TEST(MathTests, Sub256OneZero) {
     string lhs = "1";
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256ZeroOne) {
@@ -2249,12 +2249,12 @@ TEST(MathTests, Sub256ZeroOne) {
     string lhs = "0";
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256OneOne) {
@@ -2263,12 +2263,12 @@ TEST(MathTests, Sub256OneOne) {
     string lhs = "1";
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256Min128Zero) {
@@ -2277,12 +2277,12 @@ TEST(MathTests, Sub256Min128Zero) {
     string lhs = MIN128STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256ZeroMin128) {
@@ -2291,12 +2291,12 @@ TEST(MathTests, Sub256ZeroMin128) {
     string lhs = "0";
     string rhs = MIN128STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256Min128One) {
@@ -2305,12 +2305,12 @@ TEST(MathTests, Sub256Min128One) {
     string lhs = MIN128STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256OneMin128) {
@@ -2319,12 +2319,12 @@ TEST(MathTests, Sub256OneMin128) {
     string lhs = "1";
     string rhs = MIN128STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256Min128Two) {
@@ -2333,12 +2333,12 @@ TEST(MathTests, Sub256Min128Two) {
     string lhs = MIN128STR;
     string rhs = "2";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256TwoMin128) {
@@ -2347,12 +2347,12 @@ TEST(MathTests, Sub256TwoMin128) {
     string lhs = "2";
     string rhs = MIN128STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256Max128Zero) {
@@ -2361,12 +2361,12 @@ TEST(MathTests, Sub256Max128Zero) {
     string lhs = MAX128STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256ZeroMax128) {
@@ -2375,12 +2375,12 @@ TEST(MathTests, Sub256ZeroMax128) {
     string lhs = "0";
     string rhs = MAX128STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256Max128One) {
@@ -2389,12 +2389,12 @@ TEST(MathTests, Sub256Max128One) {
     string lhs = MAX128STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256OneMax128) {
@@ -2403,12 +2403,12 @@ TEST(MathTests, Sub256OneMax128) {
     string lhs = "1";
     string rhs = MAX128STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256Max128Two) {
@@ -2417,12 +2417,12 @@ TEST(MathTests, Sub256Max128Two) {
     string lhs = MAX128STR;
     string rhs = "2";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256TwoMax128) {
@@ -2431,12 +2431,12 @@ TEST(MathTests, Sub256TwoMax128) {
     string lhs = "2";
     string rhs = MAX128STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256Min256Zero) {
@@ -2445,12 +2445,12 @@ TEST(MathTests, Sub256Min256Zero) {
     string lhs = MIN256STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256ZeroMin256) {
@@ -2459,12 +2459,12 @@ TEST(MathTests, Sub256ZeroMin256) {
     string lhs = "0";
     string rhs = MIN256STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256Min256One) {
@@ -2473,12 +2473,12 @@ TEST(MathTests, Sub256Min256One) {
     string lhs = MIN256STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 
 }
 
@@ -2488,12 +2488,12 @@ TEST(MathTests, Sub256OneMin256) {
     string lhs = "1";
     string rhs = MIN256STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256Min256Two) {
@@ -2502,12 +2502,12 @@ TEST(MathTests, Sub256Min256Two) {
     string lhs = MIN256STR;
     string rhs = "2";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256TwoMin256) {
@@ -2516,12 +2516,12 @@ TEST(MathTests, Sub256TwoMin256) {
     string lhs = "2";
     string rhs = MIN256STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256Max256Zero) {
@@ -2530,12 +2530,12 @@ TEST(MathTests, Sub256Max256Zero) {
     string lhs = MAX256STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256ZeroMax256) {
@@ -2544,12 +2544,12 @@ TEST(MathTests, Sub256ZeroMax256) {
     string lhs = "0";
     string rhs = MAX256STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256Max256One) {
@@ -2558,12 +2558,12 @@ TEST(MathTests, Sub256Max256One) {
     string lhs = MAX256STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Sub256OneMax256) {
@@ -2572,24 +2572,24 @@ TEST(MathTests, Sub256OneMax256) {
     string lhs = "1";
     string rhs = MAX256STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) - bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST_F(RandomMathTests, Sub256) {
     bmp::uint256_t boost_a(gen256()), boost_b(gen256());
 
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
-    uint256_t b = dap_chain_balance_scan(boost_b.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
+    uint256_t b = dap_uint256_scan_uninteger(boost_b.str().c_str());
     uint256_t c = uint256_0;
 
     SUBTRACT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (boost_a-boost_b).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (boost_a-boost_b).str().c_str());
 }
 
 
@@ -2600,16 +2600,16 @@ TEST(MathTests, Prod256Zeroes) {
     string lhs = "0";
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256OneZero) {
@@ -2618,16 +2618,16 @@ TEST(MathTests, Prod256OneZero) {
     string lhs = "0";
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256OneOne) {
@@ -2636,16 +2636,16 @@ TEST(MathTests, Prod256OneOne) {
     string lhs = "1";
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256Min128Zero) {
@@ -2654,16 +2654,16 @@ TEST(MathTests, Prod256Min128Zero) {
     string lhs = MIN128STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256Min128One) {
@@ -2672,16 +2672,16 @@ TEST(MathTests, Prod256Min128One) {
     string lhs = MIN128STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256Min128Two) {
@@ -2690,16 +2690,16 @@ TEST(MathTests, Prod256Min128Two) {
     string lhs = MIN128STR;
     string rhs = "2";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256Max128Zero) {
@@ -2708,16 +2708,16 @@ TEST(MathTests, Prod256Max128Zero) {
     string lhs = MAX128STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256Max128One) {
@@ -2726,16 +2726,16 @@ TEST(MathTests, Prod256Max128One) {
     string lhs = MAX128STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256Max128Two) {
@@ -2744,16 +2744,16 @@ TEST(MathTests, Prod256Max128Two) {
     string lhs = MAX128STR;
     string rhs = "2";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256Min256Zero) {
@@ -2762,16 +2762,16 @@ TEST(MathTests, Prod256Min256Zero) {
     string lhs = MIN256STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256Min256One) {
@@ -2780,16 +2780,16 @@ TEST(MathTests, Prod256Min256One) {
     string lhs = MIN256STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256Min256Two) {
@@ -2798,16 +2798,16 @@ TEST(MathTests, Prod256Min256Two) {
     string lhs = MIN256STR;
     string rhs = "2";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256Max256Zero) {
@@ -2816,16 +2816,16 @@ TEST(MathTests, Prod256Max256Zero) {
     string lhs = MAX256STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Prod256Max256One) {
@@ -2834,32 +2834,32 @@ TEST(MathTests, Prod256Max256One) {
     string lhs = MAX256STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) * bmp::uint256_t(rhs)).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) * bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST_F(RandomMathTests, Prod256) {
     bmp::uint256_t boost_a(gen256()), boost_b(gen256());
 
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
-    uint256_t b = dap_chain_balance_scan(boost_b.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
+    uint256_t b = dap_uint256_scan_uninteger(boost_b.str().c_str());
     uint256_t c = uint256_0;
 
     MULT_256_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (boost_a*boost_b).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (boost_a*boost_b).str().c_str());
 
     MULT_256_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (boost_b*boost_a).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (boost_b*boost_a).str().c_str());
 }
 
 
@@ -2872,16 +2872,16 @@ TEST(DISABLED_MathTests, Div256Zeroes) {
     string lhs = "0";
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 
     DIV_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) / bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) / bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(DISABLED_MathTests, Div256OneZero) {
@@ -2890,12 +2890,12 @@ TEST(DISABLED_MathTests, Div256OneZero) {
     string lhs = "1";
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256ZeroOne) {
@@ -2904,12 +2904,12 @@ TEST(MathTests, Div256ZeroOne) {
     string lhs = "0";
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256OneOne) {
@@ -2918,12 +2918,12 @@ TEST(MathTests, Div256OneOne) {
     string lhs = "1";
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(DISABLED_MathTests, Div256Min128Zero) {
@@ -2932,12 +2932,12 @@ TEST(DISABLED_MathTests, Div256Min128Zero) {
     string lhs = MIN128STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256ZeroMin128) {
@@ -2946,12 +2946,12 @@ TEST(MathTests, Div256ZeroMin128) {
     string lhs = "0";
     string rhs = MIN128STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256Min128One) {
@@ -2960,12 +2960,12 @@ TEST(MathTests, Div256Min128One) {
     string lhs = MIN128STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256OneMin128) {
@@ -2974,12 +2974,12 @@ TEST(MathTests, Div256OneMin128) {
     string lhs = "1";
     string rhs = MIN128STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256Min128Two) {
@@ -2988,12 +2988,12 @@ TEST(MathTests, Div256Min128Two) {
     string lhs = MIN128STR;
     string rhs = "2";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256TwoMin128) {
@@ -3002,12 +3002,12 @@ TEST(MathTests, Div256TwoMin128) {
     string lhs = "2";
     string rhs = MIN128STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(DISABLED_MathTests, Div256Max128Zero) {
@@ -3016,12 +3016,12 @@ TEST(DISABLED_MathTests, Div256Max128Zero) {
     string lhs = MAX128STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256ZeroMax128) {
@@ -3030,12 +3030,12 @@ TEST(MathTests, Div256ZeroMax128) {
     string lhs = MAX128STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(b, a, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(rhs) / bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) / bmp::uint256_t(lhs)).str().c_str());
 }
 
 TEST(MathTests, Div256Max128One) {
@@ -3044,12 +3044,12 @@ TEST(MathTests, Div256Max128One) {
     string lhs = MAX128STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256OneMax128) {
@@ -3058,12 +3058,12 @@ TEST(MathTests, Div256OneMax128) {
     string lhs = "1";
     string rhs = MAX128STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256Max128Two) {
@@ -3072,12 +3072,12 @@ TEST(MathTests, Div256Max128Two) {
     string lhs = MAX128STR;
     string rhs = "2";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256TwoMax128) {
@@ -3086,12 +3086,12 @@ TEST(MathTests, Div256TwoMax128) {
     string lhs = "2";
     string rhs = MAX128STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(DISABLED_MathTests, Div256Min256Zero) {
@@ -3100,12 +3100,12 @@ TEST(DISABLED_MathTests, Div256Min256Zero) {
     string lhs = MIN256STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256ZeroMin256) {
@@ -3114,12 +3114,12 @@ TEST(MathTests, Div256ZeroMin256) {
     string lhs = "0";
     string rhs = MIN256STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256Min256One) {
@@ -3128,12 +3128,12 @@ TEST(MathTests, Div256Min256One) {
     string lhs = MIN256STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 
 }
 
@@ -3143,12 +3143,12 @@ TEST(MathTests, Div256OneMin256) {
     string lhs = "1";
     string rhs = MIN256STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256Min256Two) {
@@ -3157,12 +3157,12 @@ TEST(MathTests, Div256Min256Two) {
     string lhs = MIN256STR;
     string rhs = "2";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256TwoMin256) {
@@ -3171,12 +3171,12 @@ TEST(MathTests, Div256TwoMin256) {
     string lhs = "2";
     string rhs = MIN256STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(DISABLED_MathTests, Div256Max256Zero) {
@@ -3185,12 +3185,12 @@ TEST(DISABLED_MathTests, Div256Max256Zero) {
     string lhs = MAX256STR;
     string rhs = "0";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256ZeroMax256) {
@@ -3199,12 +3199,12 @@ TEST(MathTests, Div256ZeroMax256) {
     string lhs = "0";
     string rhs = MAX256STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256Max256One) {
@@ -3213,12 +3213,12 @@ TEST(MathTests, Div256Max256One) {
     string lhs = MAX256STR;
     string rhs = "1";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, Div256OneMax256) {
@@ -3227,12 +3227,12 @@ TEST(MathTests, Div256OneMax256) {
     string lhs = "1";
     string rhs = MAX256STR;
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
 TEST(MathTests, DivMoreToLess) {
@@ -3241,10 +3241,10 @@ TEST(MathTests, DivMoreToLess) {
     string lhs = "25000";
     string rhs = "10000";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
     DIV_256_COIN(a, b, &c);
-    ASSERT_STREQ(dap_chain_balance_to_coins(c), "2.5");
+    ASSERT_STREQ(dap_uint256_decimal_to_char(c), "2.5");
 }
 
 TEST(MathTests, DivMoreToLessPrimes) {
@@ -3253,10 +3253,10 @@ TEST(MathTests, DivMoreToLessPrimes) {
     string lhs = "23";
     string rhs = "13";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
     DIV_256_COIN(a, b, &c);
-    ASSERT_STREQ(dap_chain_balance_to_coins(c), "1.76923076923076923");
+    ASSERT_STREQ(dap_uint256_decimal_to_char(c), "1.76923076923076923");
 }
 
 TEST(MathTests, DivMoreToLessClassic) {
@@ -3265,10 +3265,10 @@ TEST(MathTests, DivMoreToLessClassic) {
     string lhs = "2500";
     string rhs = "1000";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
     DIV_256_COIN(a, b, &c);
-    ASSERT_STREQ(dap_chain_balance_to_coins(c), "2.5");
+    ASSERT_STREQ(dap_uint256_decimal_to_char(c), "2.5");
 }
 
 TEST(MathTests, DivMoreToLessSixFour) {
@@ -3277,10 +3277,10 @@ TEST(MathTests, DivMoreToLessSixFour) {
     string lhs = "6";
     string rhs = "4";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
     DIV_256_COIN(a, b, &c);
-    ASSERT_STREQ(dap_chain_balance_to_coins(c), "1.5");
+    ASSERT_STREQ(dap_uint256_decimal_to_char(c), "1.5");
 }
 
 TEST(MathTests, DivMoreToLessSixThree) {
@@ -3289,10 +3289,10 @@ TEST(MathTests, DivMoreToLessSixThree) {
     string lhs = "6";
     string rhs = "3";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
     DIV_256_COIN(a, b, &c);
-    ASSERT_STREQ(dap_chain_balance_to_coins(c), "2.0");
+    ASSERT_STREQ(dap_uint256_decimal_to_char(c), "2.0");
 }
 
 TEST(MathTests, DivMoreToLessBigBig) {
@@ -3301,18 +3301,18 @@ TEST(MathTests, DivMoreToLessBigBig) {
     string lhs = "1.0e+57";
     string rhs = "1.0e+23";
 
-    a = dap_chain_balance_scan(lhs.c_str());
-    b = dap_chain_balance_scan(rhs.c_str());
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
     DIV_256_COIN(a, b, &c);
-    ASSERT_STREQ(dap_chain_balance_to_coins(c), "10000000000000000000000000000000000.0");
+    ASSERT_STREQ(dap_uint256_decimal_to_char(c), "10000000000000000000000000000000000.0");
 }
 
 
 TEST_F(RandomMathTests, Div256) {
     bmp::uint256_t boost_a(gen256()), boost_b(gen256());
 
-    uint256_t a = dap_chain_balance_scan(boost_a.str().c_str());
-    uint256_t b = dap_chain_balance_scan(boost_b.str().c_str());
+    uint256_t a = dap_uint256_scan_uninteger(boost_a.str().c_str());
+    uint256_t b = dap_uint256_scan_uninteger(boost_b.str().c_str());
     uint256_t c = uint256_0;
 
     if (boost_b == 0) {
@@ -3321,6 +3321,6 @@ TEST_F(RandomMathTests, Div256) {
 
     DIV_256(a, b, &c);
 
-    ASSERT_STREQ(dap_chain_balance_print(c), (boost_a/boost_b).str().c_str());
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (boost_a/boost_b).str().c_str());
 }
 
