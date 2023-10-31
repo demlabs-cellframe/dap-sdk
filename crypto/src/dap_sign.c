@@ -144,8 +144,8 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
         l_sign_type.type = SIG_TYPE_DILITHIUM;
     }else if ( !dap_strcmp (a_type_str, "sig_falcon") ) {
         l_sign_type.type = SIG_TYPE_FALCON;
-    }else if ( !dap_strcmp (a_type_str, "sig_sphincs") ) {
-        l_sign_type.type = SIG_TYPE_SPHINCSPLUS;
+    // }else if ( !dap_strcmp (a_type_str, "sig_sphincs") ) {
+    //     l_sign_type.type = SIG_TYPE_SPHINCSPLUS;
     }else if ( !dap_strcmp (a_type_str,"sig_multi") ){
         l_sign_type.type = SIG_TYPE_MULTI_CHAINED;
     }else if ( !dap_strcmp (a_type_str,"sig_multi2") ){

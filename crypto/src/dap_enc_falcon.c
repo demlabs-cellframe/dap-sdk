@@ -15,23 +15,19 @@ static int s_deserialised_sign_check(
     falcon_kind_t a_kind, 
     falcon_sign_type_t a_type)
 {
-
     if (a_buflen != a_des_buflen) {
         log_it(L_ERROR, "Buflen %"DAP_UINT64_FORMAT_U" is not equal to sign size (%"DAP_UINT64_FORMAT_U")",
                         a_buflen, a_des_buflen);
         return -1;
     }
-
     if (a_degree != FALCON_512 && a_degree != FALCON_1024) { // we are now supporting only 512 and 1024 degrees
         log_it(L_ERROR, "Degree %ul is not supported", a_degree);
         return -2;
     }
-
     if (a_kind != FALCON_COMPRESSED && a_kind != FALCON_PADDED && a_kind != FALCON_CT) { // we are now supporting only compressed, padded and ct signatures
         log_it(L_ERROR, "Kind %ul is not supported", a_kind);
         return -3;
     }
-
     if (a_type != FALCON_DYNAMIC && a_type != FALCON_TREE) { // we are now supporting only sign and sign open signatures
         log_it(L_ERROR, "Type %ul is not supported", a_type);
         return -4;

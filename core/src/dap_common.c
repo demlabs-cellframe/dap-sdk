@@ -300,7 +300,7 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, .
         uint8_t *l_arg = va_arg(l_args, uint8_t *);
         uint64_t l_size = va_arg(l_args, uint64_t);
         if (l_shift_mem + l_size > a_size) {
-            log_it(L_WARNING, "Error size in the object deserialize. %zu > %zu", l_shift_mem + l_size, a_size);
+            log_it(L_ERROR, "Error size in the object deserialize. %zu > %zu", l_shift_mem + l_size, a_size);
             return -2;
         }
         memcpy(l_arg, a_data + l_shift_mem, l_size);
