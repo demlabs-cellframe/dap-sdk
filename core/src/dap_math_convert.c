@@ -151,7 +151,7 @@ uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger){ //dap_chain_b
     return l_ret;
 }
 
-uint256_t dap_uint256_scan_decimal(const char *a_str_decimal){
+uint256_t dap_uint256_scan_decimal(const char *a_str_decimal){ //dap_chain_coins_to_balance256, dap_chain_coins_to_balance
     int l_len, l_pos;
     char    l_buf  [DAP_CHAIN$SZ_MAX256DEC + 8] = {0}, *l_point;
 
@@ -216,7 +216,7 @@ char *dap_uint256_uninteger_to_char(uint256_t a_uint256) {
     return l_buf;
 }
 
-char *dap_uint256_decimal_to_char(uint256_t a_uint256){
+char *dap_uint256_decimal_to_char(uint256_t a_uint256){ //dap_chain_balance_to_coins256, dap_chain_balance_to_coins
     char *l_buf, *l_cp;
     int l_strlen, l_len;
 

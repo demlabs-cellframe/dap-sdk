@@ -1,6 +1,9 @@
 #pragma once
 #include "dap_math_ops.h"
 
+/*
+ * Forward declarations
+ */
 #define DATOSHI_DEGREE 18
 #define DATOSHI_POW 39
 #define DATOSHI_POW256 (DATOSHI_POW * 2)
