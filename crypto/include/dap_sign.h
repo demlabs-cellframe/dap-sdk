@@ -82,7 +82,7 @@ typedef struct dap_sign
 
 typedef struct _dap_multi_sign_params_t {
     dap_sign_type_t type;               // Multi-signature type
-    uint8_t total_count;                // Total key count
+    uint8_t key_count;                // Total key count
     uint8_t sign_count;                 // Signatures count
     uint8_t *key_seq;                   // Signing key sequence
     dap_enc_key_t **keys;               // Signing keys
@@ -99,7 +99,7 @@ typedef struct _dap_multi_sign_keys_t {
 typedef struct _dap_multi_sign_t {
 /*** Hashed metadata ***/
     dap_sign_type_t type;               // Multi-signature type
-    uint8_t total_count;                // Total key count
+    uint8_t key_count;                  // Total key count
     uint8_t sign_count;                 // Signatures count
     dap_multi_sign_keys_t *key_seq;     // Signing key sequence
 /*** Unhashed metadata ***/
