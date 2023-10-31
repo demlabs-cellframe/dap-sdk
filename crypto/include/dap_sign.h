@@ -89,13 +89,11 @@ typedef struct _dap_multi_sign_params_t {
 } dap_multi_sign_params_t;
 
 typedef struct _dap_multi_sign_meta_t {
-    uint32_t pkey_size;                 // Size of public key
-    uint32_t sign_size;                 // Size of signature
+    dap_sign_hdr_t sign_header;         // header data need to verification
 } DAP_ALIGN_PACKED dap_multi_sign_meta_t;
 
 typedef struct _dap_multi_sign_keys_t {
     uint8_t num;
-    dap_sign_type_t type;
 } DAP_ALIGN_PACKED dap_multi_sign_keys_t;
 
 typedef struct _dap_multi_sign_t {

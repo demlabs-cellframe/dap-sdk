@@ -3,8 +3,8 @@
 #include "rand/dap_rand.h"
 #include "dap_sign.h"
 
-#define SIGNATURE_TYPE_COUNT 4
-#define KEYS_TOTAL_COUNT 10
+#define SIGNATURE_TYPE_COUNT 6
+#define KEYS_TOTAL_COUNT 20
 
 static void test_signing_verifying(void)
 {
@@ -17,7 +17,9 @@ static void test_signing_verifying(void)
              DAP_ENC_KEY_TYPE_SIG_TESLA,\
              DAP_ENC_KEY_TYPE_SIG_BLISS,\
              DAP_ENC_KEY_TYPE_SIG_DILITHIUM,\
-             DAP_ENC_KEY_TYPE_SIG_PICNIC};
+             DAP_ENC_KEY_TYPE_SIG_PICNIC,\
+             DAP_ENC_KEY_TYPE_SIG_FALCON,\
+             DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS};
     int step;
     dap_enc_key_t* key[KEYS_TOTAL_COUNT];
     for (int i = 0; i < KEYS_TOTAL_COUNT; i++) {
@@ -30,11 +32,13 @@ static void test_signing_verifying(void)
     uint8_t *source = DAP_NEW_SIZE(uint8_t, source_size);
     randombytes(source, source_size);
 
-    dap_multi_sign_params_t *params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, KEYS_TOTAL_COUNT, 5,\
+    dap_multi_sign_params_t *params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, KEYS_TOTAL_COUNT, 8,\
                                                                  key[0], key[1], key[2], key[3], key[4], key[5],\
-                                                                 key[6], key[7], key[8], key[9], 3, 5, 7, 1, 10);
+                                                                 key[6], key[7], key[8], key[9],\
+                                                                 key[10], key[11], key[12], key[13], key[14], key[15],\
+                                                                 key[16], key[17], key[18], key[19], 11, 3, 5, 7, 1, 17, 10, 0);
     dap_assert_PIF(params, "Creating multi-sign parameters");
-
+    
     dap_multi_sign_t *sign = dap_multi_sign_create(params, source, source_size);
     dap_assert_PIF(sign, "Signing message");
 
