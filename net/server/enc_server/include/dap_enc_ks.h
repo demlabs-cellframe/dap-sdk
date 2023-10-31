@@ -27,6 +27,10 @@
 #include "stdbool.h"
 #include "dap_hash.h"
 
+// TODO rewrite code for remove this module (with no stream setting sockets disconnects)
+#define DAP_STREAM_NODE_ADDR_CERT_NAME  "node-addr"
+#define DAP_STREAM_NODE_ADDR_CERT_TYPE DAP_ENC_KEY_TYPE_SIG_DILITHIUM
+
 #define DAP_ENC_KS_KEY_ID_SIZE 33
 struct dap_http_client;
 typedef struct dap_enc_key dap_enc_key_t;

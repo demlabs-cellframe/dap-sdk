@@ -159,21 +159,14 @@ static pthread_rwlock_t     s_evsocks_lock = PTHREAD_RWLOCK_INITIALIZER;
  */
 static inline dap_events_socket_t *s_dap_evsock_alloc (void)
 {
-int     l_rc;
-dap_events_socket_t *l_es;
-
+    dap_events_socket_t *l_es;
     if ( !(l_es = DAP_NEW_Z( dap_events_socket_t )) )                   /* Allocate memory for new dap_events_socket context and the record */
         return  log_it(L_CRITICAL, "Cannot allocate memory for <dap_events_socket> context, errno=%d", errno), NULL;                                                /* Fill new track record */
     l_es->uuid = dap_uuid_generate_uint64();
 #ifdef DAP_SYS_DEBUG
-    l_rc = pthread_rwlock_wrlock(&s_evsocks_lock);  /* Add new record into the hash table */
-    assert(!l_rc);
+    pthread_rwlock_wrlock(&s_evsocks_lock);                             /* Add new record into the hash table */
     HASH_ADD(hh2, s_esockets, uuid, sizeof(l_es->uuid), l_es);
-    l_rc = pthread_rwlock_unlock(&s_evsocks_lock);
-    assert(!l_rc);
-#ifndef DAP_DEBUG
-    UNUSED(l_rc);
-#endif
+    pthread_rwlock_unlock(&s_evsocks_lock);
 #endif
     debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is allocated", l_es);
     return  l_es;
@@ -198,34 +191,22 @@ dap_events_socket_t *l_es;
  *      0:          a_es contains valid pointer
  *      <errno>
  */
-static inline int s_dap_evsock_free(dap_events_socket_t *a_es)
+static inline void s_dap_evsock_free(dap_events_socket_t *a_es)
 {
 #ifdef DAP_SYS_DEBUG
-    int l_rc = pthread_rwlock_wrlock(&s_evsocks_lock);
-    assert(!l_rc);
+    pthread_rwlock_wrlock(&s_evsocks_lock);
     dap_events_socket_t *l_es;
     HASH_FIND(hh2, s_esockets, &a_es->uuid, sizeof(l_es->uuid), l_es);
     if (l_es)
         HASH_DELETE(hh2, s_esockets, l_es); /* Remove record from the table */
-    l_rc = pthread_rwlock_unlock(&s_evsocks_lock);
-    assert(!l_rc);
-#ifndef DAP_DEBUG
-    UNUSED(l_rc);
-#endif
-    if (l_es) {
-        if (l_es != a_es) {
-            log_it(L_WARNING, "[!] Esockets %p and %p share the same UUID %zu, possibly a dup!", a_es, l_es, a_es->uuid);
-        }
-        DAP_DELETE(l_es);
-        debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is released", a_es);
-    } else {
+    pthread_rwlock_unlock(&s_evsocks_lock);
+    if (!l_es)
         log_it(L_ERROR, "dap_events_socket:%p - uuid %zu not found", a_es, a_es->uuid);
-    }
-#else
-    DAP_DELETE(a_es);
-    debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is released", a_es);
+    else if (l_es != a_es)
+        log_it(L_WARNING, "[!] Esockets %p and %p share the same UUID %zu, possibly a dup!", a_es, l_es, a_es->uuid);
 #endif
-    return  0;  /* SS$_SUCCESS */
+    debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is released", a_es);
+    DAP_DELETE(a_es);
 }
 
 /**
@@ -382,7 +363,7 @@ void dap_events_socket_assign_on_worker_inter(dap_events_socket_t * a_es_input, 
  */
 void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t * a_es, dap_worker_t * a_worker_new)
 {
-    dap_worker_t *l_worker = a_es->context->worker;
+    dap_worker_t *l_worker = a_es->worker;
     log_it(L_DEBUG, "Reassign between %u->%u workers: %p (%d)  ", l_worker->id, a_worker_new->id, a_es, a_es->fd );
 
     dap_context_remove(a_es);
@@ -456,7 +437,7 @@ dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, da
         case DESCRIPTOR_TYPE_SOCKET_UDP :
             l_sock_type = SOCK_DGRAM;
         break;
-        case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
+        case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
 #ifdef DAP_OS_UNIX
             l_sock_class = AF_LOCAL;
 #elif defined DAP_OS_WINDOWS
@@ -1389,33 +1370,38 @@ void dap_events_socket_delete_mt(dap_worker_t * a_worker, dap_events_socket_uuid
 }
 
 /**
- * @brief dap_events_socket_wrap2
+ * @brief dap_events_socket_wrap_listener
  * @param a_server
  * @param a_sock
  * @param a_callbacks
  * @return
  */
-dap_events_socket_t * dap_events_socket_wrap2( dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks )
+dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, dap_events_socket_callbacks_t *a_callbacks)
 {
-    assert( a_callbacks );
-    assert( a_server );
     if (!a_callbacks || !a_server) {
-        log_it(L_CRITICAL, "Invalid arguments in dap_events_socket_wrap2");
+        log_it(L_CRITICAL, "Invalid arguments in dap_events_socket_wrap_listener");
         return NULL;
     }
-
-    dap_events_socket_t * l_es = s_dap_evsock_alloc ();
+    dap_events_socket_t * l_es = s_dap_evsock_alloc();
     if (!l_es)
         return NULL;
 
-    l_es->socket = a_sock;
+    l_es->socket = a_server->socket_listener;
     l_es->server = a_server;
-    if (a_callbacks)
-        l_es->callbacks = *a_callbacks;
-    l_es->buf_out_size_max = l_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
-    l_es->buf_in = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max+1);
-    l_es->buf_out = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max+1);
-    l_es->buf_in_size = l_es->buf_out_size = 0;
+    l_es->callbacks = *a_callbacks;
+    l_es->_inheritor = a_server;
+    switch (a_server->type) {
+    case DAP_SERVER_UDP:
+        l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
+        break;
+#ifdef DAP_OS_UNIX
+    case DAP_SERVER_LOCAL:
+        l_es->type = DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING;
+        break;
+#endif
+    default:
+        l_es->type = DESCRIPTOR_TYPE_SOCKET_LISTENING;
+    }
 
 #ifdef   DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].alloc_nr, 1);
@@ -1567,7 +1553,7 @@ void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_
     l_es_handler->value = a_preserve_inheritor ? 1 : 0;
     //dap_events_socket_descriptor_close(a_es);
 
-    dap_worker_t * l_worker = a_es->context->worker;
+    dap_worker_t * l_worker = a_es->worker;
     dap_context_remove(a_es);
     a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
     dap_timerfd_start_on_worker(l_worker, s_delayed_ops_timeout_ms,

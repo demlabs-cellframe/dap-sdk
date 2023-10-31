@@ -1,4 +1,4 @@
-set(DAP_SDK_NATIVE_VERSION "2.2-2")
+set(DAP_SDK_NATIVE_VERSION "2.3-0")
 
 include(ExternalProject)
 
@@ -53,12 +53,12 @@ if (CELLFRAME_MODULES MATCHES "network")
     set(DAPSDK_MODULES "${DAPSDK_MODULES} app-cli plugin network-core network-client network-server")
 endif()
 
+if (CELLFRAME_MODULES MATCHES "avrestream")
+    set(DAPSDK_MODULES "${DAPSDK_MODULES} avrestream")
+endif()
+
 if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
-    set(DAPSDK_MODULES "core crypto network-core network-client network-server")
-    set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m pthread)
-    if (SUPPORT_PYTHON_PLUGINS)
-        set(CELLFRAME_MODULES "${CELLFRAME_MODULES} core chains network cs-none srv-")
-    endif()
+    set(DAPSDK_MODULES "core crypto io network-core network-client network-server")
 endif()
 
 # We switch off SSL until its not switched on back
@@ -100,7 +100,6 @@ endif()
 
 if (DAPSDK_MODULES MATCHES "network-pure")
     add_subdirectory(io)
-    add_subdirectory(net/core)
 endif()
 
 # Networking client
@@ -114,17 +113,22 @@ if (DAPSDK_MODULES MATCHES "network-server")
 #    add_subdirectory(net/server-udp)
 endif()
 
+if (DAPSDK_MODULES MATCHES "avrestream")
+    add_subdirectory(avrestream)
+endif()
+
 if(DARWIN)
     add_subdirectory(3rdparty/libmagic-darwin)
 elseif(ANDROID)
     include_directories(3rdparty/)
 endif()
+add_subdirectory(3rdparty/crc32c_adler)             # https://github.com/fonic/crc32c_adler
+include_directories(3rdparty/crc32c_adler)
 
 #if(BUILD_DAP_TESTS)
 #    file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/test/main_test.py
 #            DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/)
 #    enable_testing()
 #    add_subdirectory(test)
+#    add_subdirectory(examples)
 #endif()
-
-add_subdirectory(examples)

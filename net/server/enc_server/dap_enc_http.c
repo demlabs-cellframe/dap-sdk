@@ -47,15 +47,21 @@
 #include "dap_enc_base64.h"
 #include "dap_enc_msrln.h"
 #include "include/http_status_code.h"
+#include "dap_enc_http_ban_list_client.h"
 #include "json.h"
-
+#include "dap_enc_http_ban_list_client.h"
+#include "dap_cert.h"
+#include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_enc_http"
+
+dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign);
 
 static dap_enc_acl_callback_t s_acl_callback = NULL;
 
 int enc_http_init()
 {
+    dap_enc_http_ban_list_client_init();
     return 0;
 }
 
@@ -64,18 +70,19 @@ void enc_http_deinit()
 
 }
 
-static void _enc_http_write_reply(struct dap_http_simple *cl_st,
-                                  const char* encrypt_id,
-                                  const char* encrypt_msg)
+static void _enc_http_write_reply(struct dap_http_simple *a_cl_st,
+                                  const char* a_encrypt_id,
+                                  const char* a_encrypt_msg, const char *a_node_sign)
 {
-    struct json_object *jobj = json_object_new_object();
-    json_object_object_add(jobj, "encrypt_id", json_object_new_string(encrypt_id));
-    json_object_object_add(jobj, "encrypt_msg", json_object_new_string(encrypt_msg));
-    json_object_object_add(jobj, "dap_protocol_version", json_object_new_int(DAP_PROTOCOL_VERSION));
-    const char* json_str = json_object_to_json_string(jobj);
-    dap_http_simple_reply(cl_st, (void*) json_str,
-                          (size_t) strlen(json_str));
-    json_object_put(jobj);
+    struct json_object *l_jobj = json_object_new_object();
+    json_object_object_add(l_jobj, "encrypt_id", json_object_new_string(a_encrypt_id));
+    json_object_object_add(l_jobj, "encrypt_msg", json_object_new_string(a_encrypt_msg));
+    if (a_node_sign)
+        json_object_object_add(l_jobj, "node_sign", json_object_new_string(a_node_sign));
+    json_object_object_add(l_jobj, "dap_protocol_version", json_object_new_int(DAP_PROTOCOL_VERSION));
+    const char* l_json_str = json_object_to_json_string(l_jobj);
+    dap_http_simple_reply(a_cl_st, (void*) l_json_str, (size_t) strlen(l_json_str));
+    json_object_put(l_jobj);
 }
 
 void dap_enc_http_json_response_format_enable(bool);
@@ -95,33 +102,58 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
     log_it(L_DEBUG,"Proc enc http request");
     http_status_code_t * return_code = (http_status_code_t*)arg;
 
-    if(strcmp(cl_st->http_client->url_path,"gd4y5yh78w42aaagh") == 0 ) {
+    assert(cl_st->esocket->server);
+    if (cl_st->esocket->server->type == DAP_SERVER_TCP || cl_st->esocket->server->type == DAP_SERVER_UDP) {
+        if (dap_enc_http_ban_list_client_check_ipv4(cl_st->esocket->remote_addr.sin_addr)) {
+            *return_code = Http_Status_Forbidden;
+            return;
+        }
+    }
+
+    if(!strcmp(cl_st->http_client->url_path,"gd4y5yh78w42aaagh")) {
         dap_enc_key_type_t l_pkey_exchange_type =DAP_ENC_KEY_TYPE_MSRLN ;
         dap_enc_key_type_t l_enc_block_type = DAP_ENC_KEY_TYPE_IAES;
-        size_t l_pkey_exchange_size=MSRLN_PKA_BYTES;
+        size_t l_pkey_exchange_size = MSRLN_PKA_BYTES;
         size_t l_block_key_size=32;
-        sscanf(cl_st->http_client->in_query_string, "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu",
-                                      &l_enc_block_type,&l_pkey_exchange_type,&l_pkey_exchange_size,&l_block_key_size);
+        int l_protocol_version = 0;
+        size_t l_sign_count = 0;
+        char *encrypt_msg = NULL, *encrypt_id = NULL;
+        sscanf(cl_st->http_client->in_query_string, "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu,protocol_version=%d,sign_count=%zu",
+                                      &l_enc_block_type,&l_pkey_exchange_type,&l_pkey_exchange_size,&l_block_key_size, &l_protocol_version, &l_sign_count);
 
         log_it(L_DEBUG, "Stream encryption: %s\t public key exchange: %s",dap_enc_get_type_name(l_enc_block_type),
                dap_enc_get_type_name(l_pkey_exchange_type));
         uint8_t alice_msg[cl_st->request_size];
         size_t l_decode_len = dap_enc_base64_decode(cl_st->request, cl_st->request_size, alice_msg, DAP_ENC_DATA_TYPE_B64);
-        dap_chain_hash_fast_t l_sign_hash = { };
-        if (l_decode_len > l_pkey_exchange_size + sizeof(dap_sign_hdr_t)) {
-            /* Message contains pubkey and serialized sign */
-            dap_sign_t *l_sign = (dap_sign_t *)&alice_msg[l_pkey_exchange_size];
-            size_t l_sign_size = l_decode_len - l_pkey_exchange_size;
-            int l_verify_ret = dap_sign_verify_all(l_sign, l_sign_size, alice_msg, l_pkey_exchange_size);
+        dap_chain_hash_fast_t l_sign_hash = {0};
+        if (!l_protocol_version && !l_sign_count) {
+            if (l_decode_len > l_pkey_exchange_size + sizeof(dap_sign_hdr_t)) {
+                l_sign_count = 1;
+            } else if (l_decode_len != l_pkey_exchange_size) {
+                /* No sign inside */
+                log_it(L_WARNING, "Wrong message size, without a valid sign must be = %zu", l_pkey_exchange_size);
+                *return_code = Http_Status_BadRequest;
+                return;
+            }
+        }
+
+        /* Verify all signs */
+        dap_sign_t *l_sign = NULL;
+        size_t l_bias = l_pkey_exchange_size;
+        size_t l_sign_validated_count = 0;
+        for(; l_sign_validated_count < l_sign_count && l_bias < l_decode_len; ++l_sign_validated_count) {
+            l_sign = (dap_sign_t *)&alice_msg[l_bias];
+            int l_verify_ret = dap_sign_verify_all(l_sign, l_decode_len - l_bias, alice_msg, l_pkey_exchange_size);
             if (l_verify_ret) {
                 log_it(L_ERROR, "Can't authorize, sign verification didn't pass (err %d)", l_verify_ret);
                 *return_code = Http_Status_Unauthorized;
                 return;
             }
-        } else if (l_decode_len != l_pkey_exchange_size) {
-            /* No sign inside */
-            log_it(L_WARNING, "Wrong message size, without a valid sign must be = %zu", l_pkey_exchange_size);
-            *return_code = Http_Status_BadRequest;
+            l_bias += dap_sign_get_size(l_sign);
+        }
+        if (l_sign_validated_count != l_sign_count) {
+            log_it(L_ERROR, "Can't authorize all %zu signs", l_sign_count);
+            *return_code = Http_Status_Unauthorized;
             return;
         }
 
@@ -136,31 +168,66 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                     (void**) &l_pkey_exchange_key->pub_key_data);
         }
 
-        dap_enc_ks_key_t * l_enc_key_ks = dap_enc_ks_new();
+        dap_enc_ks_key_t *l_enc_key_ks = dap_enc_ks_new();
+        dap_return_if_pass(!l_enc_key_ks);
         if (s_acl_callback) {
             l_enc_key_ks->acl_list = s_acl_callback(&l_sign_hash);
         } else {
             log_it(L_DEBUG, "Callback for ACL is not set, pass anauthorized");
         }
-
-        char encrypt_msg[DAP_ENC_BASE64_ENCODE_SIZE(l_pkey_exchange_key->pub_key_data_size) + 1];
+    
+        if (
+            !(encrypt_msg = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(l_pkey_exchange_key->pub_key_data_size) + 1)) ||
+            !(encrypt_id = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1))
+        ) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            dap_enc_key_delete(l_pkey_exchange_key);
+            *return_code = Http_Status_InternalServerError;
+            return;
+        }
         size_t encrypt_msg_size = dap_enc_base64_encode(l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, encrypt_msg, DAP_ENC_DATA_TYPE_B64);
-        encrypt_msg[encrypt_msg_size] = '\0';
 
         l_enc_key_ks->key = dap_enc_key_new_generate(l_enc_block_type,
                                                l_pkey_exchange_key->priv_key_data, // shared key
                                                l_pkey_exchange_key->priv_key_data_size,
                                                l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE, l_block_key_size);
+        
         dap_enc_ks_save_in_storage(l_enc_key_ks);
 
-        char encrypt_id[DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1];
-
         size_t encrypt_id_size = dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), encrypt_id, DAP_ENC_DATA_TYPE_B64);
-        encrypt_id[encrypt_id_size] = '\0';
+        UNUSED(encrypt_id_size);
 
-        _enc_http_write_reply(cl_st, encrypt_id, encrypt_msg);
+        // save verified node addr and generate own sign
+        char* l_node_sign_msg = NULL;
+        if (l_protocol_version && l_sign_count) {
+            dap_stream_add_addr(dap_stream_node_addr_from_sign(l_sign), l_enc_key_ks);   // !TODO remove dependency from stream module
+
+            dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
+            dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, 0);
+            if (!l_node_sign) {
+                dap_enc_key_delete(l_pkey_exchange_key);
+                *return_code = Http_Status_InternalServerError;
+                return;
+            }
+            size_t l_node_sign_size = dap_sign_get_size(l_node_sign);
+            size_t l_node_sign_size_new = DAP_ENC_BASE64_ENCODE_SIZE(l_node_sign_size) + 1;
+
+            l_node_sign_msg = DAP_NEW_Z_SIZE(char, l_node_sign_size_new);
+            if (!l_node_sign_msg) {
+                log_it(L_CRITICAL, "Memory allocation error");
+                dap_enc_key_delete(l_pkey_exchange_key);
+                *return_code = Http_Status_InternalServerError;
+                DAP_DELETE(l_node_sign);
+                return;
+            }
+            l_node_sign_size = dap_enc_base64_encode(l_node_sign, l_node_sign_size, l_node_sign_msg, DAP_ENC_DATA_TYPE_B64);
+            DAP_DELETE(l_node_sign);
+        }
+
+        _enc_http_write_reply(cl_st, encrypt_id, encrypt_msg, l_node_sign_msg);
 
         dap_enc_key_delete(l_pkey_exchange_key);
+        DAP_DEL_Z(l_node_sign_msg);
 
         *return_code = Http_Status_OK;
 

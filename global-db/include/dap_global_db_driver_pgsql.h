@@ -1,7 +1,6 @@
 #pragma once
 
 #include "dap_global_db_driver.h"
-#include "/usr/include/postgresql/libpq-fe.h"
 
 #define DAP_PGSQL_DBHASHNAME_LEN    8
 #define DAP_PGSQL_POOL_COUNT        16

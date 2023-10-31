@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.1)
 project (dap_global_db C)
 
-file(GLOB dap_global_db_SRC dap_global_db.c dap_global_db_driver.c dap_global_db_remote.c)
-file(GLOB dap_global_db_HDR include/dap_global_db.h include/dap_global_db_driver.h include/dap_global_db_remote.h)
+file(GLOB dap_global_db_SRC dap_global_db.c dap_global_db_driver.c dap_global_db_ch.c dap_global_db_pkt.c dap_global_db_cluster.c)
+file(GLOB dap_global_db_HDR include/*.h)
 
 set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream dap_json-c)
 
@@ -10,7 +10,6 @@ if(BUILD_WITH_GDB_DRIVER_MDBX)
     set(SAVED_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})
     set(CMAKE_MESSAGE_LOG_LEVEL WARNING)
     list(APPEND dap_global_db_SRC dap_global_db_driver_mdbx.c)
-    list(APPEND dap_global_db_HDR include/dap_global_db_driver_mdbx.h)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/libmdbx ${CMAKE_CURRENT_BINARY_DIR}/../3rdparty/libmdbx EXCLUDE_FROM_ALL)
     set(CMAKE_MESSAGE_LOG_LEVEL ${SAVED_CMAKE_MESSAGE_LOG_LEVEL})
     set(dap_global_db_LIBS ${dap_global_db_LIBS} mdbx-static)
@@ -19,14 +18,12 @@ endif()
 
 if(BUILD_WITH_GDB_DRIVER_PGSQL)
     list(APPEND dap_global_db_SRC dap_global_db_driver_pgsql.c)
-    list(APPEND dap_global_db_HDR include/dap_global_db_driver_pgsql.h)
     set(dap_global_db_LIBS ${dap_global_db_LIBS} pq)
     add_definitions("-DDAP_CHAIN_GDB_ENGINE_PGSQL")
 endif()
 
 if(BUILD_WITH_GDB_DRIVER_SQLITE)
     list(APPEND dap_global_db_SRC dap_global_db_driver_sqlite.c)
-    list(APPEND dap_global_db_HDR include/dap_global_db_driver_sqlite.h)
     set(dap_global_db_LIBS ${dap_global_db_LIBS} sqlite3)
     add_definitions("-DDAP_CHAIN_GDB_ENGINE_SQLITE")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSQLITE_THREADSAFE=2")

@@ -3,6 +3,10 @@
 #include <stddef.h>
 #include <time.h>
 
+#ifdef DAP_OS_WINDOWS
+#define localtime_r(a, b) localtime_s((b), (a))
+#endif
+
 #define DAP_END_OF_DAYS 4102444799
 // Constant to convert seconds to nanoseconds
 #define DAP_NSEC_PER_SEC 1000000000
@@ -34,7 +38,7 @@ dap_nanotime_t dap_nanotime_now(void);
 
 
 // crossplatform usleep
-void dap_usleep(dap_time_t a_microseconds);
+void dap_usleep(uint64_t a_microseconds);
 
 /**
  * @brief dap_ctime_r This function does the same as ctime_r, but if it returns (null), a line break is added.

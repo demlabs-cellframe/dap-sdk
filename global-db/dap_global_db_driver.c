@@ -39,7 +39,6 @@
 #include "dap_file_utils.h"
 #include "dap_strfuncs.h"
 #include "dap_hash.h"
-#include "dap_proc_queue.h"
 #include "dap_events.h"
 #include "dap_list.h"
 #include "dap_common.h"
@@ -150,13 +149,26 @@ int dap_db_driver_flush(void)
     return s_drv_callback.flush();
 }
 
+static void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, dap_store_obj_t *a_store_obj_src)
+{
+    *a_store_obj_dst = *a_store_obj_src;
+    a_store_obj_dst->group = dap_strdup(a_store_obj_src->group);
+    a_store_obj_dst->key = dap_strdup(a_store_obj_src->key);
+    if (a_store_obj_src->value) {
+        if (!a_store_obj_src->value_len)
+            log_it(L_WARNING, "Inconsistent global DB object copy requested");
+        else
+            a_store_obj_dst->value = DAP_DUP_SIZE(a_store_obj_src->value, a_store_obj_src->value_len);
+    }
+}
+
 /**
  * @brief Copies objects from a_store_obj.
  * @param a_store_obj a pointer to the source objects
  * @param a_store_count a number of objects
  * @return A pointer to the copied objects.
  */
-dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count)
+dap_store_obj_t *dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count)
 {
 dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
@@ -168,20 +180,38 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
     l_store_obj_dst = l_store_obj;
     l_store_obj_src = a_store_obj;
+    for (int i = a_store_count; i--; l_store_obj_dst++, l_store_obj_src++)
+        s_store_obj_copy_one(l_store_obj_dst, l_store_obj_src);
+    return l_store_obj;
+}
 
-    for( int i =  a_store_count; i--; l_store_obj_dst++, l_store_obj_src++) {
-        *l_store_obj_dst = *l_store_obj_src;
-        l_store_obj_dst->group = dap_strdup(l_store_obj_src->group);
-        l_store_obj_dst->key = dap_strdup(l_store_obj_src->key);
-        if (l_store_obj_src->value) {
-            if (!l_store_obj->value_len)
-                log_it(L_WARNING, "Inconsistent global DB object copy requested");
+dap_store_obj_t *dap_store_obj_copy_ext(dap_store_obj_t *a_store_obj, void *a_ext, size_t a_ext_size)
+{
+    dap_store_obj_t *l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + a_ext_size);
+    s_store_obj_copy_one(l_ret, a_store_obj);
+    if (a_ext_size)
+        memcpy(l_ret->ext, a_ext, a_ext_size);
+    return l_ret;
+}
+
+dap_store_obj_t* dap_global_db_store_objs_copy(dap_store_obj_t *a_store_objs_dest, const dap_store_obj_t *a_store_objs_src, size_t a_store_count)
+{
+    dap_return_val_if_pass(!a_store_objs_dest || !a_store_objs_src || !a_store_count, NULL);
+
+    /* Run over array's elements */
+    const dap_store_obj_t *l_obj = a_store_objs_src;
+    for (dap_store_obj_t *l_cur = a_store_objs_dest; a_store_count--; l_cur++, l_obj++) {
+        *l_cur = *l_obj;
+        l_cur->group = dap_strdup(l_obj->group);
+        l_cur->key = dap_strdup(l_obj->key);
+        if (l_obj->value) {
+            if (l_obj->value_len)
+                l_cur->value = DAP_DUP_SIZE(l_obj->value, l_obj->value_len);
             else
-                l_store_obj_dst->value = DAP_DUP_SIZE(l_store_obj_src->value, l_store_obj_src->value_len);
+                log_it(L_WARNING, "Inconsistent global DB object copy requested");
         }
     }
-
-    return l_store_obj;
+    return a_store_objs_dest;
 }
 
 /**
@@ -229,7 +259,7 @@ dap_store_obj_t *l_store_obj_cur;
 
     if(s_drv_callback.apply_store_obj) {
         for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
-            if ((l_store_obj_cur->type == DAP_DB$K_OPTYPE_ADD) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
+            if ((l_store_obj_cur->type == DAP_GLOBAL_DB_OPTYPE_ADD) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
                 log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i, a_store_count);
                 l_ret = -9;
                 break;
@@ -254,12 +284,12 @@ dap_store_obj_t *l_store_obj_cur;
  * @param a_store_count a number of added objects
  * @return Returns 0 if sucseesful.
  */
-int dap_global_db_driver_add(pdap_store_obj_t a_store_obj, size_t a_store_count)
+int dap_global_db_driver_add(dap_store_obj_t *a_store_obj, size_t a_store_count)
 {
 dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
     for(int i = a_store_count; i--; l_store_obj_cur++)
-        l_store_obj_cur->type = DAP_DB$K_OPTYPE_ADD;
+        l_store_obj_cur->type = DAP_GLOBAL_DB_OPTYPE_ADD;
 
     return dap_global_db_driver_apply(a_store_obj, a_store_count);
 }
@@ -270,12 +300,12 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
  * @param a_store_count a number of deleted objects
  * @return Returns 0 if sucseesful.
  */
-int dap_global_db_driver_delete(pdap_store_obj_t a_store_obj, size_t a_store_count)
+int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_count)
 {
 dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
     for(int i = a_store_count; i--; l_store_obj_cur++)
-        l_store_obj_cur->type = DAP_DB$K_OPTYPE_DEL;
+        l_store_obj_cur->type = DAP_GLOBAL_DB_OPTYPE_DEL;
 
     return dap_global_db_driver_apply(a_store_obj, a_store_count);
 }
@@ -283,15 +313,15 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
 /**
  * @brief Gets a number of stored objects in a database by a_group and id.
  * @param a_group the group name string
- * @param a_id id
+ * @param a_iter data base iterator
  * @return Returns a number of objects.
  */
-size_t dap_global_db_driver_count(const char *a_group, uint64_t id)
+size_t dap_global_db_driver_count(const char *a_group, dap_nanotime_t a_timestamp)
 {
     size_t l_count_out = 0;
     // read the number of items
     if(s_drv_callback.read_count_store)
-        l_count_out = s_drv_callback.read_count_store(a_group, id);
+        l_count_out = s_drv_callback.read_count_store(a_group, a_timestamp);
     return l_count_out;
 }
 
@@ -326,21 +356,69 @@ dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group)
 }
 
 /**
- * @brief Reads several objects from a database by a_group and id.
- * @param a_group the group name string
- * @param a_id id
- * @param a_count_out[in] a number of objects to be read, if 0 - no limits
- * @param a_count_out[out] a count of objects that were read
- * @return If successful, a pointer to an objects, otherwise NULL.
+ * @brief Read elements starting grom iterator
+ * @param a_group the group name
+ * @param a_iter data base iterator
+ * @param a_count_out elements count
+ * @return If successful, a pointer to the object, otherwise NULL.
  */
-dap_store_obj_t* dap_global_db_driver_cond_read(const char *a_group, uint64_t id, size_t *a_count_out)
+dap_store_obj_t* dap_global_db_driver_cond_read(dap_global_db_iter_t* a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp)
 {
+    dap_return_val_if_pass(!a_iter, NULL);
+
     dap_store_obj_t *l_ret = NULL;
     // read records using the selected database engine
     if(s_drv_callback.read_cond_store_obj)
-        l_ret = s_drv_callback.read_cond_store_obj(a_group, id, a_count_out);
+        l_ret = s_drv_callback.read_cond_store_obj(a_iter, a_count_out, a_timestamp);
     return l_ret;
 }
+
+/**
+ * @brief Create iterator to the first element in the a_group database.
+ * @param a_group the group name string
+ * @return If successful, a pointer to an iterator, otherwise NULL.
+ */
+dap_global_db_iter_t *dap_global_db_driver_iter_create(const char *a_group)
+{
+    if (!a_group || !s_drv_callback.iter_create)
+        return NULL;
+    
+    // create return object
+    dap_global_db_iter_t *l_ret = DAP_NEW_Z(dap_global_db_iter_t);
+    if (!l_ret) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    }
+
+    l_ret->db_group = dap_strdup(a_group);
+    if (!l_ret->db_group) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
+    if (s_drv_callback.iter_create(l_ret)) {
+        log_it(L_ERROR, "Error iterator create in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        DAP_DELETE(l_ret->db_group);
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
+    return l_ret;
+}
+
+/**
+ * @brief Delete iterator and free memory
+ * @param a_iter deleting itaretor
+ * @return -.
+ */
+void dap_global_db_driver_iter_delete(dap_global_db_iter_t* a_iter)
+{
+    dap_return_if_pass(!a_iter);
+
+    DAP_DEL_Z(a_iter->db_iter);
+    DAP_DEL_Z(a_iter->db_group);
+    DAP_DEL_Z(a_iter);
+}
+
 
 /**
  * @brief Reads several objects from a database by a_group and a_key.
@@ -373,4 +451,10 @@ bool dap_global_db_driver_is(const char *a_group, const char *a_key)
         return s_drv_callback.is_obj(a_group, a_key);
     else
         return false;
+}
+
+bool dap_global_db_driver_is_hash(const char *a_group, const dap_global_db_driver_hash_t *a_hash)
+{
+    // TODO 9575
+    return false;
 }

@@ -304,9 +304,8 @@ dap_list_t *dap_list_copy(dap_list_t *a_list)
 dap_list_t *dap_list_copy_deep(dap_list_t *a_list, dap_callback_copy_t a_func, void *a_user_data)
 {
     dap_list_t *l_deep_copy = NULL, *l_el;
-    DL_FOREACH(a_list, l_el) {
+    DL_FOREACH(a_list, l_el)
         l_deep_copy = dap_list_append(l_deep_copy, a_func ? a_func(l_el->data, a_user_data) : l_el->data);
-    }
     return l_deep_copy;
 }
 
@@ -529,4 +528,14 @@ dap_list_t *dap_list_insert_sorted(dap_list_t *a_list, void *a_data, dap_callbac
 dap_list_t *dap_list_sort(dap_list_t *a_list, dap_callback_compare_t a_cmp)
 {
     return ({ DL_SORT(a_list, a_cmp); a_list; });
+}
+
+static int s_random_compare(dap_list_t UNUSED_ARG *a_list1, dap_list_t UNUSED_ARG *a_list2)
+{
+    return rand() % 2 ? -1 : 1;
+}
+
+dap_list_t *dap_list_shuffle(dap_list_t *a_list)
+{
+    return dap_list_sort(a_list, s_random_compare);
 }

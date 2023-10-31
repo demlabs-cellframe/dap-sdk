@@ -203,7 +203,11 @@ static void *s_list_thread_proc2(void *arg) {
         dap_nanotime_t  l_time_allowed = l_now + dap_nanotime_from_sec(24 * 3600),
                         l_two_weeks_ago = l_now - dap_nanotime_from_sec(15 * 24 * 3600);
         size_t l_item_count = 0, l_objs_total_size = 0;
+<<<<<<< HEAD
         dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group->name, 0, &l_item_count);
+=======
+        dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group->name, &l_item_count);
+>>>>>>> origin/develop
         if (!l_objs)
             continue;
         if (l_item_count != l_group->count) {
@@ -254,11 +258,15 @@ static void *s_list_thread_proc2(void *arg) {
                 l_dap_db_log_list->is_process = false;
                 pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
                 dap_store_obj_free(l_objs, l_item_count);
+<<<<<<< HEAD
 #ifdef DAP_OS_WINDOWS
                 ExitThread(0);
 #else
                 pthread_exit(NULL);
 #endif
+=======
+                pthread_exit(NULL);
+>>>>>>> origin/develop
             }
             uint64_t l_cur_id = l_obj_cur->id;
             l_obj_cur->id = 0;
@@ -277,11 +285,15 @@ static void *s_list_thread_proc2(void *arg) {
         dap_store_obj_free(l_objs, l_item_count);
     }
     l_dap_db_log_list->is_process = false;
+<<<<<<< HEAD
 #ifdef DAP_OS_WINDOWS
     ExitThread(0);
 #else
     pthread_exit(NULL);
 #endif
+=======
+    pthread_exit(NULL);
+>>>>>>> origin/develop
 }
 
 /**
@@ -300,31 +312,33 @@ static void *s_list_thread_proc(void *arg)
         char l_del_group_name_replace[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
         char l_obj_type;
         if (!dap_fnmatch("*.del", l_group_cur->name, 0)) {
-            l_obj_type = DAP_DB$K_OPTYPE_DEL;
+            l_obj_type = DAP_GLOBAL_DB_OPTYPE_DEL;
             size_t l_del_name_len = strlen(l_group_cur->name) - 4; //strlen(".del");
             memcpy(l_del_group_name_replace, l_group_cur->name, l_del_name_len);
             l_del_group_name_replace[l_del_name_len] = '\0';
         } else {
-            l_obj_type = DAP_DB$K_OPTYPE_ADD;
+            l_obj_type = DAP_GLOBAL_DB_OPTYPE_ADD;
         }
-        uint64_t l_item_start = l_group_cur->last_id_synced + 1;
         dap_nanotime_t l_time_allowed = dap_nanotime_now() + dap_nanotime_from_sec(3600 * 24); // to be sure the timestamp is invalid
         while (l_group_cur->count && l_dap_db_log_list->is_process) {
             // Number of records to be synchronized
             size_t l_item_count = 0;//min(64, l_group_cur->count);
             size_t l_objs_total_size = 0;
+<<<<<<< HEAD
             dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, 0, &l_item_count);
             /*if (!l_dap_db_log_list->is_process) {
+=======
+
+            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, &l_item_count);
+            
+            if (!l_dap_db_log_list->is_process) {
+>>>>>>> origin/develop
                 dap_store_obj_free(l_objs, l_item_count);
                 return NULL;
             }*/
             // go to next group
             if (!l_objs)
                 break;
-            // set new start pos = lastitem pos + 1
-            l_item_start = l_objs[l_item_count - 1].id + 1;
-            // TODO
-            UNUSED(l_item_start);
             l_group_cur->count = 0; //-= l_item_count;
             dap_list_t *l_list = NULL;
             for (size_t i = 0; i < l_item_count; i++) {
@@ -338,7 +352,7 @@ static void *s_list_thread_proc(void *arg)
                     dap_global_db_driver_delete(l_obj_cur, 1);
                     continue;       // the object is broken
                 }
-                if (l_obj_type == DAP_DB$K_OPTYPE_DEL) {
+                if (l_obj_type == DAP_GLOBAL_DB_OPTYPE_DEL) {
                     if (l_limit_time && l_obj_cur->timestamp < l_limit_time) {
                         dap_global_db_driver_delete(l_obj_cur, 1);
                         continue;
@@ -443,6 +457,7 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
             DAP_DEL_Z(l_dap_db_log_list);
             return NULL;
         }
+<<<<<<< HEAD
 
         l_sync_group->name = (char*)l_group->data;
         l_sync_group->last_id_synced = a_flags & F_DB_LOG_SYNC_FROM_ZERO ? 0 : dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
@@ -453,6 +468,17 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
             DAP_DELETE(l_sync_group);
             continue;
         }
+=======
+        l_sync_group->name = (char *)l_group->data;
+        // Need change after iterator applying
+        // if (a_flags & F_DB_LOG_SYNC_FROM_ZERO)
+        //     l_sync_group->last_id_synced = 0;
+        // else
+        //     l_sync_group->last_id_synced = dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
+        dap_global_db_iter_t *l_iter = dap_global_db_driver_iter_create(l_sync_group->name);
+        l_sync_group->count = dap_global_db_driver_count(l_iter, 0);
+        dap_global_db_driver_iter_delete(l_iter);
+>>>>>>> origin/develop
         l_dap_db_log_list->items_number += l_sync_group->count;
         l_group->data = l_sync_group;
     }
@@ -625,7 +651,7 @@ uint64_t dap_db_get_last_id_remote(uint64_t a_node_addr, char *a_group)
  * @param store_obj a pointer to the object
  * @return Returns the size.
  */
-static size_t dap_db_get_size_pdap_store_obj_t(pdap_store_obj_t store_obj)
+static size_t dap_db_get_size_dap_store_obj_t *(dap_store_obj_t * store_obj)
 {
     return sizeof(uint32_t)
             + 2 * sizeof(uint16_t)
@@ -673,21 +699,27 @@ void dap_global_db_pkt_change_id(dap_global_db_pkt_t *a_pkt, uint64_t a_id)
  * @param a_store_obj a pointer to the object to be serialized
  * @return Returns a pointer to the packed sructure if successful, otherwise NULL.
  */
-dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
+dap_global_db_pkt_old_t *dap_global_db_pkt_serialize_old(dap_store_obj_t *a_store_obj)
 {
     byte_t *pdata;
 
     if (!a_store_obj)
         return NULL;
 
-    uint32_t l_data_size_out = dap_db_get_size_pdap_store_obj_t(a_store_obj);
-    dap_global_db_pkt_t *l_pkt = DAP_NEW_Z_SIZE(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t));
+    size_t l_group_len = dap_strlen(a_store_obj->group);
+    size_t l_key_len = dap_strlen(a_store_obj->key);
+    size_t l_sign_len = dap_sign_get_size(a_store_obj->sign);
+    size_t l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len + l_sign_len;
+    dap_global_db_pkt_t *l_pkt = DAP_NEW_SIZE(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t));
+    if (!l_pkt) {
+        log_it(L_CRITICAL, "Insufficient memory");
+        return NULL;
+    }
 
     /* Fill packet header */
     l_pkt->data_size = l_data_size_out;
     l_pkt->obj_count = 1;
     l_pkt->timestamp = 0;
-    uint16_t l_group_len = dap_strlen(a_store_obj->group), l_key_len = dap_strlen(a_store_obj->key);
     /* Put serialized data into the payload part of the packet */
     pdata = l_pkt->data;
     memcpy(pdata,   &a_store_obj->type,     sizeof(uint32_t));      pdata += sizeof(uint32_t);
@@ -711,7 +743,7 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
  * @param store_obj_count[out] a number of deserialized objects in the array
  * @return Returns a pointer to the first object in the array, if successful; otherwise NULL.
  */
-dap_store_obj_t *dap_global_db_pkt_deserialize(const dap_global_db_pkt_t *a_pkt, size_t *a_store_obj_count)
+dap_store_obj_t *dap_global_db_pkt_deserialize_old(const dap_global_db_pkt_t *a_pkt, size_t *a_store_obj_count)
 {
 uint32_t l_count, l_cur_count;
 uint64_t l_size;
@@ -885,8 +917,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     // check the applied object newer that we have stored or erased
     if (a_obj->timestamp > (uint64_t)l_timestamp_del && a_obj->timestamp > (uint64_t)l_timestamp_cur)
         l_apply = true;
-
-    if (((l_ttl || a_obj->type == DAP_DB$K_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time) || l_broken)
+    if ((l_ttl || a_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time)
         l_apply = false;
 
     if (!l_apply) {

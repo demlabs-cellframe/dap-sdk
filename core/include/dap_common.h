@@ -73,6 +73,12 @@
 #include "portable_endian.h"
 
 #define BIT( x ) ( 1 << x )
+
+#define dap_return_if_fail(expr)            {if(!(expr)) {return;}}
+#define dap_return_val_if_fail(expr,val)    {if(!(expr)) {return (val);}}
+#define dap_return_if_pass(expr)            {if(expr) {return;}}
+#define dap_return_val_if_pass(expr,val)    {if(expr) {return (val);}}
+
 // Stuffs an integer into a pointer type
 #define DAP_INT_TO_POINTER(i) ((void*) (size_t) (i))
 // Extracts an integer from a pointer
@@ -216,6 +222,29 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))
 #endif
 
+/**
+  * @struct Node address
+  */
+typedef union dap_stream_node_addr {
+    uint64_t uint64;
+    uint16_t words[sizeof(uint64_t)/2];
+    uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
+} DAP_ALIGN_PACKED dap_stream_node_addr_t;
+
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+#define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
+#define NODE_ADDR_FP_ARGS(a)  a->words[2],a->words[3],a->words[0],a->words[1]
+#define NODE_ADDR_FPS_ARGS(a)  &a->words[2],&a->words[3],&a->words[0],&a->words[1]
+#define NODE_ADDR_FP_ARGS_S(a)  a.words[2],a.words[3],a.words[0],a.words[1]
+#define NODE_ADDR_FPS_ARGS_S(a)  &a.words[2],&a.words[3],&a.words[0],&a.words[1]
+#else
+#define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
+#define NODE_ADDR_FP_ARGS(a)  (a)->words[3],(a)->words[2],(a)->words[1],(a)->words[0]
+#define NODE_ADDR_FPS_ARGS(a)  &(a)->words[3],&(a)->words[2],&(a)->words[1],&(a)->words[0]
+#define NODE_ADDR_FP_ARGS_S(a)  (a).words[3],(a).words[2],(a).words[1],(a).words[0]
+#define NODE_ADDR_FPS_ARGS_S(a)  &(a).words[3],&(a).words[2],&(a).words[1],&(a).words[0]
+#endif
+
 DAP_STATIC_INLINE unsigned long dap_pagesize() {
     static int s = 0;
     if (s)
@@ -304,11 +333,14 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 /*
  * 23: added support for encryption key type parameter and option to encrypt headers
  * 24: Update hashes protocol
+ * 25: Added node sign
 */
-#define DAP_PROTOCOL_VERSION          24
+#define DAP_PROTOCOL_VERSION          25
 #define DAP_PROTOCOL_VERSION_DEFAULT  24 // used if version is not explicitly specified
 
-#define DAP_CLIENT_PROTOCOL_VERSION   24
+#define DAP_CLIENT_PROTOCOL_VERSION   25
+
+/* Crossplatform print formats for integers and others */
 
 #if (__SIZEOF_LONG__ == 4) || defined (DAP_OS_DARWIN)
 #define DAP_UINT64_FORMAT_X  "llX"
@@ -518,6 +550,9 @@ static const uint16_t s_ascii_table_data[256] = {
 #define dap_ascii_isprint(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_PRINT)
 #define dap_ascii_isxdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_XDIGIT)
 
+
+
+
 DAP_STATIC_INLINE void DAP_AtomicLock( dap_spinlock_t *lock )
 {
     __sync_lock_test_and_set(lock, 1);
@@ -674,8 +709,6 @@ void    *l_ptr;
 #define dump_it(v,s,l)
 #endif
 
-
-
 const char * log_error(void);
 void dap_log_level_set(enum dap_log_level ll);
 enum dap_log_level dap_log_level_get(void);
@@ -721,51 +754,52 @@ char **dap_parse_items(const char *a_str, char a_delimiter, int *a_count, const 
 
 unsigned int dap_crc32c(unsigned int crc, const void *buf, size_t buflen);
 
-static inline const char *dap_get_arch() { //Get current architecture, detectx nearly every architecture. Coded by Freak
-        #if defined(__x86_64__) || defined(_M_X64)
-        return "x86_64";
-        #elif defined(i386) || defined(__i386__) || defined(__i386) || defined(_M_IX86)
-        return "x86_32";
-        #elif defined(__ARM_ARCH_2__)
-        return "arm2";
-        #elif defined(__ARM_ARCH_3__) || defined(__ARM_ARCH_3M__)
-        return "arm3";
-        #elif defined(__ARM_ARCH_4T__) || defined(__TARGET_ARM_4T)
-        return "arm4t";
-        #elif defined(__ARM_ARCH_5_) || defined(__ARM_ARCH_5E_)
-        return "arm5"
-        #elif defined(__ARM_ARCH_6T2_) || defined(__ARM_ARCH_6T2_)
-        return "arm6t2";
-        #elif defined(__ARM_ARCH_6__) || defined(__ARM_ARCH_6J__) || defined(__ARM_ARCH_6K__) || defined(__ARM_ARCH_6Z__) || defined(__ARM_ARCH_6ZK__)
-        return "arm6";
-        #elif defined(__ARM_ARCH_7__) || defined(__ARM_ARCH_7A__) || defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
-        return "arm7";
-        #elif defined(__ARM_ARCH_7A__) || defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
-        return "arm7a";
-        #elif defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
-        return "arm7r";
-        #elif defined(__ARM_ARCH_7M__)
-        return "arm7m";
-        #elif defined(__ARM_ARCH_7S__)
-        return "arm7s";
-        #elif defined(__aarch64__) || defined(_M_ARM64)
-        return "arm64";
-        #elif defined(mips) || defined(__mips__) || defined(__mips)
-        return "mips";
-        #elif defined(__sh__)
-        return "superh";
-        #elif defined(__powerpc) || defined(__powerpc__) || defined(__powerpc64__) || defined(__POWERPC__) || defined(__ppc__) || defined(__PPC__) || defined(_ARCH_PPC)
-        return "powerpc";
-        #elif defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)
-        return "powerpc64";
-        #elif defined(__sparc__) || defined(__sparc)
-        return "sparc";
-        #elif defined(__m68k__)
-        return "m68k";
-        #else
-        return "unknown";
-        #endif
-    }
+static inline const char *dap_get_arch()
+{ //Get current architecture, detectx nearly every architecture. Coded by Freak
+    #if defined(__x86_64__) || defined(_M_X64)
+    return "x86_64";
+    #elif defined(i386) || defined(__i386__) || defined(__i386) || defined(_M_IX86)
+    return "x86_32";
+    #elif defined(__ARM_ARCH_2__)
+    return "arm2";
+    #elif defined(__ARM_ARCH_3__) || defined(__ARM_ARCH_3M__)
+    return "arm3";
+    #elif defined(__ARM_ARCH_4T__) || defined(__TARGET_ARM_4T)
+    return "arm4t";
+    #elif defined(__ARM_ARCH_5_) || defined(__ARM_ARCH_5E_)
+    return "arm5"
+    #elif defined(__ARM_ARCH_6T2_) || defined(__ARM_ARCH_6T2_)
+    return "arm6t2";
+    #elif defined(__ARM_ARCH_6__) || defined(__ARM_ARCH_6J__) || defined(__ARM_ARCH_6K__) || defined(__ARM_ARCH_6Z__) || defined(__ARM_ARCH_6ZK__)
+    return "arm6";
+    #elif defined(__ARM_ARCH_7__) || defined(__ARM_ARCH_7A__) || defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
+    return "arm7";
+    #elif defined(__ARM_ARCH_7A__) || defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
+    return "arm7a";
+    #elif defined(__ARM_ARCH_7R__) || defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__)
+    return "arm7r";
+    #elif defined(__ARM_ARCH_7M__)
+    return "arm7m";
+    #elif defined(__ARM_ARCH_7S__)
+    return "arm7s";
+    #elif defined(__aarch64__) || defined(_M_ARM64)
+    return "arm64";
+    #elif defined(mips) || defined(__mips__) || defined(__mips)
+    return "mips";
+    #elif defined(__sh__)
+    return "superh";
+    #elif defined(__powerpc) || defined(__powerpc__) || defined(__powerpc64__) || defined(__POWERPC__) || defined(__ppc__) || defined(__PPC__) || defined(_ARCH_PPC)
+    return "powerpc";
+    #elif defined(__PPC64__) || defined(__ppc64__) || defined(_ARCH_PPC64)
+    return "powerpc64";
+    #elif defined(__sparc__) || defined(__sparc)
+    return "sparc";
+    #elif defined(__m68k__)
+    return "m68k";
+    #else
+    return "unknown";
+    #endif
+}
 
 #ifdef __MINGW32__
 int exec_silent(const char *a_cmd);

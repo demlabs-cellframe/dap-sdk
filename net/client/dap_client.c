@@ -595,13 +595,8 @@ dap_stream_ch_t * dap_client_get_stream_ch_unsafe(dap_client_t * a_client, uint8
 {
     dap_stream_ch_t * l_ch = NULL;
     dap_client_pvt_t * l_client_internal = a_client ? DAP_CLIENT_PVT(a_client) : NULL;
-    if(l_client_internal && l_client_internal->stream && l_client_internal->stream_es)
-        for(size_t i = 0; i < l_client_internal->stream->channel_count; i++) {
-            if(l_client_internal->stream->channel[i]->proc->id == a_ch_id) {
-                l_ch = l_client_internal->stream->channel[i];
-                break;
-            }
-        }
+    if (l_client_internal && l_client_internal->stream && l_client_internal->stream_es)
+        l_ch = dap_stream_ch_by_id_unsafe(l_client_internal->stream, a_ch_id);
     return l_ch;
 }
 
@@ -610,10 +605,10 @@ dap_stream_ch_t * dap_client_get_stream_ch_unsafe(dap_client_t * a_client, uint8
  * @param a_client
  * @return
  */
-const char * dap_client_get_stream_id(dap_client_t * a_client)
+uint32_t dap_client_get_stream_id(dap_client_t * a_client)
 {
     if(!(a_client || !DAP_CLIENT_PVT(a_client)))
-        return NULL;
+        return 0;
     return DAP_CLIENT_PVT(a_client)->stream_id;
 }
 
