@@ -4,36 +4,63 @@ project (dap_core)
 add_definitions("-D_GNU_SOURCE") 
 
 if(UNIX)
-  file(GLOB CORE_HEADERS 
-      include/*.h 
-      include/unix/*.h 
-      include/unix/linux/*.h 
-  )
 
-  file(GLOB CORE_SRCS
-    src/*.c
-    src/etc/*.c
-    src/rpmalloc/*.c
-    src/unix/*.c
-    src/unix/linux/*.c
-    src/rpmalloc/*.c
-  )
+    if(DARWIN)
+
+        file(GLOB CORE_HEADERS 
+        include/*.h 
+        include/unix/*.h 
+        src/darwin/macos/*.h 
+        src/unix/*.h 
+        )
+
+
+        file(GLOB CORE_SRCS
+        src/*.c
+        src/etc/*.c
+        src/rpmalloc/*.c
+        src/unix/*.c
+        src/darwin/macos/*.c
+        src/rpmalloc/*.c
+        )
+
+    else()
+
+        file(GLOB CORE_HEADERS 
+            include/*.h 
+            include/unix/*.h 
+            src/unix/linux/*.h
+            src/unix/*.h
+        )
+
+
+        file(GLOB CORE_SRCS
+            src/*.c
+            src/etc/*.c
+            src/rpmalloc/*.c
+            src/unix/*.c
+            src/unix/linux/*.c
+            src/rpmalloc/*.c
+        )
+
+    endif()
+
 endif()
 
 
 if(WIN32)
 
-file(GLOB CORE_SRCS
-    src/*.c
-    src/etc/*.c
-    src/rpmalloc/*.c
-    src/win32/*.c
-)
+    file(GLOB CORE_SRCS
+        src/*.c
+        src/etc/*.c
+        src/rpmalloc/*.c
+        src/win32/*.c
+    )
 
-  file(GLOB CORE_HEADERS 
-      include/*.h 
-      src/win32/*.h 
-  )
+    file(GLOB CORE_HEADERS 
+        include/*.h 
+        src/win32/*.h 
+    )
 
 endif()
 
@@ -92,8 +119,8 @@ if(INSTALL_DAP_SDK)
 
     INSTALL(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #if (DAP_OS_LINUX)
-    INSTALL(DIRECTORY src/unix/linux/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
-    INSTALL(DIRECTORY src/unix/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
+    #INSTALL(DIRECTORY src/unix/linux/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
+    #INSTALL(DIRECTORY src/unix/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #endif()
 
 endif()
