@@ -215,18 +215,12 @@ int dap_enc_sig_falcon_verify_sign(dap_enc_key_t *a_key, const void *a_msg, cons
     return l_ret;
 }
 
-void dap_enc_sig_falcon_key_delete(dap_enc_key_t *key) {
-
+void dap_enc_sig_falcon_key_delete(dap_enc_key_t *key)
+{
+    dap_return_if_pass(!key);
     falcon_private_and_public_keys_delete((falcon_private_key_t *)key->priv_key_data, (falcon_public_key_t *)key->pub_key_data);
-
-    if (key->priv_key_data) {
-        memset(key->priv_key_data, 0, key->priv_key_data_size);
-        DAP_DEL_Z(key->priv_key_data);
-    }
-    if (key->pub_key_data) {
-        memset(key->pub_key_data, 0, key->pub_key_data_size);
-        DAP_DEL_Z(key->pub_key_data);
-    }
+    key->priv_key_data = NULL;
+    key->pub_key_data = NULL;
 }
 
 // Serialize a public key into a buffer.
@@ -412,23 +406,23 @@ void falcon_private_and_public_keys_delete(falcon_private_key_t* privateKey, fal
 }
 
 void falcon_private_key_delete(falcon_private_key_t* privateKey) {
-    if (privateKey) {
-        memset(privateKey->data, 0, FALCON_PRIVKEY_SIZE(privateKey->degree));
-        DAP_DEL_Z(privateKey->data);
-        privateKey->degree = 0;
-        privateKey->type = 0;
-        privateKey->kind = 0;
-    }
+    dap_return_if_pass(!privateKey);
+
+    memset(privateKey->data, 0, FALCON_PRIVKEY_SIZE(privateKey->degree));
+    privateKey->degree = 0;
+    privateKey->type = 0;
+    privateKey->kind = 0;
+    DAP_DEL_MULTY(privateKey->data, privateKey);
 }
 
 void falcon_public_key_delete(falcon_public_key_t* publicKey) {
-    if (publicKey) {
-        memset(publicKey->data, 0, FALCON_PUBKEY_SIZE(publicKey->degree));
-        DAP_DEL_Z(publicKey->data);
-        publicKey->degree = 0;
-        publicKey->type = 0;
-        publicKey->kind = 0;
-    }
+    dap_return_if_pass(!publicKey);
+
+    memset(publicKey->data, 0, FALCON_PUBKEY_SIZE(publicKey->degree));
+    publicKey->degree = 0;
+    publicKey->type = 0;
+    publicKey->kind = 0;
+    DAP_DEL_MULTY(publicKey->data, publicKey);
 }
 
 void falcon_signature_delete(falcon_signature_t *a_sig){

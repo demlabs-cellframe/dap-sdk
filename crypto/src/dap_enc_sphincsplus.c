@@ -161,13 +161,14 @@ size_t dap_enc_sig_sphincsplus_open_sign_msg(dap_enc_key_t *a_key, const void *a
     return l_res_size;
 }
 
-void dap_enc_sig_sphincsplus_key_delete(dap_enc_key_t *key) {
+void dap_enc_sig_sphincsplus_key_delete(dap_enc_key_t *a_key)
+{
+    dap_return_if_pass(!a_key);
+    sphincsplus_private_and_public_keys_delete((sphincsplus_private_key_t *) a_key->priv_key_data,
+        (sphincsplus_public_key_t *) a_key->pub_key_data);
 
-    sphincsplus_private_and_public_keys_delete((sphincsplus_private_key_t *) key->priv_key_data,
-        (sphincsplus_public_key_t *) key->pub_key_data);
-
-    DAP_DEL_Z(key->pub_key_data)
-    DAP_DEL_Z(key->priv_key_data);
+    a_key->pub_key_data = NULL;
+    a_key->priv_key_data = NULL;
 }
 
 /* Serialize a private key. */
@@ -335,16 +336,14 @@ void sphincsplus_private_and_public_keys_delete(sphincsplus_private_key_t *a_ske
 
 void sphincsplus_private_key_delete(sphincsplus_private_key_t *a_skey)
 {
-    if (a_skey) {
-        DAP_DEL_Z(a_skey->data);
-    }
+    dap_return_if_pass(!a_skey);
+    DAP_DEL_MULTY(a_skey->data, a_skey);
 }
 
 void sphincsplus_public_key_delete(sphincsplus_public_key_t *a_pkey)
 {
-    if (a_pkey) {
-        DAP_DEL_Z(a_pkey->data);
-    }
+    dap_return_if_pass(!a_pkey);
+    DAP_DEL_MULTY(a_pkey->data, a_pkey);
 }
 
 void sphincsplus_signature_delete(sphincsplus_signature_t *a_sig){

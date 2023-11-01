@@ -125,7 +125,7 @@ typedef enum dap_enc_key_type {
 
     DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_PQLR_KEM_NEWHOPE,
 #else
-    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_FALCON,
+    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,
 #endif
 } dap_enc_key_type_t;
 

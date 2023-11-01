@@ -39,7 +39,7 @@ void dap_enc_sig_picnic_key_delete(dap_enc_key_t *key);
 
 void dap_enc_sig_picnic_update(dap_enc_key_t *key);
 
-void dap_enc_sig_picnic_key_new_generate(dap_enc_key_t * key, const void *kex_buf, size_t kex_size,
+void dap_enc_sig_picnic_key_new_generate(dap_enc_key_t *key, const void *kex_buf, size_t kex_size,
         const void * seed, size_t seed_size,
         size_t key_size);
 

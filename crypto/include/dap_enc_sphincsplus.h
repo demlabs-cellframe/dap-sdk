@@ -24,7 +24,7 @@ const size_t a_sign_size);
 size_t dap_enc_sig_sphincsplus_open_sign_msg(dap_enc_key_t *a_key, const void *a_sign_in, const size_t a_sign_size, void *a_msg_out,
         const size_t a_out_size_max);
 
-void dap_enc_sig_sphincsplus_key_delete(dap_enc_key_t *key);
+void dap_enc_sig_sphincsplus_key_delete(dap_enc_key_t *a_key);
 
 uint8_t *dap_enc_sphincsplus_write_signature(const void *a_sign, size_t *a_buflen_out);
 sphincsplus_signature_t *dap_enc_sphincsplus_read_signature(const uint8_t *a_buf, size_t a_buflen);

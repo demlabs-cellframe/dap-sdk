@@ -56,10 +56,9 @@ void dap_enc_sig_dilithium_key_new_generate(dap_enc_key_t * key, const void *kex
             (dilithium_kind_t)_dilithium_type,
             seed, seed_size
             );
-    if(retcode != 0) {
-        dilithium_private_and_public_keys_delete((dilithium_private_key_t *) key->pub_key_data,
-                (dilithium_public_key_t *) key->pub_key_data);
+    if(retcode) {
         log_it(L_CRITICAL, "Error generating Dilithium key pair");
+        dap_enc_sig_dilithium_key_delete(key);
         return;
     }
 }
@@ -91,13 +90,12 @@ int dap_enc_sig_dilithium_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
 
 void dap_enc_sig_dilithium_key_delete(dap_enc_key_t * key)
 {
+    dap_return_if_pass(!key);
     dilithium_private_and_public_keys_delete((dilithium_private_key_t *) key->priv_key_data,
         (dilithium_public_key_t *) key->pub_key_data);
 
-    DAP_DEL_Z(key->pub_key_data);
-    // DAP_DEL_Z(key->priv_key_data);
+    key->pub_key_data = NULL;
     key->priv_key_data = NULL;
-
 }
 
 size_t dap_enc_dilithium_calc_signature_unserialized_size(void)

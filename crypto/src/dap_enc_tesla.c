@@ -66,8 +66,7 @@ void dap_enc_sig_tesla_key_new_generate(dap_enc_key_t *key, const void *kex_buf,
     retcode = tesla_crypto_sign_keypair((tesla_public_key_t *) key->pub_key_data,
             (tesla_private_key_t *) key->priv_key_data, (tesla_kind_t)_tesla_type, seed, seed_size);
     if(retcode != 0) {
-        tesla_private_and_public_keys_delete((tesla_private_key_t *) key->pub_key_data,
-                (tesla_public_key_t *) key->pub_key_data);
+        dap_enc_sig_tesla_key_delete(key);
         log_it(L_CRITICAL, "Error");
         return;
     }
@@ -97,8 +96,11 @@ int dap_enc_sig_tesla_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
 
 void dap_enc_sig_tesla_key_delete(dap_enc_key_t *key)
 {
+    dap_return_if_pass(!key);
     tesla_private_and_public_keys_delete((tesla_private_key_t *) key->priv_key_data,
             (tesla_public_key_t *) key->pub_key_data);
+    key->priv_key_data = NULL;
+    key->pub_key_data = NULL;
 }
 
 size_t dap_enc_tesla_calc_signature_size(void)

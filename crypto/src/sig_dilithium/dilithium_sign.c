@@ -78,19 +78,14 @@ void challenge(poly *c, const unsigned char mu[CRHBYTES], const polyveck *w1, di
 /********************************************************************************************/
 void dilithium_private_key_delete(dilithium_private_key_t *private_key)
 {
-    if(private_key) {
-        free(private_key->data);
-        private_key->data = NULL;
-        free(private_key);
-    }
+    dap_return_if_pass(!private_key);
+    DAP_DEL_MULTY(private_key->data, private_key);
 }
 
 void dilithium_public_key_delete(dilithium_public_key_t *public_key)
 {
-    if(public_key) {
-        DAP_DEL_Z(public_key->data);
-        //free(public_key);
-    }
+    dap_return_if_pass(!public_key);
+    DAP_DEL_MULTY(public_key->data, public_key);
 }
 
 void dilithium_private_and_public_keys_delete(dilithium_private_key_t *private_key, dilithium_public_key_t *public_key)

@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <inttypes.h>
 #include "bliss_b_params.h"
+#include "dap_common.h"
 #include "ntt_api.h"
 
 /* Constructs a random polyomial
@@ -236,17 +237,18 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
 }
 
 void bliss_b_private_key_delete(bliss_private_key_t *private_key){
-  bliss_param_t p;
+    dap_return_if_pass(!private_key);
 
-  assert(private_key != NULL);
-  
-  if (! bliss_params_init(&p, private_key->kind)) {
-    return;
-  }
+    bliss_param_t p;
 
-  secure_free(&private_key->s1, p.n);
-  secure_free(&private_key->s2, p.n);
-  secure_free(&private_key->a, p.n);
+    if (! bliss_params_init(&p, private_key->kind)) {
+        return;
+    }
+
+    secure_free(&private_key->s1, p.n);
+    secure_free(&private_key->s2, p.n);
+    secure_free(&private_key->a, p.n);
+    DAP_DELETE(private_key);
 }
 
 
@@ -283,10 +285,8 @@ int32_t bliss_b_public_key_extract(bliss_public_key_t *public_key, const bliss_p
 }
 
 
-void bliss_b_public_key_delete(bliss_public_key_t *public_key){
-
-  assert(public_key != NULL);
-
-  free(public_key->a);
-  public_key->a = NULL;
+void bliss_b_public_key_delete(bliss_public_key_t *public_key)
+{
+    dap_return_if_pass(!public_key);
+    DAP_DEL_MULTY(public_key->a, public_key);
 }
