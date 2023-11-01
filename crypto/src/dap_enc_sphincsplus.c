@@ -26,9 +26,14 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
 
     sphincsplus_private_key_t *l_skey = NULL;
     sphincsplus_public_key_t *l_pkey = NULL;
+    sphincsplus_base_params_t l_params = {0};
+    if (sphincsplus_get_params(s_default_config, &l_params)) {
+        log_it(L_CRITICAL, "Error generating Sphincs key pair");
+        return;
+    }
     
     // seed norming
-    uint64_t l_key_size = sphincsplus_crypto_sign_seedbytes();
+    uint64_t l_key_size = dap_enc_sphincsplus_crypto_sign_seedbytes(s_default_config);
     unsigned char l_seedbuf[l_key_size];
 
     if(a_seed && a_seed_size > 0) {
@@ -43,13 +48,12 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
 
     DAP_NEW_Z_SIZE_RET(l_skey, sphincsplus_private_key_t, a_key->priv_key_data_size, NULL);
     DAP_NEW_Z_SIZE_RET(l_pkey, sphincsplus_public_key_t, a_key->pub_key_data_size, l_skey);
-    DAP_NEW_Z_SIZE_RET(l_skey->data, uint8_t, dap_enc_sphincsplus_crypto_sign_secretkeybytes(s_default_config), l_skey, l_pkey);
-    DAP_NEW_Z_SIZE_RET(l_pkey->data, uint8_t, dap_enc_sphincsplus_crypto_sign_publickeybytes(s_default_config), l_skey->data, l_skey, l_pkey);
+    DAP_NEW_Z_SIZE_RET(l_skey->data, uint8_t, dap_enc_sphincsplus_crypto_sign_secretkeybytes(&l_params), l_skey, l_pkey);
+    DAP_NEW_Z_SIZE_RET(l_pkey->data, uint8_t, dap_enc_sphincsplus_crypto_sign_publickeybytes(&l_params), l_skey->data, l_skey, l_pkey);
 
     pthread_mutex_lock(&s_sign_mtx);
-        if(sphincsplus_set_config(s_default_config) || sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seedbuf) ||
-            sphincsplus_get_params(s_default_config, &l_skey->params) || sphincsplus_get_params(s_default_config, &l_pkey->params)) {
-            log_it(L_CRITICAL, "Error generating Sphincs key pair");
+        if(sphincsplus_set_config(s_default_config) || sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seedbuf)) {
+            log_it(L_CRITICAL, "Error load sphincsplus config");
             pthread_mutex_unlock(&s_sign_mtx);
             DAP_DEL_MULTY(l_skey->data, l_pkey->data, l_skey, l_pkey);
             return;
@@ -57,6 +61,8 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
     pthread_mutex_unlock(&s_sign_mtx);
     a_key->priv_key_data = l_skey;
     a_key->pub_key_data = l_pkey;
+    l_skey->params = l_params;
+    l_pkey->params = l_params;
 }
 
 
@@ -68,9 +74,9 @@ int dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg_in,
         return -1;
     }
 
-    sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign_out;
-    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, sphincsplus_crypto_sign_bytes(), -3, NULL);
     sphincsplus_private_key_t *l_skey = a_key->priv_key_data;
+    sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign_out;
+    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, dap_enc_sphincsplus_crypto_sign_bytes(&l_skey->params), -3, NULL);
 
     pthread_mutex_lock(&s_sign_mtx);
         if (sphincsplus_set_params(&l_skey->params)) {
@@ -87,14 +93,16 @@ int dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg_in,
 size_t dap_enc_sig_sphincsplus_get_sign_msg(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size,
         void *a_sign_out, const size_t a_out_size_max) {
 
-    if(a_out_size_max < sphincsplus_crypto_sign_bytes()) {
+    sphincsplus_private_key_t *l_skey = a_key->priv_key_data;
+    uint64_t l_sign_bytes = dap_enc_sphincsplus_crypto_sign_bytes(&l_skey->params);
+    
+    if(a_out_size_max < l_sign_bytes) {
         log_it(L_ERROR, "Bad signature size");
         return 0;
     }
 
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign_out;
-    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, sphincsplus_crypto_sign_bytes() + a_msg_size, 0, NULL);
-    sphincsplus_private_key_t *l_skey = a_key->priv_key_data;
+    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, l_sign_bytes + a_msg_size, 0, NULL);
 
     pthread_mutex_lock(&s_sign_mtx);
         if (sphincsplus_set_params(&l_skey->params)) {
@@ -137,12 +145,14 @@ int dap_enc_sig_sphincsplus_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
 size_t dap_enc_sig_sphincsplus_open_sign_msg(dap_enc_key_t *a_key, const void *a_sign_in, const size_t a_sign_size, void *a_msg_out,
         const size_t a_out_size_max)
 {
-    if(a_out_size_max < sphincsplus_crypto_sign_bytes()) {
+    sphincsplus_public_key_t *l_pkey = a_key->pub_key_data;
+    uint64_t l_sign_bytes = dap_enc_sphincsplus_crypto_sign_bytes(&l_pkey->params);
+
+    if(a_out_size_max < l_sign_bytes) {
         log_it(L_ERROR, "Bad signature size");
         return 0;
     }
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign_in;
-    sphincsplus_public_key_t *l_pkey = a_key->pub_key_data;
 
     if(memcmp(&l_sign->sig_params, &l_pkey->params, sizeof(sphincsplus_base_params_t))) {
         log_it(L_ERROR, "Sphincs key params have not equal sign params");
@@ -179,7 +189,7 @@ uint8_t *dap_enc_sphincsplus_write_private_key(const void *a_private_key, size_t
     dap_return_val_if_pass(!a_private_key, NULL);
     sphincsplus_private_key_t *l_private_key = (sphincsplus_private_key_t *)a_private_key;
 // func work
-    uint64_t l_secret_length = dap_enc_sphincsplus_crypto_sign_secretkeybytes(s_default_config);
+    uint64_t l_secret_length = dap_enc_sphincsplus_crypto_sign_secretkeybytes(&l_private_key->params);
     uint64_t l_buflen = sizeof(uint64_t) + sizeof(sphincsplus_base_params_t) + l_secret_length;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
         &l_buflen, sizeof(uint64_t),
@@ -210,10 +220,9 @@ sphincsplus_private_key_t *dap_enc_sphincsplus_read_private_key(const uint8_t *a
         l_skey->data, l_skey_len
     );
 // out work
-    uint64_t l_skey_len_exp = dap_enc_sphincsplus_crypto_sign_secretkeybytes(l_skey->params.config);
-    int l_res_check = sphincsplus_check_params(&l_skey->params);
-    if (l_res_des || l_res_check) {
-        log_it(L_ERROR,"::read_public_key() deserialise public key, err code %d", l_res_des ? l_res_des : l_res_check );
+    uint64_t l_skey_len_exp = dap_enc_sphincsplus_crypto_sign_secretkeybytes(&l_skey->params);
+    if (l_res_des) {
+        log_it(L_ERROR,"::read_public_key() deserialise public key, err code %d", l_res_des);
         DAP_DEL_MULTY(l_skey->data, l_skey);
         return NULL;
     }
@@ -233,7 +242,7 @@ uint8_t *dap_enc_sphincsplus_write_public_key(const void* a_public_key, size_t *
     dap_return_val_if_pass(!a_public_key, NULL);
     sphincsplus_public_key_t *l_public_key = (sphincsplus_public_key_t *)a_public_key;
 // func work
-    uint64_t l_public_length = dap_enc_sphincsplus_crypto_sign_publickeybytes(s_default_config);
+    uint64_t l_public_length = dap_enc_sphincsplus_crypto_sign_publickeybytes(&l_public_key->params);
     uint64_t l_buflen = sizeof(uint64_t) + sizeof(sphincsplus_base_params_t) + l_public_length;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6, 
         &l_buflen, sizeof(uint64_t),
@@ -264,10 +273,9 @@ sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_b
         l_pkey->data, l_pkey_len
     );
 // out work
-    uint64_t l_pkey_len_exp = dap_enc_sphincsplus_crypto_sign_publickeybytes(l_pkey->params.config);
-    int l_res_check = sphincsplus_check_params(&l_pkey->params);
-    if (l_res_des || l_res_check) {
-        log_it(L_ERROR,"::read_public_key() deserialise public key, err code %d", l_res_des ? l_res_des : l_res_check );
+    uint64_t l_pkey_len_exp = dap_enc_sphincsplus_crypto_sign_publickeybytes(&l_pkey->params);
+    if (l_res_des) {
+        log_it(L_ERROR,"::read_public_key() deserialise public key, err code %d", l_res_des);
         DAP_DEL_MULTY(l_pkey->data, l_pkey);
         return NULL;
     }
@@ -356,10 +364,10 @@ void sphincsplus_signature_delete(sphincsplus_signature_t *a_sig){
 /*
  * Returns the length of a secret key, in bytes
  */
-uint64_t dap_enc_sphincsplus_crypto_sign_secretkeybytes(sphincsplus_config_t a_config)
+uint64_t dap_enc_sphincsplus_crypto_sign_secretkeybytes(const sphincsplus_base_params_t *a_params)
 {
     pthread_mutex_lock(&s_sign_mtx);
-        if (sphincsplus_set_config(a_config)) {
+        if (sphincsplus_set_params(a_params)) {
             pthread_mutex_unlock(&s_sign_mtx);
             return 0;
         }
@@ -371,10 +379,10 @@ uint64_t dap_enc_sphincsplus_crypto_sign_secretkeybytes(sphincsplus_config_t a_c
 /*
  * Returns the length of a public key, in bytes
  */
-uint64_t dap_enc_sphincsplus_crypto_sign_publickeybytes(sphincsplus_config_t a_config)
+uint64_t dap_enc_sphincsplus_crypto_sign_publickeybytes(const sphincsplus_base_params_t *a_params)
 {
     pthread_mutex_lock(&s_sign_mtx);
-        if (sphincsplus_set_config(a_config)) {
+        if (sphincsplus_set_params(a_params)) {
             pthread_mutex_unlock(&s_sign_mtx);
             return 0;
         }
@@ -394,6 +402,21 @@ uint64_t dap_enc_sphincsplus_crypto_sign_seedbytes(sphincsplus_config_t a_config
             return 0;
         }
         uint64_t l_ret = sphincsplus_crypto_sign_seedbytes();
+    pthread_mutex_unlock(&s_sign_mtx);
+    return l_ret;
+}
+
+/*
+ * Returns the length of a signature, in bytes
+ */
+uint64_t dap_enc_sphincsplus_crypto_sign_bytes(const sphincsplus_base_params_t *a_params)
+{
+    pthread_mutex_lock(&s_sign_mtx);
+        if (sphincsplus_set_params(a_params)) {
+            pthread_mutex_unlock(&s_sign_mtx);
+            return 0;
+        }
+        uint64_t l_ret = sphincsplus_crypto_sign_bytes();
     pthread_mutex_unlock(&s_sign_mtx);
     return l_ret;
 }

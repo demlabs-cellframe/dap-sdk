@@ -400,7 +400,6 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
 
 /*************************************************/
 void dilithium_signature_delete(dilithium_signature_t *sig){
-    assert(sig != NULL);
-
+    dap_return_if_pass(!sig);
     DAP_DEL_Z(sig->sig_data);
 }

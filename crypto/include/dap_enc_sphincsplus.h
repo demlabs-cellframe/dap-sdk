@@ -34,8 +34,9 @@ uint8_t *dap_enc_sphincsplus_write_public_key(const void* a_public_key, size_t *
 sphincsplus_private_key_t *dap_enc_sphincsplus_read_private_key(const uint8_t *a_buf, size_t a_buflen);
 sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_buf, size_t a_buflen);
 
-uint64_t dap_enc_sphincsplus_crypto_sign_secretkeybytes(sphincsplus_config_t a_config);
-uint64_t dap_enc_sphincsplus_crypto_sign_publickeybytes(sphincsplus_config_t a_config);
+uint64_t dap_enc_sphincsplus_crypto_sign_secretkeybytes(const sphincsplus_base_params_t *a_params);
+uint64_t dap_enc_sphincsplus_crypto_sign_publickeybytes(const sphincsplus_base_params_t *a_params);
+uint64_t dap_enc_sphincsplus_crypto_sign_bytes(const sphincsplus_base_params_t *a_params);
 uint64_t dap_enc_sphincsplus_crypto_sign_seedbytes(sphincsplus_config_t a_config);
 uint64_t dap_enc_sphincsplus_calc_signature_unserialized_size();
 

@@ -557,7 +557,6 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
         if((a_key->priv_key_data)) {
             bliss_b_private_key_delete((bliss_private_key_t *) a_key->priv_key_data);
-            DAP_DELETE(a_key->pub_key_data);
         }
         a_key->priv_key_data = (uint8_t*) dap_enc_sig_bliss_read_private_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
@@ -576,7 +575,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data_size = sizeof(tesla_private_key_t);
         break;
     case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-        DAP_DELETE(a_key->priv_key_data);
+        DAP_DEL_Z(a_key->priv_key_data);
         a_key->priv_key_data_size = a_buflen;
         DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -1, NULL);
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
@@ -610,7 +609,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data_size = sizeof(sphincsplus_private_key_t);
         break;
     default:
-        DAP_DELETE(a_key->priv_key_data);
+        DAP_DEL_Z(a_key->priv_key_data);
         a_key->priv_key_data_size = a_buflen;
         DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -1, NULL);
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
@@ -634,7 +633,6 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
         if((a_key->pub_key_data)) {
             bliss_b_public_key_delete((bliss_public_key_t *) a_key->pub_key_data);
-            DAP_DELETE(a_key->pub_key_data);
         }
         a_key->pub_key_data = (uint8_t*) dap_enc_sig_bliss_read_public_key(a_buf, a_buflen);
         if(!a_key->pub_key_data) {
@@ -653,7 +651,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         a_key->pub_key_data_size = sizeof(tesla_public_key_t);
         break;
     case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-        DAP_DELETE(a_key->pub_key_data);
+        DAP_DEL_Z(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
         DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1, NULL);
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
@@ -693,7 +691,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         a_key->pub_key_data_size = sizeof(sphincsplus_public_key_t);
         break;
     default:
-        DAP_DELETE(a_key->pub_key_data);
+        DAP_DEL_Z(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
         DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1, NULL);
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
@@ -736,17 +734,17 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
     dap_return_val_if_pass(!l_ret, NULL);
 
     if (a_key->priv_key_data_size) {
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret->priv_key_data, byte_t, a_key->priv_key_data_size, NULL, l_ret);
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->priv_key_data, uint8_t, a_key->priv_key_data_size, NULL, l_ret);
         l_ret->priv_key_data_size = a_key->priv_key_data_size;
         memcpy(l_ret->priv_key_data, a_key->priv_key_data, a_key->priv_key_data_size);
     }
     if (a_key->pub_key_data_size) {
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret->pub_key_data, byte_t, a_key->pub_key_data_size, NULL, l_ret->priv_key_data, l_ret);
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->pub_key_data, uint8_t, a_key->pub_key_data_size, NULL, l_ret->priv_key_data, l_ret);
         l_ret->pub_key_data_size =  a_key->pub_key_data_size;
         memcpy(l_ret->pub_key_data, a_key->pub_key_data, a_key->pub_key_data_size);
     }
     if(a_key->_inheritor_size) {
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret->_inheritor, byte_t, a_key->_inheritor_size, NULL, l_ret->pub_key_data, l_ret->priv_key_data, l_ret);
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->_inheritor, uint8_t, a_key->_inheritor_size, NULL, l_ret->pub_key_data, l_ret->priv_key_data, l_ret);
         l_ret->_inheritor_size = a_key->_inheritor_size;
         memcpy(l_ret->_inheritor, a_key->_inheritor, a_key->_inheritor_size);
     }
@@ -775,19 +773,18 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
     l_ret->priv_key_data_size = in_key->priv_key_data_size;
     l_ret->pub_key_data_size = in_key->pub_key_data_size;
     l_ret->_inheritor_size = in_key->inheritor_size;
-    DAP_DEL_Z(l_ret->priv_key_data);
-    DAP_DEL_Z(l_ret->pub_key_data);
+    DAP_DEL_MULTY(l_ret->priv_key_data, l_ret->pub_key_data);
     if (l_ret->priv_key_data_size) {
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret->priv_key_data, byte_t, l_ret->priv_key_data_size, NULL, l_ret);
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->priv_key_data, uint8_t, l_ret->priv_key_data_size, NULL, l_ret);
         memcpy(l_ret->priv_key_data, in_key->priv_key_data, l_ret->priv_key_data_size);
     }
     if (l_ret->pub_key_data_size) {
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret->pub_key_data, byte_t, l_ret->pub_key_data, NULL, l_ret->priv_key_data, l_ret);
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->pub_key_data, uint8_t, l_ret->pub_key_data, NULL, l_ret->priv_key_data, l_ret);
         memcpy(l_ret->pub_key_data, in_key->pub_key_data, l_ret->pub_key_data_size);
     }
     if(in_key->inheritor_size) {
         DAP_DEL_Z(l_ret->_inheritor);
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret->_inheritor, byte_t, in_key->inheritor_size, NULL, l_ret->pub_key_data, l_ret->priv_key_data, l_ret);
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->_inheritor, uint8_t, in_key->inheritor_size, NULL, l_ret->pub_key_data, l_ret->priv_key_data, l_ret);
         memcpy(l_ret->_inheritor, in_key->inheritor, in_key->inheritor_size);
     } else {
         l_ret->_inheritor = NULL;
@@ -898,15 +895,15 @@ void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_
         dilithium_signature_delete((dilithium_signature_t*)a_sig_buf);
         break;
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        DAP_DELETE(((falcon_signature_t *)a_sig_buf)->sig_data);
+        DAP_DEL_Z(((falcon_signature_t *)a_sig_buf)->sig_data);
         break;
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        DAP_DELETE(((sphincsplus_signature_t *)a_sig_buf)->sig_data);
+        DAP_DEL_Z(((sphincsplus_signature_t *)a_sig_buf)->sig_data);
         break;
     default:
         break;
     }
-    DAP_DELETE(a_sig_buf);
+    DAP_DEL_Z(a_sig_buf);
 }
 
 /**

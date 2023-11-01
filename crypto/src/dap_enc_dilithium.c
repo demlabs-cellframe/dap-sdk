@@ -199,7 +199,7 @@ uint8_t *dap_enc_dilithium_write_private_key(const void *a_private_key, size_t *
     dap_return_val_if_pass(!l_private_key || !dilithium_params_init(&p, l_private_key->kind), NULL);
 // func work
     uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_SECRETKEYBYTES;
-    byte_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
                         &l_buflen, sizeof(uint64_t),
                         &l_private_key->kind, sizeof(uint32_t),
                         l_private_key->data, p.CRYPTO_SECRETKEYBYTES);

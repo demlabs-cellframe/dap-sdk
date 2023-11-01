@@ -122,7 +122,6 @@ void dap_enc_sig_falcon_key_new_generate(dap_enc_key_t *a_key, const void *kex_b
 
 int dap_enc_sig_falcon_get_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size, void* a_sig, const size_t a_signature_size)
 {
-
     if (a_signature_size != sizeof(falcon_signature_t)) {
         log_it(L_ERROR, "Invalid falcon signature size");
         return -10;

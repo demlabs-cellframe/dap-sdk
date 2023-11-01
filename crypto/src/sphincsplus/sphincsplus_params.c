@@ -285,8 +285,6 @@ int sphincsplus_check_params(const sphincsplus_base_params_t *a_base_params) {
         log_it(L_ERROR, "Differents between current config and checked");
         return -2;
     }
-
-
     if (!a_base_params->spx_d || a_base_params->spx_full_height % a_base_params->spx_d) {
         log_it(L_ERROR, "SPX_D should always divide SPX_FULL_HEIGHT");
         return -3;
@@ -314,6 +312,7 @@ int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params)
     if (sphincsplus_check_params(a_base_params))
         return -1;
 #ifdef SPHINCSPLUS_FLEX
+    dap_return_val_if_pass(a_base_params->config == SPHINCSPLUS_CONFIG, 0);
     sphincsplus_params_t l_res = {0};
     l_res.base_params = *a_base_params;
 
@@ -384,8 +383,6 @@ int sphincsplus_set_config(sphincsplus_config_t a_config) {
         log_it(L_ERROR, "Wrong sphincplus sig config");
         return -1;
     }
-    if (a_config == g_sphincsplus_params_current.base_params.config)
-        return 0;
     return sphincsplus_set_params(&s_params[a_config]);
 }
 
