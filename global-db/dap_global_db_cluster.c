@@ -37,7 +37,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 int dap_global_db_cluster_init()
 {
-        // Pseudo-cluster for local scope (unsynced groups). There is no notificator for it
+        // Pseudo-cluster for local scope (unsynced groups). There is no notifier for it
     if (dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_LOCAL, DAP_GLOBAL_DB_CLUSTER_LOCAL ".*",
                                     0, false, DAP_GDB_MEMBER_ROLE_ROOT, DAP_CLUSTER_ROLE_VIRTUAL))
         // Pseudo-cluster for global scope
@@ -171,18 +171,18 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
 static bool s_db_cluster_notify_on_proc_thread(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
 {
     dap_store_obj_t *l_store_obj = a_arg;
-    dap_global_db_notificator_t *l_notificator = *(dap_global_db_notificator_t **)l_store_obj->ext;
-    l_notificator->callback_notify(l_store_obj, l_notificator->callback_arg);
+    dap_global_db_notifier_t *l_notifier = *(dap_global_db_notifier_t **)l_store_obj->ext;
+    l_notifier->callback_notify(l_store_obj, l_notifier->callback_arg);
     dap_store_obj_free_one(l_store_obj);
     return false;
 }
 
 void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj)
 {
-    dap_global_db_notificator_t *l_notificator;
-    DL_FOREACH(a_cluster->notificators, l_notificator) {
-        assert(l_notificator->callback_notify);
-        dap_store_obj_t *l_store_obj = dap_store_obj_copy_ext(a_store_obj, l_notificator, sizeof(*l_notificator));
+    dap_global_db_notifier_t *l_notifier;
+    DL_FOREACH(a_cluster->notifiers, l_notifier) {
+        assert(l_notifier->callback_notify);
+        dap_store_obj_t *l_store_obj = dap_store_obj_copy_ext(a_store_obj, l_notifier, sizeof(*l_notifier));
         dap_proc_thread_callback_add_pri(NULL, s_db_cluster_notify_on_proc_thread, l_store_obj, DAP_QUEUE_MSG_PRIORITY_LOW);
     }
 }
@@ -190,13 +190,13 @@ void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_store_
 int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster, dap_store_obj_callback_notify_t a_callback, void *a_callback_arg)
 {
     dap_return_val_if_fail(a_cluster && a_callback, -1);
-    dap_global_db_notificator_t *l_notificator = DAP_NEW_Z(dap_global_db_notificator_t);
-    if (!l_notificator) {
+    dap_global_db_notifier_t *l_notifier = DAP_NEW_Z(dap_global_db_notifier_t);
+    if (!l_notifier) {
         log_it(L_CRITICAL, "Not enough memory");
         return -2;
     }
-    l_notificator->callback_notify = a_callback;
-    l_notificator->callback_arg = a_callback_arg;
-    DL_APPEND(a_cluster->notificators, l_notificator);
+    l_notifier->callback_notify = a_callback;
+    l_notifier->callback_arg = a_callback_arg;
+    DL_APPEND(a_cluster->notifiers, l_notifier);
     return 0;
 }

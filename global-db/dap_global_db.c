@@ -397,7 +397,7 @@ static int s_store_obj_apply(dap_store_obj_t *a_obj)
         if (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)
             // Notify sync cluster first in driver format
             dap_global_db_cluster_broadcast(l_cluster, a_obj);
-        if (l_cluster->notificators) {
+        if (l_cluster->notifiers) {
             // Notify others in user space format
             char *l_old_group_ptr = a_obj->group;
             a_obj->group = l_basic_group;

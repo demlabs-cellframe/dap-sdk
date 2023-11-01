@@ -62,7 +62,7 @@ typedef struct dap_store_obj {
     dap_sign_t *sign;               // Crypto sign for authentication and security checks
     dap_nanotime_t timestamp;       // Timestamp of record creation, in nanoseconds since EPOCH
     uint32_t crc;                   // Integrity control
-    dap_global_db_optype_t type;    // Operation type - for event notificators
+    dap_global_db_optype_t type;    // Operation type - for event notifiers
     byte_t ext[];                   // For extra data transfer between sync callbacks
 } dap_store_obj_t;
 
