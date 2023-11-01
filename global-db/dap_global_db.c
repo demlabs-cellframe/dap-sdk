@@ -1011,7 +1011,7 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
     dap_store_obj_t l_store_data = { 0 };
     l_store_data.type = DAP_GLOBAL_DB_OPTYPE_ADD;
     l_store_data.key = (char *)a_key ;
-    l_store_data.flags = (DAP_GLOBAL_DB_RECORD_NEW | a_pin_value) ? DAP_GLOBAL_DB_RECORD_PINNED : 0;
+    l_store_data.flags = DAP_GLOBAL_DB_RECORD_NEW | (a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0);
     l_store_data.value_len =  a_value_length;
     l_store_data.value = (uint8_t *)a_value;
     l_store_data.group = (char *)a_group;

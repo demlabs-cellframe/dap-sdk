@@ -203,11 +203,7 @@ static void *s_list_thread_proc2(void *arg) {
         dap_nanotime_t  l_time_allowed = l_now + dap_nanotime_from_sec(24 * 3600),
                         l_two_weeks_ago = l_now - dap_nanotime_from_sec(15 * 24 * 3600);
         size_t l_item_count = 0, l_objs_total_size = 0;
-<<<<<<< HEAD
-        dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group->name, 0, &l_item_count);
-=======
         dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group->name, &l_item_count);
->>>>>>> origin/develop
         if (!l_objs)
             continue;
         if (l_item_count != l_group->count) {
@@ -258,15 +254,11 @@ static void *s_list_thread_proc2(void *arg) {
                 l_dap_db_log_list->is_process = false;
                 pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
                 dap_store_obj_free(l_objs, l_item_count);
-<<<<<<< HEAD
 #ifdef DAP_OS_WINDOWS
                 ExitThread(0);
 #else
                 pthread_exit(NULL);
 #endif
-=======
-                pthread_exit(NULL);
->>>>>>> origin/develop
             }
             uint64_t l_cur_id = l_obj_cur->id;
             l_obj_cur->id = 0;
@@ -285,15 +277,11 @@ static void *s_list_thread_proc2(void *arg) {
         dap_store_obj_free(l_objs, l_item_count);
     }
     l_dap_db_log_list->is_process = false;
-<<<<<<< HEAD
 #ifdef DAP_OS_WINDOWS
     ExitThread(0);
 #else
     pthread_exit(NULL);
 #endif
-=======
-    pthread_exit(NULL);
->>>>>>> origin/develop
 }
 
 /**
@@ -324,15 +312,9 @@ static void *s_list_thread_proc(void *arg)
             // Number of records to be synchronized
             size_t l_item_count = 0;//min(64, l_group_cur->count);
             size_t l_objs_total_size = 0;
-<<<<<<< HEAD
-            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, 0, &l_item_count);
-            /*if (!l_dap_db_log_list->is_process) {
-=======
-
             dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, &l_item_count);
             
-            if (!l_dap_db_log_list->is_process) {
->>>>>>> origin/develop
+            /*if (!l_dap_db_log_list->is_process) {
                 dap_store_obj_free(l_objs, l_item_count);
                 return NULL;
             }*/
@@ -457,7 +439,6 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
             DAP_DEL_Z(l_dap_db_log_list);
             return NULL;
         }
-<<<<<<< HEAD
 
         l_sync_group->name = (char*)l_group->data;
         l_sync_group->last_id_synced = a_flags & F_DB_LOG_SYNC_FROM_ZERO ? 0 : dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
@@ -468,17 +449,6 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
             DAP_DELETE(l_sync_group);
             continue;
         }
-=======
-        l_sync_group->name = (char *)l_group->data;
-        // Need change after iterator applying
-        // if (a_flags & F_DB_LOG_SYNC_FROM_ZERO)
-        //     l_sync_group->last_id_synced = 0;
-        // else
-        //     l_sync_group->last_id_synced = dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
-        dap_global_db_iter_t *l_iter = dap_global_db_driver_iter_create(l_sync_group->name);
-        l_sync_group->count = dap_global_db_driver_count(l_iter, 0);
-        dap_global_db_driver_iter_delete(l_iter);
->>>>>>> origin/develop
         l_dap_db_log_list->items_number += l_sync_group->count;
         l_group->data = l_sync_group;
     }
