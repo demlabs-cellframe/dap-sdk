@@ -57,3 +57,13 @@ if (${BUILD_DAP_CRYPTO_KYBER512_TESTS} MATCHES ON)
     add_subdirectory(test)
 endif()
 
+
+
+if(INSTALL_DAP_SDK)
+    
+    INSTALL(TARGETS ${PROJECT_NAME} 
+            LIBRARY DESTINATION lib/dap/crypto/
+            ARCHIVE DESTINATION lib/dap/crypto/
+    )
+
+endif()

@@ -15,6 +15,15 @@ if(UNIX)
       include/unix/*.h 
       include/unix/linux/*.h 
   )
+
+  file(GLOB CORE_SRCS
+    src/*.c
+    src/etc/*.c
+    src/rpmalloc/*.c
+    src/unix/*.c
+    src/unix/linux/*.c
+    src/rpmalloc/*.c
+  )
 endif()
 
 if(WIN32)
