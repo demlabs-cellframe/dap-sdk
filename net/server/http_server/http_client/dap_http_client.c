@@ -295,13 +295,11 @@ static inline void s_report_error_and_restart( dap_events_socket_t *a_esocket, d
     a_esocket->buf_in_size = 0;
     a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
 
-    dap_events_socket_set_readable_unsafe( a_http_client->esocket, false );
-    dap_events_socket_set_writable_unsafe( a_http_client->esocket, true );
-
     a_http_client->reply_status_code = 505;
     strcpy( a_http_client->reply_reason_phrase, "Error" );
     a_http_client->state_write = DAP_HTTP_CLIENT_STATE_START;
-
+    dap_events_socket_set_readable_unsafe( a_http_client->esocket, false );
+    dap_events_socket_set_writable_unsafe( a_http_client->esocket, true );
     return;
 }
 
@@ -613,7 +611,9 @@ void dap_http_client_write( dap_events_socket_t * a_esocket, void *a_arg )
                 }
             } else {
                 log_it(L_WARNING, "No http proc, nothing to write");
+#ifndef DAP_EVENTS_CAPS_IOCP
                 l_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+#endif
                 l_http_client->state_write = DAP_HTTP_CLIENT_STATE_NONE;
             }
             return;

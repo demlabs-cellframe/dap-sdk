@@ -89,6 +89,20 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 #define LOG_TAG "dap_events_socket"
 
+const char *s_socket_type_to_str[] = {
+    [DESCRIPTOR_TYPE_SOCKET_CLIENT]         = "CLIENT",
+    [DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT]   = "LOCAL_CLIENT",
+    [DESCRIPTOR_TYPE_SOCKET_LISTENING]      = "SERVER",
+    [DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING]= "LOCAL_SERVER",
+    [DESCRIPTOR_TYPE_SOCKET_UDP]            = "CLIENT_UDP",
+    [DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL]     = "CLIENT_SSL",
+    [DESCRIPTOR_TYPE_FILE]                  = "FILE",
+    [DESCRIPTOR_TYPE_PIPE]                  = "PIPE",
+    [DESCRIPTOR_TYPE_QUEUE]                 = "QUEUE",
+    [DESCRIPTOR_TYPE_TIMER]                 = "TIMER",
+    [DESCRIPTOR_TYPE_EVENT]                 = "EVENT"
+};
+
 // Item for QUEUE_PTR input esocket
 struct queue_ptr_input_item{
     dap_events_socket_t * esocket;
@@ -1250,9 +1264,9 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
 #ifdef DAP_EVENTS_CAPS_IOCP
     if (!a_is_ready) {
         a_esocket->flags &= ~DAP_SOCK_READY_TO_READ;
-        if (!PostQueuedCompletionStatus(a_esocket->context->iocp, a_esocket->buf_in_size, (ULONG_PTR)a_esocket, &a_esocket->ol_in)) {
-            log_it(L_ERROR, "Enqueue completion message failed, errno %lu", GetLastError());
-        }
+        //if (!PostQueuedCompletionStatus(a_esocket->context->iocp, a_esocket->buf_in_size, (ULONG_PTR)a_esocket, &a_esocket->ol_in)) {
+        //    log_it(L_ERROR, "Enqueue completion message failed, errno %lu", GetLastError());
+        //}
         return;
     }
     a_esocket->flags |= DAP_SOCK_READY_TO_READ;
@@ -1281,6 +1295,7 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
         }
         u_long l_mode = 1;
         ioctlsocket(a_esocket->socket2, (long)FIONBIO, &l_mode);
+        memset(a_esocket->buf_in, 0, 2 * sizeof(SOCKADDR_STORAGE) + 32);
         l_res = a_esocket->server->pfn_AcceptEx(a_esocket->socket, a_esocket->socket2,
                             (LPVOID)(a_esocket->buf_in),
                             0, /* Let's receive everything in separate WSARecv()... */
@@ -1303,7 +1318,8 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
     if (l_res == SOCKET_ERROR && WSAGetLastError() != ERROR_IO_PENDING) {
         log_it(L_ERROR, "Reading failed, errno %d", WSAGetLastError());
     } else if (!l_res) {
-        log_it(L_ATT, "[!] Reading completed immediately, received %lu bytes", a_esocket->buf_in_size);
+        log_it(L_ATT, "[!] Reading from %p : %zu (%s) completed immediately, received %lu bytes",
+               a_esocket, a_esocket->socket, dap_events_socket_get_type_str(a_esocket), a_esocket->buf_in_size);
         //if (!PostQueuedCompletionStatus(a_esocket->context->iocp, a_esocket->buf_in_size, (ULONG_PTR)a_esocket, &a_esocket->ol_in)) {
         //    log_it(L_ERROR, "Enqueue completion message failed, errno %lu", GetLastError());
         //}
@@ -1467,7 +1483,7 @@ void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_
 void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool preserve_inheritor )
 {
     assert(a_es);
-
+    log_it(L_ATT, "[!] Delete socket %p : %zu", a_es, a_es->socket);
     if( a_es->callbacks.delete_callback )
         a_es->callbacks.delete_callback( a_es, a_es->callbacks.arg ); // Init internal structure
     //log_it( L_DEBUG, "es is going to be removed from the lists and free the memory (0x%016X)", a_es );
@@ -1485,7 +1501,16 @@ void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
 {
 #ifdef DAP_OS_WINDOWS
     if ( a_esocket->socket && (a_esocket->socket != INVALID_SOCKET)) {
+        LINGER  lingerStruct;
+
+                    lingerStruct.l_onoff = 1;
+                    lingerStruct.l_linger = 30;
+                    setsockopt(a_esocket->socket, SOL_SOCKET, SO_LINGER,
+                               (char *)&lingerStruct, sizeof(lingerStruct) );
         closesocket( a_esocket->socket );
+    }
+    a_esocket->socket = a_esocket->socket2 = INVALID_SOCKET;
+}
 #else
     if ( a_esocket->socket && (a_esocket->socket != -1)) {
 #ifdef DAP_OS_BSD
@@ -1495,12 +1520,12 @@ void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
         if( a_esocket->fd2 > 0 ){
             close( a_esocket->fd2);
         }
-#endif
     }
     a_esocket->fd2 = -1;
     a_esocket->fd = -1;
     a_esocket->socket = INVALID_SOCKET;
 }
+#endif
 
 /**
  * @brief dap_events_socket_delete_unsafe
