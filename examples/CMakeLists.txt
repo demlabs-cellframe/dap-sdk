@@ -5,6 +5,7 @@ set(CMAKE_C_STANDARD 11)
 
 add_executable(${PROJECT_NAME} rng_example.c)
 
+target_include_directories(${PROJECT_NAME} INTERFACE ../crypto/src/rand/)
 #target_include_directories(rng_example INTERFACE
 #        ../3rdparty
 #        ../crypto/include
