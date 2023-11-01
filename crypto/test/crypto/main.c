@@ -47,7 +47,7 @@ int main(void) {
 
 
 #ifndef DAP_CRYPTO_MULTISIGN_TEST_OFF
-    // dap_enc_multi_sign_tests_run();
+    dap_enc_multi_sign_tests_run();
 #endif
 
     dap_enc_ringct20_tests_run(l_times);

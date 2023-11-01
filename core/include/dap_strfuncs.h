@@ -15,12 +15,6 @@
 #include "dap_math_ops.h"
 #include "dap_fnmatch.h"
 
-#define POINTER_TO_INT(p)   ((int)   (p))
-#define POINTER_TO_UINT(p)  ((unsigned int)  (p))
-
-#define INT_TO_POINTER(i)   ((void*)  (i))
-#define UINT_TO_POINTER(u)  ((void*)  (u))
-
 #ifdef __cplusplus
 extern "C" {
 #endif

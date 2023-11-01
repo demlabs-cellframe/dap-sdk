@@ -24,50 +24,55 @@
 #pragma once
 
 #include <pthread.h>
-#include "dap_proc_queue.h"
-#include "dap_worker.h"
 #include "dap_common.h"
-#include "dap_context.h"
-typedef struct dap_proc_thread{
 
-    dap_proc_queue_t *proc_queue;                                           /* Queues  */
-    atomic_uint proc_queue_size;                                            /* Thread's load factor - is not supported at the moment  */
+typedef struct dap_proc_thread dap_proc_thread_t;
+typedef struct dap_context dap_context_t;
+/// Callback for processor. Returns TRUE for repeat
+typedef bool (*dap_proc_queue_callback_t)(dap_proc_thread_t *a_thread, void *a_arg);
 
-    dap_events_socket_t * proc_event;                                       /* Should be armed if we have to deal with it */
+typedef enum dap_queue_msg_priority {
+    DAP_QUEUE_MSG_PRIORITY_IDLE = 0,                                        /* Lowest priority (Idle). Don't use Idle if u are not sure that understand how it works */
+    DAP_QUEUE_MSG_PRIORITY_LOW,                                             /* Low priority */
+    DAP_QUEUE_MSG_PRIORITY_NORMAL,                                          /* Default priority for any queue's entry, has assigned implicitly */
+    DAP_QUEUE_MSG_PRIORITY_HIGH,                                            /* High priority */
+    DAP_QUEUE_MSG_PRIORITY_CRITICAL,                                        /* Highest priority, critical for reaction time*/
+    DAP_QUEUE_MSG_PRIORITY_COUNT                                            /* End-of-list marker */
+} dap_queue_msg_priority_t;
 
-    dap_events_socket_t ** queue_assign_input;                              /* Inputs for assign queues */
-    dap_events_socket_t ** queue_io_input;                                  /* Inputs for assign queues */
-    dap_events_socket_t ** queue_callback_input;                            /* Inputs for worker context callback queues */
+#define DAP_QUEUE_MSG_PRIORITY_MIN DAP_QUEUE_MSG_PRIORITY_IDLE
+#define DAP_QUEUE_MSG_PRIORITY_MAX DAP_QUEUE_MSG_PRIORITY_CRITICAL
 
-    dap_events_socket_t *queue_gdb_input;                                   /* Inputs for request to GDB, @RRL: #6238 */
+typedef struct dap_proc_queue_item {
+     dap_proc_queue_callback_t  callback;                                   /* An address of the action routine */
+                          void *callback_arg;                               /* Address of the action routine argument */
+    struct dap_proc_queue_item *prev;
+    struct dap_proc_queue_item *next;
+} dap_proc_queue_item_t;
 
-    dap_context_t * context;
-
-    void * _inheritor;
+typedef struct dap_proc_thread {
+    pthread_mutex_t queue_lock;                                             /* To coordinate access to the queuee's entries */
+    pthread_cond_t queue_event;                                             /* Conditional variable for waiting thread event queue */
+    dap_proc_queue_item_t *queue[DAP_QUEUE_MSG_PRIORITY_COUNT];             /* List of the queue' entries in array of list according of priority numbers */
+    uint64_t proc_queue_size;                                               /* Thread's load factor */
+    dap_context_t *context;
 } dap_proc_thread_t;
-#define DAP_CONTEXT_TYPE_PROC_THREAD 1
+
+#define DAP_PROC_THREAD(a) (dap_proc_thread_t *)((a)->_inheritor);
 
 int dap_proc_thread_init(uint32_t a_threads_count);
 void dap_proc_thread_deinit();
-
+int dap_proc_thread_loop(dap_context_t *a_context);
 
 dap_proc_thread_t *dap_proc_thread_get(uint32_t a_thread_number);
 dap_proc_thread_t *dap_proc_thread_get_auto();
-dap_events_socket_t *dap_proc_thread_create_queue_ptr(dap_proc_thread_t * a_thread, dap_events_socket_callback_queue_ptr_t a_callback);
-
-bool dap_proc_thread_assign_on_worker_inter(dap_proc_thread_t * a_thread, dap_worker_t * a_worker, dap_events_socket_t *a_esocket  );
-
-int dap_proc_thread_esocket_write_inter(dap_proc_thread_t * a_thread,dap_worker_t * a_worker,  dap_events_socket_uuid_t a_es_uuid,
-                                        const void * a_data, size_t a_data_size);
-
-DAP_PRINTF_ATTR(4, 5) int dap_proc_thread_esocket_write_f_inter(dap_proc_thread_t *a_thread,
-                                                                dap_worker_t *a_worker,
-                                                                dap_events_socket_uuid_t a_es_uuid,
-                                                                const char *a_format,
-                                                                ...);
-
-typedef void (*dap_proc_worker_callback_t)(dap_worker_t *,void *);
-
-void dap_proc_thread_worker_exec_callback_inter(dap_proc_thread_t * a_thread, size_t a_worker_id, dap_proc_worker_callback_t a_callback, void * a_arg);
-
-int dap_proc_thread_assign_esocket_unsafe(dap_proc_thread_t * a_thread, dap_events_socket_t * a_esocket);
+int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, dap_queue_msg_priority_t a_priority);
+DAP_STATIC_INLINE int dap_proc_thread_callback_add(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg)
+{
+    return dap_proc_thread_callback_add_pri(a_thread, a_callback, a_callback_arg, DAP_QUEUE_MSG_PRIORITY_NORMAL);
+}
+int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, dap_queue_msg_priority_t a_priority);
+DAP_STATIC_INLINE int dap_proc_thread_timer_add(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms)
+{
+    return dap_proc_thread_timer_add_pri(a_thread, a_callback, a_callback_arg, a_timeout_ms, DAP_QUEUE_MSG_PRIORITY_NORMAL);
+}

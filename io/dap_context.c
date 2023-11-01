@@ -83,14 +83,15 @@
 #include "dap_context.h"
 #include "dap_list.h"
 #include "dap_worker.h"
-#include "dap_events_socket.h"
+#include "dap_events.h"
+#include "dap_proc_thread.h"
+#include "dap_worker.h"
 
 pthread_key_t g_dap_context_pth_key; // Thread-specific object with pointer on current context
 
 static void *s_context_thread(void *arg); // Context thread
 static int s_thread_init(dap_context_t * a_context);
 static int s_thread_loop(dap_context_t * a_context);
-static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags);
 
 pthread_rwlock_t s_contexts_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 dap_list_t * s_contexts = NULL;
@@ -135,8 +136,6 @@ dap_context_t * dap_context_new(int a_type)
    l_context->id = s_context_id_max;
    l_context->type = a_type;
    s_context_id_max++;
-
-   l_context->event_exit = dap_context_create_event( NULL, s_event_exit_callback);
 
    pthread_rwlock_wrlock(&s_contexts_rwlock);
    s_contexts = dap_list_prepend(s_contexts,l_context);
@@ -232,7 +231,20 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
 void dap_context_stop_n_kill(dap_context_t * a_context)
 {
     pthread_t l_thread_id = a_context->thread_id;
-    dap_events_socket_event_signal(a_context->event_exit, 1);
+    switch (a_context->type) {
+    case DAP_CONTEXT_TYPE_WORKER:
+        dap_events_socket_event_signal(a_context->event_exit, 1);
+        break;
+    case DAP_CONTEXT_TYPE_PROC_THREAD: {
+        dap_proc_thread_t *l_thread = DAP_PROC_THREAD(a_context);
+        pthread_mutex_lock(&l_thread->queue_lock);
+        a_context->signal_exit = true;
+        pthread_cond_signal(&l_thread->queue_event);
+        pthread_mutex_unlock(&l_thread->queue_lock);
+    }
+    default:
+        break;
+    }
     pthread_join(l_thread_id, NULL);
 }
 
@@ -304,42 +316,38 @@ static void *s_context_thread(void *a_arg)
     }
 #endif // DAP_OS_WINDOWS
 
-    if(s_thread_init(l_context)!=0){
-        // Can't initialize
-        if(l_msg->flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED ) {
-            pthread_mutex_lock(&l_context->started_mutex);
-            l_context->started = true;
-            pthread_cond_broadcast(&l_context->started_cond);
-            pthread_mutex_unlock(&l_context->started_mutex);
-        }
-        return NULL;
-    }
+    pthread_setspecific(g_dap_context_pth_key, l_context);
     // Now we're running and initalized for sure, so we can assign flags to the current context
     l_context->running_flags = l_msg->flags;
-
-    // Add pre-defined queues and events
-    dap_context_add(l_context, l_context->event_exit);
-
     l_context->is_running = true;
     // Started callback execution
-    l_msg->callback_started(l_context, l_msg->callback_arg);
-
-    // Initialization success
-    if(l_msg->flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED ){
+    if (l_msg->callback_started &&
+            l_msg->callback_started(l_context, l_msg->callback_arg))
+        // Can't initialize
+        l_context->signal_exit = true;
+    if (l_msg->flags & DAP_CONTEXT_FLAG_WAIT_FOR_STARTED) {
         pthread_mutex_lock(&l_context->started_mutex); // If we're too fast and calling thread haven't switched on cond_wait line
         l_context->started = true;
         pthread_cond_broadcast(&l_context->started_cond);
         pthread_mutex_unlock(&l_context->started_mutex);
     }
-
-    s_thread_loop(l_context);
-
+    if (l_context->signal_exit)
+        return NULL;
+    // Initialization success
+    switch (l_context->type) {
+    case DAP_CONTEXT_TYPE_WORKER:
+        dap_worker_thread_loop(l_context);
+        break;
+    case DAP_CONTEXT_TYPE_PROC_THREAD:
+        dap_proc_thread_loop(l_context);
+    default:
+        break;
+    }
     // Stopped callback execution
-    l_msg->callback_stopped(l_context, l_msg->callback_arg);
+    if (l_msg->callback_stopped)
+        l_msg->callback_stopped(l_context, l_msg->callback_arg);
 
     log_it(L_NOTICE,"Exiting context #%u", l_context->id);
-    dap_context_remove(l_context->event_exit);
-    dap_events_socket_delete_unsafe(l_context->event_exit, false);  // check ticket 9030
 
     // Removes from the list
     pthread_rwlock_wrlock(&s_contexts_rwlock);
@@ -354,61 +362,12 @@ static void *s_context_thread(void *a_arg)
     return NULL;
 }
 
-
-/**
- * @brief dap_context_thread_init
+/** Need be moved back to worker
+ * @brief dap_worker_thread_loop
  * @param a_context
  * @return
  */
-static int s_thread_init(dap_context_t * a_context)
-{
-    pthread_setspecific(g_dap_context_pth_key, a_context);
-
-#if defined(DAP_EVENTS_CAPS_KQUEUE)
-    a_context->kqueue_fd = kqueue();
-
-    if (a_context->kqueue_fd == -1 ){
-        int l_errno = errno;
-        char l_errbuf[255];
-        strerror_r(l_errno,l_errbuf,sizeof(l_errbuf));
-        log_it (L_CRITICAL,"Can't create kqueue(): '%s' code %d",l_errbuf,l_errno);
-        return -1;
-    }
-
-    a_context->kqueue_events_selected_count_max = 100;
-    a_context->kqueue_events_count_max = DAP_EVENTS_SOCKET_MAX;
-    a_context->kqueue_events_selected = DAP_NEW_Z_SIZE(struct kevent, a_context->kqueue_events_selected_count_max *sizeof(struct kevent));
-#elif defined(DAP_EVENTS_CAPS_POLL)
-    a_context->poll_count_max = DAP_EVENTS_SOCKET_MAX;
-    a_context->poll = DAP_NEW_Z_SIZE(struct pollfd,a_context->poll_count_max*sizeof (struct pollfd));
-    a_context->poll_esocket = DAP_NEW_Z_SIZE(dap_events_socket_t*,a_context->poll_count_max*sizeof (dap_events_socket_t*));
-#elif defined(DAP_EVENTS_CAPS_EPOLL)
-        a_context->epoll_fd = epoll_create( DAP_MAX_EVENTS_COUNT );
-        //log_it(L_DEBUG, "Created event_fd %d for context %u", a_context->epoll_fd,i);
-#ifdef DAP_OS_WINDOWS
-        if (!a_context->epoll_fd) {
-            int l_errno = WSAGetLastError();
-#else
-        if ( a_context->epoll_fd == -1 ) {
-            int l_errno = errno;
-#endif
-            char l_errbuf[128];
-            strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-            log_it(L_CRITICAL, "Error create epoll fd: %s (%d)", l_errbuf, l_errno);
-            return -1;
-        }
-#else
-#error "Unimplemented dap_context_init for this platform"
-#endif
-    return 0;
-}
-
-/**
- * @brief s_thread_loop
- * @param a_context
- * @return
- */
-static int s_thread_loop(dap_context_t * a_context)
+int dap_worker_thread_loop(dap_context_t * a_context)
 {
     int l_errno = 0, l_selected_sockets = 0;
     dap_events_socket_t *l_cur = NULL;
@@ -549,7 +508,9 @@ static int s_thread_loop(dap_context_t * a_context)
             case DESCRIPTOR_TYPE_SOCKET_CLIENT:
             case DESCRIPTOR_TYPE_SOCKET_UDP:
             case DESCRIPTOR_TYPE_SOCKET_LISTENING:
+#ifdef DAP_OS_UNIX
             case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
+#endif
             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
             case DESCRIPTOR_TYPE_TIMER:
             case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL:
@@ -582,6 +543,7 @@ static int s_thread_loop(dap_context_t * a_context)
             if( l_flag_hup ) {
                 switch (l_cur->type ){
                 case DESCRIPTOR_TYPE_SOCKET_UDP:
+                case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                 case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
                     getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size);
 #ifndef DAP_OS_WINDOWS
@@ -628,15 +590,16 @@ static int s_thread_loop(dap_context_t * a_context)
 
             if(l_flag_error) {
                 switch (l_cur->type ){
-                    case DESCRIPTOR_TYPE_SOCKET_LISTENING:
-                    case DESCRIPTOR_TYPE_SOCKET_CLIENT:
-                        getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size);
+                case DESCRIPTOR_TYPE_SOCKET_LISTENING:
+                case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+                case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+                    getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size);
 #ifdef DAP_OS_WINDOWS
-                        log_it(L_ERROR, "Winsock error: %d", l_sock_err);
+                    log_it(L_ERROR, "Winsock error: %d", l_sock_err);
 #else
-                        log_it(L_ERROR, "Socket error: %s", strerror(l_sock_err));
+                    log_it(L_ERROR, "Socket error: %s", strerror(l_sock_err));
 #endif
-                    default: ;
+                default: ;
                 }
                 dap_events_socket_set_readable_unsafe(l_cur, false);
                 dap_events_socket_set_writable_unsafe(l_cur, false);
@@ -705,13 +668,24 @@ static int s_thread_loop(dap_context_t * a_context)
 #endif
                     }
                     break;
-                    case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
+
                     case DESCRIPTOR_TYPE_SOCKET_LISTENING:
+#ifdef DAP_OS_UNIX
+                    case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
+#endif
                         // Accept connection
-                        if ( l_cur->callbacks.accept_callback){
-                            struct sockaddr l_remote_addr;
-                            socklen_t l_remote_addr_size= sizeof (l_remote_addr);
-                            SOCKET l_remote_socket = accept(l_cur->socket ,&l_remote_addr,&l_remote_addr_size);
+                        if (l_cur->callbacks.accept_callback) {
+                            struct sockaddr_storage l_remote_addr;
+                            void *l_remote_addr_ptr = &l_remote_addr;
+                            socklen_t l_remote_addr_size = sizeof(l_remote_addr);
+#ifdef DAP_OS_UNIX
+                            struct sockaddr_un l_remote_path;
+                            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING) {
+                                l_remote_addr_ptr = &l_remote_path;
+                                l_remote_addr_size = sizeof(l_remote_path);
+                            }
+#endif
+                            SOCKET l_remote_socket = accept(l_cur->socket, (struct sockaddr *)l_remote_addr_ptr, &l_remote_addr_size);
 #ifdef DAP_OS_WINDOWS
                             /*u_long l_mode = 1;
                             ioctlsocket((SOCKET)l_remote_socket, (long)FIONBIO, &l_mode); */
@@ -739,7 +713,7 @@ static int s_thread_loop(dap_context_t * a_context)
                                 }
                             }
 #endif
-                            l_cur->callbacks.accept_callback(l_cur,l_remote_socket,&l_remote_addr);
+                            l_cur->callbacks.accept_callback(l_cur, l_remote_socket, l_remote_addr_ptr);
                         }else
                             log_it(L_ERROR,"No accept_callback on listening socket");
                     break;
@@ -822,6 +796,7 @@ static int s_thread_loop(dap_context_t * a_context)
             // Possibly have data to read despite EPOLLRDHUP
             if (l_flag_rdhup){
                 switch (l_cur->type ){
+                    case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL:
@@ -906,6 +881,7 @@ static int s_thread_loop(dap_context_t * a_context)
 
                 if ( l_cur->context && l_flag_write ){ // esocket wasn't unassigned in callback, we need some other ops with it
                         switch (l_cur->type){
+                            case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
                                 l_bytes_sent = send(l_cur->socket, (const char *)l_cur->buf_out,
                                                     l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
@@ -1050,7 +1026,7 @@ static int s_thread_loop(dap_context_t * a_context)
                     }else{
                         //log_it(L_DEBUG, "Output: %u from %u bytes are sent ", l_bytes_sent,l_cur->buf_out_size);
                         if (l_bytes_sent) {
-                            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT  || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
+                            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
                                 l_cur->last_time_active = l_cur_time;
                             }
                             if ( l_bytes_sent <= (ssize_t) l_cur->buf_out_size ){
@@ -1156,20 +1132,6 @@ static int s_thread_loop(dap_context_t * a_context)
     log_it(L_ATT,"Context :%u finished", a_context->id);
     return 0;
 }
-
-/**
- * @brief s_event_exit_callback
- * @param a_es
- * @param a_flags
- */
-static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags)
-{
-    (void) a_flags;
-    a_es->context->signal_exit = true;
-    if(g_debug_reactor)
-        log_it(L_DEBUG, "Context #%u signaled to exit", a_es->context->id);
-}
-
 
 /**
  * @brief dap_context_poll_update
@@ -1302,9 +1264,9 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
         log_it(L_WARNING, "Can't add NULL esocket to the context");
         return -1;
     }
-    if(a_context == NULL){
-        log_it(L_WARNING, "Can't add esocket to the NULL context");
-        return -1;
+    if (a_context == NULL || a_context->type != DAP_CONTEXT_TYPE_WORKER) {
+        log_it(L_WARNING, "Can't add esocket to the bad context");
+        return -2;
     }
 
     if(g_debug_reactor){
@@ -1318,7 +1280,6 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
     if(a_es->flags & DAP_SOCK_READY_TO_WRITE )
         a_es->ev.events |= EPOLLOUT;
     a_es->ev.data.ptr = a_es;
-    a_es->context = a_context;
     int l_ret = epoll_ctl(a_context->epoll_fd, EPOLL_CTL_ADD, a_es->socket, &a_es->ev);
     if (l_ret != 0 ){
         l_is_error = true;
@@ -1342,7 +1303,6 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
 
     a_context->poll_esocket[a_context->poll_count] = a_es;
     a_context->poll_count++;
-    a_es->context = a_context;
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     if ( a_es->type == DESCRIPTOR_TYPE_QUEUE ){
         goto lb_exit;
@@ -1404,11 +1364,12 @@ lb_exit:
         char l_errbuf[128];
         l_errbuf[0]=0;
         strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        log_it(L_ERROR,"Can't update client socket state on poll/epoll/kqueue fd %d: \"%s\" (%d)",
+        log_it(L_ERROR,"Can't update client socket state on poll/epoll/kqueue fd %" DAP_FORMAT_SOCKET ": \"%s\" (%d)",
             a_es->socket, l_errbuf, l_errno);
         return l_errno;
     }else{
         a_es->context = a_context;
+        a_es->worker = DAP_WORKER(a_context);
         // Add in context HT
         dap_events_socket_t * l_a_es_found = NULL;
         if (a_es->socket!=0 && a_es->socket != INVALID_SOCKET){

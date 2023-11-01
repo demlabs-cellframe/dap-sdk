@@ -22,10 +22,7 @@
  along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-//#include "cuttdb.h"
-#include "cdb_core.h"
 #include "dap_global_db_driver.h"
-#define UNUSED(x) (void)(x)
 
 typedef struct _cdb_options {
     int hsize;      // Main hash table size, 1%-10% of total records, immutable
@@ -42,7 +39,7 @@ int dap_db_driver_cdb_init(const char *, dap_db_driver_callbacks_t *);
 int dap_db_driver_cdb_deinit();
 int dap_db_driver_cdb_flush(void);
 
-int dap_db_driver_cdb_apply_store_obj(pdap_store_obj_t);
+int dap_db_driver_cdb_apply_store_obj(dap_store_obj_t *);
 
 dap_store_obj_t *dap_db_driver_cdb_read_last_store_obj(const char*);
 dap_store_obj_t *dap_db_driver_cdb_read_store_obj(const char*, const char*, size_t*);

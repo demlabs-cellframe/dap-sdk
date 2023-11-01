@@ -32,22 +32,18 @@
 #include "dap_stream_session.h"
 #include "dap_timerfd.h"
 #include "dap_sign.h"
-
-/*  #define CHUNK_SIZE_MAX (3 * 1024)
-    #define STREAM_BUF_SIZE_MAX DAP_STREAM_PKT_SIZE_MAX
-*/
+#include "dap_cert.h"
+#include "dap_pkey.h"
+#include "dap_enc_ks.h"
 
 #define STREAM_KEEPALIVE_TIMEOUT 3   // How  often send keeplive messages (seconds)
 
 typedef struct dap_stream_ch dap_stream_ch_t;
 typedef struct dap_stream_worker dap_stream_worker_t;
-
-typedef enum dap_stream_sign_group {
-    UNSIGNED = 0,
-    BASE_NODE_SIGN,
-} dap_stream_sign_group_t;
+typedef struct dap_cluster dap_cluster_t;
 
 typedef struct dap_stream {
+    dap_stream_node_addr_t node;
     int id;
     dap_stream_session_t * session;
     dap_events_socket_t * esocket; // Connection
@@ -59,7 +55,7 @@ typedef struct dap_stream {
     bool is_active;
 
     char * service_key;
-    bool is_client_to_uplink ;
+    bool is_client_to_uplink;
 
     struct dap_stream_pkt * in_pkt;
     struct dap_stream_pkt *pkt_buf_in;
@@ -70,27 +66,73 @@ typedef struct dap_stream {
     size_t buf_fragments_size_total;// Full size of all fragments
     size_t buf_fragments_size_filled;// Received size
 
-    //uint8_t buf[STREAM_BUF_SIZE_MAX];
-    //uint8_t pkt_cache[DAP_EVENTS_SOCKET_BUF_SIZE];
-
     dap_stream_ch_t **channel;
     size_t channel_count;
-
-    size_t frame_sent; // Frame counter
 
     size_t seq_id;
     size_t stream_size;
     size_t client_last_seq_id_packet;
 
+    UT_hash_handle hh;
     struct dap_stream *prev, *next;
-
-    dap_stream_sign_group_t sign_group;
-    dap_stream_node_addr_t node;
 } dap_stream_t;
 
-typedef void (*dap_stream_callback)(dap_stream_t *, void *);
+typedef struct dap_stream_info {
+    dap_stream_node_addr_t node_addr;
+    char *remote_addr_str;
+    uint16_t remote_port;
+    char *channels;
+    size_t total_packets_sent;
+    bool is_uplink;
+} dap_stream_info_t;
+
+DAP_STATIC_INLINE bool dap_stream_node_addr_str_check(const char *a_addr_str)
+{
+    if (!a_addr_str)
+        return false;
+    size_t l_str_len = strlen(a_addr_str);
+    if (l_str_len == 22) {
+        for (int n =0; n < 22; n+= 6) {
+            if (!dap_is_xdigit(a_addr_str[n]) || !dap_is_xdigit(a_addr_str[n + 1]) ||
+                !dap_is_xdigit(a_addr_str[n + 2]) || !dap_is_xdigit(a_addr_str[n + 3])) {
+                return false;
+            }
+        }
+        for (int n = 4; n < 18; n += 6) {
+            if (a_addr_str[n] != ':' || a_addr_str[n + 1] != ':')
+                return false;
+        }
+        return true;
+    }
+    return false;
+}
+
+DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str)
+{
+    if (!a_addr || !a_addr_str){
+        return -1;
+    }
+    if (sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4)
+        return 0;
+    if (sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, &a_addr->uint64) == 1)
+        return 0;
+    return -1;
+}
+
+DAP_STATIC_INLINE bool dap_stream_node_addr_not_null(dap_stream_node_addr_t * a_addr) { return a_addr->uint64 != 0; }
+
+DAP_STATIC_INLINE void dap_stream_node_addr_from_hash(dap_hash_fast_t *a_hash, dap_stream_node_addr_t *a_node_addr)
+{
+    // Copy fist four and last four octets of hash to fill node addr
+    a_node_addr->words[3] = *(uint16_t *)a_hash->raw;
+    a_node_addr->words[2] = *(uint16_t *)(a_hash->raw + sizeof(uint16_t));
+    a_node_addr->words[1] = *(uint16_t *)(a_hash->raw + DAP_CHAIN_HASH_FAST_SIZE - sizeof(uint16_t) * 2);
+    a_node_addr->words[0] = *(uint16_t *)(a_hash->raw + DAP_CHAIN_HASH_FAST_SIZE - sizeof(uint16_t));
+}
 
 #define DAP_STREAM(a) ((dap_stream_t *) (a)->_inheritor )
+
+extern dap_stream_node_addr_t g_node_addr;
 
 int dap_stream_init(dap_config_t * g_config);
 
@@ -108,16 +150,21 @@ size_t dap_stream_data_proc_write(dap_stream_t * a_stream);
 void dap_stream_delete_unsafe(dap_stream_t * a_stream);
 void dap_stream_proc_pkt_in(dap_stream_t * sid);
 
-void dap_stream_es_rw_states_update(struct dap_stream *a_stream);
 void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
+dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es);
 
 // autorization stream block
 int dap_stream_add_addr(dap_stream_node_addr_t a_addr, void *a_id);
 int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full);
 int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
-int dap_stream_change_id(void  *a_old, uint64_t a_new);
-dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t a_addr, dap_worker_t **a_worker);
-dap_stream_node_addr_t dap_stream_get_addr_from_sign(dap_sign_t *a_sign);
+int dap_stream_change_id(void *a_old, uint64_t a_new);
+dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr, dap_worker_t **a_worker);
+dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign);
+dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert);
+dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey);
+dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count);
+void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count);
+void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);

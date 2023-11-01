@@ -22,20 +22,14 @@
 extern "C" {
 #endif
 
-typedef void (*dap_callback_destroyed_t)(void*);
-typedef void (*dap_callback_t)(void*, void*);
-typedef void *(*dap_callback_copy_t)(const void*, void*);
-typedef int (*dap_callback_compare_t)(const void*, const void*);
-typedef int (*dap_callback_compare_data_t)(const void*, const void*, void*);
-
-/*typedef struct _dap_list dap_list_t;*/
-
-typedef struct __dap_list__
-{
-    void* data;
-    //uint64_t size;
+typedef struct __dap_list__ {
+    void *data;
     struct __dap_list__ *next, *prev;
 } dap_list_t;
+
+typedef void (*dap_callback_destroyed_t)(void *a_free_func);
+typedef int (*dap_callback_compare_t)(dap_list_t *a_list1, dap_list_t *a_list2);
+typedef void *(*dap_callback_copy_t)(const void *a_data, void *a_user_arg);
 
 /* Doubly linked lists
  */
@@ -64,6 +58,7 @@ dap_list_t* dap_list_first(dap_list_t*);
 uint64_t dap_list_length(dap_list_t*);
 dap_list_t* dap_list_sort(dap_list_t*, dap_callback_compare_t);
 void* dap_list_nth_data(dap_list_t*, uint64_t);
+dap_list_t *dap_list_shuffle(dap_list_t *a_list);
 
 #define dap_list_prev(list) ((dap_list_t*)(list))->prev
 #define dap_list_next(list)	((dap_list_t*)(list))->next

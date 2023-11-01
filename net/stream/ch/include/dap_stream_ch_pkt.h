@@ -53,6 +53,8 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
 
 DAP_PRINTF_ATTR(4, 5) size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t *a_worker , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char *a_str, ...);
 size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch_uuid_t a_ch_uuid,  uint8_t a_type, const void * a_data, size_t a_data_size);
+// Write on channel by stream events socket UUID
+size_t dap_stream_ch_pkt_send_mt(dap_stream_worker_t *a_worker, dap_events_socket_uuid_t a_uuid, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
 
 DAP_PRINTF_ATTR(4, 5) size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t *a_queue , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char *a_str, ...);
 size_t dap_stream_ch_pkt_write_inter(dap_events_socket_t * a_queue_input , dap_stream_ch_uuid_t a_ch_uuid,  uint8_t a_type, const void * a_data, size_t a_data_size);
