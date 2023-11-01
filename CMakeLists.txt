@@ -41,6 +41,10 @@ ExternalProject_Add(dap_json-c_dep
                     SOURCE_DIR ${PROJECT_SOURCE_DIR}/dap-sdk/3rdparty/json-c/
                     CONFIGURE_COMMAND ${JSON-C-CONFIG_COMMAND})
 
+if (INSTALL_DAP_SDK)
+    INSTALL(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/deps/ DESTINATION ./)
+endif()
+
 if (CELLFRAME_MODULES MATCHES "core")
     SET(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
 endif()

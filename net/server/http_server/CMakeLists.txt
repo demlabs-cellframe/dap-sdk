@@ -52,3 +52,11 @@ if(UNIX)
   target_include_directories(${PROJECT_NAME} PUBLIC ${IPUTILS_INCLUDE_DIRS})
 endif()
 
+if(INSTALL_DAP_SDK)
+set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${HTTP_SERVER_HDRS}")
+INSTALL(TARGETS ${PROJECT_NAME} 
+        LIBRARY DESTINATION lib/dap/net/server/http_server/
+        ARCHIVE DESTINATION lib/dap/net/server/http_server/
+        PUBLIC_HEADER DESTINATION include/dap/net/server/http_server/
+)
+endif()
