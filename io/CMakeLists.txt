@@ -9,7 +9,7 @@ file(GLOB DAP_IO_SOURCES *.c)
 file(GLOB DAP_IO_HEADERS include/*.h)
 if(WIN32)
     set(DAP_IO_SOURCES ${DAP_IO_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/wepoll/wepoll.c)
-    set(DAP_IO_HEADERS ${DAP_IO_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/wepoll/wepoll.h)
+    set(DAP_IO_HEADERS ${DAP_IO_HEADERS} ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/wepoll/wepoll.h)
     include_directories(../3rdparty/wepoll)
 endif()
 
