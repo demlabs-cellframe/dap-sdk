@@ -140,6 +140,6 @@ elseif(ANDROID)
     include_directories(3rdparty/)
 endif()
 
-if (NOT CELLFRAME_MODULES)
-    add_subdirectory(examples)
+if (LINUX)
+    add_subdirectory(examples) #We are putting together an example for Linux only.
 endif()
