@@ -45,3 +45,6 @@ target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
 
+if (BUILD_GLOBAL_DB_TEST)
+    add_subdirectory(test)
+endif()

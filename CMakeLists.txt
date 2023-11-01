@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.10)
+project(DAP_SDK_NATIVE C)
 set(DAP_SDK_NATIVE_VERSION "2.3-0")
 
 include(ExternalProject)
@@ -38,11 +40,16 @@ endif()
 message("json-c build cmd ${JSON-C-CONFIG_COMMAND}")
 
 ExternalProject_Add(dap_json-c_dep
-                    SOURCE_DIR ${PROJECT_SOURCE_DIR}/dap-sdk/3rdparty/json-c/
+                    SOURCE_DIR ${PROJECT_SOURCE_DIR}/3rdparty/json-c/
                     CONFIGURE_COMMAND ${JSON-C-CONFIG_COMMAND})
 
+
+include(cmake/OS_Detection.cmake)
 if (CELLFRAME_MODULES MATCHES "core")
     SET(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
+    if (BUILD_DAP_TESTS)
+        SET(BUILD_CRYPTO_TESTS ON)
+    endif()
 endif()
 
 if (CELLFRAME_MODULES MATCHES "chains")
@@ -69,6 +76,22 @@ else()
 endif()
 
 # Core, add it always
+if (BUILD_DAP_SDK_TESTS)
+    enable_testing()
+    add_subdirectory(test-framework)
+    set(BUILD_DAP_TESTS ON)
+    set(BUILD_CRYPTO_TESTS ON)
+#    set(BUILD_WITH_GDB_DRIVER_MDBX ON)
+#    set(BUILD_GLOBAL_DB_TEST ON)
+    set(DAPSDK_MODULES "crypto io network-core network-server network-client global-db")
+#    add_definitions("-DDAP_CHAIN_GDB_ENGINE_MDBX")
+#    set(DAPSDK_MODULES ${DAPSDK_MODULES} global-db)
+    message("[+] Enable dap_sdk_tests")
+endif ()
+if (CELLFRAME_MODULES MATCHES "test-framework")
+    add_subdirectory(test-framework)
+endif()
+
 add_subdirectory(core)
 if (DAPSDK_MODULES MATCHES "crypto")
     # Cryptography
@@ -124,11 +147,3 @@ elseif(ANDROID)
 endif()
 add_subdirectory(3rdparty/crc32c_adler)             # https://github.com/fonic/crc32c_adler
 include_directories(3rdparty/crc32c_adler)
-
-#if(BUILD_DAP_TESTS)
-#    file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/test/main_test.py
-#            DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/)
-#    enable_testing()
-#    add_subdirectory(test)
-#    add_subdirectory(examples)
-#endif()
