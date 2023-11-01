@@ -87,7 +87,7 @@ typedef int SOCKET;
 
 #ifdef DAP_EVENTS_CAPS_IOCP
 #include <mswsock.h>
-#define MAX_IOCP_ENTRIES 0xf // Maximum count of IOCP entries to retireve at once
+#define MAX_IOCP_ENTRIES 0xf // Maximum count of IOCP entries to fetch at once
 #endif
 #if defined(DAP_EVENTS_CAPS_WEPOLL)
 #define EPOLL_HANDLE  HANDLE

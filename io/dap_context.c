@@ -431,25 +431,20 @@ static int s_thread_loop(dap_context_t * a_context)
     DWORD l_bytes = 0, l_entires_num = 0;
     OVERLAPPED_ENTRY l_ols[MAX_IOCP_ENTRIES];
     do {
-        DWORD l_transferred = 0;
-        ULONG_PTR l_cur_ptr;
-        LPOVERLAPPED l_cur_ol = NULL;
-        if (!GetQueuedCompletionStatus(a_context->iocp, &l_transferred, &l_cur_ptr, &l_cur_ol, INFINITE)) {
-        //if (!GetQueuedCompletionStatusEx(a_context->iocp, l_ols, MAX_IOCP_ENTRIES, &l_entires_num, INFINITE, FALSE)) {
+        if (!GetQueuedCompletionStatusEx(a_context->iocp, l_ols, MAX_IOCP_ENTRIES, &l_entires_num, INFINITE, FALSE)) {
             log_it(L_ERROR, "GetQueuedCompletionStatus failed, errno %lu", GetLastError());
             continue;
         }
+        DWORD l_transferred = 0;
         log_it(L_ATT, "[!] Completed %lu items", l_entires_num);
-        //for (ULONG i = 0; i < l_entires_num; ++i) {
-            //LPOVERLAPPED l_cur_ol = l_ols[i].lpOverlapped;
+        for (ULONG i = 0; i < l_entires_num; ++i) {
+            LPOVERLAPPED l_cur_ol = l_ols[i].lpOverlapped;
             if (!l_cur_ol) {
                 log_it(L_ERROR, "Dequeuing from IOCP failed, errno %d, dump it", WSAGetLastError());
                 continue;
             }
-            l_cur = (dap_events_socket_t*)l_cur_ptr; //l_ols[i].lpCompletionKey;
-            //if (i > 0 && l_ols[i].lpCompletionKey == l_ols[i-1].lpCompletionKey)
-            //    continue;
-            log_it(L_MSG, "Dequeued %p [%s]", l_cur, dap_events_socket_get_type_str(l_cur));
+            l_cur = (dap_events_socket_t*)l_ols[i].lpCompletionKey;
+            log_it(L_MSG, "Completed %p [%s]", l_cur, dap_events_socket_get_type_str(l_cur));
             if (!l_cur || !l_cur->context) {
                 log_it(L_ATT, "An already destroyed es, skip it");
                 continue;
@@ -458,7 +453,7 @@ static int s_thread_loop(dap_context_t * a_context)
                        l_cur, l_cur->socket, dap_events_socket_get_type_str(l_cur));
                 continue;
             }
-            //DWORD l_transferred = l_ols[i].dwNumberOfBytesTransferred;
+            l_transferred = l_ols[i].dwNumberOfBytesTransferred;
             log_it(L_ATT, "[!] Bytes transferred %lu, buf out size %lu", l_transferred, l_cur->buf_out_size);
             if (!l_transferred) {
                 log_it(L_ERROR, "[!] Zero bytes transferred. Need to investigate...");
@@ -673,7 +668,7 @@ static int s_thread_loop(dap_context_t * a_context)
             if (l_cur->flags & DAP_SOCK_SIGNAL_CLOSE) {
                 dap_events_socket_remove_and_delete_unsafe(l_cur, false);
             }
-        //}
+        }
 
     } while (!a_context->signal_exit);
     log_it(L_ATT,"Context %u finished", a_context->id);

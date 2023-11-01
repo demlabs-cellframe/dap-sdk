@@ -1293,9 +1293,8 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
             log_it(L_ERROR, "Failed to create socket for accept()'ing, errno %d", WSAGetLastError());
             return;
         }
-        u_long l_mode = 1;
-        ioctlsocket(a_esocket->socket2, (long)FIONBIO, &l_mode);
-        memset(a_esocket->buf_in, 0, 2 * sizeof(SOCKADDR_STORAGE) + 32);
+        //u_long l_mode = 1;
+        //ioctlsocket(a_esocket->socket2, (long)FIONBIO, &l_mode);
         l_res = a_esocket->server->pfn_AcceptEx(a_esocket->socket, a_esocket->socket2,
                             (LPVOID)(a_esocket->buf_in),
                             0, /* Let's receive everything in separate WSARecv()... */
