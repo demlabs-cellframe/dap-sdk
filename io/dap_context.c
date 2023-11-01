@@ -116,6 +116,11 @@ int dap_context_init()
     return 0;
 }
 
+void dap_context_current_print(pthread_key_t g_dap_context_pth_key)
+{
+        log_it(L_ATT, "[!] Not found data by key %d in LTS", g_dap_context_pth_key);
+}
+
 void dap_context_deinit()
 {
     pthread_key_delete(g_dap_context_pth_key);
@@ -371,6 +376,9 @@ static int s_thread_init(dap_context_t * a_context)
         return -1;
     }
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
+    log_it(L_ATT, "[!] Assign %p : %d to LTS by key %d (thread %ld)",
+           a_context, a_context->type, g_dap_context_pth_key, a_context->thread_id);
+
     a_context->kqueue_fd = kqueue();
 
     if (a_context->kqueue_fd == -1 ){
