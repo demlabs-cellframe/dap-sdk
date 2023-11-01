@@ -3,12 +3,6 @@ project (dap_core)
 
 add_definitions("-D_GNU_SOURCE") 
 
-file(GLOB CORE_SRCS
-    src/*.c
-    src/etc/*.c
-    src/rpmalloc/*.c
-)
-
 if(UNIX)
   file(GLOB CORE_HEADERS 
       include/*.h 
@@ -26,10 +20,21 @@ if(UNIX)
   )
 endif()
 
+
 if(WIN32)
+
+file(GLOB CORE_SRCS
+    src/*.c
+    src/etc/*.c
+    src/rpmalloc/*.c
+    src/win32/*.c
+)
+
   file(GLOB CORE_HEADERS 
       include/*.h 
+      src/win32/*.h 
   )
+
 endif()
 
 add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
