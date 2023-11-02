@@ -33,23 +33,23 @@ extern "C" {
 
 #define DAP_PICNIC_SIGN_PARAMETR 1//determination of the scheme and level of resistance {1-6}
 
-void dap_enc_sig_picnic_key_new(struct dap_enc_key *key);
+void dap_enc_sig_picnic_key_new(dap_enc_key_t *key);
 
-void dap_enc_sig_picnic_key_delete(struct dap_enc_key *key);
+void dap_enc_sig_picnic_key_delete(dap_enc_key_t *key);
 
-void dap_enc_sig_picnic_update(struct dap_enc_key * key);
+void dap_enc_sig_picnic_update(dap_enc_key_t *key);
 
-void dap_enc_sig_picnic_key_new_generate(struct dap_enc_key * key, const void *kex_buf, size_t kex_size,
+void dap_enc_sig_picnic_key_new_generate(dap_enc_key_t *key, const void *kex_buf, size_t kex_size,
         const void * seed, size_t seed_size,
         size_t key_size);
 
-size_t dap_enc_sig_picnic_get_sign(struct dap_enc_key * key, const void* message, size_t message_len,
-        void* signature, size_t signature_len);
+int dap_enc_sig_picnic_get_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_len,
+        void *a_sig, size_t a_sig_len);
 
-size_t dap_enc_sig_picnic_verify_sign(struct dap_enc_key * key, const void* message, size_t message_len,
-        void* signature, size_t signature_len);
+int dap_enc_sig_picnic_verify_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_len,
+        void* a_sig, size_t a_sig_len);
 
-size_t dap_enc_picnic_calc_signature_size(struct dap_enc_key *key);
+size_t dap_enc_picnic_calc_signature_size(dap_enc_key_t *key);
 
 #ifdef __cplusplus
 }

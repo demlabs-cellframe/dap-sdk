@@ -70,6 +70,8 @@ const uint256_t uint256_max = {.hi = uint128_max, .lo = uint128_max};
 
 const uint512_t uint512_0 = {};
 
+const char *g_error_memory_alloc = "Memory allocation error";
+
 static const char *s_log_level_tag[ 16 ] = {
     " [DBG] ", // L_DEBUG     = 0
     " [INF] ", // L_INFO      = 1,
@@ -200,6 +202,92 @@ void dap_set_log_tag_width(size_t a_width) {
     snprintf(s_log_tag_fmt_str,sizeof (s_log_tag_fmt_str), "[%%%zds]\t",a_width);
 }
 
+
+/**
+ * @brief dap_del_z_all
+ * DAP_FREE n args
+ * @param int a_count - count deleted args
+ * @param void* a_to_delete
+ */
+void dap_delete_multy(int a_count, ...)
+{
+    if (a_count <= 0) {
+        log_it(L_ERROR, "Wrong count in DAP_DELETE macros, maybe many args?");
+        return;
+    }
+    va_list l_args_list;
+    va_start(l_args_list, a_count);
+    while (a_count > 0) {
+        void *l_to_delete = va_arg(l_args_list, void*);
+        DAP_DEL_Z(l_to_delete);
+        a_count--;
+    }
+    va_end(l_args_list);
+}
+
+/**
+ * @brief dap_serialize_multy - serialize args to one uint8_t *l_ret. Args count should be even.
+ * @param a_data - pointer to write data, if NULL - allocate needed memory
+ * @param a_size - total out size
+ * @param a_count - args count, should be even
+ * @return pointer if pass, else NULL
+ */
+uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...)
+{
+    dap_return_val_if_pass(!a_size || a_count % 2, NULL);
+
+    uint8_t *l_ret = a_data;
+    // allocate memory, if need
+    if (!l_ret)
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret, uint8_t, a_size, NULL, NULL);
+    uint64_t l_shift_mem = 0;
+    va_list l_args;
+    va_start(l_args, a_count);
+    for (int i = 0; i < a_count / 2; ++i) {
+        uint8_t *l_arg = va_arg(l_args, uint8_t *);
+        uint64_t l_size = va_arg(l_args, uint64_t);
+        memcpy(l_ret + l_shift_mem, l_arg, l_size);
+        l_shift_mem += l_size;
+    }
+    if (l_shift_mem != a_size) {
+        log_it(L_WARNING, "Error size in the object serialize. %"DAP_UINT64_FORMAT_U" != %"DAP_UINT64_FORMAT_U"", l_shift_mem, a_size);
+    }
+    va_end(l_args);
+    return l_ret;
+}
+
+/**
+ * @brief dap_deserialize_multy - deserialize uint8_t *a_data to args. Args count should be even.
+ * @param a_data - pointer to read data
+ * @param a_size - total out size
+ * @param a_count - args count, should be even, memory NOT allocating
+ * @return 0 if pass, other if error
+ */
+int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, ...)
+{
+    dap_return_val_if_pass(!a_size || a_count % 2, -1);
+
+    uint8_t *l_ret = a_data;
+
+    uint64_t l_shift_mem = 0;
+    va_list l_args;
+    va_start(l_args, a_count);
+    for (int i = 0; i < a_count / 2; ++i) {
+        uint8_t *l_arg = va_arg(l_args, uint8_t *);
+        uint64_t l_size = va_arg(l_args, uint64_t);
+        if (l_shift_mem + l_size > a_size) {
+            log_it(L_ERROR, "Error size in the object deserialize. %"DAP_UINT64_FORMAT_U" > %"DAP_UINT64_FORMAT_U"", l_shift_mem + l_size, a_size);
+            return -2;
+        }
+        memcpy(l_arg, a_data + l_shift_mem, l_size);
+        l_shift_mem += l_size;
+    }
+    if (l_shift_mem != a_size) {
+        log_it(L_WARNING, "Error size in the object deserialize. %"DAP_UINT64_FORMAT_U" != %"DAP_UINT64_FORMAT_U"", l_shift_mem, a_size);
+    }
+    va_end(l_args);
+    return 0;
+}
 
 /**
  * @brief this function is used for dap sdk modules initialization
@@ -1305,7 +1393,6 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
     return l_res;
 #endif
 }
-
 
 #ifdef  DAP_SYS_DEBUG
 dap_memstat_rec_t    *g_memstat [MEMSTAT$K_MAXNR];                      /* Array to keep pointers to module/facility specific memstat vecros */
