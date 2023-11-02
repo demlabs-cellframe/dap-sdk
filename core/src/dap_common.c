@@ -267,8 +267,6 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, .
 {
     dap_return_val_if_pass(!a_size || a_count % 2, -1);
 
-    uint8_t *l_ret = a_data;
-
     uint64_t l_shift_mem = 0;
     va_list l_args;
     va_start(l_args, a_count);

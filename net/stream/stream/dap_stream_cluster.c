@@ -273,7 +273,8 @@ char *dap_cluster_get_links_info(dap_cluster_t *a_cluster)
         dap_stream_delete_links_info(l_links_info, l_total_links_count);
     }
     assert(l_total_links_count == l_uplinks_count + l_downlinks_count);
-    dap_string_prepend_printf(l_str_out, "Total links: %zu\tUplinks: %zu\tDownlinks: %zu\n",
+    dap_string_append_printf(l_str_out, "-----------------------------------------------\n"
+                                        "Total links: %zu\tUplinks: %zu\tDownlinks: %zu\n",
                                 l_total_links_count, l_uplinks_count, l_downlinks_count);
     char *l_ret = l_str_out->str;
     dap_string_free(l_str_out, false);

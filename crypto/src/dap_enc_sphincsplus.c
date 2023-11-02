@@ -1,6 +1,7 @@
 #include "dap_enc_sphincsplus.h"
 #include "sphincsplus/randombytes.h"
 #include "api.h"
+#include "dap_hash.h"
 
 #define LOG_TAG "dap_enc_sig_sphincsplus"
 
@@ -215,7 +216,7 @@ sphincsplus_private_key_t *dap_enc_sphincsplus_read_private_key(const uint8_t *a
     uint64_t l_skey_len = a_buflen -  sizeof(uint64_t) - sizeof(sphincsplus_base_params_t);
 
     sphincsplus_private_key_t *l_skey = NULL;
-    DAP_NEW_Z_RET_VAL(l_skey, sphincsplus_public_key_t, NULL, NULL);
+    DAP_NEW_Z_RET_VAL(l_skey, sphincsplus_private_key_t, NULL, NULL);
     DAP_NEW_Z_SIZE_RET_VAL(l_skey->data, uint8_t, l_skey_len, NULL, l_skey);
 
     int l_res_des = dap_deserialize_multy(a_buf, a_buflen, 6, 

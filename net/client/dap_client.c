@@ -292,7 +292,7 @@ struct go_stage_arg {
  * @param a_worker
  * @param a_arg
  */
-static void s_go_stage_on_client_worker_unsafe(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
+static void s_go_stage_on_client_worker_unsafe(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
 {
     assert(a_arg);
     if (!a_arg) {

@@ -1106,8 +1106,8 @@ static bool s_callback_clusters_update(dap_proc_thread_t UNUSED_ARG *a_thread, v
 void s_stream_delete_from_list(dap_stream_t *a_stream)
 {
     dap_return_if_fail(a_stream);
-    DL_DELETE(s_streams, a_stream);
     pthread_rwlock_wrlock(&s_streams_lock);
+    DL_DELETE(s_streams, a_stream);
     if (a_stream->node.uint64) {
         // It's an authorized stream, try to replace it in hastable
         HASH_DEL(s_authorized_streams, a_stream);
@@ -1304,7 +1304,7 @@ dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a
     }
     pthread_rwlock_unlock(&s_streams_lock);
     if (a_count)
-        *a_count = i - 1;
+        *a_count = i;
     return l_ret;
 }
 
