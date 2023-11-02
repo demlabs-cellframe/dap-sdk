@@ -1321,7 +1321,7 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
                a_esocket, a_esocket->socket, dap_events_socket_get_type_str(a_esocket), a_esocket->buf_in_size);
         //if (!PostQueuedCompletionStatus(a_esocket->context->iocp, a_esocket->buf_in_size, (ULONG_PTR)a_esocket, &a_esocket->ol_in)) {
         //    log_it(L_ERROR, "Enqueue completion message failed, errno %lu", GetLastError());
-        //}
+        //} // It's autoposting implicitly
     }
 
     return;
@@ -1377,13 +1377,81 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
 void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool a_is_ready )
 {
 #ifdef DAP_EVENTS_CAPS_IOCP
-    a_esocket->flags = a_is_ready
-            ? a_esocket->flags | DAP_SOCK_READY_TO_WRITE
-            : a_esocket->flags & ~DAP_SOCK_READY_TO_WRITE;
-
-    if (!PostQueuedCompletionStatus(a_esocket->context->iocp, a_esocket->buf_out_size, (ULONG_PTR)a_esocket, &a_esocket->ol_in)) {
-        log_it(L_ERROR, "Enqueue completion message failed, errno %lu", GetLastError());
+    if (!a_is_ready) {
+        a_esocket->flags &= ~DAP_SOCK_READY_TO_WRITE;
+        return;
     }
+    a_esocket->flags |= DAP_SOCK_READY_TO_WRITE;
+    WSABUF wsabuf = { .buf = a_esocket->buf_out, .len = a_esocket->buf_out_size };
+    int l_res = -2;
+    DWORD flags = 0;
+    switch (a_esocket->type) {
+    case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+    case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+        l_res = WSASend(a_esocket->socket, &wsabuf, 1, NULL, flags, &a_esocket->ol_out, NULL);
+        //a_esocket->callbacks.write_callback = NULL;
+        break;
+
+    case DESCRIPTOR_TYPE_SOCKET_UDP: {
+        INT l_len = sizeof(a_esocket->remote_addr);
+        l_res = WSASendTo(a_esocket->socket, &wsabuf, 1, NULL,
+                          flags, (LPSOCKADDR)&a_esocket->remote_addr, l_len, &a_esocket->ol_out, NULL);
+        //a_esocket->callbacks.write_callback = NULL;
+    } break;
+
+    case DESCRIPTOR_TYPE_FILE:
+    case DESCRIPTOR_TYPE_PIPE:
+        l_res = WriteFile(a_esocket->h, a_esocket->buf_out, a_esocket->buf_out_size_max, NULL, &a_esocket->ol_out)
+                ? 0 : SOCKET_ERROR;
+        break;
+
+    case DESCRIPTOR_TYPE_QUEUE:
+        if (!(a_esocket->flags & DAP_SOCK_QUEUE_PTR)) {
+            log_it(L_ATT, "[!] Queue socket %p has no appropriate flag. Dump it", a_esocket);
+            a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            break;
+        }
+        if (a_esocket->buf_out_size % sizeof(void*)) {
+            log_it(L_CRITICAL, "[!] Socket %p contains malformed data! Dump %lu bytes", a_esocket, a_esocket->buf_out_size);
+            a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            break;
+        }
+        for (DWORD shift = 0; shift < a_esocket->buf_out_size; shift += sizeof(void*)) {
+            void *l_queue_ptr = *(void**)(a_esocket->buf_out + shift);
+            work_item_t *l_work_item = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(work_item_t));
+            l_work_item->data = l_queue_ptr;
+            InterlockedPushEntrySList((PSLIST_HEADER)a_esocket->_pvt, &(l_work_item->entry));
+        }
+        log_it(L_ATT, "[!] Sent %lu bytes to queue", a_esocket->buf_out_size);
+        if (!PostQueuedCompletionStatus(a_esocket->context->iocp, 1, (ULONG_PTR)a_esocket, &a_esocket->ol_out)) {
+            log_it(L_ERROR, "Enqueuing %lu bytes into es %p failed, errno %lu", a_esocket->buf_out_size, a_esocket, GetLastError());
+        } else {
+            l_res = 0;
+        }
+        break;
+
+    default:
+        log_it(L_WARNING, "Socket %p is not writeable, dump it", a_esocket);
+        a_esocket->flags &= ~DAP_SOCK_READY_TO_WRITE;
+        break;
+    }
+    if (l_res == SOCKET_ERROR && WSAGetLastError() != ERROR_IO_PENDING) {
+        log_it(L_ERROR, "Writing failed, errno %d", WSAGetLastError());
+    } else if (!l_res) {
+        log_it(L_ATT, "[!] Writing to %p : %zu (%s) completed immediately, sent %lu bytes",
+               a_esocket, a_esocket->socket, dap_events_socket_get_type_str(a_esocket), a_esocket->buf_out_size);
+        /*if (a_esocket->buf_out_size != l_bytes) {
+            log_it(L_ATT, "[!] Unsent %lu bytes", a_esocket->buf_out_size - l_bytes);
+            a_esocket->buf_out_size -= l_bytes;
+        } else {
+            a_esocket->buf_out_size = 0;
+        }
+        a_esocket->flags &= ~DAP_SOCK_READY_TO_WRITE;*/
+    }
+
+    //if (!PostQueuedCompletionStatus(a_esocket->context->iocp, a_esocket->buf_out_size, (ULONG_PTR)a_esocket, &a_esocket->ol_in)) {
+    //    log_it(L_ERROR, "Enqueue completion message failed, errno %lu", GetLastError());
+    //}
     return;
 #else
     if (!a_esocket || a_is_ready == (bool)(a_esocket->flags & DAP_SOCK_READY_TO_WRITE))
@@ -1816,7 +1884,7 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     } else if ((a_es->buf_out_size + a_data_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
         a_es->buf_out_size_max = l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
+        log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %lu, actual size: %lu",
                a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
     memcpy(a_es->buf_out + a_es->buf_out_size, a_data, a_data_size);

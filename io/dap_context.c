@@ -564,102 +564,33 @@ static int s_thread_loop(dap_context_t * a_context)
                     l_cur->flags &= ~DAP_SOCK_CONNECTING;
                     if (l_cur->callbacks.connected_callback)
                         l_cur->callbacks.connected_callback(l_cur);
-                }
-                if (!l_transferred) {
-
-                    //l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                    continue;
-                } else if (!l_cur->buf_out_size && !l_cur->callbacks.write_callback) {
-                    log_it(L_ATT, "Time to close");
-                    l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
-                    l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                    //continue;
-                }
-                if ( !(l_cur->flags & DAP_SOCK_CONNECTING) ) {
-                    /*if (!l_cur->buf_out_size) {
-                        l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
-                        log_it(L_ATT, "We've written smth before, check the status");
-                        // We have written something before, let's check the status
-                        if (!l_transferred) {
-                            log_it(L_ERROR, "[!] Zero bytes transferred.");
+                } else {
+                //if ( !(l_cur->flags & DAP_SOCK_CONNECTING) ) {
+                    if (!l_transferred) {
+                        continue;
+                    } else if (l_cur->buf_out_size) {
+                        l_cur->buf_out_size -= l_transferred;
+                        if (!l_cur->buf_out_size) {
+                            if (l_cur->callbacks.write_callback)
+                                l_cur->callbacks.write_callback = NULL;
+                            else {
+                                l_cur->callbacks.write_finished_callback = NULL;
+                                log_it(L_ATT, "Time to close");
+                                l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
+                                l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                            }
                         }
-                        if (l_cur->callbacks.write_finished_callback)
-                            l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg, l_errno);
-                        continue; // TODO: ananlyze and maybe close
-                    }*/
+                    }
                     if (l_cur->callbacks.write_callback)
                         l_cur->callbacks.write_callback(l_cur, NULL);
-                    if (!l_cur->buf_out_size) {
-                        //l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
+                    else if (!l_cur->buf_out_size) {
+                        l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
                         if ( l_cur->callbacks.write_finished_callback )
                             l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg, 0);
-                    } else if (l_cur->context) {
-                        // Extra actions required...
-                        WSABUF wsabuf = { .buf = l_cur->buf_out, .len = l_cur->buf_out_size };
-                        int l_res = -2;
-                        DWORD flags = 0;
-                        switch (l_cur->type) {
-                        case DESCRIPTOR_TYPE_SOCKET_CLIENT:
-                        case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                            l_res = WSASend(l_cur->socket, &wsabuf, 1, &l_bytes, flags, NULL/*&l_cur->ol_out*/, NULL);
-                            l_cur->callbacks.write_callback = NULL;
-                            break;
-
-                        case DESCRIPTOR_TYPE_SOCKET_UDP: {
-                            INT l_len = sizeof(l_cur->remote_addr);
-                            l_res = WSASendTo(l_cur->socket, &wsabuf, 1, &l_bytes,
-                                                flags, (LPSOCKADDR)&l_cur->remote_addr, l_len, &l_cur->ol_out, NULL);
+                        else {
+                            log_it(L_ATT, "Time to close, nothing to do more");
                             l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
-                        } break;
-
-                        case DESCRIPTOR_TYPE_FILE:
-                        case DESCRIPTOR_TYPE_PIPE:
-                            l_res = WriteFile(l_cur->h, l_cur->buf_out, l_cur->buf_out_size_max, &l_bytes, &l_cur->ol_out)
-                                    ? 0 : SOCKET_ERROR;
-                            break;
-
-                        case DESCRIPTOR_TYPE_QUEUE:
-                            if (!(l_cur->flags & DAP_SOCK_QUEUE_PTR)) {
-                                log_it(L_ATT, "[!] Queue socket %p has no appropriate flag. Dump it", l_cur);
-                                l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                                break;
-                            }
-                            if (l_cur->buf_out_size % sizeof(void*)) {
-                                log_it(L_CRITICAL, "[!] Socket %p contains malformed data! Dump %lu bytes", l_cur, l_cur->buf_out_size);
-                                l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                                break;
-                            }
-                            for (DWORD shift = 0; shift < l_cur->buf_out_size; shift += sizeof(void*)) {
-                                void *l_queue_ptr = *(void**)(l_cur->buf_out + shift);
-                                work_item_t *l_work_item = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(work_item_t));
-                                l_work_item->data = l_queue_ptr;
-                                InterlockedPushEntrySList((PSLIST_HEADER)l_cur->_pvt, &(l_work_item->entry));
-                            }
-                            log_it(L_ATT, "[!] Sent %lu bytes to queue", l_cur->buf_out_size);
-                            l_bytes = l_cur->buf_out_size;
-                            if (!PostQueuedCompletionStatus(l_cur->context->iocp, 1, (ULONG_PTR)l_cur, &l_cur->ol_out)) {
-                                log_it(L_ERROR, "Enqueuing %lu bytes into es %p failed, errno %lu", l_cur->buf_out_size, l_cur, GetLastError());
-                            } else {
-                                l_res = 0;
-                            }
-                            break;
-
-                        default:
-                            log_it(L_WARNING, "Socket %p is not writeable, dump it", l_cur);
-                            l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
-                            break;
-                        }
-                        if (l_res == SOCKET_ERROR && WSAGetLastError() != ERROR_IO_PENDING) {
-                            log_it(L_ERROR, "Writing failed, errno %d", WSAGetLastError());
-                        } else if (!l_res) {
-                            log_it(L_ATT, "[!] Writing completed immediately, sent %lu bytes", l_bytes);
-                            if (l_cur->buf_out_size != l_bytes) {
-                                log_it(L_ATT, "[!] Unsent %lu bytes", l_cur->buf_out_size - l_bytes);
-                                l_cur->buf_out_size -= l_bytes;
-                            } else {
-                                l_cur->buf_out_size = 0;
-                            }
-                            //l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
+                            l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                         }
                     }
                 }
