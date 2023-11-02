@@ -248,7 +248,7 @@ uint8_t *dap_enc_falcon_write_public_key(const void *a_public_key, size_t *a_buf
         l_public_key->data, FALCON_PUBKEY_SIZE(l_public_key->degree)
     );
 // out work
-    a_buflen_out ? *a_buflen_out = l_buflen : 0;
+    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 
@@ -276,7 +276,7 @@ uint8_t *dap_enc_falcon_write_private_key(const void *a_private_key, size_t *a_b
         l_private_key->data, FALCON_PRIVKEY_SIZE(l_private_key->degree)
     );
 // out work
-    a_buflen_out ? *a_buflen_out = l_buflen : 0;
+    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 
@@ -365,7 +365,7 @@ uint8_t *dap_enc_falcon_write_signature(const void *a_sign, size_t *a_buflen_out
         l_sign->sig_data, l_sign->sig_len
     );
 // out work
-    a_buflen_out ? *a_buflen_out = l_buflen : 0;
+    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 falcon_signature_t* dap_enc_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen)

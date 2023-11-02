@@ -4,7 +4,7 @@
 
 #define LOG_TAG "dap_enc_sig_sphincsplus_params"
 
-sphincsplus_params_t g_sphincsplus_params_current;
+sphincsplus_params_t g_sphincsplus_params_current = {0};
 
 #define s_haraka_offsets {\
     .spx_offset_layer = 3,\
@@ -312,10 +312,12 @@ int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params)
     if (sphincsplus_check_params(a_base_params))
         return -1;
 #ifdef SPHINCSPLUS_FLEX
-    dap_return_val_if_pass(a_base_params->config == SPHINCSPLUS_CONFIG, 0);
+    if (a_base_params->config == SPHINCSPLUS_CONFIG) {
+        SPHINCSPLUS_DIFFICULTY = a_base_params->difficulty;
+        return 0;
+    }
     sphincsplus_params_t l_res = {0};
     l_res.base_params = *a_base_params;
-
 
     if (a_base_params->spx_wots_w == 256) {
         l_res.spx_wots_logw = 8;
@@ -386,7 +388,7 @@ int sphincsplus_set_config(sphincsplus_config_t a_config) {
     return sphincsplus_set_params(&s_params[a_config]);
 }
 
-int sphincsplus_get_params(const sphincsplus_config_t a_config, sphincsplus_base_params_t *a_params) {
+int sphincsplus_get_params(sphincsplus_config_t a_config, sphincsplus_base_params_t *a_params) {
     if(!a_params) {
         return -1;
     }

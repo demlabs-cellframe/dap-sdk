@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 // not change, only add
-typedef enum {
+typedef enum sphincsplus_config {
     SPHINCSPLUS_CONFIG_MIN_ARG,
     SPHINCSPLUS_HARAKA_128F,
     SPHINCSPLUS_HARAKA_128S,
@@ -27,12 +27,12 @@ typedef enum {
     SPHINCSPLUS_CONFIG_MAX_ARG,
 } sphincsplus_config_t;
 
-typedef enum {
+typedef enum sphincsplus_difficulty {
     SPHINCSPLUS_SIMPLE,
     SPHINCSPLUS_ROBUST,
 } sphincsplus_difficulty_t;
 
-typedef struct {
+typedef struct sphincsplus_offsets {
     uint32_t spx_offset_layer;
     uint32_t spx_offset_tree;
     uint32_t spx_offset_type;
@@ -44,7 +44,7 @@ typedef struct {
     uint32_t spx_offset_tree_index;
 } sphincsplus_offsets_t;
 
-typedef struct {
+typedef struct sphincsplus_base_params {
     sphincsplus_config_t config;
     uint32_t spx_n;
     uint32_t spx_full_height;
@@ -58,7 +58,7 @@ typedef struct {
     sphincsplus_difficulty_t difficulty;
 } sphincsplus_base_params_t;
 
-typedef struct {
+typedef struct sphincsplus_params {
     sphincsplus_base_params_t base_params;
     uint32_t spx_wots_logw;
     uint32_t spx_wots_len1;
@@ -82,17 +82,17 @@ typedef struct {
     uint32_t spx_shax_block_bytes;
 } sphincsplus_params_t;
 
-typedef struct {
+typedef struct sphincsplus_private_key {
   sphincsplus_base_params_t params;
   uint8_t *data;
 } sphincsplus_private_key_t;
 
-typedef struct {
+typedef struct sphincsplus_public_key {
   sphincsplus_base_params_t params;
   uint8_t *data;
 } sphincsplus_public_key_t;
 
-typedef struct {
+typedef struct sphincsplus_signature {
   sphincsplus_base_params_t sig_params;
   uint64_t sig_len;
   uint8_t *sig_data;
@@ -100,7 +100,7 @@ typedef struct {
 
 int sphincsplus_set_config(sphincsplus_config_t a_config);
 int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params);
-int sphincsplus_get_params(const sphincsplus_config_t a_config, sphincsplus_base_params_t *a_params);
+int sphincsplus_get_params(sphincsplus_config_t a_config, sphincsplus_base_params_t *a_params);
 int sphincsplus_check_params(const sphincsplus_base_params_t *a_base_params);
 
 #endif  // __SPHINCSPLUS_PARAMS__

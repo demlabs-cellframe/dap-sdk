@@ -8,7 +8,8 @@ static const sphincsplus_config_t s_default_config = SPHINCSPLUS_SHA2_128F;
 static const sphincsplus_difficulty_t s_default_difficulty = SPHINCSPLUS_SIMPLE;
 static pthread_mutex_t s_sign_mtx = PTHREAD_MUTEX_INITIALIZER;
 
-void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {
+void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key)
+{
     a_key->type = DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
     a_key->enc = NULL;
     a_key->enc_na = dap_enc_sig_sphincsplus_get_sign_msg;
@@ -18,7 +19,8 @@ void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key) {
 }
 
 void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_buf, size_t a_kex_size,
-        const void *a_seed, size_t a_seed_size, size_t a_key_size) {
+        const void *a_seed, size_t a_seed_size, size_t a_key_size)
+{
 
     (void) a_kex_buf;
     (void) a_kex_size;
@@ -28,7 +30,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
     sphincsplus_public_key_t *l_pkey = NULL;
     sphincsplus_base_params_t l_params = {0};
     if (sphincsplus_get_params(s_default_config, &l_params)) {
-        log_it(L_CRITICAL, "Error generating Sphincs key pair");
+        log_it(L_CRITICAL, "Error load sphincsplus config");
         return;
     }
     
@@ -53,21 +55,22 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
 
     pthread_mutex_lock(&s_sign_mtx);
         if(sphincsplus_set_config(s_default_config) || sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seedbuf)) {
-            log_it(L_CRITICAL, "Error load sphincsplus config");
+            log_it(L_CRITICAL, "Error generating Sphincs key pair");
             pthread_mutex_unlock(&s_sign_mtx);
             DAP_DEL_MULTY(l_skey->data, l_pkey->data, l_skey, l_pkey);
             return;
         }
     pthread_mutex_unlock(&s_sign_mtx);
-    a_key->priv_key_data = l_skey;
-    a_key->pub_key_data = l_pkey;
     l_skey->params = l_params;
     l_pkey->params = l_params;
+    a_key->priv_key_data = l_skey;
+    a_key->pub_key_data = l_pkey;
 }
 
 
 int dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, const size_t a_msg_size,
-        void *a_sign_out, const size_t a_out_size_max){
+        void *a_sign_out, const size_t a_out_size_max)
+{
 
     if(a_out_size_max < sizeof(sphincsplus_signature_t)) {
         log_it(L_ERROR, "Bad signature size");
@@ -91,7 +94,8 @@ int dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg_in,
 }
 
 size_t dap_enc_sig_sphincsplus_get_sign_msg(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size,
-        void *a_sign_out, const size_t a_out_size_max) {
+        void *a_sign_out, const size_t a_out_size_max)
+{
 
     sphincsplus_private_key_t *l_skey = a_key->priv_key_data;
     uint64_t l_sign_bytes = dap_enc_sphincsplus_crypto_sign_bytes(&l_skey->params);
@@ -197,7 +201,7 @@ uint8_t *dap_enc_sphincsplus_write_private_key(const void *a_private_key, size_t
         l_private_key->data, l_secret_length
     );
 // out work
-    a_buflen_out ? *a_buflen_out = l_buflen : 0;
+    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 
@@ -222,12 +226,12 @@ sphincsplus_private_key_t *dap_enc_sphincsplus_read_private_key(const uint8_t *a
 // out work
     uint64_t l_skey_len_exp = dap_enc_sphincsplus_crypto_sign_secretkeybytes(&l_skey->params);
     if (l_res_des) {
-        log_it(L_ERROR,"::read_public_key() deserialise public key, err code %d", l_res_des);
+        log_it(L_ERROR,"::read_private_key() deserialise public key, err code %d", l_res_des);
         DAP_DEL_MULTY(l_skey->data, l_skey);
         return NULL;
     }
     if (l_skey_len != l_skey_len_exp) {
-        log_it(L_ERROR,"::read_public_key() l_pkey_len %"DAP_UINT64_FORMAT_U" is not equal to expected size %zu", l_skey_len, l_skey_len_exp);
+        log_it(L_ERROR,"::read_private_key() l_pkey_len %"DAP_UINT64_FORMAT_U" is not equal to expected size %zu", l_skey_len, l_skey_len_exp);
         DAP_DEL_MULTY(l_skey->data, l_skey);
         return NULL;
     }
@@ -250,11 +254,11 @@ uint8_t *dap_enc_sphincsplus_write_public_key(const void* a_public_key, size_t *
         l_public_key->data, l_public_length
     );
 // out work
-    a_buflen_out ? *a_buflen_out = l_buflen : 0;
+    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 
-/* Deserialize a private key. */
+/* Deserialize a public key. */
 sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_buf, size_t a_buflen)
 {
 // in work
@@ -303,7 +307,7 @@ uint8_t *dap_enc_sphincsplus_write_signature(const void *a_sign, size_t *a_bufle
         l_sign->sig_data, l_sign->sig_len
     );
 // out work
-    a_buflen_out ? *a_buflen_out = l_buflen : 0;
+    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
 

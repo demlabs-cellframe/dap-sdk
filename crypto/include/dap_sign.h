@@ -88,15 +88,15 @@ typedef struct _dap_multi_sign_params_t {
     dap_enc_key_t **keys;               // Signing keys
 } dap_multi_sign_params_t;
 
-typedef struct _dap_multi_sign_meta_t {
+typedef struct dap_multi_sign_meta {
     dap_sign_hdr_t sign_header;         // header data need to verification
 } DAP_ALIGN_PACKED dap_multi_sign_meta_t;
 
-typedef struct _dap_multi_sign_keys_t {
+typedef struct dap_multi_sign_keys {
     uint8_t num;
 } DAP_ALIGN_PACKED dap_multi_sign_keys_t;
 
-typedef struct _dap_multi_sign_t {
+typedef struct dap_multi_sign {
 /*** Hashed metadata ***/
     dap_sign_type_t type;               // Multi-signature type
     uint8_t key_count;                  // Total key count

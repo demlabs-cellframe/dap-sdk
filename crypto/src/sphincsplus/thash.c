@@ -11,7 +11,6 @@
 #ifdef SPHINCSPLUS_FLEX
 void thash(unsigned char *out, const unsigned char *in, unsigned int inblocks,
            const spx_ctx *ctx, uint32_t addr[8])
-#endif
 {
     if(SPHINCSPLUS_CONFIG >= SPHINCSPLUS_HARAKA_128F && SPHINCSPLUS_CONFIG <= SPHINCSPLUS_HARAKA_256S) {
         SPHINCSPLUS_DIFFICULTY == SPHINCSPLUS_ROBUST ? thash_haraka_robust(out, in, inblocks, ctx, addr) : thash_haraka_simple(out, in, inblocks, ctx, addr);
@@ -23,3 +22,4 @@ void thash(unsigned char *out, const unsigned char *in, unsigned int inblocks,
         log_it(L_ERROR, "Wrong sphincplus sig config");
     }
 }
+#endif
