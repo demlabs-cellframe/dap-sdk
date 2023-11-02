@@ -116,6 +116,11 @@ int dap_context_init()
     return 0;
 }
 
+void dap_context_current_print(pthread_key_t g_dap_context_pth_key)
+{
+        log_it(L_ATT, "[!] Not found data by key %d in LTS", g_dap_context_pth_key);
+}
+
 void dap_context_deinit()
 {
     pthread_key_delete(g_dap_context_pth_key);

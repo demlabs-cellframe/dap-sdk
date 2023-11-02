@@ -397,7 +397,7 @@ static int s_store_obj_apply(dap_store_obj_t *a_obj)
         if (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)
             // Notify sync cluster first in driver format
             dap_global_db_cluster_broadcast(l_cluster, a_obj);
-        if (l_cluster->notificators) {
+        if (l_cluster->notifiers) {
             // Notify others in user space format
             char *l_old_group_ptr = a_obj->group;
             a_obj->group = l_basic_group;
@@ -800,13 +800,11 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 {
     size_t l_values_count = 0;
     dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count);
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values",
-                                                                            a_group, l_values_count);
+    debug_if(g_dap_global_db_debug_more, L_DEBUG,
+             "Get all request from group %s recieved %zu values", a_group, l_values_count);
     dap_global_db_obj_t *l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
     if (l_values_count > 1)
         qsort(l_objs, l_values_count, sizeof(dap_global_db_obj_t), s_db_compare_by_ts);
-    if (a_objs_count)
-        *a_objs_count = l_values_count;
     return l_objs;
 }
 
@@ -1003,7 +1001,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
 }
 
 static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_group, const char *a_key, const void *a_value,
-                             const size_t a_value_length, bool a_pin_value, dap_nanotime_t a_timestamp)
+                              const size_t a_value_length, bool a_pin_value, dap_nanotime_t a_timestamp)
 {
     if (!a_group || !a_key) {
         log_it(L_WARNING, "Trying to set GDB object with NULL group or key param");
@@ -1013,7 +1011,7 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
     dap_store_obj_t l_store_data = { 0 };
     l_store_data.type = DAP_GLOBAL_DB_OPTYPE_ADD;
     l_store_data.key = (char *)a_key ;
-    l_store_data.flags = DAP_GLOBAL_DB_RECORD_NEW | a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0;
+    l_store_data.flags = DAP_GLOBAL_DB_RECORD_NEW | (a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0);
     l_store_data.value_len =  a_value_length;
     l_store_data.value = (uint8_t *)a_value;
     l_store_data.group = (char *)a_group;

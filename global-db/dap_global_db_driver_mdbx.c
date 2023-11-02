@@ -293,7 +293,6 @@ static  int s_db_mdbx_deinit(void)
     dap_db_ctx_t *l_db_ctx = NULL, *l_tmp;
 
     dap_assert ( !pthread_rwlock_wrlock(&s_db_ctxs_rwlock) );               /* Prelock for WR */
-
     HASH_ITER(hh, s_db_ctxs, l_db_ctx, l_tmp) {                             /* run over the hash table of the DB contexts */
         if (l_db_ctx->dbi)
             mdbx_dbi_close(s_mdbx_env, l_db_ctx->dbi);
@@ -645,7 +644,6 @@ dap_store_obj_t *l_obj;
         l_rc = MDBX_PROBLEM, log_it (L_ERROR, "Cannot allocate a memory for store object, errno=%d", errno);
     }
     mdbx_txn_commit(l_txn);
-
     return l_rc == MDBX_SUCCESS ? l_obj : NULL;
 }
 
@@ -672,7 +670,6 @@ MDBX_val    l_key, l_data;
 
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group)) )                    /* Get DB Context for group/table */
         return 0;
-
     MDBX_txn *l_txn;
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
        return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), 0;
@@ -684,7 +681,6 @@ MDBX_val    l_key, l_data;
 
     if ( MDBX_SUCCESS != (l_rc2 = mdbx_txn_commit(l_txn)) )
         log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
-
     return ( l_rc == MDBX_SUCCESS );    /*0 - RNF, 1 - SUCCESS */
 }
 
@@ -727,7 +723,6 @@ static dap_store_obj_t *s_db_mdbx_read_cond_store_obj(dap_global_db_iter_t *a_it
         l_count_out = *a_count_out;
     else
         l_count_current = s_db_mdbx_read_count_store(a_iter->db_group, a_timestamp);
-
     if (!(l_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * l_count_out))) {
         log_it(L_CRITICAL, "Memory allocation error");
         goto safe_ret;
@@ -805,7 +800,6 @@ size_t s_db_mdbx_read_count_store(const char *a_group, dap_nanotime_t a_timestam
     if ( (MDBX_SUCCESS != l_rc) && (l_rc != MDBX_NOTFOUND) ) {
         log_it (L_ERROR, "mdbx_cursor_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
     }
-
     mdbx_cursor_close(l_cursor);
     mdbx_txn_commit(l_txn);
     dap_store_obj_free(l_obj, 1);
@@ -984,12 +978,10 @@ dap_store_obj_t *l_obj, *l_obj_arr = NULL;
 MDBX_val    l_key, l_data;
 MDBX_cursor *l_cursor;
 MDBX_stat   l_stat;
-
     dap_return_val_if_pass(!a_group || !(l_db_ctx = s_get_db_ctx_for_group(a_group)), NULL); /* Sanity check */
     MDBX_txn *l_txn;
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
-
     if ( a_count_out )
         *a_count_out = 0;
     /*
@@ -1068,6 +1060,5 @@ MDBX_stat   l_stat;
     if (l_cursor)
         mdbx_cursor_close(l_cursor);
     mdbx_txn_commit(l_txn);
-
     return l_obj_arr;
 }
