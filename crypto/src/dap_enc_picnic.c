@@ -13,12 +13,12 @@
 /**
  * Set the mark that valid keys are present
  */
-static void set_picnic_params_t(struct dap_enc_key *key)
+static void set_picnic_params_t(dap_enc_key_t *key)
 {
     picnic_params_t *param = (key) ? (picnic_params_t*) key->_inheritor : NULL;
     if(param && key->_inheritor_size == sizeof(picnic_params_t)){
         if(key->priv_key_data)
-        *param = ((picnic_privatekey_t*) key->priv_key_data)->params;
+            *param = ((picnic_privatekey_t*) key->priv_key_data)->params;
         else if(key->pub_key_data)
             *param = ((picnic_publickey_t*) key->pub_key_data)->params;
     }
@@ -27,7 +27,7 @@ static void set_picnic_params_t(struct dap_enc_key *key)
 /**
  * Check present of valid keys
  */
-static bool check_picnic_params_t(struct dap_enc_key *key)
+static bool check_picnic_params_t(dap_enc_key_t *key)
 {
     picnic_params_t *param = (key) ? (picnic_params_t*) key->_inheritor : NULL;
     if(param && *param > PARAMETER_SET_INVALID && *param < PARAMETER_SET_MAX_INDEX)
@@ -35,14 +35,14 @@ static bool check_picnic_params_t(struct dap_enc_key *key)
     return false;
 }
 
-size_t dap_enc_picnic_calc_signature_size(struct dap_enc_key *key)
+size_t dap_enc_picnic_calc_signature_size(dap_enc_key_t *key)
 {
     picnic_params_t *param = (picnic_params_t*) key->_inheritor;
     size_t max_signature_size = picnic_signature_size(*param);
     return max_signature_size;
 }
 
-void dap_enc_sig_picnic_key_new(struct dap_enc_key *key) {
+void dap_enc_sig_picnic_key_new(dap_enc_key_t *key) {
 
     key->type = DAP_ENC_KEY_TYPE_SIG_PICNIC;
     key->_inheritor = calloc(sizeof(picnic_params_t), 1);
@@ -51,13 +51,15 @@ void dap_enc_sig_picnic_key_new(struct dap_enc_key *key) {
     key->enc = NULL;
     key->gen_bob_shared_key = NULL; //(dap_enc_gen_bob_shared_key) dap_enc_sig_picnic_get_sign;
     key->gen_alice_shared_key = NULL; //(dap_enc_gen_alice_shared_key) dap_enc_sig_picnic_verify_sign;
-    key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_picnic_get_sign;
-    key->dec_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_picnic_verify_sign;
+    key->sign_get = dap_enc_sig_picnic_get_sign;
+    key->sign_verify = dap_enc_sig_picnic_verify_sign;
     key->priv_key_data = NULL;
     key->pub_key_data = NULL;
+    key->dec_na = NULL;
+    key->enc_na = NULL;
 }
 
-void dap_enc_sig_picnic_key_delete(struct dap_enc_key *key)
+void dap_enc_sig_picnic_key_delete(dap_enc_key_t *key)
 {
     if(key->_inheritor_size > 0)
         free(key->_inheritor);
@@ -69,7 +71,7 @@ void dap_enc_sig_picnic_key_delete(struct dap_enc_key *key)
     key->pub_key_data_size = 0;
 }
 
-void dap_enc_sig_picnic_update(struct dap_enc_key * a_key)
+void dap_enc_sig_picnic_update(dap_enc_key_t *a_key)
 {
     if(a_key) {
         if(!a_key->priv_key_data ||
@@ -78,7 +80,7 @@ void dap_enc_sig_picnic_update(struct dap_enc_key * a_key)
     }
 }
 
-void dap_enc_sig_picnic_key_new_generate(struct dap_enc_key * key, const void *kex_buf, size_t kex_size,
+void dap_enc_sig_picnic_key_new_generate(dap_enc_key_t *key, const void *kex_buf, size_t kex_size,
         const void * seed, size_t seed_size, size_t key_size)
 {
     (void) kex_buf;
@@ -101,88 +103,82 @@ void dap_enc_sig_picnic_key_new_generate(struct dap_enc_key * key, const void *k
         set_picnic_params_t(key);
 }
 
-size_t dap_enc_sig_picnic_get_sign(struct dap_enc_key * key, const void* message, size_t message_len,
-        void* signature, size_t signature_len)
+int dap_enc_sig_picnic_get_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_len,
+        void *a_sig, size_t a_sig_len)
 {
-    int ret;
-    if(!check_picnic_params_t(key))
-        return -1;
-    picnic_privatekey_t* sk = key->priv_key_data;
-    signature_t* sig = (signature_t*) malloc(sizeof(signature_t));
+    // var init and first checks
+    dap_return_val_if_pass(!check_picnic_params_t(a_key), -1);
+    int l_ret = 0;
+    picnic_privatekey_t* sk = a_key->priv_key_data;
     paramset_t paramset;
+    dap_return_val_if_pass((l_ret = get_param_set(sk->params, &paramset)) != EXIT_SUCCESS, l_ret);
+    // memory alloc
+    signature_t *l_sig = NULL;
+    DAP_NEW_Z_RET_VAL(l_sig, signature_t, -1, NULL);
 
-    ret = get_param_set(sk->params, &paramset);
-    if(ret != EXIT_SUCCESS) {
-        free(sig);
+    allocateSignature(l_sig, &paramset);
+    dap_return_val_if_pass(!l_sig, -1);
+
+    l_ret = sign((uint32_t*) sk->data, (uint32_t*) sk->pk.ciphertext, (uint32_t*) sk->pk.plaintext, (const uint8_t*)a_msg,
+            a_msg_len, l_sig, &paramset);
+    if(l_ret != EXIT_SUCCESS) {
+        freeSignature(l_sig, &paramset);
+        DAP_DELETE(l_sig);
         return -1;
     }
-
-    allocateSignature(sig, &paramset);
-    if(sig == NULL) {
-        return -1;
-    }
-
-    ret = sign((uint32_t*) sk->data, (uint32_t*) sk->pk.ciphertext, (uint32_t*) sk->pk.plaintext, (const uint8_t*)message,
-            message_len, sig, &paramset);
-    if(ret != EXIT_SUCCESS) {
-        freeSignature(sig, &paramset);
-        free(sig);
-        return -1;
-    }
-    ret = serializeSignature(sig, (uint8_t*)signature, signature_len, &paramset);
-    if(ret == -1) {
-        freeSignature(sig, &paramset);
-        free(sig);
+    l_ret = serializeSignature(l_sig, (uint8_t*)a_sig, a_sig_len, &paramset);
+    if(l_ret == -1) {
+        freeSignature(l_sig, &paramset);
+        DAP_DELETE(l_sig);
         return -1;
     }
 //    *signature_len = ret;
-    freeSignature(sig, &paramset);
-    free(sig);
-    return ret;
+    freeSignature(l_sig, &paramset);
+    DAP_DELETE(l_sig);
+    return 0;
 }
 
-size_t dap_enc_sig_picnic_verify_sign(struct dap_enc_key * key, const void* message, size_t message_len,
-        void* signature, size_t signature_len)
+int dap_enc_sig_picnic_verify_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_len,
+        void* a_sig, size_t a_sig_len)
 {
-    int ret;
-    if(!check_picnic_params_t(key))
-        return -1;
-    picnic_publickey_t* pk = key->pub_key_data;
+    // var init and first checks
+    dap_return_val_if_pass(!check_picnic_params_t(a_key), -1);
+    int l_ret = 0;
+    picnic_publickey_t* pk = a_key->pub_key_data;
     paramset_t paramset;
+    dap_return_val_if_pass((l_ret = get_param_set(pk->params, &paramset)) != EXIT_SUCCESS, l_ret);
+    // memory alloc
+    signature_t *l_sig = NULL;
+    DAP_NEW_Z_RET_VAL(l_sig, signature_t, -1, NULL);
 
-    ret = get_param_set(pk->params, &paramset);
-    if(ret != EXIT_SUCCESS)
-        return -1;
-
-    signature_t* sig = (signature_t*) malloc(sizeof(signature_t));
-    allocateSignature(sig, &paramset);
-    if(sig == NULL) {
-        return -1;
-    }
-
-    ret = deserializeSignature(sig, (const uint8_t*)signature, signature_len, &paramset);
-    if(ret != EXIT_SUCCESS) {
-        freeSignature(sig, &paramset);
-        free(sig);
+    allocateSignature(l_sig, &paramset);
+    if(!l_sig) {
         return -1;
     }
 
-    ret = verify(sig, (uint32_t*) pk->ciphertext,
-            (uint32_t*) pk->plaintext, (const uint8_t*)message, message_len, &paramset);
-    if(ret != EXIT_SUCCESS) {
+    l_ret = deserializeSignature(l_sig, (const uint8_t*)a_sig, a_sig_len, &paramset);
+    if(l_ret != EXIT_SUCCESS) {
+        freeSignature(l_sig, &paramset);
+        DAP_DELETE(l_sig);
+        return -1;
+    }
+
+    l_ret = verify(l_sig, (uint32_t*) pk->ciphertext,
+            (uint32_t*) pk->plaintext, (const uint8_t*)a_msg, a_msg_len, &paramset);
+    if(l_ret != EXIT_SUCCESS) {
         /* Signature is invalid, or verify function failed */
-        freeSignature(sig, &paramset);
-        free(sig);
+        freeSignature(l_sig, &paramset);
+        DAP_DELETE(l_sig);
         return -1;
     }
 
-    freeSignature(sig, &paramset);
-    free(sig);
+    freeSignature(l_sig, &paramset);
+    DAP_DELETE(l_sig);
     return 0;
 }
 
 /*
-uint8_t* dap_enc_sig_picnic_write_public_key(struct dap_enc_key * a_key, size_t *a_buflen_out)
+uint8_t* dap_enc_sig_picnic_write_public_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
 {
     const picnic_publickey_t *l_key = a_key->pub_key_data;
     size_t buflen = picnic_get_public_key_size(l_key); // Get public key size for serialize
@@ -196,7 +192,7 @@ uint8_t* dap_enc_sig_picnic_write_public_key(struct dap_enc_key * a_key, size_t 
     return NULL;
 }
 
-uint8_t* dap_enc_sig_picnic_read_public_key(struct dap_enc_key * a_key, uint8_t a_buf, size_t *a_buflen)
+uint8_t* dap_enc_sig_picnic_read_public_key(dap_enc_key_t *a_key, uint8_t a_buf, size_t *a_buflen)
 {
    const picnic_publickey_t *l_key = a_key->pub_key_data;
     size_t buflen = picnic_get_public_key_size(l_key);  Get public key size for serialize
