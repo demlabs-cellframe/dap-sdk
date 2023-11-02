@@ -37,6 +37,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 int dap_global_db_cluster_init()
 {
+    dap_global_db_ch_init();
         // Pseudo-cluster for local scope (unsynced groups). There is no notifier for it
     if (dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_LOCAL, DAP_GLOBAL_DB_CLUSTER_LOCAL ".*",
                                     0, false, DAP_GDB_MEMBER_ROLE_ROOT, DAP_CLUSTER_ROLE_VIRTUAL))

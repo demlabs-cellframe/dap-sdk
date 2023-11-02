@@ -46,16 +46,16 @@ static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb);
  * @brief dap_stream_ch_gdb_init
  * @return
  */
-int dap_stream_ch_gdb_init()
+int dap_global_db_ch_init()
 {
     log_it(L_NOTICE, "Global DB exchange channel initialized");
-    dap_stream_ch_proc_add(DAP_STREAM_CH_GDB_ID, s_stream_ch_new, s_stream_ch_delete, s_stream_ch_packet_in,
-            s_stream_ch_packet_out);
+    dap_stream_ch_proc_add(DAP_STREAM_CH_GDB_ID, s_stream_ch_new, s_stream_ch_delete,
+                                                 s_stream_ch_packet_in, s_stream_ch_packet_out);
     assert(!dap_stream_ch_gossip_callback_add(DAP_STREAM_CH_GDB_ID, s_gossip_payload_callback));
     return 0;
 }
 
-void dap_stream_ch_chain_deinit()
+void dap_global_db_ch_deinit()
 {
 
 }

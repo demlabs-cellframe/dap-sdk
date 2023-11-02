@@ -78,4 +78,6 @@ typedef struct dap_stream_ch_gdb {
 #define DAP_STREAM_CH(a) ((dap_stream_ch_t *)((a)->_inheritor))
 #define DAP_STREAM_CH_GDB_ID 'D'
 
+int dap_global_db_ch_init();
+void dap_global_db_ch_deinit();
 dap_stream_ch_gdb_pkt_t *dap_global_db_ch_pkt_new();
