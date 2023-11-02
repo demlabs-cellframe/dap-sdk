@@ -459,7 +459,6 @@ void dap_enc_tests_run() {
 
 static void test_signing_verifying(dap_enc_key_type_t a_key_type, int a_times, int *a_sig_time, int *a_verify_time)
 {
-
     size_t seed_size = sizeof(uint8_t);
     uint8_t seed[seed_size];
     uint8_t **l_signs = NULL;
@@ -497,12 +496,15 @@ static void test_signing_verifying(dap_enc_key_type_t a_key_type, int a_times, i
     for(int i = 0; i < a_times; ++i) {
         int l_verified = l_keys[i]->sign_verify(l_keys[i], l_source[i], l_source_size[i], l_signs[i], max_signature_size);
         dap_assert_PIF(!l_verified, "Verifying signature");
-        dap_enc_key_signature_delete(l_keys[i]->type, l_signs[i]);
-        dap_enc_key_delete(l_keys[i]);
-        DAP_DEL_MULTY(l_source[i]);;
     }
     l_t2 = get_cur_time_msec();
     *a_verify_time = l_t2 - l_t1;
+//memory free
+    for(int i = 0; i < a_times; ++i) {
+        dap_enc_key_signature_delete(l_keys[i]->type, l_signs[i]);
+        dap_enc_key_delete(l_keys[i]);
+        DAP_DELETE(l_source[i]);
+    }
     DAP_DEL_MULTY(l_signs, l_source, l_keys);
 }
 
@@ -539,12 +541,15 @@ static void test_signing_verifying_serial(dap_enc_key_type_t a_key_type, int a_t
     l_t1 = get_cur_time_msec();
     for(int i = 0; i < a_times; ++i) {
         int verify = dap_sign_verify(l_signs[i], l_source[i], l_source_size[i]);
-        dap_assert_PIF(!verify, "Deserialize and verifying signature");
-        DAP_DEL_MULTY(l_signs[i], l_source[i]);;
+        dap_assert_PIF(!verify, "Deserialize and verifying signature")
     }
     l_t2 = get_cur_time_msec();
     *a_verify_time = l_t2 - l_t1;
 
+
+    for(int i = 0; i < a_times; ++i) {
+        DAP_DEL_MULTY(l_signs[i], l_source[i]);
+    }
     DAP_DEL_MULTY(l_signs, l_source);
 }
 

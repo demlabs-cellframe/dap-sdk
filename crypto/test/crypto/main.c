@@ -16,7 +16,7 @@ void dap_enc_newhope_tests_run(const int times);
 int main(void) {
     // switch off debug info from library
     dap_log_level_set(L_CRITICAL);
-    const int l_times = 100;
+    const int l_times = 1000;
 #ifndef DAP_CRYPTO_NEWHOPE_TEST_OFF
     // dap_enc_newhope_tests_run(l_times);
 #endif
@@ -47,7 +47,7 @@ int main(void) {
 
 
 #ifndef DAP_CRYPTO_MULTISIGN_TEST_OFF
-    dap_enc_multi_sign_tests_run();
+    dap_enc_multi_sign_tests_run(l_times);
 #endif
 
     dap_enc_ringct20_tests_run(l_times);
