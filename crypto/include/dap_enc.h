@@ -42,12 +42,12 @@ bool dap_enc_debug_more();
 size_t dap_enc_code_out_size(dap_enc_key_t* a_key, const size_t a_buf_in_size, dap_enc_data_type_t type);
 size_t dap_enc_decode_out_size(dap_enc_key_t* a_key, const size_t a_buf_in_size, dap_enc_data_type_t type);
 
-size_t dap_enc_code(struct dap_enc_key * a_key, // Key
+size_t dap_enc_code(dap_enc_key_t *a_key, // Key
                     const void * a_buf_in, const size_t a_buf_in_size, // Input
                     void * a_buf_out, const size_t a_buf_out_size_max, // Output
                     dap_enc_data_type_t a_data_type_out); // Output data type
 
-size_t dap_enc_decode(struct dap_enc_key * a_key, // Key
+size_t dap_enc_decode(dap_enc_key_t *a_key, // Key
                       const void * a_buf_in, const size_t a_buf_in_size, // Input
                       void * a_buf_out, const size_t a_buf_out_size_max, // Output
                      dap_enc_data_type_t a_data_type_in); // Output data type

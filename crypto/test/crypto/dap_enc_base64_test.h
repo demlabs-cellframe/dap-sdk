@@ -5,5 +5,5 @@
 #include "stdint.h"
 #include "rand/dap_rand.h"
 
-extern void dap_enc_base64_tests_run(void);
+extern void dap_enc_base64_tests_run(int a_times);
 

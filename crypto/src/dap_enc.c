@@ -116,7 +116,7 @@ size_t dap_enc_decode_out_size(dap_enc_key_t* a_key, const size_t a_buf_in_size,
  * @param a_buf_out_size_max
  * @return bytes actualy written in the output buffer
  */
-size_t dap_enc_code(struct dap_enc_key * a_key,const void * a_buf_in,const size_t a_buf_size,
+size_t dap_enc_code(dap_enc_key_t *a_key,const void * a_buf_in,const size_t a_buf_size,
                     void * a_buf_out, const size_t a_buf_out_size_max, dap_enc_data_type_t a_data_type_out)
 {
     if(!a_key) {
@@ -161,7 +161,7 @@ size_t dap_enc_code(struct dap_enc_key * a_key,const void * a_buf_in,const size_
  * @param buf_out_max Maximum size of output buffer
  * @return bytes actualy written in the output buffer
  */
-size_t dap_enc_decode(struct dap_enc_key * a_key,const void * a_buf_in, const size_t a_buf_in_size,
+size_t dap_enc_decode(dap_enc_key_t *a_key,const void * a_buf_in, const size_t a_buf_in_size,
                       void * a_buf_out, const size_t a_buf_out_size_max, dap_enc_data_type_t a_data_type_in)
 {
     void *l_proc_buf = NULL;

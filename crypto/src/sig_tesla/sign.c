@@ -588,32 +588,19 @@ static void sparse_mul32(poly *prod, const int32_t *pk, const uint32_t *pos_list
 /********************************************************************************************/
 void tesla_private_key_delete(tesla_private_key_t *private_key)
 {
-
-    if(private_key) {
-        free(private_key->data);
-        private_key->data = NULL;
-        free(private_key);
-    }
+    dap_return_if_pass(!private_key);
+    DAP_DEL_MULTY(private_key->data, private_key);
 }
 
 void tesla_public_key_delete(tesla_public_key_t *public_key)
 {
-    if(public_key) {
-        free(public_key->data);
-        public_key->data = NULL;
-        free(public_key);
-    }
+    dap_return_if_pass(!public_key);
+    DAP_DEL_MULTY(public_key->data, public_key);
 }
 
 void tesla_private_and_public_keys_delete(tesla_private_key_t *private_key, tesla_public_key_t *public_key){
-    if(private_key) {
-        free(private_key->data);
-        private_key->data = NULL;
-    }
-    if(public_key) {
-        free(public_key->data);
-        public_key->data = NULL;
-    }
+    tesla_private_key_delete(private_key);
+    tesla_public_key_delete(public_key);
 }
 
 /********************************************************************************************/
