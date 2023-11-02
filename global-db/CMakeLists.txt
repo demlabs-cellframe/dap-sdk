@@ -29,6 +29,7 @@ if(BUILD_WITH_GDB_DRIVER_SQLITE)
     list(APPEND dap_global_db_HDR include/dap_global_db_driver_sqlite.h)
     set(dap_global_db_LIBS ${dap_global_db_LIBS} sqlite3)
     add_definitions("-DDAP_CHAIN_GDB_ENGINE_SQLITE")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSQLITE_THREADSAFE=2")
 endif()
 
 if(BUILD_WITH_GDB_DRIVER_CUTTDB)

@@ -1051,21 +1051,20 @@ static inline int MULT_256_FRAC_FRAC(uint256_t a_val, uint256_t a_mult, uint256_
  * @param result is a fixed-point value, represented as 256-bit value
  * @return
  */
-static inline int MULT_256_COIN(uint256_t a_val, uint256_t b_val, uint256_t* result) {
-    uint256_t tmp;
-    uint256_t rem;
-    uint256_t ten18 = GET_256_FROM_64(1000000000000000000ULL);
-    uint256_t ten = GET_256_FROM_64(10ULL);
-    uint256_t five = GET_256_FROM_64(500000000000000000);
+static inline int _MULT_256_COIN(uint256_t a_val, uint256_t b_val, uint256_t* result, bool round_result) {
+    uint256_t tmp, rem,
+            five = GET_256_FROM_64(500000000000000000),
+            ten18 = GET_256_FROM_64(1000000000000000000ULL);
     int overflow = MULT_256_256(a_val, b_val, &tmp);
     divmod_impl_256(tmp, ten18, &tmp, &rem);
-    if (compare256(rem, five) >= 0) {
-        SUM_256_256(tmp, ten, &tmp);
+    if (round_result && (compare256(rem, five) >= 0)) {
+        SUM_256_256(tmp, uint256_1, &tmp);
     }
     *result = tmp;
     return overflow;
 }
 
+#define MULT_256_COIN(a_val,b_val,res) _MULT_256_COIN(a_val,b_val,res,false)
 /**
  * Divides two fixed-point values, represented as 256-bit values
  * @param a_val

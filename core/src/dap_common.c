@@ -145,30 +145,6 @@ static FILE *s_log_file = NULL;
 
 #define STR_LOG_BUF_MAX                       1000
 
-// Try some non-blocking file i/o...
-#ifdef DAP_LOG_BUFFERIZED
-#if DAP_LOG_USE_SPINLOCK
-    static dap_spinlock_t log_spinlock;
-#else
-    static pthread_mutex_t s_log_mutex = PTHREAD_MUTEX_INITIALIZER;
-#endif
-static pthread_cond_t s_log_cond = PTHREAD_COND_INITIALIZER;
-static volatile int s_log_count = 0;
-
-
-static pthread_t s_log_thread = 0;
-static void  *s_log_thread_proc(void *arg);
-
-typedef struct log_str_t {
-    char str[STR_LOG_BUF_MAX];
-    unsigned int offset;
-    struct log_str_t *prev, *next;
-} log_str_t;
-
-static log_str_t *s_log_buffer = NULL;
-
-#endif
-
 static char* s_appname = NULL;
 
 DAP_STATIC_INLINE int s_update_log_time(char *a_datetime_str) {
@@ -249,12 +225,11 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
             return -1;   //switch off show log in cosole if file not open
         }
         setbuf(s_log_file, NULL);
-        dap_stpcpy(s_log_dir_path,  a_log_dirpath);
-        dap_stpcpy(s_log_file_path, a_log_file_path);
+        if (a_log_dirpath != s_log_dir_path)
+            dap_stpcpy(s_log_dir_path,  a_log_dirpath);
+        if (a_log_file_path != s_log_file_path)
+            dap_stpcpy(s_log_file_path, a_log_file_path);
     }
-#ifdef DAP_LOG_BUFFERIZED
-    pthread_create( &s_log_thread, NULL, s_log_thread_proc, NULL );
-#endif
     return 0;
 }
 
@@ -277,9 +252,6 @@ int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename
         }
         //dap_stpcpy(s_log_file_path, a_log_filename);
     }
-#ifdef DAP_LOG_BUFFERIZED
-    pthread_create( &s_log_thread, NULL, s_log_thread_proc, NULL );
-#endif
     return 0;
 }
 
@@ -289,63 +261,9 @@ int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename
  * @brief dap_common_deinit Deinitialise
  */
 void dap_common_deinit( ) {
-#ifdef DAP_LOG_BUFFERIZED
-    pthread_mutex_lock(&s_log_mutex);
-    s_log_term_signal = true;
-    pthread_cond_signal(&s_log_cond);
-    pthread_mutex_unlock(&s_log_mutex);
-    pthread_join(s_log_thread, NULL);
-#endif
     if (s_log_file)
         fclose(s_log_file);
 }
-
-
-/**
- * @brief s_log_thread_proc
- * @param arg
- * @return
- */
-
-#ifdef DAP_LOG_BUFFERIZED
-static void *s_log_thread_proc(void *arg) {
-    (void) arg;
-    for ( ; !s_log_term_signal; ) {
-        pthread_mutex_lock(&s_log_mutex);
-        for ( ; s_log_count == 0 && !s_log_term_signal; ) {
-            pthread_cond_wait(&s_log_cond, &s_log_mutex);
-        }
-        if (s_log_count) {
-            log_str_t *elem, *tmp;
-            if(s_log_file) {
-                if(!dap_file_test(s_log_file_path)) {
-                    fclose(s_log_file);
-                    s_log_file = fopen(s_log_file_path, "a");
-                    if( s_log_file == NULL) {
-                        dap_mkdir_with_parents(s_log_dir_path);
-                        s_log_file = fopen( s_log_file_path , "w" );
-                    }
-                }
-            }
-            DL_FOREACH_SAFE(s_log_buffer, elem, tmp) {
-                if(s_log_file)
-                    fwrite(elem->str + elem->offset, strlen(elem->str) - elem->offset, 1, s_log_file);
-                fwrite(elem->str, strlen(elem->str), 1, stdout);
-
-                DL_DELETE(s_log_buffer, elem);
-                DAP_FREE(elem);
-                --s_log_count;
-
-                if(s_log_file)
-                    fflush(s_log_file);
-                fflush(stdout);
-            }
-        }
-        pthread_mutex_unlock(&s_log_mutex);
-    }
-    return NULL;
-}
-#endif
 
 /**
  * @brief _log_it
@@ -356,34 +274,6 @@ static void *s_log_thread_proc(void *arg) {
 void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
         return;
-#ifdef DAP_LOG_BUFFERIZED
-    log_str_t *l_log_string = DAP_NEW_Z(log_str_t);
-    if (!l_log_string) {
-        return;
-    }
-    size_t offset2 = sizeof(l_log_string->str) - 2;
-    strncpy(l_log_string->str, s_ansi_seq_color[a_ll], offset2);
-    l_log_string->offset = s_ansi_seq_color_len[a_ll];
-    s_update_log_time(l_log_string->str + l_log_string->offset);
-    size_t offset = strlen(l_log_string->str);
-    offset += func_name
-            ? snprintf(l_log_string->str + offset, offset2, "%s[%s] [%s:%d] ", s_log_level_tag[a_ll], a_log_tag, func_name, line_num)
-            : snprintf(l_log_string->str + offset, offset2, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
-    offset2 -= offset;
-    va_list va;
-    va_start( va, a_fmt );
-    size_t l_offset = vsnprintf(l_log_string->str + offset, offset2, a_fmt, va);
-    offset = (l_offset < offset2) ? offset + l_offset : offset;
-    offset2 = (l_offset < offset2) ? offset2 - offset : 0;
-    va_end( va );
-    volatile char *dummy = (offset2 == 0) ? memcpy(&l_log_string->str[sizeof(l_log_string->str) - 6], "...\n\0", 5)
-        : memcpy(&l_log_string->str[offset], "\n", 1);
-    pthread_mutex_lock(&s_log_mutex);
-    DL_APPEND(s_log_buffer, l_log_string);
-    ++s_log_count;
-    pthread_cond_signal(&s_log_cond);
-    pthread_mutex_unlock(&s_log_mutex);
-#else
     char log_str[STR_LOG_BUF_MAX] = { '\0' };
     size_t offset = 0;
     memcpy(log_str, s_ansi_seq_color[a_ll], s_ansi_seq_color_len[a_ll]);
@@ -402,13 +292,15 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
             ? memcpy(&log_str[offset--], "\n", 1) + 1
             : memcpy(&log_str[STR_LOG_BUF_MAX - 5], "...\n\0", 5) + 5;
     offset = pos - log_str;
+    if (!s_log_file) {
+        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path))
+            return;
+    }
     if (s_log_file) {
         fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
         fwrite(log_str, offset, 1, stdout);
         fflush(stdout);
     }
-
-#endif
 }
 
 
@@ -599,7 +491,7 @@ struct timespec now;
 static int s_check_and_fill_buffer_log(char **m, struct tm *a_tm_st, char *a_tmp)
 {
 	char *s = *m;
-	struct tm l_tm;
+    struct tm l_tm = { };
 	if (sscanf(a_tmp, "[%d/%d/%d-%d:%d:%d]", &l_tm.tm_mon, &l_tm.tm_mday, &l_tm.tm_year, &l_tm.tm_hour, &l_tm.tm_min, &l_tm.tm_sec) == 6) {
 		l_tm.tm_mon--;
 		if (a_tm_st->tm_year >= l_tm.tm_year &&
@@ -612,13 +504,31 @@ static int s_check_and_fill_buffer_log(char **m, struct tm *a_tm_st, char *a_tmp
             memcpy(s, a_tmp, l_len);
             s[l_len] = '\0';
 			s += l_len;
-			//*s++ = '\n';
 			*m = s;
 			return 1;
 		}
 	}
 	return 0;
 }
+
+static int s_check_and_fill_buffer_log2(char **m, int64_t a_tm_st, char *a_tmp) {
+    char *s = *m;
+    struct tm l_tm = { };
+    if (strptime(a_tmp, "[%m/%d/%Y-%H:%M:%S]", &l_tm)) {
+        l_tm.tm_year += 2000;
+        time_t l_tm_sec = mktime(&l_tm);
+        if (l_tm_sec >= a_tm_st) {
+            size_t l_len = strlen(a_tmp);
+            memcpy(s, a_tmp, l_len);
+            s[l_len] = '\0';
+            s += l_len;
+            *m = s;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /**
  * @brief dap_log_get_item
  * @param a_start_time
@@ -627,55 +537,25 @@ static int s_check_and_fill_buffer_log(char **m, struct tm *a_tm_st, char *a_tmp
  */
 char *dap_log_get_item(time_t a_start_time, int a_limit)
 {
-#ifdef DAP_LOG_BUFFERIZED
-	log_str_t *elem, *tmp;
-	elem = tmp = NULL;
 	char *l_buf = DAP_CALLOC(STR_LOG_BUF_MAX, a_limit);
     if (!l_buf) {
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
-	char *l_line = DAP_CALLOC(1, STR_LOG_BUF_MAX + 1);
-    if (!l_line) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_FREE(l_buf);
-        return NULL;
-    }
-	char *s = l_buf;
-
-	//char *l_log_file = dap_strdup_printf("%s/var/log/%s.log", g_sys_dir_path, dap_get_appname());
-	char *l_log_file = dap_strdup_printf("%s", s_log_file_path);
+    char l_line[STR_LOG_BUF_MAX] = { '\0' }, *s = l_buf, *l_log_file = dap_strdup_printf("%s", s_log_file_path);
 	FILE *fp = fopen(l_log_file, "r");
 	if (!fp) {
 		DAP_FREE(l_buf);
-		DAP_FREE(l_line);
 		return NULL;
 	}
 
-	struct tm *l_tm_st = localtime (&a_start_time);
-
-	pthread_mutex_lock(&s_log_mutex);
-
 	while (fgets(l_line, STR_LOG_BUF_MAX, fp)) {
 		if (a_limit <= 0) break;
-		a_limit -= s_check_and_fill_buffer_log(&s, l_tm_st, l_line);
+        a_limit -= s_check_and_fill_buffer_log2(&s, a_start_time, l_line);
 	}
-
-    DL_FOREACH_SAFE(s_log_buffer, elem, tmp) {
-        if (!tmp->str[0]) continue;
-		if (a_limit <= 0) break;
-		a_limit -= s_check_and_fill_buffer_log(&s, l_tm_st, tmp->str);
-	}
-
-	pthread_mutex_unlock(&s_log_mutex);
 
 	fclose(fp);
-	DAP_FREE(l_line);
-
     return l_buf;
-#else
-    return NULL;
-#endif
 }
 
 /**

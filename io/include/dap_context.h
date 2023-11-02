@@ -163,6 +163,7 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
 
 void dap_context_stop_n_kill(dap_context_t * a_context);
 void dap_context_wait(dap_context_t * a_context);
+void dap_context_current_print(pthread_key_t g_dap_context_pth_key);
 
 /**
  * @brief dap_context_current Get current context
@@ -170,7 +171,12 @@ void dap_context_wait(dap_context_t * a_context);
  */
 static inline dap_context_t * dap_context_current()
 {
-    return (dap_context_t*) pthread_getspecific(g_dap_context_pth_key);
+    dap_context_t* l_ret = (dap_context_t*) pthread_getspecific(g_dap_context_pth_key);
+    if (!l_ret) {
+        dap_context_current_print(g_dap_context_pth_key);
+    }
+    return l_ret;
+
 }
 
 /// ALL THIS FUNCTIONS ARE UNSAFE ! CALL THEM ONLY INSIDE THEIR OWN CONTEXT!!
