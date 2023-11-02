@@ -328,44 +328,56 @@ static int s_store_obj_apply(dap_store_obj_t *a_obj)
     int l_ret = 0;
     if (dap_global_db_driver_is(l_basic_group, a_obj->key)) {
         l_read_obj = dap_global_db_driver_read(l_basic_group, a_obj->key, NULL);
-        assert(l_read_obj);
-        if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED && l_obj_type == DAP_GLOBAL_DB_OPTYPE_ADD) {
-            debug_if(g_dap_global_db_debug_more, L_NOTICE, "Pinned record with group %s and key %s won't be overwritten",
-                     l_read_obj->group, l_read_obj->key);
-            l_ret = -15;
-            goto free_n_exit;
+        if (l_read_obj) {
+            if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED && l_obj_type == DAP_GLOBAL_DB_OPTYPE_ADD) {
+                debug_if(g_dap_global_db_debug_more, L_NOTICE, "Pinned record with group %s and key %s won't be overwritten",
+                         l_read_obj->group, l_read_obj->key);
+                l_ret = -15;
+                goto free_n_exit;
+            }
+            l_required_role = DAP_GDB_MEMBER_ROLE_ROOT; // Need to rewrite existed value
+        } else {
+            log_it(L_ERROR, "Existed object with group %s and key %s is broken and will be erased",
+                                                        a_obj->group, a_obj->key);
+            dap_store_obj_t l_to_delete = (dap_store_obj_t){ .group = l_basic_group, .key = a_obj->key };
+            dap_global_db_driver_delete(&l_to_delete, 1);
         }
-        l_required_role = DAP_GDB_MEMBER_ROLE_ROOT; // Need to rewrite existed value
     }
     if (dap_global_db_driver_is(l_del_group, a_obj->key)) {
-        if (l_read_obj) {   // Conflict, object is present in both tables
-            dap_store_obj_t *l_read_del = dap_global_db_driver_read(l_del_group, a_obj->key, NULL);
-            assert(l_read_del);
-            switch (dap_store_obj_driver_hash_compare(l_read_obj, l_read_del)) {
-            case -1:        // Basic obj is older
-                if (!(l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED)) {
-                    log_it(L_WARNING, "DB record with group %s and key %s will be destroyed to avoid a conflict",
+        dap_store_obj_t *l_read_del = dap_global_db_driver_read(l_del_group, a_obj->key, NULL);
+        if (l_read_del) {
+            if (l_read_obj) {   // Conflict, object is present in both tables
+                switch (dap_store_obj_driver_hash_compare(l_read_obj, l_read_del)) {
+                case -1:        // Basic obj is older
+                    if (!(l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED)) {
+                        log_it(L_WARNING, "DB record with group %s and key %s will be destroyed to avoid a conflict",
+                                                                    l_read_obj->group, l_read_obj->key);
+                        dap_global_db_driver_delete(l_read_obj, 1);
+                        dap_global_db_cluster_notify(l_cluster, l_read_obj);
+                    }
+                    dap_store_obj_free_one(l_read_obj);
+                    l_read_obj = l_read_del;
+                    break;
+                case 0:         // Objects are the same, omg! Use the basic object
+                    log_it(L_ERROR, "Duplicate record with group %s and key %s in both local tabels, "
+                                                            DAP_GLOBAL_DB_DEL_SUFFIX" will be erased",
                                                                 l_read_obj->group, l_read_obj->key);
-                    dap_global_db_driver_delete(l_read_obj, 1);
-                    dap_global_db_cluster_notify(l_cluster, l_read_obj);
+                case 1:         // Deleted object is older
+                    debug_if(g_dap_global_db_debug_more, L_WARNING,
+                             "DB record with group %s and key %s will be destroyed to avoid a conflict",
+                                                                    l_read_del->group, l_read_del->key);
+                    dap_global_db_driver_delete(l_read_del, 1);
+                    dap_store_obj_free_one(l_read_del);
+                    break;
                 }
-                dap_store_obj_free_one(l_read_obj);
+            } else
                 l_read_obj = l_read_del;
-                break;
-            case 0:         // Objects are the same, omg! Use the basic object
-                log_it(L_ERROR, "Duplicate record with group %s and key %s in both local tabels, "
-                                                        DAP_GLOBAL_DB_DEL_SUFFIX" will be erased",
-                                                            l_read_obj->group, l_read_obj->key);
-            case 1:         // Deleted object is older
-                debug_if(g_dap_global_db_debug_more, L_WARNING,
-                         "DB record with group %s and key %s will be destroyed to avoid a conflict",
-                                                                l_read_del->group, l_read_del->key);
-                dap_global_db_driver_delete(l_read_del, 1);
-                dap_store_obj_free_one(l_read_del);
-                break;
-            }
-        } else
-            l_read_obj = dap_global_db_driver_read(l_del_group, a_obj->key, NULL);
+        } else  {
+            log_it(L_ERROR, "Existed object with group %s and key %s is broken and will be erased",
+                                                        a_obj->group, a_obj->key);
+            dap_store_obj_t l_to_delete = (dap_store_obj_t){ .group = l_del_group, .key = a_obj->key };
+            dap_global_db_driver_delete(&l_to_delete, 1);
+        }
     }
     if (l_read_obj && l_cluster->owner_root_access &&
             a_obj->sign && l_read_obj->sign &&
