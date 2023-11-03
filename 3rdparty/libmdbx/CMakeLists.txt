@@ -14,7 +14,7 @@
 
 ##
 ##  libmdbx = { Revised and extended descendant of Symas LMDB. }
-##  Please see README.md at https://gitflic.ru/project/erthink/libmdbx
+##  Please see README.md at https://github.com/erthink/libmdbx
 ##
 ##  Libmdbx is superior to LMDB in terms of features and reliability,
 ##  not inferior in performance. libmdbx works on Linux, FreeBSD, MacOS X
@@ -112,10 +112,7 @@ else()
   endif()
 endif()
 
-if(NOT MDBX_AMALGAMATED_SOURCE)
-  include(CTest)
-  option(MDBX_ENABLE_TESTS "Build libmdbx tests." ${BUILD_TESTING})
-elseif(DEFINED MDBX_ENABLE_TESTS AND MDBX_ENABLE_TESTS)
+if(MDBX_AMALGAMATED_SOURCE AND DEFINED MDBX_ENABLE_TESTS AND MDBX_ENABLE_TESTS)
   message(WARNING "MDBX_ENABLE_TESTS=${MDBX_ENABLE_TESTS}: But amalgamated source code don't includes tests.")
   set(MDBX_ENABLE_TESTS OFF)
 endif()
@@ -611,7 +608,7 @@ endmacro()
 macro(libmdbx_setup_libs TARGET MODE)
   target_link_libraries(${TARGET} ${MODE} Threads::Threads)
   if(${CMAKE_SYSTEM_NAME} STREQUAL "Windows")
-    target_link_libraries(${TARGET} ${MODE} ntdll advapi32)
+    target_link_libraries(${TARGET} ${MODE} ntdll)
     if(MDBX_NTDLL_EXTRA_IMPLIB AND MDBX_WITHOUT_MSVC_CRT)
       target_link_libraries(${TARGET} ${MODE} ntdll_extra)
     endif()
@@ -621,7 +618,7 @@ macro(libmdbx_setup_libs TARGET MODE)
     target_link_libraries(${TARGET} ${MODE} log)
   endif()
   if(LIBCXX_FILESYSTEM AND MDBX_BUILD_CXX)
-    if(CMAKE_COMPILER_IS_ELBRUSCXX AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 1.25.23
+    if(CMAKE_COMPILER_IS_ELBRUSCXX AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 1.26.0
         AND NOT CMAKE_VERSION VERSION_LESS 3.13)
       target_link_options(${TARGET} PUBLIC "-Wl,--allow-multiple-definition")
     endif()
@@ -861,33 +858,16 @@ endif()
 # make a build-target triplet
 if(CMAKE_C_COMPILER_TARGET)
   set(MDBX_BUILD_TARGET "${CMAKE_C_COMPILER_TARGET}")
+elseif(CMAKE_C_PLATFORM_ID AND NOT CMAKE_C_PLATFORM_ID STREQUAL CMAKE_SYSTEM_NAME)
+  string(STRIP "${CMAKE_C_PLATFORM_ID}-${CMAKE_SYSTEM_NAME}" MDBX_BUILD_TARGET)
+elseif(CMAKE_LIBRARY_ARCHITECTURE)
+  string(STRIP "${CMAKE_LIBRARY_ARCHITECTURE}-${CMAKE_SYSTEM_NAME}" MDBX_BUILD_TARGET)
+elseif(CMAKE_GENERATOR_PLATFORM AND NOT CMAKE_C_PLATFORM_ID STREQUAL CMAKE_SYSTEM_NAME)
+  string(STRIP "${CMAKE_GENERATOR_PLATFORM}-${CMAKE_SYSTEM_NAME}" MDBX_BUILD_TARGET)
+elseif(CMAKE_SYSTEM_ARCH)
+  string(STRIP "${CMAKE_SYSTEM_ARCH}-${CMAKE_SYSTEM_NAME}" MDBX_BUILD_TARGET)
 else()
-  if(CMAKE_C_COMPILER_ARCHITECTURE_ID)
-    string(STRIP "${CMAKE_C_COMPILER_ARCHITECTURE_ID}" MDBX_BUILD_TARGET)
-  elseif(CMAKE_GENERATOR_PLATFORM AND NOT CMAKE_GENERATOR_PLATFORM STREQUAL CMAKE_SYSTEM_NAME)
-    string(STRIP "${CMAKE_GENERATOR_PLATFORM}" MDBX_BUILD_TARGET)
-  elseif(CMAKE_SYSTEM_ARCH)
-    string(STRIP "${CMAKE_SYSTEM_ARCH}" MDBX_BUILD_TARGET)
-  elseif(CMAKE_LIBRARY_ARCHITECTURE)
-    string(STRIP "${CMAKE_LIBRARY_ARCHITECTURE}" MDBX_BUILD_TARGET)
-  elseif(CMAKE_SYSTEM_PROCESSOR)
-    string(STRIP "${CMAKE_SYSTEM_PROCESSOR}" MDBX_BUILD_TARGET)
-  else()
-    set(MDBX_BUILD_TARGET "unknown")
-  endif()
-  if(CMAKE_C_COMPILER_ABI
-      AND NOT (CMAKE_C_COMPILER_ABI MATCHES ".*${MDBX_BUILD_TARGET}.*" OR MDBX_BUILD_TARGET MATCHES ".*${CMAKE_C_COMPILER_ABI}.*"))
-    string(APPEND MDBX_BUILD_TARGET "-${CMAKE_C_COMPILER_ABI}")
-  endif()
-  if(CMAKE_C_PLATFORM_ID
-      AND NOT (CMAKE_SYSTEM_NAME
-        AND (CMAKE_C_PLATFORM_ID MATCHES ".*${CMAKE_SYSTEM_NAME}.*" OR CMAKE_SYSTEM_NAME MATCHES ".*${CMAKE_C_PLATFORM_ID}.*"))
-      AND NOT (CMAKE_C_PLATFORM_ID MATCHES ".*${CMAKE_C_PLATFORM_ID}.*" OR MDBX_BUILD_TARGET MATCHES ".*${CMAKE_C_PLATFORM_ID}.*"))
-    string(APPEND MDBX_BUILD_TARGET "-${CMAKE_C_COMPILER_ABI}")
-  endif()
-  if(CMAKE_SYSTEM_NAME)
-    string(APPEND MDBX_BUILD_TARGET "-${CMAKE_SYSTEM_NAME}")
-  endif()
+  string(STRIP "${CMAKE_SYSTEM_PROCESSOR}-${CMAKE_SYSTEM_NAME}" MDBX_BUILD_TARGET)
 endif()
 
 # provide build-type
