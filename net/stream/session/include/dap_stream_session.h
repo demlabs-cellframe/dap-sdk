@@ -60,6 +60,7 @@ struct dap_stream_session {
     stream_session_connection_type_t conn_type;
     stream_session_type_t type;
     uint8_t *acl;
+    dap_stream_node_addr_t node;
     UT_hash_handle hh;
     struct in_addr tun_client_addr;
 

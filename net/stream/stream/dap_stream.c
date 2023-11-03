@@ -73,8 +73,7 @@ typedef struct authorized_stream {
 } authorized_stream_t;
 
 static pthread_rwlock_t     s_streams_lock = PTHREAD_RWLOCK_INITIALIZER;    // Lock for all tables and list under
-static authorized_stream_t  *s_prep_authorized_streams = NULL;              // Authorized streams
-static dap_stream_t         *s_authorized_streams = NULL;                   // Hashtable by addr
+static dap_stream_t         *s_authorized_streams = NULL;                   // Authorized streams hashtable by addr
 static dap_stream_t         *s_streams = NULL;                              // Double-linked list
 static dap_enc_key_type_t   s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAES;
 
@@ -100,7 +99,7 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
 static void s_udp_esocket_new(dap_events_socket_t* a_esocket,void * a_arg);
 
 // Internal functions
-static dap_stream_t * s_stream_new(dap_http_client_t * a_http_client); // Create new stream
+static dap_stream_t * s_stream_new(dap_http_client_t * a_http_client, dap_stream_node_addr_t *a_addr); // Create new stream
 static void s_http_client_delete(dap_http_client_t * a_esocket, void * a_arg);
 int s_stream_add_to_list(dap_stream_t *a_stream);
 void s_stream_delete_from_list(dap_stream_t *a_stream);
@@ -332,7 +331,7 @@ static void s_check_session( unsigned int a_id, dap_events_socket_t *a_esocket )
  * @brief stream_new Create new stream instance for HTTP client
  * @return New stream_t instance
  */
-dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
+dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_addr_t *a_addr)
 {
     dap_stream_t *l_ret = DAP_NEW_Z(dap_stream_t);
     if (!l_ret) {
@@ -365,6 +364,8 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
     l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
     a_http_client->_inheritor = l_ret;
+    if (a_addr)
+        l_ret->node = *a_addr;
     s_stream_add_to_list(l_ret);
     log_it(L_NOTICE,"New stream instance");
     return l_ret;
@@ -467,7 +468,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
             } else {
                 log_it(L_INFO,"Session id %u was found with channels = %s", l_id, l_ss->active_channels);
                 if(!dap_stream_session_open(l_ss)){ // Create new stream
-                    dap_stream_t *l_stream = s_stream_new(a_http_client);
+                    dap_stream_t *l_stream = s_stream_new(a_http_client, &l_ss->node);
                     if (!l_stream) {
                         log_it(L_CRITICAL, "Memory allocation error");
                         a_http_client->reply_status_code=404;
@@ -491,7 +492,6 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     a_http_client->state_write=DAP_HTTP_CLIENT_STATE_START;
                     dap_events_socket_set_readable_unsafe(a_http_client->esocket,true);
                     dap_events_socket_set_writable_unsafe(a_http_client->esocket,true);
-                    s_stream_add_stream_info(l_stream, l_stream->session->id);
                 }else{
                     log_it(L_ERROR,"Can't open session id %u", l_id);
                     a_http_client->reply_status_code=404;
@@ -1038,53 +1038,6 @@ static bool s_callback_server_keepalive(void *a_arg)
     return s_callback_keepalive(a_arg, true);
 }
 
-/**
- * @brief dap_stream_add_addr Adding autorized stream to hash table
- * @param a_node - autorrized node address
- * @param a_id - pointer use as ID
- * @param a_stream - using stream
- * @param a_protocol_version - client protocol version
- * @return  0 if ok others if not
- */
-int dap_stream_add_addr(dap_stream_node_addr_t a_addr, void *a_id)
-{
-    authorized_stream_t *l_auth_stream = DAP_NEW_Z(authorized_stream_t);
-    if(!l_auth_stream) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return -1;
-    }
-    l_auth_stream->node = a_addr;
-    l_auth_stream->id.pointer = a_id;
-
-    assert(!pthread_rwlock_wrlock(&s_streams_lock));
-        HASH_ADD(hh, s_prep_authorized_streams, id, sizeof(l_auth_stream->id), l_auth_stream);
-    assert(!pthread_rwlock_unlock(&s_streams_lock));
-    return 0;
-}
-
-/**
- * @brief dap_stream_change_id change session id in hash table
- * @param a_old - old session value id
- * @param a_new - new session value id
- * @return  0 if ok others if not
- */
-int dap_stream_change_id(void *a_old, uint64_t a_new)
-{
-    dap_return_val_if_pass(!a_old, -1);
-    authorized_stream_t *l_auth_stream = NULL;
-    int l_ret = -1;
-    assert(!pthread_rwlock_wrlock(&s_streams_lock));
-    HASH_FIND(hh, s_prep_authorized_streams, &a_old, sizeof(a_old), l_auth_stream);
-    if (l_auth_stream) {
-        HASH_DEL(s_prep_authorized_streams, l_auth_stream);
-        l_auth_stream->id.num = a_new;
-        HASH_ADD(hh, s_prep_authorized_streams, id, sizeof(l_auth_stream->id), l_auth_stream);
-        l_ret = 0;
-    }
-    assert(!pthread_rwlock_unlock(&s_streams_lock));
-    return l_ret;
-}
-
 int s_stream_add_to_hashtable(dap_stream_t *a_stream)
 {
     dap_stream_t *l_double = NULL;
@@ -1138,27 +1091,6 @@ int s_stream_add_to_list(dap_stream_t *a_stream)
     DL_APPEND(s_streams, a_stream);
     if (a_stream->node.uint64)
         l_ret = s_stream_add_to_hashtable(a_stream);
-    pthread_rwlock_unlock(&s_streams_lock);
-    return l_ret;
-}
-
-/**
- * @brief s_stream_add_stream_info Adding autorized stream to hash tables
- * @param a_stream - using stream
- * @param a_id - id to finding node in preparing table
- * @return  0 if ok others if not
- */
-static int s_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id)
-{
-    dap_return_val_if_pass(!a_stream, -1);
-    authorized_stream_t *l_auth_stream = NULL;
-    int l_ret = 0;
-    pthread_rwlock_wrlock(&s_streams_lock);
-    HASH_FIND(hh, s_prep_authorized_streams, &a_id, sizeof(a_id), l_auth_stream);
-    if (l_auth_stream && l_auth_stream->node.uint64) {
-        a_stream->node.uint64 = l_auth_stream->node.uint64;
-        s_stream_add_to_hashtable(a_stream);
-    }
     pthread_rwlock_unlock(&s_streams_lock);
     return l_ret;
 }
