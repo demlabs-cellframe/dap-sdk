@@ -518,7 +518,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         break;
                     }
 
-                    a_client_pvt->stream = dap_stream_new_es_client(l_es);
+                    a_client_pvt->stream = dap_stream_new_es_client(l_es, &a_client_pvt->stream_addr);
                     assert(a_client_pvt->stream);
                     a_client_pvt->stream->session = dap_stream_session_pure_new(); // may be from in packet?
 
@@ -545,7 +545,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                             return;
                         }
                         *l_stream_es_uuid_ptr  = l_es->uuid;
-                        dap_stream_change_id(a_client_pvt->session_key, a_client_pvt->stream_id);  // change id in hash tab
                         dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
                                                     s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                     }
@@ -575,7 +574,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                             return;
                         }
                         *l_stream_es_uuid_ptr = l_es->uuid;
-                        dap_stream_change_id(a_client_pvt->session_key, a_client_pvt->stream_id);  // change id in hash tab
                         dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
                                                     s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                     }
@@ -588,7 +586,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     if(!a_client_pvt->stream){
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
-                        dap_stream_delete_prep_addr(a_client_pvt->stream_id, NULL);
                         s_stage_status_after(a_client_pvt);
                         return;
                     }
@@ -1204,7 +1201,6 @@ static void s_stream_ctl_error(dap_client_t * a_client, UNUSED_ARG void *a_arg, 
         l_client_pvt->last_error = ERROR_STREAM_CTL_ERROR;
     }
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
-    dap_stream_delete_prep_addr(0, l_client_pvt->session_key);
 
     s_stage_status_after(l_client_pvt);
 
