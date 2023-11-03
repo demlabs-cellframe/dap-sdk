@@ -1053,9 +1053,8 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             }
             size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_sign, DAP_ENC_DATA_TYPE_B64);
             if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
-                dap_stream_node_addr_t l_sign_addr = dap_stream_node_addr_from_sign(l_sign);
-                dap_stream_add_addr(l_sign_addr, l_client_pvt->session_key);
-                log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_sign_addr));
+                l_client_pvt->stream_addr = dap_stream_node_addr_from_sign(l_sign);
+                log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_client_pvt->stream_addr));
             } else
                 log_it(L_WARNING, "ENC: Invalid node sign");
         }

@@ -393,12 +393,22 @@ static int s_store_obj_apply(dap_store_obj_t *a_obj)
         goto free_n_exit;
     }
     switch (dap_store_obj_driver_hash_compare(l_read_obj, a_obj)) {
+    case 1:         // Received object is older
+        debug_if(g_dap_global_db_debug_more, L_DEBUG, "DB record with group %s and key %s is not applied. It's older than existed record with same key",
+                                                        a_obj->group, a_obj->key);
+        l_ret = -18;
+        break;
+    case 0:         // Objects the same, omg! Use the basic object
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Duplicate record with group %s and key %s not dropped by hash filter",
+                                                                    a_obj->group, a_obj->key);
+        l_ret = -17;
+        break;
     case -1:        // Existed obj is older
         debug_if(g_dap_global_db_debug_more, L_INFO, "Applied new global DB record with group %s and key %s",
                                                                                         a_obj->group, a_obj->key);
         // Only the condition to apply new object
         l_ret = dap_global_db_driver_apply(a_obj, 1);
-        if (l_read_obj) {
+        if (l_read_obj && dap_strcmp(l_read_obj->group, a_obj->group)) {
             debug_if(g_dap_global_db_debug_more, L_INFO, "Deleted global DB record with group %s and same key",
                                                                                         l_read_obj->group);
             dap_global_db_driver_delete(l_read_obj, 1);
@@ -418,16 +428,6 @@ static int s_store_obj_apply(dap_store_obj_t *a_obj)
             a_obj->group = l_old_group_ptr;
             a_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
         }
-        break;
-    case 0:         // Objects the same, omg! Use the basic object
-        debug_if(g_dap_global_db_debug_more, L_WARNING, "Duplicate record with group %s and key %s not dropped by hash filter",
-                                                                    a_obj->group, a_obj->key);
-        l_ret = -17;
-        break;
-    case 1:         // Received object is older
-        debug_if(g_dap_global_db_debug_more, L_DEBUG, "DB record with group %s and key %s is not applied. It's older than existed record with same key",
-                                                        a_obj->group, a_obj->key);
-        l_ret = -18;
         break;
     }
 free_n_exit:
