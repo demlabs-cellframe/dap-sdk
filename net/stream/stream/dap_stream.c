@@ -391,7 +391,7 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
     l_ret->esocket->callbacks.worker_assign_callback = s_client_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_client_callback_worker_unassign;
     if (a_addr)
-        l_ret->node = *addr;
+        l_ret->node = *a_addr;
     s_stream_add_to_list(l_ret);
     return l_ret;
 }

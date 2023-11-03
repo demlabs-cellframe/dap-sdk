@@ -612,7 +612,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->reconnect_attempts = 0;
 
                     a_client_pvt->stage_status = STAGE_STATUS_DONE;
-                    dap_stream_add_stream_info(a_client_pvt->stream, a_client_pvt->stream_id);
                     s_stage_status_after(a_client_pvt);
 
                 } break;
