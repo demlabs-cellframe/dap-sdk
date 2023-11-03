@@ -222,9 +222,8 @@ static void s_notify_server_callback_queue(dap_events_socket_t * a_es, void * a_
  * @param a_es
  * @param a_arg
  */
-static void s_notify_server_callback_new(dap_events_socket_t * a_es, void * a_arg)
+static void s_notify_server_callback_new(dap_events_socket_t * a_es, UNUSED_ARG void *a_arg)
 {
-    (void) a_arg;
     dap_events_socket_handler_hh_t * l_hh_new;
     pthread_rwlock_wrlock(&s_notify_server_clients_mutex);
     HASH_FIND(hh,s_notify_server_clients, &a_es->uuid, sizeof (a_es->uuid), l_hh_new);
@@ -233,7 +232,12 @@ static void s_notify_server_callback_new(dap_events_socket_t * a_es, void * a_ar
         log_it(L_WARNING,"Trying to add notify client with uuid 0x%016"DAP_UINT64_FORMAT_X" but already present this UUID in list, updating only esocket pointer if so", *l_uuid_u64);
         l_hh_new->esocket = a_es;
         l_hh_new->worker_id = a_es->context->worker->id;
-    }else {
+    } else {
+        if (!a_es->context || !a_es->context->worker) {
+            log_it(L_ERROR, "Invalid esocket arg with uuid %zu: broken context", a_es->uuid);
+            pthread_rwlock_unlock(&s_notify_server_clients_mutex);
+            return;
+        }
         l_hh_new = DAP_NEW_Z(dap_events_socket_handler_hh_t);
         if (!l_hh_new) {
             log_it(L_CRITICAL, "Memory allocation error");

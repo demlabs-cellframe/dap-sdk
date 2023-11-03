@@ -29,6 +29,11 @@
 #include "utlist.h"
 #include "json.h"
 
+#define DAP_JSON_RPC_ERR_CODE_MEMORY_ALLOCATED 1
+#define DAP_JSON_RPC_ERR_CODE_SERIALIZATION_SIGN_TO_JSON 2
+#define DAP_JSON_RPC_ERR_CODE_SERIALIZATION_DATUM_TO_JSON 3
+#define DAP_JSON_RPC_ERR_CODE_SERIALIZATION_ADDR_TO_JSON 4
+#define DAP_JSON_RPC_ERR_CODE_METHOD_ERR_START   11
 #ifdef __cplusplus
 extern "C"{
 #endif
@@ -67,6 +72,8 @@ dap_json_rpc_error_t *dap_json_rpc_create_from_json(const char *a_json);
 dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(json_object *a_jobj);
 
 void dap_json_rpc_add_standart_erros(void);
+
+#define dap_json_rpc_allocated_error log_it(L_CRITICAL, "Memory allocated error."); dap_json_rpc_error_add(DAP_JSON_RPC_ERR_CODE_MEMORY_ALLOCATED, "[%s] Memory allocated error.",  LOG_TAG)
 
 #ifdef __cplusplus
 }

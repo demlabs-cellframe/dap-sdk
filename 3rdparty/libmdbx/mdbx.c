@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY c510b93d78b5848764f976ea67f06d278a7b99f141b4c98ceb095285f834f31c_v0_11_7_0_g40ec559c
+#define MDBX_BUILD_SOURCERY 62eacc68d08e21a1f4d18c16b6bea7510bae1d86d5a65d406b0db3a57e59a4b6_v0_11_6_39_gbb8f4318
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -48,8 +48,7 @@
 /*----------------------------------------------------------------------------*/
 
 /* Should be defined before any includes */
-#if !defined(_FILE_OFFSET_BITS) && !defined(__ANDROID_API__) &&                \
-    !defined(ANDROID)
+#ifndef _FILE_OFFSET_BITS
 #define _FILE_OFFSET_BITS 64
 #endif
 
@@ -883,14 +882,6 @@ typedef pthread_mutex_t mdbx_fastmutex_t;
 #define MDBX_WORDBITS 32
 #endif /* MDBX_WORDBITS */
 
-#if defined(__ANDROID_API__) || defined(ANDROID)
-#if defined(_FILE_OFFSET_BITS) && _FILE_OFFSET_BITS != MDBX_WORDBITS
-#error "_FILE_OFFSET_BITS != MDBX_WORDBITS" (_FILE_OFFSET_BITS != MDBX_WORDBITS)
-#elif defined(__FILE_OFFSET_BITS) && __FILE_OFFSET_BITS != MDBX_WORDBITS
-#error "__FILE_OFFSET_BITS != MDBX_WORDBITS" (__FILE_OFFSET_BITS != MDBX_WORDBITS)
-#endif
-#endif /* Android */
-
 /*----------------------------------------------------------------------------*/
 /* Compiler's includes for builtins/intrinsics */
 
@@ -1281,7 +1272,6 @@ MDBX_MAYBE_UNUSED static __inline uint32_t mdbx_getpid(void) {
 #if defined(_WIN32) || defined(_WIN64)
   return GetCurrentProcessId();
 #else
-  STATIC_ASSERT(sizeof(pid_t) <= sizeof(uint32_t));
   return getpid();
 #endif
 }
@@ -1296,20 +1286,6 @@ MDBX_MAYBE_UNUSED static __inline uintptr_t mdbx_thread_self(void) {
 #endif
   return (uintptr_t)thunk;
 }
-
-#if !defined(_WIN32) && !defined(_WIN64)
-#if defined(__ANDROID_API__) || defined(ANDROID) || defined(BIONIC)
-MDBX_INTERNAL_FUNC int mdbx_check_tid4bionic(void);
-#else
-static __inline int mdbx_check_tid4bionic(void) { return 0; }
-#endif /* __ANDROID_API__ || ANDROID) || BIONIC */
-
-MDBX_MAYBE_UNUSED static __inline int
-mdbx_pthread_mutex_lock(pthread_mutex_t *mutex) {
-  int err = mdbx_check_tid4bionic();
-  return unlikely(err) ? err : pthread_mutex_lock(mutex);
-}
-#endif /* !Windows */
 
 MDBX_INTERNAL_FUNC uint64_t mdbx_osal_monotime(void);
 MDBX_INTERNAL_FUNC uint64_t
@@ -1541,8 +1517,6 @@ typedef LSTATUS(WINAPI *MDBX_RegGetValueA)(HKEY hkey, LPCSTR lpSubKey,
                                            LPDWORD pdwType, PVOID pvData,
                                            LPDWORD pcbData);
 MDBX_INTERNAL_VAR MDBX_RegGetValueA mdbx_RegGetValueA;
-
-NTSYSAPI ULONG RtlRandomEx(PULONG Seed);
 
 #endif /* Windows */
 
@@ -4681,7 +4655,7 @@ static __inline void rthc_lock(void) {
 #if defined(_WIN32) || defined(_WIN64)
   EnterCriticalSection(&rthc_critical_section);
 #else
-  mdbx_ensure(nullptr, mdbx_pthread_mutex_lock(&rthc_mutex) == 0);
+  mdbx_ensure(nullptr, pthread_mutex_lock(&rthc_mutex) == 0);
 #endif
 }
 
@@ -5029,7 +5003,7 @@ static __inline void lcklist_lock(void) {
 #if defined(_WIN32) || defined(_WIN64)
   EnterCriticalSection(&lcklist_critical_section);
 #else
-  mdbx_ensure(nullptr, mdbx_pthread_mutex_lock(&lcklist_mutex) == 0);
+  mdbx_ensure(nullptr, pthread_mutex_lock(&lcklist_mutex) == 0);
 #endif
 }
 
@@ -8491,7 +8465,7 @@ static int mdbx_iov_write(MDBX_txn *const txn, struct mdbx_iov_ctx *ctx) {
     MDBX_page *wp = (MDBX_page *)ctx->iov[i].iov_base;
     const MDBX_page *rp = pgno2page(txn->mt_env, wp->mp_pgno);
     /* check with timeout as the workaround
-     * for todo4recovery://erased_by_github/libmdbx/issues/269 */
+     * for https://github.com/erthink/libmdbx/issues/269 */
     while (likely(rc == MDBX_SUCCESS) &&
            unlikely(memcmp(wp, rp, ctx->iov[i].iov_len) != 0)) {
       if (!timestamp) {
@@ -9833,7 +9807,7 @@ __hot static struct page_result mdbx_page_alloc(MDBX_cursor *mc,
                catch-up with itself by growing while trying to save it. */
             (mc->mc_flags & C_RECLAIMING) ||
             /* avoid (recursive) search inside empty tree and while tree is
-               updating, todo4recovery://erased_by_github/libmdbx/issues/31 */
+               updating, https://github.com/erthink/libmdbx/issues/31 */
             txn->mt_dbs[FREE_DBI].md_entries == 0 ||
             /* If our dirty list is already full, we can't touch GC */
             (txn->tw.dirtyroom < txn->mt_dbs[FREE_DBI].md_depth &&
@@ -10046,8 +10020,7 @@ no_loose:
                MDBX_PGL_LIMIT)) {
         /* Stop reclaiming to avoid overflow the page list.
          * This is a rare case while search for a continuously multi-page region
-         * in a large database.
-         * todo4recovery://erased_by_github/libmdbx/issues/123 */
+         * in a large database. https://github.com/erthink/libmdbx/issues/123 */
         mdbx_notice("stop reclaiming to avoid PNL overflow: %u (current) + %u "
                     "(chunk) -> %u",
                     MDBX_PNL_SIZE(txn->tw.reclaimed_pglist), gc_len,
@@ -11020,7 +10993,7 @@ __cold int mdbx_thread_unregister(const MDBX_env *env) {
   return MDBX_SUCCESS;
 }
 
-/* check against todo4recovery://erased_by_github/libmdbx/issues/269 */
+/* check against https://github.com/erthink/libmdbx/issues/269 */
 static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
                             bool report) {
   const txnid_t meta_txnid = constmeta_txnid(env, meta);
@@ -11096,7 +11069,7 @@ static bool meta_checktxnid(const MDBX_env *env, const MDBX_meta *meta,
 }
 
 /* check with timeout as the workaround
- * for todo4recovery://erased_by_github/libmdbx/issues/269 */
+ * for https://github.com/erthink/libmdbx/issues/269 */
 static int meta_waittxnid(const MDBX_env *env, const MDBX_meta *meta,
                           uint64_t *timestamp) {
   if (likely(meta_checktxnid(env, (const MDBX_meta *)meta, !*timestamp)))
@@ -11241,8 +11214,7 @@ static int mdbx_txn_renew0(MDBX_txn *txn, const unsigned flags) {
                    snap == meta_txnid(env, meta) &&
                    snap >= atomic_load64(&env->me_lck->mti_oldest_reader,
                                          mo_AcquireRelease))) {
-          /* workaround for todo4recovery://erased_by_github/libmdbx/issues/269
-           */
+          /* workaround for https://github.com/erthink/libmdbx/issues/269 */
           rc = meta_waittxnid(env, (const MDBX_meta *)meta, &timestamp);
           mdbx_jitter4testing(false);
           if (likely(rc == MDBX_SUCCESS))
@@ -11330,8 +11302,7 @@ static int mdbx_txn_renew0(MDBX_txn *txn, const unsigned flags) {
     mdbx_jitter4testing(false);
     const MDBX_meta *meta = constmeta_prefer_last(env);
     uint64_t timestamp = 0;
-    while (
-        "workaround for todo4recovery://erased_by_github/libmdbx/issues/269") {
+    while ("workaround for https://github.com/erthink/libmdbx/issues/269") {
       rc = meta_waittxnid(env, (const MDBX_meta *)meta, &timestamp);
       if (likely(rc == MDBX_SUCCESS))
         break;
@@ -15158,8 +15129,7 @@ mdbx_env_set_geometry(MDBX_env *env, intptr_t size_lower, intptr_t size_now,
       const MDBX_meta *head = constmeta_prefer_last(env);
 
       uint64_t timestamp = 0;
-      while ("workaround for "
-             "todo4recovery://erased_by_github/libmdbx/issues/269") {
+      while ("workaround for https://github.com/erthink/libmdbx/issues/269") {
         meta = *head;
         rc = meta_waittxnid(env, &meta, &timestamp);
         if (likely(rc == MDBX_SUCCESS))
@@ -16422,7 +16392,7 @@ __cold int mdbx_env_open(MDBX_env *env, const char *pathname,
   } else {
 #if MDBX_MMAP_INCOHERENT_FILE_WRITE
     /* Temporary `workaround` for OpenBSD kernel's flaw.
-     * See todo4recovery://erased_by_github/libmdbx/issues/67 */
+     * See https://github.com/erthink/libmdbx/issues/67 */
     if ((flags & MDBX_WRITEMAP) == 0) {
       if (flags & MDBX_ACCEDE)
         flags |= MDBX_WRITEMAP;
@@ -23381,8 +23351,7 @@ __cold static int fetch_envinfo_ex(const MDBX_env *env, const MDBX_txn *txn,
   const size_t size_before_bootid = offsetof(MDBX_envinfo, mi_bootid);
   const size_t size_before_pgop_stat = offsetof(MDBX_envinfo, mi_pgop_stat);
 
-  /* is the environment open?
-   * (todo4recovery://erased_by_github/libmdbx/issues/171) */
+  /* is the environment open? (https://github.com/erthink/libmdbx/issues/171) */
   if (unlikely(!env->me_map)) {
     /* environment not yet opened */
 #if 1
@@ -26936,7 +26905,7 @@ MDBX_INTERNAL_FUNC int mdbx_condpair_lock(mdbx_condpair_t *condpair) {
   DWORD code = WaitForSingleObject(condpair->mutex, INFINITE);
   return waitstatus2errcode(code);
 #else
-  return mdbx_pthread_mutex_lock(&condpair->mutex);
+  return pthread_mutex_lock(&condpair->mutex);
 #endif
 }
 
@@ -27006,7 +26975,7 @@ MDBX_INTERNAL_FUNC int mdbx_fastmutex_acquire(mdbx_fastmutex_t *fastmutex) {
   }
   return MDBX_SUCCESS;
 #else
-  return mdbx_pthread_mutex_lock(fastmutex);
+  return pthread_mutex_lock(fastmutex);
 #endif
 }
 
@@ -27177,7 +27146,7 @@ MDBX_INTERNAL_FUNC int mdbx_openfile(const enum mdbx_openfile_purpose purpose,
   flags |= O_CLOEXEC;
 #endif /* O_CLOEXEC */
 
-  /* Safeguard for todo4recovery://erased_by_github/libmdbx/issues/144 */
+  /* Safeguard for https://github.com/erthink/libmdbx/issues/144 */
 #if STDIN_FILENO == 0 && STDOUT_FILENO == 1 && STDERR_FILENO == 2
   int stub_fd0 = -1, stub_fd1 = -1, stub_fd2 = -1;
   static const char dev_null[] = "/dev/null";
@@ -27209,7 +27178,7 @@ MDBX_INTERNAL_FUNC int mdbx_openfile(const enum mdbx_openfile_purpose purpose,
   }
 #endif /* O_DIRECT */
 
-  /* Safeguard for todo4recovery://erased_by_github/libmdbx/issues/144 */
+  /* Safeguard for https://github.com/erthink/libmdbx/issues/144 */
 #if STDIN_FILENO == 0 && STDOUT_FILENO == 1 && STDERR_FILENO == 2
   if (*fd == STDIN_FILENO) {
     mdbx_warning("Got STD%s_FILENO/%d, avoid using it by dup(fd)", "IN",
@@ -28046,8 +28015,7 @@ MDBX_INTERNAL_FUNC int mdbx_munmap(mdbx_mmap_t *map) {
   VALGRIND_MAKE_MEM_NOACCESS(map->address, map->current);
   /* Unpoisoning is required for ASAN to avoid false-positive diagnostic
    * when this memory will re-used by malloc or another mmapping.
-   * See todo4recovery://erased_by_github/libmdbx/pull/93#issuecomment-613687203
-   */
+   * See https://github.com/erthink/libmdbx/pull/93#issuecomment-613687203 */
   MDBX_ASAN_UNPOISON_MEMORY_REGION(map->address,
                                    (map->filesize && map->filesize < map->limit)
                                        ? map->filesize
@@ -28123,8 +28091,7 @@ MDBX_INTERNAL_FUNC int mdbx_mresize(const int flags, mdbx_mmap_t *map,
 
   /* Unpoisoning is required for ASAN to avoid false-positive diagnostic
    * when this memory will re-used by malloc or another mmapping.
-   * See todo4recovery://erased_by_github/libmdbx/pull/93#issuecomment-613687203
-   */
+   * See https://github.com/erthink/libmdbx/pull/93#issuecomment-613687203 */
   MDBX_ASAN_UNPOISON_MEMORY_REGION(map->address, map->limit);
   status = NtUnmapViewOfSection(GetCurrentProcess(), map->address);
   if (!NT_SUCCESS(status))
@@ -28389,8 +28356,7 @@ retry_mapview:;
         VALGRIND_MAKE_MEM_NOACCESS(map->address, map->current);
         /* Unpoisoning is required for ASAN to avoid false-positive diagnostic
          * when this memory will re-used by malloc or another mmapping.
-         * See
-         * todo4recovery://erased_by_github/libmdbx/pull/93#issuecomment-613687203
+         * See https://github.com/erthink/libmdbx/pull/93#issuecomment-613687203
          */
         MDBX_ASAN_UNPOISON_MEMORY_REGION(
             map->address,
@@ -28410,9 +28376,7 @@ retry_mapview:;
     VALGRIND_MAKE_MEM_NOACCESS(map->address, map->current);
     /* Unpoisoning is required for ASAN to avoid false-positive diagnostic
      * when this memory will re-used by malloc or another mmapping.
-     * See
-     * todo4recovery://erased_by_github/libmdbx/pull/93#issuecomment-613687203
-     */
+     * See https://github.com/erthink/libmdbx/pull/93#issuecomment-613687203 */
     MDBX_ASAN_UNPOISON_MEMORY_REGION(
         map->address, (map->current < map->limit) ? map->current : map->limit);
 
@@ -28444,9 +28408,6 @@ __cold MDBX_INTERNAL_FUNC void mdbx_osal_jitter(bool tiny) {
 #if defined(_M_IX86) || defined(_M_X64) || defined(__i386__) ||                \
     defined(__x86_64__)
     const unsigned salt = 277u * (unsigned)__rdtsc();
-#elif (defined(_WIN32) || defined(_WIN64)) && MDBX_WITHOUT_MSVC_CRT
-    static ULONG state;
-    const unsigned salt = (unsigned)RtlRandomEx(&state);
 #else
     const unsigned salt = rand();
 #endif
@@ -29153,10 +29114,10 @@ __dll_export
     const struct MDBX_version_info mdbx_version = {
         0,
         11,
-        7,
-        0,
-        {"2022-04-22T23:28:56+03:00", "6fdefd6844bd6d212ea6dec99892ae1fac981521", "40ec559c8c1e0b9794cdc0cd12c155d05e7e8547",
-         "v0.11.7-0-g40ec559c"},
+        6,
+        39,
+        {"2022-04-13T11:05:50+03:00", "04fd8130aaecb30dfcfba8e33352613eb38d9605", "bb8f43181783686879219846d64379a04c1430e3",
+         "v0.11.6-39-gbb8f4318"},
         sourcery};
 
 __dll_export
@@ -29245,7 +29206,7 @@ static
 #  pragma const_seg(push)
 #  pragma data_seg(push)
 
-#  ifndef _M_IX86
+#  ifdef _WIN64
      /* kick a linker to create the TLS directory if not already done */
 #    pragma comment(linker, "/INCLUDE:_tls_used")
      /* Force some symbol references. */
@@ -29267,7 +29228,7 @@ static
 #  pragma const_seg(pop)
 
 #elif defined(__GNUC__)
-#  ifndef _M_IX86
+#  ifdef _WIN64
      const
 #  endif
    PIMAGE_TLS_CALLBACK mdbx_tls_anchor __attribute__((__section__(".CRT$XLB"), used)) = mdbx_module_handler;
@@ -30164,35 +30125,14 @@ __cold static void choice_fcntl() {
 
 #ifndef OFF_T_MAX
 #define OFF_T_MAX                                                              \
-  (((sizeof(off_t) > 4) ? INT64_MAX : INT32_MAX) & ~(size_t)0xffff)
+  ((sizeof(off_t) > 4 ? INT64_MAX : INT32_MAX) & ~(size_t)0xffff)
 #endif
 
-static int lck_op(const mdbx_filehandle_t fd, int cmd, const int lck,
-                  const off_t offset, off_t len) {
-  STATIC_ASSERT(sizeof(off_t) >= sizeof(void *) &&
-                sizeof(off_t) >= sizeof(size_t));
-#ifdef __ANDROID_API__
-  STATIC_ASSERT_MSG((sizeof(off_t) * 8 == MDBX_WORDBITS),
-                    "The bitness of system `off_t` type is mismatch. Please "
-                    "fix build and/or NDK configuration.");
-#endif /* Android */
+static int lck_op(mdbx_filehandle_t fd, int cmd, int lck, off_t offset,
+                  off_t len) {
   mdbx_jitter4testing(true);
-  assert(offset >= 0 && len > 0);
-  assert((uint64_t)offset < (uint64_t)INT64_MAX &&
-         (uint64_t)len < (uint64_t)INT64_MAX &&
-         (uint64_t)(offset + len) > (uint64_t)offset);
-
-  assert((uint64_t)offset < (uint64_t)OFF_T_MAX &&
-         (uint64_t)len <= (uint64_t)OFF_T_MAX &&
-         (uint64_t)(offset + len) <= (uint64_t)OFF_T_MAX);
-
-  assert((uint64_t)((off_t)((uint64_t)offset + (uint64_t)len)) ==
-         ((uint64_t)offset + (uint64_t)len));
   for (;;) {
     struct flock lock_op;
-    STATIC_ASSERT(sizeof(off_t) <= sizeof(lock_op.l_start) &&
-                  sizeof(off_t) <= sizeof(lock_op.l_len) &&
-                  OFF_T_MAX == (off_t)OFF_T_MAX);
     memset(&lock_op, 0, sizeof(lock_op));
     lock_op.l_type = lck;
     lock_op.l_whence = SEEK_SET;
@@ -30228,7 +30168,7 @@ static int lck_op(const mdbx_filehandle_t fd, int cmd, const int lck,
     }
 #endif /* MDBX_USE_OFDLOCKS */
     if (rc != EINTR || cmd == op_setlkw) {
-      assert(MDBX_IS_ERROR(rc));
+      mdbx_assert(nullptr, MDBX_IS_ERROR(rc));
       return rc;
     }
   }
@@ -30801,32 +30741,11 @@ __cold static int mdbx_ipclock_failed(MDBX_env *env, mdbx_ipclock_t *ipc,
   return rc;
 }
 
-#if defined(__ANDROID_API__) || defined(ANDROID) || defined(BIONIC)
-MDBX_INTERNAL_FUNC int mdbx_check_tid4bionic(void) {
-  /* avoid 32-bit Bionic bug/hang with 32-pit TID */
-  if (sizeof(pthread_mutex_t) < sizeof(pid_t) + sizeof(unsigned)) {
-    pid_t tid = gettid();
-    if (unlikely(tid > 0xffff)) {
-      mdbx_fatal("Raise the ENOSYS(%d) error to avoid hang due "
-                 "the 32-bit Bionic/Android bug with tid/thread_id 0x%08x(%i) "
-                 "that don’t fit in 16 bits, see "
-                 "https://android.googlesource.com/platform/bionic/+/master/"
-                 "docs/32-bit-abi.md#is-too-small-for-large-pids",
-                 ENOSYS, tid, tid);
-      return ENOSYS;
-    }
-  }
-  return 0;
-}
-#endif /* __ANDROID_API__ || ANDROID) || BIONIC */
-
 static int mdbx_ipclock_lock(MDBX_env *env, mdbx_ipclock_t *ipc,
                              const bool dont_wait) {
 #if MDBX_LOCKING == MDBX_LOCKING_POSIX2001 ||                                  \
     MDBX_LOCKING == MDBX_LOCKING_POSIX2008
-  int rc = mdbx_check_tid4bionic();
-  if (likely(rc == 0))
-    rc = dont_wait ? pthread_mutex_trylock(ipc) : pthread_mutex_lock(ipc);
+  int rc = dont_wait ? pthread_mutex_trylock(ipc) : pthread_mutex_lock(ipc);
   rc = (rc == EBUSY && dont_wait) ? MDBX_BUSY : rc;
 #elif MDBX_LOCKING == MDBX_LOCKING_POSIX1988
   int rc = MDBX_SUCCESS;
