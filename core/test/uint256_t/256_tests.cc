@@ -3295,6 +3295,30 @@ TEST(MathTests, DivMoreToLessSixThree) {
     ASSERT_STREQ(dap_uint256_decimal_to_char(c), "2.0");
 }
 
+TEST(MathTests, DivLessToMoreFourThree) {
+    uint256_t a, b, c = uint256_0;
+
+    string lhs = "4";
+    string rhs = "3";
+
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
+    DIV_256_COIN(a, b, &c);
+    ASSERT_STREQ(dap_uint256_decimal_to_char(c), "1.333333333333333333");
+}
+
+TEST(MathTests, DivLessToMoreFiveThree) {
+    uint256_t a, b, c = uint256_0;
+
+    string lhs = "5";
+    string rhs = "3";
+
+    a = dap_uint256_scan_uninteger(lhs.c_str());
+    b = dap_uint256_scan_uninteger(rhs.c_str());
+    DIV_256_COIN(a, b, &c);
+    ASSERT_STREQ(dap_uint256_decimal_to_char(c), "1.666666666666666666");
+}
+
 TEST(MathTests, DivMoreToLessBigBig) {
     uint256_t a, b, c = uint256_0;
 
