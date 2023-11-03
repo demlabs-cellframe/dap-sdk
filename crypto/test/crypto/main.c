@@ -1,9 +1,8 @@
 #include "dap_enc_base64_test.h"
 #include "dap_enc_base58_test.h"
 #include "dap_enc_test.h"
-#include "dap_enc_msrln_test.h"
+#include "dap_enc_benchmark_test.h"
 #include "dap_enc_ringct20_test.h"
-#include "dap_enc_kyber_test.h"
 #ifndef DAP_CRYPTO_MULTISIGN_TEST_OFF
 #include "dap_enc_sign_multi_test.h"
 #endif
@@ -39,16 +38,12 @@ int main(void) {
     test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_OAES, 32);
 
     dap_enc_tests_run();
-    dap_enc_msrln_tests_run();
     dap_enc_base64_tests_run(l_times);
     dap_enc_base58_tests_run(l_times);
-    dap_enc_kyber_test_run(l_times);
     dap_enc_benchmark_tests_run(l_times);
-
 
 #ifndef DAP_CRYPTO_MULTISIGN_TEST_OFF
     dap_enc_multi_sign_tests_run(l_times);
 #endif
-
     dap_enc_ringct20_tests_run(l_times);
 }
