@@ -3235,6 +3235,114 @@ TEST(MathTests, Div256OneMax256) {
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
+TEST(MathTests, Mult256ZeroZero){
+    uint256_t a = uint256_0, b = uint256_0, c = uint256_0;
+    int overflow = MULT_256_256(a,b, &c);
+    ASSERT_FALSE(overflow);
+    string ret = "0";
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
+}
+
+TEST(MathTests, Mult256OneOne) {
+    uint256_t a = uint256_1, b = uint256_1, c = uint256_0;
+    int overflow = MULT_256_256(a, b, &c);
+    ASSERT_FALSE(overflow);
+    string ret = "1";
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
+}
+ TEST(MathTests, Mult256ZeroOne) {
+    uint256_t a = uint256_0, b = uint256_1, c;
+    int overflow = MULT_256_256(a, b, &c);
+    string ret = "0";
+    ASSERT_FALSE(overflow);
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
+}
+
+TEST(MathTests, Mult256OneZero) {
+    uint256_t a = uint256_1, b = uint256_0, c;
+    int overflow = MULT_256_256(a,b, &c);
+    string ret = "0";
+    ASSERT_FALSE(overflow);
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
+}
+
+TEST(MathTests, Mult256MaxMax) {
+    uint256_t a, b, c = uint256_0;
+    a = dap_uint256_scan_uninteger(MAX256STR);
+    b = dap_uint256_scan_uninteger(MAX256STR);
+    int overflow = MULT_256_256(a, b, &c);
+    char *cc = dap_uint256_uninteger_to_char(c);
+    ASSERT_TRUE(overflow);
+}
+
+TEST(MathTests, Mult256MaxOne) {
+    uint256_t a,b,c;
+    a = dap_uint256_scan_uninteger(MAX256STR);
+    b = uint256_1;
+    int overflow = MULT_256_256(a, b, &c);
+    ASSERT_FALSE(overflow);
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), MAX256STR);
+}
+
+TEST(DISABLE_MathTests, Mult256BigBig) {
+    uint256_t a,c;
+    a = dap_uint256_scan_uninteger(MIN256STR);
+    int overflow = MULT_256_256(a, a, &c);
+    ASSERT_TRUE(overflow);
+}
+
+TEST(MathTests, Mult256BigLow) {
+    uint256_t a, b, c;
+    a = dap_uint256_scan_uninteger("1606938044258990275541962092341162602522202993782792835301376");
+    b = dap_uint256_scan_uninteger("2");
+    int overflow = MULT_256_256(a, b, &c);
+    ASSERT_FALSE(overflow);
+    string ret = "3213876088517980551083924184682325205044405987565585670602752";
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
+}
+
+TEST(MathTests, Mult256LowBig) {
+    uint256_t a,b,c;
+    a = dap_uint256_scan_uninteger("2");
+    b = dap_uint256_scan_uninteger("1606938044258990275541962092341162602522202993782792835301376");
+    int overflow = MULT_256_256(a, b, &c);
+    ASSERT_FALSE(overflow);
+    string ret = "3213876088517980551083924184682325205044405987565585670602752";
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
+}
+
+TEST(MathTest, Mult256LowLow) {
+    uint256_t a = dap_uint256_scan_uninteger("700000000000000000000");
+    uint256_t b = dap_uint256_scan_uninteger("877744774747447754177");
+    uint256_t c = uint256_0;
+    int overflow = MULT_256_256(a, b, &c);
+    string ret = "614421342323213427923900000000000000000000";
+    ASSERT_FALSE(overflow);
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
+}
+
+TEST(MathTest, Mult256TwoThree) {
+    uint256_t a = dap_uint256_scan_uninteger("2");
+    uint256_t b = dap_uint256_scan_uninteger("3");
+    uint256_t c = uint256_0;
+    int overflow = MULT_256_256(a, b, &c);
+    ASSERT_FALSE(overflow);
+    string ret = "6";
+    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), ret.c_str());
+}
+
+//TEST(MathTest, Mult256LowLow) {}
+
+TEST(DISABLE_MathTests, Mult256MaxMaxRet512) {
+//    uint256_t a, b = uint256_0;
+//    uint512_t c = uint512_0;
+//    a = dap_uint256_scan_uninteger(MAX256STR);
+//    b = dap_uint256_scan_uninteger(MAX256STR);
+//    char *ltp = dap_uint256_uninteger_to_char(a);
+//    MULT_256_512(a, b, &c);
+//    char *ccp = dap_uint256_uninteger_to_char(c);
+}
+
 TEST(MathTests, DivMoreToLess) {
     uint256_t a, b, c = uint256_0;
 
