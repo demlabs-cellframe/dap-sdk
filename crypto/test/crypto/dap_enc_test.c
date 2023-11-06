@@ -208,7 +208,7 @@ void test_key_transfer_msrln()
 
     /* generate Bob's response */
     dap_enc_key_t* bob_key = dap_enc_key_new(DAP_ENC_KEY_TYPE_MSRLN);
-    bob_key->gen_bob_shared_key(bob_key, (unsigned char *) alice_msg, alice_msg_len,
+    bob_key->pub_key_data_size = bob_key->gen_bob_shared_key(bob_key, (unsigned char *) alice_msg, alice_msg_len,
                                 (void **) &bob_key->pub_key_data);
     bob_msg = bob_key->pub_key_data;
     bob_msg_len = bob_key->pub_key_data_size;

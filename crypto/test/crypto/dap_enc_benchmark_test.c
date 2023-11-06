@@ -30,8 +30,8 @@ static void s_transfer_test(dap_enc_key_type_t a_key_type, int a_times, int *a_g
     l_t1 = get_cur_time_msec();
     for(int i = 0; i < a_times; ++i) {
         l_bob_keys[i] = dap_enc_key_new(a_key_type);
-        size_t l_res = l_bob_keys[i]->gen_bob_shared_key(l_bob_keys[i], l_alice_keys[i]->pub_key_data, l_alice_keys[i]->pub_key_data_size, (void**)&l_bob_keys[i]->pub_key_data);
-        dap_assert_PIF(l_res, "Bob shared key gen");
+        l_bob_keys[i]->pub_key_data_size = l_bob_keys[i]->gen_bob_shared_key(l_bob_keys[i], l_alice_keys[i]->pub_key_data, l_alice_keys[i]->pub_key_data_size, (void**)&l_bob_keys[i]->pub_key_data);
+        dap_assert_PIF(l_bob_keys[i]->pub_key_data_size, "Bob shared key gen");
     }
     l_t2 = get_cur_time_msec();
     *a_bob_shared = l_t2 - l_t1;
@@ -189,6 +189,7 @@ static void s_sign_verify_test_becnhmark(const char *a_name, dap_enc_key_type_t 
 static void s_transfer_tests_run(int a_times)
 {
     dap_init_test_case();
+    // s_transfer_test_benchmark("NEWHOPE", DAP_ENC_KEY_TYPE_RLWE_NEWHOPE_CPA_KEM, a_times);
     s_transfer_test_benchmark("KYBER512", DAP_ENC_KEY_TYPE_KEM_KYBER512, a_times);
     s_transfer_test_benchmark("MSRLN", DAP_ENC_KEY_TYPE_MSRLN, a_times);
     dap_cleanup_test_case();
