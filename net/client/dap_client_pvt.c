@@ -125,7 +125,7 @@ void dap_client_pvt_deinit()
 void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
 {
     a_client_pvt->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012 ;
-    a_client_pvt->session_key_open_type = DAP_ENC_KEY_TYPE_MSRLN ;
+    a_client_pvt->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512 ;
     a_client_pvt->session_key_block_size = 32;
 
     a_client_pvt->stage = STAGE_BEGIN; // start point of state machine

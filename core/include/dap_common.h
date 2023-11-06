@@ -362,11 +362,12 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
  * 23: added support for encryption key type parameter and option to encrypt headers
  * 24: Update hashes protocol
  * 25: Added node sign
+ * 26: Change MSRLN to KYBER512
 */
-#define DAP_PROTOCOL_VERSION          25
+#define DAP_PROTOCOL_VERSION          26
 #define DAP_PROTOCOL_VERSION_DEFAULT  24 // used if version is not explicitly specified
 
-#define DAP_CLIENT_PROTOCOL_VERSION   25
+#define DAP_CLIENT_PROTOCOL_VERSION   26
 
 /* Crossplatform print formats for integers and others */
 
