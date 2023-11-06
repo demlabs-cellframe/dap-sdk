@@ -518,7 +518,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         break;
                     }
 
-                    a_client_pvt->stream = dap_stream_new_es_client(l_es);
+                    a_client_pvt->stream = dap_stream_new_es_client(l_es, &a_client_pvt->stream_addr);
                     assert(a_client_pvt->stream);
                     a_client_pvt->stream->session = dap_stream_session_pure_new(); // may be from in packet?
 
@@ -545,7 +545,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                             return;
                         }
                         *l_stream_es_uuid_ptr  = l_es->uuid;
-                        dap_stream_change_id(a_client_pvt->session_key, a_client_pvt->stream_id);  // change id in hash tab
                         dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
                                                     s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                     }
@@ -575,7 +574,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                             return;
                         }
                         *l_stream_es_uuid_ptr = l_es->uuid;
-                        dap_stream_change_id(a_client_pvt->session_key, a_client_pvt->stream_id);  // change id in hash tab
                         dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
                                                     s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                     }
@@ -588,7 +586,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     if(!a_client_pvt->stream){
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
-                        dap_stream_delete_prep_addr(a_client_pvt->stream_id, NULL);
                         s_stage_status_after(a_client_pvt);
                         return;
                     }
@@ -615,7 +612,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->reconnect_attempts = 0;
 
                     a_client_pvt->stage_status = STAGE_STATUS_DONE;
-                    dap_stream_add_stream_info(a_client_pvt->stream, a_client_pvt->stream_id);
                     s_stage_status_after(a_client_pvt);
 
                 } break;
@@ -1053,9 +1049,8 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             }
             size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_sign, DAP_ENC_DATA_TYPE_B64);
             if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
-                dap_stream_node_addr_t l_sign_addr = dap_stream_node_addr_from_sign(l_sign);
-                dap_stream_add_addr(l_sign_addr, l_client_pvt->session_key);
-                log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_sign_addr));
+                l_client_pvt->stream_addr = dap_stream_node_addr_from_sign(l_sign);
+                log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_client_pvt->stream_addr));
             } else
                 log_it(L_WARNING, "ENC: Invalid node sign");
         }
@@ -1205,7 +1200,6 @@ static void s_stream_ctl_error(dap_client_t * a_client, UNUSED_ARG void *a_arg, 
         l_client_pvt->last_error = ERROR_STREAM_CTL_ERROR;
     }
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
-    dap_stream_delete_prep_addr(0, l_client_pvt->session_key);
 
     s_stage_status_after(l_client_pvt);
 
