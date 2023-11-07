@@ -170,7 +170,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         if (l_msg_item && l_ch_pkt->hdr.type == DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST) {
             // Send data associated with this hash by request
             dap_gossip_msg_t *l_msg = (dap_gossip_msg_t *)l_msg_item->message;
-            dap_stream_ch_pkt_write_unsafe(a_ch, DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST, l_msg, dap_gossip_msg_get_size(l_msg));
+            dap_stream_ch_pkt_write_unsafe(a_ch, DAP_STREAM_CH_GOSSIP_MSG_TYPE_DATA, l_msg, dap_gossip_msg_get_size(l_msg));
         }
         pthread_rwlock_unlock(&s_gossip_lock);
         if (!l_msg_item && l_ch_pkt->hdr.type == DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH) {
@@ -205,18 +205,18 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             break;
         }
 
-        struct gossip_msg_item *l_msg_item = NULL;
+        struct gossip_msg_item *l_item_new = NULL;
         pthread_rwlock_wrlock(&s_gossip_lock);
         unsigned l_hash_value = 0;
         HASH_VALUE(l_ch_pkt->data, sizeof(dap_hash_t), l_hash_value);
-        HASH_FIND_BYHASHVALUE(hh, s_gossip_last_msgs, &l_msg->payload_hash, sizeof(dap_hash_t), l_hash_value, l_msg_item);
-        if (l_msg_item) {
+        HASH_FIND_BYHASHVALUE(hh, s_gossip_last_msgs, &l_msg->payload_hash, sizeof(dap_hash_t), l_hash_value, l_item_new);
+        if (l_item_new) {
             // Looks like a double. Just ignore it
             pthread_rwlock_unlock(&s_gossip_lock);
             break;
         }
         size_t l_item_new_size = dap_gossip_msg_get_size(l_msg) + sizeof(g_node_addr) + sizeof(struct gossip_msg_item);
-        struct gossip_msg_item *l_item_new = DAP_NEW_Z_SIZE(struct gossip_msg_item, l_item_new_size);
+        l_item_new = DAP_NEW_Z_SIZE(struct gossip_msg_item, l_item_new_size);
         if (!l_item_new) {
             log_it(L_CRITICAL, "Not enough memory");
             pthread_rwlock_unlock(&s_gossip_lock);
@@ -230,7 +230,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         l_msg_new->trace_len += sizeof(g_node_addr);
         *(dap_stream_node_addr_t *)(l_msg_new->trace_n_payload + l_msg->trace_len) = g_node_addr;
         memcpy(l_msg_new->trace_n_payload + l_msg_new->trace_len, l_msg->trace_n_payload + l_msg->trace_len, l_msg->payload_len);
-        HASH_ADD_BYHASHVALUE(hh, s_gossip_last_msgs, payload_hash, sizeof(dap_hash_t), l_hash_value, l_msg_item);
+        HASH_ADD_BYHASHVALUE(hh, s_gossip_last_msgs, payload_hash, sizeof(dap_hash_t), l_hash_value, l_item_new);
         pthread_rwlock_unlock(&s_gossip_lock);
         // Broadcast new message
         dap_cluster_t *l_links_cluster = dap_cluster_find(l_msg->cluster_id);
@@ -253,7 +253,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                               l_msg_new->trace_len / sizeof(dap_stream_node_addr_t));
         // Call back the payload func if any
         struct gossip_callback *l_callback = s_get_callbacks_by_ch_id(l_msg->payload_ch_id);
-        if (l_callback) {
+        if (!l_callback) {
             log_it(L_ERROR, "Can't find channel callback for gossip message apply");
             break;
         }

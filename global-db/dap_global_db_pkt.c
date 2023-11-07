@@ -132,9 +132,13 @@ bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj)
     if (!l_pkt)
         return false;
     bool l_ret = false;
-    dap_sign_t *l_sign = (dap_sign_t *)(l_pkt->data + l_pkt->group_len + l_pkt->key_len + l_pkt->value_len);
+    size_t l_signed_data_size = l_pkt->group_len + l_pkt->key_len + l_pkt->value_len;
+    size_t l_full_data_len = l_pkt->data_len;
+    l_pkt->data_len = l_signed_data_size;
+    dap_sign_t *l_sign = (dap_sign_t *)(l_pkt->data + l_signed_data_size);
     if (dap_sign_verify(l_sign, (byte_t *)l_pkt + sizeof(uint32_t),
-                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint32_t)) == 1) {
+                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint32_t)) == 0) {
+        l_pkt->data_len = l_full_data_len;
         uint32_t l_checksum = crc32c(CRC32C_INIT, (byte_t *)l_pkt + sizeof(uint32_t),
                                             dap_global_db_pkt_get_size(l_pkt) - sizeof(uint32_t));
         l_ret = l_checksum == l_pkt->crc;
