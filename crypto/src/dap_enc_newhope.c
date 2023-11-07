@@ -68,24 +68,14 @@ void dap_enc_newhope_kem_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const
 // work prepare
     DAP_NEWHOPE_SIGN_SECURITY newhope_type = NEWHOPE_1024;
     dap_enc_newhope_pke_set_type(newhope_type);
-    newhope_private_key_t *l_sk = NULL;
-    newhope_public_key_t  *l_pk = NULL;
 // memory alloc
-    DAP_NEW_Z_SIZE_RET(l_sk, newhope_private_key_t, sizeof(newhope_private_key_t), NULL);
-    DAP_NEW_Z_SIZE_RET(l_pk, newhope_public_key_t, sizeof(newhope_public_key_t), l_sk);
-    DAP_NEW_Z_SIZE_RET(l_sk->data, uint8_t, NEWHOPE_CPAPKE_SECRETKEYBYTES, l_pk, l_sk);
-    DAP_NEW_Z_SIZE_RET(l_pk->data, uint8_t, NEWHOPE_CPAPKE_PUBLICKEYBYTES, l_sk->data, l_pk, l_sk);
+    DAP_NEW_Z_SIZE_RET(a_key->_inheritor, uint8_t, NEWHOPE_CPAPKE_SECRETKEYBYTES, NULL);
+    DAP_NEW_Z_SIZE_RET(a_key->pub_key_data, uint8_t, NEWHOPE_CPAPKE_PUBLICKEYBYTES, a_key->_inheritor);
 // crypto calc
-    cpapke_keypair(l_pk->data, l_sk->data);
+    cpapke_keypair(a_key->pub_key_data, a_key->_inheritor);
 // post func work
-    l_sk->kind = newhope_type;
-    l_pk->kind = newhope_type;
-    l_pk->len = NEWHOPE_CPAPKE_PUBLICKEYBYTES;
-    l_sk->len = NEWHOPE_CPAPKE_SECRETKEYBYTES;
-    a_key->_inheritor = l_sk;
-    a_key->pub_key_data = l_pk;
-    a_key->_inheritor_size = sizeof(newhope_private_key_t);
-    a_key->pub_key_data_size = sizeof(newhope_public_key_t);
+    a_key->_inheritor_size = NEWHOPE_CPAPKE_SECRETKEYBYTES;
+    a_key->pub_key_data_size = NEWHOPE_CPAPKE_PUBLICKEYBYTES;
     return;
 }
 
@@ -111,20 +101,15 @@ size_t dap_enc_newhope_pbk_enc(dap_enc_key_t *a_key, const void *a_pub,
 {
 // sanity check
     dap_return_val_if_pass(!a_sendb || !a_key || !a_pub, 0)
-    newhope_public_key_t *l_pk = (newhope_public_key_t*)a_pub;
-    if(a_pub_size != sizeof (newhope_public_key_t) || !l_pk || (l_pk->kind != NEWHOPE_1024 && l_pk->kind != NEWHOPE_TOY)) {
-        log_it(L_ERROR, "newhope wrong public key");
-        return 0;
-    }
 // memory alloc
-    a_key->priv_key_data_size = 0;
-    DAP_DEL_MULTY(a_key->priv_key_data, *a_sendb);
-    DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, NEWHOPE_SYMBYTES, 0, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(*a_sendb, uint8_t, NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0, a_key->priv_key_data);
+    a_key->shared_key_size = 0;
+    DAP_DEL_MULTY(a_key->shared_key, *a_sendb);
+    DAP_NEW_Z_SIZE_RET_VAL(a_key->shared_key, uint8_t, NEWHOPE_SYMBYTES, 0, NULL);
+    DAP_NEW_Z_SIZE_RET_VAL(*a_sendb, uint8_t, NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0, a_key->shared_key);
 // crypto calc
-    crypto_kem_enc(*a_sendb, a_key->priv_key_data, l_pk->data);
+    crypto_kem_enc(*a_sendb, a_key->shared_key, a_pub);
  // post func work
-    a_key->priv_key_data_size = NEWHOPE_SYMBYTES;
+    a_key->shared_key_size = NEWHOPE_SYMBYTES;
     return NEWHOPE_CPAKEM_CIPHERTEXTBYTES;
 }
 
@@ -133,36 +118,21 @@ size_t dap_enc_newhope_prk_dec(dap_enc_key_t *a_key, const void *a_priv,
 {
 // sanity check
     dap_return_val_if_pass(!a_key || !a_sendb_size != NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0);
-
-    uint8_t key_a[NEWHOPE_SYMBYTES];
-    uint8_t sendb[NEWHOPE_CPAKEM_CIPHERTEXTBYTES];
-    newhope_private_key_t *l_sk = a_key->_inheritor;
-    memcpy(sendb, a_sendb, NEWHOPE_CPAKEM_CIPHERTEXTBYTES);
-    crypto_kem_dec(key_a, sendb, l_sk->data);
-    a_key->priv_key_data_size = NEWHOPE_SYMBYTES;
-    a_key->priv_key_data = DAP_NEW_SIZE(uint8_t,a_key->priv_key_data_size);
-    memcpy(a_key->priv_key_data, key_a, a_key->priv_key_data_size);
-
-    return NEWHOPE_SYMBYTES;//return (newhope_crypto_sign_open( (unsigned char *) msg, msg_size, (newhope_signature_t *) signature, a_key->pub_key_data));
+// memory alloc
+    a_key->shared_key_size = 0;
+    DAP_DEL_Z(a_key->shared_key);
+    DAP_NEW_Z_SIZE_RET_VAL(a_key->shared_key, uint8_t, NEWHOPE_SYMBYTES, 0, NULL);
+// crypto calc
+    crypto_kem_dec(a_key->priv_key_data, a_sendb, a_key->_inheritor);
+// post func work
+    a_key->shared_key_size = NEWHOPE_SYMBYTES;
+    return a_key->shared_key_size;
 }
 
 void dap_enc_newhope_kem_key_delete(dap_enc_key_t *a_key)
 {
     dap_return_if_pass(!a_key);
-    newhope_private_key_t *l_sk = (newhope_private_key_t *)a_key->_inheritor;
-    newhope_public_key_t *l_pk = (newhope_public_key_t *)a_key->pub_key_data;
-
-    if (l_sk) {
-        DAP_DEL_MULTY(l_sk->data, l_sk);
-        a_key->_inheritor = NULL;
-    }
-    // if (l_pk) {
-    //     DAP_DEL_MULTY(l_pk->data, l_pk);
-    //     a_key->pub_key_data = NULL;
-    // }
-    DAP_DEL_Z(a_key->priv_key_data);
+    DAP_DEL_Z(a_key->_inheritor);
     a_key->_inheritor_size= 0;
-    a_key->priv_key_data_size = 0;
-    a_key->pub_key_data_size = 0;
 }
 
