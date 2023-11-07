@@ -39,7 +39,8 @@ typedef enum{
 
 typedef struct {
   DAP_NEWHOPE_SIGN_SECURITY kind;                 /* the kind of ringct20       */
-  unsigned char *data;
+  uint64_t len;
+  uint8_t *data;
 }newhope_public_key_t;
 
 
@@ -50,13 +51,14 @@ typedef struct {
 ///==========================================================================================
 typedef struct {
   DAP_NEWHOPE_SIGN_SECURITY kind;                 /* the kind of ringct20       */
-  unsigned char *data;
+  uint64_t len;
+  uint8_t *data;
 } newhope_private_key_t;
 
 typedef struct {
   DAP_NEWHOPE_SIGN_SECURITY kind;                      /* the kind of ringct20       */
-  unsigned char *sig_data;
-  unsigned long long sig_len;
+  uint8_t *sig_data;
+  uint64_t sig_len;
 } newhope_signature_t;
 
 

@@ -48,13 +48,11 @@ void dap_enc_msrln_key_new(dap_enc_key_t *a_key)
  * @param key_size
  * @details allocate memory and generate private and public key
  */
-void dap_enc_msrln_key_generate(dap_enc_key_t *a_key, const void *kex_buf,
-                                size_t kex_size, const void * seed, size_t seed_size,
-                                size_t key_size)
+void dap_enc_msrln_key_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *a_kex_buf,
+                                UNUSED_ARG size_t a_kex_size, UNUSED_ARG const void *a_seed, UNUSED_ARG size_t a_seed_size,
+                                UNUSED_ARG size_t a_key_size)
 {
-    (void)kex_buf; (void)kex_size;
-    (void)seed; (void)seed_size; (void)key_size;
-// input check
+// sanity check
     dap_return_if_pass(!a_key);
 // memory alloc
     /* alice_msg is alice's public key */
