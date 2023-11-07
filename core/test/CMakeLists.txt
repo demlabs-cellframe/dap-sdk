@@ -58,7 +58,7 @@ add_test(
     COMMAND core_test
 )
 
-if (NOT PLATFORM_ARM AND VERSION EQUAL "7l")
+if (NOT PLATFORM_ARM AND VERSION MATCHES "7l")
     message("[-] Dissable rpm test")
     add_test(
         NAME rpm-test
