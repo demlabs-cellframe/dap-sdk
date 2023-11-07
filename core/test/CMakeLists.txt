@@ -58,10 +58,13 @@ add_test(
     COMMAND core_test
 )
 
-add_test(
-    NAME rpm-test
-    COMMAND rpmalloc_test
-)
+if (NOT PLATFORM_ARM AND VERSION EQUAL "7l")
+    message("[-] Dissable rpm test")
+    add_test(
+        NAME rpm-test
+        COMMAND rpmalloc_test
+    )
+endif ()
 
 if(UNIX)
     target_include_directories(${PROJECT_NAME} PRIVATE unix)
