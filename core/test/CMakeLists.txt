@@ -59,11 +59,12 @@ add_test(
 )
 
 if (NOT PLATFORM_ARM AND VERSION MATCHES "7l")
-    message("[-] Dissable rpm test")
     add_test(
         NAME rpm-test
         COMMAND rpmalloc_test
     )
+else()
+    message("[-] Disable rpm test")
 endif ()
 
 if(UNIX)
