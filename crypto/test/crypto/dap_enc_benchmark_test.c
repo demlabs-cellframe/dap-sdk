@@ -8,8 +8,6 @@
 /*--------------------------TRANSFER TEST BLOCK--------------------------*/
 static void s_transfer_test(dap_enc_key_type_t a_key_type, int a_times, int *a_gen_time, int *a_alice_shared, int *a_bob_shared)
 {
-    size_t seed_size = sizeof(uint8_t);
-    uint8_t seed[seed_size];
     dap_enc_key_t **l_alice_keys = NULL;
     dap_enc_key_t **l_bob_keys = NULL;
 
@@ -19,8 +17,7 @@ static void s_transfer_test(dap_enc_key_type_t a_key_type, int a_times, int *a_g
     int l_t1 = get_cur_time_msec();
 
     for (int i = 0; i < a_times; ++i) {
-        randombytes(seed, seed_size);
-        l_alice_keys[i] = dap_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
+        l_alice_keys[i] = dap_enc_key_new_generate(a_key_type, NULL, 0, NULL, 0, 0);
         dap_assert_PIF(l_alice_keys[i], "Key generate");
     }
 

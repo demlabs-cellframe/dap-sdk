@@ -13,6 +13,7 @@
 #include "dap_string.h"
 
 #define MY_MAXSIZE ((size_t)-1)
+#define LOG_TAG "dap_string"
 
 static inline size_t nearest_power(size_t a_base, size_t a_num)
 {

@@ -117,29 +117,22 @@ size_t dap_enc_newhope_pbk_enc(dap_enc_key_t *a_key, const void *a_pub,
         return 0;
     }
 // memory alloc
-    DAP_DEL_Z(a_key->priv_key_data);
     a_key->priv_key_data_size = 0;
+    DAP_DEL_MULTY(a_key->priv_key_data, *a_sendb);
     DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, NEWHOPE_SYMBYTES, 0, NULL);
-    if (!*a_sendb)
-        DAP_NEW_Z_SIZE_RET_VAL(*a_sendb, uint8_t, NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0, a_key->priv_key_data);
+    DAP_NEW_Z_SIZE_RET_VAL(*a_sendb, uint8_t, NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0, a_key->priv_key_data);
 // crypto calc
-    uint8_t key_b[NEWHOPE_SYMBYTES];
-    crypto_kem_enc(*a_sendb, key_b, l_pk->data);
+    crypto_kem_enc(*a_sendb, a_key->priv_key_data, l_pk->data);
  // post func work
     a_key->priv_key_data_size = NEWHOPE_SYMBYTES;
-    memcpy(a_key->priv_key_data, key_b, a_key->priv_key_data_size);
     return NEWHOPE_CPAKEM_CIPHERTEXTBYTES;
 }
 
 size_t dap_enc_newhope_prk_dec(dap_enc_key_t *a_key, const void *a_priv,
                                size_t a_sendb_size, unsigned char *a_sendb)
 {
-    // if(a_sendb_size != NEWHOPE_CPAKEM_CIPHERTEXTBYTES)
-    // {
-    //     log_it(L_ERROR, "newhope wrong size of ciphertext (Bob send");
-    //     return 0;
-    // }
-    // newhope_private_key_t *sk = a_key->priv_key_data;
+// sanity check
+    dap_return_val_if_pass(!a_key || !a_sendb_size != NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0);
 
     uint8_t key_a[NEWHOPE_SYMBYTES];
     uint8_t sendb[NEWHOPE_CPAKEM_CIPHERTEXTBYTES];
@@ -157,15 +150,19 @@ void dap_enc_newhope_kem_key_delete(dap_enc_key_t *a_key)
 {
     dap_return_if_pass(!a_key);
     newhope_private_key_t *l_sk = (newhope_private_key_t *)a_key->_inheritor;
-    // newhope_public_key_t  *l_pk = (newhope_public_key_t  *)a_key->pub_key_data;
-    // if(sk != NULL && a_key->priv_key_data_size != NEWHOPE_SYMBYTES)
-    //     DAP_DEL_Z(sk->data);
-    // if(pk != NULL)
-    //     DAP_DEL_Z(pk->data);
+    newhope_public_key_t *l_pk = (newhope_public_key_t *)a_key->pub_key_data;
+
     if (l_sk) {
         DAP_DEL_MULTY(l_sk->data, l_sk);
         a_key->_inheritor = NULL;
     }
-    a_key->_inheritor_size = 0;
+    // if (l_pk) {
+    //     DAP_DEL_MULTY(l_pk->data, l_pk);
+    //     a_key->pub_key_data = NULL;
+    // }
+    DAP_DEL_Z(a_key->priv_key_data);
+    a_key->_inheritor_size= 0;
+    a_key->priv_key_data_size = 0;
+    a_key->pub_key_data_size = 0;
 }
 
