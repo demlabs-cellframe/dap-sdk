@@ -264,9 +264,7 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
         dap_timerfd_reset_unsafe(l_timer_fd);
     } else {
         debug_if(l_debug_timer, L_ATT, "Close timer on socket %"DAP_FORMAT_SOCKET, l_timer_fd->events_socket->socket);
-#if defined (DAP_OS_WINDOWS)
-        DeleteTimerQueueTimer(hTimerQueue, l_timer_fd->th, NULL);
-#elif defined (DAP_OS_BSD)
+#ifdef DAP_EVENTS_CAPS_KQUEUE
         l_timer_fd->events_socket->kqueue_base_filter = EVFILT_EMPTY;
 #endif
         a_event_sock->flags |= DAP_SOCK_SIGNAL_CLOSE;

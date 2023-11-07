@@ -336,7 +336,7 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 
 #ifdef DAP_OS_WINDOWS
 #ifdef _WIN64
-#define DAP_FORMAT_SOCKET "d"
+#define DAP_FORMAT_SOCKET "llu"
 #else
 #define DAP_FORMAT_SOCKET "lu"
 #endif // _WIN64
