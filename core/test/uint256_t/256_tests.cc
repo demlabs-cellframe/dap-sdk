@@ -442,6 +442,34 @@ TEST(InputTests, OverflowScientificInputHighBit2) {
     check_equality256(a, 0);
 }
 
+TEST(InputTests, DecimalInputZero) {
+    uint256_t a = dap_uint256_scan_decimal("0.0");
+    check_equality256(a, 0);
+}
+
+TEST(InputTests, DecimalInputOne) {
+    uint256_t a = dap_uint256_scan_decimal("1.0");
+    check_equality256(a, 1000000000000000000);
+}
+
+TEST(InputTests, DecimalInputTen) {
+    uint256_t a = dap_uint256_scan_decimal("10.0");
+    check_equality256(a, 10000000000000000000);
+}
+
+TEST(InputTests, DecimalInputBig) {
+    uint256_t a = dap_uint256_scan_decimal("10000000000000000000000000.0");
+    uint256_t b = dap_uint256_scan_uninteger("10000000000000000000000000000000000000000000");
+    int c = compare256(a, b);
+    ASSERT_FALSE(c);
+}
+TEST(InputTests, DecimalInputLow) {
+    uint256_t a = dap_uint256_scan_decimal("0.000000000000000001");
+    uint256_t b = dap_uint256_scan_uninteger("1");
+    int c = compare256(a, b);
+    ASSERT_FALSE(c);
+}
+
 TEST_F(DISABLED_RandomInputTestsCoins, CoinsBase) {
     //todo: fraction part should be 18 or less symbols, not more. For now it can be more and i dont know what to do with it
 
@@ -508,6 +536,40 @@ TEST(OutputTests, Min256Output) {
 TEST(OutputTests, Max256Output) {
     uint256_t max = dap_uint256_scan_uninteger("115792089237316195423570985008687907853269984665640564039457584007913129639935");
     ASSERT_STREQ(dap_uint256_uninteger_to_char(max), "115792089237316195423570985008687907853269984665640564039457584007913129639935");
+}
+
+TEST(OutputTests, DecimalInputZero) {
+    uint256_t a = dap_uint256_scan_decimal("0.0");
+    char *b = dap_uint256_decimal_to_char(a);
+    ASSERT_STREQ(b, "0.0");
+    DAP_DELETE(b);
+}
+
+TEST(OutputTests, DecimalInputOne) {
+    uint256_t a = dap_uint256_scan_decimal("1.0");
+    char *b = dap_uint256_decimal_to_char(a);
+    ASSERT_STREQ(b, "1.0");
+    DAP_DELETE(b);
+}
+
+TEST(OutputTests, DecimalInputTen) {
+    uint256_t a = dap_uint256_scan_decimal("10.0");
+    char *b = dap_uint256_decimal_to_char(a);
+    ASSERT_STREQ(b, "10.0");
+    DAP_DELETE(b);
+}
+
+TEST(OutputTests, DecimalInputBig) {
+    uint256_t a = dap_uint256_scan_decimal("10000000000000000000000000.0");
+    char *b = dap_uint256_decimal_to_char(a);
+    ASSERT_STREQ(b, "10000000000000000000000000.0");
+    DAP_DELETE(b);
+}
+TEST(OutputTests, DecimalInputLow) {
+    uint256_t a = dap_uint256_scan_decimal("0.000000000000000001");
+    char *b = dap_uint256_decimal_to_char(a);
+    ASSERT_STREQ(b, "0.000000000000000001");
+    DAP_DELETE(b);
 }
 
 TEST_F(RandomOutputTests, Output256){
