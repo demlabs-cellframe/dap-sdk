@@ -836,7 +836,6 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
                     l_work_item = l_prev;
 
                     //debug_if(g_debug_reactor, L_INFO, "[!] Dequeued %lu items from es %p", l_count, a_esocket);
-                    log_it(L_MSG, "[!] Dequeued %lu items from es %p", l_count, a_esocket);
                     for( ; l_work_item && (l_tmp = (work_item_t*)l_work_item->entry.Next, 1); l_work_item = l_tmp ) {
                         a_esocket->callbacks.queue_ptr_callback(a_esocket, l_work_item->data);
                         DAP_ALFREE(l_work_item);
@@ -1275,11 +1274,8 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     */
     work_item_t *l_work_item = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(work_item_t));
     l_work_item->data = a_arg;
-    if (!InterlockedPushEntrySList((PSLIST_HEADER)a_es->_pvt, &(l_work_item->entry)))
-        l_ret = dap_sendto(a_es->socket, a_es->port, &a_arg, sizeof(void*)) == SOCKET_ERROR ? WSAGetLastError() : NO_ERROR;
-    else
-        l_ret = NO_ERROR;
-    return l_ret;
+    InterlockedPushEntrySList((PSLIST_HEADER)a_es->_pvt, &(l_work_item->entry))
+    return dap_sendto(a_es->socket, a_es->port, &a_arg, sizeof(void*)) == SOCKET_ERROR ? WSAGetLastError() : NO_ERROR;
     //log_it(L_MSG, "[!] Enqueued an item to es %p", a_es);
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     struct kevent l_event={0};
