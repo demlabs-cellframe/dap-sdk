@@ -60,8 +60,8 @@ void dap_enc_msrln_key_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *a_k
     dap_return_if_pass(!a_key);
 // memory alloc
     uint8_t *l_skey, *l_pkey;
-    DAP_NEW_Z_SIZE_RET_VAL(l_skey, uint8_t, MSRLN_PKA_BYTES * sizeof(uint32_t), 0, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_pkey, uint8_t, MSRLN_PKA_BYTES, 0, l_skey);
+    DAP_NEW_Z_SIZE_RET(l_skey, uint8_t, MSRLN_PKA_BYTES * sizeof(uint32_t), NULL);
+    DAP_NEW_Z_SIZE_RET(l_pkey, uint8_t, MSRLN_PKA_BYTES, l_skey);
 // crypto calc
     PLatticeCryptoStruct PLCS = LatticeCrypto_allocate();
     LatticeCrypto_initialize(PLCS, (RandomBytes)randombytes, MSRLN_generate_a, MSRLN_get_error);

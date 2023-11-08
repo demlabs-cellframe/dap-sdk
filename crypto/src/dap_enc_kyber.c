@@ -51,8 +51,8 @@ void dap_enc_kyber512_key_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *
     dap_return_if_pass(!a_key);
 // memory alloc
     uint8_t *l_skey, *l_pkey;
-    DAP_NEW_Z_SIZE_RET_VAL(l_skey, uint8_t, CRYPTO_SECRETKEYBYTES, 0, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_pkey, uint8_t, CRYPTO_PUBLICKEYBYTES, 0, l_skey);
+    DAP_NEW_Z_SIZE_RET(l_skey, uint8_t, CRYPTO_SECRETKEYBYTES, NULL);
+    DAP_NEW_Z_SIZE_RET(l_pkey, uint8_t, CRYPTO_PUBLICKEYBYTES, l_skey);
 // crypto calc
     if (crypto_kem_keypair(l_pkey, l_skey)) {
         DAP_DEL_MULTY(l_pkey, l_skey);

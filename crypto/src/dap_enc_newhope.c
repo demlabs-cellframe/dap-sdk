@@ -74,8 +74,8 @@ void dap_enc_newhope_kem_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const
     dap_enc_newhope_pke_set_type(newhope_type);
 // memory alloc
     uint8_t *l_skey, *l_pkey;
-    DAP_NEW_Z_SIZE_RET_VAL(l_skey, uint8_t, NEWHOPE_CPAPKE_SECRETKEYBYTES, 0, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_pkey, uint8_t, NEWHOPE_CPAPKE_PUBLICKEYBYTES, 0, l_skey);
+    DAP_NEW_Z_SIZE_RET(l_skey, uint8_t, NEWHOPE_CPAPKE_SECRETKEYBYTES, NULL);
+    DAP_NEW_Z_SIZE_RET(l_pkey, uint8_t, NEWHOPE_CPAPKE_PUBLICKEYBYTES, l_skey);
 // crypto calc
     cpapke_keypair(l_pkey, l_skey);
 // post func work
