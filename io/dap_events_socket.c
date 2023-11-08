@@ -1274,7 +1274,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     */
     work_item_t *l_work_item = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(work_item_t));
     l_work_item->data = a_arg;
-    InterlockedPushEntrySList((PSLIST_HEADER)a_es->_pvt, &(l_work_item->entry))
+    InterlockedPushEntrySList((PSLIST_HEADER)a_es->_pvt, &(l_work_item->entry));
     return dap_sendto(a_es->socket, a_es->port, &a_arg, sizeof(void*)) == SOCKET_ERROR ? WSAGetLastError() : NO_ERROR;
     //log_it(L_MSG, "[!] Enqueued an item to es %p", a_es);
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
