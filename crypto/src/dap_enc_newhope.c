@@ -46,34 +46,42 @@ void dap_enc_newhope_pke_set_type(DAP_NEWHOPE_SIGN_SECURITY type)
     _newhope_type = type;
 }
 
-void dap_enc_newhope_kem_key_new(dap_enc_key_t *key) {
+void dap_enc_newhope_kem_key_new(dap_enc_key_t *a_key) {
 
-    key->type = DAP_ENC_KEY_TYPE_RLWE_NEWHOPE_CPA_KEM;
-    key->enc = NULL;
-    key->enc_na = NULL;
-    key->dec_na = NULL;
-    key->gen_bob_shared_key= dap_enc_newhope_gen_bob_shared_key;
-    key->gen_alice_shared_key = dap_enc_newhope_gen_alice_shared_key;
-    key->priv_key_data  = NULL;
-    key->pub_key_data   = NULL;
+    a_key->type = DAP_ENC_KEY_TYPE_RLWE_NEWHOPE_CPA_KEM;
+    a_key->enc = NULL;
+    a_key->enc_na = NULL;
+    a_key->dec_na = NULL;
+    a_key->gen_bob_shared_key= dap_enc_newhope_gen_bob_shared_key;
+    a_key->gen_alice_shared_key = dap_enc_newhope_gen_alice_shared_key;
+    a_key->priv_key_data_size = 0;
+    a_key->pub_key_data_size = 0;
+    a_key->_inheritor_size = 0;
+    a_key->priv_key_data = NULL;
+    a_key->pub_key_data = NULL;
+    a_key->_inheritor = NULL;
 
 }
 
 void dap_enc_newhope_kem_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *a_kex_buf,
-        UNUSED_ARG size_t a_kex_size, UNUSED_ARG const void *a_seed, UNUSED_ARG size_t a_seed_size,
-        UNUSED_ARG size_t a_key_size)
+                                    UNUSED_ARG size_t a_kex_size, UNUSED_ARG const void *a_seed, 
+                                    UNUSED_ARG size_t a_seed_size, UNUSED_ARG size_t a_key_size)
 {
-// income check
+// sanity check
     dap_return_if_pass(!a_key);
 // work prepare
     DAP_NEWHOPE_SIGN_SECURITY newhope_type = NEWHOPE_1024;
     dap_enc_newhope_pke_set_type(newhope_type);
 // memory alloc
-    DAP_NEW_Z_SIZE_RET(a_key->_inheritor, uint8_t, NEWHOPE_CPAPKE_SECRETKEYBYTES, NULL);
-    DAP_NEW_Z_SIZE_RET(a_key->pub_key_data, uint8_t, NEWHOPE_CPAPKE_PUBLICKEYBYTES, a_key->_inheritor);
+    uint8_t *l_skey, *l_pkey;
+    DAP_NEW_Z_SIZE_RET_VAL(l_skey, uint8_t, NEWHOPE_CPAPKE_SECRETKEYBYTES, 0, NULL);
+    DAP_NEW_Z_SIZE_RET_VAL(l_pkey, uint8_t, NEWHOPE_CPAPKE_PUBLICKEYBYTES, 0, l_skey);
 // crypto calc
-    cpapke_keypair(a_key->pub_key_data, a_key->_inheritor);
+    cpapke_keypair(l_pkey, l_skey);
 // post func work
+    DAP_DEL_MULTY(a_key->_inheritor, a_key->pub_key_data);
+    a_key->_inheritor = l_skey;
+    a_key->pub_key_data = l_pkey;
     a_key->_inheritor_size = NEWHOPE_CPAPKE_SECRETKEYBYTES;
     a_key->pub_key_data_size = NEWHOPE_CPAPKE_PUBLICKEYBYTES;
     return;
@@ -118,7 +126,7 @@ size_t dap_enc_newhope_gen_bob_shared_key(dap_enc_key_t *a_bob_key, const void *
 }
 
 size_t dap_enc_newhope_gen_alice_shared_key(dap_enc_key_t *a_alice_key, UNUSED_ARG const void *a_alice_priv,
-                               size_t a_cypher_msg_size, unsigned char *a_cypher_msg)
+                               size_t a_cypher_msg_size, uint8_t *a_cypher_msg)
 {
 // sanity check
     dap_return_val_if_pass(!a_alice_key || !a_cypher_msg || a_cypher_msg_size < NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0);

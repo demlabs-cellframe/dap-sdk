@@ -15,6 +15,10 @@ void dap_enc_msrln_key_new(dap_enc_key_t *a_key)
     a_key->gen_alice_shared_key = dap_enc_msrln_gen_alice_shared_key;
     a_key->priv_key_data_size = 0;
     a_key->pub_key_data_size = 0;
+    a_key->_inheritor_size = 0;
+    a_key->priv_key_data = NULL;
+    a_key->pub_key_data = NULL;
+    a_key->_inheritor = NULL;
 }
 
 ///**
@@ -49,29 +53,29 @@ void dap_enc_msrln_key_new(dap_enc_key_t *a_key)
  * @details allocate memory and generate private and public key
  */
 void dap_enc_msrln_key_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *a_kex_buf,
-                                UNUSED_ARG size_t a_kex_size, UNUSED_ARG const void *a_seed, UNUSED_ARG size_t a_seed_size,
-                                UNUSED_ARG size_t a_key_size)
+                                UNUSED_ARG size_t a_kex_size, UNUSED_ARG const void *a_seed,
+                                UNUSED_ARG size_t a_seed_size, UNUSED_ARG size_t a_key_size)
 {
 // sanity check
     dap_return_if_pass(!a_key);
 // memory alloc
-    /* alice_msg is alice's public key */
-    DAP_NEW_Z_SIZE_RET(a_key->pub_key_data, void, MSRLN_PKA_BYTES, NULL);
-    DAP_NEW_Z_SIZE_RET(a_key->priv_key_data, void, MSRLN_PKA_BYTES * sizeof(uint32_t), a_key->pub_key_data);
+    uint8_t *l_skey, *l_pkey;
+    DAP_NEW_Z_SIZE_RET_VAL(l_skey, uint8_t, MSRLN_PKA_BYTES * sizeof(uint32_t), 0, NULL);
+    DAP_NEW_Z_SIZE_RET_VAL(l_pkey, uint8_t, MSRLN_PKA_BYTES, 0, l_skey);
 // crypto calc
     PLatticeCryptoStruct PLCS = LatticeCrypto_allocate();
     LatticeCrypto_initialize(PLCS, (RandomBytes)randombytes, MSRLN_generate_a, MSRLN_get_error);
-
-    if (MSRLN_KeyGeneration_A((int32_t *) a_key->priv_key_data,
-                              (unsigned char *) a_key->pub_key_data, PLCS) != CRYPTO_MSRLN_SUCCESS) {
-        DAP_DEL_Z(a_key->pub_key_data);
-        DAP_DEL_Z(a_key->priv_key_data);
+    if (MSRLN_KeyGeneration_A((int32_t *) l_skey, l_pkey, PLCS) != CRYPTO_MSRLN_SUCCESS) {
+        DAP_DEL_MULTY(l_skey, l_pkey, PLCS);
         return;
     }
     DAP_DELETE(PLCS);
-// post func work
-    a_key->pub_key_data_size = MSRLN_PKA_BYTES;
+// post func work, change in args only after all pass
+    DAP_DEL_MULTY(a_key->priv_key_data, a_key->pub_key_data);
+    a_key->priv_key_data = l_skey;
+    a_key->pub_key_data = l_pkey;
     a_key->priv_key_data_size = MSRLN_SHAREDKEY_BYTES;
+    a_key->pub_key_data_size = MSRLN_PKA_BYTES;
     return;
 }
 
@@ -120,7 +124,7 @@ size_t dap_enc_msrln_gen_bob_shared_key(dap_enc_key_t *a_bob_key, const void *a_
  * @return
  */
 size_t dap_enc_msrln_gen_alice_shared_key(dap_enc_key_t *a_alice_key, const void *a_alice_priv,
-                               size_t a_cypher_msg_size, unsigned char *a_cypher_msg)
+                               size_t a_cypher_msg_size, uint8_t *a_cypher_msg)
 {
 // sanity check
     dap_return_val_if_pass(!a_alice_key || !a_alice_priv || !a_cypher_msg || a_cypher_msg_size < MSRLN_PKB_BYTES, 0);

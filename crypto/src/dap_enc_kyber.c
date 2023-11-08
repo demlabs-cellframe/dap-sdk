@@ -17,6 +17,10 @@ void dap_enc_kyber512_key_new(dap_enc_key_t *a_key)
     a_key->gen_alice_shared_key = dap_enc_kyber512_gen_alice_shared_key;
     a_key->priv_key_data_size = 0;
     a_key->pub_key_data_size = 0;
+    a_key->_inheritor_size = 0;
+    a_key->priv_key_data = NULL;
+    a_key->pub_key_data = NULL;
+    a_key->_inheritor = NULL;
 }
 
 /**
@@ -39,20 +43,25 @@ void dap_enc_kyber512_key_new_from_data_public(UNUSED_ARG dap_enc_key_t *a_key, 
  * @param seed_size
  * @param key_size
  */
-void dap_enc_kyber512_key_generate( dap_enc_key_t *a_key, const void *kex_buf,
-                                size_t kex_size, const void * seed, size_t seed_size,
-                                size_t key_size)
+void dap_enc_kyber512_key_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *a_kex_buf,
+                                UNUSED_ARG size_t a_kex_size, UNUSED_ARG const void *a_seed, 
+                                UNUSED_ARG size_t a_seed_size, UNUSED_ARG size_t a_key_size)
 {
-    (void)kex_buf; (void)kex_size;
-    (void)seed; (void)seed_size; (void)key_size;
 // input check
     dap_return_if_pass(!a_key);
 // memory alloc
-    DAP_NEW_Z_SIZE_RET(a_key->_inheritor, uint8_t, CRYPTO_SECRETKEYBYTES, NULL);
-    DAP_NEW_Z_SIZE_RET(a_key->pub_key_data, uint8_t, CRYPTO_PUBLICKEYBYTES, a_key->_inheritor);
+    uint8_t *l_skey, *l_pkey;
+    DAP_NEW_Z_SIZE_RET_VAL(l_skey, uint8_t, CRYPTO_SECRETKEYBYTES, 0, NULL);
+    DAP_NEW_Z_SIZE_RET_VAL(l_pkey, uint8_t, CRYPTO_PUBLICKEYBYTES, 0, l_skey);
 // crypto calc
-    crypto_kem_keypair(a_key->pub_key_data, a_key->_inheritor);
-// post func work
+    if (crypto_kem_keypair(l_pkey, l_skey)) {
+        DAP_DEL_MULTY(l_pkey, l_skey);
+        return;
+    }
+// post func work, change in args only after all pass
+    DAP_DEL_MULTY(a_key->_inheritor, a_key->pub_key_data);
+    a_key->_inheritor = l_skey;
+    a_key->pub_key_data = l_pkey;
     a_key->_inheritor_size = CRYPTO_SECRETKEYBYTES;
     a_key->pub_key_data_size = CRYPTO_PUBLICKEYBYTES;
 }
@@ -108,7 +117,7 @@ size_t dap_enc_kyber512_gen_bob_shared_key (dap_enc_key_t *a_bob_key, const void
 // a_key->priv_key_data  --- shared key
 // a_key->priv_key_data_size --- shared key length
 size_t dap_enc_kyber512_gen_alice_shared_key(dap_enc_key_t *a_alice_key, UNUSED_ARG const void *a_alice_priv,
-                               size_t a_cypher_msg_size, unsigned char *a_cypher_msg)
+                               size_t a_cypher_msg_size, uint8_t *a_cypher_msg)
 {
 // sanity check
     dap_return_val_if_pass(!a_alice_key || !a_cypher_msg || a_cypher_msg_size < CRYPTO_CIPHERTEXTBYTES, 0);

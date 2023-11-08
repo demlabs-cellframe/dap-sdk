@@ -64,7 +64,7 @@ typedef struct {
 
 void dap_enc_newhope_pke_set_type(DAP_NEWHOPE_SIGN_SECURITY type);
 
-void dap_enc_newhope_kem_key_new(dap_enc_key_t *key);
+void dap_enc_newhope_kem_key_new(dap_enc_key_t *a_key);
 
 void dap_enc_newhope_kem_key_new_generate(dap_enc_key_t *key, const void *kex_buf,
                                     size_t kex_size, const void *seed, size_t seed_size,
@@ -72,7 +72,7 @@ void dap_enc_newhope_kem_key_new_generate(dap_enc_key_t *key, const void *kex_bu
 
 size_t dap_enc_newhope_gen_bob_shared_key(dap_enc_key_t *a_bob_key, const void *a_alice_pub, size_t a_alice_pub_size, void **a_cypher_msg);
 size_t dap_enc_newhope_gen_alice_shared_key(dap_enc_key_t *a_alice_key, const void *a_alice_priv,
-                               size_t a_cypher_msg_size, unsigned char *a_cypher_msg);
+                               size_t a_cypher_msg_size, uint8_t *a_cypher_msg);
 void dap_enc_newhope_kem_key_delete(dap_enc_key_t *key);
 
 //size_t dap_enc_newhope_calc_signature_unserialized_size(void);
