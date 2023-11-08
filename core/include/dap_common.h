@@ -74,11 +74,6 @@
 
 #define BIT( x ) ( 1 << x )
 
-#define dap_return_if_fail(expr)            {if(!(expr)) {return;}}
-#define dap_return_val_if_fail(expr,val)    {if(!(expr)) {return (val);}}
-#define dap_return_if_pass(expr)            {if(expr) {return;}}
-#define dap_return_val_if_pass(expr,val)    {if(expr) {return (val);}}
-
 // Stuffs an integer into a pointer type
 #define DAP_INT_TO_POINTER(i) ((void*) (size_t) (i))
 // Extracts an integer from a pointer
@@ -130,6 +125,7 @@
 #endif
 
 extern const char *g_error_memory_alloc;
+extern const char *g_error_sanity_check;
 void dap_delete_multy(int a_count, ...);
 uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...);
 int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, ...);
@@ -240,11 +236,10 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_NEW_Z_COUNT_RET(a, t, c, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
 #define DAP_NEW_Z_COUNT_RET_VAL(a, t, c, ret_val, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
 
-#define dap_return_if_fail(expr)            {if(!(expr)) {return;}}
-#define dap_return_val_if_fail(expr,val)    {if(!(expr)) {return (val);}}
-
-#define dap_return_if_pass(expr)            {if(expr) {return;}}
-#define dap_return_val_if_pass(expr,val)    {if(expr) {return (val);}}
+#define dap_return_if_fail(expr)            {if(!(expr)) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", g_error_sanity_check); return;}}
+#define dap_return_val_if_fail(expr,val)    {if(!(expr)) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", g_error_sanity_check); return (val);}}
+#define dap_return_if_pass(expr)            {if(expr) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", g_error_sanity_check); return;}}
+#define dap_return_val_if_pass(expr,val)    {if(expr) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", g_error_sanity_check); return (val);}}
 
 #ifndef __cplusplus
 #define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))
@@ -362,11 +357,12 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
  * 23: added support for encryption key type parameter and option to encrypt headers
  * 24: Update hashes protocol
  * 25: Added node sign
+ * 26: Change MSRLN to KYBER512
 */
-#define DAP_PROTOCOL_VERSION          25
+#define DAP_PROTOCOL_VERSION          26
 #define DAP_PROTOCOL_VERSION_DEFAULT  24 // used if version is not explicitly specified
 
-#define DAP_CLIENT_PROTOCOL_VERSION   25
+#define DAP_CLIENT_PROTOCOL_VERSION   26
 
 /* Crossplatform print formats for integers and others */
 

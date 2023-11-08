@@ -11,6 +11,8 @@
 #include "SimpleFIPS202.h"
 #include "tesla_params.h"
 
+#define LOG_TAG "dap_crypto_sign_tesla"
+
 static void pack_sk(unsigned char *sk, poly *s, poly_k *e, unsigned char *seeds, tesla_param_t *p)
 {    
     // Pack secret key sk. It does not apply full compression

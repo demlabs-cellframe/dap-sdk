@@ -1,5 +1,6 @@
 #include "dap_enc_sign_multi_test.h"
 #include "dap_test.h"
+#include "dap_enc_test.h"
 #include "rand/dap_rand.h"
 #include "dap_sign.h"
 
@@ -39,7 +40,7 @@ static void test_signing_verifying(
                 DAP_ENC_KEY_TYPE_SIG_TESLA,\
                 DAP_ENC_KEY_TYPE_SIG_BLISS,\
                 DAP_ENC_KEY_TYPE_SIG_DILITHIUM,\
-                /* DAP_ENC_KEY_TYPE_SIG_PICNIC,\ */
+                /*DAP_ENC_KEY_TYPE_SIG_PICNIC,\ */
                 DAP_ENC_KEY_TYPE_SIG_FALCON,\
                 DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS};
         int step;
@@ -118,11 +119,6 @@ static void test_signing_verifying(
     DAP_DEL_MULTY(l_signs, l_signs_ser, l_source);
 }
 
-static void init_test_case()
-{
-    srand((uint32_t) time(NULL));
-}
-
 static void test_becnhmark_get_verify_ser_deser_sign(const char *a_name, dap_enc_key_type_t a_key_type, int a_times)
 {
     dap_print_module_name(a_name);
@@ -146,14 +142,12 @@ static void test_becnhmark_get_verify_ser_deser_sign(const char *a_name, dap_enc
 
 void dap_enc_multi_sign_tests_run(int a_times)
 {
-    
-    init_test_case();
-
+    dap_init_test_case();
     test_becnhmark_get_verify_ser_deser_sign("MULTISIG_BLISS", DAP_ENC_KEY_TYPE_SIG_BLISS, a_times / SIGN_COUNT);
     test_becnhmark_get_verify_ser_deser_sign("MULTISIG_DILITHIUM", DAP_ENC_KEY_TYPE_SIG_DILITHIUM, a_times / SIGN_COUNT);
     // test_becnhmark_get_verify_ser_deser_sign("MULTISIG_PICNIC", DAP_ENC_KEY_TYPE_SIG_PICNIC, a_times / SIGN_COUNT);
     test_becnhmark_get_verify_ser_deser_sign("MULTISIG_FALCON", DAP_ENC_KEY_TYPE_SIG_FALCON, a_times / SIGN_COUNT);
     test_becnhmark_get_verify_ser_deser_sign("MULTISIG_SPHINCSPLUS", DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, a_times / SIGN_COUNT);
     test_becnhmark_get_verify_ser_deser_sign("MULTISIG_RANDOM", DAP_ENC_KEY_TYPE_NULL, a_times / SIGN_COUNT);
-
+    dap_cleanup_test_case();
 }

@@ -8,7 +8,7 @@
  * @brief dap_enc_kyber_key_new
  * @param a_key
  */
-void dap_enc_kyber512_key_new( dap_enc_key_t* a_key)
+void dap_enc_kyber512_key_new(dap_enc_key_t *a_key)
 {
     a_key->type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
     a_key->dec = NULL;
@@ -17,6 +17,10 @@ void dap_enc_kyber512_key_new( dap_enc_key_t* a_key)
     a_key->gen_alice_shared_key = dap_enc_kyber512_gen_alice_shared_key;
     a_key->priv_key_data_size = 0;
     a_key->pub_key_data_size = 0;
+    a_key->_inheritor_size = 0;
+    a_key->priv_key_data = NULL;
+    a_key->pub_key_data = NULL;
+    a_key->_inheritor = NULL;
 }
 
 /**
@@ -25,11 +29,9 @@ void dap_enc_kyber512_key_new( dap_enc_key_t* a_key)
  * @param a_in
  * @param a_in_size
  */
-void dap_enc_kyber512_key_new_from_data_public(dap_enc_key_t * a_key, const void * a_in, size_t a_in_size)
+void dap_enc_kyber512_key_new_from_data_public(UNUSED_ARG dap_enc_key_t *a_key, UNUSED_ARG const void *a_in, UNUSED_ARG size_t a_in_size)
 {
-    (void)a_key;
-    (void)a_in;
-    (void)a_in_size;
+
 }
 
 /**
@@ -41,31 +43,38 @@ void dap_enc_kyber512_key_new_from_data_public(dap_enc_key_t * a_key, const void
  * @param seed_size
  * @param key_size
  */
-void dap_enc_kyber512_key_generate( dap_enc_key_t * a_key, const void *kex_buf,
-                                size_t kex_size, const void * seed, size_t seed_size,
-                                size_t key_size)
+void dap_enc_kyber512_key_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *a_kex_buf,
+                                UNUSED_ARG size_t a_kex_size, UNUSED_ARG const void *a_seed, 
+                                UNUSED_ARG size_t a_seed_size, UNUSED_ARG size_t a_key_size)
 {
-    (void)kex_buf; (void)kex_size;
-    (void)seed; (void)seed_size; (void)key_size;
-
+// input check
+    dap_return_if_pass(!a_key);
+// memory alloc
+    uint8_t *l_skey, *l_pkey;
+    DAP_NEW_Z_SIZE_RET(l_skey, uint8_t, CRYPTO_SECRETKEYBYTES, NULL);
+    DAP_NEW_Z_SIZE_RET(l_pkey, uint8_t, CRYPTO_PUBLICKEYBYTES, l_skey);
+// crypto calc
+    if (crypto_kem_keypair(l_pkey, l_skey)) {
+        DAP_DEL_MULTY(l_pkey, l_skey);
+        return;
+    }
+// post func work, change in args only after all pass
+    DAP_DEL_MULTY(a_key->_inheritor, a_key->pub_key_data);
+    a_key->_inheritor = l_skey;
+    a_key->pub_key_data = l_pkey;
     a_key->_inheritor_size = CRYPTO_SECRETKEYBYTES;
-    a_key->_inheritor = DAP_NEW_SIZE(byte_t,a_key->_inheritor_size);
-
     a_key->pub_key_data_size = CRYPTO_PUBLICKEYBYTES;
-    a_key->pub_key_data = DAP_NEW_SIZE(byte_t,a_key->pub_key_data_size);
-
-    crypto_kem_keypair(a_key->pub_key_data, a_key->_inheritor);
-
 }
 
 /**
  * @brief dap_enc_kyber_key_delete
  * @param a_key
  */
-void dap_enc_kyber512_key_delete(struct dap_enc_key* a_key)
+void dap_enc_kyber512_key_delete(dap_enc_key_t *a_key)
 {
-    if( a_key->_inheritor)
-        DAP_DELETE(a_key->_inheritor);
+    dap_return_if_pass(!a_key);
+    DAP_DEL_Z(a_key->_inheritor);
+    a_key->_inheritor_size = 0;
 }
 
 // key pair generation and generation of shared key at Bob's side
@@ -77,25 +86,25 @@ void dap_enc_kyber512_key_delete(struct dap_enc_key* a_key)
 // b_pub  --- Bob's public key
 // b_key->priv_key_data --- shared key
 // b_key->priv_key_data_size --- shared key length
-size_t dap_enc_kyber512_gen_bob_shared_key (dap_enc_key_t *a_key, const void *a_pub,
-                                           size_t a_cypher_msg_size, void ** a_cypher_msg)
+size_t dap_enc_kyber512_gen_bob_shared_key (dap_enc_key_t *a_bob_key, const void *a_alice_pub, size_t a_alice_pub_size, void **a_cypher_msg)
 {
-    if(!a_cypher_msg)
+// sanity check
+    dap_return_val_if_pass(!a_bob_key || !a_alice_pub || !a_cypher_msg || a_alice_pub_size < CRYPTO_PUBLICKEYBYTES, 0);
+// memory alloc
+    uint8_t *l_shared_key, *l_cypher_msg;
+    DAP_NEW_Z_SIZE_RET_VAL(l_shared_key, uint8_t, CRYPTO_BYTES, 0, NULL);
+    DAP_NEW_Z_SIZE_RET_VAL(l_cypher_msg, uint8_t, CRYPTO_CIPHERTEXTBYTES, 0, l_shared_key);
+// crypto calc
+    if(crypto_kem_enc(l_cypher_msg, l_shared_key, a_alice_pub)) {
+        DAP_DEL_MULTY(l_cypher_msg, l_shared_key);
         return 0;
-    if( a_cypher_msg_size < CRYPTO_CIPHERTEXTBYTES)
-        return 0;
-
-    if (! *a_cypher_msg)
-        *a_cypher_msg = DAP_NEW_SIZE(byte_t, CRYPTO_CIPHERTEXTBYTES);
-
-    if (a_key->shared_key)
-        DAP_DELETE(a_key->shared_key);
-    a_key->shared_key_size = CRYPTO_BYTES;
-    a_key->shared_key = DAP_NEW_SIZE(byte_t, a_key->shared_key_size);
-
-
-    crypto_kem_enc( *a_cypher_msg, a_key->shared_key,  a_pub );
-    return a_key->shared_key_size;
+    }
+// post func work, change in args only after all pass
+    DAP_DEL_MULTY(a_bob_key->shared_key, *a_cypher_msg);
+    *a_cypher_msg = l_cypher_msg;
+    a_bob_key->shared_key = l_shared_key;
+    a_bob_key->shared_key_size = CRYPTO_BYTES;
+    return CRYPTO_CIPHERTEXTBYTES;
 }
 
 // generation of shared key at Alice's side
@@ -107,14 +116,22 @@ size_t dap_enc_kyber512_gen_bob_shared_key (dap_enc_key_t *a_key, const void *a_
 // OUTPUT:
 // a_key->priv_key_data  --- shared key
 // a_key->priv_key_data_size --- shared key length
-size_t dap_enc_kyber512_gen_alice_shared_key(struct dap_enc_key *a_key, const void *a_priv,
-                                             size_t a_cypher_msg_size, byte_t *a_cypher_msg)
+size_t dap_enc_kyber512_gen_alice_shared_key(dap_enc_key_t *a_alice_key, UNUSED_ARG const void *a_alice_priv,
+                               size_t a_cypher_msg_size, uint8_t *a_cypher_msg)
 {
-    a_key->shared_key_size = CRYPTO_BYTES;
-    if (a_key->shared_key)
-        DAP_DELETE(a_key->shared_key);
-    a_key->shared_key = DAP_NEW_SIZE(byte_t, a_key->shared_key_size);
-
-    crypto_kem_dec(  a_key->shared_key, a_cypher_msg, a_key->_inheritor );
-    return a_key->shared_key_size;
+// sanity check
+    dap_return_val_if_pass(!a_alice_key || !a_cypher_msg || a_cypher_msg_size < CRYPTO_CIPHERTEXTBYTES, 0);
+// memory alloc
+    uint8_t *l_shared_key = NULL;
+    DAP_NEW_Z_SIZE_RET_VAL(l_shared_key, uint8_t, CRYPTO_BYTES, 0, NULL);
+// crypto calc
+    if (crypto_kem_dec(l_shared_key, a_cypher_msg, a_alice_key->_inheritor) ) {
+        DAP_DEL_Z(l_shared_key);
+        return 0;
+    }
+// post func work
+    DAP_DEL_Z(a_alice_key->shared_key);
+    a_alice_key->shared_key = l_shared_key;
+    a_alice_key->shared_key_size = CRYPTO_BYTES;
+    return a_alice_key->shared_key_size;
 }
