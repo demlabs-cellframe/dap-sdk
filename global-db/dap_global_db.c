@@ -962,7 +962,7 @@ dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
 /* *** Get_all functions group *** */
 
 
-static int s_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
+int dap_global_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
     dap_store_obj_t *l_obj1 = (dap_store_obj_t *)a_obj1,
             *l_obj2 = (dap_store_obj_t *)a_obj2;
     return l_obj2->timestamp < l_obj1->timestamp
@@ -983,7 +983,7 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
     // Form objs from store_objs
     if (l_store_objs) {
         if (l_values_count > 1)
-            qsort(l_store_objs, l_values_count, sizeof(dap_store_obj_t), s_db_compare_by_ts);
+            qsort(l_store_objs, l_values_count, sizeof(dap_store_obj_t), dap_global_db_compare_by_ts);
         l_objs = DAP_NEW_Z_SIZE(dap_global_db_obj_t, sizeof(dap_global_db_obj_t) * l_values_count);
         if (!l_objs) {
             goto mem_clear;
