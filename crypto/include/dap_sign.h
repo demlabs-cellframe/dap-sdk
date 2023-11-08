@@ -40,6 +40,7 @@ enum dap_sign_type_enum {
     SIG_TYPE_PICNIC = 0x0101, /// @brief
     SIG_TYPE_DILITHIUM = 0x0102, /// @brief
     SIG_TYPE_FALCON = 0x0103, /// @brief Falcon signature
+    SIG_TYPE_SPHINCSPLUS = 0x0104, /// @brief Falcon signature
 #ifdef DAP_PQLR
     SIG_TYPE_PQLR_DILITHIUM = 0x1102,
     SIG_TYPE_PQLR_FALCON = 0x1103,
@@ -81,28 +82,22 @@ typedef struct dap_sign
 
 typedef struct _dap_multi_sign_params_t {
     dap_sign_type_t type;               // Multi-signature type
-    uint8_t total_count;                // Total key count
+    uint8_t key_count;                // Total key count
     uint8_t sign_count;                 // Signatures count
     uint8_t *key_seq;                   // Signing key sequence
     dap_enc_key_t **keys;               // Signing keys
 } dap_multi_sign_params_t;
 
-typedef struct _dap_multi_sign_meta_t {
-    uint32_t pkey_size;                 // Size of public key
-    uint32_t sign_size;                 // Size of signature
+typedef struct dap_multi_sign_meta {
+    dap_sign_hdr_t sign_header;         // header data need to verification
 } DAP_ALIGN_PACKED dap_multi_sign_meta_t;
 
-typedef struct _dap_multi_sign_keys_t {
-    uint8_t num;
-    dap_sign_type_t type;
-} DAP_ALIGN_PACKED dap_multi_sign_keys_t;
-
-typedef struct _dap_multi_sign_t {
+typedef struct dap_multi_sign {
 /*** Hashed metadata ***/
     dap_sign_type_t type;               // Multi-signature type
-    uint8_t total_count;                // Total key count
+    uint8_t key_count;                  // Total key count
     uint8_t sign_count;                 // Signatures count
-    dap_multi_sign_keys_t *key_seq;     // Signing key sequence
+    uint8_t *key_seq;     // Signing key sequence
 /*** Unhashed metadata ***/
     dap_multi_sign_meta_t *meta;        // Sizes of keys and signatures
 /*** Key hashes ***/
@@ -133,7 +128,7 @@ bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size);
  * @return
  */
 static inline bool dap_sign_verify_data (dap_sign_t * a_chain_sign, const void * a_data, const size_t a_data_size){
-    return dap_sign_verify(a_chain_sign, a_data, a_data_size) == 1;
+    return !dap_sign_verify(a_chain_sign, a_data, a_data_size);
 }
 
 /**
@@ -179,7 +174,7 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
 
 uint8_t *dap_multi_sign_serialize(dap_multi_sign_t *a_sign, size_t *a_out_len);
 dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_t *a_sign, size_t a_sign_len);
-dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, uint8_t a_total_count, uint8_t a_sign_count, dap_enc_key_t *a_key1, ...);
+dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, uint8_t a_total_count, uint8_t a_sign_count, ...);
 void dap_multi_sign_params_delete(dap_multi_sign_params_t *a_params);
 dap_multi_sign_t *dap_multi_sign_create(dap_multi_sign_params_t *a_params, const void *a_data, const size_t a_data_size);
 int dap_multi_sign_verify(dap_multi_sign_t *a_sign, const void *a_data, const size_t a_data_size);

@@ -227,11 +227,9 @@ void LRCT_MatrixMulVect_Test()
 {
     poly_ringct20 A[2], H[2];
     LRCT_Setup(A, H, 2);
-    uint8_t bt[2] = { 0 };
-    bt[0] = 1;
-    bt[1] = 2;
-
-
+    // uint8_t bt[2] = { 0 };
+    // bt[0] = 1;
+    // bt[1] = 2;
 }
 void LRCT_Lift_Test()
 {

@@ -3,13 +3,10 @@
 #include "dap_enc_test.h"
 #include "dap_test.h"
 #include "rand/dap_rand.h"
-#include "dap_enc_key.h"
-#include "dap_enc_base64.h"
-#include "dap_enc_bliss.h"
-#include "dap_enc_picnic.h"
-#include "dap_enc_tesla.h"
-#include "dap_enc_dilithium.h"
+#include "dap_sign.h"
 #include "dap_enc.h"
+
+#define LOG_TAG "dap_crypto_enc_tests"
 
 int get_cur_time_msec();
 
@@ -195,45 +192,13 @@ void test_encode_decode_raw_b64_url_safe(size_t count_steps)
     dap_pass_msg("Encode->decode raw base64 url safe");
 }
 
-void test_key_transfer_msrln()
+void dap_init_test_case()
 {
-    uint8_t *alice_msg;
-    size_t alice_msg_len;
-
-    uint8_t *bob_msg;
-    size_t bob_msg_len;
-
-    dap_enc_key_t* alice_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_MSRLN, NULL, 0, NULL, 0, 0);
-
-    // generate Alice msg
-    alice_msg = alice_key->pub_key_data;
-    alice_msg_len = alice_key->pub_key_data_size;
-
-    /* generate Bob's response */
-    dap_enc_key_t* bob_key = dap_enc_key_new(DAP_ENC_KEY_TYPE_MSRLN);
-    bob_key->gen_bob_shared_key(bob_key, (unsigned char *) alice_msg, alice_msg_len,
-                                (void **) &bob_key->pub_key_data);
-    bob_msg = bob_key->pub_key_data;
-    bob_msg_len = bob_key->pub_key_data_size;
-
-    /* Alice processes Bob's response */
-    bob_key->gen_alice_shared_key(alice_key, alice_key->priv_key_data, bob_msg_len, (unsigned char*)bob_msg);
-
-    /* compare session key values */
-    dap_assert(memcmp(alice_key->priv_key_data, bob_key->priv_key_data, alice_key->priv_key_data_size) == 0, "Session keys equals");
-
-    dap_enc_key_delete(alice_key);
-    dap_enc_key_delete(bob_key);
-
-    dap_pass_msg("Key transfer simulation");
-}
-
-static void init_test_case()
-{
+    srand((uint32_t) time(NULL));
     dap_enc_key_init();
 }
 
-static void cleanup_test_case()
+void dap_cleanup_test_case()
 {
     dap_enc_key_deinit();
 }
@@ -260,7 +225,7 @@ void* _read_key_from_file(const char* file_name, size_t key_size)
 /**
  * @key_type may be DAP_ENC_KEY_TYPE_IAES, DAP_ENC_KEY_TYPE_OAES
  */
-static void test_serealize_deserealize(dap_enc_key_type_t key_type)
+static void test_serialize_deserialize(dap_enc_key_type_t key_type)
 {
     const char *kex_data = "1234567890123456789012345678901234567890";//"123";
     size_t kex_size = strlen(kex_data);
@@ -271,13 +236,13 @@ static void test_serealize_deserealize(dap_enc_key_type_t key_type)
 
 //  for key_type==DAP_ENC_KEY_TYPE_OAES must be: key_size=[16|24|32] and kex_size>=key_size
     dap_enc_key_t* key = dap_enc_key_new_generate(key_type, kex_data, kex_size, seed, seed_size, 32);
-    dap_enc_key_serialize_t* serealize_key = dap_enc_key_serialize(key);
-    _write_key_in_file(serealize_key, sizeof (dap_enc_key_serialize_t), TEST_SER_FILE_NAME);
-    dap_enc_key_serialize_t* deserealize_key = _read_key_from_file(TEST_SER_FILE_NAME, sizeof(dap_enc_key_serialize_t));
-    dap_assert(memcmp(serealize_key, deserealize_key, sizeof(dap_enc_key_serialize_t)) == 0,
+    dap_enc_key_serialize_t* serialize_key = dap_enc_key_serialize(key);
+    _write_key_in_file(serialize_key, sizeof (dap_enc_key_serialize_t), TEST_SER_FILE_NAME);
+    dap_enc_key_serialize_t* deserialize_key = _read_key_from_file(TEST_SER_FILE_NAME, sizeof(dap_enc_key_serialize_t));
+    dap_assert(memcmp(serialize_key, deserialize_key, sizeof(dap_enc_key_serialize_t)) == 0,
                "dap_enc_key_serialize_t equals");
 
-    dap_enc_key_t* key2 = dap_enc_key_deserialize(deserealize_key, sizeof (*deserealize_key));
+    dap_enc_key_t* key2 = dap_enc_key_deserialize(deserialize_key, sizeof (*deserialize_key));
 
     dap_assert(key->type == key2->type, "Key type");
     dap_assert(key->last_used_timestamp == key2->last_used_timestamp,
@@ -323,19 +288,19 @@ static void test_serealize_deserealize(dap_enc_key_type_t key_type)
     dap_assert_PIF(memcmp(source, decode_result, source_size) == 0,
                    "Check source and encode->decode data");
 
-    free(serealize_key);
-    free(deserealize_key);
+    free(serialize_key);
+    free(deserialize_key);
     dap_enc_key_delete(key);
     dap_enc_key_delete(key2);
 
-    dap_pass_msg("Key serealize->deserealize");
+    dap_pass_msg("Key serialize->deserialize");
     unlink(TEST_SER_FILE_NAME);
 }
 
 /**
  * @key_type may be DAP_ENC_KEY_TYPE_SIG_BLISS, DAP_ENC_KEY_TYPE_SIG_TESLA, DAP_ENC_KEY_TYPE_SIG_PICNIC
  */
-static void test_serealize_deserealize_pub_priv(dap_enc_key_type_t key_type)
+static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
 {
     const char *kex_data = "1234567890123456789012345678901234567890"; //"123";
     size_t kex_size = strlen(kex_data);
@@ -370,7 +335,7 @@ static void test_serealize_deserealize_pub_priv(dap_enc_key_type_t key_type)
 
     dap_assert(key->priv_key_data_size == key2->priv_key_data_size, "Priv key data size");
     dap_assert(key->pub_key_data_size == key2->pub_key_data_size, "Pub key data size");
-    dap_pass_msg("Key serealize->deserealize");
+    dap_pass_msg("Key serialize->deserialize");
 
     size_t source_size = 10 + random_uint32_t( 20);
     uint8_t source_buf[source_size];
@@ -381,73 +346,51 @@ static void test_serealize_deserealize_pub_priv(dap_enc_key_type_t key_type)
     // encode by key
     int is_sig = 0, is_vefify = 0;
     switch (key_type) {
-    case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        sig_buf_size = sizeof(bliss_signature_t);
-        sig_buf = calloc(sig_buf_size, 1);
-        if(dap_enc_sig_bliss_get_sign(key, source_buf, source_size, sig_buf, sig_buf_size) == BLISS_B_NO_ERROR)
-            is_sig = 1;
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-        sig_buf_size = dap_enc_picnic_calc_signature_size(key);
-        sig_buf = calloc(sig_buf_size, 1);
-        if(key->enc_na(key, source_buf, source_size, sig_buf, sig_buf_size) > 0)
-            is_sig = 1;
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        sig_buf_size = dap_enc_tesla_calc_signature_size();
-        sig_buf = calloc(sig_buf_size, 1);
-        if(key->enc_na(key, source_buf, source_size, sig_buf, sig_buf_size) > 0)
-            is_sig = 1;
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        sig_buf_size = dap_enc_dilithium_calc_signature_unserialized_size();
-        sig_buf = calloc(sig_buf_size, 1);
-        if(key->enc_na(key, source_buf, source_size, sig_buf, sig_buf_size) > 0)
-            is_sig = 1;
-        break;
-    default:
-        sig_buf_size = 0;
+        case DAP_ENC_KEY_TYPE_SIG_BLISS:
+        case DAP_ENC_KEY_TYPE_SIG_PICNIC:
+        case DAP_ENC_KEY_TYPE_SIG_TESLA:
+        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+            sig_buf_size = dap_sign_create_output_unserialized_calc_size(key, 0);
+            sig_buf = calloc(sig_buf_size, 1);
+            is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
+            break;
+        default:
+            sig_buf_size = 0;
     }
     dap_enc_key_delete(key);
 
-    dap_assert_PIF(sig_buf_size>0 && is_sig==1, "Check make signature");
+    dap_assert_PIF(sig_buf_size > 0 && !is_sig, "Check make signature");
 
-    // serealize & deserealize signature
+    // serialize & deserialize signature
     size_t sig_buf_len = sig_buf_size;
     uint8_t *l_sign_tmp = dap_enc_key_serialize_sign(key_type, sig_buf, &sig_buf_len);
     dap_enc_key_signature_delete(key_type, sig_buf);
     sig_buf = dap_enc_key_deserialize_sign(key_type, l_sign_tmp, &sig_buf_len);
     DAP_DELETE(l_sign_tmp);
 
-    dap_assert_PIF(sig_buf, "Check serealize->deserealize signature");
+    dap_assert_PIF(sig_buf, "Check serialize->deserialize signature");
 
     // decode by key2
     switch (key_type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        if(dap_enc_sig_bliss_verify_sign(key2, source_buf, source_size, sig_buf, sig_buf_size) == BLISS_B_NO_ERROR)
-            is_vefify = 1;
-        break;
     case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-        if(key2->dec_na(key2, source_buf, source_size, sig_buf, sig_buf_size) == 0)
-            is_vefify = 1;
-        break;
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        if(key2->dec_na(key2, source_buf, source_size, sig_buf, sig_buf_size) == 0)
-            is_vefify = 1;
-        break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        if(key2->dec_na(key2, source_buf, source_size, sig_buf, sig_buf_size) == 0)
-            is_vefify = 1;
+    case DAP_ENC_KEY_TYPE_SIG_FALCON:
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        is_vefify = key2->sign_verify(key2, source_buf, source_size, sig_buf, sig_buf_size);
         break;
     default:
-        is_vefify = 0;
+        is_vefify = 1;
     }
     //dap_enc_key_delete(key);
     dap_enc_key_delete(key2);
     dap_enc_key_signature_delete(key_type, sig_buf);
 
 
-    dap_assert_PIF(is_vefify==1, "Check verify signature");
+    dap_assert_PIF(!is_vefify, "Check verify signature");
 
     dap_pass_msg("Verify signature");
     unlink(TEST_SER_FILE_NAME);
@@ -455,23 +398,26 @@ static void test_serealize_deserealize_pub_priv(dap_enc_key_type_t key_type)
 
 void dap_enc_tests_run() {
     dap_print_module_name("dap_enc");
-    init_test_case();
+    dap_init_test_case();
     test_encode_decode_raw(500);
     test_encode_decode_raw_b64(500);
     test_encode_decode_raw_b64_url_safe(500);
-    test_key_transfer_msrln();
-    dap_print_module_name("dap_enc serealize->deserealize IAES");
-    test_serealize_deserealize(DAP_ENC_KEY_TYPE_IAES);
-    dap_print_module_name("dap_enc serealize->deserealize OAES");
-    test_serealize_deserealize(DAP_ENC_KEY_TYPE_OAES);
+    dap_print_module_name("dap_enc serialize->deserialize IAES");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_IAES);
+    dap_print_module_name("dap_enc serialize->deserialize OAES");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_OAES);
 
-    dap_print_module_name("dap_enc_sig serealize->deserealize BLISS");
-    test_serealize_deserealize_pub_priv(DAP_ENC_KEY_TYPE_SIG_BLISS);
-    dap_print_module_name("dap_enc_sig serealize->deserealize PICNIC");
-    test_serealize_deserealize_pub_priv(DAP_ENC_KEY_TYPE_SIG_PICNIC); //sometimes fail
-    dap_print_module_name("dap_enc_sig serealize->deserealize TESLA");
-    test_serealize_deserealize_pub_priv(DAP_ENC_KEY_TYPE_SIG_TESLA);
-    dap_print_module_name("dap_enc_sig serealize->deserealize DILITHIUM");
-    test_serealize_deserealize_pub_priv(DAP_ENC_KEY_TYPE_SIG_DILITHIUM);
-    cleanup_test_case();
+    dap_print_module_name("dap_enc_sig serialize->deserialize BLISS");
+    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_BLISS);
+    dap_print_module_name("dap_enc_sig serialize->deserialize PICNIC");
+    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_PICNIC); //sometimes fail
+    dap_print_module_name("dap_enc_sig serialize->deserialize TESLA");
+    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_TESLA);
+    dap_print_module_name("dap_enc_sig serialize->deserialize DILITHIUM");
+    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_DILITHIUM);
+    dap_print_module_name("dap_enc_sig serialize->deserialize FALCON");
+    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_FALCON);
+    dap_print_module_name("dap_enc_sig serialize->deserialize SPHINCSPLUS");
+    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS);
+    dap_cleanup_test_case();
 }

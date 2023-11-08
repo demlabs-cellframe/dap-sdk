@@ -125,7 +125,7 @@ void dap_client_pvt_deinit()
 void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
 {
     a_client_pvt->session_key_type = DAP_ENC_KEY_TYPE_SALSA2012 ;
-    a_client_pvt->session_key_open_type = DAP_ENC_KEY_TYPE_MSRLN ;
+    a_client_pvt->session_key_open_type = DAP_ENC_KEY_TYPE_KEM_KYBER512;
     a_client_pvt->session_key_block_size = 32;
 
     a_client_pvt->stage = STAGE_BEGIN; // start point of state machine
@@ -498,13 +498,27 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         .error_callback = s_stream_es_callback_error,
                         .delete_callback = s_stream_es_callback_delete,
                         .connected_callback = s_stream_es_callback_connected
-                    };//
-                    a_client_pvt->stream_es = dap_events_socket_wrap_no_add( l_stream_socket,
-                                                                             &l_s_callbacks);
-                    a_client_pvt->stream_es->flags |= DAP_SOCK_CONNECTING ; // To catch non-blocking error when connecting we should up WRITE flag
-                    a_client_pvt->stream_es->flags |= DAP_SOCK_READY_TO_WRITE;
-                    a_client_pvt->stream_es->_inheritor = a_client_pvt->client;
-                    a_client_pvt->stream = dap_stream_new_es_client(a_client_pvt->stream_es);
+                    };
+                    // Stream event socket
+                    dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_stream_socket, &l_s_callbacks);
+                    a_client_pvt->stream_es = l_es;
+                    l_es->flags |= DAP_SOCK_CONNECTING ; // To catch non-blocking error when connecting we should up WRITE flag
+                    l_es->flags |= DAP_SOCK_READY_TO_WRITE;
+                    l_es->_inheritor = a_client_pvt->client;
+                    memset(&l_es->remote_addr, 0, sizeof(l_es->remote_addr));
+                    l_es->remote_addr.sin_family = AF_INET;
+                    l_es->remote_addr.sin_port = htons(a_client_pvt->client->uplink_port);
+                    l_es->remote_port = a_client_pvt->client->uplink_port;
+                    strncpy(l_es->remote_addr_str, a_client_pvt->client->uplink_addr, INET_ADDRSTRLEN);
+                    if(inet_pton(AF_INET, a_client_pvt->client->uplink_addr, &(l_es->remote_addr.sin_addr)) < 0) {
+                        log_it(L_ERROR, "Wrong remote address '%s:%u'", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                        a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                        a_client_pvt->last_error = ERROR_WRONG_ADDRESS;
+                        s_stage_status_after(a_client_pvt);
+                        break;
+                    }
+
+                    a_client_pvt->stream = dap_stream_new_es_client(l_es, &a_client_pvt->stream_addr);
                     assert(a_client_pvt->stream);
                     a_client_pvt->stream->session = dap_stream_session_pure_new(); // may be from in packet?
 
@@ -514,69 +528,54 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->stream->stream_worker = a_client_pvt->stream_worker;
 
                     // connect
-                    memset(&a_client_pvt->stream_es->remote_addr, 0, sizeof(a_client_pvt->stream_es->remote_addr));
-                    a_client_pvt->stream_es->remote_addr.sin_family = AF_INET;
-                    a_client_pvt->stream_es->remote_addr.sin_port = htons(a_client_pvt->client->uplink_port);
-                    if(inet_pton(AF_INET, a_client_pvt->client->uplink_addr, &(a_client_pvt->stream_es->remote_addr.sin_addr)) < 0) {
-                        log_it(L_ERROR, "Wrong remote address '%s:%u'", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
-                        a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                        a_client_pvt->last_error = ERROR_WRONG_ADDRESS;
-                    } else {
-                        int l_err = 0;
-                        strncpy(a_client_pvt->stream_es->remote_addr_str, a_client_pvt->client->uplink_addr, INET_ADDRSTRLEN);
+                    int l_err = 0;
+                    if((l_err = connect(l_es->socket, (struct sockaddr *) &l_es->remote_addr,
+                            sizeof(struct sockaddr_in))) ==0) {
+                        log_it(L_INFO, "Connected momentaly with %s:%u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                        // add to dap_worker
+                        dap_worker_add_events_socket(l_worker, l_es);
 
-                        if((l_err = connect(a_client_pvt->stream_es->socket, (struct sockaddr *) &a_client_pvt->stream_es->remote_addr,
-                                sizeof(struct sockaddr_in))) ==0) {
-                            log_it(L_INFO, "Connected momentaly with %s:%u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
-                            // add to dap_worker
-                            dap_worker_add_events_socket(l_worker, a_client_pvt->stream_es);
-
-                            // Add check timer
-                            assert(a_client_pvt->stream_es);
-                            dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-                            if (!l_stream_es_uuid_ptr) {
-                                log_it(L_CRITICAL, "Memory allocation error");
-                                a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                                a_client_pvt->last_error = ERROR_STREAM_ABORTED;
-                                s_stage_status_after(a_client_pvt);
-                                return;
-                            }
-                            *l_stream_es_uuid_ptr  = a_client_pvt->stream_es->uuid;
-                            dap_stream_change_id(a_client_pvt->session_key, a_client_pvt->stream_id);  // change id in hash tab
-                            dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
-                                                        s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
-                        }
-                        else if (l_err != EINPROGRESS && l_err != -1){
-                            char l_errbuf[128] = {0};
-
-                            if (l_err)
-                                strerror_r(l_err,l_errbuf,sizeof (l_errbuf));
-                            else
-                                strncpy(l_errbuf,"Unknown Error",sizeof(l_errbuf)-1);
-                            log_it(L_ERROR, "Remote address can't connect (%s:%hu) with sock_id %"DAP_FORMAT_SOCKET": \"%s\" (code %d)",
-                                                a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port,
-                                                a_client_pvt->stream_es->socket, l_errbuf, l_err);
-                            dap_events_socket_delete_unsafe(a_client_pvt->stream_es, true);
+                        // Add check timer
+                        dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
+                        if (!l_stream_es_uuid_ptr) {
+                            log_it(L_CRITICAL, "Memory allocation error");
                             a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                            a_client_pvt->last_error = ERROR_STREAM_CONNECT;
-                        } else {
-                            log_it(L_INFO, "Connecting stream to remote %s:%u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
-                            // add to dap_worker
-                            assert (a_client_pvt->stream_es);
-                            dap_worker_add_events_socket(l_worker, a_client_pvt->stream_es);
-                            dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-                            if (!l_stream_es_uuid_ptr) {
-                                log_it(L_CRITICAL, "Memory allocation error");
-                                a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                                a_client_pvt->last_error = ERROR_STREAM_ABORTED;
-                                s_stage_status_after(a_client_pvt);
-                                return;
-                            }
-                            *l_stream_es_uuid_ptr = a_client_pvt->stream_es->uuid;
-                            dap_stream_change_id(a_client_pvt->session_key, a_client_pvt->stream_id);  // change id in hash tab
-                            dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
-                                                        s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
+                            a_client_pvt->last_error = ERROR_STREAM_ABORTED;
+                            s_stage_status_after(a_client_pvt);
+                            return;
                         }
+                        *l_stream_es_uuid_ptr  = l_es->uuid;
+                        dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
+                                                    s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
+                    }
+                    else if (l_err != EINPROGRESS && l_err != -1){
+                        char l_errbuf[128] = {0};
+
+                        if (l_err)
+                            strerror_r(l_err,l_errbuf,sizeof (l_errbuf));
+                        else
+                            strncpy(l_errbuf,"Unknown Error",sizeof(l_errbuf)-1);
+                        log_it(L_ERROR, "Remote address can't connect (%s:%hu) with sock_id %"DAP_FORMAT_SOCKET": \"%s\" (code %d)",
+                                            a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port,
+                                            l_es->socket, l_errbuf, l_err);
+                        dap_events_socket_delete_unsafe(l_es, true);
+                        a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                        a_client_pvt->last_error = ERROR_STREAM_CONNECT;
+                    } else {
+                        log_it(L_INFO, "Connecting stream to remote %s:%u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                        // add to dap_worker
+                        dap_worker_add_events_socket(l_worker, l_es);
+                        dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
+                        if (!l_stream_es_uuid_ptr) {
+                            log_it(L_CRITICAL, "Memory allocation error");
+                            a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                            a_client_pvt->last_error = ERROR_STREAM_ABORTED;
+                            s_stage_status_after(a_client_pvt);
+                            return;
+                        }
+                        *l_stream_es_uuid_ptr = l_es->uuid;
+                        dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
+                                                    s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                     }
                     if (a_client_pvt->stage_status == STAGE_STATUS_ERROR)
                         s_stage_status_after(a_client_pvt);
@@ -587,7 +586,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     if(!a_client_pvt->stream){
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
-                        dap_stream_delete_prep_addr(a_client_pvt->stream_id, NULL);
                         s_stage_status_after(a_client_pvt);
                         return;
                     }
@@ -614,7 +612,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->reconnect_attempts = 0;
 
                     a_client_pvt->stage_status = STAGE_STATUS_DONE;
-                    dap_stream_add_stream_info(a_client_pvt->stream, a_client_pvt->stream_id);
                     s_stage_status_after(a_client_pvt);
 
                 } break;
@@ -1052,9 +1049,8 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             }
             size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_sign, DAP_ENC_DATA_TYPE_B64);
             if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
-                dap_stream_node_addr_t l_sign_addr = dap_stream_node_addr_from_sign(l_sign);
-                dap_stream_add_addr(l_sign_addr, l_client_pvt->session_key);
-                log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_sign_addr));
+                l_client_pvt->stream_addr = dap_stream_node_addr_from_sign(l_sign);
+                log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_client_pvt->stream_addr));
             } else
                 log_it(L_WARNING, "ENC: Invalid node sign");
         }
@@ -1204,7 +1200,6 @@ static void s_stream_ctl_error(dap_client_t * a_client, UNUSED_ARG void *a_arg, 
         l_client_pvt->last_error = ERROR_STREAM_CTL_ERROR;
     }
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
-    dap_stream_delete_prep_addr(0, l_client_pvt->session_key);
 
     s_stage_status_after(l_client_pvt);
 

@@ -112,6 +112,7 @@ typedef enum dap_enc_key_type {
 
     DAP_ENC_KEY_TYPE_KEM_KYBER512 = 23, // NIST Kyber KEM implementation
     DAP_ENC_KEY_TYPE_SIG_FALCON = 24, 
+    DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS = 25,
 
 #ifdef DAP_PQLR
     // QApp PQLR library integration
@@ -124,36 +125,34 @@ typedef enum dap_enc_key_type {
 
     DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_PQLR_KEM_NEWHOPE,
 #else
-    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_FALCON,
+    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,
 #endif
 } dap_enc_key_type_t;
 
-
-
-struct dap_enc_key;
+typedef struct dap_enc_key dap_enc_key_t;
 
 // allocates memory and sets callbacks
-typedef void (*dap_enc_callback_new)(struct dap_enc_key*);
+typedef void (*dap_enc_callback_new)(dap_enc_key_t*);
 
 // generates key data from seed
-typedef void (*dap_enc_callback_new_generate)(struct dap_enc_key* key, const void *kex_buf,
+typedef void (*dap_enc_callback_new_generate)(dap_enc_key_t* key, const void *kex_buf,
                                               size_t kex_size, const void* seed, size_t seed_size,
                                               size_t key_size);
 // free memory
-typedef void (*dap_enc_callback_delete)(struct dap_enc_key*);
+typedef void (*dap_enc_callback_delete)(dap_enc_key_t*);
 
-typedef size_t (*dap_enc_callback_key_size_t)(struct dap_enc_key*);
+typedef size_t (*dap_enc_callback_key_size_t)(dap_enc_key_t*);
 
 // encrypt and decrypt functions. Allocates Memory for out
-typedef size_t (*dap_enc_callback_dataop_t)(struct dap_enc_key *key, const void *in,
+typedef size_t (*dap_enc_callback_dataop_t)(dap_enc_key_t *key, const void *in,
                                             const size_t in_size,void ** out);
 
-typedef size_t (*dap_enc_callback_dataop_na_t)(struct dap_enc_key *key, const void *in,
+typedef size_t (*dap_enc_callback_dataop_na_t)(dap_enc_key_t *key, const void *in,
                                             const size_t in_size,void * out, const size_t out_size_max);
-typedef size_t (*dap_enc_callback_dataop_na_ext_t)(struct dap_enc_key *key, const void *in,
+typedef size_t (*dap_enc_callback_dataop_na_ext_t)(dap_enc_key_t *key, const void *in,
                                             const size_t in_size,void * out, const size_t out_size_max, const void *extra_param, const int extra_param_len);
 
-typedef int (*dap_enc_callback_sign_op_t)(struct dap_enc_key *key, const void *in,
+typedef int (*dap_enc_callback_sign_op_t)(dap_enc_key_t *key, const void *in,
                                             const size_t in_size,void * out, const size_t out_size_max);
 
 // key pair generation and generation of shared key at Bob's side
@@ -165,7 +164,7 @@ typedef int (*dap_enc_callback_sign_op_t)(struct dap_enc_key *key, const void *i
 // b_pub  --- Bob's public key
 // b_key->priv_key_data --- shared key
 // b_key->priv_key_data_size --- shared key length
-typedef size_t (*dap_enc_gen_bob_shared_key) (struct dap_enc_key *b_key, const void *a_pub,
+typedef size_t (*dap_enc_gen_bob_shared_key) (dap_enc_key_t *b_key, const void *a_pub,
                                            size_t a_pub_size, void ** b_pub);
 
 // generation of shared key at Alice's side
@@ -177,19 +176,21 @@ typedef size_t (*dap_enc_gen_bob_shared_key) (struct dap_enc_key *b_key, const v
 // OUTPUT:
 // a_key->priv_key_data  --- shared key
 // a_key->priv_key_data_size --- shared key length
-typedef size_t (*dap_enc_gen_alice_shared_key) (struct dap_enc_key *a_key, const void *a_priv,
-                                             size_t b_pub_size, unsigned char *b_pub);
+typedef size_t (*dap_enc_gen_alice_shared_key) (dap_enc_key_t *a_key, const void *a_priv,
+                                             size_t b_pub_size, uint8_t *b_pub);
 
-typedef int (*dap_enc_callback_gen_key_public_t ) (struct dap_enc_key *a_key, void * a_output);
+typedef int (*dap_enc_callback_gen_key_public_t ) (dap_enc_key_t *a_key, void * a_output);
 
-typedef void (*dap_enc_callback_ptr_t)(struct dap_enc_key *, void *);
-typedef size_t (*dap_enc_callback_pptr_r_size_t)(struct dap_enc_key *, void **);
-typedef void (*dap_enc_callback_data_t)(struct dap_enc_key *, const void * , size_t);
-typedef void (*dap_enc_callback_size_t)(struct dap_enc_key *, size_t);
-typedef void (*dap_enc_callback_str_t)(struct dap_enc_key *, const char*);
-typedef char* (*dap_enc_callback_r_str_t)(struct dap_enc_key *);
+typedef void (*dap_enc_callback_ptr_t)(dap_enc_key_t *, void *);
+typedef size_t (*dap_enc_callback_pptr_r_size_t)(dap_enc_key_t *, void **);
+typedef void (*dap_enc_callback_data_t)(dap_enc_key_t *, const void * , size_t);
+typedef void (*dap_enc_callback_size_t)(dap_enc_key_t *, size_t);
+typedef void (*dap_enc_callback_str_t)(dap_enc_key_t *, const char*);
+typedef char* (*dap_enc_callback_r_str_t)(dap_enc_key_t *);
+typedef uint8_t* (*dap_enc_callback_serialize_t)(const void *, size_t *);
 typedef size_t (*dap_enc_callback_calc_out_size)(const size_t);
-typedef size_t (*dap_enc_get_allpbk_list) (struct dap_enc_key *a_key, const void *allpbk_list, const int allpbk_num);
+typedef size_t (*dap_enc_callback_calc_unser_size)(const void *);
+typedef size_t (*dap_enc_get_allpbk_list) (dap_enc_key_t *a_key, const void *allpbk_list, const int allpbk_num);
 
 typedef struct dap_enc_key {
     union{
@@ -219,6 +220,8 @@ typedef struct dap_enc_key {
 
     dap_enc_gen_alice_shared_key gen_alice_shared_key;
     dap_enc_gen_bob_shared_key gen_bob_shared_key;
+
+    dap_enc_callback_calc_unser_size unser_sig_size;
 
     void *pbkListdata;
     size_t pbkListsize;
@@ -266,6 +269,10 @@ typedef struct dap_enc_key_callbacks{
     dap_enc_gen_bob_shared_key gen_bob_shared_key;
     dap_enc_gen_alice_shared_key gen_alice_shared_key;
 
+    dap_enc_callback_serialize_t ser_sign;
+    dap_enc_callback_serialize_t ser_priv_key;
+    dap_enc_callback_serialize_t ser_pub_key;
+
     dap_enc_callback_new new_callback;
     dap_enc_callback_data_t new_from_data_public_callback;
     dap_enc_callback_new_generate new_generate_callback;
@@ -283,6 +290,7 @@ const char *dap_enc_get_type_name(dap_enc_key_type_t a_key_type);
 dap_enc_key_type_t dap_enc_key_type_find_by_name(const char *a_name);
 size_t dap_enc_key_get_enc_size(dap_enc_key_t * a_key, const size_t a_buf_in_size);
 size_t dap_enc_key_get_dec_size(dap_enc_key_t * a_key, const size_t a_buf_in_size);
+size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key);
 
 uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len);
 uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len);
@@ -309,7 +317,7 @@ dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t a_key_type, const voi
 void dap_enc_key_update(dap_enc_key_t *a_key);
 
 // for asymmetric gen public key
-dap_enc_key_t *dap_enc_gen_pub_key_from_priv(struct dap_enc_key *a_key, void **priv_key, size_t *alice_msg_len);
+dap_enc_key_t *dap_enc_gen_pub_key_from_priv(dap_enc_key_t *a_key, void **priv_key, size_t *alice_msg_len);
 
 
 size_t dap_enc_gen_key_public_size (dap_enc_key_t *a_key);

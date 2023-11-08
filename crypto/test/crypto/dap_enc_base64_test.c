@@ -22,10 +22,19 @@ void test_encode_decode_base64(int count_steps, dap_enc_data_type_t standard)
     }
 }
 
-void dap_enc_base64_tests_run() {
-    dap_print_module_name("dap_enc_base64");
-    test_encode_decode_base64(100, DAP_ENC_DATA_TYPE_B64);
-    dap_pass_msg("Encode and decode DAP_ENC_STANDARD_B64");
-    test_encode_decode_base64(100, DAP_ENC_DATA_TYPE_B64_URLSAFE);
-    dap_pass_msg("Encode and decode DAP_ENC_STANDARD_B64_URLSAFE");
+void dap_enc_base64_tests_run(int a_times) {
+    dap_print_module_name("BASE64");
+
+    char l_msg[120] = {0};
+    int l_t1 = get_cur_time_msec();
+    test_encode_decode_base64(a_times, DAP_ENC_DATA_TYPE_B64);
+    int l_t2 = get_cur_time_msec();
+    sprintf(l_msg, "Encode and decode DAP_ENC_STANDARD_B64 %d times", a_times);
+    benchmark_mgs_time(l_msg, l_t2 - l_t1);
+
+    l_t1 = get_cur_time_msec();
+    test_encode_decode_base64(a_times, DAP_ENC_DATA_TYPE_B64_URLSAFE);
+    l_t2 = get_cur_time_msec();
+    sprintf(l_msg, "Encode and decode DAP_ENC_STANDARD_B64_URLSAFE %d times", a_times);
+    benchmark_mgs_time(l_msg, l_t2 - l_t1);
 }

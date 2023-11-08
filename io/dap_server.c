@@ -448,13 +448,13 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         l_es_new->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
         l_es_new->remote_addr = *(struct sockaddr_in *)a_remote_addr;
         inet_ntop(AF_INET, &l_es_new->remote_addr.sin_addr, l_es_new->remote_addr_str, sizeof(l_es_new->remote_addr_str));
-        l_es_new->remote_port = l_es_new->remote_addr.sin_port;
+        l_es_new->remote_port = ntohs(l_es_new->remote_addr.sin_port);
         break;
     case AF_INET6:
         l_es_new->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
         l_es_new->remote_addr_v6 = *(struct sockaddr_in6 *)a_remote_addr;
         inet_ntop(AF_INET6, &l_es_new->remote_addr_v6.sin6_addr, l_es_new->remote_addr_str, sizeof(l_es_new->remote_addr_str));
-        l_es_new->remote_port = l_es_new->remote_addr_v6.sin6_port;
+        l_es_new->remote_port = ntohs(l_es_new->remote_addr_v6.sin6_port);
         break;
     default:
         log_it(L_ERROR, "Unsupported protocol family %hu from accept()", l_family);

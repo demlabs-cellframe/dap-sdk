@@ -271,10 +271,7 @@ size_t dap_strlen(const char *a_str) {
 
 int dap_strcmp(const char *a_str1, const char *a_str2)
 {
-    if(a_str1 && a_str2) {
-        return strcmp(a_str1, a_str2);
-    }
-    return -1;
+    return a_str1 && a_str2 ? strcmp(a_str1, a_str2) : -1;
 }
 
 /**
@@ -288,10 +285,7 @@ int dap_strcmp(const char *a_str1, const char *a_str2)
 
 int dap_strncmp(const char *a_str1, const char *a_str2, size_t a_n)
 {
-    if(a_str1 && a_str2) {
-        return strncmp(a_str1, a_str2, a_n);
-    }
-    return -1;
+    return a_str1 && a_str2 ? strncmp(a_str1, a_str2, a_n) : -1;
 }
 
 

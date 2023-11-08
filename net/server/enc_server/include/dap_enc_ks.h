@@ -23,6 +23,7 @@
 #include <time.h>
 #include <pthread.h>
 #include "uthash.h"
+#include "dap_common.h"
 #include "dap_enc_key.h"
 #include "stdbool.h"
 #include "dap_hash.h"
@@ -40,6 +41,7 @@ typedef struct dap_enc_ks_key{
     time_t time_created;
     pthread_mutex_t mutex;
     uint8_t *acl_list;
+    dap_stream_node_addr_t node_addr;
     UT_hash_handle hh; // makes this structure hashable with UTHASH library
 } dap_enc_ks_key_t;
 

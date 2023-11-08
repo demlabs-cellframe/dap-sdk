@@ -74,11 +74,6 @@
 
 #define BIT( x ) ( 1 << x )
 
-#define dap_return_if_fail(expr)            {if(!(expr)) {return;}}
-#define dap_return_val_if_fail(expr,val)    {if(!(expr)) {return (val);}}
-#define dap_return_if_pass(expr)            {if(expr) {return;}}
-#define dap_return_val_if_pass(expr,val)    {if(expr) {return (val);}}
-
 // Stuffs an integer into a pointer type
 #define DAP_INT_TO_POINTER(i) ((void*) (size_t) (i))
 // Extracts an integer from a pointer
@@ -128,6 +123,12 @@
 #else
 #define DAP_CAST_PTR(t,v) (t*)(v)
 #endif
+
+extern const char *g_error_memory_alloc;
+extern const char *g_error_sanity_check;
+void dap_delete_multy(int a_count, ...);
+uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...);
+int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, ...);
 
 #if DAP_USE_RPMALLOC
   #include "rpmalloc.h"
@@ -216,7 +217,29 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? calloc(1, sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : DAP_CAST_PTR(void, NULL); })
 #define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (p) ? (size_t)(s) : 0; void *p1 = (p) && (s1 > 0) ? calloc(1, s1) : NULL; p1 ? memcpy(p1, (p), s1) : DAP_CAST_PTR(void, NULL); })
 #endif
+
+#define VA_NARGS_IMPL(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, N, ...) N
+#define VA_NARGS(...) VA_NARGS_IMPL(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+#define DAP_DEL_MULTY(...) dap_delete_multy(VA_NARGS(__VA_ARGS__), __VA_ARGS__)
+
 #define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
+// a - pointer to alloc
+// t - type return pointer
+// s - size to alloc
+// c - count element
+// val - return value if error
+// ... what need free if error, if nothing  write NULL
+#define DAP_NEW_Z_RET(a, t, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
+#define DAP_NEW_Z_RET_VAL(a, t, ret_val, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
+#define DAP_NEW_Z_SIZE_RET(a, t, s, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
+#define DAP_NEW_Z_SIZE_RET_VAL(a, t, s, ret_val, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
+#define DAP_NEW_Z_COUNT_RET(a, t, c, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
+#define DAP_NEW_Z_COUNT_RET_VAL(a, t, c, ret_val, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
+
+#define dap_return_if_fail(expr)            {if(!(expr)) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", g_error_sanity_check); return;}}
+#define dap_return_val_if_fail(expr,val)    {if(!(expr)) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", g_error_sanity_check); return (val);}}
+#define dap_return_if_pass(expr)            {if(expr) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", g_error_sanity_check); return;}}
+#define dap_return_val_if_pass(expr,val)    {if(expr) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", g_error_sanity_check); return (val);}}
 
 #ifndef __cplusplus
 #define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))
@@ -334,11 +357,12 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
  * 23: added support for encryption key type parameter and option to encrypt headers
  * 24: Update hashes protocol
  * 25: Added node sign
+ * 26: Change MSRLN to KYBER512
 */
-#define DAP_PROTOCOL_VERSION          25
+#define DAP_PROTOCOL_VERSION          26
 #define DAP_PROTOCOL_VERSION_DEFAULT  24 // used if version is not explicitly specified
 
-#define DAP_CLIENT_PROTOCOL_VERSION   25
+#define DAP_CLIENT_PROTOCOL_VERSION   26
 
 /* Crossplatform print formats for integers and others */
 

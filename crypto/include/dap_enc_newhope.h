@@ -39,7 +39,8 @@ typedef enum{
 
 typedef struct {
   DAP_NEWHOPE_SIGN_SECURITY kind;                 /* the kind of ringct20       */
-  unsigned char *data;
+  uint64_t len;
+  uint8_t *data;
 }newhope_public_key_t;
 
 
@@ -50,29 +51,29 @@ typedef struct {
 ///==========================================================================================
 typedef struct {
   DAP_NEWHOPE_SIGN_SECURITY kind;                 /* the kind of ringct20       */
-  unsigned char *data;
+  uint64_t len;
+  uint8_t *data;
 } newhope_private_key_t;
 
 typedef struct {
   DAP_NEWHOPE_SIGN_SECURITY kind;                      /* the kind of ringct20       */
-  unsigned char *sig_data;
-  unsigned long long sig_len;
+  uint8_t *sig_data;
+  uint64_t sig_len;
 } newhope_signature_t;
 
 
 void dap_enc_newhope_pke_set_type(DAP_NEWHOPE_SIGN_SECURITY type);
 
-void dap_enc_newhope_kem_key_new(struct dap_enc_key *key);
+void dap_enc_newhope_kem_key_new(dap_enc_key_t *a_key);
 
-void dap_enc_newhope_kem_key_new_generate(struct dap_enc_key * key, const void *kex_buf,
-                                    size_t kex_size, const void * seed, size_t seed_size,
+void dap_enc_newhope_kem_key_new_generate(dap_enc_key_t *key, const void *kex_buf,
+                                    size_t kex_size, const void *seed, size_t seed_size,
                                     size_t key_size);
 
-size_t dap_enc_newhope_pbk_enc(struct dap_enc_key * a_key, const void * a_pub,
-        size_t a_pub_size, void ** b_pub);
-size_t dap_enc_newhope_prk_dec(struct dap_enc_key * a_key, const void *a_priv,
-                               size_t b_pub_size, unsigned char *b_pub);
-void dap_enc_newhope_kem_key_delete(struct dap_enc_key * key);
+size_t dap_enc_newhope_gen_bob_shared_key(dap_enc_key_t *a_bob_key, const void *a_alice_pub, size_t a_alice_pub_size, void **a_cypher_msg);
+size_t dap_enc_newhope_gen_alice_shared_key(dap_enc_key_t *a_alice_key, const void *a_alice_priv,
+                               size_t a_cypher_msg_size, uint8_t *a_cypher_msg);
+void dap_enc_newhope_kem_key_delete(dap_enc_key_t *key);
 
 //size_t dap_enc_newhope_calc_signature_unserialized_size(void);
 

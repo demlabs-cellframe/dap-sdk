@@ -31,13 +31,9 @@ static void test_encode_decode_base58(void)
     dap_assert_PIF(memcmp(source, decode_result, source_size) == 0, "Check source and encode->decode data");
 }
 
-void dap_enc_base58_tests_run() {
-    dap_print_module_name("dap_enc_base58");
-    source_size = 0;
-    benchmark_mgs_time("Encode and decode DAP_ENC_STANDARD_B58 100 times",
-            benchmark_test_time(test_encode_decode_base58, 100));
-
-    benchmark_mgs_rate("Encode and decode DAP_ENC_STANDARD_B58",
-            benchmark_test_rate(test_encode_decode_base58, 1));
-
+void dap_enc_base58_tests_run(int a_times) {
+    dap_print_module_name("BASE58");
+    char l_msg[120] = {0};
+    sprintf(l_msg, "Encode and decode DAP_ENC_STANDARD_B58 %d times", a_times);
+    benchmark_mgs_time(l_msg, benchmark_test_time(test_encode_decode_base58, a_times));
 }
