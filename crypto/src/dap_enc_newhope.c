@@ -53,7 +53,7 @@ void dap_enc_newhope_kem_key_new(dap_enc_key_t *key) {
     key->enc_na = NULL;
     key->dec_na = NULL;
     key->gen_bob_shared_key= dap_enc_newhope_gen_bob_shared_key;
-    key->gen_alice_shared_key = dap_enc_newhope_prk_dec;
+    key->gen_alice_shared_key = dap_enc_newhope_gen_alice_shared_key;
     key->priv_key_data  = NULL;
     key->pub_key_data   = NULL;
 
@@ -117,20 +117,24 @@ size_t dap_enc_newhope_gen_bob_shared_key(dap_enc_key_t *a_bob_key, const void *
     return NEWHOPE_CPAKEM_CIPHERTEXTBYTES;
 }
 
-size_t dap_enc_newhope_prk_dec(dap_enc_key_t *a_key, const void *a_priv,
-                               size_t a_sendb_size, unsigned char *a_sendb)
+size_t dap_enc_newhope_gen_alice_shared_key(dap_enc_key_t *a_alice_key, UNUSED_ARG const void *a_alice_priv,
+                               size_t a_cypher_msg_size, unsigned char *a_cypher_msg)
 {
 // sanity check
-    dap_return_val_if_pass(!a_key || a_sendb_size != NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0);
+    dap_return_val_if_pass(!a_alice_key || !a_cypher_msg || a_cypher_msg_size < NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0);
 // memory alloc
-    a_key->shared_key_size = 0;
-    DAP_DEL_Z(a_key->shared_key);
-    DAP_NEW_Z_SIZE_RET_VAL(a_key->shared_key, uint8_t, NEWHOPE_SYMBYTES, 0, NULL);
+    uint8_t *l_shared_key = NULL;
+    DAP_NEW_Z_SIZE_RET_VAL(l_shared_key, uint8_t, NEWHOPE_SYMBYTES, 0, NULL);
 // crypto calc
-    crypto_kem_dec(a_key->priv_key_data, a_sendb, a_key->_inheritor);
+    if (crypto_kem_dec(l_shared_key, a_cypher_msg, a_alice_key->_inheritor)) {
+        DAP_DELETE(l_shared_key);
+        return 0;
+    }
 // post func work
-    a_key->shared_key_size = NEWHOPE_SYMBYTES;
-    return a_key->shared_key_size;
+    DAP_DEL_Z(a_alice_key->shared_key);
+    a_alice_key->shared_key = l_shared_key;
+    a_alice_key->shared_key_size = NEWHOPE_SYMBYTES;
+    return a_alice_key->shared_key_size;
 }
 
 void dap_enc_newhope_kem_key_delete(dap_enc_key_t *a_key)

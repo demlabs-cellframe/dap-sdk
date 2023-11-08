@@ -27,6 +27,7 @@ void dap_enc_msrln_key_delete(dap_enc_key_t *a_key);
 size_t dap_enc_msrln_key_public_raw(dap_enc_key_t *a_key, void **a_key_public);
 
 size_t dap_enc_msrln_gen_bob_shared_key(dap_enc_key_t *a_bob_key, const void *a_alice_pub, size_t a_alice_pub_size, void **a_cypher_msg);
-size_t dap_enc_msrln_gen_alice_shared_key(dap_enc_key_t *a_key, const void* a_priv, const size_t b_key_len, unsigned char * b_pub);
+size_t dap_enc_msrln_gen_alice_shared_key(dap_enc_key_t *a_alice_key, const void *a_alice_priv,
+                               size_t a_cypher_msg_size, unsigned char *a_cypher_msg);
 
 #endif

@@ -119,21 +119,24 @@ size_t dap_enc_msrln_gen_bob_shared_key(dap_enc_key_t *a_bob_key, const void *a_
  * @param key_len
  * @return
  */
-size_t dap_enc_msrln_gen_alice_shared_key(dap_enc_key_t *a_key, const void* a_priv, const size_t b_key_len, unsigned char * b_pub)
+size_t dap_enc_msrln_gen_alice_shared_key(dap_enc_key_t *a_alice_key, const void *a_alice_priv,
+                               size_t a_cypher_msg_size, unsigned char *a_cypher_msg)
 {
-// input check
-    dap_return_val_if_pass(b_key_len != MSRLN_PKB_BYTES, 0);
+// sanity check
+    dap_return_val_if_pass(!a_alice_key || !a_alice_priv || !a_cypher_msg || a_cypher_msg_size < MSRLN_PKB_BYTES, 0);
 // memory alloc
-    if(a_key->priv_key_data_size == 0)// need allocate mamory for priv key
-        DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, void, MSRLN_SHAREDKEY_BYTES, 0, NULL);
+    uint8_t *l_shared_key = NULL;
+    DAP_NEW_Z_SIZE_RET_VAL(l_shared_key, uint8_t, MSRLN_SHAREDKEY_BYTES, 0, NULL);
 // crypto calc
-    if (MSRLN_SecretAgreement_A((unsigned char *) b_pub, (int32_t *) a_priv, (unsigned char *) a_key->priv_key_data) != CRYPTO_MSRLN_SUCCESS) {
-        DAP_DEL_Z(a_key->priv_key_data);
+    if (MSRLN_SecretAgreement_A(a_cypher_msg, (int32_t *) a_alice_priv, l_shared_key) != CRYPTO_MSRLN_SUCCESS) {
+        DAP_DEL_Z(l_shared_key);
         return 0;
     }
 // post func work
-    a_key->priv_key_data_size = MSRLN_SHAREDKEY_BYTES;
-    return MSRLN_SHAREDKEY_BYTES;
+    DAP_DEL_Z(a_alice_key->shared_key);
+    a_alice_key->shared_key = l_shared_key;
+    a_alice_key->shared_key_size = MSRLN_SHAREDKEY_BYTES;
+    return a_alice_key->shared_key_size;
 }
 
 /**
