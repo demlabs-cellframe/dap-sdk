@@ -52,7 +52,7 @@ void dap_enc_newhope_kem_key_new(dap_enc_key_t *key) {
     key->enc = NULL;
     key->enc_na = NULL;
     key->dec_na = NULL;
-    key->gen_bob_shared_key= dap_enc_newhope_pbk_enc;
+    key->gen_bob_shared_key= dap_enc_newhope_gen_bob_shared_key;
     key->gen_alice_shared_key = dap_enc_newhope_prk_dec;
     key->priv_key_data  = NULL;
     key->pub_key_data   = NULL;
@@ -96,20 +96,24 @@ bool is_writeable_memory(void *a_p, size_t a_len)
     return l_writeable;
 }
 
-size_t dap_enc_newhope_pbk_enc(dap_enc_key_t *a_key, const void *a_pub,
-        size_t a_pub_size, void **a_sendb)
+size_t dap_enc_newhope_gen_bob_shared_key(dap_enc_key_t *a_bob_key, const void *a_alice_pub, size_t a_alice_pub_size, void **a_cypher_msg)
 {
 // sanity check
-    dap_return_val_if_pass(!a_sendb || !a_key || !a_pub, 0)
+    dap_return_val_if_pass(!a_bob_key || !a_alice_pub || !a_cypher_msg || a_alice_pub_size < NEWHOPE_CPAPKE_PUBLICKEYBYTES, 0)
 // memory alloc
-    a_key->shared_key_size = 0;
-    DAP_DEL_MULTY(a_key->shared_key, *a_sendb);
-    DAP_NEW_Z_SIZE_RET_VAL(a_key->shared_key, uint8_t, NEWHOPE_SYMBYTES, 0, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(*a_sendb, uint8_t, NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0, a_key->shared_key);
+    uint8_t *l_shared_key, *l_cypher_msg;
+    DAP_NEW_Z_SIZE_RET_VAL(l_shared_key, uint8_t, NEWHOPE_SYMBYTES, 0, NULL);
+    DAP_NEW_Z_SIZE_RET_VAL(l_cypher_msg, uint8_t, NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0, l_shared_key);
 // crypto calc
-    crypto_kem_enc(*a_sendb, a_key->shared_key, a_pub);
- // post func work
-    a_key->shared_key_size = NEWHOPE_SYMBYTES;
+    if (crypto_kem_enc(l_cypher_msg, l_shared_key, a_alice_pub)) {
+        DAP_DEL_MULTY(l_cypher_msg, l_shared_key);
+        return 0;
+    }
+// post func work, change in args only after all pass
+    DAP_DEL_MULTY(a_bob_key->shared_key, *a_cypher_msg);
+    *a_cypher_msg = l_cypher_msg;
+    a_bob_key->shared_key = l_shared_key;
+    a_bob_key->shared_key_size = NEWHOPE_SYMBYTES;
     return NEWHOPE_CPAKEM_CIPHERTEXTBYTES;
 }
 
@@ -117,7 +121,7 @@ size_t dap_enc_newhope_prk_dec(dap_enc_key_t *a_key, const void *a_priv,
                                size_t a_sendb_size, unsigned char *a_sendb)
 {
 // sanity check
-    dap_return_val_if_pass(!a_key || !a_sendb_size != NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0);
+    dap_return_val_if_pass(!a_key || a_sendb_size != NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0);
 // memory alloc
     a_key->shared_key_size = 0;
     DAP_DEL_Z(a_key->shared_key);
