@@ -4,6 +4,8 @@
 //#include "KeccakHash.h"
 #include "SimpleFIPS202.h"
 
+#define LOG_TAG "dap_crypto_sign_dilithium"
+
 /********************************************************************************************/
 void expand_mat(polyvecl mat[], const unsigned char rho[SEEDBYTES], dilithium_param_t *p)
 {

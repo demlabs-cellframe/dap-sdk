@@ -177,7 +177,7 @@ typedef size_t (*dap_enc_gen_bob_shared_key) (dap_enc_key_t *b_key, const void *
 // a_key->priv_key_data  --- shared key
 // a_key->priv_key_data_size --- shared key length
 typedef size_t (*dap_enc_gen_alice_shared_key) (dap_enc_key_t *a_key, const void *a_priv,
-                                             size_t b_pub_size, unsigned char *b_pub);
+                                             size_t b_pub_size, uint8_t *b_pub);
 
 typedef int (*dap_enc_callback_gen_key_public_t ) (dap_enc_key_t *a_key, void * a_output);
 

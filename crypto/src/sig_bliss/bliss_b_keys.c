@@ -6,6 +6,8 @@
 #include "dap_common.h"
 #include "ntt_api.h"
 
+#define LOG_TAG "dap_crypto_sign_bliss"
+
 /* Constructs a random polyomial
    - v: where the random polynomial is stored
    - n: the length of the polynomial

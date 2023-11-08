@@ -71,6 +71,7 @@ const uint256_t uint256_max = {.hi = uint128_max, .lo = uint128_max};
 const uint512_t uint512_0 = {};
 
 const char *g_error_memory_alloc = "Memory allocation error";
+const char *g_error_sanity_check = "Sanity check error";
 
 static const char *s_log_level_tag[ 16 ] = {
     " [DBG] ", // L_DEBUG     = 0
