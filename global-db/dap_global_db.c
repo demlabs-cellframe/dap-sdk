@@ -815,6 +815,8 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
     debug_if(g_dap_global_db_debug_more, L_DEBUG,
              "Get all request from group %s recieved %zu values", a_group, l_values_count);
     dap_global_db_obj_t *l_objs = s_objs_from_store_objs(l_store_objs, l_values_count);
+    if (a_objs_count)
+        *a_objs_count = l_values_count;
     if (l_values_count > 1)
         qsort(l_objs, l_values_count, sizeof(dap_global_db_obj_t), s_db_compare_by_ts);
     return l_objs;
@@ -1401,6 +1403,7 @@ static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_gr
         .key        = a_key,
         .group      = dap_strdup_printf("%s" DAP_GLOBAL_DB_DEL_SUFFIX, a_group),
         .type       = a_key ? DAP_GLOBAL_DB_OPTYPE_ADD : DAP_GLOBAL_DB_OPTYPE_DEL,
+        .flags      = DAP_GLOBAL_DB_RECORD_NEW,
         .timestamp  = dap_nanotime_now()
     };
     if (a_key)

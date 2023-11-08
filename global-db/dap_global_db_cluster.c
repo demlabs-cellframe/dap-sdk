@@ -50,9 +50,12 @@ int dap_global_db_cluster_init()
 
 void dap_global_db_cluster_deinit()
 {
-    dap_global_db_cluster_t *it, *tmp;
-    DL_FOREACH_SAFE(dap_global_db_instance_get_default()->clusters, it, tmp)
-        dap_global_db_cluster_delete(it);
+    dap_global_db_instance_t *l_dbi = dap_global_db_instance_get_default();
+    if (l_dbi) {
+        dap_global_db_cluster_t *it, *tmp;
+        DL_FOREACH_SAFE(l_dbi->clusters, it, tmp)
+            dap_global_db_cluster_delete(it);
+    }
 }
 
 static bool s_group_match_mask(const char *a_group, const char *a_mask)

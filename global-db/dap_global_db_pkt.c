@@ -81,8 +81,8 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
 
     /* Put serialized data into the payload part of the packet */
     char *l_data_ptr = (char *)l_pkt->data;
-    l_data_ptr = dap_stpcpy(l_data_ptr, a_store_obj->group);
-    l_data_ptr = dap_stpcpy(l_data_ptr, a_store_obj->key);
+    l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->group, l_group_len);
+    l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->key, l_key_len);
     if (a_store_obj->value_len)
         l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->value, a_store_obj->value_len);
     l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->sign, l_sign_len);
@@ -164,6 +164,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
         log_it(L_ERROR, "Broken GDB element: 'key_len' field is incorrect");
         return NULL;
     }
+    a_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
     a_obj->timestamp = a_pkt->timestamp;
     a_obj->value_len = a_pkt->value_len;
     a_obj->crc = a_pkt->crc;
@@ -223,7 +224,9 @@ dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_
 {
     dap_return_val_if_fail(a_pkt, NULL);
     dap_store_obj_t *l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + sizeof(dap_stream_node_addr_t));
-    if (!s_fill_one_store_obj(a_pkt, l_ret, a_pkt_size)) {
+    if (!l_ret)
+        log_it(L_CRITICAL, "Memory allocation_error");
+    else if (!s_fill_one_store_obj(a_pkt, l_ret, a_pkt_size)) {
         log_it(L_ERROR, "Broken GDB element: can't read GOSSIP record packet");
         DAP_DEL_Z(l_ret);
     }
