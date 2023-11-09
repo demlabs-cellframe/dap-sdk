@@ -6,7 +6,6 @@ add_definitions("-D_GNU_SOURCE")
 file(GLOB CORE_SRCS
     src/*.c
     src/etc/*.c
-    src/rpmalloc/*.c
 )
 
 if(UNIX)
@@ -26,7 +25,7 @@ endif()
 add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
 
 #This paths will be used by project-dependent project libraries
-target_include_directories(${PROJECT_NAME} INTERFACE include/ src/rpmalloc/)
+target_include_directories(${PROJECT_NAME} INTERFACE include/)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
 
@@ -58,6 +57,11 @@ endif()
 if (BUILD_WITH_ZIP)
     set(CORE_LIBRARIES ${CORE_LIBRARIES} zip)
     add_definitions ("-DDAP_BUILD_WITH_ZIP")
+endif()
+
+if (BUILD_RPMALLOC)
+    set(CORE_LIBRARIES ${CORE_LIBRARIES} rpmalloc)
+    add_definitions("-DENABLE_RPMALLOC")
 endif()
 
 target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES})
