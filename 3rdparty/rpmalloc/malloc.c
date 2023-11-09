@@ -13,6 +13,8 @@
 // This file provides overrides for the standard library malloc entry points for C and new/delete operators for C++
 // It also provides automatic initialization/finalization of process and threads
 //
+#include "rpmalloc.h"
+#include "stdint.h"
 #if defined(__TINYC__)
 #include <sys/types.h>
 #endif
@@ -259,6 +261,7 @@ size_t malloc_size(void* ptr) RPALIAS(rpmalloc_usable_size)
 
 #endif
 
+extern size_t _memory_page_size;
 static inline size_t
 _rpmalloc_page_size(void) {
 	return _memory_page_size;
