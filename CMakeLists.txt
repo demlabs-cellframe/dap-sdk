@@ -3,6 +3,10 @@ set(DAP_SDK_NATIVE_VERSION "2.2-2")
 include(ExternalProject)
 
 add_subdirectory(3rdparty/json-c EXCLUDE_FROM_ALL)
+if (BUILD_RPMALLOC)
+    add_definitions("-DENABLE_OVERRIDE=1")
+    add_subdirectory(3rdparty/rpmalloc EXCLUDE_FROM_ALL)
+endif ()
 
 set(JSON-C-CONFIG_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json-c/
     -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_CURRENT_BINARY_DIR}/deps/

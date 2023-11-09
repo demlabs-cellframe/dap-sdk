@@ -45,6 +45,9 @@
   #include "win32/dap_console_manager.h"
 #endif
 
+#ifdef ENABLE_RPMALLOC
+#include "rpmalloc/rpmalloc.h"
+#endif
 
 #define DAP_LOG_USE_SPINLOCK    0
 #define DAP_LOG_HISTORY         1
@@ -230,6 +233,9 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
         if (a_log_file_path != s_log_file_path)
             dap_stpcpy(s_log_file_path, a_log_file_path);
     }
+#ifdef ENABLE_RPMALLOC
+    rpmalloc_linker_reference();
+#endif
     return 0;
 }
 
