@@ -801,8 +801,7 @@ dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type)
 {
     dap_enc_key_t * l_ret = NULL;
     if ((size_t)a_key_type < c_callbacks_size) {
-        // DAP_NEW_Z_RET_VAL(l_ret, dap_enc_key_t, NULL, NULL);
-        l_ret = DAP_NEW_Z(dap_enc_key_t);
+        DAP_NEW_Z_RET_VAL(l_ret, dap_enc_key_t, NULL, NULL);
         if(s_callbacks[a_key_type].new_callback){
             s_callbacks[a_key_type].new_callback(l_ret);
         }

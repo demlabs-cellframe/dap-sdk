@@ -233,7 +233,7 @@ void dap_delete_multy(int a_count, ...)
  * @param a_count - args count, should be even
  * @return pointer if pass, else NULL
  */
-uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...)
+uint8_t *dap_serialize_multy(uint8_t *a_data, uint32_t a_size, int a_count, ...)
 {
     dap_return_val_if_pass(!a_size || a_count % 2, NULL);
 
@@ -241,12 +241,12 @@ uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...)
     // allocate memory, if need
     if (!l_ret)
         DAP_NEW_Z_SIZE_RET_VAL(l_ret, uint8_t, a_size, NULL, NULL);
-    uint64_t l_shift_mem = 0;
+    uint32_t l_shift_mem = 0;
     va_list l_args;
     va_start(l_args, a_count);
     for (int i = 0; i < a_count / 2; ++i) {
         uint8_t *l_arg = va_arg(l_args, uint8_t *);
-        uint64_t l_size = va_arg(l_args, uint64_t);
+        uint32_t l_size = va_arg(l_args, uint32_t);
         memcpy(l_ret + l_shift_mem, l_arg, l_size);
         l_shift_mem += l_size;
     }
@@ -264,16 +264,16 @@ uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...)
  * @param a_count - args count, should be even, memory NOT allocating
  * @return 0 if pass, other if error
  */
-int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, ...)
+int dap_deserialize_multy(const uint8_t *a_data, uint32_t a_size, int a_count, ...)
 {
     dap_return_val_if_pass(!a_size || a_count % 2, -1);
 
-    uint64_t l_shift_mem = 0;
+    uint32_t l_shift_mem = 0;
     va_list l_args;
     va_start(l_args, a_count);
     for (int i = 0; i < a_count / 2; ++i) {
         uint8_t *l_arg = va_arg(l_args, uint8_t *);
-        uint64_t l_size = va_arg(l_args, uint64_t);
+        uint32_t l_size = va_arg(l_args, uint32_t);
         if (l_shift_mem + l_size > a_size) {
             log_it(L_ERROR, "Error size in the object deserialize. %"DAP_UINT64_FORMAT_U" > %"DAP_UINT64_FORMAT_U"", l_shift_mem + l_size, a_size);
             return -2;
