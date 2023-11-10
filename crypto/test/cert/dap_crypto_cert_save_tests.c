@@ -61,6 +61,8 @@ void dap_crypto_cert_save_tests_run(void)
     test_cert_memory_file(DAP_ENC_KEY_TYPE_SIG_TESLA);
     test_cert_memory_file(DAP_ENC_KEY_TYPE_SIG_PICNIC);
     test_cert_memory_file(DAP_ENC_KEY_TYPE_SIG_DILITHIUM);
+    test_cert_memory_file(DAP_ENC_KEY_TYPE_SIG_FALCON);
+    test_cert_memory_file(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS);
 
     cleanup_test_case();
 }
