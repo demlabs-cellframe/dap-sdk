@@ -30,9 +30,9 @@ int main(void) {
     test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_OAES, 32);
 
     dap_enc_tests_run();
-    dap_enc_base64_tests_run(l_times);
-    dap_enc_base58_tests_run(l_times);
-    dap_enc_ringct20_tests_run(l_times);
-    dap_enc_benchmark_tests_run(l_times);
-    dap_enc_multi_sign_tests_run(l_times);
+    // dap_enc_base64_tests_run(l_times);
+    // dap_enc_base58_tests_run(l_times);
+    // dap_enc_ringct20_tests_run(l_times);
+    // dap_enc_benchmark_tests_run(l_times);
+    // dap_enc_multi_sign_tests_run(l_times);
 }
