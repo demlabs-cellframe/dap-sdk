@@ -271,9 +271,9 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_key_public_size =              dap_enc_sig_bliss_key_pub_output_size,
 
         .enc_out_size =                     NULL,
-        .dec_out_size =                     NULL, 
-        .ser_sign =                         dap_enc_sig_bliss_write_signature, 
-        .ser_priv_key =                     dap_enc_sig_bliss_write_private_key, 
+        .dec_out_size =                     NULL,
+        .ser_sign =                         dap_enc_sig_bliss_write_signature,
+        .ser_priv_key =                     dap_enc_sig_bliss_write_private_key,
         .ser_pub_key =                      dap_enc_sig_bliss_write_public_key
     },
     [DAP_ENC_KEY_TYPE_SIG_TESLA]={
@@ -292,9 +292,9 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_tesla_get_sign,
-        .sign_verify =                      dap_enc_sig_tesla_verify_sign, 
-        .ser_sign =                         dap_enc_tesla_write_signature, 
-        .ser_priv_key =                     dap_enc_tesla_write_private_key, 
+        .sign_verify =                      dap_enc_sig_tesla_verify_sign,
+        .ser_sign =                         dap_enc_tesla_write_signature,
+        .ser_priv_key =                     dap_enc_tesla_write_private_key,
         .ser_pub_key =                      dap_enc_tesla_write_public_key
     },
     [DAP_ENC_KEY_TYPE_SIG_DILITHIUM]={
@@ -313,9 +313,9 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_dilithium_get_sign,
-        .sign_verify =                      dap_enc_sig_dilithium_verify_sign, 
-        .ser_sign =                         dap_enc_dilithium_write_signature, 
-        .ser_priv_key =                     dap_enc_dilithium_write_private_key, 
+        .sign_verify =                      dap_enc_sig_dilithium_verify_sign,
+        .ser_sign =                         dap_enc_dilithium_write_signature,
+        .ser_priv_key =                     dap_enc_dilithium_write_private_key,
         .ser_pub_key =                      dap_enc_dilithium_write_public_key
     },
     [DAP_ENC_KEY_TYPE_SIG_RINGCT20]={
@@ -353,9 +353,9 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_falcon_get_sign,
-        .sign_verify =                      dap_enc_sig_falcon_verify_sign, 
-        .ser_sign =                         dap_enc_falcon_write_signature, 
-        .ser_priv_key =                     dap_enc_falcon_write_private_key, 
+        .sign_verify =                      dap_enc_sig_falcon_verify_sign,
+        .ser_sign =                         dap_enc_falcon_write_signature,
+        .ser_priv_key =                     dap_enc_falcon_write_private_key,
         .ser_pub_key =                      dap_enc_falcon_write_public_key
     },
     [DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS]={
@@ -374,9 +374,9 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_sphincsplus_get_sign,
-        .sign_verify =                      dap_enc_sig_sphincsplus_verify_sign, 
-        .ser_sign =                         dap_enc_sphincsplus_write_signature, 
-        .ser_priv_key =                     dap_enc_sphincsplus_write_private_key, 
+        .sign_verify =                      dap_enc_sig_sphincsplus_verify_sign,
+        .ser_sign =                         dap_enc_sphincsplus_write_signature,
+        .ser_priv_key =                     dap_enc_sphincsplus_write_private_key,
         .ser_pub_key =                      dap_enc_sphincsplus_write_public_key
     },
 
@@ -765,7 +765,7 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
     }
     const dap_enc_key_serialize_t *in_key = (const dap_enc_key_serialize_t *)buf;
     // memory allocation block
-    
+
     dap_enc_key_t *l_ret = dap_enc_key_new(in_key->type);
     dap_return_val_if_pass(!l_ret, NULL);
 
