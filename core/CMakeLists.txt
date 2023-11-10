@@ -6,22 +6,21 @@ add_definitions("-D_GNU_SOURCE")
 file(GLOB CORE_SRCS
     src/*.c
     src/etc/*.c
-    ../3rdparty/rpmalloc/rpmalloc.c
 )
 
+file(GLOB CORE_HEADERS include/*.h)
+
 if(UNIX)
-  file(GLOB CORE_HEADERS 
-      include/*.h 
-      include/unix/*.h 
-      include/unix/linux/*.h 
-      ../3rdparty/rpmalloc/rpmalloc.h
-  )
+  file(GLOB CORE_HEADERS ${CORE_HEADERS}
+      include/unix/*.h
+      include/unix/linux/*.h)
 endif()
 
-if(WIN32)
-  file(GLOB CORE_HEADERS 
-      include/*.h 
-  )
+if(NOT DAP_DEBUG) # AND NOT DAP_DBG_INFO)
+    message("[!] Use RPMALLOC")
+    add_definitions("-DENABLE_OVERRIDE=1")
+    file(GLOB CORE_SRCS ${CORE_SRCS} ../3rdparty/rpmalloc/rpmalloc.c)
+    file(GLOB CORE_HEADERS ${CORE_HEADERS} ../3rdparty/rpmalloc/rpmalloc.h)
 endif()
 
 add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
@@ -30,7 +29,6 @@ add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
 target_include_directories(${PROJECT_NAME} INTERFACE include/)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/rpmalloc)
 
 if(WIN32)
   include_directories(include/)

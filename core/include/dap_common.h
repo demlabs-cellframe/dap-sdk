@@ -72,9 +72,6 @@
 #endif
 #include "portable_endian.h"
 
-#define ENABLE_OVERRIDE 1
-#include "rpmalloc.h"
-
 #define BIT( x ) ( 1 << x )
 // Stuffs an integer into a pointer type
 #define DAP_INT_TO_POINTER(i) ((void*) (size_t) (i))
@@ -126,23 +123,7 @@
 #define DAP_CAST_PTR(t,v) (t*)(v)
 #endif
 
-#if DAP_USE_RPMALLOC
-  #include "rpmalloc.h"
-  #define DAP_MALLOC(a)         rpmalloc(a)
-  #define DAP_FREE(a)           rpfree(a)
-  #define DAP_CALLOC(a, b)      rpcalloc(a, b)
-  #define DAP_ALMALLOC(a, b)    rpaligned_alloc(a, b)
-  #define DAP_ALREALLOC(a,b,c)  rpaligned_realloc(a, b, c, 0, 0)
-  #define DAP_ALFREE(a)         rpfree(a)
-  #define DAP_NEW(a)            DAP_CAST_REINT(a, rpmalloc(sizeof(a)))
-  #define DAP_NEW_SIZE(a, b)    DAP_CAST_REINT(a, rpmalloc(b))
-  #define DAP_NEW_Z(a)          DAP_CAST_REINT(a, rpcalloc(1,sizeof(a)))
-  #define DAP_NEW_Z_SIZE(a, b)  DAP_CAST_REINT(a, rpcalloc(1,b))
-  #define DAP_REALLOC(a, b)     rprealloc(a,b)
-  #define DAP_DELETE(a)         rpfree(a)
-  #define DAP_DUP(a)            memcpy(rpmalloc(sizeof(*a)), a, sizeof(*a))
-  #define DAP_DUP_SIZE(a, s)    memcpy(rpmalloc(s), a, s)
-#elif   DAP_SYS_DEBUG
+#if   DAP_SYS_DEBUG
 
 #include    <assert.h>
 
