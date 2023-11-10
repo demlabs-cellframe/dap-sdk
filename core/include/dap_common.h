@@ -776,8 +776,6 @@ DAP_STATIC_INLINE int dap_is_xdigit(char c) {return dap_ascii_isxdigit(c);}
 DAP_STATIC_INLINE int dap_is_alpha_and_(char c) { return dap_is_alpha(c) || c == '_'; }
 char **dap_parse_items(const char *a_str, char a_delimiter, int *a_count, const int a_only_digit);
 
-unsigned int dap_crc32c(unsigned int crc, const void *buf, size_t buflen);
-
 static inline const char *dap_get_arch()
 { //Get current architecture, detectx nearly every architecture. Coded by Freak
     #if defined(__x86_64__) || defined(_M_X64)
