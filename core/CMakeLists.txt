@@ -23,6 +23,8 @@ if(NOT DAP_DEBUG) # AND NOT DAP_DBG_INFO)
     file(GLOB CORE_HEADERS ${CORE_HEADERS} ../3rdparty/rpmalloc/rpmalloc.h)
 endif()
 
+set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -ldl")
+
 add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
 
 #This paths will be used by project-dependent project libraries
