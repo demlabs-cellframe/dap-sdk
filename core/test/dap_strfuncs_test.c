@@ -91,7 +91,7 @@ void dap_list_test(void)
     l_list = dap_list_append(l_list, "item 3");
     l_list = dap_list_prepend(l_list, "item 0");
 
-    dap_list_t *l_list_tmp = dap_list_find(l_list, "item 2");
+    dap_list_t *l_list_tmp = dap_list_find(l_list, "item 2", NULL);
     unsigned int l_count = dap_list_length(l_list);
     dap_list_remove(l_list, "item 3");
     unsigned int l_count_after = dap_list_length(l_list);
