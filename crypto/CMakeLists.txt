@@ -4,7 +4,6 @@ project (dap_crypto)
 # fix implicit declaration warnings
 add_definitions ("-D_GNU_SOURCE")
 
-
 if(NOT DEFINED SPHINCSPLUS_FLEX)
 # define sphincs hash params
     # choose one hashtype
