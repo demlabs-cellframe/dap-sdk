@@ -401,12 +401,12 @@ void dap_enc_tests_run() {
 
     dap_print_module_name("dap_enc_sig serialize->deserialize BLISS");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_BLISS);
-    // dap_print_module_name("dap_enc_sig serialize->deserialize PICNIC");
-    // test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_PICNIC); //sometimes fail
+    dap_print_module_name("dap_enc_sig serialize->deserialize PICNIC");
+    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_PICNIC);
     dap_print_module_name("dap_enc_sig serialize->deserialize TESLA");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_TESLA);
-    // dap_print_module_name("dap_enc_sig serialize->deserialize DILITHIUM");
-    // test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_DILITHIUM);
+    dap_print_module_name("dap_enc_sig serialize->deserialize DILITHIUM");
+    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_DILITHIUM);
     // dap_print_module_name("dap_enc_sig serialize->deserialize FALCON");
     // test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_FALCON);
     // dap_print_module_name("dap_enc_sig serialize->deserialize SPHINCSPLUS");

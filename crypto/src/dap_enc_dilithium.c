@@ -113,10 +113,10 @@ uint8_t *dap_enc_dilithium_write_signature(const void *a_sign, size_t *a_buflen_
 // func work
     uint64_t l_buflen = dap_enc_dilithium_calc_signagture_size(l_sign);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8,
-        &l_buflen, sizeof(uint64_t),
-        &l_sign->kind, sizeof(uint32_t),
-        &l_sign->sig_len, sizeof(uint64_t),
-        l_sign->sig_data, l_sign->sig_len
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        &l_sign->kind, (uint64_t)sizeof(uint32_t),
+        &l_sign->sig_len, (uint64_t)sizeof(uint64_t),
+        l_sign->sig_data, (uint64_t)l_sign->sig_len
     );
 // out work
     (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
@@ -176,7 +176,7 @@ dilithium_signature_t* dap_enc_dilithium_read_signature(uint8_t *a_buf, size_t a
         return NULL;
     }
 
-    l_sign->sig_data = DAP_NEW_SIZE(byte_t, l_sign->sig_len);
+    l_sign->sig_data = DAP_NEW_SIZE(uint8_t, l_sign->sig_len);
     if (!l_sign->sig_data){
         log_it(L_ERROR,"::read_signature() Can't allocate sig_data %"DAP_UINT64_FORMAT_U" size", l_sign->sig_len);
         DAP_DELETE(l_sign);
@@ -200,9 +200,9 @@ uint8_t *dap_enc_dilithium_write_private_key(const void *a_private_key, size_t *
 // func work
     uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_SECRETKEYBYTES;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
-                        &l_buflen, sizeof(uint64_t),
-                        &l_private_key->kind, sizeof(uint32_t),
-                        l_private_key->data, p.CRYPTO_SECRETKEYBYTES);
+                        &l_buflen, (uint64_t)sizeof(uint64_t),
+                        &l_private_key->kind, (uint64_t)sizeof(uint32_t),
+                        l_private_key->data, (uint64_t)p.CRYPTO_SECRETKEYBYTES);
 // out work
     (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
     return l_buf;
@@ -219,9 +219,9 @@ uint8_t *dap_enc_dilithium_write_public_key(const void *a_public_key, size_t *a_
 // func work
     uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_PUBLICKEYBYTES;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
-                        &l_buflen, sizeof(uint64_t),
-                        &l_public_key->kind, sizeof(uint32_t),
-                        l_public_key->data, p.CRYPTO_PUBLICKEYBYTES);
+                        &l_buflen, (uint64_t)sizeof(uint64_t),
+                        &l_public_key->kind, (uint64_t)sizeof(uint32_t),
+                        l_public_key->data, (uint64_t)p.CRYPTO_PUBLICKEYBYTES);
     
 // out work
     (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
@@ -261,7 +261,7 @@ dilithium_private_key_t* dap_enc_dilithium_read_private_key(const uint8_t *a_buf
     }
     l_private_key->kind = kind;
 
-    l_private_key->data = DAP_NEW_SIZE(byte_t, p.CRYPTO_SECRETKEYBYTES);
+    l_private_key->data = DAP_NEW_SIZE(uint8_t, p.CRYPTO_SECRETKEYBYTES);
     memcpy(l_private_key->data, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.CRYPTO_SECRETKEYBYTES);
     return l_private_key;
 }
