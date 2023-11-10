@@ -262,15 +262,14 @@ uint8_t *dap_enc_falcon_write_private_key(const void *a_private_key, size_t *a_b
     dap_return_val_if_pass(!a_private_key, NULL);
 // func work
     falcon_private_key_t *l_private_key = (falcon_private_key_t *)a_private_key;
-    uint32_t l_buflen =
-            sizeof(uint32_t) * 4 +
+    uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) * 3 +
             FALCON_PRIVKEY_SIZE(l_private_key->degree);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
-        &l_buflen, sizeof(uint32_t),
-        &l_private_key->degree, sizeof(uint32_t),
-        &l_private_key->kind, sizeof(uint32_t),
-        &l_private_key->type, sizeof(uint32_t),
-        l_private_key->data, FALCON_PRIVKEY_SIZE(l_private_key->degree)
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        &l_private_key->degree, (uint64_t)sizeof(uint32_t),
+        &l_private_key->kind, (uint64_t)sizeof(uint32_t),
+        &l_private_key->type, (uint64_t)sizeof(uint32_t),
+        l_private_key->data, (uint64_t)FALCON_PRIVKEY_SIZE(l_private_key->degree)
     );
 // out work
     (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
@@ -280,21 +279,21 @@ uint8_t *dap_enc_falcon_write_private_key(const void *a_private_key, size_t *a_b
 falcon_private_key_t* dap_enc_falcon_read_private_key(const uint8_t *a_buf, size_t a_buflen)
 {
 // in work
-    dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint32_t) * 4, NULL);
+    dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) + sizeof(uint32_t) * 3, NULL);
 // func work
-    uint32_t l_buflen = 0;
-    uint32_t l_skey_len = a_buflen - sizeof(uint32_t) * 4;
+    uint64_t l_buflen = 0;
+    uint64_t l_skey_len = a_buflen - sizeof(uint64_t) - sizeof(uint32_t) * 3;
 
     falcon_private_key_t *l_skey = NULL;
     DAP_NEW_Z_RET_VAL(l_skey, falcon_private_key_t, NULL, NULL);
     DAP_NEW_Z_SIZE_RET_VAL(l_skey->data, uint8_t, l_skey_len, NULL, l_skey);
 
     int l_res_des = dap_deserialize_multy(a_buf, a_buflen, 10, 
-        &l_buflen, sizeof(uint32_t),
-        &l_skey->degree, sizeof(uint32_t),
-        &l_skey->kind, sizeof(uint32_t),
-        &l_skey->type, sizeof(uint32_t),
-        l_skey->data, l_skey_len
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        &l_skey->degree, (uint64_t)sizeof(uint32_t),
+        &l_skey->kind, (uint64_t)sizeof(uint32_t),
+        &l_skey->type, (uint64_t)sizeof(uint32_t),
+        l_skey->data, (uint64_t)l_skey_len
     );
 // out work
     int l_res_check = s_deserialised_sign_check(a_buflen, l_buflen, l_skey->degree, l_skey->kind, l_skey->type);
