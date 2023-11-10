@@ -23,8 +23,6 @@ if(NOT DAP_DEBUG) # AND NOT DAP_DBG_INFO)
     file(GLOB CORE_HEADERS ${CORE_HEADERS} ../3rdparty/rpmalloc/rpmalloc.h)
 endif()
 
-set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} -ldl")
-
 add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
 
 #This paths will be used by project-dependent project libraries
@@ -43,7 +41,7 @@ if(UNIX)
         add_subdirectory(src/darwin)
         set(CORE_LIBRARIES ${CORE_LIBRARIES} dap_core_darwin)
     else()
-        set(CORE_LIBRARIES ${CORE_LIBRARIES} rt)
+        set(CORE_LIBRARIES ${CORE_LIBRARIES} rt dl)
     endif()
     if(ANDROID)
         add_subdirectory(src/android)
