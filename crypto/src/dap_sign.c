@@ -536,20 +536,21 @@ uint8_t *dap_multi_sign_serialize(dap_multi_sign_t *a_sign, size_t *a_out_len)
         return NULL;
     }
     uint32_t  l_pkeys_size, l_signes_size, l_pkeys_hashes_size;
-    *a_out_len = s_multi_sign_calc_size(a_sign, &l_pkeys_size, &l_signes_size, &l_pkeys_hashes_size) + sizeof(uint32_t) * 4;
-    uint8_t *l_ret = dap_serialize_multy(NULL, *a_out_len, 24,
-        a_out_len, sizeof(uint32_t),
-        &l_pkeys_size, sizeof(uint32_t),
-        &l_pkeys_hashes_size, sizeof(uint32_t),
-        &l_signes_size, sizeof(uint32_t),
-        &a_sign->type, sizeof(dap_sign_type_t),
-        &a_sign->key_count, sizeof(uint8_t),
-        &a_sign->sign_count, sizeof(uint8_t),
-        a_sign->key_seq, sizeof(uint8_t) * a_sign->sign_count,
-        a_sign->meta, sizeof(dap_multi_sign_meta_t) * a_sign->sign_count,
-        a_sign->pub_keys, l_pkeys_size,
-        a_sign->key_hashes, l_pkeys_hashes_size,
-        a_sign->sign_data, l_signes_size
+    uint64_t l_out_len = s_multi_sign_calc_size(a_sign, &l_pkeys_size, &l_signes_size, &l_pkeys_hashes_size) + sizeof(uint64_t) + sizeof(uint32_t) * 4;
+    *a_out_len = l_out_len;
+    uint8_t *l_ret = dap_serialize_multy(NULL, l_out_len, 24,
+        &l_out_len, (uint64_t)sizeof(uint64_t),
+        &l_pkeys_size, (uint64_t)sizeof(uint32_t),
+        &l_pkeys_hashes_size, (uint64_t)sizeof(uint32_t),
+        &l_signes_size, (uint64_t)sizeof(uint32_t),
+        &a_sign->type, (uint64_t)sizeof(dap_sign_type_t),
+        &a_sign->key_count, (uint64_t)sizeof(uint8_t),
+        &a_sign->sign_count, (uint64_t)sizeof(uint8_t),
+        a_sign->key_seq, (uint64_t)(sizeof(uint8_t) * a_sign->sign_count),
+        a_sign->meta, (uint64_t)(sizeof(dap_multi_sign_meta_t) * a_sign->sign_count),
+        a_sign->pub_keys, (uint64_t)l_pkeys_size,
+        a_sign->key_hashes, (uint64_t)l_pkeys_hashes_size,
+        a_sign->sign_data, (uint64_t)l_signes_size
     );
     return l_ret;
 }
@@ -568,19 +569,20 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
     }
 
     dap_multi_sign_t *l_sign = NULL;
-    uint32_t l_sign_len, l_pkeys_size, l_signes_size, l_pkeys_hashes_size;
-    uint32_t l_mem_shift = sizeof(uint32_t) * 4 + sizeof(dap_sign_type_t) + sizeof(uint8_t) * 2;
+    uint32_t l_pkeys_size, l_signes_size, l_pkeys_hashes_size;
+    uint64_t l_sign_len = 0;
+    uint64_t l_mem_shift = sizeof(uint64_t) + sizeof(uint32_t) * 3 + sizeof(dap_sign_type_t) + sizeof(uint8_t) * 2;
 // base allocate memory
     DAP_NEW_Z_RET_VAL(l_sign, dap_multi_sign_t, NULL, NULL);
 // get sizes
     int l_res_des = dap_deserialize_multy(a_sign, l_mem_shift, 14, 
-        &l_sign_len, sizeof(uint32_t),
-        &l_pkeys_size, sizeof(uint32_t),
-        &l_pkeys_hashes_size, sizeof(uint32_t),
-        &l_signes_size, sizeof(uint32_t),
-        &l_sign->type, sizeof(dap_sign_type_t),
-        &l_sign->key_count, sizeof(uint8_t),
-        &l_sign->sign_count, sizeof(uint8_t)
+        &l_sign_len, (uint64_t)sizeof(uint64_t),
+        &l_pkeys_size, (uint64_t)sizeof(uint32_t),
+        &l_pkeys_hashes_size, (uint64_t)sizeof(uint32_t),
+        &l_signes_size, (uint64_t)sizeof(uint32_t),
+        &l_sign->type, (uint64_t)sizeof(dap_sign_type_t),
+        &l_sign->key_count, (uint64_t)sizeof(uint8_t),
+        &l_sign->sign_count, (uint64_t)sizeof(uint8_t)
     );
     UNUSED(l_res_des);
 // addtional allocation memory
@@ -591,11 +593,11 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
      DAP_NEW_Z_SIZE_RET_VAL(l_sign->sign_data, uint8_t, l_signes_size, NULL, l_sign->key_hashes, l_sign->pub_keys, l_sign->meta, l_sign->key_seq, l_sign);
 // get data
     l_res_des = dap_deserialize_multy(a_sign + l_mem_shift, l_sign_len - l_mem_shift, 10, 
-        l_sign->key_seq, sizeof(uint8_t) * l_sign->sign_count,
-        l_sign->meta, sizeof(dap_multi_sign_meta_t) * l_sign->sign_count,
-        l_sign->pub_keys, l_pkeys_size,
-        l_sign->key_hashes, l_pkeys_hashes_size,
-        l_sign->sign_data, l_signes_size
+        l_sign->key_seq, (uint64_t)(sizeof(uint8_t) * l_sign->sign_count),
+        l_sign->meta, (uint64_t)(sizeof(dap_multi_sign_meta_t) * l_sign->sign_count),
+        l_sign->pub_keys, (uint64_t)l_pkeys_size,
+        l_sign->key_hashes, (uint64_t)l_pkeys_hashes_size,
+        l_sign->sign_data, (uint64_t)l_signes_size
     );
     return l_sign;
 }

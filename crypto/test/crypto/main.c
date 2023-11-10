@@ -34,5 +34,5 @@ int main(void) {
     // dap_enc_base58_tests_run(l_times);
     // dap_enc_ringct20_tests_run(l_times);
     // dap_enc_benchmark_tests_run(l_times);
-    // dap_enc_multi_sign_tests_run(l_times);
+    dap_enc_multi_sign_tests_run(l_times);
 }
