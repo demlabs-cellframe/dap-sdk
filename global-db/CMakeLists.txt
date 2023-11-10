@@ -4,7 +4,7 @@ project (dap_global_db C)
 file(GLOB dap_global_db_SRC dap_global_db.c dap_global_db_driver.c dap_global_db_ch.c dap_global_db_pkt.c dap_global_db_cluster.c)
 file(GLOB dap_global_db_HDR include/*.h)
 
-set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream dap_json-c)
+set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream dap_json-c crc32c_adler)
 
 if(BUILD_WITH_GDB_DRIVER_MDBX)
     set(SAVED_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})
@@ -45,3 +45,6 @@ target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
 
+if (BUILD_GLOBAL_DB_TEST)
+    add_subdirectory(test)
+endif()
