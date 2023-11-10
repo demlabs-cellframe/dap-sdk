@@ -47,9 +47,7 @@ void test_encypt_decrypt(int count_steps, const dap_enc_key_type_t key_type, con
         dap_assert_PIF(memcmp(source, buf_decrypted, source_size) == 0,
                 "Check source and encode->decode data");
 
-        DAP_DELETE(source);
-        DAP_DELETE(buf_encrypted);
-        DAP_DELETE(buf_decrypted);
+        DAP_DEL_MULTY(source, buf_encrypted, buf_decrypted);
         dap_enc_key_delete(key);
     }
     int time_end = get_cur_time_msec();
@@ -167,9 +165,7 @@ static void _encrypt_decrypt(enum dap_enc_key_type key_type,
 
 
 //#endif
-        DAP_DELETE(decode_result);
-        DAP_DELETE(encrypt_result);
-        DAP_DELETE(source);
+        DAP_DEL_MULTY(decode_result, encrypt_result, source);
         dap_enc_key_delete(key);
     }
 }
@@ -312,7 +308,6 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     dap_enc_key_t* key = dap_enc_key_new_generate(key_type, kex_data, kex_size, seed, seed_size, 32);
     // Serialize key & save/read to/from buf
     size_t l_data_pub_size = 0;
-    //uint8_t *l_data_pub = DAP_NEW_SIZE(uint8_t, l_data_pub_size);//dap_enc_key_serialize_pub_key(key, &l_data_pub_size);
     uint8_t *l_data_pub = dap_enc_key_serialize_pub_key(key, &l_data_pub_size);
     _write_key_in_file(l_data_pub, l_data_pub_size, TEST_SER_FILE_NAME);
     uint8_t *l_data_pub_read = _read_key_from_file(TEST_SER_FILE_NAME, l_data_pub_size);
@@ -328,10 +323,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     dap_enc_key_deserialize_pub_key(key2, l_data_pub_read, l_data_pub_size);
     dap_enc_key_deserialize_priv_key(key2, l_data_priv_read, l_data_priv_size);
 
-    DAP_DELETE(l_data_pub);
-    DAP_DELETE(l_data_pub_read);
-    DAP_DELETE(l_data_priv);
-    DAP_DELETE(l_data_priv_read);
+    DAP_DEL_MULTY(l_data_pub, l_data_pub_read, l_data_priv, l_data_priv_read);
 
     dap_assert(key->priv_key_data_size == key2->priv_key_data_size, "Priv key data size");
     dap_assert(key->pub_key_data_size == key2->pub_key_data_size, "Pub key data size");
