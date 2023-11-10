@@ -72,6 +72,9 @@
 #endif
 #include "portable_endian.h"
 
+#define ENABLE_OVERRIDE 1
+#include "rpmalloc.h"
+
 #define BIT( x ) ( 1 << x )
 // Stuffs an integer into a pointer type
 #define DAP_INT_TO_POINTER(i) ((void*) (size_t) (i))
