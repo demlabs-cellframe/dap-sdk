@@ -407,8 +407,8 @@ void dap_enc_tests_run() {
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_TESLA);
     dap_print_module_name("dap_enc_sig serialize->deserialize DILITHIUM");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_DILITHIUM);
-    // dap_print_module_name("dap_enc_sig serialize->deserialize FALCON");
-    // test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_FALCON);
+    dap_print_module_name("dap_enc_sig serialize->deserialize FALCON");
+    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_FALCON);
     // dap_print_module_name("dap_enc_sig serialize->deserialize SPHINCSPLUS");
     // test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS);
     dap_cleanup_test_case();

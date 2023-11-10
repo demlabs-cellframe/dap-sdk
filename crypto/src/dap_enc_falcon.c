@@ -235,15 +235,15 @@ uint8_t *dap_enc_falcon_write_public_key(const void *a_public_key, size_t *a_buf
     dap_return_val_if_pass(!a_public_key, NULL);
 // func work
     falcon_public_key_t *l_public_key = (falcon_public_key_t *)a_public_key;
-    uint32_t l_buflen =
-            sizeof(uint32_t) * 4 + FALCON_PUBKEY_SIZE(l_public_key->degree
+    uint64_t l_buflen =
+            sizeof(uint64_t) + sizeof(uint32_t) * 3 + FALCON_PUBKEY_SIZE(l_public_key->degree
     );
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
-        &l_buflen, sizeof(uint32_t),
-        &l_public_key->degree, sizeof(uint32_t),
-        &l_public_key->kind, sizeof(uint32_t),
-        &l_public_key->type, sizeof(uint32_t),
-        l_public_key->data, FALCON_PUBKEY_SIZE(l_public_key->degree)
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        &l_public_key->degree, (uint64_t)sizeof(uint32_t),
+        &l_public_key->kind, (uint64_t)sizeof(uint32_t),
+        &l_public_key->type, (uint64_t)sizeof(uint32_t),
+        l_public_key->data, (uint64_t)FALCON_PUBKEY_SIZE(l_public_key->degree)
     );
 // out work
     (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
@@ -314,21 +314,21 @@ falcon_private_key_t* dap_enc_falcon_read_private_key(const uint8_t *a_buf, size
 falcon_public_key_t *dap_enc_falcon_read_public_key(const uint8_t *a_buf, size_t a_buflen)
 {
 // in work
-    dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint32_t) * 4, NULL);
+    dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) + sizeof(uint32_t) * 3, NULL);
 // func work
-    uint32_t l_buflen = 0;
-    uint32_t l_pkey_len = a_buflen - sizeof(uint32_t) * 4;
+    uint64_t l_buflen = 0;
+    uint64_t l_pkey_len = a_buflen - sizeof(uint64_t) - sizeof(uint32_t) * 3;
 
     falcon_public_key_t *l_pkey = NULL;
     DAP_NEW_Z_RET_VAL(l_pkey, falcon_public_key_t, NULL, NULL);
     DAP_NEW_Z_SIZE_RET_VAL(l_pkey->data, uint8_t, l_pkey_len, NULL, l_pkey);
 
     int l_res_des = dap_deserialize_multy(a_buf, a_buflen, 10, 
-        &l_buflen, sizeof(uint32_t),
-        &l_pkey->degree, sizeof(uint32_t),
-        &l_pkey->kind, sizeof(uint32_t),
-        &l_pkey->type, sizeof(uint32_t),
-        l_pkey->data, l_pkey_len
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        &l_pkey->degree, (uint64_t)sizeof(uint32_t),
+        &l_pkey->kind, (uint64_t)sizeof(uint32_t),
+        &l_pkey->type, (uint64_t)sizeof(uint32_t),
+        l_pkey->data, (uint64_t)l_pkey_len
     );
 // out work
     int l_res_check = s_deserialised_sign_check(a_buflen, l_buflen, l_pkey->degree, l_pkey->kind, l_pkey->type);
@@ -352,14 +352,14 @@ uint8_t *dap_enc_falcon_write_signature(const void *a_sign, size_t *a_buflen_out
     dap_return_val_if_pass(!a_sign, NULL);
     falcon_signature_t *l_sign = (falcon_signature_t*)a_sign;
 // func work
-    size_t l_buflen = sizeof(uint32_t) * 5 + l_sign->sig_len;
+    uint64_t l_buflen = sizeof(uint64_t) * 2 + sizeof(uint64_t) * 3 + l_sign->sig_len;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 12,
-        &l_buflen, sizeof(uint32_t),
-        &l_sign->degree, sizeof(uint32_t),
-        &l_sign->kind, sizeof(uint32_t),
-        &l_sign->type, sizeof(uint32_t),
-        &l_sign->sig_len, sizeof(uint32_t),
-        l_sign->sig_data, l_sign->sig_len
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        &l_sign->degree, (uint64_t)sizeof(uint32_t),
+        &l_sign->kind, (uint64_t)sizeof(uint32_t),
+        &l_sign->type, (uint64_t)sizeof(uint32_t),
+        &l_sign->sig_len, (uint64_t)sizeof(uint64_t),
+        l_sign->sig_data, (uint64_t)l_sign->sig_len
     );
 // out work
     (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
@@ -368,22 +368,22 @@ uint8_t *dap_enc_falcon_write_signature(const void *a_sign, size_t *a_buflen_out
 falcon_signature_t* dap_enc_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen)
 {
 // in work 
-    dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint32_t) * 5, NULL);
+    dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) * 2 + sizeof(uint32_t) * 3, NULL);
 // func work
-    uint32_t l_buflen = 0;
-    uint32_t l_sig_len = a_buflen - sizeof(uint32_t) * 5;
+    uint64_t l_buflen = 0;
+    uint64_t l_sig_len = a_buflen - sizeof(uint64_t) * 2 - sizeof(uint32_t) * 3;
 
     falcon_signature_t *l_sign = NULL;
     DAP_NEW_Z_RET_VAL(l_sign, falcon_signature_t, NULL, NULL);
     DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, l_sig_len, NULL, l_sign);
 
     int l_res_des = dap_deserialize_multy(a_buf, a_buflen, 12, 
-        &l_buflen, sizeof(uint32_t),
-        &l_sign->degree, sizeof(uint32_t),
-        &l_sign->kind, sizeof(uint32_t),
-        &l_sign->type, sizeof(uint32_t),
-        &l_sign->sig_len, sizeof(uint32_t),
-        l_sign->sig_data, l_sig_len
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        &l_sign->degree, (uint64_t)sizeof(uint32_t),
+        &l_sign->kind, (uint64_t)sizeof(uint32_t),
+        &l_sign->type, (uint64_t)sizeof(uint32_t),
+        &l_sign->sig_len, (uint64_t)sizeof(uint64_t),
+        l_sign->sig_data, (uint64_t)l_sig_len
     );
 // out work
     int l_res_check = s_deserialised_sign_check(a_buflen, l_buflen, l_sign->degree, l_sign->kind, l_sign->type);
