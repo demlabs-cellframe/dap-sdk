@@ -2,7 +2,7 @@
 #include "dap_test.h"
 #include "dap_enc_test.h"
 #include "rand/dap_rand.h"
-#include "dap_sign.h"
+#include "dap_enc_multisign.h"
 
 #define LOG_TAG "dap_crypto_multy_sign_tests"
 

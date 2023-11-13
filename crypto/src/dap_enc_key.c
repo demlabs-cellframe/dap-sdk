@@ -379,6 +379,27 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .ser_priv_key =                     dap_enc_sphincsplus_write_private_key,
         .ser_pub_key =                      dap_enc_sphincsplus_write_public_key
     },
+    [DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED]={
+        .name =                             "MULTI_CHAINED",
+        .enc =                              NULL,
+        .dec =                              NULL,
+        // .enc_na =                           dap_enc_sig_sphincsplus_get_sign_msg,
+        // .dec_na =                           dap_enc_sig_sphincsplus_open_sign_msg,
+        .gen_key_public =                   NULL,
+        .gen_key_public_size =              NULL,
+        .gen_bob_shared_key =               NULL,
+        .gen_alice_shared_key =             NULL,
+        // .new_callback =                     dap_enc_sig_sphincsplus_key_new,
+        // .delete_callback =                  dap_enc_sig_sphincsplus_key_delete,
+        // .new_generate_callback =            dap_enc_sig_sphincsplus_key_new_generate,
+        .enc_out_size =                     NULL,
+        .dec_out_size =                     NULL,
+        // .sign_get =                         dap_enc_sig_sphincsplus_get_sign,
+        // .sign_verify =                      dap_enc_sig_sphincsplus_verify_sign,
+        // .ser_sign =                         dap_enc_sphincsplus_write_signature,
+        // .ser_priv_key =                     dap_enc_sphincsplus_write_private_key,
+        // .ser_pub_key =                      dap_enc_sphincsplus_write_public_key
+    },
 
 #ifdef DAP_PQLR
     [DAP_ENC_KEY_TYPE_PQLR_SIG_DILITHIUM] = {0},

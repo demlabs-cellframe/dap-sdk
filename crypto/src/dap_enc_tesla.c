@@ -125,7 +125,7 @@ uint8_t *dap_enc_tesla_write_signature(const void *a_sign, size_t *a_buflen_out)
         l_sign->sig_data, (uint64_t)l_sign->sig_len
     );
 // out work
-    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
+    (a_buflen_out  && l_buf) ? *a_buflen_out = (size_t)l_buflen : 0;
     return l_buf;
 }
 
@@ -171,7 +171,7 @@ uint8_t *dap_enc_tesla_write_private_key(const void *a_private_key, size_t *a_bu
         l_private_key->data, (uint64_t)p.CRYPTO_SECRETKEYBYTES
     );
 // out work
-    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
+    (a_buflen_out  && l_buf) ? *a_buflen_out = (size_t)l_buflen : 0;
     return l_buf;
 }
 
@@ -191,7 +191,7 @@ uint8_t *dap_enc_tesla_write_public_key(const void *a_public_key, size_t *a_bufl
         l_public_key->data, (uint64_t)p.CRYPTO_PUBLICKEYBYTES
     );
 // out work
-    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
+    (a_buflen_out  && l_buf) ? *a_buflen_out = (size_t)l_buflen : 0;
     return l_buf;
 }
 
