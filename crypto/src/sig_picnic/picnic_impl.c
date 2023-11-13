@@ -565,7 +565,7 @@ int verify(signature_t* sig, const uint32_t* pubKey, const uint32_t* plaintext,
     uint8_t* computed_challengebits = NULL;
     uint32_t* view3Slab = NULL;
 
-    uint8_t* tmp = malloc(MAX(6 * params->stateSizeBytes, params->stateSizeBytes + params->andSizeBytes));
+    uint8_t* tmp = malloc(dap_max(6 * params->stateSizeBytes, params->stateSizeBytes + params->andSizeBytes));
 
     randomTape_t* tape = (randomTape_t*)malloc(sizeof(randomTape_t));
 
@@ -779,7 +779,7 @@ int sign(uint32_t* privateKey, uint32_t* pubKey, uint32_t* plaintext, const uint
     randomTape_t tape;
 
     allocateRandomTape(&tape, params);
-    uint8_t* tmp = malloc( MAX(9 * params->stateSizeBytes, params->stateSizeBytes + params->andSizeBytes));
+    uint8_t* tmp = malloc( dap_max(9 * params->stateSizeBytes, params->stateSizeBytes + params->andSizeBytes));
 
     uint32_t k;
     for (k = 0; k < params->numZKBRounds; k++) {

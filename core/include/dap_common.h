@@ -427,11 +427,21 @@ extern "C" {
 #define MAX_PATH 1024
 #endif
 
-#ifndef MAX
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#ifndef dap_max
+#define dap_max(a,b)        \
+({                          \
+    __typeof__(a) _a = (a); \
+    __typeof__(b) _b = (b); \
+    _a > _b ? _a : _b;      \
+})
 #endif
-#ifndef MIN
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#ifndef dap_min
+#define dap_min(a,b)        \
+({                          \
+    __typeof__(a) _a = (a); \
+    __typeof__(b) _b = (b); \
+    _a < _b ? _a : _b;      \
+})
 #endif
 
 static const DAP_ALIGNED(16) uint16_t htoa_lut256[ 256 ] = {

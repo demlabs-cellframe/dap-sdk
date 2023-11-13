@@ -378,7 +378,7 @@ struct timespec now;
 	olen += vsnprintf(out + olen, sizeof(out) - olen - 1, a_fmt, arglist);
 	va_end (arglist);
 
-	olen = MIN(olen, (ssize_t) sizeof(out) - 1);
+    olen = dap_min(olen, (ssize_t) sizeof(out) - 1);
 
 	/* Add <LF> at end of record*/
 	out[olen++] = '\n';
@@ -921,7 +921,7 @@ void dap_digit_from_string(const char *num_str, void *raw, size_t raw_len)
     val = le64toh(val);
 #endif
     memset(raw, 0, raw_len);
-    memcpy(raw, &val, MIN(raw_len, sizeof(uint64_t)));
+    memcpy(raw, &val, dap_min(raw_len, sizeof(uint64_t)));
 }
 
 typedef union {
@@ -948,7 +948,7 @@ void dap_digit_from_string2(const char *num_str, void *raw, size_t raw_len)
     val = le64toh(val);
 #endif
     memset(raw, 0, raw_len);
-    memcpy(raw, &val, MIN(raw_len, sizeof(uint64_t)));
+    memcpy(raw, &val, dap_min(raw_len, sizeof(uint64_t)));
 }
 
 
