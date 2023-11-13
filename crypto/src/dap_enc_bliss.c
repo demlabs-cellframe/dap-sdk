@@ -165,7 +165,7 @@ uint8_t *dap_enc_sig_bliss_write_signature(const void *a_sign, size_t *a_buflen_
         l_sign->c, (uint64_t)(p.kappa * sizeof(int32_t))
     );
 // out work
-    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
+    (a_buflen_out  && l_buf) ? *a_buflen_out = (size_t)l_buflen : 0;
     return l_buf;
 }
 
@@ -221,7 +221,7 @@ uint8_t *dap_enc_sig_bliss_write_private_key(const void *a_private_key, size_t *
         l_private_key->a, (uint64_t)(p.n * sizeof(int32_t))
     );
 // out work
-    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
+    (a_buflen_out  && l_buf) ? *a_buflen_out = (size_t)l_buflen : 0;
     return l_buf;
 }
 
@@ -241,7 +241,7 @@ uint8_t *dap_enc_sig_bliss_write_public_key(const void *a_public_key, size_t *a_
         l_public_key->a, p.n * (uint64_t)sizeof(int32_t)
     );
 // out work
-    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
+    (a_buflen_out  && l_buf) ? *a_buflen_out = (size_t)l_buflen : 0;
     return l_buf;
 }
 
