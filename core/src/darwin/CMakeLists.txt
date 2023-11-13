@@ -13,5 +13,8 @@ endif()
 add_library(${PROJECT_NAME} STATIC ${CORE_DARWIN_SRCS} ${CORE_DARWIN_HEADERS}
     ${CORE_MACOS_SRCS} ${CORE_MACOS_HEADERS})
 
-target_link_libraries(${PROJECT_NAME} dap_core pthread)
+target_link_libraries(${PROJECT_NAME} dap_core )
+if(NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} pthread)
+endif()
 

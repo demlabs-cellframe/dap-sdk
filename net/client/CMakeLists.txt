@@ -27,3 +27,11 @@ if (${BUILD_DAP_CLIENT_TESTS} MATCHES ON)
     add_subdirectory(test)
 endif()
 
+if(INSTALL_DAP_SDK)
+set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_CLIENT_HEADERS}")
+INSTALL(TARGETS ${PROJECT_NAME} 
+        LIBRARY DESTINATION lib/dap/net/client/
+        ARCHIVE DESTINATION lib/dap/net/client/
+        PUBLIC_HEADER DESTINATION include/dap/net/client/
+)
+endif()

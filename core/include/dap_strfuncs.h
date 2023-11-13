@@ -19,20 +19,6 @@
 extern "C" {
 #endif
 
-#ifndef WIN32
-#undef  max
-#define max(a,b) \
-  ({ size_t _a = (a); \
-      size_t _b = (b); \
-    _a > _b ? _a : _b; })
-
-#undef  min
-#define min(a,b) \
-  ({ size_t _a = (a); \
-      size_t _b = (b); \
-    _a < _b ? _a : _b; })
-
-#endif
 
 #ifdef _WIN32
 char *strptime(const char *buff, const char *fmt, struct tm *tm);
