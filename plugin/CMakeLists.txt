@@ -20,3 +20,11 @@ endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC include/ )
 
+if(INSTALL_DAP_SDK)
+set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_PLUGIN_HEADERS}")
+INSTALL(TARGETS ${PROJECT_NAME} 
+        LIBRARY DESTINATION lib/dap/plugin/
+        ARCHIVE DESTINATION lib/dap/plugin/
+        PUBLIC_HEADER DESTINATION include/dap/plugin/
+)
+endif()

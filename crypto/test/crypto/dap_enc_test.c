@@ -277,7 +277,7 @@ static void test_serealize_deserealize(dap_enc_key_type_t key_type)
     dap_assert(memcmp(serealize_key, deserealize_key, sizeof(dap_enc_key_serealize_t)) == 0,
                "dap_enc_key_serealize_t equals");
 
-    dap_enc_key_t* key2 = dap_enc_key_deserealize(deserealize_key, sizeof (*deserealize_key));
+    dap_enc_key_t* key2 = dap_enc_key_deserialize(deserealize_key, sizeof (*deserealize_key));
 
     dap_assert(key->type == key2->type, "Key type");
     dap_assert(key->last_used_timestamp == key2->last_used_timestamp,
@@ -348,7 +348,7 @@ static void test_serealize_deserealize_pub_priv(dap_enc_key_type_t key_type)
     // Serialize key & save/read to/from buf
     size_t l_data_pub_size = 0;
     //uint8_t *l_data_pub = DAP_NEW_SIZE(uint8_t, l_data_pub_size);//dap_enc_key_serealize_pub_key(key, &l_data_pub_size);
-    uint8_t *l_data_pub = dap_enc_key_serealize_pub_key(key, &l_data_pub_size);
+    uint8_t *l_data_pub = dap_enc_key_serialize_pub_key(key, &l_data_pub_size);
     _write_key_in_file(l_data_pub, l_data_pub_size, TEST_SER_FILE_NAME);
     uint8_t *l_data_pub_read = _read_key_from_file(TEST_SER_FILE_NAME, l_data_pub_size);
 
@@ -360,8 +360,8 @@ static void test_serealize_deserealize_pub_priv(dap_enc_key_type_t key_type)
     // create new key2
     dap_enc_key_t *key2 = dap_enc_key_new(key_type);
     // Deserialize key2
-    dap_enc_key_deserealize_pub_key(key2, l_data_pub_read, l_data_pub_size);
-    dap_enc_key_deserealize_priv_key(key2, l_data_priv_read, l_data_priv_size);
+    dap_enc_key_deserialize_pub_key(key2, l_data_pub_read, l_data_pub_size);
+    dap_enc_key_deserialize_priv_key(key2, l_data_priv_read, l_data_priv_size);
 
     DAP_DELETE(l_data_pub);
     DAP_DELETE(l_data_pub_read);
@@ -416,7 +416,7 @@ static void test_serealize_deserealize_pub_priv(dap_enc_key_type_t key_type)
     size_t sig_buf_len = sig_buf_size;
     uint8_t *l_sign_tmp = dap_enc_key_serealize_sign(key_type, sig_buf, &sig_buf_len);
     dap_enc_key_signature_delete(key_type, sig_buf);
-    sig_buf = dap_enc_key_deserealize_sign(key_type, l_sign_tmp, &sig_buf_len);
+    sig_buf = dap_enc_key_deserialize_pub_key(key_type, l_sign_tmp, &sig_buf_len);
     DAP_DELETE(l_sign_tmp);
 
     dap_assert_PIF(sig_buf, "Check serealize->deserealize signature");

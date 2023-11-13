@@ -58,15 +58,20 @@
 const uint128_t uint128_0 = {};
 const uint128_t uint128_1 = {.hi = 0, .lo = 1};
 const uint128_t uint128_max = {.hi = UINT64_MAX, .lo = UINT64_MAX};
+
+const uint256_t uint256_0 = {};
+const uint256_t uint256_1 = {.hi = {0,0}, .lo = {.hi = 0, .lo = 1}};
+const uint256_t uint256_max = {.hi = {.hi = UINT64_MAX, .lo = UINT64_MAX}, .lo = {.hi = UINT64_MAX, .lo = UINT64_MAX}};
 #else // DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = 0;
 const uint128_t uint128_1 = 1;
 const uint128_t uint128_max = ((uint128_t)((int128_t)-1L));
-#endif // DAP_GLOBAL_IS_INT128
 
 const uint256_t uint256_0 = {};
 const uint256_t uint256_1 = {.hi = uint128_0, .lo = uint128_1};
 const uint256_t uint256_max = {.hi = uint128_max, .lo = uint128_max};
+#endif // DAP_GLOBAL_IS_INT128
+
 
 const uint512_t uint512_0 = {};
 
@@ -916,7 +921,7 @@ void dap_digit_from_string(const char *num_str, void *raw, size_t raw_len)
     val = le64toh(val);
 #endif
     memset(raw, 0, raw_len);
-    memcpy(raw, &val, min(raw_len, sizeof(uint64_t)));
+    memcpy(raw, &val, MIN(raw_len, sizeof(uint64_t)));
 }
 
 typedef union {
@@ -943,7 +948,7 @@ void dap_digit_from_string2(const char *num_str, void *raw, size_t raw_len)
     val = le64toh(val);
 #endif
     memset(raw, 0, raw_len);
-    memcpy(raw, &val, min(raw_len, sizeof(uint64_t)));
+    memcpy(raw, &val, MIN(raw_len, sizeof(uint64_t)));
 }
 
 
