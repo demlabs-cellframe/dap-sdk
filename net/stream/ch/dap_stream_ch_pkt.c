@@ -282,7 +282,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         dap_stream_fragment_pkt_t *l_fragment;
         for (l_fragment = (dap_stream_fragment_pkt_t*)l_buf, l_fragment_size = sizeof(dap_stream_ch_pkt_hdr_t);
              l_data_size > 0;
-             l_data_size -= l_fragment_size, l_fragment_size = MIN(l_data_size, l_max_fragm_size))
+             l_data_size -= l_fragment_size, l_fragment_size = dap_min(l_data_size, l_max_fragm_size))
         {
             l_fragment->size        = l_fragment_size;
             l_fragment->full_size   = l_max_size;
