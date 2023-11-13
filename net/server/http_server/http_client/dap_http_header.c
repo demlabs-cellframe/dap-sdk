@@ -157,20 +157,20 @@ dap_http_header_t *l_new_header;
             break;
 
         case    HTTP_FLD$K_CONTENT_TYPE:
-            memcpy( cl_ht->in_content_type, l_pval, l_len = MIN(l_valuelen, sizeof(cl_ht->in_content_type) - 1) );
+            memcpy( cl_ht->in_content_type, l_pval, l_len = dap_min(l_valuelen, sizeof(cl_ht->in_content_type) - 1) );
             cl_ht->in_content_type[l_valuelen] = '\0';
             break;
 
         case    HTTP_FLD$K_CONTENT_LEN:
             {
             char digit[32] = {0};
-            memcpy(digit, l_pval, MIN(l_valuelen, sizeof(digit) - 1));
+            memcpy(digit, l_pval, dap_min(l_valuelen, sizeof(digit) - 1));
             cl_ht->in_content_length = atoi( digit );
         }
             break;
 
         case    HTTP_FLD$K_COOKIE:
-            memcpy(cl_ht->in_cookie, l_pval, l_len = MIN(l_valuelen, sizeof(cl_ht->in_cookie) - 1) );
+            memcpy(cl_ht->in_cookie, l_pval, l_len = dap_min(l_valuelen, sizeof(cl_ht->in_cookie) - 1) );
             cl_ht->in_cookie[l_valuelen] = '\0';
             break;
     }

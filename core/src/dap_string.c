@@ -72,7 +72,7 @@ dap_string_t * dap_string_sized_new(size_t a_dfl_size)
     l_string->len = 0;
     l_string->str = NULL;
 
-    dap_string_maybe_expand(l_string, MAX(a_dfl_size, 2));
+    dap_string_maybe_expand(l_string, dap_max(a_dfl_size, (size_t)2));
     if(l_string->str)
         l_string->str[0] = 0;
 
@@ -273,7 +273,7 @@ dap_string_t* dap_string_truncate(dap_string_t *string, size_t len)
 {
     dap_return_val_if_fail(string != NULL, NULL);
 
-    string->len = MIN(len, string->len);
+    string->len = dap_min(len, string->len);
     string->str[string->len] = 0;
 
     return string;
@@ -360,7 +360,7 @@ dap_string_t* dap_string_insert_len(dap_string_t *string, ssize_t pos, const cha
 
         /* Move the source part before the gap, if any.  */
         if(offset < (size_t) pos) {
-            precount = MIN(len, pos - (ssize_t )offset);
+            precount = dap_min(len, pos - (ssize_t )offset);
             memcpy(string->str + pos, val, precount);
         }
 

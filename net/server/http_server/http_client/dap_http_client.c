@@ -239,7 +239,7 @@ const char ht_ver [] = "HTTP/1.";                                           /* W
     for ( ; !isspace(*l_cp_end) && l_buf_len; l_cp_end++, l_buf_len--);     /* Run method's symbols until first whitespace */
 
     l_len = l_cp_end - l_cp_start;
-    a_http_client->action_len = MIN(l_len, sizeof(a_http_client->action) - 1 );
+    a_http_client->action_len = dap_min(l_len, sizeof(a_http_client->action) - 1 );
     memcpy( a_http_client->action, l_cp_start, a_http_client->action_len);  /* Save HTTP method's name into the HT-client context */
     a_http_client->action[a_http_client->action_len] = '\0';                /* ASCIZ */
 
@@ -253,7 +253,7 @@ const char ht_ver [] = "HTTP/1.";                                           /* W
     for ( ; (*l_cp_end != '?') && !isspace(*l_cp_end) && l_buf_len; l_cp_end++, l_buf_len--); /* Run over <path> up to first <space> or '?' */
 
     l_len = l_cp_end - l_cp_start;
-    a_http_client->url_path_len = MIN(l_len, sizeof( a_http_client->url_path) - 1 );
+    a_http_client->url_path_len = dap_min(l_len, sizeof( a_http_client->url_path) - 1 );
     memcpy( a_http_client->url_path, l_cp_start, a_http_client->url_path_len);
     a_http_client->url_path[a_http_client->url_path_len] = '\0';            /* ASCIZ */
 
@@ -268,7 +268,7 @@ const char ht_ver [] = "HTTP/1.";                                           /* W
         for ( ; !isspace(*l_cp_end) && l_buf_len; l_cp_end++, l_buf_len--); /* Run over <arguments> up to first <space> */
 
         l_len = l_cp_end - l_cp_start;
-        a_http_client->in_query_string_len = MIN(l_len, sizeof( a_http_client->in_query_string) - 1 );
+        a_http_client->in_query_string_len = dap_min(l_len, sizeof( a_http_client->in_query_string) - 1 );
         memcpy( a_http_client->in_query_string, l_cp_start, a_http_client->in_query_string_len);
         a_http_client->in_query_string[a_http_client->in_query_string_len] = '\0';          /* ASCIZ */
     }
