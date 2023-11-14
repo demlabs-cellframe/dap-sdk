@@ -374,6 +374,7 @@ dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign)
  */
 int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a_data_size)
 {
+    printf("verify_func_start\n");
     dap_return_val_if_pass(!a_chain_sign || !a_data, -2);
 
     dap_enc_key_t * l_key = dap_sign_to_enc_key(a_chain_sign);
@@ -389,6 +390,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
         log_it(L_WARNING,"Incorrect signature, can't extract serialized signature's data ");
         return -4;
     }
+    printf("verify_func_deserialize start\n");
 
     size_t l_sign_data_size = a_chain_sign->header.sign_size;
     // deserialize signature
@@ -406,6 +408,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
     size_t l_verify_data_size;
     dap_chain_hash_fast_t l_verify_data_hash;
 
+    printf("verify_func_hash_fast start\n");
     if(a_chain_sign->header.hash_type == DAP_SIGN_HASH_TYPE_NONE){
         l_verify_data = a_data;
         l_verify_data_size = a_data_size;
@@ -420,7 +423,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
             return -5;
         }
     }
-
+    printf("verify_func_verify start\n");
     switch (l_key->type) {
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
@@ -433,6 +436,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
         default:
             l_ret = -6;
     }
+    printf("verify_func_sig delete start\n");
     dap_enc_key_signature_delete(l_key->type, l_sign_data);
     dap_enc_key_delete(l_key);
     return l_ret;

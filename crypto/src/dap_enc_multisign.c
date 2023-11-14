@@ -51,17 +51,16 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
 // sanity check
     dap_return_if_pass(a_key->type != DAP_ENC_KEY_TYPE_SIG_MULTI || !a_kex_size);
 // memory alloc
-    // dap_enc_key_type_t *l_key_types = a_kex_buf;
-    // dap_enc_key_t **l_keys;
-    // for (int i = 0; i < KEYS_TOTAL_COUNT; i++) {
-    //     step = random_uint32_t( SIGNATURE_TYPE_COUNT);
-    //     if (a_sign_type != DAP_ENC_KEY_TYPE_NULL)
-    //         key[i] = dap_enc_key_new_generate(a_sign_type, NULL, 0, seed, seed_size, 0);
-    //     else
-    //         key[i] = dap_enc_key_new_generate(key_type_arr[step], NULL, 0, seed, seed_size, 0);
-    // }
+    dap_enc_key_type_t *l_key_types = a_kex_buf;
+    dap_enc_key_t *l_key[a_kex_size];
+    int l_seq[a_kex_size];
+    for (size_t i = 0; i < a_kex_size; i++) {
+        l_key[i] = dap_enc_key_new_generate(l_key_types[i], NULL, 0, a_seed, a_seed_size, 0);
+        l_seq[i] = i;
+    }
+    dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, l_key, a_kex_size, l_seq, a_kex_size);
 
-    // a_key->_pvt = 
+    a_key->_pvt = l_params;
 }
 
 /**

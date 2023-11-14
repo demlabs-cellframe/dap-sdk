@@ -200,7 +200,7 @@ static void s_sign_verify_tests_run(int a_times)
 {
     dap_init_test_case();
     // s_sign_verify_test_becnhmark("PICNIC", DAP_ENC_KEY_TYPE_SIG_PICNIC, a_times);
-    s_sign_verify_test_becnhmark("TESLA", DAP_ENC_KEY_TYPE_SIG_TESLA, a_times);
+    // s_sign_verify_test_becnhmark("TESLA", DAP_ENC_KEY_TYPE_SIG_TESLA, a_times);
     s_sign_verify_test_becnhmark("BLISS", DAP_ENC_KEY_TYPE_SIG_TESLA, a_times);
     s_sign_verify_test_becnhmark("DILITHIUM", DAP_ENC_KEY_TYPE_SIG_DILITHIUM, a_times);
     s_sign_verify_test_becnhmark("FALCON", DAP_ENC_KEY_TYPE_SIG_FALCON, a_times);

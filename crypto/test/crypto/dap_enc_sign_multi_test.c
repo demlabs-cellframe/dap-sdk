@@ -3,6 +3,7 @@
 #include "dap_enc_test.h"
 #include "rand/dap_rand.h"
 #include "dap_enc_multisign.h"
+#include "dap_enc_key.h"
 
 #define LOG_TAG "dap_crypto_multy_sign_tests"
 
@@ -44,31 +45,32 @@ static void test_signing_verifying(
                 DAP_ENC_KEY_TYPE_SIG_FALCON,\
                 DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS};
         int step;
-        dap_enc_key_t* key[KEYS_TOTAL_COUNT];
+
+        dap_enc_key_type_t key[KEYS_TOTAL_COUNT];
         for (int i = 0; i < KEYS_TOTAL_COUNT; i++) {
-            step = random_uint32_t( SIGNATURE_TYPE_COUNT);
             if (a_sign_type != DAP_ENC_KEY_TYPE_NULL)
-                key[i] = dap_enc_key_new_generate(a_sign_type, NULL, 0, seed, seed_size, 0);
-            else
-                key[i] = dap_enc_key_new_generate(key_type_arr[step], NULL, 0, seed, seed_size, 0);
+                key[i] = a_sign_type;
+            else {
+                step = random_uint32_t( SIGNATURE_TYPE_COUNT);
+                key[i] = key_type_arr[step];
+            }
         }
+        
+        dap_enc_key_t *l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_MULTI, key, KEYS_TOTAL_COUNT, seed, seed_size, 0);
 
         l_source_size[i] = 1 + random_uint32_t(20);
         DAP_NEW_Z_SIZE_RET(l_source[i], uint8_t, l_source_size[i], NULL);
         randombytes(l_source[i], l_source_size[i]);
-        int l_seq[SIGN_COUNT];
-        for (int i = 0; i < SIGN_COUNT; ++i) {
-            l_seq[i] = random_uint32_t(SIGN_COUNT);
-        }
-        dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, key, KEYS_TOTAL_COUNT, l_seq, SIGN_COUNT);
+        // int l_seq[SIGN_COUNT];
+        // for (int i = 0; i < SIGN_COUNT; ++i) {
+        //     l_seq[i] = random_uint32_t(SIGN_COUNT);
+        // }
+        dap_multi_sign_params_t *l_params = l_key->_pvt;
         dap_assert_PIF(l_params, "Creating multi-sign parameters");
         
         l_signs[i] = dap_multi_sign_create(l_params, l_source[i], l_source_size[i]);
         dap_assert_PIF(l_signs[i], "Signing message");
 
-        for (int i = 0; i < KEYS_TOTAL_COUNT; i++) {
-            dap_enc_key_delete(key[i]);
-        }
         dap_multi_sign_params_delete(l_params);
     }
     int l_t2 = get_cur_time_msec();
