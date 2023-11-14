@@ -254,11 +254,7 @@ static void *s_list_thread_proc2(void *arg) {
                 l_dap_db_log_list->is_process = false;
                 pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
                 dap_store_obj_free(l_objs, l_item_count);
-#ifdef DAP_OS_WINDOWS
-                ExitThread(0);
-#else
-                pthread_exit(NULL);
-#endif
+                return NULL;
             }
             uint64_t l_cur_id = l_obj_cur->id;
             l_obj_cur->id = 0;
@@ -277,11 +273,7 @@ static void *s_list_thread_proc2(void *arg) {
         dap_store_obj_free(l_objs, l_item_count);
     }
     l_dap_db_log_list->is_process = false;
-#ifdef DAP_OS_WINDOWS
-    ExitThread(0);
-#else
-    pthread_exit(NULL);
-#endif
+    return NULL;
 }
 
 /**
