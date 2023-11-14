@@ -56,15 +56,11 @@ static void test_signing_verifying(
         l_source_size[i] = 1 + random_uint32_t(20);
         DAP_NEW_Z_SIZE_RET(l_source[i], uint8_t, l_source_size[i], NULL);
         randombytes(l_source[i], l_source_size[i]);
-
-        dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, KEYS_TOTAL_COUNT, 5,\
-                                                                    key[0], key[1], key[2], key[3], key[4], key[5],\
-                                                                    key[6], key[7], key[8], key[9],\
-                                                                    random_uint32_t(SIGN_COUNT),
-                                                                    random_uint32_t(SIGN_COUNT),
-                                                                    random_uint32_t(SIGN_COUNT),
-                                                                    random_uint32_t(SIGN_COUNT),
-                                                                    random_uint32_t(SIGN_COUNT));
+        int l_seq[SIGN_COUNT];
+        for (int i = 0; i < SIGN_COUNT; ++i) {
+            l_seq[i] = random_uint32_t(SIGN_COUNT);
+        }
+        dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, key, KEYS_TOTAL_COUNT, l_seq, SIGN_COUNT);
         dap_assert_PIF(l_params, "Creating multi-sign parameters");
         
         l_signs[i] = dap_multi_sign_create(l_params, l_source[i], l_source_size[i]);

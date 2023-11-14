@@ -35,6 +35,35 @@
 #define LOG_TAG "dap_enc_multi_sign"
 
 
+void dap_enc_sig_multisign_key_new(dap_enc_key_t *a_key)
+{
+    a_key->type = DAP_ENC_KEY_TYPE_SIG_MULTI;
+    a_key->enc = NULL;
+    // a_key->enc_na = dap_enc_sig_sphincsplus_get_sign_msg;
+    // a_key->dec_na = dap_enc_sig_sphincsplus_open_sign_msg;
+    // a_key->sign_get = dap_enc_sig_sphincsplus_get_sign;
+    // a_key->sign_verify = dap_enc_sig_sphincsplus_verify_sign;
+}
+
+void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_buf, size_t a_kex_size,
+        const void *a_seed, size_t a_seed_size, UNUSED_ARG size_t a_key_size)
+{
+// sanity check
+    dap_return_if_pass(a_key->type != DAP_ENC_KEY_TYPE_SIG_MULTI || !a_kex_size);
+// memory alloc
+    // dap_enc_key_type_t *l_key_types = a_kex_buf;
+    // dap_enc_key_t **l_keys;
+    // for (int i = 0; i < KEYS_TOTAL_COUNT; i++) {
+    //     step = random_uint32_t( SIGNATURE_TYPE_COUNT);
+    //     if (a_sign_type != DAP_ENC_KEY_TYPE_NULL)
+    //         key[i] = dap_enc_key_new_generate(a_sign_type, NULL, 0, seed, seed_size, 0);
+    //     else
+    //         key[i] = dap_enc_key_new_generate(key_type_arr[step], NULL, 0, seed, seed_size, 0);
+    // }
+
+    // a_key->_pvt = 
+}
+
 /**
  * @brief s_multi_sign_calc_size Auxiliary function to calculate multi-signature strucrutre size
  * @param a_sign The multi-signature
@@ -122,7 +151,6 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
         &l_sign->key_count, (uint64_t)sizeof(uint8_t),
         &l_sign->sign_count, (uint64_t)sizeof(uint8_t)
     );
-    UNUSED(l_res_des);
 // addtional allocation memory
      DAP_NEW_Z_SIZE_RET_VAL(l_sign->key_seq, uint8_t, sizeof(uint8_t) * l_sign->sign_count, NULL, l_sign);
      DAP_NEW_Z_SIZE_RET_VAL(l_sign->meta, dap_multi_sign_meta_t, sizeof(dap_multi_sign_meta_t) * l_sign->sign_count, NULL, l_sign->key_seq, l_sign);
@@ -149,25 +177,25 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
  * @param a_num[1 .. sign_count] Signing keys sequence
  * @return Pointer to multi-signature params structure
  */
-dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, uint8_t a_total_count, uint8_t a_sign_count, ...)
+dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, dap_enc_key_t **a_keys, uint8_t a_key_count, int *a_key_seq, uint8_t a_sign_count)
 {
+// sanity check
+    dap_return_val_if_pass(a_type != SIG_TYPE_MULTI_CHAINED && a_type != SIG_TYPE_MULTI_COMBINED, NULL);
+// memory alloc
     dap_multi_sign_params_t *l_params = NULL;
     DAP_NEW_Z_RET_VAL(l_params, dap_multi_sign_params_t, NULL, NULL);
-    DAP_NEW_Z_COUNT_RET_VAL(l_params->keys, dap_enc_key_t *, a_total_count, NULL, l_params);
+    DAP_NEW_Z_COUNT_RET_VAL(l_params->keys, dap_enc_key_t *, a_key_count, NULL, l_params);
     DAP_NEW_Z_COUNT_RET_VAL(l_params->key_seq, uint8_t, a_sign_count, NULL, l_params->keys, l_params);
 
     l_params->type.type = a_type;
-    l_params->key_count = a_total_count;
+    l_params->key_count = a_key_count;
     l_params->sign_count = a_sign_count;
-    va_list l_list;
-    va_start(l_list, a_sign_count);
-    for (int i = 0; i < a_total_count; i++) {
-        l_params->keys[i] = va_arg(l_list, dap_enc_key_t *);
+    for (int i = 0; i < a_key_count; i++) {
+        l_params->keys[i] = a_keys[i];
     }
     for (int i = 0; i < a_sign_count; i++) {
-        l_params->key_seq[i] = va_arg(l_list, int);
+        l_params->key_seq[i] = a_key_seq[i];
     }
-    va_end(l_list);
     return l_params;
 }
 

@@ -39,6 +39,7 @@
 #include "dap_enc_newhope.h"
 #include "dap_enc_kyber.h"
 #include "dap_enc_sphincsplus.h"
+#include "dap_enc_multisign.h"
 
 #include "dap_enc_ringct20.h"
 #ifdef DAP_PQRL
@@ -379,19 +380,19 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .ser_priv_key =                     dap_enc_sphincsplus_write_private_key,
         .ser_pub_key =                      dap_enc_sphincsplus_write_public_key
     },
-    [DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED]={
+    [DAP_ENC_KEY_TYPE_SIG_MULTI]={
         .name =                             "MULTI_CHAINED",
         .enc =                              NULL,
         .dec =                              NULL,
-        // .enc_na =                           dap_enc_sig_sphincsplus_get_sign_msg,
-        // .dec_na =                           dap_enc_sig_sphincsplus_open_sign_msg,
+        .enc_na =                           NULL,
+        .dec_na =                           NULL,
         .gen_key_public =                   NULL,
         .gen_key_public_size =              NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
-        // .new_callback =                     dap_enc_sig_sphincsplus_key_new,
+        .new_callback =                     dap_enc_sig_multisign_key_new,
         // .delete_callback =                  dap_enc_sig_sphincsplus_key_delete,
-        // .new_generate_callback =            dap_enc_sig_sphincsplus_key_new_generate,
+        .new_generate_callback =            dap_enc_sig_multisign_key_new_generate,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         // .sign_get =                         dap_enc_sig_sphincsplus_get_sign,

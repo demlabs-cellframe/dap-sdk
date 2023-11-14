@@ -125,6 +125,7 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
     dap_sign_t **l_signs = NULL;
     uint8_t **l_source = NULL;
     size_t l_source_size[a_times];
+    dap_pass_msg("verify test start");
 
     DAP_NEW_Z_COUNT_RET(l_signs, dap_sign_t*, a_times, NULL);
     DAP_NEW_Z_COUNT_RET(l_source, uint8_t*, a_times, NULL);
@@ -143,6 +144,7 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
         l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i], 0);
         dap_assert_PIF(l_signs[i], "Signing message and serialize");
         dap_enc_key_delete(key);
+        dap_pass_msg("sign created");
     }
 
     int l_t2 = get_cur_time_msec();
@@ -152,12 +154,14 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
     for(int i = 0; i < a_times; ++i) {
         int verify = dap_sign_verify(l_signs[i], l_source[i], l_source_size[i]);
         dap_assert_PIF(!verify, "Deserialize and verifying signature");
+        dap_pass_msg("sign vefified");
     }
     l_t2 = get_cur_time_msec();
     *a_verify_time = l_t2 - l_t1;
 
     for(int i = 0; i < a_times; ++i) {
         DAP_DEL_MULTY(l_signs[i], l_source[i]);
+        dap_pass_msg("sign deleted");
     }
     DAP_DEL_MULTY(l_signs, l_source);
 }
