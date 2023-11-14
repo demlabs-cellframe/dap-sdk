@@ -69,7 +69,8 @@ uint8_t *dap_multi_sign_serialize(dap_multi_sign_t *a_sign, size_t *a_out_len);
 dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_t *a_sign, size_t a_sign_len);
 dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, dap_enc_key_t **a_keys, uint8_t a_key_count, int *a_key_seq, uint8_t a_sign_count);
 void dap_multi_sign_params_delete(dap_multi_sign_params_t *a_params);
-dap_multi_sign_t *dap_multi_sign_create(dap_multi_sign_params_t *a_params, const void *a_data, const size_t a_data_size);
+int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, const size_t a_msg_size,
+        void *a_sign_out, const size_t a_out_size_max);
 int dap_multi_sign_verify(dap_multi_sign_t *a_sign, const void *a_data, const size_t a_data_size);
 void dap_multi_sign_delete(dap_multi_sign_t *a_sign);
 

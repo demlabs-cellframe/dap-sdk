@@ -151,10 +151,11 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
     *a_sig_time = l_t2 - l_t1;
 
     l_t1 = get_cur_time_msec();
+    dap_pass_msg("___sign verify start");
     for(int i = 0; i < a_times; ++i) {
         int verify = dap_sign_verify(l_signs[i], l_source[i], l_source_size[i]);
         dap_assert_PIF(!verify, "Deserialize and verifying signature");
-        dap_pass_msg("sign vefified");
+        dap_pass_msg("___sign verified");
     }
     l_t2 = get_cur_time_msec();
     *a_verify_time = l_t2 - l_t1;

@@ -57,21 +57,18 @@ static void test_signing_verifying(
         }
         
         dap_enc_key_t *l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_MULTI, key, KEYS_TOTAL_COUNT, seed, seed_size, 0);
-
+        dap_assert_PIF(l_key, "ENC key creating");
+        size_t max_signature_size = dap_sign_create_output_unserialized_calc_size(l_key, 0);
+        DAP_NEW_Z_SIZE_RET(l_signs[i], dap_multi_sign_t, max_signature_size, NULL);
+        
         l_source_size[i] = 1 + random_uint32_t(20);
         DAP_NEW_Z_SIZE_RET(l_source[i], uint8_t, l_source_size[i], NULL);
         randombytes(l_source[i], l_source_size[i]);
-        // int l_seq[SIGN_COUNT];
-        // for (int i = 0; i < SIGN_COUNT; ++i) {
-        //     l_seq[i] = random_uint32_t(SIGN_COUNT);
-        // }
-        dap_multi_sign_params_t *l_params = l_key->_pvt;
-        dap_assert_PIF(l_params, "Creating multi-sign parameters");
         
-        l_signs[i] = dap_multi_sign_create(l_params, l_source[i], l_source_size[i]);
-        dap_assert_PIF(l_signs[i], "Signing message");
+        int l_signed = l_key->sign_get(l_key, l_source[i], l_source_size[i], l_signs[i], max_signature_size);
+        dap_assert_PIF(!l_signed, "Signing message");
 
-        dap_multi_sign_params_delete(l_params);
+        dap_multi_sign_params_delete(l_key->_pvt);
     }
     int l_t2 = get_cur_time_msec();
     *a_sig_time = l_t2 - l_t1;

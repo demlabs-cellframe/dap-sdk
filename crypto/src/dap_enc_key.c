@@ -395,7 +395,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .new_generate_callback =            dap_enc_sig_multisign_key_new_generate,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
-        // .sign_get =                         dap_enc_sig_sphincsplus_get_sign,
+        .sign_get =                         dap_enc_sig_multisign_get_sign,
         // .sign_verify =                      dap_enc_sig_sphincsplus_verify_sign,
         // .ser_sign =                         dap_enc_sphincsplus_write_signature,
         // .ser_priv_key =                     dap_enc_sphincsplus_write_private_key,
@@ -994,6 +994,7 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: l_sign_size = dap_enc_dilithium_calc_signature_unserialized_size(); break;
         case DAP_ENC_KEY_TYPE_SIG_FALCON: l_sign_size = dap_enc_falcon_calc_signature_unserialized_size(); break;
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_sign_size = dap_enc_sphincsplus_calc_signature_unserialized_size(); break;
+        case DAP_ENC_KEY_TYPE_SIG_MULTI: l_sign_size = sizeof(dap_multi_sign_t); break;
 #ifdef DAP_PQRL
         case DAP_ENC_KEY_TYPE_SIG_PQLR_DILITHIUM: l_sign_size = dap_pqlr_dilithium_calc_signature_size(a_key); break;
 #endif
