@@ -106,7 +106,7 @@ static size_t s_multi_sign_calc_size(dap_multi_sign_t *a_sign, uint32_t *a_pkeys
  * @param a_out_len OUT Output data lenght
  * @return Pointer to serialized data
  */
-uint8_t *dap_multi_sign_serialize(dap_multi_sign_t *a_sign, size_t *a_out_len)
+uint8_t *dap_enc_sig_multisign_write_signature(dap_multi_sign_t *a_sign, size_t *a_out_len)
 {
     if (a_sign->type.type != SIG_TYPE_MULTI_CHAINED) {
         log_it(L_ERROR, "Unsupported multi-signature type");

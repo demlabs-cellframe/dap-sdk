@@ -5,6 +5,18 @@
 #include "rand/dap_rand.h"
 #define LOG_TAG "dap_crypto_benchmark_tests"
 
+#define SIGNATURE_TYPE_COUNT 5
+#define SIGN_COUNT 5
+#define KEYS_TOTAL_COUNT 10
+
+dap_enc_key_type_t s_key_type_arr[SIGNATURE_TYPE_COUNT] = {\
+        DAP_ENC_KEY_TYPE_SIG_TESLA,\
+        DAP_ENC_KEY_TYPE_SIG_BLISS,\
+        DAP_ENC_KEY_TYPE_SIG_DILITHIUM,\
+        /*DAP_ENC_KEY_TYPE_SIG_PICNIC,\ */
+        DAP_ENC_KEY_TYPE_SIG_FALCON,\
+        DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS};
+
 /*--------------------------TRANSFER TEST BLOCK--------------------------*/
 static void s_transfer_test(dap_enc_key_type_t a_key_type, int a_times, int *a_gen_time, int *a_alice_shared, int *a_bob_shared)
 {
@@ -88,7 +100,12 @@ static void s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *
     for (int i = 0; i < a_times; ++i) {
         randombytes(seed, seed_size);
 
-        l_keys[i] = dap_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
+        dap_enc_key_type_t l_key[KEYS_TOTAL_COUNT];
+        for (int j = 0; j < KEYS_TOTAL_COUNT; j++) {
+            int l_step = random_uint32_t( SIGNATURE_TYPE_COUNT);
+            l_key[j] = s_key_type_arr[l_step];
+        }
+        l_keys[i] = dap_enc_key_new_generate(a_key_type, l_key, KEYS_TOTAL_COUNT, seed, seed_size, 0);
         DAP_NEW_Z_SIZE_RET(l_signs[i], uint8_t, max_signature_size, NULL);
 
         l_source_size[i] = 1 + random_uint32_t(20);
@@ -183,11 +200,11 @@ static void s_sign_verify_test_becnhmark(const char *a_name, dap_enc_key_type_t 
     sprintf(l_msg, "Verifying message %d times", a_times);
     benchmark_mgs_time(l_msg, l_verify_time);
 
-    s_sign_verify_ser_test(a_key_type, a_times, &l_sig_time, &l_verify_time);
-    sprintf(l_msg, "Signing message with serialization %d times", a_times);
-    benchmark_mgs_time(l_msg, l_sig_time);
-    sprintf(l_msg, "Verifying message with serialization %d times", a_times);
-    benchmark_mgs_time(l_msg, l_verify_time);
+    // s_sign_verify_ser_test(a_key_type, a_times, &l_sig_time, &l_verify_time);
+    // sprintf(l_msg, "Signing message with serialization %d times", a_times);
+    // benchmark_mgs_time(l_msg, l_sig_time);
+    // sprintf(l_msg, "Verifying message with serialization %d times", a_times);
+    // benchmark_mgs_time(l_msg, l_verify_time);
 }
 /*-----------------------------------------------------------------------*/
 
@@ -204,11 +221,12 @@ static void s_sign_verify_tests_run(int a_times)
 {
     dap_init_test_case();
     // s_sign_verify_test_becnhmark("PICNIC", DAP_ENC_KEY_TYPE_SIG_PICNIC, a_times);
-    // s_sign_verify_test_becnhmark("TESLA", DAP_ENC_KEY_TYPE_SIG_TESLA, a_times);
+    s_sign_verify_test_becnhmark("TESLA", DAP_ENC_KEY_TYPE_SIG_TESLA, a_times);
     s_sign_verify_test_becnhmark("BLISS", DAP_ENC_KEY_TYPE_SIG_TESLA, a_times);
     s_sign_verify_test_becnhmark("DILITHIUM", DAP_ENC_KEY_TYPE_SIG_DILITHIUM, a_times);
     s_sign_verify_test_becnhmark("FALCON", DAP_ENC_KEY_TYPE_SIG_FALCON, a_times);
     s_sign_verify_test_becnhmark("SPHINCSPLUS", DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, a_times);
+    s_sign_verify_test_becnhmark("MULTISIGN", DAP_ENC_KEY_TYPE_SIG_MULTI, a_times);
     dap_cleanup_test_case();
 }
 

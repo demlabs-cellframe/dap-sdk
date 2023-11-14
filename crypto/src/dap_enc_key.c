@@ -397,7 +397,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_multisign_get_sign,
         .sign_verify =                      dap_enc_sig_multisign_verify_sign,
-        // .ser_sign =                         dap_enc_sphincsplus_write_signature,
+        .ser_sign =                         dap_enc_sig_multisign_write_signature,
         // .ser_priv_key =                     dap_enc_sphincsplus_write_private_key,
         // .ser_pub_key =                      dap_enc_sphincsplus_write_public_key
     },
