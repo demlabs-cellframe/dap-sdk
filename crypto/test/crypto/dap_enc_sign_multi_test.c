@@ -34,6 +34,7 @@ static void test_signing_verifying(
 //check sign time
     int l_t1 = get_cur_time_msec();
 
+    dap_enc_key_t *l_key = NULL;
     for (int i = 0; i < a_times; ++i) {
         randombytes(seed, seed_size);
 
@@ -56,7 +57,7 @@ static void test_signing_verifying(
             }
         }
         
-        dap_enc_key_t *l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_MULTI, key, KEYS_TOTAL_COUNT, seed, seed_size, 0);
+        l_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_MULTI, key, KEYS_TOTAL_COUNT, seed, seed_size, 0);
         dap_assert_PIF(l_key, "ENC key creating");
         size_t max_signature_size = dap_sign_create_output_unserialized_calc_size(l_key, 0);
         DAP_NEW_Z_SIZE_RET(l_signs[i], dap_multi_sign_t, max_signature_size, NULL);
@@ -67,8 +68,8 @@ static void test_signing_verifying(
         
         int l_signed = l_key->sign_get(l_key, l_source[i], l_source_size[i], l_signs[i], max_signature_size);
         dap_assert_PIF(!l_signed, "Signing message");
-
-        dap_enc_key_delete(l_key);
+        if (i + 1 < a_times)
+            dap_enc_key_delete(l_key);
     }
     int l_t2 = get_cur_time_msec();
     *a_sig_time = l_t2 - l_t1;
@@ -101,8 +102,8 @@ static void test_signing_verifying(
 // check verify time
     l_t1 = get_cur_time_msec();
     for (int i = 0; i < a_times; ++i) {
-        int verify = dap_multi_sign_verify(l_signs[i], l_source[i], l_source_size[i]);
-        dap_assert_PIF(!verify, "Verifying signature");
+        int l_verified = l_key->sign_verify(l_key, l_source[i], l_source_size[i], l_signs[i], 0);
+        dap_assert_PIF(!l_verified, "Verifying signature");
     }
     l_t2 = get_cur_time_msec();
     *a_verify_time = l_t2 - l_t1;

@@ -42,7 +42,7 @@ void dap_enc_sig_multisign_key_new(dap_enc_key_t *a_key)
     // a_key->enc_na = dap_enc_sig_sphincsplus_get_sign_msg;
     // a_key->dec_na = dap_enc_sig_sphincsplus_open_sign_msg;
     a_key->sign_get = dap_enc_sig_multisign_get_sign;
-    // a_key->sign_verify = dap_enc_sig_sphincsplus_verify_sign;
+    a_key->sign_verify = dap_enc_sig_multisign_verify_sign;
 }
 
 void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_buf, size_t a_kex_size,
@@ -358,46 +358,48 @@ int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, c
  * @param a_data_size Signed message size
  * @return 0 valid signature, other verification error
  */
-int dap_multi_sign_verify(dap_multi_sign_t *a_sign, const void *a_data, const size_t a_data_size)
+int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size, void *a_sign,
+        const size_t a_sign_size)
 {
-    if (!a_sign || !a_data)
+    if (!a_sign || !a_msg)
         return -1;
-    if (a_sign->type.type != SIG_TYPE_MULTI_CHAINED) {
+    dap_multi_sign_t *l_sign = a_sign;
+    if (l_sign->type.type != SIG_TYPE_MULTI_CHAINED) {
         log_it (L_ERROR, "Unsupported multi-signature type");
         return -1;
     }
-    if (!a_sign->pub_keys || !a_sign->sign_data || !a_sign->key_hashes || !a_sign->meta || !a_sign->key_seq) {
+    if (!l_sign->pub_keys || !l_sign->sign_data || !l_sign->key_hashes || !l_sign->meta || !l_sign->key_seq) {
         log_it (L_ERROR, "Invalid multi-signature format");
         return -1;
     }
     uint32_t l_pkeys_mem_shift = 0, l_signs_mem_shift = 0;
-    for (int i = 0; i < a_sign->sign_count - 1; i++) {
-        l_pkeys_mem_shift += a_sign->meta[i].sign_header.sign_pkey_size;
-        l_signs_mem_shift += a_sign->meta[i].sign_header.sign_size;
+    for (int i = 0; i < l_sign->sign_count - 1; i++) {
+        l_pkeys_mem_shift += l_sign->meta[i].sign_header.sign_pkey_size;
+        l_signs_mem_shift += l_sign->meta[i].sign_header.sign_size;
     }
     dap_chain_hash_fast_t l_data_hash;
     bool l_hashed;
     int l_verified = 0;
-    for (int i = a_sign->sign_count - 1; i >= 0; i--) {
-        size_t l_pkey_size = a_sign->meta[i].sign_header.sign_pkey_size;
-        size_t l_sign_size = a_sign->meta[i].sign_header.sign_size;
+    for (int i = l_sign->sign_count - 1; i >= 0; i--) {
+        size_t l_pkey_size = l_sign->meta[i].sign_header.sign_pkey_size;
+        size_t l_sign_size = l_sign->meta[i].sign_header.sign_size;
         dap_sign_t *l_step_sign = NULL;
         DAP_NEW_Z_SIZE_RET_VAL(l_step_sign, dap_sign_t, sizeof(dap_sign_hdr_t) + l_pkey_size + l_sign_size, -1, NULL);
 
-        l_step_sign->header = a_sign->meta[i].sign_header;
+        l_step_sign->header = l_sign->meta[i].sign_header;
 
-        memcpy(l_step_sign->pkey_n_sign, &a_sign->pub_keys[l_pkeys_mem_shift], l_pkey_size);
+        memcpy(l_step_sign->pkey_n_sign, &l_sign->pub_keys[l_pkeys_mem_shift], l_pkey_size);
         if (i > 0) {
-            l_pkeys_mem_shift -= a_sign->meta[i - 1].sign_header.sign_pkey_size;
+            l_pkeys_mem_shift -= l_sign->meta[i - 1].sign_header.sign_pkey_size;
         }
-        memcpy(&l_step_sign->pkey_n_sign[l_pkey_size], &a_sign->sign_data[l_signs_mem_shift], l_sign_size);
+        memcpy(&l_step_sign->pkey_n_sign[l_pkey_size], &l_sign->sign_data[l_signs_mem_shift], l_sign_size);
         if (i > 0) {
-            l_signs_mem_shift -= a_sign->meta[i - 1].sign_header.sign_size;
+            l_signs_mem_shift -= l_sign->meta[i - 1].sign_header.sign_size;
         }
         if (i ==0) {
-            l_hashed = dap_multi_sign_hash_data(a_sign, a_data, a_data_size, &l_data_hash);
+            l_hashed = dap_multi_sign_hash_data(l_sign, a_msg, a_msg_size, &l_data_hash);
         } else {
-            l_hashed = dap_hash_fast(&a_sign->sign_data[l_signs_mem_shift], a_sign->meta[i - 1].sign_header.sign_size, &l_data_hash);
+            l_hashed = dap_hash_fast(&l_sign->sign_data[l_signs_mem_shift], l_sign->meta[i - 1].sign_header.sign_size, &l_data_hash);
         }
         if (!l_hashed) {
             log_it (L_ERROR, "Can't create multi-signature hash");
