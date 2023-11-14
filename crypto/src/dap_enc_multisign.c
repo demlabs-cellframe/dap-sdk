@@ -63,6 +63,16 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
     a_key->_pvt = l_params;
 }
 
+void dap_enc_sig_multisign_key_delete(dap_enc_key_t *a_key)
+{
+    dap_return_if_pass(!a_key);
+    DAP_DEL_Z(a_key->priv_key_data);
+    DAP_DEL_Z(a_key->pub_key_data);
+    a_key->priv_key_data_size = 0;
+    a_key->pub_key_data_size = 0;
+    dap_multi_sign_params_delete((dap_multi_sign_params_t *)a_key->_pvt);
+}
+
 /**
  * @brief s_multi_sign_calc_size Auxiliary function to calculate multi-signature strucrutre size
  * @param a_sign The multi-signature
@@ -88,6 +98,7 @@ static size_t s_multi_sign_calc_size(dap_multi_sign_t *a_sign, uint32_t *a_pkeys
     a_pkeys_hashes_size ? *a_pkeys_hashes_size = l_pkeys_hashes_size : 0;
     return l_meta_data_size + l_pkeys_hashes_size + l_pkeys_size + l_signes_size;
 }
+
 
 /**
  * @brief dap_multi_sign_serialize Makes a serialization for multi-signature structure

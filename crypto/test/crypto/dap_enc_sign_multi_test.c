@@ -68,7 +68,7 @@ static void test_signing_verifying(
         int l_signed = l_key->sign_get(l_key, l_source[i], l_source_size[i], l_signs[i], max_signature_size);
         dap_assert_PIF(!l_signed, "Signing message");
 
-        dap_multi_sign_params_delete(l_key->_pvt);
+        dap_enc_key_delete(l_key);
     }
     int l_t2 = get_cur_time_msec();
     *a_sig_time = l_t2 - l_t1;
