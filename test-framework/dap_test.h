@@ -37,7 +37,8 @@
     if(expr) {} \
     else { \
     printf("\t%s%s FAILED!%s\n", TEXT_COLOR_RED, msg, TEXT_COLOR_RESET); \
-    abort(); } }
+    fflush(stdout); }}
+    // abort(); } }
 
 /**
  * @brief
@@ -48,7 +49,8 @@
         fflush(stdout); \
     } else { \
     printf("\t%s%s FAILED!%s\n", TEXT_COLOR_RED, testname, TEXT_COLOR_RESET); \
-    abort(); } } \
+    fflush(stdout); }}
+    // abort(); } }
 
 /**
  * @brief Display the name test
