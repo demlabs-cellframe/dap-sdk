@@ -169,16 +169,47 @@ uint8_t *dap_enc_tesla_write_private_key(const void *a_private_key, size_t *a_bu
     tesla_param_t p;
     dap_return_val_if_pass(!l_private_key || !tesla_params_init(&p, l_private_key->kind), NULL);
 // func work
-    uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_SECRETKEYBYTES; //CRYPTO_PUBLICKEYBYTES;
+    uint64_t l_buflen = sizeof(uint64_t) * 2 + p.CRYPTO_SECRETKEYBYTES; //CRYPTO_PUBLICKEYBYTES;
+    uint64_t l_kind = l_private_key->kind;
     uint8_t *l_buf =  dap_serialize_multy(NULL, l_buflen, 6,
         &l_buflen, (uint64_t)sizeof(uint64_t),
-        &l_private_key->kind, (uint64_t)sizeof(uint32_t),
+        &l_kind, (uint64_t)sizeof(uint64_t),
         l_private_key->data, (uint64_t)p.CRYPTO_SECRETKEYBYTES
     );
 // out work
     (a_buflen_out  && l_buf) ? *a_buflen_out = (size_t)l_buflen : 0;
     return l_buf;
 }
+
+/* Deserialize a private key. */
+tesla_private_key_t* dap_enc_tesla_read_private_key(const uint8_t *a_buf, size_t a_buflen)
+{
+// sanity check
+    dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) * 2, NULL);
+// func work
+    uint64_t l_buflen;
+    uint64_t l_skey_len = a_buflen - sizeof(uint64_t) * 2;
+    tesla_private_key_t* l_skey = NULL;
+    DAP_NEW_Z_RET_VAL(l_skey, tesla_private_key_t, NULL, NULL);
+    DAP_NEW_Z_SIZE_RET_VAL(l_skey->data, uint8_t, l_skey_len, NULL, l_skey);
+    uint64_t l_kind = 0;
+    int l_res_des = dap_deserialize_multy(a_buf, a_buflen,  6,
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        &l_kind, (uint64_t)sizeof(uint64_t),
+        l_skey->data, (uint64_t)l_skey_len
+    );
+    l_skey->kind = l_kind;
+// out work
+    tesla_param_t l_p;
+    int l_res_check = tesla_params_init(&l_p, l_skey->kind);
+    if (l_res_des || !l_res_check) {
+        log_it(L_ERROR,"Error deserialise signature, err code %d", l_res_des ? l_res_des : l_res_check );
+        DAP_DEL_MULTY(l_skey->data, l_skey);
+        return NULL;
+    }
+    return l_skey;
+}
+
 
 /* Serialize a public key. */
 uint8_t *dap_enc_tesla_write_public_key(const void *a_public_key, size_t *a_buflen_out)
@@ -189,10 +220,11 @@ uint8_t *dap_enc_tesla_write_public_key(const void *a_public_key, size_t *a_bufl
     tesla_param_t p;
     dap_return_val_if_pass(!l_public_key || !tesla_params_init(&p, l_public_key->kind), NULL);
 // func work
-    uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_PUBLICKEYBYTES;
+    uint64_t l_buflen = sizeof(uint64_t) * 2 + p.CRYPTO_PUBLICKEYBYTES;
+    uint64_t l_kind = l_public_key->kind;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
         &l_buflen, (uint64_t)sizeof(uint64_t),
-        &l_public_key->kind, (uint64_t)sizeof(uint32_t),
+        &l_kind, (uint64_t)sizeof(uint64_t),
         l_public_key->data, (uint64_t)p.CRYPTO_PUBLICKEYBYTES
     );
 // out work
@@ -200,46 +232,31 @@ uint8_t *dap_enc_tesla_write_public_key(const void *a_public_key, size_t *a_bufl
     return l_buf;
 }
 
-/* Deserialize a private key. */
-tesla_private_key_t* dap_enc_tesla_read_private_key(const uint8_t *a_buf, size_t a_buflen)
-{
-    if(!a_buf || a_buflen < (sizeof(uint64_t) + sizeof(uint32_t)))
-        return NULL;
-    tesla_kind_t kind;
-    uint64_t l_buflen = 0;
-    memcpy(&l_buflen, a_buf, sizeof(uint64_t));
-    memcpy(&kind, a_buf + sizeof(uint64_t), sizeof(uint32_t));
-    if(l_buflen != a_buflen)
-        return NULL;
-    tesla_param_t p;
-    if(!tesla_params_init(&p, kind))
-        return NULL;
-    tesla_private_key_t* l_private_key = DAP_NEW(tesla_private_key_t);
-    l_private_key->kind = kind;
-
-    l_private_key->data = DAP_NEW_SIZE(unsigned char, p.CRYPTO_SECRETKEYBYTES);
-    memcpy(l_private_key->data, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.CRYPTO_SECRETKEYBYTES);
-    return l_private_key;
-}
-
 /* Deserialize a public key. */
 tesla_public_key_t* dap_enc_tesla_read_public_key(const uint8_t *a_buf, size_t a_buflen)
 {
-    if(!a_buf || a_buflen < (sizeof(uint64_t) + sizeof(uint32_t)))
+// sanity check
+    dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) * 2, NULL);
+// func work
+    uint64_t l_buflen;
+    uint64_t l_pkey_len = a_buflen - sizeof(uint64_t) * 2;
+    tesla_public_key_t* l_pkey = NULL;
+    DAP_NEW_Z_RET_VAL(l_pkey, tesla_public_key_t, NULL, NULL);
+    DAP_NEW_Z_SIZE_RET_VAL(l_pkey->data, uint8_t, l_pkey_len, NULL, l_pkey);
+    uint64_t l_kind = 0;
+    int l_res_des = dap_deserialize_multy(a_buf, a_buflen,  6,
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        &l_kind, (uint64_t)sizeof(uint64_t),
+        l_pkey->data, (uint64_t)l_pkey_len
+    );
+    l_pkey->kind = l_kind;
+// out work
+    tesla_param_t l_p;
+    int l_res_check = tesla_params_init(&l_p, l_pkey->kind);
+    if (l_res_des || !l_res_check) {
+        log_it(L_ERROR,"Error deserialise signature, err code %d", l_res_des ? l_res_des : l_res_check );
+        DAP_DEL_MULTY(l_pkey->data, l_pkey);
         return NULL;
-    tesla_kind_t kind;
-    uint64_t l_buflen = 0;
-    memcpy(&l_buflen, a_buf, sizeof(uint64_t));
-    memcpy(&kind, a_buf + sizeof(uint64_t), sizeof(uint32_t));
-    if(l_buflen != a_buflen)
-        return NULL;
-    tesla_param_t p;
-    if(!tesla_params_init(&p, kind))
-        return NULL;
-    tesla_public_key_t* l_public_key = DAP_NEW(tesla_public_key_t);
-    l_public_key->kind = kind;
-
-    l_public_key->data = DAP_NEW_SIZE(unsigned char, p.CRYPTO_PUBLICKEYBYTES);
-    memcpy(l_public_key->data, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.CRYPTO_PUBLICKEYBYTES);
-    return l_public_key;
+    }
+    return l_pkey;
 }
