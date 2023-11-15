@@ -157,9 +157,10 @@ uint8_t *dap_enc_sig_bliss_write_signature(const void *a_sign, size_t *a_buflen_
     dap_return_val_if_pass(!bliss_params_init(&p, l_sign->kind), NULL);
 // func work
     uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.n * 2 * sizeof(int32_t) + p.kappa * sizeof(int32_t);
+    uint32_t l_kind = l_sign->kind;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
         &l_buflen, (uint64_t)sizeof(uint64_t),
-        &l_sign->kind, (uint64_t)sizeof(uint32_t),
+        &l_kind, (uint64_t)sizeof(uint32_t),
         l_sign->z1, (uint64_t)(p.n * sizeof(int32_t)),
         l_sign->z2, (uint64_t)(p.n * sizeof(int32_t)),
         l_sign->c, (uint64_t)(p.kappa * sizeof(int32_t))
@@ -212,9 +213,10 @@ uint8_t *dap_enc_sig_bliss_write_private_key(const void *a_private_key, size_t *
     dap_return_val_if_pass(!l_private_key || !bliss_params_init(&p, l_private_key->kind), NULL);
 // func work
     uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + 3 * p.n * sizeof(int32_t);
+    uint32_t l_kind = l_private_key->kind;
     uint8_t *l_buf = dap_serialize_multy( NULL, l_buflen, 10,
         &l_buflen, (uint64_t)sizeof(uint64_t),
-        &l_private_key->kind, (uint64_t)sizeof(uint32_t),
+        &l_kind, (uint64_t)sizeof(uint32_t),
         l_private_key->s1, (uint64_t)(p.n * sizeof(int32_t)),
         l_private_key->s2, (uint64_t)(p.n * sizeof(int32_t)),
         l_private_key->a, (uint64_t)(p.n * sizeof(int32_t))
@@ -234,9 +236,10 @@ uint8_t *dap_enc_sig_bliss_write_public_key(const void *a_public_key, size_t *a_
     dap_return_val_if_pass(!bliss_params_init(&p, l_public_key->kind), NULL);
 // func work
     uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.n * sizeof(uint64_t);
+    uint32_t l_kind = l_public_key->kind;
     uint8_t *l_buf = dap_serialize_multy( NULL, l_buflen, 6,
         &l_buflen, (uint64_t)sizeof(uint64_t),
-        &l_public_key->kind, (uint64_t)sizeof(uint32_t),
+        &l_kind, (uint64_t)sizeof(uint32_t),
         l_public_key->a, p.n * (uint64_t)sizeof(int32_t)
     );
 // out work

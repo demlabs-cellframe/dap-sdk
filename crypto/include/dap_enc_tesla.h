@@ -25,7 +25,6 @@ int dap_enc_sig_tesla_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
 void dap_enc_sig_tesla_key_delete(dap_enc_key_t *key);
 
 size_t dap_enc_tesla_calc_signature_size(void);
-size_t dap_enc_tesla_calc_signature_serialized_size(tesla_signature_t* a_sign);
 
 uint8_t *dap_enc_tesla_write_signature(const void *a_sign, size_t *a_buflen_out);
 tesla_signature_t* dap_enc_tesla_read_signature(uint8_t *a_buf, size_t a_buflen);
