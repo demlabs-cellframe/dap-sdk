@@ -299,6 +299,7 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response) {
             for (int i = 0; i < result_count; i++) {
                     struct json_object * json_obj_result = json_object_array_get_idx(response->result_json_object, i);
                     json_print_object(json_obj_result, 0);
+                    printf("\n");
                     json_object_put(json_obj_result);
             }
             break;
