@@ -315,7 +315,7 @@ uint8_t *dap_enc_sphincsplus_write_signature(const void *a_sign, size_t *a_bufle
 /* Deserialize a signature */
 sphincsplus_signature_t *dap_enc_sphincsplus_read_signature(const uint8_t *a_buf, size_t a_buflen)
 {
-// in work
+// sanity check
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) * 2 + sizeof(sphincsplus_base_params_t), NULL);
 // func work
     uint64_t l_buflen;

@@ -117,10 +117,11 @@ uint8_t *dap_enc_tesla_write_signature(const void *a_sign, size_t *a_buflen_out)
     dap_return_val_if_pass(!a_sign, NULL);
     tesla_signature_t *l_sign = (tesla_signature_t *)a_sign;
 // func work
-    uint64_t l_buflen = dap_enc_tesla_calc_signature_serialized_size(l_sign);
+    uint64_t l_buflen = sizeof(uint64_t) * 3 + l_sign->sig_len;
+    uint64_t l_kind = l_sign->kind;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8,
         &l_buflen, (uint64_t)sizeof(uint64_t),
-        &l_sign->kind, (uint64_t)sizeof(uint32_t),
+        &l_kind, (uint64_t)sizeof(uint64_t),
         &l_sign->sig_len, (uint64_t)sizeof(uint64_t),
         l_sign->sig_data, (uint64_t)l_sign->sig_len
     );
@@ -132,26 +133,30 @@ uint8_t *dap_enc_tesla_write_signature(const void *a_sign, size_t *a_buflen_out)
 /* Deserialize a signature */
 tesla_signature_t* dap_enc_tesla_read_signature(uint8_t *a_buf, size_t a_buflen)
 {
-    if(!a_buf || a_buflen < (sizeof(uint64_t) + sizeof(uint32_t)))
-        return NULL ;
-    tesla_kind_t kind;
-    uint64_t l_buflen = 0;
-    memcpy(&l_buflen, a_buf, sizeof(uint64_t));
-    memcpy(&kind, a_buf + sizeof(uint64_t), sizeof(uint32_t));
-    if(l_buflen != a_buflen)
-        return NULL ;
-    tesla_param_t p;
-    if(!tesla_params_init(&p, kind))
-        return NULL ;
-
-    tesla_signature_t* l_sign = DAP_NEW(tesla_signature_t);
-    l_sign->kind = kind;
-    uint64_t l_shift_mem = sizeof(uint64_t) + sizeof(uint32_t);
-    memcpy(&l_sign->sig_len, a_buf + l_shift_mem, sizeof(unsigned long long));
-    l_shift_mem += sizeof(unsigned long long);
-    l_sign->sig_data = DAP_NEW_SIZE(unsigned char, l_sign->sig_len);
-    memcpy(l_sign->sig_data, a_buf + l_shift_mem, l_sign->sig_len);
-    l_shift_mem += l_sign->sig_len;
+// sanity check
+    dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) * 3, NULL);
+// func work
+    uint64_t l_buflen;
+    uint64_t l_sig_len = a_buflen - sizeof(uint64_t) * 3;
+    tesla_signature_t* l_sign = NULL;
+    DAP_NEW_Z_RET_VAL(l_sign, tesla_signature_t, NULL, NULL);
+    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, l_sig_len, NULL, l_sign);
+    uint64_t l_kind = 0;
+    int l_res_des = dap_deserialize_multy(a_buf, a_buflen, 8,
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        &l_kind, (uint64_t)sizeof(uint64_t),
+        &l_sign->sig_len, (uint64_t)sizeof(uint64_t),
+        l_sign->sig_data, (uint64_t)l_sig_len
+    );
+    l_sign->kind = l_kind;
+// out work
+    tesla_param_t l_p;
+    int l_res_check = tesla_params_init(&l_p, l_sign->kind);
+    if (l_res_des || !l_res_check) {
+        log_it(L_ERROR,"Error deserialise signature, err code %d", l_res_des ? l_res_des : l_res_check );
+        DAP_DEL_MULTY(l_sign->sig_data, l_sign);
+        return NULL;
+    }
     return l_sign;
 }
 

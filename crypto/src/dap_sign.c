@@ -433,8 +433,6 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
         default:
             l_ret = -6;
     }
-    printf("verify_func_sig delete start lret = %d\n", l_ret);
-    fflush(stdout);
     dap_enc_key_signature_delete(l_key->type, l_sign_data);
     dap_enc_key_delete(l_key);
     return l_ret;
