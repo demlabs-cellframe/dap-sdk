@@ -113,7 +113,7 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_KEM_KYBER512 = 23, // NIST Kyber KEM implementation
     DAP_ENC_KEY_TYPE_SIG_FALCON = 24, 
     DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS = 25,
-    DAP_ENC_KEY_TYPE_SIG_MULTI = 100,
+    DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED = 100,
 
 #ifdef DAP_PQLR
     // QApp PQLR library integration
@@ -126,7 +126,7 @@ typedef enum dap_enc_key_type {
 
     DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_PQLR_KEM_NEWHOPE,
 #else
-    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_MULTI,
+    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED,
 #endif
 } dap_enc_key_type_t;
 

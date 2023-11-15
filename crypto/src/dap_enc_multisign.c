@@ -37,10 +37,7 @@
 
 void dap_enc_sig_multisign_key_new(dap_enc_key_t *a_key)
 {
-    a_key->type = DAP_ENC_KEY_TYPE_SIG_MULTI;
-    a_key->enc = NULL;
-    // a_key->enc_na = dap_enc_sig_sphincsplus_get_sign_msg;
-    // a_key->dec_na = dap_enc_sig_sphincsplus_open_sign_msg;
+    a_key->type = DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED;
     a_key->sign_get = dap_enc_sig_multisign_get_sign;
     a_key->sign_verify = dap_enc_sig_multisign_verify_sign;
 }
@@ -49,7 +46,7 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
         const void *a_seed, size_t a_seed_size, UNUSED_ARG size_t a_key_size)
 {
 // sanity check
-    dap_return_if_pass(a_key->type != DAP_ENC_KEY_TYPE_SIG_MULTI || !a_kex_size);
+    dap_return_if_pass(a_key->type != DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED || !a_kex_size);
 // memory alloc
     const dap_enc_key_type_t *l_key_types = a_kex_buf;
     dap_enc_key_t *l_key[a_kex_size];

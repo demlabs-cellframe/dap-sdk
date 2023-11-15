@@ -380,7 +380,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .ser_priv_key =                     dap_enc_sphincsplus_write_private_key,
         .ser_pub_key =                      dap_enc_sphincsplus_write_public_key
     },
-    [DAP_ENC_KEY_TYPE_SIG_MULTI]={
+    [DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED]={
         .name =                             "MULTI_CHAINED",
         .enc =                              NULL,
         .dec =                              NULL,
@@ -994,7 +994,7 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: l_sign_size = dap_enc_dilithium_calc_signature_unserialized_size(); break;
         case DAP_ENC_KEY_TYPE_SIG_FALCON: l_sign_size = dap_enc_falcon_calc_signature_unserialized_size(); break;
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_sign_size = dap_enc_sphincsplus_calc_signature_unserialized_size(); break;
-        case DAP_ENC_KEY_TYPE_SIG_MULTI: l_sign_size = sizeof(dap_multi_sign_t); break;
+        case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED: l_sign_size = sizeof(dap_multi_sign_t); break;
 #ifdef DAP_PQRL
         case DAP_ENC_KEY_TYPE_SIG_PQLR_DILITHIUM: l_sign_size = dap_pqlr_dilithium_calc_signature_size(a_key); break;
 #endif
