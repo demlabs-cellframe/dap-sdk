@@ -54,18 +54,18 @@ typedef struct {
 ///==========================================================================================
 typedef struct {
   tesla_kind_t kind;                 /* the kind of tesla       */
-  unsigned char *data;
+  uint8_t *data;
 } tesla_private_key_t;
 
 typedef struct {
   tesla_kind_t kind;                 /* the kind of tesla       */
-  unsigned char *data;
+  uint8_t *data;
 } tesla_public_key_t;
 
 typedef struct {
   tesla_kind_t kind;                      /* the kind of tesla       */
-  unsigned char *sig_data;
-  unsigned long long sig_len;
+  uint8_t *sig_data;
+  uint64_t sig_len;
 } tesla_signature_t;
 
 ///==========================================================================================
