@@ -151,16 +151,16 @@ static char s_last_error[LAST_ERROR_MAX]    = {'\0'},
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
 
-#define STR_LOG_BUF_MAX                       1000
+#define STR_LOG_BUF_MAX 1000
 
 static char* s_appname = NULL;
 
 DAP_STATIC_INLINE int s_update_log_time(char *a_datetime_str) {
     time_t t = time(NULL);
     struct tm tmptime;
-    if(localtime_r(&t, &tmptime))
-        return strftime(a_datetime_str, 32, "[%x-%X]", &tmptime);
-    return 0;
+    return localtime_r(&t, &tmptime)
+            ? strftime(a_datetime_str, 32, "[%x-%X]", &tmptime)
+            : 0;
 }
 
 /**
@@ -308,7 +308,7 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
     strncpy( s_log_tag_fmt_str, "[%s]\t",sizeof (s_log_tag_fmt_str));
     for (int i = 0; i < 16; ++i)
             s_ansi_seq_color_len[i] =(unsigned int) strlen(s_ansi_seq_color[i]);
-    if ( a_log_file_path ) {
+    if ( a_log_file_path && a_log_file_path[0] ) {
         s_log_file = fopen( a_log_file_path , "a" );
         if( s_log_file == NULL)
             s_log_file = fopen( a_log_file_path , "w" );
@@ -316,7 +316,7 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
             fprintf( stderr, "Can't open log file %s \n", a_log_file_path );
             return -1;   //switch off show log in cosole if file not open
         }
-        setbuf(s_log_file, NULL);
+        setvbuf(s_log_file, NULL, _IOLBF, STR_LOG_BUF_MAX);
         if (a_log_dirpath != s_log_dir_path)
             dap_stpcpy(s_log_dir_path,  a_log_dirpath);
         if (a_log_file_path != s_log_file_path)
@@ -367,32 +367,28 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
         return;
     char log_str[STR_LOG_BUF_MAX] = { '\0' };
-    size_t offset = 0;
+    size_t offset = s_ansi_seq_color_len[a_ll];
     memcpy(log_str, s_ansi_seq_color[a_ll], s_ansi_seq_color_len[a_ll]);
-    offset = s_ansi_seq_color_len[a_ll] + s_update_log_time(log_str + s_ansi_seq_color_len[a_ll]);
+    offset += s_update_log_time(log_str + offset);
     offset += func_name
             ? snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s][%s:%d] ", s_log_level_tag[a_ll], a_log_tag, func_name, line_num)
             : snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
     va_list va;
     va_start(va, a_fmt);
     if (offset < STR_LOG_BUF_MAX) {
-        size_t l_offset = vsnprintf(log_str + offset, STR_LOG_BUF_MAX - offset, a_fmt, va);
-        offset += l_offset;
+        offset += vsnprintf(log_str + offset, STR_LOG_BUF_MAX - offset, a_fmt, va);
     }
     va_end(va);
     char *pos = offset < STR_LOG_BUF_MAX
             ? memcpy(&log_str[offset--], "\n", 1) + 1
-            : memcpy(&log_str[STR_LOG_BUF_MAX - 5], "...\n\0", 5) + 5;
+            : memcpy(&log_str[STR_LOG_BUF_MAX - 5], "...\n", 4) + 4;
     offset = pos - log_str;
     fwrite(log_str, offset, 1, stdout);
     fflush(stdout);
-    if (!s_log_file) {
-        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path))
+    if (!s_log_file)
+        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file)
             return;
-    }
-    if (s_log_file) {
-        fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
-    }
+    fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
 }
 
 
