@@ -5,6 +5,8 @@
 #include "dap_network_monitor_test.h"
 
 enum events {
+    NEW_LINK_EV,
+    REMOVE_LINK_EV,
     NEW_INTERFACE_EV,
     NEW_GATEWAY_EV,
     REMOVE_INTERFACE_EV,
@@ -12,7 +14,7 @@ enum events {
     REMOVE_ROUTE_EV
 };
 
-#define COUNT_TEST_EVENT_CASES 5
+#define COUNT_TEST_EVENT_CASES 7
 
 
 static dap_network_notification_t _test_event_cases[COUNT_TEST_EVENT_CASES];
@@ -20,39 +22,65 @@ static dap_network_notification_t _test_event_cases[COUNT_TEST_EVENT_CASES];
 
 static bool list_events_done[COUNT_TEST_EVENT_CASES] = {0};
 
+void _addr_ip_check(uint32_t ip1, uint32_t ip2){
+    dap_assert(ip1 == ip2, "Check dest ip");
+}
+
+void _addr_ip_str_check(const char *ip1, const char *ip2){
+    dap_assert(dap_str_equals(ip1, ip2), "Check dest str ip");
+}
+
 void _network_callback(const dap_network_notification_t result)
 {
-    if(result.type == IP_ADDR_ADD || result.type == IP_ADDR_REMOVE)
-    {
-        dap_test_msg("Interface %s %s has IP address %s",
-               result.addr.interface_name, (result.type == IP_ADDR_ADD ? "now" : "no longer"),
-               result.addr.s_ip);
-        enum events event;
-        if(result.type == IP_ADDR_ADD) {
-            event = NEW_INTERFACE_EV;
-        } else {
-            event = REMOVE_INTERFACE_EV;
-        }
+    switch (result.type) {
+        case IP_ADDR_ADD: {
+            dap_test_msg("Interface %s now has ip address %s", result.addr.interface_name, result.addr.s_ip);
+            dap_test_msg("Checking add new interface callback");
+            _addr_ip_check(result.addr.ip, _test_event_cases[NEW_INTERFACE_EV].addr.ip);
+            _addr_ip_str_check(result.addr.s_ip, _test_event_cases[NEW_INTERFACE_EV].addr.s_ip);
+            dap_assert(dap_str_equals(result.addr.interface_name,
+                                      _test_event_cases[NEW_INTERFACE_EV].addr.interface_name),
+                       "Check interface name");
+            list_events_done[NEW_INTERFACE_EV] = true;
+        } break;
+        case IP_ADDR_REMOVE: {
+            dap_test_msg("Interface %s no longer has IP address %s",
+                         result.addr.interface_name, result.addr.s_ip);
 
-        dap_test_msg("Checking %s" , (event == NEW_INTERFACE_EV ?
-                                          "add new interface callback" : "remove interface callback"));
+            dap_test_msg("Checking remove interface callback");
 
-        dap_assert(result.addr.ip == _test_event_cases[event].addr.ip,
-                   "Check dest ip");
+            _addr_ip_check(result.addr.ip, _test_event_cases[REMOVE_INTERFACE_EV].addr.ip);
+            _addr_ip_str_check(result.addr.s_ip, _test_event_cases[REMOVE_INTERFACE_EV].addr.s_ip);
 
-        dap_assert(dap_str_equals(result.addr.s_ip, _test_event_cases[event].addr.s_ip),
-                   "Check dest str ip");
+//            dap_assert(dap_str_equals(result.addr.interface_name,
+//                                      _test_event_cases[REMOVE_INTERFACE_EV].addr.interface_name),
+//                       "Check interface name");
 
-        dap_assert(dap_str_equals(result.addr.interface_name,
-                                  _test_event_cases[event].addr.interface_name),
-                   "Check interface name");
+            list_events_done[REMOVE_INTERFACE_EV] = true;
+        } break;
+        case IP_ROUTE_ADD: {
+            if(result.route.gateway_address != (uint64_t) -1) { // gateway address is present
+                dap_test_msg("Checking new gateway addr");
+                dap_assert(result.route.gateway_address ==
+                           _test_event_cases[NEW_GATEWAY_EV].route.gateway_address,
+                           "Check gateway ip");
 
-        list_events_done[event] = true;
+                dap_assert(dap_str_equals(result.route.s_gateway_address,
+                                          _test_event_cases[NEW_GATEWAY_EV].route.s_gateway_address),
+                           "Check gateway str ip");
 
-    } else if(result.type == IP_ROUTE_ADD || result.type == IP_ROUTE_REMOVE) {
+                dap_assert(result.route.protocol == _test_event_cases[NEW_GATEWAY_EV].route.protocol,
+                           "Check protocol");
 
-        if (result.type == IP_ROUTE_REMOVE) {
-
+                list_events_done[NEW_GATEWAY_EV] = true;
+            }
+//            dap_test_msg("Adding route to destination --> %s/%d proto %d and gateway %s\n",
+//                         result.route.s_destination_address,
+//                         result.route.netmask,
+//                         result.route.protocol,
+//                         result.route.s_gateway_address);
+        } break;
+        case IP_ROUTE_REMOVE: {
             if(result.route.destination_address == _test_event_cases[REMOVE_GATEWAY_EV].route.gateway_address) {
                 dap_pass_msg("Gateway addr removed");
                 dap_assert(dap_str_equals(result.route.s_destination_address,
@@ -82,28 +110,24 @@ void _network_callback(const dap_network_notification_t result)
 //                         result.route.netmask,
 //                         result.route.protocol,
 //                         result.route.s_gateway_address);
-
-        } else  if (result.type == IP_ROUTE_ADD) {
-            if(result.route.gateway_address != (uint64_t) -1) { // gateway address is present
-                dap_test_msg("Checking new gateway addr");
-                dap_assert(result.route.gateway_address ==
-                           _test_event_cases[NEW_GATEWAY_EV].route.gateway_address,
-                           "Check gateway ip");
-
-                dap_assert(dap_str_equals(result.route.s_gateway_address,
-                                          _test_event_cases[NEW_GATEWAY_EV].route.s_gateway_address),
-                           "Check gateway str ip");
-
-                dap_assert(result.route.protocol == _test_event_cases[NEW_GATEWAY_EV].route.protocol,
-                           "Check protocol");
-
-                list_events_done[NEW_GATEWAY_EV] = true;
-            }
-//            dap_test_msg("Adding route to destination --> %s/%d proto %d and gateway %s\n",
-//                         result.route.s_destination_address,
-//                         result.route.netmask,
-//                         result.route.protocol,
-//                         result.route.s_gateway_address);
+        } break;
+        case IP_LINK_NEW: {
+            dap_test_msg("New IP Link");
+            if (result.link.is_up)
+                dap_assert(dap_str_equals(result.link.interface_name, _test_event_cases[NEW_LINK_EV].link.interface_name),
+                       "Check interface name");
+            list_events_done[NEW_LINK_EV] = true;
+        } break;
+        case IP_LINK_DEL: {
+            dap_test_msg("Remove IP Link");
+            dap_assert(result.link.is_running == _test_event_cases[REMOVE_LINK_EV].link.is_running,
+                       "Checking that the link is not running.");
+            dap_assert(result.link.is_running == _test_event_cases[REMOVE_LINK_EV].link.is_up,
+                       "Checking that the link is down.");
+            list_events_done[REMOVE_LINK_EV] = true;
+        } break;
+        default: {
+            dap_fail("The callback received a result type that is not processed")
         }
     }
 }
@@ -114,6 +138,19 @@ static void init_test_case()
     bzero(_test_event_cases, sizeof (_test_event_cases));
 
     dap_network_notification_t * res;
+
+    // new_link
+    res = &_test_event_cases[NEW_LINK_EV];
+    res->type = IP_LINK_NEW;
+    strcpy(res->addr.s_ip, "10.1.0.111");
+    strcpy(res->addr.interface_name, "tun10");
+    res->addr.ip = 167837807;
+
+    // remove_link_ev
+    res = &_test_event_cases[REMOVE_LINK_EV];
+    res->type = IP_LINK_DEL;
+    res->link.is_running = false;
+    res->link.is_up = false;
 
     // new_interface
     res = &_test_event_cases[NEW_INTERFACE_EV];
@@ -176,6 +213,7 @@ void dap_network_monitor_test_run(void)
     system(up_test_interfece);
     system(down_test_interfece);
     system(delete_test_interfece);
+    sleep(120);
 
     for(int i = 0; i < COUNT_TEST_EVENT_CASES; i++) {
         if(list_events_done[i] == false) {

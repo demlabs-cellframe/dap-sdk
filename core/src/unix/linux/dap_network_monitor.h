@@ -38,12 +38,12 @@ extern "C" {
 
 typedef enum {
     // like in rtnetlink defines
-    IP_ADDR_ADD = RTM_NEWADDR,
-    IP_ADDR_REMOVE,
-    IP_ROUTE_ADD = RTM_NEWROUTE,
-    IP_ROUTE_REMOVE,
-    IP_LINK_NEW = RTM_NEWLINK,
-    IP_LINK_DEL
+    IP_ADDR_ADD     = RTM_NEWADDR,
+    IP_ADDR_REMOVE  = RTM_DELADDR,
+    IP_ROUTE_ADD    = RTM_NEWROUTE,
+    IP_ROUTE_REMOVE = RTM_DELROUTE,
+    IP_LINK_NEW     = RTM_NEWLINK,
+    IP_LINK_DEL     = RTM_DELLINK
 } dap_network_monitor_notification_type_t;
 
 typedef struct {
@@ -53,7 +53,7 @@ typedef struct {
             char interface_name[IF_NAMESIZE];
             char s_ip[MAX_IP_STR_LEN + 1];
             uint32_t ip; // inet_ntoa(*((struct in_addr *)&ipaddr)) for cast to char*
-        } addr; // for IP_ADDR_ADD, IP_ADDR_REMOVE
+        } addr; // for IP_ADDR_ADD (RTM_NEWADDR), IP_ADDR_REMOVE (RTM_DELADDR)
         struct {
             uint64_t destination_address; // 64 bit for checking -1 like not filled variable
             char s_destination_address[MAX_IP_STR_LEN + 1];
@@ -61,7 +61,7 @@ typedef struct {
             char s_gateway_address[MAX_IP_STR_LEN + 1];
             uint8_t protocol;
             uint8_t netmask;
-        } route; // for IP_ROUTE_ADD, IP_ROUTE_REMOVE
+        } route; // for IP_ROUTE_ADD (RTM_NEWROUTE), IP_ROUTE_REMOVE (RTM_DELROUTE)
         struct {
             char interface_name[IF_NAMESIZE];
             bool is_up;
