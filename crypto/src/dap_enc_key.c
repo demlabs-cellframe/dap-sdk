@@ -296,9 +296,11 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_tesla_get_sign,
         .sign_verify =                      dap_enc_sig_tesla_verify_sign,
-        .ser_sign =                         dap_enc_tesla_write_signature,
-        .ser_priv_key =                     dap_enc_tesla_write_private_key,
-        .ser_pub_key =                      dap_enc_tesla_write_public_key
+        .ser_sign =                         dap_enc_sig_tesla_write_signature,
+        .ser_priv_key =                     dap_enc_sig_tesla_write_private_key,
+        .ser_pub_key =                      dap_enc_sig_tesla_write_public_key,
+        .ser_priv_key_size =                dap_enc_sig_tesla_ser_private_key_size,
+        .ser_pub_key_size =                 dap_enc_sig_tesla_ser_public_key_size
     },
     [DAP_ENC_KEY_TYPE_SIG_DILITHIUM]={
         .name =                             "SIG_DILITHIUM",
@@ -1026,6 +1028,7 @@ dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(const dap_enc_key_t **a_keys,
     dap_return_val_if_pass(!l_ret, NULL);
 // func work
     dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, a_keys, a_count, NULL, a_count);
+    dap_enc_sig_multisign_forming_keys(l_ret, l_params);
     l_ret->_pvt = l_params;
     return l_ret;
 }

@@ -54,7 +54,7 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
         l_keys[i] = dap_enc_key_new_generate(l_key_types[i], NULL, 0, a_seed, a_seed_size, 0);
     }
     dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, l_keys, a_kex_size, NULL, a_kex_size);
-
+    dap_enc_sig_multisign_forming_keys(a_key, l_params);
     a_key->_pvt = l_params;
 }
 
@@ -95,16 +95,42 @@ static size_t s_multi_sign_calc_size(const dap_multi_sign_t *a_sign, uint32_t *a
 }
 
 
-static dap_enc_key_t *s_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sign_params_t *a_params)
+int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sign_params_t *a_params)
 {
 // sanity check
     dap_return_val_if_pass(!a_key, NULL);
 // memory alloc
     dap_multisign_private_key_t *l_skey = NULL;
     dap_multisign_public_key_t *l_pkey = NULL;
-    
+    uint64_t l_skey_len = sizeof(uint64_t);
+    uint64_t l_pkey_len = sizeof(uint64_t);
+    for(size_t i = 0; i < a_params->key_count; ++i) {
+        l_skey_len += dap_enc_ser_priv_key_size(a_params->keys[i]);
+        l_pkey_len += dap_enc_ser_pub_key_size(a_params->keys[i]);
+    }
+    DAP_NEW_Z_SIZE_RET_VAL(l_skey, dap_multisign_private_key_t, l_skey_len, -1, NULL);
+    DAP_NEW_Z_SIZE_RET_VAL(l_pkey, dap_multisign_public_key_t, l_pkey_len, -1, l_skey);
+// func work
+    uint64_t l_mem_bias_skey = 0;
+    uint64_t l_mem_bias_pkey = 0;
+    for(size_t i = 0; i < a_params->key_count; ++i) {
+        size_t l_ser_skey_len = 0;
+        size_t l_ser_pkey_len = 0;
+        uint8_t *l_ser_skey = dap_enc_key_serialize_priv_key(a_params->keys[i], &l_ser_skey_len);
+        uint8_t *l_ser_pkey = dap_enc_key_serialize_pub_key(a_params->keys[i], &l_ser_pkey_len);
+        memcpy(l_skey->data + l_mem_bias_skey, l_ser_skey, l_ser_skey_len);
+        memcpy(l_pkey->data + l_mem_bias_pkey, l_ser_pkey, l_ser_pkey_len);
+        l_mem_bias_skey += l_ser_skey_len;
+        l_mem_bias_pkey += l_ser_pkey_len;
+        DAP_DEL_MULTY(l_ser_skey, l_ser_pkey);
+    }
+// out work
     DAP_DEL_MULTY(a_key->priv_key_data, a_key->pub_key_data);
-    return NULL;
+    a_key->priv_key_data = l_skey;
+    a_key->pub_key_data = l_pkey;
+    a_key->priv_key_data_size = l_skey_len;
+    a_key->pub_key_data_size = l_pkey_len;
+    return 0;
 }
 
 /**
@@ -225,7 +251,7 @@ dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type,
         if (a_key_seq)
             l_params->key_seq[i] = a_key_seq[i];
         else
-            l_params->key_seq[i] = i;
+            l_params->key_seq[i] = (uint8_t)i;
     }
     return l_params;
 }

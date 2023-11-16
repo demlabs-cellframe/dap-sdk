@@ -25,11 +25,13 @@ int dap_enc_sig_tesla_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
 void dap_enc_sig_tesla_key_delete(dap_enc_key_t *key);
 
 size_t dap_enc_tesla_calc_signature_size(void);
+uint64_t dap_enc_sig_tesla_ser_private_key_size(const void *a_skey);
+uint64_t dap_enc_sig_tesla_ser_public_key_size(const void *a_pkey);
 
-uint8_t *dap_enc_tesla_write_signature(const void *a_sign, size_t *a_buflen_out);
+uint8_t *dap_enc_sig_tesla_write_signature(const void *a_sign, size_t *a_buflen_out);
 tesla_signature_t* dap_enc_tesla_read_signature(uint8_t *a_buf, size_t a_buflen);
-uint8_t *dap_enc_tesla_write_private_key(const void *a_private_key, size_t *a_buflen_out);
-uint8_t *dap_enc_tesla_write_public_key(const void *a_public_key, size_t *a_buflen_out);
+uint8_t *dap_enc_sig_tesla_write_private_key(const void *a_private_key, size_t *a_buflen_out);
+uint8_t *dap_enc_sig_tesla_write_public_key(const void *a_public_key, size_t *a_buflen_out);
 tesla_private_key_t* dap_enc_tesla_read_private_key(const uint8_t *a_buf, size_t a_buflen);
 tesla_public_key_t* dap_enc_tesla_read_public_key(const uint8_t *a_buf, size_t a_buflen);
 

@@ -85,6 +85,7 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
         const size_t a_sign_size);
 void dap_multi_sign_delete(dap_multi_sign_t *a_sign);
 void dap_enc_sig_multisign_key_delete(dap_enc_key_t *a_key);
+int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sign_params_t *a_params);
 
 #ifdef __cplusplus
 }

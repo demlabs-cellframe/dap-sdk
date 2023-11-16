@@ -15,6 +15,24 @@ void dap_enc_sig_tesla_set_type(enum DAP_TESLA_SIGN_SECURITY type)
     _tesla_type = type;
 }
 
+uint64_t dap_enc_sig_tesla_ser_private_key_size(const void *a_skey)
+{
+// sanity check
+    tesla_param_t l_p;
+    dap_return_val_if_pass(!a_skey || !tesla_params_init(&l_p, ((tesla_public_key_t *)a_skey)->kind), 0);
+// func work
+    return sizeof(uint64_t) + sizeof(uint32_t) + l_p.CRYPTO_SECRETKEYBYTES;
+}
+
+uint64_t dap_enc_sig_tesla_ser_public_key_size(const void *a_pkey)
+{
+// sanity check
+    tesla_param_t l_p;
+    dap_return_val_if_pass(!a_pkey || !tesla_params_init(&l_p, ((tesla_public_key_t *)a_pkey)->kind), 0);
+// func work
+    return sizeof(uint64_t) + sizeof(uint32_t) + l_p.CRYPTO_PUBLICKEYBYTES;
+}
+
 void dap_enc_sig_tesla_key_new(dap_enc_key_t *a_key) {
 
     a_key->type = DAP_ENC_KEY_TYPE_SIG_TESLA;
@@ -105,7 +123,7 @@ size_t dap_enc_tesla_calc_signature_size(void)
 }
 
 /* Serialize a signature */
-uint8_t *dap_enc_tesla_write_signature(const void *a_sign, size_t *a_buflen_out)
+uint8_t *dap_enc_sig_tesla_write_signature(const void *a_sign, size_t *a_buflen_out)
 {
 // in work
     a_buflen_out ? *a_buflen_out = 0 : 0;
@@ -156,7 +174,7 @@ tesla_signature_t* dap_enc_tesla_read_signature(uint8_t *a_buf, size_t a_buflen)
 }
 
 /* Serialize a private key. */
-uint8_t *dap_enc_tesla_write_private_key(const void *a_private_key, size_t *a_buflen_out)
+uint8_t *dap_enc_sig_tesla_write_private_key(const void *a_private_key, size_t *a_buflen_out)
 {
 // in work
     a_buflen_out ? *a_buflen_out = 0 : 0;
@@ -164,7 +182,7 @@ uint8_t *dap_enc_tesla_write_private_key(const void *a_private_key, size_t *a_bu
     tesla_param_t p;
     dap_return_val_if_pass(!l_private_key || !tesla_params_init(&p, l_private_key->kind), NULL);
 // func work
-    uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_SECRETKEYBYTES; //CRYPTO_PUBLICKEYBYTES;
+    uint64_t l_buflen = dap_enc_sig_tesla_ser_private_key_size(a_private_key); //CRYPTO_PUBLICKEYBYTES;
     uint32_t l_kind = l_private_key->kind;
     uint8_t *l_buf =  dap_serialize_multy(NULL, l_buflen, 6,
         &l_buflen, (uint64_t)sizeof(uint64_t),
@@ -207,7 +225,7 @@ tesla_private_key_t* dap_enc_tesla_read_private_key(const uint8_t *a_buf, size_t
 
 
 /* Serialize a public key. */
-uint8_t *dap_enc_tesla_write_public_key(const void *a_public_key, size_t *a_buflen_out)
+uint8_t *dap_enc_sig_tesla_write_public_key(const void *a_public_key, size_t *a_buflen_out)
 {
 // in work
     a_buflen_out ? *a_buflen_out = 0 : 0;
@@ -215,7 +233,7 @@ uint8_t *dap_enc_tesla_write_public_key(const void *a_public_key, size_t *a_bufl
     tesla_param_t p;
     dap_return_val_if_pass(!l_public_key || !tesla_params_init(&p, l_public_key->kind), NULL);
 // func work
-    uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_PUBLICKEYBYTES;
+    uint64_t l_buflen = dap_enc_sig_tesla_ser_public_key_size(a_public_key);
     uint32_t l_kind = l_public_key->kind;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
         &l_buflen, (uint64_t)sizeof(uint64_t),
