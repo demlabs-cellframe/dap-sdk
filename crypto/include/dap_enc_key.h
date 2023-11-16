@@ -327,6 +327,8 @@ int dap_enc_gen_key_public (dap_enc_key_t *a_key, void *a_output);
 void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_buf);
 void dap_enc_key_delete(dap_enc_key_t *a_key);
 
+dap_enc_key_t *dap_enc_merge_keys_to_multisign(const dap_enc_key_t **a_keys, size_t a_count);
+
 #ifdef __cplusplus
 }
 #endif

@@ -866,17 +866,11 @@ void dap_enc_key_update(dap_enc_key_t *a_key)
 {
     if(a_key)
         switch (a_key->type) {
-        case DAP_ENC_KEY_TYPE_SIG_TESLA:
-            break;
-        case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-            dap_enc_sig_picnic_update(a_key);
-            break;
-        case DAP_ENC_KEY_TYPE_SIG_BLISS:
-            break;
-        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-            break;
-        default:
-            break;
+            case DAP_ENC_KEY_TYPE_SIG_PICNIC:
+                dap_enc_sig_picnic_update(a_key);
+                break;
+            default:
+                break;
         }
 }
 
@@ -1003,3 +997,15 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
     return l_sign_size;
 }
 
+dap_enc_key_t *dap_enc_merge_keys_to_multisign(const dap_enc_key_t **a_keys, size_t a_count)
+{
+// sanity check
+    dap_return_val_if_pass(!a_keys, NULL);
+// memory alloc
+    dap_enc_key_t *l_ret = dap_enc_key_new(DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED);
+    dap_return_val_if_pass(!l_ret, NULL);
+// func work
+    dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, a_keys, a_count, NULL, a_count);
+    l_ret->_pvt = l_params;
+    return l_ret;
+}

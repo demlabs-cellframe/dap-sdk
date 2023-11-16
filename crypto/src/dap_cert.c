@@ -921,3 +921,14 @@ void dap_cert_deinit()
 {
 
 }
+
+dap_enc_key_t *dap_cert_merge_keys(dap_cert_t **a_certs, size_t a_count)
+{
+// sanity check
+    dap_return_val_if_pass(!a_certs, NULL);
+// memory alloc
+    dap_enc_key_t **l_keys = NULL;
+    DAP_NEW_Z_COUNT_RET_VAL(l_keys, dap_enc_key_t *, a_count, NULL, NULL);
+// func work
+    return dap_enc_merge_keys_to_multisign(l_keys, a_count);
+}

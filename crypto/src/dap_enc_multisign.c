@@ -49,13 +49,11 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
     dap_return_if_pass(a_key->type != DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED || !a_kex_size);
 // memory alloc
     const dap_enc_key_type_t *l_key_types = a_kex_buf;
-    dap_enc_key_t *l_key[a_kex_size];
-    int l_seq[a_kex_size];
+    dap_enc_key_t *l_keys[a_kex_size];
     for (size_t i = 0; i < a_kex_size; i++) {
-        l_key[i] = dap_enc_key_new_generate(l_key_types[i], NULL, 0, a_seed, a_seed_size, 0);
-        l_seq[i] = i;
+        l_keys[i] = dap_enc_key_new_generate(l_key_types[i], NULL, 0, a_seed, a_seed_size, 0);
     }
-    dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, l_key, a_kex_size, l_seq, a_kex_size);
+    dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, l_keys, a_kex_size, NULL, a_kex_size);
 
     a_key->_pvt = l_params;
 }
@@ -195,7 +193,7 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
  * @param a_num[1 .. sign_count] Signing keys sequence
  * @return Pointer to multi-signature params structure
  */
-dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, dap_enc_key_t **a_keys, uint8_t a_key_count, int *a_key_seq, uint8_t a_sign_count)
+dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, const dap_enc_key_t **a_keys, uint8_t a_key_count, const int *a_key_seq, uint8_t a_sign_count)
 {
 // sanity check
     dap_return_val_if_pass(a_type != SIG_TYPE_MULTI_CHAINED && a_type != SIG_TYPE_MULTI_COMBINED, NULL);
@@ -204,7 +202,7 @@ dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type,
     DAP_NEW_Z_RET_VAL(l_params, dap_multi_sign_params_t, NULL, NULL);
     DAP_NEW_Z_COUNT_RET_VAL(l_params->keys, dap_enc_key_t *, a_key_count, NULL, l_params);
     DAP_NEW_Z_COUNT_RET_VAL(l_params->key_seq, uint8_t, a_sign_count, NULL, l_params->keys, l_params);
-
+// func work
     l_params->type.type = a_type;
     l_params->key_count = a_key_count;
     l_params->sign_count = a_sign_count;
@@ -212,7 +210,10 @@ dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type,
         l_params->keys[i] = a_keys[i];
     }
     for (int i = 0; i < a_sign_count; i++) {
-        l_params->key_seq[i] = a_key_seq[i];
+        if (a_key_seq)
+            l_params->key_seq[i] = a_key_seq[i];
+        else
+            l_params->key_seq[i] = i;
     }
     return l_params;
 }
