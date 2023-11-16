@@ -922,13 +922,24 @@ void dap_cert_deinit()
 
 }
 
-dap_enc_key_t *dap_cert_merge_keys(dap_cert_t **a_certs, size_t a_count)
+dap_enc_key_t *dap_cert_merge_keys(dap_cert_t **a_certs, size_t a_count, size_t a_key_start_index)
 {
 // sanity check
-    dap_return_val_if_pass(!a_certs, NULL);
+    dap_return_val_if_pass(!a_certs || !a_count || !a_certs[0] || a_key_start_index >= a_count, NULL);
+    if (a_count == 1)
+        return a_certs[0]->enc_key;
 // memory alloc
+    size_t l_keys_count = 0;
     dap_enc_key_t **l_keys = NULL;
     DAP_NEW_Z_COUNT_RET_VAL(l_keys, dap_enc_key_t *, a_count, NULL, NULL);
 // func work
-    return dap_enc_merge_keys_to_multisign(l_keys, a_count);
+    for(size_t i = a_key_start_index; i < a_count; ++i) {
+        if (a_certs[i]) {
+            l_keys[i] = a_certs[i]->enc_key;
+            l_keys_count++;
+        }
+    }
+    dap_enc_key_t *l_ret = dap_enc_merge_keys_to_multisign(l_keys, l_keys_count);
+    DAP_DELETE(l_keys);
+    return l_ret;
 }
