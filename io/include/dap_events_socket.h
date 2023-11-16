@@ -91,6 +91,12 @@ typedef int SOCKET;
     #endif
 #define MSG_DONTWAIT 0
 #define MSG_NOSIGNAL 0
+
+typedef struct work_item {
+    SLIST_ENTRY entry;
+    void *data;
+} work_item_t;
+
 #endif
 
 #if defined(DAP_EVENTS_CAPS_WEPOLL)

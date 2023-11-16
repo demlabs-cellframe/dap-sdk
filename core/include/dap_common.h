@@ -190,8 +190,8 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_MALLOC(p)         malloc(p)
 #define DAP_FREE(p)           free(p)
 #define DAP_CALLOC(p, s)      ({ size_t s1 = (size_t)(s); s1 > 0 ? calloc(p, s1) : DAP_CAST_PTR(void, NULL); })
-#define DAP_ALMALLOC(p, s)    ({ size_t s1 = (size_t)(s); s1 > 0 ? _dap_aligned_alloc(p, s1) : DAP_CAST_PTR(void, NULL); })
-#define DAP_ALREALLOC(p, s)   ({ size_t s1 = (size_t)(s); s1 > 0 ? _dap_aligned_realloc(p, s1) :  DAP_CAST_PTR(void, NULL); })
+#define DAP_ALMALLOC(a, s)      ({ size_t s1 = (size_t)(s); s1 > 0 ? _dap_aligned_alloc(a, s1) : DAP_CAST_PTR(void, NULL); })
+#define DAP_ALREALLOC(a, p, s)  ({ size_t s1 = (size_t)(s); s1 > 0 ? _dap_aligned_realloc(a, (p), s1) : ({ _dap_aligned_free(p); DAP_CAST_PTR(void, NULL); }); })
 #define DAP_ALFREE(p)         _dap_aligned_free(p)
 #define DAP_PAGE_ALMALLOC(p)  _dap_page_aligned_alloc(p)
 #define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
@@ -252,6 +252,9 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
 
 DAP_STATIC_INLINE void *_dap_aligned_alloc( uintptr_t alignment, uintptr_t size )
 {
+#ifdef DAP_OS_WINDOWS
+    return _aligned_malloc(size, alignment);
+#else
     uintptr_t ptr = (uintptr_t) DAP_MALLOC( size + (alignment * 2) + sizeof(void *) );
 
     if ( !ptr )
@@ -261,10 +264,14 @@ DAP_STATIC_INLINE void *_dap_aligned_alloc( uintptr_t alignment, uintptr_t size 
     ((uintptr_t *)al_ptr)[-1] = ptr;
 
     return (void *)al_ptr;
+#endif
 }
 
 DAP_STATIC_INLINE void *_dap_aligned_realloc( uintptr_t alignment, void *bptr, uintptr_t size )
 {
+#ifdef DAP_OS_WINDOWS
+    return _aligned_realloc(bptr, size, alignment);
+#else
     uintptr_t ptr = (uintptr_t) DAP_REALLOC( bptr, size + (alignment * 2) + sizeof(void *) );
 
     if ( !ptr )
@@ -274,15 +281,20 @@ DAP_STATIC_INLINE void *_dap_aligned_realloc( uintptr_t alignment, void *bptr, u
     ((uintptr_t *)al_ptr)[-1] = ptr;
 
     return (void *)al_ptr;
+#endif
 }
 
 DAP_STATIC_INLINE void _dap_aligned_free( void *ptr )
 {
+#ifdef DAP_OS_WINDOWS
+    _aligned_free(ptr);
+#else
     if ( !ptr )
         return;
 
     void  *base_ptr = (void *)((uintptr_t *)ptr)[-1];
     DAP_FREE( base_ptr );
+#endif
 }
 
 DAP_STATIC_INLINE void *_dap_page_aligned_alloc(size_t size) {
