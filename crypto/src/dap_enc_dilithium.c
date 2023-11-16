@@ -103,7 +103,7 @@ size_t dap_enc_dilithium_calc_signature_unserialized_size(void)
     return sizeof(dilithium_signature_t);
 }
 
-uint64_t dap_enc_dilithium_ser_private_key_size(const void *a_skey)
+uint64_t dap_enc_sig_dilithium_ser_private_key_size(const void *a_skey)
 {
 // sanity check
     dilithium_param_t l_p;
@@ -112,7 +112,7 @@ uint64_t dap_enc_dilithium_ser_private_key_size(const void *a_skey)
     return sizeof(uint64_t) + sizeof(uint32_t) + l_p.CRYPTO_SECRETKEYBYTES;
 }
 
-uint64_t dap_enc_dilithium_ser_public_key_size(const void *a_pkey)
+uint64_t dap_enc_sig_dilithium_ser_public_key_size(const void *a_pkey)
 {
 // sanity check
     dilithium_param_t l_p;
@@ -215,7 +215,7 @@ uint8_t *dap_enc_dilithium_write_private_key(const void *a_private_key, size_t *
     dilithium_param_t p;
     dap_return_val_if_pass(!l_private_key || !dilithium_params_init(&p, l_private_key->kind), NULL);
 // func work
-    uint64_t l_buflen = dap_enc_dilithium_ser_private_key_size(a_private_key);
+    uint64_t l_buflen = dap_enc_sig_dilithium_ser_private_key_size(a_private_key);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
                         &l_buflen, (uint64_t)sizeof(uint64_t),
                         &l_private_key->kind, (uint64_t)sizeof(uint32_t),
@@ -234,7 +234,7 @@ uint8_t *dap_enc_dilithium_write_public_key(const void *a_public_key, size_t *a_
     dilithium_param_t p;
     dap_return_val_if_pass(!l_public_key || !dilithium_params_init(&p, l_public_key->kind), NULL);
 // func work
-    uint64_t l_buflen = dap_enc_dilithium_ser_public_key_size(a_public_key);
+    uint64_t l_buflen = dap_enc_sig_dilithium_ser_public_key_size(a_public_key);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
                         &l_buflen, (uint64_t)sizeof(uint64_t),
                         &l_public_key->kind, (uint64_t)sizeof(uint32_t),

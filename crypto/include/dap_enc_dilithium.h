@@ -26,8 +26,8 @@ int dap_enc_sig_dilithium_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
 void dap_enc_sig_dilithium_key_delete(dap_enc_key_t *key);
 
 size_t dap_enc_dilithium_calc_signature_unserialized_size(void);
-uint64_t dap_enc_dilithium_ser_private_key_size(const void *a_skey);
-uint64_t dap_enc_dilithium_ser_public_key_size(const void *a_pkey);
+uint64_t dap_enc_sig_dilithium_ser_private_key_size(const void *a_skey);
+uint64_t dap_enc_sig_dilithium_ser_public_key_size(const void *a_pkey);
 
 static inline size_t dap_enc_dilithium_calc_signagture_size(dilithium_signature_t *a_sign)
 {

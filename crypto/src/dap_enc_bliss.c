@@ -36,6 +36,24 @@ size_t dap_enc_sig_bliss_key_pub_output_size(UNUSED_ARG dap_enc_key_t *l_key)
     return sizeof(bliss_public_key_t); // Always same, right?
 }
 
+uint64_t dap_enc_sig_bliss_ser_private_key_size(const void *a_skey)
+{
+// sanity check
+    bliss_param_t l_p;
+    dap_return_val_if_pass(!a_skey || !bliss_params_init(&l_p, ((bliss_private_key_t *)a_skey)->kind), 0);
+// func work
+    return sizeof(uint64_t) + sizeof(uint32_t) + 3 * l_p.n * sizeof(int32_t);
+}
+
+uint64_t dap_enc_sig_bliss_ser_public_key_size(const void *a_pkey)
+{
+// sanity check
+    bliss_param_t l_p;
+    dap_return_val_if_pass(!a_pkey || !bliss_params_init(&l_p, ((bliss_public_key_t *)a_pkey)->kind), 0);
+// func work
+    return sizeof(uint64_t) + sizeof(uint32_t) + l_p.n * sizeof(uint64_t);
+}
+
 /**
  * @brief dap_enc_sig_bliss_key_pub_output
  * @param l_key
@@ -212,7 +230,7 @@ uint8_t *dap_enc_sig_bliss_write_private_key(const void *a_private_key, size_t *
     bliss_param_t p;
     dap_return_val_if_pass(!l_private_key || !bliss_params_init(&p, l_private_key->kind), NULL);
 // func work
-    uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + 3 * p.n * sizeof(int32_t);
+    uint64_t l_buflen = dap_enc_sig_bliss_ser_private_key_size(a_private_key);
     uint32_t l_kind = l_private_key->kind;
     uint8_t *l_buf = dap_serialize_multy( NULL, l_buflen, 10,
         &l_buflen, (uint64_t)sizeof(uint64_t),
@@ -235,7 +253,7 @@ uint8_t *dap_enc_sig_bliss_write_public_key(const void *a_public_key, size_t *a_
     bliss_param_t p;
     dap_return_val_if_pass(!bliss_params_init(&p, l_public_key->kind), NULL);
 // func work
-    uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.n * sizeof(uint64_t);
+    uint64_t l_buflen = dap_enc_sig_bliss_ser_public_key_size(a_public_key);
     uint32_t l_kind = l_public_key->kind;
     uint8_t *l_buf = dap_serialize_multy( NULL, l_buflen, 6,
         &l_buflen, (uint64_t)sizeof(uint64_t),

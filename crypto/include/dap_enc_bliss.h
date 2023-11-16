@@ -26,6 +26,9 @@ void dap_enc_sig_bliss_key_delete(dap_enc_key_t *key);
 size_t dap_enc_sig_bliss_key_pub_output_size(dap_enc_key_t *l_key);
 int dap_enc_sig_bliss_key_pub_output(dap_enc_key_t *l_key, void * l_output);
 
+uint64_t dap_enc_sig_bliss_ser_private_key_size(const void *a_skey);
+uint64_t dap_enc_sig_bliss_ser_public_key_size(const void *a_pkey);
+
 
 uint8_t *dap_enc_sig_bliss_write_signature(const void *a_sign, size_t *a_buflen_out);
 bliss_signature_t *dap_enc_sig_bliss_read_signature(const uint8_t *a_buf, size_t a_buflen);

@@ -63,7 +63,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .delete_callback =                  dap_enc_aes_key_delete,
         .new_generate_callback =            dap_enc_aes_key_generate,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =                 NULL,
         .enc_out_size =                     dap_enc_iaes256_calc_encode_size,
         .dec_out_size =                     dap_enc_iaes256_calc_decode_max_size,
         .sign_get =                         NULL,
@@ -80,7 +80,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .delete_callback =                  dap_enc_oaes_key_delete,
         .new_generate_callback =            dap_enc_oaes_key_generate,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =                 NULL,
         .enc_out_size =                     dap_enc_oaes_calc_encode_size,
         .dec_out_size =                     dap_enc_oaes_calc_decode_size,
         .sign_get =                         NULL,
@@ -96,7 +96,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .delete_callback =                  dap_enc_bf_key_delete,
         .new_generate_callback =            dap_enc_bf_key_generate,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =                 NULL,
         .enc_out_size =                     dap_enc_bf_cbc_calc_encode_size,
         .dec_out_size =                     dap_enc_bf_cbc_calc_decode_max_size,
         .sign_get =                         NULL,
@@ -112,7 +112,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .delete_callback =                  dap_enc_bf_key_delete,
         .new_generate_callback =            dap_enc_bf_key_generate,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =                 NULL,
         .enc_out_size =                     dap_enc_bf_ofb_calc_encode_size,
         .dec_out_size =                     dap_enc_bf_ofb_calc_decode_size,
         .sign_get =                         NULL,
@@ -128,7 +128,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .delete_callback =                  dap_enc_gost_key_delete,
         .new_generate_callback =            dap_enc_gost_key_generate,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =                 NULL,
         .enc_out_size =                     dap_enc_gost_ofb_calc_encode_size,
         .dec_out_size =                     dap_enc_gost_ofb_calc_decode_size,
         .sign_get =                         NULL,
@@ -144,7 +144,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .delete_callback =                  dap_enc_gost_key_delete,
         .new_generate_callback =            dap_enc_gost_key_generate,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =                 NULL,
         .enc_out_size =                     dap_enc_kuzn_ofb_calc_encode_size,
         .dec_out_size =                     dap_enc_kuzn_ofb_calc_decode_size,
         .sign_get =                         NULL,
@@ -160,7 +160,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .delete_callback =                  dap_enc_salsa2012_key_delete,
         .new_generate_callback =            dap_enc_salsa2012_key_generate,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =                 NULL,
         .enc_out_size =                     dap_enc_salsa2012_calc_encode_size,
         .dec_out_size =                     dap_enc_salsa2012_calc_decode_size,
         .sign_get =                         NULL,
@@ -176,7 +176,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .delete_callback =                  dap_enc_seed_key_delete,
         .new_generate_callback =            dap_enc_seed_key_generate,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =                 NULL,
         .enc_out_size =                     dap_enc_seed_ofb_calc_encode_size,
         .dec_out_size =                     dap_enc_seed_ofb_calc_decode_size,
         .sign_get =                         NULL,
@@ -195,7 +195,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_alice_shared_key =             dap_enc_msrln_gen_alice_shared_key,
         .new_from_data_public_callback =    dap_enc_msrln_key_new_from_data_public,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =                 NULL,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         NULL,
@@ -212,7 +212,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_alice_shared_key =             dap_enc_kyber512_gen_alice_shared_key,
         .new_from_data_public_callback =    dap_enc_kyber512_key_new_from_data_public,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =                 NULL,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         NULL,
@@ -225,7 +225,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_na =                           NULL,
         .dec_na =                           NULL,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =                 NULL,
         .gen_bob_shared_key =               dap_enc_newhope_gen_bob_shared_key,
         .gen_alice_shared_key =             dap_enc_newhope_gen_alice_shared_key,
         .new_callback =                     dap_enc_newhope_kem_key_new,
@@ -247,7 +247,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_picnic_key_new,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =                 NULL,
         .delete_callback =                  dap_enc_sig_picnic_key_delete,
         .new_generate_callback =            dap_enc_sig_picnic_key_new_generate,
         .enc_out_size =                     NULL,
@@ -269,13 +269,14 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .delete_callback =                  dap_enc_sig_bliss_key_delete,
         .new_generate_callback =            dap_enc_sig_bliss_key_new_generate,
         .gen_key_public =                   dap_enc_sig_bliss_key_pub_output,
-        .ser_key_public_size =              NULL,
 
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .ser_sign =                         dap_enc_sig_bliss_write_signature,
         .ser_priv_key =                     dap_enc_sig_bliss_write_private_key,
-        .ser_pub_key =                      dap_enc_sig_bliss_write_public_key
+        .ser_pub_key =                      dap_enc_sig_bliss_write_public_key,
+        .ser_priv_key_size =                dap_enc_sig_bliss_ser_private_key_size,
+        .ser_pub_key_size =                 dap_enc_sig_bliss_ser_public_key_size,
     },
     [DAP_ENC_KEY_TYPE_SIG_TESLA]={
         .name =                             "SIG_TESLA",
@@ -284,7 +285,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_na =                           NULL,
         .dec_na =                           NULL,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =              NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_tesla_key_new,
@@ -305,8 +306,8 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_na =                           NULL,
         .dec_na =                           NULL,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              dap_enc_dilithium_ser_public_key_size,
-        .ser_key_private_size =             dap_enc_dilithium_ser_private_key_size,
+        .ser_pub_key_size =                 dap_enc_sig_dilithium_ser_public_key_size,
+        .ser_priv_key_size =                dap_enc_sig_dilithium_ser_private_key_size,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_dilithium_key_new,
@@ -328,7 +329,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .dec_na =                           dap_enc_sig_ringct20_verify_sign,
         .dec_na_ext =                       dap_enc_sig_ringct20_verify_sign_with_pbk_list,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =              NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_ringct20_key_new,
@@ -346,7 +347,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_na =                           NULL,
         .dec_na =                           NULL,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =              NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_falcon_key_new,
@@ -367,7 +368,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_na =                           dap_enc_sig_sphincsplus_get_sign_msg,
         .dec_na =                           dap_enc_sig_sphincsplus_open_sign_msg,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =              NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_sphincsplus_key_new,
@@ -388,7 +389,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_na =                           NULL,
         .dec_na =                           NULL,
         .gen_key_public =                   NULL,
-        .ser_key_public_size =              NULL,
+        .ser_pub_key_size =              NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_multisign_key_new,
@@ -874,24 +875,24 @@ void dap_enc_key_update(dap_enc_key_t *a_key)
 }
 
 
-size_t dap_enc_ser_key_private_size (dap_enc_key_t *a_key)
+size_t dap_enc_ser_priv_key_size (dap_enc_key_t *a_key)
 {
     // sanity check
     dap_return_val_if_pass(!a_key, 0);
-    if(s_callbacks[a_key->type].ser_key_private_size) {
-        return s_callbacks[a_key->type].ser_key_private_size(a_key->priv_key_data);
+    if(s_callbacks[a_key->type].ser_priv_key_size) {
+        return s_callbacks[a_key->type].ser_priv_key_size(a_key->priv_key_data);
     } else {
         log_it(L_ERROR, "No callback for key private size calculate");
         return 0;
     }
 }
 
-size_t dap_enc_ser_key_public_size (dap_enc_key_t *a_key)
+size_t dap_enc_ser_pub_key_size (dap_enc_key_t *a_key)
 {
     // sanity check
     dap_return_val_if_pass(!a_key, 0);
-    if(s_callbacks[a_key->type].ser_key_public_size) {
-        return s_callbacks[a_key->type].ser_key_public_size(a_key->priv_key_data);
+    if(s_callbacks[a_key->type].ser_pub_key_size) {
+        return s_callbacks[a_key->type].ser_pub_key_size(a_key->priv_key_data);
     } else {
         log_it(L_ERROR, "No callback for key public size calculate");
         return 0;
