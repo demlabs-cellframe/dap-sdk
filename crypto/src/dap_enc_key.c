@@ -247,13 +247,14 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_picnic_key_new,
         .gen_key_public =                   NULL,
-        .ser_pub_key_size =                 NULL,
         .delete_callback =                  dap_enc_sig_picnic_key_delete,
         .new_generate_callback =            dap_enc_sig_picnic_key_new_generate,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_picnic_get_sign,
-        .sign_verify =                      dap_enc_sig_picnic_verify_sign
+        .sign_verify =                      dap_enc_sig_picnic_verify_sign,
+        .ser_priv_key_size =                NULL,
+        .ser_pub_key_size =                 NULL,
     },
     [DAP_ENC_KEY_TYPE_SIG_BLISS]={
         .name =                             "SIG_BLISS",
@@ -347,7 +348,6 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_na =                           NULL,
         .dec_na =                           NULL,
         .gen_key_public =                   NULL,
-        .ser_pub_key_size =              NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_falcon_key_new,
@@ -357,9 +357,11 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_falcon_get_sign,
         .sign_verify =                      dap_enc_sig_falcon_verify_sign,
-        .ser_sign =                         dap_enc_falcon_write_signature,
-        .ser_priv_key =                     dap_enc_falcon_write_private_key,
-        .ser_pub_key =                      dap_enc_falcon_write_public_key
+        .ser_sign =                         dap_enc_sig_falcon_write_signature,
+        .ser_priv_key =                     dap_enc_sig_falcon_write_private_key,
+        .ser_pub_key =                      dap_enc_sig_falcon_write_public_key,
+        .ser_priv_key_size =                dap_enc_sig_falcon_ser_private_key_size,
+        .ser_pub_key_size =                 dap_enc_sig_falcon_ser_public_key_size,
     },
     [DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS]={
         .name =                             "SIG_SPHINCSPLUS",
@@ -368,7 +370,6 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_na =                           dap_enc_sig_sphincsplus_get_sign_msg,
         .dec_na =                           dap_enc_sig_sphincsplus_open_sign_msg,
         .gen_key_public =                   NULL,
-        .ser_pub_key_size =              NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_sphincsplus_key_new,
@@ -378,9 +379,11 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_sphincsplus_get_sign,
         .sign_verify =                      dap_enc_sig_sphincsplus_verify_sign,
-        .ser_sign =                         dap_enc_sphincsplus_write_signature,
-        .ser_priv_key =                     dap_enc_sphincsplus_write_private_key,
-        .ser_pub_key =                      dap_enc_sphincsplus_write_public_key
+        .ser_sign =                         dap_enc_sig_sphincsplus_write_signature,
+        .ser_priv_key =                     dap_enc_sig_sphincsplus_write_private_key,
+        .ser_pub_key =                      dap_enc_sig_sphincsplus_write_public_key,
+        .ser_priv_key_size =                dap_enc_sig_sphincsplus_ser_private_key_size,
+        .ser_pub_key_size =                 dap_enc_sig_sphincsplus_ser_public_key_size,
     },
     [DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED]={
         .name =                             "MULTI_CHAINED",
@@ -389,7 +392,6 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_na =                           NULL,
         .dec_na =                           NULL,
         .gen_key_public =                   NULL,
-        .ser_pub_key_size =              NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_multisign_key_new,
@@ -399,7 +401,9 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_multisign_get_sign,
         .sign_verify =                      dap_enc_sig_multisign_verify_sign,
-        .ser_sign =                         dap_enc_sig_multisign_write_signature
+        .ser_sign =                         dap_enc_sig_multisign_write_signature,
+        .ser_priv_key_size =                NULL,
+        .ser_pub_key_size =                 NULL,
     },
 
 #ifdef DAP_PQLR
@@ -882,8 +886,8 @@ size_t dap_enc_ser_priv_key_size (dap_enc_key_t *a_key)
     if(s_callbacks[a_key->type].ser_priv_key_size) {
         return s_callbacks[a_key->type].ser_priv_key_size(a_key->priv_key_data);
     } else {
-        log_it(L_ERROR, "No callback for key private size calculate");
-        return 0;
+        log_it(L_WARNING, "No callback for key private size calculate");
+        return a_key->priv_key_data_size;
     }
 }
 
@@ -894,8 +898,8 @@ size_t dap_enc_ser_pub_key_size (dap_enc_key_t *a_key)
     if(s_callbacks[a_key->type].ser_pub_key_size) {
         return s_callbacks[a_key->type].ser_pub_key_size(a_key->priv_key_data);
     } else {
-        log_it(L_ERROR, "No callback for key public size calculate");
-        return 0;
+        log_it(L_WARNING, "No callback for key public size calculate");
+        return a_key->pub_key_data_size;
     }
 }
 

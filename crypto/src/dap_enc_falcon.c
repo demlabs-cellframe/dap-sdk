@@ -62,6 +62,22 @@ void dap_enc_sig_falcon_set_type(falcon_sign_type_t a_falcon_type)
     s_falcon_type = a_falcon_type;
 }
 
+uint64_t dap_enc_sig_falcon_ser_private_key_size(const void *a_skey)
+{
+// sanity check
+    dap_return_val_if_pass(!a_skey, 0);
+// func work
+    return sizeof(uint64_t) + sizeof(uint32_t) * 3 + FALCON_PRIVKEY_SIZE(((falcon_private_key_t *)a_skey)->degree);
+}
+
+uint64_t dap_enc_sig_falcon_ser_public_key_size(const void *a_pkey)
+{
+// sanity check
+    dap_return_val_if_pass(!a_pkey, 0);
+// func work
+    return sizeof(uint64_t) + sizeof(uint32_t) * 3 + FALCON_PUBKEY_SIZE(((falcon_public_key_t *)a_pkey)->degree);
+}
+
 
 void dap_enc_sig_falcon_key_new(dap_enc_key_t *a_key) {
     a_key->type = DAP_ENC_KEY_TYPE_SIG_FALCON;
@@ -223,7 +239,7 @@ void dap_enc_sig_falcon_key_delete(dap_enc_key_t *key)
 }
 
 // Serialize a public key into a buffer.
-uint8_t *dap_enc_falcon_write_public_key(const void *a_public_key, size_t *a_buflen_out) {
+uint8_t *dap_enc_sig_falcon_write_public_key(const void *a_public_key, size_t *a_buflen_out) {
     //Serialized key have format:
     // 8 first bytes - size of overall serialized key
     // 4 bytes - degree of key
@@ -235,9 +251,7 @@ uint8_t *dap_enc_falcon_write_public_key(const void *a_public_key, size_t *a_buf
     dap_return_val_if_pass(!a_public_key, NULL);
 // func work
     falcon_public_key_t *l_public_key = (falcon_public_key_t *)a_public_key;
-    uint64_t l_buflen =
-            sizeof(uint64_t) + sizeof(uint32_t) * 3 + FALCON_PUBKEY_SIZE(l_public_key->degree
-    );
+    uint64_t l_buflen = dap_enc_sig_falcon_ser_public_key_size(a_public_key);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_public_key->degree, (uint64_t)sizeof(uint32_t),
@@ -250,7 +264,7 @@ uint8_t *dap_enc_falcon_write_public_key(const void *a_public_key, size_t *a_buf
     return l_buf;
 }
 
-uint8_t *dap_enc_falcon_write_private_key(const void *a_private_key, size_t *a_buflen_out) {
+uint8_t *dap_enc_sig_falcon_write_private_key(const void *a_private_key, size_t *a_buflen_out) {
     //Serialized key have format:
     // 8 first bytes - size of overall serialized key
     // 4 bytes - degree of key
@@ -262,8 +276,7 @@ uint8_t *dap_enc_falcon_write_private_key(const void *a_private_key, size_t *a_b
     dap_return_val_if_pass(!a_private_key, NULL);
 // func work
     falcon_private_key_t *l_private_key = (falcon_private_key_t *)a_private_key;
-    uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) * 3 +
-            FALCON_PRIVKEY_SIZE(l_private_key->degree);
+    uint64_t l_buflen = dap_enc_sig_falcon_ser_private_key_size(a_private_key);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_private_key->degree, (uint64_t)sizeof(uint32_t),
@@ -344,7 +357,7 @@ falcon_public_key_t *dap_enc_falcon_read_public_key(const uint8_t *a_buf, size_t
     return l_pkey;
 }
 
-uint8_t *dap_enc_falcon_write_signature(const void *a_sign, size_t *a_buflen_out)
+uint8_t *dap_enc_sig_falcon_write_signature(const void *a_sign, size_t *a_buflen_out)
 {
 // in work
     a_buflen_out ? *a_buflen_out = 0 : 0;
