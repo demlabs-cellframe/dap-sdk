@@ -95,6 +95,18 @@ static size_t s_multi_sign_calc_size(const dap_multi_sign_t *a_sign, uint32_t *a
 }
 
 
+static dap_enc_key_t *s_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sign_params_t *a_params)
+{
+// sanity check
+    dap_return_val_if_pass(!a_key, NULL);
+// memory alloc
+    dap_multisign_private_key_t *l_skey = NULL;
+    dap_multisign_public_key_t *l_pkey = NULL;
+    
+    DAP_DEL_MULTY(a_key->priv_key_data, a_key->pub_key_data);
+    return NULL;
+}
+
 /**
  * @brief dap_multi_sign_serialize Makes a serialization for multi-signature structure
  * @param a_sign Pointer to multi-signature

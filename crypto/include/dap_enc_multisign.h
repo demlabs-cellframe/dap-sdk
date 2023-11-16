@@ -56,6 +56,16 @@ typedef struct dap_multi_sign {
     uint8_t *sign_data;                 // Signatures data
 } DAP_ALIGN_PACKED dap_multi_sign_t;
 
+typedef struct dap_multisign_private_key {
+  uint64_t count;                 
+  uint8_t data[];
+} dap_multisign_private_key_t;
+
+typedef struct dap_multisign_public_key{
+  uint64_t count;                 
+  uint8_t data[];
+} dap_multisign_public_key_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -142,7 +142,7 @@ typedef void (*dap_enc_callback_new_generate)(dap_enc_key_t* key, const void *ke
 // free memory
 typedef void (*dap_enc_callback_delete)(dap_enc_key_t*);
 
-typedef size_t (*dap_enc_callback_key_size_t)(dap_enc_key_t*);
+typedef uint64_t (*dap_enc_callback_key_size_t)(const void*);
 
 // encrypt and decrypt functions. Allocates Memory for out
 typedef size_t (*dap_enc_callback_dataop_t)(dap_enc_key_t *key, const void *in,
@@ -251,7 +251,7 @@ typedef struct dap_enc_key_serialize {
 } dap_enc_key_serialize_t;
 
 typedef struct dap_enc_key_callbacks{
-    const char * name;
+    const char *name;
     dap_enc_callback_dataop_t enc;
     dap_enc_callback_dataop_t dec;
     dap_enc_callback_dataop_na_t enc_na;
@@ -262,7 +262,8 @@ typedef struct dap_enc_key_callbacks{
     dap_enc_callback_sign_op_t sign_verify;
 
     dap_enc_callback_gen_key_public_t gen_key_public;
-    dap_enc_callback_key_size_t gen_key_public_size;
+    dap_enc_callback_key_size_t ser_key_public_size;
+    dap_enc_callback_key_size_t ser_key_private_size;
 
     dap_enc_callback_calc_out_size enc_out_size;
     dap_enc_callback_calc_out_size dec_out_size;
@@ -321,13 +322,14 @@ void dap_enc_key_update(dap_enc_key_t *a_key);
 dap_enc_key_t *dap_enc_gen_pub_key_from_priv(dap_enc_key_t *a_key, void **priv_key, size_t *alice_msg_len);
 
 
-size_t dap_enc_gen_key_public_size (dap_enc_key_t *a_key);
+size_t dap_enc_ser_key_public_size (dap_enc_key_t *a_key);
+size_t dap_enc_ser_key_private_size (dap_enc_key_t *a_key);
 int dap_enc_gen_key_public (dap_enc_key_t *a_key, void *a_output);
 
 void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_buf);
 void dap_enc_key_delete(dap_enc_key_t *a_key);
 
-dap_enc_key_t *dap_enc_merge_keys_to_multisign(const dap_enc_key_t **a_keys, size_t a_count);
+dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(const dap_enc_key_t **a_keys, size_t a_count);
 
 #ifdef __cplusplus
 }
