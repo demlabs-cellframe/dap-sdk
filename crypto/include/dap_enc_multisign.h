@@ -57,12 +57,12 @@ typedef struct dap_multi_sign {
 } DAP_ALIGN_PACKED dap_multi_sign_t;
 
 typedef struct dap_multisign_private_key {
-  uint64_t count;                 
+  uint64_t len;                 
   uint8_t data[];
 } dap_multisign_private_key_t;
 
 typedef struct dap_multisign_public_key{
-  uint64_t count;                 
+  uint64_t len;                 
   uint8_t data[];
 } dap_multisign_public_key_t;
 

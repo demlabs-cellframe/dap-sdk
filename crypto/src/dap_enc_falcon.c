@@ -114,15 +114,17 @@ void dap_enc_sig_falcon_key_new_generate(dap_enc_key_t *a_key, const void *kex_b
     l_pkey->type = s_falcon_type;
 
     shake256_context rng;
-    l_ret = shake256_init_prng_from_system(&rng);
-    if (l_ret) {
-        log_it(L_ERROR, "Failed to initialize PRNG");
-        DAP_DEL_MULTY(l_skey->data, l_skey, l_pkey->data, l_pkey);
-        return;
+    if(!seed || !seed_size) {
+        if (l_ret = shake256_init_prng_from_system(&rng)) {
+            log_it(L_ERROR, "Failed to initialize PRNG");
+            DAP_DEL_MULTY(l_skey->data, l_skey, l_pkey->data, l_pkey);
+            return;
+        }
+    } else {
+        shake256_init_prng_from_seed(&rng, seed, seed_size);
     }
     l_ret = falcon_keygen_make(
-            &rng,
-            l_logn,
+            &rng, l_logn,
             l_skey->data, FALCON_PRIVKEY_SIZE(l_logn),
             l_pkey->data, FALCON_PUBKEY_SIZE(l_logn),
             l_tmp, FALCON_TMPSIZE_KEYGEN(l_logn)

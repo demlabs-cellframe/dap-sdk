@@ -905,6 +905,22 @@ size_t dap_enc_ser_pub_key_size (dap_enc_key_t *a_key)
     }
 }
 
+size_t dap_enc_gen_key_public_size (dap_enc_key_t *a_key)
+{
+    if(a_key)
+        switch (a_key->type) {
+            case DAP_ENC_KEY_TYPE_SIG_PICNIC:
+                return dap_enc_picnic_calc_signature_size(a_key);
+                break;
+            case DAP_ENC_KEY_TYPE_SIG_BLISS:
+                return dap_enc_sig_bliss_key_pub_output_size(a_key);
+                break;
+            default:
+                log_it(L_WARNING, "No callback for key public size calculate");
+                return 0;
+                break;
+        }
+}
 
 int dap_enc_gen_key_public (dap_enc_key_t *a_key, void * a_output)
 {

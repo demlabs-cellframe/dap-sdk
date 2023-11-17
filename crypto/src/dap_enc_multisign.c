@@ -126,6 +126,8 @@ int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sig
     }
 // out work
     DAP_DEL_MULTY(a_key->priv_key_data, a_key->pub_key_data);
+    l_skey->len = l_skey_len;
+    l_pkey->len = l_pkey_len;
     a_key->priv_key_data = l_skey;
     a_key->pub_key_data = l_pkey;
     a_key->priv_key_data_size = l_skey_len;
