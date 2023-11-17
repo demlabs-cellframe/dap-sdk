@@ -72,11 +72,11 @@ void dap_enc_sig_multisign_key_delete(dap_enc_key_t *a_key)
  * @brief s_multi_sign_calc_size Auxiliary function to calculate multi-signature strucrutre size
  * @param a_sign The multi-signature
  * @param a_pkeys_size Size of each part
- * @param a_signes_size
- * @param a_pkeys_hashes_size
- * @return Multi-signature size
+ * @param a_signes_size ...
+ * @param a_pkeys_hashes_size ...
+ * @return Multi-signature size, if error 0
  */
-static size_t s_multi_sign_calc_size(const dap_multi_sign_t *a_sign, uint32_t *a_pkeys_size, uint32_t *a_signes_size, uint32_t *a_pkeys_hashes_size)
+static size_t s_multi_sign_calc_size(const dap_multi_sign_t *a_sign, uint64_t *a_signes_size, uint64_t *a_pkeys_hashes_size)
 {
     dap_return_val_if_pass(!a_sign, 0);
 
@@ -85,20 +85,23 @@ static size_t s_multi_sign_calc_size(const dap_multi_sign_t *a_sign, uint32_t *a
     size_t l_pkeys_hashes_size = a_sign->key_count * sizeof(dap_chain_hash_fast_t);
     size_t l_pkeys_size = 0, l_signes_size = 0;
     for (int i = 0; i < a_sign->sign_count; i++) {
-        l_pkeys_size += a_sign->meta[i].sign_header.sign_pkey_size;
         l_signes_size += a_sign->meta[i].sign_header.sign_size;
     }
-    a_pkeys_size ? *a_pkeys_size = l_pkeys_size : 0;
     a_signes_size ? *a_signes_size = l_signes_size : 0;
     a_pkeys_hashes_size ? *a_pkeys_hashes_size = l_pkeys_hashes_size : 0;
     return l_meta_data_size + l_pkeys_hashes_size + l_pkeys_size + l_signes_size;
 }
 
-
+/**
+ * @brief Forming pub_key_data and priv_key_data from params
+ * @param a_key updating key
+ * @param a_params multisign params
+ * @return 0 if pass, other if error
+ */
 int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sign_params_t *a_params)
 {
 // sanity check
-    dap_return_val_if_pass(!a_key, NULL);
+    dap_return_val_if_pass(!a_key || !a_params, -2);
 // memory alloc
     dap_multisign_private_key_t *l_skey = NULL;
     dap_multisign_public_key_t *l_pkey = NULL;
@@ -113,9 +116,9 @@ int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sig
 // func work
     uint64_t l_mem_bias_skey = 0;
     uint64_t l_mem_bias_pkey = 0;
-    for(size_t i = 0; i < a_params->key_count; ++i) {
-        size_t l_ser_skey_len = 0;
-        size_t l_ser_pkey_len = 0;
+    for(uint8_t i = 0; i < a_params->key_count; ++i) {
+        uint64_t l_ser_skey_len = 0;
+        uint64_t l_ser_pkey_len = 0;
         uint8_t *l_ser_skey = dap_enc_key_serialize_priv_key(a_params->keys[i], &l_ser_skey_len);
         uint8_t *l_ser_pkey = dap_enc_key_serialize_pub_key(a_params->keys[i], &l_ser_pkey_len);
         memcpy(l_skey->data + l_mem_bias_skey, l_ser_skey, l_ser_skey_len);
@@ -136,7 +139,7 @@ int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sig
 }
 
 /**
- * @brief dap_multi_sign_serialize Makes a serialization for multi-signature structure
+ * @brief Makes a serialization for multi-signature structure
  * @param a_sign Pointer to multi-signature
  * @param a_out_len OUT Output data lenght
  * @return Pointer to serialized data
@@ -148,20 +151,18 @@ uint8_t *dap_enc_sig_multisign_write_signature(const void *a_sign, size_t *a_out
         log_it(L_ERROR, "Unsupported multi-signature type");
         return NULL;
     }
-    uint32_t  l_pkeys_size, l_signes_size, l_pkeys_hashes_size;
-    uint64_t l_out_len = s_multi_sign_calc_size(l_sign, &l_pkeys_size, &l_signes_size, &l_pkeys_hashes_size) + sizeof(uint64_t) + sizeof(uint32_t) * 4;
+    uint64_t  l_signes_size, l_pkeys_hashes_size;
+    uint64_t l_out_len = s_multi_sign_calc_size(l_sign, &l_signes_size, &l_pkeys_hashes_size) + sizeof(uint64_t) + sizeof(uint32_t) * 4;
     *a_out_len = l_out_len;
     uint8_t *l_ret = dap_serialize_multy(NULL, l_out_len, 24,
         &l_out_len, (uint64_t)sizeof(uint64_t),
-        &l_pkeys_size, (uint64_t)sizeof(uint32_t),
-        &l_pkeys_hashes_size, (uint64_t)sizeof(uint32_t),
-        &l_signes_size, (uint64_t)sizeof(uint32_t),
+        &l_pkeys_hashes_size, (uint64_t)sizeof(uint64_t),
+        &l_signes_size, (uint64_t)sizeof(uint64_t),
         &l_sign->type, (uint64_t)sizeof(dap_sign_type_t),
         &l_sign->key_count, (uint64_t)sizeof(uint8_t),
         &l_sign->sign_count, (uint64_t)sizeof(uint8_t),
         l_sign->key_seq, (uint64_t)(sizeof(uint8_t) * l_sign->sign_count),
         l_sign->meta, (uint64_t)(sizeof(dap_multi_sign_meta_t) * l_sign->sign_count),
-        l_sign->pub_keys, (uint64_t)l_pkeys_size,
         l_sign->key_hashes, (uint64_t)l_pkeys_hashes_size,
         l_sign->sign_data, (uint64_t)l_signes_size
     );
@@ -184,15 +185,14 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
     dap_multi_sign_t *l_sign = NULL;
     uint32_t l_pkeys_size, l_signes_size, l_pkeys_hashes_size;
     uint64_t l_sign_len = 0;
-    uint64_t l_mem_shift = sizeof(uint64_t) + sizeof(uint32_t) * 3 + sizeof(dap_sign_type_t) + sizeof(uint8_t) * 2;
+    uint64_t l_mem_shift = sizeof(uint64_t) * 4 + sizeof(dap_sign_type_t) + sizeof(uint8_t) * 2;
 // base allocate memory
     DAP_NEW_Z_RET_VAL(l_sign, dap_multi_sign_t, NULL, NULL);
 // get sizes
     int l_res_des = dap_deserialize_multy(a_sign, l_mem_shift, 14, 
         &l_sign_len, (uint64_t)sizeof(uint64_t),
-        &l_pkeys_size, (uint64_t)sizeof(uint32_t),
-        &l_pkeys_hashes_size, (uint64_t)sizeof(uint32_t),
-        &l_signes_size, (uint64_t)sizeof(uint32_t),
+        &l_pkeys_hashes_size, (uint64_t)sizeof(uint64_t),
+        &l_signes_size, (uint64_t)sizeof(uint64_t),
         &l_sign->type, (uint64_t)sizeof(dap_sign_type_t),
         &l_sign->key_count, (uint64_t)sizeof(uint8_t),
         &l_sign->sign_count, (uint64_t)sizeof(uint8_t)
@@ -205,35 +205,33 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
 // addtional allocation memory
      DAP_NEW_Z_SIZE_RET_VAL(l_sign->key_seq, uint8_t, sizeof(uint8_t) * l_sign->sign_count, NULL, l_sign);
      DAP_NEW_Z_SIZE_RET_VAL(l_sign->meta, dap_multi_sign_meta_t, sizeof(dap_multi_sign_meta_t) * l_sign->sign_count, NULL, l_sign->key_seq, l_sign);
-     DAP_NEW_Z_SIZE_RET_VAL(l_sign->pub_keys, uint8_t, l_pkeys_size, NULL, l_sign->meta, l_sign->key_seq, l_sign);
-     DAP_NEW_Z_SIZE_RET_VAL(l_sign->key_hashes, dap_hash_fast_t, l_pkeys_hashes_size, NULL, l_sign->pub_keys, l_sign->meta, l_sign->key_seq, l_sign);
-     DAP_NEW_Z_SIZE_RET_VAL(l_sign->sign_data, uint8_t, l_signes_size, NULL, l_sign->key_hashes, l_sign->pub_keys, l_sign->meta, l_sign->key_seq, l_sign);
+     DAP_NEW_Z_SIZE_RET_VAL(l_sign->key_hashes, dap_hash_fast_t, l_pkeys_hashes_size, NULL, l_sign->meta, l_sign->key_seq, l_sign);
+     DAP_NEW_Z_SIZE_RET_VAL(l_sign->sign_data, uint8_t, l_signes_size, NULL, l_sign->key_hashes, l_sign->meta, l_sign->key_seq, l_sign);
 // get data
     l_res_des = dap_deserialize_multy(a_sign + l_mem_shift, l_sign_len - l_mem_shift, 10, 
         l_sign->key_seq, (uint64_t)(sizeof(uint8_t) * l_sign->sign_count),
         l_sign->meta, (uint64_t)(sizeof(dap_multi_sign_meta_t) * l_sign->sign_count),
-        l_sign->pub_keys, (uint64_t)l_pkeys_size,
         l_sign->key_hashes, (uint64_t)l_pkeys_hashes_size,
         l_sign->sign_data, (uint64_t)l_signes_size
     );
     if (l_res_des) {
         log_it(L_ERROR, "Multisign deserialisation error");
-        DAP_DEL_MULTY(l_sign->sign_data, l_sign->key_hashes, l_sign->pub_keys, l_sign->meta, l_sign->key_seq, l_sign);
+        DAP_DEL_MULTY(l_sign->sign_data, l_sign->key_hashes, l_sign->meta, l_sign->key_seq, l_sign);
         return NULL;
     }
     return l_sign;
 }
 
 /**
- * @brief dap_multi_sign_params_make Auxiliary function which helps fill multi-signature params structure
+ * @brief Auxiliary function which helps fill multi-signature params structure
  * @param a_type Type of multi-signature
- * @param a_total_count Number of total key count
+ * @param a_keys pointer to keys
+ * @param a_total_count a_key_count
+ * @param a_key_seq Signing keys sequence
  * @param a_sign_count Number of keys participating in multi-signing algorithm
- * @param a_key[1 .. total_count] Set of keys
- * @param a_num[1 .. sign_count] Signing keys sequence
- * @return Pointer to multi-signature params structure
+ * @return Pointer to multi-signature params structure, if error - NULL
  */
-dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, const dap_enc_key_t **a_keys, uint8_t a_key_count, const int *a_key_seq, uint8_t a_sign_count)
+dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, dap_enc_key_t **a_keys, uint8_t a_key_count, const int *a_key_seq, uint8_t a_sign_count)
 {
 // sanity check
     dap_return_val_if_pass(a_type != SIG_TYPE_MULTI_CHAINED && a_type != SIG_TYPE_MULTI_COMBINED, NULL);
@@ -297,9 +295,9 @@ bool dap_multi_sign_hash_data(dap_multi_sign_t *a_sign, const void *a_data, cons
         &a_sign->sign_count, (uint64_t)sizeof(uint8_t),
         a_sign->key_seq, (uint64_t)(a_sign->sign_count * sizeof(uint8_t))
     );
-    l_ret ? l_ret &= dap_hash_fast(a_data, a_data_size, l_concatenated_hash) : 0;  // get data hash
-    l_ret ? l_ret &= dap_hash_fast(l_meta_data, l_meta_data_size, l_concatenated_hash + sizeof(dap_chain_hash_fast_t)) : 0;  // get metadata hash
-    l_ret ? l_ret &= dap_hash_fast(a_sign->key_hashes, a_sign->key_count * sizeof(dap_chain_hash_fast_t), l_concatenated_hash + 2 * sizeof(dap_chain_hash_fast_t)) : 0;   // get key_hashes hash
+    l_ret ? l_ret &= dap_hash_fast(a_data, a_data_size, (dap_chain_hash_fast_t *)l_concatenated_hash) : 0;  // get data hash
+    l_ret ? l_ret &= dap_hash_fast(l_meta_data, l_meta_data_size, (dap_chain_hash_fast_t *)(l_concatenated_hash + sizeof(dap_chain_hash_fast_t))) : 0;  // get metadata hash
+    l_ret ? l_ret &= dap_hash_fast(a_sign->key_hashes, a_sign->key_count * sizeof(dap_chain_hash_fast_t), (dap_chain_hash_fast_t *)(l_concatenated_hash + 2 * sizeof(dap_chain_hash_fast_t))) : 0;   // get key_hashes hash
     l_ret ? l_ret &= dap_hash_fast(l_concatenated_hash, 3 * sizeof(dap_chain_hash_fast_t), a_hash) : 0;  // get out hash of calculated hashes
 // out work
     DAP_DEL_MULTY(l_meta_data, l_concatenated_hash);
@@ -316,41 +314,35 @@ bool dap_multi_sign_hash_data(dap_multi_sign_t *a_sign, const void *a_data, cons
 int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, const size_t a_msg_size,
         void *a_sign_out, const size_t a_out_size_max)
 {
+// sanity check
     dap_multi_sign_params_t *l_params = a_key->_pvt;
-    if (!l_params || !l_params->key_count) {
-        log_it (L_ERROR, "Wrong parameters of multi-signature");
-        return -1;
-    }
-    if (l_params->type.type != SIG_TYPE_MULTI_CHAINED) {
-        log_it (L_ERROR, "Unsupported multi-signature type");
-        return -2;
-    }
-
+    dap_return_val_if_pass(!l_params || !l_params->key_count || l_params->type.type != SIG_TYPE_MULTI_CHAINED, -1);
+// memory alloc
     dap_multi_sign_t *l_sign = a_sign_out;
+    uint8_t **l_step_signs = NULL;
     DAP_NEW_Z_COUNT_RET_VAL(l_sign->key_hashes, dap_chain_hash_fast_t, l_params->key_count, -6, NULL);
-
+    DAP_NEW_Z_COUNT_RET_VAL(l_sign->key_seq, uint8_t, l_params->sign_count, -4, l_sign->key_hashes);
+    DAP_NEW_Z_COUNT_RET_VAL(l_sign->meta, dap_multi_sign_meta_t, l_params->sign_count, -5, l_sign->key_seq, l_sign->key_hashes);
+    DAP_NEW_Z_COUNT_RET_VAL(l_step_signs, uint8_t *, l_params->sign_count, -5, l_sign->key_seq, l_sign->key_hashes, l_sign->meta);
+// data prepare
     l_sign->type = l_params->type;
     l_sign->key_count = l_params->key_count;
+    l_sign->sign_count = l_params->sign_count;
 
     for (int i = 0; i < l_params->key_count; i++) {
         if (!dap_hash_fast(l_params->keys[i]->pub_key_data, l_params->keys[i]->pub_key_data_size, &l_sign->key_hashes[i])) {
             log_it (L_ERROR, "Can't create multi-signature hash");
-            dap_multi_sign_delete(l_sign);
             return -3;
         }
     }
-    l_sign->sign_count = l_params->sign_count;
-    DAP_NEW_Z_COUNT_RET_VAL(l_sign->key_seq, uint8_t, l_params->sign_count, -4, l_sign->key_hashes, l_sign);
-    DAP_NEW_Z_COUNT_RET_VAL(l_sign->meta, dap_multi_sign_meta_t, l_params->sign_count, -5, l_sign->key_seq, l_sign->key_hashes, l_sign);
-    for (int i = 0; i < l_sign->sign_count; i++) {
-        uint8_t l_num = l_params->key_seq[i];
-        l_sign->key_seq[i] = l_num;
+    for (int i = 0; i < l_params->sign_count; i++) {
+        l_sign->key_seq[i] = l_params->key_seq[i];
     }
-    uint32_t l_pkeys_mem_shift = 0, l_signs_mem_shift = 0;
+    uint32_t l_signs_mem_shift = 0;
     size_t l_pkey_size, l_sign_size;
     dap_chain_hash_fast_t l_data_hash;
     bool l_hashed;
-    for (int i = 0; i < l_sign->sign_count; i++) {
+    for (int i = 0; i < l_params->sign_count; i++) {
         if (i == 0) {
              l_hashed = dap_multi_sign_hash_data(l_sign, a_msg_in, a_msg_size, &l_data_hash);
         } else {
@@ -359,24 +351,14 @@ int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, c
         }
         if (!l_hashed) {
             log_it (L_ERROR, "Can't create multi-signature hash");
-            dap_multi_sign_delete(l_sign);
             return -4;
         }
         int l_num = l_sign->key_seq[i];
         dap_sign_t *l_dap_sign_step = dap_sign_create(l_params->keys[l_num], &l_data_hash, sizeof(dap_chain_hash_fast_t), 0);
         if (!l_dap_sign_step) {
             log_it (L_ERROR, "Can't create multi-signature step signature");
-            dap_multi_sign_delete(l_sign);
             return -5;
         }
-        uint8_t *l_pkey = dap_sign_get_pkey(l_dap_sign_step, &l_pkey_size);
-        if (l_pkeys_mem_shift == 0) {
-            l_sign->pub_keys = DAP_NEW_Z_SIZE(uint8_t, l_pkey_size);
-        } else {
-            l_sign->pub_keys = DAP_REALLOC(l_sign->pub_keys, l_pkeys_mem_shift + l_pkey_size);
-        }
-        memcpy(&l_sign->pub_keys[l_pkeys_mem_shift], l_pkey, l_pkey_size);
-        l_pkeys_mem_shift += l_pkey_size;
         uint8_t *l_sign_step = dap_sign_get_sign(l_dap_sign_step, &l_sign_size);
         l_sign->meta[i].sign_header = l_dap_sign_step->header;
         if (l_signs_mem_shift == 0) {
@@ -387,6 +369,8 @@ int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, c
         memcpy(&l_sign->sign_data[l_signs_mem_shift], l_sign_step, l_sign_size);
         DAP_DELETE(l_dap_sign_step);
     }
+// out work
+
     return 0;
 }
 
@@ -407,7 +391,7 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
         log_it (L_ERROR, "Unsupported multi-signature type");
         return -1;
     }
-    if (!l_sign->pub_keys || !l_sign->sign_data || !l_sign->key_hashes || !l_sign->meta || !l_sign->key_seq) {
+    if (!l_sign->sign_data || !l_sign->key_hashes || !l_sign->meta || !l_sign->key_seq) {
         log_it (L_ERROR, "Invalid multi-signature format");
         return -1;
     }
@@ -423,11 +407,12 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
         size_t l_pkey_size = l_sign->meta[i].sign_header.sign_pkey_size;
         size_t l_sign_size = l_sign->meta[i].sign_header.sign_size;
         dap_sign_t *l_step_sign = NULL;
+        dap_multisign_public_key_t *l_pkeys = a_key->pub_key_data;
         DAP_NEW_Z_SIZE_RET_VAL(l_step_sign, dap_sign_t, sizeof(dap_sign_hdr_t) + l_pkey_size + l_sign_size, -1, NULL);
 
         l_step_sign->header = l_sign->meta[i].sign_header;
 
-        memcpy(l_step_sign->pkey_n_sign, &l_sign->pub_keys[l_pkeys_mem_shift], l_pkey_size);
+        memcpy(l_step_sign->pkey_n_sign, l_pkeys->data + l_pkeys_mem_shift, l_pkey_size);
         if (i > 0) {
             l_pkeys_mem_shift -= l_sign->meta[i - 1].sign_header.sign_pkey_size;
         }
@@ -462,5 +447,5 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
 void dap_multi_sign_delete(dap_multi_sign_t *a_sign)
 {
     dap_return_if_pass(!a_sign);
-    DAP_DEL_MULTY(a_sign->sign_data, a_sign->key_hashes, a_sign->pub_keys, a_sign->meta, a_sign->key_seq, a_sign);
+    DAP_DEL_MULTY(a_sign->sign_data, a_sign->key_hashes, a_sign->meta, a_sign->key_seq, a_sign);
 }
