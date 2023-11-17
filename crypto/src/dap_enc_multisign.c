@@ -249,11 +249,11 @@ dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type,
     for (int i = 0; i < a_key_count; i++) {
         l_params->keys[i] = a_keys[i];
     }
-    for (int i = 0; i < a_sign_count; i++) {
+    for (uint8_t i = 0; i < a_sign_count; i++) {
         if (a_key_seq)
             l_params->key_seq[i] = a_key_seq[i];
         else
-            l_params->key_seq[i] = (uint8_t)i;
+            l_params->key_seq[i] = i;
     }
     return l_params;
 }
@@ -282,41 +282,28 @@ void dap_multi_sign_params_delete(dap_multi_sign_params_t *a_params)
  */
 bool dap_multi_sign_hash_data(dap_multi_sign_t *a_sign, const void *a_data, const size_t a_data_size, dap_chain_hash_fast_t *a_hash)
 {
-    //types missunderstanding?
-    uint8_t *l_concatenated_hash = NULL;
-    DAP_NEW_Z_SIZE_RET_VAL(l_concatenated_hash, uint8_t, 3 * sizeof(dap_chain_hash_fast_t), false, NULL);
-
-    if (!dap_hash_fast(a_data, a_data_size, a_hash)) {
-        DAP_DELETE(l_concatenated_hash);
-        return false;
-    }
-    memcpy(l_concatenated_hash, a_hash, sizeof(dap_chain_hash_fast_t));
-    uint32_t l_meta_data_size = sizeof(dap_sign_type_t) + 2 * sizeof(uint8_t) + a_sign->sign_count * sizeof(uint8_t);
+// sanity check
+    dap_return_val_if_pass(!a_sign, false);
+// memory alloc
     uint8_t *l_meta_data = NULL;
+    uint8_t *l_concatenated_hash = NULL;
+    uint32_t l_meta_data_size = sizeof(dap_sign_type_t) + 2 * sizeof(uint8_t) + a_sign->sign_count * sizeof(uint8_t);
+    DAP_NEW_Z_SIZE_RET_VAL(l_concatenated_hash, uint8_t, 3 * sizeof(dap_chain_hash_fast_t), false, NULL);
     DAP_NEW_Z_SIZE_RET_VAL(l_meta_data, uint8_t, l_meta_data_size, false, l_concatenated_hash);
-
-    int l_meta_data_mem_shift = 0;
-    memcpy(l_meta_data, &a_sign->type, sizeof(dap_sign_type_t));
-    l_meta_data_mem_shift += sizeof(dap_sign_type_t);
-    l_meta_data[l_meta_data_mem_shift++] = a_sign->key_count;
-    l_meta_data[l_meta_data_mem_shift++] = a_sign->sign_count;
-    memcpy(&l_meta_data[l_meta_data_mem_shift], a_sign->key_seq, a_sign->sign_count * sizeof(uint8_t));
-    if (!dap_hash_fast(l_meta_data, l_meta_data_size, a_hash)) {
-        DAP_DEL_MULTY(l_meta_data, l_concatenated_hash);
-        return false;
-    }
-    memcpy(l_concatenated_hash + sizeof(dap_chain_hash_fast_t), a_hash, sizeof(dap_chain_hash_fast_t));
-    if (!dap_hash_fast(a_sign->key_hashes, a_sign->key_count * sizeof(dap_chain_hash_fast_t), a_hash)) {
-        DAP_DEL_MULTY(l_meta_data, l_concatenated_hash);
-        return false;
-    }
-    memcpy(l_concatenated_hash + 2 * sizeof(dap_chain_hash_fast_t), a_hash, sizeof(dap_chain_hash_fast_t));
-    if (!dap_hash_fast(l_concatenated_hash, 3 * sizeof(dap_chain_hash_fast_t), a_hash)) {
-        DAP_DEL_MULTY(l_meta_data, l_concatenated_hash);
-        return false;
-    }
+// func work
+    bool l_ret = (bool)dap_serialize_multy(l_meta_data, l_meta_data_size, 8,
+        &a_sign->type, (uint64_t)sizeof(dap_sign_type_t),
+        &a_sign->key_count, (uint64_t)sizeof(uint8_t),
+        &a_sign->sign_count, (uint64_t)sizeof(uint8_t),
+        a_sign->key_seq, (uint64_t)(a_sign->sign_count * sizeof(uint8_t))
+    );
+    l_ret ? l_ret &= dap_hash_fast(a_data, a_data_size, l_concatenated_hash) : 0;  // get data hash
+    l_ret ? l_ret &= dap_hash_fast(l_meta_data, l_meta_data_size, l_concatenated_hash + sizeof(dap_chain_hash_fast_t)) : 0;  // get metadata hash
+    l_ret ? l_ret &= dap_hash_fast(a_sign->key_hashes, a_sign->key_count * sizeof(dap_chain_hash_fast_t), l_concatenated_hash + 2 * sizeof(dap_chain_hash_fast_t)) : 0;   // get key_hashes hash
+    l_ret ? l_ret &= dap_hash_fast(l_concatenated_hash, 3 * sizeof(dap_chain_hash_fast_t), a_hash) : 0;  // get out hash of calculated hashes
+// out work
     DAP_DEL_MULTY(l_meta_data, l_concatenated_hash);
-    return true;
+    return l_ret;
 }
 
 /**
