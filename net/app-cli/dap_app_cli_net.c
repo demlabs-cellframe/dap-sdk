@@ -157,8 +157,9 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
     // connect
     int l_addr_len;
 #ifdef WIN32
+    printf("Win32 special: tcp connection using: %d\n", l_cli_port);
     struct sockaddr_in l_remote_addr = {
-        .sin_family = AF_INET, .sin_port = l_cli_port, .sin_addr = {{ .S_addr = htonl(INADDR_LOOPBACK) }}
+        .sin_family = AF_INET, .sin_port = htons(l_cli_port), .sin_addr = {{ .S_addr = htonl(INADDR_LOOPBACK) }}
     };
     l_addr_len = sizeof(struct sockaddr_in);
 #else
