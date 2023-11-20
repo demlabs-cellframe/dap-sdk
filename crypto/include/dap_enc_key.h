@@ -236,6 +236,7 @@ typedef struct dap_enc_key {
 
 #define MAX_ENC_KEY_SIZE 16384
 #define MAX_INHERITOR_SIZE 2048
+#define MAX_ENC_KEYS_IN_MULTYSIGN 128
 
 // struct for serelization/deseralization keys in binary storage
 typedef struct dap_enc_key_serialize {

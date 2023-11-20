@@ -333,14 +333,15 @@ int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, c
             return -3;
         }
     }
+    // need to forming metadata
     for (int i = 0; i < l_params->sign_count; i++) {
         l_sign->key_seq[i] = l_params->key_seq[i];
     }
     uint32_t l_signs_mem_shift = 0;
     size_t l_sign_size = 0;
-    dap_chain_hash_fast_t l_data_hash;
-    bool l_hashed;
-    for (int i = 0; i < l_params->sign_count; i++) {
+    for (uint8_t i = 0; i < l_params->sign_count; ++i) {
+        bool l_hashed = false;
+        dap_chain_hash_fast_t l_data_hash;
         if (i == 0) {
              l_hashed = dap_multi_sign_hash_data(l_sign, a_msg_in, a_msg_size, &l_data_hash);
         } else {
@@ -394,12 +395,12 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
     }
 
     uint32_t l_pkeys_mem_shift = 0, l_signs_mem_shift = 0;
-    dap_chain_hash_fast_t l_data_hash;
     for (uint8_t i = 0; i < l_sign->sign_count; ++i) {
+        dap_chain_hash_fast_t l_data_hash;
+        dap_multisign_public_key_t *l_pkeys = a_key->pub_key_data;
         size_t l_pkey_size = l_sign->meta[i].sign_header.sign_pkey_size;
         size_t l_sign_size = l_sign->meta[i].sign_header.sign_size;
         dap_sign_t *l_step_sign = NULL;
-        dap_multisign_public_key_t *l_pkeys = a_key->pub_key_data;
         int l_verified = 0;
         // get multisign hash data
         if (!i && !dap_multi_sign_hash_data(l_sign, a_msg, a_msg_size, &l_data_hash)) {
