@@ -169,7 +169,7 @@ size_t dap_enc_sig_sphincsplus_open_sign_msg(dap_enc_key_t *a_key, const void *a
             pthread_mutex_unlock(&s_sign_mtx);
             return 0;
         }
-        uint32_t l_res_size = 0;
+        uint64_t l_res_size = 0;
         if (sphincsplus_crypto_sign_open(a_msg_out, &l_res_size, l_sign->sig_data, l_sign->sig_len, l_pkey->data))
             log_it(L_ERROR, "Failed to verify signature");
     pthread_mutex_unlock(&s_sign_mtx);
@@ -232,7 +232,7 @@ sphincsplus_private_key_t *dap_enc_sphincsplus_read_private_key(const uint8_t *a
         return NULL;
     }
     if (l_skey_len != l_skey_len_exp) {
-        log_it(L_ERROR,"::read_private_key() l_pkey_len %"DAP_UINT64_FORMAT_U" is not equal to expected size %zu", l_skey_len, l_skey_len_exp);
+        log_it(L_ERROR,"::read_private_key() l_pkey_len %u is not equal to expected size %u", l_skey_len, l_skey_len_exp);
         DAP_DEL_MULTY(l_skey->data, l_skey);
         return NULL;
     }
@@ -285,7 +285,7 @@ sphincsplus_public_key_t *dap_enc_sphincsplus_read_public_key(const uint8_t *a_b
         return NULL;
     }
     if (l_pkey_len != l_pkey_len_exp) {
-        log_it(L_ERROR,"::read_public_key() l_pkey_len %"DAP_UINT64_FORMAT_U" is not equal to expected size %zu", l_pkey_len, l_pkey_len_exp);
+        log_it(L_ERROR,"::read_public_key() l_pkey_len %u is not equal to expected size %u", l_pkey_len, l_pkey_len_exp);
         DAP_DEL_MULTY(l_pkey->data, l_pkey);
         return NULL;
     }

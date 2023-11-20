@@ -16,7 +16,7 @@ static int s_deserialised_sign_check(
     falcon_sign_type_t a_type)
 {
     if (a_buflen != a_des_buflen) {
-        log_it(L_ERROR, "Buflen %"DAP_UINT64_FORMAT_U" is not equal to sign size (%"DAP_UINT64_FORMAT_U")",
+        log_it(L_ERROR, "Buflen %u is not equal to sign size (%u)",
                         a_buflen, a_des_buflen);
         return -1;
     }
@@ -299,7 +299,7 @@ falcon_private_key_t* dap_enc_falcon_read_private_key(const uint8_t *a_buf, size
 // out work
     int l_res_check = s_deserialised_sign_check(a_buflen, l_buflen, l_skey->degree, l_skey->kind, l_skey->type);
     if (l_skey_len != FALCON_PRIVKEY_SIZE(l_skey->degree)) {
-        log_it(L_ERROR,"::read_private_key() l_skey_len %"DAP_UINT64_FORMAT_U" is not equal to expected size %u", l_skey_len, FALCON_PRIVKEY_SIZE(l_skey->degree));
+        log_it(L_ERROR,"::read_private_key() l_skey_len %u is not equal to expected size %u", l_skey_len, FALCON_PRIVKEY_SIZE(l_skey->degree));
         DAP_DEL_MULTY(l_skey->data, l_skey);
         return NULL;
     }
@@ -333,7 +333,7 @@ falcon_public_key_t *dap_enc_falcon_read_public_key(const uint8_t *a_buf, size_t
 // out work
     int l_res_check = s_deserialised_sign_check(a_buflen, l_buflen, l_pkey->degree, l_pkey->kind, l_pkey->type);
     if (l_pkey_len != FALCON_PUBKEY_SIZE(l_pkey->degree)) {
-        log_it(L_ERROR,"::read_public_key() l_pkey_len %"DAP_UINT64_FORMAT_U" is not equal to expected size %u", l_pkey_len, FALCON_PUBKEY_SIZE(l_pkey->degree));
+        log_it(L_ERROR,"::read_public_key() l_pkey_len %u is not equal to expected size %u", l_pkey_len, FALCON_PUBKEY_SIZE(l_pkey->degree));
         DAP_DEL_MULTY(l_pkey->data, l_pkey);
         return NULL;
     }
