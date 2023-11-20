@@ -232,13 +232,14 @@ static void test_serialize_deserialize(dap_enc_key_type_t key_type)
 
 //  for key_type==DAP_ENC_KEY_TYPE_OAES must be: key_size=[16|24|32] and kex_size>=key_size
     dap_enc_key_t* key = dap_enc_key_new_generate(key_type, kex_data, kex_size, seed, seed_size, 32);
-    dap_enc_key_serialize_t* serialize_key = dap_enc_key_serialize(key);
-    _write_key_in_file(serialize_key, sizeof (dap_enc_key_serialize_t), TEST_SER_FILE_NAME);
-    dap_enc_key_serialize_t* deserialize_key = _read_key_from_file(TEST_SER_FILE_NAME, sizeof(dap_enc_key_serialize_t));
-    dap_assert(memcmp(serialize_key, deserialize_key, sizeof(dap_enc_key_serialize_t)) == 0,
+    size_t l_buflen = 0;
+    uint8_t *l_ser_key = dap_enc_key_serialize(key, &l_buflen);
+    _write_key_in_file(l_ser_key, l_buflen, TEST_SER_FILE_NAME);
+    uint8_t *l_deser_key = _read_key_from_file(TEST_SER_FILE_NAME, l_buflen);
+    dap_assert(!memcmp(l_ser_key, l_deser_key, l_buflen),
                "dap_enc_key_serialize_t equals");
 
-    dap_enc_key_t* key2 = dap_enc_key_deserialize(deserialize_key, sizeof (*deserialize_key));
+    dap_enc_key_t *key2 = dap_enc_key_deserialize(l_deser_key, l_buflen);
 
     dap_assert(key->type == key2->type, "Key type");
     dap_assert(key->last_used_timestamp == key2->last_used_timestamp,
@@ -246,15 +247,20 @@ static void test_serialize_deserialize(dap_enc_key_type_t key_type)
     dap_assert(key->priv_key_data_size == key2->priv_key_data_size, "Priv key data size");
     dap_assert(key->pub_key_data_size == key2->pub_key_data_size, "Pub key data size");
 
-    dap_assert(memcmp(key->priv_key_data, key2->priv_key_data, key2->priv_key_data_size) == 0,
-               "Priv key data");
+    size_t l_ser_skey_len_1 = 0, l_ser_pkey_len_1 = 0, l_ser_skey_len_2 = 0, l_ser_pkey_len_2 = 0;
+    uint8_t *l_ser_skey_1 = dap_enc_key_serialize_priv_key(key, &l_ser_skey_len_1);
+    uint8_t *l_ser_skey_2 = dap_enc_key_serialize_priv_key(key2, &l_ser_skey_len_2);
+    dap_assert(l_ser_skey_len_1 == l_ser_skey_len_2, "Priv key data size");
+    dap_assert(!memcmp(l_ser_skey_1, l_ser_skey_2, l_ser_skey_len_1), "Priv key data");
 
-    if(key->pub_key_data_size) {
-        dap_assert(memcmp(key->pub_key_data, key2->pub_key_data, key2->pub_key_data_size) == 0,
-                   "Pub key data");
-    }
-    dap_assert(key->enc == key2->enc, "Enc callback");
-    dap_assert(key->dec == key2->dec, "Dec callback");
+    uint8_t *l_ser_pkey_1 = dap_enc_key_serialize_pub_key(key, &l_ser_pkey_len_1);
+    uint8_t *l_ser_pkey_2 = dap_enc_key_serialize_pub_key(key2, &l_ser_pkey_len_2);
+    dap_assert(l_ser_pkey_len_1 == l_ser_pkey_len_2, "Pub key data size");
+    dap_assert(!memcmp(l_ser_pkey_1, l_ser_pkey_2, l_ser_pkey_len_1), "Pub key data");
+
+
+    dap_assert(key->_inheritor_size == key2->_inheritor_size, "Inheritor data size");
+    dap_assert(!memcmp(key->_inheritor, key2->_inheritor, key->_inheritor_size), "Inheritor data");
 
     const char* source = "simple test";
     size_t source_size = strlen(source);
@@ -284,13 +290,12 @@ static void test_serialize_deserialize(dap_enc_key_type_t key_type)
     dap_assert_PIF(memcmp(source, decode_result, source_size) == 0,
                    "Check source and encode->decode data");
 
-    free(serialize_key);
-    free(deserialize_key);
     dap_enc_key_delete(key);
     dap_enc_key_delete(key2);
 
     dap_pass_msg("Key serialize->deserialize");
     unlink(TEST_SER_FILE_NAME);
+    DAP_DEL_MULTY(l_ser_key, l_deser_key, l_ser_skey_1, l_ser_skey_2, l_ser_pkey_1, l_ser_pkey_2);
 }
 
 /**

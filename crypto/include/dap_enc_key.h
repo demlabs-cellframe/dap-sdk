@@ -238,18 +238,6 @@ typedef struct dap_enc_key {
 #define MAX_INHERITOR_SIZE 2048
 #define MAX_ENC_KEYS_IN_MULTYSIGN 128
 
-// struct for serelization/deseralization keys in binary storage
-typedef struct dap_enc_key_serialize {
-    size_t priv_key_data_size;
-    size_t pub_key_data_size;
-    size_t inheritor_size;
-    time_t last_used_timestamp;
-    dap_enc_key_type_t type;
-
-    unsigned char priv_key_data[MAX_ENC_KEY_SIZE];
-    unsigned char pub_key_data[MAX_ENC_KEY_SIZE];
-    unsigned char inheritor[MAX_INHERITOR_SIZE];
-} dap_enc_key_serialize_t;
 
 typedef struct dap_enc_key_callbacks{
     const char *name;
@@ -303,7 +291,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
 int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
 int dap_enc_key_deserialize_pub_key_old(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
 
-dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t *a_key);
+uint8_t *dap_enc_key_serialize(dap_enc_key_t *a_key, size_t *a_buflen);
 dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size);
 dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t *a_key);
 

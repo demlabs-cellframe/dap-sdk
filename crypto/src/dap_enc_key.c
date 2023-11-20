@@ -732,19 +732,89 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
  * @param key
  * @return allocates dap_enc_key_serialize_t* dont remember use free()
  */
-dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t *a_key)
+uint8_t *dap_enc_key_serialize(dap_enc_key_t *a_key, size_t *a_buflen)
 {
-    dap_enc_key_serialize_t *l_ret = NULL;
-    DAP_NEW_Z_RET_VAL(l_ret, dap_enc_key_serialize_t, NULL, NULL);
+// sanity check
+    dap_return_val_if_pass(!a_key, NULL);
+    
+    uint64_t l_ser_skey_size = 0, l_ser_pkey_size = 0;
+    uint64_t l_timestamp = a_key->last_used_timestamp;
+    int32_t l_type = a_key->type;
+    uint8_t *l_ser_skey = dap_enc_key_serialize_priv_key(a_key, &l_ser_skey_size);
+    uint8_t *l_ser_pkey = dap_enc_key_serialize_pub_key(a_key, &l_ser_pkey_size);
+    uint64_t l_buflen = sizeof(uint64_t) * 5 + sizeof(int32_t) + l_ser_skey_size + l_ser_pkey_size + a_key->_inheritor_size;
+    uint8_t *l_ret = dap_serialize_multy(NULL, l_buflen, 18,
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        &l_ser_skey_size, (uint64_t)sizeof(uint64_t),
+        &l_ser_pkey_size, (uint64_t)sizeof(uint64_t),
+        &a_key->_inheritor_size, (uint64_t)sizeof(uint64_t),
+        &l_timestamp, (uint64_t)sizeof(uint64_t),
+        &l_type, (uint64_t)sizeof(int32_t),
+        l_ser_skey, (uint64_t)l_ser_skey_size,
+        l_ser_pkey, (uint64_t)l_ser_pkey_size,
+        a_key->_inheritor, (uint64_t)a_key->_inheritor_size
+    );
+    DAP_DEL_MULTY(l_ser_skey, l_ser_pkey);
+    a_buflen ? *a_buflen = l_buflen : 0;
+    return l_ret;
+}
 
-    l_ret->priv_key_data_size = a_key->priv_key_data_size;
-    l_ret->pub_key_data_size = a_key->pub_key_data_size;
-    l_ret->last_used_timestamp = a_key->last_used_timestamp;
-    l_ret->inheritor_size = a_key->_inheritor_size;
-    l_ret->type = a_key->type;
-    memcpy(l_ret->priv_key_data, a_key->priv_key_data, a_key->priv_key_data_size);
-    memcpy(l_ret->pub_key_data, a_key->pub_key_data, a_key->pub_key_data_size);
-    memcpy(l_ret->inheritor, a_key->_inheritor, a_key->_inheritor_size);
+/**
+ * @brief dap_enc_key_deserialize
+ * @param buf
+ * @param buf_size
+ * @return allocates dap_enc_key_t*. Use dap_enc_key_delete for free memory
+ */
+dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
+{
+// sanity check
+    uint64_t l_sizes_len = sizeof(uint64_t) * 5 + sizeof(int32_t);
+    dap_return_val_if_pass(!buf || a_buf_size < l_sizes_len, NULL);
+    int32_t l_type = DAP_ENC_KEY_TYPE_NULL;
+    uint64_t l_timestamp = 0, l_ser_skey_size = 0, l_ser_pkey_size = 0, l_ser_inheritor_size = 0, l_buflen = 0;
+    uint8_t *l_ser_skey = NULL, *l_ser_pkey = NULL;
+// get sizes
+    int l_res_des = dap_deserialize_multy((const uint8_t *)buf, l_sizes_len, 12,
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        &l_ser_skey_size, (uint64_t)sizeof(uint64_t),
+        &l_ser_pkey_size, (uint64_t)sizeof(uint64_t),
+        &l_ser_inheritor_size, (uint64_t)sizeof(uint64_t),
+        &l_timestamp, (uint64_t)sizeof(uint64_t),
+        &l_type, (uint64_t)sizeof(int32_t)
+    );
+    if (l_res_des) {
+        log_it(L_ERROR, "Enc_key size deserialisation error");
+        return NULL;
+    }
+// memory alloc
+    dap_enc_key_t *l_ret = dap_enc_key_new(l_type);
+    if (!l_ret) {
+        log_it(L_ERROR, "Enc_key type deserialisation error");
+        return NULL;
+    }
+    if (l_ser_skey_size)
+        DAP_NEW_Z_SIZE_RET_VAL(l_ser_skey, uint8_t, l_ser_skey_size, NULL, l_ret);
+    if (l_ser_pkey_size)
+        DAP_NEW_Z_SIZE_RET_VAL(l_ser_pkey, uint8_t, l_ser_pkey_size, NULL, l_ser_skey, l_ret);
+    if (l_ser_inheritor_size)
+        DAP_NEW_Z_SIZE_RET_VAL(l_ret->_inheritor, void, l_ser_inheritor_size, NULL, l_ser_pkey, l_ser_skey, l_ret);
+// deser keys
+    l_res_des = dap_deserialize_multy((const uint8_t *)buf + l_sizes_len, a_buf_size - l_sizes_len, 6,
+        l_ser_skey, (uint64_t)l_ser_skey_size,
+        l_ser_pkey, (uint64_t)l_ser_pkey_size,
+        (uint8_t *)l_ret->_inheritor, (uint64_t)l_ser_inheritor_size
+    );
+    if (l_res_des || (l_ser_skey_size && dap_enc_key_deserialize_priv_key(l_ret, l_ser_skey, l_ser_skey_size)) ||
+        (l_ser_pkey_size && dap_enc_key_deserialize_pub_key(l_ret, l_ser_pkey, l_ser_pkey_size))) {
+            DAP_DEL_MULTY(l_ret->_inheritor, l_ser_pkey, l_ser_skey, l_ret);
+            log_it(L_ERROR, "Enc_key type deserialisation error");
+            return NULL;
+        }
+// out work
+    l_ret->last_used_timestamp = l_timestamp;
+    l_ret->priv_key_data_size = l_ser_skey_size;
+    l_ret->pub_key_data_size = l_ser_pkey_size;
+    l_ret->_inheritor_size = l_ser_inheritor_size;
     return l_ret;
 }
 
@@ -755,9 +825,8 @@ dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t *a_key)
  */
 dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
 {
-    if (!a_key || a_key->type == DAP_ENC_KEY_TYPE_INVALID) {
-        return NULL;
-    }
+// sanity check
+    dap_return_val_if_pass(!a_key || a_key->type == DAP_ENC_KEY_TYPE_INVALID, NULL);
     dap_enc_key_t *l_ret = dap_enc_key_new(a_key->type);
     dap_return_val_if_pass(!l_ret, NULL);
 
@@ -775,47 +844,6 @@ dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
         DAP_NEW_Z_SIZE_RET_VAL(l_ret->_inheritor, uint8_t, a_key->_inheritor_size, NULL, l_ret->pub_key_data, l_ret->priv_key_data, l_ret);
         l_ret->_inheritor_size = a_key->_inheritor_size;
         memcpy(l_ret->_inheritor, a_key->_inheritor, a_key->_inheritor_size);
-    }
-    return l_ret;
-}
-
-/**
- * @brief dap_enc_key_deserialize
- * @param buf
- * @param buf_size
- * @return allocates dap_enc_key_t*. Use dap_enc_key_delete for free memory
- */
-dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
-{
-    if(a_buf_size != sizeof (dap_enc_key_serialize_t)) {
-        log_it(L_ERROR, "Key can't be deserialize. buf_size(%zu) != sizeof (dap_enc_key_serialize_t)(%zu)", a_buf_size, sizeof(dap_enc_key_serialize_t));
-        return NULL;
-    }
-    const dap_enc_key_serialize_t *in_key = (const dap_enc_key_serialize_t *)buf;
-    // memory allocation block
-
-    dap_enc_key_t *l_ret = dap_enc_key_new(in_key->type);
-    dap_return_val_if_pass(!l_ret, NULL);
-
-    l_ret->last_used_timestamp = in_key->last_used_timestamp;
-    l_ret->priv_key_data_size = in_key->priv_key_data_size;
-    l_ret->pub_key_data_size = in_key->pub_key_data_size;
-    l_ret->_inheritor_size = in_key->inheritor_size;
-    DAP_DEL_MULTY(l_ret->priv_key_data, l_ret->pub_key_data);
-    if (l_ret->priv_key_data_size) {
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret->priv_key_data, uint8_t, l_ret->priv_key_data_size, NULL, l_ret);
-        memcpy(l_ret->priv_key_data, in_key->priv_key_data, l_ret->priv_key_data_size);
-    }
-    if (l_ret->pub_key_data_size) {
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret->pub_key_data, uint8_t, l_ret->pub_key_data, NULL, l_ret->priv_key_data, l_ret);
-        memcpy(l_ret->pub_key_data, in_key->pub_key_data, l_ret->pub_key_data_size);
-    }
-    if(in_key->inheritor_size) {
-        DAP_DEL_Z(l_ret->_inheritor);
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret->_inheritor, uint8_t, in_key->inheritor_size, NULL, l_ret->pub_key_data, l_ret->priv_key_data, l_ret);
-        memcpy(l_ret->_inheritor, in_key->inheritor, in_key->inheritor_size);
-    } else {
-        l_ret->_inheritor = NULL;
     }
     return l_ret;
 }

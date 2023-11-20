@@ -203,8 +203,8 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
         return NULL;
     }
 // addtional allocation memory
-     DAP_NEW_Z_SIZE_RET_VAL(l_sign->key_seq, uint8_t, sizeof(uint8_t) * l_sign->sign_count, NULL, l_sign);
-     DAP_NEW_Z_SIZE_RET_VAL(l_sign->meta, dap_multi_sign_meta_t, sizeof(dap_multi_sign_meta_t) * l_sign->sign_count, NULL, l_sign->key_seq, l_sign);
+     DAP_NEW_Z_COUNT_RET_VAL(l_sign->key_seq, uint8_t, l_sign->sign_count, NULL, l_sign);
+     DAP_NEW_Z_COUNT_RET_VAL(l_sign->meta, dap_multi_sign_meta_t, l_sign->sign_count, NULL, l_sign->key_seq, l_sign);
      DAP_NEW_Z_SIZE_RET_VAL(l_sign->key_hashes, dap_hash_fast_t, l_pkeys_hashes_size, NULL, l_sign->meta, l_sign->key_seq, l_sign);
      DAP_NEW_Z_SIZE_RET_VAL(l_sign->sign_data, uint8_t, l_signes_size, NULL, l_sign->key_hashes, l_sign->meta, l_sign->key_seq, l_sign);
 // get data
