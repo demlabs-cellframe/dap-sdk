@@ -189,8 +189,8 @@ typedef void (*dap_enc_callback_size_t)(dap_enc_key_t *, size_t);
 typedef void (*dap_enc_callback_str_t)(dap_enc_key_t *, const char*);
 typedef char* (*dap_enc_callback_r_str_t)(dap_enc_key_t *);
 typedef uint8_t* (*dap_enc_callback_serialize_t)(const void *, size_t *);
+typedef uint8_t* (*dap_enc_callback_deserialize_t)(const uint8_t *, size_t);
 typedef size_t (*dap_enc_callback_calc_out_size)(const size_t);
-typedef size_t (*dap_enc_callback_calc_unser_size)(const void *);
 typedef size_t (*dap_enc_get_allpbk_list) (dap_enc_key_t *a_key, const void *allpbk_list, const int allpbk_num);
 
 typedef struct dap_enc_key {
@@ -222,8 +222,6 @@ typedef struct dap_enc_key {
     dap_enc_gen_alice_shared_key gen_alice_shared_key;
     dap_enc_gen_bob_shared_key gen_bob_shared_key;
 
-    dap_enc_callback_calc_unser_size unser_sig_size;
-
     void *pbkListdata;
     size_t pbkListsize;
     dap_enc_get_allpbk_list getallpbkList;
@@ -251,8 +249,6 @@ typedef struct dap_enc_key_callbacks{
     dap_enc_callback_sign_op_t sign_verify;
 
     dap_enc_callback_gen_key_public_t gen_key_public;
-    dap_enc_callback_key_size_t ser_pub_key_size;
-    dap_enc_callback_key_size_t ser_priv_key_size;
 
     dap_enc_callback_calc_out_size enc_out_size;
     dap_enc_callback_calc_out_size dec_out_size;
@@ -263,6 +259,16 @@ typedef struct dap_enc_key_callbacks{
     dap_enc_callback_serialize_t ser_sign;
     dap_enc_callback_serialize_t ser_priv_key;
     dap_enc_callback_serialize_t ser_pub_key;
+    dap_enc_callback_key_size_t ser_pub_key_size;
+    dap_enc_callback_key_size_t ser_priv_key_size;
+
+
+    dap_enc_callback_deserialize_t deser_sign;
+    dap_enc_callback_deserialize_t deser_priv_key;
+    dap_enc_callback_deserialize_t deser_pub_key;
+    dap_enc_callback_key_size_t deser_sign_size;
+    dap_enc_callback_key_size_t deser_pub_key_size;
+    dap_enc_callback_key_size_t deser_priv_key_size;
 
     dap_enc_callback_new new_callback;
     dap_enc_callback_data_t new_from_data_public_callback;
@@ -318,7 +324,7 @@ int dap_enc_gen_key_public (dap_enc_key_t *a_key, void *a_output);
 void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_buf);
 void dap_enc_key_delete(dap_enc_key_t *a_key);
 
-dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(const dap_enc_key_t **a_keys, size_t a_count);
+dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_t a_count);
 
 #ifdef __cplusplus
 }
