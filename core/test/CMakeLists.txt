@@ -58,12 +58,17 @@ add_test(
     COMMAND core_test
 )
 
+if (NOT PLATFORM_ARM AND VERSION MATCHES "7l")
 add_test(
     NAME rpm-test
     COMMAND rpmalloc_test
 )
+else()
+    message("[-] Disable rpm test for armv7l platform")
+endif ()
 
 if(UNIX)
     target_include_directories(${PROJECT_NAME} PRIVATE unix)
     target_include_directories(${PROJECT_NAME} PRIVATE unix/linux)
 endif()
+add_subdirectory(uint256_t)
