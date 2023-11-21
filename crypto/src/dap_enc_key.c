@@ -600,7 +600,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data = (uint8_t*) dap_enc_sig_bliss_read_private_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
-            return -1;
+            return -2;
         }
         a_key->priv_key_data_size = sizeof(bliss_private_key_t);
         break;
@@ -609,7 +609,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data = (uint8_t*) dap_enc_tesla_read_private_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
-            return -1;
+            return -3;
         }
         a_key->priv_key_data_size = sizeof(tesla_private_key_t);
         break;
@@ -626,7 +626,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data = s_callbacks[a_key->type].deser_priv_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
-            return -1;
+            return -4;
         }
         a_key->priv_key_data_size = s_callbacks[a_key->type].deser_priv_key_size(NULL);
         break;
@@ -635,7 +635,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data = (uint8_t*) dap_enc_sphincsplus_read_private_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
-            return -1;
+            return -5;
         }
         a_key->priv_key_data_size = sizeof(sphincsplus_private_key_t);
         break;
@@ -804,11 +804,15 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
         l_ser_pkey, (uint64_t)l_ser_pkey_size,
         (uint8_t *)l_ret->_inheritor, (uint64_t)l_ser_inheritor_size
     );
-    if (l_res_des || (l_ser_skey_size && dap_enc_key_deserialize_priv_key(l_ret, l_ser_skey, l_ser_skey_size)) ||
-        (l_ser_pkey_size && dap_enc_key_deserialize_pub_key(l_ret, l_ser_pkey, l_ser_pkey_size))) {
+    int l_priv_deser = 0, l_pub_deser = 0;
+    if (l_ser_skey_size)
+        l_priv_deser = dap_enc_key_deserialize_priv_key(l_ret, l_ser_skey, l_ser_skey_size);
+    if (l_ser_pkey_size)
+        l_pub_deser = dap_enc_key_deserialize_pub_key(l_ret, l_ser_pkey, l_ser_pkey_size);
+    if (l_res_des || l_priv_deser || l_pub_deser) {
             DAP_DEL_MULTY(l_ret->_inheritor, l_ser_pkey, l_ser_skey, l_ret);
             log_it(L_ERROR, "Enc_key pub and priv keys deserialisation error");
-            printf("Enc_key pub and priv keys deserialisation error\n");
+            printf("Enc_key pub and priv keys deserialisation error priv error = %d  pub error = %d\n", l_priv_deser, l_pub_deser);
             fflush(stdout);
             return NULL;
         }
