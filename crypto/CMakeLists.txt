@@ -330,6 +330,7 @@ target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
 
 if(BUILD_CRYPTO_TESTS)
     enable_testing()
+    message("[*] Enable crypto test")
     add_subdirectory(test)
 endif()
 
