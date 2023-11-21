@@ -242,6 +242,7 @@ static void test_serialize_deserialize(dap_enc_key_type_t key_type)
     dap_enc_key_t *key3 = dap_enc_key_deserialize(l_deser_key, l_buflen);
     dap_assert(key3, "Key deserialize done");
     dap_enc_key_t *key2 = dap_enc_key_dup(key3);
+    dap_assert(key2, "Key dup done");
 
     dap_assert(key->type == key2->type, "Key type");
     dap_assert(key->last_used_timestamp == key2->last_used_timestamp,
