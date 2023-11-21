@@ -9,8 +9,8 @@ static falcon_sign_type_t s_falcon_type = FALCON_DYNAMIC;
 
 
 static int s_deserialised_sign_check(
-    uint32_t a_buflen,
-    uint32_t a_des_buflen, 
+    uint64_t a_buflen,
+    uint64_t a_des_buflen, 
     falcon_sign_degree_t a_degree, 
     falcon_kind_t a_kind, 
     falcon_sign_type_t a_type)
@@ -62,21 +62,6 @@ void dap_enc_sig_falcon_set_type(falcon_sign_type_t a_falcon_type)
     s_falcon_type = a_falcon_type;
 }
 
-uint64_t dap_enc_sig_falcon_ser_private_key_size(const void *a_skey)
-{
-// sanity check
-    dap_return_val_if_pass(!a_skey, 0);
-// func work
-    return sizeof(uint64_t) + sizeof(uint32_t) * 3 + FALCON_PRIVKEY_SIZE(((falcon_private_key_t *)a_skey)->degree);
-}
-
-uint64_t dap_enc_sig_falcon_ser_public_key_size(const void *a_pkey)
-{
-// sanity check
-    dap_return_val_if_pass(!a_pkey, 0);
-// func work
-    return sizeof(uint64_t) + sizeof(uint32_t) * 3 + FALCON_PUBKEY_SIZE(((falcon_public_key_t *)a_pkey)->degree);
-}
 
 
 void dap_enc_sig_falcon_key_new(dap_enc_key_t *a_key) {
@@ -115,7 +100,7 @@ void dap_enc_sig_falcon_key_new_generate(dap_enc_key_t *a_key, const void *kex_b
 
     shake256_context rng;
     if(!seed || !seed_size) {
-        if (l_ret = shake256_init_prng_from_system(&rng)) {
+        if ((l_ret = shake256_init_prng_from_system(&rng))) {
             log_it(L_ERROR, "Failed to initialize PRNG");
             DAP_DEL_MULTY(l_skey->data, l_skey, l_pkey->data, l_pkey);
             return;
@@ -291,7 +276,7 @@ uint8_t *dap_enc_sig_falcon_write_private_key(const void *a_private_key, size_t 
     return l_buf;
 }
 
-falcon_private_key_t* dap_enc_falcon_read_private_key(const uint8_t *a_buf, size_t a_buflen)
+uint8_t *dap_enc_sig_falcon_read_private_key(const uint8_t *a_buf, size_t a_buflen)
 {
 // in work
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) + sizeof(uint32_t) * 3, NULL);
@@ -322,10 +307,10 @@ falcon_private_key_t* dap_enc_falcon_read_private_key(const uint8_t *a_buf, size
         DAP_DEL_MULTY(l_skey->data, l_skey);
         return NULL;
     }
-    return l_skey;
+    return (uint8_t *)l_skey;
 }
 
-falcon_public_key_t *dap_enc_falcon_read_public_key(const uint8_t *a_buf, size_t a_buflen)
+uint8_t *dap_enc_sig_falcon_read_public_key(const uint8_t *a_buf, size_t a_buflen)
 {
 // in work
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) + sizeof(uint32_t) * 3, NULL);
@@ -356,7 +341,7 @@ falcon_public_key_t *dap_enc_falcon_read_public_key(const uint8_t *a_buf, size_t
         DAP_DEL_MULTY(l_pkey->data, l_pkey);
         return NULL;
     }
-    return l_pkey;
+    return (uint8_t *)l_pkey;
 }
 
 uint8_t *dap_enc_sig_falcon_write_signature(const void *a_sign, size_t *a_buflen_out)
@@ -366,7 +351,7 @@ uint8_t *dap_enc_sig_falcon_write_signature(const void *a_sign, size_t *a_buflen
     dap_return_val_if_pass(!a_sign, NULL);
     falcon_signature_t *l_sign = (falcon_signature_t*)a_sign;
 // func work
-    uint64_t l_buflen = sizeof(uint64_t) * 2 + sizeof(uint64_t) * 3 + l_sign->sig_len;
+    uint64_t l_buflen = dap_enc_sig_falcon_ser_sig_size(a_sign);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 12,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_sign->degree, (uint64_t)sizeof(uint32_t),
@@ -379,9 +364,10 @@ uint8_t *dap_enc_sig_falcon_write_signature(const void *a_sign, size_t *a_buflen
     (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
     return l_buf;
 }
-falcon_signature_t* dap_enc_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen)
+
+uint8_t *dap_enc_sig_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen)
 {
-// in work 
+// sanity
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) * 2 + sizeof(uint32_t) * 3, NULL);
 // func work
     uint64_t l_buflen = 0;
@@ -406,7 +392,7 @@ falcon_signature_t* dap_enc_falcon_read_signature(const uint8_t* a_buf, size_t a
         DAP_DEL_MULTY(l_sign->sig_data, l_sign);
         return NULL;
     }
-    return l_sign;
+    return (uint8_t *)l_sign;
 }
 
 

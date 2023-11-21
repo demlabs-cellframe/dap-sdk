@@ -178,7 +178,7 @@ uint8_t *dap_enc_sig_dilithium_read_signature(const uint8_t *a_buf, size_t a_buf
         return NULL;
     }else{
         memcpy(l_sign->sig_data, a_buf + l_shift_mem, l_sign->sig_len);
-        return l_sign;
+        return (uint8_t *)l_sign;
     }
 }
 
@@ -256,7 +256,7 @@ uint8_t *dap_enc_sig_dilithium_read_private_key(const uint8_t *a_buf, size_t a_b
 
     l_private_key->data = DAP_NEW_SIZE(uint8_t, p.CRYPTO_SECRETKEYBYTES);
     memcpy(l_private_key->data, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.CRYPTO_SECRETKEYBYTES);
-    return l_private_key;
+    return (uint8_t *)l_private_key;
 }
 
 /* Deserialize a public key. */
@@ -312,5 +312,5 @@ uint8_t *dap_enc_sig_dilithium_read_public_key(const uint8_t *a_buf, size_t a_bu
     }
 
     memcpy(l_public_key->data, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.CRYPTO_PUBLICKEYBYTES);
-    return l_public_key;
+    return (uint8_t *)l_public_key;
 }

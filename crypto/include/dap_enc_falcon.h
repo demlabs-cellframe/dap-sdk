@@ -22,16 +22,53 @@ int dap_enc_sig_falcon_verify_sign(dap_enc_key_t *key, const void *msg, const si
 
 void dap_enc_sig_falcon_key_delete(dap_enc_key_t *key);
 
-uint8_t *dap_enc_sig_falcon_write_signature(const void *a_sign, size_t *a_buflen_out);
-falcon_signature_t* dap_enc_falcon_read_signature(const uint8_t *a_buf, size_t a_buflen);
 
+
+uint8_t *dap_enc_sig_falcon_write_signature(const void *a_sign, size_t *a_buflen_out);
 uint8_t *dap_enc_sig_falcon_write_private_key(const void *a_private_key, size_t *a_buflen_out);
 uint8_t *dap_enc_sig_falcon_write_public_key(const void *a_public_key, size_t *a_buflen_out);
-falcon_private_key_t *dap_enc_falcon_read_private_key(const uint8_t* a_buf, size_t a_buflen);
-falcon_public_key_t *dap_enc_falcon_read_public_key(const uint8_t* a_buf, size_t a_buflen);
+uint8_t *dap_enc_sig_falcon_read_signature(const uint8_t *a_buf, size_t a_buflen);
+uint8_t *dap_enc_sig_falcon_read_private_key(const uint8_t* a_buf, size_t a_buflen);
+uint8_t *dap_enc_sig_falcon_read_public_key(const uint8_t* a_buf, size_t a_buflen);
 
-DAP_STATIC_INLINE size_t dap_enc_falcon_calc_signature_unserialized_size() { return sizeof(falcon_signature_t); }
-uint64_t dap_enc_sig_falcon_ser_private_key_size(const void *a_skey);
-uint64_t dap_enc_sig_falcon_ser_public_key_size(const void *a_pkey);
+DAP_STATIC_INLINE uint64_t dap_enc_sig_falcon_deser_sig_size(UNUSED_ARG const void *a_in)
+{
+    return sizeof(falcon_signature_t);
+}
+
+DAP_STATIC_INLINE uint64_t dap_enc_sig_falcon_deser_private_key_size(UNUSED_ARG const void *a_in)
+{
+    return sizeof(falcon_private_key_t);
+}
+
+DAP_STATIC_INLINE uint64_t dap_enc_sig_falcon_deser_public_key_size(UNUSED_ARG const void *a_in)
+{
+    return sizeof(falcon_public_key_t);
+}
+
+DAP_STATIC_INLINE uint64_t dap_enc_sig_falcon_ser_sig_size(const void *a_sign)
+{
+    if (!a_sign)
+        return 0;
+    return sizeof(uint64_t) * 2 + sizeof(uint64_t) * 3 + ((falcon_signature_t *)a_sign)->sig_len;
+}
+
+DAP_STATIC_INLINE uint64_t dap_enc_sig_falcon_ser_private_key_size(const void *a_skey)
+{
+// sanity check
+    if(!a_skey)
+        return 0;
+// func work
+    return sizeof(uint64_t) + sizeof(uint32_t) * 3 + FALCON_PRIVKEY_SIZE(((falcon_private_key_t *)a_skey)->degree);
+}
+
+DAP_STATIC_INLINE uint64_t dap_enc_sig_falcon_ser_public_key_size(const void *a_pkey)
+{
+// sanity check
+    if(!a_pkey)
+        return 0;
+// func work
+    return sizeof(uint64_t) + sizeof(uint32_t) * 3 + FALCON_PUBKEY_SIZE(((falcon_public_key_t *)a_pkey)->degree);
+}
 
 #endif //_DAP_ENC_FALCON_H
