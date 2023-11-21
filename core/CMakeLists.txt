@@ -107,7 +107,9 @@ endif()
 target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES})
 
 if(BUILD_DAP_TESTS)
+    message("Enabled dap_core test")
     enable_testing()
+    add_definitions("-DDAP_NETWORK_MONITOR_TEST_OFF")
     add_subdirectory(test)
 endif()
 
