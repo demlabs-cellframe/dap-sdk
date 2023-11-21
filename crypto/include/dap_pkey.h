@@ -178,4 +178,4 @@ DAP_STATIC_INLINE bool dap_pkey_compare(dap_pkey_t *a_pkey1, dap_pkey_t *a_pkey2
             !memcmp(a_pkey1->pkey, a_pkey2->pkey, a_pkey1->header.size));
 }
 
-dap_pkey_t *dap_pkey_get_from_sign_deserialization(dap_sign_t *a_sign);
+dap_pkey_t *dap_pkey_get_from_sign(dap_sign_t *a_sign);
