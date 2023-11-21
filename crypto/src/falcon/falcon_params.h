@@ -55,8 +55,9 @@ typedef struct falcon_signature {
 extern "C" {
 #endif
 
-void falcon_private_key_delete(falcon_private_key_t* private_key);
-void falcon_public_key_delete(falcon_public_key_t* public_key);
+void falcon_private_key_delete(void *a_skey);
+void falcon_public_key_delete(void *a_pkey);
+void falcon_signature_delete(void *a_sig);
 void falcon_private_and_public_keys_delete(falcon_private_key_t* private_key, falcon_public_key_t* public_key);
 
 #ifdef __cplusplus

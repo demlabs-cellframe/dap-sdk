@@ -941,7 +941,7 @@ dap_enc_key_t *dap_cert_merge_keys(dap_cert_t **a_certs, size_t a_count, size_t 
             log_it(L_WARNING, "Certs with NULL value");
         }
     }
-    dap_enc_key_t *l_ret = dap_enc_merge_keys_to_multisign_key((const dap_enc_key_t **)l_keys, l_keys_count);
+    dap_enc_key_t *l_ret = dap_enc_merge_keys_to_multisign_key(l_keys, l_keys_count);
     DAP_DELETE(l_keys);
     return l_ret;
 }

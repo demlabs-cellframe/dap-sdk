@@ -140,7 +140,7 @@ typedef void (*dap_enc_callback_new_generate)(dap_enc_key_t* key, const void *ke
                                               size_t kex_size, const void* seed, size_t seed_size,
                                               size_t key_size);
 // free memory
-typedef void (*dap_enc_callback_delete)(dap_enc_key_t*);
+typedef void (*dap_enc_callback_delete)(void *);
 
 typedef uint64_t (*dap_enc_callback_key_size_t)(const void*);
 
@@ -273,7 +273,10 @@ typedef struct dap_enc_key_callbacks{
     dap_enc_callback_new new_callback;
     dap_enc_callback_data_t new_from_data_public_callback;
     dap_enc_callback_new_generate new_generate_callback;
-    dap_enc_callback_delete delete_callback;
+    dap_enc_callback_new delete_callback;
+    dap_enc_callback_delete del_sign;
+    dap_enc_callback_delete del_pub_key;
+    dap_enc_callback_delete del_priv_key;
 } dap_enc_key_callbacks_t;
 
 #ifdef __cplusplus

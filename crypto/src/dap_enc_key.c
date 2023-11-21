@@ -310,14 +310,20 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_key_public =                   NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
-        .new_callback =                     dap_enc_sig_dilithium_key_new,
-        .delete_callback =                  dap_enc_sig_dilithium_key_delete,
-        .new_generate_callback =            dap_enc_sig_dilithium_key_new_generate,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
+
+        .new_callback =                     dap_enc_sig_dilithium_key_new,
+        .new_generate_callback =            dap_enc_sig_dilithium_key_new_generate,
+        
+        .delete_callback =                  dap_enc_sig_dilithium_key_delete,
+        .del_sign =                         dilithium_signature_delete,
+        .del_pub_key =                      dilithium_public_key_delete,
+        .del_priv_key =                     dilithium_private_key_delete,
+
         .sign_get =                         dap_enc_sig_dilithium_get_sign,
         .sign_verify =                      dap_enc_sig_dilithium_verify_sign,
-
+    
         .ser_sign =                         dap_enc_sig_dilithium_write_signature,
         .ser_priv_key =                     dap_enc_sig_dilithium_write_private_key,
         .ser_pub_key =                      dap_enc_sig_dilithium_write_public_key,
@@ -359,11 +365,20 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_key_public =                   NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
-        .new_callback =                     dap_enc_sig_falcon_key_new,
-        .delete_callback =                  dap_enc_sig_falcon_key_delete,
-        .new_generate_callback =            dap_enc_sig_falcon_key_new_generate,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
+
+        .new_callback =                     dap_enc_sig_falcon_key_new,
+        .new_generate_callback =            dap_enc_sig_falcon_key_new_generate,
+    
+        .delete_callback =                  dap_enc_sig_falcon_key_delete,
+        .del_sign =                         falcon_signature_delete,
+        .del_pub_key =                      falcon_public_key_delete,
+        .del_priv_key =                     falcon_private_key_delete,
+    
+        .sign_get =                         dap_enc_sig_dilithium_get_sign,
+        .sign_verify =                      dap_enc_sig_dilithium_verify_sign,
+    
         .sign_get =                         dap_enc_sig_falcon_get_sign,
         .sign_verify =                      dap_enc_sig_falcon_verify_sign,
 
@@ -389,11 +404,17 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_key_public =                   NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
-        .new_callback =                     dap_enc_sig_sphincsplus_key_new,
-        .delete_callback =                  dap_enc_sig_sphincsplus_key_delete,
-        .new_generate_callback =            dap_enc_sig_sphincsplus_key_new_generate,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
+    
+        .new_callback =                     dap_enc_sig_sphincsplus_key_new,
+        .new_generate_callback =            dap_enc_sig_sphincsplus_key_new_generate,
+        .delete_callback =                  dap_enc_sig_sphincsplus_key_delete,
+    
+        .del_sign =                         sphincsplus_signature_delete,
+        .del_pub_key =                      sphincsplus_public_key_delete,
+        .del_priv_key =                     sphincsplus_private_key_delete,
+
         .sign_get =                         dap_enc_sig_sphincsplus_get_sign,
         .sign_verify =                      dap_enc_sig_sphincsplus_verify_sign,
 
@@ -628,7 +649,8 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        dilithium_private_key_delete((dilithium_private_key_t *) a_key->priv_key_data);
+        if (a_key->priv_key_data)
+            s_callbacks[a_key->type].del_priv_key(a_key->priv_key_data);
         a_key->priv_key_data = s_callbacks[a_key->type].deser_priv_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
@@ -688,7 +710,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         if ( a_key->pub_key_data )
-            dilithium_public_key_delete((dilithium_public_key_t *) a_key->pub_key_data);
+            s_callbacks[a_key->type].del_pub_key(a_key->pub_key_data);
 
         a_key->pub_key_data = s_callbacks[a_key->type].deser_pub_key(a_buf, a_buflen);
         if(!a_key->pub_key_data) {
@@ -970,13 +992,9 @@ void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_
         tesla_signature_delete((tesla_signature_t*)a_sig_buf);
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        dilithium_signature_delete((dilithium_signature_t*)a_sig_buf);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        DAP_DEL_Z(((falcon_signature_t *)a_sig_buf)->sig_data);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        DAP_DEL_Z(((sphincsplus_signature_t *)a_sig_buf)->sig_data);
+        s_callbacks[a_key_type].del_sign(a_sig_buf);
         break;
     default:
         break;

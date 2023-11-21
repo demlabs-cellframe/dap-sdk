@@ -401,29 +401,31 @@ void falcon_private_and_public_keys_delete(falcon_private_key_t* privateKey, fal
     falcon_public_key_delete(publicKey);
 }
 
-void falcon_private_key_delete(falcon_private_key_t* privateKey) {
-    dap_return_if_pass(!privateKey);
+void falcon_private_key_delete(void* a_skey) {
+    dap_return_if_pass(!a_skey);
 
-    memset(privateKey->data, 0, FALCON_PRIVKEY_SIZE(privateKey->degree));
-    privateKey->degree = 0;
-    privateKey->type = 0;
-    privateKey->kind = 0;
-    DAP_DEL_MULTY(privateKey->data, privateKey);
+    falcon_private_key_t *l_skey = a_skey;
+    memset(l_skey->data, 0, FALCON_PRIVKEY_SIZE(l_skey->degree));
+    l_skey->degree = 0;
+    l_skey->type = 0;
+    l_skey->kind = 0;
+    DAP_DEL_MULTY(l_skey->data, l_skey);
 }
 
-void falcon_public_key_delete(falcon_public_key_t* publicKey) {
-    dap_return_if_pass(!publicKey);
+void falcon_public_key_delete(void *a_skey) {
+    dap_return_if_pass(!a_skey);
 
-    memset(publicKey->data, 0, FALCON_PUBKEY_SIZE(publicKey->degree));
-    publicKey->degree = 0;
-    publicKey->type = 0;
-    publicKey->kind = 0;
-    DAP_DEL_MULTY(publicKey->data, publicKey);
+    falcon_public_key_t *l_pkey = a_skey;
+    memset(l_pkey->data, 0, FALCON_PUBKEY_SIZE(l_pkey->degree));
+    l_pkey->degree = 0;
+    l_pkey->type = 0;
+    l_pkey->kind = 0;
+    DAP_DEL_MULTY(l_pkey->data, l_pkey);
 }
 
-void falcon_signature_delete(falcon_signature_t *a_sig){
-    assert(a_sig);
-    DAP_DEL_Z(a_sig->sig_data);
-    a_sig->sig_len = 0;
+void falcon_signature_delete(void *a_sig){
+    dap_return_if_pass(!a_sig);
+    DAP_DEL_Z(((falcon_signature_t *)a_sig)->sig_data);
+    ((falcon_signature_t *)a_sig)->sig_len = 0;
 }
 
