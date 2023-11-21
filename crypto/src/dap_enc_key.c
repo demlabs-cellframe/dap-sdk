@@ -286,7 +286,6 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .enc_na =                           NULL,
         .dec_na =                           NULL,
         .gen_key_public =                   NULL,
-        .ser_pub_key_size =              NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
         .new_callback =                     dap_enc_sig_tesla_key_new,
@@ -419,7 +418,6 @@ dap_enc_key_callbacks_t s_callbacks[]={
 
 };
 
-const size_t c_callbacks_size = sizeof(s_callbacks) / sizeof(s_callbacks[0]);
 /**
  * @brief dap_enc_key_init empty stub
  * @return
@@ -819,51 +817,40 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
 }
 
 /**
- * @brief dap_enc_key_dup
- * @param a_key
- * @return
+ * @brief create copy to current key
+ * @param a_key to copy
+ * @return pointer to new key or in error NULL
  */
-dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t * a_key)
+dap_enc_key_t *dap_enc_key_dup(dap_enc_key_t *a_key)
 {
 // sanity check
     dap_return_val_if_pass(!a_key || a_key->type == DAP_ENC_KEY_TYPE_INVALID, NULL);
-    dap_enc_key_t *l_ret = dap_enc_key_new(a_key->type);
-    dap_return_val_if_pass(!l_ret, NULL);
-
-    if (a_key->priv_key_data_size) {
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret->priv_key_data, uint8_t, a_key->priv_key_data_size, NULL, l_ret);
-        l_ret->priv_key_data_size = a_key->priv_key_data_size;
-        memcpy(l_ret->priv_key_data, a_key->priv_key_data, a_key->priv_key_data_size);
-    }
-    if (a_key->pub_key_data_size) {
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret->pub_key_data, uint8_t, a_key->pub_key_data_size, NULL, l_ret->priv_key_data, l_ret);
-        l_ret->pub_key_data_size =  a_key->pub_key_data_size;
-        memcpy(l_ret->pub_key_data, a_key->pub_key_data, a_key->pub_key_data_size);
-    }
-    if(a_key->_inheritor_size) {
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret->_inheritor, uint8_t, a_key->_inheritor_size, NULL, l_ret->pub_key_data, l_ret->priv_key_data, l_ret);
-        l_ret->_inheritor_size = a_key->_inheritor_size;
-        memcpy(l_ret->_inheritor, a_key->_inheritor, a_key->_inheritor_size);
-    }
+// func work
+    size_t l_buflen = 0;
+    uint8_t *l_ser_key = dap_enc_key_serialize(a_key, &l_buflen);
+    dap_enc_key_t *l_ret = dap_enc_key_deserialize(l_ser_key, l_buflen);
+    DAP_DEL_Z(l_ser_key);
     return l_ret;
 }
 
 /**
- * @brief dap_enc_key_new
- * @param a_key_type
- * @return
+ * @brief creating new enc_key
+ * @param a_key_type to creating key
+ * @return pointer to new key or NULL
  */
 dap_enc_key_t *dap_enc_key_new(dap_enc_key_type_t a_key_type)
 {
+// sanity check
+    dap_return_val_if_pass(DAP_ENC_KEY_TYPE_INVALID == a_key_type, NULL);
+// memory alloc
     dap_enc_key_t * l_ret = NULL;
-    if ((size_t)a_key_type < c_callbacks_size) {
-        DAP_NEW_Z_RET_VAL(l_ret, dap_enc_key_t, NULL, NULL);
-        if(s_callbacks[a_key_type].new_callback){
-            s_callbacks[a_key_type].new_callback(l_ret);
-        }
-    }
-    if(l_ret)
+    DAP_NEW_Z_RET_VAL(l_ret, dap_enc_key_t, NULL, NULL);
+// func work
+    if(s_callbacks[a_key_type].new_callback){
+        s_callbacks[a_key_type].new_callback(l_ret);
+    } else {
         l_ret->type = a_key_type;
+    }
     return l_ret;
 }
 
@@ -881,91 +868,109 @@ dap_enc_key_t *dap_enc_key_new_generate(dap_enc_key_type_t a_key_type, const voi
                                         size_t a_kex_size, const void* a_seed,
                                         size_t a_seed_size, size_t a_key_size)
 {
-    dap_enc_key_t * l_ret = NULL;
-    if ((size_t)a_key_type < c_callbacks_size) {
-        l_ret = dap_enc_key_new(a_key_type);
-        if(s_callbacks[a_key_type].new_generate_callback) {
-            s_callbacks[a_key_type].new_generate_callback( l_ret, a_kex_buf, a_kex_size, a_seed, a_seed_size, a_key_size);
-        }
+// sanity check
+    dap_return_val_if_pass(DAP_ENC_KEY_TYPE_INVALID == a_key_type, NULL);
+// func work
+    dap_enc_key_t * l_ret = dap_enc_key_new(a_key_type);
+    if(s_callbacks[a_key_type].new_generate_callback) {
+        s_callbacks[a_key_type].new_generate_callback( l_ret, a_kex_buf, a_kex_size, a_seed, a_seed_size, a_key_size);
     }
     return l_ret;
 }
 
 /**
  * @brief dap_enc_key_update
- * @param a_key_type
- * @return
+ * @param a_key key to update
  */
 void dap_enc_key_update(dap_enc_key_t *a_key)
 {
-    if(a_key)
-        switch (a_key->type) {
-            case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-                dap_enc_sig_picnic_update(a_key);
-                break;
-            default:
-                break;
-        }
+// sanity check
+    dap_return_if_pass(!a_key);
+// func work
+    switch (a_key->type) {
+        case DAP_ENC_KEY_TYPE_SIG_PICNIC:
+            dap_enc_sig_picnic_update(a_key);
+            break;
+        default:
+            break;
+    }
 }
 
-
+/**
+ * @brief calc serialized private key size
+ * @param a_key to calc
+ * @return calced size or 0
+ */
 size_t dap_enc_ser_priv_key_size (dap_enc_key_t *a_key)
 {
-    // sanity check
+// sanity check
     dap_return_val_if_pass(!a_key, 0);
+// func work
     if(s_callbacks[a_key->type].ser_priv_key_size) {
         return s_callbacks[a_key->type].ser_priv_key_size(a_key->priv_key_data);
-    } else {
-        log_it(L_WARNING, "No callback for key private size calculate");
-        return a_key->priv_key_data_size;
     }
+    log_it(L_WARNING, "No callback for key private size calculate");
+    return a_key->priv_key_data_size;
 }
 
+/**
+ * @brief calc serialized public key size
+ * @param a_key to calc
+ * @return calced size or 0
+ */
 size_t dap_enc_ser_pub_key_size (dap_enc_key_t *a_key)
 {
-    // sanity check
+// sanity check
     dap_return_val_if_pass(!a_key, 0);
+// func work
     if(s_callbacks[a_key->type].ser_pub_key_size) {
         return s_callbacks[a_key->type].ser_pub_key_size(a_key->priv_key_data);
-    } else {
-        log_it(L_WARNING, "No callback for key public size calculate");
-        return a_key->pub_key_data_size;
     }
+    log_it(L_WARNING, "No callback for key public size calculate");
+    return a_key->pub_key_data_size;
 }
 
 size_t dap_enc_gen_key_public_size (dap_enc_key_t *a_key)
 {
-    if(a_key)
-        switch (a_key->type) {
-            case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-                return dap_enc_picnic_calc_signature_size(a_key);
-                break;
-            case DAP_ENC_KEY_TYPE_SIG_BLISS:
-                return dap_enc_sig_bliss_key_pub_output_size(a_key);
-                break;
-            default:
-                log_it(L_WARNING, "No callback for key public size calculate");
-                return 0;
-                break;
-        }
+// sanity check
+    dap_return_val_if_pass(!a_key, 0);
+// func work
+    switch (a_key->type) {
+        case DAP_ENC_KEY_TYPE_SIG_PICNIC:
+            return dap_enc_picnic_calc_signature_size(a_key);
+            break;
+        case DAP_ENC_KEY_TYPE_SIG_BLISS:
+            return dap_enc_sig_bliss_key_pub_output_size(a_key);
+            break;
+        default:
+            log_it(L_WARNING, "No callback for key public size calculate");
+            return 0;
+            break;
+    }
 }
 
-int dap_enc_gen_key_public (dap_enc_key_t *a_key, void * a_output)
+int dap_enc_gen_key_public (dap_enc_key_t *a_key, void *a_output)
 {
+// sanity check
+    dap_return_val_if_pass(!a_key, -1);
+// func work
     if(s_callbacks[a_key->type].gen_key_public) {
-        return s_callbacks[a_key->type].gen_key_public(a_key,a_output);
-    } else {
-        log_it(L_ERROR, "No callback for key public generate action");
+        return s_callbacks[a_key->type].gen_key_public(a_key, a_output);
     }
-    return -1;
+    log_it(L_ERROR, "No callback for key public generate action");
+    return -2;
 }
 
 /**
- * @brief dap_enc_key_delete
- * @param a_key
+ * @brief sign delete
+ * @param a_key_type - key type to callback
+ * @param a_sig_buf - sign buf
  */
 void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_buf)
 {
+// sanity check
+    dap_return_if_pass(DAP_ENC_KEY_TYPE_INVALID == a_key_type || !a_sig_buf);
+// func work
     switch (a_key_type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
         bliss_signature_delete((bliss_signature_t*)a_sig_buf);
@@ -990,10 +995,13 @@ void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_
 
 /**
  * @brief dap_enc_key_delete
- * @param a_key
+ * @param a_key to delete
  */
 void dap_enc_key_delete(dap_enc_key_t * a_key)
 {
+// sanity check
+    dap_return_if_pass(!a_key);
+// func work
     if(s_callbacks[a_key->type].delete_callback) {
         s_callbacks[a_key->type].delete_callback(a_key);
     } else {
@@ -1003,8 +1011,17 @@ void dap_enc_key_delete(dap_enc_key_t * a_key)
     DAP_DEL_MULTY(a_key->pub_key_data, a_key->priv_key_data, a_key);
 }
 
-size_t dap_enc_key_get_enc_size(dap_enc_key_t * a_key, const size_t a_buf_in_size)
+/**
+ * @brief calc enc size
+ * @param a_key to calc
+ * @param a_buf_in_size in buf size to calc
+ * @return calced size or 0
+ */
+size_t dap_enc_key_get_enc_size(dap_enc_key_t *a_key, const size_t a_buf_in_size)
 {
+// sanity check
+    dap_return_val_if_pass(!a_key, 0);
+// func work
     if(s_callbacks[a_key->type].enc_out_size) {
         return s_callbacks[a_key->type].enc_out_size(a_buf_in_size);
     }
@@ -1012,8 +1029,17 @@ size_t dap_enc_key_get_enc_size(dap_enc_key_t * a_key, const size_t a_buf_in_siz
     return 0;
 }
 
-size_t dap_enc_key_get_dec_size(dap_enc_key_t * a_key, const size_t a_buf_in_size)
+/**
+ * @brief calc dec size
+ * @param a_key to calc
+ * @param a_buf_in_size in buf size to calc
+ * @return calced size or 0
+ */
+size_t dap_enc_key_get_dec_size(dap_enc_key_t *a_key, const size_t a_buf_in_size)
 {
+// sanity check
+    dap_return_val_if_pass(!a_key, 0);
+// func work
     if(s_callbacks[a_key->type].dec_out_size) {
         return s_callbacks[a_key->type].dec_out_size(a_buf_in_size);
     }
@@ -1045,6 +1071,7 @@ dap_enc_key_type_t dap_enc_key_type_find_by_name(const char * a_name){
 
 size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
 {
+// sanity check
     dap_return_val_if_pass(!a_key, 0);
     size_t l_sign_size = 0;
     switch (a_key->type){
@@ -1070,6 +1097,10 @@ dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(const dap_enc_key_t **a_keys,
 // memory alloc
     dap_enc_key_t *l_ret = dap_enc_key_new(DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED);
     dap_return_val_if_pass(!l_ret, NULL);
+    if (!l_ret) {
+        log_it(L_ERROR, "Can't create multisign key");
+        return NULL;
+    }
 // func work
     dap_multi_sign_params_t *l_params = dap_multi_sign_params_make(SIG_TYPE_MULTI_CHAINED, a_keys, a_count, NULL, a_count);
     dap_enc_sig_multisign_forming_keys(l_ret, l_params);

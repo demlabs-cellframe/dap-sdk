@@ -75,7 +75,7 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
 
 uint8_t *dap_enc_sig_multisign_write_signature(const void *a_sign, size_t *a_out_len);
 dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_t *a_sign, size_t a_sign_len);
-dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, dap_enc_key_t **a_keys, uint8_t a_key_count, const int *a_key_seq, uint8_t a_sign_count);
+dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, const dap_enc_key_t **a_keys, uint8_t a_key_count, const int *a_key_seq, uint8_t a_sign_count);
 void dap_multi_sign_params_delete(dap_multi_sign_params_t *a_params);
 int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, const size_t a_msg_size,
         void *a_sign_out, const size_t a_out_size_max);

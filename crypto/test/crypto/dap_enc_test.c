@@ -239,7 +239,8 @@ static void test_serialize_deserialize(dap_enc_key_type_t key_type)
     dap_assert(!memcmp(l_ser_key, l_deser_key, l_buflen),
                "dap_enc_key_serialize_t equals");
 
-    dap_enc_key_t *key2 = dap_enc_key_deserialize(l_deser_key, l_buflen);
+    dap_enc_key_t *key3 = dap_enc_key_deserialize(l_deser_key, l_buflen);
+    dap_enc_key_t *key2 = dap_enc_key_dup(key3);
 
     dap_assert(key->type == key2->type, "Key type");
     dap_assert(key->last_used_timestamp == key2->last_used_timestamp,
@@ -292,6 +293,7 @@ static void test_serialize_deserialize(dap_enc_key_type_t key_type)
 
     dap_enc_key_delete(key);
     dap_enc_key_delete(key2);
+    dap_enc_key_delete(key3);
 
     dap_pass_msg("Key serialize->deserialize");
     unlink(TEST_SER_FILE_NAME);

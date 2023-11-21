@@ -231,7 +231,7 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
  * @param a_sign_count Number of keys participating in multi-signing algorithm
  * @return Pointer to multi-signature params structure, if error - NULL
  */
-dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, dap_enc_key_t **a_keys, uint8_t a_key_count, const int *a_key_seq, uint8_t a_sign_count)
+dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, const dap_enc_key_t **a_keys, uint8_t a_key_count, const int *a_key_seq, uint8_t a_sign_count)
 {
 // sanity check
     dap_return_val_if_pass(a_type != SIG_TYPE_MULTI_CHAINED && a_type != SIG_TYPE_MULTI_COMBINED, NULL);
