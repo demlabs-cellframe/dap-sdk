@@ -51,3 +51,12 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..
 if (BUILD_GLOBAL_DB_TEST)
     add_subdirectory(test)
 endif()
+
+if(INSTALL_DAP_SDK)
+set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${dap_global_db_HDR}")
+INSTALL(TARGETS ${PROJECT_NAME} 
+        LIBRARY DESTINATION lib/dap/global_db/
+        ARCHIVE DESTINATION lib/dap/global_db/
+        PUBLIC_HEADER DESTINATION include/dap/global_db/
+)
+endif()

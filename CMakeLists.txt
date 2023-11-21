@@ -43,7 +43,10 @@ ExternalProject_Add(dap_json-c_dep
                     SOURCE_DIR ${PROJECT_SOURCE_DIR}/3rdparty/json-c/
                     CONFIGURE_COMMAND ${JSON-C-CONFIG_COMMAND})
 
-include(cmake/OS_Detection.cmake)
+if (INSTALL_DAP_SDK)
+    INSTALL(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/deps/ DESTINATION ./)
+endif()
+
 if (CELLFRAME_MODULES MATCHES "core")
     SET(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
     if (BUILD_DAP_TESTS)
@@ -61,7 +64,10 @@ endif()
 
 if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
     set(DAPSDK_MODULES "core crypto network-core network-client network-server")
-    set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m pthread)
+    set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m)
+    if(NOT ANDROID)
+        set(CELLFRAME_LIBS ${CELLFRAME_LIBS} pthread)
+    endif()
     if (SUPPORT_PYTHON_PLUGINS)
         set(CELLFRAME_MODULES "${CELLFRAME_MODULES} core chains network cs-none srv-")
     endif()

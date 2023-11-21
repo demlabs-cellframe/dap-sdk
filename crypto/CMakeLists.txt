@@ -333,3 +333,18 @@ if(BUILD_CRYPTO_TESTS)
     message("[*] Enable crypto test")
     add_subdirectory(test)
 endif()
+
+if(INSTALL_DAP_SDK)
+set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${CRYPTO_HEADERS}")
+INSTALL(TARGETS ${PROJECT_NAME} 
+        LIBRARY DESTINATION lib/dap/crypto/
+        ARCHIVE DESTINATION lib/dap/crypto/
+        PUBLIC_HEADER DESTINATION include/dap/crypto/
+)
+
+INSTALL(DIRECTORY src/XKCP/ DESTINATION include/dap/crypto/XKCP/)
+INSTALL(DIRECTORY src/rand/ DESTINATION include/dap/crypto/rand/)
+INSTALL(DIRECTORY src/msrln/ DESTINATION include/dap/crypto/msrln/)
+INSTALL(DIRECTORY src/sig_dilithium/ DESTINATION include/dap/crypto/sig_dilithium/)
+INSTALL(DIRECTORY src/sha3/ DESTINATION include/dap/crypto/sha3/)
+endif()

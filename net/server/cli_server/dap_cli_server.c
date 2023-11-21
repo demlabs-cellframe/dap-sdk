@@ -480,7 +480,7 @@ int dap_cli_server_init(bool a_debug_more,const char * a_socket_path_or_address,
         server_addr.sin_family = AF_INET;
 #ifdef _WIN32
         server_addr.sin_addr = (struct in_addr){{ .S_addr = htonl(INADDR_LOOPBACK) }};
-        server_addr.sin_port = l_listen_port;
+        server_addr.sin_port = htons( (uint16_t)l_listen_port );;
 #else
         inet_pton( AF_INET, l_listen_addr_str, &server_addr.sin_addr );
         server_addr.sin_port = htons( (uint16_t)l_listen_port );
@@ -825,7 +825,7 @@ char    *str_header;
                 size_t l_reply_rest = l_reply_len;
 
                 while(l_reply_rest) {
-                    size_t l_send_bytes = min(l_reply_step, l_reply_rest);
+                    size_t l_send_bytes = dap_min(l_reply_step, l_reply_rest);
                     int ret = send(newsockfd, reply_str + l_reply_len - l_reply_rest, l_send_bytes, MSG_NOSIGNAL);
                     if(ret<=0)
                         break;
