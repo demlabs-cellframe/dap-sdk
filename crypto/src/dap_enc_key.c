@@ -396,11 +396,19 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .dec_out_size =                     NULL,
         .sign_get =                         dap_enc_sig_sphincsplus_get_sign,
         .sign_verify =                      dap_enc_sig_sphincsplus_verify_sign,
+
         .ser_sign =                         dap_enc_sig_sphincsplus_write_signature,
         .ser_priv_key =                     dap_enc_sig_sphincsplus_write_private_key,
         .ser_pub_key =                      dap_enc_sig_sphincsplus_write_public_key,
         .ser_priv_key_size =                dap_enc_sig_sphincsplus_ser_private_key_size,
         .ser_pub_key_size =                 dap_enc_sig_sphincsplus_ser_public_key_size,
+
+        .deser_sign =                       dap_enc_sig_sphincsplus_read_signature,
+        .deser_priv_key =                   dap_enc_sig_sphincsplus_read_private_key,
+        .deser_pub_key =                    dap_enc_sig_sphincsplus_read_public_key,
+        .deser_sign_size =                  dap_enc_sig_sphincsplus_deser_sig_size,
+        .deser_pub_key_size =               dap_enc_sig_sphincsplus_deser_public_key_size,
+        .deser_priv_key_size =              dap_enc_sig_sphincsplus_deser_private_key_size,
     },
     [DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED]={
         .name =                             "MULTI_CHAINED",
@@ -507,12 +515,9 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         l_data = s_callbacks[a_key_type].deser_sign(a_sign, *a_sign_len);
         *a_sign_len = s_callbacks[a_key_type].deser_sign_size(NULL);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        l_data = (uint8_t*)dap_enc_sphincsplus_read_signature(a_sign, *a_sign_len);
-        *a_sign_len = sizeof(sphincsplus_signature_t);
         break;
     default:
         DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, *a_sign_len, NULL, NULL);
@@ -622,6 +627,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         dilithium_private_key_delete((dilithium_private_key_t *) a_key->priv_key_data);
         a_key->priv_key_data = s_callbacks[a_key->type].deser_priv_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
@@ -629,15 +635,6 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
             return -4;
         }
         a_key->priv_key_data_size = s_callbacks[a_key->type].deser_priv_key_size(NULL);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        sphincsplus_private_key_delete((sphincsplus_private_key_t *) a_key->priv_key_data);
-        a_key->priv_key_data = (uint8_t*) dap_enc_sphincsplus_read_private_key(a_buf, a_buflen);
-        if(!a_key->priv_key_data) {
-            a_key->priv_key_data_size = 0;
-            return -5;
-        }
-        a_key->priv_key_data_size = sizeof(sphincsplus_private_key_t);
         break;
     default:
         DAP_DEL_Z(a_key->priv_key_data);
@@ -689,6 +686,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
+    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         if ( a_key->pub_key_data )
             dilithium_public_key_delete((dilithium_public_key_t *) a_key->pub_key_data);
 
@@ -698,17 +696,6 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
             return -1;
         }
         a_key->pub_key_data_size = s_callbacks[a_key->type].deser_pub_key_size(NULL);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        if ( a_key->pub_key_data )
-            sphincsplus_public_key_delete((sphincsplus_public_key_t *)a_key->pub_key_data);
-
-        a_key->pub_key_data = (uint8_t*) dap_enc_sphincsplus_read_public_key(a_buf, a_buflen);
-        if(!a_key->pub_key_data) {
-            a_key->pub_key_data_size = 0;
-            return -1;
-        }
-        a_key->pub_key_data_size = sizeof(sphincsplus_public_key_t);
         break;
     default:
         DAP_DEL_Z(a_key->pub_key_data);
@@ -809,7 +796,6 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
     if (l_res_des || l_priv_deser || l_pub_deser) {
             DAP_DEL_MULTY(l_ret->_inheritor, l_ser_pkey, l_ser_skey, l_ret);
             log_it(L_ERROR, "Enc_key pub and priv keys deserialisation error");
-            printf("Enc_key pub and priv keys deserialisation error a_buf_size = %llu l_sizes_len = %llu l_ser_skey_size = %llu l_ser_pkey_size = %llu\n", a_buf_size, l_sizes_len, l_ser_skey_size, l_ser_pkey_size);
             fflush(stdout);
             return NULL;
         }
@@ -1085,9 +1071,9 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
         case DAP_ENC_KEY_TYPE_SIG_TESLA: l_sign_size = dap_enc_tesla_calc_signature_size(); break;
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: 
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
             l_sign_size = s_callbacks[a_key->type].deser_sign_size(NULL);
             break;
-        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_sign_size = dap_enc_sphincsplus_calc_signature_unserialized_size(); break;
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED: l_sign_size = sizeof(dap_multi_sign_t); break;
 #ifdef DAP_PQRL
         case DAP_ENC_KEY_TYPE_SIG_PQLR_DILITHIUM: l_sign_size = dap_pqlr_dilithium_calc_signature_size(a_key); break;
