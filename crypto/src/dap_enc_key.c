@@ -255,6 +255,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .sign_verify =                      dap_enc_sig_picnic_verify_sign,
         .ser_priv_key_size =                NULL,
         .ser_pub_key_size =                 NULL,
+        .deser_sign_size =                  dap_enc_sig_picnic_deser_sig_size,
     },
     [DAP_ENC_KEY_TYPE_SIG_BLISS]={
         .name =                             "SIG_BLISS",
@@ -600,10 +601,8 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
  */
 uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
 {
-    if (!a_key->pub_key_data){
-        log_it(L_ERROR, "Public key is NULL");
-        return NULL;
-    }
+// sanity check
+    dap_return_val_if_pass(!a_key || !a_key->pub_key_data, NULL);
     uint8_t *l_data = NULL;
 
     switch (a_key->type) {
@@ -635,13 +634,6 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
     if(!a_key || !a_buf)
         return -1;
     switch (a_key->type) {
-    case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-        DAP_DEL_Z(a_key->priv_key_data);
-        a_key->priv_key_data_size = a_buflen;
-        DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -1, NULL);
-        memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
-        dap_enc_sig_picnic_update(a_key);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
@@ -661,6 +653,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data_size = a_buflen;
         DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -1, NULL);
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
+        dap_enc_key_update(a_key);
     }
     return 0;
 }
@@ -677,13 +670,6 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
 // sanity check
     dap_return_val_if_pass(!a_key || !a_buf, -1);
     switch (a_key->type) {
-    case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-        DAP_DEL_Z(a_key->pub_key_data);
-        a_key->pub_key_data_size = a_buflen;
-        DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1, NULL);
-        memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
-        dap_enc_sig_picnic_update(a_key);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
@@ -704,6 +690,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         a_key->pub_key_data_size = a_buflen;
         DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1, NULL);
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
+        dap_enc_key_update(a_key);
     }
     return 0;
 }
@@ -930,7 +917,7 @@ size_t dap_enc_gen_key_public_size (dap_enc_key_t *a_key)
 // func work
     switch (a_key->type) {
         case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-            return dap_enc_picnic_calc_signature_size(a_key);
+            return dap_enc_sig_picnic_deser_sig_size(a_key);
             break;
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
             return dap_enc_sig_tesla_deser_public_key_size(a_key);
@@ -1060,13 +1047,13 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
     dap_return_val_if_pass(!a_key, 0);
     size_t l_sign_size = 0;
     switch (a_key->type){
-        case DAP_ENC_KEY_TYPE_SIG_PICNIC: l_sign_size = dap_enc_picnic_calc_signature_size(a_key); break;
+        case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: 
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-            l_sign_size = s_callbacks[a_key->type].deser_sign_size(NULL);
+            l_sign_size = s_callbacks[a_key->type].deser_sign_size(a_key);
             break;
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED: l_sign_size = sizeof(dap_multi_sign_t); break;
 #ifdef DAP_PQRL
