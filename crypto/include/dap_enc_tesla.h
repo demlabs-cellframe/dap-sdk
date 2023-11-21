@@ -66,8 +66,7 @@ DAP_STATIC_INLINE uint64_t dap_enc_sig_tesla_ser_private_key_size(const void *a_
     return sizeof(uint64_t) + sizeof(uint32_t) + l_p.CRYPTO_SECRETKEYBYTES;
 }
 
-DAP_STATIC_INLINE 
-uint64_t dap_enc_sig_tesla_ser_public_key_size(const void *a_pkey)
+DAP_STATIC_INLINE uint64_t dap_enc_sig_tesla_ser_public_key_size(const void *a_pkey)
 {
 // sanity check
     tesla_param_t l_p;

@@ -247,7 +247,7 @@ uint8_t *dap_enc_sig_sphincsplus_write_public_key(const void* a_public_key, size
     sphincsplus_public_key_t *l_public_key = (sphincsplus_public_key_t *)a_public_key;
 // func work
     uint64_t l_public_length = dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(&l_public_key->params);
-    uint64_t l_buflen = dap_enc_sig_sphincsplus_ser_public_key_size((void *)l_public_key);
+    uint64_t l_buflen = dap_enc_sig_sphincsplus_ser_public_key_size(a_public_key);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6, 
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_public_key->params, (uint64_t)sizeof(sphincsplus_base_params_t),
@@ -299,7 +299,7 @@ uint8_t *dap_enc_sig_sphincsplus_write_signature(const void *a_sign, size_t *a_b
     dap_return_val_if_pass(!a_sign, NULL);
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign;
 // func work
-    uint64_t l_buflen = l_sign->sig_len + sizeof(uint64_t) * 2 + sizeof(sphincsplus_base_params_t);
+    uint64_t l_buflen = dap_enc_sig_sphincsplus_ser_sig_size(a_sign);
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8, 
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_sign->sig_params, (uint64_t)sizeof(sphincsplus_base_params_t),

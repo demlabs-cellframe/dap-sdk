@@ -27,34 +27,6 @@ void dap_enc_sig_bliss_key_new(dap_enc_key_t *a_key) {
 }
 
 /**
- * @brief dap_enc_sig_bliss_key_pub_output_size
- * @param l_key
- * @return
- */
-size_t dap_enc_sig_bliss_key_pub_output_size(UNUSED_ARG dap_enc_key_t *l_key)
-{
-    return sizeof(bliss_public_key_t); // Always same, right?
-}
-
-uint64_t dap_enc_sig_bliss_ser_private_key_size(const void *a_skey)
-{
-// sanity check
-    bliss_param_t l_p;
-    dap_return_val_if_pass(!a_skey || !bliss_params_init(&l_p, ((bliss_private_key_t *)a_skey)->kind), 0);
-// func work
-    return sizeof(uint64_t) + sizeof(uint32_t) + 3 * l_p.n * sizeof(int32_t);
-}
-
-uint64_t dap_enc_sig_bliss_ser_public_key_size(const void *a_pkey)
-{
-// sanity check
-    bliss_param_t l_p;
-    dap_return_val_if_pass(!a_pkey || !bliss_params_init(&l_p, ((bliss_public_key_t *)a_pkey)->kind), 0);
-// func work
-    return sizeof(uint64_t) + sizeof(uint32_t) + l_p.n * sizeof(uint64_t);
-}
-
-/**
  * @brief dap_enc_sig_bliss_key_pub_output
  * @param l_key
  * @param l_output
@@ -174,7 +146,7 @@ uint8_t *dap_enc_sig_bliss_write_signature(const void *a_sign, size_t *a_buflen_
     bliss_param_t p;
     dap_return_val_if_pass(!bliss_params_init(&p, l_sign->kind), NULL);
 // func work
-    uint64_t l_buflen = sizeof(uint64_t) + sizeof(uint32_t) + p.n * 2 * sizeof(int32_t) + p.kappa * sizeof(int32_t);
+    uint64_t l_buflen = dap_enc_sig_bliss_ser_sig_size(a_sign);
     uint32_t l_kind = l_sign->kind;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
         &l_buflen, (uint64_t)sizeof(uint64_t),
@@ -189,7 +161,7 @@ uint8_t *dap_enc_sig_bliss_write_signature(const void *a_sign, size_t *a_buflen_
 }
 
 /* Deserialize a signature */
-bliss_signature_t* dap_enc_sig_bliss_read_signature(const uint8_t *a_buf, size_t a_buflen)
+uint8_t *dap_enc_sig_bliss_read_signature(const uint8_t *a_buf, size_t a_buflen)
 {
     if(!a_buf || a_buflen < (sizeof(uint64_t) + sizeof(uint32_t)))
         return NULL ;
@@ -218,7 +190,7 @@ bliss_signature_t* dap_enc_sig_bliss_read_signature(const uint8_t *a_buf, size_t
     memcpy(l_sign->z2, a_buf + l_shift_mem, p.n * sizeof(int32_t));
     l_shift_mem += p.n * sizeof(int32_t);
     memcpy(l_sign->c, a_buf + l_shift_mem, p.kappa * sizeof(int32_t));
-    return l_sign;
+    return (uint8_t *)l_sign;
 }
 
 /* Serialize a private key. */
@@ -266,7 +238,7 @@ uint8_t *dap_enc_sig_bliss_write_public_key(const void *a_public_key, size_t *a_
 }
 
 /* Deserialize a private key. */
-bliss_private_key_t* dap_enc_sig_bliss_read_private_key(const uint8_t *a_buf, size_t a_buflen)
+uint8_t *dap_enc_sig_bliss_read_private_key(const uint8_t *a_buf, size_t a_buflen)
 {
     if(!a_buf || a_buflen < (sizeof(uint64_t) + sizeof(uint32_t)))
         return NULL;
@@ -297,11 +269,11 @@ bliss_private_key_t* dap_enc_sig_bliss_read_private_key(const uint8_t *a_buf, si
     l_shift_mem += p.n * sizeof(int32_t);
     memcpy(l_private_key->a, a_buf + l_shift_mem, p.n * sizeof(int32_t));
     l_shift_mem += p.n * sizeof(int32_t);
-    return l_private_key;
+    return (uint8_t *)l_private_key;
 }
 
 /* Deserialize a public key. */
-bliss_public_key_t* dap_enc_sig_bliss_read_public_key(const uint8_t *a_buf, size_t a_buflen)
+uint8_t *dap_enc_sig_bliss_read_public_key(const uint8_t *a_buf, size_t a_buflen)
 {
     if(!a_buf || a_buflen < (sizeof(uint64_t) + sizeof(uint32_t)))
         return NULL;
@@ -327,5 +299,5 @@ bliss_public_key_t* dap_enc_sig_bliss_read_public_key(const uint8_t *a_buf, size
         return NULL;
     }
     memcpy(l_public_key->a, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.n * sizeof(int32_t));
-    return l_public_key;
+    return (uint8_t *)l_public_key;
 }

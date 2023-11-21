@@ -57,7 +57,8 @@ DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_ser_sig_size(const void *a_si
 {
     if (!a_sign)
         return 0;
-    return sizeof(uint64_t) * 2 + sizeof(uint32_t) + ((sphincsplus_signature_t *)a_sign)->sig_len;
+        
+    return ((sphincsplus_signature_t *)a_sign)->sig_len + sizeof(uint64_t) * 2 + sizeof(sphincsplus_base_params_t);
 }
 
 DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_ser_private_key_size(const void *a_skey)

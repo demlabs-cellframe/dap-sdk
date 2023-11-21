@@ -99,11 +99,6 @@ void dap_enc_sig_tesla_key_delete(dap_enc_key_t *key)
     key->pub_key_data = NULL;
 }
 
-size_t dap_enc_sig_tesla_calc_signature_size(void)
-{
-    return sizeof(tesla_signature_t);
-}
-
 /* Serialize a signature */
 uint8_t *dap_enc_sig_tesla_write_signature(const void *a_sign, size_t *a_buflen_out)
 {
