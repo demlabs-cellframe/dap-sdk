@@ -379,14 +379,14 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
             ? memcpy(&log_str[offset--], "\n", 1) + 1
             : memcpy(&log_str[STR_LOG_BUF_MAX - 5], "...\n\0", 5) + 5;
     offset = pos - log_str;
+    fwrite(log_str, offset, 1, stdout);
+    fflush(stdout);
     if (!s_log_file) {
         if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path))
             return;
-    }
+    } 
     if (s_log_file) {
         fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
-        fwrite(log_str, offset, 1, stdout);
-        fflush(stdout);
     }
 }
 
