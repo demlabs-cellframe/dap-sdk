@@ -762,7 +762,8 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
 // sanity check
     uint64_t l_sizes_len = sizeof(uint64_t) * 5 + sizeof(int32_t);
     dap_return_val_if_pass(!buf || a_buf_size < l_sizes_len, NULL);
-    printf("a_buf_size = %llu l_sizes_len = %llu", a_buf_size, l_sizes_len);
+    printf("a_buf_size = %llu l_sizes_len = %llu\n", a_buf_size, l_sizes_len);
+    fflush(stdout);
     int32_t l_type = DAP_ENC_KEY_TYPE_NULL;
     uint64_t l_timestamp = 0, l_ser_skey_size = 0, l_ser_pkey_size = 0, l_ser_inheritor_size = 0, l_buflen = 0;
     uint8_t *l_ser_skey = NULL, *l_ser_pkey = NULL;
@@ -779,6 +780,9 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
         log_it(L_ERROR, "Enc_key size deserialisation error");
         return NULL;
     }
+
+    printf("l_ser_skey_size = %llu l_ser_pkey_size = %llu\n", l_ser_skey_size, l_ser_pkey_size);
+    fflush(stdout);
 // memory alloc
     dap_enc_key_t *l_ret = dap_enc_key_new(l_type);
     if (!l_ret) {
