@@ -15,23 +15,6 @@ void dap_enc_sig_tesla_set_type(enum DAP_TESLA_SIGN_SECURITY type)
     _tesla_type = type;
 }
 
-uint64_t dap_enc_sig_tesla_ser_private_key_size(const void *a_skey)
-{
-// sanity check
-    tesla_param_t l_p;
-    dap_return_val_if_pass(!a_skey || !tesla_params_init(&l_p, ((tesla_public_key_t *)a_skey)->kind), 0);
-// func work
-    return sizeof(uint64_t) + sizeof(uint32_t) + l_p.CRYPTO_SECRETKEYBYTES;
-}
-
-uint64_t dap_enc_sig_tesla_ser_public_key_size(const void *a_pkey)
-{
-// sanity check
-    tesla_param_t l_p;
-    dap_return_val_if_pass(!a_pkey || !tesla_params_init(&l_p, ((tesla_public_key_t *)a_pkey)->kind), 0);
-// func work
-    return sizeof(uint64_t) + sizeof(uint32_t) + l_p.CRYPTO_PUBLICKEYBYTES;
-}
 
 void dap_enc_sig_tesla_key_new(dap_enc_key_t *a_key) {
 
@@ -111,13 +94,12 @@ int dap_enc_sig_tesla_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
 void dap_enc_sig_tesla_key_delete(dap_enc_key_t *key)
 {
     dap_return_if_pass(!key);
-    tesla_private_and_public_keys_delete((tesla_private_key_t *) key->priv_key_data,
-            (tesla_public_key_t *) key->pub_key_data);
+    tesla_private_and_public_keys_delete(key->priv_key_data, key->pub_key_data);
     key->priv_key_data = NULL;
     key->pub_key_data = NULL;
 }
 
-size_t dap_enc_tesla_calc_signature_size(void)
+size_t dap_enc_sig_tesla_calc_signature_size(void)
 {
     return sizeof(tesla_signature_t);
 }
@@ -130,7 +112,7 @@ uint8_t *dap_enc_sig_tesla_write_signature(const void *a_sign, size_t *a_buflen_
     dap_return_val_if_pass(!a_sign, NULL);
     tesla_signature_t *l_sign = (tesla_signature_t *)a_sign;
 // func work
-    uint64_t l_buflen = sizeof(uint64_t) * 2 + sizeof(uint32_t) + l_sign->sig_len;
+    uint64_t l_buflen = dap_enc_sig_tesla_ser_sig_size(l_sign);
     uint32_t l_kind = l_sign->kind;
     uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8,
         &l_buflen, (uint64_t)sizeof(uint64_t),
@@ -144,7 +126,7 @@ uint8_t *dap_enc_sig_tesla_write_signature(const void *a_sign, size_t *a_buflen_
 }
 
 /* Deserialize a signature */
-tesla_signature_t* dap_enc_tesla_read_signature(uint8_t *a_buf, size_t a_buflen)
+uint8_t *dap_enc_sig_tesla_read_signature(const uint8_t *a_buf, size_t a_buflen)
 {
 // sanity check
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) * 2 + sizeof(uint32_t), NULL);
@@ -170,7 +152,7 @@ tesla_signature_t* dap_enc_tesla_read_signature(uint8_t *a_buf, size_t a_buflen)
         DAP_DEL_MULTY(l_sign->sig_data, l_sign);
         return NULL;
     }
-    return l_sign;
+    return (uint8_t *)l_sign;
 }
 
 /* Serialize a private key. */
@@ -195,7 +177,7 @@ uint8_t *dap_enc_sig_tesla_write_private_key(const void *a_private_key, size_t *
 }
 
 /* Deserialize a private key. */
-tesla_private_key_t* dap_enc_tesla_read_private_key(const uint8_t *a_buf, size_t a_buflen)
+uint8_t *dap_enc_sig_tesla_read_private_key(const uint8_t *a_buf, size_t a_buflen)
 {
 // sanity check
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) + sizeof(uint32_t), NULL);
@@ -220,7 +202,7 @@ tesla_private_key_t* dap_enc_tesla_read_private_key(const uint8_t *a_buf, size_t
         DAP_DEL_MULTY(l_skey->data, l_skey);
         return NULL;
     }
-    return l_skey;
+    return (uint8_t *)l_skey;
 }
 
 
@@ -246,7 +228,7 @@ uint8_t *dap_enc_sig_tesla_write_public_key(const void *a_public_key, size_t *a_
 }
 
 /* Deserialize a public key. */
-tesla_public_key_t* dap_enc_tesla_read_public_key(const uint8_t *a_buf, size_t a_buflen)
+uint8_t *dap_enc_sig_tesla_read_public_key(const uint8_t *a_buf, size_t a_buflen)
 {
 // sanity check
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) + sizeof(uint32_t), NULL);
@@ -271,5 +253,5 @@ tesla_public_key_t* dap_enc_tesla_read_public_key(const uint8_t *a_buf, size_t a
         DAP_DEL_MULTY(l_pkey->data, l_pkey);
         return NULL;
     }
-    return l_pkey;
+    return (uint8_t *)l_pkey;
 }

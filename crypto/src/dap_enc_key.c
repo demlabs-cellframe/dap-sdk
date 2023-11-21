@@ -288,18 +288,31 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_key_public =                   NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
-        .new_callback =                     dap_enc_sig_tesla_key_new,
-        .delete_callback =                  dap_enc_sig_tesla_key_delete,
-        .new_generate_callback =            dap_enc_sig_tesla_key_new_generate,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
+    
+        .new_callback =                     dap_enc_sig_tesla_key_new,
+        .new_generate_callback =            dap_enc_sig_tesla_key_new_generate,
+
+        .delete_callback =                  dap_enc_sig_tesla_key_delete,
+        .del_sign =                         tesla_signature_delete,
+        .del_pub_key =                      tesla_public_key_delete,
+        .del_priv_key =                     tesla_private_key_delete,
+        
         .sign_get =                         dap_enc_sig_tesla_get_sign,
         .sign_verify =                      dap_enc_sig_tesla_verify_sign,
         .ser_sign =                         dap_enc_sig_tesla_write_signature,
         .ser_priv_key =                     dap_enc_sig_tesla_write_private_key,
         .ser_pub_key =                      dap_enc_sig_tesla_write_public_key,
         .ser_priv_key_size =                dap_enc_sig_tesla_ser_private_key_size,
-        .ser_pub_key_size =                 dap_enc_sig_tesla_ser_public_key_size
+        .ser_pub_key_size =                 dap_enc_sig_tesla_ser_public_key_size,
+
+        .deser_sign =                       dap_enc_sig_tesla_read_signature,
+        .deser_priv_key =                   dap_enc_sig_tesla_read_private_key,
+        .deser_pub_key =                    dap_enc_sig_tesla_read_public_key,
+        .deser_sign_size =                  dap_enc_sig_tesla_deser_sig_size,
+        .deser_pub_key_size =               dap_enc_sig_tesla_deser_public_key_size,
+        .deser_priv_key_size =              dap_enc_sig_tesla_deser_private_key_size,
     },
     [DAP_ENC_KEY_TYPE_SIG_DILITHIUM]={
         .name =                             "SIG_DILITHIUM",
@@ -531,9 +544,6 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
         *a_sign_len = sizeof(bliss_signature_t);
         break;
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        l_data = (uint8_t*)dap_enc_tesla_read_signature(a_sign, *a_sign_len);
-        *a_sign_len = sizeof(tesla_signature_t);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
@@ -630,15 +640,6 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         }
         a_key->priv_key_data_size = sizeof(bliss_private_key_t);
         break;
-    case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        tesla_private_key_delete((tesla_private_key_t *) a_key->priv_key_data);
-        a_key->priv_key_data = (uint8_t*) dap_enc_tesla_read_private_key(a_buf, a_buflen);
-        if(!a_key->priv_key_data) {
-            a_key->priv_key_data_size = 0;
-            return -3;
-        }
-        a_key->priv_key_data_size = sizeof(tesla_private_key_t);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         DAP_DEL_Z(a_key->priv_key_data);
         a_key->priv_key_data_size = a_buflen;
@@ -646,6 +647,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
         dap_enc_sig_picnic_update(a_key);
         break;
+    case DAP_ENC_KEY_TYPE_SIG_TESLA:
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
@@ -690,15 +692,6 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         }
         a_key->pub_key_data_size = sizeof(bliss_public_key_t);
         break;
-    case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        tesla_public_key_delete((tesla_public_key_t *) a_key->pub_key_data);
-        a_key->pub_key_data = (uint8_t*) dap_enc_tesla_read_public_key(a_buf, a_buflen);
-        if(!a_key->pub_key_data) {
-            a_key->pub_key_data_size = 0;
-            return -1;
-        }
-        a_key->pub_key_data_size = sizeof(tesla_public_key_t);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         DAP_DEL_Z(a_key->pub_key_data);
         a_key->pub_key_data_size = a_buflen;
@@ -706,10 +699,11 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
         dap_enc_sig_picnic_update(a_key);
         break;
+    case DAP_ENC_KEY_TYPE_SIG_TESLA:
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        if ( a_key->pub_key_data )
+        if (a_key->pub_key_data)
             s_callbacks[a_key->type].del_pub_key(a_key->pub_key_data);
 
         a_key->pub_key_data = s_callbacks[a_key->type].deser_pub_key(a_buf, a_buflen);
@@ -989,8 +983,6 @@ void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_
         bliss_signature_delete((bliss_signature_t*)a_sig_buf);
         break;
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        tesla_signature_delete((tesla_signature_t*)a_sig_buf);
-        break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
@@ -1086,7 +1078,7 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
     switch (a_key->type){
         case DAP_ENC_KEY_TYPE_SIG_BLISS: l_sign_size = sizeof(bliss_signature_t); break;
         case DAP_ENC_KEY_TYPE_SIG_PICNIC: l_sign_size = dap_enc_picnic_calc_signature_size(a_key); break;
-        case DAP_ENC_KEY_TYPE_SIG_TESLA: l_sign_size = dap_enc_tesla_calc_signature_size(); break;
+        case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: 
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:

@@ -85,11 +85,11 @@ int tesla_crypto_sign(tesla_signature_t *, const unsigned char *, unsigned long 
 
 int tesla_crypto_sign_open(tesla_signature_t *, const unsigned char *, unsigned long long, const tesla_public_key_t *);
 
-void tesla_private_key_delete(tesla_private_key_t *private_key);
-void tesla_public_key_delete(tesla_public_key_t *public_key);
-void tesla_private_and_public_keys_delete(tesla_private_key_t *private_key, tesla_public_key_t *public_key);
+void tesla_private_key_delete(void *private_key);
+void tesla_public_key_delete(void *public_key);
+void tesla_private_and_public_keys_delete(void *private_key, void *public_key);
 
-void tesla_signature_delete(tesla_signature_t *signature);
+void tesla_signature_delete(void *signature);
 
 int64_t init_mass_poly(poly *zeta, poly *zetainv, tesla_param_t *p);
 int64_t reduce(int64_t a, tesla_param_t *p);
