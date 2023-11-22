@@ -1654,20 +1654,14 @@ void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_p
     dap_events_socket_descriptor_close(a_esocket);
     if (!a_preserve_inheritor)
         DAP_DEL_Z(a_esocket->_inheritor);
-<<<<<<< HEAD
-#ifdef DAP_EVENTS_CAPS_IOCP
-    if (a_esocket->type == DESCRIPTOR_TYPE_QUEUE)
-        DAP_ALFREE(a_esocket->_pvt);
-=======
 
-#ifdef DAP_OS_WINDOWS
+#ifdef DAP_EVENTS_CAPS_IOCP
     if (a_esocket->type == DESCRIPTOR_TYPE_QUEUE) {
         DAP_ALFREE(a_esocket->_pvt);
         a_esocket->_pvt = NULL;
     } else {
         DAP_DEL_Z(a_esocket->_pvt);
     }
->>>>>>> 87285739917f1d7864aad19e5f96ce739b12a170
 #else
     DAP_DEL_Z(a_esocket->_pvt);
 #endif
