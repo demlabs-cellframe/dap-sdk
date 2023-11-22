@@ -414,7 +414,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
 
                     char *l_suburl;
 
-                    uint32_t l_least_common_dap_protocol = min(a_client_pvt->remote_protocol_version,
+                    uint32_t l_least_common_dap_protocol = dap_min(a_client_pvt->remote_protocol_version,
                                                                a_client_pvt->uplink_protocol_version);
 
                     if(l_least_common_dap_protocol < 23){

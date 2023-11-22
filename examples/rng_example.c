@@ -1,7 +1,6 @@
 #include <stdio.h>
-#include "../crypto/src/rand/dap_rand.h"
+#include "rand/dap_rand.h"
 #include "dap_math_ops.h"
-#include "dap_chain_common.h"
 
 #define NUMBER_OF_BITSTREAMS 100
 #define NUMBER_OF_ELEMENTS 1024 * 4

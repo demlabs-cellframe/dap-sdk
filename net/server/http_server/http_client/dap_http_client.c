@@ -239,7 +239,7 @@ const char ht_ver [] = "HTTP/1.";                                           /* W
     for ( ; !isspace(*l_cp_end) && l_buf_len; l_cp_end++, l_buf_len--);     /* Run method's symbols until first whitespace */
 
     l_len = l_cp_end - l_cp_start;
-    a_http_client->action_len = MIN(l_len, sizeof(a_http_client->action) - 1 );
+    a_http_client->action_len = dap_min(l_len, sizeof(a_http_client->action) - 1 );
     memcpy( a_http_client->action, l_cp_start, a_http_client->action_len);  /* Save HTTP method's name into the HT-client context */
     a_http_client->action[a_http_client->action_len] = '\0';                /* ASCIZ */
 
@@ -253,7 +253,7 @@ const char ht_ver [] = "HTTP/1.";                                           /* W
     for ( ; (*l_cp_end != '?') && !isspace(*l_cp_end) && l_buf_len; l_cp_end++, l_buf_len--); /* Run over <path> up to first <space> or '?' */
 
     l_len = l_cp_end - l_cp_start;
-    a_http_client->url_path_len = MIN(l_len, sizeof( a_http_client->url_path) - 1 );
+    a_http_client->url_path_len = dap_min(l_len, sizeof( a_http_client->url_path) - 1 );
     memcpy( a_http_client->url_path, l_cp_start, a_http_client->url_path_len);
     a_http_client->url_path[a_http_client->url_path_len] = '\0';            /* ASCIZ */
 
@@ -268,7 +268,7 @@ const char ht_ver [] = "HTTP/1.";                                           /* W
         for ( ; !isspace(*l_cp_end) && l_buf_len; l_cp_end++, l_buf_len--); /* Run over <arguments> up to first <space> */
 
         l_len = l_cp_end - l_cp_start;
-        a_http_client->in_query_string_len = MIN(l_len, sizeof( a_http_client->in_query_string) - 1 );
+        a_http_client->in_query_string_len = dap_min(l_len, sizeof( a_http_client->in_query_string) - 1 );
         memcpy( a_http_client->in_query_string, l_cp_start, a_http_client->in_query_string_len);
         a_http_client->in_query_string[a_http_client->in_query_string_len] = '\0';          /* ASCIZ */
     }
@@ -290,11 +290,10 @@ const char ht_ver [] = "HTTP/1.";                                           /* W
  * @param a_esocket
  * @param a_http_client
  */
-static inline void s_report_error_and_restart( dap_events_socket_t *a_esocket, dap_http_client_t *a_http_client )
+static inline void s_report_error_and_restart( dap_events_socket_t *a_esocket, dap_http_client_t *a_http_client, uint16_t error_code )
 {
     a_esocket->buf_in_size = 0;
     a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
-
     a_http_client->reply_status_code = 505;
     strcpy( a_http_client->reply_reason_phrase, "Error" );
     a_http_client->state_write = DAP_HTTP_CLIENT_STATE_START;
@@ -342,7 +341,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 {
                     log_it( L_ERROR, "Start-line '%.*s' is too short (%d < %d)",
                             (int ) a_esocket->buf_in_size, a_esocket->buf_in, (int) a_esocket->buf_in_size , HTTP$SZ_MINSTARTLINE );
-                    s_report_error_and_restart( a_esocket, l_http_client );
+                    s_report_error_and_restart( a_esocket, l_http_client,  400);
                     break;
                 }
 
@@ -352,7 +351,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 
                 if ( !l_peol ) {
                     log_it( L_ERROR, "Start-line '%.*s' is not terminated by CRLF pair", (int) a_esocket->buf_in_size, a_esocket->buf_in);
-                    s_report_error_and_restart( a_esocket, l_http_client );
+                    s_report_error_and_restart( a_esocket, l_http_client, 400 );
                     break;
                 }
 
@@ -362,7 +361,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                                                                             /* Parse HTTP's start-line */
                 if ( 0 > s_http_start_line_parse(l_http_client, (char *) a_esocket->buf_in, l_len) ) {
                     log_it( L_WARNING, "Error parsing request line '%.*s'", l_len, a_esocket->buf_in );
-                    s_report_error_and_restart( a_esocket, l_http_client );
+                    s_report_error_and_restart( a_esocket, l_http_client, 400 );
                     break;
                 }
 
@@ -392,7 +391,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 if ( !url_proc )
                 {
                     log_it( L_WARNING, "Input: unprocessed URL request %s is rejected", l_http_client->url_path );
-                    s_report_error_and_restart( a_esocket, l_http_client );
+                    s_report_error_and_restart( a_esocket, l_http_client, 404 );
                     break;
                 }
 
@@ -431,7 +430,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 if ( a_esocket->buf_in_size < 2 )                          /* 2 = CRLF pair */
                     {
                         log_it( L_ERROR, "HTTP Header field is too short (%d octets) to be useful", (int) a_esocket->buf_in_size);
-                        s_report_error_and_restart( a_esocket, l_http_client );
+                        s_report_error_and_restart( a_esocket, l_http_client, 400);
                         break;
                     }
 
@@ -442,7 +441,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 if ( !l_peol )
                     {
                         log_it( L_ERROR, "Line '%.*s' is not terminated by CRLF pair", (int) a_esocket->buf_in_size, a_esocket->buf_in);
-                        s_report_error_and_restart( a_esocket, l_http_client );
+                        s_report_error_and_restart( a_esocket, l_http_client, 400 );
                         break;
                     }
 
@@ -462,7 +461,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                             if ( !isOk )
                             {
                                 log_it( L_NOTICE, "Access restricted" );
-                                s_report_error_and_restart( a_esocket, l_http_client );
+                                s_report_error_and_restart( a_esocket, l_http_client, 401 );
                             }
                         }
 
@@ -512,7 +511,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
         } // switch
         if (l_iter_count++ > 1000) {
             log_it(L_ERROR, "Indefinite loop in DAP HTTP client read");
-            s_report_error_and_restart( a_esocket, l_http_client );
+            s_report_error_and_restart( a_esocket, l_http_client, 508 );
             break;
         }
     } while (a_esocket->buf_in_size);

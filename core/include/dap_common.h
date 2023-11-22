@@ -297,7 +297,9 @@ DAP_STATIC_INLINE void _dap_aligned_free( void *ptr )
 }
 
 DAP_STATIC_INLINE void *_dap_page_aligned_alloc(size_t size) {
-#ifndef DAP_OS_WINDOWS
+#ifdef __ANDROID__
+    return memalign(getpagesize(), size);
+#elif !defined(DAP_OS_WINDOWS)
     return valloc(size);
 #else
     return VirtualAlloc(0, size, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
@@ -436,11 +438,21 @@ extern "C" {
 #define MAX_PATH 1024
 #endif
 
-#ifndef MAX
-#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#ifndef dap_max
+#define dap_max(a,b)        \
+({                          \
+    __typeof__(a) _a = (a); \
+    __typeof__(b) _b = (b); \
+    _a > _b ? _a : _b;      \
+})
 #endif
-#ifndef MIN
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#ifndef dap_min
+#define dap_min(a,b)        \
+({                          \
+    __typeof__(a) _a = (a); \
+    __typeof__(b) _b = (b); \
+    _a < _b ? _a : _b;      \
+})
 #endif
 
 static const DAP_ALIGNED(16) uint16_t htoa_lut256[ 256 ] = {

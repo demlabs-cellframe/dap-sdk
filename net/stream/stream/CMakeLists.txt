@@ -15,3 +15,12 @@ endif()
 
 target_include_directories(${PROJECT_NAME} INTERFACE .)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
+
+if(INSTALL_DAP_SDK)
+set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${STREAM_HDRS}")
+INSTALL(TARGETS ${PROJECT_NAME} 
+        LIBRARY DESTINATION lib/dap/net/stream/stream/
+        ARCHIVE DESTINATION lib/dap/net/stream/stream/
+        PUBLIC_HEADER DESTINATION include/dap/net/stream/stream/
+)
+endif()
