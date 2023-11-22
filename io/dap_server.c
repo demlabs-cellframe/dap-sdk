@@ -92,8 +92,37 @@ static dap_server_t* s_default_server = NULL;
  */
 int dap_server_init()
 {
-    log_it(L_NOTICE,"Server module init");
-    return 0;
+    int l_ret = 0;
+#ifdef DAP_EVENTS_CAPS_IOCP
+    SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);
+    DWORD l_bytes = 0;
+    static GUID l_guid_AcceptEx             = WSAID_ACCEPTEX,
+                l_guid_GetAcceptExSockaddrs = WSAID_GETACCEPTEXSOCKADDRS,
+                l_guid_ConnectEx            = WSAID_CONNECTEX;
+    if (
+            WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                     &l_guid_AcceptEx,  sizeof(l_guid_AcceptEx),
+                     &pfn_AcceptEx,     sizeof(pfn_AcceptEx),
+                     &l_bytes, NULL, NULL) == SOCKET_ERROR
+
+            || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                        &l_guid_GetAcceptExSockaddrs,   sizeof(l_guid_GetAcceptExSockaddrs),
+                        &pfn_GetAcceptExSockaddrs,      sizeof(pfn_GetAcceptExSockaddrs),
+                        &l_bytes, NULL, NULL) == SOCKET_ERROR
+
+            || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                        &l_guid_ConnectEx,  sizeof(l_guid_ConnectEx),
+                        &pfn_ConnectEx,     sizeof(pfn_ConnectEx),
+                        &l_bytes, NULL, NULL) == SOCKET_ERROR
+            )
+    {
+        log_it(L_ERROR, "WSAIoctl() error %d", WSAGetLastError());
+        l_ret = -1;
+    }
+    closesocket(l_socket);
+#endif
+    log_it(L_NOTICE, "Server module init%s", l_ret ? " failed" : "");
+    return l_ret;
 }
 
 /**
@@ -320,33 +349,6 @@ static int s_server_run(dap_server_t *a_server, dap_events_socket_callbacks_t *a
         .write_callback  = a_callbacks ? a_callbacks->write_callback    : NULL,
         .error_callback  = s_es_server_error
     };
-
-#ifdef DAP_EVENTS_CAPS_IOCP
-    DWORD l_bytes = 0;
-    if (a_server->type == SERVER_TCP) {
-        static GUID l_guid_AcceptEx             = WSAID_ACCEPTEX,
-                    l_guid_GetAcceptExSockaddrs = WSAID_GETACCEPTEXSOCKADDRS;
-        int l_ioctl = WSAIoctl(a_server->socket_listener, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                               &l_guid_AcceptEx, sizeof(l_guid_AcceptEx),
-                               &a_server->pfn_AcceptEx, sizeof(a_server->pfn_AcceptEx),
-                               &l_bytes, NULL, NULL);
-        if (l_ioctl == SOCKET_ERROR) {
-            log_it(L_ERROR, "Failed to load AcceptEx, errno %d", WSAGetLastError());
-            DAP_DELETE(a_server);
-            return -1;
-        }
-        l_bytes = 0;
-        l_ioctl = WSAIoctl(a_server->socket_listener, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                           &l_guid_GetAcceptExSockaddrs, sizeof(l_guid_GetAcceptExSockaddrs),
-                           &a_server->pfn_GetAcceptExSockaddrs, sizeof(a_server->pfn_GetAcceptExSockaddrs),
-                           &l_bytes, NULL, NULL);
-        if (l_ioctl == SOCKET_ERROR) {
-            log_it(L_ERROR, "Failed to load GetAcceptExSockaddrs, errno %d", WSAGetLastError());
-            DAP_DELETE(a_server);
-            return -2;
-        }
-    }
-#endif
 
 #ifdef DAP_EVENTS_CAPS_EPOLL
     for(size_t l_worker_id = 0; l_worker_id < dap_events_thread_get_count() ; l_worker_id++){

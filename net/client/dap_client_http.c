@@ -61,11 +61,6 @@ static uint64_t s_client_timeout_ms                     = 20000;
 static uint64_t s_client_timeout_read_after_connect_ms  = 5000;
 static uint32_t s_max_attempts = 5;
 
-#ifdef DAP_EVENTS_CAPS_IOCP
-static LPFN_CONNECTEX s_pfn_ConnectEx;
-static GUID l_guid_ConnectEx = WSAID_CONNECTEX;
-#endif
-
 #ifndef DAP_NET_CLIENT_NO_SSL
 static WOLFSSL_CTX *s_ctx;
 #endif
@@ -106,19 +101,6 @@ int dap_client_http_init()
         wolfSSL_get_ciphers(l_buf, l_ciphers_len);
         log_it(L_DEBUG, "WolfSSL cipher list is :\n%s", l_buf);
     }
-#endif
-#ifdef DAP_EVENTS_CAPS_IOCP
-    SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);
-    DWORD l_bytes = 0;
-    if ( WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                  &l_guid_ConnectEx, sizeof(l_guid_ConnectEx),
-                  &s_pfn_ConnectEx, sizeof(s_pfn_ConnectEx),
-                  &l_bytes, NULL, NULL) == SOCKET_ERROR )
-    {
-        log_it(L_ERROR, "Failed to load GetConnectEx, errno %d", WSAGetLastError());
-        // TODO: try to call regular 'connect()' instead
-    }
-    closesocket(l_socket);
 #endif
     return 0;
 }
@@ -229,7 +211,12 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
 
 #ifdef DAP_EVENTS_CAPS_IOCP
     a_esocket->no_close = true;
-#endif
+    dap_events_socket_write_f_unsafe(a_esocket, "%s /%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n" "%s",
+                                     l_client_http->method, l_client_http->path, l_get_str,
+                                     l_client_http->uplink_addr, l_request_headers,
+                                     l_client_http->request && l_client_http->request_size
+                                     ? (char*)l_client_http->request : "");
+#else
     // send header
     ssize_t l_wrote = dap_events_socket_write_f_unsafe(a_esocket,
                                                     "%s /%s%s HTTP/1.1\r\n"
@@ -237,14 +224,13 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
                                                     "%s\r\n",
                                                     l_client_http->method, l_client_http->path,
                                                     l_get_str, l_client_http->uplink_addr, l_request_headers);
-#ifndef DAP_EVENTS_CAPS_IOCP
     if (l_wrote > 0)        // Exclude trailing zero
         a_esocket->buf_out_size--;
-#endif
+
     // send data for POST request
     if (l_client_http->request && l_client_http->request_size)
         dap_events_socket_write_unsafe( a_esocket, l_client_http->request, l_client_http->request_size);
-
+#endif
 }
 
 /**
@@ -622,7 +608,6 @@ dap_client_http_t * dap_client_http_request_custom (
     l_ev_socket->_inheritor = l_client_http;
     l_client_http->error_callback = a_error_callback;
     l_client_http->response_callback = a_response_callback;
-    //l_client_http_internal->socket = l_socket;
     l_client_http->callbacks_arg = a_callbacks_arg;
     l_client_http->method = dap_strdup(a_method);
     l_client_http->path = dap_strdup(a_path);
@@ -655,9 +640,13 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->worker = a_worker;
     l_client_http->is_over_ssl = a_over_ssl;
 
+    l_ev_socket->remote_addr = (struct sockaddr_in) {
+            .sin_family = AF_INET,
+            .sin_port = htons(a_uplink_port)
+    };
 
     // get struct in_addr from ip_str
-    inet_pton(AF_INET, a_uplink_addr, &(l_ev_socket->remote_addr.sin_addr));
+    inet_pton(AF_INET, a_uplink_addr, &l_ev_socket->remote_addr.sin_addr);
     //Resolve addr if
     if(!l_ev_socket->remote_addr.sin_addr.s_addr) {
         if(dap_net_resolve_host(a_uplink_addr, AF_INET, (struct sockaddr*) &l_ev_socket->remote_addr.sin_addr) < 0) {
@@ -673,8 +662,6 @@ dap_client_http_t * dap_client_http_request_custom (
     }
     strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET_ADDRSTRLEN);
     // connect
-    l_ev_socket->remote_addr.sin_family = AF_INET;
-    l_ev_socket->remote_addr.sin_port = htons(a_uplink_port);
     l_ev_socket->flags |= DAP_SOCK_CONNECTING;
     l_ev_socket->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
     if (a_over_ssl) {
@@ -685,7 +672,7 @@ dap_client_http_t * dap_client_http_request_custom (
 #endif
     }
 #ifdef DAP_EVENTS_CAPS_IOCP
-    l_ev_socket->_pvt = s_pfn_ConnectEx;
+    l_ev_socket->_pvt = pfn_ConnectEx;
     log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
     l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
     dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);

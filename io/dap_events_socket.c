@@ -543,6 +543,7 @@ dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket
 
 #elif defined(DAP_EVENTS_CAPS_IOCP)
     //TODO:
+    l_es->_pvt = a_es->_pvt;
 #else
 #error "Not defined s_create_type_pipe for your platform"
 #endif
@@ -1276,17 +1277,20 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
     WSABUF wsabuf = { .buf = a_esocket->buf_in, .len = a_esocket->buf_in_size_max };
     int l_res = -2;
     DWORD flags = 0;
+    const char *l_action = "Some read action";
     switch (a_esocket->type) {
     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
         l_res = WSARecv(a_esocket->socket, &wsabuf, 1, &a_esocket->buf_in_size,
                         &flags, &a_esocket->ol_in, NULL);
+        l_action = "WSARecv";
         break;
 
     case DESCRIPTOR_TYPE_SOCKET_UDP: {
         INT l_len = sizeof(a_esocket->remote_addr);
         l_res = WSARecvFrom(a_esocket->socket, &wsabuf, 1, &a_esocket->buf_in_size,
                             &flags, (LPSOCKADDR)&a_esocket->remote_addr, &l_len, &a_esocket->ol_in, NULL);
+        l_action = "WSARecvFrom";
     } break;
 
     case DESCRIPTOR_TYPE_SOCKET_LISTENING:
@@ -1298,18 +1302,20 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
         }
         //u_long l_mode = 1;
         //ioctlsocket(a_esocket->socket2, (long)FIONBIO, &l_mode);
-        l_res = a_esocket->server->pfn_AcceptEx(a_esocket->socket, a_esocket->socket2,
+        l_res = pfn_AcceptEx(a_esocket->socket, a_esocket->socket2,
                             (LPVOID)(a_esocket->buf_in),
                             0, /* Let's receive everything in separate WSARecv()... */
                             sizeof(SOCKADDR_STORAGE) + 16, sizeof(SOCKADDR_STORAGE) + 16,
                             &a_esocket->buf_in_size,
                             (LPOVERLAPPED)&a_esocket->ol_in);
+        l_action = "AcceptEx";
     } break;
 
     case DESCRIPTOR_TYPE_FILE:
     case DESCRIPTOR_TYPE_PIPE:
         l_res = ReadFile(a_esocket->h, a_esocket->buf_in, a_esocket->buf_in_size_max, &a_esocket->buf_in_size, &a_esocket->ol_in)
                 ? 0 : SOCKET_ERROR;
+        l_action = "ReadFile";
         break;
 
     default:
@@ -1318,9 +1324,9 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
     }
 
     if (l_res == SOCKET_ERROR && WSAGetLastError() != ERROR_IO_PENDING) {
-        log_it(L_ERROR, "Reading failed, errno %d", WSAGetLastError());
+        log_it(L_ERROR, "%s failed, errno %d", l_action, WSAGetLastError());
     } else if (!l_res) {
-        log_it(L_ATT, "[!] Reading from %p : %zu (%s) completed immediately, received %lu bytes",
+        log_it(L_ATT, "[!] <%s> from %p : %zu (%s) completed immediately, received %lu bytes", l_action,
                a_esocket, a_esocket->socket, dap_events_socket_get_type_str(a_esocket), a_esocket->buf_in_size);
         //if (!PostQueuedCompletionStatus(a_esocket->context->iocp, a_esocket->buf_in_size, (ULONG_PTR)a_esocket, &a_esocket->ol_in)) {
         //    log_it(L_ERROR, "Enqueue completion message failed, errno %lu", GetLastError());
@@ -1388,7 +1394,7 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
     WSABUF wsabuf = { .buf = a_esocket->buf_out, .len = a_esocket->buf_out_size };
     int l_res = -2;
     DWORD flags = 0;
-    const char *l_action = "...some action";
+    const char *l_action = "Some write action";
     switch (a_esocket->type) {
     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:

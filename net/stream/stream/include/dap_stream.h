@@ -53,8 +53,6 @@ typedef struct dap_stream {
     bool is_active;
 
     char * service_key;
-    bool is_client_to_uplink ;
-
     struct dap_stream_pkt * in_pkt;
     struct dap_stream_pkt *pkt_buf_in;
     size_t pkt_buf_in_data_size;

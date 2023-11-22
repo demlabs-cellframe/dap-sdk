@@ -454,7 +454,7 @@ static int s_thread_loop(dap_context_t * a_context)
                 continue;
             }
             l_transferred = l_ols[i].dwNumberOfBytesTransferred;
-            log_it(L_ATT, "[!] Bytes transferred %lu, buf out size %lu", l_transferred, l_cur->buf_out_size);
+            log_it(L_ATT, "[!] Bytes transferred %lu, buf_in size - %lu, buf_out size - %lu", l_transferred, l_cur->buf_in_size, l_cur->buf_out_size);
             if (!l_transferred) {
                 log_it(L_ERROR, "[!] Zero bytes transferred. Need to investigate...");
             }

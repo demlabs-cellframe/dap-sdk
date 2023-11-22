@@ -87,6 +87,9 @@ typedef int SOCKET;
 
 #ifdef DAP_EVENTS_CAPS_IOCP
 #include <mswsock.h>
+#ifdef DAP_EVENTS_CAPS_IOCP
+LPFN_CONNECTEX pfn_ConnectEx;
+#endif
 #define MAX_IOCP_ENTRIES 0xf // Maximum count of IOCP entries to fetch at once
 #endif
 #if defined(DAP_EVENTS_CAPS_WEPOLL)

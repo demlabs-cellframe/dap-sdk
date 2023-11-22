@@ -54,10 +54,12 @@
 #error "No poll headers for your platform"
 #endif
 
+#ifdef DAP_EVENTS_CAPS_IOCP
+  LPFN_ACCEPTEX             pfn_AcceptEx                = NULL;
+  LPFN_GETACCEPTEXSOCKADDRS pfn_GetAcceptExSockaddrs    = NULL;
+#endif
 
 typedef enum dap_server_type {SERVER_TCP, SERVER_UDP,SERVER_LOCAL} dap_server_type_t;
-
-
 
 struct dap_server;
 
@@ -68,11 +70,6 @@ typedef struct dap_server {
   dap_server_type_t type;                   // Server's type
   uint16_t  port;                           // Listen port
   char      address[INET6_ADDRSTRLEN];      // Listen address
-
-#ifdef DAP_EVENTS_CAPS_IOCP
-  LPFN_ACCEPTEX             pfn_AcceptEx;
-  LPFN_GETACCEPTEXSOCKADDRS pfn_GetAcceptExSockaddrs;
-#endif
 
 #ifdef DAP_OS_WINDOWS
   SOCKET socket_listener;
