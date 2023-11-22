@@ -16,7 +16,7 @@ static int s_deserialised_sign_check(
     falcon_sign_type_t a_type)
 {
     if (a_buflen != a_des_buflen) {
-        log_it(L_ERROR, "Buflen %"DAP_UINT64_FORMAT_U" is not equal to sign size (%"DAP_UINT64_FORMAT_U")",
+        log_it(L_ERROR, "Buflen  %"DAP_UINT64_FORMAT_U" is not equal to sign size ( %"DAP_UINT64_FORMAT_U")",
                         a_buflen, a_des_buflen);
         return -1;
     }

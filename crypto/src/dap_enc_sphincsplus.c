@@ -231,7 +231,7 @@ uint8_t *dap_enc_sig_sphincsplus_read_private_key(const uint8_t *a_buf, size_t a
         return NULL;
     }
     if (l_skey_len != l_skey_len_exp) {
-        log_it(L_ERROR,"::read_private_key() l_pkey_len %"DAP_UINT64_FORMAT_U" is not equal to expected size %zu", l_skey_len, l_skey_len_exp);
+        log_it(L_ERROR,"::read_private_key() l_pkey_len %"DAP_UINT64_FORMAT_U" is not equal to expected size %"DAP_UINT64_FORMAT_U"", l_skey_len, l_skey_len_exp);
         DAP_DEL_MULTY(l_skey->data, l_skey);
         return NULL;
     }
