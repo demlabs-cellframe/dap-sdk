@@ -87,7 +87,7 @@
 // Extracts a size_t from a pointer
 #define DAP_POINTER_TO_SIZE(p) ((size_t) (p))
 
-#if defined(__GNUC__) ||defined (__clang__)
+#if defined(__GNUC__) || defined (__clang__)
   #define DAP_ALIGN_PACKED  __attribute__((aligned(1),packed))
 #else
   #define DAP_ALIGN_PACKED  __attribute__((aligned(1),packed))

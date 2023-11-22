@@ -384,7 +384,7 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
     if (!s_log_file) {
         if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path))
             return;
-    } 
+    }
     if (s_log_file) {
         fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
     }

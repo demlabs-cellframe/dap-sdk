@@ -50,7 +50,7 @@ DAP_STATIC_INLINE uint64_t dap_enc_sig_falcon_ser_sig_size(const void *a_sign)
 {
     if (!a_sign)
         return 0;
-    return sizeof(uint64_t) * 2 + sizeof(uint64_t) * 3 + ((falcon_signature_t *)a_sign)->sig_len;
+    return sizeof(uint64_t) * 2 + sizeof(uint32_t) * 3 + ((falcon_signature_t *)a_sign)->sig_len;
 }
 
 DAP_STATIC_INLINE uint64_t dap_enc_sig_falcon_ser_private_key_size(const void *a_skey)

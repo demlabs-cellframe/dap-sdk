@@ -52,29 +52,26 @@ typedef struct dap_multi_sign {
     dap_chain_hash_fast_t *key_hashes;  // Total key hashes
 /*** Serialized signatures chain ***/
     uint8_t *sign_data;                 // Signatures data
-} DAP_ALIGN_PACKED dap_multi_sign_t;
+} dap_multi_sign_t;
 
 typedef struct dap_multisign_private_key {
   uint64_t len;                 
   uint8_t data[];
-} dap_multisign_private_key_t;
+} DAP_ALIGN_PACKED dap_multisign_private_key_t;
 
 typedef struct dap_multisign_public_key{
   uint64_t len;                 
   uint8_t data[];
-} dap_multisign_public_key_t;
+} DAP_ALIGN_PACKED dap_multisign_public_key_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-
 void dap_enc_sig_multisign_key_new(dap_enc_key_t *a_key);
 void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_buf, size_t a_kex_size,
         const void *a_seed, size_t a_seed_size, size_t a_key_size);
 
-uint8_t *dap_enc_sig_multisign_write_signature(const void *a_sign, size_t *a_out_len);
-uint8_t *dap_enc_sig_multisign_read_signature(uint8_t *a_sign, size_t a_sign_len);
 dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type, dap_enc_key_t **a_keys, uint8_t a_key_count, const int *a_key_seq, uint8_t a_sign_count);
 void dap_multi_sign_params_delete(dap_multi_sign_params_t *a_params);
 int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, const size_t a_msg_size,
@@ -85,6 +82,8 @@ void dap_multi_sign_delete(dap_multi_sign_t *a_sign);
 void dap_enc_sig_multisign_key_delete(dap_enc_key_t *a_key);
 int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sign_params_t *a_params);
 
+uint8_t *dap_enc_sig_multisign_write_signature(const void *a_sign, size_t *a_out_len);
+uint8_t *dap_enc_sig_multisign_read_signature(uint8_t *a_sign, size_t a_sign_len);
 
 DAP_STATIC_INLINE uint64_t dap_enc_sig_multisign_deser_sig_size(UNUSED_ARG const void *a_in)
 {
