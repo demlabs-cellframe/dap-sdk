@@ -26,8 +26,6 @@
 
 #include "dap_sign.h"
 
-#define MULTI_SIGN_MAX_COUNT 255
-
 typedef struct _dap_multi_sign_params_t {
     dap_sign_type_t type;               // Multi-signature type
     uint8_t key_count;                // Total key count
@@ -57,7 +55,7 @@ typedef struct dap_multi_sign {
 typedef struct dap_multisign_private_key {
   uint64_t len;                 
   uint8_t data[];
-} DAP_ALIGN_PACKED dap_multisign_private_key_t;
+} dap_multisign_private_key_t;
 
 typedef struct dap_multisign_public_key{
   uint64_t len;                 

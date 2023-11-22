@@ -122,7 +122,7 @@ time_t dap_cert_get_meta_time(dap_cert_t *a_cert, const char *a_field);
 time_t dap_cert_get_meta_period(dap_cert_t *a_cert, const char *a_field);
 dap_sign_t *dap_cert_get_meta_sign(dap_cert_t *a_cert, const char *a_field);
 void *dap_cert_get_meta_custom(dap_cert_t *a_cert, const char *a_field, size_t *a_meta_size_out);
-dap_enc_key_t *dap_cert_merge_keys(dap_cert_t **a_certs, size_t a_count, size_t a_key_start_index);
+dap_enc_key_t *dap_cert_get_keys_from_certs(dap_cert_t **a_certs, size_t a_count, size_t a_key_start_index);
 #ifdef __cplusplus
 }
 #endif

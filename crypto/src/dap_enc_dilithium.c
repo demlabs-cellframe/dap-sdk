@@ -88,14 +88,13 @@ int dap_enc_sig_dilithium_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
     return l_ret;
 }
 
-void dap_enc_sig_dilithium_key_delete(dap_enc_key_t * key)
+void dap_enc_sig_dilithium_key_delete(dap_enc_key_t *a_key)
 {
-    dap_return_if_pass(!key);
-    dilithium_private_and_public_keys_delete((dilithium_private_key_t *) key->priv_key_data,
-        (dilithium_public_key_t *) key->pub_key_data);
+    dap_return_if_pass(!a_key);
+    dilithium_private_and_public_keys_delete(a_key->priv_key_data, a_key->pub_key_data);
 
-    key->pub_key_data = NULL;
-    key->priv_key_data = NULL;
+    a_key->pub_key_data = NULL;
+    a_key->priv_key_data = NULL;
 }
 
 /* Serialize a signature */

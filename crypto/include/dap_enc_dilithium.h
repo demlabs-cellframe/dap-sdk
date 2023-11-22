@@ -16,7 +16,7 @@ void dap_enc_sig_dilithium_key_new(dap_enc_key_t *a_key);
 void dap_enc_sig_dilithium_key_new_generate(dap_enc_key_t *key, const void *kex_buf,
                                     size_t kex_size, const void *seed, size_t seed_size,
                                     size_t key_size);
-void dap_enc_sig_dilithium_key_delete(dap_enc_key_t *key);
+void dap_enc_sig_dilithium_key_delete(dap_enc_key_t *a_key);
 
 int dap_enc_sig_dilithium_get_sign(dap_enc_key_t *a_key, const void *a_msg,
         const size_t a_msg_size, void *a_sig, const size_t a_sig_size);

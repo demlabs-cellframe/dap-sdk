@@ -922,12 +922,19 @@ void dap_cert_deinit()
 
 }
 
-dap_enc_key_t *dap_cert_merge_keys(dap_cert_t **a_certs, size_t a_count, size_t a_key_start_index)
+/**
+ * @brief create new key with merged all keys from certs
+ * @param a_cert pointer to certificate objects
+ * @param a_count certificate count, if > 1 forming MULTISIGN key
+ * @param a_key_start_index index to start getting keys
+ * @return pointer to key, NULL if error
+ */
+dap_enc_key_t *dap_cert_get_keys_from_certs(dap_cert_t **a_certs, size_t a_count, size_t a_key_start_index)
 {
 // sanity check
     dap_return_val_if_pass(!a_certs || !a_count || !a_certs[0] || a_key_start_index >= a_count, NULL);
     if (a_count == 1)
-        return a_certs[0]->enc_key;
+        return dap_enc_key_dup(a_certs[0]->enc_key);
 // memory alloc
     size_t l_keys_count = 0;
     dap_enc_key_t **l_keys = NULL;
@@ -935,7 +942,7 @@ dap_enc_key_t *dap_cert_merge_keys(dap_cert_t **a_certs, size_t a_count, size_t 
 // func work
     for(size_t i = a_key_start_index; i < a_count; ++i) {
         if (a_certs[i]) {
-            l_keys[i] = a_certs[i]->enc_key;
+            l_keys[i] = dap_enc_key_dup(a_certs[i]->enc_key);
             l_keys_count++;
         } else {
             log_it(L_WARNING, "Certs with NULL value");

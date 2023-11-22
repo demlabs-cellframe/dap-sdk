@@ -83,7 +83,7 @@ int dilithium_crypto_sign_open( unsigned char *, unsigned long long, dilithium_s
 
 void dilithium_private_key_delete(void *private_key);
 void dilithium_public_key_delete(void *public_key);
-void dilithium_private_and_public_keys_delete(dilithium_private_key_t *private_key, dilithium_public_key_t *public_key);
+void dilithium_private_and_public_keys_delete(void *private_key, void *public_key);
 
 void dilithium_signature_delete(void *sig);
 

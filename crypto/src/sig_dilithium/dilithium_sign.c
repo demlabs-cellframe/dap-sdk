@@ -90,10 +90,10 @@ void dilithium_public_key_delete(void *public_key)
     DAP_DEL_MULTY(((dilithium_public_key_t *)public_key)->data, public_key);
 }
 
-void dilithium_private_and_public_keys_delete(dilithium_private_key_t *private_key, dilithium_public_key_t *public_key)
+void dilithium_private_and_public_keys_delete(void *a_skey, void *a_pkey)
 {
-    dilithium_private_key_delete(private_key);
-    dilithium_public_key_delete(public_key);
+    dilithium_private_key_delete(a_skey);
+    dilithium_public_key_delete(a_pkey);
 }
 
 /********************************************************************************************/
