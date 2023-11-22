@@ -1073,13 +1073,18 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
     return l_sign_size;
 }
 
+/**
+ * @brief create new key with merged all keys 
+ * @param a_keys pointer to keys
+ * @param a_count keys count
+ * @return pointer to key, NULL if error
+ */
 dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_t a_count)
 {
 // sanity check
-    dap_return_val_if_pass(!a_keys, NULL);
+    dap_return_val_if_pass(!a_keys  || !a_count, NULL);
 // memory alloc
     dap_enc_key_t *l_ret = dap_enc_key_new(DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED);
-    dap_return_val_if_pass(!l_ret, NULL);
     if (!l_ret) {
         log_it(L_ERROR, "Can't create multisign key");
         return NULL;

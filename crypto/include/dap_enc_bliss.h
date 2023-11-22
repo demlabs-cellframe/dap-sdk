@@ -75,5 +75,5 @@ DAP_STATIC_INLINE uint64_t dap_enc_sig_bliss_ser_public_key_size(const void *a_p
     if(!a_pkey || !bliss_params_init(&l_p, ((bliss_public_key_t *)a_pkey)->kind))
         return 0;
 // func work
-    return sizeof(uint64_t) + sizeof(uint32_t) + l_p.n * sizeof(uint64_t);
+    return sizeof(uint64_t) + sizeof(uint32_t) + l_p.n * sizeof(int32_t);
 }

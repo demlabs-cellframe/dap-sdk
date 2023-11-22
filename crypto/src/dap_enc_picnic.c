@@ -39,8 +39,7 @@ uint64_t dap_enc_sig_picnic_deser_sig_size(void *a_key)
 {
     dap_enc_key_t *l_key = a_key;
     picnic_params_t *param = (picnic_params_t*) l_key->_inheritor;
-    size_t max_signature_size = picnic_signature_size(*param);
-    return max_signature_size;
+    return picnic_signature_size(*param);
 }
 
 void dap_enc_sig_picnic_key_new(dap_enc_key_t *key) {
