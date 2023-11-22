@@ -463,16 +463,31 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .gen_key_public =                   NULL,
         .gen_bob_shared_key =               NULL,
         .gen_alice_shared_key =             NULL,
-        .new_callback =                     dap_enc_sig_multisign_key_new,
-        .delete_callback =                  dap_enc_sig_multisign_key_delete,
-        .new_generate_callback =            dap_enc_sig_multisign_key_new_generate,
         .enc_out_size =                     NULL,
         .dec_out_size =                     NULL,
+    
+        .new_callback =                     dap_enc_sig_multisign_key_new,
+        .new_generate_callback =            dap_enc_sig_multisign_key_new_generate,
+
+        .delete_callback =                  dap_enc_sig_multisign_key_delete,
+        .del_pub_key =                      NULL,
+        .del_priv_key =                     NULL,
+
         .sign_get =                         dap_enc_sig_multisign_get_sign,
         .sign_verify =                      dap_enc_sig_multisign_verify_sign,
+
         .ser_sign =                         dap_enc_sig_multisign_write_signature,
+        .ser_priv_key =                     NULL,
+        .ser_pub_key =                      NULL,
         .ser_priv_key_size =                NULL,
         .ser_pub_key_size =                 NULL,
+
+        .deser_sign =                       dap_enc_sig_multisign_read_signature,
+        .deser_priv_key =                   NULL,
+        .deser_pub_key =                    NULL,
+        .deser_sign_size =                  dap_enc_sig_multisign_deser_sig_size,
+        .deser_pub_key_size =               NULL,
+        .deser_priv_key_size =              NULL,
     },
 
 #ifdef DAP_PQLR
@@ -518,7 +533,7 @@ void dap_enc_key_deinit()
  * @param a_sign_len [in/out]
  * @return allocates memory with private key
  */
-uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len)
+uint8_t *dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len)
 {
     uint8_t *l_data = NULL;
     switch (a_key_type) {
@@ -527,6 +542,7 @@ uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
             l_data = s_callbacks[a_key_type].ser_sign(a_sign, a_sign_len);
             break;
         default:
@@ -554,6 +570,7 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+    case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
         l_data = s_callbacks[a_key_type].deser_sign(a_sign, *a_sign_len);
         *a_sign_len = s_callbacks[a_key_type].deser_sign_size(NULL);
         break;
@@ -603,8 +620,8 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
 {
 // sanity check
     dap_return_val_if_pass(!a_key || !a_key->pub_key_data, NULL);
+// func work
     uint8_t *l_data = NULL;
-
     switch (a_key->type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
@@ -631,8 +648,9 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
  */
 int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen)
 {
-    if(!a_key || !a_buf)
-        return -1;
+// sanity check
+    dap_return_val_if_pass(!a_key || !a_buf, -1);
+// func work
     switch (a_key->type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
@@ -644,7 +662,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data = s_callbacks[a_key->type].deser_priv_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
-            return -4;
+            return -2;
         }
         a_key->priv_key_data_size = s_callbacks[a_key->type].deser_priv_key_size(NULL);
         break;
@@ -669,6 +687,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
 {
 // sanity check
     dap_return_val_if_pass(!a_key || !a_buf, -1);
+// func work
     switch (a_key->type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
@@ -704,7 +723,7 @@ uint8_t *dap_enc_key_serialize(dap_enc_key_t *a_key, size_t *a_buflen)
 {
 // sanity check
     dap_return_val_if_pass(!a_key, NULL);
-    
+// func work
     uint64_t l_ser_skey_size = 0, l_ser_pkey_size = 0;
     uint64_t l_timestamp = a_key->last_used_timestamp;
     int32_t l_type = a_key->type;
@@ -722,6 +741,7 @@ uint8_t *dap_enc_key_serialize(dap_enc_key_t *a_key, size_t *a_buflen)
         l_ser_pkey, (uint64_t)l_ser_pkey_size,
         a_key->_inheritor, (uint64_t)a_key->_inheritor_size
     );
+// out work
     DAP_DEL_MULTY(l_ser_skey, l_ser_pkey);
     a_buflen ? *a_buflen = l_buflen : 0;
     return l_ret;
@@ -777,15 +797,10 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
         l_ser_pkey, (uint64_t)l_ser_pkey_size,
         (uint8_t *)l_ret->_inheritor, (uint64_t)l_ser_inheritor_size
     );
-    int l_priv_deser = 0, l_pub_deser = 0;
-    if (l_ser_skey_size)
-        l_priv_deser = dap_enc_key_deserialize_priv_key(l_ret, l_ser_skey, l_ser_skey_size);
-    if (l_ser_pkey_size)
-        l_pub_deser = dap_enc_key_deserialize_pub_key(l_ret, l_ser_pkey, l_ser_pkey_size);
-    if (l_res_des || l_priv_deser || l_pub_deser) {
+    if (l_res_des || (l_ser_skey_size && dap_enc_key_deserialize_priv_key(l_ret, l_ser_skey, l_ser_skey_size)) || 
+                        (l_ser_pkey_size && dap_enc_key_deserialize_pub_key(l_ret, l_ser_pkey, l_ser_pkey_size))) {
             DAP_DEL_MULTY(l_ret->_inheritor, l_ser_pkey, l_ser_skey, l_ret);
             log_it(L_ERROR, "Enc_key pub and priv keys deserialisation error");
-            fflush(stdout);
             return NULL;
         }
 // out work
@@ -1053,9 +1068,9 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: 
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
             l_sign_size = s_callbacks[a_key->type].deser_sign_size(a_key);
             break;
-        case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED: l_sign_size = sizeof(dap_multi_sign_t); break;
 #ifdef DAP_PQRL
         case DAP_ENC_KEY_TYPE_SIG_PQLR_DILITHIUM: l_sign_size = dap_pqlr_dilithium_calc_signature_size(a_key); break;
 #endif

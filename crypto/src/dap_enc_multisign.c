@@ -154,7 +154,7 @@ uint8_t *dap_enc_sig_multisign_write_signature(const void *a_sign, size_t *a_out
     uint64_t  l_signes_size, l_pkeys_hashes_size;
     uint64_t l_out_len = s_multi_sign_calc_size(l_sign, &l_signes_size, &l_pkeys_hashes_size) + sizeof(uint64_t) + sizeof(uint32_t) * 4;
     *a_out_len = l_out_len;
-    uint8_t *l_ret = dap_serialize_multy(NULL, l_out_len, 24,
+    uint8_t *l_ret = dap_serialize_multy(NULL, l_out_len, 20,
         &l_out_len, (uint64_t)sizeof(uint64_t),
         &l_pkeys_hashes_size, (uint64_t)sizeof(uint64_t),
         &l_signes_size, (uint64_t)sizeof(uint64_t),
@@ -175,21 +175,15 @@ uint8_t *dap_enc_sig_multisign_write_signature(const void *a_sign, size_t *a_out
  * @param a_sign_len Input data lenght
  * @return Pointer to multi-signature
  */
-dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_t *a_sign, size_t a_sign_len)
+uint8_t *dap_enc_sig_multisign_read_signature(uint8_t *a_sign, size_t a_sign_len)
 {
-    if (a_type != SIG_TYPE_MULTI_CHAINED) {
-        log_it(L_ERROR, "Unsupported multi-signature type");
-        return NULL;
-    }
-
     dap_multi_sign_t *l_sign = NULL;
-    uint32_t l_pkeys_size, l_signes_size, l_pkeys_hashes_size;
-    uint64_t l_sign_len = 0;
-    uint64_t l_mem_shift = sizeof(uint64_t) * 4 + sizeof(dap_sign_type_t) + sizeof(uint8_t) * 2;
+    uint64_t l_sign_len = 0, l_pkeys_size = 0, l_signes_size = 0, l_pkeys_hashes_size = 0;
+    uint64_t l_mem_shift = sizeof(uint64_t) * 3 + sizeof(dap_sign_type_t) + sizeof(uint8_t) * 2;
 // base allocate memory
     DAP_NEW_Z_RET_VAL(l_sign, dap_multi_sign_t, NULL, NULL);
 // get sizes
-    int l_res_des = dap_deserialize_multy(a_sign, l_mem_shift, 14, 
+    int l_res_des = dap_deserialize_multy(a_sign, l_mem_shift, 12, 
         &l_sign_len, (uint64_t)sizeof(uint64_t),
         &l_pkeys_hashes_size, (uint64_t)sizeof(uint64_t),
         &l_signes_size, (uint64_t)sizeof(uint64_t),
@@ -208,7 +202,7 @@ dap_multi_sign_t *dap_multi_sign_deserialize(dap_sign_type_enum_t a_type, uint8_
      DAP_NEW_Z_SIZE_RET_VAL(l_sign->key_hashes, dap_hash_fast_t, l_pkeys_hashes_size, NULL, l_sign->meta, l_sign->key_seq, l_sign);
      DAP_NEW_Z_SIZE_RET_VAL(l_sign->sign_data, uint8_t, l_signes_size, NULL, l_sign->key_hashes, l_sign->meta, l_sign->key_seq, l_sign);
 // get data
-    l_res_des = dap_deserialize_multy(a_sign + l_mem_shift, l_sign_len - l_mem_shift, 10, 
+    l_res_des = dap_deserialize_multy(a_sign + l_mem_shift, l_sign_len - l_mem_shift, 8, 
         l_sign->key_seq, (uint64_t)(sizeof(uint8_t) * l_sign->sign_count),
         l_sign->meta, (uint64_t)(sizeof(dap_multi_sign_meta_t) * l_sign->sign_count),
         l_sign->key_hashes, (uint64_t)l_pkeys_hashes_size,
