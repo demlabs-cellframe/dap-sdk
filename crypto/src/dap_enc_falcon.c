@@ -21,7 +21,7 @@ static int s_deserialised_sign_check(
         return -1;
     }
     if (a_degree != FALCON_512 && a_degree != FALCON_1024) { // we are now supporting only 512 and 1024 degrees
-        log_it(L_ERROR, "Degree %ul is not supported", a_degree);
+        log_it(L_ERROR, "Degree %u is not supported", a_degree);
         return -2;
     }
     if (a_kind != FALCON_COMPRESSED && a_kind != FALCON_PADDED && a_kind != FALCON_CT) { // we are now supporting only compressed, padded and ct signatures

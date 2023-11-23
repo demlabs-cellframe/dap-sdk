@@ -92,8 +92,10 @@ void dilithium_public_key_delete(dilithium_public_key_t *public_key)
 
 void dilithium_private_and_public_keys_delete(dilithium_private_key_t *private_key, dilithium_public_key_t *public_key)
 {
-    dilithium_private_key_delete(private_key);
-    dilithium_public_key_delete(public_key);
+    if (private_key)
+        dilithium_private_key_delete(private_key);
+    if (public_key)
+        dilithium_public_key_delete(public_key);
 }
 
 /********************************************************************************************/

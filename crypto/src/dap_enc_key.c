@@ -555,9 +555,8 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         return -1;
     switch (a_key->type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
-        if((a_key->priv_key_data)) {
+        if((a_key->priv_key_data))
             bliss_b_private_key_delete((bliss_private_key_t *) a_key->priv_key_data);
-        }
         a_key->priv_key_data = (uint8_t*) dap_enc_sig_bliss_read_private_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
@@ -566,7 +565,8 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data_size = sizeof(bliss_private_key_t);
         break;
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
-        tesla_private_key_delete((tesla_private_key_t *) a_key->priv_key_data);
+        if (a_key->priv_key_data)
+            tesla_private_key_delete((tesla_private_key_t *) a_key->priv_key_data);
         a_key->priv_key_data = (uint8_t*) dap_enc_tesla_read_private_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
@@ -582,7 +582,8 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         dap_enc_sig_picnic_update(a_key);
         break;
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-        dilithium_private_key_delete((dilithium_private_key_t *) a_key->priv_key_data);
+        if (a_key->priv_key_data)
+            dilithium_private_key_delete((dilithium_private_key_t *) a_key->priv_key_data);
         a_key->priv_key_data = (uint8_t*) dap_enc_dilithium_read_private_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
@@ -591,7 +592,8 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data_size = sizeof(dilithium_private_key_t);
         break;
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        falcon_private_key_delete((falcon_private_key_t *) a_key->priv_key_data);
+        if (a_key->priv_key_data)
+            falcon_private_key_delete((falcon_private_key_t *) a_key->priv_key_data);
         a_key->priv_key_data = (uint8_t*) dap_enc_falcon_read_private_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
@@ -600,7 +602,8 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         a_key->priv_key_data_size = sizeof(falcon_private_key_t);
         break;
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        sphincsplus_private_key_delete((sphincsplus_private_key_t *) a_key->priv_key_data);
+        if (a_key->priv_key_data)
+            sphincsplus_private_key_delete((sphincsplus_private_key_t *) a_key->priv_key_data);
         a_key->priv_key_data = (uint8_t*) dap_enc_sphincsplus_read_private_key(a_buf, a_buflen);
         if(!a_key->priv_key_data) {
             a_key->priv_key_data_size = 0;
