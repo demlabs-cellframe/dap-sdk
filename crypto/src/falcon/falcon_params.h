@@ -33,14 +33,14 @@ typedef struct falcon_private_key {
     falcon_kind_t kind;
     falcon_sign_degree_t degree;
     falcon_sign_type_t type;
-    byte_t *data;
+    uint8_t *data;
 } falcon_private_key_t;
 
 typedef struct falcon_public_key {
     falcon_kind_t kind;
     falcon_sign_degree_t degree;
     falcon_sign_type_t type;
-    byte_t *data;
+    uint8_t *data;
 } falcon_public_key_t;
 
 typedef struct falcon_signature {
@@ -48,15 +48,16 @@ typedef struct falcon_signature {
     falcon_sign_degree_t degree;
     falcon_sign_type_t type;
     uint64_t sig_len;
-    byte_t *sig_data;
+    uint8_t *sig_data;
 } falcon_signature_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void falcon_private_key_delete(falcon_private_key_t* private_key);
-void falcon_public_key_delete(falcon_public_key_t* public_key);
+void falcon_private_key_delete(void *a_skey);
+void falcon_public_key_delete(void *a_pkey);
+void falcon_signature_delete(void *a_sig);
 void falcon_private_and_public_keys_delete(falcon_private_key_t* private_key, falcon_public_key_t* public_key);
 
 #ifdef __cplusplus

@@ -2,6 +2,7 @@
 #define __SPHINCSPLUS_PARAMS__
 
 #include <stdint.h>
+#include <dap_common.h>
 
 // not change, only add
 typedef enum sphincsplus_config {
@@ -56,7 +57,7 @@ typedef struct sphincsplus_base_params {
     uint8_t spx_sha512;
     sphincsplus_offsets_t offsets;
     sphincsplus_difficulty_t difficulty;
-} sphincsplus_base_params_t;
+} DAP_ALIGN_PACKED sphincsplus_base_params_t;
 
 typedef struct sphincsplus_params {
     sphincsplus_base_params_t base_params;

@@ -233,7 +233,7 @@ void dap_delete_multy(int a_count, ...)
  * @param a_count - args count, should be even
  * @return pointer if pass, else NULL
  */
-uint8_t *dap_serialize_multy(uint8_t *a_data, uint32_t a_size, int a_count, ...)
+uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...)
 {
     dap_return_val_if_pass(!a_size || a_count % 2, NULL);
 
@@ -241,17 +241,17 @@ uint8_t *dap_serialize_multy(uint8_t *a_data, uint32_t a_size, int a_count, ...)
     // allocate memory, if need
     if (!l_ret)
         DAP_NEW_Z_SIZE_RET_VAL(l_ret, uint8_t, a_size, NULL, NULL);
-    uint32_t l_shift_mem = 0;
+    uint64_t l_shift_mem = 0;
     va_list l_args;
     va_start(l_args, a_count);
     for (int i = 0; i < a_count / 2; ++i) {
         uint8_t *l_arg = va_arg(l_args, uint8_t *);
-        uint32_t l_size = va_arg(l_args, uint32_t);
+        uint64_t l_size = va_arg(l_args, uint64_t);
         memcpy(l_ret + l_shift_mem, l_arg, l_size);
         l_shift_mem += l_size;
     }
     if (l_shift_mem != a_size) {
-        log_it(L_WARNING, "Error size in the object serialize. %u != %u", l_shift_mem, a_size);
+        log_it(L_WARNING, "Error size in the object serialize. %"DAP_UINT64_FORMAT_U" != %"DAP_UINT64_FORMAT_U"", l_shift_mem, a_size);
     }
     va_end(l_args);
     return l_ret;
@@ -264,25 +264,25 @@ uint8_t *dap_serialize_multy(uint8_t *a_data, uint32_t a_size, int a_count, ...)
  * @param a_count - args count, should be even, memory NOT allocating
  * @return 0 if pass, other if error
  */
-int dap_deserialize_multy(const uint8_t *a_data, uint32_t a_size, int a_count, ...)
+int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, ...)
 {
     dap_return_val_if_pass(!a_size || a_count % 2, -1);
 
-    uint32_t l_shift_mem = 0;
+    uint64_t l_shift_mem = 0;
     va_list l_args;
     va_start(l_args, a_count);
     for (int i = 0; i < a_count / 2; ++i) {
         uint8_t *l_arg = va_arg(l_args, uint8_t *);
-        uint32_t l_size = va_arg(l_args, uint32_t);
+        uint64_t l_size = va_arg(l_args, uint64_t);
         if (l_shift_mem + l_size > a_size) {
-            log_it(L_ERROR, "Error size in the object deserialize. %u > %u", l_shift_mem + l_size, a_size);
+            log_it(L_ERROR, "Error size in the object deserialize. %"DAP_UINT64_FORMAT_U" > %"DAP_UINT64_FORMAT_U"", l_shift_mem + l_size, a_size);
             return -2;
         }
         memcpy(l_arg, a_data + l_shift_mem, l_size);
         l_shift_mem += l_size;
     }
     if (l_shift_mem != a_size) {
-        log_it(L_WARNING, "Error size in the object deserialize. %u != %u", l_shift_mem, a_size);
+        log_it(L_WARNING, "Error size in the object deserialize. %"DAP_UINT64_FORMAT_U" != %"DAP_UINT64_FORMAT_U"", l_shift_mem, a_size);
     }
     va_end(l_args);
     return 0;
@@ -379,14 +379,14 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
             ? memcpy(&log_str[offset--], "\n", 1) + 1
             : memcpy(&log_str[STR_LOG_BUF_MAX - 5], "...\n\0", 5) + 5;
     offset = pos - log_str;
+    fwrite(log_str, offset, 1, stdout);
+    fflush(stdout);
     if (!s_log_file) {
         if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path))
             return;
     }
     if (s_log_file) {
         fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
-        fwrite(log_str, offset, 1, stdout);
-        fflush(stdout);
     }
 }
 
