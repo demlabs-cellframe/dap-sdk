@@ -3,12 +3,12 @@
 #include "dap_enc_test.h"
 #include "dap_enc_benchmark_test.h"
 #include "dap_enc_ringct20_test.h"
-#include "dap_enc_sign_multi_test.h"
 #include "rand/dap_rand.h"
 #include "dap_common.h"
 
 int main(void) {
     // switch off debug info from library
+    int l_ret = 0;
     dap_log_level_set(L_CRITICAL);
     const int l_times = 10;
 
@@ -33,6 +33,6 @@ int main(void) {
     dap_enc_base64_tests_run(l_times);
     dap_enc_base58_tests_run(l_times);
     dap_enc_ringct20_tests_run(l_times);
-    dap_enc_benchmark_tests_run(l_times);
-    dap_enc_multi_sign_tests_run(l_times);
+    l_ret |= dap_enc_benchmark_tests_run(l_times);
+    return l_ret;
 }

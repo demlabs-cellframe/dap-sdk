@@ -113,6 +113,7 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_KEM_KYBER512 = 23, // NIST Kyber KEM implementation
     DAP_ENC_KEY_TYPE_SIG_FALCON = 24, 
     DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS = 25,
+    DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED = 100,
 
 #ifdef DAP_PQLR
     // QApp PQLR library integration
@@ -125,7 +126,7 @@ typedef enum dap_enc_key_type {
 
     DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_PQLR_KEM_NEWHOPE,
 #else
-    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,
+    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED,
 #endif
 } dap_enc_key_type_t;
 
@@ -139,9 +140,9 @@ typedef void (*dap_enc_callback_new_generate)(dap_enc_key_t* key, const void *ke
                                               size_t kex_size, const void* seed, size_t seed_size,
                                               size_t key_size);
 // free memory
-typedef void (*dap_enc_callback_delete)(dap_enc_key_t*);
+typedef void (*dap_enc_callback_delete)(void *);
 
-typedef size_t (*dap_enc_callback_key_size_t)(dap_enc_key_t*);
+typedef uint64_t (*dap_enc_callback_key_size_t)(const void*);
 
 // encrypt and decrypt functions. Allocates Memory for out
 typedef size_t (*dap_enc_callback_dataop_t)(dap_enc_key_t *key, const void *in,
@@ -188,8 +189,8 @@ typedef void (*dap_enc_callback_size_t)(dap_enc_key_t *, size_t);
 typedef void (*dap_enc_callback_str_t)(dap_enc_key_t *, const char*);
 typedef char* (*dap_enc_callback_r_str_t)(dap_enc_key_t *);
 typedef uint8_t* (*dap_enc_callback_serialize_t)(const void *, size_t *);
+typedef uint8_t* (*dap_enc_callback_deserialize_t)(const uint8_t *, size_t);
 typedef size_t (*dap_enc_callback_calc_out_size)(const size_t);
-typedef size_t (*dap_enc_callback_calc_unser_size)(const void *);
 typedef size_t (*dap_enc_get_allpbk_list) (dap_enc_key_t *a_key, const void *allpbk_list, const int allpbk_num);
 
 typedef struct dap_enc_key {
@@ -221,8 +222,6 @@ typedef struct dap_enc_key {
     dap_enc_gen_alice_shared_key gen_alice_shared_key;
     dap_enc_gen_bob_shared_key gen_bob_shared_key;
 
-    dap_enc_callback_calc_unser_size unser_sig_size;
-
     void *pbkListdata;
     size_t pbkListsize;
     dap_enc_get_allpbk_list getallpbkList;
@@ -235,22 +234,11 @@ typedef struct dap_enc_key {
 
 #define MAX_ENC_KEY_SIZE 16384
 #define MAX_INHERITOR_SIZE 2048
+#define MAX_ENC_KEYS_IN_MULTYSIGN 255
 
-// struct for serelization/deseralization keys in binary storage
-typedef struct dap_enc_key_serialize {
-    size_t priv_key_data_size;
-    size_t pub_key_data_size;
-    size_t inheritor_size;
-    time_t last_used_timestamp;
-    dap_enc_key_type_t type;
-
-    unsigned char priv_key_data[MAX_ENC_KEY_SIZE];
-    unsigned char pub_key_data[MAX_ENC_KEY_SIZE];
-    unsigned char inheritor[MAX_INHERITOR_SIZE];
-} dap_enc_key_serialize_t;
 
 typedef struct dap_enc_key_callbacks{
-    const char * name;
+    const char *name;
     dap_enc_callback_dataop_t enc;
     dap_enc_callback_dataop_t dec;
     dap_enc_callback_dataop_na_t enc_na;
@@ -261,7 +249,6 @@ typedef struct dap_enc_key_callbacks{
     dap_enc_callback_sign_op_t sign_verify;
 
     dap_enc_callback_gen_key_public_t gen_key_public;
-    dap_enc_callback_key_size_t gen_key_public_size;
 
     dap_enc_callback_calc_out_size enc_out_size;
     dap_enc_callback_calc_out_size dec_out_size;
@@ -272,11 +259,24 @@ typedef struct dap_enc_key_callbacks{
     dap_enc_callback_serialize_t ser_sign;
     dap_enc_callback_serialize_t ser_priv_key;
     dap_enc_callback_serialize_t ser_pub_key;
+    dap_enc_callback_key_size_t ser_pub_key_size;
+    dap_enc_callback_key_size_t ser_priv_key_size;
+
+
+    dap_enc_callback_deserialize_t deser_sign;
+    dap_enc_callback_deserialize_t deser_priv_key;
+    dap_enc_callback_deserialize_t deser_pub_key;
+    dap_enc_callback_key_size_t deser_sign_size;
+    dap_enc_callback_key_size_t deser_pub_key_size;
+    dap_enc_callback_key_size_t deser_priv_key_size;
 
     dap_enc_callback_new new_callback;
     dap_enc_callback_data_t new_from_data_public_callback;
     dap_enc_callback_new_generate new_generate_callback;
-    dap_enc_callback_delete delete_callback;
+    dap_enc_callback_new delete_callback;
+    dap_enc_callback_delete del_sign;
+    dap_enc_callback_delete del_pub_key;
+    dap_enc_callback_delete del_priv_key;
 } dap_enc_key_callbacks_t;
 
 #ifdef __cplusplus
@@ -300,7 +300,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
 int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
 int dap_enc_key_deserialize_pub_key_old(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
 
-dap_enc_key_serialize_t* dap_enc_key_serialize(dap_enc_key_t *a_key);
+uint8_t *dap_enc_key_serialize(dap_enc_key_t *a_key, size_t *a_buflen);
 dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size);
 dap_enc_key_t* dap_enc_key_dup(dap_enc_key_t *a_key);
 
@@ -320,11 +320,14 @@ void dap_enc_key_update(dap_enc_key_t *a_key);
 dap_enc_key_t *dap_enc_gen_pub_key_from_priv(dap_enc_key_t *a_key, void **priv_key, size_t *alice_msg_len);
 
 
-size_t dap_enc_gen_key_public_size (dap_enc_key_t *a_key);
+size_t dap_enc_ser_pub_key_size (dap_enc_key_t *a_key);
+size_t dap_enc_ser_priv_key_size (dap_enc_key_t *a_key);
 int dap_enc_gen_key_public (dap_enc_key_t *a_key, void *a_output);
 
 void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_buf);
 void dap_enc_key_delete(dap_enc_key_t *a_key);
+
+dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_t a_count);
 
 #ifdef __cplusplus
 }

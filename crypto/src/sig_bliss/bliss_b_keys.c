@@ -171,7 +171,7 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
       secure_free(&t, p.n);
       secure_free(&u, p.n);
       delete_ntt_state(state);
-      bliss_b_private_key_delete(private_key);
+      bliss_b_private_key_delete((void *)private_key);
       return BLISS_B_NO_MEM;
   }
 
@@ -180,7 +180,7 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
       secure_free(&t, p.n);
       secure_free(&u, p.n);
       delete_ntt_state(state);
-      bliss_b_private_key_delete(private_key);
+      bliss_b_private_key_delete((void *)private_key);
       return BLISS_B_NO_MEM;
   }
 
@@ -189,7 +189,7 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
       secure_free(&t, p.n);
       secure_free(&u, p.n);
       delete_ntt_state(state);
-      bliss_b_private_key_delete(private_key);
+      bliss_b_private_key_delete((void *)private_key);
       return BLISS_B_NO_MEM;
   }
 
@@ -238,19 +238,20 @@ int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t k
   return retcode;
 }
 
-void bliss_b_private_key_delete(bliss_private_key_t *private_key){
-    dap_return_if_pass(!private_key);
+void bliss_b_private_key_delete(void *a_skey){
+    dap_return_if_pass(!a_skey);
 
+    bliss_private_key_t *l_skey = a_skey;
     bliss_param_t p;
 
-    if (! bliss_params_init(&p, private_key->kind)) {
+    if (! bliss_params_init(&p, l_skey->kind)) {
         return;
     }
 
-    secure_free(&private_key->s1, p.n);
-    secure_free(&private_key->s2, p.n);
-    secure_free(&private_key->a, p.n);
-    DAP_DELETE(private_key);
+    secure_free(&l_skey->s1, p.n);
+    secure_free(&l_skey->s2, p.n);
+    secure_free(&l_skey->a, p.n);
+    DAP_DELETE(l_skey);
 }
 
 
@@ -287,8 +288,8 @@ int32_t bliss_b_public_key_extract(bliss_public_key_t *public_key, const bliss_p
 }
 
 
-void bliss_b_public_key_delete(bliss_public_key_t *public_key)
+void bliss_b_public_key_delete(void *a_pkey)
 {
-    dap_return_if_pass(!public_key);
-    DAP_DEL_MULTY(public_key->a, public_key);
+    dap_return_if_pass(!a_pkey);
+    DAP_DEL_MULTY(((bliss_public_key_t *)a_pkey)->a, a_pkey);
 }

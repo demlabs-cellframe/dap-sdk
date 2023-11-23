@@ -49,7 +49,7 @@ int dap_enc_sig_picnic_get_sign(dap_enc_key_t *a_key, const void *a_msg, const s
 int dap_enc_sig_picnic_verify_sign(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_len,
         void* a_sig, size_t a_sig_len);
 
-size_t dap_enc_picnic_calc_signature_size(dap_enc_key_t *key);
+uint64_t dap_enc_sig_picnic_deser_sig_size(void *a_key);
 
 #ifdef __cplusplus
 }

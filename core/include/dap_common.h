@@ -87,7 +87,7 @@
 // Extracts a size_t from a pointer
 #define DAP_POINTER_TO_SIZE(p) ((size_t) (p))
 
-#if defined(__GNUC__) ||defined (__clang__)
+#if defined(__GNUC__) || defined (__clang__)
   #define DAP_ALIGN_PACKED  __attribute__((aligned(1),packed))
 #else
   #define DAP_ALIGN_PACKED  __attribute__((aligned(1),packed))
@@ -127,8 +127,8 @@
 extern const char *g_error_memory_alloc;
 extern const char *g_error_sanity_check;
 void dap_delete_multy(int a_count, ...);
-uint8_t *dap_serialize_multy(uint8_t *a_data, uint32_t a_size, int a_count, ...);
-int dap_deserialize_multy(const uint8_t *a_data, uint32_t a_size, int a_count, ...);
+uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...);
+int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, ...);
 
 #if DAP_USE_RPMALLOC
   #include "rpmalloc.h"
