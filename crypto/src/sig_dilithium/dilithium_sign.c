@@ -92,8 +92,10 @@ void dilithium_public_key_delete(void *public_key)
 
 void dilithium_private_and_public_keys_delete(void *a_skey, void *a_pkey)
 {
-    dilithium_private_key_delete(a_skey);
-    dilithium_public_key_delete(a_pkey);
+    if (a_skey)
+        dilithium_private_key_delete(a_skey);
+    if (a_pkey)
+        dilithium_public_key_delete(a_pkey);
 }
 
 /********************************************************************************************/

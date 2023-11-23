@@ -341,8 +341,10 @@ uint8_t *dap_enc_sig_sphincsplus_read_signature(const uint8_t *a_buf, size_t a_b
 
 void sphincsplus_private_and_public_keys_delete(void *a_skey, void *a_pkey) 
 {
-    sphincsplus_private_key_delete(a_skey);
-    sphincsplus_public_key_delete(a_pkey);
+    if(a_skey)
+        sphincsplus_private_key_delete(a_skey);
+    if(a_pkey)
+        sphincsplus_public_key_delete(a_pkey);
 }
 
 void sphincsplus_private_key_delete(void *a_skey)

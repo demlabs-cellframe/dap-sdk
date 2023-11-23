@@ -397,8 +397,10 @@ uint8_t *dap_enc_sig_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen
 
 
 void falcon_private_and_public_keys_delete(falcon_private_key_t* privateKey, falcon_public_key_t* publicKey) {
-    falcon_private_key_delete(privateKey);
-    falcon_public_key_delete(publicKey);
+    if(privateKey)
+        falcon_private_key_delete(privateKey);
+    if(publicKey)
+        falcon_public_key_delete(publicKey);
 }
 
 void falcon_private_key_delete(void* a_skey) {

@@ -600,9 +600,12 @@ void tesla_public_key_delete(void *l_pkey)
     DAP_DEL_MULTY(((tesla_public_key_t *)l_pkey)->data, l_pkey);
 }
 
-void tesla_private_and_public_keys_delete(void *a_skey, void *a_pkey){
-    tesla_private_key_delete(a_skey);
-    tesla_public_key_delete(a_pkey);
+void tesla_private_and_public_keys_delete(void *a_skey, void *a_pkey)
+{
+    if(a_skey)
+        tesla_private_key_delete(a_skey);
+    if(a_pkey)
+        tesla_public_key_delete(a_pkey);
 }
 
 /********************************************************************************************/
