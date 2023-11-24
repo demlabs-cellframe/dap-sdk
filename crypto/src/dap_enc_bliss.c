@@ -163,7 +163,7 @@ uint8_t *dap_enc_sig_bliss_write_signature(const void *a_sign, size_t *a_buflen_
 }
 
 /* Deserialize a signature */
-uint8_t *dap_enc_sig_bliss_read_signature(const uint8_t *a_buf, size_t a_buflen)
+void *dap_enc_sig_bliss_read_signature(const uint8_t *a_buf, size_t a_buflen)
 {
     if(!a_buf || a_buflen < (sizeof(uint64_t) + sizeof(uint32_t)))
         return NULL ;
@@ -192,7 +192,7 @@ uint8_t *dap_enc_sig_bliss_read_signature(const uint8_t *a_buf, size_t a_buflen)
     memcpy(l_sign->z2, a_buf + l_shift_mem, p.n * sizeof(int32_t));
     l_shift_mem += p.n * sizeof(int32_t);
     memcpy(l_sign->c, a_buf + l_shift_mem, p.kappa * sizeof(int32_t));
-    return (uint8_t *)l_sign;
+    return l_sign;
 }
 
 /* Serialize a private key. */
@@ -240,7 +240,7 @@ uint8_t *dap_enc_sig_bliss_write_public_key(const void *a_public_key, size_t *a_
 }
 
 /* Deserialize a private key. */
-uint8_t *dap_enc_sig_bliss_read_private_key(const uint8_t *a_buf, size_t a_buflen)
+void *dap_enc_sig_bliss_read_private_key(const uint8_t *a_buf, size_t a_buflen)
 {
     if(!a_buf || a_buflen < (sizeof(uint64_t) + sizeof(uint32_t)))
         return NULL;
@@ -271,11 +271,11 @@ uint8_t *dap_enc_sig_bliss_read_private_key(const uint8_t *a_buf, size_t a_bufle
     l_shift_mem += p.n * sizeof(int32_t);
     memcpy(l_private_key->a, a_buf + l_shift_mem, p.n * sizeof(int32_t));
     l_shift_mem += p.n * sizeof(int32_t);
-    return (uint8_t *)l_private_key;
+    return l_private_key;
 }
 
 /* Deserialize a public key. */
-uint8_t *dap_enc_sig_bliss_read_public_key(const uint8_t *a_buf, size_t a_buflen)
+void *dap_enc_sig_bliss_read_public_key(const uint8_t *a_buf, size_t a_buflen)
 {
     if(!a_buf || a_buflen < (sizeof(uint64_t) + sizeof(uint32_t)))
         return NULL;
@@ -301,5 +301,5 @@ uint8_t *dap_enc_sig_bliss_read_public_key(const uint8_t *a_buf, size_t a_buflen
         return NULL;
     }
     memcpy(l_public_key->a, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.n * sizeof(int32_t));
-    return (uint8_t *)l_public_key;
+    return l_public_key;
 }

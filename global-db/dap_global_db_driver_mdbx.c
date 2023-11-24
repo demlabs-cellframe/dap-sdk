@@ -978,8 +978,11 @@ dap_store_obj_t *l_obj, *l_obj_arr = NULL;
 MDBX_val    l_key, l_data;
 MDBX_cursor *l_cursor;
 MDBX_stat   l_stat;
-    dap_return_val_if_pass(!a_group || !(l_db_ctx = s_get_db_ctx_for_group(a_group)), NULL); /* Sanity check */
-    MDBX_txn *l_txn;
+MDBX_txn *l_txn;
+
+    dap_return_val_if_fail(a_group, NULL); /* Sanity check */
+    if (!(l_db_ctx = s_get_db_ctx_for_group(a_group)))
+        return NULL;
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     if ( a_count_out )

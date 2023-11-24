@@ -30,9 +30,9 @@ uint8_t *dap_enc_sig_bliss_write_signature(const void *a_sign, size_t *a_buflen_
 uint8_t *dap_enc_sig_bliss_write_private_key(const void *a_skey, size_t *a_buflen_out);
 uint8_t *dap_enc_sig_bliss_write_public_key(const void *a_pkey, size_t *a_buflen_out);
 
-uint8_t *dap_enc_sig_bliss_read_signature(const uint8_t *a_buf, size_t a_buflen);
-uint8_t *dap_enc_sig_bliss_read_private_key(const uint8_t *a_buf, size_t a_buflen);
-uint8_t *dap_enc_sig_bliss_read_public_key(const uint8_t *a_buf, size_t a_buflen);
+void *dap_enc_sig_bliss_read_signature(const uint8_t *a_buf, size_t a_buflen);
+void *dap_enc_sig_bliss_read_private_key(const uint8_t *a_buf, size_t a_buflen);
+void *dap_enc_sig_bliss_read_public_key(const uint8_t *a_buf, size_t a_buflen);
 
 
 DAP_STATIC_INLINE uint64_t dap_enc_sig_bliss_deser_sig_size(UNUSED_ARG const void *a_in)

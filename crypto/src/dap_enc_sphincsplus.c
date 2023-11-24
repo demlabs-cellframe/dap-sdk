@@ -206,7 +206,7 @@ uint8_t *dap_enc_sig_sphincsplus_write_private_key(const void *a_private_key, si
 }
 
 /* Deserialize a private key. */
-uint8_t *dap_enc_sig_sphincsplus_read_private_key(const uint8_t *a_buf, size_t a_buflen)
+void *dap_enc_sig_sphincsplus_read_private_key(const uint8_t *a_buf, size_t a_buflen)
 {
 // in work
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) + sizeof(sphincsplus_base_params_t), NULL);
@@ -235,7 +235,7 @@ uint8_t *dap_enc_sig_sphincsplus_read_private_key(const uint8_t *a_buf, size_t a
         DAP_DEL_MULTY(l_skey->data, l_skey);
         return NULL;
     }
-    return (uint8_t *)l_skey;
+    return l_skey;
 }
 
 /* Serialize a public key. */
@@ -259,7 +259,7 @@ uint8_t *dap_enc_sig_sphincsplus_write_public_key(const void* a_public_key, size
 }
 
 /* Deserialize a public key. */
-uint8_t *dap_enc_sig_sphincsplus_read_public_key(const uint8_t *a_buf, size_t a_buflen)
+void *dap_enc_sig_sphincsplus_read_public_key(const uint8_t *a_buf, size_t a_buflen)
 {
 // in work
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) + sizeof(sphincsplus_base_params_t), NULL);
@@ -288,7 +288,7 @@ uint8_t *dap_enc_sig_sphincsplus_read_public_key(const uint8_t *a_buf, size_t a_
         DAP_DEL_MULTY(l_pkey->data, l_pkey);
         return NULL;
     }
-    return (uint8_t *)l_pkey;
+    return l_pkey;
 }
 
 /* Serialize a signature */
@@ -312,7 +312,7 @@ uint8_t *dap_enc_sig_sphincsplus_write_signature(const void *a_sign, size_t *a_b
 }
 
 /* Deserialize a signature */
-uint8_t *dap_enc_sig_sphincsplus_read_signature(const uint8_t *a_buf, size_t a_buflen)
+void *dap_enc_sig_sphincsplus_read_signature(const uint8_t *a_buf, size_t a_buflen)
 {
 // sanity check
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) * 2 + sizeof(sphincsplus_base_params_t), NULL);
@@ -336,7 +336,7 @@ uint8_t *dap_enc_sig_sphincsplus_read_signature(const uint8_t *a_buf, size_t a_b
         DAP_DEL_MULTY(l_sign->sig_data, l_sign);
         return NULL;
     }
-    return (uint8_t *)l_sign;
+    return l_sign;
 }
 
 void sphincsplus_private_and_public_keys_delete(void *a_skey, void *a_pkey) 

@@ -81,7 +81,7 @@ void dap_enc_sig_multisign_key_delete(dap_enc_key_t *a_key);
 int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sign_params_t *a_params);
 
 uint8_t *dap_enc_sig_multisign_write_signature(const void *a_sign, size_t *a_out_len);
-uint8_t *dap_enc_sig_multisign_read_signature(uint8_t *a_sign, size_t a_sign_len);
+void *dap_enc_sig_multisign_read_signature(const uint8_t *a_sign, size_t a_sign_len);
 
 DAP_STATIC_INLINE uint64_t dap_enc_sig_multisign_deser_sig_size(UNUSED_ARG const void *a_in)
 {
