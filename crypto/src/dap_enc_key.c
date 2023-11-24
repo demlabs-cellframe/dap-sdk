@@ -907,7 +907,7 @@ size_t dap_enc_ser_priv_key_size (dap_enc_key_t *a_key)
  * @param a_key to calc
  * @return calced size or 0
  */
-size_t dap_enc_ser_pub_key_size (dap_enc_key_t *a_key)
+size_t dap_enc_ser_pub_key_size(dap_enc_key_t *a_key)
 {
 // sanity check
     dap_return_val_if_pass(!a_key, 0);
@@ -919,26 +919,7 @@ size_t dap_enc_ser_pub_key_size (dap_enc_key_t *a_key)
     return a_key->pub_key_data_size;
 }
 
-size_t dap_enc_gen_key_public_size (dap_enc_key_t *a_key)
-{
-// sanity check
-    dap_return_val_if_pass(!a_key, 0);
-// func work
-    switch (a_key->type) {
-        case DAP_ENC_KEY_TYPE_SIG_PICNIC:
-            return dap_enc_sig_picnic_deser_sig_size(a_key);
-            break;
-        case DAP_ENC_KEY_TYPE_SIG_BLISS:
-            return dap_enc_sig_tesla_deser_public_key_size(a_key);
-            break;
-        default:
-            log_it(L_WARNING, "No callback for key public size calculate");
-            return 0;
-            break;
-    }
-}
-
-int dap_enc_gen_key_public (dap_enc_key_t *a_key, void *a_output)
+int dap_enc_gen_key_public(dap_enc_key_t *a_key, void *a_output)
 {
 // sanity check
     dap_return_val_if_pass(!a_key, -1);
