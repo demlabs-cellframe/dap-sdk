@@ -118,7 +118,7 @@ uint8_t *dap_enc_sig_dilithium_write_signature(const void *a_sign, size_t *a_buf
 }
 
 /* Deserialize a signature */
-uint8_t *dap_enc_sig_dilithium_read_signature(const uint8_t *a_buf, size_t a_buflen)
+void *dap_enc_sig_dilithium_read_signature(const uint8_t *a_buf, size_t a_buflen)
 {
     if (!a_buf){
         log_it(L_ERROR,"::read_signature() NULL buffer on input");
@@ -175,10 +175,9 @@ uint8_t *dap_enc_sig_dilithium_read_signature(const uint8_t *a_buf, size_t a_buf
         log_it(L_ERROR,"::read_signature() Can't allocate sig_data %"DAP_UINT64_FORMAT_U" size", l_sign->sig_len);
         DAP_DELETE(l_sign);
         return NULL;
-    }else{
-        memcpy(l_sign->sig_data, a_buf + l_shift_mem, l_sign->sig_len);
-        return (uint8_t *)l_sign;
     }
+    memcpy(l_sign->sig_data, a_buf + l_shift_mem, l_sign->sig_len);
+    return l_sign;
 }
 
 /* Serialize a private key. */
@@ -221,7 +220,7 @@ uint8_t *dap_enc_sig_dilithium_write_public_key(const void *a_public_key, size_t
 }
 
 /* Deserialize a private key. */
-uint8_t *dap_enc_sig_dilithium_read_private_key(const uint8_t *a_buf, size_t a_buflen)
+void *dap_enc_sig_dilithium_read_private_key(const uint8_t *a_buf, size_t a_buflen)
 {
     dap_return_val_if_pass(!a_buf, NULL);
 
@@ -255,11 +254,11 @@ uint8_t *dap_enc_sig_dilithium_read_private_key(const uint8_t *a_buf, size_t a_b
 
     l_private_key->data = DAP_NEW_SIZE(uint8_t, p.CRYPTO_SECRETKEYBYTES);
     memcpy(l_private_key->data, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.CRYPTO_SECRETKEYBYTES);
-    return (uint8_t *)l_private_key;
+    return l_private_key;
 }
 
 /* Deserialize a public key. */
-uint8_t *dap_enc_sig_dilithium_read_public_key(const uint8_t *a_buf, size_t a_buflen)
+void *dap_enc_sig_dilithium_read_public_key(const uint8_t *a_buf, size_t a_buflen)
 {
     if (!a_buf){
         log_it(L_ERROR,"::read_public_key() NULL buffer on input");
@@ -311,5 +310,5 @@ uint8_t *dap_enc_sig_dilithium_read_public_key(const uint8_t *a_buf, size_t a_bu
     }
 
     memcpy(l_public_key->data, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.CRYPTO_PUBLICKEYBYTES);
-    return (uint8_t *)l_public_key;
+    return l_public_key;
 }

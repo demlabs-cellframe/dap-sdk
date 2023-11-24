@@ -174,7 +174,7 @@ uint8_t *dap_enc_sig_multisign_write_signature(const void *a_sign, size_t *a_out
  * @param a_sign_len Input data lenght
  * @return Pointer to multi-signature
  */
-uint8_t *dap_enc_sig_multisign_read_signature(uint8_t *a_sign, size_t a_sign_len)
+void *dap_enc_sig_multisign_read_signature(const uint8_t *a_sign, size_t a_sign_len)
 {
 // sanity check
     uint64_t l_mem_shift = sizeof(uint64_t) * 3 + sizeof(dap_sign_type_t) + sizeof(uint8_t) * 2;
