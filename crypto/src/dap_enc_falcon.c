@@ -78,7 +78,11 @@ void dap_enc_sig_falcon_key_new_generate(struct dap_enc_key *key, const void *ke
     falcon_public_key_t publicKey = {s_falcon_kind, s_falcon_sign_degree, s_falcon_type, pubkey};
 
     shake256_context rng;
-    retcode = shake256_init_prng_from_system(&rng);
+    if (!seed || !seed_size) {
+        retcode = shake256_init_prng_from_system(&rng);
+    } else {
+        shake256_init_prng_from_seed(&rng, seed, seed_size);
+    }
     if (retcode != 0) {
         log_it(L_ERROR, "Failed to initialize PRNG");
         return;
