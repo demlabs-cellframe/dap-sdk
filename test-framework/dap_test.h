@@ -27,6 +27,7 @@
 
 #define dap_fail(msg) {\
     printf("\t%s%s!%s\n", TEXT_COLOR_RED, msg, TEXT_COLOR_RESET); \
+    fflush(stdout); \
     abort();}
 
 /* PIF - print if failed. For checking value in loop, for don't repeat output */
@@ -37,6 +38,7 @@
     if(expr) {} \
     else { \
     printf("\t%s%s FAILED!%s\n", TEXT_COLOR_RED, msg, TEXT_COLOR_RESET); \
+    fflush(stdout); \
     abort(); } }
 
 /**
@@ -48,7 +50,8 @@
         fflush(stdout); \
     } else { \
     printf("\t%s%s FAILED!%s\n", TEXT_COLOR_RED, testname, TEXT_COLOR_RESET); \
-    abort(); } } \
+    fflush(stdout); \
+    abort(); } }
 
 /**
  * @brief Display the name test

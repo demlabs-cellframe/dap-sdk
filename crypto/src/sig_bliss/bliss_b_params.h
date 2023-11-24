@@ -108,7 +108,7 @@ typedef struct {
 extern int32_t bliss_b_private_key_gen(bliss_private_key_t *private_key, bliss_kind_t kind, entropy_t *entropy);
 
 /* Delete the memory associated with the private_key */
-extern void bliss_b_private_key_delete(bliss_private_key_t *private_key);
+extern void bliss_b_private_key_delete(void *a_skey);
 
 
 /* PUBLIC KEY API */
@@ -119,7 +119,7 @@ extern void bliss_b_private_key_delete(bliss_private_key_t *private_key);
 extern int32_t bliss_b_public_key_extract(bliss_public_key_t *public_key, const bliss_private_key_t *private_key);
 
 /* Delete the memory associated with the public_key */
-extern void bliss_b_public_key_delete(bliss_public_key_t *public_key);
+extern void bliss_b_public_key_delete(void *a_pkey);
 
 ///===========================================================================================
 
@@ -141,7 +141,7 @@ extern int32_t bliss_b_sign(bliss_signature_t *signature,  const bliss_private_k
 
 extern int32_t bliss_b_verify(const bliss_signature_t *signature,  const bliss_public_key_t *public_key, const uint8_t *msg, size_t msg_sz);
 
-extern void bliss_signature_delete(bliss_signature_t *signature);
+extern void bliss_signature_delete(void *a_sig);
 
 
 #endif

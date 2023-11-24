@@ -69,7 +69,7 @@ void s_save_key_in_storge(dap_enc_ks_key_t *a_key)
 {
     HASH_ADD_STR(_ks,id,a_key);
     if(s_memcache_enable) {
-        dap_enc_key_serialize_t* l_serialize_key = dap_enc_key_serialize(a_key->key);
+        uint8_t* l_serialize_key = dap_enc_key_serialize(a_key->key, NULL);
         //dap_memcache_put(a_key->id, l_serialize_key, sizeof (dap_enc_key_serialize_t), s_memcache_expiration_key);
         free(l_serialize_key);
     }

@@ -588,21 +588,24 @@ static void sparse_mul32(poly *prod, const int32_t *pk, const uint32_t *pos_list
 }
 
 /********************************************************************************************/
-void tesla_private_key_delete(tesla_private_key_t *private_key)
+void tesla_private_key_delete(void *l_skey)
 {
-    dap_return_if_pass(!private_key);
-    DAP_DEL_MULTY(private_key->data, private_key);
+    dap_return_if_pass(!l_skey);
+    DAP_DEL_MULTY(((tesla_private_key_t *)l_skey)->data, l_skey);
 }
 
-void tesla_public_key_delete(tesla_public_key_t *public_key)
+void tesla_public_key_delete(void *l_pkey)
 {
-    dap_return_if_pass(!public_key);
-    DAP_DEL_MULTY(public_key->data, public_key);
+    dap_return_if_pass(!l_pkey);
+    DAP_DEL_MULTY(((tesla_public_key_t *)l_pkey)->data, l_pkey);
 }
 
-void tesla_private_and_public_keys_delete(tesla_private_key_t *private_key, tesla_public_key_t *public_key){
-    tesla_private_key_delete(private_key);
-    tesla_public_key_delete(public_key);
+void tesla_private_and_public_keys_delete(void *a_skey, void *a_pkey)
+{
+    if(a_skey)
+        tesla_private_key_delete(a_skey);
+    if(a_pkey)
+        tesla_public_key_delete(a_pkey);
 }
 
 /********************************************************************************************/
@@ -960,9 +963,7 @@ int tesla_crypto_sign_open( tesla_signature_t *sig, const unsigned char *m, unsi
     return 0;
 }
 
-void tesla_signature_delete(tesla_signature_t *signature){
-    assert(signature != NULL);
-
-    free(signature->sig_data);
-    signature->sig_data = NULL;    
+void tesla_signature_delete(void *a_sig){
+    dap_return_if_pass(!a_sig)
+    DAP_DEL_Z(((tesla_signature_t *)a_sig)->sig_data);    
 }

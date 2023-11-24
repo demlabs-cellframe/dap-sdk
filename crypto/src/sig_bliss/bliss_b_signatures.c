@@ -972,15 +972,15 @@ int32_t bliss_b_verify(const bliss_signature_t *signature,  const bliss_public_k
     return retval;
 }
 
-void bliss_signature_delete(bliss_signature_t *signature){
-    assert(signature != NULL);
+void bliss_signature_delete(void *a_sig){
+    assert(a_sig != NULL);
+    bliss_signature_t *l_sig = a_sig;
+    free(l_sig->z1);
+    l_sig->z1 = NULL;
 
-    free(signature->z1);
-    signature->z1 = NULL;
+    free(l_sig->z2);
+    l_sig->z2 = NULL;
 
-    free(signature->z2);
-    signature->z2 = NULL;
-
-    free(signature->c);
-    signature->c = NULL;
+    free(l_sig->c);
+    l_sig->c = NULL;
 }

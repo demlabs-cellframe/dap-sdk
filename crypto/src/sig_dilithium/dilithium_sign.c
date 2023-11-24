@@ -78,24 +78,24 @@ void challenge(poly *c, const unsigned char mu[CRHBYTES], const polyveck *w1, di
 }
 
 /********************************************************************************************/
-void dilithium_private_key_delete(dilithium_private_key_t *private_key)
+void dilithium_private_key_delete(void *private_key)
 {
     dap_return_if_pass(!private_key);
-    DAP_DEL_MULTY(private_key->data, private_key);
+    DAP_DEL_MULTY(((dilithium_private_key_t *)private_key)->data, private_key);
 }
 
-void dilithium_public_key_delete(dilithium_public_key_t *public_key)
+void dilithium_public_key_delete(void *public_key)
 {
     dap_return_if_pass(!public_key);
-    DAP_DEL_MULTY(public_key->data, public_key);
+    DAP_DEL_MULTY(((dilithium_public_key_t *)public_key)->data, public_key);
 }
 
-void dilithium_private_and_public_keys_delete(dilithium_private_key_t *private_key, dilithium_public_key_t *public_key)
+void dilithium_private_and_public_keys_delete(void *a_skey, void *a_pkey)
 {
-    if (private_key)
-        dilithium_private_key_delete(private_key);
-    if (public_key)
-        dilithium_public_key_delete(public_key);
+    if (a_skey)
+        dilithium_private_key_delete(a_skey);
+    if (a_pkey)
+        dilithium_public_key_delete(a_pkey);
 }
 
 /********************************************************************************************/
@@ -403,7 +403,7 @@ int dilithium_crypto_sign_open( unsigned char *m, unsigned long long mlen, dilit
 }
 
 /*************************************************/
-void dilithium_signature_delete(dilithium_signature_t *sig){
+void dilithium_signature_delete(void *sig){
     dap_return_if_pass(!sig);
-    DAP_DEL_Z(sig->sig_data);
+    DAP_DEL_Z(((dilithium_signature_t *)sig)->sig_data);
 }
