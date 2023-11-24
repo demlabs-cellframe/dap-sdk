@@ -21,7 +21,7 @@ static int s_deserialised_sign_check(
         return -1;
     }
     if (a_degree != FALCON_512 && a_degree != FALCON_1024) { // we are now supporting only 512 and 1024 degrees
-        log_it(L_ERROR, "Degree %ul is not supported", a_degree);
+        log_it(L_ERROR, "Degree %u is not supported", a_degree);
         return -2;
     }
     if (a_kind != FALCON_COMPRESSED && a_kind != FALCON_PADDED && a_kind != FALCON_CT) { // we are now supporting only compressed, padded and ct signatures
@@ -276,7 +276,7 @@ uint8_t *dap_enc_sig_falcon_write_private_key(const void *a_private_key, size_t 
     return l_buf;
 }
 
-uint8_t *dap_enc_sig_falcon_read_private_key(const uint8_t *a_buf, size_t a_buflen)
+void *dap_enc_sig_falcon_read_private_key(const uint8_t *a_buf, size_t a_buflen)
 {
 // in work
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) + sizeof(uint32_t) * 3, NULL);
@@ -307,10 +307,10 @@ uint8_t *dap_enc_sig_falcon_read_private_key(const uint8_t *a_buf, size_t a_bufl
         DAP_DEL_MULTY(l_skey->data, l_skey);
         return NULL;
     }
-    return (uint8_t *)l_skey;
+    return l_skey;
 }
 
-uint8_t *dap_enc_sig_falcon_read_public_key(const uint8_t *a_buf, size_t a_buflen)
+void *dap_enc_sig_falcon_read_public_key(const uint8_t *a_buf, size_t a_buflen)
 {
 // in work
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) + sizeof(uint32_t) * 3, NULL);
@@ -341,7 +341,7 @@ uint8_t *dap_enc_sig_falcon_read_public_key(const uint8_t *a_buf, size_t a_bufle
         DAP_DEL_MULTY(l_pkey->data, l_pkey);
         return NULL;
     }
-    return (uint8_t *)l_pkey;
+    return l_pkey;
 }
 
 uint8_t *dap_enc_sig_falcon_write_signature(const void *a_sign, size_t *a_buflen_out)
@@ -365,7 +365,7 @@ uint8_t *dap_enc_sig_falcon_write_signature(const void *a_sign, size_t *a_buflen
     return l_buf;
 }
 
-uint8_t *dap_enc_sig_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen)
+void *dap_enc_sig_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen)
 {
 // sanity
     dap_return_val_if_pass(!a_buf || a_buflen < sizeof(uint64_t) * 2 + sizeof(uint32_t) * 3, NULL);
@@ -392,7 +392,7 @@ uint8_t *dap_enc_sig_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen
         DAP_DEL_MULTY(l_sign->sig_data, l_sign);
         return NULL;
     }
-    return (uint8_t *)l_sign;
+    return l_sign;
 }
 
 

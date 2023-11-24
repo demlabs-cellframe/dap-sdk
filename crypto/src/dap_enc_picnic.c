@@ -35,9 +35,9 @@ static bool check_picnic_params_t(dap_enc_key_t *key)
     return false;
 }
 
-uint64_t dap_enc_sig_picnic_deser_sig_size(void *a_key)
+uint64_t dap_enc_sig_picnic_deser_sig_size(const void *a_key)
 {
-    dap_enc_key_t *l_key = a_key;
+    const dap_enc_key_t *l_key = a_key;
     picnic_params_t *param = (picnic_params_t*) l_key->_inheritor;
     return picnic_signature_size(*param);
 }

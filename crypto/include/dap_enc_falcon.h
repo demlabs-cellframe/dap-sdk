@@ -27,9 +27,9 @@ void dap_enc_sig_falcon_key_delete(dap_enc_key_t *key);
 uint8_t *dap_enc_sig_falcon_write_signature(const void *a_sign, size_t *a_buflen_out);
 uint8_t *dap_enc_sig_falcon_write_private_key(const void *a_private_key, size_t *a_buflen_out);
 uint8_t *dap_enc_sig_falcon_write_public_key(const void *a_public_key, size_t *a_buflen_out);
-uint8_t *dap_enc_sig_falcon_read_signature(const uint8_t *a_buf, size_t a_buflen);
-uint8_t *dap_enc_sig_falcon_read_private_key(const uint8_t* a_buf, size_t a_buflen);
-uint8_t *dap_enc_sig_falcon_read_public_key(const uint8_t* a_buf, size_t a_buflen);
+void *dap_enc_sig_falcon_read_signature(const uint8_t *a_buf, size_t a_buflen);
+void *dap_enc_sig_falcon_read_private_key(const uint8_t* a_buf, size_t a_buflen);
+void *dap_enc_sig_falcon_read_public_key(const uint8_t* a_buf, size_t a_buflen);
 
 DAP_STATIC_INLINE uint64_t dap_enc_sig_falcon_deser_sig_size(UNUSED_ARG const void *a_in)
 {

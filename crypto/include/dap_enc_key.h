@@ -187,9 +187,9 @@ typedef size_t (*dap_enc_callback_pptr_r_size_t)(dap_enc_key_t *, void **);
 typedef void (*dap_enc_callback_data_t)(dap_enc_key_t *, const void * , size_t);
 typedef void (*dap_enc_callback_size_t)(dap_enc_key_t *, size_t);
 typedef void (*dap_enc_callback_str_t)(dap_enc_key_t *, const char*);
-typedef char* (*dap_enc_callback_r_str_t)(dap_enc_key_t *);
-typedef uint8_t* (*dap_enc_callback_serialize_t)(const void *, size_t *);
-typedef uint8_t* (*dap_enc_callback_deserialize_t)(const uint8_t *, size_t);
+typedef char * (*dap_enc_callback_r_str_t)(dap_enc_key_t *);
+typedef uint8_t * (*dap_enc_callback_serialize_t)(const void *, size_t *);
+typedef void * (*dap_enc_callback_deserialize_t)(const uint8_t *, size_t);
 typedef size_t (*dap_enc_callback_calc_out_size)(const size_t);
 typedef size_t (*dap_enc_get_allpbk_list) (dap_enc_key_t *a_key, const void *allpbk_list, const int allpbk_num);
 
