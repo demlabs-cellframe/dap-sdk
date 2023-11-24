@@ -112,7 +112,7 @@ size_t dap_enc_newhope_pbk_enc(struct dap_enc_key * a_key, const void * a_pub,
     }
     newhope_public_key_t *pk = (newhope_public_key_t*)a_pub;
     // Check the validity of the public key
-    if(!pk || (pk->kind != NEWHOPE_1024 && pk->kind != NEWHOPE_TOY) || !is_writeable_memory(pk->data, NEWHOPE_CPAPKE_PUBLICKEYBYTES))
+    if(!pk || (pk->kind != NEWHOPE_1024 && pk->kind != NEWHOPE_TOY))
     {
         log_it(L_ERROR, "newhope wrong public key");
         return 0;
