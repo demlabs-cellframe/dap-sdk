@@ -64,6 +64,10 @@
 #include "dap_net.h"
 #include "dap_cli_server.h"
 
+#include "dap_json_rpc_errors.h"
+#include "dap_json_rpc_request.h"
+#include "dap_json_rpc_response.h"
+
 #define LOG_TAG "dap_cli_server"
 
 #define MAX_CONSOLE_CLIENTS 16
@@ -542,11 +546,6 @@ void dap_cli_server_deinit()
  */
 void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex)
 {
-    if (json_commands(a_name)) {
-        json_object * a_arg_func = json_object_new_object();
-        s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, a_arg_func, a_doc, a_doc_ex);
-        json_object_put(a_arg_func);
-    }
     s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex);
 }
 
@@ -726,6 +725,7 @@ char* s_get_next_str( SOCKET nSocket, int *dwLen, const char *stop_str, bool del
 
     return NULL;
 }
+
 int json_commands(const char * a_name) {
     const char* long_cmd[] = {
             "tx_history",
@@ -782,7 +782,7 @@ char    *str_header;
         DAP_FREE(str_header);
 
         // Receiving request data
-        char * str_json_command = malloc(sizeof(char)*data_len);
+        char * str_json_command = DAP_NEW_SIZE(char, data_len);
         int recv_res = recv(newsockfd, str_json_command, data_len, 0);
         if (recv_res != data_len) {
             printf("The received data size: %d differs from the readed data size ->%d, errno: %d\n", data_len, recv_res, errno);
@@ -894,6 +894,7 @@ char    *str_header;
 
     return NULL;
 }
+
 
 /**
  * @brief thread_main_func

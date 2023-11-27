@@ -1,4 +1,5 @@
 #include "dap_json_rpc.h"
+#include "dap_cli_server.h"
 
 #define LOG_TAG "dap_json_rpc_rpc"
 
@@ -8,6 +9,7 @@ int dap_json_rpc_init()
 {
     init_module = true;
     return 0;
+
 }
 
 void dap_json_rpc_deinit()

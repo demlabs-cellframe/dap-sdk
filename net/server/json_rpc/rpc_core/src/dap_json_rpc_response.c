@@ -289,18 +289,22 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response) {
                 printf("json object is NULL\n");
                 return -2;
             }
-
-            if (json_object_array_length(response->result_json_object) <= 0) {
-                printf("json response length is 0\n");
-                return -3;
-            }
-
-            int result_count = json_object_array_length(response->result_json_object);
-            for (int i = 0; i < result_count; i++) {
+            int json_type = 0;
+            json_object_is_type(response->result_json_object, json_type);
+            if (json_type == json_type_array) {                                     /* print json array */ 
+                int result_count = json_object_array_length(response->result_json_object);
+                if (result_count <= 0) {
+                    printf("response json array length is 0\n");
+                    return -3;
+                }
+                for (int i = 0; i < result_count; i++) {
                     struct json_object * json_obj_result = json_object_array_get_idx(response->result_json_object, i);
                     json_print_object(json_obj_result, 0);
                     printf("\n");
                     json_object_put(json_obj_result);
+                }
+            } else {                                                                /* print json */ 
+                json_print_object(response->result_json_object, 0);
             }
             break;
         case TYPE_RESPONSE_ERROR:

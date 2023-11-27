@@ -51,6 +51,9 @@
 #include "dap_app_cli_net.h"
 #include "dap_enc_base64.h"
 
+#include "dap_json_rpc_request.h"
+#include "dap_json_rpc_response.h"
+
 static int s_status;
 
 //staic function to receive http data

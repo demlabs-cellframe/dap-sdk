@@ -29,11 +29,9 @@
 #include "dap_common.h"
 #include "dap_config.h"
 #include "uthash.h"
-#include "dap_json_rpc.h"
 
 typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, char **str_reply);
-typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, json_object **a_json_reply);
-
+typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, void **reply);
 typedef void (*dap_cli_server_override_log_cmd_callback_t)(const char*);
 
 typedef struct dap_cli_server_cmd_override{
