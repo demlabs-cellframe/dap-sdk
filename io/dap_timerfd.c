@@ -82,13 +82,13 @@ dap_timerfd_t* dap_timerfd_start(uint64_t a_timeout_ms, dap_timerfd_callback_t a
 
 #ifdef DAP_OS_WINDOWS
 void __stdcall TimerRoutine(void* arg, UNUSED_ARG BOOLEAN flag) {
-    /* A dumb crutch for unix crap compatibility
+    /* A dumb crutch for unix crap compatibility sake
      * TODO: The timer should be created with WT_EXECUTEINIOTHREAD flag directly on worker thread
      */
     dap_timerfd_t *l_timerfd = (dap_timerfd_t*)arg;
     dap_events_socket_t *l_es = l_timerfd->events_socket;
-    if (!PostQueuedCompletionStatus(l_es->context->iocp, 1, (ULONG_PTR)l_es, &l_es->ol_in)) {
-        log_it(L_ERROR, "Enqueue completion message failed, errno %d", WSAGetLastError());
+    if (!PostQueuedCompletionStatus(l_es->context->iocp, 0, (ULONG_PTR)l_es, NULL)) {
+        log_it(L_ERROR, "Sending completion message failed, errno %lu", GetLastError());
     }
 }
 #endif

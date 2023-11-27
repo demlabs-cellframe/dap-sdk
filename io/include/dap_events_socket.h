@@ -94,7 +94,7 @@ typedef struct work_item {
 #ifdef DAP_EVENTS_CAPS_IOCP
 #include <mswsock.h>
 #ifdef DAP_EVENTS_CAPS_IOCP
-LPFN_CONNECTEX pfn_ConnectEx;
+extern LPFN_CONNECTEX pfn_ConnectEx;
 #endif
 #define MAX_IOCP_ENTRIES 0xf // Maximum count of IOCP entries to fetch at once
 #endif
@@ -216,10 +216,7 @@ typedef struct dap_events_socket {
     uint32_t mqd_id;
 #elif defined(DAP_EVENTS_CAPS_IOCP)
     };
-    HANDLE h;
-    OVERLAPPED ol_in, ol_out;
-    HANDLE iocp;
-    SLIST_HEADER work_items;
+    HANDLE h, h_ev;
 #else
     };
 #endif
@@ -313,13 +310,6 @@ typedef struct dap_events_socket {
 } dap_events_socket_t; // Node of bidirectional list of clients
 typedef dap_events_socket_t dap_esocket_t;
 
-#ifdef DAP_EVENTS_CAPS_IOCP
-typedef struct work_item {
-    SLIST_ENTRY entry;
-    void *data;
-} work_item_t;
-#endif
-
 #define SSL(a) (a ? (WOLFSSL *) (a)->_pvt : NULL)
 
 typedef struct dap_events_socket_uuid_w_data{
@@ -365,7 +355,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t * a_es, void* a_arg);
 
 int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value);
 
-void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_preserve_inheritor);
+void dap_events_socket_delete_unsafe( dap_events_socket_t *a_esocket , bool a_preserve_inheritor);
 void dap_events_socket_delete_mt(dap_worker_t * a_worker, dap_events_socket_uuid_t a_es_uuid);
 
 dap_events_socket_t *dap_events_socket_wrap_no_add(SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);

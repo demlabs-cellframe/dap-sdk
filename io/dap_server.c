@@ -80,6 +80,8 @@ static int s_server_run(dap_server_t * a_server, dap_events_socket_callbacks_t *
 #ifdef DAP_EVENTS_CAPS_IOCP
 static void s_es_server_new_ex(dap_events_socket_t *a_es, void *a_arg);
 static void s_es_server_accept_ex(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr* a_remote_addr);
+LPFN_ACCEPTEX               pfn_AcceptEx                = NULL;
+LPFN_GETACCEPTEXSOCKADDRS   pfn_GetAcceptExSockaddrs    = NULL;
 #endif
 static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr* a_remote_addr);
 static void s_es_server_error(dap_events_socket_t *a_es, int a_arg);
@@ -389,6 +391,9 @@ static int s_server_run(dap_server_t *a_server, dap_events_socket_callbacks_t *a
     l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
 #endif
 #endif
+#ifdef DAP_EVENTS_CAPS_IOCP
+    l_es_server->h_ev = CreateEvent(0, TRUE, FALSE, NULL);
+#endif
     a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es_server);
     l_es_server->type = a_server->type == SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
     l_es_server->_inheritor = a_server;
@@ -517,6 +522,9 @@ static dap_events_socket_t * s_es_server_create(int a_sock, dap_events_socket_ca
         ret = dap_events_socket_wrap_no_add(a_sock, a_callbacks);
         ret->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
         ret->server = a_server;
+#ifdef DAP_EVENTS_CAPS_IOCP
+        ret->h_ev = CreateEvent(0, TRUE, FALSE, NULL);
+#endif
     } else {
         log_it(L_CRITICAL,"Accept error: %s",strerror(errno));
     }

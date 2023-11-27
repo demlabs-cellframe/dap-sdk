@@ -64,11 +64,9 @@ typedef struct dap_context {
     bool started;
     pthread_t thread_id; // Thread id
 
-
     /// Platform-specific fields
 #if defined DAP_EVENTS_CAPS_IOCP
     HANDLE iocp;
-    OVERLAPPED ol;
 #elif defined DAP_EVENTS_CAPS_EPOLL
     EPOLL_HANDLE epoll_fd;
     struct epoll_event epoll_events[ DAP_EVENTS_SOCKET_MAX];

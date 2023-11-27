@@ -473,12 +473,14 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         .error_callback = s_stream_es_callback_error,
                         .delete_callback = s_stream_es_callback_delete,
                         .connected_callback = s_stream_es_callback_connected
-                    };//
+                    };
                     a_client_pvt->stream_es = dap_events_socket_wrap_no_add( l_stream_socket,
                                                                              &l_s_callbacks);
                     a_client_pvt->stream_es->flags |= DAP_SOCK_CONNECTING ; // To catch non-blocking error when connecting we should up WRITE flag
 #ifndef DAP_EVENTS_CAPS_IOCP
                     a_client_pvt->stream_es->flags |= DAP_SOCK_READY_TO_WRITE;
+#else
+                    a_client_pvt->stream_es->h_ev = CreateEvent(0, TRUE, FALSE, NULL);
 #endif
                     a_client_pvt->stream_es->_inheritor = a_client_pvt->client;
                     a_client_pvt->stream = dap_stream_new_es_client(a_client_pvt->stream_es);
@@ -503,7 +505,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     } else {
                         strncpy(a_client_pvt->stream_es->remote_addr_str, a_client_pvt->client->uplink_addr, INET_ADDRSTRLEN);
 #ifdef DAP_EVENTS_CAPS_IOCP
-                        a_client_pvt->stream_es->_pvt = pfn_ConnectEx;
                         log_it(L_DEBUG, "Stream: connecting to remote %s:%u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                         dap_worker_add_events_socket(l_worker, a_client_pvt->stream_es);
                         dap_events_socket_uuid_t *l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);

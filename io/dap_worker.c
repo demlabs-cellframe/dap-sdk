@@ -128,15 +128,16 @@ static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg)
         return;
     }
 
-    if(g_debug_reactor)
-        log_it(L_NOTICE, "Received event socket %p (ident %"DAP_FORMAT_SOCKET" type %d) to add on worker #%u",
-                          l_es_new, l_es_new->socket, l_es_new->type, l_worker->id);
+    debug_if(g_debug_reactor, L_DEBUG, "Added es %p \"%s\" [%s] to worker #%d",
+             a_es, dap_events_socket_get_type_str(a_es),
+             a_es->socket == INVALID_SOCKET ? "" : dap_itoa(a_es->socket),
+             l_worker->id);
 
-    switch( l_es_new->type){
+    /*switch( l_es_new->type){
         case DESCRIPTOR_TYPE_SOCKET_UDP: break;
         case DESCRIPTOR_TYPE_SOCKET_CLIENT: break;
         default:{}
-    }
+    }*/
 
 #ifdef DAP_EVENTS_CAPS_KQUEUE
     if(l_es_new->socket!=0 && l_es_new->socket != -1 &&
@@ -196,7 +197,7 @@ static void s_queue_delete_es_callback( dap_events_socket_t * a_es, void * a_arg
     dap_events_socket_t * l_es;
     if ( (l_es = dap_context_find(a_es->context,*l_es_uuid_ptr)) != NULL ){
         //l_es->flags |= DAP_SOCK_SIGNAL_CLOSE; // Send signal to socket to kill
-        dap_events_socket_remove_and_delete_unsafe(l_es,false);
+        dap_events_socket_remove_and_delete_unsafe(l_es, false);
     }else
         debug_if(g_debug_reactor, L_INFO, "While we were sending the delete() message, esocket %"DAP_UINT64_FORMAT_U" has been disconnected ", *l_es_uuid_ptr);
     DAP_DELETE(l_es_uuid_ptr);
@@ -324,7 +325,7 @@ static bool s_socket_all_check_activity( void * a_arg)
                 if (l_es->callbacks.error_callback) {
                     l_es->callbacks.error_callback(l_es, ETIMEDOUT);
                 }
-                dap_events_socket_remove_and_delete_unsafe(l_es,false);
+                dap_events_socket_remove_and_delete_unsafe(l_es, false);
                 l_removed = true;
                 break;  // Start new cycle from beginning (cause next socket might been removed too)
             }
@@ -350,8 +351,12 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
         log_it(L_ERROR, dap_worker_get_current() == a_worker
                ? "Can't assign esocket to worker: \"%s\"(code %d)"
                : "Can't send pointer in queue: \"%s\"(code %d)", l_errbuf, l_ret);
-    } else
-        debug_if(g_debug_reactor, L_DEBUG, "Worker add esocket %"DAP_FORMAT_SOCKET, a_events_socket->socket);
+    } else if (g_debug_reactor)
+        log_it(L_DEBUG,
+               "Send es %p \"%s\" [%s] to worker #%d",
+               a_events_socket, dap_events_socket_get_type_str(a_events_socket),
+               a_events_socket->socket == INVALID_SOCKET ? "" : dap_itoa(a_events_socket->socket),
+               a_worker->id);
 }
 
 /**

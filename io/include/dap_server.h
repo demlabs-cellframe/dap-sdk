@@ -55,8 +55,8 @@
 #endif
 
 #ifdef DAP_EVENTS_CAPS_IOCP
-  LPFN_ACCEPTEX             pfn_AcceptEx                = NULL;
-  LPFN_GETACCEPTEXSOCKADDRS pfn_GetAcceptExSockaddrs    = NULL;
+extern LPFN_ACCEPTEX                pfn_AcceptEx;
+extern LPFN_GETACCEPTEXSOCKADDRS    pfn_GetAcceptExSockaddrs;
 #endif
 
 typedef enum dap_server_type {SERVER_TCP, SERVER_UDP,SERVER_LOCAL} dap_server_type_t;
