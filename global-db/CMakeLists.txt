@@ -56,3 +56,7 @@ INSTALL(TARGETS ${PROJECT_NAME}
         PUBLIC_HEADER DESTINATION include/dap/global_db/
 )
 endif()
+
+if (BUILD_GLOBAL_DB_TEST)
+    add_subdirectory(test)
+endif()

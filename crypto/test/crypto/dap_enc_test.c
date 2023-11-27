@@ -271,13 +271,14 @@ static void test_serealize_deserealize(dap_enc_key_type_t key_type)
 
 //  for key_type==DAP_ENC_KEY_TYPE_OAES must be: key_size=[16|24|32] and kex_size>=key_size
     dap_enc_key_t* key = dap_enc_key_new_generate(key_type, kex_data, kex_size, seed, seed_size, 32);
-    dap_enc_key_serealize_t* serealize_key = dap_enc_key_serealize(key);
-    _write_key_in_file(serealize_key, sizeof (dap_enc_key_serealize_t), TEST_SER_FILE_NAME);
-    dap_enc_key_serealize_t* deserealize_key = _read_key_from_file(TEST_SER_FILE_NAME, sizeof(dap_enc_key_serealize_t));
-    dap_assert(memcmp(serealize_key, deserealize_key, sizeof(dap_enc_key_serealize_t)) == 0,
+    dap_enc_key_serialize_t* serealize_key = dap_enc_key_serialize(key);
+    _write_key_in_file(serealize_key, sizeof (dap_enc_key_serialize_t), TEST_SER_FILE_NAME);
+    dap_enc_key_serialize_t* deserealize_key = _read_key_from_file(TEST_SER_FILE_NAME, sizeof(dap_enc_key_serialize_t));
+    dap_assert(memcmp(serealize_key, deserealize_key, sizeof(dap_enc_key_serialize_t)) == 0,
                "dap_enc_key_serealize_t equals");
 
     dap_enc_key_t* key2 = dap_enc_key_deserialize(deserealize_key, sizeof (*deserealize_key));
+    dap_assert(key2, "Error: Unable to deserialize the public key");
 
     dap_assert(key->type == key2->type, "Key type");
     dap_assert(key->last_used_timestamp == key2->last_used_timestamp,
@@ -353,7 +354,7 @@ static void test_serealize_deserealize_pub_priv(dap_enc_key_type_t key_type)
     uint8_t *l_data_pub_read = _read_key_from_file(TEST_SER_FILE_NAME, l_data_pub_size);
 
     size_t l_data_priv_size = 0;
-    uint8_t *l_data_priv = dap_enc_key_serealize_priv_key(key, &l_data_priv_size);
+    uint8_t *l_data_priv = dap_enc_key_serialize_priv_key(key, &l_data_priv_size);
     _write_key_in_file(l_data_priv, l_data_priv_size, TEST_SER_FILE_NAME);
     uint8_t *l_data_priv_read = _read_key_from_file(TEST_SER_FILE_NAME, l_data_priv_size);
 
@@ -414,9 +415,9 @@ static void test_serealize_deserealize_pub_priv(dap_enc_key_type_t key_type)
 
     // serealize & deserealize signature
     size_t sig_buf_len = sig_buf_size;
-    uint8_t *l_sign_tmp = dap_enc_key_serealize_sign(key_type, sig_buf, &sig_buf_len);
+    uint8_t *l_sign_tmp = dap_enc_key_serialize_sign(key_type, sig_buf, &sig_buf_len);
     dap_enc_key_signature_delete(key_type, sig_buf);
-    sig_buf = dap_enc_key_deserialize_pub_key(key_type, l_sign_tmp, &sig_buf_len);
+    sig_buf = dap_enc_key_deserialize_sign(key_type, l_sign_tmp, &sig_buf_len);
     DAP_DELETE(l_sign_tmp);
 
     dap_assert_PIF(sig_buf, "Check serealize->deserealize signature");
@@ -464,7 +465,6 @@ void dap_enc_tests_run() {
     test_serealize_deserealize(DAP_ENC_KEY_TYPE_IAES);
     dap_print_module_name("dap_enc serealize->deserealize OAES");
     test_serealize_deserealize(DAP_ENC_KEY_TYPE_OAES);
-
     dap_print_module_name("dap_enc_sig serealize->deserealize BLISS");
     test_serealize_deserealize_pub_priv(DAP_ENC_KEY_TYPE_SIG_BLISS);
     dap_print_module_name("dap_enc_sig serealize->deserealize PICNIC");

@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.10)
-project(examples C)
+project(rng_example C)
 
 set(CMAKE_C_STANDARD 11)
 
-add_executable(rng_example rng_example.c)
+add_executable(${PROJECT_NAME} rng_example.c)
 
+target_include_directories(${PROJECT_NAME} INTERFACE ../crypto/src/rand/)
 #target_include_directories(rng_example INTERFACE
 #        ../3rdparty
 #        ../crypto/include
@@ -14,6 +15,5 @@ add_executable(rng_example rng_example.c)
 #        ../crypto/src/XKCP/lib/common
 #        )
 
-target_link_libraries( rng_example
-        cellframe-sdk
-)
+target_link_libraries(${PROJECT_NAME}
+        dap_core dap_crypto)
