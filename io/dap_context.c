@@ -376,7 +376,7 @@ static int s_thread_init(dap_context_t * a_context)
         return -1;
     }
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
-    log_it(L_ATT, "[!] Assign %p : %d to LTS by key %d (thread %ld)",
+    log_it(L_DEBUG, "[!] Assign %p : %d to LTS by key %d (thread %ld)",
            a_context, a_context->type, g_dap_context_pth_key, a_context->thread_id);
 
     a_context->kqueue_fd = kqueue();
@@ -432,35 +432,39 @@ static int s_thread_loop(dap_context_t * a_context)
     OVERLAPPED_ENTRY l_ols[MAX_IOCP_ENTRIES] = { };
     do {
         if (!GetQueuedCompletionStatusEx(a_context->iocp, l_ols, MAX_IOCP_ENTRIES, &l_entires_num, INFINITE, FALSE)) {
-            log_it(L_ERROR, "GetQueuedCompletionStatus failed, errno %lu", GetLastError());
-            continue;
-        }
-        DWORD l_transferred = 0;
-        LPOVERLAPPED l_ol;
-        log_it(L_ATT, "[!] Completed %lu items", l_entires_num);
-        for (ULONG i = 0; i < l_entires_num; ++i) {
-            //DWORD flags;
-            l_ol = l_ols[i].lpOverlapped;
-            if (l_ol && !l_ol->hEvent) {
-                log_it(L_ATT, "[!] Es %p already destroyed, dump it", (void*)l_ols[i].lpCompletionKey);
-                DAP_DELETE(l_ol);
+            switch (l_errno = GetLastError()) {
+            case ERROR_ABANDONED_WAIT_0:
+                log_it(L_ERROR, "Completion port on context %u is closed", a_context->id);
+                continue;
+            default:
+                log_it(L_ERROR, "GetQueuedCompletionStatusEx failed, errno %u", l_errno);
                 continue;
             }
-            l_transferred   = l_ols[i].dwNumberOfBytesTransferred;
-            l_cur = (dap_events_socket_t*)l_ols[i].lpCompletionKey;
+        }
+        LPOVERLAPPED l_ol;
+        HANDLE l_ev;
+        char l_op = '\0';
+        debug_if(g_debug_reactor, L_INFO, "Completed %lu items in context #%d", l_entires_num, a_context->id);
+        for (ULONG i = 0; i < l_entires_num; ++i) {
+            // DWORD flags;
+            l_bytes = l_ols[i].dwNumberOfBytesTransferred;
+            l_ol    = l_ols[i].lpOverlapped;
+            l_ev    = l_ol ? l_ol->hEvent : NULL;
+            l_cur   = (dap_events_socket_t*)l_ols[i].lpCompletionKey;
             if (!l_cur || !l_cur->context) {
-                log_it(L_ATT, "An already destroyed es, skip it");
+                log_it(L_ATT, "An already unattached es, skip it");
                 continue;
             } else if (l_cur->context != a_context) {
-                log_it(L_ERROR, "es %p \"%s\" is from foreign context! %p != %p Dump it",
-                       l_cur, dap_events_socket_get_type_str(l_cur), l_cur->context, a_context);
+                log_it(L_ERROR, "Es %p \"%s\" is from foreign context #%d, expected #%d. Dump it",
+                       l_cur, dap_events_socket_get_type_str(l_cur), l_cur->context->id, a_context->id);
+                // TODO: should we send it to proper context?
                 continue;
             }
 
-            debug_if(g_debug_reactor, L_ATT, "Completed \"%s\" %p [%s], transferred %lu bytes",
+            debug_if(g_debug_reactor, L_INFO, "Completed \"%s\" %p [%s], transferred %lu bytes",
                    dap_events_socket_get_type_str(l_cur), l_cur,
                    l_cur->socket == INVALID_SOCKET ? "" : dap_itoa(l_cur->socket),
-                   l_transferred);
+                   l_bytes);
 
             uint32_t    l_cur_flags     = l_cur->flags,
                         flag_r_noclose  = ~DAP_SOCK_SIGNAL_CLOSE & DAP_SOCK_READY_TO_READ,
@@ -468,36 +472,42 @@ static int s_thread_loop(dap_context_t * a_context)
 
             DWORD l_buf_in_size = l_cur->buf_in_size, l_buf_out_size = l_cur->buf_out_size;
 
-            debug_if(g_debug_reactor, L_ATT, "[!] es %p flags: %s:%s:%s:%s:%s , sizes in/out: %lu/%lu",
+            debug_if(g_debug_reactor, L_DEBUG, "Es %p flags: [%s:%s:%s:%s:%s], sizes in/out: %lu/%lu, OL event state: %s",
                      l_cur,
                      l_cur_flags & DAP_SOCK_READY_TO_READ  ? "READ"    : "",
                      l_cur_flags & DAP_SOCK_READY_TO_WRITE ? "WRITE"   : "",
                      l_cur_flags & DAP_SOCK_CONNECTING     ? "CONN"    : "",
                      l_cur_flags & DAP_SOCK_SIGNAL_CLOSE   ? "CLOSE"   : "",
                      l_cur->no_close ? "NOCLOSE" : "",
-                     l_buf_in_size, l_buf_out_size);
+                     l_buf_in_size, l_buf_out_size,
+                     l_ev ? WaitForSingleObject(l_ev, 0) == WAIT_OBJECT_0
+                       ? "SET" : "UNSET"
+                     : "not passed");
 
-            if ((l_cur->flags & flag_r_noclose) == flag_r_noclose) {
-                DWORD flags = 0;
+            if ((l_cur_flags & flag_r_noclose) == flag_r_noclose) {
+                l_op = 'r';
                 switch (l_cur->type) {
                 case DESCRIPTOR_TYPE_SOCKET_LISTENING: {
                     if (l_cur->flags & DAP_SOCK_READY_TO_READ) {
                         // AcceptEx completed
                         if (!l_cur->callbacks.accept_callback) {
                             log_it(L_ERROR, "Listening socket %p : %zu has no accept callback, nothing to do. Dump eet", l_cur, l_cur->socket);
-                            l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                            DAP_DEL_Z(l_ol);
+                            l_cur->flags = DAP_SOCK_SIGNAL_CLOSE;
                             break;
                         }
-                        if (setsockopt(l_cur->socket2, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)&l_cur->socket, sizeof(l_cur->socket)) == SOCKET_ERROR) {
+                        if (setsockopt(l_cur->socket2, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)&l_cur->socket, sizeof(l_cur->socket))
+                                == SOCKET_ERROR)
+                        {
                             log_it(L_ERROR, "setsockopt failed, errno %d", WSAGetLastError());
-                            l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                            DAP_DEL_Z(l_ol);
+                            l_cur->flags = DAP_SOCK_SIGNAL_CLOSE;
                             break;
                         }
                         LPSOCKADDR l_local_addr = NULL, l_remote_addr = NULL;
                         INT l_local_addr_len = 0, l_remote_addr_len = 0;
                         pfn_GetAcceptExSockaddrs(l_cur->buf_in, 0, sizeof(SOCKADDR_STORAGE) + 16, sizeof(SOCKADDR_STORAGE) + 16,
-                                                                &l_local_addr, &l_local_addr_len,
-                                                                &l_remote_addr, &l_remote_addr_len);
+                                                                &l_local_addr, &l_local_addr_len, &l_remote_addr, &l_remote_addr_len);
                         l_cur->callbacks.accept_callback(l_cur, l_cur->socket2, l_remote_addr);
                         dap_events_socket_set_readable_unsafe(l_cur, true);
                     }
@@ -505,60 +515,65 @@ static int s_thread_loop(dap_context_t * a_context)
 
                 case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
                 case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                    break; // not used on Windows yet
+                    break; // TODO: not used on Windows yet
 
                 case DESCRIPTOR_TYPE_PIPE:
                 case DESCRIPTOR_TYPE_FILE:
-                    // TODO: read data
+                    // TODO: do some reading stuff
                     break;
 
                 case DESCRIPTOR_TYPE_TIMER:
                     if (!l_cur->callbacks.timer_callback) {
-                        log_it(L_ERROR, "Socket %p has no timer callback set, nothing to do. Dump it", l_cur);
+                        log_it(L_ERROR, "Es %p has no timer callback, nothing to do. Dump eet", l_cur);
+                        l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                         break;
                     }
                     l_cur->callbacks.timer_callback(l_cur);
                     break;
                 case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                 case DESCRIPTOR_TYPE_SOCKET_UDP:
-                    if (!l_transferred /*&& !l_cur->no_close*/) {
-                        log_it(L_INFO, "Connection on es %p [%zu] closed", l_cur, l_cur->socket);
-                        int l_errno = 0, l_len = sizeof(int);
-                        if (getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno, &l_len)) {
-                            log_it(L_ERROR, "getsockopt() failed, errno %d", WSAGetLastError());
-                        } else if (l_errno) {
-                            log_it(L_ERROR, "[!] Socket error %d", l_errno);
+                    if (l_ol) {
+                        if (!l_bytes) {
+                            log_it(L_INFO, "Connection on es %zu closed", l_cur->socket);
+                            int l_errno = 0, l_len = sizeof(int);
+                            if (getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno, &l_len)) {
+                                log_it(L_ERROR, "getsockopt() failed, errno %d", WSAGetLastError());
+                            } else if (l_errno) {
+                                log_it(L_ERROR, "Socket error %d", l_errno);
+                            }
+                            l_cur->no_close = false;
+                            l_cur->flags = DAP_SOCK_SIGNAL_CLOSE;
+                            DAP_DEL_Z(l_ol);
+                            break;
+                        } else if (WaitForSingleObject(l_ev, 0) == WAIT_OBJECT_0) {
+                            l_cur->buf_in_size += l_bytes;
                         }
-                        l_cur->no_close = false;
-                        l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
-                        l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                        break;
-                        //continue;
-                    } else if (!l_cur->buf_in_size) {
-                        l_cur->buf_in_size += l_transferred;
                     }
 
-                    /*if (!WSAGetOverlappedResult(l_cur->socket, l_cur_ol, &l_bytes, FALSE, &flags)) {
+                    // Something read...
+                    /* TODO: analyze flags?
+                     *
+                     * if (!WSAGetOverlappedResult(l_cur->socket, l_cur_ol, &l_bytes, FALSE, &flags)) {
                         log_it(L_ERROR, "Getting WSARecv() result failed, errno %d", WSAGetLastError());
                         l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                         break;
-                    }*/
+                    }
+                    */
 
-                    // Something read...
-                    // TODO: analyze flags...
                     if (!l_cur->callbacks.read_callback) {
-                        log_it(L_ERROR, "Socket %p : %zu has no read callback set, nothing to do, drop %lu bytes", l_cur, l_cur->socket, l_transferred);
+                        log_it(L_ERROR, "Es %zu has no read callback, nothing to do. Dump %lu bytes", l_cur->socket, l_bytes);
                         l_cur->flags &= ~DAP_SOCK_READY_TO_READ; // TODO: prevent from IOCP getting status...
                     }
                     l_cur->last_time_active = time(NULL);
-                    log_it(L_DEBUG, "Received %lu bytes from socket %zu", l_transferred, l_cur->socket);
+                    debug_if(g_debug_reactor, L_DEBUG, "Received %lu bytes from socket %zu", l_bytes, l_cur->socket);
                     l_cur->callbacks.read_callback(l_cur, NULL);
-                    //l_bytes = 0;
-                    if (!l_cur->context)
+                    if (!l_cur->context) {
+                        debug_if(g_debug_reactor, L_ATT, "[!] es %p : %zu unattached from context %u", l_cur, l_cur->socket, a_context->id);
+                        CloseHandle(l_ev);
+                        DAP_DEL_Z(l_ol);
                         continue;
+                    }
                     break;
-                    //if (!l_cur->context)
-                    //    break;
                 case DESCRIPTOR_TYPE_QUEUE:
                     dap_events_socket_queue_proc_input_unsafe(l_cur);
                     l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
@@ -569,39 +584,48 @@ static int s_thread_loop(dap_context_t * a_context)
                 case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL:
                     break;
                 default:
-                    log_it(L_ATT, "[!] Unknown socket type %d", l_cur->type);
+                    log_it(L_ERROR, "Es %p has unknown type %d. Dump eet", l_cur, l_cur->type);
                     l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                     break;
                 }
+                if (g_debug_reactor) {
+                    char states[127] = { '\0' }, shift = 0;
+                    if (l_cur->flags != l_cur_flags) {
+                        l_cur_flags = l_cur->flags;
+                        shift = dap_snprintf(states, sizeof(states), ", flags changed to [%s:%s:%s:%s:%s]",
+                                     l_cur->flags & DAP_SOCK_READY_TO_READ  ? "READ"    : "",
+                                     l_cur->flags & DAP_SOCK_READY_TO_WRITE ? "WRITE"   : "",
+                                     l_cur->flags & DAP_SOCK_CONNECTING     ? "CONN"    : "",
+                                     l_cur->flags & DAP_SOCK_SIGNAL_CLOSE   ? "CLOSE"   : "",
+                                     l_cur->no_close ? "NOCLOSE" : "");
+                    }
+                    if (l_cur->buf_in_size != l_buf_in_size) {
+                        shift += dap_snprintf(states + shift, sizeof(states) - shift,
+                                     ", BUF_IN size: %lu -> %lu",
+                                     l_buf_in_size, l_cur->buf_in_size);
+                        l_buf_in_size = l_cur->buf_in_size;
+                    }
+                    if (l_cur->buf_out_size != l_buf_out_size) {
+                        shift += dap_snprintf(states + shift, sizeof(states) - shift,
+                                              ", BUF_OUT size: %lu -> %lu",
+                                              l_buf_out_size, l_cur->buf_out_size);
+                        l_buf_out_size = l_cur->buf_out_size;
+                    }
+                    if (l_ev)
+                        dap_snprintf(states + shift, sizeof(states) - shift,
+                                              ", OL event is %s",
+                                              WaitForSingleObject(l_ev, 0) == WAIT_OBJECT_0
+                                              ? "SET" : "UNSET");
+                    log_it(L_DEBUG, "Finished READ routines on es %p%s", l_cur, states);
+                }
             }
 
-            if (g_debug_reactor) {
-                if (l_cur->flags != l_cur_flags) {
-                    l_cur_flags = l_cur->flags;
-                    log_it(L_ATT, "[1] es %p flags changed to %s:%s:%s:%s:%s",
-                           l_cur,
-                           l_cur_flags & DAP_SOCK_READY_TO_READ  ? "READ"    : "",
-                           l_cur_flags & DAP_SOCK_READY_TO_WRITE ? "WRITE"   : "",
-                           l_cur_flags & DAP_SOCK_CONNECTING     ? "CONN"    : "",
-                           l_cur_flags & DAP_SOCK_SIGNAL_CLOSE   ? "CLOSE"   : "",
-                           l_cur->no_close ? "NOCLOSE" : "");
-                }
-                if (l_cur->buf_in_size != l_buf_in_size) {
-                    log_it(L_ATT, "[1] es %p BUF_IN size: %lu -> %lu",
-                           l_cur, l_buf_in_size, l_cur->buf_in_size);
-                    l_buf_in_size = l_cur->buf_in_size;
-                }
-                if (l_cur->buf_out_size != l_buf_out_size) {
-                    log_it(L_ATT, "[1] es %p BUF_OUT size: %lu -> %lu",
-                           l_cur, l_buf_out_size, l_cur->buf_out_size);
-                    l_buf_out_size = l_cur->buf_out_size;
-                }
-            }
 
             if ((l_cur->flags & flag_w_noclose) == flag_w_noclose) {// || (l_cur->flags & DAP_SOCK_QUEUE_PTR)) {
-                // Write something OR check the status
-                // TODO: analyze flags...
+                // Write something OR check the status of completed writing
+                // TODO: yet again analyze flags
                 if(!l_cur->server && l_cur->flags & DAP_SOCK_CONNECTING) {
+                    l_op = 'w';
                     UINT seconds;
                     int tmp = sizeof(int);
                     if (getsockopt(l_cur->socket, SOL_SOCKET, SO_CONNECT_TIME, (char*)&seconds, (PINT)&tmp)
@@ -611,6 +635,7 @@ static int s_thread_loop(dap_context_t * a_context)
                         log_it(L_ERROR, "getsockopt SO_CONNECT_TIME failed, errno %d", l_err);
                         if ( l_cur->callbacks.error_callback )
                             l_cur->callbacks.error_callback(l_cur, l_err);
+                        DAP_DEL_Z(l_ol);
                         l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                     } else {
                         if (seconds == 0xFFFFFFFF) {
@@ -618,6 +643,7 @@ static int s_thread_loop(dap_context_t * a_context)
                                    l_cur->remote_addr_str, ntohs(l_cur->remote_addr.sin_port));
                             if ( l_cur->callbacks.error_callback )
                                 l_cur->callbacks.error_callback(l_cur, WSAGetLastError());
+                            DAP_DEL_Z(l_ol);
                             l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                         } else {
                             log_it(L_INFO, "ConnectEx to %s:%u succeeded in %d seconds",
@@ -629,6 +655,7 @@ static int s_thread_loop(dap_context_t * a_context)
                                 log_it(L_ERROR, "setsockopt SO_UPDATE_CONNECT_CONTEXT failed, errno %d", l_err);
                                 if ( l_cur->callbacks.error_callback )
                                     l_cur->callbacks.error_callback(l_cur, l_err);
+                                DAP_DEL_Z(l_ol);
                                 l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                             } else {
                                 l_cur->flags &= ~DAP_SOCK_CONNECTING;
@@ -638,99 +665,76 @@ static int s_thread_loop(dap_context_t * a_context)
                         }
                     }
                 } else {
-                //if ( !(l_cur->flags & DAP_SOCK_CONNECTING) ) {
-                    if (!l_transferred) {
-                        continue;
-                    } else {
-                        if (l_cur->buf_out_size)
-                            l_cur->buf_out_size -= l_transferred;
-                        if (l_cur->callbacks.write_callback)
-                            l_cur->callbacks.write_callback(l_cur, NULL);
-                        if (!l_cur->buf_out_size) {
-                            if (l_cur->no_close)
-                                dap_events_socket_set_readable_unsafe(l_cur, true);
-                            else {
-                                l_cur->callbacks.write_callback = NULL;
-                                l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
-                                if ( l_cur->callbacks.write_finished_callback )
-                                    l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg, 0);
-                                else {
-                                    l_cur->callbacks.write_finished_callback = NULL;
-                                    log_it(L_ATT, "Time to close, nothing to do more");
-                                    l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                                }
+                    if (l_op != 'r') {
+                        if (!l_bytes) {
+                            log_it(L_INFO, "Connection on es %zu closed", l_cur->socket);
+                            int l_errno = 0, l_len = sizeof(int);
+                            if (getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno, &l_len)) {
+                                log_it(L_ERROR, "getsockopt() failed, errno %d", WSAGetLastError());
+                            } else if (l_errno) {
+                                log_it(L_ERROR, "Socket error %d", l_errno);
                             }
+                            l_cur->no_close = false;
+                            l_cur->flags = DAP_SOCK_SIGNAL_CLOSE;
+                            DAP_DEL_Z(l_ol);
+                        } else if (WaitForSingleObject(l_ev, 0) == WAIT_OBJECT_0) {
+                            l_cur->buf_out_size -= l_bytes;
                         }
                     }
-
-
-                    /*} else if (l_cur->buf_out_size) {
-                        l_cur->buf_out_size -= l_transferred;
-                        if (!l_cur->buf_out_size) {
-                            if (l_cur->no_close) {}
-                                //dap_events_socket_set_readable_unsafe(l_cur, true);
-                            else {
-                                if (l_cur->callbacks.write_callback)
-                                    l_cur->callbacks.write_callback = NULL;
-                                else {
-                                    l_cur->callbacks.write_finished_callback = NULL;
-                                    log_it(L_ATT, "Time to close");
-                                    l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
-                                    l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                                }
-                            }
-                        }
-                    }
+                    l_op = 'w';
                     if (l_cur->callbacks.write_callback)
                         l_cur->callbacks.write_callback(l_cur, NULL);
-                    else if (!l_cur->buf_out_size) {
+                    if (!l_cur->buf_out_size) {
                         if (l_cur->no_close)
                             dap_events_socket_set_readable_unsafe(l_cur, true);
                         else {
+                            l_cur->callbacks.write_callback = NULL;
                             l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
                             if ( l_cur->callbacks.write_finished_callback )
                                 l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg, 0);
-                            else {
-                                log_it(L_ATT, "Time to close, nothing to do more");
-                                l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                            }
                         }
-                    }*/
+                    }
                 }
-            }
-
-            if (g_debug_reactor) {
-                if (l_cur->flags != l_cur_flags) {
-                    l_cur_flags = l_cur->flags;
-                    log_it(L_ATT, "[2] es %p flags changed to %s:%s:%s:%s:%s",
-                           l_cur,
-                           l_cur_flags & DAP_SOCK_READY_TO_READ  ? "READ"    : "",
-                           l_cur_flags & DAP_SOCK_READY_TO_WRITE ? "WRITE"   : "",
-                           l_cur_flags & DAP_SOCK_CONNECTING     ? "CONN"    : "",
-                           l_cur_flags & DAP_SOCK_SIGNAL_CLOSE   ? "CLOSE"   : "",
-                           l_cur->no_close ? "NOCLOSE" : "");
+                if (g_debug_reactor) {
+                    char states[127] = { '\0' }, shift = 0;
+                    if (l_cur->flags != l_cur_flags) {
+                        l_cur_flags = l_cur->flags;
+                        shift = dap_snprintf(states, sizeof(states), ", flags changed to [%s:%s:%s:%s:%s]",
+                                     l_cur_flags & DAP_SOCK_READY_TO_READ  ? "READ"    : "",
+                                     l_cur_flags & DAP_SOCK_READY_TO_WRITE ? "WRITE"   : "",
+                                     l_cur_flags & DAP_SOCK_CONNECTING     ? "CONN"    : "",
+                                     l_cur_flags & DAP_SOCK_SIGNAL_CLOSE   ? "CLOSE"   : "",
+                                     l_cur->no_close ? "NOCLOSE" : "");
+                    }
+                    if (l_cur->buf_in_size != l_buf_in_size) {
+                        shift += dap_snprintf(states + shift, sizeof(states) - shift,
+                                     ", BUF_IN size: %lu -> %lu",
+                                     l_buf_in_size, l_cur->buf_in_size);
+                        l_buf_in_size = l_cur->buf_in_size;
+                    }
+                    if (l_cur->buf_out_size != l_buf_out_size) {
+                        shift += dap_snprintf(states + shift, sizeof(states) - shift,
+                                              ", BUF_OUT size: %lu -> %lu",
+                                              l_buf_out_size, l_cur->buf_out_size);
+                        l_buf_out_size = l_cur->buf_out_size;
+                    }
+                    if (l_ev)
+                        dap_snprintf(states + shift, sizeof(states) - shift,
+                                              ", OL event is %s",
+                                              WaitForSingleObject(l_ev, 0) == WAIT_OBJECT_0
+                                              ? "SET" : "UNSET");
+                    log_it(L_DEBUG, "Finished WRITE routines on es %p%s", l_cur, states);
                 }
-                if (l_cur->buf_in_size != l_buf_in_size) {
-                    log_it(L_ATT, "[2] es %p BUF_IN size: %lu -> %lu",
-                           l_cur, l_buf_in_size, l_cur->buf_in_size);
-                }
-                l_buf_in_size = l_cur->buf_in_size;
-                if (l_cur->buf_out_size != l_buf_out_size) {
-                    log_it(L_ATT, "[2] es %p BUF_OUT size: %lu -> %lu",
-                           l_cur, l_buf_out_size, l_cur->buf_out_size);
-                }
-                l_buf_out_size = l_cur->buf_out_size;
             }
 
             // Final check for closing
             if (l_cur->flags & DAP_SOCK_SIGNAL_CLOSE) {
-                dap_events_socket_remove_and_delete_unsafe(l_cur, false);
-            } else if (l_ol) {
-                log_it(L_ATT, "[!] ResetEvent %d on %p", ResetEvent(l_ol->hEvent), l_cur);
+                dap_events_socket_remove_and_delete_unsafe_ex(l_cur, false, l_ol);
             }
-            DAP_DELETE(l_ol);
+            if (l_ev)
+                CloseHandle(l_ev);
+            DAP_DEL_Z(l_ol);
         }
-
     } while (!a_context->signal_exit);
     log_it(L_ATT,"Context %u finished", a_context->id);
     return 0;
@@ -1618,7 +1622,7 @@ int dap_context_add(dap_context_t *a_context, dap_events_socket_t *a_es)
                     log_it(L_ERROR, "IOCP update failed, errno %lu %llu", l_err, a_es->socket );
                     return l_err;
             } else {
-                log_it(L_ATT, "[!] Socket %p of type %d added to IOCP", a_es, a_es->type);
+                log_it(L_INFO, "[!] Socket %p of type %s added to IOCP", a_es, dap_events_socket_get_type_str(a_es));
             }
         }
     }
@@ -1874,16 +1878,10 @@ int dap_context_remove( dap_events_socket_t * a_es)
  */
 dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_socket_uuid_t a_es_uuid )
 {
-    if(a_context == NULL){
-        log_it(L_ERROR, "Worker is NULL, can't fund esocket by UUID");
-        return NULL;
-    }
-    dap_events_socket_t * l_ret = NULL;
-    if(a_context->esockets ) {
-        //HASH_FIND_PTR( a_worker->context->esockets, &a_es_uuid,l_ret );
-        HASH_FIND(hh, a_context->esockets, &a_es_uuid, sizeof(a_es_uuid), l_ret );
-    }
-    return l_ret;
+    dap_events_socket_t * l_es = NULL;
+    if (a_context && a_context->esockets)
+        HASH_FIND(hh, a_context->esockets, &a_es_uuid, sizeof(a_es_uuid), l_es);
+    return l_es;
 }
 
 /**

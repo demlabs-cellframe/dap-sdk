@@ -391,9 +391,6 @@ static int s_server_run(dap_server_t *a_server, dap_events_socket_callbacks_t *a
     l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
 #endif
 #endif
-#ifdef DAP_EVENTS_CAPS_IOCP
-    l_es_server->h_ev = CreateEvent(0, TRUE, FALSE, NULL);
-#endif
     a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es_server);
     l_es_server->type = a_server->type == SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
     l_es_server->_inheritor = a_server;
@@ -469,10 +466,10 @@ static void s_es_server_accept(dap_events_socket_t *a_es, SOCKET a_remote_socket
     assert(l_server);
 
     dap_events_socket_t * l_es_new = NULL;
-    log_it(L_DEBUG, "[es:%p] Listening socket (binded on %s:%u) got new incoming connection", a_es, l_server->address,l_server->port);
-    log_it(L_DEBUG, "[es:%p] Accepted new connection (sock %"DAP_FORMAT_SOCKET" from %"DAP_FORMAT_SOCKET")", a_es, a_remote_socket, a_es->socket);
+    log_it(L_DEBUG, "[es:%p] Listening socket %"DAP_FORMAT_SOCKET" binded on %s:%u "
+                    "accepted new connection from remote %"DAP_FORMAT_SOCKET"",
+           a_es, a_es->socket, l_server->address, l_server->port, a_remote_socket);
     l_es_new = s_es_server_create(a_remote_socket,&l_server->client_callbacks,l_server);
-    //l_es_new->is_dont_reset_write_flag = true; // By default all income connection has this flag
     getnameinfo(a_remote_addr,a_remote_addr_size, l_es_new->hostaddr, DAP_EVSOCK$SZ_HOSTNAME,
                 l_es_new->service, DAP_EVSOCK$SZ_SERVICE, NI_NUMERICHOST | NI_NUMERICSERV);
     struct in_addr l_addr_remote = ((struct sockaddr_in*)a_remote_addr)->sin_addr;
@@ -520,11 +517,8 @@ static dap_events_socket_t * s_es_server_create(int a_sock, dap_events_socket_ca
     dap_events_socket_t * ret = NULL;
     if (a_sock > 0)  {
         ret = dap_events_socket_wrap_no_add(a_sock, a_callbacks);
-        ret->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
+        ret->type   = DESCRIPTOR_TYPE_SOCKET_CLIENT;
         ret->server = a_server;
-#ifdef DAP_EVENTS_CAPS_IOCP
-        ret->h_ev = CreateEvent(0, TRUE, FALSE, NULL);
-#endif
     } else {
         log_it(L_CRITICAL,"Accept error: %s",strerror(errno));
     }

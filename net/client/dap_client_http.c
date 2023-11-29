@@ -376,9 +376,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
             l_client_http->header_length = 0;
             l_client_http->content_length = 0;
             l_client_http->were_callbacks_called = true;
-#ifdef DAP_EVENTS_CAPS_IOCP
-            //a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-#endif
+            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
         }
 
     }
@@ -672,7 +670,6 @@ dap_client_http_t * dap_client_http_request_custom (
     }
 #ifdef DAP_EVENTS_CAPS_IOCP
     log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
-    l_ev_socket->h_ev = CreateEvent(0, TRUE, FALSE, NULL);
     l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
     dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
 
