@@ -13,6 +13,8 @@
 
 #ifdef _WIN32
 
+extern char *strptime(const char *s, const char *format, struct tm *tm);
+
 /* Identifier for system-wide realtime clock.  */
 #ifndef CLOCK_REALTIME
 #define CLOCK_REALTIME              0
@@ -129,30 +131,26 @@ int timespec_diff(struct timespec *a_start, struct timespec *a_stop, struct time
  * @param[in] t UNIX time
  * @return Length of resulting string if ok or lesser than zero if not
  */
-int dap_time_to_str_rfc822(char * a_out, size_t a_out_size_max, dap_time_t a_t)
+int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time)
 {
-  struct tm *l_tmp;
-  time_t l_time = (time_t)a_t;
-  l_tmp = localtime(&l_time);
-
-  if ( l_tmp == NULL ) {
-    log_it( L_ERROR, "Can't convert data from unix fromat to structured one" );
-    return -2;
-  }
-
-  int l_ret;
-  #ifndef _WIN32
-    l_ret = strftime( a_out, a_out_size_max, "%a, %d %b %y %T %z", l_tmp);
-  #else
-    l_ret = strftime( a_out, a_out_size_max, "%a, %d %b %y %H:%M:%S", l_tmp );
-  #endif
-
-  if ( !l_ret ) {
-    log_it( L_ERROR, "Can't print formatted time in string" );
-    return -1;
-  }
-
-  return l_ret;
+    struct tm *l_tmp;
+    time_t l_time = a_time;
+    l_tmp = localtime(&l_time);
+    if (!l_tmp) {
+        log_it(L_ERROR, "Can't convert data from unix fromat to structured one");
+        return -2;
+    }
+    int l_ret;
+#ifndef _WIN32
+    l_ret = strftime(a_out, a_out_size_max, "%a, %d %b %y %T %z", l_tmp);
+#else
+    l_ret = strftime(a_out, a_out_size_max, "%a, %d %b %y %H:%M:%S", l_tmp);
+#endif
+    if (!l_ret) {
+        log_it( L_ERROR, "Can't print formatted time in string");
+        return -1;
+    }
+    return l_ret;
 }
 
 /**
@@ -171,53 +169,12 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
     struct tm l_tm;
     memset(&l_tm, 0, sizeof(struct tm));
 
-#ifndef _WIN32
     strptime(a_time_str, "%a, %d %b %Y %T %z", &l_tm);
-#else
-    strptime(a_time_str, "%y%m%d%H%M%S", &l_tm);// <<--- TODO: _!-DOES NOT WORK-!_ { need rework strptime() in dap_strfuncs.c } | in the meantime please use --> dap_time_from_str_simplified()
-#endif
 
     time_t tmp = mktime(&l_tm);
     l_time = (tmp <= 0) ? 0 : tmp;
     return l_time;
 }
-
-#ifdef _WIN32
-static void tmp_strptime(const char *buff, struct tm *tm)
-{
-    char tbuff[15];
-    uint8_t year;
-    uint8_t mon;
-    uint8_t day;
-    uint8_t len = dap_strlen(buff);
-
-    if (len > 12)
-        return;
-
-    memcpy(tbuff, buff, len);
-
-    day = atoi(&tbuff[4]);
-    tbuff[4] = '\0';
-    if (day > 0)
-        day--;
-
-    mon = atoi(&tbuff[2]);
-    if (mon > 0)
-        mon--;
-    tbuff[2] = '\0';
-
-    year = atoi(tbuff);
-    if (year < 69)
-        year += 100;
-
-    tm->tm_year = year;
-    tm->tm_mon = mon;
-    tm->tm_mday = day;
-    tm->tm_hour = 0;
-    tm->tm_min = 0;
-    tm->tm_sec = 0;
-}
-#endif
 
 /**
  * @brief Get time_t from string simplified formatted [%y%m%d = 220610 = 10 june 2022 00:00]
@@ -233,11 +190,7 @@ dap_time_t dap_time_from_str_simplified(const char *a_time_str)
     struct tm l_tm;
     memset(&l_tm, 0, sizeof(struct tm));
 
-#ifndef _WIN32
     strptime(a_time_str, "%y%m%d", &l_tm);
-#else
-    tmp_strptime(a_time_str, &l_tm);
-#endif
     l_tm.tm_sec++;
     time_t tmp = mktime(&l_tm);
     l_time = (tmp <= 0) ? 0 : tmp;
