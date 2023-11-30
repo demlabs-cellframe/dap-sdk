@@ -120,7 +120,6 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
         case SIG_TYPE_DILITHIUM: return "sig_dil";
         case SIG_TYPE_FALCON: return "sig_falcon";
         case SIG_TYPE_SPHINCSPLUS: return "sig_sphincs";
-        case SIG_TYPE_MULTI_DILITHIUM_ECDSA: return "sig_dil_ecdsa";
         case SIG_TYPE_MULTI_COMBINED: return "sig_multi_combined";
         case SIG_TYPE_MULTI_CHAINED: return "sig_multi_chained";
         default: return "UNDEFINED";//DAP_ENC_KEY_TYPE_NULL;
@@ -149,9 +148,7 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
         l_sign_type.type = SIG_TYPE_FALCON;
     // }else if ( !dap_strcmp (a_type_str, "sig_sphincs") ) {
     //     l_sign_type.type = SIG_TYPE_SPHINCSPLUS;
-    } else if (!dap_strcmp(a_type_str, "sig_dil_ecdsa")) {
-        l_sign_type.type = SIG_TYPE_MULTI_DILITHIUM_ECDSA;
-    } else if ( !dap_strcmp (a_type_str,"sig_multi_chained") ){
+    }else if ( !dap_strcmp (a_type_str,"sig_multi_chained") ){
         l_sign_type.type = SIG_TYPE_MULTI_CHAINED;
     // } else if ( !dap_strcmp (a_type_str,"sig_multi_combined") ){
     //     l_sign_type.type = SIG_TYPE_MULTI_COMBINED;
