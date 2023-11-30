@@ -403,10 +403,10 @@ void dap_enc_tests_run() {
     test_encode_decode_raw(500);
     test_encode_decode_raw_b64(500);
     test_encode_decode_raw_b64_url_safe(500);
-    // dap_print_module_name("dap_enc serialize->deserialize IAES");
-    // test_serialize_deserialize(DAP_ENC_KEY_TYPE_IAES);
-    // dap_print_module_name("dap_enc serialize->deserialize OAES");
-    // test_serialize_deserialize(DAP_ENC_KEY_TYPE_OAES);
+    dap_print_module_name("dap_enc serialize->deserialize IAES");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_IAES);
+    dap_print_module_name("dap_enc serialize->deserialize OAES");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_OAES);
 
     dap_print_module_name("dap_enc_sig serialize->deserialize BLISS");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_BLISS);
