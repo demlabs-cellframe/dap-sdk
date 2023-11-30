@@ -50,7 +50,7 @@ char* dap_ctime_r(dap_time_t *a_time, char* a_buf);
 char* dap_nanotime_to_str(dap_nanotime_t *a_time, char* a_buf);
 
 
-int dap_time_to_str_rfc822(char * out, size_t out_size_max, dap_time_t t);
+int dap_time_to_str_rfc822(char * out, size_t out_size_max, dap_time_t a_time);
 dap_time_t dap_time_from_str_rfc822(const char *a_time_str);
 int dap_gbd_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_nanotime_t a_chain_time);
 int timespec_diff(struct timespec *a_start, struct timespec *a_stop, struct timespec *a_result);
