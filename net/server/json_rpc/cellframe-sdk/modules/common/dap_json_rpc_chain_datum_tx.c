@@ -14,10 +14,10 @@
 
 
 
-json_object *dap_chain_datum_dump_tx_to_json(dap_chain_datum_tx_t *a_tx, const char *a_hash_out_type){
+json_object *dap_chain_datum_tx_to_json(dap_chain_datum_tx_t *a_tx){
     json_object *l_obj_items = json_object_new_array();
     if (!l_obj_items) {
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     uint32_t l_tx_items_count = 0;
@@ -63,7 +63,7 @@ json_object *dap_chain_datum_dump_tx_to_json(dap_chain_datum_tx_t *a_tx, const c
 
                 switch (((dap_chain_tx_out_cond_t*)item)->header.subtype) {
                     case DAP_CHAIN_TX_OUT_COND_SUBTYPE_SRV_PAY:
-                        l_obj_item_data = dap_chain_datum_tx_item_out_cond_srv_pay_to_json((dap_chain_tx_out_cond_t*)item, a_hash_out_type);
+                        l_obj_item_data = dap_chain_datum_tx_item_out_cond_srv_pay_to_json((dap_chain_tx_out_cond_t*)item);
                         break;
                     case DAP_CHAIN_TX_OUT_COND_SUBTYPE_SRV_STAKE_LOCK:
                         l_obj_item_data = dap_chain_net_srv_stake_lock_cond_out_to_json((dap_chain_tx_out_cond_t*)item);
@@ -106,7 +106,7 @@ json_object *dap_chain_datum_dump_tx_to_json(dap_chain_datum_tx_t *a_tx, const c
             default: {
                 char *l_hash_str;
                 dap_get_data_hash_str_static(a_tx, dap_chain_datum_tx_get_size(a_tx), l_hash_str);
-                log_it(L_NOTICE, "Transaction %s has an item whose type cannot be handled by the dap_chain_datum_dump_tx_to_json function.", l_hash_str);
+                log_it(L_NOTICE, "Transaction %s has an item whose type cannot be handled by the dap_chain_datum_tx_to_json function.", l_hash_str);
                 break;
             }
         }
@@ -120,7 +120,7 @@ json_object *dap_chain_datum_dump_tx_to_json(dap_chain_datum_tx_t *a_tx, const c
                 json_object_put(l_obj_item_type);
                 json_object_put(l_obj_item_data);
                 json_object_put(l_obj_items);
-                dap_json_rpc_allocated_error;
+                dap_json_rpc_allocation_error;
                 return NULL;
             }
             json_object_object_add(l_obj_item, "type", l_obj_item_type);

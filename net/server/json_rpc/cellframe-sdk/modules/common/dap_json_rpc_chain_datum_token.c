@@ -25,14 +25,14 @@ json_object *dap_chain_datum_token_flags_to_json(uint16_t a_flags){
 json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, size_t a_token_size){
     json_object *l_jobj_token = json_object_new_object();
     if (!l_jobj_token){
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     json_object *l_jobj_type;
     json_object *l_jobj_version = json_object_new_uint64(a_token->version);
     if (!l_jobj_version) {
         json_object_put(l_jobj_token);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     switch (a_token->type) {
@@ -49,7 +49,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
     if (!l_jobj_type) {
         json_object_put(l_jobj_version);
         json_object_put(l_jobj_token);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     json_object_object_add(l_jobj_token, "version", l_jobj_version);
@@ -58,7 +58,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
     json_object *l_jobj_header = json_object_new_object();
     if (!l_jobj_header){
         json_object_put(l_jobj_token);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     size_t l_tsd_total_size = 0;
@@ -68,7 +68,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
             if (!l_jobj_decimals){
                 json_object_put(l_jobj_header);
                 json_object_put(l_jobj_token);
-                dap_json_rpc_allocated_error;
+                dap_json_rpc_allocation_error;
                 return NULL;
             }
             json_object_object_add(l_jobj_header, "decimals", l_jobj_decimals);
@@ -82,7 +82,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
                 if (!l_jobj_flags){
                     json_object_put(l_jobj_header);
                     json_object_put(l_jobj_token);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 l_jobj_decimals = json_object_new_uint64(a_token->header_private_decl.decimals);
@@ -90,7 +90,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
                     json_object_put(l_jobj_flags);
                     json_object_put(l_jobj_header);
                     json_object_put(l_jobj_token);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 l_tsd_total_size = a_token->header_private_decl.tsd_total_size;
@@ -99,7 +99,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
                 if (!l_jobj_flags) {
                     json_object_put(l_jobj_header);
                     json_object_put(l_jobj_token);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 l_jobj_decimals = json_object_new_uint64(a_token->header_private_update.decimals);
@@ -107,7 +107,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
                     json_object_put(l_jobj_flags);
                     json_object_put(l_jobj_header);
                     json_object_put(l_jobj_token);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 l_tsd_total_size = a_token->header_private_update.tsd_total_size;
@@ -124,7 +124,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
                 if (!l_jobj_flags) {
                     json_object_put(l_jobj_header);
                     json_object_put(l_jobj_token);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 l_jobj_decimals = json_object_new_uint64(a_token->header_native_decl.decimals);
@@ -132,7 +132,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
                     json_object_put(l_jobj_flags);
                     json_object_put(l_jobj_header);
                     json_object_put(l_jobj_token);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 l_tsd_total_size = a_token->header_native_decl.tsd_total_size;
@@ -141,7 +141,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
                 if (!l_jobj_flags) {
                     json_object_put(l_jobj_header);
                     json_object_put(l_jobj_token);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 l_jobj_decimals = json_object_new_uint64(a_token->header_native_update.decimals);
@@ -149,7 +149,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
                     json_object_put(l_jobj_flags);
                     json_object_put(l_jobj_header);
                     json_object_put(l_jobj_token);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 l_tsd_total_size = a_token->header_native_update.tsd_total_size;
@@ -163,7 +163,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
             if (!l_jobj_flags){
                 json_object_put(l_jobj_header);
                 json_object_put(l_jobj_token);
-                dap_json_rpc_allocated_error;
+                dap_json_rpc_allocation_error;
                 return NULL;
             }
             char *l_premine_supply_str = dap_chain_balance_print(a_token->header_public.premine_supply);
@@ -171,7 +171,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
                 json_object_put(l_jobj_flags);
                 json_object_put(l_jobj_header);
                 json_object_put(l_jobj_token);
-                dap_json_rpc_allocated_error;
+                dap_json_rpc_allocation_error;
                 return NULL;
             }
             json_object *l_jobj_premine_supply = json_object_new_string(l_premine_supply_str);
@@ -180,7 +180,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
                 json_object_put(l_jobj_flags);
                 json_object_put(l_jobj_header);
                 json_object_put(l_jobj_token);
-                dap_json_rpc_allocated_error;
+                dap_json_rpc_allocation_error;
                 return NULL;
             }
             json_object *l_jobj_premine_address = dap_chain_addr_to_json(&a_token->header_public.premine_address);
@@ -205,7 +205,7 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
     if (!l_jobj_subtype) {
         json_object_put(l_jobj_header);
         json_object_put(l_jobj_token);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     json_object_object_add(l_jobj_token, "subtype", l_jobj_subtype);
@@ -213,28 +213,28 @@ json_object *dap_chain_datum_token_to_json(dap_chain_datum_token_t * a_token, si
     json_object *l_jobj_ticker = json_object_new_string(a_token->ticker);
     if (!l_jobj_ticker) {
         json_object_put(l_jobj_token);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     json_object_object_add(l_jobj_token, "ticker", l_jobj_ticker);
     json_object *l_jobj_signs_valid = json_object_new_uint64(a_token->signs_valid);
     if (!l_jobj_signs_valid) {
         json_object_put(l_jobj_token);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     json_object_object_add(l_jobj_token, "signs_valid", l_jobj_signs_valid);
     json_object *l_jobj_signs_total = json_object_new_uint64(a_token->signs_total);
     if (!l_jobj_signs_total) {
         json_object_put(l_jobj_token);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     json_object_object_add(l_jobj_token, "signs_total", l_jobj_signs_total);
     json_object *l_obj_signs = json_object_new_array();
     if (!l_obj_signs) {
         json_object_put(l_jobj_token);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     size_t l_offset = 0;
@@ -270,7 +270,7 @@ json_object *dap_chain_datum_emission_to_json(dap_chain_datum_token_emission_t *
         json_object_put(l_emi_address);
         json_object_put(l_emi_header);
         json_object_put(l_emi_data);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     json_object_object_add(l_emi_header, "version", l_emi_version);
@@ -288,7 +288,7 @@ json_object *dap_chain_datum_emission_to_json(dap_chain_datum_token_emission_t *
                 json_object_put(l_obj_signs_count);
                 json_object_put(l_emi_data);
                 json_object_put(l_emi_obj);
-                dap_json_rpc_allocated_error;
+                dap_json_rpc_allocation_error;
                 return NULL;
             }
             json_object_object_add(l_emi_data, "size", l_obj_size);
@@ -301,7 +301,7 @@ json_object *dap_chain_datum_emission_to_json(dap_chain_datum_token_emission_t *
                 if (!l_err_str){
                     json_object_put(l_emi_data);
                     json_object_put(l_emi_obj);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object *l_err_tsd = json_object_new_string(l_err_str);
@@ -309,7 +309,7 @@ json_object *dap_chain_datum_emission_to_json(dap_chain_datum_token_emission_t *
                 if (!l_err_tsd) {
                     json_object_put(l_emi_data);
                     json_object_put(l_emi_obj);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_emi_data, "ERROR", l_err_tsd);
@@ -318,12 +318,11 @@ json_object *dap_chain_datum_emission_to_json(dap_chain_datum_token_emission_t *
             if (!l_obj_signs){
                 json_object_put(l_emi_data);
                 json_object_put(l_emi_obj);
-                dap_json_rpc_error_add(DAP_JSON_RPC_ERR_CODE_SERIALIZATION_SIGN_TO_JSON, "Error serialization signatures to JSON");
-                dap_json_rpc_allocated_error;
+                dap_json_rpc_allocation_error;
                 return NULL;
             }
-            size_t l_offset = 0;
-            for (int i = 1; i < a_emission->data.type_auth.signs_count; i++) {
+            size_t l_offset = a_emission->data.type_auth.tsd_total_size;
+            for (int i = 0; i < a_emission->data.type_auth.signs_count; i++) {
                 dap_sign_t *l_sign = (dap_sign_t *) ((byte_t*)a_emission->tsd_n_signs + l_offset);
                 l_offset += dap_sign_get_size(l_sign);
                 json_object *l_obj_sign = dap_sign_to_json(l_sign);
@@ -338,13 +337,13 @@ json_object *dap_chain_datum_emission_to_json(dap_chain_datum_token_emission_t *
             }
             json_object_object_add(l_emi_data, "signs", l_obj_signs);
 
-        }
+        } break;
         case DAP_CHAIN_DATUM_TOKEN_EMISSION_TYPE_ALGO: {
             json_object *l_code_name = json_object_new_string(a_emission->data.type_algo.codename);
             if (!l_code_name) {
                 json_object_put(l_emi_data);
                 json_object_put(l_emi_obj);
-                dap_json_rpc_allocated_error;
+                dap_json_rpc_allocation_error;
                 return NULL;
             }
             json_object_object_add(l_emi_data, "codename", l_code_name);
@@ -358,7 +357,7 @@ json_object *dap_chain_datum_emission_to_json(dap_chain_datum_token_emission_t *
                 json_object_put(l_value_change_algo_codename);
                 json_object_put(l_emi_data);
                 json_object_put(l_emi_obj);
-                dap_json_rpc_allocated_error;
+                dap_json_rpc_allocation_error;
                 return NULL;
             }
             json_object_object_add(l_emi_data, "value_start", l_value_start);
@@ -375,7 +374,7 @@ json_object *dap_chain_datum_emission_to_json(dap_chain_datum_token_emission_t *
                 json_object_put(l_obj_lock_time);
                 json_object_put(l_emi_data);
                 json_object_put(l_emi_obj);
-                dap_json_rpc_allocated_error;
+                dap_json_rpc_allocation_error;
                 return NULL;
             }
             json_object_object_add(l_emi_data, "addr", l_obj_addr);

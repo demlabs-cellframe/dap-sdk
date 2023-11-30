@@ -8,7 +8,7 @@
 json_object *s_dap_chain_datum_decree_certs_dump_json(byte_t * a_signs, size_t a_certs_size){
     json_object *l_jobj_signatures = json_object_new_array();
     if (!l_jobj_signatures) {
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     size_t l_offset = 0;
@@ -16,7 +16,7 @@ json_object *s_dap_chain_datum_decree_certs_dump_json(byte_t * a_signs, size_t a
         json_object *l_jobj_signature = json_object_new_object();
         if (!l_jobj_signature) {
             json_object_put(l_jobj_signatures);
-            dap_json_rpc_allocated_error;
+            dap_json_rpc_allocation_error;
             return NULL;
         }
         dap_sign_t *l_sign = (dap_sign_t *) (a_signs + l_offset);
@@ -26,7 +26,7 @@ json_object *s_dap_chain_datum_decree_certs_dump_json(byte_t * a_signs, size_t a
             if(!l_wrn_text) {
                 json_object_put(l_jobj_signature);
                 json_object_put(l_jobj_signatures);
-                dap_json_rpc_allocated_error;
+                dap_json_rpc_allocation_error;
                 return NULL;
             }
             json_object_object_add(l_jobj_signature, "warning", l_wrn_text);
@@ -39,7 +39,7 @@ json_object *s_dap_chain_datum_decree_certs_dump_json(byte_t * a_signs, size_t a
             if (!l_wrn_text){
                 json_object_put(l_jobj_signature);
                 json_object_put(l_jobj_signatures);
-                dap_json_rpc_allocated_error;
+                dap_json_rpc_allocation_error;
                 return NULL;
             }
             json_object_object_add(l_jobj_signature, "warning", l_wrn_text);
@@ -50,7 +50,7 @@ json_object *s_dap_chain_datum_decree_certs_dump_json(byte_t * a_signs, size_t a
         if (!l_hash_str) {
             json_object_put(l_jobj_signature);
             json_object_put(l_jobj_signatures);
-            dap_json_rpc_allocated_error;
+            dap_json_rpc_allocation_error;
             return NULL;
         }
         json_object *l_jobj_hash_str = json_object_new_string(l_hash_str);
@@ -58,7 +58,7 @@ json_object *s_dap_chain_datum_decree_certs_dump_json(byte_t * a_signs, size_t a
             DAP_DEL_Z(l_hash_str);
             json_object_put(l_jobj_signature);
             json_object_put(l_jobj_signatures);
-            dap_json_rpc_allocated_error;
+            dap_json_rpc_allocation_error;
             return NULL;
         }
         json_object *l_jobj_type_str = json_object_new_string(dap_sign_type_to_str(l_sign->header.type));
@@ -66,7 +66,7 @@ json_object *s_dap_chain_datum_decree_certs_dump_json(byte_t * a_signs, size_t a
             json_object_put(l_jobj_hash_str);
             json_object_put(l_jobj_signature);
             json_object_put(l_jobj_signatures);
-            dap_json_rpc_allocated_error;
+            dap_json_rpc_allocation_error;
             return NULL;
         }
         json_object *l_jobj_sign_size = json_object_new_uint64(l_sign->header.sign_size);
@@ -75,7 +75,7 @@ json_object *s_dap_chain_datum_decree_certs_dump_json(byte_t * a_signs, size_t a
             json_object_put(l_jobj_type_str);
             json_object_put(l_jobj_signature);
             json_object_put(l_jobj_signatures);
-            dap_json_rpc_allocated_error;
+            dap_json_rpc_allocation_error;
             return NULL;
         }
         DAP_DEL_Z(l_hash_str);
@@ -90,7 +90,7 @@ json_object *s_dap_chain_datum_decree_certs_dump_json(byte_t * a_signs, size_t a
 json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
     json_object *l_jobj_decree = json_object_new_object();
     if (!l_jobj_decree) {
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     char *l_type_str = "";
@@ -108,7 +108,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
     json_object *l_jobj_type = json_object_new_string(l_type_str);
     if (!l_jobj_type) {
         json_object_put(l_jobj_decree);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     const char *l_subtype_str = dap_chain_datum_decree_subtype_to_str(a_decree->header.sub_type);
@@ -116,7 +116,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
     if (!l_json_subtype) {
         json_object_put(l_jobj_type);
         json_object_put(l_jobj_decree);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     json_object *l_json_tsd_array = json_object_new_array();
@@ -124,7 +124,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
         json_object_put(l_json_subtype);
         json_object_put(l_jobj_type);
         json_object_put(l_jobj_decree);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     for (size_t l_offset = 0; l_offset < a_decree->header.data_size;) {
@@ -136,7 +136,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
             json_object_put(l_json_subtype);
             json_object_put(l_jobj_type);
             json_object_put(l_jobj_decree);
-            dap_json_rpc_allocated_error;
+            dap_json_rpc_allocation_error;
             return NULL;
         }
         switch(l_tsd->type) {
@@ -148,7 +148,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "type", l_obj_tsd_type);
@@ -161,7 +161,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "type", l_obj_tsd_type);
@@ -173,7 +173,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                         json_object_put(l_jobj_type);
                         json_object_put(l_jobj_decree);
                         json_object_put(l_jobj_tsd);
-                        dap_json_rpc_allocated_error;
+                        dap_json_rpc_allocation_error;
                         return NULL;
                     }
                     json_object_object_add(l_jobj_tsd, "warning", l_text_wgn);
@@ -188,7 +188,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object *l_jobj_fee = json_object_new_string(l_fee_value_str);
@@ -199,7 +199,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "value", l_jobj_fee);
@@ -212,7 +212,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "type", l_obj_tsd_type);
@@ -224,7 +224,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                         json_object_put(l_jobj_type);
                         json_object_put(l_jobj_decree);
                         json_object_put(l_jobj_tsd);
-                        dap_json_rpc_allocated_error;
+                        dap_json_rpc_allocation_error;
                         return NULL;
                     }
                     json_object_object_add(l_jobj_tsd, "warning", l_text_wgn);
@@ -237,7 +237,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 memcpy(l_owner_pkey, l_tsd->data, l_tsd->size);
@@ -252,7 +252,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "owner_fingerprint", l_jobj_owner_pkey);
@@ -266,7 +266,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "type", l_obj_tsd_type);
@@ -278,7 +278,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                         json_object_put(l_jobj_type);
                         json_object_put(l_jobj_decree);
                         json_object_put(l_jobj_tsd);
-                        dap_json_rpc_allocated_error;
+                        dap_json_rpc_allocation_error;
                         return NULL;
                     }
                     json_object_object_add(l_jobj_tsd, "warning", l_text_wgn);
@@ -293,7 +293,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object *l_jobj_owner_min = json_object_new_string(l_owner_min_str);
@@ -303,7 +303,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "owner_min", l_jobj_owner_min);
@@ -317,7 +317,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "type", l_obj_tsd_type);
@@ -329,7 +329,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                         json_object_put(l_jobj_type);
                         json_object_put(l_jobj_decree);
                         json_object_put(l_jobj_tsd);
-                        dap_json_rpc_allocated_error;
+                        dap_json_rpc_allocation_error;
                         return NULL;
                     }
                     json_object_object_add(l_jobj_tsd, "warning", l_text_wgn);
@@ -356,7 +356,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "addr", l_jobj_addr_fee_wallet);
@@ -378,7 +378,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object *l_jobj_tx_hash = json_object_new_string(l_stake_tx_hash);
@@ -389,7 +389,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "hash", l_jobj_tx_hash);
@@ -406,7 +406,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "type", l_obj_tsd_type);
@@ -418,7 +418,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                         json_object_put(l_jobj_type);
                         json_object_put(l_jobj_decree);
                         json_object_put(l_jobj_tsd);
-                        dap_json_rpc_allocated_error;
+                        dap_json_rpc_allocation_error;
                         return NULL;
                     }
                     json_object_object_add(l_jobj_tsd, "warning", l_text_wgn);
@@ -433,7 +433,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object *l_jobj_stake_value = json_object_new_string(l_stake_value_str);
@@ -444,7 +444,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "value", l_jobj_stake_value);
@@ -468,7 +468,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 memcpy(l_pkey_signing, l_stake_addr_signing.data.key, sizeof(dap_chain_hash_fast_t));
@@ -480,7 +480,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object *l_jobj_stake_addr_signing = json_object_new_string(l_stake_addr_signing_str);
@@ -490,7 +490,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object *l_jobj_pkey_signing = json_object_new_string(l_pkey_signing_str);
@@ -500,7 +500,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "addr", l_jobj_stake_addr_signing);
@@ -522,7 +522,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "type", l_obj_tsd_type);
@@ -534,7 +534,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                         json_object_put(l_jobj_type);
                         json_object_put(l_jobj_decree);
                         json_object_put(l_jobj_tsd);
-                        dap_json_rpc_allocated_error;
+                        dap_json_rpc_allocation_error;
                         return NULL;
                     }
                     json_object_object_add(l_jobj_tsd, "warning", l_text_wgn);
@@ -549,7 +549,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object *l_jobj_node_addr = json_object_new_string(l_node_addr_str);
@@ -560,7 +560,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "node", l_jobj_node_addr);
@@ -590,7 +590,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "type", l_obj_tsd_type);
@@ -602,7 +602,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                         json_object_put(l_jobj_type);
                         json_object_put(l_jobj_decree);
                         json_object_put(l_jobj_tsd);
-                        dap_json_rpc_allocated_error;
+                        dap_json_rpc_allocation_error;
                         return NULL;
                     }
                     json_object_object_add(l_jobj_tsd, "warning", l_text_wgn);
@@ -617,7 +617,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object *l_jobj_min_signers_count = json_object_new_string(l_min_signers_count_str);
@@ -627,7 +627,7 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 DAP_DELETE(l_min_signers_count_str);
@@ -642,12 +642,13 @@ json_object *dap_chain_datum_decree_to_json(dap_chain_datum_decree_t *a_decree){
                     json_object_put(l_jobj_type);
                     json_object_put(l_jobj_decree);
                     json_object_put(l_jobj_tsd);
-                    dap_json_rpc_allocated_error;
+                    dap_json_rpc_allocation_error;
                     return NULL;
                 }
                 json_object_object_add(l_jobj_tsd, "type", l_obj_tsd_type);
             } break;
         }
+        json_object_array_add(l_json_tsd_array, l_jobj_tsd);
     }
     json_object *l_jobj_signs = s_dap_chain_datum_decree_certs_dump_json(a_decree->data_n_signs + a_decree->header.data_size,
                                                                          a_decree->header.signs_size);

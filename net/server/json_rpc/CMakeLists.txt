@@ -12,7 +12,6 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/btc_rpc/)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/dap-sdk/core/)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/cellframe-sdk/modules/common/)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/cellframe-sdk/modules/mempool/)
-# add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/cellframe-sdk/modules/net/)
 
 
 add_library(${PROJECT_NAME} STATIC ${JSON_RPC_HEADERS} ${JSON_RPC_SRCS})

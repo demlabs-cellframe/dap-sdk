@@ -32,13 +32,13 @@ json_object* dap_sign_to_json(const dap_sign_t *a_sign) {
         return NULL;
     json_object *l_object = json_object_new_object();
     if (!l_object) {
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     json_object *l_obj_type_sign = json_object_new_string(dap_sign_type_to_str(a_sign->header.type));
     if (!l_obj_type_sign) {
         json_object_put(l_object);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     json_object_object_add(l_object, "type", l_obj_type_sign);
@@ -49,7 +49,7 @@ json_object* dap_sign_to_json(const dap_sign_t *a_sign) {
         json_object *l_obj_pkey_hash = json_object_new_string(l_hash);
         if (!l_obj_pkey_hash) {
             json_object_put(l_object);
-            dap_json_rpc_allocated_error;
+            dap_json_rpc_allocation_error;
             return NULL;
         }
         json_object_object_add(l_object, "pkeyHash", l_obj_pkey_hash);
@@ -57,14 +57,14 @@ json_object* dap_sign_to_json(const dap_sign_t *a_sign) {
     json_object *l_obj_pkey_size = json_object_new_uint64(a_sign->header.sign_pkey_size);
     if (!l_obj_pkey_size) {
         json_object_put(l_object);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     json_object *l_obj_sign_size = json_object_new_uint64(a_sign->header.sign_size);
     if (!l_obj_sign_size) {
         json_object_put(l_object);
         json_object_put(l_obj_pkey_size);
-        dap_json_rpc_allocated_error;
+        dap_json_rpc_allocation_error;
         return NULL;
     }
     json_object_object_add(l_object, "signPkeySize", l_obj_pkey_size);
