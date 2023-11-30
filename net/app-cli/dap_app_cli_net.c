@@ -140,7 +140,7 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
 {
     // set socket param
     int buffsize = DAP_CLI_HTTP_RESPONSE_SIZE_MAX;
-#ifdef WIN32
+#if defined(__WIN32) || defined(ANDROID)
     // TODO connect to the named pipe "\\\\.\\pipe\\node_cli.pipe"
     uint16_t l_cli_port = dap_config_get_item_uint16 ( g_config, "conserver", "listen_port_tcp");
     if (!l_cli_port)

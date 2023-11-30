@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.10)
+project(DAP_SDK_NATIVE C)
 set(DAP_SDK_NATIVE_VERSION "2.2-2")
 
 include(ExternalProject)
@@ -38,11 +40,20 @@ endif()
 message("json-c build cmd ${JSON-C-CONFIG_COMMAND}")
 
 ExternalProject_Add(dap_json-c_dep
-                    SOURCE_DIR ${PROJECT_SOURCE_DIR}/dap-sdk/3rdparty/json-c/
+                    SOURCE_DIR ${PROJECT_SOURCE_DIR}/3rdparty/json-c/
                     CONFIGURE_COMMAND ${JSON-C-CONFIG_COMMAND})
+
+if (INSTALL_DAP_SDK)
+    INSTALL(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/deps/ DESTINATION ./)
+endif()
+
+include(cmake/OS_Detection.cmake)
 
 if (CELLFRAME_MODULES MATCHES "core")
     SET(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
+    if (BUILD_DAP_TESTS)
+        SET(BUILD_CRYPTO_TESTS ON)
+    endif()
 endif()
 
 if (CELLFRAME_MODULES MATCHES "chains")
@@ -55,7 +66,10 @@ endif()
 
 if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
     set(DAPSDK_MODULES "core crypto network-core network-client network-server")
-    set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m pthread)
+    set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m)
+    if(NOT ANDROID)
+        set(CELLFRAME_LIBS ${CELLFRAME_LIBS} pthread)
+    endif()
     if (SUPPORT_PYTHON_PLUGINS)
         set(CELLFRAME_MODULES "${CELLFRAME_MODULES} core chains network cs-none srv-")
     endif()
@@ -69,6 +83,20 @@ else()
 endif()
 
 # Core, add it always
+if (BUILD_DAP_SDK_TESTS)
+    enable_testing()
+    add_subdirectory(test-framework)
+    set(BUILD_DAP_TESTS ON)
+    set(BUILD_CRYPTO_TESTS ON)
+    set(BUILD_WITH_GDB_DRIVER_MDBX ON)
+    set(DAPSDK_MODULES "crypto io network-core network-server network-client global-db")
+#    add_definitions("-DDAP_CHAIN_GDB_ENGINE_MDBX")
+#    set(DAPSDK_MODULES ${DAPSDK_MODULES} global-db)
+    message("[+] Enable dap_sdk_tests")
+endif ()
+if (CELLFRAME_MODULES MATCHES "test-framework")
+    add_subdirectory(test-framework)
+endif()
 add_subdirectory(core)
 if (DAPSDK_MODULES MATCHES "crypto")
     # Cryptography
@@ -120,11 +148,6 @@ elseif(ANDROID)
     include_directories(3rdparty/)
 endif()
 
-#if(BUILD_DAP_TESTS)
-#    file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/test/main_test.py
-#            DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/)
-#    enable_testing()
-#    add_subdirectory(test)
-#endif()
-
-add_subdirectory(examples)
+if (LINUX)
+    add_subdirectory(examples) #We are putting together an example for Linux only.
+endif()

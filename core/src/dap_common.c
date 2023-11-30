@@ -58,15 +58,20 @@
 const uint128_t uint128_0 = {};
 const uint128_t uint128_1 = {.hi = 0, .lo = 1};
 const uint128_t uint128_max = {.hi = UINT64_MAX, .lo = UINT64_MAX};
+
+const uint256_t uint256_0 = {};
+const uint256_t uint256_1 = {.hi = {0,0}, .lo = {.hi = 0, .lo = 1}};
+const uint256_t uint256_max = {.hi = {.hi = UINT64_MAX, .lo = UINT64_MAX}, .lo = {.hi = UINT64_MAX, .lo = UINT64_MAX}};
 #else // DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = 0;
 const uint128_t uint128_1 = 1;
 const uint128_t uint128_max = ((uint128_t)((int128_t)-1L));
-#endif // DAP_GLOBAL_IS_INT128
 
 const uint256_t uint256_0 = {};
 const uint256_t uint256_1 = {.hi = uint128_0, .lo = uint128_1};
 const uint256_t uint256_max = {.hi = uint128_max, .lo = uint128_max};
+#endif // DAP_GLOBAL_IS_INT128
+
 
 const uint512_t uint512_0 = {};
 
@@ -143,16 +148,16 @@ static char s_last_error[LAST_ERROR_MAX]    = {'\0'},
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
 
-#define STR_LOG_BUF_MAX                       1000
+#define STR_LOG_BUF_MAX 1024
 
 static char* s_appname = NULL;
 
 DAP_STATIC_INLINE int s_update_log_time(char *a_datetime_str) {
     time_t t = time(NULL);
     struct tm tmptime;
-    if(localtime_r(&t, &tmptime))
-        return strftime(a_datetime_str, 32, "[%x-%X]", &tmptime);
-    return 0;
+    return localtime_r(&t, &tmptime)
+            ? strftime(a_datetime_str, 32, "[%x-%X]", &tmptime)
+            : 0;
 }
 
 /**
@@ -216,7 +221,7 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
     strncpy( s_log_tag_fmt_str, "[%s]\t",sizeof (s_log_tag_fmt_str));
     for (int i = 0; i < 16; ++i)
             s_ansi_seq_color_len[i] =(unsigned int) strlen(s_ansi_seq_color[i]);
-    if ( a_log_file_path ) {
+    if ( a_log_file_path && a_log_file_path[0] ) {
         s_log_file = fopen( a_log_file_path , "a" );
         if( s_log_file == NULL)
             s_log_file = fopen( a_log_file_path , "w" );
@@ -275,32 +280,29 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
         return;
     char log_str[STR_LOG_BUF_MAX] = { '\0' };
-    size_t offset = 0;
-    memcpy(log_str, s_ansi_seq_color[a_ll], s_ansi_seq_color_len[a_ll]);
-    offset = s_ansi_seq_color_len[a_ll] + s_update_log_time(log_str + s_ansi_seq_color_len[a_ll]);
+    size_t offset = s_ansi_seq_color_len[a_ll];
+    memcpy(log_str, s_ansi_seq_color[a_ll], offset);
+    offset += s_update_log_time(log_str + offset);
     offset += func_name
             ? snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s][%s:%d] ", s_log_level_tag[a_ll], a_log_tag, func_name, line_num)
             : snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
     va_list va;
     va_start(va, a_fmt);
     if (offset < STR_LOG_BUF_MAX) {
-        size_t l_offset = vsnprintf(log_str + offset, STR_LOG_BUF_MAX - offset, a_fmt, va);
-        offset += l_offset;
+        offset += vsnprintf(log_str + offset, STR_LOG_BUF_MAX - offset, a_fmt, va);
     }
     va_end(va);
     char *pos = offset < STR_LOG_BUF_MAX
             ? memcpy(&log_str[offset--], "\n", 1) + 1
-            : memcpy(&log_str[STR_LOG_BUF_MAX - 5], "...\n\0", 5) + 5;
+            : memcpy(&log_str[STR_LOG_BUF_MAX - 5], "...\n", 4) + 4;
     offset = pos - log_str;
+    fwrite(log_str, offset, 1, stdout);
+    fflush(stdout);
     if (!s_log_file) {
-        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path))
-            return;
+        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file)
+        return;
     }
-    if (s_log_file) {
-        fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
-        fwrite(log_str, offset, 1, stdout);
-        fflush(stdout);
-    }
+    fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
 }
 
 
@@ -373,7 +375,7 @@ struct timespec now;
 	olen += vsnprintf(out + olen, sizeof(out) - olen - 1, a_fmt, arglist);
 	va_end (arglist);
 
-	olen = MIN(olen, (ssize_t) sizeof(out) - 1);
+    olen = dap_min(olen, (ssize_t) sizeof(out) - 1);
 
 	/* Add <LF> at end of record*/
 	out[olen++] = '\n';
@@ -916,7 +918,7 @@ void dap_digit_from_string(const char *num_str, void *raw, size_t raw_len)
     val = le64toh(val);
 #endif
     memset(raw, 0, raw_len);
-    memcpy(raw, &val, min(raw_len, sizeof(uint64_t)));
+    memcpy(raw, &val, dap_min(raw_len, sizeof(uint64_t)));
 }
 
 typedef union {
@@ -943,7 +945,7 @@ void dap_digit_from_string2(const char *num_str, void *raw, size_t raw_len)
     val = le64toh(val);
 #endif
     memset(raw, 0, raw_len);
-    memcpy(raw, &val, min(raw_len, sizeof(uint64_t)));
+    memcpy(raw, &val, dap_min(raw_len, sizeof(uint64_t)));
 }
 
 

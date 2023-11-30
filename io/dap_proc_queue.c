@@ -157,8 +157,8 @@ static void s_queue_esocket_callback( dap_events_socket_t * a_es, void * a_msg)
     /*
      * So, all checks has been finished, now we can prepare new entry
      */
-    pri = MIN(l_msg->pri, DAP_PROC_PRI_MAX - 1);
-    pri = MAX(pri, 0);
+    pri = dap_min(l_msg->pri, DAP_PROC_PRI_MAX - 1);
+    pri = dap_max(pri, 0);
 
     l_item->callback = l_msg->callback;
     l_item->callback_arg = l_msg->callback_arg;

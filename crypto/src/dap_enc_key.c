@@ -796,21 +796,25 @@ dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
     l_ret->_inheritor_size = in_key->inheritor_size;
     DAP_DEL_Z(l_ret->priv_key_data);
     DAP_DEL_Z(l_ret->pub_key_data);
-    l_ret->priv_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->priv_key_data_size);
-    if (!l_ret->priv_key_data) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_DEL_Z(l_ret);
-        return NULL;
+    if (l_ret->priv_key_data_size) {
+        l_ret->priv_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->priv_key_data_size);
+        if (!l_ret->priv_key_data) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            DAP_DEL_Z(l_ret);
+            return NULL;
+        }
+        memcpy(l_ret->priv_key_data, in_key->priv_key_data, l_ret->priv_key_data_size);
     }
-    memcpy(l_ret->priv_key_data, in_key->priv_key_data, l_ret->priv_key_data_size);
-    l_ret->pub_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->pub_key_data_size);
-    if (!l_ret->pub_key_data) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_DEL_Z(l_ret->priv_key_data);
-        DAP_DEL_Z(l_ret);
-        return NULL;
+    if (l_ret->pub_key_data_size) {
+        l_ret->pub_key_data = DAP_NEW_Z_SIZE(byte_t, l_ret->pub_key_data_size);
+        if (!l_ret->pub_key_data) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            DAP_DEL_Z(l_ret->priv_key_data);
+            DAP_DEL_Z(l_ret);
+            return NULL;
+        }
+        memcpy(l_ret->pub_key_data, in_key->pub_key_data, l_ret->pub_key_data_size);
     }
-    memcpy(l_ret->pub_key_data, in_key->pub_key_data, l_ret->pub_key_data_size);
     if(in_key->inheritor_size) {
         DAP_DEL_Z(l_ret->_inheritor);
         l_ret->_inheritor = DAP_NEW_Z_SIZE(byte_t, in_key->inheritor_size );

@@ -9,7 +9,7 @@ file(GLOB DAP_IO_SOURCES *.c)
 file(GLOB DAP_IO_HEADERS include/*.h)
 if(WIN32)
     set(DAP_IO_SOURCES ${DAP_IO_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/wepoll/wepoll.c)
-    set(DAP_IO_HEADERS ${DAP_IO_SOURCES} ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/wepoll/wepoll.h)
+    set(DAP_IO_HEADERS ${DAP_IO_HEADERS} ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/wepoll/wepoll.h)
     include_directories(../3rdparty/wepoll)
 endif()
 
@@ -40,3 +40,11 @@ if (${BUILD_DAP_IO_TESTS} MATCHES ON)
     add_subdirectory(test)
 endif()
 
+if(INSTALL_DAP_SDK)
+set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_IO_HEADERS}")
+INSTALL(TARGETS ${PROJECT_NAME} 
+        LIBRARY DESTINATION lib/dap/io/
+        ARCHIVE DESTINATION lib/dap/io/
+        PUBLIC_HEADER DESTINATION include/dap/io/
+)
+endif()

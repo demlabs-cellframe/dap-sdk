@@ -6,6 +6,12 @@ include_directories(http_client/include)
 file(GLOB HTTP_SERVER_SRCS FILES *.c http_client/*.c)
 file(GLOB HTTP_SERVER_HDRS FILES include/*.h http_client/include/*.h)
 
+if (ANDROID)
+  list(FILTER HTTP_SERVER_SRCS EXCLUDE REGEX ".*dap_http_folder\\.c$")
+  list(FILTER HTTP_SERVER_HDRS EXCLUDE REGEX ".*dap_http_folder\\.h$")
+  message(${HTTP_SERVER_SRCS})
+endif()
+
 if(WIN32)
     add_definitions ("-DUNDEBUG")
     add_definitions ("-DNDEBUG")
@@ -48,7 +54,19 @@ if(WIN32)
 endif()
 
 if(UNIX)
-  target_link_libraries(${PROJECT_NAME} dap_core dap_io magic dap_json-c)
+  
+  target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json-c)
+  if (NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} magic)
+  endif()
   target_include_directories(${PROJECT_NAME} PUBLIC ${IPUTILS_INCLUDE_DIRS})
 endif()
 
+if(INSTALL_DAP_SDK)
+set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${HTTP_SERVER_HDRS}")
+INSTALL(TARGETS ${PROJECT_NAME} 
+        LIBRARY DESTINATION lib/dap/net/server/http_server/
+        ARCHIVE DESTINATION lib/dap/net/server/http_server/
+        PUBLIC_HEADER DESTINATION include/dap/net/server/http_server/
+)
+endif()
