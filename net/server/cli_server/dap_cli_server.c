@@ -814,7 +814,7 @@ char    *str_header;
                 // Call the command function
                 if(l_cmd &&  l_argv && l_cmd->func) {
                     if (json_commands(cmd_name)) {
-                        res = l_cmd->func_ex(argc, l_argv, &json_com_res, NULL);
+                        res = l_cmd->func(argc, l_argv, &json_com_res);
                     } else if (l_cmd->arg_func) {
                         res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
                     } else {
@@ -855,6 +855,7 @@ char    *str_header;
             dap_json_rpc_response_t* response = NULL;
             if (reply_body) {
                 response = dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id);
+                json_object_put(json_com_res);
             } else {
                 response = dap_json_rpc_response_create(json_com_res, TYPE_RESPONSE_JSON, request->id);
             }

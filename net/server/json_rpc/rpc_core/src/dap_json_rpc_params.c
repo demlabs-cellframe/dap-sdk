@@ -146,7 +146,7 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *
 
         switch (jobj_type) {
             case json_type_string: {
-                const char * l_str_tmp = dap_strdup(json_object_get_string(jobj));
+                char * l_str_tmp = dap_strdup(json_object_get_string(jobj));
                 dap_json_rpc_params_add_data(params, l_str_tmp, TYPE_PARAM_STRING);
                 DAP_FREE(l_str_tmp);
                 break;
