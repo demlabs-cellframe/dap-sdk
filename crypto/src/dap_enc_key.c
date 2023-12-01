@@ -591,6 +591,9 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
  */
 uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
 {
+// sanity check
+    dap_return_val_if_pass(!a_key || !a_key->priv_key_data_size, NULL);
+// func work
     uint8_t *l_data = NULL;
     switch (a_key->type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
