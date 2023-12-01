@@ -814,11 +814,11 @@ char    *str_header;
                 // Call the command function
                 if(l_cmd &&  l_argv && l_cmd->func) {
                     if (json_commands(cmd_name)) {
-                        res = l_cmd->func(argc, l_argv, &json_com_res);
+                        res = l_cmd->func(argc, l_argv, (void *)&json_com_res);
                     } else if (l_cmd->arg_func) {
                         res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
                     } else {
-                        res = l_cmd->func(argc, l_argv, &str_reply);
+                        res = l_cmd->func(argc, l_argv, (void *)&str_reply);
                     }
                 } else if (l_cmd) {
                     log_it(L_WARNING,"NULL arguments for input for command \"%s\"", str_cmd);
