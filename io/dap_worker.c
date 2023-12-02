@@ -129,8 +129,8 @@ static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg)
     }
 
     debug_if(g_debug_reactor, L_DEBUG, "Added es %p \"%s\" [%s] to worker #%d",
-             a_es, dap_events_socket_get_type_str(a_es),
-             a_es->socket == INVALID_SOCKET ? "" : dap_itoa(a_es->socket),
+             l_es_new, dap_events_socket_get_type_str(l_es_new),
+             l_es_new->socket == INVALID_SOCKET ? "" : dap_itoa(l_es_new->socket),
              l_worker->id);
 
     /*switch( l_es_new->type){
@@ -353,7 +353,7 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
                : "Can't send pointer in queue: \"%s\"(code %d)", l_errbuf, l_ret);
     } else if (g_debug_reactor)
         log_it(L_DEBUG,
-               "Send es %p \"%s\" [%s] to worker #%d",
+               "Sent es %p \"%s\" [%s] to worker #%d",
                a_events_socket, dap_events_socket_get_type_str(a_events_socket),
                a_events_socket->socket == INVALID_SOCKET ? "" : dap_itoa(a_events_socket->socket),
                a_worker->id);

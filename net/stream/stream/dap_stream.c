@@ -705,6 +705,7 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
 
     byte_t *l_buf_in = a_stream->esocket->buf_in;
     size_t l_buf_in_size = a_stream->esocket->buf_in_size;
+    log_it(L_MSG, "[---] es %p buf_in_size: %zu, buf_in: %s", a_stream->esocket, l_buf_in_size, l_buf_in);
 
     // Save the received data to stream memory
     if (!a_stream->pkt_buf_in) {
@@ -890,7 +891,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         check_session(l_session_id, a_stream->esocket);
     } break;
     case STREAM_PKT_TYPE_KEEPALIVE: {
-        //log_it(L_DEBUG, "Keep alive check recieved");
+        log_it(L_DEBUG, "Keep alive check recieved");
         dap_stream_pkt_hdr_t l_ret_pkt = {
             .type = STREAM_PKT_TYPE_ALIVE
         };
@@ -903,7 +904,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     } break;
     case STREAM_PKT_TYPE_ALIVE:
         a_stream->is_active = false; // To prevent keep-alive concurrency
-        //log_it(L_DEBUG, "Keep alive response recieved");
+        log_it(L_DEBUG, "Keep alive response recieved");
         break;
     default:
         log_it(L_WARNING, "Unknown header type");

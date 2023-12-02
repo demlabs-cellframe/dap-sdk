@@ -46,7 +46,7 @@ static void s_es_callback_timer(dap_events_socket_t *a_es);
 static void s_es_cb_timer_delete(dap_events_socket_t *a_es, void *a_arg);
 #endif
 
-static bool l_debug_timer = false;
+//static bool l_debug_timer = false;
 
 #ifdef DAP_OS_WINDOWS
     static HANDLE hTimerQueue = NULL;
@@ -205,7 +205,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     }
     l_events_socket->socket = INVALID_SOCKET;
 #endif
-    debug_if(l_debug_timer, L_ATT, "Create timer on socket %"DAP_FORMAT_SOCKET, l_timerfd->events_socket->socket);
+    debug_if(g_debug_reactor, L_ATT, "Create timer on socket %"DAP_FORMAT_SOCKET, l_timerfd->events_socket->socket);
 #if defined (DAP_OS_LINUX)
     l_timerfd->tfd = l_tfd;
 #endif
@@ -215,7 +215,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
 void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
 {
     assert(a_timerfd);
-    debug_if(l_debug_timer, L_ATT, "Reset timer on socket %"DAP_FORMAT_SOCKET, a_timerfd->events_socket->socket);
+    debug_if(g_debug_reactor, L_ATT, "Reset timer on socket %"DAP_FORMAT_SOCKET, a_timerfd->events_socket->socket);
 #if defined DAP_OS_LINUX
     struct itimerspec l_ts;
     // repeat never
@@ -259,11 +259,11 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
     if(!l_timer_fd)
         return;
     // run user's callback
-    debug_if(l_debug_timer, L_ATT, "Call timer on socket %"DAP_FORMAT_SOCKET, l_timer_fd->events_socket->socket);
+    debug_if(g_debug_reactor, L_ATT, "Call timer on socket %"DAP_FORMAT_SOCKET, l_timer_fd->events_socket->socket);
     if(l_timer_fd && l_timer_fd->callback && l_timer_fd->callback(l_timer_fd->callback_arg)) {
         dap_timerfd_reset_unsafe(l_timer_fd);
     } else {
-        debug_if(l_debug_timer, L_ATT, "Close timer on socket %"DAP_FORMAT_SOCKET, l_timer_fd->events_socket->socket);
+        debug_if(g_debug_reactor, L_ATT, "Close timer on socket %"DAP_FORMAT_SOCKET, l_timer_fd->events_socket->socket);
 #ifdef DAP_EVENTS_CAPS_KQUEUE
         l_timer_fd->events_socket->kqueue_base_filter = EVFILT_EMPTY;
 #endif
@@ -273,6 +273,7 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
 
 #ifdef DAP_EVENTS_CAPS_IOCP
 static void s_es_cb_timer_delete(dap_events_socket_t *a_es, UNUSED_ARG void *a_arg) {
+    debug_if(g_debug_reactor, L_DEBUG, "Timer remove cb called on es %p", a_es);
     dap_timerfd_t *l_timer_fd = a_es->_inheritor;
     if(!l_timer_fd)
         return;
@@ -343,10 +344,7 @@ void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
 {
     if (!a_timerfd)
         return; 
-#ifdef _WIN32
-    DeleteTimerQueueTimer(hTimerQueue, a_timerfd->th, NULL);
-#endif
-    debug_if(l_debug_timer, L_ATT, "Remove timer on socket %"DAP_FORMAT_SOCKET, a_timerfd->events_socket->socket);
+    debug_if(g_debug_reactor, L_DEBUG, "Remove timer on socket %"DAP_FORMAT_SOCKET, a_timerfd->events_socket->socket);
     if (a_timerfd->events_socket->context)
        dap_events_socket_remove_and_delete_unsafe(a_timerfd->events_socket, false);
     else

@@ -298,7 +298,7 @@ static inline void s_report_error_and_restart( dap_events_socket_t *a_esocket, d
     strcpy( a_http_client->reply_reason_phrase, "Error" );
     a_http_client->state_write = DAP_HTTP_CLIENT_STATE_START;
 #ifdef DAP_EVENTS_CAPS_IOCP
-    a_esocket->flags |= DAP_SOCK_READY_TO_WRITE;
+    dap_events_socket_set_writable_unsafe( a_http_client->esocket, true );
     a_esocket->flags &= ~DAP_SOCK_READY_TO_READ;
 #else
     dap_events_socket_set_readable_unsafe( a_http_client->esocket, false );
@@ -547,6 +547,7 @@ void dap_http_client_write( dap_events_socket_t * a_esocket, void *a_arg )
 
     switch( l_http_client->state_write ) {
         case DAP_HTTP_CLIENT_STATE_NONE:
+        log_it(L_INFO, "[---]");
         default:
             return;
 

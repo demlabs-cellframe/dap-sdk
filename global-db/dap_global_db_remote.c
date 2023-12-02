@@ -794,7 +794,8 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         memcpy(&l_obj->value_len, pdata, sizeof(uint64_t)); pdata += sizeof(uint64_t);
 
         if (l_obj->value_len && !(l_obj->value = DAP_DUP_SIZE(pdata, l_obj->value_len))) {
-            log_it(L_CRITICAL, "Memory allocation error");
+            log_it(L_CRITICAL, "Memory allocation error. Possibly invalid GDB object %s : %s, value_len %zu",
+                   l_obj->group, l_obj->key_byte, l_obj->value_len);
             DAP_DEL_Z(l_obj->key_byte);
             DAP_DEL_Z(l_obj->group);
             DAP_DEL_Z(l_store_obj_arr);

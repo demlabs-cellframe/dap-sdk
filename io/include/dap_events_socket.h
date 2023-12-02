@@ -93,9 +93,7 @@ typedef struct work_item {
 
 #ifdef DAP_EVENTS_CAPS_IOCP
 #include <mswsock.h>
-#ifdef DAP_EVENTS_CAPS_IOCP
 extern LPFN_CONNECTEX pfn_ConnectEx;
-#endif
 #define MAX_IOCP_ENTRIES 0xf // Maximum count of IOCP entries to fetch at once
 #endif
 #if defined(DAP_EVENTS_CAPS_WEPOLL)
@@ -203,6 +201,15 @@ typedef struct dap_events_socket_w_data{
     size_t size;
 } dap_events_socket_w_data_t;
 
+#ifdef DAP_EVENTS_CAPS_IOCP
+enum dap_io_op {
+    io_op_close = 0,
+    io_op_read,
+    io_op_write,
+    io_op_max
+};
+#endif
+
 typedef uint64_t dap_events_socket_uuid_t;
 #define DAP_FORMAT_ESOCKET_UUID "0x%016" DAP_UINT64_FORMAT_X
 
@@ -216,7 +223,7 @@ typedef struct dap_events_socket {
     uint32_t mqd_id;
 #elif defined(DAP_EVENTS_CAPS_IOCP)
     };
-    HANDLE h, ev_close;
+    HANDLE h, op_events[io_op_max];
 #else
     };
 #endif
@@ -391,9 +398,7 @@ DAP_PRINTF_ATTR(3, 4) size_t dap_events_socket_write_f_inter(dap_events_socket_t
 
 void dap_events_socket_remove_and_delete_mt( dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid);
 void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool preserve_inheritor );
-#ifdef DAP_EVENTS_CAPS_IOCP
-void dap_events_socket_remove_and_delete_unsafe_ex(dap_events_socket_t*, bool, LPOVERLAPPED);
-#endif
+
 // Delayed removed
 void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_es, bool a_preserve_inheritor);
 

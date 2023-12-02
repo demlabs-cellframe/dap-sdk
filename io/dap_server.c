@@ -390,6 +390,8 @@ static int s_server_run(dap_server_t *a_server, dap_events_socket_callbacks_t *a
 #ifdef EPOLLEXCLUSIVE
     l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
 #endif
+#elif defined DAP_EVENTS_CAPS_IOCP
+    l_es_server->op_events[io_op_read] = CreateEvent(0, TRUE, FALSE, NULL);
 #endif
     a_server->es_listeners = dap_list_append(a_server->es_listeners, l_es_server);
     l_es_server->type = a_server->type == SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
