@@ -172,7 +172,7 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
     memset(&l_tm, 0, sizeof(struct tm));
 
 #ifndef _WIN32
-    strptime(a_time_str, "%a, %d %b %y %T %z", &l_tm);
+    strptime(a_time_str, "%a, %d %b %Y %T %z", &l_tm);
 #else
     strptime(a_time_str, "%y%m%d%H%M%S", &l_tm);// <<--- TODO: _!-DOES NOT WORK-!_ { need rework strptime() in dap_strfuncs.c } | in the meantime please use --> dap_time_from_str_simplified()
 #endif
