@@ -50,14 +50,11 @@ endif()
 include(cmake/OS_Detection.cmake)
 
 if (CELLFRAME_MODULES MATCHES "core")
-    SET(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
-    if (BUILD_DAP_TESTS)
-        SET(BUILD_CRYPTO_TESTS ON)
-    endif()
+    set(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
 endif()
 
 if (CELLFRAME_MODULES MATCHES "chains")
-    SET(DAPSDK_MODULES "${DAPSDK_MODULES} global-db")
+    set(DAPSDK_MODULES "${DAPSDK_MODULES} global-db")
 endif()
 
 if (CELLFRAME_MODULES MATCHES "network")
@@ -82,64 +79,74 @@ else()
     add_definitions("-DDAP_NET_CLIENT_NO_SSL")
 endif()
 
-# Core, add it always
 if (BUILD_DAP_SDK_TESTS)
-    enable_testing()
-    add_subdirectory(test-framework)
     set(BUILD_DAP_TESTS ON)
     set(BUILD_CRYPTO_TESTS ON)
     set(BUILD_WITH_GDB_DRIVER_MDBX ON)
-    set(DAPSDK_MODULES "crypto io network-core network-server network-client global-db")
+    set(DAPSDK_MODULES "crypto io network-core network-server network-client global-db test-framework")
 #    add_definitions("-DDAP_CHAIN_GDB_ENGINE_MDBX")
 #    set(DAPSDK_MODULES ${DAPSDK_MODULES} global-db)
     message("[+] Enable dap_sdk_tests")
 endif ()
-if (CELLFRAME_MODULES MATCHES "test-framework")
+
+if (DAPSDK_MODULES MATCHES "test-framework")
+    enable_testing()
     add_subdirectory(test-framework)
+    message("[+] Testing framework")
 endif()
+
+# Core, add it always
 add_subdirectory(core)
+
 if (DAPSDK_MODULES MATCHES "crypto")
     # Cryptography
     add_subdirectory(crypto)
+    message("[+] Module 'crypto'")
 endif()
 
 if (DAPSDK_MODULES MATCHES "app-cli")
     add_subdirectory(net/app-cli)
+    message("[+] Module 'app-cli'")
 endif()
 
 if (DAPSDK_MODULES MATCHES "plugin")
     add_subdirectory(plugin)
+    message("[+] Module 'plugin'")
 endif()
 
 # I/O subsystem
-if (DAPSDK_MODULES MATCHES "io")
+if (DAPSDK_MODULES MATCHES "io" OR DAPSDK_MODULES MATCHES "network-pure")
     add_subdirectory(io)
-endif()
-
-# Global database
-if (DAPSDK_MODULES MATCHES "global-db")
-    add_subdirectory(global-db)
+    message("[+] Module 'io'")
 endif()
 
 # Networking core
 if (DAPSDK_MODULES MATCHES "network-core")
     add_subdirectory(net/stream)
-endif()
-
-if (DAPSDK_MODULES MATCHES "network-pure")
-    add_subdirectory(io)
-    add_subdirectory(net/core)
+    message("[+] Module 'stream'")
 endif()
 
 # Networking client
 if (DAPSDK_MODULES MATCHES "network-client")
     add_subdirectory(net/client)
+    message("[+] Module 'client'")
 endif()
 
 # Networking server
 if (DAPSDK_MODULES MATCHES "network-server")
     add_subdirectory(net/server)
-#    add_subdirectory(net/server-udp)
+    message("[+] Module 'server'")
+endif()
+
+if(DAPSDK_MODULES MATCHES "ssl-support")
+    add_subdirectory(3rdparty/wolfssl)
+    message("[+] SSL supporting")
+endif()
+
+# Global database
+if (DAPSDK_MODULES MATCHES "global-db")
+    add_subdirectory(global-db)
+    message("[+] Module 'global-db'")
 endif()
 
 if(DARWIN)
