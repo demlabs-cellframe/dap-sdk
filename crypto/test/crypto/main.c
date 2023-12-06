@@ -21,9 +21,7 @@ int main(void) {
     // switch off debug info from library
     dap_log_level_set(L_CRITICAL);
     const int test_numbers = 100;
-#ifndef DAP_CRYPTO_NEWHOPE_TEST_OFF
     dap_enc_newhope_tests_run(test_numbers);
-#endif
 
     test_encypt_decrypt(test_numbers, DAP_ENC_KEY_TYPE_SALSA2012, 32);
     test_encypt_decrypt_fast(test_numbers, DAP_ENC_KEY_TYPE_SALSA2012, 32);
