@@ -88,8 +88,10 @@
 
 #if defined(__GNUC__) ||defined (__clang__)
   #define DAP_ALIGN_PACKED  __attribute__((aligned(1),packed))
+  #define DAP_PACKED  __attribute__((packed))
 #else
   #define DAP_ALIGN_PACKED  __attribute__((aligned(1),packed))
+  #define DAP_PACKED  __attribute__((packed))
 #endif
 
 #ifdef _MSC_VER
