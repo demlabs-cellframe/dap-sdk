@@ -89,7 +89,7 @@ void dap_network_monitor_deinit(void)
         return;
     }
     close(_net_notification.socket);
-    pthread_cancel(_net_notification.thread);
+    pthread_kill(_net_notification.thread, SIGKILL );
     pthread_join(_net_notification.thread, NULL);
 }
 
