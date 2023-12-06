@@ -7,7 +7,32 @@
 #include <arpa/inet.h>
 
 #ifdef __ANDROID__
-    #include "pthread_barrier.h"
+
+#include "pthread_barrier.h"
+
+//simulate pthread_cancel: send thread SIGUSR1 
+int pthread_cancel(pthread_t h) {
+    return pthread_kill(h, SIGUSR1);
+}
+
+static void thread_cancel_signal_handler(int sig_num)
+{
+	if (sig_num == SIGUSR1)
+	{
+		pthread_exit(0);
+	}
+}
+
+int thread_cancelable()
+{
+	struct sigaction action;
+	memset(&action, 0, sizeof(action));
+	sigemptyset(&action.sa_mask);
+	action.sa_flags = 0;
+	action.sa_handler = &thread_cancel_signal_handler;
+	return sigaction(SIGUSR1, &action, NULL);
+}
+
 #endif
 
 #include "dap_network_monitor.h"
@@ -68,6 +93,11 @@ int dap_network_monitor_init(dap_network_monitor_notification_callback_t cb)
     pthread_barrier_t barrier;
 
     pthread_barrier_init(&barrier, NULL, 2);
+
+    #ifdef __ANDROID__
+        thread_cancelable(); //to allow pthread_cancel simulation to work;
+    #endif
+
     if(pthread_create(&_net_notification.thread, NULL, network_monitor_worker, &barrier) != 0) {
         log_it(L_ERROR, "Error create notification thread");
         return -3;
@@ -89,7 +119,7 @@ void dap_network_monitor_deinit(void)
         return;
     }
     close(_net_notification.socket);
-    pthread_kill(_net_notification.thread, SIGKILL );
+    pthread_cancel(_net_notification.thread);
     pthread_join(_net_notification.thread, NULL);
 }
 
@@ -193,6 +223,7 @@ static void clear_results(dap_network_notification_t* cb_result)
     cb_result->route.destination_address = (uint64_t) -1;
     cb_result->route.gateway_address = (uint64_t) -1;
 }
+
 
 static void* network_monitor_worker(void *arg)
 {
