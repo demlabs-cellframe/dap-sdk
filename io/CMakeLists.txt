@@ -33,6 +33,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE src)
 
 if (WIN32)
     target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/wepoll)
+    target_link_libraries(${PROJECT_NAME} ws2_32)
 endif()
 
 if (${BUILD_DAP_IO_TESTS} MATCHES ON)
