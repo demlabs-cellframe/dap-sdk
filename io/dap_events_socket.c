@@ -222,8 +222,8 @@ static inline int s_dap_evsock_free(dap_events_socket_t *a_es)
         log_it(L_ERROR, "dap_events_socket:%p - uuid %zu not found", a_es, a_es->uuid);
     }
 #else
-    DAP_DELETE(a_es);
     debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is released", a_es);
+    DAP_DELETE(a_es);
 #endif
     return  0;  /* SS$_SUCCESS */
 }
