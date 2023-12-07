@@ -829,7 +829,7 @@ char    *str_header;
     if (s_debug_cli)
         log_it(L_DEBUG, "close connection=%d sockfd=%"DAP_FORMAT_SOCKET, cs, newsockfd);
 
-    return false;
+    return true;
 }
 
 /**
@@ -855,7 +855,7 @@ static void* s_thread_main_func(void *args)
             break;
         }
         // Serve client connection on automatically chosen processing thread
-        dap_proc_thread_callback_add(NULL, s_thread_one_client_func, DAP_INT_TO_POINTER(newsockfd));
+        dap_proc_queue_add_callback(dap_events_worker_get_auto(), s_thread_one_client_func, DAP_INT_TO_POINTER(newsockfd));
     };
     // close connection
     int cs = closesocket(sockfd);
