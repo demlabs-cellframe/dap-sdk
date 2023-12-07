@@ -730,14 +730,8 @@ char* s_get_next_str( SOCKET nSocket, int *dwLen, const char *stop_str, bool del
 int json_commands(const char * a_name) {
     const char* long_cmd[] = {
             "tx_history",
-            "mempool"
-//            "mempool_list",
-//            "mempool_proc",
-//            "mempool_proc_all",
-//            "mempool_add_ca",
-//            "mempool_delete",
-//            "mempool_check",
-//            "chain_ca_copy"
+            "mempool",
+            "chain_ca_copy"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
@@ -819,8 +813,9 @@ char    *str_header;
 
                 char **l_argv = NULL;
                 if (l_finded_by_alias) {
-                    char *l_tmp_argv = dap_strdup_printf("%s;%s", l_ncmd, str_cmd);
-                    l_argv = dap_strsplit(str_cmd, ";", -1);
+                    char *l_tmp_argv = dap_strdup_printf("%s;%s;%s", l_ncmd, l_append_cmd, str_cmd);
+                    cmd_name = l_ncmd;
+                    l_argv = dap_strsplit(l_tmp_argv, ";", -1);
                     DAP_DELETE(l_tmp_argv);
                 } else {
                     l_argv = dap_strsplit(str_cmd, ";", -1);
