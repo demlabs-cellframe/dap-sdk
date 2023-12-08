@@ -14,9 +14,9 @@ if (OFF_CORE_CELLFRAME_SDK_TESTS_OFF MATCHES "network-monitor")
   endif()
 endif()
 
-if (NOT DAP_USE_RPMALLOC)
-	file (GLOB PLATROFM_DEP_SRC ${PLATROFM_DEP_SRC} ../../3rdparty/rpmalloc/rpmalloc.c ../../3rdparty/rpmalloc/rpmalloc.h)
-endif()
+#if (NOT DAP_USE_RPMALLOC)
+#	file (GLOB PLATROFM_DEP_SRC ${PLATROFM_DEP_SRC} ../../3rdparty/rpmalloc/rpmalloc.c ../../3rdparty/rpmalloc/rpmalloc.h)
+#endif()
 
 add_executable(${PROJECT_NAME} ${SRCS} ${PLATROFM_DEP_SRC})  
 target_link_libraries(core_test dap_test dap_core pthread)
@@ -25,6 +25,8 @@ add_executable(rpmalloc_test
   rpmalloc/test/main.c 
   rpmalloc/test/thread.c
   rpmalloc/test/timer.c
+  ../../3rdparty/rpmalloc/rpmalloc.c
+  ../../3rdparty/rpmalloc/rpmalloc.h
 )
 target_link_libraries(rpmalloc_test dap_core pthread)
 target_include_directories(rpmalloc_test PRIVATE rpmalloc/test/)
@@ -34,6 +36,8 @@ add_executable(rpmalloc_bench
   rpmalloc/benchmark/benchmark.c
   rpmalloc/test/thread.c
   rpmalloc/test/timer.c
+  ../../3rdparty/rpmalloc/rpmalloc.c
+  ../../3rdparty/rpmalloc/rpmalloc.h
 )
 if(WIN32)
 	target_link_libraries(rpmalloc_bench dap_core m pthread ntdll psapi shlwapi)
@@ -48,6 +52,8 @@ add_executable(crtmalloc_bench
   rpmalloc/benchmark/crt_benchmark.c
   rpmalloc/test/thread.c
   rpmalloc/test/timer.c
+  ../../3rdparty/rpmalloc/rpmalloc.c
+  ../../3rdparty/rpmalloc/rpmalloc.h
 )
 if(WIN32)
 	target_link_libraries(crtmalloc_bench dap_core m pthread ntdll psapi shlwapi)
