@@ -58,7 +58,7 @@
 */
 #define dap_pass_msg(testname) { \
     printf("\t%s%s PASS.%s\n", TEXT_COLOR_GRN, testname, TEXT_COLOR_RESET); \
-    fflush(stdout); } \
+    fflush(stdout); }
 
 /**
  * @brief Display the name of the test module

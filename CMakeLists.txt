@@ -44,6 +44,9 @@ ExternalProject_Add(dap_json-c_dep
                     CONFIGURE_COMMAND ${JSON-C-CONFIG_COMMAND})
 
 include(cmake/OS_Detection.cmake)
+if (INSTALL_DAP_SDK)
+    INSTALL(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/deps/ DESTINATION ./)
+endif()
 
 if (CELLFRAME_MODULES MATCHES "core")
     set(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
@@ -62,7 +65,15 @@ if (CELLFRAME_MODULES MATCHES "avrestream")
 endif()
 
 if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
+
     set(DAPSDK_MODULES "core crypto io network-core network-client network-server")
+    set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m)
+    if(NOT ANDROID)
+        set(CELLFRAME_LIBS ${CELLFRAME_LIBS} pthread)
+    endif()
+    if (SUPPORT_PYTHON_PLUGINS)
+        set(CELLFRAME_MODULES "${CELLFRAME_MODULES} core chains network cs-none srv-")
+    endif()
 endif()
 
 # We switch off SSL until its not switched on back
