@@ -231,12 +231,17 @@ static void *s_list_thread_proc2(void *arg) {
                 DAP_DELETE(l_obj_cur->group);
                 l_obj_cur->group = dap_strdup_printf("%.*s", (int)dap_strlen(l_group->name) - 4, l_group->name);
                 break;
-            case DAP_DB$K_OPTYPE_ADD:
-                if (l_obj_cur->timestamp < l_two_weeks_ago && !(l_obj_cur->flags & RECORD_PINNED) && dap_strncmp(l_obj_cur->group, "cdb.", 4)) {
+            case DAP_DB$K_OPTYPE_ADD: {
+                bool group_HALed = strstr(l_obj_cur->group, ".service.orders")
+                        || !dap_strncmp(l_obj_cur->group, "cdb.", 4)
+                        || strstr(l_obj_cur->group, ".nodes.v2");
+
+                if (l_obj_cur->timestamp < l_two_weeks_ago && !(l_obj_cur->flags & RECORD_PINNED) && !group_HALed) {
                     dap_global_db_del_sync(l_obj_cur->group, l_obj_cur->key);
                     continue;
                 }
                 break;
+            }
             default:
                 break;
             }
@@ -730,7 +735,7 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
                                                                               will be used to prevent out-of-buffer case */
     l_obj = l_store_obj_arr;
 
-    for ( l_cur_count = l_count ; l_cur_count; --l_cur_count, ++l_obj ) {
+    for ( l_cur_count = 0; l_cur_count < l_count; ++l_cur_count, ++l_obj ) {
         if ( (pdata  + sizeof (uint32_t)) > pdata_end )                     /* Check for buffer boundaries */
             {log_it(L_ERROR, "Broken GDB element: can't read 'type' field"); break;}
         memcpy(&l_obj->type, pdata, sizeof(uint32_t)); pdata += sizeof(uint32_t);
@@ -759,22 +764,22 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         */ // Protocol version update needed...
 
         if ( (pdata + sizeof (uint64_t)) > pdata_end )
-            {log_it(L_ERROR, "Broken GDB element: can't read 'id' field"); break;}
+            {log_it(L_ERROR, "Broken GDB element: can't read 'id' field"); DAP_DELETE(l_obj->group); break;}
         memcpy(&l_obj->id, pdata, sizeof(uint64_t)); pdata += sizeof(uint64_t);
 
         if ( (pdata + sizeof (uint64_t)) > pdata_end )
-            {log_it(L_ERROR, "Broken GDB element: can't read 'timestamp' field");  break;}
+            {log_it(L_ERROR, "Broken GDB element: can't read 'timestamp' field"); DAP_DELETE(l_obj->group); break;}
         memcpy(&l_obj->timestamp, pdata, sizeof(uint64_t)); pdata += sizeof(uint64_t);
 
         if ( (pdata + sizeof (uint16_t)) > pdata_end)
-            {log_it(L_ERROR, "Broken GDB element: can't read 'key_length' field"); break;}
+            {log_it(L_ERROR, "Broken GDB element: can't read 'key_length' field"); DAP_DELETE(l_obj->group); break;}
         memcpy(&l_obj->key_len, pdata, sizeof(uint16_t)); pdata += sizeof(uint16_t);
 
         if ( !l_obj->key_len )
-            {log_it(L_ERROR, "Broken GDB element: 'key_length' field is zero"); break;}
+            {log_it(L_ERROR, "Broken GDB element: 'key_length' field is zero"); DAP_DELETE(l_obj->group); break;}
 
         if ((pdata + l_obj->key_len) > pdata_end)
-            {log_it(L_ERROR, "Broken GDB element: 'key_length' field is out from allocated memory"); break;}
+            {log_it(L_ERROR, "Broken GDB element: 'key_length' field is out from allocated memory"); DAP_DELETE(l_obj->group); break;}
 
         l_obj->key = DAP_NEW_Z_SIZE(char, l_obj->key_len + 1);
         memcpy((char*)l_obj->key, pdata, l_obj->key_len); pdata += l_obj->key_len;
@@ -805,12 +810,13 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
 
     if (pdata != pdata_end) {
         log_it(L_MSG, "! Unprocessed data left: %zu bytes", pdata_end - pdata);
+        l_store_obj_arr = DAP_REALLOC(l_store_obj_arr, l_cur_count * sizeof(struct dap_store_obj));
     }
 
     // Return the number of completely filled dap_store_obj_t structures
     // because l_cur_count may be less than l_count due to too little memory
     if (a_store_obj_count)
-        *a_store_obj_count = l_count;
+        *a_store_obj_count = l_cur_count;
 
     return l_store_obj_arr;
 }

@@ -3,6 +3,14 @@ project (dap_core)
 
 add_definitions("-D_GNU_SOURCE") 
 
+if (DAP_USE_RPMALLOC)
+#if(NOT DAP_DEBUG AND NOT DAP_DBG_INFO)
+    message("[!] Use RPMALLOC")
+    add_definitions("-DENABLE_OVERRIDE=1")
+    file(GLOB CORE_SRCS ${CORE_SRCS} ../3rdparty/rpmalloc/rpmalloc.c)
+    file(GLOB CORE_HEADERS ${CORE_HEADERS} ../3rdparty/rpmalloc/rpmalloc.h)
+endif(DAP_USE_RPMALLOC)
+
 if(UNIX)
     if(DARWIN)
         file(GLOB CORE_HEADERS 
@@ -14,10 +22,8 @@ if(UNIX)
         file(GLOB CORE_SRCS
             src/*.c
             src/etc/*.c
-            src/rpmalloc/*.c
             src/unix/*.c
             src/darwin/macos/*.c
-            src/rpmalloc/*.c
         )
     else()
         file(GLOB CORE_HEADERS 
@@ -29,10 +35,8 @@ if(UNIX)
         file(GLOB CORE_SRCS
             src/*.c
             src/etc/*.c
-            src/rpmalloc/*.c
             src/unix/*.c
             src/unix/linux/*.c
-            src/rpmalloc/*.c
         )
     endif()
 endif()
@@ -45,7 +49,6 @@ if(WIN32)
     file(GLOB CORE_SRCS
         src/*.c
         src/etc/*.c
-        src/rpmalloc/*.c
         src/win32/*.c
         ../3rdparty/strptime.c
     )
@@ -54,7 +57,7 @@ endif()
 add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
 
 #This paths will be used by project-dependent project libraries
-target_include_directories(${PROJECT_NAME} INTERFACE include/ src/rpmalloc/)
+target_include_directories(${PROJECT_NAME} INTERFACE include/)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
 
@@ -70,6 +73,8 @@ if(UNIX)
     if(DARWIN)
         add_subdirectory(src/darwin)
         set(CORE_LIBRARIES ${CORE_LIBRARIES} dap_core_darwin)
+    else()
+        set(CORE_LIBRARIES ${CORE_LIBRARIES} rt dl)
     endif()
     if(ANDROID)
         add_subdirectory(src/android)
