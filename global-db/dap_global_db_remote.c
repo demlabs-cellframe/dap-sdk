@@ -231,12 +231,17 @@ static void *s_list_thread_proc2(void *arg) {
                 DAP_DELETE(l_obj_cur->group);
                 l_obj_cur->group = dap_strdup_printf("%.*s", (int)dap_strlen(l_group->name) - 4, l_group->name);
                 break;
-            case DAP_DB$K_OPTYPE_ADD:
-                if (l_obj_cur->timestamp < l_two_weeks_ago && !(l_obj_cur->flags & RECORD_PINNED) && dap_strncmp(l_obj_cur->group, "cdb.", 4)) {
+            case DAP_DB$K_OPTYPE_ADD: {
+                bool group_HALed = strstr(l_obj_cur->group, ".service.orders")
+                        || !dap_strncmp(l_obj_cur->group, "cdb.", 4)
+                        || strstr(l_obj_cur->group, ".nodes.v2");
+
+                if (l_obj_cur->timestamp < l_two_weeks_ago && !(l_obj_cur->flags & RECORD_PINNED) && !group_HALed) {
                     dap_global_db_del_sync(l_obj_cur->group, l_obj_cur->key);
                     continue;
                 }
                 break;
+            }
             default:
                 break;
             }
