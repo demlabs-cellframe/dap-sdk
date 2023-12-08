@@ -14,6 +14,8 @@ if (OFF_CORE_CELLFRAME_SDK_TESTS_OFF MATCHES "network-monitor")
   endif()
 endif()
 
+add_definitions("-DENABLE_OVERRIDE=1")
+
 #if (NOT DAP_USE_RPMALLOC)
 #	file (GLOB PLATROFM_DEP_SRC ${PLATROFM_DEP_SRC} ../../3rdparty/rpmalloc/rpmalloc.c ../../3rdparty/rpmalloc/rpmalloc.h)
 #endif()
