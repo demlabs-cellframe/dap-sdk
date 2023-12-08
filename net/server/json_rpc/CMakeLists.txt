@@ -14,3 +14,12 @@ target_include_directories(${PROJECT_NAME} INTERFACE . include/)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 
 target_link_libraries(${PROJECT_NAME} dap_core dap_crypto dap_io dap_http_server dap_client dap_json-c)
+
+if(INSTALL_DAP_SDK)
+set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${JSON_RPC_HEADERS}")
+INSTALL(TARGETS ${PROJECT_NAME} 
+        LIBRARY DESTINATION lib/dap/net/server/json_rpc/
+        ARCHIVE DESTINATION lib/dap/net/server/json_rpc/
+        PUBLIC_HEADER DESTINATION include/dap/net/server/json_rpc/
+)
+endif()

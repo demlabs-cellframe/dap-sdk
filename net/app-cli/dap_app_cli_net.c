@@ -137,7 +137,7 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
 {
     // set socket param
     int buffsize = DAP_CLI_HTTP_RESPONSE_SIZE_MAX;
-#ifdef WIN32
+#if defined(__WIN32) || defined(ANDROID)
     // TODO connect to the named pipe "\\\\.\\pipe\\node_cli.pipe"
     uint16_t l_cli_port = dap_config_get_item_uint16 ( g_config, "conserver", "listen_port_tcp");
     if (!l_cli_port)
@@ -158,7 +158,12 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
     int l_addr_len;
 #ifdef WIN32
     struct sockaddr_in l_remote_addr = {
-        .sin_family = AF_INET, .sin_port = l_cli_port, .sin_addr = {{ .S_addr = htonl(INADDR_LOOPBACK) }}
+        .sin_family = AF_INET, .sin_port = htons(l_cli_port), .sin_addr = {{ .S_addr = htonl(INADDR_LOOPBACK) }}
+    };
+    l_addr_len = sizeof(struct sockaddr_in);
+#elif defined(DAP_OS_ANDROID)
+    struct sockaddr_in l_remote_addr = {
+        .sin_family = AF_INET, .sin_port = htons(l_cli_port), .sin_addr = { .s_addr = htonl(INADDR_LOOPBACK) }
     };
     l_addr_len = sizeof(struct sockaddr_in);
 #else

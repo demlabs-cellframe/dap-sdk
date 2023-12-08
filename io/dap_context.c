@@ -986,10 +986,19 @@ static int s_thread_loop(dap_context_t * a_context)
                                         l_bytes_sent = sizeof(void*);
                                     }
                                     */
-                                    l_bytes_sent = dap_sendto(l_cur->socket, l_cur->port, l_cur->buf_out, l_cur->buf_out_size);
-                                    if (l_bytes_sent == SOCKET_ERROR) {
-                                        log_it(L_ERROR, "Write to socket error: %d", WSAGetLastError());
+                                    size_t shift;
+                                    for (shift = 0; shift < l_cur->buf_out_size; shift += sizeof(void*)) {
+                                        work_item_t *l_work_item = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(work_item_t));
+                                        l_work_item->data = *(void**)(l_cur->buf_out + shift);
+                                        if (!InterlockedPushEntrySList((PSLIST_HEADER)l_cur->_pvt, &(l_work_item->entry))) {
+                                            if (dap_sendto(l_cur->socket, l_cur->port, /* l_cur->buf_out, l_cur->buf_out_size*/ NULL, 0) == SOCKET_ERROR) {
+                                                log_it(L_ERROR, "Write to socket error: %d", WSAGetLastError());
+                                                break;
+                                            }
+                                        }
                                     }
+                                    //log_it(L_MSG, "[!] Enqueued %llu items to es %p", shift / 8, l_cur);
+                                    l_bytes_sent = l_cur->buf_out_size;
 #elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
                                     l_bytes_sent = mq_send(l_cur->mqd , (const char *)l_cur->buf_out,sizeof (void*),0);
                                     if(l_bytes_sent == 0)
@@ -1719,6 +1728,10 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
         getsockname(l_es->socket, (struct sockaddr*)&l_addr, &dummy);
         l_es->port = l_addr.sin_port;
     }
+
+    l_es->_pvt = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(SLIST_HEADER));
+    InitializeSListHead((PSLIST_HEADER)l_es->_pvt);
+
     /*
     MQQUEUEPROPS   l_qps;
     MQPROPVARIANT  l_qp_var[1];

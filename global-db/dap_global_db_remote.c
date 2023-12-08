@@ -232,7 +232,7 @@ static void *s_list_thread_proc2(void *arg) {
                 l_obj_cur->group = dap_strdup_printf("%.*s", (int)dap_strlen(l_group->name) - 4, l_group->name);
                 break;
             case DAP_DB$K_OPTYPE_ADD:
-                if (l_obj_cur->timestamp < l_two_weeks_ago && !(l_obj_cur->flags & RECORD_PINNED)) {
+                if (l_obj_cur->timestamp < l_two_weeks_ago && !(l_obj_cur->flags & RECORD_PINNED) && dap_strncmp(l_obj_cur->group, "cdb.", 4)) {
                     dap_global_db_del_sync(l_obj_cur->group, l_obj_cur->key);
                     continue;
                 }
@@ -254,11 +254,7 @@ static void *s_list_thread_proc2(void *arg) {
                 l_dap_db_log_list->is_process = false;
                 pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
                 dap_store_obj_free(l_objs, l_item_count);
-#ifdef DAP_OS_WINDOWS
-                ExitThread(0);
-#else
-                pthread_exit(NULL);
-#endif
+                return NULL;
             }
             uint64_t l_cur_id = l_obj_cur->id;
             l_obj_cur->id = 0;
@@ -277,11 +273,7 @@ static void *s_list_thread_proc2(void *arg) {
         dap_store_obj_free(l_objs, l_item_count);
     }
     l_dap_db_log_list->is_process = false;
-#ifdef DAP_OS_WINDOWS
-    ExitThread(0);
-#else
-    pthread_exit(NULL);
-#endif
+    return NULL;
 }
 
 /**
@@ -507,7 +499,7 @@ dap_db_log_list_obj_t **dap_db_log_list_get_multiple(dap_db_log_list_t *a_db_log
     }
     size_t l_count = a_db_log_list->items_list
             ? *a_count
-              ? MIN(*a_count, dap_list_length(a_db_log_list->items_list))
+              ? dap_min(*a_count, dap_list_length(a_db_log_list->items_list))
               : dap_list_length(a_db_log_list->items_list)
             : 0;
     size_t l_old_size = a_db_log_list->size, l_out_size = 0;

@@ -72,16 +72,19 @@ bool dap_pkey_match(dap_pkey_t *a_pkey1, dap_pkey_t *a_pkey2) {
 bool dap_pkey_match_sign(dap_pkey_t *a_pkey, dap_sign_t *a_sign)
 {
     return a_pkey->header.size == a_sign->header.sign_pkey_size &&
-            !memcmp(a_pkey->pkey, a_sign->pkey_n_sign, a_pkey->header.size);
+            !memcmp(a_pkey->pkey, a_sign->pkey_n_sign, a_pkey->header.size) &&
+            a_pkey->header.type.type == dap_pkey_type_from_sign_type(a_sign->header.type).type;
 }
 
-bool dap_pkey_get_hash(dap_pkey_t *a_pkey, dap_chain_hash_fast_t *a_out_hash){
+bool dap_pkey_get_hash(dap_pkey_t *a_pkey, dap_chain_hash_fast_t *a_out_hash)
+{
     if (!a_pkey || !a_out_hash)
         return false;
     return dap_hash_fast(a_pkey->pkey, a_pkey->header.size, a_out_hash);
 }
 
-dap_pkey_t *dap_pkey_get_from_sign_deserialization(dap_sign_t *a_sign){
+dap_pkey_t *dap_pkey_get_from_sign(dap_sign_t *a_sign)
+{
     dap_pkey_t *l_pkey = DAP_NEW_SIZE(dap_pkey_t, sizeof(dap_pkey_t) + a_sign->header.sign_pkey_size);
     l_pkey->header.size = a_sign->header.sign_pkey_size;
     l_pkey->header.type = dap_pkey_type_from_sign_type(a_sign->header.type);

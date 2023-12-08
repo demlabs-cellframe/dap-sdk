@@ -953,15 +953,6 @@ char* dap_strreverse(char *a_string)
 }
 
 #ifdef _WIN32
-char *strptime(const char *buff, const char *fmt, struct tm *tm)
-{
-    UNUSED(fmt);
-    uint32_t len = strlen(buff);
-    sscanf(buff, "%u.%u.%u_%u.%u.%u", &tm->tm_year, &tm->tm_mon, &tm->tm_mday, &tm->tm_hour, &tm->tm_min, &tm->tm_sec);
-    tm->tm_year += 2000;
-    return (char *)buff + len;
-}
-
 /**
  * @brief _strndup
  * 
@@ -969,7 +960,6 @@ char *strptime(const char *buff, const char *fmt, struct tm *tm)
  * @param len 
  * @return char* 
  */
-
 char *_strndup(const char *str, unsigned long len) {
     char *buf = (char*)memchr(str, '\0', len);
     if (buf)
