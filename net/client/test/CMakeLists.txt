@@ -13,7 +13,7 @@ add_executable(${PROJECT_NAME} ${DAP_CLIENT_TEST_SOURCES} ${DAP_CLIENT_TEST_HEAD
 target_link_libraries(${PROJECT_NAME} dap_test dap_core dap_crypto dap_io ev)
 
 if(NOT ANDROID)
-    target_link_libraries(${PROJECT_NAME} )
+    target_link_libraries(${PROJECT_NAME} pthread)
 endif()
 
 add_test(
