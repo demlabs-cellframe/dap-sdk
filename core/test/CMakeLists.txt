@@ -15,7 +15,7 @@ if (OFF_CORE_CELLFRAME_SDK_TESTS_OFF MATCHES "network-monitor")
 endif()
 
 if (NOT DAP_USE_RPMALLOC)
-	file (GLOB PLATROFM_DEP_SRC ${PLATROFM_DEP_SRC} ../../3rdparty/rpmalloc/rpmalloc.c ../3rdparty/rpmalloc/rpmalloc.h)
+	file (GLOB PLATROFM_DEP_SRC ${PLATROFM_DEP_SRC} ../../3rdparty/rpmalloc/rpmalloc.c ../../3rdparty/rpmalloc/rpmalloc.h)
 endif()
 
 add_executable(${PROJECT_NAME} ${SRCS} ${PLATROFM_DEP_SRC})  
