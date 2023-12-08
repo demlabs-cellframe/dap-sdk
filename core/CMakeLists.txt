@@ -3,20 +3,16 @@ project (dap_core)
 
 add_definitions("-D_GNU_SOURCE") 
 
-file(GLOB CORE_SRCS
-    src/*.c
-    src/etc/*.c
-    src/rpmalloc/*.c
-)
-
 if(UNIX)
     if(DARWIN)
+
         file(GLOB CORE_HEADERS 
             include/*.h
             include/unix/*.h
             src/darwin/macos/*.h
             src/unix/*.h
         )
+
         file(GLOB CORE_SRCS
             src/*.c
             src/etc/*.c
@@ -25,13 +21,16 @@ if(UNIX)
             src/darwin/macos/*.c
             src/rpmalloc/*.c
         )
+
     else()
+
         file(GLOB CORE_HEADERS 
             include/*.h 
             include/unix/*.h 
             src/unix/linux/*.h
             src/unix/*.h
         )
+
         file(GLOB CORE_SRCS
             src/*.c
             src/etc/*.c
@@ -40,14 +39,18 @@ if(UNIX)
             src/unix/linux/*.c
             src/rpmalloc/*.c
         )
+
     endif()
 endif()
 
+
 if(WIN32)
+
     file(GLOB CORE_HEADERS
         include/*.h
         src/win32/*.h
     )
+
     file(GLOB CORE_SRCS
         src/*.c
         src/etc/*.c
@@ -65,9 +68,9 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
 
 if(WIN32)
-  include_directories(include/)
-  add_subdirectory(src/win32)
-  set(CORE_LIBRARIES dap_core_win32)
+    include_directories(include/)
+    add_subdirectory(src/win32)
+    set(CORE_LIBRARIES dap_core_win32)
 endif()
 
 if(UNIX)
@@ -81,7 +84,7 @@ if(UNIX)
         set(CORE_LIBRARIES ${CORE_LIBRARIES} dap_core_android)
     else()
         set(CORE_LIBRARIES ${CORE_LIBRARIES} rt)
-    endif()
+    endif() 
 endif()
 
 if (BUILD_WITH_ZIP)
@@ -113,3 +116,4 @@ if(INSTALL_DAP_SDK)
     #INSTALL(DIRECTORY src/unix/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #endif()
 endif()
+

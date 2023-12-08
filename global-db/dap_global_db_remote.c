@@ -503,7 +503,7 @@ dap_db_log_list_obj_t **dap_db_log_list_get_multiple(dap_db_log_list_t *a_db_log
     }
     size_t l_count = a_db_log_list->items_list
             ? *a_count
-              ? MIN(*a_count, dap_list_length(a_db_log_list->items_list))
+              ? dap_min(*a_count, dap_list_length(a_db_log_list->items_list))
               : dap_list_length(a_db_log_list->items_list)
             : 0;
     size_t l_old_size = a_db_log_list->size, l_out_size = 0;

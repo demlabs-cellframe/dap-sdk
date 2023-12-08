@@ -12,3 +12,5 @@ if (BUILD_LIB_DAP_SERVER_TESTS)
     enable_testing()
     add_subdirectory(test)
 endif()
+
+
