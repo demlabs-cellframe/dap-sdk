@@ -81,6 +81,7 @@ static bool s_debug_cli = false;
 #endif
 
 static dap_cli_cmd_t * s_commands = NULL;
+static dap_cli_cmd_aliases_t * s_command_alias = NULL;
 
 
 static void* s_thread_one_client_func(void *args);
@@ -1056,4 +1057,30 @@ dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name)
     dap_cli_cmd_t *l_cmd_item = NULL;
     HASH_FIND_STR(s_commands,a_name,l_cmd_item);
     return l_cmd_item;
+}
+
+void dap_cli_server_alias_add(const char *a_alias, const char *a_pre_cmd, dap_cli_cmd_t *a_cmd) {
+    if (!a_alias || !a_pre_cmd || !a_cmd)
+        return;
+    dap_cli_cmd_aliases_t *l_alias = DAP_NEW(dap_cli_cmd_aliases_t);
+    size_t l_alias_size = dap_strlen(a_alias);
+    memcpy(l_alias->alias, a_alias, l_alias_size);
+    l_alias->alias[l_alias_size] = '\0';
+    size_t l_addition_size = dap_strlen(a_pre_cmd);
+    memcpy(l_alias->addition, a_pre_cmd, l_addition_size);
+    l_alias->addition[l_addition_size] = '\0';
+    l_alias->standard_command = a_cmd;
+    HASH_ADD_STR(s_command_alias, alias, l_alias);
+}
+
+dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_append, char **a_ncmd) {
+    dap_cli_cmd_aliases_t *l_alias = NULL;
+    HASH_FIND_STR(s_command_alias, a_alias, l_alias);
+    if (!l_alias)
+        return NULL;
+    size_t l_addition_size = dap_strlen(l_alias->addition);
+    *a_append = DAP_NEW_Z_SIZE(char, l_addition_size);
+    memcpy(*a_append, l_alias->addition, l_addition_size);
+    *a_ncmd = l_alias->standard_command->name;
+    return l_alias->standard_command;
 }

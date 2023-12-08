@@ -4,36 +4,28 @@ project (dap_core)
 add_definitions("-D_GNU_SOURCE") 
 
 if(UNIX)
-
     if(DARWIN)
-
         file(GLOB CORE_HEADERS 
-        include/*.h 
-        include/unix/*.h 
-        src/darwin/macos/*.h 
-        src/unix/*.h 
+            include/*.h
+            include/unix/*.h
+            src/darwin/macos/*.h
+            src/unix/*.h
         )
-
-
         file(GLOB CORE_SRCS
-        src/*.c
-        src/etc/*.c
-        src/rpmalloc/*.c
-        src/unix/*.c
-        src/darwin/macos/*.c
-        src/rpmalloc/*.c
+            src/*.c
+            src/etc/*.c
+            src/rpmalloc/*.c
+            src/unix/*.c
+            src/darwin/macos/*.c
+            src/rpmalloc/*.c
         )
-
     else()
-
         file(GLOB CORE_HEADERS 
             include/*.h 
             include/unix/*.h 
             src/unix/linux/*.h
             src/unix/*.h
         )
-
-
         file(GLOB CORE_SRCS
             src/*.c
             src/etc/*.c
@@ -42,26 +34,21 @@ if(UNIX)
             src/unix/linux/*.c
             src/rpmalloc/*.c
         )
-
     endif()
-
 endif()
 
-
 if(WIN32)
-
+    file(GLOB CORE_HEADERS
+        include/*.h
+        src/win32/*.h
+    )
     file(GLOB CORE_SRCS
         src/*.c
         src/etc/*.c
         src/rpmalloc/*.c
         src/win32/*.c
+        ../3rdparty/strptime.c
     )
-
-    file(GLOB CORE_HEADERS 
-        include/*.h 
-        src/win32/*.h 
-    )
-
 endif()
 
 add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
@@ -71,9 +58,10 @@ target_include_directories(${PROJECT_NAME} INTERFACE include/ src/rpmalloc/)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
 
-
 if(WIN32)
   include_directories(include/)
+  add_subdirectory(src/win32)
+  set(CORE_LIBRARIES dap_core_win32)
 endif()
 
 if(UNIX)
@@ -91,12 +79,6 @@ if(UNIX)
     if(UNIX AND NOT ANDROID AND NOT DARWIN)
         set(CORE_LIBRARIES ${CORE_LIBRARIES} rt)
     endif()
-    
-endif()
-
-if (WIN32)
-    add_subdirectory(src/win32)
-    set(CORE_LIBRARIES dap_core_win32)
 endif()
 
 if (BUILD_WITH_ZIP)
@@ -127,5 +109,4 @@ if(INSTALL_DAP_SDK)
     #INSTALL(DIRECTORY src/unix/linux/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #INSTALL(DIRECTORY src/unix/  DESTINATION include/dap/core/ FILES_MATCHING PATTERN "*.h")
     #endif()
-
 endif()
