@@ -260,7 +260,7 @@ dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type,
 void dap_multi_sign_params_delete(dap_multi_sign_params_t *a_params)
 {
     dap_return_if_pass(!a_params);
-    for (size_t i; i < a_params->key_count; ++i) {
+    for (size_t i = 0; i < a_params->key_count; ++i) {
         dap_enc_key_delete(a_params->keys[i]);
     }
     DAP_DEL_MULTY(a_params->key_seq, a_params->keys, a_params);

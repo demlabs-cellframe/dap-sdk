@@ -165,5 +165,3 @@ if(DARWIN)
 elseif(ANDROID)
     include_directories(3rdparty/)
 endif()
-add_subdirectory(3rdparty/crc32c_adler)             # https://github.com/fonic/crc32c_adler
-include_directories(3rdparty/crc32c_adler)

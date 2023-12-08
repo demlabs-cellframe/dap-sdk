@@ -50,7 +50,7 @@ typedef enum dap_global_db_optype {
 
 typedef struct dap_global_db_driver_hash {
     dap_nanotime_t bets;
-    uint32_t becrc;
+    uint64_t becrc;
 } DAP_ALIGN_PACKED dap_global_db_driver_hash_t;
 
 typedef struct dap_store_obj {
@@ -61,7 +61,7 @@ typedef struct dap_store_obj {
     uint8_t flags;                  // Now it is only 'pinned' flag, pointed to record can be removed only by author
     dap_sign_t *sign;               // Crypto sign for authentication and security checks
     dap_nanotime_t timestamp;       // Timestamp of record creation, in nanoseconds since EPOCH
-    uint32_t crc;                   // Integrity control
+    uint64_t crc;                   // Integrity control
     dap_global_db_optype_t type;    // Operation type - for event notifiers
     byte_t ext[];                   // For extra data transfer between sync callbacks
 } dap_store_obj_t;

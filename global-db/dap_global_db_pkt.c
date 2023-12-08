@@ -22,11 +22,11 @@ You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include <string.h>
 #include "dap_global_db_pkt.h"
 #include "dap_sign.h"
 #include "dap_strfuncs.h"
-#include <string.h>
-#include "crc32c_adler/crc32c_adler.h"
+#include "dap_crc64.h"
 
 #define LOG_TAG "dap_global_db_pkt"
 
@@ -91,7 +91,7 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     return l_pkt;
 }
 
-dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uint32_t *a_checksum)
+dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uint64_t *a_checksum)
 {
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_obj);
     if (!l_pkt) {
@@ -99,8 +99,8 @@ dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uin
         return NULL;
     }
     // Exclude CRC field from sign
-    dap_sign_t *l_sign = dap_sign_create(a_key, (byte_t *)l_pkt + sizeof(uint32_t),
-                                         dap_global_db_pkt_get_size(l_pkt) - sizeof(uint32_t), 0);
+    dap_sign_t *l_sign = dap_sign_create(a_key, (uint8_t *)l_pkt + sizeof(uint64_t),
+                                         dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t), 0);
     if (!l_sign) {
         log_it(L_ERROR, "Can't sign serialized global DB object");
         DAP_DELETE(l_pkt);
@@ -116,9 +116,8 @@ dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uin
         }
         memcpy(l_pkt->data + l_pkt->data_len, l_sign, l_sign_len);
         l_pkt->data_len += l_sign_len;
-        *a_checksum = crc32c(CRC32C_INIT,
-                            (byte_t *)l_pkt + sizeof(uint32_t),
-                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint32_t));
+        *a_checksum = crc64((uint8_t *)l_pkt + sizeof(uint64_t),
+                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t));
     }
     DAP_DELETE(l_pkt);
     return l_sign;
@@ -136,11 +135,11 @@ bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj)
     size_t l_full_data_len = l_pkt->data_len;
     l_pkt->data_len = l_signed_data_size;
     dap_sign_t *l_sign = (dap_sign_t *)(l_pkt->data + l_signed_data_size);
-    if (dap_sign_verify(l_sign, (byte_t *)l_pkt + sizeof(uint32_t),
-                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint32_t)) == 0) {
+    if (dap_sign_verify(l_sign, (uint8_t *)l_pkt + sizeof(uint64_t),
+                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t)) == 0) {
         l_pkt->data_len = l_full_data_len;
-        uint32_t l_checksum = crc32c(CRC32C_INIT, (byte_t *)l_pkt + sizeof(uint32_t),
-                                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint32_t));
+        uint64_t l_checksum = crc64((uint8_t *)l_pkt + sizeof(uint64_t),
+                                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t));
         l_ret = l_checksum == l_pkt->crc;
     }
     DAP_DELETE(l_pkt);
