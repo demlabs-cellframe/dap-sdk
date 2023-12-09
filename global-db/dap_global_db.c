@@ -1734,7 +1734,7 @@ static void s_check_db_version_callback_get (dap_global_db_instance_t *a_dbi, in
                a_dbi->version, DAP_GLOBAL_DB_VERSION);
         dap_global_db_deinit();
         // Database path
-        const char *l_storage_path = a_global_db_context->instance->storage_path;
+        const char *l_storage_path = a_dbi->storage_path;
         // Delete database
         if(dap_file_test(l_storage_path) || dap_dir_test(l_storage_path)) {
             // Backup filename: backup_global_db_ver.X_DATE_TIME.zip
