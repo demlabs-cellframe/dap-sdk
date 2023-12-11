@@ -1,5 +1,5 @@
-project(dap_json_rpc_crypto C)
 cmake_minimum_required(VERSION 3.10)
+project(dap_json_rpc_crypto C)
 
 file(GLOB JSON_RPC_CRYPTO_HEADERS include/*.h)
 file(GLOB JSON_RPC_CRYPTO_SRCS src/*.c)
