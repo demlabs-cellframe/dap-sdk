@@ -23,40 +23,13 @@
  along with any Cellframe SDK based project.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <sys/stat.h>
 #include <stdio.h>
 #include <string.h>
 #include <errno.h>
 #include <assert.h>
-//#include <glib.h>
 #include <unistd.h>
-
-#ifndef _WIN32
-#include <poll.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <arpa/inet.h>
-//#include <unistd.h> // for close
-#include <fcntl.h>
-//#include <sys/poll.h>
-//#include <sys/select.h>
-#include <netinet/in.h>
-#include <sys/un.h>
-#include <sys/stat.h>
-//#define closesocket close
-//typedef int SOCKET;
-//#define SOCKET_ERROR    -1  // for win32 =  (-1)
-//#define INVALID_SOCKET  -1  // for win32 =  (SOCKET)(~0)
-// for Windows
-#else
-#include <winsock2.h>
-#include <windows.h>
-#include <mswsock.h>
-#include <ws2tcpip.h>
-#include <io.h>
-#endif
-
 #include <pthread.h>
-
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
@@ -67,6 +40,7 @@
 #include "dap_json_rpc_errors.h"
 #include "dap_json_rpc_request.h"
 #include "dap_json_rpc_response.h"
+#include "dap_proc_thread.h"
 
 #define LOG_TAG "dap_cli_server"
 
@@ -83,8 +57,6 @@ static bool s_debug_cli = false;
 static dap_cli_cmd_t * s_commands = NULL;
 static dap_cli_cmd_aliases_t * s_command_alias = NULL;
 
-
-static void* s_thread_one_client_func(void *args);
 static void* s_thread_main_func(void *args);
 static inline void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex);
 
@@ -745,7 +717,7 @@ int json_commands(const char * a_name) {
 /**
  * threading function for processing a request from a client
  */
-static void* s_thread_one_client_func(void *args)
+static bool s_thread_one_client_func(dap_proc_thread_t UNUSED_ARG *a_thread, void *arg)
 {
 SOCKET  newsockfd = (SOCKET) (intptr_t) args;
 int     str_len, timeout = 5000, argc = 0, is_data, data_len = 0;
@@ -904,7 +876,7 @@ char    *str_header;
     if (s_debug_cli)
         log_it(L_DEBUG, "close connection=%d sockfd=%"DAP_FORMAT_SOCKET, cs, newsockfd);
 
-    return NULL;
+    return true;
 }
 
 
@@ -923,7 +895,6 @@ static void* s_thread_main_func(void *args)
     // wait of clients
     while(1)
     {
-        pthread_t threadId;
         struct sockaddr_in peer;
         socklen_t size = sizeof(peer);
         // received a new connection request
@@ -931,10 +902,8 @@ static void* s_thread_main_func(void *args)
             log_it(L_ERROR, "new connection break newsockfd=%"DAP_FORMAT_SOCKET, newsockfd);
             break;
         }
-        // create child thread for a client connection
-        pthread_create(&threadId, NULL, s_thread_one_client_func, (void*) (intptr_t) newsockfd);
-        // in order to thread not remain in state "dead" after completion
-        pthread_detach(threadId);
+        // Serve client connection on automatically chosen processing thread
+        dap_proc_queue_add_callback(dap_events_worker_get_auto(), s_thread_one_client_func, DAP_INT_TO_POINTER(newsockfd));
     };
     // close connection
     int cs = closesocket(sockfd);
