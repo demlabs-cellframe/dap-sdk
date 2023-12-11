@@ -3213,7 +3213,7 @@ MDBX_INTERNAL_FUNC void mdbx_rthc_thread_dtor(void *ptr);
  * This value was chosen somewhat arbitrarily. The 61 is a prime number,
  * and such readers plus a couple mutexes fit into single 4KB page.
  * Applications should set the table size using mdbx_env_set_maxreaders(). */
-#define DEFAULT_READERS 61
+#define DEFAULT_READERS 61*4
 
 /* Test if a page is a leaf page */
 #define IS_LEAF(p) (((p)->mp_flags & P_LEAF) != 0)
@@ -10902,6 +10902,10 @@ static bind_rslot_result bind_rslot(MDBX_env *env, const uintptr_t tid) {
       mdbx_rdt_unlock(env);
       result.err =
           (result.err == MDBX_SUCCESS) ? MDBX_READERS_FULL : result.err;
+
+      if (result.err == MDBX_READERS_FULL)
+        mdbx_error("READER LIMIT REACHED (%d)", env->me_maxreaders);
+    
       return result;
     }
   }
