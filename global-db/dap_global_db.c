@@ -260,22 +260,12 @@ static void s_global_db_obj_data_callback_wait(struct sync_obj_data_callback* a_
  * @param a_driver
  * @return
  */
-int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
+int dap_global_db_init()
 {
     int l_rc = 0;
     static bool s_is_check_version = false;
 
     dap_global_db_sync_init();
-
-    if (a_storage_path == NULL) {
-        log_it(L_CRITICAL, "Can't initialize GlobalDB without storage path");
-        return -1;
-    }
-
-    if ( a_driver_name == NULL) {
-        log_it(L_CRITICAL, "Can't initialize GlobalDB without driver name");
-        return -2;
-    }
 
     // Debug config
     g_dap_global_db_debug_more = dap_config_get_item_bool_default(g_config, "global_db", "debug_more", false);
@@ -304,8 +294,15 @@ int dap_global_db_init(const char * a_storage_path, const char * a_driver_name)
             goto lb_return;
         }
 
-        l_dbi->storage_path = dap_strdup(a_storage_path);
-        l_dbi->driver_name = dap_strdup(a_driver_name);
+        const char *l_gdb_path_cfg = dap_config_get_item_str(g_config, "global_db", "path");
+        l_dbi->storage_path = l_gdb_path_cfg ? dap_strdup(l_gdb_path_cfg) : dap_strdup_printf("%s/var/lib/global_db", g_sys_dir_path);
+        const char *l_driver_name = dap_config_get_item_str(g_config, "global_db", "driver");
+        l_dbi->driver_name = dap_strdup(l_driver_name ? l_driver_name :
+#ifdef DAP_OS_DARWIN
+                                                                        "sqlite3");
+#else
+                                                                        "mdbx");
+#endif
 
         uint16_t l_size_ban_list = 0, l_size_white_list = 0;
         char **l_ban_list = dap_config_get_array_str(g_config, "global_db", "ban_list_sync_groups", &l_size_ban_list);
@@ -2411,7 +2408,7 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
                a_global_db_context->instance->version, DAP_GLOBAL_DB_VERSION);
         dap_global_db_deinit();
         // Database path
-        const char *l_storage_path = dap_config_get_item_str(g_config, "resources", "dap_global_db_path");
+        const char *l_storage_path = a_global_db_context->instance->storage_path;
         // Delete database
         if(dap_file_test(l_storage_path) || dap_dir_test(l_storage_path)) {
             // Backup filename: backup_global_db_ver.X_DATE_TIME.zip
@@ -2431,8 +2428,10 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
             // Create backup as TAR file
             if(dap_tar_directory(l_storage_path, l_output_file_path)) {
 #endif
+                char *l_rm_path = dap_strdup_printf("%s/*", l_storage_path);
                 // Delete database file or directory
-                dap_rm_rf(l_storage_path);
+                dap_rm_rf(l_rm_path);
+                DAP_DELETE(l_rm_path);
             }
             else {
                 log_it(L_ERROR, "Can't backup GlobalDB version %d", a_global_db_context->instance->version);
@@ -2443,7 +2442,7 @@ static void s_check_db_version_callback_get (dap_global_db_context_t * a_global_
             DAP_DELETE(l_output_file_path);
         }
         // Reinitialize database
-        res = dap_global_db_init(NULL, NULL);
+        res = dap_global_db_init();
         // Save current db version
         if(!res) {
             a_global_db_context->instance->version = DAP_GLOBAL_DB_VERSION;
