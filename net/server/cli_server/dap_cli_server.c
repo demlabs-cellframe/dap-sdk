@@ -719,7 +719,7 @@ int json_commands(const char * a_name) {
  */
 static bool s_thread_one_client_func(dap_proc_thread_t UNUSED_ARG *a_thread, void *arg)
 {
-SOCKET  newsockfd = (SOCKET) (intptr_t) args;
+SOCKET  newsockfd = (SOCKET) (intptr_t) arg;
 int     str_len, timeout = 5000, argc = 0, is_data, data_len = 0;
 char    *str_header;
 
