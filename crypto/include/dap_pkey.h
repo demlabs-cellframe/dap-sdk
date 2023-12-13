@@ -160,7 +160,7 @@ typedef struct dap_pkey {
     uint8_t pkey[];             // Raw pkey data
 } DAP_ALIGN_PACKED dap_pkey_t;
 
-DAP_STATIC_INLINE dap_pkey_get_size(dap_pkey_t *a_pkey) { return sizeof(dap_pkey_t) + a_pkey->header.size; }
+DAP_STATIC_INLINE size_t dap_pkey_get_size(dap_pkey_t *a_pkey) { return sizeof(dap_pkey_t) + a_pkey->header.size; }
 
 dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key);
 
