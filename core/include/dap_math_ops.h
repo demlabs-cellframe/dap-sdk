@@ -981,10 +981,14 @@ static inline int fls256(uint256_t n) {
     }
     return 127 - nlz128(n.lo);
 }
-
+#define LOG_TAG "dap_math_ops"
 static inline void divmod_impl_256(uint256_t a_dividend, uint256_t a_divisor, uint256_t *a_quotient, uint256_t *a_remainder)
 {
     assert( compare256(a_divisor, uint256_0) ); // a_divisor != 0
+    if (!compare256(a_divisor, uint256_0)) {
+        log_it(L_ERROR, "An error occurred when trying to divide by 0.");
+        exit(134);
+    }
     if ( compare256(a_divisor, a_dividend) == 1 ) { // a_divisor > a_dividend
         *a_quotient = uint256_0;
         *a_remainder = a_dividend;
@@ -1014,6 +1018,7 @@ static inline void divmod_impl_256(uint256_t a_dividend, uint256_t a_divisor, ui
     *a_quotient = l_quotient;
     *a_remainder = a_dividend;
 }
+#undef LOG_TAG
 
 
 static inline void DIV_128(uint128_t a_128_bit, uint128_t b_128_bit, uint128_t* c_128_bit){
