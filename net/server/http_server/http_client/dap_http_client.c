@@ -547,7 +547,6 @@ void dap_http_client_write( dap_events_socket_t * a_esocket, void *a_arg )
 
     switch( l_http_client->state_write ) {
         case DAP_HTTP_CLIENT_STATE_NONE:
-        log_it(L_INFO, "[---]");
         default:
             return;
 

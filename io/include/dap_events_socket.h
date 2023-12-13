@@ -89,6 +89,11 @@ typedef struct work_item {
     void *data;
 } work_item_t;
 
+typedef struct dap_overlapped {
+    OVERLAPPED ol;
+    char buf[];
+} dap_overlapped_t;
+
 #endif
 
 #ifdef DAP_EVENTS_CAPS_IOCP
@@ -247,7 +252,8 @@ typedef struct dap_events_socket {
 
 #ifdef DAP_EVENTS_CAPS_IOCP
     byte_t *buf_in, *buf_out;
-    DWORD buf_in_size, buf_in_size_max, buf_out_size, buf_out_size_max;
+    DWORD   buf_in_size, buf_in_size_max,
+            buf_out_size, buf_out_size_max;
 #else
     // Input section
     byte_t  *buf_in;

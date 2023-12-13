@@ -1050,7 +1050,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
     l_work_item->data = a_arg;
     debug_if(g_debug_reactor, L_DEBUG, "Enqueue %p into %p", a_arg, a_es);
     if (!InterlockedPushEntrySList((PSLIST_HEADER)a_es->_pvt, &(l_work_item->entry))) {
-        if (!PostQueuedCompletionStatus(a_es->context->iocp, 0, (ULONG_PTR)a_es, NULL)) {
+        if (!PostQueuedCompletionStatus(a_es->context->iocp, 0, a_es->uuid, NULL)) {
             l_ret = GetLastError();
             log_it(L_ERROR, "Enqueuing into es %p failed, errno %d", a_es, l_ret);
         }
@@ -1211,7 +1211,7 @@ int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value
         else
             return 1;
 #elif defined (DAP_EVENTS_CAPS_IOCP)
-    return PostQueuedCompletionStatus(a_es->context->iocp, 0, (ULONG_PTR)a_es, NULL)
+    return PostQueuedCompletionStatus(a_es->context->iocp, 0, a_es->uuid, NULL)
             ? GetLastError() : NO_ERROR;
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     struct kevent l_event={0};
@@ -1333,7 +1333,7 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
     int l_res = -2;
     DWORD flags = 0, bytes = 0;
     const char *l_func = "Read";
-    LPOVERLAPPED l_ol = NULL;
+    dap_overlapped_t *l_ol = NULL;
     if (a_esocket->op_events[io_op_read])
         ResetEvent(a_esocket->op_events[io_op_read]);
 
@@ -1344,9 +1344,9 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
             log_it(L_ERROR, "! Not initialized read event for es %p \"%s\"", a_esocket, dap_events_socket_get_type_str(a_esocket));
             a_esocket->op_events[io_op_read] = CreateEvent(0, TRUE, FALSE, NULL);
         }
-        l_ol            = DAP_NEW_Z(OVERLAPPED);
-        l_ol->hEvent    = a_esocket->op_events[io_op_read];
-        l_res           = WSARecv(a_esocket->socket, &wsabuf, 1, &bytes, &flags, l_ol, NULL);
+        l_ol            = DAP_NEW_Z(dap_overlapped_t);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_read];
+        l_res           = WSARecv(a_esocket->socket, &wsabuf, 1, &bytes, &flags, (OVERLAPPED*)l_ol, NULL);
         l_func          = "WSARecv";
         break;
 
@@ -1356,10 +1356,10 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
             a_esocket->op_events[io_op_read] = CreateEvent(0, TRUE, FALSE, NULL);
         }
         INT l_len       = sizeof(a_esocket->remote_addr);
-        l_ol            = DAP_NEW_Z(OVERLAPPED);
-        l_ol->hEvent    = a_esocket->op_events[io_op_read];
+        l_ol            = DAP_NEW_Z(dap_overlapped_t);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_read];
         l_res           = WSARecvFrom(a_esocket->socket, &wsabuf, 1, &bytes, &flags,
-                                      (LPSOCKADDR)&a_esocket->remote_addr, &l_len, l_ol, NULL);
+                                      (LPSOCKADDR)&a_esocket->remote_addr, &l_len, (OVERLAPPED*)l_ol, NULL);
         l_func          = "WSARecvFrom";
     } break;
 
@@ -1370,19 +1370,19 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
             log_it(L_ERROR, "Failed to create socket for accept()'ing, errno %d", WSAGetLastError());
             return;
         }
-        l_ol        = DAP_NEW_Z(OVERLAPPED);
-        l_ol->hEvent= a_esocket->op_events[io_op_read];
+        l_ol        = DAP_NEW_Z(dap_overlapped_t);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_read];
         l_res       = pfn_AcceptEx(a_esocket->socket, a_esocket->socket2, (LPVOID)(a_esocket->buf_in),
-                                   0, l_len, l_len, &bytes, l_ol) ? 0 : SOCKET_ERROR;
+                                   0, l_len, l_len, &bytes, (OVERLAPPED*)l_ol) ? 0 : SOCKET_ERROR;
         l_func      = "AcceptEx";
     } break;
 
     case DESCRIPTOR_TYPE_FILE:
     case DESCRIPTOR_TYPE_PIPE:
-        l_ol            = DAP_NEW_Z(OVERLAPPED);
-        l_ol->hEvent    = a_esocket->op_events[io_op_read];
+        l_ol            = DAP_NEW_Z(dap_overlapped_t);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_read];
         l_res           = ReadFile(a_esocket->h, a_esocket->buf_in, a_esocket->buf_in_size_max,
-                                   &bytes, l_ol) ? 0 : SOCKET_ERROR;
+                                   &bytes, (OVERLAPPED*)l_ol) ? 0 : SOCKET_ERROR;
         l_func          = "ReadFile";
         break;
 
@@ -1473,65 +1473,70 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
         return;
     }
     a_esocket->flags |= DAP_SOCK_READY_TO_WRITE;
-    WSABUF wsabuf = {
-        .buf = a_esocket->buf_out,
-        .len = a_esocket->buf_out_size
-    };
     int l_res = -2;
     DWORD flags = 0, bytes = 0;
     const char *l_func = "Trigger writing";
-    LPOVERLAPPED l_ol = NULL;
+    dap_overlapped_t *l_ol = NULL;
     if (a_esocket->op_events[io_op_write])
         ResetEvent(a_esocket->op_events[io_op_write]);
 
     switch (a_esocket->type) {
     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-        l_ol            = DAP_NEW_Z(OVERLAPPED);
-        l_ol->hEvent    = a_esocket->op_events[io_op_write];
+        l_ol            = DAP_NEW_Z_SIZE(dap_overlapped_t, sizeof(OVERLAPPED) + a_esocket->buf_out_size);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_write];
         if (a_esocket->flags & DAP_SOCK_CONNECTING) {
             SOCKADDR_IN l_addr_any = {
                 .sin_family = AF_INET, .sin_port = 0,
-                .sin_addr = {{ .S_addr = INADDR_ANY }}
+                .sin_addr   = {{ .S_addr = INADDR_ANY }}
             };
             if ( bind(a_esocket->socket, (PSOCKADDR)&l_addr_any, sizeof(l_addr_any)) == SOCKET_ERROR ) {
                 log_it(L_ERROR, "Failed to create socket for accept()'ing, errno %d", WSAGetLastError());
                 return;
             }
             l_res   = pfn_ConnectEx(a_esocket->socket, (PSOCKADDR)&a_esocket->remote_addr, sizeof(SOCKADDR),
-                                    NULL, 0, NULL, l_ol) ? 0 : SOCKET_ERROR;
+                                    NULL, 0, NULL, (OVERLAPPED*)l_ol) ? 0 : SOCKET_ERROR;
             l_func  = "ConnectEx";
         } else {
             if (a_esocket->buf_out_size) {
-                l_res           = WSASend(a_esocket->socket, &wsabuf, 1, &bytes, flags, l_ol, NULL);
-                l_func          = "WSASend";
+                memcpy(l_ol->buf, a_esocket->buf_out, a_esocket->buf_out_size);
+                l_res   = WSASend(a_esocket->socket,
+                                  &(WSABUF) { .len = a_esocket->buf_out_size,
+                                              .buf = l_ol->buf
+                                  }, 1, &bytes, flags, (OVERLAPPED*)l_ol, NULL);
+                a_esocket->buf_out_size = 0;
+                l_func  = "WSASend";
             } else {
-                l_res           = PostQueuedCompletionStatus(a_esocket->context->iocp, 0, (ULONG_PTR)a_esocket, l_ol) ? 0 : 1;
+                l_res   = PostQueuedCompletionStatus(a_esocket->context->iocp, 0, a_esocket->uuid, (OVERLAPPED*)l_ol) ? 0 : 1;
             }
         }
         break;
     case DESCRIPTOR_TYPE_SOCKET_UDP: {
-        l_ol            = DAP_NEW_Z(OVERLAPPED);
-        l_ol->hEvent    = a_esocket->op_events[io_op_write];
+        l_ol            = DAP_NEW_Z_SIZE(dap_overlapped_t, sizeof(OVERLAPPED) + a_esocket->buf_out_size);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_write];
         if (a_esocket->buf_out_size) {
-            INT l_len = sizeof(a_esocket->remote_addr);
-            l_res           = WSASendTo(a_esocket->socket, &wsabuf, 1, &bytes,
-                                        flags, (LPSOCKADDR)&a_esocket->remote_addr, l_len, l_ol, NULL);
-            l_func          = "WSASendTo";
+            INT l_len   = sizeof(a_esocket->remote_addr);
+            memcpy(l_ol->buf, a_esocket->buf_out, a_esocket->buf_out_size);
+            l_res       = WSASendTo(a_esocket->socket,
+                                    &(WSABUF) { .len = a_esocket->buf_out_size,
+                                                .buf = l_ol->buf
+                                    }, 1, &bytes, flags, (LPSOCKADDR)&a_esocket->remote_addr, l_len, (OVERLAPPED*)l_ol, NULL);
+            a_esocket->buf_out_size = 0;
+            l_func      = "WSASendTo";
         } else
-            l_res           = PostQueuedCompletionStatus(a_esocket->context->iocp, 0, (ULONG_PTR)a_esocket, l_ol) ? 0 : 1;
+            l_res       = PostQueuedCompletionStatus(a_esocket->context->iocp, 0, a_esocket->uuid, (OVERLAPPED*)l_ol) ? 0 : 1;
 
     } break;
 
     case DESCRIPTOR_TYPE_FILE:
     case DESCRIPTOR_TYPE_PIPE:
-        l_ol            = DAP_NEW_Z(OVERLAPPED);
-        l_ol->hEvent    = a_esocket->op_events[io_op_write];
+        l_ol            = DAP_NEW_Z(dap_overlapped_t);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_write];
         if (a_esocket->buf_out_size) {
-            l_res           = WriteFile(a_esocket->h, a_esocket->buf_out, a_esocket->buf_out_size, NULL, l_ol) ? 0 : SOCKET_ERROR;
-            l_func          = "WriteFile";
+            l_res       = WriteFile(a_esocket->h, a_esocket->buf_out, a_esocket->buf_out_size, NULL, (OVERLAPPED*)l_ol) ? 0 : SOCKET_ERROR;
+            l_func      = "WriteFile";
         } else
-            l_res           = PostQueuedCompletionStatus(a_esocket->context->iocp, 0, (ULONG_PTR)a_esocket, l_ol) ? 0 : 1;
+            l_res       = PostQueuedCompletionStatus(a_esocket->context->iocp, 0, a_esocket->uuid, (OVERLAPPED*)l_ol) ? 0 : 1;
         break;
 
     case DESCRIPTOR_TYPE_QUEUE:
@@ -1558,8 +1563,9 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
         }
 
         bytes   = a_esocket->buf_out_size;
+        a_esocket->buf_out_size = 0;
         l_func  = "Enqueue";
-        l_res   = !l_res ? PostQueuedCompletionStatus(a_esocket->context->iocp, 0, (ULONG_PTR)a_esocket, NULL) ? 0 : 1 : 0;
+        l_res   = !l_res ? PostQueuedCompletionStatus(a_esocket->context->iocp, 0, a_esocket->uuid, NULL) ? 0 : 1 : 0;
         break;
 
     default:
@@ -1576,16 +1582,16 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
             debug_if(g_debug_reactor, L_DEBUG, "Pending \"%s\" on es %p", l_func, a_esocket);
             break;
         default:
+            if (l_ol) {
+                DAP_DELETE(l_ol);
+            }
             log_it(L_ERROR, "\"%s\" failed with error %d", l_func, l_err);
         } break;
     case 0:
-        a_esocket->buf_out_size -= bytes;
         debug_if(g_debug_reactor, L_DEBUG, "\"%s\" to %p : %zu \"%s\" completed immediately, sent %lu bytes", l_func,
                a_esocket, a_esocket->socket, dap_events_socket_get_type_str(a_esocket), bytes);
-        debug_if(g_debug_reactor && a_esocket->buf_out_size, L_DEBUG,
-                 "Unsent %lu bytes", a_esocket->buf_out_size);
-        if (l_ol && l_ol->hEvent)
-            ResetEvent(l_ol->hEvent);
+        if (l_ol && l_ol->ol.hEvent)
+            ResetEvent(l_ol->ol.hEvent);
         break;
     default:
         log_it(L_ERROR, "Operation \"%s\" with %p failed with error %lu",
@@ -1690,10 +1696,10 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
 {
 #ifdef DAP_EVENTS_CAPS_IOCP
     if (!a_es->op_events[io_op_close]) {
-        LPOVERLAPPED l_ol = DAP_NEW_Z(OVERLAPPED);
-        l_ol->hEvent = CreateEvent(0, TRUE, FALSE, NULL);
-        a_es->op_events[io_op_close] = l_ol->hEvent;
-        if (!PostQueuedCompletionStatus(a_es->context->iocp, preserve_inheritor, (ULONG_PTR)a_es, l_ol))
+        dap_overlapped_t *l_ol = DAP_NEW_Z(dap_overlapped_t);
+        l_ol->ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL);
+        a_es->op_events[io_op_close] = l_ol->ol.hEvent;
+        if (!PostQueuedCompletionStatus(a_es->context->iocp, preserve_inheritor, a_es->uuid, (OVERLAPPED*)l_ol))
             log_it(L_ERROR, "Queue deleting on es %p failed, errno %lu", a_es, GetLastError());
         else
             debug_if(g_debug_reactor, L_DEBUG, "Queue deleting on es %p \"%s\"", a_es, dap_events_socket_get_type_str(a_es));
@@ -2065,8 +2071,8 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     }
     memcpy(a_es->buf_out + a_es->buf_out_size, a_data, a_data_size);
     a_es->buf_out_size += a_data_size;
-    debug_if(g_debug_reactor, L_DEBUG, "Write %lu bytes to \"%s\" %p",
-           a_es->buf_out_size, dap_events_socket_get_type_str(a_es), a_es);
+    debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" %p, total size: %lu",
+           a_data_size, dap_events_socket_get_type_str(a_es), a_es, a_es->buf_out_size);
     dap_events_socket_set_writable_unsafe(a_es, true);
     return a_data_size;
 }
@@ -2137,7 +2143,6 @@ size_t dap_events_socket_pop_from_buf_in(dap_events_socket_t *a_es, void *a_data
  */
 void dap_events_socket_shrink_buf_in(dap_events_socket_t * a_es, size_t shrink_size)
 {
-    log_it(L_MSG, "[---] shrinkin es %p buf_in: %lu -> %zu", a_es, a_es->buf_in_size, a_es->buf_in_size - shrink_size);
     if ( (!shrink_size) || (!a_es->buf_in_size) )
         return;                                                             /* Nothing to do - OK */
 

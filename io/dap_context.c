@@ -441,16 +441,16 @@ static int s_thread_loop(dap_context_t * a_context)
                 continue;
             }
         }
-        LPOVERLAPPED l_ol;
+        dap_overlapped_t *l_ol;
         HANDLE l_ev;
         char l_op = '\0';
         debug_if(g_debug_reactor, L_INFO, "Completed %lu items in context #%d", l_entires_num, a_context->id);
         for (ULONG i = 0; i < l_entires_num; ++i) {
             // DWORD flags;
             l_bytes = l_ols[i].dwNumberOfBytesTransferred;
-            l_ol    = l_ols[i].lpOverlapped;
-            l_ev    = l_ol ? l_ol->hEvent : NULL;
-            l_cur   = (dap_events_socket_t*)l_ols[i].lpCompletionKey;
+            l_ol    = (dap_overlapped_t*)l_ols[i].lpOverlapped;
+            l_ev    = l_ol ? l_ol->ol.hEvent : NULL;
+            l_cur   = dap_context_find(a_context, l_ols[i].lpCompletionKey);
             if (!l_cur || !l_cur->context) {
                 log_it(L_ATT, "An already unattached es, skip it");
                 continue;
@@ -610,10 +610,13 @@ static int s_thread_loop(dap_context_t * a_context)
                             break;
                         } else {
                             if (seconds == 0xFFFFFFFF) {
-                                log_it(L_ERROR, "Connection to %s:%u failed",
-                                       l_cur->remote_addr_str, ntohs(l_cur->remote_addr.sin_port));
+                                int l_err = 0;
+                                tmp = 0;
+                                getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (char*)&l_err, (PINT)&tmp);
+                                log_it(L_ERROR, "Connection to %s:%u failed, error %d",
+                                       l_cur->remote_addr_str, ntohs(l_cur->remote_addr.sin_port), l_err);
                                 if ( l_cur->callbacks.error_callback )
-                                    l_cur->callbacks.error_callback(l_cur, WSAGetLastError());
+                                    l_cur->callbacks.error_callback(l_cur, l_err);
                                 l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
                                 SetEvent(l_cur->op_events[io_op_close]);
                                 break;
@@ -634,6 +637,8 @@ static int s_thread_loop(dap_context_t * a_context)
                                     l_cur->flags &= ~DAP_SOCK_CONNECTING;
                                     if (l_cur->callbacks.connected_callback)
                                         l_cur->callbacks.connected_callback(l_cur);
+                                    if (!(l_cur->flags & DAP_SOCK_READY_TO_READ))
+                                        dap_events_socket_set_readable_unsafe(l_cur, true);
                                 }
                             }
                         }
@@ -650,9 +655,9 @@ static int s_thread_loop(dap_context_t * a_context)
                                 l_cur->no_close = false;
                                 l_cur->flags = DAP_SOCK_SIGNAL_CLOSE;
                                 break;
-                            } else {
-                                l_cur->buf_out_size -= l_bytes;
-                            }
+                            } //else {
+                                //l_cur->buf_out_size -= l_bytes;
+                            //}
                         }
                     }
                     if (l_cur->callbacks.write_callback)
@@ -667,16 +672,16 @@ static int s_thread_loop(dap_context_t * a_context)
                 }
                 break;
             case DESCRIPTOR_TYPE_QUEUE:
-                if (l_op == 'r') {
+                //if (l_op == 'r') {
                     dap_events_socket_queue_proc_input_unsafe(l_cur);
                     l_cur->flags &= ~DAP_SOCK_READY_TO_WRITE;
-                }
+                //}
                 break;
 
             case DESCRIPTOR_TYPE_EVENT:
-                if (l_op == 'r') {
+                //if (l_op == 'r') {
                     dap_events_socket_event_proc_input_unsafe(l_cur);
-                }
+                //}
                 break;
 
             case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL:
@@ -725,7 +730,9 @@ static int s_thread_loop(dap_context_t * a_context)
             if (l_cur->flags & DAP_SOCK_SIGNAL_CLOSE) {
                 dap_events_socket_remove_and_delete_unsafe(l_cur, false);
             }
-            DAP_DEL_Z(l_ol);
+            if (l_ol) {
+                DAP_DELETE(l_ol);
+            }
         }
     } while (!a_context->signal_exit);
     log_it(L_ATT,"Context %u finished", a_context->id);
@@ -1609,10 +1616,10 @@ int dap_context_add(dap_context_t *a_context, dap_events_socket_t *a_es)
         HASH_ADD_BYHASHVALUE(hh, a_context->esockets, uuid, sizeof(a_es->uuid), l_hash_val, a_es);
         ++a_context->event_sockets_count;
         if (a_es->socket != INVALID_SOCKET) {
-            if (!(a_context->iocp = CreateIoCompletionPort((HANDLE)a_es->socket, a_context->iocp, (ULONG_PTR)a_es, 0))) {
-                    DWORD l_err = GetLastError();
-                    log_it(L_ERROR, "IOCP update failed, errno %lu %llu", l_err, a_es->socket );
-                    return l_err;
+            if (!(a_context->iocp = CreateIoCompletionPort((HANDLE)a_es->socket, a_context->iocp, a_es->uuid, 0))) {
+                DWORD l_err = GetLastError();
+                log_it(L_ERROR, "IOCP update failed, errno %lu %llu", l_err, a_es->socket );
+                return l_err;
             } else {
                 log_it(L_INFO, "[!] Socket %p of type %s added to context #%d IOCP", a_es, dap_events_socket_get_type_str(a_es), a_context->id);
             }

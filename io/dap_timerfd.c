@@ -87,7 +87,7 @@ void __stdcall TimerRoutine(void* arg, UNUSED_ARG BOOLEAN flag) {
      */
     dap_timerfd_t *l_timerfd = (dap_timerfd_t*)arg;
     dap_events_socket_t *l_es = l_timerfd->events_socket;
-    if (!PostQueuedCompletionStatus(l_es->context->iocp, 0, (ULONG_PTR)l_es, NULL)) {
+    if (!PostQueuedCompletionStatus(l_es->context->iocp, 0, l_es->uuid, NULL)) {
         log_it(L_ERROR, "Sending completion message failed, errno %lu", GetLastError());
     }
 }
