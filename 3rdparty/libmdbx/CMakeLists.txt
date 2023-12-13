@@ -60,6 +60,7 @@ else()
 endif()
 
 option(MDBX_BUILD_CXX "Build C++ portion" OFF)
+option(MDBX_FORCE_DISABLE_CXX "Disable C++ building" ON)
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND
     EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/CMakeLists.txt" AND
