@@ -149,7 +149,7 @@ typedef void (*dap_global_db_callback_results_raw_t) (dap_global_db_context_t * 
 
 extern int g_dap_global_db_debug_more;
 
-int dap_global_db_init(const char * a_path, const char * a_driver);
+int dap_global_db_init();
 void dap_global_db_deinit();
 void dap_global_db_context_deinit();
 
@@ -201,6 +201,8 @@ int dap_global_db_pin_sync(const char * a_group, const char *a_key);
 int dap_global_db_unpin_sync(const char * a_group, const char *a_key);
 int dap_global_db_del_sync(const char * a_group, const char *a_key);
 int dap_global_db_flush_sync();
+
+int dap_global_db_compare_by_ts(const void *a_obj1, const void *a_obj2);
 
 // ==== Unsafe functions (for own context call only) ===
 dap_global_db_context_t * dap_global_db_context_current();
