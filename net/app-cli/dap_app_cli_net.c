@@ -228,12 +228,12 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
             }
         }
     }
-    json_object* cmd = json_object_new_object();
-    int ret = json_object_object_add(cmd, "command", json_object_new_string(l_cmd_data->str));
-    if (ret != 0) {
-        printf("JSON creating error");
-        return -1;
-    }
+    // json_object* cmd = json_object_new_object();
+    // int ret = json_object_object_add(cmd, "command", json_object_new_string(l_cmd_data->str));
+    // if (ret != 0) {
+    //     printf("JSON creating error");
+    //     return -1;
+    // }
     dap_json_rpc_params_t * params = dap_json_rpc_params_create();
     dap_json_rpc_params_add_data(params, l_cmd_data->str, TYPE_PARAM_STRING);
     uint64_t l_id_response = dap_json_rpc_response_get_new_id();
@@ -273,7 +273,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
         }
         dap_json_rpc_response_free(response);
     }
-    // DAP_DELETE(a_cmd->cmd_res);
+    DAP_DELETE(a_cmd->cmd_res);
     dap_json_rpc_request_free(a_request);
     dap_string_free(l_cmd_data, true);
     dap_string_free(l_post_data, true);

@@ -750,7 +750,7 @@ char    *str_header;
         DAP_FREE(str_header);
 
         // Receiving request data
-        char * str_json_command = DAP_NEW_SIZE(char, data_len);
+        char * str_json_command = DAP_NEW_Z_SIZE(char, data_len + 1);
         int recv_res = recv(newsockfd, str_json_command, data_len, 0);
         if (recv_res != data_len) {
             printf("The received data size: %d differs from the readed data size ->%d, errno: %d\n", data_len, recv_res, errno);
