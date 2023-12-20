@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include "assert.h"
+#include "signal.h"
 
 #ifndef __STDC_FORMAT_MACROS
 #define __STDC_FORMAT_MACROS
@@ -834,6 +835,10 @@ static inline int fls256(uint256_t n) {
 static inline void divmod_impl_256(uint256_t a_dividend, uint256_t a_divisor, uint256_t *a_quotient, uint256_t *a_remainder)
 {
     assert( compare256(a_divisor, uint256_0) ); // a_divisor != 0
+    if (!compare256(a_divisor, uint256_0)) {
+        _log_it(NULL, 0, "dap_math_ops", L_ERROR, "An error occurred when trying to divide by 0.");
+        raise(SIGFPE);
+    }
     if ( compare256(a_divisor, a_dividend) == 1 ) { // a_divisor > a_dividend
         *a_quotient = uint256_0;
         *a_remainder = a_dividend;
