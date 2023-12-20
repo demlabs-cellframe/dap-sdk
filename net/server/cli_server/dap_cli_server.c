@@ -1009,9 +1009,7 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
     HASH_FIND_STR(s_command_alias, a_alias, l_alias);
     if (!l_alias)
         return NULL;
-    size_t l_addition_size = dap_strlen(l_alias->addition);
-    *a_append = DAP_NEW_Z_SIZE(char, l_addition_size);
-    memcpy(*a_append, l_alias->addition, l_addition_size);
+    *a_append = dap_strdup(l_alias->addition);
     *a_ncmd = l_alias->standard_command->name;
     return l_alias->standard_command;
 }
