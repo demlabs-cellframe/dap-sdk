@@ -140,16 +140,25 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
         log_it(L_ERROR, "Can't convert data from unix fromat to structured one");
         return -2;
     }
-    int l_ret;
-#ifndef _WIN32
-    l_ret = strftime(a_out, a_out_size_max, "%a, %d %b %y %T %z", l_tmp);
-#else
-    l_ret = strftime(a_out, a_out_size_max, "%a, %d %b %y %H:%M:%S", l_tmp);
-#endif
+    int l_ret = strftime(a_out, a_out_size_max, "%a, %d %b %y %H:%M:%S %z", l_tmp);
     if (!l_ret) {
         log_it( L_ERROR, "Can't print formatted time in string");
         return -1;
     }
+#ifdef DAP_OS_WINDOWS
+    // %z is unsupported on Windows platform
+    TIME_ZONE_INFORMATION l_tz_info;
+    GetTimeZoneInformation(&l_tz_info);
+    char l_shift = strlen(l_ret);
+    int l_tz_diff = -(l_tz_info.Bias / 60);
+    int l_count = snprintf(l_ret + l_shift, a_out_size_max - l_shift, "%02d", l_tz_diff);
+    if (l_count > 0 && l_shift + l_count < a_out_size_max)
+        l_shift += l_count;
+    else
+        return l_ret;
+    int l_tz_minutes = l_tz_info.Bias % 60;
+    snprintf(l_ret + l_shift, a_out_size_max - l_shift, "%02d", l_tz_minutes);
+#endif
     return l_ret;
 }
 
@@ -166,10 +175,8 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
     if(!a_time_str) {
         return l_time;
     }
-    struct tm l_tm;
-    memset(&l_tm, 0, sizeof(struct tm));
-
-    strptime(a_time_str, "%a, %d %b %y %T %z", &l_tm);
+    struct tm l_tm = {};
+    strptime(a_time_str, "%a, %d %b %Y %T %z", &l_tm);
 
     time_t tmp = mktime(&l_tm);
     l_time = (tmp <= 0) ? 0 : tmp;
@@ -187,9 +194,7 @@ dap_time_t dap_time_from_str_simplified(const char *a_time_str)
     if(!a_time_str) {
         return l_time;
     }
-    struct tm l_tm;
-    memset(&l_tm, 0, sizeof(struct tm));
-
+    struct tm l_tm = {};
     strptime(a_time_str, "%y%m%d", &l_tm);
     l_tm.tm_sec++;
     time_t tmp = mktime(&l_tm);
