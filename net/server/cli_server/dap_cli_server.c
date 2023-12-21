@@ -783,17 +783,23 @@ char    *str_header;
                 else
                     log_it(L_DEBUG, "execute command=%s", str_cmd);
 
-                char **l_argv = NULL;
-                if (l_finded_by_alias) {
-                    char *l_tmp_argv = dap_strdup_printf("%s;%s;%s", l_ncmd, l_append_cmd, str_cmd);
-                    cmd_name = l_ncmd;
-                    l_argv = dap_strsplit(l_tmp_argv, ";", -1);
-                    DAP_DELETE(l_tmp_argv);
-                } else {
-                    l_argv = dap_strsplit(str_cmd, ";", -1);
-                }
+                char ** l_argv = dap_strsplit(str_cmd, ";", -1);
                 // Count argc
                 while (l_argv[argc] != NULL) argc++;
+                // Support alias
+                if (l_finded_by_alias) {
+                    int l_argc = argc + 1;
+                    char **al_argv = DAP_NEW_Z_COUNT(char*, l_argc + 1);
+                    al_argv[0] = l_ncmd;
+                    al_argv[1] = l_append_cmd;
+                    for (int i = 1; i < argc; i++)
+                        al_argv[i + 1] = l_argv[i];
+                    cmd_name = l_ncmd;
+                    DAP_FREE(l_argv[0]);
+                    DAP_DEL_Z(l_argv);
+                    l_argv = al_argv;
+                    argc = l_argc;
+                }
                 // Call the command function
                 if(l_cmd &&  l_argv && l_cmd->func) {
                     if (json_commands(cmd_name)) {
@@ -1057,9 +1063,7 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
     HASH_FIND_STR(s_command_alias, a_alias, l_alias);
     if (!l_alias)
         return NULL;
-    size_t l_addition_size = dap_strlen(l_alias->addition);
-    *a_append = DAP_NEW_Z_SIZE(char, l_addition_size);
-    memcpy(*a_append, l_alias->addition, l_addition_size);
+    *a_append = dap_strdup(l_alias->addition);
     *a_ncmd = l_alias->standard_command->name;
     return l_alias->standard_command;
 }

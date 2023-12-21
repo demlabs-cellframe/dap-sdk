@@ -38,7 +38,6 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
 {
     enum json_tokener_error jterr;
     bool err_parse_request = false;
-    // log_it(L_CRITICAL, "%s\n", a_data);
     json_object *jobj = json_tokener_parse_verbose(a_data, &jterr);
     json_object *jobj_id = NULL;
     json_object *jobj_method = NULL;
