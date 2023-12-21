@@ -8,13 +8,20 @@
 typedef struct dap_conf {
     char *path;
     struct dap_conf_item {
-        char *name, *val;
+        char type, *name;
+        union dap_conf_val {
+            bool        val_bool;
+            char        *val_str;
+            dap_list_t  *val_list;
+            int64_t     val_int;
+            uint64_t    val_uint;
+        } val;
         UT_hash_handle hh;
     } *items;
     UT_hash_handle hh;
 } dap_conf_t;
 
-extern dap_conf_t *g_conf;
+extern dap_conf_t *g_configs_table;
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,9 +29,10 @@ extern "C" {
 
 int dap_conf_init(const char*);
 dap_conf_t *dap_conf_load(const char*);
+
 void dap_conf_close(dap_conf_t*);
 
-const char * dap_config_path();
+const char * dap_conf_path();
 
 uint16_t dap_config_get_item_uint16(dap_conf_t * a_config, const char * a_section_path, const char * a_item_name);
 uint16_t dap_config_get_item_uint16_default(dap_conf_t * a_config, const char * a_section_path, const char * a_item_name, uint16_t a_default);
