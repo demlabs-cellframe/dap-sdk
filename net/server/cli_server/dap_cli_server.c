@@ -1064,6 +1064,6 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
     if (!l_alias)
         return NULL;
     *a_append = dap_strdup(l_alias->addition);
-    *a_ncmd = l_alias->standard_command->name;
+    *a_ncmd = dap_strdup(l_alias->standard_command->name);
     return l_alias->standard_command;
 }
