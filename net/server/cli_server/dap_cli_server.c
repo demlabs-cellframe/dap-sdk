@@ -224,13 +224,14 @@ static void *thread_pipe_client_func( void *args )
                 char *str_reply = NULL;
 
                 if ( l_cmd ) {
-
+                    bool l_pass_in_cmd = false;
                     while( list ) {
+                                                l_pass_in_cmd |= !strcmp((char *)list->data, "-password") || !strcmp((char *)list->data, "password");
                         str_cmd = dap_strdup_printf( "%s;%s", str_cmd, list->data );
                         list = dap_list_next(list);
                     }
 
-                    log_it(L_INFO, "execute command = %s", str_cmd );
+                    log_it(L_INFO, "execute command=%s", l_pass_in_cmd ? "Command hide, password used" : str_cmd );
                     // exec command
 
                     char **l_argv = dap_strsplit( str_cmd, ";", -1 );
@@ -759,7 +760,9 @@ char    *str_header;
                 int res = -1;
                 char *str_reply = NULL;
                 if(l_cmd){
+                    bool l_pass_in_cmd = false;
                     while(list) {
+                        l_pass_in_cmd |= !strcmp((char *)list->data, "-password") || !strcmp((char *)list->data, "password");
                         char *str_cmd_prev = str_cmd;
                         str_cmd = l_finded_by_alias ? dap_strdup_printf("%s;%s;%s", l_ncmd, l_append_cmd, (char*)list->data) : dap_strdup_printf("%s;%s", str_cmd, (char *)list->data);
                         l_finded_by_alias = false;
@@ -767,9 +770,9 @@ char    *str_header;
                         DAP_DELETE(str_cmd_prev);
                     }
                     if(l_cmd->overrides.log_cmd_call)
-                        l_cmd->overrides.log_cmd_call(str_cmd);
+                        l_cmd->overrides.log_cmd_call(l_pass_in_cmd ? "Command hide, password used" : str_cmd);
                     else
-                        log_it(L_DEBUG, "execute command=%s", str_cmd);
+                        log_it(L_DEBUG, "execute command=%s", l_pass_in_cmd ? "Command hide, password used" : str_cmd);
                     // exec command
 
                     char **l_argv = dap_strsplit(str_cmd, ";", -1);
@@ -1009,9 +1012,7 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
     HASH_FIND_STR(s_command_alias, a_alias, l_alias);
     if (!l_alias)
         return NULL;
-    size_t l_addition_size = dap_strlen(l_alias->addition);
-    *a_append = DAP_NEW_Z_SIZE(char, l_addition_size);
-    memcpy(*a_append, l_alias->addition, l_addition_size);
+    *a_append = dap_strdup(l_alias->addition);
     *a_ncmd = l_alias->standard_command->name;
     return l_alias->standard_command;
 }
