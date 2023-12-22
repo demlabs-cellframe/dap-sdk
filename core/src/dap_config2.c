@@ -40,7 +40,21 @@ const char *dap_conf_path()
     return s_configs_path;
 }
 
-void dap_conf_item_del(struct dap_conf_item *a_item);
+#define dap_conf_item_del(a_item)                   \
+{                                                   \
+    DAP_DELETE(a_item->name);                       \
+    switch (a_item->type) {                         \
+    case 's':                                       \
+        DAP_DELETE(a_item->val.val_str);            \
+        break;                                      \
+    case 'a':                                       \
+    dap_list_free_full(a_item->val.val_list, NULL); \
+        break;                                      \
+    default:                                        \
+        break;                                      \
+    }                                               \
+    DAP_DELETE(a_item);                             \
+}
 
 static int _dap_conf_load(const char* a_abs_path, dap_conf_t **a_conf) {
     if (!a_conf || !*a_conf) {
@@ -284,21 +298,6 @@ int64_t dap_conf_get_item_int(dap_conf_t *a_config, const char *a_section, const
     if (!l_tsd) {
         log_it(L_ERROR, "")
     }
-}
-
-void dap_conf_item_del(struct dap_conf_item *a_item) {
-    DAP_DELETE(a_item->name);
-    switch (a_item->type) {
-    case 's':
-        DAP_DELETE(a_item->val.val_str);
-        break;
-    case 'a':
-        dap_list_free_full(a_item->val.val_list, NULL);
-        break;
-    default:
-        break;
-    }
-    DAP_DELETE(a_item);
 }
 
 void dap_conf_close(dap_conf_t *a_conf) {
