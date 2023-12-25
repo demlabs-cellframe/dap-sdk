@@ -228,13 +228,14 @@ static void *thread_pipe_client_func( void *args )
                 char *str_reply = NULL;
 
                 if ( l_cmd ) {
-
+                    bool l_pass_in_cmd = false;
                     while( list ) {
+                                                l_pass_in_cmd |= !strcmp((char *)list->data, "-password") || !strcmp((char *)list->data, "password");
                         str_cmd = dap_strdup_printf( "%s;%s", str_cmd, list->data );
                         list = dap_list_next(list);
                     }
 
-                    log_it(L_INFO, "execute command = %s", str_cmd );
+                    log_it(L_INFO, "execute command=%s", l_pass_in_cmd ? "Command hide, password used" : str_cmd );
                     // exec command
 
                     char **l_argv = dap_strsplit( str_cmd, ";", -1 );
