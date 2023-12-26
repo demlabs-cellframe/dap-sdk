@@ -164,12 +164,15 @@ void dap_network_monitor_test_run(void)
 
     dap_network_monitor_init(_network_callback);
 
-    const char *add_test_interfece = "sudo nmcli connection add type tun con-name "
+    uid_t l_uid = getuid();
+    const char *add_test_interfece = l_uid ? "sudo nmcli connection add type tun con-name "
+                                     "DiveVPNTest autoconnect false ifname tun10 "
+                                     "mode tun ip4 10.1.0.111 gw4 10.1.0.1" : "nmcli connection add type tun con-name "
                                      "DiveVPNTest autoconnect false ifname tun10 "
                                      "mode tun ip4 10.1.0.111 gw4 10.1.0.1";
-    const char *up_test_interfece = "sudo nmcli connection up DiveVPNTest";
-    const char *down_test_interfece = "sudo nmcli connection down DiveVPNTest";
-    const char *delete_test_interfece = "sudo nmcli connection delete DiveVPNTest 2> /dev/null";
+    const char *up_test_interfece = l_uid ? "sudo nmcli connection up DiveVPNTest" : "nmcli connection up DiveVPNTest";
+    const char *down_test_interfece = l_uid ? "sudo nmcli connection down DiveVPNTest" : "nmcli connection down DiveVPNTest";
+    const char *delete_test_interfece = l_uid ? "sudo nmcli connection delete DiveVPNTest 2> /dev/null" : "nmcli connection delete DiveVPNTest 2> /dev/null";
 
     system(delete_test_interfece);
     system(add_test_interfece);
