@@ -578,7 +578,7 @@ const char *log_error()
  * @param[in] i number
  * @return
  */
-char *dap_itoa(int i)
+char *dap_itoa(long long i)
 {
     /* Room for INT_DIGITS digits, - and '\0' */
     static char buf[INT_DIGITS + 2];
