@@ -144,7 +144,6 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str);
 dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t *a_signs_count);
 
 void dap_sign_get_information(dap_sign_t *a_sign, dap_string_t *a_str_out, const char *a_hash_out_type);
-json_object *dap_sign_to_json(const dap_sign_t *a_sign);
 
 #ifdef __cplusplus
 }
