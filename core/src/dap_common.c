@@ -581,7 +581,7 @@ const char *log_error()
 char *dap_itoa(long long i)
 {
     /* Room for INT_DIGITS digits, - and '\0' */
-    static char buf[INT_DIGITS + 2];
+    static _Thread_local char buf[INT_DIGITS + 2];
     char *p = buf + INT_DIGITS + 1; /* points to terminating '\0' */
     if (i >= 0) {
         do {

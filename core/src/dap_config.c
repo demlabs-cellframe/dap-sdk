@@ -43,43 +43,43 @@ const char *dap_config_path()
     return s_configs_path;
 }
 
-#define dap_config_item_del(a_item)                   \
-{                                                   \
-    DAP_DELETE(a_item->name);                       \
-    switch (a_item->type) {                         \
-    case 's':                                       \
-        DAP_DELETE(a_item->val.val_str);            \
-        break;                                      \
-    case 'a':                                       \
-        dap_strfreev(a_item->val.val_arr);          \
-        break;                                      \
-    default:                                        \
-        break;                                      \
-    }                                               \
-    DAP_DELETE(a_item);                             \
+#define dap_config_item_del(a_item)         \
+{                                           \
+    DAP_DELETE(a_item->name);               \
+    switch (a_item->type) {                 \
+    case 's':                               \
+        DAP_DELETE(a_item->val.val_str);    \
+        break;                              \
+    case 'a':                               \
+        dap_strfreev(a_item->val.val_arr);  \
+        break;                              \
+    default:                                \
+        break;                              \
+    }                                       \
+    DAP_DELETE(a_item);                     \
 }
 
 void dap_config_dump(dap_config_t *a_conf) {
     dap_config_item_t *l_item = NULL, *l_tmp = NULL;
-    log_it(L_INFO, "[] Config %s", a_conf->path);
+    log_it(L_DAP, " Config %s", a_conf->path);
     HASH_ITER(hh, a_conf->items, l_item, l_tmp) {
         switch (l_item->type) {
         case 's':
-            log_it(L_INFO, "[] String param: %s = %s", l_item->name, l_item->val.val_str);
+            log_it(L_DAP, " String param: %s = %s", l_item->name, l_item->val.val_str);
             break;
         case 'd':
-            log_it(L_INFO, "[] Int param: %s = %ld", l_item->name, l_item->val.val_int);
+            log_it(L_DAP, " Int param: %s = %ld", l_item->name, l_item->val.val_int);
             break;
         case 'u':
-            log_it(L_INFO, "[] UInt param: %s = %lu", l_item->name, l_item->val.val_uint);
+            log_it(L_DAP, " UInt param: %s = %lu", l_item->name, l_item->val.val_uint);
             break;
         case 'b':
-            log_it(L_INFO, "[] Bool param: %s = %d", l_item->name, l_item->val.val_bool);
+            log_it(L_DAP, " Bool param: %s = %d", l_item->name, l_item->val.val_bool);
             break;
         case 'a': {
-            log_it(L_INFO, "[] Array param: %s = ", l_item->name);
+            log_it(L_DAP, " Array param: %s = ", l_item->name);
             for (char **l_str = l_item->val.val_arr; *l_str; ++l_str) {
-                log_it(L_INFO, "[] %s", *l_str);
+                log_it(L_DAP, " %s", *l_str);
             }
             break;
         }
@@ -160,7 +160,6 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
                 continue;
             }
             l_key = strtok_r(l_line, "=", &l_val);
-            log_it(L_MSG, "[!] %s", l_val);
         } else {
             l_val = l_line;
         }
