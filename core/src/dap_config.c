@@ -15,6 +15,8 @@ typedef struct dap_config_item dap_config_item_t;
 static char *s_configs_path = NULL;
 dap_config_t *g_config = NULL;
 
+static bool debug_config = false;
+
 int dap_config_init(const char *a_configs_path)
 {
     if (!a_configs_path || !a_configs_path[0]) {
@@ -61,25 +63,25 @@ const char *dap_config_path()
 
 void dap_config_dump(dap_config_t *a_conf) {
     dap_config_item_t *l_item = NULL, *l_tmp = NULL;
-    log_it(L_DAP, " Config %s", a_conf->path);
+    log_it(L_DEBUG, " Config %s", a_conf->path);
     HASH_ITER(hh, a_conf->items, l_item, l_tmp) {
         switch (l_item->type) {
         case 's':
-            log_it(L_DAP, " String param: %s = %s", l_item->name, l_item->val.val_str);
+            log_it(L_DEBUG, " String param: %s = %s", l_item->name, l_item->val.val_str);
             break;
         case 'd':
-            log_it(L_DAP, " Int param: %s = %ld", l_item->name, l_item->val.val_int);
+            log_it(L_DEBUG, " Int param: %s = %ld", l_item->name, l_item->val.val_int);
             break;
         case 'u':
-            log_it(L_DAP, " UInt param: %s = %lu", l_item->name, l_item->val.val_uint);
+            log_it(L_DEBUG, " UInt param: %s = %lu", l_item->name, l_item->val.val_uint);
             break;
         case 'b':
-            log_it(L_DAP, " Bool param: %s = %d", l_item->name, l_item->val.val_bool);
+            log_it(L_DEBUG, " Bool param: %s = %d", l_item->name, l_item->val.val_bool);
             break;
         case 'a': {
-            log_it(L_DAP, " Array param: %s = ", l_item->name);
+            log_it(L_DEBUG, " Array param: %s = ", l_item->name);
             for (char **l_str = l_item->val.val_arr; *l_str; ++l_str) {
-                log_it(L_DAP, " %s", *l_str);
+                log_it(L_DEBUG, " %s", *l_str);
             }
             break;
         }
@@ -270,6 +272,8 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
         case 'a':
             l_item_val.val_arr = dap_str_appv(l_item_val.val_arr, l_values_arr, NULL);
             DAP_DEL_Z(l_values_arr);
+            if (l_item)
+                dap_strfreev(l_item->val.val_arr);
         default:
             if (!l_item) {
                 l_item = DAP_NEW_Z(dap_config_item_t);
@@ -321,6 +325,7 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     l_conf->path = l_basic_name;
     if (_dap_config_load(l_path, &l_conf))
        return NULL;
+    debug_config = g_config ? dap_config_get_item_bool(g_config, "general", "debug-config") : false;
 
     if (l_pos >= MAX_PATH - 3)
         return l_conf;
@@ -330,7 +335,8 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     int l_err = scandir(l_path, &l_entries, 0, alphasort);
     if (l_err < 0) {
         log_it(L_DEBUG, "Cannot open directory %s", l_path);
-        dap_config_dump(l_conf);
+        if (debug_config)
+            dap_config_dump(l_conf);
         return l_conf;
     }
     for (int i = 0; i < l_err; ++i) {
@@ -342,9 +348,8 @@ dap_config_t *dap_config_open(const char* a_file_path) {
         DAP_DELETE(l_entries[i]);
     }
     DAP_DELETE(l_entries);
-
-    dap_config_dump(l_conf);
-
+    if (debug_config)
+        dap_config_dump(l_conf);
     return l_conf;
 }
 
