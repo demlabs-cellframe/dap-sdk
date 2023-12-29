@@ -5,6 +5,9 @@
 #include "uthash.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
+#ifdef DAP_OS_WINDOWS
+#include "dap_list.h"
+#endif
 
 #define LOG_TAG "dap_config"
 
@@ -88,6 +91,14 @@ void dap_config_dump(dap_config_t *a_conf) {
         }
     }
 }
+
+#ifdef DAP_OS_WINDOWS
+static int s_name_sort_cb(const void *a_str1, const void *a_str2) {
+    char    *l_str1 = (char*)((dap_list_t*)a_str1)->data,
+            *l_str2 = (char*)((dap_list_t*)a_str2)->data;
+    return dap_strcmp(l_str1, l_str2);
+}
+#endif
 
 static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
     if (!a_conf || !*a_conf) {
@@ -331,6 +342,30 @@ dap_config_t *dap_config_open(const char* a_file_path) {
         return l_conf;
 
     strncpy(l_path + l_pos, ".d", 2);
+#ifdef DAP_OS_WINDOWS
+    DIR *l_dir = opendir(l_path);
+    if (!l_dir) {
+        log_it(L_DEBUG, "Cannot open directory %s", l_path);
+        if (debug_config)
+            dap_config_dump(l_conf);
+        return l_conf;
+    }
+    struct dirent *l_entry;
+    dap_list_t *l_filenames = NULL;
+    while ((l_entry = readdir(l_dir))) {
+        const char *l_filename = l_entry->d_name;
+        if (!strncmp(l_filename + strlen(l_filename) - 4, ".cfg", 4))
+            l_filenames = dap_list_append(l_filenames, dap_strdup(l_filename));
+    }
+    closedir(l_dir);
+    l_filenames = dap_list_sort(l_filenames, s_name_sort_cb);
+    for (dap_list_t *l_filename = l_filenames; l_filename; l_filename = l_filename->next) {
+        char *l_entry_file = dap_strdup_printf("%s/%s", l_path, (char*)l_filename->data);
+        _dap_config_load(l_entry_file, &l_conf);
+        DAP_DELETE(l_entry_file);
+    }
+    dap_list_free_full(l_filenames, NULL);
+#else
     struct dirent **l_entries;
     int l_err = scandir(l_path, &l_entries, 0, alphasort);
     if (l_err < 0) {
@@ -348,6 +383,7 @@ dap_config_t *dap_config_open(const char* a_file_path) {
         DAP_DELETE(l_entries[i]);
     }
     DAP_DELETE(l_entries);
+#endif
     if (debug_config)
         dap_config_dump(l_conf);
     return l_conf;
