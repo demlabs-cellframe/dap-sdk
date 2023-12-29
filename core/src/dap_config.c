@@ -467,6 +467,24 @@ char **dap_config_get_array_str(dap_config_t *a_config, const char *a_section, c
     return l_item->val.val_arr;
 }
 
+double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, double a_default) {
+    dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
+    if (!l_item)
+        return a_default;
+    switch (l_item->type) {
+    case 's':
+        return strtod(l_item->val.val_str, NULL);
+    case 'd':
+        return (double)l_item->val.val_int;
+    case 'u':
+        return (double)l_item->val.val_uint;
+    default:
+        log_it(L_ERROR, "Parameter \"%s\" '%c' can't be represented as double", l_item->name, l_item->type);
+        return a_default;
+    }
+}
+
+
 void dap_config_close(dap_config_t *a_conf) {
     DAP_DELETE(a_conf->path);
     dap_config_item_t *l_item = NULL, *l_tmp = NULL;
