@@ -1,0 +1,13 @@
+# Target labels
+ dap_json-c_dep
+# Source files and their labels
+/home/anton/Documents/code/dap-sdk/CMakeFiles/dap_json-c_dep
+/home/anton/Documents/code/dap-sdk/CMakeFiles/dap_json-c_dep.rule
+/home/anton/Documents/code/dap-sdk/CMakeFiles/dap_json-c_dep-complete.rule
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-install.rule
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-mkdir.rule
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-download.rule
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-update.rule
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-patch.rule
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-configure.rule
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-build.rule

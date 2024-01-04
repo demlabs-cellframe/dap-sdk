@@ -1,0 +1,194 @@
+Determining if the include file xlocale.h exists failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_ce9f6/fast && /usr/bin/make -f CMakeFiles/cmTC_ce9f6.dir/build.make CMakeFiles/cmTC_ce9f6.dir/build
+make[1]: Entering directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_ce9f6.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_ce9f6.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: xlocale.h: No such file or directory
+    1 | #include <xlocale.h>
+      |          ^~~~~~~~~~~
+compilation terminated.
+make[1]: *** [CMakeFiles/cmTC_ce9f6.dir/build.make:66: CMakeFiles/cmTC_ce9f6.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_ce9f6/fast] Error 2
+
+
+
+Determining if the _isnan exist failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_875ce/fast && /usr/bin/make -f CMakeFiles/cmTC_875ce.dir/build.make CMakeFiles/cmTC_875ce.dir/build
+make[1]: Entering directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_875ce.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_875ce.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘_isnan’ undeclared (first use in this function)
+    8 |   return ((int*)(&_isnan))[argc];
+      |                   ^~~~~~
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
+make[1]: *** [CMakeFiles/cmTC_875ce.dir/build.make:66: CMakeFiles/cmTC_875ce.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_875ce/fast] Error 2
+
+
+File /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <float.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef _isnan
+  return ((int*)(&_isnan))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the _finite exist failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_4e342/fast && /usr/bin/make -f CMakeFiles/cmTC_4e342.dir/build.make CMakeFiles/cmTC_4e342.dir/build
+make[1]: Entering directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_4e342.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_4e342.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘_finite’ undeclared (first use in this function)
+    8 |   return ((int*)(&_finite))[argc];
+      |                   ^~~~~~~
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
+make[1]: *** [CMakeFiles/cmTC_4e342.dir/build.make:66: CMakeFiles/cmTC_4e342.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_4e342/fast] Error 2
+
+
+File /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <float.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef _finite
+  return ((int*)(&_finite))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the _doprnt exist failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_95add/fast && /usr/bin/make -f CMakeFiles/cmTC_95add.dir/build.make CMakeFiles/cmTC_95add.dir/build
+make[1]: Entering directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_95add.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_95add.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘_doprnt’ undeclared (first use in this function)
+    8 |   return ((int*)(&_doprnt))[argc];
+      |                   ^~~~~~~
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
+make[1]: *** [CMakeFiles/cmTC_95add.dir/build.make:66: CMakeFiles/cmTC_95add.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_95add/fast] Error 2
+
+
+File /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdio.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef _doprnt
+  return ((int*)(&_doprnt))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the arc4random exist failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_fc2b0/fast && /usr/bin/make -f CMakeFiles/cmTC_fc2b0.dir/build.make CMakeFiles/cmTC_fc2b0.dir/build
+make[1]: Entering directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_fc2b0.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_fc2b0.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘arc4random’ undeclared (first use in this function); did you mean ‘srandom’?
+    8 |   return ((int*)(&arc4random))[argc];
+      |                   ^~~~~~~~~~
+      |                   srandom
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
+make[1]: *** [CMakeFiles/cmTC_fc2b0.dir/build.make:66: CMakeFiles/cmTC_fc2b0.dir/CheckSymbolExists.c.o] Error 1
+make[1]: Leaving directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_fc2b0/fast] Error 2
+
+
+File /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdlib.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef arc4random
+  return ((int*)(&arc4random))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the include file bsd/stdlib.h exists failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_82323/fast && /usr/bin/make -f CMakeFiles/cmTC_82323.dir/build.make CMakeFiles/cmTC_82323.dir/build
+make[1]: Entering directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_82323.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_82323.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: bsd/stdlib.h: No such file or directory
+    1 | #include <bsd/stdlib.h>
+      |          ^~~~~~~~~~~~~~
+compilation terminated.
+make[1]: *** [CMakeFiles/cmTC_82323.dir/build.make:66: CMakeFiles/cmTC_82323.dir/CheckIncludeFile.c.o] Error 1
+make[1]: Leaving directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_82323/fast] Error 2
+
+
+
+Performing C SOURCE FILE Test HAS_GNU_WARNING_LONG failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_1040f/fast && /usr/bin/make -f CMakeFiles/cmTC_1040f.dir/build.make CMakeFiles/cmTC_1040f.dir/build
+make[1]: Entering directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_1040f.dir/src.c.o
+/usr/bin/cc -D_GNU_SOURCE  -DHAS_GNU_WARNING_LONG -fPIE   -o CMakeFiles/cmTC_1040f.dir/src.c.o   -c /home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/src.c
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/src.c:3:9: warning: missing terminating " character
+    3 | __asm__(".section .gnu.json_object_get
+      |         ^
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/src.c:3:9: error: missing terminating " character
+    3 | __asm__(".section .gnu.json_object_get
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/src.c:4:2: error: expected string literal before ‘.’ token
+    4 |  .ascii "Please link against libjson-c instead of libjson"
+      |  ^
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/src.c:5:7: warning: missing terminating " character
+    5 |  .text");
+      |       ^
+/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp/src.c:5:7: error: missing terminating " character
+    5 |  .text");
+      |       ^~~
+make[1]: *** [CMakeFiles/cmTC_1040f.dir/build.make:66: CMakeFiles/cmTC_1040f.dir/src.c.o] Error 1
+make[1]: Leaving directory '/home/anton/Documents/code/dap-sdk/CMakeFiles/CMakeTmp'
+make: *** [Makefile:121: cmTC_1040f/fast] Error 2
+
+
+Source file was:
+
+extern void json_object_get();
+__asm__(".section .gnu.json_object_get
+	.ascii "Please link against libjson-c instead of libjson"
+	.text");
+int main(int c, char *v) { return 0;}
+

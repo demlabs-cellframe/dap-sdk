@@ -1,0 +1,1 @@
+cmd='/usr/bin/cmake;/home/anton/Documents/code/dap-sdk/3rdparty/json-c/;-DCMAKE_INSTALL_PREFIX:PATH=/home/anton/Documents/code/dap-sdk/deps/;-DCMAKE_BUILD_TYPE=;-DCMAKE_C_COMPILER=/usr/bin/cc;-DCMAKE_CXX_COMPILER=/usr/bin/c++;-DCMAKE_SYSTEM_NAME=Linux;-DCMAKE_GENERATOR=Unix Makefiles'

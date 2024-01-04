@@ -1,0 +1,12 @@
+prefix=/home/anton/Documents/code/dap-sdk/deps
+exec_prefix=/home/anton/Documents/code/dap-sdk/deps
+libdir=/home/anton/Documents/code/dap-sdk/deps/lib
+includedir=/home/anton/Documents/code/dap-sdk/deps/include
+
+Name: json-c
+Description: A JSON implementation in C
+Version: 0.16.99
+Requires:
+Libs.private: -lm
+Libs: -L${libdir} -ljson-c
+Cflags: -I${includedir} -I${includedir}/json-c

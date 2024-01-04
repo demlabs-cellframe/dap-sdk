@@ -40,6 +40,7 @@
 #include "dap_enc_kyber.h"
 #include "dap_enc_sphincsplus.h"
 #include "dap_enc_multisign.h"
+#include "dap_enc_ecdsa.h"
 
 #include "dap_enc_ringct20.h"
 #ifdef DAP_PQRL

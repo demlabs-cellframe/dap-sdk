@@ -1,0 +1,1392 @@
+The target system is: Linux -  - 
+The host system is: Linux - 5.15.0-91-generic - x86_64
+Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+Compiler: /usr/bin/cc 
+Build flags: 
+Id flags:  
+
+The output was:
+0
+
+
+Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+
+The C compiler identification is GNU, found in "/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/3.16.3/CompilerIdC/a.out"
+
+Determining if the C compiler works passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_a01de/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_a01de.dir/build.make CMakeFiles/cmTC_a01de.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_a01de.dir/testCCompiler.c.o
+/usr/bin/cc    -o CMakeFiles/cmTC_a01de.dir/testCCompiler.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/testCCompiler.c
+Linking C executable cmTC_a01de
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a01de.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_a01de.dir/testCCompiler.c.o  -o cmTC_a01de 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Detecting C compiler ABI info compiled with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_166f1/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_166f1.dir/build.make CMakeFiles/cmTC_166f1.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o
+/usr/bin/cc   -v -o CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o   -c /usr/share/cmake-3.16/Modules/CMakeCCompilerABI.c
+Using built-in specs.
+COLLECT_GCC=/usr/bin/cc
+OFFLOAD_TARGET_NAMES=nvptx-none:hsa
+OFFLOAD_TARGET_DEFAULT=1
+Target: x86_64-linux-gnu
+Configured with: ../src/configure -v --with-pkgversion='Ubuntu 9.4.0-1ubuntu1~20.04.2' --with-bugurl=file:///usr/share/doc/gcc-9/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++,gm2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-9 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-9-9QDOt0/gcc-9-9.4.0/debian/tmp-nvptx/usr,hsa --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu
+Thread model: posix
+gcc version 9.4.0 (Ubuntu 9.4.0-1ubuntu1~20.04.2) 
+COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64'
+ /usr/lib/gcc/x86_64-linux-gnu/9/cc1 -quiet -v -imultiarch x86_64-linux-gnu /usr/share/cmake-3.16/Modules/CMakeCCompilerABI.c -quiet -dumpbase CMakeCCompilerABI.c -mtune=generic -march=x86-64 -auxbase-strip CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccOEsvu9.s
+GNU C17 (Ubuntu 9.4.0-1ubuntu1~20.04.2) version 9.4.0 (x86_64-linux-gnu)
+	compiled by GNU C version 9.4.0, GMP version 6.2.0, MPFR version 4.0.2, MPC version 1.1.0, isl version isl-0.22.1-GMP
+
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/9/include-fixed"
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/9/../../../../x86_64-linux-gnu/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /usr/lib/gcc/x86_64-linux-gnu/9/include
+ /usr/local/include
+ /usr/include/x86_64-linux-gnu
+ /usr/include
+End of search list.
+GNU C17 (Ubuntu 9.4.0-1ubuntu1~20.04.2) version 9.4.0 (x86_64-linux-gnu)
+	compiled by GNU C version 9.4.0, GMP version 6.2.0, MPFR version 4.0.2, MPC version 1.1.0, isl version isl-0.22.1-GMP
+
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+Compiler executable checksum: 01da938ff5dc2163489aa33cb3b747a7
+COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64'
+ as -v --64 -o CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o /tmp/ccOEsvu9.s
+GNU assembler version 2.34 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.34
+COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/
+LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64'
+Linking C executable cmTC_166f1
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_166f1.dir/link.txt --verbose=1
+/usr/bin/cc     -v CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o  -o cmTC_166f1 
+Using built-in specs.
+COLLECT_GCC=/usr/bin/cc
+COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/9/lto-wrapper
+OFFLOAD_TARGET_NAMES=nvptx-none:hsa
+OFFLOAD_TARGET_DEFAULT=1
+Target: x86_64-linux-gnu
+Configured with: ../src/configure -v --with-pkgversion='Ubuntu 9.4.0-1ubuntu1~20.04.2' --with-bugurl=file:///usr/share/doc/gcc-9/README.Bugs --enable-languages=c,ada,c++,go,brig,d,fortran,objc,obj-c++,gm2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-9 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-9-9QDOt0/gcc-9-9.4.0/debian/tmp-nvptx/usr,hsa --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu
+Thread model: posix
+gcc version 9.4.0 (Ubuntu 9.4.0-1ubuntu1~20.04.2) 
+COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/
+LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_166f1' '-mtune=generic' '-march=x86-64'
+ /usr/lib/gcc/x86_64-linux-gnu/9/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/9/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/9/lto-wrapper -plugin-opt=-fresolution=/tmp/cczOGhaC.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_166f1 /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/9/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/9 -L/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/9/../../.. CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/9/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crtn.o
+COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_166f1' '-mtune=generic' '-march=x86-64'
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Parsed C implicit include dir info from above output: rv=done
+  found start of include info
+  found start of implicit include info
+    add: [/usr/lib/gcc/x86_64-linux-gnu/9/include]
+    add: [/usr/local/include]
+    add: [/usr/include/x86_64-linux-gnu]
+    add: [/usr/include]
+  end of search list found
+  collapse include dir [/usr/lib/gcc/x86_64-linux-gnu/9/include] ==> [/usr/lib/gcc/x86_64-linux-gnu/9/include]
+  collapse include dir [/usr/local/include] ==> [/usr/local/include]
+  collapse include dir [/usr/include/x86_64-linux-gnu] ==> [/usr/include/x86_64-linux-gnu]
+  collapse include dir [/usr/include] ==> [/usr/include]
+  implicit include dirs: [/usr/lib/gcc/x86_64-linux-gnu/9/include;/usr/local/include;/usr/include/x86_64-linux-gnu;/usr/include]
+
+
+Parsed C implicit link information from above output:
+  link line regex: [^( *|.*[/\])(ld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\]+-)?ld|collect2)[^/\]*( |$)]
+  ignore line: [Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp]
+  ignore line: []
+  ignore line: [Run Build Command(s):/usr/bin/make cmTC_166f1/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp']
+  ignore line: [/usr/bin/make -f CMakeFiles/cmTC_166f1.dir/build.make CMakeFiles/cmTC_166f1.dir/build]
+  ignore line: [make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp']
+  ignore line: [Building C object CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o]
+  ignore line: [/usr/bin/cc   -v -o CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o   -c /usr/share/cmake-3.16/Modules/CMakeCCompilerABI.c]
+  ignore line: [Using built-in specs.]
+  ignore line: [COLLECT_GCC=/usr/bin/cc]
+  ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none:hsa]
+  ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+  ignore line: [Target: x86_64-linux-gnu]
+  ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 9.4.0-1ubuntu1~20.04.2' --with-bugurl=file:///usr/share/doc/gcc-9/README.Bugs --enable-languages=c ada c++ go brig d fortran objc obj-c++ gm2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-9 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32 m64 mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-9-9QDOt0/gcc-9-9.4.0/debian/tmp-nvptx/usr hsa --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu]
+  ignore line: [Thread model: posix]
+  ignore line: [gcc version 9.4.0 (Ubuntu 9.4.0-1ubuntu1~20.04.2) ]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64']
+  ignore line: [ /usr/lib/gcc/x86_64-linux-gnu/9/cc1 -quiet -v -imultiarch x86_64-linux-gnu /usr/share/cmake-3.16/Modules/CMakeCCompilerABI.c -quiet -dumpbase CMakeCCompilerABI.c -mtune=generic -march=x86-64 -auxbase-strip CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o -version -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccOEsvu9.s]
+  ignore line: [GNU C17 (Ubuntu 9.4.0-1ubuntu1~20.04.2) version 9.4.0 (x86_64-linux-gnu)]
+  ignore line: [	compiled by GNU C version 9.4.0  GMP version 6.2.0  MPFR version 4.0.2  MPC version 1.1.0  isl version isl-0.22.1-GMP]
+  ignore line: []
+  ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+  ignore line: [ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"]
+  ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/9/include-fixed"]
+  ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/9/../../../../x86_64-linux-gnu/include"]
+  ignore line: [#include "..." search starts here:]
+  ignore line: [#include <...> search starts here:]
+  ignore line: [ /usr/lib/gcc/x86_64-linux-gnu/9/include]
+  ignore line: [ /usr/local/include]
+  ignore line: [ /usr/include/x86_64-linux-gnu]
+  ignore line: [ /usr/include]
+  ignore line: [End of search list.]
+  ignore line: [GNU C17 (Ubuntu 9.4.0-1ubuntu1~20.04.2) version 9.4.0 (x86_64-linux-gnu)]
+  ignore line: [	compiled by GNU C version 9.4.0  GMP version 6.2.0  MPFR version 4.0.2  MPC version 1.1.0  isl version isl-0.22.1-GMP]
+  ignore line: []
+  ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+  ignore line: [Compiler executable checksum: 01da938ff5dc2163489aa33cb3b747a7]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64']
+  ignore line: [ as -v --64 -o CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o /tmp/ccOEsvu9.s]
+  ignore line: [GNU assembler version 2.34 (x86_64-linux-gnu) using BFD version (GNU Binutils for Ubuntu) 2.34]
+  ignore line: [COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/]
+  ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../:/lib/:/usr/lib/]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64']
+  ignore line: [Linking C executable cmTC_166f1]
+  ignore line: [/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_166f1.dir/link.txt --verbose=1]
+  ignore line: [/usr/bin/cc     -v CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o  -o cmTC_166f1 ]
+  ignore line: [Using built-in specs.]
+  ignore line: [COLLECT_GCC=/usr/bin/cc]
+  ignore line: [COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/9/lto-wrapper]
+  ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none:hsa]
+  ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+  ignore line: [Target: x86_64-linux-gnu]
+  ignore line: [Configured with: ../src/configure -v --with-pkgversion='Ubuntu 9.4.0-1ubuntu1~20.04.2' --with-bugurl=file:///usr/share/doc/gcc-9/README.Bugs --enable-languages=c ada c++ go brig d fortran objc obj-c++ gm2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-9 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32 m64 mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-9-9QDOt0/gcc-9-9.4.0/debian/tmp-nvptx/usr hsa --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu]
+  ignore line: [Thread model: posix]
+  ignore line: [gcc version 9.4.0 (Ubuntu 9.4.0-1ubuntu1~20.04.2) ]
+  ignore line: [COMPILER_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/]
+  ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/9/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/9/../../../:/lib/:/usr/lib/]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_166f1' '-mtune=generic' '-march=x86-64']
+  link line: [ /usr/lib/gcc/x86_64-linux-gnu/9/collect2 -plugin /usr/lib/gcc/x86_64-linux-gnu/9/liblto_plugin.so -plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/9/lto-wrapper -plugin-opt=-fresolution=/tmp/cczOGhaC.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o cmTC_166f1 /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/9/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/9 -L/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/9/../../.. CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/9/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crtn.o]
+    arg [/usr/lib/gcc/x86_64-linux-gnu/9/collect2] ==> ignore
+    arg [-plugin] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/9/liblto_plugin.so] ==> ignore
+    arg [-plugin-opt=/usr/lib/gcc/x86_64-linux-gnu/9/lto-wrapper] ==> ignore
+    arg [-plugin-opt=-fresolution=/tmp/cczOGhaC.res] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [-plugin-opt=-pass-through=-lc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [--build-id] ==> ignore
+    arg [--eh-frame-hdr] ==> ignore
+    arg [-m] ==> ignore
+    arg [elf_x86_64] ==> ignore
+    arg [--hash-style=gnu] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-dynamic-linker] ==> ignore
+    arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+    arg [-pie] ==> ignore
+    arg [-znow] ==> ignore
+    arg [-zrelro] ==> ignore
+    arg [-o] ==> ignore
+    arg [cmTC_166f1] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/Scrt1.o] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crti.o] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/9/crtbeginS.o] ==> ignore
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/9] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/9]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib]
+    arg [-L/lib/x86_64-linux-gnu] ==> dir [/lib/x86_64-linux-gnu]
+    arg [-L/lib/../lib] ==> dir [/lib/../lib]
+    arg [-L/usr/lib/x86_64-linux-gnu] ==> dir [/usr/lib/x86_64-linux-gnu]
+    arg [-L/usr/lib/../lib] ==> dir [/usr/lib/../lib]
+    arg [-L/usr/lib/gcc/x86_64-linux-gnu/9/../../..] ==> dir [/usr/lib/gcc/x86_64-linux-gnu/9/../../..]
+    arg [CMakeFiles/cmTC_166f1.dir/CMakeCCompilerABI.c.o] ==> ignore
+    arg [-lgcc] ==> lib [gcc]
+    arg [--push-state] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [--pop-state] ==> ignore
+    arg [-lc] ==> lib [c]
+    arg [-lgcc] ==> lib [gcc]
+    arg [--push-state] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [--pop-state] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/9/crtendS.o] ==> ignore
+    arg [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu/crtn.o] ==> ignore
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/9] ==> [/usr/lib/gcc/x86_64-linux-gnu/9]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/9/../../../x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/9/../../../../lib] ==> [/usr/lib]
+  collapse library dir [/lib/x86_64-linux-gnu] ==> [/lib/x86_64-linux-gnu]
+  collapse library dir [/lib/../lib] ==> [/lib]
+  collapse library dir [/usr/lib/x86_64-linux-gnu] ==> [/usr/lib/x86_64-linux-gnu]
+  collapse library dir [/usr/lib/../lib] ==> [/usr/lib]
+  collapse library dir [/usr/lib/gcc/x86_64-linux-gnu/9/../../..] ==> [/usr/lib]
+  implicit libs: [gcc;gcc_s;c;gcc;gcc_s]
+  implicit dirs: [/usr/lib/gcc/x86_64-linux-gnu/9;/usr/lib/x86_64-linux-gnu;/usr/lib;/lib/x86_64-linux-gnu;/lib]
+  implicit fwks: []
+
+
+Determining if the include file fcntl.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_28bb1/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_28bb1.dir/build.make CMakeFiles/cmTC_28bb1.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_28bb1.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_28bb1.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_28bb1
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_28bb1.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_28bb1.dir/CheckIncludeFile.c.o  -o cmTC_28bb1  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file inttypes.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_6b87e/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_6b87e.dir/build.make CMakeFiles/cmTC_6b87e.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_6b87e.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_6b87e.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_6b87e
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6b87e.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_6b87e.dir/CheckIncludeFile.c.o  -o cmTC_6b87e  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file stdarg.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_bda8d/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_bda8d.dir/build.make CMakeFiles/cmTC_bda8d.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_bda8d.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_bda8d.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_bda8d
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_bda8d.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_bda8d.dir/CheckIncludeFile.c.o  -o cmTC_bda8d  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file strings.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_4e5cf/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_4e5cf.dir/build.make CMakeFiles/cmTC_4e5cf.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_4e5cf.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_4e5cf.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_4e5cf
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_4e5cf.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_4e5cf.dir/CheckIncludeFile.c.o  -o cmTC_4e5cf  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file string.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_30bd7/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_30bd7.dir/build.make CMakeFiles/cmTC_30bd7.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_30bd7.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_30bd7.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_30bd7
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_30bd7.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_30bd7.dir/CheckIncludeFile.c.o  -o cmTC_30bd7  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file syslog.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_75957/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_75957.dir/build.make CMakeFiles/cmTC_75957.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_75957.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_75957.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_75957
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_75957.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_75957.dir/CheckIncludeFile.c.o  -o cmTC_75957  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if files stdlib.h;stdarg.h;string.h;float.h exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_9d470/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_9d470.dir/build.make CMakeFiles/cmTC_9d470.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_9d470.dir/STDC_HEADERS.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_9d470.dir/STDC_HEADERS.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CheckIncludeFiles/STDC_HEADERS.c
+Linking C executable cmTC_9d470
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_9d470.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_9d470.dir/STDC_HEADERS.c.o  -o cmTC_9d470  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file unistd.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_34505/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_34505.dir/build.make CMakeFiles/cmTC_34505.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_34505.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_34505.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_34505
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_34505.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_34505.dir/CheckIncludeFile.c.o  -o cmTC_34505  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file sys/types.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_39442/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_39442.dir/build.make CMakeFiles/cmTC_39442.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_39442.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_39442.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_39442
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_39442.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_39442.dir/CheckIncludeFile.c.o  -o cmTC_39442  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file sys/resource.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_3d58d/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_3d58d.dir/build.make CMakeFiles/cmTC_3d58d.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_3d58d.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_3d58d.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_3d58d
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3d58d.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_3d58d.dir/CheckIncludeFile.c.o  -o cmTC_3d58d  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file dlfcn.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_93c3a/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_93c3a.dir/build.make CMakeFiles/cmTC_93c3a.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_93c3a.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_93c3a.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_93c3a
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_93c3a.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_93c3a.dir/CheckIncludeFile.c.o  -o cmTC_93c3a  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file endian.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_b04fb/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_b04fb.dir/build.make CMakeFiles/cmTC_b04fb.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_b04fb.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_b04fb.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_b04fb
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_b04fb.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_b04fb.dir/CheckIncludeFile.c.o  -o cmTC_b04fb  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file limits.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_12c94/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_12c94.dir/build.make CMakeFiles/cmTC_12c94.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_12c94.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_12c94.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_12c94
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_12c94.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_12c94.dir/CheckIncludeFile.c.o  -o cmTC_12c94  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file locale.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_1804b/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_1804b.dir/build.make CMakeFiles/cmTC_1804b.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_1804b.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_1804b.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_1804b
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_1804b.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_1804b.dir/CheckIncludeFile.c.o  -o cmTC_1804b  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file memory.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_e9b9b/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_e9b9b.dir/build.make CMakeFiles/cmTC_e9b9b.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_e9b9b.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_e9b9b.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_e9b9b
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_e9b9b.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_e9b9b.dir/CheckIncludeFile.c.o  -o cmTC_e9b9b  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file stdint.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_78439/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_78439.dir/build.make CMakeFiles/cmTC_78439.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_78439.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_78439.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_78439
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_78439.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_78439.dir/CheckIncludeFile.c.o  -o cmTC_78439  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file stdlib.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_62ebc/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_62ebc.dir/build.make CMakeFiles/cmTC_62ebc.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_62ebc.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_62ebc.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_62ebc
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_62ebc.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_62ebc.dir/CheckIncludeFile.c.o  -o cmTC_62ebc  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file sys/cdefs.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_31353/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_31353.dir/build.make CMakeFiles/cmTC_31353.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_31353.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_31353.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_31353
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_31353.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_31353.dir/CheckIncludeFile.c.o  -o cmTC_31353  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file sys/param.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_175a2/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_175a2.dir/build.make CMakeFiles/cmTC_175a2.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_175a2.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_175a2.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_175a2
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_175a2.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_175a2.dir/CheckIncludeFile.c.o  -o cmTC_175a2  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file sys/random.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_e717c/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_e717c.dir/build.make CMakeFiles/cmTC_e717c.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_e717c.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_e717c.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_e717c
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_e717c.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_e717c.dir/CheckIncludeFile.c.o  -o cmTC_e717c  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the include file sys/stat.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_3b278/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_3b278.dir/build.make CMakeFiles/cmTC_3b278.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_3b278.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_3b278.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_3b278
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3b278.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_3b278.dir/CheckIncludeFile.c.o  -o cmTC_3b278  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the INFINITY exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_b2663/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_b2663.dir/build.make CMakeFiles/cmTC_b2663.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_b2663.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_b2663.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_b2663
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_b2663.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_b2663.dir/CheckSymbolExists.c.o  -o cmTC_b2663  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <math.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef INFINITY
+  return ((int*)(&INFINITY))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the isinf exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_24327/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_24327.dir/build.make CMakeFiles/cmTC_24327.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_24327.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_24327.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_24327
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_24327.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_24327.dir/CheckSymbolExists.c.o  -o cmTC_24327  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <math.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef isinf
+  return ((int*)(&isinf))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the isnan exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_430d8/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_430d8.dir/build.make CMakeFiles/cmTC_430d8.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_430d8.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_430d8.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_430d8
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_430d8.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_430d8.dir/CheckSymbolExists.c.o  -o cmTC_430d8  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <math.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef isnan
+  return ((int*)(&isnan))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the nan exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_1af9a/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_1af9a.dir/build.make CMakeFiles/cmTC_1af9a.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_1af9a.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_1af9a.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_1af9a
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_1af9a.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_1af9a.dir/CheckSymbolExists.c.o  -o cmTC_1af9a  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <math.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef nan
+  return ((int*)(&nan))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the snprintf exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_a8dc8/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_a8dc8.dir/build.make CMakeFiles/cmTC_a8dc8.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_a8dc8.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_a8dc8.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_a8dc8
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a8dc8.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_a8dc8.dir/CheckSymbolExists.c.o  -o cmTC_a8dc8  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdio.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef snprintf
+  return ((int*)(&snprintf))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the vasprintf exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_db1bd/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_db1bd.dir/build.make CMakeFiles/cmTC_db1bd.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_db1bd.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_db1bd.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_db1bd
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_db1bd.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_db1bd.dir/CheckSymbolExists.c.o  -o cmTC_db1bd  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdio.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef vasprintf
+  return ((int*)(&vasprintf))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the vsnprintf exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_146bb/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_146bb.dir/build.make CMakeFiles/cmTC_146bb.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_146bb.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_146bb.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_146bb
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_146bb.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_146bb.dir/CheckSymbolExists.c.o  -o cmTC_146bb  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdio.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef vsnprintf
+  return ((int*)(&vsnprintf))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the vprintf exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_871ec/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_871ec.dir/build.make CMakeFiles/cmTC_871ec.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_871ec.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_871ec.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_871ec
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_871ec.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_871ec.dir/CheckSymbolExists.c.o  -o cmTC_871ec  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdio.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef vprintf
+  return ((int*)(&vprintf))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the open exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_3bbe3/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_3bbe3.dir/build.make CMakeFiles/cmTC_3bbe3.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_3bbe3.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_3bbe3.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_3bbe3
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_3bbe3.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_3bbe3.dir/CheckSymbolExists.c.o  -o cmTC_3bbe3  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <fcntl.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef open
+  return ((int*)(&open))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the realloc exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_40768/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_40768.dir/build.make CMakeFiles/cmTC_40768.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_40768.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_40768.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_40768
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_40768.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_40768.dir/CheckSymbolExists.c.o  -o cmTC_40768  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdlib.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef realloc
+  return ((int*)(&realloc))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the setlocale exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_234b5/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_234b5.dir/build.make CMakeFiles/cmTC_234b5.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_234b5.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_234b5.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_234b5
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_234b5.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_234b5.dir/CheckSymbolExists.c.o  -o cmTC_234b5  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <locale.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef setlocale
+  return ((int*)(&setlocale))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the uselocale exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_0033d/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_0033d.dir/build.make CMakeFiles/cmTC_0033d.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_0033d.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_0033d.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_0033d
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_0033d.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_0033d.dir/CheckSymbolExists.c.o  -o cmTC_0033d  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <locale.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef uselocale
+  return ((int*)(&uselocale))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the strcasecmp exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_f3788/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_f3788.dir/build.make CMakeFiles/cmTC_f3788.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_f3788.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_f3788.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_f3788
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f3788.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_f3788.dir/CheckSymbolExists.c.o  -o cmTC_f3788  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <strings.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef strcasecmp
+  return ((int*)(&strcasecmp))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the strncasecmp exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_9c16d/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_9c16d.dir/build.make CMakeFiles/cmTC_9c16d.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_9c16d.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_9c16d.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_9c16d
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_9c16d.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_9c16d.dir/CheckSymbolExists.c.o  -o cmTC_9c16d  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <strings.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef strncasecmp
+  return ((int*)(&strncasecmp))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the strdup exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_d87c5/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_d87c5.dir/build.make CMakeFiles/cmTC_d87c5.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_d87c5.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_d87c5.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_d87c5
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_d87c5.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_d87c5.dir/CheckSymbolExists.c.o  -o cmTC_d87c5  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <string.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef strdup
+  return ((int*)(&strdup))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the strerror exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_df438/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_df438.dir/build.make CMakeFiles/cmTC_df438.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_df438.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_df438.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_df438
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_df438.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_df438.dir/CheckSymbolExists.c.o  -o cmTC_df438  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <string.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef strerror
+  return ((int*)(&strerror))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the vsyslog exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_a9fe9/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_a9fe9.dir/build.make CMakeFiles/cmTC_a9fe9.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_a9fe9.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_a9fe9.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_a9fe9
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a9fe9.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_a9fe9.dir/CheckSymbolExists.c.o  -o cmTC_a9fe9  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <syslog.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef vsyslog
+  return ((int*)(&vsyslog))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the getrandom exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_f41b2/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_f41b2.dir/build.make CMakeFiles/cmTC_f41b2.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_f41b2.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_f41b2.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_f41b2
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_f41b2.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_f41b2.dir/CheckSymbolExists.c.o  -o cmTC_f41b2  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <sys/random.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef getrandom
+  return ((int*)(&getrandom))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the getrusage exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_a9274/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_a9274.dir/build.make CMakeFiles/cmTC_a9274.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_a9274.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_a9274.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_a9274
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_a9274.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_a9274.dir/CheckSymbolExists.c.o  -o cmTC_a9274  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <sys/resource.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef getrusage
+  return ((int*)(&getrusage))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the strtoll exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_11e2c/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_11e2c.dir/build.make CMakeFiles/cmTC_11e2c.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_11e2c.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_11e2c.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_11e2c
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_11e2c.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_11e2c.dir/CheckSymbolExists.c.o  -o cmTC_11e2c  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdlib.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef strtoll
+  return ((int*)(&strtoll))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the strtoull exist passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_b06d0/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_b06d0.dir/build.make CMakeFiles/cmTC_b06d0.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_b06d0.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_b06d0.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+Linking C executable cmTC_b06d0
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_b06d0.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_b06d0.dir/CheckSymbolExists.c.o  -o cmTC_b06d0  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdlib.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef strtoull
+  return ((int*)(&strtoull))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the include file stddef.h exists passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_86490/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_86490.dir/build.make CMakeFiles/cmTC_86490.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_86490.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_86490.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+Linking C executable cmTC_86490
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_86490.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_86490.dir/CheckIncludeFile.c.o  -o cmTC_86490  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining size of int passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_30ffd/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_30ffd.dir/build.make CMakeFiles/cmTC_30ffd.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_30ffd.dir/SIZEOF_INT.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_30ffd.dir/SIZEOF_INT.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CheckTypeSize/SIZEOF_INT.c
+Linking C executable cmTC_30ffd
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_30ffd.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_30ffd.dir/SIZEOF_INT.c.o  -o cmTC_30ffd  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining size of int64_t passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_01d36/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_01d36.dir/build.make CMakeFiles/cmTC_01d36.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_01d36.dir/SIZEOF_INT64_T.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_01d36.dir/SIZEOF_INT64_T.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CheckTypeSize/SIZEOF_INT64_T.c
+Linking C executable cmTC_01d36
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_01d36.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_01d36.dir/SIZEOF_INT64_T.c.o  -o cmTC_01d36  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining size of long passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_5bf21/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_5bf21.dir/build.make CMakeFiles/cmTC_5bf21.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_5bf21.dir/SIZEOF_LONG.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_5bf21.dir/SIZEOF_LONG.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CheckTypeSize/SIZEOF_LONG.c
+Linking C executable cmTC_5bf21
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_5bf21.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_5bf21.dir/SIZEOF_LONG.c.o  -o cmTC_5bf21  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining size of long long passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_957da/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_957da.dir/build.make CMakeFiles/cmTC_957da.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_957da.dir/SIZEOF_LONG_LONG.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_957da.dir/SIZEOF_LONG_LONG.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CheckTypeSize/SIZEOF_LONG_LONG.c
+Linking C executable cmTC_957da
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_957da.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_957da.dir/SIZEOF_LONG_LONG.c.o  -o cmTC_957da  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining size of size_t passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_d1fe5/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_d1fe5.dir/build.make CMakeFiles/cmTC_d1fe5.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_d1fe5.dir/SIZEOF_SIZE_T.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_d1fe5.dir/SIZEOF_SIZE_T.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CheckTypeSize/SIZEOF_SIZE_T.c
+Linking C executable cmTC_d1fe5
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_d1fe5.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_d1fe5.dir/SIZEOF_SIZE_T.c.o  -o cmTC_d1fe5  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining size of ssize_t passed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_e2da2/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_e2da2.dir/build.make CMakeFiles/cmTC_e2da2.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_e2da2.dir/SIZEOF_SSIZE_T.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_e2da2.dir/SIZEOF_SSIZE_T.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CheckTypeSize/SIZEOF_SSIZE_T.c
+Linking C executable cmTC_e2da2
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_e2da2.dir/link.txt --verbose=1
+/usr/bin/cc      CMakeFiles/cmTC_e2da2.dir/SIZEOF_SSIZE_T.c.o  -o cmTC_e2da2  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Performing C SOURCE FILE Test HAVE_ATOMIC_BUILTINS succeeded with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_42506/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_42506.dir/build.make CMakeFiles/cmTC_42506.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_42506.dir/src.c.o
+/usr/bin/cc -D_GNU_SOURCE  -DHAVE_ATOMIC_BUILTINS -fPIE   -o CMakeFiles/cmTC_42506.dir/src.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_42506
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_42506.dir/link.txt --verbose=1
+/usr/bin/cc  -DHAVE_ATOMIC_BUILTINS    CMakeFiles/cmTC_42506.dir/src.c.o  -o cmTC_42506  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+int main() { int i, x = 0; i = __sync_add_and_fetch(&x,1); return x; }
+Performing C SOURCE FILE Test HAVE___THREAD succeeded with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_bc356/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_bc356.dir/build.make CMakeFiles/cmTC_bc356.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_bc356.dir/src.c.o
+/usr/bin/cc -D_GNU_SOURCE  -DHAVE___THREAD -fPIE   -o CMakeFiles/cmTC_bc356.dir/src.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_bc356
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_bc356.dir/link.txt --verbose=1
+/usr/bin/cc  -DHAVE___THREAD    CMakeFiles/cmTC_bc356.dir/src.c.o  -o cmTC_bc356  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+__thread int x = 0; int main() { return 0; }
+Performing C SOURCE FILE Test REENTRANT_WORKS succeeded with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_ba027/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_ba027.dir/build.make CMakeFiles/cmTC_ba027.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_ba027.dir/src.c.o
+/usr/bin/cc -D_GNU_SOURCE  -ffunction-sections -fdata-sections -Werror -Wall -Wcast-qual -Wno-error=deprecated-declarations -Wextra -Wwrite-strings -Wno-unused-parameter -Wstrict-prototypes -DREENTRANT_WORKS -fPIE   -o CMakeFiles/cmTC_ba027.dir/src.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_ba027
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_ba027.dir/link.txt --verbose=1
+/usr/bin/cc  -ffunction-sections -fdata-sections -Werror -Wall -Wcast-qual -Wno-error=deprecated-declarations -Wextra -Wwrite-strings -Wno-unused-parameter -Wstrict-prototypes -DREENTRANT_WORKS    CMakeFiles/cmTC_ba027.dir/src.c.o  -o cmTC_ba027  -lm 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+
+	/* uClibc toolchains without threading barf when _REENTRANT is defined */
+	#define _REENTRANT 1
+	#include <sys/types.h>
+	int main (void)
+	{
+	  return 0;
+	}
+	
+Performing C SOURCE FILE Test BSYMBOLIC_WORKS succeeded with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_24e2e/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_24e2e.dir/build.make CMakeFiles/cmTC_24e2e.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_24e2e.dir/src.c.o
+/usr/bin/cc -D_GNU_SOURCE  -ffunction-sections -fdata-sections -Werror -Wall -Wcast-qual -Wno-error=deprecated-declarations -Wextra -Wwrite-strings -Wno-unused-parameter -Wstrict-prototypes -DBSYMBOLIC_WORKS -fPIE   -o CMakeFiles/cmTC_24e2e.dir/src.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_24e2e
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_24e2e.dir/link.txt --verbose=1
+/usr/bin/cc  -ffunction-sections -fdata-sections -Werror -Wall -Wcast-qual -Wno-error=deprecated-declarations -Wextra -Wwrite-strings -Wno-unused-parameter -Wstrict-prototypes -DBSYMBOLIC_WORKS    CMakeFiles/cmTC_24e2e.dir/src.c.o  -o cmTC_24e2e  -lm -Wl,-Bsymbolic-functions 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+
+	int main (void)
+	{
+	  return 0;
+	}
+	
+Performing C SOURCE FILE Test VERSION_SCRIPT_WORKS succeeded with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_6e6b1/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_6e6b1.dir/build.make CMakeFiles/cmTC_6e6b1.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_6e6b1.dir/src.c.o
+/usr/bin/cc -D_GNU_SOURCE  -ffunction-sections -fdata-sections -Werror -Wall -Wcast-qual -Wno-error=deprecated-declarations -Wextra -Wwrite-strings -Wno-unused-parameter -Wstrict-prototypes -DVERSION_SCRIPT_WORKS -fPIE   -o CMakeFiles/cmTC_6e6b1.dir/src.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/src.c
+Linking C executable cmTC_6e6b1
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_6e6b1.dir/link.txt --verbose=1
+/usr/bin/cc  -ffunction-sections -fdata-sections -Werror -Wall -Wcast-qual -Wno-error=deprecated-declarations -Wextra -Wwrite-strings -Wno-unused-parameter -Wstrict-prototypes -DVERSION_SCRIPT_WORKS    CMakeFiles/cmTC_6e6b1.dir/src.c.o  -o cmTC_6e6b1  -lm -Wl,--version-script,/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/check-version-script.sym 
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+
+	int main (void)
+	{
+	  return 0;
+	}
+	

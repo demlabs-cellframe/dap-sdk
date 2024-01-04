@@ -119,6 +119,7 @@ file( GLOB CRYPTO_SRCS
       src/sig_tesla/*.c
       src/sig_picnic/*.c
       src/sig_dilithium/*.c
+	src/sig_ecdsa/*.c
       src/ringct20/*.c
       src/falcon/*.c
       ${SPHINCS_BASE_SRCS}
@@ -138,6 +139,7 @@ file( GLOB CRYPTO_HEADERS
       src/msrln/*.h
       src/newhope/*.h
       src/sig_bliss/*.h
+	src/sig_ecdsa/*.h      
       src/sig_tesla/*.h
       src/sig_picnic/*.h
       src/sig_dilithium/*.h
@@ -430,6 +432,7 @@ if(UNIX)
 endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
+target_include_directories(dap_crypto PUBLIC ../3rdparty/secp256k1)
 
 if(BUILD_CRYPTO_TESTS)
     enable_testing()

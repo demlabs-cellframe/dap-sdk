@@ -204,10 +204,6 @@ typedef struct dap_enc_key {
         byte_t * shared_key;
     };
 
-    union{
-        void* context_data;
-        size_t* context_size;
-    };
 
     size_t pub_key_data_size;
     //unsigned char * pub_key_data; // can be null if enc symmetric

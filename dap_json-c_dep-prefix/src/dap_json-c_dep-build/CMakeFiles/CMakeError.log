@@ -1,0 +1,208 @@
+Determining if the include file xlocale.h exists failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_5aa4e/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_5aa4e.dir/build.make CMakeFiles/cmTC_5aa4e.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_5aa4e.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_5aa4e.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: xlocale.h: No such file or directory
+    1 | #include <xlocale.h>
+      |          ^~~~~~~~~~~
+compilation terminated.
+make[4]: *** [CMakeFiles/cmTC_5aa4e.dir/build.make:66: CMakeFiles/cmTC_5aa4e.dir/CheckIncludeFile.c.o] Error 1
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: *** [Makefile:121: cmTC_5aa4e/fast] Error 2
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Determining if the _isnan exist failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_01951/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_01951.dir/build.make CMakeFiles/cmTC_01951.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_01951.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_01951.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘_isnan’ undeclared (first use in this function)
+    8 |   return ((int*)(&_isnan))[argc];
+      |                   ^~~~~~
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
+make[4]: *** [CMakeFiles/cmTC_01951.dir/build.make:66: CMakeFiles/cmTC_01951.dir/CheckSymbolExists.c.o] Error 1
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: *** [Makefile:121: cmTC_01951/fast] Error 2
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <float.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef _isnan
+  return ((int*)(&_isnan))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the _finite exist failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_5d5a6/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_5d5a6.dir/build.make CMakeFiles/cmTC_5d5a6.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_5d5a6.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_5d5a6.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘_finite’ undeclared (first use in this function)
+    8 |   return ((int*)(&_finite))[argc];
+      |                   ^~~~~~~
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
+make[4]: *** [CMakeFiles/cmTC_5d5a6.dir/build.make:66: CMakeFiles/cmTC_5d5a6.dir/CheckSymbolExists.c.o] Error 1
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: *** [Makefile:121: cmTC_5d5a6/fast] Error 2
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <float.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef _finite
+  return ((int*)(&_finite))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the _doprnt exist failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_0b13a/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_0b13a.dir/build.make CMakeFiles/cmTC_0b13a.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_0b13a.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_0b13a.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘_doprnt’ undeclared (first use in this function)
+    8 |   return ((int*)(&_doprnt))[argc];
+      |                   ^~~~~~~
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
+make[4]: *** [CMakeFiles/cmTC_0b13a.dir/build.make:66: CMakeFiles/cmTC_0b13a.dir/CheckSymbolExists.c.o] Error 1
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: *** [Makefile:121: cmTC_0b13a/fast] Error 2
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdio.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef _doprnt
+  return ((int*)(&_doprnt))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the arc4random exist failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_054c5/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_054c5.dir/build.make CMakeFiles/cmTC_054c5.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_054c5.dir/CheckSymbolExists.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_054c5.dir/CheckSymbolExists.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c: In function ‘main’:
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: ‘arc4random’ undeclared (first use in this function); did you mean ‘srandom’?
+    8 |   return ((int*)(&arc4random))[argc];
+      |                   ^~~~~~~~~~
+      |                   srandom
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: note: each undeclared identifier is reported only once for each function it appears in
+make[4]: *** [CMakeFiles/cmTC_054c5.dir/build.make:66: CMakeFiles/cmTC_054c5.dir/CheckSymbolExists.c.o] Error 1
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: *** [Makefile:121: cmTC_054c5/fast] Error 2
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+File /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include <stdlib.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef arc4random
+  return ((int*)(&arc4random))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+Determining if the include file bsd/stdlib.h exists failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_c3adf/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_c3adf.dir/build.make CMakeFiles/cmTC_c3adf.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_c3adf.dir/CheckIncludeFile.c.o
+/usr/bin/cc -D_GNU_SOURCE  -fPIE   -o CMakeFiles/cmTC_c3adf.dir/CheckIncludeFile.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/CheckIncludeFile.c:1:10: fatal error: bsd/stdlib.h: No such file or directory
+    1 | #include <bsd/stdlib.h>
+      |          ^~~~~~~~~~~~~~
+compilation terminated.
+make[4]: *** [CMakeFiles/cmTC_c3adf.dir/build.make:66: CMakeFiles/cmTC_c3adf.dir/CheckIncludeFile.c.o] Error 1
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: *** [Makefile:121: cmTC_c3adf/fast] Error 2
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+
+Performing C SOURCE FILE Test HAS_GNU_WARNING_LONG failed with the following output:
+Change Dir: /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp
+
+Run Build Command(s):/usr/bin/make cmTC_346cd/fast && make[3]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+/usr/bin/make -f CMakeFiles/cmTC_346cd.dir/build.make CMakeFiles/cmTC_346cd.dir/build
+make[4]: Entering directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_346cd.dir/src.c.o
+/usr/bin/cc -D_GNU_SOURCE  -DHAS_GNU_WARNING_LONG -fPIE   -o CMakeFiles/cmTC_346cd.dir/src.c.o   -c /home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/src.c
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/src.c:3:9: warning: missing terminating " character
+    3 | __asm__(".section .gnu.json_object_get
+      |         ^
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/src.c:3:9: error: missing terminating " character
+    3 | __asm__(".section .gnu.json_object_get
+      |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/src.c:4:2: error: expected string literal before ‘.’ token
+    4 |  .ascii "Please link against libjson-c instead of libjson"
+      |  ^
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/src.c:5:7: warning: missing terminating " character
+    5 |  .text");
+      |       ^
+/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp/src.c:5:7: error: missing terminating " character
+    5 |  .text");
+      |       ^~~
+make[4]: *** [CMakeFiles/cmTC_346cd.dir/build.make:66: CMakeFiles/cmTC_346cd.dir/src.c.o] Error 1
+make[4]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+make[3]: *** [Makefile:121: cmTC_346cd/fast] Error 2
+make[3]: Leaving directory '/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-build/CMakeFiles/CMakeTmp'
+
+
+Source file was:
+
+extern void json_object_get();
+__asm__(".section .gnu.json_object_get
+	.ascii "Please link against libjson-c instead of libjson"
+	.text");
+int main(int c, char *v) { return 0;}
+

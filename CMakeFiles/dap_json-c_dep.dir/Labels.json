@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/home/anton/Documents/code/dap-sdk/CMakeFiles/dap_json-c_dep"
+		},
+		{
+			"file" : "/home/anton/Documents/code/dap-sdk/CMakeFiles/dap_json-c_dep.rule"
+		},
+		{
+			"file" : "/home/anton/Documents/code/dap-sdk/CMakeFiles/dap_json-c_dep-complete.rule"
+		},
+		{
+			"file" : "/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-install.rule"
+		},
+		{
+			"file" : "/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-mkdir.rule"
+		},
+		{
+			"file" : "/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-download.rule"
+		},
+		{
+			"file" : "/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-update.rule"
+		},
+		{
+			"file" : "/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-patch.rule"
+		},
+		{
+			"file" : "/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-configure.rule"
+		},
+		{
+			"file" : "/home/anton/Documents/code/dap-sdk/dap_json-c_dep-prefix/src/dap_json-c_dep-stamp/dap_json-c_dep-build.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"dap_json-c_dep"
+		],
+		"name" : "dap_json-c_dep"
+	}
+}
