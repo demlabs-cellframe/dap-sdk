@@ -139,7 +139,6 @@ file( GLOB CRYPTO_HEADERS
       src/msrln/*.h
       src/newhope/*.h
       src/sig_bliss/*.h
-	src/sig_ecdsa/*.h      
       src/sig_tesla/*.h
       src/sig_picnic/*.h
       src/sig_dilithium/*.h
@@ -241,10 +240,14 @@ if (DAP_PQRL)
     ENDIF()
 endif()
 
+
 target_include_directories(dap_crypto PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
 target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/)
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
+
+#target_include_directories(dap_crypto PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include )
+
 
 target_include_directories(dap_crypto PUBLIC
         src/XKCP/lib/common
@@ -424,15 +427,15 @@ endif()
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
 
 if(WIN32)
-  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c)
+  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c libsecp256k1 )
 endif()
 
 if(UNIX)
-  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c m)
+  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c m libsecp256k1)
 endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
-target_include_directories(dap_crypto PUBLIC ../3rdparty/secp256k1)
+target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include)
 
 if(BUILD_CRYPTO_TESTS)
     enable_testing()

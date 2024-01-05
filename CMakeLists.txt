@@ -108,6 +108,8 @@ add_subdirectory(core)
 
 if (DAPSDK_MODULES MATCHES "crypto")
     # Cryptography
+    add_subdirectory(3rdparty/secp256k1)
+
     add_subdirectory(crypto)
     message("[+] Module 'crypto'")
 endif()
