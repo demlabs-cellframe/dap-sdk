@@ -810,7 +810,7 @@ char    *str_header;
                     if (json_commands(cmd_name)) {
                         res = l_cmd->func(argc, l_argv, (void *)&json_com_res);
                     } else if (l_cmd->arg_func) {
-                        res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
+                        res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, (void *)&str_reply);
                     } else {
                         res = l_cmd->func(argc, l_argv, (void *)&str_reply);
                     }
@@ -930,16 +930,17 @@ static void* s_thread_main_func(void *args)
  * @param str
  * @param ...
  */
-void dap_cli_server_cmd_set_reply_text(char **str_reply, const char *str, ...)
+void dap_cli_server_cmd_set_reply_text(void **a_str_reply, const char *str, ...)
 {
-    if(str_reply) {
-        if(*str_reply) {
-            DAP_DELETE(*str_reply);
-            *str_reply = NULL;
+    char **l_str_reply = (char **)a_str_reply;
+    if (l_str_reply) {
+        if (*l_str_reply) {
+            DAP_DELETE(*l_str_reply);
+            *l_str_reply = NULL;
         }
         va_list args;
         va_start(args, str);
-        *str_reply = dap_strdup_vprintf(str, args); //*str_reply = dap_strdup(str);
+        *l_str_reply = dap_strdup_vprintf(str, args);
         va_end(args);
     }
 }

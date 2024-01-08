@@ -91,7 +91,7 @@ char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_reques
     }
 
     char *l_str = dap_strdup_printf(
-        "{\"method\":\"%s\", \"params\":%s, \"id\":\"%llu\" }",
+        "{\"method\":\"%s\", \"params\":%s, \"id\":\"%"DAP_UINT64_FORMAT_U"\" }",
         a_request->method, params_json, a_request->id);
 
     DAP_FREE(params_json); 
