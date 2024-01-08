@@ -113,6 +113,8 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_KEM_KYBER512 = 23, // NIST Kyber KEM implementation
     DAP_ENC_KEY_TYPE_SIG_FALCON = 24, 
     DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS = 25,
+    DAP_ENC_KEY_TYPE_SIG_ECDSA = 26,
+
     DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED = 100,
 
 #ifdef DAP_PQLR

@@ -23,7 +23,7 @@ typedef struct secp256k1_context ecdsa_context_t;
 
 typedef struct {
 	unsigned char data[DAP_ENC_ECDSA_SKEY_LEN];
-}DAP_ALIGNED_PACKED ecdsa_private_key_t;
+} ecdsa_private_key_t;
 
 typedef struct secp256k1_pubkey ecdsa_public_key_t;
 

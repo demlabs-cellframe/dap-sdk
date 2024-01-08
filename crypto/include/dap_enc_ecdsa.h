@@ -5,6 +5,7 @@
 #include "dap_enc_key.h"
 
 
+
 enum DAP_ECDSA_SIGN_SECURITY {
     ECDSA_TOY = 0, ECDSA_MAX_SPEED, ECDSA_MIN_SIZE, ECDSA_MAX_SECURITY
 };
