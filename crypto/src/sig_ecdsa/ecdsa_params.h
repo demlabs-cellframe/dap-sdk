@@ -29,7 +29,7 @@ typedef struct secp256k1_pubkey ecdsa_public_key_t;
 
 typedef struct secp256k1_ecdsa_signature ecdsa_signature_t;
 
-
+typedef struct secp256k1_ecdsa_signature ecdsa_signature_t;
 
 ///==========================================================================================
 
