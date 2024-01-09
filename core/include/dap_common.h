@@ -694,7 +694,7 @@ void dap_set_log_tag_width(size_t width);
 const char * dap_get_appname();
 void dap_set_appname(const char * a_appname);
 
-char *dap_itoa(int i);
+char *dap_itoa(long long i);
 
 unsigned dap_gettid();
 
