@@ -45,7 +45,12 @@ char *dap_strjoin(const char *a_separator, ...);
 char** dap_strsplit(const char *a_string, const char *a_delimiter, int a_max_tokens);
 size_t dap_str_countv(char **a_str_array);
 size_t dap_str_symbol_count(const char *a_str, char a_sym);
+<<<<<<< HEAD
 
+=======
+char **dap_str_appv(char **a_dst, char **a_src, size_t *a_count);
+char *dap_str_remove_spaces(char *a_str);
+>>>>>>> 93a0e7cc (Feature 10079)
 // copies a NULL-terminated array of strings
 char** dap_strdupv(const char **a_str_array);
 // frees the array itself and all of its strings.
