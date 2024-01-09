@@ -23,15 +23,6 @@ This file is part of DAP SDK the open source project
 #include "dap_tsd.h"
 #define LOG_TAG "dap_tsd"
 
-byte_t *dap_tsd_write(byte_t *a_ptr, uint16_t a_type, const void *a_data, size_t a_data_size)
-{
-    dap_return_val_if_fail(a_ptr && a_data && a_data_size, NULL);
-    dap_tsd_t *l_tsd = (dap_tsd_t *)a_ptr;
-    l_tsd->type = a_type;
-    l_tsd->size = a_data_size;
-    return dap_mempcpy(l_tsd->data, a_data, a_data_size);
-}
-
 /**
  * @brief dap_tsd_create
  * @param a_type
@@ -39,12 +30,17 @@ byte_t *dap_tsd_write(byte_t *a_ptr, uint16_t a_type, const void *a_data, size_t
  * @param a_data_size
  * @return
  */
-dap_tsd_t *dap_tsd_create(uint16_t a_type, const void *a_data, size_t a_data_size)
+dap_tsd_t * dap_tsd_create(uint16_t a_type, const void * a_data, size_t a_data_size)
 {
-    byte_t *l_tsd = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_tsd_t) + a_data_size);
-    if (l_tsd)
-        dap_tsd_write(l_tsd, a_type, a_data, a_data_size);
-    return (dap_tsd_t *)l_tsd;
+    dap_tsd_t * l_tsd = DAP_NEW_Z_SIZE(dap_tsd_t, sizeof(dap_tsd_t) + a_data_size );
+    if ( l_tsd ){
+        if (a_data && a_data_size)
+            memcpy(l_tsd->data, a_data , a_data_size );
+        l_tsd->type = a_type;
+        l_tsd->size = a_data_size;
+    }
+    return l_tsd;
+
 }
 
 /**
