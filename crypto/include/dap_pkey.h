@@ -155,10 +155,10 @@ DAP_STATIC_INLINE dap_pkey_type_t dap_pkey_type_from_enc_key_type(dap_enc_key_ty
 typedef struct dap_pkey {
     struct {
         dap_pkey_type_t type;   // Pkey type
-        uint32_t size;          // Pkey size
-    } DAP_ALIGN_PACKED header;
+        uint32_t size DAP_ALIGNED(4);          // Pkey size
+    } DAP_PACKED header;
     uint8_t pkey[];             // Raw pkey data
-} DAP_ALIGN_PACKED dap_pkey_t;
+} DAP_PACKED dap_pkey_t;
 
 DAP_STATIC_INLINE size_t dap_pkey_get_size(dap_pkey_t *a_pkey) { return sizeof(dap_pkey_t) + a_pkey->header.size; }
 
