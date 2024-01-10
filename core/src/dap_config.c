@@ -400,7 +400,7 @@ struct dap_config_item *dap_config_get_item(dap_config_t *a_config, const char *
     struct dap_config_item *l_item = NULL;
     HASH_FIND_STR(a_config->items, l_key, l_item);
     if (!l_item) {
-        log_it(L_DEBUG, "Not found param \"%s\"", l_key);
+        debug_if(debug_config, L_DEBUG, "Not found param \"%s\"", l_key);
     }
     DAP_DELETE(l_key);
     return l_item;
