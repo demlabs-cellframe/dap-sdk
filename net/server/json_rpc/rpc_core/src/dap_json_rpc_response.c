@@ -204,7 +204,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
 int json_print_commands(const char * a_name) {
     const char* long_cmd[] = {
             "tx_history",
-            "mempool_list",
+            "mempool_list"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
@@ -289,7 +289,7 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
 
 void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
     json_object * json_obj_response = json_object_array_get_idx(response->result_json_object, 0);
-    json_object * j_obj_net_name, * j_arr_chains, * j_obj_chain, *j_obj_removed, *j_arr_datums;
+    json_object * j_obj_net_name, * j_arr_chains, * j_obj_chain, *j_obj_removed, *j_arr_datums, *j_arr_total;
     json_object_object_get_ex(json_obj_response, "net", &j_obj_net_name);
     json_object_object_get_ex(json_obj_response, "chains", &j_arr_chains);
     int result_count = json_object_array_length(j_arr_chains);
@@ -298,10 +298,13 @@ void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
         json_object_object_get_ex(json_obj_result, "name", &j_obj_chain);
         json_object_object_get_ex(json_obj_result, "removed", &j_obj_removed);
         json_object_object_get_ex(json_obj_result, "datums", &j_arr_datums);
+        json_object_object_get_ex(json_obj_result, "total", &j_arr_total);
         printf("Removed %d records from the %s chain mempool in %s network.\n", 
                 json_object_get_int(j_obj_removed), json_object_get_string(j_obj_chain), json_object_get_string(j_obj_net_name));
         printf("Datums:\n");
         json_print_object(j_arr_datums, 1);
+        // TODO total parser
+        json_print_object(j_arr_total, 1);
     }
 }
 
@@ -334,7 +337,7 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
             }
             switch(json_print_commands(cmd_name)) {
                 case 1: json_print_for_tx_history(response); break; return 0;
-                case 2: json_print_for_mempool_list(response); break; return 0;
+                // case 2: json_print_for_mempool_list(response); break; return 0;
                 default: {
                         int json_type = 0;
                         json_object_is_type(response->result_json_object, json_type);
