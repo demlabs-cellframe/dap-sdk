@@ -228,6 +228,27 @@ char *dap_uint256_uninteger_to_char(uint256_t a_uint256);
  */
 char *dap_uint256_decimal_to_char(uint256_t a_uint256);
 
+/**
+ * @brief dap_uint256_decimal_to_round_char
+ *
+ * Converts a value from uint256_t to a string. The uint256_t value is treated as a fixed-point value.
+ * Rounds value to a_digits_after_point position after point.
+ *
+ * @param a_uint256
+ * @return char*
+ */
+char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_digits_after_point, bool is_round);
+
+/**
+ * @brief dap_uint256_char_to_round_char
+ *
+ * Converts a decimal string to a string with rounding to a_digits_after_point. The uint256_t value is treated as a fixed-point value.
+ *
+ * @param a_uint256
+ * @return char*
+ */
+char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_position, bool is_round);
+
 #ifdef __cplusplus
 }
 #endif
