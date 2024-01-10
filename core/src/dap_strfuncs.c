@@ -696,6 +696,10 @@ char **dap_str_appv(char **a_dst, char **a_src, size_t *a_count) {
     while (l_src && l_count_src--) {
         if (**l_src)
             l_res[l_count_dst++] = *l_src;
+        else {
+            DAP_DELETE(*l_src);
+            *l_src = NULL;
+        }
         l_src++;
     }
     l_res[l_count_dst] = NULL;
