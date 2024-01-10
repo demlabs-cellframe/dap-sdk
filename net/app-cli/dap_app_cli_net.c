@@ -51,6 +51,9 @@
 #include "dap_app_cli_net.h"
 #include "dap_enc_base64.h"
 
+#include "dap_json_rpc_request.h"
+#include "dap_json_rpc_response.h"
+
 static int s_status;
 
 //staic function to receive http data
@@ -161,11 +164,6 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
         .sin_family = AF_INET, .sin_port = htons(l_cli_port), .sin_addr = {{ .S_addr = htonl(INADDR_LOOPBACK) }}
     };
     l_addr_len = sizeof(struct sockaddr_in);
-#elif defined(DAP_OS_ANDROID)
-    struct sockaddr_in l_remote_addr = {
-        .sin_family = AF_INET, .sin_port = htons(l_cli_port), .sin_addr = { .s_addr = htonl(INADDR_LOOPBACK) }
-    };
-    l_addr_len = sizeof(struct sockaddr_in);
 #else
     struct sockaddr_un l_remote_addr;
     l_remote_addr.sun_family =  AF_UNIX;
@@ -219,10 +217,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
     if (a_cmd->cmd_param) {
         for (int i = 0; i < a_cmd->cmd_param_count; i++) {
             if (a_cmd->cmd_param[i]) {
-                if(l_cmd_data->str[l_cmd_data->len - 1] == ',')
-                    dap_string_append(l_cmd_data, " ");
-                else
-                    dap_string_append(l_cmd_data, "\r\n");
+                dap_string_append(l_cmd_data, ";");
                 if(s_dap_app_cli_cmd_contains_forbidden_symbol(a_cmd->cmd_param[i])){
                     char * l_cmd_param_base64 = dap_enc_strdup_to_base64(a_cmd->cmd_param[i]);
                     dap_string_append(l_cmd_data, l_cmd_param_base64);
@@ -233,15 +228,30 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
             }
         }
     }
-    dap_string_append(l_cmd_data, "\r\n\r\n");
+    // json_object* cmd = json_object_new_object();
+    // int ret = json_object_object_add(cmd, "command", json_object_new_string(l_cmd_data->str));
+    // if (ret != 0) {
+    //     printf("JSON creating error");
+    //     return -1;
+    // }
+    dap_json_rpc_params_t * params = dap_json_rpc_params_create();
+    dap_json_rpc_params_add_data(params, l_cmd_data->str, TYPE_PARAM_STRING);
+    uint64_t l_id_response = dap_json_rpc_response_get_new_id();
+    dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(a_cmd->cmd_name, params, l_id_response);
+    char * request_str = dap_json_rpc_request_to_json_string(a_request);
+
     dap_string_t *l_post_data = dap_string_new("");
     dap_string_printf(l_post_data, "POST /connect HTTP/1.1\r\n"
                                    "Host: localhost\r\n"
                                    "Content-Type: text/text\r\n"
                                    "Content-Length: %zu\r\n"
                                    "\r\n"
-                                   "%s", l_cmd_data->len, l_cmd_data->str);
-    send(*a_socket, l_post_data->str, l_post_data->len, 0);
+                                   "%s", strlen(request_str), request_str);
+    size_t res = send(*a_socket, l_post_data->str, l_post_data->len, 0);
+    if (res != l_post_data->len) {
+        printf("Error sending to server");
+        return -1;
+    }
 
     //wait for command execution
     time_t l_start_time = time(NULL);
@@ -252,18 +262,19 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
             s_status = DAP_CLI_ERROR_TIMEOUT;
     }
     // process result
-    if (a_cmd->cmd_res && !s_status) {
-        char **l_str = dap_strsplit(a_cmd->cmd_res, "\r\n", 1);
-        int l_cnt = dap_str_countv(l_str);
-        char *l_str_reply = NULL;
-        if (l_cnt == 2) {
-            //long l_err_code = strtol(l_str[0], NULL, 10);
-            l_str_reply = l_str[1];
+    if (!s_status && a_cmd->cmd_res) {
+        dap_json_rpc_response_t* response = dap_json_rpc_response_from_string(a_cmd->cmd_res);
+        if (l_id_response != response->id) {
+            printf("Wrong response from server\n");
+            return -1;
         }
-        printf("%s\n", (l_str_reply) ? l_str_reply : "no response");
-        dap_strfreev(l_str);
+        if (dap_json_rpc_response_printf_result(response, a_cmd->cmd_name) != 0) {
+            printf("Something wrong with response\n");
+        }
+        dap_json_rpc_response_free(response);
     }
     DAP_DELETE(a_cmd->cmd_res);
+    dap_json_rpc_request_free(a_request);
     dap_string_free(l_cmd_data, true);
     dap_string_free(l_post_data, true);
     return s_status;

@@ -50,6 +50,7 @@ if(WIN32)
   bcrypt
   crypt32
   secur32
+  dap_json-c
 )
 endif()
 
