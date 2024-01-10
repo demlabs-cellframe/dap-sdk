@@ -148,7 +148,7 @@ static char s_last_error[LAST_ERROR_MAX]    = {'\0'},
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
 
-#define STR_LOG_BUF_MAX 1000
+#define STR_LOG_BUF_MAX 1024
 
 static char* s_appname = NULL;
 
@@ -281,7 +281,7 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
         return;
     char log_str[STR_LOG_BUF_MAX] = { '\0' };
     size_t offset = s_ansi_seq_color_len[a_ll];
-    memcpy(log_str, s_ansi_seq_color[a_ll], s_ansi_seq_color_len[a_ll]);
+    memcpy(log_str, s_ansi_seq_color[a_ll], offset);
     offset += s_update_log_time(log_str + offset);
     offset += func_name
             ? snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s][%s:%d] ", s_log_level_tag[a_ll], a_log_tag, func_name, line_num)
