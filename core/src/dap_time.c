@@ -155,7 +155,8 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
     GetTimeZoneInformation(&l_tz_info);
     char l_tz_str[8] = { '\0' };
     snprintf(l_tz_str, sizeof(l_tz_str), " +%02d%02d", -(l_tz_info.Bias / 60), l_tz_info.Bias % 60);
-    l_ret += snprintf(a_out + l_ret, a_out_size_max - l_ret, l_tz_str);
+    if (l_ret < a_out_size_max)
+        l_ret += snprintf(a_out + l_ret, a_out_size_max - l_ret, l_tz_str);
 #endif
     return l_ret;
 }
