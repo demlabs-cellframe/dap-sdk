@@ -272,8 +272,8 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
 
         switch (l_type) {
         case 'r':
+            DAP_DELETE(l_name);
             if (l_item) {
-                DAP_DELETE(l_name);
                 HASH_DEL((*a_conf)->items, l_item);
                 dap_config_item_del(l_item);
             }
@@ -299,6 +299,8 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
         }
     }
     DAP_DELETE(l_line);
+    DAP_DEL_Z(l_key_for_arr);
+    DAP_DEL_Z(l_section);
     fclose(f);
     return 0;
 }
@@ -341,7 +343,7 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     if (l_pos >= MAX_PATH - 3)
         return l_conf;
 
-    strncpy(l_path + l_pos, ".d", 2);
+    memcpy(l_path + l_pos, ".d", 2);
 #ifdef DAP_OS_WINDOWS
     DIR *l_dir = opendir(l_path);
     if (!l_dir) {
