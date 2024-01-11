@@ -466,6 +466,12 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
         return l_item->val.val_str;
     case 'a':
         return l_item->val.val_arr[0];
+    case 'd':
+        return dap_itoa(l_item->val.val_int);
+    case 'u':
+        return dap_itoa(l_item->val.val_uint);
+    case 'b':
+        return dap_itoa(l_item->val.val_bool);
     default:
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
         return a_default;
