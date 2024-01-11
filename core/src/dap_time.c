@@ -137,19 +137,27 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
     time_t l_time = a_time;
     l_tmp = localtime(&l_time);
     if (!l_tmp) {
-        log_it(L_ERROR, "Can't convert data from unix fromat to structured one");
+        log_it(L_ERROR, "Can't convert data from unix format to structured one");
         return -2;
     }
-    int l_ret;
-#ifndef _WIN32
-    l_ret = strftime(a_out, a_out_size_max, "%a, %d %b %y %T %z", l_tmp);
-#else
-    l_ret = strftime(a_out, a_out_size_max, "%a, %d %b %y %H:%M:%S", l_tmp);
-#endif
+    int l_ret = strftime(a_out, a_out_size_max, "%a, %d %b %Y %H:%M:%S"
+                     #ifndef DAP_OS_WINDOWS
+                                                " %z"
+                     #endif
+                         , l_tmp);
     if (!l_ret) {
-        log_it( L_ERROR, "Can't print formatted time in string");
+        log_it(L_ERROR, "Can't print formatted time in string");
         return -1;
     }
+#ifdef DAP_OS_WINDOWS
+    // %z is unsupported on Windows platform
+    TIME_ZONE_INFORMATION l_tz_info;
+    GetTimeZoneInformation(&l_tz_info);
+    char l_tz_str[8] = { '\0' };
+    snprintf(l_tz_str, sizeof(l_tz_str), " +%02d%02d", -(l_tz_info.Bias / 60), l_tz_info.Bias % 60);
+    if (l_ret < a_out_size_max)
+        l_ret += snprintf(a_out + l_ret, a_out_size_max - l_ret, l_tz_str);
+#endif
     return l_ret;
 }
 
