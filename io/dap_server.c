@@ -200,7 +200,7 @@ dap_server_t* dap_server_new_local(const char * a_path, const char* a_mode, dap_
 dap_server_t* dap_server_new(const char **a_addrs, uint16_t *a_ports, size_t a_count, dap_server_type_t a_type, dap_events_socket_callbacks_t *a_callbacks)
 {
 // sanity check
-    dap_return_val_if_pass(!a_addrs || !a_ports || !a_count, NULL);
+    dap_return_val_if_pass(!a_ports || !a_count, NULL);
 // func work
     dap_server_t *l_server =  DAP_NEW_Z(dap_server_t);
     if (!l_server) {
@@ -257,7 +257,7 @@ dap_server_t* dap_server_new(const char **a_addrs, uint16_t *a_ports, size_t a_c
     }
 
     dap_events_socket_t *l_es = dap_events_socket_wrap2(l_server, l_socket_listener, &l_callbacks);
-    strncpy(l_es->listener_addr_str6, *a_addrs ? *a_addrs : "0.0.0.0", sizeof(l_es->listener_addr_str6) ); // If NULL we listen everything
+    strncpy(l_es->listener_addr_str6, (a_addrs && *a_addrs) ? *a_addrs : "0.0.0.0", sizeof(l_es->listener_addr_str6) ); // If NULL we listen everything
     l_es->listener_port = *a_ports;
     l_es->listener_addr.sin_family = AF_INET;
     l_es->listener_addr.sin_port = htons(l_es->listener_port);
@@ -278,7 +278,7 @@ dap_server_t* dap_server_new(const char **a_addrs, uint16_t *a_ports, size_t a_c
 static int s_server_run(dap_server_t *a_server, dap_events_socket_callbacks_t *a_callbacks)
 {
 // sanity check
-    dap_return_val_if_pass(!a_server || a_server->es_listeners, -1);
+    dap_return_val_if_pass(!a_server || !a_server->es_listeners, -1);
 // func work
     dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
     struct sockaddr *l_listener_addr =
