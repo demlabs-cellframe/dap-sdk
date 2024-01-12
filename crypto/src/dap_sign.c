@@ -319,7 +319,7 @@ bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t * a_sign_h
  * @param l_sign2
  * @return true or false
  */
-bool dap_sign_match_pkey_signs(dap_sign_t *l_sign1, dap_sign_t *l_sign2)
+bool dap_sign_compare_pkeys(dap_sign_t *l_sign1, dap_sign_t *l_sign2)
 {
     size_t l_pkey_ser_size1 = 0, l_pkey_ser_size2 = 0;
     // Get public key from sign

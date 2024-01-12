@@ -378,7 +378,7 @@ static int s_store_obj_apply(dap_store_obj_t *a_obj)
     }
     if (l_read_obj && l_cluster->owner_root_access &&
             a_obj->sign && l_read_obj->sign &&
-            dap_sign_match_pkey_signs(a_obj->sign, l_read_obj->sign))
+            dap_sign_compare_pkeys(a_obj->sign, l_read_obj->sign))
         l_signer_role = DAP_GDB_MEMBER_ROLE_ROOT;
     if (l_signer_role < l_required_role) {
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Global DB record with group %s and key %s is rejected "
