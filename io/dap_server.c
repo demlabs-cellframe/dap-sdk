@@ -340,7 +340,7 @@ static int s_server_run(dap_server_t *a_server, dap_events_socket_callbacks_t *a
                 pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
             pthread_mutex_unlock(&a_server->started_mutex);
         } else{
-            log_it(L_WARNING, "Can't wrap event socket for %s:%u server", a_server->address, a_server->port);
+            log_it(L_WARNING, "Can't wrap event socket for %s:%u server", l_es->listener_addr_str6, l_es->listener_port);
             return -2;
         }
     }
