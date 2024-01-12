@@ -263,11 +263,20 @@ typedef struct dap_events_socket {
     char service [DAP_EVSOCK$SZ_SERVICE + 1];
 
     // Remote address, port and others
-    struct sockaddr_in remote_addr;
-    char    remote_addr_str [INET_ADDRSTRLEN + 1];
-    char    remote_addr_str6[INET6_ADDRSTRLEN + 1];
-    short   remote_port;
+    union {
+        struct sockaddr_in remote_addr;
+        struct sockaddr_in listener_addr;
+    };
+    char remote_addr_str [INET_ADDRSTRLEN + 1];
 
+    union {
+        char remote_addr_str6[INET6_ADDRSTRLEN + 1];
+        char listener_addr_str6[INET6_ADDRSTRLEN + 1];   
+    };
+    union {
+        short   remote_port;
+        uint16_t  listener_port;
+    };
 
     // Links to related objects
     dap_context_t * context;

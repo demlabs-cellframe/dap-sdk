@@ -69,8 +69,11 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
  *
  * Returns: either @list or the new start of the DapList if @list was %NULL
  */
-dap_list_t *dap_list_append(dap_list_t *a_list, void* a_data)
+dap_list_t *dap_list_append(dap_list_t *a_list, void *a_data)
 {
+// sanity check
+    dap_return_val_if_pass(!a_data, a_list);
+//func work
     dap_list_t *l_el = DAP_NEW_Z(dap_list_t);
     if (!l_el) {
         log_it(L_CRITICAL, "Out of memory");

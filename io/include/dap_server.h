@@ -66,18 +66,13 @@ typedef void (*dap_server_callback_t)( struct dap_server *,void * arg ); // Call
 typedef struct dap_server {
 
   dap_server_type_t type;                   // Server's type
-  uint16_t  port;                           // Listen port
-  char      address[INET6_ADDRSTRLEN];      // Listen address
-
-#ifdef DAP_OS_WINDOWS
-  SOCKET socket_listener;
+  #ifdef DAP_OS_WINDOWS
+  SOCKET socket_listener_old;
 #else
-  int32_t socket_listener; // Socket for listener
+  int32_t socket_listener_old; // Socket for listener
 #endif
   dap_list_t *es_listeners;
-
-  struct sockaddr_in listener_addr; // Kernel structure for listener's binded address
-
+  
 #ifdef DAP_OS_UNIX
   struct sockaddr_un listener_path; // Path to UNIX socket
 #endif
@@ -101,7 +96,7 @@ void  dap_server_deinit( void ); // Deinit server module
 void dap_server_set_default(dap_server_t* a_server);
 dap_server_t* dap_server_get_default();
 
-dap_server_t* dap_server_new(const char * a_addr, uint16_t a_port, dap_server_type_t a_type, dap_events_socket_callbacks_t *a_callbacks);
+dap_server_t* dap_server_new(const char **a_addrs, uint16_t *a_ports, size_t a_count, dap_server_type_t a_type, dap_events_socket_callbacks_t *a_callbacks);
 dap_server_t* dap_server_new_local(const char * a_path, const char * a_mode, dap_events_socket_callbacks_t *a_callbacks);
 
 void dap_server_delete(dap_server_t *a_server);

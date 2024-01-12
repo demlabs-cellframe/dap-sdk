@@ -60,14 +60,14 @@ int dap_notify_server_init()
     const char * l_notify_socket_path = dap_config_get_item_str_default(g_config, "notify_server", "listen_path",NULL);
     const char * l_notify_socket_path_mode = dap_config_get_item_str_default(g_config, "notify_server", "listen_path_mode","0600");
 
-    const char * l_notify_socket_address = dap_config_get_item_str_default(g_config, "notify_server", "listen_address",NULL);
+    const char *l_notify_socket_address = dap_config_get_item_str_default(g_config, "notify_server", "listen_address",NULL);
     uint16_t l_notify_socket_port = dap_config_get_item_uint16_default(g_config, "notify_server", "listen_port",0);
 
     if(l_notify_socket_path){
         s_notify_server = dap_server_new_local(l_notify_socket_path, l_notify_socket_path_mode, NULL);
     }else if (l_notify_socket_address && l_notify_socket_port ){
-        s_notify_server = dap_server_new( l_notify_socket_address,
-                                            l_notify_socket_port, SERVER_TCP, NULL);
+        s_notify_server = dap_server_new( &l_notify_socket_address,
+                                            &l_notify_socket_port, 1, SERVER_TCP, NULL);
     }else{
         log_it(L_INFO,"Notify server is not configured, nothing to init but thats okay");
         return 0;

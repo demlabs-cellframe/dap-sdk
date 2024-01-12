@@ -1425,23 +1425,20 @@ void dap_events_socket_delete_mt(dap_worker_t * a_worker, dap_events_socket_uuid
  * @param a_callbacks
  * @return
  */
-dap_events_socket_t * dap_events_socket_wrap2( dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks )
+dap_events_socket_t *dap_events_socket_wrap2( dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks )
 {
-    assert( a_callbacks );
-    assert( a_server );
     if (!a_callbacks || !a_server) {
         log_it(L_CRITICAL, "Invalid arguments in dap_events_socket_wrap2");
         return NULL;
     }
 
-    dap_events_socket_t * l_es = s_dap_evsock_alloc ();
+    dap_events_socket_t *l_es = s_dap_evsock_alloc();
     if (!l_es)
         return NULL;
 
     l_es->socket = a_sock;
-    l_es->server = a_server;
-    if (a_callbacks)
-        l_es->callbacks = *a_callbacks;
+    l_es->server = a_server; 
+    l_es->callbacks = *a_callbacks;
     l_es->buf_out_size_max = l_es->buf_in_size_max = DAP_EVENTS_SOCKET_BUF_SIZE;
     l_es->buf_in = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_in_size_max+1);
     l_es->buf_out = a_callbacks->timer_callback ? NULL : DAP_NEW_Z_SIZE(byte_t, l_es->buf_out_size_max+1);
