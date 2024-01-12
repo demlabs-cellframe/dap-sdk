@@ -392,15 +392,12 @@ int dap_cli_server_init(bool a_debug_more,const char * a_socket_path_or_address,
 
     const char * l_listen_unix_socket_path = dap_config_get_item_str( g_config, "conserver", "listen_unix_socket_path");
 
-
-
-    const char * l_listen_unix_socket_permissions_str = dap_config_get_item_str( g_config, "conserver", "listen_unix_socket_permissions");
     mode_t l_listen_unix_socket_permissions = 0770;
 
     if ( l_listen_unix_socket_path && l_listen_unix_socket_permissions ) {
-        if ( l_listen_unix_socket_permissions_str ) {
+        if ( a_permissions ) {
             uint16_t l_perms;
-            sscanf(l_listen_unix_socket_permissions_str,"%ho", &l_perms);
+            sscanf(a_permissions, "%ho", &l_perms);
             l_listen_unix_socket_permissions = l_perms;
         }
         log_it( L_INFO, "Console interace on path %s (%04o) ", l_listen_unix_socket_path, l_listen_unix_socket_permissions );

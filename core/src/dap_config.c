@@ -272,8 +272,8 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
 
         switch (l_type) {
         case 'r':
+            DAP_DELETE(l_name);
             if (l_item) {
-                DAP_DELETE(l_name);
                 HASH_DEL((*a_conf)->items, l_item);
                 dap_config_item_del(l_item);
             }
@@ -299,6 +299,8 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
         }
     }
     DAP_DELETE(l_line);
+    DAP_DEL_Z(l_key_for_arr);
+    DAP_DEL_Z(l_section);
     fclose(f);
     return 0;
 }
@@ -341,7 +343,7 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     if (l_pos >= MAX_PATH - 3)
         return l_conf;
 
-    strncpy(l_path + l_pos, ".d", 2);
+    memcpy(l_path + l_pos, ".d", 2);
 #ifdef DAP_OS_WINDOWS
     DIR *l_dir = opendir(l_path);
     if (!l_dir) {
@@ -398,7 +400,7 @@ struct dap_config_item *dap_config_get_item(dap_config_t *a_config, const char *
     struct dap_config_item *l_item = NULL;
     HASH_FIND_STR(a_config->items, l_key, l_item);
     if (!l_item) {
-        log_it(L_DEBUG, "Not found param \"%s\"", l_key);
+        debug_if(debug_config, L_DEBUG, "Not found param \"%s\"", l_key);
     }
     DAP_DELETE(l_key);
     return l_item;
@@ -464,6 +466,12 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
         return l_item->val.val_str;
     case 'a':
         return l_item->val.val_arr[0];
+    case 'd':
+        return dap_itoa(l_item->val.val_int);
+    case 'u':
+        return dap_itoa(l_item->val.val_uint);
+    case 'b':
+        return dap_itoa(l_item->val.val_bool);
     default:
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
         return a_default;

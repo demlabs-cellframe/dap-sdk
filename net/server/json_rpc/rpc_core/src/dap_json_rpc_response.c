@@ -334,7 +334,7 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
             }
             switch(json_print_commands(cmd_name)) {
                 case 1: json_print_for_tx_history(response); break; return 0;
-                case 2: json_print_for_mempool_list(response); break; return 0;
+                // case 2: json_print_for_mempool_list(response); break; return 0;
                 default: {
                         int json_type = 0;
                         json_object_is_type(response->result_json_object, json_type);
