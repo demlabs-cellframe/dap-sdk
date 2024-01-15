@@ -95,10 +95,7 @@ void dap_stream_ch_deinit()
 {
 }
 
-
-
-
-
+#ifdef  DAP_SYS_DEBUG
 typedef struct __dap_stm_ch_rec__ {
     dap_stream_ch_t     *stm_ch;
     UT_hash_handle          hh;
@@ -106,7 +103,7 @@ typedef struct __dap_stm_ch_rec__ {
 
 static dap_stm_ch_rec_t     *s_stm_chs = NULL;                          /* @RRL:  A has table to track using of events sockets context */
 static pthread_rwlock_t     s_stm_ch_lock = PTHREAD_RWLOCK_INITIALIZER;
-
+#endif
 
 /*
  *   DESCRIPTION: Allocate a new <dap_stream_ch_t> context, add record into the hash table to track usage
@@ -130,13 +127,12 @@ static pthread_rwlock_t     s_stm_ch_lock = PTHREAD_RWLOCK_INITIALIZER;
  */
 static inline dap_stream_ch_t *dap_stream_ch_alloc (void)
 {
-int     l_rc;
 dap_stream_ch_t *l_stm_ch;
+if ( !(l_stm_ch = DAP_NEW_Z( dap_stream_ch_t )) )                       /* Allocate memory for new dap_events_socket context and the record */
+    return  log_it(L_CRITICAL, "Cannot allocate memory for <dap_stream_ch_t> context, errno=%d", errno), NULL;
+#ifdef DAP_SYS_DEBUG
+int     l_rc;
 dap_stm_ch_rec_t    *l_rec;
-
-    if ( !(l_stm_ch = DAP_NEW_Z( dap_stream_ch_t )) )                       /* Allocate memory for new dap_events_socket context and the record */
-        return  log_it(L_CRITICAL, "Cannot allocate memory for <dap_stream_ch_t> context, errno=%d", errno), NULL;
-
     if ( !(l_rec = DAP_NEW_Z( dap_stm_ch_rec_t )) )                         /* Allocate memory for new record */
         return  log_it(L_CRITICAL, "Cannot allocate memory for record, errno=%d", errno),
                 DAP_DELETE(l_stm_ch), NULL;
@@ -146,20 +142,16 @@ dap_stm_ch_rec_t    *l_rec;
                                                                             /* Add new record into the hash table */
     l_rc = pthread_rwlock_wrlock(&s_stm_ch_lock);
     assert(!l_rc);
-    HASH_ADD(hh, s_stm_chs, stm_ch, sizeof(dap_events_socket_t *), l_rec );
+    HASH_ADD_PTR(s_stm_chs, stm_ch, l_rec);
 
-#ifdef  DAP_SYS_DEBUG
     s_memstat[MEMSTAT$K_STM_CH].alloc_nr += 1;
-#endif
     l_rc = pthread_rwlock_unlock(&s_stm_ch_lock);
     assert(!l_rc);
 #ifndef DAP_DEBUG
     UNUSED(l_rc);
 #endif
-
-
+#endif
     debug_if(g_debug_reactor, L_NOTICE, "dap_stream_ch_t:%p - is allocated", l_stm_ch);
-
     return  l_stm_ch;
 }
 
@@ -186,19 +178,17 @@ static inline int dap_stm_ch_free (
                     dap_stream_ch_t *a_stm_ch
                         )
 {
+#ifdef DAP_SYS_DEBUG
 int     l_rc;
 dap_stm_ch_rec_t    *l_rec = NULL;
 
     l_rc = pthread_rwlock_wrlock(&s_stm_ch_lock);
     assert(!l_rc);
-
-    HASH_FIND(hh, s_stm_chs, &a_stm_ch, sizeof(dap_stream_ch_t *), l_rec );
+    HASH_FIND_PTR(s_stm_chs, &a_stm_ch, l_rec);
     if ( l_rec && (l_rec->stm_ch == a_stm_ch) )
-        HASH_DELETE(hh, s_stm_chs, l_rec);                           /* Remove record from the table */
+        HASH_DEL(s_stm_chs, l_rec);                           /* Remove record from the table */
 
-#ifdef  DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM_CH].free_nr, 1);
-#endif
 
     l_rc = pthread_rwlock_unlock(&s_stm_ch_lock);
     assert(!l_rc);
@@ -217,7 +207,9 @@ dap_stm_ch_rec_t    *l_rec = NULL;
         debug_if(g_debug_reactor, L_NOTICE, "dap_stream_ch_t:%p - is released", a_stm_ch);
 
     }
-
+#else
+    DAP_DELETE(a_stm_ch);
+#endif
     return  0;  /* SS$_SUCCESS */
 }
 
