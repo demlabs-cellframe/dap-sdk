@@ -84,6 +84,8 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
             case TYPE_RESPONSE_BOOLEAN:
             case TYPE_RESPONSE_NULL:
             case TYPE_RESPONSE_ERROR:
+                if (response->json_arr_errors)
+                    json_object_put(response->json_arr_errors);
                 // No specific cleanup needed for these response types
                 break;
             default:
@@ -197,7 +199,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
     json_object_object_get_ex(jobj, "id", &result_id);
     response->id = json_object_get_int64(result_id);
 
-    // json_object_put(jobj);
+    json_object_put(jobj);
     return response;
 }
 
