@@ -423,10 +423,11 @@ char *dap_strncpy(char *a_dst, const char *a_src, size_t a_limit)
     do {
         *a_dst++ = *a_src;
         a_limit--;
-    while (*a_src++ != '\0' && a_limit);
+    } while (*a_src++ != '\0' && a_limit);
     --a_dst;
     if (*a_dst != '\0')
         *a_dst = '\0';
+    return a_dst;
 }
 
 /**

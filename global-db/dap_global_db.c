@@ -258,6 +258,25 @@ void dap_global_db_deinit() {
     dap_db_driver_deinit();
     dap_global_db_cluster_deinit();
 }
+
+bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
+{
+    dap_return_val_if_fail(a_group && a_mask && *a_group && *a_mask, false);
+    const char *l_group_tail = a_group + strlen(a_group);           // Pointer to trailng zero
+    if (!strcmp(l_group_tail - sizeof(DAP_GLOBAL_DB_DEL_SUFFIX), DAP_GLOBAL_DB_DEL_SUFFIX))
+        l_group_tail -= sizeof(DAP_GLOBAL_DB_DEL_SUFFIX);           // Pointer to '.' of .del group suffix
+    const char *l_mask_tail = a_mask + strlen(a_mask);
+    const char *l_group_it = a_group, *l_mask_it = a_mask;
+    const char *l_wildcard = strchr(a_mask, '*');
+    while (l_mask_it < (l_wildcard ? l_wildcard : l_mask_tail) &&
+                l_group_it < l_group_tail)
+        if (*l_group_it++ != *l_mask_it++)
+            return false;
+    if (l_mask_it == l_wildcard && ++l_mask_it < l_mask_tail)
+        return strstr(l_group_it, l_mask_it);
+    return true;
+}
+
 static int s_store_obj_apply(dap_store_obj_t *a_obj)
 {
     assert(a_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD);
