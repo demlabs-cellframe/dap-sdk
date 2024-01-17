@@ -405,6 +405,31 @@ char* dap_stpcpy(char *a_dest, const char *a_src)
 }
 
 /**
+ * dap_strncpy:
+ * @a_dst: destination buffer.
+ * @a_src: source string.
+ * @a_limit: destination buffer max size
+ *
+ * Copies a null-terminated string into the dest buffer, include the
+ * trailing null, limited to specified size, and return a pointer
+ * to the trailing null byte. Although limit reached before source string end
+ * the trailing NULL is inserted to the destination string
+ *
+ * Returns: a pointer to trailing null byte.
+ **/
+char *dap_strncpy(char *a_dst, const char *a_src, size_t a_limit)
+{
+    dap_return_val_if_fail(a_dst && a_src, NULL);
+    do {
+        *a_dst++ = *a_src;
+        a_limit--;
+    while (*a_src++ != '\0' && a_limit);
+    --a_dst;
+    if (*a_dst != '\0')
+        *a_dst = '\0';
+}
+
+/**
  * dap_strstr_len:
  * @a_haystack: a string
  * @a_haystack_len: the maximum length of @a_haystack. Note that -1 is

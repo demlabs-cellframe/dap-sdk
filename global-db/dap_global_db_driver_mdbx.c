@@ -74,13 +74,12 @@ typedef struct __db_ctx__ {
 /*
  * MDBX record structure
  */
-struct DAP_ALIGN_PACKED driver_record {
-    dap_nanotime_t  timestamp;                                              /* Timestamp of the record */
+struct DAP_ALIGN_PACKED driver_record {                                     /* Timestamp and CRC is the driver key of the record, packed in big-endian format */
+    uint64_t        key_len;                                                /* Legth of global DB text key part */
     uint64_t        value_len;                                              /* Length of value part */
-    uint8_t         flags;                                                  /* Flag of the record : see RECORD_FLAGS enums */
-    uint32_t        crc;                                                    /* Object integrity */
     uint64_t        sign_len;                                               /* Size control */
-    byte_t          value_n_sign[];                                         /* Serialized form */
+    uint8_t         flags;                                                  /* Flag of the record : see RECORD_FLAGS enums */
+    byte_t          key_n_value_n_sign[];                                   /* Serialized form */
 };
 
 static pthread_mutex_t s_db_ctx_mutex = PTHREAD_MUTEX_INITIALIZER;          /* A mutex  for working with a DB context */
@@ -342,7 +341,7 @@ size_t     l_upper_limit_of_db_size = 16;
      * [resources]
      * mdbx_upper_limit_of_db_size=32
      */
-    l_upper_limit_of_db_size = dap_config_get_item_uint32_default ( g_config,  "resources", "mdbx_upper_limit_of_db_size", l_upper_limit_of_db_size);
+    l_upper_limit_of_db_size = dap_config_get_item_uint32_default ( g_config,  "global_db", "mdbx_upper_limit_of_db_size", l_upper_limit_of_db_size);
     l_upper_limit_of_db_size  *= 1024*1024*1024ULL;
     log_it(L_INFO, "Set MDBX Upper Limit of DB Size to %zu octets", l_upper_limit_of_db_size);
 
@@ -363,7 +362,6 @@ size_t     l_upper_limit_of_db_size = 16;
     log_it(L_NOTICE, "Set maximum number of local groups: %lu", DAP_GLOBAL_DB_GROUPS_COUNT_MAX);
     dap_assert ( !(l_rc =  mdbx_env_set_maxdbs (s_mdbx_env, DAP_GLOBAL_DB_GROUPS_COUNT_MAX)) );/* Set maximum number of the file-tables (MDBX subDB)
                                                                               according to number of supported groups */
-
 
                                                                             /* We set "unlim" for all MDBX characteristics at the moment */
 
@@ -540,39 +538,51 @@ int s_fill_store_obj(const char *a_group, MDBX_val *a_key, MDBX_val *a_data, dap
     if (!a_obj->group)
         return log_it(L_CRITICAL, "Cannot allocate a memory for store object group"), -3;
 
-    if (!a_key->iov_len)
-        return log_it(L_ERROR, "Zero length of global DB record key"), -4;
-    if ( (a_obj->key = DAP_NEW_Z_SIZE(char, a_key->iov_len + 1)) )
-        memcpy((char *)a_obj->key, a_key->iov_base, a_key->iov_len);
+    if (a_key->iov_len != sizeof(dap_global_db_driver_hash_t)) {
+        DAP_DELETE(a_obj->group);
+        return log_it(L_ERROR, "Invalid length of global DB record key, expected %zu, got %zu",
+                                                    sizeof(dap_global_db_driver_hash_t), a_key->iov_len), -4;
+    }
+    dap_global_db_driver_hash_t *l_driver_key = a_key->iov_base;
+    a_obj->timestamp = be64toh(l_driver_key->bets);
+    a_obj->crc = be64toh(l_driver_key->becrc);
+
+    struct driver_record *l_record = a_data->iov_base;
+    if (a_data->iov_len < sizeof(*l_record) || // Do not intersect bounds of read array, check it twice
+            a_data->iov_len < sizeof(*l_record) + l_record->sign_len + l_record->value_len + l_record->key_len) {
+        DAP_DELETE(a_obj->group);
+        return log_it(L_ERROR, "Corrupted global DB record internal value"), -6;
+    }
+    if (!l_record->key_len) {
+        DAP_DELETE(a_obj->group);
+        return log_it(L_ERROR, "Ivalid driver record with zero text key length"), -9;
+    }
+    if ( (a_obj->key = DAP_NEW_SIZE(char, l_record->key_len)) )
+        strcpy((char *)a_obj->key, l_record->key_n_value_n_sign, l_record->key_len);
     else {
         DAP_DELETE(a_obj->group);
         return log_it(L_CRITICAL, "Cannot allocate a memory for store object key"), -5;
     }
-    struct driver_record *l_record = a_data->iov_base;
-    if (a_data->iov_len < sizeof(*l_record) || // Do not intersct bounds of readed array, check it twice
-            a_data->iov_len < sizeof(*l_record) + l_record->sign_len + l_record->value_len ||
-            l_record->sign_len == 0)
-        return log_it(L_ERROR, "Corrupted global DB record internal value"), -6;
-    a_obj->timestamp = l_record->timestamp;
     a_obj->value_len = l_record->value_len;
     a_obj->flags = l_record->flags;
-    a_obj->crc = l_record->crc;
-    if (a_obj->value_len &&
-            !(a_obj->value = DAP_DUP_SIZE(l_record->value_n_sign, a_obj->value_len))) {
+        if (a_obj->value_len &&
+            !(a_obj->value = DAP_DUP_SIZE(l_record->key_n_value_n_sign + l_record->key_len, a_obj->value_len))) {
         DAP_DELETE(a_obj->group);
         DAP_DELETE(a_obj->key);
         return log_it(L_CRITICAL, "Cannot allocate a memory for store object value"), -7;
     }
-    dap_sign_t *l_sign = (dap_sign_t *)(l_record->value_n_sign + l_record->value_len);
-    if (dap_sign_get_size(l_sign) != l_record->sign_len ||
-            !(a_obj->sign = (dap_sign_t *)DAP_DUP_SIZE(l_sign, l_record->sign_len))) {
-        DAP_DELETE(a_obj->group);
-        DAP_DELETE(a_obj->key);
-        DAP_DEL_Z(a_obj->value);
-        if (dap_sign_get_size(l_sign) != l_record->sign_len)
-            return log_it(L_ERROR, "Corrupted global DB record internal value"), -6;
-        else
-            return log_it(L_CRITICAL, "Cannot allocate a memory for store object value"), -8;
+    if (l_record->sign_len >= sizeof(dap_sign_t)) {
+        dap_sign_t *l_sign = (dap_sign_t *)(l_record->value_n_sign + l_record->key_len + l_record->value_len);
+        if (dap_sign_get_size(l_sign) != l_record->sign_len ||
+                !(a_obj->sign = (dap_sign_t *)DAP_DUP_SIZE(l_sign, l_record->sign_len))) {
+            DAP_DELETE(a_obj->group);
+            DAP_DELETE(a_obj->key);
+            DAP_DEL_Z(a_obj->value);
+            if (dap_sign_get_size(l_sign) != l_record->sign_len)
+                return log_it(L_ERROR, "Corrupted global DB record internal value"), -6;
+            else
+                return log_it(L_CRITICAL, "Cannot allocate a memory for store object value"), -8;
+        }
     }
     return 0;
 }
@@ -601,42 +611,37 @@ MDBX_val    l_key={0}, l_data={0};
 MDBX_cursor *l_cursor = NULL;
 dap_store_obj_t *l_obj;
 
-     /* Sanity check and Get DB Context for group/table*/
-    dap_return_val_if_pass(!a_group || !(l_db_ctx = s_get_db_ctx_for_group(a_group)), NULL)
+     /* Sanity check for group/table */
+    dap_return_val_if_fail(a_group, NULL);
+
+    if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group)) )
+        return NULL;
 
     MDBX_txn *l_txn;
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
     if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor)) ) {
+        mdbx_txn_commit(l_txn);
         log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", l_rc, mdbx_strerror(l_rc));
         return NULL;
     }
-
-    /* Iterate cursor to retieve records from DB - select a <key> and <data> pair
-    ** with maximal <id>
-    */
-    MDBX_val l_last_key = {}, l_last_data = {};
-    dap_nanotime_t l_current_timestamp = 0;
-    while (MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))) {
-        struct driver_record *l_record = l_data.iov_base;
-        if (l_record->timestamp < l_current_timestamp) {
-            l_current_timestamp = l_record->timestamp;
-            l_last_key = l_key;
-            l_last_data = l_data;
-        }
+    if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_LAST)) ) {
+        mdbx_txn_commit(l_txn);
+        log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
+        return NULL;
     }
 
     if (l_cursor)                                                           // Release uncesessary MDBX cursor area,
         mdbx_cursor_close(l_cursor);                                        //but keep transaction !!!
 
-    if (!l_last_key.iov_len || !l_last_data.iov_len) {                      /* Not found anything  - return NULL */
+    if (!l_key.iov_len || !l_data.iov_len) {                                /* Not found anything  - return NULL */
         mdbx_txn_commit(l_txn);
         return NULL;
     }
     /* Found ! Allocate memory for <store object>, <key> and <value> */
     if ( (l_obj = DAP_CALLOC(1, sizeof( dap_store_obj_t ))) ) {
-        if (s_fill_store_obj(a_group, &l_last_key, &l_last_data, l_obj)) {
+        if (s_fill_store_obj(a_group, &l_key, &l_data, l_obj)) {
             l_rc = MDBX_PROBLEM;
             DAP_DEL_Z(l_obj);
         }
@@ -644,7 +649,8 @@ dap_store_obj_t *l_obj;
         l_rc = MDBX_PROBLEM, log_it (L_ERROR, "Cannot allocate a memory for store object, errno=%d", errno);
     }
     mdbx_txn_commit(l_txn);
-    return l_rc == MDBX_SUCCESS ? l_obj : NULL;
+
+    return l_obj;
 }
 
 /*
@@ -665,19 +671,40 @@ int l_rc, l_rc2;
 dap_db_ctx_t *l_db_ctx;
 MDBX_val    l_key, l_data;
 
-    if (!a_group || !a_key)                                                           /* Sanity check */
-        return 0;
+    dap_return_val_if_fail(a_group && a_key, NULL)                          /* Sanity check */
 
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group)) )                    /* Get DB Context for group/table */
         return 0;
+
     MDBX_txn *l_txn;
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
        return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), 0;
+    if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor)) ) {
+        mdbx_txn_commit(l_txn);
+        log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", l_rc, mdbx_strerror(l_rc));
+        return NULL;
+    }
+    if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_FIRST)) ) {
+        mdbx_txn_commit(l_txn);
+        log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
+        return NULL;
+    }
+    size_t l_key_len = strlen(a_key);
+    bool l_found = false;
+    do {
+        struct driver_record *l_record = l_data.iov_base;
+        if (l_key_len == l_record->key_len &&
+                !memcmp(l_record->key_n_value_n_sign, a_key, l_key_len))
+            l_obj = l_obj_arr + l_count_current;        /* Point <l_obj> to last array's element */
+            if (s_fill_store_obj(a_iter->db_group, l_key, &l_data, l_obj)) {
+                l_rc = MDBX_PROBLEM;
+                break;
+            }
+            l_count_current++;
+        }
+    } while ( MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_cursor, l_key, &l_data, MDBX_NEXT)) );
 
-    l_key.iov_base = (void *)a_key;                                        /* Fill IOV for MDBX key */
-    l_key.iov_len =  strlen(a_key);
 
-    l_rc = mdbx_get(l_txn, l_db_ctx->dbi, &l_key, &l_data);
 
     if ( MDBX_SUCCESS != (l_rc2 = mdbx_txn_commit(l_txn)) )
         log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
@@ -876,43 +903,42 @@ MDBX_txn *l_txn;
     }
     /* At this point we have got the DB Context for the table/group so we are can performs a main work */
     if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD) {
-        if( !a_store_obj->key )
+        if( !a_store_obj->key || !*a_store_obj->key)
             return -ENOENT;
-        l_key.iov_base = (void *)a_store_obj->key;                                  /* Fill IOV for MDBX key */
-        l_key.iov_len =  strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX);
-
-        /* Compute a length of the area to keep record */
-        size_t l_record_len = sizeof(struct driver_record) + a_store_obj->value_len + dap_sign_get_size(a_store_obj->sign);
-        struct driver_record *l_record = DAP_NEW_Z_SIZE(struct driver_record, l_record_len);
-        if (!l_record) {
-            log_it(L_ERROR, "Cannot allocate memory for new records, %zu octets, errno=%d", l_record_len, errno);
-            return MDBX_PANIC;
-        }
-        l_record->timestamp = a_store_obj->timestamp;
-        l_record->value_len = a_store_obj->value_len;
-        // Don't save NEW attribute
-        l_record->flags = a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW;
+        /* Fill IOV for MDBX key */
         if (!a_store_obj->crc) {
             DAP_DELETE(l_record);
             log_it(L_ERROR, "Global DB store object corrupted");
             return MDBX_EINVAL;
         }
-        l_record->crc = a_store_obj->crc;
-        if (!a_store_obj->sign) {
-            DAP_DELETE(l_record);
-            log_it(L_ERROR, "Global DB store object unsigned");
-            return MDBX_EINVAL;
+        dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
+        l_key->iov_base = &l_driver_key;
+        l_key->iov_len = sizeof(l_driver_key);
+        /* Compute a length of the area to keep record */
+        size_t l_key_len = strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX - 1);
+        size_t l_record_len = sizeof(struct driver_record) + a_store_obj->value_len + l_key_len + dap_sign_get_size(a_store_obj->sign);
+        struct driver_record *l_record = DAP_NEW_Z_SIZE(struct driver_record, l_record_len);
+        if (!l_record) {
+            log_it(L_ERROR, "Cannot allocate memory for new records, %zu octets, errno=%d", l_record_len, errno);
+            return MDBX_PANIC;
         }
-        l_record->sign_len = dap_sign_get_size(a_store_obj->sign);
-        if (!l_record->sign_len) {
-            DAP_DELETE(l_record);
-            log_it(L_ERROR, "Global DB store object sign corrupted");
-            return MDBX_EINVAL;
-        }
+        dap_strncpy(l_record->key_n_value_n_sign, a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX);
+        l_record->key_len = l_key_len;
+        l_record->value_len = a_store_obj->value_len;
+        // Don't save NEW attribute
+        l_record->flags = a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW;
         if (a_store_obj->value_len)                                                 /* Put <value> into the record */
-            memcpy(l_record->value_n_sign, a_store_obj->value, a_store_obj->value_len);
-                                                                                    /* Put the authorization sign */
-        memcpy(l_record->value_n_sign + a_store_obj->value_len, a_store_obj->sign, l_record->sign_len);
+            memcpy(l_record->key_n_value_n_sign + l_key_len, a_store_obj->value, a_store_obj->value_len);
+        if (a_store_obj->sign) {
+            /* Put the authorization sign */
+            l_record->sign_len = dap_sign_get_size(a_store_obj->sign);
+            memcpy(l_record->value_n_sign + l_key_len + a_store_obj->value_len, a_store_obj->sign, l_record->sign_len);
+            if (!l_record->sign_len) {
+                DAP_DELETE(l_record);
+                log_it(L_ERROR, "Global DB store object sign corrupted");
+                return MDBX_EINVAL;
+            }
+        }
         l_data.iov_base = l_record;                                                 /* Fill IOV for MDBX data */
         l_data.iov_len = l_record_len;
 
@@ -932,9 +958,11 @@ MDBX_txn *l_txn;
     if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) {
         if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
             return  log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), -ENOENT;
-        if ( a_store_obj->key ) {                                                       /* Delete record */
-            l_key.iov_base = (void *) a_store_obj->key;
-            l_key.iov_len =  strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX);
+        if ( a_store_obj->key ) {
+            /* Delete record */
+            dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
+            l_key.iov_base = &l_driver_key;
+            l_key.iov_len = sizeof(l_driver_key);
             if ( MDBX_SUCCESS != (l_rc = mdbx_del(l_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND)
                 log_it (L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc));
             l_rc = (l_rc == MDBX_NOTFOUND) ? 1 : l_rc;                                  /* Not found? It's OK */
