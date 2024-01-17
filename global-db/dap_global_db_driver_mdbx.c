@@ -598,7 +598,7 @@ int s_get_obj_by_text_key(MDBX_txn *a_txn, MDBX_dbi a_dbi, MDBX_val *a_key, MDBX
         log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
         return l_rc;
     }
-    size_t l_key_len = strlen(a_text_key);
+    size_t l_key_len = strlen(a_text_key) + 1;
     do {
         struct driver_record *l_record = a_data->iov_base;
         if (l_key_len == l_record->key_len &&
@@ -906,12 +906,17 @@ MDBX_txn *l_txn;
             log_it(L_ERROR, "Global DB store object corrupted");
             return MDBX_EINVAL;
         }
+        if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
+            return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), l_rc;
         l_rc = s_get_obj_by_text_key(l_txn, l_db_ctx->dbi, &l_key, &l_data, a_store_obj->key);
         if (l_rc == MDBX_SUCCESS) {
             // Drop object with same text key
-            if ( MDBX_SUCCESS != (l_rc = mdbx_del(l_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND)
+            if ( MDBX_SUCCESS != (l_rc = mdbx_del(l_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND) {
+                mdbx_txn_abort(l_txn);
                 return log_it(L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc)), l_rc;
+            }
         }
+        mdbx_txn_commit(l_txn);
         dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
         l_key.iov_base = &l_driver_key;
         l_key.iov_len = sizeof(l_driver_key);

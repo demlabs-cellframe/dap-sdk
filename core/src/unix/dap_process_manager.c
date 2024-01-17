@@ -45,7 +45,7 @@ bool save_process_pid_in_file(const char* file_path) {
 pid_t get_pid_from_file(const char* file_path) {
     FILE * fpid = fopen(file_path, "r");
     if (fpid == NULL) {
-        log_it(L_ERROR, "Cant create/open file by path %s",file_path);
+        log_it(L_ERROR, "Cant open file by path %s",file_path);
         return false;
     }
 
