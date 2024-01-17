@@ -1007,7 +1007,7 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
                                                   const char *a_group, size_t *a_objs_count)
 {
     size_t l_values_count = 0;
-    dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count);
+    dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, NULL, &l_values_count);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Get all request from group %s recieved %zu values",
                                                    a_group, l_values_count);
     dap_global_db_obj_t *l_objs = NULL;
@@ -1027,31 +1027,32 @@ dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_conte
                 --i;
                 continue;
             }
-            l_objs[i].id = l_store_objs[i].id;
-            l_objs[i].is_pinned = l_store_objs[i].flags & RECORD_PINNED;
-            l_objs[i].key = dap_strdup(l_store_objs[i].key);
+            l_objs[i].id = l_store_objs[j].id;
+            l_objs[i].is_pinned = l_store_objs[j].flags & RECORD_PINNED;
+            l_objs[i].key = dap_strdup(l_store_objs[j].key);
             if (!l_objs[i].key) {
+                ++i;
                 goto mem_clear;
             }
-            l_objs[i].value = DAP_DUP_SIZE(l_store_objs[i].value, l_store_objs[i].value_len);
-            if (!l_objs[i].value && l_store_objs[i].value)
+            l_objs[i].value = DAP_DUP_SIZE(l_store_objs[j].value, l_store_objs[j].value_len);
+            if (!l_objs[i].value && l_store_objs[j].value) {
+                ++i;
                 goto mem_clear;
-            l_objs[i].value_len = l_store_objs[i].value_len;
-            l_objs[i].timestamp = l_store_objs[i].timestamp;
+            }
+            l_objs[i].value_len = l_store_objs[j].value_len;
+            l_objs[i].timestamp = l_store_objs[j].timestamp;
         }
     }
     dap_store_obj_free(l_store_objs, l_values_count);
+    if (i < j)
+        l_objs = DAP_REALLOC_COUNT(l_objs, i);
     if (a_objs_count)
         *a_objs_count = i;
     return l_objs;
 
 mem_clear:
-        log_it(L_CRITICAL, "Memory allocation error");
-    for(size_t j = 0; j < l_values_count && l_objs; j++) {
-        DAP_DEL_Z(l_objs[j].key);
-        DAP_DEL_Z(l_objs[j].value);
-    }
-    DAP_DEL_Z(l_objs);
+    log_it(L_CRITICAL, "Memory allocation error");
+    dap_global_db_objs_delete(l_objs, i);
     dap_store_obj_free(l_store_objs, l_values_count);
     return NULL;
 }
@@ -1175,6 +1176,8 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
                                                   const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
 {
+    return dap_global_db_driver_read(a_group, NULL, a_objs_count);
+#if 0
     dap_store_obj_t* l_ret = dap_global_db_driver_cond_read(a_group, a_first_id, a_objs_count);
     if (a_objs_count && *a_objs_count) {
         size_t l_cur_i = 0;
@@ -1198,6 +1201,7 @@ dap_store_obj_t* dap_global_db_get_all_raw_unsafe(UNUSED_ARG dap_global_db_conte
         }
     }
     return l_ret;
+#endif
 }
 
 /**
