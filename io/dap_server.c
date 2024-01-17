@@ -223,6 +223,7 @@ dap_server_t *dap_server_new(const char **a_addrs, uint16_t a_count, dap_server_
             l_es->listener_addr.sin_port = htons(l_es->listener_port);
             inet_pton(AF_INET, l_es->listener_addr_str6, &(l_es->listener_addr.sin_addr));
         } else {
+#ifdef DAP_OS_UNIX
             const char * l_notify_socket_path_mode = dap_config_get_item_str_default(g_config, "notify_server", "listen_path_mode","0600");
             l_es->listener_path.sun_family =  AF_UNIX;
             strncpy(l_es->listener_path.sun_path, a_addrs[i], sizeof(l_es->listener_path.sun_path) - 1);
@@ -233,6 +234,7 @@ dap_server_t *dap_server_new(const char **a_addrs, uint16_t a_count, dap_server_
                 sscanf(l_notify_socket_path_mode,"%ou", &l_listen_unix_socket_permissions);
             }
             chmod(a_addrs[i], l_listen_unix_socket_permissions);
+#endif
         }
         l_server->es_listeners = dap_list_prepend(l_server->es_listeners, l_es);
         if(s_server_run(l_server, a_callbacks)) {
