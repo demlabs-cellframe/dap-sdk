@@ -181,7 +181,7 @@ if(UNIX)
     endif()
 
     if (ANDROID)
-        set(_CCOPT "${_CCOPT} -std=gnu11")
+        set(_CCOPT "${_CCOPT} -fforce-enable-int128 -std=gnu11")
         add_definitions ("-DDAP_OS_ANDROID")
         add_definitions ("-DDAP_OS_LINUX")
     endif()
@@ -224,9 +224,10 @@ if(WIN32)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_CCOPT} ")
     set(CMAKE_LINKER_FLAGS "${CMAKE_LINKER_FLAGS} ${_LOPT}")
 
-    include_directories(3rdparty/uthash/src/)
-    include_directories(3rdparty/json-c)
-
+    include_directories(../../dap-sdk/3rdparty/uthash/src/)
+    include_directories(../../dap-sdk/3rdparty/json-c)
+    include_directories(3rdparty/wepoll/)
+    #include_directories(libdap-chain-net-srv-vpn/)
 endif()
 
 # Platform
