@@ -199,10 +199,10 @@ dap_server_t* dap_server_new_local(const char * a_path, const char* a_mode, dap_
  * @param a_type
  * @return
  */
-dap_server_t* dap_server_new(const char **a_addrs, uint16_t *a_ports, size_t a_count, dap_server_type_t a_type, dap_events_socket_callbacks_t *a_callbacks)
+dap_server_t* dap_server_new(const char **a_addrs, uint16_t a_count, dap_server_type_t a_type, dap_events_socket_callbacks_t *a_callbacks)
 {
 // sanity check
-    dap_return_val_if_pass(!a_ports || !a_count, NULL);
+    dap_return_val_if_pass(!a_addrs || !a_count, NULL);
 // preparing
 #ifdef DAP_OS_WINDOWS
     SOCKET l_socket_listener;
@@ -229,6 +229,7 @@ dap_server_t* dap_server_new(const char **a_addrs, uint16_t *a_ports, size_t a_c
         return NULL;
     }
     l_server->type = a_type;
+    char l_curr_ip[INET6_ADDRSTRLEN + 1] = {0};
     for(size_t i = 0; i < a_count; ++i) {
         if(l_server->type == SERVER_TCP)
             l_socket_listener = socket(AF_INET, SOCK_STREAM, 0);
@@ -258,8 +259,17 @@ dap_server_t* dap_server_new(const char **a_addrs, uint16_t *a_ports, size_t a_c
 
         //create socket
         dap_events_socket_t *l_es = dap_events_socket_wrap2(l_server, l_socket_listener, &l_callbacks);
-        strncpy(l_es->listener_addr_str6, (a_addrs && a_addrs[i]) ? a_addrs[i] : "0.0.0.0", sizeof(l_es->listener_addr_str6) ); // If NULL we listen everything
-        l_es->listener_port = a_ports[i];
+        char *l_curr_port = strstr(a_addrs[i], ":");
+        if (l_curr_port) {
+            memset(l_curr_ip, 0, sizeof(l_curr_ip));
+            strncpy(l_curr_ip, a_addrs[i], l_curr_port - a_addrs[i]);
+            l_curr_port++;
+        } else {
+            l_curr_port = a_addrs[i];
+        }
+
+        strncpy(l_es->listener_addr_str6, l_curr_ip[0] ? l_curr_ip : "0.0.0.0", sizeof(l_es->listener_addr_str6) ); // If NULL we listen everything
+        l_es->listener_port = atol(l_curr_port);
         l_es->listener_addr.sin_family = AF_INET;
         l_es->listener_addr.sin_port = htons(l_es->listener_port);
         inet_pton(AF_INET, l_es->listener_addr_str6, &(l_es->listener_addr.sin_addr));
