@@ -246,6 +246,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
                                    "Content-Length: %zu\r\n"
                                    "\r\n"
                                    "%s", strlen(request_str), request_str);
+    DAP_DELETE(request_str);
     size_t res = send(*a_socket, l_post_data->str, l_post_data->len, 0);
     if (res != l_post_data->len) {
         dap_json_rpc_request_free(a_request);
