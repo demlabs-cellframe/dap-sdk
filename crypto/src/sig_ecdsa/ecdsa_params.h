@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "dap_crypto_common.h"
+#include <secp256k1.h>
 
 
 
@@ -25,16 +26,15 @@ typedef struct {
 	unsigned char data[DAP_ENC_ECDSA_SKEY_LEN];
 } ecdsa_private_key_t;
 
-typedef struct secp256k1_pubkey ecdsa_public_key_t;
+typedef secp256k1_pubkey ecdsa_public_key_t;
 
-typedef struct secp256k1_ecdsa_signature ecdsa_signature_t;
+typedef secp256k1_ecdsa_signature ecdsa_signature_t;
 
-typedef struct secp256k1_ecdsa_signature ecdsa_signature_t;
 
 ///==========================================================================================
 
-int ecdsa_crypto_sign_keypair(ecdsa_public_key_t *public_key, ecdsa_private_key_t *private_key,
-        ecdsa_kind_t kind, const void * seed, size_t seed_size);
+//int ecdsa_crypto_sign_keypair(ecdsa_public_key_t *public_key, ecdsa_private_key_t *private_key,
+//        ecdsa_kind_t kind, const void * seed, size_t seed_size);
 
 int ecdsa_crypto_sign(ecdsa_signature_t *, const unsigned char *, unsigned long long, const ecdsa_private_key_t *);
 

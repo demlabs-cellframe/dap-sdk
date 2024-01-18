@@ -138,6 +138,7 @@ file( GLOB CRYPTO_HEADERS
       src/msrln/*.h
       src/newhope/*.h
       src/sig_bliss/*.h
+      src/sig_ecdsa/*.h
       src/sig_tesla/*.h
       src/sig_picnic/*.h
       src/sig_dilithium/*.h
