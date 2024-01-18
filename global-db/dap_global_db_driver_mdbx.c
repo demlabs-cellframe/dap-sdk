@@ -400,6 +400,9 @@ size_t     l_upper_limit_of_db_size = 16;
     if ( MDBX_SUCCESS != (l_rc = mdbx_env_open(s_mdbx_env, s_db_path, MDBX_CREATE |  MDBX_COALESCE | MDBX_LIFORECLAIM, 0664)) )
         return  log_it (L_CRITICAL, "mdbx_env_open (%s): (%d) %s", s_db_path, l_rc, mdbx_strerror(l_rc)),  -EINVAL;
 
+    if ( MDBX_SUCCESS != (l_rc = mdbx_env_set_maxreaders(s_mdbx_env, 107) ))
+        return log_it (L_CRITICAL, "mdbx_env_set_maxreaders (%s): (%d) %s", s_db_path, l_rc, mdbx_strerror(l_rc)),  -EINVAL;
+
     /*
      * Since MDBX don't maintain a list of subDB with public API, we will use a "MASTER Table",
      * be advised that this MASTER teble is not maintained accurately!!!
