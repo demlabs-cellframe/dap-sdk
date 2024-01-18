@@ -150,13 +150,17 @@ dap_server_t *dap_server_new(const char **a_addrs, uint16_t a_count, dap_server_
 {
 // sanity check
     dap_return_val_if_pass(!a_addrs || !a_count, NULL);
+// preparing
 #ifndef DAP_OS_UNIX
     if (a_type == SERVER_LOCAL) {
         log_it(L_ERROR, "Local server is not implemented for your platform");
         return NULL;
     }
+    int l_domain = AF_INET;
+#else
+    int l_domain = a_type == SERVER_LOCAL ? AF_LOCAL : AF_INET;
 #endif
-// preparing
+    int l_socket_type = a_type == SERVER_UDP ? SOCK_DGRAM : SOCK_STREAM;
     //create callback
     dap_events_socket_callbacks_t l_callbacks = {0};
     l_callbacks.new_callback = s_es_server_new;
@@ -175,8 +179,7 @@ dap_server_t *dap_server_new(const char **a_addrs, uint16_t a_count, dap_server_
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
-    int l_domain = a_type == SERVER_LOCAL ? AF_LOCAL : AF_INET;
-    int l_socket_type = a_type == SERVER_UDP ? SOCK_DGRAM : SOCK_STREAM;
+
     l_server->type = a_type;
     char l_curr_ip[INET6_ADDRSTRLEN + 1] = {0};
     for(size_t i = 0; i < a_count; ++i) {
@@ -193,7 +196,6 @@ dap_server_t *dap_server_new(const char **a_addrs, uint16_t a_count, dap_server_
             dap_server_delete(l_server);
             return NULL;
         }
-
         log_it(L_NOTICE,"Listen socket %"DAP_FORMAT_SOCKET" created...", l_socket_listener);
         if (l_server->type != SERVER_LOCAL) {
             if (setsockopt(l_socket_listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&l_reuse, sizeof(l_reuse)) < 0)
