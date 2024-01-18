@@ -2,6 +2,7 @@
 #define _DAP_ENC_ECDSA_H_
 
 #include <secp256k1.h>
+#include "sig_ecdsa/ecdsa_params.h"
 #include "dap_enc_key.h"
 
 

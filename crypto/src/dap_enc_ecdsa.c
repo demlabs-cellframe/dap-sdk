@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "dap_enc_ecdsa.h"
+#include "ecdsa_params.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
 
