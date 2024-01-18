@@ -210,7 +210,7 @@ dap_server_t *dap_server_new(const char **a_addrs, uint16_t a_count, dap_server_
         //create socket
         dap_events_socket_t *l_es = dap_events_socket_wrap2(l_server, l_socket_listener, &l_callbacks);
         if (l_server->type != SERVER_LOCAL) {
-            char *l_curr_port = strstr(a_addrs[i], ":");
+            const char *l_curr_port = strstr(a_addrs[i], ":");
             if (l_curr_port) {
                 memset(l_curr_ip, 0, sizeof(l_curr_ip));
                 strncpy(l_curr_ip, a_addrs[i], l_curr_port - a_addrs[i]);
@@ -224,20 +224,24 @@ dap_server_t *dap_server_new(const char **a_addrs, uint16_t a_count, dap_server_
             l_es->listener_addr.sin_family = AF_INET;
             l_es->listener_addr.sin_port = htons(l_es->listener_port);
             inet_pton(AF_INET, l_es->listener_addr_str6, &(l_es->listener_addr.sin_addr));
-        } else {
-#ifdef DAP_OS_UNIX
-            const char * l_notify_socket_path_mode = dap_config_get_item_str_default(g_config, "notify_server", "listen_path_mode","0600");
-            l_es->listener_path.sun_family =  AF_UNIX;
-            strncpy(l_es->listener_path.sun_path, a_addrs[i], sizeof(l_es->listener_path.sun_path) - 1);
-            if ( access(a_addrs[i], R_OK) != -1 )
-            unlink(a_addrs[i]);
-            mode_t l_listen_unix_socket_permissions = 0770;
-            if (l_notify_socket_path_mode){
-                sscanf(l_notify_socket_path_mode,"%ou", &l_listen_unix_socket_permissions);
-            }
-            chmod(a_addrs[i], l_listen_unix_socket_permissions);
-#endif
         }
+#ifdef DAP_OS_UNIX
+        else {
+            char *l_path_mode = strstr(a_addrs[i], ":");
+            mode_t l_listen_permissions = 0770;
+            if (l_path_mode) {
+                strncpy(l_es->listener_path.sun_path, a_addrs[i], dap_min((size_t)(l_path_mode - a_addrs[i]), sizeof(l_es->listener_path.sun_path) - 1));
+                sscanf(++l_path_mode, "%ou", &l_listen_permissions);
+            } else {
+                strncpy(l_es->listener_path.sun_path, a_addrs[i], sizeof(l_es->listener_path.sun_path));
+            }
+            l_es->listener_path.sun_family = AF_UNIX;
+
+            if ( access(l_es->listener_path.sun_path, R_OK) != -1 )
+                unlink(l_es->listener_path.sun_path);
+            chmod(l_es->listener_path.sun_path, l_listen_permissions);
+        }
+#endif
         l_server->es_listeners = dap_list_prepend(l_server->es_listeners, l_es);
         if(s_server_run(l_server, a_callbacks)) {
             dap_server_delete(l_server);
