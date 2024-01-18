@@ -1003,7 +1003,8 @@ MDBX_txn *l_txn = NULL;
         l_suff->flags = a_store_obj->flags;
         l_suff->ts = a_store_obj->timestamp;
 
-        memcpy(l_val, a_store_obj->value, a_store_obj->value_len);          /* Put <value> into the record */
+        if (a_store_obj->value && a_store_obj->value_len)
+            memcpy(l_val, a_store_obj->value, a_store_obj->value_len);          /* Put <value> into the record */
 
         /* So, finaly: BEGIN transaction, do INSERT, COMMIT or ABORT ... */
 

@@ -695,7 +695,9 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     memcpy(pdata,   &l_key_len,             sizeof(uint16_t));      pdata += sizeof(uint16_t);
     memcpy(pdata,   a_store_obj->key,       l_key_len /* + 1 */);   pdata += l_key_len /* + 1 */;
     memcpy(pdata,   &a_store_obj->value_len,sizeof(uint64_t));      pdata += sizeof(uint64_t);
-    memcpy(pdata,   a_store_obj->value,     a_store_obj->value_len);pdata += a_store_obj->value_len;
+    if (a_store_obj->value && a_store_obj->value_len) {
+        memcpy(pdata, a_store_obj->value, a_store_obj->value_len);  pdata += a_store_obj->value_len;
+    }
     if ((uint32_t)(pdata - l_pkt->data) != l_data_size_out) {
         log_it(L_MSG, "! Inconsistent global_db packet! %u != %u", (uint32_t)(pdata - l_pkt->data), l_data_size_out);
     }
