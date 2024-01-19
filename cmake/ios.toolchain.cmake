@@ -1,4 +1,3 @@
-
 # Fix for PThread library not in path
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
 set(CMAKE_HAVE_THREADS_LIBRARY 1)
