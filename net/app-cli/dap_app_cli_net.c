@@ -168,7 +168,7 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
     struct sockaddr_un l_remote_addr;
     l_remote_addr.sun_family =  AF_UNIX;
     strcpy(l_remote_addr.sun_path, a_socket_path);
-    l_addr_len = SUN_LEN(&l_remote_addr);
+    l_addr_len = sizeof(struct sockaddr_un);
 #endif
     if (connect(l_socket, (struct sockaddr *)&l_remote_addr, l_addr_len) == SOCKET_ERROR) {
 #ifdef __WIN32
