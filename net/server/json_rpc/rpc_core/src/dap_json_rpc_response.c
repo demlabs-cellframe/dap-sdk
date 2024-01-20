@@ -204,7 +204,8 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
 int json_print_commands(const char * a_name) {
     const char* long_cmd[] = {
             "tx_history",
-            "mempool_list"
+            "mempool_list",
+            "net"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
