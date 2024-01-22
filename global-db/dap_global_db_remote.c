@@ -855,12 +855,6 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
 
     bool l_broken = !dap_global_db_isalnum_group_key(a_obj);
 
-    if (l_broken && a_obj->type != DAP_DB$K_OPTYPE_DEL) {
-        dap_global_db_del(a_obj->group, a_obj->key, NULL, NULL);
-        log_it(L_NOTICE, "Delete garbage object %s : %s from table", a_obj->group, a_obj->key);
-        DAP_DEL_Z(a_arg);
-        return -1;
-    }
     dap_store_obj_t *l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
     if (l_read_obj) {
         l_timestamp_cur = l_read_obj->timestamp;
