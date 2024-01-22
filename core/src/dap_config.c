@@ -206,8 +206,9 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
                     c = l_val;
                     l_type = 'u';
                 }
+                char counter = 0;
                 while (*c) {
-                    if (!isdigit(*c++)) {
+                    if (!isdigit(*c++) || (++counter == 19)) {
                         l_type = 's';
                         break;
                     }
