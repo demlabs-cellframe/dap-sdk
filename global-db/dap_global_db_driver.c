@@ -232,7 +232,7 @@ dap_store_obj_t *l_store_obj_cur;
             if ((l_store_obj_cur->type == DAP_DB$K_OPTYPE_ADD)
                     && strncmp(l_store_obj_cur->group + strlen(l_store_obj_cur->group) - 4, ".del", 4)
                     && !dap_global_db_isalnum_group_key(l_store_obj_cur)) {
-                log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i, a_store_count);
+                log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i + 1, a_store_count);
                 l_ret = -9;
                 break;
             }
