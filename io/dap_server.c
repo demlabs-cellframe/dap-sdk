@@ -169,7 +169,7 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
 
     if (a_server->type != SERVER_LOCAL) {
         int l_reuse = 1;
-        strncpy(l_es->listener_addr_str6, a_addr, sizeof(l_es->listener_addr_str6) );
+        strncpy(l_es->listener_addr_str6, a_addr, sizeof(l_es->listener_addr_str6) -1);
         l_es->listener_port = a_port;
         if (setsockopt(l_socket_listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&l_reuse, sizeof(l_reuse)) < 0)
             log_it(L_WARNING, "Can't set up REUSEADDR flag to the socket");
@@ -184,7 +184,7 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
     }
 #ifdef DAP_OS_UNIX
     else {
-        strncpy(l_es->listener_path.sun_path, a_addr, sizeof(l_es->listener_path.sun_path));
+        strncpy(l_es->listener_path.sun_path, a_addr, sizeof(l_es->listener_path.sun_path) -1);
         l_es->listener_path.sun_family = AF_UNIX;
         if ( access(l_es->listener_path.sun_path, R_OK) != -1 )
             unlink(l_es->listener_path.sun_path);
@@ -209,7 +209,7 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
  * @param a_type
  * @return
  */
-dap_server_t *dap_server_new(const char **a_addrs, uint16_t a_count, dap_server_type_t a_type, dap_events_socket_callbacks_t *a_callbacks)
+dap_server_t *dap_server_new(char **a_addrs, uint16_t a_count, dap_server_type_t a_type, dap_events_socket_callbacks_t *a_callbacks)
 {
 // sanity check
     dap_return_val_if_pass(!a_addrs || !a_count, NULL);
@@ -253,7 +253,7 @@ dap_server_t *dap_server_new(const char **a_addrs, uint16_t a_count, dap_server_
 #ifdef DAP_OS_UNIX
         else {
             if (!l_curr_port_mode_str) {
-                strncpy(l_curr_ip_path, a_addrs[i], sizeof(l_curr_ip_path));
+                strncpy(l_curr_ip_path, a_addrs[i], sizeof(l_curr_ip_path) - 1);
                 l_curr_port_mode = 0770;
             }
         }

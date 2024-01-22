@@ -61,7 +61,7 @@ int dap_notify_server_init()
     const char *l_path_mode = dap_config_get_item_str_default(g_config, "notify_server", "listen_path_mode","0600");
 
     uint16_t l_notify_socket_count = 0;
-    const char **l_notify_socket_address = dap_config_get_array_str(g_config, "notify_server", "listen_address", &l_notify_socket_count);
+    char **l_notify_socket_address = dap_config_get_array_str(g_config, "notify_server", "listen_address", &l_notify_socket_count);
 
     if(l_path){
         char *l_path_and_mode = DAP_NEW_Z_SIZE(char, MAX_PATH + 5);
