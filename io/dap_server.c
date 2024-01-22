@@ -146,7 +146,7 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
 #ifndef DAP_OS_UNIX
     if (a_server->type == SERVER_LOCAL) {
         log_it(L_ERROR, "Local server is not implemented for your platform");
-        return NULL;
+        return -4;
     }
     int l_domain = AF_INET;
     SOCKET l_socket_listener = socket(l_domain, l_socket_type, 0);
@@ -178,7 +178,6 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
         if (setsockopt(l_socket_listener, SOL_SOCKET, SO_REUSEPORT, (const char*)&l_reuse, sizeof(l_reuse)) < 0)
             log_it(L_WARNING, "Can't set up REUSEPORT flag to the socket");
 #endif
-
         l_es->listener_addr.sin_family = AF_INET;
         l_es->listener_addr.sin_port = htons(l_es->listener_port);
         inet_pton(AF_INET, l_es->listener_addr_str6, &(l_es->listener_addr.sin_addr));
@@ -195,6 +194,8 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
     a_server->es_listeners = dap_list_prepend(a_server->es_listeners, l_es);
     if(s_server_run(a_server)) {
         log_it (L_ERROR,"Can't server run");
+        a_server->es_listeners = dap_list_remove(a_server->es_listeners, l_es);
+        dap_events_socket_delete_unsafe(l_es, false);
         return -3;
     }
     return 0;
@@ -282,7 +283,13 @@ static int s_server_run(dap_server_t *a_server)
 // func work
     dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
     struct sockaddr *l_listener_addr = (struct sockaddr *) &(l_es->listener_addr);
-    socklen_t l_listener_addr_len = sizeof(l_es->listener_addr);
+    socklen_t l_listener_addr_len =
+#ifndef DAP_OS_WINDOWS
+            a_server->type == SERVER_LOCAL ?
+                sizeof(l_es->listener_path) :
+#endif
+                sizeof(l_es->listener_addr);
+
 
     if(bind (l_es->socket, l_listener_addr, l_listener_addr_len) < 0) {
 #ifdef DAP_OS_WINDOWS
