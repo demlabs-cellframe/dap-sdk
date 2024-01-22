@@ -168,7 +168,7 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
     struct sockaddr_un l_remote_addr;
     l_remote_addr.sun_family =  AF_UNIX;
     strcpy(l_remote_addr.sun_path, a_socket_path);
-    l_addr_len = SUN_LEN(&l_remote_addr);
+    l_addr_len = sizeof(struct sockaddr_un);
 #endif
     if (connect(l_socket, (struct sockaddr *)&l_remote_addr, l_addr_len) == SOCKET_ERROR) {
 #ifdef __WIN32
@@ -217,7 +217,8 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
     if (a_cmd->cmd_param) {
         for (int i = 0; i < a_cmd->cmd_param_count; i++) {
             if (a_cmd->cmd_param[i]) {
-                dap_string_append(l_cmd_data, ";");
+                if (l_cmd_data->str[l_cmd_data->len-1] != ',')
+                    dap_string_append(l_cmd_data, ";");
                 if(s_dap_app_cli_cmd_contains_forbidden_symbol(a_cmd->cmd_param[i])){
                     char * l_cmd_param_base64 = dap_enc_strdup_to_base64(a_cmd->cmd_param[i]);
                     dap_string_append(l_cmd_data, l_cmd_param_base64);
