@@ -57,18 +57,20 @@ static void s_notify_server_callback_delete(dap_events_socket_t * a_es, void * a
  */
 int dap_notify_server_init()
 {
-    const char * l_notify_socket_path = dap_config_get_item_str_default(g_config, "notify_server", "listen_path",NULL);
-    const char * l_notify_socket_path_mode = dap_config_get_item_str_default(g_config, "notify_server", "listen_path_mode","0600");
+    const char *l_path = dap_config_get_item_str_default(g_config, "notify_server", "listen_path", NULL);
+    const char *l_path_mode = dap_config_get_item_str_default(g_config, "notify_server", "listen_path_mode","0600");
 
-    const char * l_notify_socket_address = dap_config_get_item_str_default(g_config, "notify_server", "listen_address",NULL);
-    uint16_t l_notify_socket_port = dap_config_get_item_uint16_default(g_config, "notify_server", "listen_port",0);
+    uint16_t l_notify_socket_count = 0;
+    char **l_notify_socket_address = dap_config_get_array_str(g_config, "notify_server", "listen_address", &l_notify_socket_count);
 
-    if(l_notify_socket_path){
-        s_notify_server = dap_server_new_local(l_notify_socket_path, l_notify_socket_path_mode, NULL);
-    }else if (l_notify_socket_address && l_notify_socket_port ){
-        s_notify_server = dap_server_new( l_notify_socket_address,
-                                            l_notify_socket_port, SERVER_TCP, NULL);
-    }else{
+    if(l_path){
+        char *l_path_and_mode = DAP_NEW_Z_SIZE(char, MAX_PATH + 5);
+        dap_snprintf(l_path_and_mode, MAX_PATH + 4, "%s%c%s", l_path, l_path_mode ? ':' : 0, l_path_mode ? l_path_mode : "\0");
+        s_notify_server = dap_server_new(&l_path_and_mode, 1, SERVER_LOCAL, NULL);
+        DAP_DELETE(l_path_and_mode);
+    } else if (l_notify_socket_address && l_notify_socket_count) {
+        s_notify_server = dap_server_new(l_notify_socket_address, l_notify_socket_count, SERVER_TCP, NULL);
+    } else {
         log_it(L_INFO,"Notify server is not configured, nothing to init but thats okay");
         return 0;
     }
