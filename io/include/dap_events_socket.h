@@ -60,6 +60,7 @@ typedef int SOCKET;
     //#define DAP_EVENTS_CAPS_AIO
     //#define DAP_EVENTS_CAPS_AIO_THREADS
     #include <netinet/in.h>
+    #include <sys/un.h>
     #include <sys/eventfd.h>
     #include <mqueue.h>
 #elif defined (DAP_OS_BSD)
@@ -68,6 +69,7 @@ typedef int SOCKET;
     #define DAP_EVENTS_CAPS_EVENT_KEVENT
     #define DAP_EVENTS_CAPS_QUEUE_KEVENT
     #include <netinet/in.h>
+    #include <sys/un.h>
     #include <sys/event.h>
 #elif defined (DAP_OS_UNIX)
     #define DAP_EVENTS_CAPS_POLL
@@ -75,6 +77,7 @@ typedef int SOCKET;
     #define DAP_EVENTS_CAPS_EVENT_PIPE
     #define DAP_EVENTS_CAPS_QUEUE_SOCKETPAIR
     #include <netinet/in.h>
+    #include <sys/un.h>
 #elif defined (DAP_OS_WINDOWS)
     #define DAP_EVENTS_CAPS_WEPOLL
     #define DAP_EVENTS_CAPS_EPOLL
@@ -263,11 +266,23 @@ typedef struct dap_events_socket {
     char service [DAP_EVSOCK$SZ_SERVICE + 1];
 
     // Remote address, port and others
-    struct sockaddr_in remote_addr;
-    char    remote_addr_str [INET_ADDRSTRLEN + 1];
-    char    remote_addr_str6[INET6_ADDRSTRLEN + 1];
-    short   remote_port;
+    union {
+        struct sockaddr_in remote_addr;
+        struct sockaddr_in listener_addr;
+#ifdef DAP_OS_UNIX
+        struct sockaddr_un listener_path; // Path to UNIX socket
+#endif
+    };
+    char remote_addr_str [INET_ADDRSTRLEN + 1];
 
+    union {
+        char remote_addr_str6[INET6_ADDRSTRLEN + 1];
+        char listener_addr_str6[INET6_ADDRSTRLEN + 1];   
+    };
+    union {
+        short   remote_port;
+        uint16_t  listener_port;
+    };
 
     // Links to related objects
     dap_context_t * context;
