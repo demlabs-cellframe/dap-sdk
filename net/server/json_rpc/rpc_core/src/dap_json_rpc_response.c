@@ -225,7 +225,7 @@ void json_print_object(json_object *obj, int indent_level) {
                     printf("    "); // indentation level
                 }
                 printf("%s: ", key);
-                json_print_value(val, key, indent_level + 1);
+                json_print_value(val, key, indent_level + 1, false);
                 printf("\n");
             }
             break;
@@ -234,7 +234,7 @@ void json_print_object(json_object *obj, int indent_level) {
             int length = json_object_array_length(obj);
             for (int i = 0; i < length; i++) {
                 json_object *item = json_object_array_get_idx(obj, i);
-                json_print_value(item, NULL, indent_level + 1);
+                json_print_value(item, NULL, indent_level + 1, length - 1 - i);
             }
             break;
         }
@@ -243,12 +243,12 @@ void json_print_object(json_object *obj, int indent_level) {
     }
 }
 
-void json_print_value(json_object *obj, const char *key, int indent_level) {
+void json_print_value(json_object *obj, const char *key, int indent_level, bool print_separator) {
     enum json_type type = json_object_get_type(obj);
 
     switch (type) {
         case json_type_string:
-            printf("%s", json_object_get_string(obj));
+            printf(print_separator ? "%s, " : "%s", json_object_get_string(obj));
             break;
         case json_type_int:
             printf("%d", json_object_get_int(obj));
