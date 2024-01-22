@@ -88,5 +88,6 @@ void dap_server_set_default(dap_server_t* a_server);
 dap_server_t* dap_server_get_default();
 
 dap_server_t* dap_server_new(const char **a_addrs, uint16_t a_count, dap_server_type_t a_type, dap_events_socket_callbacks_t *a_callbacks);
+int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint16_t a_port, dap_events_socket_callbacks_t *a_callbacks);
 
 void dap_server_delete(dap_server_t *a_server);
