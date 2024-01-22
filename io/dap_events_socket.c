@@ -1376,7 +1376,7 @@ void dap_events_socket_delete_mt(dap_worker_t * a_worker, dap_events_socket_uuid
  * @param a_callbacks
  * @return
  */
-dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, dap_events_socket_callbacks_t *a_callbacks)
+dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks)
 {
     if (!a_callbacks || !a_server) {
         log_it(L_CRITICAL, "Invalid arguments in dap_events_socket_wrap_listener");
@@ -1386,10 +1386,9 @@ dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, dap
     if (!l_es)
         return NULL;
 
-    l_es->socket = a_server->socket_listener;
+    l_es->socket = a_sock;
     l_es->server = a_server;
     l_es->callbacks = *a_callbacks;
-    l_es->_inheritor = a_server;
     switch (a_server->type) {
     case DAP_SERVER_UDP:
         l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
