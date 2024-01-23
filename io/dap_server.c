@@ -271,11 +271,8 @@ dap_server_t *dap_server_new(char **a_addrs, uint16_t a_count, dap_server_type_t
 // sanity check
     dap_return_val_if_pass(!a_addrs || !a_count, NULL);
 // memory alloc
-    dap_server_t *l_server =  DAP_NEW_Z(dap_server_t);
-    if (!l_server) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
+    dap_server_t *l_server =  NULL;
+    DAP_NEW_Z_RET_VAL(l_server, dap_server_t, NULL, NULL);
 // preparing
     //create callback
     dap_events_socket_callbacks_t l_callbacks = {0};
