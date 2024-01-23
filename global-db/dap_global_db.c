@@ -1877,13 +1877,10 @@ int dap_global_db_del_unsafe(dap_global_db_context_t *a_global_db_context, const
 
     int l_res = dap_global_db_driver_apply(&l_store_obj, 1);
 
-    if (a_key) {
-        if (l_res >= 0)
-            l_res = s_record_del_history_add(l_store_obj.group, (char *)l_store_obj.key, l_store_obj.timestamp);
+    if (a_key && l_res >= 0 &&
+            !s_record_del_history_add(l_store_obj.group, (char *)l_store_obj.key, l_store_obj.timestamp))
         // do not notify group deletion or deletion error
-        if (!l_res)
-            s_change_notify(a_global_db_context, &l_store_obj);
-    }
+        s_change_notify(a_global_db_context, &l_store_obj);
     return l_res;
 }
 /**
