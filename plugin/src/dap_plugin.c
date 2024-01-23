@@ -116,6 +116,8 @@ void dap_plugin_deinit(){
 static void s_solve_dependencies()
 {
     // TODO solving dependencies
+
+
 }
 
 
