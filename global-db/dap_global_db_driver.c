@@ -198,11 +198,11 @@ void dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count)
     dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
     for ( ; a_store_count--; l_store_obj_cur++ ) {
-        DAP_DEL_Z(l_store_obj_cur->group);
-        DAP_DEL_Z(l_store_obj_cur->key);
-        DAP_DEL_Z(l_store_obj_cur->value);
+        DAP_DELETE(l_store_obj_cur->group);
+        DAP_DELETE(l_store_obj_cur->key);
+        DAP_DELETE(l_store_obj_cur->value);
     }
-    DAP_DEL_Z(a_store_obj);
+    DAP_DELETE(a_store_obj);
 }
 
 /**
@@ -229,8 +229,10 @@ dap_store_obj_t *l_store_obj_cur;
 
     if(s_drv_callback.apply_store_obj) {
         for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
-            if ((l_store_obj_cur->type == DAP_DB$K_OPTYPE_ADD) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
-                log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i, a_store_count);
+            if ((l_store_obj_cur->type == DAP_DB$K_OPTYPE_ADD)
+                    //&& strncmp(l_store_obj_cur->group + strlen(l_store_obj_cur->group) - 4, ".del", 4)
+                    && !dap_global_db_isalnum_group_key(l_store_obj_cur)) {
+                log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i + 1, a_store_count);
                 l_ret = -9;
                 break;
             }

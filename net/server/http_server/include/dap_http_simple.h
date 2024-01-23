@@ -40,7 +40,7 @@ typedef struct dap_http_simple {
     dap_worker_t * worker;
     dap_http_client_t * http_client;
     dap_events_socket_uuid_t esocket_uuid;
-
+    char es_hostaddr[INET6_ADDRSTRLEN];
     union {
         void *request;
         char *request_str;
