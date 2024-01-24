@@ -12,8 +12,8 @@ if (DAP_USE_RPMALLOC)
 endif(DAP_USE_RPMALLOC)
 
 if(UNIX)
-    if(DARWIN)
-        file(GLOB CORE_HEADERS 
+    if (IOS)
+        file(GLOB CORE_HEADERS
             include/*.h
             include/unix/*.h
             src/unix/*.h
@@ -23,10 +23,19 @@ if(UNIX)
             src/etc/*.c
             src/unix/*.c
         )
-        if (NOT IOS)
-            file(GLOB CORE_HEADERS src/darwin/macos/*.h)
-            file(GLOB CORE_SRCS src/darwin/macos/*.c)
-        endif()
+    elseif(DARWIN)
+        file(GLOB CORE_HEADERS 
+            include/*.h
+            include/unix/*.h
+            src/unix/*.h
+            src/darwin/macos/*.h
+        )
+        file(GLOB CORE_SRCS
+            src/*.c
+            src/etc/*.c
+            src/unix/*.c
+            src/darwin/macos/*.c
+        )
     else()
         file(GLOB CORE_HEADERS 
             include/*.h 
