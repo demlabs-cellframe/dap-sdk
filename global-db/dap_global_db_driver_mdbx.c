@@ -386,6 +386,8 @@ size_t     l_upper_limit_of_db_size = 16;
         mdbx_setup_debug	(	MDBX_LOG_VERBOSE, 0, 0);
 #endif
 
+    if ( MDBX_SUCCESS != (l_rc = mdbx_env_set_maxreaders(s_mdbx_env, 107) ))
+        return log_it (L_CRITICAL, "mdbx_env_set_maxreaders (%s): (%d) %s", s_db_path, l_rc, mdbx_strerror(l_rc)),  -EINVAL;
 
     log_it(L_NOTICE, "Set maximum number of local groups: %lu", DAP_GLOBAL_DB_GROUPS_COUNT_MAX);
     dap_assert ( !(l_rc =  mdbx_env_set_maxdbs (s_mdbx_env, DAP_GLOBAL_DB_GROUPS_COUNT_MAX)) );/* Set maximum number of the file-tables (MDBX subDB)
@@ -1003,7 +1005,8 @@ MDBX_txn *l_txn = NULL;
         l_suff->flags = a_store_obj->flags;
         l_suff->ts = a_store_obj->timestamp;
 
-        memcpy(l_val, a_store_obj->value, a_store_obj->value_len);          /* Put <value> into the record */
+        if (a_store_obj->value && a_store_obj->value_len)
+            memcpy(l_val, a_store_obj->value, a_store_obj->value_len);          /* Put <value> into the record */
 
         /* So, finaly: BEGIN transaction, do INSERT, COMMIT or ABORT ... */
 

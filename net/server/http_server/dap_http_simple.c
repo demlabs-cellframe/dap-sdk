@@ -399,7 +399,7 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void *
     l_http_simple->worker = a_http_client->esocket->context->worker;
     l_http_simple->reply_size_max = DAP_HTTP_SIMPLE_URL_PROC( a_http_client->proc )->reply_size_max;
     l_http_simple->reply_byte = DAP_NEW_Z_SIZE(uint8_t, DAP_HTTP_SIMPLE(a_http_client)->reply_size_max );
-
+    strncpy(l_http_simple->es_hostaddr, l_http_simple->esocket->hostaddr, INET6_ADDRSTRLEN);
 //    Made a temporary solution to handle simple CORS requests.
 //    This is necessary in order to be able to request information using JavaScript obtained from another source.
     dap_http_header_t* l_header_origin = dap_http_header_find(a_http_client->in_headers, "Origin");

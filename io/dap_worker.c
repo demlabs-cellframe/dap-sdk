@@ -341,22 +341,18 @@ static bool s_socket_all_check_activity( void * a_arg)
  */
 void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket)
 {
-    int l_ret = 0;
-    if (dap_worker_get_current() == a_worker)
-        l_ret = dap_worker_add_events_socket_unsafe(a_worker, a_events_socket);
-    else
-        l_ret = dap_events_socket_queue_ptr_send( a_worker->queue_es_new, a_events_socket );
+    debug_if(g_debug_reactor, L_DEBUG, "Add es %"DAP_FORMAT_SOCKET" to worker %d", a_events_socket->socket, a_worker->id);
+    int l_ret = dap_worker_get_current() == a_worker
+            ? dap_worker_add_events_socket_unsafe(a_worker, a_events_socket)
+            : dap_events_socket_queue_ptr_send( a_worker->queue_es_new, a_events_socket );
 
-    if(l_ret != 0 ){
-        char l_errbuf[128];
-        *l_errbuf = 0;
+    if (l_ret) {
+        char l_errbuf[128] = { '\0' };
         strerror_r(l_ret, l_errbuf, sizeof(l_errbuf));
-        if (dap_worker_get_current() == a_worker)
-            log_it(L_ERROR, "Can't assign esocket to worker: \"%s\"(code %d)", l_errbuf, l_ret);
-        else
-            log_it(L_ERROR, "Can't send pointer in queue: \"%s\"(code %d)", l_errbuf, l_ret);
-    } else
-        debug_if(g_debug_reactor, L_DEBUG, "Worker add esocket %"DAP_FORMAT_SOCKET, a_events_socket->socket);
+        log_it(L_ERROR, "%s: \"%s\"(code %d)",
+               dap_worker_get_current() == a_worker ? "Can't add es to worker" : "Can't send pointer to queue",
+               l_errbuf, l_ret);
+    }
 }
 
 /**
