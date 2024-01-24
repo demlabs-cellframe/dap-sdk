@@ -237,7 +237,7 @@ static void *s_list_thread_proc2(void *arg) {
                         || strstr(l_obj_cur->group, ".nodes.v2");
 
                 if (l_obj_cur->timestamp < l_two_weeks_ago && !(l_obj_cur->flags & RECORD_PINNED) && !group_HALed) {
-                    dap_global_db_del_sync(l_obj_cur->group, l_obj_cur->key);
+                    dap_global_db_del(l_obj_cur->group, l_obj_cur->key, NULL, NULL);
                     continue;
                 }
                 break;
@@ -695,7 +695,9 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     memcpy(pdata,   &l_key_len,             sizeof(uint16_t));      pdata += sizeof(uint16_t);
     memcpy(pdata,   a_store_obj->key,       l_key_len /* + 1 */);   pdata += l_key_len /* + 1 */;
     memcpy(pdata,   &a_store_obj->value_len,sizeof(uint64_t));      pdata += sizeof(uint64_t);
-    memcpy(pdata,   a_store_obj->value,     a_store_obj->value_len);pdata += a_store_obj->value_len;
+    if (a_store_obj->value && a_store_obj->value_len) {
+        memcpy(pdata, a_store_obj->value, a_store_obj->value_len);  pdata += a_store_obj->value_len;
+    }
     if ((uint32_t)(pdata - l_pkt->data) != l_data_size_out) {
         log_it(L_MSG, "! Inconsistent global_db packet! %u != %u", (uint32_t)(pdata - l_pkt->data), l_data_size_out);
     }
@@ -853,23 +855,14 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
 
     bool l_broken = !dap_global_db_isalnum_group_key(a_obj);
 
-    dap_store_obj_t *l_read_obj = NULL;
-    if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
-        if (l_broken) {
-            log_it(L_NOTICE, "Found this object in DB, delete it");
-            dap_global_db_del(a_obj->group, a_obj->key, NULL, NULL);
-            DAP_DEL_Z(a_arg);
-            return -1;
-        } else {
-            if ((l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL))) {
-                l_timestamp_cur = l_read_obj->timestamp;
-                if (l_read_obj->flags & RECORD_PINNED)
-                    l_is_pinned_cur = true;
-                else {
-                    dap_store_obj_free_one(l_read_obj);
-                    l_read_obj = NULL;
-                }
-            }
+    dap_store_obj_t *l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
+    if (l_read_obj) {
+        l_timestamp_cur = l_read_obj->timestamp;
+        if (l_read_obj->flags & RECORD_PINNED)
+            l_is_pinned_cur = true;
+        else {
+            dap_store_obj_free_one(l_read_obj);
+            l_read_obj = NULL;
         }
     }
 
