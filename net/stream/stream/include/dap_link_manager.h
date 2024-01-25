@@ -25,7 +25,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_common.h"
 
 typedef struct dap_link_manager {
-    uint64_t update_timeout;
+    dap_timerfd_t *update_timer;
 } dap_link_manager_t;
 
 int dap_link_manager_init();

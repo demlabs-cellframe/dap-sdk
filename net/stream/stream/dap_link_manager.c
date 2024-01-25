@@ -29,7 +29,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_link_manager"
 
-dap_timerfd_t *s_link_manager_timer = NULL;
 dap_link_manager_t *s_link_manager;
 
 static bool s_links_check(void *a_arg);
@@ -39,8 +38,7 @@ int dap_link_manager_init()
 // memory alloc
     DAP_NEW_Z_RET_VAL(s_link_manager, dap_link_manager_t, -1, NULL);
 // func work
-    s_link_manager->update_timeout = 5000;
-    s_link_manager_timer = dap_timerfd_start(s_link_manager->update_timeout, s_links_check, NULL);
+    s_link_manager->update_timer = dap_timerfd_start(5000, s_links_check, NULL);
     return 0;
 }
 
