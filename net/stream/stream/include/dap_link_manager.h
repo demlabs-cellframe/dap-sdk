@@ -22,11 +22,28 @@ You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
-#include "dap_common.h"
+#include "dap_timerfd.h"
+
+typedef struct dap_link_manager dap_link_manager_t;
+
+typedef void (*dap_link_manager_callback_t)(dap_link_manager_t *, void*);
+typedef void (*dap_link_manager_callback_delete_t)(dap_link_manager_t *);
+typedef bool (*dap_link_manager_callback_update_t)(void *);
+typedef void (*dap_link_manager_callback_error_t)(dap_link_manager_t *, int, void *);
+
+typedef struct dap_link_manager_callbacks {
+    dap_link_manager_callback_t connected;
+    dap_link_manager_callback_t disconnected;
+    dap_link_manager_callback_delete_t delete;
+    dap_link_manager_callback_update_t update;
+    dap_link_manager_callback_error_t error;
+} dap_link_manager_callbacks_t;
 
 typedef struct dap_link_manager {
     dap_timerfd_t *update_timer;
+    dap_link_manager_callbacks_t callbacks;
 } dap_link_manager_t;
 
 int dap_link_manager_init();
 void dap_link_manager_deinit();
+dap_link_manager_t *dap_link_manager_new(dap_link_manager_callbacks_t *a_callbacks);

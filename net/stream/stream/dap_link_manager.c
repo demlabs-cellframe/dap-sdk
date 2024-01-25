@@ -24,37 +24,42 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #include "dap_link_manager.h"
 #include "dap_worker.h"
-// #include "dap_global_db_cluster.h"
-// #include "dap_global_db.h"
+#include "dap_config.h"
 
 #define LOG_TAG "dap_link_manager"
 
-dap_link_manager_t *s_link_manager;
+static uint32_t s_timer_update_states = 5100;
 
-static bool s_links_check(void *a_arg);
+static void s_delete_callback(dap_link_manager_t *a_manager)
+{
+    
+}
 
 int dap_link_manager_init()
 {
-// memory alloc
-    DAP_NEW_Z_RET_VAL(s_link_manager, dap_link_manager_t, -1, NULL);
-// func work
-    s_link_manager->update_timer = dap_timerfd_start(5000, s_links_check, NULL);
+    s_timer_update_states = dap_config_get_item_uint32_default(g_config, "link_manager", "timer_update_states", s_timer_update_states);
     return 0;
+}
+
+dap_link_manager_t *dap_link_manager_new(dap_link_manager_callbacks_t *a_callbacks)
+{
+// sanity check
+    dap_return_val_if_pass(!a_callbacks, NULL);
+// memory alloc
+    dap_link_manager_t *l_ret = NULL;
+    DAP_NEW_Z_RET_VAL(l_ret, dap_link_manager_t, NULL, NULL);
+// func work
+    l_ret->callbacks = *a_callbacks;
+    if(l_ret->callbacks.update)
+        l_ret->update_timer = dap_timerfd_start(s_timer_update_states, l_ret->callbacks.update, NULL);
+    if(!l_ret->update_timer)
+        log_it(L_WARNING, "Link manager created, but timer not active");
+    if(l_ret->callbacks.delete)
+        l_ret->callbacks.delete = s_delete_callback;
+    return l_ret;
 }
 
 void dap_link_manager_deinit()
 {
-    DAP_DEL_Z(s_link_manager);
-}
 
-
-bool s_links_check(void *a_arg) {
-    // dap_global_db_instance_t *l_dbi = dap_global_db_instance_get_default();
-    // dap_global_db_cluster_t *l_it;
-    // DL_FOREACH(l_dbi->clusters, l_it) {
-    //     if (l_it->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC || l_it->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED) {
-    //         printf("FINDED!!!!!!");
-    //     }
-    // }
-    return true;
 }
