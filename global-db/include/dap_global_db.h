@@ -100,6 +100,7 @@ typedef bool (*dap_global_db_callback_results_raw_t) (dap_global_db_instance_t *
                                                       dap_store_obj_t *a_values, void *a_arg);
 // Return codes
 #define DAP_GLOBAL_DB_RC_SUCCESS     0
+#define DAP_GLOBAL_DB_RC_PROGRESS    1
 #define DAP_GLOBAL_DB_RC_NO_RESULTS -1
 #define DAP_GLOBAL_DB_RC_ERROR      -6
 
@@ -161,3 +162,4 @@ int dap_global_db_del_sync(const char * a_group, const char *a_key);
 int dap_global_db_flush_sync();
 
 bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj);
+bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask);

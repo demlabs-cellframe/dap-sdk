@@ -37,6 +37,8 @@
 #define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL                              /* A maximum number of groups */
 #define DAP_GLOBAL_DB_KEY_SIZE_MAX          512UL                               /* A limit for the key's length in DB */
 
+#define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 256UL                             /* Default count of records to return with conditional read */
+
 enum dap_global_db_record_flags {
     DAP_GLOBAL_DB_RECORD_COMMON = 0,
     DAP_GLOBAL_DB_RECORD_PINNED = 1,
@@ -68,7 +70,7 @@ typedef struct dap_store_obj {
 
 DAP_STATIC_INLINE dap_global_db_driver_hash_t dap_global_db_driver_hash_get(dap_store_obj_t *a_obj)
 {
-    dap_global_db_driver_hash_t l_ret = { .bets = htobe64(a_obj->timestamp), .becrc = htobe32(a_obj->crc) };
+    dap_global_db_driver_hash_t l_ret = { .bets = htobe64(a_obj->timestamp), .becrc = htobe64(a_obj->crc) };
     return l_ret;
 }
 
@@ -98,29 +100,23 @@ DAP_STATIC_INLINE char *dap_global_db_driver_hash_print(dap_global_db_driver_has
     return l_ret;
 }
 
-// db type for iterator
-typedef enum dap_global_db_iter_type {
-    DAP_GLOBAL_DB_TYPE_UNDEFINED = 0,
-    DAP_GLOBAL_DB_TYPE_MDBX = 1,
-    DAP_GLOBAL_DB_TYPE_SQLITE
-} dap_global_db_iter_type_t;
+extern const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_start;
 
-// db element iterator
-typedef struct dap_global_db_iter {
-    dap_global_db_iter_type_t db_type;
-    const char *db_group;
-    void *db_iter;
-} dap_global_db_iter_t;
+DAP_STATIC_INLINE bool dap_global_db_driver_hash_is_blank(dap_global_db_driver_hash_t a_blank_candidate)
+{
+    return !memcmp(&a_blank_candidate, &c_dap_global_db_driver_hash_start, sizeof(dap_global_db_driver_hash_t));
+}
 
 typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t *a_store_obj);
 typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *a_group, const char *a_key, size_t *a_count_out);
-typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(dap_global_db_iter_t *a_iter, size_t *a_count, dap_nanotime_t a_timestamp);
+typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count);
 typedef dap_store_obj_t* (*dap_db_driver_read_last_callback_t)(const char *a_group);
-typedef size_t (*dap_db_driver_read_count_callback_t)(const char * a_group, dap_nanotime_t a_timestamp);
+typedef size_t (*dap_db_driver_read_count_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 typedef dap_list_t* (*dap_db_driver_get_groups_callback_t)(const char *a_mask);
 typedef bool (*dap_db_driver_is_obj_callback_t)(const char *a_group, const char *a_key);
+typedef bool (*dap_db_driver_is_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash);
+typedef dap_store_obj_t * (*dap_db_driver_get_by_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash);
 typedef int (*dap_db_driver_callback_t)(void);
-typedef int (*dap_db_driver_iter_create_callback_t)(dap_global_db_iter_t *a_iter);
 
 typedef struct dap_db_driver_callbacks {
     dap_db_driver_write_callback_t      apply_store_obj;                    /* Performs an DB's action like: INSERT/DELETE/UPDATE for the given
@@ -134,16 +130,16 @@ typedef struct dap_db_driver_callbacks {
 
     dap_db_driver_is_obj_callback_t     is_obj;                             /* Check for existence of a record in the table/group for
                                                                               a given <key> */
+    dap_db_driver_is_hash_callback_t    is_hash;                            /* Check for existence of a record in the table/group for
+                                                                              a given driver hash */
+    dap_db_driver_get_by_hash_callback_t get_by_hash;                       /* Retrieve a record from the table/group for a given driver hash */
 
     dap_db_driver_callback_t            transaction_start;                  /* Allocate DB context for consequtive operations */
     dap_db_driver_callback_t            transaction_end;                    /* Release DB context at end of DB consequtive operations */
 
     dap_db_driver_callback_t            deinit;
     dap_db_driver_callback_t            flush;
-
-    dap_db_driver_iter_create_callback_t    iter_create;
 } dap_db_driver_callbacks_t;
-
 
 int     dap_db_driver_init(const char *driver_name, const char *a_filename_db, int a_mode_async);
 void    dap_db_driver_deinit(void);
@@ -159,13 +155,11 @@ int     dap_db_driver_flush(void);
 int dap_global_db_driver_apply(dap_store_obj_t *a_store_obj, size_t a_store_count);
 int dap_global_db_driver_add(dap_store_obj_t *a_store_obj, size_t a_store_count);
 int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_count);
-dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group);
-dap_store_obj_t* dap_global_db_driver_cond_read(dap_global_db_iter_t* a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp);
-dap_store_obj_t* dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out);
+dap_store_obj_t *dap_global_db_driver_read_last(const char *a_group);
+dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out);
+dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out);
+dap_store_obj_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 bool dap_global_db_driver_is(const char *a_group, const char *a_key);
-bool dap_global_db_driver_is_hash(const char *a_group, const dap_global_db_driver_hash_t *a_hash);
-size_t dap_global_db_driver_count(const char *a_group, dap_nanotime_t a_timestamp);
-dap_list_t* dap_global_db_driver_get_groups_by_mask(const char *a_group_mask);
-
-dap_global_db_iter_t *dap_global_db_driver_iter_create(const char *a_group);
-void dap_global_db_driver_iter_delete(dap_global_db_iter_t* a_iter);
+bool dap_global_db_driver_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
+size_t dap_global_db_driver_count(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
+dap_list_t *dap_global_db_driver_get_groups_by_mask(const char *a_group_mask);
