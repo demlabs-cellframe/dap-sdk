@@ -35,6 +35,15 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_global_db_cluster"
 
+static const dap_link_manager_callbacks_t s_link_manager_callbacks = {
+    .connected      = NULL,
+    .disconnected   = NULL,
+    .delete         = NULL,
+    .update         = NULL,
+    .delete         = NULL,
+    .error          = NULL
+};
+
 int dap_global_db_cluster_init()
 {
     dap_global_db_ch_init();
@@ -139,6 +148,19 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         DAP_DELETE(l_cluster);
         return NULL;
     }
+    if (l_cluster->links_cluster &&
+        (l_cluster->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
+        l_cluster->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED))
+    {
+        l_cluster->link_manager = dap_link_manager_new(&s_link_manager_callbacks);
+        if (!l_cluster->link_manager) {
+            log_it(L_ERROR, "Can't create link manager");
+            dap_cluster_delete(l_cluster->role_cluster);
+            dap_cluster_delete(l_cluster->links_cluster);
+            DAP_DELETE(l_cluster);
+            return NULL;
+        }
+    }
     l_cluster->ttl = (uint64_t)a_ttl * 3600;    // Convert to seconds
     l_cluster->default_role = a_default_role;
     l_cluster->owner_root_access = a_owner_root_access;
@@ -167,7 +189,10 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
         dap_cluster_delete(a_cluster->links_cluster);
     if (a_cluster->role_cluster)
         dap_cluster_delete(a_cluster->role_cluster);
-    DAP_DEL_Z(a_cluster->groups_mask);
+    if (a_cluster->link_manager && a_cluster->link_manager->callbacks.delete)
+        a_cluster->link_manager->callbacks.delete(a_cluster->link_manager);
+    
+    DAP_DEL_MULTY(a_cluster->link_manager, a_cluster->groups_mask);
     DL_DELETE(a_cluster->dbi->clusters, a_cluster);
     DAP_DELETE(a_cluster);
 }
