@@ -32,6 +32,7 @@
 #include "dap_time.h"
 #include "dap_list.h"
 #include "dap_sign.h"
+#include "dap_global_db_pkt.h"
 
 #define DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX   128UL                               /* A maximum size of group name */
 #define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL                              /* A maximum number of groups */
@@ -100,16 +101,17 @@ DAP_STATIC_INLINE char *dap_global_db_driver_hash_print(dap_global_db_driver_has
     return l_ret;
 }
 
-extern const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_start;
+extern const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank;
 
 DAP_STATIC_INLINE bool dap_global_db_driver_hash_is_blank(dap_global_db_driver_hash_t a_blank_candidate)
 {
-    return !memcmp(&a_blank_candidate, &c_dap_global_db_driver_hash_start, sizeof(dap_global_db_driver_hash_t));
+    return !memcmp(&a_blank_candidate, &c_dap_global_db_driver_hash_blank, sizeof(dap_global_db_driver_hash_t));
 }
 
 typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t *a_store_obj);
 typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *a_group, const char *a_key, size_t *a_count_out);
 typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count);
+typedef dap_global_db_hash_pkt_t * (*dap_db_driver_read_hashes_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 typedef dap_store_obj_t* (*dap_db_driver_read_last_callback_t)(const char *a_group);
 typedef size_t (*dap_db_driver_read_count_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 typedef dap_list_t* (*dap_db_driver_get_groups_callback_t)(const char *a_mask);
@@ -124,6 +126,7 @@ typedef struct dap_db_driver_callbacks {
     dap_db_driver_read_callback_t       read_store_obj;                     /* Retreive 'store object' from DB */
     dap_db_driver_read_last_callback_t  read_last_store_obj;
     dap_db_driver_read_cond_callback_t  read_cond_store_obj;
+    dap_db_driver_read_hashes_callback_t read_hashes;
     dap_db_driver_read_count_callback_t read_count_store;
 
     dap_db_driver_get_groups_callback_t get_groups_by_mask;                 /* Return a list of tables/groups has been matched to pattern */
@@ -163,3 +166,5 @@ bool dap_global_db_driver_is(const char *a_group, const char *a_key);
 bool dap_global_db_driver_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 size_t dap_global_db_driver_count(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 dap_list_t *dap_global_db_driver_get_groups_by_mask(const char *a_group_mask);
+dap_store_obj_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
+dap_global_db_driver_hash_t *dap_global_db_driver_hashes_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from);

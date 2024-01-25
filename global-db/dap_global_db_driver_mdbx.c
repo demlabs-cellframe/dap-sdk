@@ -97,7 +97,15 @@ static dap_store_obj_t  *s_db_mdbx_get_by_hash(const char *a_group, dap_global_d
 static bool             s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static bool             s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out);
-static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out);
+static void             *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out);
+static inline dap_global_db_driver_hash_t *s_db_mdbx_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
+{
+    return s_db_mdbx_read_cond(a_group, a_hash_from, NULL, true);
+}
+static inline dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out)
+{
+    return s_db_mdbx_read_cond(a_group, a_hash_from, a_count_out, false);
+}
 static size_t           s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
 
@@ -224,7 +232,7 @@ MDBX_val    l_key_iov, l_data_iov;
     if ( !(l_db_ctx = DAP_NEW_Z(dap_db_ctx_t)) )                            /* Allocate zeroed memory for new DB context */
         return  log_it(L_ERROR, "Cannot allocate DB context for '%s', errno=%d", a_group, errno), NULL;
 
-    memcpy(l_db_ctx->name,  a_group, l_db_ctx->namelen = l_name_len);             /* Store group name in the DB context */
+    memcpy(l_db_ctx->name, a_group, l_db_ctx->namelen = l_name_len);             /* Store group name in the DB context */
     /*
     ** Start transaction, create table, commit.
     */
@@ -429,6 +437,7 @@ size_t     l_upper_limit_of_db_size = 16;
     a_drv_dpt->get_by_hash         = s_db_mdbx_get_by_hash;
     a_drv_dpt->read_store_obj      = s_db_mdbx_read_store_obj;
     a_drv_dpt->read_cond_store_obj = s_db_mdbx_read_cond_store_obj;
+    a_drv_dpt->read_hashes         = s_db_mdbx_read_hashes;
     a_drv_dpt->read_count_store    = s_db_mdbx_read_count_store;
     a_drv_dpt->get_groups_by_mask  = s_db_mdbx_get_groups_by_mask;
     a_drv_dpt->is_obj              = s_db_mdbx_is_obj;
@@ -748,18 +757,18 @@ static dap_store_obj_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-static dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out)
+static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read)
 {
-    dap_return_val_if_fail(a_group, NULL);  /* Sanity check */
+    dap_return_val_if_fail(a_group && *a_group, NULL);  /* Sanity check */
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
     if (!l_db_ctx)
         return NULL;
-
+    size_t l_element_size = a_keys_only_read ? sizeof(dap_global_db_driver_hash_t) : sizeof(dap_store_obj_t);
     size_t l_count_current = 0,
            l_count_out = a_count_out ? *a_count_out : 0;
     if (!l_count_out)
         l_count_out = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT;
-    dap_store_obj_t *l_obj = NULL, *l_obj_arr = NULL;
+    byte_t *l_obj_arr = NULL;
     int l_rc = 0;
     MDBX_txn *l_txn = NULL;
     if (MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn))) {
@@ -778,15 +787,27 @@ static dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_g
             log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
         goto safe_ret;
     }
-    l_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_count_out * sizeof(dap_store_obj_t) + 1);
+    size_t l_group_name_len = l_db_ctx->namelen + 1;
+    size_t l_addition_size = a_keys_only_read ? l_group_name_len + sizeof(dap_global_db_hash_pkt_t): 0;
+
+    l_obj_arr = DAP_NEW_Z_SIZE(byte_t, (l_count_out + 1) * l_element_size + l_addition_size);
     if (!l_obj_arr) {
         log_it(L_CRITICAL, "Can't allocate memory");
         goto safe_ret;
     }
+    if (a_keys_only_read) {
+        dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_obj_arr;
+        l_pkt->group_name_len = l_group_name_len;
+        memcpy(l_pkt->group_n_hashses, a_group, l_group_name_len);
+    }
     /* Iterate cursor to retrieve records from DB */
     do {
-        l_obj = l_obj_arr + l_count_current;        // Point <l_obj> to last array's element
-        if (s_fill_store_obj(a_group, &l_key, &l_data, l_obj)) {
+        if (a_keys_only_read && l_key.iov_len == sizeof(dap_global_db_driver_hash_t)) {
+            dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_obj_arr;
+            dap_global_db_driver_hash_t *l_hashes_ptr = (dap_global_db_driver_hash_t *)(l_pkt->group_n_hashses + l_group_name_len);
+            *(l_hashes_ptr + l_count_current) = *(dap_global_db_driver_hash_t *)l_key.iov_base;
+        }
+        else if (s_fill_store_obj(a_group, &l_key, &l_data, (dap_store_obj_t *)l_obj_arr + l_count_current)) {
             l_rc = MDBX_PROBLEM;
             break;
         }
@@ -796,7 +817,8 @@ static dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_g
     if (l_rc == MDBX_NOTFOUND) {
         // Add blank object to the end as marker of final itreation
         l_count_current++;
-        if (l_count_current < l_count_out && !(l_obj_arr = DAP_REALLOC(l_obj_arr, sizeof(dap_store_obj_t) * l_count_current))) {
+        if (l_count_current < l_count_out &&
+                !(l_obj_arr = DAP_REALLOC(l_obj_arr, l_element_size * l_count_current + l_addition_size))) {
             log_it(L_ERROR, "Cannot cut area to keep %zu <store objects>", l_count_current);
             l_rc = MDBX_PROBLEM;
         }
@@ -811,6 +833,8 @@ safe_ret:
         mdbx_txn_commit(l_txn);
     if (a_count_out)
         *a_count_out = l_count_current;
+    if (a_keys_only_read && l_obj_arr)
+        ((dap_global_db_hash_pkt_t *)l_obj_arr)->hashes_count = l_count_current;
     return l_obj_arr;
 }
 

@@ -853,7 +853,7 @@ int dap_global_db_get_all(const char *a_group, size_t a_results_page_size, dap_g
     l_msg->callback_arg = a_arg;
     l_msg->callback_results = a_callback;
     l_msg->values_page_size = a_results_page_size;
-    l_msg->last_hash = c_dap_global_db_driver_hash_start;
+    l_msg->last_hash = c_dap_global_db_driver_hash_blank;
 
     l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
 
@@ -890,7 +890,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
         return false;
     }
     if (!a_msg->total_records)
-        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_start);
+        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank);
     if (a_msg->total_records)
         l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count);
     int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
@@ -959,7 +959,7 @@ int dap_global_db_get_all_raw(const char * a_group, size_t a_results_page_size, 
     l_msg->values_page_size = a_results_page_size;
     l_msg->callback_arg = a_arg;
     l_msg->callback_results_raw = a_callback;
-    l_msg->last_hash = c_dap_global_db_driver_hash_start;
+    l_msg->last_hash = c_dap_global_db_driver_hash_blank;
 
     int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
     if (l_ret != 0){
@@ -993,7 +993,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
        return false;
     }
     if (!a_msg->total_records)
-        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_start);
+        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank);
     if (a_msg->total_records)
         l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count);
     int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;

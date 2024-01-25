@@ -35,6 +35,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_global_db_cluster"
 
+static void s_gdb_cluster_sync_timer_callback(void *a_arg);
+
 int dap_global_db_cluster_init()
 {
     dap_global_db_ch_init();
@@ -126,6 +128,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->owner_root_access = a_owner_root_access;
     l_cluster->dbi = a_dbi;
     DL_APPEND(a_dbi->clusters, l_cluster);
+    dap_proc_thread_timer_add(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000);
     return l_cluster;
 }
 
@@ -185,4 +188,69 @@ int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster
     l_notifier->callback_arg = a_callback_arg;
     DL_APPEND(a_cluster->notifiers, l_notifier);
     return 0;
+}
+
+struct sync_request {
+    dap_stream_node_addr_t link;
+    char *group;
+    dap_global_db_driver_hash_t last_hash;
+    dap_global_db_cluster *cluster;
+};
+
+bool s_proc_thread_reader(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+{
+    bool l_ret = false;
+    struct sync_request *l_req = a_arg;
+    if (dap_global_db_driver_hash_is_blank(l_req->last_hash))
+        l_req->last_hash = dap_db_get_last_hash_remote(l_req->link, l_req->group);
+    dap_global_db_hash_pkt_t *l_hashes_pkt = dap_global_db_driver_hashes_read(l_req->group, l_req->last_hash);
+    if (l_hashes_pkt && l_hashes_pkt->hashes_count) {
+        dap_global_db_driver_hash_t *l_hashes_diff = (dap_global_db_driver_hash_t *)(l_hashes_pkt->group_n_hashses + l_hashes_pkt->group_name_len);
+        l_req->last_hash = l_hashes_diff[l_hashes_pkt->hashes_count - 1];
+        l_ret = !dap_global_db_driver_hash_is_blank(l_req->last_hash);
+        if (!l_ret)
+            l_count_out--;
+        dap_stream_worker *l_worker = NULL;
+        dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr(&l_req->link, &l_worker);
+        dap_stream_ch_pkt_send_mt(l_worker, l_es_uuid, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES,
+                                  l_hashes_pkt, dap_global_db_hash_pkt_get_size(l_hashes_pkt));
+    }
+    if (!l_ret) {
+        l_req->cluster->sync_context.request_count--;
+        DAP_DELETE(l_req->group);
+        DAP_DELETE(l_req);
+    }
+    return l_ret;
+}
+
+void s_gdb_cluster_sync_timer_callback(void *a_arg)
+{
+    assert(a_arg);
+    dap_global_db_cluster_t *l_cluster = a_arg;
+    switch (l_cluster->sync_context.state) {
+    case DAP_GLOBAL_DB_SYNC_STATE_START: {
+        dap_stream_node_addr_t l_current_link = l_cluster->links_cluster
+                ? dap_cluster_get_random_link(l_cluster->links_cluster)
+                : dap_stream_get_random_link();
+        dap_list_t *l_groups = dap_global_db_driver_get_groups_by_mask(l_cluster->groups_mask);
+        if (!l_groups) {    // Nothing to sync
+            l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
+            break;
+        }
+        for (dap_list_t *it = l_groups; it; it = it->next) {
+            struct sync_request *l_req = DAP_NEW_Z(struct sync_request);
+            l_req->cluster = l_cluster;
+            l_req->link = l_current_link;
+            l_req->group = it->data;
+            dap_proc_thread_callback_add(NULL, s_proc_thread_reader, l_req);
+            l_cluster->sync_context.request_count++;
+        }
+        dap_list_free(l_groups);
+        l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_ITERATION;
+    } break;
+    case DAP_GLOBAL_DB_SYNC_STATE_ITERATION:
+
+    default:
+        break;
+    }
 }

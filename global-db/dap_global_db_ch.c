@@ -417,3 +417,37 @@ static void s_stream_ch_io_complete(dap_events_socket_t *a_es, void *a_arg, int 
 {
 
 }
+
+/**
+ * @brief Sets last synchronized object hash for a remote node.
+ *
+ * @param a_node_addr a node adress
+ * @param a_hash a driver hash for database object
+ * @param a_group a group name string
+ * @return Returns true if successful, otherwise false.
+ */
+bool dap_db_set_last_hash_remote(uint64_t a_node_addr, dap_global_db_driver_hash_t a_hash, char *a_group)
+{
+    char *l_key = dap_strdup_printf("%"DAP_UINT64_FORMAT_U"%s", a_node_addr, a_group);
+    return dap_global_db_set(GROUP_LOCAL_NODE_LAST_ID, l_key, &a_hash, sizeof(dap_global_db_driver_hash_t), false, NULL, NULL) == 0;
+    DAP_DELETE(l_key);
+}
+
+/**
+ * @brief Gets last id of a remote node.
+ *
+ * @param a_node_addr a node adress
+ * @param a_group a group name string
+ * @return Returns last synchronize object driver hash for provided node if successful, otherwise blank hash.
+ */
+dap_global_db_driver_hash_t dap_db_get_last_hash_remote(uint64_t a_node_addr, char *a_group)
+{
+    char *l_key = dap_strdup_printf("%"DAP_UINT64_FORMAT_U"%s", a_node_addr, a_group);
+    size_t l_ret_len = 0;
+    byte_t *l_ret_ptr = dap_global_db_get_sync(GROUP_LOCAL_NODE_LAST_ID, l_key, &l_ret_len, NULL, NULL);
+    dap_global_db_driver_hash_t l_ret_hash = l_ret_ptr && l_ret_len == sizeof(dap_global_db_driver_hash_t)
+            ? *(dap_global_db_driver_hash_t *)l_ret_ptr
+            : c_dap_global_db_driver_hash_blank;
+    DAP_DELETE(l_ret_ptr);
+    return l_ret_hash;
+}

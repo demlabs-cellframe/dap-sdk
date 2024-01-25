@@ -61,16 +61,28 @@ typedef struct dap_global_db_notifier {
     struct dap_global_db_notifier *prev, *next;
 } dap_global_db_notifier_t;
 
+enum dap_global_db_sync_state {
+    DAP_GLOBAL_DB_SYNC_STATE_START,
+    DAP_GLOBAL_DB_SYNC_STATE_ITERATION,
+    DAP_GLOBAL_DB_SYNC_STATE_IDLE
+};
+
+typedef struct dap_global_db_sync_context {
+    enum dap_global_db_sync_state state;
+    atomic_uint request_count;
+} dap_global_db_sync_context_t;
+
 typedef struct dap_global_db_cluster {
-    const char *groups_mask;        // GDB cluster coverage area
-    dap_cluster_t *links_cluster;   // Cluster container for network links
-    dap_cluster_t *role_cluster;    // Cluster container for members with especial roles
-    dap_global_db_role_t default_role;  // Role assined for new membersadded with default one
-    uint64_t ttl;                   // Time-to-life for objects in this cluster, in seconds
-    bool owner_root_access;         // Deny if false, grant overwise
-    dap_global_db_notifier_t *notifiers;    // Cluster notifiers
-    dap_global_db_instance_t *dbi;  // Pointer to database instance that contains the cluster
-    struct dap_global_db_cluster *prev, *next;
+    const char *groups_mask;                    // GDB cluster coverage area
+    dap_cluster_t *links_cluster;               // Cluster container for network links
+    dap_cluster_t *role_cluster;                // Cluster container for members with especial roles
+    dap_global_db_role_t default_role;          // Role assined for new membersadded with default one
+    uint64_t ttl;                               // Time-to-life for objects in the cluster, in seconds
+    bool owner_root_access;                     // Deny if false, grant overwise
+    dap_global_db_notifier_t *notifiers;        // Cluster notifiers
+    dap_global_db_instance_t *dbi;              // Pointer to database instance that contains the cluster
+    struct dap_global_db_cluster *prev, *next;  // Pointers to next and previous cluster instances in the global clusters list
+    dap_global_db_sync_context_t sync_context;  // Cluster synchronization context for current client
 } dap_global_db_cluster_t;
 
 int dap_global_db_cluster_init();

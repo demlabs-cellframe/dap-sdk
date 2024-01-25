@@ -1050,14 +1050,6 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
     return 0;
 }
 
-static bool s_callback_clusters_update(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
-{
-    dap_stream_node_addr_t *l_addr = a_arg;
-    dap_cluster_link_delete_from_all(l_addr);
-    DAP_DELETE(a_arg);
-    return false;
-}
-
 void s_stream_delete_from_list(dap_stream_t *a_stream)
 {
     dap_return_if_fail(a_stream);
@@ -1075,10 +1067,8 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
                 break;
             }
         }
-        if (!l_replace_found) {
-            dap_stream_node_addr_t *l_addr_arg = DAP_DUP(&a_stream->node);
-            dap_proc_thread_callback_add(NULL, s_callback_clusters_update, l_addr_arg);
-        }
+        if (!l_replace_found)
+            dap_cluster_link_delete_from_all(l_addr);
     }
     pthread_rwlock_unlock(&s_streams_lock);
 }
@@ -1228,4 +1218,21 @@ void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data
     for (dap_stream_t *it = s_authorized_streams; it; it = it->hh.next)
         dap_stream_ch_pkt_send_mt(it->stream_worker, it->esocket_uuid, a_ch_id, a_type, a_data, a_data_size);
     pthread_rwlock_unlock(&s_streams_lock);
+}
+
+dap_stream_node_addr_t dap_stream_get_random_link()
+{
+    dap_stream_node_addr_t l_ret = {};
+    if (s_authorized_streams) {
+        int num = rand() % HASH_COUNT(s_authorized_streams), idx = 0;
+        pthread_rwlock_rdlock(&s_streams_lock);
+        for (dap_stream_t *it = s_authorized_streams; it; it = it->hh.next) {
+            if (idx++ == num) {
+                l_ret = it->node;
+                break;
+            }
+        }
+        pthread_rwlock_unlock(&s_streams_lock);
+    }
+    return l_ret;
 }
