@@ -409,10 +409,6 @@ byte_t *dap_global_db_get_unsafe(dap_global_db_context_t *a_global_db_context, c
     if (a_ts)
         *a_ts = l_store_obj->timestamp;
     byte_t *l_res = DAP_DUP_SIZE(l_store_obj->value, l_store_obj->value_len);
-    if (!l_res) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
     dap_store_obj_free_one(l_store_obj);
     return l_res;
 }
