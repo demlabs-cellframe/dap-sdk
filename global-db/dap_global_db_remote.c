@@ -201,7 +201,7 @@ static void *s_list_thread_proc2(void *arg) {
         dap_db_log_list_group_t *l_group = (dap_db_log_list_group_t*)l_group_elem->data;
         char l_obj_type = dap_fnmatch("*.del", l_group->name, 0) ? DAP_DB$K_OPTYPE_ADD : DAP_DB$K_OPTYPE_DEL;
         dap_nanotime_t  l_time_allowed = l_now + dap_nanotime_from_sec(24 * 3600),
-                        l_two_weeks_ago = l_now - dap_nanotime_from_sec(15 * 24 * 3600);
+                        l_two_weeks_ago = l_now - dap_nanotime_from_sec(7 * 24 * 3600);
         size_t l_item_count = 0, l_objs_total_size = 0;
         dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group->name, 0, &l_item_count);
         if (!l_objs)
