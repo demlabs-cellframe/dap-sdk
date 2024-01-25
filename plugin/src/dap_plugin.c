@@ -58,7 +58,7 @@ struct plugin_module *s_modules = NULL; // List of all loaded modules
 static int s_stop(dap_plugin_manifest_t * a_manifest);
 static int s_start(dap_plugin_manifest_t * a_manifest);
 
-static void s_solve_dependencies();
+static int s_solve_dependencies();
 
 
 /**
@@ -96,7 +96,10 @@ int dap_plugin_init(const char * a_root_path)
         }
         DAP_FREE(l_name_file);
     }
-    s_solve_dependencies();
+    if (s_solve_dependencies()){
+        log_it(L_ERROR, "Dependencies solving error.");
+        return -1;
+    }
     return 0;
 }
 
@@ -113,11 +116,11 @@ void dap_plugin_deinit(){
 /**
  * @brief s_solve_dependencies
  */
-static void s_solve_dependencies()
+static int s_solve_dependencies()
 {
     // TODO solving dependencies
 
-
+    return 0;
 }
 
 
