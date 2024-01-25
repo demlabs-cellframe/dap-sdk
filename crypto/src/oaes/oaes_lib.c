@@ -1253,7 +1253,7 @@ OAES_RET oaes_encrypt( OAES_CTX * ctx,
 		
 		// insert pad
 		for( _j = 0; _j < OAES_BLOCK_SIZE - _block_size; _j++ )
-			_block[ _block_size + _j ] = _j + 1;
+            _block[ _block_size + _j ] = _j + 1;
 	
 		// CBC
 		if( _ctx->options & OAES_OPTION_CBC )
