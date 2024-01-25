@@ -1338,21 +1338,18 @@ int s_set_unsafe_with_ts(dap_global_db_context_t *a_global_db_context, const cha
         return -1;
     }
 
-    dap_store_obj_t l_store_data = { 0 };
+    dap_store_obj_t l_store_data = {
+        .timestamp  = a_timestamp,
+        .type       = DAP_DB$K_OPTYPE_ADD,
+        .flags      = a_pin_value ? RECORD_PINNED : 0,
+        .group      = (char*)a_group,
+        .group_len  = dap_strlen(a_group),
+        .key        = (char*)a_key,
+        .key_len    = a_key ? dap_strlen(a_key) : 0,
+        .value      = (byte_t*)a_value,
+        .value_len  = a_value_length,
 
-    l_store_data.key = (char *)a_key ;
-    l_store_data.flags = a_pin_value ? RECORD_PINNED : 0 ;
-    l_store_data.value_len =  a_value_length;
-    l_store_data.value = (uint8_t *)a_value;
-    l_store_data.group = (char*) a_group;
-    l_store_data.timestamp = a_timestamp;
-    l_store_data.group_len = dap_strlen(l_store_data.group);
-    if (a_key == NULL) {
-        l_store_data.key_len = 0;
-    } else {
-        l_store_data.key_len = dap_strlen(l_store_data.key);
-    }
-    l_store_data.type = DAP_DB$K_OPTYPE_ADD;
+    };
 
     int l_res = dap_global_db_driver_apply(&l_store_data, 1);
     if (l_res == 0) {
@@ -1526,20 +1523,25 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
 int dap_global_db_set_raw_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
     int l_ret = dap_global_db_driver_apply(a_store_objs, a_store_objs_count);
-    if (l_ret >= 0) {
-        for (size_t i = 0; i < a_store_objs_count; i++) {
-            int l_res_del = 0;
-            if (a_store_objs[i].type == DAP_DB$K_OPTYPE_ADD)
-                l_res_del = s_record_del_history_del(a_store_objs[i].group, a_store_objs[i].key);
-            else if (a_store_objs[i].type == DAP_DB$K_OPTYPE_DEL)
-                l_res_del = s_record_del_history_add(a_store_objs[i].group, (char *)a_store_objs[i].key,
-                                                     a_store_objs[i].timestamp);
-            if (!l_res_del && !l_ret) {
-                s_change_notify(a_global_db_context, &a_store_objs[i]);
-            }
-        }
-    } else
+    if (l_ret < 0) {
         log_it(L_ERROR,"Can't save raw gdb data, code %d ", l_ret);
+        return l_ret;
+    }
+    for (dap_store_obj_t *l_store_obj = a_store_objs; a_store_objs_count--; l_store_obj++) {
+        int l_res = 0;
+        switch (l_store_obj->type) {
+        case DAP_DB$K_OPTYPE_ADD:
+            l_res = s_record_del_history_del(l_store_obj->group, l_store_obj->key);
+            break;
+        case DAP_DB$K_OPTYPE_DEL:
+            l_res = s_record_del_history_add(l_store_obj->group, (char*)l_store_obj->key, l_store_obj->timestamp);
+            break;
+        default: break;
+        }
+
+        if (!l_res && !l_ret)
+            s_change_notify(a_global_db_context, l_store_obj);
+    }
     return l_ret;
 }
 
