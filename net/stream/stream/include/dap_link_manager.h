@@ -22,6 +22,7 @@ You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
+#include <stdint.h>
 #include "dap_timerfd.h"
 
 typedef struct dap_link_manager dap_link_manager_t;
@@ -40,6 +41,7 @@ typedef struct dap_link_manager_callbacks {
 } dap_link_manager_callbacks_t;
 
 typedef struct dap_link_manager {
+    uint32_t min_links_num;
     dap_timerfd_t *update_timer;
     void *_inheritor;
     dap_link_manager_callbacks_t callbacks;

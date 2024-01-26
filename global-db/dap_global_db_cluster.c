@@ -35,18 +35,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_global_db_cluster"
 
-
-static bool s_link_manager_update_callback(void *a_arg);
-
-static const dap_link_manager_callbacks_t s_link_manager_callbacks = {
-    .connected      = NULL,
-    .disconnected   = NULL,
-    .delete         = NULL,
-    .update         = s_link_manager_update_callback,
-    .delete         = NULL,
-    .error          = NULL
-};
-
 int dap_global_db_cluster_init()
 {
     dap_global_db_ch_init();
@@ -151,22 +139,6 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         DAP_DELETE(l_cluster);
         return NULL;
     }
-    if (l_cluster->links_cluster &&
-        (l_cluster->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
-        l_cluster->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED))
-    {
-        l_cluster->link_manager = dap_link_manager_new(&s_link_manager_callbacks);
-        if (!l_cluster->link_manager) {
-            log_it(L_ERROR, "Can't create link manager");
-            dap_cluster_delete(l_cluster->role_cluster);
-            dap_cluster_delete(l_cluster->links_cluster);
-            DAP_DELETE(l_cluster);
-            return NULL;
-        }
-dap_stream_node_addr_t l_poa_addr = {0xDDDD, 0000, 0000, 0000};
-dap_global_db_cluster_member_add(l_cluster, &l_poa_addr, DAP_GDB_MEMBER_ROLE_ROOT);
-        l_cluster->link_manager->_inheritor = (void *)l_cluster;
-    }
     l_cluster->ttl = (uint64_t)a_ttl * 3600;    // Convert to seconds
     l_cluster->default_role = a_default_role;
     l_cluster->owner_root_access = a_owner_root_access;
@@ -236,20 +208,19 @@ int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster
     return 0;
 }
 
-
-bool s_link_manager_update_callback(void *a_arg)
+dap_link_manager_t *dap_global_db_cluster_add_link_manager(dap_global_db_cluster_t *a_cluster, dap_link_manager_callbacks_t *a_callbacks)
 {
 // sanity check
-    dap_return_val_if_pass(!a_arg || !(((dap_link_manager_t *)a_arg)->_inheritor), true);
+    dap_return_val_if_pass(!a_cluster, NULL);
+    dap_return_val_if_pass_err(a_cluster->link_manager, a_cluster->link_manager, "Cluster already has link manager");
 // func work
-    dap_global_db_cluster_t *l_cluster = ((dap_link_manager_t *)a_arg)->_inheritor;
-    size_t l_role_count = 0;
-    dap_stream_node_addr_t *l_role_addrs = dap_stream_get_memebers_addr(l_cluster->role_cluster, &l_role_count);
-    for(size_t i = 0; i < l_role_count; ++i ) {
-        if (!dap_stream_find_by_addr(l_role_addrs + i, NULL)) {
-            printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Restore connection\n");
-        }
+    a_cluster->link_manager = dap_link_manager_new(a_callbacks);
+    if (!a_cluster->link_manager) {
+        log_it(L_ERROR, "Can't create link manager");
+        return NULL;
     }
-    DAP_DEL_Z(l_role_addrs);
-    return true;
+// dap_stream_node_addr_t l_poa_addr = {0xDDDD, 0000, 0000, 0000};
+// dap_global_db_cluster_member_add(a_cluster, &l_poa_addr, DAP_GDB_MEMBER_ROLE_ROOT);
+    a_cluster->link_manager->_inheritor = (void *)a_cluster;
+    return a_cluster->link_manager;
 }

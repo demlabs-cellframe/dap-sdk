@@ -28,7 +28,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_link_manager"
 
-static uint32_t s_timer_update_states = 5100;
+static uint32_t s_timer_update_states = 4000;
+static uint32_t s_min_links_num = 5;
 
 static void s_delete_callback(dap_link_manager_t *a_manager)
 {
@@ -38,6 +39,7 @@ static void s_delete_callback(dap_link_manager_t *a_manager)
 int dap_link_manager_init()
 {
     s_timer_update_states = dap_config_get_item_uint32_default(g_config, "link_manager", "timer_update_states", s_timer_update_states);
+    s_min_links_num = dap_config_get_item_uint32_default(g_config, "link_manager", "min_links_num", s_min_links_num);
     return 0;
 }
 
@@ -56,6 +58,7 @@ dap_link_manager_t *dap_link_manager_new(dap_link_manager_callbacks_t *a_callbac
         log_it(L_WARNING, "Link manager created, but timer not active");
     if(l_ret->callbacks.delete)
         l_ret->callbacks.delete = s_delete_callback;
+    l_ret->min_links_num = s_min_links_num;
     return l_ret;
 }
 

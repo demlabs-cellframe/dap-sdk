@@ -168,4 +168,5 @@ dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey);
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count);
 void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count);
 void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
-dap_stream_node_addr_t *dap_stream_get_memebers_addr(dap_cluster_t *a_cluster, size_t *a_count);
+dap_stream_node_addr_t *dap_stream_get_members_addr(dap_cluster_t *a_cluster, size_t *a_count);
+size_t dap_stream_cluster_members_count(dap_cluster_t *a_cluster);

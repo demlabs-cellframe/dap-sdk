@@ -1231,7 +1231,7 @@ void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data
 }
 
 
-dap_stream_node_addr_t *dap_stream_get_memebers_addr(dap_cluster_t *a_cluster, size_t *a_count)
+dap_stream_node_addr_t *dap_stream_get_members_addr(dap_cluster_t *a_cluster, size_t *a_count)
 {
     dap_return_val_if_pass(!a_cluster, NULL);
     size_t l_members_count = 0, i = 0;
@@ -1249,10 +1249,21 @@ dap_stream_node_addr_t *dap_stream_get_memebers_addr(dap_cluster_t *a_cluster, s
             l_ret[i].uint64 = l_member->addr.uint64;
             ++i;
         }
-        pthread_rwlock_unlock(&a_cluster->members_lock);
     }
+    pthread_rwlock_unlock(&a_cluster->members_lock);
 
     if (a_count)
         *a_count = l_members_count;
+    return l_ret;
+}
+
+size_t dap_stream_cluster_members_count(dap_cluster_t *a_cluster)
+{
+// sanity check
+    dap_return_val_if_pass(!a_cluster, 0);
+// func work
+    pthread_rwlock_rdlock(&a_cluster->members_lock);
+    size_t l_ret = HASH_COUNT(a_cluster->members);
+    pthread_rwlock_unlock(&a_cluster->members_lock);
     return l_ret;
 }
