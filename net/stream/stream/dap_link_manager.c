@@ -1,5 +1,6 @@
 /*
 * Authors:
+* Roman Khlopkov <roman.khlopkov@demlabs.net>
 * Pavel Uhanov <pavel.uhanov@demlabs.net>
 * Cellframe       https://cellframe.net
 * DeM Labs Inc.   https://demlabs.net
