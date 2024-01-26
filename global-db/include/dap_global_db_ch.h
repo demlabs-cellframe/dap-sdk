@@ -75,5 +75,5 @@ typedef struct dap_stream_ch_gdb {
 int dap_global_db_ch_init();
 void dap_global_db_ch_deinit();
 dap_stream_ch_gdb_pkt_t *dap_global_db_ch_pkt_new();
-bool dap_db_set_last_hash_remote(uint64_t a_node_addr, dap_global_db_driver_hash_t a_hash, char *a_group);
+bool dap_db_set_last_hash_remote(uint64_t a_node_addr, char *a_group, dap_global_db_driver_hash_t a_hash);
 dap_global_db_driver_hash_t dap_db_get_last_hash_remote(uint64_t a_node_addr, char *a_group);
