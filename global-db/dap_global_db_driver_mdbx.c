@@ -781,7 +781,7 @@ size_t  l_cnt = 0, l_count_out = 0;
              * Expand a memory for new <store object> structure
              */
             ++l_cnt;
-            if ( !(l_obj_arr = DAP_REALLOC(l_obj_arr, l_cnt * sizeof(dap_store_obj_t))) ) {
+            if ( !(l_obj_arr = DAP_REALLOC_COUNT(l_obj_arr, l_cnt)) ) {
                 log_it(L_ERROR, "Cannot expand area to keep %zu <store objects>", l_cnt);
                 l_rc = MDBX_PROBLEM;
                 break;
