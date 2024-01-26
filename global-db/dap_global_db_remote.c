@@ -815,6 +815,7 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
 
     if (pdata != pdata_end) {
         log_it(L_MSG, "! Unprocessed data left: %zu bytes", pdata_end - pdata);
+        l_store_obj_arr = DAP_REALLOC_COUNT(l_store_obj_arr, l_cur_count);
     }
 
     // Return the number of completely filled dap_store_obj_t structures

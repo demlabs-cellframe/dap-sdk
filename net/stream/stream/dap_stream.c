@@ -732,13 +732,12 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
     if (!a_stream->pkt_buf_in) {
         a_stream->pkt_buf_in = DAP_DUP_SIZE(l_buf_in, l_buf_in_size);
         a_stream->pkt_buf_in_data_size = l_buf_in_size;
-        memcpy(a_stream->pkt_buf_in, l_buf_in, l_buf_in_size);
     } else {
         debug_if(s_dump_packet_headers, L_DEBUG, "dap_stream_data_proc_read() Receive previously unprocessed data %zu bytes + new %zu bytes",
                                                   a_stream->pkt_buf_in_data_size, l_buf_in_size);
         // The current data is added to rest of the previous package
         a_stream->pkt_buf_in = DAP_REALLOC(a_stream->pkt_buf_in, a_stream->pkt_buf_in_data_size + l_buf_in_size);
-        memcpy((byte_t *)a_stream->pkt_buf_in + a_stream->pkt_buf_in_data_size, l_buf_in, l_buf_in_size);
+        memcpy((byte_t*)a_stream->pkt_buf_in + a_stream->pkt_buf_in_data_size, l_buf_in, l_buf_in_size);
         // Increase the size of pkt_buf_in
         a_stream->pkt_buf_in_data_size += l_buf_in_size;
     }
