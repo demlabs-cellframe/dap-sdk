@@ -35,11 +35,14 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_global_db_cluster"
 
+
+static bool s_link_manager_update_callback(void *a_arg);
+
 static const dap_link_manager_callbacks_t s_link_manager_callbacks = {
     .connected      = NULL,
     .disconnected   = NULL,
     .delete         = NULL,
-    .update         = NULL,
+    .update         = s_link_manager_update_callback,
     .delete         = NULL,
     .error          = NULL
 };
@@ -160,6 +163,9 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
             DAP_DELETE(l_cluster);
             return NULL;
         }
+dap_stream_node_addr_t l_poa_addr = {0xDDDD, 0000, 0000, 0000};
+dap_global_db_cluster_member_add(l_cluster, &l_poa_addr, DAP_GDB_MEMBER_ROLE_ROOT);
+        l_cluster->link_manager->_inheritor = (void *)l_cluster;
     }
     l_cluster->ttl = (uint64_t)a_ttl * 3600;    // Convert to seconds
     l_cluster->default_role = a_default_role;
@@ -228,4 +234,22 @@ int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster
     l_notifier->callback_arg = a_callback_arg;
     DL_APPEND(a_cluster->notifiers, l_notifier);
     return 0;
+}
+
+
+bool s_link_manager_update_callback(void *a_arg)
+{
+// sanity check
+    dap_return_val_if_pass(!a_arg || !(((dap_link_manager_t *)a_arg)->_inheritor), true);
+// func work
+    dap_global_db_cluster_t *l_cluster = ((dap_link_manager_t *)a_arg)->_inheritor;
+    size_t l_role_count = 0;
+    dap_stream_node_addr_t *l_role_addrs = dap_stream_get_memebers_addr(l_cluster->role_cluster, &l_role_count);
+    for(size_t i = 0; i < l_role_count; ++i ) {
+        if (!dap_stream_find_by_addr(l_role_addrs + i, NULL)) {
+            printf("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Restore connection\n");
+        }
+    }
+    DAP_DEL_Z(l_role_addrs);
+    return true;
 }

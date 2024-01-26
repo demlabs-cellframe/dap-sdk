@@ -51,7 +51,7 @@ dap_link_manager_t *dap_link_manager_new(dap_link_manager_callbacks_t *a_callbac
 // func work
     l_ret->callbacks = *a_callbacks;
     if(l_ret->callbacks.update)
-        l_ret->update_timer = dap_timerfd_start(s_timer_update_states, l_ret->callbacks.update, NULL);
+        l_ret->update_timer = dap_timerfd_start(s_timer_update_states, l_ret->callbacks.update, l_ret);
     if(!l_ret->update_timer)
         log_it(L_WARNING, "Link manager created, but timer not active");
     if(l_ret->callbacks.delete)

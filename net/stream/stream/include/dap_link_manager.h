@@ -41,6 +41,7 @@ typedef struct dap_link_manager_callbacks {
 
 typedef struct dap_link_manager {
     dap_timerfd_t *update_timer;
+    void *_inheritor;
     dap_link_manager_callbacks_t callbacks;
 } dap_link_manager_t;
 

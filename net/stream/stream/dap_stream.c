@@ -1174,7 +1174,7 @@ static void s_stream_fill_info(dap_stream_t *a_stream, dap_stream_info_t *a_out_
 
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count)
 {
-    dap_return_val_if_fail(s_streams, NULL);
+    dap_return_val_if_pass(!a_cluster && !s_streams, NULL);
     pthread_rwlock_wrlock(&s_streams_lock);
     dap_stream_t *it;
     size_t l_streams_count = 0, i = 0;
@@ -1184,7 +1184,7 @@ dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a
     } else
         DL_COUNT(s_streams, it, l_streams_count);
     if (!l_streams_count)
-        return 0;
+        return NULL;
     dap_stream_info_t *l_ret = DAP_NEW_Z_SIZE(dap_stream_info_t, sizeof(dap_stream_info_t) * l_streams_count);
     if (!l_ret) {
         log_it(L_CRITICAL, "Memory allocation error");
@@ -1228,4 +1228,31 @@ void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data
     for (dap_stream_t *it = s_authorized_streams; it; it = it->hh.next)
         dap_stream_ch_pkt_send_mt(it->stream_worker, it->esocket_uuid, a_ch_id, a_type, a_data, a_data_size);
     pthread_rwlock_unlock(&s_streams_lock);
+}
+
+
+dap_stream_node_addr_t *dap_stream_get_memebers_addr(dap_cluster_t *a_cluster, size_t *a_count)
+{
+    dap_return_val_if_pass(!a_cluster, NULL);
+    size_t l_members_count = 0, i = 0;
+    dap_stream_node_addr_t *l_ret = NULL;
+    pthread_rwlock_rdlock(&a_cluster->members_lock);
+    l_members_count = HASH_COUNT(a_cluster->members);
+    if (l_members_count){
+        l_ret = DAP_NEW_Z_COUNT(dap_stream_node_addr_t, l_members_count);
+        if (!l_ret) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            pthread_rwlock_unlock(&a_cluster->members_lock);
+            return NULL;
+        }
+        for (dap_cluster_member_t *l_member = a_cluster->members; l_member; l_member = l_member->hh.next) {
+            l_ret[i].uint64 = l_member->addr.uint64;
+            ++i;
+        }
+        pthread_rwlock_unlock(&a_cluster->members_lock);
+    }
+
+    if (a_count)
+        *a_count = l_members_count;
+    return l_ret;
 }
