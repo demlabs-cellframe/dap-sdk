@@ -24,6 +24,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 */
 #pragma once
 #include <stdint.h>
+#include "dap_guuid.h"
 #include "dap_timerfd.h"
 
 typedef struct dap_link_manager dap_link_manager_t;
@@ -43,8 +44,9 @@ typedef struct dap_link_manager_callbacks {
 
 typedef struct dap_link_manager {
     uint32_t min_links_num;
+    dap_guuid_t links_cluster_guuid;
+    dap_guuid_t role_cluster_guuid;
     dap_timerfd_t *update_timer;
-    void *_inheritor;
     dap_link_manager_callbacks_t callbacks;
 } dap_link_manager_t;
 

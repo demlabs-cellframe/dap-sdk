@@ -1233,7 +1233,9 @@ void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data
 
 dap_stream_node_addr_t *dap_stream_get_members_addr(dap_cluster_t *a_cluster, size_t *a_count)
 {
+// sanity check
     dap_return_val_if_pass(!a_cluster, NULL);
+// func work
     size_t l_members_count = 0, i = 0;
     dap_stream_node_addr_t *l_ret = NULL;
     pthread_rwlock_rdlock(&a_cluster->members_lock);
@@ -1251,7 +1253,6 @@ dap_stream_node_addr_t *dap_stream_get_members_addr(dap_cluster_t *a_cluster, si
         }
     }
     pthread_rwlock_unlock(&a_cluster->members_lock);
-
     if (a_count)
         *a_count = l_members_count;
     return l_ret;
