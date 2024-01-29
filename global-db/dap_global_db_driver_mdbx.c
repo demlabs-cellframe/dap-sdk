@@ -93,7 +93,7 @@ static int              s_db_mdbx_deinit();
 static int              s_db_mdbx_flush(void);
 static int              s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj);
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group);
-static dap_store_obj_t  *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
+static dap_store_obj_t  *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hash, size_t *a_count);
 static bool             s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static bool             s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out);
@@ -721,9 +721,9 @@ static bool s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a
     return l_rc == MDBX_SUCCESS;
 }
 
-static dap_store_obj_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t a_hash)
+static dap_store_obj_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hash, size_t *a_count)
 {
-    dap_return_val_if_fail(a_group, NULL); /* Sanity check */
+    dap_return_val_if_fail(a_group && (!a_count || *a_count != 0), NULL); /* Sanity check */
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
     if (!l_db_ctx)
         return false;
@@ -732,20 +732,24 @@ static dap_store_obj_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     MDBX_val l_key, l_data;
-    l_key.iov_base = &a_hash;                                    /* Fill IOV for MDBX key */
-    l_key.iov_len =  sizeof(a_hash);
-    dap_store_obj_t *l_obj = NULL;
-    if (MDBX_SUCCESS == (l_rc = mdbx_get(l_txn, l_db_ctx->dbi, &l_key, &l_data))) {
-        /* Found ! Make new <store_obj> */
-        if ( !(l_obj = DAP_NEW_Z(dap_store_obj_t)) ) {
-            log_it (L_ERROR, "Cannot allocate a memory for store object key, errno=%d", errno);
-            l_rc = MDBX_PROBLEM;
-        } else if ( s_fill_store_obj(a_group, &l_key, &l_data, l_obj) ) {
-            l_rc = MDBX_PROBLEM;
-            DAP_DEL_Z(l_obj);
-        }
-    } else if ( l_rc != MDBX_NOTFOUND )
-        log_it (L_ERROR, "mdbx_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
+    if (!a_count || *a_count == 1) {
+        l_key.iov_base = a_hash;                                    /* Fill IOV for MDBX key */
+        l_key.iov_len =  sizeof(*a_hash);
+        dap_store_obj_t *l_obj = NULL;
+        if (MDBX_SUCCESS == (l_rc = mdbx_get(l_txn, l_db_ctx->dbi, &l_key, &l_data))) {
+            /* Found ! Make new <store_obj> */
+            if ( !(l_obj = DAP_NEW_Z(dap_store_obj_t)) ) {
+                log_it (L_ERROR, "Cannot allocate a memory for store object key, errno=%d", errno);
+                l_rc = MDBX_PROBLEM;
+            } else if ( s_fill_store_obj(a_group, &l_key, &l_data, l_obj) ) {
+                l_rc = MDBX_PROBLEM;
+                DAP_DEL_Z(l_obj);
+            }
+        } else if ( l_rc != MDBX_NOTFOUND )
+            log_it (L_ERROR, "mdbx_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
+    } else {
+
+    }
     mdbx_txn_commit(l_txn);
     return l_obj;
 }
@@ -767,7 +771,7 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
     size_t l_count_current = 0,
            l_count_out = a_count_out ? *a_count_out : 0;
     if (!l_count_out)
-        l_count_out = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT;
+        l_count_out = a_keys_only_read ? DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT : DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT;
     byte_t *l_obj_arr = NULL;
     int l_rc = 0;
     MDBX_txn *l_txn = NULL;

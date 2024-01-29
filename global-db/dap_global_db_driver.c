@@ -420,9 +420,9 @@ bool dap_global_db_driver_is_hash(const char *a_group, dap_global_db_driver_hash
     return false;
 }
 
-dap_store_obj_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t a_hash)
+dap_store_obj_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hash, size_t *a_count)
 {
     if (s_drv_callback.get_by_hash && a_group)
-        return s_drv_callback.get_by_hash(a_group, a_hash);
+        return s_drv_callback.get_by_hash(a_group, a_hash, a_count);
     return NULL;
 }

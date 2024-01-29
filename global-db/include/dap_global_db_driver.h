@@ -39,6 +39,7 @@
 #define DAP_GLOBAL_DB_KEY_SIZE_MAX          512UL                               /* A limit for the key's length in DB */
 
 #define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 256UL                             /* Default count of records to return with conditional read */
+#define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  512UL                             /* Default count of keys to return with conditional read */
 
 enum dap_global_db_record_flags {
     DAP_GLOBAL_DB_RECORD_COMMON = 0,
@@ -117,7 +118,7 @@ typedef size_t (*dap_db_driver_read_count_callback_t)(const char *a_group, dap_g
 typedef dap_list_t* (*dap_db_driver_get_groups_callback_t)(const char *a_mask);
 typedef bool (*dap_db_driver_is_obj_callback_t)(const char *a_group, const char *a_key);
 typedef bool (*dap_db_driver_is_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash);
-typedef dap_store_obj_t * (*dap_db_driver_get_by_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash);
+typedef dap_store_obj_t * (*dap_db_driver_get_by_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t *a_hash, size_t *a_count);
 typedef int (*dap_db_driver_callback_t)(void);
 
 typedef struct dap_db_driver_callbacks {
@@ -161,7 +162,7 @@ int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_co
 dap_store_obj_t *dap_global_db_driver_read_last(const char *a_group);
 dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out);
 dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out);
-dap_store_obj_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
+dap_store_obj_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hash, size_t *a_count);
 bool dap_global_db_driver_is(const char *a_group, const char *a_key);
 bool dap_global_db_driver_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 size_t dap_global_db_driver_count(const char *a_group, dap_global_db_driver_hash_t a_hash_from);

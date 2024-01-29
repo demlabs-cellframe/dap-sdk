@@ -103,6 +103,14 @@ dap_proc_thread_t *dap_proc_thread_get_auto()
     return &s_threads[l_id_min];
 }
 
+size_t dap_proc_thread_get_avg_queue_size()
+{
+    size_t l_ret = 0;
+    for (uint32_t i = 0; i < s_threads_count; i++)
+        l_ret += s_threads[i].proc_queue_size;
+    return l_ret / s_threads_count;
+}
+
 int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback,
                                      void *a_callback_arg, dap_queue_msg_priority_t a_priority)
 {

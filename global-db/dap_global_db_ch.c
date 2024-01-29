@@ -131,6 +131,42 @@ static void s_process_hashes(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg
      }
 }
 
+static void s_process_reqest(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+{
+     dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t));
+     char *l_group = l_pkt->group_n_hashses;
+     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
+     if (!l_cluster)
+         return;
+     dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
+     dap_global_db_hash_pkt_t *l_ret = NULL;
+     int j = 0;
+     for (uint32_t i = 0; i < l_pkt->hashes_count; i++) {
+        if (!dap_global_db_driver_get_by_hash(l_group, l_hashes + i)) {
+            if (!l_ret)
+                l_ret = DAP_NEW_STACK_SIZE(dap_global_db_hash_pkt_t,
+                                           sizeof(dap_global_db_hash_pkt_t) +
+                                           l_pkt->group_name_len +
+                                           sizeof(dap_global_db_driver_hash_t) * l_pkt->hashes_count);
+            if (!l_ret) {
+                log_it(L_CRITACAL, "Not enough memory");
+                return;
+            }
+            l_ret->group_name_len = l_pkt->group_name_len;
+            dap_global_db_driver_hash_t *l_ret_hashes = (dap_global_db_driver_hash_t *)(l_ret->group_n_hashses + l_ret->group_name_len);
+            l_ret_hashes[j++] = l_hashes[i];
+        }
+     }
+     if (l_ret) {
+        l_ret->hashes_count = j;
+        dap_worker_t *l_worker = NULL;
+        dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr((dap_stream_node_addr *)a_arg, &l_worker);
+        if (l_worker)
+            dap_stream_ch_pkt_send_mt(l_worker, l_es_uuid, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST,
+                                      l_ret, dap_global_db_hash_pkt_get_size(l_ret));
+     }
+}
+
 static bool s_process_single_record(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
 {
     dap_return_val_if_fail(a_arg, false);
@@ -180,20 +216,11 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
     //s_chain_timer_reset(l_ch_chain);
     switch (l_ch_pkt->hdr.type) {
 
-    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK: {
-        dap_global_db_pkt_pack_t *l_pkt = (dap_global_db_pkt_pack_t *)l_ch_pkt->data;
-        size_t l_objs_count = 0;
-        dap_store_obj_t **l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count);
-        if (!l_objs) {
-            log_it(L_WARNING, "Wrong Global DB record packet rejected");
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES:
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST: {
+        if (l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES &&
+                dap_proc_thread_get_avg_queue_size() > DAP_GLOBAL_DB_QUEUE_SIZE_MAX)
             break;
-        }
-        for (size_t i = 0; i < l_objs_count; i++)
-            dap_proc_thread_callback_add_pri(NULL, s_process_single_record, l_objs[i], DAP_GLOBAL_DB_TASK_PRIORITY);
-        DAP_DELETE(l_objs);
-    } break;
-
-    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES: {
         dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_ch_pkt->data;
         if (l_ch_pkt->hdr.data_size < sizeof(dap_global_db_hash_pkt_t) ||
                 l_ch_pkt->hdr.data_size != dap_global_db_hash_pkt_get_size(l_pkt)) {
@@ -210,7 +237,21 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         }
         memcpy(l_arg + sizeof(dap_stream_node_addr_t), l_pkt, l_ch_pkt->hdr.data_size);
         *(dap_stream_node_addr_t *)l_arg = a_ch->stream->node;
-        dap_proc_thread_callback_add_pri(NULL, s_process_hashes, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
+        dap_proc_queue_callback_t l_callback = l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES ?
+                    s_process_hashes : s_process_request;
+        dap_proc_thread_callback_add_pri(NULL, l_callback, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
+    } break;
+
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK: {
+        dap_global_db_pkt_pack_t *l_pkt = (dap_global_db_pkt_pack_t *)l_ch_pkt->data;
+        size_t l_objs_count = 0;
+        dap_store_obj_t *l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count);
+        if (!l_objs) {
+            log_it(L_WARNING, "Wrong Global DB record packet rejected");
+            break;
+        }
+        dap_proc_thread_callback_add_pri(NULL, s_process_multiply_record, l_objs, DAP_GLOBAL_DB_TASK_PRIORITY);
+        DAP_DELETE(l_objs);
     } break;
 
     default:
