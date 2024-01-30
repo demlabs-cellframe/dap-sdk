@@ -802,8 +802,6 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
         }
 // out work
     l_ret->last_used_timestamp = l_timestamp;
-    l_ret->priv_key_data_size = l_ser_skey_size;
-    l_ret->pub_key_data_size = l_ser_pkey_size;
     l_ret->_inheritor_size = l_ser_inheritor_size;
     return l_ret;
 }
