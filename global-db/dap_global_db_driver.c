@@ -157,7 +157,7 @@ int dap_db_driver_flush(void)
  * @param a_move "move" outstanding data ownership to new object
  * @return A pointer to the copied objects.
  */
-dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count, bool a_move)
+dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count, bool a_deep)
 {
 dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
@@ -172,7 +172,7 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
     for( int i = a_store_count; i--; l_store_obj_dst++, l_store_obj_src++ ) {
         *l_store_obj_dst = *l_store_obj_src;
-        if (a_move) {
+        if (!a_deep) {
             l_store_obj_src->group = NULL; l_store_obj_src->key = NULL; l_store_obj_src->value = NULL;
         } else {
             l_store_obj_dst->group = dap_strdup(l_store_obj_src->group);
