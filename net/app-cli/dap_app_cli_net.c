@@ -174,7 +174,7 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
 #ifdef __WIN32
             _set_errno(WSAGetLastError());
 #endif
-        printf("Socket connection err: %d\n", errno);
+        printf("Error %d: Failed socket connection\n", errno);
         closesocket(l_socket);
         return NULL;
     }
