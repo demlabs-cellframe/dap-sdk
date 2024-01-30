@@ -84,13 +84,13 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
             case TYPE_RESPONSE_BOOLEAN:
             case TYPE_RESPONSE_NULL:
             case TYPE_RESPONSE_ERROR:
-                if (response->json_arr_errors)
-                    json_object_put(response->json_arr_errors);
                 break;
             default:
                 log_it(L_ERROR, "Unsupported response type");
                 break;
         }
+        if (response->json_arr_errors)
+            json_object_put(response->json_arr_errors);
         dap_json_rpc_error_deinit();
         DAP_FREE(response);
     }
