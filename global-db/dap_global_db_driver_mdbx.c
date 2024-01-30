@@ -438,8 +438,8 @@ size_t     l_upper_limit_of_db_size = 16;
             l_slist = dap_list_append(l_slist, l_cp);
             }
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "--- End-Of-List  ---");
+        mdbx_cursor_close(l_cursor);
         }
-
     dap_assert ( MDBX_SUCCESS == mdbx_txn_commit (l_txn) );
 
 
@@ -449,6 +449,7 @@ size_t     l_upper_limit_of_db_size = 16;
         l_data_iov.iov_base = l_el->data;
         s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE);
         DL_DELETE(l_slist, l_el);
+        DAP_DELETE(l_el->data);
         DAP_DELETE(l_el);
     }
 
