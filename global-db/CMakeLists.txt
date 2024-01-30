@@ -4,7 +4,7 @@ project (dap_global_db C)
 file(GLOB dap_global_db_SRC dap_global_db.c dap_global_db_driver.c dap_global_db_ch.c dap_global_db_pkt.c dap_global_db_cluster.c)
 file(GLOB dap_global_db_HDR include/*.h)
 
-set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream dap_json-c crc32c_adler)
+set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream dap_json-c)
 
 if(BUILD_WITH_GDB_DRIVER_MDBX)
     set(SAVED_CMAKE_MESSAGE_LOG_LEVEL ${CMAKE_MESSAGE_LOG_LEVEL})
@@ -47,4 +47,12 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..
 
 if (BUILD_GLOBAL_DB_TEST)
     add_subdirectory(test)
+endif()
+if(INSTALL_DAP_SDK)
+set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${dap_global_db_HDR}")
+INSTALL(TARGETS ${PROJECT_NAME} 
+        LIBRARY DESTINATION lib/dap/global_db/
+        ARCHIVE DESTINATION lib/dap/global_db/
+        PUBLIC_HEADER DESTINATION include/dap/global_db/
+)
 endif()

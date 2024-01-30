@@ -500,7 +500,8 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
     WIN32_FIND_DATA info_file;
     HANDLE h_find_file = FindFirstFileA(m_path, &info_file);
     while (FindNextFileA(h_find_file, &info_file)){
-        if (info_file.dwFileAttributes == FILE_ATTRIBUTE_DIRECTORY){
+        if (info_file.dwFileAttributes == FILE_ATTRIBUTE_DIRECTORY &&
+            strcmp(info_file.cFileName, "..") && strcmp(info_file.cFileName, ".")){
             element = (dap_list_name_directories_t *)malloc(sizeof(dap_list_name_directories_t));
             element->name_directory = dap_strdup(info_file.cFileName);
             LL_APPEND(list, element);
@@ -581,7 +582,7 @@ static bool get_contents_stdio(const char *filename, FILE *f, char **contents, s
                 total_allocated *= 2;
             }
             else {
-                total_allocated = MIN(bytes + 1, sizeof(buf));
+                total_allocated = dap_min(bytes + 1, sizeof(buf));
             }
 
             tmp = DAP_REALLOC(str, total_allocated);
@@ -1543,7 +1544,7 @@ static bool s_tar_dir_add(int a_outfile, const char *a_fname, const char *a_fpat
     // fill header
     memset(&l_buffer, 0, BLOCKSIZE);
     // Trim a directory name if it's over 100 bytes
-    size_t l_fname_len = MIN(dap_strlen(a_fname), sizeof(l_buffer.header.name) - 1);
+    size_t l_fname_len = dap_min(dap_strlen(a_fname), sizeof(l_buffer.header.name) - 1);
     strncpy(l_buffer.header.name, a_fname, l_fname_len);
     l_buffer.header.name[l_fname_len] = '/';
     sprintf(l_buffer.header.mode, "0000777");
@@ -1592,7 +1593,7 @@ static bool s_tar_file_add(int a_outfile, const char *a_fname, const char *a_fpa
         // fill header
         memset(&l_buffer, 0, BLOCKSIZE);
         // Trim filename if it's over 100 bytes
-        strncpy(l_buffer.header.name, a_fname, MIN(dap_strlen(a_fname), sizeof(l_buffer.header.name) - 1));
+        strncpy(l_buffer.header.name, a_fname, dap_min(dap_strlen(a_fname), sizeof(l_buffer.header.name) - 1));
         sprintf(l_buffer.header.mode, "0100644");
         sprintf(l_buffer.header.magic, "ustar");
         l_buffer.header.typeflag = REGTYPE;

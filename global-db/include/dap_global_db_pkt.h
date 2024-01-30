@@ -30,7 +30,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #define DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT            1024
 
 typedef struct dap_global_db_pkt {
-    uint32_t crc;   // Must be first for compute
+    uint64_t crc;   // Must be first for compute
     dap_nanotime_t timestamp;
     uint16_t group_len;
     uint16_t key_len;
@@ -54,6 +54,6 @@ dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old
 dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj);
 dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count);
 dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_t a_pkt_size);
-dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uint32_t *a_checksum);
+dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uint64_t *a_checksum);
 bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj);
 void *dap_gossip_pkt_read(dap_hash_fast_t *a_route, size_t *a_route_len);

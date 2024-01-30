@@ -1160,7 +1160,6 @@ dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey)
     return l_ret;
 }
 
-
 static void s_stream_fill_info(dap_stream_t *a_stream, dap_stream_info_t *a_out_info)
 {
     a_out_info->node_addr = a_stream->node;

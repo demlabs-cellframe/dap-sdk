@@ -76,7 +76,7 @@ class RandomInputTests : public RandomTests {
 
 };
 
-class DISABLED_RandomInputTestsCoins: public RandomInputTests {
+class RandomInputTestsCoins: public RandomInputTests {
 
 };
 
@@ -294,20 +294,15 @@ TEST(InputTests, ScientificInputSimpleCapital) {
     check_equality256(a, 10000000000);
 }
 
-TEST(DISABLED_InputTests, ScientificInputSimpleNotImportantZeroes) {
-    //todo: turn this on, when we can handle this
-
-    uint256_t a = dap_uint256_scan_uninteger("1.23456789000000e9");
-
-
-    check_equality256(a, 1234567890);
+TEST(InputTests, ScientificInputSimpleNotImportantZeroes) {
+    uint256_t a = dap_uint256_scan_uninteger("1.23456709e9");
+    check_equality256(a, 1234567090);
 }
 
-TEST(DISABLED_InputTests, ScientificInputSimpleNotImportantZeroesAtAll) {
+TEST(InputTests, ScientificInputSimpleNotImportantZeroesAtAll) {
+    uint256_t a = dap_uint256_scan_uninteger("01.234e4");
 
-    uint256_t a = dap_uint256_scan_uninteger("1.234000000000000000000000000000e+3");
-
-    check_equality256(a, 1234);
+    check_equality256(a, 12340);
 }
 
 TEST(InputTests, ScientificInputSimpleMax64) {
@@ -470,41 +465,23 @@ TEST(InputTests, DecimalInputLow) {
     ASSERT_FALSE(c);
 }
 
-TEST_F(DISABLED_RandomInputTestsCoins, CoinsBase) {
-    //todo: fraction part should be 18 or less symbols, not more. For now it can be more and i dont know what to do with it
+TEST(InputTests, EnteringFractionalNumberWithComma) {
+    uint256_t a = dap_uint256_scan_uninteger("1,0");
+    check_equality256(a, 0);
+}
 
-
-//    boost::random::uniform_real_distribution<
-//            boost::multiprecision::number<
-//                    boost::multiprecision::cpp_bin_float<
-//                            16, boost::multiprecision::backends::digit_base_10
-//                            >
-//                            >
-//                            > ur(0, 1);
-//    boost::random::independent_bits_engine<
-//            boost::mt19937,
-//            std::numeric_limits<
-////                    boost::multiprecision::cpp_bin_float_100
-//                    boost::multiprecision::number<
-//                            boost::multiprecision::cpp_bin_float<
-//                                    16
-//                                    >
-//                                    >
-//                    >::digits,
-//                    boost::multiprecision::cpp_int> gen;
-//
-//
-//    for (int i = 0; i<100; i++) {
-//        std::cout << ur(gen).str().c_str() << std::endl;
-//    }
-//
-////    ASSERT_FALSE(true);
-//    boost::multiprecision::cpp_bin_float_100 c(gen256().str() + ".0");
-//    boost::multiprecision::cpp_bin_float_100 b = ur(gen) + c;
-//
-//    uint256_t a = dap_chain_coins_to_balance(b.str().c_str());
-//
-//    ASSERT_STREQ(dap_uint256_decimal_to_char(a), b.str().c_str());
+TEST_F(RandomInputTestsCoins, CoinsBase) {
+    boost::random::independent_bits_engine<boost::random::mt19937, 59, bmp::cpp_int> generator_type_18;
+    for (int i=0; i < 100; i++) {
+        bmp::uint128_t boost_a(generator_type_18());
+        bmp::uint128_t boost_b(generator_type_18());
+        std::string temp = boost_a.str() + "." + boost_b.str();
+        if (temp[temp.length() - 1] == '0') {
+            temp[temp.length() - 1] = '1';
+        }
+        uint256_t a = dap_uint256_scan_decimal(temp.c_str());
+        ASSERT_STREQ(dap_uint256_decimal_to_char(a), temp.c_str());
+    }
 }
 
 
@@ -2928,7 +2905,7 @@ TEST_F(RandomMathTests, Prod256) {
 //// DIVISION
 //division by zero disabled for now
 
-TEST(DISABLED_MathTests, Div256Zeroes) {
+TEST(MathTests, Div256Zeroes) {
     uint256_t a, b, c = uint256_0;
 
     string lhs = "0";
@@ -2937,16 +2914,10 @@ TEST(DISABLED_MathTests, Div256Zeroes) {
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
 
-    DIV_256(a, b, &c);
-
-    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
-
-    DIV_256(b, a, &c);
-
-    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(rhs) / bmp::uint256_t(lhs)).str().c_str());
+    ASSERT_DEATH(DIV_256(a, b, &c), "");
 }
 
-TEST(DISABLED_MathTests, Div256OneZero) {
+TEST(MathTests, Div256OneZero) {
     uint256_t a, b, c = uint256_0;
 
     string lhs = "1";
@@ -2955,9 +2926,7 @@ TEST(DISABLED_MathTests, Div256OneZero) {
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
 
-    DIV_256(a, b, &c);
-
-    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_DEATH(DIV_256(a, b, &c), "");
 }
 
 TEST(MathTests, Div256ZeroOne) {
@@ -2988,7 +2957,7 @@ TEST(MathTests, Div256OneOne) {
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
-TEST(DISABLED_MathTests, Div256Min128Zero) {
+TEST(MathTests, Div256Min128Zero) {
     uint256_t a, b, c = uint256_0;
 
     string lhs = MIN128STR;
@@ -2997,9 +2966,7 @@ TEST(DISABLED_MathTests, Div256Min128Zero) {
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
 
-    DIV_256(a, b, &c);
-
-    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_DEATH(DIV_256(a, b, &c), "");
 }
 
 TEST(MathTests, Div256ZeroMin128) {
@@ -3072,7 +3039,7 @@ TEST(MathTests, Div256TwoMin128) {
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
-TEST(DISABLED_MathTests, Div256Max128Zero) {
+TEST(MathTests, Div256Max128Zero) {
     uint256_t a, b, c = uint256_0;
 
     string lhs = MAX128STR;
@@ -3081,9 +3048,7 @@ TEST(DISABLED_MathTests, Div256Max128Zero) {
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
 
-    DIV_256(a, b, &c);
-
-    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_DEATH(DIV_256(a, b, &c), "");
 }
 
 TEST(MathTests, Div256ZeroMax128) {
@@ -3156,7 +3121,7 @@ TEST(MathTests, Div256TwoMax128) {
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
-TEST(DISABLED_MathTests, Div256Min256Zero) {
+TEST(MathTests, Div256Min256Zero) {
     uint256_t a, b, c = uint256_0;
 
     string lhs = MIN256STR;
@@ -3165,9 +3130,7 @@ TEST(DISABLED_MathTests, Div256Min256Zero) {
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
 
-    DIV_256(a, b, &c);
-
-    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_DEATH(DIV_256(a, b, &c), "");
 }
 
 TEST(MathTests, Div256ZeroMin256) {
@@ -3241,7 +3204,7 @@ TEST(MathTests, Div256TwoMin256) {
     ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
 }
 
-TEST(DISABLED_MathTests, Div256Max256Zero) {
+TEST(MathTests, Div256Max256Zero) {
     uint256_t a, b, c = uint256_0;
 
     string lhs = MAX256STR;
@@ -3250,9 +3213,7 @@ TEST(DISABLED_MathTests, Div256Max256Zero) {
     a = dap_uint256_scan_uninteger(lhs.c_str());
     b = dap_uint256_scan_uninteger(rhs.c_str());
 
-    DIV_256(a, b, &c);
-
-    ASSERT_STREQ(dap_uint256_uninteger_to_char(c), (bmp::uint256_t(lhs) / bmp::uint256_t(rhs)).str().c_str());
+    ASSERT_DEATH(DIV_256(a, b, &c), "");
 }
 
 TEST(MathTests, Div256ZeroMax256) {

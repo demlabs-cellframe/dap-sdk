@@ -19,20 +19,6 @@
 extern "C" {
 #endif
 
-#ifndef WIN32
-#undef  max
-#define max(a,b) \
-  ({ size_t _a = (a); \
-      size_t _b = (b); \
-    _a > _b ? _a : _b; })
-
-#undef  min
-#define min(a,b) \
-  ({ size_t _a = (a); \
-      size_t _b = (b); \
-    _a < _b ? _a : _b; })
-
-#endif
 
 #ifdef _WIN32
 char *strptime(const char *buff, const char *fmt, struct tm *tm);
@@ -49,7 +35,7 @@ int dap_strncmp(const char *a_str1, const char *a_str2, size_t a_n);
 char* dap_strdup(const char *a_str);
 char* dap_strdup_vprintf(const char *a_format, va_list a_args);
 DAP_PRINTF_ATTR(1, 2) char *dap_strdup_printf(const char *a_format, ...);
-
+char *dap_strncpy(char *a_dst, const char *a_src, size_t a_limit);
 char* dap_stpcpy(char *a_dest, const char *a_src);
 char* dap_strstr_len(const char *a_haystack, ssize_t a_haystack_len, const char *a_needle);
 // concatenates all of str_array's strings, sliding in an optional separator, the returned string is newly allocated.
@@ -59,7 +45,8 @@ char *dap_strjoin(const char *a_separator, ...);
 char** dap_strsplit(const char *a_string, const char *a_delimiter, int a_max_tokens);
 size_t dap_str_countv(char **a_str_array);
 size_t dap_str_symbol_count(const char *a_str, char a_sym);
-bool dap_str_remove_spaces(char *a_str);
+char **dap_str_appv(char **a_dst, char **a_src, size_t *a_count);
+char *dap_str_remove_spaces(char *a_str);
 // copies a NULL-terminated array of strings
 char** dap_strdupv(const char **a_str_array);
 // frees the array itself and all of its strings.

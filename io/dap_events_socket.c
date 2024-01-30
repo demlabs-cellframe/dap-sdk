@@ -967,7 +967,7 @@ static void *s_dap_events_socket_buf_thread(void *arg)
     while (1) {
         if (!s_wait_send_socket(l_sock, 0)) {
             pthread_rwlock_wrlock(&l_es->buf_out_lock);
-            ssize_t l_write_ret = write(l_sock, l_es->buf_out, MIN(PIPE_BUF, l_es->buf_out_size));
+            ssize_t l_write_ret = write(l_sock, l_es->buf_out, dap_min((size_t)PIPE_BUF, l_es->buf_out_size));
             if (l_write_ret == -1) {
                 switch (errno) {
                 case EAGAIN:
@@ -1376,7 +1376,7 @@ void dap_events_socket_delete_mt(dap_worker_t * a_worker, dap_events_socket_uuid
  * @param a_callbacks
  * @return
  */
-dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, dap_events_socket_callbacks_t *a_callbacks)
+dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks)
 {
     if (!a_callbacks || !a_server) {
         log_it(L_CRITICAL, "Invalid arguments in dap_events_socket_wrap_listener");
@@ -1386,10 +1386,9 @@ dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, dap
     if (!l_es)
         return NULL;
 
-    l_es->socket = a_server->socket_listener;
+    l_es->socket = a_sock;
     l_es->server = a_server;
     l_es->callbacks = *a_callbacks;
-    l_es->_inheritor = a_server;
     switch (a_server->type) {
     case DAP_SERVER_UDP:
         l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
@@ -1613,9 +1612,7 @@ void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_p
     if (!a_preserve_inheritor )
         DAP_DEL_Z(a_esocket->_inheritor);
 
-    DAP_DEL_Z(a_esocket->_pvt);
-    DAP_DEL_Z(a_esocket->buf_in);
-    DAP_DEL_Z(a_esocket->buf_out);
+    DAP_DEL_MULTY(a_esocket->_pvt, a_esocket->buf_in, a_esocket->buf_out);
 
 #ifdef   DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].free_nr, 1);
@@ -1883,7 +1880,7 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     static const size_t l_basic_buf_size = DAP_EVENTS_SOCKET_BUF_LIMIT / 4;
 
     if (a_es->buf_out_size_max < a_es->buf_out_size + a_data_size) {
-        a_es->buf_out_size_max += MAX(l_basic_buf_size, a_data_size);
+        a_es->buf_out_size_max += dap_max(l_basic_buf_size, a_data_size);
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
         log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %lu, actual size: %lu", a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + a_data_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {

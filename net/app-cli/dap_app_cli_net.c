@@ -51,6 +51,9 @@
 #include "dap_app_cli_net.h"
 #include "dap_enc_base64.h"
 
+#include "dap_json_rpc_request.h"
+#include "dap_json_rpc_response.h"
+
 static int s_status;
 
 //staic function to receive http data
@@ -137,7 +140,7 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
 {
     // set socket param
     int buffsize = DAP_CLI_HTTP_RESPONSE_SIZE_MAX;
-#ifdef WIN32
+#if defined(__WIN32) || defined(ANDROID)
     // TODO connect to the named pipe "\\\\.\\pipe\\node_cli.pipe"
     uint16_t l_cli_port = dap_config_get_item_uint16 ( g_config, "conserver", "listen_port_tcp");
     if (!l_cli_port)
@@ -158,7 +161,12 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
     int l_addr_len;
 #ifdef WIN32
     struct sockaddr_in l_remote_addr = {
-        .sin_family = AF_INET, .sin_port = l_cli_port, .sin_addr = {{ .S_addr = htonl(INADDR_LOOPBACK) }}
+        .sin_family = AF_INET, .sin_port = htons(l_cli_port), .sin_addr = {{ .S_addr = htonl(INADDR_LOOPBACK) }}
+    };
+    l_addr_len = sizeof(struct sockaddr_in);
+#elif defined(DAP_OS_ANDROID)
+    struct sockaddr_in l_remote_addr = {
+        .sin_family = AF_INET, .sin_port = htons(l_cli_port), .sin_addr = { .s_addr = htonl(INADDR_LOOPBACK) }
     };
     l_addr_len = sizeof(struct sockaddr_in);
 #else
@@ -207,14 +215,13 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
     if(!a_socket || !a_cmd || !a_cmd->cmd_name) {
         assert(0);
         return -1;
-    }
-    a_cmd->cmd_res = DAP_NEW_Z_SIZE(char, DAP_CLI_HTTP_RESPONSE_SIZE_MAX);
+    }    
     a_cmd->cmd_res_cur = 0;
     dap_string_t *l_cmd_data = dap_string_new(a_cmd->cmd_name);
     if (a_cmd->cmd_param) {
         for (int i = 0; i < a_cmd->cmd_param_count; i++) {
             if (a_cmd->cmd_param[i]) {
-                dap_string_append(l_cmd_data, "\r\n");
+                dap_string_append(l_cmd_data, ";");
                 if(s_dap_app_cli_cmd_contains_forbidden_symbol(a_cmd->cmd_param[i])){
                     char * l_cmd_param_base64 = dap_enc_strdup_to_base64(a_cmd->cmd_param[i]);
                     dap_string_append(l_cmd_data, l_cmd_param_base64);
@@ -225,41 +232,57 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
             }
         }
     }
-    dap_string_append(l_cmd_data, "\r\n\r\n");
+    dap_json_rpc_params_t * params = dap_json_rpc_params_create();
+    dap_json_rpc_params_add_data(params, l_cmd_data->str, TYPE_PARAM_STRING);
+    uint64_t l_id_response = dap_json_rpc_response_get_new_id();
+    dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(a_cmd->cmd_name, params, l_id_response);
+    char * request_str = dap_json_rpc_request_to_json_string(a_request);
+
     dap_string_t *l_post_data = dap_string_new("");
     dap_string_printf(l_post_data, "POST /connect HTTP/1.1\r\n"
                                    "Host: localhost\r\n"
                                    "Content-Type: text/text\r\n"
                                    "Content-Length: %zu\r\n"
                                    "\r\n"
-                                   "%s", l_cmd_data->len, l_cmd_data->str);
-    send(*a_socket, l_post_data->str, l_post_data->len, 0);
+                                   "%s", strlen(request_str), request_str);
+    DAP_DELETE(request_str);
+    size_t res = send(*a_socket, l_post_data->str, l_post_data->len, 0);
+    if (res != l_post_data->len) {
+        dap_json_rpc_request_free(a_request);
+        printf("Error sending to server");
+        return -1;
+    }
 
     //wait for command execution
     time_t l_start_time = time(NULL);
     s_status = 1;
+    a_cmd->cmd_res = DAP_NEW_Z_SIZE(char, DAP_CLI_HTTP_RESPONSE_SIZE_MAX);
     while(s_status > 0) {
         dap_app_cli_http_read(a_socket, a_cmd);
         if ((time(NULL) - l_start_time > DAP_CLI_HTTP_TIMEOUT)&&!a_cmd->cmd_res)
             s_status = DAP_CLI_ERROR_TIMEOUT;
     }
     // process result
-    if (a_cmd->cmd_res && !s_status) {
-        char **l_str = dap_strsplit(a_cmd->cmd_res, "\r\n", 1);
-        int l_cnt = dap_str_countv(l_str);
-        char *l_str_reply = NULL;
-        if (l_cnt == 2) {
-            //long l_err_code = strtol(l_str[0], NULL, 10);
-            l_str_reply = l_str[1];
+    if (!s_status && a_cmd->cmd_res) {
+        dap_json_rpc_response_t* response = dap_json_rpc_response_from_string(a_cmd->cmd_res);
+        if (l_id_response != response->id) {
+            printf("Wrong response from server\n");
+            dap_json_rpc_request_free(a_request);
+            dap_json_rpc_response_free(response);
+            return -1;
         }
-        printf("%s\n", (l_str_reply) ? l_str_reply : "no response");
-        dap_strfreev(l_str);
+        if (dap_json_rpc_response_printf_result(response, a_cmd->cmd_name) != 0) {
+            printf("Something wrong with response\n");
+        }
+        dap_json_rpc_response_free(response);
     }
     DAP_DELETE(a_cmd->cmd_res);
+    dap_json_rpc_request_free(a_request);
     dap_string_free(l_cmd_data, true);
     dap_string_free(l_post_data, true);
     return s_status;
 }
+
 
 int dap_app_cli_disconnect(dap_app_cli_connect_param_t *a_socket)
 {

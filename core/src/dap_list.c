@@ -69,8 +69,11 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
  *
  * Returns: either @list or the new start of the DapList if @list was %NULL
  */
-dap_list_t *dap_list_append(dap_list_t *a_list, void* a_data)
+dap_list_t *dap_list_append(dap_list_t *a_list, void *a_data)
 {
+// sanity check
+    dap_return_val_if_pass(!a_data, a_list);
+//func work
     dap_list_t *l_el = DAP_NEW_Z(dap_list_t);
     if (!l_el) {
         log_it(L_CRITICAL, "Out of memory");
@@ -106,6 +109,9 @@ dap_list_t *dap_list_append(dap_list_t *a_list, void* a_data)
  */
 dap_list_t *dap_list_prepend(dap_list_t *a_list, void *a_data)
 {
+// sanity check
+    dap_return_val_if_pass(!a_data, a_list);
+//func work
     dap_list_t *l_el = DAP_NEW_Z(dap_list_t);
     if (!l_el) {
         log_it(L_CRITICAL, "Out of memory");
@@ -325,39 +331,6 @@ dap_list_t *dap_list_nth(dap_list_t *a_list, uint64_t n)
         a_list = a_list->next;
 
     return a_list;
-}
-
-/**
- * dap_list_nth_prev:
- * @list: a DapList
- * @n: the position of the element, counting from 0
- *
- * Gets the element @n places before @list.
- *
- * Returns: the element, or %NULL if the position is
- *     off the end of the DapList
- */
-dap_list_t *dap_list_nth_prev(dap_list_t *a_list, uint64_t n)
-{
-    while((n-- > 0) && a_list)
-        a_list = a_list->prev;
-
-    return a_list;
-}
-
-/**
- * dap_list_nth_data:
- * @list: a DapList, this must point to the top of the list
- * @n: the position of the element
- *
- * Gets the data of the element at the given position.
- *
- * Returns: the element's data, or %NULL if the position
- *     is off the end of the DapList
- */
-void* dap_list_nth_data(dap_list_t *a_list, uint64_t n)
-{
-    return dap_list_nth(a_list, n)->data;
 }
 
 /**

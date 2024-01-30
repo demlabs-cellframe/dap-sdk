@@ -40,3 +40,12 @@ if(WIN32)
     secur32
 )
 endif()
+
+if(INSTALL_DAP_SDK)
+set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_ENC_SERVER_HDRS}")
+INSTALL(TARGETS ${PROJECT_NAME} 
+        LIBRARY DESTINATION lib/dap/net/server/enc_server/
+        ARCHIVE DESTINATION lib/dap/net/server/enc_server/
+        PUBLIC_HEADER DESTINATION include/dap/net/server/enc_server/
+)
+endif()

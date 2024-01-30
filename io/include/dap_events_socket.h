@@ -60,6 +60,7 @@ typedef int SOCKET;
     //#define DAP_EVENTS_CAPS_AIO
     //#define DAP_EVENTS_CAPS_AIO_THREADS
     #include <netinet/in.h>
+    #include <sys/un.h>
     #include <sys/eventfd.h>
     #include <mqueue.h>
     #include <sys/un.h>
@@ -69,6 +70,7 @@ typedef int SOCKET;
     #define DAP_EVENTS_CAPS_EVENT_KEVENT
     #define DAP_EVENTS_CAPS_QUEUE_KEVENT
     #include <netinet/in.h>
+    #include <sys/un.h>
     #include <sys/event.h>
     #include <sys/un.h>
 #elif defined (DAP_OS_UNIX)
@@ -254,13 +256,24 @@ typedef struct dap_events_socket {
     // Remote address, port and others
     union {
         struct sockaddr_in remote_addr;
+        struct sockaddr_in listener_addr;
         struct sockaddr_in6 remote_addr_v6;
+        struct sockaddr_in6 listener_addr_v6;
 #ifdef DAP_OS_UNIX
         struct sockaddr_un remote_path;
+        struct sockaddr_un listener_path; // Path to UNIX socket
 #endif
     };
-    char remote_addr_str[INET6_ADDRSTRLEN];
-    uint16_t remote_port;
+
+    union {
+        char remote_addr_str[INET6_ADDRSTRLEN];
+        char listener_addr_str[INET6_ADDRSTRLEN];   
+    };
+    union {
+        uint16_t  remote_port;
+        uint16_t  listener_port;
+        mode_t  permission;
+    };
 
     // Links to related objects
     dap_context_t *context;
@@ -348,7 +361,7 @@ void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_p
 void dap_events_socket_delete_mt(dap_worker_t * a_worker, dap_events_socket_uuid_t a_es_uuid);
 
 dap_events_socket_t *dap_events_socket_wrap_no_add(SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);
-dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, dap_events_socket_callbacks_t *a_callbacks);
+dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);
 
 void dap_events_socket_assign_on_worker_mt(dap_events_socket_t * a_es, struct dap_worker * a_worker);
 void dap_events_socket_assign_on_worker_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_es);

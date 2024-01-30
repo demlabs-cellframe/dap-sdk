@@ -12,7 +12,7 @@
 
 static bool s_l_restart_plugins = false;
 
-static int s_command_handler(int a_argc, char **a_argv, char **a_str_reply);
+static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply);
 
 
 /**
@@ -50,7 +50,7 @@ void dap_plugin_command_deinit(void)
  * @param a_str_reply
  * @return
  */
-static int s_command_handler(int a_argc, char **a_argv, char **a_str_reply)
+static int s_command_handler(int a_argc, char **a_argv, void **a_str_reply)
 {
     enum {
         CMD_NONE, CMD_LIST, CMD_SHOW_NAME, CMD_RESTART, CMD_RELOAD_NAME
@@ -133,8 +133,7 @@ static int s_command_handler(int a_argc, char **a_argv, char **a_str_reply)
                                                           l_cmd_arg);
                         break;
                     case -3:
-                        dap_cli_server_cmd_set_reply_text(a_str_reply, "Registration \"%s\" manifest for \"%s\" plugin is failed.",
-                                                                        l_manifest->name, l_cmd_arg);
+                        dap_cli_server_cmd_set_reply_text(a_str_reply, "Registration manifest for \"%s\" plugin is failed.", l_cmd_arg);
                         break;
                     case -4:
                         dap_cli_server_cmd_set_reply_text(a_str_reply, "Plugin \"%s\" was not found.", l_cmd_arg);

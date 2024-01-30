@@ -1,767 +1,547 @@
-#include <stdio.h>
 #include <string.h>
-
 #include <errno.h>
-#include <ctype.h>
-#include "dap_file_utils.h"
-#include "uthash.h"
-#include "dap_common.h"
+#include <stdint.h>
 #include "dap_config.h"
+#include "uthash.h"
+#include "dap_strfuncs.h"
+#include "dap_file_utils.h"
+#ifdef DAP_OS_WINDOWS
+#include "dap_list.h"
+#endif
 
 #define LOG_TAG "dap_config"
 
-dap_config_t * g_config = NULL;
+//dap_config_t *g_configs_table = NULL;
 
-/**
- * @brief The dap_config_item struct
- */
-typedef struct dap_config_item{
-    char name[64];
-    struct dap_config_item * childs;
-    struct dap_config_item * item_next;
-    union{
-        char *data_str;
-        uint8_t data_uint8;
-        bool data_bool;
-        double data_double;
-        int32_t data_int32;
-        struct {
-            char **data_str_array;
-            uint16_t array_length;
-        };
-    };
-    bool is_array;
-    UT_hash_handle hh;
-} dap_config_item_t;
+typedef struct dap_config_item dap_config_item_t;
 
+static char *s_configs_path = NULL;
+dap_config_t *g_config = NULL;
 
-typedef struct dap_config_internal
+static bool debug_config = false;
+
+int dap_config_init(const char *a_configs_path)
 {
-    dap_config_item_t * item_root;
-    char * path;
-} dap_config_internal_t;
-#define DAP_CONFIG_INTERNAL(a) ( (dap_config_internal_t* ) a->_internal )
-
-#define MAX_CONFIG_PATH 256
-static char s_configs_path[MAX_CONFIG_PATH] = "/opt/dap/etc";
-
-
-/**
- * @brief dap_config_init Initialization settings
- * @param[in] a_configs_path If NULL path is set to default
- * @return
- */
-int dap_config_init(const char * a_configs_path)
-{
-    if( a_configs_path ) {
-#ifdef _WIN32
-        // Check up under Windows, in Linux is not required
-        if(!dap_valid_ascii_symbols(a_configs_path)) {
-            log_it(L_ERROR, "Supported only ASCII symbols for directory path");
-            return -1;
-        }
-#endif
-        if(dap_dir_test(a_configs_path) || !dap_mkdir_with_parents(a_configs_path)) {
-            strncpy(s_configs_path, a_configs_path,sizeof(s_configs_path)-1);
-            return 0;
-        }
+    if (!a_configs_path || !a_configs_path[0]) {
+        log_it(L_ERROR, "Empty path!");
+        return -1;
     }
-    return -1;
+#ifdef DAP_OS_WINDOWS
+    // Check up under Windows, in Linux is not required
+    if(!dap_valid_ascii_symbols(a_configs_path)) {
+        log_it(L_ERROR, "Supported only ASCII symbols for directory path");
+        return -1;
+    }
+#endif
+    if(dap_dir_test(a_configs_path) || !dap_mkdir_with_parents(a_configs_path)) {
+        DAP_DEL_Z(s_configs_path);
+        s_configs_path = dap_strdup(a_configs_path);
+        return 0;
+    } else {
+        log_it(L_ERROR, "Invalid path %s!", a_configs_path);
+        return -2;
+    }
 }
 
-const char * dap_config_path()
+const char *dap_config_path()
 {
     return s_configs_path;
 }
 
-
-/**
- * @brief dap_config_deinit Deinitialize settings
- */
-void dap_config_deinit()
-{
-
+#define dap_config_item_del(a_item)         \
+{                                           \
+    DAP_DELETE(a_item->name);               \
+    switch (a_item->type) {                 \
+    case 's':                               \
+        DAP_DELETE(a_item->val.val_str);    \
+        break;                              \
+    case 'a':                               \
+        dap_strfreev(a_item->val.val_arr);  \
+        break;                              \
+    default:                                \
+        break;                              \
+    }                                       \
+    DAP_DELETE(a_item);                     \
 }
 
-
-/**
- * @brief get_array_length Function parse string and return array length
- * @param[in] value
- * @details internal function parse string and return array length
- * @return
- */
-static uint16_t get_array_length(const char* str) {
-    uint16_t array_length = 1; // by default if not find ','
-    while (*str) {
-        if (*str == ',')
-            array_length++;
-        str++;
-    }
-    return array_length;
-}
-/**
- * @brief dap_config_open Open the configuration settings
- * @param[in] a_name Configuration name
- * @return dap_config_t Configuration
- */
-dap_config_t * dap_config_open(const char * a_name)
-{
-    dap_config_t * l_ret = NULL;
-    if ( a_name ){
-        log_it(L_DEBUG,"Looking for config name %s...",a_name);
-        size_t l_config_path_size_max = strlen(a_name)+6+strlen(s_configs_path);
-        char *l_config_path = DAP_NEW_Z_SIZE(char,l_config_path_size_max);
-        snprintf(l_config_path,l_config_path_size_max, "%s/%s.cfg",s_configs_path,a_name);
-        l_ret = dap_config_load(l_config_path);
-//        DAP_DELETE(l_config_path);
-    }else{
-        log_it(L_ERROR,"Config name is NULL");
-    }
-    return l_ret;
-}
-
-/**
- * @brief Load config from file
- * @param a_file_path
- * @return
- */
-dap_config_t * dap_config_load(const char * a_file_path)
-{
-    dap_config_t * l_ret = NULL;
-
-    FILE * f = fopen(a_file_path,"r");
-    if ( f ){
-        fseek(f, 0, SEEK_END);
-        long buf_len = ftell(f);
-        char buf[buf_len];
-        fseek(f, 0L, SEEK_SET);
-        log_it(L_DEBUG,"Opened config %s",a_file_path);
-        l_ret = DAP_NEW_Z(dap_config_t);
-        if (!l_ret) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            fclose(f);
-            return NULL;
+void dap_config_dump(dap_config_t *a_conf) {
+    dap_config_item_t *l_item = NULL, *l_tmp = NULL;
+    log_it(L_DEBUG, " Config %s", a_conf->path);
+    HASH_ITER(hh, a_conf->items, l_item, l_tmp) {
+        switch (l_item->type) {
+        case 's':
+            log_it(L_DEBUG, " String param: %s = %s", l_item->name, l_item->val.val_str);
+            break;
+        case 'd':
+            log_it(L_DEBUG, " Int param: %s = %ld", l_item->name, l_item->val.val_int);
+            break;
+        case 'u':
+            log_it(L_DEBUG, " UInt param: %s = %lu", l_item->name, l_item->val.val_uint);
+            break;
+        case 'b':
+            log_it(L_DEBUG, " Bool param: %s = %d", l_item->name, l_item->val.val_bool);
+            break;
+        case 'a': {
+            log_it(L_DEBUG, " Array param: %s = ", l_item->name);
+            for (char **l_str = l_item->val.val_arr; *l_str; ++l_str) {
+                log_it(L_DEBUG, " %s", *l_str);
+            }
+            break;
         }
-        dap_config_internal_t * l_config_internal = DAP_NEW_Z(dap_config_internal_t);
-        if (!l_config_internal) {
-            log_it(L_CRITICAL, "Memory allocation error");
-            fclose(f);
-            DAP_DELETE(l_ret);
-            return NULL;
         }
-        l_config_internal->path = (char*)a_file_path;
-        l_ret->_internal = l_config_internal;
-        size_t l_global_offset=0;
-        size_t l_buf_size=0;
-        size_t l_buf_pos_line_start=0;
-        size_t l_buf_pos_line_end=0;
-        dap_config_item_t * l_section_current = NULL ;
-        bool l_is_space_now = false;
-        while ( feof(f)==0){ // Break on lines
-            size_t i;
-            l_global_offset +=  (l_buf_size = fread(buf, 1, buf_len, f) );
-            for (i=0; i< l_buf_size; i++){
-                if( (buf[i] == '\r') || (buf[i] == '\n' ) ){
-                    if( ! l_is_space_now){
-                        l_buf_pos_line_end = i;
-                        l_is_space_now = true;
-                        //if(l_buf_pos_line_end)
-                        //    l_buf_pos_line_end--;
-                        if(l_buf_pos_line_end != l_buf_pos_line_start ){ // Line detected
-                            char *l_line = NULL;
-                            uint32_t l_line_length = 0;
-                            size_t j;
+    }
+}
 
-                            // Trimming spaces and skip the line if commented
-                            for ( j = l_buf_pos_line_start; j < l_buf_pos_line_end; j++ ){
-                                if ( buf[j] == '#' )
-                                    break;
-                                if (buf[j] != ' ' ){
-                                    l_line_length = (l_buf_pos_line_end - j);
-                                    break;
-                                }
-                            }
-                            if( l_line_length ){
-                                l_line = DAP_NEW_SIZE(char,l_line_length+1);
-                                if (!l_line) {
-                                    log_it(L_CRITICAL, "Memory allocation error");
-                                    DAP_DEL_Z(l_config_internal);
-                                    DAP_DELETE(l_ret);
-                                    fclose(f);
-                                    return NULL;
-                                }
-                                memcpy(l_line,buf+j,l_line_length);
-                                l_line[l_line_length] = 0;
+#ifdef DAP_OS_WINDOWS
+static int s_name_sort_cb(const void *a_str1, const void *a_str2) {
+    char    *l_str1 = (char*)((dap_list_t*)a_str1)->data,
+            *l_str2 = (char*)((dap_list_t*)a_str2)->data;
+    return dap_strcmp(l_str1, l_str2);
+}
+#endif
 
-                                // Process trimmed line
-                                if( (l_line[0] == '[' ) && (l_line[l_line_length-1] == ']' ) ){ // Section detected
-                                    //log_it(L_DEBUG, "Raw line '%s'",l_line);
-                                    char * l_section_name = strdup(l_line+1);
-                                    if (!l_section_name) {
-                                        log_it(L_CRITICAL, "Memory allocation error");
-                                        DAP_DEL_Z(l_config_internal);
-                                        DAP_DELETE(l_line);
-                                        DAP_DELETE(l_ret);
-                                        fclose(f);
-                                        return NULL;
-                                    }
-                                    size_t l_section_name_length = (l_line_length - 2);
-                                    l_section_name[l_section_name_length]='\0';
-                                    // log_it(L_DEBUG,"Config section '%s'",l_section_name);
+static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
+    if (!a_conf || !*a_conf) {
+        log_it(L_ERROR, "Config is not initialized");
+        return 1;
+    }
+    FILE *f = fopen(a_abs_path, "r");
+    if (!f) {
+        log_it(L_ERROR, "Can't open config file \"%s\", error %d", a_abs_path, errno);
+        return 2;
+    }
+#define MAX_CONFIG_LINE_LEN 1024
+    unsigned l_len = MAX_CONFIG_LINE_LEN, l_shift = 0;
+    log_it(L_DEBUG, "Opened config %s", a_abs_path);
 
-                                    dap_config_item_t * l_item_section = DAP_NEW_Z(dap_config_item_t);
-                                    if(!l_item_section) {
-                                        log_it(L_CRITICAL, "Memory allocation error");
-                                        free(l_section_name);
-                                        DAP_DEL_Z(l_config_internal);
-                                        DAP_DELETE(l_line);
-                                        DAP_DELETE(l_ret);
-                                        fclose(f);
-                                        return NULL;
-                                    }
-                                    strncpy(l_item_section->name,l_section_name,sizeof(l_item_section->name)-1);
-                                    l_item_section->item_next = l_config_internal->item_root;
-                                    l_config_internal->item_root = l_item_section;
-                                    free(l_section_name);
-
-                                    l_section_current = l_item_section;
-                                }else{ // key-value line
-                                    //log_it(L_DEBUG,"Read line '%s'",l_line);
-                                    char l_param_name[sizeof(l_section_current->name)];
-                                    size_t l_param_name_size=0;
-                                    size_t l_param_value_size=0;
-                                    char l_param_value[262144];
-                                    l_param_name[0] = 0;
-                                    l_param_value[0] = 0;
-                                    for ( j = 0; j < l_line_length; j++ ){ // Parse param name
-                                        if ( ( l_line[j] == ' ' )|| ( l_line[j] == '=' ) ||( l_line[j] == '\t' ) ){ // Param name
-                                            l_param_name_size = j;
-                                            if (l_param_name_size > (sizeof(l_param_name) -1) ){
-                                                l_param_name_size = (sizeof(l_param_name) - 1 );
-                                                log_it(L_WARNING,"Too long param name in config, %zu is more than %zu maximum",
-                                                       j,sizeof(l_param_name) -1);
-                                            }
-                                            strncpy(l_param_name,l_line,j);
-                                            l_param_name[j] = 0;
-                                            break;
-                                        }
-
-                                    }
-
-                                    for (; j < l_line_length; j++ ){ // Find beginning of param value
-                                        if ( ( l_line[j] != '\t' ) && ( l_line[j] != ' ' ) && ( l_line[j] != '=' ) ){
-                                            break;
-                                        }
-                                    }
-                                    l_param_value_size = l_line_length - j;
-                                    if (l_param_value_size ){
-                                        if (l_param_value_size > (sizeof(l_param_value) -1) ){
-                                            l_param_value_size = (sizeof(l_param_value) - 1 );
-                                            log_it(L_WARNING,"Too long param value in config, %zu is more than %zu maximum",
-                                                   l_line_length - j,sizeof(l_param_value) -1);
-                                        }
-                                        strncpy(l_param_value,l_line +j, l_param_value_size);
-                                        l_param_value[l_param_value_size] = '\0';
-                                        for(int j=(int)l_param_value_size-1; j>=0; j--){
-                                            if( (l_param_value[j] ==' ') || (l_param_value[j] =='\t') ){
-                                                l_param_value[j] = '\0';
-                                            }else{
-                                                break;
-                                            }
-                                        }
-                                    }
-                                //    log_it(L_DEBUG,"  Param '%s' = '%s'", l_param_name, l_param_value);
-                                    if (l_section_current){
-
-                                        if (l_param_value[0] == '[') {
-                                            if(l_param_value[1] == ']') {
-                                                //log_it(L_WARNING, "Empty array!");
-                                                DAP_DELETE(l_line);
-                                                continue;
-                                            }
-
-                                            // delete '[' and ']'
-                                            char* values = l_param_value + 1;
-                                            values[l_param_value_size-2] = 0;
-
-                                            dap_config_item_t * l_item = DAP_NEW_Z(dap_config_item_t);
-                                            if (!l_item) {
-                                                log_it(L_CRITICAL, "Memory allocation error");
-                                                DAP_DEL_Z(l_config_internal);
-                                                DAP_DELETE(l_line);
-                                                DAP_DELETE(l_ret);
-                                                fclose(f);
-                                                return NULL;
-                                            }
-                                            strncpy(l_item->name,l_param_name,sizeof(l_item->name));
-                                            l_item->item_next = l_section_current->childs;
-                                            l_item->is_array = true;
-                                            l_section_current->childs = l_item;
-                                            l_item->array_length = get_array_length(l_param_value);
-                                            l_item->data_str_array = (char**) malloc (sizeof(char*) * l_item->array_length);
-                                            if (!l_item->data_str_array) {
-                                                log_it(L_CRITICAL, "Memory allocation error");
-                                                DAP_DEL_Z(l_config_internal);
-                                                DAP_DELETE(l_item);
-                                                DAP_DELETE(l_line);
-                                                DAP_DELETE(l_ret);
-                                                fclose(f);
-                                                return NULL;
-                                            }
-                                            // parsing items in array
-                                            int j = 0;
-                                            char * l_tmp = NULL;
-                                            char *token = strtok_r(values, ",",&l_tmp);
-                                            while(token) {
-
-                                                // trim token whitespace
-                                                if (isspace(token[0]))
-                                                    token = token + 1;
-                                                char *closer = strchr(token, ']');
-                                                if (closer) /* last item in array */
-                                                    *closer = 0;
-
-                                                l_item->data_str_array[j] = strdup(token);
-
-                                                token = strtok_r(NULL, ",",&l_tmp);
-                                                j++;
-                                            }
-                                            l_item->array_length = j;
-                                        } else {
-                                            dap_config_item_t * l_item = DAP_NEW_Z(dap_config_item_t);
-                                            if (!l_item) {
-                                                log_it(L_CRITICAL, "Memory allocation error");
-                                                DAP_DEL_Z(l_config_internal);
-                                                DAP_DELETE(l_line);
-                                                DAP_DELETE(l_ret);
-                                                fclose(f);
-                                                return NULL;
-                                            }
-
-                                            strncpy(l_item->name,l_param_name,sizeof(l_item->name));
-                                            l_item->item_next = l_section_current->childs;
-                                            l_item->data_str = strdup (l_param_value);
-
-                                            l_section_current->childs = l_item;
-                                        }
-                                    }else{
-                                        log_it(L_ERROR,"Can't add param to a tree without current section");
-                                    }
-
-                                }
-                                DAP_DELETE(l_line);
-                            }
-                        }
+    char    *l_line = DAP_NEW_Z_SIZE(char, l_len),
+            *l_section = NULL;
+    dap_config_item_t *l_item = NULL;
+    char l_type = '\0', *l_key_for_arr = NULL, **l_values_arr = NULL;
+    for (uint16_t l_line_counter = 0, l_line_counter2 = 0; fgets(l_line + l_shift, MAX_CONFIG_LINE_LEN, f); ++l_line_counter) {
+        if (!l_shift)
+            l_line = DAP_REALLOC(l_line, MAX_CONFIG_LINE_LEN);
+        unsigned l_eol = strcspn(l_line + l_shift, "\r\n") + l_shift;
+        if (l_eol == l_len - 1) {
+            if (l_line_counter != l_line_counter2) {
+                log_it(L_WARNING, "Config \"%s\": line %d is too long, preserving the tail ...", a_abs_path, l_line_counter);
+            }
+            l_line_counter2 = l_line_counter--;
+            l_shift = l_eol;
+            l_len += (MAX_CONFIG_LINE_LEN - 1);
+            l_line = DAP_REALLOC(l_line, l_len);
+            continue;
+        }
+        if (l_shift) {
+            l_len = MAX_CONFIG_LINE_LEN;
+            l_shift = 0;
+        }
+        l_eol = strcspn(l_line, "#\r\n");
+        l_line[l_eol] = '\0';
+        {
+            char *l_tmp = l_line, *l_tmp1 = l_line;
+            int l_shift = 0;
+            do {
+                while(isspace(*l_tmp1)) {
+                    ++l_tmp1;
+                    ++l_shift;
+                }
+            } while((*l_tmp++ = *l_tmp1++));
+        }
+        unsigned l_stripped_len = strlen(l_line);
+        if (!l_stripped_len) {
+            // No useful data remained
+            continue;
+        }
+        char *l_key = NULL, *l_val = NULL;
+        if (!l_values_arr) {
+            --l_stripped_len;
+            if (l_line[0] == '[' && l_line[l_stripped_len] == ']') {
+                // A section start
+                l_line[l_stripped_len] = '\0';
+                DAP_DEL_Z(l_section);
+                l_section = dap_strdup(l_line + 1);
+                continue;
+            } else if (!l_section) {
+                log_it(L_WARNING, "Config \"%s\": line %d belongs to unknown section. Dump it",
+                       a_abs_path, l_line_counter);
+                continue;
+            }
+            if (!strchr(l_line, '=')) {
+                log_it(L_WARNING, "Config \"%s\": unknown pattern on line %d, dump it",
+                       a_abs_path, l_line_counter);
+                continue;
+            }
+            l_key = strtok_r(l_line, "=", &l_val);
+        } else {
+            l_val = l_line;
+        }
+        union dap_config_val l_item_val = { };
+        if (*l_val != '[' && !l_values_arr) {
+            // Single val
+            l_type = 'd';
+            if (!*l_val)
+                l_type = 'r';
+            else if (
+         #ifdef DAP_OS_WINDOWS
+                     !stricmp(l_val, "true")
+         #else
+                     !strcasecmp(l_val, "true")
+         #endif
+                     )
+                l_type = 1;
+            else if (
+         #ifdef DAP_OS_WINDOWS
+                     !stricmp(l_val, "false")
+         #else
+                     !strcasecmp(l_val, "false")
+         #endif
+                     )
+                l_type = 0;
+            else {
+                char *c;
+                if (*l_val == '-') {
+                    c = l_val + 1;
+                } else {
+                    c = l_val;
+                    l_type = 'u';
+                }
+                while (*c) {
+                    if (!isdigit(*c++)) {
+                        l_type = 's';
+                        break;
                     }
+                }
+            }
+            switch (l_type) {
+            case 0:
+            case 1:
+                l_item_val.val_bool = l_type;
+                l_type = 'b';
+                break;
+            case 'd': {
+                l_item_val.val_int = strtoll(l_val, NULL, 10);
+                break;
+            }
+            case 'u':{
+                l_item_val.val_uint = strtoull(l_val, NULL, 10);
+                break;
+            }
+            case 's':
+                l_item_val.val_str = dap_strdup(l_val);
+                break;
+            default:
+                break;
+            }
+        } else {
+            // Array of strings
+            if (!l_values_arr)
+                ++l_val;
+            if (l_type != 'r') {
+                l_type = 'a';
+                int l_pos = dap_strlen(l_val) - 1;
+                char l_term = l_val[l_pos];
+                if (l_term == ']') {
+                    l_val[l_pos] = '\0';
+                }
+                char **l_vals = dap_strsplit(l_val, ",", -1);
+                if (!*l_vals) {
+                    l_type = 'r';
+                } else {
+                    l_values_arr = dap_str_appv(l_values_arr, l_vals, NULL);
+                }
+
+                DAP_DELETE(l_vals);
+                if (l_term != ']' || !l_values_arr) {
+                    if (!l_key_for_arr && l_key)
+                        l_key_for_arr = strdup(l_key);
                     continue;
-                }else{
-                    if (l_is_space_now){
-                        l_is_space_now = false;
-                        l_buf_pos_line_start = i;
-                    }
                 }
+                if (!dap_str_countv(l_values_arr))
+                    l_type = 'r';
             }
         }
-        fclose(f);
-    }else{
-        log_it(L_ERROR,"Can't open config file '%s' (%s)",a_file_path,strerror(errno));
-    }
-    return l_ret;
-}
 
-/**
- * @brief dap_config_close Closing the configuration
- * @param[in] a_config Configuration
- */
-void dap_config_close(dap_config_t * a_config)
-{
-    dap_config_item_t * l_item = DAP_CONFIG_INTERNAL(a_config)->item_root ;
-    while(l_item) {
-        dap_config_item_t * l_item_child = l_item->childs;
-        DAP_CONFIG_INTERNAL(a_config)->item_root = l_item->item_next;
+        char *l_name = dap_strdup_printf("%s:%s", l_section, l_key_for_arr ? l_key_for_arr : l_key);
+        DAP_DEL_Z(l_key_for_arr);
+        for (char *c = l_name; *c; ++c) {
+            if (*c == '-')
+                *c = '_';
+        }
+        HASH_FIND_STR((*a_conf)->items, l_name, l_item);
 
-        while(l_item_child) {
-            l_item->childs = l_item_child->item_next;
-            if(l_item_child->is_array) {
-                for(int i = 0; i< l_item_child->array_length; i++)
-                    free(l_item_child->data_str_array[i]);
-                free(l_item_child->data_str_array);
-            } else if (l_item_child->data_str) {
-                DAP_DELETE(l_item_child->data_str);
+        switch (l_type) {
+        case 'r':
+            DAP_DELETE(l_name);
+            if (l_item) {
+                HASH_DEL((*a_conf)->items, l_item);
+                dap_config_item_del(l_item);
             }
-            DAP_DELETE(l_item_child);
-            l_item_child = l_item->childs;
-        }
-
-        if(l_item->data_str) {
-            DAP_DELETE(l_item->data_str);
-        }
-        DAP_DELETE(l_item);
-        l_item = DAP_CONFIG_INTERNAL(a_config)->item_root;
-    }
-
-    free(DAP_CONFIG_INTERNAL(a_config)->path);
-    free(a_config->_internal);
-    free(a_config);
-
-}
-
-/**
- * @brief dap_config_get_item_int32 Getting a configuration item as a int32
- * @param[in] a_config
- * @param[in] a_section_path
- * @param[in] a_item_name
- * @return
- */
-int32_t dap_config_get_item_int32(dap_config_t * a_config, const char * a_section_path, const char * a_item_name)
-{
-    return atoi(dap_config_get_item_str(a_config,a_section_path,a_item_name));
-}
-
-/**
- * @brief dap_config_get_item_int64
- * @param a_config
- * @param a_section_path
- * @param a_item_name
- * @return
- */
-int64_t dap_config_get_item_int64(dap_config_t * a_config, const char * a_section_path, const char * a_item_name)
-{
-    return atoll(dap_config_get_item_str(a_config,a_section_path,a_item_name));
-}
-
-/**
- * @brief dap_config_get_item_uint64
- * @param a_config
- * @param a_section_path
- * @param a_item_name
- * @return
- */
-uint64_t dap_config_get_item_uint64(dap_config_t * a_config, const char * a_section_path, const char * a_item_name)
-{
-    return (uint64_t) atoll(dap_config_get_item_str(a_config,a_section_path,a_item_name));
-}
-
-/**
- * @brief dap_config_get_item_uint16
- * @param a_config
- * @param a_section_path
- * @param a_item_name
- * @return
- */
-uint16_t dap_config_get_item_uint16(dap_config_t * a_config, const char * a_section_path, const char * a_item_name)
-{
-    return (uint16_t) atoi(dap_config_get_item_str(a_config,a_section_path,a_item_name));
-}
-
-/**
- * @brief dap_config_get_item_int16
- * @param a_config
- * @param a_section_path
- * @param a_item_name
- * @return
- */
-int16_t dap_config_get_item_int16(dap_config_t * a_config, const char * a_section_path, const char * a_item_name)
-{
-    return (int16_t) atoi(dap_config_get_item_str(a_config,a_section_path,a_item_name));
-}
-
-
-/**
- * @brief dap_config_get_item_int32_default Getting a configuration item as a int32
- * @param[in] a_config Configuration
- * @param[in] a_section_path Path
- * @param[in] a_item_name setting
- * @param[in] a_default
- * @return
- */
-int32_t dap_config_get_item_int32_default(dap_config_t * a_config, const char * a_section_path, const char * a_item_name, int32_t a_default)
-{
-    const char * l_str_ret = dap_config_get_item_str(a_config,a_section_path,a_item_name);
-    return l_str_ret?atoi(l_str_ret):a_default;
-}
-
-/**
- * @brief dap_config_get_item_uint32_default
- * @param a_config
- * @param a_section_path
- * @param a_item_name
- * @param a_default
- * @return
- */
-uint32_t dap_config_get_item_uint32_default(dap_config_t * a_config, const char * a_section_path, const char * a_item_name, uint32_t a_default)
-{
-    const char * l_str_ret = dap_config_get_item_str(a_config,a_section_path,a_item_name);
-    uint32_t l_ret = 0;
-    if (l_str_ret && sscanf(l_str_ret, "%u", &l_ret) == 1)
-        return l_ret;
-    else
-        return a_default;
-}
-
-/**
- * @brief dap_config_get_item_uint32
- * @param a_config
- * @param a_section_path
- * @param a_item_name
- * @return
- */
-uint32_t dap_config_get_item_uint32(dap_config_t * a_config, const char * a_section_path, const char * a_item_name)
-{
-    const char * l_str_ret = dap_config_get_item_str(a_config,a_section_path,a_item_name);
-    uint32_t l_ret = 0;
-    if (l_str_ret)
-        sscanf(l_str_ret, "%u", &l_ret);
-    return l_ret;
-}
-
-/**
- * @brief dap_config_get_item_uint16_default
- * @param a_config
- * @param a_section_path
- * @param a_item_name
- * @param a_default
- * @return
- */
-uint16_t dap_config_get_item_uint16_default(dap_config_t * a_config, const char * a_section_path, const char * a_item_name, uint16_t a_default)
-{
-    const char * l_str_ret = dap_config_get_item_str(a_config,a_section_path,a_item_name);
-    return l_str_ret? (uint16_t) atoi(l_str_ret):a_default;
-}
-
-/**
- * @brief dap_config_get_item_int16_default
- * @param a_config
- * @param a_section_path
- * @param a_item_name
- * @param a_default
- * @return
- */
-int16_t dap_config_get_item_int16_default(dap_config_t * a_config, const char * a_section_path, const char * a_item_name, int16_t a_default)
-{
-    const char * l_str_ret = dap_config_get_item_str(a_config,a_section_path,a_item_name);
-    return l_str_ret? (int16_t) atoi(l_str_ret):a_default;
-}
-
-/**
- * @brief dap_config_get_item_int64_default
- * @param a_config
- * @param a_section_path
- * @param a_item_name
- * @param a_default
- * @return
- */
-int64_t dap_config_get_item_int64_default(dap_config_t * a_config, const char * a_section_path, const char * a_item_name, int64_t a_default)
-{
-    const char * l_str_ret = dap_config_get_item_str(a_config,a_section_path,a_item_name);
-    return l_str_ret? (int64_t) atoll(l_str_ret):a_default;
-}
-
-/**
- * @brief dap_config_get_item_int64_default
- * @param a_config
- * @param a_section_path
- * @param a_item_name
- * @param a_default
- * @return
- */
-uint64_t dap_config_get_item_uint64_default(dap_config_t * a_config, const char * a_section_path, const char * a_item_name, uint64_t a_default)
-{
-    const char * l_str_ret = dap_config_get_item_str(a_config,a_section_path,a_item_name);
-    return l_str_ret? (uint64_t) atoll(l_str_ret):a_default;
-}
-
-
-/**
- * @brief dap_config_get_item Get the configuration as a item
- * @param[in] a_config Configuration
- * @param[in] a_section_path Path
- * @param[in] a_item_name setting
- * @return
- */
-static dap_config_item_t * dap_config_get_item(dap_config_t * a_config, const char * a_section_path, const char * a_item_name)
-{
-    dap_config_item_t * l_item_section = a_config? DAP_CONFIG_INTERNAL(a_config)->item_root: NULL ;
-    while(l_item_section){
-        if (strcmp(l_item_section->name,a_section_path)==0){
-            dap_config_item_t * l_item = l_item_section->childs;
-            while (l_item){
-                if (strcmp(l_item->name,a_item_name)==0){
-                    return l_item;
-                }
-                l_item = l_item->item_next;
+            dap_strfreev(l_values_arr);
+            l_values_arr = NULL;
+            break;
+        case 'a':
+            l_item_val.val_arr = dap_str_appv(l_item_val.val_arr, l_values_arr, NULL);
+            DAP_DEL_Z(l_values_arr);
+            if (l_item)
+                dap_strfreev(l_item->val.val_arr);
+        default:
+            if (!l_item) {
+                l_item = DAP_NEW_Z(dap_config_item_t);
+                l_item->name = l_name;
+                HASH_ADD_KEYPTR(hh, (*a_conf)->items, l_item->name, strlen(l_item->name), l_item);
+            } else {
+                DAP_DELETE(l_name);
             }
+            l_item->type = l_type;
+            l_item->val = l_item_val;
+            break;
         }
-        l_item_section = l_item_section->item_next;
     }
-    return NULL;
+    DAP_DELETE(l_line);
+    DAP_DEL_Z(l_key_for_arr);
+    DAP_DEL_Z(l_section);
+    fclose(f);
+    return 0;
 }
 
-
-/**
- * @brief dap_config_get_item_str Getting a configuration item as a string
- * @param[in] a_config Configuration
- * @param[in] a_section_path Path
- * @param[in] a_item_name setting
- * @return
- */
-const char * dap_config_get_item_str(dap_config_t * a_config, const char * a_section_path, const char * a_item_name)
-{
-    dap_config_item_t * item = dap_config_get_item(a_config, a_section_path, a_item_name);
-
-    return  (!item) ?  NULL : item->data_str;
-}
-
-/**
- * @brief dap_config_get_item_path Getting a configuration item as a filsystem path (may be relative to config location)
- * @param[in] a_config Configuration
- * @param[in] a_section_path Path
- * @param[in] a_item_name setting
- * @return
- */
-const char * dap_config_get_item_path(dap_config_t * a_config, const char * a_section_path, const char * a_item_name)
-{
-    const char* raw_path = dap_config_get_item_str(a_config, a_section_path, a_item_name);
-    if (!raw_path) return NULL;
-    char * res = dap_canonicalize_filename(raw_path, dap_path_get_dirname(DAP_CONFIG_INTERNAL(a_config)->path));
-    log_it(L_DEBUG, "Config-path item: '%s': composed from '%s' and '%s'", res, raw_path, dap_path_get_dirname(DAP_CONFIG_INTERNAL(a_config)->path));
-    return res;
-}
-
-/**
- * @brief dap_config_get_item_path_default Getting a configuration item as a filsystem path (may be relative to config location) (or default)
- * @param[in] a_config Configuration
- * @param[in] a_section_path Path
- * @param[in] a_item_name setting
- * @param[in] a_value_default Default value
- * @return
- */
-const char * dap_config_get_item_path_default(dap_config_t * a_config, const char * a_section_path, const char * a_item_name, const char * a_value_default)
-{
-    const char * res = dap_config_get_item_path(a_config, a_section_path, a_item_name);
-    return res ?  res : a_value_default;
-}
-
-/**
- * @brief dap_config_get_array_str Getting an array of configuration items as a string
- * @param[in] a_config Configuration
- * @param[in] a_section_path Path
- * @param[in] a_item_name setting
- * @return
- */
-char** dap_config_get_array_str(dap_config_t * a_config, const char * a_section_path,
-                                const char * a_item_name, uint16_t * array_length) {
-    dap_config_item_t * item = dap_config_get_item(a_config, a_section_path, a_item_name);
-    if (item == NULL){
-        if(array_length != NULL)
-            *array_length = 0;
+dap_config_t *dap_config_open(const char* a_file_path) {
+    if (!a_file_path || !a_file_path[0]) {
+        log_it(L_ERROR, "Empty config name!");
         return NULL;
-    }else{
-        if (array_length != NULL)
-            *array_length = item->array_length;
-        return item->data_str_array;
     }
-}
+    log_it(L_DEBUG, "Looking for config name %s...", a_file_path);
+    char l_path[MAX_PATH] = { '\0' };
+    int l_pos = dap_strncmp(a_file_path, s_configs_path, strlen(s_configs_path))
+            ? dap_snprintf(l_path, MAX_PATH, "%s/%s.cfg", s_configs_path, a_file_path)
+            : dap_snprintf(l_path, MAX_PATH, "%s.cfg", a_file_path);
 
+    if (l_pos >= MAX_PATH) {
+        log_it(L_ERROR, "Too long config name!");
+        return NULL;
+    }
 
-/**
- * @brief dap_config_get_item_str_default Getting an array of configuration items as a string
- * @param[in] a_config Configuration
- * @param[in] a_section_path Path
- * @param[in] a_item_name setting
- * @param[in] a_value_default Default
- * @return
- */
-const char * dap_config_get_item_str_default(dap_config_t * a_config, const char * a_section_path, const char * a_item_name, const char * a_value_default)
-{
-    dap_config_item_t * l_item_section =a_config? DAP_CONFIG_INTERNAL(a_config)->item_root: NULL ;
-    while(l_item_section){
-        if (strcmp(l_item_section->name,a_section_path)==0){
-            dap_config_item_t * l_item = l_item_section->childs;
-            while (l_item){
-                if (strcmp(l_item->name,a_item_name)==0){
-                    return l_item->data_str;
-                }
-                l_item = l_item->item_next;
-            }
+    int l_basic_len = strlen(l_path) - 4;
+    char *l_basic_name = dap_strdup_printf("%.*s", l_basic_len, l_path);
+#if 0
+    dap_config_t *l_conf = NULL;
+    HASH_FIND_STR(g_configs_table, l_basic_name, l_conf);
+    if (!l_conf) {
+        l_conf = DAP_NEW_Z(dap_config_t);
+        l_conf->path = l_basic_name;
+        HASH_ADD_KEYPTR(hh, g_configs_table, l_conf->path, l_basic_len, l_conf);
+    } else {
+        DAP_DELETE(l_basic_name);
+    }
+#endif
+    dap_config_t *l_conf = DAP_NEW_Z(dap_config_t);
+    l_conf->path = l_basic_name;
+    if (_dap_config_load(l_path, &l_conf))
+       return NULL;
+    debug_config = g_config ? dap_config_get_item_bool(g_config, "general", "debug-config") : false;
+
+    if (l_pos >= MAX_PATH - 3)
+        return l_conf;
+
+    memcpy(l_path + l_pos, ".d", 2);
+#ifdef DAP_OS_WINDOWS
+    DIR *l_dir = opendir(l_path);
+    if (!l_dir) {
+        log_it(L_DEBUG, "Cannot open directory %s", l_path);
+        if (debug_config)
+            dap_config_dump(l_conf);
+        return l_conf;
+    }
+    struct dirent *l_entry;
+    dap_list_t *l_filenames = NULL;
+    while ((l_entry = readdir(l_dir))) {
+        const char *l_filename = l_entry->d_name;
+        if (!strncmp(l_filename + strlen(l_filename) - 4, ".cfg", 4))
+            l_filenames = dap_list_append(l_filenames, dap_strdup(l_filename));
+    }
+    closedir(l_dir);
+    l_filenames = dap_list_sort(l_filenames, s_name_sort_cb);
+    for (dap_list_t *l_filename = l_filenames; l_filename; l_filename = l_filename->next) {
+        char *l_entry_file = dap_strdup_printf("%s/%s", l_path, (char*)l_filename->data);
+        _dap_config_load(l_entry_file, &l_conf);
+        DAP_DELETE(l_entry_file);
+    }
+    dap_list_free_full(l_filenames, NULL);
+#else
+    struct dirent **l_entries;
+    int l_err = scandir(l_path, &l_entries, 0, alphasort);
+    if (l_err < 0) {
+        log_it(L_DEBUG, "Cannot open directory %s", l_path);
+        if (debug_config)
+            dap_config_dump(l_conf);
+        return l_conf;
+    }
+    for (int i = 0; i < l_err; ++i) {
+        if (!strncmp(l_entries[i]->d_name + strlen(l_entries[i]->d_name) - 4, ".cfg", 4)) {
+            char *l_entry_file = dap_strdup_printf("%s/%s", l_path, l_entries[i]->d_name);
+            _dap_config_load(l_entry_file, &l_conf);
+            DAP_DELETE(l_entry_file);
         }
-        l_item_section = l_item_section->item_next;
+        DAP_DELETE(l_entries[i]);
     }
-    return a_value_default;
-}
-
-/**
- * @brief dap_config_get_item_bool Getting a configuration item as a boolean
- * @param[in] a_config Configuration
- * @param[in] a_section_path Path
- * @param[in] a_item_name Setting
- * @return
- */
-bool dap_config_get_item_bool(dap_config_t * a_config, const char * a_section_path, const char * a_item_name)
-{
-const char *l_str_ret;
-
-    if ( !(l_str_ret = dap_config_get_item_str(a_config, a_section_path, a_item_name)) )
-        return	false;
-
-#ifdef	WIN32
-    return	!strnicmp (l_str_ret, "true", 4);
-#else
-    return	!strncasecmp (l_str_ret, "true", 4);	/* 0 == True */
+    DAP_DELETE(l_entries);
 #endif
+    if (debug_config)
+        dap_config_dump(l_conf);
+    return l_conf;
+}
+
+struct dap_config_item *dap_config_get_item(dap_config_t *a_config, const char *a_section, const char *a_item_name) {
+    char *l_key = dap_strdup_printf("%s:%s", a_section, a_item_name);
+    for (char *c = l_key; *c; ++c) {
+        if (*c == '-')
+            *c = '_';
+    }
+    struct dap_config_item *l_item = NULL;
+    HASH_FIND_STR(a_config->items, l_key, l_item);
+    if (!l_item) {
+        debug_if(debug_config, L_DEBUG, "Not found param \"%s\"", l_key);
+    }
+    DAP_DELETE(l_key);
+    return l_item;
+}
+
+bool dap_config_get_item_bool_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, bool a_default) {
+    dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
+    if (!l_item)
+        return a_default;
+    if (l_item->type != 'b') {
+        log_it(L_ERROR, "Parameter \"%s\" '%c' is not bool", l_item->name, l_item->type);
+        return a_default;
+    }
+    return l_item->val.val_bool;
+}
+
+int64_t _dap_config_get_item_int(dap_config_t *a_config, const char *a_section, const char *a_item_name, int64_t a_default) {
+    dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
+    if (!l_item)
+        return a_default;
+    switch (l_item->type) {
+    case 'd':
+        return l_item->val.val_int;
+    case 'u':
+        if (l_item->val.val_uint > INT64_MAX) {
+            log_it(L_WARNING, "Signed parameter \"%s\" requested, but the value %zu exeeds the limit", l_item->name, l_item->val.val_uint);
+            return a_default;
+        } else {
+            return (int64_t)l_item->val.val_uint;
+        }
+    default:
+        log_it(L_ERROR, "Parameter \"%s\" '%c' is not signed integer", l_item->name, l_item->type);
+        return a_default;
+    }
+}
+
+uint64_t _dap_config_get_item_uint(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint64_t a_default) {
+    dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
+    if (!l_item)
+        return a_default;
+    switch (l_item->type) {
+    case 'u':
+        return l_item->val.val_uint;
+    case 'd':
+        if (l_item->val.val_int < 0) {
+            log_it(L_WARNING, "Unsigned parameter \"%s\" requested, but the value is negative: %ld", l_item->name, l_item->val.val_int);
+            return a_default;
+        } else {
+            return (uint64_t)l_item->val.val_int;
+        }
+    default:
+        log_it(L_ERROR, "Parameter \"%s\" '%c' is not unsigned integer", l_item->name, l_item->type);
+        return a_default;
+    }
+}
+
+const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_default) {
+    dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
+    if (!l_item)
+        return a_default;
+    switch (l_item->type) {
+    case 's':
+        return l_item->val.val_str;
+    case 'a':
+        return l_item->val.val_arr[0];
+    case 'd':
+        return dap_itoa(l_item->val.val_int);
+    case 'u':
+        return dap_itoa(l_item->val.val_uint);
+    case 'b':
+        return dap_itoa(l_item->val.val_bool);
+    default:
+        log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
+        return a_default;
+    }
+}
+
+const char *dap_config_get_item_str_path_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_default) {
+    dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
+    if (!l_item)
+        return a_default;
+    if (l_item->type != 's') {
+        log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
+        return a_default;
+    }
+    char l_abs_path[strlen(a_config->path) + 5];
+    dap_stpcpy(l_abs_path, a_config->path);
+    char *l_dir = dap_path_get_dirname(l_abs_path);
+    char *l_ret = dap_canonicalize_filename(l_item->val.val_str, l_dir);
+    log_it(L_DEBUG, "Config-path item: \"%s\": composed from \"%s\" and \"%s\"",
+           l_ret, l_item->val.val_str, l_dir);
+    DAP_DELETE(l_dir);
+    return l_ret;
+}
+
+char **dap_config_get_array_str(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length) {
+    dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
+    if (array_length)
+        *array_length = 0;
+    if (!l_item)
+        return NULL;
+    if (l_item->type != 'a') {
+        log_it(L_ERROR, "Parameter \"%s\" '%c' is not array", l_item->name, l_item->type);
+        return NULL;
+    }
+    if (array_length)
+        *array_length = dap_str_countv(l_item->val.val_arr);
+    return l_item->val.val_arr;
+}
+
+double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, double a_default) {
+    dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
+    if (!l_item)
+        return a_default;
+    switch (l_item->type) {
+    case 's':
+        return strtod(l_item->val.val_str, NULL);
+    case 'd':
+        return (double)l_item->val.val_int;
+    case 'u':
+        return (double)l_item->val.val_uint;
+    default:
+        log_it(L_ERROR, "Parameter \"%s\" '%c' can't be represented as double", l_item->name, l_item->type);
+        return a_default;
+    }
 }
 
 
-/**
- * @brief dap_config_get_item_bool_default Getting a configuration item as a boolean
- * @param[in] a_config Configuration
- * @param[in] a_section_path Path
- * @param[in] a_item_name Setting
- * @param[in] a_default Default
- * @return
- */
-bool dap_config_get_item_bool_default(dap_config_t * a_config, const char * a_section_path,
-                                      const char * a_item_name, bool a_default)
-{
-const char *l_str_ret;
-
-    if ( !(l_str_ret = dap_config_get_item_str_default(a_config,a_section_path, a_item_name, a_default ? "true" : "false")) )
-        return  a_default;
-
-#ifdef	WIN32
-    return	!strnicmp (l_str_ret, "true", 4);
-#else
-    return	!strncasecmp (l_str_ret, "true", 4);	/* 0 == True */
+void dap_config_close(dap_config_t *a_conf) {
+    DAP_DELETE(a_conf->path);
+    dap_config_item_t *l_item = NULL, *l_tmp = NULL;
+    HASH_ITER(hh, a_conf->items, l_item, l_tmp) {
+        HASH_DEL(a_conf->items, l_item);
+        dap_config_item_del(l_item);
+    }
+#if 0
+    HASH_DEL(g_configs_table, a_conf);
 #endif
-
+    DAP_DELETE(a_conf);
 }
 
-/**
- * @brief dap_config_get_item_double Getting a configuration item as a floating-point value
- * @param[in] a_config Configuration
- * @param[in] a_section_path Path
- * @param[in] a_item_name Setting
- * @return
- */
-double dap_config_get_item_double(dap_config_t * a_config, const char * a_section_path, const char * a_item_name)
-{
-const char *l_str_ret;
+void dap_config_deinit() {
 
-    l_str_ret = dap_config_get_item_str(a_config,a_section_path,a_item_name);
-    return l_str_ret ? atof(l_str_ret) : 0.0;
 }
-
-/**
- * @brief dap_config_get_item_double Getting a configuration item as a floating-point value
- * @param[in] a_config Configuration
- * @param[in] a_section_path Path
- * @param[in] a_item_name Setting
- * @param[in] a_default Defailt
- * @return
- */
-double dap_config_get_item_double_default(dap_config_t * a_config, const char * a_section_path, const char * a_item_name, double a_default)
-{
-    const char * l_str_ret = dap_config_get_item_str(a_config,a_section_path,a_item_name);
-    return l_str_ret?atof(l_str_ret):a_default;
-}
-

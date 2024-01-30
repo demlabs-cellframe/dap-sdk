@@ -162,9 +162,10 @@ dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_strea
  */
 void dap_cluster_member_delete(dap_cluster_member_t *a_member)
 {
-    pthread_rwlock_wrlock(&a_member->cluster->members_lock);
+    pthread_rwlock_t *l_lock = &a_member->cluster->members_lock;
+    pthread_rwlock_wrlock(l_lock);
     s_cluster_member_delete(a_member);
-    pthread_rwlock_unlock(&a_member->cluster->members_lock);
+    pthread_rwlock_unlock(l_lock);
 }
 
 static void s_cluster_member_delete(dap_cluster_member_t *a_member)

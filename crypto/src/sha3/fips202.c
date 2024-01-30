@@ -338,8 +338,6 @@ void KeccakF1600_StatePermute(uint64_t * state)
 }
 
 #include <string.h>
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-
 
 void keccak_absorb(uint64_t *s, unsigned int r, const unsigned char *m, unsigned long long int mlen, unsigned char p)
 {

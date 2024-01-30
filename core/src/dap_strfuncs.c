@@ -11,6 +11,7 @@
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
+#include "dap_list.h"
 
 #define LOG_TAG "dap_strfunc"
 
@@ -404,6 +405,32 @@ char* dap_stpcpy(char *a_dest, const char *a_src)
 }
 
 /**
+ * dap_strncpy:
+ * @a_dst: destination buffer.
+ * @a_src: source string.
+ * @a_limit: destination buffer max size
+ *
+ * Copies a null-terminated string into the dest buffer, include the
+ * trailing null, limited to specified size, and return a pointer
+ * to the trailing null byte. Although limit reached before source string end
+ * the trailing NULL is inserted to the destination string
+ *
+ * Returns: a pointer to trailing null byte.
+ **/
+char *dap_strncpy(char *a_dst, const char *a_src, size_t a_limit)
+{
+    dap_return_val_if_fail(a_dst && a_src, NULL);
+    do {
+        *a_dst++ = *a_src;
+        a_limit--;
+    } while (*a_src++ != '\0' && a_limit);
+    --a_dst;
+    if (*a_dst != '\0')
+        *a_dst = '\0';
+    return a_dst;
+}
+
+/**
  * dap_strstr_len:
  * @a_haystack: a string
  * @a_haystack_len: the maximum length of @a_haystack. Note that -1 is
@@ -578,43 +605,6 @@ char* dap_strjoin(const char *a_separator, ...)
     return string;
 }
 
-typedef struct _dap_slist dap_slist;
-
-struct _dap_slist
-{
-    void* data;
-    dap_slist *next;
-};
-
-static dap_slist* dap_slist_prepend(dap_slist *a_list, void* a_data)
-{
-    dap_slist *l_new_list;
-
-    l_new_list = DAP_NEW_Z(dap_slist);
-    if (!l_new_list) {
-        return NULL;
-    }
-    l_new_list->data = a_data;
-    l_new_list->next = a_list;
-
-    return l_new_list;
-}
-
-static void dap_slist_free(dap_slist *a_list)
-{
-    if(a_list)
-    {
-        dap_slist *l_cur_node;
-        dap_slist *l_last_node = a_list;
-        while(l_last_node)
-        {
-            l_cur_node = l_last_node;
-            l_last_node = l_last_node->next;
-            DAP_DELETE(l_cur_node);
-        }
-    }
-}
-
 /**
  * dap_strsplit:
  * @a_string: a string to split
@@ -644,7 +634,7 @@ static void dap_slist_free(dap_slist *a_list)
  */
 char** dap_strsplit(const char *a_string, const char *a_delimiter, int a_max_tokens)
 {
-    dap_slist *l_string_list = NULL, *l_slist;
+    dap_list_t *l_string_list = NULL, *l_slist;
     char **l_str_array, *l_s;
     uint32_t l_n = 1;
 
@@ -665,17 +655,17 @@ char** dap_strsplit(const char *a_string, const char *a_delimiter, int a_max_tok
             char *new_string;
 
             len = (uint32_t) (l_s - a_string);
-            new_string = DAP_NEW_SIZE(char, len + 1);
+            new_string = DAP_NEW_Z_SIZE(char, len + 1);
             strncpy(new_string, a_string, len);
             new_string[len] = 0;
-            l_string_list = dap_slist_prepend(l_string_list, new_string);
+            l_string_list = dap_list_prepend(l_string_list, new_string);
             l_n++;
             a_string = l_s + delimiter_len;
             l_s = strstr(a_string, a_delimiter);
         }
         while(--a_max_tokens && l_s);
     }
-    l_string_list = dap_slist_prepend(l_string_list, dap_strdup(a_string));
+    l_string_list = dap_list_prepend(l_string_list, dap_strdup(a_string));
 
     l_str_array = DAP_NEW_SIZE(char*, (l_n + 1) * sizeof(char*));
 
@@ -683,7 +673,7 @@ char** dap_strsplit(const char *a_string, const char *a_delimiter, int a_max_tok
     for(l_slist = l_string_list; l_slist; l_slist = l_slist->next)
         l_str_array[l_n--] = l_slist->data;
 
-    dap_slist_free(l_string_list);
+    dap_list_free(l_string_list);
 
     return l_str_array;
 }
@@ -715,6 +705,35 @@ size_t dap_str_symbol_count(const char *a_str, char a_sym)
         if (*p++ == a_sym)
             l_count++;
     return l_count;
+}
+
+char **dap_str_appv(char **a_dst, char **a_src, size_t *a_count) {
+    size_t  l_count_dst = dap_str_countv(a_dst),
+            l_count     = a_count && *a_count ? *a_count : (size_t)-1,
+            l_count_src = dap_min(dap_str_countv(a_src), l_count);
+    if (!l_count_src) {
+        if (a_count)
+            *a_count = l_count_dst;
+        return a_dst;
+    }
+    l_count = l_count_dst + l_count_src + 1;
+    char **l_res = DAP_REALLOC_COUNT(a_dst, l_count);
+    char **l_src = a_src;
+    while (l_src && l_count_src--) {
+        if (**l_src)
+            l_res[l_count_dst++] = *l_src;
+        else {
+            DAP_DELETE(*l_src);
+            *l_src = NULL;
+        }
+        l_src++;
+    }
+    l_res[l_count_dst] = NULL;
+    if (l_count > l_count_dst + 1)
+        l_res = DAP_REALLOC_COUNT(l_res, l_count_dst + 1);
+    if (a_count)
+        *a_count = l_count_dst;
+    return l_res;
 }
 
 /**
@@ -953,15 +972,6 @@ char* dap_strreverse(char *a_string)
 }
 
 #ifdef _WIN32
-char *strptime(const char *buff, const char *fmt, struct tm *tm)
-{
-    UNUSED(fmt);
-    uint32_t len = strlen(buff);
-    sscanf(buff, "%u.%u.%u_%u.%u.%u", &tm->tm_year, &tm->tm_mon, &tm->tm_mday, &tm->tm_hour, &tm->tm_min, &tm->tm_sec);
-    tm->tm_year += 2000;
-    return (char *)buff + len;
-}
-
 /**
  * @brief _strndup
  * 
@@ -969,7 +979,6 @@ char *strptime(const char *buff, const char *fmt, struct tm *tm)
  * @param len 
  * @return char* 
  */
-
 char *_strndup(const char *str, unsigned long len) {
     char *buf = (char*)memchr(str, '\0', len);
     if (buf)
