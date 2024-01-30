@@ -803,6 +803,7 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
 // out work
     l_ret->last_used_timestamp = l_timestamp;
     l_ret->_inheritor_size = l_ser_inheritor_size;
+    DAP_DEL_MULTY(l_ser_pkey, l_ser_skey);
     return l_ret;
 }
 
