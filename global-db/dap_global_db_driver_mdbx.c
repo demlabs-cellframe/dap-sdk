@@ -86,7 +86,7 @@ static char s_db_path[MAX_PATH];                                            /* A
 /* Forward declarations of action routines */
 static int              s_db_mdbx_deinit();
 static int              s_db_mdbx_flush(void);
-static int              s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj);
+static int              s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj, size_t a_count);
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group);
 static bool s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out);
@@ -940,7 +940,7 @@ dap_db_ctx_t *l_db_ctx, *l_db_ctx2;
  *      0   - SUCCESS
  *      0>  - <errno>
  */
-static  int s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj)
+static  int s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj, size_t a_count)
 {
 int     l_rc = 0, l_rc2;
 size_t l_summary_len;

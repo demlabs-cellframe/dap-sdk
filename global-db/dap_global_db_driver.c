@@ -154,9 +154,10 @@ int dap_db_driver_flush(void)
  * @brief Copies objects from a_store_obj.
  * @param a_store_obj a pointer to the source objects
  * @param a_store_count a number of objects
+ * @param a_move "move" outstanding data ownership to new object
  * @return A pointer to the copied objects.
  */
-dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count)
+dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count, bool a_move)
 {
 dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
@@ -169,15 +170,21 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
     l_store_obj_dst = l_store_obj;
     l_store_obj_src = a_store_obj;
 
-    for( int i =  a_store_count; i--; l_store_obj_dst++, l_store_obj_src++) {
+    for( int i = a_store_count; i--; l_store_obj_dst++, l_store_obj_src++ ) {
         *l_store_obj_dst = *l_store_obj_src;
-        l_store_obj_dst->group = dap_strdup(l_store_obj_src->group);
-        l_store_obj_dst->key = dap_strdup(l_store_obj_src->key);
-        if (l_store_obj_src->value) {
-            if (!l_store_obj->value_len)
-                log_it(L_WARNING, "Inconsistent global DB object copy requested");
-            else
-                l_store_obj_dst->value = DAP_DUP_SIZE(l_store_obj_src->value, l_store_obj_src->value_len);
+        if (a_move) {
+            l_store_obj_src->group = NULL; l_store_obj_src->key = NULL; l_store_obj_src->value = NULL;
+        } else {
+            l_store_obj_dst->group = dap_strdup(l_store_obj_src->group);
+            l_store_obj_dst->key = dap_strdup(l_store_obj_src->key);
+            if (l_store_obj_src->value) {
+                if (!l_store_obj_src->value_len) {
+                    log_it(L_WARNING, "Inconsistent global DB object \"%s : %s\" copy requested",
+                           l_store_obj_dst->group, l_store_obj_dst->key);
+                    l_store_obj_dst->value = NULL; l_store_obj_dst->value_len = 0;
+                } else
+                    l_store_obj_dst->value = DAP_DUP_SIZE(l_store_obj_src->value, l_store_obj_src->value_len);
+            }
         }
     }
 
@@ -219,7 +226,7 @@ dap_store_obj_t *l_store_obj_cur;
     if(!a_store_obj || !a_store_count)
         return -1;
 
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "[%p] Process DB Request ...", a_store_obj);
+    //debug_if(g_dap_global_db_debug_more, L_DEBUG, "[%p] Process DB Request ...", a_store_obj);
 
     l_store_obj_cur = a_store_obj;                                          /* We have to  use a power of the address's incremental arithmetic */
     l_ret = 0;                                                              /* Preset return code to OK */
@@ -228,15 +235,19 @@ dap_store_obj_t *l_store_obj_cur;
         s_drv_callback.transaction_start();
 
     if(s_drv_callback.apply_store_obj) {
-        for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
+        for(int i = a_store_count; i--; l_store_obj_cur++) {
             if ((l_store_obj_cur->type == DAP_DB$K_OPTYPE_ADD)
                     //&& strncmp(l_store_obj_cur->group + strlen(l_store_obj_cur->group) - 4, ".del", 4)
                     && !dap_global_db_isalnum_group_key(l_store_obj_cur)) {
                 log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i + 1, a_store_count);
-                l_ret = -9;
-                break;
+                if (a_store_count > 1) {
+                    continue;
+                } else {
+                    l_ret = -9;
+                    break;
+                }
             }
-            if ( 1 == (l_ret = s_drv_callback.apply_store_obj(l_store_obj_cur)) )
+            if ( 1 == (l_ret = s_drv_callback.apply_store_obj(l_store_obj_cur, 1)) )
                 log_it(L_INFO, "[%p] Item is missing (may be already deleted) %s/%s", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key);
             else if (l_ret < 0)
                 log_it(L_ERROR, "[%p] Can't write item %s/%s (code %d)", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key, l_ret);
@@ -246,8 +257,10 @@ dap_store_obj_t *l_store_obj_cur;
     if(a_store_count > 1 && s_drv_callback.transaction_end)
         s_drv_callback.transaction_end();
 
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "[%p] Finished DB Request (code %d)", a_store_obj, l_ret);
-    return l_ret;
+    debug_if(l_ret && g_dap_global_db_debug_more, L_DEBUG,
+             "Finished DB Request \"%s : %s\" '%c' (code %d)",
+             a_store_obj->group, a_store_obj->key, a_store_obj->type, l_ret);
+    return a_store_count > 1 ? 0 : l_ret;
 }
 
 /**

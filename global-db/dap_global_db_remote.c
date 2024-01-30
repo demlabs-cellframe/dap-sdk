@@ -191,6 +191,18 @@ static int s_db_add_sync_group(dap_list_t **a_grp_list, dap_sync_group_item_t *a
     return 0;
 }
 
+struct dap_store_obj_t_multi {
+    dap_store_obj_t *objs;
+    size_t objs_count;
+};
+
+static void s_log_list_delete_filtered(UNUSED_ARG dap_global_db_context_t *a_context, void *a_arg) {
+    struct dap_store_obj_t_multi *l_store_objs = (struct dap_store_obj_t_multi*)a_arg;
+    dap_global_db_driver_delete(l_store_objs->objs, l_store_objs->objs_count);
+    dap_store_obj_free(l_store_objs->objs, l_store_objs->objs_count);
+    DAP_DELETE(a_arg);
+}
+
 static void *s_list_thread_proc2(void *arg) {
     dap_db_log_list_t *l_dap_db_log_list = (dap_db_log_list_t*)arg;
     uint32_t l_time_store_lim_hours = l_dap_db_log_list->db_context->instance->store_time_limit;
@@ -202,30 +214,28 @@ static void *s_list_thread_proc2(void *arg) {
         char l_obj_type = dap_fnmatch("*.del", l_group->name, 0) ? DAP_DB$K_OPTYPE_ADD : DAP_DB$K_OPTYPE_DEL;
         dap_nanotime_t  l_time_allowed = l_now + dap_nanotime_from_sec(24 * 3600),
                         l_two_weeks_ago = l_now - dap_nanotime_from_sec(7 * 24 * 3600);
-        size_t l_item_count = 0, l_objs_total_size = 0;
+        size_t l_item_count = 0;
+        int l_placed_count = 0, l_deleted_count = 0, l_unprocessed_count = 0;
         dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group->name, 0, &l_item_count);
         if (!l_objs)
             continue;
         if (l_item_count != l_group->count) {
-            log_it(L_MSG, "[!] Record count mismatch: actually extracted %zu != %zu previously count", l_item_count, l_group->count);
+            log_it(L_WARNING, "[!] Record count mismatch: actually extracted %zu != %zu previously count", l_item_count, l_group->count);
             l_group->count = l_item_count;
         }
-        debug_if(g_dap_global_db_debug_more, L_MSG, "group %s: put %zu records into log_list", l_group->name, l_item_count);
-        for (dap_store_obj_t *l_obj_cur = l_objs; l_group->count; --l_group->count, ++l_obj_cur) {
+        debug_if(g_dap_global_db_debug_more, L_MSG, "Group %s: place %zu records into log_list", l_group->name, l_item_count);
+        for (dap_store_obj_t *l_obj_cur = l_objs, *l_obj_last = l_objs + l_item_count - 1; l_obj_cur <= l_obj_last; ++l_obj_cur) {
             if (!l_obj_cur)
                 continue;
-            if (l_obj_cur->timestamp >> 32 == 0
-                    || l_obj_cur->timestamp > l_time_allowed
-                    || !l_obj_cur->group)
-            {
-                dap_global_db_driver_delete(l_obj_cur, 1);
+            if (!(l_obj_cur->timestamp >> 32) || l_obj_cur->timestamp > l_time_allowed || !l_obj_cur->group) {
+                //dap_global_db_driver_delete(l_obj_cur, 1);
                 continue;       // the object is broken or too old
             }
             l_obj_cur->type = l_obj_type;
             switch (l_obj_type) {
             case DAP_DB$K_OPTYPE_DEL:
                 if (l_limit_time && l_obj_cur->timestamp < l_limit_time) {
-                    dap_global_db_driver_delete(l_obj_cur, 1);
+                    //dap_global_db_driver_delete(l_obj_cur, 1);
                     continue;
                 }
                 DAP_DELETE(l_obj_cur->group);
@@ -238,6 +248,13 @@ static void *s_list_thread_proc2(void *arg) {
 
                 if (l_obj_cur->timestamp < l_two_weeks_ago && !(l_obj_cur->flags & RECORD_PINNED) && !group_HALed) {
                     dap_global_db_del(l_obj_cur->group, l_obj_cur->key, NULL, NULL);
+                    --l_group->count;
+                    ++l_deleted_count;
+                    if (l_obj_cur < l_obj_last) {
+                        *l_obj_cur-- = *l_obj_last;
+                        l_obj_last->group = NULL; l_obj_last->key = NULL; l_obj_last->value = NULL;
+                    }
+                    --l_obj_last;
                     continue;
                 }
                 break;
@@ -250,6 +267,16 @@ static void *s_list_thread_proc2(void *arg) {
                 pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
             if (!l_dap_db_log_list->is_process) {
                 pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
+                while (l_obj_cur <= l_obj_last) {
+                    DAP_DEL_Z(l_obj_cur->group);
+                    DAP_DEL_Z(l_obj_cur->key);
+                    DAP_DEL_Z(l_obj_cur->value);
+                    ++l_obj_cur;
+                    ++l_unprocessed_count;
+                }
+                debug_if(g_dap_global_db_debug_more, L_MSG, "Group \"%s\" not processed completely, %d / %zu records skipped",
+                         l_group->name, l_unprocessed_count, l_item_count);
+                l_group->count -= l_unprocessed_count;
                 l_group_elem = dap_list_last(l_dap_db_log_list->groups);
                 break;
             }
@@ -266,21 +293,42 @@ static void *s_list_thread_proc2(void *arg) {
             dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(l_obj_cur);
             DAP_DEL_Z(l_obj_cur->group);
             DAP_DEL_Z(l_obj_cur->key);
-            DAP_DEL_Z(l_obj_cur->value); /* Cleanup to free some memory... */
+            DAP_DEL_Z(l_obj_cur->value);
             dap_global_db_pkt_change_id(l_pkt, l_cur_id);
             dap_hash_fast(l_pkt->data, l_pkt->data_size, &l_list_obj->hash);
             l_list_obj->pkt = l_pkt;
             l_dap_db_log_list->items_list = dap_list_append(l_dap_db_log_list->items_list, l_list_obj);
-            l_dap_db_log_list->size += dap_db_log_list_obj_get_size(l_list_obj);
+            l_dap_db_log_list->size += dap_db_log_list_obj_get_size(l_list_obj);                
             pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
+            ++l_placed_count;
+            --l_group->count;
+            if (l_obj_cur < l_obj_last) {
+                *l_obj_cur-- = *l_obj_last;
+                l_obj_last->group = NULL; l_obj_last->key = NULL; l_obj_last->value = NULL;
+            }
+            --l_obj_last;
         }
-        debug_if(g_dap_global_db_debug_more, L_MSG, "Placed all records [%s] into log list, left %zu records", l_group->name, l_group->count);
-        dap_store_obj_free(l_objs, l_item_count);
+
+        debug_if(g_dap_global_db_debug_more, L_MSG, "Placed %d / %zu records of group \"%s\" into log list, %zu deleted, %d skipped",
+                 l_placed_count, l_item_count, l_group->name, l_group->count + l_deleted_count, l_unprocessed_count);
+
+        if (l_group->count) {
+            struct dap_store_obj_t_multi *l_arg = DAP_NEW_Z(struct dap_store_obj_t_multi);
+            *l_arg = (struct dap_store_obj_t_multi){
+                    .objs = l_objs,
+                    .objs_count = l_group->count
+            };
+            dap_global_db_context_exec(s_log_list_delete_filtered, l_arg);
+            l_group->count = 0;
+        } else {
+            DAP_DELETE(l_objs);
+        }
     }
     l_dap_db_log_list->is_process = false;
     return NULL;
 }
 
+#if 0
 /**
  * @brief A function for a thread for reading a log list
  *
@@ -377,6 +425,8 @@ static void *s_list_thread_proc(void *arg)
     return NULL;
 }
 
+#endif
+
 /**
  * @brief Starts a thread that readding a log list
  * @note instead dap_db_log_get_list()
@@ -465,6 +515,7 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
     return l_dap_db_log_list;
 }
 
+#if 0
 /**
  * @brief Gets an object from a list.
  *
@@ -493,6 +544,7 @@ dap_db_log_list_obj_t *dap_db_log_list_get(dap_db_log_list_t *a_db_log_list)
     pthread_mutex_unlock(&a_db_log_list->list_mutex);
     return l_ret ? l_ret : DAP_INT_TO_POINTER(l_is_process);
 }
+#endif
 
 dap_db_log_list_obj_t **dap_db_log_list_get_multiple(dap_db_log_list_t *a_db_log_list, size_t a_size_limit, size_t *a_count) {
     if (!a_db_log_list || !a_count)
@@ -528,7 +580,7 @@ dap_db_log_list_obj_t **dap_db_log_list_get_multiple(dap_db_log_list_t *a_db_log
             l_ret = DAP_REALLOC_COUNT(l_ret, *a_count);
         }
         log_it(L_MSG, "[!] Extracted %zu records from log_list (size %zu), left %zu", *a_count, l_out_size, l_count);
-        if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE && a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE && a_db_log_list->is_process)
+        if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE && a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE)
             pthread_cond_signal(&a_db_log_list->cond);
     }
     if (a_db_log_list->is_process) {
@@ -823,106 +875,122 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
     return l_store_obj_arr;
 }
 
-int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_obj,
+int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_obj, size_t a_count,
                                           dap_global_db_callback_results_raw_t a_callback, void *a_arg)
 {
     dap_nanotime_t l_timestamp_cur = 0;
-    bool l_match_mask = false, l_is_pinned_cur = false;
-    uint64_t l_ttl = 0;
-    for (dap_list_t *it = a_global_db_context->instance->notify_groups; it; it = it->next) {
-        dap_global_db_notify_item_t *l_item = it->data;
-        if (!dap_fnmatch(l_item->group_mask, a_obj->group, 0)) {
-            debug_if(g_dap_global_db_debug_more, L_DEBUG, "Group %s match mask %s.", a_obj->group, l_item->group_mask);
-            l_match_mask = true;
-            l_ttl = l_item->ttl;
-            break;
-        }
-    }
-    if (!l_match_mask) {
-        log_it(L_WARNING, "An entry in the group %s was rejected because the group name did not match any of the masks.", a_obj->group);
-        DAP_DEL_Z(a_arg);
-        return -4;
-    }
-
-    if (g_dap_global_db_debug_more) {
-        char l_ts_str[64] = { '\0' };
-        dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
-        log_it(L_DEBUG, "Unpacked log history: type='%c' (0x%02hhX) group=\"%s\" key=\"%s\""
-                " timestamp=\"%s\" value_len=%" DAP_UINT64_FORMAT_U,
-                (char)a_obj->type, (char)a_obj->type, a_obj->group,
-                a_obj->key, l_ts_str, a_obj->value_len);
-    }
-
-    bool l_broken = !dap_global_db_isalnum_group_key(a_obj);
-
-    dap_store_obj_t *l_read_obj = dap_global_db_driver_read(a_obj->group, a_obj->key, NULL);
-    if (l_read_obj) {
-        l_timestamp_cur = l_read_obj->timestamp;
-        if (l_read_obj->flags & RECORD_PINNED)
-            l_is_pinned_cur = true;
-        else {
-            dap_store_obj_free_one(l_read_obj);
-            l_read_obj = NULL;
-        }
-    }
-
-    // Deleted time
-    dap_nanotime_t l_timestamp_del = dap_global_db_get_del_ts_unsafe(a_global_db_context, a_obj->group, a_obj->key);
-    // Limit time
-    uint32_t l_time_store_lim_hours = l_ttl ? l_ttl : a_global_db_context->instance->store_time_limit;
-    uint64_t l_limit_time = l_time_store_lim_hours ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
-    //check whether to apply the received data into the database
-    bool l_apply = false;
-    // check the applied object newer that we have stored or erased
-    if (a_obj->timestamp > (uint64_t)l_timestamp_del && a_obj->timestamp > (uint64_t)l_timestamp_cur)
-        l_apply = true;
-
-    if (((l_ttl || a_obj->type == DAP_DB$K_OPTYPE_DEL) && a_obj->timestamp <= l_limit_time) || l_broken)
-        l_apply = false;
-
-    if (!l_apply) {
-        if (g_dap_global_db_debug_more) {
-            if (a_obj->timestamp <= (uint64_t)l_timestamp_cur)
-                log_it(L_WARNING, "New data not applied, because newly object exists");
-            if (a_obj->timestamp <= (uint64_t)l_timestamp_del)
-                log_it(L_WARNING, "New data not applied, because newly object is deleted");
-            if (a_obj->timestamp <= l_limit_time)
-                log_it(L_WARNING, "New data not applied, because object is too old");
-            if (l_broken) {
-                log_it(L_WARNING, "New data not applied, because object is corrupted");
+    dap_store_obj_t *l_obj, *l_last_obj = a_obj + a_count - 1;
+    size_t l_count = a_count;
+    for (l_obj = a_obj; l_obj <= l_last_obj; ++l_obj) {
+        bool l_match_mask = false, l_is_pinned_cur = false;
+        uint64_t l_ttl = 0;
+        for (dap_list_t *it = a_global_db_context->instance->notify_groups; it; it = it->next) {
+            dap_global_db_notify_item_t *l_item = it->data;
+            if (!dap_fnmatch(l_item->group_mask, l_obj->group, 0)) {
+                debug_if(g_dap_global_db_debug_more, L_DEBUG, "Group %s match mask %s.", l_obj->group, l_item->group_mask);
+                l_match_mask = true;
+                l_ttl = l_item->ttl;
+                break;
             }
         }
-        dap_store_obj_free(l_read_obj, (int)l_is_pinned_cur);
-        DAP_DEL_Z(a_arg);
-        return -2;
-    }
-    // Do not overwrite pinned records
-    if (l_is_pinned_cur) {
-        int l_ret = 0;
-        if (a_obj->timestamp - l_read_obj->timestamp == 1 && a_obj->type == DAP_DB$K_OPTYPE_ADD) {
-            log_it(L_MSG, "[!] Repinning occured, unpin %s : %s", a_obj->group, a_obj->key);
-            l_ret = dap_global_db_set_raw(a_obj, 1, a_callback, a_arg);
-        } else {
-            debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
-                                    a_obj->type != DAP_DB$K_OPTYPE_DEL ? "remove" : "rewrite", a_obj->group, a_obj->key);
-            l_read_obj->timestamp = a_obj->timestamp + 1;
-            l_read_obj->type = DAP_DB$K_OPTYPE_ADD;
-            dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
-            l_ret = -1;
+        if (!l_match_mask) {
+            log_it(L_WARNING, "An entry in the group %s was rejected because the group name did not match any of the masks.", l_obj->group);
+            --l_count;
+            if (l_obj != l_last_obj) {
+                *l_obj-- = *l_last_obj;
+                l_last_obj->group = NULL; l_last_obj->key = NULL; l_last_obj->value = NULL;
+                --l_last_obj;
+                continue;
+            } else {
+                --l_last_obj;
+                break;
+            }
         }
-        dap_store_obj_free_one(l_read_obj);
-        DAP_DEL_Z(a_arg);
-        return l_ret;
-    } else if (dap_global_db_set_raw(a_obj, 1, a_callback, a_arg) != 0) {
-        DAP_DEL_Z(a_arg);
-        log_it(L_ERROR, "Can't send save GlobalDB request");
-        return -3;
+
+        if (g_dap_global_db_debug_more) {
+            char l_ts_str[64] = { '\0' };
+            dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(l_obj->timestamp));
+            log_it(L_DEBUG, "Unpacked log history: type='%c' (0x%02hhX) group=\"%s\" key=\"%s\""
+                    " timestamp=\"%s\" value_len=%" DAP_UINT64_FORMAT_U,
+                    (char)l_obj->type, (char)l_obj->type, l_obj->group,
+                    l_obj->key, l_ts_str, l_obj->value_len);
+        }
+
+        bool l_broken = !dap_global_db_isalnum_group_key(l_obj);
+        dap_store_obj_t *l_read_obj = dap_global_db_driver_read(l_obj->group, l_obj->key, NULL);
+        if (l_read_obj) {
+            l_timestamp_cur = l_read_obj->timestamp;
+            if (l_read_obj->flags & RECORD_PINNED)
+                l_is_pinned_cur = true;
+            else {
+                dap_store_obj_free_one(l_read_obj);
+                l_read_obj = NULL;
+            }
+        }
+
+        // Deleted time
+        dap_nanotime_t l_timestamp_del = dap_global_db_get_del_ts_unsafe(a_global_db_context, l_obj->group, l_obj->key);
+        // Limit time
+        uint32_t l_time_store_lim_hours = l_ttl ? l_ttl : a_global_db_context->instance->store_time_limit;
+        uint64_t l_limit_time = l_time_store_lim_hours ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
+        //check whether to apply the received data into the database
+        bool l_apply = false;
+        // check the applied object newer that we have stored or erased
+        if (l_obj->timestamp > (uint64_t)l_timestamp_del && l_obj->timestamp > (uint64_t)l_timestamp_cur)
+            l_apply = true;
+
+        if (((l_ttl || l_obj->type == DAP_DB$K_OPTYPE_DEL) && l_obj->timestamp <= l_limit_time) || l_broken)
+            l_apply = false;
+
+        if (!l_apply) {
+            if (g_dap_global_db_debug_more) {
+                if (l_obj->timestamp <= (uint64_t)l_timestamp_cur)
+                    log_it(L_WARNING, "New data not applied, because newly object exists");
+                if (l_obj->timestamp <= (uint64_t)l_timestamp_del)
+                    log_it(L_WARNING, "New data not applied, because newly object is deleted");
+                if (l_obj->timestamp <= l_limit_time)
+                    log_it(L_WARNING, "New data not applied, because object is too old");
+                if (l_broken) {
+                    log_it(L_WARNING, "New data not applied, because object is corrupted");
+                }
+            }
+            dap_store_obj_free(l_read_obj, (int)l_is_pinned_cur);
+            --l_count;
+            if (l_obj != l_last_obj) {
+                *l_obj-- = *l_last_obj;
+                l_last_obj->group = NULL; l_last_obj->key = NULL; l_last_obj->value = NULL;
+                --l_last_obj;
+                continue;
+            } else {
+                --l_last_obj;
+                break;
+            }
+        }
+        // Do not overwrite pinned records
+        if (l_is_pinned_cur) {
+            //int l_ret = 0;
+            if (l_obj->timestamp - l_read_obj->timestamp == 1 && l_obj->type == DAP_DB$K_OPTYPE_ADD) {
+                log_it(L_MSG, "[!] Repinning occured, unpin %s : %s", l_obj->group, l_obj->key);
+                //l_ret = dap_global_db_set_raw(l_obj, 1, a_callback, a_arg);
+            } else {
+                debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
+                                        l_obj->type != DAP_DB$K_OPTYPE_DEL ? "remove" : "rewrite", l_obj->group, l_obj->key);
+                l_read_obj->timestamp = l_obj->timestamp + 1;
+                l_read_obj->type = DAP_DB$K_OPTYPE_ADD;
+                *l_obj = *l_read_obj;
+                l_read_obj->group = NULL; l_read_obj->key = NULL; l_read_obj->value = NULL;
+                //dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
+                //l_ret = -1;
+            }
+            dap_store_obj_free_one(l_read_obj);
+        }
     }
-    return 0;
+    return l_count ? dap_global_db_set_raw(a_obj, l_count, a_callback, a_arg) : -1;
 }
 
 struct gdb_apply_args {
     dap_store_obj_t *obj;
+    size_t objs_count;
     dap_global_db_callback_results_raw_t callback;
     void *cb_arg;
 };
@@ -930,20 +998,22 @@ struct gdb_apply_args {
 static void s_db_apply_obj(dap_global_db_context_t *a_global_db_context, void *a_arg)
 {
     struct gdb_apply_args *l_args = a_arg;
-    dap_global_db_remote_apply_obj_unsafe(a_global_db_context, l_args->obj, l_args->callback, l_args->cb_arg);
-    dap_store_obj_free_one(l_args->obj);
+    dap_global_db_remote_apply_obj_unsafe(a_global_db_context, l_args->obj, l_args->objs_count, l_args->callback, l_args->cb_arg);
+    dap_store_obj_free(l_args->obj, l_args->objs_count);
     DAP_DELETE(l_args);
 }
 
-int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
+int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, size_t a_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
 {
     struct gdb_apply_args *l_args =  DAP_NEW_Z(struct gdb_apply_args);
     if (!l_args) {
         log_it(L_CRITICAL, "Memory allocation error");
         return -1;
     }
-    l_args->obj = dap_store_obj_copy(a_obj, 1);
+    l_args->obj = dap_store_obj_copy(a_obj, a_count, false);
+    l_args->objs_count = a_count;
     l_args->callback = a_callback;
     l_args->cb_arg = a_arg;
+    log_it(L_MSG, "[!] Apply %zu objs", a_count);
     return dap_global_db_context_exec(s_db_apply_obj, l_args);
 }

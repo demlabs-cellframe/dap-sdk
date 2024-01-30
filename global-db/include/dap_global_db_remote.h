@@ -104,6 +104,6 @@ dap_db_log_list_obj_t *dap_db_log_list_get(dap_db_log_list_t *a_db_log_list);
 dap_db_log_list_obj_t **dap_db_log_list_get_multiple(dap_db_log_list_t *a_db_log_list, size_t a_size_limit, size_t *a_count);
 
 void dap_db_log_list_delete(dap_db_log_list_t *a_db_log_list);
-int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_obj,
+int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_obj, size_t a_count,
                                           dap_global_db_callback_results_raw_t a_callback, void *a_arg);
-int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, dap_global_db_callback_results_raw_t a_callback, void *a_arg);
+int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, size_t a_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg);
