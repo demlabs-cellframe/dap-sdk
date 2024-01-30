@@ -727,22 +727,22 @@ uint8_t *dap_enc_key_serialize(dap_enc_key_t *a_key, size_t *a_buflen)
 // sanity check
     dap_return_val_if_pass(!a_key, NULL);
 // func work
-    uint64_t l_ser_skey_size = 0, l_ser_pkey_size = 0;
+    uint64_t l_ser_skey_size = 0, l_ser_pkey_size = 0, l_ser_inheritor_size = a_key->_inheritor_size;
     uint64_t l_timestamp = a_key->last_used_timestamp;
     int32_t l_type = a_key->type;
-    uint8_t *l_ser_skey = dap_enc_key_serialize_priv_key(a_key, &l_ser_skey_size);
-    uint8_t *l_ser_pkey = dap_enc_key_serialize_pub_key(a_key, &l_ser_pkey_size);
+    uint8_t *l_ser_skey = dap_enc_key_serialize_priv_key(a_key, (size_t *)&l_ser_skey_size);
+    uint8_t *l_ser_pkey = dap_enc_key_serialize_pub_key(a_key, (size_t *)&l_ser_pkey_size);
     uint64_t l_buflen = sizeof(uint64_t) * 5 + sizeof(int32_t) + l_ser_skey_size + l_ser_pkey_size + a_key->_inheritor_size;
     uint8_t *l_ret = dap_serialize_multy(NULL, l_buflen, 18,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_ser_skey_size, (uint64_t)sizeof(uint64_t),
         &l_ser_pkey_size, (uint64_t)sizeof(uint64_t),
-        &a_key->_inheritor_size, (uint64_t)sizeof(uint64_t),
+        &l_ser_inheritor_size, (uint64_t)sizeof(uint64_t),
         &l_timestamp, (uint64_t)sizeof(uint64_t),
         &l_type, (uint64_t)sizeof(int32_t),
         l_ser_skey, (uint64_t)l_ser_skey_size,
         l_ser_pkey, (uint64_t)l_ser_pkey_size,
-        a_key->_inheritor, (uint64_t)a_key->_inheritor_size
+        a_key->_inheritor, (uint64_t)l_ser_inheritor_size
     );
 // out work
     DAP_DEL_MULTY(l_ser_skey, l_ser_pkey);
