@@ -202,7 +202,8 @@ int dap_global_db_unpin_sync(const char * a_group, const char *a_key);
 int dap_global_db_del_sync(const char * a_group, const char *a_key);
 int dap_global_db_flush_sync();
 
-int dap_global_db_compare_by_ts(const void *a_obj1, const void *a_obj2);
+int dap_global_db_compare_by_ts(const void*, const void*);
+int dap_global_db_compare_by_group(const void*, const void*);
 
 // ==== Unsafe functions (for own context call only) ===
 dap_global_db_context_t * dap_global_db_context_current();

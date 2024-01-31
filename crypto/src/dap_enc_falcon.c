@@ -205,12 +205,10 @@ size_t dap_enc_sig_falcon_verify_sign(struct dap_enc_key* key, const void* msg, 
 void dap_enc_sig_falcon_key_delete(struct dap_enc_key *key) {
 
     if (key->priv_key_data) {
-        memset(key->priv_key_data, 0, key->priv_key_data_size);
-        DAP_DEL_Z(key->priv_key_data);
+        falcon_private_key_delete(key->priv_key_data);
     }
     if (key->pub_key_data) {
-        memset(key->pub_key_data, 0, key->pub_key_data_size);
-        DAP_DEL_Z(key->pub_key_data);
+        falcon_public_key_delete(key->pub_key_data);
     }
 }
 

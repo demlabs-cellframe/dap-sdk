@@ -86,7 +86,7 @@ static char s_db_path[MAX_PATH];                                            /* A
 /* Forward declarations of action routines */
 static int              s_db_mdbx_deinit();
 static int              s_db_mdbx_flush(void);
-static int              s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj);
+static int              s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj, size_t a_count);
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group);
 static bool s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out);
@@ -438,8 +438,8 @@ size_t     l_upper_limit_of_db_size = 16;
             l_slist = dap_list_append(l_slist, l_cp);
             }
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "--- End-Of-List  ---");
+        mdbx_cursor_close(l_cursor);
         }
-
     dap_assert ( MDBX_SUCCESS == mdbx_txn_commit (l_txn) );
 
 
@@ -449,6 +449,7 @@ size_t     l_upper_limit_of_db_size = 16;
         l_data_iov.iov_base = l_el->data;
         s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE);
         DL_DELETE(l_slist, l_el);
+        DAP_DELETE(l_el->data);
         DAP_DELETE(l_el);
     }
 
@@ -781,7 +782,7 @@ size_t  l_cnt = 0, l_count_out = 0;
              * Expand a memory for new <store object> structure
              */
             ++l_cnt;
-            if ( !(l_obj_arr = DAP_REALLOC(l_obj_arr, l_cnt * sizeof(dap_store_obj_t))) ) {
+            if ( !(l_obj_arr = DAP_REALLOC_COUNT(l_obj_arr, l_cnt)) ) {
                 log_it(L_ERROR, "Cannot expand area to keep %zu <store objects>", l_cnt);
                 l_rc = MDBX_PROBLEM;
                 break;
@@ -940,7 +941,7 @@ dap_db_ctx_t *l_db_ctx, *l_db_ctx2;
  *      0   - SUCCESS
  *      0>  - <errno>
  */
-static  int s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj)
+static  int s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj, size_t a_count)
 {
 int     l_rc = 0, l_rc2;
 size_t l_summary_len;

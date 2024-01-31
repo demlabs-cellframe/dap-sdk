@@ -626,7 +626,7 @@ static void s_obj_raw_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_
         pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
         return;
     }
-    l_args->get_raw.obj = dap_store_obj_copy(a_value, 1);
+    l_args->get_raw.obj = dap_store_obj_copy(a_value, 1, false);
     l_args->hdr.called = true;
     pthread_cond_signal(&l_args->hdr.cond);
     pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
@@ -999,6 +999,12 @@ int dap_global_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
               : 0; // should never occur...
 }
 
+int dap_global_db_compare_by_group(const void *a_obj1, const void *a_obj2) {
+    dap_store_obj_t *l_obj1 = (dap_store_obj_t *)a_obj1,
+                    *l_obj2 = (dap_store_obj_t *)a_obj2;
+    return strcmp(l_obj1->group, l_obj2->group);
+}
+
 dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
                                                   const char *a_group, size_t *a_objs_count)
 {
@@ -1293,7 +1299,7 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
         return;
     }
     // TODO make incremental copy
-    l_args->get_store_objs.objs = dap_store_obj_copy(a_values, a_values_count);
+    l_args->get_store_objs.objs = dap_store_obj_copy(a_values, a_values_count, false);
     l_args->get_objs.objs_count += a_values_count;
     if (a_values_count != a_values_total) {
         log_it(L_WARNING, "Got only %zu records from %zu", a_values_count, a_values_total);
@@ -1564,10 +1570,10 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
     l_msg->callback_arg = a_arg;
     l_msg->callback_results_raw = a_callback;
 
-    l_msg->values_raw = dap_store_obj_copy(a_store_objs, a_store_objs_count) ;
+    l_msg->values_raw = dap_store_obj_copy(a_store_objs, a_store_objs_count, false) ;
     l_msg->values_raw_total = a_store_objs_count;
 
-    int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
+    int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io, l_msg);
     if (l_ret != 0){
         log_it(L_ERROR, "Can't exec set_raw request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
