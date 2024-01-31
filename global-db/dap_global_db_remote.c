@@ -248,13 +248,14 @@ static void *s_list_thread_proc2(void *arg) {
 
                 if (l_obj_cur->timestamp < l_two_weeks_ago && !(l_obj_cur->flags & RECORD_PINNED) && !group_HALed) {
                     dap_global_db_del(l_obj_cur->group, l_obj_cur->key, NULL, NULL);
-                    --l_group->count;
-                    ++l_deleted_count;
+                    dap_store_obj_clear_one(l_obj_cur);
                     if (l_obj_cur < l_obj_last) {
                         *l_obj_cur-- = *l_obj_last;
-                        l_obj_last->group = NULL; l_obj_last->key = NULL; l_obj_last->value = NULL;
                     }
+                    l_obj_last->group = NULL; l_obj_last->key = NULL; l_obj_last->value = NULL;
                     --l_obj_last;
+                    --l_group->count;
+                    ++l_deleted_count;
                     continue;
                 }
                 break;
@@ -268,9 +269,7 @@ static void *s_list_thread_proc2(void *arg) {
             if (!l_dap_db_log_list->is_process) {
                 pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
                 while (l_obj_cur <= l_obj_last) {
-                    DAP_DEL_Z(l_obj_cur->group);
-                    DAP_DEL_Z(l_obj_cur->key);
-                    DAP_DEL_Z(l_obj_cur->value);
+                    dap_store_obj_clear_one(l_obj_cur);
                     ++l_obj_cur;
                     ++l_unprocessed_count;
                 }
@@ -300,13 +299,14 @@ static void *s_list_thread_proc2(void *arg) {
             l_dap_db_log_list->items_list = dap_list_append(l_dap_db_log_list->items_list, l_list_obj);
             l_dap_db_log_list->size += dap_db_log_list_obj_get_size(l_list_obj);                
             pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
-            ++l_placed_count;
-            --l_group->count;
+            dap_store_obj_clear_one(l_obj_cur);
             if (l_obj_cur < l_obj_last) {
                 *l_obj_cur-- = *l_obj_last;
-                l_obj_last->group = NULL; l_obj_last->key = NULL; l_obj_last->value = NULL;
             }
+            l_obj_last->group = NULL; l_obj_last->key = NULL; l_obj_last->value = NULL;
             --l_obj_last;
+            ++l_placed_count;
+            --l_group->count;
         }
 
         debug_if(g_dap_global_db_debug_more, L_MSG, "Placed %d / %zu records of group \"%s\" into log list, %zu deleted, %d skipped",
@@ -852,7 +852,9 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
             {log_it(L_ERROR, "Broken GDB element: can't read 'value_length' field"); break;}
         memcpy(&l_obj->value_len, pdata, sizeof(uint64_t)); pdata += sizeof(uint64_t);
 
-        if (l_obj->value_len && !(l_obj->value = DAP_DUP_SIZE(pdata, l_obj->value_len))) {
+        l_obj->value = DAP_NEW_Z_SIZE(byte_t, l_obj->value_len + 1);
+        memcpy(l_obj->value, pdata, l_obj->value_len);
+        if (l_obj->value_len && !l_obj->value) {
             log_it(L_CRITICAL, "Memory allocation error");
             DAP_DEL_Z(l_obj->key_byte);
             DAP_DEL_Z(l_obj->group);
@@ -895,16 +897,13 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
         }
         if (!l_match_mask) {
             log_it(L_WARNING, "An entry in the group %s was rejected because the group name did not match any of the masks.", l_obj->group);
-            --l_count;
-            if (l_obj != l_last_obj) {
+            if (l_obj < l_last_obj) {
                 *l_obj-- = *l_last_obj;
-                l_last_obj->group = NULL; l_last_obj->key = NULL; l_last_obj->value = NULL;
-                --l_last_obj;
-                continue;
-            } else {
-                --l_last_obj;
-                break;
             }
+            l_last_obj->group = NULL; l_last_obj->key = NULL; l_last_obj->value = NULL;
+            --l_last_obj;
+            --l_count;
+            continue;
         }
 
         if (g_dap_global_db_debug_more) {
@@ -955,16 +954,14 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                 }
             }
             dap_store_obj_free(l_read_obj, (int)l_is_pinned_cur);
-            --l_count;
-            if (l_obj != l_last_obj) {
+            dap_store_obj_clear_one(l_obj);
+            if (l_obj < l_last_obj) {
                 *l_obj-- = *l_last_obj;
-                l_last_obj->group = NULL; l_last_obj->key = NULL; l_last_obj->value = NULL;
-                --l_last_obj;
-                continue;
-            } else {
-                --l_last_obj;
-                break;
             }
+            l_last_obj->group = NULL; l_last_obj->key = NULL; l_last_obj->value = NULL;
+            --l_last_obj;
+            --l_count;
+            continue;
         }
         // Do not overwrite pinned records
         if (l_is_pinned_cur) {
@@ -977,6 +974,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                                         l_obj->type != DAP_DB$K_OPTYPE_DEL ? "remove" : "rewrite", l_obj->group, l_obj->key);
                 l_read_obj->timestamp = l_obj->timestamp + 1;
                 l_read_obj->type = DAP_DB$K_OPTYPE_ADD;
+                dap_store_obj_clear_one(l_obj);
                 *l_obj = *l_read_obj;
                 l_read_obj->group = NULL; l_read_obj->key = NULL; l_read_obj->value = NULL;
                 //dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
@@ -985,7 +983,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
             dap_store_obj_free_one(l_read_obj);
         }
     }
-    return l_count ? dap_global_db_set_raw(a_obj, l_count, a_callback, a_arg) : -1;
+    return l_count ? dap_global_db_set_raw(a_obj, l_count, a_callback, a_arg) : ({ DAP_DELETE(a_arg); -1;});
 }
 
 struct gdb_apply_args {

@@ -79,6 +79,9 @@ void    dap_db_driver_deinit(void);
 
 dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count, bool a_move);
 void    dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count);
+DAP_STATIC_INLINE void dap_store_obj_clear_one(dap_store_obj_t *a_store_obj) {
+    DAP_DELETE(a_store_obj->group); DAP_DELETE(a_store_obj->key); DAP_DELETE(a_store_obj->value);
+}
 DAP_STATIC_INLINE void dap_store_obj_free_one(dap_store_obj_t *a_store_obj) { return dap_store_obj_free(a_store_obj, 1); }
 int     dap_db_driver_flush(void);
 
