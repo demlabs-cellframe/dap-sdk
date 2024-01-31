@@ -50,6 +50,11 @@ typedef struct dap_global_db_pkt_pack {
     byte_t data[];
 } DAP_ALIGN_PACKED dap_global_db_pkt_pack_t;
 
+DAP_STATIC_INLINE size_t dap_global_db_pkt_pack_get_size(dap_global_db_pkt_pack_t *a_pkt_pack)
+{
+    return sizeof(*a_pkt_pack) + a_pkt_pack->data_size;
+}
+
 typedef struct dap_global_db_hash_pkt {
     uint32_t hashes_count;
     uint16_t group_name_len;

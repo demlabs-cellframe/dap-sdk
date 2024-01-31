@@ -93,7 +93,7 @@ static int              s_db_mdbx_deinit();
 static int              s_db_mdbx_flush(void);
 static int              s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj);
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group);
-static dap_store_obj_t  *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hash, size_t *a_count);
+static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
 static bool             s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static bool             s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out);
@@ -542,13 +542,11 @@ int s_fill_store_obj(const char *a_group, MDBX_val *a_key, MDBX_val *a_data, dap
         DAP_DELETE(a_obj->group);
         return log_it(L_ERROR, "Corrupted global DB record internal value"), -6;
     }
-    if (!l_record->key_len) {
+    if (!l_record->key_len || !*l_record->key_n_value_n_sign) {
         DAP_DELETE(a_obj->group);
         return log_it(L_ERROR, "Ivalid driver record with zero text key length"), -9;
     }
-    if ( (a_obj->key = DAP_NEW_SIZE(char, l_record->key_len)) )
-        memcpy((char *)a_obj->key, l_record->key_n_value_n_sign, l_record->key_len);
-    else {
+    if ( !(a_obj->key = DAP_DUP_SIZE(l_record->key_n_value_n_sign, l_record->key_len)) ) {
         DAP_DELETE(a_obj->group);
         return log_it(L_CRITICAL, "Cannot allocate a memory for store object key"), -5;
     }
@@ -591,7 +589,8 @@ int s_get_obj_by_text_key(MDBX_txn *a_txn, MDBX_dbi a_dbi, MDBX_val *a_key, MDBX
     size_t l_key_len = strlen(a_text_key) + 1;
     do {
         struct driver_record *l_record = a_data->iov_base;
-        if (l_key_len == l_record->key_len &&
+        if (a_data->iov_len > sizeof(struct driver_record) + l_key_len &&
+                l_key_len == l_record->key_len &&
                 !memcmp(l_record->key_n_value_n_sign, a_text_key, l_key_len)) {
             mdbx_cursor_close(l_cursor);
             return MDBX_SUCCESS;
@@ -721,9 +720,9 @@ static bool s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a
     return l_rc == MDBX_SUCCESS;
 }
 
-static dap_store_obj_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hash, size_t *a_count)
+static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count)
 {
-    dap_return_val_if_fail(a_group && (!a_count || *a_count != 0), NULL); /* Sanity check */
+    dap_return_val_if_fail(a_group && a_count, NULL); /* Sanity check */
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
     if (!l_db_ctx)
         return false;
@@ -732,26 +731,75 @@ static dap_store_obj_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     MDBX_val l_key, l_data;
-    if (!a_count || *a_count == 1) {
-        l_key.iov_base = a_hash;                                    /* Fill IOV for MDBX key */
-        l_key.iov_len =  sizeof(*a_hash);
-        dap_store_obj_t *l_obj = NULL;
-        if (MDBX_SUCCESS == (l_rc = mdbx_get(l_txn, l_db_ctx->dbi, &l_key, &l_data))) {
-            /* Found ! Make new <store_obj> */
-            if ( !(l_obj = DAP_NEW_Z(dap_store_obj_t)) ) {
-                log_it (L_ERROR, "Cannot allocate a memory for store object key, errno=%d", errno);
+    dap_global_db_pkt_pack_t *l_ret = NULL;
+    for (size_t i = 0; i < a_count; i++) {
+        l_key.iov_base = a_hashes + i;                                    /* Fill IOV for MDBX key */
+        l_key.iov_len =  sizeof(dap_global_db_driver_hash_t);
+        l_rc = mdbx_get(l_txn, l_db_ctx->dbi, &l_key, &l_data);
+        if (MDBX_SUCCESS == l_rc) {
+            struct driver_record *l_record = a_data->iov_base;
+            if (a_data->iov_len < sizeof(*l_record) || // Do not intersect bounds of read array, check it twice
+                    a_data->iov_len < sizeof(*l_record) + l_record->sign_len + l_record->value_len + l_record->key_len) {
+                log_it(L_ERROR, "Corrupted global DB record internal value");
                 l_rc = MDBX_PROBLEM;
-            } else if ( s_fill_store_obj(a_group, &l_key, &l_data, l_obj) ) {
-                l_rc = MDBX_PROBLEM;
-                DAP_DEL_Z(l_obj);
+                continue;
             }
-        } else if ( l_rc != MDBX_NOTFOUND )
-            log_it (L_ERROR, "mdbx_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
-    } else {
+            size_t l_data_len = l_record->key_len + l_record->value_len + l_record->sign_len + l_db_ctx->namelen;
+            size_t l_add_size = l_data_len + sizeof(dap_global_db_pkt_t);
+            l_ret = l_ret ? DAP_REALLOC(l_ret, l_ret->data_size + l_add_size) : DAP_NEW_Z(dap_global_db_pkt_pack_t);
+            if (!l_ret) {
+                log_it(L_CRITICAL, "Cannot allocate a memory for store object packet");
+                l_rc = MDBX_PROBLEM;
+                break;
+            }
+            dap_global_db_pkt_t *l_pkt = (dap_global_db_pkt_t *)(l_ret->data + l_ret->data_size);
 
+            /* Fill packet header */
+            if (a_key->iov_len != sizeof(dap_global_db_driver_hash_t)) {
+                log_it(L_ERROR, "Invalid length of global DB record key, expected %zu, got %zu",
+                                                            sizeof(dap_global_db_driver_hash_t), a_key->iov_len);
+                l_rc = MDBX_PROBLEM;
+                continue;
+            }
+            dap_global_db_driver_hash_t *l_driver_key = a_key->iov_base;
+            l_pkt->timestamp = be64toh(l_driver_key->bets);
+            l_pkt->crc = be64toh(l_driver_key->becrc);
+            if (!l_db_ctx->namelen) {
+                log_it(L_ERROR, "Zero length of global DB group name");
+                l_rc = MDBX_PROBLEM;
+                break;
+            }
+            l_pkt->group_len = l_db_ctx->namelen;
+            if (!l_record->key_len || !*l_record->key_n_value_n_sign) {
+                log_it(L_ERROR, "Ivalid driver record with zero text key length");
+                l_rc = MDBX_PROBLEM;
+                break;
+            }
+            l_pkt->key_len = l_record->key_len;
+            l_pkt->value_len = l_record->value_len;
+            l_pkt->data_len = l_data_len;
+
+            /* Put serialized data into the payload part of the packet */
+            byte_t *l_data_ptr = dap_mempcpy(l_pkt->data, l_db_ctx->name, l_db_ctx->namelen);
+            l_data_ptr = dap_mempcpy(l_data_ptr, l_record->key_n_value_n_sign, l_record->key_len);
+            if (l_record->value_len)
+                l_data_ptr = dap_mempcpy(l_data_ptr, l_record->key_n_value_n_sign + l_record->key_len, l_record->value_len);
+            if (l_record->sign_len >= sizeof(dap_sign_t)) {
+                dap_sign_t *l_sign = (dap_sign_t *)(l_record->key_n_value_n_sign + l_record->key_len + l_record->value_len);
+                if (dap_sign_get_size(l_sign) != l_record->sign_len) {
+                    log_it(L_ERROR, "Corrupted global DB record internal value");
+                    l_rc = MDBX_PROBLEM;
+                    continue;
+                }
+                l_data_ptr = dap_mempcpy(l_data_ptr, l_sign, l_sign_len);
+            }
+            assert((size_t)(l_data_ptr - l_pkt->data) == l_data_len);
+            l_ret->data_size += l_add_size;
+            l_ret->obj_count++;
+        }
     }
     mdbx_txn_commit(l_txn);
-    return l_obj;
+    return l_ret;
 }
 
 /**
