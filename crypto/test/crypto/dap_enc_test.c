@@ -221,7 +221,7 @@ void* _read_key_from_file(const char* file_name, size_t key_size)
 /**
  * @key_type may be DAP_ENC_KEY_TYPE_IAES, DAP_ENC_KEY_TYPE_OAES
  */
-static void test_serialize_deserialize(dap_enc_key_type_t key_type)
+static void test_serialize_deserialize(dap_enc_key_type_t key_type, bool enc_test)
 {
     const char *kex_data = "1234567890123456789012345678901234567890";//"123";
     size_t kex_size = strlen(kex_data);
@@ -287,11 +287,12 @@ static void test_serialize_deserialize(dap_enc_key_type_t key_type)
                                         decode_result,
                                         min_decode_size,
                                         DAP_ENC_DATA_TYPE_RAW);
+    if (enc_test) {
+        dap_assert_PIF(source_size == decode_size, "Check result decode size");
 
-    dap_assert_PIF(source_size == decode_size, "Check result decode size");
-
-    dap_assert_PIF(memcmp(source, decode_result, source_size) == 0,
-                   "Check source and encode->decode data");
+        dap_assert_PIF(memcmp(source, decode_result, source_size) == 0,
+                    "Check source and encode->decode data");
+    }
 
     dap_enc_key_delete(key);
     dap_enc_key_delete(key2);
@@ -403,10 +404,23 @@ void dap_enc_tests_run() {
     test_encode_decode_raw(500);
     test_encode_decode_raw_b64(500);
     test_encode_decode_raw_b64_url_safe(500);
-    // dap_print_module_name("dap_enc serialize->deserialize IAES");
-    // test_serialize_deserialize(DAP_ENC_KEY_TYPE_IAES);
-    // dap_print_module_name("dap_enc serialize->deserialize OAES");
-    // test_serialize_deserialize(DAP_ENC_KEY_TYPE_OAES);
+    dap_print_module_name("dap_enc serialize->deserialize BLISS");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_BLISS, false);
+    dap_print_module_name("dap_enc serialize->deserialize PICNIC");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_PICNIC, false);
+    dap_print_module_name("dap_enc serialize->deserialize TESLA");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_TESLA, false);
+    dap_print_module_name("dap_enc serialize->deserialize DILITHIUM");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, false);
+    dap_print_module_name("dap_enc serialize->deserialize FALCON");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_FALCON, false);
+    dap_print_module_name("dap_enc serialize->deserialize SPHINCSPLUS");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, false);
+
+    dap_print_module_name("dap_enc serialize->deserialize IAES");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_IAES, true);
+    dap_print_module_name("dap_enc serialize->deserialize OAES");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_OAES, true);
 
     dap_print_module_name("dap_enc_sig serialize->deserialize BLISS");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_BLISS);
