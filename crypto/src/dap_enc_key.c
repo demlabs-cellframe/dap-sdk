@@ -591,6 +591,9 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
  */
 uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
 {
+// sanity check
+    dap_return_val_if_pass(!a_key || !a_key->priv_key_data_size, NULL);
+// func work
     uint8_t *l_data = NULL;
     switch (a_key->type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
@@ -724,22 +727,22 @@ uint8_t *dap_enc_key_serialize(dap_enc_key_t *a_key, size_t *a_buflen)
 // sanity check
     dap_return_val_if_pass(!a_key, NULL);
 // func work
-    uint64_t l_ser_skey_size = 0, l_ser_pkey_size = 0;
+    uint64_t l_ser_skey_size = 0, l_ser_pkey_size = 0, l_ser_inheritor_size = a_key->_inheritor_size;
     uint64_t l_timestamp = a_key->last_used_timestamp;
     int32_t l_type = a_key->type;
-    uint8_t *l_ser_skey = dap_enc_key_serialize_priv_key(a_key, &l_ser_skey_size);
-    uint8_t *l_ser_pkey = dap_enc_key_serialize_pub_key(a_key, &l_ser_pkey_size);
+    uint8_t *l_ser_skey = dap_enc_key_serialize_priv_key(a_key, (size_t *)&l_ser_skey_size);
+    uint8_t *l_ser_pkey = dap_enc_key_serialize_pub_key(a_key, (size_t *)&l_ser_pkey_size);
     uint64_t l_buflen = sizeof(uint64_t) * 5 + sizeof(int32_t) + l_ser_skey_size + l_ser_pkey_size + a_key->_inheritor_size;
     uint8_t *l_ret = dap_serialize_multy(NULL, l_buflen, 18,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_ser_skey_size, (uint64_t)sizeof(uint64_t),
         &l_ser_pkey_size, (uint64_t)sizeof(uint64_t),
-        &a_key->_inheritor_size, (uint64_t)sizeof(uint64_t),
+        &l_ser_inheritor_size, (uint64_t)sizeof(uint64_t),
         &l_timestamp, (uint64_t)sizeof(uint64_t),
         &l_type, (uint64_t)sizeof(int32_t),
         l_ser_skey, (uint64_t)l_ser_skey_size,
         l_ser_pkey, (uint64_t)l_ser_pkey_size,
-        a_key->_inheritor, (uint64_t)a_key->_inheritor_size
+        a_key->_inheritor, (uint64_t)l_ser_inheritor_size
     );
 // out work
     DAP_DEL_MULTY(l_ser_skey, l_ser_pkey);
@@ -799,9 +802,8 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
         }
 // out work
     l_ret->last_used_timestamp = l_timestamp;
-    l_ret->priv_key_data_size = l_ser_skey_size;
-    l_ret->pub_key_data_size = l_ser_pkey_size;
     l_ret->_inheritor_size = l_ser_inheritor_size;
+    DAP_DEL_MULTY(l_ser_pkey, l_ser_skey);
     return l_ret;
 }
 
