@@ -50,6 +50,6 @@ typedef struct dap_link_manager {
     dap_link_manager_callbacks_t callbacks;
 } dap_link_manager_t;
 
-int dap_link_manager_init();
+int dap_link_manager_init(dap_link_manager_callbacks_t *a_callbacks);
 void dap_link_manager_deinit();
 dap_link_manager_t *dap_link_manager_new(dap_link_manager_callbacks_t *a_callbacks);

@@ -31,16 +31,21 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 static uint32_t s_timer_update_states = 4000;
 static uint32_t s_min_links_num = 5;
+static dap_link_manager_t *s_link_manager = NULL;
 
 static void s_delete_callback(dap_link_manager_t *a_manager)
 {
     
 }
 
-int dap_link_manager_init()
+int dap_link_manager_init(dap_link_manager_callbacks_t *a_callbacks)
 {
     s_timer_update_states = dap_config_get_item_uint32_default(g_config, "link_manager", "timer_update_states", s_timer_update_states);
     s_min_links_num = dap_config_get_item_uint32_default(g_config, "link_manager", "min_links_num", s_min_links_num);
+    if (!(s_link_manager = dap_link_manager_new(a_callbacks))) {
+        log_it(L_ERROR, "Default link manager not inited");
+        return -1;
+    }
     return 0;
 }
 
