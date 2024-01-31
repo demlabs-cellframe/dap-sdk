@@ -27,6 +27,10 @@
 #include <dlfcn.h>
 #endif
 
+#if defined (DAP_OS_WINDOWS)
+#include <windows.h>
+#endif
+
 #include <assert.h>
 #include "dap_plugin.h"
 #include "dap_plugin_binary.h"
@@ -105,6 +109,20 @@ static int s_type_callback_load(dap_plugin_manifest_t * a_manifest, void ** a_pv
         return -5;
     }
 #endif
+
+#if defined (DAP_OS_WINDOWS)
+    char * l_path = dap_strdup_printf("%s/%s.windows.%s.dll",a_manifest->path,a_manifest->name,dap_get_arch());
+    l_pvt_data->handle = LoadLibraryA(l_path);
+    if(l_pvt_data->handle){
+        l_pvt_data->callback_init = (plugin_init_callback_t)GetProcAddress(l_pvt_data->handle, "plugin_init");
+        l_pvt_data->callback_deinit = (plugin_deinit_callback_t)GetProcAddress(l_pvt_data->handle, "plugin_deinit");
+    }else{
+        log_it(L_ERROR,"Can't load %s module: %s (error code: %ul)", a_manifest->name, l_path, GetLastError());
+        *a_error_str = dap_strdup_printf("Can't load %s module: %s (error code: %ul)", a_manifest->name, l_path, GetLastError());
+        return -5;
+    }
+#endif
+
     if( l_pvt_data->callback_init){
         return l_pvt_data->callback_init(a_manifest->config,a_error_str);
     }else{
@@ -132,6 +150,10 @@ static int s_type_callback_unload(dap_plugin_manifest_t * a_manifest, void * a_p
         l_pvt_data->callback_deinit();
 #if defined (DAP_OS_UNIX) && !defined (__ANDROID__)
     dlclose(l_pvt_data->handle);
+#endif
+
+#if defined (DAP_OS_WINDOWS)
+    FreeLibrary(l_pvt_data->handle);
 #endif
     return 0;
 }
