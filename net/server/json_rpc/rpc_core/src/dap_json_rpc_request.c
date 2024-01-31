@@ -74,6 +74,7 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
         log_it(L_ERROR, "Error parse json tokener: %s", json_tokener_error_desc(jterr));
         err_parse_request = true;
     }
+    json_object_put(jobj);
     if (err_parse_request){
         DAP_FREE(request->method);
         DAP_FREE(request);

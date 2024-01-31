@@ -519,7 +519,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                                 return;
                             }
                             *l_stream_es_uuid_ptr  = a_client_pvt->stream_es->uuid;
-                            dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
+                            dap_timerfd_start_on_worker(l_worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
                                                         s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                         }
                         else if (l_err != EINPROGRESS && l_err != -1){
@@ -549,7 +549,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                                 return;
                             }
                             *l_stream_es_uuid_ptr = a_client_pvt->stream_es->uuid;
-                            dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
+                            dap_timerfd_start_on_worker(l_worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
                                                         s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                         }
                     }
@@ -616,7 +616,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                        a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                 // small delay before next request
                 a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
-                            a_client_pvt->worker, 300, s_timer_reconnect_callback, a_client_pvt);
+                            l_worker, 300, s_timer_reconnect_callback, a_client_pvt);
                 if (!a_client_pvt->reconnect_timer)
                     log_it(L_ERROR ,"Can't run timer for small delay before the next enc_init request");
             } else {
@@ -627,7 +627,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->reconnect_attempts = 0;
                     // bigger delay before next request
                     a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
-                                a_client_pvt->worker, s_timeout * 1000, s_timer_reconnect_callback, a_client_pvt);
+                                l_worker, s_timeout * 1000, s_timer_reconnect_callback, a_client_pvt);
                     if (!a_client_pvt->reconnect_timer)
                         log_it(L_ERROR,"Can't run timer for bigger delay before the next enc_init request");
                 } else
