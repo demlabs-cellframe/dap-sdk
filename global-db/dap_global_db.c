@@ -263,10 +263,10 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
     return true;
 }
 
-static int s_store_obj_apply(dap_store_obj_t *a_obj)
+static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_obj)
 {
     assert(a_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD);
-    dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), a_obj->group);
+    dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(a_dbi, a_obj->group);
     if (!l_cluster) {
         log_it(L_WARNING, "An entry in the group %s was rejected because the group name doesn't match any cluster", a_obj->group);
         return -11;
@@ -1038,7 +1038,7 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
         return -2;
     }
 
-    int l_res = s_store_obj_apply(&l_store_data);
+    int l_res = s_store_obj_apply(a_dbi, &l_store_data);
     DAP_DELETE(l_store_data.sign);
     return l_res;
 }
@@ -1141,6 +1141,8 @@ static void s_msg_opcode_set(struct queue_io_msg * a_msg)
 int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
     int l_ret = -1;
+    if (a_store_objs_count > 1)
+        dap_global_db_driver_txn_start();
     for (size_t i = 0; i < a_store_objs_count; i++) {
         dap_store_obj_t *l_obj = a_store_objs + i;
         char *l_group_saved = NULL;
@@ -1150,15 +1152,19 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
             l_obj->group = dap_strdup_printf("%s" DAP_GLOBAL_DB_DEL_SUFFIX, l_obj->group);
             l_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
         }
-        l_ret = s_store_obj_apply(l_obj);
-        if (l_ret)
-            log_it(L_ERROR, "Can't save raw gdb data, code %d ", l_ret);
+        l_ret = s_store_obj_apply(a_dbi, l_obj);
         if (l_group_saved) {
             l_obj->type = DAP_GLOBAL_DB_OPTYPE_DEL;
             DAP_DELETE(l_obj->group);
             l_obj->group = l_group_saved;
         }
+        if (l_ret) {
+            log_it(L_ERROR, "Can't save raw gdb data, code %d ", l_ret);\
+            break;
+        }
     }
+    if (a_store_objs_count > 1)
+        dap_global_db_driver_txn_end(!l_ret);
     return l_ret;
 }
 
@@ -1280,7 +1286,7 @@ static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
             l_store_obj.value = a_msg->values[i].value;
             l_store_obj.value_len = a_msg->values[i].value_len;
             l_store_obj.timestamp = a_msg->values[i].timestamp;
-            l_ret = s_store_obj_apply(&l_store_obj);
+            l_ret = s_store_obj_apply(a_msg->dbi, &l_store_obj);
         }
     }
     if(a_msg->callback_results){
@@ -1413,13 +1419,17 @@ static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_gr
 
     int l_res = -1;
     if (a_key)
-        l_res = s_store_obj_apply(&l_store_obj);
+        l_res = s_store_obj_apply(a_dbi, &l_store_obj);
     else {
         // Drop .del table
         l_res = dap_global_db_driver_apply(&l_store_obj, 1);
+        if (l_res)
+            log_it(L_ERROR, "Can't delete group %s", l_store_obj.group);
         // Drop main table too
         l_store_obj.group[dap_strlen(a_group)] = '\0';
         l_res = dap_global_db_driver_apply(&l_store_obj, 1);
+        if (l_res)
+            log_it(L_ERROR, "Can't delete group %s", l_store_obj.group);
     }
     DAP_DELETE(l_store_obj.group);
     return l_res;

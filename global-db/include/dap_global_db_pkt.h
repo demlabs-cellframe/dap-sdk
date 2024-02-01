@@ -26,6 +26,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_time.h"
 #include "dap_stream_cluster.h"
 #include "dap_global_db.h"
+#include "dap_global_db_driver.h"
 
 #define DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT            1024
 
@@ -58,7 +59,7 @@ DAP_STATIC_INLINE size_t dap_global_db_pkt_pack_get_size(dap_global_db_pkt_pack_
 typedef struct dap_global_db_hash_pkt {
     uint32_t hashes_count;
     uint16_t group_name_len;
-    byte_t group_n_hashses;
+    byte_t group_n_hashses[];
 } DAP_ALIGN_PACKED dap_global_db_hash_pkt_t;
 
 DAP_STATIC_INLINE size_t dap_global_db_hash_pkt_get_size(dap_global_db_hash_pkt_t *a_hash_pkt)
@@ -68,7 +69,7 @@ DAP_STATIC_INLINE size_t dap_global_db_hash_pkt_get_size(dap_global_db_hash_pkt_
 
 dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old_pkt, dap_global_db_pkt_t *a_new_pkt);
 dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj);
-dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count);
+dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count);
 dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_t a_pkt_size);
 dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uint64_t *a_checksum);
 bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj);

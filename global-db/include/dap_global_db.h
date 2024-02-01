@@ -29,6 +29,7 @@
 
 #define DAP_GLOBAL_DB_VERSION               3
 #define DAP_GLOBAL_DB_LOCAL_GENERAL         "local.general"
+#define DAP_GLOBAL_DB_LOCAL_LAST_HASH       "local.lasthash"
 #define DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT     5 // seconds
 #define DAP_GLOBAL_DB_DEL_SUFFIX            ".del"
 

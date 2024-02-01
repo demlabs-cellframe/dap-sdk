@@ -40,7 +40,7 @@ static void s_stream_ch_io_complete(dap_events_socket_t *a_es, void *a_arg, int 
 static void s_stream_ch_write_error_unsafe(dap_stream_ch_t *a_ch, uint64_t a_net_id, uint64_t a_chain_id, uint64_t a_cell_id, const char * a_err_string);
 static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, dap_stream_node_addr_t a_sender_addr);
 
-static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb);
+static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb) {}
 
 /**
  * @brief dap_stream_ch_gdb_init
@@ -88,33 +88,33 @@ static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg)
 {
     UNUSED(a_arg);
     dap_stream_ch_gdb_t *l_ch_gdb = DAP_STREAM_CH_GDB(a_ch);
-    if (l_ch_gdb->callback_notify_packet_out)
-        l_ch_gdb->callback_notify_packet_out(l_ch_gdb, DAP_STREAM_CH_GDB_PKT_TYPE_DELETE, NULL, l_ch_gdb->callback_notify_arg);
+    //if (l_ch_gdb->callback_notify_packet_out)
+    //    l_ch_gdb->callback_notify_packet_out(l_ch_gdb, DAP_STREAM_CH_GDB_PKT_TYPE_DELETE, NULL, l_ch_gdb->callback_notify_arg);
     s_ch_gdb_go_idle(l_ch_gdb);
     debug_if(g_dap_global_db_debug_more, L_NOTICE, "Destroyed GDB sync channel %p with internal data %p", a_ch, l_ch_gdb);
     DAP_DEL_Z(a_ch->internal);
 }
 
-static void s_process_hashes(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+static bool s_process_hashes(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
 {
      dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t));
-     char *l_group = l_pkt->group_n_hashses;
+     const char *l_group = (const char *)l_pkt->group_n_hashses;
      dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
      if (!l_cluster)
-         return;
+         return false;
      dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
      dap_global_db_hash_pkt_t *l_ret = NULL;
      int j = 0;
      for (uint32_t i = 0; i < l_pkt->hashes_count; i++) {
-        if (!dap_global_db_driver_is_hash(l_group, l_hashes + i)) {
+        if (!dap_global_db_driver_is_hash(l_group, *(l_hashes + i))) {
             if (!l_ret)
                 l_ret = DAP_NEW_STACK_SIZE(dap_global_db_hash_pkt_t,
                                            sizeof(dap_global_db_hash_pkt_t) +
                                            l_pkt->group_name_len +
                                            sizeof(dap_global_db_driver_hash_t) * l_pkt->hashes_count);
             if (!l_ret) {
-                log_it(L_CRITACAL, "Not enough memory");
-                return;
+                log_it(L_CRITICAL, "Not enough memory");
+                return false;
             }
             l_ret->group_name_len = l_pkt->group_name_len;
             dap_global_db_driver_hash_t *l_ret_hashes = (dap_global_db_driver_hash_t *)(l_ret->group_n_hashses + l_ret->group_name_len);
@@ -124,36 +124,37 @@ static void s_process_hashes(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg
      if (l_ret) {
         l_ret->hashes_count = j;
         dap_worker_t *l_worker = NULL;
-        dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr((dap_stream_node_addr *)a_arg, &l_worker);
+        dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr((dap_stream_node_addr_t *)a_arg, &l_worker);
         if (l_worker)
-            dap_stream_ch_pkt_send_mt(l_worker, l_es_uuid, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST,
+            dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_es_uuid, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST,
                                       l_ret, dap_global_db_hash_pkt_get_size(l_ret));
      }
+     return false;
 }
 
-static void s_process_request(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+static bool s_process_request(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
 {
      dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t));
-     char *l_group = l_pkt->group_n_hashses;
+     const char *l_group = (const char *)l_pkt->group_n_hashses;
      dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
      if (!l_cluster)
-         return;
-     dap_stream_node_addr *l_sender_addr = (dap_stream_node_addr *)a_arg;
-     if (dap_cluster_member_find_role(l_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
-         const char *l_name = l_cluster->links_cluster && l_cluster->links_cluster->mnemonim ?
-                     l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
-         log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s",
-                NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
+         return false;
+     dap_stream_node_addr_t *l_sender_addr = (dap_stream_node_addr_t *)a_arg;
+     if (l_cluster->links_cluster &&
+             dap_cluster_member_find_role(l_cluster->links_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
+         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
+         log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
      }
      dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
      dap_global_db_pkt_pack_t *l_pkt_out = dap_global_db_driver_get_by_hash(l_group, l_hashes, l_pkt->hashes_count);
      if (l_pkt_out) {
         dap_worker_t *l_worker = NULL;
-        dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr(, &l_worker);
+        dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr(l_sender_addr, &l_worker);
         if (l_worker)
-            dap_stream_ch_pkt_send_mt(l_worker, l_es_uuid, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST,
+            dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_es_uuid, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK,
                                       l_pkt_out, dap_global_db_pkt_pack_get_size(l_pkt_out));
      }
+     return false;
 }
 
 struct processing_arg {
@@ -165,36 +166,39 @@ struct processing_arg {
 static bool s_process_records(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
 {
     dap_return_val_if_fail(a_arg, false);
-    dap_store_obj_t *l_obj = (dap_store_obj_t *)a_arg + i;
-    if (!dap_global_db_pkt_check_sign_crc(l_obj)) {
-        log_it(L_WARNING, "Global DB record packet sign verify or CRC check error for group %s and key %s", l_obj->group, l_obj->key);
-        dap_store_obj_free_one(l_obj);
-        return false;
+    struct processing_arg *l_arg = a_arg;
+    for (uint32_t i = 0; i < l_arg->count; i++) {
+        dap_store_obj_t *l_obj = l_arg->objs + i;
+        if (!dap_global_db_pkt_check_sign_crc(l_obj)) {
+            log_it(L_WARNING, "Global DB record packet sign verify or CRC check error for group %s and key %s", l_obj->group, l_obj->key);
+            dap_store_obj_free_one(l_obj);
+            return false;
+        }
+        if (g_dap_global_db_debug_more) {
+            char l_ts_str[64] = { '\0' };
+            dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(l_obj->timestamp));
+            char l_hash_str[DAP_HASH_FAST_STR_SIZE];
+            dap_hash_fast_t l_sign_hash;
+            if (!l_obj->sign || !dap_sign_get_pkey_hash(l_obj->sign, &l_sign_hash))
+                strcpy(l_hash_str, "UNSIGNED");
+            else
+               dap_hash_fast_to_str(&l_sign_hash, l_hash_str, DAP_HASH_FAST_STR_SIZE);
+            log_it(L_DEBUG, "Unpacked object: group=\"%s\" key=\"%s\""
+                    " timestamp=\"%s\" value_len=%"DAP_UINT64_FORMAT_U" signer_hash=%s" ,
+                    l_obj->group, l_obj->key, l_ts_str, l_obj->value_len, l_hash_str);
+        }
+        dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_obj->group);
+        if (!l_cluster)
+            return false;
+        if (l_cluster->links_cluster &&
+                dap_cluster_member_find_role(l_cluster->links_cluster, &l_arg->addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
+            const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
+            log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s", NODE_ADDR_FP_ARGS_S(l_arg->addr), l_name);
+        }
     }
-    if (g_dap_global_db_debug_more) {
-        char l_ts_str[64] = { '\0' };
-        dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(l_obj->timestamp));
-        char l_hash_str[DAP_HASH_FAST_STR_SIZE];
-        dap_hash_fast_t l_sign_hash;
-        if (!l_obj->sign || !dap_sign_get_pkey_hash(l_obj->sign, &l_sign_hash))
-            strcpy(l_hash_str, "UNSIGNED");
-        else
-           dap_hash_fast_to_str(&l_sign_hash, l_hash_str, DAP_HASH_FAST_STR_SIZE);
-        log_it(L_DEBUG, "Unpacked object: group=\"%s\" key=\"%s\""
-                " timestamp=\"%s\" value_len=%"DAP_UINT64_FORMAT_U" signer_hash=%s" ,
-                l_obj->group, l_obj->key, l_ts_str, l_obj->value_len, l_hash_str);
-    }
-    dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_obj->group);
-    if (!l_cluster)
-        return;
-    if (dap_cluster_member_find_role(l_cluster, a_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
-        const char *l_name = l_cluster->links_cluster && l_cluster->links_cluster->mnemonim ?
-                    l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
-        log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s",
-               NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
-    }
-    dap_global_db_set_raw_sync(l_obj, 1);
-    dap_store_obj_free_one(l_obj);
+    dap_global_db_set_raw_sync(l_arg->objs, l_arg->count);
+    dap_store_obj_free(l_arg->objs, l_arg->count);
+    DAP_DELETE(l_arg);
     return false;
 }
 
@@ -206,6 +210,10 @@ static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, da
         log_it(L_WARNING, "Wrong Global DB gossip packet rejected");
         return;
     }
+    struct processing_arg *l_arg = DAP_NEW_Z(struct processing_arg);
+    l_arg->addr = a_sender_addr;
+    l_arg->count = 1;
+    l_arg->objs = l_obj;
     dap_proc_thread_callback_add_pri(NULL, s_process_records, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
 }
 
@@ -254,6 +262,10 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             log_it(L_WARNING, "Wrong Global DB record packet rejected");
             break;
         }
+        struct processing_arg *l_arg = DAP_NEW_Z(struct processing_arg);
+        l_arg->addr = a_ch->stream->node;
+        l_arg->count = l_objs_count;
+        l_arg->objs = l_objs;
         dap_proc_thread_callback_add_pri(NULL, s_process_records, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
     } break;
 
@@ -281,11 +293,12 @@ static void s_stream_ch_io_complete(dap_events_socket_t *a_es, void *a_arg, int 
  * @param a_group a group name string
  * @return Returns true if successful, otherwise false.
  */
-bool dap_db_set_last_hash_remote(uint64_t a_node_addr, char *a_group, dap_global_db_driver_hash_t a_hash)
+bool dap_db_set_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group, dap_global_db_driver_hash_t a_hash)
 {
-    char *l_key = dap_strdup_printf("%"DAP_UINT64_FORMAT_U"%s", a_node_addr, a_group);
-    return dap_global_db_set(GROUP_LOCAL_NODE_LAST_ID, l_key, &a_hash, sizeof(dap_global_db_driver_hash_t), false, NULL, NULL) == 0;
+    char *l_key = dap_strdup_printf("%"DAP_UINT64_FORMAT_U"%s", a_node_addr.uint64, a_group);
+    bool l_ret = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_LAST_HASH, l_key, &a_hash, sizeof(dap_global_db_driver_hash_t), false, NULL, NULL) == 0;
     DAP_DELETE(l_key);
+    return l_ret;
 }
 
 /**
@@ -295,11 +308,11 @@ bool dap_db_set_last_hash_remote(uint64_t a_node_addr, char *a_group, dap_global
  * @param a_group a group name string
  * @return Returns last synchronize object driver hash for provided node if successful, otherwise blank hash.
  */
-dap_global_db_driver_hash_t dap_db_get_last_hash_remote(uint64_t a_node_addr, char *a_group)
+dap_global_db_driver_hash_t dap_db_get_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group)
 {
-    char *l_key = dap_strdup_printf("%"DAP_UINT64_FORMAT_U"%s", a_node_addr, a_group);
+    char *l_key = dap_strdup_printf("%"DAP_UINT64_FORMAT_U"%s", a_node_addr.uint64, a_group);
     size_t l_ret_len = 0;
-    byte_t *l_ret_ptr = dap_global_db_get_sync(GROUP_LOCAL_NODE_LAST_ID, l_key, &l_ret_len, NULL, NULL);
+    byte_t *l_ret_ptr = dap_global_db_get_sync(DAP_GLOBAL_DB_LOCAL_LAST_HASH, l_key, &l_ret_len, NULL, NULL);
     dap_global_db_driver_hash_t l_ret_hash = l_ret_ptr && l_ret_len == sizeof(dap_global_db_driver_hash_t)
             ? *(dap_global_db_driver_hash_t *)l_ret_ptr
             : c_dap_global_db_driver_hash_blank;

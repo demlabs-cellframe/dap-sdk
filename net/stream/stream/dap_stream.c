@@ -1068,7 +1068,7 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
             }
         }
         if (!l_replace_found)
-            dap_cluster_link_delete_from_all(l_addr);
+            dap_cluster_link_delete_from_all(&a_stream->node);
     }
     pthread_rwlock_unlock(&s_streams_lock);
 }

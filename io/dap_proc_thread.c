@@ -212,20 +212,27 @@ static int s_context_callback_stopped(dap_context_t UNUSED_ARG *a_context, void 
 
 struct timer_arg {
     dap_proc_thread_t *thread;
-    dap_proc_queue_callback_t callback;
+    dap_thread_timer_callback_t callback;
     void *callback_arg;
     dap_queue_msg_priority_t priority;
 };
 
+static bool s_thread_timer_callback(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+{
+    struct timer_arg *l_arg = a_arg;
+    l_arg->callback(l_arg->callback_arg);
+    return false;
+}
+
 static bool s_timer_callback(void *a_arg)
 {
     struct timer_arg *l_arg = a_arg;
-    dap_proc_thread_callback_add_pri(l_arg->thread, l_arg->callback, l_arg->callback_arg, l_arg->priority);
+    dap_proc_thread_callback_add_pri(l_arg->thread, s_thread_timer_callback, l_arg, l_arg->priority);
     // Repeat after exit
     return true;
 }
 
-int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, dap_queue_msg_priority_t a_priority)
+int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, dap_queue_msg_priority_t a_priority)
 {
     dap_return_val_if_fail(a_thread && a_thread->context && a_callback && a_timeout_ms, -1);
     dap_worker_t *l_worker = dap_events_worker_get(a_thread->context->id);

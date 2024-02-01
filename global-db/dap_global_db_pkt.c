@@ -238,7 +238,7 @@ dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_
  * @param store_obj_count[out] a number of deserialized objects in the array
  * @return Returns a pointer to the first object in the array, if successful; otherwise NULL.
  */
-dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count)
+dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count)
 {
     dap_return_val_if_fail(a_pkt && a_pkt->data_size >= sizeof(dap_global_db_pkt_t), NULL);
 
@@ -249,7 +249,7 @@ dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a
         log_it(L_ERROR, "Invalid size: packet pack total size is zero");
         return NULL;
     }
-    dap_store_obj_t *l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_size);
+    dap_store_obj_t *l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_size * sizeof(dap_store_obj_t));
     if (!l_store_obj_arr) {
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
@@ -258,10 +258,9 @@ dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a
     byte_t *l_data_ptr = (byte_t *)a_pkt->data;                                 /* Set <l_data_ptr> to begin of payload */
     byte_t *l_data_end = l_data_ptr + a_pkt->data_size;                         /* Set <l_data_end> to end of payload area
                                                                                 will be used to prevent out-of-buffer case */
-    uint32_t i;
-    for (i = 0; i < l_count; i++) {
-        l_store_obj_arr[i] = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + sizeof(dap_stream_node_addr_t));
-        l_data_ptr = s_fill_one_store_obj((dap_global_db_pkt_t *)l_data_ptr, l_store_obj_arr[i], l_data_end - l_data_ptr);
+    uint32_t i = 0;
+    for ( ; i < l_count; i++) {
+        l_data_ptr = s_fill_one_store_obj((dap_global_db_pkt_t *)l_data_ptr, l_store_obj_arr + i, l_data_end - l_data_ptr);
         if (!l_data_ptr) {
             log_it(L_ERROR, "Broken GDB element: can't read packet #%u", i);
             break;
