@@ -232,7 +232,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
         l_manifest->path = dap_path_get_dirname(a_file_path);
     }
 
-    char * l_config_path = dap_strdup_printf("%s/%s.cfg", l_manifest->path,l_manifest->name );
+    char * l_config_path = dap_strdup_printf("%s/%s", l_manifest->path,l_manifest->name );
     if(dap_file_test(l_config_path)) // If present custom config
         l_manifest->config = dap_config_open(l_config_path);
     DAP_DELETE(l_config_path);
