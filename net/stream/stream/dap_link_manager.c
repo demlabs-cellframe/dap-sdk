@@ -23,6 +23,7 @@ You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "dap_common.h"
 #include "dap_link_manager.h"
 #include "dap_worker.h"
 #include "dap_config.h"
@@ -40,6 +41,9 @@ static void s_delete_callback(dap_link_manager_t *a_manager)
 
 int dap_link_manager_init(dap_link_manager_callbacks_t *a_callbacks)
 {
+// sanity check
+    dap_return_val_if_pass(s_link_manager, -2);
+// func work
     s_timer_update_states = dap_config_get_item_uint32_default(g_config, "link_manager", "timer_update_states", s_timer_update_states);
     s_min_links_num = dap_config_get_item_uint32_default(g_config, "link_manager", "min_links_num", s_min_links_num);
     if (!(s_link_manager = dap_link_manager_new(a_callbacks))) {
@@ -65,7 +69,13 @@ dap_link_manager_t *dap_link_manager_new(dap_link_manager_callbacks_t *a_callbac
     if(l_ret->callbacks.delete)
         l_ret->callbacks.delete = s_delete_callback;
     l_ret->min_links_num = s_min_links_num;
+    l_ret->active_net_count = 0;
     return l_ret;
+}
+
+DAP_INLINE dap_link_manager_t *dap_link_manager_get_default()
+{
+    return s_link_manager;
 }
 
 void dap_link_manager_deinit()

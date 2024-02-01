@@ -143,6 +143,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->default_role = a_default_role;
     l_cluster->owner_root_access = a_owner_root_access;
     l_cluster->dbi = a_dbi;
+    l_cluster->link_manager = dap_link_manager_get_default();
     DL_APPEND(a_dbi->clusters, l_cluster);
     return l_cluster;
 }
@@ -206,20 +207,4 @@ int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster
     l_notifier->callback_arg = a_callback_arg;
     DL_APPEND(a_cluster->notifiers, l_notifier);
     return 0;
-}
-
-dap_link_manager_t *dap_global_db_cluster_add_link_manager(dap_global_db_cluster_t *a_cluster, dap_link_manager_callbacks_t *a_callbacks)
-{
-// sanity check
-    dap_return_val_if_pass(!a_cluster || !a_cluster->links_cluster || !a_cluster->role_cluster, NULL);
-    dap_return_val_if_pass_err(a_cluster->link_manager, a_cluster->link_manager, "Cluster already has link manager");
-// func work
-    a_cluster->link_manager = dap_link_manager_new(a_callbacks);
-    if (!a_cluster->link_manager) {
-        log_it(L_ERROR, "Can't create link manager");
-        return NULL;
-    }
-    a_cluster->link_manager->links_cluster_guuid = a_cluster->links_cluster->uuid;
-    a_cluster->link_manager->role_cluster_guuid = a_cluster->role_cluster->uuid;
-    return a_cluster->link_manager;
 }

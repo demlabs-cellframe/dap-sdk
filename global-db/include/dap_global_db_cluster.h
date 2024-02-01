@@ -86,4 +86,3 @@ dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *
 void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster);
 void dap_global_db_cluster_notify(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj);
 int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster, dap_store_obj_callback_notify_t a_callback, void *a_callback_arg);
-dap_link_manager_t *dap_global_db_cluster_add_link_manager(dap_global_db_cluster_t *a_cluster, dap_link_manager_callbacks_t *a_callbacks);
