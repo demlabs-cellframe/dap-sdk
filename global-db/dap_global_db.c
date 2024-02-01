@@ -314,7 +314,7 @@ int dap_global_db_init()
             l_dbi->whitelist = dap_list_append(l_dbi->whitelist, dap_strdup_printf("%s.del", l_white_list[i]));
         }
 
-        l_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 72);
+        l_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 3);
 
         s_context_global_db->instance = l_dbi;
     }

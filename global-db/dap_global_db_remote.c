@@ -213,7 +213,7 @@ static void *s_list_thread_proc2(void *arg) {
         dap_db_log_list_group_t *l_group = (dap_db_log_list_group_t*)l_group_elem->data;
         char l_obj_type = dap_fnmatch("*.del", l_group->name, 0) ? DAP_DB$K_OPTYPE_ADD : DAP_DB$K_OPTYPE_DEL;
         dap_nanotime_t  l_time_allowed = l_now + dap_nanotime_from_sec(24 * 3600),
-                        l_two_weeks_ago = l_now - dap_nanotime_from_sec(7 * 24 * 3600);
+                        l_3_hours_ago = l_now - dap_nanotime_from_sec(3 * 3600);
         size_t l_item_count = 0;
         int l_placed_count = 0, l_deleted_count = 0, l_unprocessed_count = 0;
         dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group->name, 0, &l_item_count);
@@ -246,7 +246,7 @@ static void *s_list_thread_proc2(void *arg) {
                         || !dap_strncmp(l_obj_cur->group, "cdb.", 4)
                         || strstr(l_obj_cur->group, ".nodes.v2");
 
-                if (l_obj_cur->timestamp < l_two_weeks_ago && !(l_obj_cur->flags & RECORD_PINNED) && !group_HALed) {
+                if (l_obj_cur->timestamp < l_3_hours_ago && !(l_obj_cur->flags & RECORD_PINNED) && !group_HALed) {
                     dap_global_db_del(l_obj_cur->group, l_obj_cur->key, NULL, NULL);
                     dap_store_obj_clear_one(l_obj_cur);
                     if (l_obj_cur < l_obj_last) {
@@ -938,7 +938,11 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
         if (l_obj->timestamp > (uint64_t)l_timestamp_del && l_obj->timestamp > (uint64_t)l_timestamp_cur)
             l_apply = true;
 
-        if (((l_ttl || l_obj->type == DAP_DB$K_OPTYPE_DEL) && l_obj->timestamp <= l_limit_time) || l_broken)
+        bool group_HALed = strstr(l_obj->group, ".service.orders")
+                || !dap_strncmp(l_obj->group, "cdb.", 4)
+                || strstr(l_obj->group, ".nodes.v2");
+
+        if (((l_obj->timestamp < l_limit_time) && !group_HALed) || l_broken)
             l_apply = false;
 
         if (!l_apply) {
@@ -947,7 +951,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                     log_it(L_WARNING, "New data not applied, because newly object exists");
                 if (l_obj->timestamp <= (uint64_t)l_timestamp_del)
                     log_it(L_WARNING, "New data not applied, because newly object is deleted");
-                if (l_obj->timestamp <= l_limit_time)
+                if (l_obj->timestamp < l_limit_time)
                     log_it(L_WARNING, "New data not applied, because object is too old");
                 if (l_broken) {
                     log_it(L_WARNING, "New data not applied, because object is corrupted");
@@ -1012,6 +1016,6 @@ int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, size_t a_count, dap_g
     l_args->objs_count = a_count;
     l_args->callback = a_callback;
     l_args->cb_arg = a_arg;
-    log_it(L_MSG, "[!] Apply %zu objs", a_count);
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "Apply %zu objs", a_count);
     return dap_global_db_context_exec(s_db_apply_obj, l_args);
 }
