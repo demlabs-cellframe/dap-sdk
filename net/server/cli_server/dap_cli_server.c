@@ -236,7 +236,7 @@ static void *thread_pipe_client_func( void *args )
                     bool l_pass_in_cmd = false;
                     while( list ) {
                                                 l_pass_in_cmd |= !strcmp((char *)list->data, "-password") || !strcmp((char *)list->data, "password");
-                        str_cmd = dap_strdup_printf( "%s;%s", str_cmd, list->data );
+                        str_cmd = dap_strdup_printf( "%s;%s", str_cmd, (char *)list->data );
                         list = dap_list_next(list);
                     }
 
@@ -248,9 +248,9 @@ static void *thread_pipe_client_func( void *args )
 
                     if ( l_cmd &&  l_argv && l_cmd->func ) {
                         if (l_cmd->arg_func) {
-                            res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
+                            res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, (void **)&str_reply);
                         } else {
-                            res = l_cmd->func(argc, l_argv, &str_reply);
+                            res = l_cmd->func(argc, l_argv, (void **)&str_reply);
                         }
                     }
 
