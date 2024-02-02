@@ -57,13 +57,6 @@ typedef struct dap_stream_ch_gdb_pkt {
 
 typedef struct dap_stream_ch_gdb {
     void *_inheritor;
-
-    enum dap_stream_ch_gdb_state state;
-
-    int timer_shots;
-    dap_timerfd_t *activity_timer;
-    int sent_breaks;
-
     dap_stream_ch_callback_packet_t callback_notify_packet_out;
     dap_stream_ch_callback_packet_t callback_notify_packet_in;
     void *callback_notify_arg;

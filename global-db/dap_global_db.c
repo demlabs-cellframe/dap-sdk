@@ -192,8 +192,10 @@ int dap_global_db_init()
             s_dbi->whitelist = dap_list_append(s_dbi->whitelist, dap_strdup(l_white_list[i]));
             s_dbi->whitelist = dap_list_append(s_dbi->whitelist, dap_strdup_printf("%s" DAP_GLOBAL_DB_DEL_SUFFIX, l_white_list[i]));
         }
-        // One year for deleted objects in undefinite objects lifetime
+        // One year for objects lifetime by default
         s_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 365 * 24);
+        // Time between sync attempts, in seconds
+        s_dbi->sync_idle_time = dap_config_get_item_uint32_default(g_config, "global_db", "sync_idle_time", 120);
     }
 
     // Driver initalization

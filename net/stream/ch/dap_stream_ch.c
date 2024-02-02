@@ -34,14 +34,12 @@
 
 #define LOG_TAG "dap_stream_ch"
 
-
 #ifdef  DAP_SYS_DEBUG
 enum    {MEMSTAT$K_STM_CH, MEMSTAT$K_NR};
 static  dap_memstat_rec_t   s_memstat [MEMSTAT$K_NR] = {
     {.fac_len = sizeof(LOG_TAG) - 1, .fac_name = {LOG_TAG}, .alloc_sz = sizeof(dap_stream_ch_t)},
 };
 #endif
-
 
 /**
  * @brief dap_stream_ch_init Init stream channel module
@@ -69,22 +67,12 @@ int dap_stream_ch_init()
     return 0;
 }
 
-
-
-
-
-
-
 /**
  * @brief dap_stream_ch_deinit Destroy stream channel submodule
  */
 void dap_stream_ch_deinit()
 {
 }
-
-
-
-
 
 typedef struct __dap_stm_ch_rec__ {
     dap_stream_ch_t     *stm_ch;
@@ -93,7 +81,6 @@ typedef struct __dap_stm_ch_rec__ {
 
 static dap_stm_ch_rec_t     *s_stm_chs = NULL;                          /* @RRL:  A has table to track using of events sockets context */
 static pthread_rwlock_t     s_stm_ch_lock = PTHREAD_RWLOCK_INITIALIZER;
-
 
 /*
  *   DESCRIPTION: Allocate a new <dap_stream_ch_t> context, add record into the hash table to track usage
@@ -208,20 +195,13 @@ dap_stm_ch_rec_t    *l_rec = NULL;
     return  0;  /* SS$_SUCCESS */
 }
 
-
-
-
-
-
-
-
 /**
  * @brief dap_stream_ch_new Creates new stream channel instance
  * @return
  */
 dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
 {
-    stream_ch_proc_t * proc=dap_stream_ch_proc_find(a_id);
+    dap_stream_ch_proc_t * proc=dap_stream_ch_proc_find(a_id);
     if(proc){
 
         dap_stream_ch_t* l_ch_new = dap_stream_ch_alloc();
@@ -291,7 +271,6 @@ void dap_stream_ch_delete(dap_stream_ch_t *a_ch)
     pthread_mutex_unlock(&a_ch->mutex);
 
     dap_stm_ch_free (a_ch);
-
 }
 
 /**

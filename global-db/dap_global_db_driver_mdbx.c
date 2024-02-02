@@ -213,7 +213,7 @@ char    l_buf[1024] = {0};
 static dap_db_ctx_t *s_cre_db_ctx_for_group(const char *a_group, int a_flags)
 {
 int l_rc;
-dap_db_ctx_t *l_db_ctx, *l_db_ctx2;
+dap_db_ctx_t *l_db_ctx;
 size_t l_name_len;
 MDBX_val    l_key_iov, l_data_iov;
 
@@ -222,11 +222,11 @@ MDBX_val    l_key_iov, l_data_iov;
 
     dap_assert( !pthread_rwlock_rdlock(&s_db_ctxs_rwlock) );                /* Get RD lock for lookup only */
     HASH_FIND_STR(s_db_ctxs, a_group, l_db_ctx);                            /* Is there exist context for the group ? */
-    dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
 
-    if ( l_db_ctx )                                                         /* Found! Good job - return DB context */
+    if ( l_db_ctx ) {                                                       /* Found! Good job - return DB context */
+        dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
         return  log_it(L_INFO, "Found DB context: %p for group: '%s'", l_db_ctx, a_group), l_db_ctx;
-
+    }
 
     /* So , at this point we are going to create (if not exist)  'table' for new group */
 
@@ -240,8 +240,8 @@ MDBX_val    l_key_iov, l_data_iov;
     /*
     ** Start transaction, create table, commit.
     */
-    MDBX_txn *l_txn;
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
+    MDBX_txn *l_txn = s_txn;
+    if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
     if  ( MDBX_SUCCESS != (l_rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) )
@@ -256,30 +256,21 @@ MDBX_val    l_key_iov, l_data_iov;
     if (MDBX_SUCCESS != (l_rc = mdbx_put(l_txn, s_db_master_dbi, &l_key_iov, &l_data_iov, MDBX_NOOVERWRITE))
          && (l_rc != MDBX_KEYEXIST)) {
         log_it (L_ERROR, "mdbx_put: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        if ( MDBX_SUCCESS != (l_rc = mdbx_txn_abort(l_txn)) )
+        if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_abort(l_txn)) )
             return  log_it(L_CRITICAL, "mdbx_txn_abort: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     }
 
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_commit(l_txn)) )
+    if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_commit(l_txn)) )
         return  log_it(L_CRITICAL, "mdbx_txn_commit: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
     /*
     ** Add new DB Context for the group into the hash for quick access
     */
-    dap_assert( !pthread_rwlock_wrlock(&s_db_ctxs_rwlock) );                /* Get WR lock for the hash-table */
-
-    l_db_ctx2 = NULL;
-    HASH_FIND_STR(s_db_ctxs, a_group, l_db_ctx2);                           /* Check for existence of group again!!! */
-
-    if ( !l_db_ctx2)                                                        /* Still not exist - fine, add new record */
-        HASH_ADD_STR(s_db_ctxs, name, l_db_ctx);
+    HASH_ADD_STR(s_db_ctxs, name, l_db_ctx);
 
     dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
 
-    if ( l_db_ctx2 )                                                        /* Release unnecessary new context */
-        DAP_DEL_Z(l_db_ctx);
-
-    return l_db_ctx2 ? l_db_ctx2 : l_db_ctx;
+    return l_db_ctx;
 }
 
 /*
@@ -1063,8 +1054,15 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
                 }
             }
             l_rc = (l_rc == MDBX_NOTFOUND) ? 1 : l_rc;                          /* Not found? It's OK */
-        } else if (MDBX_SUCCESS != (l_rc = mdbx_drop(a_txn, l_db_ctx->dbi, 0))) /* Drop the whole table */
-            log_it (L_ERROR, "mdbx_drop: (%d) %s", l_rc, mdbx_strerror(l_rc));
+        } else {
+            /* Drop the whole table */
+            if (MDBX_SUCCESS != (l_rc = mdbx_drop(a_txn, l_db_ctx->dbi, true)))
+                log_it (L_ERROR, "mdbx_drop: (%d) %s", l_rc, mdbx_strerror(l_rc));
+            dap_assert ( !pthread_rwlock_rdlock(&s_db_ctxs_rwlock) );
+            HASH_DEL(s_db_ctxs, l_db_ctx);
+            dap_assert ( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
+            DAP_DELETE(l_db_ctx);
+        }
     } else
         log_it (L_ERROR, "Unhandle/unknown DB opcode (%d/%#x)", a_store_obj->type, a_store_obj->type);
 

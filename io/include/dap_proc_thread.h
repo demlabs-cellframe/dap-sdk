@@ -33,7 +33,7 @@ typedef bool (*dap_proc_queue_callback_t)(dap_proc_thread_t *a_thread, void *a_a
 typedef void (*dap_thread_timer_callback_t)(void *a_arg);
 
 typedef enum dap_queue_msg_priority {
-    DAP_QUEUE_MSG_PRIORITY_IDLE = 0,                                        /* Lowest priority (Idle). Don't use Idle if u are not sure that understand how it works */
+    DAP_QUEUE_MSG_PRIORITY_IDLE = 0,                                        /* Lowest priority (Idle). Don't use Idle until you sure what you do */
     DAP_QUEUE_MSG_PRIORITY_LOW,                                             /* Low priority */
     DAP_QUEUE_MSG_PRIORITY_NORMAL,                                          /* Default priority for any queue's entry, has assigned implicitly */
     DAP_QUEUE_MSG_PRIORITY_HIGH,                                            /* High priority */

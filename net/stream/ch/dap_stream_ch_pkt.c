@@ -289,7 +289,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         .id         = a_ch->proc->id,
         .data_size  = (uint32_t)a_data_size,
         .type       = a_type,
-        .enc_type   = a_ch->proc->enc_type,
+        //.enc_type   = a_ch->proc->enc_type,
         .seq_id     = a_ch->stream->seq_id++
     };
 

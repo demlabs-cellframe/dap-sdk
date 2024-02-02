@@ -30,7 +30,7 @@
 #define TECHICAL_CHANNEL_ID 't'
 
 typedef struct dap_stream_worker dap_stream_worker_t;
-typedef struct dap_stream_ch_proc dap_stream_ch_proc_t;
+typedef struct dap_stream_ch_proc dap_dap_stream_ch_proc_t;
 typedef struct dap_events_socket dap_events_socket_t;
 
 typedef void (* dap_stream_ch_callback_t)(dap_stream_ch_t *, void *);
@@ -50,7 +50,7 @@ typedef struct dap_stream_ch{
 
     //uint8_t buf[STREAM_BUF_SIZE_MAX];
 
-    dap_stream_ch_proc_t * proc;
+    dap_dap_stream_ch_proc_t * proc;
     void * internal;
     struct dap_stream_ch *me;
     UT_hash_handle hh_worker;

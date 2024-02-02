@@ -40,8 +40,6 @@ static void s_stream_ch_io_complete(dap_events_socket_t *a_es, void *a_arg, int 
 static void s_stream_ch_write_error_unsafe(dap_stream_ch_t *a_ch, uint64_t a_net_id, uint64_t a_chain_id, uint64_t a_cell_id, const char * a_err_string);
 static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, dap_stream_node_addr_t a_sender_addr);
 
-static void s_ch_gdb_go_idle(dap_stream_ch_gdb_t *a_ch_gdb) {}
-
 /**
  * @brief dap_stream_ch_gdb_init
  * @return
@@ -88,9 +86,6 @@ static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg)
 {
     UNUSED(a_arg);
     dap_stream_ch_gdb_t *l_ch_gdb = DAP_STREAM_CH_GDB(a_ch);
-    //if (l_ch_gdb->callback_notify_packet_out)
-    //    l_ch_gdb->callback_notify_packet_out(l_ch_gdb, DAP_STREAM_CH_GDB_PKT_TYPE_DELETE, NULL, l_ch_gdb->callback_notify_arg);
-    s_ch_gdb_go_idle(l_ch_gdb);
     debug_if(g_dap_global_db_debug_more, L_NOTICE, "Destroyed GDB sync channel %p with internal data %p", a_ch, l_ch_gdb);
     DAP_DEL_Z(a_ch->internal);
 }
@@ -225,7 +220,6 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         return;
     }
     dap_stream_ch_pkt_t * l_ch_pkt = (dap_stream_ch_pkt_t *)a_arg;
-    //s_chain_timer_reset(l_ch_chain);
     switch (l_ch_pkt->hdr.type) {
 
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES:

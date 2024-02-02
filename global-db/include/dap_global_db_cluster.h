@@ -70,6 +70,7 @@ enum dap_global_db_sync_state {
 typedef struct dap_global_db_sync_context {
     enum dap_global_db_sync_state state;
     atomic_uint request_count;
+    dap_time_t stage_last_activity;
 } dap_global_db_sync_context_t;
 
 typedef struct dap_global_db_cluster {
