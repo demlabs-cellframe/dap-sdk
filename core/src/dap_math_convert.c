@@ -267,3 +267,34 @@ char *dap_uint256_decimal_to_char(uint256_t a_uint256){ //dap_chain_balance_to_c
 
     return l_buf;
 }
+
+char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_round_position, bool is_round)
+{
+    char *result = dap_uint256_decimal_to_char(a_uint256);
+
+    size_t l_str_len = strlen(result);
+    char*  l_dot_pos = strstr(result, ".");
+
+    if (l_dot_pos && (l_str_len - (l_dot_pos - result)) > a_round_position){
+        size_t l_new_size = l_dot_pos - result + a_round_position;
+        char *l_res = DAP_DUP_SIZE(result, l_new_size + 1);
+        DAP_DELETE(result);
+        return l_res;
+    }
+
+    return result;
+}
+
+char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_position, bool is_round)
+{
+    char *result = a_str_decimal;
+
+    size_t l_str_len = strlen(result);
+    char*  l_dot_pos = strstr(result, ".");
+
+    if (l_dot_pos && (l_str_len - (l_dot_pos - result)) > a_round_position){
+        *(char*)(l_dot_pos + a_round_position + 1) = '\0';
+    }
+
+    return result;
+}
