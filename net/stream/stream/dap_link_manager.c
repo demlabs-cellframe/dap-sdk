@@ -69,7 +69,7 @@ dap_link_manager_t *dap_link_manager_new(dap_link_manager_callbacks_t *a_callbac
     if(l_ret->callbacks.delete)
         l_ret->callbacks.delete = s_delete_callback;
     l_ret->min_links_num = s_min_links_num;
-    l_ret->active_net_count = 0;
+    l_ret->active = true;
     return l_ret;
 }
 
@@ -78,7 +78,20 @@ DAP_INLINE dap_link_manager_t *dap_link_manager_get_default()
     return s_link_manager;
 }
 
+void dap_link_manager_add_active_net(char *a_net_name)
+{
+    dap_return_if_pass(!s_link_manager || !a_net_name);
+    s_link_manager->active_nets = dap_list_append(s_link_manager->active_nets, (void *)a_net_name);
+}
+
+void dap_link_manager_remove_active_net(char *a_net_name)
+{
+    dap_return_if_pass(!s_link_manager || !a_net_name);
+    s_link_manager->active_nets = dap_list_remove(s_link_manager->active_nets, (void *)a_net_name);
+}
+
 void dap_link_manager_deinit()
 {
-
+    dap_list_free(s_link_manager->active_nets);
+    dap_list_free_full(s_link_manager->links, NULL);
 }

@@ -29,8 +29,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_cluster"
 
-dap_cluster_t *s_clusters = NULL, *s_cluster_mnemonims = NULL;
-pthread_rwlock_t s_clusters_rwlock = PTHREAD_RWLOCK_INITIALIZER;
+static dap_cluster_t *s_clusters = NULL, *s_cluster_mnemonims = NULL;
+static pthread_rwlock_t s_clusters_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 
 static void s_cluster_member_delete(dap_cluster_member_t *a_member);
 

@@ -44,7 +44,8 @@ typedef struct dap_link_manager_callbacks {
 
 typedef struct dap_link_manager {
     uint32_t min_links_num;
-    int32_t active_net_count;
+    bool active;
+    dap_list_t *active_nets;
     dap_list_t *links;
     dap_timerfd_t *update_timer;
     dap_link_manager_callbacks_t callbacks;
@@ -54,3 +55,5 @@ int dap_link_manager_init(dap_link_manager_callbacks_t *a_callbacks);
 void dap_link_manager_deinit();
 dap_link_manager_t *dap_link_manager_new(dap_link_manager_callbacks_t *a_callbacks);
 dap_link_manager_t *dap_link_manager_get_default();
+void dap_link_manager_add_active_net(char *a_net_name);
+void dap_link_manager_remove_active_net(char *a_net_name);

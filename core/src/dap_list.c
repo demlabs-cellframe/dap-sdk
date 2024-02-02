@@ -434,9 +434,11 @@ dap_list_t *dap_list_first(dap_list_t *a_list)
  */
 uint64_t dap_list_length(dap_list_t *a_list)
 {
+    dap_return_val_if_pass(!a_list, 0);
     dap_list_t *l_el;
     uint64_t l_len;
-    return ({ DL_COUNT(a_list, l_el, l_len); l_len; });
+    DL_COUNT(a_list, l_el, l_len);
+    return l_len;
 }
 
 /**
