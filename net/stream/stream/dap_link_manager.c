@@ -39,7 +39,7 @@ static void s_delete_callback(dap_link_manager_t *a_manager)
     
 }
 
-int dap_link_manager_init(dap_link_manager_callbacks_t *a_callbacks)
+int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
 {
 // sanity check
     dap_return_val_if_pass(s_link_manager, -2);
@@ -53,7 +53,13 @@ int dap_link_manager_init(dap_link_manager_callbacks_t *a_callbacks)
     return 0;
 }
 
-dap_link_manager_t *dap_link_manager_new(dap_link_manager_callbacks_t *a_callbacks)
+void dap_link_manager_deinit()
+{
+    dap_list_free(s_link_manager->active_nets);
+    dap_list_free_full(s_link_manager->links, NULL);
+}
+
+dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_callbacks)
 {
 // sanity check
     dap_return_val_if_pass(!a_callbacks, NULL);
@@ -88,10 +94,4 @@ void dap_link_manager_remove_active_net(char *a_net_name)
 {
     dap_return_if_pass(!s_link_manager || !a_net_name);
     s_link_manager->active_nets = dap_list_remove(s_link_manager->active_nets, (void *)a_net_name);
-}
-
-void dap_link_manager_deinit()
-{
-    dap_list_free(s_link_manager->active_nets);
-    dap_list_free_full(s_link_manager->links, NULL);
 }

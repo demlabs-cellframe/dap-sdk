@@ -51,9 +51,9 @@ typedef struct dap_link_manager {
     dap_link_manager_callbacks_t callbacks;
 } dap_link_manager_t;
 
-int dap_link_manager_init(dap_link_manager_callbacks_t *a_callbacks);
+int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks);
 void dap_link_manager_deinit();
-dap_link_manager_t *dap_link_manager_new(dap_link_manager_callbacks_t *a_callbacks);
+dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_callbacks);
 dap_link_manager_t *dap_link_manager_get_default();
 void dap_link_manager_add_active_net(char *a_net_name);
 void dap_link_manager_remove_active_net(char *a_net_name);
