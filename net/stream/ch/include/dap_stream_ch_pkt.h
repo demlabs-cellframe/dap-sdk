@@ -26,10 +26,12 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "dap_stream_ch.h"
+#include "dap_stream.h"
 #include "dap_enc_key.h"
 
-typedef struct dap_stream_ch_pkt_hdr{
+typedef uint64_t dap_stream_ch_uuid_t;
+
+typedef struct dap_stream_ch_pkt_hdr {
     uint8_t id;   // Channel id
     uint8_t enc_type; // Zero if not encrypted
     uint8_t type; // general, command, info, signal and etc
@@ -44,6 +46,7 @@ typedef struct dap_stream_ch_pkt{
 } DAP_ALIGN_PACKED dap_stream_ch_pkt_t;
 
 typedef void (*dap_stream_ch_callback_packet_t)(void *, uint8_t, dap_stream_ch_pkt_t *, void *);
+typedef void (*dap_stream_ch_notifier_t)(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size);
 
 int dap_stream_ch_pkt_init();
 void dap_stream_ch_pkt_deinit();

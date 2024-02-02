@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include "uthash.h"
 #include "dap_math_ops.h"
+#include "dap_stream_ch_pkt.h"
 #include "dap_stream.h"
 
 #define TECHICAL_CHANNEL_ID 't'
@@ -35,7 +36,6 @@ typedef struct dap_events_socket dap_events_socket_t;
 
 typedef void (* dap_stream_ch_callback_t)(dap_stream_ch_t *, void *);
 
-typedef uint64_t dap_stream_ch_uuid_t;
 typedef struct dap_stream_ch{
     pthread_mutex_t mutex;
     bool ready_to_write;
@@ -48,7 +48,8 @@ typedef struct dap_stream_ch{
         uint64_t bytes_read;
     } stat;
 
-    //uint8_t buf[STREAM_BUF_SIZE_MAX];
+    dap_stream_ch_notifier_t packet_in_notifier;
+    dap_stream_ch_notifier_t packet_out_notifier;
 
     dap_dap_stream_ch_proc_t * proc;
     void * internal;

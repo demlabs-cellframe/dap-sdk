@@ -650,26 +650,17 @@ static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
  * @param sh DAP client instance
  * @param arg Not used
  */
-static void s_esocket_write(dap_events_socket_t* a_esocket , void * a_arg){
-    (void) a_arg;
-    size_t i;
-    bool l_ready_to_write=false;
+static void s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
+{
+    return;
+    // TODO identfy the channel to call right proc->callback
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
     //log_it(L_DEBUG,"Process channels data output (%u channels)", DAP_STREAM(l_http_client)->channel_count );
-    for(i=0;i<DAP_STREAM(l_http_client)->channel_count; i++){
-        dap_stream_ch_t * ch = DAP_STREAM(l_http_client)->channel[i];
-        if(ch->ready_to_write){
-            if(ch->proc->packet_out_callback)
-                ch->proc->packet_out_callback(ch,NULL);
-            l_ready_to_write|=ch->ready_to_write;
-        }
+    for (size_t i = 0; i < DAP_STREAM(l_http_client)->channel_count; i++) {
+        dap_stream_ch_t *l_ch = DAP_STREAM(l_http_client)->channel[i];
+        if (l_ch->ready_to_write && l_ch->proc->packet_out_callback)
+            l_ch->proc->packet_out_callback(l_ch, a_arg);
     }
-    if (s_dump_packet_headers ) {
-        log_it(L_DEBUG,"dap_stream_data_write: ready_to_write=%s client->buf_out_size=%zu" ,
-               l_ready_to_write?"true":"false", a_esocket->buf_out_size );
-    }
-    dap_events_socket_set_writable_unsafe(a_esocket, l_ready_to_write);
-    //log_it(L_DEBUG,"stream_dap_data_write ok");
 }
 
 /**
@@ -895,6 +886,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                 if(a_stream->channel[i]->proc){
                     if(a_stream->channel[i]->proc->id == l_ch_pkt->hdr.id ){
                         l_ch=a_stream->channel[i];
+                        break;
                     }
                 }
             }
@@ -905,6 +897,8 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type);
+                    if (l_ch->packet_in_notifier)
+                        l_ch->packet_in_notifier(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size);
                 }
             } else{
                 log_it(L_WARNING, "Input: unprocessed channel packet id '%c'",(char) l_ch_pkt->hdr.id );
