@@ -80,7 +80,7 @@ typedef struct dap_db_driver_callbacks {
 int     dap_db_driver_init(const char *driver_name, const char *a_filename_db, int a_mode_async);
 void    dap_db_driver_deinit(void);
 
-dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count);
+dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count, bool a_move);
 void    dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count);
 DAP_STATIC_INLINE void dap_store_obj_clear_one(dap_store_obj_t *a_store_obj) {
     DAP_DELETE(a_store_obj->group); DAP_DELETE(a_store_obj->key); DAP_DELETE(a_store_obj->value);

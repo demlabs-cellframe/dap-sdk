@@ -626,7 +626,7 @@ static void s_obj_raw_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_
         pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
         return;
     }
-    l_args->get_raw.obj = dap_store_obj_copy(a_value, 1);
+    l_args->get_raw.obj = dap_store_obj_copy(a_value, 1, false);
     l_args->hdr.called = true;
     pthread_cond_signal(&l_args->hdr.cond);
     pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
@@ -1298,7 +1298,7 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
         return;
     }
     // TODO make incremental copy
-    l_args->get_store_objs.objs = dap_store_obj_copy(a_values, a_values_count);
+    l_args->get_store_objs.objs = dap_store_obj_copy(a_values, a_values_count, false);
     l_args->get_objs.objs_count += a_values_count;
     if (a_values_count != a_values_total) {
         log_it(L_WARNING, "Got only %zu records from %zu", a_values_count, a_values_total);
