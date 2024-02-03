@@ -247,7 +247,7 @@ MDBX_val    l_key_iov, l_data_iov;
     /* MDBX sequence is started from zero, zero is not so good for our case,
      * so we just increment a current (may be is not zero) sequence for <dbi>
      */
-    mdbx_dbi_sequence (l_txn /*l_db_ctx->txn*/, l_db_ctx->dbi, &l_seq, 1);
+    mdbx_dbi_sequence (l_txn, l_db_ctx->dbi, &l_seq, 1);
 
     /*
      * Save new subDB name into the master table
@@ -968,7 +968,7 @@ MDBX_txn *l_txn = NULL;
         if (l_last_dot && !strcmp(l_last_dot, ".del"))
             l_cur_obj->flags &= ~RECORD_DEL_HISTORY_MODIFY;
 
-        if ( dap_strcmp(l_cur_obj->group, l_group) ) {
+        if (!l_db_ctx || dap_strcmp(l_cur_obj->group, l_group) ) {
             l_group = l_cur_obj->group;
             if ( !(l_db_ctx = s_cre_db_ctx_for_group(l_cur_obj->group, MDBX_CREATE, l_txn)) ) {
                 log_it(L_CRITICAL, "Cannot create DB table '%s'", l_cur_obj->group);
@@ -976,17 +976,17 @@ MDBX_txn *l_txn = NULL;
                 continue;
             }
             mdbx_dbi_sequence(l_txn, l_db_ctx->dbi, &l_id, 1);
+        }
 
-            if (l_cur_obj->flags & RECORD_DEL_HISTORY_MODIFY) {
-                char l_del_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
-                dap_snprintf(l_del_group, sizeof(l_del_group) - 1, "%s.del", l_group);
-                if ( !(l_db_del_ctx = s_cre_db_ctx_for_group(l_del_group, MDBX_CREATE, l_txn)) ){
-                    log_it(L_CRITICAL, "Cannot create DB table '%s'", l_cur_obj->group);
-                    l_cur_obj->flags |= RECORD_APPLY_ERR;
-                    continue;
-                }
-                mdbx_dbi_sequence(l_txn, l_db_del_ctx->dbi, &l_del_id, 1);
+        if ( (l_cur_obj->flags & RECORD_DEL_HISTORY_MODIFY) && (!l_db_del_ctx || dap_strcmp(l_cur_obj->group, l_group)) ) {
+            char l_del_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
+            dap_snprintf(l_del_group, sizeof(l_del_group) - 1, "%s.del", l_group);
+            if ( !(l_db_del_ctx = s_cre_db_ctx_for_group(l_del_group, MDBX_CREATE, l_txn)) ){
+                log_it(L_CRITICAL, "Cannot create DB table '%s'", l_cur_obj->group);
+                l_cur_obj->flags |= RECORD_APPLY_ERR;
+                continue;
             }
+            mdbx_dbi_sequence(l_txn, l_db_del_ctx->dbi, &l_del_id, 1);
         }
 
         switch (l_cur_obj->type) {
