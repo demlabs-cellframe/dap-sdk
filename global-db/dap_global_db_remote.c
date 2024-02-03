@@ -897,6 +897,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
         }
         if (!l_match_mask) {
             log_it(L_WARNING, "An entry in the group %s was rejected because the group name did not match any of the masks.", l_obj->group);
+            dap_store_obj_clear_one(l_obj);
             if (l_obj < l_last_obj) {
                 *l_obj-- = *l_last_obj;
             }
@@ -987,7 +988,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
             dap_store_obj_free_one(l_read_obj);
         }
     }
-    return l_count ? dap_global_db_set_raw(a_obj, l_count, a_callback, a_arg) : ({ DAP_DELETE(a_arg); -1;});
+    return l_count ? dap_global_db_set_raw(a_obj, l_count, a_callback, a_arg) : ({ DAP_DELETE(a_obj); DAP_DELETE(a_arg); -1;});
 }
 
 struct gdb_apply_args {
@@ -1001,7 +1002,6 @@ static void s_db_apply_obj(dap_global_db_context_t *a_global_db_context, void *a
 {
     struct gdb_apply_args *l_args = a_arg;
     dap_global_db_remote_apply_obj_unsafe(a_global_db_context, l_args->obj, l_args->objs_count, l_args->callback, l_args->cb_arg);
-    dap_store_obj_free(l_args->obj, l_args->objs_count);
     DAP_DELETE(l_args);
 }
 
@@ -1012,7 +1012,7 @@ int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, size_t a_count, dap_g
         log_it(L_CRITICAL, "Memory allocation error");
         return -1;
     }
-    l_args->obj = dap_store_obj_copy(a_obj, a_count, false);
+    l_args->obj = a_obj;
     l_args->objs_count = a_count;
     l_args->callback = a_callback;
     l_args->cb_arg = a_arg;
