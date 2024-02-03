@@ -948,14 +948,22 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
 
         if (!l_apply) {
             if (g_dap_global_db_debug_more) {
-                if (l_obj->timestamp <= (uint64_t)l_timestamp_cur)
-                    log_it(L_WARNING, "New data not applied, because newly object exists");
-                if (l_obj->timestamp <= (uint64_t)l_timestamp_del)
-                    log_it(L_WARNING, "New data not applied, because newly object is deleted");
-                if (l_obj->timestamp < l_limit_time)
-                    log_it(L_WARNING, "New data not applied, because object is too old");
-                if (l_broken) {
-                    log_it(L_WARNING, "New data not applied, because object is corrupted");
+                if (l_obj->timestamp <= (uint64_t)l_timestamp_cur) {
+                    char l_ts[64] = { '\0' };
+                    dap_gbd_time_to_str_rfc822(l_ts, sizeof(l_ts), l_obj->timestamp);
+                    log_it(L_INFO, "Skip \"%s : %s\", record already exists since %s",
+                           l_obj->group, l_obj->key, l_ts);
+                } else if (l_obj->timestamp <= (uint64_t)l_timestamp_del) {
+                    char l_ts[64] = { '\0' };
+                    dap_gbd_time_to_str_rfc822(l_ts, sizeof(l_ts), l_timestamp_del);
+                    log_it(L_INFO, "Skip \"%s : %s\", record was deleted at %s",
+                           l_obj->group, l_obj->key, l_ts);
+                } else if (l_obj->timestamp < l_limit_time) {
+                    log_it(L_INFO, "Skip \"%s : %s\", record is too old",
+                           l_obj->group, l_obj->key);
+                } else if (l_broken) {
+                    log_it(L_WARNING, "Skip \"%s : %s\", record is corrupted",
+                           l_obj->group, l_obj->key);
                 }
             }
             dap_store_obj_free(l_read_obj, (int)l_is_pinned_cur);
@@ -1016,6 +1024,5 @@ int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, size_t a_count, dap_g
     l_args->objs_count = a_count;
     l_args->callback = a_callback;
     l_args->cb_arg = a_arg;
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "Apply %zu objs", a_count);
     return dap_global_db_context_exec(s_db_apply_obj, l_args);
 }

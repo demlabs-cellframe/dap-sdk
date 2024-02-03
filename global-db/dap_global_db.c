@@ -1522,16 +1522,20 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
 
 int dap_global_db_set_raw_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
-    a_store_objs->flags |= RECORD_DEL_HISTORY_MODIFY;
+    dap_store_obj_t *l_store_obj = a_store_objs, *l_last_obj = a_store_objs + a_store_objs_count - 1;
+    do {
+        l_store_obj->flags |= RECORD_DEL_HISTORY_MODIFY;
+    } while (++l_store_obj <= l_last_obj);
     int l_ret = dap_global_db_driver_apply(a_store_objs, a_store_objs_count);
     if (l_ret < 0) {
         log_it(L_ERROR,"Can't save raw gdb data, code %d ", l_ret);
         return l_ret;
     }
-    for (dap_store_obj_t *l_store_obj = a_store_objs; a_store_objs_count--; l_store_obj++) {
+    l_store_obj = a_store_objs;
+    do {
         if (!(l_store_obj->flags & RECORD_APPLY_ERR))
             s_change_notify(a_global_db_context, l_store_obj);
-    }
+    } while (++l_store_obj <= l_last_obj);
     return l_ret;
 }
 
