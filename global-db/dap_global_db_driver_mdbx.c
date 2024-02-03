@@ -955,7 +955,6 @@ MDBX_txn *l_txn = NULL;
 
     size_t l_err_count = 0;
     dap_store_obj_t *l_cur_obj = a_store_obj, *l_last_obj = a_store_obj + a_count - 1;
-    char *l_group = NULL;
 
     if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn )) ) {
         return  log_it (L_CRITICAL, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), -EIO;
@@ -968,8 +967,7 @@ MDBX_txn *l_txn = NULL;
         if (l_last_dot && !strcmp(l_last_dot, ".del"))
             l_cur_obj->flags &= ~RECORD_DEL_HISTORY_MODIFY;
 
-        if (!l_db_ctx || dap_strcmp(l_cur_obj->group, l_group) ) {
-            l_group = l_cur_obj->group;
+        if (!l_db_ctx || dap_strcmp(l_cur_obj->group, l_db_ctx->name) ) {
             if ( !(l_db_ctx = s_cre_db_ctx_for_group(l_cur_obj->group, MDBX_CREATE, l_txn)) ) {
                 log_it(L_CRITICAL, "Cannot create DB table '%s'", l_cur_obj->group);
                 l_cur_obj->flags |= RECORD_APPLY_ERR;
@@ -978,15 +976,16 @@ MDBX_txn *l_txn = NULL;
             mdbx_dbi_sequence(l_txn, l_db_ctx->dbi, &l_id, 1);
         }
 
-        if ( (l_cur_obj->flags & RECORD_DEL_HISTORY_MODIFY) && (!l_db_del_ctx || dap_strcmp(l_cur_obj->group, l_group)) ) {
+        if ( l_cur_obj->flags & RECORD_DEL_HISTORY_MODIFY ) {
             char l_del_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
-            dap_snprintf(l_del_group, sizeof(l_del_group) - 1, "%s.del", l_group);
-            if ( !(l_db_del_ctx = s_cre_db_ctx_for_group(l_del_group, MDBX_CREATE, l_txn)) ){
-                log_it(L_CRITICAL, "Cannot create DB table '%s'", l_cur_obj->group);
-                l_cur_obj->flags |= RECORD_APPLY_ERR;
-                continue;
+            dap_snprintf(l_del_group, sizeof(l_del_group) - 1, "%s.del", l_cur_obj->group);
+            if (!l_db_del_ctx || dap_strcmp(l_del_group, l_db_del_ctx->name)) {
+                if ( !(l_db_del_ctx = s_cre_db_ctx_for_group(l_del_group, MDBX_CREATE, l_txn)) ){
+                    log_it(L_CRITICAL, "Cannot create DB table '%s'", l_cur_obj->group);
+                    l_cur_obj->flags |= RECORD_APPLY_ERR;
+                    continue;
+                }
             }
-            mdbx_dbi_sequence(l_txn, l_db_del_ctx->dbi, &l_del_id, 1);
         }
 
         switch (l_cur_obj->type) {
