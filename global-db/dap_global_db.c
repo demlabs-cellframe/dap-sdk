@@ -626,7 +626,7 @@ static void s_obj_raw_get_callback(UNUSED_ARG dap_global_db_context_t *a_global_
         pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
         return;
     }
-    l_args->get_raw.obj = dap_store_obj_copy(a_value, 1, false);
+    l_args->get_raw.obj = dap_store_obj_copy(a_value, 1);
     l_args->hdr.called = true;
     pthread_cond_signal(&l_args->hdr.cond);
     pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
