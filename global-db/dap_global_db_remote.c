@@ -215,7 +215,7 @@ static void *s_list_thread_proc2(void *arg) {
         dap_nanotime_t  l_time_allowed = l_now + dap_nanotime_from_sec(24 * 3600),
                         l_3_hours_ago = l_now - dap_nanotime_from_sec(3 * 3600);
         size_t l_item_count = 0;
-        int l_placed_count = 0, l_deleted_count = 0, l_unprocessed_count = 0;
+        int l_placed_count = 0, l_unprocessed_count = 0;
         dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group->name, 0, &l_item_count);
         if (!l_objs)
             continue;
@@ -228,14 +228,12 @@ static void *s_list_thread_proc2(void *arg) {
             if (!l_obj_cur)
                 continue;
             if (!(l_obj_cur->timestamp >> 32) || l_obj_cur->timestamp > l_time_allowed || !l_obj_cur->group) {
-                //dap_global_db_driver_delete(l_obj_cur, 1);
                 continue;       // the object is broken or too old
             }
             l_obj_cur->type = l_obj_type;
             switch (l_obj_type) {
             case DAP_DB$K_OPTYPE_DEL:
                 if (l_limit_time && l_obj_cur->timestamp < l_limit_time) {
-                    //dap_global_db_driver_delete(l_obj_cur, 1);
                     continue;
                 }
                 DAP_DELETE(l_obj_cur->group);
@@ -246,16 +244,7 @@ static void *s_list_thread_proc2(void *arg) {
                         || !dap_strncmp(l_obj_cur->group, "cdb.", 4)
                         || strstr(l_obj_cur->group, ".nodes.v2");
 
-                if (l_obj_cur->timestamp < l_3_hours_ago && !(l_obj_cur->flags & RECORD_PINNED) && !group_HALed) {
-                    dap_global_db_del(l_obj_cur->group, l_obj_cur->key, NULL, NULL);
-                    dap_store_obj_clear_one(l_obj_cur);
-                    if (l_obj_cur < l_obj_last) {
-                        *l_obj_cur-- = *l_obj_last;
-                    }
-                    l_obj_last->group = NULL; l_obj_last->key = NULL; l_obj_last->value = NULL;
-                    --l_obj_last;
-                    --l_group->count;
-                    ++l_deleted_count;
+                if ( (l_obj_cur->timestamp < l_3_hours_ago) && !(l_obj_cur->flags & RECORD_PINNED) && !group_HALed ) {
                     continue;
                 }
                 break;
@@ -310,7 +299,7 @@ static void *s_list_thread_proc2(void *arg) {
         }
 
         debug_if(g_dap_global_db_debug_more, L_MSG, "Placed %d / %zu records of group \"%s\" into log list, %zu deleted, %d skipped",
-                 l_placed_count, l_item_count, l_group->name, l_group->count + l_deleted_count, l_unprocessed_count);
+                 l_placed_count, l_item_count, l_group->name, l_group->count, l_unprocessed_count);
 
         if (l_group->count) {
             struct dap_store_obj_t_multi *l_arg = DAP_NEW_Z(struct dap_store_obj_t_multi);

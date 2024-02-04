@@ -220,7 +220,8 @@ MDBX_val    l_key_iov, l_data_iov;
     dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
 
     if ( l_db_ctx )                                                         /* Found! Good job - return DB context */
-        return  log_it(L_INFO, "Found DB context: %p for group: '%s'", l_db_ctx, a_group), l_db_ctx;
+        return  //log_it(L_INFO, "Found DB context: %p for group: '%s'", l_db_ctx, a_group),
+                l_db_ctx;
 
 
     /* So , at this point we are going to create (if not exist)  'table' for new group */
