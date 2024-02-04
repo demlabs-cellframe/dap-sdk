@@ -1871,7 +1871,7 @@ int dap_global_db_del_unsafe(dap_global_db_context_t *a_global_db_context, const
 
     int l_res = dap_global_db_driver_apply(&l_store_obj, 1);
 
-    if (a_key && !l_res)
+    if (a_key && (l_res >= 0))
         // do not notify group deletion or deletion error
         s_change_notify(a_global_db_context, &l_store_obj);
     return l_res;
