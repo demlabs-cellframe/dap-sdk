@@ -238,11 +238,20 @@ static void *s_list_thread_proc2(void *arg) {
                     continue;
                 break;
             case DAP_DB$K_OPTYPE_DEL:
-                if ( group_HALed )
+                /*if ( group_HALed ) {
+                    dap_store_obj_clear_one(l_obj_cur);
+                    if (l_obj_cur < l_obj_last) {
+                        *l_obj_cur-- = *l_obj_last;
+                    }
+                    l_obj_last->group = NULL; l_obj_last->key = NULL; l_obj_last->value = NULL;
+                    --l_obj_last;
                     continue;
-                char *l_dot = strrchr(l_obj_cur->group, '.');
-                *l_dot = '\0';
-                l_obj_cur->group_len = l_dot - l_obj_cur->group + 1;
+                } */
+                {
+                    char *l_dot = strrchr(l_obj_cur->group, '.');
+                    *l_dot = '\0';
+                    l_obj_cur->group_len = l_dot - l_obj_cur->group + 1;
+                }
                 break;
             default: break;
             }
@@ -964,9 +973,14 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                 break;
             case DAP_DB$K_OPTYPE_DEL:
                 if ( group_HALed ) {
-                    debug_if(g_dap_global_db_debug_more, L_INFO, "Skip \"%s : %s\", record is protected from deletion",
+                    debug_if(g_dap_global_db_debug_more, L_INFO, "Skip deleting \"%s : %s\", record is protected from deletion",
                              l_obj->group, l_obj->key);
                     l_apply = false;
+                }
+                if (l_obj->timestamp < l_limit_time) {
+                    l_apply = false;
+                    debug_if(g_dap_global_db_debug_more, L_INFO, "Skip deleting \"%s : %s\", record is too old",
+                             l_obj->group, l_obj->key);
                 }
                 break;
             default: break;
