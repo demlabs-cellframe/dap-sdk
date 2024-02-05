@@ -26,10 +26,13 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include <stdint.h>
 #include "dap_list.h"
 #include "dap_timerfd.h"
+#include "dap_common.h"
+#include "dap_client.h"
 
 typedef struct dap_link_manager dap_link_manager_t;
+typedef struct dap_link dap_link_t;
 
-typedef void (*dap_link_manager_callback_t)(dap_link_manager_t *, void*);
+typedef void (*dap_link_manager_callback_t)(dap_link_t *, void*);
 typedef void (*dap_link_manager_callback_delete_t)(dap_link_manager_t *);
 typedef bool (*dap_link_manager_callback_update_t)(void *);
 typedef void (*dap_link_manager_callback_error_t)(dap_link_manager_t *, int, void *);
@@ -42,14 +45,44 @@ typedef struct dap_link_manager_callbacks {
     dap_link_manager_callback_error_t error;
 } dap_link_manager_callbacks_t;
 
+// connection states
+typedef enum dap_link_state {
+    LINK_STATE_ERROR = -1,
+    LINK_STATE_DISCONNECTED = 0,
+    LINK_STATE_GET_NODE_ADDR = 1,
+    LINK_STATE_NODE_ADDR_LEASED = 2,
+    LINK_STATE_PING = 3,
+    LINK_STATE_PONG = 4,
+    LINK_STATE_CONNECTING = 5,
+    LINK_STATE_ESTABLISHED = 100,
+} dap_link_state_t;
+
+typedef struct dap_link {
+    dap_link_state_t state;
+    uint64_t uplink_ip;
+    struct in_addr addr_v4;
+    struct in6_addr addr_v6;
+    uint16_t port;
+    dap_client_t *client;
+    char *net;
+    dap_stream_node_addr_t addr;
+    bool keep_connection;
+    dap_link_manager_t *link_manager;
+    UT_hash_handle hh;
+} dap_link_t;
+
 typedef struct dap_link_manager {
+    dap_stream_node_addr_t self_addr;
     uint32_t min_links_num;
     bool active;
     dap_list_t *active_nets;
-    dap_list_t *links;
+    dap_link_t *self_links;
+    dap_link_t *alien_links;
     dap_timerfd_t *update_timer;
     dap_link_manager_callbacks_t callbacks;
 } dap_link_manager_t;
+
+#define DAP_LINK(a) (a ? (dap_link_t *) (a)->_inheritor : NULL)
 
 int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks);
 void dap_link_manager_deinit();

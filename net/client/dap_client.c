@@ -75,34 +75,20 @@ dap_client_t *dap_client_new(dap_client_callback_t a_delete_callback,
                              dap_client_callback_t a_stage_status_error_callback,
                              void *a_callbacks_arg)
 {
-    // ALLOC MEM FOR dap_client
-    dap_client_t *l_client = DAP_NEW_Z(dap_client_t);
-    if (!l_client)
-        goto MEM_ALLOC_ERR;
-
+// memory alloc
+    dap_client_t *l_client = NULL;
+    DAP_NEW_Z_RET_VAL(l_client, dap_client_t, NULL, NULL);
+    DAP_NEW_Z_RET_VAL(l_client->_internal, dap_client_pvt_t, NULL, l_client);
+// func work
     l_client->delete_callback = a_delete_callback;
     l_client->callbacks_arg = a_callbacks_arg;
-    l_client->_internal  = DAP_NEW_Z(dap_client_pvt_t);
-    if (!l_client->_internal)
-        goto MEM_ALLOC_ERR;
-
     // CONSTRUCT dap_client object
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     l_client_pvt->client = l_client;
     l_client_pvt->stage_status_error_callback = a_stage_status_error_callback;
     l_client_pvt->worker = dap_events_worker_get_auto();
-
     dap_client_pvt_new(l_client_pvt);
-
     return l_client;
-
-MEM_ALLOC_ERR:
-    log_it(L_ERROR, "dap_client_new can not allocate memory");
-    if (l_client) {
-        DAP_DEL_Z(l_client->_internal);
-        DAP_DELETE(l_client);
-    }
-    return NULL;
 }
 
 /**
