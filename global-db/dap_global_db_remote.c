@@ -206,52 +206,47 @@ static void s_log_list_delete_filtered(UNUSED_ARG dap_global_db_context_t *a_con
 static void *s_list_thread_proc2(void *arg) {
     dap_db_log_list_t *l_dap_db_log_list = (dap_db_log_list_t*)arg;
     uint32_t l_time_store_lim_hours = l_dap_db_log_list->db_context->instance->store_time_limit;
-    dap_nanotime_t l_now = dap_nanotime_now();
-    dap_nanotime_t l_limit_time = l_time_store_lim_hours ? l_now - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
     dap_list_t *l_group_elem;
     DL_FOREACH(l_dap_db_log_list->groups, l_group_elem) {
         dap_db_log_list_group_t *l_group = (dap_db_log_list_group_t*)l_group_elem->data;
         char l_obj_type = dap_fnmatch("*.del", l_group->name, 0) ? DAP_DB$K_OPTYPE_ADD : DAP_DB$K_OPTYPE_DEL;
-        dap_nanotime_t  l_time_allowed = l_now + dap_nanotime_from_sec(24 * 3600),
-                        l_3_hours_ago = l_now - dap_nanotime_from_sec(3 * 3600);
         size_t l_item_count = 0;
         int l_placed_count = 0, l_unprocessed_count = 0;
         dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group->name, 0, &l_item_count);
         if (!l_objs)
             continue;
         if (l_item_count != l_group->count) {
-            log_it(L_WARNING, "[!] Record count mismatch: actually extracted %zu != %zu previously count", l_item_count, l_group->count);
+            debug_if(g_dap_global_db_debug_more, L_WARNING, "Record count mismatch: actually extracted %zu != %zu previously count",
+                     l_item_count, l_group->count);
             l_group->count = l_item_count;
         }
-        debug_if(g_dap_global_db_debug_more, L_MSG, "Group %s: place %zu records into log_list", l_group->name, l_item_count);
+        debug_if(g_dap_global_db_debug_more, L_INFO, "Group %s: put %zu records into log_list", l_group->name, l_item_count);
         for (dap_store_obj_t *l_obj_cur = l_objs, *l_obj_last = l_objs + l_item_count - 1; l_obj_cur <= l_obj_last; ++l_obj_cur) {
-            if (!l_obj_cur)
-                continue;
-            if (!(l_obj_cur->timestamp >> 32) || l_obj_cur->timestamp > l_time_allowed || !l_obj_cur->group) {
-                continue;       // the object is broken or too old
-            }
+            if (!l_obj_cur || !l_obj_cur->group || !(l_obj_cur->timestamp >> 32))
+                continue;   // broken or derelict object
             l_obj_cur->type = l_obj_type;
-            switch (l_obj_type) {
-            case DAP_DB$K_OPTYPE_DEL:
-                if (l_limit_time && l_obj_cur->timestamp < l_limit_time) {
-                    continue;
-                }
-                DAP_DELETE(l_obj_cur->group);
-                l_obj_cur->group = dap_strdup_printf("%.*s", (int)dap_strlen(l_group->name) - 4, l_group->name);
-                break;
-            case DAP_DB$K_OPTYPE_ADD: {
-                bool group_HALed = strstr(l_obj_cur->group, ".service.orders")
-                        || !dap_strncmp(l_obj_cur->group, "cdb.", 4)
-                        || strstr(l_obj_cur->group, ".nodes.v2");
+            dap_nanotime_t l_limit_time = l_time_store_lim_hours
+                    ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600)
+                    : 0;
+            bool group_HALed = strstr(l_obj_cur->group, ".service.orders")
+                    || !dap_strncmp(l_obj_cur->group, "cdb.", 4)
+                    || strstr(l_obj_cur->group, ".nodes.v2");
 
-                if ( (l_obj_cur->timestamp < l_3_hours_ago) && !(l_obj_cur->flags & RECORD_PINNED) && !group_HALed ) {
+            switch (l_obj_type) {
+            case DAP_DB$K_OPTYPE_ADD:
+                if ( (l_obj_cur->timestamp < l_limit_time) && !group_HALed && !(l_obj_cur->flags & RECORD_PINNED) )
                     continue;
-                }
                 break;
-            }
-            default:
+            case DAP_DB$K_OPTYPE_DEL:
+                if ( group_HALed )
+                    continue;
+                char *l_dot = strrchr(l_obj_cur->group, '.');
+                *l_dot = '\0';
+                l_obj_cur->group_len = l_dot - l_obj_cur->group + 1;
                 break;
+            default: break;
             }
+
             pthread_mutex_lock(&l_dap_db_log_list->list_mutex);
             while (l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE && l_dap_db_log_list->is_process)
                 pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
@@ -484,7 +479,7 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
         l_sync_group->last_id_synced = a_flags & F_DB_LOG_SYNC_FROM_ZERO ? 0 : dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
         l_sync_group->count = dap_global_db_driver_count(l_sync_group->name, l_sync_group->last_id_synced + 1);
         if (!l_sync_group->count) {
-            debug_if(L_DEBUG, g_dap_global_db_debug_more, "Group %s is empty on our side, skip it", l_sync_group->name);
+            debug_if(g_dap_global_db_debug_more, L_DEBUG, "Group %s is empty on our side, skip it", l_sync_group->name);
             l_dap_db_log_list->groups = dap_list_delete_link(l_dap_db_log_list->groups, l_group);
             DAP_DELETE(l_sync_group);
             continue;
@@ -872,6 +867,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     dap_nanotime_t l_timestamp_cur = 0;
     dap_store_obj_t *l_obj, *l_last_obj = a_obj + a_count - 1;
     size_t l_count = a_count;
+    dap_nanotime_t l_now = dap_nanotime_now();
     for (l_obj = a_obj; l_obj <= l_last_obj; ++l_obj) {
         bool l_match_mask = false, l_is_pinned_cur = false;
         uint64_t l_ttl = 0;
@@ -920,41 +916,66 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
         // Deleted time
         dap_nanotime_t l_timestamp_del = dap_global_db_get_del_ts_unsafe(a_global_db_context, l_obj->group, l_obj->key);
         // Limit time
-        uint32_t l_time_store_lim_hours = l_ttl ? l_ttl : a_global_db_context->instance->store_time_limit;
-        uint64_t l_limit_time = l_time_store_lim_hours ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600) : 0;
-        //check whether to apply the received data into the database
-        bool l_apply = false;
-        // check the applied object newer that we have stored or erased
-        if (l_obj->timestamp > (uint64_t)l_timestamp_del && l_obj->timestamp > (uint64_t)l_timestamp_cur)
-            l_apply = true;
+        dap_nanotime_t l_time_store_lim_hours = l_ttl ? l_ttl : a_global_db_context->instance->store_time_limit;
+        dap_nanotime_t l_limit_time = l_time_store_lim_hours
+                ? l_now - dap_nanotime_from_sec(l_time_store_lim_hours * 3600)
+                : 0;
+        bool l_apply = !l_broken;
 
-        bool group_HALed = strstr(l_obj->group, ".service.orders")
-                || !dap_strncmp(l_obj->group, "cdb.", 4)
-                || strstr(l_obj->group, ".nodes.v2");
-
-        if (((l_obj->timestamp < l_limit_time) && !group_HALed) || l_broken)
-            l_apply = false;
-
-        if (!l_apply) {
-            if (g_dap_global_db_debug_more) {
-                if (l_obj->timestamp <= (uint64_t)l_timestamp_cur) {
+        if (l_apply) {
+            if ( l_obj->timestamp > l_now ) {
+                l_apply = false;
+                if (g_dap_global_db_debug_more) {
                     char l_ts[64] = { '\0' };
                     dap_gbd_time_to_str_rfc822(l_ts, sizeof(l_ts), l_obj->timestamp);
-                    log_it(L_INFO, "Skip \"%s : %s\", record already exists since %s",
+                    log_it(L_INFO, "Skip \"%s : %s\", record is from the future: %s",
                            l_obj->group, l_obj->key, l_ts);
-                } else if (l_obj->timestamp <= (uint64_t)l_timestamp_del) {
-                    char l_ts[64] = { '\0' };
-                    dap_gbd_time_to_str_rfc822(l_ts, sizeof(l_ts), l_timestamp_del);
-                    log_it(L_INFO, "Skip \"%s : %s\", record was deleted at %s",
-                           l_obj->group, l_obj->key, l_ts);
-                } else if (l_obj->timestamp < l_limit_time) {
-                    log_it(L_INFO, "Skip \"%s : %s\", record is too old",
-                           l_obj->group, l_obj->key);
-                } else if (l_broken) {
-                    log_it(L_WARNING, "Skip \"%s : %s\", record is corrupted",
-                           l_obj->group, l_obj->key);
                 }
             }
+            if ( l_obj->timestamp <= (uint64_t)l_timestamp_del ) {
+                l_apply = false;
+                if (g_dap_global_db_debug_more) {
+                    char l_ts[64] = { '\0' };
+                    dap_gbd_time_to_str_rfc822(l_ts, sizeof(l_ts), l_timestamp_del);
+                    log_it(L_INFO, "Skip \"%s : %s\", record already deleted at %s",
+                           l_obj->group, l_obj->key, l_ts);
+                }
+            } else if (l_obj->timestamp <= (uint64_t)l_timestamp_cur) {
+                l_apply = false;
+                if (g_dap_global_db_debug_more) {
+                    char l_ts[64] = { '\0' };
+                    dap_gbd_time_to_str_rfc822(l_ts, sizeof(l_ts), l_timestamp_cur);
+                    log_it(L_INFO, "Skip \"%s : %s\", record already added at %s",
+                           l_obj->group, l_obj->key, l_ts);
+                }
+            }
+
+            bool group_HALed = strstr(l_obj->group, ".service.orders")
+                    || !dap_strncmp(l_obj->group, "cdb.", 4)
+                    || strstr(l_obj->group, ".nodes.v2");
+
+            switch (l_obj->type) {
+            case DAP_DB$K_OPTYPE_ADD:
+                if ( (l_obj->timestamp < l_limit_time) && !group_HALed && !l_is_pinned_cur) {
+                    l_apply = false;
+                    debug_if(g_dap_global_db_debug_more, L_INFO, "Skip \"%s : %s\", record is too old",
+                             l_obj->group, l_obj->key);
+                }
+                break;
+            case DAP_DB$K_OPTYPE_DEL:
+                if ( group_HALed ) {
+                    debug_if(g_dap_global_db_debug_more, L_INFO, "Skip \"%s : %s\", record is protected from deletion",
+                             l_obj->group, l_obj->key);
+                    l_apply = false;
+                }
+                break;
+            default: break;
+            }
+        } else {
+            debug_if(g_dap_global_db_debug_more, L_WARNING, "Skip \"%s : %s\", record is corrupted", l_obj->group, l_obj->key);
+        }
+
+        if (!l_apply) {
             dap_store_obj_free(l_read_obj, (int)l_is_pinned_cur);
             dap_store_obj_clear_one(l_obj);
             if (l_obj < l_last_obj) {
@@ -967,25 +988,21 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
         }
         // Do not overwrite pinned records
         if (l_is_pinned_cur) {
-            //int l_ret = 0;
-            if (l_obj->timestamp - l_read_obj->timestamp == 1 && l_obj->type == DAP_DB$K_OPTYPE_ADD) {
-                log_it(L_MSG, "[!] Repinning occured, unpin %s : %s", l_obj->group, l_obj->key);
-                //l_ret = dap_global_db_set_raw(l_obj, 1, a_callback, a_arg);
+            if ( (l_obj->timestamp - l_read_obj->timestamp == 1) && l_obj->type == DAP_DB$K_OPTYPE_ADD ) {
+                debug_if(g_dap_global_db_debug_more, L_INFO, "Record \"%s : %s\" was repinned, unpin it", l_obj->group, l_obj->key);
             } else {
-                debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record from group %s key %s - current record is pinned",
-                                        l_obj->type != DAP_DB$K_OPTYPE_DEL ? "remove" : "rewrite", l_obj->group, l_obj->key);
+                debug_if(g_dap_global_db_debug_more, L_WARNING, "Can't %s record \"%s : %s\" - it's pinned",
+                                        l_obj->type != DAP_DB$K_OPTYPE_DEL ? "delete" : "rewrite", l_obj->group, l_obj->key);
                 l_read_obj->timestamp = l_obj->timestamp + 1;
                 l_read_obj->type = DAP_DB$K_OPTYPE_ADD;
                 dap_store_obj_clear_one(l_obj);
                 *l_obj = *l_read_obj;
                 l_read_obj->group = NULL; l_read_obj->key = NULL; l_read_obj->value = NULL;
-                //dap_global_db_set_raw(l_read_obj, 1, NULL, NULL);
-                //l_ret = -1;
             }
             dap_store_obj_free_one(l_read_obj);
         }
-    }
-    return l_count ? dap_global_db_set_raw(a_obj, l_count, a_callback, a_arg) : ({ DAP_DELETE(a_obj); DAP_DELETE(a_arg); -1;});
+    }    
+    return l_count ? dap_global_db_set_raw(a_obj, l_count, a_callback, a_arg) : ({ DAP_DELETE(a_obj); DAP_DELETE(a_arg); -1; });
 }
 
 struct gdb_apply_args {
