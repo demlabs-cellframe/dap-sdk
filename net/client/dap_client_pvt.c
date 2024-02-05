@@ -247,9 +247,9 @@ static bool s_stream_timer_timeout_check(void * a_arg)
                    l_client->uplink_addr, l_client->uplink_port);
             l_client_pvt->is_closed_by_timeout = true;
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout", l_es->remote_addr_str, l_es->socket, l_es->type);
-            // Esocket wiil be removed here!
             if (l_es->callbacks.error_callback)
                 l_es->callbacks.error_callback(l_es, ETIMEDOUT);
+            dap_events_socket_remove_and_delete_unsafe(l_es, true);
         }else
             if(s_debug_more)
                 log_it(L_DEBUG,"Socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
