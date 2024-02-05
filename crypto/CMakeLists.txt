@@ -143,12 +143,12 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..
 
 target_include_directories(dap_crypto PUBLIC
         src/XKCP/lib/common
-        src/XKCP/lib/low/common
+        #src/XKCP/lib/low/common
         src/XKCP/lib/high/Keccak
         src/XKCP/lib/high/common
         src/XKCP/lib/high/Keccak/FIPS202
         src/XKCP/lib/high/Keccak/SP800-185
-        src/XKCP/lib/low/KeccakP-1600/Optimized
+        #src/XKCP/lib/low/KeccakP-1600/Optimized
 )
 
 if(WIN32)

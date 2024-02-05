@@ -3,7 +3,7 @@ The eXtended Keccak Code Package (XKCP)
 https://github.com/XKCP/XKCP
 
 Keccak, designed by Guido Bertoni, Joan Daemen, Michaël Peeters and Gilles Van Assche.
-
+d
 Implementation by Gilles Van Assche, hereby denoted as "the implementer".
 
 For more information, feedback or questions, please refer to the Keccak Team website:
@@ -21,6 +21,10 @@ http://creativecommons.org/publicdomain/zero/1.0/
 #ifdef XKCP_has_KeccakP1600
 
 #include <string.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /** Implementation of the SHAKE128 extendable output function (XOF) [FIPS 202].
   * @param  output          Pointer to the output buffer.
@@ -71,6 +75,11 @@ int SHA3_384(unsigned char *output, const unsigned char *input, size_t inputByte
   * @return 0 if successful, 1 otherwise.
   */
 int SHA3_512(unsigned char *output, const unsigned char *input, size_t inputByteLen);
+
+
+#ifdef __cplusplus
+}
+#endif
 
 #else
 #error This requires an implementation of Keccak-p[1600]
