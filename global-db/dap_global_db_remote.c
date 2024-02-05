@@ -484,7 +484,7 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
         l_sync_group->last_id_synced = a_flags & F_DB_LOG_SYNC_FROM_ZERO ? 0 : dap_db_get_last_id_remote(a_node_addr, l_sync_group->name);
         l_sync_group->count = dap_global_db_driver_count(l_sync_group->name, l_sync_group->last_id_synced + 1);
         if (!l_sync_group->count) {
-            log_it(L_MSG, "[!] Group %s is empty on our side, skip it", l_sync_group->name);
+            debug_if(L_DEBUG, g_dap_global_db_debug_more, "Group %s is empty on our side, skip it", l_sync_group->name);
             l_dap_db_log_list->groups = dap_list_delete_link(l_dap_db_log_list->groups, l_group);
             DAP_DELETE(l_sync_group);
             continue;
