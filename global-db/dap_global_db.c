@@ -1642,8 +1642,8 @@ static bool s_queue_io_callback(dap_proc_thread_t UNUSED_ARG *a_thread, void * a
     case MSG_OPCODE_GET_LAST:       s_msg_opcode_get_last(l_msg); break;
     case MSG_OPCODE_GET_LAST_RAW:   s_msg_opcode_get_last_raw(l_msg); break;
     case MSG_OPCODE_GET_DEL_TS:     s_msg_opcode_get_del_ts(l_msg); break;
-    case MSG_OPCODE_GET_ALL:        if (s_msg_opcode_get_all(l_msg)) return true;
-    case MSG_OPCODE_GET_ALL_RAW:    if (s_msg_opcode_get_all(l_msg)) return true;
+    case MSG_OPCODE_GET_ALL:        if (s_msg_opcode_get_all(l_msg)) return true; break;
+    case MSG_OPCODE_GET_ALL_RAW:    if (s_msg_opcode_get_all(l_msg)) return true; break;
     case MSG_OPCODE_SET:            s_msg_opcode_set(l_msg); break;
     case MSG_OPCODE_SET_MULTIPLE:   s_msg_opcode_set_multiple_zc(l_msg); break;
     case MSG_OPCODE_SET_RAW:        s_msg_opcode_set_raw(l_msg); break;

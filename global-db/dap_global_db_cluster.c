@@ -129,7 +129,8 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->dbi = a_dbi;
     l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
     DL_APPEND(a_dbi->clusters, l_cluster);
-    dap_proc_thread_timer_add(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000);
+    if (!l_cluster->links_cluster || l_cluster->links_cluster->role != DAP_CLUSTER_ROLE_VIRTUAL)
+        dap_proc_thread_timer_add(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000);
     return l_cluster;
 }
 
@@ -246,11 +247,15 @@ void s_gdb_cluster_sync_timer_callback(void *a_arg)
         dap_stream_node_addr_t l_current_link = l_cluster->links_cluster
                 ? dap_cluster_get_random_link(l_cluster->links_cluster)
                 : dap_stream_get_random_link();
+        if (dap_stream_node_addr_is_blank(&l_current_link))
+            break;
         dap_list_t *l_groups = dap_global_db_driver_get_groups_by_mask(l_cluster->groups_mask);
         if (!l_groups) {    // Nothing to sync
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
+            l_cluster->sync_context.stage_last_activity = dap_time_now();
             break;
         }
+        l_cluster->sync_context.current_link = l_current_link;
         dap_stream_ch_add_notifier(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
         for (dap_list_t *it = l_groups; it; it = it->next) {
             struct sync_request *l_req = DAP_NEW_Z(struct sync_request);
@@ -262,7 +267,6 @@ void s_gdb_cluster_sync_timer_callback(void *a_arg)
             l_cluster->sync_context.request_count++;
         }
         dap_list_free(l_groups);
-        l_cluster->sync_context.current_link = l_current_link;
         l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_ITERATION;
     } break;
     case DAP_GLOBAL_DB_SYNC_STATE_ITERATION:
@@ -275,8 +279,10 @@ void s_gdb_cluster_sync_timer_callback(void *a_arg)
         if (l_cluster->sync_context.stage_last_activity - dap_time_now() >
                 l_cluster->dbi->sync_idle_time) {
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
-            dap_stream_ch_del_notifier(&l_cluster->sync_context.current_link, DAP_STREAM_CH_GDB_ID,
-                                       DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
+            if (!dap_stream_node_addr_is_blank(&l_cluster->sync_context.current_link))
+                dap_stream_ch_del_notifier(&l_cluster->sync_context.current_link, DAP_STREAM_CH_GDB_ID,
+                                           DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
+            l_cluster->sync_context.current_link = (dap_stream_node_addr_t){};
         }
         break;
     default:

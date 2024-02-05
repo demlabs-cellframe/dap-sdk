@@ -119,7 +119,7 @@ DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_ad
     return -1;
 }
 
-DAP_STATIC_INLINE bool dap_stream_node_addr_not_null(dap_stream_node_addr_t * a_addr) { return a_addr->uint64 != 0; }
+DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
 
 DAP_STATIC_INLINE void dap_stream_node_addr_from_hash(dap_hash_fast_t *a_hash, dap_stream_node_addr_t *a_node_addr)
 {

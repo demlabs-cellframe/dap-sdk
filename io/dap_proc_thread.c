@@ -234,14 +234,15 @@ static bool s_timer_callback(void *a_arg)
 
 int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, dap_queue_msg_priority_t a_priority)
 {
-    dap_return_val_if_fail(a_thread && a_thread->context && a_callback && a_timeout_ms, -1);
-    dap_worker_t *l_worker = dap_events_worker_get(a_thread->context->id);
+    dap_return_val_if_fail(a_callback && a_timeout_ms, -1);
+    dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
+    dap_worker_t *l_worker = dap_events_worker_get(l_thread->context->cpu_id);
     if (!l_worker) {
-        log_it(L_CRITICAL, "Unexistent worker with ID corresonding to specified procedures thread ID %u", a_thread->context->id);
+        log_it(L_CRITICAL, "Worker with ID corresonding to specified processing thread ID %u doesn't exists", l_thread->context->id);
         return -2;
     }
     struct timer_arg *l_timer_arg = DAP_NEW_Z(struct timer_arg);
-    *l_timer_arg = (struct timer_arg){ .thread = a_thread, .callback = a_callback, .callback_arg = a_callback_arg, .priority = a_priority };
+    *l_timer_arg = (struct timer_arg){ .thread = l_thread, .callback = a_callback, .callback_arg = a_callback_arg, .priority = a_priority };
     dap_timerfd_start_on_worker(l_worker, a_timeout_ms, s_timer_callback, l_timer_arg);
     return 0;
 }
