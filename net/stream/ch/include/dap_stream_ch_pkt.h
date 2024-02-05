@@ -46,7 +46,6 @@ typedef struct dap_stream_ch_pkt{
 } DAP_ALIGN_PACKED dap_stream_ch_pkt_t;
 
 typedef void (*dap_stream_ch_callback_packet_t)(void *, uint8_t, dap_stream_ch_pkt_t *, void *);
-typedef void (*dap_stream_ch_notifier_t)(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size);
 
 int dap_stream_ch_pkt_init();
 void dap_stream_ch_pkt_deinit();
@@ -56,7 +55,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
 
 DAP_PRINTF_ATTR(4, 5) size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t *a_worker , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char *a_str, ...);
 size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch_uuid_t a_ch_uuid,  uint8_t a_type, const void * a_data, size_t a_data_size);
-// Write on channel by stream events socket UUID
+// Send to channel by stream events socket UUID
 size_t dap_stream_ch_pkt_send_mt(dap_stream_worker_t *a_worker, dap_events_socket_uuid_t a_uuid, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
 
 DAP_PRINTF_ATTR(4, 5) size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t *a_queue , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char *a_str, ...);

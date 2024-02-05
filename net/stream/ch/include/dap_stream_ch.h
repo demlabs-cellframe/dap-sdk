@@ -25,8 +25,8 @@
 #include <stdint.h>
 #include "uthash.h"
 #include "dap_math_ops.h"
-#include "dap_stream_ch_pkt.h"
 #include "dap_stream.h"
+#include "dap_stream_ch_pkt.h"
 
 #define TECHICAL_CHANNEL_ID 't'
 
@@ -35,8 +35,19 @@ typedef struct dap_stream_ch_proc dap_dap_stream_ch_proc_t;
 typedef struct dap_events_socket dap_events_socket_t;
 
 typedef void (* dap_stream_ch_callback_t)(dap_stream_ch_t *, void *);
+typedef void (*dap_stream_ch_notify_callback_t)(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size, void *a_arg);
 
-typedef struct dap_stream_ch{
+typedef enum dap_stream_packet_direction {
+    DAP_STREAM_PKT_DIR_IN,
+    DAP_STREAM_PKT_DIR_OUT
+} dap_stream_packet_direction_t;
+
+typedef struct dap_stream_ch_notifier {
+    dap_stream_ch_notify_callback_t callback;
+    void *arg;
+} dap_stream_ch_notifier_t;
+
+typedef struct dap_stream_ch {
     pthread_mutex_t mutex;
     bool ready_to_write;
     bool ready_to_read;
@@ -48,8 +59,8 @@ typedef struct dap_stream_ch{
         uint64_t bytes_read;
     } stat;
 
-    dap_stream_ch_notifier_t packet_in_notifier;
-    dap_stream_ch_notifier_t packet_out_notifier;
+    dap_list_t *packet_in_notifiers;
+    dap_list_t *packet_out_notifiers;
 
     dap_dap_stream_ch_proc_t * proc;
     void * internal;
@@ -77,5 +88,12 @@ DAP_STATIC_INLINE bool dap_stream_ch_check_uuid_mt(dap_stream_worker_t *a_worker
 {
     return dap_stream_ch_find_by_uuid_unsafe(a_worker, a_ch_uuid);
 }
+
+int dap_stream_ch_add_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+                             dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
+                             void *a_callback_arg);
+int dap_stream_ch_del_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+                             dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
+                             void *a_callback_arg);
 
 #endif

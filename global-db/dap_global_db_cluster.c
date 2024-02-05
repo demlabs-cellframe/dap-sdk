@@ -223,6 +223,20 @@ bool s_proc_thread_reader(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
     return l_ret;
 }
 
+void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size, void *a_arg)
+{
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "Got packet with message type %hhu size %zu from addr " NODE_ADDR_FP_STR,
+                                                           a_type, a_data_size, NODE_ADDR_FP_ARGS_S(a_ch->stream->node));
+    dap_global_db_cluster_t *l_cluster = a_arg;
+    switch (a_type) {
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST:
+        l_cluster->sync_context.stage_last_activity = dap_time_now();
+        break;
+    default:
+        break;
+    }
+}
+
 void s_gdb_cluster_sync_timer_callback(void *a_arg)
 {
     assert(a_arg);
@@ -237,6 +251,7 @@ void s_gdb_cluster_sync_timer_callback(void *a_arg)
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
             break;
         }
+        dap_stream_ch_add_notifier(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
         for (dap_list_t *it = l_groups; it; it = it->next) {
             struct sync_request *l_req = DAP_NEW_Z(struct sync_request);
             l_req->cluster = l_cluster;
@@ -247,6 +262,7 @@ void s_gdb_cluster_sync_timer_callback(void *a_arg)
             l_cluster->sync_context.request_count++;
         }
         dap_list_free(l_groups);
+        l_cluster->sync_context.current_link = l_current_link;
         l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_ITERATION;
     } break;
     case DAP_GLOBAL_DB_SYNC_STATE_ITERATION:
@@ -259,6 +275,8 @@ void s_gdb_cluster_sync_timer_callback(void *a_arg)
         if (l_cluster->sync_context.stage_last_activity - dap_time_now() >
                 l_cluster->dbi->sync_idle_time) {
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
+            dap_stream_ch_del_notifier(&l_cluster->sync_context.current_link, DAP_STREAM_CH_GDB_ID,
+                                       DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
         }
         break;
     default:

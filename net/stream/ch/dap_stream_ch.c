@@ -22,6 +22,7 @@
 #include "dap_strfuncs.h"
 #include "dap_events.h"
 #include "dap_events_socket.h"
+#include "dap_context.h"
 #include "dap_http_client.h"
 #include "dap_uuid.h"
 #include "dap_stream.h"
@@ -362,3 +363,99 @@ static void s_print_workers_channels()
     return;
 }
 */
+
+static int s_notifiers_compare(dap_list_t *a_list1, dap_list_t *a_list2)
+{
+    dap_stream_ch_notifier_t *l_notifier1 = a_list1->data,
+                             *l_notifier2 = a_list2->data;
+    return l_notifier1->callback != l_notifier2->callback ||
+                l_notifier1->arg != l_notifier2->arg;
+}
+
+struct place_notifier_arg {
+    dap_events_socket_uuid_t es_uuid;
+    uint8_t ch_id;
+    dap_stream_packet_direction_t direction;
+    dap_stream_ch_notify_callback_t callback;
+    void *callback_arg;
+    bool add;
+};
+
+static void s_place_notifier_callback(dap_worker_t *a_worker, void *a_arg)
+{
+    struct place_notifier_arg *l_arg = a_arg;
+    assert(l_arg);
+    // Check if it was removed from the list
+    dap_events_socket_t *l_es = dap_context_find(a_worker->context, l_arg->es_uuid);
+    if (!l_es) {
+        log_it(L_DEBUG, "We got place notifier request for client thats now not in list");
+        goto ret_n_clear;
+    }
+    dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
+    if (!l_stream) {
+        log_it(L_ERROR, "No stream found by events socket descriptor "DAP_FORMAT_ESOCKET_UUID, l_es->uuid);
+        goto ret_n_clear;
+    }
+    dap_stream_ch_t *l_ch = dap_stream_ch_by_id_unsafe(l_stream, l_arg->ch_id);
+    if (!l_ch) {
+        log_it(L_WARNING, "Stream found, but channel '%c' isn't set", l_arg->ch_id);
+        goto ret_n_clear;
+    }
+    dap_list_t *l_notifiers_list = l_arg->direction == DAP_STREAM_PKT_DIR_IN ? l_ch->packet_in_notifiers
+                                                                             : l_ch->packet_out_notifiers;
+    dap_stream_ch_notifier_t l_notifier = { .callback = l_arg->callback, .arg = l_arg->callback_arg };
+    dap_list_t *l_exist = dap_list_find(l_notifiers_list, &l_notifier, s_notifiers_compare);
+    if (l_exist) {
+        if (l_arg->add) {
+            log_it(L_WARNING, "Notifier already exists for provided callback and arg");
+            goto ret_n_clear;
+        } else {
+            l_notifiers_list = dap_list_remove_link(l_notifiers_list, l_exist);
+            DAP_DELETE(l_exist->data);
+            DAP_DELETE(l_exist);
+        }
+    } else {
+        if (l_arg->add) {
+            dap_stream_ch_notifier_t *l_to_add = DAP_DUP(&l_notifier);
+            if (!l_to_add) {
+                log_it(L_CRITICAL, "Not enough memory");
+                goto ret_n_clear;
+            }
+            l_notifiers_list = dap_list_append(l_notifiers_list, l_to_add);
+        } else {
+            log_it(L_WARNING, "Notifier for provided callback and arg not found");
+            goto ret_n_clear;
+        }
+    }
+ret_n_clear:
+    DAP_DELETE(l_arg);
+}
+
+static int s_stream_ch_place_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+                                      dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
+                                      void *a_callback_arg, bool a_add)
+{
+    dap_worker_t *l_worker = NULL;
+    dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(a_stream_addr, &l_worker);
+    if (!l_worker)
+        return -1;
+    struct place_notifier_arg *l_arg = DAP_NEW(struct place_notifier_arg);
+    *l_arg = (struct place_notifier_arg) { .es_uuid = l_uuid, .ch_id = a_ch_id, .direction = a_direction,
+                                           .callback = a_callback, .callback_arg = a_callback_arg, .add = a_add };
+    dap_worker_exec_callback_on(l_worker, s_place_notifier_callback, l_arg);
+    return 0;
+}
+
+int dap_stream_ch_add_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+                             dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
+                             void *a_callback_arg)
+{
+    return s_stream_ch_place_notifier(a_stream_addr, a_ch_id, a_direction, a_callback, a_callback_arg, true);
+}
+
+int dap_stream_ch_del_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_ch_id,
+                             dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
+                             void *a_callback_arg)
+{
+    return s_stream_ch_place_notifier(a_stream_addr, a_ch_id, a_direction, a_callback, a_callback_arg, false);
+}
