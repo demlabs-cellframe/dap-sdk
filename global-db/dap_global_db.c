@@ -123,7 +123,7 @@ static int s_context_callback_stopped( dap_context_t * a_context, void *a_arg);
 static const char *s_msg_opcode_to_str(enum queue_io_msg_opcode a_opcode);
 
 // Queue i/o processing callback
-static bool s_queue_io_callback(dap_proc_thread_t *a_proc_thread, void *a_arg);
+static bool s_queue_io_callback(void *a_arg);
 
 // Queue i/o message processing functions
 static void s_msg_opcode_get(struct queue_io_msg * a_msg);
@@ -1629,7 +1629,7 @@ static const char *s_msg_opcode_to_str(enum queue_io_msg_opcode a_opcode)
  * @param a_es
  * @param a_arg
  */
-static bool s_queue_io_callback(dap_proc_thread_t UNUSED_ARG *a_thread, void * a_arg)
+static bool s_queue_io_callback(void * a_arg)
 {
     struct queue_io_msg * l_msg = (struct queue_io_msg *) a_arg;
     assert(l_msg);

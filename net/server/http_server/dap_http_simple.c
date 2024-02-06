@@ -70,7 +70,7 @@ static void s_http_client_headers_read( dap_http_client_t *cl_ht, void *arg );
 static void s_http_client_data_read( dap_http_client_t * cl_ht, void *arg );
 static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *arg);
 static void s_http_client_data_write( dap_http_client_t * a_http_client, void *a_arg );
-static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void *a_arg );
+static bool s_proc_queue_callback(void *a_arg );
 
 typedef struct dap_http_simple_url_proc {
   dap_http_simple_callback_t proc_callback;
@@ -243,7 +243,7 @@ static void s_esocket_worker_write_callback(dap_worker_t *a_worker, void *a_arg)
     dap_http_client_write(l_es, NULL);
 }
 
-inline static void s_write_data_to_socket(UNUSED_ARG dap_proc_thread_t *a_thread, dap_http_simple_t *a_simple)
+inline static void s_write_data_to_socket(dap_http_simple_t *a_simple)
 {
     a_simple->http_client->state_write = DAP_HTTP_CLIENT_STATE_START;
     dap_worker_exec_callback_on(dap_events_worker_get(a_simple->worker->id), s_esocket_worker_write_callback, a_simple);
@@ -319,7 +319,7 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
  * @brief dap_http_simple_proc Execute procession callback and switch to write state
  * @param cl_sh HTTP simple client instance
  */
-static bool s_proc_queue_callback(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+static bool s_proc_queue_callback(void *a_arg)
 {
      dap_http_simple_t *l_http_simple = (dap_http_simple_t*) a_arg;
     log_it(L_DEBUG, "dap http simple proc");
@@ -341,7 +341,7 @@ static bool s_proc_queue_callback(dap_proc_thread_t UNUSED_ARG *a_thread, void *
         if (!l_header && !is_unknown_user_agents_pass) {
             const char l_error_msg[] = "Not found User-Agent HTTP header";
             s_write_response_bad_request(l_http_simple, l_error_msg);
-            s_write_data_to_socket(a_thread, l_http_simple);
+            s_write_data_to_socket(l_http_simple);
             return false;
         }
 
@@ -349,7 +349,7 @@ static bool s_proc_queue_callback(dap_proc_thread_t UNUSED_ARG *a_thread, void *
             log_it(L_DEBUG, "Not supported user agent in request: %s", l_header->value);
             const char *l_error_msg = "User-Agent version not supported. Update your software";
             s_write_response_bad_request(l_http_simple, l_error_msg);
-            s_write_data_to_socket(a_thread, l_http_simple);
+            s_write_data_to_socket(l_http_simple);
             return false;
         }
     }
@@ -364,7 +364,7 @@ static bool s_proc_queue_callback(dap_proc_thread_t UNUSED_ARG *a_thread, void *
         log_it(L_ERROR, "Request was processed with ERROR");
         l_http_simple->http_client->reply_status_code = Http_Status_InternalServerError;
     }
-    s_write_data_to_socket(a_thread, l_http_simple);
+    s_write_data_to_socket(l_http_simple);
     return false;
 }
 

@@ -159,7 +159,7 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
     DAP_DELETE(a_cluster);
 }
 
-static bool s_db_cluster_notify_on_proc_thread(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+static bool s_db_cluster_notify_on_proc_thread(void *a_arg)
 {
     dap_store_obj_t *l_store_obj = a_arg;
     dap_global_db_notifier_t *l_notifier = *(dap_global_db_notifier_t **)l_store_obj->ext;
@@ -199,7 +199,7 @@ struct sync_request {
     dap_global_db_cluster_t *cluster;
 };
 
-bool s_proc_thread_reader(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+bool s_proc_thread_reader(void *a_arg)
 {
     bool l_ret = false;
     struct sync_request *l_req = a_arg;       

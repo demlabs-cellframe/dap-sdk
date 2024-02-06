@@ -29,7 +29,7 @@
 typedef struct dap_proc_thread dap_proc_thread_t;
 typedef struct dap_context dap_context_t;
 /// Callback for processor. Returns TRUE for repeat
-typedef bool (*dap_proc_queue_callback_t)(dap_proc_thread_t *a_thread, void *a_arg);
+typedef bool (*dap_proc_queue_callback_t)(void *a_arg);
 typedef void (*dap_thread_timer_callback_t)(void *a_arg);
 
 typedef enum dap_queue_msg_priority {

@@ -164,7 +164,7 @@ int dap_proc_thread_loop(dap_context_t *a_context)
             pthread_cond_wait(&l_thread->queue_event, &l_thread->queue_lock);
         pthread_mutex_unlock(&l_thread->queue_lock);
         if (!a_context->signal_exit &&
-                l_item->callback(l_thread, l_item->callback_arg))
+                l_item->callback(l_item->callback_arg))
             dap_proc_thread_callback_add_pri(l_thread, l_item->callback, l_item->callback_arg, l_item_priority);
         DAP_DEL_Z(l_item);
     } while (!a_context->signal_exit);
@@ -217,7 +217,7 @@ struct timer_arg {
     dap_queue_msg_priority_t priority;
 };
 
-static bool s_thread_timer_callback(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+static bool s_thread_timer_callback(void *a_arg)
 {
     struct timer_arg *l_arg = a_arg;
     l_arg->callback(l_arg->callback_arg);

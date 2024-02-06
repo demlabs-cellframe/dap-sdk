@@ -90,7 +90,7 @@ static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg)
     DAP_DEL_Z(a_ch->internal);
 }
 
-static bool s_process_hashes(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+static bool s_process_hashes(void *a_arg)
 {
      dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t));
      const char *l_group = (const char *)l_pkt->group_n_hashses;
@@ -127,7 +127,7 @@ static bool s_process_hashes(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg
      return false;
 }
 
-static bool s_process_request(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+static bool s_process_request(void *a_arg)
 {
      dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t));
      const char *l_group = (const char *)l_pkt->group_n_hashses;
@@ -158,7 +158,7 @@ struct processing_arg {
     dap_store_obj_t *objs;
 };
 
-static bool s_process_records(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
+static bool s_process_records(void *a_arg)
 {
     dap_return_val_if_fail(a_arg, false);
     struct processing_arg *l_arg = a_arg;
