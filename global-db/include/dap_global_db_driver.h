@@ -42,6 +42,9 @@
 enum RECORD_FLAGS {
     RECORD_COMMON = 0,    // 0000
     RECORD_PINNED = 1,    // 0001
+    RECORD_DEL_HISTORY_MODIFY   = 2,
+    RECORD_NOTIFY_CB_CALL       = 4,
+    RECORD_APPLY_ERR            = 8
 };
 
 typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t*, size_t);
@@ -77,7 +80,7 @@ typedef struct dap_db_driver_callbacks {
 int     dap_db_driver_init(const char *driver_name, const char *a_filename_db, int a_mode_async);
 void    dap_db_driver_deinit(void);
 
-dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count, bool a_move);
+dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count);
 void    dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count);
 DAP_STATIC_INLINE void dap_store_obj_clear_one(dap_store_obj_t *a_store_obj) {
     DAP_DELETE(a_store_obj->group); DAP_DELETE(a_store_obj->key); DAP_DELETE(a_store_obj->value);
