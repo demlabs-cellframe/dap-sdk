@@ -36,6 +36,7 @@ typedef void (*dap_link_manager_callback_t)(dap_link_t *, void*);
 typedef void (*dap_link_manager_callback_delete_t)(dap_link_manager_t *);
 typedef bool (*dap_link_manager_callback_update_t)(void *);
 typedef void (*dap_link_manager_callback_error_t)(dap_link_manager_t *, int, void *);
+typedef dap_list_t *(*dap_link_manager_callback_node_list_t)(const char *);
 
 typedef struct dap_link_manager_callbacks {
     dap_link_manager_callback_t connected;
@@ -43,6 +44,7 @@ typedef struct dap_link_manager_callbacks {
     dap_link_manager_callback_delete_t delete;
     dap_link_manager_callback_update_t update;
     dap_link_manager_callback_error_t error;
+    dap_link_manager_callback_node_list_t get_node_list;
 } dap_link_manager_callbacks_t;
 
 // connection states
@@ -90,3 +92,4 @@ dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_c
 dap_link_manager_t *dap_link_manager_get_default();
 void dap_link_manager_add_active_net(char *a_net_name);
 void dap_link_manager_remove_active_net(char *a_net_name);
+int dap_link_compare(dap_list_t *a_list1, dap_list_t *a_list2);

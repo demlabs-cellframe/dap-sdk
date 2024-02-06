@@ -154,10 +154,10 @@ dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *
         log_it(L_ERROR, "Invalid argument with cluster member adding");
         return NULL;
     }
-    if (a_cluster->links_cluster &&
-            (a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
-             a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED))
-        dap_cluster_member_add(a_cluster->links_cluster, a_node_addr, a_role, NULL);
+    // if (a_cluster->links_cluster &&
+    //         (a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
+    //          a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED))
+    //     dap_cluster_member_add(a_cluster->links_cluster, a_node_addr, a_role, NULL);
 
     return dap_cluster_member_add(a_cluster->role_cluster, a_node_addr, a_role, NULL);
 }

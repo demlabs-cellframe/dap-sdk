@@ -24,8 +24,12 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 */
 
 #include "dap_link_manager.h"
+#include "dap_global_db.h"
+#include "dap_global_db_cluster.h"
+#include "dap_stream_cluster.h"
 #include "dap_worker.h"
 #include "dap_config.h"
+#include "utlist.h"
 
 #define LOG_TAG "dap_link_manager"
 
@@ -111,24 +115,42 @@ bool s_update_states(void *a_arg)
     if(!l_link_manager->active || !l_link_manager->active_nets) {
         return true;
     }
-    // dap_global_db_instance_t *l_dbi = dap_global_db_instance_get_default();
-    // if (l_dbi) {
-    //     dap_global_db_cluster_t *it = NULL;
-    //     DL_FOREACH(l_dbi->clusters, it) {
-    //         if (it->links_cluster && (it->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC || it->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED)) {
-    //             // pthread_mutex_lock(&s_link_manager_links_rwlock);
-    //             dap_link_t *l_link = NULL, *l_link_tmp = NULL, *l_link_found = NULL;
-    //             HASH_ITER(hh, l_link_manager->self_links, l_link, l_link_tmp) {
-    //                 if (!dap_stream_find_by_addr(&l_link->addr, NULL)) {
-    //                     s_client_connect(l_link, "GND");
-    //                 }
-    //             }
-    //             // pthread_mutex_unlock(&s_link_manager_links_rwlock);
-    //         } else if(it->links_cluster && it->links_cluster->role == DAP_CLUSTER_ROLE_EMBEDDED) {
-    //             s_link_manager_update_embeded(l_link_manager);
-    //         }
-    //     }
-    // }
+    dap_global_db_instance_t *l_dbi = dap_global_db_instance_get_default();
+    if (l_dbi) {
+        dap_global_db_cluster_t *it = NULL;
+        DL_FOREACH(l_dbi->clusters, it) {
+            if (it->links_cluster && it->role_cluster) {
+                size_t l_links_member_count = dap_stream_cluster_members_count(it->links_cluster);
+                size_t l_role_member_count = dap_stream_cluster_members_count(it->role_cluster);
+                if ((it->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC || it->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED) && 
+                    l_role_member_count && l_role_member_count != l_links_member_count) {
+                    dap_stream_node_addr_t *l_role_members = dap_stream_get_members_addr(it->role_cluster, &l_role_member_count);
+                    dap_list_t *l_node_list = it->link_manager->callbacks.get_node_list(it->links_cluster->mnemonim);
+                    for (size_t i = 0; i < l_role_member_count; ++i) {
+                        if(!dap_cluster_member_find_unsafe(it->links_cluster, l_role_members + i)) {
+                            dap_link_t l_link_to_find = { .addr.uint64 = l_role_members[i].uint64 };
+                            dap_list_t *l_link_finded = dap_list_find(l_node_list, &l_link_to_find, dap_link_compare);
+                            if (l_link_finded) {
+                                s_client_connect(l_link_finded->data, "GND");
+                            } else {
+                                log_it(L_INFO, "Can't find node "NODE_ADDR_FP_STR" in node list %s net", NODE_ADDR_FP_ARGS_S(l_role_members[i]), it->links_cluster->mnemonim);
+                            }
+                        }
+                    }
+                    // pthread_mutex_lock(&s_link_manager_links_rwlock);
+                    dap_link_t *l_link = NULL, *l_link_tmp = NULL, *l_link_found = NULL;
+                    HASH_ITER(hh, l_link_manager->self_links, l_link, l_link_tmp) {
+                        if (!dap_stream_find_by_addr(&l_link->addr, NULL)) {
+                            s_client_connect(l_link, "GND");
+                        }
+                    }
+                    // pthread_mutex_unlock(&s_link_manager_links_rwlock);
+                } else if(it->links_cluster && it->links_cluster->role == DAP_CLUSTER_ROLE_EMBEDDED) {
+                    // s_link_manager_update_embeded(l_link_manager);
+                }
+            }
+        }
+    }
     return true;
 }
 
@@ -154,7 +176,7 @@ void dap_link_manager_deinit()
 dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_callbacks)
 {
 // sanity check
-    dap_return_val_if_pass(!a_callbacks, NULL);
+    dap_return_val_if_pass_err(!a_callbacks || !a_callbacks->get_node_list, NULL, "Needed link manager callbacks not filled, please check it");
 // memory alloc
     dap_link_manager_t *l_ret = NULL;
     DAP_NEW_Z_RET_VAL(l_ret, dap_link_manager_t, NULL, NULL);
@@ -163,7 +185,7 @@ dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_c
     l_ret->update_timer = dap_timerfd_start(s_timer_update_states, s_update_states, l_ret);
     if(!l_ret->update_timer)
         log_it(L_WARNING, "Link manager created, but timer not active");
-    if(l_ret->callbacks.delete)
+    if(!l_ret->callbacks.delete)
         l_ret->callbacks.delete = s_delete_callback;
     l_ret->min_links_num = s_min_links_num;
     l_ret->active = true;
@@ -263,4 +285,10 @@ int dap_link_manager_link_add(dap_link_t *a_link)
     HASH_ADD(hh, a_link->link_manager->alien_links, uplink_ip, sizeof(l_new_link->uplink_ip), l_new_link);
     // pthread_mutex_unlock(&s_link_manager_links_rwlock);
     return 0;
+}
+
+int dap_link_compare(dap_list_t *a_list1, dap_list_t *a_list2)
+{
+    dap_return_val_if_pass(!a_list1 || !a_list2, -1);
+    return !(((dap_link_t *)(a_list1->data))->addr.uint64 == ((dap_link_t *)(a_list2->data))->addr.uint64);
 }
