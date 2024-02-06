@@ -210,7 +210,7 @@ char    l_buf[1024] = {0};
  *      NULL in case of error
  *
  */
-static dap_db_ctx_t *s_cre_db_ctx_for_group(const char *a_group, int a_flags)
+static dap_db_ctx_t *s_cre_db_ctx_for_group(const char *a_group, int a_flags, MDBX_txn *a_txn)
 {
 int l_rc;
 dap_db_ctx_t *l_db_ctx;
@@ -240,8 +240,8 @@ MDBX_val    l_key_iov, l_data_iov;
     /*
     ** Start transaction, create table, commit.
     */
-    MDBX_txn *l_txn = s_txn;
-    if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
+    MDBX_txn *l_txn = a_txn;
+    if (!a_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
     if  ( MDBX_SUCCESS != (l_rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) )
@@ -256,11 +256,11 @@ MDBX_val    l_key_iov, l_data_iov;
     if (MDBX_SUCCESS != (l_rc = mdbx_put(l_txn, s_db_master_dbi, &l_key_iov, &l_data_iov, MDBX_NOOVERWRITE))
          && (l_rc != MDBX_KEYEXIST)) {
         log_it (L_ERROR, "mdbx_put: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_abort(l_txn)) )
+        if (!a_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_abort(l_txn)) )
             return  log_it(L_CRITICAL, "mdbx_txn_abort: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     }
 
-    if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_commit(l_txn)) )
+    if (!a_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_commit(l_txn)) )
         return  log_it(L_CRITICAL, "mdbx_txn_commit: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
     /*
@@ -413,7 +413,7 @@ size_t     l_upper_limit_of_db_size = 16;
     dap_list_t *l_el, *l_tmp;
     DL_FOREACH_SAFE(l_slist, l_el, l_tmp) {
         l_data_iov.iov_base = l_el->data;
-        s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE);
+        s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE, NULL);
         DL_DELETE(l_slist, l_el);
         DAP_DELETE(l_el);
     }
@@ -988,7 +988,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
     dap_db_ctx_t *l_db_ctx;
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group)) ) {               /* Get a DB context for the group */
                                                                                     /* Group is not found ? Try to create table for new group */
-        if ( !(l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE)) )
+        if ( !(l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE, a_txn)) )
             return  log_it(L_WARNING, "Cannot create DB context for the group '%s'", a_store_obj->group), -EIO;
         log_it(L_NOTICE, "DB context for the group '%s' has been created", a_store_obj->group);
         if ( a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL )                        /* Nothing to do anymore */
