@@ -125,15 +125,13 @@ bool s_update_states(void *a_arg)
                 if ((it->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC || it->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED) && 
                     l_role_member_count && l_role_member_count != l_links_member_count) {
                     dap_stream_node_addr_t *l_role_members = dap_stream_get_members_addr(it->role_cluster, &l_role_member_count);
-                    dap_list_t *l_node_list = it->link_manager->callbacks.get_node_list(it->links_cluster->mnemonim);
                     for (size_t i = 0; i < l_role_member_count; ++i) {
                         if(!dap_cluster_member_find_unsafe(it->links_cluster, l_role_members + i)) {
-                            dap_link_t l_link_to_find = { .addr.uint64 = l_role_members[i].uint64 };
-                            dap_list_t *l_link_finded = dap_list_find(l_node_list, &l_link_to_find, dap_link_compare);
-                            if (l_link_finded) {
-                                s_client_connect(l_link_finded->data, "GND");
+                            dap_link_t *l_link = it->link_manager->callbacks.get_node_net_info(l_role_members + i);
+                            if (l_link) {
+                                s_client_connect(l_link, "GND");
                             } else {
-                                log_it(L_INFO, "Can't find node "NODE_ADDR_FP_STR" in node list %s net", NODE_ADDR_FP_ARGS_S(l_role_members[i]), it->links_cluster->mnemonim);
+                                log_it(L_INFO, "Can't find node "NODE_ADDR_FP_STR" in node list", NODE_ADDR_FP_ARGS_S(l_role_members[i]));
                             }
                         }
                     }
@@ -176,7 +174,7 @@ void dap_link_manager_deinit()
 dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_callbacks)
 {
 // sanity check
-    dap_return_val_if_pass_err(!a_callbacks || !a_callbacks->get_node_list, NULL, "Needed link manager callbacks not filled, please check it");
+    dap_return_val_if_pass_err(!a_callbacks || !a_callbacks->get_node_net_info, NULL, "Needed link manager callbacks not filled, please check it");
 // memory alloc
     dap_link_manager_t *l_ret = NULL;
     DAP_NEW_Z_RET_VAL(l_ret, dap_link_manager_t, NULL, NULL);
