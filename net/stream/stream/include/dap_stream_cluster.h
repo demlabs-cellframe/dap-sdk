@@ -28,6 +28,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "uthash.h"
 #include "dap_list.h"
 #include "dap_guuid.h"
+#include "json_object.h"
 
 typedef struct dap_cluster dap_cluster_t;
 
@@ -77,6 +78,7 @@ void dap_cluster_member_delete(dap_cluster_member_t *a_member);
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size,
                            dap_stream_node_addr_t *a_exclude_aray, size_t a_exclude_array_size);
 dap_list_t *dap_cluster_get_shuffle_members(dap_cluster_t *a_cluster);
+json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster);
 char *dap_cluster_get_links_info(dap_cluster_t *a_cluster);
 void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr);
 dap_stream_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster);
