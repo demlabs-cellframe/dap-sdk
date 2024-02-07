@@ -94,3 +94,5 @@ void dap_link_manager_add_active_net(char *a_net_name);
 void dap_link_manager_remove_active_net(char *a_net_name);
 void dap_link_manager_add_role_cluster(dap_cluster_member_t *a_member);
 void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member);
+void dap_link_manager_remove_role_cluster(dap_cluster_member_t *a_member);
+void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member);

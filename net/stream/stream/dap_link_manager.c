@@ -215,6 +215,34 @@ void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member)
     // pthread_rwlock_unlock(&it->members_lock);
 }
 
+void dap_link_manager_remove_role_cluster(dap_cluster_member_t *a_member)
+{
+    dap_return_if_pass(!s_link_manager || !a_member || !a_member->cluster);
+    // pthread_rwlock_wrlock(&it->members_lock);
+    dap_link_t *l_link = NULL;
+    HASH_FIND(hh, s_link_manager->self_links, &a_member->addr, sizeof(a_member->addr), l_link);
+    if (!l_link) {
+        log_it(L_ERROR, "Try cluster deleting from non-existent link");
+        return;
+    }
+    l_link->role_clusters = dap_list_remove(l_link->role_clusters, a_member->cluster);
+    // pthread_rwlock_unlock(&it->members_lock);
+}
+
+void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member)
+{
+    dap_return_if_pass(!s_link_manager || !a_member || !a_member->cluster);
+    // pthread_rwlock_wrlock(&it->members_lock);
+    dap_link_t *l_link = NULL;
+    HASH_FIND(hh, s_link_manager->self_links, &a_member->addr, sizeof(a_member->addr), l_link);
+    if (!l_link) {
+        log_it(L_ERROR, "Try cluster deleting from non-existent link");
+        return;
+    }
+    l_link->links_clusters = dap_list_remove(l_link->links_clusters, a_member->cluster);
+    // pthread_rwlock_unlock(&it->members_lock);
+}
+
 /**
  * @brief dap_chain_node_client_connect
  * Create new dap_client, setup it, and send it in adventure trip
