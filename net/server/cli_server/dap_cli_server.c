@@ -885,7 +885,7 @@ char    *str_header;
     if (s_debug_cli)
         log_it(L_DEBUG, "close connection=%d sockfd=%"DAP_FORMAT_SOCKET, cs, newsockfd);
 
-    return true;
+    return false;
 }
 
 
