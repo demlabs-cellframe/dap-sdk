@@ -54,6 +54,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_enc_key.h"
 #include "dap_http_user_agent.h"
 #include "dap_context.h"
+#include "dap_http_ban_list_client.h"
 
 #include "../enc_server/include/dap_enc_ks.h"
 #include "../enc_server/include/dap_enc_http.h"
@@ -382,9 +383,15 @@ static void s_http_client_delete( dap_http_client_t *a_http_client, void *arg )
     }
 }
 
-static void s_http_client_headers_read( dap_http_client_t *a_http_client, void *a_arg )
+static void s_http_client_headers_read( dap_http_client_t *a_http_client, void UNUSED_ARG *a_arg )
 {
-    (void) a_arg;
+    assert(a_http_client->esocket->server);
+    if (a_http_client->esocket->server->type == DAP_SERVER_TCP || a_http_client->esocket->server->type == DAP_SERVER_UDP) {
+        if (dap_http_ban_list_client_check_ipv4(a_http_client->esocket->remote_addr.sin_addr)) {
+            a_http_client->reply_status_code = Http_Status_Forbidden;
+            return;
+        }
+    }
     a_http_client->_inheritor = DAP_NEW_Z( dap_http_simple_t );
     dap_http_simple_t * l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
     l_http_simple->generate_default_header = true;

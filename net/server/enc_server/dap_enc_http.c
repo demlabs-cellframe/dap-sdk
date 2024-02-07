@@ -47,9 +47,9 @@
 #include "dap_enc_base64.h"
 #include "dap_enc_msrln.h"
 #include "include/http_status_code.h"
-#include "dap_enc_http_ban_list_client.h"
+#include "dap_http_ban_list_client.h"
 #include "json.h"
-#include "dap_enc_http_ban_list_client.h"
+#include "dap_http_ban_list_client.h"
 #include "dap_cert.h"
 #include "dap_strfuncs.h"
 
@@ -61,7 +61,7 @@ static dap_enc_acl_callback_t s_acl_callback = NULL;
 
 int enc_http_init()
 {
-    dap_enc_http_ban_list_client_init();
+    dap_http_ban_list_client_init();
     return 0;
 }
 
@@ -101,14 +101,6 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
 {
     log_it(L_DEBUG,"Proc enc http request");
     http_status_code_t * return_code = (http_status_code_t*)arg;
-
-    assert(cl_st->esocket->server);
-    if (cl_st->esocket->server->type == DAP_SERVER_TCP || cl_st->esocket->server->type == DAP_SERVER_UDP) {
-        if (dap_enc_http_ban_list_client_check_ipv4(cl_st->esocket->remote_addr.sin_addr)) {
-            *return_code = Http_Status_Forbidden;
-            return;
-        }
-    }
 
     if(!strcmp(cl_st->http_client->url_path,"gd4y5yh78w42aaagh")) {
         dap_enc_key_type_t l_pkey_exchange_type =DAP_ENC_KEY_TYPE_MSRLN ;

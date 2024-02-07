@@ -1,19 +1,19 @@
-#include "dap_enc_http_ban_list_client.h"
+#include "dap_http_ban_list_client.h"
 
 //IP V4
-static dap_enc_http_ban_list_client_record_t *s_ipv4_ban_list = NULL;
+static dap_http_ban_list_client_record_t *s_ipv4_ban_list = NULL;
 static pthread_rwlock_t s_ipv4_ban_list_rwlock;
 
-bool dap_enc_http_ban_list_client_check_ipv4(struct in_addr a_ip) {
+bool dap_http_ban_list_client_check_ipv4(struct in_addr a_ip) {
     pthread_rwlock_rdlock(&s_ipv4_ban_list_rwlock);
-    dap_enc_http_ban_list_client_record_t *l_record = NULL;
+    dap_http_ban_list_client_record_t *l_record = NULL;
     HASH_FIND(hh, s_ipv4_ban_list, &a_ip, sizeof (struct in_addr), l_record);
     pthread_rwlock_unlock(&s_ipv4_ban_list_rwlock);
     return l_record ? true : false;
 }
 
-void dap_enc_http_ban_list_client_add_ipv4(struct in_addr a_ip, dap_hash_fast_t a_decree_hash, dap_time_t a_ts_created) {
-    dap_enc_http_ban_list_client_record_t *l_record = DAP_NEW(dap_enc_http_ban_list_client_record_t);
+void dap_http_ban_list_client_add_ipv4(struct in_addr a_ip, dap_hash_fast_t a_decree_hash, dap_time_t a_ts_created) {
+    dap_http_ban_list_client_record_t *l_record = DAP_NEW(dap_http_ban_list_client_record_t);
     l_record->ip_v4 = a_ip;
     l_record->decree_hash = a_decree_hash;
     l_record->ts_created = a_ts_created;
@@ -22,9 +22,9 @@ void dap_enc_http_ban_list_client_add_ipv4(struct in_addr a_ip, dap_hash_fast_t 
     pthread_rwlock_unlock(&s_ipv4_ban_list_rwlock);
 }
 
-void dap_enc_http_ban_list_client_remove_ipv4(struct in_addr a_ip){
+void dap_http_ban_list_client_remove_ipv4(struct in_addr a_ip){
     pthread_rwlock_wrlock(&s_ipv4_ban_list_rwlock);
-    dap_enc_http_ban_list_client_record_t *l_record = NULL, *tmp = NULL;
+    dap_http_ban_list_client_record_t *l_record = NULL, *tmp = NULL;
     HASH_FIND(hh, s_ipv4_ban_list, &a_ip, sizeof (struct in_addr), l_record);
     if (l_record) {
         HASH_DEL(s_ipv4_ban_list, l_record);
@@ -33,7 +33,7 @@ void dap_enc_http_ban_list_client_remove_ipv4(struct in_addr a_ip){
     pthread_rwlock_unlock(&s_ipv4_ban_list_rwlock);
 }
 
-void dap_enc_http_ban_list_client_ipv4_print(dap_string_t *a_str_out){
+void dap_http_ban_list_client_ipv4_print(dap_string_t *a_str_out){
     a_str_out = dap_string_append(a_str_out, "\t IP v4.\n\n");
     pthread_rwlock_rdlock(&s_ipv4_ban_list_rwlock);
     if (!s_ipv4_ban_list) {
@@ -41,7 +41,7 @@ void dap_enc_http_ban_list_client_ipv4_print(dap_string_t *a_str_out){
         return;
     }
     int number = 1;
-    dap_enc_http_ban_list_client_record_t *l_record = NULL, *l_tmp = NULL;
+    dap_http_ban_list_client_record_t *l_record = NULL, *l_tmp = NULL;
     HASH_ITER(hh, s_ipv4_ban_list, l_record, l_tmp) {
         char *l_decree_hash_str = dap_chain_hash_fast_to_str_new(&l_record->decree_hash);
         char l_tm[85];
@@ -57,19 +57,19 @@ void dap_enc_http_ban_list_client_ipv4_print(dap_string_t *a_str_out){
 
 //IP V6
 
-static dap_enc_http_ban_list_client_record_t *s_ipv6_ban_list = NULL;
+static dap_http_ban_list_client_record_t *s_ipv6_ban_list = NULL;
 static pthread_rwlock_t s_ipv6_ban_list_rwlock;
 
-bool dap_enc_http_ban_list_client_check_ipv6(struct in6_addr a_ip_v6) {
+bool dap_http_ban_list_client_check_ipv6(struct in6_addr a_ip_v6) {
     pthread_rwlock_rdlock(&s_ipv6_ban_list_rwlock);
-    dap_enc_http_ban_list_client_record_t *l_record = NULL;
+    dap_http_ban_list_client_record_t *l_record = NULL;
     HASH_FIND(hh, s_ipv6_ban_list, &a_ip_v6, sizeof(struct in6_addr), l_record);
     pthread_rwlock_unlock(&s_ipv6_ban_list_rwlock);
     return l_record ? true : false;
 }
 
-void dap_enc_http_ban_list_client_add_ipv6(struct in6_addr a_ip_v6, dap_hash_fast_t a_decree_hash, dap_time_t a_ts_created) {
-    dap_enc_http_ban_list_client_record_t *l_record = DAP_NEW(dap_enc_http_ban_list_client_record_t);
+void dap_http_ban_list_client_add_ipv6(struct in6_addr a_ip_v6, dap_hash_fast_t a_decree_hash, dap_time_t a_ts_created) {
+    dap_http_ban_list_client_record_t *l_record = DAP_NEW(dap_http_ban_list_client_record_t);
     l_record->ip_v6 = a_ip_v6;
     l_record->decree_hash = a_decree_hash;
     l_record->ts_created = a_ts_created;
@@ -77,9 +77,9 @@ void dap_enc_http_ban_list_client_add_ipv6(struct in6_addr a_ip_v6, dap_hash_fas
     HASH_ADD(hh, s_ipv6_ban_list, ip_v6, sizeof(struct in6_addr), l_record);
     pthread_rwlock_unlock(&s_ipv6_ban_list_rwlock);
 }
-void dap_enc_http_ban_list_client_remove_ipv6(struct in6_addr a_ip_v6) {
+void dap_http_ban_list_client_remove_ipv6(struct in6_addr a_ip_v6) {
     pthread_rwlock_wrlock(&s_ipv6_ban_list_rwlock);
-    dap_enc_http_ban_list_client_record_t *l_record = NULL;
+    dap_http_ban_list_client_record_t *l_record = NULL;
     HASH_FIND(hh, s_ipv6_ban_list, &a_ip_v6, sizeof(struct in6_addr), l_record);
     if (l_record) {
         HASH_DEL(s_ipv6_ban_list, l_record);
@@ -88,7 +88,7 @@ void dap_enc_http_ban_list_client_remove_ipv6(struct in6_addr a_ip_v6) {
     pthread_rwlock_unlock(&s_ipv6_ban_list_rwlock);
 }
 
-void dap_enc_http_ban_list_client_ipv6_print(dap_string_t *a_str_out) {
+void dap_http_ban_list_client_ipv6_print(dap_string_t *a_str_out) {
     a_str_out = dap_string_append(a_str_out, "\t IP v6.\n");
     pthread_rwlock_rdlock(&s_ipv6_ban_list_rwlock);
     if (!s_ipv6_ban_list) {
@@ -96,7 +96,7 @@ void dap_enc_http_ban_list_client_ipv6_print(dap_string_t *a_str_out) {
         return;
     }
     int number = 1;
-    dap_enc_http_ban_list_client_record_t *l_record = NULL, *tmp = NULL;
+    dap_http_ban_list_client_record_t *l_record = NULL, *tmp = NULL;
     HASH_ITER(hh, s_ipv6_ban_list, l_record, tmp) {
         char *l_decree_hash_str = dap_chain_hash_fast_to_str_new(&l_record->decree_hash);
         char l_tm[85];
@@ -110,14 +110,14 @@ void dap_enc_http_ban_list_client_ipv6_print(dap_string_t *a_str_out) {
     pthread_rwlock_unlock(&s_ipv6_ban_list_rwlock);
 }
 
-int dap_enc_http_ban_list_client_init() {
+int dap_http_ban_list_client_init() {
     s_ipv4_ban_list = NULL;
     s_ipv6_ban_list = NULL;
     pthread_rwlock_init(&s_ipv4_ban_list_rwlock, NULL);
     pthread_rwlock_init(&s_ipv6_ban_list_rwlock, NULL);
     return 0;
 }
-void dap_enc_http_ban_list_client_deinit() {
+void dap_http_ban_list_client_deinit() {
     pthread_rwlock_destroy(&s_ipv4_ban_list_rwlock);
     pthread_rwlock_destroy(&s_ipv6_ban_list_rwlock);
 }
