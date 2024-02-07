@@ -36,22 +36,23 @@ static uint32_t s_timer_update_states = 4000;
 static uint32_t s_min_links_num = 5;
 static dap_link_manager_t *s_link_manager = NULL;
 
-static void s_client_connect(dap_link_t *a_link, const char *a_active_channels, dap_cluster_t *a_link_cluster);
+static void s_client_connect(dap_link_t *a_link, const char *a_active_channels, dap_client_callback_t a_connected_callback);
 
 /**
- * @brief s_client_connected_callback
+ * @brief s_client_connected_links_cluster_callback
  * @param a_client
  * @param a_arg
  */
-static void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
+static void s_client_connected_links_cluster_callback(dap_client_t *a_client, void *a_arg)
 {
 // sanity check
-    dap_return_if_pass(!a_client || !a_client->_inheritor);
+    dap_return_if_pass(!DAP_LINK(a_client));
 // func work
     dap_link_t *l_link = DAP_LINK(a_client);
-    dap_global_db_cluster_t *l_global_db_cluster = (dap_cluster_t *)a_arg;
-    dap_cluster_member_find_role(l_global_db_cluster->role_cluster, &l_link->node_addr);
-    // if(dap_cluster_member_add(l_global_db_cluster->role_cluster, &l_link->node_addr))
+    dap_list_t *l_item = NULL;
+    DL_FOREACH(l_link->links_clusters, l_item) {
+        dap_cluster_member_add((dap_cluster_t *)l_item->data, &l_link->node_addr, 0, NULL);
+    }
     log_it(L_NOTICE, "Stream connection with node "NODE_ADDR_FP_STR" (%s:%hu) established",
                 NODE_ADDR_FP_ARGS_S(l_link->node_addr),
                 l_link->host_addr_str, l_link->host_port);
@@ -72,7 +73,7 @@ static void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
 static void s_client_error_callback(dap_client_t *a_client, void *a_arg)
 {
 // sanity check
-    dap_return_if_pass(!a_client || !a_client->_inheritor);
+    dap_return_if_pass(!DAP_LINK(a_client));
 // func work
     dap_link_t *l_link = DAP_LINK(a_client);
     // check for last attempt
@@ -88,7 +89,7 @@ static void s_client_error_callback(dap_client_t *a_client, void *a_arg)
                 dap_client_go_stage(l_link->client, STAGE_BEGIN, NULL);
             log_it(L_INFO, "Reconnecting node client with peer "NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(l_link->node_addr));
             l_link->state = LINK_STATE_CONNECTING ;
-            dap_client_go_stage(l_link->client, STAGE_STREAM_STREAMING, s_client_connected_callback);
+            dap_client_go_stage(l_link->client, STAGE_STREAM_STREAMING, s_client_connected_links_cluster_callback);
         }
     } else if(l_link->link_manager->callbacks.error) // TODO make different error codes
         l_link->link_manager->callbacks.error(l_link, EINVAL, NULL /*l_node_client->callbacks_arg*/);
@@ -118,13 +119,15 @@ bool s_update_states(void *a_arg)
     dap_link_t *l_link = NULL, *l_tmp = NULL;
     // pthread_rwlock_wrlock(&a_cluster->members_lock);
     HASH_ITER(hh, l_link_manager->self_links, l_link, l_tmp) {
+        // if we don't have any connections with members in role clusters then create connection
         if(!l_link->client && l_link->role_clusters) {
-            dap_link_t *l_link = l_link_manager->callbacks.get_node_net_info(&l_link->node_addr);
-            if (l_link) {
-                s_client_connect(l_link, "GND", NULL);
+            if (!l_link_manager->callbacks.fill_net_info(l_link)) {
+                s_client_connect(l_link, "GND", s_client_connected_links_cluster_callback);
             } else {
                 log_it(L_INFO, "Can't find node "NODE_ADDR_FP_STR" in node list", NODE_ADDR_FP_ARGS_S(l_link->node_addr));
             }
+        } else if (l_link->client && !l_link->role_clusters) {
+            // recheck dynamic cluster and if no need close connect
         }
     }
     return true;
@@ -152,7 +155,7 @@ void dap_link_manager_deinit()
 dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_callbacks)
 {
 // sanity check
-    dap_return_val_if_pass_err(!a_callbacks || !a_callbacks->get_node_net_info, NULL, "Needed link manager callbacks not filled, please check it");
+    dap_return_val_if_pass_err(!a_callbacks || !a_callbacks->fill_net_info, NULL, "Needed link manager callbacks not filled, please check it");
 // memory alloc
     dap_link_manager_t *l_ret = NULL;
     DAP_NEW_Z_RET_VAL(l_ret, dap_link_manager_t, NULL, NULL);
@@ -250,12 +253,12 @@ void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member)
  * @param a_active_channels a_active_channels
  * @param a_link_cluster - cluster to added node addr if connected
  */
-void s_client_connect(dap_link_t *a_link, const char *a_active_channels, dap_cluster_t *a_link_cluster)
+void s_client_connect(dap_link_t *a_link, const char *a_active_channels, dap_client_callback_t a_connected_callback)
 {
 // sanity check 
     dap_return_if_pass(!a_link); 
 //func work
-    a_link->client = dap_client_new(s_client_delete_callback, s_client_error_callback, a_link_cluster);
+    a_link->client = dap_client_new(s_client_delete_callback, s_client_error_callback, NULL);
     dap_client_set_is_always_reconnect(a_link->client, false);
     a_link->client->_inheritor = a_link;
     dap_client_set_active_channels_unsafe(a_link->client, a_active_channels);
@@ -263,6 +266,6 @@ void s_client_connect(dap_link_t *a_link, const char *a_active_channels, dap_clu
     dap_client_set_uplink_unsafe(a_link->client, a_link->host_addr_str, a_link->host_port);
     a_link->state = LINK_STATE_CONNECTING;
     // Handshake & connect
-    dap_client_go_stage(a_link->client, STAGE_STREAM_STREAMING, s_client_connected_callback);
+    dap_client_go_stage(a_link->client, STAGE_STREAM_STREAMING, a_connected_callback);
     return;
 }
