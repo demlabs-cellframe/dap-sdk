@@ -64,7 +64,7 @@ typedef struct dap_global_db_hash_pkt {
 
 DAP_STATIC_INLINE size_t dap_global_db_hash_pkt_get_size(dap_global_db_hash_pkt_t *a_hash_pkt)
 {
-    return a_hash_pkt->hashes_count * sizeof(dap_global_db_driver_hash_t) + a_hash_pkt->group_name_len;
+    return sizeof(dap_global_db_hash_pkt_t) + a_hash_pkt->group_name_len + a_hash_pkt->hashes_count * sizeof(dap_global_db_driver_hash_t);
 }
 
 dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old_pkt, dap_global_db_pkt_t *a_new_pkt);

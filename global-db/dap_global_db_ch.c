@@ -99,7 +99,6 @@ static bool s_process_hashes(void *a_arg)
          return false;
      dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
      dap_global_db_hash_pkt_t *l_ret = NULL;
-     int j = 0;
      for (uint32_t i = 0; i < l_pkt->hashes_count; i++) {
         if (!dap_global_db_driver_is_hash(l_group, *(l_hashes + i))) {
             if (!l_ret) {
@@ -112,8 +111,9 @@ static bool s_process_hashes(void *a_arg)
                     return false;
                 }
                 memcpy(l_ret->group_n_hashses, l_pkt->group_n_hashses, l_ret->group_name_len = l_pkt->group_name_len);
+                l_ret->hashes_count = 0;
             }
-            dap_global_db_driver_hash_t *l_ret_hashes = (dap_global_db_driver_hash_t *)(l_ret->group_n_hashses + l_pkt->group_name_len);
+            dap_global_db_driver_hash_t *l_ret_hashes = (dap_global_db_driver_hash_t *)(l_ret->group_n_hashses + l_ret->group_name_len);
             l_ret_hashes[l_ret->hashes_count++] = l_hashes[i];
         }
      }

@@ -216,8 +216,13 @@ size_t dap_stream_ch_pkt_send_mt(dap_stream_worker_t *a_worker, dap_events_socke
     l_msg->uuid = a_uuid;
     l_msg->ch_pkt_type = a_type;
     l_msg->ch_id = a_ch_id;
-    if (a_data && a_data_size)
+    if (a_data && a_data_size) {
         l_msg->data = DAP_DUP_SIZE(a_data, a_data_size);
+        if (!l_msg->data) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            return 0;
+        }
+    }
     l_msg->data_size = a_data_size;
 
     int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_ch_send, l_msg);
