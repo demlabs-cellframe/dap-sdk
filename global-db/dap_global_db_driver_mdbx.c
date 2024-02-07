@@ -204,7 +204,7 @@ char    l_buf[1024] = {0};
  *      NULL in case of error
  *
  */
-static dap_db_ctx_t *s_cre_db_ctx_for_group(const char *a_group, int a_flags)
+static dap_db_ctx_t *s_cre_db_ctx_for_group(const char *a_group, int a_flags, MDBX_txn *a_parent_tx)
 {
 int l_rc;
 dap_db_ctx_t *l_db_ctx, *l_db_ctx2;
@@ -220,7 +220,8 @@ MDBX_val    l_key_iov, l_data_iov;
     dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
 
     if ( l_db_ctx )                                                         /* Found! Good job - return DB context */
-        return  log_it(L_INFO, "Found DB context: %p for group: '%s'", l_db_ctx, a_group), l_db_ctx;
+        return  //log_it(L_INFO, "Found DB context: %p for group: '%s'", l_db_ctx, a_group),
+                l_db_ctx;
 
 
     /* So , at this point we are going to create (if not exist)  'table' for new group */
@@ -238,16 +239,16 @@ MDBX_val    l_key_iov, l_data_iov;
     ** Start transaction, create table, commit.
     */
     MDBX_txn *l_txn = NULL;
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn /*l_db_ctx->txn*/)) )
+    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, a_parent_tx, 0, &l_txn)) )
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
-    if  ( MDBX_SUCCESS != (l_rc = mdbx_dbi_open(l_txn /*l_db_ctx->txn*/, a_group, a_flags, &l_db_ctx->dbi)) )
+    if  ( MDBX_SUCCESS != (l_rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) )
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
     /* MDBX sequence is started from zero, zero is not so good for our case,
      * so we just increment a current (may be is not zero) sequence for <dbi>
      */
-    mdbx_dbi_sequence (l_txn /*l_db_ctx->txn*/, l_db_ctx->dbi, &l_seq, 1);
+    mdbx_dbi_sequence (l_txn, l_db_ctx->dbi, &l_seq, 1);
 
     /*
      * Save new subDB name into the master table
@@ -255,16 +256,16 @@ MDBX_val    l_key_iov, l_data_iov;
     l_data_iov.iov_base =  l_key_iov.iov_base = l_db_ctx->name;
     l_data_iov.iov_len = l_key_iov.iov_len = l_db_ctx->namelen + 1;    /* Count '\0' */
 
-    if ( MDBX_SUCCESS != (l_rc = mdbx_put(l_txn /*l_db_ctx->txn*/, s_db_master_dbi, &l_key_iov, &l_data_iov, MDBX_NOOVERWRITE ))
+    if ( MDBX_SUCCESS != (l_rc = mdbx_put(l_txn, s_db_master_dbi, &l_key_iov, &l_data_iov, MDBX_NOOVERWRITE ))
          && (l_rc != MDBX_KEYEXIST) )
     {
         log_it (L_ERROR, "mdbx_put: (%d) %s", l_rc, mdbx_strerror(l_rc));
 
-        if ( MDBX_SUCCESS != (l_rc = mdbx_txn_abort(l_txn /*l_db_ctx->txn*/)) )
+        if ( MDBX_SUCCESS != (l_rc = mdbx_txn_abort(l_txn)) )
             return  log_it(L_CRITICAL, "mdbx_txn_abort: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     }
 
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_commit(l_txn /*l_db_ctx->txn*/)) )
+    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_commit(l_txn)) )
         return  log_it(L_CRITICAL, "mdbx_txn_commit: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
     /*
@@ -447,7 +448,7 @@ size_t     l_upper_limit_of_db_size = 16;
     dap_list_t *l_el, *l_tmp;
     DL_FOREACH_SAFE(l_slist, l_el, l_tmp) {
         l_data_iov.iov_base = l_el->data;
-        s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE);
+        s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE, NULL);
         DL_DELETE(l_slist, l_el);
         DAP_DELETE(l_el->data);
         DAP_DELETE(l_el);
@@ -945,25 +946,170 @@ static  int s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj, size_t a_co
 {
 int     l_rc = 0, l_rc2;
 size_t l_summary_len;
-dap_db_ctx_t *l_db_ctx;
-MDBX_val    l_key, l_data;
+dap_db_ctx_t *l_db_ctx = NULL, *l_db_del_ctx = NULL;
+//MDBX_val    l_key, l_data;
 char    *l_val;
-struct  __record_suffix__   *l_suff;
+//struct  __record_suffix__   *l_suff;
 MDBX_txn *l_txn = NULL;
-    if ( !a_store_obj || !a_store_obj->group)                               /* Sanity checks ... */
+    if (!a_count || !a_store_obj)                               /* Sanity checks ... */
         return -EINVAL;
 
+    size_t l_err_count = 0;
+    dap_store_obj_t *l_cur_obj = a_store_obj, *l_last_obj = a_store_obj + a_count - 1;
 
+    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn )) ) {
+        return  log_it (L_CRITICAL, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), -EIO;
+    }
+
+    do {
+
+        uint64_t l_id = 0, l_del_id = 0;
+        char *l_last_dot = strrchr(l_cur_obj->group, '.');
+        if (l_last_dot && !strcmp(l_last_dot, ".del"))
+            l_cur_obj->flags &= ~RECORD_DEL_HISTORY_MODIFY;
+
+        if (!l_db_ctx || dap_strcmp(l_cur_obj->group, l_db_ctx->name) ) {
+            if ( !(l_db_ctx = s_cre_db_ctx_for_group(l_cur_obj->group, MDBX_CREATE, l_txn)) ) {
+                log_it(L_CRITICAL, "Cannot create DB table '%s'", l_cur_obj->group);
+                l_cur_obj->flags |= RECORD_APPLY_ERR;
+                continue;
+            }
+            mdbx_dbi_sequence(l_txn, l_db_ctx->dbi, &l_id, 1);
+        }
+
+        if ( l_cur_obj->flags & RECORD_DEL_HISTORY_MODIFY ) {
+            char l_del_group[DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX];
+            dap_snprintf(l_del_group, sizeof(l_del_group) - 1, "%s.del", l_cur_obj->group);
+            if (!l_db_del_ctx || dap_strcmp(l_del_group, l_db_del_ctx->name)) {
+                if ( !(l_db_del_ctx = s_cre_db_ctx_for_group(l_del_group, MDBX_CREATE, l_txn)) ){
+                    log_it(L_CRITICAL, "Cannot create DB table '%s'", l_cur_obj->group);
+                    l_cur_obj->flags |= RECORD_APPLY_ERR;
+                    continue;
+                }
+            }
+        }
+
+        switch (l_cur_obj->type) {
+
+        case DAP_DB$K_OPTYPE_ADD: {
+            /*
+             * Now we are ready  to form a record in next format:
+             * <value> + <suffix>
+             */
+
+            /* Compute a length of the area to keep value+suffix */
+            l_summary_len = l_cur_obj->value_len + sizeof(struct  __record_suffix__);
+            l_val = DAP_NEW_STACK_SIZE(char, l_summary_len);
+            if (l_cur_obj->value && l_cur_obj->value_len)
+                memcpy(l_val, l_cur_obj->value, l_cur_obj->value_len);          /* Put <value> into the record */
+            /*
+             * Fill suffix's fields
+            */
+            *(struct __record_suffix__*)(l_val + l_cur_obj->value_len) = (struct __record_suffix__) {
+                    .id     = l_id,
+                    .flags  = l_cur_obj->flags,
+                    .ts     = l_cur_obj->timestamp
+            };
+
+            MDBX_val l_iovkey = {  /* Fill IOV for MDBX key */
+                .iov_base   = (void*)l_cur_obj->key,
+                .iov_len    = l_cur_obj->key_len ? l_cur_obj->key_len : strnlen(l_cur_obj->key, DAP_GLOBAL_DB_KEY_MAX)
+            };
+            MDBX_val l_iovdata = {  /* Fill IOV for MDBX data */
+                .iov_base   = l_val,
+                .iov_len    = l_summary_len
+            };
+
+            /* So, finaly do INSERT, COMMIT or ABORT ... */
+
+            if ( MDBX_SUCCESS != (l_rc = mdbx_put(l_txn, l_db_ctx->dbi, &l_iovkey, &l_iovdata, 0)) )
+            {
+                log_it (L_CRITICAL, "mdbx_put: (%d) %s", l_rc, mdbx_strerror(l_rc));
+                l_cur_obj->flags |= RECORD_APPLY_ERR;
+                ++l_err_count;
+                continue;
+            } else if ( l_cur_obj->flags & RECORD_DEL_HISTORY_MODIFY ) {
+                if ((MDBX_SUCCESS != (l_rc = mdbx_del(l_txn, l_db_del_ctx->dbi, &l_iovkey, NULL))) && ( l_rc != MDBX_NOTFOUND) ) {
+                    log_it (L_CRITICAL, "mdbx_del del: (%d) %s", l_rc, mdbx_strerror(l_rc));
+                    l_cur_obj->flags |= RECORD_APPLY_ERR;
+                    ++l_err_count;
+                    continue;
+                }
+                l_rc = (l_rc == MDBX_NOTFOUND) ? 0 : l_rc;               /* Not found ?! It's Okay !!! */
+            }
+            break;
+        }
+        case DAP_DB$K_OPTYPE_DEL: {
+            l_rc2 = 0;
+            if (l_cur_obj->key) {
+                MDBX_val l_iovkey = {  /* Fill IOV for MDBX key */
+                    .iov_base   = (void*)l_cur_obj->key,
+                    .iov_len    = l_cur_obj->key_len ? l_cur_obj->key_len : strnlen(l_cur_obj->key, DAP_GLOBAL_DB_KEY_MAX)
+                };
+                if ( MDBX_SUCCESS != (l_rc = mdbx_del(l_txn, l_db_ctx->dbi, &l_iovkey, NULL)) && (l_rc != MDBX_NOTFOUND)) {
+                    l_rc2 = -EIO, log_it (L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc));
+                    l_cur_obj->flags |= RECORD_APPLY_ERR;
+                    ++l_err_count;
+                    continue;
+                }
+
+                if (l_cur_obj->flags & RECORD_DEL_HISTORY_MODIFY) {
+                    struct  __record_suffix__ l_suff = {
+                        .id     = l_id,
+                        .flags  = l_cur_obj->flags,
+                        .ts     = l_cur_obj->timestamp
+                    };
+                    MDBX_val l_iovdata = {  /* Fill IOV for MDBX data */
+                        .iov_base   = &l_suff,
+                        .iov_len    = sizeof(struct  __record_suffix__)
+                    };
+                    if ( MDBX_SUCCESS != (l_rc = mdbx_put(l_txn, l_db_del_ctx->dbi, &l_iovkey, &l_iovdata, 0)) ) {
+                        log_it (L_CRITICAL, "mdbx_put del: (%d) %s", l_rc, mdbx_strerror(l_rc));
+                        l_cur_obj->flags |= RECORD_APPLY_ERR;
+                        ++l_err_count;
+                        continue;
+                    }
+                }
+            } else {
+                if ( MDBX_SUCCESS != (l_rc = mdbx_drop(l_txn, l_db_ctx->dbi, 0)) && (l_rc != MDBX_NOTFOUND) ) {
+                    l_cur_obj->flags |= RECORD_APPLY_ERR;
+                    ++l_err_count;
+                    l_rc2 = -EIO, log_it (L_ERROR, "mdbx_drop: (%d) %s", l_rc, mdbx_strerror(l_rc));
+                    continue;
+                }
+            }
+
+            l_rc = (l_rc == MDBX_NOTFOUND) ? 1 : l_rc;               /* Not found ?! It's Okay !!! */
+            break;
+        }
+        default: break;
+        }
+
+    } while(++l_cur_obj <= l_last_obj);
+
+    if ( l_err_count == a_count ) {
+        if ( MDBX_SUCCESS != (l_rc2 = mdbx_txn_abort(l_txn)) )
+            log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
+    } else {
+        if ( MDBX_SUCCESS != (l_rc2 = mdbx_txn_commit(l_txn)) )
+            log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
+    }
+
+    return a_count == 1
+            ? l_rc2 == MDBX_SUCCESS ? l_rc : l_rc2
+            : MDBX_SUCCESS;
+
+#if 0
 
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group)) ) {       /* Get a DB context for the group */
                                                                             /* Group is not found ? Try to create table for new group */
+        if ( a_store_obj->type == DAP_DB$K_OPTYPE_DEL )                     /* Nothing to do anymore */
+            return 1;
         if ( !(l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE)) )
             return  log_it(L_WARNING, "Cannot create DB context for the group '%s'", a_store_obj->group), -EIO;
 
         log_it(L_NOTICE, "DB context for the group '%s' has been created", a_store_obj->group);
 
-        if ( a_store_obj->type == DAP_DB$K_OPTYPE_DEL )                     /* Nothing to do anymore */
-            return 1;
     }
 
 
@@ -1092,12 +1238,12 @@ MDBX_txn *l_txn = NULL;
         return ( l_rc2 == MDBX_SUCCESS ) ? l_rc : -EIO;
     } /* DAP_DB$K_OPTYPE_DEL */
 
-
     //dap_assert ( !pthread_mutex_unlock(&l_db_ctx->dbi_mutex) );
 
     log_it (L_ERROR, "Unhandle/unknown DB opcode (%d/%#x)", a_store_obj->type, a_store_obj->type);
 
     return  -EIO;
+#endif
 }
 
 /*
