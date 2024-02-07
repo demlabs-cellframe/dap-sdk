@@ -278,7 +278,7 @@ void s_gdb_cluster_sync_timer_callback(void *a_arg)
         }
         break;
     case DAP_GLOBAL_DB_SYNC_STATE_IDLE:
-        if (l_cluster->sync_context.stage_last_activity - dap_time_now() >
+        if (dap_time_now() - l_cluster->sync_context.stage_last_activity >
                 l_cluster->dbi->sync_idle_time) {
             l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
             if (!dap_stream_node_addr_is_blank(&l_cluster->sync_context.current_link))
