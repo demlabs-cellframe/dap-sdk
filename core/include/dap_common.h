@@ -202,6 +202,8 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))
 #endif
 
+#define memberof_packed(p, m) ((typeof((p)->m)*)(((char*)(p)) + offsetof(typeof(*(p)), m)))
+
 DAP_STATIC_INLINE unsigned long dap_pagesize() {
     static int s = 0;
     if (s)
