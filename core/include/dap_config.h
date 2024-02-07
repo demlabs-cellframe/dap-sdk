@@ -13,7 +13,6 @@ typedef struct dap_conf {
             char        *val_str;
             char        **val_arr;
             int64_t     val_int;
-            uint64_t    val_uint;
         } val;
         UT_hash_handle hh;
     } *items;

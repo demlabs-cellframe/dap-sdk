@@ -64,9 +64,10 @@
 
 #define LOG_TAG "db_driver"
 
+const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_start = {};
+
 // A selected database driver.
 static char s_used_driver [32];                                             /* Name of the driver */
-
 
 static dap_db_driver_callbacks_t s_drv_callback;                            /* A set of interface routines for the selected
                                                                             DB Driver at startup time */
@@ -316,12 +317,12 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
  * @param a_iter data base iterator
  * @return Returns a number of objects.
  */
-size_t dap_global_db_driver_count(const char *a_group, dap_nanotime_t a_timestamp)
+size_t dap_global_db_driver_count(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
 {
     size_t l_count_out = 0;
     // read the number of items
-    if(s_drv_callback.read_count_store)
-        l_count_out = s_drv_callback.read_count_store(a_group, a_timestamp);
+    if (s_drv_callback.read_count_store)
+        l_count_out = s_drv_callback.read_count_store(a_group, a_hash_from);
     return l_count_out;
 }
 
@@ -362,63 +363,14 @@ dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group)
  * @param a_count_out elements count
  * @return If successful, a pointer to the object, otherwise NULL.
  */
-dap_store_obj_t* dap_global_db_driver_cond_read(dap_global_db_iter_t* a_iter, size_t *a_count_out, dap_nanotime_t a_timestamp)
+dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out)
 {
-    dap_return_val_if_pass(!a_iter, NULL);
-
-    dap_store_obj_t *l_ret = NULL;
+    dap_return_val_if_fail(a_group, NULL);
     // read records using the selected database engine
-    if(s_drv_callback.read_cond_store_obj)
-        l_ret = s_drv_callback.read_cond_store_obj(a_iter, a_count_out, a_timestamp);
-    return l_ret;
+    if (s_drv_callback.read_cond_store_obj)
+        return s_drv_callback.read_cond_store_obj(a_group, a_hash_from, a_count_out);
+    return NULL;
 }
-
-/**
- * @brief Create iterator to the first element in the a_group database.
- * @param a_group the group name string
- * @return If successful, a pointer to an iterator, otherwise NULL.
- */
-dap_global_db_iter_t *dap_global_db_driver_iter_create(const char *a_group)
-{
-    if (!a_group || !s_drv_callback.iter_create)
-        return NULL;
-    
-    // create return object
-    dap_global_db_iter_t *l_ret = DAP_NEW_Z(dap_global_db_iter_t);
-    if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
-
-    l_ret->db_group = dap_strdup(a_group);
-    if (!l_ret->db_group) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_DELETE(l_ret);
-        return NULL;
-    }
-    if (s_drv_callback.iter_create(l_ret)) {
-        log_it(L_ERROR, "Error iterator create in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        DAP_DELETE(l_ret->db_group);
-        DAP_DELETE(l_ret);
-        return NULL;
-    }
-    return l_ret;
-}
-
-/**
- * @brief Delete iterator and free memory
- * @param a_iter deleting itaretor
- * @return -.
- */
-void dap_global_db_driver_iter_delete(dap_global_db_iter_t* a_iter)
-{
-    dap_return_if_pass(!a_iter);
-
-    DAP_DEL_Z(a_iter->db_iter);
-    DAP_DEL_Z(a_iter->db_group);
-    DAP_DEL_Z(a_iter);
-}
-
 
 /**
  * @brief Reads several objects from a database by a_group and a_key.
@@ -447,14 +399,14 @@ dap_store_obj_t* dap_global_db_driver_read(const char *a_group, const char *a_ke
 bool dap_global_db_driver_is(const char *a_group, const char *a_key)
 {
     // read records using the selected database engine
-    if(s_drv_callback.is_obj && a_group && a_key)
+    if (s_drv_callback.is_obj && a_group && a_key)
         return s_drv_callback.is_obj(a_group, a_key);
-    else
-        return false;
+    return false;
 }
 
-bool dap_global_db_driver_is_hash(const char *a_group, const dap_global_db_driver_hash_t *a_hash)
+bool dap_global_db_driver_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash)
 {
-    // TODO 9575
+    if (s_drv_callback.is_hash && a_group)
+        return s_drv_callback.is_hash(a_group, a_hash);
     return false;
 }
