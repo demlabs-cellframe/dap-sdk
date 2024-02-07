@@ -290,6 +290,8 @@ static void s_stream_ch_io_complete(dap_events_socket_t *a_es, void *a_arg, int 
 bool dap_db_set_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group, dap_global_db_driver_hash_t a_hash)
 {
     char *l_key = dap_strdup_printf("%"DAP_UINT64_FORMAT_U"%s", a_node_addr.uint64, a_group);
+    if (!l_key)
+        return false;
     bool l_ret = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_LAST_HASH, l_key, &a_hash, sizeof(dap_global_db_driver_hash_t), false, NULL, NULL) == 0;
     DAP_DELETE(l_key);
     return l_ret;
@@ -310,6 +312,6 @@ dap_global_db_driver_hash_t dap_db_get_last_hash_remote(dap_stream_node_addr_t a
     dap_global_db_driver_hash_t l_ret_hash = l_ret_ptr && l_ret_len == sizeof(dap_global_db_driver_hash_t)
             ? *(dap_global_db_driver_hash_t *)l_ret_ptr
             : c_dap_global_db_driver_hash_blank;
-    DAP_DELETE(l_ret_ptr);
+    DAP_DEL_Z(l_ret_ptr);
     return l_ret_hash;
 }

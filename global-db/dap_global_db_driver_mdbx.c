@@ -959,8 +959,8 @@ dap_db_ctx_t *l_db_ctx, *l_db_ctx2;
 
     HASH_ITER(hh, s_db_ctxs, l_db_ctx, l_db_ctx2)
         if (dap_global_db_group_match_mask(l_db_ctx->name, a_group_mask) )  /* Name match a pattern/mask ? */
-            l_ret_list = dap_list_append(l_ret_list, l_db_ctx->name);       /* Add group name to output list */
-
+            l_ret_list = dap_list_append(l_ret_list,
+                                         dap_strdup(l_db_ctx->name));       /* Add group name to output list */
     dap_assert ( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
 
     return l_ret_list;

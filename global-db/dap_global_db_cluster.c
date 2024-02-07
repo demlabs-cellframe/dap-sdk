@@ -208,7 +208,7 @@ bool s_proc_thread_reader(void *a_arg)
         dap_global_db_driver_hash_t *l_hashes_diff = (dap_global_db_driver_hash_t *)(l_hashes_pkt->group_n_hashses + l_hashes_pkt->group_name_len);
         l_req->last_hash = l_hashes_diff[l_hashes_pkt->hashes_count - 1];
         l_ret = !dap_global_db_driver_hash_is_blank(l_req->last_hash);
-        if (!l_ret)
+        if (false)//!l_ret)
             dap_db_set_last_hash_remote(l_req->link, l_req->group, l_hashes_diff[--l_hashes_pkt->hashes_count - 1]);
         dap_worker_t *l_worker = NULL;
         dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr(&l_req->link, &l_worker);

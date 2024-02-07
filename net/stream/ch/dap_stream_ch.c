@@ -427,6 +427,10 @@ static void s_place_notifier_callback(dap_worker_t *a_worker, void *a_arg)
             goto ret_n_clear;
         }
     }
+    if (l_arg->direction == DAP_STREAM_PKT_DIR_IN)
+        l_ch->packet_in_notifiers = l_notifiers_list;
+    else
+        l_ch->packet_out_notifiers = l_notifiers_list;
 ret_n_clear:
     DAP_DELETE(l_arg);
 }
