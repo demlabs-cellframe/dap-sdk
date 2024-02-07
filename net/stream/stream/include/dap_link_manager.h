@@ -61,14 +61,11 @@ typedef enum dap_link_state {
 
 typedef struct dap_link {
     dap_link_state_t state;
-    uint64_t uplink_ip;
-    struct in_addr addr_v4;
-    struct in6_addr addr_v6;
-    uint16_t port;
-    dap_client_t *client;
-    char *net;
-    dap_stream_node_addr_t addr;
     bool keep_connection;
+    dap_stream_node_addr_t node_addr;
+    char host_addr_str[INET6_ADDRSTRLEN];
+    uint16_t host_port;
+    dap_client_t *client;
     dap_link_manager_t *link_manager;
     UT_hash_handle hh;
 } dap_link_t;
@@ -92,4 +89,3 @@ dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_c
 dap_link_manager_t *dap_link_manager_get_default();
 void dap_link_manager_add_active_net(char *a_net_name);
 void dap_link_manager_remove_active_net(char *a_net_name);
-int dap_link_compare(dap_list_t *a_list1, dap_list_t *a_list2);
