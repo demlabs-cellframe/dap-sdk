@@ -102,22 +102,22 @@ static bool s_process_hashes(void *a_arg)
      int j = 0;
      for (uint32_t i = 0; i < l_pkt->hashes_count; i++) {
         if (!dap_global_db_driver_is_hash(l_group, *(l_hashes + i))) {
-            if (!l_ret)
+            if (!l_ret) {
                 l_ret = DAP_NEW_STACK_SIZE(dap_global_db_hash_pkt_t,
                                            sizeof(dap_global_db_hash_pkt_t) +
                                            l_pkt->group_name_len +
                                            sizeof(dap_global_db_driver_hash_t) * l_pkt->hashes_count);
-            if (!l_ret) {
-                log_it(L_CRITICAL, "Not enough memory");
-                return false;
+                if (!l_ret) {
+                    log_it(L_CRITICAL, "Not enough memory");
+                    return false;
+                }
+                memcpy(l_ret->group_n_hashses, l_pkt->group_n_hashses, l_ret->group_name_len = l_pkt->group_name_len);
             }
-            l_ret->group_name_len = l_pkt->group_name_len;
-            dap_global_db_driver_hash_t *l_ret_hashes = (dap_global_db_driver_hash_t *)(l_ret->group_n_hashses + l_ret->group_name_len);
-            l_ret_hashes[j++] = l_hashes[i];
+            dap_global_db_driver_hash_t *l_ret_hashes = (dap_global_db_driver_hash_t *)(l_ret->group_n_hashses + l_pkt->group_name_len);
+            l_ret_hashes[l_ret->hashes_count++] = l_hashes[i];
         }
      }
      if (l_ret) {
-        l_ret->hashes_count = j;
         dap_worker_t *l_worker = NULL;
         dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr((dap_stream_node_addr_t *)a_arg, &l_worker);
         if (l_worker)
@@ -307,6 +307,8 @@ bool dap_db_set_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char 
 dap_global_db_driver_hash_t dap_db_get_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group)
 {
     char *l_key = dap_strdup_printf("%"DAP_UINT64_FORMAT_U"%s", a_node_addr.uint64, a_group);
+    if (!l_key)
+        return c_dap_global_db_driver_hash_blank;
     size_t l_ret_len = 0;
     byte_t *l_ret_ptr = dap_global_db_get_sync(DAP_GLOBAL_DB_LOCAL_LAST_HASH, l_key, &l_ret_len, NULL, NULL);
     dap_global_db_driver_hash_t l_ret_hash = l_ret_ptr && l_ret_len == sizeof(dap_global_db_driver_hash_t)

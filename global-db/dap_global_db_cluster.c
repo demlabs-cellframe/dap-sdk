@@ -208,8 +208,10 @@ bool s_proc_thread_reader(void *a_arg)
         dap_global_db_driver_hash_t *l_hashes_diff = (dap_global_db_driver_hash_t *)(l_hashes_pkt->group_n_hashses + l_hashes_pkt->group_name_len);
         l_req->last_hash = l_hashes_diff[l_hashes_pkt->hashes_count - 1];
         l_ret = !dap_global_db_driver_hash_is_blank(l_req->last_hash);
-        if (false)//!l_ret)
-            dap_db_set_last_hash_remote(l_req->link, l_req->group, l_hashes_diff[--l_hashes_pkt->hashes_count - 1]);
+        if (!l_ret) {
+            --l_hashes_pkt->hashes_count;
+            //dap_db_set_last_hash_remote(l_req->link, l_req->group, l_hashes_diff[l_hashes_pkt->hashes_count - 1]);
+        }
         dap_worker_t *l_worker = NULL;
         dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr(&l_req->link, &l_worker);
         if (l_worker)
@@ -262,7 +264,7 @@ void s_gdb_cluster_sync_timer_callback(void *a_arg)
             l_req->cluster = l_cluster;
             l_req->link = l_current_link;
             l_req->group = it->data;
-            l_req->last_hash = dap_db_get_last_hash_remote(l_req->link, l_req->group);
+            l_req->last_hash = c_dap_global_db_driver_hash_blank; //dap_db_get_last_hash_remote(l_req->link, l_req->group);
             dap_proc_thread_callback_add_pri(NULL, s_proc_thread_reader, l_req, DAP_GLOBAL_DB_TASK_PRIORITY);
             l_cluster->sync_context.request_count++;
         }
