@@ -195,7 +195,7 @@ int dap_global_db_init()
         // One year for objects lifetime by default
         s_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 365 * 24);
         // Time between sync attempts, in seconds
-        s_dbi->sync_idle_time = dap_config_get_item_uint32_default(g_config, "global_db", "sync_idle_time", 120);
+        s_dbi->sync_idle_time = dap_config_get_item_uint32_default(g_config, "global_db", "sync_idle_time", 60);
     }
 
     // Driver initalization
@@ -304,7 +304,7 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     dap_global_db_role_t l_required_role = DAP_GDB_MEMBER_ROLE_USER;
     if (l_signer_role < l_required_role) {
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Global DB record with group %s and key %s is rejected "
-                                                        "with signer role %s and requered role %s",
+                                                        "with signer role %s and required role %s",
                                                             a_obj->group, a_obj->key,
                                                             dap_global_db_cluster_role_str(l_signer_role),
                                                             dap_global_db_cluster_role_str(l_required_role));
@@ -358,6 +358,9 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
                                                                     l_read_obj->group, l_read_obj->key);
                         dap_global_db_driver_delete(l_read_obj, 1);
                         dap_global_db_cluster_notify(l_cluster, l_read_obj);
+                    } else {
+                        log_it(L_NOTICE, "DB record with group %s and key %s won't be removed cause is locally pinned",
+                                                                    l_read_obj->group, l_read_obj->key);
                     }
                     dap_store_obj_free_one(l_read_obj);
                     l_read_obj = l_read_del;
@@ -366,12 +369,16 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
                     log_it(L_ERROR, "Duplicate record with group %s and key %s in both local tabels, "
                                                             DAP_GLOBAL_DB_DEL_SUFFIX" will be erased",
                                                                 l_read_obj->group, l_read_obj->key);
+                    break;
                 case 1:         // Deleted object is older
                     debug_if(g_dap_global_db_debug_more, L_WARNING,
                              "DB record with group %s and key %s will be destroyed to avoid a conflict",
                                                                     l_read_del->group, l_read_del->key);
                     dap_global_db_driver_delete(l_read_del, 1);
                     dap_store_obj_free_one(l_read_del);
+                    break;
+                default:
+                    log_it(L_ERROR, "Unexpected comparision result");
                     break;
                 }
             } else
@@ -432,6 +439,9 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
             a_obj->group = l_old_group_ptr;
             a_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
         }
+        break;
+    default:
+        log_it(L_ERROR, "Unexpected comparision result");
         break;
     }
 free_n_exit:

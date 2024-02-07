@@ -77,7 +77,8 @@ DAP_STATIC_INLINE dap_global_db_driver_hash_t dap_global_db_driver_hash_get(dap_
 
 DAP_STATIC_INLINE int dap_global_db_driver_hash_compare(dap_global_db_driver_hash_t a_hash1, dap_global_db_driver_hash_t a_hash2)
 {
-    return memcmp(&a_hash1, &a_hash2, sizeof(dap_global_db_driver_hash_t));
+    int l_ret = memcmp(&a_hash1, &a_hash2, sizeof(dap_global_db_driver_hash_t));
+    return l_ret < 0 ? -1 : (l_ret > 0 ? 1 : 0);
 }
 
 DAP_STATIC_INLINE int dap_store_obj_driver_hash_compare(dap_store_obj_t *a_obj1, dap_store_obj_t *a_obj2)
