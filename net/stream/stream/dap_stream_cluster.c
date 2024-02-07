@@ -153,7 +153,7 @@ dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_strea
     HASH_ADD(hh, a_cluster->members, addr, sizeof(*a_addr), l_member);
     pthread_rwlock_unlock(&a_cluster->members_lock);
     if (l_member->cluster->members_add_callback)
-        l_member->cluster->members_add_callback(a_cluster, l_member);
+        l_member->cluster->members_add_callback(l_member);
     return l_member;
 }
 
@@ -172,7 +172,7 @@ void dap_cluster_member_delete(dap_cluster_member_t *a_member)
 static void s_cluster_member_delete(dap_cluster_member_t *a_member)
 {
     if (a_member->cluster->members_delete_callback)
-        a_member->cluster->members_delete_callback(a_member->cluster, a_member);
+        a_member->cluster->members_delete_callback(a_member);
     HASH_DEL(a_member->cluster, a_member);
     DAP_DEL_Z(a_member->info);
     DAP_DELETE(a_member);

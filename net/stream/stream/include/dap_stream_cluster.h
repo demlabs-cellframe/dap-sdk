@@ -41,7 +41,7 @@ typedef struct dap_cluster_member {
     UT_hash_handle hh;
 } dap_cluster_member_t;
 
-typedef void (*dap_cluster_change_callback_t)(dap_cluster_t *a_cluster, dap_cluster_member_t *a_member);
+typedef void (*dap_cluster_change_callback_t)(dap_cluster_member_t *a_member);
 
 // Role in cluster
 typedef enum dap_cluster_role {

@@ -35,6 +35,15 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_global_db_cluster"
 
+static void s_links_cluster_member_add_callback(dap_cluster_member_t *a_member)
+{
+    dap_link_manager_add_links_cluster(a_member);
+}
+static void s_role_cluster_member_add_callback(dap_cluster_member_t *a_member)
+{
+    dap_link_manager_add_role_cluster(a_member);
+}
+
 int dap_global_db_cluster_init()
 {
     dap_global_db_ch_init();
@@ -104,14 +113,17 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
             return NULL;
         }
     }
+    if (l_cluster->links_cluster)
+        l_cluster->links_cluster->members_add_callback = s_links_cluster_member_add_callback;
     if (dap_strcmp(DAP_GLOBAL_DB_CLUSTER_LOCAL, a_mnemonim)) {
-    l_cluster->role_cluster = dap_cluster_new(NULL, DAP_CLUSTER_ROLE_VIRTUAL);
+        l_cluster->role_cluster = dap_cluster_new(NULL, DAP_CLUSTER_ROLE_VIRTUAL);
         if (!l_cluster->role_cluster) {
             log_it(L_ERROR, "Can't create role cluster");
             dap_cluster_delete(l_cluster->links_cluster);
             DAP_DELETE(l_cluster);
             return NULL;
         }
+        l_cluster->role_cluster->members_add_callback = s_role_cluster_member_add_callback;
     }
     l_cluster->groups_mask = dap_strdup(a_group_mask);
     if (!l_cluster->groups_mask) {

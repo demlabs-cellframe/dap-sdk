@@ -29,7 +29,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_stream_cluster.h"
 #include "dap_worker.h"
 #include "dap_config.h"
-#include "utlist.h"
 
 #define LOG_TAG "dap_link_manager"
 
@@ -40,26 +39,29 @@ static dap_link_manager_t *s_link_manager = NULL;
 static void s_client_connect(dap_link_t *a_link, const char *a_active_channels, dap_cluster_t *a_link_cluster);
 
 /**
- * @brief a_stage_end_callback
+ * @brief s_client_connected_callback
  * @param a_client
  * @param a_arg
  */
-static void s_client_connected_callback(dap_client_t *a_client, UNUSED_ARG void *a_arg)
+static void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
 {
+// sanity check
+    dap_return_if_pass(!a_client || !a_client->_inheritor);
+// func work
     dap_link_t *l_link = DAP_LINK(a_client);
-    if(l_link) {
-        log_it(L_NOTICE, "Stream connection with node "NODE_ADDR_FP_STR" (%s:%hu) established",
-                    NODE_ADDR_FP_ARGS_S(l_link->node_addr),
-                    l_link->host_addr_str, l_link->host_port);
-
-        // if(l_link->link_manager->callbacks.connected)
-        //     l_link->link_manager->callbacks.connected(l_link, NULL /*l_node_client->callbacks_arg*/);
-        // dap_stream_ch_chain_net_pkt_hdr_t l_announce = { .version = DAP_STREAM_CH_CHAIN_NET_PKT_VERSION,
-        //                                                  .net_id  = l_node_client->net->pub.id };
-        // dap_client_write_unsafe(a_client, 'N', DAP_STREAM_CH_CHAIN_NET_PKT_TYPE_ANNOUNCE,
-        //                                  &l_announce, sizeof(l_announce));
-        l_link->state = LINK_STATE_ESTABLISHED;
-    }
+    dap_global_db_cluster_t *l_global_db_cluster = (dap_cluster_t *)a_arg;
+    dap_cluster_member_find_role(l_global_db_cluster->role_cluster, &l_link->node_addr);
+    // if(dap_cluster_member_add(l_global_db_cluster->role_cluster, &l_link->node_addr))
+    log_it(L_NOTICE, "Stream connection with node "NODE_ADDR_FP_STR" (%s:%hu) established",
+                NODE_ADDR_FP_ARGS_S(l_link->node_addr),
+                l_link->host_addr_str, l_link->host_port);
+    // if(l_link->link_manager->callbacks.connected)
+    //     l_link->link_manager->callbacks.connected(l_link, NULL /*l_node_client->callbacks_arg*/);
+    // dap_stream_ch_chain_net_pkt_hdr_t l_announce = { .version = DAP_STREAM_CH_CHAIN_NET_PKT_VERSION,
+    //                                                  .net_id  = l_node_client->net->pub.id };
+    // dap_client_write_unsafe(a_client, 'N', DAP_STREAM_CH_CHAIN_NET_PKT_TYPE_ANNOUNCE,
+    //                                  &l_announce, sizeof(l_announce));
+    l_link->state = LINK_STATE_ESTABLISHED;
 }
 
 /**
@@ -113,28 +115,15 @@ bool s_update_states(void *a_arg)
     if(!l_link_manager->active || !l_link_manager->active_nets) {
         return true;
     }
-    dap_global_db_instance_t *l_dbi = dap_global_db_instance_get_default();
-    if (l_dbi) {
-        dap_global_db_cluster_t *it = NULL;
-        DL_FOREACH(l_dbi->clusters, it) {
-            if (it->links_cluster && it->role_cluster) {
-                size_t l_role_member_count = dap_stream_cluster_members_count(it->role_cluster);
-                if ((it->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC || it->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED) && 
-                    l_role_member_count && l_role_member_count != dap_stream_cluster_members_count(it->links_cluster)) {
-                    dap_stream_node_addr_t *l_role_members = dap_stream_get_members_addr(it->role_cluster, &l_role_member_count);
-                    for (size_t i = 0; i < l_role_member_count; ++i) {
-                        if(!dap_cluster_member_find_unsafe(it->links_cluster, l_role_members + i)) {
-                            dap_link_t *l_link = it->link_manager->callbacks.get_node_net_info(l_role_members + i);
-                            if (l_link) {
-                                s_client_connect(l_link, "GND", it->links_cluster);
-                            } else {
-                                log_it(L_INFO, "Can't find node "NODE_ADDR_FP_STR" in node list", NODE_ADDR_FP_ARGS_S(l_role_members[i]));
-                            }
-                        }
-                    }
-                } else if(it->links_cluster && it->links_cluster->role == DAP_CLUSTER_ROLE_EMBEDDED) {
-                    // s_link_manager_update_embeded(l_link_manager);
-                }
+    dap_link_t *l_link = NULL, *l_tmp = NULL;
+    // pthread_rwlock_wrlock(&a_cluster->members_lock);
+    HASH_ITER(hh, l_link_manager->self_links, l_link, l_tmp) {
+        if(!l_link->client && l_link->role_clusters) {
+            dap_link_t *l_link = l_link_manager->callbacks.get_node_net_info(&l_link->node_addr);
+            if (l_link) {
+                s_client_connect(l_link, "GND", NULL);
+            } else {
+                log_it(L_INFO, "Can't find node "NODE_ADDR_FP_STR" in node list", NODE_ADDR_FP_ARGS_S(l_link->node_addr));
             }
         }
     }
@@ -184,16 +173,46 @@ DAP_INLINE dap_link_manager_t *dap_link_manager_get_default()
     return s_link_manager;
 }
 
-void dap_link_manager_add_active_net(char *a_net_name)
+DAP_INLINE void dap_link_manager_add_active_net(char *a_net_name)
 {
     dap_return_if_pass(!s_link_manager || !a_net_name);
     s_link_manager->active_nets = dap_list_append(s_link_manager->active_nets, (void *)a_net_name);
 }
 
-void dap_link_manager_remove_active_net(char *a_net_name)
+DAP_INLINE void dap_link_manager_remove_active_net(char *a_net_name)
 {
     dap_return_if_pass(!s_link_manager || !a_net_name);
     s_link_manager->active_nets = dap_list_remove(s_link_manager->active_nets, (void *)a_net_name);
+}
+
+void dap_link_manager_add_role_cluster(dap_cluster_member_t *a_member)
+{
+    dap_return_if_pass(!s_link_manager || !a_member || !a_member->cluster);
+    // pthread_rwlock_wrlock(&it->members_lock);
+    dap_link_t *l_link = NULL;
+    HASH_FIND(hh, s_link_manager->self_links, &a_member->addr, sizeof(a_member->addr), l_link);
+    if (!l_link) {
+        DAP_NEW_Z_RET(l_link, dap_link_t, NULL);
+        l_link->node_addr.uint64 = a_member->addr.uint64;
+        HASH_ADD(hh, s_link_manager->self_links, node_addr, sizeof(l_link->node_addr), l_link);
+    }
+    l_link->role_clusters = dap_list_append(l_link->role_clusters, a_member->cluster);
+    // pthread_rwlock_unlock(&it->members_lock);
+}
+
+void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member)
+{
+    dap_return_if_pass(!s_link_manager || !a_member || !a_member->cluster);
+    // pthread_rwlock_wrlock(&it->members_lock);
+    dap_link_t *l_link = NULL;
+    HASH_FIND(hh, s_link_manager->self_links, &a_member->addr, sizeof(a_member->addr), l_link);
+    if (!l_link) {
+        DAP_NEW_Z_RET(l_link, dap_link_t, NULL);
+        l_link->node_addr.uint64 = a_member->addr.uint64;
+        HASH_ADD(hh, s_link_manager->self_links, node_addr, sizeof(l_link->node_addr), l_link);
+    }
+    l_link->links_clusters = dap_list_append(l_link->links_clusters, a_member->cluster);
+    // pthread_rwlock_unlock(&it->members_lock);
 }
 
 /**

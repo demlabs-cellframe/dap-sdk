@@ -28,6 +28,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_timerfd.h"
 #include "dap_common.h"
 #include "dap_client.h"
+#include "dap_stream_cluster.h"
 
 typedef struct dap_link_manager dap_link_manager_t;
 typedef struct dap_link dap_link_t;
@@ -66,6 +67,8 @@ typedef struct dap_link {
     char host_addr_str[INET6_ADDRSTRLEN];
     uint16_t host_port;
     dap_client_t *client;
+    dap_list_t *role_clusters;
+    dap_list_t *links_clusters;
     dap_link_manager_t *link_manager;
     UT_hash_handle hh;
 } dap_link_t;
@@ -89,3 +92,5 @@ dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_c
 dap_link_manager_t *dap_link_manager_get_default();
 void dap_link_manager_add_active_net(char *a_net_name);
 void dap_link_manager_remove_active_net(char *a_net_name);
+void dap_link_manager_add_role_cluster(dap_cluster_member_t *a_member);
+void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member);
