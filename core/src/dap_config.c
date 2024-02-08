@@ -202,7 +202,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
             } else {
                 errno = 0;
                 char *tmp;
-                long long val = strtoll(l_val, &tmp, 0);
+                long long val = strtoll(l_val, &tmp, 10);
                 bool fail = ( tmp == l_val || *tmp != '\0' || ((val == LLONG_MIN || val == LLONG_MAX) && errno == ERANGE) );
                 if ( !fail ) {
                     l_item_val.val_int = val;
