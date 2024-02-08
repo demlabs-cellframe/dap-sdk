@@ -577,8 +577,8 @@ dap_client_http_t * dap_client_http_request_custom (
         return NULL;
     }
     // Make it non-block
-    if (fcntl( l_socket, F_SETFL,l_socket_flags| O_NONBLOCK) == -1){
-        log_it(L_ERROR, "Error %d can't get socket flags", errno);
+    if (fcntl( l_socket, F_SETFL, l_socket_flags| O_NONBLOCK) == -1){
+        log_it(L_ERROR, "Error %d can't set socket flags", errno);
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
 
@@ -725,8 +725,8 @@ dap_client_http_t * dap_client_http_request_custom (
     else{
         char l_errbuf[128];
         l_errbuf[0] = '\0';
-        strerror_r(l_err, l_errbuf, sizeof (l_errbuf));
-        log_it(L_ERROR, "Connecting error: \"%s\" (code %d)", l_errbuf, l_err);
+        strerror_r(errno, l_errbuf, sizeof (l_errbuf));
+        log_it(L_ERROR, "Connecting error: \"%s\" (code %d)", l_errbuf, errno);
         s_client_http_delete( l_client_http);
         l_ev_socket->_inheritor = NULL;
         dap_events_socket_delete_unsafe( l_ev_socket, true);

@@ -399,8 +399,8 @@ static int s_server_run(dap_server_t *a_server)
     pthread_cond_init(&a_server->started_cond,NULL);
 
 #ifdef DAP_EVENTS_CAPS_EPOLL
-    for(size_t l_worker_id = 0; l_worker_id < dap_events_thread_get_count() ; l_worker_id++){
-        dap_worker_t *l_w = dap_events_worker_get(l_worker_id);
+    //for(size_t l_worker_id = 0; l_worker_id < dap_events_thread_get_count() ; l_worker_id++){
+        dap_worker_t *l_w = dap_events_worker_get_auto();//dap_events_worker_get(l_worker_id);
         assert(l_w);
         if (l_es) {
             l_es->type = a_server->type == DAP_SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
@@ -419,7 +419,7 @@ static int s_server_run(dap_server_t *a_server)
             log_it(L_WARNING, "Can't wrap event socket for %s:%u server", l_es->listener_addr_str, l_es->listener_port);
             return -2;
         }
-    }
+    //}
 #else
     dap_worker_t *l_w = dap_events_worker_get_auto();
     assert(l_w);

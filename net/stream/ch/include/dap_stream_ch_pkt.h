@@ -26,10 +26,12 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "dap_stream_ch.h"
+#include "dap_stream.h"
 #include "dap_enc_key.h"
 
-typedef struct dap_stream_ch_pkt_hdr{
+typedef uint64_t dap_stream_ch_uuid_t;
+
+typedef struct dap_stream_ch_pkt_hdr {
     uint8_t id;   // Channel id
     uint8_t enc_type; // Zero if not encrypted
     uint8_t type; // general, command, info, signal and etc
@@ -53,7 +55,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
 
 DAP_PRINTF_ATTR(4, 5) size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t *a_worker , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char *a_str, ...);
 size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch_uuid_t a_ch_uuid,  uint8_t a_type, const void * a_data, size_t a_data_size);
-// Write on channel by stream events socket UUID
+// Send to channel by stream events socket UUID
 size_t dap_stream_ch_pkt_send_mt(dap_stream_worker_t *a_worker, dap_events_socket_uuid_t a_uuid, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
 
 DAP_PRINTF_ATTR(4, 5) size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t *a_queue , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char *a_str, ...);

@@ -182,17 +182,14 @@ void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr)
 {
     pthread_rwlock_rdlock(&s_clusters_rwlock);
     for (dap_cluster_t *it = s_clusters; it; it = it->hh.next) {
-        // Check if cluster contains nonpersistent links
-        if (it->role == DAP_CLUSTER_ROLE_EMBEDDED) {
-            pthread_rwlock_wrlock(&it->members_lock);
-            dap_cluster_member_t *l_member = NULL;
-            HASH_FIND(hh, it->members, a_addr, sizeof(*a_addr), l_member);
-            if (l_member) {
-                HASH_DEL(it->members, l_member);
-                DAP_DELETE(l_member);
-            }
-            pthread_rwlock_unlock(&it->members_lock);
+        pthread_rwlock_wrlock(&it->members_lock);
+        dap_cluster_member_t *l_member = NULL;
+        HASH_FIND(hh, it->members, a_addr, sizeof(*a_addr), l_member);
+        if (l_member) {
+            HASH_DEL(it->members, l_member);
+            DAP_DELETE(l_member);
         }
+        pthread_rwlock_unlock(&it->members_lock);
     }
     pthread_rwlock_unlock(&s_clusters_rwlock);
 }
@@ -235,6 +232,7 @@ void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t
                            dap_stream_node_addr_t *a_exclude_aray, size_t a_exclude_array_size)
 {
     if (!a_cluster) {
+        // TODO add exclude array to stream broadcasting
         dap_stream_broadcast(a_ch_id, a_type, a_data, a_data_size);
         return;
     }
@@ -343,5 +341,23 @@ char *dap_cluster_get_links_info(dap_cluster_t *a_cluster)
                                 l_total_links_count, l_uplinks_count, l_downlinks_count);
     char *l_ret = l_str_out->str;
     dap_string_free(l_str_out, false);
+    return l_ret;
+}
+
+dap_stream_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster)
+{
+    dap_stream_node_addr_t l_ret = {};
+    dap_return_val_if_fail(a_cluster, l_ret);
+    if (a_cluster->members) {
+        int num = rand() % HASH_COUNT(a_cluster->members), idx = 0;
+        pthread_rwlock_rdlock(&a_cluster->members_lock);
+        for (dap_cluster_member_t *it = a_cluster->members; it; it = it->hh.next) {
+            if (idx++ == num) {
+                l_ret = it->addr;
+                break;
+            }
+        }
+        pthread_rwlock_unlock(&a_cluster->members_lock);
+    }
     return l_ret;
 }

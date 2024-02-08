@@ -31,19 +31,20 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_stream_worker.h"
 
 #define DAP_GLOBAL_DB_TASK_PRIORITY DAP_QUEUE_MSG_PRIORITY_LOW
+#define DAP_GLOBAL_DB_QUEUE_SIZE_MAX 4096
 
 enum dap_stream_ch_gdb_state {
     DAP_STREAM_CH_GDB_STATE_IDLE,
     DAP_STREAM_CH_GDB_STATE_UPDATE,
-    DAP_STREAM_CH_GDB_STATE_SYNC,
-    DAP_STREAM_CH_GDB_STATE_UPDATE_REMOTE,
-    DAP_STREAM_CH_GDB_STATE_SYNC_REMOTE
+    DAP_STREAM_CH_GDB_STATE_SYNC
 };
 
-enum dap_global_db_cluster_pkt_type {
-    DAP_STREAM_CH_GDB_PKT_TYPE_RECORD_PACK,
-    DAP_STREAM_CH_GDB_PKT_TYPE_PERIODIC,
-    DAP_STREAM_CH_GDB_PKT_TYPE_DELETE
+enum dap_global_db_cluster_msg_type {
+    DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES,
+    DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST,
+    DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD,
+    DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK,
+    DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_DELETE
 };
 
 typedef struct dap_stream_ch_gdb_pkt {
@@ -56,19 +57,6 @@ typedef struct dap_stream_ch_gdb_pkt {
 
 typedef struct dap_stream_ch_gdb {
     void *_inheritor;
-
-    enum dap_stream_ch_gdb_state state;
-    uint64_t stats_request_gdb_processed;
-
-    dap_global_db_driver_hash_t *remote_gdbs; // Remote gdbs
-
-    //dap_stream_ch_chain_pkt_hdr_t request_hdr;
-    //dap_list_t *request_db_iter;
-
-    int timer_shots;
-    dap_timerfd_t *activity_timer;
-    int sent_breaks;
-
     dap_stream_ch_callback_packet_t callback_notify_packet_out;
     dap_stream_ch_callback_packet_t callback_notify_packet_in;
     void *callback_notify_arg;
@@ -81,3 +69,5 @@ typedef struct dap_stream_ch_gdb {
 int dap_global_db_ch_init();
 void dap_global_db_ch_deinit();
 dap_stream_ch_gdb_pkt_t *dap_global_db_ch_pkt_new();
+bool dap_db_set_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group, dap_global_db_driver_hash_t a_hash);
+dap_global_db_driver_hash_t dap_db_get_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group);

@@ -48,7 +48,7 @@ typedef struct dap_gossip_msg {
     byte_t      trace_n_payload[];          // Serialized form of message tracepath and payload itself
 } DAP_ALIGN_PACKED dap_gossip_msg_t;
 
-typedef void (*dap_gossip_callback_payload_t)(void *a_payload, size_t a_payload_size);
+typedef void (*dap_gossip_callback_payload_t)(void *a_payload, size_t a_payload_size, dap_stream_node_addr_t a_sender_addr);
 
 #define DAP_STREAM_CH_GOSSIP_ID     'G'
 #define DAP_GOSSIP_CURRENT_VERSION  1

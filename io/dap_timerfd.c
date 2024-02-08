@@ -110,21 +110,6 @@ dap_timerfd_t* dap_timerfd_start_on_worker(dap_worker_t * a_worker, uint64_t a_t
 }
 
 /**
- * @brief dap_timerfd_start_on_proc_thread
- * @param a_proc_thread
- * @param a_timeout_ms
- * @param a_callback
- * @param a_callback_arg
- * @return
- */
-dap_timerfd_t* dap_timerfd_start_on_proc_thread(dap_proc_thread_t * a_proc_thread, uint64_t a_timeout_ms, dap_timerfd_callback_t a_callback, void *a_callback_arg)
-{
-    dap_timerfd_t* l_timerfd = dap_timerfd_create( a_timeout_ms, a_callback, a_callback_arg);
-    // TODO make realization
-    return l_timerfd;
-}
-
-/**
  * @brief dap_timerfd_create
  * @param a_timeout_ms
  * @param a_callback
@@ -302,23 +287,6 @@ static void s_timerfd_reset_worker_callback(dap_worker_t *a_worker, void *a_arg)
     if (l_sock)
         dap_timerfd_reset_unsafe(l_sock->_inheritor);
     DAP_DELETE(l_uuid);
-}
-
-/**
- * @brief s_timerfd_reset_proc_thread_callback
- * @param a_thread
- * @param a_arg
- * @return
- */
-static bool s_timerfd_reset_proc_thread_callback(dap_proc_thread_t *a_thread, void *a_arg)
-{
-    assert(a_arg);
-    dap_events_socket_uuid_t *l_uuid = a_arg;
-    dap_events_socket_t *l_sock = dap_context_find(a_thread->context, *l_uuid);
-    if (l_sock)
-        dap_timerfd_reset_unsafe(l_sock->_inheritor);
-    DAP_DELETE(l_uuid);
-    return true;
 }
 
 /**

@@ -258,7 +258,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             break;
         }
         assert(l_callback->callback_payload);
-        l_callback->callback_payload(l_msg->trace_n_payload + l_msg->trace_len, l_msg->payload_len);
+        l_callback->callback_payload(l_msg->trace_n_payload + l_msg->trace_len, l_msg->payload_len, a_ch->stream->node);
     } break;
 
     default:

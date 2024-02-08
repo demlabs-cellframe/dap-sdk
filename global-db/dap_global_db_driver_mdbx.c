@@ -58,6 +58,7 @@
 #include "dap_file_utils.h"
 #include "dap_common.h"
 #include "dap_sign.h"
+#include "dap_global_db_pkt.h"
 
 #include "mdbx.h"                                                           /* LibMDBX API */
 #define LOG_TAG "dap_global_db_mdbx"
@@ -82,7 +83,6 @@ struct DAP_ALIGN_PACKED driver_record {                                     /* T
     byte_t          key_n_value_n_sign[];                                   /* Serialized form */
 };
 
-static pthread_mutex_t s_db_ctx_mutex = PTHREAD_MUTEX_INITIALIZER;          /* A mutex  for working with a DB context */
 static dap_db_ctx_t *s_db_ctxs = NULL;                                      /* A hash table of <group/subDB/table> == <MDBX DB context> */
 static pthread_rwlock_t s_db_ctxs_rwlock = PTHREAD_RWLOCK_INITIALIZER;      /* A read-write lock for working with a <s_db_ctxs>. */
 
@@ -91,15 +91,26 @@ static char s_db_path[MAX_PATH];                                            /* A
 /* Forward declarations of action routines */
 static int              s_db_mdbx_deinit();
 static int              s_db_mdbx_flush(void);
-static int              s_db_mdbx_apply_store_obj (dap_store_obj_t *a_store_obj);
+static int              s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj);
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group);
-static dap_store_obj_t  *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
+static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
 static bool             s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static bool             s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out);
-static dap_store_obj_t  *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out);
+static void             *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read);
+static inline dap_global_db_hash_pkt_t *s_db_mdbx_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
+{
+    return s_db_mdbx_read_cond(a_group, a_hash_from, NULL, true);
+}
+static inline dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out)
+{
+    return s_db_mdbx_read_cond(a_group, a_hash_from, a_count_out, false);
+}
 static size_t           s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
+static int              s_db_mdbx_txn_start();
+static int              s_db_mdbx_txn_end(bool a_commit);
+
 
 static MDBX_env *s_mdbx_env;                                                /* MDBX's context area */
 static char s_subdir [] = "";                                               /* Name of subdir for the MDBX's database files */
@@ -107,6 +118,7 @@ static char s_subdir [] = "";                                               /* N
 static char s_db_master_tbl [] = "MDBX$MASTER";                             /* A name of master table in the MDBX
                                                                               to keep and maintains application level information */
 static MDBX_dbi s_db_master_dbi;                                            /* A handle of the MDBX' DBI of the master subDB */
+static _Thread_local MDBX_txn *s_txn = NULL;
 
 /*
  *   DESCRIPTION: A kind of replacement of the C RTL assert()
@@ -198,10 +210,10 @@ char    l_buf[1024] = {0};
  *      NULL in case of error
  *
  */
-static dap_db_ctx_t *s_cre_db_ctx_for_group(const char *a_group, int a_flags)
+static dap_db_ctx_t *s_cre_db_ctx_for_group(const char *a_group, int a_flags, MDBX_txn *a_txn)
 {
 int l_rc;
-dap_db_ctx_t *l_db_ctx, *l_db_ctx2;
+dap_db_ctx_t *l_db_ctx;
 size_t l_name_len;
 MDBX_val    l_key_iov, l_data_iov;
 
@@ -210,11 +222,11 @@ MDBX_val    l_key_iov, l_data_iov;
 
     dap_assert( !pthread_rwlock_rdlock(&s_db_ctxs_rwlock) );                /* Get RD lock for lookup only */
     HASH_FIND_STR(s_db_ctxs, a_group, l_db_ctx);                            /* Is there exist context for the group ? */
-    dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
 
-    if ( l_db_ctx )                                                         /* Found! Good job - return DB context */
+    if ( l_db_ctx ) {                                                       /* Found! Good job - return DB context */
+        dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
         return  log_it(L_INFO, "Found DB context: %p for group: '%s'", l_db_ctx, a_group), l_db_ctx;
-
+    }
 
     /* So , at this point we are going to create (if not exist)  'table' for new group */
 
@@ -224,12 +236,12 @@ MDBX_val    l_key_iov, l_data_iov;
     if ( !(l_db_ctx = DAP_NEW_Z(dap_db_ctx_t)) )                            /* Allocate zeroed memory for new DB context */
         return  log_it(L_ERROR, "Cannot allocate DB context for '%s', errno=%d", a_group, errno), NULL;
 
-    memcpy(l_db_ctx->name,  a_group, l_db_ctx->namelen = l_name_len);             /* Store group name in the DB context */
+    memcpy(l_db_ctx->name, a_group, l_db_ctx->namelen = l_name_len);             /* Store group name in the DB context */
     /*
     ** Start transaction, create table, commit.
     */
-    MDBX_txn *l_txn;
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
+    MDBX_txn *l_txn = a_txn;
+    if (!a_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
     if  ( MDBX_SUCCESS != (l_rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) )
@@ -244,33 +256,22 @@ MDBX_val    l_key_iov, l_data_iov;
     if (MDBX_SUCCESS != (l_rc = mdbx_put(l_txn, s_db_master_dbi, &l_key_iov, &l_data_iov, MDBX_NOOVERWRITE))
          && (l_rc != MDBX_KEYEXIST)) {
         log_it (L_ERROR, "mdbx_put: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        if ( MDBX_SUCCESS != (l_rc = mdbx_txn_abort(l_txn)) )
+        if (!a_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_abort(l_txn)) )
             return  log_it(L_CRITICAL, "mdbx_txn_abort: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     }
 
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_commit(l_txn)) )
+    if (!a_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_commit(l_txn)) )
         return  log_it(L_CRITICAL, "mdbx_txn_commit: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
     /*
     ** Add new DB Context for the group into the hash for quick access
     */
-    dap_assert( !pthread_rwlock_wrlock(&s_db_ctxs_rwlock) );                /* Get WR lock for the hash-table */
-
-    l_db_ctx2 = NULL;
-    HASH_FIND_STR(s_db_ctxs, a_group, l_db_ctx2);                           /* Check for existence of group again!!! */
-
-    if ( !l_db_ctx2)                                                        /* Still not exist - fine, add new record */
-        HASH_ADD_STR(s_db_ctxs, name, l_db_ctx);
+    HASH_ADD_STR(s_db_ctxs, name, l_db_ctx);
 
     dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
 
-    if ( l_db_ctx2 )                                                        /* Release unnecessary new context */
-        DAP_DEL_Z(l_db_ctx);
-
-    return l_db_ctx2 ? l_db_ctx2 : l_db_ctx;
+    return l_db_ctx;
 }
-
-
 
 /*
  *  DESCRIPTION: Action routine - cleanup this module's internal contexts, DB contexts hash table,
@@ -337,11 +338,7 @@ dap_list_t  *l_slist = NULL;
 char        *l_cp;
 size_t     l_upper_limit_of_db_size = 16;
 
-    /*
-     * [resources]
-     * mdbx_upper_limit_of_db_size=32
-     */
-    l_upper_limit_of_db_size = dap_config_get_item_uint32_default ( g_config,  "global_db", "mdbx_upper_limit_of_db_size", l_upper_limit_of_db_size);
+    l_upper_limit_of_db_size = dap_config_get_item_uint32_default(g_config,  "global_db", "mdbx_upper_limit_of_db_size", l_upper_limit_of_db_size);
     l_upper_limit_of_db_size  *= 1024*1024*1024ULL;
     log_it(L_INFO, "Set MDBX Upper Limit of DB Size to %zu octets", l_upper_limit_of_db_size);
 
@@ -416,7 +413,7 @@ size_t     l_upper_limit_of_db_size = 16;
     dap_list_t *l_el, *l_tmp;
     DL_FOREACH_SAFE(l_slist, l_el, l_tmp) {
         l_data_iov.iov_base = l_el->data;
-        s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE);
+        s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE, NULL);
         DL_DELETE(l_slist, l_el);
         DAP_DELETE(l_el);
     }
@@ -429,12 +426,15 @@ size_t     l_upper_limit_of_db_size = 16;
     a_drv_dpt->get_by_hash         = s_db_mdbx_get_by_hash;
     a_drv_dpt->read_store_obj      = s_db_mdbx_read_store_obj;
     a_drv_dpt->read_cond_store_obj = s_db_mdbx_read_cond_store_obj;
+    a_drv_dpt->read_hashes         = s_db_mdbx_read_hashes;
     a_drv_dpt->read_count_store    = s_db_mdbx_read_count_store;
     a_drv_dpt->get_groups_by_mask  = s_db_mdbx_get_groups_by_mask;
     a_drv_dpt->is_obj              = s_db_mdbx_is_obj;
     a_drv_dpt->is_hash             = s_db_mdbx_is_hash;
     a_drv_dpt->deinit              = s_db_mdbx_deinit;
     a_drv_dpt->flush               = s_db_mdbx_flush;
+    a_drv_dpt->transaction_start   = s_db_mdbx_txn_start;
+    a_drv_dpt->transaction_end     = s_db_mdbx_txn_end;
 
     /*
      * MDBX support transactions but on the current circuimstance we will not get
@@ -533,13 +533,11 @@ int s_fill_store_obj(const char *a_group, MDBX_val *a_key, MDBX_val *a_data, dap
         DAP_DELETE(a_obj->group);
         return log_it(L_ERROR, "Corrupted global DB record internal value"), -6;
     }
-    if (!l_record->key_len) {
+    if (!l_record->key_len || !*l_record->key_n_value_n_sign) {
         DAP_DELETE(a_obj->group);
         return log_it(L_ERROR, "Ivalid driver record with zero text key length"), -9;
     }
-    if ( (a_obj->key = DAP_NEW_SIZE(char, l_record->key_len)) )
-        memcpy((char *)a_obj->key, l_record->key_n_value_n_sign, l_record->key_len);
-    else {
+    if ( !(a_obj->key = DAP_DUP_SIZE(l_record->key_n_value_n_sign, l_record->key_len)) ) {
         DAP_DELETE(a_obj->group);
         return log_it(L_CRITICAL, "Cannot allocate a memory for store object key"), -5;
     }
@@ -582,7 +580,8 @@ int s_get_obj_by_text_key(MDBX_txn *a_txn, MDBX_dbi a_dbi, MDBX_val *a_key, MDBX
     size_t l_key_len = strlen(a_text_key) + 1;
     do {
         struct driver_record *l_record = a_data->iov_base;
-        if (l_key_len == l_record->key_len &&
+        if (a_data->iov_len > sizeof(struct driver_record) + l_key_len &&
+                l_key_len == l_record->key_len &&
                 !memcmp(l_record->key_n_value_n_sign, a_text_key, l_key_len)) {
             mdbx_cursor_close(l_cursor);
             return MDBX_SUCCESS;
@@ -614,7 +613,7 @@ int l_rc;
 dap_db_ctx_t *l_db_ctx;
 MDBX_val    l_key={0}, l_data={0};
 MDBX_cursor *l_cursor = NULL;
-dap_store_obj_t *l_obj;
+dap_store_obj_t *l_obj = NULL;
 
      /* Sanity check for group/table */
     dap_return_val_if_fail(a_group, NULL);
@@ -622,39 +621,35 @@ dap_store_obj_t *l_obj;
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group)) )
         return NULL;
 
-    MDBX_txn *l_txn;
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
+    MDBX_txn *l_txn = s_txn;
+    if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
 
     if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor)) ) {
-        mdbx_txn_commit(l_txn);
         log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        return NULL;
+        goto ret;
     }
     if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_LAST)) ) {
-        mdbx_txn_commit(l_txn);
         log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        return NULL;
+        goto ret;
     }
+    if (!l_key.iov_len || !l_data.iov_len)                                  /* Not found anything  - return NULL */
+        goto ret;
 
-    if (l_cursor)                                                           // Release uncesessary MDBX cursor area,
-        mdbx_cursor_close(l_cursor);                                        //but keep transaction !!!
-
-    if (!l_key.iov_len || !l_data.iov_len) {                                /* Not found anything  - return NULL */
-        mdbx_txn_commit(l_txn);
-        return NULL;
-    }
     /* Found ! Allocate memory for <store object>, <key> and <value> */
     if ( (l_obj = DAP_CALLOC(1, sizeof( dap_store_obj_t ))) ) {
         if (s_fill_store_obj(a_group, &l_key, &l_data, l_obj)) {
             l_rc = MDBX_PROBLEM;
             DAP_DEL_Z(l_obj);
         }
-    } else {
+    } else
         l_rc = MDBX_PROBLEM, log_it (L_ERROR, "Cannot allocate a memory for store object, errno=%d", errno);
-    }
-    mdbx_txn_commit(l_txn);
+ret:
 
+    if (l_cursor)                                                           // Release uncesessary MDBX cursor area,
+        mdbx_cursor_close(l_cursor);                                        //but keep transaction !!!
+    if (!s_txn)
+        mdbx_txn_commit(l_txn);
     return l_obj;
 }
 
@@ -681,13 +676,13 @@ MDBX_val l_key, l_data;
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_group)) )                    /* Get DB Context for group/table */
         return 0;
 
-    MDBX_txn *l_txn;
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
-       return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), 0;
+    MDBX_txn *l_txn = s_txn;
+    if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
+       return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), false;
 
     l_rc = s_get_obj_by_text_key(l_txn, l_db_ctx->dbi, &l_key, &l_data, a_key);
 
-    if ( MDBX_SUCCESS != (l_rc2 = mdbx_txn_commit(l_txn)) )
+    if (!s_txn && MDBX_SUCCESS != (l_rc2 = mdbx_txn_commit(l_txn)) )
         log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
     return ( l_rc == MDBX_SUCCESS );    /*0 - RNF, 1 - SUCCESS */
 }
@@ -699,8 +694,8 @@ static bool s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a
     if (!l_db_ctx)
         return false;
     int l_rc;
-    MDBX_txn *l_txn;
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
+    MDBX_txn *l_txn = s_txn ? s_txn : NULL;
+    if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     MDBX_val l_key, l_data;
     l_key.iov_base = &a_hash;                                    /* Fill IOV for MDBX key */
@@ -708,37 +703,93 @@ static bool s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a
     l_rc = mdbx_get(l_txn, l_db_ctx->dbi, &l_key, &l_data);
     if (l_rc != MDBX_NOTFOUND && l_rc != MDBX_SUCCESS)
         log_it (L_ERROR, "mdbx_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
-    mdbx_txn_commit(l_txn);
+    if (!s_txn)
+        mdbx_txn_commit(l_txn);
     return l_rc == MDBX_SUCCESS;
 }
 
-static dap_store_obj_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t a_hash)
+static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count)
 {
-    dap_return_val_if_fail(a_group, NULL); /* Sanity check */
+    dap_return_val_if_fail(a_group && a_count, NULL); /* Sanity check */
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
     if (!l_db_ctx)
         return false;
     int l_rc;
-    MDBX_txn *l_txn;
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
+    MDBX_txn *l_txn = s_txn;
+    if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     MDBX_val l_key, l_data;
-    l_key.iov_base = &a_hash;                                    /* Fill IOV for MDBX key */
-    l_key.iov_len =  sizeof(a_hash);
-    dap_store_obj_t *l_obj = NULL;
-    if (MDBX_SUCCESS == (l_rc = mdbx_get(l_txn, l_db_ctx->dbi, &l_key, &l_data))) {
-        /* Found ! Make new <store_obj> */
-        if ( !(l_obj = DAP_NEW_Z(dap_store_obj_t)) ) {
-            log_it (L_ERROR, "Cannot allocate a memory for store object key, errno=%d", errno);
-            l_rc = MDBX_PROBLEM;
-        } else if ( s_fill_store_obj(a_group, &l_key, &l_data, l_obj) ) {
-            l_rc = MDBX_PROBLEM;
-            DAP_DEL_Z(l_obj);
+    dap_global_db_pkt_pack_t *l_ret = NULL;
+    for (size_t i = 0; i < a_count; i++) {
+        l_key.iov_base = a_hashes + i;                                    /* Fill IOV for MDBX key */
+        l_key.iov_len =  sizeof(dap_global_db_driver_hash_t);
+        l_rc = mdbx_get(l_txn, l_db_ctx->dbi, &l_key, &l_data);
+        if (MDBX_SUCCESS == l_rc) {
+            struct driver_record *l_record = l_data.iov_base;
+            if (l_data.iov_len < sizeof(*l_record) || // Do not intersect bounds of read array, check it twice
+                    l_data.iov_len < sizeof(*l_record) + l_record->sign_len + l_record->value_len + l_record->key_len) {
+                log_it(L_ERROR, "Corrupted global DB record internal value");
+                l_rc = MDBX_PROBLEM;
+                continue;
+            }
+            size_t l_data_len = l_record->key_len + l_record->value_len + l_record->sign_len + l_db_ctx->namelen;
+            size_t l_add_size = l_data_len + sizeof(dap_global_db_pkt_t);
+            l_ret = l_ret ? DAP_REALLOC(l_ret, l_ret->data_size + sizeof(dap_global_db_pkt_pack_t) + l_add_size)
+                          : DAP_NEW_Z_SIZE(dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_add_size);
+            if (!l_ret) {
+                log_it(L_CRITICAL, "Cannot allocate a memory for store object packet");
+                l_rc = MDBX_PROBLEM;
+                break;
+            }
+            dap_global_db_pkt_t *l_pkt = (dap_global_db_pkt_t *)(l_ret->data + l_ret->data_size);
+
+            /* Fill packet header */
+            if (l_key.iov_len != sizeof(dap_global_db_driver_hash_t)) {
+                log_it(L_ERROR, "Invalid length of global DB record key, expected %zu, got %zu",
+                                                            sizeof(dap_global_db_driver_hash_t), l_key.iov_len);
+                l_rc = MDBX_PROBLEM;
+                continue;
+            }
+            dap_global_db_driver_hash_t *l_driver_key = l_key.iov_base;
+            l_pkt->timestamp = be64toh(l_driver_key->bets);
+            l_pkt->crc = be64toh(l_driver_key->becrc);
+            if (!l_db_ctx->namelen) {
+                log_it(L_ERROR, "Zero length of global DB group name");
+                l_rc = MDBX_PROBLEM;
+                break;
+            }
+            l_pkt->group_len = l_db_ctx->namelen;
+            if (!l_record->key_len || !*l_record->key_n_value_n_sign) {
+                log_it(L_ERROR, "Ivalid driver record with zero text key length");
+                l_rc = MDBX_PROBLEM;
+                break;
+            }
+            l_pkt->key_len = l_record->key_len;
+            l_pkt->value_len = l_record->value_len;
+            l_pkt->data_len = l_data_len;
+
+            /* Put serialized data into the payload part of the packet */
+            byte_t *l_data_ptr = dap_mempcpy(l_pkt->data, l_db_ctx->name, l_db_ctx->namelen);
+            l_data_ptr = dap_mempcpy(l_data_ptr, l_record->key_n_value_n_sign, l_record->key_len);
+            if (l_record->value_len)
+                l_data_ptr = dap_mempcpy(l_data_ptr, l_record->key_n_value_n_sign + l_record->key_len, l_record->value_len);
+            if (l_record->sign_len >= sizeof(dap_sign_t)) {
+                dap_sign_t *l_sign = (dap_sign_t *)(l_record->key_n_value_n_sign + l_record->key_len + l_record->value_len);
+                if (dap_sign_get_size(l_sign) != l_record->sign_len) {
+                    log_it(L_ERROR, "Corrupted global DB record internal value");
+                    l_rc = MDBX_PROBLEM;
+                    continue;
+                }
+                l_data_ptr = dap_mempcpy(l_data_ptr, l_sign, l_record->sign_len);
+            }
+            assert((size_t)(l_data_ptr - l_pkt->data) == l_data_len);
+            l_ret->data_size += l_add_size;
+            l_ret->obj_count++;
         }
-    } else if ( l_rc != MDBX_NOTFOUND )
-        log_it (L_ERROR, "mdbx_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
-    mdbx_txn_commit(l_txn);
-    return l_obj;
+    }
+    if (!s_txn)
+        mdbx_txn_commit(l_txn);
+    return l_ret;
 }
 
 /**
@@ -748,21 +799,21 @@ static dap_store_obj_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-static dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out)
+static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read)
 {
-    dap_return_val_if_fail(a_group, NULL);  /* Sanity check */
+    dap_return_val_if_fail(a_group && *a_group, NULL);  /* Sanity check */
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
     if (!l_db_ctx)
         return NULL;
-
+    size_t l_element_size = a_keys_only_read ? sizeof(dap_global_db_driver_hash_t) : sizeof(dap_store_obj_t);
     size_t l_count_current = 0,
            l_count_out = a_count_out ? *a_count_out : 0;
     if (!l_count_out)
-        l_count_out = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT;
-    dap_store_obj_t *l_obj = NULL, *l_obj_arr = NULL;
+        l_count_out = a_keys_only_read ? DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT : DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT;
+    byte_t *l_obj_arr = NULL;
     int l_rc = 0;
-    MDBX_txn *l_txn = NULL;
-    if (MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn))) {
+    MDBX_txn *l_txn = s_txn;
+    if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn))) {
         log_it (L_ERROR, "mdbx_txn: (%d) %s", l_rc, mdbx_strerror(l_rc));
         goto safe_ret;
     }
@@ -778,15 +829,27 @@ static dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_g
             log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
         goto safe_ret;
     }
-    l_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_count_out * sizeof(dap_store_obj_t) + 1);
+    size_t l_group_name_len = l_db_ctx->namelen + 1;
+    size_t l_addition_size = a_keys_only_read ? l_group_name_len + sizeof(dap_global_db_hash_pkt_t): 0;
+
+    l_obj_arr = DAP_NEW_Z_SIZE(byte_t, (l_count_out + 1) * l_element_size + l_addition_size);
     if (!l_obj_arr) {
         log_it(L_CRITICAL, "Can't allocate memory");
         goto safe_ret;
     }
+    if (a_keys_only_read) {
+        dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_obj_arr;
+        l_pkt->group_name_len = l_group_name_len;
+        memcpy(l_pkt->group_n_hashses, a_group, l_group_name_len);
+    }
     /* Iterate cursor to retrieve records from DB */
     do {
-        l_obj = l_obj_arr + l_count_current;        // Point <l_obj> to last array's element
-        if (s_fill_store_obj(a_group, &l_key, &l_data, l_obj)) {
+        if (a_keys_only_read && l_key.iov_len == sizeof(dap_global_db_driver_hash_t)) {
+            dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_obj_arr;
+            dap_global_db_driver_hash_t *l_hashes_ptr = (dap_global_db_driver_hash_t *)(l_pkt->group_n_hashses + l_group_name_len);
+            *(l_hashes_ptr + l_count_current) = *(dap_global_db_driver_hash_t *)l_key.iov_base;
+        }
+        else if (s_fill_store_obj(a_group, &l_key, &l_data, (dap_store_obj_t *)l_obj_arr + l_count_current)) {
             l_rc = MDBX_PROBLEM;
             break;
         }
@@ -796,7 +859,8 @@ static dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_g
     if (l_rc == MDBX_NOTFOUND) {
         // Add blank object to the end as marker of final itreation
         l_count_current++;
-        if (l_count_current < l_count_out && !(l_obj_arr = DAP_REALLOC(l_obj_arr, sizeof(dap_store_obj_t) * l_count_current))) {
+        if (l_count_current < l_count_out &&
+                !(l_obj_arr = DAP_REALLOC(l_obj_arr, l_element_size * l_count_current + l_addition_size))) {
             log_it(L_ERROR, "Cannot cut area to keep %zu <store objects>", l_count_current);
             l_rc = MDBX_PROBLEM;
         }
@@ -811,6 +875,8 @@ safe_ret:
         mdbx_txn_commit(l_txn);
     if (a_count_out)
         *a_count_out = l_count_current;
+    if (a_keys_only_read && l_obj_arr)
+        ((dap_global_db_hash_pkt_t *)l_obj_arr)->hashes_count = l_count_current;
     return l_obj_arr;
 }
 
@@ -826,8 +892,8 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
     if (!l_db_ctx)
         return 0;
     int l_rc = 0;
-    MDBX_txn *l_txn;
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn))) {
+    MDBX_txn *l_txn = s_txn;
+    if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn))) {
         log_it(L_ERROR, "mdbx_txn: (%d) %s", l_rc, mdbx_strerror(l_rc));
         return 0;
     }
@@ -839,7 +905,8 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
             log_it(L_ERROR, "mdbx_dbi_stat: (%d) %s", l_rc, mdbx_strerror(l_rc));
         else if (!l_stat.ms_entries)                                    /* Nothing to retrieve , table contains no record */
             debug_if(g_dap_global_db_debug_more, L_WARNING, "No object (-s) to be retrieved from the group '%s'", a_group);
-        mdbx_txn_commit(l_txn);
+        if (!s_txn)
+            mdbx_txn_commit(l_txn);
         return l_rc == MDBX_SUCCESS ? l_stat.ms_entries : 0;
     }
     // Return count of entries after specified position by driver hash
@@ -853,7 +920,8 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
              l_data = {};
     if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_SET_UPPERBOUND))) {
         mdbx_cursor_close(l_cursor);
-        mdbx_txn_commit(l_txn);
+        if (!s_txn)
+            mdbx_txn_commit(l_txn);
         if (l_rc != MDBX_NOTFOUND)
             log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
         return 0;
@@ -862,7 +930,8 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
     while ((MDBX_SUCCESS == (l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))))
         l_ret_count++;
     mdbx_cursor_close(l_cursor);
-    mdbx_txn_commit(l_txn);
+    if (!s_txn)
+        mdbx_txn_commit(l_txn);
     return l_ret_count;
 }
 
@@ -891,8 +960,8 @@ dap_db_ctx_t *l_db_ctx, *l_db_ctx2;
 
     HASH_ITER(hh, s_db_ctxs, l_db_ctx, l_db_ctx2)
         if (dap_global_db_group_match_mask(l_db_ctx->name, a_group_mask) )  /* Name match a pattern/mask ? */
-            l_ret_list = dap_list_append(l_ret_list, l_db_ctx->name);       /* Add group name to output list */
-
+            l_ret_list = dap_list_append(l_ret_list,
+                                         dap_strdup(l_db_ctx->name));       /* Add group name to output list */
     dap_assert ( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
 
     return l_ret_list;
@@ -913,43 +982,30 @@ dap_db_ctx_t *l_db_ctx, *l_db_ctx2;
  *      0   - SUCCESS
  *      0>  - <errno>
  */
-static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
+static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX_txn *a_txn)
 {
-int     l_rc = 0, l_rc2;
-dap_db_ctx_t *l_db_ctx;
-MDBX_val    l_key, l_data;
-MDBX_txn *l_txn;
+    dap_return_val_if_fail(a_store_obj && a_store_obj->group && a_store_obj->crc, -EINVAL)     /* Sanity checks ... */
 
-    if ( !a_store_obj || !a_store_obj->group)                                       /* Sanity checks ... */
-        return -EINVAL;
+    dap_db_ctx_t *l_db_ctx;
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group)) ) {               /* Get a DB context for the group */
                                                                                     /* Group is not found ? Try to create table for new group */
-        if ( !(l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE)) )
+        if ( !(l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE, a_txn)) )
             return  log_it(L_WARNING, "Cannot create DB context for the group '%s'", a_store_obj->group), -EIO;
         log_it(L_NOTICE, "DB context for the group '%s' has been created", a_store_obj->group);
         if ( a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL )                        /* Nothing to do anymore */
             return 1;
     }
+    int l_rc = -EIO;
+    MDBX_val l_key, l_data;
     /* At this point we have got the DB Context for the table/group so we are can performs a main work */
     if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD) {
         if( !a_store_obj->key || !*a_store_obj->key)
             return -ENOENT;
+        l_rc = s_get_obj_by_text_key(a_txn, l_db_ctx->dbi, &l_key, &l_data, a_store_obj->key);
+        // Drop object with same text key
+        if (MDBX_SUCCESS == l_rc && MDBX_SUCCESS != (l_rc = mdbx_del(a_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND)
+            return log_it(L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc)), l_rc;
         /* Fill IOV for MDBX key */
-        if (!a_store_obj->crc) {
-            log_it(L_ERROR, "Global DB store object corrupted");
-            return MDBX_EINVAL;
-        }
-        if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
-            return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), l_rc;
-        l_rc = s_get_obj_by_text_key(l_txn, l_db_ctx->dbi, &l_key, &l_data, a_store_obj->key);
-        if (l_rc == MDBX_SUCCESS) {
-            // Drop object with same text key
-            if ( MDBX_SUCCESS != (l_rc = mdbx_del(l_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND) {
-                mdbx_txn_abort(l_txn);
-                return log_it(L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc)), l_rc;
-            }
-        }
-        mdbx_txn_commit(l_txn);
         dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
         l_key.iov_base = &l_driver_key;
         l_key.iov_len = sizeof(l_driver_key);
@@ -957,10 +1013,8 @@ MDBX_txn *l_txn;
         size_t l_key_len = strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX - 1) + 1;
         size_t l_record_len = sizeof(struct driver_record) + a_store_obj->value_len + l_key_len + dap_sign_get_size(a_store_obj->sign);
         struct driver_record *l_record = DAP_NEW_Z_SIZE(struct driver_record, l_record_len);
-        if (!l_record) {
-            log_it(L_ERROR, "Cannot allocate memory for new records, %zu octets, errno=%d", l_record_len, errno);
-            return MDBX_PANIC;
-        }
+        if (!l_record)
+            return log_it(L_CRITICAL, "Cannot allocate memory for new records, %zu octets, errno=%d", l_record_len, errno), MDBX_PANIC;
         dap_strncpy((char *)l_record->key_n_value_n_sign, a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX);
         l_record->key_len = l_key_len;
         l_record->value_len = a_store_obj->value_len;
@@ -978,54 +1032,60 @@ MDBX_txn *l_txn;
                 return MDBX_EINVAL;
             }
         }
+        /* So, finaly: do INSERT, COMMIT or ABORT ... */
         l_data.iov_base = l_record;                                                 /* Fill IOV for MDBX data */
         l_data.iov_len = l_record_len;
-
-        /* So, finaly: BEGIN transaction, do INSERT, COMMIT or ABORT ... */
-        if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
-            return DAP_FREE(l_record), log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), -EIO;
-        if ( MDBX_SUCCESS != (l_rc = mdbx_put(l_txn, l_db_ctx->dbi, &l_key, &l_data, 0)) ) {
+        if ( MDBX_SUCCESS != (l_rc = mdbx_put(a_txn, l_db_ctx->dbi, &l_key, &l_data, 0)) )
             log_it (L_ERROR, "mdbx_put: (%d) %s", l_rc, mdbx_strerror(l_rc));
-            if ( MDBX_SUCCESS != (l_rc2 = mdbx_txn_abort(l_txn)) )
-                log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
-        }
-        else if ( MDBX_SUCCESS != (l_rc = mdbx_txn_commit(l_txn)) )
-            log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        return DAP_FREE(l_record), (( l_rc == MDBX_SUCCESS ) ? 0 : -EIO);
-    } /* DAP_GLOBAL_DB_OPTYPE_ADD */
-
-    if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) {
-        if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
-            return  log_it (L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), -ENOENT;
+        DAP_DELETE(l_record);
+    } else if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) {
         if ( a_store_obj->key ) {
             /* Delete record */
             if (a_store_obj->crc && a_store_obj->timestamp) {
                 dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
                 l_key.iov_base = &l_driver_key;
                 l_key.iov_len = sizeof(l_driver_key);
-                if ( MDBX_SUCCESS != (l_rc = mdbx_del(l_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND)
+                if ( MDBX_SUCCESS != (l_rc = mdbx_del(a_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND)
                     log_it(L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc));
             } else {
-                l_rc = s_get_obj_by_text_key(l_txn, l_db_ctx->dbi, &l_key, &l_data, a_store_obj->key);
+                l_rc = s_get_obj_by_text_key(a_txn, l_db_ctx->dbi, &l_key, &l_data, a_store_obj->key);
                 if (l_rc == MDBX_SUCCESS) {
-                    if ( MDBX_SUCCESS != (l_rc = mdbx_del(l_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND)
+                    if ( MDBX_SUCCESS != (l_rc = mdbx_del(a_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND)
                         log_it(L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc));
                 }
             }
-            l_rc = (l_rc == MDBX_NOTFOUND) ? 1 : l_rc;                      /* Not found? It's OK */
-        } else if (MDBX_SUCCESS != (l_rc = mdbx_drop(l_txn, l_db_ctx->dbi, 0))) /* Drop the whole table */
-            log_it (L_ERROR, "mdbx_drop: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        l_rc2 = 0;
-        if ( l_rc != MDBX_SUCCESS ) {                                       /* Check result of mdbx_drop/del */
-            if ( MDBX_SUCCESS != (l_rc2 = mdbx_txn_abort(l_txn)) )
-                log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
-        } else if ( MDBX_SUCCESS != (l_rc2 = mdbx_txn_commit(l_txn)) )
-            log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
-        return ( l_rc2 == MDBX_SUCCESS ) ? l_rc : -EIO;
-    } /* DAP_GLOBAL_DB_OPTYPE_DEL */
+            l_rc = (l_rc == MDBX_NOTFOUND) ? 1 : l_rc;                          /* Not found? It's OK */
+        } else {
+            /* Drop the whole table */
+            if (MDBX_SUCCESS != (l_rc = mdbx_drop(a_txn, l_db_ctx->dbi, true)))
+                log_it (L_ERROR, "mdbx_drop: (%d) %s", l_rc, mdbx_strerror(l_rc));
+            dap_assert ( !pthread_rwlock_rdlock(&s_db_ctxs_rwlock) );
+            HASH_DEL(s_db_ctxs, l_db_ctx);
+            dap_assert ( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
+            DAP_DELETE(l_db_ctx);
+        }
+    } else
+        log_it (L_ERROR, "Unhandle/unknown DB opcode (%d/%#x)", a_store_obj->type, a_store_obj->type);
 
-    log_it (L_ERROR, "Unhandle/unknown DB opcode (%d/%#x)", a_store_obj->type, a_store_obj->type);
-    return  -EIO;
+    return l_rc;
+}
+
+static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
+{
+    if (s_txn)
+        return s_db_mdbx_apply_store_obj_with_txn(a_store_obj, s_txn);
+
+    int l_rc = 0, l_rc2;
+    MDBX_txn *l_txn;
+    if (MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_READWRITE, &l_txn)) )
+        return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), l_rc;
+    l_rc = s_db_mdbx_apply_store_obj_with_txn(a_store_obj, l_txn);
+    if ( l_rc != MDBX_SUCCESS ) {                                      /* Check result of mdbx_drop/del */
+        if ( MDBX_SUCCESS != (l_rc2 = mdbx_txn_abort(l_txn)) )
+            log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
+    } else if ( MDBX_SUCCESS != (l_rc2 = mdbx_txn_commit(l_txn)) )
+        log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", l_rc2, mdbx_strerror(l_rc2));
+    return l_rc;
 }
 
 /*
@@ -1052,12 +1112,12 @@ dap_db_ctx_t *l_db_ctx;
 dap_store_obj_t *l_obj, *l_obj_arr = NULL;
 MDBX_val    l_key, l_data;
 MDBX_stat   l_stat;
-MDBX_txn *l_txn;
 
     dap_return_val_if_fail(a_group, NULL); /* Sanity check */
     if (!(l_db_ctx = s_get_db_ctx_for_group(a_group)))
         return NULL;
-    if ( MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
+    MDBX_txn *l_txn = s_txn;
+    if (!s_txn && MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
         return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), NULL;
     if ( a_count_out )
         *a_count_out = 0;
@@ -1079,7 +1139,8 @@ MDBX_txn *l_txn;
             }
         } else if ( l_rc != MDBX_NOTFOUND )
             log_it (L_ERROR, "mdbx_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
-        mdbx_txn_commit(l_txn);
+        if (!s_txn)
+            mdbx_txn_commit(l_txn);
         return ( l_rc == MDBX_SUCCESS ) ? l_obj : NULL;
     }
 
@@ -1122,7 +1183,8 @@ MDBX_txn *l_txn;
             if (s_fill_store_obj(a_group, &l_key, &l_data, l_obj)) {
                 l_rc = MDBX_PROBLEM;
                 break;
-            } else if (a_count_out)
+            }
+            if (a_count_out)
                 (*a_count_out)++;
             l_count_out--;
             l_obj++;
@@ -1136,7 +1198,34 @@ MDBX_txn *l_txn;
     } while (0);
     if (l_cursor)
         mdbx_cursor_close(l_cursor);
-    mdbx_txn_commit(l_txn);
+    if (!s_txn)
+        mdbx_txn_commit(l_txn);
 
     return l_obj_arr;
+}
+
+static int s_db_mdbx_txn_start()
+{
+    if (s_txn)
+        return MDBX_BUSY;
+    int l_rc;
+    if (MDBX_SUCCESS != (l_rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_READWRITE, &s_txn)) )
+        return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", l_rc, mdbx_strerror(l_rc)), l_rc;
+    return l_rc;
+
+}
+
+static int s_db_mdbx_txn_end(bool a_commit)
+{
+    if (!s_txn)
+        return MDBX_BAD_TXN;
+    int l_rc;
+    if (!a_commit) {
+        if ( MDBX_SUCCESS != (l_rc = mdbx_txn_abort(s_txn)) )
+            log_it (L_ERROR, "mdbx_txn_abort: (%d) %s", l_rc, mdbx_strerror(l_rc));
+    } else if ( MDBX_SUCCESS != (l_rc = mdbx_txn_commit(s_txn)) )
+        log_it (L_ERROR, "mdbx_txn_commit: (%d) %s", l_rc, mdbx_strerror(l_rc));
+    if (MDBX_SUCCESS == l_rc)
+        s_txn = NULL;
+    return l_rc;
 }

@@ -1929,4 +1929,3 @@ void dap_context_create_queues( dap_events_socket_callback_queue_ptr_t a_callbac
 {
     // TODO complete queues create
 }
-

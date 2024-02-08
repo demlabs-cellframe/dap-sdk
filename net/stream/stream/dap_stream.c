@@ -650,26 +650,17 @@ static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
  * @param sh DAP client instance
  * @param arg Not used
  */
-static void s_esocket_write(dap_events_socket_t* a_esocket , void * a_arg){
-    (void) a_arg;
-    size_t i;
-    bool l_ready_to_write=false;
+static void s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
+{
+    return;
+    // TODO identfy the channel to call right proc->callback
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
     //log_it(L_DEBUG,"Process channels data output (%u channels)", DAP_STREAM(l_http_client)->channel_count );
-    for(i=0;i<DAP_STREAM(l_http_client)->channel_count; i++){
-        dap_stream_ch_t * ch = DAP_STREAM(l_http_client)->channel[i];
-        if(ch->ready_to_write){
-            if(ch->proc->packet_out_callback)
-                ch->proc->packet_out_callback(ch,NULL);
-            l_ready_to_write|=ch->ready_to_write;
-        }
+    for (size_t i = 0; i < DAP_STREAM(l_http_client)->channel_count; i++) {
+        dap_stream_ch_t *l_ch = DAP_STREAM(l_http_client)->channel[i];
+        if (l_ch->ready_to_write && l_ch->proc->packet_out_callback)
+            l_ch->proc->packet_out_callback(l_ch, a_arg);
     }
-    if (s_dump_packet_headers ) {
-        log_it(L_DEBUG,"dap_stream_data_write: ready_to_write=%s client->buf_out_size=%zu" ,
-               l_ready_to_write?"true":"false", a_esocket->buf_out_size );
-    }
-    dap_events_socket_set_writable_unsafe(a_esocket, l_ready_to_write);
-    //log_it(L_DEBUG,"stream_dap_data_write ok");
 }
 
 /**
@@ -895,6 +886,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                 if(a_stream->channel[i]->proc){
                     if(a_stream->channel[i]->proc->id == l_ch_pkt->hdr.id ){
                         l_ch=a_stream->channel[i];
+                        break;
                     }
                 }
             }
@@ -905,6 +897,11 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type);
+                    for (dap_list_t *it = l_ch->packet_in_notifiers; it; it = it->next) {
+                        dap_stream_ch_notifier_t *l_notifier = it->data;
+                        assert(l_notifier);
+                        l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
+                    }
                 }
             } else{
                 log_it(L_WARNING, "Input: unprocessed channel packet id '%c'",(char) l_ch_pkt->hdr.id );
@@ -1050,14 +1047,6 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
     return 0;
 }
 
-static bool s_callback_clusters_update(dap_proc_thread_t UNUSED_ARG *a_thread, void *a_arg)
-{
-    dap_stream_node_addr_t *l_addr = a_arg;
-    dap_cluster_link_delete_from_all(l_addr);
-    DAP_DELETE(a_arg);
-    return false;
-}
-
 void s_stream_delete_from_list(dap_stream_t *a_stream)
 {
     dap_return_if_fail(a_stream);
@@ -1075,10 +1064,8 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
                 break;
             }
         }
-        if (!l_replace_found) {
-            dap_stream_node_addr_t *l_addr_arg = DAP_DUP(&a_stream->node);
-            dap_proc_thread_callback_add(NULL, s_callback_clusters_update, l_addr_arg);
-        }
+        if (!l_replace_found)
+            dap_cluster_link_delete_from_all(&a_stream->node);
     }
     pthread_rwlock_unlock(&s_streams_lock);
 }
@@ -1228,4 +1215,21 @@ void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data
     for (dap_stream_t *it = s_authorized_streams; it; it = it->hh.next)
         dap_stream_ch_pkt_send_mt(it->stream_worker, it->esocket_uuid, a_ch_id, a_type, a_data, a_data_size);
     pthread_rwlock_unlock(&s_streams_lock);
+}
+
+dap_stream_node_addr_t dap_stream_get_random_link()
+{
+    dap_stream_node_addr_t l_ret = {};
+    if (s_authorized_streams) {
+        int num = rand() % HASH_COUNT(s_authorized_streams), idx = 0;
+        pthread_rwlock_rdlock(&s_streams_lock);
+        for (dap_stream_t *it = s_authorized_streams; it; it = it->hh.next) {
+            if (idx++ == num) {
+                l_ret = it->node;
+                break;
+            }
+        }
+        pthread_rwlock_unlock(&s_streams_lock);
+    }
+    return l_ret;
 }

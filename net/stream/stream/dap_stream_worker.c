@@ -138,7 +138,7 @@ static void s_ch_send_callback(dap_events_socket_t *a_es, void *a_msg)
     }
     dap_stream_ch_t *l_ch = dap_stream_ch_by_id_unsafe(l_stream, l_msg->ch_id);
     if (!l_ch) {
-        log_it(L_WARNING, "Stream found, but not setup channel '%c'", l_msg->ch_id);
+        log_it(L_WARNING, "Stream found, but channel '%c' isn't set", l_msg->ch_id);
         goto ret_n_clear;
     }
     dap_stream_ch_pkt_write_unsafe(l_ch, l_msg->ch_pkt_type, l_msg->data, l_msg->data_size);
