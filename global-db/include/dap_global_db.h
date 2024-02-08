@@ -29,6 +29,7 @@
 
 #define DAP_GLOBAL_DB_VERSION               3
 #define DAP_GLOBAL_DB_LOCAL_GENERAL         "local.general"
+#define DAP_GLOBAL_DB_LOCAL_LAST_HASH       "local.lasthash"
 #define DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT     5 // seconds
 #define DAP_GLOBAL_DB_DEL_SUFFIX            ".del"
 
@@ -44,6 +45,7 @@ typedef struct dap_global_db_instance {
     uint32_t store_time_limit;
     dap_global_db_cluster_t *clusters;
     dap_enc_key_t *signing_key;
+    uint32_t sync_idle_time;
 } dap_global_db_instance_t;
 
 typedef struct dap_global_db_obj {

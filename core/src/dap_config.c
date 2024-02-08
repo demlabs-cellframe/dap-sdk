@@ -90,9 +90,9 @@ void dap_config_dump(dap_config_t *a_conf) {
 }
 
 #ifdef DAP_OS_WINDOWS
-static int s_name_sort_cb(const void *a_str1, const void *a_str2) {
-    char    *l_str1 = (char*)((dap_list_t*)a_str1)->data,
-            *l_str2 = (char*)((dap_list_t*)a_str2)->data;
+static int s_name_sort_cb(dap_list_t *a_str1, dap_list_t *a_str2) {
+    char    *l_str1 = a_str1->data,
+            *l_str2 = a_str2->data;
     return dap_strcmp(l_str1, l_str2);
 }
 #endif

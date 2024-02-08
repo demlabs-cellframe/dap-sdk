@@ -61,7 +61,7 @@ int dap_notify_server_init()
     char **l_notify_addrs = dap_config_get_array_str(g_config, "notify_server", "listen_path", &l_notify_addrs_count);
     if( l_notify_addrs ) {
         s_notify_server = dap_server_new(l_notify_addrs, l_notify_addrs_count, DAP_SERVER_LOCAL, NULL);
-    } else if (l_notify_addrs = dap_config_get_array_str(g_config, "notify_server", "listen_address", &l_notify_addrs_count)) {
+    } else if ( (l_notify_addrs = dap_config_get_array_str(g_config, "notify_server", "listen_address", &l_notify_addrs_count)) ) {
         s_notify_server = dap_server_new(l_notify_addrs, l_notify_addrs_count, DAP_SERVER_TCP, NULL);
     } else {
         log_it(L_INFO,"Notify server is not configured, nothing to init but thats okay");

@@ -38,6 +38,7 @@
 #define DAP_GLOBAL_DB_KEY_SIZE_MAX          512UL                               /* A limit for the key's length in DB */
 
 #define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 256UL                             /* Default count of records to return with conditional read */
+#define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  512UL                             /* Default count of keys to return with conditional read */
 
 enum dap_global_db_record_flags {
     DAP_GLOBAL_DB_RECORD_COMMON = 0,
@@ -76,7 +77,8 @@ DAP_STATIC_INLINE dap_global_db_driver_hash_t dap_global_db_driver_hash_get(dap_
 
 DAP_STATIC_INLINE int dap_global_db_driver_hash_compare(dap_global_db_driver_hash_t a_hash1, dap_global_db_driver_hash_t a_hash2)
 {
-    return memcmp(&a_hash1, &a_hash2, sizeof(dap_global_db_driver_hash_t));
+    int l_ret = memcmp(&a_hash1, &a_hash2, sizeof(dap_global_db_driver_hash_t));
+    return l_ret < 0 ? -1 : (l_ret > 0 ? 1 : 0);
 }
 
 DAP_STATIC_INLINE int dap_store_obj_driver_hash_compare(dap_store_obj_t *a_obj1, dap_store_obj_t *a_obj2)
@@ -100,22 +102,28 @@ DAP_STATIC_INLINE char *dap_global_db_driver_hash_print(dap_global_db_driver_has
     return l_ret;
 }
 
-extern const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_start;
+extern const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank;
 
 DAP_STATIC_INLINE bool dap_global_db_driver_hash_is_blank(dap_global_db_driver_hash_t a_blank_candidate)
 {
-    return !memcmp(&a_blank_candidate, &c_dap_global_db_driver_hash_start, sizeof(dap_global_db_driver_hash_t));
+    return !memcmp(&a_blank_candidate, &c_dap_global_db_driver_hash_blank, sizeof(dap_global_db_driver_hash_t));
 }
+
+typedef struct dap_global_db_hash_pkt dap_global_db_hash_pkt_t;
+typedef struct dap_global_db_pkt_pack dap_global_db_pkt_pack_t;
 
 typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t *a_store_obj);
 typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *a_group, const char *a_key, size_t *a_count_out);
 typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count);
+typedef dap_global_db_hash_pkt_t * (*dap_db_driver_read_hashes_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 typedef dap_store_obj_t* (*dap_db_driver_read_last_callback_t)(const char *a_group);
 typedef size_t (*dap_db_driver_read_count_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 typedef dap_list_t* (*dap_db_driver_get_groups_callback_t)(const char *a_mask);
 typedef bool (*dap_db_driver_is_obj_callback_t)(const char *a_group, const char *a_key);
 typedef bool (*dap_db_driver_is_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash);
-typedef dap_store_obj_t * (*dap_db_driver_get_by_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash);
+typedef dap_global_db_pkt_pack_t * (*dap_db_driver_get_by_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t *a_hash, size_t a_count);
+typedef int (*dap_db_driver_txn_start_callback_t)(void);
+typedef int (*dap_db_driver_txn_end_callback_t)(bool);
 typedef int (*dap_db_driver_callback_t)(void);
 
 typedef struct dap_db_driver_callbacks {
@@ -124,6 +132,7 @@ typedef struct dap_db_driver_callbacks {
     dap_db_driver_read_callback_t       read_store_obj;                     /* Retreive 'store object' from DB */
     dap_db_driver_read_last_callback_t  read_last_store_obj;
     dap_db_driver_read_cond_callback_t  read_cond_store_obj;
+    dap_db_driver_read_hashes_callback_t read_hashes;
     dap_db_driver_read_count_callback_t read_count_store;
 
     dap_db_driver_get_groups_callback_t get_groups_by_mask;                 /* Return a list of tables/groups has been matched to pattern */
@@ -134,8 +143,8 @@ typedef struct dap_db_driver_callbacks {
                                                                               a given driver hash */
     dap_db_driver_get_by_hash_callback_t get_by_hash;                       /* Retrieve a record from the table/group for a given driver hash */
 
-    dap_db_driver_callback_t            transaction_start;                  /* Allocate DB context for consequtive operations */
-    dap_db_driver_callback_t            transaction_end;                    /* Release DB context at end of DB consequtive operations */
+    dap_db_driver_txn_start_callback_t  transaction_start;                  /* Allocate DB context for consequtive operations */
+    dap_db_driver_txn_end_callback_t    transaction_end;                    /* Release DB context at end of DB consequtive operations */
 
     dap_db_driver_callback_t            deinit;
     dap_db_driver_callback_t            flush;
@@ -158,8 +167,11 @@ int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_co
 dap_store_obj_t *dap_global_db_driver_read_last(const char *a_group);
 dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out);
 dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out);
-dap_store_obj_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
+dap_global_db_pkt_pack_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
 bool dap_global_db_driver_is(const char *a_group, const char *a_key);
 bool dap_global_db_driver_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 size_t dap_global_db_driver_count(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 dap_list_t *dap_global_db_driver_get_groups_by_mask(const char *a_group_mask);
+dap_global_db_hash_pkt_t *dap_global_db_driver_hashes_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
+int dap_global_db_driver_txn_start();
+int dap_global_db_driver_txn_end(bool a_commit);

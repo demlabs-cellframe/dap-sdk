@@ -29,10 +29,11 @@
 typedef struct dap_proc_thread dap_proc_thread_t;
 typedef struct dap_context dap_context_t;
 /// Callback for processor. Returns TRUE for repeat
-typedef bool (*dap_proc_queue_callback_t)(dap_proc_thread_t *a_thread, void *a_arg);
+typedef bool (*dap_proc_queue_callback_t)(void *a_arg);
+typedef void (*dap_thread_timer_callback_t)(void *a_arg);
 
 typedef enum dap_queue_msg_priority {
-    DAP_QUEUE_MSG_PRIORITY_IDLE = 0,                                        /* Lowest priority (Idle). Don't use Idle if u are not sure that understand how it works */
+    DAP_QUEUE_MSG_PRIORITY_IDLE = 0,                                        /* Lowest priority (Idle). Don't use Idle until you sure what you do */
     DAP_QUEUE_MSG_PRIORITY_LOW,                                             /* Low priority */
     DAP_QUEUE_MSG_PRIORITY_NORMAL,                                          /* Default priority for any queue's entry, has assigned implicitly */
     DAP_QUEUE_MSG_PRIORITY_HIGH,                                            /* High priority */
@@ -71,8 +72,9 @@ DAP_STATIC_INLINE int dap_proc_thread_callback_add(dap_proc_thread_t *a_thread, 
 {
     return dap_proc_thread_callback_add_pri(a_thread, a_callback, a_callback_arg, DAP_QUEUE_MSG_PRIORITY_NORMAL);
 }
-int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, dap_queue_msg_priority_t a_priority);
-DAP_STATIC_INLINE int dap_proc_thread_timer_add(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms)
+int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, dap_queue_msg_priority_t a_priority);
+DAP_STATIC_INLINE int dap_proc_thread_timer_add(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms)
 {
     return dap_proc_thread_timer_add_pri(a_thread, a_callback, a_callback_arg, a_timeout_ms, DAP_QUEUE_MSG_PRIORITY_NORMAL);
 }
+size_t dap_proc_thread_get_avg_queue_size();

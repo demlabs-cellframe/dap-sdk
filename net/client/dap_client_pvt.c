@@ -402,8 +402,14 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     memcpy(l_data, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size);
 
                     dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
-                    size_t l_sign_count = s_add_cert_sign_to_data(a_client_pvt->client->auth_cert, &l_data, &l_data_size, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size) +
-                                            s_add_cert_sign_to_data(l_node_cert, &l_data, &l_data_size, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size);
+                    size_t l_sign_count = 0;
+                    if (a_client_pvt->client->auth_cert)
+                        l_sign_count += s_add_cert_sign_to_data(a_client_pvt->client->auth_cert, &l_data, &l_data_size,
+                                                                a_client_pvt->session_key_open->pub_key_data,
+                                                                a_client_pvt->session_key_open->pub_key_data_size);
+                    l_sign_count += s_add_cert_sign_to_data(l_node_cert, &l_data, &l_data_size,
+                                                             a_client_pvt->session_key_open->pub_key_data,
+                                                             a_client_pvt->session_key_open->pub_key_data_size);
                 
 
                     size_t l_data_str_size_max = DAP_ENC_BASE64_ENCODE_SIZE(l_data_size);

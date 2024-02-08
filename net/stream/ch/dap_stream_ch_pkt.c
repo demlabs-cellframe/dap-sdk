@@ -216,8 +216,13 @@ size_t dap_stream_ch_pkt_send_mt(dap_stream_worker_t *a_worker, dap_events_socke
     l_msg->uuid = a_uuid;
     l_msg->ch_pkt_type = a_type;
     l_msg->ch_id = a_ch_id;
-    if (a_data && a_data_size)
+    if (a_data && a_data_size) {
         l_msg->data = DAP_DUP_SIZE(a_data, a_data_size);
+        if (!l_msg->data) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            return 0;
+        }
+    }
     l_msg->data_size = a_data_size;
 
     int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_ch_send, l_msg);
@@ -289,7 +294,7 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         .id         = a_ch->proc->id,
         .data_size  = (uint32_t)a_data_size,
         .type       = a_type,
-        .enc_type   = a_ch->proc->enc_type,
+        //.enc_type   = a_ch->proc->enc_type, // TODO make it clear, it's unused for now
         .seq_id     = a_ch->stream->seq_id++
     };
 
@@ -329,6 +334,11 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
     // Statistics without header sizes
     a_ch->stat.bytes_write += a_data_size;
     DAP_DELETE(l_buf);
+    for (dap_list_t *it = a_ch->packet_out_notifiers; it; it = it->next) {
+        dap_stream_ch_notifier_t *l_notifier = it->data;
+        assert(l_notifier);
+        l_notifier->callback(a_ch, a_type, a_data, a_data_size, l_notifier->arg);
+    }
     return l_ret;
 
 }

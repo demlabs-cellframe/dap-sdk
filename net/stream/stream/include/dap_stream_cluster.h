@@ -81,3 +81,4 @@ dap_list_t *dap_cluster_get_shuffle_members(dap_cluster_t *a_cluster);
 json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster);
 char *dap_cluster_get_links_info(dap_cluster_t *a_cluster);
 void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr);
+dap_stream_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster);

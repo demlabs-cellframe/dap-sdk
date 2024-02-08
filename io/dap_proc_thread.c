@@ -103,6 +103,14 @@ dap_proc_thread_t *dap_proc_thread_get_auto()
     return &s_threads[l_id_min];
 }
 
+size_t dap_proc_thread_get_avg_queue_size()
+{
+    size_t l_ret = 0;
+    for (uint32_t i = 0; i < s_threads_count; i++)
+        l_ret += s_threads[i].proc_queue_size;
+    return l_ret / s_threads_count;
+}
+
 int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback,
                                      void *a_callback_arg, dap_queue_msg_priority_t a_priority)
 {
@@ -156,7 +164,7 @@ int dap_proc_thread_loop(dap_context_t *a_context)
             pthread_cond_wait(&l_thread->queue_event, &l_thread->queue_lock);
         pthread_mutex_unlock(&l_thread->queue_lock);
         if (!a_context->signal_exit &&
-                l_item->callback(l_thread, l_item->callback_arg))
+                l_item->callback(l_item->callback_arg))
             dap_proc_thread_callback_add_pri(l_thread, l_item->callback, l_item->callback_arg, l_item_priority);
         DAP_DEL_Z(l_item);
     } while (!a_context->signal_exit);
@@ -204,29 +212,37 @@ static int s_context_callback_stopped(dap_context_t UNUSED_ARG *a_context, void 
 
 struct timer_arg {
     dap_proc_thread_t *thread;
-    dap_proc_queue_callback_t callback;
+    dap_thread_timer_callback_t callback;
     void *callback_arg;
     dap_queue_msg_priority_t priority;
 };
 
+static bool s_thread_timer_callback(void *a_arg)
+{
+    struct timer_arg *l_arg = a_arg;
+    l_arg->callback(l_arg->callback_arg);
+    return false;
+}
+
 static bool s_timer_callback(void *a_arg)
 {
     struct timer_arg *l_arg = a_arg;
-    dap_proc_thread_callback_add_pri(l_arg->thread, l_arg->callback, l_arg->callback_arg, l_arg->priority);
+    dap_proc_thread_callback_add_pri(l_arg->thread, s_thread_timer_callback, l_arg, l_arg->priority);
     // Repeat after exit
     return true;
 }
 
-int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, dap_queue_msg_priority_t a_priority)
+int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, dap_queue_msg_priority_t a_priority)
 {
-    dap_return_val_if_fail(a_thread && a_thread->context && a_callback && a_timeout_ms, -1);
-    dap_worker_t *l_worker = dap_events_worker_get(a_thread->context->id);
+    dap_return_val_if_fail(a_callback && a_timeout_ms, -1);
+    dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
+    dap_worker_t *l_worker = dap_events_worker_get(l_thread->context->cpu_id);
     if (!l_worker) {
-        log_it(L_CRITICAL, "Unexistent worker with ID corresonding to specified procedures thread ID %u", a_thread->context->id);
+        log_it(L_CRITICAL, "Worker with ID corresonding to specified processing thread ID %u doesn't exists", l_thread->context->id);
         return -2;
     }
     struct timer_arg *l_timer_arg = DAP_NEW_Z(struct timer_arg);
-    *l_timer_arg = (struct timer_arg){ .thread = a_thread, .callback = a_callback, .callback_arg = a_callback_arg, .priority = a_priority };
+    *l_timer_arg = (struct timer_arg){ .thread = l_thread, .callback = a_callback, .callback_arg = a_callback_arg, .priority = a_priority };
     dap_timerfd_start_on_worker(l_worker, a_timeout_ms, s_timer_callback, l_timer_arg);
     return 0;
 }
