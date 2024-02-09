@@ -113,7 +113,7 @@ static bool s_callback_hashtable_maintenance(void UNUSED_ARG *a_arg)
     return true;
 }
 
-void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, void *a_payload, size_t a_payload_size, dap_hash_fast_t *a_payload_hash)
+void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const void *a_payload, size_t a_payload_size, dap_hash_fast_t *a_payload_hash)
 {
     struct gossip_msg_item *l_msg_item = NULL;
     pthread_rwlock_wrlock(&s_gossip_lock);
