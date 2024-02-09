@@ -219,6 +219,9 @@ dap_store_obj_t *l_store_obj_cur;
     if(!a_store_obj || !a_store_count)
         return -1;
 
+    if (s_drv_callback.transaction_start)
+        s_drv_callback.transaction_start();
+
     //debug_if(g_dap_global_db_debug_more, L_DEBUG, "[%p] Process DB Request ...", a_store_obj);
     l_ret = 0;
 
@@ -232,6 +235,9 @@ dap_store_obj_t *l_store_obj_cur;
             l_ret = s_drv_callback.apply_store_obj(a_store_obj, a_store_count);
         }
     }
+
+    if (s_drv_callback.transaction_end)
+        s_drv_callback.transaction_end();
 
 #if 0
     l_store_obj_cur = a_store_obj;                                          /* We have to  use a power of the address's incremental arithmetic */
