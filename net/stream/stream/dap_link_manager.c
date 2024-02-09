@@ -29,21 +29,54 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_stream_cluster.h"
 #include "dap_worker.h"
 #include "dap_config.h"
+#include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_link_manager"
+
+typedef struct dap_controlled_net {
+    bool active;
+    int links_count;
+    char *name;
+} dap_controlled_net_t;
 
 static uint32_t s_timer_update_states = 4000;
 static uint32_t s_min_links_num = 5;
 static dap_link_manager_t *s_link_manager = NULL;
 
 static void s_client_connect(dap_link_t *a_link, const char *a_active_channels, dap_client_callback_t a_connected_callback);
+static void s_client_error_callback(dap_client_t *a_client, void *a_arg);
+static void s_client_delete_callback(UNUSED_ARG dap_client_t *a_client, void *a_arg);
 
 /**
- * @brief s_client_connected_links_cluster_callback
+ * @brief dap_chain_node_client_connect
+ * Create new dap_client, setup it, and send it in adventure trip
+ * @param a_node_client dap_chain_node_client_t
+ * @param a_active_channels a_active_channels
+ * @param a_link_cluster - cluster to added node addr if connected
+ */
+void s_client_connect(dap_link_t *a_link, const char *a_active_channels, dap_client_callback_t a_connected_callback)
+{
+// sanity check 
+    dap_return_if_pass(!a_link); 
+//func work
+    a_link->client = dap_client_new(s_client_delete_callback, s_client_error_callback, NULL);
+    dap_client_set_is_always_reconnect(a_link->client, false);
+    a_link->client->_inheritor = a_link;
+    dap_client_set_active_channels_unsafe(a_link->client, a_active_channels);
+    log_it(L_INFO, "Connecting to addr %s : %d", a_link->host_addr_str, a_link->host_port);
+    dap_client_set_uplink_unsafe(a_link->client, a_link->host_addr_str, a_link->host_port);
+    a_link->state = LINK_STATE_CONNECTING;
+    // Handshake & connect
+    dap_client_go_stage(a_link->client, STAGE_STREAM_STREAMING, a_connected_callback);
+    return;
+}
+
+/**
+ * @brief s_client_connected_self_callback
  * @param a_client
  * @param a_arg
  */
-static void s_client_connected_links_cluster_callback(dap_client_t *a_client, void *a_arg)
+static void s_client_connected_self_callback(dap_client_t *a_client, void *a_arg)
 {
 // sanity check
     dap_return_if_pass(!DAP_LINK(a_client));
@@ -66,11 +99,38 @@ static void s_client_connected_links_cluster_callback(dap_client_t *a_client, vo
 }
 
 /**
+ * @brief s_client_connected_alien_callback
+ * @param a_client
+ * @param a_arg
+ */
+static void s_client_connected_alien_callback(dap_client_t *a_client, void *a_arg)
+{
+// sanity check
+    dap_return_if_pass(!DAP_LINK(a_client));
+// func work
+    dap_link_t *l_link = DAP_LINK(a_client);
+    dap_list_t *l_item = NULL;
+    // DL_FOREACH(l_link->links_clusters, l_item) {
+    //     dap_cluster_member_add((dap_cluster_t *)l_item->data, &l_link->node_addr, 0, NULL);
+    // }
+    log_it(L_NOTICE, "Stream connection with node "NODE_ADDR_FP_STR" (%s:%hu) established",
+                NODE_ADDR_FP_ARGS_S(l_link->node_addr),
+                l_link->host_addr_str, l_link->host_port);
+    // if(l_link->link_manager->callbacks.connected)
+    //     l_link->link_manager->callbacks.connected(l_link, NULL /*l_node_client->callbacks_arg*/);
+    // dap_stream_ch_chain_net_pkt_hdr_t l_announce = { .version = DAP_STREAM_CH_CHAIN_NET_PKT_VERSION,
+    //                                                  .net_id  = l_node_client->net->pub.id };
+    // dap_client_write_unsafe(a_client, 'N', DAP_STREAM_CH_CHAIN_NET_PKT_TYPE_ANNOUNCE,
+    //                                  &l_announce, sizeof(l_announce));
+    l_link->state = LINK_STATE_ESTABLISHED;
+}
+
+/**
  * @brief s_client_error_callback
  * @param a_client
  * @param a_arg
  */
-static void s_client_error_callback(dap_client_t *a_client, void *a_arg)
+void s_client_error_callback(dap_client_t *a_client, void *a_arg)
 {
 // sanity check
     dap_return_if_pass(!DAP_LINK(a_client));
@@ -89,13 +149,13 @@ static void s_client_error_callback(dap_client_t *a_client, void *a_arg)
                 dap_client_go_stage(l_link->client, STAGE_BEGIN, NULL);
             log_it(L_INFO, "Reconnecting node client with peer "NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(l_link->node_addr));
             l_link->state = LINK_STATE_CONNECTING ;
-            dap_client_go_stage(l_link->client, STAGE_STREAM_STREAMING, s_client_connected_links_cluster_callback);
+            dap_client_go_stage(l_link->client, STAGE_STREAM_STREAMING, s_client_connected_self_callback);
         }
     } else if(l_link->link_manager->callbacks.error) // TODO make different error codes
         l_link->link_manager->callbacks.error(l_link, EINVAL, NULL /*l_node_client->callbacks_arg*/);
 }
 
-static void s_client_delete_callback(UNUSED_ARG dap_client_t *a_client, void *a_arg)
+void s_client_delete_callback(UNUSED_ARG dap_client_t *a_client, void *a_arg)
 {
     // TODO make decision for possible client replacement
     assert(a_arg);
@@ -113,7 +173,7 @@ bool s_update_states(void *a_arg)
     dap_link_manager_t *l_link_manager = (dap_link_manager_t *)a_arg;
     dap_return_val_if_pass(!l_link_manager, true);
 // func work
-    if(!l_link_manager->active || !l_link_manager->active_nets) {
+    if(!l_link_manager->active || !dap_list_length(l_link_manager->nets)) {
         return true;
     }
     dap_link_t *l_link = NULL, *l_tmp = NULL;
@@ -122,7 +182,7 @@ bool s_update_states(void *a_arg)
         // if we don't have any connections with members in role clusters then create connection
         if(!l_link->client && l_link->role_clusters) {
             if (!l_link_manager->callbacks.fill_net_info(l_link)) {
-                s_client_connect(l_link, "GND", s_client_connected_links_cluster_callback);
+                s_client_connect(l_link, "GND", s_client_connected_self_callback);
             } else {
                 log_it(L_INFO, "Can't find node "NODE_ADDR_FP_STR" in node list", NODE_ADDR_FP_ARGS_S(l_link->node_addr));
             }
@@ -149,7 +209,7 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
 
 void dap_link_manager_deinit()
 {
-    dap_list_free(s_link_manager->active_nets);
+    dap_list_free(s_link_manager->nets);  // TODO fool memry free
 }
 
 dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_callbacks)
@@ -176,16 +236,59 @@ DAP_INLINE dap_link_manager_t *dap_link_manager_get_default()
     return s_link_manager;
 }
 
-DAP_INLINE void dap_link_manager_add_active_net(char *a_net_name)
+DAP_INLINE size_t dap_link_manager_link_count(const char *a_net_name)
 {
-    dap_return_if_pass(!s_link_manager || !a_net_name);
-    s_link_manager->active_nets = dap_list_append(s_link_manager->active_nets, (void *)a_net_name);
+    return 0; //TODO
 }
 
-DAP_INLINE void dap_link_manager_remove_active_net(char *a_net_name)
+int dap_link_manager_add_net(const char *a_net_name)
+{
+    dap_return_val_if_pass(!s_link_manager || !a_net_name, -2);
+    dap_controlled_net_t *l_net = NULL;
+    DAP_NEW_Z_RET_VAL(l_net, dap_controlled_net_t, -3, NULL);
+    l_net->name = dap_strdup(a_net_name);
+    if(l_net->name)
+        s_link_manager->nets = dap_list_append(s_link_manager->nets, (void *)l_net);
+    else {
+        log_it(L_ERROR, "Can't copy net name");
+        DAP_DELETE(l_net);
+        return -1;
+    }
+    return 0;
+}
+
+
+void dap_link_manager_remove_net(char *a_net_name)
 {
     dap_return_if_pass(!s_link_manager || !a_net_name);
-    s_link_manager->active_nets = dap_list_remove(s_link_manager->active_nets, (void *)a_net_name);
+    dap_list_t *l_item = NULL;
+    DL_FOREACH(s_link_manager->nets, l_item) {
+        if (!strcmp(a_net_name, ((dap_controlled_net_t *)(l_item->data))->name)) {
+            s_link_manager->nets = dap_list_remove_link(s_link_manager->nets, l_item);
+            break;
+        }
+    }
+    if (!l_item) {
+        log_it(L_ERROR, "Net %s not controlled by link manager", a_net_name);
+        return;
+    }
+    // TODO write func compare controlled nets struct
+    DAP_DEL_MULTY(((dap_controlled_net_t *)(l_item->data))->name, l_item->data, l_item);
+}
+
+void dap_link_manager_set_net_status(const char *a_net_name, bool a_status)
+{
+    dap_return_if_pass(!s_link_manager || !a_net_name);
+    dap_list_t *l_item = NULL;
+    DL_FOREACH(s_link_manager->nets, l_item) {
+        if (!strcmp(a_net_name, ((dap_controlled_net_t *)(l_item->data))->name)) {
+            ((dap_controlled_net_t *)(l_item->data))->active = a_status;
+            break;
+        }
+    }
+    if (!l_item) {
+        log_it(L_ERROR, "Net %s not controlled by link manager", a_net_name);
+    }
 }
 
 void dap_link_manager_add_role_cluster(dap_cluster_member_t *a_member)
@@ -246,26 +349,24 @@ void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member)
     // pthread_rwlock_unlock(&it->members_lock);
 }
 
-/**
- * @brief dap_chain_node_client_connect
- * Create new dap_client, setup it, and send it in adventure trip
- * @param a_node_client dap_chain_node_client_t
- * @param a_active_channels a_active_channels
- * @param a_link_cluster - cluster to added node addr if connected
- */
-void s_client_connect(dap_link_t *a_link, const char *a_active_channels, dap_client_callback_t a_connected_callback)
+int dap_link_manager_link_add(const char* a_net_name, dap_link_t *a_link)
 {
-// sanity check 
-    dap_return_if_pass(!a_link); 
-//func work
-    a_link->client = dap_client_new(s_client_delete_callback, s_client_error_callback, NULL);
-    dap_client_set_is_always_reconnect(a_link->client, false);
-    a_link->client->_inheritor = a_link;
-    dap_client_set_active_channels_unsafe(a_link->client, a_active_channels);
-    log_it(L_INFO, "Connecting to addr %s : %d", a_link->host_addr_str, a_link->host_port);
-    dap_client_set_uplink_unsafe(a_link->client, a_link->host_addr_str, a_link->host_port);
-    a_link->state = LINK_STATE_CONNECTING;
-    // Handshake & connect
-    dap_client_go_stage(a_link->client, STAGE_STREAM_STREAMING, a_connected_callback);
-    return;
+// sanity check
+    dap_return_val_if_pass(!a_link, -1);
+// func work
+    if(!s_link_manager->active || !dap_list_length(s_link_manager->nets)) {
+        return -2;
+    }
+    dap_link_t *l_link = NULL;
+    // pthread_rwlock_wrlock(&a_cluster->members_lock);
+    HASH_FIND(hh, s_link_manager->alien_links, &a_link->node_addr, sizeof(a_link->node_addr), l_link);
+    // pthread_rwlock_unlock(&a_cluster->members_lock);
+    if (!l_link) {
+        l_link->link_manager = s_link_manager;
+        s_client_connect(a_link, "GND", s_client_connected_alien_callback);
+    } else {
+        log_it(L_ERROR, "Trying add existed link to "NODE_ADDR_FP_STR" %s:%hu", NODE_ADDR_FP_ARGS_S(l_link->node_addr), l_link->host_addr_str, l_link->host_port);
+        return -1;
+    }
+    return 0;
 }
