@@ -154,6 +154,7 @@ int dap_db_driver_flush(void)
  * @brief Copies objects from a_store_obj.
  * @param a_store_obj a pointer to the source objects
  * @param a_store_count a number of objects
+ * @param a_move "move" outstanding data ownership to new object
  * @return A pointer to the copied objects.
  */
 dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count)
@@ -163,24 +164,25 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
     if(!a_store_obj || !a_store_count)
         return NULL;
 
-    if ( !(l_store_obj = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * a_store_count)) )
+    if ( !(l_store_obj = DAP_NEW_Z_COUNT(dap_store_obj_t, a_store_count)) )
          return NULL;
 
     l_store_obj_dst = l_store_obj;
     l_store_obj_src = a_store_obj;
 
-    for( int i =  a_store_count; i--; l_store_obj_dst++, l_store_obj_src++) {
-        *l_store_obj_dst = *l_store_obj_src;
-        l_store_obj_dst->group = dap_strdup(l_store_obj_src->group);
-        l_store_obj_dst->key = dap_strdup(l_store_obj_src->key);
+    for ( int i = a_store_count; i--; l_store_obj_dst++, l_store_obj_src++ ) {
+        *l_store_obj_dst        = *l_store_obj_src;
+        l_store_obj_dst->group  = dap_strdup(l_store_obj_src->group);
+        l_store_obj_dst->key    = dap_strdup(l_store_obj_src->key);
         if (l_store_obj_src->value) {
-            if (!l_store_obj->value_len)
-                log_it(L_WARNING, "Inconsistent global DB object copy requested");
-            else
+            if (!l_store_obj_src->value_len && l_store_obj_src->type != DAP_DB$K_OPTYPE_DEL) {
+                log_it(L_WARNING, "Inconsistent global DB object \"%s : %s\" copy requested",
+                       l_store_obj_dst->group, l_store_obj_dst->key);
+                l_store_obj_dst->value = NULL; l_store_obj_dst->value_len = 0;
+            } else
                 l_store_obj_dst->value = DAP_DUP_SIZE(l_store_obj_src->value, l_store_obj_src->value_len);
         }
     }
-
     return l_store_obj;
 }
 
@@ -198,9 +200,7 @@ void dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count)
     dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
     for ( ; a_store_count--; l_store_obj_cur++ ) {
-        DAP_DELETE(l_store_obj_cur->group);
-        DAP_DELETE(l_store_obj_cur->key);
-        DAP_DELETE(l_store_obj_cur->value);
+        dap_store_obj_clear_one(l_store_obj_cur);
     }
     DAP_DELETE(a_store_obj);
 }
@@ -219,8 +219,27 @@ dap_store_obj_t *l_store_obj_cur;
     if(!a_store_obj || !a_store_count)
         return -1;
 
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "[%p] Process DB Request ...", a_store_obj);
+    if (s_drv_callback.transaction_start)
+        s_drv_callback.transaction_start();
 
+    //debug_if(g_dap_global_db_debug_more, L_DEBUG, "[%p] Process DB Request ...", a_store_obj);
+    l_ret = 0;
+
+    if(s_drv_callback.apply_store_obj) {
+        if (a_store_count == 1) {
+            if ( 1 == (l_ret = s_drv_callback.apply_store_obj(a_store_obj, 1)) )
+                log_it(L_INFO, "[%p] Item is missing (may be already deleted) %s/%s", a_store_obj, a_store_obj->group, a_store_obj->key);
+            else if (l_ret < 0)
+                log_it(L_ERROR, "[%p] Can't write item %s/%s (code %d)", a_store_obj, a_store_obj->group, a_store_obj->key, l_ret);
+        } else {
+            l_ret = s_drv_callback.apply_store_obj(a_store_obj, a_store_count);
+        }
+    }
+
+    if (s_drv_callback.transaction_end)
+        s_drv_callback.transaction_end();
+
+#if 0
     l_store_obj_cur = a_store_obj;                                          /* We have to  use a power of the address's incremental arithmetic */
     l_ret = 0;                                                              /* Preset return code to OK */
 
@@ -228,15 +247,19 @@ dap_store_obj_t *l_store_obj_cur;
         s_drv_callback.transaction_start();
 
     if(s_drv_callback.apply_store_obj) {
-        for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
+        for(int i = a_store_count; i--; l_store_obj_cur++) {
             if ((l_store_obj_cur->type == DAP_DB$K_OPTYPE_ADD)
                     //&& strncmp(l_store_obj_cur->group + strlen(l_store_obj_cur->group) - 4, ".del", 4)
                     && !dap_global_db_isalnum_group_key(l_store_obj_cur)) {
                 log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i + 1, a_store_count);
-                l_ret = -9;
-                break;
+                if (a_store_count > 1) {
+                    continue;
+                } else {
+                    l_ret = -9;
+                    break;
+                }
             }
-            if ( 1 == (l_ret = s_drv_callback.apply_store_obj(l_store_obj_cur)) )
+            if ( 1 == (l_ret = s_drv_callback.apply_store_obj(l_store_obj_cur, 1)) )
                 log_it(L_INFO, "[%p] Item is missing (may be already deleted) %s/%s", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key);
             else if (l_ret < 0)
                 log_it(L_ERROR, "[%p] Can't write item %s/%s (code %d)", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key, l_ret);
@@ -245,9 +268,12 @@ dap_store_obj_t *l_store_obj_cur;
 
     if(a_store_count > 1 && s_drv_callback.transaction_end)
         s_drv_callback.transaction_end();
+#endif
 
-    debug_if(g_dap_global_db_debug_more, L_DEBUG, "[%p] Finished DB Request (code %d)", a_store_obj, l_ret);
-    return l_ret;
+    debug_if(l_ret && g_dap_global_db_debug_more, L_DEBUG,
+             "Finished DB Request \"%s : %s\" '%c' (code %d)",
+             a_store_obj->group, a_store_obj->key, a_store_obj->type, l_ret);
+    return a_store_count > 1 ? 0 : l_ret;
 }
 
 /**

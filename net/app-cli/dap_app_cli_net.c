@@ -142,7 +142,7 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
     int buffsize = DAP_CLI_HTTP_RESPONSE_SIZE_MAX;
 #if defined(__WIN32) || defined(ANDROID)
     // TODO connect to the named pipe "\\\\.\\pipe\\node_cli.pipe"
-    uint16_t l_cli_port = dap_config_get_item_uint16 ( g_config, "conserver", "listen_port_tcp");
+    uint16_t l_cli_port = a_socket_path ? strtod(a_socket_path, NULL) : 0;
     if (!l_cli_port)
         return NULL;
     SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -174,7 +174,7 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
 #ifdef __WIN32
             _set_errno(WSAGetLastError());
 #endif
-        printf("Socket connection err: %d\n", errno);
+        printf("Error %d: Failed socket connection\n", errno);
         closesocket(l_socket);
         return NULL;
     }

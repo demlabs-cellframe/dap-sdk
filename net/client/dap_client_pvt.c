@@ -247,9 +247,9 @@ static bool s_stream_timer_timeout_check(void * a_arg)
                    l_client->uplink_addr, l_client->uplink_port);
             l_client_pvt->is_closed_by_timeout = true;
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout", l_es->remote_addr_str, l_es->socket, l_es->type);
-            // Esocket wiil be removed here!
             if (l_es->callbacks.error_callback)
                 l_es->callbacks.error_callback(l_es, ETIMEDOUT);
+            dap_events_socket_remove_and_delete_unsafe(l_es, true);
         }else
             if(s_debug_more)
                 log_it(L_DEBUG,"Socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
@@ -519,7 +519,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                                 return;
                             }
                             *l_stream_es_uuid_ptr  = a_client_pvt->stream_es->uuid;
-                            dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
+                            dap_timerfd_start_on_worker(l_worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
                                                         s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                         }
                         else if (l_err != EINPROGRESS && l_err != -1){
@@ -549,7 +549,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                                 return;
                             }
                             *l_stream_es_uuid_ptr = a_client_pvt->stream_es->uuid;
-                            dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
+                            dap_timerfd_start_on_worker(l_worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
                                                         s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                         }
                     }
@@ -616,7 +616,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                        a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                 // small delay before next request
                 a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
-                            a_client_pvt->worker, 300, s_timer_reconnect_callback, a_client_pvt);
+                            l_worker, 300, s_timer_reconnect_callback, a_client_pvt);
                 if (!a_client_pvt->reconnect_timer)
                     log_it(L_ERROR ,"Can't run timer for small delay before the next enc_init request");
             } else {
@@ -627,7 +627,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->reconnect_attempts = 0;
                     // bigger delay before next request
                     a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
-                                a_client_pvt->worker, s_timeout * 1000, s_timer_reconnect_callback, a_client_pvt);
+                                l_worker, s_timeout * 1000, s_timer_reconnect_callback, a_client_pvt);
                     if (!a_client_pvt->reconnect_timer)
                         log_it(L_ERROR,"Can't run timer for bigger delay before the next enc_init request");
                 } else
@@ -1254,7 +1254,15 @@ static void s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ARG vo
 {
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
-
+    if (!l_client_pvt) {
+        log_it(L_ERROR, "Inconsistent client %s : %d, target stage %s (es %p, inheritor %p)",
+               l_client->uplink_addr, l_client->uplink_port,
+               dap_client_stage_str(l_client->stage_target), a_es, l_client->_inheritor);
+        if (a_es->callbacks.error_callback)
+            a_es->callbacks.error_callback(a_es, ETIMEDOUT);
+        dap_events_socket_remove_and_delete_unsafe(a_es, true);
+        return;
+    }
     if (l_client_pvt->stage_status == STAGE_STATUS_ERROR || !l_client_pvt->stream)
         return;
     switch (l_client_pvt->stage) {

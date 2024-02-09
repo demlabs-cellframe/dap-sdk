@@ -843,10 +843,10 @@ char    *str_header;
             dap_json_rpc_response_t* response = NULL;
             if (reply_body) {
                 response = dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id);
-                json_object_put(json_com_res);
             } else {
-                response = dap_json_rpc_response_create(json_com_res, TYPE_RESPONSE_JSON, request->id);
+                response = dap_json_rpc_response_create(json_object_get(json_com_res), TYPE_RESPONSE_JSON, request->id);
             }
+            json_object_put(json_com_res);
             const char* response_string = dap_json_rpc_response_to_string(response);
             // send the result of the command function
             char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
