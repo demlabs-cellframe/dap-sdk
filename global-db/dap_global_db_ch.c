@@ -129,27 +129,29 @@ static bool s_process_hashes(void *a_arg)
 
 static bool s_process_request(void *a_arg)
 {
-     dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t));
-     const char *l_group = (const char *)l_pkt->group_n_hashses;
-     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
-     if (!l_cluster)
-         return false;
-     dap_stream_node_addr_t *l_sender_addr = (dap_stream_node_addr_t *)a_arg;
-     if (l_cluster->links_cluster &&
-             dap_cluster_member_find_role(l_cluster->links_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
-         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
-         log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
-     }
-     dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
-     dap_global_db_pkt_pack_t *l_pkt_out = dap_global_db_driver_get_by_hash(l_group, l_hashes, l_pkt->hashes_count);
-     if (l_pkt_out) {
-        dap_worker_t *l_worker = NULL;
-        dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr(l_sender_addr, &l_worker);
-        if (l_worker)
-            dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_es_uuid, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK,
-                                      l_pkt_out, dap_global_db_pkt_pack_get_size(l_pkt_out));
-     }
-     return false;
+    dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t));
+    const char *l_group = (const char *)l_pkt->group_n_hashses;
+    dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
+    if (!l_cluster) {
+        log_it(L_ERROR, "Cluster for group %s not found", l_group);
+        return false;
+    }
+    dap_stream_node_addr_t *l_sender_addr = (dap_stream_node_addr_t *)a_arg;
+    if (!l_cluster->links_cluster ||
+            dap_cluster_member_find_role(l_cluster->links_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
+        const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
+        log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
+    }
+    dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
+    dap_global_db_pkt_pack_t *l_pkt_out = dap_global_db_driver_get_by_hash(l_group, l_hashes, l_pkt->hashes_count);
+    if (l_pkt_out) {
+       dap_worker_t *l_worker = NULL;
+       dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr(l_sender_addr, &l_worker);
+       if (l_worker)
+           dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_es_uuid, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK,
+                                     l_pkt_out, dap_global_db_pkt_pack_get_size(l_pkt_out));
+    }
+    return false;
 }
 
 struct processing_arg {
@@ -183,9 +185,11 @@ static bool s_process_records(void *a_arg)
                     l_obj->group, l_obj->key, l_ts_str, l_obj->value_len, l_hash_str);
         }
         dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_obj->group);
-        if (!l_cluster)
+        if (!l_cluster) {
+            log_it(L_ERROR, "Cluster for group %s not found", l_obj->group);
             return false;
-        if (l_cluster->links_cluster &&
+        }
+        if (!l_cluster->links_cluster ||
                 dap_cluster_member_find_role(l_cluster->links_cluster, &l_arg->addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
             const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
             log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s", NODE_ADDR_FP_ARGS_S(l_arg->addr), l_name);

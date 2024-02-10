@@ -41,12 +41,12 @@ int dap_global_db_cluster_init()
 {
     dap_global_db_ch_init();
         // Pseudo-cluster for local scope (unsynced groups). There is no notifier for it
-    if (dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_LOCAL, DAP_GLOBAL_DB_CLUSTER_LOCAL ".*",
+    if (dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_LOCAL, 0, DAP_GLOBAL_DB_CLUSTER_LOCAL ".*",
                                     0, false, DAP_GDB_MEMBER_ROLE_ROOT, DAP_CLUSTER_ROLE_VIRTUAL))
         // Pseudo-cluster for global scope
-        return !dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_GLOBAL, DAP_GLOBAL_DB_CLUSTER_GLOBAL ".*",
+        return !dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_GLOBAL, 0, DAP_GLOBAL_DB_CLUSTER_GLOBAL ".*",
                                            DAP_GLOBAL_DB_UNCLUSTERED_TTL, true,
-                                           DAP_GDB_MEMBER_ROLE_GUEST, DAP_CLUSTER_ROLE_EMBEDDED);
+                                           DAP_GDB_MEMBER_ROLE_GUEST, DAP_CLUSTER_ROLE_VIRTUAL);
     return 2;
 }
 
@@ -81,7 +81,7 @@ void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_sto
     DAP_DELETE(l_pkt);
 }
 
-dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim,
+dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim, dap_cluster_uuid_t a_uuid,
                                                    const char *a_group_mask, uint32_t a_ttl, bool a_owner_root_access,
                                                    dap_global_db_role_t a_default_role, dap_cluster_role_t a_links_cluster_role)
 {
@@ -97,9 +97,10 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
-    l_cluster->links_cluster = dap_cluster_by_mnemonim(a_mnemonim);
+    if (a_mnemonim)
+        l_cluster->links_cluster = dap_cluster_by_mnemonim(a_mnemonim);
     if (!l_cluster->links_cluster && dap_strcmp(DAP_GLOBAL_DB_CLUSTER_GLOBAL, a_mnemonim)) {
-        l_cluster->links_cluster = dap_cluster_new(a_mnemonim, a_links_cluster_role);
+        l_cluster->links_cluster = dap_cluster_new(a_mnemonim, a_uuid, a_links_cluster_role);
         if (!l_cluster->links_cluster) {
             log_it(L_ERROR, "Can't create links cluster");
             DAP_DELETE(l_cluster);
@@ -107,7 +108,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         }
     }
     if (dap_strcmp(DAP_GLOBAL_DB_CLUSTER_LOCAL, a_mnemonim)) {
-    l_cluster->role_cluster = dap_cluster_new(NULL, DAP_CLUSTER_ROLE_VIRTUAL);
+        l_cluster->role_cluster = dap_cluster_new(NULL, 0, DAP_CLUSTER_ROLE_VIRTUAL);
         if (!l_cluster->role_cluster) {
             log_it(L_ERROR, "Can't create role cluster");
             dap_cluster_delete(l_cluster->links_cluster);

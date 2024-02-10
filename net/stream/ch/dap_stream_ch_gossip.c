@@ -104,7 +104,7 @@ static bool s_callback_hashtable_maintenance(void UNUSED_ARG *a_arg)
     dap_nanotime_t l_time_now = dap_nanotime_now();
     struct gossip_msg_item *it, *tmp;
     HASH_ITER(hh, s_gossip_last_msgs, it, tmp) {
-        if (it->timestamp - l_time_now > DAP_GOSSIP_LIFETIME * 1000000000UL) {
+        if (l_time_now - it->timestamp > DAP_GOSSIP_LIFETIME * 1000000000UL) {
             HASH_DEL(s_gossip_last_msgs, it);
             DAP_DELETE(it);
         }
@@ -140,7 +140,7 @@ void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const vo
     l_msg->payload_ch_id = a_ch_id;
     l_msg->trace_len = sizeof(g_node_addr);
     l_msg->payload_len = a_payload_size;
-    l_msg->cluster_id = a_cluster ? a_cluster->uuid : uint128_0;
+    l_msg->cluster_id = a_cluster ? a_cluster->uuid : 0;
     l_msg->payload_hash = *a_payload_hash;
     *(dap_stream_node_addr_t *)l_msg->trace_n_payload = g_node_addr;
     memcpy(l_msg->trace_n_payload + l_msg->trace_len, a_payload, a_payload_size);
@@ -241,8 +241,8 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                                             NODE_ADDR_FP_ARGS_S(a_ch->stream->node), l_links_cluster->mnemonim);
                 break;
             }
-        } else if (!compare128(l_msg->cluster_id, uint128_0)) {
-            log_it(L_ERROR, "Can't find cluster for gossip message broadcasting");
+        } else if (l_msg->cluster_id) {
+            log_it(L_ERROR, "Can't find cluster with ID 0x" DAP_UINT64_FORMAT_X " for gossip message broadcasting");
             break;
         }
         // Allow NULL cluster for global scope broadcast

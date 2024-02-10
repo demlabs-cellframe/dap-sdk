@@ -40,7 +40,7 @@ static void s_cluster_member_delete(dap_cluster_member_t *a_member);
  * @param a_options
  * @return
  */
-dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_cluster_role_t a_role)
+dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_cluster_uuid_t a_uuid, dap_cluster_role_t a_role)
 {
     dap_cluster_t *l_ret = DAP_NEW_Z(dap_cluster_t);
     if (!l_ret) {
@@ -69,20 +69,24 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_cluster_role_t a_role
         }
         HASH_ADD_KEYPTR(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_ret);
     }
-    do {
-        l_ret->uuid = dap_guuid_new();
-        HASH_FIND(hh, s_clusters, &l_ret->uuid, sizeof(dap_guuid_t), l_check);
-    } while (l_check);
+    if (a_uuid)
+        l_ret->uuid = a_uuid;
+    else {
+        do {
+            l_ret->uuid = dap_uuid_generate_uint64();
+            HASH_FIND(hh, s_clusters, &l_ret->uuid, sizeof(dap_cluster_uuid_t), l_check);
+        } while (l_check);
+    }
     HASH_ADD(hh, s_clusters, uuid, sizeof(l_ret->uuid), l_ret);
     pthread_rwlock_unlock(&s_clusters_rwlock);
     return l_ret;
 }
 
-dap_cluster_t *dap_cluster_find(dap_guuid_t a_uuid)
+dap_cluster_t *dap_cluster_find(dap_cluster_uuid_t a_uuid)
 {
     dap_cluster_t *l_ret = NULL;
     pthread_rwlock_rdlock(&s_clusters_rwlock);
-    HASH_FIND(hh, s_clusters, &a_uuid, sizeof(dap_guuid_t), l_ret);
+    HASH_FIND(hh, s_clusters, &a_uuid, sizeof(dap_cluster_uuid_t), l_ret);
     pthread_rwlock_unlock(&s_clusters_rwlock);
     return l_ret;
 }
