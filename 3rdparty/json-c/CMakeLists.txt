@@ -22,6 +22,9 @@ cmake_policy(SET CMP0042 NEW)
 # Only interpret if() arguments as variables or keywords when unquoted.
 cmake_policy(SET CMP0054 NEW)
 
+# Allow exec_program
+cmake_policy(SET CMP0153 OLD)
+
 # set default build type if not specified by user
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE debug)
