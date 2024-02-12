@@ -1010,35 +1010,51 @@ static void *s_dap_events_socket_buf_thread(void *arg)
         l_sock = l_es->mqd;
 #endif
     while (1) {
-        if (!s_wait_send_socket(l_sock, 0)) {
-            pthread_rwlock_wrlock(&l_es->buf_out_lock);
-            ssize_t l_write_ret = write(l_sock, l_es->buf_out, dap_min((size_t)PIPE_BUF, l_es->buf_out_size));
-            if (l_write_ret == -1) {
-                switch (errno) {
-                case EAGAIN:
-                    pthread_rwlock_unlock(&l_es->buf_out_lock);
-                    continue;
-                default:
-                    log_it(L_CRITICAL, "[!] Can't write data to pipe! Errno %d", errno);
+        pthread_rwlock_wrlock(&l_es->buf_out_lock);
+        errno = 0;
+        ssize_t l_write_ret = write(l_sock, l_es->buf_out, dap_min((size_t)PIPE_BUF, l_es->buf_out_size));
+        if (l_write_ret == -1) {
+            switch (errno) {
+            case EAGAIN:
+                pthread_rwlock_unlock(&l_es->buf_out_lock);
+                struct timeval l_tv = { .tv_sec = 120 };
+                fd_set l_outfd; FD_ZERO(&l_outfd);
+                FD_SET(l_sock, &l_outfd);
+                sched_yield();
+                switch ( select(l_sock + 1, NULL, &l_outfd, NULL, &l_tv) ) {
+                case 0:
+                    log_it(L_ERROR, "Es %p (fd %d) waiting timeout, data lost!",
+                           l_es, l_es->fd2);
+                case -1:
+                    pthread_rwlock_wrlock(&l_es->buf_out_lock);
                     l_es->buf_out_size = 0;
                     pthread_rwlock_unlock(&l_es->buf_out_lock);
                     pthread_exit(NULL);
-                }
-            } else if (l_write_ret == (ssize_t)l_es->buf_out_size) {
-                debug_if(g_debug_reactor, L_DEBUG, "[!] Sent all %lu bytes to pipe [es %d]", l_write_ret, l_sock);
+                default:
+                    if ( FD_ISSET(l_sock, &l_outfd) )
+                        continue;
+                    break;
+                } break;
+            default:
+                log_it(L_CRITICAL, "[!] Can't write data to pipe! Errno %d", errno);
                 l_es->buf_out_size = 0;
                 pthread_rwlock_unlock(&l_es->buf_out_lock);
-                break;
-            } else if (l_write_ret) {
-                debug_if(g_debug_reactor, L_DEBUG, "[!] Sent %lu / %lu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
-                l_es->buf_out_size -= l_write_ret;
-                memmove(l_es->buf_out, l_es->buf_out + l_write_ret, l_es->buf_out_size);
+                pthread_exit(NULL);
             }
-
-            if (l_write_ret % sizeof(arg))
-                log_it(L_CRITICAL, "[!] Sent unaligned chunk [%ld bytes] to pipe, possible data corruption!", l_write_ret);
+        } else if (l_write_ret == (ssize_t)l_es->buf_out_size) {
+            debug_if(g_debug_reactor, L_DEBUG, "[!] Sent all %lu bytes to pipe [es %d]", l_write_ret, l_sock);
+            l_es->buf_out_size = 0;
             pthread_rwlock_unlock(&l_es->buf_out_lock);
+            break;
+        } else if (l_write_ret) {
+            debug_if(g_debug_reactor, L_DEBUG, "[!] Sent %lu / %lu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
+            l_es->buf_out_size -= l_write_ret;
+            memmove(l_es->buf_out, l_es->buf_out + l_write_ret, l_es->buf_out_size);
         }
+
+        if (l_write_ret % sizeof(arg))
+            log_it(L_CRITICAL, "[!] Sent unaligned chunk [%ld bytes] to pipe, possible data corruption!", l_write_ret);
+        pthread_rwlock_unlock(&l_es->buf_out_lock);
     }
     pthread_exit(NULL);
 }
@@ -1067,11 +1083,13 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
     } else if (a_es->buf_out_size_max < a_es->buf_out_size + sizeof(void*)) {
         a_es->buf_out_size_max += l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        log_it(L_MSG, "[!] Increase capacity to %lu, actual size: %lu", a_es->buf_out_size_max, a_es->buf_out_size);
+        log_it(L_MSG, "Es %p (%d): increase capacity to %lu, actual size: %lu",
+               a_es, a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + sizeof(void*) <= l_basic_buf_size / 2) && (a_es->buf_out_size_max > l_basic_buf_size)) {
         a_es->buf_out_size_max = l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        log_it(L_MSG, "[!] Decrease capacity to %lu, actual size: %lu", a_es->buf_out_size_max, a_es->buf_out_size);
+        log_it(L_MSG, "Es %p (%d): decrease capacity to %lu, actual size: %lu",
+               a_es, a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
     *(void**)(a_es->buf_out + a_es->buf_out_size) = a_arg;
     a_es->buf_out_size += sizeof(a_arg);
