@@ -31,6 +31,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "json_object.h"
 
 typedef struct dap_cluster dap_cluster_t;
+typedef uint64_t dap_cluster_uuid_t;
 
 typedef struct dap_cluster_member {
     dap_stream_node_addr_t addr;    // Member addr, HT key
@@ -54,7 +55,7 @@ typedef enum dap_cluster_role {
 
 typedef struct dap_cluster {
     const char *mnemonim;           // Field for alternative cluster finding, unique
-    dap_guuid_t uuid;               // Unique cluster id
+    dap_cluster_uuid_t uuid;        // Unique cluster id
     dap_cluster_role_t role;        // Link management role
     pthread_rwlock_t members_lock;
     dap_cluster_member_t *members;  // Cluster members (by stream addr) and callbacks
@@ -65,9 +66,9 @@ typedef struct dap_cluster {
 } dap_cluster_t;
 
 // Cluster common funcs
-dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_cluster_role_t a_role);
+dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_cluster_uuid_t a_uuid, dap_cluster_role_t a_role);
 void dap_cluster_delete(dap_cluster_t *a_cluster);
-dap_cluster_t *dap_cluster_find(dap_guuid_t a_uuid);
+dap_cluster_t *dap_cluster_find(dap_cluster_uuid_t a_uuid);
 dap_cluster_t *dap_cluster_by_mnemonim(const char *a_mnemonim);
 
 // Member funcs
@@ -77,7 +78,7 @@ int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_
 void dap_cluster_member_delete(dap_cluster_member_t *a_member);
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size,
                            dap_stream_node_addr_t *a_exclude_aray, size_t a_exclude_array_size);
-dap_list_t *dap_cluster_get_shuffle_members(dap_cluster_t *a_cluster);
 json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster);
 char *dap_cluster_get_links_info(dap_cluster_t *a_cluster);
 void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr);
+dap_stream_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster);

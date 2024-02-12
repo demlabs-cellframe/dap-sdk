@@ -159,10 +159,12 @@ DAP_STATIC_INLINE char *dap_hash_fast_str_new( const void *a_data, size_t a_data
 }
 
 #define dap_get_data_hash_str_static(data,data_size,strname) \
+do { \
     strname = DAP_NEW_STACK_SIZE(char, DAP_CHAIN_HASH_FAST_STR_SIZE); \
-    do { dap_hash_fast_t dummy_hash; \
+    dap_hash_fast_t dummy_hash; \
     dap_hash_fast(data,data_size,&dummy_hash); \
-    dap_chain_hash_fast_to_str(&dummy_hash,strname,DAP_CHAIN_HASH_FAST_STR_SIZE); } while (0)
+    dap_chain_hash_fast_to_str(&dummy_hash,strname,DAP_CHAIN_HASH_FAST_STR_SIZE); \
+} while (0)
 
 #ifdef __cplusplus
 }

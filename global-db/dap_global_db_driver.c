@@ -64,7 +64,7 @@
 
 #define LOG_TAG "db_driver"
 
-const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_start = {};
+const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank = {};
 
 // A selected database driver.
 static char s_used_driver [32];                                             /* Name of the driver */
@@ -272,8 +272,8 @@ dap_store_obj_t *l_store_obj_cur;
         }
     }
 
-    if(a_store_count > 1 && s_drv_callback.transaction_end)
-        s_drv_callback.transaction_end();
+    if (a_store_count > 1 && s_drv_callback.transaction_end)
+        s_drv_callback.transaction_end(true);
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "[%p] Finished DB Request (code %d)", a_store_obj, l_ret);
     return l_ret;
@@ -347,7 +347,7 @@ dap_list_t *dap_global_db_driver_get_groups_by_mask(const char *a_group_mask)
  * @param a_group the group name
  * @return If successful, a pointer to the object, otherwise NULL.
  */
-dap_store_obj_t* dap_global_db_driver_read_last(const char *a_group)
+dap_store_obj_t *dap_global_db_driver_read_last(const char *a_group)
 {
     dap_store_obj_t *l_ret = NULL;
     // read records using the selected database engine
@@ -372,6 +372,15 @@ dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_
     return NULL;
 }
 
+dap_global_db_hash_pkt_t *dap_global_db_driver_hashes_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
+{
+    dap_return_val_if_fail(a_group, NULL);
+    // read records using the selected database engine
+    if (s_drv_callback.read_cond_store_obj)
+        return s_drv_callback.read_hashes(a_group, a_hash_from);
+    return NULL;
+}
+
 /**
  * @brief Reads several objects from a database by a_group and a_key.
  * If a_key is NULL, reads whole group.
@@ -381,7 +390,7 @@ dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-dap_store_obj_t* dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *a_count_out)
+dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *a_count_out)
 {
     dap_store_obj_t *l_ret = NULL;
     // read records using the selected database engine
@@ -409,4 +418,21 @@ bool dap_global_db_driver_is_hash(const char *a_group, dap_global_db_driver_hash
     if (s_drv_callback.is_hash && a_group)
         return s_drv_callback.is_hash(a_group, a_hash);
     return false;
+}
+
+dap_global_db_pkt_pack_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count)
+{
+    if (s_drv_callback.get_by_hash && a_group)
+        return s_drv_callback.get_by_hash(a_group, a_hashes, a_count);
+    return NULL;
+}
+
+int dap_global_db_driver_txn_start()
+{
+    return s_drv_callback.transaction_start ? s_drv_callback.transaction_start() : -1;
+}
+
+int dap_global_db_driver_txn_end(bool a_commit)
+{
+    return s_drv_callback.transaction_end ? s_drv_callback.transaction_end(a_commit) : -1;
 }
