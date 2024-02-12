@@ -652,7 +652,6 @@ static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
  */
 static void s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
 {
-    return;
     // TODO identfy the channel to call right proc->callback
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
     //log_it(L_DEBUG,"Process channels data output (%u channels)", DAP_STREAM(l_http_client)->channel_count );
