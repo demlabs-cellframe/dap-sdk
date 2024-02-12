@@ -165,12 +165,16 @@ dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_strea
  * @brief dap_cluster_member_delete
  * @param a_member
  */
-void dap_cluster_member_delete(dap_cluster_member_t *a_member)
+int dap_cluster_member_delete(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr)
 {
-    pthread_rwlock_t *l_lock = &a_member->cluster->members_lock;
-    pthread_rwlock_wrlock(l_lock);
-    s_cluster_member_delete(a_member);
-    pthread_rwlock_unlock(l_lock);
+    dap_return_val_if_fail(a_cluster && a_member_addr, -1);
+    pthread_rwlock_wrlock(&a_cluster->members_lock);
+    dap_cluster_member_t *l_member = NULL;
+    HASH_FIND(hh, a_cluster->members, a_member_addr, sizeof(*a_member_addr), l_member);
+    if (l_member)
+        s_cluster_member_delete(l_member);
+    pthread_rwlock_unlock(&a_cluster->members_lock);
+    return l_member ? 0 : 1;
 }
 
 static void s_cluster_member_delete(dap_cluster_member_t *a_member)
