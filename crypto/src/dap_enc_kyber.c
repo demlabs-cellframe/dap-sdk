@@ -91,6 +91,7 @@ size_t dap_enc_kyber512_gen_bob_shared_key (dap_enc_key_t *a_key, const void *a_
     if (a_key->shared_key)
         DAP_DELETE(a_key->shared_key);
     a_key->shared_key_size = CRYPTO_BYTES;
+    a_key->pub_key_data_size = CRYPTO_CIPHERTEXTBYTES;
     a_key->shared_key = DAP_NEW_SIZE(byte_t, a_key->shared_key_size);
 
 
