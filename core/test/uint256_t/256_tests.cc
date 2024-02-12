@@ -446,7 +446,7 @@ TEST(InputTests, EnteringFractionalNumberWithComma) {
 TEST_F(RandomInputTestsCoins, CoinsBase) {
     boost::random::independent_bits_engine<boost::random::mt19937, 59, bmp::cpp_int> generator_type_18;
     for (int i=0; i < 100; i++) {
-        bmp::uint128_t boost_a(generator_type_18());
+        bmp::uint128_t boost_a(i ? generator_type_18() : 0);
         bmp::uint128_t boost_b(generator_type_18());
         std::string temp = boost_a.str() + "." + boost_b.str();
         if (temp[temp.length() - 1] == '0') {
@@ -455,7 +455,7 @@ TEST_F(RandomInputTestsCoins, CoinsBase) {
 
         uint256_t a = dap_uint256_scan_decimal(temp.c_str());
         char *lt = dap_uint256_decimal_to_char(a);
-        std::cout << lt;
+        std::cout << lt << std::endl;
         ASSERT_STREQ(dap_uint256_decimal_to_char(a), temp.c_str());
     }
 }

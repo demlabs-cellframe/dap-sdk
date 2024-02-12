@@ -211,6 +211,9 @@ uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger);
  * @return uint256_t
  */
 uint256_t dap_uint256_scan_decimal(const char *a_str_decimal);
+
+char *dap_uint256_to_char(uint256_t, char**);
+
 /**
  * @brief dap_uint256_uninteger_to_char
  * Convert a uint256_t value to a string value. Uint256_t is treated as an unsigned integer value.
