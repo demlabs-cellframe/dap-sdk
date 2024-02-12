@@ -12,12 +12,23 @@ if (DAP_USE_RPMALLOC)
 endif(DAP_USE_RPMALLOC)
 
 if(UNIX)
-    if(DARWIN)
+    if (IOS)
+        file(GLOB CORE_HEADERS
+            include/*.h
+            include/unix/*.h
+            src/unix/*.h
+        )
+        file(GLOB CORE_SRCS
+            src/*.c
+            src/etc/*.c
+            src/unix/*.c
+        )
+    elseif(DARWIN)
         file(GLOB CORE_HEADERS 
             include/*.h
             include/unix/*.h
-            src/darwin/macos/*.h
             src/unix/*.h
+            src/darwin/macos/*.h
         )
         file(GLOB CORE_SRCS
             src/*.c
@@ -71,18 +82,15 @@ if(UNIX)
     add_subdirectory(src/unix)
     set(CORE_LIBRARIES dap_core_unix)
     if(DARWIN)
-        add_subdirectory(src/darwin)
-        set(CORE_LIBRARIES ${CORE_LIBRARIES} dap_core_darwin)
-    else()
-        set(CORE_LIBRARIES ${CORE_LIBRARIES} rt dl)
-    endif()
-    if(ANDROID)
+        if (NOT IOS)
+            add_subdirectory(src/darwin)
+            set(CORE_LIBRARIES ${CORE_LIBRARIES} dap_core_darwin)
+        endif()
+    elseif(ANDROID)
         add_subdirectory(src/android)
         set(CORE_LIBRARIES ${CORE_LIBRARIES} dap_core_android)
-    endif()
-
-    if(UNIX AND NOT ANDROID AND NOT DARWIN)
-        set(CORE_LIBRARIES ${CORE_LIBRARIES} rt)
+    else()
+        set(CORE_LIBRARIES ${CORE_LIBRARIES} rt dl)
     endif()
 endif()
 

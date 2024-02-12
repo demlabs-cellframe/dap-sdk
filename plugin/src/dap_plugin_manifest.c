@@ -232,11 +232,13 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
         l_manifest->path = dap_path_get_dirname(a_file_path);
     }
 
-    char * l_config_path = dap_strdup_printf("%s/%s.cfg", l_manifest->path,l_manifest->name );
-    if(dap_file_test(l_config_path)) // If present custom config
-        l_manifest->config = dap_config_load(l_config_path);
+    char * l_config_path = dap_strdup_printf("%s/%s", l_manifest->path,l_manifest->name );
+    char * l_config_path_cfg = dap_strdup_printf("%s/%s.cfg", l_manifest->path,l_manifest->name );
+    log_it(L_NOTICE, "Will try config %s", l_config_path);
+    if(dap_file_test(l_config_path_cfg)) // If present custom config
+        l_manifest->config = dap_config_open(l_config_path);
     DAP_DELETE(l_config_path);
-
+    DAP_DELETE(l_config_path_cfg);
     HASH_ADD_STR(s_manifests,name,l_manifest);
 
     json_object_put(l_json_dependencies);

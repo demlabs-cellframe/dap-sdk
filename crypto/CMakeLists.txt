@@ -143,12 +143,12 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..
 
 target_include_directories(dap_crypto PUBLIC
         src/XKCP/lib/common
-        src/XKCP/lib/low/common
+        #src/XKCP/lib/low/common
         src/XKCP/lib/high/Keccak
         src/XKCP/lib/high/common
         src/XKCP/lib/high/Keccak/FIPS202
         src/XKCP/lib/high/Keccak/SP800-185
-        src/XKCP/lib/low/KeccakP-1600/Optimized
+        #src/XKCP/lib/low/KeccakP-1600/Optimized
 )
 
 if(WIN32)
@@ -319,11 +319,11 @@ endif()
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
 
 if(WIN32)
-  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c)
+  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512)
 endif()
 
 if(UNIX)
-  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c m)
+  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 m)
 endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)

@@ -267,3 +267,50 @@ char *dap_uint256_decimal_to_char(uint256_t a_uint256){ //dap_chain_balance_to_c
 
     return l_buf;
 }
+
+char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_round_position, bool is_round)
+{
+    char *result = dap_uint256_decimal_to_char(a_uint256);
+
+    return dap_uint256_char_to_round_char(result, a_round_position, is_round);
+}
+
+char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_position, bool is_round)
+{
+    char *result = a_str_decimal;
+
+    size_t l_str_len = strlen(result);
+    char*  l_dot_pos = strstr(result, ".");
+    bool is_inc_round = false;
+
+    if (l_dot_pos && (l_str_len - (l_dot_pos - result)) > a_round_position){
+        size_t l_new_size = l_dot_pos - result + a_round_position;
+        char *l_res = DAP_DUP_SIZE(result, l_new_size + 1);
+
+        if (is_round){
+            is_inc_round = *(char*)(l_dot_pos + a_round_position + 1) >= '5';
+            for(int i = strlen(l_res)-1; is_inc_round && i >= 0; i--){
+                if(l_res[i] == '9'){
+                    l_res[i] = '0';
+                } else if (l_res[i] != '.'){
+                    l_res[i]++;
+                    is_inc_round = false;
+                } if (l_res[i] == '.' && a_round_position == 0)
+                    l_res[i] = '\0';
+            }
+            if (is_inc_round){
+                char *l_new_res = DAP_NEW_Z_SIZE(char, sizeof(char)*(strlen(l_res)+1));
+                *l_new_res = '1';
+                memcpy(l_new_res+1, l_res, strlen(l_res));
+                DAP_DELETE(l_res);
+                l_res=l_new_res;
+            }
+        }
+        if (!a_round_position && l_res[l_new_size-a_round_position]=='.'){
+            l_res[l_new_size-a_round_position]='\0';
+        }
+        DAP_DELETE(result);
+        return l_res;
+    }
+    return result;
+}

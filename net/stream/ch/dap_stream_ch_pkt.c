@@ -191,7 +191,6 @@ size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch
         l_msg->data = DAP_DUP_SIZE(a_data, a_data_size);
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
     l_msg->data_size = a_data_size;
-    memcpy( l_msg->data, a_data, a_data_size);
     int l_ret= dap_events_socket_queue_ptr_send(a_worker->queue_ch_io , l_msg );
     if (l_ret!=0){
         log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);

@@ -26,7 +26,7 @@ contains(DAP_FEATURES, ssl){
     DEFINES += DAP_NET_CLIENT_NO_SSL
 }
 
-darwin {
+macos {
     QMAKE_CFLAGS_DEBUG += -Wall -g3 -ggdb -fno-strict-aliasing
     DEFINES += _GNU_SOURCE
     include(src/darwin/darwin.pri)

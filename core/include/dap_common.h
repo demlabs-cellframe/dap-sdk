@@ -573,6 +573,7 @@ DAP_PRINTF_ATTR(5, 6) void _log_it(const char * func_name, int line_num, const c
 #define log_it(_log_level, ...) _log_level == L_CRITICAL ? _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__) : _log_it(NULL, 0, LOG_TAG, _log_level, ##__VA_ARGS__)
 #define debug_if(flg, lvl, ...) _log_it(NULL, 0, ((flg) ? LOG_TAG : NULL), (lvl), ##__VA_ARGS__)
 
+char *dap_dump_hex(byte_t *a_data, size_t a_size);
 
 #ifdef DAP_SYS_DEBUG
 void    _log_it_ext (const char *, unsigned, enum dap_log_level, const char * format, ... );
@@ -694,7 +695,7 @@ void dap_set_log_tag_width(size_t width);
 const char * dap_get_appname();
 void dap_set_appname(const char * a_appname);
 
-char *dap_itoa(int i);
+char *dap_itoa(long long i);
 
 unsigned dap_gettid();
 
@@ -704,7 +705,6 @@ int exec_with_ret(char**, const char*);
 char* exec_with_ret_multistring(const char* a_cmd);
 char * dap_random_string_create_alloc(size_t a_length);
 void dap_random_string_fill(char *str, size_t length);
-void dap_dump_hex(const void* data, size_t size);
 
 size_t dap_hex2bin(uint8_t *a_out, const char *a_in, size_t a_len);
 size_t dap_bin2hex(char *a_out, const void *a_in, size_t a_len);
