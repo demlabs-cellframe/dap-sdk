@@ -291,7 +291,7 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
 
 void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
     json_object * json_obj_response = json_object_array_get_idx(response->result_json_object, 0);
-    json_object * j_obj_net_name, * j_arr_chains, * j_obj_chain, *j_obj_removed, *j_arr_datums;
+    json_object * j_obj_net_name, * j_arr_chains, * j_obj_chain, *j_obj_removed, *j_arr_datums, *j_arr_total;
     json_object_object_get_ex(json_obj_response, "net", &j_obj_net_name);
     json_object_object_get_ex(json_obj_response, "chains", &j_arr_chains);
     int result_count = json_object_array_length(j_arr_chains);
@@ -300,10 +300,13 @@ void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
         json_object_object_get_ex(json_obj_result, "name", &j_obj_chain);
         json_object_object_get_ex(json_obj_result, "removed", &j_obj_removed);
         json_object_object_get_ex(json_obj_result, "datums", &j_arr_datums);
+        json_object_object_get_ex(json_obj_result, "total", &j_arr_total);
         printf("Removed %d records from the %s chain mempool in %s network.\n", 
                 json_object_get_int(j_obj_removed), json_object_get_string(j_obj_chain), json_object_get_string(j_obj_net_name));
         printf("Datums:\n");
         json_print_object(j_arr_datums, 1);
+        // TODO total parser
+        json_print_object(j_arr_total, 1);
     }
 }
 
