@@ -314,13 +314,17 @@ static inline void s_report_error_and_restart( dap_events_socket_t *a_esocket, d
 void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 {
     UNUSED(a_arg);
-
+    dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
+    if (!l_http_client) {
+        log_it(L_ERROR, "Es %d: HTTP client was either deleted or is being processed by other thread, skip this reading",
+            a_esocket->fd);
+        return;
+    }
     byte_t *l_peol;
     char *l_cp;
     int l_len, l_ret;
     size_t read_bytes = 0;
-
-    dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
+    
     dap_http_url_proc_t *url_proc;
     dap_http_cache_t * l_http_cache;
 
