@@ -47,6 +47,8 @@ int dap_network_monitor_init(dap_network_monitor_notification_callback_t callbac
  */
 void dap_network_monitor_deinit(void);
 
+void watch_for_network_changes();
+
 
 #ifdef __cplusplus
 }
