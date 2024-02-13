@@ -89,7 +89,7 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks);
 void dap_link_manager_deinit();
 dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_callbacks);
 dap_link_manager_t *dap_link_manager_get_default();
-int dap_link_manager_add_net(uint64_t a_net_id);
+int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster);
 void dap_link_manager_remove_active_net(uint64_t a_net_id);
 void dap_link_manager_add_role_cluster(dap_cluster_member_t *a_member);
 void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);

@@ -677,7 +677,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 a_client_pvt->stage_status = STAGE_STATUS_COMPLETE;
                 if (a_client_pvt->client->stage_target_done_callback) {
                     log_it(L_NOTICE, "Stage %s is achieved", dap_client_stage_str(a_client_pvt->stage));
-                    a_client_pvt->client->stage_target_done_callback(a_client_pvt->client, NULL);
+                    a_client_pvt->client->stage_target_done_callback(a_client_pvt->client, a_client_pvt->client->callbacks_arg);
                 }
                 if (a_client_pvt->stage == STAGE_STREAM_STREAMING) {
                     // Send all pkts in queue

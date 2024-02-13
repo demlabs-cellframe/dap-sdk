@@ -37,13 +37,14 @@ typedef struct dap_managed_net {
     bool active;
     int32_t links_count;
     uint64_t id;
+    dap_cluster_t *node_link_cluster;
 } dap_managed_net_t;
 
 static uint32_t s_timer_update_states = 4000;
 static uint32_t s_min_links_num = 5;
 static dap_link_manager_t *s_link_manager = NULL;
 
-static void s_client_connect(dap_link_t *a_link, const char *a_active_channels);
+static void s_client_connect(dap_link_t *a_link, const char *a_active_channels, void *a_callback_arg);
 static void s_client_connected_callback(dap_client_t *a_client, void *a_arg);
 static void s_client_error_callback(dap_client_t *a_client, void *a_arg);
 static void s_client_delete_callback(UNUSED_ARG dap_client_t *a_client, void *a_arg);
@@ -56,12 +57,12 @@ static bool s_check_active_nets();
  * @param a_active_channels a_active_channels
  * @param a_link_cluster - cluster to added node addr if connected
  */
-void s_client_connect(dap_link_t *a_link, const char *a_active_channels)
+void s_client_connect(dap_link_t *a_link, const char *a_active_channels, void *a_callback_arg)
 {
 // sanity check 
     dap_return_if_pass(!a_link); 
 //func work
-    a_link->client = dap_client_new(s_client_delete_callback, s_client_error_callback, NULL);
+    a_link->client = dap_client_new(s_client_delete_callback, s_client_error_callback, a_callback_arg);
     dap_client_set_is_always_reconnect(a_link->client, false);
     a_link->client->_inheritor = a_link;
     dap_client_set_active_channels_unsafe(a_link->client, a_active_channels);
@@ -87,6 +88,12 @@ static void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
     dap_list_t *l_item = NULL;
     DL_FOREACH(l_link->links_clusters, l_item) {
         dap_cluster_member_add((dap_cluster_t *)l_item->data, &l_link->node_addr, 0, NULL);
+    }
+    // if dynamic link, increment counter
+    if (a_arg) {
+        dap_managed_net_t *l_net = (dap_managed_net_t *)a_arg;
+        dap_cluster_member_add(l_net->node_link_cluster, &l_link->node_addr, 0, NULL);
+        l_net->links_count++;
     }
     log_it(L_NOTICE, "Stream connection with node "NODE_ADDR_FP_STR" (%s:%hu) established",
                 NODE_ADDR_FP_ARGS_S(l_link->node_addr),
@@ -166,7 +173,7 @@ bool s_update_states(void *a_arg)
         // if we don't have any connections with members in role clusters then create connection
         if(!l_link->client && l_link->role_clusters) {
             if (!l_link_manager->callbacks.fill_net_info(l_link)) {
-                s_client_connect(l_link, "CGND");
+                s_client_connect(l_link, "CGND", NULL);
             } else {
                 log_it(L_INFO, "Can't find node "NODE_ADDR_FP_STR" in node list", NODE_ADDR_FP_ARGS_S(l_link->node_addr));
             }
@@ -267,12 +274,13 @@ size_t dap_link_manager_needed_links_count(uint64_t a_net_id)
     return 0;
 }
 
-int dap_link_manager_add_net(uint64_t a_net_id)
+int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster)
 {
     dap_return_val_if_pass(!s_link_manager || !a_net_id, -2);
     dap_managed_net_t *l_net = NULL;
     DAP_NEW_Z_RET_VAL(l_net, dap_managed_net_t, -3, NULL);
     l_net->id = a_net_id;
+    l_net->node_link_cluster = a_link_cluster;
     s_link_manager->nets = dap_list_append(s_link_manager->nets, (void *)l_net);
     return 0;
 }
@@ -383,9 +391,16 @@ int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link)
     // pthread_rwlock_wrlock(&a_cluster->members_lock);
     HASH_FIND(hh, s_link_manager->links, &a_link->node_addr, sizeof(a_link->node_addr), l_link);
     // pthread_rwlock_unlock(&a_cluster->members_lock);
+
+    dap_list_t *l_item = NULL;
+    DL_FOREACH(s_link_manager->nets, l_item) {
+        if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
+            break;
+        }
+    }
     if (!l_link) {
         a_link->link_manager = s_link_manager;
-        s_client_connect(a_link, "CGND");
+        s_client_connect(a_link, "CGND", l_item ? l_item->data : NULL);
     } else if (!l_link->client){
         l_link->node_addr.uint64 = a_link->node_addr.uint64;
         l_link->host_port = a_link->host_port;

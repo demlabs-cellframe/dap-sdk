@@ -298,7 +298,7 @@ static void s_go_stage_on_client_worker_unsafe(dap_worker_t UNUSED_ARG *a_worker
         if (l_client->stage_target == l_stage_target) {
             log_it(L_DEBUG, "Already have target state %s", dap_client_stage_str(l_stage_target));
             if (l_stage_end_callback)
-                l_stage_end_callback(l_client, NULL);
+                l_stage_end_callback(l_client, l_client->callbacks_arg);
             return;
         }
         if (l_client->stage_target < l_stage_target) {
