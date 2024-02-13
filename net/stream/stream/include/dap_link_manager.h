@@ -37,7 +37,7 @@ typedef void (*dap_link_manager_callback_t)(dap_link_t *, void*);
 typedef void (*dap_link_manager_callback_delete_t)(dap_link_manager_t *);
 typedef void (*dap_link_manager_callback_error_t)(dap_link_manager_t *, int, void *);
 typedef int (*dap_link_manager_callback_fill_net_info_t)(dap_link_t *);
-typedef void (*dap_link_manager_callback_link_request_t)(const char *);
+typedef void (*dap_link_manager_callback_link_request_t)(uint64_t);
 
 typedef struct dap_link_manager_callbacks {
     dap_link_manager_callback_t connected;
@@ -89,13 +89,13 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks);
 void dap_link_manager_deinit();
 dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_callbacks);
 dap_link_manager_t *dap_link_manager_get_default();
-int dap_link_manager_add_net(const char *a_net_name);
-void dap_link_manager_remove_active_net(char *a_net_name);
+int dap_link_manager_add_net(uint64_t a_net_id);
+void dap_link_manager_remove_active_net(uint64_t a_net_id);
 void dap_link_manager_add_role_cluster(dap_cluster_member_t *a_member);
 void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
 void dap_link_manager_remove_role_cluster(dap_cluster_member_t *a_member);
 void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member);
-int dap_link_manager_link_add(const char* a_net_name, dap_link_t *a_link);
-void dap_link_manager_set_net_status(const char *a_net_name, bool a_status);
-size_t dap_link_manager_links_count(const char *a_net_name);
-size_t dap_link_manager_needed_links_count(const char *a_net_name);
+int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link);
+void dap_link_manager_set_net_status(uint64_t a_net_id, bool a_status);
+size_t dap_link_manager_links_count(uint64_t a_net_id);
+size_t dap_link_manager_needed_links_count(uint64_t a_net_id);

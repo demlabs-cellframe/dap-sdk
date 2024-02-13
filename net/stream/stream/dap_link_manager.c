@@ -36,7 +36,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 typedef struct dap_managed_net {
     bool active;
     int32_t links_count;
-    char *name;
+    uint64_t id;
 } dap_managed_net_t;
 
 static uint32_t s_timer_update_states = 4000;
@@ -157,7 +157,7 @@ bool s_update_states(void *a_arg)
     DL_FOREACH(s_link_manager->nets, l_item) {
         dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
         if(l_net->active && l_link_manager->callbacks.link_request && l_net->links_count < l_link_manager->min_links_num)
-            l_link_manager->callbacks.link_request(l_net->name);
+            l_link_manager->callbacks.link_request(l_net->id);
     }
     // static link work
     dap_link_t *l_link = NULL, *l_tmp = NULL;
@@ -235,7 +235,7 @@ DAP_INLINE dap_link_manager_t *dap_link_manager_get_default()
     return s_link_manager;
 }
 
-size_t dap_link_manager_links_count(const char *a_net_name)
+size_t dap_link_manager_links_count(uint64_t a_net_id)
 {
 // sanity check
     dap_return_val_if_pass(!s_link_manager, 0);
@@ -243,7 +243,7 @@ size_t dap_link_manager_links_count(const char *a_net_name)
     dap_list_t *l_item = NULL;
     size_t l_ret = 0;
     DL_FOREACH(s_link_manager->nets, l_item) {
-        if (!strcmp(a_net_name, ((dap_managed_net_t *)(l_item->data))->name)) {
+        if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
             l_ret = ((dap_managed_net_t *)(l_item->data))->links_count;
             break;
         }
@@ -252,7 +252,7 @@ size_t dap_link_manager_links_count(const char *a_net_name)
 }
 
 
-size_t dap_link_manager_needed_links_count(const char *a_net_name)
+size_t dap_link_manager_needed_links_count(uint64_t a_net_id)
 {
 // sanity check
     dap_return_val_if_pass(!s_link_manager, 0);
@@ -260,60 +260,54 @@ size_t dap_link_manager_needed_links_count(const char *a_net_name)
     dap_list_t *l_item = NULL;
     DL_FOREACH(s_link_manager->nets, l_item) {
         dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
-        if (!strcmp(a_net_name, l_net->name) && l_net->links_count < s_link_manager->min_links_num) {
+        if (a_net_id == l_net->id && l_net->links_count < s_link_manager->min_links_num) {
             return s_link_manager->min_links_num - l_net->links_count;
         }
     }
     return 0;
 }
 
-int dap_link_manager_add_net(const char *a_net_name)
+int dap_link_manager_add_net(uint64_t a_net_id)
 {
-    dap_return_val_if_pass(!s_link_manager || !a_net_name, -2);
+    dap_return_val_if_pass(!s_link_manager || !a_net_id, -2);
     dap_managed_net_t *l_net = NULL;
     DAP_NEW_Z_RET_VAL(l_net, dap_managed_net_t, -3, NULL);
-    l_net->name = dap_strdup(a_net_name);
-    if(l_net->name)
-        s_link_manager->nets = dap_list_append(s_link_manager->nets, (void *)l_net);
-    else {
-        log_it(L_ERROR, "Can't copy net name");
-        DAP_DELETE(l_net);
-        return -1;
-    }
+    l_net->id = a_net_id;
+    s_link_manager->nets = dap_list_append(s_link_manager->nets, (void *)l_net);
     return 0;
 }
 
 
-void dap_link_manager_remove_net(char *a_net_name)
+void dap_link_manager_remove_net(uint64_t a_net_id)
 {
-    dap_return_if_pass(!s_link_manager || !a_net_name);
+    dap_return_if_pass(!s_link_manager || !a_net_id);
     dap_list_t *l_item = NULL;
     DL_FOREACH(s_link_manager->nets, l_item) {
-        if (!strcmp(a_net_name, ((dap_managed_net_t *)(l_item->data))->name)) {
+        if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
             s_link_manager->nets = dap_list_remove_link(s_link_manager->nets, l_item);
             break;
         }
     }
     if (!l_item) {
-        log_it(L_ERROR, "Net %s not controlled by link manager", a_net_name);
+        log_it(L_ERROR, "Net ID %zu not controlled by link manager", a_net_id);
         return;
     }
     // TODO write func compare controlled nets struct
-    DAP_DEL_MULTY(((dap_managed_net_t *)(l_item->data))->name, l_item->data, l_item);
+    DAP_DEL_MULTY(l_item->data, l_item);
 }
 
-void dap_link_manager_set_net_status(const char *a_net_name, bool a_status)
+void dap_link_manager_set_net_status(uint64_t a_net_id, bool a_status)
 {
-    dap_return_if_pass(!s_link_manager || !a_net_name);
+    dap_return_if_pass(!s_link_manager || !a_net_id);
     dap_list_t *l_item = NULL;
     DL_FOREACH(s_link_manager->nets, l_item) {
-        if (!strcmp(a_net_name, ((dap_managed_net_t *)(l_item->data))->name)) {
+        if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
             ((dap_managed_net_t *)(l_item->data))->active = a_status;
             break;
         }
     }
     if (!l_item) {
-        log_it(L_ERROR, "Net %s not controlled by link manager", a_net_name);
+        log_it(L_ERROR, "Net %zu not controlled by link manager", a_net_id);
     }
 }
 
@@ -377,7 +371,7 @@ void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member)
     // pthread_rwlock_unlock(&it->members_lock);
 }
 
-int dap_link_manager_link_add(const char* a_net_name, dap_link_t *a_link)
+int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link)
 {
 // sanity check
     dap_return_val_if_pass(!a_link, -1);
