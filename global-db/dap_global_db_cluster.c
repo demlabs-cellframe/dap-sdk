@@ -37,7 +37,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 static void s_links_cluster_member_add_callback(dap_cluster_member_t *a_member)
 {
-    dap_link_manager_add_links_cluster(a_member);
+    dap_link_manager_add_links_cluster(&a_member->addr, a_member->cluster);
 }
 static void s_role_cluster_member_add_callback(dap_cluster_member_t *a_member)
 {

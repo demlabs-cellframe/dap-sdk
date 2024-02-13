@@ -333,19 +333,19 @@ void dap_link_manager_add_role_cluster(dap_cluster_member_t *a_member)
     // pthread_rwlock_unlock(&it->members_lock);
 }
 
-void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member)
+void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster)
 {
-    dap_return_if_pass(!s_link_manager || !a_member || !a_member->cluster);
+    dap_return_if_pass(!s_link_manager || !a_addr || !a_cluster);
     // pthread_rwlock_wrlock(&it->members_lock);
     dap_link_t *l_link = NULL;
-    HASH_FIND(hh, s_link_manager->links, &a_member->addr, sizeof(a_member->addr), l_link);
+    HASH_FIND(hh, s_link_manager->links, a_addr, sizeof(*a_addr), l_link);
     if (!l_link) {
         DAP_NEW_Z_RET(l_link, dap_link_t, NULL);
-        l_link->node_addr.uint64 = a_member->addr.uint64;
+        l_link->node_addr.uint64 = a_addr->uint64;
         l_link->link_manager = s_link_manager;
         HASH_ADD(hh, s_link_manager->links, node_addr, sizeof(l_link->node_addr), l_link);
     }
-    l_link->links_clusters = dap_list_append(l_link->links_clusters, a_member->cluster);
+    l_link->links_clusters = dap_list_append(l_link->links_clusters, a_cluster);
     // pthread_rwlock_unlock(&it->members_lock);
 }
 
@@ -392,6 +392,11 @@ int dap_link_manager_link_add(const char* a_net_name, dap_link_t *a_link)
     if (!l_link) {
         a_link->link_manager = s_link_manager;
         s_client_connect(a_link, "CGND");
+    } else if (!l_link->client){
+        l_link->node_addr.uint64 = a_link->node_addr.uint64;
+        l_link->host_port = a_link->host_port;
+        memcpy(l_link->host_addr_str, a_link->host_addr_str, sizeof(l_link->host_addr_str));
+        DAP_DELETE(l_link);
     } else {
         log_it(L_ERROR, "Trying add existed link to "NODE_ADDR_FP_STR" %s:%hu", NODE_ADDR_FP_ARGS_S(l_link->node_addr), l_link->host_addr_str, l_link->host_port);
         return -1;
