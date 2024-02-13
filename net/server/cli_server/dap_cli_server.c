@@ -30,7 +30,10 @@
 #include <assert.h>
 #include <unistd.h>
 #include <pthread.h>
+
+#ifndef DAP_OS_WINDOWS
 #include <poll.h>
+#endif
 
 #include "dap_common.h"
 #include "dap_strfuncs.h"
