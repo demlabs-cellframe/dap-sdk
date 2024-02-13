@@ -439,20 +439,20 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
                                                                                         l_read_obj->group);
             dap_global_db_driver_delete(l_read_obj, 1);
         }
-        if (l_obj_type == DAP_GLOBAL_DB_OPTYPE_DEL && !l_read_obj)
+        if (l_obj_type != DAP_GLOBAL_DB_OPTYPE_DEL || l_read_obj) {
             // Do not notify for delete if deleted record not exists
-            break;
-        if (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)
-            // Notify sync cluster first in driver format
-            dap_global_db_cluster_broadcast(l_cluster, a_obj);
-        if (l_cluster->notifiers) {
-            // Notify others in user space format
-            char *l_old_group_ptr = a_obj->group;
-            a_obj->group = l_basic_group;
-            a_obj->type = l_obj_type;
-            dap_global_db_cluster_notify(l_cluster, a_obj);
-            a_obj->group = l_old_group_ptr;
-            a_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
+            if (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)
+                // Notify sync cluster first in driver format
+                dap_global_db_cluster_broadcast(l_cluster, a_obj);
+            if (l_cluster->notifiers) {
+                // Notify others in user space format
+                char *l_old_group_ptr = a_obj->group;
+                a_obj->group = l_basic_group;
+                a_obj->type = l_obj_type;
+                dap_global_db_cluster_notify(l_cluster, a_obj);
+                a_obj->group = l_old_group_ptr;
+                a_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
+            }
         }
     }
 free_n_exit:
