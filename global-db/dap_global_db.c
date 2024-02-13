@@ -1047,20 +1047,20 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
         return -1;
     }
 
-    dap_store_obj_t l_store_data = { 0 };
-    l_store_data.type = DAP_GLOBAL_DB_OPTYPE_ADD;
-    l_store_data.key = (char *)a_key ;
-    l_store_data.flags = DAP_GLOBAL_DB_RECORD_NEW | (a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0);
-    l_store_data.value_len =  a_value_length;
-    l_store_data.value = (uint8_t *)a_value;
-    l_store_data.group = (char *)a_group;
-    l_store_data.timestamp = a_timestamp;
+    dap_store_obj_t l_store_data = {
+        .timestamp  = a_timestamp,
+        .type       = DAP_GLOBAL_DB_OPTYPE_ADD,
+        .flags      = DAP_GLOBAL_DB_RECORD_NEW | (a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0),
+        .group      = (char*)a_group,
+        .key        = (char*)a_key,
+        .value      = (byte_t*)a_value,
+        .value_len  = a_value_length,
+    };
     l_store_data.sign = dap_store_obj_sign(&l_store_data, a_dbi->signing_key, &l_store_data.crc);
     if (!l_store_data.sign) {
         log_it(L_ERROR, "Can't sign new global DB object group %s key %s", a_group, a_key);
         return -2;
     }
-
     int l_res = s_store_obj_apply(a_dbi, &l_store_data);
     DAP_DELETE(l_store_data.sign);
     return l_res;

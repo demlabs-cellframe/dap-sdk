@@ -604,17 +604,16 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->path = dap_strdup(a_path);
     l_client_http->request_content_type = dap_strdup(a_request_content_type);
 
-    l_client_http->request = DAP_NEW_Z_SIZE(byte_t, a_request_size + 1);
-    if (!l_client_http->request) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_DEL_Z(l_client_http);
-        return NULL;
+    if (a_request && a_request_size) {
+        l_client_http->request = DAP_NEW_Z_SIZE(byte_t, a_request_size + 1);
+        if (!l_client_http->request) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            DAP_DEL_Z(l_client_http);
+            return NULL;
+        }
+        l_client_http->request_size = a_request_size;
+        memcpy(l_client_http->request, a_request, a_request_size);
     }
-    if (! l_client_http->request)
-        return NULL;
-    l_client_http->request_size = a_request_size;
-    memcpy(l_client_http->request, a_request, a_request_size);
-
     strncpy(l_client_http->uplink_addr, a_uplink_addr, INET_ADDRSTRLEN - 1);
     l_client_http->uplink_port = a_uplink_port;
     l_client_http->cookie = a_cookie;
