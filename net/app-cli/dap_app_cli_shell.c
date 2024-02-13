@@ -142,8 +142,8 @@ int rl_set_prompt(const char *prompt)
  */
 char *rl_readline(const char *prompt)
 {
-    int value_size = 3, value_len = 0;
-    char *value = DAP_NEW_Z_SIZE(char, value_size + 1);
+    unsigned l_value_len = 32, l_basic_len = 32, l_shift = 0;
+    char *value = DAP_NEW_Z_SIZE(char, l_basic_len);
     if (!value) {
         printf("Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
         return NULL;
@@ -151,23 +151,16 @@ char *rl_readline(const char *prompt)
 
     // Set up the prompt
     rl_set_prompt(prompt);
-
-    // Read a line of input from the global rl_instream, doing output on the global rl_outstream.
-    while(1)
-    {
-        unsigned char c = rl_getc(rl_instream);
-
-        if((char)c == EOF || c == NEWLINE)
+    while (fgets(value + l_shift, l_basic_len, rl_instream)) {
+        unsigned l_eol = strcspn(value + l_shift, "\r\n") + l_shift;
+        if (l_eol == l_value_len - 1) {
+            l_shift = l_eol;
+            l_value_len += (l_basic_len - 1);
+            value = DAP_REALLOC(value, l_value_len);
+            continue;
+        } else {
+            value[l_eol] = '\0';
             break;
-        value[value_len] = c;
-        value_len++;
-        if(value_len == value_size) {
-            value_size += 32;
-            value = realloc(value, value_size + 1);
-            if (!value) {
-                printf("Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-                return NULL;
-            }
         }
     }
     return (value);
@@ -323,27 +316,6 @@ int parse_shell_options(char **argv, int arg_start, int arg_end)
     }
 
     return (arg_index);
-}
-
-/**
- *  Strip whitespace from the start and end of STRING.  Return a pointer into STRING.
- */
-char * rl_stripwhite(char *string)
-{
-    register char *s, *t;
-
-    for(s = string; whitespace(*s); s++)
-        ;
-
-    if(*s == 0)
-        return (s);
-
-    t = s + strlen(s) - 1;
-    while(t > s && whitespace(*t))
-        t--;
-    *++t = '\0';
-
-    return s;
 }
 
 /* The structure used to store a history entry. */
