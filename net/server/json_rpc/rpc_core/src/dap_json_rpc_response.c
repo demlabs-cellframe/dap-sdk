@@ -39,7 +39,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
             case TYPE_RESPONSE_BOOLEAN:
                 response->result_boolean = *((bool*)result); break;
             case TYPE_RESPONSE_JSON:
-                response->result_json_object = json_object_get(result); break;
+                response->result_json_object = result; break;
             case TYPE_RESPONSE_NULL:
                 break;
             default:
@@ -84,10 +84,9 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
             case TYPE_RESPONSE_BOOLEAN:
             case TYPE_RESPONSE_NULL:
             case TYPE_RESPONSE_ERROR:
-                if (response->json_arr_errors)
-                    json_object_put(response->json_arr_errors);
-                // No specific cleanup needed for these response types
-                break;
+            if (response->json_arr_errors)
+                json_object_put(response->json_arr_errors);
+            break;
             default:
                 log_it(L_ERROR, "Unsupported response type");
                 break;
@@ -133,7 +132,7 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
 
     // json errors
     if (response->type == TYPE_RESPONSE_ERROR) {
-        json_object_object_add(jobj, "errors", response->json_arr_errors);
+        json_object_object_add(jobj, "errors", json_object_get(response->json_arr_errors));
     } else {
         json_object_object_add(jobj, "errors", json_object_new_null());
     }
