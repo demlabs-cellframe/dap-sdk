@@ -133,7 +133,7 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
 
     // json errors
     if (response->type == TYPE_RESPONSE_ERROR) {
-        json_object_object_add(jobj, "errors", response->json_arr_errors);
+        json_object_object_add(jobj, "errors", json_object_get(response->json_arr_errors));
     } else {
         json_object_object_add(jobj, "errors", json_object_new_null());
     }
