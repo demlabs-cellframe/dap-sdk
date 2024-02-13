@@ -405,9 +405,16 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     }
     switch (dap_store_obj_driver_hash_compare(l_read_obj, a_obj)) {
     case 1:         // Received object is older
-        debug_if(g_dap_global_db_debug_more, L_DEBUG, "DB record with group %s and key %s is not applied. It's older than existed record with same key",
-                                                        a_obj->group, a_obj->key);
-        l_ret = -18;
+        if (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW) {
+            dap_nanotime_t l_time_diff = l_read_obj->timestamp - a_obj->timestamp;
+            a_obj->timestamp = l_read_obj->timestamp + 1;
+            debug_if(g_dap_global_db_debug_more, L_WARNING, "DB record with group %s and key %s need time corrction for %zu seconds to be properly applied",
+                                                            a_obj->group, a_obj->key, dap_nanotime_to_sec(l_time_diff));
+        } else {
+            debug_if(g_dap_global_db_debug_more, L_DEBUG, "DB record with group %s and key %s is not applied. It's older than existed record with same key",
+                                                            a_obj->group, a_obj->key);
+            l_ret = -18;
+        }
         break;
     case 0:         // Objects the same, omg! Use the basic object
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Duplicate record with group %s and key %s not dropped by hash filter",
@@ -417,8 +424,16 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     case -1:        // Existed obj is older
         debug_if(g_dap_global_db_debug_more, L_INFO, "Applied new global DB record with group %s and key %s",
                                                                                         a_obj->group, a_obj->key);
+        break;
+    default:
+        log_it(L_ERROR, "Unexpected comparision result");
+        l_ret = -19;
+        break;
+    }
+    if (!l_ret) {
         // Only the condition to apply new object
         l_ret = dap_global_db_driver_apply(a_obj, 1);
+
         if (l_read_obj && dap_strcmp(l_read_obj->group, a_obj->group)) {
             debug_if(g_dap_global_db_debug_more, L_INFO, "Deleted global DB record with group %s and same key",
                                                                                         l_read_obj->group);
@@ -439,10 +454,6 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
             a_obj->group = l_old_group_ptr;
             a_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
         }
-        break;
-    default:
-        log_it(L_ERROR, "Unexpected comparision result");
-        break;
     }
 free_n_exit:
     if (l_obj_type == DAP_GLOBAL_DB_OPTYPE_DEL)
