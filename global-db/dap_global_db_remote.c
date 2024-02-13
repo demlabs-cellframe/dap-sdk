@@ -231,7 +231,7 @@ static void *s_list_thread_proc2(void *arg) {
             bool group_HALed = strstr(l_obj_cur->group, ".service.orders")
                     || !dap_strncmp(l_obj_cur->group, "cdb.", 4)
                     || strstr(l_obj_cur->group, ".nodes.v2")
-                    || ( strstr(l_obj_cur->group, "round.new") && !dap_strncmp(l_obj_cur->key, "round_current") );
+                    || ( strstr(l_obj_cur->group, "round.new") && !dap_strncmp(l_obj_cur->key, "round_current", 13) );
 
             switch (l_obj_type) {
             case DAP_DB$K_OPTYPE_ADD:
@@ -927,7 +927,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
             bool group_HALed = strstr(l_obj->group, ".service.orders")
                     || !dap_strncmp(l_obj->group, "cdb.", 4)
                     || strstr(l_obj->group, ".nodes.v2")
-                    || ( strstr(l_obj_cur->group, "round.new") && !dap_strncmp(l_obj_cur->key, "round_current") );
+                    || ( strstr(l_obj->group, "round.new") && !dap_strncmp(l_obj->key, "round_current", 13) );
 
             switch (l_obj->type) {
             case DAP_DB$K_OPTYPE_ADD:
