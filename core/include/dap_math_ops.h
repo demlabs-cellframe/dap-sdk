@@ -114,25 +114,16 @@ static inline uint128_t GET_128_FROM_64(uint64_t n) {
 #ifdef DAP_GLOBAL_IS_INT128
     return (uint128_t) n;
 #else
-    uint128_t output;
-    output.hi = 0;
-    output.lo = n;
-    return output;
+    return (uint128_t) { .hi = 0, .lo = n };
 #endif
 }
 
 static inline uint256_t GET_256_FROM_64(uint64_t n) {
-    uint256_t output;
-    output.hi = uint128_0;
-    output.lo = GET_128_FROM_64(n);
-    return output;
+    return (uint256_t) { .hi = uint128_0, .lo = GET_128_FROM_64(n) };
 }
 
 static inline uint256_t GET_256_FROM_128(uint128_t n) {
-    uint256_t output;
-    output.hi = uint128_0;
-    output.lo = n;
-    return output;
+    return (uint256_t) { .hi = uint128_0, .lo = n };
 }
 
 static inline bool EQUAL_128(uint128_t a_128_bit, uint128_t b_128_bit){
@@ -190,17 +181,17 @@ static inline uint128_t OR_128(uint128_t a_128_bit,uint128_t b_128_bit){
 }
 
 static inline uint256_t AND_256(uint256_t a_256_bit,uint256_t b_256_bit){
-    uint256_t output = uint256_0;
-    output.hi = AND_128(a_256_bit.hi, b_256_bit.hi);
-    output.lo = AND_128(a_256_bit.lo, b_256_bit.lo);
-    return output;
+    return (uint256_t) {
+        .hi = AND_128(a_256_bit.hi, b_256_bit.hi),
+        .lo = AND_128(a_256_bit.lo, b_256_bit.lo)
+    };
 }
 
 static inline uint256_t OR_256(uint256_t a_256_bit,uint256_t b_256_bit){
-    uint256_t output = uint256_0;
-    output.hi = OR_128(a_256_bit.hi, b_256_bit.hi);
-    output.lo = OR_128(a_256_bit.lo, b_256_bit.lo);
-    return output;
+    return (uint256_t) {
+        .hi = OR_128(a_256_bit.hi, b_256_bit.hi),
+        .lo = OR_128(a_256_bit.lo, b_256_bit.lo)
+    };
 }
 
 static inline void LEFT_SHIFT_128(uint128_t a_128_bit,uint128_t* b_128_bit,int n){
@@ -365,29 +356,21 @@ static inline void DECR_256(uint256_t* a_256_bit) {
 
 static inline int SUM_64_64(uint64_t a_64_bit,uint64_t b_64_bit,uint64_t* c_64_bit )
 {
-    int overflow_flag;
-    *c_64_bit=a_64_bit+b_64_bit;
-    overflow_flag=(*c_64_bit<a_64_bit);
-    return overflow_flag;
+    return *c_64_bit = a_64_bit + b_64_bit, (int)(*c_64_bit < a_64_bit);
 }
 
 static inline int OVERFLOW_SUM_64_64(uint64_t a_64_bit,uint64_t b_64_bit)
 {
-    int overflow_flag;
-    overflow_flag=(a_64_bit+b_64_bit<a_64_bit);
-    return overflow_flag;
+    return (int)(a_64_bit + b_64_bit < a_64_bit);
 }
 
 static inline int OVERFLOW_MULT_64_64(uint64_t a_64_bit,uint64_t b_64_bit)
 {
-    return (a_64_bit>((uint64_t)-1)/b_64_bit);
+    return (int)(a_64_bit > ((uint64_t)-1) / b_64_bit);
 }
 
 static inline int MULT_64_64(uint64_t a_64_bit,uint64_t b_64_bit,uint64_t* c_64_bit ) {
-    int overflow_flag;
-    *c_64_bit=a_64_bit*b_64_bit;
-    overflow_flag=OVERFLOW_MULT_64_64(a_64_bit, b_64_bit);
-    return overflow_flag;
+    return *c_64_bit = a_64_bit * b_64_bit, OVERFLOW_MULT_64_64(a_64_bit, b_64_bit);
 }
 
 //Mixed precision: add a uint64_t into a uint128_t
@@ -451,8 +434,7 @@ static inline int SUBTRACT_128_128(uint128_t a_128_bit, uint128_t b_128_bit, uin
 //Mixed precision: add a uint128_t into a uint256_t
 static inline int ADD_128_INTO_256(uint128_t a_128_bit,uint256_t* c_256_bit) {
     int overflow_flag=0;
-    uint128_t overflow_128 = uint128_0;
-    uint128_t temp = uint128_0;
+    uint128_t overflow_128 = uint128_0, temp = uint128_0;
     overflow_flag=SUM_128_128(a_128_bit, c_256_bit->lo, &temp);
     c_256_bit->lo = temp;
 
@@ -562,8 +544,7 @@ static inline int ADD_256_INTO_512(uint256_t a_256_bit,uint512_t* c_512_bit) {
 static inline void MULT_64_128(uint64_t a_64_bit, uint64_t b_64_bit, uint128_t* c_128_bit)
 {
 #ifdef DAP_GLOBAL_IS_INT128
-    *c_128_bit = (uint128_t)a_64_bit;
-    *c_128_bit *= (uint128_t)b_64_bit;
+    *c_128_bit = (uint128_t)a_64_bit * (uint128_t)b_64_bit;
 #else
     uint64_t a_64_bit_hi = (a_64_bit & 0xffffffff);
     uint64_t b_64_bit_hi = (b_64_bit & 0xffffffff);
@@ -643,7 +624,7 @@ static inline int MULT_128_128(uint128_t a_128_bit, uint128_t b_128_bit, uint128
     int overflow_flag=0;
 
 #ifdef DAP_GLOBAL_IS_INT128
-    *c_128_bit=a_128_bit*b_128_bit;
+    *c_128_bit= a_128_bit * b_128_bit;
     overflow_flag=(a_128_bit>((uint128_t)-1)/b_128_bit);
 #else
     int equal_flag=0;

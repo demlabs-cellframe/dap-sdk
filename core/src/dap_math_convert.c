@@ -189,41 +189,34 @@ uint256_t dap_uint256_scan_decimal(const char *a_str_decimal){ //dap_chain_coins
     return dap_uint256_scan_uninteger(l_buf);
 }
 
+char *dap_uint256_to_char(uint256_t a_uint256, char **)
+
 char *dap_uint256_uninteger_to_char(uint256_t a_uint256) {
-    char *l_buf = DAP_NEW_Z_SIZE(char, DATOSHI_POW256 + 2); // for decimal dot and trailing zero
-    if (!l_buf) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
-    int l_pos = 0;
-    uint256_t l_value = a_uint256;
-    uint256_t uint256_ten = GET_256_FROM_64(10);
-    uint256_t rem;
+    _Thread_local static char s_buf[DATOSHI_POW256 + 2]; // Space for decimal dot and trailing zero
+    char l_c, *l_c1 = s_buf, *l_c2 = s_buf;
+    uint256_t l_value = a_uint256, uint256_ten = GET_256_FROM_64(10), rem;
     do {
         divmod_impl_256(l_value, uint256_ten, &l_value, &rem);
 #ifdef DAP_GLOBAL_IS_INT128
-        l_buf[l_pos++] = rem.lo + '0';
+        *l_c1++ = rem.lo + '0';
 #else
-        l_buf[l_pos++] = rem.lo.lo + (unsigned long long) '0';
+        *l_c1++ = rem.lo.lo + (unsigned long long) '0';
 #endif
     } while (!IS_ZERO_256(l_value));
-    int l_strlen = strlen(l_buf) - 1;
-    for (int i = 0; i < (l_strlen + 1) / 2; i++) {
-        char c = l_buf[i];
-        l_buf[i] = l_buf[l_strlen - i];
-        l_buf[l_strlen - i] = c;
-    }
-    return l_buf;
+    *l_c1-- = '\0';
+
+    do {
+        l_c = *l_c2; *l_c2++ = *l_c1; *l_c1-- = l_c;
+    } while (l_c2 < l_c1);
+
+    return s_buf;
 }
 
 char *dap_uint256_decimal_to_char(uint256_t a_uint256){ //dap_chain_balance_to_coins256, dap_chain_balance_to_coins
-    char *l_buf, *l_cp;
+    char *l_buf = dap_uint256_uninteger_to_char(a_uint256), *l_cp;
     int l_strlen, l_len;
 
     /* 123000...456 -> "123000...456" */
-    if ( !(l_buf = dap_uint256_uninteger_to_char(a_uint256)) )
-        return NULL;
-
     l_strlen = strlen(l_buf);
 
     if ( 0 < (l_len = (l_strlen - DATOSHI_DEGREE)) )
@@ -231,12 +224,11 @@ char *dap_uint256_decimal_to_char(uint256_t a_uint256){ //dap_chain_balance_to_c
         l_cp = l_buf + l_len;                                               /* Move last 18 symbols to one position right */
         memmove(l_cp + 1, l_cp, DATOSHI_DEGREE);
         *l_cp = '.';                                                        /* Insert '.' separator */
-
         l_strlen++;                                                         /* Adjust string len in the buffer */
     } else {
-        l_len = DATOSHI_DEGREE - l_strlen;                           /* Add leading "0." */
+        l_len = DATOSHI_DEGREE - l_strlen;                                  /* Add leading "0." */
         l_cp = l_buf;
-        memmove(l_cp + l_len + 2, l_cp, DATOSHI_DEGREE - l_len);                                     /* Move last 18 symbols to 2 positions right */
+        memmove(l_cp + l_len + 2, l_cp, DATOSHI_DEGREE - l_len);            /* Move last 18 symbols to 2 positions right */
         memset(l_cp, '0', l_len + 2);
         *(++l_cp) = '.';
         l_strlen += 2;                                                      /* Adjust string len in the buffer */
@@ -257,11 +249,10 @@ char *dap_uint256_decimal_to_char(uint256_t a_uint256){ //dap_chain_balance_to_c
             memmove(l_buf, l_cp, l_len);                                    /* Move and terminated by zero */
             l_buf[l_len] = '\0';
         }
-
         l_strlen = l_len;                                                   /* Adjust string len in the buffer */
     }
 
-    for ( l_cp = l_buf + strlen(l_buf) - 1; *l_cp == '0' && l_cp >= l_buf; l_cp--)
+    for ( l_cp = l_buf + l_strlen - 1; *l_cp == '0' && l_cp >= l_buf; l_cp-- )
         if (*(l_cp - 1) != '.')
             *l_cp = '\0';
 
@@ -270,47 +261,34 @@ char *dap_uint256_decimal_to_char(uint256_t a_uint256){ //dap_chain_balance_to_c
 
 char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_round_position, bool is_round)
 {
-    char *result = dap_uint256_decimal_to_char(a_uint256);
-
-    return dap_uint256_char_to_round_char(result, a_round_position, is_round);
+    return dap_uint256_char_to_round_char(dap_uint256_decimal_to_char(a_uint256), a_round_position, is_round);
 }
 
 char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_position, bool is_round)
 {
-    char *result = a_str_decimal;
-
-    size_t l_str_len = strlen(result);
-    char*  l_dot_pos = strstr(result, ".");
+    char *result = a_str_decimal, *l_dot_pos = strchr(a_str_decimal, '.');
+    int l_str_len = strlen(result);
     bool is_inc_round = false;
-
-    if (l_dot_pos && (l_str_len - (l_dot_pos - result)) > a_round_position){
-        size_t l_new_size = l_dot_pos - result + a_round_position;
-        char *l_res = DAP_DUP_SIZE(result, l_new_size + 1);
-
-        if (is_round){
+    if (l_dot_pos && (l_str_len - (l_dot_pos - result)) > a_round_position) {
+        int l_new_size = l_dot_pos - result + a_round_position;
+        if (is_round) {
             is_inc_round = *(char*)(l_dot_pos + a_round_position + 1) >= '5';
-            for(int i = strlen(l_res)-1; is_inc_round && i >= 0; i--){
-                if(l_res[i] == '9'){
-                    l_res[i] = '0';
-                } else if (l_res[i] != '.'){
-                    l_res[i]++;
+            for (char *l_c = result + l_new_size - 1; is_inc_round && l_c >= result; --l_c) {
+                if (*l_c == '9')
+                    *l_c = '0';
+                else if (*l_c != '.') {
+                    ++(*l_c);
                     is_inc_round = false;
-                } if (l_res[i] == '.' && a_round_position == 0)
-                    l_res[i] = '\0';
+                }
+                if (*l_c == '.' && !a_round_position)
+                    *l_c = '\0';
             }
-            if (is_inc_round){
-                char *l_new_res = DAP_NEW_Z_SIZE(char, sizeof(char)*(strlen(l_res)+1));
-                *l_new_res = '1';
-                memcpy(l_new_res+1, l_res, strlen(l_res));
-                DAP_DELETE(l_res);
-                l_res=l_new_res;
+
+            if (is_inc_round) {
+                memmove(result + 1, result, l_new_size);
+                *result = '1';
             }
         }
-        if (!a_round_position && l_res[l_new_size-a_round_position]=='.'){
-            l_res[l_new_size-a_round_position]='\0';
-        }
-        DAP_DELETE(result);
-        return l_res;
     }
     return result;
 }
