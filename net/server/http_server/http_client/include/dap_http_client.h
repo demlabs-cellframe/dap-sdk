@@ -35,9 +35,8 @@ typedef enum dap_http_client_state{
 } dap_http_client_state_t;
 
 typedef void (*dap_http_client_callback_t) (struct dap_http_client *,void * arg); // Callback for specific client operations
-typedef bool (*dap_http_client_callback_ret_boolean_t) (struct dap_http_client *,void * arg); // Callback for specific client operations
+typedef bool (*dap_http_client_callback_write_t) (struct dap_http_client *a_client, void *a_arg); // Callback for write client operation
 typedef void (*dap_http_client_callback_error_t) (struct dap_http_client *,int); // Callback for specific client operations
-
 
 typedef struct dap_http_client
 {
@@ -49,7 +48,6 @@ typedef struct dap_http_client
     int     keep_alive;                                                     /* Connection: Keep-Alive */
 
     dap_http_client_state_t state_read;
-    dap_http_client_state_t state_write;
 
     struct dap_http_header *in_headers;                                     /* List of HTTP's fields */
 
@@ -97,9 +95,11 @@ void dap_http_client_new( dap_events_socket_t *a_esocket, void *a_arg ); // Crea
 void dap_http_client_delete( dap_events_socket_t * a_esocket,void *a_arg ); // Free memory for HTTP client's internal structure
 
 void dap_http_client_read( dap_events_socket_t * a_esocket,void *a_arg ); // Process read event
-void dap_http_client_write( dap_events_socket_t * a_esocket,void *a_arg ); // Process write event
+bool dap_http_client_write_callback( dap_events_socket_t * a_esocket,void *a_arg ); // Process write event
 void dap_http_client_error( dap_events_socket_t * a_esocket,int a_arg ); // Process error event
 void dap_http_client_out_header_generate( dap_http_client_t *a_http_client );
+
+void dap_http_client_write(dap_http_client_t *a_http_client);   // Start write event
 
 #ifdef __cplusplus
 }

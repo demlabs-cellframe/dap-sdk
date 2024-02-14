@@ -85,7 +85,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *l_pk
 static void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg); // Prepare stream when all headers are read
 
 static bool s_http_client_headers_write(dap_http_client_t * a_http_client, void * a_arg); // Output headers
-static void s_http_client_data_write(dap_http_client_t * a_http_client, void * a_arg); // Write the data
+static bool s_http_client_data_write(dap_http_client_t * a_http_client, void * a_arg); // Write the data
 static void s_http_client_data_read(dap_http_client_t * a_http_client, void * a_arg); // Read the data
 
 static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, dap_worker_t * a_worker);
@@ -94,7 +94,7 @@ static void s_client_callback_worker_assign(dap_events_socket_t *a_esocket, dap_
 static void s_client_callback_worker_unassign(dap_events_socket_t *a_esocket, dap_worker_t *a_worker);
 
 static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg);
-static void s_esocket_write(dap_events_socket_t* a_esocket, void * a_arg);
+static bool s_esocket_write(dap_events_socket_t* a_esocket, void * a_arg);
 static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_arg);
 static void s_udp_esocket_new(dap_events_socket_t* a_esocket,void * a_arg);
 
@@ -240,8 +240,6 @@ void dap_stream_add_proc_udp(dap_server_t *a_udp_server)
  */
 static void s_stream_states_update(dap_stream_t *a_stream)
 {
-    if(a_stream->conn_http)
-        a_stream->conn_http->state_write=DAP_HTTP_CLIENT_STATE_START;
     size_t i;
     bool ready_to_write=false;
     for(i=0;i<a_stream->channel_count; i++)
@@ -488,8 +486,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     a_http_client->reply_status_code=200;
                     strcpy(a_http_client->reply_reason_phrase,"OK");
                     s_stream_states_update(l_stream);
-                    a_http_client->state_read=DAP_HTTP_CLIENT_STATE_DATA;
-                    a_http_client->state_write=DAP_HTTP_CLIENT_STATE_START;
+                    a_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
                     dap_events_socket_set_readable_unsafe(a_http_client->esocket,true);
                     dap_events_socket_set_writable_unsafe(a_http_client->esocket,true);
                 }else{
@@ -534,7 +531,7 @@ static bool s_http_client_headers_write(dap_http_client_t * a_http_client, void 
  * @param a_http_client HTTP client instance
  * @param a_arg Not used
  */
-static void s_http_client_data_write(dap_http_client_t * a_http_client, void * a_arg)
+static bool s_http_client_data_write(dap_http_client_t * a_http_client, void * a_arg)
 {
     (void) a_arg;
 
@@ -543,6 +540,7 @@ static void s_http_client_data_write(dap_http_client_t * a_http_client, void * a
     }else{
         log_it(L_WARNING, "Wrong request, reply status code is %u",a_http_client->reply_status_code);
     }
+    return false;
 }
 
 /**
@@ -650,16 +648,18 @@ static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg)
  * @param sh DAP client instance
  * @param arg Not used
  */
-static void s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
+static bool s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
 {
-    // TODO identfy the channel to call right proc->callback
+    bool l_ret = false;
+    // TODO identify the channel to call right proc->callback
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
     //log_it(L_DEBUG,"Process channels data output (%u channels)", DAP_STREAM(l_http_client)->channel_count );
     for (size_t i = 0; i < DAP_STREAM(l_http_client)->channel_count; i++) {
         dap_stream_ch_t *l_ch = DAP_STREAM(l_http_client)->channel[i];
         if (l_ch->ready_to_write && l_ch->proc->packet_out_callback)
-            l_ch->proc->packet_out_callback(l_ch, a_arg);
+            l_ret = l_ch->proc->packet_out_callback(l_ch, a_arg);
     }
+    return l_ret;
 }
 
 /**
@@ -697,18 +697,6 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
     l_stm->esocket = NULL;
     l_stm->esocket_uuid = 0;
     dap_stream_delete_unsafe(l_stm);
-}
-
-/**
- * @brief dap_stream_set_ready_to_write
- * @param a_stream
- * @param a_is_ready
- */
-void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready)
-{
-    if(a_is_ready && a_stream->conn_http)
-        a_stream->conn_http->state_write=DAP_HTTP_CLIENT_STATE_DATA;
-    dap_events_socket_set_writable_unsafe(a_stream->esocket,a_is_ready);
 }
 
 /**

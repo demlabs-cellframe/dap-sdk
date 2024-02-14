@@ -865,26 +865,15 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             }
 
             l_bytes_sent = 0;
-
+            bool l_write_repeat = false;
             if (l_flag_write && (l_cur->flags & DAP_SOCK_READY_TO_WRITE) && !(l_cur->flags & DAP_SOCK_CONNECTING)) {
                 debug_if (g_debug_reactor, L_DEBUG, "Main loop output: %zu bytes to send", l_cur->buf_out_size);
                 if (l_cur->callbacks.write_callback)
-                    l_cur->callbacks.write_callback(l_cur, NULL);           /* Call callback to process write event */
-
+                    l_write_repeat = l_cur->callbacks.write_callback(l_cur, l_cur->callbacks.arg);  /* Call callback to process write event */
                 /*
                  * Socket is ready to write and not going to close
                  */
-                if ( !l_cur->buf_out_size )                                     /* Check firstly that output buffer is not empty */
-                {
-                    dap_events_socket_set_writable_unsafe(l_cur, false);        /* Clear "enable write flag" */
-
-                    if ( l_cur->callbacks.write_finished_callback )             /* Optionaly call I/O completion routine */
-                        l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg, 0);
-
-                    l_flag_write = 0;                                           /* Clear flag to exclude unecessary processing of output */
-                }
-
-                if ( l_cur->context && l_flag_write ){ // esocket wasn't unassigned in callback, we need some other ops with it
+                if ( l_cur->context && l_cur->buf_out_size ){ // esocket wasn't unassigned in callback, we need some other ops with it
                         switch (l_cur->type){
                             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                             case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
@@ -1005,7 +994,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 dap_events_socket_set_writable_unsafe(l_cur,false);
                         }
 
-                    if(l_bytes_sent < 0) {
+                    if (l_bytes_sent < 0) {
 #ifdef DAP_OS_WINDOWS
                         if (l_cur->type != DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL && l_errno != WSAEWOULDBLOCK) {
                             log_it(L_ERROR, "Can't send to socket %zu, WSA error: %d", l_cur->socket, l_errno);
@@ -1028,34 +1017,27 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             l_cur->buf_out_size = 0;
                         }
 #endif
-                    }else{
-                        //log_it(L_DEBUG, "Output: %u from %u bytes are sent ", l_bytes_sent,l_cur->buf_out_size);
-                        if (l_bytes_sent) {
-                            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
-                                l_cur->last_time_active = l_cur_time;
-                            }
-                            if ( l_bytes_sent <= (ssize_t) l_cur->buf_out_size ){
-                                l_cur->buf_out_size -= l_bytes_sent;
-                                if (l_cur->buf_out_size ) {
-                                    memmove(l_cur->buf_out, &l_cur->buf_out[l_bytes_sent], l_cur->buf_out_size);
-                                } else {
-                                    /*
-                                     * If whole buffer has been sent - clear "write flag" for socket/file descriptor to prevent
-                                     * generation of unexpected I/O events like POLLOUT and consuming CPU by this.
-                                     */
-                                    dap_events_socket_set_writable_unsafe(l_cur, false);/* Clear "enable write flag" */
-                                    if ( l_cur->callbacks.write_finished_callback ) {    /* Optionaly call I/O completion routine */
-                                        if (l_errno == EWOULDBLOCK || l_errno == EAGAIN || l_errno == EINTR)
-                                            l_errno = 0;
-                                        l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg, l_errno);
-                                    }
-                                }
-                            }else{
-                                log_it(L_ERROR, "Wrong bytes sent, %zd more then was in buffer %zd",l_bytes_sent, l_cur->buf_out_size);
-                                l_cur->buf_out_size = 0;
-                            }
+                    } else if (l_bytes_sent) {
+                        debug_if(g_debug_reactor, L_DEBUG, "Output: %zu from %zu bytes are sent", l_bytes_sent, l_cur->buf_out_size);
+                        if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP)
+                            l_cur->last_time_active = l_cur_time;
+                        if (l_bytes_sent <= (ssize_t) l_cur->buf_out_size) {
+                            l_cur->buf_out_size -= l_bytes_sent;
+                            if (l_cur->buf_out_size)
+                                memmove(l_cur->buf_out, &l_cur->buf_out[l_bytes_sent], l_cur->buf_out_size);
+                            else if (l_cur->callbacks.write_finished_callback)    /* Optionaly call I/O completion routine */
+                                l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg);
+                        } else {
+                            log_it(L_ERROR, "Wrong bytes sent, %zd more then was in buffer %zd",l_bytes_sent, l_cur->buf_out_size);
+                            l_cur->buf_out_size = 0;
                         }
                     }
+                    /*
+                     * If whole buffer has been sent - clear "write flag" for socket/file descriptor to prevent
+                     * generation of unexpected I/O events like POLLOUT and consuming CPU by this.
+                     */
+                    if (!l_cur->buf_out_size && !l_write_repeat)
+                        dap_events_socket_set_writable_unsafe(l_cur, false); /* Clear "enable write flag" */
                 }
             }
 

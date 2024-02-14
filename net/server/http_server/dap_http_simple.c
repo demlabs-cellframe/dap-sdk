@@ -70,7 +70,7 @@ static void s_http_simple_delete( dap_http_simple_t *a_http_simple);
 static void s_http_client_headers_read( dap_http_client_t *cl_ht, void *arg );
 static void s_http_client_data_read( dap_http_client_t * cl_ht, void *arg );
 static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *arg);
-static void s_http_client_data_write( dap_http_client_t * a_http_client, void *a_arg );
+static bool s_http_client_data_write( dap_http_client_t * a_http_client, void *a_arg );
 static bool s_proc_queue_callback(void *a_arg );
 
 typedef struct dap_http_simple_url_proc {
@@ -241,12 +241,11 @@ static void s_esocket_worker_write_callback(dap_worker_t *a_worker, void *a_arg)
         return;
     }
     l_es->_inheritor = l_http_simple->http_client; // Back to the owner
-    dap_http_client_write(l_es, NULL);
+    dap_http_client_write(l_http_simple->http_client);
 }
 
 inline static void s_write_data_to_socket(dap_http_simple_t *a_simple)
 {
-    a_simple->http_client->state_write = DAP_HTTP_CLIENT_STATE_START;
     dap_worker_exec_callback_on(dap_events_worker_get(a_simple->worker->id), s_esocket_worker_write_callback, a_simple);
 }
 
@@ -263,7 +262,7 @@ static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg) {
 }
 
 
-static void s_http_client_data_write(dap_http_client_t * a_http_client, void *a_arg)
+static bool s_http_client_data_write(dap_http_client_t * a_http_client, void *a_arg)
 {
     (void) a_arg;
     dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE( a_http_client );
@@ -276,6 +275,7 @@ static void s_http_client_data_write(dap_http_client_t * a_http_client, void *a_
                                                   l_http_simple->reply_byte + l_http_simple->reply_sent,
                                                   l_http_simple->http_client->out_content_length - l_http_simple->reply_sent);
     }
+    return false;
 }
 
 

@@ -45,10 +45,10 @@ typedef struct dap_http_url_proc{
     dap_http_client_callback_t delete_callback; // Delete internal structure
 
     dap_http_client_callback_t headers_read_callback;
-    dap_http_client_callback_ret_boolean_t headers_write_callback;
+    dap_http_client_callback_write_t headers_write_callback;
 
     dap_http_client_callback_t data_read_callback;
-    dap_http_client_callback_t data_write_callback;
+    dap_http_client_callback_write_t data_write_callback;
     dap_http_client_callback_error_t error_callback;
 
     dap_http_client_callback_t access_callback;
@@ -73,10 +73,10 @@ int dap_http_new( dap_server_t *a_server, const char *a_server_name ); // Create
 void dap_http_delete( dap_server_t *a_server, void *a_arg ); // Clear dap_http structure in the internal data field of dap_server_t instance
 
 dap_http_url_proc_t * dap_http_add_proc(dap_http_t *sh, const char *url_path, void *internal
-                             ,dap_http_client_callback_t new_callback
-                             ,dap_http_client_callback_t delete_callback
-                             ,dap_http_client_callback_t headers_read_callback
-                             ,dap_http_client_callback_ret_boolean_t headers_write_callback
-                             ,dap_http_client_callback_t data_read_callback
-                             ,dap_http_client_callback_t data_write_callback
-                             ,dap_http_client_callback_error_t error_callback ); // Add custom procesor for the HTTP server
+                             , dap_http_client_callback_t new_callback
+                             , dap_http_client_callback_t delete_callback
+                             , dap_http_client_callback_t headers_read_callback
+                             , dap_http_client_callback_write_t headers_write_callback
+                             , dap_http_client_callback_t data_read_callback
+                             , dap_http_client_callback_write_t data_write_callback
+                             , dap_http_client_callback_error_t error_callback ); // Add custom procesor for the HTTP server

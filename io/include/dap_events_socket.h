@@ -129,6 +129,7 @@ typedef struct dap_context dap_context_t;
 
 typedef struct dap_server dap_server_t;
 typedef void (*dap_events_socket_callback_t) (dap_events_socket_t *,void * ); // Callback for specific client operations
+typedef bool (*dap_events_socket_write_callback_t)(dap_events_socket_t *, void *); // Callback for write client operation
 typedef void (*dap_events_socket_callback_error_ptr_t) (dap_events_socket_t *, int, void * ); // Callback for specific client operations
 typedef void (*dap_events_socket_callback_error_t) (dap_events_socket_t *, int ); // Callback for specific client operations
 typedef void (*dap_events_socket_callback_queue_t) (dap_events_socket_t *,const void * , size_t); // Callback for specific client operations
@@ -139,10 +140,6 @@ typedef void (*dap_events_socket_callback_timer_t) (dap_events_socket_t * ); // 
 typedef void (*dap_events_socket_callback_accept_t) (dap_events_socket_t *, SOCKET, struct sockaddr_storage *); // Callback for accept of new connection
 typedef void (*dap_events_socket_callback_connected_t) (dap_events_socket_t * ); // Callback for connected client connection
 typedef void (*dap_events_socket_worker_callback_t) (dap_events_socket_t *,dap_worker_t * ); // Callback for specific client operations
-
-
-                                                                            /* A callback routine is supposed to be called on completion I/O */
-typedef void (*dap_events_socket_worker_complete_io_t) (dap_events_socket_t *, void *, int a_errno);
 
 typedef struct dap_events_socket_callbacks {
     union{ // Specific callbacks
@@ -157,8 +154,8 @@ typedef struct dap_events_socket_callbacks {
     dap_events_socket_callback_t new_callback;                              /* Create new client callback */
     dap_events_socket_callback_t delete_callback;                           /* Delete client callback */
     dap_events_socket_callback_t read_callback;                             /* Read function */
-    dap_events_socket_callback_t write_callback;                            /* Write function */
-    dap_events_socket_worker_complete_io_t write_finished_callback;         /* Called on completion Write operation */
+    dap_events_socket_write_callback_t write_callback;                      /* Write function */
+    dap_events_socket_callback_t write_finished_callback;                   /* Called on completion Write operation */
     dap_events_socket_callback_error_t error_callback;                      /* Error processing function */
 
     dap_events_socket_worker_callback_t worker_assign_callback;             /* After successful worker assign */

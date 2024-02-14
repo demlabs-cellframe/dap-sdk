@@ -150,8 +150,6 @@ size_t dap_stream_data_proc_write(dap_stream_t * a_stream);
 void dap_stream_delete_unsafe(dap_stream_t * a_stream);
 void dap_stream_proc_pkt_in(dap_stream_t * sid);
 
-void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready);
-
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es);
 
