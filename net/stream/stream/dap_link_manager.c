@@ -93,7 +93,6 @@ static void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
     if (a_arg) {
         dap_managed_net_t *l_net = (dap_managed_net_t *)a_arg;
         dap_cluster_member_add(l_net->node_link_cluster, &l_link->node_addr, 0, NULL);
-        l_net->links_count++;
     }
     log_it(L_NOTICE, "Stream connection with node "NODE_ADDR_FP_STR" (%s:%hu) established",
                 NODE_ADDR_FP_ARGS_S(l_link->node_addr),
@@ -319,19 +318,19 @@ void dap_link_manager_set_net_status(uint64_t a_net_id, bool a_status)
     }
 }
 
-void dap_link_manager_add_role_cluster(dap_cluster_member_t *a_member)
+void dap_link_manager_add_role_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster)
 {
-    dap_return_if_pass(!s_link_manager || !a_member || !a_member->cluster);
+    dap_return_if_pass(!s_link_manager || !a_addr || !a_cluster);
     // pthread_rwlock_wrlock(&it->members_lock);
     dap_link_t *l_link = NULL;
-    HASH_FIND(hh, s_link_manager->links, &a_member->addr, sizeof(a_member->addr), l_link);
+    HASH_FIND(hh, s_link_manager->links, a_addr, sizeof(*a_addr), l_link);;
     if (!l_link) {
         DAP_NEW_Z_RET(l_link, dap_link_t, NULL);
-        l_link->node_addr.uint64 = a_member->addr.uint64;
+        l_link->node_addr.uint64 = a_addr->uint64;
         l_link->link_manager = s_link_manager;
         HASH_ADD(hh, s_link_manager->links, node_addr, sizeof(l_link->node_addr), l_link);
     }
-    l_link->role_clusters = dap_list_append(l_link->role_clusters, a_member->cluster);
+    l_link->role_clusters = dap_list_append(l_link->role_clusters, a_cluster);
     // pthread_rwlock_unlock(&it->members_lock);
 }
 
@@ -348,34 +347,52 @@ void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_clus
         HASH_ADD(hh, s_link_manager->links, node_addr, sizeof(l_link->node_addr), l_link);
     }
     l_link->links_clusters = dap_list_append(l_link->links_clusters, a_cluster);
+    dap_list_t *l_item = NULL;
+    if (a_cluster->role == DAP_CLUSTER_ROLE_EMBEDDED)
+        DL_FOREACH(s_link_manager->nets, l_item) {
+            dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
+            if (!strcmp((l_net->node_link_cluster->mnemonim), a_cluster->mnemonim)) {
+                l_net->links_count++;
+                break;
+            }
+        }
     // pthread_rwlock_unlock(&it->members_lock);
 }
 
-void dap_link_manager_remove_role_cluster(dap_cluster_member_t *a_member)
+void dap_link_manager_remove_role_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster)
 {
-    dap_return_if_pass(!s_link_manager || !a_member || !a_member->cluster);
+    dap_return_if_pass(!s_link_manager || !a_addr || !a_cluster);
     // pthread_rwlock_wrlock(&it->members_lock);
     dap_link_t *l_link = NULL;
-    HASH_FIND(hh, s_link_manager->links, &a_member->addr, sizeof(a_member->addr), l_link);
+    HASH_FIND(hh, s_link_manager->links, a_addr, sizeof(*a_addr), l_link);
     if (!l_link) {
         log_it(L_ERROR, "Try cluster deleting from non-existent link");
         return;
     }
-    l_link->role_clusters = dap_list_remove(l_link->role_clusters, a_member->cluster);
+    l_link->role_clusters = dap_list_remove(l_link->role_clusters, a_cluster);
     // pthread_rwlock_unlock(&it->members_lock);
 }
 
-void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member)
+void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster)
 {
-    dap_return_if_pass(!s_link_manager || !a_member || !a_member->cluster);
+    dap_return_if_pass(!s_link_manager || !a_addr || !a_cluster);
     // pthread_rwlock_wrlock(&it->members_lock);
     dap_link_t *l_link = NULL;
-    HASH_FIND(hh, s_link_manager->links, &a_member->addr, sizeof(a_member->addr), l_link);
+    HASH_FIND(hh, s_link_manager->links, a_addr, sizeof(*a_addr), l_link);
     if (!l_link) {
         log_it(L_ERROR, "Try cluster deleting from non-existent link");
         return;
     }
-    l_link->links_clusters = dap_list_remove(l_link->links_clusters, a_member->cluster);
+    l_link->links_clusters = dap_list_remove(l_link->links_clusters, a_cluster);
+        dap_list_t *l_item = NULL;
+    if (a_cluster->role == DAP_CLUSTER_ROLE_EMBEDDED)
+        DL_FOREACH(s_link_manager->nets, l_item) {
+            dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
+            if (!strcmp((l_net->node_link_cluster->mnemonim), a_cluster->mnemonim)) {
+                l_net->links_count--;
+                break;
+            }
+        }
     // pthread_rwlock_unlock(&it->members_lock);
 }
 

@@ -91,10 +91,10 @@ dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_c
 dap_link_manager_t *dap_link_manager_get_default();
 int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster);
 void dap_link_manager_remove_active_net(uint64_t a_net_id);
-void dap_link_manager_add_role_cluster(dap_cluster_member_t *a_member);
+void dap_link_manager_add_role_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
 void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
-void dap_link_manager_remove_role_cluster(dap_cluster_member_t *a_member);
-void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member);
+void dap_link_manager_remove_role_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
+void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
 int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link);
 void dap_link_manager_set_net_status(uint64_t a_net_id, bool a_status);
 size_t dap_link_manager_links_count(uint64_t a_net_id);

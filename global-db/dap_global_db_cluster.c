@@ -41,15 +41,15 @@ static void s_links_cluster_member_add_callback(dap_cluster_member_t *a_member)
 }
 static void s_role_cluster_member_add_callback(dap_cluster_member_t *a_member)
 {
-    dap_link_manager_add_role_cluster(a_member);
+    dap_link_manager_add_role_cluster(&a_member->addr, a_member->cluster);
 }
 static void s_links_cluster_member_remove_callback(dap_cluster_member_t *a_member)
 {
-    dap_link_manager_remove_links_cluster(a_member);
+    dap_link_manager_remove_links_cluster(&a_member->addr, a_member->cluster);
 }
 static void s_role_cluster_member_remove_callback(dap_cluster_member_t *a_member)
 {
-    dap_link_manager_remove_role_cluster(a_member);
+    dap_link_manager_remove_role_cluster(&a_member->addr, a_member->cluster);
 }
 static void s_gdb_cluster_sync_timer_callback(void *a_arg);
 
