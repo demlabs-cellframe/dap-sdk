@@ -23,7 +23,9 @@ cmake_policy(SET CMP0042 NEW)
 cmake_policy(SET CMP0054 NEW)
 
 # Allow exec_program
-cmake_policy(SET CMP0153 OLD)
+if(POLICY CMP0153)
+    cmake_policy(SET CMP0153 OLD)
+endif()
 
 # set default build type if not specified by user
 if(NOT CMAKE_BUILD_TYPE)
