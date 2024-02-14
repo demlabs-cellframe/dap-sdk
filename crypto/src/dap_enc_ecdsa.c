@@ -1,11 +1,11 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <string.h>
-
 #include "dap_enc_ecdsa.h"
-#include "ecdsa_params.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
+#include <secp256k1.h>
+
 
 #define LOG_TAG "dap_enc_sig_ecdsa"
 
@@ -14,14 +14,14 @@
 static enum DAP_ECDSA_SIGN_SECURITY _ecdsa_type = ECDSA_MIN_SIZE; // by default
 
 
-void dap_enc_sig_ecdsa_set_type(enum DAP_ECDSA_SIGN_SECURITY type)
-{
-    _ecdsa_type = type;
-}
+//void dap_enc_sig_ecdsa_set_type(enum DAP_ECDSA_SIGN_SECURITY type)
+//{
+//    _ecdsa_type = type;
+//}
 
 void dap_enc_sig_ecdsa_key_new(dap_enc_key_t *a_key) {
 
-    a_key->type = DAP_ENC_KEY_TYPE_ECDSA;
+    a_key->type = DAP_ENC_KEY_TYPE_SIG_ECDSA;
     a_key->enc = NULL;
     a_key->sign_get = dap_enc_sig_ecdsa_get_sign;
     a_key->sign_verify = dap_enc_sig_ecdsa_verify_sign;
@@ -35,11 +35,12 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, const void *kex_buf
     (void) kex_buf;
     (void) kex_size;
     (void) key_size;
+    unsigned char randomize[32];
 
     int retcode;
 
-    /*not sure we need this for ECDSA
-    /*dap_enc_sig_ecdsa_set_type(ECDSA_MAX_SPEED);*/
+    //not sure we need this for ECDSA
+    //dap_enc_sig_ecdsa_set_type(ECDSA_MAX_SPEED)
 
     //int32_t type = 2;
     key->priv_key_data_size =sizeof(ecdsa_private_key_t);
@@ -47,16 +48,18 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, const void *kex_buf
     key->priv_key_data = malloc(key->priv_key_data_size);
     key->pub_key_data = malloc(key->pub_key_data_size);
 
-    ecdsa_context_t* ctx=sec256k1_context_create_(SECP256K1_CONTEXT_NONE);
-    if (!fill_random(randomize, sizeof(randomize))) {
+
+    ecdsa_context_t* ctx=secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+
+    if (!randombytes(randomize, sizeof(randomize))) {
         printf("Failed to generate randomness\n");
-        return 1;
+        return;
     }
 
     retcode = secp256k1_context_randomize(ctx, randomize);
     assert(retcode);
 
-    retcode = secp256k1_ec_pubkey_create(ctx,&key->pub_key_dat, &key->priv_key_data);
+    retcode = secp256k1_ec_pubkey_create(ctx,(ecdsa_public_key_t*)key->pub_key_data,(const unsigned char*) key->priv_key_data);
     assert(retcode);
 
     if(retcode) {
@@ -101,14 +104,14 @@ uint8_t *dap_enc_sig_ecdsa_write_signature(const void *a_sign, size_t *a_buflen_
 // in work
     a_buflen_out ? *a_buflen_out = 0 : 0;
     dap_return_val_if_pass(!a_sign, NULL);
-    ecdsa_signature_t *l_sign = (dilithium_signature_t *)a_sign;
+    ecdsa_signature_t *l_sign = (ecdsa_signature_t *)a_sign;
 // func work
     uint64_t l_buflen = dap_enc_sig_ecdsa_ser_sig_size(l_sign);
-    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8,
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 4,
         &l_buflen, (uint64_t)sizeof(uint64_t),
-        &l_sign->kind, (uint64_t)sizeof(uint32_t),
-        &l_sign->sig_len, (uint64_t)sizeof(uint64_t),
-        l_sign->sig_data, (uint64_t)l_sign->sig_len
+        //&l_sign->kind, (uint64_t)sizeof(uint32_t),
+        //&l_sign->sig_len, (uint64_t)sizeof(uint64_t),
+        l_sign->data, DAP_ENC_ECDSA_SKEY_LEN
     );
 // out work
     (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
@@ -153,29 +156,29 @@ void *dap_enc_sig_ecdsa_read_signature(const uint8_t *a_buf, size_t a_buflen)
         return NULL;
     }
    /* l_sign->kind = kind;*/
-    memcpy(&l_sign->sig_len, a_buf + l_shift_mem, sizeof(uint64_t));
+    memcpy(&l_sign->data, a_buf + l_shift_mem, sizeof(uint64_t));
     l_shift_mem += sizeof(uint64_t);
 
-    if( l_sign->sig_len> (UINT64_MAX - l_shift_mem ) ){
-            log_it(L_ERROR,"::read_signature() Buflen inside signature %"DAP_UINT64_FORMAT_U" is too big ", l_sign->sig_len);
-            DAP_DELETE(l_sign);
-            return NULL;
-    }
+   // if( l_sign->sig_len> (UINT64_MAX - l_shift_mem ) ){
+   //         log_it(L_ERROR,"::read_signature() Buflen inside signature %"DAP_UINT64_FORMAT_U" is too big ", l_sign->sig_len);
+   //         DAP_DELETE(l_sign);
+   //         return NULL;
+   // }
 
-    if( (uint64_t) a_buflen < (l_shift_mem + l_sign->sig_len) ){
-        log_it(L_ERROR,"::read_signature() Buflen %zd is smaller than all fields together(%"DAP_UINT64_FORMAT_U")", a_buflen,
-               l_shift_mem + l_sign->sig_len  );
-        DAP_DELETE(l_sign);
-        return NULL;
-    }
+//    if( (uint64_t) a_buflen < (l_shift_mem + l_sign->sig_len) ){
+//        log_it(L_ERROR,"::read_signature() Buflen %zd is smaller than all fields together(%"DAP_UINT64_FORMAT_U")", a_buflen,
+//               l_shift_mem + l_sign->sig_len  );
+//        DAP_DELETE(l_sign);
+//        return NULL;
+//    }
 
-    l_sign->sig_data = DAP_NEW_SIZE(uint8_t, l_sign->sig_len);
-    if (!l_sign->sig_data){
+    l_sign->data = DAP_NEW_SIZE(uint8_t, ECDSA_SIG_SIZE);
+    if (!l_sign->data){
         log_it(L_ERROR,"::read_signature() Can't allocate sig_data %"DAP_UINT64_FORMAT_U" size", l_sign->sig_len);
         DAP_DELETE(l_sign);
         return NULL;
     }
-    memcpy(l_sign->sig_data, a_buf + l_shift_mem, l_sign->sig_len);
+    memcpy(l_sign->data, a_buf + l_shift_mem, ECDSA_SIG_SIZE);
     return l_sign;
 }
 
