@@ -228,9 +228,10 @@ static void *s_list_thread_proc2(void *arg) {
             dap_nanotime_t l_limit_time = l_time_store_lim_hours
                     ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_hours * 3600)
                     : 0;
-            bool group_HALed = strstr(l_obj_cur->group, ".service.orders")
+            bool group_HALed = strstr(l_obj_cur->group, ".orders")
                     || !dap_strncmp(l_obj_cur->group, "cdb.", 4)
-                    || strstr(l_obj_cur->group, ".nodes.v2");
+                    || strstr(l_obj_cur->group, ".nodes.v2")
+                    || ( strstr(l_obj_cur->group, "round.new") && !dap_strncmp(l_obj_cur->key, "round_current", 13) );
 
             switch (l_obj_type) {
             case DAP_DB$K_OPTYPE_ADD:
@@ -239,15 +240,6 @@ static void *s_list_thread_proc2(void *arg) {
                     continue;
                 break;
             case DAP_DB$K_OPTYPE_DEL:
-                /*if ( group_HALed ) {
-                    dap_store_obj_clear_one(l_obj_cur);
-                    if (l_obj_cur < l_obj_last) {
-                        *l_obj_cur-- = *l_obj_last;
-                    }
-                    l_obj_last->group = NULL; l_obj_last->key = NULL; l_obj_last->value = NULL;
-                    --l_obj_last;
-                    continue;
-                } */
                 if ( (l_obj_cur->timestamp < l_limit_time) || (l_obj_cur->timestamp > dap_nanotime_now()) )
                      continue;
                 else {
@@ -932,9 +924,10 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                 }
             }
 
-            bool group_HALed = strstr(l_obj->group, ".service.orders")
+            bool group_HALed = strstr(l_obj->group, ".orders")
                     || !dap_strncmp(l_obj->group, "cdb.", 4)
-                    || strstr(l_obj->group, ".nodes.v2");
+                    || strstr(l_obj->group, ".nodes.v2")
+                    || ( strstr(l_obj->group, "round.new") && !dap_strncmp(l_obj->key, "round_current", 13) );
 
             switch (l_obj->type) {
             case DAP_DB$K_OPTYPE_ADD:
