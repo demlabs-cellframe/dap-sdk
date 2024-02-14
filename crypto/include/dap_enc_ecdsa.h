@@ -6,6 +6,8 @@
 #include "dap_enc_key.h"
 
 
+#define ECDSA_SIG_SIZE 64
+
 
 enum DAP_ECDSA_SIGN_SECURITY {
     ECDSA_TOY = 0, ECDSA_MAX_SPEED, ECDSA_MIN_SIZE, ECDSA_MAX_SECURITY
@@ -54,26 +56,26 @@ DAP_STATIC_INLINE uint64_t dap_enc_sig_ecdsa_ser_sig_size(const void *a_sign)
 {
     if (!a_sign)
         return 0;
-    return sizeof(uint64_t) * 2 + sizeof(uint32_t) + ((ecdsa_signature_t *)a_sign)->sig_len;
+    return sizeof(uint64_t) * 2 + sizeof(uint32_t) + ECDSA_SIG_SIZE;
 }
 
 DAP_STATIC_INLINE uint64_t dap_enc_sig_ecdsa_ser_private_key_size(const void *a_skey)
 {
 // sanity check
-    ecdsa_param_t l_p;
-    if(!a_skey || !ecdsa_params_init(&l_p, ((ecdsa_private_key_t *)a_skey)->kind))
-        return 0;
+// TEMPORARILY DISABLED
+//    if(!a_skey || !ecdsa_params_init(&l_p, ((ecdsa_private_key_t *)a_skey)->kind))
+//        return 0;
 // func work
-    return sizeof(uint64_t) + sizeof(uint32_t) + l_p.CRYPTO_SECRETKEYBYTES;
+    return sizeof(uint64_t) + sizeof(uint32_t);
 }
 
 DAP_STATIC_INLINE uint64_t dap_enc_sig_ecdsa_ser_public_key_size(const void *a_pkey)
 {
 // sanity check
-    ecdsa_param_t l_p;
-    if(!a_pkey || !ecdsa_params_init(&l_p, ((ecdsa_public_key_t *)a_pkey)->kind))
-        return 0;
+// TEMPORARILY DISABLED
+//    if(!a_pkey || !ecdsa_params_init(&l_p, ((ecdsa_public_key_t *)a_pkey)->kind))
+//        return 0;
 // func work
-    return sizeof(uint64_t) + sizeof(uint32_t) + l_p.CRYPTO_PUBLICKEYBYTES;
+    return sizeof(uint64_t) + sizeof(uint32_t);
 }
 #endif

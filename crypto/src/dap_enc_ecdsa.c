@@ -1,11 +1,11 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <string.h>
-
 #include "dap_enc_ecdsa.h"
-#include "ecdsa_params.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
+#include <secp256k1.h>
+
 
 #define LOG_TAG "dap_enc_sig_ecdsa"
 
@@ -14,14 +14,14 @@
 static enum DAP_ECDSA_SIGN_SECURITY _ecdsa_type = ECDSA_MIN_SIZE; // by default
 
 
-void dap_enc_sig_ecdsa_set_type(enum DAP_ECDSA_SIGN_SECURITY type)
-{
-    _ecdsa_type = type;
-}
+//void dap_enc_sig_ecdsa_set_type(enum DAP_ECDSA_SIGN_SECURITY type)
+//{
+//    _ecdsa_type = type;
+//}
 
 void dap_enc_sig_ecdsa_key_new(dap_enc_key_t *a_key) {
 
-    a_key->type = DAP_ENC_KEY_TYPE_ECDSA;
+    a_key->type = DAP_ENC_KEY_TYPE_SIG_ECDSA;
     a_key->enc = NULL;
     a_key->sign_get = dap_enc_sig_ecdsa_get_sign;
     a_key->sign_verify = dap_enc_sig_ecdsa_verify_sign;
@@ -35,11 +35,12 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, const void *kex_buf
     (void) kex_buf;
     (void) kex_size;
     (void) key_size;
+    unsigned char randomize[32];
 
     int retcode;
 
-    /*not sure we need this for ECDSA
-    /*dap_enc_sig_ecdsa_set_type(ECDSA_MAX_SPEED);*/
+    //not sure we need this for ECDSA
+    //dap_enc_sig_ecdsa_set_type(ECDSA_MAX_SPEED)
 
     //int32_t type = 2;
     key->priv_key_data_size = 32;
@@ -47,16 +48,18 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, const void *kex_buf
     key->priv_key_data = malloc(key->priv_key_data_size);
     key->pub_key_data = malloc(key->pub_key_data_size);
 
-    secp256k1_context* ctx=sec256k1_context_create_(SECP256K1_CONTEXT_NONE);
-    if (!fill_random(randomize, sizeof(randomize))) {
+
+    ecdsa_context_t* ctx=secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+
+    if (!randombytes(randomize, sizeof(randomize))) {
         printf("Failed to generate randomness\n");
-        return 1;
+        return;
     }
 
     retcode = secp256k1_context_randomize(ctx, randomize);
     assert(retcode);
 
-    retcode = secp256k1_ec_pubkey_create(ctx, &pubkey, seckey);
+    retcode = secp256k1_ec_pubkey_create(ctx,(ecdsa_public_key_t*)key->pub_key_data,(const unsigned char*) key->priv_key_data);
     assert(retcode);
 
     if(retcode) {
@@ -91,4 +94,235 @@ void dap_enc_sig_ecdsa_key_delete(dap_enc_key_t *a_key)
 
     a_key->pub_key_data = NULL;
     a_key->priv_key_data = NULL;
+}
+
+
+
+/* Serialize a signature */
+uint8_t *dap_enc_sig_ecdsa_write_signature(const void *a_sign, size_t *a_buflen_out)
+{
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
+    dap_return_val_if_pass(!a_sign, NULL);
+    ecdsa_signature_t *l_sign = (ecdsa_signature_t *)a_sign;
+// func work
+    uint64_t l_buflen = dap_enc_sig_ecdsa_ser_sig_size(l_sign);
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 4,
+        &l_buflen, (uint64_t)sizeof(uint64_t),
+        //&l_sign->kind, (uint64_t)sizeof(uint32_t),
+        //&l_sign->sig_len, (uint64_t)sizeof(uint64_t),
+        l_sign->data, DAP_ENC_ECDSA_SKEY_LEN
+    );
+// out work
+    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
+    return l_buf;
+}
+
+
+/* Deserialize a signature */
+void *dap_enc_sig_ecdsa_read_signature(const uint8_t *a_buf, size_t a_buflen)
+{
+    if (!a_buf){
+        log_it(L_ERROR,"::read_signature() NULL buffer on input");
+        return NULL;
+    }
+    if(a_buflen < sizeof(uint64_t) * 2 + sizeof(uint32_t)){
+        log_it(L_ERROR,"::read_signature() Buflen %zd is smaller than first three fields(%zd)", a_buflen,
+               sizeof(uint64_t) * 2 + sizeof(uint32_t));
+        return NULL;
+    }
+
+    uint64_t l_buflen;
+    memcpy(&l_buflen, a_buf, sizeof(uint64_t));
+    uint64_t l_shift_mem = sizeof(uint64_t);
+    if (l_buflen != a_buflen) {
+        if (l_buflen << 32 >> 32 != a_buflen) {
+            log_it(L_ERROR,"::read_public_key() Buflen field inside buffer is %"DAP_UINT64_FORMAT_U" when expected to be %"DAP_UINT64_FORMAT_U,
+                   l_buflen, (uint64_t)a_buflen);
+            return NULL;
+        }
+        l_shift_mem = sizeof(uint32_t);
+    }
+   /* uint32_t kind;
+    memcpy(&kind, a_buf + l_shift_mem, sizeof(uint32_t));
+    l_shift_mem += sizeof(uint32_t);
+    dilithium_param_t p;
+    if(!dilithium_params_init(&p, kind))
+        return NULL ;*/
+
+    ecdsa_signature_t* l_sign = DAP_NEW_Z(ecdsa_signature_t);
+    if (!l_sign) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    }
+   /* l_sign->kind = kind;*/
+    memcpy(&l_sign->data, a_buf + l_shift_mem, sizeof(uint64_t));
+    l_shift_mem += sizeof(uint64_t);
+
+   // if( l_sign->sig_len> (UINT64_MAX - l_shift_mem ) ){
+   //         log_it(L_ERROR,"::read_signature() Buflen inside signature %"DAP_UINT64_FORMAT_U" is too big ", l_sign->sig_len);
+   //         DAP_DELETE(l_sign);
+   //         return NULL;
+   // }
+
+//    if( (uint64_t) a_buflen < (l_shift_mem + l_sign->sig_len) ){
+//        log_it(L_ERROR,"::read_signature() Buflen %zd is smaller than all fields together(%"DAP_UINT64_FORMAT_U")", a_buflen,
+//               l_shift_mem + l_sign->sig_len  );
+//        DAP_DELETE(l_sign);
+//        return NULL;
+//    }
+
+    l_sign->data = DAP_NEW_SIZE(uint8_t, ECDSA_SIG_SIZE);
+    if (!l_sign->data){
+        log_it(L_ERROR,"::read_signature() Can't allocate sig_data %"DAP_UINT64_FORMAT_U" size", l_sign->sig_len);
+        DAP_DELETE(l_sign);
+        return NULL;
+    }
+    memcpy(l_sign->data, a_buf + l_shift_mem, ECDSA_SIG_SIZE);
+    return l_sign;
+}
+
+
+
+/* Serialize a private key. */
+uint8_t *dap_enc_sig_ecdsa_write_private_key(const void *a_private_key, size_t *a_buflen_out)
+{
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
+    ecdsa_private_key_t *l_private_key = (ecdsa_private_key_t *)a_private_key;
+   
+   /*
+    dilithium_param_t p;
+    dap_return_val_if_pass(!l_private_key || !dilithium_params_init(&p, l_private_key->kind), NULL);
+    */
+
+    
+    // func work
+    uint64_t l_buflen = dap_enc_sig_dilithium_ser_private_key_size(a_private_key);
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
+                        &l_buflen, (uint64_t)sizeof(uint64_t),
+                       /* &l_private_key->kind, (uint64_t)sizeof(uint32_t),*/
+                        l_private_key->data, (uint64_t)p.CRYPTO_SECRETKEYBYTES);
+// out work
+    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
+    return l_buf;
+}
+
+
+/* Serialize a public key. */
+uint8_t *dap_enc_sig_dilithium_write_public_key(const void *a_public_key, size_t *a_buflen_out)
+{
+// in work
+    a_buflen_out ? *a_buflen_out = 0 : 0;
+    ecdsa_public_key_t *l_public_key = (ecdsa_public_key_t *)a_public_key;
+   /* dilithium_param_t p;*/
+    dap_return_val_if_pass(!l_public_key/* || !dilithium_params_init(&p, l_public_key->kind)*/, NULL);
+// func work
+    uint64_t l_buflen = dap_enc_sig_ecdsa_ser_public_key_size(a_public_key);
+    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
+                        &l_buflen, (uint64_t)sizeof(uint64_t),
+                      /*  &l_public_key->kind, (uint64_t)sizeof(uint32_t),*/
+                        l_public_key->data, (uint64_t)p.CRYPTO_PUBLICKEYBYTES);
+    
+// out work
+    (a_buflen_out  && l_buf) ? *a_buflen_out = l_buflen : 0;
+    return l_buf;
+}
+
+
+/* Deserialize a private key. */
+void *dap_enc_sig_ecdsa_read_private_key(const uint8_t *a_buf, size_t a_buflen)
+{
+    dap_return_val_if_pass(!a_buf, NULL);
+
+    if(a_buflen < (sizeof(uint64_t) + sizeof(uint32_t))){
+        log_it(L_ERROR,"::read_private_key() Buflen %zd is smaller than first two fields(%zd)", a_buflen,sizeof(uint64_t)/* + sizeof(dilithium_kind_t)*/  );
+        return NULL;
+    }
+
+   /* dilithium_kind_t kind;*/
+    uint64_t l_buflen = 0;
+    memcpy(&l_buflen, a_buf, sizeof(uint64_t));
+    if(l_buflen != (uint64_t) a_buflen)
+        return NULL;
+   /* memcpy(&kind, a_buf + sizeof(uint64_t), sizeof(uint32_t));
+    dilithium_param_t p;
+    if(!dilithium_params_init(&p, kind))
+        return NULL;*/
+
+    if(a_buflen < (sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_SECRETKEYBYTES ) ){
+        log_it(L_ERROR,"::read_private_key() Buflen %zd is smaller than all fields together(%zd)", a_buflen,
+               sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_SECRETKEYBYTES  );
+        return NULL;
+    }
+
+    dilithium_private_key_t* l_private_key = DAP_NEW(dilithium_private_key_t);
+    if (!l_private_key) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    }
+ /*   l_private_key->kind = kind;*/
+
+    l_private_key->data = DAP_NEW_SIZE(uint8_t, p.CRYPTO_SECRETKEYBYTES);
+    memcpy(l_private_key->data, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.CRYPTO_SECRETKEYBYTES);
+    return l_private_key;
+}
+
+
+
+
+/* Deserialize a public key. */
+void *dap_enc_sig_ecdsa_read_public_key(const uint8_t *a_buf, size_t a_buflen)
+{
+    if (!a_buf){
+        log_it(L_ERROR,"::read_public_key() NULL buffer on input");
+        return NULL;
+    }
+    if( a_buflen < (sizeof(uint64_t) + sizeof(uint32_t))){
+        log_it(L_ERROR,"::read_public_key() Buflen %zd is smaller than first two fields(%zd)", a_buflen,sizeof(uint64_t) + sizeof(uint32_t)  );
+        return NULL;
+    }
+
+    uint32_t kind = 0;
+    uint64_t l_buflen = 0;
+    memcpy(&l_buflen, a_buf, sizeof(uint64_t));
+    if (l_buflen != a_buflen) {
+        if (l_buflen << 32 >> 32 != a_buflen) {
+            log_it(L_ERROR,"::read_public_key() Buflen field inside buffer is %"DAP_UINT64_FORMAT_U" when expected to be %"DAP_UINT64_FORMAT_U,
+                   l_buflen, (uint64_t)a_buflen);
+            return NULL;
+        }else {
+            memcpy(&kind, a_buf + sizeof(uint32_t), sizeof(uint32_t));
+        }
+    } else {
+        memcpy(&kind, a_buf + sizeof(uint64_t), sizeof(uint32_t));
+    }
+    /*dilithium_param_t p;
+    if(!dilithium_params_init(&p, kind)){
+        log_it(L_ERROR,"::read_public_key() Can't find params for signature kind %d", kind);
+        return NULL;
+    }*/
+
+    if(a_buflen < (sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_PUBLICKEYBYTES ) ){
+        log_it(L_ERROR,"::read_public_key() Buflen %zd is smaller than all fields together(%zd)", a_buflen,
+               sizeof(uint64_t) + sizeof(uint32_t) + p.CRYPTO_PUBLICKEYBYTES  );
+        return NULL;
+    }
+
+    ecdsa_public_key_t* l_public_key = DAP_NEW_Z(ecdsa_public_key_t);
+    if (!l_public_key){
+        log_it(L_CRITICAL,"::read_public_key() Can't allocate memory for public key");
+        return NULL;
+    }
+    l_public_key->kind = kind;
+
+    l_public_key->data = DAP_NEW_Z_SIZE(byte_t, p.CRYPTO_PUBLICKEYBYTES);
+    if (!l_public_key->data){
+        log_it(L_CRITICAL,"::read_public_key() Can't allocate memory for public key's data");
+        DAP_DELETE(l_public_key);
+        return NULL;
+    }
+
+    memcpy(l_public_key->data, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.CRYPTO_PUBLICKEYBYTES);
+    return l_public_key;
 }
