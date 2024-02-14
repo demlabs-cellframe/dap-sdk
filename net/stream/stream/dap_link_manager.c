@@ -396,6 +396,32 @@ void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_c
     // pthread_rwlock_unlock(&it->members_lock);
 }
 
+dap_link_t *dap_link_manager_link_create_or_update(
+    dap_link_t *a_link, dap_stream_node_addr_t *a_node_addr, 
+    struct in_addr *a_addr_v4, struct in6_addr *a_addr_v6, uint16_t a_port)
+{
+// sanity check
+    dap_return_val_if_pass(((!a_addr_v4 || !a_addr_v4->s_addr) && !a_addr_v6) || !a_port || !a_node_addr || !a_node_addr->uint64, a_link);
+// func work
+    dap_link_t *l_ret = NULL;
+    // erase old link or create new
+    if (a_link) {
+        l_ret = a_link;
+        memset(l_ret->host_addr_str, 0, sizeof(l_ret->host_addr_str));
+    } else {   
+        DAP_NEW_Z_RET(l_ret, dap_link_t, a_link);
+    }
+    // fill addr
+    if(a_addr_v4 && a_addr_v4->s_addr){
+        inet_ntop(AF_INET, a_addr_v4, l_ret->host_addr_str, INET_ADDRSTRLEN);
+    } else {
+        inet_ntop(AF_INET6, a_addr_v6, l_ret->host_addr_str, INET6_ADDRSTRLEN);
+    }
+    l_ret->host_port = a_port;
+    l_ret->node_addr.uint64 = a_node_addr->uint64;
+    return l_ret;
+}
+
 int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link)
 {
 // sanity check
