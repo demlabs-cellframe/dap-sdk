@@ -86,7 +86,7 @@ static void s_request_error(int a_error_code, void *a_obj);
 static void s_stream_es_callback_connected(dap_events_socket_t * a_es);
 static void s_stream_es_callback_delete(dap_events_socket_t * a_es, void *a_arg);
 static void s_stream_es_callback_read(dap_events_socket_t * a_es, void *a_arg);
-static void s_stream_es_callback_write(dap_events_socket_t * a_es, void *a_arg);
+static bool s_stream_es_callback_write(dap_events_socket_t * a_es, void *a_arg);
 static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error);
 
 // Timer callbacks
@@ -1250,7 +1250,7 @@ static void s_stream_es_callback_read(dap_events_socket_t * a_es, void * arg)
  * @param a_es
  * @param arg
  */
-static void s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ARG void *a_arg)
+static bool s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ARG void *a_arg)
 {
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
@@ -1261,21 +1261,23 @@ static void s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ARG vo
         if (a_es->callbacks.error_callback)
             a_es->callbacks.error_callback(a_es, ETIMEDOUT);
         dap_events_socket_remove_and_delete_unsafe(a_es, true);
-        return;
+        return false;
     }
+    bool l_ret = false;
     if (l_client_pvt->stage_status == STAGE_STATUS_ERROR || !l_client_pvt->stream)
-        return;
+        return false;
     switch (l_client_pvt->stage) {
         case STAGE_STREAM_STREAMING: {
             //  log_it(DEBUG,"Process channels data output (%u channels)",STREAM(sh)->channel_count);
             for (size_t i = 0; i < l_client_pvt->stream->channel_count; i++) {
                 dap_stream_ch_t *ch = l_client_pvt->stream->channel[i];
                 if (ch->ready_to_write && ch->proc->packet_out_callback)
-                    ch->proc->packet_out_callback(ch, NULL);
+                    l_ret = ch->proc->packet_out_callback(ch, NULL);
             }
         } break;
         default: {}
     }
+    return l_ret;
 }
 
 /**

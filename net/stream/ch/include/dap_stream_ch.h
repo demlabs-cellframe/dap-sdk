@@ -33,7 +33,9 @@ typedef struct dap_stream_worker dap_stream_worker_t;
 typedef struct dap_stream_ch_proc dap_stream_ch_proc_t;
 typedef struct dap_events_socket dap_events_socket_t;
 
-typedef void (* dap_stream_ch_callback_t)(dap_stream_ch_t *, void *);
+typedef void (*dap_stream_ch_callback_t)(dap_stream_ch_t *, void *);
+typedef bool (*dap_stream_ch_write_callback_t)(dap_stream_ch_t *a_ch, void *a_arg);
+typedef void (*dap_stream_ch_notify_callback_t)(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size, void *a_arg);
 
 typedef uint64_t dap_stream_ch_uuid_t;
 typedef struct dap_stream_ch{

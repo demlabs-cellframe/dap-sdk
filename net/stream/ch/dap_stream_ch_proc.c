@@ -67,9 +67,11 @@ void stream_ch_proc_deinit()
  * @param packet_in_callback
  * @param packet_out_callback
  */
-void dap_stream_ch_proc_add(uint8_t id,dap_stream_ch_callback_t new_callback,dap_stream_ch_callback_t delete_callback,
-                          dap_stream_ch_callback_t packet_in_callback,
-                          dap_stream_ch_callback_t packet_out_callback)
+void dap_stream_ch_proc_add(uint8_t id,
+                            dap_stream_ch_callback_t new_callback,
+                            dap_stream_ch_callback_t delete_callback,
+                            dap_stream_ch_callback_t packet_in_callback,
+                            dap_stream_ch_write_callback_t packet_out_callback)
 {
     *(s_proc + id) = (stream_ch_proc_t) {
             .id = id,

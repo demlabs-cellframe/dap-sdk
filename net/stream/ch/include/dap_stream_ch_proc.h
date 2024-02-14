@@ -33,7 +33,7 @@ typedef struct dap_stream_ch_proc{
     dap_stream_ch_callback_t delete_callback;
 
     dap_stream_ch_callback_t packet_in_callback;
-    dap_stream_ch_callback_t packet_out_callback;
+    dap_stream_ch_write_callback_t packet_out_callback;
     void * internal;
 } stream_ch_proc_t;
 
@@ -41,10 +41,11 @@ int stream_ch_proc_init();
 void stream_ch_proc_deinit();
 
 void dap_stream_ch_proc_add(uint8_t id,
-                          dap_stream_ch_callback_t new_callback, dap_stream_ch_callback_t delete_callback,
-                          dap_stream_ch_callback_t packet_in_callback,
-                          dap_stream_ch_callback_t packet_out_callback
-                          );
-stream_ch_proc_t* dap_stream_ch_proc_find(uint8_t id);
+                            dap_stream_ch_callback_t new_callback,
+                            dap_stream_ch_callback_t delete_callback,
+                            dap_stream_ch_callback_t packet_in_callback,
+                            dap_stream_ch_write_callback_t packet_out_callback
+                            );
+stream_ch_proc_t *dap_stream_ch_proc_find(uint8_t id);
 
 #endif
