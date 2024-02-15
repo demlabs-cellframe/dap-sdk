@@ -300,8 +300,9 @@ static void s_es_cb_timer_delete(dap_events_socket_t *a_es, UNUSED_ARG void *a_a
     if(!l_timer_fd)
         return;
     DeleteTimerQueueTimer(hTimerQueue, l_timer_fd->th, NULL);
-#endif
 }
+#endif
+
 
 /**
  * @brief s_timerfd_reset_worker_callback
