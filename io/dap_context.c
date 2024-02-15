@@ -82,7 +82,6 @@
 #include "dap_uuid.h"
 #include "dap_context.h"
 #include "dap_list.h"
-#include "dap_worker.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
 #include "dap_worker.h"
@@ -1645,7 +1644,7 @@ lb_exit:
         // TODO: should we remove the es from old context or just duplicate it?...
         log_it(L_WARNING, "Context switch detected on es %p : %zu", a_es, a_es->socket);
     a_es->context = a_context;
-    if (a_es->socket && a_es->socket != INVALID_SOCKET) {
+    //if (a_es->socket && a_es->socket != INVALID_SOCKET) {
         // Add in context HT
         dap_events_socket_t *l_es_sought = NULL;
         unsigned l_hash_val; HASH_VALUE(&a_es->uuid, sizeof(a_es->uuid), l_hash_val);
@@ -1654,7 +1653,7 @@ lb_exit:
             HASH_ADD_BYHASHVALUE(hh, a_context->esockets, uuid, sizeof(a_es->uuid), l_hash_val, a_es);
             ++a_context->event_sockets_count;
         }
-    }
+    //}
     return 0;
 }
 
