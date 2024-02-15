@@ -1915,7 +1915,7 @@ bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj)
 
     if (!ret) {
         char l_ts[128] = { '\0' };
-        dap_gbd_time_to_str_rfc822(l_ts, sizeof(l_ts), a_obj->timestamp);
+        dap_nanotime_to_str_rfc822(l_ts, sizeof(l_ts), a_obj->timestamp);
         log_it(L_MSG, "[!] Corrupted object %s (len %zu) : %s (len %zu), ts %s",
                a_obj->group, dap_strlen(a_obj->group), a_obj->key, dap_strlen(a_obj->key), l_ts);
     }
