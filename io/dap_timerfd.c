@@ -88,10 +88,11 @@ void __stdcall TimerRoutine(void* arg, BOOLEAN flag) {
      * TODO: The timer should be created with WT_EXECUTEINIOTHREAD flag directly on worker thread
      */
     dap_timerfd_t *l_timerfd = (dap_timerfd_t*)arg;
-    dap_events_socket_t *l_es = l_timerfd->events_socket;
-    if (!PostQueuedCompletionStatus(l_es->context->iocp, 0, l_es->uuid, NULL)) {
+    dap_events_socket_t *l_es = dap_context_find(l_timerfd->worker->context, l_timerfd->esocket_uuid);
+    if (!l_es)
+        log_it(L_ERROR, "Timer fired on already removed es uuid %zu", l_timerfd->esocket_uuid);
+    else if (!PostQueuedCompletionStatus(l_es->context->iocp, 0, l_es->uuid, NULL))
         log_it(L_ERROR, "Sending completion message failed, errno %lu", GetLastError());
-    }
 }
 #endif
 

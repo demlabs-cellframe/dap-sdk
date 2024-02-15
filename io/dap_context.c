@@ -1536,8 +1536,8 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
         l_errno = GetLastError();
         l_is_error = true;
     } else {
-        log_it(L_INFO, "Socket %p of type %s added to context #%d IOCP",
-                        a_es, dap_events_socket_get_type_str(a_es), a_context->id);
+        debug_if(g_debug_reactor, L_DEBUG, "Socket %p of type %s added to context #%d IOCP", 
+                 a_es, dap_events_socket_get_type_str(a_es), a_context->id);
     }
 #elif defined DAP_EVENTS_CAPS_EPOLL
     // Init events for EPOLL
@@ -1644,6 +1644,7 @@ lb_exit:
         // TODO: should we remove the es from old context or just duplicate it?...
         log_it(L_WARNING, "Context switch detected on es %p : %zu", a_es, a_es->socket);
     a_es->context = a_context;
+    a_es->worker = DAP_WORKER(a_context);
     //if (a_es->socket && a_es->socket != INVALID_SOCKET) {
         // Add in context HT
         dap_events_socket_t *l_es_sought = NULL;
