@@ -291,12 +291,14 @@ static inline void s_report_error_and_restart( dap_events_socket_t *a_esocket, d
 {
     a_esocket->buf_in_size = 0;
     a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
-
-    dap_events_socket_set_readable_unsafe( a_http_client->esocket, false );
-    dap_events_socket_set_writable_unsafe( a_http_client->esocket, true );
-
     a_http_client->reply_status_code = error_code;
     strcpy( a_http_client->reply_reason_phrase, "Error" );
+#ifdef DAP_EVENTS_CAPS_IOCP
+    a_esocket->flags &= ~DAP_SOCK_READY_TO_READ;
+#else
+    dap_events_socket_set_readable_unsafe( a_http_client->esocket, false );
+#endif
+    dap_events_socket_set_writable_unsafe( a_http_client->esocket, true );
 }
 
 /**

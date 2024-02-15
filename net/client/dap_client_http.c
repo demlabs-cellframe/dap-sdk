@@ -210,7 +210,14 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     if ((l_client_http->request && l_client_http->request_size))
         snprintf(l_get_str, sizeof(l_get_str), "?%s", l_client_http->request) ;
     }
-
+#ifdef DAP_EVENTS_CAPS_IOCP
+    a_esocket->no_close = true;
+    dap_events_socket_write_f_unsafe(a_esocket, "%s /%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n" "%s",
+                                     l_client_http->method, l_client_http->path, l_get_str,
+                                     l_client_http->uplink_addr, l_request_headers,
+                                     l_client_http->request && l_client_http->request_size
+                                     ? (char*)l_client_http->request : "");
+#else
     // send header
     ssize_t l_wrote = dap_events_socket_write_f_unsafe(a_esocket,
                                                     "%s /%s%s HTTP/1.1\r\n"
@@ -223,6 +230,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     // send data for POST request
     if (l_client_http->request && l_client_http->request_size)
         dap_events_socket_write_unsafe( a_esocket, l_client_http->request, l_client_http->request_size);
+#endif
 }
 
 /**
@@ -599,7 +607,6 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->es = l_ev_socket;
     l_client_http->error_callback = a_error_callback;
     l_client_http->response_callback = a_response_callback;
-    //l_client_http_internal->socket = l_socket;
     l_client_http->callbacks_arg = a_callbacks_arg;
     l_client_http->method = dap_strdup(a_method);
     l_client_http->path = dap_strdup(a_path);
@@ -621,7 +628,7 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->request_custom_headers = dap_strdup(a_custom_headers);
 
     l_client_http->response_size_max = DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX;
-    l_client_http->response = (uint8_t*) DAP_NEW_Z_SIZE(uint8_t, DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX);
+    l_client_http->response = DAP_NEW_Z_SIZE(uint8_t, DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX);
     if (!l_client_http->response) {
         log_it(L_CRITICAL, "Memory allocation error");
         DAP_DEL_Z(l_client_http->request);
@@ -631,9 +638,11 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->worker = a_worker;
     l_client_http->is_over_ssl = a_over_ssl;
 
-
-    // get struct in_addr from ip_str
-    inet_pton(AF_INET, a_uplink_addr, &(l_ev_socket->remote_addr.sin_addr));
+    l_ev_socket->remote_addr = (struct sockaddr_in) {
+            .sin_family = AF_INET,
+            .sin_port = htons(a_uplink_port)
+    };
+    inet_pton(AF_INET, a_uplink_addr, &l_ev_socket->remote_addr.sin_addr);
     //Resolve addr if
     if(!l_ev_socket->remote_addr.sin_addr.s_addr) {
         if(dap_net_resolve_host(a_uplink_addr, AF_INET, (struct sockaddr*) &l_ev_socket->remote_addr.sin_addr) < 0) {
@@ -649,11 +658,8 @@ dap_client_http_t * dap_client_http_request_custom (
     }
     strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET_ADDRSTRLEN);
     // connect
-    l_ev_socket->remote_addr.sin_family = AF_INET;
-    l_ev_socket->remote_addr.sin_port = htons(a_uplink_port);
     l_ev_socket->flags |= DAP_SOCK_CONNECTING;
     l_ev_socket->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
-    l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
     if (a_over_ssl) {
 #ifndef DAP_NET_CLIENT_NO_SSL
         l_ev_socket->callbacks.connected_callback = s_http_ssl_connected;
@@ -661,6 +667,24 @@ dap_client_http_t * dap_client_http_request_custom (
         log_it(L_ERROR,"We have no SSL implementation but trying to create SSL connection!");
 #endif
     }
+#ifdef DAP_EVENTS_CAPS_IOCP
+    log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
+    l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
+    dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
+
+    dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
+    *l_ev_uuid_ptr = l_ev_socket->uuid;
+    l_ev_socket->flags &= ~DAP_SOCK_READY_TO_READ;
+    dap_events_socket_set_writable_mt(l_client_http->worker, *l_ev_uuid_ptr, true);
+    l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, s_timer_timeout_check, l_ev_uuid_ptr);
+    if (!l_client_http->timer) {
+        log_it(L_ERROR,"Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
+               l_client_http->worker->id, *l_ev_uuid_ptr);
+        DAP_DEL_Z(l_ev_uuid_ptr);
+    }
+    return l_client_http;
+#else
+    l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
     int l_err = connect(l_socket, (struct sockaddr *) &l_ev_socket->remote_addr, sizeof(struct sockaddr_in));
     if (l_err == 0){
         log_it(L_DEBUG, "Connected momentaly with %s:%u!", a_uplink_addr, a_uplink_port);
@@ -735,6 +759,7 @@ dap_client_http_t * dap_client_http_request_custom (
 
         return NULL;
     }
+#endif
 #endif
     return NULL;
 }
