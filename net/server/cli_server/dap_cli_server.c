@@ -381,7 +381,6 @@ int dap_cli_server_init(bool a_debug_more,const char * a_socket_path_or_address,
    pthread_t threadId;
 #endif
 
-    struct sockaddr_in server_addr;
     SOCKET sockfd = -1;
 
     // create thread for waiting of clients
@@ -401,7 +400,7 @@ int dap_cli_server_init(bool a_debug_more,const char * a_socket_path_or_address,
         }
         log_it( L_INFO, "Console interace on path %s (%04o) ", l_listen_unix_socket_path, l_listen_unix_socket_permissions );
 
-      #ifndef _WIN32
+      #ifndef DAP_OS_WINDOWS
 
         if ( server_sockfd >= 0 ) {
             dap_cli_server_deinit();
@@ -456,13 +455,15 @@ int dap_cli_server_init(bool a_debug_more,const char * a_socket_path_or_address,
 
         log_it( L_INFO, "Console interace on addr %s port %u ", l_listen_addr_str, l_listen_port );
 
-        server_addr.sin_family = AF_INET;
-#ifdef _WIN32
+        struct sockaddr_in server_addr = (struct sockaddr_in) {
+            .sin_family = AF_INET,
+            .sin_port   = htons((uint16_t)l_listen_port)
+        };
+#ifdef DAP_OS_WINDOWS
+
         server_addr.sin_addr = (struct in_addr){{ .S_addr = htonl(INADDR_LOOPBACK) }};
-        server_addr.sin_port = htons( (uint16_t)l_listen_port );;
 #else
         inet_pton( AF_INET, l_listen_addr_str, &server_addr.sin_addr );
-        server_addr.sin_port = htons( (uint16_t)l_listen_port );
 #endif
         // create socket
         if ( (sockfd = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET ) {

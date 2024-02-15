@@ -306,7 +306,9 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         *(dap_stream_ch_pkt_hdr_t*)l_buf = l_hdr;
         memcpy(l_buf + sizeof(dap_stream_ch_pkt_hdr_t), a_data, a_data_size);
         l_ret = dap_stream_pkt_write_unsafe(a_ch->stream, STREAM_PKT_TYPE_DATA_PACKET, l_buf, l_data_size);
+#ifndef DAP_EVENTS_CAPS_IOCP
         dap_stream_ch_set_ready_to_write_unsafe(a_ch, true);
+#endif
     } else if (l_data_size > l_max_fragm_size) {
         /* The first fragment (has no memory shift) is the channel header
          The rest fragments just concatenate as-is */
@@ -323,7 +325,9 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
                    l_fragment_size);
             l_ret += dap_stream_pkt_write_unsafe(a_ch->stream, STREAM_PKT_TYPE_FRAGMENT_PACKET, l_fragment,
                                                   l_fragment_size + sizeof(dap_stream_fragment_pkt_t));
+#ifndef DAP_EVENTS_CAPS_IOCP
             dap_stream_ch_set_ready_to_write_unsafe(a_ch, true);
+#endif
         }
     } else {
         a_ch->stat.bytes_write = 0;

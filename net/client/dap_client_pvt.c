@@ -509,11 +509,14 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_stream_socket, &l_s_callbacks);
                     a_client_pvt->stream_es = l_es;
                     l_es->flags |= DAP_SOCK_CONNECTING ; // To catch non-blocking error when connecting we should up WRITE flag
+                #ifndef DAP_EVENTS_CAPS_IOCP
                     l_es->flags |= DAP_SOCK_READY_TO_WRITE;
+                #endif
                     l_es->_inheritor = a_client_pvt->client;
-                    memset(&l_es->remote_addr, 0, sizeof(l_es->remote_addr));
-                    l_es->remote_addr.sin_family = AF_INET;
-                    l_es->remote_addr.sin_port = htons(a_client_pvt->client->uplink_port);
+                    a_client_pvt->stream_es->remote_addr = (struct sockaddr_in) {
+                            .sin_family = AF_INET,
+                            .sin_port   = htons(a_client_pvt->client->uplink_port)
+                    };
                     l_es->remote_port = a_client_pvt->client->uplink_port;
                     strncpy(l_es->remote_addr_str, a_client_pvt->client->uplink_addr, INET_ADDRSTRLEN);
                     if(inet_pton(AF_INET, a_client_pvt->client->uplink_addr, &(l_es->remote_addr.sin_addr)) < 0) {
@@ -534,6 +537,26 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->stream->stream_worker = a_client_pvt->stream_worker;
 
                     // connect
+                #ifdef DAP_EVENTS_CAPS_IOCP
+                    log_it(L_DEBUG, "Stream connecting to remote %s:%u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                    dap_worker_add_events_socket(l_worker, a_client_pvt->stream_es);
+                    dap_events_socket_uuid_t *l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
+                    *l_stream_es_uuid_ptr = a_client_pvt->stream_es->uuid;
+                    a_client_pvt->stream_es->flags &= ~DAP_SOCK_READY_TO_READ;
+                    dap_events_socket_set_writable_mt(l_worker, *l_stream_es_uuid_ptr, true);
+                    if (!dap_timerfd_start_on_worker(a_client_pvt->worker,
+                                                    (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
+                                                    s_stream_timer_timeout_check, l_stream_es_uuid_ptr)) {
+                        log_it(L_ERROR, "Can't run timer on worker %u for es %p : %"DAP_UINT64_FORMAT_U,
+                                a_client_pvt->worker->id, a_client_pvt->stream_es, *l_stream_es_uuid_ptr);
+                            DAP_DELETE(l_stream_es_uuid_ptr);
+                            a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                            a_client_pvt->last_error = ERROR_STREAM_ABORTED;
+                            s_stage_status_after(a_client_pvt);
+                            return;
+                    }
+                #else
+
                     int l_err = 0;
                     if((l_err = connect(l_es->socket, (struct sockaddr *) &l_es->remote_addr,
                             sizeof(struct sockaddr_in))) ==0) {
@@ -583,6 +606,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         dap_timerfd_start_on_worker(a_client_pvt->worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
                                                     s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                     }
+                #endif
                     if (a_client_pvt->stage_status == STAGE_STATUS_ERROR)
                         s_stage_status_after(a_client_pvt);
                 } break;

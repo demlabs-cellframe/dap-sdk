@@ -904,7 +904,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         s_check_session(l_session_id, a_stream->esocket);
     } break;
     case STREAM_PKT_TYPE_KEEPALIVE: {
-        //log_it(L_DEBUG, "Keep alive check recieved");
+        debug_if(s_debug, L_DEBUG, "Keep alive check recieved");
         dap_stream_pkt_hdr_t l_ret_pkt = {
             .type = STREAM_PKT_TYPE_ALIVE
         };
@@ -917,7 +917,7 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
     } break;
     case STREAM_PKT_TYPE_ALIVE:
         a_stream->is_active = false; // To prevent keep-alive concurrency
-        //log_it(L_DEBUG, "Keep alive response recieved");
+        debug_if(s_debug, L_DEBUG, "Keep alive response recieved");
         break;
     default:
         log_it(L_WARNING, "Unknown header type");

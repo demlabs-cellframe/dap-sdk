@@ -74,12 +74,17 @@
 
 #define LOG_TAG "dap_server"
 
-static dap_events_socket_t * s_es_server_create(int a_sock,
-                                             dap_events_socket_callbacks_t * a_callbacks, dap_server_t * a_server);
-static int s_server_run(dap_server_t * a_server);
-static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr);
-static void s_es_server_error(dap_events_socket_t *a_es, int a_arg);
-static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg);
+static void s_es_server_new     (dap_events_socket_t *a_es, void *a_arg);
+static int s_server_run         (dap_server_t * a_server);
+static void s_es_server_accept  (dap_events_socket_t *a_es_listener, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr);
+static void s_es_server_error   (dap_events_socket_t *a_es, int a_arg);
+
+#ifdef DAP_EVENTS_CAPS_IOCP
+static void s_es_server_new_ex      (dap_events_socket_t *a_es, void *a_arg);
+static void s_es_server_accept_ex   (dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr* a_remote_addr);
+LPFN_ACCEPTEX               pfn_AcceptEx                = NULL;
+LPFN_GETACCEPTEXSOCKADDRS   pfn_GetAcceptExSockaddrs    = NULL;
+#endif
 
 static dap_server_t* s_default_server = NULL;
 
@@ -89,8 +94,37 @@ static dap_server_t* s_default_server = NULL;
  */
 int dap_server_init()
 {
-    log_it(L_NOTICE,"Server module init");
-    return 0;
+        int l_ret = 0;
+#ifdef DAP_EVENTS_CAPS_IOCP
+    SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);
+    DWORD l_bytes = 0;
+    static GUID l_guid_AcceptEx             = WSAID_ACCEPTEX,
+                l_guid_GetAcceptExSockaddrs = WSAID_GETACCEPTEXSOCKADDRS,
+                l_guid_ConnectEx            = WSAID_CONNECTEX;
+    if (
+            WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                     &l_guid_AcceptEx,  sizeof(l_guid_AcceptEx),
+                     &pfn_AcceptEx,     sizeof(pfn_AcceptEx),
+                     &l_bytes, NULL, NULL) == SOCKET_ERROR
+
+            || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                        &l_guid_GetAcceptExSockaddrs,   sizeof(l_guid_GetAcceptExSockaddrs),
+                        &pfn_GetAcceptExSockaddrs,      sizeof(pfn_GetAcceptExSockaddrs),
+                        &l_bytes, NULL, NULL) == SOCKET_ERROR
+
+            || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                        &l_guid_ConnectEx,  sizeof(l_guid_ConnectEx),
+                        &pfn_ConnectEx,     sizeof(pfn_ConnectEx),
+                        &l_bytes, NULL, NULL) == SOCKET_ERROR
+            )
+    {
+        log_it(L_ERROR, "WSAIoctl() error %d", WSAGetLastError());
+        l_ret = -1;
+    }
+    closesocket(l_socket);
+#endif
+    log_it(L_NOTICE, "Server module init%s", l_ret ? " failed" : "");
+    return l_ret;
 }
 
 /**
@@ -194,11 +228,9 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
         l_es->listener_port = a_port;
     else
         l_es->permission = a_port;
-
     int reuse = 1;
     if (setsockopt(l_socket_listener, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) < 0)
         log_it(L_WARNING, "Can't set up REUSEADDR flag to the socket");
-    reuse = 1;
 #ifdef SO_REUSEPORT
     if (setsockopt(l_socket_listener, SOL_SOCKET, SO_REUSEPORT, (const char*)&reuse, sizeof(reuse)) < 0)
         log_it(L_WARNING, "Can't set up REUSEPORT flag to the socket");
@@ -273,18 +305,19 @@ dap_server_t *dap_server_new(char **a_addrs, uint16_t a_count, dap_server_type_t
 // memory alloc
     dap_server_t *l_server =  NULL;
     DAP_NEW_Z_RET_VAL(l_server, dap_server_t, NULL, NULL);
-// preparing
-    //create callback
-    dap_events_socket_callbacks_t l_callbacks = {0};
-    l_callbacks.new_callback = s_es_server_new;
-    l_callbacks.accept_callback = s_es_server_accept;
-    l_callbacks.error_callback = s_es_server_error;
+    dap_events_socket_callbacks_t l_callbacks = {
+#ifdef DAP_EVENTS_CAPS_IOCP
+        .accept_callback = s_es_server_accept_ex,
+        .new_callback    = s_es_server_new_ex,
+#else
+        .accept_callback = s_es_server_accept,
+        .new_callback    = s_es_server_new,
+#endif
+        .read_callback   = a_callbacks ? a_callbacks->read_callback     : NULL,
+        .write_callback  = a_callbacks ? a_callbacks->write_callback    : NULL,
+        .error_callback  = s_es_server_error
+    };
 
-    if (a_callbacks) {
-        l_callbacks.read_callback = a_callbacks->read_callback;
-        l_callbacks.write_callback = a_callbacks->write_callback;
-        l_callbacks.error_callback = a_callbacks->error_callback;
-    }
     l_server->type = a_type;
     char l_curr_ip[INET6_ADDRSTRLEN] = {0};
 // func work
@@ -376,7 +409,7 @@ static int s_server_run(dap_server_t *a_server)
 
     if (bind(l_es->socket, (struct sockaddr *)l_listener_addr, l_listener_addr_len) < 0) {
 #ifdef DAP_OS_WINDOWS
-        log_it(L_ERROR,"Bind error: %d", WSAGetLastError());
+        log_it(L_ERROR, "Bind error: %d", WSAGetLastError());
         closesocket(l_es->socket);
 #else
         log_it(L_ERROR,"Bind error: %s",strerror(errno));
@@ -386,7 +419,7 @@ static int s_server_run(dap_server_t *a_server)
 #endif
         return -1;
     } else {
-        log_it(L_INFO,"Binded %s:%u", l_es->listener_addr_str, l_es->listener_port);
+        log_it(L_INFO, "Binded %s:%u", l_es->listener_addr_str, l_es->listener_port);
         listen(l_es->socket, SOMAXCONN);
     }
 #ifdef DAP_OS_WINDOWS
@@ -398,42 +431,21 @@ static int s_server_run(dap_server_t *a_server)
     pthread_mutex_init(&a_server->started_mutex,NULL);
     pthread_cond_init(&a_server->started_cond,NULL);
 
-#ifdef DAP_EVENTS_CAPS_EPOLL
-    //for(size_t l_worker_id = 0; l_worker_id < dap_events_thread_get_count() ; l_worker_id++){
-        dap_worker_t *l_w = dap_events_worker_get_auto();//dap_events_worker_get(l_worker_id);
-        assert(l_w);
-        if (l_es) {
-            l_es->type = a_server->type == DAP_SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
-            // Prepare for multi thread listening
-            l_es->ev_base_flags = EPOLLIN;
+#if defined DAP_EVENTS_CAPS_IOCP
+    l_es->op_events[io_op_read] = CreateEvent(0, TRUE, FALSE, NULL);
+#elif defined DAP_EVENTS_CAPS_EPOLL
+    l_es->ev_base_flags = EPOLLIN;
 #ifdef EPOLLEXCLUSIVE
-            // if we have poll exclusive
-            l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
+    l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
 #endif
-            pthread_mutex_lock(&a_server->started_mutex);
-            dap_worker_add_events_socket( l_w, l_es );
-            while (!a_server->started)
-                pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
-            pthread_mutex_unlock(&a_server->started_mutex);
-        } else{
-            log_it(L_WARNING, "Can't wrap event socket for %s:%u server", l_es->listener_addr_str, l_es->listener_port);
-            return -2;
-        }
-    //}
-#else
-    dap_worker_t *l_w = dap_events_worker_get_auto();
-    assert(l_w);
-    if (l_es) {
-        pthread_mutex_lock(&a_server->started_mutex);
-        dap_worker_add_events_socket( l_w, l_es );
-        while (!a_server->started)
-            pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
-        pthread_mutex_unlock(&a_server->started_mutex);
-    } else {
-        log_it(L_WARNING, "Can't wrap event socket server");
-        return -3;
-    }
 #endif
+    l_es->type = a_server->type == DAP_SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
+    l_es->_inheritor = a_server;
+    pthread_mutex_lock(&a_server->started_mutex);
+    dap_worker_add_events_socket_auto(l_es);
+    while (!a_server->started)
+        pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
+    pthread_mutex_unlock(&a_server->started_mutex);
     return 0;
 }
 
@@ -466,6 +478,21 @@ static void s_es_server_error(dap_events_socket_t *a_es, int a_arg)
     log_it(L_WARNING, "Listening socket error: %s, ", l_buf);
 }
 
+#ifdef DAP_EVENTS_CAPS_IOCP
+static void s_es_server_new_ex(dap_events_socket_t *a_es, void *a_arg) {
+    dap_events_socket_set_readable_unsafe(a_es, true);
+    s_es_server_accept_ex(a_es, INVALID_SOCKET, NULL); // Initial AcceptEx
+    s_es_server_new(a_es, a_arg);
+}
+
+static void s_es_server_accept_ex(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr *a_remote_addr) {
+    if (a_remote_socket != INVALID_SOCKET) {
+        s_es_server_accept(a_es, a_remote_socket, a_remote_addr);
+    }
+    // Accept the next connection...
+}
+#endif
+
 /**
  * @brief s_es_server_accept
  * @param a_events
@@ -478,7 +505,9 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     assert(l_server);
 
     dap_events_socket_t * l_es_new = NULL;
-    log_it(L_DEBUG, "[es:%p] Listening socket (binded on %s:%u) got new incoming connection", a_es_listener, a_es_listener->listener_addr_str, a_es_listener->listener_port);
+    log_it(L_DEBUG, "[es:%p] Listening socket %"DAP_FORMAT_SOCKET" binded on %s:%u "
+                    "accepted new connection from remote %"DAP_FORMAT_SOCKET"",
+           a_es_listener, a_es_listener->socket, a_es_listener->listener_addr_str, a_es_listener->listener_port, a_remote_socket);
     if (a_remote_socket < 0) {
 #ifdef DAP_OS_WINDOWS
         log_it(L_ERROR, "Accept error: %d", WSAGetLastError());
@@ -537,6 +566,9 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         debug_if(g_debug_reactor, L_INFO, "Direct addition of esocket %p uuid 0x%"DAP_UINT64_FORMAT_x" to worker %d",
                  l_es_new, l_es_new->uuid, l_worker->id);
     } else {
-        dap_worker_add_events_socket_auto(l_es_new);
+        dap_worker_add_events_socket(l_worker, l_es_new);
+#ifdef DAP_EVENTS_CAPS_IOCP
+        dap_events_socket_set_readable_mt(l_worker, l_es_new->uuid, true);
+#endif
     }
 }
