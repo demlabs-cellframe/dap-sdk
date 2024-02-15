@@ -127,7 +127,7 @@ int dap_proc_thread_callback_add_pri(dap_proc_thread_t *a_thread, dap_proc_queue
     pthread_mutex_lock(&l_thread->queue_lock);
     DL_APPEND(l_thread->queue[a_priority], l_item);
     l_thread->proc_queue_size++;
-    pthread_cond_broadcast(&l_thread->queue_event);
+    pthread_cond_signal(&l_thread->queue_event);
     pthread_mutex_unlock(&l_thread->queue_lock);
     return 0;
 }

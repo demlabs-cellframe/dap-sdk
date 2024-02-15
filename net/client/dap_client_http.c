@@ -596,6 +596,7 @@ dap_client_http_t * dap_client_http_request_custom (
         return NULL;
     }
     l_ev_socket->_inheritor = l_client_http;
+    l_client_http->es = l_ev_socket;
     l_client_http->error_callback = a_error_callback;
     l_client_http->response_callback = a_response_callback;
     //l_client_http_internal->socket = l_socket;
@@ -796,5 +797,6 @@ void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
     if (a_client_http->es) {
         a_client_http->es->callbacks.delete_callback = NULL;
         dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);
-    }
+    } else
+        DAP_DELETE(a_client_http);
 }
