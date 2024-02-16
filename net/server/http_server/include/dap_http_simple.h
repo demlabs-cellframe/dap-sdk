@@ -26,7 +26,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include <stddef.h>
 #include <stdint.h>
 #include "dap_events_socket.h"
-#include "dap_http.h"
+#include "dap_http_server.h"
 #include "dap_uuid.h"
 //#define DAP_HTTP_SIMPLE_REQUEST_MAX 100000
 // number of simultaneous http requests
@@ -73,7 +73,7 @@ typedef struct dap_http_simple {
 
 #define DAP_HTTP_SIMPLE(a) ((dap_http_simple_t*) (a)->_inheritor )
 
-struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_t *sh, const char *url_path, size_t reply_size_max, dap_http_simple_callback_t cb ); // Add simple processor
+struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_server_t *sh, const char *url_path, size_t reply_size_max, dap_http_simple_callback_t cb ); // Add simple processor
 
 int  dap_http_simple_module_init( void );
 void dap_http_simple_module_deinit(void);

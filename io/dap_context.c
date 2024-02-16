@@ -1642,7 +1642,7 @@ lb_exit:
 
     if (a_es->context)
         // TODO: should we remove the es from old context or just duplicate it?...
-        log_it(L_WARNING, "Context switch detected on es %p : %zu", a_es, a_es->socket);
+        log_it(L_WARNING, "Context switch detected on es %p : %" DAP_FORMAT_SOCKET, a_es, a_es->socket);
     a_es->context = a_context;
     a_es->worker = DAP_WORKER(a_context);
     //if (a_es->socket && a_es->socket != INVALID_SOCKET) {

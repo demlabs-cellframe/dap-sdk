@@ -302,7 +302,7 @@ int dap_strncmp(const char *a_str1, const char *a_str2, size_t a_n)
 
 char* dap_strdup(const char *a_str)
 {
-    return DAP_DUP_SIZE(a_str, strlen(a_str) + 1);
+    return a_str ? DAP_DUP_SIZE(a_str, strlen(a_str) + 1) : NULL;
 }
 
 /**
