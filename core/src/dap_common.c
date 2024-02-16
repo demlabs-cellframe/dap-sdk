@@ -22,6 +22,7 @@
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #define _POSIX_THREAD_SAFE_FUNCTIONS
+#include <locale.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_string.h"
@@ -151,7 +152,7 @@ static char s_last_error[LAST_ERROR_MAX]    = {'\0'},
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
 
-#define STR_LOG_BUF_MAX 1000
+#define LOG_FORMAT_LEN 128
 
 static char* s_appname = NULL;
 
@@ -316,7 +317,7 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
             fprintf( stderr, "Can't open log file %s \n", a_log_file_path );
             return -1;   //switch off show log in cosole if file not open
         }
-        setvbuf(s_log_file, NULL, _IOLBF, STR_LOG_BUF_MAX);
+        setvbuf(s_log_file, NULL, _IOLBF, LOG_FORMAT_LEN * 4);
         if (a_log_dirpath != s_log_dir_path)
             dap_stpcpy(s_log_dir_path,  a_log_dirpath);
         if (a_log_file_path != s_log_file_path)
@@ -357,6 +358,21 @@ void dap_common_deinit( ) {
         fclose(s_log_file);
 }
 
+static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
+    va_list va_file;
+    va_copy(va_file, va);
+    vfprintf(stdout, a_fmt, va);
+    fflush(stdout);
+    if (!s_log_file) {
+        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file) {
+            va_end(va_file);
+            return;
+        }
+    }
+    vfprintf(s_log_file, a_fmt + a_off, va_file);
+    va_end(va_file);
+}
+
 /**
  * @brief _log_it
  * @param log_tag
@@ -366,29 +382,20 @@ void dap_common_deinit( ) {
 void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
         return;
-    char log_str[STR_LOG_BUF_MAX] = { '\0' };
-    size_t offset = s_ansi_seq_color_len[a_ll];
-    memcpy(log_str, s_ansi_seq_color[a_ll], s_ansi_seq_color_len[a_ll]);
-    offset += s_update_log_time(log_str + offset);
+    static _Thread_local char s_format[LOG_FORMAT_LEN] = { '\0' };
+    unsigned offset = s_ansi_seq_color_len[a_ll];
+    memcpy(s_format, s_ansi_seq_color[a_ll], offset);
+    offset += s_update_log_time(s_format + offset);
     offset += func_name
-            ? snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s][%s:%d] ", s_log_level_tag[a_ll], a_log_tag, func_name, line_num)
-            : snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
+            ? snprintf(s_format + offset, LOG_FORMAT_LEN - offset,"%s[%s][%s:%d] %s\n", s_log_level_tag[a_ll], a_log_tag, func_name, line_num, a_fmt)
+            : snprintf(s_format + offset, LOG_FORMAT_LEN - offset, "%s[%s] %s\n", s_log_level_tag[a_ll], a_log_tag, a_fmt);
+    if (offset >= LOG_FORMAT_LEN) {
+        return;
+    }
     va_list va;
     va_start(va, a_fmt);
-    if (offset < STR_LOG_BUF_MAX) {
-        offset += vsnprintf(log_str + offset, STR_LOG_BUF_MAX - offset, a_fmt, va);
-    }
+    print_it(s_ansi_seq_color_len[a_ll], s_format, va);
     va_end(va);
-    char *pos = offset < STR_LOG_BUF_MAX
-            ? memcpy(&log_str[offset--], "\n", 1) + 1
-            : memcpy(&log_str[STR_LOG_BUF_MAX - 5], "...\n", 4) + 4;
-    offset = pos - log_str;
-    fwrite(log_str, offset, 1, stdout);
-    fflush(stdout);
-    if (!s_log_file)
-        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file)
-            return;
-    fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
 }
 
 char *dap_dump_hex(byte_t *a_data, size_t a_len) {
@@ -633,47 +640,6 @@ struct timespec now;
 }
 #endif
 
-static int s_check_and_fill_buffer_log(char **m, struct tm *a_tm_st, char *a_tmp)
-{
-	char *s = *m;
-    struct tm l_tm = { };
-	if (sscanf(a_tmp, "[%d/%d/%d-%d:%d:%d]", &l_tm.tm_mon, &l_tm.tm_mday, &l_tm.tm_year, &l_tm.tm_hour, &l_tm.tm_min, &l_tm.tm_sec) == 6) {
-		l_tm.tm_mon--;
-		if (a_tm_st->tm_year >= l_tm.tm_year &&
-			a_tm_st->tm_mon >= l_tm.tm_mon &&
-			a_tm_st->tm_mday >= l_tm.tm_mday &&
-			a_tm_st->tm_hour >= l_tm.tm_hour &&
-			a_tm_st->tm_min >= l_tm.tm_min &&
-			a_tm_st->tm_sec >= l_tm.tm_sec) {
-			size_t l_len = strlen(a_tmp);
-            memcpy(s, a_tmp, l_len);
-            s[l_len] = '\0';
-			s += l_len;
-			*m = s;
-			return 1;
-		}
-	}
-	return 0;
-}
-
-static int s_check_and_fill_buffer_log2(char **m, int64_t a_tm_st, char *a_tmp) {
-    char *s = *m;
-    struct tm l_tm = { };
-    if (strptime(a_tmp, "[%m/%d/%Y-%H:%M:%S]", &l_tm)) {
-        l_tm.tm_year += 2000;
-        time_t l_tm_sec = mktime(&l_tm);
-        if (l_tm_sec >= a_tm_st) {
-            size_t l_len = strlen(a_tmp);
-            memcpy(s, a_tmp, l_len);
-            s[l_len] = '\0';
-            s += l_len;
-            *m = s;
-            return 1;
-        }
-    }
-    return 0;
-}
-
 /**
  * @brief dap_log_get_item
  * @param a_start_time
@@ -682,24 +648,48 @@ static int s_check_and_fill_buffer_log2(char **m, int64_t a_tm_st, char *a_tmp) 
  */
 char *dap_log_get_item(time_t a_start_time, int a_limit)
 {
-	char *l_buf = DAP_CALLOC(STR_LOG_BUF_MAX, a_limit);
-    if (!l_buf) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return NULL;
-    }
-    char l_line[STR_LOG_BUF_MAX] = { '\0' }, *s = l_buf, *l_log_file = dap_strdup_printf("%s", s_log_file_path);
-	FILE *fp = fopen(l_log_file, "r");
+    unsigned l_len = LOG_FORMAT_LEN * 8;
+    char l_line[l_len];
+	FILE *fp = fopen(s_log_file_path, "rb+"); // rb+ is for unignoring \r
 	if (!fp) {
-		DAP_FREE(l_buf);
 		return NULL;
 	}
+    long l_start_pos = -1, l_end_pos = 0;
+    struct tm l_tm = { };
+    while ( fgets(l_line, l_len, fp) ) {
+        if ( strptime(l_line, /* "[%x-%X" */ "[%m/%d/%Y-%H:%M:%S]", &l_tm) ) {
+            l_tm.tm_year += 2000;
+            time_t l_tm_sec = mktime(&l_tm);
+            if (l_tm_sec >= a_start_time) {
+                l_start_pos = ftell(fp) - strlen(l_line);
+                break;
+            }
+        }
+    }
 
-	while (fgets(l_line, STR_LOG_BUF_MAX, fp)) {
-		if (a_limit <= 0) break;
-        a_limit -= s_check_and_fill_buffer_log2(&s, a_start_time, l_line);
-	}
+    if (l_start_pos == -1) {
+        fclose(fp);
+        return NULL;
+    }
 
+    // Start pos defined, let's find the end pos
+    if (!a_limit) {
+        fseek(fp, 0, SEEK_END);
+    } else {
+        while ( --a_limit && fgets(l_line, l_len, fp) ) {
+            if ( strcspn(l_line, "\r\n") == l_len - 1)
+                ++a_limit; // The line is longer than expected
+        }
+    }
+    l_end_pos = ftell(fp);
+    fseek(fp, l_start_pos, SEEK_SET);
+
+    // Finaly read required data from file to buf
+    l_len = l_end_pos - l_start_pos - 1;
+    char *l_buf = DAP_NEW_Z_SIZE(char, l_len + 1);
+    fread(l_buf, l_len, 1, fp);
 	fclose(fp);
+    log_it(L_DEBUG, "Chunk is %s", l_buf);
     return l_buf;
 }
 
