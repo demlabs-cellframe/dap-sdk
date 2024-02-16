@@ -836,12 +836,8 @@ char    *str_header;
                     json_object_object_add(json_res, "ret_code", json_object_new_int(res));
                     json_object_array_add(json_com_res, json_res);
                 }
-            }
-            else{
-                if (str_reply) {
-                    reply_body = dap_strdup_printf("%s", (str_reply) ? str_reply : "");
-                } 
-            }
+            } else
+                reply_body = dap_strdup(str_reply);
             
             // create response 
             dap_json_rpc_response_t* response = NULL;
