@@ -177,7 +177,7 @@ static void s_cluster_member_delete(dap_cluster_member_t *a_member)
 {
     if (a_member->cluster->members_delete_callback)
         a_member->cluster->members_delete_callback(a_member);
-    HASH_DEL(a_member->cluster, a_member);
+    HASH_DEL(a_member->cluster->members, a_member);
     DAP_DEL_Z(a_member->info);
     DAP_DELETE(a_member);
 }
@@ -190,8 +190,7 @@ void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr)
         dap_cluster_member_t *l_member = NULL;
         HASH_FIND(hh, it->members, a_addr, sizeof(*a_addr), l_member);
         if (l_member) {
-            HASH_DEL(it->members, l_member);
-            DAP_DELETE(l_member);
+            s_cluster_member_delete(l_member);
         }
         pthread_rwlock_unlock(&it->members_lock);
     }

@@ -89,20 +89,17 @@ static void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
     DL_FOREACH(l_link->links_clusters, l_item) {
         dap_cluster_member_add((dap_cluster_t *)l_item->data, &l_link->node_addr, 0, NULL);
     }
-    // if dynamic link, increment counter
+    // if dynamic link, increment counter and call callback
     if (a_arg) {
         dap_managed_net_t *l_net = (dap_managed_net_t *)a_arg;
         dap_cluster_member_add(l_net->node_link_cluster, &l_link->node_addr, 0, NULL);
+        if(l_link->link_manager->callbacks.connected)
+            l_link->link_manager->callbacks.connected(l_link, l_net->id);
     }
     log_it(L_NOTICE, "Stream connection with node "NODE_ADDR_FP_STR" (%s:%hu) established",
                 NODE_ADDR_FP_ARGS_S(l_link->node_addr),
                 l_link->host_addr_str, l_link->host_port);
-    // if(l_link->link_manager->callbacks.connected)
-    //     l_link->link_manager->callbacks.connected(l_link, NULL /*l_node_client->callbacks_arg*/);
-    // dap_stream_ch_chain_net_pkt_hdr_t l_announce = { .version = DAP_STREAM_CH_CHAIN_NET_PKT_VERSION,
-    //                                                  .net_id  = l_node_client->net->pub.id };
-    // dap_client_write_unsafe(a_client, 'N', DAP_STREAM_CH_CHAIN_NET_PKT_TYPE_ANNOUNCE,
-    //                                  &l_announce, sizeof(l_announce));
+
     l_link->state = LINK_STATE_ESTABLISHED;
 }
 
@@ -142,11 +139,6 @@ void s_client_delete_callback(UNUSED_ARG dap_client_t *a_client, void *a_arg)
     // TODO make decision for possible client replacement
     assert(a_arg);
     dap_chain_node_client_close_unsafe(a_arg);
-}
-
-static void s_delete_callback(dap_link_manager_t *a_manager)
-{
-    
 }
 
 bool s_update_states(void *a_arg)
@@ -229,8 +221,6 @@ dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_c
         log_it(L_WARNING, "Link manager created, but timer not active");
     if(!l_ret->callbacks.link_request)
         log_it(L_WARNING, "Link manager link_request callback is NULL");
-    if(!l_ret->callbacks.delete)
-        l_ret->callbacks.delete = s_delete_callback;
     l_ret->min_links_num = s_min_links_num;
     l_ret->active = true;
     return l_ret;
@@ -367,6 +357,7 @@ void dap_link_manager_remove_role_cluster(dap_stream_node_addr_t *a_addr, dap_cl
     HASH_FIND(hh, s_link_manager->links, a_addr, sizeof(*a_addr), l_link);
     if (!l_link) {
         log_it(L_ERROR, "Try cluster deleting from non-existent link");
+        // pthread_rwlock_unlock(&it->members_lock);
         return;
     }
     l_link->role_clusters = dap_list_remove(l_link->role_clusters, a_cluster);
@@ -381,6 +372,7 @@ void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_c
     HASH_FIND(hh, s_link_manager->links, a_addr, sizeof(*a_addr), l_link);
     if (!l_link) {
         log_it(L_ERROR, "Try cluster deleting from non-existent link");
+        // pthread_rwlock_unlock(&it->members_lock);
         return;
     }
     l_link->links_clusters = dap_list_remove(l_link->links_clusters, a_cluster);
