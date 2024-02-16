@@ -36,7 +36,7 @@ typedef struct dap_link dap_link_t;
 typedef void (*dap_link_manager_callback_t)(dap_link_t *, void*);
 typedef void (*dap_link_manager_callback_connected_t)(dap_link_t *, uint64_t);
 typedef void (*dap_link_manager_callback_delete_t)(dap_link_manager_t *);
-typedef void (*dap_link_manager_callback_error_t)(dap_link_manager_t *, int, void *);
+typedef void (*dap_link_manager_callback_error_t)(dap_link_t *, uint64_t, int);
 typedef int (*dap_link_manager_callback_fill_net_info_t)(dap_link_t *);
 typedef void (*dap_link_manager_callback_link_request_t)(uint64_t);
 

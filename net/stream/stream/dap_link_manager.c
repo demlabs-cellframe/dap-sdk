@@ -130,8 +130,8 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
             l_link->state = LINK_STATE_CONNECTING ;
             dap_client_go_stage(l_link->client, STAGE_STREAM_STREAMING, s_client_connected_callback);
         }
-    } else if(l_link->link_manager->callbacks.error) // TODO make different error codes
-        l_link->link_manager->callbacks.error(l_link, EINVAL, NULL /*l_node_client->callbacks_arg*/);
+    } else if(a_client->callbacks_arg && l_link->link_manager->callbacks.error) // TODO make different error codes
+        l_link->link_manager->callbacks.error(l_link, ((dap_managed_net_t *)(a_client->callbacks_arg))->id, EINVAL);
 }
 
 void s_client_delete_callback(UNUSED_ARG dap_client_t *a_client, void *a_arg)
