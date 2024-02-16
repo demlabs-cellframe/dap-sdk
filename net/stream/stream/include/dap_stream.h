@@ -26,7 +26,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <pthread.h>
-#include "dap_http.h"
+#include "dap_http_server.h"
 #include "dap_events_socket.h"
 #include "dap_config.h"
 #include "dap_stream_session.h"
@@ -140,7 +140,7 @@ bool dap_stream_get_dump_packet_headers();
 
 void dap_stream_deinit();
 
-void dap_stream_add_proc_http(dap_http_t * sh, const char * url);
+void dap_stream_add_proc_http(dap_http_server_t * sh, const char * url);
 
 void dap_stream_add_proc_udp(dap_server_t *a_udp_server);
 

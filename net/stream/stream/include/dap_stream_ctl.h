@@ -22,10 +22,10 @@
 
 #include "dap_enc.h"
 #include "dap_config.h"
-typedef struct dap_http dap_http_t;
+typedef struct dap_http_server dap_http_server_t;
 #define KEX_KEY_STR_SIZE 128
 
 
 int dap_stream_ctl_init();
 void dap_stream_ctl_deinit();
-void dap_stream_ctl_add_proc(struct dap_http * sh, const char * url);
+void dap_stream_ctl_add_proc(struct dap_http_server* sh, const char * url);
