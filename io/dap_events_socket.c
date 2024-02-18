@@ -172,11 +172,7 @@ static inline dap_events_socket_t *s_dap_evsock_alloc (void)
     HASH_ADD(hh2, s_esockets, uuid, sizeof(l_es->uuid), l_es);
     pthread_rwlock_unlock(&s_evsocks_lock);
 #endif
-<<<<<<< HEAD
-    debug_if(g_debug_reactor, L_DEBUG, "Created es %p \"%s\" with uuid %llu",
-=======
     debug_if(g_debug_reactor, L_DEBUG, "Created es %p \"%s\" with uuid " DAP_FORMAT_ESOCKET_UUID,
->>>>>>> release-5.3
                               l_es, dap_events_socket_get_type_str(l_es), l_es->uuid);
     return  l_es;
 }
