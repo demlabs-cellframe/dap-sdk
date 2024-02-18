@@ -126,10 +126,12 @@ DAP_STATIC_INLINE int dap_chain_hash_fast_to_str(const dap_hash_fast_t *a_hash, 
 
 DAP_STATIC_INLINE char *dap_chain_hash_fast_to_str_static(const dap_hash_fast_t *a_hash) {
     _Thread_local static char s_hash_str[DAP_HASH_FAST_STR_SIZE];
-    return dap_chain_hash_fast_to_str(a_hash, s_hash_str, sizeof(s_hash_str)), s_hash_str;
+    return dap_chain_hash_fast_to_str(a_hash, s_hash_str, sizeof(s_hash_str)) == DAP_CHAIN_HASH_FAST_STR_SIZE
+           ? s_hash_str : NULL;
 }
 
 #define dap_hash_fast_to_str dap_chain_hash_fast_to_str
+#define dap_hash_fast_to_str_static dap_chain_hash_fast_to_str_static
 
 DAP_STATIC_INLINE char *dap_chain_hash_fast_to_str_new(const dap_hash_fast_t *a_hash)
 {

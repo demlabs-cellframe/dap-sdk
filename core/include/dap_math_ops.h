@@ -119,11 +119,11 @@ static inline uint128_t GET_128_FROM_64(uint64_t n) {
 }
 
 static inline uint256_t GET_256_FROM_64(uint64_t n) {
-    return (uint256_t) { .hi = uint128_0, .lo = GET_128_FROM_64(n) };
+    return (uint256_t) {{ .hi = uint128_0, .lo = GET_128_FROM_64(n) }};
 }
 
 static inline uint256_t GET_256_FROM_128(uint128_t n) {
-    return (uint256_t) { .hi = uint128_0, .lo = n };
+    return (uint256_t) {{ .hi = uint128_0, .lo = n }};
 }
 
 static inline bool EQUAL_128(uint128_t a_128_bit, uint128_t b_128_bit){
@@ -181,17 +181,17 @@ static inline uint128_t OR_128(uint128_t a_128_bit,uint128_t b_128_bit){
 }
 
 static inline uint256_t AND_256(uint256_t a_256_bit,uint256_t b_256_bit){
-    return (uint256_t) {
+    return (uint256_t) {{
         .hi = AND_128(a_256_bit.hi, b_256_bit.hi),
         .lo = AND_128(a_256_bit.lo, b_256_bit.lo)
-    };
+    }};
 }
 
 static inline uint256_t OR_256(uint256_t a_256_bit,uint256_t b_256_bit){
-    return (uint256_t) {
+    return (uint256_t) {{
         .hi = OR_128(a_256_bit.hi, b_256_bit.hi),
         .lo = OR_128(a_256_bit.lo, b_256_bit.lo)
-    };
+    }};
 }
 
 static inline void LEFT_SHIFT_128(uint128_t a_128_bit,uint128_t* b_128_bit,int n){

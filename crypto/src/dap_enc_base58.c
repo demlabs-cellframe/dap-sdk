@@ -215,11 +215,6 @@ char* dap_enc_base58_encode_to_str(const void * a_in, size_t a_in_size)
     return l_out;
 }
 
-char* dap_enc_base58_encode_hash_to_str(dap_chain_hash_fast_t *a_in_hash)
-{
-    return dap_enc_base58_encode_to_str(a_in_hash->raw, sizeof(dap_chain_hash_fast_t));
-}
-
 // convert from "0xA21F1E865B6740A28E8708798ECF25D2C0AA596DF5EB1FD724186B6AD7FF2199" to "Bura1HFrKsqbdytEXQVrxpbovtvLhR1VbrJs65JBx3gc"
 char* dap_enc_base58_from_hex_str_to_str(const char *a_in_str)
 {
@@ -230,8 +225,7 @@ char* dap_enc_base58_from_hex_str_to_str(const char *a_in_str)
     char *l_out_str = DAP_NEW_STACK_SIZE(char, a_in_hash_len / 2 + 1);
     size_t len = dap_hex2bin((uint8_t*)l_out_str, a_in_str+2, a_in_hash_len-2);
     // from binary to base58
-    char *l_base58_out = dap_enc_base58_encode_to_str(l_out_str, len/2);
-    return l_base58_out;
+    return dap_enc_base58_encode_to_str(l_out_str, len/2);
 }
 
 // convert from "Bura1HFrKsqbdytEXQVrxpbovtvLhR1VbrJs65JBx3gc" to "0xA21F1E865B6740A28E8708798ECF25D2C0AA596DF5EB1FD724186B6AD7FF2199"
