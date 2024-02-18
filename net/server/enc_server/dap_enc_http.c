@@ -35,7 +35,7 @@
 #include <pthread.h>
 #include "dap_sign.h"
 
-#include "include/dap_http.h"
+#include "include/dap_http_server.h"
 #include "dap_http_client.h"
 #include "include/dap_http_simple.h"
 
@@ -235,7 +235,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
  * @param sh
  * @param url
  */
-void enc_http_add_proc(struct dap_http * sh, const char * url)
+void enc_http_add_proc(struct dap_http_server* sh, const char * url)
 {
     dap_http_simple_proc_add(sh,url,140000,enc_http_proc);
 }

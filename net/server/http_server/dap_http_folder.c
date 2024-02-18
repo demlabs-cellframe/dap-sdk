@@ -41,7 +41,7 @@
 
 #include "dap_common.h"
 #include "dap_events_socket.h"
-#include "dap_http.h"
+#include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_http_folder.h"
 #include "http_status_code.h"
@@ -86,7 +86,7 @@ void dap_http_folder_deinit( )
  * @param url_path Beginning part of the URL
  * @param local_path Local path that will be read for
  */
-int dap_http_folder_add( dap_http_t *sh, const char *url_path, const char *local_path )
+int dap_http_folder_add(dap_http_server_t *sh, const char *url_path, const char *local_path )
 {
   if ( !local_path ) {
     log_it( L_ERROR, "Directory Path parameter is empty!" );

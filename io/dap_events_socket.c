@@ -172,7 +172,11 @@ static inline dap_events_socket_t *s_dap_evsock_alloc (void)
     HASH_ADD(hh2, s_esockets, uuid, sizeof(l_es->uuid), l_es);
     pthread_rwlock_unlock(&s_evsocks_lock);
 #endif
+<<<<<<< HEAD
     debug_if(g_debug_reactor, L_DEBUG, "Created es %p \"%s\" with uuid %llu",
+=======
+    debug_if(g_debug_reactor, L_DEBUG, "Created es %p \"%s\" with uuid " DAP_FORMAT_ESOCKET_UUID,
+>>>>>>> release-5.3
                               l_es, dap_events_socket_get_type_str(l_es), l_es->uuid);
     return  l_es;
 }
@@ -210,7 +214,7 @@ static inline void s_dap_evsock_free(dap_events_socket_t *a_es)
     else if (l_es != a_es)
         log_it(L_WARNING, "[!] Esockets %p and %p share the same UUID %zu, possibly a dup!", a_es, l_es, a_es->uuid);
 #endif
-    debug_if(g_debug_reactor, L_DEBUG, "Release es %p \"%s\" with uuid %llu",
+    debug_if(g_debug_reactor, L_DEBUG, "Release es %p \"%s\" with uuid " DAP_FORMAT_ESOCKET_UUID,
                               a_es, dap_events_socket_get_type_str(a_es), a_es->uuid);
     DAP_DELETE(a_es);
 }

@@ -81,7 +81,7 @@ static void s_es_server_error   (dap_events_socket_t *a_es, int a_arg);
 
 #ifdef DAP_EVENTS_CAPS_IOCP
 static void s_es_server_new_ex      (dap_events_socket_t *a_es, void *a_arg);
-static void s_es_server_accept_ex   (dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr* a_remote_addr);
+static void s_es_server_accept_ex   (dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr);
 LPFN_ACCEPTEX               pfn_AcceptEx                = NULL;
 LPFN_GETACCEPTEXSOCKADDRS   pfn_GetAcceptExSockaddrs    = NULL;
 #endif
@@ -485,7 +485,8 @@ static void s_es_server_new_ex(dap_events_socket_t *a_es, void *a_arg) {
     s_es_server_new(a_es, a_arg);
 }
 
-static void s_es_server_accept_ex(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr *a_remote_addr) {
+static void s_es_server_accept_ex(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr)
+{
     if (a_remote_socket != INVALID_SOCKET) {
         s_es_server_accept(a_es, a_remote_socket, a_remote_addr);
     }

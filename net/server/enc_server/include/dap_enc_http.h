@@ -24,7 +24,7 @@
 #include <stdbool.h>
 #include "dap_hash.h"
 
-struct dap_http;
+struct dap_http_server;
 struct dap_http_client;
 struct dap_http_simple;
 struct enc_key;
@@ -79,6 +79,6 @@ void enc_http_reply_encode(struct dap_http_simple *a_http_simple,enc_http_delega
 
 void enc_http_delegate_delete(enc_http_delegate_t * dg);
 
-void enc_http_add_proc(struct dap_http * sh, const char * url);
+void enc_http_add_proc(struct dap_http_server *sh, const char * url);
 
 #endif

@@ -48,7 +48,7 @@
 #include "dap_stream_session.h"
 #include "dap_events_socket.h"
 
-#include "dap_http.h"
+#include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_http_header.h"
 #include "dap_stream_worker.h"
@@ -205,7 +205,7 @@ void dap_stream_deinit()
  * @param sh HTTP server instance
  * @param url URL
  */
-void dap_stream_add_proc_http(struct dap_http * a_http, const char * a_url)
+void dap_stream_add_proc_http(struct dap_http_server* a_http, const char * a_url)
 {
     dap_http_add_proc(a_http,
                       a_url,
