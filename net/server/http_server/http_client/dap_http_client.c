@@ -292,13 +292,12 @@ static inline void s_report_error_and_restart( dap_events_socket_t *a_esocket, d
     a_esocket->buf_in_size = 0;
     a_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
     a_http_client->reply_status_code = error_code;
-    strcpy( a_http_client->reply_reason_phrase, "Error" );
 #ifdef DAP_EVENTS_CAPS_IOCP
     a_esocket->flags &= ~DAP_SOCK_READY_TO_READ;
 #else
     dap_events_socket_set_readable_unsafe( a_http_client->esocket, false );
 #endif
-    dap_events_socket_set_writable_unsafe( a_http_client->esocket, true );
+    dap_http_client_write(a_http_client);
 }
 
 /**
@@ -552,14 +551,16 @@ void dap_http_client_write(dap_http_client_t *a_http_client)
         dap_http_header_remove( &a_http_client->out_headers, hdr );
     }
     dap_events_socket_write_unsafe(a_http_client->esocket, CRLF, 2);/* Add final CRLF - HTTP's End-Of-Header */
-
-    dap_http_client_write_callback(a_http_client->esocket, a_http_client->esocket->callbacks.arg);
 }
 
 bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
 {
     dap_return_val_if_fail(a_esocket, false);
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
+    if (l_http_client->reply_status_code != Http_Status_OK) {       // No write data if error code set
+        l_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+        return false;
+    }
     bool l_ret = false;
     debug_if(s_debug_http, L_DEBUG, "Entering HTTP data write callback, a_esocket: %p, a_arg: %p", a_esocket, a_arg);
     /* Write HTTP data */
