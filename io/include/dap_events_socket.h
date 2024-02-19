@@ -55,10 +55,7 @@ typedef int SOCKET;
     #define DAP_EVENTS_CAPS_POLL
     #define DAP_EVENTS_CAPS_PIPE_POSIX
     #define DAP_EVENTS_CAPS_QUEUE_PIPE2
-    //#define DAP_EVENTS_CAPS_QUEUE_MQUEUE
     #define DAP_EVENTS_CAPS_EVENT_EVENTFD
-    //#define DAP_EVENTS_CAPS_AIO
-    //#define DAP_EVENTS_CAPS_AIO_THREADS
     #include <netinet/in.h>
     #include <sys/un.h>
     #include <sys/eventfd.h>
@@ -81,26 +78,43 @@ typedef int SOCKET;
     #include <netinet/in.h>
     #include <sys/un.h>
 #elif defined (DAP_OS_WINDOWS)
-    #define DAP_EVENTS_CAPS_WEPOLL
-    #define DAP_EVENTS_CAPS_EPOLL
-    #define DAP_EVENTS_CAPS_QUEUE_WEVENT
-    #define DAP_EVENTS_CAPS_EVENT_WEVENT
-    //#define DAP_EVENTS_CAPS_AIO_THREADS
-    //#define DAP_EVENTS_CAPS_PIPE_POSIX
-    #define DAP_EVENTS_CAPS_MSMQ
+    //#define DAP_EVENTS_CAPS_WEPOLL
+    #define MSG_DONTWAIT 0
+    #define MSG_NOSIGNAL 0
+    #define DAP_EVENTS_CAPS_IOCP
     #ifndef INET_ADDRSTRLEN
         #define INET_ADDRSTRLEN     16
     #endif
     #ifndef INET6_ADDRSTRLEN
         #define INET6_ADDRSTRLEN    46
     #endif
-#define MSG_DONTWAIT 0
-#define MSG_NOSIGNAL 0
+typedef struct task_entry {
+    SLIST_ENTRY entry;
+    void *data;
+} task_entry_t;
+
 #endif
 
 #if defined(DAP_EVENTS_CAPS_WEPOLL)
-#define EPOLL_HANDLE  HANDLE
+#define DAP_EVENTS_CAPS_EPOLL
+#define EPOLL_HANDLE HANDLE
 #include "wepoll.h"
+#elif defined (DAP_EVENTS_CAPS_IOCP)
+typedef struct dap_overlapped {
+    OVERLAPPED ol;
+    //char *buf;
+    char buf[];
+} dap_overlapped_t;
+
+enum dap_io_op {
+    io_op_close = 0,
+    io_op_read,
+    io_op_write,
+    io_op_max
+};
+#include <mswsock.h>
+extern LPFN_CONNECTEX pfn_ConnectEx;
+#define MAX_IOCP_ENTRIES 0xf // Maximum count of IOCP entries to fetch at once
 #elif defined (DAP_EVENTS_CAPS_EPOLL)
 #include <sys/epoll.h>
 #define EPOLL_HANDLE  int
@@ -129,6 +143,7 @@ typedef struct dap_context dap_context_t;
 
 typedef struct dap_server dap_server_t;
 typedef void (*dap_events_socket_callback_t) (dap_events_socket_t *,void * ); // Callback for specific client operations
+typedef bool (*dap_events_socket_write_callback_t)(dap_events_socket_t *, void *); // Callback for write client operation
 typedef void (*dap_events_socket_callback_error_ptr_t) (dap_events_socket_t *, int, void * ); // Callback for specific client operations
 typedef void (*dap_events_socket_callback_error_t) (dap_events_socket_t *, int ); // Callback for specific client operations
 typedef void (*dap_events_socket_callback_queue_t) (dap_events_socket_t *,const void * , size_t); // Callback for specific client operations
@@ -139,10 +154,6 @@ typedef void (*dap_events_socket_callback_timer_t) (dap_events_socket_t * ); // 
 typedef void (*dap_events_socket_callback_accept_t) (dap_events_socket_t *, SOCKET, struct sockaddr_storage *); // Callback for accept of new connection
 typedef void (*dap_events_socket_callback_connected_t) (dap_events_socket_t * ); // Callback for connected client connection
 typedef void (*dap_events_socket_worker_callback_t) (dap_events_socket_t *,dap_worker_t * ); // Callback for specific client operations
-
-
-                                                                            /* A callback routine is supposed to be called on completion I/O */
-typedef void (*dap_events_socket_worker_complete_io_t) (dap_events_socket_t *, void *, int a_errno);
 
 typedef struct dap_events_socket_callbacks {
     union{ // Specific callbacks
@@ -157,8 +168,8 @@ typedef struct dap_events_socket_callbacks {
     dap_events_socket_callback_t new_callback;                              /* Create new client callback */
     dap_events_socket_callback_t delete_callback;                           /* Delete client callback */
     dap_events_socket_callback_t read_callback;                             /* Read function */
-    dap_events_socket_callback_t write_callback;                            /* Write function */
-    dap_events_socket_worker_complete_io_t write_finished_callback;         /* Called on completion Write operation */
+    dap_events_socket_write_callback_t write_callback;                      /* Write function */
+    dap_events_socket_callback_t write_finished_callback;                   /* Called on completion Write operation */
     dap_events_socket_callback_error_t error_callback;                      /* Error processing function */
 
     dap_events_socket_worker_callback_t worker_assign_callback;             /* After successful worker assign */
@@ -179,16 +190,17 @@ typedef struct dap_events_socket_callbacks {
 
 typedef enum {
     DESCRIPTOR_TYPE_SOCKET_CLIENT = 0,
-    DESCRIPTOR_TYPE_SOCKET_UDP,
-    DESCRIPTOR_TYPE_SOCKET_LISTENING,
-    DESCRIPTOR_TYPE_QUEUE,
-    DESCRIPTOR_TYPE_PIPE,
-    DESCRIPTOR_TYPE_TIMER,
-    DESCRIPTOR_TYPE_EVENT,
-    DESCRIPTOR_TYPE_FILE,
-    DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING,
     DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT,
-    DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL
+    DESCRIPTOR_TYPE_SOCKET_LISTENING,
+    DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING,
+    DESCRIPTOR_TYPE_SOCKET_UDP,
+    DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL,
+    DESCRIPTOR_TYPE_FILE,
+    DESCRIPTOR_TYPE_PIPE,
+    DESCRIPTOR_TYPE_QUEUE,
+    /* all above are readable/writeable */
+    DESCRIPTOR_TYPE_TIMER,
+    DESCRIPTOR_TYPE_EVENT
 } dap_events_desc_type_t;
 
 
@@ -214,17 +226,18 @@ typedef struct dap_events_socket {
         mqd_t mqd;
     };
     uint32_t mqd_id;
-#elif defined(DAP_EVENTS_CAPS_MSMQ)
+#elif defined(DAP_EVENTS_CAPS_IOCP)
     };
-    QUEUEHANDLE mqh, mqh_recv;
-    u_int mq_num;
-    u_short port;
-    HANDLE ev_timeout, ev_recv;
+    HANDLE h, op_events[io_op_max];
 #else
     };
 #endif
+    u_short port;
+    union {
+        SOCKET socket2;
+        int fd2;
+    };
 
-    int fd2;
 
     dap_events_desc_type_t type;
     dap_events_socket_uuid_t uuid; // Unique UID
@@ -233,21 +246,21 @@ typedef struct dap_events_socket {
     size_t workers_es_size;           //  events socket with same socket
 
     // Flags. TODO  - rework in bool fields
-    uint32_t  flags;
+    uint32_t flags;
     bool no_close;
     atomic_bool is_initalized;
     bool was_reassigned; // Was reassigment at least once
 
-    // Input section
-    byte_t  *buf_in;
-    size_t buf_in_size_max; //  size of alloced buffer
-        //char    *buf_in_str;
-    size_t buf_in_size; // size of data that is in the input buffer
+    byte_t *buf_in, *buf_out;
 
-    // Output section
-    byte_t *buf_out;
-    size_t buf_out_size; // size of data that is in the output buffer
-    size_t buf_out_size_max; // max size of data
+    #ifdef DAP_EVENTS_CAPS_IOCP
+    DWORD   
+    #else
+    size_t
+    #endif
+        buf_in_size,    buf_in_size_max,
+        buf_out_size,   buf_out_size_max;
+
     dap_events_socket_t * pipe_out; // Pipe socket with data for output
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
     pthread_rwlock_t buf_out_lock;
@@ -322,7 +335,7 @@ typedef struct dap_events_socket_uuid_w_data{
     };
 } dap_events_socket_uuid_w_data_t;
 
-
+extern const char *s_socket_type_to_str[];
 
 typedef struct dap_events_socket_handler_hh{
     dap_events_socket_t * esocket;
@@ -408,7 +421,11 @@ DAP_STATIC_INLINE size_t dap_events_socket_get_free_buf_size(dap_events_socket_t
 size_t  dap_events_socket_pop_from_buf_in(dap_events_socket_t *sc, void * data, size_t data_size);
 size_t  dap_events_socket_insert_buf_out(dap_events_socket_t * a_es, void *a_data, size_t a_data_size);
 
-#ifdef DAP_OS_WINDOWS
+DAP_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t* a_es) {
+    return s_socket_type_to_str[a_es->type];
+}
+
+#ifdef DAP_EVENTS_CAPS_WEPOLL
 DAP_STATIC_INLINE int dap_recvfrom(SOCKET s, void* buf_in, size_t buf_size) {
     struct sockaddr_in l_dummy;
     socklen_t l_size = sizeof(l_dummy);

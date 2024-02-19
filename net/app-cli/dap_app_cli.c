@@ -139,8 +139,7 @@ int shell_reader_loop(dap_app_cli_connect_param_t *cparam)
         /* Remove leading and trailing whitespace from the line.
          Then, if there is anything left, add it to the history list
          and execute it. */
-        s = rl_stripwhite(line);
-
+        s = dap_strstrip(line);
         if(*s)
         {
             add_history(s);
@@ -198,7 +197,6 @@ int dap_app_cli_main(const char * a_app_name, const char * a_socket_path, int a_
     }else{
         // command not found, start interactive shell
         shell_reader_loop(cparam);
-        dap_app_cli_disconnect(cparam);
     }
 #ifdef _WIN32
         WSACleanup();

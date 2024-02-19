@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 project(DAP_SDK_NATIVE C)
-set(DAP_SDK_NATIVE_VERSION "2.3-0")
+set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
 include(ExternalProject)
 

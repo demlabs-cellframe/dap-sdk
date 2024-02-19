@@ -39,7 +39,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
             case TYPE_RESPONSE_BOOLEAN:
                 response->result_boolean = *((bool*)result); break;
             case TYPE_RESPONSE_JSON:
-                response->result_json_object = json_object_get(result); break;
+                response->result_json_object = result; break;
             case TYPE_RESPONSE_NULL:
                 break;
             default:
@@ -84,10 +84,9 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
             case TYPE_RESPONSE_BOOLEAN:
             case TYPE_RESPONSE_NULL:
             case TYPE_RESPONSE_ERROR:
-                if (response->json_arr_errors)
-                    json_object_put(response->json_arr_errors);
-                // No specific cleanup needed for these response types
-                break;
+            if (response->json_arr_errors)
+                json_object_put(response->json_arr_errors);
+            break;
             default:
                 log_it(L_ERROR, "Unsupported response type");
                 break;
@@ -133,7 +132,7 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
 
     // json errors
     if (response->type == TYPE_RESPONSE_ERROR) {
-        json_object_object_add(jobj, "errors", response->json_arr_errors);
+        json_object_object_add(jobj, "errors", json_object_get(response->json_arr_errors));
     } else {
         json_object_object_add(jobj, "errors", json_object_new_null());
     }
@@ -238,6 +237,7 @@ void json_print_object(json_object *obj, int indent_level) {
                 json_object *item = json_object_array_get_idx(obj, i);
                 json_print_value(item, NULL, indent_level + 1, length - 1 - i);
             }
+            printf("\n");
             break;
         }
         default:
@@ -292,7 +292,7 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
 
 void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
     json_object * json_obj_response = json_object_array_get_idx(response->result_json_object, 0);
-    json_object * j_obj_net_name, * j_arr_chains, * j_obj_chain, *j_obj_removed, *j_arr_datums;
+    json_object * j_obj_net_name, * j_arr_chains, * j_obj_chain, *j_obj_removed, *j_arr_datums, *j_arr_total;
     json_object_object_get_ex(json_obj_response, "net", &j_obj_net_name);
     json_object_object_get_ex(json_obj_response, "chains", &j_arr_chains);
     int result_count = json_object_array_length(j_arr_chains);
@@ -301,10 +301,13 @@ void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
         json_object_object_get_ex(json_obj_result, "name", &j_obj_chain);
         json_object_object_get_ex(json_obj_result, "removed", &j_obj_removed);
         json_object_object_get_ex(json_obj_result, "datums", &j_arr_datums);
+        json_object_object_get_ex(json_obj_result, "total", &j_arr_total);
         printf("Removed %d records from the %s chain mempool in %s network.\n", 
                 json_object_get_int(j_obj_removed), json_object_get_string(j_obj_chain), json_object_get_string(j_obj_net_name));
         printf("Datums:\n");
         json_print_object(j_arr_datums, 1);
+        // TODO total parser
+        json_print_object(j_arr_total, 1);
     }
 }
 

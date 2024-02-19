@@ -401,7 +401,7 @@ dap_link_t *dap_link_manager_link_create_or_update(
         l_ret = a_link;
         memset(l_ret->host_addr_str, 0, sizeof(l_ret->host_addr_str));
     } else {   
-        DAP_NEW_Z_RET(l_ret, dap_link_t, a_link);
+        DAP_NEW_Z_RET_VAL(l_ret, dap_link_t, a_link, NULL);
     }
     // fill addr
     if(a_addr_v4 && a_addr_v4->s_addr){

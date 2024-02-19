@@ -26,7 +26,7 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <pthread.h>
-#include "dap_http.h"
+#include "dap_http_server.h"
 #include "dap_events_socket.h"
 #include "dap_config.h"
 #include "dap_stream_session.h"
@@ -140,7 +140,7 @@ bool dap_stream_get_dump_packet_headers();
 
 void dap_stream_deinit();
 
-void dap_stream_add_proc_http(dap_http_t * sh, const char * url);
+void dap_stream_add_proc_http(dap_http_server_t * sh, const char * url);
 
 void dap_stream_add_proc_udp(dap_server_t *a_udp_server);
 
@@ -149,8 +149,6 @@ size_t dap_stream_data_proc_read(dap_stream_t * a_stream);
 size_t dap_stream_data_proc_write(dap_stream_t * a_stream);
 void dap_stream_delete_unsafe(dap_stream_t * a_stream);
 void dap_stream_proc_pkt_in(dap_stream_t * sid);
-
-void dap_stream_set_ready_to_write(dap_stream_t * a_stream,bool a_is_ready);
 
 dap_enc_key_type_t dap_stream_get_preferred_encryption_type();
 dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es);

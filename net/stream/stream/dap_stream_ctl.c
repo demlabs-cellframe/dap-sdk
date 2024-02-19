@@ -42,7 +42,7 @@
 #include "dap_enc_http.h"
 #include "dap_enc_key.h"
 
-#include "dap_http.h"
+#include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_events_socket.h"
 #include "dap_http_simple.h"
@@ -94,7 +94,7 @@ void dap_stream_ctl_deinit()
  * @param sh HTTP server instance
  * @param url URL string
  */
-void dap_stream_ctl_add_proc(struct dap_http * sh, const char * url)
+void dap_stream_ctl_add_proc(struct dap_http_server* sh, const char * url)
 {
      dap_http_simple_proc_add(sh, url, 14096, s_stream_ctl_proc);
 }

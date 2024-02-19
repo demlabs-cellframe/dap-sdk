@@ -34,11 +34,6 @@
 int rl_initialize(void);
 
 /**
- *  Strip whitespace from the start and end of STRING.  Return a pointer into STRING.
- */
-char * rl_stripwhite(char *string);
-
-/**
  *  Read a line of input.  Prompt with PROMPT.  An empty PROMPT means none.
  *  A return value of NULL means that EOF was encountered.
  */

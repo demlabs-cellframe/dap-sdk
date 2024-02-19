@@ -37,7 +37,7 @@ void _json_rpc_http_proc(struct dap_http_simple *a_client, void *a_arg)
     *l_http_code = Http_Status_OK;
 }
 
-void dap_json_rpc_add_proc_http(struct dap_http *sh, const char *URL)
+void dap_json_rpc_add_proc_http(struct dap_http_server*sh, const char *URL)
 {
     dap_http_simple_proc_add(sh, URL, 140000, _json_rpc_http_proc);
     dap_json_rpc_request_init(URL);

@@ -48,7 +48,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_worker.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
-#include "dap_http.h"
+#include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_http_simple.h"
 #include "dap_enc_key.h"
@@ -70,7 +70,7 @@ static void s_http_simple_delete( dap_http_simple_t *a_http_simple);
 static void s_http_client_headers_read( dap_http_client_t *cl_ht, void *arg );
 static void s_http_client_data_read( dap_http_client_t * cl_ht, void *arg );
 static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *arg);
-static void s_http_client_data_write( dap_http_client_t * a_http_client, void *a_arg );
+static bool s_http_client_data_write( dap_http_client_t * a_http_client, void *a_arg );
 static bool s_proc_queue_callback(void *a_arg );
 
 typedef struct dap_http_simple_url_proc {
@@ -108,7 +108,7 @@ void dap_http_simple_module_deinit( void )
  * @param a_reply_size_max Maximum reply size
  * @param a_callback Callback for data processing
  */
-struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_t *a_http, const char *a_url_path, size_t a_reply_size_max, dap_http_simple_callback_t a_callback )
+struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_server_t *a_http, const char *a_url_path, size_t a_reply_size_max, dap_http_simple_callback_t a_callback )
 {
     dap_http_simple_url_proc_t *l_url_proc = DAP_NEW_Z( dap_http_simple_url_proc_t );
     if (!l_url_proc) {
@@ -241,12 +241,11 @@ static void s_esocket_worker_write_callback(dap_worker_t *a_worker, void *a_arg)
         return;
     }
     l_es->_inheritor = l_http_simple->http_client; // Back to the owner
-    dap_http_client_write(l_es, NULL);
+    dap_http_client_write(l_http_simple->http_client);
 }
 
 inline static void s_write_data_to_socket(dap_http_simple_t *a_simple)
 {
-    a_simple->http_client->state_write = DAP_HTTP_CLIENT_STATE_START;
     dap_worker_exec_callback_on(dap_events_worker_get(a_simple->worker->id), s_esocket_worker_write_callback, a_simple);
 }
 
@@ -263,10 +262,12 @@ static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg) {
 }
 
 
-static void s_http_client_data_write(dap_http_client_t * a_http_client, void *a_arg)
+static bool s_http_client_data_write(dap_http_client_t * a_http_client, void *a_arg)
 {
-    (void) a_arg;
     dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE( a_http_client );
+    assert(l_http_simple == a_arg);
+    if (!a_arg)
+        return false;
 
     if ( l_http_simple->reply_sent >= a_http_client->out_content_length ) {
         log_it(L_INFO, "All the reply (%zu) is sent out", a_http_client->out_content_length );
@@ -276,6 +277,7 @@ static void s_http_client_data_write(dap_http_client_t * a_http_client, void *a_
                                                   l_http_simple->reply_byte + l_http_simple->reply_sent,
                                                   l_http_simple->http_client->out_content_length - l_http_simple->reply_sent);
     }
+    return false;
 }
 
 
@@ -394,24 +396,21 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
     }
     a_http_client->_inheritor = DAP_NEW_Z( dap_http_simple_t );
     dap_http_simple_t * l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
+    a_http_client->esocket->callbacks.arg = l_http_simple;
     l_http_simple->generate_default_header = true;
-    //  log_it(L_DEBUG,"dap_http_simple_headers_read");
-    //  Sleep(300);
-
     l_http_simple->esocket = a_http_client->esocket;
     l_http_simple->esocket_uuid = a_http_client->esocket->uuid;
     l_http_simple->http_client = a_http_client;
     l_http_simple->worker = a_http_client->esocket->worker;
     l_http_simple->reply_size_max = DAP_HTTP_SIMPLE_URL_PROC( a_http_client->proc )->reply_size_max;
     l_http_simple->reply_byte = DAP_NEW_Z_SIZE(uint8_t, DAP_HTTP_SIMPLE(a_http_client)->reply_size_max );
-
+    strncpy(l_http_simple->es_hostaddr, l_http_simple->esocket->remote_addr_str, INET6_ADDRSTRLEN);
 //    Made a temporary solution to handle simple CORS requests.
 //    This is necessary in order to be able to request information using JavaScript obtained from another source.
     dap_http_header_t* l_header_origin = dap_http_header_find(a_http_client->in_headers, "Origin");
     if (l_header_origin){
         dap_http_out_header_add(a_http_client, "Access-Control-Allow-Origin", "*");
     }
-
 
     if( a_http_client->in_content_length ) {
         // dbg if( a_http_client->in_content_length < 3){

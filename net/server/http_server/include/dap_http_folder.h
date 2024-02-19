@@ -21,10 +21,10 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #pragma once
-struct dap_http;
+struct dap_http_server;
 
 int dap_http_folder_init(void);
 void dap_http_folder_deinit(void);
 
-int dap_http_folder_add(struct dap_http *sh, const char * url_path, const char * local_path); // Add folder for reading to the HTTP server
+int dap_http_folder_add(struct dap_http_server *sh, const char * url_path, const char * local_path); // Add folder for reading to the HTTP server
 
