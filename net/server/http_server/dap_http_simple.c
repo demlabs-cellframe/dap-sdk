@@ -255,7 +255,7 @@ static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg)
     assert(a_arg == l_hs);
     if (!l_hs)
         return false;
-    if (cl_ht->reply_status_code == 200) {
+    if (cl_ht->reply_status_code == Http_Status_OK) {
         for (dap_http_header_t *i = l_hs->ext_headers; i; i = i->next) {
             dap_http_out_header_add(cl_ht, i->name, i->value);
             log_it(L_DEBUG, "Added http header. %s: %s", i->name, i->value);
@@ -271,16 +271,15 @@ static bool s_http_client_data_write(dap_http_client_t * a_http_client, void *a_
     assert(l_http_simple == a_arg);
     if (!a_arg)
         return false;
-
-    if ( l_http_simple->reply_sent >= a_http_client->out_content_length ) {
-        log_it(L_INFO, "All the reply (%zu) is sent out", a_http_client->out_content_length );
+    l_http_simple->reply_sent += dap_events_socket_write_unsafe(l_http_simple->esocket,
+                                              l_http_simple->reply_byte + l_http_simple->reply_sent,
+                                              l_http_simple->http_client->out_content_length - l_http_simple->reply_sent);
+    if (l_http_simple->reply_sent >= a_http_client->out_content_length) {
+        log_it(L_INFO, "All the reply (%zu) is sent out", a_http_client->out_content_length);
         a_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
-    } else {
-        l_http_simple->reply_sent += dap_events_socket_write_unsafe(l_http_simple->esocket,
-                                                  l_http_simple->reply_byte + l_http_simple->reply_sent,
-                                                  l_http_simple->http_client->out_content_length - l_http_simple->reply_sent);
+        return false;
     }
-    return false;
+    return true;
 }
 
 

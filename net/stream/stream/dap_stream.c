@@ -51,6 +51,7 @@
 #include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_http_header.h"
+#include "http_status_code.h"
 #include "dap_stream_worker.h"
 #include "dap_client_pvt.h"
 #include "dap_strfuncs.h"
@@ -461,7 +462,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
             dap_stream_session_t *l_ss = dap_stream_session_id_mt(l_id);
             if(!l_ss) {
                 log_it(L_ERROR,"No session id %u was found", l_id);
-                a_http_client->reply_status_code=404;
+                a_http_client->reply_status_code = Http_Status_NotFound;
                 strcpy(a_http_client->reply_reason_phrase,"Not found");
             } else {
                 log_it(L_INFO,"Session id %u was found with channels = %s", l_id, l_ss->active_channels);
@@ -469,7 +470,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     dap_stream_t *l_stream = s_stream_new(a_http_client, &l_ss->node);
                     if (!l_stream) {
                         log_it(L_CRITICAL, "Memory allocation error");
-                        a_http_client->reply_status_code=404;
+                        a_http_client->reply_status_code = Http_Status_NotFound;
                         return;
                     }
                     l_stream->session = l_ss;
@@ -483,7 +484,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                         //l_stream->channel[i]->ready_to_write = true;
                     }
 
-                    a_http_client->reply_status_code=200;
+                    a_http_client->reply_status_code = Http_Status_OK;
                     strcpy(a_http_client->reply_reason_phrase,"OK");
                     s_stream_states_update(l_stream);
                     a_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
@@ -491,7 +492,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     dap_events_socket_set_writable_unsafe(a_http_client->esocket,true);
                 }else{
                     log_it(L_ERROR,"Can't open session id %u", l_id);
-                    a_http_client->reply_status_code=404;
+                    a_http_client->reply_status_code = Http_Status_NotFound;
                     strcpy(a_http_client->reply_reason_phrase,"Not found");
                 }
             }
@@ -510,7 +511,7 @@ static bool s_http_client_headers_write(dap_http_client_t * a_http_client, void 
 {
     (void) a_arg;
     //log_it(L_DEBUG,"s_http_client_headers_write()");
-    if(a_http_client->reply_status_code==200){
+    if(a_http_client->reply_status_code == Http_Status_OK){
         dap_stream_t *l_stream=DAP_STREAM(a_http_client);
 
         dap_http_out_header_add(a_http_client,"Content-Type","application/octet-stream");
@@ -531,15 +532,12 @@ static bool s_http_client_headers_write(dap_http_client_t * a_http_client, void 
  * @param a_http_client HTTP client instance
  * @param a_arg Not used
  */
-static bool s_http_client_data_write(dap_http_client_t * a_http_client, void * a_arg)
+static bool s_http_client_data_write(dap_http_client_t * a_http_client, void UNUSED_ARG *a_arg)
 {
-    (void) a_arg;
+    if (a_http_client->reply_status_code == Http_Status_OK)
+        return s_esocket_write(a_http_client->esocket, a_arg);
 
-    if( a_http_client->reply_status_code == 200 ){
-        s_esocket_write(a_http_client->esocket, a_arg);
-    }else{
-        log_it(L_WARNING, "Wrong request, reply status code is %u",a_http_client->reply_status_code);
-    }
+    log_it(L_WARNING, "Wrong request, reply status code is %u", a_http_client->reply_status_code);
     return false;
 }
 
@@ -657,7 +655,7 @@ static bool s_esocket_write(dap_events_socket_t *a_esocket , void *a_arg)
     for (size_t i = 0; i < DAP_STREAM(l_http_client)->channel_count; i++) {
         dap_stream_ch_t *l_ch = DAP_STREAM(l_http_client)->channel[i];
         if (l_ch->ready_to_write && l_ch->proc->packet_out_callback)
-            l_ret = l_ch->proc->packet_out_callback(l_ch, a_arg);
+            l_ret |= l_ch->proc->packet_out_callback(l_ch, a_arg);
     }
     return l_ret;
 }
