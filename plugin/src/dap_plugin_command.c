@@ -105,6 +105,10 @@ static int s_command_handler(int a_argc, char **a_argv, void **reply)
             break;
         case CMD_RELOAD_NAME:{
             int l_result;
+            if(!l_cmd_arg){
+                dap_cli_server_cmd_set_reply_text(a_str_reply, "Need argument for this command");
+                break;
+            }
             l_result = dap_plugin_stop(l_cmd_arg);
             switch (l_result) {
                 case 0: //All is good
