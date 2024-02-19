@@ -173,10 +173,8 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
         dap_cluster_delete(a_cluster->links_cluster);
     if (a_cluster->role_cluster)
         dap_cluster_delete(a_cluster->role_cluster);
-    if (a_cluster->link_manager && a_cluster->link_manager->callbacks.delete)
-        a_cluster->link_manager->callbacks.delete(a_cluster->link_manager);
     
-    DAP_DEL_MULTY(a_cluster->link_manager, a_cluster->groups_mask);
+    DAP_DELETE(a_cluster->groups_mask);
     DL_DELETE(a_cluster->dbi->clusters, a_cluster);
     DAP_DELETE(a_cluster);
 }
