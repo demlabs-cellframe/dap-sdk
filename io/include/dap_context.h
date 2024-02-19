@@ -76,9 +76,13 @@ typedef struct dap_context {
 /* *** TODO Move this part to dap_worker_t context subtype *** */
 struct {
     /// Platform-specific fields
-#if defined DAP_EVENTS_CAPS_IOCP
-    HANDLE iocp;
-#elif defined DAP_EVENTS_CAPS_EPOLL
+#if defined DAP_EVENTS_CAPS_MSMQ
+    HANDLE msmq_events[MAXIMUM_WAIT_OBJECTS];
+#endif
+#ifdef DAP_EVENTS_CAPS_AIO
+    dap_slist_t garbage_list;
+#endif
+#if defined DAP_EVENTS_CAPS_EPOLL
     EPOLL_HANDLE epoll_fd;
     struct epoll_event epoll_events[ DAP_EVENTS_SOCKET_MAX];
 #elif defined (DAP_EVENTS_CAPS_POLL)

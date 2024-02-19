@@ -423,8 +423,6 @@ dap_list_t *dap_list_first(dap_list_t *a_list)
 {
     if (!a_list)
         return NULL;
-    if (!a_list->prev)
-        return a_list;
     while (a_list->prev->next)
         a_list = a_list->prev;
     return a_list;

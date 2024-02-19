@@ -48,7 +48,7 @@
 #include "dap_common.h"
 #include "dap_server.h"
 #include "dap_events_socket.h"
-#include "dap_http_server.h"
+#include "dap_http.h"
 #include "dap_http_header.h"
 #include "dap_http_client.h"
 
@@ -93,9 +93,9 @@ void dap_http_deinit()
  */
 int dap_http_new( dap_server_t *a_server, const char * a_server_name )
 {
-    a_server->_inheritor = DAP_NEW_Z(dap_http_server_t);
+    a_server->_inheritor = DAP_NEW_Z(dap_http_t);
 
-    dap_http_server_t *l_http = DAP_HTTP_SERVER( a_server );
+    dap_http_t *l_http = DAP_HTTP( a_server );
 
     l_http->server = a_server;
     strncpy( l_http->server_name, a_server_name, sizeof(l_http->server_name)-1 );
@@ -103,7 +103,7 @@ int dap_http_new( dap_server_t *a_server, const char * a_server_name )
     a_server->client_callbacks.new_callback    = dap_http_client_new;
     a_server->client_callbacks.delete_callback = dap_http_client_delete;
     a_server->client_callbacks.read_callback   = dap_http_client_read;
-    a_server->client_callbacks.write_callback  = dap_http_client_write_callback;
+    a_server->client_callbacks.write_callback  = dap_http_client_write;
     a_server->client_callbacks.error_callback  = dap_http_client_error;
 
     return 0;
@@ -117,7 +117,7 @@ int dap_http_new( dap_server_t *a_server, const char * a_server_name )
 void dap_http_delete( dap_server_t *a_server, void * a_arg )
 {
     (void) a_arg;
-    dap_http_server_t *l_http = DAP_HTTP_SERVER( a_server );
+    dap_http_t *l_http = DAP_HTTP( a_server );
     dap_http_url_proc_t *l_url_proc, *l_tmp;
 
     HASH_ITER( hh, l_http->url_proc ,l_url_proc, l_tmp ) {
@@ -155,14 +155,14 @@ void dap_http_delete( dap_server_t *a_server, void * a_arg )
  * body request contains remaining part of buffer. If data contains only in header, a_data_read_callback is not called.
  * @return dap_http_url_proc_t* 
  */
-dap_http_url_proc_t * dap_http_add_proc(dap_http_server_t *a_http, const char *a_url_path, void *a_inheritor
-                      , dap_http_client_callback_t a_new_callback
-                      , dap_http_client_callback_t a_delete_callback
-                      , dap_http_client_callback_t a_headers_read_callback
-                      , dap_http_client_callback_write_t a_headers_write_callback
-                      , dap_http_client_callback_t a_data_read_callback
-                      , dap_http_client_callback_write_t a_data_write_callback
-                      , dap_http_client_callback_error_t a_error_callback
+dap_http_url_proc_t * dap_http_add_proc(dap_http_t *a_http, const char *a_url_path, void *a_inheritor
+                      ,dap_http_client_callback_t a_new_callback
+                      ,dap_http_client_callback_t a_delete_callback
+                      ,dap_http_client_callback_t a_headers_read_callback
+                      ,dap_http_client_callback_ret_boolean_t a_headers_write_callback
+                      ,dap_http_client_callback_t a_data_read_callback
+                      ,dap_http_client_callback_t a_data_write_callback
+                      ,dap_http_client_callback_error_t a_error_callback
 
                       )
 {

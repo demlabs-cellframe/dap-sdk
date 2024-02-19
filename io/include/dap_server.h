@@ -44,12 +44,10 @@
 
 #elif defined(DAP_OS_WINDOWS)
 
+#define EPOLL_HANDLE  HANDLE
+#define MSG_DONTWAIT 0
+#define MSG_NOSIGNAL 0
 #include "winsock.h"
-#ifdef DAP_EVENTS_CAPS_IOCP
-extern LPFN_ACCEPTEX                pfn_AcceptEx;
-extern LPFN_GETACCEPTEXSOCKADDRS    pfn_GetAcceptExSockaddrs;
-#endif
-
 #elif defined(DAP_OS_BSD)
 
 #else
@@ -66,12 +64,13 @@ typedef enum dap_server_type {
 DAP_STATIC_INLINE const char *dap_server_type_str(dap_server_type_t a_type)
 {
     switch (a_type) {
-    case DAP_SERVER_TCP:    return "TCP/IPv4";
+    case DAP_SERVER_TCP: return "TCP/IPv4";
     case DAP_SERVER_TCP_V6: return "TCP/IPv6";
-    case DAP_SERVER_UDP:    return "UDP/IPv4";
-    case DAP_SERVER_LOCAL:  return "UNIX LOCAL";
-    default:                return "UNKNOWN";
+    case DAP_SERVER_UDP: return "UDP/IPv4";
+    case DAP_SERVER_LOCAL: return "UNIX LOCAL";
+    default:;
     }
+    return "UNKNOWN";
 }
 
 struct dap_server;

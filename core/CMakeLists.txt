@@ -58,9 +58,6 @@ if(WIN32)
         src/win32/*.c
         ../3rdparty/strptime.c
     )
-
-    set_source_files_properties(../3rdparty/strptime PROPERTIES COMPILE_FLAGS -Wno-deprecated-declarations)
-
 endif()
 
 add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})

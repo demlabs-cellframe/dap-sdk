@@ -40,7 +40,7 @@ typedef enum dap_json_rpc_version{
 
 int dap_json_rpc_init();
 void dap_json_rpc_deinit();
-void dap_json_rpc_add_proc_http(struct dap_http_server*sh, const char *URL);
+void dap_json_rpc_add_proc_http(struct dap_http *sh, const char *URL);
 
 #ifdef __cplusplus
 }

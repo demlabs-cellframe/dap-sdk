@@ -41,7 +41,7 @@
 
 #include "dap_common.h"
 #include "dap_events_socket.h"
-#include "dap_http_server.h"
+#include "dap_http.h"
 #include "dap_http_client.h"
 #include "dap_http_folder.h"
 #include "http_status_code.h"
@@ -65,7 +65,7 @@ typedef struct dap_http_file{
 void dap_http_folder_headers_read( dap_http_client_t *cl_ht, void *arg );
 bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void *arg );
 void dap_http_folder_data_read( dap_http_client_t *cl_ht, void *arg );
-bool dap_http_folder_data_write( dap_http_client_t *cl_ht, void *arg );
+void dap_http_folder_data_write( dap_http_client_t *cl_ht, void *arg );
 
 #define LOG_TAG "dap_http_folder"
 
@@ -86,7 +86,7 @@ void dap_http_folder_deinit( )
  * @param url_path Beginning part of the URL
  * @param local_path Local path that will be read for
  */
-int dap_http_folder_add(dap_http_server_t *sh, const char *url_path, const char *local_path )
+int dap_http_folder_add( dap_http_t *sh, const char *url_path, const char *local_path )
 {
   if ( !local_path ) {
     log_it( L_ERROR, "Directory Path parameter is empty!" );
@@ -164,7 +164,9 @@ int dap_http_folder_add(dap_http_server_t *sh, const char *url_path, const char 
 void dap_http_folder_headers_read(dap_http_client_t * cl_ht, void * arg)
 {
     (void) arg;
-    cl_ht->state_read = cl_ht->keep_alive ? DAP_HTTP_CLIENT_STATE_START : DAP_HTTP_CLIENT_STATE_NONE;
+    cl_ht->state_write=DAP_HTTP_CLIENT_STATE_START;
+    cl_ht->state_read=cl_ht->keep_alive?DAP_HTTP_CLIENT_STATE_START:DAP_HTTP_CLIENT_STATE_NONE;
+
     dap_events_socket_set_writable_unsafe(cl_ht->esocket,true);
     dap_events_socket_set_readable_unsafe(cl_ht->esocket, cl_ht->keep_alive);
 }
@@ -293,7 +295,7 @@ void dap_http_folder_data_read(dap_http_client_t * cl_ht, void * arg)
  * @param cl_ht HTTP client instance
  * @param arg
  */
-bool dap_http_folder_data_write(dap_http_client_t * cl_ht, void * arg)
+void dap_http_folder_data_write(dap_http_client_t * cl_ht, void * arg)
 {
     (void) arg;
     dap_http_file_t * cl_ht_file= DAP_HTTP_FILE(cl_ht);
@@ -309,7 +311,8 @@ bool dap_http_folder_data_write(dap_http_client_t * cl_ht, void * arg)
 
         if ( !cl_ht->keep_alive )
             cl_ht->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+
+        cl_ht->state_write=DAP_HTTP_CLIENT_STATE_NONE;
     }
-    return false;
 }
 

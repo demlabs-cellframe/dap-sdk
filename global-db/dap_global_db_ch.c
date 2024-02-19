@@ -35,6 +35,9 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 static void s_stream_ch_new(dap_stream_ch_t *a_ch, void *a_arg);
 static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg);
 static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg);
+static void s_stream_ch_packet_out(dap_stream_ch_t *a_ch, void *a_arg);
+static void s_stream_ch_io_complete(dap_events_socket_t *a_es, void *a_arg, int a_errno);
+static void s_stream_ch_write_error_unsafe(dap_stream_ch_t *a_ch, uint64_t a_net_id, uint64_t a_chain_id, uint64_t a_cell_id, const char * a_err_string);
 static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, dap_stream_node_addr_t a_sender_addr);
 
 /**
@@ -44,7 +47,8 @@ static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, da
 int dap_global_db_ch_init()
 {
     log_it(L_NOTICE, "Global DB exchange channel initialized");
-    dap_stream_ch_proc_add(DAP_STREAM_CH_GDB_ID, s_stream_ch_new, s_stream_ch_delete, s_stream_ch_packet_in, NULL);
+    dap_stream_ch_proc_add(DAP_STREAM_CH_GDB_ID, s_stream_ch_new, s_stream_ch_delete,
+                                                 s_stream_ch_packet_in, s_stream_ch_packet_out);
     assert(!dap_stream_ch_gossip_callback_add(DAP_STREAM_CH_GDB_ID, s_gossip_payload_callback));
     return 0;
 }
@@ -69,6 +73,7 @@ void s_stream_ch_new(dap_stream_ch_t *a_ch, void *a_arg)
         return;
     }
     l_ch_gdb->_inheritor = a_ch;
+    a_ch->stream->esocket->callbacks.write_finished_callback = s_stream_ch_io_complete;
     debug_if(g_dap_global_db_debug_more, L_NOTICE, "Created GDB sync channel %p with internal data %p", a_ch, l_ch_gdb);
 }
 
@@ -266,6 +271,16 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         log_it(L_WARNING, "Unknown global DB packet type %hhu", l_ch_pkt->hdr.type);
         break;
     }
+}
+
+static void s_stream_ch_packet_out(dap_stream_ch_t *a_ch, void *a_arg)
+{
+
+}
+
+static void s_stream_ch_io_complete(dap_events_socket_t *a_es, void *a_arg, int a_errno)
+{
+
 }
 
 /**

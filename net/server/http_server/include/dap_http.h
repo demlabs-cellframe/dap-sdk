@@ -29,14 +29,14 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_http_cache.h"
 #include "uthash.h"
 
-struct dap_http_server;
+struct dap_http;
 struct dap_http_url_processor;
 //Structure for internal data of dap_server_t structure for holding special HTTP data
 
 // Structure for holding URL processors
 typedef struct dap_http_url_proc{
     char url[512]; // First part of URL that will be processed
-    struct dap_http_server *http; // Pointer to HTTP server instance
+    struct dap_http * http; // Pointer to HTTP server instance
 
     dap_http_cache_t * cache; // In memory cache, could be present or not
     pthread_rwlock_t cache_rwlock;
@@ -45,10 +45,10 @@ typedef struct dap_http_url_proc{
     dap_http_client_callback_t delete_callback; // Delete internal structure
 
     dap_http_client_callback_t headers_read_callback;
-    dap_http_client_callback_write_t headers_write_callback;
+    dap_http_client_callback_ret_boolean_t headers_write_callback;
 
     dap_http_client_callback_t data_read_callback;
-    dap_http_client_callback_write_t data_write_callback;
+    dap_http_client_callback_t data_write_callback;
     dap_http_client_callback_error_t error_callback;
 
     dap_http_client_callback_t access_callback;
@@ -58,13 +58,13 @@ typedef struct dap_http_url_proc{
 } dap_http_url_proc_t;
 
 // Internal server structure for HTTP server
-typedef struct dap_http_server {
+typedef struct dap_http {
     dap_server_t *server;
     char server_name[256];
     dap_http_url_proc_t * url_proc;
-} dap_http_server_t;
+} dap_http_t;
 
-#define DAP_HTTP_SERVER(a) ((dap_http_server_t *) (a)->_inheritor)
+#define DAP_HTTP(a) ((dap_http_t *) (a)->_inheritor)
 
 int dap_http_init( ); // Init module
 void dap_http_deinit( ); // Deinit module
@@ -72,11 +72,11 @@ void dap_http_deinit( ); // Deinit module
 int dap_http_new( dap_server_t *a_server, const char *a_server_name ); // Create dap_http structure in the internal data field of dap_server_t instance
 void dap_http_delete( dap_server_t *a_server, void *a_arg ); // Clear dap_http structure in the internal data field of dap_server_t instance
 
-dap_http_url_proc_t * dap_http_add_proc(dap_http_server_t *sh, const char *url_path, void *internal
-                             , dap_http_client_callback_t new_callback
-                             , dap_http_client_callback_t delete_callback
-                             , dap_http_client_callback_t headers_read_callback
-                             , dap_http_client_callback_write_t headers_write_callback
-                             , dap_http_client_callback_t data_read_callback
-                             , dap_http_client_callback_write_t data_write_callback
-                             , dap_http_client_callback_error_t error_callback ); // Add custom procesor for the HTTP server
+dap_http_url_proc_t * dap_http_add_proc(dap_http_t *sh, const char *url_path, void *internal
+                             ,dap_http_client_callback_t new_callback
+                             ,dap_http_client_callback_t delete_callback
+                             ,dap_http_client_callback_t headers_read_callback
+                             ,dap_http_client_callback_ret_boolean_t headers_write_callback
+                             ,dap_http_client_callback_t data_read_callback
+                             ,dap_http_client_callback_t data_write_callback
+                             ,dap_http_client_callback_error_t error_callback ); // Add custom procesor for the HTTP server

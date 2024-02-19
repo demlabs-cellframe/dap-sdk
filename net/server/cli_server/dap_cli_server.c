@@ -30,7 +30,8 @@
 #include <assert.h>
 #include <unistd.h>
 #include <pthread.h>
-#ifndef DAP_OS_WINDOWS
+
+#ifdef DAP_OS_DARWIN
 #include <poll.h>
 #endif
 
@@ -381,6 +382,7 @@ int dap_cli_server_init(bool a_debug_more,const char * a_socket_path_or_address,
    pthread_t threadId;
 #endif
 
+    struct sockaddr_in server_addr;
     SOCKET sockfd = -1;
 
     // create thread for waiting of clients
@@ -400,7 +402,7 @@ int dap_cli_server_init(bool a_debug_more,const char * a_socket_path_or_address,
         }
         log_it( L_INFO, "Console interace on path %s (%04o) ", l_listen_unix_socket_path, l_listen_unix_socket_permissions );
 
-      #ifndef DAP_OS_WINDOWS
+      #ifndef _WIN32
 
         if ( server_sockfd >= 0 ) {
             dap_cli_server_deinit();
@@ -455,15 +457,13 @@ int dap_cli_server_init(bool a_debug_more,const char * a_socket_path_or_address,
 
         log_it( L_INFO, "Console interace on addr %s port %u ", l_listen_addr_str, l_listen_port );
 
-        struct sockaddr_in server_addr = (struct sockaddr_in) {
-            .sin_family = AF_INET,
-            .sin_port   = htons((uint16_t)l_listen_port)
-        };
-#ifdef DAP_OS_WINDOWS
-
+        server_addr.sin_family = AF_INET;
+#ifdef _WIN32
         server_addr.sin_addr = (struct in_addr){{ .S_addr = htonl(INADDR_LOOPBACK) }};
+        server_addr.sin_port = htons( (uint16_t)l_listen_port );;
 #else
         inet_pton( AF_INET, l_listen_addr_str, &server_addr.sin_addr );
+        server_addr.sin_port = htons( (uint16_t)l_listen_port );
 #endif
         // create socket
         if ( (sockfd = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET ) {
@@ -836,17 +836,21 @@ char    *str_header;
                     json_object_object_add(json_res, "ret_code", json_object_new_int(res));
                     json_object_array_add(json_com_res, json_res);
                 }
-            } else
-                reply_body = dap_strdup(str_reply);
+            }
+            else{
+                if (str_reply) {
+                    reply_body = dap_strdup_printf("%s", (str_reply) ? str_reply : "");
+                } 
+            }
             
             // create response 
             dap_json_rpc_response_t* response = NULL;
             if (reply_body) {
                 response = dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id);
+                json_object_put(json_com_res);
             } else {
-                response = dap_json_rpc_response_create(json_object_get(json_com_res), TYPE_RESPONSE_JSON, request->id);
+                response = dap_json_rpc_response_create(json_com_res, TYPE_RESPONSE_JSON, request->id);
             }
-            json_object_put(json_com_res);
             const char* response_string = dap_json_rpc_response_to_string(response);
             // send the result of the command function
             char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"

@@ -405,17 +405,9 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     }
     switch (dap_store_obj_driver_hash_compare(l_read_obj, a_obj)) {
     case 1:         // Received object is older
-        if (a_obj->key && (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)) {
-            dap_nanotime_t l_time_diff = l_read_obj->timestamp - a_obj->timestamp;
-            a_obj->timestamp = l_read_obj->timestamp + 1;
-            a_obj->sign = dap_store_obj_sign(a_obj, a_dbi->signing_key, &a_obj->crc);
-            debug_if(g_dap_global_db_debug_more, L_WARNING, "DB record with group %s and key %s need time corrction for %zu seconds to be properly applied",
-                                                            a_obj->group, a_obj->key, dap_nanotime_to_sec(l_time_diff));
-        } else {
-            debug_if(g_dap_global_db_debug_more, L_DEBUG, "DB record with group %s and key %s is not applied. It's older than existed record with same key",
-                                                            a_obj->group, a_obj->key);
-            l_ret = -18;
-        }
+        debug_if(g_dap_global_db_debug_more, L_DEBUG, "DB record with group %s and key %s is not applied. It's older than existed record with same key",
+                                                        a_obj->group, a_obj->key);
+        l_ret = -18;
         break;
     case 0:         // Objects the same, omg! Use the basic object
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Duplicate record with group %s and key %s not dropped by hash filter",
@@ -425,36 +417,32 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     case -1:        // Existed obj is older
         debug_if(g_dap_global_db_debug_more, L_INFO, "Applied new global DB record with group %s and key %s",
                                                                                         a_obj->group, a_obj->key);
-        break;
-    default:
-        log_it(L_ERROR, "Unexpected comparision result");
-        l_ret = -19;
-        break;
-    }
-    if (!l_ret) {
         // Only the condition to apply new object
         l_ret = dap_global_db_driver_apply(a_obj, 1);
-
         if (l_read_obj && dap_strcmp(l_read_obj->group, a_obj->group)) {
             debug_if(g_dap_global_db_debug_more, L_INFO, "Deleted global DB record with group %s and same key",
                                                                                         l_read_obj->group);
             dap_global_db_driver_delete(l_read_obj, 1);
         }
-        if (l_obj_type != DAP_GLOBAL_DB_OPTYPE_DEL || l_read_obj) {
+        if (l_obj_type == DAP_GLOBAL_DB_OPTYPE_DEL && !l_read_obj)
             // Do not notify for delete if deleted record not exists
-            if (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)
-                // Notify sync cluster first in driver format
-                dap_global_db_cluster_broadcast(l_cluster, a_obj);
-            if (l_cluster->notifiers) {
-                // Notify others in user space format
-                char *l_old_group_ptr = a_obj->group;
-                a_obj->group = l_basic_group;
-                a_obj->type = l_obj_type;
-                dap_global_db_cluster_notify(l_cluster, a_obj);
-                a_obj->group = l_old_group_ptr;
-                a_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
-            }
+            break;
+        if (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)
+            // Notify sync cluster first in driver format
+            dap_global_db_cluster_broadcast(l_cluster, a_obj);
+        if (l_cluster->notifiers) {
+            // Notify others in user space format
+            char *l_old_group_ptr = a_obj->group;
+            a_obj->group = l_basic_group;
+            a_obj->type = l_obj_type;
+            dap_global_db_cluster_notify(l_cluster, a_obj);
+            a_obj->group = l_old_group_ptr;
+            a_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
         }
+        break;
+    default:
+        log_it(L_ERROR, "Unexpected comparision result");
+        break;
     }
 free_n_exit:
     if (l_obj_type == DAP_GLOBAL_DB_OPTYPE_DEL)
@@ -1048,20 +1036,20 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
         return -1;
     }
 
-    dap_store_obj_t l_store_data = {
-        .timestamp  = a_timestamp,
-        .type       = DAP_GLOBAL_DB_OPTYPE_ADD,
-        .flags      = DAP_GLOBAL_DB_RECORD_NEW | (a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0),
-        .group      = (char*)a_group,
-        .key        = (char*)a_key,
-        .value      = (byte_t*)a_value,
-        .value_len  = a_value_length,
-    };
+    dap_store_obj_t l_store_data = { 0 };
+    l_store_data.type = DAP_GLOBAL_DB_OPTYPE_ADD;
+    l_store_data.key = (char *)a_key ;
+    l_store_data.flags = DAP_GLOBAL_DB_RECORD_NEW | (a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0);
+    l_store_data.value_len =  a_value_length;
+    l_store_data.value = (uint8_t *)a_value;
+    l_store_data.group = (char *)a_group;
+    l_store_data.timestamp = a_timestamp;
     l_store_data.sign = dap_store_obj_sign(&l_store_data, a_dbi->signing_key, &l_store_data.crc);
     if (!l_store_data.sign) {
         log_it(L_ERROR, "Can't sign new global DB object group %s key %s", a_group, a_key);
         return -2;
     }
+
     int l_res = s_store_obj_apply(a_dbi, &l_store_data);
     DAP_DELETE(l_store_data.sign);
     return l_res;
@@ -1915,7 +1903,7 @@ bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj)
 
     if (!ret) {
         char l_ts[128] = { '\0' };
-        dap_nanotime_to_str_rfc822(l_ts, sizeof(l_ts), a_obj->timestamp);
+        dap_gbd_time_to_str_rfc822(l_ts, sizeof(l_ts), a_obj->timestamp);
         log_it(L_MSG, "[!] Corrupted object %s (len %zu) : %s (len %zu), ts %s",
                a_obj->group, dap_strlen(a_obj->group), a_obj->key, dap_strlen(a_obj->key), l_ts);
     }

@@ -715,83 +715,110 @@ dap_global_db_pkt_old_t *dap_global_db_pkt_serialize_old(dap_store_obj_t *a_stor
  */
 dap_store_obj_t *dap_global_db_pkt_deserialize_old(const dap_global_db_pkt_t *a_pkt, size_t *a_store_obj_count)
 {
-uint32_t l_count;
+uint32_t l_count, l_cur_count;
+uint64_t l_size;
 byte_t *pdata, *pdata_end;
 dap_store_obj_t *l_store_obj_arr, *l_obj;
 
     if(!a_pkt || a_pkt->data_size < sizeof(dap_global_db_pkt_t))
         return NULL;
 
-    if ( !(l_store_obj_arr = DAP_NEW_Z_COUNT(dap_store_obj_t, a_pkt->obj_count)) ) {
-        log_it(L_CRITICAL, "Memory allocation error");
+    l_count = a_pkt->obj_count;
+    l_size = l_count <= UINT16_MAX ? l_count * sizeof(struct dap_store_obj) : 0;
+
+    l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_size);
+
+    if (!l_store_obj_arr || !l_size)
+    {
+        log_it(L_ERROR, "Invalid size: can't allocate %"DAP_UINT64_FORMAT_U" bytes, errno=%d", l_size, errno);
+        DAP_DEL_Z(l_store_obj_arr);
         return NULL;
     }
 
-    pdata = (byte_t*)a_pkt->data; pdata_end = pdata + a_pkt->data_size;
+    pdata = (byte_t*)a_pkt->data;                                  /* Set <pdata> to begin of payload */
+    pdata_end = pdata + a_pkt->data_size;                                   /* Set <pdata_end> to end of payload area
+                                                                              will be used to prevent out-of-buffer case */
     l_obj = l_store_obj_arr;
 
-    for (l_count = 0; l_count < a_pkt->obj_count; ++l_count, ++l_obj) {
-        if ( pdata + sizeof (uint32_t) > pdata_end ) {
-            log_it(L_ERROR, "Broken GDB element: can't read 'type' field"); break;
-        }
+    for ( l_cur_count = l_count ; l_cur_count; --l_cur_count, ++l_obj ) {
+        if ( (pdata  + sizeof (uint32_t)) > pdata_end )                     /* Check for buffer boundaries */
+            {log_it(L_ERROR, "Broken GDB element: can't read 'type' field"); break;}
         memcpy(&l_obj->type, pdata, sizeof(uint32_t)); pdata += sizeof(uint32_t);
 
-        if ( pdata + sizeof (uint16_t) > pdata_end ) {
-            log_it(L_ERROR, "Broken GDB element: can't read 'group_length' field"); break;
-        }
+        if ( (pdata  + sizeof (uint16_t)) > pdata_end )
+            {log_it(L_ERROR, "Broken GDB element: can't read 'group_length' field"); break;}
         memcpy(&l_obj->group_len, pdata, sizeof(uint16_t)); pdata += sizeof(uint16_t);
 
-        if (!l_obj->group_len || pdata + l_obj->group_len > pdata_end) {
-            log_it(L_ERROR, "Broken GDB element: can't read 'group' field"); break;
-        }
+        if ( !l_obj->group_len )
+            {log_it(L_ERROR, "Broken GDB element: 'group_len' field is zero"); break;}
+
+        if ( (pdata + l_obj->group_len) > pdata_end )
+            {log_it(L_ERROR, "Broken GDB element: can't read 'group' field"); break;}
+
         l_obj->group = DAP_NEW_Z_SIZE(char, l_obj->group_len + 1);
         memcpy(l_obj->group, pdata, l_obj->group_len); pdata += l_obj->group_len;
 
-        if ( pdata + sizeof (uint64_t) > pdata_end ) {
-            log_it(L_ERROR, "Broken GDB element: can't read 'id' field");
-            DAP_DELETE(l_obj->group); break;
+        /*
+        l_obj->group = dap_strdup((char*)pdata); pdata += l_obj->group_len + 1;
+        if (dap_strlen(l_obj->group) != l_obj->group_len) {
+            log_it(L_ERROR, "Broken GDB element: inconsistent 'group' field, length mismatch %zu != %zu",
+                   dap_strlen(l_obj->group), l_obj->group_len);
+            DAP_DELETE(l_obj->group);
+            break;
         }
+        */ // Protocol version update needed...
+
+        if ( (pdata + sizeof (uint64_t)) > pdata_end )
+            {log_it(L_ERROR, "Broken GDB element: can't read 'id' field"); break;}
         memcpy(&l_obj->id, pdata, sizeof(uint64_t)); pdata += sizeof(uint64_t);
 
-        if ( pdata + sizeof (uint64_t) > pdata_end ) {
-            log_it(L_ERROR, "Broken GDB element: can't read 'timestamp' field");
-            DAP_DELETE(l_obj->group); break;
-        }
+        if ( (pdata + sizeof (uint64_t)) > pdata_end )
+            {log_it(L_ERROR, "Broken GDB element: can't read 'timestamp' field");  break;}
         memcpy(&l_obj->timestamp, pdata, sizeof(uint64_t)); pdata += sizeof(uint64_t);
 
-        if ( pdata + sizeof (uint16_t) > pdata_end ) {
-            log_it(L_ERROR, "Broken GDB element: can't read 'key_length' field");
-            DAP_DELETE(l_obj->group); break;
-        }
+        if ( (pdata + sizeof (uint16_t)) > pdata_end)
+            {log_it(L_ERROR, "Broken GDB element: can't read 'key_length' field"); break;}
         memcpy(&l_obj->key_len, pdata, sizeof(uint16_t)); pdata += sizeof(uint16_t);
 
-        if ( !l_obj->key_len || pdata + l_obj->key_len > pdata_end ) {
-            log_it(L_ERROR, "Broken GDB element: 'key' field");
-            DAP_DELETE(l_obj->group); break;
-        }
+        if ( !l_obj->key_len )
+            {log_it(L_ERROR, "Broken GDB element: 'key_length' field is zero"); break;}
+
+        if ((pdata + l_obj->key_len) > pdata_end)
+            {log_it(L_ERROR, "Broken GDB element: 'key_length' field is out from allocated memory"); break;}
+
         l_obj->key = DAP_NEW_Z_SIZE(char, l_obj->key_len + 1);
         memcpy((char*)l_obj->key, pdata, l_obj->key_len); pdata += l_obj->key_len;
-
-        if ( pdata + sizeof (uint64_t) > pdata_end ) {
-            log_it(L_ERROR, "Broken GDB element: can't read 'value_length' field");
+        /*
+        l_obj->key = dap_strdup((char*)pdata); pdata += l_obj->key_len + 1;
+        if (dap_strlen(l_obj->key) != l_obj->key_len) {
+            log_it(L_ERROR, "Broken GDB element: inconsistent 'key' field, length mismatch %zu != %zu",
+                   dap_strlen(l_obj->group), l_obj->group_len);
             DAP_DELETE(l_obj->group);
-            DAP_DELETE(l_obj->key); break;
+            DAP_DELETE(l_obj->key);
+            break;
         }
+        */ // Protocol version update needed...
+
+        if ( (pdata + sizeof (uint64_t)) > pdata_end )
+            {log_it(L_ERROR, "Broken GDB element: can't read 'value_length' field"); break;}
         memcpy(&l_obj->value_len, pdata, sizeof(uint64_t)); pdata += sizeof(uint64_t);
 
-        if (l_obj->value_len && pdata + l_obj->value_len > pdata_end ) {
-            log_it(L_ERROR, "Broken GDB element: can't read 'value' field");
-            DAP_DELETE(l_obj->group);
-            DAP_DELETE(l_obj->key); break;
+        if (l_obj->value_len && !(l_obj->value = DAP_DUP_SIZE(pdata, l_obj->value_len))) {
+            log_it(L_CRITICAL, "Memory allocation error");
+            DAP_DEL_Z(l_obj->key_byte);
+            DAP_DEL_Z(l_obj->group);
+            DAP_DEL_Z(l_store_obj_arr);
+            return NULL;
         }
-        l_obj->value = DAP_DUP_SIZE(pdata, l_obj->value_len); pdata += l_obj->value_len;
+        pdata += l_obj->value_len;
     }
 
-    if ( pdata < pdata_end ) {
-        log_it(L_WARNING, "Unprocessed %zu bytes left in GDB packet", pdata_end - pdata);
-        l_store_obj_arr = DAP_REALLOC_COUNT(l_store_obj_arr, l_count);
+    if (pdata != pdata_end) {
+        log_it(L_MSG, "! Unprocessed data left: %zu bytes", pdata_end - pdata);
     }
 
+    // Return the number of completely filled dap_store_obj_t structures
+    // because l_cur_count may be less than l_count due to too little memory
     if (a_store_obj_count)
         *a_store_obj_count = l_count;
 

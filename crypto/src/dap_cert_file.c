@@ -154,7 +154,7 @@ void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t
                 return;
             }
         } else {
-            l_meta_arr = DAP_REALLOC_COUNT(l_meta_arr, l_meta_items_count + 1);
+            l_meta_arr = DAP_REALLOC(l_meta_arr, (l_meta_items_count + 1) * sizeof(dap_cert_metadata_t *));
             if (!l_meta_arr) {
                 log_it(L_CRITICAL, "Memory allocation error");
                 return;
