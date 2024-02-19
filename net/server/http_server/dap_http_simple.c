@@ -249,9 +249,12 @@ inline static void s_write_data_to_socket(dap_http_simple_t *a_simple)
     dap_worker_exec_callback_on(dap_events_worker_get(a_simple->worker->id), s_esocket_worker_write_callback, a_simple);
 }
 
-static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg) {
-    (void)a_arg;
-    dap_http_simple_t  *l_hs = DAP_HTTP_SIMPLE(cl_ht);
+static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg)
+{
+    dap_http_simple_t *l_hs = DAP_HTTP_SIMPLE(cl_ht);
+    assert(a_arg == l_hs);
+    if (!l_hs)
+        return false;
     if (cl_ht->reply_status_code == 200) {
         for (dap_http_header_t *i = l_hs->ext_headers; i; i = i->next) {
             dap_http_out_header_add(cl_ht, i->name, i->value);

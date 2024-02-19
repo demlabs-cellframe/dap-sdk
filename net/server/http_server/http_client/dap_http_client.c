@@ -524,11 +524,12 @@ void dap_http_client_write(dap_http_client_t *a_http_client)
     dap_http_header_t *hdr = a_http_client->out_headers;
     if ( a_http_client->proc ) {
         // We check out_headers because if they are - we send only cached headers and don't call headers_write_callback at all
-        if ( !a_http_client->out_headers  && a_http_client->proc->headers_write_callback ){
-                bool not_generate_default_headers = a_http_client->proc->headers_write_callback( a_http_client, NULL );
-                if (!not_generate_default_headers)
-                    dap_http_client_out_header_generate( a_http_client );
-        } else if (a_http_client->out_headers) {
+        if (!a_http_client->out_headers) {
+            bool l_generate_default_headers = a_http_client->proc->headers_write_callback && a_http_client->state_read != DAP_HTTP_CLIENT_STATE_NONE ?
+                        !a_http_client->proc->headers_write_callback(a_http_client, a_http_client->esocket->callbacks.arg) : true;
+            if (l_generate_default_headers)
+                dap_http_client_out_header_generate( a_http_client );
+        } else {
             a_http_client->reply_status_code = Http_Status_OK; // Cached data are always OK... for now.
             //TODO: make cached reply status code
         }
@@ -557,7 +558,8 @@ bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
 {
     dap_return_val_if_fail(a_esocket, false);
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
-    if (l_http_client->reply_status_code != Http_Status_OK) {       // No write data if error code set
+    if (l_http_client->reply_status_code != Http_Status_OK || l_http_client->state_read == DAP_HTTP_CLIENT_STATE_NONE) {
+        // No write data if error code set
         l_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
         return false;
     }
