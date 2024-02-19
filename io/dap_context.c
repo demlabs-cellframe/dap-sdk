@@ -1184,88 +1184,88 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                  * Socket is ready to write and not going to close
                  */
                 if ( l_cur->context && l_cur->buf_out_size ){ // esocket wasn't unassigned in callback, we need some other ops with it
-                        switch (l_cur->type){
-                            case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                            case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
-                                l_bytes_sent = send(l_cur->socket, (const char *)l_cur->buf_out,
-                                                    l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
-                                if (l_bytes_sent == -1)
+                    switch (l_cur->type){
+                    case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+                    case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
+                        l_bytes_sent = send(l_cur->socket, (const char *)l_cur->buf_out,
+                                            l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL);
+                        if (l_bytes_sent == -1)
 #ifdef DAP_OS_WINDOWS
-                                    l_errno = WSAGetLastError();
+                            l_errno = WSAGetLastError();
 #else
-                                    l_errno = errno;
+                            l_errno = errno;
 #endif
-                                else
-                                    l_errno = 0;
-                            }
-                            break;
-                            case DESCRIPTOR_TYPE_SOCKET_UDP:
-                                l_bytes_sent = sendto(l_cur->socket, (const char *)l_cur->buf_out,
-                                                      l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL,
-                                                      (struct sockaddr *)&l_cur->remote_addr, sizeof(l_cur->remote_addr));
+                        else
+                            l_errno = 0;
+                    }
+                    break;
+                    case DESCRIPTOR_TYPE_SOCKET_UDP:
+                        l_bytes_sent = sendto(l_cur->socket, (const char *)l_cur->buf_out,
+                                              l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL,
+                                              (struct sockaddr *)&l_cur->remote_addr, sizeof(l_cur->remote_addr));
 #ifdef DAP_OS_WINDOWS
-                                dap_events_socket_set_writable_unsafe(l_cur,false);
-                                l_errno = WSAGetLastError();
+                        dap_events_socket_set_writable_unsafe(l_cur,false);
+                        l_errno = WSAGetLastError();
 #else
-                                l_errno = errno;
+                        l_errno = errno;
 #endif
-                            break;
-                            case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL: {
+                    break;
+                    case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL: {
 #ifndef DAP_NET_CLIENT_NO_SSL
-                                WOLFSSL *l_ssl = SSL(l_cur);
-                                l_bytes_sent = wolfSSL_write(l_ssl, (char *)(l_cur->buf_out), l_cur->buf_out_size);
-                                if (l_bytes_sent > 0)
-                                    log_it(L_DEBUG, "SSL write: %s", (char *)(l_cur->buf_out));
-                                l_errno = wolfSSL_get_error(l_ssl, 0);
+                        WOLFSSL *l_ssl = SSL(l_cur);
+                        l_bytes_sent = wolfSSL_write(l_ssl, (char *)(l_cur->buf_out), l_cur->buf_out_size);
+                        if (l_bytes_sent > 0)
+                            log_it(L_DEBUG, "SSL write: %s", (char *)(l_cur->buf_out));
+                        l_errno = wolfSSL_get_error(l_ssl, 0);
 #endif
-                            }
-                            case DESCRIPTOR_TYPE_QUEUE:
-                                if (l_cur->flags & DAP_SOCK_QUEUE_PTR && l_cur->buf_out_size>= sizeof (void*)) {
+                    }
+                    case DESCRIPTOR_TYPE_QUEUE:
+                        if (l_cur->flags & DAP_SOCK_QUEUE_PTR && l_cur->buf_out_size>= sizeof (void*)) {
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-                                    l_bytes_sent = write(l_cur->fd, l_cur->buf_out, /* sizeof(void *) */ l_cur->buf_out_size);
-                                    l_errno = l_bytes_sent < (ssize_t)l_cur->buf_out_size ? errno : 0;
-                                    debug_if(l_errno, L_ERROR, "Writing to pipe %lu bytes failed, sent %lu only...", l_cur->buf_out_size, l_bytes_sent);
+                            l_bytes_sent = write(l_cur->fd, l_cur->buf_out, /* sizeof(void *) */ l_cur->buf_out_size);
+                            l_errno = l_bytes_sent < (ssize_t)l_cur->buf_out_size ? errno : 0;
+                            debug_if(l_errno, L_ERROR, "Writing to pipe %lu bytes failed, sent %lu only...", l_cur->buf_out_size, l_bytes_sent);
 #elif defined (DAP_EVENTS_CAPS_QUEUE_POSIX)
-                                    l_bytes_sent = mq_send(a_es->mqd, (const char *)&a_arg,sizeof (a_arg),0);
+                            l_bytes_sent = mq_send(a_es->mqd, (const char *)&a_arg,sizeof (a_arg),0);
 #elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
-                                    l_bytes_sent = mq_send(l_cur->mqd , (const char *)l_cur->buf_out,sizeof (void*),0);
-                                    if(l_bytes_sent == 0)
-                                        l_bytes_sent = sizeof (void*);
-                                    l_errno = errno;
-                                    if (l_bytes_sent == -1 && l_errno == EINVAL) // To make compatible with other
-                                        l_errno = EAGAIN;                        // non-blocking sockets
+                            l_bytes_sent = mq_send(l_cur->mqd , (const char *)l_cur->buf_out,sizeof (void*),0);
+                            if(l_bytes_sent == 0)
+                                l_bytes_sent = sizeof (void*);
+                            l_errno = errno;
+                            if (l_bytes_sent == -1 && l_errno == EINVAL) // To make compatible with other
+                                l_errno = EAGAIN;                        // non-blocking sockets
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
-                                    struct kevent* l_event=&l_cur->kqueue_event;
-                                    dap_events_socket_w_data_t * l_es_w_data = DAP_NEW_Z(dap_events_socket_w_data_t);
-                                    l_es_w_data->esocket = l_cur;
-                                    memcpy(&l_es_w_data->ptr, l_cur->buf_out,sizeof(l_cur));
-                                    EV_SET(l_event,l_cur->socket, l_cur->kqueue_base_filter,l_cur->kqueue_base_flags, l_cur->kqueue_base_fflags,l_cur->kqueue_data, l_es_w_data);
-                                    int l_n = kevent(a_context->kqueue_fd,l_event,1,NULL,0,NULL);
-                                    if (l_n == 1){
-                                        l_bytes_sent = sizeof(l_cur);
-                                    }else{
-                                        l_errno = errno;
-                                        log_it(L_WARNING,"queue ptr send error: kevent %p errno: %d", l_es_w_data, l_errno);
-                                        DAP_DELETE(l_es_w_data);
-                                    }
+                            struct kevent* l_event=&l_cur->kqueue_event;
+                            dap_events_socket_w_data_t * l_es_w_data = DAP_NEW_Z(dap_events_socket_w_data_t);
+                            l_es_w_data->esocket = l_cur;
+                            memcpy(&l_es_w_data->ptr, l_cur->buf_out,sizeof(l_cur));
+                            EV_SET(l_event,l_cur->socket, l_cur->kqueue_base_filter,l_cur->kqueue_base_flags, l_cur->kqueue_base_fflags,l_cur->kqueue_data, l_es_w_data);
+                            int l_n = kevent(a_context->kqueue_fd,l_event,1,NULL,0,NULL);
+                            if (l_n == 1){
+                                l_bytes_sent = sizeof(l_cur);
+                            }else{
+                                l_errno = errno;
+                                log_it(L_WARNING,"queue ptr send error: kevent %p errno: %d", l_es_w_data, l_errno);
+                                DAP_DELETE(l_es_w_data);
+                            }
 
 #else
 #error "Not implemented dap_events_socket_queue_ptr_send() for this platform"
 #endif
-                                }else{
-                                     assert("Not implemented non-ptr queue send from outgoing buffer");
-                                     // TODO Implement non-ptr queue output
-                                 }
-                            break;
-                            case DESCRIPTOR_TYPE_PIPE:
-                            case DESCRIPTOR_TYPE_FILE:
-                                l_bytes_sent = write(l_cur->fd, (char *) (l_cur->buf_out), l_cur->buf_out_size );
-                                l_errno = errno;
-                            break;
-                            default:
-                                log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET" is not SOCKET, PIPE or FILE but has WRITE state on. Switching it off", l_cur->socket);
-                                dap_events_socket_set_writable_unsafe(l_cur,false);
-                        }
+                        }else{
+                             assert("Not implemented non-ptr queue send from outgoing buffer");
+                             // TODO Implement non-ptr queue output
+                         }
+                    break;
+                    case DESCRIPTOR_TYPE_PIPE:
+                    case DESCRIPTOR_TYPE_FILE:
+                        l_bytes_sent = write(l_cur->fd, (char *) (l_cur->buf_out), l_cur->buf_out_size );
+                        l_errno = errno;
+                    break;
+                    default:
+                        log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET" is not SOCKET, PIPE or FILE but has WRITE state on. Switching it off", l_cur->socket);
+                        dap_events_socket_set_writable_unsafe(l_cur,false);
+                    }
 
                     if (l_bytes_sent < 0) {
 #ifdef DAP_OS_WINDOWS
@@ -1305,13 +1305,13 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             l_cur->buf_out_size = 0;
                         }
                     }
-                    /*
-                     * If whole buffer has been sent - clear "write flag" for socket/file descriptor to prevent
-                     * generation of unexpected I/O events like POLLOUT and consuming CPU by this.
-                     */
-                    if (!l_cur->buf_out_size && !l_write_repeat)
-                        dap_events_socket_set_writable_unsafe(l_cur, false); /* Clear "enable write flag" */
                 }
+                /*
+                 * If whole buffer has been sent - clear "write flag" for socket/file descriptor to prevent
+                 * generation of unexpected I/O events like POLLOUT and consuming CPU by this.
+                 */
+                if (!l_cur->buf_out_size && !l_write_repeat)
+                    dap_events_socket_set_writable_unsafe(l_cur, false); /* Clear "enable write flag" */
             }
 
             if (l_cur->flags & DAP_SOCK_SIGNAL_CLOSE)

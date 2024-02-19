@@ -348,10 +348,6 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         l_peol = NULL;
 
                 if ( !l_peol ) {
-                    if (l_http_client->in_content_length > a_esocket->buf_in_size) {
-                        debug_if(s_debug_http, L_DEBUG, "Incomplete request in buffer, wait another part");
-                        return;
-                    }
                     log_it( L_ERROR, "Start-line with size %zu is not terminated by CRLF pair", a_esocket->buf_in_size);
                     s_report_error_and_restart( a_esocket, l_http_client, Http_Status_BadRequest );
                     break;
@@ -441,6 +437,10 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         l_peol = NULL;
 
                 if ( !l_peol ) {
+                    if (l_http_client->in_content_length > a_esocket->buf_in_size) {
+                        debug_if(s_debug_http, L_DEBUG, "Incomplete request in buffer, wait another part");
+                        return;
+                    }
                     log_it( L_ERROR, "Line with size %zu is not terminated by CRLF pair", a_esocket->buf_in_size);
                     s_report_error_and_restart( a_esocket, l_http_client, Http_Status_BadRequest );
                     break;
