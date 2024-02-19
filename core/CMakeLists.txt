@@ -23,7 +23,7 @@ if(UNIX)
             src/etc/*.c
             src/unix/*.c
         )
-    elseif(DARWIN)
+    elseif(MACOS)
         file(GLOB CORE_HEADERS 
             include/*.h
             include/unix/*.h
@@ -81,13 +81,13 @@ endif()
 if(UNIX)
     add_subdirectory(src/unix)
     set(CORE_LIBRARIES dap_core_unix)
-    if(MACOS)
+    if(DARWIN AND NOT IOS)
         add_subdirectory(src/darwin)
         set(CORE_LIBRARIES ${CORE_LIBRARIES} dap_core_darwin)
     elseif(ANDROID)
         add_subdirectory(src/android)
         set(CORE_LIBRARIES ${CORE_LIBRARIES} dap_core_android)
-    else()
+    elseif(NOT IOS)
         set(CORE_LIBRARIES ${CORE_LIBRARIES} rt dl)
     endif()
 endif()

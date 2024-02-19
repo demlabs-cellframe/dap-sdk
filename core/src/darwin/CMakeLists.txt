@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 project (dap_core_darwin)
 
-if(DARWIN)
+if(MACOS)
     file(GLOB CORE_MACOS_SRCS macos/*.c)
     file(GLOB CORE_MACOS_HEADERS macos/*.h)
 endif()
