@@ -351,8 +351,8 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         l_peol = NULL;
 
                 if ( !l_peol ) {
-                    log_it( L_ERROR, "Start-line '%.*s' is not terminated by CRLF pair", (int) a_esocket->buf_in_size, a_esocket->buf_in);
-                    s_report_error_and_restart( a_esocket, l_http_client, 400 );
+                    log_it( L_ERROR, "Start-line with size %zu is not terminated by CRLF pair", a_esocket->buf_in_size);
+                    s_report_error_and_restart( a_esocket, l_http_client, Http_Status_BadRequest );
                     break;
                 }
 
@@ -439,12 +439,15 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                     if ( *(l_peol - 1) != CR )                              /* Check CR at previous position */
                         l_peol = NULL;
 
-                if ( !l_peol )
-                    {
-                        log_it( L_ERROR, "Line '%.*s' is not terminated by CRLF pair", (int) a_esocket->buf_in_size, a_esocket->buf_in);
-                        s_report_error_and_restart( a_esocket, l_http_client, 400 );
-                        break;
+                if ( !l_peol ) {
+                    if (l_http_client->in_content_length > a_esocket->buf_in_size) {
+                        debug_if(s_debug_http, L_DEBUG, "Incomplete request in buffer, wait another part");
+                        return;
                     }
+                    log_it( L_ERROR, "Line with size %zu is not terminated by CRLF pair", a_esocket->buf_in_size);
+                    s_report_error_and_restart( a_esocket, l_http_client, Http_Status_BadRequest );
+                    break;
+                }
 
                 l_peol++;                                                   /* Count terminal  <LF> */
                 l_len = l_peol - a_esocket->buf_in;
