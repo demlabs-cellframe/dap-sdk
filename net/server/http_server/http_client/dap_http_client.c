@@ -40,7 +40,7 @@
 #include "dap_events_socket.h"
 
 #include "dap_time.h"
-#include "dap_http.h"
+#include "dap_http_server.h"
 #include "http_status_code.h"
 
 #include "dap_http_header.h"
@@ -90,7 +90,7 @@ void dap_http_client_new( dap_events_socket_t *a_esocket, void *a_arg )
 
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
     l_http_client->esocket = a_esocket;
-    l_http_client->http = DAP_HTTP( a_esocket->server );
+    l_http_client->http = DAP_HTTP_SERVER( a_esocket->server );
     l_http_client->state_read = DAP_HTTP_CLIENT_STATE_START;
     l_http_client->socket_num = a_esocket->socket;
 
@@ -553,7 +553,7 @@ void dap_http_client_write(dap_http_client_t *a_http_client)
     }
     dap_events_socket_write_unsafe(a_http_client->esocket, CRLF, 2);/* Add final CRLF - HTTP's End-Of-Header */
 
-    dap_http_client_write_callback(a_http_client->esocket, NULL);
+    dap_http_client_write_callback(a_http_client->esocket, a_http_client->esocket->callbacks.arg);
 }
 
 bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)

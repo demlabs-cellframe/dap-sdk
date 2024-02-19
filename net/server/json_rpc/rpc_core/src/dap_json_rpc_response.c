@@ -238,6 +238,7 @@ void json_print_object(json_object *obj, int indent_level) {
                 json_object *item = json_object_array_get_idx(obj, i);
                 json_print_value(item, NULL, indent_level + 1, length - 1 - i);
             }
+            printf("\n");
             break;
         }
         default:
