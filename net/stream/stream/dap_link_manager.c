@@ -62,15 +62,17 @@ void s_client_connect(dap_link_t *a_link, const char *a_active_channels, void *a
 // sanity check 
     dap_return_if_pass(!a_link); 
 //func work
-    a_link->client = dap_client_new(s_client_delete_callback, s_client_error_callback, a_callback_arg);
-    dap_client_set_is_always_reconnect(a_link->client, false);
-    a_link->client->_inheritor = a_link;
-    dap_client_set_active_channels_unsafe(a_link->client, a_active_channels);
-    log_it(L_INFO, "Connecting to addr %s : %d", a_link->host_addr_str, a_link->host_port);
-    dap_client_set_uplink_unsafe(a_link->client, a_link->host_addr_str, a_link->host_port);
-    a_link->state = LINK_STATE_CONNECTING;
-    // Handshake & connect
-    dap_client_go_stage(a_link->client, STAGE_STREAM_STREAMING, s_client_connected_callback);
+    if (!a_link->client) {
+        a_link->client = dap_client_new(s_client_delete_callback, s_client_error_callback, a_callback_arg);
+        dap_client_set_is_always_reconnect(a_link->client, false);
+        a_link->client->_inheritor = a_link;
+        dap_client_set_active_channels_unsafe(a_link->client, a_active_channels);
+        log_it(L_INFO, "Connecting to addr %s : %d", a_link->host_addr_str, a_link->host_port);
+        dap_client_set_uplink_unsafe(a_link->client, a_link->host_addr_str, a_link->host_port);
+        a_link->state = LINK_STATE_CONNECTING;
+        // Handshake & connect
+        dap_client_go_stage(a_link->client, STAGE_STREAM_STREAMING, s_client_connected_callback);
+    }
     return;
 }
 
@@ -112,9 +114,9 @@ static void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
 void s_client_error_callback(dap_client_t *a_client, void *a_arg)
 {
 // sanity check
-    dap_return_if_pass(!DAP_LINK(a_client));
-// func work
     dap_link_t *l_link = DAP_LINK(a_client);
+    dap_return_if_pass(!l_link);
+// func work
     // check for last attempt
     bool l_is_last_attempt = a_arg ? true : false;
     uint64_t l_net_id = a_client->callbacks_arg ? ((dap_managed_net_t *)(a_client->callbacks_arg))->id : 0;
@@ -124,6 +126,7 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
         if (l_link->link_manager->callbacks.disconnected) {
             l_link->link_manager->callbacks.disconnected(l_link, l_net_id, ((dap_managed_net_t *)(a_client->callbacks_arg))->links_count );
         }
+        dap_client_delete_mt(l_link->client);
         if (l_link->keep_connection) {
             if (dap_client_get_stage(l_link->client) != STAGE_BEGIN)
                 dap_client_go_stage(l_link->client, STAGE_BEGIN, NULL);
@@ -137,11 +140,13 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
         l_link->link_manager->callbacks.error(l_link, l_net_id, EINVAL);
 }
 
-void s_client_delete_callback(UNUSED_ARG dap_client_t *a_client, void *a_arg)
+void s_client_delete_callback(dap_client_t *a_client, void *a_arg)
 {
-    // TODO make decision for possible client replacement
-    assert(a_arg);
-    dap_chain_node_client_close_unsafe(a_arg);
+// sanity check
+    dap_link_t *l_link = DAP_LINK(a_client);
+    dap_return_if_pass(!l_link);
+// func work
+    l_link->client = NULL;
 }
 
 bool s_update_states(void *a_arg)
@@ -430,9 +435,6 @@ int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link)
         log_it(L_WARNING, "LEAKS, links dublicate to node "NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_link->node_addr));
         return -3;
     }
-
-    if (!l_link || !l_link->client) {
-        s_client_connect(a_link, "CGND", l_item->data);
-    }
+    s_client_connect(a_link, "CGND", l_item->data);
     return 0;
 }

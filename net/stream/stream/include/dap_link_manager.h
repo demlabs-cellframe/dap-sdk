@@ -49,14 +49,9 @@ typedef struct dap_link_manager_callbacks {
 
 // connection states
 typedef enum dap_link_state {
-    LINK_STATE_ERROR = -1,
     LINK_STATE_DISCONNECTED = 0,
-    LINK_STATE_GET_NODE_ADDR = 1,
-    LINK_STATE_NODE_ADDR_LEASED = 2,
-    LINK_STATE_PING = 3,
-    LINK_STATE_PONG = 4,
-    LINK_STATE_CONNECTING = 5,
-    LINK_STATE_ESTABLISHED = 100,
+    LINK_STATE_CONNECTING,
+    LINK_STATE_ESTABLISHED,
 } dap_link_state_t;
 
 typedef struct dap_link {
