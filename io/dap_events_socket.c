@@ -1253,7 +1253,7 @@ dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOC
 
     l_es->flags = DAP_SOCK_READY_TO_READ;
     l_es->last_time_active = l_es->last_ping_request = time( NULL );
-
+    l_es->buf_in = DAP_NEW_Z_SIZE(char, 2 * sizeof(struct sockaddr_storage) + 32);
     return l_es;
 }
 
@@ -1315,7 +1315,7 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
     case DESCRIPTOR_TYPE_SOCKET_LISTENING:
     case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING: {
         INT l_len = sizeof(SOCKADDR_STORAGE) + 16;
-        if ((a_esocket->socket2 = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
+        if ((a_esocket->socket2 = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == INVALID_SOCKET) {
             log_it(L_ERROR, "Failed to create socket for accept()'ing, errno %d", WSAGetLastError());
             return;
         }
