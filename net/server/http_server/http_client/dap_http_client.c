@@ -437,8 +437,8 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         l_peol = NULL;
 
                 if ( !l_peol ) {
-                    if (l_http_client->in_content_length > a_esocket->buf_in_size) {
-                        debug_if(s_debug_http, L_DEBUG, "Incomplete request in buffer, wait another part");
+                    if (HTTP$SZ_HTLINE > a_esocket->buf_in_size) {
+                        debug_if(s_debug_http, L_DEBUG, "May be incomplete request in buffer, wait another part");
                         return;
                     }
                     log_it( L_ERROR, "Line with size %zu is not terminated by CRLF pair: %s", a_esocket->buf_in_size, a_esocket->buf_in);

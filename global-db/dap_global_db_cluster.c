@@ -163,8 +163,8 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
 static bool s_db_cluster_notify_on_proc_thread(void *a_arg)
 {
     dap_store_obj_t *l_store_obj = a_arg;
-    dap_global_db_notifier_t *l_notifier = *(dap_global_db_notifier_t **)l_store_obj->ext;
-    l_notifier->callback_notify(l_store_obj, l_notifier->callback_arg);
+    dap_global_db_notifier_t l_notifier = *(dap_global_db_notifier_t *)l_store_obj->ext;
+    l_notifier.callback_notify(l_store_obj, l_notifier.callback_arg);
     dap_store_obj_free_one(l_store_obj);
     return false;
 }
