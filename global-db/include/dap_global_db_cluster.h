@@ -63,13 +63,11 @@ typedef struct dap_global_db_notifier {
 
 enum dap_global_db_sync_state {
     DAP_GLOBAL_DB_SYNC_STATE_START,
-    DAP_GLOBAL_DB_SYNC_STATE_ITERATION,
     DAP_GLOBAL_DB_SYNC_STATE_IDLE
 };
 
 typedef struct dap_global_db_sync_context {
     enum dap_global_db_sync_state state;
-    atomic_uint request_count;
     dap_time_t stage_last_activity;
     dap_stream_node_addr_t current_link;
 } dap_global_db_sync_context_t;
