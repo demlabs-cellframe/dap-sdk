@@ -404,8 +404,8 @@ size_t     l_upper_limit_of_db_size = 16;
             l_slist = dap_list_append(l_slist, l_cp);
             }
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "--- End-Of-List  ---");
+        mdbx_cursor_close(l_cursor);
         }
-
     dap_assert ( MDBX_SUCCESS == mdbx_txn_commit (l_txn) );
 
 
@@ -415,6 +415,7 @@ size_t     l_upper_limit_of_db_size = 16;
         l_data_iov.iov_base = l_el->data;
         s_cre_db_ctx_for_group(l_data_iov.iov_base, MDBX_CREATE, NULL);
         DL_DELETE(l_slist, l_el);
+        DAP_DELETE(l_el->data);
         DAP_DELETE(l_el);
     }
 
@@ -574,7 +575,8 @@ int s_get_obj_by_text_key(MDBX_txn *a_txn, MDBX_dbi a_dbi, MDBX_val *a_key, MDBX
         return l_rc;
     }
     if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, a_key, a_data, MDBX_FIRST)) ) {
-        log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
+        if (l_rc != MDBX_NOTFOUND)
+            log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
         return l_rc;
     }
     size_t l_key_len = strlen(a_text_key) + 1;
@@ -630,7 +632,8 @@ dap_store_obj_t *l_obj = NULL;
         goto ret;
     }
     if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_LAST)) ) {
-        log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
+        if (l_rc != MDBX_NOTFOUND)
+            log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", l_rc, mdbx_strerror(l_rc));
         goto ret;
     }
     if (!l_key.iov_len || !l_data.iov_len)                                  /* Not found anything  - return NULL */
@@ -904,7 +907,7 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
         if (l_rc != MDBX_SUCCESS)
             log_it(L_ERROR, "mdbx_dbi_stat: (%d) %s", l_rc, mdbx_strerror(l_rc));
         else if (!l_stat.ms_entries)                                    /* Nothing to retrieve , table contains no record */
-            debug_if(g_dap_global_db_debug_more, L_WARNING, "No object (-s) to be retrieved from the group '%s'", a_group);
+            debug_if(g_dap_global_db_debug_more, L_NOTICE, "No object (-s) to be retrieved from the group '%s'", a_group);
         if (!s_txn)
             mdbx_txn_commit(l_txn);
         return l_rc == MDBX_SUCCESS ? l_stat.ms_entries : 0;
@@ -1175,7 +1178,8 @@ MDBX_stat   l_stat;
             break;
         }
         if ( MDBX_SUCCESS != (l_rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_FIRST)) ) {
-            log_it (L_ERROR, "mdbx_cursor_get FIRST: (%d) %s", l_rc, mdbx_strerror(l_rc));
+            if (l_rc != MDBX_NOTFOUND)
+                log_it (L_ERROR, "mdbx_cursor_get FIRST: (%d) %s", l_rc, mdbx_strerror(l_rc));
             break;
         }
         l_obj = l_obj_arr;

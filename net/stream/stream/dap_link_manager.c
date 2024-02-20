@@ -433,12 +433,6 @@ int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link)
 
     if (!l_link || !l_link->client) {
         s_client_connect(a_link, "CGND", l_item->data);
-    } else {
-        log_it(L_INFO, "Use existed link to "NODE_ADDR_FP_STR" %s:%hu", NODE_ADDR_FP_ARGS_S(l_link->node_addr), l_link->host_addr_str, l_link->host_port);
-        dap_cluster_member_add(((dap_managed_net_t *)(l_item->data))->node_link_cluster, &l_link->node_addr, 0, NULL);
-        if(l_link->link_manager->callbacks.connected)
-            l_link->link_manager->callbacks.connected(l_link, ((dap_managed_net_t *)(l_item->data))->id);
-        return 0;
     }
     return 0;
 }

@@ -391,6 +391,63 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
     fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
 }
 
+char *dap_dump_hex(byte_t *a_data, size_t a_len) {
+#define HEX_LINE_LEN 80
+#define BYTES_IN_LINE 16
+    if (!a_data || !a_len)
+        return NULL;
+
+    size_t l_len = HEX_LINE_LEN * (a_len / BYTES_IN_LINE);
+    if (a_len % BYTES_IN_LINE)
+        l_len += HEX_LINE_LEN;
+
+    char *l_ret = DAP_NEW_Z_SIZE(char, l_len + 1);
+    if (!l_ret) {
+        if (a_len)
+            log_it(L_CRITICAL, "Memory allocation error!");
+        return NULL;
+    }
+    memset(l_ret, ' ', l_len);
+    byte_t *l_data = a_data, low, high;
+    size_t  l_shift = 0, i, j,
+            l_rem = a_len % BYTES_IN_LINE,
+            l_div = a_len / BYTES_IN_LINE;
+
+    for (i = 0; i < l_div; ++i) {
+        l_shift = snprintf(l_ret, HEX_LINE_LEN, "  +%04lx:  ", i * BYTES_IN_LINE);
+        //l_ret[l_shift] = ' ';
+        memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
+        for (j = 0; j < BYTES_IN_LINE; ++j, ++l_data) {
+            high    = (*l_data) >> 4;
+            low     = (*l_data) & 0x0f;
+
+            l_ret[l_shift + j*3]            = high + ((high < 10) ? '0' : 'a' - 10);
+            l_ret[l_shift + j*3 + 1]        = low + ((low < 10) ? '0' : 'a' - 10);
+            l_ret[l_shift + BYTES_IN_LINE*3 + 2 + j] = isprint(*l_data) ? *l_data : '.';
+        }
+        l_ret[HEX_LINE_LEN - 1] = '\n';
+        l_ret += HEX_LINE_LEN;
+    }
+
+    if (l_rem) {
+        l_shift = snprintf(l_ret, HEX_LINE_LEN, "  +%04lx:  ", i * BYTES_IN_LINE);
+        //l_ret[l_shift] = ' ';
+        memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
+        for (j = 0; j < l_rem; ++j, ++l_data) {
+            high    = (*l_data) >> 4;
+            low     = (*l_data) & 0x0f;
+
+            l_ret[l_shift + j*3]            = high + ((high < 10) ? '0' : 'a' - 10);
+            l_ret[l_shift + j*3 + 1]        = low + ((low < 10) ? '0' : 'a' - 10);
+            l_ret[l_shift + BYTES_IN_LINE*3 + 2 + j] = isprint(*l_data) ? *l_data : '.';
+        }
+        l_ret[HEX_LINE_LEN - 1] = '\n';
+        l_ret += HEX_LINE_LEN;
+    }
+    return l_ret - l_len;
+#undef HEX_LINE_LEN
+#undef BYTES_IN_LINE
+}
 
 #ifdef DAP_SYS_DEBUG
 

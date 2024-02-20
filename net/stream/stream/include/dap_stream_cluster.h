@@ -75,7 +75,7 @@ dap_cluster_t *dap_cluster_by_mnemonim(const char *a_mnemonim);
 dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, int a_role, void *a_info);
 dap_cluster_member_t *dap_cluster_member_find_unsafe(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
 int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
-void dap_cluster_member_delete(dap_cluster_member_t *a_member);
+int dap_cluster_member_delete(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size,
                            dap_stream_node_addr_t *a_exclude_aray, size_t a_exclude_array_size);
 json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster);

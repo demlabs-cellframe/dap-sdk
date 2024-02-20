@@ -47,9 +47,7 @@
 #elif defined (DAP_OS_WINDOWS)
 #include <winsock2.h>
 #include <windows.h>
-#include <mswsock.h>
 #include <io.h>
-
 #endif
 
 
@@ -88,19 +86,25 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include "dap_context.h"
 #include "dap_events_socket.h"
 
-#ifdef DAP_EVENTS_CAPS_AIO
-#include <aio.h>
+#define LOG_TAG "dap_events_socket"
 
-struct queue_ptr_aio{ // Pointer on buffer with pointer on itself
-    void * ptr;
-    struct queue_ptr_aio * self;
-    struct aiocb * aiocb;
+const char *s_socket_type_to_str[] = {
+    [DESCRIPTOR_TYPE_SOCKET_CLIENT]         = "CLIENT",
+    [DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT]   = "LOCAL_CLIENT",
+    [DESCRIPTOR_TYPE_SOCKET_LISTENING]      = "SERVER",
+    [DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING]= "LOCAL_SERVER",
+    [DESCRIPTOR_TYPE_SOCKET_UDP]            = "CLIENT_UDP",
+    [DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL]     = "CLIENT_SSL",
+    [DESCRIPTOR_TYPE_FILE]                  = "FILE",
+    [DESCRIPTOR_TYPE_PIPE]                  = "PIPE",
+    [DESCRIPTOR_TYPE_QUEUE]                 = "QUEUE",
+    [DESCRIPTOR_TYPE_TIMER]                 = "TIMER",
+    [DESCRIPTOR_TYPE_EVENT]                 = "EVENT"
 };
 
+#ifdef DAP_EVENTS_CAPS_IOCP
+LPFN_CONNECTEX pfn_ConnectEx = NULL;
 #endif
-
-
-#define LOG_TAG "dap_events_socket"
 
 // Item for QUEUE_PTR input esocket
 struct queue_ptr_input_item{
@@ -168,7 +172,8 @@ static inline dap_events_socket_t *s_dap_evsock_alloc (void)
     HASH_ADD(hh2, s_esockets, uuid, sizeof(l_es->uuid), l_es);
     pthread_rwlock_unlock(&s_evsocks_lock);
 #endif
-    debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is allocated", l_es);
+    debug_if(g_debug_reactor, L_DEBUG, "Created es %p \"%s\" with uuid " DAP_FORMAT_ESOCKET_UUID,
+                              l_es, dap_events_socket_get_type_str(l_es), l_es->uuid);
     return  l_es;
 }
 
@@ -205,7 +210,8 @@ static inline void s_dap_evsock_free(dap_events_socket_t *a_es)
     else if (l_es != a_es)
         log_it(L_WARNING, "[!] Esockets %p and %p share the same UUID %zu, possibly a dup!", a_es, l_es, a_es->uuid);
 #endif
-    debug_if(g_debug_reactor, L_NOTICE, "dap_events_socket:%p - is released", a_es);
+    debug_if(g_debug_reactor, L_DEBUG, "Release es %p \"%s\" with uuid " DAP_FORMAT_ESOCKET_UUID,
+                              a_es, dap_events_socket_get_type_str(a_es), a_es->uuid);
     DAP_DELETE(a_es);
 }
 
@@ -259,23 +265,6 @@ void dap_events_socket_deinit(void)
 {
 }
 
-#ifdef DAP_OS_WINDOWS
-void __stdcall mq_receive_cb(HRESULT hr, QUEUEHANDLE qh, DWORD timeout
-                             , DWORD action, MQMSGPROPS *pmsgprops, LPOVERLAPPED pov, HANDLE cursor) {
-    UNUSED(hr);
-    UNUSED(qh);
-    UNUSED(timeout);
-    UNUSED(action);
-    UNUSED(pmsgprops);
-    UNUSED(cursor);
-    switch (hr) {
-    case MQ_OK:
-        SetEvent(pov->hEvent);
-        break;
-    }
-}
-#endif
-
 /**
  * @brief dap_events_socket_wrap
  * @param a_events
@@ -321,6 +310,10 @@ dap_events_socket_t *dap_events_socket_wrap_no_add( SOCKET a_sock, dap_events_so
     l_es->kqueue_event_catched_data.esocket = l_es;
     l_es->kqueue_base_flags = 0;
     l_es->kqueue_base_filter = 0;
+#elif defined DAP_EVENTS_CAPS_IOCP
+    for (int i = io_op_read; i < io_op_max; ++i) {
+        l_es->op_events[i] = CreateEvent(0, TRUE, FALSE, NULL);
+    }
 #endif
 
     //log_it( L_DEBUG,"Dap event socket wrapped around %d sock a_events = %X", a_sock, a_events );
@@ -528,7 +521,12 @@ dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_IN].alloc_nr, 1);
 #endif
     l_es->pipe_out = a_es;
-#if defined(DAP_EVENTS_CAPS_EPOLL)
+#if defined DAP_EVENTS_CAPS_IOCP
+    for (int i = io_op_read; i < io_op_max; ++i) {
+        l_es->op_events[i] = CreateEvent(0, TRUE, FALSE, NULL);
+    }
+    l_es->_pvt = a_es->_pvt;
+#elif defined(DAP_EVENTS_CAPS_EPOLL)
     l_es->ev_base_flags = EPOLLERR | EPOLLRDHUP | EPOLLHUP;
 #elif defined(DAP_EVENTS_CAPS_POLL)
     l_es->poll_base_flags = POLLERR | POLLRDHUP | POLLHUP;
@@ -538,8 +536,7 @@ dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket
     l_es->kqueue_base_flags = EV_ONESHOT;
     l_es->kqueue_base_fflags = NOTE_TRIGGER | NOTE_FFNOP;
     l_es->kqueue_base_filter = EVFILT_USER;
-    l_es->kqueue_event_catched_data.esocket = l_es;
-
+    l_es->kqueue_event_catched_data.esocket = l_es;    
 #else
 #error "Not defined s_create_type_pipe for your platform"
 #endif
@@ -572,43 +569,11 @@ dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket
 
 #elif defined (DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined (DAP_EVENTS_CAPS_QUEUE_PIPE)
     l_es->fd = a_es->fd2;
-#elif defined DAP_EVENTS_CAPS_MSMQ
-    l_es->mqh       = a_es->mqh;
-    l_es->mqh_recv  = a_es->mqh_recv;
-
+#elif defined DAP_EVENTS_CAPS_WEPOLL
     l_es->socket        = a_es->socket;
     l_es->port          = a_es->port;
-    l_es->mq_num        = a_es->mq_num;
-    /*
-    WCHAR l_direct_name[MQ_MAX_Q_NAME_LEN] = { 0 };
-    int pos = 0;
-#ifdef DAP_BRAND
-    pos = _snwprintf_s(l_direct_name, sizeof(l_direct_name)/sizeof(l_direct_name[0]), _TRUNCATE, L"DIRECT=OS:.\\PRIVATE$\\" DAP_BRAND "mq%d", l_es->mq_num);
-#else
-    pos = _snwprintf_s(l_direct_name, sizeof(l_direct_name)/sizeof(l_direct_name[0]), _TRUNCATE, L"DIRECT=OS:.\\PRIVATE$\\%hs_esmq%d", dap_get_appname(), l_es->mq_num);
-#endif
-    if (pos < 0) {
-        log_it(L_ERROR, "Message queue path error");
-        s_dap_evsock_free(l_es);
-        return NULL;
-    }
-
-    HRESULT hr = MQOpenQueue(l_direct_name, MQ_SEND_ACCESS, MQ_DENY_NONE, &(l_es->mqh));
-    if (hr == MQ_ERROR_QUEUE_NOT_FOUND) {
-        log_it(L_INFO, "Queue still not created, wait a bit...");
-        Sleep(300);
-        hr = MQOpenQueue(l_direct_name, MQ_SEND_ACCESS, MQ_DENY_NONE, &(l_es->mqh));
-        if (hr != MQ_OK) {
-            log_it(L_ERROR, "Can't open message queue for queue type, error: %ld", hr);
-            return NULL;
-        }
-    }
-    hr = MQOpenQueue(l_direct_name, MQ_RECEIVE_ACCESS, MQ_DENY_NONE, &(l_es->mqh_recv));
-    if (hr != MQ_OK) {
-        log_it(L_ERROR, "Can't open message queue for queue type, error: %ld", hr);
-        return NULL;
-    }
-    */
+#elif defined DAP_EVENTS_CAPS_IOCP
+    l_es->socket        = INVALID_SOCKET;
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     // We don't create descriptor for kqueue at all
 #else
@@ -643,7 +608,8 @@ dap_events_socket_t * dap_events_socket_create_type_queue_ptr_mt(dap_worker_t * 
  */
 int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
 {
-#ifdef DAP_OS_WINDOWS
+
+#ifdef DAP_EVENTS_CAPS_WEPOLL
     ssize_t l_read = dap_recvfrom(a_esocket->socket, a_esocket->buf_in, a_esocket->buf_in_size_max);
     int l_errno = WSAGetLastError();
     if (l_read == SOCKET_ERROR) {
@@ -656,35 +622,6 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
 
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
             int l_read_errno = 0;
-#if defined (DAP_EVENTS_CAPS_AIO)
-            struct queue_ptr_aio l_queue_ptr_aio={0};
-            ssize_t l_read_ret = read( a_esocket->fd, &l_queue_ptr_aio,sizeof (l_queue_ptr_aio ));
-            if(l_read_ret == (ssize_t) sizeof (l_queue_ptr_aio)){
-                if(g_debug_reactor)
-                    log_it(L_DEBUG,"Queue ptr received %p", l_queue_ptr_aio.ptr);
-                a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr_aio.ptr);
-                if (l_queue_ptr_aio.aiocb) {
-                    if (aio_error(l_queue_ptr_aio.aiocb) == EINPROGRESS)
-                        dap_slist_add2tail(&a_esocket->context->garbage_list, l_queue_ptr_aio.aiocb, 0);
-                    else
-                        DAP_DELETE(l_queue_ptr_aio.aiocb);
-                }
-                while (a_esocket->context->garbage_list.head) {
-                    dap_slist_elm_t *l_elm = (dap_slist_elm_t *)a_esocket->context->garbage_list.head;
-                    struct aiocb *l_aiocb = (struct aiocb *)l_elm->data;
-                    if (aio_error(l_aiocb) == EINPROGRESS)
-                        break;
-                    dap_slist_get4head(&a_esocket->context->garbage_list, NULL, NULL);
-                    DAP_DELETE(l_aiocb);
-                }
-                DAP_DELETE(l_queue_ptr_aio.self);
-            } else if ( (l_read_errno != EAGAIN) && (l_read_errno != EWOULDBLOCK) )  // we use blocked socket for now but who knows...
-                log_it(L_WARNING,"Queue ptr recieved %zd when expected to see %zd", l_read_ret,
-                       sizeof (l_queue_ptr_aio));
-            else if (g_debug_reactor)
-                log_it(L_DEBUG, "%s code received, do nothing on this loop",
-                       l_read_errno == EAGAIN? "EAGAIN": l_read_errno == EWOULDBLOCK ? "EWOULDBLOCK": "UNKNOWN" );
-#else
             char l_body[PIPE_BUF] = { '\0' };
             ssize_t l_read_ret = read(a_esocket->fd, l_body, PIPE_BUF);
             l_read_errno = errno;
@@ -701,8 +638,6 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
             }
             else if ((l_read_errno != EAGAIN) && (l_read_errno != EWOULDBLOCK))
                 log_it(L_ERROR, "Can't read message from pipe");
-#endif
-
 #elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
             char l_body[DAP_QUEUE_MAX_BUFLEN * DAP_QUEUE_MAX_MSGS] = { '\0' };
             ssize_t l_ret, l_shift;
@@ -728,12 +663,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
                 }
                 }
             }
-#if defined (DAP_EVENTS_CAPS_AIO)
-            struct queue_ptr_aio l_queue_ptr_aio;
-            ssize_t l_ret = mq_receive(a_esocket->mqd,(char*) &l_queue_ptr_aio, sizeof (l_queue_ptr_aio),NULL);
-#else
             ssize_t l_ret = mq_receive(a_esocket->mqd,(char*) &l_queue_ptr, sizeof (l_queue_ptr),NULL);
-#endif
             if (l_ret == -1){
                 int l_errno = errno;
                 char l_errbuf[128];
@@ -742,56 +672,8 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
                 log_it(L_ERROR, "Error in esocket queue_ptr:\"%s\" code %d", l_errbuf, l_errno);
                 return -1;
             }
-#if defined (DAP_EVENTS_CAPS_AIO)
-            if(l_ret != sizeof(l_queue_ptr_aio) ){
-                log_it(L_ERROR, "Wrong AIO message in MQ, expected to have %zd but received %zd",
-                       sizeof (l_queue_ptr_aio), l_ret);
-                return -1;
-            }
-            void *l_queue_ptr = l_queue_ptr_aio.ptr;
-            DAP_DELETE(l_queue_ptr_aio.self); // Clear send buffer
-#endif
             a_esocket->callbacks.queue_ptr_callback (a_esocket, l_queue_ptr);
-#elif defined DAP_EVENTS_CAPS_MSMQ
-            /*
-            DWORD l_mp_id = 0;
-            MQMSGPROPS    l_mps;
-            MQPROPVARIANT l_mpvar[2];
-            MSGPROPID     l_p_id[2];
-
-            UCHAR l_body[4096] = { 0 }; // Normally a limit for MSMQ is ~4MB
-            l_p_id[l_mp_id]				= PROPID_M_BODY;
-            l_mpvar[l_mp_id].vt			= VT_UI1 | VT_VECTOR;
-            l_mpvar[l_mp_id].caub.cElems = sizeof(l_body);
-            l_mpvar[l_mp_id].caub.pElems = l_body;
-            l_mp_id++;
-
-            l_p_id[l_mp_id]				= PROPID_M_BODY_SIZE;
-            l_mpvar[l_mp_id].vt			= VT_UI4;
-            l_mp_id++;
-
-            l_mps.cProp    = l_mp_id;
-            l_mps.aPropID  = l_p_id;
-            l_mps.aPropVar = l_mpvar;
-            l_mps.aStatus  = NULL;
-
-            HRESULT hr;
-            while ((hr = MQReceiveMessage(a_esocket->mqh_recv, 0, MQ_ACTION_RECEIVE, &l_mps, NULL, NULL, NULL, MQ_NO_TRANSACTION))
-                                          != MQ_ERROR_IO_TIMEOUT) {
-                if (hr != MQ_OK) {
-                    log_it(L_ERROR, "An error %ld occured receiving a message from queue", hr);
-                    return -3;
-                }
-                debug_if(l_mpvar[1].ulVal > 8, L_NOTICE, "MSMQ: processing %lu bytes in 1 pass", l_mpvar[1].ulVal);
-                debug_if(g_debug_reactor, L_DEBUG, "Received msg: %p len %lu", *(void **)l_body, l_mpvar[1].ulVal);
-                if (a_esocket->callbacks.queue_ptr_callback) {
-                    for (long shift = 0; shift < (long)l_mpvar[1].ulVal; shift += sizeof(void*)) {
-                        l_queue_ptr = *(void **)(l_body + shift);
-                        a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
-                    }
-                }
-            }
-            */
+#elif defined DAP_EVENTS_CAPS_WEPOLL
             if(l_read > 0) {
                 debug_if(g_debug_reactor, L_NOTICE, "Got %ld bytes from socket", l_read);
                 for (long shift = 0; shift < l_read; shift += sizeof(void*)) {
@@ -802,11 +684,29 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
             else if ((l_errno != EAGAIN) && (l_errno != EWOULDBLOCK))  // we use blocked socket for now but who knows...
                 log_it(L_ERROR, "Can't read message from socket");
 #elif defined DAP_EVENTS_CAPS_KQUEUE
-        void *l_queue_ptr = a_esocket->kqueue_event_catched_data.data;
-        if(g_debug_reactor)
-            log_it(L_INFO,"Queue ptr received %p ptr on input", l_queue_ptr);
-        if(a_esocket->callbacks.queue_ptr_callback)
-            a_esocket->callbacks.queue_ptr_callback (a_esocket, l_queue_ptr);
+            void *l_queue_ptr = a_esocket->kqueue_event_catched_data.data;
+            if(g_debug_reactor)
+                log_it(L_INFO,"Queue ptr received %p ptr on input", l_queue_ptr);
+            if(a_esocket->callbacks.queue_ptr_callback)
+                a_esocket->callbacks.queue_ptr_callback (a_esocket, l_queue_ptr);
+#elif defined DAP_EVENTS_CAPS_IOCP
+            task_entry_t *l_work_item = (task_entry_t*)InterlockedFlushSList((PSLIST_HEADER)a_esocket->_pvt), *l_tmp, *l_prev;
+            // Reverse list for FIFO usage
+            if (l_work_item->entry.Next) {
+                for (l_prev = NULL; l_work_item; l_work_item = l_tmp) {
+                    l_tmp = (task_entry_t*)l_work_item->entry.Next;
+                    l_work_item->entry.Next = (SLIST_ENTRY*)l_prev;
+                    l_prev = l_work_item;
+                }
+                l_work_item = l_prev;
+            }
+
+            UINT l_count = 0;
+            for( ; l_work_item && (l_tmp = (task_entry_t*)l_work_item->entry.Next, 1); ++l_count, l_work_item = l_tmp ) {
+                a_esocket->callbacks.queue_ptr_callback(a_esocket, l_work_item->data);
+                DAP_ALFREE(l_work_item);
+            }
+            debug_if(g_debug_reactor, L_DEBUG, "Dequeued %u items from queue %p", l_count, a_esocket);
 #else
 #error "No Queue fetch mechanism implemented on your platform"
 #endif
@@ -824,6 +724,14 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
         }
     }else{
         log_it(L_ERROR, "Queue socket %"DAP_FORMAT_SOCKET" accepted data but callback is NULL ", a_esocket->socket);
+#ifdef DAP_EVENTS_CAPS_IOCP
+        for ( task_entry_t *l_work_item = (task_entry_t*)InterlockedFlushSList((PSLIST_HEADER)a_esocket->_pvt), *l_tmp;
+              l_work_item && (l_tmp = (task_entry_t*)l_work_item->entry.Next, 1);
+              l_work_item = l_tmp )
+            {
+                DAP_ALFREE(l_work_item);
+            }
+#endif
         return -2;
     }
     return 0;
@@ -879,7 +787,7 @@ void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket)
             log_it(L_WARNING, "Can't read packet from event fd: \"%s\"(%d)", l_errbuf, l_errno);
         }else
             return; // do nothing
-#elif defined DAP_OS_WINDOWS
+#elif defined DAP_EVENTS_CAPS_WEPOLL
         u_short l_value;
         int l_ret;
         switch (l_ret = dap_recvfrom(a_esocket->socket, &l_value, sizeof(char))) {
@@ -894,15 +802,14 @@ void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket)
         }
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     a_esocket->callbacks.event_callback(a_esocket, a_esocket->kqueue_event_catched_data.value);
-
+#elif defined DAP_EVENTS_CAPS_IOCP
+    a_esocket->callbacks.event_callback(a_esocket, 1);
 #else
 #error "No Queue fetch mechanism implemented on your platform"
 #endif
     } else
         log_it(L_ERROR, "Event socket %"DAP_FORMAT_SOCKET" accepted data but callback is NULL ", a_esocket->socket);
 }
-
-//#if (!defined DAP_EVENTS_CAPS_AIO) || (defined DAP_CAPS_AIO_THREADS)
 
 #ifdef DAP_EVENTS_CAPS_QUEUE_PIPE2
 
@@ -965,35 +872,51 @@ static void *s_dap_events_socket_buf_thread(void *arg)
         l_sock = l_es->mqd;
 #endif
     while (1) {
-        if (!s_wait_send_socket(l_sock, 0)) {
-            pthread_rwlock_wrlock(&l_es->buf_out_lock);
-            ssize_t l_write_ret = write(l_sock, l_es->buf_out, dap_min((size_t)PIPE_BUF, l_es->buf_out_size));
-            if (l_write_ret == -1) {
-                switch (errno) {
-                case EAGAIN:
-                    pthread_rwlock_unlock(&l_es->buf_out_lock);
-                    continue;
-                default:
-                    log_it(L_CRITICAL, "[!] Can't write data to pipe! Errno %d", errno);
+        pthread_rwlock_wrlock(&l_es->buf_out_lock);
+        errno = 0;
+        ssize_t l_write_ret = write(l_sock, l_es->buf_out, dap_min((size_t)PIPE_BUF, l_es->buf_out_size));
+        if (l_write_ret == -1) {
+            switch (errno) {
+            case EAGAIN:
+                pthread_rwlock_unlock(&l_es->buf_out_lock);
+                struct timeval l_tv = { .tv_sec = 120 };
+                fd_set l_outfd; FD_ZERO(&l_outfd);
+                FD_SET(l_sock, &l_outfd);
+                sched_yield();
+                switch ( select(l_sock + 1, NULL, &l_outfd, NULL, &l_tv) ) {
+                case 0:
+                    log_it(L_ERROR, "Es %p (fd %d) waiting timeout, data lost!",
+                           l_es, l_es->fd2);
+                case -1:
+                    pthread_rwlock_wrlock(&l_es->buf_out_lock);
                     l_es->buf_out_size = 0;
                     pthread_rwlock_unlock(&l_es->buf_out_lock);
                     pthread_exit(NULL);
-                }
-            } else if (l_write_ret == (ssize_t)l_es->buf_out_size) {
-                debug_if(g_debug_reactor, L_DEBUG, "[!] Sent all %lu bytes to pipe [es %d]", l_write_ret, l_sock);
+                default:
+                    if ( FD_ISSET(l_sock, &l_outfd) )
+                        continue;
+                    break;
+                } break;
+            default:
+                log_it(L_CRITICAL, "[!] Can't write data to pipe! Errno %d", errno);
                 l_es->buf_out_size = 0;
                 pthread_rwlock_unlock(&l_es->buf_out_lock);
-                break;
-            } else if (l_write_ret) {
-                debug_if(g_debug_reactor, L_DEBUG, "[!] Sent %lu / %lu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
-                l_es->buf_out_size -= l_write_ret;
-                memmove(l_es->buf_out, l_es->buf_out + l_write_ret, l_es->buf_out_size);
+                pthread_exit(NULL);
             }
-
-            if (l_write_ret % sizeof(arg))
-                log_it(L_CRITICAL, "[!] Sent unaligned chunk [%ld bytes] to pipe, possible data corruption!", l_write_ret);
+        } else if (l_write_ret == (ssize_t)l_es->buf_out_size) {
+            debug_if(g_debug_reactor, L_DEBUG, "[!] Sent all %lu bytes to pipe [es %d]", l_write_ret, l_sock);
+            l_es->buf_out_size = 0;
             pthread_rwlock_unlock(&l_es->buf_out_lock);
+            break;
+        } else if (l_write_ret) {
+            debug_if(g_debug_reactor, L_DEBUG, "[!] Sent %lu / %lu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
+            l_es->buf_out_size -= l_write_ret;
+            memmove(l_es->buf_out, l_es->buf_out + l_write_ret, l_es->buf_out_size);
         }
+
+        if (l_write_ret % sizeof(arg))
+            log_it(L_CRITICAL, "[!] Sent unaligned chunk [%ld bytes] to pipe, possible data corruption!", l_write_ret);
+        pthread_rwlock_unlock(&l_es->buf_out_lock);
     }
     pthread_exit(NULL);
 }
@@ -1022,11 +945,13 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
     } else if (a_es->buf_out_size_max < a_es->buf_out_size + sizeof(void*)) {
         a_es->buf_out_size_max += l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        log_it(L_MSG, "[!] Increase capacity to %lu, actual size: %lu", a_es->buf_out_size_max, a_es->buf_out_size);
+        log_it(L_MSG, "Es %p (%d): increase capacity to %lu, actual size: %lu",
+               a_es, a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + sizeof(void*) <= l_basic_buf_size / 2) && (a_es->buf_out_size_max > l_basic_buf_size)) {
         a_es->buf_out_size_max = l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        log_it(L_MSG, "[!] Decrease capacity to %lu, actual size: %lu", a_es->buf_out_size_max, a_es->buf_out_size);
+        log_it(L_MSG, "Es %p (%d): decrease capacity to %lu, actual size: %lu",
+               a_es, a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
     *(void**)(a_es->buf_out + a_es->buf_out_size) = a_arg;
     a_es->buf_out_size += sizeof(a_arg);
@@ -1042,6 +967,7 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
  */
 int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t * a_es_input, void * a_arg)
 {
+    debug_if(g_debug_reactor, L_DEBUG, "Send to queue input %p -> %p", a_es_input, a_es_input->pipe_out);
 #if defined (DAP_EVENTS_CAPS_KQUEUE)
     if (a_es_input->pipe_out){
         int l_ret;
@@ -1074,8 +1000,8 @@ int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t * a_es_input, 
         return -2;
     }
 
-#elif defined(DAP_EVENTS_CAPS_AIO)
-    return dap_events_socket_queue_ptr_send(a_es_input->pipe_out,a_arg);
+#elif defined DAP_EVENTS_CAPS_IOCP
+    return dap_events_socket_queue_ptr_send(a_es_input->pipe_out, a_arg);
 #else
     return dap_events_socket_write_unsafe(a_es_input, &a_arg, sizeof(a_arg)) == sizeof(a_arg) ? 0 : -1;
 #endif
@@ -1096,48 +1022,8 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         log_it(L_DEBUG,"Sent ptr %p to esocket queue %p (%d)", a_arg, a_es, a_es? a_es->fd : -1);
 
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
-#if defined (DAP_EVENTS_CAPS_AIO)
-    struct queue_ptr_aio * l_ptr_aio = DAP_NEW_Z(struct queue_ptr_aio);
-    if (!l_ptr_aio) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return 0;
-    }
-    l_ptr_aio->self = l_ptr_aio;
-    l_ptr_aio->ptr = a_arg;
-    l_ptr_aio->aiocb = DAP_NEW_Z(struct aiocb);
-    if (!l_ptr_aio->aiocb) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_DEL_Z(l_ptr_aio);
-        return 0;
-    }
-    l_ptr_aio->aiocb->aio_fildes = a_es->fd2;
-    l_ptr_aio->aiocb->aio_buf = l_ptr_aio;
-    l_ptr_aio->aiocb->aio_nbytes = sizeof(*l_ptr_aio);
-    l_ret =  aio_write(l_ptr_aio->aiocb) == 0? sizeof(a_arg) : 0;
-#else
-    // Bufferize all messages to prevent random reordering when writing to pipe
     s_add_ptr_to_buf(a_es, a_arg);
     return 0;
-    //return dap_events_socket_write_unsafe(a_es, &a_arg, sizeof(a_arg))
-    //        == sizeof(a_arg) ? 0 : -1;
-    /*if ((l_ret = write(a_es->fd2, &a_arg, sizeof(a_arg)) == sizeof(a_arg))) {
-        debug_if(g_debug_reactor, L_NOTICE, "send %d bytes to pipe", l_ret);
-        return 0;
-    }
-    l_errno = errno;
-    if(l_errno == EAGAIN || l_errno == EWOULDBLOCK ){
-        //log_it(L_MSG, "[!] Bufferize ptr %p for send", a_arg);
-        s_add_ptr_to_buf(a_es, a_arg);
-        return 0;
-    }
-
-    char l_errbuf[128] = { '\0' };
-    strerror_r(l_errno, l_errbuf, sizeof(l_errbuf));
-    log_it(L_ERROR, "Can't send ptr to pipe:\"%s\" code %d", l_errbuf, l_errno);
-    return l_errno;*/
-#endif
-    l_errno = errno;
-
 #elif defined (DAP_EVENTS_CAPS_QUEUE_MQUEUE)
     assert(a_es);
     assert(a_es->mqd);
@@ -1161,21 +1047,6 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         log_it(L_ERROR, "Can't send ptr to queue:\"%s\" code %d", l_errbuf, l_errno);
         return l_errno;
     }}
-#if defined (DAP_EVENTS_CAPS_AIO)
-    struct aiocb l_aio_op = {0};
-    struct queue_ptr_aio * l_ptr_aio = DAP_NEW(struct queue_ptr_aio);
-    if (!l_ptr_aio) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return 0;
-    }
-    l_ptr_aio->self = l_ptr_aio;
-    l_ptr_aio->ptr = a_arg;
-    l_aio_op.aio_fildes = a_es->mqd;
-    l_aio_op.aio_buf = l_ptr_aio;
-    l_aio_op.aio_nbytes = sizeof(*l_ptr_aio);
-    l_ret =  aio_write(&l_aio_op) == 0? sizeof(a_arg) : 0;
-    l_errno = errno;
-#else
     l_ret = mq_send(a_es->mqd, (const char *)&a_arg, sizeof (a_arg), 0);
     l_errno = errno;
     if ( l_ret == EPERM){
@@ -1188,8 +1059,6 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         l_ret = sizeof(a_arg);
     else if (l_ret > 0)
         l_ret = -l_ret;
-#endif
-
 #elif defined (DAP_EVENTS_CAPS_QUEUE_POSIX)
     struct timespec l_timeout;
     clock_gettime(CLOCK_REALTIME, &l_timeout);
@@ -1200,34 +1069,13 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         return  0;
     else
         return l_errno;
-#elif defined DAP_EVENTS_CAPS_MSMQ
-
-    /* TODO: Windows-way message waiting and handling
-     *
-    DWORD l_mp_id = 0;
-    MQMSGPROPS    l_mps;
-    MQPROPVARIANT l_mpvar[1];
-    MSGPROPID     l_p_id[1];
-    HRESULT       l_mstatus[1];
-
-    l_p_id[l_mp_id] = PROPID_M_BODY;
-    l_mpvar[l_mp_id].vt = VT_VECTOR | VT_UI1;
-    l_mpvar[l_mp_id].caub.pElems = (unsigned char*)(&a_arg);
-    l_mpvar[l_mp_id].caub.cElems = sizeof(void*);
-    l_mp_id++;
-
-    l_mps.cProp = l_mp_id;
-    l_mps.aPropID = l_p_id;
-    l_mps.aPropVar = l_mpvar;
-    l_mps.aStatus = l_mstatus;
-    HRESULT hr = MQSendMessage(a_es->mqh, &l_mps, MQ_NO_TRANSACTION);
-
-    if (hr != MQ_OK) {
-        log_it(L_ERROR, "An error occured on sending message to queue, errno: %ld", hr);
-        return hr;
-    }
-    */
+#elif defined DAP_EVENTS_CAPS_WEPOLL
+    //return dap_sendto(a_es->socket, a_es->port, &a_arg, sizeof(void*)) == SOCKET_ERROR ? WSAGetLastError() : NO_ERROR;
+    task_entry_t *l_work_item = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(task_entry_t));
+    l_work_item->data = a_arg;
+    InterlockedPushEntrySList((PSLIST_HEADER)a_es->_pvt, &(l_work_item->entry));
     return dap_sendto(a_es->socket, a_es->port, &a_arg, sizeof(void*)) == SOCKET_ERROR ? WSAGetLastError() : NO_ERROR;
+
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     struct kevent l_event={0};
     dap_events_socket_w_data_t * l_es_w_data = DAP_NEW_Z(dap_events_socket_w_data_t);
@@ -1265,26 +1113,21 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         return l_errno;
     }
 
+#elif defined DAP_EVENTS_CAPS_IOCP
+    task_entry_t *l_work_item = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(task_entry_t));
+    l_work_item->data = a_arg;
+    debug_if(g_debug_reactor, L_DEBUG, "Enqueue %p into %p", a_arg, a_es);
+    l_ret = 0;
+    if (!InterlockedPushEntrySList((PSLIST_HEADER)a_es->_pvt, &(l_work_item->entry))) {
+        if (!PostQueuedCompletionStatus(a_es->context->iocp, 0, a_es->uuid, NULL)) {
+            l_ret = GetLastError();
+            log_it(L_ERROR, "Enqueuing into es %p failed, errno %d", a_es, l_ret);
+        }
+    }
+    return l_ret;
 #else
 #error "Not implemented dap_events_socket_queue_ptr_send() for this platform"
 #endif
-#if defined(DAP_EVENTS_CAPS_AIO_THREADS)
-
-    if (l_ret == sizeof(a_arg) ){
-        return 0;
-    }else{
-        // Try again
-        if(l_errno == EAGAIN || l_errno == EWOULDBLOCK ){
-            s_add_ptr_to_buf(a_es, a_arg);
-            return 0;
-        }else {
-            char l_errbuf[128];
-            strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-            log_it(L_ERROR, "Can't send ptr to queue:\"%s\" code %d", l_errbuf, l_errno);
-            return l_errno;
-        }
-    }
-#else
     if(l_ret == sizeof(a_arg) )
         return 0;
     else{
@@ -1293,7 +1136,6 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         log_it(L_ERROR,"Send queue ptr error: \"%s\" code %d", l_errbuf, l_errno);
         return l_errno;
     }
-#endif
 }
 
 
@@ -1315,8 +1157,10 @@ int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value
             return l_errno;
         else
             return 1;
-#elif defined (DAP_OS_WINDOWS)
+#elif defined DAP_EVENTS_CAPS_WEPOLL
     return dap_sendto(a_es->socket, a_es->port, NULL, 0) == SOCKET_ERROR ? WSAGetLastError() : NO_ERROR;
+#elif defined (DAP_EVENTS_CAPS_IOCP)
+    return PostQueuedCompletionStatus(a_es->context->iocp, 0, a_es->uuid, NULL) ? GetLastError() : NO_ERROR;
 #elif defined (DAP_EVENTS_CAPS_KQUEUE)
     struct kevent l_event={0};
     dap_events_socket_w_data_t * l_es_w_data = DAP_NEW_Z(dap_events_socket_w_data_t);
@@ -1420,6 +1264,103 @@ dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOC
  */
 void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool a_is_ready )
 {
+#ifdef DAP_EVENTS_CAPS_IOCP
+    if (!a_is_ready) {
+        a_esocket->flags &= ~DAP_SOCK_READY_TO_READ;
+        return;
+    }
+    if (a_esocket->flags & DAP_SOCK_SIGNAL_CLOSE) {
+        debug_if(g_debug_reactor, L_DEBUG, "Attempt to read from closing socket %p, dump it", a_esocket);
+        dap_events_socket_remove_and_delete_unsafe(a_esocket, 0);
+        return;
+    }
+    a_esocket->flags |= DAP_SOCK_READY_TO_READ;
+    WSABUF wsabuf = {
+        .buf = a_esocket->buf_in,
+        .len = a_esocket->buf_in_size_max
+    };
+    int l_res = -2;
+    DWORD flags = 0, bytes = 0;
+    const char *l_func = "Read";
+    dap_overlapped_t *l_ol = NULL;
+    if (a_esocket->op_events[io_op_read])
+        ResetEvent(a_esocket->op_events[io_op_read]);
+
+    switch (a_esocket->type) {
+    case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+    case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+        if (!a_esocket->op_events[io_op_read]) {
+            log_it(L_ERROR, "! Not initialized read event for es %p \"%s\"", a_esocket, dap_events_socket_get_type_str(a_esocket));
+            a_esocket->op_events[io_op_read] = CreateEvent(0, TRUE, FALSE, NULL);
+        }
+        l_ol            = DAP_NEW_Z(dap_overlapped_t);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_read];
+        l_res           = WSARecv(a_esocket->socket, &wsabuf, 1, &bytes, &flags, (OVERLAPPED*)l_ol, NULL);
+        l_func          = "WSARecv";
+        break;
+
+    case DESCRIPTOR_TYPE_SOCKET_UDP: {
+        if (!a_esocket->op_events[io_op_read]) {
+            log_it(L_ERROR, "! Not initialized read event for es %p \"%s\"", a_esocket, dap_events_socket_get_type_str(a_esocket));
+            a_esocket->op_events[io_op_read] = CreateEvent(0, TRUE, FALSE, NULL);
+        }
+        INT l_len       = sizeof(a_esocket->remote_addr);
+        l_ol            = DAP_NEW_Z(dap_overlapped_t);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_read];
+        l_res           = WSARecvFrom(a_esocket->socket, &wsabuf, 1, &bytes, &flags,
+                                      (LPSOCKADDR)&a_esocket->remote_addr, &l_len, (OVERLAPPED*)l_ol, NULL);
+        l_func          = "WSARecvFrom";
+    } break;
+
+    case DESCRIPTOR_TYPE_SOCKET_LISTENING:
+    case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING: {
+        INT l_len = sizeof(SOCKADDR_STORAGE) + 16;
+        if ((a_esocket->socket2 = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET) {
+            log_it(L_ERROR, "Failed to create socket for accept()'ing, errno %d", WSAGetLastError());
+            return;
+        }
+        l_ol        = DAP_NEW_Z(dap_overlapped_t);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_read];
+        l_res       = pfn_AcceptEx(a_esocket->socket, a_esocket->socket2, (LPVOID)(a_esocket->buf_in),
+                                   0, l_len, l_len, &bytes, (OVERLAPPED*)l_ol) ? 0 : SOCKET_ERROR;
+        l_func      = "AcceptEx";
+    } break;
+
+    case DESCRIPTOR_TYPE_FILE:
+    case DESCRIPTOR_TYPE_PIPE:
+        l_ol            = DAP_NEW_Z(dap_overlapped_t);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_read];
+        l_res           = ReadFile(a_esocket->h, a_esocket->buf_in, a_esocket->buf_in_size_max,
+                                   &bytes, (OVERLAPPED*)l_ol) ? 0 : SOCKET_ERROR;
+        l_func          = "ReadFile";
+        break;
+
+    default:
+        log_it(L_ERROR, "Unsupported es %p type: %d, dump it", a_esocket, a_esocket->type);
+        break;
+    }
+
+    int l_err;
+    switch (l_res) {
+    case SOCKET_ERROR:
+        switch (l_err = a_esocket->socket == INVALID_SOCKET ? GetLastError() : WSAGetLastError()) {
+        case ERROR_IO_PENDING:
+            debug_if(g_debug_reactor, L_DEBUG, "Pending \"%s\" on es %p", l_func, a_esocket);
+            break;
+        default:
+            log_it(L_ERROR, "\"%s\" failed with error %d", l_func, l_err);
+        } break;
+    case 0:
+        /* a_esocket->buf_in_size += bytes; */
+        debug_if(g_debug_reactor, L_DEBUG, "[!] \"%s\" from %p : %zu \"%s\" completed immediately, received %lu bytes",
+                 l_func, a_esocket, a_esocket->socket, dap_events_socket_get_type_str(a_esocket), bytes);
+        /* if (l_ol && l_ol->hEvent)
+            ResetEvent(l_ol->hEvent); */
+        break;
+    default: break;
+    }
+    return;
+#else
     if( a_is_ready == (bool)(a_esocket->flags & DAP_SOCK_READY_TO_READ))
         return;
     if ( a_is_ready ){
@@ -1460,7 +1401,7 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
 #else
     dap_context_poll_update(a_esocket);
 #endif
-
+#endif
 }
 
 /**
@@ -1470,6 +1411,144 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
  */
 void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool a_is_ready )
 {
+#ifdef DAP_EVENTS_CAPS_IOCP
+    if (!a_is_ready) {
+        a_esocket->flags &= ~DAP_SOCK_READY_TO_WRITE;
+        return;
+    }
+    if (a_esocket->flags & DAP_SOCK_SIGNAL_CLOSE) {
+        debug_if(g_debug_reactor, L_DEBUG, "Attempt to write to closing socket %p, dump it", a_esocket);
+        dap_events_socket_remove_and_delete_unsafe(a_esocket, 0);
+        return;
+    }
+    a_esocket->flags |= DAP_SOCK_READY_TO_WRITE;
+    int l_res = -2;
+    DWORD flags = 0, bytes = 0;
+    const char *l_func = "Trigger writing";
+    dap_overlapped_t *l_ol = NULL;
+    if (a_esocket->op_events[io_op_write])
+        ResetEvent(a_esocket->op_events[io_op_write]);
+
+    switch (a_esocket->type) {
+    case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+    case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+        l_ol            = DAP_NEW_Z_SIZE(dap_overlapped_t, sizeof(OVERLAPPED) + a_esocket->buf_out_size);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_write];
+        if (a_esocket->flags & DAP_SOCK_CONNECTING) {
+            SOCKADDR_IN l_addr_any = {
+                .sin_family = AF_INET, .sin_port = 0,
+                .sin_addr   = {{ .S_addr = INADDR_ANY }}
+            };
+            if ( bind(a_esocket->socket, (PSOCKADDR)&l_addr_any, sizeof(l_addr_any)) == SOCKET_ERROR ) {
+                log_it(L_ERROR, "Failed to create socket for accept()'ing, errno %d", WSAGetLastError());
+                return;
+            }
+            l_res   = pfn_ConnectEx(a_esocket->socket, (PSOCKADDR)&a_esocket->remote_addr, sizeof(SOCKADDR),
+                                    NULL, 0, NULL, (OVERLAPPED*)l_ol) ? 0 : SOCKET_ERROR;
+            l_func  = "ConnectEx";
+        } else {
+            if (a_esocket->buf_out_size) {
+                memcpy(l_ol->buf, a_esocket->buf_out, a_esocket->buf_out_size);
+                l_res   = WSASend(a_esocket->socket,
+                                  &(WSABUF) { .len = a_esocket->buf_out_size,
+                                              .buf = l_ol->buf
+                                  }, 1, &bytes, flags, (OVERLAPPED*)l_ol, NULL);
+                a_esocket->buf_out_size = 0;
+                l_func  = "WSASend";
+            } else {
+                l_res   = PostQueuedCompletionStatus(a_esocket->context->iocp, 0, a_esocket->uuid, (OVERLAPPED*)l_ol) ? 0 : 1;
+            }
+        }
+        break;
+    case DESCRIPTOR_TYPE_SOCKET_UDP: {
+        l_ol            = DAP_NEW_Z_SIZE(dap_overlapped_t, sizeof(OVERLAPPED) + a_esocket->buf_out_size);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_write];
+        if (a_esocket->buf_out_size) {
+            INT l_len   = sizeof(a_esocket->remote_addr);
+            memcpy(l_ol->buf, a_esocket->buf_out, a_esocket->buf_out_size);
+            l_res       = WSASendTo(a_esocket->socket,
+                                    &(WSABUF) { .len = a_esocket->buf_out_size,
+                                                .buf = l_ol->buf
+                                    }, 1, &bytes, flags, (LPSOCKADDR)&a_esocket->remote_addr, l_len, (OVERLAPPED*)l_ol, NULL);
+            a_esocket->buf_out_size = 0;
+            l_func      = "WSASendTo";
+        } else
+            l_res       = PostQueuedCompletionStatus(a_esocket->context->iocp, 0, a_esocket->uuid, (OVERLAPPED*)l_ol) ? 0 : 1;
+
+    } break;
+
+    case DESCRIPTOR_TYPE_FILE:
+    case DESCRIPTOR_TYPE_PIPE:
+        l_ol            = DAP_NEW_Z(dap_overlapped_t);
+        l_ol->ol.hEvent = a_esocket->op_events[io_op_write];
+        if (a_esocket->buf_out_size) {
+            l_res       = WriteFile(a_esocket->h, a_esocket->buf_out, a_esocket->buf_out_size, NULL, (OVERLAPPED*)l_ol) ? 0 : SOCKET_ERROR;
+            l_func      = "WriteFile";
+        } else
+            l_res       = PostQueuedCompletionStatus(a_esocket->context->iocp, 0, a_esocket->uuid, (OVERLAPPED*)l_ol) ? 0 : 1;
+        break;
+
+    case DESCRIPTOR_TYPE_QUEUE:
+        if (!(a_esocket->flags & DAP_SOCK_QUEUE_PTR)) {
+            log_it(L_ATT, "Queue socket %p has no appropriate flag. Dump it", a_esocket);
+            a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            break;
+        }
+        if (!a_esocket->buf_out_size) {
+            log_it(L_WARNING, "Queue es %p buffer is empty, nothing to write", a_esocket);
+            break;
+        }
+        if (a_esocket->buf_out_size % sizeof(void*)) {
+            log_it(L_ERROR, "Socket %p contains malformed data! Dump %lu bytes", a_esocket, a_esocket->buf_out_size);
+            a_esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
+            break;
+        }
+        for (DWORD shift = 0; shift < a_esocket->buf_out_size; shift += sizeof(void*)) {
+            void *l_queue_ptr           = *(void**)(a_esocket->buf_out + shift);
+            task_entry_t *l_work_item   = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(task_entry_t));
+            l_work_item->data           = l_queue_ptr;
+            if (!InterlockedPushEntrySList((PSLIST_HEADER)a_esocket->_pvt, &(l_work_item->entry)))
+                l_res = 0;
+        }
+
+        bytes   = a_esocket->buf_out_size;
+        a_esocket->buf_out_size = 0;
+        l_func  = "Enqueue";
+        l_res   = !l_res ? PostQueuedCompletionStatus(a_esocket->context->iocp, 0, a_esocket->uuid, NULL) ? 0 : 1 : 0;
+        break;
+
+    default:
+        log_it(L_ERROR, "Unsupported es %p type %d, dump it", a_esocket, a_esocket->type);
+        a_esocket->flags &= ~DAP_SOCK_READY_TO_WRITE;
+        break;
+    }
+
+    int l_err;
+    switch (l_res) {
+    case SOCKET_ERROR:
+        switch (l_err = a_esocket->socket == INVALID_SOCKET ? GetLastError() : WSAGetLastError()) {
+        case ERROR_IO_PENDING:
+            debug_if(g_debug_reactor, L_DEBUG, "Pending \"%s\" on es %p", l_func, a_esocket);
+            break;
+        default:
+            if (l_ol) {
+                DAP_DELETE(l_ol);
+            }
+            log_it(L_ERROR, "\"%s\" failed with error %d", l_func, l_err);
+        } break;
+    case 0:
+        debug_if(g_debug_reactor, L_DEBUG, "\"%s\" to %p : %zu \"%s\" completed immediately, sent %lu bytes", l_func,
+               a_esocket, a_esocket->socket, dap_events_socket_get_type_str(a_esocket), bytes);
+        if (l_ol && l_ol->ol.hEvent)
+            ResetEvent(l_ol->ol.hEvent);
+        break;
+    default:
+        log_it(L_ERROR, "Operation \"%s\" with %p failed with error %lu",
+               l_func, a_esocket, GetLastError());
+        break;
+    }
+    return;
+#else
     if (!a_esocket || a_is_ready == (bool)(a_esocket->flags & DAP_SOCK_READY_TO_WRITE))
         return;
 
@@ -1512,7 +1591,7 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
 #else
     dap_context_poll_update(a_esocket);
 #endif
-
+#endif
 }
 
 
@@ -1529,7 +1608,6 @@ bool s_remove_and_delete_unsafe_delayed_delete_callback(void * a_arg)
     assert(l_worker);
     dap_events_socket_t * l_es;
     if( (l_es = dap_context_find(l_worker->context, l_es_handler->esocket_uuid)) != NULL)
-        //dap_events_socket_remove_and_delete_unsafe(l_es,l_es_handler->value == 1);
         dap_events_socket_remove_and_delete_unsafe( l_es, l_es_handler->value == 1);
     DAP_DELETE(l_es_handler);
 
@@ -1566,14 +1644,28 @@ void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_
 void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool preserve_inheritor )
 {
     assert(a_es);
+    debug_if(g_debug_reactor, L_DEBUG, "[!] Delete es %p \"%s\" [%s] ",
+             a_es, dap_events_socket_get_type_str(a_es),
+             a_es->socket == INVALID_SOCKET ? "" : dap_itoa(a_es->socket));
 
+#ifdef DAP_EVENTS_CAPS_IOCP
+    if (!a_es->op_events[io_op_close]) {
+        dap_overlapped_t *l_ol = DAP_NEW_Z(dap_overlapped_t);
+        l_ol->ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL);
+        a_es->op_events[io_op_close] = l_ol->ol.hEvent;
+        if (!PostQueuedCompletionStatus(a_es->context->iocp, preserve_inheritor, a_es->uuid, (OVERLAPPED*)l_ol))
+            log_it(L_ERROR, "Queue deleting on es %p failed, errno %lu", a_es, GetLastError());
+        else
+            debug_if(g_debug_reactor, L_DEBUG, "Queue deleting on es %p \"%s\"", a_es, dap_events_socket_get_type_str(a_es));
+        return;
+    } else if (WaitForSingleObject(a_es->op_events[io_op_close], 0) == WAIT_TIMEOUT)
+        return;
+#endif
+    
     if( a_es->callbacks.delete_callback )
-        a_es->callbacks.delete_callback( a_es, a_es->callbacks.arg ); // Init internal structure
-    //log_it( L_DEBUG, "es is going to be removed from the lists and free the memory (0x%016X)", a_es );
+        a_es->callbacks.delete_callback( a_es, a_es->callbacks.arg );
     dap_context_remove(a_es);
-    //log_it( L_DEBUG, "dap_events_socket wrapped around %d socket is removed", a_es->socket );
     dap_events_socket_delete_unsafe(a_es, preserve_inheritor);
-
 }
 
 /**
@@ -1584,7 +1676,15 @@ void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
 {
 #ifdef DAP_OS_WINDOWS
     if ( a_esocket->socket && (a_esocket->socket != INVALID_SOCKET)) {
+        LINGER  lingerStruct;
+        lingerStruct.l_onoff = 1;
+        lingerStruct.l_linger = 30;
+        setsockopt(a_esocket->socket, SOL_SOCKET, SO_LINGER, (char *)&lingerStruct, sizeof(lingerStruct) );
+         // Do we need graceful shutdown anyway?...
         closesocket( a_esocket->socket );
+    }
+    a_esocket->socket = a_esocket->socket2 = INVALID_SOCKET;
+
 #else
     if ( a_esocket->socket && (a_esocket->socket != -1)) {
 #ifdef DAP_OS_BSD
@@ -1594,11 +1694,11 @@ void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
         if( a_esocket->fd2 > 0 ){
             close( a_esocket->fd2);
         }
-#endif
     }
     a_esocket->fd2 = -1;
     a_esocket->fd = -1;
     a_esocket->socket = INVALID_SOCKET;
+#endif
 }
 
 /**
@@ -1609,11 +1709,41 @@ void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
 void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_preserve_inheritor)
 {
     dap_events_socket_descriptor_close(a_esocket);
-    if (!a_preserve_inheritor )
+    if (!a_preserve_inheritor)
         DAP_DEL_Z(a_esocket->_inheritor);
 
-    DAP_DEL_MULTY(a_esocket->_pvt, a_esocket->buf_in, a_esocket->buf_out);
+#ifdef DAP_EVENTS_CAPS_IOCP
+    for (int i = 0; i < io_op_max; ++i) {
+        if (a_esocket->op_events[i])
+            CloseHandle(a_esocket->op_events[i]);
+    }
+    DAP_DEL_MULTY(a_esocket->buf_in, a_esocket->buf_out);
+    switch (a_esocket->type) {
+    case DESCRIPTOR_TYPE_QUEUE:
+        DAP_ALFREE(a_esocket->_pvt);
+        a_esocket->_pvt = NULL;
+        break;
 
+    /*
+     * For possible usage
+     *
+    case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+    case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+    case DESCRIPTOR_TYPE_SOCKET_UDP:
+    case DESCRIPTOR_TYPE_FILE:
+    case DESCRIPTOR_TYPE_PIPE:
+    case DESCRIPTOR_TYPE_SOCKET_LISTENING:
+    case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
+        break;
+    */
+
+    default:
+        DAP_DEL_Z(a_esocket->_pvt);
+        break;
+    }
+#else
+    DAP_DEL_MULTY(a_esocket->_pvt, a_esocket->buf_in, a_esocket->buf_out);
+#endif
 #ifdef   DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].free_nr, 1);
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_IN].free_nr, 1);
@@ -1869,7 +1999,7 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
 size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size)
 {
     if (!a_es) {
-        log_it(L_ERROR, "Attemp to write into NULL esocket!");
+        log_it(L_ERROR, "Attempt to write into NULL esocket!");
         return 0;
     }
     if (a_es->flags & DAP_SOCK_SIGNAL_CLOSE) {
@@ -1886,29 +2016,15 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     } else if ((a_es->buf_out_size + a_data_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
         a_es->buf_out_size_max = l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
+        log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %lu, actual size: %lu",
                a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
     memcpy(a_es->buf_out + a_es->buf_out_size, a_data, a_data_size);
     a_es->buf_out_size += a_data_size;
-    /*a_es->buf_out_size += a_data_size;
-    if (a_es->buf_out_size_max < a_es->buf_out_size) {
-        while (a_es->buf_out_size_max < a_es->buf_out_size)
-            a_es->buf_out_size_max += l_basic_buf_size;
-        a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        l_cur_buf_ptr = a_es->buf_out + a_es->buf_out_size - a_data_size;
-        log_it(L_DEBUG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu",
-               a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
-    } else if (a_es->buf_out_size_max > l_basic_buf_size &&
-                    a_es->buf_out_size <= a_es->buf_out_size_max >> 1) {
-        a_es->buf_out_size_max >>= 1;
-        a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        l_cur_buf_ptr = a_es->buf_out + a_es->buf_out_size - a_data_size;
-        log_it(L_DEBUG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
-               a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
-    }
-    memcpy(l_cur_buf_ptr, a_data, a_data_size);*/
     dap_events_socket_set_writable_unsafe(a_es, true);
+    debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" %p, total size: %lu",
+             a_data_size, dap_events_socket_get_type_str(a_es), a_es, a_es->buf_out_size);
+
     return a_data_size;
 }
 
@@ -1943,7 +2059,7 @@ ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *
     }
     vsprintf(l_buf, a_format, ap_copy);
     va_end(ap_copy);
-    l_ret = dap_events_socket_write_unsafe(a_es, l_buf, l_buf_size);
+    l_ret = dap_events_socket_write_unsafe(a_es, l_buf, l_buf_size - 1);
     DAP_DELETE(l_buf);
     return l_ret;
 }
@@ -1964,12 +2080,9 @@ size_t dap_events_socket_pop_from_buf_in(dap_events_socket_t *a_es, void *a_data
     } else {
         if ( a_data_size > a_es->buf_in_size )
             a_data_size = a_es->buf_in_size;
-
         memcpy(a_data, a_es->buf_in, a_data_size);
     }
-
     a_es->buf_in_size -= a_data_size;
-
     return a_data_size;
 }
 
