@@ -259,7 +259,7 @@ bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
       log_it( L_DEBUG, "MIME type detected: '%s'", mime_type );
     }
     else {
-      cl_ht->reply_status_code=Http_Status_NotFound;
+      cl_ht->reply_status_code = Http_Status_NotFound;
       cl_ht->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
       log_it(L_WARNING,"Can't detect MIME type of %s file: %s",cl_ht_file->local_path,magic_error(up_folder->mime_detector));
     }
@@ -270,7 +270,7 @@ bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
 err:
 
   log_it( L_WARNING, "Can't get file info: %s", strerror(errno) );
-  cl_ht->reply_status_code = 404;
+  cl_ht->reply_status_code = Http_Status_NotFound;
   strncpy( cl_ht->reply_reason_phrase, "Not Found", sizeof(cl_ht->reply_reason_phrase)-1 );
 
   return false;
