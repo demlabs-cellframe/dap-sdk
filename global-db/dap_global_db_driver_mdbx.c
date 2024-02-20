@@ -901,7 +901,7 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
         return 0;
     }
     // Return all entries count
-    if (dap_global_db_driver_hash_is_blank(a_hash_from)) {
+    if (dap_global_db_driver_hash_is_blank(&a_hash_from)) {
         MDBX_stat l_stat;
         l_rc = mdbx_dbi_stat(l_txn, l_db_ctx->dbi, &l_stat, sizeof(MDBX_stat));
         if (l_rc != MDBX_SUCCESS)

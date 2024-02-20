@@ -248,10 +248,7 @@ void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t
     for (dap_cluster_member_t *it = a_cluster->members; it; it = it->hh.next) {
         if (s_present_in_array(it->addr, a_exclude_aray, a_exclude_array_size))
             continue;
-        dap_worker_t *l_worker = NULL;
-        dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(&it->addr, &l_worker);
-        if (l_worker && l_uuid)
-            dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_uuid, a_ch_id, a_type, a_data, a_data_size);
+        dap_stream_ch_pkt_send_by_addr(&it->addr, a_ch_id, a_type, a_data, a_data_size);
     }
     pthread_rwlock_unlock(&a_cluster->members_lock);
 }

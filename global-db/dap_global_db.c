@@ -284,7 +284,7 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     uint64_t l_limit_time = l_time_store_lim_sec ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_sec) : 0;
     if (l_limit_time && a_obj->timestamp < l_limit_time) {
         if (g_dap_global_db_debug_more) {
-            char l_ts_str[64] = { '\0' };
+            char l_ts_str[DAP_TIME_STR_SIZE];
             dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
             log_it(L_NOTICE, "Rejected too old object with group %s and key %s and timestamp %s",
                                             a_obj->group, a_obj->key, l_ts_str);
@@ -921,7 +921,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
     if (l_store_objs && l_values_count) {
         a_msg->processed_records += a_msg->values_page_size;
         a_msg->last_hash = dap_global_db_driver_hash_get(l_store_objs + l_values_count - 1);
-        if (dap_global_db_driver_hash_is_blank(a_msg->last_hash)) {
+        if (dap_global_db_driver_hash_is_blank(&a_msg->last_hash)) {
             l_rc = DAP_GLOBAL_DB_RC_PROGRESS;
             l_values_count--;
         } else
@@ -1024,7 +1024,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
     if (l_store_objs && l_values_count) {
         a_msg->processed_records += a_msg->values_page_size;
         a_msg->last_hash = dap_global_db_driver_hash_get(l_store_objs + l_values_count - 1);
-        if (dap_global_db_driver_hash_is_blank(a_msg->last_hash)) {
+        if (dap_global_db_driver_hash_is_blank(&a_msg->last_hash)) {
             l_rc = DAP_GLOBAL_DB_RC_PROGRESS;
             l_values_count--;
         } else
