@@ -123,8 +123,6 @@ dap_http_header_t *l_new_header;
     l_pname = (char *) ht_line;
     l_namelen = l_cp - ht_line;
 
-    debug_if(s_debug_http, L_DEBUG, "HTTP header field: '%.*s'", (int) l_namelen, l_pname);
-
     /*
      * So at this moment we known start and end of a field name, so we can try to recognize it
      * against a set of interested fields

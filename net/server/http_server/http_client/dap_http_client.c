@@ -441,7 +441,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         debug_if(s_debug_http, L_DEBUG, "Incomplete request in buffer, wait another part");
                         return;
                     }
-                    log_it( L_ERROR, "Line with size %zu is not terminated by CRLF pair", a_esocket->buf_in_size);
+                    log_it( L_ERROR, "Line with size %zu is not terminated by CRLF pair: %s", a_esocket->buf_in_size, a_esocket->buf_in);
                     s_report_error_and_restart( a_esocket, l_http_client, Http_Status_BadRequest );
                     break;
                 }
@@ -473,7 +473,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         l_http_client->proc->headers_read_callback( l_http_client, NULL );
                     }else {
                         pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
-                        debug_if (s_debug_http, L_DEBUG, "Cache is present, don't call underlaying callbacks");
+                        debug_if (s_debug_http, L_DEBUG, "Cache is present, don't call underlying callbacks");
                     }
 
                     // If no headers callback we go to the DATA processing
