@@ -689,7 +689,7 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
     char *l_buf = DAP_NEW_Z_SIZE(char, l_len + 1);
     fread(l_buf, l_len, 1, fp);
 	fclose(fp);
-    log_it(L_DEBUG, "Chunk is %s", l_buf);
+    //log_it(L_DEBUG, "Chunk is %s", l_buf); 
     return l_buf;
 }
 
