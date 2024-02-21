@@ -150,7 +150,7 @@ int dap_db_driver_flush(void)
     return s_drv_callback.flush();
 }
 
-static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, dap_store_obj_t *a_store_obj_src)
+static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const dap_store_obj_t *a_store_obj_src)
 {
     *a_store_obj_dst = *a_store_obj_src;
     a_store_obj_dst->group = dap_strdup(a_store_obj_src->group);

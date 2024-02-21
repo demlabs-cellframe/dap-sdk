@@ -67,6 +67,17 @@ DAP_STATIC_INLINE size_t dap_global_db_hash_pkt_get_size(dap_global_db_hash_pkt_
     return sizeof(dap_global_db_hash_pkt_t) + a_hash_pkt->group_name_len + a_hash_pkt->hashes_count * sizeof(dap_global_db_driver_hash_t);
 }
 
+typedef struct dap_global_db_start_pkt {
+    dap_global_db_driver_hash_t last_hash;
+    uint16_t group_len;
+    byte_t group[];
+} DAP_ALIGN_PACKED dap_global_db_start_pkt_t;
+
+DAP_STATIC_INLINE size_t dap_global_db_start_pkt_get_size(dap_global_db_start_pkt_t *a_start_pkt)
+{
+    return sizeof(dap_global_db_start_pkt_t) + a_start_pkt->group_len;
+}
+
 dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old_pkt, dap_global_db_pkt_t *a_new_pkt);
 dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj);
 dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count);

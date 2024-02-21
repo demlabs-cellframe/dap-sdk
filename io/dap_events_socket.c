@@ -1253,7 +1253,7 @@ dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOC
 
     l_es->flags = DAP_SOCK_READY_TO_READ;
     l_es->last_time_active = l_es->last_ping_request = time( NULL );
-    l_es->buf_in = DAP_NEW_Z_SIZE(char, 2 * sizeof(struct sockaddr_storage) + 32);
+    l_es->buf_in = DAP_NEW_Z_SIZE(byte_t, 2 * sizeof(struct sockaddr_storage) + 32);
     return l_es;
 }
 
