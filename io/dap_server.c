@@ -236,29 +236,16 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
         log_it(L_WARNING, "Can't set up REUSEPORT flag to the socket");
 #endif
 
-    void *l_addr_ptr = NULL;
-    const char *l_addr = a_addr;
-    switch (a_server->type) {
-    case DAP_SERVER_TCP:
-    case DAP_SERVER_UDP:
-        l_es->listener_addr.sin_family = AF_INET;
-        l_es->listener_addr.sin_port = htons(l_es->listener_port);
-        l_addr_ptr = &l_es->listener_addr.sin_addr;
-        break;
-    case DAP_SERVER_TCP_V6:
-        l_es->listener_addr_v6.sin6_family = AF_INET6;
-        l_es->listener_addr_v6.sin6_port = htons(l_es->listener_port);
-        l_addr_ptr = &l_es->listener_addr_v6.sin6_addr;
-    default:
-        break;
+    struct addrinfo l_hints = { .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM }, *l_addr_res;
+    if ( getaddrinfo(a_addr, dap_itoa(l_es->listener_port), &l_hints, &l_addr_res) ) {
+        log_it(L_ERROR, "Wrong listen address '%s : %u'", a_addr, l_es->listener_port);
+        goto clean_n_quit;
     }
+    memcpy(&l_es->addr_storage, l_addr_res->ai_addr, l_addr_res->ai_addrlen);
+    freeaddrinfo(l_addr_res);
 
     if (a_server->type != DAP_SERVER_LOCAL) {
-        if (inet_pton(AF_INET, l_addr, &l_addr_ptr) <= 0) {
-            log_it(L_ERROR, "Can't convert address %s to digital form", l_addr);
-            goto clean_n_quit;
-        }
-        strncpy(l_es->listener_addr_str, l_addr, sizeof(l_es->listener_addr_str)); // If NULL we listen everything
+        strncpy(l_es->listener_addr_str, a_addr, sizeof(l_es->listener_addr_str)); // If NULL we listen everything
     }
 #ifdef DAP_OS_UNIX
     else {
@@ -386,28 +373,8 @@ static int s_server_run(dap_server_t *a_server)
     dap_return_val_if_pass(!a_server || !a_server->es_listeners, -1);
 // func work
     dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
-    void *l_listener_addr = NULL;
-    socklen_t l_listener_addr_len = 0;
-    switch (a_server->type) {
-    case DAP_SERVER_TCP:
-    case DAP_SERVER_UDP:
-        l_listener_addr = &l_es->listener_addr;
-        l_listener_addr_len = sizeof(l_es->listener_addr);
-        break;
-    case DAP_SERVER_TCP_V6:
-        l_listener_addr = &l_es->listener_addr_v6;
-        l_listener_addr_len = sizeof(l_es->listener_addr_v6);
-        break;
-#ifdef DAP_OS_UNIX
-    case DAP_SERVER_LOCAL:
-        l_listener_addr = &l_es->listener_path;
-        l_listener_addr_len = sizeof(l_es->listener_path);
-#endif
-    default:
-        log_it(L_ERROR, "Can't run server: unsupported server type %s", dap_server_type_str(a_server->type));
-    }
 
-    if (bind(l_es->socket, (struct sockaddr *)l_listener_addr, l_listener_addr_len) < 0) {
+    if (bind(l_es->socket, (struct sockaddr*)&l_es->addr_storage, sizeof(struct sockaddr_storage)) < 0) {
 #ifdef DAP_OS_WINDOWS
         log_it(L_ERROR, "Bind error: %d", WSAGetLastError());
         closesocket(l_es->socket);
@@ -520,30 +487,36 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
     l_es_new->server = l_server;
     unsigned short int l_family = a_remote_addr->ss_family;
+    
+    l_es_new->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
+    l_es_new->addr_storage = *a_remote_addr;
+    char l_port_str[NI_MAXSERV];
 
     switch (l_family) {
 #ifdef DAP_OS_UNIX
     case AF_UNIX:
         l_es_new->type = DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT;
-        l_es_new->remote_path = *(struct sockaddr_un *)a_remote_addr;
-        strncpy(l_es_new->remote_addr_str, l_es_new->remote_path.sun_path, sizeof(l_es_new->remote_addr_str) - 1);
+        strncpy(l_es_new->remote_addr_str, ((struct sockaddr_un*)a_remote_addr)->sun_path, sizeof(l_es_new->remote_addr_str) - 1);
         break;
 #endif
     case AF_INET:
-        l_es_new->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
-        l_es_new->remote_addr = *(struct sockaddr_in *)a_remote_addr;
-        inet_ntop(AF_INET, &l_es_new->remote_addr.sin_addr, l_es_new->remote_addr_str, sizeof(l_es_new->remote_addr_str));
-        l_es_new->remote_port = ntohs(l_es_new->remote_addr.sin_port);
-        break;
     case AF_INET6:
-        l_es_new->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
-        l_es_new->remote_addr_v6 = *(struct sockaddr_in6 *)a_remote_addr;
-        inet_ntop(AF_INET6, &l_es_new->remote_addr_v6.sin6_addr, l_es_new->remote_addr_str, sizeof(l_es_new->remote_addr_str));
-        l_es_new->remote_port = ntohs(l_es_new->remote_addr_v6.sin6_port);
+        if (getnameinfo((struct sockaddr*)a_remote_addr, sizeof(*a_remote_addr), l_es_new->remote_addr_str,
+            sizeof(l_es_new->remote_addr_str), l_port_str, sizeof(l_port_str), NI_NUMERICHOST | NI_NUMERICSERV))
+        {
+#ifdef DAP_OS_WINDOWS
+            log_it(L_ERROR, "getnameinfo error: %d", WSAGetLastError());
+#else
+            log_it(L_ERROR, "getnameinfo error: %s", strerror(errno));
+#endif
+            return;
+        } 
+        l_es_new->remote_port = strtol(l_port_str, NULL, 10);
         break;
     default:
         log_it(L_ERROR, "Unsupported protocol family %hu from accept()", l_family);
     }
+    
     log_it(L_DEBUG, "[es:%p] Accepted new connection (sock %"DAP_FORMAT_SOCKET" from %"DAP_FORMAT_SOCKET")",
                                                         a_es_listener, a_remote_socket, a_es_listener->socket);
     log_it(L_INFO, "Connection accepted from %s : %hu", l_es_new->remote_addr_str, l_es_new->remote_port);
