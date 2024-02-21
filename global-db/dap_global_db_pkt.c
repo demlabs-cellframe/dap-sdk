@@ -147,7 +147,7 @@ bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj)
 
 }
 
-static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t *a_obj, size_t a_bound_size)
+static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t *a_obj, size_t a_bound_size, dap_stream_node_addr_t *a_addr)
 {
     if (sizeof(dap_global_db_pkt_t) > a_bound_size ||            /* Check for buffer boundaries */
             dap_global_db_pkt_get_size(a_pkt) > a_bound_size ||
@@ -215,17 +215,18 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
         DAP_DEL_Z(a_obj->value);
         return NULL;
     }
+    *(dap_stream_node_addr_t *)a_obj->ext = *a_addr;
     return l_data_ptr + l_sign_size;
 }
 
 
-dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_t a_pkt_size)
+dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_t a_pkt_size, dap_stream_node_addr_t *a_addr)
 {
     dap_return_val_if_fail(a_pkt, NULL);
-    dap_store_obj_t *l_ret = DAP_NEW_Z(dap_store_obj_t);
+    dap_store_obj_t *l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + sizeof(*a_addr));
     if (!l_ret)
         log_it(L_CRITICAL, "Memory allocation_error");
-    else if (!s_fill_one_store_obj(a_pkt, l_ret, a_pkt_size)) {
+    else if (!s_fill_one_store_obj(a_pkt, l_ret, a_pkt_size, a_addr)) {
         log_it(L_ERROR, "Broken GDB element: can't read GOSSIP record packet");
         DAP_DEL_Z(l_ret);
     }
@@ -238,7 +239,11 @@ dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_
  * @param store_obj_count[out] a number of deserialized objects in the array
  * @return Returns a pointer to the first object in the array, if successful; otherwise NULL.
  */
-dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count)
+#ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
+dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count, dap_stream_node_addr_t *a_addr)
+#else
+dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count, dap_stream_node_addr_t *a_addr)
+#endif
 {
     dap_return_val_if_fail(a_pkt && a_pkt->data_size >= sizeof(dap_global_db_pkt_t), NULL);
 
@@ -249,9 +254,13 @@ dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_
         log_it(L_ERROR, "Invalid size: packet pack total size is zero");
         return NULL;
     }
+#ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
     dap_store_obj_t *l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_size * sizeof(dap_store_obj_t));
+#else
+    dap_store_obj_t **l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t *, l_size * sizeof(dap_store_obj_t *));
+#endif
     if (!l_store_obj_arr) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, g_error_memory_alloc);
         return NULL;
     }
 
@@ -260,7 +269,16 @@ dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_
                                                                                 will be used to prevent out-of-buffer case */
     uint32_t i = 0;
     for ( ; i < l_count; i++) {
-        l_data_ptr = s_fill_one_store_obj((dap_global_db_pkt_t *)l_data_ptr, l_store_obj_arr + i, l_data_end - l_data_ptr);
+#ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
+        l_data_ptr = s_fill_one_store_obj((dap_global_db_pkt_t *)l_data_ptr, l_store_obj_arr + i, l_data_end - l_data_ptr, a_addr);
+#else
+        l_store_obj_arr[i] = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + sizeof(dap_stream_node_addr_t));
+        if (!l_store_obj_arr[i]) {
+            log_it(L_CRITICAL, g_error_memory_alloc);
+            break;
+        }
+        l_data_ptr = s_fill_one_store_obj((dap_global_db_pkt_t *)l_data_ptr, l_store_obj_arr[i], l_data_end - l_data_ptr, a_addr);
+#endif
         if (!l_data_ptr) {
             log_it(L_ERROR, "Broken GDB element: can't read packet #%u", i);
             break;

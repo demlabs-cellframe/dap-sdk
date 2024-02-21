@@ -232,7 +232,8 @@ void s_gdb_cluster_sync_timer_callback(void *a_arg)
             l_msg->last_hash = c_dap_global_db_driver_hash_blank; //dap_db_get_last_hash_remote(l_req->link, l_req->group);
             l_msg->group_len = l_group_len;
             memcpy(l_msg->group, it->data, l_group_len);
-            dap_stream_ch_pkt_send_by_addr(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START, l_msg, sizeof(*l_msg));
+            dap_stream_ch_pkt_send_by_addr(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START,
+                                           l_msg, dap_global_db_start_pkt_get_size(l_msg));
         }
         dap_list_free(l_groups);
         l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
