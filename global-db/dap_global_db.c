@@ -824,16 +824,6 @@ static void s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
 
 /* *** Get_all functions group *** */
 
-static int s_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
-    dap_global_db_obj_t *l_obj1 = (dap_global_db_obj_t *)a_obj1,
-            *l_obj2 = (dap_global_db_obj_t *)a_obj2;
-    return l_obj2->timestamp < l_obj1->timestamp
-            ? 1
-            : l_obj2->timestamp > l_obj1->timestamp
-              ? -1
-              : 0; // should never occur...
-}
-
 dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_objs_count)
 {
     size_t l_values_count = 0;
@@ -843,8 +833,6 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
     dap_global_db_obj_t *l_objs = l_store_objs ? s_objs_from_store_objs(l_store_objs, l_values_count) : NULL;
     if (a_objs_count)
         *a_objs_count = l_values_count;
-    if (l_values_count > 1)
-        qsort(l_objs, l_values_count, sizeof(dap_global_db_obj_t), s_db_compare_by_ts);
     return l_objs;
 }
 
@@ -978,7 +966,7 @@ int dap_global_db_get_all_raw(const char * a_group, size_t a_results_page_size, 
         return -1;
     }
     l_msg->dbi = s_dbi;
-    l_msg->opcode = MSG_OPCODE_GET_ALL_RAW ;
+    l_msg->opcode = MSG_OPCODE_GET_ALL_RAW;
     l_msg->group = dap_strdup(a_group);
     l_msg->values_page_size = a_results_page_size;
     l_msg->callback_arg = a_arg;
@@ -1665,7 +1653,7 @@ static bool s_queue_io_callback(void * a_arg)
     case MSG_OPCODE_GET_LAST_RAW:   s_msg_opcode_get_last_raw(l_msg); break;
     case MSG_OPCODE_GET_DEL_TS:     s_msg_opcode_get_del_ts(l_msg); break;
     case MSG_OPCODE_GET_ALL:        if (s_msg_opcode_get_all(l_msg)) return true; break;
-    case MSG_OPCODE_GET_ALL_RAW:    if (s_msg_opcode_get_all(l_msg)) return true; break;
+    case MSG_OPCODE_GET_ALL_RAW:    if (s_msg_opcode_get_all_raw(l_msg)) return true; break;
     case MSG_OPCODE_SET:            s_msg_opcode_set(l_msg); break;
     case MSG_OPCODE_SET_MULTIPLE:   s_msg_opcode_set_multiple_zc(l_msg); break;
     case MSG_OPCODE_SET_RAW:        s_msg_opcode_set_raw(l_msg); break;

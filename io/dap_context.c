@@ -557,11 +557,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             break;
                         } else {
                             if (seconds == 0xFFFFFFFF) {
-                                int l_err = 0;
-                                tmp = 0;
+                                int l_err = 0; tmp = 0;
                                 getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (char*)&l_err, (PINT)&tmp);
-                                log_it(L_ERROR, "Connection to %s:%u failed, error %d",
-                                       l_cur->remote_addr_str, ntohs(l_cur->remote_addr.sin_port), l_err);
+                                log_it(L_ERROR, "Connection to %s : %u failed, error %d",
+                                       l_cur->remote_addr_str, l_cur->remote_port, l_err);
                                 if ( l_cur->callbacks.error_callback )
                                     l_cur->callbacks.error_callback(l_cur, l_err);
                                 l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
@@ -569,7 +568,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 break;
                             } else {
                                 log_it(L_INFO, "ConnectEx to %s:%u succeeded in %d seconds",
-                                       l_cur->remote_addr_str, ntohs(l_cur->remote_addr.sin_port), seconds);
+                                       l_cur->remote_addr_str, l_cur->remote_port, seconds);
                                 if (setsockopt(l_cur->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0)
                                         == SOCKET_ERROR)
                                 {
@@ -957,10 +956,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     break;
                     case DESCRIPTOR_TYPE_SOCKET_UDP: {
                         l_must_read_smth = true;
-                        socklen_t l_size = sizeof(l_cur->remote_addr);
+                        socklen_t l_size = sizeof(l_cur->addr_storage);
                         l_bytes_read = recvfrom(l_cur->fd, (char *) (l_cur->buf_in + l_cur->buf_in_size),
                                                 l_cur->buf_in_size_max - l_cur->buf_in_size, 0,
-                                                (struct sockaddr *)&l_cur->remote_addr, &l_size);
+                                                (struct sockaddr *)&l_cur->addr_storage, &l_size);
 
 #ifdef DAP_OS_WINDOWS
                         l_errno = WSAGetLastError();
@@ -1202,7 +1201,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
                         l_bytes_sent = sendto(l_cur->socket, (const char *)l_cur->buf_out,
                                               l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL,
-                                              (struct sockaddr *)&l_cur->remote_addr, sizeof(l_cur->remote_addr));
+                                              (struct sockaddr *)&l_cur->addr_storage, sizeof(l_cur->addr_storage));
 #ifdef DAP_OS_WINDOWS
                         dap_events_socket_set_writable_unsafe(l_cur,false);
                         l_errno = WSAGetLastError();
