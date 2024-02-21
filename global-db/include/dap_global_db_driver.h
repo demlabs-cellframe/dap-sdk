@@ -104,9 +104,9 @@ DAP_STATIC_INLINE char *dap_global_db_driver_hash_print(dap_global_db_driver_has
 
 extern const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank;
 
-DAP_STATIC_INLINE bool dap_global_db_driver_hash_is_blank(dap_global_db_driver_hash_t a_blank_candidate)
+DAP_STATIC_INLINE bool dap_global_db_driver_hash_is_blank(dap_global_db_driver_hash_t *a_blank_candidate)
 {
-    return !memcmp(&a_blank_candidate, &c_dap_global_db_driver_hash_blank, sizeof(dap_global_db_driver_hash_t));
+    return !memcmp(a_blank_candidate, &c_dap_global_db_driver_hash_blank, sizeof(dap_global_db_driver_hash_t));
 }
 
 typedef struct dap_global_db_hash_pkt dap_global_db_hash_pkt_t;

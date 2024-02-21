@@ -85,6 +85,71 @@ static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg)
     DAP_DEL_Z(a_ch->internal);
 }
 
+bool s_proc_thread_reader(void *a_arg)
+{
+    dap_global_db_start_pkt_t *l_pkt = (dap_global_db_start_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t));
+    const char *l_group = (const char *)l_pkt->group;
+    dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
+    if (!l_cluster) {
+        log_it(L_ERROR, "Cluster for group %s not found", l_group);
+        return false;
+    }
+    dap_stream_node_addr_t *l_sender_addr = (dap_stream_node_addr_t *)a_arg;
+    if (!l_cluster->links_cluster ||
+            dap_cluster_member_find_role(l_cluster->links_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
+        const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
+        log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
+        return false;
+    }
+    bool l_ret = false;
+    dap_global_db_hash_pkt_t *l_hashes_pkt = dap_global_db_driver_hashes_read(l_group, l_pkt->last_hash);
+    if (l_hashes_pkt && l_hashes_pkt->hashes_count) {
+        dap_global_db_driver_hash_t *l_hashes_diff = (dap_global_db_driver_hash_t *)(l_hashes_pkt->group_n_hashses + l_hashes_pkt->group_name_len);
+        uint64_t l_time_store_lim_sec = l_cluster->ttl ? l_cluster->ttl : l_cluster->dbi->store_time_limit * 3600ULL;
+        uint64_t l_limit_time = l_time_store_lim_sec ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_sec) : 0;
+        if (l_limit_time) {
+            uint32_t i;
+            for (i = 0; i < l_hashes_pkt->hashes_count && be64toh((l_hashes_diff + i)->bets) < l_limit_time; i++) {
+                if (dap_global_db_driver_hash_is_blank(l_hashes_diff + i))
+                    break;
+                dap_store_obj_t l_to_del = { .timestamp = be64toh((l_hashes_diff + i)->bets),
+                                             .crc = be64toh((l_hashes_diff + i)->becrc),
+                                             .group = (char *)l_group };
+                int l_res = dap_global_db_driver_delete(&l_to_del, 1);
+                if (g_dap_global_db_debug_more) {
+                    char l_to_del_ts[DAP_TIME_STR_SIZE];
+                    dap_time_to_str_rfc822(l_to_del_ts, sizeof(l_to_del_ts), dap_nanotime_to_sec(l_to_del.timestamp));
+                    log_it(l_res ? L_WARNING : L_DEBUG, "%s too old object with group %s and timestamp %s",
+                                                             l_res ? "Can't remove" : "Removed", l_to_del_ts, l_group);
+                }
+            }
+            if (i == l_hashes_pkt->hashes_count) {
+                l_pkt->last_hash = l_hashes_diff[l_hashes_pkt->hashes_count - 1];
+                DAP_DELETE(l_hashes_pkt);
+                return true;
+            }
+            if (i) {
+                l_hashes_pkt->hashes_count -= i;
+                memmove(l_hashes_diff, l_hashes_diff + i, sizeof(dap_global_db_driver_hash_t) * l_hashes_pkt->hashes_count);
+            }
+        }
+        l_pkt->last_hash = l_hashes_diff[l_hashes_pkt->hashes_count - 1];
+        l_ret = !dap_global_db_driver_hash_is_blank(&l_pkt->last_hash);
+        if (!l_ret) {
+            --l_hashes_pkt->hashes_count;
+            //dap_db_set_last_hash_remote(l_req->link, l_req->group, l_hashes_diff[l_hashes_pkt->hashes_count - 1]);
+        }
+        if (l_hashes_pkt->hashes_count)
+            dap_stream_ch_pkt_send_by_addr((dap_stream_node_addr_t *)a_arg,
+                                           DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES,
+                                           l_hashes_pkt, dap_global_db_hash_pkt_get_size(l_hashes_pkt));
+        DAP_DELETE(l_hashes_pkt);
+    }
+    if (!l_ret)
+        DAP_DELETE(a_arg);
+    return l_ret;
+}
+
 static bool s_process_hashes(void *a_arg)
 {
      dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t));
@@ -112,13 +177,10 @@ static bool s_process_hashes(void *a_arg)
             l_ret_hashes[l_ret->hashes_count++] = l_hashes[i];
         }
      }
-     if (l_ret) {
-        dap_worker_t *l_worker = NULL;
-        dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr((dap_stream_node_addr_t *)a_arg, &l_worker);
-        if (l_worker)
-            dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_es_uuid, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST,
-                                      l_ret, dap_global_db_hash_pkt_get_size(l_ret));
-     }
+     if (l_ret)
+        dap_stream_ch_pkt_send_by_addr((dap_stream_node_addr_t *)a_arg,
+                                       DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST,
+                                       l_ret, dap_global_db_hash_pkt_get_size(l_ret));
      return false;
 }
 
@@ -136,16 +198,13 @@ static bool s_process_request(void *a_arg)
             dap_cluster_member_find_role(l_cluster->links_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
         log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
+        return false;
     }
     dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
     dap_global_db_pkt_pack_t *l_pkt_out = dap_global_db_driver_get_by_hash(l_group, l_hashes, l_pkt->hashes_count);
-    if (l_pkt_out) {
-       dap_worker_t *l_worker = NULL;
-       dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr(l_sender_addr, &l_worker);
-       if (l_worker)
-           dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_es_uuid, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK,
-                                     l_pkt_out, dap_global_db_pkt_pack_get_size(l_pkt_out));
-    }
+    if (l_pkt_out)
+        dap_stream_ch_pkt_send_by_addr(l_sender_addr, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK,
+                                       l_pkt_out, dap_global_db_pkt_pack_get_size(l_pkt_out));
     return false;
 }
 
@@ -221,6 +280,23 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
     dap_stream_ch_pkt_t * l_ch_pkt = (dap_stream_ch_pkt_t *)a_arg;
     switch (l_ch_pkt->hdr.type) {
 
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START: {
+        dap_global_db_start_pkt_t *l_pkt = (dap_global_db_start_pkt_t *)l_ch_pkt->data;
+        if (l_ch_pkt->hdr.data_size < sizeof(dap_global_db_start_pkt_t) ||
+                l_ch_pkt->hdr.data_size != dap_global_db_start_pkt_get_size(l_pkt)) {
+            log_it(L_WARNING, "Invalid packet size %u", l_ch_pkt->hdr.data_size);
+            break;
+        }
+        byte_t *l_arg = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_node_addr_t) + l_ch_pkt->hdr.data_size);
+        if (!l_arg) {
+            log_it(L_CRITICAL, g_error_memory_alloc);
+            break;
+        }
+        memcpy(l_arg + sizeof(dap_stream_node_addr_t), l_pkt, l_ch_pkt->hdr.data_size);
+        *(dap_stream_node_addr_t *)l_arg = a_ch->stream->node;
+        dap_proc_thread_callback_add_pri(NULL, s_proc_thread_reader, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
+    } break;
+
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES:
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST: {
         if (l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES &&
@@ -237,7 +313,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             break;
         byte_t *l_arg = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_node_addr_t) + l_ch_pkt->hdr.data_size);
         if (!l_arg) {
-            log_it(L_CRITICAL, "Not enough memory");
+            log_it(L_CRITICAL, g_error_memory_alloc);
             break;
         }
         memcpy(l_arg + sizeof(dap_stream_node_addr_t), l_pkt, l_ch_pkt->hdr.data_size);

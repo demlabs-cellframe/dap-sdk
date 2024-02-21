@@ -1349,7 +1349,7 @@ static bool s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ARG vo
             for (size_t i = 0; i < l_client_pvt->stream->channel_count; i++) {
                 dap_stream_ch_t *ch = l_client_pvt->stream->channel[i];
                 if (ch->ready_to_write && ch->proc->packet_out_callback)
-                    l_ret = ch->proc->packet_out_callback(ch, NULL);
+                    l_ret |= ch->proc->packet_out_callback(ch, NULL);
             }
         } break;
         default: {}

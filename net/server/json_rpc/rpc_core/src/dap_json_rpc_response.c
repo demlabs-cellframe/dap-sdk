@@ -206,6 +206,7 @@ int json_print_commands(const char * a_name) {
     const char* long_cmd[] = {
             "tx_history",
             "tx_wallet",
+            "tx_ledger",
             "mempool_list",
             "net"
     };

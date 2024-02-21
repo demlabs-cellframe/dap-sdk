@@ -707,6 +707,7 @@ int json_commands(const char * a_name) {
             "tx_history",
             "wallet",
             "mempool",
+            "ledger",
             "chain_ca_copy",
             "net"
     };
