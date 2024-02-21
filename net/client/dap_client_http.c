@@ -669,7 +669,7 @@ dap_client_http_t * dap_client_http_request_custom (
     return l_client_http;
 #else
     l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
-    int l_err = connect(l_socket, (struct sockaddr *) &l_ev_socket->remote_addr, sizeof(struct sockaddr_in));
+    int l_err = connect(l_socket, (struct sockaddr *) &l_ev_socket->addr_storage, sizeof(struct sockaddr_in));
     if (l_err == 0){
         log_it(L_DEBUG, "Connected momentaly with %s:%u!", a_uplink_addr, a_uplink_port);
         l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
