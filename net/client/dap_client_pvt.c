@@ -33,6 +33,7 @@
 #include <sys/types.h>          /* See NOTES */
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #endif
 #include "json.h"
 
@@ -357,6 +358,7 @@ int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *
  * @brief s_client_internal_stage_status_proc
  * @param a_client
  */
+
 static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
 {
     if (!a_client_pvt)
@@ -513,7 +515,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     l_es->flags |= DAP_SOCK_READY_TO_WRITE;
                 #endif
                     l_es->_inheritor = a_client_pvt->client;
-                    struct addrinfo l_hints = { .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM }, *l_addr_res;
+                    struct addrinfo l_hints = (struct addrinfo){ .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM }, *l_addr_res;
                     if ( getaddrinfo(a_client_pvt->client->uplink_addr, dap_itoa(a_client_pvt->client->uplink_port), &l_hints, &l_addr_res) ) {
                         log_it(L_ERROR, "Wrong remote address '%s : %u'", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
@@ -558,7 +560,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 #else
 
                     int l_err = 0;
-                    if((l_err = connect(l_es->socket, (struct sockaddr *) &l_es->remote_addr,
+                    if((l_err = connect(l_es->socket, (struct sockaddr *) &l_es->addr_storage,
                             sizeof(struct sockaddr_in))) ==0) {
                         log_it(L_INFO, "Connected momentaly with %s:%u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                         // add to dap_worker
