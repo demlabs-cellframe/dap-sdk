@@ -133,6 +133,12 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
         l_link->link_manager->callbacks.error(l_link, l_net_id, EINVAL);
 }
 
+
+/**
+ * @brief s_client_delete_callback
+ * @param a_client
+ * @param a_arg
+ */
 void s_client_delete_callback(dap_client_t *a_client, void *a_arg)
 {
 // sanity check
@@ -142,7 +148,10 @@ void s_client_delete_callback(dap_client_t *a_client, void *a_arg)
     l_link->client = NULL;
 }
 
-// !hash table shouls be mutexed
+/**
+ * @brief Memory free from link !!!hash table should be locked!!!
+ * @param a_link
+ */
 void s_link_delete(dap_link_t *a_link)
 {
 // sanity check
@@ -152,6 +161,10 @@ void s_link_delete(dap_link_t *a_link)
     DAP_DELETE(a_link);
 }
 
+
+/**
+ * @brief Check existed links
+ */
 void s_links_wake_up()
 {
     dap_link_t *l_link = NULL, *l_tmp = NULL;
@@ -173,6 +186,9 @@ void s_links_wake_up()
     // pthread_rwlock_unlock(&a_cluster->members_lock);
 }
 
+/**
+ * @brief Create request to new links
+ */
 void s_links_request()
 {
 // func work
@@ -185,6 +201,11 @@ void s_links_request()
     }
 }
 
+/**
+ * @brief serially call funcs s_links_wake_up and s_links_request
+ * @param a_arg UNUSED
+ * @return false if error or manager inactiove, other - true
+ */
 bool s_update_states(UNUSED_ARG void *a_arg)
 {
 // sanity check
@@ -206,6 +227,10 @@ bool s_update_states(UNUSED_ARG void *a_arg)
     return true;
 }
 
+/**
+ * @brief check if any network have not offline status
+ * @return false if all netorks offline
+ */
 bool s_check_active_nets()
 {
 // sanity check
@@ -219,6 +244,11 @@ bool s_check_active_nets()
     return false;
 }
 
+/**
+ * @brief link manager initialisation
+ * @param a_callbacks - callbacks
+ * @return 0 if ok, other if error
+ */
 int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
 {
 // sanity check
@@ -235,6 +265,9 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
     return 0;
 }
 
+/**
+ * @brief close connections and memory free
+ */
 void dap_link_manager_deinit()
 {
 // sanity check
@@ -252,6 +285,11 @@ void dap_link_manager_deinit()
     DAP_DELETE(s_link_manager);
 }
 
+/**
+ * @brief close connections and memory free
+ * @param a_callbacks - callbacks
+ * @return pointer to dap_link_manager_t, NULL if error
+ */
 dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_callbacks)
 {
 // sanity check
@@ -268,11 +306,20 @@ dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_c
     return l_ret;
 }
 
+/**
+ * @brief dap_link_manager_get_default
+ * @return pointer to s_link_manager
+ */
 DAP_INLINE dap_link_manager_t *dap_link_manager_get_default()
 {
     return s_link_manager;
 }
 
+/**
+ * @brief count links in concretic net
+ * @param a_net_id net id for search
+ * @return links count
+ */
 size_t dap_link_manager_links_count(uint64_t a_net_id)
 {
 // sanity check
@@ -289,22 +336,28 @@ size_t dap_link_manager_links_count(uint64_t a_net_id)
     return l_ret;
 }
 
-
+/**
+ * @brief count needed links in concretic net
+ * @param a_net_id net id for search
+ * @return needed links count
+ */
 size_t dap_link_manager_needed_links_count(uint64_t a_net_id)
 {
 // sanity check
     dap_return_val_if_pass(!s_link_manager, 0);
 // func work
-    dap_list_t *l_item = NULL;
-    DL_FOREACH(s_link_manager->nets, l_item) {
-        dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
-        if (a_net_id == l_net->id && l_net->links_count < s_link_manager->min_links_num) {
-            return s_link_manager->min_links_num - l_net->links_count;
-        }
-    }
+    int32_t l_links_count = dap_link_manager_links_count(a_net_id);
+    if (l_links_count < s_link_manager->min_links_num)
+        return s_link_manager->min_links_num - l_links_count;
     return 0;
 }
 
+/**
+ * @brief add controlled net to link manager 
+ * @param a_net_id net id for adding
+ * @param a_link_cluster net link cluster for adding
+ * @return 0 if ok, other - ERROR
+ */
 int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster)
 {
     dap_return_val_if_pass(!s_link_manager || !a_net_id, -2);
