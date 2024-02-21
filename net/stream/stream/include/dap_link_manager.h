@@ -55,25 +55,25 @@ typedef enum dap_link_state {
 } dap_link_state_t;
 
 typedef struct dap_link {
-    dap_link_state_t state;
-    bool keep_connection;
-    bool enabled;
     dap_stream_node_addr_t node_addr;
+    dap_link_state_t state;
+    bool valid;
+    int keep_connection_count;
+    int attempts_count;
     dap_client_t *client;
-    dap_list_t *role_clusters;
     dap_list_t *links_clusters;
     dap_link_manager_t *link_manager;
     UT_hash_handle hh;
 } dap_link_t;
 
 typedef struct dap_link_manager {
-    dap_stream_node_addr_t self_addr;
-    int32_t min_links_num;
-    bool active;
-    dap_list_t *nets;
-    dap_link_t *links;
-    dap_timerfd_t *update_timer;
-    dap_link_manager_callbacks_t callbacks;
+    int32_t min_links_num;  // min links required in each net 
+    bool active;  // work status
+    int32_t max_attempts_num;  // max attempts to connect to each link
+    dap_list_t *nets;  // nets list to links count
+    dap_link_t *links;  // links HASH_TAB
+    dap_timerfd_t *update_timer;  // update timer status
+    dap_link_manager_callbacks_t callbacks;  // callbacks
 } dap_link_manager_t;
 
 #define DAP_LINK(a) (a ? (dap_link_t *) (a)->_inheritor : NULL)
@@ -93,3 +93,5 @@ int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link);
 void dap_link_manager_set_net_status(uint64_t a_net_id, bool a_status);
 size_t dap_link_manager_links_count(uint64_t a_net_id);
 size_t dap_link_manager_needed_links_count(uint64_t a_net_id);
+void dap_link_manager_set_condition(bool a_active);
+bool dap_link_manager_get_condition();
