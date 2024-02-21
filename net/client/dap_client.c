@@ -99,16 +99,11 @@ dap_client_t *dap_client_new(dap_client_callback_t a_delete_callback,
  */
 void dap_client_set_uplink_unsafe(dap_client_t *a_client, const char *a_addr, uint16_t a_port)
 {
-    if (!a_client) {
-        log_it(L_CRITICAL, "Invalid client");
-        return;
-    }
-    DAP_DEL_Z(a_client->uplink_addr);
-    if(!a_addr || !a_addr[0] || !a_port) {
-        log_it(L_ERROR, "Can't set uplink, invalid IP and/or port");
-        return;
-    }
-    a_client->uplink_addr = strdup(a_addr);
+// sanity check
+    dap_return_if_pass(!a_client || !a_addr || !a_addr[0] || !a_port);
+// func work
+    memset(a_client->uplink_addr, 0, sizeof(a_client->uplink_addr));
+    strncpy(a_client->uplink_addr, a_addr, sizeof(a_client->uplink_addr) - 1);
     a_client->uplink_port = a_port;
 }
 
@@ -249,7 +244,6 @@ void dap_client_delete_unsafe(dap_client_t *a_client)
     if(a_client->delete_callback)
         a_client->delete_callback(a_client, a_client->callbacks_arg);
     dap_client_pvt_delete_unsafe( DAP_CLIENT_PVT(a_client) );
-    DAP_DEL_Z(a_client->uplink_addr);
     DAP_DEL_Z(a_client->active_channels);
     DAP_DELETE(a_client);
 }

@@ -44,7 +44,7 @@ static uint32_t s_timer_update_states = 4000;
 static uint32_t s_min_links_num = 5;
 static dap_link_manager_t *s_link_manager = NULL;
 
-static void s_client_connect(dap_link_t *a_link, const char *a_active_channels, void *a_callback_arg);
+static void s_client_connect(dap_link_t *a_link, void *a_callback_arg);
 static void s_client_connected_callback(dap_client_t *a_client, void *a_arg);
 static void s_client_error_callback(dap_client_t *a_client, void *a_arg);
 static void s_client_delete_callback(UNUSED_ARG dap_client_t *a_client, void *a_arg);
@@ -57,20 +57,18 @@ static bool s_check_active_nets();
  * @param a_active_channels a_active_channels
  * @param a_link_cluster - cluster to added node addr if connected
  */
-void s_client_connect(dap_link_t *a_link, const char *a_active_channels, void *a_callback_arg)
+void s_client_connect(dap_link_t *a_link, void *a_callback_arg)
 {
 // sanity check 
-    dap_return_if_pass(!a_link); 
+    dap_return_if_pass(!a_link || !a_link->enabled || !a_link->client);
 //func work
-    if (!a_link->client) {
-        a_link->client = dap_client_new(s_client_delete_callback, s_client_error_callback, a_callback_arg);
-        dap_client_set_is_always_reconnect(a_link->client, false);
-        a_link->client->_inheritor = a_link;
-        dap_client_set_active_channels_unsafe(a_link->client, a_active_channels);
-        log_it(L_INFO, "Connecting to addr %s : %d", a_link->host_addr_str, a_link->host_port);
-        dap_client_set_uplink_unsafe(a_link->client, a_link->host_addr_str, a_link->host_port);
-        a_link->state = LINK_STATE_CONNECTING;
-        // Handshake & connect
+    if (a_link->state == LINK_STATE_DISCONNECTED) {
+        a_link->client->callbacks_arg = a_callback_arg;
+        if (dap_client_get_stage(a_link->client) != STAGE_BEGIN) {
+            dap_client_go_stage(a_link->client, STAGE_BEGIN, NULL);
+        }
+        log_it(L_INFO, "Connecting to node" NODE_ADDR_FP_STR ", addr %s : %d", NODE_ADDR_FP_ARGS_S(a_link->node_addr), a_link->client->uplink_addr, a_link->client->uplink_port);
+        a_link->state = LINK_STATE_CONNECTING ;
         dap_client_go_stage(a_link->client, STAGE_STREAM_STREAMING, s_client_connected_callback);
     }
     return;
@@ -100,7 +98,7 @@ static void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
     }
     log_it(L_NOTICE, "Stream connection with node "NODE_ADDR_FP_STR" (%s:%hu) established",
                 NODE_ADDR_FP_ARGS_S(l_link->node_addr),
-                l_link->host_addr_str, l_link->host_port);
+                l_link->client->uplink_addr, l_link->client->uplink_port);
 
     l_link->state = LINK_STATE_ESTABLISHED;
 }
@@ -126,11 +124,10 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
         if (l_link->link_manager->callbacks.disconnected) {
             l_link->link_manager->callbacks.disconnected(l_link, l_net_id, ((dap_managed_net_t *)(a_client->callbacks_arg))->links_count );
         }
-        dap_client_delete_mt(l_link->client);
         if (l_link->keep_connection) {
             if (dap_client_get_stage(l_link->client) != STAGE_BEGIN)
                 dap_client_go_stage(l_link->client, STAGE_BEGIN, NULL);
-            log_it(L_INFO, "Reconnecting node client with peer "NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(l_link->node_addr));
+            log_it(L_INFO, "Reconnecting to node" NODE_ADDR_FP_STR ", addr %s : %d", NODE_ADDR_FP_ARGS_S(l_link->node_addr), l_link->client->uplink_addr, l_link->client->uplink_port);
             l_link->state = LINK_STATE_CONNECTING ;
             dap_client_go_stage(l_link->client, STAGE_STREAM_STREAMING, s_client_connected_callback);
         } else {
@@ -172,7 +169,7 @@ bool s_update_states(void *a_arg)
         // if we don't have any connections with members in role clusters then create connection
         if(!l_link->client && l_link->role_clusters) {
             if (!l_link_manager->callbacks.fill_net_info(l_link)) {
-                s_client_connect(l_link, "CGND", NULL);
+                s_client_connect(l_link, NULL);
             } else {
                 log_it(L_INFO, "Can't find node "NODE_ADDR_FP_STR" in node list", NODE_ADDR_FP_ARGS_S(l_link->node_addr));
             }
@@ -391,22 +388,29 @@ dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_nod
         DAP_NEW_Z_RET_VAL(l_ret, dap_link_t, NULL, NULL);
         l_ret->node_addr.uint64 = a_node_addr->uint64;
         l_ret->link_manager = s_link_manager;
+        l_ret->client = dap_client_new(s_client_delete_callback, s_client_error_callback, NULL);
+        dap_client_set_is_always_reconnect(l_ret->client, false);
+        dap_client_set_active_channels_unsafe(l_ret->client, "CGND");
+        l_ret->client->_inheritor = l_ret;
         HASH_ADD(hh, s_link_manager->links, node_addr, sizeof(l_ret->node_addr), l_ret);
     }
     // pthread_rwlock_unlock(&a_cluster->members_lock);
 
     // fill addr
     if(a_addr_v4 && a_addr_v4->s_addr){
-        inet_ntop(AF_INET, a_addr_v4, l_ret->host_addr_str, INET_ADDRSTRLEN);
+        inet_ntop(AF_INET, a_addr_v4, l_ret->client->uplink_addr, INET_ADDRSTRLEN);
     } else if (a_addr_v6) {
-        inet_ntop(AF_INET6, a_addr_v6, l_ret->host_addr_str, INET6_ADDRSTRLEN);
+        inet_ntop(AF_INET6, a_addr_v6, l_ret->client->uplink_addr, INET6_ADDRSTRLEN);
     }
     if (a_port)
-    l_ret->host_port = a_port;
-    l_ret->host_port = a_port;
+        l_ret->client->uplink_port = a_port;
     l_ret->node_addr.uint64 = a_node_addr->uint64;
-        l_ret->host_port = a_port;
-    l_ret->node_addr.uint64 = a_node_addr->uint64;
+    l_ret->enabled = l_ret->client->uplink_port && (strlen(l_ret->client->uplink_addr) && strcmp(l_ret->client->uplink_addr, "::"));
+    if (!l_ret->enabled) {
+        log_it(L_INFO, "Create link to node " NODE_ADDR_FP_STR " with undefined address %s : %d", NODE_ADDR_FP_ARGS_S(l_ret->node_addr), l_ret->client->uplink_addr, l_ret->client->uplink_addr);
+    } else {
+
+    }
     return l_ret;
 }
 
@@ -435,6 +439,6 @@ int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link)
         log_it(L_WARNING, "LEAKS, links dublicate to node "NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_link->node_addr));
         return -3;
     }
-    s_client_connect(a_link, "CGND", l_item->data);
+    s_client_connect(a_link, l_item->data);
     return 0;
 }

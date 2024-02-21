@@ -57,9 +57,8 @@ typedef enum dap_link_state {
 typedef struct dap_link {
     dap_link_state_t state;
     bool keep_connection;
+    bool enabled;
     dap_stream_node_addr_t node_addr;
-    char host_addr_str[INET6_ADDRSTRLEN];
-    uint16_t host_port;
     dap_client_t *client;
     dap_list_t *role_clusters;
     dap_list_t *links_clusters;
