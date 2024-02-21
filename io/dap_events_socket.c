@@ -1304,11 +1304,11 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
             log_it(L_ERROR, "! Not initialized read event for es %p \"%s\"", a_esocket, dap_events_socket_get_type_str(a_esocket));
             a_esocket->op_events[io_op_read] = CreateEvent(0, TRUE, FALSE, NULL);
         }
-        INT l_len       = sizeof(a_esocket->remote_addr);
+        INT l_len       = sizeof(a_esocket->addr_storage);
         l_ol            = DAP_NEW_Z(dap_overlapped_t);
         l_ol->ol.hEvent = a_esocket->op_events[io_op_read];
         l_res           = WSARecvFrom(a_esocket->socket, &wsabuf, 1, &bytes, &flags,
-                                      (LPSOCKADDR)&a_esocket->remote_addr, &l_len, (OVERLAPPED*)l_ol, NULL);
+                                      (LPSOCKADDR)&a_esocket->addr_storage, &l_len, (OVERLAPPED*)l_ol, NULL);
         l_func          = "WSARecvFrom";
     } break;
 
@@ -1443,7 +1443,7 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
                 log_it(L_ERROR, "Failed to create socket for accept()'ing, errno %d", WSAGetLastError());
                 return;
             }
-            l_res   = pfn_ConnectEx(a_esocket->socket, (PSOCKADDR)&a_esocket->remote_addr, sizeof(SOCKADDR),
+            l_res   = pfn_ConnectEx(a_esocket->socket, (PSOCKADDR)&a_esocket->addr_storage, sizeof(SOCKADDR),
                                     NULL, 0, NULL, (OVERLAPPED*)l_ol) ? 0 : SOCKET_ERROR;
             l_func  = "ConnectEx";
         } else {
@@ -1464,12 +1464,12 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
         l_ol            = DAP_NEW_Z_SIZE(dap_overlapped_t, sizeof(OVERLAPPED) + a_esocket->buf_out_size);
         l_ol->ol.hEvent = a_esocket->op_events[io_op_write];
         if (a_esocket->buf_out_size) {
-            INT l_len   = sizeof(a_esocket->remote_addr);
+            INT l_len   = sizeof(a_esocket->addr_storage);
             memcpy(l_ol->buf, a_esocket->buf_out, a_esocket->buf_out_size);
             l_res       = WSASendTo(a_esocket->socket,
                                     &(WSABUF) { .len = a_esocket->buf_out_size,
                                                 .buf = l_ol->buf
-                                    }, 1, &bytes, flags, (LPSOCKADDR)&a_esocket->remote_addr, l_len, (OVERLAPPED*)l_ol, NULL);
+                                    }, 1, &bytes, flags, (LPSOCKADDR)&a_esocket->addr_storage, l_len, (OVERLAPPED*)l_ol, NULL);
             a_esocket->buf_out_size = 0;
             l_func      = "WSASendTo";
         } else

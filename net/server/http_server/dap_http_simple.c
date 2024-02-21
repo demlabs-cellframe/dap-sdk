@@ -391,7 +391,8 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
 {
     assert(a_http_client->esocket->server);
     if (a_http_client->esocket->server->type == DAP_SERVER_TCP || a_http_client->esocket->server->type == DAP_SERVER_UDP) {
-        if (dap_http_ban_list_client_check_ipv4(a_http_client->esocket->remote_addr.sin_addr)) {
+        if ( dap_http_ban_list_client_check_ipv4( ((struct sockaddr_in*)&a_http_client->esocket->addr_storage)->sin_addr ) ) {
+            // TODO make it universal for IPv6
             a_http_client->reply_status_code = Http_Status_Forbidden;
             return;
         }

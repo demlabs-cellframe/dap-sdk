@@ -265,7 +265,7 @@ typedef struct dap_events_socket {
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
     pthread_rwlock_t buf_out_lock;
 #endif
-
+    struct sockaddr_storage addr_storage;
     // Remote address, port and others
     union {
         struct sockaddr_in remote_addr;

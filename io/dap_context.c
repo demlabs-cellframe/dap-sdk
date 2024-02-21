@@ -557,11 +557,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             break;
                         } else {
                             if (seconds == 0xFFFFFFFF) {
-                                int l_err = 0;
-                                tmp = 0;
+                                int l_err = 0; tmp = 0;
                                 getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (char*)&l_err, (PINT)&tmp);
-                                log_it(L_ERROR, "Connection to %s:%u failed, error %d",
-                                       l_cur->remote_addr_str, ntohs(l_cur->remote_addr.sin_port), l_err);
+                                log_it(L_ERROR, "Connection to %s : %u failed, error %d",
+                                       l_cur->remote_addr_str, l_cur->remote_port, l_err);
                                 if ( l_cur->callbacks.error_callback )
                                     l_cur->callbacks.error_callback(l_cur, l_err);
                                 l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
@@ -569,7 +568,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 break;
                             } else {
                                 log_it(L_INFO, "ConnectEx to %s:%u succeeded in %d seconds",
-                                       l_cur->remote_addr_str, ntohs(l_cur->remote_addr.sin_port), seconds);
+                                       l_cur->remote_addr_str, l_cur->remote_port, seconds);
                                 if (setsockopt(l_cur->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0)
                                         == SOCKET_ERROR)
                                 {
