@@ -706,6 +706,7 @@ int json_commands(const char * a_name) {
     const char* long_cmd[] = {
             "tx_history",
             "mempool",
+            "ledger",
             "chain_ca_copy",
             "net"
     };
