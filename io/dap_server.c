@@ -236,32 +236,16 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
         log_it(L_WARNING, "Can't set up REUSEPORT flag to the socket");
 #endif
 
-    const char *l_addr = a_addr;
-    switch (a_server->type) {
-    case DAP_SERVER_TCP:
-    case DAP_SERVER_UDP:
-        l_es->addr_storage.ss_family = AF_INET;
-        //l_es->listener_addr.sin_family = AF_INET;
-        //l_es->listener_addr.sin_port = htons(l_es->listener_port);
-        ((struct sockaddr_in*)&l_es->addr_storage)->sin_port = htons(l_es->listener_port);
-        if (inet_pton(AF_INET, l_addr, &((struct sockaddr_in*)&l_es->addr_storage)->sin_addr) <= 0) {
-            log_it(L_ERROR, "Can't convert address %s to digital form", l_addr);
-            goto clean_n_quit;
-        }
-        break;
-    case DAP_SERVER_TCP_V6:
-        l_es->addr_storage.ss_family = AF_INET6;
-        ((struct sockaddr_in6*)&l_es->addr_storage)->sin6_port = htons(l_es->listener_port);
-        if (inet_pton(AF_INET, l_addr, &((struct sockaddr_in6*)&l_es->addr_storage)->sin6_addr) <= 0) {
-            log_it(L_ERROR, "Can't convert address %s to digital form", l_addr);
-            goto clean_n_quit;
-        }
-    default:
-        break;
+    struct addrinfo l_hints = { .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM }, *l_addr_res;
+    if ( getaddrinfo(a_addr, dap_itoa(l_es->listener_port), &l_hints, &l_addr_res) ) {
+        log_it(L_ERROR, "Wrong listen address '%s : %u'", a_addr, l_es->listener_port);
+        goto clean_n_quit;
     }
+    memcpy(&l_es->addr_storage, l_addr_res->ai_addr, l_addr_res->ai_addrlen);
+    freeaddrinfo(l_addr_res);
 
     if (a_server->type != DAP_SERVER_LOCAL) {
-        strncpy(l_es->listener_addr_str, l_addr, sizeof(l_es->listener_addr_str)); // If NULL we listen everything
+        strncpy(l_es->listener_addr_str, a_addr, sizeof(l_es->listener_addr_str)); // If NULL we listen everything
     }
 #ifdef DAP_OS_UNIX
     else {
