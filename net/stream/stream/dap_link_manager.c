@@ -95,7 +95,7 @@ void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
     dap_return_if_pass(!l_link);
 // func work
     dap_list_t *l_item = NULL;
-    DL_FOREACH(l_link->links_clusters, l_item) {
+    DL_FOREACH(l_link->static_links_clusters, l_item) {
         dap_cluster_member_add((dap_cluster_t *)l_item->data, &l_link->node_addr, 0, NULL);
     }
     // if dynamic link, increment counter and call callback
@@ -186,6 +186,7 @@ void s_link_delete(dap_link_t *a_link)
     dap_client_delete_mt(a_link->client);
     HASH_DEL(s_link_manager->links, a_link);
     dap_list_free(a_link->links_clusters);
+    dap_list_free(a_link->static_links_clusters);
     DAP_DELETE(a_link);
 }
 
@@ -207,7 +208,7 @@ void s_links_wake_up()
             } else {
                 log_it(L_INFO, "Can't find node "NODE_ADDR_FP_STR" in node list", NODE_ADDR_FP_ARGS_S(l_link->node_addr));
             }
-            if (!l_link->keep_connection_count)
+            if (!l_link->static_links_clusters)
                 l_link->attempts_count++;
         }
     }
@@ -439,18 +440,6 @@ void dap_link_manager_set_net_status(uint64_t a_net_id, bool a_status)
 }
 
 /**
- * @brief check adding member in role cluster
- * @param a_addr - node addr to adding
- * @param a_cluster - pointer to role cluster
- */
-void dap_link_manager_add_role_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster)
-{
-    dap_return_if_pass(!s_link_manager || !a_addr || !a_cluster);
-    dap_link_t *l_link = dap_link_manager_link_create_or_update(a_addr, NULL, NULL, 0);
-    l_link->keep_connection_count++;
-}
-
-/**
  * @brief check adding member in links cluster
  * @param a_addr - node addr to adding
  * @param a_cluster - pointer to links cluster
@@ -469,26 +458,6 @@ void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_clus
                 break;
             }
         }
-}
-
-/**
- * @brief check removing member from role cluster
- * @param a_addr - node addr to adding
- * @param a_cluster - pointer to role cluster
- */
-void dap_link_manager_remove_role_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster)
-{
-    dap_return_if_pass(!s_link_manager || !a_addr || !a_cluster);
-    // pthread_rwlock_wrlock(&it->members_lock);
-    dap_link_t *l_link = NULL;
-    HASH_FIND(hh, s_link_manager->links, a_addr, sizeof(*a_addr), l_link);
-    if (!l_link) {
-        log_it(L_ERROR, "Try cluster deleting from non-existent link");
-        // pthread_rwlock_unlock(&it->members_lock);
-        return;
-    }
-    l_link->keep_connection_count--;
-    // pthread_rwlock_unlock(&it->members_lock);
 }
 
 /**
@@ -559,10 +528,8 @@ dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_nod
         l_ret->client->uplink_port = a_port;
     l_ret->node_addr.uint64 = a_node_addr->uint64;
     l_ret->valid = l_ret->client->uplink_port && (strlen(l_ret->client->uplink_addr) && strcmp(l_ret->client->uplink_addr, "::"));
-    if (!l_ret->valid) {
-        log_it(L_INFO, "Create link to node " NODE_ADDR_FP_STR " with undefined address %s : %d", NODE_ADDR_FP_ARGS_S(l_ret->node_addr), l_ret->client->uplink_addr, l_ret->client->uplink_addr);
-    } else {
-
+    if (l_ret->valid) {
+        log_it(L_INFO, "Create link to node " NODE_ADDR_FP_STR " with address %s : %d", NODE_ADDR_FP_ARGS_S(l_ret->node_addr), l_ret->client->uplink_addr, l_ret->client->uplink_port);
     }
     return l_ret;
 }
@@ -629,4 +596,39 @@ DAP_INLINE bool dap_link_manager_get_condition()
     dap_return_if_pass_err(!s_link_manager, s_init_error);
 // func work
     return s_link_manager->active;
+}
+
+/**
+ * @brief add static links cluster to list
+ * @param a_node_addr link manager condition
+ * @param a_cluster links cluster to add
+ */
+void dap_link_manager_add_static_links_cluster(dap_stream_node_addr_t *a_node_addr, dap_cluster_t *a_cluster)
+{
+// sanity check
+    dap_return_if_pass_err(!s_link_manager, s_init_error);
+    dap_return_if_pass(!a_node_addr || !a_cluster);
+// func work
+    dap_link_t *l_link = dap_link_manager_link_create_or_update(a_node_addr, NULL, NULL, 0);
+    dap_return_if_pass(!l_link);
+    l_link->static_links_clusters = dap_list_append(l_link->static_links_clusters, a_cluster);
+}
+
+/**
+ * @brief remove static links cluster from list
+ * @param a_node_addr link manager condition
+ * @param a_cluster links cluster to add
+ */
+void dap_link_manager_remove_static_links_cluster_all(dap_cluster_t *a_cluster)
+{
+// sanity check
+    dap_return_if_pass_err(!s_link_manager, s_init_error);
+    dap_return_if_pass(!a_cluster);
+// func work
+    dap_link_t *l_link = NULL, *l_tmp = NULL;
+    // pthread_rwlock_wrlock(&a_cluster->members_lock);
+    HASH_ITER(hh, s_link_manager->links, l_link, l_tmp) {
+        l_link->static_links_clusters = dap_list_remove(l_link->static_links_clusters, a_cluster);
+    }
+    // pthread_rwlock_unlock(&a_cluster->members_lock);
 }

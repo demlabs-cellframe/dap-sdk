@@ -58,10 +58,10 @@ typedef struct dap_link {
     dap_stream_node_addr_t node_addr;
     dap_link_state_t state;
     bool valid;
-    int keep_connection_count;
     int attempts_count;
     dap_client_t *client;
     dap_list_t *links_clusters;
+    dap_list_t *static_links_clusters;
     dap_link_manager_t *link_manager;
     UT_hash_handle hh;
 } dap_link_t;
@@ -84,10 +84,10 @@ dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_c
 dap_link_manager_t *dap_link_manager_get_default();
 int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster);
 void dap_link_manager_remove_active_net(uint64_t a_net_id);
-void dap_link_manager_add_role_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
 void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
-void dap_link_manager_remove_role_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
 void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
+void dap_link_manager_add_static_links_cluster(dap_stream_node_addr_t *a_node_addr, dap_cluster_t *a_cluster);
+void dap_link_manager_remove_static_links_cluster_all(dap_cluster_t *a_cluster);
 dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_node_addr, struct in_addr *a_addr_v4, struct in6_addr *a_addr_v6, uint16_t a_port);
 int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link);
 void dap_link_manager_set_net_status(uint64_t a_net_id, bool a_status);

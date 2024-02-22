@@ -39,17 +39,9 @@ static void s_links_cluster_member_add_callback(dap_cluster_member_t *a_member)
 {
     dap_link_manager_add_links_cluster(&a_member->addr, a_member->cluster);
 }
-static void s_role_cluster_member_add_callback(dap_cluster_member_t *a_member)
-{
-    dap_link_manager_add_role_cluster(&a_member->addr, a_member->cluster);
-}
 static void s_links_cluster_member_remove_callback(dap_cluster_member_t *a_member)
 {
     dap_link_manager_remove_links_cluster(&a_member->addr, a_member->cluster);
-}
-static void s_role_cluster_member_remove_callback(dap_cluster_member_t *a_member)
-{
-    dap_link_manager_remove_role_cluster(&a_member->addr, a_member->cluster);
 }
 static void s_gdb_cluster_sync_timer_callback(void *a_arg);
 
@@ -135,8 +127,6 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
             DAP_DELETE(l_cluster);
             return NULL;
         }
-        l_cluster->role_cluster->members_add_callback = s_role_cluster_member_add_callback;
-        l_cluster->role_cluster->members_delete_callback = s_role_cluster_member_remove_callback;
     }
     l_cluster->groups_mask = dap_strdup(a_group_mask);
     if (!l_cluster->groups_mask) {
@@ -164,13 +154,23 @@ dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *
         log_it(L_ERROR, "Invalid argument with cluster member adding");
         return NULL;
     }
+    if (a_cluster->links_cluster &&
+            (a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
+             a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED))
+        dap_link_manager_add_static_links_cluster(a_node_addr, a_cluster->links_cluster);
+
     return dap_cluster_member_add(a_cluster->role_cluster, a_node_addr, a_role, NULL);
 }
 
 void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
 {
-    if (a_cluster->links_cluster)
+    if (a_cluster->links_cluster) {
+        if (a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
+             a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_ISOLATED) {
+            dap_link_manager_remove_static_links_cluster_all(a_cluster->links_cluster);
+        }
         dap_cluster_delete(a_cluster->links_cluster);
+    }
     if (a_cluster->role_cluster)
         dap_cluster_delete(a_cluster->role_cluster);
     
