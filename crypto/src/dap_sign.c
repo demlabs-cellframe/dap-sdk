@@ -505,22 +505,21 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
 void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const char *a_hash_out_type)
 {
     dap_string_append_printf(a_str_out, "Signature: \n");
-    if (a_sign != NULL){
-        dap_chain_hash_fast_t l_hash_pkey;
-        dap_string_append_printf(a_str_out, "\tType: %s\n",
-                                 dap_sign_type_to_str(a_sign->header.type));
-        if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)){
-            char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
-                    ? dap_enc_base58_encode_hash_to_str(&l_hash_pkey)
-                    : dap_chain_hash_fast_to_str_new(&l_hash_pkey);
-            dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", l_hash_str);
-            DAP_DELETE(l_hash_str);
-        }
-        dap_string_append_printf(a_str_out, "\tPublic key size: %u\n"
-                                            "\tSignature size: %u\n",
-                                 a_sign->header.sign_pkey_size,
-                                 a_sign->header.sign_size);
-    } else {
-        dap_string_append_printf(a_str_out, "! Signature has data, corrupted or not valid\n");
+    if (!a_sign) {
+        dap_string_append_printf(a_str_out, "! Corrupted signature data\n");
+        return;
     }
+    dap_chain_hash_fast_t l_hash_pkey;
+    dap_string_append_printf(a_str_out, "\tType: %s\n",
+                             dap_sign_type_to_str(a_sign->header.type));
+    if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
+        char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
+             ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
+             : dap_chain_hash_fast_to_str_static(&l_hash_pkey);
+             dap_string_append_printf(a_str_out, "\tPublic key hash: %s\n", l_hash_str);
+    }
+    dap_string_append_printf(a_str_out, "\tPublic key size: %u\n"
+                                        "\tSignature size: %u\n",
+                             a_sign->header.sign_pkey_size,
+                             a_sign->header.sign_size);
 }
