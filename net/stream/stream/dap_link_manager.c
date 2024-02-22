@@ -133,7 +133,11 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
         if (l_link->link_manager->callbacks.disconnected) {
             l_link->link_manager->callbacks.disconnected(l_link, l_net_id, ((dap_managed_net_t *)(a_client->callbacks_arg))->links_count );
         }
-        dap_cluster_link_delete_from_all(&l_link->node_addr);
+        // remove node addr from all links clusters
+        dap_list_t *l_item = NULL;
+        DL_FOREACH(l_link->links_clusters, l_item) {
+            dap_cluster_member_delete(l_item->data, &l_link->node_addr);
+        }
     } else if(l_link->link_manager->callbacks.error) // TODO make different error codes
         l_link->link_manager->callbacks.error(l_link, l_net_id, EINVAL);
 }
