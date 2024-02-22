@@ -93,5 +93,5 @@ int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link);
 void dap_link_manager_set_net_status(uint64_t a_net_id, bool a_status);
 size_t dap_link_manager_links_count(uint64_t a_net_id);
 size_t dap_link_manager_needed_links_count(uint64_t a_net_id);
-void dap_link_manager_set_condition(bool a_active);
+void dap_link_manager_set_condition(bool a_new_condition);
 bool dap_link_manager_get_condition();
