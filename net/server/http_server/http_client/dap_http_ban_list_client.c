@@ -43,14 +43,14 @@ void dap_http_ban_list_client_ipv4_print(dap_string_t *a_str_out){
     int number = 1;
     dap_http_ban_list_client_record_t *l_record = NULL, *l_tmp = NULL;
     HASH_ITER(hh, s_ipv4_ban_list, l_record, l_tmp) {
-        char *l_decree_hash_str = dap_chain_hash_fast_to_str_new(&l_record->decree_hash);
         char l_tm[85];
         char l_tm_ip[INET_ADDRSTRLEN];
         dap_time_to_str_rfc822(l_tm, 85, l_record->ts_created);
         dap_string_append_printf(a_str_out, "\t\t%d) %s\n"
                                             "\t\t\tIP: %s\n"
-                                            "\t\t\tCreated: %s\n\n", number, l_decree_hash_str, inet_ntop(AF_INET, &l_record->ip_v4,
-                                                                                                      l_tm_ip, INET_ADDRSTRLEN), l_tm);
+                                            "\t\t\tCreated: %s\n\n",
+                                number++, dap_chain_hash_fast_to_str_static(&l_record->decree_hash),
+                                inet_ntop(AF_INET, &l_record->ip_v4, l_tm_ip, INET_ADDRSTRLEN), l_tm);
     }
     pthread_rwlock_unlock(&s_ipv4_ban_list_rwlock);
 }
@@ -98,14 +98,14 @@ void dap_http_ban_list_client_ipv6_print(dap_string_t *a_str_out) {
     int number = 1;
     dap_http_ban_list_client_record_t *l_record = NULL, *tmp = NULL;
     HASH_ITER(hh, s_ipv6_ban_list, l_record, tmp) {
-        char *l_decree_hash_str = dap_chain_hash_fast_to_str_new(&l_record->decree_hash);
         char l_tm[85];
         char l_tm_ip[INET6_ADDRSTRLEN];
         dap_time_to_str_rfc822(l_tm, 85, l_record->ts_created);
         dap_string_append_printf(a_str_out, "\t\t%d) %s\n"
                                             "\t\t\tIP: %s\n"
-                                            "\t\t\tCreated: %s\n\n", number, l_decree_hash_str, inet_ntop(AF_INET6, &l_record->ip_v6,
-                                                                                                      l_tm_ip, INET6_ADDRSTRLEN), l_tm);
+                                            "\t\t\tCreated: %s\n\n",
+                                number++, dap_chain_hash_fast_to_str_static(&l_record->decree_hash),
+                                inet_ntop(AF_INET6, &l_record->ip_v6, l_tm_ip, INET6_ADDRSTRLEN), l_tm);
     }
     pthread_rwlock_unlock(&s_ipv6_ban_list_rwlock);
 }
