@@ -227,7 +227,7 @@ char *dap_uint256_to_char(uint256_t a_uint256, char **a_frac) {
         l_strlen += 2 - l_len;
     }
     l_c1 = s_buf_frac + l_strlen - 1;
-    while (*l_c1-- == '0')
+    while (*l_c1-- == '0' && *l_c1 != '.')
         --l_strlen; 
     s_buf_frac[l_strlen] = '\0';
     *a_frac = s_buf_frac;
