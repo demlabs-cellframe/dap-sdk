@@ -119,11 +119,11 @@ static inline uint128_t GET_128_FROM_64(uint64_t n) {
 }
 
 static inline uint256_t GET_256_FROM_64(uint64_t n) {
-    return (uint256_t) {{ .hi = uint128_0, .lo = GET_128_FROM_64(n) }};
+    return (uint256_t) {{{ .hi = uint128_0, .lo = GET_128_FROM_64(n) }}};
 }
 
 static inline uint256_t GET_256_FROM_128(uint128_t n) {
-    return (uint256_t) {{ .hi = uint128_0, .lo = n }};
+    return (uint256_t) {{{ .hi = uint128_0, .lo = n }}};
 }
 
 static inline bool EQUAL_128(uint128_t a_128_bit, uint128_t b_128_bit){
