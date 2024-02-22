@@ -114,7 +114,7 @@ static inline uint128_t GET_128_FROM_64(uint64_t n) {
 #ifdef DAP_GLOBAL_IS_INT128
     return (uint128_t) n;
 #else
-    return (uint128_t) {{ .hi = 0, .lo = n }};
+    return (uint128_t) {{ .lo = n, .hi = 0 }};
 #endif
 }
 
