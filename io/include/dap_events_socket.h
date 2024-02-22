@@ -265,13 +265,9 @@ typedef struct dap_events_socket {
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
     pthread_rwlock_t buf_out_lock;
 #endif
-
+    struct sockaddr_storage addr_storage;
     // Remote address, port and others
     union {
-        struct sockaddr_in remote_addr;
-        struct sockaddr_in listener_addr;
-        struct sockaddr_in6 remote_addr_v6;
-        struct sockaddr_in6 listener_addr_v6;
 #ifdef DAP_OS_UNIX
         struct sockaddr_un remote_path;
         struct sockaddr_un listener_path; // Path to UNIX socket

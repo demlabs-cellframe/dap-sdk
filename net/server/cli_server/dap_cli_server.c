@@ -705,7 +705,9 @@ char* s_get_next_str( SOCKET nSocket, int *dwLen, const char *stop_str, bool del
 int json_commands(const char * a_name) {
     const char* long_cmd[] = {
             "tx_history",
+            "wallet",
             "mempool",
+            "ledger",
             "chain_ca_copy",
             "net"
     };

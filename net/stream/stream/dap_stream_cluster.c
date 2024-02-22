@@ -248,10 +248,7 @@ void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t
     for (dap_cluster_member_t *it = a_cluster->members; it; it = it->hh.next) {
         if (s_present_in_array(it->addr, a_exclude_aray, a_exclude_array_size))
             continue;
-        dap_worker_t *l_worker = NULL;
-        dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(&it->addr, &l_worker);
-        if (l_worker && l_uuid)
-            dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_uuid, a_ch_id, a_type, a_data, a_data_size);
+        dap_stream_ch_pkt_send_by_addr(&it->addr, a_ch_id, a_type, a_data, a_data_size);
     }
     pthread_rwlock_unlock(&a_cluster->members_lock);
 }
@@ -321,14 +318,14 @@ json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster){
 
 char *dap_cluster_get_links_info(dap_cluster_t *a_cluster)
 {
-    dap_string_t *l_str_out = dap_string_new("| ↑\\↓ |\t\tNode addr\t| \tIP\t| Port\t|    Channels   | SeqID\n"
-                                             "--------------------------------------------------------------------------------\n");
+    dap_string_t *l_str_out = dap_string_new(" ↑\\↓ |\t\tNode addr\t| \tIP\t  |    Port\t|    Channels   | SeqID\n"
+                                             "--------------------------------------------------------------------------------------\n");
     size_t l_uplinks_count = 0, l_downlinks_count = 0, l_total_links_count = 0;
     dap_stream_info_t *l_links_info = dap_stream_get_links_info(a_cluster, &l_total_links_count);
     if (l_links_info) {
         for (size_t i = 0; i < l_total_links_count; i++) {
             dap_stream_info_t *l_link_info = l_links_info + i;
-            dap_string_append_printf(l_str_out, "|  %s  | "NODE_ADDR_FP_STR"\t| %s\t| %hu\t|\t%s\t| %zu\n",
+            dap_string_append_printf(l_str_out, "  %s  | "NODE_ADDR_FP_STR"\t| %s |    %hu\t|\t%s\t| %zu\n",
                                      l_link_info->is_uplink ? "↑" : "↓",
                                      NODE_ADDR_FP_ARGS_S(l_link_info->node_addr),
                                      l_link_info->remote_addr_str,
@@ -344,7 +341,7 @@ char *dap_cluster_get_links_info(dap_cluster_t *a_cluster)
         dap_stream_delete_links_info(l_links_info, l_total_links_count);
     }
     assert(l_total_links_count == l_uplinks_count + l_downlinks_count);
-    dap_string_append_printf(l_str_out, "-----------------------------------------------\n"
+    dap_string_append_printf(l_str_out, "--------------------------------------------------------------------------------------\n"
                                         "Total links: %zu | Uplinks: %zu | Downlinks: %zu\n",
                                 l_total_links_count, l_uplinks_count, l_downlinks_count);
     char *l_ret = l_str_out->str;

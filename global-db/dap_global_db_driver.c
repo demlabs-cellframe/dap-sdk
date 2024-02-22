@@ -150,7 +150,7 @@ int dap_db_driver_flush(void)
     return s_drv_callback.flush();
 }
 
-static void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, dap_store_obj_t *a_store_obj_src)
+static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const dap_store_obj_t *a_store_obj_src)
 {
     *a_store_obj_dst = *a_store_obj_src;
     a_store_obj_dst->group = dap_strdup(a_store_obj_src->group);
@@ -201,17 +201,8 @@ dap_store_obj_t* dap_global_db_store_objs_copy(dap_store_obj_t *a_store_objs_des
 
     /* Run over array's elements */
     const dap_store_obj_t *l_obj = a_store_objs_src;
-    for (dap_store_obj_t *l_cur = a_store_objs_dest; a_store_count--; l_cur++, l_obj++) {
-        *l_cur = *l_obj;
-        l_cur->group = dap_strdup(l_obj->group);
-        l_cur->key = dap_strdup(l_obj->key);
-        if (l_obj->value) {
-            if (l_obj->value_len)
-                l_cur->value = DAP_DUP_SIZE(l_obj->value, l_obj->value_len);
-            else
-                log_it(L_WARNING, "Inconsistent global DB object copy requested");
-        }
-    }
+    for (dap_store_obj_t *l_cur = a_store_objs_dest; a_store_count--; l_cur++, l_obj++)
+         s_store_obj_copy_one(l_cur, l_obj);
     return a_store_objs_dest;
 }
 

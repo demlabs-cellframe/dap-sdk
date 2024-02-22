@@ -174,63 +174,50 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     int l_offset = 0;
     size_t l_offset2 = sizeof(l_request_headers);
     if(l_client_http->request && (dap_strcmp(l_client_http->method, "POST") == 0 || dap_strcmp(l_client_http->method, "POST_ENC") == 0)) {
-	//log_it(L_DEBUG, "POST request with %u bytes of decoded data", a_request_size);
+        //log_it(L_DEBUG, "POST request with %u bytes of decoded data", a_request_size);
 
-    l_offset += l_client_http->request_content_type
-            ? snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", l_client_http->request_content_type)
-	        : 0;
+        l_offset += l_client_http->request_content_type
+                ? snprintf(l_request_headers, l_offset2, "Content-Type: %s\r\n", l_client_http->request_content_type)
+                : 0;
 
-	// Add custom headers
-    l_offset += l_client_http->request_custom_headers
-            ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
-	        : 0;
+        // Add custom headers
+        l_offset += l_client_http->request_custom_headers
+                ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
+                : 0;
 
-	// Setup cookie header
-    l_offset += l_client_http->cookie
-            ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
-	        : 0;
+        // Setup cookie header
+        l_offset += l_client_http->cookie
+                ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
+                : 0;
 
-	// Set request size as Content-Length header
-    l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", l_client_http->request_size);
+        // Set request size as Content-Length header
+        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", l_client_http->request_size);
     }
 
     // adding string for GET request
     char l_get_str[l_client_http->request_size + 2];
     l_get_str[0] = '\0';
     if(! dap_strcmp(l_client_http->method, "GET") ) {
-	// We hide our request and mask them as possible
-	l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "User-Agent: Mozilla\r\n");
-    l_offset += l_client_http->request_custom_headers
-            ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
-	        : 0;
-    l_offset += l_client_http->cookie
-            ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
-	        : 0;
+        // We hide our request and mask them as possible
+        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "User-Agent: Mozilla\r\n");
+        l_offset += l_client_http->request_custom_headers
+                ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
+                : 0;
+        l_offset += l_client_http->cookie
+                ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
+                : 0;
 
-    if ((l_client_http->request && l_client_http->request_size))
-        snprintf(l_get_str, sizeof(l_get_str), "?%s", l_client_http->request) ;
+        if ((l_client_http->request && l_client_http->request_size))
+            snprintf(l_get_str, sizeof(l_get_str), "?%s", l_client_http->request) ;
     }
 #ifdef DAP_EVENTS_CAPS_IOCP
     a_esocket->no_close = true;
+#endif
     dap_events_socket_write_f_unsafe(a_esocket, "%s /%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n" "%s",
                                      l_client_http->method, l_client_http->path, l_get_str,
                                      l_client_http->uplink_addr, l_request_headers,
                                      l_client_http->request && l_client_http->request_size
                                      ? (char*)l_client_http->request : "");
-#else
-    // send header
-    ssize_t l_wrote = dap_events_socket_write_f_unsafe(a_esocket,
-                                                    "%s /%s%s HTTP/1.1\r\n"
-                                                    "Host: %s\r\n"
-                                                    "%s\r\n",
-                                                    l_client_http->method, l_client_http->path,
-                                                    l_get_str, l_client_http->uplink_addr, l_request_headers);
-    if (l_wrote > 0)        // Exclude trailing zero
-        a_esocket->buf_out_size--;
-    // send data for POST request
-    if (l_client_http->request && l_client_http->request_size)
-        dap_events_socket_write_unsafe( a_esocket, l_client_http->request, l_client_http->request_size);
-#endif
 }
 
 /**
@@ -638,25 +625,22 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->worker = a_worker;
     l_client_http->is_over_ssl = a_over_ssl;
 
-    l_ev_socket->remote_addr = (struct sockaddr_in) {
-            .sin_family = AF_INET,
-            .sin_port = htons(a_uplink_port)
-    };
-    inet_pton(AF_INET, a_uplink_addr, &l_ev_socket->remote_addr.sin_addr);
-    //Resolve addr if
-    if(!l_ev_socket->remote_addr.sin_addr.s_addr) {
-        if(dap_net_resolve_host(a_uplink_addr, AF_INET, (struct sockaddr*) &l_ev_socket->remote_addr.sin_addr) < 0) {
-            log_it(L_ERROR, "Wrong remote address '%s:%u'", a_uplink_addr, a_uplink_port);
-            s_client_http_delete( l_client_http);
+    struct addrinfo l_hints = { .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM }, *l_addr_res;
+    if ( getaddrinfo(a_uplink_addr, dap_itoa(a_uplink_port), &l_hints, &l_addr_res) ) {
+        log_it(L_ERROR, "Wrong remote address '%s : %u'", a_uplink_addr, a_uplink_port);
+            s_client_http_delete(l_client_http);
             l_ev_socket->_inheritor = NULL;
             dap_events_socket_delete_unsafe( l_ev_socket, true);
             if(a_error_callback)
                 a_error_callback(errno, a_callbacks_arg);
-
             return NULL;
-        }
     }
-    strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET_ADDRSTRLEN);
+    memcpy(&l_ev_socket->addr_storage, l_addr_res->ai_addr, l_addr_res->ai_addrlen);
+    freeaddrinfo(l_addr_res);
+
+    strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET6_ADDRSTRLEN);
+    l_ev_socket->remote_port = a_uplink_port;
+
     // connect
     l_ev_socket->flags |= DAP_SOCK_CONNECTING;
     l_ev_socket->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
@@ -685,7 +669,7 @@ dap_client_http_t * dap_client_http_request_custom (
     return l_client_http;
 #else
     l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
-    int l_err = connect(l_socket, (struct sockaddr *) &l_ev_socket->remote_addr, sizeof(struct sockaddr_in));
+    int l_err = connect(l_socket, (struct sockaddr *) &l_ev_socket->addr_storage, sizeof(struct sockaddr_in));
     if (l_err == 0){
         log_it(L_DEBUG, "Connected momentaly with %s:%u!", a_uplink_addr, a_uplink_port);
         l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
