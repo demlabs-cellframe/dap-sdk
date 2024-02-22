@@ -81,7 +81,7 @@ void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_sto
     DAP_DELETE(l_pkt);
 }
 
-dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim, dap_cluster_uuid_t a_uuid,
+dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim, dap_guuid_t a_uuid,
                                                    const char *a_group_mask, uint32_t a_ttl, bool a_owner_root_access,
                                                    dap_global_db_role_t a_default_role, dap_cluster_role_t a_links_cluster_role)
 {

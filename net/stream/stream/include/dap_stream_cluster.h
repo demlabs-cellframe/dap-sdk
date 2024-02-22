@@ -31,7 +31,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "json_object.h"
 
 typedef struct dap_cluster dap_cluster_t;
-typedef uint64_t dap_cluster_uuid_t;
 
 typedef struct dap_cluster_member {
     dap_stream_node_addr_t addr;    // Member addr, HT key
@@ -55,7 +54,7 @@ typedef enum dap_cluster_role {
 
 typedef struct dap_cluster {
     const char *mnemonim;           // Field for alternative cluster finding, unique
-    dap_cluster_uuid_t uuid;        // Unique cluster id
+    dap_guuid_t uuid;               // Unique global cluster id
     dap_cluster_role_t role;        // Link management role
     pthread_rwlock_t members_lock;
     dap_cluster_member_t *members;  // Cluster members (by stream addr) and callbacks
@@ -66,9 +65,9 @@ typedef struct dap_cluster {
 } dap_cluster_t;
 
 // Cluster common funcs
-dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_cluster_uuid_t a_uuid, dap_cluster_role_t a_role);
+dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_uuid, dap_cluster_role_t a_role);
 void dap_cluster_delete(dap_cluster_t *a_cluster);
-dap_cluster_t *dap_cluster_find(dap_cluster_uuid_t a_uuid);
+dap_cluster_t *dap_cluster_find(dap_guuid_t a_uuid);
 dap_cluster_t *dap_cluster_by_mnemonim(const char *a_mnemonim);
 
 // Member funcs

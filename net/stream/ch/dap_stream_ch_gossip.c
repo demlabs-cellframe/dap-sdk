@@ -242,7 +242,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                 break;
             }
         } else if (l_msg->cluster_id) {
-            log_it(L_ERROR, "Can't find cluster with ID 0x" DAP_UINT64_FORMAT_X " for gossip message broadcasting");
+            log_it(L_ERROR, "Can't find cluster with ID 0x%" DAP_UINT64_FORMAT_X " for gossip message broadcasting");
             break;
         }
         // Allow NULL cluster for global scope broadcast
