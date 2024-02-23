@@ -380,7 +380,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
 
         .new_callback =                     dap_enc_sig_ecdsa_key_new,
         .new_generate_callback =            dap_enc_sig_ecdsa_key_new_generate,
-        
+
         .delete_callback =                  dap_enc_sig_ecdsa_key_delete,
         .del_sign =                         ecdsa_signature_delete,
         .del_pub_key =                      ecdsa_public_key_delete,
@@ -388,12 +388,12 @@ dap_enc_key_callbacks_t s_callbacks[]={
 
         .sign_get =                         dap_enc_sig_ecdsa_get_sign,
         .sign_verify =                      dap_enc_sig_ecdsa_verify_sign,
-    
+
         .ser_sign =                         dap_enc_sig_ecdsa_write_signature,
         .ser_priv_key =                     dap_enc_sig_ecdsa_write_private_key,
         .ser_pub_key =                      dap_enc_sig_ecdsa_write_public_key,
-        .ser_pub_key_size =                 dap_enc_sig_ecdsa_ser_public_key_size,
         .ser_priv_key_size =                dap_enc_sig_ecdsa_ser_private_key_size,
+        .ser_pub_key_size =                 dap_enc_sig_ecdsa_ser_public_key_size,
 
         .deser_sign =                       dap_enc_sig_ecdsa_read_signature,
         .deser_priv_key =                   dap_enc_sig_ecdsa_read_private_key,
@@ -675,7 +675,7 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-    case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+    //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         l_data = s_callbacks[a_key->type].ser_pub_key(a_key->pub_key_data, a_buflen_out);
         break;
