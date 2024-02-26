@@ -108,7 +108,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         }
     }
     if (dap_strcmp(DAP_GLOBAL_DB_CLUSTER_LOCAL, a_mnemonim)) {
-        l_cluster->role_cluster = dap_cluster_new(NULL, 0, DAP_CLUSTER_ROLE_VIRTUAL);
+        l_cluster->role_cluster = dap_cluster_new(NULL, uint128_0, DAP_CLUSTER_ROLE_VIRTUAL);
         if (!l_cluster->role_cluster) {
             log_it(L_ERROR, "Can't create role cluster");
             dap_cluster_delete(l_cluster->links_cluster);

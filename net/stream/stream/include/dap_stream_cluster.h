@@ -82,7 +82,7 @@ json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster);
 char *dap_cluster_get_links_info(dap_cluster_t *a_cluster);
 void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr);
 dap_stream_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster);
-DAP_STATIC_INLINE dap_guuid_t dap_cluster_uuid_compose(uint64_t a_net_id, uint64_t a_service_id)
+DAP_STATIC_INLINE dap_guuid_t dap_cluster_guuid_compose(uint64_t a_net_id, uint64_t a_service_id)
 {
     return (dap_guuid_t)(GET_128_FROM_64_64(a_net_id, a_service_id));
 }

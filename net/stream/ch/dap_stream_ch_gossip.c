@@ -140,7 +140,7 @@ void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const vo
     l_msg->payload_ch_id = a_ch_id;
     l_msg->trace_len = sizeof(g_node_addr);
     l_msg->payload_len = a_payload_size;
-    l_msg->cluster_id = a_cluster ? a_cluster->uuid : 0;
+    l_msg->cluster_id = a_cluster ? a_cluster->uuid : uint128_0;
     l_msg->payload_hash = *a_payload_hash;
     *(dap_stream_node_addr_t *)l_msg->trace_n_payload = g_node_addr;
     memcpy(l_msg->trace_n_payload + l_msg->trace_len, a_payload, a_payload_size);
