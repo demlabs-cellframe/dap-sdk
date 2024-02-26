@@ -241,8 +241,9 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                                             NODE_ADDR_FP_ARGS_S(a_ch->stream->node), l_links_cluster->mnemonim);
                 break;
             }
-        } else if (l_msg->cluster_id) {
-            log_it(L_ERROR, "Can't find cluster with ID 0x%" DAP_UINT64_FORMAT_X " for gossip message broadcasting");
+        } else if (!IS_ZERO_128(l_msg->cluster_id)) {
+            const char *l_guuid_str = dap_uint128_to_hex_str(l_msg->cluster_id);
+            log_it(L_ERROR, "Can't find cluster with ID %s for gossip message broadcasting", l_guuid_str);
             break;
         }
         // Allow NULL cluster for global scope broadcast

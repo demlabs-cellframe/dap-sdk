@@ -41,10 +41,10 @@ int dap_global_db_cluster_init()
 {
     dap_global_db_ch_init();
         // Pseudo-cluster for local scope (unsynced groups). There is no notifier for it
-    if (dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_LOCAL, 0, DAP_GLOBAL_DB_CLUSTER_LOCAL ".*",
+    if (dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_LOCAL, uint128_1, DAP_GLOBAL_DB_CLUSTER_LOCAL ".*",
                                     0, false, DAP_GDB_MEMBER_ROLE_ROOT, DAP_CLUSTER_ROLE_VIRTUAL))
         // Pseudo-cluster for global scope
-        return !dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_GLOBAL, 0, DAP_GLOBAL_DB_CLUSTER_GLOBAL ".*",
+        return !dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_GLOBAL, uint128_0, DAP_GLOBAL_DB_CLUSTER_GLOBAL ".*",
                                            DAP_GLOBAL_DB_UNCLUSTERED_TTL, true,
                                            DAP_GDB_MEMBER_ROLE_GUEST, DAP_CLUSTER_ROLE_VIRTUAL);
     return 2;
