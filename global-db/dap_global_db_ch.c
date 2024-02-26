@@ -289,6 +289,8 @@ static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, da
         log_it(L_WARNING, "Wrong Global DB gossip packet rejected");
         return;
     }
+    debug_if(g_dap_global_db_debug_more, L_INFO, "IN: GLOBAL_DB_GOSSIP packet for group %s with key %s",
+                 l_obj->group, l_obj->key);
     dap_proc_thread_callback_add_pri(NULL, s_process_record, l_obj, DAP_GLOBAL_DB_TASK_PRIORITY);
 }
 
@@ -318,7 +320,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         }
         memcpy(l_arg + sizeof(dap_stream_node_addr_t), l_pkt, l_ch_pkt->hdr.data_size);
         *(dap_stream_node_addr_t *)l_arg = a_ch->stream->node;
-        dap_proc_thread_callback_add_pri(NULL, s_proc_thread_reader, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
+        //dap_proc_thread_callback_add_pri(NULL, s_proc_thread_reader, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
     } break;
 
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES:

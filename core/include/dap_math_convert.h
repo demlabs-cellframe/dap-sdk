@@ -191,6 +191,51 @@ static const union __c_pow10_double__ {
 #endif
 };
 
+static const union __c_pow10__ {
+    uint64_t u64[2];
+    uint32_t u32[4];
+} DAP_ALIGN_PACKED c_pow10[DATOSHI_POW] = {
+        { .u64 = {0,                         1ULL} },                          // 0
+        { .u64 = {0,                         10ULL} },                         // 1
+        { .u64 = {0,                         100ULL} },                        // 2
+        { .u64 = {0,                         1000ULL} },                       // 3
+        { .u64 = {0,                         10000ULL} },                      // 4
+        { .u64 = {0,                         100000ULL} },                     // 5
+        { .u64 = {0,                         1000000ULL} },                    // 6
+        { .u64 = {0,                         10000000ULL} },                   // 7
+        { .u64 = {0,                         100000000ULL} },                  // 8
+        { .u64 = {0,                         1000000000ULL} },                 // 9
+        { .u64 = {0,                         10000000000ULL} },                // 10
+        { .u64 = {0,                         100000000000ULL} },               // 11
+        { .u64 = {0,                         1000000000000ULL} },              // 12
+        { .u64 = {0,                         10000000000000ULL} },             // 13
+        { .u64 = {0,                         100000000000000ULL} },            // 14
+        { .u64 = {0,                         1000000000000000ULL} },           // 15
+        { .u64 = {0,                         10000000000000000ULL} },          // 16
+        { .u64 = {0,                         100000000000000000ULL} },         // 17
+        { .u64 = {0,                         1000000000000000000ULL} },        // 18
+        { .u64 = {0,                         10000000000000000000ULL} },       // 19
+        { .u64 = {5ULL,                      7766279631452241920ULL} },        // 20
+        { .u64 = {54ULL,                     3875820019684212736ULL} },        // 21
+        { .u64 = {542ULL,                    1864712049423024128ULL} },        // 22
+        { .u64 = {5421ULL,                   200376420520689664ULL} },         // 23
+        { .u64 = {54210ULL,                  2003764205206896640ULL} },        // 24
+        { .u64 = {542101ULL,                 1590897978359414784ULL} },        // 25
+        { .u64 = {5421010ULL,                15908979783594147840ULL} },       // 26
+        { .u64 = {54210108ULL,               11515845246265065472ULL} },       // 27
+        { .u64 = {542101086ULL,              4477988020393345024ULL} },        // 28
+        { .u64 = {5421010862ULL,             7886392056514347008ULL} },        // 29
+        { .u64 = {54210108624ULL,            5076944270305263616ULL} },        // 30
+        { .u64 = {542101086242ULL,           13875954555633532928ULL} },       // 31
+        { .u64 = {5421010862427ULL,          9632337040368467968ULL} },        // 32
+        { .u64 = {54210108624275ULL,         4089650035136921600ULL} },        // 33
+        { .u64 = {542101086242752ULL,        4003012203950112768ULL} },        // 34
+        { .u64 = {5421010862427522ULL,       3136633892082024448ULL} },        // 35
+        { .u64 = {54210108624275221ULL,      12919594847110692864ULL} },       // 36
+        { .u64 = {542101086242752217ULL,     68739955140067328ULL} },          // 37
+        { .u64 = {5421010862427522170ULL,    687399551400673280ULL} }          // 38
+};
+
 /**
  * @brief dap_uint256_scan_uinteger
  * Converts a string value to uint256_t. The string value must be an unsigned integer.
@@ -220,7 +265,7 @@ char *dap_uint256_to_char(uint256_t, char**);
  * @param a_uint256 unsigned integer value
  * @return char* String representation of the uint256_t value.
  */
-char *dap_uint256_uninteger_to_char(uint256_t a_uint256);
+char *dap_uint256_uninteger_to_char(uint256_t a_uninteger);
 /**
  * @brief dap_uint256_decimal_to_char
  *
@@ -229,7 +274,7 @@ char *dap_uint256_uninteger_to_char(uint256_t a_uint256);
  * @param a_uint256
  * @return char*
  */
-char *dap_uint256_decimal_to_char(uint256_t a_uint256);
+char *dap_uint256_decimal_to_char(uint256_t a_decimal);
 
 /**
  * @brief dap_uint256_decimal_to_round_char
@@ -252,7 +297,16 @@ char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_digits_af
  */
 char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_position, bool is_round);
 
+int dap_id_uint64_parse(const char *a_id_str, uint64_t *a_id);
+const char *dap_uint128_to_hex_str(uint128_t a_uninteger);
+uint64_t dap_uint128_to_uint64(uint128_t a_from);
+uint64_t dap_uint256_to_uint64(uint256_t a_from);
+uint128_t dap_uint256_to_uint128(uint256_t a_from);
+char *dap_uint128_uninteger_to_char(uint128_t a_uninteger);
+char *dap_uint128_decimal_to_char(uint128_t a_decimal);
+uint128_t dap_uint128_scan_uninteger(const char *a_str_uninteger);
+uint128_t dap_uint128_scan_decimal(const char *a_str_decimal);
+
 #ifdef __cplusplus
 }
 #endif
-

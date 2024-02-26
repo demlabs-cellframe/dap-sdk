@@ -40,7 +40,7 @@ static void s_cluster_member_delete(dap_cluster_member_t *a_member);
  * @param a_options
  * @return
  */
-dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_cluster_uuid_t a_uuid, dap_cluster_role_t a_role)
+dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_uuid, dap_cluster_role_t a_role)
 {
     dap_cluster_t *l_ret = DAP_NEW_Z(dap_cluster_t);
     if (!l_ret) {
@@ -49,6 +49,24 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_cluster_uuid_t a_uuid
     }
     pthread_rwlock_init(&l_ret->members_lock, NULL);
     l_ret->role = a_role;
+    dap_cluster_t *l_check = NULL;
+    pthread_rwlock_wrlock(&s_clusters_rwlock);
+    if (a_mnemonim) {
+        HASH_FIND(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_check);
+        if (l_check) {
+            log_it(L_ERROR, "Mnemonim %s already in use", a_mnemonim);
+            DAP_DELETE(l_ret);
+            return NULL;
+        }
+        HASH_ADD_KEYPTR(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_ret);
+    }
+    HASH_FIND(hh, s_clusters, &a_uuid, sizeof(dap_guuid_t), l_check);
+    if (l_check) {
+        const char *l_guuid_str = dap_uint128_to_hex_str(a_uuid);
+        log_it(L_ERROR, "GUUID %s already in use", l_guuid_str);
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
     if (a_mnemonim) {
         l_ret->mnemonim = strdup(a_mnemonim);
         if (!l_ret->mnemonim) {
@@ -57,36 +75,17 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_cluster_uuid_t a_uuid
             return NULL;
         }
     }
-    dap_cluster_t *l_check = NULL;
-    pthread_rwlock_wrlock(&s_clusters_rwlock);
-    if (a_mnemonim) {
-        HASH_FIND(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_check);
-        if (l_check) {
-            log_it(L_ERROR, "Mnemonim %s already in use", a_mnemonim);
-            DAP_DELETE(l_ret->mnemonim);
-            DAP_DELETE(l_ret);
-            return NULL;
-        }
-        HASH_ADD_KEYPTR(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_ret);
-    }
-    if (a_uuid)
-        l_ret->uuid = a_uuid;
-    else {
-        do {
-            l_ret->uuid = dap_uuid_generate_uint64();
-            HASH_FIND(hh, s_clusters, &l_ret->uuid, sizeof(dap_cluster_uuid_t), l_check);
-        } while (l_check);
-    }
+    l_ret->uuid = a_uuid;
     HASH_ADD(hh, s_clusters, uuid, sizeof(l_ret->uuid), l_ret);
     pthread_rwlock_unlock(&s_clusters_rwlock);
     return l_ret;
 }
 
-dap_cluster_t *dap_cluster_find(dap_cluster_uuid_t a_uuid)
+dap_cluster_t *dap_cluster_find(dap_guuid_t a_uuid)
 {
     dap_cluster_t *l_ret = NULL;
     pthread_rwlock_rdlock(&s_clusters_rwlock);
-    HASH_FIND(hh, s_clusters, &a_uuid, sizeof(dap_cluster_uuid_t), l_ret);
+    HASH_FIND(hh, s_clusters, &a_uuid, sizeof(dap_guuid_t), l_ret);
     pthread_rwlock_unlock(&s_clusters_rwlock);
     return l_ret;
 }
