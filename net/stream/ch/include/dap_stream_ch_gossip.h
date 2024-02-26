@@ -43,8 +43,7 @@ typedef struct dap_gossip_msg {
     byte_t      padding[2];
     uint32_t    trace_len;                  // Size of tracepath, in bytes
     uint64_t    payload_len;                // Size of payload, bytes
-    dap_cluster_uuid_t
-            cluster_id;                 // Links cluster ID to message retranslate to
+    dap_guuid_t cluster_id;                 // Links cluster ID to message retranslate to
     dap_hash_t  payload_hash;               // Payoad hash for doubles check
     byte_t      trace_n_payload[];          // Serialized form of message tracepath and payload itself
 } DAP_ALIGN_PACKED dap_gossip_msg_t;
