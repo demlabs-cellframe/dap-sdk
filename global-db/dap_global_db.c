@@ -1040,10 +1040,10 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
         .timestamp  = a_timestamp,
         .type       = DAP_GLOBAL_DB_OPTYPE_ADD,
         .flags      = DAP_GLOBAL_DB_RECORD_NEW | (a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0),
-        .group      = (char*)a_group,
-        .key        = (char*)a_key,
-        .value      = (byte_t*)a_value,
-        .value_len  = a_value_length,
+        .group      = (char *)a_group,
+        .key        = (char *)a_key,
+        .value      = (byte_t *)a_value,
+        .value_len  = a_value_length
     };
     l_store_data.sign = dap_store_obj_sign(&l_store_data, a_dbi->signing_key, &l_store_data.crc);
     if (!l_store_data.sign) {
