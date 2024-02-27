@@ -381,10 +381,10 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .new_callback =                     dap_enc_sig_ecdsa_key_new,
         .new_generate_callback =            dap_enc_sig_ecdsa_key_new_generate,
 
-        .delete_callback =                  dap_enc_sig_ecdsa_key_delete,
-        .del_sign =                         ecdsa_signature_delete,
-        .del_pub_key =                      ecdsa_public_key_delete,
-        .del_priv_key =                     ecdsa_private_key_delete,
+        .delete_callback =                  dap_enc_ecdsa_private_and_public_keys_delete,
+        .del_sign =                         dap_enc_ecdsa_signature_delete,
+        .del_pub_key =                      dap_enc_ecdsa_public_key_delete,
+        .del_priv_key =                     dap_enc_ecdsa_private_key_delete,
 
         .sign_get =                         dap_enc_sig_ecdsa_get_sign,
         .sign_verify =                      dap_enc_sig_ecdsa_verify_sign,
@@ -392,15 +392,15 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .ser_sign =                         dap_enc_sig_ecdsa_write_signature,
         .ser_priv_key =                     dap_enc_sig_ecdsa_write_private_key,
         .ser_pub_key =                      dap_enc_sig_ecdsa_write_public_key,
-        .ser_priv_key_size =                dap_enc_sig_ecdsa_ser_private_key_size,
-        .ser_pub_key_size =                 dap_enc_sig_ecdsa_ser_public_key_size,
+     //   .ser_priv_key_size =                dap_enc_sig_ecdsa_ser_private_key_size,
+     //   .ser_pub_key_size =                 dap_enc_sig_ecdsa_ser_public_key_size,
 
         .deser_sign =                       dap_enc_sig_ecdsa_read_signature,
         .deser_priv_key =                   dap_enc_sig_ecdsa_read_private_key,
         .deser_pub_key =                    dap_enc_sig_ecdsa_read_public_key,
-        .deser_sign_size =                  dap_enc_sig_ecdsa_deser_sig_size,
-        .deser_pub_key_size =               dap_enc_sig_ecdsa_deser_public_key_size,
-        .deser_priv_key_size =              dap_enc_sig_ecdsa_deser_private_key_size,
+    //.deser_sign_size =                  dap_enc_sig_ecdsa_deser_sig_size,
+    //    .deser_pub_key_size =               dap_enc_sig_ecdsa_deser_public_key_size,
+    //    .deser_priv_key_size =              dap_enc_sig_ecdsa_deser_private_key_size,
     },
 
 
