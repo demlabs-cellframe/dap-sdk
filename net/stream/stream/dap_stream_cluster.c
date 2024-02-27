@@ -60,10 +60,10 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_uuid, dap_c
         }
         HASH_ADD_KEYPTR(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_ret);
     }
-    if (!IS_ZERO_128(a_uuid)) {
+    if (!IS_ZERO_128(a_uuid.raw)) {
         HASH_FIND(hh, s_clusters, &a_uuid, sizeof(dap_guuid_t), l_check);
         if (l_check) {
-            const char *l_guuid_str = dap_uint128_to_hex_str(a_uuid);
+            const char *l_guuid_str = dap_uint128_to_hex_str(a_uuid.raw);
             log_it(L_ERROR, "GUUID %s already in use", l_guuid_str);
             DAP_DELETE(l_ret);
             return NULL;

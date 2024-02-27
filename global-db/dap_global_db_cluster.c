@@ -41,12 +41,14 @@ int dap_global_db_cluster_init()
 {
     dap_global_db_ch_init();
         // Pseudo-cluster for local scope (unsynced groups). There is no notifier for it
-    if (dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_LOCAL, uint128_1, DAP_GLOBAL_DB_CLUSTER_LOCAL ".*",
-                                    0, false, DAP_GDB_MEMBER_ROLE_ROOT, DAP_CLUSTER_ROLE_VIRTUAL))
+    if (dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_LOCAL,
+                                  dap_cluster_guuid_compose(0, 1), DAP_GLOBAL_DB_CLUSTER_LOCAL ".*",
+                                  0, false, DAP_GDB_MEMBER_ROLE_ROOT, DAP_CLUSTER_ROLE_VIRTUAL))
         // Pseudo-cluster for global scope
-        return !dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_GLOBAL, uint128_0, DAP_GLOBAL_DB_CLUSTER_GLOBAL ".*",
-                                           DAP_GLOBAL_DB_UNCLUSTERED_TTL, true,
-                                           DAP_GDB_MEMBER_ROLE_GUEST, DAP_CLUSTER_ROLE_VIRTUAL);
+        return !dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_GLOBAL,
+                                          *(dap_guuid_t *)&uint128_0, DAP_GLOBAL_DB_CLUSTER_GLOBAL ".*",
+                                          DAP_GLOBAL_DB_UNCLUSTERED_TTL, true,
+                                          DAP_GDB_MEMBER_ROLE_GUEST, DAP_CLUSTER_ROLE_VIRTUAL);
     return 2;
 }
 
@@ -108,7 +110,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         }
     }
     if (dap_strcmp(DAP_GLOBAL_DB_CLUSTER_LOCAL, a_mnemonim)) {
-        l_cluster->role_cluster = dap_cluster_new(NULL, uint128_0, DAP_CLUSTER_ROLE_VIRTUAL);
+        l_cluster->role_cluster = dap_cluster_new(NULL, *(dap_guuid_t *)&uint128_0, DAP_CLUSTER_ROLE_VIRTUAL);
         if (!l_cluster->role_cluster) {
             log_it(L_ERROR, "Can't create role cluster");
             dap_cluster_delete(l_cluster->links_cluster);
