@@ -60,12 +60,14 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_uuid, dap_c
         }
         HASH_ADD_KEYPTR(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_ret);
     }
-    HASH_FIND(hh, s_clusters, &a_uuid, sizeof(dap_guuid_t), l_check);
-    if (l_check) {
-        const char *l_guuid_str = dap_uint128_to_hex_str(a_uuid);
-        log_it(L_ERROR, "GUUID %s already in use", l_guuid_str);
-        DAP_DELETE(l_ret);
-        return NULL;
+    if (!IS_ZERO_128(a_uuid)) {
+        HASH_FIND(hh, s_clusters, &a_uuid, sizeof(dap_guuid_t), l_check);
+        if (l_check) {
+            const char *l_guuid_str = dap_uint128_to_hex_str(a_uuid);
+            log_it(L_ERROR, "GUUID %s already in use", l_guuid_str);
+            DAP_DELETE(l_ret);
+            return NULL;
+        }
     }
     if (a_mnemonim) {
         l_ret->mnemonim = strdup(a_mnemonim);
@@ -188,16 +190,20 @@ static void s_cluster_member_delete(dap_cluster_member_t *a_member)
 void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr)
 {
     pthread_rwlock_rdlock(&s_clusters_rwlock);
-    for (dap_cluster_t *it = s_clusters; it; it = it->hh.next) {
-        pthread_rwlock_wrlock(&it->members_lock);
-        dap_cluster_member_t *l_member = NULL;
-        HASH_FIND(hh, it->members, a_addr, sizeof(*a_addr), l_member);
-        if (l_member) {
-            HASH_DEL(it->members, l_member);
-            DAP_DELETE(l_member);
-        }
-        pthread_rwlock_unlock(&it->members_lock);
-    }
+    for (dap_cluster_t *it = s_clusters; it; it = it->hh.next)
+        if (it->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
+                it->role == DAP_CLUSTER_ROLE_EMBEDDED)
+            dap_cluster_member_delete(it, a_addr);
+    pthread_rwlock_unlock(&s_clusters_rwlock);
+}
+
+void dap_cluser_link_add_for_all(dap_stream_node_addr_t *a_addr)
+{
+    pthread_rwlock_rdlock(&s_clusters_rwlock);
+    for (dap_cluster_t *it = s_clusters; it; it = it->hh.next)
+        if (it->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
+                it->role == DAP_CLUSTER_ROLE_EMBEDDED)
+            dap_cluster_member_add(it, a_addr, 0, NULL);
     pthread_rwlock_unlock(&s_clusters_rwlock);
 }
 
@@ -317,7 +323,7 @@ json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster){
 
 char *dap_cluster_get_links_info(dap_cluster_t *a_cluster)
 {
-    dap_string_t *l_str_out = dap_string_new(" ↑\\↓ |\t\tNode addr\t| \tIP\t  |    Port\t|    Channels   | SeqID\n"
+    dap_string_t *l_str_out = dap_string_new(" ↑\\↓ |\t\tNode addr\t| \tIP\t  |    Port\t|    Channels  | SeqID\n"
                                              "--------------------------------------------------------------------------------------\n");
     size_t l_uplinks_count = 0, l_downlinks_count = 0, l_total_links_count = 0;
     dap_stream_info_t *l_links_info = dap_stream_get_links_info(a_cluster, &l_total_links_count);
