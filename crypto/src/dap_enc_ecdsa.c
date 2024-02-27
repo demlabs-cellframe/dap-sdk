@@ -22,11 +22,14 @@ static enum DAP_ECDSA_SIGN_SECURITY _ecdsa_type = ECDSA_MIN_SIZE; // by default
 
 void dap_enc_sig_ecdsa_key_new(dap_enc_key_t *a_key) {
 
+    a_key->_inheritor = NULL;
+    a_key->_inheritor_size =0;
     a_key->type = DAP_ENC_KEY_TYPE_SIG_ECDSA;
     a_key->enc = NULL;
     a_key->sign_get = dap_enc_sig_ecdsa_get_sign;
     a_key->sign_verify = dap_enc_sig_ecdsa_verify_sign;
 }
+
 
 
 void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, const void *kex_buf,
@@ -44,13 +47,15 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, const void *kex_buf
     //dap_enc_sig_ecdsa_set_type(ECDSA_MAX_SPEED)
 
     //int32_t type = 2;
-    key->priv_key_data_size = 32;
-    key->pub_key_data_size = sizeof(secp256k1_pubkey);
+    key->priv_key_data_size =sizeof(ecdsa_private_key_t);
+    key->pub_key_data_size = sizeof(ecdsa_public_key_t);
+    key->_inheritor_size=sizeof(ecdsa_context_t);
     key->priv_key_data = malloc(key->priv_key_data_size);
     key->pub_key_data = malloc(key->pub_key_data_size);
-
+    key->_inheritor=malloc(key->_inheritor_size);
 
     ecdsa_context_t* ctx=secp256k1_context_create(SECP256K1_CONTEXT_NONE);
+    key->_inheritor=ctx;
 
     if (!randombytes(randomize, sizeof(randomize))) {
         printf("Failed to generate randomness\n");
@@ -92,13 +97,12 @@ size_t dap_enc_sig_ecdsa_get_sign(struct dap_enc_key* key, const void* msg, cons
         return -10;
     }
 
-    ecdsa_context_t* ctx=secp256k1_context_create(SECP256K1_CONTEXT_NONE);
     if (!randombytes(randomize, sizeof(randomize))) {
         printf("Failed to generate randomness\n");
         return;
     }
 
-    int retcode = secp256k1_context_randomize(ctx, randomize);
+    int retcode = secp256k1_context_randomize(key->_inheritor, randomize);
     assert(retcode);
 
 
@@ -112,7 +116,7 @@ size_t dap_enc_sig_ecdsa_get_sign(struct dap_enc_key* key, const void* msg, cons
     ecdsa_signature_t *sig = signature;
 //    sig->data = DAP_NEW_SIZE(byte_t,ECDSA_SIG_SIZE);
 
-    retcode = secp256k1_ecdsa_sign(ctx, sig, msg, privateKey, NULL, NULL);
+    retcode = secp256k1_ecdsa_sign(key->_inheritor, sig, msg, privateKey, NULL, NULL);
 
     if (retcode != 0)
         log_it(L_ERROR, "Failed to sign message");
@@ -133,7 +137,7 @@ size_t dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key* key, const void* msg, c
     if (sizeof(ecdsa_signature_t) != signature_size)
         return -1;
 
-    int retcode = secp256k1_ecdsa_verify(ctx, sig, msg_hash, publicKey);
+    int retcode = secp256k1_ecdsa_verify(key->_inheritor, sig, msg, publicKey);
     if (retcode != 0)
         log_it(L_ERROR, "Failed to verify signature");
     return retcode;
@@ -171,7 +175,7 @@ size_t dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key* key, const void* msg, c
 //}
 
 // Serialize a public key into a buffer.
-uint8_t* dap_enc_ecdsa_write_public_key(const ecdsa_public_key_t* a_public_key, size_t* a_buflen_out) {
+uint8_t* dap_enc_sig_ecdsa_write_public_key(const ecdsa_public_key_t* a_public_key, size_t* a_buflen_out) {
 
     uint64_t l_buflen =
             sizeof(uint64_t) +
@@ -241,7 +245,7 @@ uint8_t* dap_enc_ecdsa_write_public_key(const ecdsa_public_key_t* a_public_key, 
 //    return l_buf;
 //}
 
-uint8_t* dap_enc_ecdsa_write_private_key(const ecdsa_private_key_t* a_private_key, size_t* a_buflen_out) {
+uint8_t* dap_enc_sig_ecdsa_write_private_key(const ecdsa_private_key_t* a_private_key, size_t* a_buflen_out) {
 
 
     uint64_t l_buflen =
@@ -265,7 +269,7 @@ uint8_t* dap_enc_ecdsa_write_private_key(const ecdsa_private_key_t* a_private_ke
 }
 
 
-ecdsa_private_key_t* dap_enc_ecdsa_read_private_key(const uint8_t *a_buf, size_t a_buflen) {
+ecdsa_private_key_t* dap_enc_sig_ecdsa_read_private_key(const uint8_t *a_buf, size_t a_buflen) {
     if (!a_buf) {
         log_it(L_ERROR, "::read_private_key() a_buf is NULL");
         return NULL;
@@ -331,7 +335,7 @@ ecdsa_private_key_t* dap_enc_ecdsa_read_private_key(const uint8_t *a_buf, size_t
 //}
 
 
-ecdsa_public_key_t* dap_enc_ecdsa_read_public_key(const uint8_t* a_buf, size_t a_buflen) {
+ecdsa_public_key_t* dap_enc_sig_ecdsa_read_public_key(const uint8_t* a_buf, size_t a_buflen) {
     if (!a_buf) {
         log_it(L_ERROR, "::read_public_key() a_buf is NULL");
         return NULL;
@@ -406,7 +410,7 @@ ecdsa_public_key_t* dap_enc_ecdsa_read_public_key(const uint8_t* a_buf, size_t a
 //}
 
 
-uint8_t *dap_enc_public_key_sig_ecdsa_write_signature(const ecdsa_signature_t* a_sign, size_t *a_sign_out)
+uint8_t *dap_enc_sig_ecdsa_write_signature(const ecdsa_signature_t* a_sign, size_t *a_sign_out)
 {
     if (!a_sign) {
         log_it(L_ERROR, "::write_signature() a_sign is NULL");
@@ -447,7 +451,7 @@ uint8_t *dap_enc_public_key_sig_ecdsa_write_signature(const ecdsa_signature_t* a
 }
 
 
-ecdsa_signature_t* dap_enc_ecdsa_read_signature(const uint8_t* a_buf, size_t a_buflen) {
+ecdsa_signature_t* dap_enc_sig_ecdsa_read_signature(const uint8_t* a_buf, size_t a_buflen) {
     if (!a_buf) {
         log_it(L_ERROR, "::read_signature() a_buf is NULL");
         return NULL;
@@ -509,41 +513,39 @@ ecdsa_signature_t* dap_enc_ecdsa_read_signature(const uint8_t* a_buf, size_t a_b
     return l_sign;
 }
 
-void *ecdsa_signature_delete(void *a_sig){
+void *dap_enc_sig_ecdsa_signature_delete(void *a_sig){
     dap_return_if_pass(!a_sig);
-    DAP_DEL_Z(((ecdsa_signature_t *)a_sig)->data);
+    memset(((ecdsa_signature_t *)a_sig)->data,0,ECDSA_SIG_SIZE);
+
 }
 
 
-void *ecdsa_private_key_delete(ecdsa_private_key_t* privateKey) {
-    if (privateKey) {
-        memset(privateKey->data, 0, ECDSA_PRIVATE_KEY_SIZE);
-        DAP_DEL_Z(privateKey->data);
+void *dap_enc_sig_ecdsa_private_key_delete(ecdsa_private_key_t* privateKey) {
+    if (privateKey){
+        secure_erase(privateKey->data, sizeof(privateKey->data));
 
     }
 }
 
-void *ecdsa_public_key_delete(ecdsa_public_key_t* publicKey) {
+void *dap_enc_sig_ecdsa_public_key_delete(ecdsa_public_key_t* publicKey) {
     if (publicKey) {
         memset(publicKey->data, 0, ECDSA_PUBLIC_KEY_SIZE);
-        DAP_DEL_Z(publicKey->data);
-
     }
 }
 
-void *ecdsa_private_and_public_keys_delete(ecdsa_private_key_t* privateKey, ecdsa_public_key_t* publicKey) {
+void *dap_enc_sig_ecdsa_private_and_public_keys_delete(ecdsa_private_key_t* privateKey, ecdsa_public_key_t* publicKey) {
         ecdsa_private_key_delete(privateKey);
         ecdsa_public_key_delete(publicKey);
 }
 
 
-void *dap_enc_sig_ecdsa_key_delete(struct dap_enc_key *key) {
+//void *dap_enc_sig_ecdsa_key_delete(struct dap_enc_key *key) {
 
-    if (key->priv_key_data) {
-        ecdsa_private_key_delete(key->priv_key_data);
-    }
-    if (key->pub_key_data) {
-        ecdsa_public_key_delete(key->pub_key_data);
-    }
-}
+//    if (key->priv_key_data) {
+//        ecdsa_private_key_delete(key->priv_key_data);
+//    }
+//    if (key->pub_key_data) {
+//        ecdsa_public_key_delete(key->pub_key_data);
+//    }
+//}
 
