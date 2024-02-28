@@ -625,18 +625,15 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->worker = a_worker;
     l_client_http->is_over_ssl = a_over_ssl;
 
-    struct addrinfo l_hints = { .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM }, *l_addr_res;
-    if ( getaddrinfo(a_uplink_addr, dap_itoa(a_uplink_port), &l_hints, &l_addr_res) ) {
+    if ( dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), &l_ev_socket->addr_storage, false) ) {
         log_it(L_ERROR, "Wrong remote address '%s : %u'", a_uplink_addr, a_uplink_port);
             s_client_http_delete(l_client_http);
             l_ev_socket->_inheritor = NULL;
             dap_events_socket_delete_unsafe( l_ev_socket, true);
             if(a_error_callback)
                 a_error_callback(errno, a_callbacks_arg);
-            return NULL;
+        return NULL;
     }
-    memcpy(&l_ev_socket->addr_storage, l_addr_res->ai_addr, l_addr_res->ai_addrlen);
-    freeaddrinfo(l_addr_res);
 
     strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET6_ADDRSTRLEN);
     l_ev_socket->remote_port = a_uplink_port;

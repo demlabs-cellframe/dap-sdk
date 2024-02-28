@@ -55,6 +55,7 @@
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_pkt.h"
 #include "dap_http_client.h"
+#include "dap_net.h"
 
 #define LOG_TAG "dap_client_pvt"
 
@@ -515,16 +516,17 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     l_es->flags |= DAP_SOCK_READY_TO_WRITE;
                 #endif
                     l_es->_inheritor = a_client_pvt->client;
-                    struct addrinfo l_hints = (struct addrinfo){ .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM }, *l_addr_res;
-                    if ( getaddrinfo(a_client_pvt->client->uplink_addr, dap_itoa(a_client_pvt->client->uplink_port), &l_hints, &l_addr_res) ) {
+                    if ( dap_net_resolve_host(a_client_pvt->client->uplink_addr,
+                                              dap_itoa(a_client_pvt->client->uplink_port),
+                                              &l_es->addr_storage,
+                                              false)
+                    ) {
                         log_it(L_ERROR, "Wrong remote address '%s : %u'", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_WRONG_ADDRESS;
                         s_stage_status_after(a_client_pvt);
                         break;
                     }
-                    memcpy(&l_es->addr_storage, l_addr_res->ai_addr, l_addr_res->ai_addrlen);
-                    freeaddrinfo(l_addr_res);
 
                     l_es->remote_port = a_client_pvt->client->uplink_port;
                     strncpy(l_es->remote_addr_str, a_client_pvt->client->uplink_addr, INET_ADDRSTRLEN);

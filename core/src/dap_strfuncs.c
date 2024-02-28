@@ -421,13 +421,14 @@ char *dap_strncpy(char *a_dst, const char *a_src, size_t a_limit)
 {
     dap_return_val_if_fail(a_dst && a_src, NULL);
     do {
-        *a_dst++ = *a_src;
-        a_limit--;
-    } while (*a_src++ != '\0' && a_limit);
-    --a_dst;
-    if (*a_dst != '\0')
-        *a_dst = '\0';
-    return a_dst;
+        if (a_limit--)
+            *a_dst++ = *a_src++;
+        else {
+            *a_dst++ = '\0';
+            break;
+        }
+    } while (*a_src != '\0');
+    return --a_dst;
 }
 
 /**

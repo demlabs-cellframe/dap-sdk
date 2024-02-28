@@ -70,6 +70,7 @@
 #include "dap_server.h"
 #include "dap_worker.h"
 #include "dap_events.h"
+#include "dap_net.h"
 #include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_server"
@@ -236,13 +237,10 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
         log_it(L_WARNING, "Can't set up REUSEPORT flag to the socket");
 #endif
 
-    struct addrinfo l_hints = { .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM }, *l_addr_res;
-    if ( getaddrinfo(a_addr, dap_itoa(l_es->listener_port), &l_hints, &l_addr_res) ) {
+    if ( dap_net_resolve_host(a_addr, dap_itoa(l_es->listener_port), &l_es->addr_storage, true) ) {
         log_it(L_ERROR, "Wrong listen address '%s : %u'", a_addr, l_es->listener_port);
         goto clean_n_quit;
     }
-    memcpy(&l_es->addr_storage, l_addr_res->ai_addr, l_addr_res->ai_addrlen);
-    freeaddrinfo(l_addr_res);
 
     if (a_server->type != DAP_SERVER_LOCAL) {
         strncpy(l_es->listener_addr_str, a_addr, sizeof(l_es->listener_addr_str)); // If NULL we listen everything
@@ -486,7 +484,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     }
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
     l_es_new->server = l_server;
-    unsigned short int l_family = a_remote_addr->ss_family;
+    unsigned short l_family = a_remote_addr->ss_family;
     
     l_es_new->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
     l_es_new->addr_storage = *a_remote_addr;
