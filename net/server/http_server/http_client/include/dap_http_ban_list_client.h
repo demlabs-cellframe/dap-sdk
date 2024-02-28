@@ -22,13 +22,3 @@ int dap_http_ban_list_client_add(const char *a_addr, dap_hash_fast_t a_decree_ha
 int dap_http_ban_list_client_remove(const char *a_addr);
 char *dap_http_ban_list_client_dump(const char *a_addr);
 
-bool dap_http_ban_list_client_check_ipv4(struct in_addr);
-void dap_http_ban_list_client_add_ipv4(struct in_addr, dap_hash_fast_t, dap_time_t);
-void dap_http_ban_list_client_remove_ipv4(struct in_addr);
-void dap_http_ban_list_client_ipv4_print(dap_string_t *a_str_out);
-
-bool dap_http_ban_list_client_check_ipv6(struct in6_addr);
-void dap_http_ban_list_client_add_ipv6(struct in6_addr, dap_hash_fast_t, dap_time_t);
-void dap_http_ban_list_client_remove_ipv6(struct in6_addr);
-void dap_http_ban_list_client_ipv6_print(dap_string_t *a_str_out);
-
