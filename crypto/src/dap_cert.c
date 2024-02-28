@@ -430,6 +430,21 @@ void dap_cert_delete(dap_cert_t * a_cert)
     DAP_DELETE (a_cert );
 }
 
+static int s_make_cert_path(const char *a_cert_name, const char *a_folder_path, bool a_check_access, char *a_cert_path)
+{
+    size_t l_cert_path_length = strlen(a_cert_name) + strlen(a_folder_path) + strlen("/.dcert") + 1;
+    if (l_cert_path_length > MAX_PATH) {
+        log_it(L_ERROR, "Path size %zu exeeds maximum", l_cert_path_length);
+        return -1;
+    }
+    snprintf(a_cert_path, l_cert_path_length, "%s/%s.dcert", a_folder_path, a_cert_name);
+    if (a_check_access && access(a_cert_path, F_OK) == -1) {
+        log_it (L_ERROR, "File %s does not exist", a_cert_path);
+        return -2;
+    }
+    return 0;
+}
+
 /**
  * @brief dap_cert_add_file
  * load certificate file from folder (specified in chain config)
@@ -437,22 +452,21 @@ void dap_cert_delete(dap_cert_t * a_cert)
  * @param a_folder_path const char * certificate path
  * @return dap_cert_t
  */
-dap_cert_t *dap_cert_add_file(const char *a_cert_name,const char *a_folder_path)
+dap_cert_t *dap_cert_add_file(const char *a_cert_name, const char *a_folder_path)
 {
-    const size_t l_cert_path_length = strlen(a_cert_name) + strlen(a_folder_path) + strlen("/.dcert") + 1;
-    if (l_cert_path_length > MAX_PATH) {
-        log_it(L_CRITICAL, "Path size %zu exeeds maximum", l_cert_path_length);
+    char l_cert_path[MAX_PATH];
+    if (s_make_cert_path(a_cert_name, a_folder_path, true, l_cert_path))
         return NULL;
-    }
-    char l_cert_path[l_cert_path_length];
-    memset(l_cert_path, '\0', l_cert_path_length);
-    snprintf(l_cert_path, l_cert_path_length, "%s/%s.dcert", a_folder_path, a_cert_name);
-    if( access( l_cert_path, F_OK ) == -1 ) {
-        log_it (L_ERROR, "File %s does not exist", l_cert_path);
-        exit(-701);
-    }
     return dap_cert_file_load(l_cert_path);
 }
+
+int dap_cert_delete_file(const char *a_cert_name, const char *a_folder_path)
+{
+    char l_cert_path[MAX_PATH];
+    int ret = s_make_cert_path(a_cert_name, a_folder_path, true, l_cert_path);
+    return ret ? ret : remove(l_cert_path);
+}
+
 
 /**
  * @brief save certitificate to folder
@@ -463,17 +477,9 @@ dap_cert_t *dap_cert_add_file(const char *a_cert_name,const char *a_folder_path)
  */
 int dap_cert_save_to_folder(dap_cert_t *a_cert, const char *a_file_dir_path)
 {
-    int l_ret = 0;
-    const char * l_cert_name = a_cert->name;
-    const size_t l_cert_path_length = strlen(l_cert_name) + strlen(a_file_dir_path) + strlen("/.dcert") + 1;
-    if (l_cert_path_length > MAX_PATH) {
-        log_it(L_CRITICAL, "Path size %zu exeeds maximum", l_cert_path_length);
-        return -4;
-    }
-    char l_cert_path[l_cert_path_length];
-    memset(l_cert_path, '\0', l_cert_path_length);
-    snprintf(l_cert_path,l_cert_path_length, "%s/%s.dcert", a_file_dir_path, l_cert_name);
-    return dap_cert_file_save(a_cert, l_cert_path);
+    char l_cert_path[MAX_PATH];
+    int ret = s_make_cert_path(a_cert->name, a_file_dir_path, false, l_cert_path);
+    return ret ? ret : dap_cert_file_save(a_cert, l_cert_path);
 }
 
 /**
