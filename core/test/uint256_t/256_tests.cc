@@ -473,7 +473,7 @@ TEST(InputTests, EnteringFractionalNumberWithComma) {
 TEST_F(RandomInputTestsCoins, CoinsBase) {
     boost::random::independent_bits_engine<boost::random::mt19937, 59, bmp::cpp_int> generator_type_18;
     for (int i=0; i < 100; i++) {
-        bmp::uint128_t boost_a(generator_type_18());
+        bmp::uint128_t boost_a(i ? generator_type_18() : 0);
         bmp::uint128_t boost_b(generator_type_18());
         std::string temp = boost_a.str() + "." + boost_b.str();
         if (temp[temp.length() - 1] == '0') {

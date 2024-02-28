@@ -289,6 +289,8 @@ static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, da
         log_it(L_WARNING, "Wrong Global DB gossip packet rejected");
         return;
     }
+    debug_if(g_dap_global_db_debug_more, L_INFO, "IN: GLOBAL_DB_GOSSIP packet for group %s with key %s",
+                 l_obj->group, l_obj->key);
     dap_proc_thread_callback_add_pri(NULL, s_process_record, l_obj, DAP_GLOBAL_DB_TASK_PRIORITY);
 }
 

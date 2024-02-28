@@ -409,7 +409,7 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
             dap_nanotime_t l_time_diff = l_read_obj->timestamp - a_obj->timestamp;
             a_obj->timestamp = l_read_obj->timestamp + 1;
             a_obj->sign = dap_store_obj_sign(a_obj, a_dbi->signing_key, &a_obj->crc);
-            debug_if(g_dap_global_db_debug_more, L_WARNING, "DB record with group %s and key %s need time corrction for %zu seconds to be properly applied",
+            debug_if(g_dap_global_db_debug_more, L_WARNING, "DB record with group %s and key %s need time correction for %zu seconds to be properly applied",
                                                             a_obj->group, a_obj->key, dap_nanotime_to_sec(l_time_diff));
         } else {
             debug_if(g_dap_global_db_debug_more, L_DEBUG, "DB record with group %s and key %s is not applied. It's older than existed record with same key",
@@ -1040,10 +1040,10 @@ static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_gro
         .timestamp  = a_timestamp,
         .type       = DAP_GLOBAL_DB_OPTYPE_ADD,
         .flags      = DAP_GLOBAL_DB_RECORD_NEW | (a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0),
-        .group      = (char*)a_group,
-        .key        = (char*)a_key,
-        .value      = (byte_t*)a_value,
-        .value_len  = a_value_length,
+        .group      = (char *)a_group,
+        .key        = (char *)a_key,
+        .value      = (byte_t *)a_value,
+        .value_len  = a_value_length
     };
     l_store_data.sign = dap_store_obj_sign(&l_store_data, a_dbi->signing_key, &l_store_data.crc);
     if (!l_store_data.sign) {

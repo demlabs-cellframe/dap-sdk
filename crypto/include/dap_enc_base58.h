@@ -42,9 +42,19 @@ size_t dap_enc_base58_encode(const void * a_in, size_t a_in_size, char * a_out);
 size_t dap_enc_base58_decode(const char * a_in, void * a_out);
 
 char* dap_enc_base58_encode_to_str(const void * a_in, size_t a_in_size);
-char* dap_enc_base58_encode_hash_to_str(dap_chain_hash_fast_t *a_in_hash);
+
+DAP_INLINE char* dap_enc_base58_encode_hash_to_str(dap_chain_hash_fast_t *a_in_hash) {
+    return dap_enc_base58_encode_to_str(a_in_hash->raw, sizeof(dap_chain_hash_fast_t));
+};
+
+DAP_STATIC_INLINE char* dap_enc_base58_encode_hash_to_str_static(dap_chain_hash_fast_t *a_in_hash) {
+    static _Thread_local char s_buf[DAP_ENC_BASE58_ENCODE_SIZE(sizeof(dap_chain_hash_fast_t))] = { '\0' };
+    return dap_enc_base58_encode(a_in_hash, sizeof(dap_chain_hash_fast_t), s_buf) ? s_buf : NULL;
+}
+
 // convert from "0xA21F1E865B6740A28E8708798ECF25D2C0AA596DF5EB1FD724186B6AD7FF2199" to "Bura1HFrKsqbdytEXQVrxpbovtvLhR1VbrJs65JBx3gc"
 char* dap_enc_base58_from_hex_str_to_str(const char *a_in_str);
+
 // convert from "Bura1HFrKsqbdytEXQVrxpbovtvLhR1VbrJs65JBx3gc" to "0xA21F1E865B6740A28E8708798ECF25D2C0AA596DF5EB1FD724186B6AD7FF2199"
 char* dap_enc_base58_to_hex_str_from_str(const char *a_in_str);
 
