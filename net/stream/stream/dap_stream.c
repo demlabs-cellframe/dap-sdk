@@ -1028,6 +1028,7 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
         return -1;
     }
     HASH_ADD(hh, s_authorized_streams, node, sizeof(a_stream->node), a_stream);
+    dap_cluser_link_add_for_all(&a_stream->node);
     return 0;
 }
 

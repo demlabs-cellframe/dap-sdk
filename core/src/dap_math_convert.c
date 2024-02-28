@@ -2,7 +2,8 @@
 
 #define LOG_TAG "dap_math_convert"
 
-uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger){ //dap_chain_balance_print
+uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger)
+{
     uint256_t l_ret = uint256_0, l_nul = uint256_0;
     int  l_strlen;
     char l_256bit_num[DAP_CHAIN$SZ_MAX256DEC + 1];
@@ -81,9 +82,6 @@ uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger){ //dap_chain_b
             //todo: change string to uint256_max after implementation
             return log_it(L_ERROR, "Too big number '%s', max number is '%s'", a_str_uninteger, "115792089237316195423570985008687907853269984665640564039457584007913129639935"), l_nul;
         }
-//        if (l_ret.hi == 0 && l_ret.lo == 0) {
-//            return l_nul;
-//        }
         uint128_t l_mul = (uint128_t) c_pow10_double[i].u64[2] * (uint128_t) l_digit;
         l_tmp.lo = l_mul << 64;
         l_tmp.hi = l_mul >> 64;
@@ -151,7 +149,8 @@ uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger){ //dap_chain_b
     return l_ret;
 }
 
-uint256_t dap_uint256_scan_decimal(const char *a_str_decimal){ //dap_chain_coins_to_balance256, dap_chain_coins_to_balance
+uint256_t dap_uint256_scan_decimal(const char *a_str_decimal)
+{
     int l_len, l_pos;
     char    l_buf  [DAP_CHAIN$SZ_MAX256DEC + 8] = {0}, *l_point;
 
@@ -213,7 +212,7 @@ char *dap_uint256_to_char(uint256_t a_uint256, char **a_frac) {
         return s_buf;
 
     int l_len;
-    
+
     if ( 0 < (l_len = (l_strlen - DATOSHI_DEGREE)) ) {
         memcpy(s_buf_frac, s_buf, l_len);
         memcpy(s_buf_frac + l_len + 1, s_buf + l_len, DATOSHI_DEGREE);
@@ -228,19 +227,19 @@ char *dap_uint256_to_char(uint256_t a_uint256, char **a_frac) {
     }
     l_c1 = s_buf_frac + l_strlen - 1;
     while (*l_c1-- == '0' && *l_c1 != '.')
-        --l_strlen; 
+        --l_strlen;
     s_buf_frac[l_strlen] = '\0';
     *a_frac = s_buf_frac;
     return s_buf;
 }
 
-char *dap_uint256_uninteger_to_char(uint256_t a_uint256) {
-    return strdup(dap_uint256_to_char(a_uint256, NULL));
+char *dap_uint256_uninteger_to_char(uint256_t a_uninteger) {
+    return strdup(dap_uint256_to_char(a_uninteger, NULL));
 }
 
-char *dap_uint256_decimal_to_char(uint256_t a_uint256){ //dap_chain_balance_to_coins256, dap_chain_balance_to_coins
+char *dap_uint256_decimal_to_char(uint256_t a_decimal){ //dap_chain_balance_to_coins256, dap_chain_balance_to_coins
     char *l_frac = NULL;
-    dap_uint256_to_char(a_uint256, &l_frac);
+    dap_uint256_to_char(a_decimal, &l_frac);
     return strdup(l_frac);
 }
 
@@ -264,7 +263,7 @@ char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_pos, b
     char    *l_src_c = a_str_decimal + l_new_len,
             *l_dst_c = l_res + l_new_len,
             l_inc = *l_src_c >= '5';
-    
+
     while ( l_src_c > a_str_decimal && (*l_src_c >= '5' || l_inc) ) {
         if (*--l_src_c == '9') {
             l_inc = 1;
@@ -288,7 +287,225 @@ char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_pos, b
     } else {
         ++l_res;
     }
-    
+
     *(l_res + l_new_len) = '\0';
     return l_res;
+}
+
+int dap_id_uint64_parse(const char *a_id_str, uint64_t *a_id)
+{
+    if (!a_id_str || !a_id || (sscanf(a_id_str, "0x%16"DAP_UINT64_FORMAT_X, a_id) != 1 &&
+            sscanf(a_id_str, "0x%16"DAP_UINT64_FORMAT_x, a_id) != 1 &&
+            sscanf(a_id_str, "%"DAP_UINT64_FORMAT_U, a_id) != 1)) {
+        log_it (L_ERROR, "Can't recognize '%s' string as 64-bit id, hex or dec", a_id_str);
+        return -1;
+    }
+    return 0;
+}
+
+uint64_t dap_uint128_to_uint64(uint128_t a_from)
+{
+#ifdef DAP_GLOBAL_IS_INT128
+    if (a_from > UINT64_MAX) {
+        log_it(L_ERROR, "Can't convert balance to uint64_t. It's too big.");
+    }
+    return (uint64_t)a_from;
+#else
+    if (a_from.hi) {
+        log_it(L_ERROR, "Can't convert balance to uint64_t. It's too big.");
+    }
+    return a_from.lo;
+#endif
+}
+
+uint64_t dap_uint256_to_uint64(uint256_t a_from)
+{
+#ifdef DAP_GLOBAL_IS_INT128
+    if (a_from.hi || a_from.lo > UINT64_MAX) {
+        log_it(L_ERROR, "Can't convert balance to uint64_t. It's too big.");
+    }
+    return (uint64_t)a_from.lo;
+#else
+    if (!IS_ZERO_128(a_from.hi) || a_from.lo.hi) {
+        log_it(L_ERROR, "Can't convert balance to uint64_t. It's too big.");
+    }
+    return a_from.lo.lo;
+#endif
+}
+
+// 256
+uint128_t dap_uint256_to_uint128(uint256_t a_from)
+{
+    if ( !( EQUAL_128(a_from.hi, uint128_0) ) ) {
+        log_it(L_ERROR, "Can't convert to uint128_t. It's too big.");
+    }
+    return a_from.lo;
+}
+
+
+const char *dap_uint128_to_hex_str(uint128_t a_uninteger)
+{
+    _Thread_local static char s_buf[sizeof(uint128_t) * 2 + 3];
+    strcpy(s_buf, "0x");
+    dap_bin2hex(s_buf + 2, &a_uninteger, sizeof(a_uninteger));
+    return (const char *)s_buf;
+}
+
+char *dap_uint128_uninteger_to_char(uint128_t a_uninteger)
+{
+    char *l_buf = DAP_NEW_Z_SIZE(char, DATOSHI_POW + 2);
+    if (!l_buf) {
+        log_it(L_CRITICAL, "Memory allocation error");
+        return NULL;
+    }
+    int l_pos = 0;
+    uint128_t l_value = a_uninteger;
+#ifdef DAP_GLOBAL_IS_INT128
+    do {
+        l_buf[l_pos++] = (l_value % 10) + '0';
+        l_value /= 10;
+    } while (l_value);
+#else
+    uint32_t l_tmp[4] = {l_value.u32.a, l_value.u32.b, l_value.u32.c, l_value.u32.d};
+    uint64_t t, q;
+    do {
+        q = 0;
+        // Byte order is 1, 0, 3, 2 for little endian
+        for (int i = 1; i <= 3; ) {
+            t = q << 32 | l_tmp[i];
+            q = t % 10;
+            l_tmp[i] = t / 10;
+            if (i == 2) i = 4; // end of cycle
+            if (i == 3) i = 2;
+            if (i == 0) i = 3;
+            if (i == 1) i = 0;
+        }
+        l_buf[l_pos++] = q + '0';
+    } while (l_tmp[2]);
+#endif
+    int l_strlen = strlen(l_buf) - 1;
+    for (int i = 0; i < (l_strlen + 1) / 2; i++) {
+        char c = l_buf[i];
+        l_buf[i] = l_buf[l_strlen - i];
+        l_buf[l_strlen - i] = c;
+    }
+    return l_buf;
+}
+
+char *dap_uint128_decimal_to_char(uint128_t a_decimal)
+{
+    char *l_buf = dap_uint128_uninteger_to_char(a_decimal);
+    int l_strlen = strlen(l_buf);
+    int l_pos;
+    if (l_strlen > DATOSHI_DEGREE) {
+        for (l_pos = l_strlen; l_pos > l_strlen - DATOSHI_DEGREE; l_pos--) {
+            l_buf[l_pos] = l_buf[l_pos - 1];
+        }
+        l_buf[l_pos] = '.';
+    } else {
+        int l_sub = DATOSHI_DEGREE - l_strlen + 2;
+        for (l_pos = DATOSHI_DEGREE + 1; l_pos >= 0; l_pos--) {
+            l_buf[l_pos] = (l_pos >= l_sub) ? l_buf[l_pos - l_sub] : '0';
+        }
+        l_buf[1] = '.';
+    }
+    return l_buf;
+}
+
+uint128_t dap_uint128_scan_uninteger(const char *a_str_uninteger)
+{
+    int l_strlen = strlen(a_str_uninteger);
+    uint128_t l_ret = uint128_0, l_nul = uint128_0;
+    if (l_strlen > DATOSHI_POW)
+        return l_nul;
+    for (int i = 0; i < l_strlen ; i++) {
+        char c = a_str_uninteger[l_strlen - i - 1];
+        if (!isdigit(c)) {
+            log_it(L_WARNING, "Incorrect input number");
+            return l_nul;
+        }
+        uint8_t l_digit = c - '0';
+        if (!l_digit)
+            continue;
+#ifdef DAP_GLOBAL_IS_INT128
+        uint128_t l_tmp = (uint128_t)c_pow10[i].u64[0] * l_digit;
+        if (l_tmp >> 64) {
+            log_it(L_WARNING, "Input number is too big");
+            return l_nul;
+        }
+        l_tmp = (l_tmp << 64) + (uint128_t)c_pow10[i].u64[1] * l_digit;
+        SUM_128_128(l_ret, l_tmp, &l_ret);
+        if (l_ret == l_nul)
+            return l_nul;
+#else
+        uint128_t l_tmp;
+        l_tmp.hi = 0;
+        l_tmp.lo = (uint64_t)c_pow10[i].u32[2] * (uint64_t)l_digit;
+        SUM_128_128(l_ret, l_tmp, &l_ret);
+        if (l_ret.hi == 0 && l_ret.lo == 0)
+            return l_nul;
+        uint64_t l_mul = (uint64_t)c_pow10[i].u32[3] * (uint64_t)l_digit;
+        l_tmp.lo = l_mul << 32;
+        l_tmp.hi = l_mul >> 32;
+        SUM_128_128(l_ret, l_tmp, &l_ret);
+        if (l_ret.hi == 0 && l_ret.lo == 0)
+            return l_nul;
+        l_tmp.lo = 0;
+        l_tmp.hi = (uint64_t)c_pow10[i].u32[0] * (uint64_t)l_digit;
+        SUM_128_128(l_ret, l_tmp, &l_ret);
+        if (l_ret.hi == 0 && l_ret.lo == 0)
+            return l_nul;
+        l_mul = (uint64_t)c_pow10[i].u32[1] * (uint64_t)l_digit;
+        if (l_mul >> 32) {
+            log_it(L_WARNING, "Input number is too big");
+            return l_nul;
+        }
+        l_tmp.hi = l_mul << 32;
+        SUM_128_128(l_ret, l_tmp, &l_ret);
+        if (l_ret.hi == 0 && l_ret.lo == 0)
+            return l_nul;
+#endif
+    }
+    return l_ret;
+}
+
+uint128_t dap_uint128_scan_decimal(const char *a_str_decimal)
+{
+    char l_buf [DATOSHI_POW + 2] = {0};
+    uint128_t l_ret = uint128_0, l_nul = uint128_0;
+
+    if (strlen(a_str_decimal) > DATOSHI_POW + 1) {
+        log_it(L_WARNING, "Incorrect balance format - too long");
+        return l_nul;
+    }
+
+    strcpy(l_buf, a_str_decimal);
+    char *l_point = strchr(l_buf, '.');
+    int l_tail = 0;
+    int l_pos = strlen(l_buf);
+    if (l_point) {
+        l_tail = l_pos - 1 - (l_point - l_buf);
+        l_pos = l_point - l_buf;
+        if (l_tail > DATOSHI_DEGREE) {
+            log_it(L_WARNING, "Incorrect balance format - too much precision");
+            return l_nul;
+        }
+        while (l_buf[l_pos]) {
+            l_buf[l_pos] = l_buf[l_pos + 1];
+            l_pos++;
+        }
+        l_pos--;
+    }
+    if (l_pos + DATOSHI_DEGREE - l_tail > DATOSHI_POW) {
+        log_it(L_WARNING, "Incorrect balance format - too long with point");
+        return l_nul;
+    }
+    int i;
+    for (i = 0; i < DATOSHI_DEGREE - l_tail; i++) {
+        l_buf[l_pos + i] = '0';
+    }
+    l_buf[l_pos + i] = '\0';
+    l_ret = dap_uint128_scan_uninteger(l_buf);
+
+    return l_ret;
 }
