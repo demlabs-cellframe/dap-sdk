@@ -38,7 +38,9 @@ int dap_net_resolve_host(const char *a_host, const char *a_port, struct sockaddr
     dap_return_val_if_fail(a_addr_out && a_host, -1);
     int l_ret = 0;
     struct addrinfo l_hints = {
-        .ai_flags   = a_passive_flag ? AI_CANONNAME | AI_PASSIVE : AI_CANONNAME,
+        .ai_flags   = a_passive_flag
+            ? AI_CANONNAME | AI_PASSIVE | AI_V4MAPPED | AI_ADDRCONFIG
+            : AI_CANONNAME | AI_V4MAPPED | AI_ADDRCONFIG,
         .ai_family  = AF_UNSPEC,
         .ai_socktype= SOCK_STREAM,
     }, *l_res;

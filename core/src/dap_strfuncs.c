@@ -422,12 +422,12 @@ char *dap_strncpy(char *a_dst, const char *a_src, size_t a_limit)
     dap_return_val_if_fail(a_dst && a_src, NULL);
     do {
         if (a_limit--)
-            *a_dst++ = *a_src++;
+            *a_dst++ = *a_src;
         else {
             *a_dst++ = '\0';
             break;
         }
-    } while (*a_src != '\0');
+    } while (*a_src++ != '\0');
     return --a_dst;
 }
 

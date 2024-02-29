@@ -152,7 +152,7 @@ static char s_last_error[LAST_ERROR_MAX]    = {'\0'},
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
 
-#define LOG_FORMAT_LEN 128
+#define LOG_FORMAT_LEN 2048
 
 static char* s_appname = NULL;
 
@@ -317,7 +317,7 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
             fprintf( stderr, "Can't open log file %s \n", a_log_file_path );
             return -1;   //switch off show log in cosole if file not open
         }
-        setvbuf(s_log_file, NULL, _IOLBF, LOG_FORMAT_LEN * 4);
+        setvbuf(s_log_file, NULL, _IOLBF, LOG_FORMAT_LEN / 2);
         if (a_log_dirpath != s_log_dir_path)
             dap_stpcpy(s_log_dir_path,  a_log_dirpath);
         if (a_log_file_path != s_log_file_path)
@@ -390,7 +390,7 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
             ? snprintf(s_format + offset, LOG_FORMAT_LEN - offset,"%s[%s][%s:%d] %s\n", s_log_level_tag[a_ll], a_log_tag, func_name, line_num, a_fmt)
             : snprintf(s_format + offset, LOG_FORMAT_LEN - offset, "%s[%s] %s\n", s_log_level_tag[a_ll], a_log_tag, a_fmt);
     if (offset >= LOG_FORMAT_LEN) {
-        return;
+        dap_strncpy(s_format + LOG_FORMAT_LEN - 5, "...\n", 4);
     }
     va_list va;
     va_start(va, a_fmt);
