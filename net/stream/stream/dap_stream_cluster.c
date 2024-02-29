@@ -182,7 +182,7 @@ static void s_cluster_member_delete(dap_cluster_t *a_cluster, dap_cluster_member
 {
     if (a_cluster->members_delete_callback)
         a_cluster->members_delete_callback(a_cluster, a_member);
-    HASH_DEL(a_cluster, a_member);
+    HASH_DEL(a_cluster->members, a_member);
     DAP_DEL_Z(a_member->info);
     DAP_DELETE(a_member);
 }
