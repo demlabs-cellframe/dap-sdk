@@ -75,34 +75,20 @@ dap_client_t *dap_client_new(dap_client_callback_t a_delete_callback,
                              dap_client_callback_t a_stage_status_error_callback,
                              void *a_callbacks_arg)
 {
-    // ALLOC MEM FOR dap_client
-    dap_client_t *l_client = DAP_NEW_Z(dap_client_t);
-    if (!l_client)
-        goto MEM_ALLOC_ERR;
-
+// memory alloc
+    dap_client_t *l_client = NULL;
+    DAP_NEW_Z_RET_VAL(l_client, dap_client_t, NULL, NULL);
+    DAP_NEW_Z_RET_VAL(l_client->_internal, dap_client_pvt_t, NULL, l_client);
+// func work
     l_client->delete_callback = a_delete_callback;
     l_client->callbacks_arg = a_callbacks_arg;
-    l_client->_internal  = DAP_NEW_Z(dap_client_pvt_t);
-    if (!l_client->_internal)
-        goto MEM_ALLOC_ERR;
-
     // CONSTRUCT dap_client object
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     l_client_pvt->client = l_client;
     l_client_pvt->stage_status_error_callback = a_stage_status_error_callback;
     l_client_pvt->worker = dap_events_worker_get_auto();
-
     dap_client_pvt_new(l_client_pvt);
-
     return l_client;
-
-MEM_ALLOC_ERR:
-    log_it(L_ERROR, "dap_client_new can not allocate memory");
-    if (l_client) {
-        DAP_DEL_Z(l_client->_internal);
-        DAP_DELETE(l_client);
-    }
-    return NULL;
 }
 
 /**
@@ -113,16 +99,11 @@ MEM_ALLOC_ERR:
  */
 void dap_client_set_uplink_unsafe(dap_client_t *a_client, const char *a_addr, uint16_t a_port)
 {
-    if (!a_client) {
-        log_it(L_CRITICAL, "Invalid client");
-        return;
-    }
-    DAP_DEL_Z(a_client->uplink_addr);
-    if(!a_addr || !a_addr[0] || !a_port) {
-        log_it(L_ERROR, "Can't set uplink, invalid IP and/or port");
-        return;
-    }
-    a_client->uplink_addr = strdup(a_addr);
+// sanity check
+    dap_return_if_pass(!a_client || !a_addr || !a_addr[0] || !a_port);
+// func work
+    memset(a_client->uplink_addr, 0, sizeof(a_client->uplink_addr));
+    strncpy(a_client->uplink_addr, a_addr, sizeof(a_client->uplink_addr) - 1);
     a_client->uplink_port = a_port;
 }
 
@@ -263,7 +244,6 @@ void dap_client_delete_unsafe(dap_client_t *a_client)
     if(a_client->delete_callback)
         a_client->delete_callback(a_client, a_client->callbacks_arg);
     dap_client_pvt_delete_unsafe( DAP_CLIENT_PVT(a_client) );
-    DAP_DEL_Z(a_client->uplink_addr);
     DAP_DEL_Z(a_client->active_channels);
     DAP_DELETE(a_client);
 }
@@ -312,7 +292,7 @@ static void s_go_stage_on_client_worker_unsafe(dap_worker_t UNUSED_ARG *a_worker
         if (l_client->stage_target == l_stage_target) {
             log_it(L_DEBUG, "Already have target state %s", dap_client_stage_str(l_stage_target));
             if (l_stage_end_callback)
-                l_stage_end_callback(l_client, NULL);
+                l_stage_end_callback(l_client, l_client->callbacks_arg);
             return;
         }
         if (l_client->stage_target < l_stage_target) {
