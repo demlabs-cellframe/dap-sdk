@@ -33,7 +33,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 dap_cluster_t *s_clusters = NULL, *s_cluster_mnemonims = NULL;
 pthread_rwlock_t s_clusters_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 
-static void s_cluster_member_delete(dap_cluster_member_t *a_member);
+static void s_cluster_member_delete(dap_cluster_t *a_cluster, dap_cluster_member_t *a_member);
 
 /**
  * @brief dap_cluster_new
@@ -120,7 +120,7 @@ void dap_cluster_delete(dap_cluster_t *a_cluster)
     dap_cluster_member_t *l_member, *l_tmp;
     pthread_rwlock_wrlock(&a_cluster->members_lock);
     HASH_ITER(hh, a_cluster->members, l_member, l_tmp)
-        s_cluster_member_delete(l_member);
+        s_cluster_member_delete(a_cluster, l_member);
     pthread_rwlock_unlock(&a_cluster->members_lock);
     assert(!a_cluster->_inheritor);
     DAP_DELETE(a_cluster);
@@ -173,16 +173,16 @@ int dap_cluster_member_delete(dap_cluster_t *a_cluster, dap_stream_node_addr_t *
     dap_cluster_member_t *l_member = NULL;
     HASH_FIND(hh, a_cluster->members, a_member_addr, sizeof(*a_member_addr), l_member);
     if (l_member)
-        s_cluster_member_delete(l_member);
+        s_cluster_member_delete(a_cluster, l_member);
     pthread_rwlock_unlock(&a_cluster->members_lock);
     return l_member ? 0 : 1;
 }
 
-static void s_cluster_member_delete(dap_cluster_member_t *a_member)
+static void s_cluster_member_delete(dap_cluster_t *a_cluster, dap_cluster_member_t *a_member)
 {
-    if (a_member->cluster->members_delete_callback)
-        a_member->cluster->members_delete_callback(a_member->cluster, a_member);
-    HASH_DEL(a_member->cluster, a_member);
+    if (a_cluster->members_delete_callback)
+        a_cluster->members_delete_callback(a_cluster, a_member);
+    HASH_DEL(a_cluster, a_member);
     DAP_DEL_Z(a_member->info);
     DAP_DELETE(a_member);
 }

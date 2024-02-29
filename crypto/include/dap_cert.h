@@ -76,7 +76,8 @@ dap_cert_t *dap_cert_generate_mem_with_seed(const char *a_cert_name, dap_enc_key
 dap_cert_t *dap_cert_generate_mem(const char *a_cert_name, dap_enc_key_type_t a_key_type );
 
 
-dap_cert_t *dap_cert_add_file(const char *a_cert_name,const char *a_folder_path);
+dap_cert_t *dap_cert_add_file(const char *a_cert_name, const char *a_folder_path);
+int dap_cert_delete_file(const char *a_cert_name, const char *a_folder_path);
 int dap_cert_save_to_folder(dap_cert_t *a_cert, const char *a_file_dir_path);
 const char *dap_cert_get_folder(int a_n_folder_path);
 void dap_cert_add_folder(const char *a_folder_path);
