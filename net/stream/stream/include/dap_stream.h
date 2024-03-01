@@ -44,20 +44,21 @@ typedef struct dap_cluster dap_cluster_t;
 
 typedef struct dap_stream {
     dap_stream_node_addr_t node;
+    bool authorized;
     int id;
-    dap_stream_session_t * session;
-    dap_events_socket_t * esocket; // Connection
+    dap_stream_session_t *session;
+    dap_events_socket_t *esocket; // Connection
     dap_events_socket_uuid_t esocket_uuid;
-    dap_stream_worker_t * stream_worker;
-    struct dap_http_client * conn_http; // HTTP-specific
+    dap_stream_worker_t *stream_worker;
+    struct dap_http_client *conn_http; // HTTP-specific
 
     dap_timerfd_t *keepalive_timer;
     bool is_active;
 
-    char * service_key;
+    char *service_key;
     bool is_client_to_uplink;
 
-    struct dap_stream_pkt * in_pkt;
+    struct dap_stream_pkt *in_pkt;
     struct dap_stream_pkt *pkt_buf_in;
     size_t pkt_buf_in_data_size;
     size_t pkt_buf_in_size_expected;
@@ -166,4 +167,5 @@ dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey);
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count);
 void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count);
 void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
+size_t dap_stream_cluster_members_count(dap_cluster_t *a_cluster);
 dap_stream_node_addr_t dap_stream_get_random_link();

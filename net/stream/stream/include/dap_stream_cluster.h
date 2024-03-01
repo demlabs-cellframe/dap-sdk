@@ -42,7 +42,7 @@ typedef struct dap_cluster_member {
     UT_hash_handle hh;
 } dap_cluster_member_t;
 
-typedef void (*dap_cluster_change_callback_t)(dap_cluster_t *a_cluster, dap_cluster_member_t *a_member);
+typedef void (*dap_cluster_change_callback_t)(dap_cluster_member_t *a_member);
 
 // Role in cluster
 typedef enum dap_cluster_role {
@@ -76,12 +76,12 @@ dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_strea
 dap_cluster_member_t *dap_cluster_member_find_unsafe(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
 int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
 int dap_cluster_member_delete(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
+void dap_cluster_delete_all_members(dap_cluster_t *a_cluster);
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size,
                            dap_stream_node_addr_t *a_exclude_aray, size_t a_exclude_array_size);
 json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster);
 char *dap_cluster_get_links_info(dap_cluster_t *a_cluster);
 void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr);
-void dap_cluser_link_add_for_all(dap_stream_node_addr_t *a_addr);
 dap_stream_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster);
 DAP_STATIC_INLINE dap_guuid_t dap_cluster_guuid_compose(uint64_t a_net_id, uint64_t a_service_id)
 {
