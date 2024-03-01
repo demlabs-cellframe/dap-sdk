@@ -47,6 +47,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_config.h"
 #include "dap_worker.h"
 #include "dap_events.h"
+#include "dap_strfuncs.h"
 #include "dap_proc_thread.h"
 #include "dap_http_server.h"
 #include "dap_http_client.h"
