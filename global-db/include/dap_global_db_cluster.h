@@ -28,6 +28,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_stream.h"
 #include "dap_stream_cluster.h"
 #include "dap_global_db.h"
+#include "dap_link_manager.h"
 
 #define DAP_GLOBAL_DB_CLUSTER_GLOBAL                "global"    // This mnemonim is for globally broadcasting grops
 #define DAP_GLOBAL_DB_CLUSTER_LOCAL                 "local"     // This mnemonim is for not broadcasting groups
@@ -83,6 +84,7 @@ typedef struct dap_global_db_cluster {
     dap_global_db_instance_t *dbi;              // Pointer to database instance that contains the cluster
     struct dap_global_db_cluster *prev, *next;  // Pointers to next and previous cluster instances in the global clusters list
     dap_global_db_sync_context_t sync_context;  // Cluster synchronization context for current client
+    dap_link_manager_t *link_manager;  // Pointer to link manager
 } dap_global_db_cluster_t;
 
 int dap_global_db_cluster_init();

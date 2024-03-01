@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 project(DAP_SDK_NATIVE C)
-set(DAP_SDK_NATIVE_VERSION "2.3-0")
+set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
 include(ExternalProject)
 
@@ -57,7 +57,7 @@ if (CELLFRAME_MODULES MATCHES "chains")
 endif()
 
 if (CELLFRAME_MODULES MATCHES "network")
-    set(DAPSDK_MODULES "${DAPSDK_MODULES} app-cli plugin network-core network-client network-server")
+    set(DAPSDK_MODULES "${DAPSDK_MODULES} app-cli plugin network-core network-link_manager network-client network-server")
 endif()
 
 if (CELLFRAME_MODULES MATCHES "avrestream")
@@ -66,7 +66,7 @@ endif()
 
 if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
 
-    set(DAPSDK_MODULES "core crypto io network-core network-client network-server")
+    set(DAPSDK_MODULES "core crypto io network-core network-link_manager network-client network-server")
     set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m)
     if(NOT ANDROID)
         set(CELLFRAME_LIBS ${CELLFRAME_LIBS} pthread)
@@ -88,7 +88,7 @@ if (BUILD_DAP_SDK_TESTS)
     set(BUILD_CRYPTO_TESTS ON)
 #    set(BUILD_WITH_GDB_DRIVER_MDBX ON)
 #    set(BUILD_GLOBAL_DB_TEST ON)
-    set(DAPSDK_MODULES "crypto io network-core network-server network-client global-db test-framework")
+    set(DAPSDK_MODULES "crypto io network-core network-server network-link_manager network-client global-db test-framework")
 #    add_definitions("-DDAP_CHAIN_GDB_ENGINE_MDBX")
 #    set(DAPSDK_MODULES ${DAPSDK_MODULES} global-db)
     set(SPHINCSPLUS_FLEX ON)
@@ -130,6 +130,12 @@ endif()
 if (DAPSDK_MODULES MATCHES "network-core")
     add_subdirectory(net/stream)
     message("[+] Module 'stream'")
+endif()
+
+# Networking link manager
+if (DAPSDK_MODULES MATCHES "network-link_manager")
+    add_subdirectory(net/link_manager)
+    message("[+] Module 'link manager'")
 endif()
 
 # Networking client

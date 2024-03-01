@@ -56,6 +56,7 @@
 #include "dap_stream_pkt.h"
 #include "dap_http_client.h"
 #include "dap_net.h"
+#include "dap_link_manager.h"
 
 #define LOG_TAG "dap_client_pvt"
 
@@ -531,7 +532,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     l_es->remote_port = a_client_pvt->client->uplink_port;
                     strncpy(l_es->remote_addr_str, a_client_pvt->client->uplink_addr, INET_ADDRSTRLEN);
 
-                    a_client_pvt->stream = dap_stream_new_es_client(l_es, &a_client_pvt->stream_addr);
+                    a_client_pvt->stream = dap_stream_new_es_client(l_es, &DAP_LINK(a_client_pvt->client)->node_addr);
+                    a_client_pvt->stream->authorized = a_client_pvt->authorized;
                     assert(a_client_pvt->stream);
                     a_client_pvt->stream->session = dap_stream_session_pure_new(); // may be from in packet?
 
@@ -705,7 +707,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 a_client_pvt->stage_status = STAGE_STATUS_COMPLETE;
                 if (a_client_pvt->client->stage_target_done_callback) {
                     log_it(L_NOTICE, "Stage %s is achieved", dap_client_stage_str(a_client_pvt->stage));
-                    a_client_pvt->client->stage_target_done_callback(a_client_pvt->client, NULL);
+                    a_client_pvt->client->stage_target_done_callback(a_client_pvt->client, a_client_pvt->client->callbacks_arg);
                 }
                 if (a_client_pvt->stage == STAGE_STREAM_STREAMING) {
                     // Send all pkts in queue
@@ -969,30 +971,30 @@ int s_json_multy_obj_parse_str(const char *a_key, const char *a_val, int a_count
  */
 static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_data_size)
 {
+// sanity check
     dap_client_pvt_t * l_client_pvt = DAP_CLIENT_PVT(a_client);
-
+    dap_return_if_pass(!l_client_pvt || !a_data);
+// func work
+    char *l_session_id_b64 = NULL;
+    char *l_bob_message_b64 = NULL;
+    char *l_node_sign_b64 = NULL;
+    char *l_bob_message = NULL;
     l_client_pvt->last_error = ERROR_NO_ERROR;
-
-    if (!l_client_pvt->session_key_open){
-        log_it(L_ERROR, "m_enc_init_response: session is NULL!");
-        l_client_pvt->last_error = ERROR_ENC_SESSION_CLOSED ;
-    }
-
-    if (l_client_pvt->last_error == ERROR_NO_ERROR) {
-        if (!a_data_size) {
-            log_it(L_ERROR, "ENC: Wrong response (size %zu data '%s')", a_data_size, (char* ) a_data);
-            l_client_pvt->last_error = ERROR_ENC_NO_KEY;
-        } else if (a_data_size <= 10) {
-            log_it(L_ERROR, "ENC: Wrong response (size %zu)", a_data_size);
-            l_client_pvt->last_error = ERROR_ENC_NO_KEY;
+    while(l_client_pvt->last_error == ERROR_NO_ERROR) {
+        // first checks
+        if (!l_client_pvt->session_key_open){
+            log_it(L_ERROR, "m_enc_init_response: session is NULL!");
+            l_client_pvt->last_error = ERROR_ENC_SESSION_CLOSED ;
+            break;
         }
-    }
-    if (l_client_pvt->last_error == ERROR_NO_ERROR) {
-
-        char *l_session_id_b64 = NULL;
-        char *l_bob_message_b64 = NULL;
-        char *l_node_sign_b64 = NULL;
+        if (a_data_size <= 10) {
+            log_it(L_ERROR, "ENC: Wrong response (size %zu data '%s')", a_data_size, (char* )a_data);
+            l_client_pvt->last_error = ERROR_ENC_NO_KEY;
+            break;
+        }
+        size_t l_bob_message_size = 0;
         int l_json_parse_count = 0;
+        // parse data
         struct json_object *jobj = json_tokener_parse((const char *) a_data);
         if(jobj) {
             // parse encrypt_id & encrypt_msg
@@ -1018,82 +1020,85 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             if(!l_client_pvt->remote_protocol_version)
                 l_client_pvt->remote_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT;
         }
+        // check data
         if (l_json_parse_count < 2 || l_json_parse_count > 4) {
             l_client_pvt->last_error = ERROR_ENC_NO_KEY;
             log_it(L_ERROR, "ENC: Wrong response (size %zu data '%s')", a_data_size, (char* ) a_data);
+            break;
         }
-        if (!l_session_id_b64) {
+        if (!l_session_id_b64 || !l_bob_message_b64) {
             l_client_pvt->last_error = ERROR_ENC_NO_KEY;
-            log_it(L_WARNING,"ENC: no session id in base64");
+            log_it(L_WARNING,"ENC: no %s session id in base64", !l_session_id_b64 ? "session" : "bob message");
+            break;
         }
+        // decode session key id
+        DAP_NEW_Z_SIZE_RET(l_client_pvt->session_key_id, char, strlen(l_session_id_b64) + 1, l_session_id_b64, l_bob_message_b64, l_node_sign_b64);
+        if (!dap_enc_base64_decode(l_session_id_b64, strlen(l_session_id_b64),
+                l_client_pvt->session_key_id, DAP_ENC_DATA_TYPE_B64)) {
+            log_it(L_WARNING, "ENC: Can't decode session id from base64");
+            l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
+        } else {
+            log_it(L_DEBUG, "ENC: session Key ID %s", l_client_pvt->session_key_id);
+        }
+        // decode bob message
+        DAP_NEW_Z_SIZE_RET(l_bob_message, char, strlen(l_bob_message_b64) + 1, l_session_id_b64, l_bob_message_b64, l_node_sign_b64, l_client_pvt->session_key_id);
+        l_bob_message_size = dap_enc_base64_decode(l_bob_message_b64, strlen(l_bob_message_b64),
+                l_bob_message, DAP_ENC_DATA_TYPE_B64);
+        if (!l_bob_message_size) {
+            log_it(L_WARNING, "ENC: Can't decode bob message from base64");
+            l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
+            break;
+        }
+        // gen alice shared key
+        if (!l_client_pvt->session_key_open->gen_alice_shared_key(
+                l_client_pvt->session_key_open, l_client_pvt->session_key_open->priv_key_data,
+                l_bob_message_size, (unsigned char*) l_bob_message)) {
+            log_it(L_WARNING, "ENC: Can't generate private key from bob message");
+            l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
+            break;
+        }
+        // generate session key
+        l_client_pvt->session_key = dap_enc_key_new_generate(l_client_pvt->session_key_type,
+                l_client_pvt->session_key_open->priv_key_data, // shared key
+                l_client_pvt->session_key_open->priv_key_data_size,
+                l_client_pvt->session_key_id, strlen(l_client_pvt->session_key_id), l_client_pvt->session_key_block_size);
 
-        if (l_client_pvt->last_error == ERROR_NO_ERROR) {
-            l_client_pvt->session_key_id = DAP_NEW_Z_SIZE(char, strlen(l_session_id_b64) + 1);
-            size_t l_rc = dap_enc_base64_decode(l_session_id_b64, strlen(l_session_id_b64),
-                    l_client_pvt->session_key_id, DAP_ENC_DATA_TYPE_B64);
-            if (!l_rc) {
-                log_it(L_WARNING, "ENC: Can't decode session id from base64");
-                l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
-            } else
-                log_it(L_DEBUG, "ENC: session Key ID %s", l_client_pvt->session_key_id);
-        }
-        DAP_DEL_Z(l_session_id_b64);
-        if(!l_bob_message_b64){
-            l_client_pvt->last_error = ERROR_ENC_NO_KEY;
-            log_it(L_WARNING,"ENC: no bob message in base64");
-        }
-        char *l_bob_message = NULL;
-        size_t l_bob_message_size = 0;
-        if (l_client_pvt->last_error == ERROR_NO_ERROR) {
-            l_bob_message = DAP_NEW_Z_SIZE(char, strlen(l_bob_message_b64) + 1);
-            l_bob_message_size = dap_enc_base64_decode(l_bob_message_b64, strlen(l_bob_message_b64),
-                    l_bob_message, DAP_ENC_DATA_TYPE_B64);
-            if (!l_bob_message_size) {
-                log_it(L_WARNING, "ENC: Can't decode bob message from base64");
-                l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
-            }
-        }
-        DAP_DEL_Z(l_bob_message_b64);
-
-        if (l_client_pvt->last_error == ERROR_NO_ERROR) {
-            size_t l_rc = l_client_pvt->session_key_open->gen_alice_shared_key(
-                    l_client_pvt->session_key_open, l_client_pvt->session_key_open->priv_key_data,
-                    l_bob_message_size, (unsigned char*) l_bob_message);
-            if (!l_rc) {
-                log_it(L_WARNING, "ENC: Can't generate private key from bob message");
-                l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
-            }
-        }
-        if (l_client_pvt->last_error == ERROR_NO_ERROR) {
-            l_client_pvt->session_key = dap_enc_key_new_generate(l_client_pvt->session_key_type,
-                    l_client_pvt->session_key_open->priv_key_data, // shared key
-                    l_client_pvt->session_key_open->priv_key_data_size,
-                    l_client_pvt->session_key_id, strlen(l_client_pvt->session_key_id), l_client_pvt->session_key_block_size);
-        }
-        if (l_client_pvt->last_error == ERROR_NO_ERROR &&
-                    l_client_pvt->stage != STAGE_ENC_INIT) { // We are in wrong stage
+        if (l_client_pvt->stage != STAGE_ENC_INIT) { // We are in wrong stage
             l_client_pvt->last_error = ERROR_WRONG_STAGE;
             log_it(L_WARNING, "ENC: initialized encryption but current stage is %s (%s)",
                     dap_client_get_stage_str(a_client), dap_client_get_stage_status_str(a_client));
+            break;
         }
-        if (l_client_pvt->last_error == ERROR_NO_ERROR && l_node_sign_b64) {
-            dap_sign_t *l_sign = (dap_sign_t *)DAP_NEW_Z_SIZE(uint8_t, strlen(l_node_sign_b64) + 1);
-            if (!l_sign){
-                log_it(L_CRITICAL, "Memory allocation error");
-            }
+        // verify node sign
+        if (l_node_sign_b64) {
+            dap_sign_t *l_sign = NULL;
+            DAP_NEW_Z_SIZE_RET(l_sign, dap_sign_t, strlen(l_node_sign_b64) + 1, l_session_id_b64, l_bob_message_b64, l_node_sign_b64, l_bob_message, l_client_pvt->session_key_id);
             size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_sign, DAP_ENC_DATA_TYPE_B64);
             if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
-                l_client_pvt->stream_addr = dap_stream_node_addr_from_sign(l_sign);
-                log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_client_pvt->stream_addr));
-            } else
+                dap_stream_node_addr_t l_sign_node_addr = dap_stream_node_addr_from_sign(l_sign);
+                if (l_sign_node_addr.uint64 != DAP_LINK(a_client)->node_addr.uint64) {
+                    log_it(L_WARNING, "Unverified stream to node "NODE_ADDR_FP_STR" signed by "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(DAP_LINK(a_client)->node_addr), NODE_ADDR_FP_ARGS_S(l_sign_node_addr));
+                    l_client_pvt->authorized = false;
+                } else {
+                    log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_sign_node_addr));
+                    l_client_pvt->authorized = true;
+                }
+            } else {
                 log_it(L_WARNING, "ENC: Invalid node sign");
+                l_client_pvt->authorized = false;
+            }
+            DAP_DELETE(l_sign);
+        } else {
+            log_it(L_INFO, "Unverified stream to node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(DAP_LINK(a_client)->node_addr));
+            l_client_pvt->authorized = false;
         }
-        DAP_DEL_Z(l_node_sign_b64);
-        DAP_DEL_Z(l_bob_message);
+        break;
     }
-    if (l_client_pvt->last_error == ERROR_NO_ERROR)
+
+    DAP_DEL_MULTY(l_session_id_b64, l_bob_message_b64, l_node_sign_b64, l_bob_message);
+    if (l_client_pvt->last_error == ERROR_NO_ERROR) {
         l_client_pvt->stage_status = STAGE_STATUS_DONE;
-    else {
+    } else {
         DAP_DEL_Z(l_client_pvt->session_key_id);
         l_client_pvt->stage_status = STAGE_STATUS_ERROR;
     }
