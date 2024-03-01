@@ -535,32 +535,29 @@ dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_nod
     dap_link_t *l_ret = NULL;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
     HASH_FIND(hh, s_link_manager->links, a_node_addr, sizeof(*a_node_addr), l_ret);
-    if (l_ret)
-        return pthread_rwlock_unlock(&s_link_manager->links_lock),
-            log_it(L_DEBUG, "Link "NODE_ADDR_FP_STR" already present", NODE_ADDR_FP_ARGS(a_node_addr)),
-        l_ret;
-    
-    l_ret = DAP_NEW_Z(dap_link_t);
     if (!l_ret) {
-        log_it(L_CRITICAL,"%s", g_error_memory_alloc);
-        pthread_rwlock_unlock(&s_link_manager->links_lock);
-        return NULL;
+        l_ret = DAP_NEW_Z(dap_link_t);
+        if (!l_ret) {
+            log_it(L_CRITICAL,"%s", g_error_memory_alloc);
+            pthread_rwlock_unlock(&s_link_manager->links_lock);
+            return NULL;
+        }
+        dap_client_t *l_client = dap_client_new(s_client_delete_callback, s_client_error_callback, NULL);
+        dap_client_set_is_always_reconnect(l_client, false);
+        dap_client_set_active_channels_unsafe(l_client, "CGND");
+        *l_ret = (dap_link_t) {
+            .node_addr.uint64 = a_node_addr->uint64,
+            .client = l_client,
+            .link_manager = s_link_manager
+        };
+        l_ret->client->_inheritor = l_ret;
+        HASH_ADD(hh, s_link_manager->links, node_addr, sizeof(l_ret->node_addr), l_ret);
     }
-    dap_client_t *l_client = dap_client_new(s_client_delete_callback, s_client_error_callback, NULL);
-    dap_client_set_is_always_reconnect(l_client, false);
-    dap_client_set_active_channels_unsafe(l_client, "CGND");
     if (a_host)
-        dap_strncpy(l_client->uplink_addr, a_host, 0xFF);
-    l_client->uplink_port = a_port;
-    l_client->_inheritor = l_ret;
-
-    *l_ret = (dap_link_t) {
-        .node_addr = a_node_addr,
-        .valid = a_host && *a_host && a_port && dap_strcmp(a_host, "::"),
-        .client = l_client,
-        .link_manager = s_link_manager
-    };
-    HASH_ADD(hh, s_link_manager->links, node_addr, sizeof(l_ret->node_addr), l_ret);
+        dap_strncpy(l_ret->client->uplink_addr, a_host, 0xFF);
+    if (a_port)
+        l_ret->client->uplink_port = a_port;
+    l_ret->valid = l_ret->client->uplink_addr && *l_ret->client->uplink_addr && l_ret->client->uplink_port && dap_strcmp(a_host, "::");
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     if (l_ret->valid) {
         log_it(L_INFO, "Create link to node " NODE_ADDR_FP_STR " with address %s : %d", NODE_ADDR_FP_ARGS_S(l_ret->node_addr), l_ret->client->uplink_addr, l_ret->client->uplink_port);
