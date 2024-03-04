@@ -47,6 +47,7 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_config.h"
 #include "dap_worker.h"
 #include "dap_events.h"
+#include "dap_strfuncs.h"
 #include "dap_proc_thread.h"
 #include "dap_http_server.h"
 #include "dap_http_client.h"
@@ -391,8 +392,7 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
 {
     assert(a_http_client->esocket->server);
     if (a_http_client->esocket->server->type == DAP_SERVER_TCP || a_http_client->esocket->server->type == DAP_SERVER_UDP) {
-        if ( dap_http_ban_list_client_check_ipv4( ((struct sockaddr_in*)&a_http_client->esocket->addr_storage)->sin_addr ) ) {
-            // TODO make it universal for IPv6
+        if ( dap_http_ban_list_client_check(a_http_client->esocket->remote_addr_str, NULL, NULL) ) {
             a_http_client->reply_status_code = Http_Status_Forbidden;
             return;
         }
@@ -407,7 +407,7 @@ static void s_http_client_headers_read( dap_http_client_t *a_http_client, void U
     l_http_simple->worker = a_http_client->esocket->worker;
     l_http_simple->reply_size_max = DAP_HTTP_SIMPLE_URL_PROC( a_http_client->proc )->reply_size_max;
     l_http_simple->reply_byte = DAP_NEW_Z_SIZE(uint8_t, DAP_HTTP_SIMPLE(a_http_client)->reply_size_max );
-    strncpy(l_http_simple->es_hostaddr, l_http_simple->esocket->remote_addr_str, INET6_ADDRSTRLEN);
+    dap_strncpy(l_http_simple->es_hostaddr, l_http_simple->esocket->remote_addr_str, INET6_ADDRSTRLEN);
 //    Made a temporary solution to handle simple CORS requests.
 //    This is necessary in order to be able to request information using JavaScript obtained from another source.
     dap_http_header_t* l_header_origin = dap_http_header_find(a_http_client->in_headers, "Origin");

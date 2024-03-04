@@ -474,7 +474,7 @@ void dap_link_manager_set_net_status(uint64_t a_net_id, bool a_status)
 void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster)
 {
     dap_return_if_pass(!s_link_manager || !a_addr || !a_cluster);
-    dap_link_t *l_link = dap_link_manager_link_create_or_update(a_addr, NULL, NULL, 0);
+    dap_link_t *l_link = dap_link_manager_link_create_or_update(a_addr, NULL, 0);
     l_link->links_clusters = dap_list_append(l_link->links_clusters, a_cluster);
     dap_list_t *l_item = NULL;
     if (a_cluster->role == DAP_CLUSTER_ROLE_EMBEDDED)
@@ -527,8 +527,7 @@ void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_c
  * @param a_port - host port
  * @return if ERROR null, other - pointer to dap_link_t
  */
-dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_node_addr, 
-    struct in_addr *a_addr_v4, struct in6_addr *a_addr_v6, uint16_t a_port)
+dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_node_addr, const char *a_host, uint16_t a_port)
 {
 // sanity check
     dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64, NULL);
@@ -543,24 +542,22 @@ dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_nod
                 pthread_rwlock_unlock(&s_link_manager->links_lock);
                 return NULL;
             }
-            l_ret->node_addr.uint64 = a_node_addr->uint64;
-            l_ret->link_manager = s_link_manager;
-            l_ret->client = dap_client_new(s_client_delete_callback, s_client_error_callback, NULL);
-            dap_client_set_is_always_reconnect(l_ret->client, false);
-            dap_client_set_active_channels_unsafe(l_ret->client, "CGND");
+            dap_client_t *l_client = dap_client_new(s_client_delete_callback, s_client_error_callback, NULL);
+            dap_client_set_is_always_reconnect(l_client, false);
+            dap_client_set_active_channels_unsafe(l_client, "CGND");
+            *l_ret = (dap_link_t) {
+                .node_addr.uint64 = a_node_addr->uint64,
+                .client = l_client,
+                .link_manager = s_link_manager
+            };
             l_ret->client->_inheritor = l_ret;
             HASH_ADD(hh, s_link_manager->links, node_addr, sizeof(l_ret->node_addr), l_ret);
         }
-        // fill addr
-        if(a_addr_v4 && a_addr_v4->s_addr){
-            inet_ntop(AF_INET, a_addr_v4, l_ret->client->uplink_addr, INET_ADDRSTRLEN);
-        } else if (a_addr_v6) {
-            inet_ntop(AF_INET6, a_addr_v6, l_ret->client->uplink_addr, INET6_ADDRSTRLEN);
-        }
+        if (a_host)
+            dap_strncpy(l_ret->client->uplink_addr, a_host, 0xFF);
         if (a_port)
             l_ret->client->uplink_port = a_port;
-        l_ret->node_addr.uint64 = a_node_addr->uint64;
-        l_ret->valid = l_ret->client->uplink_port && (strlen(l_ret->client->uplink_addr) && strcmp(l_ret->client->uplink_addr, "::"));
+        l_ret->valid = l_ret->client->uplink_addr && *l_ret->client->uplink_addr && l_ret->client->uplink_port && dap_strcmp(a_host, "::");
         if (l_ret->valid) {
             log_it(L_INFO, "Create link to node " NODE_ADDR_FP_STR " with address %s : %d", NODE_ADDR_FP_ARGS_S(l_ret->node_addr), l_ret->client->uplink_addr, l_ret->client->uplink_port);
         }
@@ -612,7 +609,7 @@ int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr)
 // sanity check
     dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64 || !s_link_manager->active || !s_check_active_nets(), -1);
 // func work
-    dap_link_t *l_link = dap_link_manager_link_create_or_update(a_node_addr, NULL, NULL, 0);
+    dap_link_t *l_link = dap_link_manager_link_create_or_update(a_node_addr, NULL, 0);
     if (l_link->state != LINK_STATE_DISCONNECTED) {
         log_it(L_WARNING, "Get dowlink from "NODE_ADDR_FP_STR" with existed link", NODE_ADDR_FP_ARGS(a_node_addr));
         return -3;
@@ -689,7 +686,7 @@ void dap_link_manager_add_static_links_cluster(dap_stream_node_addr_t *a_node_ad
     dap_return_if_pass_err(!s_link_manager, s_init_error);
     dap_return_if_pass(!a_node_addr || !a_cluster);
 // func work
-    dap_link_t *l_link = dap_link_manager_link_create_or_update(a_node_addr, NULL, NULL, 0);
+    dap_link_t *l_link = dap_link_manager_link_create_or_update(a_node_addr, NULL, 0);
     dap_return_if_pass(!l_link);
     l_link->static_links_clusters = dap_list_append(l_link->static_links_clusters, a_cluster);
 }
