@@ -1,123 +1,99 @@
 #include "dap_http_ban_list_client.h"
+#include "dap_strfuncs.h"
+#include "dap_hash.h"
 
-//IP V4
-static dap_http_ban_list_client_record_t *s_ipv4_ban_list = NULL;
-static pthread_rwlock_t s_ipv4_ban_list_rwlock;
+typedef struct ban_record {
+    dap_hash_fast_t decree_hash;
+    dap_time_t ts_created;
+    UT_hash_handle hh;
+    char addr[];
+} ban_record_t;
 
-bool dap_http_ban_list_client_check_ipv4(struct in_addr a_ip) {
-    pthread_rwlock_rdlock(&s_ipv4_ban_list_rwlock);
-    dap_http_ban_list_client_record_t *l_record = NULL;
-    HASH_FIND(hh, s_ipv4_ban_list, &a_ip, sizeof (struct in_addr), l_record);
-    pthread_rwlock_unlock(&s_ipv4_ban_list_rwlock);
-    return l_record ? true : false;
-}
+pthread_rwlock_t s_ban_list_lock = PTHREAD_RWLOCK_INITIALIZER;
+ban_record_t *s_ban_list;
 
-void dap_http_ban_list_client_add_ipv4(struct in_addr a_ip, dap_hash_fast_t a_decree_hash, dap_time_t a_ts_created) {
-    dap_http_ban_list_client_record_t *l_record = DAP_NEW(dap_http_ban_list_client_record_t);
-    l_record->ip_v4 = a_ip;
-    l_record->decree_hash = a_decree_hash;
-    l_record->ts_created = a_ts_created;
-    pthread_rwlock_wrlock(&s_ipv4_ban_list_rwlock);
-    HASH_ADD(hh, s_ipv4_ban_list, ip_v4, sizeof(struct in_addr), l_record);
-    pthread_rwlock_unlock(&s_ipv4_ban_list_rwlock);
-}
-
-void dap_http_ban_list_client_remove_ipv4(struct in_addr a_ip){
-    pthread_rwlock_wrlock(&s_ipv4_ban_list_rwlock);
-    dap_http_ban_list_client_record_t *l_record = NULL, *tmp = NULL;
-    HASH_FIND(hh, s_ipv4_ban_list, &a_ip, sizeof (struct in_addr), l_record);
-    if (l_record) {
-        HASH_DEL(s_ipv4_ban_list, l_record);
-        DAP_DELETE(l_record);
+bool dap_http_ban_list_client_check(const char *a_addr, dap_hash_fast_t *a_decree_hash, dap_time_t *a_ts) {
+    ban_record_t *l_rec = NULL;
+    pthread_rwlock_rdlock(&s_ban_list_lock);
+    HASH_FIND_STR(s_ban_list, a_addr, l_rec);
+    pthread_rwlock_unlock(&s_ban_list_lock);
+    if (l_rec) {
+        if (a_decree_hash) *a_decree_hash = l_rec->decree_hash;
+        if (a_ts) *a_ts = l_rec->ts_created;
+        return true;
     }
-    pthread_rwlock_unlock(&s_ipv4_ban_list_rwlock);
+    return false;
 }
 
-void dap_http_ban_list_client_ipv4_print(dap_string_t *a_str_out){
-    a_str_out = dap_string_append(a_str_out, "\t IP v4.\n\n");
-    pthread_rwlock_rdlock(&s_ipv4_ban_list_rwlock);
-    if (!s_ipv4_ban_list) {
-        a_str_out = dap_string_append(a_str_out, "\t\t Not found.\n");
-        return;
-    }
-    int number = 1;
-    dap_http_ban_list_client_record_t *l_record = NULL, *l_tmp = NULL;
-    HASH_ITER(hh, s_ipv4_ban_list, l_record, l_tmp) {
-        char l_tm[85];
-        char l_tm_ip[INET_ADDRSTRLEN];
-        dap_time_to_str_rfc822(l_tm, 85, l_record->ts_created);
-        dap_string_append_printf(a_str_out, "\t\t%d) %s\n"
-                                            "\t\t\tIP: %s\n"
-                                            "\t\t\tCreated: %s\n\n",
-                                number++, dap_chain_hash_fast_to_str_static(&l_record->decree_hash),
-                                inet_ntop(AF_INET, &l_record->ip_v4, l_tm_ip, INET_ADDRSTRLEN), l_tm);
-    }
-    pthread_rwlock_unlock(&s_ipv4_ban_list_rwlock);
+int dap_http_ban_list_client_add(const char *a_addr, dap_hash_fast_t a_decree_hash, dap_time_t a_ts) {
+    if ( dap_http_ban_list_client_check(a_addr, NULL, NULL) )
+        return -1;
+    ban_record_t *l_rec = DAP_NEW_Z_SIZE( ban_record_t, sizeof(ban_record_t) + strlen(a_addr) + 1);
+    *l_rec = (ban_record_t) {
+        .decree_hash = a_decree_hash,
+        .ts_created = a_ts,
+    };
+    strcpy(l_rec->addr, a_addr);
+    pthread_rwlock_wrlock(&s_ban_list_lock);
+    HASH_ADD_STR(s_ban_list, addr, l_rec);
+    pthread_rwlock_unlock(&s_ban_list_lock);
+    return 0;
 }
 
-//IP V6
-
-static dap_http_ban_list_client_record_t *s_ipv6_ban_list = NULL;
-static pthread_rwlock_t s_ipv6_ban_list_rwlock;
-
-bool dap_http_ban_list_client_check_ipv6(struct in6_addr a_ip_v6) {
-    pthread_rwlock_rdlock(&s_ipv6_ban_list_rwlock);
-    dap_http_ban_list_client_record_t *l_record = NULL;
-    HASH_FIND(hh, s_ipv6_ban_list, &a_ip_v6, sizeof(struct in6_addr), l_record);
-    pthread_rwlock_unlock(&s_ipv6_ban_list_rwlock);
-    return l_record ? true : false;
+int dap_http_ban_list_client_remove(const char *a_addr) {
+    ban_record_t *l_rec = NULL;
+    int l_ret = 0;
+    pthread_rwlock_wrlock(&s_ban_list_lock);
+    HASH_FIND_STR(s_ban_list, a_addr, l_rec);
+    if (l_rec) {
+        HASH_DEL(s_ban_list, l_rec);
+        DAP_DELETE(l_rec);
+    } else
+        l_ret = -1;
+    pthread_rwlock_unlock(&s_ban_list_lock);
+    return l_ret;
 }
 
-void dap_http_ban_list_client_add_ipv6(struct in6_addr a_ip_v6, dap_hash_fast_t a_decree_hash, dap_time_t a_ts_created) {
-    dap_http_ban_list_client_record_t *l_record = DAP_NEW(dap_http_ban_list_client_record_t);
-    l_record->ip_v6 = a_ip_v6;
-    l_record->decree_hash = a_decree_hash;
-    l_record->ts_created = a_ts_created;
-    pthread_rwlock_wrlock(&s_ipv6_ban_list_rwlock);
-    HASH_ADD(hh, s_ipv6_ban_list, ip_v6, sizeof(struct in6_addr), l_record);
-    pthread_rwlock_unlock(&s_ipv6_ban_list_rwlock);
-}
-void dap_http_ban_list_client_remove_ipv6(struct in6_addr a_ip_v6) {
-    pthread_rwlock_wrlock(&s_ipv6_ban_list_rwlock);
-    dap_http_ban_list_client_record_t *l_record = NULL;
-    HASH_FIND(hh, s_ipv6_ban_list, &a_ip_v6, sizeof(struct in6_addr), l_record);
-    if (l_record) {
-        HASH_DEL(s_ipv6_ban_list, l_record);
-        DAP_DELETE(l_record);
-    }
-    pthread_rwlock_unlock(&s_ipv6_ban_list_rwlock);
+static void s_dap_http_ban_list_client_dump_single(ban_record_t *a_rec, dap_string_t *a_str) {
+    char *l_decree_hash_str = dap_hash_fast_to_str_static(&a_rec->decree_hash),
+        l_ts[80] = { '\0' };
+    dap_time_to_str_rfc822(l_ts, sizeof(l_ts), a_rec->ts_created);
+    dap_string_append_printf(a_str, "%s\n\t\t\tAddress: %s\n\t\t\tCreated at %s\n\n",
+        l_decree_hash_str, a_rec->addr, l_ts);
 }
 
-void dap_http_ban_list_client_ipv6_print(dap_string_t *a_str_out) {
-    a_str_out = dap_string_append(a_str_out, "\t IP v6.\n");
-    pthread_rwlock_rdlock(&s_ipv6_ban_list_rwlock);
-    if (!s_ipv6_ban_list) {
-        a_str_out = dap_string_append(a_str_out, "\t\t Not found.\n\n");
-        return;
+char *dap_http_ban_list_client_dump(const char *a_addr) {
+    int num = 1;
+    ban_record_t *l_rec = NULL, *l_tmp = NULL;
+    dap_string_t *l_res = dap_string_new(NULL);
+    pthread_rwlock_rdlock(&s_ban_list_lock);
+    if (a_addr) {
+        HASH_FIND_STR(s_ban_list, a_addr, l_rec);
+        if (l_rec)
+            s_dap_http_ban_list_client_dump_single(l_rec, l_res);
+        else
+            dap_string_append_printf(l_res, "Address %s is not banlisted", a_addr);
+    } else {
+        HASH_ITER(hh, s_ban_list, l_rec, l_tmp) {
+            dap_string_append_printf(l_res, "\t\t%d. ", num++);
+            s_dap_http_ban_list_client_dump_single(l_rec, l_res);
+        }
     }
-    int number = 1;
-    dap_http_ban_list_client_record_t *l_record = NULL, *tmp = NULL;
-    HASH_ITER(hh, s_ipv6_ban_list, l_record, tmp) {
-        char l_tm[85];
-        char l_tm_ip[INET6_ADDRSTRLEN];
-        dap_time_to_str_rfc822(l_tm, 85, l_record->ts_created);
-        dap_string_append_printf(a_str_out, "\t\t%d) %s\n"
-                                            "\t\t\tIP: %s\n"
-                                            "\t\t\tCreated: %s\n\n",
-                                number++, dap_chain_hash_fast_to_str_static(&l_record->decree_hash),
-                                inet_ntop(AF_INET6, &l_record->ip_v6, l_tm_ip, INET6_ADDRSTRLEN), l_tm);
-    }
-    pthread_rwlock_unlock(&s_ipv6_ban_list_rwlock);
+    pthread_rwlock_unlock(&s_ban_list_lock);
+    return dap_string_free(l_res, false);
 }
 
 int dap_http_ban_list_client_init() {
-    s_ipv4_ban_list = NULL;
-    s_ipv6_ban_list = NULL;
-    pthread_rwlock_init(&s_ipv4_ban_list_rwlock, NULL);
-    pthread_rwlock_init(&s_ipv6_ban_list_rwlock, NULL);
     return 0;
 }
+
 void dap_http_ban_list_client_deinit() {
-    pthread_rwlock_destroy(&s_ipv4_ban_list_rwlock);
-    pthread_rwlock_destroy(&s_ipv6_ban_list_rwlock);
+    ban_record_t *l_rec = NULL, *l_tmp = NULL;
+    pthread_rwlock_wrlock(&s_ban_list_lock);
+    HASH_ITER(hh, s_ban_list, l_rec, l_tmp) {
+        HASH_DEL(s_ban_list, l_rec);
+        DAP_DELETE(l_rec);
+    }
+    pthread_rwlock_unlock(&s_ban_list_lock);
+    pthread_rwlock_destroy(&s_ban_list_lock);
 }

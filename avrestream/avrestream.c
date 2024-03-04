@@ -33,7 +33,7 @@
 
 #ifdef  DAP_SYS_DEBUG
     #ifndef DAP_VERSION
-        #define DAP_VERSION 0.9-15
+        #define DAP_VERSION "0.9-15"
     #endif
 #endif
 

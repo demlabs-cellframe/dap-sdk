@@ -1440,7 +1440,7 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
                 .sin_addr   = {{ .S_addr = INADDR_ANY }}
             };
             if ( bind(a_esocket->socket, (PSOCKADDR)&l_addr_any, sizeof(l_addr_any)) == SOCKET_ERROR ) {
-                log_it(L_ERROR, "Failed to create socket for accept()'ing, errno %d", WSAGetLastError());
+                log_it(L_ERROR, "Failed to create socket for connect()'ing, errno %d", WSAGetLastError());
                 return;
             }
             l_res   = pfn_ConnectEx(a_esocket->socket, (PSOCKADDR)&a_esocket->addr_storage, sizeof(SOCKADDR),

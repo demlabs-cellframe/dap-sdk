@@ -90,7 +90,7 @@ void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_clus
 void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
 void dap_link_manager_add_static_links_cluster(dap_stream_node_addr_t *a_node_addr, dap_cluster_t *a_cluster);
 void dap_link_manager_remove_static_links_cluster_all(dap_cluster_t *a_cluster);
-dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_node_addr, struct in_addr *a_addr_v4, struct in6_addr *a_addr_v6, uint16_t a_port);
+dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_node_addr, const char *a_host, uint16_t a_port);
 int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link);
 int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr);
 void dap_accounting_downlink_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr);

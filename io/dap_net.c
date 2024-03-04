@@ -26,57 +26,81 @@
 #include <errno.h>
 #include <string.h>
 #include "dap_net.h"
-
+#include "dap_strfuncs.h"
 #define LOG_TAG "dap_net"
 
 #ifdef _WIN32
   #define poll WSAPoll
 #endif
 
-/**
- * @brief dap_net_resolve_host
- * @param a_host hostname
- * @param ai_family AF_INET  for ipv4 or AF_INET6 for ipv6
- * @param a_addr_out out addr (struct in_addr or struct in6_addr)
- * @param return 0 of OK, <0 Error
- */
-int dap_net_resolve_host(const char *a_host, int ai_family, struct sockaddr *a_addr_out)
+int dap_net_resolve_host(const char *a_host, const char *a_port, struct sockaddr_storage *a_addr_out, bool a_passive_flag)
 {
-    struct addrinfo l_hints, *l_res;
-    void *l_cur_addr = NULL;
+    dap_return_val_if_fail(a_addr_out && a_host, -1);
+    int l_ret = 0;
+    struct addrinfo l_hints = {
+        .ai_flags   = a_passive_flag
+            ? AI_CANONNAME | AI_PASSIVE | AI_V4MAPPED | AI_ADDRCONFIG
+            : AI_CANONNAME | AI_V4MAPPED | AI_ADDRCONFIG,
+        .ai_family  = AF_UNSPEC,
+        .ai_socktype= SOCK_STREAM,
+    }, *l_res;
 
-    memset(&l_hints, 0, sizeof(l_hints));
-    l_hints.ai_family = ai_family == AF_INET ? PF_INET : PF_INET6;
-    l_hints.ai_socktype = SOCK_STREAM;
-    l_hints.ai_flags = AI_CANONNAME;
+    if (( l_ret = getaddrinfo(a_host, a_port, &l_hints, &l_res) ))
+        return l_ret;
 
-    int l_res_code = getaddrinfo(a_host, NULL, &l_hints, &l_res);
-    if (l_res_code)
-        return l_res_code;
-
-    while(l_res)
+    // for (struct addrinfo *l_res_it = l_res; l_res_it; l_res_it = l_res_it->ai_next) // What shall we do?
     {
-        if(ai_family == l_res->ai_family)
-            switch (l_res->ai_family)
-            {
-            case AF_INET:
-                l_cur_addr = &((struct sockaddr_in *) l_res->ai_addr)->sin_addr;
-                memcpy(a_addr_out, l_cur_addr, sizeof(struct in_addr));
-                break;
-            case AF_INET6:
-                l_cur_addr = &((struct sockaddr_in6 *) l_res->ai_addr)->sin6_addr;
-                memcpy(a_addr_out, l_cur_addr, sizeof(struct in6_addr));
-                break;
-            }
-        if(l_cur_addr) {
-            freeaddrinfo(l_res);
-            return 0;
-        }
-        l_res = l_res->ai_next;
+        memset(a_addr_out, 0, sizeof(*a_addr_out));
+        memcpy(a_addr_out, l_res->ai_addr, l_res->ai_addrlen);
     }
-    if (l_res)
-        freeaddrinfo(l_res);
-    return -1;
+    freeaddrinfo(l_res);
+    return 0;
+}
+
+
+int dap_net_parse_hostname(const char *a_src, char *a_addr, uint16_t *a_port) {
+    if (!a_src)
+        return -1;
+    if (!a_addr && !a_port)
+        return log_it(L_ERROR, "No output buffers provided!"), -2;
+        
+    char l_type = 0, *l_cpos = NULL, *l_bpos = NULL;
+    /*  
+        type 4,5 - hostname or IPv4 (no port, with port)
+        type 6,7 - IPv6 (no port, with port)
+    */
+    if ((l_cpos = strrchr(a_src, ':') )) {
+        l_type = strchr(a_src, ':') == l_cpos ? 5 : 6;
+    } else
+        l_type = 4;
+
+    if (*a_src == '[') {   // It's likely an IPv6 with port, see https://www.ietf.org/rfc/rfc2732.txt
+        if ( l_type != 6 || !(l_bpos = strrchr(a_src, ']')) || l_cpos < l_bpos )
+            return -1;
+        a_src++;
+        l_type = 7;
+    } else if ( (l_bpos = strrchr(a_src, ']')) )
+        return -1;
+    
+    int l_len;
+    switch (l_type) {
+    case 4:
+    case 6:
+        l_len = strlen(a_src);
+        if (a_port)
+            *a_port = 0;
+        break;
+    case 5:
+        l_bpos = l_cpos;
+    case 7:
+        if (a_port)
+            *a_port = strtoul(l_cpos + 1, NULL, 10);
+        l_len = l_bpos - a_src;
+        break;
+    default:
+        return -1;
+    }
+    return l_len > 0xFF ? -2 : ( dap_strncpy(a_addr, a_src, l_len), 0 );
 }
 
 /**
