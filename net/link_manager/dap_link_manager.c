@@ -183,15 +183,14 @@ void s_link_delete(dap_link_t *a_link, bool a_force)
 // sanity check
     dap_return_if_pass(!a_link);
 // func work
-    dap_list_t *l_item = NULL;
+    if(a_link->static_links_clusters && !a_force)
+        return;
     a_link->state = LINK_STATE_DISCONNECTED;
     dap_client_go_stage(a_link->client, STAGE_BEGIN, NULL);
-    if (!a_link->static_links_clusters || a_force) {
-        dap_client_delete_mt(a_link->client);
-        dap_list_free(a_link->static_links_clusters);
-        HASH_DEL(s_link_manager->links, a_link);
-        DAP_DELETE(a_link);
-    }
+    dap_client_delete_mt(a_link->client);
+    dap_list_free(a_link->static_links_clusters);
+    HASH_DEL(s_link_manager->links, a_link);
+    DAP_DELETE(a_link);
 }
 
 /**
@@ -219,9 +218,10 @@ void s_links_wake_up()
 {
     dap_link_t *l_link = NULL, *l_tmp = NULL;
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
+        bool l_active_nets = s_check_active_nets();
         HASH_ITER(hh, s_link_manager->links, l_link, l_tmp) {
             // if disconnected try connect
-            if(l_link->state == LINK_STATE_DISCONNECTED) {
+            if(l_link->state == LINK_STATE_DISCONNECTED  && (l_link->static_links_clusters || l_active_nets)) {
                 if (l_link->attempts_count >= s_link_manager->max_attempts_num) {
                     s_link_delete(l_link, false);
                 } else if (l_link->valid || !s_link_manager->callbacks.fill_net_info(l_link)) {
@@ -270,13 +270,11 @@ bool s_update_states(UNUSED_ARG void *a_arg)
     }
     // static mode switcher
     static bool l_wakeup_mode = false;
-    if (s_check_active_nets()) {
-        if (l_wakeup_mode)
-            s_links_wake_up();
-        else
-            s_links_request();
-        l_wakeup_mode = !l_wakeup_mode;
-    }
+    if (l_wakeup_mode)
+        s_links_wake_up();
+    else
+        s_links_request();
+    l_wakeup_mode = !l_wakeup_mode;
     return true;
 }
 
@@ -514,8 +512,8 @@ void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_c
                 }
             }
         }
-        if (!l_link->links_clusters)
-            s_link_delete(l_link, false);
+        // if (!l_link->links_clusters)
+        //     s_link_delete(l_link, false);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
 }
 
@@ -603,14 +601,13 @@ int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link)
 
 /**
  * @brief add downlink to manager list
- * @param a_net_id - net id to link count
  * @param a_node_addr - pointer to node addr
  * @return if ok 0, other if ERROR
  */
 int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr)
 {
 // sanity check
-    dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64 || !s_link_manager->active || !s_check_active_nets(), -1);
+    dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64 || !s_link_manager->active, -1);
 // func work
     dap_link_t *l_link = dap_link_manager_link_create_or_update(a_node_addr, NULL, NULL, 0);
     if (l_link->state != LINK_STATE_DISCONNECTED) {
@@ -626,6 +623,22 @@ int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr)
 }
 
 /**
+ * @brief delete downlink from manager list
+ * @param a_node_addr - pointer to node addr
+ * @return if ok 0, other if ERROR
+ */
+void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr)
+{
+// sanity check
+    dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64 || !s_link_manager->active, -1);
+// func work
+    dap_link_t *l_link = dap_link_manager_link_create_or_update(a_node_addr, NULL, NULL, 0);
+    dap_list_t *l_item = NULL;
+    l_link->state = LINK_STATE_DISCONNECTED;
+    return 0;
+}
+
+/**
  * @brief used to add member to link cluster if stream established
  * @param a_net_id - net id to check
  * @param a_node_addr - node addr to check
@@ -636,16 +649,19 @@ void dap_accounting_downlink_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a
     dap_return_if_pass(!a_net_id);
 // func work
     dap_list_t *l_item = NULL;
+    dap_managed_net_t *l_net = NULL;
     DL_FOREACH(s_link_manager->nets, l_item) {
-        if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
+        l_net = (dap_managed_net_t *)l_item->data;
+        if (a_net_id == l_net->id) {
             break;
         }
     }
     if (!l_item) {
         log_it(L_ERROR, "Can't find %zu netowrk ID in link manager list", a_net_id);
         return;
+    } else if (l_net->active) {
+        dap_cluster_member_add(l_net->node_link_cluster, a_node_addr, 0, NULL);
     }
-    dap_cluster_member_add(((dap_managed_net_t *)(l_item->data))->node_link_cluster, a_node_addr, 0, NULL);
 }
 
 /**

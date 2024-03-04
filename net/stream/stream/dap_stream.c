@@ -363,8 +363,10 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
     a_http_client->_inheritor = l_ret;
-    if (a_addr)
+    if (a_addr) {
         l_ret->node = *a_addr;
+        l_ret->authorized = true;
+    }
     s_stream_add_to_list(l_ret);
     log_it(L_NOTICE,"New stream instance");
     return l_ret;
@@ -1050,8 +1052,10 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
         if (l_stream)
             s_stream_add_to_hashtable(l_stream);
     }
-    if(!l_stream)
+    if(!l_stream) {
         dap_cluster_link_delete_from_all(&a_stream->node);
+        dap_link_manager_downlink_delete(&a_stream->node);
+    }
     pthread_rwlock_unlock(&s_streams_lock);
 }
 
