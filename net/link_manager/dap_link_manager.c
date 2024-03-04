@@ -75,7 +75,7 @@ void s_client_connect(dap_link_t *a_link, void *a_callback_arg)
         if (dap_client_get_stage(a_link->client) != STAGE_BEGIN) {
             dap_client_go_stage(a_link->client, STAGE_BEGIN, NULL);
         }
-        log_it(L_INFO, "Connecting to node" NODE_ADDR_FP_STR ", addr %s : %d", NODE_ADDR_FP_ARGS_S(a_link->node_addr), a_link->client->uplink_addr, a_link->client->uplink_port);
+        log_it(L_INFO, "Connecting to node " NODE_ADDR_FP_STR ", addr %s : %d", NODE_ADDR_FP_ARGS_S(a_link->node_addr), a_link->client->uplink_addr, a_link->client->uplink_port);
         a_link->state = LINK_STATE_CONNECTING ;
         dap_client_go_stage(a_link->client, STAGE_STREAM_STREAMING, s_client_connected_callback);
     } else if (a_callback_arg && a_link->state == LINK_STATE_ESTABLISHED) {
@@ -554,10 +554,10 @@ dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_nod
             HASH_ADD(hh, s_link_manager->links, node_addr, sizeof(l_ret->node_addr), l_ret);
         }
         if (a_host)
-            dap_strncpy(l_ret->client->uplink_addr, a_host, 0xFF);
+            dap_strncpy(l_ret->client->uplink_addr, a_host, DAP_HOSTADDR_STRLEN);
         if (a_port)
             l_ret->client->uplink_port = a_port;
-        l_ret->valid = l_ret->client->uplink_addr && *l_ret->client->uplink_addr && l_ret->client->uplink_port && dap_strcmp(a_host, "::");
+        l_ret->valid = *l_ret->client->uplink_addr && l_ret->client->uplink_port && dap_strcmp(a_host, "::");
         if (l_ret->valid) {
             log_it(L_INFO, "Create link to node " NODE_ADDR_FP_STR " with address %s : %d", NODE_ADDR_FP_ARGS_S(l_ret->node_addr), l_ret->client->uplink_addr, l_ret->client->uplink_port);
         }
@@ -717,10 +717,11 @@ char *dap_link_manager_get_links_info()
     dap_link_t *l_link = NULL, *l_tmp = NULL;
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
         HASH_ITER(hh, s_link_manager->links, l_link, l_tmp) {
-            dap_string_append_printf(l_str_out, "  %d  | "NODE_ADDR_FP_STR"\t|\t%zu\t|\t%hu\t|\t%s\t| %zu\n",
+            dap_string_append_printf(l_str_out, "  %d  | "NODE_ADDR_FP_STR"\t|\t%"DAP_UINT64_FORMAT_U
+                                                "\t|\t%"DAP_UINT64_FORMAT_U"\t|\t%s\t| %zu\n",
                                      l_link->state, NODE_ADDR_FP_ARGS_S(l_link->node_addr),
                                      dap_list_length(l_link->links_clusters),
-                                     dap_list_length(l_link->static_links_clusters), "0", 0);
+                                     dap_list_length(l_link->static_links_clusters), "0", (size_t)0);
         }
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     char *l_ret = l_str_out->str;

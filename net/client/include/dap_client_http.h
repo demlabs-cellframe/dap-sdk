@@ -56,7 +56,7 @@ typedef struct dap_client_http {
     size_t response_size_max;
 
     // Request args
-    char uplink_addr[0xFF + 1];
+    char uplink_addr[DAP_HOSTADDR_STRLEN];
     uint16_t uplink_port;
     char *method;
     char *request_content_type;

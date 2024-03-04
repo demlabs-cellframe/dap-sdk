@@ -217,6 +217,7 @@ typedef struct dap_events_socket_w_data{
 
 typedef uint64_t dap_events_socket_uuid_t;
 #define DAP_FORMAT_ESOCKET_UUID "0x%016" DAP_UINT64_FORMAT_X
+#define DAP_HOSTADDR_STRLEN     0xFF
 
 typedef struct dap_events_socket {
     union {
@@ -275,8 +276,8 @@ typedef struct dap_events_socket {
     };
 
     union {
-        char remote_addr_str[INET6_ADDRSTRLEN];
-        char listener_addr_str[INET6_ADDRSTRLEN];   
+        char remote_addr_str[DAP_HOSTADDR_STRLEN];
+        char listener_addr_str[DAP_HOSTADDR_STRLEN];
     };
     union {
         uint16_t  remote_port;

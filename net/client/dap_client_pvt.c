@@ -384,7 +384,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 case STAGE_ENC_INIT: {
                     log_it(L_INFO, "Go to stage ENC: prepare the request");
 
-                    if (!a_client_pvt->client->uplink_addr || !*a_client_pvt->client->uplink_addr || !a_client_pvt->client->uplink_port) {
+                    if (!*a_client_pvt->client->uplink_addr || !a_client_pvt->client->uplink_port) {
                         log_it(L_ERROR, "Wrong remote address %s : %u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_WRONG_ADDRESS;
@@ -530,7 +530,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     }
 
                     l_es->remote_port = a_client_pvt->client->uplink_port;
-                    dap_strncpy(l_es->remote_addr_str, a_client_pvt->client->uplink_addr, 0xFF);
+                    dap_strncpy(l_es->remote_addr_str, a_client_pvt->client->uplink_addr, DAP_HOSTADDR_STRLEN);
 
                     a_client_pvt->stream = dap_stream_new_es_client(l_es, &DAP_LINK(a_client_pvt->client)->node_addr);
                     a_client_pvt->stream->authorized = a_client_pvt->authorized;

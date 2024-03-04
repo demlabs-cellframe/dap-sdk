@@ -58,6 +58,7 @@
 #include "uthash.h"
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"
+#include "dap_link_manager.h"
 
 #define LOG_TAG "dap_stream"
 
