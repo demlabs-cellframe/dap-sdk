@@ -45,7 +45,7 @@ int dap_net_resolve_host(const char *a_host, const char *a_port, struct sockaddr
         .ai_socktype= SOCK_STREAM,
     }, *l_res;
 
-    if ( l_ret = getaddrinfo(a_host, a_port, &l_hints, &l_res) )
+    if (( l_ret = getaddrinfo(a_host, a_port, &l_hints, &l_res) ))
         return l_ret;
 
     // for (struct addrinfo *l_res_it = l_res; l_res_it; l_res_it = l_res_it->ai_next) // What shall we do?
@@ -69,7 +69,7 @@ int dap_net_parse_hostname(const char *a_src, char *a_addr, uint16_t *a_port) {
         type 4,5 - hostname or IPv4 (no port, with port)
         type 6,7 - IPv6 (no port, with port)
     */
-    if ( l_cpos = strrchr(a_src, ':') ) {
+    if ((l_cpos = strrchr(a_src, ':') )) {
         l_type = strchr(a_src, ':') == l_cpos ? 5 : 6;
     } else
         l_type = 4;

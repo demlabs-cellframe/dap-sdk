@@ -635,7 +635,7 @@ dap_client_http_t * dap_client_http_request_custom (
         return NULL;
     }
 
-    strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET6_ADDRSTRLEN);
+    dap_strncpy(l_ev_socket->remote_addr_str, a_uplink_addr, INET6_ADDRSTRLEN - 1);
     l_ev_socket->remote_port = a_uplink_port;
 
     // connect

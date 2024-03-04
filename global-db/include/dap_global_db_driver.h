@@ -95,7 +95,7 @@ DAP_STATIC_INLINE int dap_store_obj_driver_hash_compare(dap_store_obj_t *a_obj1,
 
 DAP_STATIC_INLINE const char *dap_global_db_driver_hash_print(dap_global_db_driver_hash_t a_hash)
 {
-    return dap_uint128_to_hex_str(*(uint128_t *)&a_hash);
+    return dap_uint128_to_hex_str(GET_128_FROM_64_64(a_hash.becrc, a_hash.bets));
 }
 
 extern const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank;

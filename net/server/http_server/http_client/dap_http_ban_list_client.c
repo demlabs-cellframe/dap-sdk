@@ -9,11 +9,14 @@ typedef struct ban_record {
     char addr[];
 } ban_record_t;
 
-_Thread_local ban_record_t *s_ban_list;
+pthread_rwlock_t s_ban_list_lock = PTHREAD_RWLOCK_INITIALIZER;
+ban_record_t *s_ban_list;
 
 bool dap_http_ban_list_client_check(const char *a_addr, dap_hash_fast_t *a_decree_hash, dap_time_t *a_ts) {
     ban_record_t *l_rec = NULL;
+    pthread_rwlock_rdlock(&s_ban_list_lock);
     HASH_FIND_STR(s_ban_list, a_addr, l_rec);
+    pthread_rwlock_unlock(&s_ban_list_lock);
     if (l_rec) {
         if (a_decree_hash) *a_decree_hash = l_rec->decree_hash;
         if (a_ts) *a_ts = l_rec->ts_created;
@@ -31,19 +34,24 @@ int dap_http_ban_list_client_add(const char *a_addr, dap_hash_fast_t a_decree_ha
         .ts_created = a_ts,
     };
     strcpy(l_rec->addr, a_addr);
+    pthread_rwlock_wrlock(&s_ban_list_lock);
     HASH_ADD_STR(s_ban_list, addr, l_rec);
+    pthread_rwlock_unlock(&s_ban_list_lock);
     return 0;
 }
 
 int dap_http_ban_list_client_remove(const char *a_addr) {
     ban_record_t *l_rec = NULL;
+    int l_ret = 0;
+    pthread_rwlock_wrlock(&s_ban_list_lock);
     HASH_FIND_STR(s_ban_list, a_addr, l_rec);
     if (l_rec) {
         HASH_DEL(s_ban_list, l_rec);
         DAP_DELETE(l_rec);
-        return 0;
-    }
-    return -1;
+    } else
+        l_ret = -1;
+    pthread_rwlock_unlock(&s_ban_list_lock);
+    return l_ret;
 }
 
 static void s_dap_http_ban_list_client_dump_single(ban_record_t *a_rec, dap_string_t *a_str) {
@@ -58,6 +66,7 @@ char *dap_http_ban_list_client_dump(const char *a_addr) {
     int num = 1;
     ban_record_t *l_rec = NULL, *l_tmp = NULL;
     dap_string_t *l_res = dap_string_new(NULL);
+    pthread_rwlock_rdlock(&s_ban_list_lock);
     if (a_addr) {
         HASH_FIND_STR(s_ban_list, a_addr, l_rec);
         if (l_rec)
@@ -70,6 +79,7 @@ char *dap_http_ban_list_client_dump(const char *a_addr) {
             s_dap_http_ban_list_client_dump_single(l_rec, l_res);
         }
     }
+    pthread_rwlock_unlock(&s_ban_list_lock);
     return dap_string_free(l_res, false);
 }
 
@@ -79,8 +89,11 @@ int dap_http_ban_list_client_init() {
 
 void dap_http_ban_list_client_deinit() {
     ban_record_t *l_rec = NULL, *l_tmp = NULL;
+    pthread_rwlock_wrlock(&s_ban_list_lock);
     HASH_ITER(hh, s_ban_list, l_rec, l_tmp) {
         HASH_DEL(s_ban_list, l_rec);
         DAP_DELETE(l_rec);
     }
+    pthread_rwlock_unlock(&s_ban_list_lock);
+    pthread_rwlock_destroy(&s_ban_list_lock);
 }

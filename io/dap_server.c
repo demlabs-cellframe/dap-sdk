@@ -243,7 +243,7 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
     }
 
     if (a_server->type != DAP_SERVER_LOCAL) {
-        strncpy(l_es->listener_addr_str, a_addr, sizeof(l_es->listener_addr_str)); // If NULL we listen everything
+        dap_strncpy(l_es->listener_addr_str, a_addr, INET6_ADDRSTRLEN - 1); // If NULL we listen everything
     }
 #ifdef DAP_OS_UNIX
     else {
@@ -312,7 +312,7 @@ dap_server_t *dap_server_new(char **a_addrs, uint16_t a_count, dap_server_type_t
             if ( dap_net_parse_hostname(a_addrs[i], l_cur_ip, &l_cur_port) )
                 log_it( L_ERROR, "Incorrect format of address \"%s\", fix net config and restart node", a_addrs[i] );
             else {
-                if ( (l_add_res = dap_server_listen_addr_add(l_server, l_cur_ip, l_cur_port, &l_callbacks)) )
+                if (( l_add_res = dap_server_listen_addr_add(l_server, l_cur_ip, l_cur_port, &l_callbacks) ))
                     log_it( L_ERROR, "Can't add address \"%s : %u\" to listen in server, errno %d", l_cur_ip, l_cur_port, l_add_res);
             }
         }
@@ -328,7 +328,7 @@ dap_server_t *dap_server_new(char **a_addrs, uint16_t a_count, dap_server_type_t
                 strncpy(l_curr_path, a_addrs[i], dap_min((size_t)(l_curr_mode_str - a_addrs[i]), sizeof(l_curr_path) - 1));
                 sscanf(l_curr_mode_str,"%ou", &l_listen_unix_socket_permissions );
             }
-            if ( l_add_res = dap_server_listen_addr_add(l_server, l_curr_path, l_listen_unix_socket_permissions, &l_callbacks) ) {
+            if (( l_add_res = dap_server_listen_addr_add(l_server, l_curr_path, l_listen_unix_socket_permissions, &l_callbacks) )) {
                 log_it( L_ERROR, "Can't add path \"%s ( %d )\" to listen in server, errno %d",
                         l_curr_path, l_listen_unix_socket_permissions, l_add_res );
             }
