@@ -548,6 +548,10 @@ dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_nod
             dap_client_set_active_channels_unsafe(l_ret->client, "CGND");
             l_ret->client->_inheritor = l_ret;
             HASH_ADD(hh, s_link_manager->links, node_addr, sizeof(l_ret->node_addr), l_ret);
+        } else if(l_ret->state != LINK_STATE_DISCONNECTED) {
+            log_it(L_DEBUG, "Link "NODE_ADDR_FP_STR" already present", NODE_ADDR_FP_ARGS(a_node_addr));
+            pthread_rwlock_unlock(&s_link_manager->links_lock);
+            return l_ret;
         }
         // fill addr
         if(a_addr_v4 && a_addr_v4->s_addr){
