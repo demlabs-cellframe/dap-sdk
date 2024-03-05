@@ -70,6 +70,7 @@
 #include "dap_server.h"
 #include "dap_worker.h"
 #include "dap_events.h"
+#include "dap_net.h"
 #include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_server"
@@ -236,16 +237,13 @@ int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint1
         log_it(L_WARNING, "Can't set up REUSEPORT flag to the socket");
 #endif
 
-    struct addrinfo l_hints = { .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM }, *l_addr_res;
-    if ( getaddrinfo(a_addr, dap_itoa(l_es->listener_port), &l_hints, &l_addr_res) ) {
+    if ( dap_net_resolve_host(a_addr, dap_itoa(l_es->listener_port), &l_es->addr_storage, true) ) {
         log_it(L_ERROR, "Wrong listen address '%s : %u'", a_addr, l_es->listener_port);
         goto clean_n_quit;
     }
-    memcpy(&l_es->addr_storage, l_addr_res->ai_addr, l_addr_res->ai_addrlen);
-    freeaddrinfo(l_addr_res);
 
     if (a_server->type != DAP_SERVER_LOCAL) {
-        strncpy(l_es->listener_addr_str, a_addr, sizeof(l_es->listener_addr_str)); // If NULL we listen everything
+        dap_strncpy(l_es->listener_addr_str, a_addr, INET6_ADDRSTRLEN - 1); // If NULL we listen everything
     }
 #ifdef DAP_OS_UNIX
     else {
@@ -306,35 +304,17 @@ dap_server_t *dap_server_new(char **a_addrs, uint16_t a_count, dap_server_type_t
     };
 
     l_server->type = a_type;
-    char l_curr_ip[INET6_ADDRSTRLEN] = {0};
-// func work
-    for(size_t i = 0; i < a_count; ++i) {
-        // parsing full addr
-        int l_ret = -1;
+    char l_cur_ip[INET6_ADDRSTRLEN] = { '\0' }; uint16_t l_cur_port = 0;
+
+    for (size_t i = 0; i < a_count; ++i) {
+        int l_add_res = 0;
         if (l_server->type != DAP_SERVER_LOCAL) {
-            const char *l_curr_port_str = strstr(a_addrs[i], ":");
-            uint16_t l_curr_port = 0;
-            if (l_curr_port_str) {
-                memset(l_curr_ip, 0, sizeof(l_curr_ip));
-                strncpy(l_curr_ip, a_addrs[i], dap_min((size_t)(l_curr_port_str - a_addrs[i]), sizeof(l_curr_ip) - 1));
-                l_curr_port = atol(++l_curr_port_str);
-            } else {
-                l_curr_port = atol(a_addrs[i]);
+            if ( dap_net_parse_hostname(a_addrs[i], l_cur_ip, &l_cur_port) )
+                log_it( L_ERROR, "Incorrect format of address \"%s\", fix net config and restart node", a_addrs[i] );
+            else {
+                if (( l_add_res = dap_server_listen_addr_add(l_server, l_cur_ip, l_cur_port, &l_callbacks) ))
+                    log_it( L_ERROR, "Can't add address \"%s : %u\" to listen in server, errno %d", l_cur_ip, l_cur_port, l_add_res);
             }
-            switch (l_server->type) {
-                case DAP_SERVER_TCP:
-                case DAP_SERVER_UDP:
-                    if (!l_curr_ip[0])
-                        strcpy(l_curr_ip, "0.0.0.0");  // If NULL we listen everything
-                    break;
-                case DAP_SERVER_TCP_V6:
-                    if (!l_curr_ip[0])
-                        strcpy(l_curr_ip, "::0");
-                    break;
-                default:
-                    break;
-            }
-            l_ret = dap_server_listen_addr_add(l_server, l_curr_ip, l_curr_port, &l_callbacks);
         }
 #ifdef DAP_OS_UNIX
         else {
@@ -348,12 +328,14 @@ dap_server_t *dap_server_new(char **a_addrs, uint16_t a_count, dap_server_type_t
                 strncpy(l_curr_path, a_addrs[i], dap_min((size_t)(l_curr_mode_str - a_addrs[i]), sizeof(l_curr_path) - 1));
                 sscanf(l_curr_mode_str,"%ou", &l_listen_unix_socket_permissions );
             }
-            l_ret = dap_server_listen_addr_add(l_server, l_curr_path, l_listen_unix_socket_permissions, &l_callbacks);
+            if (( l_add_res = dap_server_listen_addr_add(l_server, l_curr_path, l_listen_unix_socket_permissions, &l_callbacks) )) {
+                log_it( L_ERROR, "Can't add path \"%s ( %d )\" to listen in server, errno %d",
+                        l_curr_path, l_listen_unix_socket_permissions, l_add_res );
+            }
         }
 #endif
-        if (l_ret)
-            continue;
     }
+
     if (!l_server->es_listeners) {
         log_it(L_ERROR, "Server not created");
         DAP_DELETE(l_server);
@@ -486,7 +468,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     }
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
     l_es_new->server = l_server;
-    unsigned short int l_family = a_remote_addr->ss_family;
+    unsigned short l_family = a_remote_addr->ss_family;
     
     l_es_new->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
     l_es_new->addr_storage = *a_remote_addr;

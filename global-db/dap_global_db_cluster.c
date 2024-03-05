@@ -91,7 +91,7 @@ void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_sto
     DAP_DELETE(l_pkt);
 }
 
-dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim, dap_guuid_t a_uuid,
+dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim, dap_guuid_t a_guuid,
                                                    const char *a_group_mask, uint32_t a_ttl, bool a_owner_root_access,
                                                    dap_global_db_role_t a_default_role, dap_cluster_role_t a_links_cluster_role)
 {
@@ -110,7 +110,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     if (a_mnemonim)
         l_cluster->links_cluster = dap_cluster_by_mnemonim(a_mnemonim);
     if (!l_cluster->links_cluster && dap_strcmp(DAP_GLOBAL_DB_CLUSTER_GLOBAL, a_mnemonim)) {
-        l_cluster->links_cluster = dap_cluster_new(a_mnemonim, a_uuid, a_links_cluster_role);
+        l_cluster->links_cluster = dap_cluster_new(a_mnemonim, a_guuid, a_links_cluster_role);
         if (!l_cluster->links_cluster) {
             log_it(L_ERROR, "Can't create links cluster");
             DAP_DELETE(l_cluster);
@@ -147,6 +147,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     DL_APPEND(a_dbi->clusters, l_cluster);
     if (!l_cluster->links_cluster || l_cluster->links_cluster->role != DAP_CLUSTER_ROLE_VIRTUAL)
         dap_proc_thread_timer_add(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000);
+    log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s", dap_uint128_to_hex_str(a_guuid.raw), a_group_mask);
     return l_cluster;
 }
 

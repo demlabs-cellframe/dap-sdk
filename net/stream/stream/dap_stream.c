@@ -58,6 +58,7 @@
 #include "uthash.h"
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"
+#include "dap_link_manager.h"
 
 #define LOG_TAG "dap_stream"
 
@@ -363,7 +364,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
     a_http_client->_inheritor = l_ret;
-    if (a_addr) {
+    if (a_addr && !dap_stream_node_addr_is_blank(a_addr)) {
         l_ret->node = *a_addr;
         l_ret->authorized = true;
     }
@@ -377,7 +378,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
  * @param a_es
  * @return
  */
-dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_stream_node_addr_t *a_addr)
+dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_stream_node_addr_t *a_addr, bool a_authorized)
 {
     dap_stream_t *l_ret = DAP_NEW_Z(dap_stream_t);
     if (!l_ret) {
@@ -394,6 +395,7 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
     l_ret->esocket->callbacks.worker_unassign_callback = s_client_callback_worker_unassign;
     if (a_addr)
         l_ret->node = *a_addr;
+    l_ret->authorized = a_authorized;
     s_stream_add_to_list(l_ret);
     return l_ret;
 }

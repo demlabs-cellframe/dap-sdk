@@ -299,6 +299,7 @@ char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_positi
 
 int dap_id_uint64_parse(const char *a_id_str, uint64_t *a_id);
 const char *dap_uint128_to_hex_str(uint128_t a_uninteger);
+uint128_t dap_uint128_from_hex_str(const char *a_hex_str);
 uint64_t dap_uint128_to_uint64(uint128_t a_from);
 uint64_t dap_uint256_to_uint64(uint256_t a_from);
 uint128_t dap_uint256_to_uint128(uint256_t a_from);
