@@ -314,7 +314,7 @@ int dap_global_db_init()
             l_dbi->whitelist = dap_list_append(l_dbi->whitelist, dap_strdup_printf("%s.del", l_white_list[i]));
         }
 
-        l_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 72);
+        l_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 3);
 
         s_context_global_db->instance = l_dbi;
     }
@@ -667,12 +667,10 @@ dap_nanotime_t dap_global_db_get_del_ts_unsafe(dap_global_db_context_t *a_global
 
     if (a_key && a_group) {
         snprintf(l_group, sizeof(l_group) - 1,  "%s.del", a_group);
-        if (dap_global_db_driver_is(l_group, a_key)) {
-            l_store_obj_del = dap_global_db_get_raw_unsafe(a_global_db_context, l_group, a_key);
-            if (l_store_obj_del) {
-                l_timestamp = l_store_obj_del->timestamp;
-                dap_store_obj_free_one(l_store_obj_del);
-            }
+        l_store_obj_del = dap_global_db_get_raw_unsafe(a_global_db_context, l_group, a_key);
+        if (l_store_obj_del) {
+            l_timestamp = l_store_obj_del->timestamp;
+            dap_store_obj_free_one(l_store_obj_del);
         }
     }
     return l_timestamp;
@@ -999,6 +997,12 @@ int dap_global_db_compare_by_ts(const void *a_obj1, const void *a_obj2) {
               : 0; // should never occur...
 }
 
+int dap_global_db_compare_by_group(const void *a_obj1, const void *a_obj2) {
+    dap_store_obj_t *l_obj1 = (dap_store_obj_t *)a_obj1,
+                    *l_obj2 = (dap_store_obj_t *)a_obj2;
+    return strcmp(l_obj1->group, l_obj2->group);
+}
+
 dap_global_db_obj_t *dap_global_db_get_all_unsafe(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
                                                   const char *a_group, size_t *a_objs_count)
 {
@@ -1278,6 +1282,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg * a_msg)
  * @brief The store_objs_get struct
  */
 
+#if 0
 static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_global_db_context,
                                         UNUSED_ARG int a_rc, UNUSED_ARG const char *a_group,
                                         const size_t a_values_total, const size_t a_values_count,
@@ -1293,7 +1298,7 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
         return;
     }
     // TODO make incremental copy
-    l_args->get_store_objs.objs = dap_store_obj_copy(a_values, a_values_count);
+    l_args->get_store_objs.objs = dap_store_obj_copy(a_values, a_values_count, false);
     l_args->get_objs.objs_count += a_values_count;
     if (a_values_count != a_values_total) {
         log_it(L_WARNING, "Got only %zu records from %zu", a_values_count, a_values_total);
@@ -1302,6 +1307,7 @@ static void s_get_all_raw_sync_callback(UNUSED_ARG dap_global_db_context_t *a_gl
     pthread_cond_signal(&l_args->hdr.cond);
     pthread_mutex_unlock(&s_context_global_db->data_callbacks_mutex);
 }
+#endif
 
 dap_store_obj_t* dap_global_db_get_all_raw_sync(const char *a_group, uint64_t a_first_id, size_t *a_objs_count)
 {
@@ -1337,7 +1343,7 @@ int s_set_unsafe_with_ts(dap_global_db_context_t *a_global_db_context, const cha
     dap_store_obj_t l_store_data = {
         .timestamp  = a_timestamp,
         .type       = DAP_DB$K_OPTYPE_ADD,
-        .flags      = a_pin_value ? RECORD_PINNED : 0,
+        .flags      = RECORD_DEL_HISTORY_MODIFY | (a_pin_value ? RECORD_PINNED : 0),
         .group      = (char*)a_group,
         .group_len  = dap_strlen(a_group),
         .key        = (char*)a_key,
@@ -1349,7 +1355,6 @@ int s_set_unsafe_with_ts(dap_global_db_context_t *a_global_db_context, const cha
 
     int l_res = dap_global_db_driver_apply(&l_store_data, 1);
     if (l_res == 0) {
-        s_record_del_history_del(a_group, a_key);
         s_change_notify(a_global_db_context, &l_store_data);
     }
     return l_res;
@@ -1368,8 +1373,7 @@ int s_set_unsafe_with_ts(dap_global_db_context_t *a_global_db_context, const cha
 int dap_global_db_set_unsafe(dap_global_db_context_t *a_global_db_context, const char *a_group, const char *a_key, const void *a_value,
                              const size_t a_value_length, bool a_pin_value)
 {
-    dap_nanotime_t l_ts_now = dap_nanotime_now();
-    return s_set_unsafe_with_ts(a_global_db_context, a_group, a_key, a_value, a_value_length, a_pin_value, l_ts_now);
+    return s_set_unsafe_with_ts(a_global_db_context, a_group, a_key, a_value, a_value_length, a_pin_value, dap_nanotime_now());
 }
 
 /**
@@ -1518,26 +1522,20 @@ int dap_global_db_set_sync(const char * a_group, const char *a_key, const void *
 
 int dap_global_db_set_raw_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
+    dap_store_obj_t *l_store_obj = a_store_objs, *l_last_obj = a_store_objs + a_store_objs_count - 1;
+    do {
+        l_store_obj->flags |= RECORD_DEL_HISTORY_MODIFY;
+    } while (++l_store_obj <= l_last_obj);
     int l_ret = dap_global_db_driver_apply(a_store_objs, a_store_objs_count);
     if (l_ret < 0) {
         log_it(L_ERROR,"Can't save raw gdb data, code %d ", l_ret);
         return l_ret;
     }
-    for (dap_store_obj_t *l_store_obj = a_store_objs; a_store_objs_count--; l_store_obj++) {
-        int l_res = 0;
-        switch (l_store_obj->type) {
-        case DAP_DB$K_OPTYPE_ADD:
-            l_res = s_record_del_history_del(l_store_obj->group, l_store_obj->key);
-            break;
-        case DAP_DB$K_OPTYPE_DEL:
-            l_res = s_record_del_history_add(l_store_obj->group, (char*)l_store_obj->key, l_store_obj->timestamp);
-            break;
-        default: break;
-        }
-
-        if (!l_res && !l_ret)
+    l_store_obj = a_store_objs;
+    do {
+        if (!(l_store_obj->flags & RECORD_APPLY_ERR))
             s_change_notify(a_global_db_context, l_store_obj);
-    }
+    } while (++l_store_obj <= l_last_obj);
     return l_ret;
 }
 
@@ -1564,10 +1562,10 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
     l_msg->callback_arg = a_arg;
     l_msg->callback_results_raw = a_callback;
 
-    l_msg->values_raw = dap_store_obj_copy(a_store_objs, a_store_objs_count) ;
+    l_msg->values_raw = a_store_objs;
     l_msg->values_raw_total = a_store_objs_count;
 
-    int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
+    int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io, l_msg);
     if (l_ret != 0){
         log_it(L_ERROR, "Can't exec set_raw request, code %d", l_ret);
         s_queue_io_msg_delete(l_msg);
@@ -1696,7 +1694,7 @@ static bool s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
             l_store_obj.value = a_msg->values[i].value;
             l_store_obj.value_len = a_msg->values[i].value_len;
             l_store_obj.timestamp = a_msg->values[i].timestamp;
-            s_record_del_history_del(a_msg->group, a_msg->values[i].key);
+            //s_record_del_history_del(a_msg->group, a_msg->values[i].key);
             l_ret = dap_global_db_driver_add(&l_store_obj,1);
             s_change_notify(s_context_global_db, &l_store_obj);
         }
@@ -1723,12 +1721,9 @@ int s_db_object_pin_unsafe(dap_global_db_context_t *a_global_db_context, const c
             l_store_obj->flags |= RECORD_PINNED;
         else
             l_store_obj->flags ^= RECORD_PINNED;
-        l_res = dap_global_db_set_raw_unsafe(a_global_db_context, l_store_obj, 1);
-        if (l_res == 0) {
-            s_record_del_history_del(a_group, a_key);
-            s_change_notify(a_global_db_context, l_store_obj);
-        } else {
-            log_it(L_ERROR,"Can't save pinned gdb data, code %d ", l_res);
+        if ( (l_res = dap_global_db_set_raw_unsafe(a_global_db_context, l_store_obj, 1)) )
+        {
+            log_it(L_ERROR, "Can't save pinned gdb data, code %d ", l_res);
             l_res = DAP_GLOBAL_DB_RC_ERROR;
         }
     }
@@ -1867,6 +1862,7 @@ int dap_global_db_unpin_sync(const char *a_group, const char *a_key)
 int dap_global_db_del_unsafe(dap_global_db_context_t *a_global_db_context, const char * a_group, const char *a_key)
 {
     dap_store_obj_t l_store_obj = {
+        .flags      = RECORD_DEL_HISTORY_MODIFY,
         .key        = a_key,
         .group      = (char*)a_group,
         .type       = DAP_DB$K_OPTYPE_DEL,
@@ -1875,8 +1871,7 @@ int dap_global_db_del_unsafe(dap_global_db_context_t *a_global_db_context, const
 
     int l_res = dap_global_db_driver_apply(&l_store_obj, 1);
 
-    if (a_key && l_res >= 0 &&
-            !s_record_del_history_add(l_store_obj.group, (char *)l_store_obj.key, l_store_obj.timestamp))
+    if (a_key && (l_res >= 0))
         // do not notify group deletion or deletion error
         s_change_notify(a_global_db_context, &l_store_obj);
     return l_res;

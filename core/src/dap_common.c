@@ -148,7 +148,7 @@ static char s_last_error[LAST_ERROR_MAX]    = {'\0'},
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
 
-#define STR_LOG_BUF_MAX 1024
+#define LOG_FORMAT_LEN 128
 
 static char* s_appname = NULL;
 
@@ -270,6 +270,21 @@ void dap_common_deinit( ) {
         fclose(s_log_file);
 }
 
+static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
+    va_list va_file;
+    va_copy(va_file, va);
+    vfprintf(stdout, a_fmt, va);
+    fflush(stdout);
+    if (!s_log_file) {
+        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file) {
+            va_end(va_file);
+            return;
+        }
+    }
+    vfprintf(s_log_file, a_fmt + a_off, va_file);
+    va_end(va_file);
+}
+
 /**
  * @brief _log_it
  * @param log_tag
@@ -279,30 +294,21 @@ void dap_common_deinit( ) {
 void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
         return;
-    char log_str[STR_LOG_BUF_MAX] = { '\0' };
-    size_t offset = s_ansi_seq_color_len[a_ll];
-    memcpy(log_str, s_ansi_seq_color[a_ll], offset);
-    offset += s_update_log_time(log_str + offset);
+
+    static _Thread_local char s_format[LOG_FORMAT_LEN] = { '\0' };
+    unsigned offset = s_ansi_seq_color_len[a_ll];
+    memcpy(s_format, s_ansi_seq_color[a_ll], offset);
+    offset += s_update_log_time(s_format + offset);
     offset += func_name
-            ? snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s][%s:%d] ", s_log_level_tag[a_ll], a_log_tag, func_name, line_num)
-            : snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
-    va_list va;
-    va_start(va, a_fmt);
-    if (offset < STR_LOG_BUF_MAX) {
-        offset += vsnprintf(log_str + offset, STR_LOG_BUF_MAX - offset, a_fmt, va);
-    }
-    va_end(va);
-    char *pos = offset < STR_LOG_BUF_MAX
-            ? memcpy(&log_str[offset--], "\n", 1) + 1
-            : memcpy(&log_str[STR_LOG_BUF_MAX - 5], "...\n", 4) + 4;
-    offset = pos - log_str;
-    fwrite(log_str, offset, 1, stdout);
-    fflush(stdout);
-    if (!s_log_file) {
-        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file)
+            ? snprintf(s_format + offset, LOG_FORMAT_LEN - offset,"%s[%s][%s:%d] %s\n", s_log_level_tag[a_ll], a_log_tag, func_name, line_num, a_fmt)
+            : snprintf(s_format + offset, LOG_FORMAT_LEN - offset, "%s[%s] %s\n", s_log_level_tag[a_ll], a_log_tag, a_fmt);
+    if (offset >= LOG_FORMAT_LEN) {
         return;
     }
-    fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
+    va_list va;
+    va_start(va, a_fmt);
+    print_it(s_ansi_seq_color_len[a_ll], s_format, va);
+    va_end(va);
 }
 
 char *dap_dump_hex(byte_t *a_data, size_t a_len) {
@@ -596,19 +602,20 @@ static int s_check_and_fill_buffer_log2(char **m, int64_t a_tm_st, char *a_tmp) 
  */
 char *dap_log_get_item(time_t a_start_time, int a_limit)
 {
-	char *l_buf = DAP_CALLOC(STR_LOG_BUF_MAX, a_limit);
+    const unsigned s_max_len = 1000;
+	char *l_buf = DAP_CALLOC(s_max_len, a_limit);
     if (!l_buf) {
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
-    char l_line[STR_LOG_BUF_MAX] = { '\0' }, *s = l_buf, *l_log_file = dap_strdup_printf("%s", s_log_file_path);
+    char l_line[s_max_len], *s = l_buf, *l_log_file = dap_strdup_printf("%s", s_log_file_path);
 	FILE *fp = fopen(l_log_file, "r");
 	if (!fp) {
 		DAP_FREE(l_buf);
 		return NULL;
 	}
 
-	while (fgets(l_line, STR_LOG_BUF_MAX, fp)) {
+	while (fgets(l_line, s_max_len, fp)) {
 		if (a_limit <= 0) break;
         a_limit -= s_check_and_fill_buffer_log2(&s, a_start_time, l_line);
 	}

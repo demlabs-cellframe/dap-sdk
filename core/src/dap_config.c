@@ -75,9 +75,6 @@ void dap_config_dump(dap_config_t *a_conf) {
         case 'd':
             log_it(L_DEBUG, " Int param: %s = %ld", l_item->name, l_item->val.val_int);
             break;
-        case 'u':
-            log_it(L_DEBUG, " UInt param: %s = %lu", l_item->name, l_item->val.val_uint);
-            break;
         case 'b':
             log_it(L_DEBUG, " Bool param: %s = %d", l_item->name, l_item->val.val_bool);
             break;
@@ -179,7 +176,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
         union dap_config_val l_item_val = { };
         if (*l_val != '[' && !l_values_arr) {
             // Single val
-            l_type = 'd';
+            l_type = 's';
             if (!*l_val)
                 l_type = 'r';
             else if (
@@ -189,51 +186,31 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
                      !strcasecmp(l_val, "true")
          #endif
                      )
-                l_type = 1;
-            else if (
+            {
+                l_type = 'b';
+                l_item_val.val_bool = true;
+            } else if (
          #ifdef DAP_OS_WINDOWS
                      !stricmp(l_val, "false")
          #else
                      !strcasecmp(l_val, "false")
          #endif
                      )
-                l_type = 0;
-            else {
-                char *c;
-                if (*l_val == '-') {
-                    c = l_val + 1;
-                } else {
-                    c = l_val;
-                    l_type = 'u';
-                }
-                char counter = 0;
-                while (*c) {
-                    if (!isdigit(*c++) || (++counter == 19)) {
-                        l_type = 's';
-                        break;
-                    }
-                }
-            }
-            switch (l_type) {
-            case 0:
-            case 1:
-                l_item_val.val_bool = l_type;
+            {
                 l_type = 'b';
-                break;
-            case 'd': {
-                l_item_val.val_int = strtoll(l_val, NULL, 10);
-                break;
+                l_item_val.val_bool = false;
+            } else {
+                errno = 0;
+                char *tmp;
+                long long val = strtoll(l_val, &tmp, 10);
+                bool fail = ( tmp == l_val || *tmp != '\0' || ((val == LLONG_MIN || val == LLONG_MAX) && errno == ERANGE) );
+                if ( !fail ) {
+                    l_item_val.val_int = val;
+                    l_type = 'd';
+                }
             }
-            case 'u':{
-                l_item_val.val_uint = strtoull(l_val, NULL, 10);
-                break;
-            }
-            case 's':
+            if (l_type == 's')
                 l_item_val.val_str = dap_strdup(l_val);
-                break;
-            default:
-                break;
-            }
         } else {
             // Array of strings
             if (!l_values_arr)
@@ -313,7 +290,7 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     }
     log_it(L_DEBUG, "Looking for config name %s...", a_file_path);
     char l_path[MAX_PATH] = { '\0' };
-    int l_pos = dap_strncmp(a_file_path, s_configs_path, strlen(s_configs_path))
+    int l_pos = dap_strncmp(a_file_path, s_configs_path, strlen(s_configs_path) - 4)
             ? dap_snprintf(l_path, MAX_PATH, "%s/%s.cfg", s_configs_path, a_file_path)
             : dap_snprintf(l_path, MAX_PATH, "%s.cfg", a_file_path);
 
@@ -425,16 +402,8 @@ int64_t _dap_config_get_item_int(dap_config_t *a_config, const char *a_section, 
     switch (l_item->type) {
     case 'd':
         return l_item->val.val_int;
-    case 'u':
-        if (l_item->val.val_uint > INT64_MAX) {
-            log_it(L_WARNING, "Signed parameter \"%s\" requested, but the value %zu exeeds the limit", l_item->name, l_item->val.val_uint);
-            return a_default;
-        } else {
-            return (int64_t)l_item->val.val_uint;
-        }
     default:
-        log_it(L_ERROR, "Parameter \"%s\" '%c' is not signed integer", l_item->name, l_item->type);
-        return a_default;
+        return log_it(L_ERROR, "Parameter \"%s\" '%c' is not signed integer", l_item->name, l_item->type), a_default;
     }
 }
 
@@ -443,18 +412,13 @@ uint64_t _dap_config_get_item_uint(dap_config_t *a_config, const char *a_section
     if (!l_item)
         return a_default;
     switch (l_item->type) {
-    case 'u':
-        return l_item->val.val_uint;
     case 'd':
-        if (l_item->val.val_int < 0) {
-            log_it(L_WARNING, "Unsigned parameter \"%s\" requested, but the value is negative: %ld", l_item->name, l_item->val.val_int);
-            return a_default;
-        } else {
-            return (uint64_t)l_item->val.val_int;
-        }
+        return l_item->val.val_int < 0
+                ? log_it(L_WARNING, "Unsigned parameter \"%s\" requested, but the value is negative: %ld",
+                         l_item->name, l_item->val.val_int), a_default
+                : (uint64_t)l_item->val.val_int;
     default:
-        log_it(L_ERROR, "Parameter \"%s\" '%c' is not unsigned integer", l_item->name, l_item->type);
-        return a_default;
+        return log_it(L_ERROR, "Parameter \"%s\" '%c' is not unsigned integer", l_item->name, l_item->type), a_default;
     }
 }
 
@@ -469,8 +433,6 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
         return l_item->val.val_arr[0];
     case 'd':
         return dap_itoa(l_item->val.val_int);
-    case 'u':
-        return dap_itoa(l_item->val.val_uint);
     case 'b':
         return dap_itoa(l_item->val.val_bool);
     default:
@@ -521,8 +483,6 @@ double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_
         return strtod(l_item->val.val_str, NULL);
     case 'd':
         return (double)l_item->val.val_int;
-    case 'u':
-        return (double)l_item->val.val_uint;
     default:
         log_it(L_ERROR, "Parameter \"%s\" '%c' can't be represented as double", l_item->name, l_item->type);
         return a_default;

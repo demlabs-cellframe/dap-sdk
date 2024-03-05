@@ -500,7 +500,8 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
     WIN32_FIND_DATA info_file;
     HANDLE h_find_file = FindFirstFileA(m_path, &info_file);
     while (FindNextFileA(h_find_file, &info_file)){
-        if (info_file.dwFileAttributes == FILE_ATTRIBUTE_DIRECTORY){
+        if (info_file.dwFileAttributes == FILE_ATTRIBUTE_DIRECTORY &&
+            strcmp(info_file.cFileName, "..") && strcmp(info_file.cFileName, ".")){
             element = (dap_list_name_directories_t *)malloc(sizeof(dap_list_name_directories_t));
             element->name_directory = dap_strdup(info_file.cFileName);
             LL_APPEND(list, element);

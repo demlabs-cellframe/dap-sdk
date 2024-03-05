@@ -83,6 +83,7 @@ json_object * dap_json_rpc_error_get(){
     if (json_object_array_length(json_arr_errors) > 0) {
         return json_arr_errors;
     } else {
+        json_object_put(json_arr_errors);
         return NULL;
     }
 }

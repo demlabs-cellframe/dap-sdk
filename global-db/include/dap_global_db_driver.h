@@ -42,9 +42,12 @@
 enum RECORD_FLAGS {
     RECORD_COMMON = 0,    // 0000
     RECORD_PINNED = 1,    // 0001
+    RECORD_DEL_HISTORY_MODIFY   = 2,
+    RECORD_NOTIFY_CB_CALL       = 4,
+    RECORD_APPLY_ERR            = 8
 };
 
-typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t*);
+typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t*, size_t);
 typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *,const char *, size_t *);
 typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(const char *,uint64_t , size_t *);
 typedef dap_store_obj_t* (*dap_db_driver_read_last_callback_t)(const char *);
@@ -79,6 +82,9 @@ void    dap_db_driver_deinit(void);
 
 dap_store_obj_t* dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count);
 void    dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count);
+DAP_STATIC_INLINE void dap_store_obj_clear_one(dap_store_obj_t *a_store_obj) {
+    DAP_DELETE(a_store_obj->group); DAP_DELETE(a_store_obj->key); DAP_DELETE(a_store_obj->value);
+}
 DAP_STATIC_INLINE void dap_store_obj_free_one(dap_store_obj_t *a_store_obj) { return dap_store_obj_free(a_store_obj, 1); }
 int     dap_db_driver_flush(void);
 

@@ -609,11 +609,140 @@ static inline char *s_sqlite_make_table_name(const char *a_group_name)
  * @param a_store_obj a pointer to the object structure
  * @return Returns 0 if successful.
  */
-int dap_db_driver_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
+int dap_db_driver_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj, size_t a_count)
 {
     if(!a_store_obj || !a_store_obj->group )
         return -1;
 
+    dap_store_obj_t *l_cur_obj = a_store_obj, *l_last_obj = a_store_obj + a_count - 1;
+    char *l_query, *l_err_msg = NULL;
+    struct conn_pool_item *l_conn = s_sqlite_get_connection();
+
+    do {
+        char *l_last_dot = strrchr(l_cur_obj->group, '.');
+        if (l_last_dot && !strcmp(l_last_dot, ".del"))
+            l_cur_obj->flags &= ~RECORD_DEL_HISTORY_MODIFY;
+
+        char *l_table_name = s_sqlite_make_table_name(l_cur_obj->group), *l_del_table_name = NULL;
+
+        if (l_cur_obj->flags & RECORD_DEL_HISTORY_MODIFY) {
+            int l_len = strlen(l_cur_obj->group) + 5;
+            char l_delgr[l_len];
+            dap_snprintf(l_delgr, l_len, "%s.del", l_cur_obj->group);
+            l_del_table_name = s_sqlite_make_table_name(l_delgr);
+        }
+
+        int l_ret = 0;
+
+        switch (l_cur_obj->type) {
+        case DAP_DB$K_OPTYPE_ADD: {
+            char *l_blob_value = s_dap_db_driver_get_string_from_blob(l_cur_obj->value, (int)l_cur_obj->value_len);
+            l_query = sqlite3_mprintf("INSERT INTO '%s' VALUES(NULL, '%s', x'', '%lld', x'%s') ON CONFLICT(key) DO UPDATE SET key=excluded.key",
+                                         l_table_name, l_cur_obj->key, l_cur_obj->timestamp, l_blob_value);
+            s_dap_db_driver_sqlite_free(l_blob_value);
+            l_ret = s_dap_db_driver_sqlite_exec(l_conn->conn, l_query, &l_err_msg);
+
+            if(l_ret == SQLITE_ERROR) {
+                s_dap_db_driver_sqlite_free(l_err_msg);
+                l_err_msg = NULL;
+                s_dap_db_driver_sqlite_create_group_table(l_table_name);
+                l_ret = s_dap_db_driver_sqlite_exec(l_conn->conn, l_query, &l_err_msg);
+            }
+            s_dap_db_driver_sqlite_free(l_query);
+            DAP_DELETE(l_table_name);
+            if (l_ret != SQLITE_OK) {
+                l_cur_obj->flags |= RECORD_APPLY_ERR;
+                s_dap_db_driver_sqlite_free(l_err_msg);
+                log_it(L_ERROR, "sqlite apply error: %s", l_err_msg);
+                continue;
+            }
+
+            if (l_cur_obj->flags & RECORD_DEL_HISTORY_MODIFY) {
+                l_query = sqlite3_mprintf("DELETE FROM '%s' where key = '%s'",
+                                              l_del_table_name, l_cur_obj->key);
+
+                l_ret = s_dap_db_driver_sqlite_exec(l_conn->conn, l_query, &l_err_msg);
+
+                if(l_ret == SQLITE_ERROR) {
+                    s_dap_db_driver_sqlite_free(l_err_msg);
+                    l_err_msg = NULL;
+                    s_dap_db_driver_sqlite_create_group_table(l_del_table_name);
+                    l_ret = s_dap_db_driver_sqlite_exec(l_conn->conn, l_query, &l_err_msg);
+                }
+                DAP_DELETE(l_del_table_name);
+                s_dap_db_driver_sqlite_free(l_query);
+                if (l_ret != SQLITE_OK) {
+                    l_cur_obj->flags |= RECORD_APPLY_ERR;
+                    log_it(L_ERROR, "sqlite apply error: %s", l_err_msg);
+                    s_dap_db_driver_sqlite_free(l_err_msg);
+                    continue;
+                }
+            }
+            break;
+        }
+        case DAP_DB$K_OPTYPE_DEL: {
+            if (a_store_obj->key) {
+                l_query = sqlite3_mprintf("DELETE FROM '%s' where key = '%s'",
+                                          l_table_name, a_store_obj->key);
+                l_ret = s_dap_db_driver_sqlite_exec(l_conn->conn, l_query, &l_err_msg);
+
+                if(l_ret == SQLITE_ERROR) {
+                    s_dap_db_driver_sqlite_free(l_err_msg);
+                    l_err_msg = NULL;
+                    s_dap_db_driver_sqlite_create_group_table(l_table_name);
+                    l_ret = s_dap_db_driver_sqlite_exec(l_conn->conn, l_query, &l_err_msg);
+                }
+                DAP_DELETE(l_table_name);
+                s_dap_db_driver_sqlite_free(l_query);
+                if (l_ret != SQLITE_OK) {
+                    l_cur_obj->flags |= RECORD_APPLY_ERR;
+                    log_it(L_ERROR, "sqlite apply error: %s", l_err_msg);
+                    s_dap_db_driver_sqlite_free(l_err_msg);
+                    continue;
+                }
+
+                if (l_cur_obj->flags & RECORD_DEL_HISTORY_MODIFY) {
+                    l_query = sqlite3_mprintf("INSERT INTO '%s' VALUES(NULL, '%s', x'', '%lld', NULL) ON CONFLICT(key) DO UPDATE SET key=excluded.key",
+                                              l_del_table_name, l_cur_obj->key, l_cur_obj->timestamp);
+                    l_ret = s_dap_db_driver_sqlite_exec(l_conn->conn, l_query, &l_err_msg);
+                    if(l_ret == SQLITE_ERROR) {
+                        s_dap_db_driver_sqlite_free(l_err_msg);
+                        l_err_msg = NULL;
+                        s_dap_db_driver_sqlite_create_group_table(l_del_table_name);
+                        l_ret = s_dap_db_driver_sqlite_exec(l_conn->conn, l_query, &l_err_msg);
+                    }
+                    DAP_DELETE(l_del_table_name);
+                    s_dap_db_driver_sqlite_free(l_query);
+                    if (l_ret != SQLITE_OK) {
+                        l_cur_obj->flags |= RECORD_APPLY_ERR;
+                        log_it(L_ERROR, "sqlite apply error: %s", l_err_msg);
+                        s_dap_db_driver_sqlite_free(l_err_msg);
+                        continue;
+                    }
+                }
+            } else {
+                l_query = sqlite3_mprintf("DROP TABLE IF EXISTS '%s'", l_table_name);
+                l_ret = s_dap_db_driver_sqlite_exec(l_conn->conn, l_query, &l_err_msg);
+                s_dap_db_driver_sqlite_free(l_query);
+                if (l_ret != SQLITE_OK) {
+                    l_cur_obj->flags |= RECORD_APPLY_ERR;
+                    log_it(L_ERROR, "sqlite apply error: %s", l_err_msg);
+                    s_dap_db_driver_sqlite_free(l_err_msg);
+                }
+            }
+            break;
+        }
+        default:
+            break;
+        }
+
+    } while(++l_cur_obj <= l_last_obj);
+
+    s_sqlite_free_connection(l_conn);
+
+    return 0;
+
+#if 0
     char *l_query = NULL;
     char *l_error_message = NULL;
 
@@ -624,8 +753,8 @@ int dap_db_driver_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             return -1;
         char *l_blob_value = s_dap_db_driver_get_string_from_blob(a_store_obj->value, (int)a_store_obj->value_len);
         //add one record
-        l_query = sqlite3_mprintf("INSERT INTO '%s' values(NULL, '%s', x'', '%lld', x'%s')",
-                                           l_table_name, a_store_obj->key, a_store_obj->timestamp, l_blob_value);
+        l_query = sqlite3_mprintf("INSERT INTO '%s' values(NULL, '%s', x'', '%lld', x'%s') ON CONFLICT(key) DO UPDATE SET key=excluded.key",
+                                  l_table_name, a_store_obj->key, a_store_obj->timestamp, l_blob_value);
         s_dap_db_driver_sqlite_free(l_blob_value);
     }
     else if (a_store_obj->type == DAP_DB$K_OPTYPE_DEL) {
@@ -682,6 +811,7 @@ int dap_db_driver_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
     s_dap_db_driver_sqlite_free(l_query);
     DAP_DELETE(l_table_name);
     return l_ret;
+#endif
 }
 
 /**
