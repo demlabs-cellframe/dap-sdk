@@ -631,12 +631,11 @@ int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr)
 void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr)
 {
 // sanity check
-    dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64 || !s_link_manager->active, -1);
+    dap_return_if_pass(!a_node_addr || !a_node_addr->uint64 || !s_link_manager->active);
 // func work
-    dap_link_t *l_link = dap_link_manager_link_create_or_update(a_node_addr, NULL, NULL, 0);
+    dap_link_t *l_link = dap_link_manager_link_create_or_update(a_node_addr, NULL, 0);
     dap_list_t *l_item = NULL;
     l_link->state = LINK_STATE_DISCONNECTED;
-    return 0;
 }
 
 /**
