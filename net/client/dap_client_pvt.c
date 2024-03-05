@@ -533,8 +533,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     l_es->remote_port = a_client_pvt->client->uplink_port;
                     dap_strncpy(l_es->remote_addr_str, a_client_pvt->client->uplink_addr, DAP_HOSTADDR_STRLEN);
 
-                    a_client_pvt->stream = dap_stream_new_es_client(l_es, &DAP_LINK(a_client_pvt->client)->node_addr);
-                    a_client_pvt->stream->authorized = a_client_pvt->authorized;
+                    a_client_pvt->stream = dap_stream_new_es_client(l_es, &DAP_LINK(a_client_pvt->client)->node_addr,
+                                                                    a_client_pvt->authorized);
                     assert(a_client_pvt->stream);
                     a_client_pvt->stream->session = dap_stream_session_pure_new(); // may be from in packet?
 
