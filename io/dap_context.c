@@ -484,6 +484,10 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             case DESCRIPTOR_TYPE_TIMER:
                 if (!flags_r_noclose(l_cur->flags))
                     break;
+                if (l_op == 'c') {
+                    l_cur->flags = DAP_SOCK_SIGNAL_CLOSE;
+                    break;
+                }
                 if (!l_cur->callbacks.timer_callback) {
                     log_it(L_ERROR, "Es %p has no timer callback, nothing to do. Dump eet", l_cur);
                     l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
@@ -503,6 +507,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 }
                 */
                 switch (l_op) {
+                case 'c':
+                    l_cur->flags = DAP_SOCK_SIGNAL_CLOSE;
+                    break;
                 case 'r':
                     if (!flags_r_noclose(l_cur->flags))
                         break;
