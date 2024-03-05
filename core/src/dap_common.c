@@ -317,7 +317,12 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
             fprintf( stderr, "Can't open log file %s \n", a_log_file_path );
             return -1;   //switch off show log in cosole if file not open
         }
-        setvbuf(s_log_file, NULL, _IOLBF, LOG_FORMAT_LEN / 2);
+        setvbuf(s_log_file, NULL,
+#ifdef DAP_OS_WINDOWS
+        _IONBF, 0);
+#else
+        _IOLBF, LOG_FORMAT_LEN / 8);
+#endif
         if (a_log_dirpath != s_log_dir_path)
             dap_stpcpy(s_log_dir_path,  a_log_dirpath);
         if (a_log_file_path != s_log_file_path)
