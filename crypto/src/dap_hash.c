@@ -44,7 +44,7 @@ int dap_chain_hash_fast_from_hex_str( const char *a_hex_str, dap_chain_hash_fast
     if (!a_hex_str || !a_hash)
         return -1;
     size_t l_hash_str_len = strlen(a_hex_str);
-    if ( l_hash_str_len == DAP_CHAIN_HASH_FAST_STR_LEN  && !dap_strncmp(a_hex_str, "0x", 2) && !dap_is_hex_string(a_hex_str + 2, l_hash_str_len - 2)) {
+    if ( l_hash_str_len == DAP_CHAIN_HASH_FAST_STR_LEN && !dap_strncmp(a_hex_str, "0x", 2) && !dap_is_hex_string(a_hex_str + 2, l_hash_str_len - 2)) {
         dap_hex2bin(a_hash->raw, a_hex_str + 2, l_hash_str_len - 2);
         return  0;
     } else  { // Wrong string

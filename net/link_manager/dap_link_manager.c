@@ -544,7 +544,7 @@ dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_nod
             }
             dap_client_t *l_client = dap_client_new(s_client_delete_callback, s_client_error_callback, NULL);
             dap_client_set_is_always_reconnect(l_client, false);
-            dap_client_set_active_channels_unsafe(l_client, "CGND");
+            dap_client_set_active_channels_unsafe(l_client, "RCGEND");
             *l_ret = (dap_link_t) {
                 .node_addr.uint64 = a_node_addr->uint64,
                 .client = l_client,
