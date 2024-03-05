@@ -120,6 +120,7 @@ file( GLOB CRYPTO_SRCS
       src/sig_picnic/*.c
       src/sig_dilithium/*.c
 	src/sig_ecdsa/*.c
+      src/sig_shipovnik/*.c
       src/ringct20/*.c
       src/falcon/*.c
       ${SPHINCS_BASE_SRCS}
@@ -140,6 +141,7 @@ file( GLOB CRYPTO_HEADERS
       src/newhope/*.h
       src/sig_bliss/*.h
       src/sig_ecdsa/*.h
+      src/sig_shipovnik/*.h
       src/sig_tesla/*.h
       src/sig_picnic/*.h
       src/sig_dilithium/*.h
@@ -164,7 +166,7 @@ file( GLOB XKCP_SRCS
   src/XKCP/lib/high/Keccak/FIPS202/SimpleFIPS202.c
 )
 
-set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sphincsplus src include)
+set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sphincsplus src include)
 add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
 
 option (DAP_PQLR "PQRL Intergration" OFF)

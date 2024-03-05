@@ -127,7 +127,13 @@ size_t dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key* key, const void* msg, c
                                       const size_t signature_size)
 {
 
-    if (key->pub_key_data_size != sizeof(ecdsa_private_key_t)) {
+    if (signature_size != sizeof(ecdsa_signature_t)) {
+        log_it(L_ERROR, "Invalid ecdsa signature size");
+        return -10;
+    }
+
+
+    if (key->pub_key_data_size != sizeof(ecdsa_public_key_t)) {
         log_it(L_ERROR, "Invalid ecdsa key");
         return -11;
     }
