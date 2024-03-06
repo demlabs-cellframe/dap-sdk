@@ -40,6 +40,7 @@ typedef struct dap_managed_net {
     dap_cluster_t *node_link_cluster;
 } dap_managed_net_t;
 
+static bool s_debug_more = false;
 static const char *s_init_error = "Link manager not inited";
 static uint32_t s_timer_update_states = 4000;
 static uint32_t s_min_links_num = 5;
@@ -57,6 +58,16 @@ static bool s_check_active_nets();
 static void s_links_wake_up();
 static void s_links_request();
 static bool s_update_states(void *a_arg);
+static void s_link_manager_print_links_info();
+// debug funcs
+DAP_STATIC_INLINE s_debug_cluster_adding_removing(bool a_static, bool a_adding, dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_node_addr) {
+    debug_if(s_debug_more, L_DEBUG, "%s cluster net_id %"DAP_UINT64_FORMAT_U", svc_id %"DAP_UINT64_FORMAT_U" successfully %s link "NODE_ADDR_FP_STR,
+            a_static ? "Static" : "Links", 
+            a_cluster->uuid.net_id,
+            a_cluster->uuid.svc_id,
+            a_adding ? "added to" : "removed from",
+            NODE_ADDR_FP_ARGS(a_node_addr));
+}
 
 /**
  * @brief dap_chain_node_client_connect
@@ -260,10 +271,9 @@ bool s_update_states(UNUSED_ARG void *a_arg)
 {
 // sanity check
     dap_return_val_if_pass_err(!s_link_manager, false, s_init_error);
+    if (s_debug_more)
+        s_link_manager_print_links_info();
     // if inactive remove timer
-    char *l_report = dap_link_manager_get_links_info();
-    //printf("%s", l_report);
-    DAP_DELETE(l_report);
     if (!s_link_manager->active) {
         s_link_manager->update_timer = NULL;
         return false;
@@ -308,6 +318,7 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
     s_timer_update_states = dap_config_get_item_uint32_default(g_config, "link_manager", "timer_update_states", s_timer_update_states);
     s_min_links_num = dap_config_get_item_uint32_default(g_config, "link_manager", "min_links_num", s_min_links_num);
     s_max_attempts_num = dap_config_get_item_uint32_default(g_config, "link_manager", "max_attempts_num", s_max_attempts_num);
+    s_debug_more = dap_config_get_item_bool_default(g_config,"link_manager","debug_more", s_debug_more);
     if (!(s_link_manager = dap_link_manager_new(a_callbacks))) {
         log_it(L_ERROR, "Default link manager not inited");
         return -1;
@@ -474,6 +485,7 @@ void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_clus
     dap_return_if_pass(!s_link_manager || !a_addr || !a_cluster);
     dap_link_t *l_link = dap_link_manager_link_create_or_update(a_addr, NULL, 0);
     l_link->links_clusters = dap_list_append(l_link->links_clusters, a_cluster);
+    s_debug_cluster_adding_removing(false, true, a_cluster, &l_link->node_addr);
     dap_list_t *l_item = NULL;
     if (a_cluster->role == DAP_CLUSTER_ROLE_EMBEDDED)
         DL_FOREACH(s_link_manager->nets, l_item) {
@@ -502,6 +514,7 @@ void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_c
             return;
         }
         l_link->links_clusters = dap_list_remove(l_link->links_clusters, a_cluster);
+        s_debug_cluster_adding_removing(false, false, a_cluster, a_addr);
         dap_list_t *l_item = NULL;
         if (a_cluster->role == DAP_CLUSTER_ROLE_EMBEDDED) {
             DL_FOREACH(s_link_manager->nets, l_item) {
@@ -512,8 +525,6 @@ void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_c
                 }
             }
         }
-        // if (!l_link->links_clusters)
-        //     s_link_delete(l_link, false);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
 }
 
@@ -552,6 +563,7 @@ dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_nod
             };
             l_ret->client->_inheritor = l_ret;
             HASH_ADD(hh, s_link_manager->links, node_addr, sizeof(l_ret->node_addr), l_ret);
+            debug_if(s_debug_more, L_DEBUG, "Create new link to node " NODE_ADDR_FP_STR "", NODE_ADDR_FP_ARGS_S(l_ret->node_addr));
         } else if(l_ret->state != LINK_STATE_DISCONNECTED) {
             log_it(L_DEBUG, "Link "NODE_ADDR_FP_STR" already present", NODE_ADDR_FP_ARGS(a_node_addr));
             pthread_rwlock_unlock(&s_link_manager->links_lock);
@@ -710,6 +722,7 @@ void dap_link_manager_add_static_links_cluster(dap_stream_node_addr_t *a_node_ad
     dap_link_t *l_link = dap_link_manager_link_create_or_update(a_node_addr, NULL, 0);
     dap_return_if_pass(!l_link);
     l_link->static_links_clusters = dap_list_append(l_link->static_links_clusters, a_cluster);
+    s_debug_cluster_adding_removing(true, true, a_cluster, &l_link->node_addr);
 }
 
 /**
@@ -727,25 +740,26 @@ void dap_link_manager_remove_static_links_cluster_all(dap_cluster_t *a_cluster)
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
         HASH_ITER(hh, s_link_manager->links, l_link, l_tmp) {
             l_link->static_links_clusters = dap_list_remove(l_link->static_links_clusters, a_cluster);
+            s_debug_cluster_adding_removing(true, false, a_cluster, &l_link->node_addr);
         }
     pthread_rwlock_unlock(&s_link_manager->links_lock);
 }
 
-char *dap_link_manager_get_links_info()
+/**
+ * @brief print information about links
+ */
+void s_link_manager_print_links_info()
 {
-    dap_string_t *l_str_out = dap_string_new(" ↑\\↓ |\t\tNode addr\t|   Clusters\t|Static clusters| Channels\t| SeqID\n"
-                                             "--------------------------------------------------------------------------------------\n");
     dap_link_t *l_link = NULL, *l_tmp = NULL;
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
+        printf(" State |\tNode addr\t|   Clusters\t|\tStatic clusters\t\t|\n"
+                "---------------------------------------------------------------------------------\n");
         HASH_ITER(hh, s_link_manager->links, l_link, l_tmp) {
-            dap_string_append_printf(l_str_out, "  %d  | "NODE_ADDR_FP_STR"\t|\t%"DAP_UINT64_FORMAT_U
-                                                "\t|\t%"DAP_UINT64_FORMAT_U"\t|\t%s\t| %zu\n",
+            printf("   %d   | "NODE_ADDR_FP_STR"\t|\t%"DAP_UINT64_FORMAT_U
+                                                "\t|\t\t%"DAP_UINT64_FORMAT_U"\t\t|\n",
                                      l_link->state, NODE_ADDR_FP_ARGS_S(l_link->node_addr),
                                      dap_list_length(l_link->links_clusters),
-                                     dap_list_length(l_link->static_links_clusters), "0", (size_t)0);
+                                     dap_list_length(l_link->static_links_clusters));
         }
     pthread_rwlock_unlock(&s_link_manager->links_lock);
-    char *l_ret = l_str_out->str;
-    dap_string_free(l_str_out, false);
-    return l_ret;
 }
