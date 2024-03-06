@@ -88,14 +88,14 @@ void shuffle(const uint32_t *p, uint16_t *pi, uint64_t *buf, size_t len) {
 
 void gen_vector(uint16_t *s) {
 
-  memset(s + W, 0, sizeof(uint16_t) * (N - W));
-  for (size_t i = 0; i < W; ++i) {
+  memset(s + W_shipovnik, 0, sizeof(uint16_t) * (N_shipovnik - W_shipovnik));
+  for (size_t i = 0; i < W_shipovnik; ++i) {
     s[i] = 1;
   }
 
-  uint32_t entropy[N];
-  randombytes((uint8_t *)entropy, N * 4);
+  uint32_t entropy[N_shipovnik];
+  randombytes((uint8_t *)entropy, N_shipovnik * 4);
 
-  uint64_t buf[N];
-  shuffle(entropy, s, buf, N);
+  uint64_t buf[N_shipovnik];
+  shuffle(entropy, s, buf, N_shipovnik);
 }

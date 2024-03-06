@@ -29,8 +29,8 @@
 
 #include <string.h>
 
-#define N_BYTES ((N + 7) / 8)
-#define K_BYTES ((K + 7) / 8)
+#define N_BYTES ((N_shipovnik + 7) / 8)
+#define K_BYTES ((K_shipovnik + 7) / 8)
 #define PRIME_ROW_BYTES (N_BYTES - K_BYTES)
 
 static inline uint8_t dot_product(const uint8_t *l, const uint8_t *r,
@@ -70,7 +70,7 @@ void syndrome(const uint8_t *H_prime, const uint8_t *sk, uint8_t *pk) {
 
   memset(pk, 0, K_BYTES);
 
-  for (uint32_t i = 0; i < K; ++i) {
+  for (uint32_t i = 0; i < K_shipovnik; ++i) {
     // get next row of H'
     memcpy(row, H_prime, PRIME_ROW_BYTES);
     // set bit in identity row

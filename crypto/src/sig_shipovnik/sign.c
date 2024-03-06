@@ -79,7 +79,7 @@ void apply_permutation(const uint16_t *p, const uint8_t *a, uint8_t *buf,
 multiword_number_t h_3_delta_shift(const uint8_t *h, size_t h_size) {
 
   // log(3**219, 2)/32 = 219*log(3, 2)/32
-  const size_t cap3 = DELTA * 2 / 32;
+  const size_t cap3 = DELTA_shipovnik * 2 / 32;
   const size_t capacity = h_size / sizeof(word_t) + cap3;
   const multiword_number_t h1 = multiword_number_new(capacity);
   if (NULL == h1) {
@@ -99,7 +99,7 @@ multiword_number_t h_3_delta_shift(const uint8_t *h, size_t h_size) {
   const uint32_t max_pow_3 = 3486784401;
 
   // h_prime * pow(3, 200)
-  for (size_t i = 0; i < DELTA / 20; ++i) {
+  for (size_t i = 0; i < DELTA_shipovnik / 20; ++i) {
     if (!multiword_number_multiply_by_word(h1, max_pow_3)) {
       multiword_number_free(h1);
       return NULL;
@@ -107,7 +107,7 @@ multiword_number_t h_3_delta_shift(const uint8_t *h, size_t h_size) {
   }
   // pow(3, 19)
   size_t leftover = 1;
-  for (size_t i = 0; i < DELTA % 20; ++i) {
+  for (size_t i = 0; i < DELTA_shipovnik % 20; ++i) {
     leftover *= 3;
   }
   // h_prime * pow(3, 19)

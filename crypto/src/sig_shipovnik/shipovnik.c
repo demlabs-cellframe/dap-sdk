@@ -38,9 +38,9 @@
 #include <string.h>
 
 void shipovnik_generate_keys(uint8_t *sk, uint8_t *pk) {
-  ALLOC_ON_STACK(uint16_t, s, N);
+  ALLOC_ON_STACK(uint16_t, s, N_shipovnik);
   gen_vector(s);
-  for (size_t i = 0; i < N; ++i) {
+  for (size_t i = 0; i < N_shipovnik; ++i) {
     size_t j = i / 8;
     sk[j] <<= 1;
     sk[j] |= s[i] & 1;
@@ -54,49 +54,49 @@ void shipovnik_sign(const uint8_t *sk, const uint8_t *msg, size_t msg_len,
                     uint8_t *sig, size_t *sig_len) {
 
   // temporary buffers
-  ALLOC_ON_STACK(uint64_t, shuf64_, N);
-  ALLOC_ON_STACK(uint32_t, entropy32_, N);
+  ALLOC_ON_STACK(uint64_t, shuf64_, N_shipovnik);
+  ALLOC_ON_STACK(uint32_t, entropy32_, N_shipovnik);
   ALLOC_ON_STACK(uint8_t, sigma_y_, SIGMA_Y_SIZE);
   ALLOC_ON_STACK(uint8_t, u1_, SHIPOVNIK_SECRETKEYBYTES);
   ALLOC_ON_STACK(uint8_t, u2_, SHIPOVNIK_SECRETKEYBYTES);
 
   ALLOC_ON_STACK(uint8_t, h, GOST512_OUTPUT_BYTES);
-  ALLOC_ON_STACK(uint8_t, b, DELTA);
+  ALLOC_ON_STACK(uint8_t, b, DELTA_shipovnik);
 
   // array of random bit vectors (u)
-  uint8_t *const us = malloc(DELTA * SHIPOVNIK_SECRETKEYBYTES);
+  uint8_t *const us = malloc(DELTA_shipovnik * SHIPOVNIK_SECRETKEYBYTES);
   // array of permutation indices (sigma)
-  uint16_t *const sigmas = malloc(DELTA * SIGMA_BYTES);
+  uint16_t *const sigmas = malloc(DELTA_shipovnik * SIGMA_BYTES);
 
-  for (size_t i = 0; i < DELTA; i++) {
+  for (size_t i = 0; i < DELTA_shipovnik; i++) {
     uint8_t *u = us + i * SHIPOVNIK_SECRETKEYBYTES;
-    uint16_t *sigma = sigmas + i * N;
-    for (uint16_t j = 0; j < N; ++j) {
+    uint16_t *sigma = sigmas + i * N_shipovnik;
+    for (uint16_t j = 0; j < N_shipovnik; ++j) {
       sigma[j] = j; // init indices
     }
 
     /* Step 2 */
     uint8_t *ebytes = (uint8_t *)entropy32_;
     randombytes(u, SHIPOVNIK_SECRETKEYBYTES);
-    randombytes(ebytes, N * sizeof(uint32_t));
+    randombytes(ebytes, N_shipovnik * sizeof(uint32_t));
     // random shuffle permutation indices
-    shuffle(entropy32_, sigma, shuf64_, N);
+    shuffle(entropy32_, sigma, shuf64_, N_shipovnik);
 
     /* Step 3 */
     uint8_t *ci = sig + i * 3 * GOST512_OUTPUT_BYTES;
 
     // sigma_k_ = sigma || H*u
-    pack_sigma(sigma, N, sigma_y_);
+    pack_sigma(sigma, N_shipovnik, sigma_y_);
     uint8_t *y = sigma_y_ + SIGMA_PACKED_BYTES;
     syndrome(H_PRIME, u, y);
     streebog_512_f(sigma_y_, SIGMA_Y_SIZE, ci); // ci0
 
-    apply_permutation(sigma, u, u1_, N); // u1_ = sigma(u)
+    apply_permutation(sigma, u, u1_, N_shipovnik); // u1_ = sigma(u)
     streebog_512_f(u1_, SHIPOVNIK_SECRETKEYBYTES,
                    ci + GOST512_OUTPUT_BYTES); // ci1
 
     bitwise_xor(u, sk, SHIPOVNIK_SECRETKEYBYTES, u1_); // u1_ = u xor sk
-    apply_permutation(sigma, u1_, u2_, N);             // u2_ = sigma(u1_)
+    apply_permutation(sigma, u1_, u2_, N_shipovnik);             // u2_ = sigma(u1_)
     streebog_512_f(u2_, SHIPOVNIK_SECRETKEYBYTES,
                    ci + 2 * GOST512_OUTPUT_BYTES); // ci2
   }
@@ -115,26 +115,26 @@ void shipovnik_sign(const uint8_t *sk, const uint8_t *msg, size_t msg_len,
   }
 
   /* Step 7 */
-  if (h_to_ternary_vec(mwh, b, DELTA)) {
+  if (h_to_ternary_vec(mwh, b, DELTA_shipovnik)) {
     goto cleanup;
   }
 
   /* Step 8 */
   uint8_t *rs = sig + CS_BYTES;
   *sig_len = CS_BYTES;
-  for (size_t i = 0; i < DELTA; i++) {
+  for (size_t i = 0; i < DELTA_shipovnik; i++) {
     uint8_t *u = us + i * SHIPOVNIK_SECRETKEYBYTES;
-    uint16_t *sigma = sigmas + i * N;
+    uint16_t *sigma = sigmas + i * N_shipovnik;
     switch (b[i]) {
     case 0: // sigma_i || u_i
-      pack_sigma(sigma, N, rs);
+      pack_sigma(sigma, N_shipovnik, rs);
       rs += SIGMA_PACKED_BYTES;
       memcpy(rs, u, SHIPOVNIK_SECRETKEYBYTES);
       rs += SHIPOVNIK_SECRETKEYBYTES;
       *sig_len += SIGMA_PACKED_BYTES + SHIPOVNIK_SECRETKEYBYTES;
       break;
     case 1: // sigma_i || (u_i xor s)
-      pack_sigma(sigma, N, rs);
+      pack_sigma(sigma, N_shipovnik, rs);
       rs += SIGMA_PACKED_BYTES;
       // u xor sk
       bitwise_xor(u, sk, SHIPOVNIK_SECRETKEYBYTES, rs);
@@ -142,9 +142,9 @@ void shipovnik_sign(const uint8_t *sk, const uint8_t *msg, size_t msg_len,
       *sig_len += SIGMA_PACKED_BYTES + SHIPOVNIK_SECRETKEYBYTES;
       break;
     case 2: // sigma_i(u_i) || sigma_i(s)
-      apply_permutation(sigma, u, rs, N);
+      apply_permutation(sigma, u, rs, N_shipovnik);
       rs += SHIPOVNIK_SECRETKEYBYTES;
-      apply_permutation(sigma, sk, rs, N);
+      apply_permutation(sigma, sk, rs, N_shipovnik);
       rs += SHIPOVNIK_SECRETKEYBYTES;
       *sig_len += 2 * SHIPOVNIK_SECRETKEYBYTES;
       break;
@@ -163,8 +163,8 @@ int shipovnik_verify(const uint8_t *pk, const uint8_t *sig, const uint8_t *msg,
                      size_t msg_len) {
 
   ALLOC_ON_STACK(uint8_t, h, GOST512_OUTPUT_BYTES); // hash_f(buff_MC)
-  ALLOC_ON_STACK(uint8_t, b, DELTA);                // b
-  ALLOC_ON_STACK(uint16_t, sigma, N);
+  ALLOC_ON_STACK(uint8_t, b, DELTA_shipovnik);                // b
+  ALLOC_ON_STACK(uint16_t, sigma, N_shipovnik);
 
   ALLOC_ON_STACK(uint8_t, sigma_y_, SIGMA_Y_SIZE)         // uint16_t buffer
   ALLOC_ON_STACK(uint8_t, u_1, SHIPOVNIK_SECRETKEYBYTES); // buffer
@@ -189,7 +189,7 @@ int shipovnik_verify(const uint8_t *pk, const uint8_t *sig, const uint8_t *msg,
   }
 
   // step 3
-  if (h_to_ternary_vec(mwh, b, DELTA)) {
+  if (h_to_ternary_vec(mwh, b, DELTA_shipovnik)) {
     ret = 1;
     goto cleanup;
   }
@@ -199,7 +199,7 @@ int shipovnik_verify(const uint8_t *pk, const uint8_t *sig, const uint8_t *msg,
   const uint8_t *ci = sig;
   const uint8_t *ri = sig + c_border;
   size_t weight = 0;                   // weight of vector
-  for (size_t i = 0; i < DELTA; i++) { // step 4
+  for (size_t i = 0; i < DELTA_shipovnik; i++) { // step 4
     // step 5
     ci0_true = ci;
     ci1_true = ci + GOST512_OUTPUT_BYTES;
@@ -225,7 +225,7 @@ int shipovnik_verify(const uint8_t *pk, const uint8_t *sig, const uint8_t *msg,
         ret = 1;
         goto cleanup;
       }
-      apply_permutation(sigma, ri1, u_1, N);
+      apply_permutation(sigma, ri1, u_1, N_shipovnik);
       streebog_512_f(u_1, SHIPOVNIK_SECRETKEYBYTES, cij_);
 
       if (memcmp(ci1_true, cij_, GOST512_OUTPUT_BYTES)) {
@@ -256,7 +256,7 @@ int shipovnik_verify(const uint8_t *pk, const uint8_t *sig, const uint8_t *msg,
         ret = 1;
         goto cleanup;
       }
-      apply_permutation(sigma, ri1, u_1, N);
+      apply_permutation(sigma, ri1, u_1, N_shipovnik);
       streebog_512_f(u_1, SHIPOVNIK_SECRETKEYBYTES, cij_);
 
       if (memcmp(ci2_true, cij_, GOST512_OUTPUT_BYTES)) {
@@ -288,7 +288,7 @@ int shipovnik_verify(const uint8_t *pk, const uint8_t *sig, const uint8_t *msg,
       }
 
       count_bits(ri1, SHIPOVNIK_SECRETKEYBYTES, &weight);
-      if (W != weight) {
+      if (W_shipovnik != weight) {
         ret = 1;
         goto cleanup;
       }

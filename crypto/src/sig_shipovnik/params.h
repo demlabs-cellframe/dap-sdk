@@ -30,10 +30,10 @@
 
 // main params
 
-#define N 2896
-#define K 1448
-#define W 318
-#define DELTA 219
+#define N_shipovnik 2896
+#define K_shipovnik 1448
+#define W_shipovnik 318
+#define DELTA_shipovnik 219
 
 #define GOST512_OUTPUT_BYTES 64
 
@@ -43,13 +43,13 @@ extern const uint8_t H_PRIME[H_PRIME_SIZE];
 
 // derived params
 
-#define SHIPOVNIK_PUBLICKEYBYTES ((N - K) / 8)
-#define SHIPOVNIK_SECRETKEYBYTES (N / 8)
+#define SHIPOVNIK_PUBLICKEYBYTES ((N_shipovnik - K_shipovnik) / 8)
+#define SHIPOVNIK_SECRETKEYBYTES (N_shipovnik / 8)
 
-#define CS_BYTES (DELTA * 3 * GOST512_OUTPUT_BYTES)
+#define CS_BYTES (DELTA_shipovnik * 3 * GOST512_OUTPUT_BYTES)
 #define SIGMA_BIT_WIDTH 12
-#define SIGMA_BYTES (N * sizeof(uint16_t))
-#define SIGMA_PACKED_BYTES (SIGMA_BIT_WIDTH * N / 8)
+#define SIGMA_BYTES (N_shipovnik * sizeof(uint16_t))
+#define SIGMA_PACKED_BYTES (SIGMA_BIT_WIDTH * N_shipovnik / 8)
 
 #define SHIPOVNIK_SIGBYTES                                                           \
-  (CS_BYTES + DELTA * (SIGMA_PACKED_BYTES + SHIPOVNIK_SECRETKEYBYTES))
+  (CS_BYTES + DELTA_shipovnik * (SIGMA_PACKED_BYTES + SHIPOVNIK_SECRETKEYBYTES))
