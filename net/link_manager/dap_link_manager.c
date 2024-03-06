@@ -51,7 +51,7 @@ static void s_client_connect(dap_link_t *a_link, void *a_callback_arg);
 static void s_client_connected_callback(dap_client_t *a_client, void *a_arg);
 static void s_client_error_callback(dap_client_t *a_client, void *a_arg);
 static void s_client_delete_callback(UNUSED_ARG dap_client_t *a_client, void *a_arg);
-static void s_accounting_link_in_net(dap_link_t *a_link, dap_managed_net_t *a_net);
+static void s_accounting_uplink_in_net(dap_link_t *a_link, dap_managed_net_t *a_net);
 static void s_link_delete(dap_link_t *a_link, bool a_force);
 static void s_link_delete_all(bool a_force);
 static bool s_check_active_nets();
@@ -60,13 +60,19 @@ static void s_links_request();
 static bool s_update_states(void *a_arg);
 static void s_link_manager_print_links_info();
 // debug funcs
-DAP_STATIC_INLINE s_debug_cluster_adding_removing(bool a_static, bool a_adding, dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_node_addr) {
+DAP_STATIC_INLINE void s_debug_cluster_adding_removing(bool a_static, bool a_adding, dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_node_addr)
+{
     debug_if(s_debug_more, L_DEBUG, "%s cluster net_id %"DAP_UINT64_FORMAT_U", svc_id %"DAP_UINT64_FORMAT_U" successfully %s link "NODE_ADDR_FP_STR,
             a_static ? "Static" : "Links", 
             a_cluster->uuid.net_id,
             a_cluster->uuid.svc_id,
             a_adding ? "added to" : "removed from",
             NODE_ADDR_FP_ARGS(a_node_addr));
+}
+DAP_STATIC_INLINE void s_debug_accounting_link_in_net(bool a_uplink, dap_stream_node_addr_t *a_node_addr, uint64_t a_net_id)
+{
+    debug_if(s_debug_more, L_DEBUG, "Accounting %slink from "NODE_ADDR_FP_STR" in net %"DAP_UINT64_FORMAT_U,
+            a_uplink ? "up" : "down", NODE_ADDR_FP_ARGS(a_node_addr), a_net_id);
 }
 
 /**
@@ -90,7 +96,7 @@ void s_client_connect(dap_link_t *a_link, void *a_callback_arg)
         a_link->state = LINK_STATE_CONNECTING ;
         dap_client_go_stage(a_link->client, STAGE_STREAM_STREAMING, s_client_connected_callback);
     } else if (a_callback_arg && a_link->state == LINK_STATE_ESTABLISHED) {
-        s_accounting_link_in_net(a_link, (dap_managed_net_t *)a_callback_arg);
+        s_accounting_uplink_in_net(a_link, (dap_managed_net_t *)a_callback_arg);
     }
     return;
 }
@@ -172,7 +178,7 @@ void s_client_delete_callback(dap_client_t *a_client, void *a_arg)
  * @param a_link - link to check
  * @param a_net - net to check
  */
-void s_accounting_link_in_net(dap_link_t *a_link, dap_managed_net_t *a_net)
+void s_accounting_uplink_in_net(dap_link_t *a_link, dap_managed_net_t *a_net)
 {
 // sanity check
     dap_return_if_pass(!a_link || !a_net);
@@ -181,6 +187,7 @@ void s_accounting_link_in_net(dap_link_t *a_link, dap_managed_net_t *a_net)
         dap_cluster_member_add(a_net->node_link_cluster, &a_link->node_addr, 0, NULL);
         if(a_link->link_manager->callbacks.connected)
             a_link->link_manager->callbacks.connected(a_link, a_net->id);
+        s_debug_accounting_link_in_net(true, &a_link->node_addr, a_net->id);
     }
 }
 
@@ -194,6 +201,7 @@ void s_link_delete(dap_link_t *a_link, bool a_force)
 // sanity check
     dap_return_if_pass(!a_link);
 // func work
+    debug_if(s_debug_more, L_DEBUG, "%seleting link to node " NODE_ADDR_FP_STR "", a_force ? "Force d" : "D", NODE_ADDR_FP_ARGS_S(a_link->node_addr));
     if(a_link->static_links_clusters && !a_force)
         return;
     a_link->state = LINK_STATE_DISCONNECTED;
@@ -441,7 +449,7 @@ void dap_link_manager_remove_net(uint64_t a_net_id)
         }
     }
     if (!l_item) {
-        log_it(L_ERROR, "Net ID %zu not controlled by link manager", a_net_id);
+        log_it(L_ERROR, "Net ID %"DAP_UINT64_FORMAT_U" not controlled by link manager", a_net_id);
         return;
     }
     // TODO write func compare controlled nets struct
@@ -452,7 +460,7 @@ void dap_link_manager_remove_net(uint64_t a_net_id)
  * @brief set active or inactive status
  * @param a_net_id - net id to set
  */
-void dap_link_manager_set_net_status(uint64_t a_net_id, bool a_status)
+void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
 {
     dap_return_if_pass(!s_link_manager || !a_net_id);
     dap_list_t *l_item = NULL;
@@ -460,16 +468,16 @@ void dap_link_manager_set_net_status(uint64_t a_net_id, bool a_status)
     DL_FOREACH(s_link_manager->nets, l_item) {
         dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
         if (a_net_id == l_net->id) {
-            if (l_net->active && !a_status) {
+            if (l_net->active && !a_new_condition) {
                 dap_cluster_delete_all_members(l_net->node_link_cluster);
             }
-            l_net->active = a_status;
+            l_net->active = a_new_condition;
             l_finded = true;
         }
         l_total_active |= l_net->active;
     }
     if (!l_finded) {
-        log_it(L_ERROR, "Net %zu not controlled by link manager", a_net_id);
+        log_it(L_ERROR, "Net %"DAP_UINT64_FORMAT_U" not controlled by link manager", a_net_id);
     } else if (!l_total_active){
         s_link_delete_all(false);
     }
@@ -599,7 +607,7 @@ int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link)
         }
     }
     if (!l_item) {
-        log_it(L_ERROR, "Can't find %zu netowrk ID in link manager list", a_net_id);
+        log_it(L_ERROR, "Can't find %"DAP_UINT64_FORMAT_U" netowrk ID in link manager list", a_net_id);
         return -2;
     }
     dap_link_t *l_link = NULL;
@@ -634,6 +642,7 @@ int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr)
         dap_cluster_member_add((dap_cluster_t *)l_item->data, &l_link->node_addr, 0, NULL);
     }
     l_link->state = LINK_STATE_DOWNLINK;
+    log_it(L_INFO, "Get dowlink from "NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS(a_node_addr));
     return 0;
 }
 
@@ -648,8 +657,8 @@ void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr)
     dap_return_if_pass(!a_node_addr || !a_node_addr->uint64 || !s_link_manager->active);
 // func work
     dap_link_t *l_link = dap_link_manager_link_create_or_update(a_node_addr, NULL, 0);
-    dap_list_t *l_item = NULL;
     l_link->state = LINK_STATE_DISCONNECTED;
+    debug_if(s_debug_more, L_DEBUG, "Deleting dowlink from "NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS(a_node_addr));
 }
 
 /**
@@ -671,10 +680,11 @@ void dap_accounting_downlink_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a
         }
     }
     if (!l_item) {
-        log_it(L_ERROR, "Can't find %zu netowrk ID in link manager list", a_net_id);
+        log_it(L_ERROR, "Can't find %"DAP_UINT64_FORMAT_U" netowrk ID in link manager list", a_net_id);
         return;
     } else if (l_net->active) {
         dap_cluster_member_add(l_net->node_link_cluster, a_node_addr, 0, NULL);
+        s_debug_accounting_link_in_net(false, a_node_addr, l_net->id);
     }
 }
 
