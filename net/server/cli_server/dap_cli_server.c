@@ -702,7 +702,9 @@ int json_commands(const char * a_name) {
             "tx_history",
             "mempool",
             "chain_ca_copy",
-            "ledger"
+            "ledger",
+            "net",
+            "wallet"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
