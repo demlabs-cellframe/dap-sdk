@@ -26,9 +26,8 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
     
     response->id = id;
     json_object* errors = dap_json_rpc_error_get();
+    response->type = type;
     if (!errors) {
-        response->type = type;
-
         switch(response->type){
             case TYPE_RESPONSE_STRING:
                 response->result_string = (char*)result; break;
