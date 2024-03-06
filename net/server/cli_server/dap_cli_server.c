@@ -245,7 +245,7 @@ static void *thread_pipe_client_func( void *args )
                         if (l_cmd->arg_func) {
                             res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
                         } else {
-                            res = l_cmd->func(argc, l_argv, (void**)&str_reply);
+                            res = l_cmd->func(argc, l_argv, &str_reply);
                         }
                     }
 
