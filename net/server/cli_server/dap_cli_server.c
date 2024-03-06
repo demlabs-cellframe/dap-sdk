@@ -245,7 +245,7 @@ static void *thread_pipe_client_func( void *args )
                         if (l_cmd->arg_func) {
                             res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
                         } else {
-                            res = l_cmd->func(argc, l_argv, &str_reply);
+                            res = l_cmd->func(argc, l_argv, (void**)&str_reply);
                         }
                     }
 
@@ -700,6 +700,7 @@ char* s_get_next_str( SOCKET nSocket, int *dwLen, const char *stop_str, bool del
 int json_commands(const char * a_name) {
     const char* long_cmd[] = {
             "tx_history",
+            "wallet",
             "mempool",
             "chain_ca_copy",
             "ledger",
