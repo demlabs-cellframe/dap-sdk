@@ -262,7 +262,7 @@ bool s_update_states(UNUSED_ARG void *a_arg)
     dap_return_val_if_pass_err(!s_link_manager, false, s_init_error);
     // if inactive remove timer
     char *l_report = dap_link_manager_get_links_info();
-    printf("%s", l_report);
+    //printf("%s", l_report);
     DAP_DELETE(l_report);
     if (!s_link_manager->active) {
         s_link_manager->update_timer = NULL;
@@ -531,6 +531,8 @@ dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_nod
 {
 // sanity check
     dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64, NULL);
+    if (a_node_addr->uint64 == g_node_addr.uint64)
+        return NULL;
 // func work
     dap_link_t *l_ret = NULL;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
