@@ -59,6 +59,23 @@ static void s_links_wake_up();
 static void s_links_request();
 static bool s_update_states(void *a_arg);
 static void s_link_manager_print_links_info();
+DAP_STATIC_INLINE dap_list_t *s_find_net_item_by_id(uint64_t a_net_id)
+{
+    dap_list_t *l_item = NULL;
+    DL_FOREACH(s_link_manager->nets, l_item)
+        if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id)
+            break;
+    if (!l_item) {
+        log_it(L_ERROR, "Net ID %"DAP_UINT64_FORMAT_U" not controlled by link manager", a_net_id);
+        return NULL;
+    }
+    return l_item;
+}
+DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
+{
+    dap_list_t *l_item = s_find_net_item_by_id(a_net_id);
+    return l_item ? (dap_managed_net_t *)l_item->data : NULL;
+}
 // debug_more funcs
 DAP_STATIC_INLINE void s_debug_cluster_adding_removing(bool a_static, bool a_adding, dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_node_addr)
 {
@@ -199,7 +216,7 @@ void s_accounting_uplink_in_net(dap_link_t *a_link, dap_managed_net_t *a_net)
 /**
  * @brief Memory free from link !!!hash table should be locked!!!
  * @param a_link - link to delet
- * @param a_force - if false only delete node from links_clusters, if true - full memory free
+ * @param a_force - only del dynamic, if true - all links types memory free
  */
 void s_link_delete(dap_link_t *a_link, bool a_force)
 {
@@ -219,7 +236,7 @@ void s_link_delete(dap_link_t *a_link, bool a_force)
 
 /**
  * @brief Memory free from all links in link manager
- * @param a_full - if false only delete node from links_clusters, if true - full memory free
+ * @param a_force - only del dynamic, if true - all links types memory free
  */
 void s_link_delete_all(bool a_force)
 {
@@ -386,6 +403,24 @@ DAP_INLINE dap_link_manager_t *dap_link_manager_get_default()
 }
 
 /**
+ * @brief create list with info about active linkcs
+ * @param a_net_id net id for search
+ * @return pointer to links list
+ */
+dap_list_t *dap_link_manager_get_net_active_links_list(uint64_t a_net_id)
+{
+// sanity check
+    dap_return_val_if_pass(!a_net_id, NULL);
+// func work
+    dap_link_t *l_link = NULL, *l_tmp = NULL;
+    pthread_rwlock_rdlock(&s_link_manager->links_lock);
+        HASH_ITER(hh, s_link_manager->links, l_link, l_tmp) {
+        }
+    pthread_rwlock_unlock(&s_link_manager->links_lock);
+    return NULL;
+}
+
+/**
  * @brief count links in concretic net
  * @param a_net_id net id for search
  * @return links count
@@ -393,17 +428,10 @@ DAP_INLINE dap_link_manager_t *dap_link_manager_get_default()
 size_t dap_link_manager_links_count(uint64_t a_net_id)
 {
 // sanity check
-    dap_return_val_if_pass(!s_link_manager, 0);
+    dap_managed_net_t *l_net = NULL;
+    dap_return_val_if_pass(!s_link_manager || !(l_net = s_find_net_by_id(a_net_id)), 0);
 // func work
-    dap_list_t *l_item = NULL;
-    size_t l_ret = 0;
-    DL_FOREACH(s_link_manager->nets, l_item) {
-        if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
-            l_ret = ((dap_managed_net_t *)(l_item->data))->links_count;
-            break;
-        }
-    }
-    return l_ret;
+    return l_net->links_count;
 }
 
 /**
@@ -445,20 +473,12 @@ int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster)
  */
 void dap_link_manager_remove_net(uint64_t a_net_id)
 {
-    dap_return_if_pass(!s_link_manager || !a_net_id);
-    dap_list_t *l_item = NULL;
-    DL_FOREACH(s_link_manager->nets, l_item) {
-        if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
-            s_link_manager->nets = dap_list_remove_link(s_link_manager->nets, l_item);
-            break;
-        }
-    }
-    if (!l_item) {
-        log_it(L_ERROR, "Net ID %"DAP_UINT64_FORMAT_U" not controlled by link manager", a_net_id);
-        return;
-    }
-    // TODO write func compare controlled nets struct
-    DAP_DEL_MULTY(l_item->data, l_item);
+// sanity check
+    dap_list_t *l_net_item = NULL;
+    dap_return_if_pass(!s_link_manager || !a_net_id || !(l_net_item = s_find_net_item_by_id(a_net_id)));
+// func work
+    s_link_manager->nets = dap_list_remove_link(s_link_manager->nets, l_net_item);
+    DAP_DEL_MULTY(l_net_item->data, l_net_item);
 }
 
 /**
@@ -467,23 +487,15 @@ void dap_link_manager_remove_net(uint64_t a_net_id)
  */
 void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
 {
-    dap_return_if_pass(!s_link_manager || !a_net_id);
-    dap_list_t *l_item = NULL;
-    bool l_finded = false, l_total_active = false;
-    DL_FOREACH(s_link_manager->nets, l_item) {
-        dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
-        if (a_net_id == l_net->id) {
-            if (l_net->active && !a_new_condition) {
-                dap_cluster_delete_all_members(l_net->node_link_cluster);
-            }
-            l_net->active = a_new_condition;
-            l_finded = true;
-        }
-        l_total_active |= l_net->active;
+// sanity check
+    dap_managed_net_t *l_net = NULL;
+    dap_return_if_pass(!s_link_manager || !a_net_id || !(l_net = s_find_net_by_id(a_net_id)));
+// func work
+    if (l_net->active && !a_new_condition) {
+        dap_cluster_delete_all_members(l_net->node_link_cluster);
     }
-    if (!l_finded) {
-        log_it(L_ERROR, "Net %"DAP_UINT64_FORMAT_U" not controlled by link manager", a_net_id);
-    } else if (!l_total_active){
+    l_net->active = a_new_condition;
+    if (!s_check_active_nets()) {
         s_link_delete_all(false);
     }
 }
@@ -607,14 +619,8 @@ int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link)
 // sanity check
     dap_return_val_if_pass(!a_net_id || !a_link || !s_link_manager->active || !s_check_active_nets(), -1);
 // func work
-    dap_list_t *l_item = NULL;
-    DL_FOREACH(s_link_manager->nets, l_item) {
-        if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
-            break;
-        }
-    }
-    if (!l_item) {
-        log_it(L_ERROR, "Can't find %"DAP_UINT64_FORMAT_U" netowrk ID in link manager list", a_net_id);
+    dap_list_t *l_net_item = s_find_net_item_by_id(a_net_id);
+    if (!l_net_item) {
         return -2;
     }
     dap_link_t *l_link = NULL;
@@ -625,7 +631,7 @@ int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link)
         log_it(L_WARNING, "LEAKS, links dublicate to node "NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_link->node_addr));
         return -3;
     }
-    s_client_connect(a_link, l_item->data);
+    s_client_connect(a_link, l_net_item->data);
     return 0;
 }
 
@@ -676,20 +682,10 @@ void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr)
 void dap_accounting_downlink_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr)
 {
 // sanity check
-    dap_return_if_pass(!a_net_id);
-// func work
-    dap_list_t *l_item = NULL;
     dap_managed_net_t *l_net = NULL;
-    DL_FOREACH(s_link_manager->nets, l_item) {
-        l_net = (dap_managed_net_t *)l_item->data;
-        if (a_net_id == l_net->id) {
-            break;
-        }
-    }
-    if (!l_item) {
-        log_it(L_ERROR, "Can't find %"DAP_UINT64_FORMAT_U" netowrk ID in link manager list", a_net_id);
-        return;
-    } else if (l_net->active) {
+    dap_return_if_pass(!a_net_id || !(l_net = s_find_net_by_id(a_net_id)));
+// func work
+    if (l_net->active) {
         dap_cluster_member_add(l_net->node_link_cluster, a_node_addr, 0, NULL);
         s_debug_accounting_link_in_net(false, a_node_addr, l_net->id);
     }
