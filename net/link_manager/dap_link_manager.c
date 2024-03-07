@@ -59,7 +59,7 @@ static void s_links_wake_up();
 static void s_links_request();
 static bool s_update_states(void *a_arg);
 static void s_link_manager_print_links_info();
-// debug funcs
+// debug_more funcs
 DAP_STATIC_INLINE void s_debug_cluster_adding_removing(bool a_static, bool a_adding, dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_node_addr)
 {
     debug_if(s_debug_more, L_DEBUG, "%s cluster net_id %"DAP_UINT64_FORMAT_U", svc_id %"DAP_UINT64_FORMAT_U" successfully %s link "NODE_ADDR_FP_STR,
@@ -73,6 +73,11 @@ DAP_STATIC_INLINE void s_debug_accounting_link_in_net(bool a_uplink, dap_stream_
 {
     debug_if(s_debug_more, L_DEBUG, "Accounting %slink from "NODE_ADDR_FP_STR" in net %"DAP_UINT64_FORMAT_U,
             a_uplink ? "up" : "down", NODE_ADDR_FP_ARGS(a_node_addr), a_net_id);
+}
+DAP_STATIC_INLINE void s_debug_counting_links_in_net(bool a_inc, dap_managed_net_t *a_net)
+{
+    debug_if(s_debug_more, a_net->links_count < 0 ? L_ERROR : L_DEBUG, "Links counter in net %"DAP_UINT64_FORMAT_U" was %scremented and equal %d",
+            a_net->id, a_inc ? "in" : "de", a_net->links_count);
 }
 
 /**
@@ -500,6 +505,7 @@ void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_clus
             dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
             if (!strcmp((l_net->node_link_cluster->mnemonim), a_cluster->mnemonim)) {
                 l_net->links_count++;
+                s_debug_counting_links_in_net(true, l_net);
                 break;
             }
         }
@@ -529,6 +535,7 @@ void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_c
                 dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
                 if (!strcmp((l_net->node_link_cluster->mnemonim), a_cluster->mnemonim)) {
                     l_net->links_count--;
+                    s_debug_counting_links_in_net(false, l_net);
                     break;
                 }
             }
