@@ -380,9 +380,7 @@ static int s_server_run(dap_server_t *a_server)
     pthread_mutex_init(&a_server->started_mutex,NULL);
     pthread_cond_init(&a_server->started_cond,NULL);
 
-#if defined DAP_EVENTS_CAPS_IOCP
-    l_es->op_events[io_op_read] = CreateEvent(0, TRUE, FALSE, NULL);
-#elif defined DAP_EVENTS_CAPS_EPOLL
+#if defined DAP_EVENTS_CAPS_EPOLL
     l_es->ev_base_flags = EPOLLIN;
 #ifdef EPOLLEXCLUSIVE
     l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;

@@ -93,6 +93,14 @@ typedef struct task_entry {
     void *data;
 } task_entry_t;
 
+typedef enum per_io_optype {
+    io_op_add   = 'a',  // Add new es to context
+    io_op_call  = 'c',  // Call a routine in context
+    io_op_del   = 'd',  // Delete es from context
+    io_op_flag  = 'f',  // Set/unset es flag
+    io_op_read  = 'r',  // Read from es
+    io_op_write = 'w'   // Write to es
+} per_io_optype_t;
 #endif
 
 #if defined(DAP_EVENTS_CAPS_WEPOLL)
@@ -102,16 +110,9 @@ typedef struct task_entry {
 #elif defined (DAP_EVENTS_CAPS_IOCP)
 typedef struct dap_overlapped {
     OVERLAPPED ol;
-    //char *buf;
-    char buf[];
+    char op, buf[];
 } dap_overlapped_t;
 
-enum dap_io_op {
-    io_op_close = 0,
-    io_op_read,
-    io_op_write,
-    io_op_max
-};
 #include <mswsock.h>
 extern LPFN_CONNECTEX pfn_ConnectEx;
 #define MAX_IOCP_ENTRIES 0xf // Maximum count of IOCP entries to fetch at once
@@ -217,7 +218,7 @@ typedef struct dap_events_socket_w_data{
 
 typedef uint64_t dap_events_socket_uuid_t;
 #define DAP_FORMAT_ESOCKET_UUID "0x%016" DAP_UINT64_FORMAT_X
-#define DAP_HOSTADDR_STRLEN     0xFF
+#define DAP_HOSTADDR_STRLEN     0x100
 
 typedef struct dap_events_socket {
     union {
@@ -229,7 +230,7 @@ typedef struct dap_events_socket {
     uint32_t mqd_id;
 #elif defined(DAP_EVENTS_CAPS_IOCP)
     };
-    HANDLE h, op_events[io_op_max];
+    HANDLE h, per_io_ev;
 #else
     };
 #endif
