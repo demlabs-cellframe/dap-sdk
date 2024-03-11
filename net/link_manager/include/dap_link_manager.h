@@ -56,7 +56,6 @@ typedef enum dap_link_state {
 } dap_link_state_t;
 
 typedef struct dap_link {
-    dap_stream_node_addr_t node_addr;
     dap_link_state_t state;
     bool valid;
     int attempts_count;
