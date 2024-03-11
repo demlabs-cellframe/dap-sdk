@@ -88,19 +88,11 @@ typedef int SOCKET;
     #ifndef INET6_ADDRSTRLEN
         #define INET6_ADDRSTRLEN    46
     #endif
-typedef struct task_entry {
+typedef struct queue_entry {
     SLIST_ENTRY entry;
+    size_t size;
     void *data;
-} task_entry_t;
-
-typedef enum per_io_optype {
-    io_op_add   = 'a',  // Add new es to context
-    io_op_call  = 'c',  // Call a routine in context
-    io_op_del   = 'd',  // Delete es from context
-    io_op_flag  = 'f',  // Set/unset es flag
-    io_op_read  = 'r',  // Read from es
-    io_op_write = 'w'   // Write to es
-} per_io_optype_t;
+} queue_entry_t;
 #endif
 
 #if defined(DAP_EVENTS_CAPS_WEPOLL)
@@ -112,6 +104,17 @@ typedef struct dap_overlapped {
     OVERLAPPED ol;
     char op, buf[];
 } dap_overlapped_t;
+
+typedef enum per_io_type {
+    io_none = '\0', // Unspecified 
+    io_add  = 'a',  // Assign es to context
+    io_call = 'c',  // Call routine on context
+    io_del  = 'd',  // Delete (close) es
+    io_flag = 'f',  // Set/unset es flag
+    io_read = 'r',  // Read from es
+    io_cs   = 's',  // Switch context (a.k.a reassign)
+    io_write= 'w'   // Write to es
+} per_io_type_t;
 
 #include <mswsock.h>
 extern LPFN_CONNECTEX pfn_ConnectEx;
@@ -137,6 +140,12 @@ extern LPFN_CONNECTEX pfn_ConnectEx;
 
 // If set - queue limited to sizeof(void*) size of data transmitted
 #define DAP_SOCK_QUEUE_PTR         BIT( 8 )
+
+#ifdef DAP_EVENTS_CAPS_IOCP
+#define FLAG_CLOSE(f) (f & DAP_SOCK_SIGNAL_CLOSE)
+#define FLAG_READ_NOCLOSE(f) (!(f & DAP_SOCK_SIGNAL_CLOSE) && (f & DAP_SOCK_READY_TO_READ))
+#define FLAG_WRITE_NOCLOSE(f) (!(f & DAP_SOCK_SIGNAL_CLOSE) && (f & DAP_SOCK_READY_TO_WRITE))
+#endif
 
 typedef struct dap_events_socket dap_events_socket_t;
 typedef struct dap_worker dap_worker_t;
@@ -230,7 +239,7 @@ typedef struct dap_events_socket {
     uint32_t mqd_id;
 #elif defined(DAP_EVENTS_CAPS_IOCP)
     };
-    HANDLE h, per_io_ev;
+    HANDLE h;
 #else
     };
 #endif
@@ -364,24 +373,32 @@ dap_events_socket_t * dap_events_socket_create_type_pipe_mt(dap_worker_t * a_w, 
 dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket_t* a_es);
 int dap_events_socket_queue_ptr_send_to_input( dap_events_socket_t * a_es, void* a_arg);
 int dap_events_socket_queue_ptr_send( dap_events_socket_t * a_es, void* a_arg);
-
+#ifdef DAP_EVENTS_CAPS_IOCP
+int dap_events_socket_queue_data_send( dap_events_socket_t *a_es, size_t a_sz, void *a_data);
+#endif
 
 int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value);
 
 void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_preserve_inheritor);
-void dap_events_socket_delete_mt(dap_worker_t * a_worker, dap_events_socket_uuid_t a_es_uuid);
 
 dap_events_socket_t *dap_events_socket_wrap_no_add(SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);
 dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);
 
 void dap_events_socket_assign_on_worker_mt(dap_events_socket_t * a_es, struct dap_worker * a_worker);
-void dap_events_socket_assign_on_worker_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_es);
-
 void dap_events_socket_reassign_between_workers_mt(dap_worker_t * a_worker_old, dap_events_socket_t * a_es, dap_worker_t * a_worker_new);
 void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t * a_es, dap_worker_t * a_worker_new);
 
 void dap_events_socket_set_readable_unsafe(dap_events_socket_t * sc,bool is_ready);
 void dap_events_socket_set_writable_unsafe(dap_events_socket_t * sc,bool is_ready);
+#ifdef DAP_EVENTS_CAPS_IOCP
+DAP_STATIC_INLINE void dap_overlapped_free(dap_overlapped_t *ol) {
+    if (!ol) return;
+    if (ol->ol.hEvent)
+        CloseHandle(ol->ol.hEvent);
+    DAP_DELETE(ol);
+}
+void dap_events_socket_set_writable_unsafe_ex(dap_events_socket_t *sc, bool is_ready, size_t size, dap_overlapped_t *ol);
+#endif
 
 size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size);
 DAP_PRINTF_ATTR(2, 3) ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...);
@@ -399,8 +416,11 @@ size_t dap_events_socket_write(dap_events_socket_uuid_t a_es_uuid, const void * 
 size_t dap_events_socket_write_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, const void * a_data, size_t a_data_size);
 DAP_PRINTF_ATTR(3, 4) size_t dap_events_socket_write_f_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, const char * a_format,...);
 
+#ifndef DAP_EVENTS_CAPS_IOCP
+void dap_events_socket_assign_on_worker_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_es);
 size_t dap_events_socket_write_inter(dap_events_socket_t * a_es_input, dap_events_socket_uuid_t a_es_uuid, const void * a_data, size_t a_data_size);
 DAP_PRINTF_ATTR(3, 4) size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_events_socket_uuid_t a_es_uuid,const char * a_format,...);
+#endif
 
 void dap_events_socket_remove_and_delete_mt( dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid);
 void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool preserve_inheritor );

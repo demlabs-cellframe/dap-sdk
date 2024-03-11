@@ -63,6 +63,7 @@ int dap_stream_worker_init()
         if (!l_stream_worker->queue_ch_send)
             return -7;
     }
+#ifndef DAP_EVENTS_CAPS_IOCP
     for (uint32_t i = 0; i < l_worker_count; i++){
         dap_worker_t *l_worker_inp = dap_events_worker_get(i);
         dap_stream_worker_t *l_stream_worker_inp = (dap_stream_worker_t *)l_worker_inp->_inheritor;
@@ -78,6 +79,7 @@ int dap_stream_worker_init()
             dap_events_socket_assign_on_worker_mt(l_stream_worker_inp->queue_ch_io_input[j], l_worker_inp);
         }
     }
+#endif
     return 0;
 }
 

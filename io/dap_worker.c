@@ -129,17 +129,19 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
         return -1;
     }
 #elif defined DAP_EVENTS_CAPS_IOCP
-    if ( !(a_context->iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0)) ) {
+    if ( !(a_context->iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1)) ) {
         log_it(L_CRITICAL, "Creating IOCP failed! Errno %d", WSAGetLastError());
         return -1;
     }
 #else
 #error "Unimplemented dap_context_init for this platform"
 #endif
+#ifndef DAP_EVENTS_CAPS_IOCP
     l_worker->queue_es_new      = dap_context_create_queue(a_context, s_queue_add_es_callback);
     l_worker->queue_es_delete   = dap_context_create_queue(a_context, s_queue_delete_es_callback);
     l_worker->queue_es_io       = dap_context_create_queue(a_context, s_queue_es_io_callback);
     l_worker->queue_es_reassign = dap_context_create_queue(a_context, s_queue_es_reassign_callback );
+#endif
     l_worker->queue_callback    = dap_context_create_queue(a_context, s_queue_callback_callback);
 
     l_worker->timer_check_activity = dap_timerfd_create (s_connection_timeout * 1000 / 2,
@@ -407,6 +409,27 @@ static bool s_socket_all_check_activity( void * a_arg)
  */
 void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket)
 {
+#ifdef DAP_EVENTS_CAPS_IOCP
+    int l_ret = 0;
+    if ( dap_worker_get_current() == a_worker )
+        l_ret = dap_worker_add_events_socket_unsafe(a_worker, a_events_socket);
+    else {
+        a_events_socket->worker = a_worker;
+        dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + sizeof(a_events_socket));
+        *ol = (dap_overlapped_t) { .op = io_add };
+        *(dap_events_socket_t**)ol->buf = a_events_socket;
+        l_ret = PostQueuedCompletionStatus(a_worker->context->iocp, 0, a_events_socket->uuid, (OVERLAPPED*)ol)
+            ? 0 : ( DAP_DELETE(ol), GetLastError() );
+    }
+    if (l_ret)
+        log_it(L_ERROR, "Can't assign esocket to worker, error %d", l_ret);
+    else
+        debug_if(g_debug_reactor, L_DEBUG,
+                 "Sent es %p \"%s\" [%s] to worker #%d",
+                 a_events_socket, dap_events_socket_get_type_str(a_events_socket),
+                 a_events_socket->socket == INVALID_SOCKET ? "" : dap_itoa(a_events_socket->socket),
+                 a_worker->id);
+#else
     int l_ret = dap_worker_get_current() == a_worker
             ? dap_worker_add_events_socket_unsafe(a_worker, a_events_socket)
             : dap_events_socket_queue_ptr_send(a_worker->queue_es_new, a_events_socket);
@@ -423,8 +446,10 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
                a_events_socket, dap_events_socket_get_type_str(a_events_socket),
                a_events_socket->socket == INVALID_SOCKET ? "" : dap_itoa(a_events_socket->socket),
                a_worker->id);
+#endif
 }
 
+#ifndef DAP_EVENTS_CAPS_IOCP
 /**
  * @brief dap_worker_add_events_socket_inter
  * @param a_es_input
@@ -465,7 +490,7 @@ void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker
     }
 
 }
-
+#endif
 
 /**
  * @brief dap_worker_exec_callback_on
@@ -473,15 +498,14 @@ void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker
 void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg)
 {
     assert(a_worker);
-    dap_worker_msg_callback_t * l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
+    dap_worker_msg_callback_t *l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "Memory allocation error");
         return;
     }
-    l_msg->callback = a_callback;
-    l_msg->arg = a_arg;
-    int l_ret=dap_events_socket_queue_ptr_send( a_worker->queue_callback,l_msg );
-    if(l_ret != 0 ){
+    *l_msg = (dap_worker_msg_callback_t) { .callback = a_callback, .arg = a_arg };
+    int l_ret = dap_events_socket_queue_ptr_send( a_worker->queue_callback, l_msg );
+    if (l_ret) {
         char l_errbuf[128];
         *l_errbuf = 0;
         strerror_r(l_ret,l_errbuf,sizeof (l_errbuf));

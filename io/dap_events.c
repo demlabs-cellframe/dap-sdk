@@ -319,7 +319,7 @@ int dap_events_start()
             goto lb_err;
         }
     }
-
+#ifndef DAP_EVENTS_CAPS_IOCP
     // Create inputs for inter-context message queues (here we can safety handle alien contexts fields)
     for (size_t n = 0; n < s_threads_count; n++) {
         s_workers[n]->queue_es_new_input      = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * s_threads_count);
@@ -361,7 +361,7 @@ int dap_events_start()
             dap_worker_add_events_socket_unsafe(s_workers[n], s_workers[n]->queue_es_reassign_input[i]);
         }
     }
-
+#endif
     // Init callback processor
     if (dap_proc_thread_init(s_threads_count) != 0 ){
         log_it( L_CRITICAL, "Can't init proc threads" );
@@ -374,10 +374,12 @@ lb_err:
     log_it(L_CRITICAL,"Events init failed with code %d", l_ret);
     for( uint32_t j = 0; j < s_threads_count; j++) {
         if (s_workers[j]) {
+#ifndef DAP_EVENTS_CAPS_IOCP
             DAP_DEL_Z(s_workers[j]->queue_es_new_input);
             DAP_DEL_Z(s_workers[j]->queue_es_delete_input);
             DAP_DEL_Z(s_workers[j]->queue_es_io_input);
             DAP_DEL_Z(s_workers[j]->queue_es_reassign_input);
+#endif
             DAP_DEL_Z(s_workers[j]);
         }
     }

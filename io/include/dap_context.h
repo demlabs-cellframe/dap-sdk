@@ -137,7 +137,6 @@ struct {
 // pthread kernel object for current context pointer
 extern pthread_key_t g_dap_context_pth_key;
 
-
 /// Next functions are thread-safe
 int dap_context_init(); // Init
 void dap_context_deinit(); // Deinit

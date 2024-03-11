@@ -651,12 +651,10 @@ dap_client_http_t * dap_client_http_request_custom (
 #ifdef DAP_EVENTS_CAPS_IOCP
     log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
     l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
-    dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
-
-    dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-    *l_ev_uuid_ptr = l_ev_socket->uuid;
     l_ev_socket->flags &= ~DAP_SOCK_READY_TO_READ;
-    dap_events_socket_set_writable_mt(l_client_http->worker, *l_ev_uuid_ptr, true);
+    dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_DUP(&l_ev_socket->uuid);
+    dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
+    dap_events_socket_set_writable_mt(l_client_http->worker, l_ev_uuid_ptr, true);
     l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, s_timer_timeout_check, l_ev_uuid_ptr);
     if (!l_client_http->timer) {
         log_it(L_ERROR,"Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",

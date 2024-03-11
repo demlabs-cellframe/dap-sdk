@@ -111,22 +111,19 @@ size_t dap_stream_pkt_read_unsafe( dap_stream_t * a_stream, dap_stream_pkt_t * a
  * @return
  */
 
-size_t dap_stream_pkt_write_unsafe(dap_stream_t * a_stream, uint8_t a_type, const void * a_data, size_t a_data_size)
+size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const void *a_data, size_t a_data_size)
 {
+    if (a_data_size > DAP_STREAM_PKT_FRAGMENT_SIZE)
+        return log_it(L_ERROR, "Too big fragment size %zu", a_data_size), 0;
+    static _Thread_local s_pkt_buf[DAP_STREAM_PKT_FRAGMENT_SIZE + sizeof(dap_stream_pkt_hdr_t) + 0x40] = { 0 };
     a_stream->is_active = true;
-    size_t ret = 0;
-    size_t data_enc_size = dap_enc_code_out_size(a_stream->session->key, a_data_size, DAP_ENC_DATA_TYPE_RAW);
-    byte_t *l_buf = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_pkt_hdr_t) + data_enc_size);
-    dap_stream_pkt_hdr_t *l_pkt_hdr = (dap_stream_pkt_hdr_t*)l_buf;
-    l_pkt_hdr->type = a_type;
+    dap_enc_key_t *l_key = a_stream->session->key;
+    size_t l_full_size = dap_enc_key_get_enc_size(l_key, a_data_size) + sizeof(dap_stream_pkt_hdr_t);
+    dap_stream_pkt_hdr_t *l_pkt_hdr = (dap_stream_pkt_hdr_t*)s_pkt_buf;
+    *l_pkt_hdr = (dap_stream_pkt_hdr_t) { .size = dap_enc_code( l_key, a_data, a_data_size, s_pkt_buf + sizeof(*l_pkt_hdr),
+                                                                l_full_size - sizeof(*l_pkt_hdr), DAP_ENC_DATA_TYPE_RAW ) };
     memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
-    l_pkt_hdr->size = (uint32_t)dap_enc_code(a_stream->session->key, a_data, a_data_size,
-                                             l_buf + sizeof(dap_stream_pkt_hdr_t),
-                                             data_enc_size,
-                                             DAP_ENC_DATA_TYPE_RAW);
-    ret = dap_events_socket_write_unsafe(a_stream->esocket, l_buf, sizeof(dap_stream_pkt_hdr_t) + l_pkt_hdr->size);
-    DAP_DELETE(l_buf);
-    return ret;
+    return dap_events_socket_write_unsafe(a_stream->esocket, s_pkt_buf, l_full_size);
 }
 
 /**
@@ -139,6 +136,15 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t * a_stream, uint8_t a_type, cons
  */
 size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_uuid, dap_enc_key_t *a_key, const void * a_data, size_t a_data_size)
 {
+#ifdef DAP_EVENTS_CAPS_IOCP
+    static _Thread_local s_pkt_buf[DAP_STREAM_PKT_FRAGMENT_SIZE + sizeof(dap_stream_pkt_hdr_t) + 0x40] = { 0 };
+    size_t l_full_size = dap_enc_key_get_enc_size(a_key, a_data_size) + sizeof(dap_stream_pkt_hdr_t);
+    dap_stream_pkt_hdr_t *l_pkt_hdr = (dap_stream_pkt_hdr_t*)s_pkt_buf;
+    *l_pkt_hdr = (dap_stream_pkt_hdr_t) { .size = dap_enc_code( a_key, a_data, a_data_size, s_pkt_buf + sizeof(*l_pkt_hdr),
+                                                                l_full_size - sizeof(*l_pkt_hdr), DAP_ENC_DATA_TYPE_RAW ) };
+    memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
+    return dap_events_socket_write_mt(a_w, a_es_uuid, s_pkt_buf, l_full_size);
+#else
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "Memory allocation error");
@@ -166,5 +172,6 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
         return 0;
     }
     return a_data_size;
+#endif
 }
 
