@@ -371,3 +371,38 @@ dap_stream_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster)
     }
     return l_ret;
 }
+
+/**
+ * @brief forming list with all members node addrs in cluster
+ * @param a_count count of finded links
+ * @return pointer to dap_stream_node_addr_t array
+ */
+dap_stream_node_addr_t *dap_cluster_get_all_members_addrs(dap_cluster_t *a_cluster, size_t *a_count)
+{
+// sanity check
+    dap_return_val_if_pass(!a_cluster, NULL);
+// func work
+    size_t l_count = 0;
+    dap_stream_node_addr_t *l_ret = NULL;
+
+    pthread_rwlock_rdlock(&a_cluster->members_lock);
+        if (a_cluster->members) {
+            l_count = HASH_COUNT(a_cluster->members);
+            l_ret = DAP_NEW_Z_COUNT(dap_stream_node_addr_t, l_count);
+            if (!l_ret) {
+                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                pthread_rwlock_unlock(&a_cluster->members_lock);
+                return NULL;
+            }
+            dap_cluster_member_t *l_member = NULL, *l_tmp = NULL;
+            size_t l_bias = 0;
+            HASH_ITER(hh, a_cluster->members, l_member, l_tmp) {
+                l_ret[l_bias].uint64 = l_member->addr.uint64;
+                l_bias++;
+            }
+        }
+    pthread_rwlock_unlock(&a_cluster->members_lock);
+    if (a_count)
+        a_count = l_count;
+    return l_ret;
+}

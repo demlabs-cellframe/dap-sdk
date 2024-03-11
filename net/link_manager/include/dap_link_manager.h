@@ -101,3 +101,4 @@ size_t dap_link_manager_needed_links_count(uint64_t a_net_id);
 void dap_link_manager_set_condition(bool a_new_condition);
 bool dap_link_manager_get_condition();
 char *dap_link_manager_get_links_info();
+dap_link_info_t *dap_link_manager_get_net_links_info_list(uint64_t a_net_id, size_t *a_count);

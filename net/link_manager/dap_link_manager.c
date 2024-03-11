@@ -759,6 +759,43 @@ void dap_link_manager_remove_static_links_cluster_all(dap_cluster_t *a_cluster)
 }
 
 /**
+ * @brief forming list with info about active links
+ * @param a_net_id net id to search
+ * @param a_count count of finded links
+ * @return pointer to dap_link_info_t array
+ */
+dap_link_info_t *dap_link_manager_get_net_links_info_list(uint64_t a_net_id, size_t *a_count)
+{
+// sanity check
+    dap_managed_net_t *l_net = NULL;
+    dap_return_val_if_pass(!s_link_manager || !(l_net = s_find_net_by_id(a_net_id)), 0);
+// func work
+    size_t l_count = 0;
+    dap_link_info_t *l_ret = NULL;
+    dap_link_t *l_link = NULL, *l_tmp = NULL;
+    dap_stream_node_addr_t *l_links_addrs = dap_cluster_get_all_members_addrs(l_net->node_link_cluster, &l_count);
+    if (!l_links_addrs) {
+        return NULL;
+    }
+    DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_link_info_t, l_links_addrs, NULL, l_links_addrs);
+    pthread_rwlock_rdlock(&s_link_manager->links_lock);
+        for (int i = l_count - 1; i >= 0; --i) {
+            dap_link_t *l_link = NULL;
+            HASH_FIND(hh, s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
+            if (!l_link) {
+                --l_count;
+                continue;
+            }
+            dap_mempcpy(l_ret + i, &l_link->client->link_info, sizeof(l_link->client->link_info));
+        }
+    pthread_rwlock_unlock(&s_link_manager->links_lock);
+    DAP_DELETE(l_links_addrs);
+    if (a_count)
+        a_count = l_count;
+    return l_ret;
+}
+
+/**
  * @brief print information about links
  */
 void s_link_manager_print_links_info()
