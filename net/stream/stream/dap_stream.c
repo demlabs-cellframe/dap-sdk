@@ -58,6 +58,7 @@
 #include "uthash.h"
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"
+#include "dap_link_manager.h"
 
 #define LOG_TAG "dap_stream"
 
@@ -363,8 +364,10 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
     a_http_client->_inheritor = l_ret;
-    if (a_addr)
+    if (a_addr && !dap_stream_node_addr_is_blank(a_addr)) {
         l_ret->node = *a_addr;
+        l_ret->authorized = true;
+    }
     s_stream_add_to_list(l_ret);
     log_it(L_NOTICE,"New stream instance");
     return l_ret;
@@ -375,7 +378,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
  * @param a_es
  * @return
  */
-dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_stream_node_addr_t *a_addr)
+dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_stream_node_addr_t *a_addr, bool a_authorized)
 {
     dap_stream_t *l_ret = DAP_NEW_Z(dap_stream_t);
     if (!l_ret) {
@@ -392,6 +395,7 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
     l_ret->esocket->callbacks.worker_unassign_callback = s_client_callback_worker_unassign;
     if (a_addr)
         l_ret->node = *a_addr;
+    l_ret->authorized = a_authorized;
     s_stream_add_to_list(l_ret);
     return l_ret;
 }
@@ -1028,7 +1032,8 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
         return -1;
     }
     HASH_ADD(hh, s_authorized_streams, node, sizeof(a_stream->node), a_stream);
-    dap_cluser_link_add_for_all(&a_stream->node);
+    if (!a_stream->is_client_to_uplink)
+        dap_link_manager_downlink_add(&a_stream->node);
     return 0;
 }
 
@@ -1036,22 +1041,21 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
 {
     dap_return_if_fail(a_stream);
     pthread_rwlock_wrlock(&s_streams_lock);
+    dap_stream_t *l_stream = NULL;
     DL_DELETE(s_streams, a_stream);
-    if (a_stream->node.uint64) {
+    DL_FOREACH(s_streams, l_stream) {
+        if (l_stream->node.uint64 == a_stream->node.uint64) {
+            break;
+        }
+    }
+    if (a_stream->authorized) {
         // It's an authorized stream, try to replace it in hastable
         HASH_DEL(s_authorized_streams, a_stream);
-        dap_stream_t *l_stream;
-        bool l_replace_found = false;
-        DL_FOREACH(s_streams, l_stream) {
-            if (l_stream->node.uint64 == a_stream->node.uint64) {
-                s_stream_add_to_hashtable(l_stream);
-                l_replace_found = true;
-                break;
-            }
-        }
-        if (!l_replace_found)
-            dap_cluster_link_delete_from_all(&a_stream->node);
+        if (l_stream)
+            s_stream_add_to_hashtable(l_stream);
     }
+    if(!l_stream)
+        dap_cluster_link_delete_from_all(&a_stream->node);
     pthread_rwlock_unlock(&s_streams_lock);
 }
 
@@ -1061,7 +1065,7 @@ int s_stream_add_to_list(dap_stream_t *a_stream)
     int l_ret = 0;
     pthread_rwlock_wrlock(&s_streams_lock);
     DL_APPEND(s_streams, a_stream);
-    if (a_stream->node.uint64)
+    if (a_stream->authorized)
         l_ret = s_stream_add_to_hashtable(a_stream);
     pthread_rwlock_unlock(&s_streams_lock);
     return l_ret;
@@ -1146,7 +1150,7 @@ static void s_stream_fill_info(dap_stream_t *a_stream, dap_stream_info_t *a_out_
 
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count)
 {
-    dap_return_val_if_fail(s_streams, NULL);
+    dap_return_val_if_pass(!a_cluster && !s_streams, NULL);
     pthread_rwlock_wrlock(&s_streams_lock);
     dap_stream_t *it;
     size_t l_streams_count = 0, i = 0;
@@ -1155,13 +1159,18 @@ dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a
         l_streams_count = HASH_COUNT(a_cluster->members);
     } else
         DL_COUNT(s_streams, it, l_streams_count);
-    if (!l_streams_count)
-        return 0;
+    if (!l_streams_count) {
+        if(a_cluster)
+            pthread_rwlock_unlock(&a_cluster->members_lock);
+        pthread_rwlock_unlock(&s_streams_lock);
+        return NULL;
+    }
     dap_stream_info_t *l_ret = DAP_NEW_Z_SIZE(dap_stream_info_t, sizeof(dap_stream_info_t) * l_streams_count);
     if (!l_ret) {
         log_it(L_CRITICAL, "Memory allocation error");
         if (a_cluster)
             pthread_rwlock_unlock(&a_cluster->members_lock);
+        pthread_rwlock_unlock(&s_streams_lock);
         return NULL;
     }
     if (a_cluster) {
@@ -1202,6 +1211,16 @@ void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data
     pthread_rwlock_unlock(&s_streams_lock);
 }
 
+size_t dap_stream_cluster_members_count(dap_cluster_t *a_cluster)
+{
+// sanity check
+    dap_return_val_if_pass(!a_cluster, 0);
+// func work
+    pthread_rwlock_rdlock(&a_cluster->members_lock);
+    size_t l_ret = HASH_COUNT(a_cluster->members);
+    pthread_rwlock_unlock(&a_cluster->members_lock);
+    return l_ret;
+}
 dap_stream_node_addr_t dap_stream_get_random_link()
 {
     dap_stream_node_addr_t l_ret = {};

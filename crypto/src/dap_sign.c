@@ -484,15 +484,13 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
     }
     unsigned int l_list_length = dap_list_length(l_list_signs);
     *a_signs_count = (size_t)l_list_length;
+    if (!l_list_length)
+        return NULL;
     dap_sign_t **l_ret = NULL;
     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_sign_t*, sizeof(dap_sign_t *)*l_list_length, NULL, NULL);
     unsigned int i = 0;
-    dap_list_t *l_list = dap_list_first(l_list_signs);
-    while(l_list) {
-        l_ret[i] = l_list->data;
-        i++;
-        l_list = l_list->next;
-    }
+    for (dap_list_t *l_list = l_list_signs; l_list; l_list = l_list->next)
+        l_ret[i++] = l_list->data;
     dap_list_free(l_list_signs);
     return l_ret;
 }

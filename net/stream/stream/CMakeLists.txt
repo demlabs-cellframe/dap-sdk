@@ -7,7 +7,7 @@ file(GLOB STREAM_HDRS include/*.h)
 add_library(${PROJECT_NAME} STATIC ${STREAM_SRCS} ${STREAM_HDRS})
 
 target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_crypto
-    dap_http_server dap_enc_server dap_session dap_stream_ch dap_client)
+    dap_http_server dap_enc_server dap_session dap_stream_ch dap_client dap_global_db)
 
 if(DAP_STREAM_TEST)
     target_link_libraries(${PROJECT_NAME} dap_stream_test)

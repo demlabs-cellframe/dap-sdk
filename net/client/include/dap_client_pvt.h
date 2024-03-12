@@ -39,7 +39,7 @@ typedef struct dap_client_pvt {
     dap_stream_t *stream;
     dap_stream_worker_t *stream_worker;
     dap_events_socket_t *stream_es;
-    dap_stream_node_addr_t stream_addr;
+    bool authorized;
 
     dap_worker_t *worker;
     dap_client_http_t *http_client;

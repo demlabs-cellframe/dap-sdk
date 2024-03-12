@@ -1,4 +1,5 @@
 #include "dap_math_convert.h"
+#include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_math_convert"
 
@@ -350,6 +351,19 @@ const char *dap_uint128_to_hex_str(uint128_t a_uninteger)
     dap_bin2hex(s_buf + 2, &a_uninteger, sizeof(a_uninteger));
     return (const char *)s_buf;
 }
+
+uint128_t dap_uint128_from_hex_str(const char *a_hex_str)
+{
+    uint128_t ret = uint128_0;
+    if (!a_hex_str)
+        return ret;
+    size_t l_hex_str_len = strlen(a_hex_str);
+    if (l_hex_str_len != (16 * 2 + 2) || dap_strncmp(a_hex_str, "0x", 2) || dap_is_hex_string(a_hex_str + 2, l_hex_str_len - 2))
+        return ret;
+    dap_hex2bin((uint8_t *)&ret, a_hex_str + 2, l_hex_str_len - 2);
+    return ret;
+}
+
 
 char *dap_uint128_uninteger_to_char(uint128_t a_uninteger)
 {

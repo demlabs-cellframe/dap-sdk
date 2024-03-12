@@ -83,7 +83,7 @@ typedef void (*dap_client_callback_data_size_t) (dap_client_t *, void *, size_t)
 typedef struct dap_client {
     char *active_channels;
 
-    char *uplink_addr;
+    char uplink_addr[DAP_HOSTADDR_STRLEN];
     uint16_t uplink_port;
 
     dap_cert_t *auth_cert;
