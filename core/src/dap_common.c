@@ -148,7 +148,7 @@ static char s_last_error[LAST_ERROR_MAX]    = {'\0'},
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
 
-#define LOG_FORMAT_LEN 128
+#define LOG_FORMAT_LEN 4096
 
 static char* s_appname = NULL;
 
