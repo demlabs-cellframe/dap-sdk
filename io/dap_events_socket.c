@@ -1647,7 +1647,7 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
     debug_if(g_debug_reactor, L_DEBUG, "[!] Delete es %p \"%s\" [%s] ",
              a_es, dap_events_socket_get_type_str(a_es),
              a_es->socket == INVALID_SOCKET ? "" : dap_itoa(a_es->socket));
-
+#if 0
 #ifdef DAP_EVENTS_CAPS_IOCP
     if (!a_es->op_events[io_op_close]) {
         dap_overlapped_t *l_ol = DAP_NEW_Z(dap_overlapped_t);
@@ -1656,12 +1656,13 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
         if (!PostQueuedCompletionStatus(a_es->context->iocp, preserve_inheritor, a_es->uuid, (OVERLAPPED*)l_ol))
             log_it(L_ERROR, "Queue deleting on es %p failed, errno %lu", a_es, GetLastError());
         else
-            debug_if(g_debug_reactor, L_DEBUG, "Queue deleting on es %p \"%s\"", a_es, dap_events_socket_get_type_str(a_es));
+            //debug_if(g_debug_reactor, L_DEBUG, "Queue deleting on es %p \"%s\"", a_es, dap_events_socket_get_type_str(a_es));
+            log_it(L_DEBUG, "Queue deleting on es %p \"%s\"", a_es, dap_events_socket_get_type_str(a_es));
         return;
     } else if (WaitForSingleObject(a_es->op_events[io_op_close], 0) == WAIT_TIMEOUT)
         return;
 #endif
-    
+#endif
     if( a_es->callbacks.delete_callback )
         a_es->callbacks.delete_callback( a_es, a_es->callbacks.arg );
     dap_context_remove(a_es);
