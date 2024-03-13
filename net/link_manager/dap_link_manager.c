@@ -507,8 +507,10 @@ void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
  */
 void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster)
 {
-    dap_return_if_pass(!s_link_manager || !a_addr || !a_cluster);
+// sanity check
     dap_link_t *l_link = dap_link_manager_link_create(a_addr);
+    dap_return_if_pass(!l_link || !a_cluster);
+// func work
     l_link->links_clusters = dap_list_append(l_link->links_clusters, a_cluster);
     s_debug_cluster_adding_removing(false, true, a_cluster, &l_link->client->link_info.node_addr);
     dap_list_t *l_item = NULL;
@@ -563,6 +565,7 @@ void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_c
 dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr)
 {
 // sanity check
+    dap_return_if_pass_err(!s_link_manager, s_init_error);
     dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64, NULL);
     if (a_node_addr->uint64 == g_node_addr.uint64)
         return NULL;
@@ -661,9 +664,9 @@ int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link)
 int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr)
 {
 // sanity check
-    dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64 || !s_link_manager->active, -1);
-// func work
     dap_link_t *l_link = dap_link_manager_link_create(a_node_addr);
+    dap_return_val_if_pass(!l_link || !s_link_manager->active, -1);
+// func work
     if (l_link->state != LINK_STATE_DISCONNECTED) {
         log_it(L_WARNING, "Get dowlink from "NODE_ADDR_FP_STR" with existed link", NODE_ADDR_FP_ARGS(a_node_addr));
         return -3;
@@ -685,9 +688,9 @@ int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr)
 void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr)
 {
 // sanity check
-    dap_return_if_pass(!a_node_addr || !a_node_addr->uint64 || !s_link_manager->active);
-// func work
     dap_link_t *l_link = dap_link_manager_link_create(a_node_addr);
+    dap_return_if_pass(!l_link || !s_link_manager->active);
+// func work
     l_link->state = LINK_STATE_DISCONNECTED;
     debug_if(s_debug_more, L_DEBUG, "Deleting dowlink from "NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS(a_node_addr));
 }
@@ -747,11 +750,9 @@ DAP_INLINE bool dap_link_manager_get_condition()
 void dap_link_manager_add_static_links_cluster(dap_stream_node_addr_t *a_node_addr, dap_cluster_t *a_cluster)
 {
 // sanity check
-    dap_return_if_pass_err(!s_link_manager, s_init_error);
-    dap_return_if_pass(!a_node_addr || !a_cluster);
-// func work
     dap_link_t *l_link = dap_link_manager_link_create(a_node_addr);
-    dap_return_if_pass(!l_link);
+    dap_return_if_pass(!l_link || !a_cluster);
+// func work
     l_link->static_links_clusters = dap_list_append(l_link->static_links_clusters, a_cluster);
     s_debug_cluster_adding_removing(true, true, a_cluster, &l_link->client->link_info.node_addr);
 }
