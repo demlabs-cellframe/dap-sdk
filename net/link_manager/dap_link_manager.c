@@ -793,10 +793,10 @@ dap_link_info_t *dap_link_manager_get_net_links_info_list(uint64_t a_net_id, siz
     dap_link_info_t *l_ret = NULL;
     dap_link_t *l_link = NULL, *l_tmp = NULL;
     dap_stream_node_addr_t *l_links_addrs = dap_cluster_get_all_members_addrs(l_net->node_link_cluster, &l_count);
-    if (!l_links_addrs) {
+    if (!l_links_addrs || !l_count) {
         return NULL;
     }
-    DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_link_info_t, l_links_addrs, NULL, l_links_addrs);
+    DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_link_info_t, l_count, NULL, l_links_addrs);
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
         for (int i = l_count - 1; i >= 0; --i) {
             dap_link_t *l_link = NULL;
@@ -810,7 +810,7 @@ dap_link_info_t *dap_link_manager_get_net_links_info_list(uint64_t a_net_id, siz
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     DAP_DELETE(l_links_addrs);
     if (a_count)
-        a_count = l_count;
+        *a_count = l_count;
     return l_ret;
 }
 
@@ -821,14 +821,14 @@ void s_link_manager_print_links_info()
 {
     dap_link_t *l_link = NULL, *l_tmp = NULL;
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
-        printf(" State |\tNode addr\t|   Clusters\t|\tStatic clusters\t\t|\n"
-                "---------------------------------------------------------------------------------\n");
+        printf(" State |\tNode addr\t|   Clusters\t|\tStatic clusters\t\t|\tHost\t|\n"
+                "-------------------------------------------------------------------------------------------------\n");
         HASH_ITER(hh, s_link_manager->links, l_link, l_tmp) {
             printf("   %d   | "NODE_ADDR_FP_STR"\t|\t%"DAP_UINT64_FORMAT_U
-                                                "\t|\t\t%"DAP_UINT64_FORMAT_U"\t\t|\n",
+                                                "\t|\t\t%"DAP_UINT64_FORMAT_U"\t\t| %s\n",
                                      l_link->state, NODE_ADDR_FP_ARGS_S(l_link->client->link_info.node_addr),
                                      dap_list_length(l_link->links_clusters),
-                                     dap_list_length(l_link->static_links_clusters));
+                                     dap_list_length(l_link->static_links_clusters), l_link->client->link_info.uplink_addr);
         }
     pthread_rwlock_unlock(&s_link_manager->links_lock);
 }

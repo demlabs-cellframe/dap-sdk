@@ -403,6 +403,6 @@ dap_stream_node_addr_t *dap_cluster_get_all_members_addrs(dap_cluster_t *a_clust
         }
     pthread_rwlock_unlock(&a_cluster->members_lock);
     if (a_count)
-        a_count = l_count;
+        *a_count = l_count;
     return l_ret;
 }
