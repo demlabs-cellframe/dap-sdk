@@ -78,8 +78,6 @@ typedef struct dap_link_manager {
     dap_link_manager_callbacks_t callbacks;  // callbacks
 } dap_link_manager_t;
 
-#define DAP_LINK(a) ((dap_link_t *)(a)->_inheritor)
-
 int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks);
 void dap_link_manager_deinit();
 dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_callbacks);
@@ -97,7 +95,6 @@ int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr);
 void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr);
 void dap_accounting_downlink_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr);
 void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition);
-dap_list_t *dap_link_manager_get_net_active_links_list(uint64_t a_net_id);
 size_t dap_link_manager_links_count(uint64_t a_net_id);
 size_t dap_link_manager_needed_links_count(uint64_t a_net_id);
 void dap_link_manager_set_condition(bool a_new_condition);

@@ -33,6 +33,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "dap_link_manager"
 
+#define DAP_LINK(a) ((dap_link_t *)(a)->_inheritor)
+
 typedef struct dap_managed_net {
     bool active;
     int32_t links_count;
@@ -59,8 +61,10 @@ static void s_links_wake_up();
 static void s_links_request();
 static bool s_update_states(void *a_arg);
 static void s_link_manager_print_links_info();
-DAP_STATIC_INLINE dap_list_t *s_find_net_item_by_id(uint64_t a_net_id)
+static dap_list_t *s_find_net_item_by_id(uint64_t a_net_id)
 {
+    dap_return_val_if_pass_err(!s_link_manager, NULL, s_init_error);
+    dap_return_val_if_pass(!a_net_id, NULL);
     dap_list_t *l_item = NULL;
     DL_FOREACH(s_link_manager->nets, l_item)
         if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id)
@@ -403,24 +407,6 @@ DAP_INLINE dap_link_manager_t *dap_link_manager_get_default()
 }
 
 /**
- * @brief create list with info about active linkcs
- * @param a_net_id net id for search
- * @return pointer to links list
- */
-dap_list_t *dap_link_manager_get_net_active_links_list(uint64_t a_net_id)
-{
-// sanity check
-    dap_return_val_if_pass(!a_net_id, NULL);
-// func work
-    dap_link_t *l_link = NULL, *l_tmp = NULL;
-    pthread_rwlock_rdlock(&s_link_manager->links_lock);
-        HASH_ITER(hh, s_link_manager->links, l_link, l_tmp) {
-        }
-    pthread_rwlock_unlock(&s_link_manager->links_lock);
-    return NULL;
-}
-
-/**
  * @brief count links in concretic net
  * @param a_net_id net id for search
  * @return links count
@@ -428,8 +414,8 @@ dap_list_t *dap_link_manager_get_net_active_links_list(uint64_t a_net_id)
 size_t dap_link_manager_links_count(uint64_t a_net_id)
 {
 // sanity check
-    dap_managed_net_t *l_net = NULL;
-    dap_return_val_if_pass(!s_link_manager || !(l_net = s_find_net_by_id(a_net_id)), 0);
+    dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
+    dap_return_val_if_pass(!l_net, 0);
 // func work
     return l_net->links_count;
 }
@@ -474,8 +460,8 @@ int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster)
 void dap_link_manager_remove_net(uint64_t a_net_id)
 {
 // sanity check
-    dap_list_t *l_net_item = NULL;
-    dap_return_if_pass(!s_link_manager || !a_net_id || !(l_net_item = s_find_net_item_by_id(a_net_id)));
+    dap_list_t *l_net_item = s_find_net_item_by_id(a_net_id);
+    dap_return_if_pass(!l_net_item);
 // func work
     s_link_manager->nets = dap_list_remove_link(s_link_manager->nets, l_net_item);
     DAP_DEL_MULTY(l_net_item->data, l_net_item);
@@ -488,8 +474,8 @@ void dap_link_manager_remove_net(uint64_t a_net_id)
 void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
 {
 // sanity check
-    dap_managed_net_t *l_net = NULL;
-    dap_return_if_pass(!s_link_manager || !a_net_id || !(l_net = s_find_net_by_id(a_net_id)));
+    dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
+    dap_return_if_pass(!l_net);
 // func work
     if (l_net->active && !a_new_condition) {
         dap_cluster_delete_all_members(l_net->node_link_cluster);
@@ -638,12 +624,9 @@ dap_link_t *dap_link_manager_link_update(dap_link_t *a_link, const char *a_host,
 int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link)
 {
 // sanity check
-    dap_return_val_if_pass(!a_net_id || !a_link || !s_link_manager->active || !s_check_active_nets(), -1);
-// func work
     dap_list_t *l_net_item = s_find_net_item_by_id(a_net_id);
-    if (!l_net_item) {
-        return -2;
-    }
+    dap_return_val_if_pass(!l_net_item || !a_link || !s_link_manager->active || !s_check_active_nets(), -1);
+// func work
     dap_link_t *l_link = NULL;
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
         HASH_FIND(hh, s_link_manager->links, &a_link->client->link_info.node_addr, sizeof(a_link->client->link_info.node_addr), l_link);
@@ -703,8 +686,8 @@ void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr)
 void dap_accounting_downlink_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr)
 {
 // sanity check
-    dap_managed_net_t *l_net = NULL;
-    dap_return_if_pass(!a_net_id || !(l_net = s_find_net_by_id(a_net_id)));
+    dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
+    dap_return_if_pass(!l_net);
 // func work
     if (l_net->active) {
         dap_cluster_member_add(l_net->node_link_cluster, a_node_addr, 0, NULL);
@@ -786,8 +769,8 @@ void dap_link_manager_remove_static_links_cluster_all(dap_cluster_t *a_cluster)
 dap_link_info_t *dap_link_manager_get_net_links_info_list(uint64_t a_net_id, size_t *a_count)
 {
 // sanity check
-    dap_managed_net_t *l_net = NULL;
-    dap_return_val_if_pass(!s_link_manager || !(l_net = s_find_net_by_id(a_net_id)), 0);
+    dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
+    dap_return_val_if_pass(!l_net, 0);
 // func work
     size_t l_count = 0;
     dap_link_info_t *l_ret = NULL;
