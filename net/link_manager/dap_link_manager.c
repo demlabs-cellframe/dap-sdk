@@ -565,7 +565,7 @@ void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_c
 dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr)
 {
 // sanity check
-    dap_return_if_pass_err(!s_link_manager, s_init_error);
+    dap_return_val_if_pass_err(!s_link_manager, NULL, s_init_error);
     dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64, NULL);
     if (a_node_addr->uint64 == g_node_addr.uint64)
         return NULL;
@@ -801,7 +801,7 @@ dap_link_info_t *dap_link_manager_get_net_links_info_list(uint64_t a_net_id, siz
         for (int i = l_count - 1; i >= 0; --i) {
             dap_link_t *l_link = NULL;
             HASH_FIND(hh, s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
-            if (!l_link) {
+            if (!l_link || l_link->state != LINK_STATE_ESTABLISHED) {
                 --l_count;
                 continue;
             }
@@ -809,6 +809,10 @@ dap_link_info_t *dap_link_manager_get_net_links_info_list(uint64_t a_net_id, siz
         }
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     DAP_DELETE(l_links_addrs);
+    if (!l_count) {
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
     if (a_count)
         *a_count = l_count;
     return l_ret;
