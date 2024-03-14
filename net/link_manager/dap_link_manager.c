@@ -825,11 +825,11 @@ void s_link_manager_print_links_info()
 {
     dap_link_t *l_link = NULL, *l_tmp = NULL;
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
-        printf(" State |\tNode addr\t|   Clusters\t|\tStatic clusters\t\t|\tHost\t|\n"
-                "-------------------------------------------------------------------------------------------------\n");
+        printf(" State |\tNode addr\t|   Clusters\t|Static clusters|\tHost\t|\n"
+                "-------------------------------------------------------------------------------\n");
         HASH_ITER(hh, s_link_manager->links, l_link, l_tmp) {
             printf("   %d   | "NODE_ADDR_FP_STR"\t|\t%"DAP_UINT64_FORMAT_U
-                                                "\t|\t\t%"DAP_UINT64_FORMAT_U"\t\t| %s\n",
+                                                "\t|\t%"DAP_UINT64_FORMAT_U"\t| %s\n",
                                      l_link->state, NODE_ADDR_FP_ARGS_S(l_link->client->link_info.node_addr),
                                      dap_list_length(l_link->links_clusters),
                                      dap_list_length(l_link->static_links_clusters), l_link->client->link_info.uplink_addr);
