@@ -77,14 +77,19 @@ typedef void (*dap_client_callback_t) (dap_client_t *, void *);
 typedef void (*dap_client_callback_int_t) (dap_client_t *, void *, int);
 typedef void (*dap_client_callback_data_size_t) (dap_client_t *, void *, size_t);
 
+typedef struct dap_link_info {
+    dap_stream_node_addr_t node_addr;
+    char uplink_addr[DAP_HOSTADDR_STRLEN + 1];
+    uint16_t uplink_port;
+} DAP_ALIGN_PACKED dap_link_info_t;
+
 /**
  * @brief The dap_client struct
  */
 typedef struct dap_client {
     char *active_channels;
 
-    char uplink_addr[DAP_HOSTADDR_STRLEN];
-    uint16_t uplink_port;
+    dap_link_info_t link_info;
 
     dap_cert_t *auth_cert;
 
@@ -121,8 +126,8 @@ dap_client_t *dap_client_new(dap_client_callback_t a_delete_callback,
                              dap_client_callback_t a_stage_status_error_callback,
                              void *a_callbacks_arg);
 
-DAP_STATIC_INLINE const char* dap_client_get_uplink_addr_unsafe(dap_client_t *a_client) { return a_client->uplink_addr; }
-DAP_STATIC_INLINE uint16_t dap_client_get_uplink_port_unsafe(dap_client_t *a_client) { return a_client->uplink_port; }
+DAP_STATIC_INLINE const char* dap_client_get_uplink_addr_unsafe(dap_client_t *a_client) { return a_client->link_info.uplink_addr; }
+DAP_STATIC_INLINE uint16_t dap_client_get_uplink_port_unsafe(dap_client_t *a_client) { return a_client->link_info.uplink_port; }
 
 void dap_client_set_uplink_unsafe(dap_client_t * a_client,const char* a_addr, uint16_t a_port);
 dap_enc_key_t * dap_client_get_key_stream(dap_client_t * a_client);
