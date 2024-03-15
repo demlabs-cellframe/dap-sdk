@@ -1054,8 +1054,11 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
         if (l_stream)
             s_stream_add_to_hashtable(l_stream);
     }
-    if(!l_stream)
+    if(!l_stream) {
         dap_cluster_link_delete_from_all(&a_stream->node);
+        if (!a_stream->is_client_to_uplink)
+            dap_link_manager_downlink_delete(&a_stream->node);
+    }
     pthread_rwlock_unlock(&s_streams_lock);
 }
 
