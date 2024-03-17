@@ -523,3 +523,10 @@ uint128_t dap_uint128_scan_decimal(const char *a_str_decimal)
 
     return l_ret;
 }
+
+double dap_uint256_decimal_to_double(uint256_t a_decimal){
+    uint64_t l_test = dap_uint256_to_uint64(a_decimal);
+    uint64_t base = 1000000000000000000;
+    double l_result = (double)(l_test * base);
+    return l_result;
+}
