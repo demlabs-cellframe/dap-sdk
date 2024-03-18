@@ -7,13 +7,13 @@
 #include "symmetric.h"
 
 /*************************************************
-* Name:        polyvec_compress
+* Name:        poly_compress
 *
-* Description: Compress and serialize vector of polynomials
+* Description: Compression and subsequent serialization of a polynomial
 *
 * Arguments:   - uint8_t *r: pointer to output byte array
-*                            (needs space for KYBER_POLYVECCOMPRESSEDBYTES)
-*              - const polyvec *a: pointer to input vector of polynomials
+*                            (of length KYBER_POLYCOMPRESSEDBYTES)
+*              - const poly *a: pointer to input polynomial
 **************************************************/
 void poly_compress(uint8_t r[KYBER_POLYCOMPRESSEDBYTES], const poly *a)
 {

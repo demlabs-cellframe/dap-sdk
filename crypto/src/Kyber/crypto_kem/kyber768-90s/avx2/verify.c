@@ -8,33 +8,32 @@
 *
 * Description: Compare two arrays for equality in constant time.
 *
-* Arguments:   const unsigned char *a: pointer to first byte array
-*              const unsigned char *b: pointer to second byte array
-*              size_t len:             length of the byte arrays
+* Arguments:   const uint8_t *a: pointer to first byte array
+*              const uint8_t *b: pointer to second byte array
+*              size_t len: length of the byte arrays
 *
 * Returns 0 if the byte arrays are equal, 1 otherwise
 **************************************************/
 int verify(const uint8_t *a, const uint8_t *b, size_t len)
 {
-  size_t pos;
+  size_t i;
   uint64_t r;
-  __m256i avec, bvec, cvec;
+  __m256i f, g, h;
 
-  cvec = _mm256_setzero_si256();
-  for(pos = 0; pos + 32 <= len; pos += 32) {
-    avec = _mm256_loadu_si256((__m256i *)&a[pos]);
-    bvec = _mm256_loadu_si256((__m256i *)&b[pos]);
-    avec = _mm256_xor_si256(avec, bvec);
-    cvec = _mm256_or_si256(cvec, avec);
+  h = _mm256_setzero_si256();
+  for(i=0;i<len/32;i++) {
+    f = _mm256_loadu_si256((__m256i *)&a[32*i]);
+    g = _mm256_loadu_si256((__m256i *)&b[32*i]);
+    f = _mm256_xor_si256(f,g);
+    h = _mm256_or_si256(h,f);
   }
-  r = 1-_mm256_testz_si256(cvec,cvec);
+  r = 1 - _mm256_testz_si256(h,h);
 
-  if(pos < len) {
-    avec = _mm256_loadu_si256((__m256i *)&a[pos]);
-    bvec = _mm256_loadu_si256((__m256i *)&b[pos]);
-    cvec = _mm256_cmpeq_epi8(avec, bvec);
-    r |= _mm256_movemask_epi8(cvec) & (-(uint32_t)1 >> (32 + pos - len));
-  }
+  a += 32*i;
+  b += 32*i;
+  len -= 32*i;
+  for(i=0;i<len;i++)
+    r |= a[i] ^ b[i];
 
   r = (-r) >> 63;
   return r;
