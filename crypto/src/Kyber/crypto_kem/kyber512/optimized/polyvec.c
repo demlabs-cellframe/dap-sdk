@@ -10,7 +10,7 @@
 *
 * Arguments:   - uint8_t *r: pointer to output byte array
 *                            (needs space for KYBER_POLYVECCOMPRESSEDBYTES)
-*              - polyvec *a: pointer to input vector of polynomials
+*              - const polyvec *a: pointer to input vector of polynomials
 **************************************************/
 void polyvec_compress(uint8_t r[KYBER_POLYVECCOMPRESSEDBYTES], const polyvec *a)
 {

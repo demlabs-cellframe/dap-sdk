@@ -11,11 +11,14 @@
 /*************************************************
 * Name:        poly_compress
 *
-* Description: Compression and subsequent serialization of a polynomial
+* Description: Compression and subsequent serialization of a polynomial.
+*              The coefficients of the input polynomial are assumed to
+*              lie in the invertal [0,q], i.e. the polynomial must be reduced
+*              by poly_reduce().
 *
 * Arguments:   - uint8_t *r: pointer to output byte array
 *                            (of length KYBER_POLYCOMPRESSEDBYTES)
-*              - poly *a:    pointer to input polynomial
+*              - const poly *a: pointer to input polynomial
 **************************************************/
 
 #if (KYBER_POLYCOMPRESSEDBYTES == 128)
