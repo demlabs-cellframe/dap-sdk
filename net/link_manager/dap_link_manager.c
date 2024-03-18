@@ -46,7 +46,7 @@ static bool s_debug_more = false;
 static const char *s_init_error = "Link manager not inited";
 static uint32_t s_timer_update_states = 4000;
 static uint32_t s_min_links_num = 5;
-static uint32_t s_max_attempts_num = 5;
+static uint32_t s_max_attempts_num = 2;
 static dap_link_manager_t *s_link_manager = NULL;
 
 static void s_client_connect(dap_link_t *a_link, void *a_callback_arg);
