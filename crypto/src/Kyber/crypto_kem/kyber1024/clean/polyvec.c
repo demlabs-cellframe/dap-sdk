@@ -49,10 +49,6 @@ void polyvec_compress(uint8_t r[KYBER_POLYVECCOMPRESSEDBYTES], const polyvec *a)
 }
 
 /*************************************************
-* Name:        PQCLEAN_KYBER1024_CLEAN_polyvec_decompress
-*
-
-/*************************************************
 * Name:        polyvec_decompress
 *
 * Description: De-serialize and decompress vector of polynomials;
