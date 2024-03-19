@@ -154,8 +154,8 @@ dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_strea
     };
     HASH_ADD(hh, a_cluster->members, addr, sizeof(*a_addr), l_member);
     pthread_rwlock_unlock(&a_cluster->members_lock);
-    if (l_member->cluster->members_add_callback)
-        l_member->cluster->members_add_callback(l_member);
+    if (a_cluster->members_add_callback)
+        a_cluster->members_add_callback(l_member, a_cluster->callbacks_arg;);
     return l_member;
 }
 
@@ -191,20 +191,10 @@ void dap_cluster_delete_all_members(dap_cluster_t *a_cluster)
 static void s_cluster_member_delete(dap_cluster_member_t *a_member)
 {
     if (a_member->cluster->members_delete_callback)
-        a_member->cluster->members_delete_callback(a_member);
+        a_member->cluster->members_delete_callback(a_member, a_member->cluster->callbacks_arg);
     HASH_DEL(a_member->cluster->members, a_member);
     DAP_DEL_Z(a_member->info);
     DAP_DELETE(a_member);
-}
-
-void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr)
-{
-    pthread_rwlock_rdlock(&s_clusters_rwlock);
-    for (dap_cluster_t *it = s_clusters; it; it = it->hh.next)
-        if (it->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
-                it->role == DAP_CLUSTER_ROLE_EMBEDDED)
-            dap_cluster_member_delete(it, a_addr);
-    pthread_rwlock_unlock(&s_clusters_rwlock);
 }
 
 /**

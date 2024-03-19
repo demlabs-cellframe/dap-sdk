@@ -49,19 +49,20 @@ typedef struct dap_link_manager_callbacks {
 
 // connection states
 typedef enum dap_link_state {
-    LINK_STATE_DELETED = -1,  // add to protect in external link using
     LINK_STATE_DISCONNECTED = 0,
     LINK_STATE_CONNECTING,
-    LINK_STATE_ESTABLISHED,
-    LINK_STATE_DOWNLINK,
+    LINK_STATE_ESTABLISHED
 } dap_link_state_t;
 
 typedef struct dap_link {
-    dap_link_state_t state;
-    bool valid;
-    int attempts_count;
-    dap_client_t *client;
-    dap_list_t *links_clusters;
+    dap_stream_node_addr_t addr;
+    bool is_uplink;
+    struct {
+        dap_link_state_t state;
+        int attempts_count;
+        dap_client_t *client;
+    } uplink;
+    dap_list_t *active_clusters;
     dap_list_t *static_links_clusters;
     dap_link_manager_t *link_manager;
     UT_hash_handle hh;
@@ -88,9 +89,8 @@ void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_clus
 void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
 void dap_link_manager_add_static_links_cluster(dap_stream_node_addr_t *a_node_addr, dap_cluster_t *a_cluster);
 void dap_link_manager_remove_static_links_cluster_all(dap_cluster_t *a_cluster);
-dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr);
-dap_link_t *dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_t a_port, bool a_force);
-int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link);
+dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, const char *a_host, uint16_t a_port);
+dap_link_t *dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr);
 int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr);
 void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr);
 void dap_accounting_downlink_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr);

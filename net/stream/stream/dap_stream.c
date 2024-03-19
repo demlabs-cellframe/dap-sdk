@@ -1043,20 +1043,15 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
     pthread_rwlock_wrlock(&s_streams_lock);
     dap_stream_t *l_stream = NULL;
     DL_DELETE(s_streams, a_stream);
-    DL_FOREACH(s_streams, l_stream) {
-        if (l_stream->node.uint64 == a_stream->node.uint64) {
-            break;
-        }
-    }
     if (a_stream->authorized) {
         // It's an authorized stream, try to replace it in hastable
         HASH_DEL(s_authorized_streams, a_stream);
+        DL_FOREACH(s_streams, l_stream)
+            if (l_stream->node.uint64 == a_stream->node.uint64)
+                break;
         if (l_stream)
             s_stream_add_to_hashtable(l_stream);
-    }
-    if(!l_stream) {
-        dap_cluster_link_delete_from_all(&a_stream->node);
-        if (!a_stream->is_client_to_uplink)
+        else if (!a_stream->is_client_to_uplink)
             dap_link_manager_downlink_delete(&a_stream->node);
     }
     pthread_rwlock_unlock(&s_streams_lock);
