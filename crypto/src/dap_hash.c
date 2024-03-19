@@ -79,5 +79,7 @@ int dap_chain_hash_fast_from_base58_str(const char *a_base58_str,  dap_chain_has
 
 int dap_chain_hash_fast_from_str( const char *a_hash_str, dap_chain_hash_fast_t *a_hash)
 {
-    return dap_chain_hash_fast_from_hex_str(a_hash_str, a_hash) && dap_chain_hash_fast_from_base58_str(a_hash_str, a_hash);
+    int l_str_from_hex = dap_chain_hash_fast_from_hex_str(a_hash_str, a_hash);
+    int l_str_from_base58 = dap_chain_hash_fast_from_base58_str(a_hash_str, a_hash);
+    return (l_str_from_hex == 0 || l_str_from_base58 == 0) ? 0 : -1;
 }
