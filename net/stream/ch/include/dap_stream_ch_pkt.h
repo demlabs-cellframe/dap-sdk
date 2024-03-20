@@ -29,7 +29,7 @@
 #include "dap_stream.h"
 #include "dap_enc_key.h"
 
-typedef uint64_t dap_stream_ch_uuid_t;
+typedef unsigned int dap_stream_ch_uuid_t;
 
 typedef struct dap_stream_ch_pkt_hdr {
     uint8_t id;   // Channel id

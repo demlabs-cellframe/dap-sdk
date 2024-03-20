@@ -97,7 +97,7 @@ static void s_ch_io_callback(dap_events_socket_t * a_es, void * a_msg)
     // Check if it was removed from the list
     dap_stream_ch_t *l_msg_ch = NULL;
     pthread_rwlock_rdlock(&l_stream_worker->channels_rwlock);
-    HASH_FIND(hh_worker, l_stream_worker->channels , &l_msg->ch_uuid , sizeof (l_msg->ch_uuid ), l_msg_ch );
+    HASH_FIND_BYHASHVALUE(hh_worker, l_stream_worker->channels , &l_msg->ch_uuid , sizeof (l_msg->ch_uuid), l_msg->ch_uuid, l_msg_ch );
     pthread_rwlock_unlock(&l_stream_worker->channels_rwlock);
     if (l_msg_ch == NULL) {
         if (l_msg->data_size) {

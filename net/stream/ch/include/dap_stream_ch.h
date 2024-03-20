@@ -77,6 +77,7 @@ typedef struct dap_stream_ch_cachet {
 int dap_stream_ch_init();
 void dap_stream_ch_deinit();
 
+unsigned int dap_new_stream_ch_id();
 dap_stream_ch_t* dap_stream_ch_new( dap_stream_t * a_stream, uint8_t a_id);
 void dap_stream_ch_set_ready_to_read_unsafe(dap_stream_ch_t * a_ch,bool a_is_ready);
 void dap_stream_ch_set_ready_to_write_unsafe(dap_stream_ch_t * a_ch,bool a_is_ready);
