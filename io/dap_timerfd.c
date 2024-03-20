@@ -81,7 +81,7 @@ dap_timerfd_t* dap_timerfd_start(uint64_t a_timeout_ms, dap_timerfd_callback_t a
 #ifdef DAP_OS_WINDOWS
 void CALLBACK TimerCallback(void* arg, BOOLEAN flag) {
     dap_timerfd_t *l_timerfd = (dap_timerfd_t*)arg;
-    if ( l_timerfd->events_socket && PostQueuedCompletionStatus(l_timerfd->worker->context->iocp, 0, (ULONG_PTR)l_timerfd->events_socket, NULL) )
+    if ( l_timerfd->events_socket && PostQueuedCompletionStatus(l_timerfd->events_socket->worker->context->iocp, 0, (ULONG_PTR)l_timerfd->events_socket, NULL) )
         ++l_timerfd->events_socket->pending;
 }
 #endif

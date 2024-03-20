@@ -1339,7 +1339,6 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         ol = DAP_NEW(dap_overlapped_t);
         *ol = (dap_overlapped_t){ .ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL), .op = io_read };
     }
-    debug_if(g_debug_reactor, L_DEBUG, "set readable: ol %p", ol);
     WSABUF wsabuf = { .buf = a_esocket->buf_in + a_esocket->buf_in_size, .len = a_esocket->buf_in_size_max };
 
     switch (a_esocket->type) {
@@ -1437,9 +1436,6 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_esocket, b
         *ol = (dap_overlapped_t) { .ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL), .op = io_write };
         a_size = 0; // ensure size consistency
     }
-
-    debug_if(g_debug_reactor, L_DEBUG, "set writable: ol %p", ol);
-
     switch (a_esocket->type) {
     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
@@ -1775,7 +1771,6 @@ void dap_events_socket_remove_and_delete_mt(dap_worker_t *a_w,  dap_events_socke
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + sizeof(uint32_t));
     *ol = (dap_overlapped_t) { .ol.hEvent = CreateEvent(0, TRUE, TRUE, NULL), .uid = a_es_uuid, .cb = s_dap_es_set_flag };
     *(uint32_t*)ol->buf = DAP_SOCK_SIGNAL_CLOSE;
-    debug_if(g_debug_reactor, L_DEBUG, "delete mt: ol %p", ol);
     if ( !PostQueuedCompletionStatus(a_w->context->iocp, 0, 0, (OVERLAPPED*)ol) ) {
         log_it(L_ERROR, "Can't schedule deletion of %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
                a_es_uuid, a_w->context->id, GetLastError());
@@ -1809,7 +1804,6 @@ void dap_events_socket_set_readable_mt(dap_worker_t * a_w, dap_events_socket_uui
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + sizeof(uint32_t));
     *ol = (dap_overlapped_t) { .ol.hEvent = CreateEvent(0, TRUE, a_is_ready, NULL), .uid = a_es_uuid, .cb = s_dap_es_set_flag };
     *(uint32_t*)ol->buf = DAP_SOCK_READY_TO_READ;
-    debug_if(g_debug_reactor, L_DEBUG, "set readable mt: ol %p", ol);
     if ( !PostQueuedCompletionStatus(a_w->context->iocp, 0, 0, (OVERLAPPED*)ol) ) {
         log_it(L_ERROR, "Can't schedule reading from %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
                a_es_uuid, a_w->context->id, GetLastError());
@@ -1843,7 +1837,6 @@ void dap_events_socket_set_writable_mt(dap_worker_t *a_w, dap_events_socket_uuid
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + sizeof(uint32_t));
     *ol = (dap_overlapped_t) { .ol.hEvent = CreateEvent(0, TRUE, a_is_ready, NULL), .uid = a_es_uuid, .cb = s_dap_es_set_flag };
     *(uint32_t*)ol->buf = DAP_SOCK_READY_TO_WRITE;
-    debug_if(g_debug_reactor, L_DEBUG, "set writable mt: ol %p", ol);
     if ( !PostQueuedCompletionStatus(a_w->context->iocp, 0, 0, (OVERLAPPED*)ol) ) {
         log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
                a_es_uuid, a_w->context->id, GetLastError());
@@ -1994,7 +1987,6 @@ size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_data_size);
     *ol = (dap_overlapped_t) { .uid = a_es_uuid, .op = io_write };
     memcpy(ol->buf, a_data, a_data_size);
-    debug_if(g_debug_reactor, L_DEBUG, "write mt: ol %p", ol);
     return PostQueuedCompletionStatus(a_w->context->iocp, a_data_size, 0, (OVERLAPPED*)ol)
         ? a_data_size
         : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
@@ -2041,7 +2033,6 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
     dap_overlapped_t *ol = DAP_NEW_Z_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + l_data_size);
     *ol = (dap_overlapped_t) { .uid = a_es_uuid, .op = io_write };
     vsprintf(ol->buf, a_format, ap_copy);
-    debug_if(g_debug_reactor, L_DEBUG, "write f mt: ol %p", ol);
     return PostQueuedCompletionStatus(a_w->context->iocp, l_data_size, 0, (OVERLAPPED*)ol)
         ? l_data_size
         : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
