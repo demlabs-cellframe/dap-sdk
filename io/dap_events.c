@@ -121,7 +121,7 @@ bool dap_events_workers_init_status(){
  */
 uint32_t dap_get_cpu_count( )
 {
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
   SYSTEM_INFO si;
 
   GetSystemInfo( &si );
@@ -221,7 +221,7 @@ void dap_cpu_assign_thread_on(uint32_t a_cpu_id)
  */
 int dap_events_init( uint32_t a_threads_count, size_t a_conn_timeout )
 {
-#ifdef __WIN32
+#ifdef DAP_OS_WINDOWS
     WSADATA wsaData;
     int ret = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (ret != 0) {

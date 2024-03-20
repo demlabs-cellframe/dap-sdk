@@ -1199,7 +1199,7 @@ dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_ca
     l_timer_obj->param      = a_param;
 #if (defined _WIN32)
     if ( !CreateTimerQueueTimer(&l_timer_obj->timer, NULL, (WAITORTIMERCALLBACK)s_win_callback,
-                                &l_timer_obj->timer, a_msec, a_msec, 0) )
+                                &l_timer_obj->timer, a_msec, a_msec, WT_EXECUTEINTIMERTHREAD | WT_EXECUTELONGFUNCTION) )
         return NULL;
 #elif (defined DAP_OS_DARWIN)
     dispatch_queue_t l_queue = dispatch_queue_create("tqueue", 0);

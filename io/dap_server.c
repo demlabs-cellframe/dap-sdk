@@ -81,10 +81,8 @@ static void s_es_server_accept  (dap_events_socket_t *a_es_listener, SOCKET a_re
 static void s_es_server_error   (dap_events_socket_t *a_es, int a_arg);
 
 #ifdef DAP_EVENTS_CAPS_IOCP
-static void s_es_server_new_ex      (dap_events_socket_t *a_es, void *a_arg);
-static void s_es_server_accept_ex   (dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr);
-LPFN_ACCEPTEX               pfn_AcceptEx                = NULL;
-LPFN_GETACCEPTEXSOCKADDRS   pfn_GetAcceptExSockaddrs    = NULL;
+LPFN_ACCEPTEX               pfnAcceptEx                = NULL;
+LPFN_GETACCEPTEXSOCKADDRS   pfnGetAcceptExSockaddrs    = NULL;
 #endif
 
 static dap_server_t* s_default_server = NULL;
@@ -101,21 +99,27 @@ int dap_server_init()
     DWORD l_bytes = 0;
     static GUID l_guid_AcceptEx             = WSAID_ACCEPTEX,
                 l_guid_GetAcceptExSockaddrs = WSAID_GETACCEPTEXSOCKADDRS,
-                l_guid_ConnectEx            = WSAID_CONNECTEX;
+                l_guid_ConnectEx            = WSAID_CONNECTEX,
+                l_guid_DisconnectEx         = WSAID_DISCONNECTEX;
     if (
             WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
                      &l_guid_AcceptEx,  sizeof(l_guid_AcceptEx),
-                     &pfn_AcceptEx,     sizeof(pfn_AcceptEx),
+                     &pfnAcceptEx,     sizeof(pfnAcceptEx),
                      &l_bytes, NULL, NULL) == SOCKET_ERROR
 
             || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
                         &l_guid_GetAcceptExSockaddrs,   sizeof(l_guid_GetAcceptExSockaddrs),
-                        &pfn_GetAcceptExSockaddrs,      sizeof(pfn_GetAcceptExSockaddrs),
+                        &pfnGetAcceptExSockaddrs,      sizeof(pfnGetAcceptExSockaddrs),
                         &l_bytes, NULL, NULL) == SOCKET_ERROR
 
             || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
                         &l_guid_ConnectEx,  sizeof(l_guid_ConnectEx),
-                        &pfn_ConnectEx,     sizeof(pfn_ConnectEx),
+                        &pfnConnectEx,     sizeof(pfnConnectEx),
+                        &l_bytes, NULL, NULL) == SOCKET_ERROR
+
+            || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
+                        &l_guid_DisconnectEx,   sizeof(l_guid_DisconnectEx),
+                        &pfnDisconnectEx,      sizeof(pfnDisconnectEx),
                         &l_bytes, NULL, NULL) == SOCKET_ERROR
             )
     {
@@ -291,13 +295,8 @@ dap_server_t *dap_server_new(char **a_addrs, uint16_t a_count, dap_server_type_t
     dap_server_t *l_server =  NULL;
     DAP_NEW_Z_RET_VAL(l_server, dap_server_t, NULL, NULL);
     dap_events_socket_callbacks_t l_callbacks = {
-#ifdef DAP_EVENTS_CAPS_IOCP
-        .accept_callback = s_es_server_accept_ex,
-        .new_callback    = s_es_server_new_ex,
-#else
         .accept_callback = s_es_server_accept,
         .new_callback    = s_es_server_new,
-#endif
         .read_callback   = a_callbacks ? a_callbacks->read_callback     : NULL,
         .write_callback  = a_callbacks ? a_callbacks->write_callback    : NULL,
         .error_callback  = s_es_server_error
@@ -403,7 +402,7 @@ static int s_server_run(dap_server_t *a_server)
  */
 static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg)
 {
-    log_it(L_DEBUG, "Created server socket %p on worker %u", a_es, a_es->worker->id);;
+    log_it(L_DEBUG, "Created server socket "DAP_FORMAT_ESOCKET_UUID" on worker %u", a_es->uuid, a_es->worker->id);;
     dap_server_t *l_server = a_es->server;
     pthread_mutex_lock( &l_server->started_mutex);
     l_server->started = true;
@@ -425,22 +424,6 @@ static void s_es_server_error(dap_events_socket_t *a_es, int a_arg)
     log_it(L_WARNING, "Listening socket error: %s, ", l_buf);
 }
 
-#ifdef DAP_EVENTS_CAPS_IOCP
-static void s_es_server_new_ex(dap_events_socket_t *a_es, void *a_arg) {
-    dap_events_socket_set_readable_unsafe(a_es, true);
-    s_es_server_accept_ex(a_es, INVALID_SOCKET, NULL); // Initial AcceptEx
-    s_es_server_new(a_es, a_arg);
-}
-
-static void s_es_server_accept_ex(dap_events_socket_t *a_es, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr)
-{
-    if (a_remote_socket != INVALID_SOCKET) {
-        s_es_server_accept(a_es, a_remote_socket, a_remote_addr);
-    }
-    // Accept the next connection...
-}
-#endif
-
 /**
  * @brief s_es_server_accept
  * @param a_events
@@ -453,9 +436,10 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     assert(l_server);
 
     dap_events_socket_t * l_es_new = NULL;
-    log_it(L_DEBUG, "[es:%p] Listening socket %"DAP_FORMAT_SOCKET" binded on %s:%u "
+    log_it(L_DEBUG, "Listening socket %"DAP_FORMAT_SOCKET" uuid "DAP_FORMAT_ESOCKET_UUID" binded on %s:%u "
                     "accepted new connection from remote %"DAP_FORMAT_SOCKET"",
-           a_es_listener, a_es_listener->socket, a_es_listener->listener_addr_str, a_es_listener->listener_port, a_remote_socket);
+                    a_es_listener->socket, a_es_listener->uuid,
+                    a_es_listener->listener_addr_str, a_es_listener->listener_port, a_remote_socket);
     if (a_remote_socket < 0) {
 #ifdef DAP_OS_WINDOWS
         log_it(L_ERROR, "Accept error: %d", WSAGetLastError());
@@ -467,7 +451,6 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
     l_es_new->server = l_server;
     unsigned short l_family = a_remote_addr->ss_family;
-    
     l_es_new->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
     l_es_new->addr_storage = *a_remote_addr;
     char l_port_str[NI_MAXSERV];
@@ -496,10 +479,12 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     default:
         log_it(L_ERROR, "Unsupported protocol family %hu from accept()", l_family);
     }
-    
-    log_it(L_DEBUG, "[es:%p] Accepted new connection (sock %"DAP_FORMAT_SOCKET" from %"DAP_FORMAT_SOCKET")",
-                                                        a_es_listener, a_remote_socket, a_es_listener->socket);
-    log_it(L_INFO, "Connection accepted from %s : %hu", l_es_new->remote_addr_str, l_es_new->remote_port);
+    log_it(L_INFO, "Connection accepted from %s : %hu, socket %"DAP_FORMAT_SOCKET,
+                   l_es_new->remote_addr_str, l_es_new->remote_port, a_remote_socket);
+
+#ifdef DAP_EVENTS_CAPS_IOCP
+    dap_worker_add_events_socket( dap_events_worker_get_auto(), l_es_new );
+#else
     dap_worker_t *l_worker = dap_events_worker_get_auto();
     if (l_worker->id == a_es_listener->worker->id) {
 #ifdef DAP_OS_UNIX
@@ -519,10 +504,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         }
         debug_if(g_debug_reactor, L_INFO, "Direct addition of esocket %p uuid 0x%"DAP_UINT64_FORMAT_x" to worker %d",
                  l_es_new, l_es_new->uuid, l_worker->id);
-    } else {
+    } else
         dap_worker_add_events_socket(l_worker, l_es_new);
-#ifdef DAP_EVENTS_CAPS_IOCP
-        dap_events_socket_set_readable_mt(l_worker, l_es_new->uuid, true);
 #endif
-    }
 }
