@@ -200,7 +200,7 @@ static void s_stream_connected(dap_client_pvt_t * a_client_pvt)
         return;
 
     log_it(L_INFO, "[client:%p] Remote address connected for streaming on (%s:%u) with Socket #%"DAP_FORMAT_SOCKET" (assign on worker #%u)",
-                            a_client_pvt->client, a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port,
+                            a_client_pvt->client, a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port,
                             a_client_pvt->stream_es->socket, a_client_pvt->stream_worker->worker->id);
 
     a_client_pvt->stage_status = STAGE_STATUS_DONE;
@@ -250,7 +250,7 @@ static bool s_stream_timer_timeout_check(void * a_arg)
             dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
             dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
             log_it(L_WARNING,"Connecting timeout for stream uplink request http://%s:%u/, possible network problems or host is down",
-                   l_client->uplink_addr, l_client->uplink_port);
+                   l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
             l_client_pvt->is_closed_by_timeout = true;
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout", l_es->remote_addr_str, l_es->socket, l_es->type);
             // Esocket wiil be removed here!
@@ -286,7 +286,7 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
         dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
         if (time(NULL) - l_client_pvt->ts_last_active >= s_client_timeout_active_after_connect_seconds) {
             log_it(L_WARNING, "Activity timeout for streaming uplink http://%s:%u/, possible network problems or host is down",
-                                l_client->uplink_addr, l_client->uplink_port);
+                                l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
             l_client_pvt->is_closed_by_timeout = true;
             if(l_es->callbacks.error_callback)
                 l_es->callbacks.error_callback(l_es, ETIMEDOUT);
@@ -385,8 +385,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 case STAGE_ENC_INIT: {
                     log_it(L_INFO, "Go to stage ENC: prepare the request");
 
-                    if (!*a_client_pvt->client->uplink_addr || !a_client_pvt->client->uplink_port) {
-                        log_it(L_ERROR, "Wrong remote address %s : %u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                    if (!*a_client_pvt->client->link_info.uplink_addr || !a_client_pvt->client->link_info.uplink_port) {
+                        log_it(L_ERROR, "Wrong remote address %s : %u", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_WRONG_ADDRESS;
                         break;
@@ -518,22 +518,22 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     l_es->flags |= DAP_SOCK_READY_TO_WRITE;
                 #endif
                     l_es->_inheritor = a_client_pvt->client;
-                    if ( dap_net_resolve_host(a_client_pvt->client->uplink_addr,
-                                              dap_itoa(a_client_pvt->client->uplink_port),
+                    if ( dap_net_resolve_host(a_client_pvt->client->link_info.uplink_addr,
+                                              dap_itoa(a_client_pvt->client->link_info.uplink_port),
                                               &l_es->addr_storage,
                                               false)
                     ) {
-                        log_it(L_ERROR, "Wrong remote address '%s : %u'", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                        log_it(L_ERROR, "Wrong remote address '%s : %u'", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_WRONG_ADDRESS;
                         s_stage_status_after(a_client_pvt);
                         break;
                     }
 
-                    l_es->remote_port = a_client_pvt->client->uplink_port;
-                    dap_strncpy(l_es->remote_addr_str, a_client_pvt->client->uplink_addr, DAP_HOSTADDR_STRLEN);
+                    l_es->remote_port = a_client_pvt->client->link_info.uplink_port;
+                    dap_strncpy(l_es->remote_addr_str, a_client_pvt->client->link_info.uplink_addr, DAP_HOSTADDR_STRLEN);
 
-                    a_client_pvt->stream = dap_stream_new_es_client(l_es, &DAP_LINK(a_client_pvt->client)->node_addr,
+                    a_client_pvt->stream = dap_stream_new_es_client(l_es, &a_client_pvt->client->link_info.node_addr,
                                                                     a_client_pvt->authorized);
                     assert(a_client_pvt->stream);
                     a_client_pvt->stream->session = dap_stream_session_pure_new(); // may be from in packet?
@@ -545,7 +545,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
 
                     // connect
                 #ifdef DAP_EVENTS_CAPS_IOCP
-                    log_it(L_DEBUG, "Stream connecting to remote %s : %u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                    log_it(L_DEBUG, "Stream connecting to remote %s : %u", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
+                    dap_worker_add_events_socket(l_worker, a_client_pvt->stream_es);
                     dap_events_socket_uuid_t *l_stream_es_uuid_ptr = DAP_DUP(&a_client_pvt->stream_es->uuid);
                     a_client_pvt->stream_es->flags &= ~DAP_SOCK_READY_TO_READ;
                     a_client_pvt->stream_es->flags |= DAP_SOCK_READY_TO_WRITE;
@@ -566,7 +567,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     int l_err = 0;
                     if((l_err = connect(l_es->socket, (struct sockaddr *) &l_es->addr_storage,
                             sizeof(struct sockaddr_in))) ==0) {
-                        log_it(L_INFO, "Connected momentaly with %s:%u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                        log_it(L_INFO, "Connected momentaly with %s:%u", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
                         // add to dap_worker
                         dap_worker_add_events_socket(l_worker, l_es);
 
@@ -591,13 +592,13 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         else
                             strncpy(l_errbuf,"Unknown Error",sizeof(l_errbuf)-1);
                         log_it(L_ERROR, "Remote address can't connect (%s:%hu) with sock_id %"DAP_FORMAT_SOCKET": \"%s\" (code %d)",
-                                            a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port,
+                                            a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port,
                                             l_es->socket, l_errbuf, l_err);
                         dap_events_socket_delete_unsafe(l_es, true);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_CONNECT;
                     } else {
-                        log_it(L_INFO, "Connecting stream to remote %s:%u", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                        log_it(L_INFO, "Connecting stream to remote %s:%u", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
                         // add to dap_worker
                         dap_worker_add_events_socket(l_worker, l_es);
                         dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
@@ -637,7 +638,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     dap_events_socket_write_f_unsafe( a_client_pvt->stream_es, "GET /%s HTTP/1.1\r\n"
                                                                         "Host: %s:%d\r\n"
                                                                         "\r\n",
-                                               l_full_path, a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                                               l_full_path, a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
 
                     a_client_pvt->stage_status = STAGE_STATUS_DONE;
                     s_stage_status_after(a_client_pvt);
@@ -673,7 +674,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 // Trying the step again
                 a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
                 log_it(L_INFO, "Reconnect attempt %d in 0.3 seconds with %s:%u", a_client_pvt->reconnect_attempts,
-                       a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                       a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
                 // small delay before next request
                 a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
                             a_client_pvt->worker, 300, s_timer_reconnect_callback, a_client_pvt);
@@ -682,7 +683,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
             } else {
                 if (a_client_pvt->client->always_reconnect) {
                     log_it(L_INFO, "Too many attempts, reconnect attempt in %d seconds with %s:%u", s_timeout,
-                           a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);                    // Trying the step again
+                           a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);                    // Trying the step again
                     a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
                     a_client_pvt->reconnect_attempts = 0;
                     // bigger delay before next request
@@ -691,7 +692,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     if (!a_client_pvt->reconnect_timer)
                         log_it(L_ERROR,"Can't run timer for bigger delay before the next enc_init request");
                 } else
-                    log_it(L_ERROR, "Connect to %s:%u failed", a_client_pvt->client->uplink_addr, a_client_pvt->client->uplink_port);
+                    log_it(L_ERROR, "Connect to %s:%u failed", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
             }
             if (a_client_pvt->stage_status != STAGE_STATUS_ERROR) {
                 s_client_internal_clean(a_client_pvt);
@@ -770,8 +771,8 @@ int dap_client_pvt_request(dap_client_pvt_t * a_client_internal, const char * a_
     a_client_internal->request_response_callback = a_response_proc;
     a_client_internal->request_error_callback = a_response_error;
     a_client_internal->is_encrypted = false;
-    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker, a_client_internal->client->uplink_addr,
-                                            a_client_internal->client->uplink_port,
+    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker, a_client_internal->client->link_info.uplink_addr,
+                                            a_client_internal->client->link_info.uplink_port,
                                             a_request ? "POST" : "GET", "text/text", a_path, a_request,
                                             a_request_size, NULL, s_request_response, s_request_error, a_client_internal, NULL);
     return a_client_internal->http_client == NULL;
@@ -871,8 +872,8 @@ void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char
     if (a_client_internal->is_close_session)
         snprintf(l_custom + l_off, l_size_required - l_off, "%s\r\n", "SessionCloseAfterRequest: true");
 
-    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker, a_client_internal->client->uplink_addr,
-                            a_client_internal->client->uplink_port,
+    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker, a_client_internal->client->link_info.uplink_addr,
+                            a_client_internal->client->link_info.uplink_port,
                             a_request ? "POST" : "GET", "text/text",
                             l_path, l_request_enc, l_request_enc_size, NULL,
                             s_request_response, s_request_error, a_client_internal, l_custom);
@@ -1076,8 +1077,8 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_sign, DAP_ENC_DATA_TYPE_B64);
             if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
                 dap_stream_node_addr_t l_sign_node_addr = dap_stream_node_addr_from_sign(l_sign);
-                if (l_sign_node_addr.uint64 != DAP_LINK(a_client)->node_addr.uint64) {
-                    log_it(L_WARNING, "Unverified stream to node "NODE_ADDR_FP_STR" signed by "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(DAP_LINK(a_client)->node_addr), NODE_ADDR_FP_ARGS_S(l_sign_node_addr));
+                if (l_sign_node_addr.uint64 != a_client->link_info.node_addr.uint64) {
+                    log_it(L_WARNING, "Unverified stream to node "NODE_ADDR_FP_STR" signed by "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(a_client->link_info.node_addr), NODE_ADDR_FP_ARGS_S(l_sign_node_addr));
                     l_client_pvt->authorized = false;
                 } else {
                     log_it(L_INFO, "Verified stream sign from node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(l_sign_node_addr));
@@ -1089,7 +1090,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             }
             DAP_DELETE(l_sign);
         } else {
-            log_it(L_INFO, "Unverified stream to node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(DAP_LINK(a_client)->node_addr));
+            log_it(L_INFO, "Unverified stream to node "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(a_client->link_info.node_addr));
             l_client_pvt->authorized = false;
         }
         break;
