@@ -481,9 +481,6 @@ void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
         dap_cluster_delete_all_members(l_net->node_link_cluster);
     }
     l_net->active = a_new_condition;
-    if (!s_check_active_nets()) {
-        s_link_delete_all(false);
-    }
 }
 
 /**
