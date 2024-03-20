@@ -30,6 +30,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_client.h"
 #include "dap_stream_cluster.h"
 
+#define DAP_NET_ID_INVALID UINT64_C(~0)
+
 typedef struct dap_link_manager dap_link_manager_t;
 typedef struct dap_link dap_link_t;
 
@@ -57,12 +59,13 @@ typedef enum dap_link_state {
 typedef struct dap_link {
     dap_stream_node_addr_t addr;
     bool is_uplink;
+    dap_list_t *active_clusters;
     struct {
         dap_link_state_t state;
         int attempts_count;
         dap_client_t *client;
+        dap_list_t *associated_nets;
     } uplink;
-    dap_list_t *active_clusters;
     dap_list_t *static_links_clusters;
     dap_link_manager_t *link_manager;
     UT_hash_handle hh;
@@ -75,7 +78,6 @@ typedef struct dap_link_manager {
     dap_list_t *nets;  // nets list to links count
     dap_link_t *links;  // links HASH_TAB
     pthread_rwlock_t links_lock;
-    dap_timerfd_t *update_timer;  // update timer status
     dap_link_manager_callbacks_t callbacks;  // callbacks
 } dap_link_manager_t;
 
@@ -85,11 +87,11 @@ dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_c
 dap_link_manager_t *dap_link_manager_get_default();
 int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster);
 void dap_link_manager_remove_active_net(uint64_t a_net_id);
-void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
-void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
-void dap_link_manager_add_static_links_cluster(dap_stream_node_addr_t *a_node_addr, dap_cluster_t *a_cluster);
-void dap_link_manager_remove_static_links_cluster_all(dap_cluster_t *a_cluster);
-dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, const char *a_host, uint16_t a_port);
+void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
+void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
+void dap_link_manager_add_static_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
+void dap_link_manager_remove_static_links_cluster_all(dap_cluster_member_t *a_member, void *a_arg);
+dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, uint64_t a_associated_net_id);
 dap_link_t *dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr);
 int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr);
 void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr);
@@ -101,3 +103,4 @@ void dap_link_manager_set_condition(bool a_new_condition);
 bool dap_link_manager_get_condition();
 char *dap_link_manager_get_links_info();
 dap_link_info_t *dap_link_manager_get_net_links_info_list(uint64_t a_net_id, size_t *a_count);
+void dap_link_manager_stream_replace(bool a_old_is_uplink, bool a_new_is_uplink);

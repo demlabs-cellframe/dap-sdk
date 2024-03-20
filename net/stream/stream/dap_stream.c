@@ -1032,8 +1032,7 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
         return -1;
     }
     HASH_ADD(hh, s_authorized_streams, node, sizeof(a_stream->node), a_stream);
-    if (!a_stream->is_client_to_uplink)
-        dap_link_manager_downlink_add(&a_stream->node);
+    dap_link_manager_stream_add(&a_stream->node, a_stream->is_client_to_uplink);
     return 0;
 }
 
@@ -1049,9 +1048,10 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
         DL_FOREACH(s_streams, l_stream)
             if (l_stream->node.uint64 == a_stream->node.uint64)
                 break;
-        if (l_stream)
+        if (l_stream) {
             s_stream_add_to_hashtable(l_stream);
-        else if (!a_stream->is_client_to_uplink)
+            dap_link_manager_stream_replace(a_stream->is_client_to_uplink, l_stream->is_client_to_uplink);
+        } else if (!a_stream->is_client_to_uplink)
             dap_link_manager_downlink_delete(&a_stream->node);
     }
     pthread_rwlock_unlock(&s_streams_lock);
@@ -1209,16 +1209,6 @@ void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data
     pthread_rwlock_unlock(&s_streams_lock);
 }
 
-size_t dap_stream_cluster_members_count(dap_cluster_t *a_cluster)
-{
-// sanity check
-    dap_return_val_if_pass(!a_cluster, 0);
-// func work
-    pthread_rwlock_rdlock(&a_cluster->members_lock);
-    size_t l_ret = HASH_COUNT(a_cluster->members);
-    pthread_rwlock_unlock(&a_cluster->members_lock);
-    return l_ret;
-}
 dap_stream_node_addr_t dap_stream_get_random_link()
 {
     dap_stream_node_addr_t l_ret = {};

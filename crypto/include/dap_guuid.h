@@ -28,7 +28,7 @@
 typedef union dap_guuid {
     struct {
         uint64_t net_id;
-        uint64_t svc_id;
+        uint64_t srv_id;
     } DAP_ALIGN_PACKED;
     uint128_t raw;
 } DAP_ALIGN_PACKED dap_guuid_t;
@@ -38,3 +38,6 @@ static inline dap_guuid_t dap_guuid_new()
     uint128_t l_ret = dap_uuid_generate_uint128();
     return *(dap_guuid_t *)&l_ret;
 }
+
+const char *dap_guuid_to_hex_str(dap_guuid_t a_guuid);
+dap_guuid_t dap_guuid_from_hex_str(const char *a_hex_str);

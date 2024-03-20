@@ -197,6 +197,16 @@ static void s_cluster_member_delete(dap_cluster_member_t *a_member)
     DAP_DELETE(a_member);
 }
 
+void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr)
+{
+    pthread_rwlock_rdlock(&s_clusters_rwlock);
+    for (dap_cluster_t *it = s_clusters; it; it = it->hh.next)
+        if (it->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
+                it->role == DAP_CLUSTER_ROLE_EMBEDDED)
+            dap_cluster_member_delete(it, a_addr);
+    pthread_rwlock_unlock(&s_clusters_rwlock);
+}
+
 /**
  * @brief dap_cluster_member_find
  * @param a_cluster
@@ -359,6 +369,17 @@ dap_stream_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster)
         }
         pthread_rwlock_unlock(&a_cluster->members_lock);
     }
+    return l_ret;
+}
+
+size_t dap_cluster_members_count(dap_cluster_t *a_cluster)
+{
+// sanity check
+    dap_return_val_if_pass(!a_cluster, 0);
+// func work
+    pthread_rwlock_rdlock(&a_cluster->members_lock);
+    size_t l_ret = HASH_COUNT(a_cluster->members);
+    pthread_rwlock_unlock(&a_cluster->members_lock);
     return l_ret;
 }
 

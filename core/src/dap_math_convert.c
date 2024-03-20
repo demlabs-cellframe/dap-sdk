@@ -343,28 +343,6 @@ uint128_t dap_uint256_to_uint128(uint256_t a_from)
     return a_from.lo;
 }
 
-
-const char *dap_uint128_to_hex_str(uint128_t a_uninteger)
-{
-    _Thread_local static char s_buf[sizeof(uint128_t) * 2 + 3];
-    strcpy(s_buf, "0x");
-    dap_bin2hex(s_buf + 2, &a_uninteger, sizeof(a_uninteger));
-    return (const char *)s_buf;
-}
-
-uint128_t dap_uint128_from_hex_str(const char *a_hex_str)
-{
-    uint128_t ret = uint128_0;
-    if (!a_hex_str)
-        return ret;
-    size_t l_hex_str_len = strlen(a_hex_str);
-    if (l_hex_str_len != (16 * 2 + 2) || dap_strncmp(a_hex_str, "0x", 2) || dap_is_hex_string(a_hex_str + 2, l_hex_str_len - 2))
-        return ret;
-    dap_hex2bin((uint8_t *)&ret, a_hex_str + 2, l_hex_str_len - 2);
-    return ret;
-}
-
-
 char *dap_uint128_uninteger_to_char(uint128_t a_uninteger)
 {
     char *l_buf = DAP_NEW_Z_SIZE(char, DATOSHI_POW + 2);

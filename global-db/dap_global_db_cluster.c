@@ -122,6 +122,8 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
             l_cluster->role_cluster->members_add_callback = dap_link_manager_add_static_links_cluster;
             l_cluster->role_cluster->members_delete_callback = dap_link_manager_remove_static_links_cluster;
             l_cluster->role_cluster->callbacks_arg = l_cluster->links_cluster;
+            l_cluster->links_cluster->members_add_callback = dap_link_manager_add_links_cluster;
+            l_cluster->links_cluster->members_delete_callback = dap_link_manager_remove_links_cluster;
         }
     }
     l_cluster->groups_mask = dap_strdup(a_group_mask);
