@@ -445,11 +445,10 @@ DAP_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t* a_es)
 #ifdef DAP_EVENTS_CAPS_IOCP
 
 DAP_STATIC_INLINE void dap_overlapped_free(dap_overlapped_t *ol) {
-    /*if (!ol) return;
-    _log_it(NULL, 0, "OL", L_DEBUG, "delete OL %p", ol);
+    if (!ol) return;
     if (ol->ol.hEvent)
         CloseHandle(ol->ol.hEvent);
-    DAP_DELETE(ol);*/
+    DAP_DELETE(ol);
 }
 void dap_events_socket_set_readable_unsafe_ex       (dap_events_socket_t*, bool, dap_overlapped_t*);
 void dap_events_socket_set_writable_unsafe_ex       (dap_events_socket_t*, bool, size_t, dap_overlapped_t*);
