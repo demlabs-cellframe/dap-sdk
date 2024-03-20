@@ -595,7 +595,7 @@ dap_link_t *dap_link_manager_link_update(dap_link_t *a_link, const char *a_host,
     dap_return_val_if_pass(!a_link || a_link->state == LINK_STATE_DELETED || !a_link->client, NULL);
 // func work
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
-        if (a_link->state != LINK_STATE_DISCONNECTED && !a_force) {
+        if (a_link->valid && a_link->state != LINK_STATE_DISCONNECTED && !a_force) {
             log_it(L_DEBUG, "Link "NODE_ADDR_FP_STR" not updated, please use force option", NODE_ADDR_FP_ARGS_S(a_link->client->link_info.node_addr));
             pthread_rwlock_unlock(&s_link_manager->links_lock);
             return a_link;
