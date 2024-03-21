@@ -787,41 +787,12 @@ char    *str_header;
                     l_cmd->overrides.log_cmd_call(str_cmd);
                 else {
                     char *l_str_cmd = dap_strdup(str_cmd);
-                    bool l_is_password = false;
-                    size_t l_size_start = 0;
-                    size_t l_size_end = 0;
-                    for (size_t i = 0; i < dap_strlen(l_str_cmd); i++) {
-                        if (l_str_cmd[i] == ';') {
-                            if (l_size_start == l_size_end) {
-                                l_size_end = i;
-                                if (l_is_password)
-                                    break;
-                            } else {
-                                l_size_start = l_size_end;
-                                l_size_end = i;
-                                if (l_is_password)
-                                    break;
-                            }
-                            if (l_size_end - l_size_start == 10 &&
-                                l_str_cmd[l_size_start + 1] == '-' &&
-                                l_str_cmd[l_size_start + 2] == 'p' &&
-                                l_str_cmd[l_size_start + 3] == 'a' &&
-                                l_str_cmd[l_size_start + 4] == 's' &&
-                                l_str_cmd[l_size_start + 5] == 's' &&
-                                l_str_cmd[l_size_start + 6] == 'w' &&
-                                l_str_cmd[l_size_start + 7] == 'o' &&
-                                l_str_cmd[l_size_start + 8] == 'r' &&
-                                l_str_cmd[l_size_start + 9] == 'd') {
-                                l_is_password = true;
-                                l_size_start = l_size_end;
-                            }
-                        }
-                    }
-                    if (l_size_start == l_size_end && l_size_end < dap_strlen(l_str_cmd))
-                        l_size_end = dap_strlen(l_str_cmd);
-                    if (l_is_password) {
-                        for (size_t i = l_size_start; i < l_size_end; i++) {
-                            l_str_cmd[i] = '*';
+                    char *l_ptr = strstr(l_str_cmd, "-password");
+                    if (l_ptr) {
+                        l_ptr += 10;
+                        while(l_ptr[0] != '\0' && l_ptr[0] != ';') {
+                            *l_ptr = '*';
+                            l_ptr +=1;
                         }
                     }
                     log_it(L_DEBUG, "execute command=%s", l_str_cmd);
