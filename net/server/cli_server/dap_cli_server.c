@@ -800,15 +800,7 @@ char    *str_header;
                                     break;
                             }
                             if (l_size_end - l_size_start == 10 &&
-                                l_str_cmd[l_size_start + 1] == '-' &&
-                                l_str_cmd[l_size_start + 2] == 'p' &&
-                                l_str_cmd[l_size_start + 3] == 'a' &&
-                                l_str_cmd[l_size_start + 4] == 's' &&
-                                l_str_cmd[l_size_start + 5] == 's' &&
-                                l_str_cmd[l_size_start + 6] == 'w' &&
-                                l_str_cmd[l_size_start + 7] == 'o' &&
-                                l_str_cmd[l_size_start + 8] == 'r' &&
-                                l_str_cmd[l_size_start + 9] == 'd') {
+                                dap_strcmp(l_str_cmd + l_size_start, "-password")) {
                                 l_is_password = true;
                                 l_size_start = l_size_end;
                             }
