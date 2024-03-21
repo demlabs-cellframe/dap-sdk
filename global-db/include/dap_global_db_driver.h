@@ -32,7 +32,8 @@
 #include "dap_time.h"
 #include "dap_list.h"
 #include "dap_sign.h"
-#include "dap_math_convert.h"
+#include "dap_guuid.h"
+#include "dap_stream_cluster.h"
 
 #define DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX   128UL                               /* A maximum size of group name */
 #define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL                              /* A maximum number of groups */
@@ -95,7 +96,7 @@ DAP_STATIC_INLINE int dap_store_obj_driver_hash_compare(dap_store_obj_t *a_obj1,
 
 DAP_STATIC_INLINE const char *dap_global_db_driver_hash_print(dap_global_db_driver_hash_t a_hash)
 {
-    return dap_uint128_to_hex_str(GET_128_FROM_64_64(a_hash.becrc, a_hash.bets));
+    return dap_guuid_to_hex_str(dap_guuid_compose(a_hash.bets, a_hash.becrc));
 }
 
 extern const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank;

@@ -37,13 +37,14 @@ typedef struct dap_link dap_link_t;
 
 typedef void (*dap_link_manager_callback_t)(dap_link_t *, void*);
 typedef void (*dap_link_manager_callback_connected_t)(dap_link_t *, uint64_t);
+typedef bool (*dap_link_manager_callback_disconnected_t)(dap_link_t *, uint64_t, int);
 typedef void (*dap_link_manager_callback_error_t)(dap_link_t *, uint64_t, int);
 typedef int (*dap_link_manager_callback_fill_net_info_t)(dap_link_t *);
 typedef void (*dap_link_manager_callback_link_request_t)(uint64_t);
 
 typedef struct dap_link_manager_callbacks {
     dap_link_manager_callback_connected_t connected;
-    dap_link_manager_callback_error_t disconnected;
+    dap_link_manager_callback_disconnected_t disconnected;
     dap_link_manager_callback_error_t error;
     dap_link_manager_callback_fill_net_info_t fill_net_info;
     dap_link_manager_callback_link_request_t link_request;
@@ -62,9 +63,10 @@ typedef struct dap_link {
     dap_list_t *active_clusters;
     struct {
         dap_link_state_t state;
-        int attempts_count;
+        uint32_t attempts_count;
         dap_client_t *client;
         dap_list_t *associated_nets;
+        dap_time_t start_after;
     } uplink;
     dap_list_t *static_clusters;
     dap_link_manager_t *link_manager;
@@ -72,11 +74,12 @@ typedef struct dap_link {
 } dap_link_t;
 
 typedef struct dap_link_manager {
-    int32_t min_links_num;  // min links required in each net 
-    bool active;  // work status
-    int32_t max_attempts_num;  // max attempts to connect to each link
-    dap_list_t *nets;  // nets list to links count
-    dap_link_t *links;  // links HASH_TAB
+    bool active;                // work status
+    uint32_t min_links_num;     // min links required in each net
+    uint32_t max_attempts_num;  // max attempts to connect to each link
+    uint32_t reconnect_delay;   // pause before next connection attempt
+    dap_list_t *nets;           // nets list to links count
+    dap_link_t *links;          // links HASH_TAB
     pthread_rwlock_t links_lock;
     dap_link_manager_callbacks_t callbacks;  // callbacks
 } dap_link_manager_t;
@@ -90,8 +93,8 @@ void dap_link_manager_remove_active_net(uint64_t a_net_id);
 void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
 void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
 void dap_link_manager_add_static_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
-void dap_link_manager_remove_static_links_cluster_all(dap_cluster_member_t *a_member, void *a_arg);
-dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, uint64_t a_associated_net_id);
+void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
+dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, bool a_with_client, uint64_t a_associated_net_id);
 dap_link_t *dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr);
 int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr);
 void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr);

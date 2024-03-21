@@ -1,5 +1,4 @@
 #include "dap_math_convert.h"
-#include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_math_convert"
 

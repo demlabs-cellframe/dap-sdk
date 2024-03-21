@@ -39,5 +39,9 @@ static inline dap_guuid_t dap_guuid_new()
     return *(dap_guuid_t *)&l_ret;
 }
 
+DAP_STATIC_INLINE dap_guuid_t dap_guuid_compose(uint64_t a_net_id, uint64_t a_service_id)
+{
+    return (dap_guuid_t){ .net_id = a_net_id, .srv_id = a_service_id };
+}
 const char *dap_guuid_to_hex_str(dap_guuid_t a_guuid);
 dap_guuid_t dap_guuid_from_hex_str(const char *a_hex_str);
