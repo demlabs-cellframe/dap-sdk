@@ -784,7 +784,6 @@ char    *str_header;
                     l_cmd->overrides.log_cmd_call(str_cmd);
                 else {
                     char *l_str_cmd = dap_strdup(str_cmd);
-                    bool l_is_password = false;
                     char *l_ptr = strstr(l_str_cmd, "-password");
                     if (l_ptr) {
                         l_ptr += 10;
