@@ -235,9 +235,12 @@ static void *s_list_thread_proc2(void *arg) {
 
             switch (l_obj_type) {
             case DAP_DB$K_OPTYPE_ADD:
-                if ( (l_obj_cur->timestamp < l_limit_time || (l_obj_cur->timestamp > dap_nanotime_now()))
-                     && !group_HALed && !(l_obj_cur->flags & RECORD_PINNED) )
-                    continue;
+                if ( (l_obj_cur->timestamp < l_limit_time || (l_obj_cur->timestamp > dap_nanotime_now())) && !(l_obj_cur->flags & RECORD_PINNED) )
+                {
+                    if (!group_HALed)
+                        continue;
+                    l_obj_cur->timestamp = dap_nanotime_now();
+                } 
                 break;
             case DAP_DB$K_OPTYPE_DEL:
                 if ( (l_obj_cur->timestamp < l_limit_time) || (l_obj_cur->timestamp > dap_nanotime_now()) )
@@ -924,25 +927,15 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                 }
             }
 
-            bool group_HALed = strstr(l_obj->group, ".orders")
-                    || !dap_strncmp(l_obj->group, "cdb.", 4)
-                    || strstr(l_obj->group, ".nodes.v2")
-                    || ( strstr(l_obj->group, "round.new") && !dap_strncmp(l_obj->key, "round_current", 13) );
-
             switch (l_obj->type) {
             case DAP_DB$K_OPTYPE_ADD:
-                if ( (l_obj->timestamp < l_limit_time) && !group_HALed && !l_is_pinned_cur) {
+                if ( (l_obj->timestamp < l_limit_time) && !l_is_pinned_cur) {
                     l_apply = false;
                     debug_if(g_dap_global_db_debug_more, L_INFO, "Skip \"%s : %s\", record is too old",
                              l_obj->group, l_obj->key);
                 }
                 break;
             case DAP_DB$K_OPTYPE_DEL:
-                if ( group_HALed ) {
-                    debug_if(g_dap_global_db_debug_more, L_INFO, "Skip deleting \"%s : %s\", record is protected from deletion",
-                             l_obj->group, l_obj->key);
-                    l_apply = false;
-                }
                 if (l_obj->timestamp < l_limit_time) {
                     l_apply = false;
                     debug_if(g_dap_global_db_debug_more, L_INFO, "Skip deleting \"%s : %s\", record is too old",
