@@ -66,7 +66,7 @@ typedef struct dap_link {
         dap_client_t *client;
         dap_list_t *associated_nets;
     } uplink;
-    dap_list_t *static_links_clusters;
+    dap_list_t *static_clusters;
     dap_link_manager_t *link_manager;
     UT_hash_handle hh;
 } dap_link_t;

@@ -53,10 +53,16 @@ typedef enum dap_cluster_role {
     DAP_CLUSTER_ROLE_VIRTUAL        // No links managment on this type of clusters
 } dap_cluster_role_t;
 
+typedef enum dap_cluster_status {
+    DAP_CLUSTER_STATUS_DISABLED = 0,
+    DAP_CLUSTER_STATUS_ENABLED
+} dap_cluster_status_t;
+
 typedef struct dap_cluster {
     const char *mnemonim;           // Field for alternative cluster finding, unique
     dap_guuid_t guuid;              // Unique global cluster id
     dap_cluster_role_t role;        // Link management role
+    dap_cluster_status_t status;    // Active or inactive for now
     pthread_rwlock_t members_lock;
     dap_cluster_member_t *members;  // Cluster members (by stream addr) and callbacks
     dap_cluster_change_callback_t members_add_callback;
