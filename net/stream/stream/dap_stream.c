@@ -2,9 +2,9 @@
  Copyright (c) 2017-2018 (c) Project "DeM Labs Inc" https://github.com/demlabsinc
   All rights reserved.
 
- This file is part of DAP (Deus Applications Prototypes) the open source project
+ This file is part of DAP (Demlabs Application Protocol) the open source project
 
-    DAP (Deus Applicaions Prototypes) is free software: you can redistribute it and/or modify
+    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -1054,8 +1054,11 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
         if (l_stream)
             s_stream_add_to_hashtable(l_stream);
     }
-    if(!l_stream)
+    if(!l_stream) {
         dap_cluster_link_delete_from_all(&a_stream->node);
+        if (!a_stream->is_client_to_uplink)
+            dap_link_manager_downlink_delete(&a_stream->node);
+    }
     pthread_rwlock_unlock(&s_streams_lock);
 }
 

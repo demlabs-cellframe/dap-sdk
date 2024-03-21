@@ -49,6 +49,7 @@ typedef struct dap_link_manager_callbacks {
 
 // connection states
 typedef enum dap_link_state {
+    LINK_STATE_DELETED = -1,  // add to protect in external link using
     LINK_STATE_DISCONNECTED = 0,
     LINK_STATE_CONNECTING,
     LINK_STATE_ESTABLISHED,
@@ -56,7 +57,6 @@ typedef enum dap_link_state {
 } dap_link_state_t;
 
 typedef struct dap_link {
-    dap_stream_node_addr_t node_addr;
     dap_link_state_t state;
     bool valid;
     int attempts_count;
@@ -78,8 +78,6 @@ typedef struct dap_link_manager {
     dap_link_manager_callbacks_t callbacks;  // callbacks
 } dap_link_manager_t;
 
-#define DAP_LINK(a) ((dap_link_t *)(a)->_inheritor)
-
 int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks);
 void dap_link_manager_deinit();
 dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_callbacks);
@@ -90,13 +88,16 @@ void dap_link_manager_add_links_cluster(dap_stream_node_addr_t *a_addr, dap_clus
 void dap_link_manager_remove_links_cluster(dap_stream_node_addr_t *a_addr, dap_cluster_t *a_cluster);
 void dap_link_manager_add_static_links_cluster(dap_stream_node_addr_t *a_node_addr, dap_cluster_t *a_cluster);
 void dap_link_manager_remove_static_links_cluster_all(dap_cluster_t *a_cluster);
-dap_link_t *dap_link_manager_link_create_or_update(dap_stream_node_addr_t *a_node_addr, const char *a_host, uint16_t a_port);
+dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr);
+dap_link_t *dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_t a_port, bool a_force);
 int dap_link_manager_link_add(uint64_t a_net_id, dap_link_t *a_link);
 int dap_link_manager_downlink_add(dap_stream_node_addr_t *a_node_addr);
+void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr);
 void dap_accounting_downlink_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr);
-void dap_link_manager_set_net_status(uint64_t a_net_id, bool a_status);
+void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition);
 size_t dap_link_manager_links_count(uint64_t a_net_id);
 size_t dap_link_manager_needed_links_count(uint64_t a_net_id);
 void dap_link_manager_set_condition(bool a_new_condition);
 bool dap_link_manager_get_condition();
 char *dap_link_manager_get_links_info();
+dap_link_info_t *dap_link_manager_get_net_links_info_list(uint64_t a_net_id, size_t *a_count);

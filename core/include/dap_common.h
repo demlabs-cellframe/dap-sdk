@@ -7,9 +7,9 @@
  * Copyright  (c) 2017-2019
  * All rights reserved.
 
- This file is part of DAP (Deus Applications Prototypes) the open source project
+ This file is part of DAP (Demlabs Application Protocol) the open source project
 
-    DAP (Deus Applicaions Prototypes) is free software: you can redistribute it and/or modify
+    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -125,6 +125,18 @@
 #else
 #define DAP_CAST_PTR(t,v) (t*)(v)
 #endif
+
+#define HASH_LAST(head, ret)                                                    \
+do {                                                                            \
+    if ((head) != NULL) {                                                       \
+        (ret) = (head)->hh.tbl->tail->prev;                                     \
+        if (!(ret))                                                             \
+            (ret) = (head);                                                     \
+        else                                                                    \
+            (ret) = (DAP_CAST_PTR(typeof(*head),(ret)))->hh.next;               \
+    } else                                                                      \
+        (ret) = (head);                                                         \
+} while (0)
 
 extern const char *g_error_memory_alloc;
 extern const char *g_error_sanity_check;
