@@ -46,8 +46,8 @@
 
 #include "winsock.h"
 #ifdef DAP_EVENTS_CAPS_IOCP
-extern LPFN_ACCEPTEX                pfn_AcceptEx;
-extern LPFN_GETACCEPTEXSOCKADDRS    pfn_GetAcceptExSockaddrs;
+extern LPFN_ACCEPTEX                pfnAcceptEx;
+extern LPFN_GETACCEPTEXSOCKADDRS    pfnGetAcceptExSockaddrs;
 #endif
 
 #elif defined(DAP_OS_BSD)

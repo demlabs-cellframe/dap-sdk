@@ -74,3 +74,6 @@ void dap_timerfd_reset_mt(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uui
 void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd);
 void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd);
 
+#ifdef DAP_EVENTS_CAPS_IOCP
+DWORD dap_del_queuetimer(HANDLE h);
+#endif
