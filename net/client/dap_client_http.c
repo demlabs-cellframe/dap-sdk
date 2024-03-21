@@ -3,9 +3,9 @@
  * Alexander Lysikov <alexander.lysikov@demlabs.net>
  * DeM Labs Inc.   https://demlabs.net
 
- This file is part of DAP (Deus Applications Prototypes) the open source project
+ This file is part of DAP (Demlabs Application Protocol) the open source project
 
- DAP (Deus Applicaions Prototypes) is free software: you can redistribute it and/or modify
+ DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation, either version 3 of the License, or
  (at your option) any later version.
@@ -651,12 +651,10 @@ dap_client_http_t * dap_client_http_request_custom (
 #ifdef DAP_EVENTS_CAPS_IOCP
     log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
     l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
-    dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
-
-    dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-    *l_ev_uuid_ptr = l_ev_socket->uuid;
     l_ev_socket->flags &= ~DAP_SOCK_READY_TO_READ;
-    dap_events_socket_set_writable_mt(l_client_http->worker, *l_ev_uuid_ptr, true);
+    l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
+    dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_DUP(&l_ev_socket->uuid);
+    dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
     l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, s_timer_timeout_check, l_ev_uuid_ptr);
     if (!l_client_http->timer) {
         log_it(L_ERROR,"Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
@@ -803,6 +801,6 @@ void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
     if (a_client_http->es) {
         a_client_http->es->callbacks.delete_callback = NULL;
         dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);
-    } else
-        DAP_DELETE(a_client_http);
+    }
+    DAP_DELETE(a_client_http);
 }

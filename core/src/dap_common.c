@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2019
  * All rights reserved.
 
- This file is part of DAP (Deus Applications Prototypes) the open source project
+ This file is part of DAP (Demlabs Application Protocol) the open source project
 
-    DAP (Deus Applicaions Prototypes) is free software: you can redistribute it and/or modify
+    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -1198,9 +1198,9 @@ dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_ca
     l_timer_obj->callback   = a_callback;
     l_timer_obj->param      = a_param;
 #if (defined _WIN32)
-    if (!CreateTimerQueueTimer(&l_timer_obj->timer , NULL, (WAITORTIMERCALLBACK)s_win_callback, &l_timer_obj->timer, a_msec, a_msec, 0)) {
+    if ( !CreateTimerQueueTimer(&l_timer_obj->timer, NULL, (WAITORTIMERCALLBACK)s_win_callback,
+                                &l_timer_obj->timer, a_msec, a_msec, WT_EXECUTEINTIMERTHREAD | WT_EXECUTELONGFUNCTION) )
         return NULL;
-    }
 #elif (defined DAP_OS_DARWIN)
     dispatch_queue_t l_queue = dispatch_queue_create("tqueue", 0);
     //todo: we should not use ^ like this, because this is clang-specific thing, but someone can use GCC on mac os

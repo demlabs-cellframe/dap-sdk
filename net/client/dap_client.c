@@ -102,9 +102,9 @@ void dap_client_set_uplink_unsafe(dap_client_t *a_client, const char *a_addr, ui
 // sanity check
     dap_return_if_pass(!a_client || !a_addr || !a_addr[0] || !a_port);
 // func work
-    memset(a_client->uplink_addr, 0, sizeof(a_client->uplink_addr));
-    strncpy(a_client->uplink_addr, a_addr, sizeof(a_client->uplink_addr) - 1);
-    a_client->uplink_port = a_port;
+    memset(a_client->link_info.uplink_addr, 0, sizeof(a_client->link_info.uplink_addr));
+    strncpy(a_client->link_info.uplink_addr, a_addr, sizeof(a_client->link_info.uplink_addr) - 1);
+    a_client->link_info.uplink_port = a_port;
 }
 
 /**

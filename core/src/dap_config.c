@@ -453,7 +453,7 @@ const char *dap_config_get_item_str_path_default(dap_config_t *a_config, const c
     dap_stpcpy(l_abs_path, a_config->path);
     char *l_dir = dap_path_get_dirname(l_abs_path);
     char *l_ret = dap_canonicalize_filename(l_item->val.val_str, l_dir);
-    log_it(L_DEBUG, "Config-path item: \"%s\": composed from \"%s\" and \"%s\"",
+    log_it(L_DEBUG, "Config-path item: %s: composed from %s and %s",
            l_ret, l_item->val.val_str, l_dir);
     DAP_DELETE(l_dir);
     return l_ret;

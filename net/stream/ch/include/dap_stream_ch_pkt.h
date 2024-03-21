@@ -2,9 +2,9 @@
  Copyright (c) 2020 (c) DeM Labs Ltd http://demlabs.net
   All rights reserved.
 
- This file is part of DAP (Deus Applications Prototypes) the open source project
+ This file is part of DAP (Demlabs Application Protocol) the open source project
 
-    DAP (Deus Applicaions Prototypes) is free software: you can redistribute it and/or modify
+    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -29,7 +29,7 @@
 #include "dap_stream.h"
 #include "dap_enc_key.h"
 
-typedef uint64_t dap_stream_ch_uuid_t;
+typedef unsigned int dap_stream_ch_uuid_t;
 
 typedef struct dap_stream_ch_pkt_hdr {
     uint8_t id;   // Channel id

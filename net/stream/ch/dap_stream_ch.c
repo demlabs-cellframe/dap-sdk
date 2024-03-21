@@ -2,9 +2,9 @@
  Copyright (c) 2017-2018 (c) Project "DeM Labs Inc" https://github.com/demlabsinc
   All rights reserved.
 
- This file is part of DAP (Deus Applications Prototypes) the open source project
+ This file is part of DAP (Demlabs Application Protocol) the open source project
 
-    DAP (Deus Applicaions Prototypes) is free software: you can redistribute it and/or modify
+    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -193,6 +193,11 @@ dap_stm_ch_rec_t    *l_rec = NULL;
     return  0;  /* SS$_SUCCESS */
 }
 
+unsigned int dap_new_stream_ch_id() {
+    static _Atomic unsigned int stream_ch_id = 0;
+    return stream_ch_id++;
+}
+
 /**
  * @brief dap_stream_ch_new Creates new stream channel instance
  * @return
@@ -208,7 +213,7 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
         l_ch_new->stream = a_stream;
         l_ch_new->proc = proc;
         l_ch_new->ready_to_read = true;
-        l_ch_new->uuid = dap_uuid_generate_uint64();
+        l_ch_new->uuid = dap_new_stream_ch_id();
         pthread_mutex_init(&(l_ch_new->mutex),NULL);
 
         // Init on stream worker
@@ -216,7 +221,7 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
         l_ch_new->stream_worker = l_stream_worker;
 
         pthread_rwlock_wrlock(&l_stream_worker->channels_rwlock);
-        HASH_ADD(hh_worker,l_stream_worker->channels, uuid,sizeof (l_ch_new->uuid ),l_ch_new);
+        HASH_ADD_BYHASHVALUE(hh_worker,l_stream_worker->channels, uuid, sizeof (l_ch_new->uuid), l_ch_new->uuid, l_ch_new);
         pthread_rwlock_unlock(&l_stream_worker->channels_rwlock);
 
 
@@ -287,7 +292,7 @@ dap_stream_ch_t *dap_stream_ch_find_by_uuid_unsafe(dap_stream_worker_t * a_worke
 
     pthread_rwlock_rdlock(&a_worker->channels_rwlock);
     if ( a_worker->channels)
-        HASH_FIND(hh_worker,a_worker->channels, &a_uuid, sizeof(a_uuid), l_ch);
+        HASH_FIND_BYHASHVALUE(hh_worker,a_worker->channels, &a_uuid, sizeof(a_uuid), a_uuid, l_ch);
     pthread_rwlock_unlock(&a_worker->channels_rwlock);
 
     return l_ch;
