@@ -40,7 +40,7 @@ static void s_cluster_member_delete(dap_cluster_member_t *a_member);
  * @param a_options
  * @return
  */
-dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_uuid, dap_cluster_role_t a_role)
+dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_cluster_role_t a_role)
 {
     dap_cluster_t *l_ret = DAP_NEW_Z(dap_cluster_t);
     if (!l_ret) {
@@ -60,10 +60,10 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_uuid, dap_c
         }
         HASH_ADD_KEYPTR(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_ret);
     }
-    if (!IS_ZERO_128(a_uuid.raw)) {
-        HASH_FIND(hh, s_clusters, &a_uuid, sizeof(dap_guuid_t), l_check);
+    if (!IS_ZERO_128(a_guuid.raw)) {
+        HASH_FIND(hh, s_clusters, &a_guuid, sizeof(dap_guuid_t), l_check);
         if (l_check) {
-            const char *l_guuid_str = dap_uint128_to_hex_str(a_uuid.raw);
+            const char *l_guuid_str = dap_guuid_to_hex_str(a_guuid);
             log_it(L_ERROR, "GUUID %s already in use", l_guuid_str);
             DAP_DELETE(l_ret);
             return NULL;
@@ -77,8 +77,8 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_uuid, dap_c
             return NULL;
         }
     }
-    l_ret->uuid = a_uuid;
-    HASH_ADD(hh, s_clusters, uuid, sizeof(l_ret->uuid), l_ret);
+    l_ret->guuid = a_guuid;
+    HASH_ADD(hh, s_clusters, guuid, sizeof(l_ret->guuid), l_ret);
     pthread_rwlock_unlock(&s_clusters_rwlock);
     return l_ret;
 }
@@ -155,7 +155,7 @@ dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_strea
     HASH_ADD(hh, a_cluster->members, addr, sizeof(*a_addr), l_member);
     pthread_rwlock_unlock(&a_cluster->members_lock);
     if (a_cluster->members_add_callback)
-        a_cluster->members_add_callback(l_member, a_cluster->callbacks_arg;);
+        a_cluster->members_add_callback(l_member, a_cluster->callbacks_arg);
     return l_member;
 }
 

@@ -161,6 +161,7 @@ int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 int dap_stream_change_id(void *a_old, uint64_t a_new);
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr, dap_worker_t **a_worker);
+dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr);
 dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign);
 dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert);
 dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey);
