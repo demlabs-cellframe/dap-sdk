@@ -782,8 +782,19 @@ char    *str_header;
             if(l_cmd){
                 if(l_cmd->overrides.log_cmd_call)
                     l_cmd->overrides.log_cmd_call(str_cmd);
-                else
-                    log_it(L_DEBUG, "execute command=%s", str_cmd);
+                else {
+                    char *l_str_cmd = dap_strdup(str_cmd);
+                    char *l_ptr = strstr(l_str_cmd, "-password");
+                    if (l_ptr) {
+                        l_ptr += 10;
+                        while(l_ptr[0] != '\0' && l_ptr[0] != ';') {
+                            *l_ptr = '*';
+                            l_ptr +=1;
+                        }
+                    }
+                    log_it(L_DEBUG, "execute command=%s", l_str_cmd);
+                    DAP_DELETE(l_str_cmd);
+                }
 
                 char ** l_argv = dap_strsplit(str_cmd, ";", -1);
                 // Count argc
