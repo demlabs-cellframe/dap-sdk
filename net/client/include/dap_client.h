@@ -79,7 +79,7 @@ typedef void (*dap_client_callback_data_size_t) (dap_client_t *, void *, size_t)
 
 typedef struct dap_link_info {
     dap_stream_node_addr_t node_addr;
-    char uplink_addr[DAP_HOSTADDR_STRLEN + 1];
+    char uplink_addr[DAP_HOSTADDR_STRLEN];
     uint16_t uplink_port;
 } DAP_ALIGN_PACKED dap_link_info_t;
 
