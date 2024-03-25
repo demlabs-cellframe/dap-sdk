@@ -63,6 +63,7 @@ int dap_stream_worker_init()
         if (!l_stream_worker->queue_ch_send)
             return -7;
     }
+#ifndef DAP_EVENTS_CAPS_IOCP
     for (uint32_t i = 0; i < l_worker_count; i++){
         dap_worker_t *l_worker_inp = dap_events_worker_get(i);
         dap_stream_worker_t *l_stream_worker_inp = (dap_stream_worker_t *)l_worker_inp->_inheritor;
@@ -78,6 +79,7 @@ int dap_stream_worker_init()
             dap_events_socket_assign_on_worker_mt(l_stream_worker_inp->queue_ch_io_input[j], l_worker_inp);
         }
     }
+#endif
     return 0;
 }
 
@@ -95,7 +97,7 @@ static void s_ch_io_callback(dap_events_socket_t * a_es, void * a_msg)
     // Check if it was removed from the list
     dap_stream_ch_t *l_msg_ch = NULL;
     pthread_rwlock_rdlock(&l_stream_worker->channels_rwlock);
-    HASH_FIND(hh_worker, l_stream_worker->channels , &l_msg->ch_uuid , sizeof (l_msg->ch_uuid ), l_msg_ch );
+    HASH_FIND_BYHASHVALUE(hh_worker, l_stream_worker->channels , &l_msg->ch_uuid , sizeof (l_msg->ch_uuid), l_msg->ch_uuid, l_msg_ch );
     pthread_rwlock_unlock(&l_stream_worker->channels_rwlock);
     if (l_msg_ch == NULL) {
         if (l_msg->data_size) {

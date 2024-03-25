@@ -44,10 +44,6 @@
 #define LOG_TAG "dap_timerfd"
 static void s_es_callback_timer(struct dap_events_socket *a_es);
 
-#ifdef DAP_EVENTS_CAPS_IOCP
-static void s_es_cb_timer_delete(dap_events_socket_t *a_es, void *a_arg);
-#endif
-
 static bool l_debug_timer = false;
 
 #ifdef DAP_OS_WINDOWS
@@ -79,20 +75,14 @@ int dap_timerfd_init()
  */
 dap_timerfd_t* dap_timerfd_start(uint64_t a_timeout_ms, dap_timerfd_callback_t a_callback, void *a_callback_arg)
 {
-     return dap_timerfd_start_on_worker(dap_events_worker_get_auto(), a_timeout_ms, a_callback, a_callback_arg);
+    return dap_timerfd_start_on_worker(dap_events_worker_get_auto(), a_timeout_ms, a_callback, a_callback_arg);
 }
 
 #ifdef DAP_OS_WINDOWS
-void __stdcall TimerRoutine(void* arg, BOOLEAN flag) {
-    /* A dumb crutch for unix crap compatibility sake
-     * TODO: The timer should be created with WT_EXECUTEINIOTHREAD flag directly on worker thread
-     */
+void CALLBACK TimerCallback(void* arg, BOOLEAN flag) {
     dap_timerfd_t *l_timerfd = (dap_timerfd_t*)arg;
-    dap_events_socket_t *l_es = dap_context_find(l_timerfd->worker->context, l_timerfd->esocket_uuid);
-    if (!l_es)
-        log_it(L_ERROR, "Timer fired on already removed es uuid %zu", l_timerfd->esocket_uuid);
-    else if (!PostQueuedCompletionStatus(l_es->context->iocp, 0, l_es->uuid, NULL))
-        log_it(L_ERROR, "Sending completion message failed, errno %lu", GetLastError());
+    if ( l_timerfd->events_socket && PostQueuedCompletionStatus(l_timerfd->events_socket->worker->context->iocp, 0, (ULONG_PTR)l_timerfd->events_socket, NULL) )
+        ++l_timerfd->events_socket->pending;
 }
 #endif
 
@@ -132,9 +122,6 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
 
     dap_events_socket_callbacks_t l_s_callbacks = {
         .timer_callback = s_es_callback_timer
-#ifdef DAP_EVENTS_CAPS_IOCP
-      , .delete_callback = s_es_cb_timer_delete
-#endif
     };
 
     dap_events_socket_t *l_events_socket = dap_events_socket_wrap_no_add(-1, &l_s_callbacks);
@@ -217,8 +204,8 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     }
     l_events_socket->socket = l_tfd;
 #elif defined DAP_EVENTS_CAPS_IOCP
-    if (!CreateTimerQueueTimer(&l_timerfd->th, hTimerQueue,
-                               (WAITORTIMERCALLBACK)TimerRoutine, l_timerfd, (DWORD)a_timeout_ms, 0, 0)) {
+    if ( !CreateTimerQueueTimer(&l_timerfd->th, hTimerQueue, (WAITORTIMERCALLBACK)TimerCallback,
+                               l_timerfd, (DWORD)a_timeout_ms, 0, WT_EXECUTEINTIMERTHREAD | WT_EXECUTEONLYONCE) ) {
         log_it(L_CRITICAL, "Timer not set, error %lu", GetLastError());
         DAP_DELETE(l_timerfd);
         return NULL;
@@ -226,7 +213,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     l_events_socket->socket = INVALID_SOCKET;
 #endif
 #endif
-    debug_if(g_debug_reactor, L_DEBUG, "Create timer on socket %"DAP_FORMAT_SOCKET, l_timerfd->events_socket->socket);;
+    debug_if(g_debug_reactor, L_DEBUG, "Create timer on socket "DAP_FORMAT_ESOCKET_UUID, l_timerfd->events_socket->uuid);
 #if defined (DAP_OS_LINUX)    
     l_timerfd->tfd = l_tfd;
 #endif
@@ -236,7 +223,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
 void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
 {
     assert(a_timerfd);
-    debug_if(g_debug_reactor, L_ATT, "Reset timer on socket %"DAP_FORMAT_SOCKET, a_timerfd->events_socket->socket);
+    debug_if(g_debug_reactor, L_DEBUG, "Reset timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
 #if defined DAP_OS_LINUX
     struct itimerspec l_ts;
     // repeat never
@@ -255,11 +242,9 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
     l_es->context = NULL;
     dap_context_add(l_context, l_es);
 #elif defined (DAP_OS_WINDOWS)
-    // Doesn't work with one-shot timers
-    //if (!ChangeTimerQueueTimer(hTimerQueue, a_timerfd->th, (DWORD)a_timerfd->timeout_ms, 0))
     DeleteTimerQueueTimer(hTimerQueue, a_timerfd->th, NULL);
-    if (!CreateTimerQueueTimer(&a_timerfd->th, hTimerQueue,
-                               (WAITORTIMERCALLBACK)TimerRoutine, a_timerfd, (DWORD)a_timerfd->timeout_ms, 0, 0))
+    if ( !CreateTimerQueueTimer(&a_timerfd->th, hTimerQueue, (WAITORTIMERCALLBACK)TimerCallback,
+                                a_timerfd, (DWORD)a_timerfd->timeout_ms, 0, WT_EXECUTEINTIMERTHREAD | WT_EXECUTEONLYONCE) )
         log_it(L_CRITICAL, "Timer not reset, error %lu", GetLastError());
 #else
 #error "No timer reset realization for your platform"
@@ -280,30 +265,17 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
     if(!l_timer_fd)
         return;
     // run user's callback
-    debug_if(g_debug_reactor, L_ATT, "Call timer on socket %"DAP_FORMAT_SOCKET, l_timer_fd->events_socket->socket);
+    debug_if(g_debug_reactor, L_DEBUG, "Call timer cb on socket "DAP_FORMAT_ESOCKET_UUID, l_timer_fd->events_socket->uuid);
     if(l_timer_fd && l_timer_fd->callback && l_timer_fd->callback(l_timer_fd->callback_arg)) {
         dap_timerfd_reset_unsafe(l_timer_fd);
     } else {
-        debug_if(g_debug_reactor, L_ATT, "Close timer on socket %"DAP_FORMAT_SOCKET, l_timer_fd->events_socket->socket);
-#if defined DAP_EVENTS_CAPS_WEPOLL
-        DeleteTimerQueueTimer(hTimerQueue, l_timer_fd->th, NULL);
-#elif defined DAP_EVENTS_CAPS_KQUEUE
+        debug_if(g_debug_reactor, L_DEBUG, "Close timer on socket "DAP_FORMAT_ESOCKET_UUID, l_timer_fd->events_socket->uuid);
+#if defined DAP_EVENTS_CAPS_KQUEUE
         l_timer_fd->events_socket->kqueue_base_filter = EVFILT_EMPTY;
 #endif
         a_event_sock->flags |= DAP_SOCK_SIGNAL_CLOSE;
     }
 }
-
-#ifdef DAP_EVENTS_CAPS_IOCP
-static void s_es_cb_timer_delete(dap_events_socket_t *a_es, UNUSED_ARG void *a_arg) {
-    debug_if(g_debug_reactor, L_DEBUG, "Timer remove cb called on es %p", a_es);
-    dap_timerfd_t *l_timer_fd = a_es->_inheritor;
-    if(!l_timer_fd)
-        return;
-    DeleteTimerQueueTimer(hTimerQueue, l_timer_fd->th, NULL);
-}
-#endif
-
 
 /**
  * @brief s_timerfd_reset_worker_callback
@@ -341,10 +313,7 @@ void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
 {
     if (!a_timerfd)
         return; 
-#if defined DAP_EVENTS_CAPS_WEPOLL
-    DeleteTimerQueueTimer(hTimerQueue, a_timerfd->th, NULL);
-#endif
-    debug_if(g_debug_reactor, L_DEBUG, "Remove timer on socket %"DAP_FORMAT_SOCKET, a_timerfd->events_socket->socket);
+    debug_if(g_debug_reactor, L_DEBUG, "Remove timer on socket "DAP_FORMAT_ESOCKET_UUID, a_timerfd->events_socket->uuid);
     if (a_timerfd->events_socket->context)
        dap_events_socket_remove_and_delete_unsafe(a_timerfd->events_socket, false);
     else
@@ -358,4 +327,8 @@ void dap_timerfd_delete_mt(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uu
     dap_events_socket_remove_and_delete_mt(a_worker, a_uuid);
 }
 
-
+#ifdef DAP_EVENTS_CAPS_IOCP
+DWORD dap_del_queuetimer(HANDLE h) {
+    return h ? DeleteTimerQueueTimer(hTimerQueue, h, NULL) ? 0 : GetLastError() : 0;
+}
+#endif
