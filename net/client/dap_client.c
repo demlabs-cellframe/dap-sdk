@@ -157,7 +157,7 @@ struct dap_client_write_args {
     byte_t data[];
 };
 
-static void s_client_write_on_worker(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
+static void s_client_write_on_worker(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
 {
     struct dap_client_write_args *l_args = a_arg;
     dap_client_write_unsafe(l_args->client, l_args->ch_id, l_args->type, l_args->data, l_args->data_size);
