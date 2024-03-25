@@ -527,7 +527,5 @@ uint128_t dap_uint128_scan_decimal(const char *a_str_decimal)
 double dap_uint256_decimal_to_double(uint256_t a_decimal){
     char *l_str = NULL;
     dap_uint256_to_char(a_decimal, &l_str);
-    double ret = strtod(l_str, NULL);
-    return ret;
     return strtod(l_str, NULL);
 }
