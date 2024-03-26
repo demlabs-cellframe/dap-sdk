@@ -323,8 +323,12 @@ json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster){
 
 char *dap_cluster_get_links_info(dap_cluster_t *a_cluster)
 {
-    dap_string_t *l_str_out = dap_string_new(" ↑\\↓ |\t\tNode addr\t| \tIP\t  |    Port\t|    Channels  | SeqID\n"
-                                             "--------------------------------------------------------------------------------------\n");
+
+    dap_string_t *l_str_out = dap_string_new("");
+    dap_string_append_printf(l_str_out, "Link inforamtion for cluster GUUID %s \n",
+                                    a_cluster ? dap_guuid_to_hex_str(a_cluster->guuid) : "0 (global)");
+    dap_string_append(l_str_out, " ↑\\↓ |\t\tNode addr\t| \tIP\t  |    Port\t|    Channels  | SeqID\n"
+                                 "--------------------------------------------------------------------------------------\n");
     size_t l_uplinks_count = 0, l_downlinks_count = 0, l_total_links_count = 0;
     dap_stream_info_t *l_links_info = dap_stream_get_links_info(a_cluster, &l_total_links_count);
     if (l_links_info) {
