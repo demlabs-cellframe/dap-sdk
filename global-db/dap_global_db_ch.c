@@ -98,7 +98,7 @@ bool s_proc_thread_reader(void *a_arg)
     if (!l_cluster->links_cluster ||
             dap_cluster_member_find_role(l_cluster->links_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
-        log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
+        log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR " is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
         return false;
     }
     bool l_ret = false;

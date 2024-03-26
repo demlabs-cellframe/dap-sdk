@@ -330,11 +330,10 @@ void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
  * @param a_addr - node addr to adding
  * @param a_cluster - pointer to links cluster
  */
-void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member, void *a_arg)
+void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member, void UNUSED_ARG *a_arg)
 {
 // sanity check
     dap_return_if_pass(!s_link_manager || !a_member || !a_member->cluster);
-    assert(a_arg == a_member->cluster);
 // func work
     dap_link_t *l_link = dap_link_manager_link_find(&a_member->addr);
     if (!l_link) {
@@ -350,10 +349,9 @@ void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member, void *a_
  * @param a_addr - node addr to adding
  * @param a_cluster - pointer to links cluster
  */
-void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member, void *a_arg)
+void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member, void UNUSED_ARG *a_arg)
 {
     dap_return_if_pass(!s_link_manager || !a_member || !a_member->cluster);
-    assert(a_arg == a_member->cluster);
     dap_link_t *l_link = dap_link_manager_link_find(&a_member->addr);
     if (!l_link) {
         log_it(L_ERROR, "Try cluster deleting from non-existent link");
