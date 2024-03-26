@@ -236,11 +236,14 @@ size_t dap_link_manager_needed_links_count(uint64_t a_net_id)
 int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster, uint32_t a_min_links_number)
 {
     dap_return_val_if_pass(!s_link_manager || !a_net_id || !a_link_cluster, -2);
-    dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    if (l_net) {
-        log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " already managed", a_net_id);
-        return -3;
+    dap_list_t *l_item = NULL;
+    DL_FOREACH(s_link_manager->nets, l_item) {
+        if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
+            log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " already managed", a_net_id);
+            return -3;
+        }
     }
+    dap_managed_net_t *l_net = NULL;
     DAP_NEW_Z_RET_VAL(l_net, dap_managed_net_t, -3, NULL);
     l_net->id = a_net_id;
     l_net->min_links_num = a_min_links_number;
@@ -410,7 +413,6 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
         if (l_link->link_manager->callbacks.disconnected) {
             dap_list_t *it, *tmp;
             DL_FOREACH_SAFE(l_link->uplink.associated_nets, it, tmp) {
-                // if dynamic link call callback
                 dap_managed_net_t *l_net = it->data;
                 if (!l_net->active) {
                     debug_if(s_debug_more, L_ERROR, "Link " NODE_ADDR_FP_STR " have associated net ID 0x%016" DAP_UINT64_FORMAT_x " have inactive state",
@@ -450,8 +452,8 @@ void s_link_delete(dap_link_t *a_link, bool a_force)
 // sanity check
     dap_return_if_pass(!a_link);
 // func work
-    debug_if(s_debug_more, L_DEBUG, "%seleting link %s node " NODE_ADDR_FP_STR "",
-                        a_force ? "Force d" : "D", a_link->is_uplink ? "to" : "from", NODE_ADDR_FP_ARGS_S(a_link->addr));
+    debug_if(s_debug_more, L_DEBUG, "%seleting link %s node " NODE_ADDR_FP_STR "", a_force ? "Force d" : "D",
+                a_link->is_uplink || !a_link->active_clusters ? "to" : "from", NODE_ADDR_FP_ARGS_S(a_link->addr));
     if (a_force) {
         dap_cluster_link_delete_from_all(&a_link->addr);
         dap_list_free(a_link->uplink.associated_nets);

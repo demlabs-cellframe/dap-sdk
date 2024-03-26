@@ -119,9 +119,6 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         }
         if (l_cluster->links_cluster &&
                 l_cluster->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC) {
-            l_cluster->role_cluster->members_add_callback = dap_link_manager_add_static_links_cluster;
-            l_cluster->role_cluster->members_delete_callback = dap_link_manager_remove_static_links_cluster;
-            l_cluster->role_cluster->callbacks_arg = l_cluster->links_cluster;
             l_cluster->links_cluster->members_add_callback = dap_link_manager_add_links_cluster;
             l_cluster->links_cluster->members_delete_callback = dap_link_manager_remove_links_cluster;
         }
@@ -152,6 +149,15 @@ dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *
     if (!a_cluster || !a_node_addr) {
         log_it(L_ERROR, "Invalid argument with cluster member adding");
         return NULL;
+    }
+    if (a_node_addr->uint64 == g_node_addr.uint64) {
+        if (a_cluster->links_cluster &&
+                a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC) {
+            a_cluster->role_cluster->members_add_callback = dap_link_manager_add_static_links_cluster;
+            a_cluster->role_cluster->members_delete_callback = dap_link_manager_remove_static_links_cluster;
+            a_cluster->role_cluster->callbacks_arg = a_cluster->links_cluster;
+        }
+        dap_cluster_members_register(a_cluster->role_cluster);
     }
     return dap_cluster_member_add(a_cluster->role_cluster, a_node_addr, a_role, NULL);
 }

@@ -159,6 +159,15 @@ dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_strea
     return l_member;
 }
 
+void dap_cluster_members_register(dap_cluster_t *a_cluster)
+{
+    pthread_rwlock_rdlock(&a_cluster->members_lock);
+    for (dap_cluster_member_t *l_member = a_cluster->members; l_member; l_member = l_member->hh.next)
+        if (a_cluster->members_add_callback)
+            a_cluster->members_add_callback(l_member, a_cluster->callbacks_arg);
+    pthread_rwlock_unlock(&a_cluster->members_lock);
+}
+
 /**
  * @brief dap_cluster_member_delete
  * @param a_member
@@ -275,13 +284,13 @@ json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster){
         for (size_t i = 0; i < l_total_links_count; i++) {
             dap_stream_info_t *l_link_info = l_links_info + i;
             json_object *l_jobj_info = json_object_new_object();
-            char *l_addr = dap_strdup_printf(NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(l_links_info->node_addr));
+            char *l_addr = dap_strdup_printf(NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(l_link_info->node_addr));
             json_object *l_jobj_node_addr = json_object_new_string(l_addr);
             DAP_DELETE(l_addr);
-            json_object *l_jobj_ip = json_object_new_string(l_links_info->remote_addr_str);
-            json_object *l_jobj_port = json_object_new_int(l_links_info->remote_port);
-            json_object *l_jobj_channel = json_object_new_string(l_links_info->channels);
-            json_object *l_jobj_total_packets_sent  = json_object_new_uint64(l_links_info->total_packets_sent);
+            json_object *l_jobj_ip = json_object_new_string(l_link_info->remote_addr_str);
+            json_object *l_jobj_port = json_object_new_int(l_link_info->remote_port);
+            json_object *l_jobj_channel = json_object_new_string(l_link_info->channels);
+            json_object *l_jobj_total_packets_sent  = json_object_new_uint64(l_link_info->total_packets_sent);
             if (!l_jobj_info || !l_jobj_node_addr || !l_jobj_ip || !l_jobj_port || !l_jobj_channel || !l_jobj_total_packets_sent) {
                 json_object_put(l_jobj_info);
                 json_object_put(l_jobj_node_addr);
@@ -299,7 +308,7 @@ json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster){
             json_object_object_add(l_jobj_info, "port", l_jobj_port);
             json_object_object_add(l_jobj_info, "channel", l_jobj_channel);
             json_object_object_add(l_jobj_info, "total_packets_sent", l_jobj_total_packets_sent);
-            if (l_links_info->is_uplink) {
+            if (l_link_info->is_uplink) {
                 json_object_array_add(l_jobj_uplinks, l_jobj_info);
             } else {
                 json_object_array_add(l_jobj_downlinks, l_jobj_downlinks);
