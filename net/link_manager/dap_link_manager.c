@@ -802,6 +802,56 @@ dap_link_info_t *dap_link_manager_get_net_links_info_list(uint64_t a_net_id, siz
 }
 
 /**
+ * @brief forming list with active links addrs
+ * @param a_net_id net id to search
+ * @param a_uplinks_count output count of finded uplinks
+ * @param a_downlinks_count output count of finded downlinks
+ * @return pointer to dap_stream_node_addr_t array, first uplinks, second downlinks
+ */
+dap_stream_node_addr_t *dap_link_manager_get_net_links_info(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count )
+{
+// sanity check
+    dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
+    dap_return_val_if_pass(!l_net, 0);
+// func work
+    size_t l_count = 0, l_uplinks_count = 0, l_downlinks_count = 0;
+    dap_stream_node_addr_t *l_links_addrs = dap_cluster_get_all_members_addrs(l_net->node_link_cluster, &l_count);
+    if (!l_links_addrs || !l_count) {
+        return NULL;
+    }
+    dap_stream_node_addr_t *l_ret = NULL;
+
+    DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_stream_node_addr_t, l_count, NULL, l_links_addrs);
+    pthread_rwlock_rdlock(&s_link_manager->links_lock);
+        for (size_t i =  0; i < l_count; ++i) {
+            dap_link_t *l_link = NULL;
+            HASH_FIND(hh, s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
+            if (!l_link || l_link->state != LINK_STATE_ESTABLISHED) {
+                continue;
+            } else if (false /**if uplink**/) {  // first uplinks, second downlinks
+                l_ret[l_uplinks_count + l_downlinks_count] = l_ret[l_uplinks_count];
+                l_ret[l_uplinks_count].uint64 = l_link->client->link_info.node_addr.uint64;
+                ++l_uplinks_count;
+            } else {
+                l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_link->client->link_info.node_addr.uint64;
+                ++l_downlinks_count;
+            }
+            
+        }
+    pthread_rwlock_unlock(&s_link_manager->links_lock);
+    DAP_DELETE(l_links_addrs);
+    if (!l_uplinks_count && !l_downlinks_count) {
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
+    if (a_uplinks_count)
+        *a_uplinks_count = l_uplinks_count;
+    if (a_downlinks_count)
+        *a_downlinks_count = l_downlinks_count;
+    return l_ret;
+}
+
+/**
  * @brief print information about links
  */
 void s_link_manager_print_links_info()

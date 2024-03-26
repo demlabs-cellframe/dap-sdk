@@ -101,3 +101,4 @@ void dap_link_manager_set_condition(bool a_new_condition);
 bool dap_link_manager_get_condition();
 char *dap_link_manager_get_links_info();
 dap_link_info_t *dap_link_manager_get_net_links_info_list(uint64_t a_net_id, size_t *a_count);
+dap_stream_node_addr_t *dap_link_manager_get_net_links_info(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count );
