@@ -21,9 +21,9 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t *key, const void *kex_buf,
                                     size_t key_size);
 void *dap_enc_sig_ecdsa_key_delete(dap_enc_key_t *a_key);
 
-size_t dap_enc_sig_ecdsa_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size);
+int dap_enc_sig_ecdsa_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size);
 
-size_t dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
+int dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
                                       const size_t signature_size);
 
 uint8_t *dap_enc_sig_ecdsa_write_signature(const ecdsa_signature_t* a_sign, size_t *a_sign_out);
