@@ -165,7 +165,7 @@ uint8_t* dap_enc_sig_shipovnik_read_private_key(const uint8_t *a_buf, size_t a_b
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
-    if (!l_private_key->data) {
+    if (!l_private_key) {
         log_it(L_CRITICAL, "Memory allocation error");
         DAP_DEL_Z(l_private_key);
         return NULL;
@@ -202,7 +202,7 @@ uint8_t* dap_enc_sig_shipovnik_read_public_key(const uint8_t* a_buf, size_t a_bu
         return NULL;
     }
  //   l_public_key->data = DAP_NEW_Z_SIZE(uint8_t, ECDSA_PUBLIC_KEY_SIZE);
-    if (!l_public_key->data) {
+    if (!l_public_key) {
         log_it(L_CRITICAL, "Memory allocation error");
         DAP_DEL_Z(l_public_key);
         return NULL;
@@ -292,7 +292,7 @@ void *dap_enc_sig_shipovnik_private_key_delete(uint8_t* privateKey) {
 
 void *dap_enc_sig_shipovnik_public_key_delete(uint8_t* publicKey) {
     if (publicKey) {
-        memset(publicKey->data, 0, SHIPOVNIK_PUBLICKEYBYTES);
+        memset(publicKey, 0, SHIPOVNIK_PUBLICKEYBYTES);
     }
 }
 
