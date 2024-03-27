@@ -235,12 +235,12 @@ static void *s_list_thread_proc2(void *arg) {
 
             switch (l_obj_type) {
             case DAP_DB$K_OPTYPE_ADD:
-                if ( (l_obj_cur->timestamp < l_limit_time || (l_obj_cur->timestamp > dap_nanotime_now())) && !(l_obj_cur->flags & RECORD_PINNED) )
+                if ( (l_obj_cur->timestamp < l_limit_time || (l_obj_cur->timestamp > dap_nanotime_now())) )
                 {
-                    if (!group_HALed)
+                    if ( !group_HALed && !(l_obj_cur->flags & RECORD_PINNED) )
                         continue;
                     l_obj_cur->timestamp = dap_nanotime_now();
-                } 
+                }
                 break;
             case DAP_DB$K_OPTYPE_DEL:
                 if ( (l_obj_cur->timestamp < l_limit_time) || (l_obj_cur->timestamp > dap_nanotime_now()) )
