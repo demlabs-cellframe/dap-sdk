@@ -35,6 +35,7 @@
 #include "dap_cert.h"
 #include "dap_pkey.h"
 #include "dap_enc_ks.h"
+#include "dap_strfuncs.h"
 
 #define STREAM_KEEPALIVE_TIMEOUT 3   // How  often send keeplive messages (seconds)
 
@@ -118,6 +119,13 @@ DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_ad
     if (sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, &a_addr->uint64) == 1)
         return 0;
     return -1;
+}
+
+DAP_STATIC_INLINE char* dap_stream_node_addr_to_str(dap_stream_node_addr_t a_addr, bool a_hex)
+{
+    if (a_hex)
+        return dap_strdup_printf("0x%016" DAP_UINT64_FORMAT_x, a_addr.uint64);
+    return dap_strdup_printf(NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_addr));
 }
 
 DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
