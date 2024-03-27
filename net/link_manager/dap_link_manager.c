@@ -46,7 +46,7 @@ static bool s_debug_more = false;
 static const char *s_init_error = "Link manager not inited";
 static uint32_t s_timer_update_states = 4000;
 static uint32_t s_min_links_num = 5;
-static uint32_t s_max_attempts_num = 5;
+static uint32_t s_max_attempts_num = 2;
 static dap_link_manager_t *s_link_manager = NULL;
 
 static void s_client_connect(dap_link_t *a_link, void *a_callback_arg);
@@ -481,9 +481,6 @@ void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
         dap_cluster_delete_all_members(l_net->node_link_cluster);
     }
     l_net->active = a_new_condition;
-    if (!s_check_active_nets()) {
-        s_link_delete_all(false);
-    }
 }
 
 /**
@@ -598,7 +595,7 @@ dap_link_t *dap_link_manager_link_update(dap_link_t *a_link, const char *a_host,
     dap_return_val_if_pass(!a_link || a_link->state == LINK_STATE_DELETED || !a_link->client, NULL);
 // func work
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
-        if (a_link->state != LINK_STATE_DISCONNECTED && !a_force) {
+        if (a_link->valid && a_link->state != LINK_STATE_DISCONNECTED && !a_force) {
             log_it(L_DEBUG, "Link "NODE_ADDR_FP_STR" not updated, please use force option", NODE_ADDR_FP_ARGS_S(a_link->client->link_info.node_addr));
             pthread_rwlock_unlock(&s_link_manager->links_lock);
             return a_link;
