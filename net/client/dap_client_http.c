@@ -160,7 +160,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     // add to dap_worker
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid_ptr) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
     *l_es_uuid_ptr = a_esocket->uuid;

@@ -30,7 +30,7 @@ dap_cbuf_t dap_cbuf_create(size_t size)
     size_t totalSize = sizeof(struct dap_cbuf) + size;
     void *p = malloc(totalSize);
     if (!p){
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     dap_cbuf_t buffer = (dap_cbuf_t)p;

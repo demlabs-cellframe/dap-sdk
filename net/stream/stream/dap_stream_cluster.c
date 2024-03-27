@@ -72,7 +72,7 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_uuid, dap_c
     if (a_mnemonim) {
         l_ret->mnemonim = strdup(a_mnemonim);
         if (!l_ret->mnemonim) {
-            log_it(L_CRITICAL, "Memory allocation error");
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             DAP_DELETE(l_ret);
             return NULL;
         }
