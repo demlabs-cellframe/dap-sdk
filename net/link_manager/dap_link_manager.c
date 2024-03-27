@@ -47,7 +47,7 @@ typedef struct dap_managed_net {
 static bool s_debug_more = false;
 static const char *s_init_error = "Link manager not inited";
 static uint32_t s_timer_update_states = 2000;
-static uint32_t s_max_attempts_num = 1;
+static uint32_t s_max_attempts_num = 3;
 static uint32_t s_reconnect_delay = 20; // sec
 static dap_link_manager_t *s_link_manager = NULL;
 
@@ -635,7 +635,7 @@ unlock:
  * @param a_force - if false update only if link have state DISCONECTED
  * @return if ERROR null, other - pointer to dap_link_t
  */
-int dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_t a_port, bool a_force)
+int dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_t a_port)
 {
 // sanity check
     dap_return_val_if_pass(!a_link, -1);
@@ -650,8 +650,8 @@ int dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_
         pthread_rwlock_unlock(&s_link_manager->links_lock);
         return -4;
     }
-    if (a_link->uplink.state != LINK_STATE_DISCONNECTED && !a_force) {
-        log_it(L_ERROR, "Can't update state of connected link " NODE_ADDR_FP_STR " without force option", NODE_ADDR_FP_ARGS_S(a_link->addr));
+    if (a_link->uplink.state != LINK_STATE_DISCONNECTED) {
+        log_it(L_ERROR, "Can't update state of connected link " NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_link->addr));
         pthread_rwlock_unlock(&s_link_manager->links_lock);
         return -3;
     }

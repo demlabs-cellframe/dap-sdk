@@ -96,7 +96,7 @@ void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member, void 
 void dap_link_manager_add_static_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
 void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
 dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, bool a_with_client, uint64_t a_associated_net_id);
-int dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_t a_port, bool a_force);
+int dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_t a_port);
 dap_link_t *dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr);
 int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_uplink);
 void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr);
