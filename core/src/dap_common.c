@@ -94,6 +94,7 @@ static const char *s_log_level_tag[ 16 ] = {
     " [---] ", //             = 15
 };
 
+#ifndef DAP_OS_IOS
 const char *s_ansi_seq_color[ 16 ] = {
 
     "\x1b[0;37;40m",   // L_DEBUG     = 0
@@ -113,6 +114,26 @@ const char *s_ansi_seq_color[ 16 ] = {
     "", //             = 14
     "", //             = 15
 };
+#else 
+const char *s_ansi_seq_color[ 16 ] = {    // Xcode doesn't support ANSI
+    "", //             = 0
+    "", //             = 1
+    "", //             = 2
+    "", //             = 3
+    "", //             = 4
+    "", //             = 5
+    "", //             = 6
+    "", //             = 7
+    "", //             = 8
+    "", //             = 9
+    "", //             = 10
+    "", //             = 11
+    "", //             = 12
+    "", //             = 13
+    "", //             = 14
+    "", //             = 15
+};
+#endif
 
 static unsigned int s_ansi_seq_color_len[16] = {0};
 
