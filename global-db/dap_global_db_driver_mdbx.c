@@ -336,10 +336,8 @@ MDBX_cursor *l_cursor;
 MDBX_val    l_key_iov, l_data_iov;
 dap_list_t  *l_slist = NULL;
 char        *l_cp;
-size_t     l_upper_limit_of_db_size = 16;
-
-    l_upper_limit_of_db_size = dap_config_get_item_uint32_default(g_config,  "global_db", "mdbx_upper_limit_of_db_size", l_upper_limit_of_db_size);
-    l_upper_limit_of_db_size  *= 1024*1024*1024ULL;
+    // B to MB, default = 1GB
+    size_t l_upper_limit_of_db_size = 0x100000 * dap_config_get_item_uint32_default(g_config,  "global_db", "mdbx_upper_limit_of_db_size", 1024);
     log_it(L_INFO, "Set MDBX Upper Limit of DB Size to %zu octets", l_upper_limit_of_db_size);
 
     snprintf(s_db_path, sizeof(s_db_path), "%s/%s", a_mdbx_path, s_subdir );/* Make a path to MDBX root */
