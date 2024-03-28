@@ -45,6 +45,7 @@ typedef struct dap_cluster dap_cluster_t;
 typedef struct dap_stream {
     dap_stream_node_addr_t node;
     bool authorized;
+    bool primary;
     int id;
     dap_stream_session_t *session;
     dap_events_socket_t *esocket; // Connection

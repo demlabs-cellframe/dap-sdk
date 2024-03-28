@@ -1031,6 +1031,7 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
         log_it(L_DEBUG, "Stream already present in hash table for node "NODE_ADDR_FP_STR"", NODE_ADDR_FP_ARGS_S(a_stream->node));
         return -1;
     }
+    a_stream->primary = true;
     HASH_ADD(hh, s_authorized_streams, node, sizeof(a_stream->node), a_stream);
     dap_link_manager_stream_add(&a_stream->node, a_stream->is_client_to_uplink);
     return 0;
@@ -1044,11 +1045,12 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
     DL_DELETE(s_streams, a_stream);
     if (a_stream->authorized) {
         // It's an authorized stream, try to replace it in hastable
-        HASH_DEL(s_authorized_streams, a_stream);
+        if (a_stream->primary)
+            HASH_DEL(s_authorized_streams, a_stream);
         DL_FOREACH(s_streams, l_stream)
             if (l_stream->node.uint64 == a_stream->node.uint64)
                 break;
-        if (l_stream) {
+        if (l_stream->node) {
             s_stream_add_to_hashtable(l_stream);
             dap_link_manager_stream_replace(&a_stream->node, a_stream->is_client_to_uplink, l_stream->is_client_to_uplink);
         } else if (!a_stream->is_client_to_uplink)
@@ -1100,7 +1102,7 @@ dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr)
 
     pthread_rwlock_wrlock(&s_streams_lock);
     DL_FOREACH(s_streams, l_stream) {
-        if (l_stream->authorized && a_addr->uint64 != l_stream->node.uint64)
+        if (!l_stream->authorized || a_addr->uint64 != l_stream->node.uint64)
             continue;
         dap_events_socket_uuid_ctrl_t *l_ret_item = DAP_NEW(dap_events_socket_uuid_ctrl_t);
         if (!l_ret_item) {
