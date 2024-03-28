@@ -40,7 +40,7 @@ typedef enum dap_global_db_role {
     DAP_GDB_MEMBER_ROLE_USER,       // Read-write access, no delete or rewrite
     DAP_GDB_MEMBER_ROLE_ROOT,       // Full access
     DAP_GDB_MEMBER_ROLE_DEFAULT,    // Use preset default role
-    DAP_GDB_MEMBER_ROLE_INVALID = -1
+    DAP_GDB_MEMBER_ROLE_INVALID = -1// Virtual role
 } dap_global_db_role_t;
 
 DAP_STATIC_INLINE const char *dap_global_db_cluster_role_str(dap_global_db_role_t a_role)
