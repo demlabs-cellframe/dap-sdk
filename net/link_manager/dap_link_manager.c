@@ -429,9 +429,13 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
             }
         }
         if (!l_link->uplink.associated_nets && !l_link->static_clusters) {
-            pthread_rwlock_wrlock(&s_link_manager->links_lock);
+            if (DAP_POINTER_TO_INT(a_arg) != 2)
+                pthread_rwlock_wrlock(&s_link_manager->links_lock);
+
             s_link_delete(l_link, false);
-            pthread_rwlock_unlock(&s_link_manager->links_lock);
+
+            if (DAP_POINTER_TO_INT(a_arg) != 2)
+                pthread_rwlock_unlock(&s_link_manager->links_lock);
         } else
             dap_client_go_stage(l_link->uplink.client, STAGE_BEGIN, NULL);
     } else if (l_link->link_manager->callbacks.error) // TODO make different error codes
@@ -503,7 +507,8 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
 {
     dap_time_t l_now = dap_time_now();
     pthread_rwlock_rdlock(&a_link_manager->links_lock);
-    for (dap_link_t *it = a_link_manager->links; it; it = it->hh.next) {
+    dap_link_t *it, *tmp;
+    HASH_ITER(hh, a_link_manager->links, it, tmp) {
         if (it->active_clusters || !it->uplink.client)
             continue;
         if (it->uplink.state != LINK_STATE_DISCONNECTED)
@@ -521,6 +526,7 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
         if (s_link_manager->callbacks.fill_net_info(it) && !it->uplink.client->link_info.uplink_port) {
             log_it(L_WARNING, "Can't find node " NODE_ADDR_FP_STR " in node list and have no predefined data for it, can't connect",
                                         NODE_ADDR_FP_ARGS_S(it->addr));
+            s_client_error_callback(it->uplink.client, DAP_INT_TO_POINTER(2));
             continue;
         }
         log_it(L_INFO, "Connecting to node " NODE_ADDR_FP_STR ", addr %s : %d", NODE_ADDR_FP_ARGS_S(it->uplink.client->link_info.node_addr),
@@ -602,6 +608,7 @@ dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, bo
             l_link->uplink.client = dap_client_new(NULL, s_client_error_callback, NULL);
         else
             debug_if(s_debug_more, L_DEBUG, "Link " NODE_ADDR_FP_STR " already have a client", NODE_ADDR_FP_ARGS(a_node_addr));
+        l_link->uplink.client->_inheritor = l_link;
         if (a_associated_net_id != DAP_NET_ID_INVALID) {
             dap_managed_net_t *l_net = s_find_net_by_id(a_associated_net_id);
             if (!l_net)
@@ -687,7 +694,6 @@ int dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_
     dap_client_set_uplink_unsafe(l_client, &a_link->addr, a_host, a_port);
     dap_client_set_is_always_reconnect(l_client, false);
     dap_client_set_active_channels_unsafe(l_client, "RCGEND");
-    l_client->_inheritor = a_link;
     log_it(L_INFO, "Validate link to node " NODE_ADDR_FP_STR " with address %s : %d", NODE_ADDR_FP_ARGS_S(a_link->addr),
                                                 a_link->uplink.client->link_info.uplink_addr, a_link->uplink.client->link_info.uplink_port);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
