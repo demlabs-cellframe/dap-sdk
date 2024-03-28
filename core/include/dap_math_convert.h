@@ -305,6 +305,7 @@ char *dap_uint128_uninteger_to_char(uint128_t a_uninteger);
 char *dap_uint128_decimal_to_char(uint128_t a_decimal);
 uint128_t dap_uint128_scan_uninteger(const char *a_str_uninteger);
 uint128_t dap_uint128_scan_decimal(const char *a_str_decimal);
+double dap_uint256_decimal_to_double(uint256_t a_decimal);
 
 #ifdef __cplusplus
 }
