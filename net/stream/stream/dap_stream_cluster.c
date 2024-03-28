@@ -206,13 +206,15 @@ static void s_cluster_member_delete(dap_cluster_member_t *a_member)
     DAP_DELETE(a_member);
 }
 
-void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr)
+void dap_cluster_link_delete_from_all(dap_list_t *a_cluster_list, dap_stream_node_addr_t *a_addr)
 {
     pthread_rwlock_rdlock(&s_clusters_rwlock);
-    for (dap_cluster_t *it = s_clusters; it; it = it->hh.next)
-        if (it->role == DAP_CLUSTER_ROLE_AUTONOMIC ||
-                it->role == DAP_CLUSTER_ROLE_EMBEDDED)
-            dap_cluster_member_delete(it, a_addr);
+    dap_list_t *l_list = dap_list_copy(a_cluster_list);
+    for (dap_list_t *it = l_list; it; it = it->next) {
+        dap_cluster_t *l_cluster = it->data;
+        dap_cluster_member_delete(l_cluster, a_addr);
+    }
+    dap_list_free(l_list);
     pthread_rwlock_unlock(&s_clusters_rwlock);
 }
 

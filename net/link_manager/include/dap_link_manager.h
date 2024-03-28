@@ -71,6 +71,7 @@ typedef struct dap_link {
     } uplink;
     dap_list_t *static_clusters;
     dap_link_manager_t *link_manager;
+    bool stream_is_destroying;
     UT_hash_handle hh;
 } dap_link_t;
 
@@ -99,7 +100,7 @@ dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, bo
 int dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_t a_port);
 dap_link_t *dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr);
 int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_uplink);
-void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr);
+void dap_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr);
 void dap_accounting_downlink_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr);
 void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition);
 size_t dap_link_manager_links_count(uint64_t a_net_id);

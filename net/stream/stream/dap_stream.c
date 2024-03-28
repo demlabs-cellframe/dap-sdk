@@ -1011,8 +1011,8 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
         if (l_stream) {
             s_stream_add_to_hashtable(l_stream);
             dap_link_manager_stream_replace(&a_stream->node, a_stream->is_client_to_uplink, l_stream->is_client_to_uplink);
-        } else if (!a_stream->is_client_to_uplink)
-            dap_link_manager_downlink_delete(&a_stream->node);
+        } else
+            dap_link_manager_stream_delete(&a_stream->node);
     }
     pthread_rwlock_unlock(&s_streams_lock);
 }
@@ -1159,8 +1159,10 @@ dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a
     if (a_cluster) {
         for (dap_cluster_member_t *l_member = a_cluster->members; l_member; l_member = l_member->hh.next) {
             HASH_FIND(hh, s_authorized_streams, &l_member->addr, sizeof(l_member->addr), it);
-            if (!it)
+            if (!it) {
+                log_it(L_ERROR, "Link cluster contains member " NODE_ADDR_FP_STR " not found in streams HT", NODE_ADDR_FP_ARGS_S(l_member->addr));
                 continue;
+            }
             assert(it->node.uint64 == l_member->addr.uint64);
             s_stream_fill_info(it, l_ret + i++);
         }

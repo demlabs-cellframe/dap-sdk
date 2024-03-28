@@ -532,6 +532,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             log_it(L_ERROR, "Connection to %s : %u closed with error %d", l_cur->remote_addr_str, l_cur->remote_port, l_errno);
                         else
                             log_it(L_INFO, "Connection to %s : %u closed", l_cur->remote_addr_str, l_cur->remote_port);
+
+                        l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
+
                         break;
                     } else if (ev_signaled)
                         l_cur->buf_in_size += l_bytes;
@@ -574,6 +577,11 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             else
                                 log_it(L_ERROR, "Connection to %s : %u failed, error %d",
                                                 l_cur->remote_addr_str, l_cur->remote_port, l_errno);
+                            if (!l_cur->no_close)
+                                l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
+
+                            if(l_cur->callbacks.error_callback)
+                                l_cur->callbacks.error_callback(l_cur, l_errno); // Call callback to process error event
                             break;
                         } else if ( setsockopt(l_cur->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0) ) {
                             log_it(L_ERROR, "setsockopt SO_UPDATE_CONNECT_CONTEXT failed, errno %d", l_errno = WSAGetLastError());
