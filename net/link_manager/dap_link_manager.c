@@ -659,7 +659,7 @@ int dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_
     }
     switch (l_numeric_addr.ss_family) {
     case PF_INET: {
-        in_addr_t l_addr = ((struct sockaddr_in *)&l_numeric_addr)->sin_addr.s_addr;
+        unsigned long l_addr = ((struct sockaddr_in *)&l_numeric_addr)->sin_addr.s_addr;
         if (l_addr == INADDR_LOOPBACK || l_addr == INADDR_ANY || l_addr == INADDR_NONE) {
             log_it(L_ERROR, "Wrong uplink address '%s : %u'", a_host, a_port);
             return -6;

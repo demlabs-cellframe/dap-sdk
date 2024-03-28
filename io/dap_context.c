@@ -589,10 +589,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         ol = NULL;
                         //}
                         break;
-                    }
-                    if (l_cur->callbacks.write_callback)
-                        l_cur->callbacks.write_callback(l_cur, NULL);
-                    if ( !l_bytes ) {
+                    } else if ( !l_bytes ) {
                         if ( !(l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal)) ) {
                             int optlen = sizeof(int);
                             if ( getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (char*)&l_errno, &optlen) )
@@ -606,7 +603,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                            l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port);
                         break;
                     }
-                    if ( (l_cur->flags & DAP_SOCK_READY_TO_WRITE) && !l_cur->buf_out_size && l_cur->callbacks.write_finished_callback )
+                    if (l_cur->callbacks.write_callback)
+                        l_cur->callbacks.write_callback(l_cur, NULL);
+                    if ( l_cur->callbacks.write_finished_callback && !l_cur->buf_out_size && (l_cur->flags & DAP_SOCK_READY_TO_WRITE) )
                         l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg);
 
                 break; // io_write
