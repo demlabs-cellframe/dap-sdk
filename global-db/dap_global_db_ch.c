@@ -30,7 +30,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_stream_ch_gossip.h"
 #include "dap_global_db_cluster.h"
 
-#define LOG_TAG "dap_stream_ch_global_db"
+#define LOG_TAG "dap_global_db_ch"
 
 static void s_stream_ch_new(dap_stream_ch_t *a_ch, void *a_arg);
 static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg);
@@ -98,7 +98,7 @@ bool s_proc_thread_reader(void *a_arg)
     if (!l_cluster->links_cluster ||
             dap_cluster_member_find_role(l_cluster->links_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
-        log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
+        log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR " is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
         return false;
     }
     bool l_ret = false;
@@ -203,7 +203,7 @@ static bool s_process_request(void *a_arg)
     if (!l_cluster->links_cluster ||
             dap_cluster_member_find_role(l_cluster->links_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
-        log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
+        log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR " is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
         return false;
     }
     dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
@@ -241,7 +241,7 @@ bool s_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_addr_t *a_addr)
     if (!l_cluster->links_cluster ||
             dap_cluster_member_find_role(l_cluster->links_cluster, a_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
-        log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR "is not a member of cluster %s", NODE_ADDR_FP_ARGS(a_addr), l_name);
+        log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR " is not a member of cluster %s", NODE_ADDR_FP_ARGS(a_addr), l_name);
     }
     return true;
 }

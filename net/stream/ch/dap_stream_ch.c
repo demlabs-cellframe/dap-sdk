@@ -286,7 +286,7 @@ dap_stream_ch_t *dap_stream_ch_find_by_uuid_unsafe(dap_stream_worker_t * a_worke
 {
     dap_stream_ch_t *l_ch = NULL;
     if( a_worker == NULL ){
-        log_it(L_WARNING,"Attempt to search for uuid 0x%016"DAP_UINT64_FORMAT_U" in NULL worker", a_uuid);
+        log_it(L_WARNING,"Attempt to search for uuid 0x%08x in NULL worker", a_uuid);
         return NULL;
     }
 

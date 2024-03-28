@@ -42,7 +42,7 @@ typedef struct dap_cluster_member {
     UT_hash_handle hh;
 } dap_cluster_member_t;
 
-typedef void (*dap_cluster_change_callback_t)(dap_cluster_member_t *a_member);
+typedef void (*dap_cluster_change_callback_t)(dap_cluster_member_t *a_member, void *a_arg);
 
 // Role in cluster
 typedef enum dap_cluster_role {
@@ -53,20 +53,27 @@ typedef enum dap_cluster_role {
     DAP_CLUSTER_ROLE_VIRTUAL        // No links managment on this type of clusters
 } dap_cluster_role_t;
 
+typedef enum dap_cluster_status {
+    DAP_CLUSTER_STATUS_DISABLED = 0,
+    DAP_CLUSTER_STATUS_ENABLED
+} dap_cluster_status_t;
+
 typedef struct dap_cluster {
     const char *mnemonim;           // Field for alternative cluster finding, unique
-    dap_guuid_t uuid;               // Unique global cluster id
+    dap_guuid_t guuid;              // Unique global cluster id
     dap_cluster_role_t role;        // Link management role
+    dap_cluster_status_t status;    // Active or inactive for now
     pthread_rwlock_t members_lock;
     dap_cluster_member_t *members;  // Cluster members (by stream addr) and callbacks
     dap_cluster_change_callback_t members_add_callback;
     dap_cluster_change_callback_t members_delete_callback;
+    void *callbacks_arg;
     void *_inheritor;
     UT_hash_handle hh, hh_str;      // Handles for uuid and mnemonim storages
 } dap_cluster_t;
 
 // Cluster common funcs
-dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_uuid, dap_cluster_role_t a_role);
+dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_cluster_role_t a_role);
 void dap_cluster_delete(dap_cluster_t *a_cluster);
 dap_cluster_t *dap_cluster_find(dap_guuid_t a_uuid);
 dap_cluster_t *dap_cluster_by_mnemonim(const char *a_mnemonim);
@@ -75,6 +82,7 @@ dap_cluster_t *dap_cluster_by_mnemonim(const char *a_mnemonim);
 dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_addr, int a_role, void *a_info);
 dap_cluster_member_t *dap_cluster_member_find_unsafe(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
 int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
+size_t dap_cluster_members_count(dap_cluster_t *a_cluster);
 int dap_cluster_member_delete(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
 void dap_cluster_delete_all_members(dap_cluster_t *a_cluster);
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size,
@@ -83,8 +91,5 @@ json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster);
 char *dap_cluster_get_links_info(dap_cluster_t *a_cluster);
 void dap_cluster_link_delete_from_all(dap_stream_node_addr_t *a_addr);
 dap_stream_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster);
-dap_stream_node_addr_t *dap_cluster_get_all_members_addrs(dap_cluster_t *a_cluster, size_t *a_count);
-DAP_STATIC_INLINE dap_guuid_t dap_cluster_guuid_compose(uint64_t a_net_id, uint64_t a_service_id)
-{
-    return (dap_guuid_t){ .net_id = a_net_id, .svc_id = a_service_id };
-}
+dap_stream_node_addr_t *dap_cluster_get_all_members_addrs(dap_cluster_t *a_cluster, size_t *a_count, int a_role);
+void dap_cluster_members_register(dap_cluster_t *a_cluster);

@@ -1032,8 +1032,7 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
         return -1;
     }
     HASH_ADD(hh, s_authorized_streams, node, sizeof(a_stream->node), a_stream);
-    if (!a_stream->is_client_to_uplink)
-        dap_link_manager_downlink_add(&a_stream->node);
+    dap_link_manager_stream_add(&a_stream->node, a_stream->is_client_to_uplink);
     return 0;
 }
 
@@ -1043,20 +1042,16 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
     pthread_rwlock_wrlock(&s_streams_lock);
     dap_stream_t *l_stream = NULL;
     DL_DELETE(s_streams, a_stream);
-    DL_FOREACH(s_streams, l_stream) {
-        if (l_stream->node.uint64 == a_stream->node.uint64) {
-            break;
-        }
-    }
     if (a_stream->authorized) {
         // It's an authorized stream, try to replace it in hastable
         HASH_DEL(s_authorized_streams, a_stream);
-        if (l_stream)
+        DL_FOREACH(s_streams, l_stream)
+            if (l_stream->node.uint64 == a_stream->node.uint64)
+                break;
+        if (l_stream) {
             s_stream_add_to_hashtable(l_stream);
-    }
-    if(!l_stream) {
-        dap_cluster_link_delete_from_all(&a_stream->node);
-        if (!a_stream->is_client_to_uplink)
+            dap_link_manager_stream_replace(&a_stream->node, a_stream->is_client_to_uplink, l_stream->is_client_to_uplink);
+        } else if (!a_stream->is_client_to_uplink)
             dap_link_manager_downlink_delete(&a_stream->node);
     }
     pthread_rwlock_unlock(&s_streams_lock);
@@ -1096,6 +1091,31 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr,
     assert(!pthread_rwlock_unlock(&s_streams_lock));
     return l_ret;
 }
+
+dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr)
+{
+    dap_list_t *l_ret = NULL;
+    dap_return_val_if_fail(a_addr, l_ret);
+    dap_stream_t *l_stream;
+
+    pthread_rwlock_wrlock(&s_streams_lock);
+    DL_FOREACH(s_streams, l_stream) {
+        if (l_stream->authorized && a_addr->uint64 != l_stream->node.uint64)
+            continue;
+        dap_events_socket_uuid_ctrl_t *l_ret_item = DAP_NEW(dap_events_socket_uuid_ctrl_t);
+        if (!l_ret_item) {
+            log_it(L_CRITICAL, g_error_memory_alloc);
+            dap_list_free_full(l_ret, NULL);
+            return NULL;
+        }
+        l_ret_item->worker = l_stream->stream_worker->worker;
+        l_ret_item->uuid = l_stream->esocket_uuid;
+        l_ret = dap_list_append(l_ret, l_ret_item);
+    }
+    pthread_rwlock_unlock(&s_streams_lock);
+    return l_ret;
+}
+
 /**
  * @brief dap_stream_node_addr_from_sign create dap_stream_node_addr_t from dap_sign_t, need memory free
  * @param a_hash - pointer to hash_fast_t
@@ -1214,16 +1234,6 @@ void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data
     pthread_rwlock_unlock(&s_streams_lock);
 }
 
-size_t dap_stream_cluster_members_count(dap_cluster_t *a_cluster)
-{
-// sanity check
-    dap_return_val_if_pass(!a_cluster, 0);
-// func work
-    pthread_rwlock_rdlock(&a_cluster->members_lock);
-    size_t l_ret = HASH_COUNT(a_cluster->members);
-    pthread_rwlock_unlock(&a_cluster->members_lock);
-    return l_ret;
-}
 dap_stream_node_addr_t dap_stream_get_random_link()
 {
     dap_stream_node_addr_t l_ret = {};
