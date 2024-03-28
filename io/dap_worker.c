@@ -196,7 +196,8 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
  * @param a_es
  * @param a_arg
  */
-static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg)
+
+static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
 {
     assert(a_es);
     dap_context_t * l_context = a_es->context;
@@ -206,7 +207,7 @@ static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg)
     dap_events_socket_t * l_es_new =(dap_events_socket_t *) a_arg;
     if (!l_es_new){
         log_it(L_ERROR,"NULL esocket accepted to add on worker #%u", l_worker->id);
-        return;
+        return -1;
     }
 
     debug_if(g_debug_reactor, L_DEBUG, "Added es %p \"%s\" [%s] to worker #%d",
@@ -225,7 +226,7 @@ static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg)
 #endif
         if (dap_context_find(l_context, l_es_new->uuid)) {
             // Socket already present in worker, it's OK
-            return;
+            return -2;
         }
 
     switch( l_es_new->type){
@@ -241,23 +242,23 @@ static void s_queue_add_es_callback( dap_events_socket_t * a_es, void * a_arg)
         } break;
         default: {}
     }
-    int l_ret = dap_context_add(l_context, l_es_new);
-
+    if (dap_context_add(l_context, l_es_new)) {
+        log_it(L_ERROR, "Can't add event socket's handler to worker i/o poll mechanism with error %d", errno);
+        return -3;
+    }
+    //log_it(L_DEBUG, "Added socket %d on worker %u", l_es_new->socket, w->id);
+    if (l_es_new->callbacks.worker_assign_callback)
+        l_es_new->callbacks.worker_assign_callback(l_es_new, l_worker);
     // We need to differ new and reassigned esockets. If its new - is_initialized is false
     if ( ! l_es_new->is_initalized ){
         if (l_es_new->callbacks.new_callback)
             l_es_new->callbacks.new_callback(l_es_new, NULL);
         l_es_new->is_initalized = true;
     }
-
-    if (  l_ret != 0 ){
-        log_it(L_CRITICAL,"Can't add event socket's handler to worker i/o poll mechanism with error %d", errno);
-    }else{
-        //log_it(L_DEBUG, "Added socket %d on worker %u", l_es_new->socket, w->id);
-        if (l_es_new->callbacks.worker_assign_callback)
-            l_es_new->callbacks.worker_assign_callback(l_es_new, l_worker);
-    }
+    return 0;
 }
+
+DAP_STATIC_INLINE void s_queue_add_es_callback(dap_events_socket_t *a_es, void * a_arg) { s_queue_es_add(a_es, a_arg); }
 
 /**
  * @brief s_delete_es_callback
@@ -370,14 +371,15 @@ static long s_dap_es_assign_to_context(dap_events_socket_t *a_es, dap_context_t 
                                         a_es->uuid, dap_events_socket_get_type_str(a_es),
                                         a_es->socket == INVALID_SOCKET ? "" : dap_itoa(a_es->socket),
                                         a_es->worker->id, a_context->id);
+    if (a_es->callbacks.worker_assign_callback)
+            a_es->callbacks.worker_assign_callback(a_es, a_es->worker);
+
     if (!a_es->is_initalized) {
         if (a_es->callbacks.new_callback)
             a_es->callbacks.new_callback(a_es, NULL);
         a_es->is_initalized = true;
     }
-    if (a_es->callbacks.worker_assign_callback)
-        a_es->callbacks.worker_assign_callback(a_es, a_es->worker);
-    
+
     if (a_es->type >= DESCRIPTOR_TYPE_FILE)
         return ERROR_CONTEXT_EXPIRED;
 
@@ -480,7 +482,7 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
                  a_worker->id);
 #else
     int l_ret = dap_worker_get_current() == a_worker
-            ? dap_worker_add_events_socket_unsafe(a_worker, a_events_socket)
+            ? s_queue_es_add(a_worker->queue_es_new, a_events_socket)
             : dap_events_socket_queue_ptr_send(a_worker->queue_es_new, a_events_socket);
 
     if (l_ret) {

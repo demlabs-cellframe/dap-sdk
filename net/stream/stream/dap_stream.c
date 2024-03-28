@@ -103,7 +103,6 @@ static void s_udp_esocket_new(dap_events_socket_t* a_esocket,void * a_arg);
 // Internal functions
 static dap_stream_t * s_stream_new(dap_http_client_t * a_http_client, dap_stream_node_addr_t *a_addr); // Create new stream
 static void s_http_client_delete(dap_http_client_t * a_esocket, void * a_arg);
-int s_stream_add_to_list(dap_stream_t *a_stream);
 void s_stream_delete_from_list(dap_stream_t *a_stream);
 
 static bool s_callback_server_keepalive(void *a_arg);
@@ -273,7 +272,7 @@ dap_stream_t * stream_new_udp(dap_events_socket_t * a_esocket)
     l_stm->esocket = a_esocket;
     l_stm->esocket_uuid = a_esocket->uuid;
     a_esocket->_inheritor = l_stm;
-    s_stream_add_to_list(l_stm);
+    dap_stream_add_to_list(l_stm);
     log_it(L_NOTICE,"New stream instance udp");
     return l_stm ;
 }
@@ -368,7 +367,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
         l_ret->node = *a_addr;
         l_ret->authorized = true;
     }
-    s_stream_add_to_list(l_ret);
+    dap_stream_add_to_list(l_ret);
     log_it(L_NOTICE,"New stream instance");
     return l_ret;
 }
@@ -396,7 +395,6 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
     if (a_addr)
         l_ret->node = *a_addr;
     l_ret->authorized = a_authorized;
-    s_stream_add_to_list(l_ret);
     return l_ret;
 }
 
@@ -552,11 +550,13 @@ static bool s_http_client_data_write(dap_http_client_t * a_http_client, void UNU
  */
 static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, dap_worker_t * a_worker)
 {
+    if (!a_esocket->is_initalized)
+        return;
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
     assert(l_http_client);
     dap_stream_t * l_stream = DAP_STREAM(l_http_client);
     assert(l_stream);
-    s_stream_add_to_list(l_stream);
+    dap_stream_add_to_list(l_stream);
     // Restart server keepalive timer if it was unassigned before
     if (!l_stream->keepalive_timer) {
         dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
@@ -597,7 +597,7 @@ static void s_client_callback_worker_assign(dap_events_socket_t * a_esocket, dap
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     dap_stream_t *l_stream = l_client_pvt->stream;
     assert(l_stream);
-    s_stream_add_to_list(l_stream);
+    dap_stream_add_to_list(l_stream);
     // Start client keepalive timer or restart it, if it was unassigned before
     if (!l_stream->keepalive_timer) {
         dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
@@ -1050,7 +1050,7 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
         DL_FOREACH(s_streams, l_stream)
             if (l_stream->node.uint64 == a_stream->node.uint64)
                 break;
-        if (l_stream->node) {
+        if (l_stream) {
             s_stream_add_to_hashtable(l_stream);
             dap_link_manager_stream_replace(&a_stream->node, a_stream->is_client_to_uplink, l_stream->is_client_to_uplink);
         } else if (!a_stream->is_client_to_uplink)
@@ -1059,7 +1059,7 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
     pthread_rwlock_unlock(&s_streams_lock);
 }
 
-int s_stream_add_to_list(dap_stream_t *a_stream)
+int dap_stream_add_to_list(dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream, -1);
     int l_ret = 0;

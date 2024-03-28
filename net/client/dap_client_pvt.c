@@ -706,6 +706,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
             bool l_is_last_stage = (a_client_pvt->stage == a_client_pvt->client->stage_target);
             if (l_is_last_stage) {
                 a_client_pvt->stage_status = STAGE_STATUS_COMPLETE;
+                dap_stream_add_to_list(a_client_pvt->stream);
                 if (a_client_pvt->client->stage_target_done_callback) {
                     log_it(L_NOTICE, "Stage %s is achieved", dap_client_stage_str(a_client_pvt->stage));
                     a_client_pvt->client->stage_target_done_callback(a_client_pvt->client, a_client_pvt->client->callbacks_arg);

@@ -458,12 +458,13 @@ void s_link_delete(dap_link_t *a_link, bool a_force)
 // func work
     debug_if(s_debug_more, L_DEBUG, "%seleting link %s node " NODE_ADDR_FP_STR "", a_force ? "Force d" : "D",
                 a_link->is_uplink || !a_link->active_clusters ? "to" : "from", NODE_ADDR_FP_ARGS_S(a_link->addr));
-    if (a_force) {
+
+    if (a_link->active_clusters)
         dap_cluster_link_delete_from_all(&a_link->addr);
-        dap_list_free(a_link->uplink.associated_nets);
-    } else
-        assert(a_link->uplink.associated_nets == NULL);
     assert(a_link->active_clusters == NULL);
+    if (a_link->uplink.associated_nets)
+        dap_list_free(a_link->uplink.associated_nets);  
+
     bool l_link_preserve = a_link->static_clusters && !a_force;
     // Drop uplink
     dap_events_socket_uuid_t l_client_uuid = 0;
@@ -763,7 +764,7 @@ int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_upli
 
 void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_old_is_uplink, bool a_new_is_uplink)
 {
-    dap_return_if_fail(!a_addr);
+    dap_return_if_fail(a_addr);
     dap_link_t *l_link = dap_link_manager_link_find(a_addr);
     if (!l_link) // Link is not managed by us
         return;
@@ -813,7 +814,6 @@ void dap_link_manager_downlink_delete(dap_stream_node_addr_t *a_node_addr)
     dap_link_t *l_link = dap_link_manager_link_find(a_node_addr);
     dap_return_if_pass(!l_link || !s_link_manager->active);
 // func work
-    debug_if(s_debug_more, L_DEBUG, "Deleting dowlink from "NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS(a_node_addr));
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
     s_link_delete(l_link, false);
     pthread_rwlock_unlock(&s_link_manager->links_lock);

@@ -157,6 +157,7 @@ dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es);
 
 // autorization stream block
 int dap_stream_add_addr(dap_stream_node_addr_t a_addr, void *a_id);
+int dap_stream_add_to_list(dap_stream_t *a_stream);
 int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full);
 int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
