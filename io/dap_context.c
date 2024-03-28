@@ -605,7 +605,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     }
                     if (l_cur->callbacks.write_callback)
                         l_cur->callbacks.write_callback(l_cur, NULL);
-                    if ( FLAG_WRITE_NOCLOSE(l_cur->flags) && !l_cur->buf_out_size && l_cur->callbacks.write_finished_callback )
+                    if ( l_cur->callbacks.write_finished_callback && !l_cur->buf_out_size && (l_cur->flags & DAP_SOCK_READY_TO_WRITE) )
                         l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg);
 
                 break; // io_write
