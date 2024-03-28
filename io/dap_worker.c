@@ -246,15 +246,17 @@ static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
         log_it(L_ERROR, "Can't add event socket's handler to worker i/o poll mechanism with error %d", errno);
         return -3;
     }
+
+    // We need to differ new and reassigned esockets. If its new - is_initialized is false
+    if (!l_es_new->is_initalized && l_es_new->callbacks.new_callback)
+        l_es_new->callbacks.new_callback(l_es_new, NULL);
+
     //log_it(L_DEBUG, "Added socket %d on worker %u", l_es_new->socket, w->id);
     if (l_es_new->callbacks.worker_assign_callback)
         l_es_new->callbacks.worker_assign_callback(l_es_new, l_worker);
-    // We need to differ new and reassigned esockets. If its new - is_initialized is false
-    if ( ! l_es_new->is_initalized ){
-        if (l_es_new->callbacks.new_callback)
-            l_es_new->callbacks.new_callback(l_es_new, NULL);
-        l_es_new->is_initalized = true;
-    }
+
+    l_es_new->is_initalized = true;
+
     return 0;
 }
 
@@ -371,14 +373,14 @@ static long s_dap_es_assign_to_context(dap_events_socket_t *a_es, dap_context_t 
                                         a_es->uuid, dap_events_socket_get_type_str(a_es),
                                         a_es->socket == INVALID_SOCKET ? "" : dap_itoa(a_es->socket),
                                         a_es->worker->id, a_context->id);
-    if (a_es->callbacks.worker_assign_callback)
-            a_es->callbacks.worker_assign_callback(a_es, a_es->worker);
 
-    if (!a_es->is_initalized) {
-        if (a_es->callbacks.new_callback)
-            a_es->callbacks.new_callback(a_es, NULL);
-        a_es->is_initalized = true;
-    }
+    if (!a_es->is_initalized && a_es->callbacks.new_callback)
+        a_es->callbacks.new_callback(a_es, NULL);
+
+    if (a_es->callbacks.worker_assign_callback)
+        a_es->callbacks.worker_assign_callback(a_es, a_es->worker);
+
+    a_es->is_initalized = true;
 
     if (a_es->type >= DESCRIPTOR_TYPE_FILE)
         return ERROR_CONTEXT_EXPIRED;

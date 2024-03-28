@@ -546,7 +546,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     // connect
                 #ifdef DAP_EVENTS_CAPS_IOCP
                     log_it(L_DEBUG, "Stream connecting to remote %s : %u", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
-                    dap_worker_add_events_socket(l_worker, a_client_pvt->stream_es);
                     dap_events_socket_uuid_t *l_stream_es_uuid_ptr = DAP_DUP(&a_client_pvt->stream_es->uuid);
                     a_client_pvt->stream_es->flags &= ~DAP_SOCK_READY_TO_READ;
                     a_client_pvt->stream_es->flags |= DAP_SOCK_READY_TO_WRITE;

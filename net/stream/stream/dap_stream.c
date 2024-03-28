@@ -92,8 +92,6 @@ static void s_http_client_data_read(dap_http_client_t * a_http_client, void * a_
 
 static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, dap_worker_t * a_worker);
 static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, dap_worker_t * a_worker);
-static void s_client_callback_worker_assign(dap_events_socket_t *a_esocket, dap_worker_t *a_worker);
-static void s_client_callback_worker_unassign(dap_events_socket_t *a_esocket, dap_worker_t *a_worker);
 
 static void s_esocket_data_read(dap_events_socket_t* a_esocket, void * a_arg);
 static bool s_esocket_write(dap_events_socket_t* a_esocket, void * a_arg);
@@ -390,8 +388,8 @@ dap_stream_t *dap_stream_new_es_client(dap_events_socket_t *a_esocket, dap_strea
     l_ret->esocket = a_esocket;
     l_ret->esocket_uuid = a_esocket->uuid;
     l_ret->is_client_to_uplink = true;
-    l_ret->esocket->callbacks.worker_assign_callback = s_client_callback_worker_assign;
-    l_ret->esocket->callbacks.worker_unassign_callback = s_client_callback_worker_unassign;
+    l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
+    l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
     if (a_addr)
         l_ret->node = *a_addr;
     l_ret->authorized = a_authorized;
@@ -552,9 +550,7 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
 {
     if (!a_esocket->is_initalized)
         return;
-    dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
-    assert(l_http_client);
-    dap_stream_t * l_stream = DAP_STREAM(l_http_client);
+    dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
     assert(l_stream);
     dap_stream_add_to_list(l_stream);
     // Restart server keepalive timer if it was unassigned before
@@ -565,9 +561,10 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
             return;
         }
         *l_es_uuid = a_esocket->uuid;
+        dap_timerfd_callback_t l_callback = a_esocket->server ? s_callback_server_keepalive : s_callback_client_keepalive;
         l_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
                                                                 STREAM_KEEPALIVE_TIMEOUT * 1000,
-                                                                (dap_timerfd_callback_t)s_callback_server_keepalive,
+                                                                l_callback,
                                                                 l_es_uuid);
     }
 }
@@ -580,46 +577,7 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
 static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, dap_worker_t * a_worker)
 {
     UNUSED(a_worker);
-    dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
-    assert(l_http_client);
-    dap_stream_t * l_stream = DAP_STREAM(l_http_client);
-    assert(l_stream);
-    s_stream_delete_from_list(l_stream);
-    DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
-    dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
-    l_stream->keepalive_timer = NULL;
-}
-
-static void s_client_callback_worker_assign(dap_events_socket_t * a_esocket, dap_worker_t * a_worker)
-{
-    dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_esocket);
-    assert(l_client);
-    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
-    dap_stream_t *l_stream = l_client_pvt->stream;
-    assert(l_stream);
-    dap_stream_add_to_list(l_stream);
-    // Start client keepalive timer or restart it, if it was unassigned before
-    if (!l_stream->keepalive_timer) {
-        dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
-        if (!l_es_uuid) {
-        log_it(L_CRITICAL, "Memory allocation error");
-            return;
-        }
-        *l_es_uuid = a_esocket->uuid;
-        l_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
-                                                                STREAM_KEEPALIVE_TIMEOUT * 1000,
-                                                                (dap_timerfd_callback_t)s_callback_client_keepalive,
-                                                                l_es_uuid);
-    }
-}
-
-static void s_client_callback_worker_unassign(dap_events_socket_t * a_esocket, dap_worker_t * a_worker)
-{
-    UNUSED(a_worker);
-    dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_esocket);
-    assert(l_client);
-    dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
-    dap_stream_t *l_stream = l_client_pvt->stream;
+    dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
     assert(l_stream);
     s_stream_delete_from_list(l_stream);
     DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
