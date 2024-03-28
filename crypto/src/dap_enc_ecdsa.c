@@ -49,7 +49,7 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, const void *kex_buf
 
     key->priv_key_data_size =sizeof(ecdsa_private_key_t);
     key->pub_key_data_size = sizeof(ecdsa_public_key_t);
-    key->_inheritor_size=sizeof(ecdsa_context_t);
+    key->_inheritor_size=get_secp256k1_context_size();
     key->priv_key_data = malloc(key->priv_key_data_size);
     key->pub_key_data = malloc(key->pub_key_data_size);
     key->_inheritor=malloc(key->_inheritor_size);
