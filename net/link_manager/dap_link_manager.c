@@ -31,6 +31,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_config.h"
 #include "dap_strfuncs.h"
 #include "dap_client_pvt.h"
+#include "dap_net.h"
 
 #define LOG_TAG "dap_link_manager"
 
@@ -104,14 +105,15 @@ DAP_STATIC_INLINE void s_debug_accounting_link_in_net(bool a_uplink, dap_stream_
 DAP_STATIC_INLINE void s_link_manager_print_links_info(dap_link_manager_t *a_link_manager)
 {
     dap_link_t *l_link = NULL, *l_tmp = NULL;
-    printf(" State |\tNode addr\t|   Clusters\t|Static clusters|\tHost\t|\n"
+    printf(" Uplink |\tNode addr\t| Active Clusters\t| Static clusters\n"
             "-------------------------------------------------------------------------------\n");
     HASH_ITER(hh, a_link_manager->links, l_link, l_tmp)
-        printf("   %d   | "NODE_ADDR_FP_STR"\t|\t%"DAP_UINT64_FORMAT_U
-                                            "\t|\t%"DAP_UINT64_FORMAT_U"\t| %s\n",
-                                 l_link->uplink.state, NODE_ADDR_FP_ARGS_S(l_link->addr),
+        printf("   %s   | "NODE_ADDR_FP_STR"\t|\t%"DAP_UINT64_FORMAT_U
+                                            "\t|\t%"DAP_UINT64_FORMAT_U"\t\n",
+                                 l_link->is_uplink ? "True" : "False",
+                                 NODE_ADDR_FP_ARGS_S(l_link->addr),
                                  dap_list_length(l_link->active_clusters),
-                                 dap_list_length(l_link->static_clusters), l_link->uplink.client->link_info.uplink_addr);
+                                 dap_list_length(l_link->static_clusters));
 }
 
 // General functional
@@ -643,6 +645,32 @@ int dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_
         log_it(L_ERROR, "Incomplete link info for uplink update");
         return -2;
     }
+    struct sockaddr_storage l_numeric_addr;
+    if ( dap_net_resolve_host(a_host, dap_itoa(a_port), &l_numeric_addr, false) ) {
+        log_it(L_ERROR, "Wrong uplink address '%s : %u'", a_host, a_port);
+        return -6;
+    }
+    switch (l_numeric_addr.ss_family) {
+    case PF_INET: {
+        in_addr_t l_addr = ((struct sockaddr_in *)&l_numeric_addr)->sin_addr.s_addr;
+        if (l_addr == INADDR_LOOPBACK || l_addr == INADDR_ANY || l_addr == INADDR_NONE) {
+            log_it(L_ERROR, "Wrong uplink address '%s : %u'", a_host, a_port);
+            return -6;
+        }
+    } break;
+    case PF_INET6: {
+        struct in6_addr *l_addr = &((struct sockaddr_in6 *)&l_numeric_addr)->sin6_addr;
+        if (!memcmp(l_addr, &in6addr_any, sizeof(struct in6_addr)) ||
+                !memcmp(l_addr, &in6addr_loopback, sizeof(struct in6_addr))) {
+            log_it(L_ERROR, "Wrong uplink address '%s : %u'", a_host, a_port);
+            return -6;
+        }
+    } break;
+    default:
+        log_it(L_ERROR, "Wrong uplink address '%s : %u'", a_host, a_port);
+        return -6;
+    }
+
 // func work
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
     if (!a_link->uplink.client) {
@@ -653,7 +681,7 @@ int dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_
     if (a_link->uplink.state != LINK_STATE_DISCONNECTED) {
         log_it(L_ERROR, "Can't update state of connected link " NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_link->addr));
         pthread_rwlock_unlock(&s_link_manager->links_lock);
-        return -3;
+        return -5;
     }
     dap_client_t *l_client = a_link->uplink.client;
     dap_client_set_uplink_unsafe(l_client, &a_link->addr, a_host, a_port);
