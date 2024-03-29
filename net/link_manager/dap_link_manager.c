@@ -481,8 +481,10 @@ void s_link_delete(dap_link_t *a_link, bool a_force)
         dap_events_socket_uuid_t l_client_uuid = 0;
         if (a_link->uplink.client) {
             l_client_uuid = a_link->uplink.es_uuid;
-            if (a_link->uplink.associated_nets)
-                dap_list_free(a_link->uplink.associated_nets);  
+            if (a_link->uplink.associated_nets) {
+                dap_list_free(a_link->uplink.associated_nets);
+                a_link->uplink.associated_nets = NULL;
+            }
             if (l_link_preserve) {
                 if (a_link->uplink.state != LINK_STATE_DISCONNECTED) {
                     dap_client_go_stage(a_link->uplink.client, STAGE_BEGIN, NULL);
@@ -530,7 +532,7 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
             continue;
         if (a_link_manager->callbacks.connected &&
                 it->uplink.state == LINK_STATE_ESTABLISHED &&
-                it->uplink.start_after > l_now) {
+                it->uplink.start_after < l_now) {
             for (dap_list_t *l_net_item = it->uplink.associated_nets;
                  l_net_item;
                  l_net_item = l_net_item->next) {
@@ -547,7 +549,7 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
             continue;
         if (!it->uplink.associated_nets && !s_link_have_clusters_enabled(it))
             continue;
-        if (it->uplink.start_after > l_now)
+        if (it->uplink.start_after >= l_now)
             continue;
         if (dap_client_get_stage(it->uplink.client) != STAGE_BEGIN) {
             dap_client_go_stage(it->uplink.client, STAGE_BEGIN, NULL);
@@ -861,7 +863,7 @@ void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_stream_node_
                 return;
             }
         }
-        dap_list_remove(l_link->uplink.associated_nets, l_net);
+        l_link->uplink.associated_nets = dap_list_remove(l_link->uplink.associated_nets, l_net);
         l_net->uplinks--;
         if (!l_link->uplink.associated_nets && !l_link->static_clusters)
             s_link_delete(l_link, false);
