@@ -514,8 +514,23 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
     pthread_rwlock_rdlock(&a_link_manager->links_lock);
     dap_link_t *it, *tmp;
     HASH_ITER(hh, a_link_manager->links, it, tmp) {
-        if (it->active_clusters || !it->uplink.client)
+        if (!it->uplink.client)
             continue;
+        if (it->active_clusters) {
+            if (a_link_manager->callbacks.connected &&
+                    it->uplink.state == LINK_STATE_ESTABLISHED &&
+                    it->uplink.start_after > l_now) {
+                for (dap_list_t *l_net_item = it->uplink.associated_nets;
+                     l_net_item;
+                     l_net_item = l_net_item->next) {
+                    dap_managed_net_t *l_net = l_net_item->data;
+                    if (!dap_cluster_member_find_unsafe((dap_cluster_t *)l_net->link_clusters->data,
+                                                   &it->addr))
+                        a_link_manager->callbacks.connected(it, l_net->id);
+                }
+            }
+            continue;
+        }
         if (it->uplink.state != LINK_STATE_DISCONNECTED)
             continue;
         if (!it->uplink.associated_nets && !s_link_have_clusters_enabled(it))
@@ -626,10 +641,6 @@ dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, bo
                 }
             l_link->uplink.associated_nets = dap_list_append(l_link->uplink.associated_nets, l_net);
             l_net->uplinks++;
-            if (l_link->uplink.client && l_link->uplink.state == LINK_STATE_ESTABLISHED) {
-                if (l_link->link_manager->callbacks.connected)
-                    l_link->link_manager->callbacks.connected(l_link, l_net->id);
-            }
         }
     }
     if (s_debug_more)
