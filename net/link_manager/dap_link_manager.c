@@ -225,8 +225,7 @@ size_t dap_link_manager_needed_links_count(uint64_t a_net_id)
         log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " is not registered", a_net_id);
         return 0;
     }
-    size_t l_links_count = dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data);
-    return l_links_count < l_net->min_links_num ? l_net->min_links_num - l_links_count : 0;
+    return l_net->uplinks < l_net->min_links_num ? l_net->min_links_num - l_net->uplinks : 0;
 }
 
 /**
@@ -628,10 +627,8 @@ dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, bo
             l_link->uplink.associated_nets = dap_list_append(l_link->uplink.associated_nets, l_net);
             l_net->uplinks++;
             if (l_link->uplink.client && l_link->uplink.state == LINK_STATE_ESTABLISHED) {
-                dap_cluster_member_add((dap_cluster_t *)l_net->link_clusters->data, a_node_addr, 0, NULL);
                 if (l_link->link_manager->callbacks.connected)
                     l_link->link_manager->callbacks.connected(l_link, l_net->id);
-                s_debug_accounting_link_in_net(true, a_node_addr, l_net->id);
             }
         }
     }
@@ -756,7 +753,6 @@ int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_upli
             // if dynamic link, add net cluster to list and call callback
             dap_managed_net_t *l_net = it->data;
             if (l_net && l_net->active) {
-                dap_cluster_member_add((dap_cluster_t *)l_net->link_clusters->data, a_node_addr, 0, NULL);
                 if (l_link->link_manager->callbacks.connected)
                     l_link->link_manager->callbacks.connected(l_link, l_net->id);
             }
@@ -805,19 +801,35 @@ void dap_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr)
  * @param a_net_id - net id to check
  * @param a_node_addr - node addr to check
  */
-void dap_accounting_downlink_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr)
+void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr, bool a_no_error)
 {
 // sanity check
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    dap_return_if_pass(!l_net);
-// func work
-    if (!l_net->active)
-        return;
-    s_debug_accounting_link_in_net(false, a_node_addr, l_net->id);
     dap_link_t *l_link = dap_link_manager_link_find(a_node_addr);
     assert(l_link);
-    dap_cluster_member_add((dap_cluster_t *)l_net->link_clusters->data, a_node_addr, 0, NULL);
-    s_debug_cluster_adding_removing(false, false, (dap_cluster_t *)l_net->link_clusters->data, a_node_addr);
+// func work
+    if (a_no_error) {
+        assert(l_net && l_net->active);
+        dap_cluster_member_add((dap_cluster_t *)l_net->link_clusters->data, a_node_addr, 0, NULL);
+        s_debug_accounting_link_in_net(false, a_node_addr, l_net->id);
+    } else if (l_net) {
+        pthread_rwlock_wrlock(&s_link_manager->links_lock);
+        assert(l_net->link_clusters);
+        dap_cluster_link_delete_from_all(l_net->link_clusters, a_node_addr);
+        if (l_link->link_manager->callbacks.disconnected) {
+            bool l_is_permanent_link = l_link->link_manager->callbacks.disconnected(
+                        l_link, l_net->id, dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data));
+            if (l_is_permanent_link) {
+                pthread_rwlock_unlock(&s_link_manager->links_lock);
+                return;
+            }
+        }
+        dap_list_remove(l_link->uplink.associated_nets, l_net);
+        l_net->uplinks--;
+        if (!l_link->uplink.associated_nets && !l_link->static_clusters)
+            s_link_delete(l_link, false);
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
+    }
 }
 
 /**

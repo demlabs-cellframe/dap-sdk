@@ -101,7 +101,7 @@ int dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_
 dap_link_t *dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr);
 int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_uplink);
 void dap_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr);
-void dap_accounting_downlink_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr);
+void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr, bool a_no_error);
 void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition);
 size_t dap_link_manager_links_count(uint64_t a_net_id);
 size_t dap_link_manager_needed_links_count(uint64_t a_net_id);
