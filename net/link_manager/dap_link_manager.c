@@ -486,7 +486,7 @@ void s_link_delete(dap_link_t *a_link, bool a_force)
             if (l_link_preserve) {
                 if (a_link->uplink.state != LINK_STATE_DISCONNECTED) {
                     dap_client_go_stage(a_link->uplink.client, STAGE_BEGIN, NULL);
-                    a_link->uplink.state == LINK_STATE_DISCONNECTED;
+                    a_link->uplink.state = LINK_STATE_DISCONNECTED;
                 }
             } else
                 dap_client_delete_mt(a_link->uplink.client);
@@ -528,19 +528,19 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
     HASH_ITER(hh, a_link_manager->links, it, tmp) {
         if (!it->uplink.client)
             continue;
-        if (it->active_clusters) {
-            if (a_link_manager->callbacks.connected &&
-                    it->uplink.state == LINK_STATE_ESTABLISHED &&
-                    it->uplink.start_after > l_now) {
-                for (dap_list_t *l_net_item = it->uplink.associated_nets;
-                     l_net_item;
-                     l_net_item = l_net_item->next) {
-                    dap_managed_net_t *l_net = l_net_item->data;
-                    if (!dap_cluster_member_find_unsafe((dap_cluster_t *)l_net->link_clusters->data,
-                                                   &it->addr))
-                        a_link_manager->callbacks.connected(it, l_net->id);
-                }
+        if (a_link_manager->callbacks.connected &&
+                it->uplink.state == LINK_STATE_ESTABLISHED &&
+                it->uplink.start_after > l_now) {
+            for (dap_list_t *l_net_item = it->uplink.associated_nets;
+                 l_net_item;
+                 l_net_item = l_net_item->next) {
+                dap_managed_net_t *l_net = l_net_item->data;
+                if (!dap_cluster_member_find_unsafe((dap_cluster_t *)l_net->link_clusters->data,
+                                               &it->addr))
+                    a_link_manager->callbacks.connected(it, l_net->id);
             }
+        }
+        if (it->active_clusters) {
             continue;
         }
         if (it->uplink.state != LINK_STATE_DISCONNECTED)
@@ -833,7 +833,20 @@ void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_stream_node_
 // func work
     if (a_no_error) {
         assert(l_net && l_net->active);
-        dap_cluster_member_add((dap_cluster_t *)l_net->link_clusters->data, a_node_addr, 0, NULL);
+        for (dap_list_t *it = l_net->link_clusters; it; it = it->next) {
+            dap_cluster_t *l_cluster = it->data;
+            if (it == l_net->link_clusters)
+                dap_cluster_member_add(l_cluster, a_node_addr, 0, NULL);
+            else {
+                for (dap_list_t *l_item = l_link->static_clusters; l_item; l_item = l_item->next) {
+                    if (l_cluster == l_item->data) {
+                        assert(l_cluster->status == DAP_CLUSTER_STATUS_ENABLED);
+                        dap_cluster_member_add(l_cluster, a_node_addr, 0, NULL);
+                        break;
+                    }
+                }
+            }
+        }
         s_debug_accounting_link_in_net(false, a_node_addr, l_net->id);
     } else if (l_net) {
         assert(l_net->link_clusters);
