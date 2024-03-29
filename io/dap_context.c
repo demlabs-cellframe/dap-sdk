@@ -532,6 +532,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             log_it(L_ERROR, "Connection to %s : %u closed with error %d", l_cur->remote_addr_str, l_cur->remote_port, l_errno);
                         else
                             log_it(L_INFO, "Connection to %s : %u closed", l_cur->remote_addr_str, l_cur->remote_port);
+
+                        l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
+
                         break;
                     } else if (ev_signaled)
                         l_cur->buf_in_size += l_bytes;
@@ -560,20 +563,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         dap_events_socket_set_writable_unsafe_ex(l_cur, true, l_bytes, ol);
                         ol = NULL; // Prevent from deletion
                         continue;
-                    } else if ( !l_bytes ) {
-                        if ( !(l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal)) ) {
-                            int optlen = sizeof(int);
-                            if ( getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (char*)&l_errno, &optlen) )
-                                log_it(L_ERROR, "getsockopt SO_ERROR failed, errno %d", l_errno = WSAGetLastError());
-                        }
-                        if (l_errno)
-                            log_it(L_ERROR, "Connection on es %zu to remote %s : %u closed with error %d",
-                                           l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port, l_errno);
-                        else
-                            log_it(L_INFO, "Connection on es %zu to remote %s : %u closed",
-                                           l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port);
-                        break;
-                    } else if( !l_cur->server && l_cur->flags & DAP_SOCK_CONNECTING ) {
+                    }
+                    if ( !l_cur->server && l_cur->flags & DAP_SOCK_CONNECTING ) {
                         UINT seconds = 0;
                         int optlen = sizeof(int);
                         if ( getsockopt(l_cur->socket, SOL_SOCKET, SO_CONNECT_TIME, (char*)&seconds, (PINT)&optlen) ) {
@@ -586,6 +577,11 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                             else
                                 log_it(L_ERROR, "Connection to %s : %u failed, error %d",
                                                 l_cur->remote_addr_str, l_cur->remote_port, l_errno);
+                            if (!l_cur->no_close)
+                                l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
+
+                            if(l_cur->callbacks.error_callback)
+                                l_cur->callbacks.error_callback(l_cur, l_errno); // Call callback to process error event
                             break;
                         } else if ( setsockopt(l_cur->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0) ) {
                             log_it(L_ERROR, "setsockopt SO_UPDATE_CONNECT_CONTEXT failed, errno %d", l_errno = WSAGetLastError());
@@ -600,14 +596,26 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         dap_events_socket_set_readable_unsafe_ex(l_cur, true, ol);
                         ol = NULL;
                         //}
-                    } 
+                        break;
+                    } else if ( !l_bytes ) {
+                        if ( !(l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal)) ) {
+                            int optlen = sizeof(int);
+                            if ( getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (char*)&l_errno, &optlen) )
+                                log_it(L_ERROR, "getsockopt SO_ERROR failed, errno %d", l_errno = WSAGetLastError());
+                        }
+                        if (l_errno)
+                            log_it(L_ERROR, "Connection on es %zu to remote %s : %u closed with error %d",
+                                           l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port, l_errno);
+                        else
+                            log_it(L_INFO, "Connection on es %zu to remote %s : %u closed",
+                                           l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port);
+                        break;
+                    }
                     if (l_cur->callbacks.write_callback)
                         l_cur->callbacks.write_callback(l_cur, NULL);
-                    if ( FLAG_WRITE_NOCLOSE(l_cur->flags) && !l_cur->buf_out_size ) {
-                        if (l_cur->callbacks.write_finished_callback)
-                            l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg);
-                    } else
-                        l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                    if ( l_cur->callbacks.write_finished_callback && !l_cur->buf_out_size && (l_cur->flags & DAP_SOCK_READY_TO_WRITE) )
+                        l_cur->callbacks.write_finished_callback(l_cur, l_cur->callbacks.arg);
+
                 break; // io_write
                 default: break;
                 }

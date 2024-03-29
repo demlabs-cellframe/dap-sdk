@@ -225,6 +225,11 @@ typedef uint64_t dap_events_socket_uuid_t;
 #define DAP_FORMAT_ESOCKET_UUID "0x%08" DAP_UINT64_FORMAT_X
 #define DAP_HOSTADDR_STRLEN     0x100
 
+typedef struct dap_events_socket_uuid_ctrl {
+    dap_events_socket_uuid_t uuid;
+    dap_worker_t *worker;
+} dap_events_socket_uuid_ctrl_t;
+
 typedef struct dap_events_socket {
     union {
         SOCKET socket;
