@@ -56,7 +56,7 @@ static void s_client_connect(dap_link_t *a_link, void *a_callback_arg);
 static void s_client_connected_callback(dap_client_t *a_client, void *a_arg);
 static void s_client_error_callback(dap_client_t *a_client, void *a_arg);
 static void s_accounting_uplink_in_net(dap_link_t *a_link, dap_managed_net_t *a_net);
-static void s_link_delete(dap_link_t *a_link, bool a_force);
+static void s_link_delete(dap_link_t *a_link, bool a_force, bool a_client_preserve);
 static void s_link_delete_all(bool a_force);
 static void s_links_wake_up(dap_link_manager_t *a_link_manager);
 static void s_links_request(dap_link_manager_t *a_link_manager);
@@ -156,7 +156,7 @@ void dap_link_manager_deinit()
     dap_link_t *l_link = NULL, *l_link_tmp;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
     HASH_ITER(hh, s_link_manager->links, l_link, l_link_tmp)
-        s_link_delete(l_link, true);
+        s_link_delete(l_link, true, false);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     dap_list_t *it = NULL, *tmp;
     DL_FOREACH_SAFE(s_link_manager->nets, it, tmp)
@@ -320,7 +320,7 @@ void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
             if (l_net_it->data == l_net) {
                 l_link_it->uplink.associated_nets = dap_list_remove_link(l_link_it->uplink.associated_nets, l_net_it);
                 if (!l_link_it->uplink.associated_nets)
-                    s_link_delete(l_link_it, false);
+                    s_link_delete(l_link_it, false, false);
                 break;
             }
     pthread_rwlock_unlock(&s_link_manager->links_lock);
@@ -372,7 +372,7 @@ void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member, void 
     s_debug_cluster_adding_removing(false, false, a_member->cluster, &a_member->addr);
     if (!l_link->active_clusters) {
         pthread_rwlock_wrlock(&s_link_manager->links_lock);
-        s_link_delete(l_link, false);
+        s_link_delete(l_link, false, true);
         pthread_rwlock_unlock(&s_link_manager->links_lock);
     }
 }
@@ -440,21 +440,23 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
             if (DAP_POINTER_TO_INT(a_arg) != 2)
                 pthread_rwlock_wrlock(&s_link_manager->links_lock);
 
-            s_link_delete(l_link, false);
+            s_link_delete(l_link, false, false);
 
             if (DAP_POINTER_TO_INT(a_arg) != 2)
                 pthread_rwlock_unlock(&s_link_manager->links_lock);
         } else
             dap_client_go_stage(a_client, STAGE_BEGIN, NULL);
         l_link->uplink.attempts_count = 0;
-    } else if (l_link->link_manager->callbacks.error)  {// TODO make different error codes
+    } else if (l_link->link_manager->callbacks.error) {// TODO make different error codes
         for (dap_list_t *it = l_link->uplink.associated_nets; it; it = it->next) {
             // if dynamic link call callback
             dap_managed_net_t *l_net = it->data;
             l_link->link_manager->callbacks.error(l_link, l_net->id, a_client->stage_target);
         }
         l_link->stream_is_destroying = true;
-        s_link_delete(l_link, false);
+        pthread_rwlock_wrlock(&s_link_manager->links_lock);
+        s_link_delete(l_link, false, true);
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
     }
 }
 
@@ -463,7 +465,7 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
  * @param a_link - link to delet
  * @param a_force - only del dynamic, if true - all links types memory free
  */
-void s_link_delete(dap_link_t *a_link, bool a_force)
+void s_link_delete(dap_link_t *a_link, bool a_force, bool a_client_preserve)
 {
 // sanity check
     dap_return_if_pass(!a_link);
@@ -475,8 +477,8 @@ void s_link_delete(dap_link_t *a_link, bool a_force)
         dap_cluster_link_delete_from_all(a_link->active_clusters, &a_link->addr);
     assert(a_link->active_clusters == NULL);
 
-    bool l_link_preserve = a_link->static_clusters && !a_force;
-    if (!a_link->stream_is_destroying) {
+    bool l_link_preserve = (a_client_preserve || a_link->static_clusters) && !a_force;
+    if (!a_link->stream_is_destroying || !l_link_preserve) {
         // Drop uplink
         dap_events_socket_uuid_t l_client_uuid = 0;
         if (a_link->uplink.client) {
@@ -794,12 +796,8 @@ void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_old_
     dap_link_t *l_link = dap_link_manager_link_find(a_addr);
     if (!l_link) // Link is not managed by us
         return;
-    if (!l_link->active_clusters) { // Link is managed and currently inactive
-        pthread_rwlock_rdlock(&s_link_manager->links_lock);
-        s_link_delete(l_link, false);
-        pthread_rwlock_unlock(&s_link_manager->links_lock);
+    if (!l_link->active_clusters) // Link is managed and currently inactive
         return;
-    }
     assert(l_link->is_uplink == a_old_is_uplink);
     if (l_link->is_uplink && !a_new_is_uplink) {
         // Have downlink from same addr, stop the client therefore
@@ -866,7 +864,7 @@ void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_stream_node_
         l_link->uplink.associated_nets = dap_list_remove(l_link->uplink.associated_nets, l_net);
         l_net->uplinks--;
         if (!l_link->uplink.associated_nets && !l_link->static_clusters)
-            s_link_delete(l_link, false);
+            s_link_delete(l_link, false, false);
         pthread_rwlock_unlock(&s_link_manager->links_lock);
     }
 }
@@ -942,7 +940,7 @@ void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member
     s_debug_cluster_adding_removing(true, false, l_cluster, l_node_addr);
     if (!l_link->static_clusters && !l_link->active_clusters) {
         pthread_rwlock_wrlock(&s_link_manager->links_lock);
-        s_link_delete(l_link, false);
+        s_link_delete(l_link, false, true);
         pthread_rwlock_unlock(&s_link_manager->links_lock);
     }
 }
