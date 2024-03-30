@@ -207,6 +207,12 @@ int json_print_commands(const char * a_name) {
             "tx_history",
             "tx_wallet",
             "tx_ledger",
+            "tx_create",
+            "tx_create_json",
+            "tx_verify",
+            "tx_cond_create",
+            "tx_cond_remove",
+            "tx_cond_unspent_find",
             "mempool_list",
             "net"
     };
