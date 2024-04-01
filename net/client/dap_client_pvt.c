@@ -386,7 +386,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     log_it(L_INFO, "Go to stage ENC: prepare the request");
 
                     if (!*a_client_pvt->client->link_info.uplink_addr || !a_client_pvt->client->link_info.uplink_port) {
-                        log_it(L_ERROR, "Wrong remote address %s : %u", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
+                        log_it(L_ERROR, "Client remote address is empty");
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_WRONG_ADDRESS;
                         break;
@@ -546,7 +546,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     // connect
                 #ifdef DAP_EVENTS_CAPS_IOCP
                     log_it(L_DEBUG, "Stream connecting to remote %s : %u", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
-                    dap_worker_add_events_socket(l_worker, a_client_pvt->stream_es);
                     dap_events_socket_uuid_t *l_stream_es_uuid_ptr = DAP_DUP(&a_client_pvt->stream_es->uuid);
                     a_client_pvt->stream_es->flags &= ~DAP_SOCK_READY_TO_READ;
                     a_client_pvt->stream_es->flags |= DAP_SOCK_READY_TO_WRITE;
@@ -664,13 +663,13 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
 
         case STAGE_STATUS_ERROR: {
             // limit the number of attempts
-            bool l_is_last_attempt = ++a_client_pvt->reconnect_attempts > s_max_attempts ? true : false;
-
-            log_it(L_ERROR, "Error state(%s), doing callback if present", dap_client_error_str(a_client_pvt->last_error));
-            if(a_client_pvt->stage_status_error_callback)
-                a_client_pvt->stage_status_error_callback(a_client_pvt->client, (void *)l_is_last_attempt);
-
-            if(!l_is_last_attempt ) {
+            bool l_is_last_attempt = a_client_pvt->reconnect_attempts >= s_max_attempts ? true : false;
+            if (!l_is_last_attempt) {
+                if (!a_client_pvt->reconnect_attempts) {
+                    log_it(L_ERROR, "Error state(%s), doing callback if present", dap_client_error_str(a_client_pvt->last_error));
+                    if (a_client_pvt->stage_status_error_callback)
+                        a_client_pvt->stage_status_error_callback(a_client_pvt->client, (void *)l_is_last_attempt);
+                }
                 // Trying the step again
                 a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
                 log_it(L_INFO, "Reconnect attempt %d in 0.3 seconds with %s:%u", a_client_pvt->reconnect_attempts,
@@ -681,6 +680,9 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 if (!a_client_pvt->reconnect_timer)
                     log_it(L_ERROR ,"Can't run timer for small delay before the next enc_init request");
             } else {
+                log_it(L_ERROR, "Disconnect state(%s), doing callback if present", dap_client_error_str(a_client_pvt->last_error));
+                if (a_client_pvt->stage_status_error_callback)
+                    a_client_pvt->stage_status_error_callback(a_client_pvt->client, (void *)l_is_last_attempt);
                 if (a_client_pvt->client->always_reconnect) {
                     log_it(L_INFO, "Too many attempts, reconnect attempt in %d seconds with %s:%u", s_timeout,
                            a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);                    // Trying the step again
@@ -694,6 +696,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 } else
                     log_it(L_ERROR, "Connect to %s:%u failed", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
             }
+            ++a_client_pvt->reconnect_attempts;
             if (a_client_pvt->stage_status != STAGE_STATUS_ERROR) {
                 s_client_internal_clean(a_client_pvt);
                 a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
@@ -706,6 +709,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
             bool l_is_last_stage = (a_client_pvt->stage == a_client_pvt->client->stage_target);
             if (l_is_last_stage) {
                 a_client_pvt->stage_status = STAGE_STATUS_COMPLETE;
+                dap_stream_add_to_list(a_client_pvt->stream);
                 if (a_client_pvt->client->stage_target_done_callback) {
                     log_it(L_NOTICE, "Stage %s is achieved", dap_client_stage_str(a_client_pvt->stage));
                     a_client_pvt->client->stage_target_done_callback(a_client_pvt->client, a_client_pvt->client->callbacks_arg);

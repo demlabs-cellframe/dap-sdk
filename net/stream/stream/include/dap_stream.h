@@ -45,6 +45,7 @@ typedef struct dap_cluster dap_cluster_t;
 typedef struct dap_stream {
     dap_stream_node_addr_t node;
     bool authorized;
+    bool primary;
     int id;
     dap_stream_session_t *session;
     dap_events_socket_t *esocket; // Connection
@@ -156,16 +157,17 @@ dap_stream_t *dap_stream_get_from_es(dap_events_socket_t *a_es);
 
 // autorization stream block
 int dap_stream_add_addr(dap_stream_node_addr_t a_addr, void *a_id);
+int dap_stream_add_to_list(dap_stream_t *a_stream);
 int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full);
 int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
 int dap_stream_change_id(void *a_old, uint64_t a_new);
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr, dap_worker_t **a_worker);
+dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr);
 dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign);
 dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert);
 dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey);
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count);
 void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count);
 void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
-size_t dap_stream_cluster_members_count(dap_cluster_t *a_cluster);
 dap_stream_node_addr_t dap_stream_get_random_link();

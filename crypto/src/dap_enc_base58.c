@@ -236,13 +236,11 @@ char* dap_enc_base58_to_hex_str_from_str(const char *a_in_str)
         return NULL;
     // from base58 to binary
     size_t l_out_size_max = DAP_ENC_BASE58_DECODE_SIZE(a_in_hash_len);
-    void * l_out = DAP_NEW_STACK_SIZE(char, l_out_size_max + 1);
+    void *l_out = DAP_NEW_STACK_SIZE(char, l_out_size_max + 1);
     size_t l_out_size = dap_enc_base58_decode( a_in_str, l_out);
     // dap_htoa64() requires a multiple of 8 bytes
-    if(l_out_size < 8 || l_out_size % 8){
-        DAP_DELETE(l_out);
+    if (l_out_size < 8 || l_out_size % 8)
         return NULL;
-    }
     // from binary to "0x..."
     size_t l_out_str_size = l_out_size * 2 + 3;
     char* l_out_str = DAP_NEW_Z_SIZE(char, l_out_str_size);
