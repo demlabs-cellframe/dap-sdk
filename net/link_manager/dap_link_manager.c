@@ -793,7 +793,9 @@ int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_upli
 void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_old_is_uplink, bool a_new_is_uplink)
 {
     dap_return_if_fail(a_addr);
-    dap_link_t *l_link = dap_link_manager_link_find(a_addr);
+    dap_link_t *l_link = NULL;
+    pthread_rwlock_wrlock(&s_link_manager->links_lock);
+    HASH_FIND(hh, s_link_manager->links, a_addr, sizeof(*a_addr), l_link);
     if (!l_link) // Link is not managed by us
         return;
     if (!l_link->active_clusters) // Link is managed and currently inactive
@@ -805,6 +807,7 @@ void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_old_
         dap_client_go_stage(l_link->uplink.client, STAGE_BEGIN, NULL);
     }
     l_link->is_uplink = a_new_is_uplink;
+    pthread_rwlock_unlock(&s_link_manager->links_lock);
 }
 
 void dap_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr)
