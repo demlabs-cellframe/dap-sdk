@@ -380,8 +380,6 @@ void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member, void 
     }
     l_link->active_clusters = dap_list_remove(l_link->active_clusters, a_member->cluster);
     s_debug_cluster_adding_removing(false, false, a_member->cluster, &a_member->addr);
-    if (!l_link->active_clusters)
-        s_link_delete(l_link, false, true);
 }
 
 
@@ -954,6 +952,8 @@ static bool s_stream_delete_callback(void *a_arg)
     }
     l_link->stream_is_destroyed = true;
     dap_cluster_link_delete_from_all(l_link->active_clusters, l_node_addr);
+    if (!l_link->uplink.client)
+        s_link_delete(l_link, false, false);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     return false;
 }
