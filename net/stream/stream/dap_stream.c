@@ -1010,7 +1010,7 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
                 break;
         if (l_stream) {
             s_stream_add_to_hashtable(l_stream);
-            dap_link_manager_stream_replace(&a_stream->node, a_stream->is_client_to_uplink, l_stream->is_client_to_uplink);
+            dap_link_manager_stream_replace(&a_stream->node, l_stream->is_client_to_uplink);
         } else
             dap_link_manager_stream_delete(&a_stream->node);
     }
