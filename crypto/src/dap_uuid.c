@@ -25,7 +25,10 @@
 #include "KeccakHash.h"
 #include "SimpleFIPS202.h"
 #include "dap_uuid.h"
+#include "dap_guuid.h"
 #include "dap_rand.h"
+#include "dap_strfuncs.h"
+#include "dap_math_convert.h"
 
 #ifndef __cplusplus
 # include <stdatomic.h>
@@ -91,4 +94,27 @@ void dap_uuid_generate_nonce(void *a_nonce, size_t a_nonce_size)
         [3] = random_uint32_t(UINT32_MAX)
     };
     SHAKE128((unsigned char *)a_nonce, a_nonce_size, (unsigned char *)l_input, sizeof(l_input));
+}
+
+_Thread_local static char s_buf[sizeof(uint128_t) * 2 + 3];
+
+const char *dap_guuid_to_hex_str(dap_guuid_t a_guuid)
+{
+    sprintf(s_buf, "0x%016" DAP_UINT64_FORMAT_x "%016" DAP_UINT64_FORMAT_x, a_guuid.net_id, a_guuid.srv_id);
+    return (const char *)s_buf;
+}
+
+dap_guuid_t dap_guuid_from_hex_str(const char *a_hex_str)
+{
+    dap_guuid_t ret = { .raw = uint128_0 };
+    if (!a_hex_str)
+        return ret;
+    size_t l_hex_str_len = strlen(a_hex_str);
+    if (l_hex_str_len != (16 * 2 + 2) || dap_strncmp(a_hex_str, "0x", 2) || dap_is_hex_string(a_hex_str + 2, l_hex_str_len - 2))
+        return ret;
+    sprintf(s_buf, "0x%s", a_hex_str + 16 + 2);
+    uint64_t l_net_id, l_srv_id;
+    if (dap_id_uint64_parse(a_hex_str, &l_net_id) || dap_id_uint64_parse(s_buf, &l_srv_id))
+        return ret;
+    return dap_guuid_compose(l_net_id, l_srv_id);
 }
