@@ -429,7 +429,7 @@ void s_link_drop(dap_link_t *a_link, bool a_disconnected)
                 l_net->uplinks--;
             }
         }
-        if (!a_link->uplink.associated_nets && !a_link->static_clusters) {
+        if (!a_link->active_clusters && !a_link->uplink.associated_nets && !a_link->static_clusters) {
             s_link_delete(a_link, false, false);
         } else
             dap_client_go_stage(a_link->uplink.client, STAGE_BEGIN, NULL);
@@ -440,8 +440,13 @@ void s_link_drop(dap_link_t *a_link, bool a_disconnected)
             dap_managed_net_t *l_net = it->data;
             a_link->link_manager->callbacks.error(a_link, l_net->id, a_link->uplink.client->stage_target);
         }
-        a_link->stream_is_destroyed = true;
-        s_link_delete(a_link, false, true);
+        if (a_link->uplink.state == LINK_STATE_ESTABLISHED) {
+            a_link->stream_is_destroyed = true;
+            s_link_delete(a_link, false, true);
+        } else if (a_link->active_clusters) {
+            dap_client_go_stage(a_link->uplink.client, STAGE_BEGIN, NULL);
+            a_link->uplink.state = LINK_STATE_DISCONNECTED;
+        }
     }
 }
 
@@ -917,6 +922,7 @@ static bool s_stream_replace_callback(void *a_arg)
         // Have downlink from same addr, stop the client therefore
         assert(l_link->uplink.client);
         dap_client_go_stage(l_link->uplink.client, STAGE_BEGIN, NULL);
+        l_link->uplink.state = LINK_STATE_DISCONNECTED;
     }
     l_link->is_uplink = l_args->uplink;
     pthread_rwlock_unlock(&s_link_manager->links_lock);
