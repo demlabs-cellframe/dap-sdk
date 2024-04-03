@@ -37,6 +37,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define DAP_LINK(a) ((dap_link_t *)(a)->_inheritor)
 
+static const char* s_connections_group_local = "local.connections.statistic";
+
 typedef struct dap_managed_net {
     bool active;
     uint64_t id;
@@ -44,6 +46,12 @@ typedef struct dap_managed_net {
     uint32_t min_links_num;     // min links required in each net
     dap_list_t *link_clusters;
 } dap_managed_net_t;
+// struct to fix connections statistic
+typedef struct dap_connections_statistics {
+    uint64_t attempts_count;
+    uint64_t successs_count;
+    uint64_t error_count;
+} dap_connections_statistics_t;
 
 static bool s_debug_more = false;
 static const char *s_init_error = "Link manager not inited";
@@ -82,6 +90,33 @@ DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
 {
     dap_list_t *l_item = s_find_net_item_by_id(a_net_id);
     return l_item ? (dap_managed_net_t *)l_item->data : NULL;
+}
+
+/**
+ * @brief update in GDB information about connections
+ * @param a_node_addr - node addr to fix
+ * @param a_attempt - if true add to attempts counter
+ * @param a_success - if true add to success counter
+ * @param a_error - if true add to error counter
+ */
+static void s_update_connection_state(dap_stream_node_addr_t a_node_addr, bool a_attempt, bool a_success, bool a_error)
+{
+// sanity check
+    dap_return_if_pass(!a_node_addr.uint64);
+// func work
+    char *l_node_addr_str = dap_stream_node_addr_to_str_static(a_node_addr);
+    dap_connections_statistics_t *l_stat = (dap_connections_statistics_t *)dap_global_db_get_sync(s_connections_group_local, l_node_addr_str, NULL, NULL, NULL);
+    if (!l_stat) {
+        log_it(L_NOTICE, "Creating new connections staticstics record in GDB for the node %s", l_node_addr_str);
+        DAP_NEW_Z_RET_VAL(l_stat, dap_connections_statistics_t, NULL, NULL);
+    }
+    l_stat->attempts_count += a_attempt;
+    l_stat->successs_count += a_success;
+    l_stat->error_count += a_error;
+    if(dap_global_db_set_sync(s_connections_group_local, l_node_addr_str, l_stat, sizeof(*l_stat), false)) {
+        log_it(L_ERROR, "Can't update connections staticstics record in GDB for the node %s", l_node_addr_str);
+    }
+    DAP_DELETE(l_stat);
 }
 
 // debug_more funcs
@@ -141,6 +176,13 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
         return -2;
     }
     dap_link_manager_set_condition(true);
+    // connections states cluster
+    dap_global_db_cluster_add(
+        dap_global_db_instance_get_default(),
+        DAP_GLOBAL_DB_CLUSTER_LOCAL, dap_guuid_compose(0, 2),
+        s_connections_group_local, 0, false,
+        DAP_GDB_MEMBER_ROLE_ROOT,
+        DAP_CLUSTER_ROLE_VIRTUAL);
     return 0;
 }
 
@@ -400,6 +442,7 @@ void s_client_connected_callback(dap_client_t *a_client, void UNUSED_ARG *a_arg)
     l_link->uplink.attempts_count = 0;
     l_link->uplink.state = LINK_STATE_ESTABLISHED;
     l_link->uplink.es_uuid = DAP_CLIENT_PVT(a_client)->stream_es->uuid;
+    s_update_connection_state(l_link->addr, false, true, false);
 }
 
 void s_link_drop(dap_link_t *a_link, bool a_disconnected)
@@ -480,11 +523,12 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
 // func work
     struct link_drop_args *l_args = DAP_NEW_Z(struct link_drop_args);
     if (!l_args) {
-        log_it(L_CRITICAL, g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
     *l_args = (struct link_drop_args) { .addr = l_link->addr, .disconnected = a_arg };
     dap_proc_thread_callback_add_pri(NULL, s_link_drop_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+    s_update_connection_state(l_link->addr, false, false, true);
 }
 
 /**
@@ -554,6 +598,7 @@ static void s_link_connect(dap_link_t *a_link)
     log_it(L_INFO, "Connecting to node " NODE_ADDR_FP_STR ", addr %s : %d", NODE_ADDR_FP_ARGS_S(a_link->uplink.client->link_info.node_addr),
                                     a_link->uplink.client->link_info.uplink_addr, a_link->uplink.client->link_info.uplink_port);
     dap_client_go_stage(a_link->uplink.client, STAGE_STREAM_STREAMING, s_client_connected_callback);
+    s_update_connection_state(a_link->addr, true, false, false);
 }
 
 /**
@@ -592,6 +637,7 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
             dap_client_go_stage(it->uplink.client, STAGE_BEGIN, NULL);
             debug_if(s_debug_more, L_ERROR, "Client " NODE_ADDR_FP_STR " state is not BEGIN, connection will start on next iteration",
                                                     NODE_ADDR_FP_ARGS_S(it->addr));
+            
             continue;
         }
         int rc = s_link_manager->callbacks.fill_net_info(it);
@@ -795,12 +841,12 @@ int dap_link_manager_link_update(dap_stream_node_addr_t *a_node_addr, const char
 // func work
     struct link_update_args *l_args = DAP_NEW_Z(struct link_update_args);
     if (!l_args) {
-        log_it(L_CRITICAL, g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -7;
     }
     l_args->host = dap_strdup(a_host);
     if (!l_args) {
-        log_it(L_CRITICAL, g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -7;
     }
     l_args->port = a_port;
@@ -894,7 +940,7 @@ int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_upli
 // func work
     struct link_moving_args *l_args = DAP_NEW_Z(struct link_moving_args);
     if (!l_args) {
-        log_it(L_CRITICAL, g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -2;
     }
     *l_args = (struct link_moving_args) { .addr = *a_node_addr, .uplink = a_uplink };
@@ -936,7 +982,7 @@ void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_new_
     struct link_moving_args *l_args = DAP_NEW_Z(struct link_moving_args);
     *l_args = (struct link_moving_args) { .addr = *a_addr, .uplink = a_new_is_uplink };
     if (!l_args) {
-        log_it(L_CRITICAL, g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
     dap_proc_thread_callback_add_pri(NULL, s_stream_replace_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
@@ -969,7 +1015,7 @@ void dap_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr)
     dap_return_if_fail(a_node_addr);
     dap_stream_node_addr_t *l_args = DAP_DUP(a_node_addr);
     if (!l_args) {
-        log_it(L_CRITICAL, g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
     dap_proc_thread_callback_add_pri(NULL, s_stream_delete_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
@@ -1046,7 +1092,7 @@ void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_stream_node_
     struct link_accounting_args *l_args = DAP_NEW_Z(struct link_accounting_args);
     *l_args = (struct link_accounting_args) { .addr = *a_node_addr, .net = l_net, .no_error = a_no_error };
     if (!l_args) {
-        log_it(L_CRITICAL, g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
     dap_proc_thread_callback_add_pri(NULL, s_link_accounting_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
