@@ -38,6 +38,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #define DAP_LINK(a) ((dap_link_t *)(a)->_inheritor)
 
 static const char* s_connections_group_local = "local.connections.statistic";
+static const char* s_ignored_group_local = "local.nodes.ignored";
 
 typedef struct dap_managed_net {
     bool active;
@@ -51,6 +52,7 @@ typedef struct dap_connections_statistics {
     uint64_t attempts_count;
     uint64_t successs_count;
     uint64_t error_count;
+    bool ignored;
 } dap_connections_statistics_t;
 
 static bool s_debug_more = false;
@@ -110,11 +112,20 @@ static void s_update_connection_state(dap_stream_node_addr_t a_node_addr, bool a
         log_it(L_NOTICE, "Creating new connections staticstics record in GDB for the node %s", l_node_addr_str);
         DAP_NEW_Z_RET_VAL(l_stat, dap_connections_statistics_t, NULL, NULL);
     }
+    bool l_old_ignored_state = l_stat->ignored;
     l_stat->attempts_count += a_attempt;
     l_stat->successs_count += a_success;
     l_stat->error_count += a_error;
+    l_stat->ignored = a_error > a_success * 2;
     if(dap_global_db_set_sync(s_connections_group_local, l_node_addr_str, l_stat, sizeof(*l_stat), false)) {
         log_it(L_ERROR, "Can't update connections staticstics record in GDB for the node %s", l_node_addr_str);
+    }
+    // ignored table, add or remove
+    if(l_old_ignored_state != l_stat->ignored) {
+        if (l_stat->ignored)
+            dap_global_db_set_sync(s_ignored_group_local, l_node_addr_str, NULL, 0, false);
+        else
+            dap_global_db_del_sync(s_ignored_group_local, l_node_addr_str);
     }
     DAP_DELETE(l_stat);
 }
@@ -181,6 +192,13 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
         dap_global_db_instance_get_default(),
         DAP_GLOBAL_DB_CLUSTER_LOCAL, dap_guuid_compose(0, 2),
         s_connections_group_local, 0, false,
+        DAP_GDB_MEMBER_ROLE_ROOT,
+        DAP_CLUSTER_ROLE_VIRTUAL);
+    // ignored nodes cluster
+    dap_global_db_cluster_add(
+        dap_global_db_instance_get_default(),
+        DAP_GLOBAL_DB_CLUSTER_LOCAL, dap_guuid_compose(0, 3),
+        s_ignored_group_local, 0, false,
         DAP_GDB_MEMBER_ROLE_ROOT,
         DAP_CLUSTER_ROLE_VIRTUAL);
     return 0;
