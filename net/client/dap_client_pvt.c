@@ -139,6 +139,10 @@ void dap_client_pvt_new(dap_client_pvt_t * a_client_pvt)
 
 static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
 {
+    if (a_client_pvt->reconnect_timer) {
+        dap_timerfd_delete_unsafe(a_client_pvt->reconnect_timer);
+        a_client_pvt->reconnect_timer = NULL;
+    }
     if (a_client_pvt->http_client) {
         dap_client_http_close_unsafe(a_client_pvt->http_client);
         a_client_pvt->http_client = NULL;
@@ -182,10 +186,6 @@ void dap_client_pvt_delete_unsafe(dap_client_pvt_t * a_client_pvt)
 {
     assert(a_client_pvt);
     debug_if(s_debug_more, L_INFO, "dap_client_pvt_delete 0x%p", a_client_pvt);
-    if (a_client_pvt->reconnect_timer) {
-        dap_timerfd_delete_unsafe(a_client_pvt->reconnect_timer);
-        a_client_pvt->reconnect_timer = NULL;
-    }
     s_client_internal_clean(a_client_pvt);
     DAP_DELETE(a_client_pvt);
 }
@@ -672,13 +672,6 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                 }
                 // Trying the step again
                 a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
-                log_it(L_INFO, "Reconnect attempt %d in 0.3 seconds with %s:%u", a_client_pvt->reconnect_attempts,
-                       a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
-                // small delay before next request
-                a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
-                            a_client_pvt->worker, 300, s_timer_reconnect_callback, a_client_pvt);
-                if (!a_client_pvt->reconnect_timer)
-                    log_it(L_ERROR ,"Can't run timer for small delay before the next enc_init request");
             } else {
                 log_it(L_ERROR, "Disconnect state(%s), doing callback if present", dap_client_error_str(a_client_pvt->last_error));
                 if (a_client_pvt->stage_status_error_callback)
@@ -688,19 +681,29 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                            a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);                    // Trying the step again
                     a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
                     a_client_pvt->reconnect_attempts = 0;
+                } else
+                    log_it(L_ERROR, "Connect to %s:%u failed", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
+            }
+            ++a_client_pvt->reconnect_attempts;
+            if (a_client_pvt->stage_status == STAGE_STATUS_IN_PROGRESS) {
+                s_client_internal_clean(a_client_pvt);
+                a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
+                a_client_pvt->stage = STAGE_ENC_INIT;
+                if (!l_is_last_attempt) {
+                    log_it(L_INFO, "Reconnect attempt %d in 0.3 seconds with %s:%u", a_client_pvt->reconnect_attempts,
+                           a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
+                    // small delay before next request
+                    a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
+                                a_client_pvt->worker, 300, s_timer_reconnect_callback, a_client_pvt);
+                    if (!a_client_pvt->reconnect_timer)
+                        log_it(L_ERROR ,"Can't run timer for small delay before the next enc_init request");
+                } else {
                     // bigger delay before next request
                     a_client_pvt->reconnect_timer = dap_timerfd_start_on_worker(
                                 a_client_pvt->worker, s_timeout * 1000, s_timer_reconnect_callback, a_client_pvt);
                     if (!a_client_pvt->reconnect_timer)
                         log_it(L_ERROR,"Can't run timer for bigger delay before the next enc_init request");
-                } else
-                    log_it(L_ERROR, "Connect to %s:%u failed", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
-            }
-            ++a_client_pvt->reconnect_attempts;
-            if (a_client_pvt->stage_status != STAGE_STATUS_ERROR) {
-                s_client_internal_clean(a_client_pvt);
-                a_client_pvt->stage_status = STAGE_STATUS_IN_PROGRESS;
-                a_client_pvt->stage = STAGE_ENC_INIT;
+                }
             }
         } break;
 

@@ -118,7 +118,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
             return NULL;
         }
         if (l_cluster->links_cluster &&
-                l_cluster->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC) {
+                l_cluster->links_cluster->role != DAP_CLUSTER_ROLE_ISOLATED) {
             l_cluster->links_cluster->members_add_callback = dap_link_manager_add_links_cluster;
             l_cluster->links_cluster->members_delete_callback = dap_link_manager_remove_links_cluster;
         }

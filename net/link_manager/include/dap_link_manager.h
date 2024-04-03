@@ -68,10 +68,11 @@ typedef struct dap_link {
         dap_list_t *associated_nets;
         dap_time_t start_after;
         dap_events_socket_uuid_t es_uuid;
+        bool ready;
     } uplink;
     dap_list_t *static_clusters;
     dap_link_manager_t *link_manager;
-    bool stream_is_destroying;
+    bool stream_is_destroyed;
     UT_hash_handle hh;
 } dap_link_t;
 
@@ -96,9 +97,9 @@ void dap_link_manager_add_links_cluster(dap_cluster_member_t *a_member, void *a_
 void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
 void dap_link_manager_add_static_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
 void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member, void *a_arg);
-dap_link_t *dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, bool a_with_client, uint64_t a_associated_net_id);
-int dap_link_manager_link_update(dap_link_t *a_link, const char *a_host, uint16_t a_port);
-dap_link_t *dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr);
+int dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, uint64_t a_associated_net_id);
+int dap_link_manager_link_update(dap_stream_node_addr_t *a_link, const char *a_host, uint16_t a_port);
+bool dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr, uint64_t a_net_id);
 int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_uplink);
 void dap_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr);
 void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_stream_node_addr_t *a_node_addr, bool a_no_error);
@@ -110,4 +111,4 @@ void dap_link_manager_set_condition(bool a_new_condition);
 bool dap_link_manager_get_condition();
 char *dap_link_manager_get_links_info();
 dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count );
-void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_old_is_uplink, bool a_new_is_uplink);
+void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_new_is_uplink);
