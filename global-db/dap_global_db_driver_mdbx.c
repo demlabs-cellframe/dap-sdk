@@ -471,7 +471,7 @@ dap_db_ctx_t *l_db_ctx = NULL;
     dap_assert ( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
 
     if ( !l_db_ctx )
-        debug_if(g_dap_global_db_debug_more, L_WARNING, "No DB context for the group '%s'", a_group);
+        debug_if(g_dap_global_db_debug_more, L_DEBUG, "No DB context for the group '%s'", a_group);
 
     return l_db_ctx;
 }

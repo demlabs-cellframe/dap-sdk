@@ -139,12 +139,16 @@ bool s_proc_thread_reader(void *a_arg)
             --l_hashes_pkt->hashes_count;
             //dap_db_set_last_hash_remote(l_req->link, l_req->group, l_hashes_diff[l_hashes_pkt->hashes_count - 1]);
         }
-        if (l_hashes_pkt->hashes_count)
+        if (l_hashes_pkt->hashes_count) {
+            debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_HASHES packet for group %s with records count %u",
+                                                                                                    l_group, l_hashes_pkt->hashes_count);
             dap_stream_ch_pkt_send_by_addr(l_sender_addr,
                                            DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES,
                                            l_hashes_pkt, dap_global_db_hash_pkt_get_size(l_hashes_pkt));
+        }
         DAP_DELETE(l_hashes_pkt);
     } else {
+        debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_START packet for group %s from first record", l_group);
         size_t l_pkt_size = dap_global_db_start_pkt_get_size(l_pkt);
         dap_global_db_start_pkt_t *l_oncoming_pkt = DAP_DUP_SIZE(l_pkt, l_pkt_size);
         l_oncoming_pkt->last_hash = c_dap_global_db_driver_hash_blank;
@@ -256,6 +260,7 @@ bool s_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_addr_t *a_addr)
 struct processing_arg {
     uint32_t count;
     dap_store_obj_t *objs;
+    dap_stream_node_addr_t addr;
 };
 
 static bool s_process_records(void *a_arg)
@@ -264,9 +269,7 @@ static bool s_process_records(void *a_arg)
     struct processing_arg *l_arg = a_arg;
     bool l_success = false;
     for (uint32_t i = 0; i < l_arg->count; i++)
-        if (!(l_success = s_check_store_obj(l_arg->objs + i,
-                                            (dap_stream_node_addr_t *)
-                                            (l_arg->objs + i)->ext)))
+        if (!(l_success = s_check_store_obj(l_arg->objs + i, &l_arg->addr)))
             break;
     if (l_success)
         dap_global_db_set_raw_sync(l_arg->objs, l_arg->count);
@@ -363,7 +366,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         dap_global_db_pkt_pack_t *l_pkt = (dap_global_db_pkt_pack_t *)l_ch_pkt->data;
         size_t l_objs_count = 0;
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
-        dap_store_obj_t *l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count, &a_ch->stream->node);
+        dap_store_obj_t *l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count);
 #else
         dap_store_obj_t **l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count, &a_ch->stream->node);
 #endif
@@ -375,8 +378,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                                                                                                 l_objs->group, l_objs_count);
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
         struct processing_arg *l_arg = DAP_NEW_Z(struct processing_arg);
-        l_arg->count = l_objs_count;
-        l_arg->objs = l_objs;
+        *l_arg = (struct processing_arg) { .count = l_objs_count, .objs = l_objs, .addr = a_ch->stream->node };
         dap_proc_thread_callback_add_pri(NULL, s_process_records, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
 #else
         for (uint32_t i = 0; i < l_objs_count; i++)
