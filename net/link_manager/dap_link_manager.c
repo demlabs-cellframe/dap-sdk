@@ -1178,11 +1178,12 @@ void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member
 /**
  * @brief forming list with active links addrs
  * @param a_net_id net id to search
- * @param a_uplinks_count output count of finded uplinks
+ * @param a_only_uplinks if TRUE count only uplinks
+ * @param a_uplinks_only output count of finded uplinks
  * @param a_downlinks_count output count of finded downlinks
  * @return pointer to dap_stream_node_addr_t array, first uplinks, second downlinks
  */
-dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count )
+dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count, bool a_uplinks_only)
 {
 // sanity check
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
@@ -1212,7 +1213,7 @@ dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, 
                 l_ret[l_uplinks_count + l_downlinks_count] = l_ret[l_uplinks_count];
                 l_ret[l_uplinks_count].uint64 = l_link->addr.uint64;
                 ++l_uplinks_count;
-            } else {
+            } else if (!a_uplinks_only) {
                 l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_link->addr.uint64;
                 ++l_downlinks_count;
             }

@@ -177,7 +177,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             *return_code = Http_Status_InternalServerError;
             return;
         }
-        size_t encrypt_msg_size = dap_enc_base64_encode(l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, encrypt_msg, DAP_ENC_DATA_TYPE_B64);
+        dap_enc_base64_encode(l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, encrypt_msg, DAP_ENC_DATA_TYPE_B64);
 
         l_enc_key_ks->key = dap_enc_key_new_generate(l_enc_block_type,
                                                l_pkey_exchange_key->priv_key_data, // shared key
@@ -185,9 +185,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                                                l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE, l_block_key_size);
         
         dap_enc_ks_save_in_storage(l_enc_key_ks);
-
-        size_t encrypt_id_size = dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), encrypt_id, DAP_ENC_DATA_TYPE_B64);
-        UNUSED(encrypt_id_size);
+        dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), encrypt_id, DAP_ENC_DATA_TYPE_B64);
 
         // save verified node addr and generate own sign
         char* l_node_sign_msg = NULL;
@@ -212,7 +210,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                 DAP_DELETE(l_node_sign);
                 return;
             }
-            l_node_sign_size = dap_enc_base64_encode(l_node_sign, l_node_sign_size, l_node_sign_msg, DAP_ENC_DATA_TYPE_B64);
+            dap_enc_base64_encode(l_node_sign, l_node_sign_size, l_node_sign_msg, DAP_ENC_DATA_TYPE_B64);
             DAP_DELETE(l_node_sign);
         }
 
