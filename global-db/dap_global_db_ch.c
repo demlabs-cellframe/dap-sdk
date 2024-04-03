@@ -183,10 +183,13 @@ static bool s_process_hashes(void *a_arg)
             l_ret_hashes[l_ret->hashes_count++] = l_hashes[i];
         }
      }
-     if (l_ret)
+     if (l_ret) {
+        debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_REQUEST packet for group %s with records count %u",
+                                                                                            l_group, l_ret->hashes_count);
         dap_stream_ch_pkt_send_by_addr((dap_stream_node_addr_t *)a_arg,
                                        DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST,
                                        l_ret, dap_global_db_hash_pkt_get_size(l_ret));
+     }
      return false;
 }
 
@@ -208,9 +211,12 @@ static bool s_process_request(void *a_arg)
     }
     dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
     dap_global_db_pkt_pack_t *l_pkt_out = dap_global_db_driver_get_by_hash(l_group, l_hashes, l_pkt->hashes_count);
-    if (l_pkt_out)
+    if (l_pkt_out) {
+        debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_RECORD_PACK packet for group %s with records count %u",
+                                                                                                l_group, l_pkt_out->obj_count);
         dap_stream_ch_pkt_send_by_addr(l_sender_addr, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK,
                                        l_pkt_out, dap_global_db_pkt_pack_get_size(l_pkt_out));
+    }
     return false;
 }
 
@@ -365,7 +371,8 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             log_it(L_WARNING, "Wrong Global DB record packet rejected");
             break;
         }
-        debug_if(g_dap_global_db_debug_more, L_INFO, "IN: GLOBAL_DB_RECORD_PACK packet");
+        debug_if(g_dap_global_db_debug_more, L_INFO, "IN: GLOBAL_DB_RECORD_PACK packet for group %s with records count %zu",
+                                                                                                l_objs->group, l_objs_count);
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
         struct processing_arg *l_arg = DAP_NEW_Z(struct processing_arg);
         l_arg->count = l_objs_count;
