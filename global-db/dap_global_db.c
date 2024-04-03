@@ -195,7 +195,7 @@ int dap_global_db_init()
         // One year for objects lifetime by default
         s_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 365 * 24);
         // Time between sync attempts, in seconds
-        s_dbi->sync_idle_time = dap_config_get_item_uint32_default(g_config, "global_db", "sync_idle_time", 60);
+        s_dbi->sync_idle_time = dap_config_get_item_uint32_default(g_config, "global_db", "sync_idle_time", 30);
     }
 
     // Driver initalization

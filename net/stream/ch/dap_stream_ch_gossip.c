@@ -216,7 +216,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         struct gossip_msg_item *l_item_new = NULL;
         pthread_rwlock_wrlock(&s_gossip_lock);
         unsigned l_hash_value = 0;
-        HASH_VALUE(l_ch_pkt->data, sizeof(dap_hash_t), l_hash_value);
+        HASH_VALUE(&l_msg->payload_hash, sizeof(dap_hash_t), l_hash_value);
         HASH_FIND_BYHASHVALUE(hh, s_gossip_last_msgs, &l_msg->payload_hash, sizeof(dap_hash_t), l_hash_value, l_item_new);
         if (l_item_new) {
             // Looks like a double. Just ignore it
@@ -265,7 +265,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         // Call back the payload func if any
         struct gossip_callback *l_callback = s_get_callbacks_by_ch_id(l_msg->payload_ch_id);
         if (!l_callback) {
-            log_it(L_ERROR, "Can't find channel callback for gossip message apply");
+            log_it(L_ERROR, "Can't find channel callback for channel %c to gossip message apply", l_msg->payload_ch_id);
             break;
         }
         assert(l_callback->callback_payload);
