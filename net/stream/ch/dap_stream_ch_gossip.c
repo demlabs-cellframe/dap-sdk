@@ -97,6 +97,7 @@ int dap_stream_ch_gossip_callback_add(const char a_ch_id, dap_gossip_callback_pa
     l_callback_new->ch_id = a_ch_id;
     l_callback_new->callback_payload = a_callback;
     DL_APPEND(s_gossip_callbacks_list, l_callback_new);
+    log_it(L_INFO, "Successfully added gossip callback for channel '%c'", a_ch_id);
     return 0;
 }
 
@@ -265,7 +266,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         // Call back the payload func if any
         struct gossip_callback *l_callback = s_get_callbacks_by_ch_id(l_msg->payload_ch_id);
         if (!l_callback) {
-            log_it(L_ERROR, "Can't find channel callback for channel %c to gossip message apply", l_msg->payload_ch_id);
+            log_it(L_ERROR, "Can't find channel callback for channel '%c' to gossip message apply", l_msg->payload_ch_id);
             break;
         }
         assert(l_callback->callback_payload);

@@ -45,8 +45,7 @@ int dap_global_db_ch_init()
 {
     log_it(L_NOTICE, "Global DB exchange channel initialized");
     dap_stream_ch_proc_add(DAP_STREAM_CH_GDB_ID, s_stream_ch_new, s_stream_ch_delete, s_stream_ch_packet_in, NULL);
-    assert(!dap_stream_ch_gossip_callback_add(DAP_STREAM_CH_GDB_ID, s_gossip_payload_callback));
-    return 0;
+    return dap_stream_ch_gossip_callback_add(DAP_STREAM_CH_GDB_ID, s_gossip_payload_callback);
 }
 
 void dap_global_db_ch_deinit()
