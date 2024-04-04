@@ -235,7 +235,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         // Copy message and append g_node_addr to pathtrace
         dap_gossip_msg_t *l_msg_new = (dap_gossip_msg_t *)l_item_new->message;
         memcpy(l_msg_new, l_msg, sizeof(dap_gossip_msg_t) + l_msg->trace_len);
-        l_msg_new->trace_len += sizeof(g_node_addr);
+        l_msg_new->trace_len = l_msg->trace_len + sizeof(g_node_addr);
         *(dap_stream_node_addr_t *)(l_msg_new->trace_n_payload + l_msg->trace_len) = g_node_addr;
         memcpy(l_msg_new->trace_n_payload + l_msg_new->trace_len, l_msg->trace_n_payload + l_msg->trace_len, l_msg->payload_len);
         HASH_ADD_BYHASHVALUE(hh, s_gossip_last_msgs, payload_hash, sizeof(dap_hash_t), l_hash_value, l_item_new);
