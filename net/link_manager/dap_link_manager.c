@@ -110,7 +110,7 @@ static void s_update_connection_state(dap_stream_node_addr_t a_node_addr, bool a
     dap_connections_statistics_t *l_stat = (dap_connections_statistics_t *)dap_global_db_get_sync(s_connections_group_local, l_node_addr_str, NULL, NULL, NULL);
     if (!l_stat) {
         log_it(L_NOTICE, "Creating new connections staticstics record in GDB for the node %s", l_node_addr_str);
-        DAP_NEW_Z_RET_VAL(l_stat, dap_connections_statistics_t, NULL, NULL);
+        DAP_NEW_Z_RET(l_stat, dap_connections_statistics_t, NULL);
     }
     bool l_old_ignored_state = l_stat->ignored;
     l_stat->attempts_count += a_attempt;
