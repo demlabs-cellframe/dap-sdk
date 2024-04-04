@@ -215,8 +215,9 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
         DAP_DEL_Z(a_obj->value);
         return NULL;
     }
-    *(dap_stream_node_addr_t *)a_obj->ext = *a_addr;
-    return l_data_ptr + l_sign_size;
+    if (a_addr)
+        *(dap_stream_node_addr_t *)a_obj->ext = *a_addr;
+    return l_data_ptr + l_sign_size + (a_addr ? sizeof(dap_stream_node_addr_t) : 0);
 }
 
 
@@ -240,7 +241,7 @@ dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_
  * @return Returns a pointer to the first object in the array, if successful; otherwise NULL.
  */
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
-dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count, dap_stream_node_addr_t *a_addr)
+dap_store_obj_t *dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count)
 #else
 dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a_pkt, size_t *a_store_obj_count, dap_stream_node_addr_t *a_addr)
 #endif
@@ -248,16 +249,23 @@ dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a
     dap_return_val_if_fail(a_pkt && a_pkt->data_size >= sizeof(dap_global_db_pkt_t), NULL);
 
     uint32_t l_count = a_pkt->obj_count;
-    size_t l_size = l_count <= DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT ? l_count * sizeof(struct dap_store_obj) : 0;
+    size_t l_size = l_count <= DAP_GLOBAL_DB_PKT_PACK_MAX_COUNT
+            ? l_count *
+#ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
+              sizeof(dap_store_obj_t)
+#else
+              sizeof(dap_store_obj_t *)
+#endif
+            : 0;
 
     if (!l_size) {
         log_it(L_ERROR, "Invalid size: packet pack total size is zero");
         return NULL;
     }
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
-    dap_store_obj_t *l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_size * sizeof(dap_store_obj_t));
+    dap_store_obj_t *l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t, l_size);
 #else
-    dap_store_obj_t **l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t *, l_size * sizeof(dap_store_obj_t *));
+    dap_store_obj_t **l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t *, l_size);
 #endif
     if (!l_store_obj_arr) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
@@ -270,7 +278,7 @@ dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a
     uint32_t i = 0;
     for ( ; i < l_count; i++) {
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
-        l_data_ptr = s_fill_one_store_obj((dap_global_db_pkt_t *)l_data_ptr, l_store_obj_arr + i, l_data_end - l_data_ptr, a_addr);
+        l_data_ptr = s_fill_one_store_obj((dap_global_db_pkt_t *)l_data_ptr, l_store_obj_arr + i, l_data_end - l_data_ptr, NULL);
 #else
         l_store_obj_arr[i] = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + sizeof(dap_stream_node_addr_t));
         if (!l_store_obj_arr[i]) {
