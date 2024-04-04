@@ -255,9 +255,10 @@ static void *s_list_thread_proc2(void *arg) {
             }
 
             pthread_mutex_lock(&l_dap_db_log_list->list_mutex);
-            while (l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE && l_dap_db_log_list->is_process)
-                pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
-            if (!l_dap_db_log_list->is_process) {
+            if (l_dap_db_log_list->is_process) {
+                while (l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE)
+                    pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
+            } else {
                 pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
                 while (l_obj_cur <= l_obj_last) {
                     dap_store_obj_clear_one(l_obj_cur);
@@ -281,9 +282,6 @@ static void *s_list_thread_proc2(void *arg) {
             uint64_t l_cur_id = l_obj_cur->id;
             l_obj_cur->id = 0;
             dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(l_obj_cur);
-            DAP_DEL_Z(l_obj_cur->group);
-            DAP_DEL_Z(l_obj_cur->key);
-            DAP_DEL_Z(l_obj_cur->value);
             dap_global_db_pkt_change_id(l_pkt, l_cur_id);
             dap_hash_fast(l_pkt->data, l_pkt->data_size, &l_list_obj->hash);
             l_list_obj->pkt = l_pkt;
@@ -541,10 +539,6 @@ dap_db_log_list_obj_t **dap_db_log_list_get_multiple(dap_db_log_list_t *a_db_log
     if (!a_db_log_list || !a_count)
         return NULL;
     pthread_mutex_lock(&a_db_log_list->list_mutex);
-    if (!a_db_log_list->is_process) {
-        // Log list was not deleted, but caching thread is finished, so no need to lock anymore
-        pthread_mutex_unlock(&a_db_log_list->list_mutex);
-    }
     size_t l_count = a_db_log_list->items_list
             ? *a_count
               ? dap_min(*a_count, dap_list_length(a_db_log_list->items_list))
@@ -570,16 +564,12 @@ dap_db_log_list_obj_t **dap_db_log_list_get_multiple(dap_db_log_list_t *a_db_log
             *a_count -= l_count;
             l_ret = DAP_REALLOC_COUNT(l_ret, *a_count);
         }
-        log_it(L_MSG, "[!] Extracted %zu records from log_list (size %zu), left %zu", *a_count, l_out_size, l_count);
+        log_it(L_MSG, "[!] Extracted %zu records from log_list (size %zu), left %zu", *a_count, l_out_size, a_db_log_list->size);
         if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE && a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE)
             pthread_cond_signal(&a_db_log_list->cond);
     }
-    if (a_db_log_list->is_process) {
-        pthread_mutex_unlock(&a_db_log_list->list_mutex);
-        if (!l_ret)
-            l_ret = DAP_INT_TO_POINTER(0x1); // Thread is not yet done...
-    }
-    return l_ret;
+    pthread_mutex_unlock(&a_db_log_list->list_mutex);
+    return l_ret ? l_ret : a_db_log_list->is_process ? DAP_INT_TO_POINTER(0x1) : NULL;
 }
 
 
