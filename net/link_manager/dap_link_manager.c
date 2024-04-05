@@ -1285,7 +1285,7 @@ dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_cou
     if (!l_ret) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         dap_global_db_objs_delete(l_objs, l_node_count);
-        return;
+        return NULL;
     }
 // func work
     for (size_t i = 0; i < l_node_count; ++i)
