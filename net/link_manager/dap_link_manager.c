@@ -51,7 +51,6 @@ typedef struct dap_managed_net {
 typedef struct dap_connections_statistics {
     uint64_t attempts_count;
     uint64_t successs_count;
-    uint64_t error_count;
     bool ignored;
 } dap_connections_statistics_t;
 
@@ -101,7 +100,7 @@ DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
  * @param a_success - if true add to success counter
  * @param a_error - if true add to error counter
  */
-static void s_update_connection_state(dap_stream_node_addr_t a_node_addr, bool a_attempt, bool a_success, bool a_error)
+static void s_update_connection_state(dap_stream_node_addr_t a_node_addr, bool a_attempt, bool a_success)
 {
 // sanity check
     dap_return_if_pass(!a_node_addr.uint64);
@@ -115,8 +114,7 @@ static void s_update_connection_state(dap_stream_node_addr_t a_node_addr, bool a
     bool l_old_ignored_state = l_stat->ignored;
     l_stat->attempts_count += a_attempt;
     l_stat->successs_count += a_success;
-    l_stat->error_count += a_error;
-    l_stat->ignored = a_error > a_success * 2;
+    l_stat->ignored = (double)a_success / (double)a_attempt > 0.9;
     if(dap_global_db_set_sync(s_connections_group_local, l_node_addr_str, l_stat, sizeof(*l_stat), false)) {
         log_it(L_ERROR, "Can't update connections staticstics record in GDB for the node %s", l_node_addr_str);
     }
@@ -460,7 +458,7 @@ void s_client_connected_callback(dap_client_t *a_client, void UNUSED_ARG *a_arg)
     l_link->uplink.attempts_count = 0;
     l_link->uplink.state = LINK_STATE_ESTABLISHED;
     l_link->uplink.es_uuid = DAP_CLIENT_PVT(a_client)->stream_es->uuid;
-    s_update_connection_state(l_link->addr, false, true, false);
+    s_update_connection_state(l_link->addr, false, true);
 }
 
 void s_link_drop(dap_link_t *a_link, bool a_disconnected)
@@ -546,7 +544,6 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
     }
     *l_args = (struct link_drop_args) { .addr = l_link->addr, .disconnected = a_arg };
     dap_proc_thread_callback_add_pri(NULL, s_link_drop_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
-    s_update_connection_state(l_link->addr, false, false, true);
 }
 
 /**
@@ -616,7 +613,7 @@ static void s_link_connect(dap_link_t *a_link)
     log_it(L_INFO, "Connecting to node " NODE_ADDR_FP_STR ", addr %s : %d", NODE_ADDR_FP_ARGS_S(a_link->uplink.client->link_info.node_addr),
                                     a_link->uplink.client->link_info.uplink_addr, a_link->uplink.client->link_info.uplink_port);
     dap_client_go_stage(a_link->uplink.client, STAGE_STREAM_STREAMING, s_client_connected_callback);
-    s_update_connection_state(a_link->addr, true, false, false);
+    s_update_connection_state(a_link->addr, true, false);
 }
 
 /**
