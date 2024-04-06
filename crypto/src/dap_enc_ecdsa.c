@@ -46,10 +46,10 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, const void *kex_buf
     //not sure we need this for ECDSA
     //dap_enc_sig_ecdsa_set_type(ECDSA_MAX_SPEED)
 
-    //int32_t type = 2;
+
     key->priv_key_data_size =sizeof(ecdsa_private_key_t);
     key->pub_key_data_size = sizeof(ecdsa_public_key_t);
-    key->_inheritor_size=sizeof(ecdsa_context_t);
+    key->_inheritor_size=get_secp256k1_context_size();
     key->priv_key_data = malloc(key->priv_key_data_size);
     key->pub_key_data = malloc(key->pub_key_data_size);
     key->_inheritor=malloc(key->_inheritor_size);
@@ -71,7 +71,7 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, const void *kex_buf
     if(retcode) {
         log_it(L_CRITICAL, "Error generating ECDSA key pair");
         secp256k1_context_destroy(ctx);
-	secure_erase(seckey, sizeof(seckey));
+	/*secure_erase(key, sizeof(seckey));finish this bit*/
 	return;
     }
 }
@@ -89,7 +89,7 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, const void *kex_buf
 //}
 
 
-size_t dap_enc_sig_ecdsa_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size)
+int dap_enc_sig_ecdsa_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size)
 {   unsigned char randomize[32];
 
     if (signature_size != sizeof(ecdsa_signature_t)) {
@@ -98,8 +98,8 @@ size_t dap_enc_sig_ecdsa_get_sign(struct dap_enc_key* key, const void* msg, cons
     }
 
     if (!randombytes(randomize, sizeof(randomize))) {
-        printf("Failed to generate randomness\n");
-        return;
+        log_it(L_ERROR, "Failed to generate randomness");
+        return -10;
     }
 
     int retcode = secp256k1_context_randomize(key->_inheritor, randomize);
@@ -116,22 +116,28 @@ size_t dap_enc_sig_ecdsa_get_sign(struct dap_enc_key* key, const void* msg, cons
     ecdsa_signature_t *sig = signature;
 //    sig->data = DAP_NEW_SIZE(byte_t,ECDSA_SIG_SIZE);
 
-    retcode = secp256k1_ecdsa_sign(key->_inheritor, sig, msg, privateKey, NULL, NULL);
+    retcode = secp256k1_ecdsa_sign(key->_inheritor, sig, msg, privateKey->data, NULL, NULL);
 
     if (retcode != 0)
         log_it(L_ERROR, "Failed to sign message");
     return retcode;
 }
 
-size_t dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
+int dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
                                       const size_t signature_size)
 {
 
-    if (key->pub_key_data_size != sizeof(ecdsa_private_key_t)) {
+    if (signature_size != sizeof(ecdsa_signature_t)) {
+        log_it(L_ERROR, "Invalid ecdsa signature size");
+        return -10;
+    }
+
+
+    if (key->pub_key_data_size != sizeof(ecdsa_public_key_t)) {
         log_it(L_ERROR, "Invalid ecdsa key");
         return -11;
     }
-    ecdsa_private_key_t *publicKey = key->pub_key_data;
+    ecdsa_public_key_t *publicKey = key->pub_key_data;
 
     ecdsa_signature_t *sig = signature;
     if (sizeof(ecdsa_signature_t) != signature_size)
@@ -521,10 +527,10 @@ void *dap_enc_sig_ecdsa_signature_delete(void *a_sig){
 
 
 void *dap_enc_sig_ecdsa_private_key_delete(ecdsa_private_key_t* privateKey) {
-    if (privateKey){
-        secure_erase(privateKey->data, sizeof(privateKey->data));
-
-    }
+    dap_return_if_pass(!privateKey);
+    ecdsa_private_key_t *l_skey = privateKey;
+    memset(l_skey->data, 0, ECDSA_PRIVATE_KEY_SIZE);
+    DAP_DEL_MULTY(l_skey->data, l_skey);
 }
 
 void *dap_enc_sig_ecdsa_public_key_delete(ecdsa_public_key_t* publicKey) {
@@ -534,8 +540,8 @@ void *dap_enc_sig_ecdsa_public_key_delete(ecdsa_public_key_t* publicKey) {
 }
 
 void *dap_enc_sig_ecdsa_private_and_public_keys_delete(ecdsa_private_key_t* privateKey, ecdsa_public_key_t* publicKey) {
-        ecdsa_private_key_delete(privateKey);
-        ecdsa_public_key_delete(publicKey);
+        dap_enc_ecdsa_private_key_delete(privateKey);
+        dap_enc_ecdsa_public_key_delete(publicKey);
 }
 
 

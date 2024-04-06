@@ -119,6 +119,8 @@ file( GLOB CRYPTO_SRCS
       src/sig_tesla/*.c
       src/sig_picnic/*.c
       src/sig_dilithium/*.c
+	src/sig_ecdsa/*.c
+      src/sig_shipovnik/*.c
       src/ringct20/*.c
       src/falcon/*.c
       ${SPHINCS_BASE_SRCS}
@@ -139,6 +141,7 @@ file( GLOB CRYPTO_HEADERS
       src/newhope/*.h
       src/sig_bliss/*.h
       src/sig_ecdsa/*.h
+      src/sig_shipovnik/*.h
       src/sig_tesla/*.h
       src/sig_picnic/*.h
       src/sig_dilithium/*.h
@@ -163,7 +166,7 @@ file( GLOB XKCP_SRCS
   src/XKCP/lib/high/Keccak/FIPS202/SimpleFIPS202.c
 )
 
-set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sphincsplus src include)
+set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sphincsplus src include)
 add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
 
 option (DAP_PQLR "PQRL Intergration" OFF)
@@ -240,10 +243,14 @@ if (DAP_PQRL)
     ENDIF()
 endif()
 
+
 target_include_directories(dap_crypto PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
 target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/)
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
+
+#target_include_directories(dap_crypto PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include )
+
 
 target_include_directories(dap_crypto PUBLIC
         src/XKCP/lib/common
@@ -423,14 +430,15 @@ endif()
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
 
 if(WIN32)
-  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c)
+  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c libsecp256k1 )
 endif()
 
 if(UNIX)
-  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c m)
+  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c m libsecp256k1)
 endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
+target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include)
 
 if(BUILD_CRYPTO_TESTS)
     enable_testing()

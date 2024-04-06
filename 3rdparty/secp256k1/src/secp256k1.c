@@ -88,6 +88,12 @@ void secp256k1_selftest(void) {
     }
 }
 
+size_t get_secp256k1_context_size(){
+   size_t ret=sizeof(secp256k1_context);
+   return ret;
+
+}
+
 size_t secp256k1_context_preallocated_size(unsigned int flags) {
     size_t ret = sizeof(secp256k1_context);
     /* A return value of 0 is reserved as an indicator for errors when we call this function internally. */

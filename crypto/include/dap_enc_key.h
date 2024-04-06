@@ -7,9 +7,9 @@
  * Copyright  (c) 2017-2019
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Deus Applications Prototypes) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Deus Applicaions Prototypes) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -114,6 +114,7 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_SIG_FALCON = 24, 
     DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS = 25,
     DAP_ENC_KEY_TYPE_SIG_ECDSA = 26,
+    DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK=27,
 
     DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED = 100,
 
@@ -206,10 +207,6 @@ typedef struct dap_enc_key {
         byte_t * shared_key;
     };
 
-    union{
-        void* context_data;
-        size_t* context_size;
-    };
 
     size_t pub_key_data_size;
     //unsigned char * pub_key_data; // can be null if enc symmetric
