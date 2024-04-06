@@ -36,7 +36,7 @@ void randombytes(uint8_t *out, size_t outlen) {
   ssize_t ret;
 
   while (fd == -1) {
-    fd = open(ENTROPY_SOURCE, O_RDONLY);
+    fd = open("/dev/urandom", O_RDONLY);
     if (fd == -1 && errno == EINTR)
       continue;
     else if (fd == -1)
