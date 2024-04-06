@@ -28,12 +28,10 @@
 #include "dap_enc_bf.h"
 #include "dap_enc_GOST.h"
 
-#include "dap_cipher.h"
+//#include "dap_cipher.h"
 
 
-typedef struct dap_cipher_params
-
-dap_cipher_callbacks_t s_callbacks[]={
-
-
-}
+//typedef struct dap_cipher_params dap_cipher_callbacks_t s_callbacks[]={
+//
+//
+//}
