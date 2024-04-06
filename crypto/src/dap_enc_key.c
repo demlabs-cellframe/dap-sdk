@@ -40,7 +40,8 @@
 #include "dap_enc_kyber.h"
 #include "dap_enc_sphincsplus.h"
 #include "dap_enc_multisign.h"
-
+#include "dap_enc_ecdsa.h"
+#include "dap_enc_shipovnik.h"
 #include "dap_enc_ringct20.h"
 #ifdef DAP_PQRL
 #include "dap_pqrl.h"
@@ -403,6 +404,40 @@ dap_enc_key_callbacks_t s_callbacks[]={
     },
 
 
+
+    [DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK]={
+          .name =                             "SIG_SHIPOVNIK",
+          .enc =                              NULL,
+          .dec =                              NULL,
+          .enc_na =                           NULL,
+          .dec_na =                           NULL,
+          .gen_key_public =                   NULL,
+          .gen_bob_shared_key =               NULL,
+          .gen_alice_shared_key =             NULL,
+          .enc_out_size =                     NULL,
+          .dec_out_size =                     NULL,
+
+          .new_callback =                     dap_enc_sig_shipovnik_key_new,
+          .new_generate_callback =            dap_enc_sig_shipovnik_key_new_generate,
+
+          .delete_callback =                  dap_enc_shipovnik_private_and_public_keys_delete,
+          .del_sign =                         dap_enc_shipovnik_signature_delete,
+          .del_pub_key =                      dap_enc_shipovnik_public_key_delete,
+          .del_priv_key =                     dap_enc_shipovnik_private_key_delete,
+
+          .sign_get =                         dap_enc_sig_shipovnik_get_sign,
+          .sign_verify =                      dap_enc_sig_shipovnik_verify_sign,
+
+          .ser_sign =                         dap_enc_sig_shipovnik_write_signature,
+          .ser_priv_key =                     dap_enc_sig_shipovnik_write_private_key,
+          .ser_pub_key =                      dap_enc_sig_shipovnik_write_public_key,
+
+          .deser_sign =                       dap_enc_sig_shipovnik_read_signature,
+          .deser_priv_key =                   dap_enc_sig_shipovnik_read_private_key,
+          .deser_pub_key =                    dap_enc_sig_shipovnik_read_public_key,
+      },
+
+
     [DAP_ENC_KEY_TYPE_SIG_RINGCT20]={
         .name =                             "SIG_RINGCT20",
         .enc =                              NULL,
@@ -583,7 +618,7 @@ uint8_t *dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-        //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
             l_data = s_callbacks[a_key_type].ser_sign(a_sign, a_sign_len);
             break;
@@ -613,7 +648,7 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
     case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-    //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+    case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
         l_data = s_callbacks[a_key_type].deser_sign(a_sign, *a_sign_len);
         *a_sign_len = s_callbacks[a_key_type].deser_sign_size(NULL);
@@ -635,9 +670,6 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
  */
 uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_out)
 {
-// sanity check
-    dap_return_val_if_pass(!a_key || !a_key->priv_key_data_size, NULL);
-// func work
     uint8_t *l_data = NULL;
     switch (a_key->type) {
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
@@ -645,7 +677,7 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-    //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+    case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         l_data = s_callbacks[a_key->type].ser_priv_key(a_key->priv_key_data, a_buflen_out);
         break;
@@ -677,7 +709,7 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-    //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+    case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         l_data = s_callbacks[a_key->type].ser_pub_key(a_key->pub_key_data, a_buflen_out);
         break;
@@ -708,7 +740,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-    //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+    case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         if (a_key->priv_key_data)
             s_callbacks[a_key->type].del_priv_key(a_key->priv_key_data);
@@ -746,9 +778,8 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
-
     case DAP_ENC_KEY_TYPE_SIG_ECDSA:        
-    //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+    case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         if (a_key->pub_key_data)
             s_callbacks[a_key->type].del_pub_key(a_key->pub_key_data);
@@ -780,22 +811,22 @@ uint8_t *dap_enc_key_serialize(dap_enc_key_t *a_key, size_t *a_buflen)
 // sanity check
     dap_return_val_if_pass(!a_key, NULL);
 // func work
-    uint64_t l_ser_skey_size = 0, l_ser_pkey_size = 0, l_ser_inheritor_size = a_key->_inheritor_size;
+    uint64_t l_ser_skey_size = 0, l_ser_pkey_size = 0;
     uint64_t l_timestamp = a_key->last_used_timestamp;
     int32_t l_type = a_key->type;
-    uint8_t *l_ser_skey = dap_enc_key_serialize_priv_key(a_key, (size_t *)&l_ser_skey_size);
-    uint8_t *l_ser_pkey = dap_enc_key_serialize_pub_key(a_key, (size_t *)&l_ser_pkey_size);
+    uint8_t *l_ser_skey = dap_enc_key_serialize_priv_key(a_key, &l_ser_skey_size);
+    uint8_t *l_ser_pkey = dap_enc_key_serialize_pub_key(a_key, &l_ser_pkey_size);
     uint64_t l_buflen = sizeof(uint64_t) * 5 + sizeof(int32_t) + l_ser_skey_size + l_ser_pkey_size + a_key->_inheritor_size;
     uint8_t *l_ret = dap_serialize_multy(NULL, l_buflen, 18,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_ser_skey_size, (uint64_t)sizeof(uint64_t),
         &l_ser_pkey_size, (uint64_t)sizeof(uint64_t),
-        &l_ser_inheritor_size, (uint64_t)sizeof(uint64_t),
+        &a_key->_inheritor_size, (uint64_t)sizeof(uint64_t),
         &l_timestamp, (uint64_t)sizeof(uint64_t),
         &l_type, (uint64_t)sizeof(int32_t),
         l_ser_skey, (uint64_t)l_ser_skey_size,
         l_ser_pkey, (uint64_t)l_ser_pkey_size,
-        a_key->_inheritor, (uint64_t)l_ser_inheritor_size
+        a_key->_inheritor, (uint64_t)a_key->_inheritor_size
     );
 // out work
     DAP_DEL_MULTY(l_ser_skey, l_ser_pkey);
@@ -855,8 +886,9 @@ dap_enc_key_t *dap_enc_key_deserialize(const void *buf, size_t a_buf_size)
         }
 // out work
     l_ret->last_used_timestamp = l_timestamp;
+    l_ret->priv_key_data_size = l_ser_skey_size;
+    l_ret->pub_key_data_size = l_ser_pkey_size;
     l_ret->_inheritor_size = l_ser_inheritor_size;
-    DAP_DEL_MULTY(l_ser_pkey, l_ser_skey);
     return l_ret;
 }
 
@@ -1002,7 +1034,7 @@ void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-    //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+    case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         s_callbacks[a_key_type].del_sign(a_sig_buf);
         break;
@@ -1100,7 +1132,7 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: 
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-        //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
             l_sign_size = s_callbacks[a_key->type].deser_sign_size(a_key);
