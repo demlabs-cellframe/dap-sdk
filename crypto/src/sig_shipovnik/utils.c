@@ -66,7 +66,7 @@ int count_bits(const uint8_t *src, size_t len, size_t *result) {
   }
 
   *result = 0;
-  for (int i = 0; i < len; ++i) {
+  for (size_t i = 0; i < len; ++i) {
     *result += count_ones(src[i]);
   }
 

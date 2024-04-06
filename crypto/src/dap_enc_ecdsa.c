@@ -1,7 +1,6 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <string.h>
-#include <secp256k1.h>
 #include "dap_enc_ecdsa.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"

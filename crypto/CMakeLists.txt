@@ -119,7 +119,7 @@ file( GLOB CRYPTO_SRCS
       src/sig_tesla/*.c
       src/sig_picnic/*.c
       src/sig_dilithium/*.c
-	src/sig_ecdsa/*.c
+	  src/sig_ecdsa/*.c
       src/sig_shipovnik/*.c
       src/ringct20/*.c
       src/falcon/*.c
@@ -166,7 +166,7 @@ file( GLOB XKCP_SRCS
   src/XKCP/lib/high/Keccak/FIPS202/SimpleFIPS202.c
 )
 
-set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sphincsplus src include)
+set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sig_shipovnik/streebog src/sphincsplus src include)
 add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
 
 option (DAP_PQLR "PQRL Intergration" OFF)
@@ -439,6 +439,7 @@ endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
 target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include)
+
 
 if(BUILD_CRYPTO_TESTS)
     enable_testing()
