@@ -121,6 +121,7 @@ file( GLOB CRYPTO_SRCS
       src/sig_dilithium/*.c
 	  src/sig_ecdsa/*.c
       src/sig_shipovnik/*.c
+      src/sig_shipovnik/streebog/*.c
       src/ringct20/*.c
       src/falcon/*.c
       ${SPHINCS_BASE_SRCS}
@@ -142,6 +143,7 @@ file( GLOB CRYPTO_HEADERS
       src/sig_bliss/*.h
       src/sig_ecdsa/*.h
       src/sig_shipovnik/*.h
+      src/sig_shipovnik/streebog/*.h
       src/sig_tesla/*.h
       src/sig_picnic/*.h
       src/sig_dilithium/*.h

@@ -25,10 +25,10 @@
 #include "gost3411-2012-ref.h"
 #endif
 
-ALIGN(16) union uint512_u
+union uint512_u
 {
     unsigned long long QWORD[8];
-};
+} ALIGN(16);
 
 #include "gost3411-2012-const.h"
 #include "gost3411-2012-precalc.h"

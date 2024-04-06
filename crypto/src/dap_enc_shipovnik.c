@@ -277,27 +277,27 @@ uint8_t* dap_enc_sig_shipovnik_read_signature(const uint8_t* a_buf, size_t a_buf
     return l_sign;
 }
 
-void *dap_enc_sig_shipovnik_signature_delete(void *a_sig){
+void dap_enc_sig_shipovnik_signature_delete(void *a_sig){
     dap_return_if_pass(!a_sig);
     memset(((uint8_t *)a_sig),0,SHIPOVNIK_SIGBYTES);
 
 }
 
-void *dap_enc_sig_shipovnik_private_key_delete(uint8_t* privateKey) {
+void dap_enc_sig_shipovnik_private_key_delete(uint8_t* privateKey) {
     if (privateKey){
         DAP_DELETE(privateKey);
     }
 }
 
-void *dap_enc_sig_shipovnik_public_key_delete(uint8_t* publicKey) {
+void dap_enc_sig_shipovnik_public_key_delete(uint8_t* publicKey) {
     if (publicKey) {
         memset(publicKey, 0, SHIPOVNIK_PUBLICKEYBYTES);
     }
 }
 
-void *dap_enc_sig_shipovnik_private_and_public_keys_delete(uint8_t* privateKey, uint8_t* publicKey) {
-        shipovnik_private_key_delete(privateKey);
-        shipovnik_public_key_delete(publicKey);
+void dap_enc_sig_shipovnik_private_and_public_keys_delete(uint8_t* privateKey, uint8_t* publicKey) {
+        dap_enc_sig_shipovnik_private_key_delete(privateKey);
+        dap_enc_sig_shipovnik_public_key_delete(publicKey);
 }
 
 

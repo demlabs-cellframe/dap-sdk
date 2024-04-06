@@ -518,29 +518,29 @@ ecdsa_signature_t* dap_enc_sig_ecdsa_read_signature(const uint8_t* a_buf, size_t
     return l_sign;
 }
 
-void *dap_enc_sig_ecdsa_signature_delete(void *a_sig){
+void dap_enc_sig_ecdsa_signature_delete(void *a_sig){
     dap_return_if_pass(!a_sig);
     memset(((ecdsa_signature_t *)a_sig)->data,0,ECDSA_SIG_SIZE);
 
 }
 
 
-void *dap_enc_sig_ecdsa_private_key_delete(ecdsa_private_key_t* privateKey) {
+void dap_enc_sig_ecdsa_private_key_delete(ecdsa_private_key_t* privateKey) {
     dap_return_if_pass(!privateKey);
     ecdsa_private_key_t *l_skey = privateKey;
     memset(l_skey->data, 0, ECDSA_PRIVATE_KEY_SIZE);
     DAP_DEL_MULTY(l_skey->data, l_skey);
 }
 
-void *dap_enc_sig_ecdsa_public_key_delete(ecdsa_public_key_t* publicKey) {
+void dap_enc_sig_ecdsa_public_key_delete(ecdsa_public_key_t* publicKey) {
     if (publicKey) {
         memset(publicKey->data, 0, ECDSA_PUBLIC_KEY_SIZE);
     }
 }
 
-void *dap_enc_sig_ecdsa_private_and_public_keys_delete(ecdsa_private_key_t* privateKey, ecdsa_public_key_t* publicKey) {
-        dap_enc_ecdsa_private_key_delete(privateKey);
-        dap_enc_ecdsa_public_key_delete(publicKey);
+void dap_enc_sig_ecdsa_private_and_public_keys_delete(ecdsa_private_key_t* privateKey, ecdsa_public_key_t* publicKey) {
+        dap_enc_sig_ecdsa_private_key_delete(privateKey);
+        dap_enc_sig_ecdsa_public_key_delete(publicKey);
 }
 
 

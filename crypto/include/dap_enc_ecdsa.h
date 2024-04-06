@@ -34,10 +34,10 @@ ecdsa_private_key_t* dap_enc_sig_ecdsa_read_private_key(const uint8_t *a_buf, si
 ecdsa_public_key_t *dap_enc_sig_ecdsa_read_public_key(const uint8_t *a_buf, size_t a_buflen);
 
 
-void *dap_enc_ecdsa_signature_delete(void *a_sig);
-void *dap_enc_ecdsa_private_key_delete(ecdsa_private_key_t* privateKey);
-void *dap_enc_ecdsa_public_key_delete(ecdsa_public_key_t* publicKey);
-void *dap_enc_ecdsa_private_and_public_keys_delete(ecdsa_private_key_t* privateKey, ecdsa_public_key_t* publicKey);
+void dap_enc_sig_ecdsa_signature_delete(void *a_sig);
+void dap_enc_sig_ecdsa_private_key_delete(ecdsa_private_key_t* privateKey);
+void dap_enc_sig_ecdsa_public_key_delete(ecdsa_public_key_t* publicKey);
+void dap_enc_sig_ecdsa_private_and_public_keys_delete(ecdsa_private_key_t* privateKey, ecdsa_public_key_t* publicKey);
 
 
 

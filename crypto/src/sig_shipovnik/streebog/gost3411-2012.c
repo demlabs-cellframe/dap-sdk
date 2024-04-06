@@ -211,7 +211,7 @@ testing(const unsigned int eflag)
 
     GOST34112012Init(CTX, 512);
 
-    memcpy(CTX->buffer, &GOSTTestInput, sizeof uint512_u);
+    memcpy(CTX->buffer, &GOSTTestInput, sizeof(union uint512_u));
     CTX->bufsize = 63;
 
     GOST34112012Final(CTX, &digest[0]);
@@ -223,7 +223,7 @@ testing(const unsigned int eflag)
 
     GOST34112012Init(CTX, 256);
 
-    memcpy(CTX->buffer, &GOSTTestInput, sizeof uint512_u);
+    memcpy(CTX->buffer, &GOSTTestInput, sizeof(union uint512_u));
     CTX->bufsize = 63;
 
     GOST34112012Final(CTX, &digest[0]);
