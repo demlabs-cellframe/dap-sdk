@@ -168,6 +168,7 @@ file( GLOB XKCP_SRCS
 
 set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sig_shipovnik/streebog src/sphincsplus src include)
 add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
+add_subdirectory (${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/ ${CMAKE_CURRENT_BINARY_DIR}/secp256k1)
 
 option (DAP_PQLR "PQRL Intergration" OFF)
 
@@ -248,9 +249,6 @@ target_include_directories(dap_crypto PRIVATE ${CRYPTO_INCLUDE_PRIVATE})
 target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/)
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
-
-#target_include_directories(dap_crypto PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include )
-
 
 target_include_directories(dap_crypto PUBLIC
         src/XKCP/lib/common

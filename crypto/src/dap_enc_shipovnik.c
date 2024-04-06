@@ -1,7 +1,6 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <string.h>
-#include "shipovnik.h"
 #include "dap_enc_shipovnik.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
@@ -46,7 +45,7 @@ void dap_enc_sig_shipovnik_key_new_generate(dap_enc_key_t * key, const void *kex
 }
 
 
-size_t dap_enc_sig_shipovnik_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size){
+int dap_enc_sig_shipovnik_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size){
 
     if (signature_size != SHIPOVNIK_SIGBYTES) {
         log_it(L_ERROR, "Invalid shipovnik signature size");
@@ -67,7 +66,7 @@ size_t dap_enc_sig_shipovnik_get_sign(struct dap_enc_key* key, const void* msg, 
     uint8_t sig[SHIPOVNIK_SIGBYTES];
     size_t sig_len;
     shipovnik_sign(key->priv_key_data, msg, sizeof(msg), sig, &sig_len);
-
+    return 0;
 //    if (retcode != 0){
 //        log_it(L_ERROR, "Failed to sign message");
 //    return retcode;
@@ -76,7 +75,7 @@ size_t dap_enc_sig_shipovnik_get_sign(struct dap_enc_key* key, const void* msg, 
 
 
 
-size_t dap_enc_sig_shipovnik_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
+int dap_enc_sig_shipovnik_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
                                       const size_t signature_size)
 {
 
@@ -90,7 +89,7 @@ size_t dap_enc_sig_shipovnik_verify_sign(struct dap_enc_key* key, const void* ms
         return -10;
     }
 
-    shipovnik_verify(key->pub_key_data, signature, msg, msg_size);
+    return shipovnik_verify(key->pub_key_data, signature, msg, msg_size);
 //    if (retcode != 0)
 //        log_it(L_ERROR, "Failed to verify signature");
 //    return retcode;

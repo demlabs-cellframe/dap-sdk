@@ -1,7 +1,7 @@
 #ifndef _DAP_ENC_SHIPOVNIK_H_
 #define _DAP_ENC_SHIPOVNIK_H_
 
-#include "shipovnik.h"
+#include "sig_shipovnik/shipovnik.h"
 #include "sig_shipovnik/shipovnik_params.h"
 #include "dap_enc_key.h"
 
@@ -19,9 +19,9 @@ void dap_enc_sig_shipovnik_key_new_generate(dap_enc_key_t *key, const void *kex_
                                     size_t key_size);
 void *dap_enc_sig_shipovnik_key_delete(dap_enc_key_t *a_key);
 
-size_t dap_enc_sig_shipovnik_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size);
+int dap_enc_sig_shipovnik_get_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size);
 
-size_t dap_enc_sig_shipovnik_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
+int dap_enc_sig_shipovnik_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
                                       const size_t signature_size);
 
 uint8_t *dap_enc_sig_shipovnik_write_signature(const uint8_t* a_sign, size_t *a_sign_out);
