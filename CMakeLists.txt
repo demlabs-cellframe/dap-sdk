@@ -83,8 +83,6 @@ else()
     add_definitions("-DDAP_NET_CLIENT_NO_SSL")
 endif()
 
-set (BUILD_DAP_SDK_TESTS ON)
-
 if (BUILD_DAP_SDK_TESTS)
     set(BUILD_DAP_TESTS ON)
     set(BUILD_CRYPTO_TESTS ON)
