@@ -713,7 +713,7 @@ int dap_client_pvt_request(dap_client_pvt_t * a_client_internal, const char * a_
     a_client_internal->http_client = dap_client_http_request(a_client_internal->worker, a_client_internal->client->uplink_addr,
                                             a_client_internal->client->uplink_port,
                                             a_request ? "POST" : "GET", "text/text", a_path, a_request,
-                                            a_request_size, NULL, s_request_response, s_request_error, a_client_internal, "some");
+                                            a_request_size, NULL, s_request_response, s_request_error, a_client_internal, "Custom: some text\r\n");
     return a_client_internal->http_client == NULL;
 }
 

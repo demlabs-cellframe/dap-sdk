@@ -180,7 +180,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
 
 	// Add custom headers
     l_offset += l_client_http->request_custom_headers
-            ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s\r\n", l_client_http->request_custom_headers)
+            ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
 	        : 0;
 
 	// Setup cookie header
