@@ -218,8 +218,8 @@ void dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count)
         return;
 
     dap_store_obj_t *l_store_obj_cur = a_store_obj;
-
     for ( ; a_store_count--; l_store_obj_cur++ ) {
+        log_it(L_ERROR, "group %p key %p value %p sign %p", l_store_obj_cur->group, l_store_obj_cur->key, l_store_obj_cur->value, l_store_obj_cur->sign);
         DAP_DEL_Z(l_store_obj_cur->group);
         DAP_DEL_Z(l_store_obj_cur->key);
         DAP_DEL_Z(l_store_obj_cur->value);
