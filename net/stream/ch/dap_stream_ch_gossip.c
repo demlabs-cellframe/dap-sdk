@@ -126,10 +126,8 @@ void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const vo
     HASH_VALUE(a_payload_hash, sizeof(dap_hash_t), l_hash_value);
     HASH_FIND_BYHASHVALUE(hh, s_gossip_last_msgs, a_payload_hash, sizeof(dap_hash_t), l_hash_value, l_msg_item);
     if (l_msg_item) {
-        HASH_DEL(s_gossip_last_msgs, l_msg_item);
         pthread_rwlock_unlock(&s_gossip_lock);
-        log_it(L_ERROR, "Unexpected found hash which must be the new");
-        DAP_DELETE(l_msg_item);
+        log_it(L_ERROR, "Hash %s already exist", dap_hash_fast_to_str_static(a_payload_hash)); 
         return;
     }
     l_msg_item = DAP_NEW_Z_SIZE(struct gossip_msg_item, sizeof(struct gossip_msg_item) + sizeof(dap_gossip_msg_t) +
