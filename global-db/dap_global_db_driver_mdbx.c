@@ -364,7 +364,7 @@ MDBX_cursor *l_cursor;
 MDBX_val    l_key_iov, l_data_iov;
 dap_list_t  *l_slist = NULL;
 char        *l_cp;
-size_t     l_upper_limit_of_db_size = 128;
+size_t     l_upper_limit_of_db_size = 256;
 
     /*
      * [resources]
