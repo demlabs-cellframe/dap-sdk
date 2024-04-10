@@ -34,7 +34,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 static void s_stream_ch_new(dap_stream_ch_t *a_ch, void *a_arg);
 static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg);
-static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg);
+static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg);
 static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, dap_stream_node_addr_t a_sender_addr);
 
 /**
@@ -45,8 +45,7 @@ int dap_global_db_ch_init()
 {
     log_it(L_NOTICE, "Global DB exchange channel initialized");
     dap_stream_ch_proc_add(DAP_STREAM_CH_GDB_ID, s_stream_ch_new, s_stream_ch_delete, s_stream_ch_packet_in, NULL);
-    assert(!dap_stream_ch_gossip_callback_add(DAP_STREAM_CH_GDB_ID, s_gossip_payload_callback));
-    return 0;
+    return dap_stream_ch_gossip_callback_add(DAP_STREAM_CH_GDB_ID, s_gossip_payload_callback);
 }
 
 void dap_global_db_ch_deinit()
@@ -139,12 +138,16 @@ bool s_proc_thread_reader(void *a_arg)
             --l_hashes_pkt->hashes_count;
             //dap_db_set_last_hash_remote(l_req->link, l_req->group, l_hashes_diff[l_hashes_pkt->hashes_count - 1]);
         }
-        if (l_hashes_pkt->hashes_count)
+        if (l_hashes_pkt->hashes_count) {
+            debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_HASHES packet for group %s with records count %u",
+                                                                                                    l_group, l_hashes_pkt->hashes_count);
             dap_stream_ch_pkt_send_by_addr(l_sender_addr,
                                            DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES,
                                            l_hashes_pkt, dap_global_db_hash_pkt_get_size(l_hashes_pkt));
+        }
         DAP_DELETE(l_hashes_pkt);
     } else {
+        debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_START packet for group %s from first record", l_group);
         size_t l_pkt_size = dap_global_db_start_pkt_get_size(l_pkt);
         dap_global_db_start_pkt_t *l_oncoming_pkt = DAP_DUP_SIZE(l_pkt, l_pkt_size);
         l_oncoming_pkt->last_hash = c_dap_global_db_driver_hash_blank;
@@ -183,10 +186,13 @@ static bool s_process_hashes(void *a_arg)
             l_ret_hashes[l_ret->hashes_count++] = l_hashes[i];
         }
      }
-     if (l_ret)
+     if (l_ret) {
+        debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_REQUEST packet for group %s with records count %u",
+                                                                                            l_group, l_ret->hashes_count);
         dap_stream_ch_pkt_send_by_addr((dap_stream_node_addr_t *)a_arg,
                                        DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST,
                                        l_ret, dap_global_db_hash_pkt_get_size(l_ret));
+     }
      return false;
 }
 
@@ -208,9 +214,12 @@ static bool s_process_request(void *a_arg)
     }
     dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
     dap_global_db_pkt_pack_t *l_pkt_out = dap_global_db_driver_get_by_hash(l_group, l_hashes, l_pkt->hashes_count);
-    if (l_pkt_out)
+    if (l_pkt_out) {
+        debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_RECORD_PACK packet for group %s with records count %u",
+                                                                                                l_group, l_pkt_out->obj_count);
         dap_stream_ch_pkt_send_by_addr(l_sender_addr, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK,
                                        l_pkt_out, dap_global_db_pkt_pack_get_size(l_pkt_out));
+    }
     return false;
 }
 
@@ -250,6 +259,7 @@ bool s_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_addr_t *a_addr)
 struct processing_arg {
     uint32_t count;
     dap_store_obj_t *objs;
+    dap_stream_node_addr_t addr;
 };
 
 static bool s_process_records(void *a_arg)
@@ -258,9 +268,7 @@ static bool s_process_records(void *a_arg)
     struct processing_arg *l_arg = a_arg;
     bool l_success = false;
     for (uint32_t i = 0; i < l_arg->count; i++)
-        if (!(l_success = s_check_store_obj(l_arg->objs + i,
-                                            (dap_stream_node_addr_t *)
-                                            (l_arg->objs + i)->ext)))
+        if (!(l_success = s_check_store_obj(l_arg->objs + i, &l_arg->addr)))
             break;
     if (l_success)
         dap_global_db_set_raw_sync(l_arg->objs, l_arg->count);
@@ -294,12 +302,12 @@ static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, da
     dap_proc_thread_callback_add_pri(NULL, s_process_record, l_obj, DAP_GLOBAL_DB_TASK_PRIORITY);
 }
 
-static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
+static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 {
     dap_stream_ch_gdb_t *l_ch_gdb = DAP_STREAM_CH_GDB(a_ch);
     if (!l_ch_gdb || l_ch_gdb->_inheritor != a_ch) {
         log_it(L_ERROR, "Not valid Global DB channel, returning");
-        return;
+        return false;
     }
     dap_stream_ch_pkt_t * l_ch_pkt = (dap_stream_ch_pkt_t *)a_arg;
     switch (l_ch_pkt->hdr.type) {
@@ -309,7 +317,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         if (l_ch_pkt->hdr.data_size < sizeof(dap_global_db_start_pkt_t) ||
                 l_ch_pkt->hdr.data_size != dap_global_db_start_pkt_get_size(l_pkt)) {
             log_it(L_WARNING, "Invalid packet size %u", l_ch_pkt->hdr.data_size);
-            break;
+            return false;
         }
         debug_if(g_dap_global_db_debug_more, L_INFO, "IN: GLOBAL_DB_SYNC_START packet for group %s",
                  l_pkt->group);
@@ -325,15 +333,15 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES:
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST: {
-        if (l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES &&
-                dap_proc_thread_get_avg_queue_size() > DAP_GLOBAL_DB_QUEUE_SIZE_MAX)
-            break;
         dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_ch_pkt->data;
         if (l_ch_pkt->hdr.data_size < sizeof(dap_global_db_hash_pkt_t) ||
                 l_ch_pkt->hdr.data_size != dap_global_db_hash_pkt_get_size(l_pkt)) {
             log_it(L_WARNING, "Invalid packet size %u", l_ch_pkt->hdr.data_size);
-            break;
+            return false;
         }
+        if (l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES &&
+                dap_proc_thread_get_avg_queue_size() > DAP_GLOBAL_DB_QUEUE_SIZE_MAX)
+            break;
         debug_if(g_dap_global_db_debug_more, L_INFO, "IN: %s packet for group %s with hashes count %u",
                                                 l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES
                                                 ? "GLOBAL_DB_HASHES" : "GLOBAL_DB_REQUEST",
@@ -357,19 +365,19 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         dap_global_db_pkt_pack_t *l_pkt = (dap_global_db_pkt_pack_t *)l_ch_pkt->data;
         size_t l_objs_count = 0;
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
-        dap_store_obj_t *l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count, &a_ch->stream->node);
+        dap_store_obj_t *l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count);
 #else
         dap_store_obj_t **l_objs = dap_global_db_pkt_pack_deserialize(l_pkt, &l_objs_count, &a_ch->stream->node);
 #endif
         if (!l_objs) {
             log_it(L_WARNING, "Wrong Global DB record packet rejected");
-            break;
+            return false;
         }
-        debug_if(g_dap_global_db_debug_more, L_INFO, "IN: GLOBAL_DB_RECORD_PACK packet");
+        debug_if(g_dap_global_db_debug_more, L_INFO, "IN: GLOBAL_DB_RECORD_PACK packet for group %s with records count %zu",
+                                                                                                l_objs->group, l_objs_count);
 #ifdef DAP_GLOBAL_DB_WRITE_SERIALIZED
         struct processing_arg *l_arg = DAP_NEW_Z(struct processing_arg);
-        l_arg->count = l_objs_count;
-        l_arg->objs = l_objs;
+        *l_arg = (struct processing_arg) { .count = l_objs_count, .objs = l_objs, .addr = a_ch->stream->node };
         dap_proc_thread_callback_add_pri(NULL, s_process_records, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
 #else
         for (uint32_t i = 0; i < l_objs_count; i++)
@@ -380,8 +388,9 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 
     default:
         log_it(L_WARNING, "Unknown global DB packet type %hhu", l_ch_pkt->hdr.type);
-        break;
+        return false;
     }
+    return true;
 }
 
 /**

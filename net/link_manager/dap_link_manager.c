@@ -98,8 +98,8 @@ DAP_STATIC_INLINE void s_debug_cluster_adding_removing(bool a_static, bool a_add
 
 DAP_STATIC_INLINE void s_debug_accounting_link_in_net(bool a_uplink, dap_stream_node_addr_t *a_node_addr, uint64_t a_net_id)
 {
-    debug_if(s_debug_more, L_DEBUG, "Accounting %slink from " NODE_ADDR_FP_STR " in net %" DAP_UINT64_FORMAT_U,
-            a_uplink ? "up" : "down", NODE_ADDR_FP_ARGS(a_node_addr), a_net_id);
+    debug_if(s_debug_more, L_DEBUG, "Accounting %s " NODE_ADDR_FP_STR " in net %" DAP_UINT64_FORMAT_U,
+                        a_uplink ? "uplink to" : "downlink from", NODE_ADDR_FP_ARGS(a_node_addr), a_net_id);
 }
 
 DAP_STATIC_INLINE void s_link_manager_print_links_info(dap_link_manager_t *a_link_manager)
@@ -429,7 +429,7 @@ void s_link_drop(dap_link_t *a_link, bool a_disconnected)
                 l_net->uplinks--;
             }
         }
-        if (!a_link->uplink.associated_nets && !a_link->static_clusters) {
+        if (!a_link->active_clusters && !a_link->uplink.associated_nets && !a_link->static_clusters) {
             s_link_delete(a_link, false, false);
         } else
             dap_client_go_stage(a_link->uplink.client, STAGE_BEGIN, NULL);
@@ -440,8 +440,13 @@ void s_link_drop(dap_link_t *a_link, bool a_disconnected)
             dap_managed_net_t *l_net = it->data;
             a_link->link_manager->callbacks.error(a_link, l_net->id, a_link->uplink.client->stage_target);
         }
-        a_link->stream_is_destroyed = true;
-        s_link_delete(a_link, false, true);
+        if (a_link->uplink.state == LINK_STATE_ESTABLISHED) {
+            a_link->stream_is_destroyed = true;
+            s_link_delete(a_link, false, true);
+        } else if (a_link->active_clusters) {
+            dap_client_go_stage(a_link->uplink.client, STAGE_BEGIN, NULL);
+            a_link->uplink.state = LINK_STATE_DISCONNECTED;
+        }
     }
 }
 
@@ -917,6 +922,7 @@ static bool s_stream_replace_callback(void *a_arg)
         // Have downlink from same addr, stop the client therefore
         assert(l_link->uplink.client);
         dap_client_go_stage(l_link->uplink.client, STAGE_BEGIN, NULL);
+        l_link->uplink.state = LINK_STATE_DISCONNECTED;
     }
     l_link->is_uplink = l_args->uplink;
     pthread_rwlock_unlock(&s_link_manager->links_lock);
@@ -1003,7 +1009,7 @@ static bool s_link_accounting_callback(void *a_arg)
                 }
             }
         }
-        s_debug_accounting_link_in_net(false, l_node_addr, l_net->id);
+        s_debug_accounting_link_in_net(l_link->is_uplink, l_node_addr, l_net->id);
     } else if (l_net) {
         assert(l_net->link_clusters);
         dap_cluster_link_delete_from_all(l_net->link_clusters, l_node_addr);

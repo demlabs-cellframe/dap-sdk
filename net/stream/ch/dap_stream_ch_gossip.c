@@ -48,14 +48,16 @@ static struct gossip_msg_item {
 dap_timerfd_t *s_gossip_timer = NULL;
 
 static bool s_callback_hashtable_maintenance(void *a_arg);
-static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg);
+static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg);
+static bool s_debug_more = false;
 /**
  * @brief dap_stream_ch_gdb_init
  * @return
  */
 int dap_stream_ch_gossip_init()
 {
-    log_it(L_NOTICE, "Global DB exchange channel initialized");
+    s_debug_more = dap_config_get_item_bool_default(g_config, "gossip", "debug_more", s_debug_more);
+    log_it(L_NOTICE, "GOSSIP epidemic protocol channel initialized");
     dap_stream_ch_proc_add(DAP_STREAM_CH_GOSSIP_ID, NULL, NULL, s_stream_ch_packet_in, NULL);
     s_gossip_timer = dap_timerfd_start(1000, s_callback_hashtable_maintenance, NULL);
     return 0;
@@ -95,6 +97,7 @@ int dap_stream_ch_gossip_callback_add(const char a_ch_id, dap_gossip_callback_pa
     l_callback_new->ch_id = a_ch_id;
     l_callback_new->callback_payload = a_callback;
     DL_APPEND(s_gossip_callbacks_list, l_callback_new);
+    log_it(L_INFO, "Successfully added gossip callback for channel '%c'", a_ch_id);
     return 0;
 }
 
@@ -146,13 +149,14 @@ void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const vo
     memcpy(l_msg->trace_n_payload + l_msg->trace_len, a_payload, a_payload_size);
     HASH_ADD_BYHASHVALUE(hh, s_gossip_last_msgs, payload_hash, sizeof(dap_hash_t), l_hash_value, l_msg_item);
     pthread_rwlock_unlock(&s_gossip_lock);
+    debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_HASH packet for hash %s", dap_hash_fast_to_str_static(a_payload_hash));
     dap_cluster_broadcast(a_cluster, DAP_STREAM_CH_GOSSIP_ID,
                           DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH,
                           a_payload_hash, sizeof(dap_hash_t),
                           &g_node_addr, 1);
 }
 
-static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
+static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 {
     dap_stream_ch_pkt_t *l_ch_pkt = (dap_stream_ch_pkt_t *)a_arg;
     switch (l_ch_pkt->hdr.type) {
@@ -163,17 +167,22 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         if (l_ch_pkt->hdr.data_size != sizeof(dap_hash_t)) {
             log_it(L_WARNING, "Incorrect gossip message data size %u, expected %zu",
                                         l_ch_pkt->hdr.data_size, sizeof(dap_hash_t));
-            break;
+            return false;
         }
+        debug_if(s_debug_more, L_INFO, "IN: %s packet for hash %s", l_ch_pkt->hdr.type == DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH
+                                                                    ? "GOSSIP_HASH" : "GOSSIP_REQUEST",
+                                                                    dap_hash_fast_to_str_static((dap_hash_fast_t *)&l_ch_pkt->data));
         pthread_rwlock_rdlock(&s_gossip_lock);
         HASH_FIND(hh, s_gossip_last_msgs, l_ch_pkt->data, sizeof(dap_hash_t), l_msg_item);
         if (l_msg_item && l_ch_pkt->hdr.type == DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST) {
+            debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_DATA packet for hash %s", dap_hash_fast_to_str_static((dap_hash_fast_t *)&l_ch_pkt->data));
             // Send data associated with this hash by request
             dap_gossip_msg_t *l_msg = (dap_gossip_msg_t *)l_msg_item->message;
             dap_stream_ch_pkt_write_unsafe(a_ch, DAP_STREAM_CH_GOSSIP_MSG_TYPE_DATA, l_msg, dap_gossip_msg_get_size(l_msg));
         }
         pthread_rwlock_unlock(&s_gossip_lock);
         if (!l_msg_item && l_ch_pkt->hdr.type == DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH) {
+            debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_request packet for hash %s", dap_hash_fast_to_str_static((dap_hash_fast_t *)&l_ch_pkt->data));
             // Send request for data associated with this hash
             dap_stream_ch_pkt_write_unsafe(a_ch, DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST, l_ch_pkt->data, sizeof(dap_hash_t));
         }
@@ -184,31 +193,31 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         if (l_ch_pkt->hdr.data_size < sizeof(dap_gossip_msg_t)) {
             log_it(L_WARNING, "Incorrect gossip message data size %u, must be at least %zu",
                                                 l_ch_pkt->hdr.data_size, sizeof(dap_gossip_msg_t));
-            break;
+            return false;
         }
         if (l_ch_pkt->hdr.data_size != dap_gossip_msg_get_size(l_msg)) {
             log_it(L_WARNING, "Incorrect gossip message data size %u, expected %zu",
                                                 l_ch_pkt->hdr.data_size, dap_gossip_msg_get_size(l_msg));
-            break;
+            return false;
         }
         if (l_msg->version != DAP_GOSSIP_CURRENT_VERSION) {
             log_it(L_ERROR, "Incorrect gossip protocol version %hhu, current version is %u",
                                                          l_msg->version, DAP_GOSSIP_CURRENT_VERSION);
-            break;
+            return false;
         }
         if (l_msg->trace_len % sizeof(dap_stream_node_addr_t) != 0) {
             log_it(L_WARNING, "Unaligned gossip message tracepath size %u", l_msg->trace_len);
-            break;
+            return false;
         }
         if (!l_msg->payload_len) {
             log_it(L_WARNING, "Zero size of gossip message payload");
-            break;
+            return false;
         }
-
+        debug_if(s_debug_more, L_INFO, "IN: GOSSIP_DATA packet for hash %s", dap_hash_fast_to_str_static(&l_msg->payload_hash));
         struct gossip_msg_item *l_item_new = NULL;
         pthread_rwlock_wrlock(&s_gossip_lock);
         unsigned l_hash_value = 0;
-        HASH_VALUE(l_ch_pkt->data, sizeof(dap_hash_t), l_hash_value);
+        HASH_VALUE(&l_msg->payload_hash, sizeof(dap_hash_t), l_hash_value);
         HASH_FIND_BYHASHVALUE(hh, s_gossip_last_msgs, &l_msg->payload_hash, sizeof(dap_hash_t), l_hash_value, l_item_new);
         if (l_item_new) {
             // Looks like a double. Just ignore it
@@ -227,7 +236,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         // Copy message and append g_node_addr to pathtrace
         dap_gossip_msg_t *l_msg_new = (dap_gossip_msg_t *)l_item_new->message;
         memcpy(l_msg_new, l_msg, sizeof(dap_gossip_msg_t) + l_msg->trace_len);
-        l_msg_new->trace_len += sizeof(g_node_addr);
+        l_msg_new->trace_len = l_msg->trace_len + sizeof(g_node_addr);
         *(dap_stream_node_addr_t *)(l_msg_new->trace_n_payload + l_msg->trace_len) = g_node_addr;
         memcpy(l_msg_new->trace_n_payload + l_msg_new->trace_len, l_msg->trace_n_payload + l_msg->trace_len, l_msg->payload_len);
         HASH_ADD_BYHASHVALUE(hh, s_gossip_last_msgs, payload_hash, sizeof(dap_hash_t), l_hash_value, l_item_new);
@@ -246,6 +255,8 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             log_it(L_ERROR, "Can't find cluster with ID %s for gossip message broadcasting", l_guuid_str);
             break;
         }
+        debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_HASH broadcast for hash %s",
+                                        dap_hash_fast_to_str_static(&l_msg_new->payload_hash));
         // Allow NULL cluster for global scope broadcast
         dap_cluster_broadcast(l_links_cluster, DAP_STREAM_CH_GOSSIP_ID,
                               DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH,
@@ -255,7 +266,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         // Call back the payload func if any
         struct gossip_callback *l_callback = s_get_callbacks_by_ch_id(l_msg->payload_ch_id);
         if (!l_callback) {
-            log_it(L_ERROR, "Can't find channel callback for gossip message apply");
+            log_it(L_ERROR, "Can't find channel callback for channel '%c' to gossip message apply", l_msg->payload_ch_id);
             break;
         }
         assert(l_callback->callback_payload);
@@ -264,7 +275,8 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 
     default:
         log_it(L_WARNING, "Unknown gossip packet type %hhu", l_ch_pkt->hdr.type);
-        break;
+        return false;
     }
+    return true;
 }
 

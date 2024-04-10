@@ -55,8 +55,8 @@ int dap_http_ban_list_client_remove(const char *a_addr) {
 }
 
 static void s_dap_http_ban_list_client_dump_single(ban_record_t *a_rec, dap_string_t *a_str) {
-    char *l_decree_hash_str = dap_hash_fast_to_str_static(&a_rec->decree_hash),
-        l_ts[80] = { '\0' };
+    const char *l_decree_hash_str = dap_hash_fast_to_str_static(&a_rec->decree_hash);
+    char l_ts[DAP_TIME_STR_SIZE] = { '\0' };
     dap_time_to_str_rfc822(l_ts, sizeof(l_ts), a_rec->ts_created);
     dap_string_append_printf(a_str, "%s\n\t\t\tAddress: %s\n\t\t\tCreated at %s\n\n",
         l_decree_hash_str, a_rec->addr, l_ts);

@@ -175,7 +175,7 @@ int dap_stream_init(dap_config_t * a_config)
     }
     s_stream_load_preferred_encryption_type(a_config);
     s_dump_packet_headers = dap_config_get_item_bool_default(g_config,"general","debug_dump_stream_headers",false);
-    s_debug = dap_config_get_item_bool_default(g_config,"stream","debug",false);
+    s_debug = dap_config_get_item_bool_default(g_config, "stream", "debug_more", false);
 #ifdef DAP_SYS_DEBUG
     for (int i = 0; i < MEMSTAT$K_NR; i++)
         dap_memstat_reg(&s_memstat[i]);
@@ -839,11 +839,11 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             if(l_ch) {
                 l_ch->stat.bytes_read += l_ch_pkt->hdr.data_size;
                 if(l_ch->proc && l_ch->proc->packet_in_callback) {
-                    l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
+                    bool l_security_check_passed = l_ch->proc->packet_in_callback(l_ch, l_ch_pkt);
                     debug_if(s_dump_packet_headers, L_INFO, "Income channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"
                                                             DAP_UINT64_FORMAT_X" enc_type=0x%02X", (char)l_ch_pkt->hdr.id,
                                                             l_ch_pkt->hdr.data_size, l_ch_pkt->hdr.type, l_ch_pkt->hdr.seq_id, l_ch_pkt->hdr.enc_type);
-                    for (dap_list_t *it = l_ch->packet_in_notifiers; it; it = it->next) {
+                    for (dap_list_t *it = l_ch->packet_in_notifiers; it && l_security_check_passed; it = it->next) {
                         dap_stream_ch_notifier_t *l_notifier = it->data;
                         assert(l_notifier);
                         l_notifier->callback(l_ch, l_ch_pkt->hdr.type, l_ch_pkt->data, l_ch_pkt->hdr.data_size, l_notifier->arg);
