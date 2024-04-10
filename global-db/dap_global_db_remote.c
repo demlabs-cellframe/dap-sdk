@@ -863,11 +863,22 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
             pthread_rwlock_wrlock(&s_pkt_cache_rwlock);
             gdb_pkt_cache_t *l_gdb_pkt_el2 = NULL;
             HASH_FIND_BYHASHVALUE(hh, s_gdb_pkt_cache, &l_hashval, sizeof(l_hashval), l_hashval, l_gdb_pkt_el2);
-            if (!l_gdb_pkt_el2)
+            if (!l_gdb_pkt_el2) {
                 HASH_ADD_BYHASHVALUE(hh, s_gdb_pkt_cache, hashval, sizeof(unsigned), l_hashval, l_gdb_pkt_el);
-            else
+                pthread_rwlock_unlock(&s_pkt_cache_rwlock);
+            } else {
+                pthread_rwlock_unlock(&s_pkt_cache_rwlock);
                 DAP_DELETE(l_gdb_pkt_el);
-            pthread_rwlock_unlock(&s_pkt_cache_rwlock);
+                debug_if(g_dap_global_db_debug_more, L_DEBUG, "GDB item \"%s : %s\" '%c' skipped, already cached", l_obj->group, l_obj->key, l_obj->type);
+                dap_store_obj_clear_one(l_obj);
+                if (l_obj < l_last_obj) {
+                    *l_obj-- = *l_last_obj;
+                }
+                l_last_obj->group = NULL; l_last_obj->key = NULL; l_last_obj->value = NULL;
+                --l_last_obj;
+                --l_count;
+                continue;
+            }    
         } else if (l_obj->timestamp > l_gdb_pkt_el->ts) {
             pthread_rwlock_wrlock(&s_pkt_cache_rwlock);
             l_gdb_pkt_el->ts = l_obj->timestamp;
