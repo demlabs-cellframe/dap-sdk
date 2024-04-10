@@ -34,7 +34,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 static void s_stream_ch_new(dap_stream_ch_t *a_ch, void *a_arg);
 static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg);
-static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg);
+static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg);
 static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, dap_stream_node_addr_t a_sender_addr);
 
 /**
@@ -302,12 +302,12 @@ static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, da
     dap_proc_thread_callback_add_pri(NULL, s_process_record, l_obj, DAP_GLOBAL_DB_TASK_PRIORITY);
 }
 
-static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
+static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 {
     dap_stream_ch_gdb_t *l_ch_gdb = DAP_STREAM_CH_GDB(a_ch);
     if (!l_ch_gdb || l_ch_gdb->_inheritor != a_ch) {
         log_it(L_ERROR, "Not valid Global DB channel, returning");
-        return;
+        return false;
     }
     dap_stream_ch_pkt_t * l_ch_pkt = (dap_stream_ch_pkt_t *)a_arg;
     switch (l_ch_pkt->hdr.type) {
@@ -317,7 +317,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         if (l_ch_pkt->hdr.data_size < sizeof(dap_global_db_start_pkt_t) ||
                 l_ch_pkt->hdr.data_size != dap_global_db_start_pkt_get_size(l_pkt)) {
             log_it(L_WARNING, "Invalid packet size %u", l_ch_pkt->hdr.data_size);
-            break;
+            return false;
         }
         debug_if(g_dap_global_db_debug_more, L_INFO, "IN: GLOBAL_DB_SYNC_START packet for group %s",
                  l_pkt->group);
@@ -333,15 +333,15 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES:
     case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST: {
-        if (l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES &&
-                dap_proc_thread_get_avg_queue_size() > DAP_GLOBAL_DB_QUEUE_SIZE_MAX)
-            break;
         dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_ch_pkt->data;
         if (l_ch_pkt->hdr.data_size < sizeof(dap_global_db_hash_pkt_t) ||
                 l_ch_pkt->hdr.data_size != dap_global_db_hash_pkt_get_size(l_pkt)) {
             log_it(L_WARNING, "Invalid packet size %u", l_ch_pkt->hdr.data_size);
-            break;
+            return false;
         }
+        if (l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES &&
+                dap_proc_thread_get_avg_queue_size() > DAP_GLOBAL_DB_QUEUE_SIZE_MAX)
+            break;
         debug_if(g_dap_global_db_debug_more, L_INFO, "IN: %s packet for group %s with hashes count %u",
                                                 l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES
                                                 ? "GLOBAL_DB_HASHES" : "GLOBAL_DB_REQUEST",
@@ -371,7 +371,7 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 #endif
         if (!l_objs) {
             log_it(L_WARNING, "Wrong Global DB record packet rejected");
-            break;
+            return false;
         }
         debug_if(g_dap_global_db_debug_more, L_INFO, "IN: GLOBAL_DB_RECORD_PACK packet for group %s with records count %zu",
                                                                                                 l_objs->group, l_objs_count);
@@ -388,8 +388,9 @@ static void s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
 
     default:
         log_it(L_WARNING, "Unknown global DB packet type %hhu", l_ch_pkt->hdr.type);
-        break;
+        return false;
     }
+    return true;
 }
 
 /**
