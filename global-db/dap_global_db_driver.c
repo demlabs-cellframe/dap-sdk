@@ -155,6 +155,7 @@ static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const 
     *a_store_obj_dst = *a_store_obj_src;
     a_store_obj_dst->group = dap_strdup(a_store_obj_src->group);
     a_store_obj_dst->key = dap_strdup(a_store_obj_src->key);
+    a_store_obj_dst->sign = DAP_DUP_SIZE(a_store_obj_dst->sign, a_store_obj_dst->sign->header.sign_size);
     if (a_store_obj_src->value) {
         if (!a_store_obj_src->value_len)
             log_it(L_WARNING, "Inconsistent global DB object copy requested");

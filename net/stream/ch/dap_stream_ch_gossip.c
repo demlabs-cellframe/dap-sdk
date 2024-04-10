@@ -67,11 +67,13 @@ void dap_stream_ch_gossip_deinit()
 {
     if (s_gossip_timer)
         dap_timerfd_delete_mt(s_gossip_timer->worker, s_gossip_timer->esocket_uuid);
+    pthread_rwlock_wrlock(&s_gossip_lock);
     struct gossip_msg_item *it, *tmp;
     HASH_ITER(hh, s_gossip_last_msgs, it, tmp) {
         HASH_DEL(s_gossip_last_msgs, it);
         DAP_DELETE(it);
     }
+    pthread_rwlock_unlock(&s_gossip_lock);
 }
 
 static struct gossip_callback *s_get_callbacks_by_ch_id(const char a_ch_id)
@@ -124,6 +126,7 @@ void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const vo
     HASH_VALUE(a_payload_hash, sizeof(dap_hash_t), l_hash_value);
     HASH_FIND_BYHASHVALUE(hh, s_gossip_last_msgs, a_payload_hash, sizeof(dap_hash_t), l_hash_value, l_msg_item);
     if (l_msg_item) {
+        HASH_DEL(s_gossip_last_msgs, l_msg_item);
         pthread_rwlock_unlock(&s_gossip_lock);
         log_it(L_ERROR, "Unexpected found hash which must be the new");
         DAP_DELETE(l_msg_item);
