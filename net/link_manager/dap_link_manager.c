@@ -1291,5 +1291,7 @@ dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_cou
     for (size_t i = 0; i < l_node_count; ++i)
         dap_stream_node_addr_from_str(l_ret + i, l_objs[i].key);
     dap_global_db_objs_delete(l_objs, l_node_count);
+    if (a_ignored_count)
+        *a_ignored_count = l_node_count;
     return l_ret;
 }
