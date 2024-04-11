@@ -102,7 +102,7 @@ static int s_update_ignored_list()
 {
     size_t l_node_count = 0;
     dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(s_ignored_group_local, &l_node_count);
-    if (!l_node_count || !l_objs) {        
+    if (!l_node_count || !l_objs) {
         log_it(L_DEBUG, "Ignore list is empty");
         return -1;
     }
@@ -114,8 +114,11 @@ static int s_update_ignored_list()
             ++l_deleted;
         }
     }
-    if (l_deleted == l_node_count)
+    dap_global_db_objs_delete(l_objs, l_node_count);
+    if (l_deleted == l_node_count) {
+        log_it(L_DEBUG, "Ignore list cleared");
         return -2;
+    }
     return 0;
 }
 
@@ -1229,14 +1232,14 @@ dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, 
     if (!l_count) {
         return NULL;
     }
-    size_t l_bias = 0;
+    bool l_overflow = false;
     dap_stream_node_addr_t *l_ret = NULL;
     DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_stream_node_addr_t, l_count, NULL, NULL);
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
-    for(l_item = l_net->link_clusters; l_item && l_bias < l_count; l_item = l_item->next) {
+    for(l_item = l_net->link_clusters; l_item && !l_overflow; l_item = l_item->next) {
         size_t l_cur_count = 0;
         dap_stream_node_addr_t *l_links_addrs = dap_cluster_get_all_members_addrs((dap_cluster_t *)l_item->data, &l_cur_count, -1);
-        for (size_t i =  0; i < l_cur_count; ++i) {
+        for (size_t i =  0; i < l_cur_count && !l_overflow; ++i) {
             dap_link_t *l_link = NULL;
             HASH_FIND(hh, s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
             if (!l_link || (l_link->is_uplink && l_link->uplink.state != LINK_STATE_ESTABLISHED)) {
@@ -1249,8 +1252,8 @@ dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, 
                 l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_link->addr.uint64;
                 ++l_downlinks_count;
             }
+            l_overflow = l_uplinks_count + l_downlinks_count >= l_count;
         }
-        l_bias = l_uplinks_count + l_downlinks_count;
         DAP_DEL_Z(l_links_addrs);
     }
     pthread_rwlock_unlock(&s_link_manager->links_lock);
