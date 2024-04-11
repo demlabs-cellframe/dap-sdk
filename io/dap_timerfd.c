@@ -265,11 +265,11 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
     if(!l_timer_fd)
         return;
     // run user's callback
-    debug_if(g_debug_reactor, L_DEBUG, "Call timer cb on socket "DAP_FORMAT_ESOCKET_UUID, l_timer_fd->events_socket->uuid);
+    debug_if(g_debug_reactor, L_DEBUG, "Call timer cb on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
     if(l_timer_fd && l_timer_fd->callback && l_timer_fd->callback(l_timer_fd->callback_arg)) {
         dap_timerfd_reset_unsafe(l_timer_fd);
     } else {
-        debug_if(g_debug_reactor, L_DEBUG, "Close timer on socket "DAP_FORMAT_ESOCKET_UUID, l_timer_fd->events_socket->uuid);
+        debug_if(g_debug_reactor, L_DEBUG, "Close timer on socket "DAP_FORMAT_ESOCKET_UUID, a_event_sock->uuid);
 #if defined DAP_EVENTS_CAPS_KQUEUE
         l_timer_fd->events_socket->kqueue_base_filter = EVFILT_EMPTY;
 #endif

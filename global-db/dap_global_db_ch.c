@@ -119,7 +119,7 @@ bool s_proc_thread_reader(void *a_arg)
                     char l_to_del_ts[DAP_TIME_STR_SIZE];
                     dap_time_to_str_rfc822(l_to_del_ts, sizeof(l_to_del_ts), dap_nanotime_to_sec(l_to_del.timestamp));
                     log_it(l_res ? L_WARNING : L_DEBUG, "%s too old object with group %s and timestamp %s",
-                                                             l_res ? "Can't remove" : "Removed", l_to_del_ts, l_group);
+                                                             l_res ? "Can't remove" : "Removed", l_group, l_to_del_ts);
                 }
             }
             if (i == l_hashes_pkt->hashes_count) {
