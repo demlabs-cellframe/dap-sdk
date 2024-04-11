@@ -24,6 +24,14 @@ typedef struct gdb_pkt_cache {
 
 static gdb_pkt_cache_t* s_gdb_pkt_cache = NULL;
 
+typedef struct gdb_pkt_cache {
+    unsigned hashval;
+    dap_nanotime_t ts;
+    UT_hash_handle hh;
+} gdb_pkt_cache_t;
+
+static gdb_pkt_cache_t* s_gdb_pkt_cache = NULL;
+static pthread_rwlock_t s_pkt_cache_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 void dap_global_db_sync_init()
 {
 }
