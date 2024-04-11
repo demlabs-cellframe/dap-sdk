@@ -73,6 +73,7 @@ struct queue_io_msg{
     };
     // Custom argument passed to the callback
     void *  callback_arg;
+    dap_global_db_callback_delete_arg_t callback_del_arg;
     union{
         struct{ // Raw get request
             uint64_t values_raw_last_id;
@@ -111,6 +112,7 @@ struct queue_io_msg{
     };
 
 };
+
 
 static pthread_cond_t s_check_db_cond = PTHREAD_COND_INITIALIZER; // Check version condition
 static pthread_mutex_t s_check_db_mutex = PTHREAD_MUTEX_INITIALIZER; // Check version condition mutex
@@ -2079,7 +2081,7 @@ dap_global_db_obj_t *l_obj;
  * @param arg Custom argument
  * @return 0 if success, others if not
  */
-int dap_global_db_context_exec (dap_global_db_callback_t a_callback, void * a_arg)
+int dap_global_db_context_exec(dap_global_db_callback_t a_callback, void * a_arg, dap_global_db_callback_delete_arg_t a_cb_del_arg)
 {
     if(s_context_global_db == NULL){
         log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_context_exec");
@@ -2093,7 +2095,7 @@ int dap_global_db_context_exec (dap_global_db_callback_t a_callback, void * a_ar
     l_msg->opcode = MSG_OPCODE_CONTEXT_EXEC;
     l_msg->callback_arg = a_arg;
     l_msg->callback = a_callback;
-
+    l_msg->callback_del_arg = a_cb_del_arg;
     int l_ret = dap_events_socket_queue_ptr_send(s_context_global_db->queue_io,l_msg);
     if (l_ret != 0){
         log_it(L_ERROR, "Can't exec context_exec request, code %d", l_ret);
@@ -2261,9 +2263,19 @@ static void s_queue_io_msg_delete( struct queue_io_msg * a_msg)
         break;
     case MSG_OPCODE_SET_RAW:
         dap_store_obj_free(a_msg->values_raw, a_msg->values_raw_total);
+    case MSG_OPCODE_CONTEXT_EXEC:
+        if (a_msg->callback_del_arg)
+            a_msg->callback_del_arg(a_msg->callback_arg);
     default:;
     }
     DAP_DELETE(a_msg);
+}
+
+static size_t s_cb_msg_buf_clean(char *a_buf_out, size_t a_buf_size) {
+    for (size_t shift = 0; shift < a_buf_size; shift += sizeof(struct queue_io_msg*)) {
+        struct queue_io_msg* l_msg = *(struct queue_io_msg**)(a_buf_out + shift);
+        s_queue_io_msg_delete(l_msg);
+    }
 }
 
 /**
@@ -2276,7 +2288,7 @@ static void s_context_callback_started( dap_context_t * a_context, void *a_arg)
 {
     // Init its own queue
     s_context_global_db->queue_io = dap_context_create_queue(a_context, s_queue_io_callback);
-
+    s_context_global_db->queue_io->cb_buf_cleaner = s_cb_msg_buf_clean;
     // Create arrays of inputs for connection with workers and proc threads
     s_context_global_db->queue_worker_io_input = DAP_NEW_Z_SIZE(dap_events_socket_t*, sizeof(dap_events_socket_t*) *
                                                                 dap_events_thread_get_count() );

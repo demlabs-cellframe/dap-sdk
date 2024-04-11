@@ -205,6 +205,8 @@ typedef struct dap_events_socket_w_data{
     size_t size;
 } dap_events_socket_w_data_t;
 
+typedef size_t (*dap_events_socket_clear_buf)(char*, size_t);
+
 typedef uint64_t dap_events_socket_uuid_t;
 #define DAP_FORMAT_ESOCKET_UUID "0x%016" DAP_UINT64_FORMAT_X
 
@@ -251,6 +253,7 @@ typedef struct dap_events_socket {
     size_t buf_out_size; // size of data that is in the output buffer
     size_t buf_out_size_max; // max size of data
     dap_events_socket_t * pipe_out; // Pipe socket with data for output
+    dap_events_socket_clear_buf cb_buf_cleaner;
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
     pthread_rwlock_t buf_out_lock;
 #endif
