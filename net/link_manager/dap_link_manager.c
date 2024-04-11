@@ -1222,40 +1222,35 @@ dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, 
 {
 // sanity check
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    dap_return_val_if_pass(!l_net, 0);
+    dap_return_val_if_pass(!l_net || !l_net->link_clusters, 0);
 // func work
     size_t l_count = 0, l_uplinks_count = 0, l_downlinks_count = 0;
-    dap_list_t *l_item = NULL;
-    DL_FOREACH(l_net->link_clusters, l_item) {
-        l_count += dap_cluster_members_count((dap_cluster_t *)l_item->data);
-    }    
+    l_count = dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data);
     if (!l_count) {
         return NULL;
     }
-    bool l_overflow = false;
+// memory alloc
     dap_stream_node_addr_t *l_ret = NULL;
     DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_stream_node_addr_t, l_count, NULL, NULL);
+// func work
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
-    for(l_item = l_net->link_clusters; l_item && !l_overflow; l_item = l_item->next) {
-        size_t l_cur_count = 0;
-        dap_stream_node_addr_t *l_links_addrs = dap_cluster_get_all_members_addrs((dap_cluster_t *)l_item->data, &l_cur_count, -1);
-        for (size_t i =  0; i < l_cur_count && !l_overflow; ++i) {
-            dap_link_t *l_link = NULL;
-            HASH_FIND(hh, s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
-            if (!l_link || (l_link->is_uplink && l_link->uplink.state != LINK_STATE_ESTABLISHED)) {
-                continue;
-            } else if (l_link->is_uplink) {  // first uplinks, second downlinks
-                l_ret[l_uplinks_count + l_downlinks_count] = l_ret[l_uplinks_count];
-                l_ret[l_uplinks_count].uint64 = l_link->addr.uint64;
-                ++l_uplinks_count;
-            } else if (!a_uplinks_only) {
-                l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_link->addr.uint64;
-                ++l_downlinks_count;
-            }
-            l_overflow = l_uplinks_count + l_downlinks_count >= l_count;
+    size_t l_cur_count = 0;
+    dap_stream_node_addr_t *l_links_addrs = dap_cluster_get_all_members_addrs((dap_cluster_t *)l_net->link_clusters->data, &l_cur_count, -1);
+    for (size_t i =  0; i < l_cur_count; ++i) {
+        dap_link_t *l_link = NULL;
+        HASH_FIND(hh, s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
+        if (!l_link || (l_link->is_uplink && l_link->uplink.state != LINK_STATE_ESTABLISHED)) {
+            continue;
+        } else if (l_link->is_uplink) {  // first uplinks, second downlinks
+            l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_ret[l_uplinks_count].uint64;
+            l_ret[l_uplinks_count].uint64 = l_link->addr.uint64;
+            ++l_uplinks_count;
+        } else if (!a_uplinks_only) {
+            l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_link->addr.uint64;
+            ++l_downlinks_count;
         }
-        DAP_DEL_Z(l_links_addrs);
     }
+    DAP_DEL_Z(l_links_addrs);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     if (!l_uplinks_count && !l_downlinks_count) {
         DAP_DELETE(l_ret);
