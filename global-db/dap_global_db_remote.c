@@ -24,13 +24,6 @@ typedef struct gdb_pkt_cache {
 
 static gdb_pkt_cache_t* s_gdb_pkt_cache = NULL;
 
-typedef struct gdb_pkt_cache {
-    unsigned hashval;
-    dap_nanotime_t ts;
-    UT_hash_handle hh;
-} gdb_pkt_cache_t;
-
-static gdb_pkt_cache_t* s_gdb_pkt_cache = NULL;
 static pthread_rwlock_t s_pkt_cache_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 void dap_global_db_sync_init()
 {
@@ -859,7 +852,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
     size_t l_count = *a_count;
     dap_nanotime_t l_now = dap_nanotime_now();
     for (l_obj = a_obj; l_obj <= l_last_obj; ++l_obj) {
-        char l_group_key_str[DAP_GLOBAL_DB_KEY_MAX + DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX + 3] = { '\0 '};
+        char l_group_key_str[DAP_GLOBAL_DB_KEY_MAX + DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX + 3] = { '\0' };
         dap_snprintf(l_group_key_str, sizeof(l_group_key_str), "%s:%s:%c", l_obj->group, l_obj->key, l_obj->type);
         unsigned l_hashval; HASH_VALUE(l_group_key_str, sizeof(l_group_key_str), l_hashval);
         gdb_pkt_cache_t *l_gdb_pkt_el = NULL;
