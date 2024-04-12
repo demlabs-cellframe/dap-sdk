@@ -255,8 +255,9 @@ dap_store_obj_t *l_store_obj_cur;
                 l_ret = -9;
                 break;
             }
-            if ( 1 == (l_ret = s_drv_callback.apply_store_obj(l_store_obj_cur)) )
-                log_it(L_INFO, "[%p] Item is missing (may be already deleted) %s/%s", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key);
+            if ( DAP_GLOBAL_DB_RC_NOT_FOUND == (l_ret = s_drv_callback.apply_store_obj(l_store_obj_cur)) )
+                log_it(L_INFO, "[%p] Item is missing (may be already deleted) %s/%s", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key
+                                         ? l_store_obj_cur->key : dap_global_db_driver_hash_print(dap_global_db_driver_hash_get(l_store_obj_cur)));
             else if (l_ret < 0)
                 log_it(L_ERROR, "[%p] Can't write item %s/%s (code %d)", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key, l_ret);
         }

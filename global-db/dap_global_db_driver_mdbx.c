@@ -998,7 +998,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
             return 1;
     }
     int l_rc = -EIO;
-    MDBX_val l_key, l_data;
+    MDBX_val l_key = {}, l_data;
     /* At this point we have got the DB Context for the table/group so we are can performs a main work */
     if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD) {
         if( !a_store_obj->key || !*a_store_obj->key)
@@ -1041,23 +1041,15 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
             log_it (L_ERROR, "mdbx_put: (%d) %s", l_rc, mdbx_strerror(l_rc));
         DAP_DELETE(l_record);
     } else if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) {
-        if ( a_store_obj->key ) {
-            /* Delete record */
-            if (a_store_obj->crc && a_store_obj->timestamp) {
-                dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
-                l_key.iov_base = &l_driver_key;
-                l_key.iov_len = sizeof(l_driver_key);
-                if ( MDBX_SUCCESS != (l_rc = mdbx_del(a_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND)
-                    log_it(L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc));
-            } else {
-                l_rc = s_get_obj_by_text_key(a_txn, l_db_ctx->dbi, &l_key, &l_data, a_store_obj->key);
-                if (l_rc == MDBX_SUCCESS) {
-                    if ( MDBX_SUCCESS != (l_rc = mdbx_del(a_txn, l_db_ctx->dbi, &l_key, NULL)) && l_rc != MDBX_NOTFOUND)
-                        log_it(L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc));
-                }
-            }
-            l_rc = (l_rc == MDBX_NOTFOUND) ? 1 : l_rc;                          /* Not found? It's OK */
-        } else {
+        /* Delete record */
+        if (a_store_obj->crc && a_store_obj->timestamp) {
+            dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
+            l_key.iov_base = &l_driver_key;
+            l_key.iov_len = sizeof(l_driver_key);
+            l_rc = MDBX_SUCCESS;
+        } else if (a_store_obj->key)
+            l_rc = s_get_obj_by_text_key(a_txn, l_db_ctx->dbi, &l_key, &l_data, a_store_obj->key);
+        else {
             /* Drop the whole table */
             if (MDBX_SUCCESS != (l_rc = mdbx_drop(a_txn, l_db_ctx->dbi, true)))
                 log_it (L_ERROR, "mdbx_drop: (%d) %s", l_rc, mdbx_strerror(l_rc));
@@ -1065,6 +1057,13 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
             HASH_DEL(s_db_ctxs, l_db_ctx);
             dap_assert ( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
             DAP_DELETE(l_db_ctx);
+        }
+        if (l_key.iov_len && l_rc == MDBX_SUCCESS) {
+            l_rc = mdbx_del(a_txn, l_db_ctx->dbi, &l_key, NULL);
+            if (l_rc == MDBX_NOTFOUND)
+                l_rc = DAP_GLOBAL_DB_RC_NOT_FOUND;                                  /* Not found? It's OK */
+            else if (l_rc != MDBX_SUCCESS)
+                log_it(L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc));
         }
     } else
         log_it (L_ERROR, "Unhandle/unknown DB opcode (%d/%#x)", a_store_obj->type, a_store_obj->type);

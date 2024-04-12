@@ -436,9 +436,12 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
         l_ret = dap_global_db_driver_apply(a_obj, 1);
 
         if (l_read_obj && dap_strcmp(l_read_obj->group, a_obj->group)) {
-            debug_if(g_dap_global_db_debug_more, L_INFO, "Deleted global DB record with group %s and same key",
-                                                                                        l_read_obj->group);
-            dap_global_db_driver_delete(l_read_obj, 1);
+            int rc = dap_global_db_driver_delete(l_read_obj, 1);
+            if (rc == DAP_GLOBAL_DB_RC_SUCCESS)
+                debug_if(g_dap_global_db_debug_more, L_INFO, "Deleted global DB record with group %s and same key",
+                                                                                            l_read_obj->group);
+            else if (rc != DAP_GLOBAL_DB_RC_NOT_FOUND)
+                log_it(L_ERROR, "Can't delete global DB record with group %s and same key", l_read_obj->group);
         }
         if (l_obj_type != DAP_GLOBAL_DB_OPTYPE_DEL || l_read_obj) {
             // Do not notify for delete if deleted record not exists

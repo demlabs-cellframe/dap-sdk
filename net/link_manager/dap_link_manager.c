@@ -143,7 +143,7 @@ static void s_update_connection_state(dap_stream_node_addr_t a_node_addr, bool a
     bool l_old_ignored_state = l_stat->ignored;
     l_stat->attempts_count += a_attempt;
     l_stat->successs_count += a_success;
-    l_stat->ignored = l_stat->attempts_count ? (double)(l_stat->successs_count + 100)  / (double)(l_stat->attempts_count + 100) < 0.9 : false;
+    l_stat->ignored = (double)(l_stat->successs_count + 100)  / (double)(l_stat->attempts_count + 100) < 0.9;
     if(dap_global_db_set_sync(s_connections_group_local, l_node_addr_str, l_stat, sizeof(*l_stat), false)) {
         log_it(L_ERROR, "Can't update connections staticstics record in GDB for the node %s", l_node_addr_str);
     }
