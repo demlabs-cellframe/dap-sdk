@@ -210,20 +210,6 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
         return -2;
     }
     dap_link_manager_set_condition(true);
-    // connections states cluster
-    dap_global_db_cluster_add(
-        dap_global_db_instance_get_default(),
-        DAP_GLOBAL_DB_CLUSTER_LOCAL, dap_guuid_compose(0, 2),
-        s_connections_group_local, 0, false,
-        DAP_GDB_MEMBER_ROLE_ROOT,
-        DAP_CLUSTER_ROLE_VIRTUAL);
-    // ignored nodes cluster
-    dap_global_db_cluster_add(
-        dap_global_db_instance_get_default(),
-        DAP_GLOBAL_DB_CLUSTER_LOCAL, dap_guuid_compose(0, 3),
-        s_ignored_group_local, 0, false,
-        DAP_GDB_MEMBER_ROLE_ROOT,
-        DAP_CLUSTER_ROLE_VIRTUAL);
     return 0;
 }
 
