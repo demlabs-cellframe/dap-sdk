@@ -1026,6 +1026,8 @@ static void *s_dap_events_socket_buf_thread(void *arg)
                            l_es, l_es->fd2);
                 case -1:
                     pthread_rwlock_wrlock(&l_es->buf_out_lock);
+                    if (l_es->cb_buf_cleaner)
+                        l_es->cb_buf_cleaner(l_es->buf_out, l_es->buf_out_size);
                     l_es->buf_out_size = 0;
                     pthread_rwlock_unlock(&l_es->buf_out_lock);
                     pthread_exit(NULL);
