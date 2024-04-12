@@ -205,7 +205,7 @@ int dap_cert_add_cert_sign(dap_cert_t * a_cert, dap_cert_t * a_cert_signer)
     if (a_cert->enc_key->pub_key_data_size && a_cert->enc_key->pub_key_data) {
         dap_sign_item_t * l_sign_item = DAP_NEW_Z(dap_sign_item_t);
         if (!l_sign_item) {
-            log_it(L_CRITICAL, "Memory allocation error");
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             return -1;
         }
         l_sign_item->sign = dap_cert_sign (a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_data_size,0);
@@ -371,7 +371,7 @@ dap_cert_t * dap_cert_new(const char * a_name)
 {
     dap_cert_t * l_ret = DAP_NEW_Z(dap_cert_t);
     if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     l_ret->_pvt = DAP_NEW_Z(dap_cert_pvt_t);
@@ -396,7 +396,7 @@ int dap_cert_add(dap_cert_t *a_cert)
     }
     l_cert_item = DAP_NEW_Z(dap_cert_item_t);
     if (!l_cert_item) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -2;
     }
     snprintf(l_cert_item->name, sizeof(l_cert_item->name), "%s", a_cert->name);
@@ -582,7 +582,7 @@ char *dap_cert_dump(dap_cert_t *a_cert)
             default:
                 l_str = l_meta_item->length ? DAP_NEW_Z_SIZE(char, l_meta_item->length * 2 + 1) : NULL;
                 if (l_meta_item->length && !l_str) {
-                    log_it(L_CRITICAL, "Memory allocation error");
+                    log_it(L_CRITICAL, "%s", g_error_memory_alloc);
                     break;
                 }
                 dap_bin2hex(l_str, l_meta_item->value, l_meta_item->length);

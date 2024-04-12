@@ -110,5 +110,6 @@ size_t dap_link_manager_needed_links_count(uint64_t a_net_id);
 void dap_link_manager_set_condition(bool a_new_condition);
 bool dap_link_manager_get_condition();
 char *dap_link_manager_get_links_info();
-dap_link_info_t *dap_link_manager_get_net_links_info_list(uint64_t a_net_id, size_t *a_count);
+dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count, bool a_uplinks_only);
+dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_count);
 void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_new_is_uplink);

@@ -96,7 +96,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     }
     dap_global_db_cluster_t *l_cluster = DAP_NEW_Z(dap_global_db_cluster_t);
     if (!l_cluster) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     if (a_mnemonim)
@@ -125,7 +125,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     }
     l_cluster->groups_mask = dap_strdup(a_group_mask);
     if (!l_cluster->groups_mask) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         dap_cluster_delete(l_cluster->role_cluster);
         dap_cluster_delete(l_cluster->links_cluster);
         DAP_DELETE(l_cluster);

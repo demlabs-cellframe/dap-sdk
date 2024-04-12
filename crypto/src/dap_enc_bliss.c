@@ -179,7 +179,7 @@ void *dap_enc_sig_bliss_read_signature(const uint8_t *a_buf, size_t a_buflen)
 
     bliss_signature_t* l_sign = DAP_NEW(bliss_signature_t);
     if (!l_sign) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     l_sign->kind = kind;
@@ -256,7 +256,7 @@ void *dap_enc_sig_bliss_read_private_key(const uint8_t *a_buf, size_t a_buflen)
 
     bliss_private_key_t* l_private_key = DAP_NEW(bliss_private_key_t);
     if (!l_private_key) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     l_private_key->kind = kind;
@@ -290,14 +290,14 @@ void *dap_enc_sig_bliss_read_public_key(const uint8_t *a_buf, size_t a_buflen)
         return NULL;
     bliss_public_key_t* l_public_key = DAP_NEW(bliss_public_key_t);
     if (!l_public_key) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     l_public_key->kind = kind;
 
     l_public_key->a = DAP_NEW_SIZE(int32_t, p.n * sizeof(int32_t));
     if (!l_public_key->a) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     memcpy(l_public_key->a, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.n * sizeof(int32_t));
