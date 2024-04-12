@@ -99,7 +99,6 @@ typedef struct dap_global_db_obj {
 } dap_global_db_obj_t;
 
 typedef void (*dap_global_db_callback_t) (dap_global_db_context_t * a_global_db_context, void * a_arg);
-
 /**
  *  @brief callback for single result
  *  @arg a_rc DAP_GLOBAL_DB_RC_SUCCESS if success others if not
@@ -142,6 +141,8 @@ typedef void (*dap_global_db_callback_results_raw_t) (dap_global_db_context_t * 
                                                       int a_rc, const char *a_group,
                                                       const size_t a_values_current, const size_t a_values_count,
                                                       dap_store_obj_t *a_values, void *a_arg);
+
+typedef void (*dap_global_db_callback_delete_arg_t) (void *a_arg);
 // Return codes
 #define DAP_GLOBAL_DB_RC_SUCCESS     0
 #define DAP_GLOBAL_DB_RC_NO_RESULTS -1
@@ -154,7 +155,7 @@ void dap_global_db_deinit();
 void dap_global_db_context_deinit();
 
 // For context unification sometimes we need to exec inside GlobalDB context
-int dap_global_db_context_exec(dap_global_db_callback_t a_callback, void * a_arg);
+int dap_global_db_context_exec(dap_global_db_callback_t a_callback, void * a_arg, dap_global_db_callback_delete_arg_t a_cb_del_arg);
 
 dap_global_db_context_t *dap_global_db_context_get_default();
 

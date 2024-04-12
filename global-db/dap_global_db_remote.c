@@ -16,7 +16,6 @@ static dap_list_t *s_sync_group_extra_items = NULL;
 
 static void s_clear_sync_grp(void *a_elm);
 static int s_db_add_sync_group(dap_list_t **a_grp_list, dap_sync_group_item_t *a_item);
-
 typedef struct gdb_pkt_cache {
     unsigned hashval;
     dap_nanotime_t ts;
@@ -24,6 +23,7 @@ typedef struct gdb_pkt_cache {
 } gdb_pkt_cache_t;
 
 static gdb_pkt_cache_t* s_gdb_pkt_cache = NULL;
+
 static pthread_rwlock_t s_pkt_cache_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 void dap_global_db_sync_init()
 {
@@ -39,13 +39,11 @@ void dap_global_db_sync_deinit()
     dap_list_free_full(s_sync_group_items, s_clear_sync_grp);
     dap_list_free_full(s_sync_group_extra_items, s_clear_sync_grp);
     s_sync_group_extra_items = s_sync_group_items = NULL;
-    pthread_rwlock_wrlock(&s_pkt_cache_rwlock);
     gdb_pkt_cache_t *l_el = NULL, *l_tmp;
     HASH_ITER(hh, s_gdb_pkt_cache, l_el, l_tmp) {
         HASH_DEL(s_gdb_pkt_cache, l_el);
         DAP_DELETE(l_el);
     }
-    pthread_rwlock_unlock(&s_pkt_cache_rwlock);
 }
 
 /**
@@ -213,6 +211,10 @@ struct dap_store_obj_t_multi {
 static void s_log_list_delete_filtered(UNUSED_ARG dap_global_db_context_t *a_context, void *a_arg) {
     struct dap_store_obj_t_multi *l_store_objs = (struct dap_store_obj_t_multi*)a_arg;
     dap_global_db_driver_delete(l_store_objs->objs, l_store_objs->objs_count);
+}
+
+static void s_log_list_free_full(void *a_arg) {
+    struct dap_store_obj_t_multi *l_store_objs = (struct dap_store_obj_t_multi*)a_arg;
     dap_store_obj_free(l_store_objs->objs, l_store_objs->objs_count);
     DAP_DELETE(a_arg);
 }
@@ -269,10 +271,9 @@ static void *s_list_thread_proc2(void *arg) {
             }
 
             pthread_mutex_lock(&l_dap_db_log_list->list_mutex);
-            if (l_dap_db_log_list->is_process) {
-                while (l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE)
-                    pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
-            } else {
+            while (l_dap_db_log_list->is_process && l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE)
+                pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
+            if (!l_dap_db_log_list->is_process) {
                 pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
                 while (l_obj_cur <= l_obj_last) {
                     dap_store_obj_clear_one(l_obj_cur);
@@ -321,7 +322,7 @@ static void *s_list_thread_proc2(void *arg) {
                     .objs = l_objs,
                     .objs_count = l_group->count
             };
-            dap_global_db_context_exec(s_log_list_delete_filtered, l_arg);
+            dap_global_db_context_exec(s_log_list_delete_filtered, l_arg, s_log_list_free_full);
             l_group->count = 0;
         } else {
             DAP_DELETE(l_objs);
@@ -842,32 +843,27 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
     return l_store_obj_arr;
 }
 
-int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_obj, size_t a_count,
+int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_context, dap_store_obj_t *a_obj, size_t *a_count,
                                           dap_global_db_callback_results_raw_t a_callback, void *a_arg)
 {
     dap_nanotime_t l_timestamp_cur = 0;
-    dap_store_obj_t *l_obj, *l_last_obj = a_obj + a_count - 1;
-    size_t l_count = a_count;
+    dap_store_obj_t *l_obj, *l_last_obj = a_obj + *a_count - 1;
+    size_t l_count = *a_count;
     dap_nanotime_t l_now = dap_nanotime_now();
     for (l_obj = a_obj; l_obj <= l_last_obj; ++l_obj) {
-        char l_group_key_str[DAP_GLOBAL_DB_KEY_MAX + DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX + 3] = { '\0 '};
+        char l_group_key_str[DAP_GLOBAL_DB_KEY_MAX + DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX + 3] = { '\0' };
         dap_snprintf(l_group_key_str, sizeof(l_group_key_str), "%s:%s:%c", l_obj->group, l_obj->key, l_obj->type);
         unsigned l_hashval; HASH_VALUE(l_group_key_str, sizeof(l_group_key_str), l_hashval);
         gdb_pkt_cache_t *l_gdb_pkt_el = NULL;
-        pthread_rwlock_rdlock(&s_pkt_cache_rwlock);
         HASH_FIND_BYHASHVALUE(hh, s_gdb_pkt_cache, &l_hashval, sizeof(l_hashval), l_hashval, l_gdb_pkt_el);
-        pthread_rwlock_unlock(&s_pkt_cache_rwlock);
         if (!l_gdb_pkt_el) {
             l_gdb_pkt_el = DAP_NEW_Z(gdb_pkt_cache_t);
             *l_gdb_pkt_el = (gdb_pkt_cache_t) { .hashval = l_hashval, .ts = l_obj->timestamp };
-            pthread_rwlock_wrlock(&s_pkt_cache_rwlock);
             gdb_pkt_cache_t *l_gdb_pkt_el2 = NULL;
             HASH_FIND_BYHASHVALUE(hh, s_gdb_pkt_cache, &l_hashval, sizeof(l_hashval), l_hashval, l_gdb_pkt_el2);
             if (!l_gdb_pkt_el2) {
                 HASH_ADD_BYHASHVALUE(hh, s_gdb_pkt_cache, hashval, sizeof(unsigned), l_hashval, l_gdb_pkt_el);
-                pthread_rwlock_unlock(&s_pkt_cache_rwlock);
             } else {
-                pthread_rwlock_unlock(&s_pkt_cache_rwlock);
                 DAP_DELETE(l_gdb_pkt_el);
                 debug_if(g_dap_global_db_debug_more, L_DEBUG, "GDB item \"%s : %s\" '%c' skipped, already cached", l_obj->group, l_obj->key, l_obj->type);
                 dap_store_obj_clear_one(l_obj);
@@ -880,9 +876,7 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
                 continue;
             }    
         } else if (l_obj->timestamp > l_gdb_pkt_el->ts) {
-            pthread_rwlock_wrlock(&s_pkt_cache_rwlock);
             l_gdb_pkt_el->ts = l_obj->timestamp;
-            pthread_rwlock_unlock(&s_pkt_cache_rwlock);
         } else {
             debug_if(g_dap_global_db_debug_more, L_DEBUG, "GDB item \"%s : %s\" '%c' skipped, already cached", l_obj->group, l_obj->key, l_obj->type);
             dap_store_obj_clear_one(l_obj);
@@ -1022,8 +1016,16 @@ int dap_global_db_remote_apply_obj_unsafe(dap_global_db_context_t *a_global_db_c
             }
             dap_store_obj_free_one(l_read_obj);
         }
-    }    
-    return l_count ? dap_global_db_set_raw(a_obj, l_count, a_callback, a_arg) : ({ DAP_DELETE(a_obj); DAP_DELETE(a_arg); -1; });
+    }
+    if (l_count) {
+        int l_ret = dap_global_db_set_raw_unsafe(a_global_db_context, a_obj, l_count);
+        if (a_callback) {
+            a_callback(a_global_db_context, !l_ret ? DAP_GLOBAL_DB_RC_SUCCESS : DAP_GLOBAL_DB_RC_ERROR, NULL, l_count, l_count, a_obj, a_arg);
+        }
+        *a_count = l_count;
+        return l_ret;
+    }
+    return -1;
 }
 
 struct gdb_apply_args {
@@ -1036,8 +1038,14 @@ struct gdb_apply_args {
 static void s_db_apply_obj(dap_global_db_context_t *a_global_db_context, void *a_arg)
 {
     struct gdb_apply_args *l_args = a_arg;
-    dap_global_db_remote_apply_obj_unsafe(a_global_db_context, l_args->obj, l_args->objs_count, l_args->callback, l_args->cb_arg);
-    DAP_DELETE(l_args);
+    dap_global_db_remote_apply_obj_unsafe(a_global_db_context, l_args->obj, &l_args->objs_count, l_args->callback, l_args->cb_arg);
+}
+
+static void s_db_delete_obj(void *a_arg) {
+    struct gdb_apply_args *l_args = a_arg;
+    dap_store_obj_free(l_args->obj, l_args->objs_count);
+    DAP_DELETE(l_args->cb_arg);
+    DAP_DELETE(a_arg);
 }
 
 int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, size_t a_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
@@ -1051,5 +1059,5 @@ int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, size_t a_count, dap_g
     l_args->objs_count = a_count;
     l_args->callback = a_callback;
     l_args->cb_arg = a_arg;
-    return dap_global_db_context_exec(s_db_apply_obj, l_args);
+    return dap_global_db_context_exec(s_db_apply_obj, l_args, s_db_delete_obj);
 }

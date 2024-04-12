@@ -483,7 +483,7 @@ static void s_client_http_delete(dap_client_http_t * a_http_pvt)
 {
     // call from dap_events_socket_delete(ev_socket, true);
     if(s_debug_more)
-        log_it(L_DEBUG, "HTTP client delete");
+        log_it(L_DEBUG, "HTTP client %p delete", a_http_pvt);
 
     if(!a_http_pvt) {
         log_it(L_ERROR, "s_http_write: l_client_http_internal is NULL!");
@@ -794,7 +794,8 @@ void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
     if (a_client_http->timer)
         dap_timerfd_delete_unsafe(a_client_http->timer);
     if (a_client_http->es) {
-        a_client_http->es->callbacks.delete_callback = NULL;
+        a_client_http->were_callbacks_called = true;
+        //a_client_http->es->callbacks.delete_callback = NULL;
         dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);
     } else
         DAP_DELETE(a_client_http);
