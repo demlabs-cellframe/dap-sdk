@@ -890,7 +890,7 @@ char* dap_strup(const char *a_str, ssize_t a_len)
 
     l_result = strndup(a_str, a_len);
     if (!l_result) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     for(l_s = l_result; *l_s; l_s++)
@@ -922,7 +922,7 @@ char* dap_strdown(const char *a_str, ssize_t a_len)
 
     l_result = strndup(a_str, a_len);
     if (!l_result) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     for(l_s = l_result; *l_s; l_s++)

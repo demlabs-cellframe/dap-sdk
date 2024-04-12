@@ -155,6 +155,7 @@ static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const 
     *a_store_obj_dst = *a_store_obj_src;
     a_store_obj_dst->group = dap_strdup(a_store_obj_src->group);
     a_store_obj_dst->key = dap_strdup(a_store_obj_src->key);
+    a_store_obj_dst->sign = DAP_DUP_SIZE(a_store_obj_dst->sign, a_store_obj_dst->sign->header.sign_size);
     if (a_store_obj_src->value) {
         if (!a_store_obj_src->value_len)
             log_it(L_WARNING, "Inconsistent global DB object copy requested");
@@ -220,9 +221,7 @@ void dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count)
     dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
     for ( ; a_store_count--; l_store_obj_cur++ ) {
-        DAP_DEL_Z(l_store_obj_cur->group);
-        DAP_DEL_Z(l_store_obj_cur->key);
-        DAP_DEL_Z(l_store_obj_cur->value);
+        DAP_DEL_MULTY(l_store_obj_cur->group, l_store_obj_cur->key, l_store_obj_cur->value, l_store_obj_cur->sign);
     }
     DAP_DEL_Z(a_store_obj);
 }

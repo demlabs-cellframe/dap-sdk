@@ -163,7 +163,7 @@ int dap_global_db_init()
     if (s_dbi == NULL) {
         s_dbi = DAP_NEW_Z(dap_global_db_instance_t);
         if (!s_dbi) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             l_rc = -5;
             goto lb_return;
         }
@@ -509,7 +509,7 @@ int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_cal
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_msg->dbi = s_dbi;
@@ -577,7 +577,7 @@ int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_msg->dbi = s_dbi;
@@ -649,7 +649,7 @@ int dap_global_db_get_del_ts(const char *a_group, const char *a_key,dap_global_d
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_msg->dbi = s_dbi;
@@ -706,7 +706,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
         *a_ts = l_store_obj->timestamp;
     byte_t *l_res = DAP_DUP_SIZE(l_store_obj->value, l_store_obj->value_len);
     if (!l_res) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         dap_store_obj_free_one(l_store_obj);
         return NULL;
     }
@@ -730,7 +730,7 @@ int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_msg->dbi = s_dbi;
@@ -794,7 +794,7 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_msg->dbi = s_dbi;
@@ -859,7 +859,7 @@ int dap_global_db_get_all(const char *a_group, size_t a_results_page_size, dap_g
 
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return l_ret;
     }
     l_msg->dbi = s_dbi;
@@ -965,7 +965,7 @@ int dap_global_db_get_all_raw(const char * a_group, size_t a_results_page_size, 
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_msg->dbi = s_dbi;
@@ -1097,7 +1097,7 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_msg->dbi = s_dbi;
@@ -1106,7 +1106,7 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
     l_msg->key = dap_strdup(a_key);
     l_msg->value = DAP_DUP_SIZE(a_value, a_value_length);
     if (!l_msg->value && a_value) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         DAP_DEL_Z(l_msg->group);
         DAP_DEL_Z(l_msg->key);
         DAP_DEL_Z(l_msg);
@@ -1204,7 +1204,7 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_msg->dbi = s_dbi;
@@ -1261,7 +1261,7 @@ int dap_global_db_set_multiple_zc(const char * a_group, dap_global_db_obj_t * a_
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_msg->dbi = s_dbi;
@@ -1353,7 +1353,7 @@ int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callba
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_msg->dbi = s_dbi;
@@ -1471,7 +1471,7 @@ int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_cal
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_msg->dbi = s_dbi;
@@ -1533,7 +1533,7 @@ int dap_global_db_flush(dap_global_db_callback_result_t a_callback, void * a_arg
     }
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_msg->dbi = s_dbi;

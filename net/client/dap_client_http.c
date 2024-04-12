@@ -160,7 +160,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     // add to dap_worker
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid_ptr) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
     *l_es_uuid_ptr = a_esocket->uuid;
@@ -587,7 +587,9 @@ dap_client_http_t * dap_client_http_request_custom (
     // create private struct
     dap_client_http_t *l_client_http = DAP_NEW_Z(dap_client_http_t);
     if (!l_client_http) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        if(a_error_callback)
+            a_error_callback(errno, a_callbacks_arg);
         return NULL;
     }
     l_ev_socket->_inheritor = l_client_http;
@@ -602,8 +604,10 @@ dap_client_http_t * dap_client_http_request_custom (
     if (a_request && a_request_size) {
         l_client_http->request = DAP_NEW_Z_SIZE(byte_t, a_request_size + 1);
         if (!l_client_http->request) {
-            log_it(L_CRITICAL, "Memory allocation error");
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             DAP_DEL_Z(l_client_http);
+            if(a_error_callback)
+                a_error_callback(errno, a_callbacks_arg);
             return NULL;
         }
         l_client_http->request_size = a_request_size;
@@ -617,9 +621,10 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->response_size_max = DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX;
     l_client_http->response = DAP_NEW_Z_SIZE(uint8_t, DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX);
     if (!l_client_http->response) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_DEL_Z(l_client_http->request);
-        DAP_DEL_Z(l_client_http);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        DAP_DEL_MULTY(l_client_http->request, l_client_http);
+        if(a_error_callback)
+            a_error_callback(errno, a_callbacks_arg);
         return NULL;
     }
     l_client_http->worker = a_worker;
@@ -710,10 +715,10 @@ dap_client_http_t * dap_client_http_request_custom (
         dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         if (!l_ev_uuid_ptr) {
-        log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_client_http->response);
-            DAP_DEL_Z(l_client_http->request);
-            DAP_DEL_Z(l_client_http);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            DAP_DEL_MULTY(l_client_http->response, l_client_http->request, l_client_http);
+            if(a_error_callback)
+                a_error_callback(errno, a_callbacks_arg);
             return NULL;
         }
         *l_ev_uuid_ptr = l_ev_socket->uuid;
@@ -735,7 +740,6 @@ dap_client_http_t * dap_client_http_request_custom (
         dap_events_socket_delete_unsafe( l_ev_socket, true);
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
-
         return NULL;
     }
 #endif

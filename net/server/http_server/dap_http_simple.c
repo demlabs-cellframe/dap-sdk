@@ -113,7 +113,7 @@ struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_server_t *a_http, 
 {
     dap_http_simple_url_proc_t *l_url_proc = DAP_NEW_Z( dap_http_simple_url_proc_t );
     if (!l_url_proc) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
 
@@ -197,7 +197,7 @@ int dap_http_simple_set_supported_user_agents( const char *user_agents, ... )
 
     user_agents_item_t *item = calloc( 1, sizeof (user_agents_item_t) );
     if (!item) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         va_end(argptr);
         s_free_user_agents_list();
         return 0;

@@ -6,7 +6,7 @@ dap_json_rpc_param_t* dap_json_rpc_create_param(void * data, dap_json_rpc_type_p
 {
     dap_json_rpc_param_t *param = DAP_NEW(dap_json_rpc_param_t);
     if (!param) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
 
@@ -21,7 +21,7 @@ dap_json_rpc_params_t* dap_json_rpc_params_create(void)
     dap_json_rpc_params_t *params = DAP_NEW(dap_json_rpc_params_t);
 
     if (!params) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
 
@@ -35,7 +35,7 @@ void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a
 {
     dap_json_rpc_param_t *new_param = DAP_NEW(dap_json_rpc_param_t);
     if (!new_param) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
 
@@ -50,7 +50,7 @@ void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a
             value_size = sizeof(bool);
             new_param->value_param = DAP_NEW(bool);
             if (!new_param->value_param) {
-                log_it(L_CRITICAL, "Memory allocation error");
+                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
                 DAP_DEL_Z(new_param);
                 return;
             }
@@ -60,7 +60,7 @@ void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a
             value_size = sizeof(int64_t);
             new_param->value_param = DAP_NEW(int64_t);
             if (!new_param->value_param) {
-                log_it(L_CRITICAL, "Memory allocation error");
+                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
                 DAP_DEL_Z(new_param);
                 return;
             }
@@ -70,7 +70,7 @@ void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a
             value_size = sizeof(double);
             new_param->value_param = DAP_NEW(double);
             if (!new_param->value_param) {
-                log_it(L_CRITICAL, "Memory allocation error");
+                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
                 DAP_DEL_Z(new_param);
                 return;
             }

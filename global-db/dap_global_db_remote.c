@@ -46,7 +46,7 @@ void dap_global_db_add_sync_group(const char *a_net_name, const char *a_group_ma
 {
     dap_sync_group_item_t *l_item = DAP_NEW_Z(dap_sync_group_item_t);
     if (!l_item) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
     l_item->net_name = dap_strdup(a_net_name);
@@ -67,7 +67,7 @@ void dap_global_db_add_sync_extra_group(const char *a_net_name, const char *a_gr
 {
     dap_sync_group_item_t* l_item = DAP_NEW_Z(dap_sync_group_item_t);
     if (!l_item) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
     l_item->net_name = dap_strdup(a_net_name);
@@ -131,7 +131,7 @@ int dap_global_db_add_notify_group_mask(dap_global_db_instance_t *a_dbi, const c
     }
     dap_global_db_notify_item_t *l_item_new = DAP_NEW_Z(dap_global_db_notify_item_t);
     if (!l_item_new) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_item_new->group_mask = dap_strdup(a_group_mask);
@@ -250,7 +250,7 @@ static void *s_list_thread_proc2(void *arg) {
             }
             dap_db_log_list_obj_t *l_list_obj = DAP_NEW_Z(dap_db_log_list_obj_t);
             if (!l_list_obj) {
-                log_it(L_CRITICAL, "Memory allocation error");
+                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
                 l_dap_db_log_list->is_process = false;
                 pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
                 dap_store_obj_free(l_objs, l_item_count);
@@ -344,7 +344,7 @@ static void *s_list_thread_proc(void *arg)
                 }
                 dap_db_log_list_obj_t *l_list_obj = DAP_NEW_Z(dap_db_log_list_obj_t);
                 if (!l_list_obj) {
-                    log_it(L_CRITICAL, "Memory allocation error");
+                    log_it(L_CRITICAL, "%s", g_error_memory_alloc);
                     dap_store_obj_free(l_objs, l_item_count);
                     return NULL;
                 }
@@ -394,7 +394,7 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Start loading db list_write...");
     dap_db_log_list_t *l_dap_db_log_list = DAP_NEW_Z(dap_db_log_list_t);
     if (!l_dap_db_log_list) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             return NULL;
         }
     l_dap_db_log_list->db_context = dap_global_db_context_get_default();
@@ -435,7 +435,7 @@ dap_db_log_list_t *dap_db_log_list_start(const char *a_net_name, uint64_t a_node
     DL_FOREACH_SAFE(l_dap_db_log_list->groups, l_group, l_tmp) {
         dap_db_log_list_group_t *l_sync_group = DAP_NEW_Z(dap_db_log_list_group_t);
         if (!l_sync_group) {
-            log_it(L_CRITICAL, "Memory allocation error");
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             DAP_DEL_Z(l_dap_db_log_list);
             return NULL;
         }
@@ -723,7 +723,7 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         return NULL;
 
     if ( !(l_store_obj_arr = DAP_NEW_Z_COUNT(dap_store_obj_t, a_pkt->obj_count)) ) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
 
@@ -922,7 +922,7 @@ int dap_global_db_remote_apply_obj(dap_store_obj_t *a_obj, dap_global_db_callbac
 {
     struct gdb_apply_args *l_args =  DAP_NEW_Z(struct gdb_apply_args);
     if (!l_args) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     l_args->obj = dap_store_obj_copy(a_obj, 1);
