@@ -271,10 +271,9 @@ static void *s_list_thread_proc2(void *arg) {
             }
 
             pthread_mutex_lock(&l_dap_db_log_list->list_mutex);
-            if (l_dap_db_log_list->is_process) {
-                while (l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE)
-                    pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
-            } else {
+            while (l_dap_db_log_list->is_process && l_dap_db_log_list->size > DAP_DB_LOG_LIST_MAX_SIZE)
+                pthread_cond_wait(&l_dap_db_log_list->cond, &l_dap_db_log_list->list_mutex);
+            if (!l_dap_db_log_list->is_process) {
                 pthread_mutex_unlock(&l_dap_db_log_list->list_mutex);
                 while (l_obj_cur <= l_obj_last) {
                     dap_store_obj_clear_one(l_obj_cur);
