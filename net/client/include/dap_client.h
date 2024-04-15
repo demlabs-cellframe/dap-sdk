@@ -98,9 +98,8 @@ typedef struct dap_client {
 
     dap_client_stage_t stage_target;
     dap_client_callback_t stage_target_done_callback;
-    dap_client_callback_int_t stage_target_error_callback;
+    dap_client_callback_t stage_status_error_callback;
     void *callbacks_arg;
-    dap_client_callback_t delete_callback;
 
     void *_internal;
     void *_inheritor;
@@ -122,9 +121,7 @@ extern "C" {
 int dap_client_init();
 void dap_client_deinit();
 
-dap_client_t *dap_client_new(dap_client_callback_t a_delete_callback,
-                             dap_client_callback_t a_stage_status_error_callback,
-                             void *a_callbacks_arg);
+dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback, void *a_callbacks_arg);
 
 DAP_STATIC_INLINE const char* dap_client_get_uplink_addr_unsafe(dap_client_t *a_client) { return a_client->link_info.uplink_addr; }
 DAP_STATIC_INLINE uint16_t dap_client_get_uplink_port_unsafe(dap_client_t *a_client) { return a_client->link_info.uplink_port; }

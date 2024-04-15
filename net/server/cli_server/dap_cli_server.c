@@ -537,7 +537,7 @@ static inline void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback
 {
     dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
     if (!l_cmd_item) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
     snprintf(l_cmd_item->name,sizeof (l_cmd_item->name),"%s",a_name);
@@ -641,7 +641,7 @@ char* s_get_next_str( SOCKET nSocket, int *dwLen, const char *stop_str, bool del
     size_t lpszBuffer_len = 256;
     char *lpszBuffer = DAP_NEW_Z_SIZE(char, lpszBuffer_len);
     if (!lpszBuffer) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     // received string will not be larger than MAX_REPLY_LEN

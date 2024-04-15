@@ -12,7 +12,7 @@ int dap_json_rpc_notification_registration(const char *a_method, notification_ha
     if (l_handler == 0){
         l_handler = DAP_NEW(dap_json_rpc_notification_handler_t);
         if (!l_handler) {
-            log_it(L_CRITICAL, "Memory allocation error");
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             return -1;
         }
         l_handler->method = dap_strdup(a_method);
