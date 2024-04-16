@@ -25,9 +25,6 @@ http://creativecommons.org/publicdomain/zero/1.0/
 #ifdef XKCP_has_Sponge_Keccak
 #include "KeccakSponge.h"
 #endif
-#ifdef XKCP_has_Keyak
-#include "Keyakv2.h"
-#endif
 #ifdef XKCP_has_Kravatte
 #include "Kravatte.h"
 #include "KravatteModes.h"
@@ -111,6 +108,7 @@ void displayMeasurements1101001000(cycles_t *measurements, uint32_t *laneCounts,
 
     #define prefix KeccakP1600
     #define SnP KeccakP1600
+    #define SnP_state KeccakP1600_state
     #define SnP_width 1600
     #define SnP_Permute KeccakP1600_Permute_24rounds
     #define SnP_Permute_12rounds KeccakP1600_Permute_12rounds
@@ -120,6 +118,7 @@ void displayMeasurements1101001000(cycles_t *measurements, uint32_t *laneCounts,
         #include "timingSnP.inc"
     #undef prefix
     #undef SnP
+    #undef SnP_state
     #undef SnP_width
     #undef SnP_Permute
     #undef SnP_Permute_12rounds
@@ -355,64 +354,20 @@ void KeccakWidth1600_timing()
 }
 #endif
 
-#ifdef XKCP_has_RiverKeyak
-    #define prefix      RiverKeyak
-    #define Rs          68
-    #define Ra          96
-    #define P           1
-        #include "timingKeyak.inc"
-    #undef prefix
-    #undef Rs
-    #undef Ra
-    #undef P
-#endif
+#ifdef XKCP_has_TurboSHAKE
+XKCP_DeclareSpongeFunctions(TurboSHAKE)
 
-#ifdef XKCP_has_LakeKeyak
-    #define prefix      LakeKeyak
-    #define Rs          168
-    #define Ra          192
-    #define P           1
-        #include "timingKeyak.inc"
+    #define prefix      TurboSHAKE
+        #include "timingSponge.inc"
     #undef prefix
-    #undef Rs
-    #undef Ra
-    #undef P
-#endif
 
-#ifdef XKCP_has_SeaKeyak
-    #define prefix      SeaKeyak
-    #define Rs          168
-    #define Ra          192
-    #define P           2
-        #include "timingKeyak.inc"
-    #undef prefix
-    #undef Rs
-    #undef Ra
-    #undef P
-#endif
-
-#ifdef XKCP_has_OceanKeyak
-    #define prefix      OceanKeyak
-    #define Rs          168
-    #define Ra          192
-    #define P           4
-        #include "timingKeyak.inc"
-    #undef prefix
-    #undef Rs
-    #undef Ra
-    #undef P
-#endif
-
-#ifdef XKCP_has_LunarKeyak
-    #define prefix      LunarKeyak
-    #define Rs          168
-    #define Ra          192
-    #define P           8
-        #include "timingKeyak.inc"
-    #undef prefix
-    #undef Rs
-    #undef Ra
-    #undef P
+void TurboSHAKE_timing()
+{
+    cycles_t calibartion = TurboSHAKE_start("TurboSHAKE", KeccakP1600_implementation);
+    TurboSHAKE_timingRCx(calibartion, 1088, 512, "TurboSHAKE256      ");
+    TurboSHAKE_timingRCx(calibartion, 1344, 256, "TurboSHAKE128      ");
+    printf("\n\n");
+}
 #endif
 
 void printParallelImplementations(
@@ -435,7 +390,7 @@ void printParallelImplementations(
     printf("- \303\2271: not used\n");
     #endif
 
-    #if defined(XKCP_has_KeccakP1600times2) && !defined(KeccakP1600times2_isFallback)
+    #if defined(XKCP_has_KeccakP1600times2)
     printf("- \303\2272: " KeccakP1600times2_implementation "\n");
     #if defined(KeccakP1600times2_12rounds_FastLoop_supported)
     if (useKeccakP1600timesN_12rounds_FastLoop_Absorb)
@@ -455,7 +410,7 @@ void printParallelImplementations(
     printf("- \303\2272: not used\n");
     #endif
 
-    #if defined(XKCP_has_KeccakP1600times4) && !defined(KeccakP1600times4_isFallback)
+    #if defined(XKCP_has_KeccakP1600times4)
     printf("- \303\2274: " KeccakP1600times4_implementation "\n");
     #if defined(KeccakP1600times4_12rounds_FastLoop_supported)
     if (useKeccakP1600timesN_12rounds_FastLoop_Absorb)
@@ -475,7 +430,7 @@ void printParallelImplementations(
     printf("- \303\2274: not used\n");
     #endif
 
-    #if defined(XKCP_has_KeccakP1600times8) && !defined(KeccakP1600times8_isFallback)
+    #if defined(XKCP_has_KeccakP1600times8)
     printf("- \303\2278: " KeccakP1600times8_implementation "\n");
     #if defined(KeccakP1600times8_12rounds_FastLoop_supported)
     if (useKeccakP1600timesN_12rounds_FastLoop_Absorb)
@@ -548,12 +503,12 @@ void testParallelHashPerformanceOne(unsigned int securityStrength, unsigned int 
             timePlus4Blocks = measureParallelHash(calibration, securityStrength, blockByteLen, i+4*blockByteLen);
             timePlus8Blocks = measureParallelHash(calibration, securityStrength, blockByteLen, i+8*blockByteLen);
         }
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", i, time, time*1.0/i);
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", i, time, getTimerUnit(), time*1.0/i, getTimerUnit());
         if (displaySlope) {
-            printf("     +1 block:  %9"PRId64" cycles, %6.3f cycles/byte (slope)\n", timePlus1Block, (timePlus1Block-(double)(time))*1.0/blockByteLen/1.0);
-            printf("     +2 blocks: %9"PRId64" cycles, %6.3f cycles/byte (slope)\n", timePlus2Blocks, (timePlus2Blocks-(double)(time))*1.0/blockByteLen/2.0);
-            printf("     +4 blocks: %9"PRId64" cycles, %6.3f cycles/byte (slope)\n", timePlus4Blocks, (timePlus4Blocks-(double)(time))*1.0/blockByteLen/4.0);
-            printf("     +8 blocks: %9"PRId64" cycles, %6.3f cycles/byte (slope)\n", timePlus8Blocks, (timePlus8Blocks-(double)(time))*1.0/blockByteLen/8.0);
+            printf("     +1 block:  %9" PRId64 " %s, %6.3f %s/byte (slope)\n", timePlus1Block, getTimerUnit(), (timePlus1Block-(double)(time))*1.0/blockByteLen/1.0, getTimerUnit());
+            printf("     +2 blocks: %9" PRId64 " %s, %6.3f %s/byte (slope)\n", timePlus2Blocks, getTimerUnit(), (timePlus2Blocks-(double)(time))*1.0/blockByteLen/2.0, getTimerUnit());
+            printf("     +4 blocks: %9" PRId64 " %s, %6.3f %s/byte (slope)\n", timePlus4Blocks, getTimerUnit(), (timePlus4Blocks-(double)(time))*1.0/blockByteLen/4.0, getTimerUnit());
+            printf("     +8 blocks: %9" PRId64 " %s, %6.3f %s/byte (slope)\n", timePlus8Blocks, getTimerUnit(), (timePlus8Blocks-(double)(time))*1.0/blockByteLen/8.0, getTimerUnit());
         }
         displaySlope = 0;
     }
@@ -616,13 +571,13 @@ void testKangarooTwelvePerformanceOne( void )
             timePlus8Blocks = measureKangarooTwelve(calibration, i+8*chunkSize);
             timePlus168Blocks = measureKangarooTwelve(calibration, i+168*chunkSize);
         }
-        printf("%8u bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", i, time, time*1.0/i);
+        printf("%8u bytes: %9" PRId64 " %s, %6.3f %s/byte\n", i, time, getTimerUnit(), time*1.0/i, getTimerUnit());
         if (displaySlope) {
-            printf("     +1 block:  %9"PRId64" cycles, %6.3f cycles/byte (slope)\n", timePlus1Block, (timePlus1Block-(double)(time))*1.0/chunkSize/1.0);
-            printf("     +2 blocks: %9"PRId64" cycles, %6.3f cycles/byte (slope)\n", timePlus2Blocks, (timePlus2Blocks-(double)(time))*1.0/chunkSize/2.0);
-            printf("     +4 blocks: %9"PRId64" cycles, %6.3f cycles/byte (slope)\n", timePlus4Blocks, (timePlus4Blocks-(double)(time))*1.0/chunkSize/4.0);
-            printf("     +8 blocks: %9"PRId64" cycles, %6.3f cycles/byte (slope)\n", timePlus8Blocks, (timePlus8Blocks-(double)(time))*1.0/chunkSize/8.0);
-            printf("   +168 blocks: %9"PRId64" cycles, %6.3f cycles/byte (slope)\n", timePlus168Blocks, (timePlus168Blocks-(double)(time))*1.0/chunkSize/168.0);
+            printf("     +1 block:  %9" PRId64 " %s, %6.3f %s/byte (slope)\n", timePlus1Block, getTimerUnit(), (timePlus1Block-(double)(time))*1.0/chunkSize/1.0, getTimerUnit());
+            printf("     +2 blocks: %9" PRId64 " %s, %6.3f %s/byte (slope)\n", timePlus2Blocks, getTimerUnit(), (timePlus2Blocks-(double)(time))*1.0/chunkSize/2.0, getTimerUnit());
+            printf("     +4 blocks: %9" PRId64 " %s, %6.3f %s/byte (slope)\n", timePlus4Blocks, getTimerUnit(), (timePlus4Blocks-(double)(time))*1.0/chunkSize/4.0, getTimerUnit());
+            printf("     +8 blocks: %9" PRId64 " %s, %6.3f %s/byte (slope)\n", timePlus8Blocks, getTimerUnit(), (timePlus8Blocks-(double)(time))*1.0/chunkSize/8.0, getTimerUnit());
+            printf("   +168 blocks: %9" PRId64 " %s, %6.3f %s/byte (slope)\n", timePlus168Blocks, getTimerUnit(), (timePlus168Blocks-(double)(time))*1.0/chunkSize/168.0, getTimerUnit());
             displaySlope = 0;
         }
     }
@@ -631,7 +586,7 @@ void testKangarooTwelvePerformanceOne( void )
         unsigned int i  = (unsigned int)floor(I+0.5);
         cycles_t time;
         time = measureKangarooTwelve(calibration, i);
-        printf("%8u bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", i, time, time*1.0/i);
+        printf("%8u bytes: %9" PRId64 " %s, %6.3f %s/byte\n", i, time, getTimerUnit(), time*1.0/i, getTimerUnit());
     }
     printf("\n\n");
 }
@@ -857,7 +812,7 @@ static void testKravattePerfSlope(measurePerf pFunc, cycles_t calibration)
 
     time = time256-time128;
 	len = 128*Kravatte_rate;
-    printf("Slope %8d bytes (%u blocks): %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, len/Kravatte_rate, time, time*1.0/(len/8));
+    printf("Slope %8d bytes (%u blocks): %9" PRId64 " %s, %6.3f %s/byte\n", len/8, len/Kravatte_rate, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
 }
 
 void testKravattePerformanceOne( void )
@@ -867,17 +822,17 @@ void testKravattePerformanceOne( void )
     cycles_t time;
 
     time = measureKravatte_MaskDerivation(calibration);
-    printf("Kravatte Mask Derivation %9"PRId64" cycles\n\n", time);
+    printf("Kravatte Mask Derivation %9" PRId64 " %s\n\n", time, getTimerUnit());
 
     printf("Kra\n");
     {
         len = 4096*8;
         time = measureKra(calibration, len);
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", len/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     for(len=8; len <= 256*Kravatte_rate; len = testKravatteNextLen(len)) {
         time = measureKra(calibration, testKravatteAdaptLen(len));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testKravatteAdaptLen(len)/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testKravatteAdaptLen(len)/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
 	testKravattePerfSlope(measureKra, calibration);
 
@@ -885,11 +840,11 @@ void testKravattePerformanceOne( void )
     {
         len = 4096*8;
         time = measureVatte(calibration, len);
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", len/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     for(len=8; len <= 256*Kravatte_rate; len = testKravatteNextLen(len)) {
         time = measureVatte(calibration, testKravatteAdaptLen(len));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testKravatteAdaptLen(len)/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testKravatteAdaptLen(len)/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
 	testKravattePerfSlope(measureVatte, calibration);
 
@@ -897,11 +852,11 @@ void testKravattePerformanceOne( void )
     {
         len = 4096*8;
         time = measureKravatte_SANE_Wrap(calibration, len);
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", len/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     for(len=8; len <= 256*Kravatte_rate; len = testKravatteNextLen(len)) {
         time = measureKravatte_SANE_Wrap(calibration, testKravatteAdaptLen(len));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testKravatteAdaptLen(len)/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testKravatteAdaptLen(len)/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
 	testKravattePerfSlope(measureKravatte_SANE_Wrap, calibration);
 
@@ -909,11 +864,11 @@ void testKravattePerformanceOne( void )
     {
         len = 4096*8;
         time = measureKravatte_SANE_MAC(calibration, len);
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", len/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     for(len=8; len <= 256*Kravatte_rate; len = testKravatteNextLen(len)) {
         time = measureKravatte_SANE_MAC(calibration, testKravatteAdaptLen(len));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testKravatteAdaptLen(len)/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testKravatteAdaptLen(len)/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
 	testKravattePerfSlope(measureKravatte_SANE_MAC, calibration);
 
@@ -921,22 +876,22 @@ void testKravattePerformanceOne( void )
     {
         len = 4096*8;
         time = measureKravatte_SANSE(calibration, len);
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", len/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     for(len=8; len <= 256*Kravatte_rate; len = testKravatteNextLen(len)) {
         time = measureKravatte_SANSE(calibration, testKravatteAdaptLen(len));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testKravatteAdaptLen(len)/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testKravatteAdaptLen(len)/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
 	testKravattePerfSlope(measureKravatte_SANSE, calibration);
 
     printf("\nKravatte_WBC (Tweak 128 bits)\n");
     for(len=2048*8; len<=16384*8; len*=2) {
         time = measureKravatte_WBC(calibration, len);
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", len/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     for(len=8; len <= 256*Kravatte_rate; len = testKravatteNextLen(len)) {
         time = measureKravatte_WBC(calibration, testKravatteWBCAdaptLen(len));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testKravatteWBCAdaptLen(len)/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testKravatteWBCAdaptLen(len)/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
 	testKravattePerfSlope(measureKravatte_WBC, calibration);
 
@@ -983,21 +938,8 @@ void testPerformance()
 #ifdef XKCP_has_Sponge_Keccak_width1600
     KeccakWidth1600_timing();
 #endif
-
-#ifdef XKCP_has_RiverKeyak
-    RiverKeyak_timing("River Keyak", KeccakP800_implementation);
-#endif
-#ifdef XKCP_has_LakeKeyak
-    LakeKeyak_timing("Lake Keyak", KeccakP1600_implementation);
-#endif
-#ifdef XKCP_has_SeaKeyak
-    SeaKeyak_timing("Sea Keyak", KeccakP1600times2_implementation);
-#endif
-#ifdef XKCP_has_OceanKeyak
-    OceanKeyak_timing("Ocean Keyak", KeccakP1600times4_implementation);
-#endif
-#ifdef XKCP_has_LunarKeyak
-    LunarKeyak_timing("Lunar Keyak", KeccakP1600times8_implementation);
+#ifdef XKCP_has_TurboSHAKE
+    TurboSHAKE_timing();
 #endif
 
 #ifdef XKCP_has_SP800_185
@@ -1060,35 +1002,35 @@ void displayMeasurements1101001000(cycles_t *measurements, uint32_t *laneCounts,
     }
     if (numberOfColumns == 1) {
         printf("     laneCount:  %5u\n", laneCounts[0]);
-        printf("       1 block:  %5"PRId64"\n", measurements[0]);
-        printf("      10 blocks: %6"PRId64"\n", measurements[1]);
-        printf("     100 blocks: %7"PRId64"\n", measurements[2]);
-        printf("    1000 blocks: %8"PRId64"\n", measurements[3]);
-        printf("    cycles/byte: %7.2f\n", cpb[0]);
+        printf("       1 block:  %5" PRId64 "\n", measurements[0]);
+        printf("      10 blocks: %6" PRId64 "\n", measurements[1]);
+        printf("     100 blocks: %7" PRId64 "\n", measurements[2]);
+        printf("    1000 blocks: %8" PRId64 "\n", measurements[3]);
+        printf("    %s/byte: %7.2f\n", getTimerUnit(), cpb[0]);
     }
     else if (numberOfColumns == 2) {
         printf("     laneCount:  %5u       %5u\n", laneCounts[0], laneCounts[1]);
-        printf("       1 block:  %5"PRId64"       %5"PRId64"\n", measurements[0], measurements[4]);
-        printf("      10 blocks: %6"PRId64"      %6"PRId64"\n", measurements[1], measurements[5]);
-        printf("     100 blocks: %7"PRId64"     %7"PRId64"\n", measurements[2], measurements[6]);
-        printf("    1000 blocks: %8"PRId64"    %8"PRId64"\n", measurements[3], measurements[7]);
-        printf("    cycles/byte: %7.2f     %7.2f\n", cpb[0], cpb[1]);
+        printf("       1 block:  %5" PRId64 "       %5" PRId64 "\n", measurements[0], measurements[4]);
+        printf("      10 blocks: %6" PRId64 "      %6" PRId64 "\n", measurements[1], measurements[5]);
+        printf("     100 blocks: %7" PRId64 "     %7" PRId64 "\n", measurements[2], measurements[6]);
+        printf("    1000 blocks: %8" PRId64 "    %8" PRId64 "\n", measurements[3], measurements[7]);
+        printf("    %s/byte: %7.2f     %7.2f\n", getTimerUnit(), cpb[0], cpb[1]);
     }
     else if (numberOfColumns == 3) {
         printf("     laneCount:  %5u       %5u       %5u\n", laneCounts[0], laneCounts[1], laneCounts[2]);
-        printf("       1 block:  %5"PRId64"       %5"PRId64"       %5"PRId64"\n", measurements[0], measurements[4], measurements[8]);
-        printf("      10 blocks: %6"PRId64"      %6"PRId64"      %6"PRId64"\n", measurements[1], measurements[5], measurements[9]);
-        printf("     100 blocks: %7"PRId64"     %7"PRId64"     %7"PRId64"\n", measurements[2], measurements[6], measurements[10]);
-        printf("    1000 blocks: %8"PRId64"    %8"PRId64"    %8"PRId64"\n", measurements[3], measurements[7], measurements[11]);
-        printf("    cycles/byte: %7.2f     %7.2f     %7.2f\n", cpb[0], cpb[1], cpb[2]);
+        printf("       1 block:  %5" PRId64 "       %5" PRId64 "       %5" PRId64 "\n", measurements[0], measurements[4], measurements[8]);
+        printf("      10 blocks: %6" PRId64 "      %6" PRId64 "      %6" PRId64 "\n", measurements[1], measurements[5], measurements[9]);
+        printf("     100 blocks: %7" PRId64 "     %7" PRId64 "     %7" PRId64 "\n", measurements[2], measurements[6], measurements[10]);
+        printf("    1000 blocks: %8" PRId64 "    %8" PRId64 "    %8" PRId64 "\n", measurements[3], measurements[7], measurements[11]);
+        printf("    %s/byte: %7.2f     %7.2f     %7.2f\n", getTimerUnit(), cpb[0], cpb[1], cpb[2]);
     }
     else if (numberOfColumns == 4) {
         printf("     laneCount:  %5u       %5u       %5u       %5u\n", laneCounts[0], laneCounts[1], laneCounts[2], laneCounts[3]);
-        printf("       1 block:  %5"PRId64"       %5"PRId64"       %5"PRId64"       %5"PRId64"\n", measurements[0], measurements[4], measurements[8], measurements[12]);
-        printf("      10 blocks: %6"PRId64"      %6"PRId64"      %6"PRId64"      %6"PRId64"\n", measurements[1], measurements[5], measurements[9], measurements[13]);
-        printf("     100 blocks: %7"PRId64"     %7"PRId64"     %7"PRId64"     %7"PRId64"\n", measurements[2], measurements[6], measurements[10], measurements[14]);
-        printf("    1000 blocks: %8"PRId64"    %8"PRId64"    %8"PRId64"    %8"PRId64"\n", measurements[3], measurements[7], measurements[11], measurements[15]);
-        printf("    cycles/byte: %7.2f     %7.2f     %7.2f     %7.2f\n", cpb[0], cpb[1], cpb[2], cpb[3]);
+        printf("       1 block:  %5" PRId64 "       %5" PRId64 "       %5" PRId64 "       %5" PRId64 "\n", measurements[0], measurements[4], measurements[8], measurements[12]);
+        printf("      10 blocks: %6" PRId64 "      %6" PRId64 "      %6" PRId64 "      %6" PRId64 "\n", measurements[1], measurements[5], measurements[9], measurements[13]);
+        printf("     100 blocks: %7" PRId64 "     %7" PRId64 "     %7" PRId64 "     %7" PRId64 "\n", measurements[2], measurements[6], measurements[10], measurements[14]);
+        printf("    1000 blocks: %8" PRId64 "    %8" PRId64 "    %8" PRId64 "    %8" PRId64 "\n", measurements[3], measurements[7], measurements[11], measurements[15]);
+        printf("    %s/byte: %7.2f     %7.2f     %7.2f     %7.2f\n", getTimerUnit(), cpb[0], cpb[1], cpb[2], cpb[3]);
     }
     printf("\n");
 }

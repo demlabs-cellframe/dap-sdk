@@ -1,5 +1,3 @@
-[![Build Status](http://img.shields.io/travis/XKCP/XKCP.svg)](https://travis-ci.org/XKCP/XKCP)
-
 <img src="doc/logo/XKCP-Anna-banner.svg" width="60%" />
 
 # What is the XKCP?
@@ -10,8 +8,7 @@ and closely related variants, such as
 
 * the SHAKE extendable-output functions and SHA-3 hash functions from [FIPS 202][fips202_standard],
 * the cSHAKE, KMAC, ParallelHash and TupleHash functions from [NIST SP 800-185][sp800_185_standard],
-* the [Ketje][caesar_ketje] and [Keyak][caesar_keyak] authenticated encryption schemes,
-* the fast [KangarooTwelve][k12] extendable-output function,
+* the fast [TurboSHAKE][turboshake] and [KangarooTwelve][k12] extendable-output functions,
 * the [Kravatte](https://keccak.team/kravatte.html) pseudo-random function and its modes,
 
 as well as the [Xoodoo](https://keccak.team/xoodoo.html) permutation and
@@ -21,13 +18,15 @@ as well as the [Xoodoo](https://keccak.team/xoodoo.html) permutation and
 
 The code in this repository can be built as a library called libXKCP.
 
+Note that we decided to remove [Ketje](https://keccak.team/ketje.html) and [Keyak](https://keccak.team/keyak.html) from the XKCP.
 
 
 # What is libXKCP?
 
 **libXKCP** is a library that contains all the Keccak and Xoodoo-based cryptographic schemes mentioned above.
 
-To build it, the quick answer is to launch:
+Before building, please make sure that the submodules have been initialized and fetched using `git submodule update --init`.
+Then, to build **libXKCP**, the quick answer is to launch:
 
 ```
 make <target>/libXKCP.so
@@ -59,9 +58,8 @@ When used as a library or directly from the sources, the XKCP offers the high-le
 * [`KeccakSponge`](doc/KeccakSponge-documentation.h), all Keccak sponge functions, with or without a message queue.
 * [`KeccakDuplex`](doc/KeccakDuplex-documentation.h), all Keccak duplex objects.
 * [`KeccakPRG`](doc/KeccakPRG-documentation.h), a pseudo-random number generator based on Keccak duplex objects.
-* [`Keyak`](doc/Keyak-documentation.h), the authenticated encryption schemes River, Lake, Sea, Ocean and Lunar Keyak.
-* [`Ketje`](doc/Ketje-documentation.h), the lightweight authenticated encryption schemes Ketje Jr, Ketje Sr, Ketje Minor and Ketje Major.
-* [`KangarooTwelve`](lib/high/KangarooTwelve/KangarooTwelve.h), the fast hashing mode based on Keccak-_p_[1600, 12] and Sakura coding.
+* [`TurboSHAKE`](lib/high/TurboSHAKE/TurboSHAKE.h), the fast twelve-round variant to Keccak.
+* [`KangarooTwelve`](lib/high/KangarooTwelve/KangarooTwelve.h), the fast and parallelizable hashing mode based on TurboSHAKE and Sakura coding.
 * [`Kravatte`](lib/high/Kravatte/Kravatte.h) and [`KravatteModes`](lib/high/Kravatte/KravatteModes.h), the pseudo-random function Kravatte, as well as the modes on top of it (SANE, SANSE, WBC and WBC-AE).
 * [`Xoofff`](lib/high/Xoofff/Xoofff.h) and [`XoofffModes`](lib/high/Xoofff/XoofffModes.h), the pseudo-random function Xoofff, as well as the modes on top of it (SANE, SANSE, WBC and WBC-AE).
 * [`Xoodyak`](doc/Xoodyak-documentation.h), the lightweight cryptographic scheme Xoodyak that can be used for hashing, encryption, MAC computation and authenticated encryption.
@@ -69,18 +67,15 @@ When used as a library or directly from the sources, the XKCP offers the high-le
 
 ## Low-level services
 
-The low-level services implement the different permutations Keccak-_f_[200 to 1600] and Keccak-_p_[200 to 1600]. Note that these two permutation families are closely related. In Keccak-_p_ the number of rounds is a parameter while in Keccak-_f_ it is fixed. As Keccak-_f_ are just instances of Keccak-_p_, we focus on the latter here.
+The low-level services implement the different permutations Keccak-_f_[1600], Keccak-_p_[1600, 12 rounds] and Xoodoo.
 
 The low-level services provide an opaque representation of the state together with functions to add data into and extract data from the state. Together with the permutations themselves, the low-level services implement what we call the **state and permutation** interface (abbreviated **SnP**). For parallelized implementation, we similarly use the **parallel** state and permutation interface or **PlSnP**.
 
 * In [`lib/low/`](lib/low/), one can find implementations of the following permutations for different platforms.
-    + [`lib/low/KeccakP-200/`](lib/low/KeccakP-200/) for Keccak-_p_[200].
-    + [`lib/low/KeccakP-400/`](lib/low/KeccakP-400/), for Keccak-_p_[400].
-    + [`lib/low/KeccakP-800/`](lib/low/KeccakP-800/), for Keccak-_p_[800].
     + [`lib/low/KeccakP-1600/`](lib/low/KeccakP-1600/), for Keccak-_p_[1600]. This is the one used in the six approved FIPS 202 instances.
     + [`lib/low/Xoodoo/`](lib/low/Xoodoo/), for Xoodoo.
 
-* In addition, one can find the implementation of parallelized permutations. There are both implementations based on SIMD instructions and "fallback" implementations relying on a parallelized with a lower degree implementation or on a serial one.
+* In addition, one can find the implementation of parallelized permutations using SIMD instructions.
 
 In both cases, the hierarchy first selects a permutation (or a permutation and a degree of parallelism) and then a given implementation. E.g., one finds in [`lib/low/KeccakP-1600-times4/`](lib/low/KeccakP-1600-times4/) the implementations of 4 parallel instances of Keccak-_p_[1600] and in [`lib/low/KeccakP-1600-times4/AVX2/`](lib/low/KeccakP-1600-times4/AVX2/) a 256-bit SIMD implementation for AVX2.
 
@@ -96,7 +91,7 @@ The package contains:
 * [**A benchmarking tool**](tests/Benchmarks/main.c) to measure the timing of the various schemes;
 * [**KeccakSum**](util/KeccakSum/KeccakSum.c) that computes a hash of the file (or multiple files) given in parameter.
 
-Note that, to run the benchmarks on ARM processors, you may need to include the Kernel-PMU module, see [`Kernel-pmu.md`](support/Kernel-PMU/Kernel-pmu.md) for more details.
+Note that, to run the benchmarks on ARM processors, you may need to include the [Kernel-PMU module](https://github.com/XKCP/Kernel-PMU).
 
 
 ## Standalone implementations
@@ -108,17 +103,15 @@ The XKCP also provides some standalone implementations, including:
 * the reference code of KangarooTwelve in Python in [`Standalone/KangarooTwelve/Python/`](Standalone/KangarooTwelve/Python/).
 
 
+# Is there example code?
+
+Yes, there is example code for using many cryptographic functions of the XKCP. You can find them in the [`usage-example.md`](usage-example.md) file.
+
 
 # Under which license is the XKCP distributed?
 
-Most of the source and header files in the XKCP are released to the **public domain** and associated to the [CC0](http://creativecommons.org/publicdomain/zero/1.0/) deed. The exceptions are the following:
-
-* [`lib/common/brg_endian.h`](lib/common/brg_endian.h) is copyrighted by Brian Gladman and comes with a BSD 3-clause license;
-* [`tests/UnitTests/genKAT.c`](tests/UnitTests/genKAT.c) is based on [SHA-3 contest's code by Larry Bassham, NIST](http://csrc.nist.gov/groups/ST/hash/sha-3/documents/KAT1.zip), which he licensed under a BSD 3-clause license;
-* [`tests/UnitTests/timing.h`](tests/UnitTests/timing.h) is adapted from Google Benchmark and is licensed under the Apache License, Version 2.0;
-* [`KeccakP-1600-AVX2.s`](lib/low/KeccakP-1600/AVX2/KeccakP-1600-AVX2.s) is licensed under the [CRYPTOGAMS license](http://www.openssl.org/~appro/cryptogams/) (BSD-like);
-* [`support/Kernel-PMU/enable_arm_pmu.c`](support/Kernel-PMU/enable_arm_pmu.c) is licensed under the GNU General Public License by Bruno Pairault.
-
+Most of the source and header files in the XKCP are released to the **public domain** and associated to the [CC0](http://creativecommons.org/publicdomain/zero/1.0/) deed, but there are exceptions.
+Please refer to the [LICENSE](LICENSE) file for more information.
 
 
 
@@ -242,8 +235,6 @@ More information on the cryptographic aspects can be found:
 * on Keccak at [`keccak.team`](https://keccak.team/keccak.html)
 * on the FIPS 202 standard at [`csrc.nist.gov`](http://csrc.nist.gov/groups/ST/hash/sha-3/fips202_standard_2015.html)
 * on the NIST SP 800-185 standard at [`keccak.team`](https://keccak.team/2016/sp_800_185.html)
-* on Ketje at [`keccak.team`](https://keccak.team/ketje.html)
-* on Keyak at [`keccak.team`](https://keccak.team/keyak.html)
 * on KangarooTwelve at [`keccak.team`](https://keccak.team/kangarootwelve.html)
 * on cryptographic sponge functions at [`keccak.team`](https://keccak.team/sponge_duplex.html)
 * on Kravatte at [`keccak.team`](https://keccak.team/kravatte.html)
@@ -269,11 +260,13 @@ We wish to thank all the contributors, and in particular:
 - Bruno Pairault for testing and benchmarking on ARM platforms
 - Conno Boel for the NEON implementations of Xoodoo
 - D.J. Bernstein, Peter Schwabe and Gilles Van Assche for the tweetable FIPS 202 implementation `TweetableFIPS202.c`
+- Hadi El Yakhni for providing example code
 - Hussama Ismail for setting up the continuous integration with Travis
 - Kent Ross for various improvements in [XKCP/K12](https://github.com/XKCP/K12) imported here
 - Larry Bassham, NIST for the original `genKAT.c` developed during the SHA-3 contest
+- Ryad Benadjila for adding continuous integration on different platforms with qemu
 - Stéphane Léon for helping support macOS
-
+- And to all those who fixed bugs or brought improvements (in no specific order): Tyler Young, Robert J Spencer, amane-c, Øystein Heskestad, Norman (Hongyu) Xu, Jorrit Jongma, David Adrian, Sebastian Ramacher, lvd2, Sam Chen, Thom Wiggers, Thomas van der Burgt, Donald Tsang, MoorayJenkins, UnePierre, Diggory Hardy, Joost Rijneveld, Steve Thomas, Benoît Viguier, Ko Stoffelen, Bogdan Vaneev, Alf Watt, surrim, Robert Crossfield, David Leon Gil, Matt Kelly, Ross Biro
 
 ***
 
@@ -287,10 +280,9 @@ Michaël Peeters, Gilles Van Assche, and Ronny Van Keer.
 [slidesAtFOSDEM2017]: https://fosdem.org/2017/schedule/event/keccak/attachments/slides/1692/export/events/attachments/keccak/slides/1692/KeccakAtFOSDEM2017.pdf
 [fips202_standard]: http://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.202.pdf "FIPS 202 standard"
 [sp800_185_standard]: https://doi.org/10.6028/NIST.SP.800-185 "NIST SP 800-185 standard"
-[caesar_ketje]: https://keccak.team/ketje.html
-[caesar_keyak]: https://keccak.team/keyak.html
 [k12]: https://keccak.team/kangarootwelve.html
 [SPEEDB]: http://ccccspeed.win.tue.nl/
 [paperAtSPEEDB]: http://ccccspeed.win.tue.nl/papers/KeccakSoftware.pdf
 [slidesAtSPEEDB]: http://ccccspeed.win.tue.nl/presentations/KeccakSoftware-slides.pdf
 [XoodooCookbook]: https://eprint.iacr.org/2018/767
+[turboshake]: https://eprint.iacr.org/2023/342

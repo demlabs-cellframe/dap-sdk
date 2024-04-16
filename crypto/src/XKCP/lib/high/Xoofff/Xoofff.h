@@ -59,19 +59,19 @@ typedef enum
 #include "Xoodoo-times4-SnP.h"
 #endif
 #include "Xoodoo-SnP.h"
-#if defined(XKCP_has_Xoodootimes16) && !defined(Xoodootimes16_isFallback)
+#if defined(XKCP_has_Xoodootimes16)
     #define XoodooMaxParallellism   16
     #define Xoofff_Alignment        Xoodootimes16_statesAlignment
     #if defined(Xoodootimes16_FastXoofff_supported)
         #define    Xoofff_AddIs    Xooffftimes16_AddIs
     #endif
-#elif defined(XKCP_has_Xoodootimes8) && !defined(Xoodootimes8_isFallback)
+#elif defined(XKCP_has_Xoodootimes8)
     #define XoodooMaxParallellism   8
     #define Xoofff_Alignment        Xoodootimes8_statesAlignment
     #if defined(Xoodootimes8_FastXoofff_supported)
         #define    Xoofff_AddIs    Xooffftimes8_AddIs
     #endif
-#elif defined(XKCP_has_Xoodootimes4) && !defined(Xoodootimes4_isFallback)
+#elif defined(XKCP_has_Xoodootimes4)
     #define XoodooMaxParallellism   4
     #define Xoofff_Alignment        Xoodootimes4_statesAlignment
     #if defined(Xoodootimes4_FastXoofff_supported)
@@ -82,17 +82,12 @@ typedef enum
     #define Xoofff_Alignment        Xoodoo_stateAlignment
 #endif
 
-ALIGN(Xoofff_Alignment) typedef struct
-{
-    unsigned char a[SnP_widthInBytes];
-} Xoofff_AlignedArray;
-
 typedef struct {
-    Xoofff_AlignedArray k;
-    Xoofff_AlignedArray kRoll;
-    Xoofff_AlignedArray xAccu;
-    Xoofff_AlignedArray yAccu;
-    Xoofff_AlignedArray queue;      /* input/output queue buffer */
+    ALIGN(4) uint8_t k[48];
+    ALIGN(4) uint8_t kRoll[48];
+    ALIGN(4) uint8_t xAccu[48];
+    ALIGN(4) uint8_t yAccu[48];
+    ALIGN(4) uint8_t queue[48];     /* input/output queue buffer */
     BitLength queueOffset;          /* current offset in queue */
     Xoofff_Phases phase;
 } Xoofff_Instance;

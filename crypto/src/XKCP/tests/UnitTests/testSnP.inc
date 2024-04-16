@@ -26,8 +26,8 @@ http://creativecommons.org/publicdomain/zero/1.0/
 #define elementarySnPtest               JOIN(prefix, _elementarySnPtest)
 #define nominalSnPtest                  JOIN(prefix, _nominalSnPtest)
 
-#define SnP_stateAlignment              JOIN(SnP, _stateAlignment)
-#define SnP_stateSizeInBytes            JOIN(SnP, _stateSizeInBytes)
+#define SnP_state                       JOIN(SnP, _state)
+#define SnP_stateSizeInBytes            sizeof(SnP_state)
 #define SnP_laneLengthInBytes           ((SnP_width)/(8*SnP_laneCount))
 #define SnP_StaticInitialize            JOIN(SnP, _StaticInitialize)
 #define SnP_Initialize                  JOIN(SnP, _Initialize)
@@ -47,7 +47,7 @@ void dumpState(const unsigned char *state, char *message)
     unsigned char buffer[SnP_width/8];
 
     SnP_ExtractBytes(state, buffer, 0, SnP_width/8 );
-    printf( "\n%s\n", message, state );
+    printf( "\n%s\n", message );
     state = buffer;
     for ( i = 0; i < SnP_laneCount; ++i, state += SnP_laneLengthInBytes )
     {
@@ -89,7 +89,7 @@ void dumpState(const unsigned char *state, char *message)
 
 #ifndef SnP_FastLoop_Absorb
 #define SnP_FastLoop_Absorb JOIN(SnP, _FastLoop_Absorb)
-size_t SnP_FastLoop_Absorb(void *state, unsigned int laneCount, const unsigned char *data, size_t dataByteLen)
+size_t SnP_FastLoop_Absorb(SnP_state *state, unsigned int laneCount, const unsigned char *data, size_t dataByteLen)
 {
     size_t processed = 0;
 
@@ -104,13 +104,13 @@ size_t SnP_FastLoop_Absorb(void *state, unsigned int laneCount, const unsigned c
 }
 #endif
 
-void accumulateBuffer(void *stateAccumulated, const unsigned char *buffer)
+void accumulateBuffer(SnP_state *stateAccumulated, const unsigned char *buffer)
 {
     SnP_AddBytes(stateAccumulated, buffer, 0, SnP_width/8);
     SnP_Permute(stateAccumulated);
 }
 
-void accumulateState(void *stateAccumulated, const void *stateTest)
+void accumulateState(SnP_state *stateAccumulated, const SnP_state *stateTest)
 {
     unsigned char buffer[SnP_width/8];
     SnP_ExtractBytes(stateTest, buffer, 0, SnP_width/8);
@@ -153,156 +153,167 @@ void checkBufferPadding(const unsigned char *paddedBuffer)
 
 void elementarySnPtest()
 {
-    ALIGN(SnP_stateAlignment) unsigned char paddedState[padding+SnP_stateSizeInBytes+padding];
-    ALIGN(SnP_stateAlignment) unsigned char paddedBuffer[padding+SnP_width/8+padding];
-    unsigned char *state = paddedState+padding;
-    unsigned char *buffer = paddedBuffer+padding;
-    unsigned int i, j;
+    ALIGN(SnP_stateAlignment) unsigned char prePaddedState[padding + SnP_stateSizeInBytes + SnP_stateAlignment + padding];
+    ALIGN(SnP_stateAlignment) unsigned char prePaddedBuffer[padding + SnP_width/8 + SnP_stateAlignment + padding];
+    unsigned int a;
+    for(a = 0; a <= SnP_stateAlignment; a += SnP_stateAlignment) {
+        unsigned char *paddedState = prePaddedState + a;
+        unsigned char *paddedBuffer = prePaddedBuffer + a;
+        SnP_state *state = (SnP_state*)(paddedState + padding);
+        unsigned char *buffer = paddedBuffer + padding;
+        unsigned int i, j;
 
-    memset(paddedState, 0x5A, sizeof(paddedState));
-    memset(paddedBuffer, 0x96, sizeof(paddedBuffer));
+        memset(prePaddedState, 0x5A, sizeof(prePaddedState));
+        memset(prePaddedBuffer, 0x96, sizeof(prePaddedBuffer));
 
-    /* Testing SnP_Initialize() */
-    {
-        SnP_Initialize(state);
-        SnP_ExtractBytes(state, buffer, 0, SnP_width/8);
-        checkStatePadding(paddedState);
-        checkBufferPadding(paddedBuffer);
-        for(i=0; i<SnP_width/8; i++)
-            assert(buffer[i] == 0);
-    }
-
-    /* Testing SnP_AddByte() */
-    {
-        for(i=0; i<SnP_width/8; i++)
-            SnP_AddByte(state, (unsigned char)i, (unsigned char)i);
-        SnP_ExtractBytes(state, buffer, 0, SnP_width/8);
-        checkStatePadding(paddedState);
-        checkBufferPadding(paddedBuffer);
-        for(i=0; i<SnP_width/8; i++)
-            assert(buffer[i] == i);
-    }
-
-    /* Testing SnP_ExtractBytes() */
-    {
-        for(i=0; i<7; i++) {
-            memset(buffer, 0x3C, SnP_width/8);
-            SnP_ExtractBytes(state, buffer, i, SnP_width/8-4*i);
-            for(j=0; j<SnP_width/8-4*i; j++)
-                assert(buffer[j] == (i+j));
-            for(j=i+SnP_width/8-4*i; j<SnP_width/8; j++)
-                assert(buffer[j] == 0x3C);
+        /* Testing SnP_Initialize() */
+        {
+            SnP_Initialize(state);
+            SnP_ExtractBytes(state, buffer, 0, SnP_width/8);
+            checkStatePadding(paddedState);
+            checkBufferPadding(paddedBuffer);
+            for(i=0; i<SnP_width/8; i++)
+                assert(buffer[i] == 0);
         }
-        checkStatePadding(paddedState);
-        checkBufferPadding(paddedBuffer);
-    }
 
-    /* Testing SnP_ExtractAndAddBytes() (input = output) */
-    {
-        for(i=0; i<7; i++) {
-            memset(buffer, 0xC3, SnP_width/8);
-            SnP_ExtractAndAddBytes(state, buffer, buffer, i, SnP_width/8-4*i);
-            for(j=0; j<SnP_width/8-4*i; j++)
-                assert(buffer[j] == (0xC3 ^ (i+j)));
-            for(j=i+SnP_width/8-4*i; j<SnP_width/8; j++)
-                assert(buffer[j] == 0xC3);
+        /* Testing SnP_AddByte() */
+        {
+            for(i=0; i<SnP_width/8; i++)
+                SnP_AddByte(state, (unsigned char)i, (unsigned char)i);
+            SnP_ExtractBytes(state, buffer, 0, SnP_width/8);
+            checkStatePadding(paddedState);
+            checkBufferPadding(paddedBuffer);
+            for(i=0; i<SnP_width/8; i++)
+                assert(buffer[i] == i);
         }
-        checkStatePadding(paddedState);
-        checkBufferPadding(paddedBuffer);
-    }
 
-    /* Testing SnP_AddBytes() */
-    {
-        for(i=0; i<8; i++) {
-            memset(buffer, 1 << i, SnP_width/8);
-            SnP_AddBytes(state, buffer, i, SnP_width/8-2*i);
-        }
-        SnP_ExtractBytes(state, buffer, 0, SnP_width/8);
-        checkStatePadding(paddedState);
-        checkBufferPadding(paddedBuffer);
-        for(i=0; i<7; i++)
-            assert(buffer[i] == (i ^ ((1 << (i+1))-1)));
-        for(i=7; i<SnP_width/8-7; i++)
-            assert(buffer[i] == (i ^ 0xFF));
-        for(i=SnP_width/8-7; i<SnP_width/8; i++)
-            assert(buffer[i] == (i ^ ((1 << (SnP_width/8-i))-1)));
-    }
-
-    /* Testing SnP_OverwriteBytes() */
-    {
-        for(i=0; i<8; i++) {
-            memset(buffer, i+1, SnP_width/8);
-            SnP_OverwriteBytes(state, buffer, i, SnP_width/8-3*i);
-        }
-        SnP_ExtractBytes(state, buffer, 0, SnP_width/8);
-        checkStatePadding(paddedState);
-        checkBufferPadding(paddedBuffer);
-        for(i=0; i<8; i++)
-            assert(buffer[i] == i+1);
-        for(i=8; i<SnP_width/8-16; i++)
-            assert(buffer[i] == 8);
-        for(i=SnP_width/8-16; i<SnP_width/8; i++)
-            assert(buffer[i] == (SnP_width/8-i-1)/2+1);
-    }
-
-    /* Testing SnP_OverwriteWithZeroes() */
-    {
-        for(i=0; i<SnP_width/8; i+=7) {
-            SnP_OverwriteWithZeroes(state, i);
-            SnP_ExtractBytes(state, buffer, i, 1);
-            assert(buffer[0] != 0);
-            if (i > 0) {
-                SnP_ExtractBytes(state, buffer, i-1, 1);
-                assert(buffer[0] == 0);
+        /* Testing SnP_ExtractBytes() */
+        {
+            for(i=0; i<7; i++) {
+                memset(buffer, 0x3C, SnP_width/8);
+                SnP_ExtractBytes(state, buffer, i, SnP_width/8-4*i);
+                for(j=0; j<SnP_width/8-4*i; j++)
+                    assert(buffer[j] == (i+j));
+                for(j=i+SnP_width/8-4*i; j<SnP_width/8; j++)
+                    assert(buffer[j] == 0x3C);
             }
+            checkStatePadding(paddedState);
+            checkBufferPadding(paddedBuffer);
         }
-        SnP_OverwriteWithZeroes(state, SnP_width/8);
-        SnP_ExtractBytes(state, buffer, 0, SnP_width/8);
-        checkStatePadding(paddedState);
-        checkBufferPadding(paddedBuffer);
-        for(i=0; i<SnP_width/8; i++)
-            assert(buffer[i] == 0);
+
+        /* Testing SnP_ExtractAndAddBytes() (input = output) */
+        {
+            for(i=0; i<7; i++) {
+                memset(buffer, 0xC3, SnP_width/8);
+                SnP_ExtractAndAddBytes(state, buffer, buffer, i, SnP_width/8-4*i);
+                for(j=0; j<SnP_width/8-4*i; j++)
+                    assert(buffer[j] == (0xC3 ^ (i+j)));
+                for(j=i+SnP_width/8-4*i; j<SnP_width/8; j++)
+                    assert(buffer[j] == 0xC3);
+            }
+            checkStatePadding(paddedState);
+            checkBufferPadding(paddedBuffer);
+        }
+
+        /* Testing SnP_AddBytes() */
+        {
+            for(i=0; i<8; i++) {
+                memset(buffer, 1 << i, SnP_width/8);
+                SnP_AddBytes(state, buffer, i, SnP_width/8-2*i);
+            }
+            SnP_ExtractBytes(state, buffer, 0, SnP_width/8);
+            checkStatePadding(paddedState);
+            checkBufferPadding(paddedBuffer);
+            for(i=0; i<7; i++)
+                assert(buffer[i] == (i ^ ((1 << (i+1))-1)));
+            for(i=7; i<SnP_width/8-7; i++)
+                assert(buffer[i] == (i ^ 0xFF));
+            for(i=SnP_width/8-7; i<SnP_width/8; i++)
+                assert(buffer[i] == (i ^ ((1 << (SnP_width/8-i))-1)));
+        }
+
+        /* Testing SnP_OverwriteBytes() */
+        {
+            for(i=0; i<8; i++) {
+                memset(buffer, i+1, SnP_width/8);
+                SnP_OverwriteBytes(state, buffer, i, SnP_width/8-3*i);
+            }
+            SnP_ExtractBytes(state, buffer, 0, SnP_width/8);
+            checkStatePadding(paddedState);
+            checkBufferPadding(paddedBuffer);
+            for(i=0; i<8; i++)
+                assert(buffer[i] == i+1);
+            for(i=8; i<SnP_width/8-16; i++)
+                assert(buffer[i] == 8);
+            for(i=SnP_width/8-16; i<SnP_width/8; i++)
+                assert(buffer[i] == (SnP_width/8-i-1)/2+1);
+        }
+
+        /* Testing SnP_OverwriteWithZeroes() */
+        {
+            for(i=0; i<SnP_width/8; i+=7) {
+                SnP_OverwriteWithZeroes(state, i);
+                SnP_ExtractBytes(state, buffer, i, 1);
+                assert(buffer[0] != 0);
+                if (i > 0) {
+                    SnP_ExtractBytes(state, buffer, i-1, 1);
+                    assert(buffer[0] == 0);
+                }
+            }
+            SnP_OverwriteWithZeroes(state, SnP_width/8);
+            SnP_ExtractBytes(state, buffer, 0, SnP_width/8);
+            checkStatePadding(paddedState);
+            checkBufferPadding(paddedBuffer);
+            for(i=0; i<SnP_width/8; i++)
+                assert(buffer[i] == 0);
+        }
     }
 }
 #undef padding
 
 void nominalSnPtest(const char *fileName, const char *synopsis, const unsigned char *expected)
 {
-    ALIGN(SnP_stateAlignment) unsigned char stateAccumulated[SnP_stateSizeInBytes];
-    ALIGN(SnP_stateAlignment) unsigned char stateTest[SnP_stateSizeInBytes];
+    ALIGN(SnP_stateAlignment) unsigned char preStateAccumulated[SnP_stateSizeInBytes + SnP_stateAlignment];
+    ALIGN(SnP_stateAlignment) unsigned char preStateTest[SnP_stateSizeInBytes + SnP_stateAlignment];
 
-    memset(stateTest, 0xAA, sizeof(stateTest));
+    unsigned int a;
+    for(a = 0; a <= SnP_stateAlignment; a += SnP_stateAlignment) {
+
+        SnP_state *stateAccumulated = (SnP_state*)(preStateAccumulated + a);
+        SnP_state *stateTest = (SnP_state*)(preStateTest + a);
+        memset(preStateTest, 0xAA, sizeof(preStateTest));
 
 #ifdef UT_VERBOSE
-    printf( "stateAccumulated @%p ", stateAccumulated );
-    printf( "stateTest @%p\n", stateTest );
+        printf( "stateAccumulated @%p ", stateAccumulated );
+        printf( "stateTest @%p\n", stateTest );
 #endif
 
 #include "testSnPnominal.inc"
 
 #ifdef UT_OUTPUT
-    /* Outputting the result */
-    {
-        unsigned char buffer[SnP_width/8];
-        unsigned int i;
-        FILE *f;
+        /* Outputting the result */
+        {
+            unsigned char buffer[SnP_width/8];
+            unsigned int i;
+            FILE *f;
 
-        SnP_ExtractBytes(stateAccumulated, buffer, 0, SnP_width/8);
-        f = fopen(fileName, "w");
-        assert(f != NULL);
-        fprintf(f, "%s", synopsis);
-        fprintf(f, "\"");
-        for(i=0; i<SnP_width/8; i++)
-            fprintf(f, "\\x%02x", buffer[i]);
-        fprintf(f, "\"\n");
-        fclose(f);
-    }
+            SnP_ExtractBytes(stateAccumulated, buffer, 0, SnP_width/8);
+            f = fopen(fileName, "w");
+            assert(f != NULL);
+            fprintf(f, "%s", synopsis);
+            fprintf(f, "\"");
+            for(i=0; i<SnP_width/8; i++)
+                fprintf(f, "\\x%02x", buffer[i]);
+            fprintf(f, "\"\n");
+            fclose(f);
+        }
 #endif
 
-    {
-        unsigned char buffer[SnP_width/8];
-        SnP_ExtractBytes(stateAccumulated, buffer, 0, SnP_width/8);
-        assert(memcmp(expected, buffer, sizeof(buffer)) == 0);
+        {
+            unsigned char buffer[SnP_width/8];
+            SnP_ExtractBytes(stateAccumulated, buffer, 0, SnP_width/8);
+            assert(memcmp(expected, buffer, sizeof(buffer)) == 0);
+        }
     }
 }
 
@@ -315,7 +326,7 @@ void nominalSnPtest(const char *fileName, const char *synopsis, const unsigned c
 #undef elementarySnPtest
 #undef nominalSnPtest
 
-#undef SnP_stateAlignment
+#undef SnP_state
 #undef SnP_stateSizeInBytes
 #undef SnP_laneLengthInBytes
 #undef SnP_StaticInitialize

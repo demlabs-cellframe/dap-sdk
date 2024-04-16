@@ -25,6 +25,7 @@ http://creativecommons.org/publicdomain/zero/1.0/
 #include <tmmintrin.h>
 #include "align.h"
 #include "Xoodoo.h"
+#include "Xoodoo-SnP.h"
 #include "Xoodyak-parameters.h"
 
 #include "brg_endian.h"
@@ -87,9 +88,9 @@ ALIGN(16) static const uint8_t maskRhoEast2[16] = {
 #define    DeclareVars          V128    a0, a1, a2, p, e; \
                                 V128    rhoEast2 = CONST128(maskRhoEast2)
 
-#define    State2Vars(state)    a0 = LOAD128(((uint32_t*)state)[0]), a1 = LOAD128(((uint32_t*)state)[4]), a2 = LOAD128(((uint32_t*)state)[8]);
+#define    State2Vars(state)    a0 = LOAD128(state->A[0]), a1 = LOAD128(state->A[4]), a2 = LOAD128(state->A[8]);
 
-#define    Vars2State(state)    STORE128(((uint32_t*)state)[0], a0), STORE128(((uint32_t*)state)[4], a1), STORE128(((uint32_t*)state)[8], a2);
+#define    Vars2State(state)    STORE128(state->A[0], a0), STORE128(state->A[4], a1), STORE128(state->A[8], a2);
 
 /*
 ** Theta: Column Parity Mixer
@@ -157,7 +158,7 @@ static const uint32_t    RC[MAXROUNDS] = {
     _rc1
 };
 
-size_t Xoodyak_AbsorbKeyedFullBlocks(void *state, const uint8_t *X, size_t XLen)
+size_t Xoodyak_AbsorbKeyedFullBlocks(Xoodoo_align128plain32_state *state, const uint8_t *X, size_t XLen)
 {
     size_t  initialLength = XLen;
     DeclareVars;
@@ -187,7 +188,7 @@ size_t Xoodyak_AbsorbKeyedFullBlocks(void *state, const uint8_t *X, size_t XLen)
     return initialLength - XLen;
 }
 
-size_t Xoodyak_AbsorbHashFullBlocks(void *state, const uint8_t *X, size_t XLen)
+size_t Xoodyak_AbsorbHashFullBlocks(Xoodoo_align128plain32_state *state, const uint8_t *X, size_t XLen)
 {
     size_t  initialLength = XLen;
     V128    one = _mm_set_epi32(0, 0, 0, 1); 
@@ -218,7 +219,7 @@ size_t Xoodyak_AbsorbHashFullBlocks(void *state, const uint8_t *X, size_t XLen)
 }
 
 
-size_t Xoodyak_SqueezeKeyedFullBlocks(void *state, uint8_t *Y, size_t YLen)
+size_t Xoodyak_SqueezeKeyedFullBlocks(Xoodoo_align128plain32_state *state, uint8_t *Y, size_t YLen)
 {
     size_t  initialLength = YLen;
     V128    one = _mm_set_epi32(0, 0, 0, 1); 
@@ -249,7 +250,7 @@ size_t Xoodyak_SqueezeKeyedFullBlocks(void *state, uint8_t *Y, size_t YLen)
     return initialLength - YLen;
 }
 
-size_t Xoodyak_SqueezeHashFullBlocks(void *state, uint8_t *Y, size_t YLen)
+size_t Xoodyak_SqueezeHashFullBlocks(Xoodoo_align128plain32_state *state, uint8_t *Y, size_t YLen)
 {
     size_t  initialLength = YLen;
     V128    one = _mm_set_epi32(0, 0, 0, 1); 
@@ -279,7 +280,7 @@ size_t Xoodyak_SqueezeHashFullBlocks(void *state, uint8_t *Y, size_t YLen)
     return initialLength - YLen;
 }
 
-size_t Xoodyak_EncryptFullBlocks(void *state, const uint8_t *I, uint8_t *O, size_t IOLen)
+size_t Xoodyak_EncryptFullBlocks(Xoodoo_align128plain32_state *state, const uint8_t *I, uint8_t *O, size_t IOLen)
 {
     size_t  initialLength = IOLen;
     DeclareVars;
@@ -311,7 +312,7 @@ size_t Xoodyak_EncryptFullBlocks(void *state, const uint8_t *I, uint8_t *O, size
     return initialLength - IOLen;
 }
 
-size_t Xoodyak_DecryptFullBlocks(void *state, const uint8_t *I, uint8_t *O, size_t IOLen)
+size_t Xoodyak_DecryptFullBlocks(Xoodoo_align128plain32_state *state, const uint8_t *I, uint8_t *O, size_t IOLen)
 {
     size_t  initialLength = IOLen;
     V128    o0;
@@ -333,8 +334,34 @@ size_t Xoodyak_DecryptFullBlocks(void *state, const uint8_t *I, uint8_t *O, size
         Round(_rc2);
         Round(_rc1);
         o0 = XOR128(a0, LOAD128u(I[0]));
+#if defined(__SSE41__) || defined(__SSE4_1__)
+#if defined(__i386__) || defined(_M_IX86)
+        *((uint32_t*)(O+16)) = *((uint32_t*)(I+16)) ^ _mm_extract_epi32(a1, 0);
+        *((uint32_t*)(O+20)) = *((uint32_t*)(I+20)) ^ _mm_extract_epi32(a1, 1);
+        a1 = _mm_insert_epi32(a1, *((uint32_t*)(I+16)), 0);
+        a1 = _mm_insert_epi32(a1, *((uint32_t*)(I+20)), 1);
+#else
         *((uint64_t*)(O+16)) = *((uint64_t*)(I+16)) ^ _mm_extract_epi64(a1, 0);
         a1 = _mm_insert_epi64(a1, *((uint64_t*)(I+16)), 0);
+#endif
+#else
+#if defined(__i386__) || defined(_M_IX86)
+        *((uint32_t*)(O+16)) = *((uint32_t*)(I+16)) ^ _mm_cvtsi128_si32(a1);
+        *((uint32_t*)(O+20)) = *((uint32_t*)(I+20)) ^ _mm_cvtsi128_si32(_mm_srli_si128(a1,4));
+        a1 = _mm_set_epi32(
+            // preserve high words
+            _mm_cvtsi128_si32(_mm_srli_si128(a1,12), 3),
+            _mm_cvtsi128_si32(_mm_srli_si128(a1,8), 2),
+            *((uint32_t*)(I+20)),
+            *((uint32_t*)(I+16)));
+#else
+        *((uint64_t*)(O+16)) = *((uint64_t*)(I+16)) ^ _mm_cvtsi128_si64(a1);
+        a1 = _mm_set_epi64x(
+            // preserve high words
+             _mm_cvtsi128_si64(_mm_srli_si128(a1,8)),
+            *((uint64_t*)(I+16)));
+#endif
+#endif
         STORE128u(O[0], o0);
         a0 = XOR128(a0, o0); 
         a1 = XOR128(a1, one); 

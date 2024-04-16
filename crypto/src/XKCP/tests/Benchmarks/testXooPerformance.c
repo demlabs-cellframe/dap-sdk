@@ -43,12 +43,14 @@ void displayMeasurements1101001000(cycles_t *measurements, uint32_t *laneCounts,
 
     #define prefix Xoodoo
     #define SnP Xoodoo
+    #define SnP_state Xoodoo_state
     #define SnP_width 384
     #define SnP_Permute_6rounds  Xoodoo_Permute_6rounds
     #define SnP_Permute_12rounds Xoodoo_Permute_12rounds
         #include "timingXooSnP.inc"
     #undef prefix
     #undef SnP
+    #undef SnP_state
     #undef SnP_width
     #undef SnP_Permute
     #undef SnP_Permute_12rounds
@@ -56,7 +58,6 @@ void displayMeasurements1101001000(cycles_t *measurements, uint32_t *laneCounts,
 
 #ifdef XKCP_has_Xoodootimes4
 #include "Xoodoo-times4-SnP.h"
-#if !defined(Xoodootimes4_isFallback)
 
     #define prefix                      Xoodootimes4
     #define PlSnP                       Xoodootimes4
@@ -72,11 +73,9 @@ void displayMeasurements1101001000(cycles_t *measurements, uint32_t *laneCounts,
     #undef PlSnP_PermuteAll_6rounds
     #undef PlSnP_PermuteAll_12rounds
 #endif
-#endif
 
 #ifdef XKCP_has_Xoodootimes8
 #include "Xoodoo-times8-SnP.h"
-#if !defined(Xoodootimes8_isFallback)
 
     #define prefix                      Xoodootimes8
     #define PlSnP                       Xoodootimes8
@@ -92,11 +91,9 @@ void displayMeasurements1101001000(cycles_t *measurements, uint32_t *laneCounts,
     #undef PlSnP_PermuteAll_6rounds
     #undef PlSnP_PermuteAll_12rounds
 #endif
-#endif
 
 #ifdef XKCP_has_Xoodootimes16
 #include "Xoodoo-times16-SnP.h"
-#if !defined(Xoodootimes16_isFallback)
 
     #define prefix                      Xoodootimes16
     #define PlSnP                       Xoodootimes16
@@ -111,7 +108,6 @@ void displayMeasurements1101001000(cycles_t *measurements, uint32_t *laneCounts,
     #undef SnP_width
     #undef PlSnP_PermuteAll_6rounds
     #undef PlSnP_PermuteAll_12rounds
-#endif
 #endif
 
 #ifdef XKCP_has_Xoofff
@@ -274,13 +270,13 @@ void printXoofffPerformanceHeader( void )
     printf("*** Xoofff ***\n");
     printf("Using Xoodoo implementations:\n");
     printf("- \303\227\x31: " Xoodoo_implementation "\n");
-    #if defined(XKCP_has_Xoodootimes4) && !defined(Xoodootimes4_isFallback)
+    #if defined(XKCP_has_Xoodootimes4)
     printf("- \303\2274: " Xoodootimes4_implementation "\n");
     #endif
-    #if defined(XKCP_has_Xoodootimes8) && !defined(Xoodootimes8_isFallback)
+    #if defined(XKCP_has_Xoodootimes8)
     printf("- \303\2278: " Xoodootimes8_implementation "\n");
     #endif
-    #if defined(XKCP_has_Xoodootimes16) && !defined(Xoodootimes16_isFallback)
+    #if defined(XKCP_has_Xoodootimes16)
     printf("- \303\22716: " Xoodootimes16_implementation "\n");
     #endif
     printf("\n");
@@ -335,7 +331,7 @@ static void testXooPerfSlope( measurePerf pFunc, cycles_t calibration )
 
     time = time256-time128;
     len = 128*Xoofff_rate;
-    printf("Slope %8d bytes (%u blocks): %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, len/Xoofff_rate, time, time*1.0/(len/8));
+    printf("Slope %8d bytes (%u blocks): %9" PRId64 " %s, %6.3f %s/byte\n", len/8, len/Xoofff_rate, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
 }
 
 void testXoofffPerformanceOne( void )
@@ -345,71 +341,71 @@ void testXoofffPerformanceOne( void )
     cycles_t time;
 
     time = measureXoofff_MaskDerivation(calibration);
-    printf("Xoodoo Mask Derivation %9"PRId64" cycles\n\n", time);
+    printf("Xoodoo Mask Derivation %9" PRId64 " %s\n\n", time, getTimerUnit());
 
     printf("Xoofff_Compress\n");
     for(len=8; len <= 256*Xoofff_rate; len = testXoofffNextLen(len)) {
         time = measureXoofff_Compress(calibration, testXoofffAdaptLen(len));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testXoofffAdaptLen(len)/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testXoofffAdaptLen(len)/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     for(len=128*8; len <= 8192*8; len = len*2) {
         time = measureXoofff_Compress(calibration, len);
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", len/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     testXooPerfSlope(measureXoofff_Compress, calibration);
     
     printf("\nXoofff_Expand\n");
     for(len=8; len <= 256*Xoofff_rate; len = testXoofffNextLen(len)) {
         time = measureXoofff_Expand(calibration, testXoofffAdaptLen(len));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testXoofffAdaptLen(len)/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testXoofffAdaptLen(len)/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     for(len=128*8; len <= 8192*8; len = len*2) {
         time = measureXoofff_Expand(calibration, len);
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", len/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     testXooPerfSlope(measureXoofff_Expand, calibration);
 
     printf("\nXoofff-SANE Wrap (only plaintext input, no AD)\n");
     for(len=8; len <= 256*Xoofff_rate; len = testXoofffNextLen(len)) {
         time = measureXoofffSANE_Wrap(calibration, testXoofffAdaptLen(len));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testXoofffAdaptLen(len)/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testXoofffAdaptLen(len)/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     for(len=128*8; len <= 8192*8; len = len*2) {
         time = measureXoofffSANE_Wrap(calibration, len);
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", len/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     testXooPerfSlope(measureXoofffSANE_Wrap, calibration);
 
     printf("\nXoofff-SANE MAC (only AD input, no plaintext)\n");
     for(len=8; len <= 256*Xoofff_rate; len = testXoofffNextLen(len)) {
         time = measureXoofffSANE_MAC(calibration, testXoofffAdaptLen(len));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testXoofffAdaptLen(len)/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testXoofffAdaptLen(len)/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     for(len=128*8; len <= 8192*8; len = len*2) {
         time = measureXoofffSANE_MAC(calibration, len);
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", len/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     testXooPerfSlope(measureXoofffSANE_MAC, calibration);
 
     printf("\nXoofff-SANSE\n");
     for(len=8; len <= 256*Xoofff_rate; len = testXoofffNextLen(len)) {
         time = measureXoofffSANSE(calibration, testXoofffAdaptLen(len));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testXoofffAdaptLen(len)/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testXoofffAdaptLen(len)/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     for(len=128*8; len <= 8192*8; len = len*2) {
         time = measureXoofffSANSE(calibration, len);
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", len/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     testXooPerfSlope(measureXoofffSANSE, calibration);
 
     printf("\nXoofff-WBC (Tweak 128 bits)\n");
     for(len=8; len <= 256*Xoofff_rate; len = testXoofffNextLen(len)) {
         time = measureXoofffWBC(calibration, testXoofffAdaptLen(len));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testXoofffAdaptLen(len)/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testXoofffAdaptLen(len)/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     for(len=128*8; len <= 8192*8; len = len*2) {
         time = measureXoofffWBC(calibration, len);
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", len/8, time, time*1.0/(len/8));
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", len/8, time, getTimerUnit(), time*1.0/(len/8), getTimerUnit());
     }
     testXooPerfSlope(measureXoofffWBC, calibration);
 
@@ -540,7 +536,7 @@ static void testXoodyakPerfSlope( measurePerf pFunc, cycles_t calibration, uint3
 
     time = time32-time16;
     len = 16*rateInBytes;
-    printf("Slope %8d bytes (%u blocks): %9"PRId64" cycles, %6.3f cycles/byte\n", len, len/rateInBytes, time, time*1.0/len);
+    printf("Slope %8d bytes (%u blocks): %9" PRId64 " %s, %6.3f %s/byte\n", len, len/rateInBytes, time, getTimerUnit(), time*1.0/len, getTimerUnit());
 }
 
 void testXoodyakPerformanceOne( void )
@@ -552,21 +548,21 @@ void testXoodyakPerformanceOne( void )
     printf("\nXoodyak Hash\n");
     for(len=1; len <= 32*Xoodyak_Rhash; len = testXoodyakNextLen(len, Xoodyak_Rhash)) {
         time = measureXoodyak_Hash(calibration, testXoodyakAdaptLen(len, Xoodyak_Rhash));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testXoodyakAdaptLen(len, Xoodyak_Rhash), time, time*1.0/len);
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testXoodyakAdaptLen(len, Xoodyak_Rhash), time, getTimerUnit(), time*1.0/len, getTimerUnit());
     }
     testXoodyakPerfSlope(measureXoodyak_Hash, calibration, Xoodyak_Rhash);
 
     printf("\nXoodyak Wrap (plaintext + 16 bytes AD)\n");
     for(len=1; len <= 32*Xoodyak_Rkout; len = testXoodyakNextLen(len, Xoodyak_Rkout)) {
         time = measureXoodyak_Wrap(calibration, testXoodyakAdaptLen(len, Xoodyak_Rkout));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testXoodyakAdaptLen(len, Xoodyak_Rkout), time, time*1.0/len);
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testXoodyakAdaptLen(len, Xoodyak_Rkout), time, getTimerUnit(), time*1.0/len, getTimerUnit());
     }
     testXoodyakPerfSlope(measureXoodyak_Wrap, calibration, Xoodyak_Rkout);
 
     printf("\nXoodyak MAC (only AD)\n");
     for(len=1; len <= 32*Xoodyak_Rkin; len = testXoodyakNextLen(len, Xoodyak_Rkin)) {
         time = measureXoodyak_MAC(calibration, testXoodyakAdaptLen(len, Xoodyak_Rkin));
-        printf("%8d bytes: %9"PRId64" cycles, %6.3f cycles/byte\n", testXoodyakAdaptLen(len, Xoodyak_Rkin), time, time*1.0/len);
+        printf("%8d bytes: %9" PRId64 " %s, %6.3f %s/byte\n", testXoodyakAdaptLen(len, Xoodyak_Rkin), time, getTimerUnit(), time*1.0/len, getTimerUnit());
     }
     testXoodyakPerfSlope(measureXoodyak_MAC, calibration, Xoodyak_Rkin);
 
@@ -594,13 +590,13 @@ void testXooPerformance(void)
 #ifdef XKCP_has_Xoodoo
     Xoodoo_timingSnP("Xoodoo", Xoodoo_implementation);
 #endif
-#if defined(XKCP_has_Xoodootimes4) && !defined(Xoodootimes4_isFallback)
+#if defined(XKCP_has_Xoodootimes4)
     Xoodootimes4_timingPlSnP("Xoodoo\303\2274", Xoodootimes4_implementation);
 #endif
-#if defined(XKCP_has_Xoodootimes8) && !defined(Xoodootimes8_isFallback)
+#if defined(XKCP_has_Xoodootimes8)
     Xoodootimes8_timingPlSnP("Xoodoo\303\2278", Xoodootimes8_implementation);
 #endif
-#if defined(XKCP_has_Xoodootimes16) && !defined(Xoodootimes16_isFallback)
+#if defined(XKCP_has_Xoodootimes16)
     Xoodootimes16_timingPlSnP("Xoodoo\303\22716", Xoodootimes16_implementation);
 #endif
 
