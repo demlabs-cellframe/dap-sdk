@@ -386,7 +386,7 @@ static void s_http_client_new(dap_http_client_t *a_http_client, UNUSED_ARG void 
     strncpy(l_http_simple->es_hostaddr, l_http_simple->esocket->hostaddr, INET6_ADDRSTRLEN);
 }
 
-static void s_http_client_delete(dap_http_client_t *a_http_client, void *arg)
+static void s_http_client_delete(dap_http_client_t *a_http_client, UNUSED_ARG void *arg)
 {
     dap_http_simple_t * l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
 
@@ -400,9 +400,8 @@ static void s_http_client_delete(dap_http_client_t *a_http_client, void *arg)
     }
 }
 
-static void s_http_client_headers_read( dap_http_client_t *a_http_client, void *a_arg )
+static void s_http_client_headers_read( dap_http_client_t *a_http_client, UNUSED_ARG void *a_arg )
 {
-    (void) a_arg;
     dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
 //    Made a temporary solution to handle simple CORS requests.
 //    This is necessary in order to be able to request information using JavaScript obtained from another source.
