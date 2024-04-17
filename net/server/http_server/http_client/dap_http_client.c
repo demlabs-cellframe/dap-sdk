@@ -45,6 +45,7 @@
 
 #include "dap_http_header.h"
 #include "dap_http_client.h"
+#include "dap_http_ban_list_client.h"
 
 #define LOG_TAG "dap_http_client"
 
@@ -334,6 +335,13 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
         switch( l_http_client->state_read )
         {
             case DAP_HTTP_CLIENT_STATE_START: { // Beginning of the session. We try to detect URL with CRLF pair at end
+                if (l_http_client->esocket->server->type == DAP_SERVER_TCP || l_http_client->esocket->server->type == DAP_SERVER_UDP) {
+                    if ( dap_http_ban_list_client_check(l_http_client->esocket->remote_addr_str, NULL, NULL) ) {
+                        log_it(L_ERROR, "Client %s is banned", l_http_client->esocket->remote_addr_str);
+                        s_report_error_and_restart( a_esocket, l_http_client, Http_Status_Forbidden);
+                        break;
+                    }
+                }
 
                 if ( a_esocket->buf_in_size < HTTP$SZ_MINSTARTLINE )         /* Is the length of the start-line looks to be enough ? */
                 {
