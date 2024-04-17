@@ -120,7 +120,7 @@ struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_t *a_http, const c
 
     return dap_http_add_proc( a_http, a_url_path,
                      l_url_proc, // Internal structure
-                     NULL, // Contrustor
+                     s_http_client_new, // Contrustor
                      s_http_client_delete, //  Destructor
                      s_http_client_headers_read, s_http_client_headers_write, // Headers read, write
                      s_http_client_data_read, s_http_client_data_write, // Data read, write
@@ -370,7 +370,23 @@ static bool s_proc_queue_callback(dap_proc_thread_t * a_thread, void * a_arg )
     return true;
 }
 
-static void s_http_client_delete( dap_http_client_t *a_http_client, void *arg )
+static void s_http_client_new(dap_http_client_t *a_http_client, UNUSED_ARG void *arg)
+{
+    a_http_client->_inheritor = DAP_NEW_Z(dap_http_simple_t);
+    dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
+    *l_http_simple = (dap_http_simple_t) {
+        .esocket        = a_http_client->esocket,
+        .worker         = a_http_client->esocket->context->worker,
+        .http_client    = a_http_client,
+        .esocket_uuid   = a_http_client->esocket->uuid,
+        .reply_byte     = DAP_NEW_Z_SIZE(uint8_t, DAP_HTTP_SIMPLE_URL_PROC(a_http_client->proc)->reply_size_max),
+        .reply_size_max = DAP_HTTP_SIMPLE_URL_PROC(a_http_client->proc)->reply_size_max,
+        .generate_default_header = true
+    };
+    strncpy(l_http_simple->es_hostaddr, l_http_simple->esocket->hostaddr, INET6_ADDRSTRLEN);
+}
+
+static void s_http_client_delete(dap_http_client_t *a_http_client, UNUSED_ARG void *arg)
 {
     dap_http_simple_t * l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
 
@@ -384,22 +400,9 @@ static void s_http_client_delete( dap_http_client_t *a_http_client, void *arg )
     }
 }
 
-static void s_http_client_headers_read( dap_http_client_t *a_http_client, void *a_arg )
+static void s_http_client_headers_read( dap_http_client_t *a_http_client, UNUSED_ARG void *a_arg )
 {
-    (void) a_arg;
-    a_http_client->_inheritor = DAP_NEW_Z( dap_http_simple_t );
-    dap_http_simple_t * l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
-    l_http_simple->generate_default_header = true;
-    //  log_it(L_DEBUG,"dap_http_simple_headers_read");
-    //  Sleep(300);
-
-    l_http_simple->esocket = a_http_client->esocket;
-    l_http_simple->esocket_uuid = a_http_client->esocket->uuid;
-    l_http_simple->http_client = a_http_client;
-    l_http_simple->worker = a_http_client->esocket->context->worker;
-    l_http_simple->reply_size_max = DAP_HTTP_SIMPLE_URL_PROC( a_http_client->proc )->reply_size_max;
-    l_http_simple->reply_byte = DAP_NEW_Z_SIZE(uint8_t, DAP_HTTP_SIMPLE(a_http_client)->reply_size_max );
-    strncpy(l_http_simple->es_hostaddr, l_http_simple->esocket->hostaddr, INET6_ADDRSTRLEN);
+    dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
 //    Made a temporary solution to handle simple CORS requests.
 //    This is necessary in order to be able to request information using JavaScript obtained from another source.
     dap_http_header_t* l_header_origin = dap_http_header_find(a_http_client->in_headers, "Origin");
