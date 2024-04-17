@@ -285,16 +285,21 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
     json_print_object(json_obj_items, 0);
     if (result_count == 2) {
         json_object * json_obj_response = json_object_array_get_idx(response->result_json_object, 1);
-        json_object * j_obj_net_name, * j_obj_chain, *j_obj_sum, *j_obj_accepted, *j_obj_rejected;
+        json_object * j_obj_net_name, * j_obj_chain, *j_obj_sum, *j_obj_accepted, *j_obj_rejected, *j_datum_sum, *j_datum_accepted, *j_datum_rejected;
         json_object_object_get_ex(json_obj_response, "network", &j_obj_net_name);
         json_object_object_get_ex(json_obj_response, "chain", &j_obj_chain);
         json_object_object_get_ex(json_obj_response, "tx_sum", &j_obj_sum);
         json_object_object_get_ex(json_obj_response, "accepted_tx", &j_obj_accepted);
         json_object_object_get_ex(json_obj_response, "rejected_tx", &j_obj_rejected);
-        printf("Chain %s in network %s contains %d transactions. \n"
-                "Of which %d were accepted into the ledger and %d were rejected.\n", 
+        json_object_object_get_ex(json_obj_response, "datum_sum", &j_datum_sum);
+        json_object_object_get_ex(json_obj_response, "accepted_datum", &j_datum_accepted);
+        json_object_object_get_ex(json_obj_response, "rejected_datum", &j_datum_rejected);
+        printf("Chain %s in network %s contains %d transactions in %d datums. \n"
+                "Of which %d tx (%d datums) were accepted into the ledger and %d tx (%d datums) were rejected.\n", 
                 json_object_get_string(j_obj_chain), json_object_get_string(j_obj_net_name), 
-                json_object_get_int(j_obj_sum), json_object_get_int(j_obj_accepted), json_object_get_int(j_obj_rejected));
+                json_object_get_int(j_obj_sum), json_object_get_int(j_datum_sum),
+                json_object_get_int(j_obj_accepted), json_object_get_int(j_datum_accepted),
+                json_object_get_int(j_obj_rejected), json_object_get_int(j_datum_rejected));
     }
 }
 
