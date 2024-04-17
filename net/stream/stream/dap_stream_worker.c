@@ -69,7 +69,7 @@ int dap_stream_worker_init()
         dap_stream_worker_t *l_stream_worker_inp = (dap_stream_worker_t *)l_worker_inp->_inheritor;
         l_stream_worker_inp->queue_ch_io_input = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * l_worker_count);
         if (!l_stream_worker_inp->queue_ch_io_input) {
-            log_it(L_CRITICAL, "Memory allocation error");
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             return -8;
         }
         for (uint32_t j = 0; j < l_worker_count; j++) {

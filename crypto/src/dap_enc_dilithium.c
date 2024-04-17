@@ -150,7 +150,7 @@ void *dap_enc_sig_dilithium_read_signature(const uint8_t *a_buf, size_t a_buflen
 
     dilithium_signature_t* l_sign = DAP_NEW_Z(dilithium_signature_t);
     if (!l_sign) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     l_sign->kind = kind;
@@ -247,7 +247,7 @@ void *dap_enc_sig_dilithium_read_private_key(const uint8_t *a_buf, size_t a_bufl
 
     dilithium_private_key_t* l_private_key = DAP_NEW(dilithium_private_key_t);
     if (!l_private_key) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     l_private_key->kind = kind;

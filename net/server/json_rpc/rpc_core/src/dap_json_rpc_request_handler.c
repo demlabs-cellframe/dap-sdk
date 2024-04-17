@@ -11,7 +11,7 @@ int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t
     if (l_handler == NULL){
         l_handler = DAP_NEW(dap_json_rpc_request_handler_t);
         if (!l_handler) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             return -1;
         }
         l_handler->name = dap_strdup(a_name);
@@ -45,7 +45,7 @@ void dap_json_rpc_request_handler(dap_json_rpc_request_t *a_request,  dap_http_s
     // } else {
     //     dap_json_rpc_response_t *l_response = DAP_NEW(dap_json_rpc_response_t);
     //     if (!l_response) {
-    //         log_it(L_CRITICAL, "Memory allocation error");
+    //         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
     //         return;
     //     }
     //     l_response->id = a_request->id;

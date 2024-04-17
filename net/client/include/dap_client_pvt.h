@@ -61,7 +61,6 @@ typedef struct dap_client_pvt {
     dap_client_error_t last_error;
 
     dap_client_callback_t stage_status_done_callback;
-    dap_client_callback_t stage_status_error_callback;
 
     int reconnect_attempts;
 

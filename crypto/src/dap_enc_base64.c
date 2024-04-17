@@ -271,7 +271,7 @@ size_t dap_enc_base64_encode(const void * a_in, size_t a_in_size, char * a_out, 
     return size;
 }
 
-char * dap_enc_strdup_to_base64(const char * a_string){
+char *dap_enc_strdup_to_base64(const char * a_string){
     size_t l_string_len = strlen(a_string);
     size_t l_string_base64_len = DAP_ENC_BASE64_ENCODE_SIZE(l_string_len) + 1;
     char * l_string_base64 = DAP_NEW_SIZE(char, l_string_base64_len);
