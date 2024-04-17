@@ -42,16 +42,12 @@
 #define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 256UL                             /* Default count of records to return with conditional read */
 #define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  512UL                             /* Default count of keys to return with conditional read */
 
-enum dap_global_db_record_flags {
-    DAP_GLOBAL_DB_RECORD_COMMON = 0,
-    DAP_GLOBAL_DB_RECORD_PINNED = 1,
-    DAP_GLOBAL_DB_RECORD_NEW = 2
-};
-
-typedef enum dap_global_db_optype {
-    DAP_GLOBAL_DB_OPTYPE_ADD  = 0x61,    /* 'a', */                             /* Operation type INSERT/ADD */
-    DAP_GLOBAL_DB_OPTYPE_DEL  = 0x64,    /* 'd', */                             /* Operation type DELETE */
-} dap_global_db_optype_t;
+// Main record flags (DB saved)
+#define DAP_GLOBAL_DB_RECORD_DEL        BIT(0)                                  /* Information of record deletion (key, timestamp and sign) propagated over sync */
+#define DAP_GLOBAL_DB_RECORD_PINNED     BIT(1)                                  /* Record can be removed only after clearing this flag */
+// Auxiliary flags (not saved in DB)
+#define DAP_GLOBAL_DB_RECORD_NEW        BIT(6)                                  /* Record is newly generated, and not appears by synchronizstion */
+#define DAP_GLOBAL_DB_RECORD_ERASE      BIT(7)                                  /* Record will be definitevly erased w/o notifications or sync */
 
 typedef struct dap_global_db_driver_hash {
     dap_nanotime_t bets;
@@ -63,13 +59,23 @@ typedef struct dap_store_obj {
     const char *key;                // Unique database key
     byte_t *value;                  // Database value corresponsing with database key
     size_t value_len;               // Length of database value
-    uint8_t flags;                  // Now it is only 'pinned' flag, pointed to record can be removed only by author
+    uint8_t flags;                  // Record flags
     dap_sign_t *sign;               // Crypto sign for authentication and security checks
     dap_nanotime_t timestamp;       // Timestamp of record creation, in nanoseconds since EPOCH
     uint64_t crc;                   // Integrity control
-    dap_global_db_optype_t type;    // Operation type - for event notifiers
     byte_t ext[];                   // For extra data transfer between sync callbacks
 } dap_store_obj_t;
+
+// Operation type - for event notifiers
+typedef enum dap_global_db_optype {
+    DAP_GLOBAL_DB_OPTYPE_ADD  = 0x61,    /* 'a', */                             /* Operation type INSERT / OVERWRITE */
+    DAP_GLOBAL_DB_OPTYPE_DEL  = 0x64,    /* 'd', */                             /* Operation type DELETE */
+} dap_global_db_optype_t;
+
+DAP_STATIC_INLINE dap_store_obj_get_type(dap_store_obj_t *a_obj)
+{
+    return a_obj->flags & DAP_GLOBAL_DB_RECORD_DEL ? DAP_GLOBAL_DB_OPTYPE_DEL : DAP_GLOBAL_DB_OPTYPE_ADD;
+}
 
 DAP_STATIC_INLINE dap_global_db_driver_hash_t dap_global_db_driver_hash_get(dap_store_obj_t *a_obj)
 {
@@ -110,10 +116,10 @@ typedef struct dap_global_db_hash_pkt dap_global_db_hash_pkt_t;
 typedef struct dap_global_db_pkt_pack dap_global_db_pkt_pack_t;
 
 typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t *a_store_obj);
-typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *a_group, const char *a_key, size_t *a_count_out);
-typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count);
+typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes);
+typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count, bool a_with_holes);
 typedef dap_global_db_hash_pkt_t * (*dap_db_driver_read_hashes_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
-typedef dap_store_obj_t* (*dap_db_driver_read_last_callback_t)(const char *a_group);
+typedef dap_store_obj_t* (*dap_db_driver_read_last_callback_t)(const char *a_group, bool a_with_holes);
 typedef size_t (*dap_db_driver_read_count_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 typedef dap_list_t* (*dap_db_driver_get_groups_callback_t)(const char *a_mask);
 typedef bool (*dap_db_driver_is_obj_callback_t)(const char *a_group, const char *a_key);
@@ -161,9 +167,9 @@ int     dap_db_driver_flush(void);
 int dap_global_db_driver_apply(dap_store_obj_t *a_store_obj, size_t a_store_count);
 int dap_global_db_driver_add(dap_store_obj_t *a_store_obj, size_t a_store_count);
 int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_count);
-dap_store_obj_t *dap_global_db_driver_read_last(const char *a_group);
-dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out);
-dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out);
+dap_store_obj_t *dap_global_db_driver_read_last(const char *a_group, bool a_with_holes);
+dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes);
+dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out, bool a_with_holes);
 dap_global_db_pkt_pack_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
 bool dap_global_db_driver_is(const char *a_group, const char *a_key);
 bool dap_global_db_driver_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);

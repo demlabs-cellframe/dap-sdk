@@ -251,8 +251,6 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
 {
     dap_return_val_if_fail(a_group && a_mask && *a_group && *a_mask, false);
     const char *l_group_tail = a_group + strlen(a_group);           // Pointer to trailng zero
-    if (!strcmp(l_group_tail - sizeof(DAP_GLOBAL_DB_DEL_SUFFIX), DAP_GLOBAL_DB_DEL_SUFFIX))
-        l_group_tail -= sizeof(DAP_GLOBAL_DB_DEL_SUFFIX);           // Pointer to '.' of .del group suffix
     const char *l_mask_tail = a_mask + strlen(a_mask);
     const char *l_group_it = a_group, *l_mask_it = a_mask;
     const char *l_wildcard = strchr(a_mask, '*');
@@ -267,7 +265,6 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
 
 static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_obj)
 {
-    assert(a_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD);
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(a_dbi, a_obj->group);
     if (!l_cluster) {
         log_it(L_WARNING, "An entry in the group %s was rejected because the group name doesn't match any cluster", a_obj->group);
@@ -301,39 +298,22 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     }
     if (l_signer_role == DAP_GDB_MEMBER_ROLE_INVALID)
         l_signer_role = l_cluster->default_role;
-    dap_global_db_role_t l_required_role = DAP_GDB_MEMBER_ROLE_USER;
-    if (l_signer_role < l_required_role) {
+    if (l_signer_role < DAP_GDB_MEMBER_ROLE_USER) {
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Global DB record with group %s and key %s is rejected "
-                                                        "with signer role %s and required role %s",
+                                                        "with signer role %s with no write access to cluster",
                                                             a_obj->group, a_obj->key,
-                                                            dap_global_db_cluster_role_str(l_signer_role),
-                                                            dap_global_db_cluster_role_str(l_required_role));
+                                                            dap_global_db_cluster_role_str(l_signer_role));
         return -14;
     }
-    dap_global_db_optype_t l_obj_type = DAP_GLOBAL_DB_OPTYPE_ADD;
-    // Get object with same key and its antinonim from opposite group, if any
-    const char l_del_suffix[] = DAP_GLOBAL_DB_DEL_SUFFIX;
-    char *l_del_group = NULL, *l_basic_group = NULL;
-    size_t l_group_len = strlen(a_obj->group);
-    size_t l_unsuffixed_len = l_group_len - sizeof(l_del_suffix) + 1;
-    if (l_group_len >= sizeof(l_del_suffix) &&
-            !strcmp(l_del_suffix, a_obj->group + l_unsuffixed_len)) {
-        // It is a group for object destroyers
-        l_obj_type = DAP_GLOBAL_DB_OPTYPE_DEL;
-        // Only root members can destroy
-        l_required_role = DAP_GDB_MEMBER_ROLE_ROOT;
-        l_del_group = a_obj->group;
-        l_basic_group = strndup(a_obj->group, l_unsuffixed_len);
-    } else {
-        l_del_group = dap_strdup_printf("%s" DAP_GLOBAL_DB_DEL_SUFFIX, a_obj->group);
-        l_basic_group = a_obj->group;
-    }
+
+    dap_global_db_role_t l_required_role = DAP_GDB_MEMBER_ROLE_USER;
+    dap_global_db_optype_t l_obj_type = dap_store_obj_get_type(a_obj);
     dap_store_obj_t *l_read_obj = NULL;
     int l_ret = 0;
-    if (dap_global_db_driver_is(l_basic_group, a_obj->key)) {
+    if (dap_global_db_driver_is(a_obj->group, a_obj->key)) {
         l_read_obj = dap_global_db_driver_read(l_basic_group, a_obj->key, NULL);
         if (l_read_obj) {
-            if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED && l_obj_type == DAP_GLOBAL_DB_OPTYPE_ADD) {
+            if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED) {
                 debug_if(g_dap_global_db_debug_more, L_NOTICE, "Pinned record with group %s and key %s won't be overwritten",
                          l_read_obj->group, l_read_obj->key);
                 l_ret = -15;
@@ -344,49 +324,6 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
             log_it(L_ERROR, "Existed object with group %s and key %s is broken and will be erased",
                                                         a_obj->group, a_obj->key);
             dap_store_obj_t l_to_delete = (dap_store_obj_t){ .group = l_basic_group, .key = a_obj->key };
-            dap_global_db_driver_delete(&l_to_delete, 1);
-        }
-    }
-    if (dap_global_db_driver_is(l_del_group, a_obj->key)) {
-        dap_store_obj_t *l_read_del = dap_global_db_driver_read(l_del_group, a_obj->key, NULL);
-        if (l_read_del) {
-            if (l_read_obj) {   // Conflict, object is present in both tables
-                switch (dap_store_obj_driver_hash_compare(l_read_obj, l_read_del)) {
-                case -1:        // Basic obj is older
-                    if (!(l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED)) {
-                        log_it(L_WARNING, "DB record with group %s and key %s will be destroyed to avoid a conflict",
-                                                                    l_read_obj->group, l_read_obj->key);
-                        dap_global_db_driver_delete(l_read_obj, 1);
-                        dap_global_db_cluster_notify(l_cluster, l_read_obj);
-                    } else {
-                        log_it(L_NOTICE, "DB record with group %s and key %s won't be removed cause is locally pinned",
-                                                                    l_read_obj->group, l_read_obj->key);
-                    }
-                    dap_store_obj_free_one(l_read_obj);
-                    l_read_obj = l_read_del;
-                    break;
-                case 0:         // Objects are the same, omg! Use the basic object
-                    log_it(L_ERROR, "Duplicate record with group %s and key %s in both local tabels, "
-                                                            DAP_GLOBAL_DB_DEL_SUFFIX" will be erased",
-                                                                l_read_obj->group, l_read_obj->key);
-                    break;
-                case 1:         // Deleted object is older
-                    debug_if(g_dap_global_db_debug_more, L_WARNING,
-                             "DB record with group %s and key %s will be destroyed to avoid a conflict",
-                                                                    l_read_del->group, l_read_del->key);
-                    dap_global_db_driver_delete(l_read_del, 1);
-                    dap_store_obj_free_one(l_read_del);
-                    break;
-                default:
-                    log_it(L_ERROR, "Unexpected comparision result");
-                    break;
-                }
-            } else
-                l_read_obj = l_read_del;
-        } else  {
-            log_it(L_ERROR, "Existed object with group %s and key %s is broken and will be erased",
-                                                        a_obj->group, a_obj->key);
-            dap_store_obj_t l_to_delete = (dap_store_obj_t){ .group = l_del_group, .key = a_obj->key };
             dap_global_db_driver_delete(&l_to_delete, 1);
         }
     }
@@ -423,8 +360,8 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
         l_ret = -17;
         break;
     case -1:        // Existed obj is older
-        debug_if(g_dap_global_db_debug_more, L_INFO, "Applied new global DB record with group %s and key %s",
-                                                                                        a_obj->group, a_obj->key);
+        debug_if(g_dap_global_db_debug_more, L_INFO, "Applied new global DB record with type '%c' and group %s and key %s",
+                                                                                        l_obj_type, a_obj->group, a_obj->key);
         break;
     default:
         log_it(L_ERROR, "Unexpected comparision result");
@@ -435,35 +372,17 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
         // Only the condition to apply new object
         l_ret = dap_global_db_driver_apply(a_obj, 1);
 
-        if (l_read_obj && dap_strcmp(l_read_obj->group, a_obj->group)) {
-            int rc = dap_global_db_driver_delete(l_read_obj, 1);
-            if (rc == DAP_GLOBAL_DB_RC_SUCCESS)
-                debug_if(g_dap_global_db_debug_more, L_INFO, "Deleted global DB record with group %s and same key",
-                                                                                            l_read_obj->group);
-            else if (rc != DAP_GLOBAL_DB_RC_NOT_FOUND)
-                log_it(L_ERROR, "Can't delete global DB record with group %s and same key", l_read_obj->group);
-        }
         if (l_obj_type != DAP_GLOBAL_DB_OPTYPE_DEL || l_read_obj) {
             // Do not notify for delete if deleted record not exists
             if (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)
-                // Notify sync cluster first in driver format
+                // Notify sync cluster first
                 dap_global_db_cluster_broadcast(l_cluster, a_obj);
-            if (l_cluster->notifiers) {
-                // Notify others in user space format
-                char *l_old_group_ptr = a_obj->group;
-                a_obj->group = l_basic_group;
-                a_obj->type = l_obj_type;
+            if (l_cluster->notifiers)
+                // Notify others
                 dap_global_db_cluster_notify(l_cluster, a_obj);
-                a_obj->group = l_old_group_ptr;
-                a_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
-            }
         }
     }
 free_n_exit:
-    if (l_obj_type == DAP_GLOBAL_DB_OPTYPE_DEL)
-        DAP_DELETE(l_basic_group);
-    else
-        DAP_DELETE(l_del_group);
     if (l_read_obj)
         dap_store_obj_free_one(l_read_obj);
     return l_ret;
@@ -691,7 +610,7 @@ static void s_msg_opcode_get_del_ts(struct queue_io_msg * a_msg)
 byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a_data_size,
                                       bool *a_is_pinned, dap_nanotime_t *a_ts)
 {
-    dap_store_obj_t *l_store_obj = dap_global_db_get_last_raw_sync(a_group);
+    dap_store_obj_t *l_store_obj = dap_global_db_driver_read_last(a_group, false);
     if (!l_store_obj) {
         log_it(L_ERROR, "l_store_ibj is not initialized, can't call dap_global_db_get_last_unsafe");
         return NULL;
@@ -775,7 +694,7 @@ static void s_msg_opcode_get_last(struct queue_io_msg * a_msg)
 
 dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
 {
-    dap_store_obj_t *l_ret = dap_global_db_driver_read_last(a_group);
+    dap_store_obj_t *l_ret = dap_global_db_driver_read_last(a_group, true);
     return l_ret;
 }
 
@@ -788,10 +707,8 @@ dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
  */
 int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_result_raw_t a_callback, void * a_arg )
 {
-    if(s_dbi == NULL){
-        log_it(L_ERROR, "GlobalDB context is not initialized, can't call dap_global_db_get_last");
-        return DAP_GLOBAL_DB_RC_ERROR;
-    }
+    dap_return_val_if_fail(a_group && s_dbi, DAP_GLOBAL_DB_RC_ERROR);
+
     struct queue_io_msg * l_msg = DAP_NEW_Z(struct queue_io_msg);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
@@ -800,6 +717,10 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_GET_LAST_RAW;
     l_msg->group = dap_strdup(a_group);
+    if (!l_msg->group) {
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        return -1;
+    }
     l_msg->callback_arg = a_arg;
     l_msg->callback_result_raw = a_callback;
 
@@ -830,7 +751,7 @@ static void s_msg_opcode_get_last_raw(struct queue_io_msg * a_msg)
 dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_objs_count)
 {
     size_t l_values_count = 0;
-    dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count);
+    dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count, false);
     debug_if(g_dap_global_db_debug_more, L_DEBUG,
              "Get all request from group %s recieved %zu values", a_group, l_values_count);
     dap_global_db_obj_t *l_objs = l_store_objs ? s_objs_from_store_objs(l_store_objs, l_values_count) : NULL;
@@ -907,7 +828,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
     if (!a_msg->total_records)
         a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank);
     if (a_msg->total_records)
-        l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count);
+        l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count, false);
     int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
     if (l_store_objs && l_values_count) {
         a_msg->processed_records += a_msg->values_page_size;
@@ -936,7 +857,7 @@ dap_store_obj_t *dap_global_db_get_all_raw_sync(const char* a_group, size_t *a_o
     dap_return_val_if_fail(a_group, NULL);
     
     size_t l_values_count = 0;
-    dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count);
+    dap_store_obj_t *l_store_objs = dap_global_db_driver_read(a_group, 0, &l_values_count, true);
     if (a_objs_count)
         *a_objs_count = l_values_count;
     return l_store_objs;
@@ -971,6 +892,10 @@ int dap_global_db_get_all_raw(const char * a_group, size_t a_results_page_size, 
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_GET_ALL_RAW;
     l_msg->group = dap_strdup(a_group);
+    if (a_group && !l_msg->group) {
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        return -2;
+    }
     l_msg->values_page_size = a_results_page_size;
     l_msg->callback_arg = a_arg;
     l_msg->callback_results_raw = a_callback;
@@ -1010,7 +935,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
     if (!a_msg->total_records)
         a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank);
     if (a_msg->total_records)
-        l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count);
+        l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count, true);
     int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
     if (l_store_objs && l_values_count) {
         a_msg->processed_records += a_msg->values_page_size;
@@ -1103,7 +1028,18 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_SET;
     l_msg->group = dap_strdup(a_group);
+    if (!l_msg->group) {
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        DAP_DEL_Z(l_msg);
+        return -1;
+    }
     l_msg->key = dap_strdup(a_key);
+    if (!l_msg->group) {
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        DAP_DEL_Z(l_msg->group);
+        DAP_DEL_Z(l_msg);
+        return -1;
+    }
     l_msg->value = DAP_DUP_SIZE(a_value, a_value_length);
     if (!l_msg->value && a_value) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
@@ -1159,22 +1095,9 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
     if (a_store_objs_count > 1)
         dap_global_db_driver_txn_start();
     for (size_t i = 0; i < a_store_objs_count; i++) {
-        dap_store_obj_t *l_obj = a_store_objs + i;
-        char *l_group_saved = NULL;
-        if (l_obj->type != DAP_GLOBAL_DB_OPTYPE_ADD) {
-            // Oh, it's compability code for old sync protocol
-            l_group_saved = l_obj->group;
-            l_obj->group = dap_strdup_printf("%s" DAP_GLOBAL_DB_DEL_SUFFIX, l_obj->group);
-            l_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
-        }
-        l_ret = s_store_obj_apply(a_dbi, l_obj);
-        if (l_group_saved) {
-            l_obj->type = DAP_GLOBAL_DB_OPTYPE_DEL;
-            DAP_DELETE(l_obj->group);
-            l_obj->group = l_group_saved;
-        }
+        l_ret = s_store_obj_apply(a_dbi, a_store_objs + i);
         if (l_ret) {
-            log_it(L_ERROR, "Can't save raw gdb data, code %d ", l_ret);\
+            log_it(L_ERROR, "Can't save raw gdb data, code %d ", l_ret);
             break;
         }
     }

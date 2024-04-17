@@ -769,6 +769,7 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
             l_pkt->key_len = l_record->key_len;
             l_pkt->value_len = l_record->value_len;
             l_pkt->data_len = l_data_len;
+            l_pkt->flags = l_record->flags & DAP_GLOBAL_DB_RECORD_DEL;
 
             /* Put serialized data into the payload part of the packet */
             byte_t *l_data_ptr = dap_mempcpy(l_pkt->data, l_db_ctx->name, l_db_ctx->namelen);
@@ -988,19 +989,20 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
 {
     dap_return_val_if_fail(a_store_obj && a_store_obj->group && a_store_obj->crc, -EINVAL)     /* Sanity checks ... */
 
+    uint8_t l_type_erase = a_store_obj->flags & DAP_GLOBAL_DB_RECORD_ERASE;
     dap_db_ctx_t *l_db_ctx;
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group)) ) {               /* Get a DB context for the group */
                                                                                     /* Group is not found ? Try to create table for new group */
         if ( !(l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE, a_txn)) )
             return  log_it(L_WARNING, "Cannot create DB context for the group '%s'", a_store_obj->group), -EIO;
         log_it(L_NOTICE, "DB context for the group '%s' has been created", a_store_obj->group);
-        if ( a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL )                        /* Nothing to do anymore */
+        if (l_type_erase)                                                           /* Nothing to do anymore */
             return 1;
     }
     int l_rc = -EIO;
     MDBX_val l_key = {}, l_data;
     /* At this point we have got the DB Context for the table/group so we are can performs a main work */
-    if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD) {
+    if (!l_type_erase) {
         if( !a_store_obj->key || !*a_store_obj->key)
             return -ENOENT;
         l_rc = s_get_obj_by_text_key(a_txn, l_db_ctx->dbi, &l_key, &l_data, a_store_obj->key);
@@ -1040,7 +1042,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
         if ( MDBX_SUCCESS != (l_rc = mdbx_put(a_txn, l_db_ctx->dbi, &l_key, &l_data, 0)) )
             log_it (L_ERROR, "mdbx_put: (%d) %s", l_rc, mdbx_strerror(l_rc));
         DAP_DELETE(l_record);
-    } else if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) {
+    } else {
         /* Delete record */
         if (a_store_obj->crc && a_store_obj->timestamp) {
             dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
@@ -1065,8 +1067,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
             else if (l_rc != MDBX_SUCCESS)
                 log_it(L_ERROR, "mdbx_del: (%d) %s", l_rc, mdbx_strerror(l_rc));
         }
-    } else
-        log_it (L_ERROR, "Unhandle/unknown DB opcode (%d/%#x)", a_store_obj->type, a_store_obj->type);
+    }
 
     return l_rc;
 }
