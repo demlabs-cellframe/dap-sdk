@@ -860,3 +860,17 @@ int exec_silent(const char *a_cmd);
 #ifdef __cplusplus
 }
 #endif
+
+DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str)
+{
+    if (!a_addr || !a_addr_str){
+        return -1;
+    }
+    if (sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4)
+        return 0;
+    if (sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, &a_addr->uint64) == 1)
+        return 0;
+    return -1;
+}
+
+DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
