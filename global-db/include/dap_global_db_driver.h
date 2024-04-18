@@ -72,7 +72,7 @@ typedef enum dap_global_db_optype {
     DAP_GLOBAL_DB_OPTYPE_DEL  = 0x64,    /* 'd', */                             /* Operation type DELETE */
 } dap_global_db_optype_t;
 
-DAP_STATIC_INLINE dap_store_obj_get_type(dap_store_obj_t *a_obj)
+DAP_STATIC_INLINE dap_global_db_optype_t dap_store_obj_get_type(dap_store_obj_t *a_obj)
 {
     return a_obj->flags & DAP_GLOBAL_DB_RECORD_DEL ? DAP_GLOBAL_DB_OPTYPE_DEL : DAP_GLOBAL_DB_OPTYPE_ADD;
 }
