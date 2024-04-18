@@ -267,7 +267,7 @@ static int s_db_driver_sqlite_exec(sqlite3 *a_db, const char *a_query, byte_t *a
     sqlite3_stmt *l_stmt = NULL;
     l_rc = sqlite3_prepare_v2(a_db, a_query, -1, &l_stmt, NULL);
     if (l_rc != SQLITE_OK) {
-        log_it(L_ERROR, "SQL error %d(%s)", l_rc, sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
+        log_it(L_ERROR, "SQL error %d(%s)", sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
         return l_rc;
     }
     if (a_value) {
