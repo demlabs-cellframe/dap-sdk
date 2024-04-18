@@ -286,10 +286,12 @@ static int s_db_driver_sqlite_exec(sqlite3 *a_db, const char *a_query, byte_t *a
                                 sqlite3_errcode(a_db), sqlite3_errmsg(a_db), a_query);
         dap_usleep(500 * 1000);                                             /* Wait 0.5 sec */
     }
-    if (l_rc != SQLITE_OK)
-        log_it(L_ERROR, "SQL error %d(%s)", sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
     sqlite3_finalize(l_stmt);
-    return l_rc;
+    if (l_rc != SQLITE_DONE && l_rc != SQLITE_ROW) {
+        log_it(L_ERROR, "SQL error %d(%s)", sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
+        return l_rc;
+    }
+    return SQLITE_OK;
 }
 
 /**
@@ -973,31 +975,6 @@ bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
 }
 
 
-
-/**
- * @brief Executes a PRAGMA statement.
- *
- * @param a_db a pointer to an instance of SQLite database structure
- * @param a_param a PRAGMA name
- * @param a_mode a PRAGMA value
- * @return Returns true if successful, otherwise false.
- */
-static int s_dap_db_driver_sqlite_set_pragma(sqlite3 *a_db, char *a_param, char *a_mode)
-{
-char    l_query [512];
-int     l_rc;
-
-    if(!a_param || !a_mode)
-        return  log_it(L_ERROR, "%s - no param or mode\n", __PRETTY_FUNCTION__), false;
-
-    snprintf(l_query, sizeof(l_query) - 1, "PRAGMA %s = %s", a_param, a_mode);
-    l_rc = s_db_driver_sqlite_exec(a_db, l_query, NULL, 0); // default synchronous=FULL
-
-    return  (l_rc == SQLITE_OK);
-}
-
-
-
 /**
  * @brief Flushes a SQLite database cahce to disk.
  * @note The function closes and opens the database
@@ -1027,12 +1004,11 @@ static int s_db_sqlite_flush()
     sync();
 #endif
 
-    if(!s_dap_db_driver_sqlite_set_pragma(l_conn->conn, "synchronous", "NORMAL")) // 0 | OFF | 1 | NORMAL | 2 | FULL
+    if(s_db_driver_sqlite_exec(l_conn->conn, "PRAGMA synchronous = NORMAL", NULL, 0)) // 0 | OFF | 1 | NORMAL | 2 | FULL
         log_it(L_WARNING, "Can't set new synchronous mode\n");
-    if(!s_dap_db_driver_sqlite_set_pragma(l_conn->conn, "journal_mode", "OFF")) // DELETE | TRUNCATE | PERSIST | MEMORY | WAL | OFF
+    if(s_db_driver_sqlite_exec(l_conn->conn, "PRAGMA journal_mode = OFF", NULL, 0)) // DELETE | TRUNCATE | PERSIST | MEMORY | WAL | OFF
         log_it(L_WARNING, "Can't set new journal mode\n");
-
-    if(!s_dap_db_driver_sqlite_set_pragma(l_conn->conn, "page_size", "1024")) // DELETE | TRUNCATE | PERSIST | MEMORY | WAL | OFF
+    if(s_db_driver_sqlite_exec(l_conn->conn, "PRAGMA page_size = 1024", NULL, 0)) // DELETE | TRUNCATE | PERSIST | MEMORY | WAL | OFF
         log_it(L_WARNING, "Can't set page_size\n");
 
     return 0;
@@ -1087,7 +1063,6 @@ int dap_db_driver_sqlite_init(const char *a_filename_db, dap_db_driver_callbacks
     }
     DAP_DEL_Z(l_filename_dir);
 
-
     s_conn_count += dap_events_thread_get_count();
     DAP_NEW_Z_COUNT_RET_VAL(s_conn_pool, conn_pool_item_t, s_conn_count, NULL, NULL)
     /* Create a pool of connection */
@@ -1111,11 +1086,11 @@ int dap_db_driver_sqlite_init(const char *a_filename_db, dap_db_driver_callbacks
 
         log_it(L_DEBUG, "SQL connection context #%d is created @%p", i, l_conn);
 
-        if(!s_dap_db_driver_sqlite_set_pragma(l_conn, "synchronous", "NORMAL"))
+        if(s_db_driver_sqlite_exec(l_conn, "PRAGMA synchronous = NORMAL", NULL, 0))
             log_it(L_ERROR, "can't set new synchronous mode\n");
-        if(!s_dap_db_driver_sqlite_set_pragma(l_conn, "journal_mode", "OFF"))
+        if(s_db_driver_sqlite_exec(l_conn, "PRAGMA journal_mode = OFF", NULL, 0))
             log_it(L_ERROR, "can't set new journal mode\n");
-        if(!s_dap_db_driver_sqlite_set_pragma(l_conn, "page_size", "4096"))
+        if(s_db_driver_sqlite_exec(l_conn, "PRAGMA page_size = 4096", NULL, 0))
             log_it(L_ERROR, "can't set page_size\n");
     }
 
