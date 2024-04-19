@@ -155,16 +155,10 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     }
 
     log_it(L_INFO, "Remote address connected (%s:%u) with sock_id %"DAP_FORMAT_SOCKET, l_client_http->uplink_addr, l_client_http->uplink_port, a_esocket->socket);
-    // add to dap_worker
-    dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-    if (!l_es_uuid_ptr) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return;
-    }
-    *l_es_uuid_ptr = a_esocket->uuid;
-    l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, (unsigned long)s_client_timeout_read_after_connect_ms, s_timer_timeout_after_connected_check, l_es_uuid_ptr);
+
+    l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, (unsigned long)s_client_timeout_read_after_connect_ms,
+        s_timer_timeout_after_connected_check, DAP_SIZE_TO_POINTER(a_esocket->uuid));
     if (!l_client_http->timer) {
-        DAP_DELETE(l_es_uuid_ptr);
         log_it(L_ERROR, "Can't run timerfo after connection check on worker id %u", l_client_http->worker->id);
     }
 
@@ -231,11 +225,10 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
 static bool s_timer_timeout_after_connected_check(void * a_arg)
 {
     assert(a_arg);
-    dap_events_socket_uuid_t * l_es_uuid_ptr = (dap_events_socket_uuid_t *) a_arg;
-
+    dap_events_socket_uuid_t l_es_uuid = DAP_POINTER_TO_SIZE(a_arg);
     dap_worker_t * l_worker = dap_worker_get_current(); // We're in own esocket context
     assert(l_worker);
-    dap_events_socket_t * l_es = dap_context_find( l_worker->context, *l_es_uuid_ptr);
+    dap_events_socket_t * l_es = dap_context_find( l_worker->context, l_es_uuid);
     if(l_es){
         dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(l_es);
         assert(l_client_http);
@@ -255,9 +248,8 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
             return true;
     }else{
         if(s_debug_more)
-            log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid_ptr);
+            log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", l_es_uuid);
     }
-    DAP_DEL_Z(l_es_uuid_ptr);
     return false;
 }
 
@@ -269,12 +261,13 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
  */
 static bool s_timer_timeout_check(void * a_arg)
 {
-    dap_events_socket_uuid_t *l_es_uuid = (dap_events_socket_uuid_t*) a_arg;
-    assert(l_es_uuid);
+    assert(a_arg);
+
+    dap_events_socket_uuid_t l_es_uuid = DAP_POINTER_TO_SIZE(a_arg);
 
     dap_worker_t * l_worker = dap_worker_get_current(); // We're in own esocket context
     assert(l_worker);
-    dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
+    dap_events_socket_t * l_es = dap_context_find(l_worker->context, l_es_uuid);
     if(l_es){
         if (l_es->flags & DAP_SOCK_CONNECTING ){
             dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(l_es);
@@ -294,9 +287,8 @@ static bool s_timer_timeout_check(void * a_arg)
                 log_it(L_DEBUG,"Socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
     }else
         if(s_debug_more)
-            log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid);
+            log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", l_es_uuid);
 
-    DAP_DEL_Z(l_es_uuid);
     return false;
 }
 
@@ -704,20 +696,10 @@ dap_client_http_t * dap_client_http_request_custom (
         l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
         l_client_http->es = l_ev_socket;
         dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
-        dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-        if (!l_ev_uuid_ptr) {
-        log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_client_http->response);
-            DAP_DEL_Z(l_client_http->request);
-            DAP_DEL_Z(l_client_http);
-            return NULL;
-        }
-        *l_ev_uuid_ptr = l_ev_socket->uuid;
-        l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, s_timer_timeout_check, l_ev_uuid_ptr);
+        l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, s_timer_timeout_check, DAP_SIZE_TO_POINTER(l_ev_socket->uuid));
         if (!l_client_http->timer) {
             log_it(L_ERROR,"Can't run timer on worker %u for esocket uuid %"DAP_UINT64_FORMAT_U" for timeout check during connection attempt ",
-                   l_client_http->worker->id, *l_ev_uuid_ptr);
-            DAP_DEL_Z(l_ev_uuid_ptr);
+                   l_client_http->worker->id, l_ev_socket->uuid);
         }
         return l_client_http;
     }
@@ -791,11 +773,15 @@ dap_client_http_t *dap_client_http_request(dap_worker_t * a_worker,const char *a
 
 void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
 {
-    if (a_client_http->timer)
+    if (a_client_http->timer) {
         dap_timerfd_delete_unsafe(a_client_http->timer);
+        a_client_http->timer = NULL;
+    }
     if (a_client_http->es) {
-        a_client_http->were_callbacks_called = true;
-        //a_client_http->es->callbacks.delete_callback = NULL;
+        if (a_client_http->were_callbacks_called)
+            a_client_http->es->callbacks.delete_callback = NULL;
+        else
+            a_client_http->were_callbacks_called = true;
         dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);
     } else
         DAP_DELETE(a_client_http);
