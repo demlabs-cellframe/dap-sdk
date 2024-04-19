@@ -878,12 +878,14 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
                 (MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))));
     // cut unused memory
     if (rc == MDBX_NOTFOUND) {
-        // Add blank object to the end as marker of final itreation
-        l_count_current++;
-        if (l_count_current < l_count_out &&
-                !(l_obj_arr = DAP_REALLOC(l_obj_arr, l_element_size * l_count_current + l_addition_size))) {
-            log_it(L_ERROR, "Cannot cut area to keep %zu <store objects>", l_count_current);
-            rc = MDBX_PROBLEM;
+        if (!l_count_current) {
+            DAP_DEL_Z(l_obj_arr);
+        } else {
+            // Add blank object to the end as marker of final itreation
+            l_count_current++;
+            if (l_count_current < l_count_out &&
+                    !(l_obj_arr = DAP_REALLOC(l_obj_arr, l_element_size * l_count_current + l_addition_size)))
+                log_it(L_ERROR, "Cannot cut area to keep %zu <store objects>", l_count_current);
         }
     }
     if ( (MDBX_SUCCESS != rc) && (rc != MDBX_NOTFOUND) )
@@ -1127,107 +1129,109 @@ static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
 static dap_store_obj_t *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes)
 {
 int rc, rc2;
-uint64_t l_count_out;
+size_t l_count_current = 0;
 dap_db_ctx_t *l_db_ctx;
-dap_store_obj_t *l_obj, *l_obj_arr = NULL;
+dap_store_obj_t *l_obj_arr = NULL;
 MDBX_val    l_key, l_data;
 MDBX_stat   l_stat;
+MDBX_cursor *l_cursor = NULL;                                       /* Initialize MDBX cursor context area */
+MDBX_txn *l_txn = s_txn;
 
-    dap_return_val_if_fail(a_group, NULL); /* Sanity check */
+    dap_return_val_if_fail(a_group, NULL);                          /* Sanity check */
     if (!(l_db_ctx = s_get_db_ctx_for_group(a_group)))
-        return NULL;
-    MDBX_txn *l_txn = s_txn;
-    if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) )
-        return log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
-    if ( a_count_out )
-        *a_count_out = 0;
-    /*
-     *  Perfroms a find/get a record with the given key
-     */
+        goto safe_ret;
+
+    if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn)) ) {
+        log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc));
+        goto safe_ret;
+    }
+
     if ( a_key ) {
+        /*
+         *  Perfroms a find/get a record with the given key
+         */
         if (MDBX_SUCCESS == (rc = s_get_obj_by_text_key(l_txn, l_db_ctx->dbi, &l_key, &l_data, a_key))) {
             if (!a_with_holes && s_is_hole(l_data.iov_base))
                 rc = MDBX_NOTFOUND;
             else {
                 /* Found ! Make new <store_obj> */
-                if ( !(l_obj = DAP_CALLOC(1, sizeof(dap_store_obj_t))) ) {
+                if ( !(l_obj_arr = DAP_CALLOC(1, sizeof(dap_store_obj_t))) ) {
                     log_it (L_ERROR, "Cannot allocate a memory for store object key, errno=%d", errno);
                     rc = MDBX_PROBLEM;
-                } else if ( !s_fill_store_obj(a_group, &l_key, &l_data, l_obj) ) {
-                    if ( a_count_out )
-                        *a_count_out = 1;
-                } else {
+                } else if ( !s_fill_store_obj(a_group, &l_key, &l_data, l_obj_arr) )
+                    l_count_current = 1;
+                else {
                     rc = MDBX_PROBLEM;
-                    DAP_DELETE(l_obj);
+                    DAP_DEL_Z(l_obj_arr);
                 }
             }
         } else if ( rc != MDBX_NOTFOUND )
             log_it (L_ERROR, "mdbx_get: (%d) %s", rc, mdbx_strerror(rc));
-        if (!s_txn)
-            mdbx_txn_commit(l_txn);
-        return ( rc == MDBX_SUCCESS ) ? l_obj : NULL;
-    }
-
-    /*
-    ** If a_key is NULL - retrieve a requested number of records from the table
-    */
-    MDBX_cursor *l_cursor = NULL;                                       /* Initialize MDBX cursor context area */
-    do  {        
+        /*
+        ** If a_key is NULL - retrieve a requested number of records from the table
+        */
+    } else {
         /*
          * Retrieve statistic for group/table, we need to compute a number of records can be retreived
          */
-        rc2 = 0;
-        if (MDBX_SUCCESS != (rc = mdbx_dbi_stat(l_txn, l_db_ctx->dbi, &l_stat, sizeof(MDBX_stat)))) {
+        if (MDBX_SUCCESS != (rc2 = mdbx_dbi_stat(l_txn, l_db_ctx->dbi, &l_stat, sizeof(MDBX_stat)))) {
             log_it (L_ERROR, "mdbx_dbi_stat: (%d) %s", rc2, mdbx_strerror(rc2));
-            break;
+            goto safe_ret;
         } else if (!l_stat.ms_entries) {                                    /* Nothing to retrieve , table contains no record */
             debug_if(g_dap_global_db_debug_more, L_WARNING, "No object (-s) to be retrieved from the group '%s'", a_group);
-            break;
+            goto safe_ret;
         }
-        l_count_out = a_count_out && *a_count_out && *a_count_out <= l_stat.ms_entries ? *a_count_out : l_stat.ms_entries;
+        size_t l_count_out = a_count_out && *a_count_out && *a_count_out <= l_stat.ms_entries ? *a_count_out : l_stat.ms_entries;
 
         /*
          * Allocate memory for array[l_count_out] of returned objects
         */
         if ( !(l_obj_arr = (dap_store_obj_t *)DAP_NEW_Z_SIZE(char, l_count_out * sizeof(dap_store_obj_t))) ) {
-            log_it(L_ERROR, "Cannot allocate %zu bytes for %"DAP_UINT64_FORMAT_U" store objects", l_count_out * sizeof(dap_store_obj_t), l_count_out);
-            break;
+            log_it(L_ERROR, "Cannot allocate %zu bytes for %" DAP_UINT64_FORMAT_U " store objects", l_count_out * sizeof(dap_store_obj_t), l_count_out);
+            goto safe_ret;
         }
         /* Iterate cursor to retrieve records from DB */
         if ( MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor)) ) {
             log_it (L_ERROR, "mdbx_cursor_open: (%d) %s", rc, mdbx_strerror(rc));
-            break;
+            goto safe_ret;
         }
         if ( MDBX_SUCCESS != (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_FIRST)) ) {
             if (rc != MDBX_NOTFOUND)
                 log_it (L_ERROR, "mdbx_cursor_get FIRST: (%d) %s", rc, mdbx_strerror(rc));
-            break;
+            goto safe_ret;
         }
-        l_obj = l_obj_arr;
+        dap_store_obj_t *l_obj = l_obj_arr;
         do {
             if (a_with_holes || !s_is_hole(l_data.iov_base)) {
                 if (s_fill_store_obj(a_group, &l_key, &l_data, l_obj)) {
                     rc = MDBX_PROBLEM;
                     break;
                 }
-                if (a_count_out)
-                    (*a_count_out)++;
+                l_count_current++;
                 l_count_out--;
                 l_obj++;
             }
         } while (MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT)) && l_count_out);
 
-        if ( (MDBX_SUCCESS != rc) && (rc != MDBX_NOTFOUND) ) {
+        if ( (MDBX_SUCCESS != rc) && (rc != MDBX_NOTFOUND) )
             log_it (L_ERROR, "mdbx_get ALL: (%d) %s", rc, mdbx_strerror(rc));
-            break;
-        }
 
-    } while (0);
+        // Cut unused memory
+        if (!l_count_current) {
+            DAP_DEL_Z(l_obj_arr);
+        } else if (l_count_current < l_count_out) {
+            l_obj_arr = DAP_REALLOC(l_obj_arr, l_count_current * sizeof(dap_store_obj_t));
+            if (!l_obj_arr)
+                log_it(L_ERROR, "Cannot cut area to keep %zu <store objects>", l_count_current);
+        }
+    }
+safe_ret:
     if (l_cursor)
         mdbx_cursor_close(l_cursor);
     if (!s_txn)
         mdbx_txn_commit(l_txn);
-
+    if (a_count_out)
+        *a_count_out = l_count_current;
     return l_obj_arr;
 }
 

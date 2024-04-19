@@ -406,7 +406,7 @@ dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_ke
 {
     dap_store_obj_t *l_ret = NULL;
     // read records using the selected database engine
-    if(s_drv_callback.read_store_obj)
+    if (s_drv_callback.read_store_obj)
         l_ret = s_drv_callback.read_store_obj(a_group, a_key, a_count_out, a_with_holes);
     return l_ret;
 }

@@ -144,7 +144,7 @@ static void s_msg_opcode_flush(struct queue_io_msg * a_msg);
 static void s_queue_io_msg_delete( struct queue_io_msg * a_msg);
 
 // convert dap_store_obj_t to dap_global_db_obj_t
-static dap_global_db_obj_t* s_objs_from_store_objs(const dap_store_obj_t *a_store_objs, size_t a_values_count);
+static dap_global_db_obj_t* s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_t a_values_count);
 
 /**
  * @brief dap_global_db_init
@@ -1335,7 +1335,7 @@ static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_gr
     dap_store_obj_t l_store_obj = {
         .key        = a_key,
         .group      = (char *)a_group,
-        .flags      = DAP_GLOBAL_DB_RECORD_NEW & DAP_GLOBAL_DB_RECORD_DEL,
+        .flags      = DAP_GLOBAL_DB_RECORD_NEW | DAP_GLOBAL_DB_RECORD_DEL,
         .timestamp  = dap_nanotime_now()
     };
     if (a_key)
@@ -1507,6 +1507,9 @@ dap_global_db_obj_t *dap_global_db_objs_copy(const dap_global_db_obj_t *a_objs_s
 void dap_global_db_objs_delete(dap_global_db_obj_t *a_objs, size_t a_count)
 {
 dap_global_db_obj_t *l_obj;
+
+    if (!a_objs && !a_count)
+        return;
 
     dap_return_if_fail(a_objs && a_count)                                   /* Sanity checks */
 
@@ -1763,7 +1766,7 @@ static void s_check_db_version_callback_set (dap_global_db_instance_t *a_dbi,int
  * @return pointer if not error, else NULL
  */
 
-dap_global_db_obj_t *s_objs_from_store_objs(const dap_store_obj_t *a_store_objs, size_t a_values_count)
+dap_global_db_obj_t *s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_t a_values_count)
 {
     dap_return_val_if_pass(!a_store_objs, NULL);
     
@@ -1786,7 +1789,7 @@ dap_global_db_obj_t *s_objs_from_store_objs(const dap_store_obj_t *a_store_objs,
         l_objs[i].value_len = a_store_objs[i].value_len;
         l_objs[i].timestamp = a_store_objs[i].timestamp;
         DAP_DELETE(a_store_objs[i].group);
-        DAP_DELETE(a_store_objs[i].sign);
+        DAP_DEL_Z(a_store_objs[i].sign);
     }
     DAP_DELETE(a_store_objs);
     return l_objs;
@@ -1794,8 +1797,8 @@ dap_global_db_obj_t *s_objs_from_store_objs(const dap_store_obj_t *a_store_objs,
 
 bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj)
 {
-    if (!a_obj)
-        return true;
+    dap_return_val_if_fail(a_obj && a_obj->group && a_obj->key, false);
+
     bool ret = true;
     for (char *c = (char*)a_obj->key; *c; ++c) {
         if (!dap_ascii_isprint(*c)) {
