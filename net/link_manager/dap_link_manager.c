@@ -738,7 +738,7 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
     }
     if (a_with_client) {
         if (!l_link->uplink.client)
-            l_link->uplink.client = dap_client_new(NULL, s_client_error_callback, NULL);
+            l_link->uplink.client = dap_client_new(s_client_error_callback, NULL);
         else
             debug_if(s_debug_more, L_DEBUG, "Link " NODE_ADDR_FP_STR " already have a client", NODE_ADDR_FP_ARGS(a_node_addr));
         l_link->uplink.client->_inheritor = l_link;

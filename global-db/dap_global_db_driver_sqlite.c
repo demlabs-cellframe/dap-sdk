@@ -518,7 +518,8 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
     size_t l_record_len = 0;
     struct driver_record *l_record;
     char *l_table_name = s_sqlite_make_table_name(a_store_obj->group);
-    if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD) {
+    uint8_t l_type_erase = a_store_obj->flags & DAP_GLOBAL_DB_RECORD_ERASE;
+    if (!l_type_erase) {
         if (!a_store_obj->key) {
             log_it(L_ERROR, "Global DB store object unsigned");
             l_ret = -3;
@@ -558,20 +559,16 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             /* Put the authorization sign */
             memcpy(l_record->value_n_sign + a_store_obj->value_len, a_store_obj->sign, l_record->sign_len);
         }
-    } else if (a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_DEL) {
+    } else {
         if (a_store_obj->key) //delete one record
             l_query = sqlite3_mprintf("DELETE FROM '%s' WHERE key = '%s'", l_table_name, a_store_obj->key);
         else // remove all group
             l_query = sqlite3_mprintf("DROP TABLE IF EXISTS '%s'", l_table_name);
-    } else {
-        log_it(L_ERROR, "Unknown store_obj type '0x%x'", a_store_obj->type);
-        l_ret = -8;
-        goto ret_n_free;
     }
     dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
     l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, &l_driver_key, (byte_t *)l_record, l_record_len);
 
-    if (l_ret == SQLITE_ERROR && a_store_obj->type == DAP_GLOBAL_DB_OPTYPE_ADD) {
+    if (l_ret == SQLITE_ERROR && !l_type_erase) {
         // create table
         s_db_driver_sqlite_create_group_table(l_table_name);
         // repeat request

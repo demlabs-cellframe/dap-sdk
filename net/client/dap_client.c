@@ -71,21 +71,18 @@ void dap_client_deinit()
  * @param a_stage_status_error_callback
  * @return
  */
-dap_client_t *dap_client_new(dap_client_callback_t a_delete_callback,
-                             dap_client_callback_t a_stage_status_error_callback,
-                             void *a_callbacks_arg)
+dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback, void *a_callbacks_arg)
 {
 // memory alloc
     dap_client_t *l_client = NULL;
     DAP_NEW_Z_RET_VAL(l_client, dap_client_t, NULL, NULL);
     DAP_NEW_Z_RET_VAL(l_client->_internal, dap_client_pvt_t, NULL, l_client);
 // func work
-    l_client->delete_callback = a_delete_callback;
+    l_client->stage_status_error_callback = a_stage_status_error_callback;
     l_client->callbacks_arg = a_callbacks_arg;
     // CONSTRUCT dap_client object
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     l_client_pvt->client = l_client;
-    l_client_pvt->stage_status_error_callback = a_stage_status_error_callback;
     l_client_pvt->worker = dap_events_worker_get_auto();
     dap_client_pvt_new(l_client_pvt);
     return l_client;
@@ -181,7 +178,7 @@ int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_ty
     return 0;
 }
 
-static void s_client_queue_clear_on_worker(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
+static void s_client_queue_clear_on_worker(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
 {
     dap_client_pvt_queue_clear(DAP_CLIENT_PVT((dap_client_t *)a_arg));
 }
@@ -238,19 +235,14 @@ void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_chain_net_na
  */
 void dap_client_delete_unsafe(dap_client_t *a_client)
 {
-    if(!a_client) {
-        log_it(L_CRITICAL, "Invalid arguments in dap_client_delete_unsafe");
-        return;
-    }
-    if(a_client->delete_callback)
-        a_client->delete_callback(a_client, a_client->callbacks_arg);
+    dap_return_if_fail(a_client);
     dap_client_pvt_delete_unsafe( DAP_CLIENT_PVT(a_client) );
     DAP_DEL_Z(a_client->active_channels);
     DAP_DELETE(a_client);
 }
 
 
-void s_client_delete_on_worker(UNUSED_ARG dap_worker_t *a_worker, void *a_arg)
+void s_client_delete_on_worker(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
 {
     dap_client_delete_unsafe(a_arg);
 }
@@ -324,12 +316,8 @@ static void s_go_stage_on_client_worker_unsafe(dap_worker_t UNUSED_ARG *a_worker
 void dap_client_go_stage(dap_client_t *a_client, dap_client_stage_t a_stage_target, dap_client_callback_t a_stage_end_callback)
 {
     // ----- check parameters -----
-    if(NULL == a_client) {
-        log_it(L_ERROR, "dap_client_go_stage, a_client == NULL");
-        return;
-    }
+    dap_return_if_fail(a_client);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
-
     if (NULL == l_client_pvt || l_client_pvt->is_removing) {
         log_it(L_ERROR, "dap_client_go_stage, client_pvt not exists or removing");
         return;

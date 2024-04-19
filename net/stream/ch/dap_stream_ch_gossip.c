@@ -120,6 +120,9 @@ static bool s_callback_hashtable_maintenance(void UNUSED_ARG *a_arg)
 
 void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const void *a_payload, size_t a_payload_size, dap_hash_fast_t *a_payload_hash)
 {
+    dap_return_if_fail(a_cluster && a_payload && a_payload_size && a_payload_hash);
+    if (dap_cluster_is_empty(a_cluster))
+        return;
     struct gossip_msg_item *l_msg_item = NULL;
     pthread_rwlock_wrlock(&s_gossip_lock);
     unsigned l_hash_value = 0;
