@@ -302,7 +302,7 @@ int dap_global_db_driver_add(dap_store_obj_t *a_store_obj, size_t a_store_count)
 dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
     for(int i = a_store_count; i--; l_store_obj_cur++)
-        l_store_obj_cur->flags &= ~DAP_GLBOAL_DB_RECORD_ERASE;
+        l_store_obj_cur->flags &= ~DAP_GLOBAL_DB_RECORD_ERASE;
 
     return dap_global_db_driver_apply(a_store_obj, a_store_count);
 }
@@ -318,7 +318,7 @@ int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_co
 dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
     for(int i = a_store_count; i--; l_store_obj_cur++)
-        l_store_obj_cur->flags |= DAP_GLBOAL_DB_RECORD_ERASE;
+        l_store_obj_cur->flags |= DAP_GLOBAL_DB_RECORD_ERASE;
 
     return dap_global_db_driver_apply(a_store_obj, a_store_count);
 }

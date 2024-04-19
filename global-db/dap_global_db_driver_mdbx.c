@@ -100,11 +100,11 @@ static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const cha
 static void             *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes);
 static inline dap_global_db_hash_pkt_t *s_db_mdbx_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
 {
-    return s_db_mdbx_read_cond(a_group, a_hash_from, NULL, true);
+    return s_db_mdbx_read_cond(a_group, a_hash_from, NULL, true, true);
 }
-static inline dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out)
+static inline dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes)
 {
-    return s_db_mdbx_read_cond(a_group, a_hash_from, a_count_out, false);
+    return s_db_mdbx_read_cond(a_group, a_hash_from, a_count_out, false, a_with_holes);
 }
 static size_t           s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
