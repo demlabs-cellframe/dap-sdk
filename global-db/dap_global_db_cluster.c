@@ -212,7 +212,7 @@ static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const vo
                                                            a_type, a_data_size, NODE_ADDR_FP_ARGS_S(a_ch->stream->node));
     dap_global_db_cluster_t *l_cluster = a_arg;
     switch (a_type) {
-    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST:
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST: {
         dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)a_data;
         dap_global_db_cluster_t *l_msg_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(),
                                                                                 (char *)l_pkt->group_n_hashses);
@@ -220,7 +220,8 @@ static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const vo
             debug_if(g_dap_global_db_debug_more, L_NOTICE, "Last activity for cluster %s was renewed", l_cluster->groups_mask);
             l_cluster->sync_context.stage_last_activity = dap_time_now();
         }
-        break;
+    } break;
+
     default:
         break;
     }
