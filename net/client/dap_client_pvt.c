@@ -200,21 +200,13 @@ static void s_stream_connected(dap_client_pvt_t * a_client_pvt)
     a_client_pvt->stage_status = STAGE_STATUS_DONE;
 
     s_stage_status_after(a_client_pvt);
-    dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-    if (!l_es_uuid_ptr) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        return;
-    }
     assert(a_client_pvt->stream_es);
-
-    *l_es_uuid_ptr = a_client_pvt->stream_es->uuid;
 
     if( dap_timerfd_start_on_worker(a_client_pvt->stream_es->context->worker,
                                     s_client_timeout_active_after_connect_seconds * 1024,
                                     s_stream_timer_timeout_after_connected_check,
-                                    l_es_uuid_ptr) == NULL) {
-        log_it(L_ERROR,"Can't run timer for stream after connect check for esocket uuid %"DAP_UINT64_FORMAT_U, *l_es_uuid_ptr);
-        DAP_DEL_Z(l_es_uuid_ptr);
+                                    DAP_SIZE_TO_POINTER(a_client_pvt->stream_es->uuid)) == NULL) {
+        log_it(L_ERROR,"Can't run timer for stream after connect check for esocket uuid %"DAP_UINT64_FORMAT_U, a_client_pvt->stream_es->uuid);
     }
 }
 
@@ -230,7 +222,7 @@ static bool s_stream_timer_timeout_check(void * a_arg)
         log_it(L_ERROR, "Invalid arguments in s_stream_timer_timeout_check");
         return false;
     }
-    dap_events_socket_uuid_t *l_es_uuid_ptr = (dap_events_socket_uuid_t*) a_arg;
+    dap_events_socket_uuid_t l_es_uuid = DAP_POINTER_TO_SIZE(a_arg);
     dap_worker_t *l_worker = dap_worker_get_current();
     assert(l_worker);
     if (!l_worker) {
@@ -238,7 +230,7 @@ static bool s_stream_timer_timeout_check(void * a_arg)
         return false;
     }
 
-    dap_events_socket_t *l_es = dap_context_find(l_worker->context, *l_es_uuid_ptr);
+    dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_es_uuid);
     if(l_es){
         if (l_es->flags & DAP_SOCK_CONNECTING ){
             dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
@@ -255,9 +247,8 @@ static bool s_stream_timer_timeout_check(void * a_arg)
                 log_it(L_DEBUG,"Socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
     }else
         if(s_debug_more)
-            log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid_ptr);
+            log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", l_es_uuid);
 
-    DAP_DELETE(l_es_uuid_ptr);
     return false;
 }
 
@@ -269,12 +260,12 @@ static bool s_stream_timer_timeout_check(void * a_arg)
 static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
 {
     assert(a_arg);
-    dap_events_socket_uuid_t *l_es_uuid_ptr = (dap_events_socket_uuid_t*) a_arg;
+    dap_events_socket_uuid_t l_es_uuid = DAP_POINTER_TO_SIZE(a_arg);
 
     dap_worker_t * l_worker = dap_worker_get_current();
     assert(l_worker);
 
-    dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid_ptr);
+    dap_events_socket_t * l_es = dap_context_find(l_worker->context, l_es_uuid);
     if( l_es ){
         dap_client_t *l_client = DAP_ESOCKET_CLIENT(l_es);
         dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
@@ -291,9 +282,8 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
             if(s_debug_more)
                 log_it(L_DEBUG,"Streaming socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
     } else
-        debug_if(s_debug_more, L_DEBUG, "Streaming socket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid_ptr);
+        debug_if(s_debug_more, L_DEBUG, "Streaming socket %"DAP_UINT64_FORMAT_U" is finished, close check timer", l_es_uuid);
 
-    DAP_DELETE(l_es_uuid_ptr);
     return false;
 }
 
@@ -510,17 +500,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
 
                             // Add check timer
                             assert(a_client_pvt->stream_es);
-                            dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-                            if (!l_stream_es_uuid_ptr) {
-                                log_it(L_CRITICAL, "Memory allocation error");
-                                a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                                a_client_pvt->last_error = ERROR_STREAM_ABORTED;
-                                s_stage_status_after(a_client_pvt);
-                                return;
-                            }
-                            *l_stream_es_uuid_ptr  = a_client_pvt->stream_es->uuid;
                             dap_timerfd_start_on_worker(l_worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
-                                                        s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
+                                                        s_stream_timer_timeout_check, DAP_SIZE_TO_POINTER(a_client_pvt->stream_es->uuid));
                         }
                         else if (l_err != EINPROGRESS && l_err != -1){
                             char l_errbuf[128] = {0};
@@ -540,17 +521,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                             // add to dap_worker
                             assert (a_client_pvt->stream_es);
                             dap_worker_add_events_socket(l_worker, a_client_pvt->stream_es);
-                            dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
-                            if (!l_stream_es_uuid_ptr) {
-                                log_it(L_CRITICAL, "Memory allocation error");
-                                a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                                a_client_pvt->last_error = ERROR_STREAM_ABORTED;
-                                s_stage_status_after(a_client_pvt);
-                                return;
-                            }
-                            *l_stream_es_uuid_ptr = a_client_pvt->stream_es->uuid;
                             dap_timerfd_start_on_worker(l_worker, (unsigned long)s_client_timeout_active_after_connect_seconds * 1000,
-                                                        s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
+                                                        s_stream_timer_timeout_check, DAP_SIZE_TO_POINTER(a_client_pvt->stream_es->uuid));
                         }
                     }
                     if (a_client_pvt->stage_status == STAGE_STATUS_ERROR)

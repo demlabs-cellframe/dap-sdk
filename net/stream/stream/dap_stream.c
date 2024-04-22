@@ -320,17 +320,10 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client)
     l_ret->seq_id = 0;
     l_ret->client_last_seq_id_packet = (size_t)-1;
     // Start server keep-alive timer
-    dap_events_socket_uuid_t *l_es_uuid = DAP_NEW_Z(dap_events_socket_uuid_t);
-    if (!l_es_uuid) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_DEL_Z(l_ret);
-        return NULL;
-    }
-    *l_es_uuid = l_ret->esocket->uuid;
     l_ret->keepalive_timer = dap_timerfd_start_on_worker(l_ret->esocket->context->worker,
                                                          STREAM_KEEPALIVE_TIMEOUT * 1000,
                                                          (dap_timerfd_callback_t)s_callback_server_keepalive,
-                                                         l_es_uuid);
+                                                         DAP_SIZE_TO_POINTER(l_ret->esocket->uuid));
     l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
     l_ret->esocket->callbacks.worker_unassign_callback = s_esocket_callback_worker_unassign;
     a_http_client->_inheritor = l_ret;
@@ -532,16 +525,10 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
     assert(l_stream);
     // Restart server keepalive timer if it was unassigned before
     if (!l_stream->keepalive_timer) {
-        dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
-        if (!l_es_uuid) {
-        log_it(L_CRITICAL, "Memory allocation error");
-            return;
-        }
-        *l_es_uuid = a_esocket->uuid;
         l_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
                                                                 STREAM_KEEPALIVE_TIMEOUT * 1000,
                                                                 (dap_timerfd_callback_t)s_callback_server_keepalive,
-                                                                l_es_uuid);
+                                                                DAP_SIZE_TO_POINTER(a_esocket->uuid));
     }
 }
 
@@ -571,16 +558,10 @@ static void s_client_callback_worker_assign(dap_events_socket_t * a_esocket, dap
     assert(l_stream);
     // Start client keepalive timer or restart it, if it was unassigned before
     if (!l_stream->keepalive_timer) {
-        dap_events_socket_uuid_t * l_es_uuid= DAP_NEW_Z(dap_events_socket_uuid_t);
-        if (!l_es_uuid) {
-        log_it(L_CRITICAL, "Memory allocation error");
-            return;
-        }
-        *l_es_uuid = a_esocket->uuid;
         l_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
                                                                 STREAM_KEEPALIVE_TIMEOUT * 1000,
                                                                 (dap_timerfd_callback_t)s_callback_client_keepalive,
-                                                                l_es_uuid);
+                                                                DAP_SIZE_TO_POINTER(a_esocket->uuid));
     }
 }
 
@@ -952,9 +933,9 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
 {
     if (!a_arg)
         return false;
-    dap_events_socket_uuid_t * l_es_uuid = (dap_events_socket_uuid_t*) a_arg;
+    dap_events_socket_uuid_t l_es_uuid = DAP_POINTER_TO_INT(a_arg);
     dap_worker_t * l_worker = dap_worker_get_current();
-    dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
+    dap_events_socket_t * l_es = dap_context_find(l_worker->context, l_es_uuid);
     if(l_es) {
         dap_stream_t *l_stream = NULL;
         if (a_server_side) {
@@ -977,7 +958,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
             return true;
         }
         if(s_debug)
-            log_it(L_DEBUG,"Keepalive for sock fd %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x, l_es->socket, *l_es_uuid);
+            log_it(L_DEBUG,"Keepalive for sock fd %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x, l_es->socket, l_es_uuid);
         dap_stream_pkt_hdr_t l_pkt = {};
         l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
         memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
@@ -985,8 +966,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         return true;
     }else{
         if(s_debug)
-            log_it(L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", *l_es_uuid);
-        DAP_DELETE(l_es_uuid);
+            log_it(L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", l_es_uuid);
         return false; // Socket is removed from worker
     }
 }
