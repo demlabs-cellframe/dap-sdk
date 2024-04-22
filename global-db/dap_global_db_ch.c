@@ -86,7 +86,8 @@ static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg)
 
 bool s_proc_thread_reader(void *a_arg)
 {
-    dap_global_db_start_pkt_t *l_pkt = (dap_global_db_start_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t));
+    dap_global_db_start_pkt_t *l_pkt = (dap_global_db_start_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t) + sizeof(byte_t));
+    byte_t l_type = *((byte_t *)a_arg + sizeof(dap_stream_node_addr_t));
     const char *l_group = (const char *)l_pkt->group;
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
     if (!l_cluster) {
@@ -146,12 +147,12 @@ bool s_proc_thread_reader(void *a_arg)
                                            l_hashes_pkt, dap_global_db_hash_pkt_get_size(l_hashes_pkt));
         }
         DAP_DELETE(l_hashes_pkt);
-    } else {
+    } else if (l_type != DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST) {
         debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_START packet for group %s from first record", l_group);
         size_t l_pkt_size = dap_global_db_start_pkt_get_size(l_pkt);
         dap_global_db_start_pkt_t *l_oncoming_pkt = DAP_DUP_SIZE(l_pkt, l_pkt_size);
         l_oncoming_pkt->last_hash = c_dap_global_db_driver_hash_blank;
-        dap_stream_ch_pkt_send_by_addr(l_sender_addr, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START,
+        dap_stream_ch_pkt_send_by_addr(l_sender_addr, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST,
                                        l_oncoming_pkt, l_pkt_size);
     }
     if (!l_ret)
@@ -312,22 +313,25 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
     dap_stream_ch_pkt_t * l_ch_pkt = (dap_stream_ch_pkt_t *)a_arg;
     switch (l_ch_pkt->hdr.type) {
 
-    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START: {
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START:
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST: {
         dap_global_db_start_pkt_t *l_pkt = (dap_global_db_start_pkt_t *)l_ch_pkt->data;
         if (l_ch_pkt->hdr.data_size < sizeof(dap_global_db_start_pkt_t) ||
                 l_ch_pkt->hdr.data_size != dap_global_db_start_pkt_get_size(l_pkt)) {
             log_it(L_WARNING, "Invalid packet size %u", l_ch_pkt->hdr.data_size);
             return false;
         }
-        debug_if(g_dap_global_db_debug_more, L_INFO, "IN: GLOBAL_DB_SYNC_START packet for group %s",
-                 l_pkt->group);
-        byte_t *l_arg = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_node_addr_t) + l_ch_pkt->hdr.data_size);
+        debug_if(g_dap_global_db_debug_more, L_INFO, "IN: %s packet for group %s",
+                            l_ch_pkt->hdr.type == DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START
+                            ? "GLOBAL_DB_SYNC_START" : "GLOBAL_DB_GROUP_REQUEST", l_pkt->group);
+        byte_t *l_arg = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_node_addr_t) + sizeof(byte_t) + l_ch_pkt->hdr.data_size);
         if (!l_arg) {
             log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             break;
         }
         memcpy(l_arg + sizeof(dap_stream_node_addr_t), l_pkt, l_ch_pkt->hdr.data_size);
         *(dap_stream_node_addr_t *)l_arg = a_ch->stream->node;
+        *(l_arg + sizeof(dap_stream_node_addr_t)) = l_ch_pkt->hdr.type;
         dap_proc_thread_callback_add_pri(NULL, s_proc_thread_reader, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
     } break;
 
