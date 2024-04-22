@@ -329,7 +329,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             break;
         }
-        memcpy(l_arg + sizeof(dap_stream_node_addr_t), l_pkt, l_ch_pkt->hdr.data_size);
+        memcpy(l_arg + sizeof(dap_stream_node_addr_t) + sizeof(byte_t), l_pkt, l_ch_pkt->hdr.data_size);
         *(dap_stream_node_addr_t *)l_arg = a_ch->stream->node;
         *(l_arg + sizeof(dap_stream_node_addr_t)) = l_ch_pkt->hdr.type;
         dap_proc_thread_callback_add_pri(NULL, s_proc_thread_reader, l_arg, DAP_GLOBAL_DB_TASK_PRIORITY);
