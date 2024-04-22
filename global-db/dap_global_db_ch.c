@@ -148,7 +148,7 @@ bool s_proc_thread_reader(void *a_arg)
         }
         DAP_DELETE(l_hashes_pkt);
     } else if (l_type != DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST) {
-        debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_START packet for group %s from first record", l_group);
+        debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_GROUP_REQUEST packet for group %s from first record", l_group);
         size_t l_pkt_size = dap_global_db_start_pkt_get_size(l_pkt);
         dap_global_db_start_pkt_t *l_oncoming_pkt = DAP_DUP_SIZE(l_pkt, l_pkt_size);
         l_oncoming_pkt->last_hash = c_dap_global_db_driver_hash_blank;

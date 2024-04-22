@@ -864,7 +864,7 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
         if (a_keys_only_read && l_key.iov_len == sizeof(dap_global_db_driver_hash_t)) {
             dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_obj_arr;
             dap_global_db_driver_hash_t *l_hashes_ptr = (dap_global_db_driver_hash_t *)(l_pkt->group_n_hashses + l_group_name_len);
-            *(l_hashes_ptr + l_count_current) = *(dap_global_db_driver_hash_t *)l_key.iov_base;
+            *(l_hashes_ptr + l_count_current++) = *(dap_global_db_driver_hash_t *)l_key.iov_base;
         } else {
             if (a_with_holes || !s_is_hole(l_data.iov_base)) {
                 if (s_fill_store_obj(a_group, &l_key, &l_data, (dap_store_obj_t *)l_obj_arr + l_count_current)) {
