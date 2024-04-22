@@ -77,6 +77,7 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     l_pkt->key_len = l_key_len;
     l_pkt->value_len = a_store_obj->value_len;
     l_pkt->crc = a_store_obj->crc;
+    l_pkt->flags = a_store_obj->flags & DAP_GLOBAL_DB_RECORD_DEL;
     l_pkt->data_len = l_data_size_out;
 
     /* Put serialized data into the payload part of the packet */
@@ -163,7 +164,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
         log_it(L_ERROR, "Broken GDB element: 'key_len' field is incorrect");
         return NULL;
     }
-    a_obj->type = DAP_GLOBAL_DB_OPTYPE_ADD;
+    a_obj->flags = a_pkt->flags & DAP_GLOBAL_DB_RECORD_DEL;
     a_obj->timestamp = a_pkt->timestamp;
     a_obj->value_len = a_pkt->value_len;
     a_obj->crc = a_pkt->crc;

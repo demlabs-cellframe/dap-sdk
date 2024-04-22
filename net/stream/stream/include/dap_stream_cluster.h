@@ -83,6 +83,7 @@ dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_strea
 dap_cluster_member_t *dap_cluster_member_find_unsafe(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
 int dap_cluster_member_find_role(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
 size_t dap_cluster_members_count(dap_cluster_t *a_cluster);
+DAP_STATIC_INLINE bool dap_cluster_is_empty(dap_cluster_t *a_cluster) { return !dap_cluster_members_count(a_cluster); }
 int dap_cluster_member_delete(dap_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr);
 void dap_cluster_delete_all_members(dap_cluster_t *a_cluster);
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size,
