@@ -178,3 +178,8 @@ dap_list_t *dap_global_db_driver_get_groups_by_mask(const char *a_group_mask);
 dap_global_db_hash_pkt_t *dap_global_db_driver_hashes_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 int dap_global_db_driver_txn_start();
 int dap_global_db_driver_txn_end(bool a_commit);
+
+DAP_STATIC_INLINE bool dap_global_db_driver_is_hole(uint8_t a_flags)
+{
+    return a_flags & DAP_GLOBAL_DB_RECORD_DEL;
+}

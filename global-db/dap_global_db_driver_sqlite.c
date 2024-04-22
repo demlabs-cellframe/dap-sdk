@@ -559,14 +559,15 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             /* Put the authorization sign */
             memcpy(l_record->value_n_sign + a_store_obj->value_len, a_store_obj->sign, l_record->sign_len);
         }
+        dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
+        l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, &l_driver_key, (byte_t *)l_record, l_record_len);
     } else {
         if (a_store_obj->key) //delete one record
             l_query = sqlite3_mprintf("DELETE FROM '%s' WHERE key = '%s'", l_table_name, a_store_obj->key);
         else // remove all group
             l_query = sqlite3_mprintf("DROP TABLE IF EXISTS '%s'", l_table_name);
+        l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, NULL, NULL, 0);
     }
-    dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
-    l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, &l_driver_key, (byte_t *)l_record, l_record_len);
 
     if (l_ret == SQLITE_ERROR && !l_type_erase) {
         // create table
@@ -786,7 +787,7 @@ dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap_global
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out)
+dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes)
 {
 // sanity check
     conn_pool_item_t *l_conn = s_sqlite_get_connection();

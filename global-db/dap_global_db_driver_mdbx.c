@@ -592,11 +592,6 @@ static int s_get_obj_by_text_key(MDBX_txn *a_txn, MDBX_dbi a_dbi, MDBX_val *a_ke
     return MDBX_NOTFOUND;
 }
 
-DAP_STATIC_INLINE bool s_is_hole(struct driver_record *a_record)
-{
-    return a_record->flags & DAP_GLOBAL_DB_RECORD_DEL;
-}
-
 /*
  *  DESCRIPTION: Action routine - lookup in the group/table a last stored record (with the bigest Id).
  *      We mainatain internaly <id> of record (it's just sequence),
@@ -642,7 +637,7 @@ dap_store_obj_t *l_obj = NULL;
     }
 
     if (!a_with_holes) {
-        while (s_is_hole(l_data.iov_base)) {
+        while (dap_global_db_driver_is_hole(((struct driver_record *)(l_data.iov_base))->flags)) {
             rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_PREV);
             if (rc != MDBX_SUCCESS) {
                 if (rc != MDBX_NOTFOUND)
@@ -866,7 +861,7 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
             dap_global_db_driver_hash_t *l_hashes_ptr = (dap_global_db_driver_hash_t *)(l_pkt->group_n_hashses + l_group_name_len);
             *(l_hashes_ptr + l_count_current) = *(dap_global_db_driver_hash_t *)l_key.iov_base;
         } else {
-            if (a_with_holes || !s_is_hole(l_data.iov_base)) {
+            if (a_with_holes || !dap_global_db_driver_is_hole(((struct driver_record *)(l_data.iov_base))->flags)) {
                 if (s_fill_store_obj(a_group, &l_key, &l_data, (dap_store_obj_t *)l_obj_arr + l_count_current)) {
                     rc = MDBX_PROBLEM;
                     break;
@@ -1151,7 +1146,7 @@ MDBX_txn *l_txn = s_txn;
          *  Perfroms a find/get a record with the given key
          */
         if (MDBX_SUCCESS == (rc = s_get_obj_by_text_key(l_txn, l_db_ctx->dbi, &l_key, &l_data, a_key))) {
-            if (!a_with_holes && s_is_hole(l_data.iov_base))
+            if (!a_with_holes && dap_global_db_driver_is_hole(((struct driver_record *)(l_data.iov_base))->flags))
                 rc = MDBX_NOTFOUND;
             else {
                 /* Found ! Make new <store_obj> */
@@ -1202,7 +1197,7 @@ MDBX_txn *l_txn = s_txn;
         }
         dap_store_obj_t *l_obj = l_obj_arr;
         do {
-            if (a_with_holes || !s_is_hole(l_data.iov_base)) {
+            if (a_with_holes || !dap_global_db_driver_is_hole(((struct driver_record *)(l_data.iov_base))->flags)) {
                 if (s_fill_store_obj(a_group, &l_key, &l_data, l_obj)) {
                     rc = MDBX_PROBLEM;
                     break;
