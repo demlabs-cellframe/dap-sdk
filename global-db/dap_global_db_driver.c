@@ -154,13 +154,32 @@ static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const 
 {
     *a_store_obj_dst = *a_store_obj_src;
     a_store_obj_dst->group = dap_strdup(a_store_obj_src->group);
+    if (a_store_obj_src->group && !a_store_obj_dst->group) {
+        log_it(L_CRITICAL, g_error_memory_alloc);
+        return;
+    }
     a_store_obj_dst->key = dap_strdup(a_store_obj_src->key);
-    a_store_obj_dst->sign = DAP_DUP_SIZE(a_store_obj_dst->sign, a_store_obj_dst->sign->header.sign_size);
+    if (a_store_obj_src->key && !a_store_obj_dst->key) {
+        log_it(L_CRITICAL, g_error_memory_alloc);
+        return;
+    }
+    if (a_store_obj_src->sign) {
+        a_store_obj_dst->sign = DAP_DUP_SIZE(a_store_obj_src->sign, dap_sign_get_size(a_store_obj_src->sign));
+        if (!a_store_obj_dst->sign) {
+            log_it(L_CRITICAL, g_error_memory_alloc);
+            return;
+        }
+    }
     if (a_store_obj_src->value) {
         if (!a_store_obj_src->value_len)
             log_it(L_WARNING, "Inconsistent global DB object copy requested");
-        else
+        else {
             a_store_obj_dst->value = DAP_DUP_SIZE(a_store_obj_src->value, a_store_obj_src->value_len);
+            if (!a_store_obj_dst->value) {
+                log_it(L_CRITICAL, g_error_memory_alloc);
+                return;
+            }
+        }
     }
 }
 
@@ -174,11 +193,13 @@ dap_store_obj_t *dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store
 {
 dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
-    if(!a_store_obj || !a_store_count)
+    if (!a_store_obj || !a_store_count)
         return NULL;
 
-    if ( !(l_store_obj = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * a_store_count)) )
-         return NULL;
+    if ( !(l_store_obj = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * a_store_count)) ) {
+        log_it(L_CRITICAL, g_error_memory_alloc);
+        return NULL;
+    }
 
     l_store_obj_dst = l_store_obj;
     l_store_obj_src = a_store_obj;
@@ -250,7 +271,7 @@ dap_store_obj_t *l_store_obj_cur;
 
     if(s_drv_callback.apply_store_obj) {
         for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
-            if ((l_store_obj_cur->type == DAP_GLOBAL_DB_OPTYPE_ADD) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
+            if (!(l_store_obj_cur->flags & DAP_GLOBAL_DB_RECORD_DEL) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
                 log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i, a_store_count);
                 l_ret = -9;
                 break;
@@ -281,7 +302,7 @@ int dap_global_db_driver_add(dap_store_obj_t *a_store_obj, size_t a_store_count)
 dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
     for(int i = a_store_count; i--; l_store_obj_cur++)
-        l_store_obj_cur->type = DAP_GLOBAL_DB_OPTYPE_ADD;
+        l_store_obj_cur->flags &= ~DAP_GLOBAL_DB_RECORD_ERASE;
 
     return dap_global_db_driver_apply(a_store_obj, a_store_count);
 }
@@ -297,7 +318,7 @@ int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_co
 dap_store_obj_t *l_store_obj_cur = a_store_obj;
 
     for(int i = a_store_count; i--; l_store_obj_cur++)
-        l_store_obj_cur->type = DAP_GLOBAL_DB_OPTYPE_DEL;
+        l_store_obj_cur->flags |= DAP_GLOBAL_DB_RECORD_ERASE;
 
     return dap_global_db_driver_apply(a_store_obj, a_store_count);
 }
@@ -338,13 +359,22 @@ dap_list_t *dap_global_db_driver_get_groups_by_mask(const char *a_group_mask)
  * @param a_group the group name
  * @return If successful, a pointer to the object, otherwise NULL.
  */
-dap_store_obj_t *dap_global_db_driver_read_last(const char *a_group)
+dap_store_obj_t *dap_global_db_driver_read_last(const char *a_group, bool a_with_holes)
 {
     dap_store_obj_t *l_ret = NULL;
     // read records using the selected database engine
     if(s_drv_callback.read_last_store_obj)
-        l_ret = s_drv_callback.read_last_store_obj(a_group);
+        l_ret = s_drv_callback.read_last_store_obj(a_group, a_with_holes);
     return l_ret;
+}
+
+dap_global_db_hash_pkt_t *dap_global_db_driver_hashes_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
+{
+    dap_return_val_if_fail(a_group, NULL);
+    // read records using the selected database engine
+    if (s_drv_callback.read_hashes)
+        return s_drv_callback.read_hashes(a_group, a_hash_from);
+    return NULL;
 }
 
 /**
@@ -354,21 +384,12 @@ dap_store_obj_t *dap_global_db_driver_read_last(const char *a_group)
  * @param a_count_out elements count
  * @return If successful, a pointer to the object, otherwise NULL.
  */
-dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out)
+dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes)
 {
     dap_return_val_if_fail(a_group, NULL);
     // read records using the selected database engine
     if (s_drv_callback.read_cond_store_obj)
-        return s_drv_callback.read_cond_store_obj(a_group, a_hash_from, a_count_out);
-    return NULL;
-}
-
-dap_global_db_hash_pkt_t *dap_global_db_driver_hashes_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
-{
-    dap_return_val_if_fail(a_group, NULL);
-    // read records using the selected database engine
-    if (s_drv_callback.read_cond_store_obj)
-        return s_drv_callback.read_hashes(a_group, a_hash_from);
+        return s_drv_callback.read_cond_store_obj(a_group, a_hash_from, a_count_out, a_with_holes);
     return NULL;
 }
 
@@ -381,12 +402,12 @@ dap_global_db_hash_pkt_t *dap_global_db_driver_hashes_read(const char *a_group, 
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *a_count_out)
+dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes)
 {
     dap_store_obj_t *l_ret = NULL;
     // read records using the selected database engine
-    if(s_drv_callback.read_store_obj)
-        l_ret = s_drv_callback.read_store_obj(a_group, a_key, a_count_out);
+    if (s_drv_callback.read_store_obj)
+        l_ret = s_drv_callback.read_store_obj(a_group, a_key, a_count_out, a_with_holes);
     return l_ret;
 }
 
