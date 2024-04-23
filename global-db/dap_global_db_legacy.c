@@ -73,165 +73,47 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
     return l_db_legacy_list;
 }
 
+//dap_hash_fast(l_pkt->data, l_pkt->data_size, &l_list_obj->hash);
+
 dap_global_db_pkt_old_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *a_db_legacy_list, size_t a_number_limit)
 {
+    dap_global_db_pkt_old_t *ret = NULL;
     dap_list_t *it, *tmp;
+    size_t l_number_limit = a_number_limit;
     DL_FOREACH_SAFE(a_db_legacy_list->groups, it, tmp) {
         char *l_group_cur = it->data;
-
-        while (l_group_cur->count && l_db_legacy_list->is_process) {
-            // Number of records to be synchronized
-            size_t l_item_count = 0;//min(64, l_group_cur->count);
-            size_t l_objs_total_size = 0;
-            dap_store_obj_t *l_objs = dap_global_db_get_all_raw_sync(l_group_cur->name, &l_item_count);
-            // go to next group
-            if (!l_objs)
-                break;
-            l_group_cur->count = 0; //-= l_item_count;
-            dap_list_t *l_list = NULL;
-            for (size_t i = 0; i < l_item_count; i++) {
-                dap_store_obj_t *l_obj_cur = l_objs + i;
-                if (!l_obj_cur)
-                    continue;
-                l_obj_cur->type = l_obj_type;
-                if (l_obj_type == DAP_GLOBAL_DB_OPTYPE_DEL) {
-
-                    DAP_DELETE((char *)l_obj_cur->group);
-                    l_obj_cur->group = dap_strdup(l_del_group_name_replace);
-                }
-                dap_global_db_legacy_list_obj_t *l_list_obj = DAP_NEW_Z(dap_global_db_legacy_list_obj_t);
-                if (!l_list_obj) {
-                    log_it(L_CRITICAL, "%s", g_error_memory_alloc);
-                    dap_store_obj_free(l_objs, l_item_count);
-                    return NULL;
-                }
-                uint64_t l_cur_id = l_obj_cur->id;
-                l_obj_cur->id = 0;
+        size_t l_values_count = l_number_limit;
+        dap_store_obj_t *l_store_objs = dap_global_db_driver_cond_read(l_group_cur, a_db_legacy_list->current_hash, &l_values_count, true);
+        int rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
+        if (l_store_objs && l_values_count) {
+            a_db_legacy_list->current_hash = dap_global_db_driver_hash_get(l_store_objs + l_values_count - 1);
+            if (dap_global_db_driver_hash_is_blank(&a_db_legacy_list->current_hash)) {
+                rc = DAP_GLOBAL_DB_RC_SUCCESS;
+                l_values_count--;
+            } else
+                rc = DAP_GLOBAL_DB_RC_PROGRESS;
+            if (l_values_count) {
+                a_db_legacy_list->items_number += l_values_count;
+                a_db_legacy_list->items_rest -= l_values_count;
+                l_number_limit -= l_values_vount;
                 dap_global_db_pkt_old_t *l_pkt = dap_global_db_pkt_serialize_old(l_obj_cur);
-                dap_hash_fast(l_pkt->data, l_pkt->data_size, &l_list_obj->hash);
-                dap_global_db_pkt_change_id(l_pkt, l_cur_id);
-                l_list_obj->pkt = l_pkt;
-                l_list = dap_list_append(l_list, l_list_obj);
-                l_objs_total_size += dap_global_db_legacy_list_obj_get_size(l_list_obj);
+                if (l_pkt)
+                    ret = dap_global_db_pkt_pack_old(ret, l_pkt);\
+                else
+                    rc = DAP_GLOBAL_DB_RC_ERROR;
             }
-            dap_store_obj_free(l_objs, l_item_count);
+            dap_store_obj_free(l_store_objs, l_values_count);
+        }
+        if (rc == DAP_GLOBAL_DB_RC_ERROR)
+            log_it(L_ERROR, "Can't process all database, internal problems occured");
 
-    if (a_msg->total_records)
-        l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count);
-    int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
-    if (l_store_objs && l_values_count) {
-        a_msg->processed_records += a_msg->values_page_size;
-        a_msg->last_hash = dap_global_db_driver_hash_get(l_store_objs + l_values_count - 1);
-        if (dap_global_db_driver_hash_is_blank(&a_msg->last_hash)) {
-            l_rc = DAP_GLOBAL_DB_RC_PROGRESS;
-            l_values_count--;
-        } else
-            l_rc = DAP_GLOBAL_DB_RC_SUCCESS;
+        if (rc != DAP_GLOBAL_DB_RC_PROGRESS) {
+            // remove cuurent group from list, go to next group
+        }
+        if (!l_number_limit)
+            break;
     }
-
-    bool l_ret = false;
-    dap_global_db_hash_pkt_t *l_hashes_pkt = dap_global_db_driver_hashes_read(l_group, l_pkt->last_hash);
-    if (l_hashes_pkt && l_hashes_pkt->hashes_count) {
-        dap_global_db_driver_hash_t *l_hashes_diff = (dap_global_db_driver_hash_t *)(l_hashes_pkt->group_n_hashses + l_hashes_pkt->group_name_len);
-        uint64_t l_time_store_lim_sec = l_cluster->ttl ? l_cluster->ttl : l_cluster->dbi->store_time_limit * 3600ULL;
-        uint64_t l_limit_time = l_time_store_lim_sec ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_sec) : 0;
-        if (l_limit_time) {
-            uint32_t i;
-            for (i = 0; i < l_hashes_pkt->hashes_count && be64toh((l_hashes_diff + i)->bets) < l_limit_time; i++) {
-                if (dap_global_db_driver_hash_is_blank(l_hashes_diff + i))
-                    break;
-                dap_store_obj_t l_to_del = { .timestamp = be64toh((l_hashes_diff + i)->bets),
-                                             .crc = be64toh((l_hashes_diff + i)->becrc),
-                                             .group = (char *)l_group };
-                int l_res = dap_global_db_driver_delete(&l_to_del, 1);
-                if (g_dap_global_db_debug_more) {
-                    char l_to_del_ts[DAP_TIME_STR_SIZE];
-                    dap_time_to_str_rfc822(l_to_del_ts, sizeof(l_to_del_ts), dap_nanotime_to_sec(l_to_del.timestamp));
-                    log_it(l_res ? L_WARNING : L_DEBUG, "%s too old object with group %s and timestamp %s",
-                                                             l_res ? "Can't remove" : "Removed", l_group, l_to_del_ts);
-                }
-            }
-            if (i == l_hashes_pkt->hashes_count) {
-                l_pkt->last_hash = l_hashes_diff[l_hashes_pkt->hashes_count - 1];
-                DAP_DELETE(l_hashes_pkt);
-                return true;
-            }
-            if (i) {
-                l_hashes_pkt->hashes_count -= i;
-                memmove(l_hashes_diff, l_hashes_diff + i, sizeof(dap_global_db_driver_hash_t) * l_hashes_pkt->hashes_count);
-            }
-        }
-        l_pkt->last_hash = l_hashes_diff[l_hashes_pkt->hashes_count - 1];
-        l_ret = !dap_global_db_driver_hash_is_blank(&l_pkt->last_hash);
-        if (!l_ret) {
-            --l_hashes_pkt->hashes_count;
-            //dap_db_set_last_hash_remote(l_req->link, l_req->group, l_hashes_diff[l_hashes_pkt->hashes_count - 1]);
-        }
-        if (l_hashes_pkt->hashes_count) {
-            debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_HASHES packet for group %s with records count %u",
-                                                                                                    l_group, l_hashes_pkt->hashes_count);
-            dap_stream_ch_pkt_send_by_addr(l_sender_addr,
-                                           DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_HASHES,
-                                           l_hashes_pkt, dap_global_db_hash_pkt_get_size(l_hashes_pkt));
-        }
-        DAP_DELETE(l_hashes_pkt);
-
-    if (!a_db_log_list || !a_count)
-        return NULL;
-    pthread_mutex_lock(&a_db_log_list->list_mutex);
-    if (!a_db_log_list->is_process) {
-        // Log list was not deleted, but caching thread is finished, so no need to lock anymore
-        pthread_mutex_unlock(&a_db_log_list->list_mutex);
-    }
-    size_t l_count = a_db_log_list->items_list
-            ? *a_count
-              ? dap_min(*a_count, dap_list_length(a_db_log_list->items_list))
-              : dap_list_length(a_db_log_list->items_list)
-            : 0;
-    size_t l_old_size = a_db_log_list->size, l_out_size = 0;
-    dap_global_db_legacy_list_obj_t **l_ret = DAP_NEW_Z_COUNT(dap_global_db_legacy_list_obj_t*, l_count);
-    if (l_ret) {
-        *a_count = l_count;
-        dap_list_t *l_elem, *l_tmp;
-        DL_FOREACH_SAFE(a_db_log_list->items_list, l_elem, l_tmp) {
-            l_out_size += dap_global_db_legacy_list_obj_get_size(l_elem->data);
-            if (a_size_limit && l_out_size > a_size_limit)
-                break;
-            l_ret[*a_count - l_count] = l_elem->data;
-            --a_db_log_list->items_rest;
-            a_db_log_list->size -= dap_global_db_legacy_list_obj_get_size(l_elem->data);
-            a_db_log_list->items_list = dap_list_delete_link(a_db_log_list->items_list, l_elem);
-            if (!(--l_count))
-                break;
-        }
-        if (l_count) {
-            *a_count -= l_count;
-            l_ret = DAP_REALLOC_COUNT(l_ret, *a_count);
-        }
-        log_it(L_MSG, "[!] Extracted %zu records from log_list (size %zu), left %zu", *a_count, l_out_size, l_count);
-        if (l_old_size > DAP_DB_LOG_LIST_MAX_SIZE && a_db_log_list->size <= DAP_DB_LOG_LIST_MAX_SIZE && a_db_log_list->is_process)
-            pthread_cond_signal(&a_db_log_list->cond);
-    }
-    if (a_db_log_list->is_process) {
-        pthread_mutex_unlock(&a_db_log_list->list_mutex);
-        if (!l_ret)
-            l_ret = DAP_INT_TO_POINTER(0x1); // Thread is not yet done...
-    }
-    return l_ret;
-}
-
-
-/**
- * @brief Deallocates memory of a list item
- *
- * @param a_item a pointer to the list item
- * @returns (none)
- */
-static void s_dap_global_db_legacy_list_delete_item(void *a_item)
-{
-    dap_global_db_legacy_list_obj_t *l_list_item = (dap_global_db_legacy_list_obj_t *)a_item;
-    DAP_DELETE(l_list_item->pkt);
-    DAP_DELETE(l_list_item);
+    return ret;
 }
 
 /**

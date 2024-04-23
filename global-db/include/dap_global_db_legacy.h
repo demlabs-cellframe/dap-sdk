@@ -36,20 +36,22 @@ typedef struct dap_global_db_legacy_list_group {
 } dap_global_db_legacy_list_group_t;
 
 typedef struct dap_global_db_legacy_list {
-    dap_list_t *items_list;
-    _Atomic(bool) is_process;
+    dap_global_db_driver_hash_t *current_hash;
     _Atomic(size_t) items_number, items_rest;
     dap_list_t *groups;
-    size_t size;
-    pthread_cond_t cond;
-    pthread_t thread;
-    pthread_mutex_t list_mutex;
 } dap_global_db_legacy_list_t;
 
-void dap_global_db_sync_init();
-void dap_global_db_sync_deinit();
+/**
+ * @brief Multiples data into a_old_pkt structure from a_new_pkt structure.
+ * @param a_old_pkt a pointer to the old object
+ * @param a_new_pkt a pointer to the new object
+ * @return Returns a pointer to the multiple object
+ */
+dap_global_db_pkt_old_t *dap_global_db_pkt_pack_old(dap_global_db_pkt_old_t *a_old_pkt, dap_global_db_pkt_old_t *a_new_pkt);
 
-DAP_STATIC_INLINE size_t dap_global_db_legacy_list_obj_get_size(dap_global_db_legacy_list_obj_t *a_obj)
-{
-    return sizeof(dap_global_db_legacy_list_obj_t) + sizeof(dap_global_db_pkt_t) + a_obj->pkt->data_size;
-}
+/**
+ * @brief Serializes an object into a packed structure.
+ * @param a_store_obj a pointer to the object to be serialized
+ * @return Returns a pointer to the packed sructure if successful, otherwise NULL.
+ */
+dap_global_db_pkt_old_t *dap_global_db_pkt_serialize_old(dap_store_obj_t *a_store_obj);
