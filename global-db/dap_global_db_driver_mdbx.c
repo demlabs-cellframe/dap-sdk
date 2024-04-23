@@ -106,7 +106,7 @@ static inline dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group
 {
     return s_db_mdbx_read_cond(a_group, a_hash_from, a_count_out, false, a_with_holes);
 }
-static size_t           s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
+static size_t           s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
 static int              s_db_mdbx_txn_start();
 static int              s_db_mdbx_txn_end(bool a_commit);
@@ -908,7 +908,7 @@ safe_ret:
  * @param a_iter started iterator
  * @return count of has been found record.
  */
-static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
+static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes)
 {
     dap_return_val_if_fail(a_group, 0);                                       /* Sanity check */
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
@@ -951,7 +951,8 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
     }
     size_t l_ret_count = 0;
     while ((MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))))
-        l_ret_count++;
+        if(a_with_holes || !s_is_hole(l_data.iov_base))
+            l_ret_count++;
     mdbx_cursor_close(l_cursor);
     if (!s_txn)
         mdbx_txn_commit(l_txn);

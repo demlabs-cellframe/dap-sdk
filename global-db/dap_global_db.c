@@ -840,7 +840,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
         return false;
     }
     if (!a_msg->total_records)
-        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank);
+        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank, false);
     if (a_msg->total_records)
         l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count, false);
     int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
@@ -936,7 +936,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
        return false;
     }
     if (!a_msg->total_records)
-        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank);
+        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank, true);
     if (a_msg->total_records)
         l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count, true);
     int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;

@@ -71,7 +71,7 @@ conn_pool_item_t *s_conn_pool = NULL;  // connection pool
 
 static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes);
 static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, bool a_with_holes);
-static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
+static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
 
 // Value of one field in the table
 typedef struct _sqlite_value_
@@ -573,7 +573,7 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
         }
         //s_db_sqlite_read_cond_store_obj(a_store_obj->group, (dap_global_db_driver_hash_t){0}, NULL, true);
         //s_db_sqlite_read_last_store_obj(a_store_obj->group, false);
-        //s_db_sqlite_read_count_store(a_store_obj->group, (dap_global_db_driver_hash_t){0});
+        //s_db_sqlite_read_count_store(a_store_obj->group, (dap_global_db_driver_hash_t){0}, true);
     } else {
         if (a_store_obj->key) //delete one record
             l_query = sqlite3_mprintf("DELETE FROM '%s' WHERE key = '%s'", l_table_name, a_store_obj->key);
@@ -903,7 +903,7 @@ dap_list_t* s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
  * @param a_id id starting from which the quantity is calculated
  * @return Returns a number of objects.
  */
-static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
+static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes)
 {
 // sanity check
     conn_pool_item_t *l_conn = s_sqlite_get_connection();
@@ -912,8 +912,9 @@ static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_dr
     sqlite3_stmt *l_stmt_count = NULL;
     char * l_table_name = s_sqlite_make_table_name(a_group);
     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
-                                        " WHERE driver_key > ?",
-                                        l_table_name);
+                                        " WHERE driver_key > ? AND (flags & '%d' %s 0)",
+                                        l_table_name, DAP_GLOBAL_DB_RECORD_ERASE,
+                                        a_with_holes ? ">=" : "=");
     DAP_DEL_Z(l_table_name);
     if (!l_str_query_count) {
         log_it(L_ERROR, "Error in SQL request forming");

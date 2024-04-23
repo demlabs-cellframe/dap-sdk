@@ -240,7 +240,7 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         l_cluster->sync_context.current_link = l_current_link;
         dap_stream_ch_add_notifier(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
         for (dap_list_t *it = l_groups; it; it = it->next) {
-            if (!dap_global_db_driver_count(it->data, c_dap_global_db_driver_hash_blank))
+            if (!dap_global_db_driver_count(it->data, c_dap_global_db_driver_hash_blank, true))
                 continue;   // Don't send request for empty group, if any
             size_t l_group_len = dap_strlen(it->data) + 1;
             dap_global_db_start_pkt_t *l_msg = DAP_NEW_STACK_SIZE(dap_global_db_start_pkt_t, sizeof(dap_global_db_start_pkt_t) + l_group_len);
