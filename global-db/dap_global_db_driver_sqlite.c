@@ -70,6 +70,7 @@ static uint32_t s_conn_count = 2;  // connection count
 conn_pool_item_t *s_conn_pool = NULL;  // connection pool
 
 static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes);
+static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, bool a_with_holes);
 
 // Value of one field in the table
 typedef struct _sqlite_value_
@@ -118,7 +119,7 @@ struct DAP_ALIGN_PACKED driver_record {
  * @param l_db a pointer to an instance of SQLite database structure
  * @return (none)
  */
-static inline void s_dap_db_driver_sqlite_close(sqlite3 *l_db)
+static inline void s_db_driver_sqlite_close(sqlite3 *l_db)
 {
     if(l_db)
         sqlite3_close(l_db);
@@ -213,7 +214,7 @@ int s_db_sqlite_deinit(void)
         pthread_mutex_lock(&s_db_mtx);
         for (uint32_t i = 0; i < s_conn_count; i++) {
             if (s_conn_pool[i].conn) {
-                s_dap_db_driver_sqlite_close(s_conn_pool[i].conn);
+                s_db_driver_sqlite_close(s_conn_pool[i].conn);
                 atomic_flag_clear (&s_conn_pool[i].busy);
             }
         }
@@ -330,7 +331,7 @@ char l_query[512];
  * @param row a database row
  * @return (none)
  */
-static void s_dap_db_driver_sqlite_row_free(SQLITE_ROW_VALUE *row)
+static void s_db_driver_sqlite_row_free(SQLITE_ROW_VALUE *row)
 {
     if(row) {
         // delete the whole string
@@ -383,7 +384,7 @@ static int s_db_driver_sqlite_fetch_array(sqlite3_stmt *l_res, SQLITE_ROW_VALUE 
     if(a_row_out)
         *a_row_out = l_row;
     else
-        s_dap_db_driver_sqlite_row_free(l_row);
+        s_db_driver_sqlite_row_free(l_row);
     return l_rc;
 }
 
@@ -393,7 +394,7 @@ static int s_db_driver_sqlite_fetch_array(sqlite3_stmt *l_res, SQLITE_ROW_VALUE 
  * @param a_db a a pointer to an instance of SQLite database structure
  * @return Returns 0 if successful.
  */
-int s_dap_db_driver_sqlite_vacuum(sqlite3 *a_db)
+int s_db_driver_sqlite_vacuum(sqlite3 *a_db)
 {
     if(!a_db)
         return -1;
@@ -570,6 +571,7 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, &l_driver_key, (byte_t *)l_record, l_record_len);
         }
         //s_db_sqlite_read_cond_store_obj(a_store_obj->group, (dap_global_db_driver_hash_t){0}, NULL, true);
+        //s_db_sqlite_read_last_store_obj(a_store_obj->group, false);
     } else {
         if (a_store_obj->key) //delete one record
             l_query = sqlite3_mprintf("DELETE FROM '%s' WHERE key = '%s'", l_table_name, a_store_obj->key);
@@ -659,45 +661,52 @@ static void s_fill_one_item(const char *a_group, dap_store_obj_t *a_obj, SQLITE_
  * @param a_group a group name string
  * @return Returns a pointer to the object.
  */
-dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group)
+static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, bool a_with_holes)
 {
-dap_store_obj_t *l_obj = NULL;
-sqlite3_stmt *l_res = NULL;
-conn_pool_item_t *l_conn;
-
-    if(!a_group)
-        return NULL;
-
-    if ( !(l_conn = s_sqlite_get_connection()) )
-        return NULL;
-
+// sanity check
+    conn_pool_item_t *l_conn = s_sqlite_get_connection();
+    dap_return_val_if_pass(!a_group || !l_conn, NULL);
+// preparing
+    dap_store_obj_t *l_ret = NULL;
+    sqlite3_stmt *l_stmt = NULL;
     char * l_table_name = s_sqlite_make_table_name(a_group);
-    char *l_str_query = sqlite3_mprintf("SELECT key,timestamp,value FROM '%s' ORDER BY timestamp DESC LIMIT 1", l_table_name);
-    int l_ret = sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_res, NULL);
-    sqlite3_free(l_str_query);
+    char *l_str_query = sqlite3_mprintf("SELECT driver_key, key, value FROM '%s'"
+                                        " WHERE flags & '%d' %s 0"
+                                        " ORDER BY driver_key DESC LIMIT 1",
+                                        l_table_name, DAP_GLOBAL_DB_RECORD_ERASE,
+                                        a_with_holes ? ">=" : "=");
     DAP_DEL_Z(l_table_name);
-    if (l_ret != SQLITE_OK) {
-        log_it(L_ERROR, "SQLite read last obj error %d(%s)\n", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
-        s_sqlite_free_connection(l_conn);
-        return NULL;
+    if (!l_str_query) {
+        log_it(L_ERROR, "Error in SQL request forming");
+        goto clean_and_ret;
     }
-
+    
+    if(sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_stmt, NULL)!= SQLITE_OK) {
+        log_it(L_ERROR, "SQLite last read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+        goto clean_and_ret;
+    }
+// data forming
     SQLITE_ROW_VALUE *l_row = NULL;
-    l_ret = s_db_driver_sqlite_fetch_array(l_res, &l_row);
-    if(l_ret != SQLITE_ROW && l_ret != SQLITE_DONE)
-    {
-        //log_it(L_ERROR, "read l_ret=%d, %s\n", sqlite3_errcode(s_db), sqlite3_errmsg(s_db));
+    int l_ret_code = s_db_driver_sqlite_fetch_array(l_stmt, &l_row);
+    if(l_ret_code != SQLITE_ROW && l_ret_code != SQLITE_DONE) {
+        log_it(L_ERROR, "SQLite last read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
     }
-    if(l_ret == SQLITE_ROW && l_row) {
-        l_obj = DAP_NEW_Z(dap_store_obj_t);
-        s_fill_one_item(a_group, l_obj, l_row);
+    if(l_ret_code == SQLITE_ROW && l_row) {
+        l_ret = DAP_NEW_Z(dap_store_obj_t);
+        if (!l_ret) {
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            goto clean_and_ret;
+        }
+        s_fill_one_item(a_group, l_ret, l_row);
+    s_db_driver_sqlite_row_free(l_row);
+    } else {
+        log_it(L_INFO, "There are no records satisfying the last read request");
     }
-    s_dap_db_driver_sqlite_row_free(l_row);
-    sqlite3_finalize(l_res);
-
+clean_and_ret:
+    sqlite3_finalize(l_stmt);
     s_sqlite_free_connection(l_conn);
-
-    return l_obj;
+    sqlite3_free(l_str_query);
+    return l_ret;
 }
 
 /**
@@ -746,7 +755,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
 // memory alloc
     int64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
     if (!l_count) {
-        log_it(L_INFO, "There are no records satisfying the request");
+        log_it(L_INFO, "There are no records satisfying the conditional read request");
         goto clean_and_ret;
     }
     DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_store_obj_t, l_count, NULL, l_str_query_count, l_str_query);
@@ -763,7 +772,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
             s_fill_one_item(a_group, l_ret + l_count_out, l_row);
             l_count_out++;
         }
-        s_dap_db_driver_sqlite_row_free(l_row);
+        s_db_driver_sqlite_row_free(l_row);
     } while(l_row && --l_count);
     if (a_count_out)
         *a_count_out = (size_t)l_count_out;
@@ -818,7 +827,7 @@ dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_k
 // memory alloc
     int64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
     if (!l_count) {
-        log_it(L_INFO, "There are no records satisfying the request");
+        log_it(L_INFO, "There are no records satisfying the read request");
         goto clean_and_ret;
     }
     DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_store_obj_t, l_count, NULL, l_str_query_count, l_str_query);
@@ -835,7 +844,7 @@ dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_k
             s_fill_one_item(a_group, l_ret + l_count_out, l_row);
             l_count_out++;
         }
-        s_dap_db_driver_sqlite_row_free(l_row);
+        s_db_driver_sqlite_row_free(l_row);
     } while(l_row && --l_count);
     if (a_count_out)
         *a_count_out = (size_t)l_count_out;
@@ -876,7 +885,7 @@ dap_list_t* s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
         char *l_table_name = (char *)l_row->val->val.val_str;
         if(!dap_fnmatch(l_mask, l_table_name, 0))
             l_ret_list = dap_list_prepend(l_ret_list, s_sqlite_make_group_name(l_table_name));
-        s_dap_db_driver_sqlite_row_free(l_row);
+        s_db_driver_sqlite_row_free(l_row);
     }
     sqlite3_finalize(l_res);
 
@@ -913,7 +922,7 @@ size_t s_db_sqlite_read_count_store(const char *a_group, dap_nanotime_t a_timest
     SQLITE_ROW_VALUE *l_row = NULL;
     if (s_db_driver_sqlite_fetch_array(l_res, &l_row) == SQLITE_ROW && l_row) {
         l_ret_val = (size_t)l_row->val->val.val_int64;
-        s_dap_db_driver_sqlite_row_free(l_row);
+        s_db_driver_sqlite_row_free(l_row);
     }
     sqlite3_finalize(l_res);
 
@@ -951,7 +960,7 @@ bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
     SQLITE_ROW_VALUE *l_row = NULL;
     if (s_db_driver_sqlite_fetch_array(l_res, &l_row) == SQLITE_ROW && l_row) {
         l_ret_val = (size_t)l_row->val->val.val_int64;
-        s_dap_db_driver_sqlite_row_free(l_row);
+        s_db_driver_sqlite_row_free(l_row);
     }
     sqlite3_finalize(l_res);
 
@@ -978,7 +987,7 @@ static int s_db_sqlite_flush()
     if(!(l_conn = s_sqlite_get_connection()) )
         return -666;
 
-    s_dap_db_driver_sqlite_close(l_conn->conn);
+    s_db_driver_sqlite_close(l_conn->conn);
 
     if ( !(l_conn->conn = dap_db_driver_sqlite_open(s_filename_db, SQLITE_OPEN_READWRITE, &l_error_message)) ) {
         log_it(L_ERROR, "Can't init sqlite err: \"%s\"", l_error_message? l_error_message: "UNKNOWN");
@@ -1060,7 +1069,7 @@ int dap_db_driver_sqlite_init(const char *a_filename_db, dap_db_driver_callbacks
             sqlite3_free(l_error_message);
             l_ret = -4;
             for(int ii = i - 1; ii >= 0; --ii) {
-                s_dap_db_driver_sqlite_close(s_conn_pool[ii].conn);
+                s_db_driver_sqlite_close(s_conn_pool[ii].conn);
             }
             goto end;
         }
