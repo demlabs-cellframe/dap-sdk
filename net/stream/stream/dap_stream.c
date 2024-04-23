@@ -933,7 +933,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
 {
     if (!a_arg)
         return false;
-    dap_events_socket_uuid_t l_es_uuid = DAP_POINTER_TO_INT(a_arg);
+    dap_events_socket_uuid_t l_es_uuid = DAP_POINTER_TO_SIZE(a_arg);
     dap_worker_t * l_worker = dap_worker_get_current();
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, l_es_uuid);
     if(l_es) {
