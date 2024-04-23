@@ -203,8 +203,8 @@ function(print_target_properties tgt)
     endforeach(prop)
 endfunction(print_target_properties)
 
-add_dependencies(${PROJECT_NAME} dap_XKCP) 
-target_link_libraries(${PROJECT_NAME} dap_XKCP)
+add_dependencies(${PROJECT_NAME} dap_crypto_XKCP) 
+target_link_libraries(${PROJECT_NAME} dap_crypto_XKCP)
 
 if (DAP_PQRL)
 
@@ -241,13 +241,13 @@ endif()
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${CRYPTO_HEADERS}")
+
 INSTALL(TARGETS ${PROJECT_NAME} 
         LIBRARY DESTINATION lib/dap/crypto/
         ARCHIVE DESTINATION lib/dap/crypto/
         PUBLIC_HEADER DESTINATION include/dap/crypto/
 )
 
-INSTALL(DIRECTORY src/XKCP/ DESTINATION include/dap/crypto/XKCP/)
 INSTALL(DIRECTORY src/rand/ DESTINATION include/dap/crypto/rand/)
 INSTALL(DIRECTORY src/msrln/ DESTINATION include/dap/crypto/msrln/)
 INSTALL(DIRECTORY src/sig_dilithium/ DESTINATION include/dap/crypto/sig_dilithium/)
