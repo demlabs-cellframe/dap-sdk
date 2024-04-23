@@ -1652,7 +1652,7 @@ static void s_check_db_version_callback_get (dap_global_db_instance_t *a_dbi, in
         a_dbi->version = DAP_GLOBAL_DB_VERSION;
         if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",
                                       &a_dbi->version,
-                                      sizeof(uint16_t), false,
+                                      sizeof(a_dbi->version), false,
                                       s_check_db_version_callback_set, NULL) ) != 0) {
             log_it(L_NOTICE, "Can't set GlobalDB version, code %d", res);
             goto lb_exit;
