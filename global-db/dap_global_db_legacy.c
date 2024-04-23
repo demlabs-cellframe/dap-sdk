@@ -73,13 +73,11 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
     return l_db_legacy_list;
 }
 
-dap_global_db_legacy_list_obj_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *a_db_log_list, size_t a_number_limit)
+dap_global_db_pkt_old_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *a_db_legacy_list, size_t a_number_limit)
 {
     dap_list_t *it, *tmp;
-    DL_FOREACH_SAFE(a_db_log_list->groups, it, tmp) {
+    DL_FOREACH_SAFE(a_db_legacy_list->groups, it, tmp) {
         char *l_group_cur = it->data;
-        char l_obj_type = dap_global_db_group_match_mask(l_group->name, "*.del") ? DAP_GLOBAL_DB_OPTYPE_DEL : DAP_GLOBAL_DB_OPTYPE_ADD;
-        size_t l_del_name_len = strlen(l_group_cur->name) - 4; //strlen(".del");
 
         while (l_group_cur->count && l_db_legacy_list->is_process) {
             // Number of records to be synchronized

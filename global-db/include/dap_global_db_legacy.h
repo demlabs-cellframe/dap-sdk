@@ -35,11 +35,6 @@ typedef struct dap_global_db_legacy_list_group {
     uint64_t count;
 } dap_global_db_legacy_list_group_t;
 
-typedef struct dap_global_db_legacy_list_obj {
-    dap_global_db_pkt_t *pkt;
-    dap_hash_fast_t hash;
-} dap_global_db_legacy_list_obj_t;
-
 typedef struct dap_global_db_legacy_list {
     dap_list_t *items_list;
     _Atomic(bool) is_process;
