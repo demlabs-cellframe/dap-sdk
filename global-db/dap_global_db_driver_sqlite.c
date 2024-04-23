@@ -778,7 +778,7 @@ clean_and_ret:
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes)
+dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out)
 {
 // sanity check
     conn_pool_item_t *l_conn = s_sqlite_get_connection();
@@ -825,10 +825,8 @@ dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_k
                 memset(l_obj + l_count_out, 0, sizeof(dap_store_obj_t) * (l_count_sized - l_count_out));
             }
             // fill currrent item
-            if (a_with_holes || !dap_global_db_driver_is_hole(((struct driver_record *)(l_row->val))->flags)) {
-                s_fill_one_item(a_group, l_obj + l_count_out, l_row);
-                l_count_out++;
-            }
+            s_fill_one_item(a_group, l_obj + l_count_out, l_row);
+            l_count_out++;
         }
         s_dap_db_driver_sqlite_row_free(l_row);
     } while(l_row);
