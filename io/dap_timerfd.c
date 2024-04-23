@@ -220,7 +220,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     }
     l_events_socket->socket = l_tfd;
 #endif
-    debug_if(l_debug_timer, L_ATT, "Create timer %p on socket %d", l_timerfd, l_timerfd->events_socket->socket);
+    debug_if(l_debug_timer, L_ATT, "Create timer %p on socket %d, arg %p", l_timerfd, l_timerfd->events_socket->socket, l_timerfd->callback_arg);
 #if defined (DAP_OS_LINUX) || defined (DAP_OS_WINDOWS)    
     l_timerfd->tfd = l_tfd;
 #endif
@@ -230,7 +230,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
 void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
 {
     assert(a_timerfd);
-    debug_if(l_debug_timer, L_ATT, "Reset timer %p on socket %d", a_timerfd, a_timerfd->events_socket->socket);
+    debug_if(l_debug_timer, L_ATT, "Reset timer %p on socket %d, arg %p", a_timerfd, a_timerfd->events_socket->socket, a_timerfd->callback_arg);
 #if defined DAP_OS_LINUX
     struct itimerspec l_ts;
     // repeat never
@@ -274,11 +274,11 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
     if(!l_timer_fd)
         return;
     // run user's callback
-    debug_if(l_debug_timer, L_ATT, "Call timer %p on socket %d", l_timer_fd, l_timer_fd->events_socket->socket);
+    debug_if(l_debug_timer, L_ATT, "Call timer %p on socket %d arg %p", l_timer_fd, l_timer_fd->events_socket->socket, l_timer_fd->callback_arg);
     if(l_timer_fd && l_timer_fd->callback && l_timer_fd->callback(l_timer_fd->callback_arg)) {
         dap_timerfd_reset_unsafe(l_timer_fd);
     } else {
-        debug_if(l_debug_timer, L_ATT, "Close timer %p on socket %d", l_timer_fd, l_timer_fd->events_socket->socket);
+        debug_if(l_debug_timer, L_ATT, "Close timer %p on socket %d arg %p", l_timer_fd, l_timer_fd->events_socket->socket, l_timer_fd->callback_arg);
 #if defined (DAP_OS_WINDOWS)
         DeleteTimerQueueTimer(hTimerQueue, l_timer_fd->th, NULL);
 #elif defined (DAP_OS_BSD)
@@ -354,7 +354,7 @@ void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
 #ifdef _WIN32
     DeleteTimerQueueTimer(hTimerQueue, a_timerfd->th, NULL);
 #endif
-    debug_if(l_debug_timer, L_ATT, "Remove timer %p on socket %d", a_timerfd, a_timerfd->events_socket->socket);
+    debug_if(l_debug_timer, L_ATT, "Remove timer %p on socket %d with arg %p", a_timerfd, a_timerfd->events_socket->socket, a_timerfd->callback_arg);
     if (a_timerfd->events_socket->context)
        dap_events_socket_remove_and_delete_unsafe(a_timerfd->events_socket, false);
     else
