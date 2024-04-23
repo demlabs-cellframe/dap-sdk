@@ -55,7 +55,6 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_enc_key.h"
 #include "dap_http_user_agent.h"
 #include "dap_context.h"
-#include "dap_http_ban_list_client.h"
 
 #include "../enc_server/include/dap_enc_ks.h"
 #include "../enc_server/include/dap_enc_http.h"
@@ -122,7 +121,7 @@ struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_server_t *a_http, 
 
     return dap_http_add_proc( a_http, a_url_path,
                      l_url_proc, // Internal structure
-                     NULL, // Contrustor
+                     s_http_client_new, // Contrustor
                      s_http_client_delete, //  Destructor
                      s_http_client_headers_read, s_http_client_headers_write, // Headers read, write
                      s_http_client_data_read, s_http_client_data_write, // Data read, write
@@ -374,7 +373,24 @@ static bool s_proc_queue_callback(void *a_arg)
     return false;
 }
 
-static void s_http_client_delete( dap_http_client_t *a_http_client, void *arg )
+static void s_http_client_new(dap_http_client_t *a_http_client, UNUSED_ARG void *arg)
+{
+    a_http_client->_inheritor = DAP_NEW_Z(dap_http_simple_t);
+    dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
+    *l_http_simple = (dap_http_simple_t) {
+        .esocket        = a_http_client->esocket,
+        .worker         = a_http_client->esocket->worker,
+        .http_client    = a_http_client,
+        .esocket_uuid   = a_http_client->esocket->uuid,
+        .reply_byte     = DAP_NEW_Z_SIZE(uint8_t, DAP_HTTP_SIMPLE_URL_PROC(a_http_client->proc)->reply_size_max),
+        .reply_size_max = DAP_HTTP_SIMPLE_URL_PROC(a_http_client->proc)->reply_size_max,
+        .generate_default_header = true
+    };
+    dap_strncpy(l_http_simple->es_hostaddr, l_http_simple->esocket->remote_addr_str, INET6_ADDRSTRLEN);
+    a_http_client->esocket->callbacks.arg = l_http_simple;
+}
+
+static void s_http_client_delete(dap_http_client_t *a_http_client, void *arg)
 {
     dap_http_simple_t * l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
 
@@ -390,38 +406,20 @@ static void s_http_client_delete( dap_http_client_t *a_http_client, void *arg )
 
 static void s_http_client_headers_read( dap_http_client_t *a_http_client, void UNUSED_ARG *a_arg )
 {
-    assert(a_http_client->esocket->server);
-    if (a_http_client->esocket->server->type == DAP_SERVER_TCP || a_http_client->esocket->server->type == DAP_SERVER_UDP) {
-        if ( dap_http_ban_list_client_check(a_http_client->esocket->remote_addr_str, NULL, NULL) ) {
-            a_http_client->reply_status_code = Http_Status_Forbidden;
-            return;
-        }
-    }
-    a_http_client->_inheritor = DAP_NEW_Z( dap_http_simple_t );
-    dap_http_simple_t * l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
-    a_http_client->esocket->callbacks.arg = l_http_simple;
-    l_http_simple->generate_default_header = true;
-    l_http_simple->esocket = a_http_client->esocket;
-    l_http_simple->esocket_uuid = a_http_client->esocket->uuid;
-    l_http_simple->http_client = a_http_client;
-    l_http_simple->worker = a_http_client->esocket->worker;
-    l_http_simple->reply_size_max = DAP_HTTP_SIMPLE_URL_PROC( a_http_client->proc )->reply_size_max;
-    l_http_simple->reply_byte = DAP_NEW_Z_SIZE(uint8_t, DAP_HTTP_SIMPLE(a_http_client)->reply_size_max );
-    dap_strncpy(l_http_simple->es_hostaddr, l_http_simple->esocket->remote_addr_str, INET6_ADDRSTRLEN);
+    dap_http_simple_t *l_http_simple = DAP_HTTP_SIMPLE(a_http_client);
 //    Made a temporary solution to handle simple CORS requests.
 //    This is necessary in order to be able to request information using JavaScript obtained from another source.
-    dap_http_header_t* l_header_origin = dap_http_header_find(a_http_client->in_headers, "Origin");
-    if (l_header_origin){
+    if ( dap_http_header_find(a_http_client->in_headers, "Origin") ){
         dap_http_out_header_add(a_http_client, "Access-Control-Allow-Origin", "*");
     }
 
     if( a_http_client->in_content_length ) {
         // dbg if( a_http_client->in_content_length < 3){
         if( a_http_client->in_content_length > 0){
-            DAP_HTTP_SIMPLE(a_http_client)->request_size_max = a_http_client->in_content_length + 1;
-            DAP_HTTP_SIMPLE(a_http_client)->request = DAP_NEW_Z_SIZE(void, DAP_HTTP_SIMPLE(a_http_client)->request_size_max);
-            if(!DAP_HTTP_SIMPLE(a_http_client)->request){
-                DAP_HTTP_SIMPLE(a_http_client)->request_size_max = 0;
+            l_http_simple->request_size_max = a_http_client->in_content_length + 1;
+            l_http_simple->request = DAP_NEW_Z_SIZE(void, l_http_simple->request_size_max);
+            if(!l_http_simple->request){
+                l_http_simple->request_size_max = 0;
                 log_it(L_ERROR, "Too big content-length %zu in request", a_http_client->in_content_length);
             }
         }

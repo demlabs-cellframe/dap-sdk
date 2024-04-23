@@ -38,6 +38,7 @@ typedef struct dap_global_db_pkt {
     uint16_t key_len;
     uint32_t value_len;
     uint32_t data_len;
+    uint8_t flags;
     byte_t data[];
 } DAP_ALIGN_PACKED dap_global_db_pkt_t;
 
