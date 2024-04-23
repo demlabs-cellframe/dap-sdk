@@ -148,6 +148,8 @@ file( GLOB CRYPTO_HEADERS
       include/*.h
 )
 
+
+
 set_source_files_properties(src/sig_picnic/picnic_impl.c PROPERTIES COMPILE_FLAGS -Wno-stringop-overflow)
 if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.2)
     set_source_files_properties(src/sha3/fips202.c PROPERTIES COMPILE_FLAGS -Warray-parameter=0)
@@ -157,6 +159,7 @@ enable_language(ASM)
 
 set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sphincsplus src include)
 add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
+add_subdirectory(./XKCP)
 
 option (DAP_PQLR "PQRL Intergration" OFF)
 
@@ -174,8 +177,34 @@ if ( DAP_PQLR)
     add_definitions("-DDAP_PQLR")
 endif()
 
+
 add_library(${PROJECT_NAME} STATIC ${CRYPTO_SRCS} ${CRYPTO_HEADERS} ${DAP_PQLR_SRC} )
-target_link_directories(${PROJECT_NAME} INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/src/XKCP/bin)
+
+## Get all properties that cmake supports
+execute_process(COMMAND cmake --help-property-list OUTPUT_VARIABLE CMAKE_PROPERTY_LIST)
+## Convert command output into a CMake list
+STRING(REGEX REPLACE ";" "\\\\;" CMAKE_PROPERTY_LIST "${CMAKE_PROPERTY_LIST}")
+STRING(REGEX REPLACE "\n" ";" CMAKE_PROPERTY_LIST "${CMAKE_PROPERTY_LIST}")
+
+list(REMOVE_DUPLICATES CMAKE_PROPERTY_LIST)
+
+function(print_target_properties tgt)
+    if(NOT TARGET ${tgt})
+      message("There is no target named '${tgt}'")
+      return()
+    endif()
+
+    foreach (prop ${CMAKE_PROPERTY_LIST})
+        string(REPLACE "<CONFIG>" "${CMAKE_BUILD_TYPE}" prop ${prop})
+        get_target_property(propval ${tgt} ${prop})
+        if (propval)
+            message ("${tgt} ${prop} = ${propval}")
+        endif()
+    endforeach(prop)
+endfunction(print_target_properties)
+
+add_dependencies(${PROJECT_NAME} dap_XKCP) 
+target_link_libraries(${PROJECT_NAME} dap_XKCP)
 
 if (DAP_PQRL)
 
@@ -194,16 +223,13 @@ target_include_directories(dap_crypto INTERFACE src/ src/sha3 include/)
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
 
-target_include_directories(dap_crypto PUBLIC src/XKCP/bin/libdap-XKCP.a.headers/)
+
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
 
-if(WIN32)
-  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap-XKCP dap_json-c)
-endif()
-
+target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c)
 if(UNIX)
-  target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap-XKCP dap_json-c m)
+  target_link_libraries(dap_crypto m)
 endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
