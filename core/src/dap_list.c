@@ -407,7 +407,7 @@ int dap_list_index(dap_list_t *a_list, const void *a_data)
  */
 dap_list_t * dap_list_last(dap_list_t *a_list)
 {
-    return dap_list_first(a_list)->prev;
+    return a_list ? dap_list_first(a_list)->prev : NULL;
 }
 
 /**
