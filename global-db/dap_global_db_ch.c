@@ -171,18 +171,22 @@ static bool s_process_hashes(void *a_arg)
         return false;
     }
     dap_global_db_driver_hash_t *l_hash = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len),
-                                *l_hash_last = l_hash + l_pkt->hashes_count;
+                                *l_hash_last = l_hash + l_pkt->hashes_count - 1;
 
-    for ( l_hash = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len),
-          l_hash_last = l_hash + l_pkt->hashes_count - 1; l_hash <= l_hash_last; ++l_hash )
-    {
+    while (l_hash <= l_hash_last ) {
         if ( dap_global_db_driver_is_hash(l_group, *l_hash) ) {
-            if ( l_hash != l_hash_last )
+            if ( l_hash < l_hash_last )
                 *l_hash-- = *l_hash_last--;
             --l_pkt->hashes_count;
         }
+        ++l_hash;
     }
+
     if ( l_pkt->hashes_count ) {
+        if ( l_pkt->hashes_count > 1 ) {
+            l_hash = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
+            qsort(l_hash, l_pkt->hashes_count, sizeof(dap_global_db_driver_hash_t), dap_global_db_driver_hash_compare);
+        }
         debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_REQUEST packet for group %s with records count %u",
                                                                                         l_group, l_pkt->hashes_count);
         dap_stream_ch_pkt_send_by_addr((dap_stream_node_addr_t *)a_arg,
