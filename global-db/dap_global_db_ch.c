@@ -168,31 +168,31 @@ static bool s_process_hashes(void *a_arg)
     if (!l_cluster)
         return false;
     dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
-    dap_global_db_hash_pkt_t *l_ret = NULL;
+    dap_global_db_hash_pkt_t *l_pkt = NULL;
     for (uint32_t i = 0; i < l_pkt->hashes_count; i++) {
         if (!dap_global_db_driver_is_hash(l_group, *(l_hashes + i))) {
-            if (!l_ret) {
-                l_ret = DAP_NEW_STACK_SIZE(dap_global_db_hash_pkt_t,
+            if (!l_pkt) {
+                l_pkt = DAP_NEW_STACK_SIZE(dap_global_db_hash_pkt_t,
                                            sizeof(dap_global_db_hash_pkt_t) +
                                            l_pkt->group_name_len +
                                            sizeof(dap_global_db_driver_hash_t) * l_pkt->hashes_count);
-                if (!l_ret) {
+                if (!l_pkt) {
                     log_it(L_CRITICAL, "Not enough memory");
                     return false;
                 }
-                memcpy(l_ret->group_n_hashses, l_pkt->group_n_hashses, l_ret->group_name_len = l_pkt->group_name_len);
-                l_ret->hashes_count = 0;
+                memcpy(l_pkt->group_n_hashses, l_pkt->group_n_hashses, l_pkt->group_name_len = l_pkt->group_name_len);
+                l_pkt->hashes_count = 0;
             }
-            dap_global_db_driver_hash_t *l_ret_hashes = (dap_global_db_driver_hash_t *)(l_ret->group_n_hashses + l_ret->group_name_len);
-            l_ret_hashes[l_ret->hashes_count++] = l_hashes[i];
+            dap_global_db_driver_hash_t *l_pkt_hashes = (dap_global_db_driver_hash_t *)(l_pkt->group_n_hashses + l_pkt->group_name_len);
+            l_pkt_hashes[l_pkt->hashes_count++] = l_hashes[i];
         }
     }
-    if (l_ret) {
-    debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_REQUEST packet for group %s with records count %u",
-                                                                                        l_group, l_ret->hashes_count);
-    dap_stream_ch_pkt_send_by_addr((dap_stream_node_addr_t *)a_arg,
-                                   DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST,
-                                   l_ret, dap_global_db_hash_pkt_get_size(l_ret));
+    if (l_pkt) {
+        debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_REQUEST packet for group %s with records count %u",
+                                                                                            l_group, l_pkt->hashes_count);
+        dap_stream_ch_pkt_send_by_addr((dap_stream_node_addr_t *)a_arg,
+                                       DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST,
+                                       l_pkt, dap_global_db_hash_pkt_get_size(l_pkt));
     }
     return false;
 }

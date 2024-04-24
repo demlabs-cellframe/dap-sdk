@@ -73,12 +73,9 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
     return l_db_legacy_list;
 }
 
-//dap_hash_fast(l_pkt->data, l_pkt->data_size, &l_list_obj->hash);
-
-dap_global_db_pkt_old_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *a_db_legacy_list, size_t a_number_limit)
+dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *a_db_legacy_list, size_t a_number_limit)
 {
-    dap_global_db_pkt_old_t *ret = NULL;
-    dap_list_t *it, *tmp;
+    dap_list_t *it, *tmp, *ret = NULL
     size_t l_number_limit = a_number_limit;
     DL_FOREACH_SAFE(a_db_legacy_list->groups, it, tmp) {
         char *l_group_cur = it->data;
@@ -93,22 +90,35 @@ dap_global_db_pkt_old_t *dap_global_db_legacy_list_get_multiple(dap_global_db_le
             } else
                 rc = DAP_GLOBAL_DB_RC_PROGRESS;
             if (l_values_count) {
-                a_db_legacy_list->items_number += l_values_count;
+                assert(a_db_legacy_list->items_rest >= l_values_count);
                 a_db_legacy_list->items_rest -= l_values_count;
+                assert(l_number_limit >= l_values_count);
                 l_number_limit -= l_values_vount;
-                dap_global_db_pkt_old_t *l_pkt = dap_global_db_pkt_serialize_old(l_obj_cur);
-                if (l_pkt)
-                    ret = dap_global_db_pkt_pack_old(ret, l_pkt);\
-                else
-                    rc = DAP_GLOBAL_DB_RC_ERROR;
+                for (size_t i = 0; i < l_values_count; i++) {
+                    dap_global_db_pkt_old_t *l_pkt = dap_global_db_pkt_serialize_old(l_store_objs + i);
+                    if (!l_pkt) {
+                        rc = DAP_GLOBAL_DB_RC_ERROR;
+                        break;
+                    }
+                    dap_list_t *l_list_cur = dap_list_last(ret);
+                    ret = dap_list_append(ret, l_pkt);
+                    if (dap_List_last(ret) == l_list_cur) {
+                        rc = DAP_GLOBAL_DB_RC_ERROR;
+                        break;
+                    }
+                }
             }
             dap_store_obj_free(l_store_objs, l_values_count);
         }
-        if (rc == DAP_GLOBAL_DB_RC_ERROR)
+        if (rc == DAP_GLOBAL_DB_RC_ERROR) {
             log_it(L_ERROR, "Can't process all database, internal problems occured");
-
+            dap_list_free_full(ret, NULL);
+            return NULL;
+        }
         if (rc != DAP_GLOBAL_DB_RC_PROGRESS) {
             // remove cuurent group from list, go to next group
+            a_db_legacy_list->groups = dap_list_remove_link(a_db_legacy_list->groups, it);
+            a_db_legacy_list->current_hash = c_dap_global_db_driver_hash_blank;
         }
         if (!l_number_limit)
             break;
@@ -122,21 +132,11 @@ dap_global_db_pkt_old_t *dap_global_db_legacy_list_get_multiple(dap_global_db_le
  * @param a_db_log_list a pointer to the log list structure
  * @returns (none)
  */
-void dap_global_db_legacy_list_delete(dap_global_db_legacy_list_t *a_db_log_list)
+void dap_global_db_legacy_list_delete(dap_global_db_legacy_list_t *a_db_legacy_list)
 {
     if(!a_db_log_list)
         return;
-    // stop thread if it has created
-    if(a_db_log_list->thread) {
-        pthread_mutex_lock(&a_db_log_list->list_mutex);
-        a_db_log_list->is_process = false;
-        pthread_cond_signal(&a_db_log_list->cond);
-        pthread_mutex_unlock(&a_db_log_list->list_mutex);
-        pthread_join(a_db_log_list->thread, NULL);
-    }
-    dap_list_free_full(a_db_log_list->items_list, (dap_callback_destroyed_t)s_dap_global_db_legacy_list_delete_item);
-    pthread_mutex_destroy(&a_db_log_list->list_mutex);
-    dap_list_free_full(a_db_log_list->groups, NULL);
+    dap_list_free_full(a_db_legacy_list->groups, NULL);
     DAP_DELETE(a_db_log_list);
 }
 
@@ -153,6 +153,10 @@ dap_global_db_pkt_old_t *dap_global_db_pkt_pack_old(dap_global_db_pkt_old_t *a_o
     a_old_pkt = a_old_pkt
             ? DAP_REALLOC(a_old_pkt, sizeof(dap_global_db_pkt_old_t) + a_old_pkt->data_size + a_new_pkt->data_size)
             : DAP_NEW_Z_SIZE(dap_global_db_pkt_old_t, sizeof(dap_global_db_pkt_old_t) + a_new_pkt->data_size);
+    if (!a_old_pkt) {
+        log_it(L_CRITICAL, g_error_memory_alloc);
+        return NULL;
+    }
     memcpy(a_old_pkt->data + a_old_pkt->data_size, a_new_pkt->data, a_new_pkt->data_size);
     a_old_pkt->data_size += a_new_pkt->data_size;
     ++a_old_pkt->obj_count;
@@ -173,9 +177,8 @@ dap_global_db_pkt_old_t *dap_global_db_pkt_serialize_old(dap_store_obj_t *a_stor
 
     size_t l_group_len = dap_strlen(a_store_obj->group);
     size_t l_key_len = dap_strlen(a_store_obj->key);
-    size_t l_sign_len = dap_sign_get_size(a_store_obj->sign);
-    size_t l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len + l_sign_len;
-    dap_global_db_pkt_t *l_pkt = DAP_NEW_SIZE(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t));
+    size_t l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len;
+    dap_global_db_pkt_old_t *l_pkt = DAP_NEW_SIZE(dap_global_db_pkt_old_t, l_data_size_out + sizeof(dap_global_db_pkt_old_t));
     if (!l_pkt) {
         log_it(L_CRITICAL, "Insufficient memory");
         return NULL;
@@ -187,7 +190,8 @@ dap_global_db_pkt_old_t *dap_global_db_pkt_serialize_old(dap_store_obj_t *a_stor
     l_pkt->timestamp = 0;
     /* Put serialized data into the payload part of the packet */
     pdata = l_pkt->data;
-    memcpy(pdata,   &a_store_obj->type,     sizeof(uint32_t));      pdata += sizeof(uint32_t);
+    uint32_t l_type = dap_store_obj_get_type(a_store_obj);
+    memcpy(pdata,   &l_type,                sizeof(uint32_t));      pdata += sizeof(uint32_t);
     memcpy(pdata,   &l_group_len,           sizeof(uint16_t));      pdata += sizeof(uint16_t);
     memcpy(pdata,   a_store_obj->group,     l_group_len);           pdata += l_group_len;
     memset(pdata,   0,                      sizeof(uint64_t));      pdata += sizeof(uint64_t);
@@ -229,7 +233,9 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         if ( pdata + sizeof (uint32_t) > pdata_end ) {
             log_it(L_ERROR, "Broken GDB element: can't read 'type' field"); break;
         }
-        memcpy(&l_obj->type, pdata, sizeof(uint32_t)); pdata += sizeof(uint32_t);
+        if (*(uint32_t *)pdata == DAP_GLOBAL_DB_OPTYPE_DEL)
+            l_obj->flags = DAP_GLOBAL_DB_RECORD_DEL;
+        pdata += sizeof(uint32_t);
 
         if ( pdata + sizeof (uint16_t) > pdata_end ) {
             log_it(L_ERROR, "Broken GDB element: can't read 'group_length' field"); break;
