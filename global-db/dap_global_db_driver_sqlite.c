@@ -74,6 +74,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
 static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, bool a_with_holes);
 static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
 static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
+static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
 
 // Value of one field in the table
 typedef struct _sqlite_value_
@@ -531,8 +532,8 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_ret = -3;
             goto ret_n_free;
         } else { //add one record
-            l_query = sqlite3_mprintf("INSERT OR REPLACE INTO '%s' VALUES(?, '%s', '%u', ?)",
-                                                  l_table_name, a_store_obj->key, a_store_obj->flags);
+            l_query = sqlite3_mprintf("INSERT OR REPLACE INTO '%s' VALUES(?, '%s', '%d', ?)",
+                                                  l_table_name, a_store_obj->key, (int)a_store_obj->flags);
             /* Compute a length of the area to keep record */
             l_record_len = sizeof(struct driver_record) + a_store_obj->value_len + dap_sign_get_size(a_store_obj->sign);
             l_record = DAP_NEW_Z_SIZE(struct driver_record, l_record_len);
@@ -577,6 +578,7 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
         //s_db_sqlite_read_last_store_obj(a_store_obj->group, false);
         //s_db_sqlite_read_count_store(a_store_obj->group, (dap_global_db_driver_hash_t){0}, true);
         dap_global_db_hash_pkt_t *l_hashes = s_db_sqlite_read_hashes(a_store_obj->group, (dap_global_db_driver_hash_t){0});
+        s_db_sqlite_get_by_hash(a_store_obj->group, l_hashes->group_n_hashses + l_hashes->group_name_len, l_hashes->hashes_count);
     } else {
         if (a_store_obj->key) //delete one record
             l_query = sqlite3_mprintf("DELETE FROM '%s' WHERE key = '%s'", l_table_name, a_store_obj->key);
@@ -714,9 +716,88 @@ clean_and_ret:
     return l_ret;
 }
 
-static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
+static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count)
 {
     // sanity check
+    conn_pool_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !a_hashes || !a_count || !(l_conn = s_sqlite_get_connection()), NULL);
+// preparing
+    dap_global_db_pkt_pack_t *l_ret = NULL;
+    sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL, *l_stmt_size = NULL;
+    char *l_blob_str = DAP_NEW_Z_SIZE(char, a_count * 2);
+    char *l_table_name = s_sqlite_make_table_name(a_group);
+    if (!l_blob_str || !l_table_name) {
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        DAP_DEL_MULTY(l_table_name, l_blob_str);
+        goto clean_and_ret;
+    }
+    for (size_t i = 0; i < a_count * 2; i += 2) {
+        l_blob_str[i] = '?';
+    }
+    for (size_t i = 1; i + 1< a_count * 2; i += 2) {
+        l_blob_str[i] = ',';
+    }
+    char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+                                        " WHERE driver_key IN (%s)",
+                                        l_table_name, l_blob_str);
+    char *l_str_query_size = sqlite3_mprintf("SELECT SUM(LENGTH(key) + LENGTH(value)) FROM '%s' "
+                                        " WHERE driver_key IN (%s)",
+                                        l_table_name, l_blob_str);
+    char *l_str_query = sqlite3_mprintf("SELECT driver_key, key, value FROM '%s'"
+                                        " WHERE driver_key IN (%s)",
+                                        l_table_name, l_blob_str);
+    DAP_DEL_MULTY(l_table_name, l_blob_str);
+    if (!l_str_query_count || !l_str_query) {
+        log_it(L_ERROR, "Error in SQL request forming");
+        goto clean_and_ret;
+    }
+    if(sqlite3_prepare_v2(l_conn->conn, l_str_query_count, -1, &l_stmt_count, NULL)!= SQLITE_OK ||
+        sqlite3_prepare_v2(l_conn->conn, l_str_query_size, -1, &l_stmt_size, NULL)!= SQLITE_OK ||
+        sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_stmt, NULL)!= SQLITE_OK)
+    {
+        log_it(L_ERROR, "SQLite get by hash error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+        goto clean_and_ret;
+    }
+    for (size_t i = 1; i <= a_count; ++i) {
+        if( sqlite3_bind_blob64(l_stmt_count, i, a_hashes + i - 1, sizeof(*a_hashes), SQLITE_STATIC) != SQLITE_OK ||
+            sqlite3_bind_blob64(l_stmt_size, i, a_hashes + i - 1, sizeof(*a_hashes), SQLITE_STATIC) != SQLITE_OK ||
+            sqlite3_bind_blob64(l_stmt, i, a_hashes + i - 1, sizeof(*a_hashes), SQLITE_STATIC) != SQLITE_OK)
+        {
+            log_it(L_ERROR, "SQLite get by hash error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+            goto clean_and_ret;
+        }
+    }
+    if (sqlite3_step(l_stmt_count) != SQLITE_ROW || sqlite3_step(l_stmt_size) != SQLITE_ROW) {
+        log_it(L_ERROR, "SQLite get by hash error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+        goto clean_and_ret;
+    }
+// memory alloc
+    uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
+    uint64_t l_size = sqlite3_column_int64(l_stmt_size, 0);
+    if (!l_count || !l_size) {
+        log_it(L_INFO, "There are no records satisfying the get by hash request");
+        goto clean_and_ret;
+    }
+    size_t l_group_name_len = strlen(a_group) + 1;
+    DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_pkt_pack_t, sizeof(dap_global_db_hash_pkt_t) + l_count * (sizeof(dap_global_db_pkt_t) - sizeof(struct driver_record)) + l_group_name_len + l_size, NULL, l_str_query_count, l_str_query);
+// data forming
+    // for (size_t i = 0; i < l_count; ++i) {
+    //     dap_global_db_pkt_t *l_pkt = (dap_global_db_pkt_t *)(l_ret->data
+    // }
+clean_and_ret:
+    sqlite3_finalize(l_stmt_count);
+    sqlite3_finalize(l_stmt_size);
+    sqlite3_finalize(l_stmt);
+    s_sqlite_free_connection(l_conn);
+    sqlite3_free(l_str_query_count);
+    sqlite3_free(l_str_query_size);
+    sqlite3_free(l_str_query);
+    return l_ret;
+}
+
+static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
+{
+// sanity check
     conn_pool_item_t *l_conn = s_sqlite_get_connection();
     dap_return_val_if_pass(!a_group || !l_conn, NULL);
 // preparing
@@ -1177,7 +1258,7 @@ int dap_db_driver_sqlite_init(const char *a_filename_db, dap_db_driver_callbacks
     a_drv_callback->is_obj                  = s_db_sqlite_is_obj;
     a_drv_callback->deinit                  = s_db_sqlite_deinit;
     a_drv_callback->flush                   = s_db_sqlite_flush;
-    a_drv_callback->get_by_hash             = NULL;
+    a_drv_callback->get_by_hash             = s_db_sqlite_get_by_hash;
     a_drv_callback->read_hashes             = s_db_sqlite_read_hashes;
     a_drv_callback->is_hash                 = NULL;
 
