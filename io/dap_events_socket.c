@@ -1218,13 +1218,12 @@ void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_
 void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
 {
 #ifdef DAP_OS_WINDOWS
-    if ( a_esocket->socket && (a_esocket->socket != INVALID_SOCKET)) {
-        LINGER  lingerStruct;
-        lingerStruct.l_onoff = 1;
-        lingerStruct.l_linger = 30;
-        setsockopt(a_esocket->socket, SOL_SOCKET, SO_LINGER, (char *)&lingerStruct, sizeof(lingerStruct) );
-         // Do we need graceful shutdown anyway?...
-        closesocket( a_esocket->socket );
+    if ( a_esocket->socket && (a_esocket->socket != INVALID_SOCKET) ) {
+        //LINGER  lingerStruct = { .l_onoff = 1, .l_linger = 5 };
+        //setsockopt(a_esocket->socket, SOL_SOCKET, SO_LINGER, (char*)&lingerStruct, sizeof(lingerStruct) );
+        // We must set { 1, 0 } when connections must be reset (RST)
+        shutdown(a_esocket->socket, SD_BOTH);
+        closesocket(a_esocket->socket);
     }
     a_esocket->socket = a_esocket->socket2 = INVALID_SOCKET;
 
