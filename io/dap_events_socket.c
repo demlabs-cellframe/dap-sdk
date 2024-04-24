@@ -1338,7 +1338,7 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         ol = DAP_NEW(dap_overlapped_t);
         *ol = (dap_overlapped_t){ .ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL), .op = io_read };
     }
-    WSABUF wsabuf = { .buf = a_esocket->buf_in + a_esocket->buf_in_size, .len = a_esocket->buf_in_size_max };
+    WSABUF wsabuf = { .buf = a_esocket->buf_in /*+ a_esocket->buf_in_size*/, .len = a_esocket->buf_in_size_max };
 
     switch (a_esocket->type) {
     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
@@ -1394,9 +1394,11 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         }
     break;
     case 0:
-        debug_if(g_debug_reactor, L_DEBUG, "[!] \"%s\" from "DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" completed immediately, received %lu bytes",
+        debug_if(g_debug_reactor, L_DEBUG, "\"%s\" from "DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" completed immediately, received %lu bytes",
                                   func, a_esocket->uuid, a_esocket->socket, dap_events_socket_get_type_str(a_esocket), bytes);
         ++a_esocket->pending;
+        ResetEvent(ol->ol.hEvent);
+        a_esocket->buf_in_size += bytes;
         return;
     default:
         log_it(L_ERROR, "Operation \"%s\" on "DAP_FORMAT_ESOCKET_UUID" failed with error %lu", func, a_esocket->uuid, GetLastError());
