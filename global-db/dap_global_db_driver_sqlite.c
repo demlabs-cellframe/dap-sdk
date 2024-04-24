@@ -106,17 +106,6 @@ typedef struct _sqlite_row_value_
     SQLITE_VALUE *val; // array of field values
 } SQLITE_ROW_VALUE;
 
-/*
- * SQLite record structure
- */
-struct DAP_ALIGN_PACKED driver_record {
-    uint64_t        value_len;                                              /* Length of value part */
-    uint8_t         flags;                                                  /* Flag of the record : see RECORD_FLAGS enums */
-    uint32_t        crc;                                                    /* Object integrity */
-    uint64_t        sign_len;                                               /* Size control */
-    byte_t          value_n_sign[];                                         /* Serialized form */
-};
-
 /**
  * @brief Closes a SQLite database.
  *
@@ -268,15 +257,16 @@ sqlite3* dap_db_driver_sqlite_open(const char *a_filename_utf8, int a_flags, cha
  * @param l_error_message[out] an error message that's received from the SQLite database
  * @return Returns 0 if successful.
  */
-static int s_db_driver_sqlite_exec(sqlite3 *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len)
+static int s_db_driver_sqlite_exec(sqlite3 *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign)
 {
     int l_rc = 0;
     sqlite3_stmt *l_stmt = NULL;
     
     if (
         (l_rc = sqlite3_prepare_v2(a_db, a_query, -1, &l_stmt, NULL)) != SQLITE_OK ||
-        (a_hash && (l_rc = sqlite3_bind_blob64(l_stmt, 1, a_hash, sizeof(*a_hash), SQLITE_STATIC) != SQLITE_OK)) ||
-        (a_value && (l_rc = sqlite3_bind_blob64(l_stmt, 2, a_value, a_value_len, SQLITE_STATIC)) != SQLITE_OK)
+        (a_hash && (l_rc = sqlite3_bind_blob64(l_stmt, 1, a_hash, sizeof(*a_hash), SQLITE_STATIC)) != SQLITE_OK) ||
+        (a_value && (l_rc = sqlite3_bind_blob64(l_stmt, 2, a_value, a_value_len, SQLITE_STATIC)) != SQLITE_OK) ||
+        (a_sign && (l_rc = sqlite3_bind_blob64(l_stmt, 3, a_sign, dap_sign_get_size(a_sign), SQLITE_STATIC)) != SQLITE_OK)
         ) {
         log_it(L_ERROR, "SQL error %d(%s)", sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
         return l_rc;
@@ -317,10 +307,10 @@ char l_query[512];
         return log_it(L_ERROR, "Error create group table '%s'", a_table_name), -ENOENT;
 
     snprintf(l_query, sizeof(l_query) - 1,
-                    "CREATE TABLE IF NOT EXISTS '%s'(driver_key BLOB UNIQUE NOT NULL PRIMARY KEY, key TEXT UNIQUE NOT NULL, flags INTEGER, value BLOB)",
+                    "CREATE TABLE IF NOT EXISTS '%s'(driver_key BLOB UNIQUE NOT NULL PRIMARY KEY, key TEXT UNIQUE NOT NULL, flags INTEGER, value BLOB, sign BLOB)",
                     a_table_name);
 
-    if ( (l_rc = s_db_driver_sqlite_exec(l_conn->conn, l_query, NULL, NULL, 0)) != SQLITE_OK ) {
+    if ( (l_rc = s_db_driver_sqlite_exec(l_conn->conn, l_query, NULL, NULL, 0, NULL)) != SQLITE_OK ) {
         s_sqlite_free_connection(l_conn);
         return -1;
     }
@@ -403,7 +393,7 @@ int s_db_driver_sqlite_vacuum(sqlite3 *a_db)
     if(!a_db)
         return -1;
 
-    return  s_db_driver_sqlite_exec(a_db, "VACUUM", NULL, NULL, 0);
+    return  s_db_driver_sqlite_exec(a_db, "VACUUM", NULL, NULL, 0, NULL);
 }
 
 /**
@@ -429,7 +419,7 @@ int l_rc;
         log_it(L_DEBUG, "Start TX l_conn: @%p/%p", s_trans, s_trans->conn);
 
     pthread_mutex_lock(&s_db_mtx);
-    l_rc = s_db_driver_sqlite_exec(s_trans->conn, "BEGIN", NULL, NULL, 0);
+    l_rc = s_db_driver_sqlite_exec(s_trans->conn, "BEGIN", NULL, NULL, 0, NULL);
     pthread_mutex_unlock(&s_db_mtx);
 
     if ( l_rc != SQLITE_OK ) {
@@ -464,7 +454,7 @@ conn_pool_item_t *l_conn;
     pthread_mutex_unlock(&s_trans_mtx);                                     /* Free TX context to other ... */
 
     pthread_mutex_lock(&s_db_mtx);
-    l_rc = s_db_driver_sqlite_exec(l_conn->conn, "COMMIT", NULL, NULL, 0);
+    l_rc = s_db_driver_sqlite_exec(l_conn->conn, "COMMIT", NULL, NULL, 0, NULL);
     pthread_mutex_unlock(&s_db_mtx);
 
     s_sqlite_free_connection(l_conn);
@@ -522,8 +512,6 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
 
     int l_ret = 0;
     char *l_query = NULL;
-    size_t l_record_len = 0;
-    struct driver_record *l_record;
     char *l_table_name = s_sqlite_make_table_name(a_store_obj->group);
     uint8_t l_type_erase = a_store_obj->flags & DAP_GLOBAL_DB_RECORD_ERASE;
     if (!l_type_erase) {
@@ -532,47 +520,16 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_ret = -3;
             goto ret_n_free;
         } else { //add one record
-            l_query = sqlite3_mprintf("INSERT OR REPLACE INTO '%s' VALUES(?, '%s', '%d', ?)",
-                                                  l_table_name, a_store_obj->key, (int)a_store_obj->flags);
-            /* Compute a length of the area to keep record */
-            l_record_len = sizeof(struct driver_record) + a_store_obj->value_len + dap_sign_get_size(a_store_obj->sign);
-            l_record = DAP_NEW_Z_SIZE(struct driver_record, l_record_len);
-            if (!l_record) {
-                log_it(L_ERROR, "Cannot allocate memory for new records, %zu octets, errno=%d", l_record_len, errno);
-                l_ret = -4;
-                goto ret_n_free;
-            }
-            l_record->value_len = a_store_obj->value_len;
-            // Don't save NEW attribute
-            l_record->flags = a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW;
-            if (!a_store_obj->crc) {
-                log_it(L_ERROR, "Global DB store object corrupted");
-                l_ret = -5;
-            }
-            l_record->crc = a_store_obj->crc;
-            if (!a_store_obj->sign) {
-                log_it(L_ERROR, "Global DB store object unsigned");
-                l_ret = -6;
-                goto ret_n_free;
-            }
-            l_record->sign_len = dap_sign_get_size(a_store_obj->sign);
-            if (!l_record->sign_len) {
-                log_it(L_ERROR, "Global DB store object sign corrupted");
-                l_ret = -7;
-                goto ret_n_free;
-            }
-            if (a_store_obj->value_len) /* Put <value> into the record */
-                memcpy(l_record->value_n_sign, a_store_obj->value, a_store_obj->value_len);
-            /* Put the authorization sign */
-            memcpy(l_record->value_n_sign + a_store_obj->value_len, a_store_obj->sign, l_record->sign_len);
+            l_query = sqlite3_mprintf("INSERT OR REPLACE INTO '%s' VALUES(?, '%s', '%d', ?, ?)",
+                                                  l_table_name, a_store_obj->key, (int)(a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW));
         }
         dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
-        l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, &l_driver_key, (byte_t *)l_record, l_record_len);
+        l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, &l_driver_key, (byte_t *)a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
         if (l_ret == SQLITE_ERROR) {
             // create table
             s_db_driver_sqlite_create_group_table(l_table_name);
             // repeat request
-            l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, &l_driver_key, (byte_t *)l_record, l_record_len);
+            l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, &l_driver_key, (byte_t *)a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
         }
         //s_db_sqlite_read_cond_store_obj(a_store_obj->group, (dap_global_db_driver_hash_t){0}, NULL, true);
         //s_db_sqlite_read_last_store_obj(a_store_obj->group, false);
@@ -584,10 +541,9 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_query = sqlite3_mprintf("DELETE FROM '%s' WHERE key = '%s'", l_table_name, a_store_obj->key);
         else // remove all group
             l_query = sqlite3_mprintf("DROP TABLE IF EXISTS '%s'", l_table_name);
-        l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, NULL, NULL, 0);
+        l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, NULL, NULL, 0, NULL);
     }
 ret_n_free:
-    DAP_DEL_Z(l_record);
     s_sqlite_free_connection(l_conn);
     if (l_query)
         sqlite3_free(l_query);
@@ -610,55 +566,55 @@ static void s_fill_one_item(const char *a_group, dap_store_obj_t *a_obj, SQLITE_
     }
     a_obj->group = dap_strdup(a_group);
 
-    for(uint32_t l_iCol = 0; l_iCol < a_row->count; l_iCol++) {
-        SQLITE_VALUE *l_cur_val = a_row->val + l_iCol;
-        switch (l_iCol) {
-        case 0:
-            if(l_cur_val->type == SQLITE_BLOB)
-                a_obj->timestamp = be64toh(((dap_global_db_driver_hash_t *)l_cur_val->val.val_blob)->bets);
-            break; // ts
-        case 1:
-            if(l_cur_val->type == SQLITE_TEXT)
-                a_obj->key = dap_strdup(l_cur_val->val.val_str);
-            break; // key
-        case 3:
-            if(l_cur_val->type == SQLITE_BLOB) {
-                struct driver_record *l_record = l_cur_val->val.val_blob;
-                if ((uint64_t)l_cur_val->len < sizeof(*l_record) || // Do not intersct bounds of readed array, check it twice
-                        (uint64_t)l_cur_val->len < sizeof(*l_record) + l_record->sign_len + l_record->value_len ||
-                        l_record->sign_len == 0) {
-                    log_it(L_ERROR, "Corrupted global DB record internal value");
-                    break;
-                }
-                a_obj->value_len = l_record->value_len;
-                a_obj->flags = l_record->flags;
-                a_obj->crc = l_record->crc;
-                if (a_obj->value_len &&
-                        !(a_obj->value = DAP_DUP_SIZE(l_record->value_n_sign, a_obj->value_len))) {
-                    DAP_DELETE(a_obj->group);
-                    DAP_DELETE(a_obj->key);
-                    log_it(L_CRITICAL, "Cannot allocate a memory for store object value");
-                    break;
-                }
-                dap_sign_t *l_sign = (dap_sign_t *)(l_record->value_n_sign + l_record->value_len);
-                if (dap_sign_get_size(l_sign) != l_record->sign_len ||
-                        !(a_obj->sign = DAP_DUP_SIZE(l_sign, l_record->sign_len))) {
-                    DAP_DELETE(a_obj->group);
-                    DAP_DELETE(a_obj->key);
-                    DAP_DEL_Z(a_obj->value);
-                    if (dap_sign_get_size(l_sign) != l_record->sign_len)
-                        log_it(L_ERROR, "Corrupted global DB record internal value");
-                    else
-                        log_it(L_CRITICAL, "Cannot allocate a memory for store object value");
-                    break;
-                }
-                a_obj->value_len = (size_t) l_cur_val->len;
-                a_obj->value = DAP_NEW_SIZE(uint8_t, a_obj->value_len);
-                memcpy((byte_t *)a_obj->value, l_cur_val->val.val_blob, a_obj->value_len);
-            }
-            break; // value
-        }
-    }
+    // for(uint32_t l_iCol = 0; l_iCol < a_row->count; l_iCol++) {
+    //     SQLITE_VALUE *l_cur_val = a_row->val + l_iCol;
+    //     switch (l_iCol) {
+    //     case 0:
+    //         if(l_cur_val->type == SQLITE_BLOB)
+    //             a_obj->timestamp = be64toh(((dap_global_db_driver_hash_t *)l_cur_val->val.val_blob)->bets);
+    //         break; // ts
+    //     case 1:
+    //         if(l_cur_val->type == SQLITE_TEXT)
+    //             a_obj->key = dap_strdup(l_cur_val->val.val_str);
+    //         break; // key
+    //     case 3:
+    //         if(l_cur_val->type == SQLITE_BLOB) {
+    //             struct driver_record *l_record = l_cur_val->val.val_blob;
+    //             if ((uint64_t)l_cur_val->len < sizeof(*l_record) || // Do not intersct bounds of readed array, check it twice
+    //                     (uint64_t)l_cur_val->len < sizeof(*l_record) + l_record->sign_len + l_record->value_len ||
+    //                     l_record->sign_len == 0) {
+    //                 log_it(L_ERROR, "Corrupted global DB record internal value");
+    //                 break;
+    //             }
+    //             a_obj->value_len = l_record->value_len;
+    //             a_obj->flags = l_record->flags;
+    //             a_obj->crc = l_record->crc;
+    //             if (a_obj->value_len &&
+    //                     !(a_obj->value = DAP_DUP_SIZE(l_record->value_n_sign, a_obj->value_len))) {
+    //                 DAP_DELETE(a_obj->group);
+    //                 DAP_DELETE(a_obj->key);
+    //                 log_it(L_CRITICAL, "Cannot allocate a memory for store object value");
+    //                 break;
+    //             }
+    //             dap_sign_t *l_sign = (dap_sign_t *)(l_record->value_n_sign + l_record->value_len);
+    //             if (dap_sign_get_size(l_sign) != l_record->sign_len ||
+    //                     !(a_obj->sign = DAP_DUP_SIZE(l_sign, l_record->sign_len))) {
+    //                 DAP_DELETE(a_obj->group);
+    //                 DAP_DELETE(a_obj->key);
+    //                 DAP_DEL_Z(a_obj->value);
+    //                 if (dap_sign_get_size(l_sign) != l_record->sign_len)
+    //                     log_it(L_ERROR, "Corrupted global DB record internal value");
+    //                 else
+    //                     log_it(L_CRITICAL, "Cannot allocate a memory for store object value");
+    //                 break;
+    //             }
+    //             a_obj->value_len = (size_t) l_cur_val->len;
+    //             a_obj->value = DAP_NEW_SIZE(uint8_t, a_obj->value_len);
+    //             memcpy((byte_t *)a_obj->value, l_cur_val->val.val_blob, a_obj->value_len);
+    //         }
+    //         break; // value
+    //     }
+    // }
 
 }
 
@@ -740,10 +696,10 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
-    char *l_str_query_size = sqlite3_mprintf("SELECT SUM(LENGTH(key) + LENGTH(value)) FROM '%s' "
+    char *l_str_query_size = sqlite3_mprintf("SELECT SUM(LENGTH(key) + LENGTH(value) + LENGTH(sign)) FROM '%s' "
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
-    char *l_str_query = sqlite3_mprintf("SELECT driver_key, key, value FROM '%s'"
+    char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s'"
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
     DAP_DEL_MULTY(l_table_name, l_blob_str);
@@ -779,11 +735,52 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
         goto clean_and_ret;
     }
     size_t l_group_name_len = strlen(a_group) + 1;
-    DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_pkt_pack_t, sizeof(dap_global_db_hash_pkt_t) + l_count * (sizeof(dap_global_db_pkt_t) - sizeof(struct driver_record)) + l_group_name_len + l_size, NULL, l_str_query_count, l_str_query);
+    size_t l_data_size = l_count * (sizeof(dap_global_db_pkt_t) + l_group_name_len) + l_size;
+    DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_data_size, NULL, l_str_query_count, l_str_query);
 // data forming
-    // for (size_t i = 0; i < l_count; ++i) {
-    //     dap_global_db_pkt_t *l_pkt = (dap_global_db_pkt_t *)(l_ret->data
-    // }
+    for (size_t i = 0; i < l_count && sqlite3_step(l_stmt) == SQLITE_ROW; ++i) {
+        dap_global_db_pkt_t *l_cur_pkt = (dap_global_db_pkt_t *)(l_ret->data + l_ret->data_size);
+        size_t l_count_col = sqlite3_column_count(l_stmt);
+        l_cur_pkt->group_len = l_group_name_len;
+        memcpy(l_cur_pkt->data, a_group, l_cur_pkt->group_len);
+        l_cur_pkt->data_len += l_cur_pkt->group_len;
+        for (size_t j = 0; j < l_count_col; ++j) {
+            if (j == 0 && sqlite3_column_type(l_stmt, j) == SQLITE_BLOB) {
+                dap_global_db_driver_hash_t *l_driver_key = (dap_global_db_driver_hash_t *)sqlite3_column_blob(l_stmt, j);
+                l_cur_pkt->timestamp = be64toh(l_driver_key->bets);
+                l_cur_pkt->crc = be64toh(l_driver_key->becrc);
+                continue;
+            }
+            if (j == 1 && sqlite3_column_type(l_stmt, j) == SQLITE_TEXT) {
+                l_cur_pkt->key_len = sqlite3_column_bytes(l_stmt, j);
+                memcpy(l_cur_pkt->data + l_cur_pkt->data_len, sqlite3_column_text(l_stmt, j), l_cur_pkt->key_len);
+                l_cur_pkt->data_len += l_cur_pkt->key_len;
+                continue;
+            }
+            if (j == 2 && sqlite3_column_type(l_stmt, j) == SQLITE_INTEGER) {
+                l_cur_pkt->flags = sqlite3_column_int64(l_stmt, j) & DAP_GLOBAL_DB_RECORD_DEL;
+                continue;
+            }
+            if (j == 3 && sqlite3_column_type(l_stmt, j) == SQLITE_BLOB) {
+                l_cur_pkt->value_len = sqlite3_column_bytes(l_stmt, j);
+                memcpy(l_cur_pkt->data + l_cur_pkt->data_len, sqlite3_column_blob(l_stmt, j), l_cur_pkt->value_len);
+                l_cur_pkt->data_len += l_cur_pkt->value_len;
+                continue;
+            }
+            if (j == 4 && sqlite3_column_type(l_stmt, j) == SQLITE_BLOB) {
+                dap_sign_t *l_sign = (dap_sign_t *)sqlite3_column_blob(l_stmt, j);
+                size_t l_sign_size = dap_sign_get_size(l_sign);
+                memcpy(l_cur_pkt->data + l_cur_pkt->data_len, sqlite3_column_blob(l_stmt, j), l_sign_size);
+                l_cur_pkt->data_len += l_sign_size;
+                continue;
+            }
+        }
+        l_ret->data_size += sizeof(dap_global_db_pkt_t) + l_cur_pkt->data_len;
+        l_ret->obj_count++;
+    }
+    if (l_ret->data_size != l_data_size) {
+//        log_it(L_WARNING, "Differents between %zu ")
+    }
 clean_and_ret:
     sqlite3_finalize(l_stmt_count);
     sqlite3_finalize(l_stmt_size);
@@ -1154,11 +1151,11 @@ static int s_db_sqlite_flush()
     sync();
 #endif
 
-    if(s_db_driver_sqlite_exec(l_conn->conn, "PRAGMA synchronous = NORMAL", NULL, NULL, 0)) // 0 | OFF | 1 | NORMAL | 2 | FULL
+    if(s_db_driver_sqlite_exec(l_conn->conn, "PRAGMA synchronous = NORMAL", NULL, NULL, 0, NULL)) // 0 | OFF | 1 | NORMAL | 2 | FULL
         log_it(L_WARNING, "Can't set new synchronous mode\n");
-    if(s_db_driver_sqlite_exec(l_conn->conn, "PRAGMA journal_mode = OFF", NULL, NULL, 0)) // DELETE | TRUNCATE | PERSIST | MEMORY | WAL | OFF
+    if(s_db_driver_sqlite_exec(l_conn->conn, "PRAGMA journal_mode = OFF", NULL, NULL, 0, NULL)) // DELETE | TRUNCATE | PERSIST | MEMORY | WAL | OFF
         log_it(L_WARNING, "Can't set new journal mode\n");
-    if(s_db_driver_sqlite_exec(l_conn->conn, "PRAGMA page_size = 1024", NULL, NULL, 0)) // DELETE | TRUNCATE | PERSIST | MEMORY | WAL | OFF
+    if(s_db_driver_sqlite_exec(l_conn->conn, "PRAGMA page_size = 1024", NULL, NULL, 0, NULL)) // DELETE | TRUNCATE | PERSIST | MEMORY | WAL | OFF
         log_it(L_WARNING, "Can't set page_size\n");
 
     return 0;
@@ -1236,11 +1233,11 @@ int dap_db_driver_sqlite_init(const char *a_filename_db, dap_db_driver_callbacks
 
         log_it(L_DEBUG, "SQL connection context #%d is created @%p", i, l_conn);
 
-        if(s_db_driver_sqlite_exec(l_conn, "PRAGMA synchronous = NORMAL", NULL, NULL, 0))
+        if(s_db_driver_sqlite_exec(l_conn, "PRAGMA synchronous = NORMAL", NULL, NULL, 0, NULL))
             log_it(L_ERROR, "can't set new synchronous mode\n");
-        if(s_db_driver_sqlite_exec(l_conn, "PRAGMA journal_mode = OFF", NULL, NULL, 0))
+        if(s_db_driver_sqlite_exec(l_conn, "PRAGMA journal_mode = OFF", NULL, NULL, 0, NULL))
             log_it(L_ERROR, "can't set new journal mode\n");
-        if(s_db_driver_sqlite_exec(l_conn, "PRAGMA page_size = 4096", NULL, NULL, 0))
+        if(s_db_driver_sqlite_exec(l_conn, "PRAGMA page_size = 4096", NULL, NULL, 0, NULL))
             log_it(L_ERROR, "can't set page_size\n");
     }
 
