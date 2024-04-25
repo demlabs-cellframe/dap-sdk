@@ -212,9 +212,16 @@ static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const vo
                                                            a_type, a_data_size, NODE_ADDR_FP_ARGS_S(a_ch->stream->node));
     dap_global_db_cluster_t *l_cluster = a_arg;
     switch (a_type) {
-    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST:
-        l_cluster->sync_context.stage_last_activity = dap_time_now();
-        break;
+    case DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST: {
+        dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)a_data;
+        dap_global_db_cluster_t *l_msg_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(),
+                                                                                (char *)l_pkt->group_n_hashses);
+        if (l_msg_cluster == l_cluster) {
+            debug_if(g_dap_global_db_debug_more, L_NOTICE, "Last activity for cluster %s was renewed", l_cluster->groups_mask);
+            l_cluster->sync_context.stage_last_activity = dap_time_now();
+        }
+    } break;
+
     default:
         break;
     }
@@ -247,6 +254,7 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
             l_msg->last_hash = c_dap_global_db_driver_hash_blank; //dap_db_get_last_hash_remote(l_req->link, l_req->group);
             l_msg->group_len = l_group_len;
             memcpy(l_msg->group, it->data, l_group_len);
+            debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_SYNC_START packet for group %s from first record", l_msg->group);
             dap_stream_ch_pkt_send_by_addr(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START,
                                            l_msg, dap_global_db_start_pkt_get_size(l_msg));
         }
