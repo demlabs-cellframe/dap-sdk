@@ -79,6 +79,19 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
 static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key);
 static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask);
+static inline int s_sqlite_free_connection(conn_pool_item_t *a_conn);
+
+static inline void s_db_sqlite_clean(sqlite3 *a_conn, size_t a_count, ... ) {
+    va_list l_args_list;
+    va_start(l_args_list, a_count);
+    for (size_t i = 0; i < a_count; ++i)
+        sqlite3_free(va_arg(l_args_list, void*));
+    for (size_t i = 0; i < a_count; ++i)
+        sqlite3_finalize(va_arg(l_args_list, void*));
+    va_end(l_args_list);
+    s_sqlite_free_connection(a_conn);
+}
+
 /**
  * @brief Closes a SQLite database.
  *
@@ -556,9 +569,7 @@ static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, boo
         log_it(L_INFO, "There are no records satisfying the last read request");
     }
 clean_and_ret:
-    sqlite3_finalize(l_stmt);
-    s_sqlite_free_connection(l_conn);
-    sqlite3_free(l_str_query);
+    s_db_sqlite_clean(l_conn, 1, l_str_query, l_stmt);    
     return l_ret;
 }
 
@@ -672,13 +683,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
         log_it(L_ERROR, "Wrong pkt pack size "DAP_UINT64_FORMAT_U", expected %zu", l_ret->data_size, l_data_size); 
     }
 clean_and_ret:
-    sqlite3_finalize(l_stmt_count);
-    sqlite3_finalize(l_stmt_size);
-    sqlite3_finalize(l_stmt);
-    s_sqlite_free_connection(l_conn);
-    sqlite3_free(l_str_query_count);
-    sqlite3_free(l_str_query_size);
-    sqlite3_free(l_str_query);
+    s_db_sqlite_clean(l_conn, 3, l_str_query, l_str_query_count, l_str_query_size, l_stmt, l_stmt_count, l_stmt_size);
     return l_ret;
 }
 
@@ -735,11 +740,7 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
     }
     l_ret->hashes_count = l_count_out;
 clean_and_ret:
-    sqlite3_finalize(l_stmt_count);
-    sqlite3_finalize(l_stmt);
-    s_sqlite_free_connection(l_conn);
-    sqlite3_free(l_str_query_count);
-    sqlite3_free(l_str_query);
+    s_db_sqlite_clean(l_conn, 2, l_str_query, l_str_query_count, l_stmt, l_stmt_count);
     return l_ret;
 }
 
@@ -806,11 +807,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
     if (a_count_out)
         *a_count_out = l_count_out;
 clean_and_ret:
-    sqlite3_finalize(l_stmt_count);
-    sqlite3_finalize(l_stmt);
-    s_sqlite_free_connection(l_conn);
-    sqlite3_free(l_str_query_count);
-    sqlite3_free(l_str_query);
+    s_db_sqlite_clean(l_conn, 2, l_str_query, l_str_query_count, l_stmt, l_stmt_count);
     return l_ret;
 }
 
@@ -875,11 +872,7 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const ch
     if (a_count_out)
         *a_count_out = l_count_out;
 clean_and_ret:
-    sqlite3_finalize(l_stmt_count);
-    sqlite3_finalize(l_stmt);
-    s_sqlite_free_connection(l_conn);
-    sqlite3_free(l_str_query_count);
-    sqlite3_free(l_str_query);
+    s_db_sqlite_clean(l_conn, 2, l_str_query, l_str_query_count, l_stmt, l_stmt_count);
     return l_ret;
 }
 
@@ -923,9 +916,7 @@ static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
         log_it(L_ERROR, "SQLite read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
     }
 clean_and_ret:
-    sqlite3_finalize(l_stmt);
-    s_sqlite_free_connection(l_conn);
-    sqlite3_free(l_str_query);
+    s_db_sqlite_clean(l_conn, 1, l_str_query, l_stmt);
     DAP_DEL_Z(l_mask);
     return l_ret;
 }
@@ -964,9 +955,7 @@ static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_dr
     }
     size_t l_ret = sqlite3_column_int64(l_stmt_count, 0);
 clean_and_ret:
-    sqlite3_finalize(l_stmt_count);
-    s_sqlite_free_connection(l_conn);
-    sqlite3_free(l_str_query_count);
+    s_db_sqlite_clean(l_conn, 1, l_str_query_count, l_stmt_count);
     return l_ret;
 }
 
@@ -1003,9 +992,7 @@ static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t
     }
     size_t l_ret = sqlite3_column_int64(l_stmt_count, 0);
 clean_and_ret:
-    sqlite3_finalize(l_stmt_count);
-    s_sqlite_free_connection(l_conn);
-    sqlite3_free(l_str_query_count);
+    s_db_sqlite_clean(l_conn, 2, l_str_query_count, l_stmt_count);
     return l_ret;
 }
 
@@ -1041,9 +1028,7 @@ static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
     }
     size_t l_ret = sqlite3_column_int64(l_stmt_count, 0);
 clean_and_ret:
-    sqlite3_finalize(l_stmt_count);
-    s_sqlite_free_connection(l_conn);
-    sqlite3_free(l_str_query_count);
+    s_db_sqlite_clean(l_conn, 1, l_str_query_count, l_stmt_count);
     return l_ret;
 }
 
