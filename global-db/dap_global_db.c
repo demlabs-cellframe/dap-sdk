@@ -1661,8 +1661,8 @@ static void s_check_db_version_callback_get (dap_global_db_instance_t *a_dbi, in
 
     }
 
-    if (a_value_len == sizeof(uint16_t))
-        a_dbi->version = *(uint16_t *)a_value;
+    if (a_value_len == sizeof(a_dbi->version))
+        a_dbi->version = *(uint32_t *)a_value;
 
     if( a_dbi->version < DAP_GLOBAL_DB_VERSION) {
         log_it(L_NOTICE, "GlobalDB version %u, but %u required. The current database will be recreated",
