@@ -76,7 +76,9 @@ static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, boo
 static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
 static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
-
+static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
+static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key);
+static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask);
 /**
  * @brief Closes a SQLite database.
  *
@@ -442,6 +444,9 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
         //s_db_sqlite_read_cond_store_obj(a_store_obj->group, (dap_global_db_driver_hash_t){0}, NULL, true);
         //s_db_sqlite_read_last_store_obj(a_store_obj->group, false);
         //s_db_sqlite_read_count_store(a_store_obj->group, (dap_global_db_driver_hash_t){0}, true);
+        s_db_sqlite_get_groups_by_mask("global");
+        bool is_obj = s_db_sqlite_is_obj(a_store_obj->group, a_store_obj->key);
+        bool is_hash = s_db_sqlite_is_hash(a_store_obj->group, l_driver_key);
         dap_global_db_hash_pkt_t *l_hashes = s_db_sqlite_read_hashes(a_store_obj->group, (dap_global_db_driver_hash_t){0});
         s_db_sqlite_get_by_hash(a_store_obj->group, l_hashes->group_n_hashses + l_hashes->group_name_len, l_hashes->hashes_count);
     } else {
@@ -514,8 +519,8 @@ clean_and_ret:
 static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, bool a_with_holes)
 {
 // sanity check
-    conn_pool_item_t *l_conn = s_sqlite_get_connection();
-    dap_return_val_if_pass(!a_group || !l_conn, NULL);
+    conn_pool_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), NULL);
 // preparing
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt = NULL;
@@ -559,7 +564,7 @@ clean_and_ret:
 
 static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count)
 {
-    // sanity check
+// sanity check
     conn_pool_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !a_hashes || !a_count || !(l_conn = s_sqlite_get_connection()), NULL);
 // preparing
@@ -664,7 +669,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
         l_ret->obj_count++;
     }
     if (l_ret->data_size != l_data_size) {
-//        log_it(L_WARNING, "Differents between %zu ")
+        log_it(L_ERROR, "Wrong pkt pack size "DAP_UINT64_FORMAT_U", expected %zu", l_ret->data_size, l_data_size); 
     }
 clean_and_ret:
     sqlite3_finalize(l_stmt_count);
@@ -680,8 +685,8 @@ clean_and_ret:
 static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
 {
 // sanity check
-    conn_pool_item_t *l_conn = s_sqlite_get_connection();
-    dap_return_val_if_pass(!a_group || !l_conn, NULL);
+    conn_pool_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), NULL);
 // preparing
     dap_global_db_hash_pkt_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
@@ -750,8 +755,8 @@ clean_and_ret:
 static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes)
 {
 // sanity check
-    conn_pool_item_t *l_conn = s_sqlite_get_connection();
-    dap_return_val_if_pass(!a_group || !l_conn, NULL);
+    conn_pool_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), NULL);
 // preparing
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
@@ -816,11 +821,11 @@ clean_and_ret:
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes)
+static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes)
 {
 // sanity check
-    conn_pool_item_t *l_conn = s_sqlite_get_connection();
-    dap_return_val_if_pass(!a_group || !l_conn, NULL)
+    conn_pool_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), NULL);
 // func work
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
@@ -884,35 +889,45 @@ clean_and_ret:
  * @param a_group_mask a group name mask
  * @return Returns a pointer to a list of group names.
  */
-dap_list_t* s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
+static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
 {
-    conn_pool_item_t *l_conn = s_sqlite_get_connection();
-
-    if(!a_group_mask || !l_conn)
-        return NULL;
-
-    sqlite3_stmt *l_res = NULL;
-    const char *l_str_query = "SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%'";
-    int l_ret = sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_res, NULL);
-    if (l_ret != SQLITE_OK) {
-        log_it(L_ERROR, "SQLite get groups error %d(%s)\n", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
-        s_sqlite_free_connection(l_conn);
-        return NULL;
+// sanity check
+    conn_pool_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group_mask || !(l_conn = s_sqlite_get_connection()), NULL);
+// preparing
+    dap_list_t* l_ret = NULL;
+    sqlite3_stmt *l_stmt = NULL;
+    char *l_mask = NULL;
+    
+    char *l_str_query = sqlite3_mprintf("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%'");
+    if (!l_str_query) {
+        log_it(L_ERROR, "Error in SQL request forming");
+        goto clean_and_ret;
     }
-    char * l_mask = s_sqlite_make_table_name(a_group_mask);
-    // SQLITE_ROW_VALUE *l_row = NULL;
-    dap_list_t *l_ret_list = NULL;
-    // while (s_db_driver_sqlite_fetch_array(l_res, &l_row) == SQLITE_ROW && l_row) {
-    //     char *l_table_name = (char *)l_row->val->val.val_str;
-    //     if(!dap_fnmatch(l_mask, l_table_name, 0))
-    //         l_ret_list = dap_list_prepend(l_ret_list, s_sqlite_make_group_name(l_table_name));
-    //     s_db_driver_sqlite_row_free(l_row);
-    // }
-    sqlite3_finalize(l_res);
-
+    
+    if(sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_stmt, NULL)!= SQLITE_OK ||
+        sqlite3_step(l_stmt) != SQLITE_ROW)
+    {
+        log_it(L_ERROR, "SQLite get groups error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+        goto clean_and_ret;
+    }
+    l_mask = s_sqlite_make_table_name(a_group_mask);
+    int l_ret_code = 0;
+    for (l_ret_code = sqlite3_step(l_stmt);l_ret_code == SQLITE_ROW && sqlite3_column_type(l_stmt, 0) == SQLITE_TEXT; l_ret_code = sqlite3_step(l_stmt)) {
+        char *l_table_name = sqlite3_column_text(l_stmt, 0);
+        //printf("table %s\n", l_table_name);
+        if(!dap_fnmatch(l_mask, l_table_name, 0))
+            l_ret = dap_list_prepend(l_ret, s_sqlite_make_group_name(l_table_name));
+    }
+    if(l_ret_code != SQLITE_DONE) {
+        log_it(L_ERROR, "SQLite read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+    }
+clean_and_ret:
+    sqlite3_finalize(l_stmt);
     s_sqlite_free_connection(l_conn);
-
-    return l_ret_list;
+    sqlite3_free(l_str_query);
+    DAP_DEL_Z(l_mask);
+    return l_ret;
 }
 
 /**
@@ -925,8 +940,8 @@ dap_list_t* s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
 static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes)
 {
 // sanity check
-    conn_pool_item_t *l_conn = s_sqlite_get_connection();
-    dap_return_val_if_pass(!a_group || !l_conn, 0);
+    conn_pool_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), 0);
 // preparing
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = s_sqlite_make_table_name(a_group);
@@ -962,11 +977,50 @@ clean_and_ret:
  * @param a_key a object key string
  * @return Returns true if it is, false it's not.
  */
-bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
+static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash)
 {
 // sanity check
-    conn_pool_item_t *l_conn = s_sqlite_get_connection();
-    dap_return_val_if_pass(!a_group || !l_conn, NULL);
+    conn_pool_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), false);
+// preparing
+    sqlite3_stmt *l_stmt_count = NULL;
+    char *l_table_name = s_sqlite_make_table_name(a_group);
+    char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+                                        " WHERE driver_key = ?",
+                                        l_table_name);
+    DAP_DEL_Z(l_table_name);
+    if (!l_str_query_count) {
+        log_it(L_ERROR, "Error in SQL request forming");
+        goto clean_and_ret;
+    }
+    
+    if(sqlite3_prepare_v2(l_conn->conn, l_str_query_count, -1, &l_stmt_count, NULL)!= SQLITE_OK ||
+        sqlite3_bind_blob64(l_stmt_count, 1, &a_hash, sizeof(a_hash), SQLITE_STATIC) != SQLITE_OK ||
+        sqlite3_step(l_stmt_count) != SQLITE_ROW)
+    {
+        log_it(L_ERROR, "SQLite is hash read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+        goto clean_and_ret;
+    }
+    size_t l_ret = sqlite3_column_int64(l_stmt_count, 0);
+clean_and_ret:
+    sqlite3_finalize(l_stmt_count);
+    s_sqlite_free_connection(l_conn);
+    sqlite3_free(l_str_query_count);
+    return l_ret;
+}
+
+/**
+ * @brief Checks if an object is in a s_db database by a_group and a_key.
+ *
+ * @param a_group a group name string
+ * @param a_key a object key string
+ * @return Returns true if it is, false it's not.
+ */
+static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
+{
+// sanity check
+    conn_pool_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), false);
 // preparing
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = s_sqlite_make_table_name(a_group);
@@ -982,7 +1036,7 @@ bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
     if(sqlite3_prepare_v2(l_conn->conn, l_str_query_count, -1, &l_stmt_count, NULL)!= SQLITE_OK ||
         sqlite3_step(l_stmt_count) != SQLITE_ROW)
     {
-        log_it(L_ERROR, "SQLite count read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+        log_it(L_ERROR, "SQLite is obj read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
         goto clean_and_ret;
     }
     size_t l_ret = sqlite3_column_int64(l_stmt_count, 0);
@@ -993,7 +1047,6 @@ clean_and_ret:
     return l_ret;
 }
 
-
 /**
  * @brief Flushes a SQLite database cahce to disk.
  * @note The function closes and opens the database
@@ -1002,7 +1055,9 @@ clean_and_ret:
  */
 static int s_db_sqlite_flush()
 {
+// sanity check
     conn_pool_item_t *l_conn = s_sqlite_get_connection();
+    dap_return_val_if_pass(!l_conn, -1);
 
     char *l_error_message = NULL;
 
@@ -1129,7 +1184,7 @@ int dap_db_driver_sqlite_init(const char *a_filename_db, dap_db_driver_callbacks
     a_drv_callback->flush                   = s_db_sqlite_flush;
     a_drv_callback->get_by_hash             = s_db_sqlite_get_by_hash;
     a_drv_callback->read_hashes             = s_db_sqlite_read_hashes;
-    a_drv_callback->is_hash                 = NULL;
+    a_drv_callback->is_hash                 = s_db_sqlite_is_hash;
 
 end:
     return l_ret;
