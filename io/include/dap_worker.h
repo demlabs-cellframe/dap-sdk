@@ -72,11 +72,7 @@ typedef struct dap_worker_msg_io{
 } dap_worker_msg_io_t;
 
 // Message for callback execution
-typedef void (*dap_worker_callback_t)(dap_worker_t *,void *);
-typedef struct dap_worker_msg_callback{
-    dap_worker_callback_t callback; // Callback for specific client operations
-    void * arg;
-} dap_worker_msg_callback_t;
+typedef void (*dap_worker_callback_t)(void *a_arg);
 
 extern pthread_key_t g_pth_key_worker;
 
