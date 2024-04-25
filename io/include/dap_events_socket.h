@@ -320,7 +320,7 @@ typedef struct dap_events_socket {
 
     int64_t kqueue_data;
 #elif defined DAP_EVENTS_CAPS_IOCP
-    char pending;
+    byte_t pending : 7, pending_read : 1;
 #endif
 
     dap_events_socket_callbacks_t callbacks;

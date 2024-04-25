@@ -1324,7 +1324,13 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         return;
     }
     a_esocket->flags |= DAP_SOCK_READY_TO_READ;
-    
+    if (a_esocket->pending_read) {
+        debug_if( g_debug_reactor, L_DEBUG, "Incomplete read on "DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" already pending, dump it",
+                                            a_esocket->uuid, a_esocket->socket, dap_events_socket_get_type_str(a_esocket) );
+        dap_overlapped_free(a_ol);
+        return;
+    }
+    a_esocket->pending_read = 1;
     int l_res = -2;
     DWORD flags = 0, bytes = 0;
     const char *func = "";
@@ -1338,7 +1344,7 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         ol = DAP_NEW(dap_overlapped_t);
         *ol = (dap_overlapped_t){ .ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL), .op = io_read };
     }
-    WSABUF wsabuf = { .buf = a_esocket->buf_in /*+ a_esocket->buf_in_size*/, .len = a_esocket->buf_in_size_max };
+    WSABUF wsabuf = { .buf = a_esocket->buf_in + a_esocket->buf_in_size, .len = a_esocket->buf_in_size_max - a_esocket->buf_in_size };
 
     switch (a_esocket->type) {
     case DESCRIPTOR_TYPE_SOCKET_CLIENT:

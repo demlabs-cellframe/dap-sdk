@@ -320,8 +320,11 @@ static void s_check_session( unsigned int a_id, dap_events_socket_t *a_esocket )
 
     s_stream_states_update(l_stream);
 
+#ifdef DAP_EVENTS_CAPS_IOCP
+     a_esocket->flags |= DAP_SOCK_READY_TO_READ;
+#else
     dap_events_socket_set_readable_unsafe( a_esocket, true );
-
+#endif
 }
 
 /**
@@ -488,8 +491,12 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     strcpy(a_http_client->reply_reason_phrase,"OK");
                     s_stream_states_update(l_stream);
                     a_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
+#ifdef DAP_EVENTS_CAPS_IOCP
+                    a_http_client->esocket->flags |= DAP_SOCK_READY_TO_READ | DAP_SOCK_READY_TO_WRITE;
+#else
                     dap_events_socket_set_readable_unsafe(a_http_client->esocket,true);
                     dap_events_socket_set_writable_unsafe(a_http_client->esocket,true);
+#endif
                 }else{
                     log_it(L_ERROR,"Can't open session id %u", l_id);
                     a_http_client->reply_status_code = Http_Status_NotFound;
