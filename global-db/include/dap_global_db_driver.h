@@ -83,9 +83,9 @@ DAP_STATIC_INLINE dap_global_db_driver_hash_t dap_global_db_driver_hash_get(dap_
     return l_ret;
 }
 
-DAP_STATIC_INLINE int dap_global_db_driver_hash_compare(dap_global_db_driver_hash_t a_hash1, dap_global_db_driver_hash_t a_hash2)
+DAP_STATIC_INLINE int dap_global_db_driver_hash_compare(dap_global_db_driver_hash_t *a_hash1, dap_global_db_driver_hash_t *a_hash2)
 {
-    int l_ret = memcmp(&a_hash1, &a_hash2, sizeof(dap_global_db_driver_hash_t));
+    int l_ret = memcmp(a_hash1, a_hash2, sizeof(dap_global_db_driver_hash_t));
     return l_ret < 0 ? -1 : (l_ret > 0 ? 1 : 0);
 }
 
@@ -97,7 +97,7 @@ DAP_STATIC_INLINE int dap_store_obj_driver_hash_compare(dap_store_obj_t *a_obj1,
         return 1;
     dap_global_db_driver_hash_t l_hash1 = dap_global_db_driver_hash_get(a_obj1),
                                 l_hash2 = dap_global_db_driver_hash_get(a_obj2);
-    return dap_global_db_driver_hash_compare(l_hash1, l_hash2);
+    return dap_global_db_driver_hash_compare(&l_hash1, &l_hash2);
 }
 
 DAP_STATIC_INLINE const char *dap_global_db_driver_hash_print(dap_global_db_driver_hash_t a_hash)
