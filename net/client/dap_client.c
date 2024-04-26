@@ -242,7 +242,7 @@ void dap_client_delete_unsafe(dap_client_t *a_client)
 }
 
 
-void s_client_delete_on_worker(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
+void s_client_delete_on_worker(void *a_arg)
 {
     dap_client_delete_unsafe(a_arg);
 }

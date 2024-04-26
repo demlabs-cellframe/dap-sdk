@@ -19,7 +19,7 @@ typedef struct dap_global_db_legacy_list_group {
 
 typedef struct dap_global_db_legacy_list {
     dap_list_t *groups;
-    dap_global_db_driver_hash_t *current_hash;
+    dap_global_db_driver_hash_t current_hash;
     size_t items_number;
     size_t items_rest;
 } dap_global_db_legacy_list_t;

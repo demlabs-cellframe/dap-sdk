@@ -4,6 +4,7 @@
 #include "dap_global_db.h"
 #include "dap_global_db_legacy.h"
 #include "dap_global_db_cluster.h"
+#include "dap_global_db_pkt.h"
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_string.h"
@@ -28,15 +29,16 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
     dap_global_db_instance_t *l_dbi = dap_global_db_instance_get_default();
     // Add groups for the selected network only
     dap_cluster_t *l_net_links_cluster = dap_cluster_by_mnemonim(a_net_name);
+    dap_list_t *l_groups = NULL;
     for (dap_global_db_cluster_t *it = l_dbi->clusters; it; it = it->next)
         if (it->links_cluster == l_net_links_cluster) // Cluster is related to specified network
-            l_groups_names = dap_list_concat(l_groups_names, dap_global_db_driver_get_groups_by_mask(it->groups_mask));
+            l_groups = dap_list_concat(l_groups, dap_global_db_driver_get_groups_by_mask(it->groups_mask));
 
     dap_list_t *l_group, *l_tmp;
     // Check for banned/whitelisted groups
     if (l_dbi->whitelist || l_dbi->blacklist) {
         dap_list_t *l_used_list = l_dbi->whitelist ? l_dbi->whitelist : l_dbi->blacklist;
-        DL_FOREACH_SAFE(l_groups_names, l_group, l_tmp) {
+        DL_FOREACH_SAFE(l_groups, l_group, l_tmp) {
             dap_list_t *l_used_el;
             bool l_match = false;
             DL_FOREACH(l_used_list, l_used_el) {
@@ -45,7 +47,7 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
                     break;
             }
             if (l_used_list == l_dbi->whitelist ? !l_match : l_match)
-                l_groups_names = dap_list_delete_link(l_groups_names, l_group);
+                l_groups = dap_list_delete_link(l_groups, l_group);
         }
     }
 
@@ -53,7 +55,7 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
     DL_FOREACH_SAFE(l_groups, l_group, l_tmp) {
         size_t l_group_size = dap_global_db_driver_count(l_group->data, c_dap_global_db_driver_hash_blank);
         if (!l_group_size) {
-            log_it(L_WARNING, "[!] Group %s is empty on our side, skip it", l_group->data);
+            log_it(L_WARNING, "[!] Group %s is empty on our side, skip it", (char *)l_group->data);
             l_groups = dap_list_delete_link(l_groups, l_group);
             DAP_DELETE(l_group->data);
             DAP_DELETE(l_group);
@@ -66,8 +68,8 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
         return NULL;
 
     dap_global_db_legacy_list_t *l_db_legacy_list;
-    DAP_NEW_Z_RET_VAL(l_db_legacy_list, dap_global_db_legacy_list_t, NULL);
-    l_db_legacy_list->groups = l_groups_names;
+    DAP_NEW_Z_RET_VAL(l_db_legacy_list, dap_global_db_legacy_list_t, NULL, NULL);
+    l_db_legacy_list->groups = l_groups;
     l_db_legacy_list->items_rest = l_db_legacy_list->items_number = l_items_number;
 
     return l_db_legacy_list;
@@ -75,7 +77,7 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
 
 dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *a_db_legacy_list, size_t a_number_limit)
 {
-    dap_list_t *it, *tmp, *ret = NULL
+    dap_list_t *it, *tmp, *ret = NULL;
     size_t l_number_limit = a_number_limit;
     DL_FOREACH_SAFE(a_db_legacy_list->groups, it, tmp) {
         char *l_group_cur = it->data;
@@ -93,7 +95,7 @@ dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *
                 assert(a_db_legacy_list->items_rest >= l_values_count);
                 a_db_legacy_list->items_rest -= l_values_count;
                 assert(l_number_limit >= l_values_count);
-                l_number_limit -= l_values_vount;
+                l_number_limit -= l_values_count;
                 for (size_t i = 0; i < l_values_count; i++) {
                     dap_global_db_pkt_old_t *l_pkt = dap_global_db_pkt_serialize_old(l_store_objs + i);
                     if (!l_pkt) {
@@ -102,7 +104,7 @@ dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *
                     }
                     dap_list_t *l_list_cur = dap_list_last(ret);
                     ret = dap_list_append(ret, l_pkt);
-                    if (dap_List_last(ret) == l_list_cur) {
+                    if (dap_list_last(ret) == l_list_cur) {
                         rc = DAP_GLOBAL_DB_RC_ERROR;
                         break;
                     }
@@ -137,7 +139,7 @@ void dap_global_db_legacy_list_delete(dap_global_db_legacy_list_t *a_db_legacy_l
     if (!a_db_legacy_list)
         return;
     dap_list_free_full(a_db_legacy_list->groups, NULL);
-    DAP_DELETE(a_db_log_list);
+    DAP_DELETE(a_db_legacy_list);
 }
 
 /**
@@ -201,7 +203,7 @@ dap_global_db_pkt_old_t *dap_global_db_pkt_serialize_old(dap_store_obj_t *a_stor
     memcpy(pdata,   &a_store_obj->value_len,sizeof(uint64_t));      pdata += sizeof(uint64_t);
     memcpy(pdata,   a_store_obj->value,     a_store_obj->value_len);pdata += a_store_obj->value_len;
     if ((uint32_t)(pdata - l_pkt->data) != l_data_size_out) {
-        log_it(L_MSG, "! Inconsistent global_db packet! %u != %u", (uint32_t)(pdata - l_pkt->data), l_data_size_out);
+        log_it(L_MSG, "! Inconsistent global_db packet! %zu != %zu", pdata - l_pkt->data, l_data_size_out);
     }
     return l_pkt;
 }
@@ -240,13 +242,13 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         if ( pdata + sizeof (uint16_t) > pdata_end ) {
             log_it(L_ERROR, "Broken GDB element: can't read 'group_length' field"); break;
         }
-        memcpy(&l_obj->group_len, pdata, sizeof(uint16_t)); pdata += sizeof(uint16_t);
+        uint16_t l_group_len = *(uint16_t *)pdata; pdata += sizeof(uint16_t);
 
-        if (!l_obj->group_len || pdata + l_obj->group_len > pdata_end) {
+        if (!l_group_len || pdata + l_group_len > pdata_end) {
             log_it(L_ERROR, "Broken GDB element: can't read 'group' field"); break;
         }
-        l_obj->group = DAP_NEW_Z_SIZE(char, l_obj->group_len + 1);
-        memcpy(l_obj->group, pdata, l_obj->group_len); pdata += l_obj->group_len;
+        l_obj->group = DAP_NEW_Z_SIZE(char, l_group_len + 1);
+        memcpy(l_obj->group, pdata, l_group_len); pdata += l_group_len;
 
         if ( pdata + sizeof (uint64_t) > pdata_end ) {
             log_it(L_ERROR, "Broken GDB element: can't read 'id' field");
@@ -264,14 +266,14 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
             log_it(L_ERROR, "Broken GDB element: can't read 'key_length' field");
             DAP_DELETE(l_obj->group); break;
         }
-        memcpy(&l_obj->key_len, pdata, sizeof(uint16_t)); pdata += sizeof(uint16_t);
+        uint16_t l_key_len = *(uint16_t *)pdata; pdata += sizeof(uint16_t);
 
-        if ( !l_obj->key_len || pdata + l_obj->key_len > pdata_end ) {
+        if ( !l_key_len || pdata + l_key_len > pdata_end ) {
             log_it(L_ERROR, "Broken GDB element: 'key' field");
             DAP_DELETE(l_obj->group); break;
         }
-        l_obj->key = DAP_NEW_Z_SIZE(char, l_obj->key_len + 1);
-        memcpy((char*)l_obj->key, pdata, l_obj->key_len); pdata += l_obj->key_len;
+        l_obj->key = DAP_NEW_Z_SIZE(char, l_key_len + 1);
+        memcpy((char*)l_obj->key, pdata, l_key_len); pdata += l_key_len;
 
         if ( pdata + sizeof (uint64_t) > pdata_end ) {
             log_it(L_ERROR, "Broken GDB element: can't read 'value_length' field");
@@ -287,7 +289,7 @@ dap_store_obj_t *l_store_obj_arr, *l_obj;
         }
         l_obj->value = DAP_DUP_SIZE(pdata, l_obj->value_len); pdata += l_obj->value_len;
 
-        l_obj->crc = dap_store_obj_checksum(); // TODO
+        l_obj->crc = dap_store_obj_checksum(l_obj);
     }
 
     if ( pdata < pdata_end ) {

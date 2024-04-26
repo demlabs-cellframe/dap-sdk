@@ -149,8 +149,9 @@ bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj)
     l_pkt->data_len = l_full_data_len;
     uint64_t l_checksum = crc64((uint8_t *)l_pkt + sizeof(uint64_t),
                                 dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t));
+    bool ret = l_checksum == l_pkt->crc;
     DAP_DELETE(l_pkt);
-    return l_checksum == l_pkt->crc;
+    return ret;
 
 }
 
