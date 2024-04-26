@@ -2148,3 +2148,16 @@ void dap_context_create_queues( dap_events_socket_callback_queue_ptr_t a_callbac
 {
     // TODO complete queues create
 }
+
+/**
+ * @brief count contexts
+ * @return value of contexts
+ */
+size_t dap_context_count()
+{
+    size_t l_ret = 0;
+    pthread_rwlock_wrlock(&s_contexts_rwlock);
+    l_ret = dap_list_length(s_contexts);
+    pthread_rwlock_unlock(&s_contexts_rwlock);
+    return l_ret;
+}

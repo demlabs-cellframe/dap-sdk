@@ -43,6 +43,7 @@
 #include "dap_file_utils.h"
 #include "dap_global_db_pkt.h"
 #include "dap_events.h"
+#include "dap_context.h"
 
 #define LOG_TAG "db_sqlite"
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_SQLITE
@@ -62,14 +63,10 @@ extern  int g_dap_global_db_debug_more;                                     /* E
 
 static char s_filename_db [MAX_PATH];
 
-static pthread_mutex_t s_conn_free_mtx = PTHREAD_MUTEX_INITIALIZER;         /* Lock to coordinate access to the free connections pool */
-static pthread_cond_t s_conn_free_cnd = PTHREAD_COND_INITIALIZER;           /* To signaling to waites of the free connection */
-static bool s_conn_free_present = true;
-
 static pthread_mutex_t s_db_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 static uint32_t s_conn_count = 2;  // connection count
-conn_pool_item_t *s_conn_pool = NULL;  // connection pool
+static conn_pool_item_t *s_conn_pool = NULL;  // connection pool
 
 static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes);
 static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, bool a_with_holes);
@@ -104,82 +101,39 @@ static inline void s_db_driver_sqlite_close(sqlite3 *l_db)
         sqlite3_close(l_db);
 }
 
-static conn_pool_item_t *s_sqlite_test_free_connection(void)
-{
-    int l_rc;
-    conn_pool_item_t *l_conn = s_conn_pool;
-    /* Run over connection list, try to get a free connection */
-    for (uint32_t j = s_conn_count; j--; l_conn++) {
-        if ( !(l_rc = atomic_flag_test_and_set (&l_conn->busy)) ) {     /* Test-and-set ... */
-                                                                        /* l_rc == 0 - so connection was free, */
-                                                                        /* we got free connection, so get out */
-            atomic_fetch_add(&l_conn->usage, 1);
-            if (g_dap_global_db_debug_more )
-                log_it(L_DEBUG, "Alloc l_conn: @%p/%p, usage: %llu", l_conn, l_conn->conn, l_conn->usage);
-            return  l_conn;
-        }
-    }
-    return NULL;
-}
-
 #define DAP_SQLITE_CONN_TIMEOUT 5   // sec
 
-static conn_pool_item_t *s_sqlite_get_connection(void)
+static conn_pool_item_t *s_sqlite_get_connection()
 {
-int     l_rc;
-struct timespec tmo = {0};
-
-    if ( (l_rc = pthread_mutex_lock(&s_db_mtx)) == EDEADLK )                /* Get the mutex */
-        return s_trans;                                                     /* DEADLOCK is detected ? Return pointer to current transaction */
-    else if ( l_rc )
-        return  log_it(L_ERROR, "Cannot get free SQLITE connection, errno=%d", l_rc), NULL;
-
-    pthread_mutex_unlock(&s_db_mtx);
-
-    pthread_mutex_lock(&s_conn_free_mtx);
-    conn_pool_item_t *l_conn = s_sqlite_test_free_connection();
-    if (l_conn) {
-        pthread_mutex_unlock(&s_conn_free_mtx);
-        return l_conn;
+// sanity check
+    dap_return_val_if_pass_err(!s_conn_pool, NULL, "Connection pool not inited");
+    dap_context_t *l_context_cur = dap_context_current();
+    if(!l_context_cur) {
+        log_it(L_ERROR, "Error in getting current context ID");
+        return NULL;
     }
-
-    log_it(L_INFO, "No free SQLITE connection, wait %d seconds ...", DAP_SQLITE_CONN_TIMEOUT);
-
-    /* No free connection at the moment, so, prepare to wait a condition ... */
-
-    clock_gettime(CLOCK_REALTIME, &tmo);
-    tmo.tv_sec += DAP_SQLITE_CONN_TIMEOUT;
-    s_conn_free_present = false;
-    l_rc = 0;
-    while (!s_conn_free_present && !l_rc)
-        l_rc = pthread_cond_timedwait(&s_conn_free_cnd, &s_conn_free_mtx, &tmo);
-    if (!l_rc)
-        l_conn = s_sqlite_test_free_connection();
-    pthread_mutex_unlock(&s_conn_free_mtx);
-
-    if (l_rc)
-        log_it(L_DEBUG, "pthread_cond_timedwait(), error=%d", l_rc);
-    if (!l_conn)
-        log_it(L_ERROR, "No free SQLITE connection");
-    return l_conn;
+    if(s_conn_count <= l_context_cur->id) {  // TODO creating new connection to isolated thread
+        log_it(L_ERROR, "Error in getting current context ID, current %u, expected < %u", l_context_cur->id, s_conn_count);
+        return NULL;
+    }
+// func work  //TODO think about check deinited
+    conn_pool_item_t *l_ret = s_conn_pool + l_context_cur->id;
+    // busy check
+    if (atomic_flag_test_and_set (&l_ret->busy)) {
+        log_it(L_ERROR, "Busy check error in connection %p, context %p id %u", l_ret, l_context_cur, l_context_cur->id);
+        return  NULL;
+    }
+    atomic_fetch_add(&l_ret->usage, 1);
+    if (g_dap_global_db_debug_more )
+        log_it(L_DEBUG, "Start use connection %p, usage %llu, context %p id %u", l_ret, l_ret->usage, l_context_cur, l_context_cur->id);
+    return l_ret;
 }
 
 static inline int s_sqlite_free_connection(conn_pool_item_t *a_conn)
 {
-int     l_rc;
-
     if (g_dap_global_db_debug_more)
         log_it(L_DEBUG, "Free  l_conn: @%p/%p, usage: %llu", a_conn, a_conn->conn, a_conn->usage);
-
     atomic_flag_clear(&a_conn->busy);                                       /* Clear busy flag */
-
-    l_rc = pthread_mutex_lock (&s_conn_free_mtx);                           /* Send a signal to waiters to wake-up */
-    s_conn_free_present = true;
-    l_rc = pthread_cond_signal(&s_conn_free_cnd);
-    l_rc = pthread_mutex_unlock(&s_conn_free_mtx);
-#ifndef DAP_DEBUG
-    UNUSED(l_rc);
-#endif
     return  0;
 }
 
@@ -190,16 +144,16 @@ int     l_rc;
  */
 int s_db_sqlite_deinit(void)
 {
-        pthread_mutex_lock(&s_db_mtx);
-        for (uint32_t i = 0; i < s_conn_count; i++) {
-            if (s_conn_pool[i].conn) {
-                s_db_driver_sqlite_close(s_conn_pool[i].conn);
-                atomic_flag_clear (&s_conn_pool[i].busy);
-            }
+    pthread_mutex_lock(&s_db_mtx);
+    for (uint32_t i = 0; i < s_conn_count; i++) {
+        if (s_conn_pool[i].conn) {
+            s_db_driver_sqlite_close(s_conn_pool[i].conn);
+            atomic_flag_clear (&s_conn_pool[i].busy);
         }
-        pthread_mutex_unlock(&s_db_mtx);
-        //s_db = NULL;
-        return sqlite3_shutdown();
+    }
+    pthread_mutex_unlock(&s_db_mtx);
+    s_conn_pool = NULL;
+    return sqlite3_shutdown();
 }
 
 /**
@@ -425,6 +379,16 @@ static inline char *s_sqlite_make_table_name(const char *a_group_name)
  */
 int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
 {
+ dap_global_db_driver_hash_t l_driver_key2 = dap_global_db_driver_hash_get(a_store_obj);
+//s_db_sqlite_read_cond_store_obj(a_store_obj->group, (dap_global_db_driver_hash_t){0}, NULL, true);
+//s_db_sqlite_read_last_store_obj(a_store_obj->group, false);
+//s_db_sqlite_read_count_store(a_store_obj->group, (dap_global_db_driver_hash_t){0}, true);
+s_db_sqlite_get_groups_by_mask("global");
+bool is_obj = s_db_sqlite_is_obj(a_store_obj->group, a_store_obj->key);
+bool is_hash = s_db_sqlite_is_hash(a_store_obj->group, l_driver_key2);
+dap_global_db_hash_pkt_t *l_hashes = s_db_sqlite_read_hashes(a_store_obj->group, (dap_global_db_driver_hash_t){0});
+dap_global_db_pkt_pack_t *l_pkt = s_db_sqlite_get_by_hash(a_store_obj->group, l_hashes->group_n_hashses + l_hashes->group_name_len, l_hashes->hashes_count);
+
 // sanity check
     dap_return_val_if_pass(!a_store_obj || !a_store_obj->group, -1);
 // func work
@@ -454,14 +418,6 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             // repeat request
             l_ret = s_db_driver_sqlite_exec(l_conn->conn, l_query, &l_driver_key, (byte_t *)a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
         }
-        //s_db_sqlite_read_cond_store_obj(a_store_obj->group, (dap_global_db_driver_hash_t){0}, NULL, true);
-        //s_db_sqlite_read_last_store_obj(a_store_obj->group, false);
-        //s_db_sqlite_read_count_store(a_store_obj->group, (dap_global_db_driver_hash_t){0}, true);
-        s_db_sqlite_get_groups_by_mask("global");
-        bool is_obj = s_db_sqlite_is_obj(a_store_obj->group, a_store_obj->key);
-        bool is_hash = s_db_sqlite_is_hash(a_store_obj->group, l_driver_key);
-        dap_global_db_hash_pkt_t *l_hashes = s_db_sqlite_read_hashes(a_store_obj->group, (dap_global_db_driver_hash_t){0});
-        s_db_sqlite_get_by_hash(a_store_obj->group, l_hashes->group_n_hashses + l_hashes->group_name_len, l_hashes->hashes_count);
     } else {
         if (a_store_obj->key) //delete one record
             l_query = sqlite3_mprintf("DELETE FROM '%s' WHERE key = '%s'", l_table_name, a_store_obj->key);
@@ -1122,7 +1078,7 @@ int dap_db_driver_sqlite_init(const char *a_filename_db, dap_db_driver_callbacks
     }
     DAP_DEL_Z(l_filename_dir);
 
-    s_conn_count += dap_events_thread_get_count();
+    s_conn_count += dap_context_count();
     DAP_NEW_Z_COUNT_RET_VAL(s_conn_pool, conn_pool_item_t, s_conn_count, -4, NULL)
     /* Create a pool of connection */
     for (int i = 0; i < (int)s_conn_count; ++i)

@@ -140,9 +140,10 @@ extern pthread_key_t g_dap_context_pth_key;
 /// Next functions are thread-safe
 int dap_context_init(); // Init
 void dap_context_deinit(); // Deinit
+size_t dap_context_count();  // count active contexts
 
 // New context create
-dap_context_t * dap_context_new(int a_type);
+dap_context_t *dap_context_new(int a_type);
 
 // Run new context in dedicated thread.
 // ATTENTION: after running the context nobody have to access it outside its own running thread
