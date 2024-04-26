@@ -56,9 +56,6 @@ typedef struct conn_pool_item {
     atomic_ullong  usage;                                                  /* Usage counter */
 } conn_pool_item_t;                                      /* Preallocate a storage for the SQLITE connections  */
 
-static conn_pool_item_t *s_trans = NULL;                               /* SQL context of outstanding  transaction */
-static pthread_mutex_t s_trans_mtx = PTHREAD_MUTEX_INITIALIZER;
-
 extern  int g_dap_global_db_debug_more;                                     /* Enable extensible debug output */
 
 static char s_filename_db [MAX_PATH];
@@ -67,6 +64,7 @@ static pthread_mutex_t s_db_mtx = PTHREAD_MUTEX_INITIALIZER;
 
 static uint32_t s_conn_count = 2;  // connection count
 static conn_pool_item_t *s_conn_pool = NULL;  // connection pool
+static _Thread_local sqlite3 *s_trans = NULL;  // outstanding connection pool
 
 static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes);
 static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, bool a_with_holes);
@@ -77,6 +75,8 @@ static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t
 static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key);
 static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask);
 static inline int s_sqlite_free_connection(conn_pool_item_t *a_conn);
+static int s_db_sqlite_transaction_end();
+static int s_db_sqlite_transaction_start();
 
 static inline void s_db_sqlite_clean(sqlite3 *a_conn, size_t a_count, ... ) {
     va_list l_args_list;
@@ -95,15 +95,15 @@ static inline void s_db_sqlite_clean(sqlite3 *a_conn, size_t a_count, ... ) {
  * @param l_db a pointer to an instance of SQLite database structure
  * @return (none)
  */
-static inline void s_db_driver_sqlite_close(sqlite3 *l_db)
+static inline void s_db_driver_sqlite_close(sqlite3 *a_conn)
 {
-    if(l_db)
-        sqlite3_close(l_db);
+    dap_return_if_pass(!a_conn);
+    sqlite3_close(a_conn);
 }
 
 #define DAP_SQLITE_CONN_TIMEOUT 5   // sec
 
-static conn_pool_item_t *s_sqlite_get_connection()
+static conn_pool_item_t *s_sqlite_get_connection(bool a_trans)
 {
 // sanity check
     dap_return_val_if_pass_err(!s_conn_pool, NULL, "Connection pool not inited");
@@ -243,7 +243,7 @@ char l_query[512];
     if( !a_table_name )
         return  -EINVAL;
 
-    if ( !(l_conn = s_sqlite_get_connection()) )
+    if ( !(l_conn = s_sqlite_get_connection(false)) )
         return log_it(L_ERROR, "Error create group table '%s'", a_table_name), -ENOENT;
 
     snprintf(l_query, sizeof(l_query) - 1,
@@ -265,12 +265,10 @@ char l_query[512];
  * @param a_db a a pointer to an instance of SQLite database structure
  * @return Returns 0 if successful.
  */
-int s_db_driver_sqlite_vacuum(sqlite3 *a_db)
+int s_db_driver_sqlite_vacuum(sqlite3 *a_conn)
 {
-    if(!a_db)
-        return -1;
-
-    return  s_db_driver_sqlite_exec(a_db, "VACUUM", NULL, NULL, 0, NULL);
+    dap_return_val_if_pass(!a_conn, -1);
+    return  s_db_driver_sqlite_exec(a_conn, "VACUUM", NULL, NULL, 0, NULL);
 }
 
 /**
@@ -280,31 +278,23 @@ int s_db_driver_sqlite_vacuum(sqlite3 *a_db)
  */
 static int s_db_sqlite_transaction_start(void)
 {
-int l_rc;
-
-    /* Try to lock */
-    if ( EDEADLK == (l_rc = pthread_mutex_lock(&s_trans_mtx)) ) {
-        /* DEADLOCK ?! - so transaction is already active ... */
-        log_it(L_DEBUG, "Active TX l_conn: @%p/%p", s_trans, s_trans->conn);
-        return  0;
+// sanity check
+    dap_return_val_if_pass_err(s_trans, -1, "Outstanding connection already using, please commit previous transaction");
+// preparing
+    char *l_error_message = NULL;
+    if ( !(s_trans = dap_db_driver_sqlite_open(s_filename_db, SQLITE_OPEN_READWRITE, &l_error_message)) ) {
+        log_it(L_ERROR, "Can't init sqlite err: \"%s\"", l_error_message? l_error_message: "UNKNOWN");
+        sqlite3_free(l_error_message);
+        return -2;
     }
-
-    if ( ! (s_trans = s_sqlite_get_connection()) )
-        return  -666;
-
+// func work
     if ( g_dap_global_db_debug_more )
-        log_it(L_DEBUG, "Start TX l_conn: @%p/%p", s_trans, s_trans->conn);
-
-    pthread_mutex_lock(&s_db_mtx);
-    l_rc = s_db_driver_sqlite_exec(s_trans->conn, "BEGIN", NULL, NULL, 0, NULL);
-    pthread_mutex_unlock(&s_db_mtx);
-
+        log_it(L_DEBUG, "Start TX: @%p", s_trans);
+    int l_rc = s_db_driver_sqlite_exec(s_trans, "BEGIN", NULL, NULL, 0, NULL);
     if ( l_rc != SQLITE_OK ) {
-        pthread_mutex_unlock(&s_trans_mtx);
-        s_sqlite_free_connection(s_trans);
+        sqlite3_close(s_trans);
         s_trans = NULL;
     }
-
     return  ( l_rc == SQLITE_OK ) ? 0 : -l_rc;
 }
 
@@ -313,29 +303,16 @@ int l_rc;
  *
  * @return Returns 0 if successful, otherwise -1.
  */
-static int s_db_sqlite_transaction_end(void)
+static int s_db_sqlite_transaction_end()
 {
-int l_rc;
-conn_pool_item_t *l_conn;
-
-    if ( !s_trans)
-        return  log_it(L_ERROR, "No active TX!"), -666;
-
-    l_conn = s_trans;
-    s_trans = NULL;                                                         /* Zeroing current TX's context until
-                                                                              it's protected by the mutex ! */
-
+// sanity check
+    dap_return_val_if_pass_err(!s_trans, -1, "Outstanding connection not exist");
+// func work
     if ( g_dap_global_db_debug_more )
-        log_it(L_DEBUG, "End TX l_conn: @%p/%p", l_conn, l_conn->conn);
-
-    pthread_mutex_unlock(&s_trans_mtx);                                     /* Free TX context to other ... */
-
-    pthread_mutex_lock(&s_db_mtx);
-    l_rc = s_db_driver_sqlite_exec(l_conn->conn, "COMMIT", NULL, NULL, 0, NULL);
-    pthread_mutex_unlock(&s_db_mtx);
-
-    s_sqlite_free_connection(l_conn);
-
+        log_it(L_DEBUG, "End TX l_conn: @%p", s_trans);
+    int l_rc = s_db_driver_sqlite_exec(s_trans, "COMMIT", NULL, NULL, 0, NULL);
+    sqlite3_close(s_trans);
+    s_trans = NULL;
     return  ( l_rc == SQLITE_OK ) ? 0 : -l_rc;
 }
 
@@ -383,6 +360,8 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
 //s_db_sqlite_read_cond_store_obj(a_store_obj->group, (dap_global_db_driver_hash_t){0}, NULL, true);
 //s_db_sqlite_read_last_store_obj(a_store_obj->group, false);
 //s_db_sqlite_read_count_store(a_store_obj->group, (dap_global_db_driver_hash_t){0}, true);
+s_db_sqlite_transaction_start();
+s_db_sqlite_transaction_end();
 s_db_sqlite_get_groups_by_mask("global");
 bool is_obj = s_db_sqlite_is_obj(a_store_obj->group, a_store_obj->key);
 bool is_hash = s_db_sqlite_is_hash(a_store_obj->group, l_driver_key2);
@@ -393,7 +372,7 @@ dap_global_db_pkt_pack_t *l_pkt = s_db_sqlite_get_by_hash(a_store_obj->group, l_
     dap_return_val_if_pass(!a_store_obj || !a_store_obj->group, -1);
 // func work
     // execute request
-    conn_pool_item_t *l_conn = s_sqlite_get_connection();
+    conn_pool_item_t *l_conn = s_sqlite_get_connection(false);
     if (!l_conn)
         return -2;
 
@@ -489,7 +468,7 @@ static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, boo
 {
 // sanity check
     conn_pool_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), NULL);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection(false)), NULL);
 // preparing
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt = NULL;
@@ -533,7 +512,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
 {
 // sanity check
     conn_pool_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !a_hashes || !a_count || !(l_conn = s_sqlite_get_connection()), NULL);
+    dap_return_val_if_pass(!a_group || !a_hashes || !a_count || !(l_conn = s_sqlite_get_connection(false)), NULL);
 // preparing
     dap_global_db_pkt_pack_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL, *l_stmt_size = NULL;
@@ -647,7 +626,7 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
 {
 // sanity check
     conn_pool_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), NULL);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection(false)), NULL);
 // preparing
     dap_global_db_hash_pkt_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
@@ -713,7 +692,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
 {
 // sanity check
     conn_pool_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), NULL);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection(false)), NULL);
 // preparing
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
@@ -778,7 +757,7 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const ch
 {
 // sanity check
     conn_pool_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), NULL);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection(false)), NULL);
 // func work
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
@@ -842,7 +821,7 @@ static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
 {
 // sanity check
     conn_pool_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group_mask || !(l_conn = s_sqlite_get_connection()), NULL);
+    dap_return_val_if_pass(!a_group_mask || !(l_conn = s_sqlite_get_connection(false)), NULL);
 // preparing
     dap_list_t* l_ret = NULL;
     sqlite3_stmt *l_stmt = NULL;
@@ -888,7 +867,7 @@ static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_dr
 {
 // sanity check
     conn_pool_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), 0);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection(false)), 0);
 // preparing
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = s_sqlite_make_table_name(a_group);
@@ -926,7 +905,7 @@ static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t
 {
 // sanity check
     conn_pool_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), false);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection(false)), false);
 // preparing
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = s_sqlite_make_table_name(a_group);
@@ -963,7 +942,7 @@ static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
 {
 // sanity check
     conn_pool_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection()), false);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_sqlite_get_connection(false)), false);
 // preparing
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = s_sqlite_make_table_name(a_group);
@@ -997,16 +976,11 @@ clean_and_ret:
 static int s_db_sqlite_flush()
 {
 // sanity check
-    conn_pool_item_t *l_conn = s_sqlite_get_connection();
-    dap_return_val_if_pass(!l_conn, -1);
-
+    conn_pool_item_t *l_conn = s_sqlite_get_connection(false);
+    dap_return_val_if_pass(!l_conn, -666);
+// preparing
     char *l_error_message = NULL;
-
     log_it(L_DEBUG, "Start flush sqlite data base.");
-
-    if(!(l_conn = s_sqlite_get_connection()) )
-        return -666;
-
     s_db_driver_sqlite_close(l_conn->conn);
 
     if ( !(l_conn->conn = dap_db_driver_sqlite_open(s_filename_db, SQLITE_OPEN_READWRITE, &l_error_message)) ) {
