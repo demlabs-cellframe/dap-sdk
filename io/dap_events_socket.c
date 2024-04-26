@@ -1218,13 +1218,12 @@ void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_
 void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
 {
 #ifdef DAP_OS_WINDOWS
-    if ( a_esocket->socket && (a_esocket->socket != INVALID_SOCKET)) {
-        LINGER  lingerStruct;
-        lingerStruct.l_onoff = 1;
-        lingerStruct.l_linger = 30;
-        setsockopt(a_esocket->socket, SOL_SOCKET, SO_LINGER, (char *)&lingerStruct, sizeof(lingerStruct) );
-         // Do we need graceful shutdown anyway?...
-        closesocket( a_esocket->socket );
+    if ( a_esocket->socket && (a_esocket->socket != INVALID_SOCKET) ) {
+        //LINGER  lingerStruct = { .l_onoff = 1, .l_linger = 5 };
+        //setsockopt(a_esocket->socket, SOL_SOCKET, SO_LINGER, (char*)&lingerStruct, sizeof(lingerStruct) );
+        // We must set { 1, 0 } when connections must be reset (RST)
+        shutdown(a_esocket->socket, SD_BOTH);
+        closesocket(a_esocket->socket);
     }
     a_esocket->socket = a_esocket->socket2 = INVALID_SOCKET;
 
@@ -1325,7 +1324,13 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         return;
     }
     a_esocket->flags |= DAP_SOCK_READY_TO_READ;
-    
+    if (a_esocket->pending_read) {
+        debug_if( g_debug_reactor, L_DEBUG, "Incomplete read on "DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" already pending, dump it",
+                                            a_esocket->uuid, a_esocket->socket, dap_events_socket_get_type_str(a_esocket) );
+        dap_overlapped_free(a_ol);
+        return;
+    }
+    a_esocket->pending_read = 1;
     int l_res = -2;
     DWORD flags = 0, bytes = 0;
     const char *func = "";
@@ -1339,7 +1344,7 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         ol = DAP_NEW(dap_overlapped_t);
         *ol = (dap_overlapped_t){ .ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL), .op = io_read };
     }
-    WSABUF wsabuf = { .buf = a_esocket->buf_in + a_esocket->buf_in_size, .len = a_esocket->buf_in_size_max };
+    WSABUF wsabuf = { .buf = a_esocket->buf_in + a_esocket->buf_in_size, .len = a_esocket->buf_in_size_max - a_esocket->buf_in_size };
 
     switch (a_esocket->type) {
     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
@@ -1395,9 +1400,11 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         }
     break;
     case 0:
-        debug_if(g_debug_reactor, L_DEBUG, "[!] \"%s\" from "DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" completed immediately, received %lu bytes",
+        debug_if(g_debug_reactor, L_DEBUG, "\"%s\" from "DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" completed immediately, received %lu bytes",
                                   func, a_esocket->uuid, a_esocket->socket, dap_events_socket_get_type_str(a_esocket), bytes);
         ++a_esocket->pending;
+        ResetEvent(ol->ol.hEvent);
+        a_esocket->buf_in_size += bytes;
         return;
     default:
         log_it(L_ERROR, "Operation \"%s\" on "DAP_FORMAT_ESOCKET_UUID" failed with error %lu", func, a_esocket->uuid, GetLastError());
