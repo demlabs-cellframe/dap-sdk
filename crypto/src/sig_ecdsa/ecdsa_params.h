@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include "dap_crypto_common.h"
 #include "secp256k1.h"
+#include "secp256k1_preallocated.h"
 
 #define ECDSA_PRIVATE_KEY_SIZE  32
 #define ECDSA_SIG_SIZE          sizeof(secp256k1_ecdsa_signature)

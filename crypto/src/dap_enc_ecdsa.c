@@ -6,7 +6,6 @@
 #include "rand/dap_rand.h"
 #include "sig_ecdsa/ecdsa_params.h"
 
-
 #define LOG_TAG "dap_enc_sig_ecdsa"
 
 
@@ -45,6 +44,7 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, UNUSED_ARG const vo
     assert(retcode);
 
     key->_inheritor = ctx;
+    key->_inheritor_size = secp256k1_context_preallocated_size(SECP256K1_CONTEXT_NONE);
     //not sure we need this for ECDSA
     //dap_enc_sig_ecdsa_set_type(ECDSA_MAX_SPEED)
 
@@ -118,17 +118,18 @@ int dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key* key, const void* msg, cons
     return retcode;
 }
 
-uint8_t* dap_enc_sig_ecdsa_write_public_key(dap_enc_key_t* a_key, size_t* a_buflen_out)
+uint8_t* dap_enc_sig_ecdsa_write_public_key(void* a_key, size_t* a_buflen_out)
 {
     dap_return_val_if_fail_err(a_key, NULL, "Invalid arg");
+    dap_enc_key_t* l_key = (dap_enc_key_t*)a_key;
     byte_t *l_buf = DAP_NEW_SIZE(byte_t, ECDSA_PKEY_SERIALIZED_SIZE);
     if (!l_buf) {
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
     size_t l_len = ECDSA_PKEY_SERIALIZED_SIZE;
-    if ( 1 != secp256k1_ec_pubkey_serialize( (const ecdsa_context_t*)a_key->_inheritor, l_buf, &l_len,
-                                             (const ecdsa_public_key_t*)a_key->pub_key_data, SECP256K1_EC_UNCOMPRESSED ) )
+    if ( 1 != secp256k1_ec_pubkey_serialize( (const ecdsa_context_t*)l_key->_inheritor, l_buf, &l_len,
+                                             (const ecdsa_public_key_t*)l_key->pub_key_data, SECP256K1_EC_UNCOMPRESSED ) )
     {
         log_it(L_CRITICAL, "Failed to serialize pkey");
         DAP_DELETE(l_buf);
@@ -140,15 +141,15 @@ uint8_t* dap_enc_sig_ecdsa_write_public_key(dap_enc_key_t* a_key, size_t* a_bufl
     return l_buf;
 }
 
-int dap_enc_sig_ecdsa_read_public_key(const uint8_t* a_buf, dap_enc_key_t *a_key, size_t a_buflen) {
-    dap_return_val_if_fail_err(a_buf && a_key && a_buflen == ECDSA_PKEY_SERIALIZED_SIZE, 1, "Invalid args");
+void* dap_enc_sig_ecdsa_read_public_key(const uint8_t* a_buf, dap_enc_key_t *a_key, size_t a_buflen) {
+    dap_return_val_if_fail_err(a_buf && a_key && a_buflen == ECDSA_PKEY_SERIALIZED_SIZE, NULL, "Invalid args");
     if ( !a_key->pub_key_data )
         a_key->pub_key_data = DAP_NEW(ecdsa_public_key_t);
 
     return secp256k1_ec_pubkey_parse( (const ecdsa_context_t*)a_key->_inheritor,
                                       (ecdsa_public_key_t*)a_key->pub_key_data,
                                       a_buf, a_buflen ) == 1
-        ? 0 : ( log_it(L_CRITICAL, "Failed to deserialize pkey"), 2 );
+        ? a_key->pub_key_data : ( log_it(L_CRITICAL, "Failed to deserialize pkey"), NULL );
 }
 
 uint8_t *dap_enc_sig_ecdsa_write_signature(const void *a_sign, dap_enc_key_t *a_key, size_t *a_sign_len)
@@ -165,7 +166,7 @@ uint8_t *dap_enc_sig_ecdsa_write_signature(const void *a_sign, dap_enc_key_t *a_
 }
 
 
-ecdsa_signature_t* dap_enc_sig_ecdsa_read_signature(const uint8_t* a_buf, dap_enc_key_t *a_key, size_t a_buflen)
+void* dap_enc_sig_ecdsa_read_signature(const uint8_t* a_buf, dap_enc_key_t *a_key, size_t a_buflen)
 {
     dap_return_val_if_fail_err(a_buf && a_key && a_buflen == sizeof(ecdsa_signature_t), 1, "Invalid args");
     ecdsa_signature_t *l_ret = DAP_NEW(ecdsa_signature_t);
@@ -195,4 +196,5 @@ void dap_enc_sig_ecdsa_public_key_delete(void* publicKey) {
 void dap_enc_sig_ecdsa_private_and_public_keys_delete(dap_enc_key_t* a_key) {
         dap_enc_sig_ecdsa_private_key_delete(a_key->priv_key_data);
         dap_enc_sig_ecdsa_public_key_delete(a_key->pub_key_data);
+        secp256k1_context_destroy((ecdsa_context_t*)a_key->_inheritor);
 }

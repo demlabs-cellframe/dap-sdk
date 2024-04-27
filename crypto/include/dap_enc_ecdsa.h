@@ -1,8 +1,5 @@
 #ifndef _DAP_ENC_ECDSA_H_
 #define _DAP_ENC_ECDSA_H_
-
-#include "secp256k1.h"
-#include "sig_ecdsa/ecdsa_params.h"
 #include "dap_enc_key.h"
 
 
@@ -27,9 +24,9 @@ int dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key* key, const void* msg, cons
                                       const size_t signature_size);
 
 uint8_t *dap_enc_sig_ecdsa_write_signature(const void* a_sign, dap_enc_key_t *a_key, size_t *a_sign_out);
-uint8_t *dap_enc_sig_ecdsa_write_public_key(dap_enc_key_t *a_key, size_t *a_buflen_out);
-ecdsa_signature_t* dap_enc_sig_ecdsa_read_signature(const uint8_t *a_buf, dap_enc_key_t *a_key, size_t a_buflen);
-int dap_enc_sig_ecdsa_read_public_key(const uint8_t *a_buf, dap_enc_key_t *a_key, size_t a_buflen);
+uint8_t *dap_enc_sig_ecdsa_write_public_key(void *a_key, size_t *a_buflen_out);
+void* dap_enc_sig_ecdsa_read_signature(const uint8_t *a_buf, dap_enc_key_t *a_key, size_t a_buflen);
+void* dap_enc_sig_ecdsa_read_public_key(const uint8_t *a_buf, dap_enc_key_t *a_key, size_t a_buflen);
 
 
 void dap_enc_sig_ecdsa_signature_delete(void *a_sig);
