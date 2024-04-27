@@ -35,6 +35,7 @@
 #include "dap_cert.h"
 #include "dap_pkey.h"
 #include "dap_enc_ks.h"
+#include "dap_strfuncs.h"
 
 #define STREAM_KEEPALIVE_TIMEOUT 3   // How  often send keeplive messages (seconds)
 
@@ -109,19 +110,21 @@ DAP_STATIC_INLINE bool dap_stream_node_addr_str_check(const char *a_addr_str)
     return false;
 }
 
-DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str)
+
+DAP_STATIC_INLINE char* dap_stream_node_addr_to_str(dap_stream_node_addr_t a_addr, bool a_hex)
 {
-    if (!a_addr || !a_addr_str){
-        return -1;
-    }
-    if (sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4)
-        return 0;
-    if (sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, &a_addr->uint64) == 1)
-        return 0;
-    return -1;
+    if (a_hex)
+        return dap_strdup_printf("0x%016" DAP_UINT64_FORMAT_x, a_addr.uint64);
+    return dap_strdup_printf(NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_addr));
 }
 
-DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
+
+DAP_STATIC_INLINE char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address)
+{
+    static _Thread_local char s_buf[23] = { '\0' };
+    dap_snprintf(s_buf, sizeof(s_buf), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
+    return s_buf;
+}
 
 DAP_STATIC_INLINE void dap_stream_node_addr_from_hash(dap_hash_fast_t *a_hash, dap_stream_node_addr_t *a_node_addr)
 {

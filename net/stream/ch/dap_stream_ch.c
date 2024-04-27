@@ -42,6 +42,8 @@ static  dap_memstat_rec_t   s_memstat [MEMSTAT$K_NR] = {
 };
 #endif
 
+static bool s_debug_more = false;
+
 /**
  * @brief dap_stream_ch_init Init stream channel module
  * @return Zero if ok others if no
@@ -64,6 +66,7 @@ int dap_stream_ch_init()
     for (int i = 0; i < MEMSTAT$K_NR; i++)
         dap_memstat_reg(&s_memstat[i]);
 #endif
+    s_debug_more = dap_config_get_item_bool_default(g_config, "stream", "debug_channels", false);
     log_it(L_NOTICE,"Module stream channel initialized");
     return 0;
 }
@@ -407,9 +410,12 @@ static void s_place_notifier_callback(dap_worker_t *a_worker, void *a_arg)
     dap_list_t *l_exist = dap_list_find(l_notifiers_list, &l_notifier, s_notifiers_compare);
     if (l_exist) {
         if (l_arg->add) {
-            log_it(L_WARNING, "Notifier already exists for provided callback and arg");
+            log_it(L_WARNING, "Notifier already exists for channel '%c' callback %p and arg %p",
+                                    l_arg->ch_id, l_notifier.callback, l_notifier.arg);
             goto ret_n_clear;
         } else {
+            debug_if(s_debug_more, L_DEBUG, "Notifier deleted for channel '%c' callback %p and arg %p",
+                                    l_arg->ch_id, l_notifier.callback, l_notifier.arg);
             l_notifiers_list = dap_list_remove_link(l_notifiers_list, l_exist);
             DAP_DELETE(l_exist->data);
             DAP_DELETE(l_exist);
@@ -422,8 +428,11 @@ static void s_place_notifier_callback(dap_worker_t *a_worker, void *a_arg)
                 goto ret_n_clear;
             }
             l_notifiers_list = dap_list_append(l_notifiers_list, l_to_add);
+            debug_if(s_debug_more, L_DEBUG, "Notifier added for channel '%c' callback %p and arg %p",
+                                    l_arg->ch_id, l_notifier.callback, l_notifier.arg);
         } else {
-            log_it(L_WARNING, "Notifier for provided callback and arg not found");
+            log_it(L_WARNING, "Notifier for channel '%c' callback %p and arg %p not found",
+                                    l_arg->ch_id, l_notifier.callback, l_notifier.arg);
             goto ret_n_clear;
         }
     }

@@ -131,7 +131,7 @@ dap_context_t * dap_context_new(int a_type)
 {
    dap_context_t * l_context = DAP_NEW_Z(dap_context_t);
    if (!l_context) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
    }
    static atomic_uint_fast64_t s_context_id_max = 0;
@@ -448,6 +448,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     --l_cur->pending;
                 continue;
             }
+            if (op == io_read)
+                l_cur->pending_read = 0;
             switch (l_cur->type) {
             case DESCRIPTOR_TYPE_SOCKET_LISTENING:
                 --l_cur->pending;
@@ -2089,7 +2091,7 @@ dap_events_socket_t * dap_context_create_pipe(dap_context_t * a_context, dap_eve
     UNUSED(a_flags);
     dap_events_socket_t * l_es = DAP_NEW_Z(dap_events_socket_t);
     if (!l_es) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     l_es->type = DESCRIPTOR_TYPE_PIPE;

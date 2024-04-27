@@ -51,7 +51,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket); // Connected
 #ifndef DAP_NET_CLIENT_NO_SSL
 static void s_http_ssl_connected(dap_events_socket_t * a_esocket); // connected SSL callback
 #endif
-static void s_client_http_delete(dap_client_http_t * a_http_pvt);
+static void s_client_http_delete(dap_client_http_t * a_client_http);
 static void s_http_read(dap_events_socket_t * a_es, void * arg);
 static void s_http_error(dap_events_socket_t * a_es, int a_arg);
 static bool s_timer_timeout_check(void * a_arg);
@@ -160,7 +160,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     // add to dap_worker
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid_ptr) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
     *l_es_uuid_ptr = a_esocket->uuid;
@@ -307,7 +307,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
     UNUSED(arg);
     dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(a_es);
     if(!l_client_http) {
-        log_it(L_ERROR, "s_http_read: l_client_http_internal is NULL!");
+        log_it(L_ERROR, "s_http_read: l_client_http is NULL!");
         return;
     }
     l_client_http->ts_last_read = time(NULL);
@@ -399,16 +399,16 @@ static void s_http_error(dap_events_socket_t * a_es, int a_errno)
     }else
         log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET" error: %s (code %d)", a_es->socket, l_errbuf, a_errno);
 
-    dap_client_http_t * l_client_http_internal = DAP_CLIENT_HTTP(a_es);
+    dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(a_es);
 
-    if(!l_client_http_internal) {
-        log_it(L_ERROR, "s_http_write: l_client_http_internal is NULL!");
+    if(!l_client_http) {
+        log_it(L_ERROR, "s_http_write: l_client_http is NULL!");
         return;
     }
-    if(l_client_http_internal->error_callback)
-        l_client_http_internal->error_callback(a_errno, l_client_http_internal->callbacks_arg);
+    if(l_client_http->error_callback)
+        l_client_http->error_callback(a_errno, l_client_http->callbacks_arg);
 
-    l_client_http_internal->were_callbacks_called = true;
+    l_client_http->were_callbacks_called = true;
 
     // close connection.
     a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
@@ -425,38 +425,38 @@ static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
         return;
     }
     (void) a_arg;
-    dap_client_http_t * l_client_http_internal = DAP_CLIENT_HTTP(a_es);
-    if(l_client_http_internal == NULL){
+    dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(a_es);
+    if(l_client_http == NULL){
         log_it(L_WARNING, "For some reasons internal object is NULL");
         return;
     }
-    if (! l_client_http_internal->were_callbacks_called){
-        size_t l_response_size = l_client_http_internal->response_size> l_client_http_internal->header_length ?
-                    l_client_http_internal->response_size - l_client_http_internal->header_length: 0;
-        if (l_client_http_internal->content_length){
+    if (! l_client_http->were_callbacks_called){
+        size_t l_response_size = l_client_http->response_size> l_client_http->header_length ?
+                    l_client_http->response_size - l_client_http->header_length: 0;
+        if (l_client_http->content_length){
             log_it(L_WARNING, "Remote server disconnected before he sends all data: %zd data in buffer when expected %zd",
-               l_client_http_internal->response_size, l_client_http_internal->content_length);
-            l_client_http_internal->error_callback(-666, l_client_http_internal->callbacks_arg); // -666 means remote server disconnected before he sends all
+               l_client_http->response_size, l_client_http->content_length);
+            l_client_http->error_callback(-6, l_client_http->callbacks_arg); // -666 means remote server disconnected before he sends all
         }else if (l_response_size){
             log_it(L_INFO, "Remote server replied without no content length but we have the response %zd bytes size",
                l_response_size);
 
-            //l_client_http_internal->error_callback(-10 , l_client_http_internal->callbacks_arg);
+            //l_client_http->error_callback(-10 , l_client_http->callbacks_arg);
 
-            if(l_client_http_internal->response_callback)
-                l_client_http_internal->response_callback(
-                        l_client_http_internal->response + l_client_http_internal->header_length,
+            if(l_client_http->response_callback)
+                l_client_http->response_callback(
+                        l_client_http->response + l_client_http->header_length,
                         l_response_size,
-                        l_client_http_internal->callbacks_arg);
-            l_client_http_internal->were_callbacks_called = true;
-        }else if (l_client_http_internal->response_size){
+                        l_client_http->callbacks_arg);
+            l_client_http->were_callbacks_called = true;
+        }else if (l_client_http->response_size){
             log_it(L_INFO, "Remote server disconnected with reply. Body is empty, only headers are in");
-            l_client_http_internal->error_callback(-667 , l_client_http_internal->callbacks_arg); // -667 means remote server replied only with headers
-            l_client_http_internal->were_callbacks_called = true;
+            l_client_http->error_callback(-7 , l_client_http->callbacks_arg); // -667 means remote server replied only with headers
+            l_client_http->were_callbacks_called = true;
         }else{
             log_it(L_WARNING, "Remote server disconnected without reply");
-            l_client_http_internal->error_callback(-668, l_client_http_internal->callbacks_arg); // -668 means remote server disconnected before he sends anythinh
-            l_client_http_internal->were_callbacks_called = true;
+            l_client_http->error_callback(-8, l_client_http->callbacks_arg); // -668 means remote server disconnected before he sends anythinh
+            l_client_http->were_callbacks_called = true;
         }
     }
 
@@ -468,33 +468,27 @@ static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
     }
 #endif
 
-    s_client_http_delete(l_client_http_internal);
+    s_client_http_delete(l_client_http);
     a_es->_inheritor = NULL;
 }
 
 /**
  * @brief s_client_http_delete
- * @param a_http_pvt
+ * @param a_client_http
  */
-static void s_client_http_delete(dap_client_http_t * a_http_pvt)
+static void s_client_http_delete(dap_client_http_t * a_client_http)
 {
-    // call from dap_events_socket_delete(ev_socket, true);
-    if(s_debug_more)
-        log_it(L_DEBUG, "HTTP client delete");
+    dap_return_if_fail(a_client_http);
+    debug_if(s_debug_more, L_DEBUG, "HTTP client delete");
 
-    if(!a_http_pvt) {
-        log_it(L_ERROR, "s_http_write: l_client_http_internal is NULL!");
-        return;
-    }
-
-    DAP_DEL_Z(a_http_pvt->method);
-    DAP_DEL_Z(a_http_pvt->request_content_type);
-    DAP_DEL_Z(a_http_pvt->cookie);
-    DAP_DEL_Z(a_http_pvt->response);
-    DAP_DEL_Z(a_http_pvt->path);
-    DAP_DEL_Z(a_http_pvt->request);
-    DAP_DEL_Z(a_http_pvt->request_custom_headers);
-    DAP_DEL_Z(a_http_pvt);
+    DAP_DEL_Z(a_client_http->method);
+    DAP_DEL_Z(a_client_http->request_content_type);
+    DAP_DEL_Z(a_client_http->cookie);
+    DAP_DEL_Z(a_client_http->response);
+    DAP_DEL_Z(a_client_http->path);
+    DAP_DEL_Z(a_client_http->request);
+    DAP_DEL_Z(a_client_http->request_custom_headers);
+    DAP_DEL_Z(a_client_http);
 }
 
 
@@ -587,7 +581,9 @@ dap_client_http_t * dap_client_http_request_custom (
     // create private struct
     dap_client_http_t *l_client_http = DAP_NEW_Z(dap_client_http_t);
     if (!l_client_http) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        if(a_error_callback)
+            a_error_callback(errno, a_callbacks_arg);
         return NULL;
     }
     l_ev_socket->_inheritor = l_client_http;
@@ -602,8 +598,10 @@ dap_client_http_t * dap_client_http_request_custom (
     if (a_request && a_request_size) {
         l_client_http->request = DAP_NEW_Z_SIZE(byte_t, a_request_size + 1);
         if (!l_client_http->request) {
-            log_it(L_CRITICAL, "Memory allocation error");
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             DAP_DEL_Z(l_client_http);
+            if(a_error_callback)
+                a_error_callback(errno, a_callbacks_arg);
             return NULL;
         }
         l_client_http->request_size = a_request_size;
@@ -617,9 +615,10 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->response_size_max = DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX;
     l_client_http->response = DAP_NEW_Z_SIZE(uint8_t, DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX);
     if (!l_client_http->response) {
-        log_it(L_CRITICAL, "Memory allocation error");
-        DAP_DEL_Z(l_client_http->request);
-        DAP_DEL_Z(l_client_http);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        DAP_DEL_MULTY(l_client_http->request, l_client_http);
+        if(a_error_callback)
+            a_error_callback(errno, a_callbacks_arg);
         return NULL;
     }
     l_client_http->worker = a_worker;
@@ -710,10 +709,10 @@ dap_client_http_t * dap_client_http_request_custom (
         dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         if (!l_ev_uuid_ptr) {
-        log_it(L_CRITICAL, "Memory allocation error");
-            DAP_DEL_Z(l_client_http->response);
-            DAP_DEL_Z(l_client_http->request);
-            DAP_DEL_Z(l_client_http);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            DAP_DEL_MULTY(l_client_http->response, l_client_http->request, l_client_http);
+            if(a_error_callback)
+                a_error_callback(errno, a_callbacks_arg);
             return NULL;
         }
         *l_ev_uuid_ptr = l_ev_socket->uuid;
@@ -735,7 +734,6 @@ dap_client_http_t * dap_client_http_request_custom (
         dap_events_socket_delete_unsafe( l_ev_socket, true);
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
-
         return NULL;
     }
 #endif
@@ -802,5 +800,5 @@ void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
         a_client_http->es->callbacks.delete_callback = NULL;
         dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);
     }
-    DAP_DELETE(a_client_http);
+    s_client_http_delete(a_client_http);
 }

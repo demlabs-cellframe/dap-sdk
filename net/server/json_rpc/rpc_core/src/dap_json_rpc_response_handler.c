@@ -12,7 +12,7 @@ int dap_json_rpc_response_registration_with_id(uint64_t a_id, dap_json_rpc_respo
     if (l_handler == NULL){
         l_handler = DAP_NEW(dap_json_rpc_response_handler_t);
         if (!l_handler) {
-            log_it(L_CRITICAL, "Memory allocation error");
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             return -1;
         }
         l_handler->id = a_id;

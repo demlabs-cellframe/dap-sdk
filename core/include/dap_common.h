@@ -250,14 +250,14 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_NEW_Z_COUNT_RET(a, t, c, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
 #define DAP_NEW_Z_COUNT_RET_VAL(a, t, c, ret_val, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
 
-#define dap_return_if_fail(expr)                        dap_return_if_fail_err(expr,g_error_sanity_check)
-#define dap_return_val_if_fail(expr,val)                dap_return_val_if_fail_err(expr,val,g_error_sanity_check)
-#define dap_return_if_fail_err(expr,err_str)            {if(!(expr)) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", err_str); return;}}
-#define dap_return_val_if_fail_err(expr,val,err_str)    {if(!(expr)) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", err_str); return (val);}}
 #define dap_return_if_pass(expr)                        dap_return_if_pass_err(expr,g_error_sanity_check)
 #define dap_return_val_if_pass(expr,val)                dap_return_val_if_pass_err(expr,val,g_error_sanity_check)
 #define dap_return_if_pass_err(expr,err_str)            {if(expr) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", err_str); return;}}
 #define dap_return_val_if_pass_err(expr,val,err_str)    {if(expr) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", err_str); return (val);}}
+#define dap_return_if_fail(expr)                        dap_return_if_pass(!(expr));
+#define dap_return_val_if_fail(expr,val)                dap_return_val_if_pass(!(expr),val) 
+#define dap_return_if_fail_err(expr,err_str)            dap_return_if_pass_err(!(expr),err_str)
+#define dap_return_val_if_fail_err(expr,val,err_str)    dap_return_val_if_pass_err(!(expr),val,err_str)
 
 #ifndef __cplusplus
 #define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))
@@ -859,3 +859,17 @@ int exec_silent(const char *a_cmd);
 #ifdef __cplusplus
 }
 #endif
+
+DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str)
+{
+    if (!a_addr || !a_addr_str){
+        return -1;
+    }
+    if (sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4)
+        return 0;
+    if (sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, &a_addr->uint64) == 1)
+        return 0;
+    return -1;
+}
+
+DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }

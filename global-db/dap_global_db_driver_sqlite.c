@@ -764,7 +764,7 @@ dap_store_obj_t* s_db_sqlite_read_cond_store_obj(dap_global_db_iter_t *a_iter, s
                 l_count_sized += 10;
                 l_obj = DAP_REALLOC(l_obj, sizeof(dap_store_obj_t) * (uint64_t)l_count_sized);
                 if (!l_obj) {
-                    log_it(L_CRITICAL, "Memory allocation error");
+                    log_it(L_CRITICAL, "%s", g_error_memory_alloc);
                     sqlite3_finalize(l_res);
                     sqlite3_free(l_error_message);
                     s_sqlite_free_connection(l_conn);
@@ -841,7 +841,7 @@ dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_k
                 l_count_sized += 10;
                 l_obj = DAP_REALLOC(l_obj, sizeof(dap_store_obj_t) * l_count_sized);
                 if (!l_obj) {
-                    log_it(L_CRITICAL, "Memory allocation error");
+                    log_it(L_CRITICAL, "%s", g_error_memory_alloc);
                     sqlite3_finalize(l_res);
                     s_sqlite_free_connection(l_conn);
                     s_dap_db_driver_sqlite_row_free(l_row);
@@ -1152,7 +1152,7 @@ static int s_db_sqlite_iter_create(dap_global_db_iter_t *a_iter)
     // create sqlite iter
     char *l_sqlite_iter = DAP_NEW_Z(char);
     if (!l_sqlite_iter) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return -1;
     }
     // get generated values
