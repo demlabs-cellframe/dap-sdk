@@ -367,9 +367,9 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
 
     // serialize & deserialize signature
     size_t sig_buf_len = sig_buf_size;
-    uint8_t *l_sign_tmp = dap_enc_key_serialize_sign(key_type, sig_buf, &sig_buf_len);
+    uint8_t *l_sign_tmp = dap_enc_key_serialize_sign(key2, sig_buf, &sig_buf_len);
     dap_enc_key_signature_delete(key_type, sig_buf);
-    sig_buf = dap_enc_key_deserialize_sign(key_type, l_sign_tmp, &sig_buf_len);
+    sig_buf = dap_enc_key_deserialize_sign(key2, l_sign_tmp, &sig_buf_len);
     DAP_DELETE(l_sign_tmp);
 
     dap_assert_PIF(sig_buf, "Check serialize->deserialize signature");
