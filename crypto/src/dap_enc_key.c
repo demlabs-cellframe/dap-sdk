@@ -394,6 +394,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
 
         .deser_sign_ex =                    dap_enc_sig_ecdsa_read_signature,
         .deser_pub_key_ex =                 dap_enc_sig_ecdsa_read_public_key,
+        .deser_sign_size  =                 dap_enc_sig_ecdsa_signature_size
     },
 
 
@@ -642,11 +643,13 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_t *a_key, uint8_t *a_sign, siz
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-    case DAP_ENC_KEY_TYPE_SIG_ECDSA:
     case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
         l_data = s_callbacks[a_key->type].deser_sign(a_sign, *a_sign_len);
         *a_sign_len = s_callbacks[a_key->type].deser_sign_size(NULL);
+        break;
+    case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+        l_data = s_callbacks[a_key->type].deser_sign_ex(a_sign, a_key, *a_sign_len);
         break;
     default:
         DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, *a_sign_len, NULL, NULL);
@@ -773,8 +776,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
     case DAP_ENC_KEY_TYPE_SIG_BLISS:
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-    case DAP_ENC_KEY_TYPE_SIG_FALCON:
-    case DAP_ENC_KEY_TYPE_SIG_ECDSA:        
+    case DAP_ENC_KEY_TYPE_SIG_FALCON:        
     case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         if (a_key->pub_key_data)
@@ -786,6 +788,10 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
             return -1;
         }
         a_key->pub_key_data_size = s_callbacks[a_key->type].deser_pub_key_size(NULL);
+        break;
+    case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+        s_callbacks[a_key->type].del_pub_key(a_key->pub_key_data);
+        a_key->pub_key_data = s_callbacks[a_key->type].deser_pub_key_ex(a_buf, a_key, a_buflen);
         break;
     default:
         DAP_DEL_Z(a_key->pub_key_data);

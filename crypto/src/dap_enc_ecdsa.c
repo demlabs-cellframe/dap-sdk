@@ -33,10 +33,7 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, UNUSED_ARG const vo
         UNUSED_ARG size_t key_size)
 {
     unsigned char randomize[32];
-    if (!randombytes(randomize, sizeof(randomize))) {
-        log_it(L_CRITICAL, "Failed to gen randomness");
-        return;
-    }
+    randombytes(randomize, sizeof(randomize));
     int retcode = 0;
 
     ecdsa_context_t* ctx = secp256k1_context_create(SECP256K1_CONTEXT_NONE);
@@ -51,20 +48,15 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t * key, UNUSED_ARG const vo
     key->priv_key_data      = DAP_NEW(ecdsa_private_key_t);
     key->priv_key_data_size = sizeof(ecdsa_private_key_t);
     do {
-        if ( !randombytes(key->priv_key_data, sizeof(ecdsa_private_key_t)) ) {
-            log_it(L_CRITICAL, "Failed to gen randomness");
-            secp256k1_context_destroy(ctx);
-            DAP_DELETE(key->priv_key_data);
-            return;
-        }
-    } while( !secp256k1_ec_seckey_verify(ctx, key->priv_key_data) );
+        randombytes(key->priv_key_data, key->priv_key_data_size);
+    } while( !secp256k1_ec_seckey_verify(ctx, (const unsigned char*)key->priv_key_data) );
 
     key->pub_key_data       = DAP_NEW(ecdsa_public_key_t);
     key->pub_key_data_size  = sizeof(ecdsa_public_key_t);
     retcode = secp256k1_ec_pubkey_create( ctx, (ecdsa_public_key_t*)key->pub_key_data, (const unsigned char*)key->priv_key_data );
     assert(retcode);
 
-    if(retcode) {
+    if(retcode != 1) {
         log_it(L_CRITICAL, "Error generating ECDSA key pair");
         secp256k1_context_destroy(ctx);
         DAP_DEL_MULTY(key->priv_key_data, key->pub_key_data);
@@ -82,10 +74,7 @@ int dap_enc_sig_ecdsa_get_sign(struct dap_enc_key* key, const void* msg, const s
         return 2;
     }
     unsigned char randomize[32];
-    if (!randombytes(randomize, sizeof(randomize))) {
-        log_it(L_ERROR, "Failed to generate randomness");
-        return 3;
-    }
+    randombytes(randomize, sizeof(randomize));
 
     int retcode = secp256k1_context_randomize(key->_inheritor, randomize);
     assert(retcode);
@@ -118,7 +107,7 @@ int dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key* key, const void* msg, cons
     return retcode;
 }
 
-uint8_t* dap_enc_sig_ecdsa_write_public_key(void* a_key, size_t* a_buflen_out)
+uint8_t* dap_enc_sig_ecdsa_write_public_key(const void* a_key, size_t* a_buflen_out)
 {
     dap_return_val_if_fail_err(a_key, NULL, "Invalid arg");
     dap_enc_key_t* l_key = (dap_enc_key_t*)a_key;
@@ -145,7 +134,7 @@ void* dap_enc_sig_ecdsa_read_public_key(const uint8_t* a_buf, dap_enc_key_t *a_k
     dap_return_val_if_fail_err(a_buf && a_key && a_buflen == ECDSA_PKEY_SERIALIZED_SIZE, NULL, "Invalid args");
     if ( !a_key->pub_key_data )
         a_key->pub_key_data = DAP_NEW(ecdsa_public_key_t);
-
+    a_key->pub_key_data_size = sizeof(ecdsa_public_key_t);
     return secp256k1_ec_pubkey_parse( (const ecdsa_context_t*)a_key->_inheritor,
                                       (ecdsa_public_key_t*)a_key->pub_key_data,
                                       a_buf, a_buflen ) == 1
@@ -165,10 +154,13 @@ uint8_t *dap_enc_sig_ecdsa_write_signature(const void *a_sign, dap_enc_key_t *a_
         ? l_buf : ( DAP_DELETE(l_buf), log_it(L_ERROR, "Failed to serialize sign"), NULL );  
 }
 
+uint64_t dap_enc_sig_ecdsa_signature_size(UNUSED_ARG void* a_arg) {
+    return sizeof(ecdsa_signature_t);
+}
 
 void* dap_enc_sig_ecdsa_read_signature(const uint8_t* a_buf, dap_enc_key_t *a_key, size_t a_buflen)
 {
-    dap_return_val_if_fail_err(a_buf && a_key && a_buflen == sizeof(ecdsa_signature_t), 1, "Invalid args");
+    dap_return_val_if_fail_err(a_buf && a_key && a_buflen == sizeof(ecdsa_signature_t), NULL, "Invalid args");
     ecdsa_signature_t *l_ret = DAP_NEW(ecdsa_signature_t);
     if (!l_ret) {
         log_it(L_CRITICAL, "Memory allocation error");
