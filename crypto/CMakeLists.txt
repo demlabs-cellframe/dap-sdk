@@ -129,10 +129,7 @@ file( GLOB CRYPTO_SRCS
 ) 
 
 get_filename_component(full_path_src ${CMAKE_CURRENT_SOURCE_DIR}/src/sig_shipovnik/streebog/gost3411-2012.c ABSOLUTE)
-message("${full_path_src}")
-
 list(REMOVE_ITEM CRYPTO_SRCS "${full_path_src}")
-message("${CRYPTO_SRCS}")
 
 file( GLOB CRYPTO_HEADERS
       src/*.h
