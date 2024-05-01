@@ -245,28 +245,22 @@ int s_db_sqlite_deinit(void)
  * @param a_table_name a table name string
  * @return Returns 0 if successful, otherwise -1.
  */
-static int s_db_sqlite_create_group_table(const char *a_table_name)
+static int s_db_sqlite_create_group_table(const char *a_table_name, conn_list_item_t *a_conn)
 {
 int l_rc;
-conn_list_item_t *l_conn;
 char l_query[512];
 
     if( !a_table_name )
         return  -EINVAL;
 
-    if ( !(l_conn = s_db_sqlite_get_connection()) )
-        return log_it(L_ERROR, "Error create group table '%s'", a_table_name), -ENOENT;
-
     snprintf(l_query, sizeof(l_query) - 1,
                     "CREATE TABLE IF NOT EXISTS '%s'(driver_key BLOB UNIQUE NOT NULL PRIMARY KEY, key TEXT UNIQUE NOT NULL, flags INTEGER, value BLOB, sign BLOB)",
                     a_table_name);
 
-    if ( (l_rc = s_db_sqlite_exec(l_conn->conn, l_query, NULL, NULL, 0, NULL)) != SQLITE_OK ) {
-        s_db_sqlite_free_connection(l_conn);
+    if ( (l_rc = s_db_sqlite_exec(a_conn->conn, l_query, NULL, NULL, 0, NULL)) != SQLITE_OK ) {
+        s_db_sqlite_free_connection(a_conn);
         return -1;
     }
-
-    s_db_sqlite_free_connection(l_conn);
     return 0;
 }
 
@@ -366,7 +360,7 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
         l_ret = s_db_sqlite_exec(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
         if (l_ret == SQLITE_ERROR) {
             // create table
-            s_db_sqlite_create_group_table(l_table_name);
+            s_db_sqlite_create_group_table(l_table_name, l_conn);
             // repeat request
             l_ret = s_db_sqlite_exec(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
         }
@@ -449,7 +443,7 @@ static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, boo
     char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s'"
                                         " WHERE flags & '%d' %s 0"
                                         " ORDER BY driver_key DESC LIMIT 1",
-                                        l_table_name, DAP_GLOBAL_DB_RECORD_ERASE,
+                                        l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=");
     DAP_DEL_Z(l_table_name);
     if (!l_str_query) {
@@ -672,12 +666,12 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE driver_key > ? AND (flags & '%d' %s 0)",
-                                        l_table_name, DAP_GLOBAL_DB_RECORD_ERASE,
+                                        l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=");
     char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s'"
                                         " WHERE driver_key > ? AND (flags & '%d' %s 0)"
                                         " ORDER BY driver_key LIMIT '%d'",
-                                        l_table_name, DAP_GLOBAL_DB_RECORD_ERASE,
+                                        l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=",
                                         a_count_out && *a_count_out ? (int)*a_count_out : (int)DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
     DAP_DEL_Z(l_table_name);
@@ -738,12 +732,12 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const ch
     char *l_str_query_count = NULL;
     char *l_str_query = NULL;
     if (a_key) {
-        l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE key='%s' AND (flags & '%d' %s 0)", l_table_name, a_key, DAP_GLOBAL_DB_RECORD_ERASE, a_with_holes ? ">=" : "=");
-        l_str_query = sqlite3_mprintf("SELECT * FROM '%s' WHERE key='%s' AND (flags & '%d' %s 0)", l_table_name, a_key, DAP_GLOBAL_DB_RECORD_ERASE, a_with_holes ? ">=" : "=");
+        l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE key='%s' AND (flags & '%d' %s 0)", l_table_name, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
+        l_str_query = sqlite3_mprintf("SELECT * FROM '%s' WHERE key='%s' AND (flags & '%d' %s 0)", l_table_name, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
     } else { // no limit
-        l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE flags & '%d' %s 0 ORDER BY driver_key", l_table_name, DAP_GLOBAL_DB_RECORD_ERASE, a_with_holes ? ">=" : "=");
+        l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE flags & '%d' %s 0 ORDER BY driver_key", l_table_name, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
         l_str_query = sqlite3_mprintf("SELECT * FROM '%s' WHERE flags & '%d' %s 0 ORDER BY driver_key LIMIT '%d'",
-                                        l_table_name, DAP_GLOBAL_DB_RECORD_ERASE,
+                                        l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=",
                                         a_count_out && *a_count_out ? (int)*a_count_out : -1);
     }
@@ -842,7 +836,7 @@ static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_dr
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE driver_key > ? AND (flags & '%d' %s 0)",
-                                        l_table_name, DAP_GLOBAL_DB_RECORD_ERASE,
+                                        l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=");
     DAP_DEL_Z(l_table_name);
     if (!l_str_query_count) {

@@ -408,6 +408,7 @@ int64_t _dap_config_get_item_int(dap_config_t *a_config, const char *a_section, 
 }
 
 uint64_t _dap_config_get_item_uint(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint64_t a_default) {
+    dap_return_val_if_pass(!a_config, a_default);
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
         return a_default;
