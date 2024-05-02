@@ -70,7 +70,7 @@ static int s_test_write(size_t a_count, s_test_mode_work_t a_mode)
     dap_store_obj_t l_store_obj = {0};
     int l_value_len = 0, *l_pvalue, i, ret;
     atomic_int l_is_completed = 0;
-    char l_key[64] = {0}, l_value[sizeof(dap_db_test_record_t) + DAP_DB$SZ_DATA] = {0};
+    char l_key[64] = {0}, l_value[sizeof(dap_db_test_record_t) + DAP_DB$SZ_DATA + 1] = {0};
     dap_enc_key_t *l_enc_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, NULL, 0, NULL, 0, 0);
     dap_db_test_record_t *prec;
     struct timespec now;
@@ -143,6 +143,8 @@ static int s_test_read(size_t a_count)
         dap_store_obj_t *l_store_obj = dap_global_db_driver_read(DAP_DB$T_GROUP, l_key, NULL, true);
         dap_assert_PIF(l_store_obj, "Record-Not-Found");
         dap_assert_PIF(dap_global_db_pkt_check_sign_crc(l_store_obj), "Record sign not verified");
+        dap_assert_PIF(!strcmp(DAP_DB$T_GROUP, l_store_obj->group), "Wrong group");
+        dap_assert_PIF(!strcmp(l_key, l_store_obj->key), "Wrong group");
 
         prec = (dap_db_test_record_t *) l_store_obj->value;
         dap_test_msg("Retrieved object: [%s, %s, %zu octets]", l_store_obj->group, l_store_obj->key,
@@ -157,6 +159,56 @@ static int s_test_read(size_t a_count)
     dap_pass_msg("reading check");
 
     return  0;
+}
+
+
+static void s_test_read_cond_store(size_t a_count)
+{
+    dap_global_db_driver_hash_t l_driver_key = {0};
+    size_t l_count = 0;
+    for (size_t i = 0; i < a_count; ++i) {
+        dap_store_obj_t *l_objs = dap_global_db_driver_cond_read(DAP_DB$T_GROUP, l_driver_key, &l_count, true);
+        dap_assert_PIF(l_objs, "Records-Not-Found");
+        dap_assert_PIF(l_count <= DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT , "Wrong finded records count");
+        for (size_t j = i, k = 0; j < a_count && k < DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT; ++j, ++k) {
+            char l_key[64] = { 0 };
+            snprintf(l_key, sizeof(l_key) - 1, "KEY$%08lx", j);           /* Generate a key of record */
+            dap_store_obj_t *l_store_obj = dap_global_db_driver_read(DAP_DB$T_GROUP, l_key, NULL, true);
+            dap_assert_PIF(l_store_obj, "Record-Not-Found");
+            dap_assert_PIF(!strcmp(l_store_obj->key, (l_objs + k)->key), "Not equal keys");
+            dap_assert_PIF(!strcmp(DAP_DB$T_GROUP, (l_objs + k)->group), "Wrong group");
+            dap_assert_PIF(!dap_store_obj_driver_hash_compare(l_store_obj, l_objs + k), "Not equal hashes");
+            dap_assert_PIF(l_store_obj->value_len == (l_objs + k)->value_len && !memcmp(l_store_obj->value, (l_objs + k)->value, l_store_obj->value_len), "Not equal values");
+            dap_assert_PIF(dap_sign_get_size(l_store_obj->sign) == dap_sign_get_size((l_objs + k)->sign) && !memcmp(l_store_obj->sign, (l_objs + k)->sign, dap_sign_get_size(l_store_obj->sign)), "Record sign not equal");
+            if (i == j)
+                l_driver_key = dap_global_db_driver_hash_get(l_store_obj);
+            dap_store_obj_free_one(l_store_obj);
+        }
+        dap_store_obj_free(l_objs, l_count);
+    }
+    l_count = 99;
+    l_driver_key = (dap_global_db_driver_hash_t){0};
+    size_t l_total_count = 0;
+    for (dap_store_obj_t *l_objs = dap_global_db_driver_cond_read(DAP_DB$T_GROUP, l_driver_key, &l_count, true);
+            l_objs;
+            l_objs = dap_global_db_driver_cond_read(DAP_DB$T_GROUP, l_driver_key, &l_count, true)) {
+        l_driver_key = dap_global_db_driver_hash_get(l_objs + l_count - 1);
+        dap_store_obj_free(l_objs, l_count);
+        l_total_count += l_count;
+    }
+    dap_assert_PIF(l_total_count == a_count, "Total cond read count with holes not equal total records count");
+    l_count = 99;
+    l_driver_key = (dap_global_db_driver_hash_t){0};
+    l_total_count = 0;
+    for (dap_store_obj_t *l_objs = dap_global_db_driver_cond_read(DAP_DB$T_GROUP, l_driver_key, &l_count, false);
+            l_objs;
+            l_objs = dap_global_db_driver_cond_read(DAP_DB$T_GROUP, l_driver_key, &l_count, false)) {
+        l_driver_key = dap_global_db_driver_hash_get(l_objs + l_count - 1);
+        dap_store_obj_free(l_objs, l_count);
+        l_total_count += l_count;
+    }
+    dap_assert_PIF(l_total_count == a_count / DAP_DB$SZ_HOLES * (DAP_DB$SZ_HOLES - 1), "Total cond read count without holes not equal total records count");
+    dap_pass_msg("read_cond_store check");
 }
 
 static void s_test_count(size_t a_count)
@@ -250,7 +302,7 @@ static void s_test_read_hashes(size_t a_count)
         dap_assert_PIF(l_hashes && l_hashes_wrong, "Hashes-Not-Found");
         dap_assert_PIF(!l_hashes_not_existed, "Finded hashes in not existed group");
         size_t l_bias = l_hashes->group_name_len;
-        for (size_t j = i; j < dap_min(a_count, DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT); ++j) {
+        for (size_t j = i, k = 0; j < a_count && k < DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT; ++j, ++k) {
             char l_key[64] = { 0 };
             snprintf(l_key, sizeof(l_key) - 1, "KEY$%08lx", j);           /* Generate a key of record */
             dap_store_obj_t *l_store_obj = dap_global_db_driver_read(DAP_DB$T_GROUP, l_key, NULL, true);
@@ -268,6 +320,31 @@ static void s_test_read_hashes(size_t a_count)
     dap_pass_msg("read hashes check");
 }
 
+static void s_test_get_groups_by_mask()
+{
+    dap_list_t *l_groups = NULL;
+    l_groups = dap_global_db_driver_get_groups_by_mask("group.z*");
+    dap_assert_PIF(dap_list_length(l_groups) == 1 && !strcmp(DAP_DB$T_GROUP, l_groups->data), "Wrong finded group by mask");
+    dap_list_free_full(l_groups, NULL);
+
+    l_groups = dap_global_db_driver_get_groups_by_mask("group.w*");
+    dap_assert_PIF(dap_list_length(l_groups) == 1 && !strcmp(DAP_DB$T_GROUP_WRONG, l_groups->data), "Wrong finded group by mask");
+    dap_list_free_full(l_groups, NULL);
+
+    l_groups = dap_global_db_driver_get_groups_by_mask("group.n*");
+    dap_assert_PIF(!dap_list_length(l_groups), "Finded not existed groups");
+    dap_list_free_full(l_groups, NULL);
+
+    l_groups = dap_global_db_driver_get_groups_by_mask("group.*");
+    dap_assert_PIF(dap_list_length(l_groups) == 2, "Wrong finded groups by mask");
+    dap_list_free_full(l_groups, NULL);
+    dap_pass_msg("get_groups_by_mask check");
+}
+static void s_test_flush()
+{
+    dap_db_driver_flush();
+}
+
 static void s_test_close_db(void)
 {
     dap_db_driver_deinit();
@@ -279,11 +356,14 @@ void s_test_all(size_t a_count)
 {
     s_test_write(a_count, 0);
     s_test_read(a_count);
+    s_test_read_cond_store(a_count);
     s_test_count(a_count);
+    s_test_flush();
     s_test_is_obj(a_count);
     s_test_is_hash(a_count);
     s_test_last(a_count);
     s_test_read_hashes(a_count);
+    s_test_get_groups_by_mask();
 }
 
 int    main (int argc, char **argv)

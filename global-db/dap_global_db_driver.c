@@ -147,7 +147,9 @@ void dap_db_driver_deinit(void)
  */
 int dap_db_driver_flush(void)
 {
-    return s_drv_callback.flush();
+    if (s_drv_callback.flush)
+        return s_drv_callback.flush();
+    return 0;
 }
 
 static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const dap_store_obj_t *a_store_obj_src)
