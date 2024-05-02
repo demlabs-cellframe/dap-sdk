@@ -69,7 +69,7 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
 
     dap_global_db_legacy_list_t *l_db_legacy_list;
     DAP_NEW_Z_RET_VAL(l_db_legacy_list, dap_global_db_legacy_list_t, NULL, NULL);
-    l_db_legacy_list->groups = l_groups;
+    l_db_legacy_list->groups = l_db_legacy_list->saved_ptr = l_groups;
     l_db_legacy_list->items_rest = l_db_legacy_list->items_number = l_items_number;
 
     return l_db_legacy_list;
@@ -77,9 +77,9 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
 
 dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *a_db_legacy_list, size_t a_number_limit)
 {
-    dap_list_t *it, *tmp, *ret = NULL;
+    dap_list_t *it, *ret = NULL;
     size_t l_number_limit = a_number_limit;
-    DL_FOREACH_SAFE(a_db_legacy_list->groups, it, tmp) {
+    DL_FOREACH(a_db_legacy_list->groups, it) {
         char *l_group_cur = it->data;
         size_t l_values_count = l_number_limit;
         dap_store_obj_t *l_store_objs = dap_global_db_driver_cond_read(l_group_cur, a_db_legacy_list->current_hash, &l_values_count, true);
@@ -119,7 +119,7 @@ dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *
         }
         if (rc != DAP_GLOBAL_DB_RC_PROGRESS) {
             // remove cuurent group from list, go to next group
-            a_db_legacy_list->groups = dap_list_remove_link(a_db_legacy_list->groups, it);
+            a_db_legacy_list->groups = dap_list_next(a_db_legacy_list->groups);
             a_db_legacy_list->current_hash = c_dap_global_db_driver_hash_blank;
         }
         if (!l_number_limit)
