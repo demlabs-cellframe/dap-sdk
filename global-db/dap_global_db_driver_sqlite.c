@@ -806,7 +806,7 @@ static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
     l_mask = dap_str_replace_char(a_group_mask, '.', '_');
     int l_ret_code = 0;
     for (l_ret_code = s_db_sqlite_step(l_stmt); l_ret_code == SQLITE_ROW && sqlite3_column_type(l_stmt, 0) == SQLITE_TEXT; l_ret_code = s_db_sqlite_step(l_stmt)) {
-        const char *l_table_name = sqlite3_column_text(l_stmt, 0);
+        const unsigned char *l_table_name = sqlite3_column_text(l_stmt, 0);
         if(!dap_fnmatch(l_mask, l_table_name, 0))
             l_ret = dap_list_prepend(l_ret, dap_str_replace_char(l_table_name, '_', '.'));
     }
@@ -870,6 +870,7 @@ static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection()), false);
 // preparing
+    bool l_ret = false;
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
@@ -888,9 +889,9 @@ static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t
         log_it(L_ERROR, "SQLite is hash read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
         goto clean_and_ret;
     }
-    size_t l_ret = sqlite3_column_int64(l_stmt_count, 0);
+    l_ret = (bool)sqlite3_column_int64(l_stmt_count, 0);
 clean_and_ret:
-    s_db_sqlite_clean(l_conn, 2, l_str_query_count, l_stmt_count);
+    s_db_sqlite_clean(l_conn, 1, l_str_query_count, l_stmt_count);
     return l_ret;
 }
 
@@ -907,6 +908,7 @@ static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection()), false);
 // preparing
+    bool l_ret = 0;
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
@@ -924,7 +926,7 @@ static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
         log_it(L_ERROR, "SQLite is obj read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
         goto clean_and_ret;
     }
-    size_t l_ret = sqlite3_column_int64(l_stmt_count, 0);
+    l_ret = (bool)sqlite3_column_int64(l_stmt_count, 0);
 clean_and_ret:
     s_db_sqlite_clean(l_conn, 1, l_str_query_count, l_stmt_count);
     return l_ret;
