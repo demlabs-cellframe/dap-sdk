@@ -525,6 +525,7 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
     assert(l_stream);
     // Restart server keepalive timer if it was unassigned before
     if (!l_stream->keepalive_timer) {
+        log_it(L_ATT, "[!] Start keepalive timer on es 0x%lx", a_esocket->uuid);
         l_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
                                                                 STREAM_KEEPALIVE_TIMEOUT * 1000,
                                                                 (dap_timerfd_callback_t)s_callback_server_keepalive,
@@ -544,7 +545,6 @@ static void s_esocket_callback_worker_unassign(dap_events_socket_t * a_esocket, 
     assert(l_http_client);
     dap_stream_t * l_stream = DAP_STREAM(l_http_client);
     assert(l_stream);
-    DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
     dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
     l_stream->keepalive_timer = NULL;
 }
@@ -558,6 +558,7 @@ static void s_client_callback_worker_assign(dap_events_socket_t * a_esocket, dap
     assert(l_stream);
     // Start client keepalive timer or restart it, if it was unassigned before
     if (!l_stream->keepalive_timer) {
+        log_it(L_ATT, "[!] Start keepalive client timer on es 0x%lx", a_esocket->uuid);
         l_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
                                                                 STREAM_KEEPALIVE_TIMEOUT * 1000,
                                                                 (dap_timerfd_callback_t)s_callback_client_keepalive,
@@ -573,7 +574,6 @@ static void s_client_callback_worker_unassign(dap_events_socket_t * a_esocket, d
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     dap_stream_t *l_stream = l_client_pvt->stream;
     assert(l_stream);
-    DAP_DEL_Z(l_stream->keepalive_timer->callback_arg);
     dap_timerfd_delete_unsafe(l_stream->keepalive_timer);
     l_stream->keepalive_timer = NULL;
 }
@@ -933,7 +933,7 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
 {
     if (!a_arg)
         return false;
-    dap_events_socket_uuid_t l_es_uuid = DAP_POINTER_TO_INT(a_arg);
+    dap_events_socket_uuid_t l_es_uuid = DAP_POINTER_TO_SIZE(a_arg);
     dap_worker_t * l_worker = dap_worker_get_current();
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, l_es_uuid);
     if(l_es) {
