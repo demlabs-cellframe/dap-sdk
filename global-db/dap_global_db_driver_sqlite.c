@@ -624,7 +624,7 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
     uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
     l_count = dap_min(l_count, DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT);
     if (!l_count) {
-        log_it(L_INFO, "There are no records satisfying the conditional read request");
+        log_it(L_INFO, "There are no records satisfying the hashes read request");
         goto clean_and_ret;
     }
     size_t l_group_name_len = strlen(a_group) + 1;

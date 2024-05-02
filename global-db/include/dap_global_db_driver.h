@@ -100,6 +100,14 @@ DAP_STATIC_INLINE int dap_store_obj_driver_hash_compare(dap_store_obj_t *a_obj1,
     return dap_global_db_driver_hash_compare(l_hash1, l_hash2);
 }
 
+DAP_STATIC_INLINE bool dap_store_obj_driver_obj_compare(dap_store_obj_t *a_obj1,  dap_store_obj_t *a_obj2)
+{
+    return dap_store_obj_driver_hash_compare(a_obj1, a_obj2) || a_obj1->value_len != a_obj2->value_len || memcmp(a_obj1->value, a_obj2->value, a_obj1->value_len) ||
+        dap_sign_get_size(a_obj1->sign) != dap_sign_get_size(a_obj2->sign) || memcmp(a_obj1->sign, a_obj2->sign, dap_sign_get_size(a_obj1->sign)) ||
+        strcmp(a_obj1->key, a_obj2->key) || strcmp(a_obj1->group, a_obj2->group);
+}
+
+
 DAP_STATIC_INLINE const char *dap_global_db_driver_hash_print(dap_global_db_driver_hash_t a_hash)
 {
     return dap_guuid_to_hex_str(dap_guuid_compose(a_hash.bets, a_hash.becrc));

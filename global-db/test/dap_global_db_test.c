@@ -175,11 +175,8 @@ static void s_test_read_cond_store(size_t a_count)
             snprintf(l_key, sizeof(l_key) - 1, "KEY$%08lx", j);           /* Generate a key of record */
             dap_store_obj_t *l_store_obj = dap_global_db_driver_read(DAP_DB$T_GROUP, l_key, NULL, true);
             dap_assert_PIF(l_store_obj, "Record-Not-Found");
-            dap_assert_PIF(!strcmp(l_store_obj->key, (l_objs + k)->key), "Not equal keys");
             dap_assert_PIF(!strcmp(DAP_DB$T_GROUP, (l_objs + k)->group), "Wrong group");
-            dap_assert_PIF(!dap_store_obj_driver_hash_compare(l_store_obj, l_objs + k), "Not equal hashes");
-            dap_assert_PIF(l_store_obj->value_len == (l_objs + k)->value_len && !memcmp(l_store_obj->value, (l_objs + k)->value, l_store_obj->value_len), "Not equal values");
-            dap_assert_PIF(dap_sign_get_size(l_store_obj->sign) == dap_sign_get_size((l_objs + k)->sign) && !memcmp(l_store_obj->sign, (l_objs + k)->sign, dap_sign_get_size(l_store_obj->sign)), "Record sign not equal");
+            dap_assert_PIF(!dap_store_obj_driver_obj_compare(l_store_obj, l_objs + k), "Records not equal");
             if (i == j)
                 l_driver_key = dap_global_db_driver_hash_get(l_store_obj);
             dap_store_obj_free_one(l_store_obj);
@@ -213,8 +210,29 @@ static void s_test_read_cond_store(size_t a_count)
 
 static void s_test_count(size_t a_count)
 {
-    dap_assert_PIF(a_count == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true), "Count with holes");
-    dap_assert_PIF(a_count / DAP_DB$SZ_HOLES * (DAP_DB$SZ_HOLES - 1) == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, false), "Count without holes");
+    dap_global_db_driver_hash_t l_driver_key = {0};
+    for (size_t i = 0; i < a_count; ++i) {
+        char l_key[64] = { 0 };
+        snprintf(l_key, sizeof(l_key) - 1, "KEY$%08lx", i);  
+        dap_store_obj_t *l_store_obj = dap_global_db_driver_read(DAP_DB$T_GROUP, l_key, NULL, true);
+        dap_assert_PIF(l_store_obj, "Records-Not-Found");
+        dap_assert_PIF(a_count - i == dap_global_db_driver_count(DAP_DB$T_GROUP, l_driver_key, true), "Count with holes");
+        l_driver_key = dap_global_db_driver_hash_get(l_store_obj);
+        dap_store_obj_free_one(l_store_obj);
+    }
+    l_driver_key = (dap_global_db_driver_hash_t){0};
+    for (size_t i = 0, k = 0; i < a_count; ++i, ++k) {
+        char l_key[64] = { 0 };
+        if(!(i % DAP_DB$SZ_HOLES))
+            ++i;
+        snprintf(l_key, sizeof(l_key) - 1, "KEY$%08lx", i);  
+        dap_store_obj_t *l_store_obj = dap_global_db_driver_read(DAP_DB$T_GROUP, l_key, NULL, false);
+        dap_assert_PIF(l_store_obj, "Records-Not-Found");
+        dap_assert_PIF(a_count / DAP_DB$SZ_HOLES * (DAP_DB$SZ_HOLES - 1) - k == dap_global_db_driver_count(DAP_DB$T_GROUP, l_driver_key, false), "Count without holes");
+        l_driver_key = dap_global_db_driver_hash_get(l_store_obj);
+        dap_store_obj_free_one(l_store_obj);
+    }
+    
     dap_assert_PIF(a_count == dap_global_db_driver_count(DAP_DB$T_GROUP_WRONG, (dap_global_db_driver_hash_t){0}, true), "Count in wrong group with holes");
     dap_assert_PIF(a_count / DAP_DB$SZ_HOLES * (DAP_DB$SZ_HOLES - 1) == dap_global_db_driver_count(DAP_DB$T_GROUP_WRONG, (dap_global_db_driver_hash_t){0}, false), "Count in wrong group without holes");
     dap_assert_PIF(!dap_global_db_driver_count(DAP_DB$T_GROUP_NOT_EXISTED, (dap_global_db_driver_hash_t){0}, true), "Count in not existed group with holes");
