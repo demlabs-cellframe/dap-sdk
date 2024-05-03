@@ -69,7 +69,6 @@ static int s_test_write(size_t a_count, s_test_mode_work_t a_mode)
 {
     dap_store_obj_t l_store_obj = {0};
     int l_value_len = 0, *l_pvalue, i, ret;
-    atomic_int l_is_completed = 0;
     char l_key[64] = {0}, l_value[sizeof(dap_db_test_record_t) + DAP_DB$SZ_DATA + 1] = {0};
     dap_enc_key_t *l_enc_key = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, NULL, 0, NULL, 0, 0);
     dap_db_test_record_t *prec;
@@ -413,9 +412,33 @@ static void s_test_get_groups_by_mask()
     dap_list_free_full(l_groups, NULL);
     dap_pass_msg("get_groups_by_mask check");
 }
+
 static void s_test_flush()
 {
     dap_db_driver_flush();
+}
+
+static void s_test_tx_start_end(size_t a_count)
+{   
+    size_t l_count = 0;
+    dap_store_obj_t *l_objs = dap_global_db_driver_cond_read(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, &l_count, true);
+    // erase some records
+    for (size_t i = 0; i < l_count; ++i) {
+        l_objs[i].flags |= DAP_GLOBAL_DB_RECORD_ERASE;
+    }
+    int ret = dap_global_db_driver_apply(l_objs, l_count);
+    dap_assert_PIF(!ret, "Erased records from DB is ok");
+    dap_assert_PIF(a_count - l_count == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true), "Wrong records count after erasing");
+    // restore erased records
+    for (size_t i = 0; i < l_count; ++i) {
+        l_objs[i].flags &= ~DAP_GLOBAL_DB_RECORD_ERASE;
+    }
+    ret = dap_global_db_driver_apply(l_objs, l_count);
+    dap_assert_PIF(!ret, "Restore records to DB is ok");
+    dap_assert_PIF(a_count == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true), "Wrong records count after restoring");
+
+    dap_store_obj_free(l_objs, l_count);
+    dap_pass_msg("tx_start tx_end check");    
 }
 
 static void s_test_close_db(void)
@@ -431,6 +454,7 @@ void s_test_all(size_t a_count)
     s_test_read(a_count);
     s_test_read_cond_store(a_count);
     s_test_count(a_count);
+    s_test_tx_start_end(a_count);  // if after this tests fail try comment
     s_test_flush();
     s_test_is_obj(a_count);
     s_test_is_hash(a_count);

@@ -50,7 +50,8 @@ typedef struct conn_pool_item {
     void    *flink;                                                 /* Forward link to next element in the simple list */
     sqlite3 *conn;                                                  /* SQLITE connection context itself */
     int     idx;                                                    /* Just index, no more */
-    atomic_flag busy;                                                   /* "Context is busy" flag */
+    atomic_flag busy_conn;                                                   /* "Context is busy" flag */
+    atomic_flag busy_trans;
     atomic_ullong  usage;                                                  /* Usage counter */
 } conn_list_item_t;                                      /* Preallocate a storage for the SQLITE connections  */
 
@@ -61,7 +62,6 @@ static char s_filename_db [MAX_PATH];
 static bool s_db_inited = false;
 static dap_list_t *s_conn_list = NULL;  // list of all connections
 static _Thread_local conn_list_item_t *s_conn = NULL;  // connection pool
-static _Thread_local sqlite3 *s_trans = NULL;  // outstanding connection pool
 static pthread_rwlock_t s_conn_list_rwlock = PTHREAD_RWLOCK_INITIALIZER; 
 
 /**
@@ -96,16 +96,14 @@ sqlite3* s_db_sqlite_open(const char *a_filename_utf8, int a_flags, char **a_err
     return l_db;
 }
 
-static inline void s_db_sqlite_free_item(void *a_data)
-{
-    sqlite3_close(((conn_list_item_t *)a_data)->conn);
-}
-
-static inline int s_db_sqlite_free_connection(conn_list_item_t *a_conn)
+static inline int s_db_sqlite_free_connection(conn_list_item_t *a_conn, bool a_trans)
 {
     if (g_dap_global_db_debug_more)
         log_it(L_DEBUG, "Free  l_conn: @%p/%p, usage: %llu", a_conn, a_conn->conn, a_conn->usage);
-    atomic_flag_clear(&a_conn->busy);                                       /* Clear busy flag */
+    if (a_trans)
+        atomic_flag_clear(&a_conn->busy_trans);  
+    else
+        atomic_flag_clear(&a_conn->busy_conn);                                       /* Clear busy flag */
     return  0;
 }
 
@@ -117,7 +115,7 @@ static void s_db_sqlite_clean(conn_list_item_t *a_conn, size_t a_count, ... ) {
     for (size_t i = 0; i < a_count; ++i)
         sqlite3_finalize(va_arg(l_args_list, void*));
     va_end(l_args_list);
-    s_db_sqlite_free_connection(a_conn);
+    s_db_sqlite_free_connection(a_conn, false);
 }
 
 static int s_db_sqlite_step(sqlite3_stmt *a_stmt)
@@ -177,7 +175,7 @@ static inline void s_db_sqlite_prepare_connection(sqlite3 *a_conn)
         log_it(L_ERROR, "can't set page_size\n");
 }
 
-static conn_list_item_t *s_db_sqlite_get_connection()
+static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
 {
 // sanity check
     dap_return_val_if_pass_err(!s_db_inited, NULL, "SQLite driver not inited");
@@ -206,9 +204,16 @@ static conn_list_item_t *s_db_sqlite_get_connection()
         pthread_rwlock_unlock(&s_conn_list_rwlock);
     }
     // busy check
-    if (atomic_flag_test_and_set (&s_conn->busy)) {
-        log_it(L_ERROR, "Busy check error in connection %p idx %d", s_conn, s_conn->idx);
-        return  NULL;
+    if (a_trans) {
+        if (atomic_flag_test_and_set (&s_conn->busy_trans)) {
+            log_it(L_ERROR, "Busy check error in connection %p idx %d", s_conn, s_conn->idx);
+            return  NULL;
+        }
+    } else {
+        if (atomic_flag_test_and_set (&s_conn->busy_conn)) {
+            log_it(L_ERROR, "Busy check error in connection %p idx %d", s_conn, s_conn->idx);
+            return  NULL;
+        }
     }
     atomic_fetch_add(&s_conn->usage, 1);
     if (g_dap_global_db_debug_more )
@@ -258,7 +263,7 @@ char l_query[512];
                     a_table_name);
 
     if ( (l_rc = s_db_sqlite_exec(a_conn->conn, l_query, NULL, NULL, 0, NULL)) != SQLITE_OK ) {
-        s_db_sqlite_free_connection(a_conn);
+        s_db_sqlite_free_connection(a_conn, false);
         return -1;
     }
     return 0;
@@ -277,58 +282,6 @@ int s_db_sqlite_vacuum(sqlite3 *a_conn)
 }
 
 /**
- * @brief Starts a transaction in s_db database.
- *
- * @return Returns 0 if successful, otherwise -1.
- */
-static int s_db_sqlite_transaction_start(void)
-{
-// sanity check
-    dap_return_val_if_pass_err(s_trans, -1, "Outstanding connection already using, please commit previous transaction");
-// preparing
-    char *l_error_message = NULL;
-    if ( !(s_trans = s_db_sqlite_open(s_filename_db, SQLITE_OPEN_READWRITE, &l_error_message)) ) {
-        log_it(L_ERROR, "Can't init sqlite err: \"%s\"", l_error_message? l_error_message: "UNKNOWN");
-        sqlite3_free(l_error_message);
-        return -2;
-    }
-    s_db_sqlite_prepare_connection(s_trans);
-// func work
-    if ( g_dap_global_db_debug_more )
-        log_it(L_DEBUG, "Start TX: @%p", s_trans);
-    int l_rc = s_db_sqlite_exec(s_trans, "BEGIN", NULL, NULL, 0, NULL);
-    if ( l_rc != SQLITE_OK ) {
-        sqlite3_close(s_trans);
-        s_trans = NULL;
-    }
-    return  ( l_rc == SQLITE_OK ) ? 0 : -l_rc;
-}
-
-/**
- * @brief Ends a transaction in s_db database.
- *
- * @return Returns 0 if successful, otherwise -1.
- */
-static int s_db_sqlite_transaction_end(bool a_commit)
-{
-// sanity check
-    dap_return_val_if_pass_err(!s_trans, -1, "Outstanding connection not exist");
-// func work
-    if ( g_dap_global_db_debug_more )
-        log_it(L_DEBUG, "End TX l_conn: @%p", s_trans);
-    int l_ret = 0;
-    if (a_commit)
-        s_db_sqlite_exec(s_trans, "COMMIT", NULL, NULL, 0, NULL);
-    else
-        s_db_sqlite_exec(s_trans, "ROLLBACK", NULL, NULL, 0, NULL);
-    if (l_ret == SQLITE_OK) {
-        sqlite3_close(s_trans);
-        s_trans = NULL;
-    }
-    return  l_ret;
-}
-
-/**
  * @brief Applies an object to a database.
  * @param a_store_obj a pointer to the object structure
  * @return Returns 0 if successful.
@@ -339,7 +292,7 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
     dap_return_val_if_pass(!a_store_obj || !a_store_obj->group, -1);
 // func work
     // execute request
-    conn_list_item_t *l_conn = s_db_sqlite_get_connection();
+    conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);
     if (!l_conn)
         return -2;
 
@@ -372,7 +325,7 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
         l_ret = s_db_sqlite_exec(l_conn->conn, l_query, NULL, NULL, 0, NULL);
     }
 ret_n_free:
-    s_db_sqlite_free_connection(l_conn);
+    s_db_sqlite_free_connection(l_conn, false);
     if (l_query)
         sqlite3_free(l_query);
     DAP_DELETE(l_table_name);
@@ -435,7 +388,7 @@ static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, boo
 {
 // sanity check
     conn_list_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection()), NULL);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
 // preparing
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt = NULL;
@@ -479,7 +432,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
 {
 // sanity check
     conn_list_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !a_hashes || !a_count || !(l_conn = s_db_sqlite_get_connection()), NULL);
+    dap_return_val_if_pass(!a_group || !a_hashes || !a_count || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
 // preparing
     dap_global_db_pkt_pack_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL, *l_stmt_size = NULL;
@@ -593,7 +546,7 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
 {
 // sanity check
     conn_list_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection()), NULL);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
 // preparing
     dap_global_db_hash_pkt_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
@@ -659,7 +612,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
 {
 // sanity check
     conn_list_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection()), NULL);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
 // preparing
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
@@ -724,7 +677,7 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const ch
 {
 // sanity check
     conn_list_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection()), NULL);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
 // func work
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
@@ -788,7 +741,7 @@ static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
 {
 // sanity check
     conn_list_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group_mask || !(l_conn = s_db_sqlite_get_connection()), NULL);
+    dap_return_val_if_pass(!a_group_mask || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
 // preparing
     dap_list_t* l_ret = NULL;
     sqlite3_stmt *l_stmt = NULL;
@@ -830,7 +783,7 @@ static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_dr
 {
 // sanity check
     conn_list_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection()), 0);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), 0);
 // preparing
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
@@ -868,7 +821,7 @@ static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t
 {
 // sanity check
     conn_list_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection()), false);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), false);
 // preparing
     bool l_ret = false;
     sqlite3_stmt *l_stmt_count = NULL;
@@ -906,7 +859,7 @@ static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
 {
 // sanity check
     conn_list_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection()), false);
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), false);
 // preparing
     bool l_ret = 0;
     sqlite3_stmt *l_stmt_count = NULL;
@@ -941,7 +894,7 @@ clean_and_ret:
 static int s_db_sqlite_flush()
 {
 // sanity check
-    conn_list_item_t *l_conn = s_db_sqlite_get_connection();
+    conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);
     dap_return_val_if_pass(!l_conn, -1);
 // preparing
     char *l_error_message = NULL;
@@ -957,10 +910,55 @@ static int s_db_sqlite_flush()
     sync();
 #endif
     s_db_sqlite_prepare_connection(l_conn->conn);
-    s_db_sqlite_free_connection(l_conn);
+    s_db_sqlite_free_connection(l_conn, false);
+    s_db_sqlite_free_connection(l_conn, true);
     return 0;
 }
 
+/**
+ * @brief Starts a transaction in s_db database.
+ *
+ * @return Returns 0 if successful, otherwise -1.
+ */
+static int s_db_sqlite_transaction_start()
+{
+// sanity check
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!(l_conn = s_db_sqlite_get_connection(true)), NULL);
+// func work
+    if ( g_dap_global_db_debug_more )
+        log_it(L_DEBUG, "Start TX: @%p", l_conn->conn);
+    
+    int l_ret = 0;
+    s_db_sqlite_exec(l_conn->conn, "BEGIN", NULL, NULL, 0, NULL);
+    if ( l_ret != SQLITE_OK ) {
+        s_db_sqlite_free_connection(l_conn, true);
+    }
+    return  l_ret;
+}
+
+/**
+ * @brief Ends a transaction in s_db database.
+ *
+ * @return Returns 0 if successful, otherwise -1.
+ */
+static int s_db_sqlite_transaction_end(bool a_commit)
+{
+// sanity check
+    dap_return_val_if_pass_err(!s_conn || !s_conn->conn, -1, "Outstanding connection not exist");
+// func work
+    if ( g_dap_global_db_debug_more )
+        log_it(L_DEBUG, "End TX l_conn: @%p", s_conn->conn);
+    int l_ret = 0;
+    if (a_commit)
+        l_ret = s_db_sqlite_exec(s_conn->conn, "COMMIT", NULL, NULL, 0, NULL);
+    else
+        l_ret = s_db_sqlite_exec(s_conn->conn, "ROLLBACK", NULL, NULL, 0, NULL);
+    if ( l_ret == SQLITE_OK ) {
+        s_db_sqlite_free_connection(s_conn, true);
+    }
+    return  l_ret;
+}
 
 
 
