@@ -493,7 +493,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     for (size_t i = 0; i < a_count * 2; i += 2) {
         l_blob_str[i] = '?';
     }
-    for (size_t i = 1; i + 1< a_count * 2; i += 2) {
+    for (size_t i = 1; i + 1 < a_count * 2; i += 2) {
         l_blob_str[i] = ',';
     }
     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
@@ -503,7 +503,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
     char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s'"
-                                        " WHERE driver_key IN (%s)",
+                                        " WHERE driver_key IN (%s) ORDER BY driver_key",
                                         l_table_name, l_blob_str);
     DAP_DEL_MULTY(l_table_name, l_blob_str);
     if (!l_str_query_count || !l_str_query) {
@@ -538,7 +538,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
         goto clean_and_ret;
     }
     size_t l_group_name_len = strlen(a_group) + 1;
-    size_t l_data_size = l_count * (sizeof(dap_global_db_pkt_t) + l_group_name_len) + l_size;
+    size_t l_data_size = l_count * (sizeof(dap_global_db_pkt_t) + l_group_name_len + 1) + l_size;
     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_data_size, NULL, l_str_query_count, l_str_query);
 // data forming
     for (size_t i = 0; i < l_count && s_db_sqlite_step(l_stmt) == SQLITE_ROW; ++i) {
@@ -555,7 +555,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
                 continue;
             }
             if (j == 1 && sqlite3_column_type(l_stmt, j) == SQLITE_TEXT) {
-                l_cur_pkt->key_len = sqlite3_column_bytes(l_stmt, j);
+                l_cur_pkt->key_len = sqlite3_column_bytes(l_stmt, j) + 1;
                 memcpy(l_cur_pkt->data + l_cur_pkt->data_len, sqlite3_column_text(l_stmt, j), l_cur_pkt->key_len);
                 l_cur_pkt->data_len += l_cur_pkt->key_len;
                 continue;

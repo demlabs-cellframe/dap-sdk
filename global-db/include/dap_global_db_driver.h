@@ -102,7 +102,8 @@ DAP_STATIC_INLINE int dap_store_obj_driver_hash_compare(dap_store_obj_t *a_obj1,
 
 DAP_STATIC_INLINE bool dap_store_obj_driver_obj_compare(dap_store_obj_t *a_obj1,  dap_store_obj_t *a_obj2)
 {
-    return dap_store_obj_driver_hash_compare(a_obj1, a_obj2) || a_obj1->value_len != a_obj2->value_len || memcmp(a_obj1->value, a_obj2->value, a_obj1->value_len) ||
+    return dap_store_obj_driver_hash_compare(a_obj1, a_obj2) || a_obj1->flags != a_obj2->flags ||
+        a_obj1->value_len != a_obj2->value_len || memcmp(a_obj1->value, a_obj2->value, a_obj1->value_len) ||
         dap_sign_get_size(a_obj1->sign) != dap_sign_get_size(a_obj2->sign) || memcmp(a_obj1->sign, a_obj2->sign, dap_sign_get_size(a_obj1->sign)) ||
         strcmp(a_obj1->key, a_obj2->key) || strcmp(a_obj1->group, a_obj2->group);
 }
