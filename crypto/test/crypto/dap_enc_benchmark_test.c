@@ -5,7 +5,7 @@
 #include "rand/dap_rand.h"
 #define LOG_TAG "dap_crypto_benchmark_tests"
 
-#define SIGNATURE_TYPE_COUNT 5
+#define SIGNATURE_TYPE_COUNT 6
 #define SIGN_COUNT 5
 #define KEYS_TOTAL_COUNT 10
 
@@ -15,7 +15,8 @@ dap_enc_key_type_t s_key_type_arr[SIGNATURE_TYPE_COUNT] = {\
         DAP_ENC_KEY_TYPE_SIG_DILITHIUM,\
         /*DAP_ENC_KEY_TYPE_SIG_PICNIC,\ */
         DAP_ENC_KEY_TYPE_SIG_FALCON,\
-        DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS};
+        DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,\
+        DAP_ENC_KEY_TYPE_SIG_ECDSA};
 
 /*--------------------------TRANSFER TEST BLOCK--------------------------*/
 static int s_transfer_test(dap_enc_key_type_t a_key_type, int a_times, int *a_gen_time, int *a_alice_shared, int *a_bob_shared)
@@ -248,6 +249,7 @@ static int s_sign_verify_tests_run(int a_times)
     l_ret |= s_sign_verify_test_becnhmark("DILITHIUM", DAP_ENC_KEY_TYPE_SIG_DILITHIUM, a_times);
     l_ret |= s_sign_verify_test_becnhmark("FALCON", DAP_ENC_KEY_TYPE_SIG_FALCON, a_times);
     l_ret |= s_sign_verify_test_becnhmark("SPHINCSPLUS", DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, a_times);
+    l_ret |= s_sign_verify_test_becnhmark("ECDSA", DAP_ENC_KEY_TYPE_SIG_ECDSA, a_times);
     l_ret |= s_sign_verify_test_becnhmark("MULTISIGN", DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED, a_times);
     dap_cleanup_test_case();
     return l_ret;
