@@ -791,6 +791,7 @@ static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_dr
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), 0);
 // preparing
+    size_t l_ret = 0;
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
@@ -810,7 +811,7 @@ static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_dr
         log_it(L_ERROR, "SQLite count read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
         goto clean_and_ret;
     }
-    size_t l_ret = sqlite3_column_int64(l_stmt_count, 0);
+    l_ret = sqlite3_column_int64(l_stmt_count, 0);
 clean_and_ret:
     s_db_sqlite_clean(l_conn, 1, l_str_query_count, l_stmt_count);
     return l_ret;
@@ -867,7 +868,7 @@ static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), false);
 // preparing
-    bool l_ret = 0;
+    bool l_ret = false;
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
