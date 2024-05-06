@@ -575,11 +575,14 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
     }
 // memory alloc
     uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
+    uint64_t l_blank_add = l_count;
     l_count = dap_min(l_count, DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT);
     if (!l_count) {
         log_it(L_INFO, "There are no records satisfying the hashes read request");
         goto clean_and_ret;
     }
+    l_blank_add = l_count == l_blank_add;
+    l_count += l_blank_add;
     size_t l_group_name_len = strlen(a_group) + 1;
     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_hash_pkt_t, sizeof(dap_global_db_hash_pkt_t) + l_count * sizeof(dap_global_db_driver_hash_t) + l_group_name_len, NULL, l_str_query_count, l_str_query);
 // data forming
@@ -593,7 +596,7 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
         memcpy(l_curr_point, l_current_hash, sizeof(dap_global_db_driver_hash_t));
         l_curr_point += sizeof(dap_global_db_driver_hash_t);
     }
-    l_ret->hashes_count = l_count_out;
+    l_ret->hashes_count = l_count_out + l_blank_add;
 clean_and_ret:
     s_db_sqlite_clean(l_conn, 2, l_str_query, l_str_query_count, l_stmt, l_stmt_count);
     return l_ret;
@@ -643,12 +646,15 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
         goto clean_and_ret;
     }
 // memory alloc
-    size_t l_count = sqlite3_column_int64(l_stmt_count, 0);
+    uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
+    uint64_t l_blank_add = l_count;
     l_count = a_count_out && *a_count_out ? dap_min(l_count, *a_count_out) : dap_min(l_count, DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
     if (!l_count) {
         log_it(L_INFO, "There are no records satisfying the conditional read request");
         goto clean_and_ret;
     }
+    l_blank_add = l_count == l_blank_add;
+    l_count += l_blank_add;
     DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_store_obj_t, l_count, NULL, l_str_query_count, l_str_query);
 // data forming
     size_t l_count_out = 0;
@@ -660,7 +666,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
         log_it(L_ERROR, "SQLite conditional read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
     }
     if (a_count_out)
-        *a_count_out = l_count_out;
+        *a_count_out = l_count_out + l_blank_add;
 clean_and_ret:
     s_db_sqlite_clean(l_conn, 2, l_str_query, l_str_query_count, l_stmt, l_stmt_count);
     return l_ret;

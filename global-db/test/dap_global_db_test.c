@@ -7,7 +7,6 @@
 #include "dap_file_utils.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
-//#include "dap_proc_queue.h"
 #include "dap_hash.h"
 
 #include "dap_global_db.h"
@@ -32,11 +31,6 @@ int    s_last = 0;
 int    s_read_hashes = 0;
 int    s_get_by_hash = 0;
 int    s_get_groups_by_mask = 0;
-
-typedef enum s_test_mode_work{
-    SYNC,
-    ASYNC
-}s_test_mode_work_t;
 
 static int s_test_create_db(const char *db_type)
 {
@@ -66,6 +60,7 @@ typedef struct __dap_test_record__ {
 #define DAP_DB$SZ_DATA                  8192
 #define DAP_DB$SZ_KEY                   64
 #define DAP_DB$SZ_HOLES                 3
+#define DAP_DB$SZ_THREADS               3
 #define DAP_DB$T_GROUP                  "group.zero"
 #define DAP_DB$T_GROUP_WRONG            "group.wrong"
 #define DAP_DB$T_GROUP_NOT_EXISTED      "group.not.existed"
@@ -79,7 +74,7 @@ int     *l_is_completed = (int *) arg;
     atomic_fetch_add(l_is_completed, 1);
 }
 
-static int s_test_write(size_t a_count, s_test_mode_work_t a_mode)
+static int s_test_write(size_t a_count)
 {
     dap_store_obj_t l_store_obj = {0};
     int l_value_len = 0, *l_pvalue, i, ret;
@@ -192,7 +187,8 @@ static void s_test_read_cond_store(size_t a_count)
         dap_store_obj_t *l_objs = dap_global_db_driver_cond_read(DAP_DB$T_GROUP, l_driver_key, &l_count, true);
         s_read_cond_store += get_cur_time_msec() - l_time;
         dap_assert_PIF(l_objs, "Records-Not-Found");
-        dap_assert_PIF(l_count <= DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT , "Wrong finded records count");
+        dap_global_db_driver_hash_t l_blank_check = dap_global_db_driver_hash_get(l_objs + l_count - 1);
+        dap_assert_PIF(l_count <= DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + dap_global_db_driver_hash_is_blank(&l_blank_check), "Wrong finded records count");
         for (size_t j = i, k = 0; j < a_count && k < l_count; ++j, ++k) {
             char l_key[64] = { 0 };
             snprintf(l_key, sizeof(l_key) - 1, "KEY$%08lx", j);           /* Generate a key of record */
@@ -483,7 +479,7 @@ static void s_test_flush()
     dap_db_driver_flush();
 }
 
-static void s_test_tx_start_end(size_t a_count)
+static void s_test_tx_start_end(size_t a_count, bool a_missing_allow)
 {   
     int l_time = 0;
     size_t l_count = 0;
@@ -498,8 +494,10 @@ static void s_test_tx_start_end(size_t a_count)
     int ret = dap_global_db_driver_apply(l_objs, l_count);
     s_tx_start_end += get_cur_time_msec() - l_time;
 
-    dap_assert_PIF(!ret, "Erased records from DB is ok");
-    dap_assert_PIF(a_count - l_count + dap_global_db_driver_hash_is_blank(&l_hash_last) == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true), "Wrong records count after erasing");
+    if (!a_missing_allow) {
+        dap_assert_PIF(!ret, "Erased records from DB is ok");
+        dap_assert_PIF(a_count - l_count + dap_global_db_driver_hash_is_blank(&l_hash_last) == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true), "Wrong records count after erasing");
+    }
     // restore erased records
     for (size_t i = 0; i < l_count; ++i) {
         l_objs[i].flags &= ~DAP_GLOBAL_DB_RECORD_ERASE;
@@ -526,11 +524,11 @@ static void s_test_close_db(void)
 
 void s_test_all(size_t a_count)
 {
-    s_test_write(a_count, 0);
+    s_test_write(a_count);
     s_test_read(a_count);
     s_test_read_cond_store(a_count);
     s_test_count(a_count);
-    s_test_tx_start_end(a_count);  // if after this tests fail try comment
+    s_test_tx_start_end(a_count, false);  // if after this tests fail try comment
 
     s_flush = get_cur_time_msec();
     s_test_flush();
@@ -554,6 +552,49 @@ void s_test_all(size_t a_count)
     s_get_groups_by_mask = get_cur_time_msec() - s_get_groups_by_mask;
 }
 
+
+void s_test_thread_rewrite_records(void *a_arg)
+{
+    size_t l_count = *(size_t *)a_arg;
+    s_test_tx_start_end(l_count, true);
+    pthread_exit(NULL);
+}
+
+void s_test_thread(void *a_arg)
+{
+    size_t l_count = *(size_t *)a_arg;
+    s_test_read(l_count);
+    s_test_read_cond_store(l_count);
+    s_test_count(l_count);
+    s_test_flush();
+    s_test_is_obj(l_count);
+    s_test_is_hash(l_count);
+    s_test_last(l_count);
+    s_test_read_hashes(l_count);
+    s_test_get_by_hash(l_count);
+    s_test_get_groups_by_mask();
+    pthread_exit(NULL);
+}
+
+void s_test_multythreads(size_t a_count)
+{
+    pthread_t *l_threads = DAP_NEW_Z_COUNT(pthread_t, DAP_DB$SZ_THREADS);
+
+    for (size_t i = 0; i < DAP_DB$SZ_THREADS; ++i) {
+        pthread_create(l_threads + i, NULL, s_test_thread_rewrite_records, &a_count);
+    }
+    for (size_t i = 0; i < DAP_DB$SZ_THREADS; ++i) {
+        pthread_join(l_threads[i], NULL);
+    }
+    for (size_t i = 0; i < DAP_DB$SZ_THREADS; ++i) {
+        pthread_create(l_threads + i, NULL, s_test_thread, &a_count);
+    }
+    for (size_t i = 0; i < DAP_DB$SZ_THREADS; ++i) {
+        pthread_join(l_threads[i], NULL);
+    }
+    DAP_DEL_Z(l_threads);
+}
+
 int main(int argc, char **argv)
 {
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
@@ -574,13 +615,12 @@ int main(int argc, char **argv)
     s_test_create_db("pgsql");
 #endif
 
-    size_t l_count = 1350;
+    size_t l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + 2;
     int l_t1 = get_cur_time_msec();
     s_test_all(l_count);
-    s_test_close_db();
     int l_t2 = get_cur_time_msec();
     char l_msg[120] = {0};
-    sprintf(l_msg, "Tests to %d records", l_count);
+    sprintf(l_msg, "Tests to %zu records", l_count);
     benchmark_mgs_time(l_msg, l_t2 - l_t1);
     benchmark_mgs_time("Tests to write", s_write);
     benchmark_mgs_time("Tests to read", s_read);
@@ -594,5 +634,8 @@ int main(int argc, char **argv)
     benchmark_mgs_time("Tests to read_hashes", s_read_hashes);
     benchmark_mgs_time("Tests to get_by_hash", s_get_by_hash);
     benchmark_mgs_time("Tests to get_groups_by_mask", s_get_groups_by_mask);
+
+    s_test_multythreads(l_count);
+    s_test_close_db();
 }
 

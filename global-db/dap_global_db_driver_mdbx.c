@@ -1089,7 +1089,6 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
                 log_it(L_ERROR, "mdbx_del: (%d) %s", rc, mdbx_strerror(rc));
         }
     }
-
     return rc;
 }
 
