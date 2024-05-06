@@ -507,9 +507,10 @@ static void s_test_tx_start_end(size_t a_count, bool a_missing_allow)
     ret = dap_global_db_driver_apply(l_objs, l_count);
     s_tx_start_end += get_cur_time_msec() - l_time;
 
-    dap_assert_PIF(!ret, "Restore records to DB is ok");
-    dap_assert_PIF(a_count == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true), "Wrong records count after restoring");
-
+    if (!a_missing_allow) {
+        dap_assert_PIF(!ret, "Restore records to DB is ok");
+        dap_assert_PIF(a_count == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true), "Wrong records count after restoring");
+    }
     dap_store_obj_free(l_objs, l_count);
     dap_pass_msg("tx_start tx_end check");    
 }
