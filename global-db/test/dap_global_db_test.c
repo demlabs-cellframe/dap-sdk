@@ -86,40 +86,54 @@ static int s_test_write(size_t a_count)
     l_store_obj.value = (uint8_t *) l_value;                                 /* Point <.value> to static buffer area */
     prec = (dap_db_test_record_t *) l_value;
     int l_time = 0;
+    size_t l_rewrite_count = rand() % (a_count / 2) + 2; 
     for (size_t i = 0; i < a_count; ++i)
     {
         dap_test_msg("Write %zu record in GDB", i);
 
         l_store_obj.group = DAP_DB$T_GROUP; 
-        snprintf(l_key, sizeof(l_key) - 1, "KEY$%08zx", i);           /* Generate a key of record */
+        snprintf(l_key, sizeof(l_key) - 1, "KEY$%08zx", i); // add bad to check rewrite          /* Generate a key of record */
 
         clock_gettime(CLOCK_REALTIME, &now);                                /* Get and save record's timestamp */
         l_store_obj.timestamp = ((uint64_t)now.tv_sec << 32) | ((uint32_t) (now.tv_nsec));
 
         prec->len = rand() % DAP_DB$SZ_DATA + 1;                                /* Variable payload length */
         l_pvalue   = (int *) prec->data;
-
         for (int  i = prec->len / sizeof(int); i--; l_pvalue++)             /* Fill record's payload with random data */
             *l_pvalue = rand() + 1;
-
-        sprintf(prec->data, "DATA$%08zx", i);                         /* Just for fun ... */
+        sprintf(prec->data, "DATA$%08zx%s", i, i < l_rewrite_count ? "rw" : "");                         /* Just for fun ... */
         l_value_len = prec->len + sizeof(dap_db_test_record_t);
-
         l_store_obj.value_len = l_value_len;
-        l_store_obj.flags = i % DAP_DB$SZ_HOLES ? 0 : DAP_GLOBAL_DB_RECORD_DEL; 
         assert(l_store_obj.value_len < sizeof(l_value));
-
 
         dap_hash_fast (prec->data, prec->len, &prec->csum);                 /* Compute a hash of the payload part of the record */
 
+        if (i >= l_rewrite_count) {
+            l_store_obj.flags = i % DAP_DB$SZ_HOLES ? 0 : DAP_GLOBAL_DB_RECORD_DEL;
+        }
         l_store_obj.sign = dap_store_obj_sign(&l_store_obj, l_enc_key, &l_store_obj.crc);
-
         dap_test_msg("Store object: [%s, %s, %zu octets]", l_store_obj.group, l_store_obj.key, l_store_obj.value_len);
 
         l_time = get_cur_time_msec();
         ret = dap_global_db_driver_add(&l_store_obj, 1);
         s_write += get_cur_time_msec() - l_time;
         dap_assert_PIF(!ret, "Write record to DB is ok");
+
+        // rewrite block
+        if ( i < l_rewrite_count) {
+            DAP_DEL_Z(l_store_obj.sign);
+            clock_gettime(CLOCK_REALTIME, &now);
+            l_store_obj.timestamp = ((uint64_t)now.tv_sec << 32) | ((uint32_t) (now.tv_nsec));
+            sprintf(prec->data, "DATA$%08zx", i);
+            dap_hash_fast (prec->data, prec->len, &prec->csum);
+            l_store_obj.flags = i % DAP_DB$SZ_HOLES ? 0 : DAP_GLOBAL_DB_RECORD_DEL;
+            l_store_obj.sign = dap_store_obj_sign(&l_store_obj, l_enc_key, &l_store_obj.crc);
+            
+            l_time = get_cur_time_msec();
+            ret = dap_global_db_driver_add(&l_store_obj, 1);
+            s_write += get_cur_time_msec() - l_time;
+            dap_assert_PIF(!ret, "Rewrite with key conflict record to DB is ok");
+        }
 
         l_store_obj.group = DAP_DB$T_GROUP_WRONG;
         l_store_obj.crc = i + 1;
@@ -145,11 +159,14 @@ static int s_test_read(size_t a_count)
         dap_db_test_record_t *prec = NULL;
         char l_key[64] = { 0 };
         snprintf(l_key, sizeof(l_key) - 1, "KEY$%08zx", i);           /* Generate a key of record */
+
         l_time = get_cur_time_msec();
         dap_store_obj_t *l_store_obj = dap_global_db_driver_read(DAP_DB$T_GROUP, l_key, NULL, true);
         s_read += get_cur_time_msec() - l_time;
+
         dap_assert_PIF(l_store_obj, "Record-Not-Found");
-        dap_assert_PIF(dap_global_db_pkt_check_sign_crc(l_store_obj), "Record sign not verified");
+        if (l_store_obj->sign)  // to test rewriting with hash conflict some records wiwthout sign
+            dap_assert_PIF(dap_global_db_pkt_check_sign_crc(l_store_obj), "Record sign not verified");
         dap_assert_PIF(!strcmp(DAP_DB$T_GROUP, l_store_obj->group), "Wrong group");
         dap_assert_PIF(!strcmp(l_key, l_store_obj->key), "Wrong group");
 
@@ -485,8 +502,8 @@ static void s_test_tx_start_end(size_t a_count, bool a_missing_allow)
     int ret = dap_global_db_driver_apply(l_objs, l_count);
     s_tx_start_end += get_cur_time_msec() - l_time;
 
-    dap_assert_PIF(!ret || ret == DAP_GLOBAL_DB_RC_NOT_FOUND, "Erased records from DB is ok");
     if (!a_missing_allow) {
+        dap_assert_PIF(!ret || ret == DAP_GLOBAL_DB_RC_NOT_FOUND, "Erased records from DB is ok");
         dap_assert_PIF(a_count - l_count + dap_global_db_driver_hash_is_blank(&l_hash_last) == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true), "Wrong records count after erasing");
     }
     // restore erased records

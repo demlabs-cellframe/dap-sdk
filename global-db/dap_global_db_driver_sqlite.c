@@ -259,7 +259,7 @@ char l_query[512];
         return  -EINVAL;
 
     snprintf(l_query, sizeof(l_query) - 1,
-                    "CREATE TABLE IF NOT EXISTS '%s'(driver_key BLOB UNIQUE NOT NULL PRIMARY KEY, key TEXT UNIQUE NOT NULL, flags INTEGER, value BLOB, sign BLOB)",
+                    "CREATE TABLE IF NOT EXISTS '%s'(driver_key BLOB UNIQUE NOT NULL PRIMARY KEY ON CONFLICT REPLACE, key TEXT UNIQUE NOT NULL, flags INTEGER, value BLOB, sign BLOB)",
                     a_table_name);
 
     if ( (l_rc = s_db_sqlite_exec(a_conn->conn, l_query, NULL, NULL, 0, NULL)) != SQLITE_OK ) {
@@ -289,7 +289,7 @@ int s_db_sqlite_vacuum(sqlite3 *a_conn)
 int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
 {
 // sanity check
-    dap_return_val_if_pass(!a_store_obj || !a_store_obj->group, -1);
+    dap_return_val_if_pass(!a_store_obj || !a_store_obj->group || !a_store_obj->crc, -EINVAL);
 // func work
     // execute request
     conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);
@@ -306,7 +306,8 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_ret = -3;
             goto ret_n_free;
         } else { //add one record
-            l_query = sqlite3_mprintf("INSERT OR REPLACE INTO '%s' VALUES(?, '%s', '%d', ?, ?)",
+            l_query = sqlite3_mprintf("INSERT INTO '%s' VALUES(?, '%s', '%d', ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET driver_key = excluded.driver_key, flags = excluded.flags, value = excluded.value, sign = excluded.sign;",
                                                   l_table_name, a_store_obj->key, (int)(a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW));
         }
         dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
@@ -502,9 +503,11 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
         l_cur_pkt->data_len += l_cur_pkt->group_len;
         for (size_t j = 0; j < l_count_col; ++j) {
             if (j == 0 && sqlite3_column_type(l_stmt, j) == SQLITE_BLOB) {
-                dap_global_db_driver_hash_t *l_driver_key = (dap_global_db_driver_hash_t *)sqlite3_column_blob(l_stmt, j);
-                l_cur_pkt->timestamp = be64toh(l_driver_key->bets);
-                l_cur_pkt->crc = be64toh(l_driver_key->becrc);
+                if (sqlite3_column_bytes(l_stmt, j)) {
+                    dap_global_db_driver_hash_t *l_driver_key = (dap_global_db_driver_hash_t *)sqlite3_column_blob(l_stmt, j);
+                    l_cur_pkt->timestamp = be64toh(l_driver_key->bets);
+                    l_cur_pkt->crc = be64toh(l_driver_key->becrc);
+                }
                 continue;
             }
             if (j == 1 && sqlite3_column_type(l_stmt, j) == SQLITE_TEXT) {
@@ -514,7 +517,8 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
                 continue;
             }
             if (j == 2 && sqlite3_column_type(l_stmt, j) == SQLITE_INTEGER) {
-                l_cur_pkt->flags = sqlite3_column_int64(l_stmt, j) & DAP_GLOBAL_DB_RECORD_DEL;
+                if (sqlite3_column_bytes(l_stmt, j))
+                    l_cur_pkt->flags = sqlite3_column_int64(l_stmt, j) & DAP_GLOBAL_DB_RECORD_DEL;
                 continue;
             }
             if (j == 3 && sqlite3_column_type(l_stmt, j) == SQLITE_BLOB) {
@@ -524,10 +528,12 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
                 continue;
             }
             if (j == 4 && sqlite3_column_type(l_stmt, j) == SQLITE_BLOB) {
-                dap_sign_t *l_sign = (dap_sign_t *)sqlite3_column_blob(l_stmt, j);
-                size_t l_sign_size = dap_sign_get_size(l_sign);
-                memcpy(l_cur_pkt->data + l_cur_pkt->data_len, sqlite3_column_blob(l_stmt, j), l_sign_size);
-                l_cur_pkt->data_len += l_sign_size;
+                if (sqlite3_column_bytes(l_stmt, j)) {
+                    dap_sign_t *l_sign = (dap_sign_t *)sqlite3_column_blob(l_stmt, j);
+                    size_t l_sign_size = dap_sign_get_size(l_sign);
+                    memcpy(l_cur_pkt->data + l_cur_pkt->data_len, sqlite3_column_blob(l_stmt, j), l_sign_size);
+                    l_cur_pkt->data_len += l_sign_size;
+                }
                 continue;
             }
         }

@@ -21,7 +21,7 @@ linux-amd64-tests:
     before_script: /opt/buildtools/prepare_environment.sh amd64-linux
     script:
       - mkdir build
-      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_GLOBAL_DB_TEST=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose
+      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_GLOBAL_DB_TEST=ON -DBUILD_WITH_GDB_DRIVER_SQLITE=ON && make -j$(nproc) && ctest --verbose
 
 linux-arm32v7-tests:
     extends: .tests
