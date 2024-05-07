@@ -349,10 +349,7 @@ size_t     l_upper_limit_of_db_size = 16;
     if ( MDBX_SUCCESS != (rc = mdbx_env_create(&s_mdbx_env)) )
         return  log_it(L_CRITICAL, "mdbx_env_create: (%d) %s", rc, mdbx_strerror(rc)), -ENOENT;
 
-#if 0
-    if ( g_dap_global_db_debug_more )
-        mdbx_setup_debug	(	MDBX_LOG_VERBOSE, 0, 0);
-#endif
+    mdbx_setup_debug(MDBX_LOG_EXTRA, 0, 0);
 
 
     log_it(L_NOTICE, "Set maximum number of local groups: %lu", DAP_GLOBAL_DB_GROUPS_COUNT_MAX);
