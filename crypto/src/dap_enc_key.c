@@ -391,9 +391,13 @@ dap_enc_key_callbacks_t s_callbacks[]={
 
         .ser_sign_ex =                      dap_enc_sig_ecdsa_write_signature,
         .ser_pub_key =                      dap_enc_sig_ecdsa_write_public_key,
+        .ser_priv_key_size =                dap_enc_sig_ecdsa_ser_key_size,
+        .ser_pub_key_size =                 dap_enc_sig_ecdsa_ser_pkey_size,
 
         .deser_sign_ex =                    dap_enc_sig_ecdsa_read_signature,
         .deser_pub_key_ex =                 dap_enc_sig_ecdsa_read_public_key,
+        .deser_priv_key_size =              dap_enc_sig_ecdsa_deser_key_size,
+        .deser_pub_key_size =               dap_enc_sig_ecdsa_deser_pkey_size,
         .deser_sign_size  =                 dap_enc_sig_ecdsa_signature_size
     },
 

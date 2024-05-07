@@ -442,6 +442,7 @@ endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
 target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include)
+target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/src)
 
 
 if(BUILD_CRYPTO_TESTS)
