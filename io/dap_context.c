@@ -448,6 +448,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     --l_cur->pending;
                 continue;
             }
+            if (op == io_read)
+                l_cur->pending_read = 0;
             switch (l_cur->type) {
             case DESCRIPTOR_TYPE_SOCKET_LISTENING:
                 --l_cur->pending;

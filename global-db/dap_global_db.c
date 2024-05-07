@@ -1645,8 +1645,6 @@ static void s_check_db_version_callback_get (dap_global_db_instance_t *a_dbi, in
                                              dap_nanotime_t value_ts, bool a_is_pinned, void * a_arg)
 {
     int res = 0;
-
-
     if(a_errno != 0) { // No DB at all
         log_it(L_NOTICE, "No GlobalDB version at all, creating the new GlobalDB from scratch");
         a_dbi->version = DAP_GLOBAL_DB_VERSION;

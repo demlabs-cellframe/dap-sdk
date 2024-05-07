@@ -1208,14 +1208,15 @@ char* dap_utf16_to_utf8(const unichar2 *str, long len, long *items_read, long *i
  * @param a_group_name a group name string
  * @param a_ch1 - char to find
  * @param a_ch1 - char to replace
- * @return Returns a table name string with the replaced character
+ * @return Returns a string with the replaced character
  */
 char *dap_str_replace_char(const char *a_src, char a_ch1, char a_ch2)
 {
+// sanity check
+    dap_return_val_if_pass(!a_src, NULL);
+// func work
     char *l_dst = dap_strdup(a_src), *l_str;
-
     for ( l_str = l_dst; (l_str = strchr(l_str, a_ch1)); l_str++)
         *l_str = a_ch2;
-
     return l_dst;
 }

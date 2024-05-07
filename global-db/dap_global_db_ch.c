@@ -97,7 +97,7 @@ bool s_proc_thread_reader(void *a_arg)
     dap_stream_node_addr_t *l_sender_addr = (dap_stream_node_addr_t *)a_arg;
     if (!l_cluster->links_cluster ||
             dap_cluster_member_find_role(l_cluster->links_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
-        const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
+        const char *l_name = l_cluster->links_cluster && l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
         log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR " is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
         return false;
     }
@@ -165,35 +165,35 @@ static bool s_process_hashes(void *a_arg)
     dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)((byte_t *)a_arg + sizeof(dap_stream_node_addr_t));
     const char *l_group = (const char *)l_pkt->group_n_hashses;
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
-    if (!l_cluster)
+    if (!l_cluster) {
+        log_it(L_ERROR, "Cluster for group %s not found", l_group);
+        DAP_DELETE(a_arg);
         return false;
-    dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
-    dap_global_db_hash_pkt_t *l_ret = NULL;
-    for (uint32_t i = 0; i < l_pkt->hashes_count; i++) {
-        if (!dap_global_db_driver_is_hash(l_group, *(l_hashes + i))) {
-            if (!l_ret) {
-                l_ret = DAP_NEW_STACK_SIZE(dap_global_db_hash_pkt_t,
-                                           sizeof(dap_global_db_hash_pkt_t) +
-                                           l_pkt->group_name_len +
-                                           sizeof(dap_global_db_driver_hash_t) * l_pkt->hashes_count);
-                if (!l_ret) {
-                    log_it(L_CRITICAL, "Not enough memory");
-                    return false;
-                }
-                memcpy(l_ret->group_n_hashses, l_pkt->group_n_hashses, l_ret->group_name_len = l_pkt->group_name_len);
-                l_ret->hashes_count = 0;
-            }
-            dap_global_db_driver_hash_t *l_ret_hashes = (dap_global_db_driver_hash_t *)(l_ret->group_n_hashses + l_ret->group_name_len);
-            l_ret_hashes[l_ret->hashes_count++] = l_hashes[i];
+    }
+    dap_global_db_driver_hash_t *l_hash = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len),
+                                *l_hash_last = l_hash + l_pkt->hashes_count - 1;
+
+    while (l_hash <= l_hash_last ) {
+        if ( dap_global_db_driver_is_hash(l_group, *l_hash) ) {
+            if ( l_hash < l_hash_last )
+                *l_hash-- = *l_hash_last--;
+            --l_pkt->hashes_count;
         }
+        ++l_hash;
     }
-    if (l_ret) {
-    debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_REQUEST packet for group %s with records count %u",
-                                                                                        l_group, l_ret->hashes_count);
-    dap_stream_ch_pkt_send_by_addr((dap_stream_node_addr_t *)a_arg,
+
+    if ( l_pkt->hashes_count ) {
+        if ( l_pkt->hashes_count > 1 ) {
+            l_hash = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
+            qsort(l_hash, l_pkt->hashes_count, sizeof(dap_global_db_driver_hash_t), dap_global_db_driver_hash_compare);
+        }
+        debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_REQUEST packet for group %s with records count %u",
+                                                                                        l_group, l_pkt->hashes_count);
+        dap_stream_ch_pkt_send_by_addr((dap_stream_node_addr_t *)a_arg,
                                    DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_REQUEST,
-                                   l_ret, dap_global_db_hash_pkt_get_size(l_ret));
+                                   l_pkt, dap_global_db_hash_pkt_get_size(l_pkt));
     }
+    DAP_DELETE(a_arg);
     return false;
 }
 
@@ -204,6 +204,7 @@ static bool s_process_request(void *a_arg)
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), l_group);
     if (!l_cluster) {
         log_it(L_ERROR, "Cluster for group %s not found", l_group);
+        DAP_DELETE(a_arg);
         return false;
     }
     dap_stream_node_addr_t *l_sender_addr = (dap_stream_node_addr_t *)a_arg;
@@ -211,6 +212,7 @@ static bool s_process_request(void *a_arg)
             dap_cluster_member_find_role(l_cluster->links_cluster, l_sender_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
         log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR " is not a member of cluster %s", NODE_ADDR_FP_ARGS(l_sender_addr), l_name);
+        DAP_DELETE(a_arg);
         return false;
     }
     dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
@@ -220,7 +222,9 @@ static bool s_process_request(void *a_arg)
                                                                                                 l_group, l_pkt_out->obj_count);
         dap_stream_ch_pkt_send_by_addr(l_sender_addr, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_RECORD_PACK,
                                        l_pkt_out, dap_global_db_pkt_pack_get_size(l_pkt_out));
+        DAP_DELETE(l_pkt_out);
     }
+    DAP_DELETE(a_arg);
     return false;
 }
 
