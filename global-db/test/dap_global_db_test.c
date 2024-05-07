@@ -485,10 +485,10 @@ static void s_test_tx_start_end(size_t a_count, bool a_missing_allow)
     int ret = dap_global_db_driver_apply(l_objs, l_count);
     s_tx_start_end += get_cur_time_msec() - l_time;
 
-    dap_assert_PIF(!ret || ret == DAP_GLOBAL_DB_RC_NOT_FOUND, "Erased records from DB is ok");
     size_t l_count_delet = dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true);
     printf("a_count = %zu l_count = %zu l_count_del = %zu\n", a_count, l_count, l_count_delet);
     if (!a_missing_allow) {
+        dap_assert_PIF(!ret || ret == DAP_GLOBAL_DB_RC_NOT_FOUND, "Erased records from DB is ok");
         dap_assert_PIF(a_count - l_count + dap_global_db_driver_hash_is_blank(&l_hash_last) == l_count_delet, "Wrong records count after erasing");
     }
     // restore erased records

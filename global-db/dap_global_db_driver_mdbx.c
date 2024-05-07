@@ -1094,8 +1094,10 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
 
 static int s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj)
 {
-    if (s_txn)
+    if (s_txn) {
+        printf("THREADD!!!\n");
         return s_db_mdbx_apply_store_obj_with_txn(a_store_obj, s_txn);
+    }
 
     int rc = 0, rc2;
     MDBX_txn *l_txn;
