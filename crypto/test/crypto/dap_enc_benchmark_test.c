@@ -105,8 +105,7 @@ static int s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *a
     DAP_NEW_Z_COUNT_RET_VAL(l_source, uint8_t*, a_times, 1, l_signs);
     DAP_NEW_Z_COUNT_RET_VAL(l_keys, dap_enc_key_t*, a_times, 1, l_source, l_signs);
 
-    int l_t1 = get_cur_time_msec();
-
+    int l_t1 = 0;
     for (int i = 0; i < a_times; ++i) {
         randombytes(seed, seed_size);
         // used only in multisign
@@ -116,13 +115,15 @@ static int s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *a
             l_key[j] = s_key_type_arr[l_step];
         }
         // ----------
-        l_keys[i] = dap_enc_key_new_generate(a_key_type, l_key, KEYS_TOTAL_COUNT, seed, seed_size, 0);
+        
         DAP_NEW_Z_SIZE_RET_VAL(l_signs[i], uint8_t, max_signature_size, 1, NULL);
-
         l_source_size[i] = 1 + random_uint32_t(20);
         DAP_NEW_Z_SIZE_RET_VAL(l_source[i], uint8_t, l_source_size[i], 1, NULL);
         randombytes(l_source[i], l_source_size[i]);
+
+        l_t1 = get_cur_time_msec();
         int l_signed = 0;
+        l_keys[i] = dap_enc_key_new_generate(a_key_type, l_key, KEYS_TOTAL_COUNT, seed, seed_size, 0);
         if (l_keys[i]->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
             l_signed = l_keys[i]->sign_get(l_keys[i], l_source[i], l_source_size[i], l_signs[i], max_signature_size);
         else {
@@ -130,12 +131,10 @@ static int s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *a
             dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
             l_signed = l_keys[i]->sign_get(l_keys[i], &l_hash, sizeof(l_hash), l_signs[i], max_signature_size);
         }
+        *a_sig_time += get_cur_time_msec() - l_t1;
         dap_assert_PIF(!l_signed, "Signing message");
         l_ret |= l_signed;
     }
-
-    int l_t2 = get_cur_time_msec();
-    *a_sig_time = l_t2 - l_t1;
 
     l_t1 = get_cur_time_msec();
     for(int i = 0; i < a_times; ++i) {
@@ -150,8 +149,7 @@ static int s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *a
         dap_assert_PIF(!l_verified, "Verifying signature");
         l_ret |= l_verified;
     }
-    l_t2 = get_cur_time_msec();
-    *a_verify_time = l_t2 - l_t1;
+    *a_verify_time = get_cur_time_msec() - l_t1;
 //memory free
     for(int i = 0; i < a_times; ++i) {
         dap_enc_key_signature_delete(l_keys[i]->type, l_signs[i]);
@@ -174,8 +172,7 @@ static int s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, in
     DAP_NEW_Z_COUNT_RET_VAL(l_signs, dap_sign_t*, a_times, 1, NULL);
     DAP_NEW_Z_COUNT_RET_VAL(l_source, uint8_t*, a_times, 1, l_signs);
 
-    int l_t1 = get_cur_time_msec();
-
+    int l_t1 = 0;
     for (int i = 0; i < a_times; ++i) {
         randombytes(seed, seed_size);
 
@@ -186,30 +183,40 @@ static int s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, in
             l_key[j] = s_key_type_arr[l_step];
         }
         // ----------
-
-        dap_enc_key_t *key = dap_enc_key_new_generate(a_key_type, l_key, KEYS_TOTAL_COUNT, seed, seed_size, 0);
-
         l_source_size[i] = 1 + random_uint32_t(20);
         DAP_NEW_Z_SIZE_RET_VAL(l_source[i], uint8_t, l_source_size[i], 1, NULL);
         randombytes(l_source[i], l_source_size[i]);
-
-        l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i], 0);
+        
+        l_t1 = get_cur_time_msec();
+        dap_enc_key_t *key = dap_enc_key_new_generate(a_key_type, l_key, KEYS_TOTAL_COUNT, seed, seed_size, 0);
+       if (key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
+            l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i], 0);
+        else {
+            dap_chain_hash_fast_t l_hash;
+            dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
+            l_signs[i] = dap_sign_create(key, &l_hash, sizeof(l_hash), 0);
+        }
+        *a_sig_time += get_cur_time_msec() - l_t1;
+        
         dap_assert_PIF(l_signs[i], "Signing message and serialize");
         l_ret |= !l_signs[i];
         dap_enc_key_delete(key);
     }
 
-    int l_t2 = get_cur_time_msec();
-    *a_sig_time = l_t2 - l_t1;
-
     l_t1 = get_cur_time_msec();
     for(int i = 0; i < a_times; ++i) {
-        int verify = dap_sign_verify(l_signs[i], l_source[i], l_source_size[i]);
-        dap_assert_PIF(!verify, "Deserialize and verifying signature");
-        l_ret |= verify;
+        int l_verified = 0;
+       if (dap_sign_type_to_key_type(l_signs[i]->header.type) == DAP_ENC_KEY_TYPE_SIG_ECDSA)
+            l_verified = dap_sign_verify(l_signs[i], l_source[i], l_source_size[i]);
+        else {
+            dap_chain_hash_fast_t l_hash;
+            dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
+            l_verified = dap_sign_verify(l_signs[i], &l_hash, sizeof(l_hash));
+        }
+        dap_assert_PIF(!l_verified, "Deserialize and verifying signature");
+        l_ret |= l_verified;
     }
-    l_t2 = get_cur_time_msec();
-    *a_verify_time = l_t2 - l_t1;
+    *a_verify_time = get_cur_time_msec() - l_t1;
 
     for(int i = 0; i < a_times; ++i) {
         DAP_DEL_MULTY(l_signs[i], l_source[i]);
