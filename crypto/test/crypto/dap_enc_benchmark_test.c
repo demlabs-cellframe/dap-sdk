@@ -106,6 +106,7 @@ static int s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *a
     DAP_NEW_Z_COUNT_RET_VAL(l_keys, dap_enc_key_t*, a_times, 1, l_source, l_signs);
 
     int l_t1 = 0;
+    *a_sig_time = 0;
     for (int i = 0; i < a_times; ++i) {
         randombytes(seed, seed_size);
         // used only in multisign
@@ -173,6 +174,7 @@ static int s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, in
     DAP_NEW_Z_COUNT_RET_VAL(l_source, uint8_t*, a_times, 1, l_signs);
 
     int l_t1 = 0;
+    *a_sig_time = 0;
     for (int i = 0; i < a_times; ++i) {
         randombytes(seed, seed_size);
 
@@ -189,7 +191,7 @@ static int s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, in
         
         l_t1 = get_cur_time_msec();
         dap_enc_key_t *key = dap_enc_key_new_generate(a_key_type, l_key, KEYS_TOTAL_COUNT, seed, seed_size, 0);
-       if (key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
+        if (key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
             l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i], 0);
         else {
             dap_chain_hash_fast_t l_hash;
