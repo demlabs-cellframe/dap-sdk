@@ -212,7 +212,7 @@ dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
 
     dap_chain_hash_fast_t l_sign_data_hash;
 
-    if(s_sign_hash_type_default == DAP_SIGN_HASH_TYPE_NONE){
+    if(s_sign_hash_type_default == DAP_SIGN_HASH_TYPE_NONE || a_key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA) {
         l_sign_data = a_data;
         l_sign_data_size = a_data_size;
     }else{

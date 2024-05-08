@@ -122,9 +122,14 @@ static int s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *a
         l_source_size[i] = 1 + random_uint32_t(20);
         DAP_NEW_Z_SIZE_RET_VAL(l_source[i], uint8_t, l_source_size[i], 1, NULL);
         randombytes(l_source[i], l_source_size[i]);
-        dap_chain_hash_fast_t l_hash;
-        dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
-        int l_signed = l_keys[i]->sign_get(l_keys[i], &l_hash, sizeof(l_hash), l_signs[i], max_signature_size);
+        int l_signed = 0;
+        if (l_keys[i]->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
+            l_signed = l_keys[i]->sign_get(l_keys[i], l_source[i], l_source_size[i], l_signs[i], max_signature_size);
+        else {
+            dap_chain_hash_fast_t l_hash;
+            dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
+            l_signed = l_keys[i]->sign_get(l_keys[i], &l_hash, sizeof(l_hash), l_signs[i], max_signature_size);
+        }
         dap_assert_PIF(!l_signed, "Signing message");
         l_ret |= l_signed;
     }
@@ -134,9 +139,14 @@ static int s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *a
 
     l_t1 = get_cur_time_msec();
     for(int i = 0; i < a_times; ++i) {
-        dap_chain_hash_fast_t l_hash;
-        dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
-        int l_verified = l_keys[i]->sign_verify(l_keys[i], &l_hash, sizeof(l_hash), l_signs[i], max_signature_size);
+        int l_verified = 0;
+        if (l_keys[i]->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
+            l_verified = l_keys[i]->sign_verify(l_keys[i], l_source[i], l_source_size[i], l_signs[i], max_signature_size);
+        else {
+            dap_chain_hash_fast_t l_hash;
+            dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
+            l_verified = l_keys[i]->sign_verify(l_keys[i], &l_hash, sizeof(l_hash), l_signs[i], max_signature_size);
+        }
         dap_assert_PIF(!l_verified, "Verifying signature");
         l_ret |= l_verified;
     }
