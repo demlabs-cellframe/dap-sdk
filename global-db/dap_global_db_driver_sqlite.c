@@ -47,26 +47,24 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_SQLITE
 
 typedef struct conn_pool_item {
-    void    *flink;                                                 /* Forward link to next element in the simple list */
     sqlite3 *conn;                                                  /* SQLITE connection context itself */
-    int     idx;                                                    /* Just index, no more */
-    atomic_flag busy_conn;                                                   /* "Context is busy" flag */
-    atomic_flag busy_trans;
-    atomic_ullong  usage;                                                  /* Usage counter */
-} conn_list_item_t;                                      /* Preallocate a storage for the SQLITE connections  */
+    int idx;                                                    /* Just index, no more */
+    atomic_flag busy_conn;                                      /* Connection busy flag */
+    atomic_flag busy_trans;                                     /* Outstanding transaction busy flag */
+    atomic_ullong  usage;                                       /* Usage counter */
+} conn_list_item_t;
 
-extern  int g_dap_global_db_debug_more;                                     /* Enable extensible debug output */
+extern int g_dap_global_db_debug_more;                         /* Enable extensible debug output */
 
 static char s_filename_db [MAX_PATH];
 
 static bool s_db_inited = false;
 static dap_list_t *s_conn_list = NULL;  // list of all connections
-static _Thread_local conn_list_item_t *s_conn = NULL;  // connection pool
+static _Thread_local conn_list_item_t *s_conn = NULL;  // local connection
 static pthread_rwlock_t s_conn_list_rwlock = PTHREAD_RWLOCK_INITIALIZER; 
 
 /**
  * @brief Opens a SQLite database and adds byte_to_bin function.
- *
  * @param a_filename_utf8 a SQLite database file name
  * @param a_flags database access flags (SQLITE_OPEN_READONLY, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE)
  * @param a_error_message[out] an error message that's received from the SQLite database
@@ -96,17 +94,26 @@ sqlite3* s_db_sqlite_open(const char *a_filename_utf8, int a_flags, char **a_err
     return l_db;
 }
 
-static inline int s_db_sqlite_free_connection(conn_list_item_t *a_conn, bool a_trans)
+/**
+ * @brief Free connections busy flags.
+ * @param a_conn a connection item
+ * @param a_trans if false clear connection flag, if true - outstanding transaction
+ */
+static inline void s_db_sqlite_free_connection(conn_list_item_t *a_conn, bool a_trans)
 {
     if (g_dap_global_db_debug_more)
         log_it(L_DEBUG, "Free  l_conn: @%p/%p, usage: %llu", a_conn, a_conn->conn, a_conn->usage);
     if (a_trans)
         atomic_flag_clear(&a_conn->busy_trans);  
     else
-        atomic_flag_clear(&a_conn->busy_conn);                                       /* Clear busy flag */
-    return  0;
+        atomic_flag_clear(&a_conn->busy_conn);
 }
 
+/**
+ * @brief Free connection, dynamic num sql items and finalize sqlite3_stmts.
+ * @param a_conn connection item to free
+ * @param a_count num of pairs sql item + sqlite3_stmts
+ */
 static void s_db_sqlite_clean(conn_list_item_t *a_conn, size_t a_count, ... ) {
     va_list l_args_list;
     va_start(l_args_list, a_count);
@@ -118,6 +125,11 @@ static void s_db_sqlite_clean(conn_list_item_t *a_conn, size_t a_count, ... ) {
     s_db_sqlite_free_connection(a_conn, false);
 }
 
+/**
+ * @brief One step to sqlite3_stmt with 7 try is sql bust
+ * @param a_stmt sqlite3_stmt to step
+ * @return result code
+ */
 static int s_db_sqlite_step(sqlite3_stmt *a_stmt)
 {
     dap_return_val_if_pass(!a_stmt, SQLITE_ERROR);
@@ -133,11 +145,13 @@ static int s_db_sqlite_step(sqlite3_stmt *a_stmt)
 
 /**
  * @brief Executes SQL statements.
- *
- * @param a_db a pointer to an instance of SQLite database structure
- * @param l_query the SQL statement
- * @param l_error_message[out] an error message that's received from the SQLite database
- * @return Returns 0 if successful.
+ * @param a_conn a pointer to an instance of SQLite connection
+ * @param a_query the SQL statement
+ * @param a_hash pointer to data hash
+ * @param a_value pointer to data
+ * @param a_value_len data len to write
+ * @param a_sign record sign
+ * @return result code.
  */
 static int s_db_sqlite_exec(sqlite3 *a_conn, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign)
 {
@@ -161,7 +175,10 @@ static int s_db_sqlite_exec(sqlite3 *a_conn, const char *a_query, dap_global_db_
     return SQLITE_OK;
 }
 
-
+/**
+ * @brief Connection configuration
+ * @param a_conn connection
+ */
 static inline void s_db_sqlite_prepare_connection(sqlite3 *a_conn)
 {
 // sanity check
@@ -173,8 +190,16 @@ static inline void s_db_sqlite_prepare_connection(sqlite3 *a_conn)
         log_it(L_ERROR, "can't set new journal mode\n");
     if(s_db_sqlite_exec(a_conn, "PRAGMA page_size = 4096", NULL, NULL, 0, NULL))
         log_it(L_ERROR, "can't set page_size\n");
+// vacuum need?
+    // if(s_db_sqlite_exec(a_conn, "PRAGMA auto_vacuum = INCREMENTAL", NULL, NULL, 0, NULL))
+    //     log_it(L_ERROR, "can't set autovacuum mode\n");
 }
 
+/**
+ * @brief Prepare connection item
+ * @param a_trans outstanding transaction flag
+ * @return pointer to connection item, otherwise NULL.
+ */
 static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
 {
 // sanity check
@@ -223,7 +248,7 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
 
 /**
  * @brief Deinitializes a SQLite database.
- * @return Returns 0 if successful.
+ * @return result code.
  */
 int s_db_sqlite_deinit(void)
 {
@@ -246,45 +271,26 @@ int s_db_sqlite_deinit(void)
 
 /**
  * @brief Creates a table and unique index in the s_db database.
- *
  * @param a_table_name a table name string
- * @return Returns 0 if successful, otherwise -1.
+ * @param a_conn connection item to use query
+ * @return result code
  */
 static int s_db_sqlite_create_group_table(const char *a_table_name, conn_list_item_t *a_conn)
 {
-int l_rc;
-char l_query[512];
-
-    if( !a_table_name )
-        return  -EINVAL;
+// sanity check
+    dap_return_val_if_pass(!a_table_name || !a_conn, -EINVAL);
+    char l_query[512];
 
     snprintf(l_query, sizeof(l_query) - 1,
                     "CREATE TABLE IF NOT EXISTS '%s'(driver_key BLOB UNIQUE NOT NULL PRIMARY KEY ON CONFLICT REPLACE, key TEXT UNIQUE NOT NULL, flags INTEGER, value BLOB, sign BLOB)",
                     a_table_name);
-
-    if ( (l_rc = s_db_sqlite_exec(a_conn->conn, l_query, NULL, NULL, 0, NULL)) != SQLITE_OK ) {
-        s_db_sqlite_free_connection(a_conn, false);
-        return -1;
-    }
-    return 0;
-}
-
-/**
- * @brief Executes a VACUUM statement in a database.
- *
- * @param a_db a a pointer to an instance of SQLite database structure
- * @return Returns 0 if successful.
- */
-int s_db_sqlite_vacuum(sqlite3 *a_conn)
-{
-    dap_return_val_if_pass(!a_conn, -1);
-    return  s_db_sqlite_exec(a_conn, "VACUUM", NULL, NULL, 0, NULL);
+    return s_db_sqlite_exec(a_conn->conn, l_query, NULL, NULL, 0, NULL);
 }
 
 /**
  * @brief Applies an object to a database.
  * @param a_store_obj a pointer to the object structure
- * @return Returns 0 if successful.
+ * @return result code.
  */
 int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
 {
@@ -304,7 +310,7 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
         if (!a_store_obj->key) {
             log_it(L_ERROR, "Global DB store object unsigned");
             l_ret = -3;
-            goto ret_n_free;
+            goto clean_and_ret;
         } else { //add one record
             l_query = sqlite3_mprintf("INSERT INTO '%s' VALUES(?, '%s', '%d', ?, ?) "
             "ON CONFLICT(key) DO UPDATE SET driver_key = excluded.driver_key, flags = excluded.flags, value = excluded.value, sign = excluded.sign;",
@@ -313,10 +319,9 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
         dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
         l_ret = s_db_sqlite_exec(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
         if (l_ret == SQLITE_ERROR) {
-            // create table
-            s_db_sqlite_create_group_table(l_table_name, l_conn);
-            // repeat request
-            l_ret = s_db_sqlite_exec(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
+            // create table and repeat request
+            if (s_db_sqlite_create_group_table(l_table_name, l_conn) == SQLITE_OK)
+                l_ret = s_db_sqlite_exec(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
         }
     } else {
         if (a_store_obj->key) //delete one record
@@ -325,7 +330,7 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_query = sqlite3_mprintf("DROP TABLE IF EXISTS '%s'", l_table_name);
         l_ret = s_db_sqlite_exec(l_conn->conn, l_query, NULL, NULL, 0, NULL);
     }
-ret_n_free:
+clean_and_ret:
     s_db_sqlite_free_connection(l_conn, false);
     if (l_query)
         sqlite3_free(l_query);
@@ -335,10 +340,10 @@ ret_n_free:
 
 /**
  * @brief Fills a object from a row
- *
  * @param a_group a group name string
  * @param a_obj a pointer to the object
- * @param a_row a ponter to the row structure
+ * @param a_stmt a ponter to the sqlite3_stmt
+ * @return result code
  */
 static int s_db_sqlite_fill_one_item(const char *a_group, dap_store_obj_t *a_obj, sqlite3_stmt *a_stmt)
 {
@@ -381,9 +386,9 @@ clean_and_ret:
 
 /**
  * @brief Reads a last object from the s_db database.
- *
  * @param a_group a group name string
- * @return Returns a pointer to the object.
+ * @param a_with_holes if true - read any records, if false - only actual records
+ * @return If successful, a pointer to the object, otherwise NULL.
  */
 static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, bool a_with_holes)
 {
@@ -429,6 +434,13 @@ clean_and_ret:
     return l_ret;
 }
 
+/**
+ * @brief Forming objects pack from hash list.
+ * @param a_group a group name string
+ * @param a_hashes pointer to hashes
+ * @param a_count hashes num
+ * @return If successful, a pointer to objects pack, otherwise NULL.
+ */
 static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count)
 {
 // sanity check
@@ -548,6 +560,12 @@ clean_and_ret:
     return l_ret;
 }
 
+/**
+ * @brief Forming hashes pack started from concretic hash.
+ * @param a_group a group name string
+ * @param a_hash_from startin hash (not include to result)
+ * @return If successful, a pointer to hashes pack, otherwise NULL.
+ */
 static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
 {
 // sanity check
@@ -609,12 +627,12 @@ clean_and_ret:
 }
 
 /**
- * @brief Reads some objects from a database by conditions
- *
+ * @brief Reads some objects from a database by conditions started from concretic hash
  * @param a_group a group name string
- * @param a_iter iterator to looked for item
+ * @param a_hash_from startin hash (not include to result)
  * @param a_count_out[in] a number of objects to be read, if equals 0 reads with no limits
  * @param a_count_out[out] a number of objects that were read
+ * @param a_with_holes if true - read any records, if false - only actual records
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
 static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes)
@@ -683,6 +701,7 @@ clean_and_ret:
  * @param a_group a group name string
  * @param a_key an object key string, if equals NULL reads the whole group
  * @param a_count_out[out] a number of objects that were read
+ * @param a_with_holes if true - read any records, if false - only actual records
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
 static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes)
@@ -744,10 +763,9 @@ clean_and_ret:
 }
 
 /**
- * @brief Gets a list of group names from a s_db database by a_group_mask.
- *
+ * @brief Gets a list of group names by a_group_mask.
  * @param a_group_mask a group name mask
- * @return Returns a pointer to a list of group names.
+ * @return If successful, a pointer to a list of group names, otherwise NULL.
  */
 static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
 {
@@ -785,10 +803,10 @@ clean_and_ret:
 }
 
 /**
- * @brief Reads a number of objects from a s_db database by a iterator
- *
+ * @brief Reads a number of objects from a s_db database by a hash
  * @param a_group a group name string
- * @param a_id id starting from which the quantity is calculated
+ * @param a_hash_from startin hash (not include to result)
+ * @param a_with_holes if true - read any records, if false - only actual records
  * @return Returns a number of objects.
  */
 static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes)
@@ -824,10 +842,9 @@ clean_and_ret:
 }
 
 /**
- * @brief Checks if an object is in a s_db database by a_group and a_key.
- *
+ * @brief Checks if an object is in a database by hash.
  * @param a_group a group name string
- * @param a_key a object key string
+ * @param a_hash a object hash
  * @return Returns true if it is, false it's not.
  */
 static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash)
@@ -862,8 +879,7 @@ clean_and_ret:
 }
 
 /**
- * @brief Checks if an object is in a s_db database by a_group and a_key.
- *
+ * @brief Checks if an object is in a database by a_group and a_key.
  * @param a_group a group name string
  * @param a_key a object key string
  * @return Returns true if it is, false it's not.
@@ -899,10 +915,9 @@ clean_and_ret:
 }
 
 /**
- * @brief Flushes a SQLite database cahce to disk.
- * @note The function closes and opens the database
- *
- * @return Returns 0 if successful.
+ * @brief Flushes a SQLite database cahce to disk
+ * @note The function closes and opens the database connection
+ * @return result code.
  */
 static int s_db_sqlite_flush()
 {
@@ -929,9 +944,8 @@ static int s_db_sqlite_flush()
 }
 
 /**
- * @brief Starts a transaction in s_db database.
- *
- * @return Returns 0 if successful, otherwise -1.
+ * @brief Starts a outstanding transaction in database.
+ * @return result code.
  */
 static int s_db_sqlite_transaction_start()
 {
@@ -951,9 +965,8 @@ static int s_db_sqlite_transaction_start()
 }
 
 /**
- * @brief Ends a transaction in s_db database.
- *
- * @return Returns 0 if successful, otherwise -1.
+ * @brief Ends a outstanding transaction in database.
+ * @return result code.
  */
 static int s_db_sqlite_transaction_end(bool a_commit)
 {
@@ -972,8 +985,6 @@ static int s_db_sqlite_transaction_end(bool a_commit)
     }
     return  l_ret;
 }
-
-
 
 /**
  * @brief Initializes a SQLite database.
