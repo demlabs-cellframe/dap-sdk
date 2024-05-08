@@ -4,7 +4,7 @@
 #include "dap_enc_ecdsa.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
-#include "hash_impl.h"
+#include "dap_hash.h"
 
 #define LOG_TAG "dap_enc_sig_ecdsa"
 
@@ -81,12 +81,12 @@ int dap_enc_sig_ecdsa_get_sign(struct dap_enc_key* key, const void* msg, const s
 
     ecdsa_private_key_t *privateKey = key->priv_key_data;
     ecdsa_signature_t *sig = signature;
-    secp256k1_sha256 hasher;
-    byte_t msghash[32] = { '\0' };
-    secp256k1_sha256_initialize(&hasher);
-    secp256k1_sha256_write(&hasher, msg, msg_size);
-    secp256k1_sha256_finalize(&hasher, msghash);
-    retcode = secp256k1_ecdsa_sign(key->_inheritor, sig, msghash, privateKey->data, NULL, NULL) - 1;
+    if ( msg_size != sizeof(dap_hash_fast_t) ) {
+        dap_hash_fast_t l_hash;
+        dap_hash_fast(msg, msg_size, &l_hash);
+        retcode = secp256k1_ecdsa_sign(key->_inheritor, sig, l_hash.raw, privateKey->data, NULL, NULL) - 1;
+    } else
+        retcode = secp256k1_ecdsa_sign(key->_inheritor, sig, msg, privateKey->data, NULL, NULL) - 1;
     if ( retcode )
         log_it(L_ERROR, "Failed to sign message");
     return retcode;
@@ -102,14 +102,16 @@ int dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key* key, const void* msg, cons
         log_it(L_ERROR, "Invalid ecdsa key");
         return 2;
     }
+    int retcode = 0;
     ecdsa_public_key_t *publicKey = key->pub_key_data;
     ecdsa_signature_t *sig = signature;
-    secp256k1_sha256 hasher;
-    byte_t msghash[32] = { '\0' };
-    secp256k1_sha256_initialize(&hasher);
-    secp256k1_sha256_write(&hasher, msg, msg_size);
-    secp256k1_sha256_finalize(&hasher, msghash);
-    int retcode = secp256k1_ecdsa_verify(key->_inheritor, (const secp256k1_ecdsa_signature*)sig, msghash, publicKey) - 1;
+    if ( msg_size != sizeof(dap_hash_fast_t) ) {
+        dap_hash_fast_t l_hash;
+        dap_hash_fast(msg, msg_size, &l_hash);
+        retcode = secp256k1_ecdsa_verify(key->_inheritor, (const secp256k1_ecdsa_signature*)sig, l_hash.raw, publicKey) - 1;
+    } else
+        retcode = secp256k1_ecdsa_verify(key->_inheritor, (const secp256k1_ecdsa_signature*)sig, msg, publicKey) - 1;
+
     if ( retcode )
         log_it(L_ERROR, "Failed to verify signature");
     return retcode;
