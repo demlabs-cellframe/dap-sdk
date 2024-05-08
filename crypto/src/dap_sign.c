@@ -411,7 +411,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
     size_t l_verify_data_size;
     dap_chain_hash_fast_t l_verify_data_hash;
 
-    if(a_chain_sign->header.hash_type == DAP_SIGN_HASH_TYPE_NONE){
+    if(a_chain_sign->header.hash_type == DAP_SIGN_HASH_TYPE_NONE || l_key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA){
         l_verify_data = a_data;
         l_verify_data_size = a_data_size;
     }else{
