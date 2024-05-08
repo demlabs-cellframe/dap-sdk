@@ -92,8 +92,6 @@ dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *
             } else
                 rc = DAP_GLOBAL_DB_RC_PROGRESS;
             if (l_values_count) {
-                assert(a_db_legacy_list->items_rest >= l_values_count);
-                a_db_legacy_list->items_rest -= l_values_count;
                 assert(l_number_limit >= l_values_count);
                 l_number_limit -= l_values_count;
                 for (size_t i = 0; i < l_values_count; i++) {
@@ -172,14 +170,11 @@ dap_global_db_pkt_old_t *dap_global_db_pkt_pack_old(dap_global_db_pkt_old_t *a_o
  */
 dap_global_db_pkt_old_t *dap_global_db_pkt_serialize_old(dap_store_obj_t *a_store_obj)
 {
-    byte_t *pdata;
-
-    if (!a_store_obj)
-        return NULL;
+    dap_return_val_if_fail(a_store_obj, NULL);
 
     size_t l_group_len = dap_strlen(a_store_obj->group);
     size_t l_key_len = dap_strlen(a_store_obj->key);
-    size_t l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len;
+    size_t l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len + sizeof(uint32_t) + sizeof(uint16_t) * 2 + sizeof(uint64_t) * 3;
     dap_global_db_pkt_old_t *l_pkt = DAP_NEW_SIZE(dap_global_db_pkt_old_t, l_data_size_out + sizeof(dap_global_db_pkt_old_t));
     if (!l_pkt) {
         log_it(L_CRITICAL, "Insufficient memory");
@@ -191,7 +186,7 @@ dap_global_db_pkt_old_t *dap_global_db_pkt_serialize_old(dap_store_obj_t *a_stor
     l_pkt->obj_count = 1;
     l_pkt->timestamp = 0;
     /* Put serialized data into the payload part of the packet */
-    pdata = l_pkt->data;
+    byte_t *pdata = l_pkt->data;
     uint32_t l_type = dap_store_obj_get_type(a_store_obj);
     memcpy(pdata,   &l_type,                sizeof(uint32_t));      pdata += sizeof(uint32_t);
     memcpy(pdata,   &l_group_len,           sizeof(uint16_t));      pdata += sizeof(uint16_t);

@@ -35,4 +35,5 @@ void dap_global_db_legacy_list_delete(dap_global_db_legacy_list_t *a_db_legacy_l
 DAP_STATIC_INLINE void dap_global_db_legacy_list_rewind(dap_global_db_legacy_list_t *a_db_legacy_list)
 {
     a_db_legacy_list->groups = a_db_legacy_list->saved_ptr;
+    a_db_legacy_list->items_rest = a_db_legacy_list->items_number;
 }
