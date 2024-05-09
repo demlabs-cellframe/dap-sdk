@@ -13,7 +13,16 @@
 
 //dap_config_t *g_configs_table = NULL;
 
-typedef struct dap_config_item dap_config_item_t;
+typedef struct dap_config_item {
+    char type, *name;
+    union dap_config_val {
+        bool        val_bool;
+        char        *val_str;
+        char        **val_arr;
+        int64_t     val_int;
+    } val;
+    UT_hash_handle hh;
+} dap_config_item_t;
 
 static char *s_configs_path = NULL;
 dap_config_t *g_config = NULL;
@@ -49,36 +58,36 @@ const char *dap_config_path()
 }
 
 #define dap_config_item_del(a_item)         \
-{                                           \
+do {                                        \
     DAP_DELETE(a_item->name);               \
     switch (a_item->type) {                 \
-    case 's':                               \
+    case DAP_CONFIG_ITEM_STRING:            \
         DAP_DELETE(a_item->val.val_str);    \
         break;                              \
-    case 'a':                               \
+    case DAP_CONFIG_ITEM_ARRAY:             \
         dap_strfreev(a_item->val.val_arr);  \
         break;                              \
     default:                                \
         break;                              \
     }                                       \
     DAP_DELETE(a_item);                     \
-}
+} while (0)
 
 void dap_config_dump(dap_config_t *a_conf) {
     dap_config_item_t *l_item = NULL, *l_tmp = NULL;
     log_it(L_DEBUG, " Config %s", a_conf->path);
     HASH_ITER(hh, a_conf->items, l_item, l_tmp) {
         switch (l_item->type) {
-        case 's':
+        case DAP_CONFIG_ITEM_STRING:
             log_it(L_DEBUG, " String param: %s = %s", l_item->name, l_item->val.val_str);
             break;
-        case 'd':
+        case DAP_CONFIG_ITEM_DECIMAL:
             log_it(L_DEBUG, " Int param: %s = %ld", l_item->name, l_item->val.val_int);
             break;
-        case 'b':
+        case DAP_CONFIG_ITEM_BOOL:
             log_it(L_DEBUG, " Bool param: %s = %d", l_item->name, l_item->val.val_bool);
             break;
-        case 'a': {
+        case DAP_CONFIG_ITEM_ARRAY: {
             log_it(L_DEBUG, " Array param: %s = ", l_item->name);
             for (char **l_str = l_item->val.val_arr; *l_str; ++l_str) {
                 log_it(L_DEBUG, " %s", *l_str);
@@ -176,7 +185,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
         union dap_config_val l_item_val = { };
         if (*l_val != '[' && !l_values_arr) {
             // Single val
-            l_type = 's';
+            l_type = DAP_CONFIG_ITEM_STRING;
             if (!*l_val)
                 l_type = 'r';
             else if (
@@ -187,7 +196,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
          #endif
                      )
             {
-                l_type = 'b';
+                l_type = DAP_CONFIG_ITEM_BOOL;
                 l_item_val.val_bool = true;
             } else if (
          #ifdef DAP_OS_WINDOWS
@@ -197,7 +206,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
          #endif
                      )
             {
-                l_type = 'b';
+                l_type = DAP_CONFIG_ITEM_BOOL;
                 l_item_val.val_bool = false;
             } else {
                 errno = 0;
@@ -206,17 +215,17 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
                 bool fail = ( tmp == l_val || *tmp != '\0' || ((val == LLONG_MIN || val == LLONG_MAX) && errno == ERANGE) );
                 if ( !fail ) {
                     l_item_val.val_int = val;
-                    l_type = 'd';
+                    l_type = DAP_CONFIG_ITEM_DECIMAL;
                 }
             }
-            if (l_type == 's')
+            if (l_type == DAP_CONFIG_ITEM_STRING)
                 l_item_val.val_str = dap_strdup(l_val);
         } else {
             // Array of strings
             if (!l_values_arr)
                 ++l_val;
             if (l_type != 'r') {
-                l_type = 'a';
+                l_type = DAP_CONFIG_ITEM_ARRAY;
                 int l_pos = dap_strlen(l_val) - 1;
                 char l_term = l_val[l_pos];
                 if (l_term == ']') {
@@ -249,6 +258,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
         HASH_FIND_STR((*a_conf)->items, l_name, l_item);
 
         switch (l_type) {
+        // 'r' is for an item being removed
         case 'r':
             DAP_DELETE(l_name);
             if (l_item) {
@@ -258,7 +268,7 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
             dap_strfreev(l_values_arr);
             l_values_arr = NULL;
             break;
-        case 'a':
+        case DAP_CONFIG_ITEM_ARRAY:
             l_item_val.val_arr = dap_str_appv(l_item_val.val_arr, l_values_arr, NULL);
             DAP_DEL_Z(l_values_arr);
             if (l_item)
@@ -369,13 +379,13 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     return l_conf;
 }
 
-struct dap_config_item *dap_config_get_item(dap_config_t *a_config, const char *a_section, const char *a_item_name) {
+dap_config_item_t *dap_config_get_item(dap_config_t *a_config, const char *a_section, const char *a_item_name) {
     char *l_key = dap_strdup_printf("%s:%s", a_section, a_item_name);
     for (char *c = l_key; *c; ++c) {
         if (*c == '-')
             *c = '_';
     }
-    struct dap_config_item *l_item = NULL;
+    dap_config_item_t *l_item = NULL;
     HASH_FIND_STR(a_config->items, l_key, l_item);
     if (!l_item) {
         debug_if(debug_config, L_DEBUG, "Not found param \"%s\"", l_key);
@@ -384,11 +394,16 @@ struct dap_config_item *dap_config_get_item(dap_config_t *a_config, const char *
     return l_item;
 }
 
+dap_config_item_type_t dap_config_get_item_type(dap_config_t *a_config, const char *a_section, const char *a_item_name) {
+    dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
+    return l_item ? l_item->type : '\0';
+}
+
 bool dap_config_get_item_bool_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, bool a_default) {
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
         return a_default;
-    if (l_item->type != 'b') {
+    if (l_item->type != DAP_CONFIG_ITEM_BOOL) {
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not bool", l_item->name, l_item->type);
         return a_default;
     }
@@ -400,7 +415,7 @@ int64_t _dap_config_get_item_int(dap_config_t *a_config, const char *a_section, 
     if (!l_item)
         return a_default;
     switch (l_item->type) {
-    case 'd':
+    case DAP_CONFIG_ITEM_DECIMAL:
         return l_item->val.val_int;
     default:
         return log_it(L_ERROR, "Parameter \"%s\" '%c' is not signed integer", l_item->name, l_item->type), a_default;
@@ -408,11 +423,12 @@ int64_t _dap_config_get_item_int(dap_config_t *a_config, const char *a_section, 
 }
 
 uint64_t _dap_config_get_item_uint(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint64_t a_default) {
+    dap_return_val_if_pass(!a_config, a_default);
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
         return a_default;
     switch (l_item->type) {
-    case 'd':
+    case DAP_CONFIG_ITEM_DECIMAL:
         return l_item->val.val_int < 0
                 ? log_it(L_WARNING, "Unsigned parameter \"%s\" requested, but the value is negative: %ld",
                          l_item->name, l_item->val.val_int), a_default
@@ -427,13 +443,13 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
     if (!l_item)
         return a_default;
     switch (l_item->type) {
-    case 's':
+    case DAP_CONFIG_ITEM_STRING:
         return l_item->val.val_str;
-    case 'a':
+    case DAP_CONFIG_ITEM_ARRAY:
         return l_item->val.val_arr[0];
-    case 'd':
+    case DAP_CONFIG_ITEM_DECIMAL:
         return dap_itoa(l_item->val.val_int);
-    case 'b':
+    case DAP_CONFIG_ITEM_BOOL:
         return dap_itoa(l_item->val.val_bool);
     default:
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
@@ -445,7 +461,7 @@ const char *dap_config_get_item_str_path_default(dap_config_t *a_config, const c
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
         return a_default;
-    if (l_item->type != 's') {
+    if (l_item->type != DAP_CONFIG_ITEM_STRING) {
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
         return a_default;
     }
@@ -465,7 +481,7 @@ char **dap_config_get_array_str(dap_config_t *a_config, const char *a_section, c
         *array_length = 0;
     if (!l_item)
         return NULL;
-    if (l_item->type != 'a') {
+    if (l_item->type != DAP_CONFIG_ITEM_ARRAY) {
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not array", l_item->name, l_item->type);
         return NULL;
     }
@@ -479,16 +495,15 @@ double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_
     if (!l_item)
         return a_default;
     switch (l_item->type) {
-    case 's':
+    case DAP_CONFIG_ITEM_STRING:
         return strtod(l_item->val.val_str, NULL);
-    case 'd':
+    case DAP_CONFIG_ITEM_DECIMAL:
         return (double)l_item->val.val_int;
     default:
         log_it(L_ERROR, "Parameter \"%s\" '%c' can't be represented as double", l_item->name, l_item->type);
         return a_default;
     }
 }
-
 
 void dap_config_close(dap_config_t *a_conf) {
     DAP_DELETE(a_conf->path);

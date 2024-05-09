@@ -4,18 +4,19 @@
 #include <stdint.h>
 #include "uthash.h"
 
+typedef struct dap_config_item dap_config_item_t;
+
+typedef enum {
+    DAP_CONFIG_ITEM_UNKNOWN = '\0',
+    DAP_CONFIG_ITEM_ARRAY   = 'a',
+    DAP_CONFIG_ITEM_BOOL    = 'b',
+    DAP_CONFIG_ITEM_DECIMAL = 'd',
+    DAP_CONFIG_ITEM_STRING  = 's'
+} dap_config_item_type_t;
+
 typedef struct dap_conf {
     char *path;
-    struct dap_config_item {
-        char type, *name;
-        union dap_config_val {
-            bool        val_bool;
-            char        *val_str;
-            char        **val_arr;
-            int64_t     val_int;
-        } val;
-        UT_hash_handle hh;
-    } *items;
+    dap_config_item_t *items;
     UT_hash_handle hh;
 } dap_config_t;
 
@@ -36,6 +37,7 @@ void dap_config_deinit();
 
 const char *dap_config_path();
 
+dap_config_item_type_t dap_config_get_item_type(dap_config_t *a_config, const char *a_section, const char *a_item_name);
 bool dap_config_get_item_bool_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, bool a_default);
 int64_t _dap_config_get_item_int(dap_config_t *a_config, const char *a_section, const char *a_item_name, int64_t a_default);
 uint64_t _dap_config_get_item_uint(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint64_t a_default);
