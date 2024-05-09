@@ -840,7 +840,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
         return false;
     }
     if (!a_msg->total_records)
-        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank);
+        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank, false);
     if (a_msg->total_records)
         l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count, false);
     int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
@@ -936,7 +936,7 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
        return false;
     }
     if (!a_msg->total_records)
-        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank);
+        a_msg->total_records = dap_global_db_driver_count(a_msg->group, c_dap_global_db_driver_hash_blank, true);
     if (a_msg->total_records)
         l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count, true);
     int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
@@ -1645,14 +1645,12 @@ static void s_check_db_version_callback_get (dap_global_db_instance_t *a_dbi, in
                                              dap_nanotime_t value_ts, bool a_is_pinned, void * a_arg)
 {
     int res = 0;
-
-
     if(a_errno != 0) { // No DB at all
         log_it(L_NOTICE, "No GlobalDB version at all, creating the new GlobalDB from scratch");
         a_dbi->version = DAP_GLOBAL_DB_VERSION;
         if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",
                                       &a_dbi->version,
-                                      sizeof(uint16_t), false,
+                                      sizeof(a_dbi->version), false,
                                       s_check_db_version_callback_set, NULL) ) != 0) {
             log_it(L_NOTICE, "Can't set GlobalDB version, code %d", res);
             goto lb_exit;
@@ -1661,8 +1659,8 @@ static void s_check_db_version_callback_get (dap_global_db_instance_t *a_dbi, in
 
     }
 
-    if (a_value_len == sizeof(uint16_t))
-        a_dbi->version = *(uint16_t *)a_value;
+    if (a_value_len == sizeof(a_dbi->version))
+        a_dbi->version = *(uint32_t *)a_value;
 
     if( a_dbi->version < DAP_GLOBAL_DB_VERSION) {
         log_it(L_NOTICE, "GlobalDB version %u, but %u required. The current database will be recreated",

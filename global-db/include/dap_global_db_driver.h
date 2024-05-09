@@ -100,6 +100,15 @@ DAP_STATIC_INLINE int dap_store_obj_driver_hash_compare(dap_store_obj_t *a_obj1,
     return dap_global_db_driver_hash_compare(&l_hash1, &l_hash2);
 }
 
+DAP_STATIC_INLINE bool dap_store_obj_driver_obj_compare(dap_store_obj_t *a_obj1,  dap_store_obj_t *a_obj2)
+{
+    return dap_store_obj_driver_hash_compare(a_obj1, a_obj2) || a_obj1->flags != a_obj2->flags ||
+        a_obj1->value_len != a_obj2->value_len || memcmp(a_obj1->value, a_obj2->value, a_obj1->value_len) ||
+        dap_sign_get_size(a_obj1->sign) != dap_sign_get_size(a_obj2->sign) || memcmp(a_obj1->sign, a_obj2->sign, dap_sign_get_size(a_obj1->sign)) ||
+        strcmp(a_obj1->key, a_obj2->key) || strcmp(a_obj1->group, a_obj2->group);
+}
+
+
 DAP_STATIC_INLINE const char *dap_global_db_driver_hash_print(dap_global_db_driver_hash_t a_hash)
 {
     return dap_guuid_to_hex_str(dap_guuid_compose(a_hash.bets, a_hash.becrc));
@@ -120,7 +129,7 @@ typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *a_group, c
 typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count, bool a_with_holes);
 typedef dap_global_db_hash_pkt_t * (*dap_db_driver_read_hashes_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 typedef dap_store_obj_t* (*dap_db_driver_read_last_callback_t)(const char *a_group, bool a_with_holes);
-typedef size_t (*dap_db_driver_read_count_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
+typedef size_t (*dap_db_driver_read_count_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
 typedef dap_list_t* (*dap_db_driver_get_groups_callback_t)(const char *a_mask);
 typedef bool (*dap_db_driver_is_obj_callback_t)(const char *a_group, const char *a_key);
 typedef bool (*dap_db_driver_is_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash);
@@ -173,7 +182,7 @@ dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_ke
 dap_global_db_pkt_pack_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
 bool dap_global_db_driver_is(const char *a_group, const char *a_key);
 bool dap_global_db_driver_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
-size_t dap_global_db_driver_count(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
+size_t dap_global_db_driver_count(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
 dap_list_t *dap_global_db_driver_get_groups_by_mask(const char *a_group_mask);
 dap_global_db_hash_pkt_t *dap_global_db_driver_hashes_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 int dap_global_db_driver_txn_start();
