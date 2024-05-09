@@ -1060,8 +1060,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_cur->buf_in_size += l_bytes_read;
                         if(g_debug_reactor)
                             log_it(L_DEBUG, "Received %zd bytes for fd %d ", l_bytes_read, l_cur->fd);
-                        if(l_cur->callbacks.read_callback){
-                            l_cur->callbacks.read_callback(l_cur, NULL); // Call callback to process read event. At the end of callback buf_in_size should be zero if everything was read well
+                        if (l_cur->callbacks.read_callback) {
+                            // Call callback to process read event. At the end of callback buf_in_size should be zero if everything was read well
+                            l_cur->callbacks.read_callback(l_cur, l_cur->callbacks.arg);
                             if (l_cur->context == NULL ){ // esocket was unassigned in callback, we don't need any ops with it now,
                                                          // continue to poll another esockets
                                 continue;

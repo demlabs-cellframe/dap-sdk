@@ -845,13 +845,13 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
         l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count, false);
     int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
     if (l_store_objs && l_values_count) {
-        a_msg->processed_records += a_msg->values_page_size;
         a_msg->last_hash = dap_global_db_driver_hash_get(l_store_objs + l_values_count - 1);
         if (dap_global_db_driver_hash_is_blank(&a_msg->last_hash)) {
-            l_rc = DAP_GLOBAL_DB_RC_PROGRESS;
+            l_rc = DAP_GLOBAL_DB_RC_SUCCESS;
             l_values_count--;
         } else
-            l_rc = DAP_GLOBAL_DB_RC_SUCCESS;
+            l_rc = DAP_GLOBAL_DB_RC_PROGRESS;
+        a_msg->processed_records += l_values_count;
     }
     l_objs = l_store_objs ? s_objs_from_store_objs(l_store_objs, l_values_count) : NULL;
     // Call callback if present
@@ -941,13 +941,13 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
         l_store_objs = dap_global_db_driver_cond_read(a_msg->group, a_msg->last_hash, &l_values_count, true);
     int l_rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
     if (l_store_objs && l_values_count) {
-        a_msg->processed_records += a_msg->values_page_size;
         a_msg->last_hash = dap_global_db_driver_hash_get(l_store_objs + l_values_count - 1);
         if (dap_global_db_driver_hash_is_blank(&a_msg->last_hash)) {
-            l_rc = DAP_GLOBAL_DB_RC_PROGRESS;
+            l_rc = DAP_GLOBAL_DB_RC_SUCCESS;
             l_values_count--;
         } else
-            l_rc = DAP_GLOBAL_DB_RC_SUCCESS;
+            l_rc = DAP_GLOBAL_DB_RC_PROGRESS;
+        a_msg->processed_records += l_values_count;
     }
     // Call callback if present
     bool l_ret = false;
@@ -1077,10 +1077,8 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
         dap_global_db_driver_txn_start();
     for (size_t i = 0; i < a_store_objs_count; i++) {
         l_ret = s_store_obj_apply(a_dbi, a_store_objs + i);
-        if (l_ret) {
+        if (l_ret)
             log_it(L_ERROR, "Can't save raw gdb data, code %d ", l_ret);
-            break;
-        }
     }
     if (a_store_objs_count > 1)
         dap_global_db_driver_txn_end(!l_ret);

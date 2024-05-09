@@ -282,11 +282,12 @@ static void s_es_callback_timer(struct dap_events_socket *a_event_sock)
  * @param a_worker
  * @param a_arg
  */
-static void s_timerfd_reset_worker_callback(dap_worker_t *a_worker, void *a_arg)
+static void s_timerfd_reset_worker_callback(void *a_arg)
 {
     assert(a_arg);
     dap_events_socket_uuid_t *l_uuid = a_arg;
-    dap_events_socket_t *l_sock = dap_context_find(a_worker->context, *l_uuid);
+    dap_worker_t *l_worker = dap_worker_get_current();
+    dap_events_socket_t *l_sock = dap_context_find(l_worker->context, *l_uuid);
     if (l_sock)
         dap_timerfd_reset_unsafe(l_sock->_inheritor);
     DAP_DELETE(l_uuid);

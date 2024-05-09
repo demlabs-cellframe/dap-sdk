@@ -40,6 +40,11 @@
 
 #define LOG_TAG "dap_worker"
 
+typedef struct dap_worker_msg_callback {
+    dap_worker_callback_t callback; // Callback for specific client operations
+    void * arg;
+} dap_worker_msg_callback_t;
+
 pthread_key_t g_pth_key_worker;
 
 static time_t s_connection_timeout = 60;    // seconds
@@ -399,12 +404,12 @@ static long s_dap_es_assign_to_context(dap_events_socket_t *a_es, dap_context_t 
  * @param a_es
  * @param a_arg
  */
-static void s_queue_callback_callback( dap_events_socket_t * a_es, void * a_arg)
+static void s_queue_callback_callback(dap_events_socket_t UNUSED_ARG *a_es, void *a_arg)
 {
     dap_worker_msg_callback_t * l_msg = (dap_worker_msg_callback_t *) a_arg;
     assert(l_msg);
     assert(l_msg->callback);
-    l_msg->callback(a_es->worker, l_msg->arg);
+    l_msg->callback(l_msg->arg);
     DAP_DELETE(l_msg);
 }
 

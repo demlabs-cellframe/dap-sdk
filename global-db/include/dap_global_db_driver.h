@@ -165,7 +165,6 @@ typedef struct dap_db_driver_callbacks {
 int     dap_db_driver_init(const char *driver_name, const char *a_filename_db, int a_mode_async);
 void    dap_db_driver_deinit(void);
 
-uint32_t dap_store_obj_checksum(dap_store_obj_t *a_obj);
 dap_store_obj_t *dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count);
 dap_store_obj_t *dap_store_obj_copy_ext(dap_store_obj_t *a_store_obj, void *a_ext, size_t a_ext_size);
 dap_store_obj_t *dap_global_db_store_objs_copy(dap_store_obj_t *, const dap_store_obj_t *, size_t);
