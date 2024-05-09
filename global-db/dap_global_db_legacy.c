@@ -53,7 +53,7 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
 
     size_t l_items_number = 0;
     DL_FOREACH_SAFE(l_groups, l_group, l_tmp) {
-        size_t l_group_size = dap_global_db_driver_count(l_group->data, c_dap_global_db_driver_hash_blank);
+        size_t l_group_size = dap_global_db_driver_count(l_group->data, c_dap_global_db_driver_hash_blank, true);
         if (!l_group_size) {
             log_it(L_WARNING, "[!] Group %s is empty on our side, skip it", (char *)l_group->data);
             l_groups = dap_list_delete_link(l_groups, l_group);
