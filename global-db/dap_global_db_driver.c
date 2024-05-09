@@ -64,7 +64,7 @@
 
 #define LOG_TAG "db_driver"
 
-const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank = {};
+const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank = { 0 };
 
 // A selected database driver.
 static char s_used_driver [32];                                             /* Name of the driver */
@@ -147,7 +147,9 @@ void dap_db_driver_deinit(void)
  */
 int dap_db_driver_flush(void)
 {
-    return s_drv_callback.flush();
+    if (s_drv_callback.flush)
+        return s_drv_callback.flush();
+    return 0;
 }
 
 static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const dap_store_obj_t *a_store_obj_src)
@@ -271,6 +273,11 @@ dap_store_obj_t *l_store_obj_cur;
 
     if(s_drv_callback.apply_store_obj) {
         for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
+            dap_global_db_driver_hash_t l_hash_cur = dap_global_db_driver_hash_get(l_store_obj_cur);
+            if (dap_global_db_driver_hash_is_blank(&l_hash_cur)) {
+                log_it(L_ERROR, "Item %zu / %zu is blank!", a_store_count - i + 1, a_store_count);
+                continue;
+            }
             if (!(l_store_obj_cur->flags & DAP_GLOBAL_DB_RECORD_DEL) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
                 log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i, a_store_count);
                 l_ret = -9;
@@ -329,12 +336,12 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
  * @param a_iter data base iterator
  * @return Returns a number of objects.
  */
-size_t dap_global_db_driver_count(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
+size_t dap_global_db_driver_count(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes)
 {
     size_t l_count_out = 0;
     // read the number of items
     if (s_drv_callback.read_count_store)
-        l_count_out = s_drv_callback.read_count_store(a_group, a_hash_from);
+        l_count_out = s_drv_callback.read_count_store(a_group, a_hash_from, a_with_holes);
     return l_count_out;
 }
 

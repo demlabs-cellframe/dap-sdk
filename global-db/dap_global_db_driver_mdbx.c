@@ -106,7 +106,7 @@ static inline dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group
 {
     return s_db_mdbx_read_cond(a_group, a_hash_from, a_count_out, false, a_with_holes);
 }
-static size_t           s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
+static size_t           s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
 static int              s_db_mdbx_txn_start();
 static int              s_db_mdbx_txn_end(bool a_commit);
@@ -748,7 +748,7 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
                 rc = MDBX_PROBLEM;
                 continue;
             }
-            size_t l_data_len = l_record->key_len + l_record->value_len + l_record->sign_len + l_db_ctx->namelen;
+            size_t l_data_len = l_record->key_len + l_record->value_len + l_record->sign_len + l_db_ctx->namelen + 1;
             size_t l_add_size = l_data_len + sizeof(dap_global_db_pkt_t);
             l_ret = l_ret ? DAP_REALLOC(l_ret, l_ret->data_size + sizeof(dap_global_db_pkt_pack_t) + l_add_size)
                           : DAP_NEW_Z_SIZE(dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_add_size);
@@ -774,7 +774,7 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
                 rc = MDBX_PROBLEM;
                 break;
             }
-            l_pkt->group_len = l_db_ctx->namelen;
+            l_pkt->group_len = l_db_ctx->namelen + 1;
             if (!l_record->key_len || !*l_record->key_n_value_n_sign) {
                 log_it(L_ERROR, "Ivalid driver record with zero text key length");
                 rc = MDBX_PROBLEM;
@@ -786,7 +786,7 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
             l_pkt->flags = l_record->flags & DAP_GLOBAL_DB_RECORD_DEL;
 
             /* Put serialized data into the payload part of the packet */
-            byte_t *l_data_ptr = dap_mempcpy(l_pkt->data, l_db_ctx->name, l_db_ctx->namelen);
+            byte_t *l_data_ptr = dap_mempcpy(l_pkt->data, l_db_ctx->name, l_pkt->group_len);
             l_data_ptr = dap_mempcpy(l_data_ptr, l_record->key_n_value_n_sign, l_record->key_len);
             if (l_record->value_len)
                 l_data_ptr = dap_mempcpy(l_data_ptr, l_record->key_n_value_n_sign + l_record->key_len, l_record->value_len);
@@ -908,7 +908,7 @@ safe_ret:
  * @param a_iter started iterator
  * @return count of has been found record.
  */
-static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
+static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes)
 {
     dap_return_val_if_fail(a_group, 0);                                       /* Sanity check */
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
@@ -921,7 +921,7 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
         return 0;
     }
     // Return all entries count
-    if (dap_global_db_driver_hash_is_blank(&a_hash_from)) {
+    if (dap_global_db_driver_hash_is_blank(&a_hash_from) && a_with_holes) {
         MDBX_stat l_stat;
         rc = mdbx_dbi_stat(l_txn, l_db_ctx->dbi, &l_stat, sizeof(MDBX_stat));
         if (rc != MDBX_SUCCESS)
@@ -949,9 +949,10 @@ static size_t s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driv
             log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
         return 0;
     }
-    size_t l_ret_count = 0;
+    size_t l_ret_count = a_with_holes || !s_is_hole(l_data.iov_base);
     while ((MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))))
-        l_ret_count++;
+        if(a_with_holes || !s_is_hole(l_data.iov_base))
+            l_ret_count++;
     mdbx_cursor_close(l_cursor);
     if (!s_txn)
         mdbx_txn_commit(l_txn);
@@ -1088,7 +1089,6 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
                 log_it(L_ERROR, "mdbx_del: (%d) %s", rc, mdbx_strerror(rc));
         }
     }
-
     return rc;
 }
 
