@@ -94,29 +94,35 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
 
 dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uint64_t *a_checksum)
 {
+    dap_return_val_if_fail(a_obj, NULL);
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_obj);
     if (!l_pkt) {
         log_it(L_ERROR, "Can't serialize global DB object");
         return NULL;
     }
-    // Exclude CRC field from sign
-    dap_sign_t *l_sign = dap_sign_create(a_key, (uint8_t *)l_pkt + sizeof(uint64_t),
-                                         dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t), 0);
-    if (!l_sign) {
-        log_it(L_ERROR, "Can't sign serialized global DB object");
-        DAP_DELETE(l_pkt);
-        return NULL;
-    }
-    if (a_checksum) {
-        size_t l_sign_len = dap_sign_get_size(l_sign);
-        l_pkt = DAP_REALLOC(l_pkt, dap_global_db_pkt_get_size(l_pkt) + l_sign_len);
-        if (!l_pkt) {
-            log_it(L_CRITICAL, "Not enough memory");
-            DAP_DELETE(l_sign);
+    dap_sign_t *l_sign = NULL;
+    if (a_key) {
+        // Exclude CRC field from sign
+        l_sign = dap_sign_create(a_key, (uint8_t *)l_pkt + sizeof(uint64_t),
+                                 dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t), 0);
+        if (!l_sign) {
+            log_it(L_ERROR, "Can't sign serialized global DB object");
+            DAP_DELETE(l_pkt);
             return NULL;
         }
-        memcpy(l_pkt->data + l_pkt->data_len, l_sign, l_sign_len);
-        l_pkt->data_len += l_sign_len;
+    }
+    if (a_checksum) {
+        if (a_key) {
+            size_t l_sign_len = dap_sign_get_size(l_sign);
+            l_pkt = DAP_REALLOC(l_pkt, dap_global_db_pkt_get_size(l_pkt) + l_sign_len);
+            if (!l_pkt) {
+                log_it(L_CRITICAL, "Not enough memory");
+                DAP_DELETE(l_sign);
+                return NULL;
+            }
+            memcpy(l_pkt->data + l_pkt->data_len, l_sign, l_sign_len);
+            l_pkt->data_len += l_sign_len;
+        }
         *a_checksum = crc64((uint8_t *)l_pkt + sizeof(uint64_t),
                             dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t));
     }
@@ -131,20 +137,21 @@ bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj)
     dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(a_obj);
     if (!l_pkt)
         return false;
-    bool l_ret = false;
     size_t l_signed_data_size = l_pkt->group_len + l_pkt->key_len + l_pkt->value_len;
     size_t l_full_data_len = l_pkt->data_len;
     l_pkt->data_len = l_signed_data_size;
     dap_sign_t *l_sign = (dap_sign_t *)(l_pkt->data + l_signed_data_size);
-    if (dap_sign_verify(l_sign, (uint8_t *)l_pkt + sizeof(uint64_t),
-                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t)) == 0) {
-        l_pkt->data_len = l_full_data_len;
-        uint64_t l_checksum = crc64((uint8_t *)l_pkt + sizeof(uint64_t),
-                                            dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t));
-        l_ret = l_checksum == l_pkt->crc;
+    if (a_obj->sign && dap_sign_verify(l_sign, (uint8_t *)l_pkt + sizeof(uint64_t),
+                                        dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t))) {
+        DAP_DELETE(l_pkt);
+        return false;
     }
+    l_pkt->data_len = l_full_data_len;
+    uint64_t l_checksum = crc64((uint8_t *)l_pkt + sizeof(uint64_t),
+                                dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t));
+    bool ret = l_checksum == l_pkt->crc;
     DAP_DELETE(l_pkt);
-    return l_ret;
+    return ret;
 
 }
 
