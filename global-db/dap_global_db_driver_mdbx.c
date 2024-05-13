@@ -328,7 +328,7 @@ static  int s_db_mdbx_deinit(void)
  *      0>      - <errno>
  */
 
-int     dap_db_driver_mdbx_init(const char *a_mdbx_path, dap_db_driver_callbacks_t *a_drv_dpt)
+int dap_global_db_driver_mdbx_init(const char *a_mdbx_path, dap_global_db_driver_callbacks_t *a_drv_dpt)
 {
 int rc;
 MDBX_txn    *l_txn;
