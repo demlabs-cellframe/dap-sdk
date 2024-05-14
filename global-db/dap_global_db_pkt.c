@@ -230,7 +230,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
     if (a_addr)
         *(dap_stream_node_addr_t *)a_obj->ext = *a_addr;
 
-    return l_data_ptr + l_sign_size + (a_addr ? sizeof(dap_stream_node_addr_t) : 0);
+    return l_data_ptr + l_sign_size_expected + (a_addr ? sizeof(dap_stream_node_addr_t) : 0);
 }
 
 
