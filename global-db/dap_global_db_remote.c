@@ -297,8 +297,8 @@ static void *s_list_thread_proc2(void *arg) {
             uint64_t l_cur_id = l_obj_cur->id;
             l_obj_cur->id = 0;
             dap_global_db_pkt_t *l_pkt = dap_global_db_pkt_serialize(l_obj_cur);
-            dap_global_db_pkt_change_id(l_pkt, l_cur_id);
             dap_hash_fast(l_pkt->data, l_pkt->data_size, &l_list_obj->hash);
+            dap_global_db_pkt_change_id(l_pkt, l_cur_id);
             l_list_obj->pkt = l_pkt;
             l_dap_db_log_list->items_list = dap_list_append(l_dap_db_log_list->items_list, l_list_obj);
             l_dap_db_log_list->size += dap_db_log_list_obj_get_size(l_list_obj);                
