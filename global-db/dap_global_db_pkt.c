@@ -86,7 +86,8 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->key, l_key_len);
     if (a_store_obj->value_len)
         l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->value, a_store_obj->value_len);
-    l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->sign, l_sign_len);
+    if (a_store_obj->sign)
+        l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->sign, l_sign_len);
 
     assert((size_t)((byte_t *)l_data_ptr - l_pkt->data) == l_data_size_out);
     return l_pkt;
@@ -159,7 +160,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
 {
     if (sizeof(dap_global_db_pkt_t) > a_bound_size ||            /* Check for buffer boundaries */
             dap_global_db_pkt_get_size(a_pkt) > a_bound_size ||
-            a_pkt->group_len + a_pkt->key_len + a_pkt->value_len + sizeof(dap_sign_t) >= a_pkt->data_len) {
+            a_pkt->group_len + a_pkt->key_len + a_pkt->value_len > a_pkt->data_len) {
         log_it(L_ERROR, "Broken GDB element: size is incorrect");
         return NULL;
     }
@@ -205,26 +206,30 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
         l_data_ptr += a_pkt->value_len;
     }
 
-    dap_sign_t *l_sign = (dap_sign_t *)l_data_ptr;
     size_t l_sign_size_expected = a_pkt->data_len - a_pkt->group_len - a_pkt->key_len - a_pkt->value_len;
-    size_t l_sign_size = dap_sign_get_size(l_sign);
-    if (l_sign_size != l_sign_size_expected) {
-        log_it(L_ERROR, "Broken GDB element: sign size %zu isn't equal expected size %zu", l_sign_size, l_sign_size_expected);
-        DAP_DELETE(a_obj->group);
-        DAP_DELETE(a_obj->key);
-        DAP_DEL_Z(a_obj->value);
-        return NULL;
+    if (l_sign_size_expected) {
+        dap_sign_t *l_sign = (dap_sign_t *)l_data_ptr;
+        size_t l_sign_size = dap_sign_get_size(l_sign);
+        if (l_sign_size != l_sign_size_expected) {
+            log_it(L_ERROR, "Broken GDB element: sign size %zu isn't equal expected size %zu", l_sign_size, l_sign_size_expected);
+            DAP_DELETE(a_obj->group);
+            DAP_DELETE(a_obj->key);
+            DAP_DEL_Z(a_obj->value);
+            return NULL;
+        }
+        a_obj->sign = (dap_sign_t *)DAP_DUP_SIZE(l_sign, l_sign_size);
+        if (!a_obj->sign) {
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            DAP_DELETE(a_obj->group);
+            DAP_DELETE(a_obj->key);
+            DAP_DEL_Z(a_obj->value);
+            return NULL;
+        }
     }
-    a_obj->sign = (dap_sign_t *)DAP_DUP_SIZE(l_sign, l_sign_size);
-    if (!l_sign) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
-        DAP_DELETE(a_obj->group);
-        DAP_DELETE(a_obj->key);
-        DAP_DEL_Z(a_obj->value);
-        return NULL;
-    }
+
     if (a_addr)
         *(dap_stream_node_addr_t *)a_obj->ext = *a_addr;
+
     return l_data_ptr + l_sign_size + (a_addr ? sizeof(dap_stream_node_addr_t) : 0);
 }
 

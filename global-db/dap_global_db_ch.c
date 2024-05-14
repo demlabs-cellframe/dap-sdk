@@ -170,15 +170,16 @@ static bool s_process_hashes(void *a_arg)
         return false;
     }
     dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
-    for (uint32_t i = 0, j = 0; i < l_pkt->hashes_count; i++) {
+    uint32_t j = 0;
+    for (uint32_t i = 0; i < l_pkt->hashes_count; i++) {
         dap_global_db_driver_hash_t *l_hash_cur = l_hashes + i;
         if (!dap_global_db_driver_is_hash(l_group, *l_hash_cur)) {
             if (i != j)
                 *(l_hashes + j) = *l_hash_cur;
             j++;
-        } else
-            --l_pkt->hashes_count;
+        }
     }
+    l_pkt->hashes_count = j;
     if (l_pkt->hashes_count) {
         debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_REQUEST packet for group %s with records count %u",
                                                                                         l_group, l_pkt->hashes_count);

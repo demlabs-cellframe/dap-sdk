@@ -271,14 +271,14 @@ dap_store_obj_t *l_store_obj_cur;
     if (a_store_count > 1 && s_drv_callback.transaction_start)
         s_drv_callback.transaction_start();
 
-    if(s_drv_callback.apply_store_obj) {
+    if (s_drv_callback.apply_store_obj) {
         for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
             dap_global_db_driver_hash_t l_hash_cur = dap_global_db_driver_hash_get(l_store_obj_cur);
             if (dap_global_db_driver_hash_is_blank(&l_hash_cur)) {
                 log_it(L_ERROR, "Item %zu / %zu is blank!", a_store_count - i + 1, a_store_count);
                 continue;
             }
-            if (!(l_store_obj_cur->flags & DAP_GLOBAL_DB_RECORD_DEL) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
+            if (!dap_global_db_isalnum_group_key(l_store_obj_cur, !(l_store_obj_cur->flags & DAP_GLOBAL_DB_RECORD_ERASE))) {
                 log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i, a_store_count);
                 l_ret = -9;
                 break;

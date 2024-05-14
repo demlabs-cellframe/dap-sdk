@@ -825,7 +825,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
     dap_return_val_if_pass(!a_msg, false);
 
     size_t l_values_count = a_msg->values_page_size;
-    dap_global_db_obj_t *l_objs= NULL;
+    dap_global_db_obj_t *l_objs = NULL;
     dap_store_obj_t *l_store_objs = NULL;
     if (!a_msg->values_page_size) {
         l_objs = dap_global_db_get_all_sync(a_msg->group, &l_values_count);
@@ -1772,7 +1772,7 @@ dap_global_db_obj_t *s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_
         return NULL;
     }
     for (size_t i = 0; i < a_values_count; i++) {
-        if (!dap_global_db_isalnum_group_key(a_store_objs + i)) {
+        if (!dap_global_db_isalnum_group_key(a_store_objs + i, true)) {
             log_it(L_ERROR, "Delete broken object");
             dap_global_db_del(a_store_objs[i].group, a_store_objs[i].key, NULL, NULL);
             continue;
@@ -1789,22 +1789,27 @@ dap_global_db_obj_t *s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_
     return l_objs;
 }
 
-bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj)
+bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_null_key)
 {
-    dap_return_val_if_fail(a_obj && a_obj->group && a_obj->key, false);
+    dap_return_val_if_fail(a_obj && a_obj->group, false);
 
     bool ret = true;
-    for (char *c = (char*)a_obj->key; *c; ++c) {
-        if (!dap_ascii_isprint(*c)) {
-            ret = false;
-            break;
+    if (a_obj->key) {
+        for (char *c = (char*)a_obj->key; *c; ++c) {
+            if (!dap_ascii_isprint(*c)) {
+                ret = false;
+                break;
+            }
         }
-    }
+    } else if (a_not_null_key)
+        ret = false;
 
-    for (char *c = (char*)a_obj->group; *c; ++c) {
-        if (!dap_ascii_isprint(*c)) {
-            ret = false;
-            break;
+    if (ret) {
+        for (char *c = (char*)a_obj->group; *c; ++c) {
+            if (!dap_ascii_isprint(*c)) {
+                ret = false;
+                break;
+            }
         }
     }
 
