@@ -48,7 +48,7 @@ int dap_global_db_cluster_init()
                 dap_global_db_instance_get_default(), DAP_STREAM_CLUSTER_GLOBAL,
                 *(dap_guuid_t *)&uint128_0, DAP_GLOBAL_DB_CLUSTER_GLOBAL,
                 DAP_GLOBAL_DB_UNCLUSTERED_TTL, true,
-                DAP_GDB_MEMBER_ROLE_USER, DAP_CLUSTER_TYPE_SYSTEM)))
+                DAP_GDB_MEMBER_ROLE_GUEST, DAP_CLUSTER_TYPE_SYSTEM)))
         return -1;
 
     // Pseudo-cluster for local scope (unsynced groups).

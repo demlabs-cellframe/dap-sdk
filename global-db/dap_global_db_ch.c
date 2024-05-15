@@ -230,15 +230,17 @@ bool dap_global_db_ch_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_ad
     if (g_dap_global_db_debug_more) {
         char l_ts_str[DAP_TIME_STR_SIZE] = { '\0' };
         dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
-        char l_hash_str[DAP_HASH_FAST_STR_SIZE];
+        dap_stream_node_addr_t l_signer_addr;
         dap_hash_fast_t l_sign_hash;
         if (!a_obj->sign || !dap_sign_get_pkey_hash(a_obj->sign, &l_sign_hash))
             strcpy(l_hash_str, "UNSIGNED");
         else
-           dap_hash_fast_to_str(&l_sign_hash, l_hash_str, DAP_HASH_FAST_STR_SIZE);
-        log_it(L_DEBUG, "Unpacked object: group=\"%s\" key=\"%s\""
-                " timestamp=\"%s\" value_len=%"DAP_UINT64_FORMAT_U" signer_hash=%s" ,
-                a_obj->group, a_obj->key, l_ts_str, a_obj->value_len, l_hash_str);
+           dap_stream_node_addr_from_hash(&l_sign_hash, &l_signer_addr);
+        log_it(L_DEBUG, "Unpacked object: type='%c', group=\"%s\" key=\"%s\""
+                " timestamp=\"%s\" value_len=%"DAP_UINT64_FORMAT_U" signer_addr=%s",
+                    dap_store_obj_get_type(a_obj),
+                        a_obj->group, a_obj->key, l_ts_str, a_obj->value_len,
+                            dap_stream_node_addr_to_str_static(&l_signer_addr));
     }
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), a_obj->group);
     if (!l_cluster) {
