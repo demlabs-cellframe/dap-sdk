@@ -348,7 +348,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
 
     l_ret->esocket = a_http_client->esocket;
     l_ret->esocket_uuid = a_http_client->esocket->uuid;
-    l_ret->stream_worker = (dap_stream_worker_t *)a_http_client->esocket->worker->_inheritor;
+    l_ret->stream_worker = DAP_STREAM_WORKER(a_http_client->esocket->worker);
     l_ret->conn_http = a_http_client;
     l_ret->seq_id = 0;
     l_ret->client_last_seq_id_packet = (size_t)-1;

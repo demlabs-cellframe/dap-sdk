@@ -137,7 +137,8 @@ void dap_global_db_legacy_list_delete(dap_global_db_legacy_list_t *a_db_legacy_l
 {
     if (!a_db_legacy_list)
         return;
-    dap_list_free_full(a_db_legacy_list->groups, NULL);
+    if (a_db_legacy_list->groups)
+        dap_list_free_full(a_db_legacy_list->groups, NULL);
     DAP_DELETE(a_db_legacy_list);
 }
 
