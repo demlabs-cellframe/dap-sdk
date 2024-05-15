@@ -46,8 +46,10 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
                 if (l_match)
                     break;
             }
-            if (l_used_list == l_dbi->whitelist ? !l_match : l_match)
+            if (l_used_list == l_dbi->whitelist ? !l_match : l_match) {
+                DAP_DELETE(l_group->data);
                 l_groups = dap_list_delete_link(l_groups, l_group);
+            }
         }
     }
 
@@ -56,9 +58,8 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
         size_t l_group_size = dap_global_db_driver_count(l_group->data, c_dap_global_db_driver_hash_blank, true);
         if (!l_group_size) {
             log_it(L_WARNING, "[!] Group %s is empty on our side, skip it", (char *)l_group->data);
-            l_groups = dap_list_delete_link(l_groups, l_group);
             DAP_DELETE(l_group->data);
-            DAP_DELETE(l_group);
+            l_groups = dap_list_delete_link(l_groups, l_group);
             continue;
         }
         l_items_number += l_group_size;
