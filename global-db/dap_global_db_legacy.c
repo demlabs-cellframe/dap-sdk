@@ -180,7 +180,6 @@ dap_global_db_pkt_old_t *dap_global_db_pkt_serialize_old(dap_store_obj_t *a_stor
         log_it(L_CRITICAL, "Insufficient memory");
         return NULL;
     }
-
     /* Fill packet header */
     l_pkt->data_size = l_data_size_out;
     l_pkt->obj_count = 1;
@@ -188,18 +187,20 @@ dap_global_db_pkt_old_t *dap_global_db_pkt_serialize_old(dap_store_obj_t *a_stor
     /* Put serialized data into the payload part of the packet */
     byte_t *pdata = l_pkt->data;
     uint32_t l_type = dap_store_obj_get_type(a_store_obj);
-    memcpy(pdata,   &l_type,                sizeof(uint32_t));      pdata += sizeof(uint32_t);
-    memcpy(pdata,   &l_group_len,           sizeof(uint16_t));      pdata += sizeof(uint16_t);
-    memcpy(pdata,   a_store_obj->group,     l_group_len);           pdata += l_group_len;
-    memset(pdata,   0,                      sizeof(uint64_t));      pdata += sizeof(uint64_t);
-    memcpy(pdata,   &a_store_obj->timestamp,sizeof(uint64_t));      pdata += sizeof(uint64_t);
-    memcpy(pdata,   &l_key_len,             sizeof(uint16_t));      pdata += sizeof(uint16_t);
-    memcpy(pdata,   a_store_obj->key,       l_key_len);             pdata += l_key_len;
-    memcpy(pdata,   &a_store_obj->value_len,sizeof(uint64_t));      pdata += sizeof(uint64_t);
-    memcpy(pdata,   a_store_obj->value,     a_store_obj->value_len);pdata += a_store_obj->value_len;
-    if ((uint32_t)(pdata - l_pkt->data) != l_data_size_out) {
+    pdata = dap_mempcpy(pdata, &l_type, sizeof(uint32_t));
+    pdata = dap_mempcpy(pdata, &l_group_len, sizeof(uint16_t));
+    pdata = dap_mempcpy(pdata, a_store_obj->group, l_group_len);
+    memset(pdata, 0, sizeof(uint64_t));
+    pdata += sizeof(uint64_t);
+    pdata = dap_mempcpy(pdata, &a_store_obj->timestamp, sizeof(uint64_t));
+    pdata = dap_mempcpy(pdata, &l_key_len, sizeof(uint16_t));
+    pdata = dap_mempcpy(pdata, a_store_obj->key, l_key_len);
+    pdata = dap_mempcpy(pdata, &a_store_obj->value_len, sizeof(uint64_t));
+    if (a_store_obj->value && a_store_obj->value_len)
+        pdata = dap_mempcpy(pdata, a_store_obj->value, a_store_obj->value_len);
+
+    if ((uint32_t)(pdata - l_pkt->data) != l_data_size_out)
         log_it(L_MSG, "! Inconsistent global_db packet! %zu != %zu", pdata - l_pkt->data, l_data_size_out);
-    }
     return l_pkt;
 }
 

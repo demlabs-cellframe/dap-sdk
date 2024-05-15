@@ -69,7 +69,7 @@ const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank = { 0 };
 // A selected database driver.
 static char s_used_driver [32];                                             /* Name of the driver */
 
-static dap_db_driver_callbacks_t s_drv_callback;                            /* A set of interface routines for the selected
+static dap_global_db_driver_callbacks_t s_drv_callback;                            /* A set of interface routines for the selected
                                                                             DB Driver at startup time */
 
 /**
@@ -80,15 +80,15 @@ static dap_db_driver_callbacks_t s_drv_callback;                            /* A
  * @param a_filename_db a path to a database file
  * @return Returns 0, if successful; otherwise <0.
  */
-int dap_db_driver_init(const char *a_driver_name, const char *a_filename_db, int a_mode_async)
+int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_db)
 {
 int l_ret = -1;
 
     if (s_used_driver[0] )
-        dap_db_driver_deinit();
+        dap_global_db_driver_deinit();
 
     // Fill callbacks with zeros
-    memset(&s_drv_callback, 0, sizeof(dap_db_driver_callbacks_t));
+    memset(&s_drv_callback, 0, sizeof(dap_global_db_driver_callbacks_t));
 
     // Setup driver name
     strncpy( s_used_driver, a_driver_name, sizeof(s_used_driver) - 1);
@@ -104,20 +104,20 @@ int l_ret = -1;
         l_ret = -1;
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
     else if(!dap_strcmp(s_used_driver, "sqlite") || !dap_strcmp(s_used_driver, "sqlite3") )
-        l_ret = dap_db_driver_sqlite_init(l_db_path_ext, &s_drv_callback);
+        l_ret = dap_global_db_driver_sqlite_init(l_db_path_ext, &s_drv_callback);
 #endif
 #ifdef DAP_CHAIN_GDB_ENGINE_CUTTDB
     else if(!dap_strcmp(s_used_driver, "cdb"))
-        l_ret = dap_db_driver_cdb_init(l_db_path_ext, &s_drv_callback);
+        l_ret = dap_global_db_driver_cdb_init(l_db_path_ext, &s_drv_callback);
 #endif
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
     else if(!dap_strcmp(s_used_driver, "mdbx"))
-        l_ret = dap_db_driver_mdbx_init(l_db_path_ext, &s_drv_callback);
+        l_ret = dap_global_db_driver_mdbx_init(l_db_path_ext, &s_drv_callback);
 #endif
 
 #ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
     else if(!dap_strcmp(s_used_driver, "pgsql"))
-        l_ret = dap_db_driver_pgsql_init(l_db_path_ext, &s_drv_callback);
+        l_ret = dap_global_db_driver_pgsql_init(l_db_path_ext, &s_drv_callback);
 #endif
     else
         log_it(L_ERROR, "Unknown global_db driver \"%s\"", a_driver_name);
@@ -130,7 +130,7 @@ int l_ret = -1;
  * @note You should call this function after using the driver.
  * @return (none)
  */
-void dap_db_driver_deinit(void)
+void dap_global_db_driver_deinit(void)
 {
     log_it(L_NOTICE, "DeInit for %s ...", s_used_driver);
 
@@ -145,7 +145,7 @@ void dap_db_driver_deinit(void)
  * @brief Flushes a database cahce to disk.
  * @return Returns 0, if successful; otherwise <0.
  */
-int dap_db_driver_flush(void)
+int dap_global_db_driver_flush(void)
 {
     if (s_drv_callback.flush)
         return s_drv_callback.flush();
@@ -271,14 +271,14 @@ dap_store_obj_t *l_store_obj_cur;
     if (a_store_count > 1 && s_drv_callback.transaction_start)
         s_drv_callback.transaction_start();
 
-    if(s_drv_callback.apply_store_obj) {
+    if (s_drv_callback.apply_store_obj) {
         for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
             dap_global_db_driver_hash_t l_hash_cur = dap_global_db_driver_hash_get(l_store_obj_cur);
             if (dap_global_db_driver_hash_is_blank(&l_hash_cur)) {
                 log_it(L_ERROR, "Item %zu / %zu is blank!", a_store_count - i + 1, a_store_count);
                 continue;
             }
-            if (!(l_store_obj_cur->flags & DAP_GLOBAL_DB_RECORD_DEL) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
+            if (!dap_global_db_isalnum_group_key(l_store_obj_cur, !(l_store_obj_cur->flags & DAP_GLOBAL_DB_RECORD_ERASE))) {
                 log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i, a_store_count);
                 l_ret = -9;
                 break;

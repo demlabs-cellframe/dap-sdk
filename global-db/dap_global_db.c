@@ -197,17 +197,16 @@ int dap_global_db_init()
     }
 
     // Driver initalization
-    if ( (l_rc = dap_db_driver_init(s_dbi->driver_name,
-                                   s_dbi->storage_path, true)) )
+    if ( (l_rc = dap_global_db_driver_init(s_dbi->driver_name, s_dbi->storage_path)) )
         return log_it(L_CRITICAL, "Hadn't initialized DB driver \"%s\" on path \"%s\", code: %d",
                        s_dbi->driver_name, s_dbi->storage_path, l_rc), l_rc;
 
+    // Clusters initialization
     if ( (l_rc = dap_global_db_cluster_init()) )
-        return log_it(L_CRITICAL, "Can't initialize GlobalDD clusters"), l_rc;
-
+        return log_it(L_CRITICAL, "Can't initialize GlobalDB clusters"), l_rc;
     // Check version and update if need it
     if ( (l_rc = s_check_db_version()) )
-        return  log_it(L_ERROR, "GlobalDB version changed, please export or remove old version!"), l_rc;
+        return log_it(L_ERROR, "GlobalDB version changed, please export or remove old version!"), l_rc;
 
 lb_return:
     if (l_rc == 0 )
@@ -241,7 +240,7 @@ inline dap_global_db_instance_t *dap_global_db_instance_get_default()
  */
 void dap_global_db_deinit() {
     dap_global_db_instance_deinit();
-    dap_db_driver_deinit();
+    dap_global_db_driver_deinit();
     dap_global_db_cluster_deinit();
 }
 
@@ -826,7 +825,7 @@ static bool s_msg_opcode_get_all(struct queue_io_msg * a_msg)
     dap_return_val_if_pass(!a_msg, false);
 
     size_t l_values_count = a_msg->values_page_size;
-    dap_global_db_obj_t *l_objs= NULL;
+    dap_global_db_obj_t *l_objs = NULL;
     dap_store_obj_t *l_store_objs = NULL;
     if (!a_msg->values_page_size) {
         l_objs = dap_global_db_get_all_sync(a_msg->group, &l_values_count);
@@ -1413,7 +1412,7 @@ static void s_msg_opcode_delete(struct queue_io_msg * a_msg)
  */
 int dap_global_db_flush_sync()
 {
-    return dap_db_driver_flush();
+    return dap_global_db_driver_flush();
 }
 
 /**
@@ -1614,9 +1613,8 @@ static void s_queue_io_msg_delete( struct queue_io_msg * a_msg)
  */
 static int s_check_db_version()
 {
-    int l_ret;
     pthread_mutex_lock(&s_check_db_mutex);
-    l_ret = dap_global_db_get(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",s_check_db_version_callback_get, NULL);
+    int l_ret = dap_global_db_get(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",s_check_db_version_callback_get, NULL);
     if (l_ret == 0) {
         while (s_check_db_ret == INVALID_RETCODE)
             pthread_cond_wait(&s_check_db_cond, &s_check_db_mutex);
@@ -1643,7 +1641,7 @@ static void s_check_db_version_callback_get (dap_global_db_instance_t *a_dbi, in
                                              dap_nanotime_t value_ts, bool a_is_pinned, void * a_arg)
 {
     int res = 0;
-    if(a_errno != 0) { // No DB at all
+    if (a_errno != 0) { // No DB at all
         log_it(L_NOTICE, "No GlobalDB version at all, creating the new GlobalDB from scratch");
         a_dbi->version = DAP_GLOBAL_DB_VERSION;
         if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",
@@ -1661,9 +1659,9 @@ static void s_check_db_version_callback_get (dap_global_db_instance_t *a_dbi, in
         a_dbi->version = *(uint32_t *)a_value;
 
     if( a_dbi->version < DAP_GLOBAL_DB_VERSION) {
-        log_it(L_NOTICE, "GlobalDB version %u, but %u required. The current database will be recreated",
+        log_it(L_NOTICE, "Current GlobalDB version is %u, but %u is required. The current database will be recreated",
                a_dbi->version, DAP_GLOBAL_DB_VERSION);
-        dap_global_db_deinit();
+        dap_global_db_driver_deinit();
         // Database path
         const char *l_storage_path = a_dbi->storage_path;
         // Delete database
@@ -1699,13 +1697,13 @@ static void s_check_db_version_callback_get (dap_global_db_instance_t *a_dbi, in
             DAP_DELETE(l_output_file_path);
         }
         // Reinitialize database
-        res = dap_global_db_init();
+        res = dap_global_db_driver_init(s_dbi->driver_name, s_dbi->storage_path);
         // Save current db version
         if(!res) {
             a_dbi->version = DAP_GLOBAL_DB_VERSION;
             if ( (res = dap_global_db_set(DAP_GLOBAL_DB_LOCAL_GENERAL, "gdb_version",
                                           &a_dbi->version,
-                                          sizeof(uint16_t), false,
+                                          sizeof(uint32_t), false,
                                           s_check_db_version_callback_set, NULL) ) != 0) {
                 log_it(L_NOTICE, "Can't set GlobalDB version, code %d", res);
                 goto lb_exit;
@@ -1774,7 +1772,7 @@ dap_global_db_obj_t *s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_
         return NULL;
     }
     for (size_t i = 0; i < a_values_count; i++) {
-        if (!dap_global_db_isalnum_group_key(a_store_objs + i)) {
+        if (!dap_global_db_isalnum_group_key(a_store_objs + i, true)) {
             log_it(L_ERROR, "Delete broken object");
             dap_global_db_del(a_store_objs[i].group, a_store_objs[i].key, NULL, NULL);
             continue;
@@ -1791,22 +1789,27 @@ dap_global_db_obj_t *s_objs_from_store_objs(dap_store_obj_t *a_store_objs, size_
     return l_objs;
 }
 
-bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj)
+bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_null_key)
 {
-    dap_return_val_if_fail(a_obj && a_obj->group && a_obj->key, false);
+    dap_return_val_if_fail(a_obj && a_obj->group, false);
 
     bool ret = true;
-    for (char *c = (char*)a_obj->key; *c; ++c) {
-        if (!dap_ascii_isprint(*c)) {
-            ret = false;
-            break;
+    if (a_obj->key) {
+        for (char *c = (char*)a_obj->key; *c; ++c) {
+            if (!dap_ascii_isprint(*c)) {
+                ret = false;
+                break;
+            }
         }
-    }
+    } else if (a_not_null_key)
+        ret = false;
 
-    for (char *c = (char*)a_obj->group; *c; ++c) {
-        if (!dap_ascii_isprint(*c)) {
-            ret = false;
-            break;
+    if (ret) {
+        for (char *c = (char*)a_obj->group; *c; ++c) {
+            if (!dap_ascii_isprint(*c)) {
+                ret = false;
+                break;
+            }
         }
     }
 

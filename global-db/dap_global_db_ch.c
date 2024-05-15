@@ -170,15 +170,16 @@ static bool s_process_hashes(void *a_arg)
         return false;
     }
     dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
-    for (uint32_t i = 0, j = 0; i < l_pkt->hashes_count; i++) {
+    uint32_t j = 0;
+    for (uint32_t i = 0; i < l_pkt->hashes_count; i++) {
         dap_global_db_driver_hash_t *l_hash_cur = l_hashes + i;
         if (!dap_global_db_driver_is_hash(l_group, *l_hash_cur)) {
             if (i != j)
                 *(l_hashes + j) = *l_hash_cur;
             j++;
-        } else
-            --l_pkt->hashes_count;
+        }
     }
+    l_pkt->hashes_count = j;
     if (l_pkt->hashes_count) {
         debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_REQUEST packet for group %s with records count %u",
                                                                                         l_group, l_pkt->hashes_count);
@@ -229,15 +230,15 @@ bool dap_global_db_ch_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_ad
     if (g_dap_global_db_debug_more) {
         char l_ts_str[DAP_TIME_STR_SIZE] = { '\0' };
         dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
-        char l_hash_str[DAP_HASH_FAST_STR_SIZE];
+        dap_stream_node_addr_t l_signer_addr;
         dap_hash_fast_t l_sign_hash;
-        if (!a_obj->sign || !dap_sign_get_pkey_hash(a_obj->sign, &l_sign_hash))
-            strcpy(l_hash_str, "UNSIGNED");
-        else
-           dap_hash_fast_to_str(&l_sign_hash, l_hash_str, DAP_HASH_FAST_STR_SIZE);
-        log_it(L_DEBUG, "Unpacked object: group=\"%s\" key=\"%s\""
-                " timestamp=\"%s\" value_len=%"DAP_UINT64_FORMAT_U" signer_hash=%s" ,
-                a_obj->group, a_obj->key, l_ts_str, a_obj->value_len, l_hash_str);
+        if (a_obj->sign && dap_sign_get_pkey_hash(a_obj->sign, &l_sign_hash))
+           dap_stream_node_addr_from_hash(&l_sign_hash, &l_signer_addr);
+        log_it(L_DEBUG, "Unpacked object: type='%c', group=\"%s\" key=\"%s\""
+                " timestamp=\"%s\" value_len=%"DAP_UINT64_FORMAT_U" signer_addr=%s",
+                    dap_store_obj_get_type(a_obj),
+                        a_obj->group, a_obj->key, l_ts_str, a_obj->value_len,
+                            a_obj->sign ? dap_stream_node_addr_to_str_static(l_signer_addr) : "UNSIGNED");
     }
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(dap_global_db_instance_get_default(), a_obj->group);
     if (!l_cluster) {
@@ -245,11 +246,11 @@ bool dap_global_db_ch_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_ad
         return false;
     }
     if (dap_stream_node_addr_is_blank(a_addr) &&
-            l_cluster->links_cluster->role == DAP_CLUSTER_ROLE_EMBEDDED &&
+            l_cluster->links_cluster->type == DAP_CLUSTER_TYPE_EMBEDDED &&
             l_cluster->links_cluster->status == DAP_CLUSTER_STATUS_ENABLED)
         // Unverified stream, let it access to embedded (network) clusters for legacy support
         return true;
-    if (dap_cluster_member_find_role(l_cluster->links_cluster, a_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
+    if (!dap_cluster_member_find_unsafe(l_cluster->links_cluster, a_addr)) {
         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
         log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR " is not a member of cluster %s", NODE_ADDR_FP_ARGS(a_addr), l_name);
         return false;

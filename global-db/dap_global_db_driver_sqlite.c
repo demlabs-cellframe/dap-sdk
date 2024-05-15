@@ -993,7 +993,7 @@ static int s_db_sqlite_transaction_end(bool a_commit)
  * @param a_drv_callback a pointer to a structure of callback functions
  * @return If successful returns 0, else a code < 0.
  */
-int dap_db_driver_sqlite_init(const char *a_filename_db, dap_db_driver_callbacks_t *a_drv_callback)
+int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_db_driver_callbacks_t *a_drv_callback)
 {
 // sanity check
     dap_return_val_if_pass(!a_filename_db, -1);

@@ -22,7 +22,7 @@
  along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 
     MODIFICATION HISTORY:
-        08-MAY-2022 RRL Added <ctx> field to the DB Driver interface table is called as <dap_db_driver_callbacks_t>;
+        08-MAY-2022 RRL Added <ctx> field to the DB Driver interface table is called as <dap_global_db_driver_callbacks_t>;
                         a set of limits - see DAP$K/SZ constant definitions;
                         added lengths for the character fields.
  */
@@ -124,53 +124,53 @@ DAP_STATIC_INLINE bool dap_global_db_driver_hash_is_blank(dap_global_db_driver_h
 typedef struct dap_global_db_hash_pkt dap_global_db_hash_pkt_t;
 typedef struct dap_global_db_pkt_pack dap_global_db_pkt_pack_t;
 
-typedef int (*dap_db_driver_write_callback_t)(dap_store_obj_t *a_store_obj);
-typedef dap_store_obj_t* (*dap_db_driver_read_callback_t)(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes);
-typedef dap_store_obj_t* (*dap_db_driver_read_cond_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count, bool a_with_holes);
-typedef dap_global_db_hash_pkt_t * (*dap_db_driver_read_hashes_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
-typedef dap_store_obj_t* (*dap_db_driver_read_last_callback_t)(const char *a_group, bool a_with_holes);
-typedef size_t (*dap_db_driver_read_count_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
-typedef dap_list_t* (*dap_db_driver_get_groups_callback_t)(const char *a_mask);
-typedef bool (*dap_db_driver_is_obj_callback_t)(const char *a_group, const char *a_key);
-typedef bool (*dap_db_driver_is_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash);
-typedef dap_global_db_pkt_pack_t * (*dap_db_driver_get_by_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t *a_hash, size_t a_count);
-typedef int (*dap_db_driver_txn_start_callback_t)(void);
-typedef int (*dap_db_driver_txn_end_callback_t)(bool);
-typedef int (*dap_db_driver_callback_t)(void);
+typedef int (*dap_global_db_driver_write_callback_t)(dap_store_obj_t *a_store_obj);
+typedef dap_store_obj_t* (*dap_global_db_driver_read_callback_t)(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes);
+typedef dap_store_obj_t* (*dap_global_db_driver_read_cond_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count, bool a_with_holes);
+typedef dap_global_db_hash_pkt_t * (*dap_global_db_driver_read_hashes_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
+typedef dap_store_obj_t* (*dap_global_db_driver_read_last_callback_t)(const char *a_group, bool a_with_holes);
+typedef size_t (*dap_global_db_driver_read_count_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
+typedef dap_list_t* (*dap_global_db_driver_get_groups_callback_t)(const char *a_mask);
+typedef bool (*dap_global_db_driver_is_obj_callback_t)(const char *a_group, const char *a_key);
+typedef bool (*dap_global_db_driver_is_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash);
+typedef dap_global_db_pkt_pack_t * (*dap_global_db_driver_get_by_hash_callback_t)(const char *a_group, dap_global_db_driver_hash_t *a_hash, size_t a_count);
+typedef int (*dap_global_db_driver_txn_start_callback_t)(void);
+typedef int (*dap_global_db_driver_txn_end_callback_t)(bool);
+typedef int (*dap_global_db_driver_callback_t)(void);
 
-typedef struct dap_db_driver_callbacks {
-    dap_db_driver_write_callback_t      apply_store_obj;                    /* Performs an DB's action like: INSERT/DELETE/UPDATE for the given
+typedef struct dap_global_db_driver_callbacks {
+    dap_global_db_driver_write_callback_t      apply_store_obj;                    /* Performs an DB's action like: INSERT/DELETE/UPDATE for the given
                                                                               'store object' */
-    dap_db_driver_read_callback_t       read_store_obj;                     /* Retreive 'store object' from DB */
-    dap_db_driver_read_last_callback_t  read_last_store_obj;
-    dap_db_driver_read_cond_callback_t  read_cond_store_obj;
-    dap_db_driver_read_hashes_callback_t read_hashes;
-    dap_db_driver_read_count_callback_t read_count_store;
+    dap_global_db_driver_read_callback_t       read_store_obj;                     /* Retreive 'store object' from DB */
+    dap_global_db_driver_read_last_callback_t  read_last_store_obj;
+    dap_global_db_driver_read_cond_callback_t  read_cond_store_obj;
+    dap_global_db_driver_read_hashes_callback_t read_hashes;
+    dap_global_db_driver_read_count_callback_t read_count_store;
 
-    dap_db_driver_get_groups_callback_t get_groups_by_mask;                 /* Return a list of tables/groups has been matched to pattern */
+    dap_global_db_driver_get_groups_callback_t get_groups_by_mask;                 /* Return a list of tables/groups has been matched to pattern */
 
-    dap_db_driver_is_obj_callback_t     is_obj;                             /* Check for existence of a record in the table/group for
+    dap_global_db_driver_is_obj_callback_t     is_obj;                             /* Check for existence of a record in the table/group for
                                                                               a given <key> */
-    dap_db_driver_is_hash_callback_t    is_hash;                            /* Check for existence of a record in the table/group for
+    dap_global_db_driver_is_hash_callback_t    is_hash;                            /* Check for existence of a record in the table/group for
                                                                               a given driver hash */
-    dap_db_driver_get_by_hash_callback_t get_by_hash;                       /* Retrieve a record from the table/group for a given driver hash */
+    dap_global_db_driver_get_by_hash_callback_t get_by_hash;                       /* Retrieve a record from the table/group for a given driver hash */
 
-    dap_db_driver_txn_start_callback_t  transaction_start;                  /* Allocate DB context for consequtive operations */
-    dap_db_driver_txn_end_callback_t    transaction_end;                    /* Release DB context at end of DB consequtive operations */
+    dap_global_db_driver_txn_start_callback_t  transaction_start;                  /* Allocate DB context for consequtive operations */
+    dap_global_db_driver_txn_end_callback_t    transaction_end;                    /* Release DB context at end of DB consequtive operations */
 
-    dap_db_driver_callback_t            deinit;
-    dap_db_driver_callback_t            flush;
-} dap_db_driver_callbacks_t;
+    dap_global_db_driver_callback_t            deinit;
+    dap_global_db_driver_callback_t            flush;
+} dap_global_db_driver_callbacks_t;
 
-int     dap_db_driver_init(const char *driver_name, const char *a_filename_db, int a_mode_async);
-void    dap_db_driver_deinit(void);
+int     dap_global_db_driver_init(const char *driver_name, const char *a_filename_db);
+void    dap_global_db_driver_deinit(void);
 
 dap_store_obj_t *dap_store_obj_copy(dap_store_obj_t *a_store_obj, size_t a_store_count);
 dap_store_obj_t *dap_store_obj_copy_ext(dap_store_obj_t *a_store_obj, void *a_ext, size_t a_ext_size);
 dap_store_obj_t *dap_global_db_store_objs_copy(dap_store_obj_t *, const dap_store_obj_t *, size_t);
 void    dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count);
 DAP_STATIC_INLINE void dap_store_obj_free_one(dap_store_obj_t *a_store_obj) { return dap_store_obj_free(a_store_obj, 1); }
-int     dap_db_driver_flush(void);
+int     dap_global_db_driver_flush(void);
 
 int dap_global_db_driver_apply(dap_store_obj_t *a_store_obj, size_t a_store_count);
 int dap_global_db_driver_add(dap_store_obj_t *a_store_obj, size_t a_store_count);

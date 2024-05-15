@@ -328,7 +328,7 @@ static  int s_db_mdbx_deinit(void)
  *      0>      - <errno>
  */
 
-int     dap_db_driver_mdbx_init(const char *a_mdbx_path, dap_db_driver_callbacks_t *a_drv_dpt)
+int dap_global_db_driver_mdbx_init(const char *a_mdbx_path, dap_global_db_driver_callbacks_t *a_drv_dpt)
 {
 int rc;
 MDBX_txn    *l_txn;
@@ -1036,7 +1036,9 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
         l_key.iov_len = sizeof(l_driver_key);
         /* Compute a length of the area to keep record */
         size_t l_key_len = strnlen(a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX - 1) + 1;
-        size_t l_record_len = sizeof(struct driver_record) + a_store_obj->value_len + l_key_len + dap_sign_get_size(a_store_obj->sign);
+        size_t l_record_len = sizeof(struct driver_record) + a_store_obj->value_len + l_key_len;
+        if (a_store_obj->sign)
+            l_record_len += dap_sign_get_size(a_store_obj->sign);
         struct driver_record *l_record = DAP_NEW_Z_SIZE(struct driver_record, l_record_len);
         if (!l_record)
             return log_it(L_CRITICAL, "Cannot allocate memory for new records, %zu bytes, errno=%d", l_record_len, errno), MDBX_PANIC;
