@@ -48,14 +48,14 @@ int dap_global_db_cluster_init()
                 dap_global_db_instance_get_default(), DAP_STREAM_CLUSTER_GLOBAL,
                 *(dap_guuid_t *)&uint128_0, DAP_GLOBAL_DB_CLUSTER_GLOBAL,
                 DAP_GLOBAL_DB_UNCLUSTERED_TTL, true,
-                DAP_GDB_MEMBER_ROLE_USER, DAP_CLUSTER_TYPE_VIRTUAL)))
+                DAP_GDB_MEMBER_ROLE_USER, DAP_CLUSTER_TYPE_SYSTEM)))
         return -1;
 
     // Pseudo-cluster for local scope (unsynced groups).
     if ( !(s_local_cluster = dap_global_db_cluster_add(
                 dap_global_db_instance_get_default(), DAP_STREAM_CLUSTER_LOCAL,
                 dap_guuid_compose(0, 1), DAP_GLOBAL_DB_CLUSTER_LOCAL,
-                0, false, DAP_GDB_MEMBER_ROLE_NOBODY, DAP_CLUSTER_TYPE_VIRTUAL)))
+                0, false, DAP_GDB_MEMBER_ROLE_NOBODY, DAP_CLUSTER_TYPE_SYSTEM)))
         return -2;
 
     dap_global_db_cluster_member_add(s_local_cluster, &g_node_addr, DAP_GDB_MEMBER_ROLE_ROOT);
@@ -120,7 +120,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
             return NULL;
         }
     }
-    l_cluster->role_cluster = dap_cluster_new(NULL, *(dap_guuid_t *)&uint128_0, DAP_CLUSTER_TYPE_VIRTUAL);
+    l_cluster->role_cluster = dap_cluster_new(NULL, dap_guuid_compose(UINT64_MAX, UINT64_MAX), DAP_CLUSTER_TYPE_VIRTUAL);
     if (!l_cluster->role_cluster) {
         log_it(L_ERROR, "Can't create role cluster");
         dap_cluster_delete(l_cluster->links_cluster);
@@ -148,7 +148,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->link_manager = dap_link_manager_get_default();
     l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
     DL_APPEND(a_dbi->clusters, l_cluster);
-    if (l_cluster->links_cluster->type != DAP_CLUSTER_TYPE_VIRTUAL)
+    if (dap_strcmp(DAP_STREAM_CLUSTER_LOCAL, a_mnemonim))
         dap_proc_thread_timer_add(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000);
     log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s", dap_guuid_to_hex_str(a_guuid), a_group_mask);
     return l_cluster;

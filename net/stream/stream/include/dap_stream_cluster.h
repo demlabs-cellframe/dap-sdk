@@ -50,10 +50,11 @@ typedef void (*dap_cluster_change_callback_t)(dap_cluster_member_t *a_member, vo
 // Role in cluster
 typedef enum dap_cluster_type {
     DAP_CLUSTER_TYPE_INVALID = 0,
-    DAP_CLUSTER_TYPE_EMBEDDED,      // Default role, passive link managment
-    DAP_CLUSTER_TYPE_AUTONOMIC,     // Role for mixed link management, passive by default, switching to active one for absent links
-    DAP_CLUSTER_TYPE_ISOLATED,      // Role for active internal independent link managment
-    DAP_CLUSTER_TYPE_VIRTUAL        // No links managment on this type of clusters
+    DAP_CLUSTER_TYPE_EMBEDDED,      // Type network link managment with balancer intregration
+    DAP_CLUSTER_TYPE_AUTONOMIC,     // Type of static link management, passive by default, switching to active one for absent links
+    DAP_CLUSTER_TYPE_ISOLATED,      // Type of active internal independent link managment
+    DAP_CLUSTER_TYPE_SYSTEM,        // Especial link management for local and global clusters
+    DAP_CLUSTER_TYPE_VIRTUAL        // No links managment for this type of clusters
 } dap_cluster_type_t;
 
 typedef enum dap_cluster_status {
