@@ -74,6 +74,7 @@ typedef struct authorized_stream {
     UT_hash_handle hh;
 } authorized_stream_t;
 
+static dap_cluster_t        *s_global_links_cluster = NULL;
 static pthread_rwlock_t     s_streams_lock = PTHREAD_RWLOCK_INITIALIZER;    // Lock for all tables and list under
 static dap_stream_t         *s_authorized_streams = NULL;                   // Authorized streams hashtable by addr
 static dap_stream_t         *s_streams = NULL;                              // Double-linked list
@@ -185,6 +186,8 @@ int dap_stream_init(dap_config_t * a_config)
 #include "dap_stream_test.h"
     dap_stream_test_init();
 #endif
+
+    s_global_links_cluster = dap_cluster_new(DAP_STREAM_CLUSTER_GLOBAL, *(dap_guuid_t *)&uint128_0, DAP_CLUSTER_TYPE_VIRTUAL);
 
     log_it(L_NOTICE,"Init streaming module");
 
@@ -998,6 +1001,7 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
     }
     a_stream->primary = true;
     HASH_ADD(hh, s_authorized_streams, node, sizeof(a_stream->node), a_stream);
+    dap_cluster_member_add(s_global_links_cluster, &a_stream->node, 0, NULL); // Used own rwlock for this cluster members
     dap_link_manager_stream_add(&a_stream->node, a_stream->is_client_to_uplink);
     return 0;
 }
@@ -1018,8 +1022,10 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
         if (l_stream) {
             s_stream_add_to_hashtable(l_stream);
             dap_link_manager_stream_replace(&a_stream->node, l_stream->is_client_to_uplink);
-        } else
-            dap_link_manager_stream_delete(&a_stream->node);
+        } else {
+            dap_cluster_member_delete(s_global_links_cluster, &a_stream->node);
+            dap_link_manager_stream_delete(&a_stream->node); // Used own rwlock for this cluster members
+        }
     }
     pthread_rwlock_unlock(&s_streams_lock);
 }
@@ -1193,29 +1199,4 @@ void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count)
         DAP_DEL_Z(it->channels);
     }
     DAP_DELETE(a_info);
-}
-
-void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
-{
-    assert(pthread_rwlock_rdlock(&s_streams_lock) != EDEADLOCK);
-    for (dap_stream_t *it = s_authorized_streams; it; it = it->hh.next)
-        dap_stream_ch_pkt_send_mt(it->stream_worker, it->esocket_uuid, a_ch_id, a_type, a_data, a_data_size);
-    pthread_rwlock_unlock(&s_streams_lock);
-}
-
-dap_stream_node_addr_t dap_stream_get_random_link()
-{
-    dap_stream_node_addr_t l_ret = {};
-    if (s_authorized_streams) {
-        int num = rand() % HASH_COUNT(s_authorized_streams), idx = 0;
-        pthread_rwlock_rdlock(&s_streams_lock);
-        for (dap_stream_t *it = s_authorized_streams; it; it = it->hh.next) {
-            if (idx++ == num) {
-                l_ret = it->node;
-                break;
-            }
-        }
-        pthread_rwlock_unlock(&s_streams_lock);
-    }
-    return l_ret;
 }

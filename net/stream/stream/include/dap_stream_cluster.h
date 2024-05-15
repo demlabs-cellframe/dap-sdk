@@ -31,6 +31,9 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "json_object.h"
 #include "dap_math_convert.h"
 
+#define DAP_STREAM_CLUSTER_GLOBAL   "global"    // This mnemonim is for globally broadcasting grops
+#define DAP_STREAM_CLUSTER_LOCAL    "local"     // This mnemonim is for not broadcasting groups
+
 typedef struct dap_cluster dap_cluster_t;
 
 typedef struct dap_cluster_member {
@@ -45,13 +48,13 @@ typedef struct dap_cluster_member {
 typedef void (*dap_cluster_change_callback_t)(dap_cluster_member_t *a_member, void *a_arg);
 
 // Role in cluster
-typedef enum dap_cluster_role {
-    DAP_CLUSTER_ROLE_INVALID = 0,
-    DAP_CLUSTER_ROLE_EMBEDDED,      // Default role, passive link managment
-    DAP_CLUSTER_ROLE_AUTONOMIC,     // Role for mixed link management, passive by default, switching to active one for absent links
-    DAP_CLUSTER_ROLE_ISOLATED,      // Role for active internal independent link managment
-    DAP_CLUSTER_ROLE_VIRTUAL        // No links managment on this type of clusters
-} dap_cluster_role_t;
+typedef enum dap_cluster_type {
+    DAP_CLUSTER_TYPE_INVALID = 0,
+    DAP_CLUSTER_TYPE_EMBEDDED,      // Default role, passive link managment
+    DAP_CLUSTER_TYPE_AUTONOMIC,     // Role for mixed link management, passive by default, switching to active one for absent links
+    DAP_CLUSTER_TYPE_ISOLATED,      // Role for active internal independent link managment
+    DAP_CLUSTER_TYPE_VIRTUAL        // No links managment on this type of clusters
+} dap_cluster_type_t;
 
 typedef enum dap_cluster_status {
     DAP_CLUSTER_STATUS_DISABLED = 0,
@@ -61,7 +64,7 @@ typedef enum dap_cluster_status {
 typedef struct dap_cluster {
     const char *mnemonim;           // Field for alternative cluster finding, unique
     dap_guuid_t guuid;              // Unique global cluster id
-    dap_cluster_role_t role;        // Link management role
+    dap_cluster_type_t type;        // Link management type
     dap_cluster_status_t status;    // Active or inactive for now
     pthread_rwlock_t members_lock;
     dap_cluster_member_t *members;  // Cluster members (by stream addr) and callbacks
@@ -73,7 +76,7 @@ typedef struct dap_cluster {
 } dap_cluster_t;
 
 // Cluster common funcs
-dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_cluster_role_t a_role);
+dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_cluster_type_t a_type);
 void dap_cluster_delete(dap_cluster_t *a_cluster);
 dap_cluster_t *dap_cluster_find(dap_guuid_t a_uuid);
 dap_cluster_t *dap_cluster_by_mnemonim(const char *a_mnemonim);

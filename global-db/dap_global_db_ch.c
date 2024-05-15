@@ -246,11 +246,11 @@ bool dap_global_db_ch_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_ad
         return false;
     }
     if (dap_stream_node_addr_is_blank(a_addr) &&
-            l_cluster->links_cluster->role == DAP_CLUSTER_ROLE_EMBEDDED &&
+            l_cluster->links_cluster->type == DAP_CLUSTER_TYPE_EMBEDDED &&
             l_cluster->links_cluster->status == DAP_CLUSTER_STATUS_ENABLED)
         // Unverified stream, let it access to embedded (network) clusters for legacy support
         return true;
-    if (dap_cluster_member_find_role(l_cluster->links_cluster, a_addr) == DAP_GDB_MEMBER_ROLE_INVALID) {
+    if (!dap_cluster_member_find_unsafe(l_cluster->links_cluster, a_addr)) {
         const char *l_name = l_cluster->links_cluster->mnemonim ? l_cluster->links_cluster->mnemonim : l_cluster->groups_mask;
         log_it(L_WARNING, "Node with addr " NODE_ADDR_FP_STR " is not a member of cluster %s", NODE_ADDR_FP_ARGS(a_addr), l_name);
         return false;

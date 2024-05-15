@@ -40,7 +40,7 @@ static void s_cluster_member_delete(dap_cluster_member_t *a_member);
  * @param a_options
  * @return
  */
-dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_cluster_role_t a_role)
+dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_cluster_type_t a_type)
 {
     dap_cluster_t *l_ret = DAP_NEW_Z(dap_cluster_t);
     if (!l_ret) {
@@ -48,9 +48,16 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_
         return NULL;
     }
     pthread_rwlock_init(&l_ret->members_lock, NULL);
-    l_ret->role = a_role;
+    l_ret->type = a_type;
     dap_cluster_t *l_check = NULL;
     pthread_rwlock_wrlock(&s_clusters_rwlock);
+    HASH_FIND(hh, s_clusters, &a_guuid, sizeof(dap_guuid_t), l_check);
+    if (l_check) {
+        const char *l_guuid_str = dap_guuid_to_hex_str(a_guuid);
+        log_it(L_ERROR, "GUUID %s already in use", l_guuid_str);
+        DAP_DELETE(l_ret);
+        return NULL;
+    }
     if (a_mnemonim) {
         HASH_FIND(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_check);
         if (l_check) {
@@ -58,24 +65,13 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_
             DAP_DELETE(l_ret);
             return NULL;
         }
-        HASH_ADD_KEYPTR(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_ret);
-    }
-    if (!IS_ZERO_128(a_guuid.raw)) {
-        HASH_FIND(hh, s_clusters, &a_guuid, sizeof(dap_guuid_t), l_check);
-        if (l_check) {
-            const char *l_guuid_str = dap_guuid_to_hex_str(a_guuid);
-            log_it(L_ERROR, "GUUID %s already in use", l_guuid_str);
-            DAP_DELETE(l_ret);
-            return NULL;
-        }
-    }
-    if (a_mnemonim) {
         l_ret->mnemonim = strdup(a_mnemonim);
         if (!l_ret->mnemonim) {
             log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             DAP_DELETE(l_ret);
             return NULL;
         }
+        HASH_ADD_KEYPTR(hh_str, s_cluster_mnemonims, a_mnemonim, strlen(a_mnemonim), l_ret);
     }
     l_ret->guuid = a_guuid;
     HASH_ADD(hh, s_clusters, guuid, sizeof(l_ret->guuid), l_ret);
@@ -255,11 +251,7 @@ bool s_present_in_array(dap_stream_node_addr_t a_addr, dap_stream_node_addr_t *a
 void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size,
                            dap_stream_node_addr_t *a_exclude_aray, size_t a_exclude_array_size)
 {
-    if (!a_cluster) {
-        // TODO add exclude array to stream broadcasting
-        dap_stream_broadcast(a_ch_id, a_type, a_data, a_data_size);
-        return;
-    }
+    dap_return_if_fail(a_cluster);
     pthread_rwlock_rdlock(&a_cluster->members_lock);
     for (dap_cluster_member_t *it = a_cluster->members; it; it = it->hh.next) {
         if (s_present_in_array(it->addr, a_exclude_aray, a_exclude_array_size))

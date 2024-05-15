@@ -37,7 +37,7 @@
 #include "dap_enc_ks.h"
 #include "dap_strfuncs.h"
 
-#define STREAM_KEEPALIVE_TIMEOUT 3   // How  often send keeplive messages (seconds)
+#define STREAM_KEEPALIVE_TIMEOUT    3   // How  often send keeplive messages (seconds)
 
 typedef struct dap_stream_ch dap_stream_ch_t;
 typedef struct dap_stream_worker dap_stream_worker_t;
@@ -172,5 +172,3 @@ dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert);
 dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey);
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count);
 void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count);
-void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
-dap_stream_node_addr_t dap_stream_get_random_link();
