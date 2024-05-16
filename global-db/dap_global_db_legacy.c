@@ -117,7 +117,7 @@ dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *
             return NULL;
         }
         if (rc != DAP_GLOBAL_DB_RC_PROGRESS) {
-            // remove cuurent group from list, go to next group
+            // go to next group
             a_db_legacy_list->groups = dap_list_next(a_db_legacy_list->groups);
             a_db_legacy_list->current_hash = c_dap_global_db_driver_hash_blank;
         }
@@ -137,8 +137,8 @@ void dap_global_db_legacy_list_delete(dap_global_db_legacy_list_t *a_db_legacy_l
 {
     if (!a_db_legacy_list)
         return;
-    if (a_db_legacy_list->groups)
-        dap_list_free_full(a_db_legacy_list->groups, NULL);
+    if (l_db_legacy_list->saved_ptr)
+        dap_list_free_full(l_db_legacy_list->saved_ptr, NULL);
     DAP_DELETE(a_db_legacy_list);
 }
 
