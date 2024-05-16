@@ -80,7 +80,8 @@ dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *
 {
     dap_list_t *ret = NULL;
     size_t l_number_limit = a_number_limit;
-    do {
+
+    while (a_db_legacy_list->current_group) {
         char *l_group_cur = a_db_legacy_list->current_group->data;
         size_t l_values_count = l_number_limit;
         dap_store_obj_t *l_store_objs = dap_global_db_driver_cond_read(l_group_cur, a_db_legacy_list->current_hash, &l_values_count, true);
@@ -123,7 +124,7 @@ dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *
         }
         if (!l_number_limit)
             break;
-    } while (a_db_legacy_list->current_group);
+    }
 
     return ret;
 }
