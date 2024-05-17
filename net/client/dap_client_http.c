@@ -75,7 +75,7 @@ int dap_client_http_init()
     s_debug_more = dap_config_get_item_bool_default(g_config,"dap_client","debug_more",false);
     s_max_attempts = dap_config_get_item_uint32_default(g_config,"dap_client","max_tries",5);
     s_client_timeout_ms = dap_config_get_item_uint32_default(g_config,"dap_client","timeout",10)*1000;
-    s_client_response_size_max = dap_config_get_item_uint32_default(g_config,"dap_client","response_size_ma",131072);
+    s_client_response_size_max = dap_config_get_item_uint64_default(g_config,"dap_client","response_size_max",131072);
     s_client_timeout_read_after_connect_ms = (time_t) dap_config_get_item_uint64_default(g_config,"dap_client","timeout_read_after_connect",5)*1000;
 #ifndef DAP_NET_CLIENT_NO_SSL
     wolfSSL_Init();
