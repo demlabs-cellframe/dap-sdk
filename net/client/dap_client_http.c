@@ -43,7 +43,7 @@
 
 #define LOG_TAG "dap_client_http"
 
-#define DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX 65536 //40960
+// #define DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX 65536 //40960
 
 static void s_http_connected(dap_events_socket_t * a_esocket); // Connected
 #ifndef DAP_NET_CLIENT_NO_SSL
@@ -57,7 +57,8 @@ static bool s_timer_timeout_after_connected_check(void * a_arg);
 
 
 static bool s_debug_more=false;
-static uint64_t s_client_timeout_ms                     = 20000;
+static uint64_t s_client_timeout_ms                     = 131072;
+static uint64_t s_client_response_size_max              = 20000;
 static uint64_t s_client_timeout_read_after_connect_ms  = 5000;
 static uint32_t s_max_attempts = 5;
 
@@ -74,6 +75,7 @@ int dap_client_http_init()
     s_debug_more = dap_config_get_item_bool_default(g_config,"dap_client","debug_more",false);
     s_max_attempts = dap_config_get_item_uint32_default(g_config,"dap_client","max_tries",5);
     s_client_timeout_ms = dap_config_get_item_uint32_default(g_config,"dap_client","timeout",10)*1000;
+    s_client_response_size_max = dap_config_get_item_uint32_default(g_config,"dap_client","response_size_ma",131072);
     s_client_timeout_read_after_connect_ms = (time_t) dap_config_get_item_uint64_default(g_config,"dap_client","timeout_read_after_connect",5)*1000;
 #ifndef DAP_NET_CLIENT_NO_SSL
     wolfSSL_Init();
@@ -133,6 +135,24 @@ uint64_t dap_client_http_get_connect_timeout_ms()
 void dap_client_http_set_connect_timeout_ms(uint64_t a_timeout_ms)
 {
     s_client_timeout_ms = a_timeout_ms;
+}
+
+/**
+ * @brief dap_client_http_get_connect_timeout_ms
+ * @return
+ */
+uint64_t dap_client_http_get_response_size_max()
+{
+    return s_client_response_size_max;
+}
+
+/**
+ * @brief dap_client_http_set_response_size_max
+ * @param a_timeout_ms
+ */
+void dap_client_http_set_response_size_max(uint64_t size_max)
+{
+    s_client_response_size_max = size_max;
 }
 
 /**
@@ -312,7 +332,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
             l_client_http->response_size_max - l_client_http->response_size);
 
     // if buffer is overfull then read once more
-    if(l_client_http->response_size >= DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX) {
+    if(l_client_http->response_size >= dap_client_http_get_connect_timeout_ms()) {
         log_it(L_ERROR, "s_http_read response_size(%zu) overfull!!!", l_client_http->response_size);
     }
 
@@ -611,8 +631,8 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->cookie = a_cookie;
     l_client_http->request_custom_headers = dap_strdup(a_custom_headers);
 
-    l_client_http->response_size_max = DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX;
-    l_client_http->response = (uint8_t*) DAP_NEW_Z_SIZE(uint8_t, DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX);
+    l_client_http->response_size_max = dap_client_http_get_connect_timeout_ms();
+    l_client_http->response = (uint8_t*) DAP_NEW_Z_SIZE(uint8_t, dap_client_http_get_connect_timeout_ms());
     if (!l_client_http->response) {
         log_it(L_CRITICAL, "Memory allocation error");
         DAP_DEL_Z(l_client_http->request);
