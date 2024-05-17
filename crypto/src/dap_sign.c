@@ -521,3 +521,28 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
                              a_sign->header.sign_pkey_size,
                              a_sign->header.sign_size);
 }
+
+/**
+ * @brief dap_sign_get_information Added in string information about signature
+ * @param a_sign Signature can be NULL
+ * @param a_json_out The output string pointer
+ */
+void dap_sign_get_information_json(dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type)
+{
+    json_object_object_add(a_json_out,"Signature",json_object_new_string(""));
+    if (!a_sign) {
+        dap_json_rpc_error_add(a_json_out, "Corrupted signature data");
+        return;
+    }
+    dap_chain_hash_fast_t l_hash_pkey;
+    json_object_object_add(a_json_out,"Type",json_object_new_string(dap_sign_type_to_str(a_sign->header.type)));
+    if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
+        const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
+             ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
+             : dap_chain_hash_fast_to_str_static(&l_hash_pkey);
+             json_object_object_add(a_json_out,"Public key hash",json_object_new_string(l_hash_str));             
+    }
+    json_object_object_add(a_json_out,"Public key size",json_object_new_uint64(a_sign->header.sign_pkey_size));
+    json_object_object_add(a_json_out,"Signature size",json_object_new_uint64(a_sign->header.sign_size));
+
+}
