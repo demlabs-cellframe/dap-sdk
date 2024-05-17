@@ -57,8 +57,8 @@ static bool s_timer_timeout_after_connected_check(void * a_arg);
 
 
 static bool s_debug_more=false;
-static uint64_t s_client_timeout_ms                     = 131072;
-static uint64_t s_client_response_size_max              = 20000;
+static uint64_t s_client_timeout_ms                     = 20000;
+static uint64_t s_client_response_size_max              = 131072;
 static uint64_t s_client_timeout_read_after_connect_ms  = 5000;
 static uint32_t s_max_attempts = 5;
 
