@@ -88,6 +88,7 @@ dap_client_http_t *dap_client_http_request(dap_worker_t * a_worker,const char *a
 
 uint64_t dap_client_http_get_connect_timeout_ms();
 void dap_client_http_set_connect_timeout_ms(uint64_t a_timeout_ms);
+void dap_client_http_set_response_size_max(uint64_t size_max);
 
 void dap_client_http_close_unsafe(dap_client_http_t *a_client_http);
 

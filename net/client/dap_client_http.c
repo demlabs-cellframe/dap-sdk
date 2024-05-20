@@ -332,7 +332,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
             l_client_http->response_size_max - l_client_http->response_size);
 
     // if buffer is overfull then read once more
-    if(l_client_http->response_size >= dap_client_http_get_connect_timeout_ms()) {
+    if(l_client_http->response_size >= dap_client_http_get_response_size_max()) {
         log_it(L_ERROR, "s_http_read response_size(%zu) overfull!!!", l_client_http->response_size);
     }
 
@@ -631,8 +631,8 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->cookie = a_cookie;
     l_client_http->request_custom_headers = dap_strdup(a_custom_headers);
 
-    l_client_http->response_size_max = dap_client_http_get_connect_timeout_ms();
-    l_client_http->response = (uint8_t*) DAP_NEW_Z_SIZE(uint8_t, dap_client_http_get_connect_timeout_ms());
+    l_client_http->response_size_max = dap_client_http_get_response_size_max();
+    l_client_http->response = (uint8_t*) DAP_NEW_Z_SIZE(uint8_t, dap_client_http_get_response_size_max());
     if (!l_client_http->response) {
         log_it(L_CRITICAL, "Memory allocation error");
         DAP_DEL_Z(l_client_http->request);
