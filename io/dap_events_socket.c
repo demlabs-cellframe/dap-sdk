@@ -1030,8 +1030,9 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
  * @param a_arg
  * @return
  */
-int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t * a_es_input, void * a_arg)
+int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t *a_es_input, void *a_arg)
 {
+    dap_return_val_if_fail(a_es_input && a_arg, -1);
     debug_if(g_debug_reactor, L_DEBUG, "Send to queue input %p -> %p", a_es_input, a_es_input->pipe_out);
 #if defined (DAP_EVENTS_CAPS_KQUEUE)
     if (a_es_input->pipe_out){
@@ -1080,6 +1081,7 @@ int dap_events_socket_queue_ptr_send_to_input(dap_events_socket_t * a_es_input, 
  */
 int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value)
 {
+    dap_return_val_if_fail(a_es, -1);
 #if defined(DAP_EVENTS_CAPS_EVENT_EVENTFD)
     int ret = eventfd_write( a_es->fd2,a_value);
         int l_errno = errno;
@@ -1218,13 +1220,12 @@ void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_
 void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
 {
 #ifdef DAP_OS_WINDOWS
-    if ( a_esocket->socket && (a_esocket->socket != INVALID_SOCKET)) {
-        LINGER  lingerStruct;
-        lingerStruct.l_onoff = 1;
-        lingerStruct.l_linger = 30;
-        setsockopt(a_esocket->socket, SOL_SOCKET, SO_LINGER, (char *)&lingerStruct, sizeof(lingerStruct) );
-         // Do we need graceful shutdown anyway?...
-        closesocket( a_esocket->socket );
+    if ( a_esocket->socket && (a_esocket->socket != INVALID_SOCKET) ) {
+        //LINGER  lingerStruct = { .l_onoff = 1, .l_linger = 5 };
+        //setsockopt(a_esocket->socket, SOL_SOCKET, SO_LINGER, (char*)&lingerStruct, sizeof(lingerStruct) );
+        // We must set { 1, 0 } when connections must be reset (RST)
+        shutdown(a_esocket->socket, SD_BOTH);
+        closesocket(a_esocket->socket);
     }
     a_esocket->socket = a_esocket->socket2 = INVALID_SOCKET;
 
@@ -1325,7 +1326,13 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         return;
     }
     a_esocket->flags |= DAP_SOCK_READY_TO_READ;
-    
+    if (a_esocket->pending_read) {
+        debug_if( g_debug_reactor, L_DEBUG, "Incomplete read on "DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" already pending, dump it",
+                                            a_esocket->uuid, a_esocket->socket, dap_events_socket_get_type_str(a_esocket) );
+        dap_overlapped_free(a_ol);
+        return;
+    }
+    a_esocket->pending_read = 1;
     int l_res = -2;
     DWORD flags = 0, bytes = 0;
     const char *func = "";
@@ -1339,7 +1346,7 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         ol = DAP_NEW(dap_overlapped_t);
         *ol = (dap_overlapped_t){ .ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL), .op = io_read };
     }
-    WSABUF wsabuf = { .buf = a_esocket->buf_in + a_esocket->buf_in_size, .len = a_esocket->buf_in_size_max };
+    WSABUF wsabuf = { .buf = a_esocket->buf_in + a_esocket->buf_in_size, .len = a_esocket->buf_in_size_max - a_esocket->buf_in_size };
 
     switch (a_esocket->type) {
     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
@@ -1395,9 +1402,11 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         }
     break;
     case 0:
-        debug_if(g_debug_reactor, L_DEBUG, "[!] \"%s\" from "DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" completed immediately, received %lu bytes",
+        debug_if(g_debug_reactor, L_DEBUG, "\"%s\" from "DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" completed immediately, received %lu bytes",
                                   func, a_esocket->uuid, a_esocket->socket, dap_events_socket_get_type_str(a_esocket), bytes);
         ++a_esocket->pending;
+        ResetEvent(ol->ol.hEvent);
+        a_esocket->buf_in_size += bytes;
         return;
     default:
         log_it(L_ERROR, "Operation \"%s\" on "DAP_FORMAT_ESOCKET_UUID" failed with error %lu", func, a_esocket->uuid, GetLastError());
@@ -1626,7 +1635,7 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
  */
 int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
 {
-    assert(a_arg);
+    dap_return_val_if_fail(a_es && a_arg, -1);
 
     int l_ret = -1024, l_errno=0;
 
@@ -1747,6 +1756,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
  */
 void dap_events_socket_delete_unsafe(dap_events_socket_t *a_esocket, bool a_preserve_inheritor)
 {
+    dap_return_if_fail(a_esocket);
 #ifndef DAP_EVENTS_CAPS_IOCP
     dap_events_socket_descriptor_close(a_esocket);
 #endif
@@ -1767,6 +1777,7 @@ void dap_events_socket_delete_unsafe(dap_events_socket_t *a_esocket, bool a_pres
  */
 void dap_events_socket_remove_and_delete_mt(dap_worker_t *a_w,  dap_events_socket_uuid_t a_es_uuid)
 {
+    dap_return_if_fail(a_w);
 #ifdef DAP_EVENTS_CAPS_IOCP
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + sizeof(uint32_t));
     *ol = (dap_overlapped_t) { .ol.hEvent = CreateEvent(0, TRUE, TRUE, NULL), .uid = a_es_uuid, .cb = s_dap_es_set_flag };
@@ -1777,7 +1788,6 @@ void dap_events_socket_remove_and_delete_mt(dap_worker_t *a_w,  dap_events_socke
         dap_overlapped_free(ol);
     }
 #else
-    assert(a_w);
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid_ptr) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
@@ -1800,6 +1810,7 @@ void dap_events_socket_remove_and_delete_mt(dap_worker_t *a_w,  dap_events_socke
  */
 void dap_events_socket_set_readable_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready)
 {
+    dap_return_if_fail(a_w);
 #ifdef DAP_EVENTS_CAPS_IOCP
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + sizeof(uint32_t));
     *ol = (dap_overlapped_t) { .ol.hEvent = CreateEvent(0, TRUE, a_is_ready, NULL), .uid = a_es_uuid, .cb = s_dap_es_set_flag };
@@ -1833,6 +1844,7 @@ void dap_events_socket_set_readable_mt(dap_worker_t * a_w, dap_events_socket_uui
  */
 void dap_events_socket_set_writable_mt(dap_worker_t *a_w, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready)
 {
+    dap_return_if_fail(a_w);
 #ifdef DAP_EVENTS_CAPS_IOCP
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + sizeof(uint32_t));
     *ol = (dap_overlapped_t) { .ol.hEvent = CreateEvent(0, TRUE, a_is_ready, NULL), .uid = a_es_uuid, .cb = s_dap_es_set_flag };

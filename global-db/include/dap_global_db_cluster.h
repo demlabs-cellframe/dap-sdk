@@ -30,17 +30,17 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db.h"
 #include "dap_link_manager.h"
 
-#define DAP_GLOBAL_DB_CLUSTER_GLOBAL                "global"    // This mnemonim is for globally broadcasting grops
-#define DAP_GLOBAL_DB_CLUSTER_LOCAL                 "local"     // This mnemonim is for not broadcasting groups
-#define DAP_GLOBAL_DB_UNCLUSTERED_TTL               1           // Time-to-life for "global.*" mask, 1 hour by default
+#define DAP_GLOBAL_DB_CLUSTER_GLOBAL    DAP_STREAM_CLUSTER_GLOBAL ".*"      // This groups mask is for globally broadcasting grops
+#define DAP_GLOBAL_DB_CLUSTER_LOCAL     DAP_STREAM_CLUSTER_LOCAL  ".*"      // This groups mask is for not broadcasting groups
+#define DAP_GLOBAL_DB_UNCLUSTERED_TTL   1                                   // Time-to-life for "global.*" mask, 1 hour by default
 
 typedef enum dap_global_db_role {
-    DAP_GDB_MEMBER_ROLE_NOBODY = 0, // No access
-    DAP_GDB_MEMBER_ROLE_GUEST,      // Read-only access
-    DAP_GDB_MEMBER_ROLE_USER,       // Read-write access, no delete or rewrite
-    DAP_GDB_MEMBER_ROLE_ROOT,       // Full access
-    DAP_GDB_MEMBER_ROLE_DEFAULT,    // Use preset default role
-    DAP_GDB_MEMBER_ROLE_INVALID = -1// Virtual role
+    DAP_GDB_MEMBER_ROLE_NOBODY = 0,     // No access
+    DAP_GDB_MEMBER_ROLE_GUEST,          // Read-only access
+    DAP_GDB_MEMBER_ROLE_USER,           // Read-write access, no delete or rewrite
+    DAP_GDB_MEMBER_ROLE_ROOT,           // Full access
+    DAP_GDB_MEMBER_ROLE_DEFAULT,        // Use preset default role
+    DAP_GDB_MEMBER_ROLE_INVALID = -1    // Virtual role
 } dap_global_db_role_t;
 
 DAP_STATIC_INLINE const char *dap_global_db_cluster_role_str(dap_global_db_role_t a_role)
@@ -93,7 +93,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_by_group(dap_global_db_instance_t
 void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_store_obj_t *a_store_obj);
 dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim, dap_guuid_t a_guuid,
                                                    const char *a_group_mask, uint32_t a_ttl, bool a_owner_root_access,
-                                                   dap_global_db_role_t a_default_role, dap_cluster_role_t a_links_cluster_role);
+                                                   dap_global_db_role_t a_default_role, dap_cluster_type_t a_links_cluster_role);
 DAP_STATIC_INLINE int dap_global_db_cluster_member_delete(dap_global_db_cluster_t *a_cluster, dap_stream_node_addr_t *a_member_addr)
 {
     return a_cluster ? dap_cluster_member_delete(a_cluster->role_cluster, a_member_addr) : -2;

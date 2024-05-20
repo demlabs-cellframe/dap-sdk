@@ -154,7 +154,7 @@ struct dap_client_write_args {
     byte_t data[];
 };
 
-static void s_client_write_on_worker(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
+static void s_client_write_on_worker(void *a_arg)
 {
     struct dap_client_write_args *l_args = a_arg;
     dap_client_write_unsafe(l_args->client, l_args->ch_id, l_args->type, l_args->data, l_args->data_size);
@@ -178,7 +178,7 @@ int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_ty
     return 0;
 }
 
-static void s_client_queue_clear_on_worker(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
+static void s_client_queue_clear_on_worker(void *a_arg)
 {
     dap_client_pvt_queue_clear(DAP_CLIENT_PVT((dap_client_t *)a_arg));
 }
@@ -242,7 +242,7 @@ void dap_client_delete_unsafe(dap_client_t *a_client)
 }
 
 
-void s_client_delete_on_worker(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
+void s_client_delete_on_worker(void *a_arg)
 {
     dap_client_delete_unsafe(a_arg);
 }
@@ -265,7 +265,7 @@ struct go_stage_arg {
  * @param a_worker
  * @param a_arg
  */
-static void s_go_stage_on_client_worker_unsafe(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
+static void s_go_stage_on_client_worker_unsafe(void *a_arg)
 {
     assert(a_arg);
     if (!a_arg) {

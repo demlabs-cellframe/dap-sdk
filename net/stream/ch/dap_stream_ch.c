@@ -384,12 +384,13 @@ struct place_notifier_arg {
     bool add;
 };
 
-static void s_place_notifier_callback(dap_worker_t *a_worker, void *a_arg)
+static void s_place_notifier_callback(void *a_arg)
 {
     struct place_notifier_arg *l_arg = a_arg;
     assert(l_arg);
     // Check if it was removed from the list
-    dap_events_socket_t *l_es = dap_context_find(a_worker->context, l_arg->es_uuid);
+    dap_worker_t *l_worker = dap_worker_get_current();
+    dap_events_socket_t *l_es = dap_context_find(l_worker->context, l_arg->es_uuid);
     if (!l_es) {
         log_it(L_DEBUG, "We got place notifier request for client thats now not in list");
         goto ret_n_clear;
@@ -416,9 +417,8 @@ static void s_place_notifier_callback(dap_worker_t *a_worker, void *a_arg)
         } else {
             debug_if(s_debug_more, L_DEBUG, "Notifier deleted for channel '%c' callback %p and arg %p",
                                     l_arg->ch_id, l_notifier.callback, l_notifier.arg);
-            l_notifiers_list = dap_list_remove_link(l_notifiers_list, l_exist);
             DAP_DELETE(l_exist->data);
-            DAP_DELETE(l_exist);
+            l_notifiers_list = dap_list_delete_link(l_notifiers_list, l_exist);
         }
     } else {
         if (l_arg->add) {

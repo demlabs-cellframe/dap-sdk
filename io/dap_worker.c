@@ -40,6 +40,11 @@
 
 #define LOG_TAG "dap_worker"
 
+typedef struct dap_worker_msg_callback {
+    dap_worker_callback_t callback; // Callback for specific client operations
+    void * arg;
+} dap_worker_msg_callback_t;
+
 pthread_key_t g_pth_key_worker;
 
 static time_t s_connection_timeout = 60;    // seconds
@@ -162,6 +167,7 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
  */
 int dap_worker_context_callback_stopped(dap_context_t *a_context, void *a_arg)
 {
+    dap_return_val_if_fail(a_context && a_arg, -1);
     //TODO add deinit code for queues and others
     dap_context_remove(a_context->event_exit);
     dap_events_socket_delete_unsafe(a_context->event_exit, false);  // check ticket 9030
@@ -399,12 +405,12 @@ static long s_dap_es_assign_to_context(dap_events_socket_t *a_es, dap_context_t 
  * @param a_es
  * @param a_arg
  */
-static void s_queue_callback_callback( dap_events_socket_t * a_es, void * a_arg)
+static void s_queue_callback_callback(dap_events_socket_t UNUSED_ARG *a_es, void *a_arg)
 {
     dap_worker_msg_callback_t * l_msg = (dap_worker_msg_callback_t *) a_arg;
     assert(l_msg);
     assert(l_msg->callback);
-    l_msg->callback(a_es->worker, l_msg->arg);
+    l_msg->callback(l_msg->arg);
     DAP_DELETE(l_msg);
 }
 
@@ -456,6 +462,7 @@ static bool s_socket_all_check_activity( void * a_arg)
  */
 void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket)
 {
+    dap_return_if_fail(a_worker && a_events_socket);
 #ifdef DAP_EVENTS_CAPS_IOCP
     int l_ret = 0;
     a_events_socket->worker = a_worker;
@@ -508,8 +515,9 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
  * @param a_es_input
  * @param a_events_socket
  */
-void dap_worker_add_events_socket_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_events_socket)
+void dap_worker_add_events_socket_inter(dap_events_socket_t *a_es_input, dap_events_socket_t *a_events_socket)
 {
+    dap_return_if_fail(a_es_input && a_events_socket);
     if( dap_events_socket_queue_ptr_send_to_input( a_es_input, a_events_socket ) != 0 ){
         int l_errno = errno;
         char l_errbuf[128];
@@ -527,6 +535,7 @@ void dap_worker_add_events_socket_inter(dap_events_socket_t * a_es_input, dap_ev
  */
 void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker_callback_t a_callback, void * a_arg)
 {
+    dap_return_if_fail(a_es_input && a_callback);
     dap_worker_msg_callback_t * l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
@@ -550,7 +559,7 @@ void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker
  */
 void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg)
 {
-    assert(a_worker);
+    dap_return_if_fail(a_worker && a_callback);
     dap_worker_msg_callback_t *l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
@@ -574,6 +583,7 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
  */
 dap_worker_t *dap_worker_add_events_socket_auto( dap_events_socket_t *a_es)
 {
+    dap_return_val_if_fail(a_es, NULL);
     dap_worker_t *l_worker = dap_events_worker_get_auto();
     return dap_worker_add_events_socket(l_worker, a_es), l_worker;
 }
