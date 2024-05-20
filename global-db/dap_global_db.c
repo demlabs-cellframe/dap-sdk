@@ -21,16 +21,13 @@
     along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include <string.h>
-#include "uthash.h"
 #include "dap_common.h"
 #include "dap_config.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 #include "dap_time.h"
-#include "dap_uuid.h"
 #include "dap_context.h"
 #include "dap_worker.h"
-#include "dap_stream_worker.h"
 #include "dap_cert.h"
 #include "dap_proc_thread.h"
 #include "dap_global_db.h"
@@ -1473,7 +1470,7 @@ dap_global_db_obj_t *dap_global_db_objs_copy(const dap_global_db_obj_t *a_objs_s
         if (l_obj->key) {
             l_cur->key = dap_strdup(l_obj->key);
             if (!l_cur->key) {
-                log_it(L_CRITICAL, g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
                 DAP_DELETE(l_objs_dest);
                 return NULL;
             }

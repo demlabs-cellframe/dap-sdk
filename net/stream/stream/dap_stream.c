@@ -37,9 +37,7 @@
 
 #include "dap_common.h"
 #include "dap_timerfd.h"
-#include "dap_events.h"
 #include "dap_context.h"
-#include "dap_events.h"
 #include "dap_stream.h"
 #include "dap_stream_pkt.h"
 #include "dap_stream_ch.h"
@@ -137,7 +135,7 @@ void s_stream_load_preferred_encryption_type(dap_config_t * a_config)
             s_stream_get_preferred_encryption_type = l_found_key_type;
     }
 
-    log_it(L_NOTICE,"ecryption type is set to %s", dap_enc_get_type_name(s_stream_get_preferred_encryption_type));
+    log_it(L_NOTICE, "Encryption type is set to %s", dap_enc_get_type_name(s_stream_get_preferred_encryption_type));
 }
 
 int s_stream_init_node_addr_cert()
@@ -1077,7 +1075,7 @@ dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr)
             continue;
         dap_events_socket_uuid_ctrl_t *l_ret_item = DAP_NEW(dap_events_socket_uuid_ctrl_t);
         if (!l_ret_item) {
-            log_it(L_CRITICAL, g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             dap_list_free_full(l_ret, NULL);
             return NULL;
         }
