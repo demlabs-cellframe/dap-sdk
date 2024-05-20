@@ -158,7 +158,7 @@ dap_global_db_pkt_old_t *dap_global_db_pkt_pack_old(dap_global_db_pkt_old_t *a_o
             ? DAP_REALLOC(a_old_pkt, sizeof(dap_global_db_pkt_old_t) + a_old_pkt->data_size + a_new_pkt->data_size)
             : DAP_NEW_Z_SIZE(dap_global_db_pkt_old_t, sizeof(dap_global_db_pkt_old_t) + a_new_pkt->data_size);
     if (!a_old_pkt) {
-        log_it(L_CRITICAL, g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     memcpy(a_old_pkt->data + a_old_pkt->data_size, a_new_pkt->data, a_new_pkt->data_size);
