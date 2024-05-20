@@ -22,7 +22,7 @@ typedef struct dap_global_db_legacy_list {
     dap_global_db_driver_hash_t current_hash;
     size_t items_number;
     size_t items_rest;
-    dap_list_t *saved_ptr;
+    dap_list_t *current_group;
 } dap_global_db_legacy_list_t;
 
 dap_global_db_pkt_old_t *dap_global_db_pkt_pack_old(dap_global_db_pkt_old_t *a_old_pkt, dap_global_db_pkt_old_t *a_new_pkt);
@@ -34,6 +34,6 @@ dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *
 void dap_global_db_legacy_list_delete(dap_global_db_legacy_list_t *a_db_legacy_list);
 DAP_STATIC_INLINE void dap_global_db_legacy_list_rewind(dap_global_db_legacy_list_t *a_db_legacy_list)
 {
-    a_db_legacy_list->groups = a_db_legacy_list->saved_ptr;
+    a_db_legacy_list->current_group = a_db_legacy_list->groups;
     a_db_legacy_list->items_rest = a_db_legacy_list->items_number;
 }

@@ -417,9 +417,8 @@ static void s_place_notifier_callback(void *a_arg)
         } else {
             debug_if(s_debug_more, L_DEBUG, "Notifier deleted for channel '%c' callback %p and arg %p",
                                     l_arg->ch_id, l_notifier.callback, l_notifier.arg);
-            l_notifiers_list = dap_list_remove_link(l_notifiers_list, l_exist);
             DAP_DELETE(l_exist->data);
-            DAP_DELETE(l_exist);
+            l_notifiers_list = dap_list_delete_link(l_notifiers_list, l_exist);
         }
     } else {
         if (l_arg->add) {

@@ -37,9 +37,7 @@
 
 #include "dap_common.h"
 #include "dap_timerfd.h"
-#include "dap_events.h"
 #include "dap_context.h"
-#include "dap_events.h"
 #include "dap_stream.h"
 #include "dap_stream_pkt.h"
 #include "dap_stream_ch.h"
@@ -137,7 +135,7 @@ void s_stream_load_preferred_encryption_type(dap_config_t * a_config)
             s_stream_get_preferred_encryption_type = l_found_key_type;
     }
 
-    log_it(L_NOTICE,"ecryption type is set to %s", dap_enc_get_type_name(s_stream_get_preferred_encryption_type));
+    log_it(L_NOTICE, "Encryption type is set to %s", dap_enc_get_type_name(s_stream_get_preferred_encryption_type));
 }
 
 int s_stream_init_node_addr_cert()
@@ -348,7 +346,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
 
     l_ret->esocket = a_http_client->esocket;
     l_ret->esocket_uuid = a_http_client->esocket->uuid;
-    l_ret->stream_worker = (dap_stream_worker_t *)a_http_client->esocket->worker->_inheritor;
+    l_ret->stream_worker = DAP_STREAM_WORKER(a_http_client->esocket->worker);
     l_ret->conn_http = a_http_client;
     l_ret->seq_id = 0;
     l_ret->client_last_seq_id_packet = (size_t)-1;
@@ -1077,7 +1075,7 @@ dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr)
             continue;
         dap_events_socket_uuid_ctrl_t *l_ret_item = DAP_NEW(dap_events_socket_uuid_ctrl_t);
         if (!l_ret_item) {
-            log_it(L_CRITICAL, g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             dap_list_free_full(l_ret, NULL);
             return NULL;
         }

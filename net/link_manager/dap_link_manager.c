@@ -383,15 +383,18 @@ void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
         return;
     l_net->uplinks = 0;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
-    dap_link_t *l_link_it, *l_tmp;
-    HASH_ITER(hh, s_link_manager->links, l_link_it, l_tmp)
-        for (dap_list_t *l_net_it = l_link_it->uplink.associated_nets; l_net_it; l_net_it = l_net_it->next)
+    dap_link_t *l_link_it, *l_link_tmp;
+    HASH_ITER(hh, s_link_manager->links, l_link_it, l_link_tmp) {
+        dap_list_t *l_net_it, *l_net_tmp;
+        DL_FOREACH_SAFE(l_link_it->uplink.associated_nets, l_net_it, l_net_tmp) {
             if (l_net_it->data == l_net) {
-                l_link_it->uplink.associated_nets = dap_list_remove_link(l_link_it->uplink.associated_nets, l_net_it);
+                l_link_it->uplink.associated_nets = dap_list_delete_link(l_link_it->uplink.associated_nets, l_net_it);
                 if (!l_link_it->uplink.associated_nets)
                     s_link_delete(l_link_it, false, false);
                 break;
             }
+        }
+    }
     pthread_rwlock_unlock(&s_link_manager->links_lock);
 }
 

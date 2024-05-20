@@ -46,8 +46,10 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
                 if (l_match)
                     break;
             }
-            if (l_used_list == l_dbi->whitelist ? !l_match : l_match)
+            if (l_used_list == l_dbi->whitelist ? !l_match : l_match) {
+                DAP_DELETE(l_group->data);
                 l_groups = dap_list_delete_link(l_groups, l_group);
+            }
         }
     }
 
@@ -56,9 +58,8 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
         size_t l_group_size = dap_global_db_driver_count(l_group->data, c_dap_global_db_driver_hash_blank, true);
         if (!l_group_size) {
             log_it(L_WARNING, "[!] Group %s is empty on our side, skip it", (char *)l_group->data);
-            l_groups = dap_list_delete_link(l_groups, l_group);
             DAP_DELETE(l_group->data);
-            DAP_DELETE(l_group);
+            l_groups = dap_list_delete_link(l_groups, l_group);
             continue;
         }
         l_items_number += l_group_size;
@@ -69,7 +70,7 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
 
     dap_global_db_legacy_list_t *l_db_legacy_list;
     DAP_NEW_Z_RET_VAL(l_db_legacy_list, dap_global_db_legacy_list_t, NULL, NULL);
-    l_db_legacy_list->groups = l_db_legacy_list->saved_ptr = l_groups;
+    l_db_legacy_list->groups = l_db_legacy_list->current_group = l_groups;
     l_db_legacy_list->items_rest = l_db_legacy_list->items_number = l_items_number;
 
     return l_db_legacy_list;
@@ -77,10 +78,11 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
 
 dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *a_db_legacy_list, size_t a_number_limit)
 {
-    dap_list_t *it, *ret = NULL;
+    dap_list_t *ret = NULL;
     size_t l_number_limit = a_number_limit;
-    DL_FOREACH(a_db_legacy_list->groups, it) {
-        char *l_group_cur = it->data;
+
+    while (a_db_legacy_list->current_group) {
+        char *l_group_cur = a_db_legacy_list->current_group->data;
         size_t l_values_count = l_number_limit;
         dap_store_obj_t *l_store_objs = dap_global_db_driver_cond_read(l_group_cur, a_db_legacy_list->current_hash, &l_values_count, true);
         int rc = DAP_GLOBAL_DB_RC_NO_RESULTS;
@@ -116,13 +118,14 @@ dap_list_t *dap_global_db_legacy_list_get_multiple(dap_global_db_legacy_list_t *
             return NULL;
         }
         if (rc != DAP_GLOBAL_DB_RC_PROGRESS) {
-            // remove cuurent group from list, go to next group
-            a_db_legacy_list->groups = dap_list_next(a_db_legacy_list->groups);
+            // go to next group
+            a_db_legacy_list->current_group = dap_list_next(a_db_legacy_list->current_group);
             a_db_legacy_list->current_hash = c_dap_global_db_driver_hash_blank;
         }
         if (!l_number_limit)
             break;
     }
+
     return ret;
 }
 
@@ -136,7 +139,8 @@ void dap_global_db_legacy_list_delete(dap_global_db_legacy_list_t *a_db_legacy_l
 {
     if (!a_db_legacy_list)
         return;
-    dap_list_free_full(a_db_legacy_list->groups, NULL);
+    if (a_db_legacy_list->groups)
+        dap_list_free_full(a_db_legacy_list->groups, NULL);
     DAP_DELETE(a_db_legacy_list);
 }
 
@@ -154,7 +158,7 @@ dap_global_db_pkt_old_t *dap_global_db_pkt_pack_old(dap_global_db_pkt_old_t *a_o
             ? DAP_REALLOC(a_old_pkt, sizeof(dap_global_db_pkt_old_t) + a_old_pkt->data_size + a_new_pkt->data_size)
             : DAP_NEW_Z_SIZE(dap_global_db_pkt_old_t, sizeof(dap_global_db_pkt_old_t) + a_new_pkt->data_size);
     if (!a_old_pkt) {
-        log_it(L_CRITICAL, g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
     memcpy(a_old_pkt->data + a_old_pkt->data_size, a_new_pkt->data, a_new_pkt->data_size);

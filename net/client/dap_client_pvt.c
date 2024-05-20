@@ -535,7 +535,13 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
 
                     a_client_pvt->stream = dap_stream_new_es_client(l_es, &a_client_pvt->client->link_info.node_addr,
                                                                     a_client_pvt->authorized);
-                    assert(a_client_pvt->stream);
+                    if (!a_client_pvt->stream) {
+                        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                        a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                        a_client_pvt->last_error = ERROR_STREAM_ABORTED;
+                        s_stage_status_after(a_client_pvt);
+                        return;
+                    }
                     a_client_pvt->stream->session = dap_stream_session_pure_new(); // may be from in packet?
 
                     // new added, whether it is necessary?
