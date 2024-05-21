@@ -146,7 +146,8 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             const char *l_client_node_addr_str = dap_stream_node_addr_to_str_static(l_client_pkey_node_addr);
             if (dap_http_ban_list_client_check(l_client_node_addr_str, NULL, NULL)) {
                 log_it(L_ERROR, "Client %s is banned.", l_client_node_addr_str);
-                return Http_Status_Forbidden;
+                *return_code = Http_Status_Forbidden;
+                return;
             }
         }
         if (l_sign_validated_count != l_sign_count) {
