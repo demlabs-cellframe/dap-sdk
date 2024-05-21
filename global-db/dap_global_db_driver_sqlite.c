@@ -37,7 +37,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db_driver_sqlite.h"
 #include "dap_common.h"
 #include "dap_time.h"
-#include "dap_hash.h"
 #include "dap_file_utils.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
@@ -789,8 +788,8 @@ static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
     l_mask = dap_str_replace_char(a_group_mask, '.', '_');
     int l_ret_code = 0;
     for (l_ret_code = s_db_sqlite_step(l_stmt); l_ret_code == SQLITE_ROW && sqlite3_column_type(l_stmt, 0) == SQLITE_TEXT; l_ret_code = s_db_sqlite_step(l_stmt)) {
-        const unsigned char *l_table_name = sqlite3_column_text(l_stmt, 0);
-        if(!dap_fnmatch(l_mask, l_table_name, 0))
+        const char *l_table_name = (const char *)sqlite3_column_text(l_stmt, 0);
+        if (dap_global_db_group_match_mask(l_mask, l_table_name))
             l_ret = dap_list_prepend(l_ret, dap_str_replace_char(l_table_name, '_', '.'));
     }
     if(l_ret_code != SQLITE_DONE) {
@@ -951,7 +950,7 @@ static int s_db_sqlite_transaction_start()
 {
 // sanity check
     conn_list_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!(l_conn = s_db_sqlite_get_connection(true)), NULL);
+    dap_return_val_if_pass(!(l_conn = s_db_sqlite_get_connection(true)), 0);
 // func work
     if ( g_dap_global_db_debug_more )
         log_it(L_DEBUG, "Start TX: @%p", l_conn->conn);
@@ -993,7 +992,7 @@ static int s_db_sqlite_transaction_end(bool a_commit)
  * @param a_drv_callback a pointer to a structure of callback functions
  * @return If successful returns 0, else a code < 0.
  */
-int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_db_driver_callbacks_t *a_drv_callback)
+int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_driver_callbacks_t *a_drv_callback)
 {
 // sanity check
     dap_return_val_if_pass(!a_filename_db, -1);
