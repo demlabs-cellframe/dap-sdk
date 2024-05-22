@@ -1690,8 +1690,10 @@ void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_p
 #else
     DAP_DEL_Z(a_esocket->_pvt);
 #endif
-    DAP_DEL_Z(a_esocket->buf_in);
-    DAP_DEL_Z(a_esocket->buf_out);
+    if ( a_esocket->type != DESCRIPTOR_TYPE_FILE && !( a_esocket->flags & DAP_SOCK_FILE_MAPPED) ) {
+        DAP_DEL_Z(a_esocket->buf_in);
+        DAP_DEL_Z(a_esocket->buf_out);
+    }
 
 #ifdef   DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].free_nr, 1);
