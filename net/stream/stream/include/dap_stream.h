@@ -34,7 +34,6 @@
 #include "dap_sign.h"
 #include "dap_cert.h"
 #include "dap_pkey.h"
-#include "dap_enc_ks.h"
 #include "dap_strfuncs.h"
 
 #define STREAM_KEEPALIVE_TIMEOUT    3   // How  often send keeplive messages (seconds)

@@ -29,6 +29,7 @@
 #include "dap_context.h"
 #include "dap_worker.h"
 #include "dap_cert.h"
+#include "dap_enc_ks.h"
 #include "dap_proc_thread.h"
 #include "dap_global_db.h"
 #include "dap_global_db_driver.h"
