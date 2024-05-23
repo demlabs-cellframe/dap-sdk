@@ -39,10 +39,8 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
-
 #endif
 
-#include "dap_common.h"
 #include "dap_events_socket.h"
 
 int dap_net_resolve_host(const char *a_host, const char *a_port, struct sockaddr_storage *a_addr_out, bool a_passive_flag);

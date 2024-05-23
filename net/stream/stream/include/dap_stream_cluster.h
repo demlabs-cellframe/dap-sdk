@@ -28,8 +28,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "uthash.h"
 #include "dap_list.h"
 #include "dap_guuid.h"
-#include "json_object.h"
-#include "dap_math_convert.h"
+#include "json.h"
 
 #define DAP_STREAM_CLUSTER_GLOBAL   "global"    // This mnemonim is for globally broadcasting grops
 #define DAP_STREAM_CLUSTER_LOCAL    "local"     // This mnemonim is for not broadcasting groups
