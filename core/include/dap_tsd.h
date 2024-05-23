@@ -22,7 +22,6 @@ This file is part of DAP SDK the open source project
 */
 #pragma once
 #include "dap_common.h"
-#include "dap_strfuncs.h"
 #include "dap_list.h"
 
 typedef struct dap_tsd {

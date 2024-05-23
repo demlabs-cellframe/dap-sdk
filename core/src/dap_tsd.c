@@ -25,11 +25,11 @@ This file is part of DAP SDK the open source project
 
 byte_t *dap_tsd_write(byte_t *a_ptr, uint16_t a_type, const void *a_data, size_t a_data_size)
 {
-    dap_return_val_if_fail(a_ptr && a_data && a_data_size, NULL);
+    dap_return_val_if_fail(a_ptr, NULL);
     dap_tsd_t *l_tsd = (dap_tsd_t *)a_ptr;
     l_tsd->type = a_type;
     l_tsd->size = a_data_size;
-    return dap_mempcpy(l_tsd->data, a_data, a_data_size);
+    return (a_data && a_data_size) ? dap_mempcpy(l_tsd->data, a_data, a_data_size) : l_tsd->data;
 }
 
 /**
@@ -54,25 +54,22 @@ dap_tsd_t *dap_tsd_create(uint16_t a_type, const void *a_data, size_t a_data_siz
  * @param a_typeid
  * @return
  */
-dap_tsd_t* dap_tsd_find(byte_t *a_data, size_t a_data_size, uint16_t a_type)
+dap_tsd_t *dap_tsd_find(byte_t *a_data, size_t a_data_size, uint16_t a_type)
 {
-    dap_tsd_t * l_ret = NULL;
-    for (size_t l_offset = 0; l_offset < a_data_size; ) {
-        dap_tsd_t *l_tsd = (dap_tsd_t*)(a_data + l_offset);
+    for (size_t l_offset = 0; l_offset + sizeof(dap_tsd_t) < a_data_size; ) {
+        dap_tsd_t *l_tsd = (dap_tsd_t *)(a_data + l_offset);
         size_t l_tsd_size = dap_tsd_size(l_tsd);
-        if( !l_tsd_size || l_tsd_size + l_offset > a_data_size) {
+        if (!l_tsd_size || l_tsd_size + l_offset > a_data_size)
             break;
-        }
-        if ( l_tsd->type == a_type ) {
-            l_ret = l_tsd;
-            break;
-        }
+        if (l_tsd->type == a_type)
+            return l_tsd;
         l_offset += l_tsd_size;
     }
-    return l_ret;
+    return NULL;
 }
 
-dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type) {
+dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type)
+{
     dap_list_t *l_ret = NULL;
     for (size_t l_offset = 0; l_offset < a_data_size; ) {
         dap_tsd_t *l_tsd = (dap_tsd_t*)(a_data + l_offset);
