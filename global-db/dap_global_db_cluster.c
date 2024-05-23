@@ -28,7 +28,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db_pkt.h"
 #include "dap_global_db_ch.h"
 #include "dap_strfuncs.h"
-#include "dap_sign.h"
 #include "dap_proc_thread.h"
 #include "dap_hash.h"
 #include "dap_stream_ch_gossip.h"

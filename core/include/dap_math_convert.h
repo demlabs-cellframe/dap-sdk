@@ -257,7 +257,7 @@ uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger);
  */
 uint256_t dap_uint256_scan_decimal(const char *a_str_decimal);
 
-char *dap_uint256_to_char(uint256_t, char**);
+const char *dap_uint256_to_char(uint256_t a_uint256, const char **a_frac);
 
 /**
  * @brief dap_uint256_uninteger_to_char
@@ -285,7 +285,7 @@ char *dap_uint256_decimal_to_char(uint256_t a_decimal);
  * @param a_uint256
  * @return char*
  */
-char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_digits_after_point, bool is_round);
+const char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_digits_after_point, bool is_round);
 
 /**
  * @brief dap_uint256_char_to_round_char
@@ -295,7 +295,7 @@ char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_digits_af
  * @param a_uint256
  * @return char*
  */
-char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_position, bool is_round);
+const char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_position, bool is_round);
 
 int dap_id_uint64_parse(const char *a_id_str, uint64_t *a_id);
 uint64_t dap_uint128_to_uint64(uint128_t a_from);
