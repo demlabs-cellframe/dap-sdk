@@ -104,17 +104,26 @@ const char *dap_guuid_to_hex_str(dap_guuid_t a_guuid)
     return (const char *)s_buf;
 }
 
-dap_guuid_t dap_guuid_from_hex_str(const char *a_hex_str)
+
+dap_guuid_t dap_guuid_from_hex_str(const char *a_hex_str, bool *succsess)
 {
     dap_guuid_t ret = { .raw = uint128_0 };
-    if (!a_hex_str)
+    if (!a_hex_str){
+        if (succsess) *succsess = false;
         return ret;
+    }
     size_t l_hex_str_len = strlen(a_hex_str);
-    if (l_hex_str_len != (16 * 2 + 2) || dap_strncmp(a_hex_str, "0x", 2) || dap_is_hex_string(a_hex_str + 2, l_hex_str_len - 2))
+    if (l_hex_str_len != (16 * 2 + 2) || dap_strncmp(a_hex_str, "0x", 2) || dap_is_hex_string(a_hex_str + 2, l_hex_str_len - 2)) {
+        if (succsess) *succsess = false;
         return ret;
+    }
     sprintf(s_buf, "0x%s", a_hex_str + 16 + 2);
     uint64_t l_net_id, l_srv_id;
     if (dap_id_uint64_parse(a_hex_str, &l_net_id) || dap_id_uint64_parse(s_buf, &l_srv_id))
+    {
+        if (succsess) *succsess = false;
         return ret;
+    }
+    if (succsess) *succsess = true;
     return dap_guuid_compose(l_net_id, l_srv_id);
 }
