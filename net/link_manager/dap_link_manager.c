@@ -174,11 +174,11 @@ DAP_STATIC_INLINE void s_debug_accounting_link_in_net(bool a_uplink, dap_stream_
 DAP_STATIC_INLINE void s_link_manager_print_links_info(dap_link_manager_t *a_link_manager)
 {
     dap_link_t *l_link = NULL, *l_tmp = NULL;
-    printf(" Uplink |\tNode addr\t| Active Clusters\t| Static clusters\n"
-            "-------------------------------------------------------------------------------\n");
+    printf("| Uplink |\tNode addr\t|Active Clusters|Static clusters|\n"
+            "-----------------------------------------------------------------\n");
     HASH_ITER(hh, a_link_manager->links, l_link, l_tmp)
-        printf("   %s   | "NODE_ADDR_FP_STR"\t|\t%"DAP_UINT64_FORMAT_U
-                                            "\t|\t%"DAP_UINT64_FORMAT_U"\t\n",
+        printf("| %5s  |"NODE_ADDR_FP_STR"|\t%"DAP_UINT64_FORMAT_U
+                                            "\t|\t%"DAP_UINT64_FORMAT_U"\t|\n",
                                  l_link->is_uplink ? "True" : "False",
                                  NODE_ADDR_FP_ARGS_S(l_link->addr),
                                  dap_list_length(l_link->active_clusters),
