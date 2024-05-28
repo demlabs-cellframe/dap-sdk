@@ -300,6 +300,14 @@ DAP_STATIC_INLINE unsigned long dap_pagesize() {
     return s ? s : 4096;
 }
 
+DAP_STATIC_INLINE uint64_t dap_page_roundup(uint64_t a) {
+    return ( a + dap_pagesize() - 1 ) & ( ~(dap_pagesize() - 1) ); 
+}
+
+DAP_STATIC_INLINE uint64_t dap_page_rounddown(uint64_t a) {
+    return a & ( ~(dap_pagesize() - 1) ); 
+}
+
 #ifdef DAP_OS_WINDOWS
 typedef struct iovec {
     void    *iov_base; /* Data */
