@@ -25,7 +25,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #include "dap_link_manager.h"
 #include "dap_global_db.h"
-#include "dap_global_db_cluster.h"
 #include "dap_stream_cluster.h"
 #include "dap_worker.h"
 #include "dap_config.h"
@@ -134,7 +133,7 @@ static void s_update_connection_state(dap_stream_node_addr_t a_node_addr, bool a
 // sanity check
     dap_return_if_pass(!a_node_addr.uint64);
 // func work
-    char *l_node_addr_str = dap_stream_node_addr_to_str_static(a_node_addr);
+    const char *l_node_addr_str = dap_stream_node_addr_to_str_static(a_node_addr);
     dap_connections_statistics_t *l_stat = (dap_connections_statistics_t *)dap_global_db_get_sync(s_connections_group_local, l_node_addr_str, NULL, NULL, NULL);
     if (!l_stat) {
         log_it(L_NOTICE, "Creating new connections staticstics record in GDB for the node %s", l_node_addr_str);

@@ -9,7 +9,6 @@
 #include <errno.h>
 
 #include "dap_common.h"
-#include "dap_strfuncs.h"
 #include "dap_string.h"
 
 #define MY_MAXSIZE ((size_t)-1)

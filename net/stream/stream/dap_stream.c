@@ -54,6 +54,7 @@
 #include "dap_client_pvt.h"
 #include "dap_strfuncs.h"
 #include "uthash.h"
+#include "dap_enc.h"
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"
 #include "dap_link_manager.h"

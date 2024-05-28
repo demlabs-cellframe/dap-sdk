@@ -30,7 +30,7 @@
 #include "dap_hash.h"
 #include "dap_sign.h"
 #include "dap_enc_base58.h"
-
+#include "dap_json_rpc_errors.h"
 #include "dap_list.h"
 
 #define LOG_TAG "dap_sign"
@@ -369,7 +369,7 @@ dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign)
  * @param a_chain_sign dap_sign_t a_chain_sign object
  * @param a_data const void * buffer with data
  * @param a_data_size const size_t  buffer size
- * @return 1 valid signature, 0 invalid signature, -1 unsupported sign type
+ * @return 0 valid signature, else invalid signature with error code
  */
 int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a_data_size)
 {
@@ -529,9 +529,9 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
  */
 void dap_sign_get_information_json(dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type)
 {
-    json_object_object_add(a_json_out,"Signature",json_object_new_string(""));
+    json_object_object_add(a_json_out,"Signature", json_object_new_string(""));
     if (!a_sign) {
-        dap_json_rpc_error_add(a_json_out, "Corrupted signature data");
+        dap_json_rpc_error_add(-1, "Corrupted signature data");
         return;
     }
     dap_chain_hash_fast_t l_hash_pkey;
