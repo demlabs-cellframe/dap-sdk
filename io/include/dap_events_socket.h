@@ -194,7 +194,6 @@ typedef struct dap_events_socket_callbacks {
 #define DAP_EVENTS_SOCKET_BUF_SIZE      (DAP_STREAM_PKT_FRAGMENT_SIZE * 16)
 #define DAP_EVENTS_SOCKET_BUF_LIMIT     DAP_STREAM_PKT_SIZE_MAX
 #define DAP_QUEUE_MAX_MSGS              1024
-#define DAP_MAPPED_VOLUME_LIMIT         (1 << 28) // 256 MB for now, may be should be configurable?
 
 typedef enum {
     DESCRIPTOR_TYPE_SOCKET_CLIENT = 0,
