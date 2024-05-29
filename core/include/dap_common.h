@@ -126,17 +126,7 @@
 #define DAP_CAST_PTR(t,v) (t*)(v)
 #endif
 
-#define HASH_LAST(head, ret)                                                    \
-do {                                                                            \
-    if ((head) != NULL) {                                                       \
-        (ret) = (head)->hh.tbl->tail->prev;                                     \
-        if (!(ret))                                                             \
-            (ret) = (head);                                                     \
-        else                                                                    \
-            (ret) = (DAP_CAST_PTR(typeof(*head),(ret)))->hh.next;               \
-    } else                                                                      \
-        (ret) = (head);                                                         \
-} while (0)
+#define HASH_LAST(head) ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail)
 
 extern const char *g_error_memory_alloc;
 extern const char *g_error_sanity_check;
