@@ -678,7 +678,7 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
             }
         }
     }
-    pthread_rwlock_unlock(&s_link_manager->links_lock);
+    pthread_rwlock_unlock(&a_link_manager->links_lock);
 }
 
 /**
@@ -922,12 +922,14 @@ static bool s_stream_add_callback(void *a_arg)
     if (!l_link) {
         log_it(L_ERROR, "Can't %s link for address " NODE_ADDR_FP_STR,
                  l_args->uplink ? "find" : "create", NODE_ADDR_FP_ARGS(l_node_addr));
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
         DAP_DELETE(l_args);
         return false;
     }
     if (l_link->active_clusters) {
         log_it(L_ERROR, "%s " NODE_ADDR_FP_STR " with existed link",
                         l_args->uplink ? "Set uplink to" : "Get dowlink from", NODE_ADDR_FP_ARGS(l_node_addr));
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
         DAP_DELETE(l_args);
         return false;
     }
@@ -1166,6 +1168,7 @@ void dap_link_manager_add_static_links_cluster(dap_cluster_member_t *a_member, v
         l_link = s_link_manager_link_create(l_node_addr, true, DAP_NET_ID_INVALID);
     if (!l_link) {
         log_it(L_ERROR, "Can't create link to addr " NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS(l_node_addr));
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
         return;
     }
     l_link->static_clusters = dap_list_append(l_link->static_clusters, l_cluster);
@@ -1190,6 +1193,7 @@ void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member
     dap_link_t *l_link = s_link_manager_link_find(l_node_addr);
     if (!l_link) {
         debug_if(s_debug_more, L_ERROR, "Link " NODE_ADDR_FP_STR " not found", NODE_ADDR_FP_ARGS(l_node_addr));
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
         return;
     }
     l_link->static_clusters = dap_list_remove(l_link->static_clusters, l_cluster);
