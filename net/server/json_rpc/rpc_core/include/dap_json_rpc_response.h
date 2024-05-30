@@ -24,9 +24,7 @@
 
 #pragma once
 
-#include "dap_http_simple.h"
 #include "dap_json_rpc_errors.h"
-#include "json.h"
 
 #ifdef __cplusplus
 extern "C"{
@@ -122,9 +120,6 @@ void json_print_value(struct json_object *obj, const char *key, int indent_level
  *         and -3 if the JSON object length is 0.
  */
 int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name);
-
-void dap_json_rpc_response_send(dap_json_rpc_response_t *a_response, dap_http_simple_t *a_client);
-
 
 #ifdef __cplusplus
 }
