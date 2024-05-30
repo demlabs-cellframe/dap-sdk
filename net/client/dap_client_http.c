@@ -313,7 +313,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
 
     // if buffer is overfull then read once more
     if(l_client_http->response_size >= DAP_EVENTS_SOCKET_BUF_SIZE) {
-        log_it(L_ERROR, "s_http_read response_size(%zu) overfull!!!", l_client_http->response_size);
+        log_it(L_DEBUG, "s_http_read response_size(%zu) equal to buf, read again", l_client_http->response_size);
     }
 
     // search http header
