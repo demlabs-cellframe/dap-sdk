@@ -1452,7 +1452,7 @@ extern "C" {
 const char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address)
 {
     static _Thread_local char s_buf[23] = { '\0' };
-    dap_snprintf(s_buf, sizeof(s_buf), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
+    snprintf(s_buf, sizeof(s_buf), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
     return s_buf;
 }
 #ifdef __cplusplus

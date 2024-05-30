@@ -54,6 +54,7 @@
 #include "dap_client_pvt.h"
 #include "dap_strfuncs.h"
 #include "uthash.h"
+#include "dap_enc.h"
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"
 #include "dap_link_manager.h"
@@ -1009,7 +1010,8 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
     dap_return_if_fail(a_stream);
     assert(pthread_rwlock_wrlock(&s_streams_lock) != EDEADLOCK);
     dap_stream_t *l_stream = NULL;
-    DL_DELETE(s_streams, a_stream);
+    if (a_stream->prev)
+        DL_DELETE(s_streams, a_stream);
     if (a_stream->authorized) {
         // It's an authorized stream, try to replace it in hastable
         if (a_stream->primary)

@@ -37,15 +37,16 @@ int dap_json_rpc_unregistration_request_handler(const char *a_name)
     }
 }
 
+#if 0
 void dap_json_rpc_request_handler(dap_json_rpc_request_t *a_request,  dap_http_simple_t *a_client)
 {
-	// log_it(L_DEBUG, "Processing request");
+    // log_it(L_DEBUG, "Processing request");
     // if (a_request->id == 0){
     //     dap_json_rpc_notification_handler(a_request->method, a_request->params);
     // } else {
     //     dap_json_rpc_response_t *l_response = DAP_NEW(dap_json_rpc_response_t);
     //     if (!l_response) {
-    //         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+    //         log_it(L_CRITICAL, "Memory allocation error");
     //         return;
     //     }
     //     l_response->id = a_request->id;
@@ -64,3 +65,4 @@ void dap_json_rpc_request_handler(dap_json_rpc_request_t *a_request,  dap_http_s
     //     dap_json_rpc_response_send(l_response, a_client);
     // }
 }
+#endif

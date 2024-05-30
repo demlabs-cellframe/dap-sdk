@@ -652,7 +652,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 char states[127] = { '\0' }, shift = 0;
                 if (l_cur->flags != l_cur_flags) {
                     l_cur_flags = l_cur->flags;
-                    shift = dap_snprintf(states, sizeof(states), ", flags changed to [%s:%s:%s:%s:%s]",
+                    shift = snprintf(states, sizeof(states), ", flags changed to [%s:%s:%s:%s:%s]",
                                          l_cur_flags & DAP_SOCK_READY_TO_READ   ? "READ"    : "",
                                          l_cur_flags & DAP_SOCK_READY_TO_WRITE  ? "WRITE"   : "",
                                          l_cur_flags & DAP_SOCK_CONNECTING      ? "CONN"    : "",
@@ -660,17 +660,17 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                          l_cur->no_close                        ? "NOCLOSE" : "");
                 }
                 if (l_cur->buf_in_size != l_buf_in_size) {
-                    shift += dap_snprintf(states + shift, sizeof(states) - shift, ", BUF_IN size: %lu -> %lu",
+                    shift += snprintf(states + shift, sizeof(states) - shift, ", BUF_IN size: %lu -> %lu",
                                           l_buf_in_size, l_cur->buf_in_size);
                     l_buf_in_size = l_cur->buf_in_size;
                 }
                 if (l_cur->buf_out_size != l_buf_out_size) {
-                    shift += dap_snprintf(states + shift, sizeof(states) - shift, ", BUF_OUT size: %lu -> %lu",
+                    shift += snprintf(states + shift, sizeof(states) - shift, ", BUF_OUT size: %lu -> %lu",
                                           l_buf_out_size, l_cur->buf_out_size);
                     l_buf_out_size = l_cur->buf_out_size;
                 }
                 if (ev)
-                    dap_snprintf(states + shift, sizeof(states) - shift, ", OL event is %s",
+                    snprintf(states + shift, sizeof(states) - shift, ", OL event is %s",
                                  ev_signaled ? "SET" : "UNSET");
                 log_it(L_DEBUG, "Finished completion of i/o op '%c' on es "DAP_FORMAT_ESOCKET_UUID"%s",
                                 op ? op : ' ', l_cur->uuid, states);
