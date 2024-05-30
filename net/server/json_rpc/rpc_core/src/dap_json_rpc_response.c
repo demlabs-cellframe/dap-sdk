@@ -405,6 +405,7 @@ void dap_json_rpc_request_JSON_free(dap_json_rpc_request_JSON_t *l_request_JSON)
     DAP_FREE(l_request_JSON);
 }
 
+#if 0
 // doesn't work
 void dap_json_rpc_response_send(dap_json_rpc_response_t *a_response, dap_http_simple_t *a_client)
 {
@@ -448,3 +449,4 @@ void dap_json_rpc_response_send(dap_json_rpc_response_t *a_response, dap_http_si
     dap_http_simple_reply(a_client, (void *)str_response, strlen(str_response));
     json_object_put(l_jobj);
 }
+#endif

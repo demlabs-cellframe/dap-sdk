@@ -95,7 +95,7 @@ if (BUILD_WITH_ZIP)
     add_definitions ("-DDAP_BUILD_WITH_ZIP")
 endif()
 
-target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES} dap_json-c)
 
 if(BUILD_DAP_TESTS)
     message("Enabled dap_core test")

@@ -164,5 +164,5 @@ int dap_global_db_unpin_sync(const char *a_group, const char *a_key);
 int dap_global_db_del_sync(const char *a_group, const char *a_key);
 int dap_global_db_flush_sync();
 
-bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj);
+bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_null_key);
 bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask);

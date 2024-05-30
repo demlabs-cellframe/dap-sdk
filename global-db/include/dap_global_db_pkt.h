@@ -89,5 +89,12 @@ dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a
 #endif
 dap_store_obj_t *dap_global_db_pkt_deserialize(dap_global_db_pkt_t *a_pkt, size_t a_pkt_size, dap_stream_node_addr_t *a_addr);
 dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uint64_t *a_checksum);
+DAP_STATIC_INLINE uint64_t dap_store_obj_checksum(dap_store_obj_t *a_obj)
+{
+    uint64_t ret = 0;
+    dap_store_obj_sign(a_obj, NULL, &ret);
+    return ret;
+}
+
 bool dap_global_db_pkt_check_sign_crc(dap_store_obj_t *a_obj);
 void *dap_gossip_pkt_read(dap_hash_fast_t *a_route, size_t *a_route_len);

@@ -60,5 +60,8 @@ typedef struct dap_stream_ch_gdb {
 
 int dap_global_db_ch_init();
 void dap_global_db_ch_deinit();
-bool dap_db_set_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group, dap_global_db_driver_hash_t a_hash);
-dap_global_db_driver_hash_t dap_db_get_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group);
+
+bool dap_global_db_ch_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_addr_t *a_addr);
+
+bool dap_global_db_ch_set_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group, dap_global_db_driver_hash_t a_hash);
+dap_global_db_driver_hash_t dap_glboal_db_ch_get_last_hash_remote(dap_stream_node_addr_t a_node_addr, const char *a_group);

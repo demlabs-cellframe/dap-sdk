@@ -28,9 +28,6 @@
 #include "dap_hash.h"
 #include "dap_enc_base58.h"
 
-#include "KeccakHash.h"
-#include "SimpleFIPS202.h"
-
 #define LOG_TAG "dap_hash"
 
 /**
