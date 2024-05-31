@@ -38,13 +38,10 @@ See more details here <http://www.gnu.org/licenses/>.
 #endif
 
 #include <pthread.h>
-
 #include "utlist.h"
-#include "json.h"
 #include "json_object.h"
-
 #include "dap_common.h"
-#include "dap_config.h"
+#include "dap_context.h"
 #include "dap_worker.h"
 #include "dap_events.h"
 #include "dap_strfuncs.h"
@@ -52,13 +49,8 @@ See more details here <http://www.gnu.org/licenses/>.
 #include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_http_simple.h"
-#include "dap_enc_key.h"
 #include "dap_http_user_agent.h"
 #include "dap_context.h"
-
-#include "../enc_server/include/dap_enc_ks.h"
-#include "../enc_server/include/dap_enc_http.h"
-
 #include "http_status_code.h"
 
 #define LOG_TAG "dap_http_simple"

@@ -27,7 +27,6 @@
 #include "dap_sign.h"
 #include "dap_pkey.h"
 #include "dap_binary_tree.h"
-#include "dap_enc.h"
 #include "dap_enc_key.h"
 
 #define DAP_CERT_ITEM_NAME_MAX 40

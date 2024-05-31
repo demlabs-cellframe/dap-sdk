@@ -1446,6 +1446,19 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
 #endif
 }
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+const char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address)
+{
+    static _Thread_local char s_buf[23] = { '\0' };
+    snprintf(s_buf, sizeof(s_buf), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
+    return s_buf;
+}
+#ifdef __cplusplus
+}
+#endif
+
 #ifdef  DAP_SYS_DEBUG
 dap_memstat_rec_t    *g_memstat [MEMSTAT$K_MAXNR];                      /* Array to keep pointers to module/facility specific memstat vecros */
 static pthread_rwlock_t     s_memstat_lock = PTHREAD_RWLOCK_INITIALIZER;

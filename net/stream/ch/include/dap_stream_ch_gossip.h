@@ -24,10 +24,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #pragma once
 
 #include "dap_common.h"
-#include "dap_time.h"
-#include "dap_timerfd.h"
-#include "dap_stream_ch_pkt.h"
-#include "dap_stream_worker.h"
+#include "dap_hash.h"
 #include "dap_stream_cluster.h"
 
 typedef enum dap_gossip_msg_type {

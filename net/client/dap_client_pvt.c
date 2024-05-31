@@ -35,7 +35,6 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #endif
-#include "json.h"
 
 #include "dap_enc_key.h"
 #include "dap_enc_base64.h"
@@ -43,20 +42,16 @@
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_cert.h"
-#include "dap_uuid.h"
 #include "dap_context.h"
 #include "dap_timerfd.h"
 #include "dap_client_pvt.h"
-#include "dap_server.h"
+#include "dap_enc_ks.h"
 #include "dap_stream.h"
 #include "dap_stream_worker.h"
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_proc.h"
-#include "dap_stream_ch_pkt.h"
 #include "dap_stream_pkt.h"
-#include "dap_http_client.h"
 #include "dap_net.h"
-#include "dap_link_manager.h"
 
 #define LOG_TAG "dap_client_pvt"
 
