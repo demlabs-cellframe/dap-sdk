@@ -49,6 +49,11 @@ static void s_notify_server_callback_queue(dap_events_socket_t * a_es, void * a_
 static void s_notify_server_callback_new(dap_events_socket_t * a_es, void * a_arg);
 static void s_notify_server_callback_delete(dap_events_socket_t * a_es, void * a_arg);
 
+dap_events_socket_callback_t s_notify_server_callback_new_ex = NULL;
+
+void dap_notify_srv_set_callback_new(dap_events_socket_callback_t a_cb) {
+    s_notify_server_callback_new_ex = a_cb;
+}
 
 /**
  * @brief dap_notify_server_init
@@ -72,7 +77,7 @@ int dap_notify_server_init()
         log_it(L_ERROR,"Notify server not initalized, check config");
         return -1;
     }
-    s_notify_server->client_callbacks.new_callback = s_notify_server_callback_new;
+    s_notify_server->client_callbacks.worker_assign_callback = s_notify_server_callback_new;
     s_notify_server->client_callbacks.delete_callback = s_notify_server_callback_delete;
     s_notify_server_queue = dap_events_socket_create_type_queue_ptr_mt(dap_events_worker_get_auto(),s_notify_server_callback_queue);
     uint32_t l_workers_count = dap_events_thread_get_count();
@@ -253,6 +258,8 @@ static void s_notify_server_callback_new(dap_events_socket_t * a_es, UNUSED_ARG 
         HASH_ADD(hh, s_notify_server_clients, uuid, sizeof (l_hh_new->uuid), l_hh_new);
     }
     pthread_rwlock_unlock(&s_notify_server_clients_mutex);
+    if (s_notify_server_callback_new_ex)
+        s_notify_server_callback_new_ex(a_es, NULL);
 }
 
 /**
