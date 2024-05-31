@@ -186,7 +186,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         }
         pthread_rwlock_unlock(&s_gossip_lock);
         if (!l_msg_item && l_ch_pkt->hdr.type == DAP_STREAM_CH_GOSSIP_MSG_TYPE_HASH) {
-            debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_request packet for hash %s", dap_hash_fast_to_str_static((dap_hash_fast_t *)&l_ch_pkt->data));
+            debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_REQUEST packet for hash %s", dap_hash_fast_to_str_static((dap_hash_fast_t *)&l_ch_pkt->data));
             // Send request for data associated with this hash
             dap_stream_ch_pkt_write_unsafe(a_ch, DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST, l_ch_pkt->data, sizeof(dap_hash_t));
         }
@@ -228,6 +228,31 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             pthread_rwlock_unlock(&s_gossip_lock);
             break;
         }
+        dap_cluster_t *l_links_cluster = dap_cluster_find(l_msg->cluster_id);
+        if (l_links_cluster) {
+            dap_cluster_member_t *l_check = dap_cluster_member_find_unsafe(l_links_cluster, &a_ch->stream->node);
+            if (!l_check) {
+                log_it(L_WARNING, "Node with addr "NODE_ADDR_FP_STR" isn't a member of cluster %s",
+                                            NODE_ADDR_FP_ARGS_S(a_ch->stream->node), l_links_cluster->mnemonim);
+                dap_stream_node_addr_t l_member = dap_cluster_get_random_link(l_links_cluster);
+                if (dap_stream_node_addr_is_blank(&l_member)) {
+                    log_it(L_ERROR, "Cluster %s has no active members", l_links_cluster->mnemonim);
+                    pthread_rwlock_unlock(&s_gossip_lock);
+                    break;
+                }
+                debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_REQUEST packet for hash %s", dap_hash_fast_to_str_static(&l_msg->payload_hash));
+                // Send request for data associated with this hash to another link
+                dap_stream_ch_pkt_send_by_addr(&l_member, DAP_STREAM_CH_GOSSIP_ID, DAP_STREAM_CH_GOSSIP_MSG_TYPE_REQUEST,
+                                               l_ch_pkt->data, sizeof(dap_hash_t));
+                pthread_rwlock_unlock(&s_gossip_lock);
+                break;
+            }
+        } else if (!IS_ZERO_128(l_msg->cluster_id.raw)) {
+            const char *l_guuid_str = dap_guuid_to_hex_str(l_msg->cluster_id);
+            log_it(L_ERROR, "Can't find cluster with ID %s for gossip message broadcasting", l_guuid_str);
+            pthread_rwlock_unlock(&s_gossip_lock);
+            break;
+        }
         size_t l_item_new_size = dap_gossip_msg_get_size(l_msg) + sizeof(g_node_addr) + sizeof(struct gossip_msg_item);
         l_item_new = DAP_NEW_Z_SIZE(struct gossip_msg_item, l_item_new_size);
         if (!l_item_new) {
@@ -243,22 +268,10 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         l_msg_new->trace_len = l_msg->trace_len + sizeof(g_node_addr);
         *(dap_stream_node_addr_t *)(l_msg_new->trace_n_payload + l_msg->trace_len) = g_node_addr;
         memcpy(l_msg_new->trace_n_payload + l_msg_new->trace_len, l_msg->trace_n_payload + l_msg->trace_len, l_msg->payload_len);
+        // TODO move HASH_ADD to first stage of protocol
         HASH_ADD_BYHASHVALUE(hh, s_gossip_last_msgs, payload_hash, sizeof(dap_hash_t), l_hash_value, l_item_new);
         pthread_rwlock_unlock(&s_gossip_lock);
         // Broadcast new message
-        dap_cluster_t *l_links_cluster = dap_cluster_find(l_msg->cluster_id);
-        if (l_links_cluster) {
-            dap_cluster_member_t *l_check = dap_cluster_member_find_unsafe(l_links_cluster, &a_ch->stream->node);
-            if (!l_check) {
-                log_it(L_WARNING, "Node with addr "NODE_ADDR_FP_STR" isn't a member of cluster %s",
-                                            NODE_ADDR_FP_ARGS_S(a_ch->stream->node), l_links_cluster->mnemonim);
-                break;
-            }
-        } else if (!IS_ZERO_128(l_msg->cluster_id.raw)) {
-            const char *l_guuid_str = dap_guuid_to_hex_str(l_msg->cluster_id);
-            log_it(L_ERROR, "Can't find cluster with ID %s for gossip message broadcasting", l_guuid_str);
-            break;
-        }
         debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_HASH broadcast for hash %s",
                                         dap_hash_fast_to_str_static(&l_msg_new->payload_hash));
         // Allow NULL cluster for global scope broadcast
@@ -281,6 +294,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         log_it(L_WARNING, "Unknown gossip packet type %hhu", l_ch_pkt->hdr.type);
         return false;
     }
+
     return true;
 }
 
