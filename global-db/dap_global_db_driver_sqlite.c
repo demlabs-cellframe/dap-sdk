@@ -789,7 +789,7 @@ static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
     int l_ret_code = 0;
     for (l_ret_code = s_db_sqlite_step(l_stmt); l_ret_code == SQLITE_ROW && sqlite3_column_type(l_stmt, 0) == SQLITE_TEXT; l_ret_code = s_db_sqlite_step(l_stmt)) {
         const char *l_table_name = (const char *)sqlite3_column_text(l_stmt, 0);
-        if (dap_global_db_group_match_mask(l_mask, l_table_name))
+        if (dap_global_db_group_match_mask(l_table_name, l_mask))
             l_ret = dap_list_prepend(l_ret, dap_str_replace_char(l_table_name, '_', '.'));
     }
     if(l_ret_code != SQLITE_DONE) {
