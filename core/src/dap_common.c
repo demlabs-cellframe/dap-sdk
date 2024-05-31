@@ -345,7 +345,7 @@ int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename
         if( s_log_file == NULL)
             s_log_file = _wfopen( a_log_filename , L"w" );
         if ( s_log_file == NULL ) {
-            dap_fprintf( stderr, "Can't open log file %ls to append\n", a_log_filename );
+            fprintf( stderr, "Can't open log file %ls to append\n", a_log_filename );
             return -1;
         }
         //dap_stpcpy(s_log_file_path, a_log_filename);
