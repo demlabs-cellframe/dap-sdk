@@ -126,17 +126,7 @@
 #define DAP_CAST_PTR(t,v) (t*)(v)
 #endif
 
-#define HASH_LAST(head, ret)                                                    \
-do {                                                                            \
-    if ((head) != NULL) {                                                       \
-        (ret) = (head)->hh.tbl->tail->prev;                                     \
-        if (!(ret))                                                             \
-            (ret) = (head);                                                     \
-        else                                                                    \
-            (ret) = (DAP_CAST_PTR(typeof(*head),(ret)))->hh.next;               \
-    } else                                                                      \
-        (ret) = (head);                                                         \
-} while (0)
+#define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
 
 extern const char *g_error_memory_alloc;
 extern const char *g_error_sanity_check;
@@ -298,6 +288,14 @@ DAP_STATIC_INLINE unsigned long dap_pagesize() {
     s = sysconf(_SC_PAGESIZE);
 #endif
     return s ? s : 4096;
+}
+
+DAP_STATIC_INLINE uint64_t dap_page_roundup(uint64_t a) {
+    return ( a + dap_pagesize() - 1 ) & ( ~(dap_pagesize() - 1) ); 
+}
+
+DAP_STATIC_INLINE uint64_t dap_page_rounddown(uint64_t a) {
+    return a & ( ~(dap_pagesize() - 1) ); 
 }
 
 #ifdef DAP_OS_WINDOWS
