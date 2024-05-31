@@ -90,7 +90,10 @@ static dap_list_t *s_find_net_item_by_id(uint64_t a_net_id)
 DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
 {
     dap_list_t *l_item = s_find_net_item_by_id(a_net_id);
-    return l_item ? (dap_managed_net_t *)l_item->data : NULL;
+    if (l_item)
+        return (dap_managed_net_t *)l_item->data;
+    log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " is not registered", a_net_id);
+    return NULL;
 }
 
 /**
@@ -286,13 +289,9 @@ size_t dap_link_manager_links_count(uint64_t a_net_id)
 size_t dap_link_manager_required_links_count(uint64_t a_net_id)
 {
 // sanity check
-    dap_return_val_if_pass(!s_link_manager, 0);
-// func work
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    if (!l_net) {
-        log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " is not registered", a_net_id);
-        return 0;
-    }
+    dap_return_val_if_pass(!s_link_manager || !l_net, 0);
+// func work
     return l_net->min_links_num;
 }
 
@@ -304,13 +303,9 @@ size_t dap_link_manager_required_links_count(uint64_t a_net_id)
 size_t dap_link_manager_needed_links_count(uint64_t a_net_id)
 {
 // sanity check
-    dap_return_val_if_pass(!s_link_manager, 0);
-// func work
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    if (!l_net) {
-        log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " is not registered", a_net_id);
-        return 0;
-    }
+    dap_return_val_if_pass(!s_link_manager || !l_net, 0);
+// func work
     return l_net->uplinks < l_net->min_links_num ? l_net->min_links_num - l_net->uplinks : 0;
 }
 
@@ -417,11 +412,10 @@ void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
 
 bool dap_link_manager_get_net_condition(uint64_t a_net_id)
 {
+// sanity check
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    if (!l_net) {
-        log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " not managed", a_net_id);
-        return false;
-    }
+    dap_return_val_if_pass(!l_net, false);
+// func work
     return l_net->active;
 }
 
@@ -1129,8 +1123,7 @@ void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_stream_node_
 {
 // sanity check
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    if (!l_net)
-        return;
+    dap_return_if_pass(!l_net);
 // memory alloc
     struct link_accounting_args *l_args = NULL;
     DAP_NEW_Z_RET(l_args, struct link_accounting_args, NULL);
@@ -1228,7 +1221,7 @@ dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, 
 {
 // sanity check
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
-    dap_return_val_if_pass(!l_net || !l_net->link_clusters, 0);
+    dap_return_val_if_pass(!l_net || !l_net->link_clusters, NULL);
 // func work
     size_t l_count = 0, l_uplinks_count = 0, l_downlinks_count = 0;
     l_count = dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data);
