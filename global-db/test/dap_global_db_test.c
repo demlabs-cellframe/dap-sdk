@@ -56,13 +56,13 @@ static int s_test_create_db(const char *db_type)
 
     if( dap_dir_test(DB_FILE) ) {
         rmdir(DB_FILE);
-        dap_snprintf(l_cmd, sizeof(l_cmd), "rm -rf %s", DB_FILE);
+        snprintf(l_cmd, sizeof(l_cmd), "rm -rf %s", DB_FILE);
         if ( (rc = system(l_cmd)) )
              log_it(L_ERROR, "system(%s)->%d", l_cmd, rc);
     }
     else
         unlink(DB_FILE);
-    rc = dap_db_driver_init(db_type, DB_FILE, -1);
+    rc = dap_global_db_driver_init(db_type, DB_FILE);
     dap_assert(rc == 0, "Initialization db driver");
     return rc;
 }
@@ -464,19 +464,19 @@ static void s_test_get_by_hash(size_t a_count)
 static void s_test_get_groups_by_mask()
 {
     dap_list_t *l_groups = NULL;
-    l_groups = dap_global_db_driver_get_groups_by_mask("group.z*");
+    l_groups = dap_global_db_driver_get_groups_by_mask("group.z");
     dap_assert_PIF(dap_list_length(l_groups) == 1 && !strcmp(DAP_DB$T_GROUP, l_groups->data), "Wrong finded group by mask");
     dap_list_free_full(l_groups, NULL);
 
-    l_groups = dap_global_db_driver_get_groups_by_mask("group.w*");
+    l_groups = dap_global_db_driver_get_groups_by_mask("group.w");
     dap_assert_PIF(dap_list_length(l_groups) == 1 && !strcmp(DAP_DB$T_GROUP_WRONG, l_groups->data), "Wrong finded group by mask");
     dap_list_free_full(l_groups, NULL);
 
-    l_groups = dap_global_db_driver_get_groups_by_mask("group.n*");
+    l_groups = dap_global_db_driver_get_groups_by_mask("group.n");
     dap_assert_PIF(!dap_list_length(l_groups), "Finded not existed groups");
     dap_list_free_full(l_groups, NULL);
 
-    l_groups = dap_global_db_driver_get_groups_by_mask("group.*");
+    l_groups = dap_global_db_driver_get_groups_by_mask("group.");
     dap_assert_PIF(dap_list_length(l_groups) == 2, "Wrong finded groups by mask");
     dap_list_free_full(l_groups, NULL);
     dap_pass_msg("get_groups_by_mask check");
@@ -484,7 +484,7 @@ static void s_test_get_groups_by_mask()
 
 static void s_test_flush()
 {
-    dap_db_driver_flush();
+    dap_global_db_driver_flush();
 }
 
 static void s_test_tx_start_end(size_t a_count, bool a_missing_allow)
@@ -525,7 +525,7 @@ static void s_test_tx_start_end(size_t a_count, bool a_missing_allow)
 
 static void s_test_close_db(void)
 {
-    dap_db_driver_deinit();
+    dap_global_db_driver_deinit();
     dap_test_msg("Close global_db");
     log_it(L_NOTICE, "Close global_db");
 }
