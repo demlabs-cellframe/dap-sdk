@@ -60,6 +60,7 @@ static uint32_t s_timer_update_states = 2000;
 static uint32_t s_max_attempts_num = 3;
 static uint32_t s_reconnect_delay = 20; // sec
 static dap_link_manager_t *s_link_manager = NULL;
+static dap_proc_thread_t *s_query_thread = NULL;
 
 static void s_client_connect(dap_link_t *a_link, void *a_callback_arg);
 static void s_client_connected_callback(dap_client_t *a_client, void *a_arg);
@@ -173,11 +174,11 @@ DAP_STATIC_INLINE void s_debug_accounting_link_in_net(bool a_uplink, dap_stream_
 DAP_STATIC_INLINE void s_link_manager_print_links_info(dap_link_manager_t *a_link_manager)
 {
     dap_link_t *l_link = NULL, *l_tmp = NULL;
-    printf(" Uplink |\tNode addr\t| Active Clusters\t| Static clusters\n"
-            "-------------------------------------------------------------------------------\n");
+    printf("| Uplink |\tNode addr\t|Active Clusters|Static clusters|\n"
+            "-----------------------------------------------------------------\n");
     HASH_ITER(hh, a_link_manager->links, l_link, l_tmp)
-        printf("   %s   | "NODE_ADDR_FP_STR"\t|\t%"DAP_UINT64_FORMAT_U
-                                            "\t|\t%"DAP_UINT64_FORMAT_U"\t\n",
+        printf("| %5s  |"NODE_ADDR_FP_STR"|\t%"DAP_UINT64_FORMAT_U
+                                            "\t|\t%"DAP_UINT64_FORMAT_U"\t|\n",
                                  l_link->is_uplink ? "True" : "False",
                                  NODE_ADDR_FP_ARGS_S(l_link->addr),
                                  dap_list_length(l_link->active_clusters),
@@ -200,13 +201,17 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
     s_max_attempts_num = dap_config_get_item_uint32_default(g_config, "link_manager", "max_attempts_num", s_max_attempts_num);
     s_reconnect_delay = dap_config_get_item_uint32_default(g_config, "link_manager", "reconnect_delay", s_reconnect_delay);
     s_debug_more = dap_config_get_item_bool_default(g_config,"link_manager","debug_more", s_debug_more);
+    if (!(s_query_thread = dap_proc_thread_get_auto())) {
+        log_it(L_ERROR, "Can't choose query thread on link manager");
+        return -1;
+    }
     if (!(s_link_manager = dap_link_manager_new(a_callbacks))) {
         log_it(L_ERROR, "Default link manager not inited");
-        return -1;
+        return -2;
     }
     if (dap_proc_thread_timer_add(NULL, s_update_states, s_link_manager, s_timer_update_states)) {
         log_it(L_ERROR, "Can't activate timer on link manager");
-        return -2;
+        return -3;
     }
     dap_link_manager_set_condition(true);
     return 0;
@@ -554,7 +559,7 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
     DAP_NEW_Z_RET(l_args, struct link_drop_args, NULL);
 // func work
     *l_args = (struct link_drop_args) { .addr = l_link->addr, .disconnected = a_arg };
-    dap_proc_thread_callback_add_pri(NULL, s_link_drop_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+    dap_proc_thread_callback_add_pri(s_query_thread, s_link_drop_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
 }
 
 /**
@@ -677,7 +682,7 @@ void s_links_wake_up(dap_link_manager_t *a_link_manager)
             }
         }
     }
-    pthread_rwlock_unlock(&s_link_manager->links_lock);
+    pthread_rwlock_unlock(&a_link_manager->links_lock);
 }
 
 /**
@@ -921,12 +926,14 @@ static bool s_stream_add_callback(void *a_arg)
     if (!l_link) {
         log_it(L_ERROR, "Can't %s link for address " NODE_ADDR_FP_STR,
                  l_args->uplink ? "find" : "create", NODE_ADDR_FP_ARGS(l_node_addr));
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
         DAP_DELETE(l_args);
         return false;
     }
     if (l_link->active_clusters) {
         log_it(L_ERROR, "%s " NODE_ADDR_FP_STR " with existed link",
                         l_args->uplink ? "Set uplink to" : "Get dowlink from", NODE_ADDR_FP_ARGS(l_node_addr));
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
         DAP_DELETE(l_args);
         return false;
     }
@@ -967,7 +974,7 @@ int dap_link_manager_stream_add(dap_stream_node_addr_t *a_node_addr, bool a_upli
     DAP_NEW_Z_RET_VAL(l_args, struct link_moving_args, -2, NULL);
 // func work
     *l_args = (struct link_moving_args) { .addr = *a_node_addr, .uplink = a_uplink };
-    return dap_proc_thread_callback_add_pri(NULL, s_stream_add_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+    return dap_proc_thread_callback_add_pri(s_query_thread, s_stream_add_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
 }
 
 static bool s_stream_replace_callback(void *a_arg)
@@ -1008,7 +1015,7 @@ void dap_link_manager_stream_replace(dap_stream_node_addr_t *a_addr, bool a_new_
     DAP_NEW_Z_RET(l_args, struct link_moving_args, NULL);
     *l_args = (struct link_moving_args) { .addr = *a_addr, .uplink = a_new_is_uplink };
 // func work
-    dap_proc_thread_callback_add_pri(NULL, s_stream_replace_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+    dap_proc_thread_callback_add_pri(s_query_thread, s_stream_replace_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
 }
 
 static bool s_stream_delete_callback(void *a_arg)
@@ -1041,7 +1048,7 @@ void dap_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr)
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
-    dap_proc_thread_callback_add_pri(NULL, s_stream_delete_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+    dap_proc_thread_callback_add_pri(s_query_thread, s_stream_delete_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
 }
 
 struct link_accounting_args {
@@ -1118,7 +1125,7 @@ void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_stream_node_
     DAP_NEW_Z_RET(l_args, struct link_accounting_args, NULL);
 // func work
     *l_args = (struct link_accounting_args) { .addr = *a_node_addr, .net = l_net, .no_error = a_no_error };
-    dap_proc_thread_callback_add_pri(NULL, s_link_accounting_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
+    dap_proc_thread_callback_add_pri(s_query_thread, s_link_accounting_callback, l_args, DAP_QUEUE_MSG_PRIORITY_NORMAL);
 }
 
 /**
@@ -1165,6 +1172,7 @@ void dap_link_manager_add_static_links_cluster(dap_cluster_member_t *a_member, v
         l_link = s_link_manager_link_create(l_node_addr, true, DAP_NET_ID_INVALID);
     if (!l_link) {
         log_it(L_ERROR, "Can't create link to addr " NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS(l_node_addr));
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
         return;
     }
     l_link->static_clusters = dap_list_append(l_link->static_clusters, l_cluster);
@@ -1189,6 +1197,7 @@ void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member
     dap_link_t *l_link = s_link_manager_link_find(l_node_addr);
     if (!l_link) {
         debug_if(s_debug_more, L_ERROR, "Link " NODE_ADDR_FP_STR " not found", NODE_ADDR_FP_ARGS(l_node_addr));
+        pthread_rwlock_unlock(&s_link_manager->links_lock);
         return;
     }
     l_link->static_clusters = dap_list_remove(l_link->static_clusters, l_cluster);
