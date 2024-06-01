@@ -291,10 +291,10 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
         json_object_object_get_ex(json_obj_response, "tx_sum", &j_obj_sum);
         json_object_object_get_ex(json_obj_response, "accepted_tx", &j_obj_accepted);
         json_object_object_get_ex(json_obj_response, "rejected_tx", &j_obj_rejected);
-        printf("Chain %s in network %s contains %d transactions. \n"
+        printf("Print %d transactions in network %s chain %s. \n"
                 "Of which %d were accepted into the ledger and %d were rejected.\n", 
-                json_object_get_string(j_obj_chain), json_object_get_string(j_obj_net_name), 
-                json_object_get_int(j_obj_sum), json_object_get_int(j_obj_accepted), json_object_get_int(j_obj_rejected));
+                json_object_get_int(j_obj_sum), json_object_get_string(j_obj_net_name),
+                json_object_get_string(j_obj_chain),json_object_get_int(j_obj_accepted), json_object_get_int(j_obj_rejected));
     }
 }
 
@@ -405,6 +405,7 @@ void dap_json_rpc_request_JSON_free(dap_json_rpc_request_JSON_t *l_request_JSON)
     DAP_FREE(l_request_JSON);
 }
 
+#if 0
 // doesn't work
 void dap_json_rpc_response_send(dap_json_rpc_response_t *a_response, dap_http_simple_t *a_client)
 {
@@ -448,3 +449,4 @@ void dap_json_rpc_response_send(dap_json_rpc_response_t *a_response, dap_http_si
     dap_http_simple_reply(a_client, (void *)str_response, strlen(str_response));
     json_object_put(l_jobj);
 }
+#endif

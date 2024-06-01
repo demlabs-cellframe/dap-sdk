@@ -26,7 +26,6 @@
 #include "dap_common.h"
 #include "dap_enc_key.h"
 #include "stdbool.h"
-#include "dap_hash.h"
 
 // TODO rewrite code for remove this module (with no stream setting sockets disconnects)
 #define DAP_STREAM_NODE_ADDR_CERT_NAME  "node-addr"

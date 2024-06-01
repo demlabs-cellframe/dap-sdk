@@ -1,5 +1,4 @@
 #include "dap_http_ban_list_client.h"
-#include "dap_strfuncs.h"
 #include "dap_hash.h"
 
 typedef struct ban_record {

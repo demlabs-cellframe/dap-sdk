@@ -74,11 +74,8 @@ dap_list_t *dap_list_append(dap_list_t *a_list, void *a_data)
 // sanity check
     dap_return_val_if_pass(!a_data, a_list);
 //func work
-    dap_list_t *l_el = DAP_NEW_Z(dap_list_t);
-    if (!l_el) {
-        log_it(L_CRITICAL, "Out of memory");
-        return a_list;
-    }
+    dap_list_t *l_el = NULL;
+    DAP_NEW_Z_RET_VAL(l_el, dap_list_t, a_list, NULL);
     l_el->data = a_data;
     return ({ DL_APPEND(a_list, l_el); a_list; });
 }
@@ -112,11 +109,8 @@ dap_list_t *dap_list_prepend(dap_list_t *a_list, void *a_data)
 // sanity check
     dap_return_val_if_pass(!a_data, a_list);
 //func work
-    dap_list_t *l_el = DAP_NEW_Z(dap_list_t);
-    if (!l_el) {
-        log_it(L_CRITICAL, "Out of memory");
-        return a_list;
-    }
+    dap_list_t *l_el = NULL;
+    DAP_NEW_Z_RET_VAL(l_el, dap_list_t, a_list, NULL);
     l_el->data = a_data;
     return ({ DL_PREPEND(a_list, l_el); a_list; });
 }
@@ -137,12 +131,9 @@ dap_list_t *dap_list_insert(dap_list_t *a_list, void* a_data, uint64_t a_positio
 {
     if (!a_position)
         return dap_list_prepend(a_list, a_data);
-    dap_list_t  *l_el = DAP_NEW_Z(dap_list_t),
-                *l_pos = dap_list_nth(a_list, a_position);
-    if (!l_el) {
-        log_it(L_CRITICAL, "Out of memory");
-        return a_list;
-    }
+    dap_list_t *l_el = NULL;
+    DAP_NEW_Z_RET_VAL(l_el, dap_list_t, a_list, NULL);
+    dap_list_t *l_pos = dap_list_nth(a_list, a_position);
     l_el->data = a_data;
     return ({ DL_PREPEND_ELEM(a_list, l_pos, l_el); a_list; });
 }

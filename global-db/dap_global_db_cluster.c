@@ -28,7 +28,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_global_db_pkt.h"
 #include "dap_global_db_ch.h"
 #include "dap_strfuncs.h"
-#include "dap_sign.h"
 #include "dap_proc_thread.h"
 #include "dap_hash.h"
 #include "dap_stream_ch_gossip.h"
@@ -37,19 +36,30 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 static void s_gdb_cluster_sync_timer_callback(void *a_arg);
 
+static dap_global_db_cluster_t *s_local_cluster = NULL, *s_global_cluster = NULL;
+
 int dap_global_db_cluster_init()
 {
     dap_global_db_ch_init();
-        // Pseudo-cluster for local scope (unsynced groups). There is no notifier for it
-    if (dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_LOCAL,
-                                  dap_guuid_compose(0, 1), DAP_GLOBAL_DB_CLUSTER_LOCAL ".*",
-                                  0, false, DAP_GDB_MEMBER_ROLE_ROOT, DAP_CLUSTER_ROLE_VIRTUAL))
-        // Pseudo-cluster for global scope
-        return !dap_global_db_cluster_add(dap_global_db_instance_get_default(), DAP_GLOBAL_DB_CLUSTER_GLOBAL,
-                                          *(dap_guuid_t *)&uint128_0, DAP_GLOBAL_DB_CLUSTER_GLOBAL ".*",
-                                          DAP_GLOBAL_DB_UNCLUSTERED_TTL, true,
-                                          DAP_GDB_MEMBER_ROLE_GUEST, DAP_CLUSTER_ROLE_VIRTUAL);
-    return 2;
+
+    // Pseudo-cluster for global scope
+    if ( !(s_global_cluster = dap_global_db_cluster_add(
+                dap_global_db_instance_get_default(), DAP_STREAM_CLUSTER_GLOBAL,
+                *(dap_guuid_t *)&uint128_0, DAP_GLOBAL_DB_CLUSTER_GLOBAL,
+                DAP_GLOBAL_DB_UNCLUSTERED_TTL, true,
+                DAP_GDB_MEMBER_ROLE_GUEST, DAP_CLUSTER_TYPE_SYSTEM)))
+        return -1;
+
+    // Pseudo-cluster for local scope (unsynced groups).
+    if ( !(s_local_cluster = dap_global_db_cluster_add(
+                dap_global_db_instance_get_default(), DAP_STREAM_CLUSTER_LOCAL,
+                dap_guuid_compose(0, 1), DAP_GLOBAL_DB_CLUSTER_LOCAL,
+                0, false, DAP_GDB_MEMBER_ROLE_NOBODY, DAP_CLUSTER_TYPE_SYSTEM)))
+        return -2;
+
+    dap_global_db_cluster_member_add(s_local_cluster, &g_node_addr, DAP_GDB_MEMBER_ROLE_ROOT);
+
+    return 0;
 }
 
 void dap_global_db_cluster_deinit()
@@ -85,7 +95,7 @@ void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_sto
 
 dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim, dap_guuid_t a_guuid,
                                                    const char *a_group_mask, uint32_t a_ttl, bool a_owner_root_access,
-                                                   dap_global_db_role_t a_default_role, dap_cluster_role_t a_links_cluster_role)
+                                                   dap_global_db_role_t a_default_role, dap_cluster_type_t a_links_cluster_role)
 {
     dap_global_db_cluster_t *it;
     DL_FOREACH(a_dbi->clusters, it) {
@@ -101,7 +111,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     }
     if (a_mnemonim)
         l_cluster->links_cluster = dap_cluster_by_mnemonim(a_mnemonim);
-    if (!l_cluster->links_cluster && dap_strcmp(DAP_GLOBAL_DB_CLUSTER_GLOBAL, a_mnemonim)) {
+    if (!l_cluster->links_cluster) {
         l_cluster->links_cluster = dap_cluster_new(a_mnemonim, a_guuid, a_links_cluster_role);
         if (!l_cluster->links_cluster) {
             log_it(L_ERROR, "Can't create links cluster");
@@ -109,19 +119,18 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
             return NULL;
         }
     }
-    if (dap_strcmp(DAP_GLOBAL_DB_CLUSTER_LOCAL, a_mnemonim)) {
-        l_cluster->role_cluster = dap_cluster_new(NULL, *(dap_guuid_t *)&uint128_0, DAP_CLUSTER_ROLE_VIRTUAL);
-        if (!l_cluster->role_cluster) {
-            log_it(L_ERROR, "Can't create role cluster");
-            dap_cluster_delete(l_cluster->links_cluster);
-            DAP_DELETE(l_cluster);
-            return NULL;
-        }
-        if (l_cluster->links_cluster &&
-                l_cluster->links_cluster->role != DAP_CLUSTER_ROLE_ISOLATED) {
-            l_cluster->links_cluster->members_add_callback = dap_link_manager_add_links_cluster;
-            l_cluster->links_cluster->members_delete_callback = dap_link_manager_remove_links_cluster;
-        }
+    l_cluster->role_cluster = dap_cluster_new(NULL, dap_guuid_compose(UINT64_MAX, UINT64_MAX), DAP_CLUSTER_TYPE_VIRTUAL);
+    if (!l_cluster->role_cluster) {
+        log_it(L_ERROR, "Can't create role cluster");
+        dap_cluster_delete(l_cluster->links_cluster);
+        DAP_DELETE(l_cluster);
+        return NULL;
+    }
+    if (l_cluster->links_cluster &&
+            (l_cluster->links_cluster->type == DAP_CLUSTER_TYPE_AUTONOMIC ||
+            l_cluster->links_cluster->type == DAP_CLUSTER_TYPE_EMBEDDED)) {
+        l_cluster->links_cluster->members_add_callback = dap_link_manager_add_links_cluster;
+        l_cluster->links_cluster->members_delete_callback = dap_link_manager_remove_links_cluster;
     }
     l_cluster->groups_mask = dap_strdup(a_group_mask);
     if (!l_cluster->groups_mask) {
@@ -138,7 +147,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     l_cluster->link_manager = dap_link_manager_get_default();
     l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_START;
     DL_APPEND(a_dbi->clusters, l_cluster);
-    if (!l_cluster->links_cluster || l_cluster->links_cluster->role != DAP_CLUSTER_ROLE_VIRTUAL)
+    if (dap_strcmp(DAP_STREAM_CLUSTER_LOCAL, a_mnemonim))
         dap_proc_thread_timer_add(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000);
     log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s", dap_guuid_to_hex_str(a_guuid), a_group_mask);
     return l_cluster;
@@ -151,8 +160,7 @@ dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *
         return NULL;
     }
     if (a_node_addr->uint64 == g_node_addr.uint64) {
-        if (a_cluster->links_cluster &&
-                a_cluster->links_cluster->role == DAP_CLUSTER_ROLE_AUTONOMIC) {
+        if (a_cluster->links_cluster->type == DAP_CLUSTER_TYPE_AUTONOMIC) {
             a_cluster->role_cluster->members_add_callback = dap_link_manager_add_static_links_cluster;
             a_cluster->role_cluster->members_delete_callback = dap_link_manager_remove_static_links_cluster;
             a_cluster->role_cluster->callbacks_arg = a_cluster->links_cluster;
@@ -166,8 +174,7 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
 {
     if (a_cluster->links_cluster)
         dap_cluster_delete(a_cluster->links_cluster);
-    if (a_cluster->role_cluster)
-        dap_cluster_delete(a_cluster->role_cluster);
+    dap_cluster_delete(a_cluster->role_cluster);
     DAP_DELETE(a_cluster->groups_mask);
     DL_DELETE(a_cluster->dbi->clusters, a_cluster);
     DAP_DELETE(a_cluster);
@@ -233,9 +240,7 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
     dap_global_db_cluster_t *l_cluster = a_arg;
     switch (l_cluster->sync_context.state) {
     case DAP_GLOBAL_DB_SYNC_STATE_START: {
-        dap_stream_node_addr_t l_current_link = l_cluster->links_cluster
-                ? dap_cluster_get_random_link(l_cluster->links_cluster)
-                : dap_stream_get_random_link();
+        dap_stream_node_addr_t l_current_link = dap_cluster_get_random_link(l_cluster->links_cluster);
         if (dap_stream_node_addr_is_blank(&l_current_link))
             break;
         dap_list_t *l_groups = dap_global_db_driver_get_groups_by_mask(l_cluster->groups_mask);
@@ -247,7 +252,7 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
         l_cluster->sync_context.current_link = l_current_link;
         dap_stream_ch_add_notifier(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_PKT_DIR_IN, s_ch_in_pkt_callback, l_cluster);
         for (dap_list_t *it = l_groups; it; it = it->next) {
-            if (!dap_global_db_driver_count(it->data, c_dap_global_db_driver_hash_blank))
+            if (!dap_global_db_driver_count(it->data, c_dap_global_db_driver_hash_blank, true))
                 continue;   // Don't send request for empty group, if any
             size_t l_group_len = dap_strlen(it->data) + 1;
             dap_global_db_start_pkt_t *l_msg = DAP_NEW_STACK_SIZE(dap_global_db_start_pkt_t, sizeof(dap_global_db_start_pkt_t) + l_group_len);

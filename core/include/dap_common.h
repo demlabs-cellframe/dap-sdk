@@ -126,17 +126,7 @@
 #define DAP_CAST_PTR(t,v) (t*)(v)
 #endif
 
-#define HASH_LAST(head, ret)                                                    \
-do {                                                                            \
-    if ((head) != NULL) {                                                       \
-        (ret) = (head)->hh.tbl->tail->prev;                                     \
-        if (!(ret))                                                             \
-            (ret) = (head);                                                     \
-        else                                                                    \
-            (ret) = (DAP_CAST_PTR(typeof(*head),(ret)))->hh.next;               \
-    } else                                                                      \
-        (ret) = (head);                                                         \
-} while (0)
+#define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
 
 extern const char *g_error_memory_alloc;
 extern const char *g_error_sanity_check;
@@ -300,6 +290,14 @@ DAP_STATIC_INLINE unsigned long dap_pagesize() {
     return s ? s : 4096;
 }
 
+DAP_STATIC_INLINE uint64_t dap_page_roundup(uint64_t a) {
+    return ( a + dap_pagesize() - 1 ) & ( ~(dap_pagesize() - 1) ); 
+}
+
+DAP_STATIC_INLINE uint64_t dap_page_rounddown(uint64_t a) {
+    return a & ( ~(dap_pagesize() - 1) ); 
+}
+
 #ifdef DAP_OS_WINDOWS
 typedef struct iovec {
     void    *iov_base; /* Data */
@@ -440,24 +438,6 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 
 typedef uint8_t byte_t;
 typedef int dap_spinlock_t;
-
-// Deprecated funstions, just for compatibility
-#define dap_sscanf      sscanf
-#define dap_vsscanf     vsscanf
-#define dap_scanf       scanf
-#define dap_vscanf      vscanf
-#define dap_fscanf      fscanf
-#define dap_vfscanf     vfscanf
-#define dap_sprintf     sprintf
-#define dap_snprintf    snprintf
-#define dap_printf      printf
-#define dap_vprintf     vprintf
-#define dap_fprintf     fprintf
-#define dap_vfprintf    vfprintf
-#define dap_vsprintf    vsprintf
-#define dap_vsnprintf   vsnprintf
-#define dap_asprintf    asprintf
-#define dap_vasprintf   vasprintf
 
 #if defined (__GNUC__) || defined (__clang__)
 #ifdef __MINGW_PRINTF_FORMAT
@@ -873,3 +853,5 @@ DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_ad
 }
 
 DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
+
+const char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address);

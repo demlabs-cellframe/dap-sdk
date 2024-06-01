@@ -180,9 +180,10 @@ int dap_cert_sign_output(dap_cert_t * a_cert, const void * a_data, size_t a_data
  * @param a_output_size_wished wished data size (don't used in current implementation)
  * @return dap_sign_t*
  */
-dap_sign_t * dap_cert_sign(dap_cert_t * a_cert, const void * a_data
-                                       , size_t a_data_size, size_t a_output_size_wished )
+dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, size_t a_output_size_wished)
 {
+    dap_return_val_if_fail(a_cert && a_cert->enc_key && a_cert->enc_key->priv_key_data &&
+                           a_cert->enc_key->priv_key_data_size && a_data && a_data_size, NULL);
     dap_sign_t *l_ret = dap_sign_create(a_cert->enc_key, a_data, a_data_size, a_output_size_wished);
 
     if (l_ret)
