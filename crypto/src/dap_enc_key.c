@@ -426,13 +426,12 @@ dap_enc_key_callbacks_t s_callbacks[]={
           .sign_get =                         dap_enc_sig_shipovnik_get_sign,
           .sign_verify =                      dap_enc_sig_shipovnik_verify_sign,
 
-          .ser_sign =                         dap_enc_sig_shipovnik_write_signature,
-          .ser_priv_key =                     dap_enc_sig_shipovnik_write_private_key,
-          .ser_pub_key =                      dap_enc_sig_shipovnik_write_public_key,
+          .ser_priv_key_size =                dap_enc_sig_shipovnik_ser_key_size,
+          .ser_pub_key_size =                 dap_enc_sig_shipovnik_ser_pkey_size,
 
-          .deser_sign =                       dap_enc_sig_shipovnik_read_signature,
-          .deser_priv_key =                   dap_enc_sig_shipovnik_read_private_key,
-          .deser_pub_key =                    dap_enc_sig_shipovnik_read_public_key,
+          .deser_priv_key_size =              dap_enc_sig_shipovnik_deser_key_size,
+          .deser_priv_key_size =              dap_enc_sig_shipovnik_deser_pkey_size,
+          .deser_sign_size =                  dap_enc_sig_shipovnik_deser_sign_size
       },
 
 
@@ -615,7 +614,6 @@ uint8_t *dap_enc_key_serialize_sign(dap_enc_key_t *a_key, uint8_t *a_sign, size_
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
             l_data = s_callbacks[a_key->type].ser_sign(a_sign, a_sign_len);
             break;
@@ -679,7 +677,6 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
-    case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         l_data = s_callbacks[a_key->type].ser_priv_key(a_key->priv_key_data, a_buflen_out);
         break;
@@ -710,7 +707,6 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
     case DAP_ENC_KEY_TYPE_SIG_TESLA:
     case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
-    case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         l_data = s_callbacks[a_key->type].ser_pub_key(a_key->pub_key_data, a_buflen_out);
         break;

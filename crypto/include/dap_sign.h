@@ -42,6 +42,7 @@ enum dap_sign_type_enum {
     SIG_TYPE_FALCON = 0x0103, /// @brief Falcon signature
     SIG_TYPE_SPHINCSPLUS = 0x0104, /// @brief Falcon signature
     SIG_TYPE_ECDSA = 0x105,
+    SIG_TYPE_SHIPOVNIK = 0x0106,
 #ifdef DAP_PQLR
     SIG_TYPE_PQLR_DILITHIUM = 0x1102,
     SIG_TYPE_PQLR_FALCON = 0x1103,

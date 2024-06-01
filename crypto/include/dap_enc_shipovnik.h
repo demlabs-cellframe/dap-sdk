@@ -24,18 +24,24 @@ int dap_enc_sig_shipovnik_get_sign(struct dap_enc_key* key, const void* msg, con
 int dap_enc_sig_shipovnik_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature,
                                       const size_t signature_size);
 
-uint8_t *dap_enc_sig_shipovnik_write_signature(const uint8_t* a_sign, size_t *a_sign_out);
-uint8_t *dap_enc_sig_shipovnik_write_private_key(const uint8_t* a_private_key, size_t *a_buflen_out);
-uint8_t *dap_enc_sig_shipovnik_write_public_key(const uint8_t* a_public_key, size_t *a_buflen_out);
-uint8_t* dap_enc_sig_shipovnik_read_signature(const uint8_t *a_buf, size_t a_buflen);
-uint8_t* dap_enc_sig_shipovnik_read_private_key(const uint8_t *a_buf, size_t a_buflen);
-uint8_t *dap_enc_sig_shipovnik_read_public_key(const uint8_t *a_buf, size_t a_buflen);
-
-
 void dap_enc_sig_shipovnik_signature_delete(void *a_sig);
-void dap_enc_sig_shipovnik_private_key_delete(uint8_t* privateKey);
-void dap_enc_sig_shipovnik_public_key_delete(uint8_t* publicKey);
-void dap_enc_sig_shipovnik_private_and_public_keys_delete(uint8_t* privateKey, uint8_t* publicKey);
+void dap_enc_sig_shipovnik_private_key_delete(void* privateKey);
+void dap_enc_sig_shipovnik_public_key_delete(void* publicKey);
+void dap_enc_sig_shipovnik_private_and_public_keys_delete(dap_enc_key_t* a_key);
 
-
+DAP_STATIC_INLINE uint64_t dap_enc_sig_shipovnik_ser_key_size(UNUSED_ARG const void *a_in) {
+    return SHIPOVNIK_SECRETKEYBYTES;
+}
+DAP_STATIC_INLINE uint64_t dap_enc_sig_shipovnik_ser_pkey_size(UNUSED_ARG const void *a_in) {
+    return SHIPOVNIK_PUBLICKEYBYTES;
+}
+DAP_STATIC_INLINE uint64_t dap_enc_sig_shipovnik_deser_sign_size(UNUSED_ARG const void *a_in) {
+    return SHIPOVNIK_SIGBYTES;
+}
+DAP_STATIC_INLINE uint64_t dap_enc_sig_shipovnik_deser_key_size(UNUSED_ARG const void *a_in) {
+    return SHIPOVNIK_SECRETKEYBYTES;
+}
+DAP_STATIC_INLINE uint64_t dap_enc_sig_shipovnik_deser_pkey_size(UNUSED_ARG const void *a_in) {
+    return SHIPOVNIK_PUBLICKEYBYTES;
+}
 #endif
