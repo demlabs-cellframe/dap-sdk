@@ -125,6 +125,7 @@ typedef struct queue_entry {
 #define FLAG_KEEP_INHERITOR(f)  (f & DAP_SOCK_KEEP_INHERITOR)
 #endif
 // If set - queue limited to sizeof(void*) size of data transmitted
+#define DAP_SOCK_FILE_MAPPED       BIT( 7 )
 #define DAP_SOCK_QUEUE_PTR         BIT( 8 )
 
 #define FLAG_CLOSE(f)           (f & DAP_SOCK_SIGNAL_CLOSE)
