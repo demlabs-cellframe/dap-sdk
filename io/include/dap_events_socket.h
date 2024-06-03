@@ -122,6 +122,7 @@ typedef struct work_item {
 //#define DAP_SOCK_DROP_WRITE_IF_ZERO BIT( 5 )    // Drop down WRITE flag from socket if reach zero bytes in output buffer
 
 // If set - queue limited to sizeof(void*) size of data transmitted
+#define DAP_SOCK_FILE_MAPPED       BIT( 7 )
 #define DAP_SOCK_QUEUE_PTR         BIT( 8 )
 
 typedef struct dap_events_socket dap_events_socket_t;
@@ -178,6 +179,7 @@ typedef struct dap_events_socket_callbacks {
 #define DAP_EVENTS_SOCKET_BUF_SIZE      (DAP_STREAM_PKT_FRAGMENT_SIZE * 16)
 #define DAP_EVENTS_SOCKET_BUF_LIMIT     DAP_STREAM_PKT_SIZE_MAX
 #define DAP_QUEUE_MAX_MSGS              1024
+#define DAP_MAPPED_VOLUME_LIMIT         (1 << 28) // 256 MB for now, may be should be configurable?
 
 typedef enum {
     DESCRIPTOR_TYPE_SOCKET_CLIENT = 0,

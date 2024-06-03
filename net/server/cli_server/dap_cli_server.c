@@ -922,7 +922,7 @@ static void* s_thread_main_func(void *args)
             break;
         }
         // Serve client connection on automatically chosen processing thread
-        dap_proc_queue_add_callback(dap_events_worker_get_auto(), s_thread_one_client_func, DAP_INT_TO_POINTER(newsockfd));
+        dap_proc_queue_add_callback_ext(dap_events_worker_get_auto(), s_thread_one_client_func, DAP_INT_TO_POINTER(newsockfd), DAP_PROC_PRI_HIGH);
     };
     // close connection
     int cs = closesocket(sockfd);
