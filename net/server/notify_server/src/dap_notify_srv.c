@@ -49,6 +49,11 @@ static void s_notify_server_callback_queue(dap_events_socket_t * a_es, void * a_
 static void s_notify_server_callback_new(dap_events_socket_t * a_es, void * a_arg);
 static void s_notify_server_callback_delete(dap_events_socket_t * a_es, void * a_arg);
 
+dap_events_socket_callback_t s_notify_server_callback_new_ex = NULL;
+
+void dap_notify_srv_set_callback_new(dap_events_socket_callback_t a_cb) {
+    s_notify_server_callback_new_ex = a_cb;
+}
 
 /**
  * @brief dap_notify_server_init
@@ -253,6 +258,8 @@ static void s_notify_server_callback_new(dap_events_socket_t * a_es, UNUSED_ARG 
         HASH_ADD(hh, s_notify_server_clients, uuid, sizeof (l_hh_new->uuid), l_hh_new);
     }
     pthread_rwlock_unlock(&s_notify_server_clients_mutex);
+    if (s_notify_server_callback_new_ex)
+        s_notify_server_callback_new_ex(a_es, NULL);
 }
 
 /**
