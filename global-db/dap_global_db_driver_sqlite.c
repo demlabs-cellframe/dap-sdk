@@ -748,9 +748,9 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const ch
 // data forming
     size_t l_count_out = 0;
     int l_ret_code = 0;
-    for (l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt);l_ret_code == SQLITE_ROW && l_count_out < l_count; ++l_count_out) {
-        l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt);
-    }
+    for (l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt);
+        l_ret_code == SQLITE_ROW && l_count_out < l_count; 
+        ++l_count_out, l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt)) {}
     if(l_ret_code != SQLITE_DONE) {
         log_it(L_ERROR, "SQLite read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
     }

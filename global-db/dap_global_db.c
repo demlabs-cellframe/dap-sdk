@@ -1200,6 +1200,12 @@ static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
             l_store_obj.value = a_msg->values[i].value;
             l_store_obj.value_len = a_msg->values[i].value_len;
             l_store_obj.timestamp = a_msg->values[i].timestamp;
+
+            l_store_obj.sign = dap_store_obj_sign(&l_store_obj, s_dbi->signing_key, &l_store_obj.crc);
+            if (!l_store_obj.sign) {
+                log_it(L_ERROR, "Can't sign new global DB object group %s key %s", l_store_obj.group, l_store_obj.key);
+                break;
+            }
             l_ret = s_store_obj_apply(a_msg->dbi, &l_store_obj);
         }
     }
