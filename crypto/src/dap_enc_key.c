@@ -430,7 +430,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
           .ser_pub_key_size =                 dap_enc_sig_shipovnik_ser_pkey_size,
 
           .deser_priv_key_size =              dap_enc_sig_shipovnik_deser_key_size,
-          .deser_priv_key_size =              dap_enc_sig_shipovnik_deser_pkey_size,
+          .deser_pub_key_size =               dap_enc_sig_shipovnik_deser_pkey_size,
           .deser_sign_size =                  dap_enc_sig_shipovnik_deser_sign_size
       },
 
