@@ -77,7 +77,7 @@ int dap_notify_server_init()
         log_it(L_ERROR,"Notify server not initalized, check config");
         return -1;
     }
-    s_notify_server->client_callbacks.worker_assign_callback = s_notify_server_callback_new;
+    s_notify_server->client_callbacks.new_callback = s_notify_server_callback_new;
     s_notify_server->client_callbacks.delete_callback = s_notify_server_callback_delete;
     s_notify_server_queue = dap_events_socket_create_type_queue_ptr_mt(dap_events_worker_get_auto(),s_notify_server_callback_queue);
     uint32_t l_workers_count = dap_events_thread_get_count();
