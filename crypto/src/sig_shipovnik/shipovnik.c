@@ -154,7 +154,6 @@ void shipovnik_sign(const uint8_t *sk, const uint8_t *msg, size_t msg_len,
   }
 
 cleanup:
-  *sig_len = 0;
   free(us);
   free(sigmas);
   multiword_number_free(mwh);

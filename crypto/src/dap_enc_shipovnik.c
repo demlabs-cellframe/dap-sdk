@@ -42,8 +42,9 @@ int dap_enc_sig_shipovnik_get_sign(struct dap_enc_key* key, const void* msg, con
         log_it(L_ERROR, "Invalid shipovnik secret key size");
         return -11;
     }
-    shipovnik_sign(key->priv_key_data, msg, msg_size, signature, &signature_size);
-    return signature_size ? 0 : log_it(L_ERROR, "Failed to sign message"), -1;
+    size_t l_size = 0;
+    shipovnik_sign(key->priv_key_data, msg, msg_size, signature, &l_size);
+    return signature_size ? 0 : ( log_it(L_ERROR, "Failed to sign message"), -1 );
 }
 
 int dap_enc_sig_shipovnik_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size)
@@ -53,7 +54,7 @@ int dap_enc_sig_shipovnik_verify_sign(struct dap_enc_key* key, const void* msg, 
         return -12;
     }
     int l_ret = shipovnik_verify(key->pub_key_data, signature, msg, msg_size);
-    return l_ret ? 0 : log_it(L_ERROR, "Failed to verify message, error %d, l_ret"), l_ret;
+    return l_ret ? 0 : ( log_it(L_ERROR, "Failed to verify message, error %d", l_ret), l_ret );
 }
 
 void dap_enc_sig_shipovnik_signature_delete(void *a_sig){

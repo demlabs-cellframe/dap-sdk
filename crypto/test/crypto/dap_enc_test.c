@@ -355,6 +355,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
             sig_buf_size = dap_sign_create_output_unserialized_calc_size(key, 0);
             sig_buf = calloc(sig_buf_size, 1);
             is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
@@ -384,6 +385,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     case DAP_ENC_KEY_TYPE_SIG_FALCON:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
     case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+    case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         is_vefify = key2->sign_verify(key2, source_buf, source_size, sig_buf, sig_buf_size);
         break;
     default:
@@ -422,6 +424,8 @@ void dap_enc_tests_run() {
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_ECDSA, false);
     dap_print_module_name("dap_enc serialize->deserialize IAES");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_IAES, true);
+    dap_print_module_name("dap_enc serialize->deserialize SHIPOVNIK");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK, false);
     dap_print_module_name("dap_enc serialize->deserialize OAES");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_OAES, true);
 
@@ -439,5 +443,7 @@ void dap_enc_tests_run() {
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS);
     dap_print_module_name("dap_enc_sig serialize->deserialize ECDSA");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_ECDSA);
+    dap_print_module_name("dap_enc_sig serialize->deserialize SHIPOVNIK");
+    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK);
     dap_cleanup_test_case();
 }
