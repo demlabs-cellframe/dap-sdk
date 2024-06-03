@@ -380,6 +380,8 @@ dap_config_t *dap_config_open(const char* a_file_path) {
 }
 
 dap_config_item_t *dap_config_get_item(dap_config_t *a_config, const char *a_section, const char *a_item_name) {
+    if (!a_config || !a_section || !a_item_name)
+        return NULL;
     char *l_key = dap_strdup_printf("%s:%s", a_section, a_item_name);
     for (char *c = l_key; *c; ++c) {
         if (*c == '-')

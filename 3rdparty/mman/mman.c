@@ -11,18 +11,14 @@
 #include "mman.h"
 
 static DWORD __map_mmap_prot_page(const int prot) {
-    DWORD protect = 0;
-    
-    if (prot == PROT_NONE)
-        return protect;
-        
-    if ((prot & PROT_EXEC) != 0) {
-        protect = ((prot & PROT_WRITE) != 0) ? 
-                    PAGE_EXECUTE_READWRITE : PAGE_EXECUTE_READ;
-    } else {
-        protect = ((prot & PROT_WRITE) != 0) ?
-                    PAGE_READWRITE : PAGE_READONLY;
-    }
+    volatile DWORD protect = PAGE_NOACCESS;
+    if ( prot == PROT_NONE )
+        return protect; // Prohibited for CFM, doomed to fail
+
+    protect <<= ( prot & PROT_READ );
+    if (prot & PROT_WRITE)
+        protect <<= ( prot & PROT_READ ) ? PROT_READ : ( PROT_READ|PROT_WRITE );
+    protect <<= ( prot & PROT_EXEC );
     return protect;
 }
 
@@ -32,13 +28,9 @@ static DWORD __map_mmap_prot_file(const int prot) {
     if (prot == PROT_NONE)
         return desiredAccess;
         
-    if ((prot & PROT_READ) != 0)
-        desiredAccess |= FILE_MAP_READ;
-    if ((prot & PROT_WRITE) != 0)
-        desiredAccess |= FILE_MAP_WRITE;
-    if ((prot & PROT_EXEC) != 0)
-        desiredAccess |= FILE_MAP_EXECUTE;
-    
+    if (prot & PROT_READ)   desiredAccess |= FILE_MAP_READ;
+    if (prot & PROT_WRITE)  desiredAccess |= FILE_MAP_WRITE;
+    if (prot & PROT_EXEC)   desiredAccess |= FILE_MAP_EXECUTE;
     return desiredAccess;
 }
 
