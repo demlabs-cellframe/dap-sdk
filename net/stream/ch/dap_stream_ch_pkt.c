@@ -90,6 +90,7 @@ size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_
     dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        va_end(ap_copy);
         return 0;
     }
     l_msg->ch_uuid = a_ch_uuid;
@@ -97,6 +98,7 @@ size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_
     l_msg->data = DAP_NEW_SIZE(void, l_data_size);
     if (!l_msg->data) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        va_end(ap_copy);
         DAP_DELETE(l_msg);
         return 0;
     }
@@ -140,6 +142,7 @@ size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t * a_queue  , dap_stre
     dap_stream_worker_msg_io_t *l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        va_end(ap_copy);
         return 0;
     }
     l_msg->ch_uuid = a_ch_uuid;
@@ -147,6 +150,7 @@ size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t * a_queue  , dap_stre
     l_msg->data = DAP_NEW_SIZE(void, l_data_size);
     if (!l_msg->data) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        va_end(ap_copy);
         DAP_DELETE(l_msg);
         return 0;
     }
@@ -217,6 +221,7 @@ int dap_stream_ch_pkt_send_mt(dap_stream_worker_t *a_worker, dap_events_socket_u
         l_msg->data = DAP_DUP_SIZE(a_data, a_data_size);
         if (!l_msg->data) {
             log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            DAP_DELETE(l_msg);
             return -3;
         }
     }

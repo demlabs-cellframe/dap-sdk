@@ -282,6 +282,7 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, .
         uint64_t l_size = va_arg(l_args, uint64_t);
         if (l_shift_mem + l_size > a_size) {
             log_it(L_ERROR, "Error size in the object deserialize. %"DAP_UINT64_FORMAT_U" > %"DAP_UINT64_FORMAT_U"", l_shift_mem + l_size, a_size);
+            va_end(l_args);
             return -2;
         }
         memcpy(l_arg, a_data + l_shift_mem, l_size);

@@ -212,7 +212,8 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
 dap_store_obj_t *dap_store_obj_copy_ext(dap_store_obj_t *a_store_obj, void *a_ext, size_t a_ext_size)
 {
-    dap_store_obj_t *l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + a_ext_size);
+    dap_store_obj_t *l_ret;
+    DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_store_obj_t, sizeof(dap_store_obj_t) + a_ext_size, NULL, NULL);
     s_store_obj_copy_one(l_ret, a_store_obj);
     if (a_ext_size)
         memcpy(l_ret->ext, a_ext, a_ext_size);
