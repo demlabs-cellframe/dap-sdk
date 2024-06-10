@@ -385,6 +385,8 @@ struct dap_config_item *dap_config_get_item(dap_config_t *a_config, const char *
 }
 
 bool dap_config_get_item_bool_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, bool a_default) {
+    if (!a_config)
+        return a_default;
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
         return a_default;
@@ -396,6 +398,8 @@ bool dap_config_get_item_bool_default(dap_config_t *a_config, const char *a_sect
 }
 
 int64_t _dap_config_get_item_int(dap_config_t *a_config, const char *a_section, const char *a_item_name, int64_t a_default) {
+    if (!a_config)
+        return a_default;
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
         return a_default;
@@ -408,6 +412,8 @@ int64_t _dap_config_get_item_int(dap_config_t *a_config, const char *a_section, 
 }
 
 uint64_t _dap_config_get_item_uint(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint64_t a_default) {
+    if (!a_config)
+        return a_default;
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
         return a_default;
@@ -423,6 +429,8 @@ uint64_t _dap_config_get_item_uint(dap_config_t *a_config, const char *a_section
 }
 
 const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_default) {
+    if (!a_config)
+        return a_default;
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
         return a_default;
@@ -442,6 +450,8 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
 }
 
 const char *dap_config_get_item_str_path_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_default) {
+    if (!a_config)
+        return a_default;
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
         return a_default;
@@ -475,6 +485,8 @@ char **dap_config_get_array_str(dap_config_t *a_config, const char *a_section, c
 }
 
 double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, double a_default) {
+    if (!a_config)
+        return a_default;
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
         return a_default;
