@@ -67,7 +67,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_builtin(const char *a_name, const
         log_it(L_CRITICAL, "Memory allocation error");
         return NULL;
     }
-    strncpy(l_manifest->name,a_name, sizeof(l_manifest->name)-1);
+    l_manifest->name = dap_strdup(a_name);
     l_manifest->type = dap_strdup(a_type);
     l_manifest->is_builtin = true;
     l_manifest->author = dap_strdup(a_author);
@@ -217,7 +217,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
         DAP_FREE(l_json_obj);
         return NULL;
     }
-    strncpy(l_manifest->name,l_name, sizeof(l_manifest->name)-1);
+    l_manifest->name = dap_strdup(l_name);
     l_manifest->type = dap_strdup(l_type);
     l_manifest->author = dap_strdup(l_author);
     l_manifest->version = dap_strdup(l_version);

@@ -33,7 +33,7 @@ extern "C"{
 #include "dap_config.h"
 
 typedef struct dap_plugin_manifest{
-    char name[64];
+    char *name;
     char *version;
     char *author;
     char *description;
