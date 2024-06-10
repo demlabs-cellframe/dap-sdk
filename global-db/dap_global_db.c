@@ -2276,6 +2276,7 @@ static size_t s_cb_msg_buf_clean(char *a_buf_out, size_t a_buf_size) {
         struct queue_io_msg* l_msg = *(struct queue_io_msg**)(a_buf_out + shift);
         s_queue_io_msg_delete(l_msg);
     }
+    return 0;
 }
 
 /**
