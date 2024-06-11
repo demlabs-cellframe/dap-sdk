@@ -104,6 +104,7 @@ DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
 static int s_update_ignored_list()
 {
     size_t l_node_count = 0;
+    static l_table_clean = true;
     dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(s_ignored_group_local, &l_node_count);
     if (!l_node_count || !l_objs) {
         log_it(L_DEBUG, "Ignore list is empty");
@@ -112,11 +113,12 @@ static int s_update_ignored_list()
     dap_nanotime_t l_time_now = dap_nanotime_now();
     size_t l_deleted = 0;
     for(size_t i = 0; i < l_node_count; ++i) {
-        if(l_time_now > l_objs[i].timestamp + s_ignored_period) {
+        if(l_table_clean || l_time_now > l_objs[i].timestamp + s_ignored_period) {
             dap_global_db_del_sync(s_ignored_group_local, l_objs[i].key);
             ++l_deleted;
         }
     }
+    l_table_clean = false;
     dap_global_db_objs_delete(l_objs, l_node_count);
     if (l_deleted == l_node_count) {
         log_it(L_DEBUG, "Ignore list cleared");
