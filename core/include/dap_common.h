@@ -299,6 +299,10 @@ DAP_STATIC_INLINE uint64_t dap_page_rounddown(uint64_t a) {
 }
 
 #ifdef DAP_OS_WINDOWS
+#define SIZE_64KB ( 1 << 16 )
+DAP_STATIC_INLINE uint64_t dap_64k_rounddown(uint64_t a) {
+    return a & ( ~(SIZE_64KB - 1) ); 
+}
 typedef struct iovec {
     void    *iov_base; /* Data */
     size_t  iov_len; /* ... and its' size */
