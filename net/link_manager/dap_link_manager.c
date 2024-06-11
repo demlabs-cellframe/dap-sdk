@@ -104,7 +104,7 @@ DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
 static int s_update_ignored_list()
 {
     size_t l_node_count = 0;
-    static l_table_clean = true;
+    static bool l_table_clean = true;
     dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(s_ignored_group_local, &l_node_count);
     if (!l_node_count || !l_objs) {
         log_it(L_DEBUG, "Ignore list is empty");
