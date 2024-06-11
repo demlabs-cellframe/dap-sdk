@@ -232,6 +232,8 @@ int dap_events_init( uint32_t a_threads_count, size_t a_conn_timeout )
     g_debug_reactor = g_config ? dap_config_get_item_bool_default(g_config, "general", "debug_reactor", false) : false;
 
     uint32_t l_cpu_count = dap_get_cpu_count();
+    if (l_cpu_count > 1)
+        --l_cpu_count;
     if (a_threads_count > l_cpu_count)
         a_threads_count = l_cpu_count;
 
