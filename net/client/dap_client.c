@@ -194,37 +194,18 @@ void dap_client_queue_clear(dap_client_t *a_client)
  * @param a_chain_net_name
  * @param a_option
  */
-void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_chain_net_name)
+void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_cert_name)
 {
     static dap_cert_t *l_cert = NULL;
-    static bool l_config_read = false;
 
-    if (a_client == NULL || a_chain_net_name == NULL) {
-        log_it(L_ERROR,"Chain-net is NULL for dap_client_set_auth_cert");
+    if (a_client == NULL || a_cert_name == NULL) {
+        log_it(L_ERROR,"Client or cert-name is NULL for dap_client_set_auth_cert");
         return;
     }
-    if (!l_config_read) {
-        char *l_path = dap_strdup_printf("network/%s", a_chain_net_name);
-        if (!l_path) {
-            log_it(L_ERROR, "Can't allocate memory: file: %s line: %d", __FILE__, __LINE__);
-            return;
-        }
-        dap_config_t *l_cfg = dap_config_open(l_path);
-        l_config_read = true;
-        DAP_DEL_Z(l_path);
-        if (!l_cfg) {
-            log_it(L_ERROR, "Can't allocate memory: file: %s line: %d", __FILE__, __LINE__);
-            return;
-        }
-        const char *l_cert_name = dap_config_get_item_str(l_cfg, "general", "auth_cert");
-        dap_config_close(l_cfg);
-        if (!l_cert_name)
-            return;
-        dap_cert_find_by_name(l_cert_name);
-        if (!l_cert) {
-            log_it(L_ERROR,"l_cert is NULL by dap_cert_find_by_name");
-            return;
-        }
+    l_cert = dap_cert_find_by_name(a_cert_name);
+    if (!l_cert) {
+        log_it(L_ERROR,"l_cert is NULL by dap_cert_find_by_name");
+        return;
     }
     a_client->auth_cert = l_cert;
 }
