@@ -73,9 +73,13 @@ char *dap_http_ban_list_client_dump(const char *a_addr) {
         else
             dap_string_append_printf(l_res, "Address %s is not banlisted", a_addr);
     } else {
-        HASH_ITER(hh, s_ban_list, l_rec, l_tmp) {
-            dap_string_append_printf(l_res, "\t\t%d. ", num++);
-            s_dap_http_ban_list_client_dump_single(l_rec, l_res);
+        if (!s_ban_list) {
+            dap_string_append_printf(l_res, "Banlist is empty.");
+        } else {
+            HASH_ITER(hh, s_ban_list, l_rec, l_tmp) {
+                dap_string_append_printf(l_res, "\t\t%d. ", num++);
+                s_dap_http_ban_list_client_dump_single(l_rec, l_res);
+            }
         }
     }
     pthread_rwlock_unlock(&s_ban_list_lock);
