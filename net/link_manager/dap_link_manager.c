@@ -104,7 +104,6 @@ DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
 static int s_update_ignored_list()
 {
     size_t l_node_count = 0;
-    static bool l_table_clean = true;
     dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(s_ignored_group_local, &l_node_count);
     if (!l_node_count || !l_objs) {
         log_it(L_DEBUG, "Ignore list is empty");
@@ -113,12 +112,11 @@ static int s_update_ignored_list()
     dap_nanotime_t l_time_now = dap_nanotime_now();
     size_t l_deleted = 0;
     for(size_t i = 0; i < l_node_count; ++i) {
-        if(l_table_clean || l_time_now > l_objs[i].timestamp + s_ignored_period) {
+        if(l_time_now > l_objs[i].timestamp + s_ignored_period) {
             dap_global_db_del_sync(s_ignored_group_local, l_objs[i].key);
             ++l_deleted;
         }
     }
-    l_table_clean = false;
     dap_global_db_objs_delete(l_objs, l_node_count);
     if (l_deleted == l_node_count) {
         log_it(L_DEBUG, "Ignore list cleared");
@@ -201,7 +199,7 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
 {
 // sanity check
     dap_return_val_if_pass_err(s_link_manager, -2, "Link manager actualy inited");
-// func work
+// get config
     s_timer_update_states = dap_config_get_item_uint32_default(g_config, "link_manager", "timer_update_states", s_timer_update_states);
     s_max_attempts_num = dap_config_get_item_uint32_default(g_config, "link_manager", "max_attempts_num", s_max_attempts_num);
     s_reconnect_delay = dap_config_get_item_uint32_default(g_config, "link_manager", "reconnect_delay", s_reconnect_delay);
@@ -218,6 +216,14 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
         log_it(L_ERROR, "Can't activate timer on link manager");
         return -3;
     }
+// clean ignore group
+    size_t l_node_count = 0;
+    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(s_ignored_group_local, &l_node_count);
+    for(size_t i = 0; i < l_node_count; ++i) {
+        dap_global_db_del_sync(s_ignored_group_local, l_objs[i].key);
+    }
+    dap_global_db_objs_delete(l_objs, l_node_count);
+// start
     dap_link_manager_set_condition(true);
     return 0;
 }
@@ -736,6 +742,7 @@ void s_update_states(void *a_arg)
     else
         s_links_request(l_link_manager);
     l_wakeup_mode = !l_wakeup_mode;
+    s_link_manager_print_links_info(s_link_manager);
 }
 
 /**
