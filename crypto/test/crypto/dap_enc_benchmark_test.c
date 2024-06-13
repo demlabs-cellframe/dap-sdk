@@ -5,18 +5,20 @@
 #include "rand/dap_rand.h"
 #define LOG_TAG "dap_crypto_benchmark_tests"
 
-#define SIGNATURE_TYPE_COUNT 7
+//#define SIGNATURE_TYPE_COUNT 7
 #define SIGN_COUNT 5
 #define KEYS_TOTAL_COUNT 10
 
-dap_enc_key_type_t s_key_type_arr[SIGNATURE_TYPE_COUNT] = {\
-        DAP_ENC_KEY_TYPE_SIG_TESLA,\
-        DAP_ENC_KEY_TYPE_SIG_BLISS,\
-        DAP_ENC_KEY_TYPE_SIG_DILITHIUM,\
+dap_enc_key_type_t s_key_type_arr[] = {
+        DAP_ENC_KEY_TYPE_SIG_TESLA,
+        DAP_ENC_KEY_TYPE_SIG_BLISS,
+        DAP_ENC_KEY_TYPE_SIG_DILITHIUM,
         // DAP_ENC_KEY_TYPE_SIG_PICNIC,
-        DAP_ENC_KEY_TYPE_SIG_FALCON,\
-        DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,\
-        DAP_ENC_KEY_TYPE_SIG_ECDSA, \
+        DAP_ENC_KEY_TYPE_SIG_FALCON,
+        DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,
+#ifdef DAP_TPS_TEST
+        DAP_ENC_KEY_TYPE_SIG_ECDSA,
+#endif
         DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK };
 
 /*--------------------------TRANSFER TEST BLOCK--------------------------*/
@@ -108,12 +110,13 @@ static int s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *a
 
     int l_t1 = 0;
     *a_sig_time = 0;
+    int l_sig_type_count = sizeof(s_key_type_arr) / sizeof(*s_key_type_arr);
     for (int i = 0; i < a_times; ++i) {
         randombytes(seed, seed_size);
         // used only in multisign
         dap_enc_key_type_t l_key[KEYS_TOTAL_COUNT];
         for (int j = 0; j < KEYS_TOTAL_COUNT; j++) {
-            int l_step = random_uint32_t( SIGNATURE_TYPE_COUNT);
+            int l_step = random_uint32_t(l_sig_type_count);
             l_key[j] = s_key_type_arr[l_step];
         }
         // ----------
@@ -176,13 +179,14 @@ static int s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, in
 
     int l_t1 = 0;
     *a_sig_time = 0;
+    int l_sig_type_count = sizeof(s_key_type_arr) / sizeof(*s_key_type_arr);
     for (int i = 0; i < a_times; ++i) {
         randombytes(seed, seed_size);
 
         // used only in multisign
         dap_enc_key_type_t l_key[KEYS_TOTAL_COUNT];
         for (int j = 0; j < KEYS_TOTAL_COUNT; j++) {
-            int l_step = random_uint32_t( SIGNATURE_TYPE_COUNT);
+            int l_step = random_uint32_t(l_sig_type_count);
             l_key[j] = s_key_type_arr[l_step];
         }
         // ----------
@@ -272,7 +276,9 @@ static int s_sign_verify_tests_run(int a_times)
     l_ret |= s_sign_verify_test_becnhmark("DILITHIUM", DAP_ENC_KEY_TYPE_SIG_DILITHIUM, a_times);
     l_ret |= s_sign_verify_test_becnhmark("FALCON", DAP_ENC_KEY_TYPE_SIG_FALCON, a_times);
     l_ret |= s_sign_verify_test_becnhmark("SPHINCSPLUS", DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, a_times);
+#ifdef DAP_TPS_TEST
     l_ret |= s_sign_verify_test_becnhmark("ECDSA", DAP_ENC_KEY_TYPE_SIG_ECDSA, a_times);
+#endif
     l_ret |= s_sign_verify_test_becnhmark("SHIPOVNIK", DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK, a_times);
     l_ret |= s_sign_verify_test_becnhmark("MULTISIGN", DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED, a_times);
     dap_cleanup_test_case();
