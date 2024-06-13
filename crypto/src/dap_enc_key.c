@@ -40,7 +40,9 @@
 #include "dap_enc_kyber.h"
 #include "dap_enc_sphincsplus.h"
 #include "dap_enc_multisign.h"
+#ifdef DAP_TPS_TEST
 #include "dap_enc_ecdsa.h"
+#endif
 #include "dap_enc_shipovnik.h"
 #include "dap_enc_ringct20.h"
 #ifdef DAP_PQRL
@@ -368,6 +370,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
 
   [DAP_ENC_KEY_TYPE_SIG_ECDSA]={
         .name =                             "SIG_ECDSA",
+#ifdef DAP_TPS_TEST
         .enc =                              NULL,
         .dec =                              NULL,
         .enc_na =                           NULL,
@@ -399,6 +402,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .deser_priv_key_size =              dap_enc_sig_ecdsa_deser_key_size,
         .deser_pub_key_size =               dap_enc_sig_ecdsa_deser_pkey_size,
         .deser_sign_size  =                 dap_enc_sig_ecdsa_signature_size
+#endif
     },
 
 
