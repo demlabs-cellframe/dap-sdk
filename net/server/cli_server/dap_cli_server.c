@@ -457,7 +457,10 @@ int dap_cli_server_init(bool a_debug_more,const char * a_socket_path_or_address,
         server_addr.sin_addr = (struct in_addr){{ .S_addr = htonl(INADDR_LOOPBACK) }};
         server_addr.sin_port = htons( (uint16_t)l_listen_port );;
 #else
-        inet_pton( AF_INET, l_listen_addr_str, &server_addr.sin_addr );
+        if (l_listen_addr_str)
+            inet_pton( AF_INET, l_listen_addr_str, &server_addr.sin_addr );
+        else 
+           server_addr.sin_addr = (struct in_addr){ .s_addr = htonl(INADDR_LOOPBACK) }; 
         server_addr.sin_port = htons( (uint16_t)l_listen_port );
 #endif
         // create socket
