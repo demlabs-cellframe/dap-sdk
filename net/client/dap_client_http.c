@@ -137,6 +137,22 @@ void dap_client_http_set_connect_timeout_ms(uint64_t a_timeout_ms)
     s_client_timeout_ms = a_timeout_ms;
 }
 
+http_status_code_t s_extract_http_code_response(void *a_response, size_t a_response_size) {
+    char l_http_code_str[3];
+    size_t l_first_space = 0;
+    for (; l_first_space < a_response_size; l_first_space++) {
+        if (((char*)a_response)[l_first_space] == ' ')
+            break;
+    }
+    if (l_first_space + 3 > a_response_size)
+        return 0;
+    l_http_code_str[0] = ((char*)a_response)[l_first_space + 1];
+    l_http_code_str[1] = ((char*)a_response)[l_first_space + 2];
+    l_http_code_str[2] = ((char*)a_response)[l_first_space + 3];
+    http_status_code_t l_code = strtol(l_http_code_str, NULL, 10);
+    return l_code;
+}
+
 /**
  * @brief s_http_connected
  * @param a_esocket
@@ -321,6 +337,8 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         log_it(L_ERROR, "s_http_read response_size(%zu) overfull!!!", l_client_http->response_size);
     }
 
+    l_client_http->response_http_code = s_extract_http_code_response(l_client_http->response, l_client_http->response_size);
+
     // search http header
     if(!l_client_http->is_header_read && l_client_http->response_size > 4
             && !l_client_http->content_length) {
@@ -344,7 +362,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
     }
 
     // process data
-    if(l_client_http->content_length) {
+    if(l_client_http->content_length) { 
         l_client_http->is_header_read = false;
 
         // received not enough data
@@ -443,7 +461,7 @@ static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
 
             //l_client_http->error_callback(-10 , l_client_http->callbacks_arg);
 
-            if(l_client_http->response_callback)
+            if(l_client_http->response_callback && l_client_http->response_http_code < 400 && l_client_http->response_http_code != 0)
                 l_client_http->response_callback(
                         l_client_http->response + l_client_http->header_length,
                         l_response_size,

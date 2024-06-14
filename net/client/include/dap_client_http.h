@@ -24,6 +24,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "dap_worker.h"
+#include "http_status_code.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -54,6 +55,7 @@ typedef struct dap_client_http {
     uint8_t *response;
     size_t response_size;
     size_t response_size_max;
+    http_status_code_t response_http_code;
 
     // Request args
     char uplink_addr[DAP_HOSTADDR_STRLEN];
