@@ -433,7 +433,7 @@ configure_file(json.h.cmakein ${PROJECT_BINARY_DIR}/json.h @ONLY)
 include_directories(${PROJECT_SOURCE_DIR})
 include_directories(${PROJECT_BINARY_DIR})
 
-add_subdirectory(doc)
+#add_subdirectory(doc)
 
 # "uninstall" custom target for make generators in unix like operating systems
 # and if that target is not present
