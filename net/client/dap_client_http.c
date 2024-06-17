@@ -67,6 +67,22 @@ static uint32_t s_max_attempts = 5;
 static WOLFSSL_CTX *s_ctx;
 #endif
 
+http_status_code_t s_extract_http_code(void *a_response, size_t a_response_size) {
+    char l_http_code_str[3] = {"\0"};
+    size_t l_first_space = 0;
+    for (;l_first_space < a_response_size; l_first_space++) {
+        if (((const char*)a_response)[l_first_space] == ' ')
+            break;
+    }
+    if (l_first_space + 3 < a_response_size)
+        return 0;
+    l_http_code_str[0] = ((const char*)a_response)[l_first_space+1];
+    l_http_code_str[1] = ((const char*)a_response)[l_first_space+2];
+    l_http_code_str[2] = ((const char*)a_response)[l_first_space+3];
+    http_status_code_t l_http_code = strtoul(l_http_code_str, NULL, 10);
+    return l_http_code;
+}
+
 /**
  * @brief dap_client_http_init
  * @return
@@ -357,7 +373,8 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                 l_client_http->response_callback(
                         l_client_http->response + l_client_http->header_length,
                         l_client_http->content_length,
-                        l_client_http->callbacks_arg);
+                        l_client_http->callbacks_arg, s_extract_http_code(
+                                l_client_http->response, l_client_http->response_size));
             l_client_http->response_size -= l_client_http->header_length;
             l_client_http->response_size -= l_client_http->content_length;
             l_client_http->header_length = 0;
@@ -447,7 +464,8 @@ static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
                 l_client_http->response_callback(
                         l_client_http->response + l_client_http->header_length,
                         l_response_size,
-                        l_client_http->callbacks_arg);
+                        l_client_http->callbacks_arg, s_extract_http_code(
+                                l_client_http->response, l_client_http->response_size));
             l_client_http->were_callbacks_called = true;
         }else if (l_client_http->response_size){
             log_it(L_INFO, "Remote server disconnected with reply. Body is empty, only headers are in");
