@@ -213,6 +213,8 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
 dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
         const size_t a_data_size, size_t a_output_wish_size)
 {
+    if (!a_key)
+        return NULL;
     const void * l_sign_data;
     size_t l_sign_data_size;
 
