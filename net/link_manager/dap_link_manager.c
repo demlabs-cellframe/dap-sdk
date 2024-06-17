@@ -593,7 +593,7 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
 void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
 {
 // sanity check
-    dap_return_if_pass(!a_link && !*a_link);
+    dap_return_if_pass(!a_link || !*a_link);
     dap_link_t *l_link = *a_link;
 // func work
     debug_if(s_debug_more, L_DEBUG, "%seleting link %s node " NODE_ADDR_FP_STR "", a_force ? "Force d" : "D",
