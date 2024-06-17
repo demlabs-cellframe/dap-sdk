@@ -46,7 +46,7 @@
 #include "include/dap_enc_http.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_msrln.h"
-#include "include/http_status_code.h"
+#include "http_status_code.h"
 #include "dap_http_ban_list_client.h"
 #include "json.h"
 #include "dap_http_ban_list_client.h"
