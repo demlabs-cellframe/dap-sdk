@@ -601,7 +601,7 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
 
     if (l_link->active_clusters)
         dap_cluster_link_delete_from_all(l_link->active_clusters, &l_link->addr);
-    assert(a_link->active_clusters == NULL);
+    assert(l_link->active_clusters == NULL);
 
     bool l_link_preserve = (a_client_preserve || l_link->static_clusters) && !a_force;
     if (!l_link->stream_is_destroyed || !l_link_preserve) {
