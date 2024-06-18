@@ -34,7 +34,7 @@ if (UNIX)
 endif()
 
 if(WIN32)
-  target_link_libraries(${PROJECT_NAME} magic regex tre intl iconv
+  target_link_libraries(${PROJECT_NAME} magic regex tre
   kernel32
   user32
   shell32
