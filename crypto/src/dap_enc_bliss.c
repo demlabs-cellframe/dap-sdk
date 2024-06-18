@@ -298,6 +298,7 @@ void *dap_enc_sig_bliss_read_public_key(const uint8_t *a_buf, size_t a_buflen)
     l_public_key->a = DAP_NEW_SIZE(int32_t, p.n * sizeof(int32_t));
     if (!l_public_key->a) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        DAP_DEL_Z(l_public_key);
         return NULL;
     }
     memcpy(l_public_key->a, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.n * sizeof(int32_t));

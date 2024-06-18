@@ -112,6 +112,7 @@ size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs,
     *a_certs = l_certs = DAP_NEW_Z_SIZE(dap_cert_t*, (*a_certs_size) * sizeof(dap_cert_t*) );
     if (!l_certs) {
         log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        DAP_DEL_Z(l_certs_str_dup);
         return 0;
     }
     // Second pass we parse them all

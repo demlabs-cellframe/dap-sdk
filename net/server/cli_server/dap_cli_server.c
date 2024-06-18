@@ -758,6 +758,7 @@ char    *str_header;
             data_len = atoi(l_str_ptr + strlen(l_cont_len_str));
         } else {
             log_it(L_ERROR, "HTTP request without length");
+            DAP_FREE(str_header);
             break;
         }
         DAP_FREE(str_header);
