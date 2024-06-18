@@ -1938,6 +1938,7 @@ size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_eve
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        va_end(ap_copy);
         return 0;
     }
     l_msg->esocket_uuid = a_es_uuid;
@@ -1945,6 +1946,7 @@ size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_eve
     if (!l_msg->data) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         DAP_DEL_Z(l_msg);
+        va_end(ap_copy);
         return 0;
     }
     l_msg->data_size = l_data_size;
@@ -2053,6 +2055,7 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        va_end(ap_copy);
         return 0;
     }
     l_msg->esocket_uuid = a_es_uuid;
@@ -2060,6 +2063,7 @@ size_t dap_events_socket_write_f_mt(dap_worker_t * a_w,dap_events_socket_uuid_t 
     l_msg->data = DAP_NEW_SIZE(void, l_data_size);
     if (!l_msg->data) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        va_end(ap_copy);
         DAP_DEL_Z(l_msg);
         return 0;
     }
@@ -2148,6 +2152,7 @@ ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *
     char *l_buf = DAP_NEW_Z_SIZE(char, l_buf_size);
     if (!l_buf) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        va_end(ap_copy);
         return 0;
     }
     vsprintf(l_buf, a_format, ap_copy);

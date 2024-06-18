@@ -45,7 +45,7 @@ dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old
     if (a_old_pkt)
         l_old_pkt = (dap_global_db_pkt_pack_t *)DAP_REALLOC(a_old_pkt, a_old_pkt->data_size + sizeof(dap_global_db_pkt_pack_t) + l_add_size);
     else
-        l_old_pkt = DAP_NEW_Z_SIZE(dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_add_size);
+        DAP_NEW_Z_SIZE_RET_VAL(l_old_pkt, dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_add_size, a_old_pkt, NULL);
     memcpy(l_old_pkt->data + l_old_pkt->data_size, a_new_pkt, l_add_size);
     l_old_pkt->data_size += l_add_size;
     l_old_pkt->obj_count++;

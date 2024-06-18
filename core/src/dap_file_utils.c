@@ -518,6 +518,7 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
             if (!element) {
                 log_it(L_CRITICAL, "%s", g_error_memory_alloc);
                 closedir(dir);
+                DAP_DEL_Z(list);
                 return NULL;
             }
             element->name_directory = dap_strdup(entry->d_name);

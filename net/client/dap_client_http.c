@@ -231,6 +231,10 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
     dap_events_socket_uuid_t * l_es_uuid_ptr = (dap_events_socket_uuid_t *) a_arg;
 
     dap_worker_t * l_worker = dap_worker_get_current(); // We're in own esocket context
+    if (!l_worker) {
+        log_it(L_ERROR, "l_woker is NULL");
+        return false;
+    }
     assert(l_worker);
     dap_events_socket_t * l_es = dap_context_find( l_worker->context, *l_es_uuid_ptr);
     if(l_es){
@@ -270,6 +274,10 @@ static bool s_timer_timeout_check(void * a_arg)
     assert(l_es_uuid);
 
     dap_worker_t * l_worker = dap_worker_get_current(); // We're in own esocket context
+    if (!l_worker) {
+        log_it(L_ERROR, "l_woker is NULL");
+        return false;
+    }
     assert(l_worker);
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
     if(l_es){
