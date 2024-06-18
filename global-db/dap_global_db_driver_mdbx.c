@@ -1069,8 +1069,9 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
         DAP_DELETE(l_record);
     } else {
         /* Delete record */
+        dap_global_db_driver_hash_t l_driver_key = {};
         if (a_store_obj->crc && a_store_obj->timestamp) {
-            dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
+            l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
             l_key.iov_base = &l_driver_key;
             l_key.iov_len = sizeof(l_driver_key);
             rc = MDBX_SUCCESS;
