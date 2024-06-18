@@ -48,7 +48,7 @@ DAP_INLINE char* dap_enc_base58_encode_hash_to_str(dap_chain_hash_fast_t *a_in_h
 };
 
 DAP_STATIC_INLINE char* dap_enc_base58_encode_hash_to_str_static(dap_chain_hash_fast_t *a_in_hash) {
-    static _Thread_local char s_buf[DAP_ENC_BASE58_ENCODE_SIZE(sizeof(dap_chain_hash_fast_t))] = { '\0' };
+    thread_local static char s_buf[DAP_ENC_BASE58_ENCODE_SIZE(sizeof(dap_chain_hash_fast_t))] = { '\0' };
     return dap_enc_base58_encode(a_in_hash, sizeof(dap_chain_hash_fast_t), s_buf) ? s_buf : NULL;
 }
 
