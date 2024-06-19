@@ -420,10 +420,8 @@ void dap_enc_tests_run() {
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_FALCON, false);
     dap_print_module_name("dap_enc serialize->deserialize SPHINCSPLUS");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, false);
-#ifdef DAP_TPS_TEST
     dap_print_module_name("dap_enc serialize->deserialize ECDSA");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_ECDSA, false);
-#endif
     dap_print_module_name("dap_enc serialize->deserialize IAES");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_IAES, true);
     dap_print_module_name("dap_enc serialize->deserialize SHIPOVNIK");
@@ -443,10 +441,8 @@ void dap_enc_tests_run() {
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_FALCON);
     dap_print_module_name("dap_enc_sig serialize->deserialize SPHINCSPLUS");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS);
-#ifdef DAP_TPS_TEST
     dap_print_module_name("dap_enc_sig serialize->deserialize ECDSA");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_ECDSA);
-#endif
     dap_print_module_name("dap_enc_sig serialize->deserialize SHIPOVNIK");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK);
     dap_cleanup_test_case();
