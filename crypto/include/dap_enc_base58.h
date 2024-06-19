@@ -47,10 +47,7 @@ DAP_INLINE char* dap_enc_base58_encode_hash_to_str(dap_chain_hash_fast_t *a_in_h
     return dap_enc_base58_encode_to_str(a_in_hash->raw, sizeof(dap_chain_hash_fast_t));
 };
 
-DAP_STATIC_INLINE char* dap_enc_base58_encode_hash_to_str_static(dap_chain_hash_fast_t *a_in_hash) {
-    thread_local static char s_buf[DAP_ENC_BASE58_ENCODE_SIZE(sizeof(dap_chain_hash_fast_t))] = { '\0' };
-    return dap_enc_base58_encode(a_in_hash, sizeof(dap_chain_hash_fast_t), s_buf) ? s_buf : NULL;
-}
+const char *dap_enc_base58_encode_hash_to_str_static(dap_chain_hash_fast_t *a_in_hash);
 
 // convert from "0xA21F1E865B6740A28E8708798ECF25D2C0AA596DF5EB1FD724186B6AD7FF2199" to "Bura1HFrKsqbdytEXQVrxpbovtvLhR1VbrJs65JBx3gc"
 char* dap_enc_base58_from_hex_str_to_str(const char *a_in_str);

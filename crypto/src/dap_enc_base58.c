@@ -249,3 +249,9 @@ char* dap_enc_base58_to_hex_str_from_str(const char *a_in_str)
     dap_htoa64((l_out_str + 2), l_out, l_out_size);
     return l_out_str;
 }
+
+const char *dap_enc_base58_encode_hash_to_str_static(dap_chain_hash_fast_t *a_in_hash)
+{
+    _Thread_local static char s_buf[DAP_ENC_BASE58_ENCODE_SIZE(sizeof(dap_chain_hash_fast_t))] = { '\0' };
+    return dap_enc_base58_encode(a_in_hash, sizeof(dap_chain_hash_fast_t), s_buf) ? s_buf : NULL;
+}

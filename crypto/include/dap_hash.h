@@ -29,7 +29,6 @@
 
 #include "KeccakHash.h"
 #include "SimpleFIPS202.h"
-#include <threads.h>
 
 #define DAP_HASH_FAST_SIZE          32
 #define DAP_CHAIN_HASH_FAST_SIZE    DAP_HASH_FAST_SIZE
@@ -125,12 +124,7 @@ DAP_STATIC_INLINE int dap_chain_hash_fast_to_str(const dap_hash_fast_t *a_hash, 
     return DAP_CHAIN_HASH_FAST_STR_SIZE;
 }
 
-DAP_STATIC_INLINE const char *dap_chain_hash_fast_to_str_static(const dap_hash_fast_t *a_hash)
-{
-    thread_local static char s_hash_str[DAP_HASH_FAST_STR_SIZE];
-    return dap_chain_hash_fast_to_str(a_hash, s_hash_str, sizeof(s_hash_str)) == DAP_CHAIN_HASH_FAST_STR_SIZE
-           ? s_hash_str : NULL;
-}
+const char *dap_chain_hash_fast_to_str_static(const dap_hash_fast_t *a_hash);
 
 #define dap_hash_fast_to_str dap_chain_hash_fast_to_str
 #define dap_hash_fast_to_str_static dap_chain_hash_fast_to_str_static
