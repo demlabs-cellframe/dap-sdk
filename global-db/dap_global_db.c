@@ -29,6 +29,7 @@
 #include "dap_context.h"
 #include "dap_worker.h"
 #include "dap_cert.h"
+#include "dap_enc_ks.h"
 #include "dap_proc_thread.h"
 #include "dap_global_db.h"
 #include "dap_global_db_driver.h"
@@ -339,6 +340,8 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
         if (a_obj->key && (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)) {
             dap_nanotime_t l_time_diff = l_read_obj->timestamp - a_obj->timestamp;
             a_obj->timestamp = l_read_obj->timestamp + 1;
+            DAP_DEL_Z(a_obj->sign);
+            a_obj->crc = 0;
             a_obj->sign = dap_store_obj_sign(a_obj, a_dbi->signing_key, &a_obj->crc);
             debug_if(g_dap_global_db_debug_more, L_WARNING, "DB record with group %s and key %s need time correction for %zu seconds to be properly applied",
                                                             a_obj->group, a_obj->key, dap_nanotime_to_sec(l_time_diff));
@@ -1074,7 +1077,7 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
     for (size_t i = 0; i < a_store_objs_count; i++) {
         l_ret = s_store_obj_apply(a_dbi, a_store_objs + i);
         if (l_ret)
-            log_it(L_ERROR, "Can't save raw gdb data, code %d ", l_ret);
+            log_it(L_ERROR, "Can't save raw gdb data to %s/%s, code %d", (a_store_objs + i)->group, (a_store_objs + i)->key, l_ret);
     }
     if (a_store_objs_count > 1)
         dap_global_db_driver_txn_end(!l_ret);

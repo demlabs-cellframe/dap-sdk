@@ -2,9 +2,9 @@
  Copyright (c) 2017-2018 (c) Project "DeM Labs Inc" https://github.com/demlabsinc
   All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -34,8 +34,8 @@
 #include "dap_sign.h"
 #include "dap_cert.h"
 #include "dap_pkey.h"
-#include "dap_enc_ks.h"
 #include "dap_strfuncs.h"
+#include "dap_enc_ks.h"
 
 #define STREAM_KEEPALIVE_TIMEOUT    3   // How  often send keeplive messages (seconds)
 
@@ -118,13 +118,6 @@ DAP_STATIC_INLINE char* dap_stream_node_addr_to_str(dap_stream_node_addr_t a_add
     return dap_strdup_printf(NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_addr));
 }
 
-
-DAP_STATIC_INLINE char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address)
-{
-    static _Thread_local char s_buf[23] = { '\0' };
-    dap_snprintf(s_buf, sizeof(s_buf), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
-    return s_buf;
-}
 
 DAP_STATIC_INLINE void dap_stream_node_addr_from_hash(dap_hash_fast_t *a_hash, dap_stream_node_addr_t *a_node_addr)
 {

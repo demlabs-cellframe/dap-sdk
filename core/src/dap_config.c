@@ -301,8 +301,8 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     log_it(L_DEBUG, "Looking for config name %s...", a_file_path);
     char l_path[MAX_PATH] = { '\0' };
     int l_pos = dap_strncmp(a_file_path, s_configs_path, strlen(s_configs_path) - 4)
-            ? dap_snprintf(l_path, MAX_PATH, "%s/%s.cfg", s_configs_path, a_file_path)
-            : dap_snprintf(l_path, MAX_PATH, "%s.cfg", a_file_path);
+            ? snprintf(l_path, MAX_PATH, "%s/%s.cfg", s_configs_path, a_file_path)
+            : snprintf(l_path, MAX_PATH, "%s.cfg", a_file_path);
 
     if (l_pos >= MAX_PATH) {
         log_it(L_ERROR, "Too long config name!");
@@ -380,6 +380,8 @@ dap_config_t *dap_config_open(const char* a_file_path) {
 }
 
 dap_config_item_t *dap_config_get_item(dap_config_t *a_config, const char *a_section, const char *a_item_name) {
+    if (!a_config || !a_section || !a_item_name)
+        return NULL;
     char *l_key = dap_strdup_printf("%s:%s", a_section, a_item_name);
     for (char *c = l_key; *c; ++c) {
         if (*c == '-')

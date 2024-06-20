@@ -1,4 +1,5 @@
 #include "dap_json_rpc.h"
+#include "dap_json_rpc_request_handler.h"
 
 #define LOG_TAG "dap_json_rpc_rpc"
 

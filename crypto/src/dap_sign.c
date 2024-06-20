@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2018
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -30,7 +30,7 @@
 #include "dap_hash.h"
 #include "dap_sign.h"
 #include "dap_enc_base58.h"
-
+#include "dap_json_rpc_errors.h"
 #include "dap_list.h"
 
 #define LOG_TAG "dap_sign"
@@ -78,6 +78,8 @@ dap_sign_type_t dap_sign_type_from_key_type( dap_enc_key_type_t a_key_type)
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: l_sign_type.type = SIG_TYPE_DILITHIUM; break;
         case DAP_ENC_KEY_TYPE_SIG_FALCON: l_sign_type.type = SIG_TYPE_FALCON; break;
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_sign_type.type = SIG_TYPE_SPHINCSPLUS; break;
+        case DAP_ENC_KEY_TYPE_SIG_ECDSA: l_sign_type.type = SIG_TYPE_ECDSA; break;
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK: l_sign_type.type = SIG_TYPE_SHIPOVNIK; break;
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED: l_sign_type.type = SIG_TYPE_MULTI_CHAINED; break;
         default: l_sign_type.raw = 0;
     }
@@ -98,6 +100,8 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
         case SIG_TYPE_DILITHIUM: return DAP_ENC_KEY_TYPE_SIG_DILITHIUM;
         case SIG_TYPE_FALCON: return DAP_ENC_KEY_TYPE_SIG_FALCON;
         case SIG_TYPE_SPHINCSPLUS: return DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
+        case SIG_TYPE_ECDSA: return DAP_ENC_KEY_TYPE_SIG_ECDSA;
+        case SIG_TYPE_SHIPOVNIK: return DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK;
         case SIG_TYPE_MULTI_CHAINED: return DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED;
         default: return DAP_ENC_KEY_TYPE_INVALID;
     }
@@ -120,6 +124,8 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
         case SIG_TYPE_DILITHIUM: return "sig_dil";
         case SIG_TYPE_FALCON: return "sig_falcon";
         case SIG_TYPE_SPHINCSPLUS: return "sig_sphincs";
+        case SIG_TYPE_ECDSA: return "sig_ecdsa";
+        case SIG_TYPE_SHIPOVNIK: return "sig_shipovnik";
         case SIG_TYPE_MULTI_COMBINED: return "sig_multi_combined";
         case SIG_TYPE_MULTI_CHAINED: return "sig_multi_chained";
         default: return "UNDEFINED";//DAP_ENC_KEY_TYPE_NULL;
@@ -146,8 +152,12 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
         l_sign_type.type = SIG_TYPE_DILITHIUM;
     }else if ( !dap_strcmp (a_type_str, "sig_falcon") ) {
         l_sign_type.type = SIG_TYPE_FALCON;
-    // }else if ( !dap_strcmp (a_type_str, "sig_sphincs") ) {
-    //     l_sign_type.type = SIG_TYPE_SPHINCSPLUS;
+    }else if ( !dap_strcmp (a_type_str, "sig_sphincs") ) {
+         l_sign_type.type = SIG_TYPE_SPHINCSPLUS;
+    }else if ( !dap_strcmp (a_type_str, "sig_ecdsa") ) {
+         l_sign_type.type = SIG_TYPE_ECDSA;
+    }else if ( !dap_strcmp (a_type_str, "sig_shipovnik") ) {
+         l_sign_type.type = SIG_TYPE_SHIPOVNIK;
     }else if ( !dap_strcmp (a_type_str,"sig_multi_chained") ){
         l_sign_type.type = SIG_TYPE_MULTI_CHAINED;
     // } else if ( !dap_strcmp (a_type_str,"sig_multi_combined") ){
@@ -181,6 +191,8 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
             return a_key->sign_get(a_key, a_data, a_data_size, a_output, *a_output_size);
@@ -201,12 +213,13 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
 dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
         const size_t a_data_size, size_t a_output_wish_size)
 {
+    dap_return_val_if_pass(!a_key, NULL);
     const void * l_sign_data;
     size_t l_sign_data_size;
 
     dap_chain_hash_fast_t l_sign_data_hash;
 
-    if(s_sign_hash_type_default == DAP_SIGN_HASH_TYPE_NONE){
+    if(s_sign_hash_type_default == DAP_SIGN_HASH_TYPE_NONE || a_key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA) {
         l_sign_data = a_data;
         l_sign_data_size = a_data_size;
     }else{
@@ -234,7 +247,7 @@ dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
             return NULL;
         } else {
             size_t l_sign_ser_size = l_sign_unserialized_size;
-            uint8_t *l_sign_ser = dap_enc_key_serialize_sign(a_key->type, l_sign_unserialized, &l_sign_ser_size);
+            uint8_t *l_sign_ser = dap_enc_key_serialize_sign(a_key, l_sign_unserialized, &l_sign_ser_size);
             if ( l_sign_ser ){
                 dap_sign_t *l_ret = NULL;
                 DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_sign_t, sizeof(dap_sign_hdr_t) + l_sign_ser_size + l_pub_key_size, NULL, l_sign_unserialized, l_pub_key, l_sign_ser);
@@ -369,7 +382,7 @@ dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign)
  * @param a_chain_sign dap_sign_t a_chain_sign object
  * @param a_data const void * buffer with data
  * @param a_data_size const size_t  buffer size
- * @return 1 valid signature, 0 invalid signature, -1 unsupported sign type
+ * @return 0 valid signature, else invalid signature with error code
  */
 int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a_data_size)
 {
@@ -391,7 +404,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
 
     size_t l_sign_data_size = a_chain_sign->header.sign_size;
     // deserialize signature
-    uint8_t *l_sign_data = dap_enc_key_deserialize_sign(l_key->type, l_sign_data_ser, &l_sign_data_size);
+    uint8_t *l_sign_data = dap_enc_key_deserialize_sign(l_key, l_sign_data_ser, &l_sign_data_size);
 
     if ( !l_sign_data ){
         log_it(L_WARNING,"Incorrect signature, can't deserialize signature's data");
@@ -405,7 +418,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
     size_t l_verify_data_size;
     dap_chain_hash_fast_t l_verify_data_hash;
 
-    if(a_chain_sign->header.hash_type == DAP_SIGN_HASH_TYPE_NONE){
+    if(a_chain_sign->header.hash_type == DAP_SIGN_HASH_TYPE_NONE || l_key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA){
         l_verify_data = a_data;
         l_verify_data_size = a_data_size;
     }else{
@@ -426,6 +439,8 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
             l_ret = l_key->sign_verify(l_key, l_verify_data, l_verify_data_size, l_sign_data, l_sign_data_size);
             break;
@@ -520,4 +535,29 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
                                         "\tSignature size: %u\n",
                              a_sign->header.sign_pkey_size,
                              a_sign->header.sign_size);
+}
+
+/**
+ * @brief dap_sign_get_information Added in string information about signature
+ * @param a_sign Signature can be NULL
+ * @param a_json_out The output string pointer
+ */
+void dap_sign_get_information_json(dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type)
+{
+    json_object_object_add(a_json_out,"Signature", json_object_new_string(""));
+    if (!a_sign) {
+        dap_json_rpc_error_add(-1, "Corrupted signature data");
+        return;
+    }
+    dap_chain_hash_fast_t l_hash_pkey;
+    json_object_object_add(a_json_out,"Type",json_object_new_string(dap_sign_type_to_str(a_sign->header.type)));
+    if(dap_sign_get_pkey_hash(a_sign, &l_hash_pkey)) {
+        const char *l_hash_str = dap_strcmp(a_hash_out_type, "hex")
+             ? dap_enc_base58_encode_hash_to_str_static(&l_hash_pkey)
+             : dap_chain_hash_fast_to_str_static(&l_hash_pkey);
+             json_object_object_add(a_json_out,"Public key hash",json_object_new_string(l_hash_str));             
+    }
+    json_object_object_add(a_json_out,"Public key size",json_object_new_uint64(a_sign->header.sign_pkey_size));
+    json_object_object_add(a_json_out,"Signature size",json_object_new_uint64(a_sign->header.sign_size));
+
 }

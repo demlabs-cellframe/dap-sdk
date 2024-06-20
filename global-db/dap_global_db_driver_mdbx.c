@@ -241,11 +241,15 @@ MDBX_val    l_key_iov, l_data_iov;
     ** Start transaction, create table, commit.
     */
     MDBX_txn *l_txn = a_txn;
-    if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
+    if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) ) {
+        DAP_DEL_Z(l_db_ctx);
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+    }
 
-    if  ( MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) )
+    if  ( MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) ) {
+        DAP_DEL_Z(l_db_ctx);
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+    }
 
     /*
      * Save new subDB name into the master table
@@ -830,11 +834,11 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
     byte_t *l_obj_arr = NULL;
     int rc = 0;
     MDBX_txn *l_txn = s_txn;
+    MDBX_cursor *l_cursor = NULL;
     if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn))) {
         log_it (L_ERROR, "mdbx_txn: (%d) %s", rc, mdbx_strerror(rc));
         goto safe_ret;
     }
-    MDBX_cursor *l_cursor = NULL;
     if ( MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor)) ) {
         log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", rc, mdbx_strerror(rc));
         goto safe_ret;
@@ -861,10 +865,12 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
     }
     /* Iterate cursor to retrieve records from DB */
     do {
-        if (a_keys_only_read && l_key.iov_len == sizeof(dap_global_db_driver_hash_t)) {
-            dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_obj_arr;
-            dap_global_db_driver_hash_t *l_hashes_ptr = (dap_global_db_driver_hash_t *)(l_pkt->group_n_hashses + l_group_name_len);
-            *(l_hashes_ptr + l_count_current++) = *(dap_global_db_driver_hash_t *)l_key.iov_base;
+        if (a_keys_only_read) {
+            if (l_key.iov_len == sizeof(dap_global_db_driver_hash_t)) {
+                dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_obj_arr;
+                dap_global_db_driver_hash_t *l_hashes_ptr = (dap_global_db_driver_hash_t *)(l_pkt->group_n_hashses + l_group_name_len);
+                *(l_hashes_ptr + l_count_current++) = *(dap_global_db_driver_hash_t *)l_key.iov_base;
+            }
         } else {
             if (a_with_holes || !s_is_hole(l_data.iov_base)) {
                 if (s_fill_store_obj(a_group, &l_key, &l_data, (dap_store_obj_t *)l_obj_arr + l_count_current)) {
@@ -1067,8 +1073,9 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
         DAP_DELETE(l_record);
     } else {
         /* Delete record */
+        dap_global_db_driver_hash_t l_driver_key = {};
         if (a_store_obj->crc && a_store_obj->timestamp) {
-            dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
+            l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
             l_key.iov_base = &l_driver_key;
             l_key.iov_len = sizeof(l_driver_key);
             rc = MDBX_SUCCESS;

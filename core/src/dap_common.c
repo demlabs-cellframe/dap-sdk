@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2019
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -282,6 +282,7 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, .
         uint64_t l_size = va_arg(l_args, uint64_t);
         if (l_shift_mem + l_size > a_size) {
             log_it(L_ERROR, "Error size in the object deserialize. %"DAP_UINT64_FORMAT_U" > %"DAP_UINT64_FORMAT_U"", l_shift_mem + l_size, a_size);
+            va_end(l_args);
             return -2;
         }
         memcpy(l_arg, a_data + l_shift_mem, l_size);
@@ -345,7 +346,7 @@ int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename
         if( s_log_file == NULL)
             s_log_file = _wfopen( a_log_filename , L"w" );
         if ( s_log_file == NULL ) {
-            dap_fprintf( stderr, "Can't open log file %ls to append\n", a_log_filename );
+            fprintf( stderr, "Can't open log file %ls to append\n", a_log_filename );
             return -1;
         }
         //dap_stpcpy(s_log_file_path, a_log_filename);
@@ -1445,6 +1446,19 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
     return l_res;
 #endif
 }
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+const char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address)
+{
+    static _Thread_local char s_buf[23] = { '\0' };
+    snprintf(s_buf, sizeof(s_buf), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
+    return s_buf;
+}
+#ifdef __cplusplus
+}
+#endif
 
 #ifdef  DAP_SYS_DEBUG
 dap_memstat_rec_t    *g_memstat [MEMSTAT$K_MAXNR];                      /* Array to keep pointers to module/facility specific memstat vecros */
