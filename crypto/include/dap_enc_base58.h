@@ -43,9 +43,10 @@ size_t dap_enc_base58_decode(const char * a_in, void * a_out);
 
 char* dap_enc_base58_encode_to_str(const void * a_in, size_t a_in_size);
 
-DAP_INLINE char* dap_enc_base58_encode_hash_to_str(dap_chain_hash_fast_t *a_in_hash) {
+DAP_INLINE char *dap_enc_base58_encode_hash_to_str(dap_chain_hash_fast_t *a_in_hash)
+{
     return dap_enc_base58_encode_to_str(a_in_hash->raw, sizeof(dap_chain_hash_fast_t));
-};
+}
 
 const char *dap_enc_base58_encode_hash_to_str_static(dap_chain_hash_fast_t *a_in_hash);
 
