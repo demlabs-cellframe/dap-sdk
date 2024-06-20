@@ -153,6 +153,7 @@ bool s_proc_thread_reader(void *a_arg)
         l_oncoming_pkt->last_hash = c_dap_global_db_driver_hash_blank;
         dap_stream_ch_pkt_send_by_addr(l_sender_addr, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST,
                                        l_oncoming_pkt, l_pkt_size);
+        DAP_DEL_Z(l_oncoming_pkt);
     }
     if (!l_ret)
         DAP_DELETE(a_arg);

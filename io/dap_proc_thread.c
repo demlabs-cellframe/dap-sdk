@@ -45,7 +45,10 @@ static int s_context_callback_stopped(dap_context_t *a_context, void *a_arg);
 
 int dap_proc_thread_init(uint32_t a_threads_count)
 {
-    s_threads_count = a_threads_count ? a_threads_count : dap_get_cpu_count();
+    if (!(s_threads_count = a_threads_count ? a_threads_count : dap_get_cpu_count())) {
+        log_it(L_CRITICAL, "Unknown threads count");
+        return -1;
+    }
     s_threads = DAP_NEW_Z_SIZE(dap_proc_thread_t, sizeof(dap_proc_thread_t) * s_threads_count);
     for (uint32_t i = 0; i < s_threads_count; i++) {
         dap_proc_thread_t *l_thread = s_threads + i;
