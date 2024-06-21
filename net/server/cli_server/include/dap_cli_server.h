@@ -80,3 +80,5 @@ int json_commands(const char * a_name);
 
 void dap_cli_server_alias_add(const char *a_alias, const char *a_pre_cmd, dap_cli_cmd_t *a_cmd);
 dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_cli, char **a_append, char **a_ncmd);
+
+char *dap_cli_cmd_exec(char *a_req_str);

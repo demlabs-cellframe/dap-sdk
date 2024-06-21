@@ -54,7 +54,7 @@ static bool s_debug_cli = false;
   #define poll WSAPoll
 #endif
 
-static dap_cli_cmd_t * s_commands = NULL;
+static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t * s_command_alias = NULL;
 
 static void* s_thread_main_func(void *args);
@@ -547,7 +547,7 @@ static inline void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback
     } else {
         l_cmd_item->func = (dap_cli_server_cmd_callback_t )(void *)a_func;
     }
-    HASH_ADD_STR(s_commands,name,l_cmd_item);
+    HASH_ADD_STR(cli_commands,name,l_cmd_item);
     log_it(L_DEBUG,"Added command %s",l_cmd_item->name);
 }
 
@@ -725,7 +725,7 @@ int json_commands(const char * a_name) {
 static bool s_thread_one_client_func(dap_proc_thread_t UNUSED_ARG *a_thread, void *arg)
 {
 SOCKET  newsockfd = (SOCKET) (intptr_t) arg;
-int     str_len, timeout = 5000, argc = 0, is_data, data_len = 0;
+int     str_len, timeout = 5000, is_data, data_len = 0;
 char    *str_header;
 
     if(s_debug_cli)
@@ -761,135 +761,20 @@ char    *str_header;
             printf("The received data size: %d differs from the readed data size ->%d, errno: %d\n", data_len, recv_res, errno);
             break;
         }
-        dap_json_rpc_request_t * request = dap_json_rpc_request_from_json(str_json_command);
-        DAP_FREE(str_json_command);
-
-        if(request) {
-            int l_verbose = 0;
-            // command is found
-            char *cmd_name = request->method;
-            dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(cmd_name);
-            bool l_finded_by_alias = false;
-            char *l_append_cmd = NULL;
-            char *l_ncmd = NULL;
-            if (!l_cmd) {
-                l_cmd = dap_cli_server_cmd_find_by_alias(cmd_name, &l_append_cmd, &l_ncmd);
-                l_finded_by_alias = true;
-            }
-            dap_json_rpc_params_t * params = request->params;
-            
-            char *str_cmd = dap_json_rpc_params_get(params, 0);
-            int res = -1;
-            char *str_reply = NULL;
-            json_object* json_com_res = json_object_new_array();
-            if(l_cmd){
-                if(l_cmd->overrides.log_cmd_call)
-                    l_cmd->overrides.log_cmd_call(str_cmd);
-                else {
-                    char *l_str_cmd = dap_strdup(str_cmd);
-                    char *l_ptr = strstr(l_str_cmd, "-password");
-                    if (l_ptr) {
-                        l_ptr += 10;
-                        while(l_ptr[0] != '\0' && l_ptr[0] != ';') {
-                            *l_ptr = '*';
-                            l_ptr +=1;
-                        }
-                    }
-                    log_it(L_DEBUG, "execute command=%s", l_str_cmd);
-                    DAP_DELETE(l_str_cmd);
-                }
-
-                char ** l_argv = dap_strsplit(str_cmd, ";", -1);
-                // Count argc
-                while (l_argv[argc] != NULL) argc++;
-                // Support alias
-                if (l_finded_by_alias) {
-                    int l_argc = argc + 1;
-                    char **al_argv = DAP_NEW_Z_COUNT(char*, l_argc + 1);
-                    al_argv[0] = l_ncmd;
-                    al_argv[1] = l_append_cmd;
-                    for (int i = 1; i < argc; i++)
-                        al_argv[i + 1] = l_argv[i];
-                    cmd_name = l_ncmd;
-                    DAP_FREE(l_argv[0]);
-                    DAP_DEL_Z(l_argv);
-                    l_argv = al_argv;
-                    argc = l_argc;
-                }
-                // Call the command function
-                if(l_cmd &&  l_argv && l_cmd->func) {
-                    if (json_commands(cmd_name)) {
-                        res = l_cmd->func(argc, l_argv, (void *)&json_com_res);
-                    } else if (l_cmd->arg_func) {
-                        res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
-                    } else {
-                        res = l_cmd->func(argc, l_argv, (void *)&str_reply);
-                    }
-                } else if (l_cmd) {
-                    log_it(L_WARNING,"NULL arguments for input for command \"%s\"", str_cmd);
-                    dap_json_rpc_error_add(-1, "NULL arguments for input for command \"%s\"", str_cmd);
-                }else {
-                    log_it(L_WARNING,"No function for command \"%s\" but it registred?!", str_cmd);
-                    dap_json_rpc_error_add(-1, "No function for command \"%s\" but it registred?!", str_cmd);
-                }
-                // find '-verbose' command
-                l_verbose = dap_cli_server_cmd_find_option_val(l_argv, 1, argc, "-verbose", NULL);
-                dap_strfreev(l_argv);
-            } else {
-                dap_json_rpc_error_add(-1, "can't recognize command=%s", str_cmd);
-                log_it(L_ERROR,"Reply string: \"%s\"", str_reply);
-            }
-            char *reply_body = NULL;
-            // -verbose 
-            if(l_verbose) {
-                if (str_reply) {
-                    reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");
-                } else {
-                    json_object* json_res = json_object_new_object();
-                    json_object_object_add(json_res, "ret_code", json_object_new_int(res));
-                    json_object_array_add(json_com_res, json_res);
-                }
-            }
-            else{
-                if (str_reply) {
-                    reply_body = dap_strdup_printf("%s", (str_reply) ? str_reply : "");
-                } 
-            }
-            
-            // create response 
-            dap_json_rpc_response_t* response = NULL;
-            if (reply_body) {
-                response = dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id);
-            } else {
-                response = dap_json_rpc_response_create(json_object_get(json_com_res), TYPE_RESPONSE_JSON, request->id);
-            }
-            json_object_put(json_com_res);
-            const char* response_string = dap_json_rpc_response_to_string(response);
-            // send the result of the command function
-            char *reply_str = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
-                                                "Content-Length: %zu\r\n\r\n"
-                                                "%s", strlen(response_string), response_string);
-            size_t l_reply_step = 32768;
-            size_t l_reply_len = strlen(reply_str);
-            size_t l_reply_rest = l_reply_len;
-
-            while(l_reply_rest) {
-                size_t l_send_bytes = dap_min(l_reply_step, l_reply_rest);
-                int ret = send(newsockfd, reply_str + l_reply_len - l_reply_rest, l_send_bytes, MSG_NOSIGNAL);
-                if(ret<=0)
-                    break;
-                l_reply_rest-=l_send_bytes;
-            };
-
-            // DAP_DELETE(reply_body);
-            // DAP_DELETE(str_cmd);
-            // str_cmd and reply_body are freed here 
-            dap_json_rpc_response_free(response);
-            dap_json_rpc_request_free(request);
-            DAP_DEL_Z(response_string);
-            DAP_DELETE(str_reply);
-            DAP_DELETE(reply_str);
-        }
+        char *reply_str = dap_cli_cmd_exec(str_json_command),
+             *l_full_reply = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
+                                              "Content-Length: %zu\r\n\r\n"
+                                              "%s", strlen(reply_str), reply_str);
+        DAP_DELETE(reply_str);
+        DAP_DELETE(str_json_command);
+        size_t l_reply_step = 32768, l_reply_len = strlen(l_full_reply), l_reply_rest = l_reply_len;
+        while (l_reply_rest) {
+            size_t l_send_bytes = dap_min(l_reply_step, l_reply_rest);
+            if ( 0 >= send(newsockfd, l_full_reply + l_reply_len - l_reply_rest, l_send_bytes, MSG_NOSIGNAL) )
+                break;
+            l_reply_rest-=l_send_bytes;
+        };
+        DAP_DELETE(l_full_reply);
         break;
     }
 
@@ -1045,7 +930,7 @@ void dap_cli_server_cmd_apply_overrides(const char * a_name, const dap_cli_serve
  */
 dap_cli_cmd_t* dap_cli_server_cmd_get_first()
 {
-    return s_commands;
+    return cli_commands;
 }
 
 /**
@@ -1056,7 +941,7 @@ dap_cli_cmd_t* dap_cli_server_cmd_get_first()
 dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name)
 {
     dap_cli_cmd_t *l_cmd_item = NULL;
-    HASH_FIND_STR(s_commands,a_name,l_cmd_item);
+    HASH_FIND_STR(cli_commands,a_name,l_cmd_item);
     return l_cmd_item;
 }
 
@@ -1082,4 +967,109 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
     *a_append = dap_strdup(l_alias->addition);
     *a_ncmd = dap_strdup(l_alias->standard_command->name);
     return l_alias->standard_command;
+}
+
+char *dap_cli_cmd_exec(char *a_req_str) {
+    dap_json_rpc_request_t *request = dap_json_rpc_request_from_json(a_req_str);
+    if ( !request )
+        return NULL;
+    int l_verbose = 0;
+    // command is found
+    char *cmd_name = request->method;
+    dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(cmd_name);
+    bool l_finded_by_alias = false;
+    char *l_append_cmd = NULL;
+    char *l_ncmd = NULL;
+    if (!l_cmd) {
+        l_cmd = dap_cli_server_cmd_find_by_alias(cmd_name, &l_append_cmd, &l_ncmd);
+        l_finded_by_alias = true;
+    }
+    dap_json_rpc_params_t * params = request->params;
+
+    char *str_cmd = dap_json_rpc_params_get(params, 0);
+    int res = -1;
+    char *str_reply = NULL;
+    json_object* json_com_res = json_object_new_array();
+    if(l_cmd){
+        if(l_cmd->overrides.log_cmd_call)
+            l_cmd->overrides.log_cmd_call(str_cmd);
+        else {
+            char *l_str_cmd = dap_strdup(str_cmd);
+            char *l_ptr = strstr(l_str_cmd, "-password");
+            if (l_ptr) {
+                l_ptr += 10;
+                while(l_ptr[0] != '\0' && l_ptr[0] != ';') {
+                    *l_ptr = '*';
+                    l_ptr +=1;
+                }
+            }
+            log_it(L_DEBUG, "execute command=%s", l_str_cmd);
+            DAP_DELETE(l_str_cmd);
+        }
+
+        char ** l_argv = dap_strsplit(str_cmd, ";", -1);
+        int argc = 0;
+        // Count argc
+        while (l_argv[argc] != NULL) argc++;
+        // Support alias
+        if (l_finded_by_alias) {
+            int l_argc = argc + 1;
+            char **al_argv = DAP_NEW_Z_COUNT(char*, l_argc + 1);
+            al_argv[0] = l_ncmd;
+            al_argv[1] = l_append_cmd;
+            for (int i = 1; i < argc; i++)
+                al_argv[i + 1] = l_argv[i];
+            cmd_name = l_ncmd;
+            DAP_FREE(l_argv[0]);
+            DAP_DEL_Z(l_argv);
+            l_argv = al_argv;
+            argc = l_argc;
+        }
+        // Call the command function
+        if(l_cmd &&  l_argv && l_cmd->func) {
+            if (json_commands(cmd_name)) {
+                res = l_cmd->func(argc, l_argv, (void *)&json_com_res);
+            } else if (l_cmd->arg_func) {
+                res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
+            } else {
+                res = l_cmd->func(argc, l_argv, (void *)&str_reply);
+            }
+        } else if (l_cmd) {
+            log_it(L_WARNING,"NULL arguments for input for command \"%s\"", str_cmd);
+            dap_json_rpc_error_add(-1, "NULL arguments for input for command \"%s\"", str_cmd);
+        }else {
+            log_it(L_WARNING,"No function for command \"%s\" but it registred?!", str_cmd);
+            dap_json_rpc_error_add(-1, "No function for command \"%s\" but it registred?!", str_cmd);
+        }
+        // find '-verbose' command
+        l_verbose = dap_cli_server_cmd_find_option_val(l_argv, 1, argc, "-verbose", NULL);
+        dap_strfreev(l_argv);
+    } else {
+        dap_json_rpc_error_add(-1, "can't recognize command=%s", str_cmd);
+        log_it(L_ERROR,"Reply string: \"%s\"", str_reply);
+    }
+    char *reply_body = NULL;
+    // -verbose
+    if(l_verbose) {
+        if (str_reply) {
+            reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");
+        } else {
+            json_object* json_res = json_object_new_object();
+            json_object_object_add(json_res, "ret_code", json_object_new_int(res));
+            json_object_array_add(json_com_res, json_res);
+        }
+    } else{
+        reply_body = dap_strdup_printf("%s", (str_reply) ? str_reply : "");
+    }
+
+    // create response
+    dap_json_rpc_response_t* response = reply_body
+            ? dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id)
+            : dap_json_rpc_response_create(json_object_get(json_com_res), TYPE_RESPONSE_JSON, request->id);
+    json_object_put(json_com_res);
+    char* response_string = dap_json_rpc_response_to_string(response);
+    dap_json_rpc_response_free(response);
+    dap_json_rpc_request_free(request);
+    DAP_DELETE(str_reply);
+    return response_string;
 }
