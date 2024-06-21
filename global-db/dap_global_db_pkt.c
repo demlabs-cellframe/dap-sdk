@@ -65,7 +65,7 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     size_t l_key_len = dap_strlen(a_store_obj->key);
     size_t l_sign_len = a_store_obj->sign ? dap_sign_get_size(a_store_obj->sign) : 0;
     size_t l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len + l_sign_len;
-    dap_global_db_pkt_t *l_pkt = DAP_NEW_SIZE(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t));
+    dap_global_db_pkt_t *l_pkt = DAP_NEW_Z_SIZE(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t));
     if (!l_pkt) {
         log_it(L_CRITICAL, "Insufficient memory");
         return NULL;
