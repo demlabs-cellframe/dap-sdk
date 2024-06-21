@@ -195,28 +195,14 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
 
 /* if cli command argument contains one of the following symbol
  argument is going to be encoded to base64 */
-static const char* s_dap_app_cli_forbidden_symbols[] = {"\r\n", ";", ""};
 
-bool s_dap_app_cli_cmd_contains_forbidden_symbol(const char * a_cmd_param){
-    for(int i = 0; s_dap_app_cli_forbidden_symbols[i][0] != '\0'; i++){
-        if(strstr(a_cmd_param, s_dap_app_cli_forbidden_symbols[i]))
-            return true;
-    }
-    return false;
+
+DAP_STATIC_INLINE bool s_dap_app_cli_cmd_contains_forbidden_symbol(const char * a_cmd_param) {
+    static const char* s_dap_app_cli_forbidden_symbols = ";\r\n";
+    return !!strpbrk(a_cmd_param, s_dap_app_cli_forbidden_symbols);
 }
 
-/**
- * Send request to kelvin-node
- *
- * return 0 if OK, else error code
- */
-int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli_cmd_state_t *a_cmd )
-{
-    if(!a_socket || !a_cmd || !a_cmd->cmd_name) {
-        assert(0);
-        return -1;
-    }    
-    a_cmd->cmd_res_cur = 0;
+char *dap_app_cli_form_command(dap_app_cli_cmd_state_t *a_cmd) {
     dap_string_t *l_cmd_data = dap_string_new(a_cmd->cmd_name);
     if (a_cmd->cmd_param) {
         for (int i = 0; i < a_cmd->cmd_param_count; i++) {
@@ -232,8 +218,34 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
             }
         }
     }
+    char *ret = l_cmd_data->str;
+    dap_string_free(l_cmd_data, false);
+    return ret;
+}
+
+
+/**
+ * Send request to node
+ *
+ * return 0 if OK, else error code
+ */
+int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli_cmd_state_t *a_cmd )
+{
+    if(!a_socket || !a_cmd || !a_cmd->cmd_name) {
+        assert(0);
+        return -1;
+    }
+    a_cmd->cmd_res_cur = 0;
+    // json_object* cmd = json_object_new_object();
+    // int ret = json_object_object_add(cmd, "command", json_object_new_string(l_cmd_data->str));
+    // if (ret != 0) {
+    //     printf("JSON creating error");
+    //     return -1;
+    // }
     dap_json_rpc_params_t * params = dap_json_rpc_params_create();
-    dap_json_rpc_params_add_data(params, l_cmd_data->str, TYPE_PARAM_STRING);
+    char *l_cmd_str = dap_app_cli_form_command(a_cmd);
+    dap_json_rpc_params_add_data(params, l_cmd_str, TYPE_PARAM_STRING);
+    DAP_DELETE(l_cmd_str);
     uint64_t l_id_response = dap_json_rpc_response_get_new_id();
     dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(a_cmd->cmd_name, params, l_id_response);
     char * request_str = dap_json_rpc_request_to_json_string(a_request);
@@ -278,7 +290,6 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
     }
     DAP_DELETE(a_cmd->cmd_res);
     dap_json_rpc_request_free(a_request);
-    dap_string_free(l_cmd_data, true);
     dap_string_free(l_post_data, true);
     return s_status;
 }

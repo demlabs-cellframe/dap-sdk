@@ -27,7 +27,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-//#include "dap_client.h"
 #include "dap_common.h"
 #include "dap_file_utils.h"
 #include "dap_strfuncs.h"
@@ -36,11 +35,14 @@
 #include "dap_app_cli_net.h"
 #include "dap_app_cli_shell.h"
 
-
-#ifdef _WIN32
-#include "registry.h"
+#ifdef DAP_OS_ANDROID
+#include "dap_json_rpc_params.h"
+#include "dap_json_rpc_request.h"
+#include <android/log.h>
+#include <jni.h>
+static dap_config_t *cli_config;
 #endif
-
+#define LOG_TAG "node-cli"
 
 /**
  * split string to argc and argv
@@ -82,13 +84,13 @@ static char** split_word(char *line, int *argc)
     return argv;
 }
 
-/*
- * Execute a command line.
+/**
+ *  Read and execute commands until EOF is reached.  This assumes that
+ *  the input source has already been initialized.
  */
 int execute_line(dap_app_cli_connect_param_t *cparam, char *line)
 {
     register int i;
-    dap_cli_cmd_t *command;
     char *word;
 
     /* Isolate the command word. */
@@ -111,18 +113,17 @@ int execute_line(dap_app_cli_connect_param_t *cparam, char *line)
         int res = dap_app_cli_post_command(cparam, &cmd);
         DAP_DELETE(argv);
         return res;
-    }else{
-        DAP_DELETE(argv);
-        fprintf(stderr, "No command\n");
-        return -1;
     }
+    fprintf(stderr, "No command\n");
+    DAP_DELETE(argv);
+    return -1;
 }
 
 /**
  *  Read and execute commands until EOF is reached.  This assumes that
  *  the input source has already been initialized.
  */
-int shell_reader_loop(dap_app_cli_connect_param_t *cparam)
+static int shell_reader_loop(char *a_socket)
 {
     char *line, *s;
 
@@ -131,56 +132,95 @@ int shell_reader_loop(dap_app_cli_connect_param_t *cparam)
     // Loop reading and executing lines until the user quits.
     for(; done == 0;) {
         // Read a line of input
-        line = rl_readline("> ");
-
-        if(!line)
+        if ( !(line = rl_readline("> ")) )
             break;
 
         /* Remove leading and trailing whitespace from the line.
          Then, if there is anything left, add it to the history list
          and execute it. */
-        s = dap_strstrip(line);
-        if(*s)
+        if (*(s = dap_strstrip(line)) )
         {
+            dap_app_cli_connect_param_t *cparam = NULL;
+            if ( !(cparam = dap_app_cli_connect(a_socket)) ) {
+                printf("Can't connect to \"%s\"\n", a_socket);
+                return -1;
+            }
             add_history(s);
             execute_line(cparam, s);
+            dap_app_cli_disconnect(cparam);
         }
-
         DAP_DELETE(line);
     }
-
     return 0;
 }
 
-
-/**
- * @brief dap_app_cli_main
- * @param argc
- * @param argv
- * @return
- */
-int dap_app_cli_main(const char * a_app_name, const char * a_socket_path, int a_argc, char **a_argv)
+#ifdef DAP_OS_ANDROID
+JNIEXPORT jstring JNICALL Java_com_CellframeWallet_Node_cellframeNodeCliMain(JNIEnv *javaEnv, jobject __unused jobj, jobjectArray argvStr)
 {
-    dap_set_appname(a_app_name);
-    if (dap_common_init(dap_get_appname(), NULL,NULL) != 0) {
-        printf("Fatal Error: Can't init common functions module");
-        return -2;
+    //g_sys_dir_path = dap_strdup_printf("/storage/emulated/0/Android/data/com.CellframeWallet/files/node");
+    dap_cli_cmd_t *l1 = NULL, *l2 = NULL;
+    __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Config %p", g_config);
+    HASH_ITER(hh, dap_cli_server_cmd_get_first(), l1, l2) {
+         __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Command %s", l1->name);
     }
-
-    dap_log_level_set(L_CRITICAL);
-#ifdef _WIN32
-    WSADATA wsaData;
-    WSAStartup(MAKEWORD(2,2), &wsaData);
+    jsize argc = (*javaEnv)->GetArrayLength(javaEnv, argvStr);
+    char **argv = malloc(sizeof(char*) * argc);
+    for (jsize i = 1; i < argc; ++i) {
+        jstring string = (jstring)((*javaEnv)->GetObjectArrayElement(javaEnv, argvStr, i));
+        const char *cstr = (*javaEnv)->GetStringUTFChars(javaEnv, string, 0);
+        argv[i - 1] = strdup(cstr);
+         __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Param %d: %s", i, argv[i - 1]);
+        (*javaEnv)->ReleaseStringUTFChars(javaEnv, string, cstr );
+        (*javaEnv)->DeleteLocalRef(javaEnv, string );
+    }
+    if ( argc > 1 ) {
+        dap_app_cli_cmd_state_t cmd = {
+            .cmd_name           = (char*)argv[0],
+            .cmd_param_count    = argc - 2,
+            .cmd_param          = argc - 2 > 0 ? (char**)(argv + 1) : NULL
+        };
+        char *l_cmd_str = dap_app_cli_form_command(&cmd);
+        __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Full request %s", l_cmd_str);
+        dap_json_rpc_params_t *params = dap_json_rpc_params_create();
+        dap_json_rpc_params_add_data(params, l_cmd_str, TYPE_PARAM_STRING);
+        DAP_DELETE(l_cmd_str);
+        dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(cmd.cmd_name, params, 0);
+        char    *req_str = dap_json_rpc_request_to_json_string(a_request),
+                *res = dap_cli_cmd_exec(req_str);
+        __android_log_print(ANDROID_LOG_INFO, LOG_TAG, "Full command %s", req_str);
+        dap_json_rpc_request_free(a_request);
+        for(jsize i = 0; i < argc - 1; ++i)
+            free(argv[i]);
+        free(argv);
+        jstring jres = (*javaEnv)->NewStringUTF(javaEnv, res);
+        DAP_DELETE(res);
+        DAP_DELETE(req_str);
+        return jres;
+    } else {
+        return (*javaEnv)->NewStringUTF(javaEnv, "Empty command");
+    }
+}
 #endif
-    // connect to node
-    dap_app_cli_connect_param_t *cparam = dap_app_cli_connect( a_socket_path );
-    if(!cparam)
+int dap_app_cli_main(const char *a_app_name, int a_argc, char **a_argv)
+{
+    //if ( dap_common_init(a_app_name, NULL,NULL) ) {
+    //    printf("Fatal Error: Can't init common functions module");
+    //    return -2;
+    //}
     {
-        printf("Can't connect to %s on socket %s\n",dap_get_appname(), a_socket_path);
-        exit(-1);
+        char l_config_dir[MAX_PATH] = {'\0'};
+        sprintf(l_config_dir, "%s/etc", g_sys_dir_path);
+        dap_config_init(l_config_dir);
     }
-
-    if(a_argc > 1){
+    if ( !(g_config = dap_config_open(a_app_name)) ) {
+        printf("Can't init general configurations %s.cfg\n", a_app_name);
+        return -3;
+    }
+    char *listen_socket = (char*)dap_config_get_item_str_default( g_config, "conserver", "listen_unix_socket_path",
+                                 dap_config_get_item_str( g_config, "conserver", "listen_port_tcp") );
+    int l_res = -1;
+    
+    if (a_argc > 1){
         // Call the function
         dap_app_cli_cmd_state_t cmd = {
             .cmd_name           = (char*)a_argv[1],
@@ -188,19 +228,18 @@ int dap_app_cli_main(const char * a_app_name, const char * a_socket_path, int a_
             .cmd_param          = a_argc - 2 > 0 ? (char**)(a_argv + 2) : NULL
         };
         // Send command
-        int res = dap_app_cli_post_command(cparam, &cmd);
+        dap_app_cli_connect_param_t *cparam = NULL;
+        if ( !(cparam = dap_app_cli_connect(listen_socket)) ) {
+            printf("Can't connect to \"%s\"\n", listen_socket);
+            return -4;
+        }
+        l_res = dap_app_cli_post_command(cparam, &cmd);
         dap_app_cli_disconnect(cparam);
-#ifdef _WIN32
-        WSACleanup();
-#endif
-        return res;
-    }else{
-        // command not found, start interactive shell
-        shell_reader_loop(cparam);
+    } else {
+        // no command passed, start interactive shell
+        l_res = shell_reader_loop(listen_socket);
     }
-#ifdef _WIN32
-        WSACleanup();
-#endif
-    return 0;
+    dap_config_close(g_config);
+    return l_res;
 }
 

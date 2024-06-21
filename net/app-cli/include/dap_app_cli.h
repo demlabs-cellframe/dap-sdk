@@ -25,6 +25,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "dap_config.h"
 
 // command description
 typedef struct dap_app_cli_cmd_state {
@@ -41,9 +42,7 @@ typedef struct dap_app_cli_cmd_state {
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-int dap_app_cli_main(const char * a_app_name, const char * a_socket_path, int argc, char **argv);
-
+int dap_app_cli_main(const char *a_app_name, int argc, char **argv);
 #ifdef __cplusplus
 }
 #endif

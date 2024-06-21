@@ -49,6 +49,9 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char * a_socket_path);
  *
  * return 0 if OK, else error code
  */
+
+char *dap_app_cli_form_command(dap_app_cli_cmd_state_t *cmd);
+
 int dap_app_cli_post_command(dap_app_cli_connect_param_t *socket, dap_app_cli_cmd_state_t *cmd);
 
 int dap_app_cli_disconnect(dap_app_cli_connect_param_t *socket);
