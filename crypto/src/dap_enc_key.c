@@ -398,7 +398,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .ser_pub_key_size =                 dap_enc_sig_ecdsa_ser_pkey_size,
 
         .deser_sign_ex =                    dap_enc_sig_ecdsa_read_signature,
-        .deser_pub_key_ex =                 dap_enc_sig_ecdsa_read_public_key,
+        .deser_pub_key =                    dap_enc_sig_ecdsa_read_public_key,
         .deser_priv_key_size =              dap_enc_sig_ecdsa_deser_key_size,
         .deser_pub_key_size =               dap_enc_sig_ecdsa_deser_pkey_size,
         .deser_sign_size  =                 dap_enc_sig_ecdsa_signature_size
@@ -783,19 +783,15 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
     case DAP_ENC_KEY_TYPE_SIG_FALCON:        
     //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+    case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         if (a_key->pub_key_data)
             s_callbacks[a_key->type].del_pub_key(a_key->pub_key_data);
-
         a_key->pub_key_data = s_callbacks[a_key->type].deser_pub_key(a_buf, a_buflen);
         if(!a_key->pub_key_data) {
             a_key->pub_key_data_size = 0;
             return -1;
         }
         a_key->pub_key_data_size = s_callbacks[a_key->type].deser_pub_key_size(NULL);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-        s_callbacks[a_key->type].del_pub_key(a_key->pub_key_data);
-        a_key->pub_key_data = s_callbacks[a_key->type].deser_pub_key_ex(a_buf, a_key, a_buflen);
         break;
     default:
         DAP_DEL_Z(a_key->pub_key_data);
