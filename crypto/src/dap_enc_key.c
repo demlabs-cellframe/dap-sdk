@@ -783,6 +783,9 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
     case DAP_ENC_KEY_TYPE_SIG_FALCON:        
     //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
     case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        if(s_callbacks[a_key->type].del_pub_key == NULL || s_callbacks[a_key->type].deser_pub_key == NULL)
+            return -2;
+
         if (a_key->pub_key_data)
             s_callbacks[a_key->type].del_pub_key(a_key->pub_key_data);
 
@@ -794,6 +797,8 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         a_key->pub_key_data_size = s_callbacks[a_key->type].deser_pub_key_size(NULL);
         break;
     case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+        if(s_callbacks[a_key->type].del_pub_key == NULL)
+            return -2;
         s_callbacks[a_key->type].del_pub_key(a_key->pub_key_data);
         a_key->pub_key_data = s_callbacks[a_key->type].deser_pub_key_ex(a_buf, a_key, a_buflen);
         break;
