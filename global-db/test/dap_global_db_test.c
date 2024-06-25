@@ -42,7 +42,7 @@ typedef struct __dap_test_record__ {
 #define DAP_DB$SZ_DATA                  8192
 #define DAP_DB$SZ_KEY                   64
 #define DAP_DB$SZ_HOLES                 3
-#define DAP_DB$SZ_THREADS               3
+#define DAP_DB$SZ_THREADS               2
 #define DAP_DB$T_GROUP                  "group.zero"
 #define DAP_DB$T_GROUP_WRONG            "group.wrong"
 #define DAP_DB$T_GROUP_NOT_EXISTED      "group.not.existed"

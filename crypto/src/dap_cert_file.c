@@ -33,7 +33,7 @@
 
 #define LOG_TAG "dap_cert_file"
 
-static const char s_key_inheritor[] = "Inheritor";
+static const char s_key_inheritor[] = "inheritor";
 
 /**
  * @brief dap_cert_file_save
