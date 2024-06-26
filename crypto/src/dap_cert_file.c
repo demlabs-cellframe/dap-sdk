@@ -126,6 +126,10 @@ void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t
             break;
         case DAP_CERT_META_CUSTOM:
             if(!strcmp(l_key_str, s_key_inheritor)) {
+                if (a_cert->enc_key->_inheritor) {
+                    log_it(L_DEBUG, "Few inheritor records in cert metadata");
+                    break;
+                }
                 DAP_NEW_Z_SIZE_RET(a_cert->enc_key->_inheritor, byte_t, l_value_size, NULL);
                 a_cert->enc_key->_inheritor_size = l_value_size;
                 a_cert->enc_key->_inheritor = DAP_DUP_SIZE(a_data + l_mem_shift, a_cert->enc_key->_inheritor_size);
