@@ -79,7 +79,7 @@ static void s_stream_ctl_error(dap_client_t *a_client, void *a_arg, int a_error)
 static void s_stage_stream_streaming(dap_client_t *a_client, void *a_arg);
 
 // STREAM stage callbacks
-static void s_request_response(void *a_response, size_t a_response_size, void * a_obj);
+static void s_request_response(void *a_response, size_t a_response_size, void * a_obj, http_status_code_t http_status);
 static void s_request_error(int a_error_code, void *a_obj);
 
 // stream callbacks
@@ -273,6 +273,10 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
     dap_events_socket_uuid_t *l_es_uuid_ptr = (dap_events_socket_uuid_t*) a_arg;
 
     dap_worker_t * l_worker = dap_worker_get_current();
+    if (!l_worker) {
+        log_it(L_ERROR, "l_worker is NULL");
+        return false;
+    }
     assert(l_worker);
 
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid_ptr);
@@ -343,6 +347,7 @@ int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *
     size_t l_sign_size = dap_sign_get_size(l_sign);
     *a_data = DAP_REALLOC(*a_data, (*a_size + l_sign_size) * sizeof(uint8_t));
     if (!*a_data) {
+        DAP_DELETE(l_sign);
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return 0;
     }
@@ -916,8 +921,9 @@ static void s_request_error(int a_err_code, void * a_obj)
  * @param a_response_size
  * @param a_obj
  */
-static void s_request_response(void * a_response, size_t a_response_size, void * a_obj)
+static void s_request_response(void * a_response, size_t a_response_size, void * a_obj, http_status_code_t a_http_code)
 {
+    (void)a_http_code;
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);
     l_client_pvt->http_client = NULL;

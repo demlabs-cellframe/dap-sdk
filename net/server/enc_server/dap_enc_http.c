@@ -2,9 +2,9 @@
  Copyright (c) 2017-2018 (c) Project "DeM Labs Inc" https://github.com/demlabsinc
   All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -46,7 +46,7 @@
 #include "include/dap_enc_http.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_msrln.h"
-#include "include/http_status_code.h"
+#include "http_status_code.h"
 #include "dap_http_ban_list_client.h"
 #include "json.h"
 #include "dap_http_ban_list_client.h"

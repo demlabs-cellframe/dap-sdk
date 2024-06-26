@@ -441,7 +441,7 @@ const char *dap_uint256_to_char(uint256_t a_uint256, const char **a_frac)
         return s_buf;
 
     int l_len;
-    
+
     if ( 0 < (l_len = (l_strlen - DATOSHI_DEGREE)) ) {
         memcpy(s_buf_frac, s_buf, l_len);
         memcpy(s_buf_frac + l_len + 1, s_buf + l_len, DATOSHI_DEGREE);
@@ -456,7 +456,7 @@ const char *dap_uint256_to_char(uint256_t a_uint256, const char **a_frac)
     }
     l_c1 = s_buf_frac + l_strlen - 1;
     while (*l_c1-- == '0' && *l_c1 != '.')
-        --l_strlen; 
+        --l_strlen;
     s_buf_frac[l_strlen] = '\0';
     *a_frac = s_buf_frac;
     return s_buf;
@@ -492,7 +492,7 @@ const char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_
     char    *l_src_c = a_str_decimal + l_new_len,
             *l_dst_c = l_res + l_new_len,
             l_inc = *l_src_c >= '5';
-    
+
     while ( l_src_c > a_str_decimal && (*l_src_c >= '5' || l_inc) ) {
         if (*--l_src_c == '9') {
             l_inc = 1;
@@ -516,7 +516,7 @@ const char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_
     } else {
         ++l_res;
     }
-    
+
     *(l_res + l_new_len) = '\0';
     return l_res;
 }

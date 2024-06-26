@@ -153,6 +153,7 @@ bool s_proc_thread_reader(void *a_arg)
         l_oncoming_pkt->last_hash = c_dap_global_db_driver_hash_blank;
         dap_stream_ch_pkt_send_by_addr(l_sender_addr, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST,
                                        l_oncoming_pkt, l_pkt_size);
+        DAP_DEL_Z(l_oncoming_pkt);
     }
     if (!l_ret)
         DAP_DELETE(a_arg);
@@ -210,6 +211,7 @@ static bool s_process_request(void *a_arg)
     }
     dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
     dap_global_db_pkt_pack_t *l_pkt_out = dap_global_db_driver_get_by_hash(l_group, l_hashes, l_pkt->hashes_count);
+
     if (l_pkt_out) {
         debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_RECORD_PACK packet for group %s with records count %u",
                                                                                                 l_group, l_pkt_out->obj_count);

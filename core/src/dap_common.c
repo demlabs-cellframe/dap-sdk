@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2019
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -282,6 +282,7 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, .
         uint64_t l_size = va_arg(l_args, uint64_t);
         if (l_shift_mem + l_size > a_size) {
             log_it(L_ERROR, "Error size in the object deserialize. %"DAP_UINT64_FORMAT_U" > %"DAP_UINT64_FORMAT_U"", l_shift_mem + l_size, a_size);
+            va_end(l_args);
             return -2;
         }
         memcpy(l_arg, a_data + l_shift_mem, l_size);

@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2020
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -25,6 +25,7 @@
 #pragma once
 
 #include "dap_json_rpc_response.h"
+#include "http_status_code.h"
 #include "uthash.h"
 
 #ifdef __cplusplus
@@ -48,7 +49,7 @@ void dap_json_rpc_response_handler(dap_json_rpc_response_t *a_response);
 
 uint64_t dap_json_rpc_response_get_new_id(void);
 
-void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj);
+void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj, http_status_code_t http_code);
 
 #ifdef __cplusplus
 }

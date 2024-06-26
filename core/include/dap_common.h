@@ -7,9 +7,9 @@
  * Copyright  (c) 2017-2019
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -299,6 +299,10 @@ DAP_STATIC_INLINE uint64_t dap_page_rounddown(uint64_t a) {
 }
 
 #ifdef DAP_OS_WINDOWS
+#define SIZE_64KB ( 1 << 16 )
+DAP_STATIC_INLINE uint64_t dap_64k_rounddown(uint64_t a) {
+    return a & ( ~(SIZE_64KB - 1) ); 
+}
 typedef struct iovec {
     void    *iov_base; /* Data */
     size_t  iov_len; /* ... and its' size */
@@ -584,8 +588,7 @@ static const uint16_t s_ascii_table_data[256] = {
 #define dap_ascii_isprint(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_PRINT)
 #define dap_ascii_isxdigit(c) (s_ascii_table_data[(unsigned char) (c)] & DAP_ASCII_XDIGIT)
 
-
-
+static void * ( *const volatile memset_safe ) (void*, int, size_t) = memset;
 
 DAP_STATIC_INLINE void DAP_AtomicLock( dap_spinlock_t *lock )
 {

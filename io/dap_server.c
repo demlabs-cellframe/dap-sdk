@@ -495,13 +495,13 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
 #endif
         l_es_new->worker = l_worker;
         l_es_new->last_time_active = time(NULL);
-        if (l_es_new->callbacks.new_callback)
-            l_es_new->callbacks.new_callback(l_es_new, NULL);
-        l_es_new->is_initalized = true;
         if (dap_worker_add_events_socket_unsafe(l_worker, l_es_new)) {
             log_it(L_CRITICAL, "Can't add event socket's handler to worker i/o poll mechanism with error %d", errno);
             return;
         }
+        if (l_es_new->callbacks.new_callback)
+            l_es_new->callbacks.new_callback(l_es_new, NULL);
+        l_es_new->is_initalized = true;
         debug_if(g_debug_reactor, L_INFO, "Direct addition of esocket %p uuid 0x%"DAP_UINT64_FORMAT_x" to worker %d",
                  l_es_new, l_es_new->uuid, l_worker->id);
     } else

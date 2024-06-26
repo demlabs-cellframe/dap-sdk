@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2018
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -77,4 +77,11 @@ int dap_chain_hash_fast_from_base58_str(const char *a_base58_str,  dap_chain_has
 int dap_chain_hash_fast_from_str( const char *a_hash_str, dap_chain_hash_fast_t *a_hash)
 {
     return dap_chain_hash_fast_from_hex_str(a_hash_str, a_hash) && dap_chain_hash_fast_from_base58_str(a_hash_str, a_hash);
+}
+
+const char *dap_chain_hash_fast_to_str_static(const dap_hash_fast_t *a_hash)
+{
+    _Thread_local static char s_hash_str[DAP_HASH_FAST_STR_SIZE];
+    return dap_chain_hash_fast_to_str(a_hash, s_hash_str, sizeof(s_hash_str)) == DAP_CHAIN_HASH_FAST_STR_SIZE
+           ? s_hash_str : NULL;
 }
