@@ -330,8 +330,8 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     // create new key2
     dap_enc_key_t *key2 = dap_enc_key_new(key_type);
     // Deserialize key2
-    dap_enc_key_deserialize_pub_key(key2, l_data_pub_read, l_data_pub_size);
-    dap_enc_key_deserialize_priv_key(key2, l_data_priv_read, l_data_priv_size);
+    dap_assert(!dap_enc_key_deserialize_pub_key(key2, l_data_pub_read, l_data_pub_size), "Pub key deserialize");
+    dap_assert(!dap_enc_key_deserialize_priv_key(key2, l_data_priv_read, l_data_priv_size), "Priv key deserialize");
 
     DAP_DEL_MULTY(l_data_pub, l_data_pub_read, l_data_priv, l_data_priv_read);
 

@@ -302,7 +302,6 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
 uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_out);
 int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
 int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
-int dap_enc_key_deserialize_pub_key_old(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
 
 uint8_t *dap_enc_key_serialize(dap_enc_key_t *a_key, size_t *a_buflen);
 dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size);
