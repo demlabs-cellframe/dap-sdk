@@ -828,8 +828,14 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
         }
 
+        if (l_dec_pkt_size < sizeof(l_ch_pkt->hdr)) {
+            log_it(L_WARNING, "Input: decoded size %zu is lesser than size of packet header %zu", l_dec_pkt_size, sizeof(l_ch_pkt->hdr));
+            l_is_clean_fragments = true;
+            break;
+        }
         if (l_dec_pkt_size != l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr)) {
-            log_it(L_WARNING, "Input: decoded packet has bad size = %zu, decoded size = %zu", l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr), l_dec_pkt_size);
+            log_it(L_WARNING, "Input: decoded packet has bad size = %zu, decoded size = %zu", l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr),
+                                                                                              l_dec_pkt_size);
             l_is_clean_fragments = true;
             break;
         }
@@ -868,7 +874,11 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         }
     } break;
     case STREAM_PKT_TYPE_SERVICE_PACKET: {
-        stream_srv_pkt_t *l_srv_pkt = (stream_srv_pkt_t *)a_pkt->data;
+        if (a_pkt_size != sizeof(dap_stream_pkt_t) + sizeof(dap_stream_srv_pkt_t)) {
+            log_it(L_WARNING, "Input: incorrect service packet size %zu, estimated %zu", a_pkt_size - sizeof(dap_stream_pkt_t), sizeof(dap_stream_srv_pkt_t));
+            break;
+        }
+        dap_stream_srv_pkt_t *l_srv_pkt = (dap_stream_srv_pkt_t *)a_pkt->data;
         uint32_t l_session_id = l_srv_pkt->session_id;
         s_check_session(l_session_id, a_stream->esocket);
     } break;
