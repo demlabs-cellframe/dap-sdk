@@ -127,9 +127,10 @@ file( GLOB CRYPTO_SRCS
       ${SPHINCS_SRCS}
 ) 
 
-if (BUILD_WITH_TPS_TEST)
+if (BUILD_WITH_ECDSA)
     file (GLOB ECDSA_SRC src/sig_ecdsa/*.c)
     set (CRYPTO_SRCS ${CRYPTO_SRCS} ${ECDSA_SRC})
+    add_definitions("-DDAP_ECDSA")
 else()
     list (FILTER CRYPTO_SRCS EXCLUDE REGEX ".*ecdsa.c")
 endif()

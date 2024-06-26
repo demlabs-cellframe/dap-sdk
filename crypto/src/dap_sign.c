@@ -247,7 +247,7 @@ dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
             return NULL;
         } else {
             size_t l_sign_ser_size = l_sign_unserialized_size;
-            uint8_t *l_sign_ser = dap_enc_key_serialize_sign(a_key, l_sign_unserialized, &l_sign_ser_size);
+            uint8_t *l_sign_ser = dap_enc_key_serialize_sign(a_key->type, l_sign_unserialized, &l_sign_ser_size);
             if ( l_sign_ser ){
                 dap_sign_t *l_ret = NULL;
                 DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_sign_t, sizeof(dap_sign_hdr_t) + l_sign_ser_size + l_pub_key_size, NULL, l_sign_unserialized, l_pub_key, l_sign_ser);
@@ -404,7 +404,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
 
     size_t l_sign_data_size = a_chain_sign->header.sign_size;
     // deserialize signature
-    uint8_t *l_sign_data = dap_enc_key_deserialize_sign(l_key, l_sign_data_ser, &l_sign_data_size);
+    uint8_t *l_sign_data = dap_enc_key_deserialize_sign(l_key->type, l_sign_data_ser, &l_sign_data_size);
 
     if ( !l_sign_data ){
         log_it(L_WARNING,"Incorrect signature, can't deserialize signature's data");
