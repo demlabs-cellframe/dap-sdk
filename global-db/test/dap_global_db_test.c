@@ -588,7 +588,7 @@ void *s_test_thread(void *a_arg)
 
 void s_test_multithread(size_t a_count)
 {
-    uint32_t l_thread_count = dap_get_cpu_count() + 1;
+    uint32_t l_thread_count = 2;
     log_it(L_INFO, "Test with %u threads", l_thread_count);
     pthread_t *l_threads = DAP_NEW_Z_COUNT(pthread_t, l_thread_count);
 

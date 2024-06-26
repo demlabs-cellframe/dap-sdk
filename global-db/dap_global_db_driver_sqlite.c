@@ -222,8 +222,8 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
             return NULL;
         }
         s_db_sqlite_prepare_connection(s_conn->conn);
-        log_it(L_DEBUG, "SQL connection #%d is created @%p", s_conn->idx, s_conn);
         s_conn->idx = l_conn_idx++;
+        log_it(L_DEBUG, "SQL connection #%d is created @%p", s_conn->idx, s_conn);
         s_conn_list = dap_list_append(s_conn_list, s_conn);
         pthread_rwlock_unlock(&s_conn_list_rwlock);
     }
