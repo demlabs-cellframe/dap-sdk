@@ -16,7 +16,7 @@ dap_enc_key_type_t s_key_type_arr[] = {
         // DAP_ENC_KEY_TYPE_SIG_PICNIC,
         DAP_ENC_KEY_TYPE_SIG_FALCON,
         DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,
-#ifdef DAP_TPS_TEST
+#ifdef DAP_ECDSA
         DAP_ENC_KEY_TYPE_SIG_ECDSA,
 #endif
         DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK };
@@ -276,7 +276,7 @@ static int s_sign_verify_tests_run(int a_times)
     l_ret |= s_sign_verify_test_becnhmark("DILITHIUM", DAP_ENC_KEY_TYPE_SIG_DILITHIUM, a_times);
     l_ret |= s_sign_verify_test_becnhmark("FALCON", DAP_ENC_KEY_TYPE_SIG_FALCON, a_times);
     l_ret |= s_sign_verify_test_becnhmark("SPHINCSPLUS", DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, a_times);
-#ifdef DAP_TPS_TEST
+#ifdef DAP_ECDSA
     l_ret |= s_sign_verify_test_becnhmark("ECDSA", DAP_ENC_KEY_TYPE_SIG_ECDSA, a_times);
 #endif
     l_ret |= s_sign_verify_test_becnhmark("SHIPOVNIK", DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK, a_times);

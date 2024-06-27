@@ -76,7 +76,7 @@ bool dap_enc_debug_more()
  */
 size_t dap_enc_code_out_size(dap_enc_key_t* a_key, const size_t a_buf_in_size, dap_enc_data_type_t type)
 {
-    size_t raw_encode_data_size = dap_enc_key_get_enc_size(a_key, a_buf_in_size);
+    size_t raw_encode_data_size = dap_enc_key_get_enc_size(a_key->type, a_buf_in_size);
     if(raw_encode_data_size == 0) {
         log_it(L_ERROR, "dap_enc_key_get_enc_size return 0");
         return 0;
@@ -95,7 +95,7 @@ size_t dap_enc_code_out_size(dap_enc_key_t* a_key, const size_t a_buf_in_size, d
  */
 size_t dap_enc_decode_out_size(dap_enc_key_t* a_key, const size_t a_buf_in_size, dap_enc_data_type_t type)
 {
-    size_t raw_decode_data_size = dap_enc_key_get_dec_size(a_key, a_buf_in_size);
+    size_t raw_decode_data_size = dap_enc_key_get_dec_size(a_key->type, a_buf_in_size);
     if(raw_decode_data_size == 0) {
         log_it(L_ERROR, "dap_enc_key_get_enc_size return 0");
         return 0;

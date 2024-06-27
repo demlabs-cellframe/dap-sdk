@@ -1169,6 +1169,7 @@ int dap_global_db_set_multiple_zc(const char *a_group, dap_global_db_obj_t *a_va
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->values = a_values;
+    l_msg->value_is_pinned = false;
     l_msg->values_count = a_values_count;
     l_msg->callback_arg = a_arg;
     l_msg->callback_results = a_callback;
@@ -1190,19 +1191,12 @@ int dap_global_db_set_multiple_zc(const char *a_group, dap_global_db_obj_t *a_va
  */
 static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
 {
-    int l_ret = -1;
+    int l_ret = 0;
     size_t i=0;
     if(a_msg->values_count>0) {
         dap_store_obj_t l_store_obj = {};
-        l_ret = 0;
         for(;  i < a_msg->values_count && l_ret == 0  ; i++ ) {
-            l_store_obj.flags = a_msg->values[i].is_pinned ? DAP_GLOBAL_DB_RECORD_PINNED : 0;
-            l_store_obj.key =  a_msg->values[i].key;
-            l_store_obj.group = a_msg->group;
-            l_store_obj.value = a_msg->values[i].value;
-            l_store_obj.value_len = a_msg->values[i].value_len;
-            l_store_obj.timestamp = a_msg->values[i].timestamp;
-            l_ret = s_store_obj_apply(a_msg->dbi, &l_store_obj);
+            l_ret = s_set_sync_with_ts(a_msg->dbi, a_msg->group, a_msg->values[i].key, a_msg->values[i].value, a_msg->values[i].value_len, a_msg->value_is_pinned, a_msg->values[i].timestamp);
         }
     }
     if(a_msg->callback_results) {

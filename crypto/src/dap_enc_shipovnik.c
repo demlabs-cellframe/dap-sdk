@@ -65,16 +65,22 @@ void dap_enc_sig_shipovnik_signature_delete(void *a_sig){
 void dap_enc_sig_shipovnik_private_key_delete(void* privateKey) {
     dap_return_if_fail(!!privateKey);
     memset_safe((uint8_t*)privateKey, 0, SHIPOVNIK_SECRETKEYBYTES);
+    DAP_DELETE(privateKey);
 }
 
 void dap_enc_sig_shipovnik_public_key_delete(void* publicKey) {
     dap_return_if_fail(!!publicKey);
     memset_safe((uint8_t*)publicKey, 0, SHIPOVNIK_PUBLICKEYBYTES);
+    DAP_DELETE(publicKey);
 }
 
 void dap_enc_sig_shipovnik_private_and_public_keys_delete(dap_enc_key_t *a_key) {
         dap_enc_sig_shipovnik_private_key_delete(a_key->priv_key_data);
         dap_enc_sig_shipovnik_public_key_delete(a_key->pub_key_data);
+        a_key->priv_key_data = NULL;
+        a_key->pub_key_data = NULL;
+        a_key->priv_key_data_size = 0;
+        a_key->pub_key_data_size = 0;
 }
 
 
