@@ -97,6 +97,8 @@ void dap_enc_sig_tesla_key_delete(dap_enc_key_t *key)
     tesla_private_and_public_keys_delete(key->priv_key_data, key->pub_key_data);
     key->priv_key_data = NULL;
     key->pub_key_data = NULL;
+    key->priv_key_data_size = 0;
+    key->pub_key_data_size = 0;
 }
 
 /* Serialize a signature */

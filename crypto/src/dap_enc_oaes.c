@@ -38,6 +38,7 @@ void dap_enc_oaes_key_delete(struct dap_enc_key *a_key)
     if(ctx) {
         oaes_free(&ctx); // free(a_key->_inheritor);
         a_key->_inheritor_size = 0;
+        a_key->_inheritor = NULL;
     }
 }
 
