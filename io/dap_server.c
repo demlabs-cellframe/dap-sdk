@@ -355,7 +355,7 @@ static int s_server_run(dap_server_t *a_server)
 // func work
     dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
 
-    if (bind(l_es->socket, (struct sockaddr*)&l_es->addr_storage, sizeof(struct sockaddr_storage)) < 0) {
+    if (bind(l_es->socket, (struct sockaddr*)&l_es->addr_storage, sizeof(struct sockaddr_in)) < 0) {
 #ifdef DAP_OS_WINDOWS
         log_it(L_ERROR, "Bind error: %d", WSAGetLastError());
         closesocket(l_es->socket);
