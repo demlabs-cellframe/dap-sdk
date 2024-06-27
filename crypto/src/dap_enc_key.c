@@ -787,8 +787,8 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
             a_key->priv_key_data_size = a_buflen;
             DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -4, NULL);
             memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
-            dap_enc_key_update(a_key);
     }
+    dap_enc_key_update(a_key);
     return 0;
 }
 
@@ -842,8 +842,8 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
             a_key->pub_key_data_size = a_buflen;
             DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1, NULL);
             memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
-            dap_enc_key_update(a_key);
     }
+    dap_enc_key_update(a_key);
     return 0;
 }
 
@@ -1104,7 +1104,7 @@ void dap_enc_key_delete(dap_enc_key_t * a_key)
         s_callbacks[a_key->type].delete_callback(a_key);
     } else {
         log_it(L_WARNING, "No callback for key delete to %s enc key. LEAKS CAUTION!", dap_enc_get_type_name(a_key->type));
-        DAP_DEL_MULTY(a_key->pub_key_data, a_key->priv_key_data, a_key->_inheritor, a_key);
+        DAP_DEL_MULTY(a_key->pub_key_data, a_key->priv_key_data, a_key->_inheritor, a_key->pbk_list_data, a_key);
     }
     DAP_DELETE(a_key);
 }

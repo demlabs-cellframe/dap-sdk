@@ -374,7 +374,7 @@ dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign)
     dap_enc_key_t * l_ret =  dap_enc_key_new(l_type);
     // deserialize public key
     if (dap_enc_key_deserialize_pub_key(l_ret, l_pkey, l_pkey_size)) {
-        log_it(L_ERROR, "Error in enc key deserialize");
+        log_it(L_ERROR, "Error in enc pub key deserialize");
         DAP_DEL_Z(l_ret);
     }
     return l_ret;
