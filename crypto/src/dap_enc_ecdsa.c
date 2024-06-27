@@ -224,4 +224,6 @@ void dap_enc_sig_ecdsa_private_and_public_keys_delete(dap_enc_key_t* a_key) {
         dap_enc_sig_ecdsa_public_key_delete(a_key->pub_key_data);
         a_key->pub_key_data = NULL;
         a_key->priv_key_data = NULL;
+        a_key->pub_key_data_size = 0;
+        a_key->priv_key_data_size = 0;
 }

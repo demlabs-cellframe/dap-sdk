@@ -758,7 +758,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-            if (!s_callbacks[a_key->type].deser_priv_key_size) {
+            if (!s_callbacks[a_key->type].deser_priv_key) {
                 log_it(L_ERROR, "No callback for private key deserialize to %s enc key", dap_enc_get_type_name(a_key->type));
                 return -2;
             }
@@ -775,12 +775,17 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
                 a_key->priv_key_data_size = 0;
                 return -3;
             }
-            a_key->priv_key_data_size = s_callbacks[a_key->type].deser_priv_key_size(NULL);
+            if (!s_callbacks[a_key->type].deser_priv_key_size) {
+                log_it(L_DEBUG, "No callback for private key deserialize size calc to %s enc key", dap_enc_get_type_name(a_key->type));
+                a_key->priv_key_data_size = a_buflen;
+            } else {
+                a_key->priv_key_data_size = s_callbacks[a_key->type].deser_priv_key_size(NULL);
+            }
             break;
         default:
             DAP_DEL_Z(a_key->priv_key_data);
             a_key->priv_key_data_size = a_buflen;
-            DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -1, NULL);
+            DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -4, NULL);
             memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
             dap_enc_key_update(a_key);
     }
@@ -825,7 +830,12 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
                 a_key->pub_key_data_size = 0;
                 return -3;
             }
-            a_key->pub_key_data_size = s_callbacks[a_key->type].deser_pub_key_size(NULL);
+            if (!s_callbacks[a_key->type].deser_pub_key_size) {
+                log_it(L_DEBUG, "No callback for public key deserialize size calc to %s enc key", dap_enc_get_type_name(a_key->type));
+                a_key->pub_key_data_size = a_buflen;
+            } else {
+                a_key->pub_key_data_size = s_callbacks[a_key->type].deser_pub_key_size(NULL);
+            }
             break;
         default:
             DAP_DEL_Z(a_key->pub_key_data);
@@ -1094,9 +1104,9 @@ void dap_enc_key_delete(dap_enc_key_t * a_key)
         s_callbacks[a_key->type].delete_callback(a_key);
     } else {
         log_it(L_WARNING, "No callback for key delete to %s enc key. LEAKS CAUTION!", dap_enc_get_type_name(a_key->type));
+        DAP_DEL_MULTY(a_key->pub_key_data, a_key->priv_key_data, a_key->_inheritor, a_key);
     }
-    /* a_key->_inheritor must be cleaned in delete_callback func */
-    DAP_DEL_MULTY(a_key->pub_key_data, a_key->priv_key_data, a_key);
+    DAP_DELETE(a_key);
 }
 
 /**

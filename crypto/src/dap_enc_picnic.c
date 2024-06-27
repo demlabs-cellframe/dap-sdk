@@ -61,14 +61,12 @@ void dap_enc_sig_picnic_key_new(dap_enc_key_t *key) {
 
 void dap_enc_sig_picnic_key_delete(dap_enc_key_t *key)
 {
-    if(key->_inheritor_size > 0)
-        free(key->_inheritor);
-    key->_inheritor = NULL;
-    key->_inheritor_size = 0;
-    // free memory will be in dap_enc_key_delete()
-    //picnic_keypair_delete((picnic_privatekey_t*) key->priv_key_data, (picnic_publickey_t *) key->pub_key_data);
+    DAP_DEL_Z(key->priv_key_data);
+    DAP_DEL_Z(key->pub_key_data);
+    DAP_DEL_Z(key->_inheritor);
     key->priv_key_data_size = 0;
     key->pub_key_data_size = 0;
+    key->_inheritor_size = 0;
 }
 
 void dap_enc_sig_picnic_update(dap_enc_key_t *a_key)

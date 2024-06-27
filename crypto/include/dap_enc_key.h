@@ -207,7 +207,6 @@ typedef struct dap_enc_key {
         byte_t * shared_key;
     };
 
-
     size_t pub_key_data_size;
     //unsigned char * pub_key_data; // can be null if enc symmetric
     void * pub_key_data; // can be null if enc symmetric
@@ -226,9 +225,9 @@ typedef struct dap_enc_key {
     dap_enc_gen_alice_shared_key gen_alice_shared_key;
     dap_enc_gen_bob_shared_key gen_bob_shared_key;
 
-    void *pbkListdata;
-    size_t pbkListsize;
-    dap_enc_get_allpbk_list getallpbkList;
+    void *pbk_list_data;  // todo use only in ringct20, move to _inheritor?
+    size_t pbk_list_size;
+    dap_enc_get_allpbk_list get_all_pbk_list;
 
     void * _pvt; // PVT part of the object
 
