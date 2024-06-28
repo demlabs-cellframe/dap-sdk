@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2020
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -24,9 +24,7 @@
 
 #pragma once
 
-#include "dap_http_simple.h"
 #include "dap_json_rpc_errors.h"
-#include "json.h"
 
 #ifdef __cplusplus
 extern "C"{
@@ -122,9 +120,6 @@ void json_print_value(struct json_object *obj, const char *key, int indent_level
  *         and -3 if the JSON object length is 0.
  */
 int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name);
-
-void dap_json_rpc_response_send(dap_json_rpc_response_t *a_response, dap_http_simple_t *a_client);
-
 
 #ifdef __cplusplus
 }

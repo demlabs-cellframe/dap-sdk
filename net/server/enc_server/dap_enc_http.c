@@ -2,9 +2,9 @@
  Copyright (c) 2017-2018 (c) Project "DeM Labs Inc" https://github.com/demlabsinc
   All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -46,7 +46,7 @@
 #include "include/dap_enc_http.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_msrln.h"
-#include "include/http_status_code.h"
+#include "http_status_code.h"
 #include "dap_http_ban_list_client.h"
 #include "json.h"
 #include "dap_http_ban_list_client.h"
@@ -142,6 +142,13 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                 return;
             }
             l_bias += dap_sign_get_size(l_sign);
+            dap_stream_node_addr_t l_client_pkey_node_addr = dap_stream_node_addr_from_sign(l_sign);
+            const char *l_client_node_addr_str = dap_stream_node_addr_to_str_static(l_client_pkey_node_addr);
+            if (dap_http_ban_list_client_check(l_client_node_addr_str, NULL, NULL)) {
+                log_it(L_ERROR, "Client %s is banned.", l_client_node_addr_str);
+                *return_code = Http_Status_Forbidden;
+                return;
+            }
         }
         if (l_sign_validated_count != l_sign_count) {
             log_it(L_ERROR, "Can't authorize all %zu signs", l_sign_count);

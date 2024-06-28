@@ -30,3 +30,5 @@ void dap_notify_server_deinit();
 DAP_PRINTF_ATTR(2, 3) int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char *a_format, ...);
 int dap_notify_server_send_mt(const char * a_data);
 DAP_PRINTF_ATTR(1, 2) int dap_notify_server_send_f_mt(const char *a_format, ...);
+
+void dap_notify_srv_set_callback_new(dap_events_socket_callback_t);

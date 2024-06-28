@@ -715,6 +715,8 @@ int json_commands(const char * a_name) {
             "tx_cond_remove",
             "tx_cond_unspent_find",
             "chain_ca_copy",
+            "block",
+            "token",
             "net"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
@@ -756,6 +758,7 @@ char    *str_header;
             data_len = atoi(l_str_ptr + strlen(l_cont_len_str));
         } else {
             log_it(L_ERROR, "HTTP request without length");
+            DAP_FREE(str_header);
             break;
         }
         DAP_FREE(str_header);
@@ -927,7 +930,7 @@ static void* s_thread_main_func(void *args)
             break;
         }
         // Serve client connection on automatically chosen processing thread
-        dap_proc_thread_callback_add(NULL, s_thread_one_client_func, DAP_INT_TO_POINTER(newsockfd));
+        dap_proc_thread_callback_add_pri(NULL, s_thread_one_client_func, DAP_INT_TO_POINTER(newsockfd), DAP_QUEUE_MSG_PRIORITY_HIGH);
     };
     // close connection
     int cs = closesocket(sockfd);

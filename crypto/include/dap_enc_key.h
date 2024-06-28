@@ -7,9 +7,9 @@
  * Copyright  (c) 2017-2019
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -113,6 +113,9 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_KEM_KYBER512 = 23, // NIST Kyber KEM implementation
     DAP_ENC_KEY_TYPE_SIG_FALCON = 24, 
     DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS = 25,
+    DAP_ENC_KEY_TYPE_SIG_ECDSA = 26,
+    DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK=27,
+
     DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED = 100,
 
 #ifdef DAP_PQLR
@@ -222,9 +225,9 @@ typedef struct dap_enc_key {
     dap_enc_gen_alice_shared_key gen_alice_shared_key;
     dap_enc_gen_bob_shared_key gen_bob_shared_key;
 
-    void *pbkListdata;
-    size_t pbkListsize;
-    dap_enc_get_allpbk_list getallpbkList;
+    void *pbk_list_data;  // todo use only in ringct20, move to _inheritor?
+    size_t pbk_list_size;
+    dap_enc_get_allpbk_list get_all_pbk_list;
 
     void * _pvt; // PVT part of the object
 
@@ -288,8 +291,8 @@ void dap_enc_key_deinit(void);
 
 const char *dap_enc_get_type_name(dap_enc_key_type_t a_key_type);
 dap_enc_key_type_t dap_enc_key_type_find_by_name(const char *a_name);
-size_t dap_enc_key_get_enc_size(dap_enc_key_t * a_key, const size_t a_buf_in_size);
-size_t dap_enc_key_get_dec_size(dap_enc_key_t * a_key, const size_t a_buf_in_size);
+size_t dap_enc_key_get_enc_size(dap_enc_key_type_t a_key_type, const size_t a_buf_in_size);
+size_t dap_enc_key_get_dec_size(dap_enc_key_type_t a_key_type, const size_t a_buf_in_size);
 size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key);
 
 uint8_t* dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len);
@@ -298,7 +301,6 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
 uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_out);
 int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
 int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
-int dap_enc_key_deserialize_pub_key_old(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen);
 
 uint8_t *dap_enc_key_serialize(dap_enc_key_t *a_key, size_t *a_buflen);
 dap_enc_key_t* dap_enc_key_deserialize(const void *buf, size_t a_buf_size);

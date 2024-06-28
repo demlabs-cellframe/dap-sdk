@@ -2,9 +2,9 @@
  Copyright (c) 2017-2018 (c) Project "DeM Labs Inc" https://github.com/demlabsinc
   All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -34,10 +34,10 @@
 #include "dap_sign.h"
 #include "dap_cert.h"
 #include "dap_pkey.h"
-#include "dap_enc_ks.h"
 #include "dap_strfuncs.h"
+#include "dap_enc_ks.h"
 
-#define STREAM_KEEPALIVE_TIMEOUT 3   // How  often send keeplive messages (seconds)
+#define STREAM_KEEPALIVE_TIMEOUT    3   // How  often send keeplive messages (seconds)
 
 typedef struct dap_stream_ch dap_stream_ch_t;
 typedef struct dap_stream_worker dap_stream_worker_t;
@@ -119,13 +119,6 @@ DAP_STATIC_INLINE char* dap_stream_node_addr_to_str(dap_stream_node_addr_t a_add
 }
 
 
-DAP_STATIC_INLINE char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address)
-{
-    static _Thread_local char s_buf[23] = { '\0' };
-    dap_snprintf(s_buf, sizeof(s_buf), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
-    return s_buf;
-}
-
 DAP_STATIC_INLINE void dap_stream_node_addr_from_hash(dap_hash_fast_t *a_hash, dap_stream_node_addr_t *a_node_addr)
 {
     // Copy fist four and last four octets of hash to fill node addr
@@ -164,7 +157,7 @@ int dap_stream_add_to_list(dap_stream_t *a_stream);
 int dap_stream_delete_addr(dap_stream_node_addr_t a_addr, bool a_full);
 int dap_stream_delete_prep_addr(uint64_t a_num_id, void *a_pointer_id);
 int dap_stream_add_stream_info(dap_stream_t *a_stream, uint64_t a_id);
-int dap_stream_change_id(void *a_old, uint64_t a_new);
+
 dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr, dap_worker_t **a_worker);
 dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr);
 dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign);
@@ -172,5 +165,3 @@ dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert);
 dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey);
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count);
 void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count);
-void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size);
-dap_stream_node_addr_t dap_stream_get_random_link();

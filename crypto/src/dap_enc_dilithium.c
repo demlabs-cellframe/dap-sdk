@@ -95,6 +95,8 @@ void dap_enc_sig_dilithium_key_delete(dap_enc_key_t *a_key)
 
     a_key->pub_key_data = NULL;
     a_key->priv_key_data = NULL;
+    a_key->pub_key_data_size = 0;
+    a_key->priv_key_data_size = 0;
 }
 
 /* Serialize a signature */

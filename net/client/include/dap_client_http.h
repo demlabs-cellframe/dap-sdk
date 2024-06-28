@@ -3,9 +3,9 @@
  * Alexander Lysikov <alexander.lysikov@demlabs.net>
  * DeM Labs Inc.   https://demlabs.net
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
- DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+ DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation, either version 3 of the License, or
  (at your option) any later version.
@@ -24,13 +24,14 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "dap_worker.h"
+#include "http_status_code.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef void (*dap_client_http_callback_error_t)(int, void *); // Callback for specific http client operations
 typedef void (*dap_client_http_callback_error_ext_t)(int,int , void *,size_t, void *); // Callback with extended error processing
-typedef void (*dap_client_http_callback_data_t)(void *, size_t, void *); // Callback for specific http client operations
+typedef void (*dap_client_http_callback_data_t)(void *, size_t, void *, http_status_code_t); // Callback for specific http client operations
 
 typedef struct dap_client_http {
     // TODO move unnessassary fields to dap_client_http_pvt privat structure

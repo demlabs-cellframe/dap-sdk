@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2018
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -33,7 +33,7 @@
 
 #define LOG_TAG "dap_cert_file"
 
-static const char s_key_inheritor[] = "Inheritor";
+static const char s_key_inheritor[] = "inheritor";
 
 /**
  * @brief dap_cert_file_save
@@ -117,14 +117,25 @@ void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t
         l_mem_shift += sizeof(uint32_t);
         dap_cert_metadata_type_t l_meta_type = (dap_cert_metadata_type_t)a_data[l_mem_shift++];
         const uint8_t *l_value = &a_data[l_mem_shift];
-        l_mem_shift += l_value_size;
         uint16_t l_tmp16;
         uint32_t l_tmp32;
         uint64_t l_tmp64;
         switch (l_meta_type) {
         case DAP_CERT_META_STRING:
         case DAP_CERT_META_SIGN:
+            break;
         case DAP_CERT_META_CUSTOM:
+            if(!strcmp(l_key_str, s_key_inheritor)) {
+                if (a_cert->enc_key->_inheritor) {
+                    log_it(L_DEBUG, "Few inheritor records in cert metadata");
+                    break;
+                }
+                DAP_NEW_Z_SIZE_RET(a_cert->enc_key->_inheritor, byte_t, l_value_size, NULL);
+                a_cert->enc_key->_inheritor_size = l_value_size;
+                a_cert->enc_key->_inheritor = DAP_DUP_SIZE(a_data + l_mem_shift, a_cert->enc_key->_inheritor_size);
+                l_mem_shift += l_value_size;
+                continue;
+            }
             break;
         default:
             switch (l_value_size) {
@@ -160,6 +171,7 @@ void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t
                 return;
             }
         }
+        l_mem_shift += l_value_size;
         l_meta_arr[l_meta_items_count++] = l_new_meta;
     }
     if(l_meta_items_count){

@@ -125,6 +125,7 @@ typedef struct queue_entry {
 #define FLAG_KEEP_INHERITOR(f)  (f & DAP_SOCK_KEEP_INHERITOR)
 #endif
 // If set - queue limited to sizeof(void*) size of data transmitted
+#define DAP_SOCK_FILE_MAPPED       BIT( 7 )
 #define DAP_SOCK_QUEUE_PTR         BIT( 8 )
 
 #define FLAG_CLOSE(f)           (f & DAP_SOCK_SIGNAL_CLOSE)
@@ -320,7 +321,7 @@ typedef struct dap_events_socket {
 
     int64_t kqueue_data;
 #elif defined DAP_EVENTS_CAPS_IOCP
-    char pending;
+    byte_t pending : 7, pending_read : 1;
 #endif
 
     dap_events_socket_callbacks_t callbacks;

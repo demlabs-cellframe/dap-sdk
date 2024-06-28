@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2018
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -112,6 +112,7 @@ size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs,
     *a_certs = l_certs = DAP_NEW_Z_SIZE(dap_cert_t*, (*a_certs_size) * sizeof(dap_cert_t*) );
     if (!l_certs) {
         log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
+        DAP_DEL_Z(l_certs_str_dup);
         return 0;
     }
     // Second pass we parse them all
@@ -180,9 +181,10 @@ int dap_cert_sign_output(dap_cert_t * a_cert, const void * a_data, size_t a_data
  * @param a_output_size_wished wished data size (don't used in current implementation)
  * @return dap_sign_t*
  */
-dap_sign_t * dap_cert_sign(dap_cert_t * a_cert, const void * a_data
-                                       , size_t a_data_size, size_t a_output_size_wished )
+dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, size_t a_output_size_wished)
 {
+    dap_return_val_if_fail(a_cert && a_cert->enc_key && a_cert->enc_key->priv_key_data &&
+                           a_cert->enc_key->priv_key_data_size && a_data && a_data_size, NULL);
     dap_sign_t *l_ret = dap_sign_create(a_cert->enc_key, a_data, a_data_size, a_output_size_wished);
 
     if (l_ret)

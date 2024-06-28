@@ -148,7 +148,11 @@ size_t dap_enc_newhope_gen_alice_shared_key(dap_enc_key_t *a_alice_key, UNUSED_A
 void dap_enc_newhope_kem_key_delete(dap_enc_key_t *a_key)
 {
     dap_return_if_pass(!a_key);
+    DAP_DEL_Z(a_key->priv_key_data);
+    DAP_DEL_Z(a_key->pub_key_data);
     DAP_DEL_Z(a_key->_inheritor);
-    a_key->_inheritor_size= 0;
+    a_key->priv_key_data_size = 0;
+    a_key->pub_key_data_size = 0;
+    a_key->_inheritor_size = 0;
 }
 

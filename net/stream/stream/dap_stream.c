@@ -2,9 +2,9 @@
  Copyright (c) 2017-2018 (c) Project "DeM Labs Inc" https://github.com/demlabsinc
   All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -37,9 +37,7 @@
 
 #include "dap_common.h"
 #include "dap_timerfd.h"
-#include "dap_events.h"
 #include "dap_context.h"
-#include "dap_events.h"
 #include "dap_stream.h"
 #include "dap_stream_pkt.h"
 #include "dap_stream_ch.h"
@@ -56,6 +54,7 @@
 #include "dap_client_pvt.h"
 #include "dap_strfuncs.h"
 #include "uthash.h"
+#include "dap_enc.h"
 #include "dap_enc_ks.h"
 #include "dap_stream_cluster.h"
 #include "dap_link_manager.h"
@@ -74,6 +73,7 @@ typedef struct authorized_stream {
     UT_hash_handle hh;
 } authorized_stream_t;
 
+static dap_cluster_t        *s_global_links_cluster = NULL;
 static pthread_rwlock_t     s_streams_lock = PTHREAD_RWLOCK_INITIALIZER;    // Lock for all tables and list under
 static dap_stream_t         *s_authorized_streams = NULL;                   // Authorized streams hashtable by addr
 static dap_stream_t         *s_streams = NULL;                              // Double-linked list
@@ -136,7 +136,7 @@ void s_stream_load_preferred_encryption_type(dap_config_t * a_config)
             s_stream_get_preferred_encryption_type = l_found_key_type;
     }
 
-    log_it(L_NOTICE,"ecryption type is set to %s", dap_enc_get_type_name(s_stream_get_preferred_encryption_type));
+    log_it(L_NOTICE, "Encryption type is set to %s", dap_enc_get_type_name(s_stream_get_preferred_encryption_type));
 }
 
 int s_stream_init_node_addr_cert()
@@ -185,6 +185,8 @@ int dap_stream_init(dap_config_t * a_config)
 #include "dap_stream_test.h"
     dap_stream_test_init();
 #endif
+
+    s_global_links_cluster = dap_cluster_new(DAP_STREAM_CLUSTER_GLOBAL, *(dap_guuid_t *)&uint128_0, DAP_CLUSTER_TYPE_SYSTEM);
 
     log_it(L_NOTICE,"Init streaming module");
 
@@ -320,8 +322,11 @@ static void s_check_session( unsigned int a_id, dap_events_socket_t *a_esocket )
 
     s_stream_states_update(l_stream);
 
+#ifdef DAP_EVENTS_CAPS_IOCP
+     a_esocket->flags |= DAP_SOCK_READY_TO_READ;
+#else
     dap_events_socket_set_readable_unsafe( a_esocket, true );
-
+#endif
 }
 
 /**
@@ -342,7 +347,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
 
     l_ret->esocket = a_http_client->esocket;
     l_ret->esocket_uuid = a_http_client->esocket->uuid;
-    l_ret->stream_worker = (dap_stream_worker_t *)a_http_client->esocket->worker->_inheritor;
+    l_ret->stream_worker = DAP_STREAM_WORKER(a_http_client->esocket->worker);
     l_ret->conn_http = a_http_client;
     l_ret->seq_id = 0;
     l_ret->client_last_seq_id_packet = (size_t)-1;
@@ -488,8 +493,12 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
                     strcpy(a_http_client->reply_reason_phrase,"OK");
                     s_stream_states_update(l_stream);
                     a_http_client->state_read = DAP_HTTP_CLIENT_STATE_DATA;
+#ifdef DAP_EVENTS_CAPS_IOCP
+                    a_http_client->esocket->flags |= DAP_SOCK_READY_TO_READ | DAP_SOCK_READY_TO_WRITE;
+#else
                     dap_events_socket_set_readable_unsafe(a_http_client->esocket,true);
                     dap_events_socket_set_writable_unsafe(a_http_client->esocket,true);
+#endif
                 }else{
                     log_it(L_ERROR,"Can't open session id %u", l_id);
                     a_http_client->reply_status_code = Http_Status_NotFound;
@@ -819,8 +828,14 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
             l_dec_pkt_size = dap_stream_pkt_read_unsafe(a_stream, a_pkt, l_ch_pkt, l_pkt_dec_size);
         }
 
+        if (l_dec_pkt_size < sizeof(l_ch_pkt->hdr)) {
+            log_it(L_WARNING, "Input: decoded size %zu is lesser than size of packet header %zu", l_dec_pkt_size, sizeof(l_ch_pkt->hdr));
+            l_is_clean_fragments = true;
+            break;
+        }
         if (l_dec_pkt_size != l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr)) {
-            log_it(L_WARNING, "Input: decoded packet has bad size = %zu, decoded size = %zu", l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr), l_dec_pkt_size);
+            log_it(L_WARNING, "Input: decoded packet has bad size = %zu, decoded size = %zu", l_ch_pkt->hdr.data_size + sizeof(l_ch_pkt->hdr),
+                                                                                              l_dec_pkt_size);
             l_is_clean_fragments = true;
             break;
         }
@@ -859,7 +874,11 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         }
     } break;
     case STREAM_PKT_TYPE_SERVICE_PACKET: {
-        stream_srv_pkt_t *l_srv_pkt = (stream_srv_pkt_t *)a_pkt->data;
+        if (a_pkt_size != sizeof(dap_stream_pkt_t) + sizeof(dap_stream_srv_pkt_t)) {
+            log_it(L_WARNING, "Input: incorrect service packet size %zu, estimated %zu", a_pkt_size - sizeof(dap_stream_pkt_t), sizeof(dap_stream_srv_pkt_t));
+            break;
+        }
+        dap_stream_srv_pkt_t *l_srv_pkt = (dap_stream_srv_pkt_t *)a_pkt->data;
         uint32_t l_session_id = l_srv_pkt->session_id;
         s_check_session(l_session_id, a_stream->esocket);
     } break;
@@ -947,6 +966,10 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         return false;
     dap_events_socket_uuid_t * l_es_uuid = (dap_events_socket_uuid_t*) a_arg;
     dap_worker_t * l_worker = dap_worker_get_current();
+    if (!l_worker) {
+        log_it(L_ERROR, "l_worker is NULL");
+        return false;
+    }
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
     if(l_es) {
         assert(a_server_side == !!l_es->server);
@@ -991,6 +1014,7 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
     }
     a_stream->primary = true;
     HASH_ADD(hh, s_authorized_streams, node, sizeof(a_stream->node), a_stream);
+    dap_cluster_member_add(s_global_links_cluster, &a_stream->node, 0, NULL); // Used own rwlock for this cluster members
     dap_link_manager_stream_add(&a_stream->node, a_stream->is_client_to_uplink);
     return 0;
 }
@@ -998,9 +1022,13 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
 void s_stream_delete_from_list(dap_stream_t *a_stream)
 {
     dap_return_if_fail(a_stream);
-    assert(pthread_rwlock_wrlock(&s_streams_lock) != EDEADLOCK);
+    if ( pthread_rwlock_wrlock(&s_streams_lock) == EDEADLK ) {
+        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
+        return;
+    }
     dap_stream_t *l_stream = NULL;
-    DL_DELETE(s_streams, a_stream);
+    if (a_stream->prev)
+        DL_DELETE(s_streams, a_stream);
     if (a_stream->authorized) {
         // It's an authorized stream, try to replace it in hastable
         if (a_stream->primary)
@@ -1011,8 +1039,10 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
         if (l_stream) {
             s_stream_add_to_hashtable(l_stream);
             dap_link_manager_stream_replace(&a_stream->node, l_stream->is_client_to_uplink);
-        } else
-            dap_link_manager_stream_delete(&a_stream->node);
+        } else {
+            dap_cluster_member_delete(s_global_links_cluster, &a_stream->node);
+            dap_link_manager_stream_delete(&a_stream->node); // Used own rwlock for this cluster members
+        }
     }
     pthread_rwlock_unlock(&s_streams_lock);
 }
@@ -1021,7 +1051,10 @@ int dap_stream_add_to_list(dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream, -1);
     int l_ret = 0;
-    assert(pthread_rwlock_wrlock(&s_streams_lock) != EDEADLOCK);
+    if ( pthread_rwlock_wrlock(&s_streams_lock) == EDEADLK ) {
+        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
+        return -666;
+    }
     DL_APPEND(s_streams, a_stream);
     if (a_stream->authorized)
         l_ret = s_stream_add_to_hashtable(a_stream);
@@ -1040,7 +1073,10 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr,
     dap_return_val_if_fail(a_addr && a_addr->uint64, 0);
     dap_stream_t *l_auth_stream = NULL;
     dap_events_socket_uuid_t l_ret = 0;
-    assert(!pthread_rwlock_rdlock(&s_streams_lock));
+    if ( pthread_rwlock_wrlock(&s_streams_lock) == EDEADLK ) {
+        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
+        return 0;
+    }
     HASH_FIND(hh, s_authorized_streams, a_addr, sizeof(*a_addr), l_auth_stream);
     if (l_auth_stream) {
         if (a_worker)
@@ -1048,7 +1084,7 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr,
         l_ret = l_auth_stream->esocket_uuid;
     } else if (a_worker)
         *a_worker = NULL;
-    assert(!pthread_rwlock_unlock(&s_streams_lock));
+    pthread_rwlock_unlock(&s_streams_lock);
     return l_ret;
 }
 
@@ -1058,13 +1094,16 @@ dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr)
     dap_return_val_if_fail(a_addr, l_ret);
     dap_stream_t *l_stream;
 
-    assert(pthread_rwlock_rdlock(&s_streams_lock) != EDEADLOCK);
+    if ( pthread_rwlock_wrlock(&s_streams_lock) == EDEADLK ) {
+        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
+        return NULL;
+    }
     DL_FOREACH(s_streams, l_stream) {
         if (!l_stream->authorized || a_addr->uint64 != l_stream->node.uint64)
             continue;
         dap_events_socket_uuid_ctrl_t *l_ret_item = DAP_NEW(dap_events_socket_uuid_ctrl_t);
         if (!l_ret_item) {
-            log_it(L_CRITICAL, g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             dap_list_free_full(l_ret, NULL);
             return NULL;
         }
@@ -1134,7 +1173,10 @@ static void s_stream_fill_info(dap_stream_t *a_stream, dap_stream_info_t *a_out_
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count)
 {
     dap_return_val_if_pass(!a_cluster && !s_streams, NULL);
-    assert(pthread_rwlock_rdlock(&s_streams_lock) != EDEADLOCK);
+    if ( pthread_rwlock_wrlock(&s_streams_lock) == EDEADLK ) {
+        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
+        return NULL;
+    }
     dap_stream_t *it;
     size_t l_streams_count = 0, i = 0;
     if (a_cluster) {
@@ -1186,29 +1228,4 @@ void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count)
         DAP_DEL_Z(it->channels);
     }
     DAP_DELETE(a_info);
-}
-
-void dap_stream_broadcast(const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
-{
-    assert(pthread_rwlock_rdlock(&s_streams_lock) != EDEADLOCK);
-    for (dap_stream_t *it = s_authorized_streams; it; it = it->hh.next)
-        dap_stream_ch_pkt_send_mt(it->stream_worker, it->esocket_uuid, a_ch_id, a_type, a_data, a_data_size);
-    pthread_rwlock_unlock(&s_streams_lock);
-}
-
-dap_stream_node_addr_t dap_stream_get_random_link()
-{
-    dap_stream_node_addr_t l_ret = {};
-    if (s_authorized_streams) {
-        int num = rand() % HASH_COUNT(s_authorized_streams), idx = 0;
-        pthread_rwlock_rdlock(&s_streams_lock);
-        for (dap_stream_t *it = s_authorized_streams; it; it = it->hh.next) {
-            if (idx++ == num) {
-                l_ret = it->node;
-                break;
-            }
-        }
-        pthread_rwlock_unlock(&s_streams_lock);
-    }
-    return l_ret;
 }

@@ -154,7 +154,7 @@ struct dap_client_write_args {
     byte_t data[];
 };
 
-static void s_client_write_on_worker(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
+static void s_client_write_on_worker(void *a_arg)
 {
     struct dap_client_write_args *l_args = a_arg;
     dap_client_write_unsafe(l_args->client, l_args->ch_id, l_args->type, l_args->data, l_args->data_size);
@@ -178,7 +178,7 @@ int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_ty
     return 0;
 }
 
-static void s_client_queue_clear_on_worker(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
+static void s_client_queue_clear_on_worker(void *a_arg)
 {
     dap_client_pvt_queue_clear(DAP_CLIENT_PVT((dap_client_t *)a_arg));
 }
@@ -194,37 +194,18 @@ void dap_client_queue_clear(dap_client_t *a_client)
  * @param a_chain_net_name
  * @param a_option
  */
-void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_chain_net_name)
+void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_cert_name)
 {
     static dap_cert_t *l_cert = NULL;
-    static bool l_config_read = false;
 
-    if (a_client == NULL || a_chain_net_name == NULL) {
-        log_it(L_ERROR,"Chain-net is NULL for dap_client_set_auth_cert");
+    if (a_client == NULL || a_cert_name == NULL) {
+        log_it(L_ERROR,"Client or cert-name is NULL for dap_client_set_auth_cert");
         return;
     }
-    if (!l_config_read) {
-        char *l_path = dap_strdup_printf("network/%s", a_chain_net_name);
-        if (!l_path) {
-            log_it(L_ERROR, "Can't allocate memory: file: %s line: %d", __FILE__, __LINE__);
-            return;
-        }
-        dap_config_t *l_cfg = dap_config_open(l_path);
-        l_config_read = true;
-        DAP_DEL_Z(l_path);
-        if (!l_cfg) {
-            log_it(L_ERROR, "Can't allocate memory: file: %s line: %d", __FILE__, __LINE__);
-            return;
-        }
-        const char *l_cert_name = dap_config_get_item_str(l_cfg, "general", "auth_cert");
-        dap_config_close(l_cfg);
-        if (!l_cert_name)
-            return;
-        dap_cert_find_by_name(l_cert_name);
-        if (!l_cert) {
-            log_it(L_ERROR,"l_cert is NULL by dap_cert_find_by_name");
-            return;
-        }
+    l_cert = dap_cert_find_by_name(a_cert_name);
+    if (!l_cert) {
+        log_it(L_ERROR,"l_cert is NULL by dap_cert_find_by_name");
+        return;
     }
     a_client->auth_cert = l_cert;
 }
@@ -242,7 +223,7 @@ void dap_client_delete_unsafe(dap_client_t *a_client)
 }
 
 
-void s_client_delete_on_worker(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
+void s_client_delete_on_worker(void *a_arg)
 {
     dap_client_delete_unsafe(a_arg);
 }
@@ -265,7 +246,7 @@ struct go_stage_arg {
  * @param a_worker
  * @param a_arg
  */
-static void s_go_stage_on_client_worker_unsafe(dap_worker_t UNUSED_ARG *a_worker, void *a_arg)
+static void s_go_stage_on_client_worker_unsafe(void *a_arg)
 {
     assert(a_arg);
     if (!a_arg) {

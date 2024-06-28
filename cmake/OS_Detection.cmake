@@ -226,8 +226,6 @@ if(WIN32)
 
     include_directories(../../dap-sdk/3rdparty/uthash/src/)
     include_directories(../../dap-sdk/3rdparty/json-c)
-    include_directories(3rdparty/wepoll/)
-    #include_directories(libdap-chain-net-srv-vpn/)
 endif()
 
 # Platform

@@ -6,9 +6,9 @@
  * Copyright  (c) 2019
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
- DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+ DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation, either version 3 of the License, or
  (at your option) any later version.
@@ -64,12 +64,12 @@
 
 #define LOG_TAG "db_driver"
 
-const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank = {};
+const dap_global_db_driver_hash_t c_dap_global_db_driver_hash_blank = { 0 };
 
 // A selected database driver.
 static char s_used_driver [32];                                             /* Name of the driver */
 
-static dap_db_driver_callbacks_t s_drv_callback;                            /* A set of interface routines for the selected
+static dap_global_db_driver_callbacks_t s_drv_callback;                            /* A set of interface routines for the selected
                                                                             DB Driver at startup time */
 
 /**
@@ -80,15 +80,15 @@ static dap_db_driver_callbacks_t s_drv_callback;                            /* A
  * @param a_filename_db a path to a database file
  * @return Returns 0, if successful; otherwise <0.
  */
-int dap_db_driver_init(const char *a_driver_name, const char *a_filename_db, int a_mode_async)
+int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_db)
 {
 int l_ret = -1;
 
     if (s_used_driver[0] )
-        dap_db_driver_deinit();
+        dap_global_db_driver_deinit();
 
     // Fill callbacks with zeros
-    memset(&s_drv_callback, 0, sizeof(dap_db_driver_callbacks_t));
+    memset(&s_drv_callback, 0, sizeof(dap_global_db_driver_callbacks_t));
 
     // Setup driver name
     strncpy( s_used_driver, a_driver_name, sizeof(s_used_driver) - 1);
@@ -104,20 +104,20 @@ int l_ret = -1;
         l_ret = -1;
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
     else if(!dap_strcmp(s_used_driver, "sqlite") || !dap_strcmp(s_used_driver, "sqlite3") )
-        l_ret = dap_db_driver_sqlite_init(l_db_path_ext, &s_drv_callback);
+        l_ret = dap_global_db_driver_sqlite_init(l_db_path_ext, &s_drv_callback);
 #endif
 #ifdef DAP_CHAIN_GDB_ENGINE_CUTTDB
     else if(!dap_strcmp(s_used_driver, "cdb"))
-        l_ret = dap_db_driver_cdb_init(l_db_path_ext, &s_drv_callback);
+        l_ret = dap_global_db_driver_cdb_init(l_db_path_ext, &s_drv_callback);
 #endif
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
     else if(!dap_strcmp(s_used_driver, "mdbx"))
-        l_ret = dap_db_driver_mdbx_init(l_db_path_ext, &s_drv_callback);
+        l_ret = dap_global_db_driver_mdbx_init(l_db_path_ext, &s_drv_callback);
 #endif
 
 #ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
     else if(!dap_strcmp(s_used_driver, "pgsql"))
-        l_ret = dap_db_driver_pgsql_init(l_db_path_ext, &s_drv_callback);
+        l_ret = dap_global_db_driver_pgsql_init(l_db_path_ext, &s_drv_callback);
 #endif
     else
         log_it(L_ERROR, "Unknown global_db driver \"%s\"", a_driver_name);
@@ -130,7 +130,7 @@ int l_ret = -1;
  * @note You should call this function after using the driver.
  * @return (none)
  */
-void dap_db_driver_deinit(void)
+void dap_global_db_driver_deinit(void)
 {
     log_it(L_NOTICE, "DeInit for %s ...", s_used_driver);
 
@@ -145,9 +145,11 @@ void dap_db_driver_deinit(void)
  * @brief Flushes a database cahce to disk.
  * @return Returns 0, if successful; otherwise <0.
  */
-int dap_db_driver_flush(void)
+int dap_global_db_driver_flush(void)
 {
-    return s_drv_callback.flush();
+    if (s_drv_callback.flush)
+        return s_drv_callback.flush();
+    return 0;
 }
 
 static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const dap_store_obj_t *a_store_obj_src)
@@ -155,18 +157,18 @@ static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const 
     *a_store_obj_dst = *a_store_obj_src;
     a_store_obj_dst->group = dap_strdup(a_store_obj_src->group);
     if (a_store_obj_src->group && !a_store_obj_dst->group) {
-        log_it(L_CRITICAL, g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
     a_store_obj_dst->key = dap_strdup(a_store_obj_src->key);
     if (a_store_obj_src->key && !a_store_obj_dst->key) {
-        log_it(L_CRITICAL, g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return;
     }
     if (a_store_obj_src->sign) {
         a_store_obj_dst->sign = DAP_DUP_SIZE(a_store_obj_src->sign, dap_sign_get_size(a_store_obj_src->sign));
         if (!a_store_obj_dst->sign) {
-            log_it(L_CRITICAL, g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
             return;
         }
     }
@@ -176,7 +178,7 @@ static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const 
         else {
             a_store_obj_dst->value = DAP_DUP_SIZE(a_store_obj_src->value, a_store_obj_src->value_len);
             if (!a_store_obj_dst->value) {
-                log_it(L_CRITICAL, g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
                 return;
             }
         }
@@ -197,7 +199,7 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
         return NULL;
 
     if ( !(l_store_obj = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * a_store_count)) ) {
-        log_it(L_CRITICAL, g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
         return NULL;
     }
 
@@ -210,7 +212,8 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
 dap_store_obj_t *dap_store_obj_copy_ext(dap_store_obj_t *a_store_obj, void *a_ext, size_t a_ext_size)
 {
-    dap_store_obj_t *l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + a_ext_size);
+    dap_store_obj_t *l_ret;
+    DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_store_obj_t, sizeof(dap_store_obj_t) + a_ext_size, NULL, NULL);
     s_store_obj_copy_one(l_ret, a_store_obj);
     if (a_ext_size)
         memcpy(l_ret->ext, a_ext, a_ext_size);
@@ -269,9 +272,14 @@ dap_store_obj_t *l_store_obj_cur;
     if (a_store_count > 1 && s_drv_callback.transaction_start)
         s_drv_callback.transaction_start();
 
-    if(s_drv_callback.apply_store_obj) {
+    if (s_drv_callback.apply_store_obj) {
         for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
-            if (!(l_store_obj_cur->flags & DAP_GLOBAL_DB_RECORD_DEL) && (!dap_global_db_isalnum_group_key(l_store_obj_cur))) {
+            dap_global_db_driver_hash_t l_hash_cur = dap_global_db_driver_hash_get(l_store_obj_cur);
+            if (dap_global_db_driver_hash_is_blank(&l_hash_cur)) {
+                log_it(L_ERROR, "Item %zu / %zu is blank!", a_store_count - i + 1, a_store_count);
+                continue;
+            }
+            if (!dap_global_db_isalnum_group_key(l_store_obj_cur, !(l_store_obj_cur->flags & DAP_GLOBAL_DB_RECORD_ERASE))) {
                 log_it(L_MSG, "Item %zu / %zu is broken!", a_store_count - i, a_store_count);
                 l_ret = -9;
                 break;
@@ -329,12 +337,12 @@ dap_store_obj_t *l_store_obj_cur = a_store_obj;
  * @param a_iter data base iterator
  * @return Returns a number of objects.
  */
-size_t dap_global_db_driver_count(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
+size_t dap_global_db_driver_count(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes)
 {
     size_t l_count_out = 0;
     // read the number of items
     if (s_drv_callback.read_count_store)
-        l_count_out = s_drv_callback.read_count_store(a_group, a_hash_from);
+        l_count_out = s_drv_callback.read_count_store(a_group, a_hash_from, a_with_holes);
     return l_count_out;
 }
 
