@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2018
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -213,6 +213,7 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
 dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
         const size_t a_data_size, size_t a_output_wish_size)
 {
+    dap_return_val_if_pass(!a_key, NULL);
     const void * l_sign_data;
     size_t l_sign_data_size;
 
@@ -246,7 +247,7 @@ dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
             return NULL;
         } else {
             size_t l_sign_ser_size = l_sign_unserialized_size;
-            uint8_t *l_sign_ser = dap_enc_key_serialize_sign(a_key, l_sign_unserialized, &l_sign_ser_size);
+            uint8_t *l_sign_ser = dap_enc_key_serialize_sign(a_key->type, l_sign_unserialized, &l_sign_ser_size);
             if ( l_sign_ser ){
                 dap_sign_t *l_ret = NULL;
                 DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_sign_t, sizeof(dap_sign_hdr_t) + l_sign_ser_size + l_pub_key_size, NULL, l_sign_unserialized, l_pub_key, l_sign_ser);
@@ -372,7 +373,10 @@ dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign)
     uint8_t *l_pkey = dap_sign_get_pkey(a_chain_sign, &l_pkey_size);
     dap_enc_key_t * l_ret =  dap_enc_key_new(l_type);
     // deserialize public key
-    dap_enc_key_deserialize_pub_key(l_ret, l_pkey, l_pkey_size);
+    if (dap_enc_key_deserialize_pub_key(l_ret, l_pkey, l_pkey_size)) {
+        log_it(L_ERROR, "Error in enc pub key deserialize");
+        DAP_DEL_Z(l_ret);
+    }
     return l_ret;
 }
 
@@ -403,7 +407,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
 
     size_t l_sign_data_size = a_chain_sign->header.sign_size;
     // deserialize signature
-    uint8_t *l_sign_data = dap_enc_key_deserialize_sign(l_key, l_sign_data_ser, &l_sign_data_size);
+    uint8_t *l_sign_data = dap_enc_key_deserialize_sign(l_key->type, l_sign_data_ser, &l_sign_data_size);
 
     if ( !l_sign_data ){
         log_it(L_WARNING,"Incorrect signature, can't deserialize signature's data");

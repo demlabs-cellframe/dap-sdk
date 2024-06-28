@@ -131,12 +131,16 @@ int dap_enc_sig_bliss_verify_sign(dap_enc_key_t * key, const void * msg,
 void dap_enc_sig_bliss_key_delete(dap_enc_key_t *key)
 {
     dap_return_if_pass(!key);
-    if(key->priv_key_data)
+    if(key->priv_key_data) {
         bliss_b_private_key_delete(key->priv_key_data);
-    if(key->pub_key_data)
+        key->priv_key_data = NULL;
+    }
+    if(key->pub_key_data) {
         bliss_b_public_key_delete(key->pub_key_data);
-    key->priv_key_data = NULL;
-    key->pub_key_data = NULL;
+        key->pub_key_data = NULL;
+    }
+    key->priv_key_data_size = 0;
+    key->pub_key_data_size = 0;
 }
 
 /* Serialize a signature */
@@ -298,6 +302,7 @@ void *dap_enc_sig_bliss_read_public_key(const uint8_t *a_buf, size_t a_buflen)
     l_public_key->a = DAP_NEW_SIZE(int32_t, p.n * sizeof(int32_t));
     if (!l_public_key->a) {
         log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        DAP_DEL_Z(l_public_key);
         return NULL;
     }
     memcpy(l_public_key->a, a_buf + sizeof(uint64_t) + sizeof(uint32_t), p.n * sizeof(int32_t));

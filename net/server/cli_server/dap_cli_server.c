@@ -717,6 +717,7 @@ int json_commands(const char * a_name) {
             "chain_ca_copy",
             "block",
             "dag",
+            "token",
             "net"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
@@ -758,6 +759,7 @@ char    *str_header;
             data_len = atoi(l_str_ptr + strlen(l_cont_len_str));
         } else {
             log_it(L_ERROR, "HTTP request without length");
+            DAP_FREE(str_header);
             break;
         }
         DAP_FREE(str_header);

@@ -202,7 +202,7 @@ return 0;
 size_t CRUTCH_gen_pbk_list(const ringct20_param_t *p, void **pbklist, const int pbknum)
 {
     size_t size_pbkkey = p->RINGCT20_PBK_SIZE + sizeof (DAP_RINGCT20_SIGN_SECURITY);
-    size_t pbklistsize = size_pbkkey*pbknum;
+    size_t pbk_list_size = size_pbkkey*pbknum;
     //get a list of some pbk
     {
         poly_ringct20 pbk_poly;
@@ -217,7 +217,7 @@ size_t CRUTCH_gen_pbk_list(const ringct20_param_t *p, void **pbklist, const int 
         }
         free(Stmp);
     }
-    return pbklistsize;
+    return pbk_list_size;
 }
 int CRUTCH_get_pbk_list(poly_ringct20 *aList, const ringct20_param_t *p, const int Pi, const int wLen)
 {
@@ -564,17 +564,17 @@ void dap_enc_sig_ringct20_key_new(struct dap_enc_key *key) {
     key->enc_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_ringct20_get_sign_with_pb_list;//dap_enc_sig_ringct20_get_sign;
     key->dec_na = (dap_enc_callback_dataop_na_t) dap_enc_sig_ringct20_verify_sign;
     key->dec_na_ext = (dap_enc_callback_dataop_na_ext_t) dap_enc_sig_ringct20_verify_sign_with_pbk_list;//dap_enc_sig_ringct20_verify_sign;
-    key->getallpbkList = (dap_enc_get_allpbk_list) dap_enc_sig_ringct20_getallpbk;
-    key->pbkListsize = 0;
-    key->pbkListdata = NULL;
+    key->get_all_pbk_list = (dap_enc_get_allpbk_list) dap_enc_sig_ringct20_getallpbk;
+    key->pbk_list_size = 0;
+    key->pbk_list_data = NULL;
 
 }
 
 size_t dap_enc_sig_ringct20_getallpbk(dap_enc_key_t *key, const void *allpbk_list, const int allpbk_list_size)
 {
-    key->pbkListdata = DAP_NEW_SIZE(uint8_t, allpbk_list_size);
-    memcpy(key->pbkListdata, allpbk_list, allpbk_list_size);
-    key->pbkListsize= allpbk_list_size;
+    key->pbk_list_data = DAP_NEW_SIZE(uint8_t, allpbk_list_size);
+    memcpy(key->pbk_list_data, allpbk_list, allpbk_list_size);
+    key->pbk_list_size= allpbk_list_size;
     return 0;
 }
 
@@ -637,7 +637,7 @@ int ringct20_crypto_sign_with_pbk_list( ringct20_signature_t *sig, const unsigne
     }
     if(filled_pbk_num < wLen)
     {
-        log_it(L_ERROR, "RINGCT20: not enough pbkeys use CRUTCH_gen_pbk_list and key->getallpbkList");
+        log_it(L_ERROR, "RINGCT20: not enough pbkeys use CRUTCH_gen_pbk_list and key->get_all_pbk_list");
         DAP_DELETE(aList);
         DAP_DELETE(S);
         return -1;
@@ -699,7 +699,7 @@ size_t dap_enc_sig_ringct20_get_sign_with_pb_list(struct dap_enc_key * a_key, co
         return 0;
     }
 
-    if(!ringct20_crypto_sign_with_pbk_list((ringct20_signature_t *) signature, (const unsigned char *) msg, msg_size, a_key->priv_key_data, a_key->pbkListdata, a_key->pbkListsize))
+    if(!ringct20_crypto_sign_with_pbk_list((ringct20_signature_t *) signature, (const unsigned char *) msg, msg_size, a_key->priv_key_data, a_key->pbk_list_data, a_key->pbk_list_size))
         return signature_size;
     else
         return 0;
@@ -744,13 +744,14 @@ size_t dap_enc_sig_ringct20_verify_sign_with_pbk_list(struct dap_enc_key * a_key
 
 void dap_enc_sig_ringct20_key_delete(struct dap_enc_key * a_key)
 {
-    if(a_key->pbkListsize)
-    {
-        DAP_DELETE(a_key->pbkListdata);
-        a_key->pbkListsize = 0;
-    }
     ringct20_private_and_public_keys_delete((ringct20_private_key_t *) a_key->priv_key_data,
             (ringct20_public_key_t *) a_key->pub_key_data);
+    DAP_DEL_Z(a_key->priv_key_data);
+    DAP_DEL_Z(a_key->pub_key_data);
+    DAP_DEL_Z(a_key->pbk_list_data);
+    a_key->priv_key_data_size = 0;
+    a_key->pub_key_data_size = 0;
+    a_key->pbk_list_size = 0;
 }
 
 size_t dap_enc_ringct20_calc_signature_size(void)

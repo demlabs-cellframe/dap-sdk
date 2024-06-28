@@ -241,11 +241,15 @@ MDBX_val    l_key_iov, l_data_iov;
     ** Start transaction, create table, commit.
     */
     MDBX_txn *l_txn = a_txn;
-    if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) )
+    if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) ) {
+        DAP_DEL_Z(l_db_ctx);
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+    }
 
-    if  ( MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) )
+    if  ( MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) ) {
+        DAP_DEL_Z(l_db_ctx);
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+    }
 
     /*
      * Save new subDB name into the master table
@@ -1069,8 +1073,9 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
         DAP_DELETE(l_record);
     } else {
         /* Delete record */
+        dap_global_db_driver_hash_t l_driver_key = {};
         if (a_store_obj->crc && a_store_obj->timestamp) {
-            dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
+            l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
             l_key.iov_base = &l_driver_key;
             l_key.iov_len = sizeof(l_driver_key);
             rc = MDBX_SUCCESS;
