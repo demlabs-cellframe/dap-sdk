@@ -6,10 +6,12 @@ SET(XKCP_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/xkcp_build_src/)
 message("[*] XKCP build dir: ${XKCP_BUILD_DIR}")
 message("[*] XKCP make command: ${CMAKE_MAKE_PROGRAM}")
 message("[*] XKCP make CC: ${CMAKE_C_COMPILER}")
+message("[*] XKCP make AR: ${CMAKE_AR}")
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/ DESTINATION ${XKCP_BUILD_DIR})
 
+
 add_custom_target(BuildXKCP ALL
-    COMMAND ${CMAKE_COMMAND}  -E env CC=${CMAKE_C_COMPILER}   ${CMAKE_MAKE_PROGRAM} -C ./xkcp_build_src libdap-XKCP.a
+    COMMAND ${CMAKE_COMMAND}  -E env AR=${CMAKE_AR} CC=${CMAKE_C_COMPILER}   ${CMAKE_MAKE_PROGRAM} -C ./xkcp_build_src libdap-XKCP.a
 )
 
 SET(XKCP_BUILD_INCLUDES ${XKCP_BUILD_DIR}/bin/libdap-XKCP.a.headers/)
