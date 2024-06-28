@@ -255,13 +255,12 @@ target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
 
 target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c)
-<<<<<<< HEAD
-=======
+
 if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
     target_link_libraries(dap_crypto secp256k1)
 endif()
 
->>>>>>> release-5.3
+
 if(UNIX)
   target_link_libraries(dap_crypto m)
 endif()
