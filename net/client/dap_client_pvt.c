@@ -1130,7 +1130,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
 static void s_enc_init_error(dap_client_t * a_client, UNUSED_ARG void *a_arg, int a_err_code)
 {
     dap_client_pvt_t * l_client_pvt = DAP_CLIENT_PVT(a_client);
-    log_it(L_ERROR, "ENC: Can't init ecnryption session, err code %d", a_err_code);
+    log_it(L_ERROR, "ENC: Can't init encryption session, err code %d", a_err_code);
     if (!l_client_pvt) return;
     if (a_err_code == ETIMEDOUT) {
         l_client_pvt->last_error = ERROR_NETWORK_CONNECTION_TIMEOUT;
