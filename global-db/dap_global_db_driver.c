@@ -82,7 +82,7 @@ static dap_global_db_driver_callbacks_t s_drv_callback;                         
  */
 int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_db)
 {
-int l_ret = -1;
+    int l_ret = -1;
 
     if (s_used_driver[0] )
         dap_global_db_driver_deinit();
@@ -101,7 +101,7 @@ int l_ret = -1;
 
    // Check for engine
     if(!dap_strcmp(s_used_driver, "ldb"))
-        l_ret = -1;
+        log_it(L_ERROR, "Unsupported global_db driver \"%s\"", a_driver_name);
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
     else if(!dap_strcmp(s_used_driver, "sqlite") || !dap_strcmp(s_used_driver, "sqlite3") )
         l_ret = dap_global_db_driver_sqlite_init(l_db_path_ext, &s_drv_callback);
