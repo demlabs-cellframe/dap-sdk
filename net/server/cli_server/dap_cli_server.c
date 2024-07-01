@@ -715,7 +715,9 @@ int json_commands(const char * a_name) {
             "tx_cond_remove",
             "tx_cond_unspent_find",
             "chain_ca_copy",
+            "dag",
             "block",
+            "dag",
             "token",
             "net"
     };
