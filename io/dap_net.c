@@ -100,7 +100,35 @@ int dap_net_parse_hostname(const char *a_src, char *a_addr, uint16_t *a_port) {
     default:
         return -1;
     }
-    return l_len > 0xFF ? -2 : ( dap_strncpy(a_addr, a_src, l_len), 0 );
+
+    // check custom addr as 0.root.scropion.cellframe.net:8080
+    if (l_type < 6) {
+        char * tmp = a_src;
+        while (*tmp) {
+            if ((*tmp >= 'a' && *tmp <= 'z') || (*tmp >= 'A' && *tmp <= 'Z')) {
+                return l_len > 0xFF ? -2 : ( dap_strncpy(a_addr, a_src, l_len), 0 );
+            }
+            tmp++;
+        }
+    } 
+    // inet_pton needs '\0'
+    char temp_addr[256];
+    if (l_len > 0xFF) {
+        return -2;
+    }
+    dap_strncpy(temp_addr, a_src, l_len);
+    temp_addr[l_len] = '\0';
+
+    // Validate the address (IPv4 and IPv6) 
+    struct sockaddr_in sa;
+    struct sockaddr_in6 sa6;
+    int is_valid_ipv4 = inet_pton(AF_INET, temp_addr, &(sa.sin_addr));
+    int is_valid_ipv6 = inet_pton(AF_INET6, temp_addr, &(sa6.sin6_addr));
+    if (is_valid_ipv4 != 1 && is_valid_ipv6 != 1) {
+        return -2;
+    }
+
+    return dap_strncpy(a_addr, a_src, l_len), 0;
 }
 
 /**
