@@ -62,31 +62,21 @@ void dap_notify_srv_set_callback_new(dap_events_socket_callback_t a_cb) {
  */
 int dap_notify_server_init()
 {
-    uint16_t l_notify_addrs_count = 0;
-    char **l_notify_addrs = dap_config_get_array_str(g_config, "notify_server", "listen_path", &l_notify_addrs_count);
-    if( l_notify_addrs ) {
-        s_notify_server = dap_server_new(l_notify_addrs, l_notify_addrs_count, DAP_SERVER_LOCAL, NULL);
-    } else if ( (l_notify_addrs = dap_config_get_array_str(g_config, "notify_server", "listen_address", &l_notify_addrs_count)) ) {
-        s_notify_server = dap_server_new(l_notify_addrs, l_notify_addrs_count, DAP_SERVER_TCP, NULL);
-    } else {
-        log_it(L_INFO,"Notify server is not configured, nothing to init but thats okay");
-        return 0;
-    }
-
-    if (!s_notify_server) {
-        log_it(L_ERROR,"Notify server not initalized, check config");
+    dap_events_socket_callbacks_t l_client_callbacks = {
+        .new_callback = s_notify_server_callback_new,
+        .delete_callback = s_notify_server_callback_delete
+    };
+    if ( !(s_notify_server = dap_server_new("notify_server", NULL, &l_client_callbacks)) ) {
+        log_it(L_INFO, "Notify server not initalized");
         return -1;
     }
-    s_notify_server->client_callbacks.new_callback = s_notify_server_callback_new;
-    s_notify_server->client_callbacks.delete_callback = s_notify_server_callback_delete;
-    s_notify_server_queue = dap_events_socket_create_type_queue_ptr_mt(dap_events_worker_get_auto(),s_notify_server_callback_queue);
+    s_notify_server_queue = dap_events_socket_create_type_queue_ptr_mt(dap_events_worker_get_auto(), s_notify_server_callback_queue);
     uint32_t l_workers_count = dap_events_thread_get_count();
-    DAP_NEW_Z_COUNT_RET_VAL(s_notify_server_queue_inter, dap_events_socket_t *, l_workers_count, -2, NULL);
-    for(uint32_t i = 0; i < l_workers_count; i++){
+    DAP_NEW_Z_COUNT_RET_VAL(s_notify_server_queue_inter, dap_events_socket_t*, l_workers_count, -2, NULL);
+    for (uint32_t i = 0; i < l_workers_count; ++i) {
         s_notify_server_queue_inter[i] = dap_events_socket_queue_ptr_create_input(s_notify_server_queue);
         dap_events_socket_assign_on_worker_mt(s_notify_server_queue_inter[i], dap_events_worker_get(i));
     }
-
     log_it(L_NOTICE,"Notify server initalized");
     return 0;
 }

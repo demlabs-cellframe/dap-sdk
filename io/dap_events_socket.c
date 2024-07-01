@@ -1147,18 +1147,6 @@ dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOC
     l_es->socket = a_sock;
     l_es->server = a_server;
     l_es->callbacks = *a_callbacks;
-    switch (a_server->type) {
-    case DAP_SERVER_UDP:
-        l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
-        break;
-#ifdef DAP_OS_UNIX
-    case DAP_SERVER_LOCAL:
-        l_es->type = DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING;
-        break;
-#endif
-    default:
-        l_es->type = DESCRIPTOR_TYPE_SOCKET_LISTENING;
-    }
 
 #ifdef   DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].alloc_nr, 1);
@@ -1219,30 +1207,22 @@ void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_
  */
 void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
 {
+    if ( a_esocket->socket > 0
+#ifdef DAP_OS_BSD
+        && a_esocket->type != DESCRIPTOR_TYPE_TIMER
+#endif    
+     ) {
 #ifdef DAP_OS_WINDOWS
-    if ( a_esocket->socket && (a_esocket->socket != INVALID_SOCKET) ) {
         //LINGER  lingerStruct = { .l_onoff = 1, .l_linger = 5 };
         //setsockopt(a_esocket->socket, SOL_SOCKET, SO_LINGER, (char*)&lingerStruct, sizeof(lingerStruct) );
         // We must set { 1, 0 } when connections must be reset (RST)
         shutdown(a_esocket->socket, SD_BOTH);
+#endif
         closesocket(a_esocket->socket);
     }
-    a_esocket->socket = a_esocket->socket2 = INVALID_SOCKET;
-
-#else
-    if ( a_esocket->socket && (a_esocket->socket != -1)) {
-#ifdef DAP_OS_BSD
-        if(a_esocket->type != DESCRIPTOR_TYPE_TIMER)
-#endif
-            close( a_esocket->socket );
-        if( a_esocket->fd2 > 0 ){
-            close( a_esocket->fd2);
-        }
-    }
-    a_esocket->fd2 = -1;
-    a_esocket->fd = -1;
-    a_esocket->socket = INVALID_SOCKET;
-#endif
+    if ( a_esocket->fd2 > 0 )
+        closesocket(a_esocket->fd2);
+    a_esocket->fd = a_esocket->fd2 = INVALID_SOCKET;
 }
 
 /**

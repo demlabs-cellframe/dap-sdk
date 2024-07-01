@@ -649,7 +649,7 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->worker = a_worker;
     l_client_http->is_over_ssl = a_over_ssl;
 
-    if ( dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), &l_ev_socket->addr_storage, false) ) {
+    if ( 0 > dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), false, &l_ev_socket->addr_storage, NULL) ) {
         log_it(L_ERROR, "Wrong remote address '%s : %u'", a_uplink_addr, a_uplink_port);
             s_client_http_delete(l_client_http);
             l_ev_socket->_inheritor = NULL;

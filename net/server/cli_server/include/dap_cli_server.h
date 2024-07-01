@@ -61,7 +61,7 @@ typedef struct dap_cli_cmd_aliases{
 } dap_cli_cmd_aliases_t;
 
 
-int dap_cli_server_init(bool a_debug_more,const char * a_socket_path_or_address, uint16_t a_port, const char * a_permissions) ;
+int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section);
 void dap_cli_server_deinit();
 
 void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex);

@@ -88,7 +88,7 @@ static char** split_word(char *line, int *argc)
  *  Read and execute commands until EOF is reached.  This assumes that
  *  the input source has already been initialized.
  */
-int execute_line(dap_app_cli_connect_param_t *cparam, char *line)
+int execute_line(dap_app_cli_connect_param_t cparam, char *line)
 {
     register int i;
     char *word;
@@ -123,7 +123,7 @@ int execute_line(dap_app_cli_connect_param_t *cparam, char *line)
  *  Read and execute commands until EOF is reached.  This assumes that
  *  the input source has already been initialized.
  */
-static int shell_reader_loop(char *a_socket)
+static int shell_reader_loop()
 {
     char *line, *s;
 
@@ -140,9 +140,9 @@ static int shell_reader_loop(char *a_socket)
          and execute it. */
         if (*(s = dap_strstrip(line)) )
         {
-            dap_app_cli_connect_param_t *cparam = NULL;
-            if ( !(cparam = dap_app_cli_connect(a_socket)) ) {
-                printf("Can't connect to \"%s\"\n", a_socket);
+            dap_app_cli_connect_param_t cparam = dap_app_cli_connect();
+            if ( (dap_app_cli_connect_param_t)~0 == cparam ) {
+                printf("Can't connect to \"%lu\"\n", cparam);
                 return -1;
             }
             add_history(s);
@@ -201,12 +201,8 @@ JNIEXPORT jstring JNICALL Java_com_CellframeWallet_Node_cellframeNodeCliMain(JNI
     }
 }
 #endif
-int dap_app_cli_main(const char *a_app_name, int a_argc, char **a_argv)
+int dap_app_cli_main(const char *a_app_name, int a_argc, const char **a_argv)
 {
-    //if ( dap_common_init(a_app_name, NULL,NULL) ) {
-    //    printf("Fatal Error: Can't init common functions module");
-    //    return -2;
-    //}
     {
         char l_config_dir[MAX_PATH] = {'\0'};
         sprintf(l_config_dir, "%s/etc", g_sys_dir_path);
@@ -216,28 +212,28 @@ int dap_app_cli_main(const char *a_app_name, int a_argc, char **a_argv)
         printf("Can't init general configurations %s.cfg\n", a_app_name);
         return -3;
     }
-    char *listen_socket = (char*)dap_config_get_item_str_default( g_config, "conserver", "listen_unix_socket_path",
-                                 dap_config_get_item_str( g_config, "conserver", "listen_port_tcp") );
+    
+
     int l_res = -1;
     
     if (a_argc > 1){
         // Call the function
         dap_app_cli_cmd_state_t cmd = {
-            .cmd_name           = (char*)a_argv[1],
+            .cmd_name           = a_argv[1],
             .cmd_param_count    = a_argc - 2,
             .cmd_param          = a_argc - 2 > 0 ? (char**)(a_argv + 2) : NULL
         };
         // Send command
-        dap_app_cli_connect_param_t *cparam = NULL;
-        if ( !(cparam = dap_app_cli_connect(listen_socket)) ) {
-            printf("Can't connect to \"%s\"\n", listen_socket);
+        dap_app_cli_connect_param_t cparam = dap_app_cli_connect();
+        if ( (dap_app_cli_connect_param_t)~0 == cparam ) {
+            printf("Can't connect to cli socket\n");
             return -4;
         }
         l_res = dap_app_cli_post_command(cparam, &cmd);
         dap_app_cli_disconnect(cparam);
     } else {
         // no command passed, start interactive shell
-        l_res = shell_reader_loop(listen_socket);
+        l_res = shell_reader_loop();
     }
     dap_config_close(g_config);
     return l_res;

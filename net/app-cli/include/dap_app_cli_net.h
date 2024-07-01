@@ -42,7 +42,7 @@ typedef uint64_t dap_app_cli_connect_param_t;
  *
  * return struct connect_param if connect established, else NULL
  */
-dap_app_cli_connect_param_t* dap_app_cli_connect(const char * a_socket_path);
+dap_app_cli_connect_param_t dap_app_cli_connect();
 
 /**
  * Send request to kelvin-node
@@ -52,6 +52,6 @@ dap_app_cli_connect_param_t* dap_app_cli_connect(const char * a_socket_path);
 
 char *dap_app_cli_form_command(dap_app_cli_cmd_state_t *cmd);
 
-int dap_app_cli_post_command(dap_app_cli_connect_param_t *socket, dap_app_cli_cmd_state_t *cmd);
+int dap_app_cli_post_command(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_state_t *cmd);
 
-int dap_app_cli_disconnect(dap_app_cli_connect_param_t *socket);
+int dap_app_cli_disconnect(dap_app_cli_connect_param_t socket);

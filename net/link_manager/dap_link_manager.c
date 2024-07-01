@@ -868,7 +868,7 @@ int dap_link_manager_link_update(dap_stream_node_addr_t *a_node_addr, const char
         return -2;
     }
     struct sockaddr_storage l_numeric_addr;
-    if ( dap_net_resolve_host(a_host, dap_itoa(a_port), &l_numeric_addr, false) ) {
+    if ( 0 > dap_net_resolve_host(a_host, dap_itoa(a_port), false, &l_numeric_addr, NULL) ) {
         log_it(L_ERROR, "Wrong uplink address '%s : %u'", a_host, a_port);
         return -6;
     }

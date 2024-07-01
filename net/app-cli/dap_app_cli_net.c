@@ -44,6 +44,7 @@
 #endif
 
 #include "dap_common.h"
+#include "dap_net.h"
 #include "dap_string.h"
 #include "dap_strfuncs.h"
 #include "dap_cli_server.h" // for UNIX_SOCKET_FILE
@@ -54,12 +55,14 @@
 #include "dap_json_rpc_request.h"
 #include "dap_json_rpc_response.h"
 
+#define CLI_SERVER_DEFAULT_PORT 12345
+
 static int s_status;
 
 //staic function to receive http data
-static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_cli_cmd_state_t *l_cmd)
+static void dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_state_t *l_cmd)
 {
-    ssize_t l_recv_len = recv(*socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], DAP_CLI_HTTP_RESPONSE_SIZE_MAX, 0);
+    ssize_t l_recv_len = recv(socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], DAP_CLI_HTTP_RESPONSE_SIZE_MAX, 0);
     if (l_recv_len == 0) {
         s_status = DAP_CLI_ERROR_INCOMPLETE;
         return;
@@ -107,7 +110,7 @@ static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_c
                 if(l_cmd->cmd_res_cur < l_cmd->cmd_res_len) {
                     l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_len + 1);
                     while((l_cmd->cmd_res_len - l_cmd->cmd_res_cur) > 0) {
-                        ssize_t l_recv_len = recv(*socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], l_cmd->cmd_res_len - l_cmd->cmd_res_cur, 0);
+                        ssize_t l_recv_len = recv(socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], l_cmd->cmd_res_len - l_cmd->cmd_res_cur, 0);
                         if(l_recv_len <= 0)
                             break;
                         l_cmd->cmd_res_cur += l_recv_len;
@@ -136,61 +139,53 @@ static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_c
  * @param a_socket_path
  * @return if connect established, else NULL
  */
-dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
+dap_app_cli_connect_param_t dap_app_cli_connect()
 {
-    // set socket param
-    int buffsize = DAP_CLI_HTTP_RESPONSE_SIZE_MAX;
-#if defined(__WIN32) || defined(ANDROID)
-    // TODO connect to the named pipe "\\\\.\\pipe\\node_cli.pipe"
-    uint16_t l_cli_port = a_socket_path ? strtod(a_socket_path, NULL) : 0;
-    if (!l_cli_port)
-        return NULL;
-    SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);
+    SOCKET l_socket = ~0;
+    int l_arg_len = 0;
+    struct sockaddr_storage l_saddr = { };
+    const char *l_addr = dap_config_get_item_str(g_config, "cli-server", DAP_CFG_PARAM_SOCK_PATH);
+    if (l_addr) {
+#ifdef DAP_OS_WINDOWS
+        printf("Unix socket-based server is not yet implemented, consider localhost usage\n"); // TODO
+        return ~0;
 #else
-    if (!a_socket_path) {
-        return NULL;
-    }
-    // create socket
-    int l_socket = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (l_socket < 0) {
-        return NULL;
-    }
-    struct timeval l_to = {DAP_CLI_HTTP_TIMEOUT, 0};
+        if ( -1 == (l_socket = socket(AF_UNIX, SOCK_STREAM, 0)) ) {
+            printf ("socket() error %d", errno);
+            return ~0;
+        }
+        struct sockaddr_un l_saddr_un = { .sun_family = AF_UNIX };
+        strncpy(l_saddr_un.sun_path, l_addr, sizeof(l_saddr_un.sun_path) - 1);
+        l_arg_len = SUN_LEN(&l_saddr_un);
+        memcpy(&l_saddr, &l_saddr_un, l_arg_len);
 #endif
-    // connect
-    int l_addr_len;
-#ifdef WIN32
-    struct sockaddr_in l_remote_addr = {
-        .sin_family = AF_INET, .sin_port = htons(l_cli_port), .sin_addr = {{ .S_addr = htonl(INADDR_LOOPBACK) }}
-    };
-    l_addr_len = sizeof(struct sockaddr_in);
-#elif defined(DAP_OS_ANDROID)
-    struct sockaddr_in l_remote_addr = {
-        .sin_family = AF_INET, .sin_port = htons(l_cli_port), .sin_addr = { .s_addr = htonl(INADDR_LOOPBACK) }
-    };
-    l_addr_len = sizeof(struct sockaddr_in);
-#else
-    struct sockaddr_un l_remote_addr;
-    l_remote_addr.sun_family =  AF_UNIX;
-    strcpy(l_remote_addr.sun_path, a_socket_path);
-    l_addr_len = SUN_LEN(&l_remote_addr);
+    } else if ( !!(l_addr = dap_config_get_item_str(g_config, "cli-server", DAP_CFG_PARAM_LISTEN_ADDRS)) ) {
+        if ( -1 == (l_socket = socket(AF_INET, SOCK_STREAM, 0)) ) {
+#ifdef DAP_OS_WINDOWS
+            _set_errno( WSAGetLastError() );
 #endif
-    if (connect(l_socket, (struct sockaddr *)&l_remote_addr, l_addr_len) == SOCKET_ERROR) {
-#ifdef __WIN32
+            printf ("socket() error %d", errno);
+            return ~0;
+        }
+        char l_ip[INET6_ADDRSTRLEN] = { '\0' }; uint16_t l_port = 0;
+        if ( 0 > (l_arg_len = dap_net_parse_config_address(l_addr, l_ip, &l_port, &l_saddr, NULL)) ) {
+            printf ("Incorrect address \"%s\" format\n", l_addr);
+            return ~0;
+        }
+    } else {
+        printf("CLI server is not set, check config");
+        return ~0;
+    }
+    
+    if ( connect(l_socket, (struct sockaddr*)&l_saddr, l_arg_len) == SOCKET_ERROR ) {
+#ifdef DAP_OS_WINDOWS
             _set_errno(WSAGetLastError());
 #endif
-        printf("Socket connection err: %d\n", errno);
+        printf("connect() error %d: \"%s\"\n", errno, dap_strerror(errno));
         closesocket(l_socket);
-        return NULL;
+        return ~0;
     }
-    dap_app_cli_connect_param_t *l_ret = DAP_NEW_Z(dap_app_cli_connect_param_t);
-    if (!l_ret) {
-        closesocket(l_socket);
-        printf("Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        return NULL;
-    }
-    *l_ret = l_socket;
-    return l_ret;
+    return (dap_app_cli_connect_param_t)l_socket;
 }
 
 /* if cli command argument contains one of the following symbol
@@ -229,9 +224,9 @@ char *dap_app_cli_form_command(dap_app_cli_cmd_state_t *a_cmd) {
  *
  * return 0 if OK, else error code
  */
-int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli_cmd_state_t *a_cmd )
+int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_cmd_state_t *a_cmd )
 {
-    if(!a_socket || !a_cmd || !a_cmd->cmd_name) {
+    if(a_socket == (dap_app_cli_connect_param_t)~0 || !a_cmd || !a_cmd->cmd_name) {
         assert(0);
         return -1;
     }
@@ -258,7 +253,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
                                    "\r\n"
                                    "%s", strlen(request_str), request_str);
     DAP_DELETE(request_str);
-    size_t res = send(*a_socket, l_post_data->str, l_post_data->len, 0);
+    size_t res = send(a_socket, l_post_data->str, l_post_data->len, 0);
     if (res != l_post_data->len) {
         dap_json_rpc_request_free(a_request);
         printf("Error sending to server");
@@ -295,9 +290,8 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
 }
 
 
-int dap_app_cli_disconnect(dap_app_cli_connect_param_t *a_socket)
+int dap_app_cli_disconnect(dap_app_cli_connect_param_t a_socket)
 {
-    closesocket(*a_socket);
-    DAP_DELETE(a_socket);
+    closesocket(a_socket);
     return 0;
 }
