@@ -783,6 +783,7 @@ static inline void *dap_mempcpy(void *a_dest, const void *a_src, size_t n)
     return ((byte_t *)memcpy(a_dest, a_src, n)) + n;
 }
 
+DAP_STATIC_INLINE int dap_is_letter(char c) { return dap_ascii_isalpha(c); }
 DAP_STATIC_INLINE int dap_is_alpha(char c) { return dap_ascii_isalnum(c); }
 DAP_STATIC_INLINE int dap_is_digit(char c) { return dap_ascii_isdigit(c); }
 DAP_STATIC_INLINE int dap_is_xdigit(char c) {return dap_ascii_isxdigit(c);}

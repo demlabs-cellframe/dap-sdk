@@ -105,12 +105,11 @@ int dap_net_parse_hostname(const char *a_src, char *a_addr, uint16_t *a_port) {
     if (l_type < 6) {
         char * tmp = a_src;
         while (*tmp) {
-            if ((*tmp >= 'a' && *tmp <= 'z') || (*tmp >= 'A' && *tmp <= 'Z')) {
-                return l_len > 0xFF ? -2 : ( dap_strncpy(a_addr, a_src, l_len), 0 );
-            }
+            if (dap_is_letter(*tmp))
+                    return l_len > 0xFF ? -2 : ( dap_strncpy(a_addr, a_src, l_len), 0 );
             tmp++;
         }
-    } 
+    }
     // inet_pton needs '\0'
     char temp_addr[256];
     if (l_len > 0xFF) {
