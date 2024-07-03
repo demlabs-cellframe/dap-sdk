@@ -322,7 +322,7 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
  */
 static bool s_proc_queue_callback(void *a_arg)
 {
-     dap_http_simple_t *l_http_simple = (dap_http_simple_t*) a_arg;
+    dap_http_simple_t *l_http_simple = (dap_http_simple_t*) a_arg;
     log_it(L_DEBUG, "dap http simple proc");
     if (!l_http_simple->http_client) {
         log_it(L_ERROR, "[!] HTTP client is already deleted!");
