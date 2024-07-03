@@ -76,8 +76,8 @@ const uint256_t uint256_max = {.hi = uint128_max, .lo = uint128_max};
 
 const uint512_t uint512_0 = {};
 
-const char *g_error_memory_alloc = "Memory allocation error";
-const char *g_error_sanity_check = "Sanity check error";
+const char *c_error_memory_alloc = "Memory allocation error";
+const char *c_error_sanity_check = "Sanity check error";
 
 static const char *s_log_level_tag[ 16 ] = {
     " [DBG] ", // L_DEBUG     = 0
@@ -1193,7 +1193,7 @@ static void s_bsd_callback(void *a_arg)
 dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_callback_t a_callback, void *a_param) {
     dap_timer_interface_t *l_timer_obj = DAP_NEW_Z(dap_timer_interface_t);
     if (!l_timer_obj) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
     l_timer_obj->callback   = a_callback;

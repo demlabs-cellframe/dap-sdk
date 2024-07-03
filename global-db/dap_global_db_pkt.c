@@ -180,7 +180,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
 
     a_obj->group = DAP_DUP_SIZE(l_data_ptr, a_pkt->group_len + sizeof(char));
     if (!a_obj->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
     a_obj->group[a_pkt->group_len] = '\0';
@@ -188,7 +188,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
 
     a_obj->key = DAP_DUP_SIZE(l_data_ptr, a_pkt->key_len + sizeof(char));
     if (!a_obj->key) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(a_obj->group);
         return NULL;
     }
@@ -198,7 +198,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
     if (a_pkt->value_len) {
         a_obj->value = DAP_DUP_SIZE(l_data_ptr, a_pkt->value_len);
         if (!a_obj->value) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DELETE(a_obj->group);
             DAP_DELETE(a_obj->key);
             return NULL;
@@ -219,7 +219,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
         }
         a_obj->sign = (dap_sign_t *)DAP_DUP_SIZE(l_sign, l_sign_size);
         if (!a_obj->sign) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DELETE(a_obj->group);
             DAP_DELETE(a_obj->key);
             DAP_DEL_Z(a_obj->value);
@@ -281,7 +281,7 @@ dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a
     dap_store_obj_t **l_store_obj_arr = DAP_NEW_Z_SIZE(dap_store_obj_t *, l_size);
 #endif
     if (!l_store_obj_arr) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
 
@@ -295,7 +295,7 @@ dap_store_obj_t **dap_global_db_pkt_pack_deserialize(dap_global_db_pkt_pack_t *a
 #else
         l_store_obj_arr[i] = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + sizeof(dap_stream_node_addr_t));
         if (!l_store_obj_arr[i]) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             break;
         }
         l_data_ptr = s_fill_one_store_obj((dap_global_db_pkt_t *)l_data_ptr, l_store_obj_arr[i], l_data_end - l_data_ptr, a_addr);

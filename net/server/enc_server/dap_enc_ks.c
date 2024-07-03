@@ -126,7 +126,7 @@ dap_enc_ks_key_t * dap_enc_ks_new()
 {
     dap_enc_ks_key_t * ret = DAP_NEW_Z(dap_enc_ks_key_t);
     if (!ret) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
     s_gen_session_id(ret->id);
@@ -148,7 +148,7 @@ dap_enc_ks_key_t * dap_enc_ks_add(struct dap_enc_key * key)
 {
     dap_enc_ks_key_t * ret = DAP_NEW_Z(dap_enc_ks_key_t);
     if (!ret) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
     ret->key = key;
