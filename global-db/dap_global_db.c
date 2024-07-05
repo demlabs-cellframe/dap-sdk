@@ -1193,6 +1193,11 @@ static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
 {
     int l_ret = 0;
     size_t i=0;
+#ifdef DAP_TPS_TEST
+    FILE *l_mempool_file = fopen("/opt/cellframe-node/share/ca/mempool_start.txt", "a");
+    fclose(l_mempool_file);
+    log_it(L_TPS, "Start write %zu records to mempool", a_msg->values_count);
+#endif
     if(a_msg->values_count>0) {
         dap_store_obj_t l_store_obj = {};
         for(;  i < a_msg->values_count && l_ret == 0  ; i++ ) {
@@ -1206,6 +1211,11 @@ static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
                                 a_msg->values, a_msg->callback_arg);
     }
     dap_global_db_objs_delete( a_msg->values, a_msg->values_count);
+#ifdef DAP_TPS_TEST
+    l_mempool_file = fopen("/opt/cellframe-node/share/ca/mempool_finish.txt", "a");
+    fclose(l_mempool_file);
+    log_it(L_TPS, "Finish write %zu records to mempool ", a_msg->values_count);
+#endif
 }
 
 /* *** Pin/unpin functions group *** */
