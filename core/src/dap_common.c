@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2019
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -76,8 +76,8 @@ const uint256_t uint256_max = {.hi = uint128_max, .lo = uint128_max};
 
 const uint512_t uint512_0 = {};
 
-const char *g_error_memory_alloc = "Memory allocation error";
-const char *g_error_sanity_check = "Sanity check error";
+const char *c_error_memory_alloc = "Memory allocation error";
+const char *c_error_sanity_check = "Sanity check error";
 
 static const char *s_log_level_tag[ 16 ] = {
     " [DBG] ", // L_DEBUG     = 0
@@ -282,6 +282,7 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, .
         uint64_t l_size = va_arg(l_args, uint64_t);
         if (l_shift_mem + l_size > a_size) {
             log_it(L_ERROR, "Error size in the object deserialize. %"DAP_UINT64_FORMAT_U" > %"DAP_UINT64_FORMAT_U"", l_shift_mem + l_size, a_size);
+            va_end(l_args);
             return -2;
         }
         memcpy(l_arg, a_data + l_shift_mem, l_size);
@@ -1192,7 +1193,7 @@ static void s_bsd_callback(void *a_arg)
 dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_callback_t a_callback, void *a_param) {
     dap_timer_interface_t *l_timer_obj = DAP_NEW_Z(dap_timer_interface_t);
     if (!l_timer_obj) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
     l_timer_obj->callback   = a_callback;

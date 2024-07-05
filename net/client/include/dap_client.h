@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2019
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -164,7 +164,6 @@ dap_stream_worker_t * dap_client_get_stream_worker(dap_client_t * a_client);
 dap_stream_ch_t * dap_client_get_stream_ch_unsafe(dap_client_t * a_client, uint8_t a_ch_id);
 uint32_t dap_client_get_stream_id(dap_client_t * a_client);
 void dap_client_set_active_channels_unsafe (dap_client_t * a_client, const char * a_active_channels);
-void dap_client_set_auth_cert_unsafe(dap_client_t * a_client, dap_cert_t *a_cert);
 void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_cert_name);
 
 dap_client_stage_t dap_client_get_stage(dap_client_t * a_client);

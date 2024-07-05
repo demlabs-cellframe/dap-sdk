@@ -6,9 +6,9 @@
  * Copyright  (c) 2019
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
- DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+ DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation, either version 3 of the License, or
  (at your option) any later version.
@@ -82,7 +82,7 @@ static dap_global_db_driver_callbacks_t s_drv_callback;                         
  */
 int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_db)
 {
-int l_ret = -1;
+    int l_ret = -1;
 
     if (s_used_driver[0] )
         dap_global_db_driver_deinit();
@@ -101,7 +101,7 @@ int l_ret = -1;
 
    // Check for engine
     if(!dap_strcmp(s_used_driver, "ldb"))
-        l_ret = -1;
+        log_it(L_ERROR, "Unsupported global_db driver \"%s\"", a_driver_name);
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
     else if(!dap_strcmp(s_used_driver, "sqlite") || !dap_strcmp(s_used_driver, "sqlite3") )
         l_ret = dap_global_db_driver_sqlite_init(l_db_path_ext, &s_drv_callback);
@@ -157,18 +157,18 @@ static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const 
     *a_store_obj_dst = *a_store_obj_src;
     a_store_obj_dst->group = dap_strdup(a_store_obj_src->group);
     if (a_store_obj_src->group && !a_store_obj_dst->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
     a_store_obj_dst->key = dap_strdup(a_store_obj_src->key);
     if (a_store_obj_src->key && !a_store_obj_dst->key) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
     if (a_store_obj_src->sign) {
         a_store_obj_dst->sign = DAP_DUP_SIZE(a_store_obj_src->sign, dap_sign_get_size(a_store_obj_src->sign));
         if (!a_store_obj_dst->sign) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return;
         }
     }
@@ -178,7 +178,7 @@ static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const 
         else {
             a_store_obj_dst->value = DAP_DUP_SIZE(a_store_obj_src->value, a_store_obj_src->value_len);
             if (!a_store_obj_dst->value) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 return;
             }
         }
@@ -199,7 +199,7 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
         return NULL;
 
     if ( !(l_store_obj = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * a_store_count)) ) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
 
@@ -212,7 +212,8 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
 dap_store_obj_t *dap_store_obj_copy_ext(dap_store_obj_t *a_store_obj, void *a_ext, size_t a_ext_size)
 {
-    dap_store_obj_t *l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) + a_ext_size);
+    dap_store_obj_t *l_ret;
+    DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_store_obj_t, sizeof(dap_store_obj_t) + a_ext_size, NULL, NULL);
     s_store_obj_copy_one(l_ret, a_store_obj);
     if (a_ext_size)
         memcpy(l_ret->ext, a_ext, a_ext_size);

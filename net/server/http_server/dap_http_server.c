@@ -2,9 +2,9 @@
  Copyright (c) 2017-2018 (c) Project "DeM Labs Inc" https://github.com/demlabsinc
   All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -168,7 +168,7 @@ dap_http_url_proc_t * dap_http_add_proc(dap_http_server_t *a_http, const char *a
 {
     dap_http_url_proc_t *l_url_proc = DAP_NEW_Z(dap_http_url_proc_t);
     if (!l_url_proc) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
 

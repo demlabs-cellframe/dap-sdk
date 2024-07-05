@@ -70,7 +70,7 @@ dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_
         }
         ret->mnemonim = strdup(a_mnemonim);
         if (!ret->mnemonim) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DELETE(ret);
             return NULL;
         }
@@ -140,7 +140,7 @@ dap_cluster_member_t *dap_cluster_member_add(dap_cluster_t *a_cluster, dap_strea
     }
     l_member = DAP_NEW_Z(dap_cluster_member_t);
     if (!l_member) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         pthread_rwlock_unlock(&a_cluster->members_lock);
         return NULL;
     }
@@ -411,7 +411,7 @@ dap_stream_node_addr_t *dap_cluster_get_all_members_addrs(dap_cluster_t *a_clust
         l_count = HASH_COUNT(a_cluster->members);
         ret = DAP_NEW_Z_COUNT(dap_stream_node_addr_t, l_count);
         if (!ret) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             pthread_rwlock_unlock(&a_cluster->members_lock);
             return NULL;
         }

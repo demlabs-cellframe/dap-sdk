@@ -153,6 +153,7 @@ bool s_proc_thread_reader(void *a_arg)
         l_oncoming_pkt->last_hash = c_dap_global_db_driver_hash_blank;
         dap_stream_ch_pkt_send_by_addr(l_sender_addr, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST,
                                        l_oncoming_pkt, l_pkt_size);
+        DAP_DEL_Z(l_oncoming_pkt);
     }
     if (!l_ret)
         DAP_DELETE(a_arg);
@@ -210,6 +211,7 @@ static bool s_process_request(void *a_arg)
     }
     dap_global_db_driver_hash_t *l_hashes = (dap_global_db_driver_hash_t *)(l_group + l_pkt->group_name_len);
     dap_global_db_pkt_pack_t *l_pkt_out = dap_global_db_driver_get_by_hash(l_group, l_hashes, l_pkt->hashes_count);
+
     if (l_pkt_out) {
         debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_RECORD_PACK packet for group %s with records count %u",
                                                                                                 l_group, l_pkt_out->obj_count);
@@ -328,7 +330,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                             ? "GLOBAL_DB_SYNC_START" : "GLOBAL_DB_GROUP_REQUEST", l_pkt->group);
         byte_t *l_arg = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_node_addr_t) + sizeof(byte_t) + l_ch_pkt->hdr.data_size);
         if (!l_arg) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             break;
         }
         memcpy(l_arg + sizeof(dap_stream_node_addr_t) + sizeof(byte_t), l_pkt, l_ch_pkt->hdr.data_size);
@@ -357,7 +359,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             break;
         byte_t *l_arg = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_node_addr_t) + l_ch_pkt->hdr.data_size);
         if (!l_arg) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             break;
         }
         memcpy(l_arg + sizeof(dap_stream_node_addr_t), l_pkt, l_ch_pkt->hdr.data_size);

@@ -6,9 +6,9 @@
 * Copyright  (c) 2017-2022
 * All rights reserved.
 
-This file is part of DAP (Demlabs Application Protocol) the open source project
+This file is part of DAP (Distributed Applications Platform) the open source project
 
-   DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+   DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation, either version 3 of the License, or
    (at your option) any later version.
@@ -267,7 +267,7 @@ static int s_start(dap_plugin_manifest_t * a_manifest)
     }else{ // Successfully
         struct plugin_module * l_module = DAP_NEW_Z(struct plugin_module);
         if (!l_module) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return -1;
         }
         l_module->pvt_data = l_pvt_data;

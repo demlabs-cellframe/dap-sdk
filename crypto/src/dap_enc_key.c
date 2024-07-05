@@ -2,9 +2,9 @@
  Copyright (c) 2017-2018 (c) Project "DeM Labs Inc" https://github.com/demlabsinc
   All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -40,7 +40,9 @@
 #include "dap_enc_kyber.h"
 #include "dap_enc_sphincsplus.h"
 #include "dap_enc_multisign.h"
+#ifdef DAP_ECDSA
 #include "dap_enc_ecdsa.h"
+#endif
 #include "dap_enc_shipovnik.h"
 #include "dap_enc_ringct20.h"
 #ifdef DAP_PQRL
@@ -368,6 +370,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
 
   [DAP_ENC_KEY_TYPE_SIG_ECDSA]={
         .name =                             "SIG_ECDSA",
+#ifdef DAP_ECDSA
         .enc =                              NULL,
         .dec =                              NULL,
         .enc_na =                           NULL,
@@ -389,16 +392,17 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .sign_get =                         dap_enc_sig_ecdsa_get_sign,
         .sign_verify =                      dap_enc_sig_ecdsa_verify_sign,
 
-        .ser_sign_ex =                      dap_enc_sig_ecdsa_write_signature,
+        .ser_sign    =                      dap_enc_sig_ecdsa_write_signature,
         .ser_pub_key =                      dap_enc_sig_ecdsa_write_public_key,
         .ser_priv_key_size =                dap_enc_sig_ecdsa_ser_key_size,
         .ser_pub_key_size =                 dap_enc_sig_ecdsa_ser_pkey_size,
 
-        .deser_sign_ex =                    dap_enc_sig_ecdsa_read_signature,
-        .deser_pub_key_ex =                 dap_enc_sig_ecdsa_read_public_key,
+        .deser_sign =                       dap_enc_sig_ecdsa_read_signature,
+        .deser_pub_key =                    dap_enc_sig_ecdsa_read_public_key,
         .deser_priv_key_size =              dap_enc_sig_ecdsa_deser_key_size,
         .deser_pub_key_size =               dap_enc_sig_ecdsa_deser_pkey_size,
         .deser_sign_size  =                 dap_enc_sig_ecdsa_signature_size
+#endif
     },
 
 
@@ -605,22 +609,25 @@ void dap_enc_key_deinit()
  * @param a_sign_len [in/out]
  * @return allocates memory with private key
  */
-uint8_t *dap_enc_key_serialize_sign(dap_enc_key_t *a_key, uint8_t *a_sign, size_t *a_sign_len)
+uint8_t *dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len)
 {
     uint8_t *l_data = NULL;
-    switch (a_key->type) {
+    switch (a_key_type) {
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
-            l_data = s_callbacks[a_key->type].ser_sign(a_sign, a_sign_len);
-            break;
-        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-            l_data = s_callbacks[a_key->type].ser_sign_ex(a_sign, a_key, a_sign_len);
+            if (!s_callbacks[a_key_type].ser_sign) {
+                log_it(L_ERROR, "No callback for signature serialize to %s enc key", dap_enc_get_type_name(a_key_type));
+                return NULL;
+            }
+            l_data = s_callbacks[a_key_type].ser_sign(a_sign, a_sign_len);
             break;
         default:
+            dap_return_val_if_pass(!a_sign || !a_sign_len || !(*a_sign_len), NULL);
             DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, *a_sign_len, NULL, NULL);
             memcpy(l_data, a_sign, *a_sign_len);
     }
@@ -635,27 +642,31 @@ uint8_t *dap_enc_key_serialize_sign(dap_enc_key_t *a_key, uint8_t *a_sign, size_
  * @param a_sign_len [in/out]
  * @return allocates memory with private key
  */
-uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_t *a_key, uint8_t *a_sign, size_t *a_sign_len)
+uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_sign, size_t *a_sign_len)
 {
     //todo: why are we changing a_sign_len after we have already used it in a function call?
+    dap_return_val_if_pass(!a_sign_len, NULL);
     uint8_t *l_data = NULL;
-    switch (a_key->type) {
-    case DAP_ENC_KEY_TYPE_SIG_BLISS:
-    case DAP_ENC_KEY_TYPE_SIG_TESLA:
-    case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-    case DAP_ENC_KEY_TYPE_SIG_FALCON:
-    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-    //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
-    case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
-        l_data = s_callbacks[a_key->type].deser_sign(a_sign, *a_sign_len);
-        *a_sign_len = s_callbacks[a_key->type].deser_sign_size(NULL);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-        l_data = s_callbacks[a_key->type].deser_sign_ex(a_sign, a_key, *a_sign_len);
-        break;
-    default:
-        DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, *a_sign_len, NULL, NULL);
-        memcpy(l_data, a_sign, *a_sign_len);
+    switch (a_key_type) {
+        case DAP_ENC_KEY_TYPE_SIG_BLISS:
+        case DAP_ENC_KEY_TYPE_SIG_TESLA:
+        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+        //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
+            if (!s_callbacks[a_key_type].deser_sign || !s_callbacks[a_key_type].deser_sign_size) {
+                log_it(L_ERROR, "No callback for signature deserialize to %s enc key", dap_enc_get_type_name(a_key_type));
+                return NULL;
+            }
+            l_data = s_callbacks[a_key_type].deser_sign(a_sign, *a_sign_len);
+            *a_sign_len = s_callbacks[a_key_type].deser_sign_size(NULL);
+            break;
+        default:
+            dap_return_val_if_pass(!a_sign || !(*a_sign_len), NULL);
+            DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, *a_sign_len, NULL, NULL);
+            memcpy(l_data, a_sign, *a_sign_len);
     }
     return l_data;
 }
@@ -673,18 +684,22 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
     dap_return_val_if_pass(!a_key || !a_key->priv_key_data_size, NULL);
     uint8_t *l_data = NULL;
     switch (a_key->type) {
-    case DAP_ENC_KEY_TYPE_SIG_BLISS:
-    case DAP_ENC_KEY_TYPE_SIG_TESLA:
-    case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-    case DAP_ENC_KEY_TYPE_SIG_FALCON:
-    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        l_data = s_callbacks[a_key->type].ser_priv_key(a_key->priv_key_data, a_buflen_out);
-        break;
-    default:
-        DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->priv_key_data_size, NULL, NULL);
-        memcpy(l_data, a_key->priv_key_data, a_key->priv_key_data_size);
-        if(a_buflen_out)
-            *a_buflen_out = a_key->priv_key_data_size;
+        case DAP_ENC_KEY_TYPE_SIG_BLISS:
+        case DAP_ENC_KEY_TYPE_SIG_TESLA:
+        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+            if (!s_callbacks[a_key->type].ser_priv_key) {
+                log_it(L_ERROR, "No callback for private key serialize to %s enc key", dap_enc_get_type_name(a_key->type));
+                return NULL;
+            }
+            l_data = s_callbacks[a_key->type].ser_priv_key(a_key->priv_key_data, a_buflen_out);
+            break;
+        default:
+            DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->priv_key_data_size, NULL, NULL);
+            memcpy(l_data, a_key->priv_key_data, a_key->priv_key_data_size);
+            if(a_buflen_out)
+                *a_buflen_out = a_key->priv_key_data_size;
     }
     return l_data;
 }
@@ -703,21 +718,23 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
 // func work
     uint8_t *l_data = NULL;
     switch (a_key->type) {
-    case DAP_ENC_KEY_TYPE_SIG_BLISS:
-    case DAP_ENC_KEY_TYPE_SIG_TESLA:
-    case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-    case DAP_ENC_KEY_TYPE_SIG_FALCON:
-    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        l_data = s_callbacks[a_key->type].ser_pub_key(a_key->pub_key_data, a_buflen_out);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-        l_data = s_callbacks[a_key->type].ser_pub_key(a_key, a_buflen_out);
-        break;
-    default:
-        DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->pub_key_data_size, NULL, NULL);
-        memcpy(l_data, a_key->pub_key_data, a_key->pub_key_data_size);
-        if(a_buflen_out)
-            *a_buflen_out = a_key->pub_key_data_size;
+        case DAP_ENC_KEY_TYPE_SIG_BLISS:
+        case DAP_ENC_KEY_TYPE_SIG_TESLA:
+        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+            if (!s_callbacks[a_key->type].ser_pub_key) {
+                log_it(L_ERROR, "No callback for public key serialize to %s enc key", dap_enc_get_type_name(a_key->type));
+                return NULL;
+            }
+            l_data = s_callbacks[a_key->type].ser_pub_key(a_key->pub_key_data, a_buflen_out);
+            break;
+        default:
+            DAP_NEW_Z_SIZE_RET_VAL(l_data, uint8_t, a_key->pub_key_data_size, NULL, NULL);
+            memcpy(l_data, a_key->pub_key_data, a_key->pub_key_data_size);
+            if(a_buflen_out)
+                *a_buflen_out = a_key->pub_key_data_size;
     }
     return l_data;
 }
@@ -735,28 +752,43 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
     dap_return_val_if_pass(!a_key || !a_buf, -1);
 // func work
     switch (a_key->type) {
-    case DAP_ENC_KEY_TYPE_SIG_BLISS:
-    case DAP_ENC_KEY_TYPE_SIG_TESLA:
-    case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-    case DAP_ENC_KEY_TYPE_SIG_FALCON:
-    //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
-    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        if (a_key->priv_key_data)
-            s_callbacks[a_key->type].del_priv_key(a_key->priv_key_data);
-        a_key->priv_key_data = s_callbacks[a_key->type].deser_priv_key(a_buf, a_buflen);
-        if(!a_key->priv_key_data) {
-            a_key->priv_key_data_size = 0;
-            return -2;
-        }
-        a_key->priv_key_data_size = s_callbacks[a_key->type].deser_priv_key_size(NULL);
-        break;
-    default:
-        DAP_DEL_Z(a_key->priv_key_data);
-        a_key->priv_key_data_size = a_buflen;
-        DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -1, NULL);
-        memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
-        dap_enc_key_update(a_key);
+        case DAP_ENC_KEY_TYPE_SIG_BLISS:
+        case DAP_ENC_KEY_TYPE_SIG_TESLA:
+        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+            if (!s_callbacks[a_key->type].deser_priv_key) {
+                log_it(L_ERROR, "No callback for private key deserialize to %s enc key", dap_enc_get_type_name(a_key->type));
+                return -2;
+            }
+            if (a_key->priv_key_data) {
+                if (!s_callbacks[a_key->type].del_priv_key) {
+                    log_it(L_WARNING, "No callback for private key delete to %s enc key. LEAKS CAUTION!", dap_enc_get_type_name(a_key->type));
+                    DAP_DELETE(a_key->priv_key_data);
+                } else {
+                    s_callbacks[a_key->type].del_priv_key(a_key->priv_key_data);
+                }
+            }
+            a_key->priv_key_data = s_callbacks[a_key->type].deser_priv_key(a_buf, a_buflen);
+            if(!a_key->priv_key_data) {
+                a_key->priv_key_data_size = 0;
+                return -3;
+            }
+            if (!s_callbacks[a_key->type].deser_priv_key_size) {
+                log_it(L_DEBUG, "No callback for private key deserialize size calc to %s enc key", dap_enc_get_type_name(a_key->type));
+                a_key->priv_key_data_size = a_buflen;
+            } else {
+                a_key->priv_key_data_size = s_callbacks[a_key->type].deser_priv_key_size(NULL);
+            }
+            break;
+        default:
+            DAP_DEL_Z(a_key->priv_key_data);
+            a_key->priv_key_data_size = a_buflen;
+            DAP_NEW_Z_SIZE_RET_VAL(a_key->priv_key_data, uint8_t, a_key->priv_key_data_size, -4, NULL);
+            memcpy(a_key->priv_key_data, a_buf, a_key->priv_key_data_size);
     }
+    dap_enc_key_update(a_key);
     return 0;
 }
 
@@ -765,7 +797,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
  * @param a_key
  * @param a_buf
  * @param a_buflen_out
- * @return 0 Ok, -1 error
+ * @return 0 Ok, other error
  */
 int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, size_t a_buflen)
 {
@@ -773,33 +805,45 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
     dap_return_val_if_pass(!a_key || !a_buf, -1);
 // func work
     switch (a_key->type) {
-    case DAP_ENC_KEY_TYPE_SIG_BLISS:
-    case DAP_ENC_KEY_TYPE_SIG_TESLA:
-    case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-    case DAP_ENC_KEY_TYPE_SIG_FALCON:        
-    //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
-    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        if (a_key->pub_key_data)
-            s_callbacks[a_key->type].del_pub_key(a_key->pub_key_data);
+        case DAP_ENC_KEY_TYPE_SIG_BLISS:
+        case DAP_ENC_KEY_TYPE_SIG_TESLA:
+        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_ECDSA:    
+        //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+            if (!s_callbacks[a_key->type].deser_pub_key) {
+                log_it(L_ERROR, "No callback for public key deserialize to %s enc key", dap_enc_get_type_name(a_key->type));
+                return -2;
+            }
 
-        a_key->pub_key_data = s_callbacks[a_key->type].deser_pub_key(a_buf, a_buflen);
-        if(!a_key->pub_key_data) {
-            a_key->pub_key_data_size = 0;
-            return -1;
-        }
-        a_key->pub_key_data_size = s_callbacks[a_key->type].deser_pub_key_size(NULL);
-        break;
-    case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-        s_callbacks[a_key->type].del_pub_key(a_key->pub_key_data);
-        a_key->pub_key_data = s_callbacks[a_key->type].deser_pub_key_ex(a_buf, a_key, a_buflen);
-        break;
-    default:
-        DAP_DEL_Z(a_key->pub_key_data);
-        a_key->pub_key_data_size = a_buflen;
-        DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1, NULL);
-        memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
-        dap_enc_key_update(a_key);
+            if (a_key->pub_key_data) {
+                if (!s_callbacks[a_key->type].del_pub_key) {
+                    log_it(L_WARNING, "No callback for public key delete to %s enc key. LEAKS CAUTION!", dap_enc_get_type_name(a_key->type));
+                    DAP_DELETE(a_key->pub_key_data);
+                } else {
+                    s_callbacks[a_key->type].del_pub_key(a_key->pub_key_data);
+                }
+            }
+            a_key->pub_key_data = s_callbacks[a_key->type].deser_pub_key(a_buf, a_buflen);
+            if(!a_key->pub_key_data) {
+                a_key->pub_key_data_size = 0;
+                return -3;
+            }
+            if (!s_callbacks[a_key->type].deser_pub_key_size) {
+                log_it(L_DEBUG, "No callback for public key deserialize size calc to %s enc key", dap_enc_get_type_name(a_key->type));
+                a_key->pub_key_data_size = a_buflen;
+            } else {
+                a_key->pub_key_data_size = s_callbacks[a_key->type].deser_pub_key_size(NULL);
+            }
+            break;
+        default:
+            DAP_DEL_Z(a_key->pub_key_data);
+            a_key->pub_key_data_size = a_buflen;
+            DAP_NEW_Z_SIZE_RET_VAL(a_key->pub_key_data, uint8_t, a_key->pub_key_data_size, -1, NULL);
+            memcpy(a_key->pub_key_data, a_buf, a_key->pub_key_data_size);
     }
+    dap_enc_key_update(a_key);
     return 0;
 }
 
@@ -984,7 +1028,7 @@ size_t dap_enc_ser_priv_key_size (dap_enc_key_t *a_key)
     if(s_callbacks[a_key->type].ser_priv_key_size) {
         return s_callbacks[a_key->type].ser_priv_key_size(a_key->priv_key_data);
     }
-    log_it(L_WARNING, "No callback for key private size calculate");
+    log_it(L_WARNING, "No callback for private key size calculate to %s enc key", dap_enc_get_type_name(a_key->type));
     return a_key->priv_key_data_size;
 }
 
@@ -1001,7 +1045,7 @@ size_t dap_enc_ser_pub_key_size(dap_enc_key_t *a_key)
     if(s_callbacks[a_key->type].ser_pub_key_size) {
         return s_callbacks[a_key->type].ser_pub_key_size(a_key->priv_key_data);
     }
-    log_it(L_WARNING, "No callback for key public size calculate");
+    log_it(L_WARNING, "No callback for public key size calculate to %s enc key", dap_enc_get_type_name(a_key->type));
     return a_key->pub_key_data_size;
 }
 
@@ -1013,7 +1057,7 @@ int dap_enc_gen_key_public(dap_enc_key_t *a_key, void *a_output)
     if(s_callbacks[a_key->type].gen_key_public) {
         return s_callbacks[a_key->type].gen_key_public(a_key, a_output);
     }
-    log_it(L_ERROR, "No callback for key public generate action");
+    log_it(L_ERROR, "No callback for key public generate action to %s enc key", dap_enc_get_type_name(a_key->type));
     return -2;
 }
 
@@ -1028,17 +1072,21 @@ void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_
     dap_return_if_pass(DAP_ENC_KEY_TYPE_INVALID == a_key_type || !a_sig_buf);
 // func work
     switch (a_key_type) {
-    case DAP_ENC_KEY_TYPE_SIG_BLISS:
-    case DAP_ENC_KEY_TYPE_SIG_TESLA:
-    case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
-    case DAP_ENC_KEY_TYPE_SIG_FALCON:
-    case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-    case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
-    case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        s_callbacks[a_key_type].del_sign(a_sig_buf);
-        break;
-    default:
-        break;
+        case DAP_ENC_KEY_TYPE_SIG_BLISS:
+        case DAP_ENC_KEY_TYPE_SIG_TESLA:
+        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
+        case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
+            if (!s_callbacks[a_key_type].del_sign) {
+                log_it(L_WARNING, "No callback for signature delete to %s enc key. LEAKS CAUTION!", dap_enc_get_type_name(a_key_type));
+                break;
+            }
+            s_callbacks[a_key_type].del_sign(a_sig_buf);
+            break;
+        default:
+            break;
     }
     DAP_DEL_Z(a_sig_buf);
 }
@@ -1055,10 +1103,10 @@ void dap_enc_key_delete(dap_enc_key_t * a_key)
     if(s_callbacks[a_key->type].delete_callback) {
         s_callbacks[a_key->type].delete_callback(a_key);
     } else {
-        log_it(L_ERROR, "delete callback is null. Can be leak memory!");
+        log_it(L_WARNING, "No callback for key delete to %s enc key. LEAKS CAUTION!", dap_enc_get_type_name(a_key->type));
+        DAP_DEL_MULTY(a_key->pub_key_data, a_key->priv_key_data, a_key->_inheritor, a_key->pbk_list_data, a_key);
     }
-    /* a_key->_inheritor must be cleaned in delete_callback func */
-    DAP_DEL_MULTY(a_key->pub_key_data, a_key->priv_key_data, a_key);
+    DAP_DELETE(a_key);
 }
 
 /**
@@ -1067,15 +1115,12 @@ void dap_enc_key_delete(dap_enc_key_t * a_key)
  * @param a_buf_in_size in buf size to calc
  * @return calced size or 0
  */
-size_t dap_enc_key_get_enc_size(dap_enc_key_t *a_key, const size_t a_buf_in_size)
+size_t dap_enc_key_get_enc_size(dap_enc_key_type_t a_key_type, const size_t a_buf_in_size)
 {
-// sanity check
-    dap_return_val_if_pass(!a_key, 0);
-// func work
-    if(s_callbacks[a_key->type].enc_out_size) {
-        return s_callbacks[a_key->type].enc_out_size(a_buf_in_size);
+    if(s_callbacks[a_key_type].enc_out_size) {
+        return s_callbacks[a_key_type].enc_out_size(a_buf_in_size);
     }
-    log_it(L_ERROR, "enc_out_size not realize for current key type");
+    log_it(L_ERROR, "No callback for enc_out_size to %s enc key", dap_enc_get_type_name(a_key_type));
     return 0;
 }
 
@@ -1085,15 +1130,12 @@ size_t dap_enc_key_get_enc_size(dap_enc_key_t *a_key, const size_t a_buf_in_size
  * @param a_buf_in_size in buf size to calc
  * @return calced size or 0
  */
-size_t dap_enc_key_get_dec_size(dap_enc_key_t *a_key, const size_t a_buf_in_size)
+size_t dap_enc_key_get_dec_size(dap_enc_key_type_t a_key_type, const size_t a_buf_in_size)
 {
-// sanity check
-    dap_return_val_if_pass(!a_key, 0);
-// func work
-    if(s_callbacks[a_key->type].dec_out_size) {
-        return s_callbacks[a_key->type].dec_out_size(a_buf_in_size);
+    if(s_callbacks[a_key_type].dec_out_size) {
+        return s_callbacks[a_key_type].dec_out_size(a_buf_in_size);
     }
-    log_it(L_ERROR, "dec_out_size not realize for current key type");
+    log_it(L_ERROR, "No callback for dec_out_size to %s enc key", dap_enc_get_type_name(a_key_type));
     return 0;
 }
 
@@ -1104,8 +1146,8 @@ const char *dap_enc_get_type_name(dap_enc_key_type_t a_key_type)
             return s_callbacks[a_key_type].name;
         }
     }
-    log_it(L_WARNING, "name was not set for key type %d", a_key_type);
-    return 0;
+    log_it(L_WARNING, "Name was not set for key type %d", a_key_type);
+    return "UNDEFINED";
 }
 
 dap_enc_key_type_t dap_enc_key_type_find_by_name(const char * a_name){
@@ -1114,7 +1156,7 @@ dap_enc_key_type_t dap_enc_key_type_find_by_name(const char * a_name){
         if(l_current_key_name && !strcmp(a_name, l_current_key_name))
             return i;
     }
-    log_it(L_WARNING, "no key type with name %s", a_name);
+    log_it(L_WARNING, "No key type with name %s", a_name);
     return DAP_ENC_KEY_TYPE_INVALID;
 }
 
@@ -1123,7 +1165,6 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
 {
 // sanity check
     dap_return_val_if_pass(!a_key, 0);
-    size_t l_sign_size = 0;
     switch (a_key->type){
         case DAP_ENC_KEY_TYPE_SIG_PICNIC:
         case DAP_ENC_KEY_TYPE_SIG_BLISS:
@@ -1134,14 +1175,19 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
-            l_sign_size = s_callbacks[a_key->type].deser_sign_size(a_key);
-            break;
+            if (!s_callbacks[a_key->type].deser_sign_size) {
+                log_it(L_ERROR, "No callback for signature deserialize size calc to %s enc key", dap_enc_get_type_name(a_key->type));
+                break;
+            }
+            return s_callbacks[a_key->type].deser_sign_size(a_key);
 #ifdef DAP_PQRL
-        case DAP_ENC_KEY_TYPE_SIG_PQLR_DILITHIUM: l_sign_size = dap_pqlr_dilithium_calc_signature_size(a_key); break;
+        case DAP_ENC_KEY_TYPE_SIG_PQLR_DILITHIUM: return dap_pqlr_dilithium_calc_signature_size(a_key); break;
 #endif
-        default : return 0;
+        default :
+            log_it(L_ERROR, "Can't signature deserialize size calc to %s enc key", dap_enc_get_type_name(a_key->type));
+            return 0;
     }
-    return l_sign_size;
+    return 0;
 }
 
 /**

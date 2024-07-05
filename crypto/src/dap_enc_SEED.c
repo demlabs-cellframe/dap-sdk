@@ -39,9 +39,9 @@ void dap_enc_seed_key_delete(struct dap_enc_key *a_key)
     if(a_key->priv_key_data != NULL)
     {
         randombytes(a_key->priv_key_data,a_key->priv_key_data_size);
-        //DAP_DELETE(a_key->priv_key_data);
+        DAP_DEL_Z(a_key->priv_key_data);
     }
-    //a_key->priv_key_data_size = 0;
+    a_key->priv_key_data_size = 0;
 }
 //------SEED_OFB-----------
 void dap_enc_seed_ofb_key_new(struct dap_enc_key * a_key)

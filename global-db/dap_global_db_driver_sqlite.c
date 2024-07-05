@@ -209,7 +209,7 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
         pthread_rwlock_wrlock(&s_conn_list_rwlock);
         s_conn = DAP_NEW_Z(conn_list_item_t);
         if (!s_conn) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             pthread_rwlock_unlock(&s_conn_list_rwlock);
             return NULL;
         }
@@ -222,8 +222,8 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
             return NULL;
         }
         s_db_sqlite_prepare_connection(s_conn->conn);
-        log_it(L_DEBUG, "SQL connection #%d is created @%p", s_conn->idx, s_conn);
         s_conn->idx = l_conn_idx++;
+        log_it(L_DEBUG, "SQL connection #%d is created @%p", s_conn->idx, s_conn);
         s_conn_list = dap_list_append(s_conn_list, s_conn);
         pthread_rwlock_unlock(&s_conn_list_rwlock);
     }
@@ -416,7 +416,7 @@ static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, boo
 // memory alloc
     l_ret = DAP_NEW_Z(dap_store_obj_t);
     if (!l_ret) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         goto clean_and_ret;
     }
 // fill item
@@ -451,7 +451,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     char *l_blob_str = DAP_NEW_Z_SIZE(char, a_count * 2);
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
     if (!l_blob_str || !l_table_name) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_table_name, l_blob_str);
         goto clean_and_ret;
     }
@@ -748,9 +748,9 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const ch
 // data forming
     size_t l_count_out = 0;
     int l_ret_code = 0;
-    for (l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt);l_ret_code == SQLITE_ROW && l_count_out < l_count; ++l_count_out) {
-        l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt);
-    }
+    for (l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt);
+        l_ret_code == SQLITE_ROW && l_count_out < l_count; 
+        ++l_count_out, l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt)) {}
     if(l_ret_code != SQLITE_DONE) {
         log_it(L_ERROR, "SQLite read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
     }

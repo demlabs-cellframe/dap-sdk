@@ -2,9 +2,9 @@
  Copyright (c) 2017-2018 (c) Project "DeM Labs Inc" https://github.com/demlabsinc
   All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -76,7 +76,7 @@ bool dap_enc_debug_more()
  */
 size_t dap_enc_code_out_size(dap_enc_key_t* a_key, const size_t a_buf_in_size, dap_enc_data_type_t type)
 {
-    size_t raw_encode_data_size = dap_enc_key_get_enc_size(a_key, a_buf_in_size);
+    size_t raw_encode_data_size = dap_enc_key_get_enc_size(a_key->type, a_buf_in_size);
     if(raw_encode_data_size == 0) {
         log_it(L_ERROR, "dap_enc_key_get_enc_size return 0");
         return 0;
@@ -95,7 +95,7 @@ size_t dap_enc_code_out_size(dap_enc_key_t* a_key, const size_t a_buf_in_size, d
  */
 size_t dap_enc_decode_out_size(dap_enc_key_t* a_key, const size_t a_buf_in_size, dap_enc_data_type_t type)
 {
-    size_t raw_decode_data_size = dap_enc_key_get_dec_size(a_key, a_buf_in_size);
+    size_t raw_decode_data_size = dap_enc_key_get_dec_size(a_key->type, a_buf_in_size);
     if(raw_decode_data_size == 0) {
         log_it(L_ERROR, "dap_enc_key_get_enc_size return 0");
         return 0;

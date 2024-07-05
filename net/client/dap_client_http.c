@@ -3,9 +3,9 @@
  * Alexander Lysikov <alexander.lysikov@demlabs.net>
  * DeM Labs Inc.   https://demlabs.net
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
- DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+ DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by
  the Free Software Foundation, either version 3 of the License, or
  (at your option) any later version.
@@ -66,6 +66,22 @@ static uint32_t s_max_attempts = 5;
 #ifndef DAP_NET_CLIENT_NO_SSL
 static WOLFSSL_CTX *s_ctx;
 #endif
+
+http_status_code_t s_extract_http_code(void *a_response, size_t a_response_size) {
+    char l_http_code_str[3] = {'\0'};
+    size_t l_first_space = 0;
+    for (;l_first_space < a_response_size; l_first_space++) {
+        if (((const char*)a_response)[l_first_space] == ' ')
+            break;
+    }
+    if (l_first_space + 3 > a_response_size)
+        return 0;
+    l_http_code_str[0] = ((const char*)a_response)[l_first_space+1];
+    l_http_code_str[1] = ((const char*)a_response)[l_first_space+2];
+    l_http_code_str[2] = ((const char*)a_response)[l_first_space+3];
+    http_status_code_t l_http_code = strtoul(l_http_code_str, NULL, 10);
+    return l_http_code;
+}
 
 /**
  * @brief dap_client_http_init
@@ -160,7 +176,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     // add to dap_worker
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid_ptr) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
     *l_es_uuid_ptr = a_esocket->uuid;
@@ -231,6 +247,10 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
     dap_events_socket_uuid_t * l_es_uuid_ptr = (dap_events_socket_uuid_t *) a_arg;
 
     dap_worker_t * l_worker = dap_worker_get_current(); // We're in own esocket context
+    if (!l_worker) {
+        log_it(L_ERROR, "l_woker is NULL");
+        return false;
+    }
     assert(l_worker);
     dap_events_socket_t * l_es = dap_context_find( l_worker->context, *l_es_uuid_ptr);
     if(l_es){
@@ -270,6 +290,10 @@ static bool s_timer_timeout_check(void * a_arg)
     assert(l_es_uuid);
 
     dap_worker_t * l_worker = dap_worker_get_current(); // We're in own esocket context
+    if (!l_worker) {
+        log_it(L_ERROR, "l_woker is NULL");
+        return false;
+    }
     assert(l_worker);
     dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
     if(l_es){
@@ -357,7 +381,8 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                 l_client_http->response_callback(
                         l_client_http->response + l_client_http->header_length,
                         l_client_http->content_length,
-                        l_client_http->callbacks_arg);
+                        l_client_http->callbacks_arg, s_extract_http_code(
+                                l_client_http->response, l_client_http->response_size));
             l_client_http->response_size -= l_client_http->header_length;
             l_client_http->response_size -= l_client_http->content_length;
             l_client_http->header_length = 0;
@@ -442,12 +467,12 @@ static void s_es_delete(dap_events_socket_t * a_es, void * a_arg)
                l_response_size);
 
             //l_client_http->error_callback(-10 , l_client_http->callbacks_arg);
-
+            http_status_code_t l_status_code = s_extract_http_code(l_client_http->response, l_client_http->response_size);
             if(l_client_http->response_callback)
                 l_client_http->response_callback(
                         l_client_http->response + l_client_http->header_length,
                         l_response_size,
-                        l_client_http->callbacks_arg);
+                        l_client_http->callbacks_arg, l_status_code);
             l_client_http->were_callbacks_called = true;
         }else if (l_client_http->response_size){
             log_it(L_INFO, "Remote server disconnected with reply. Body is empty, only headers are in");
@@ -581,7 +606,7 @@ dap_client_http_t * dap_client_http_request_custom (
     // create private struct
     dap_client_http_t *l_client_http = DAP_NEW_Z(dap_client_http_t);
     if (!l_client_http) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
         return NULL;
@@ -598,7 +623,7 @@ dap_client_http_t * dap_client_http_request_custom (
     if (a_request && a_request_size) {
         l_client_http->request = DAP_NEW_Z_SIZE(byte_t, a_request_size + 1);
         if (!l_client_http->request) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DEL_Z(l_client_http);
             if(a_error_callback)
                 a_error_callback(errno, a_callbacks_arg);
@@ -615,7 +640,7 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->response_size_max = DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX;
     l_client_http->response = DAP_NEW_Z_SIZE(uint8_t, DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX);
     if (!l_client_http->response) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_client_http->request, l_client_http);
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
@@ -709,7 +734,7 @@ dap_client_http_t * dap_client_http_request_custom (
         dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         if (!l_ev_uuid_ptr) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DEL_MULTY(l_client_http->response, l_client_http->request, l_client_http);
             if(a_error_callback)
                 a_error_callback(errno, a_callbacks_arg);

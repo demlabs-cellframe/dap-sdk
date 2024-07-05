@@ -119,7 +119,6 @@ file( GLOB CRYPTO_SRCS
       src/sig_tesla/*.c
       src/sig_picnic/*.c
       src/sig_dilithium/*.c
-	  src/sig_ecdsa/*.c
       src/sig_shipovnik/*.c
       src/sig_shipovnik/streebog/*.c
       src/ringct20/*.c
@@ -127,6 +126,14 @@ file( GLOB CRYPTO_SRCS
       ${SPHINCS_BASE_SRCS}
       ${SPHINCS_SRCS}
 ) 
+
+if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+    file (GLOB ECDSA_SRC src/sig_ecdsa/*.c)
+    set (CRYPTO_SRCS ${CRYPTO_SRCS} ${ECDSA_SRC})
+    add_definitions("-DDAP_ECDSA")
+else()
+    list (FILTER CRYPTO_SRCS EXCLUDE REGEX ".*ecdsa.c")
+endif()
 
 get_filename_component(full_path_src ${CMAKE_CURRENT_SOURCE_DIR}/src/sig_shipovnik/streebog/gost3411-2012.c ABSOLUTE)
 list(REMOVE_ITEM CRYPTO_SRCS "${full_path_src}")
@@ -144,7 +151,6 @@ file( GLOB CRYPTO_HEADERS
       src/msrln/*.h
       src/newhope/*.h
       src/sig_bliss/*.h
-      src/sig_ecdsa/*.h
       src/sig_shipovnik/*.h
       src/sig_shipovnik/streebog/*.h
       src/sig_tesla/*.h
@@ -156,6 +162,12 @@ file( GLOB CRYPTO_HEADERS
       ${SPHINCS_HEADERS}
       include/*.h
 )
+if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+    file (GLOB ECDSA_HDR src/sig_ecdsa/*.h)
+    set (CRYPTO_HEADERS ${CRYPTO_HEADERS} ${ECDSA_HDR})
+else()
+    list (FILTER CRYPTO_HEADERS EXCLUDE REGEX ".*ecdsa.h")
+endif()
 
 set_source_files_properties(src/sig_picnic/picnic_impl.c PROPERTIES COMPILE_FLAGS -Wno-stringop-overflow)
 if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12.2)
@@ -173,7 +185,9 @@ file( GLOB XKCP_SRCS
 
 set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sig_shipovnik/streebog src/sphincsplus src include)
 add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
-add_subdirectory (${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/ ${CMAKE_CURRENT_BINARY_DIR}/secp256k1)
+if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+    add_subdirectory (${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/ ${CMAKE_CURRENT_BINARY_DIR}/secp256k1)
+endif()
 
 option (DAP_PQLR "PQRL Intergration" OFF)
 
@@ -432,16 +446,20 @@ endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
 
-target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c secp256k1)
+target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c)
+if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+    target_link_libraries(dap_crypto secp256k1)
+endif()
 
 if(UNIX)
   target_link_libraries(dap_crypto m)
 endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
-target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include)
-target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/src)
-
+if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+    target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include)
+    target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/src)
+endif()
 
 if(BUILD_CRYPTO_TESTS)
     enable_testing()

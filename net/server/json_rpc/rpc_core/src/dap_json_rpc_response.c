@@ -6,7 +6,7 @@ dap_json_rpc_response_t *dap_json_rpc_response_init()
 {
     dap_json_rpc_response_t *response = DAP_NEW(dap_json_rpc_response_t);
     if (!response)
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
     dap_json_rpc_error_init();
     return response;
 }
@@ -20,7 +20,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
 
     dap_json_rpc_response_t *response = DAP_NEW(dap_json_rpc_response_t);
     if (!response) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
     

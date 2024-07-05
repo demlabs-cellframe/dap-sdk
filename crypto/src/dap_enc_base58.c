@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2019
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -248,4 +248,10 @@ char* dap_enc_base58_to_hex_str_from_str(const char *a_in_str)
     l_out_str[1] = 'x';
     dap_htoa64((l_out_str + 2), l_out, l_out_size);
     return l_out_str;
+}
+
+const char *dap_enc_base58_encode_hash_to_str_static(const dap_chain_hash_fast_t *a_in_hash)
+{
+    _Thread_local static char s_buf[DAP_ENC_BASE58_ENCODE_SIZE(sizeof(dap_chain_hash_fast_t))] = { '\0' };
+    return dap_enc_base58_encode(a_in_hash, sizeof(dap_chain_hash_fast_t), s_buf) ? s_buf : NULL;
 }

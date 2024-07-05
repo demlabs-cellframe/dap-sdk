@@ -12,7 +12,7 @@ int dap_json_rpc_response_registration_with_id(uint64_t a_id, dap_json_rpc_respo
     if (l_handler == NULL){
         l_handler = DAP_NEW(dap_json_rpc_response_handler_t);
         if (!l_handler) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return -1;
         }
         l_handler->id = a_id;
@@ -60,9 +60,10 @@ uint64_t dap_json_rpc_response_get_new_id(void)
     return l_ret;
 }
 
-void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj)
+void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj, http_status_code_t http_status)
 {
-    (void) a_obj;
+    (void)http_status;
+    (void)a_obj;
     log_it(L_NOTICE, "Pre handling response");
     char *l_str = DAP_NEW_SIZE(char, a_size_data);
     memcpy(l_str, a_data, a_size_data);

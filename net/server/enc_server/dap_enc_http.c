@@ -2,9 +2,9 @@
  Copyright (c) 2017-2018 (c) Project "DeM Labs Inc" https://github.com/demlabsinc
   All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU Lesser General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -46,7 +46,7 @@
 #include "include/dap_enc_http.h"
 #include "dap_enc_base64.h"
 #include "dap_enc_msrln.h"
-#include "include/http_status_code.h"
+#include "http_status_code.h"
 #include "dap_http_ban_list_client.h"
 #include "json.h"
 #include "dap_http_ban_list_client.h"
@@ -179,7 +179,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             !(encrypt_msg = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(l_pkey_exchange_key->pub_key_data_size) + 1)) ||
             !(encrypt_id = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1))
         ) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             dap_enc_key_delete(l_pkey_exchange_key);
             *return_code = Http_Status_InternalServerError;
             return;
@@ -211,7 +211,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
 
             l_node_sign_msg = DAP_NEW_Z_SIZE(char, l_node_sign_size_new);
             if (!l_node_sign_msg) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 dap_enc_key_delete(l_pkey_exchange_key);
                 *return_code = Http_Status_InternalServerError;
                 DAP_DELETE(l_node_sign);
@@ -257,7 +257,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
     if(l_key){
         enc_http_delegate_t * dg = DAP_NEW_Z(enc_http_delegate_t);
         if (!dg) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DEL_Z(dg);
             return NULL;
         }
@@ -274,7 +274,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
             size_t l_dg_request_size_max = a_http_simple->request_size;
             dg->request= DAP_NEW_SIZE( void , l_dg_request_size_max+1);
             if (!dg->request) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 DAP_DEL_Z(dg);
                 return NULL;
             }
@@ -296,7 +296,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         if(l_url_path_size_max){
             dg->url_path= DAP_NEW_SIZE(char,l_url_path_size_max+1);
             if (!dg->url_path) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 DAP_DEL_Z(dg->request);
                 DAP_DEL_Z(dg);
                 return NULL;
@@ -312,7 +312,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         if(l_in_query_size){
             dg->in_query= DAP_NEW_SIZE(char, l_in_query_size+1);
             if (!dg->in_query) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 DAP_DEL_Z(dg->request);
                 DAP_DEL_Z(dg->url_path);
                 DAP_DEL_Z(dg);
@@ -324,7 +324,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         }
         dg->response = calloc(1,a_http_simple->reply_size_max+1);
         if (!dg->response) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DEL_Z(dg->in_query);
             DAP_DEL_Z(dg->request);
             DAP_DEL_Z(dg->url_path);

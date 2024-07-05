@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2020
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -73,7 +73,7 @@ dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(json_object *a_jobj);
 
 void dap_json_rpc_add_standart_erros(void);
 
-#define dap_json_rpc_allocation_error log_it(L_CRITICAL, "%s", g_error_memory_alloc); dap_json_rpc_error_add(DAP_JSON_RPC_ERR_CODE_MEMORY_ALLOCATED, "[%s] %s",  LOG_TAG, g_error_memory_alloc)
+#define dap_json_rpc_allocation_error log_it(L_CRITICAL, "%s", c_error_memory_alloc); dap_json_rpc_error_add(DAP_JSON_RPC_ERR_CODE_MEMORY_ALLOCATED, "[%s] %s",  LOG_TAG, c_error_memory_alloc)
 
 #ifdef __cplusplus
 }

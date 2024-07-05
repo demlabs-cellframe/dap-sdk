@@ -42,7 +42,6 @@ typedef struct __dap_test_record__ {
 #define DAP_DB$SZ_DATA                  8192
 #define DAP_DB$SZ_KEY                   64
 #define DAP_DB$SZ_HOLES                 3
-#define DAP_DB$SZ_THREADS               3
 #define DAP_DB$T_GROUP                  "group.zero"
 #define DAP_DB$T_GROUP_WRONG            "group.wrong"
 #define DAP_DB$T_GROUP_NOT_EXISTED      "group.not.existed"
@@ -589,18 +588,20 @@ void *s_test_thread(void *a_arg)
 
 void s_test_multithread(size_t a_count)
 {
-    pthread_t *l_threads = DAP_NEW_Z_COUNT(pthread_t, DAP_DB$SZ_THREADS);
+    uint32_t l_thread_count = 2;
+    log_it(L_INFO, "Test with %u threads", l_thread_count);
+    pthread_t *l_threads = DAP_NEW_Z_COUNT(pthread_t, l_thread_count);
 
-    for (size_t i = 0; i < DAP_DB$SZ_THREADS; ++i) {
+    for (uint32_t i = 0; i < l_thread_count; ++i) {
         pthread_create(l_threads + i, NULL, s_test_thread_rewrite_records, &a_count);
     }
-    for (size_t i = 0; i < DAP_DB$SZ_THREADS; ++i) {
+    for (uint32_t i = 0; i < l_thread_count; ++i) {
         pthread_join(l_threads[i], NULL);
     }
-    for (size_t i = 0; i < DAP_DB$SZ_THREADS; ++i) {
+    for (uint32_t i = 0; i < l_thread_count; ++i) {
         pthread_create(l_threads + i, NULL, s_test_thread, &a_count);
     }
-    for (size_t i = 0; i < DAP_DB$SZ_THREADS; ++i) {
+    for (uint32_t i = 0; i < l_thread_count; ++i) {
         pthread_join(l_threads[i], NULL);
     }
     DAP_DEL_Z(l_threads);

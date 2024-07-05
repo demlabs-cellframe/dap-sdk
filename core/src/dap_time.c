@@ -125,7 +125,7 @@ int timespec_diff(struct timespec *a_start, struct timespec *a_stop, struct time
 }
 
 /**
- * @brief time_to_rfc822 Convert time_t to string with RFC822 formatted date and time
+ * @brief time_to_rfc822 Convert time_t to string with RFC2822 formatted date and time
  * @param[out] out Output buffer
  * @param[out] out_size_mac Maximum size of output buffer
  * @param[in] t UNIX time

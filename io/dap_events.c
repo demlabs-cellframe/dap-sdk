@@ -6,9 +6,9 @@
  * Copyright  (c) 2017-2020
  * All rights reserved.
 
- This file is part of DAP (Demlabs Application Protocol) the open source project
+ This file is part of DAP (Distributed Applications Platform) the open source project
 
-    DAP (Demlabs Application Protocol) is free software: you can redistribute it and/or modify
+    DAP (Distributed Applications Platform) is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
     (at your option) any later version.
@@ -300,7 +300,7 @@ int dap_events_start()
     for( uint32_t i = 0; i < s_threads_count; i++) {
         dap_worker_t * l_worker = DAP_NEW_Z(dap_worker_t);
         if (!l_worker) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             l_ret = -6;
             goto lb_err;
         }
@@ -324,25 +324,25 @@ int dap_events_start()
     for (size_t n = 0; n < s_threads_count; n++) {
         s_workers[n]->queue_es_new_input      = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * s_threads_count);
         if (!s_workers[n]->queue_es_new_input) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             l_ret = -6;
             goto lb_err;
         }
         s_workers[n]->queue_es_delete_input   = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * s_threads_count);
         if (!s_workers[n]->queue_es_delete_input) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             l_ret = -6;
             goto lb_err;
         }
         s_workers[n]->queue_es_io_input       = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * s_threads_count);
         if (!s_workers[n]->queue_es_io_input) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             l_ret = -6;
             goto lb_err;
         }
         s_workers[n]->queue_es_reassign_input = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * s_threads_count);
         if (!s_workers[n]->queue_es_reassign_input) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             l_ret = -6;
             goto lb_err;
         }
