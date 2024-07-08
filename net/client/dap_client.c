@@ -196,15 +196,10 @@ void dap_client_queue_clear(dap_client_t *a_client)
  */
 void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_cert_name)
 {
-    static dap_cert_t *l_cert = NULL;
-
-    if (a_client == NULL || a_cert_name == NULL) {
-        log_it(L_ERROR,"Client or cert-name is NULL for dap_client_set_auth_cert");
-        return;
-    }
-    l_cert = dap_cert_find_by_name(a_cert_name);
+    dap_return_if_fail(a_client && a_cert_name);
+    dap_cert_t *l_cert = dap_cert_find_by_name(a_cert_name);
     if (!l_cert) {
-        log_it(L_ERROR,"l_cert is NULL by dap_cert_find_by_name");
+        log_it(L_ERROR, "Certificate %s not found", a_cert_name);
         return;
     }
     a_client->auth_cert = l_cert;

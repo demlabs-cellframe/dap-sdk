@@ -48,7 +48,7 @@ DAP_INLINE char *dap_enc_base58_encode_hash_to_str(dap_chain_hash_fast_t *a_in_h
     return dap_enc_base58_encode_to_str(a_in_hash->raw, sizeof(dap_chain_hash_fast_t));
 }
 
-const char *dap_enc_base58_encode_hash_to_str_static(dap_chain_hash_fast_t *a_in_hash);
+const char *dap_enc_base58_encode_hash_to_str_static(const dap_chain_hash_fast_t *a_in_hash);
 
 // convert from "0xA21F1E865B6740A28E8708798ECF25D2C0AA596DF5EB1FD724186B6AD7FF2199" to "Bura1HFrKsqbdytEXQVrxpbovtvLhR1VbrJs65JBx3gc"
 char* dap_enc_base58_from_hex_str_to_str(const char *a_in_str);

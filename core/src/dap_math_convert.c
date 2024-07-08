@@ -575,7 +575,7 @@ char *dap_uint128_uninteger_to_char(uint128_t a_uninteger)
 {
     char *l_buf = DAP_NEW_Z_SIZE(char, DATOSHI_POW + 2);
     if (!l_buf) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
     int l_pos = 0;

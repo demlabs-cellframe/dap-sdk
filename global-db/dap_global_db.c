@@ -161,7 +161,7 @@ int dap_global_db_init()
     if (s_dbi == NULL) {
         s_dbi = DAP_NEW_Z(dap_global_db_instance_t);
         if (!s_dbi) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             l_rc = -5;
             goto lb_return;
         }
@@ -429,13 +429,13 @@ int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_cal
     l_msg->opcode = MSG_OPCODE_GET;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->key = dap_strdup(a_key);
     if (!l_msg->key) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -503,13 +503,13 @@ int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_
     l_msg->opcode = MSG_OPCODE_GET_RAW;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->key = dap_strdup(a_key);
     if (!l_msg->key) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -574,13 +574,13 @@ int dap_global_db_get_del_ts(const char *a_group, const char *a_key, dap_global_
     l_msg->opcode = MSG_OPCODE_GET_DEL_TS;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->key = dap_strdup(a_key);
     if (!l_msg->key) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -628,7 +628,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
     if (a_key) {
         *a_key = dap_strdup(l_store_obj->key);
         if (!*a_key) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             dap_store_obj_free_one(l_store_obj);
             return NULL;
         }
@@ -641,7 +641,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
         *a_ts = l_store_obj->timestamp;
     byte_t *l_res = DAP_DUP_SIZE(l_store_obj->value, l_store_obj->value_len);
     if (!l_res) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         dap_store_obj_free_one(l_store_obj);
         return NULL;
     }
@@ -666,7 +666,7 @@ int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t
     l_msg->opcode = MSG_OPCODE_GET_LAST;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -732,7 +732,7 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
     l_msg->opcode = MSG_OPCODE_GET_LAST_RAW;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -794,7 +794,7 @@ int dap_global_db_get_all(const char *a_group, size_t a_results_page_size, dap_g
     l_msg->opcode = MSG_OPCODE_GET_ALL;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -894,7 +894,7 @@ int dap_global_db_get_all_raw(const char *a_group, size_t a_results_page_size, d
     l_msg->opcode = MSG_OPCODE_GET_ALL_RAW;
     l_msg->group = dap_strdup(a_group);
     if (l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -1016,19 +1016,19 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
     l_msg->opcode = MSG_OPCODE_SET;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->key = dap_strdup(a_key);
     if (!l_msg->key) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->value = DAP_DUP_SIZE(a_value, a_value_length);
     if (!l_msg->value && a_value) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_msg->key, l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -1110,7 +1110,7 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
 
     l_msg->values_raw = dap_store_obj_copy(a_store_objs, a_store_objs_count);
     if (!l_msg->values_raw) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -1164,7 +1164,7 @@ int dap_global_db_set_multiple_zc(const char *a_group, dap_global_db_obj_t *a_va
     l_msg->opcode = MSG_OPCODE_SET_MULTIPLE;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -1259,13 +1259,13 @@ int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callba
     l_msg->opcode = MSG_OPCODE_PIN;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->key = dap_strdup(a_key);
     if (!l_msg->key) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -1477,7 +1477,7 @@ dap_global_db_obj_t *dap_global_db_objs_copy(const dap_global_db_obj_t *a_objs_s
         if (l_obj->key) {
             l_cur->key = dap_strdup(l_obj->key);
             if (!l_cur->key) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 DAP_DELETE(l_objs_dest);
                 return NULL;
             }
@@ -1488,7 +1488,7 @@ dap_global_db_obj_t *dap_global_db_objs_copy(const dap_global_db_obj_t *a_objs_s
             if (l_obj->value_len) {
                 l_cur->value = DAP_DUP_SIZE(l_obj->value, l_obj->value_len);
                 if (!l_cur->value) {
-                    log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                    log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                     DAP_DEL_MULTY(l_cur->key, l_objs_dest);
                     return NULL;
                 }

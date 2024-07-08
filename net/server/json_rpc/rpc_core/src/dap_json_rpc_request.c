@@ -17,7 +17,7 @@ dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_
 {
     dap_json_rpc_request_t *request = DAP_NEW(dap_json_rpc_request_t);
     if (!request) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
     }
     request->method = dap_strdup(a_method);
     request->params = a_params;
@@ -45,7 +45,7 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
 
     dap_json_rpc_request_t *request = DAP_NEW_Z(dap_json_rpc_request_t);
     if (!request) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
 

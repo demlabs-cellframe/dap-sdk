@@ -57,7 +57,7 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
 
     uint8_t * id_concat_kex = (uint8_t *) malloc(kex_size + seed_size);
     if (!id_concat_kex) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
 
