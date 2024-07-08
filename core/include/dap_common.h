@@ -471,6 +471,9 @@ typedef enum dap_log_level {
   L_ERROR     = 7,
   L_CRITICAL  = 8,
   L_TOTAL,
+#ifdef DAP_TPS_TEST
+  L_TPS  = 15,
+#endif
 
 } dap_log_level_t;
 
