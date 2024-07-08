@@ -95,7 +95,11 @@ static const char *s_log_level_tag[ 16 ] = {
     " [---] ", //             = 12
     " [---] ", //             = 13
     " [---] ", //             = 14
+#ifdef DAP_TPS_TEST
+    " [TPS] ", // L_TPS       = 15
+#else
     " [---] ", //             = 15
+#endif
 };
 
 const char *s_ansi_seq_color[ 16 ] = {
@@ -115,7 +119,11 @@ const char *s_ansi_seq_color[ 16 ] = {
     "", //             = 12
     "", //             = 13
     "", //             = 14
+#ifdef DAP_TPS_TEST
+    "\x1b[1;32;40m",   // L_TPS      = 15,
+#else
     "", //             = 15
+#endif
 };
 
 static unsigned int s_ansi_seq_color_len[16] = {0};
@@ -388,6 +396,15 @@ static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
 void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
         return;
+#ifdef DAP_TPS_TEST
+    if (a_ll != L_TPS) {
+        FILE *l_file = fopen("/opt/cellframe-node/share/ca/without_logs.txt", "r");
+        if (l_file) {
+            fclose(l_file);
+            return;
+        }
+    }
+#endif
     static _Thread_local char s_format[LOG_FORMAT_LEN] = { '\0' };
     unsigned offset = s_ansi_seq_color_len[a_ll];
     memcpy(s_format, s_ansi_seq_color[a_ll], offset);
