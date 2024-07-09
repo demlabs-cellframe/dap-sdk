@@ -178,21 +178,19 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
     a_obj->crc = a_pkt->crc;
     byte_t *l_data_ptr = a_pkt->data;
 
-    a_obj->group = DAP_DUP_SIZE(l_data_ptr, a_pkt->group_len + sizeof(char));
+    a_obj->group = strndup((char*)l_data_ptr, a_pkt->group_len);
     if (!a_obj->group) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
-    a_obj->group[a_pkt->group_len] = '\0';
     l_data_ptr += a_pkt->group_len;
 
-    a_obj->key = DAP_DUP_SIZE(l_data_ptr, a_pkt->key_len + sizeof(char));
+    a_obj->key = strndup((char*)l_data_ptr, a_pkt->key_len);
     if (!a_obj->key) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(a_obj->group);
         return NULL;
     }
-    ((char *)a_obj->key)[a_pkt->key_len] = '\0';
     l_data_ptr += a_pkt->key_len;
 
     if (a_pkt->value_len) {
