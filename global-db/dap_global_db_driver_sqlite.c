@@ -44,7 +44,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define LOG_TAG "db_sqlite"
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_SQLITE
-static const char s_attempts_count = 7;
 
 typedef struct conn_pool_item {
     sqlite3 *conn;                                                  /* SQLITE connection context itself */
@@ -58,6 +57,7 @@ extern int g_dap_global_db_debug_more;                         /* Enable extensi
 
 static char s_filename_db [MAX_PATH];
 
+static const char s_attempts_count = 7;
 static bool s_db_inited = false;
 static dap_list_t *s_conn_list = NULL;  // list of all connections
 static _Thread_local conn_list_item_t *s_conn = NULL;  // local connection
@@ -128,6 +128,7 @@ static void s_db_sqlite_clean(conn_list_item_t *a_conn, size_t a_count, ... ) {
 /**
  * @brief One step to sqlite3_stmt with 7 try is sql bust
  * @param a_stmt sqlite3_stmt to step
+ * @param a_error_msg module name
  * @return result code
  */
 static int s_db_sqlite_step(sqlite3_stmt *a_stmt, const char *a_error_msg)
@@ -146,7 +147,10 @@ static int s_db_sqlite_step(sqlite3_stmt *a_stmt, const char *a_error_msg)
 
 /**
  * @brief One step to sqlite3_stmt with 7 try is sql bust
- * @param a_stmt sqlite3_stmt to step
+ * @param a_db a pointer to an instance of SQLite connection
+ * @param a_str_query SQL query string
+ * @param a_stmt pointer to generate sqlite3_stmt
+ * @param a_error_msg module name
  * @return result code
  */
 static int s_db_sqlite_prepare(sqlite3 *a_db, const char *a_str_query, sqlite3_stmt **a_stmt, const char *a_error_msg)
@@ -166,6 +170,11 @@ static int s_db_sqlite_prepare(sqlite3 *a_db, const char *a_str_query, sqlite3_s
 /**
  * @brief One step to sqlite3_stmt with 7 try is sql bust
  * @param a_stmt sqlite3_stmt to step
+ * @param a_pos blob element position in query
+ * @param a_data blob data
+ * @param a_data_size blob data size
+ * @param a_destructor SQL destructor type
+ * @param a_error_msg module name
  * @return result code
  */
 static int s_db_sqlite_bind_blob64(sqlite3_stmt *a_stmt, int a_pos, const void *a_data, sqlite3_uint64 a_data_size, sqlite3_destructor_type a_destructor, const char *a_error_msg)
