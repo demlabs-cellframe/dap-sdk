@@ -468,48 +468,32 @@ size_t dap_sign_get_size(dap_sign_t * a_chain_sign)
     return (sizeof(dap_sign_t) + a_chain_sign->header.sign_size + a_chain_sign->header.sign_pkey_size);
 }
 
-
 dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t *a_signs_count)
 {
-    size_t l_offset = 0;
-    dap_list_t *l_list_signs = NULL;
-    while (l_offset < a_data_size) {
-        dap_sign_t *l_sign = (dap_sign_t *)(a_data+l_offset);
-        size_t l_sign_size = dap_sign_get_size(l_sign);
-        if (!l_sign_size){
-            break;
-        }
-        if (l_sign_size > a_data_size-l_offset ){
-            break;
-        }
-        // Check duplicate signs
-        bool l_sign_duplicate = false;
-        if (l_list_signs) {
-            dap_list_t *l_list = dap_list_first(l_list_signs);
-            while (l_list) {
-                if ( memcmp( ((dap_sign_t *)l_list->data)->pkey_n_sign,
-                            l_sign->pkey_n_sign, l_sign->header.sign_pkey_size ) == 0 ) {
-                    l_sign_duplicate = true;
+    dap_return_val_if_fail(a_data && a_signs_count && *a_signs_count, NULL);
+    dap_sign_t **l_ret = NULL;
+    size_t i = 0, l_sign_size = 0;
+    for (size_t l_offset = 0; l_offset < a_data_size; l_offset += l_sign_size) {
+        dap_sign_t *l_sign = (dap_sign_t *)((byte_t *)a_data + l_offset);
+        l_sign_size = dap_sign_get_size(l_sign);
+        bool l_repeat = false;
+        if (l_ret) {
+            // Check duplicate signs
+            for (size_t j = 0; j < i; j++) {
+                if (dap_sign_compare_pkeys(l_sign, l_ret[i])) {
+                    l_repeat = true;
                     break;
                 }
-                l_list = l_list->next;
             }
-        }
-        if (!l_sign_duplicate) {
-            l_list_signs = dap_list_append(l_list_signs, l_sign);
-        }
-        l_offset += l_sign_size;
+            if (l_repeat)
+                continue;
+        } else
+            DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_sign_t *, a_signs_count, NULL, NULL);
+        l_ret[i++] = l_sign;
+        if (i == *a_signs_count)
+            break;
     }
-    unsigned int l_list_length = dap_list_length(l_list_signs);
-    *a_signs_count = (size_t)l_list_length;
-    if (!l_list_length)
-        return NULL;
-    dap_sign_t **l_ret = NULL;
-    DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_sign_t*, sizeof(dap_sign_t *)*l_list_length, NULL, NULL);
-    unsigned int i = 0;
-    for (dap_list_t *l_list = l_list_signs; l_list; l_list = l_list->next)
-        l_ret[i++] = l_list->data;
-    dap_list_free(l_list_signs);
+    *a_signs_count = i;
     return l_ret;
 }
 
