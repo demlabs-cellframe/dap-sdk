@@ -58,6 +58,7 @@ extern int g_dap_global_db_debug_more;                         /* Enable extensi
 static char s_filename_db [MAX_PATH];
 
 static const char s_attempts_count = 7;
+static const int s_sleep_period = 500 * 1000;  /* Wait 0.5 sec */;
 static bool s_db_inited = false;
 static dap_list_t *s_conn_list = NULL;  // list of all connections
 static _Thread_local conn_list_item_t *s_conn = NULL;  // local connection
@@ -139,9 +140,9 @@ static int s_db_sqlite_step(sqlite3_stmt *a_stmt, const char *a_error_msg)
         l_ret = sqlite3_step(a_stmt);
         if (l_ret != SQLITE_BUSY && l_ret != SQLITE_LOCKED)
             break;
-        dap_usleep(500 * 1000);  /* Wait 0.5 sec */
+        dap_usleep(s_sleep_period);
     }
-    debug_if(l_ret != SQLITE_ROW && l_ret != SQLITE_DONE, L_DEBUG, "SQLite step in %s error %d(%s)", a_error_msg, l_ret, sqlite3_errstr(l_ret));
+    debug_if(l_ret != SQLITE_ROW && l_ret != SQLITE_DONE, L_DEBUG, "SQLite step in %s error %d(%s)", a_error_msg ? a_error_msg : "", l_ret, sqlite3_errstr(l_ret));
     return l_ret;
 }
 
@@ -155,15 +156,15 @@ static int s_db_sqlite_step(sqlite3_stmt *a_stmt, const char *a_error_msg)
  */
 static int s_db_sqlite_prepare(sqlite3 *a_db, const char *a_str_query, sqlite3_stmt **a_stmt, const char *a_error_msg)
 {
-    dap_return_val_if_pass(!a_stmt, SQLITE_ERROR);
+    dap_return_val_if_pass(!a_stmt || !a_str_query || !a_stmt, SQLITE_ERROR);
     int l_ret = 0;
     for (char i = s_attempts_count; i--; ) {
         l_ret = sqlite3_prepare_v2(a_db, a_str_query, -1, a_stmt, NULL);
         if (l_ret != SQLITE_BUSY && l_ret != SQLITE_LOCKED)
             break;
-        dap_usleep(500 * 1000);  /* Wait 0.5 sec */
+        dap_usleep(s_sleep_period);
     }
-    debug_if(l_ret != SQLITE_OK, L_DEBUG, "SQLite prepare %s error %d(%s)", a_error_msg, sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
+    debug_if(l_ret != SQLITE_OK, L_DEBUG, "SQLite prepare %s error %d(%s)", a_error_msg ? a_error_msg : "", sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
     return l_ret;
 }
 
@@ -179,15 +180,15 @@ static int s_db_sqlite_prepare(sqlite3 *a_db, const char *a_str_query, sqlite3_s
  */
 static int s_db_sqlite_bind_blob64(sqlite3_stmt *a_stmt, int a_pos, const void *a_data, sqlite3_uint64 a_data_size, sqlite3_destructor_type a_destructor, const char *a_error_msg)
 {
-    dap_return_val_if_pass(!a_stmt, SQLITE_ERROR);
+    dap_return_val_if_pass(!a_stmt || !a_data || !a_data_size || a_pos < 0, SQLITE_ERROR);
     int l_ret = 0;
     for ( char i = s_attempts_count; i--; ) {
         l_ret = sqlite3_bind_blob64(a_stmt, a_pos, a_data, a_data_size, a_destructor);
         if (l_ret != SQLITE_BUSY && l_ret != SQLITE_LOCKED)
             break;
-        dap_usleep(500 * 1000);  /* Wait 0.5 sec */
+        dap_usleep(s_sleep_period);
     }
-    debug_if(l_ret != SQLITE_OK, L_DEBUG, "SQLite bind blob64 %s error %d(%s)", a_error_msg, l_ret, sqlite3_errstr(l_ret));
+    debug_if(l_ret != SQLITE_OK, L_DEBUG, "SQLite bind blob64 %s error %d(%s)", a_error_msg ? a_error_msg : "", l_ret, sqlite3_errstr(l_ret));
     return l_ret;
 }
 
