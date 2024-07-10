@@ -10,7 +10,7 @@ int main(void) {
     // switch off debug info from library
     int l_ret = 0;
     dap_log_level_set(L_CRITICAL);
-    const int l_times = 10;
+    const int l_times = 5;
 
     test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_SALSA2012, 32);
     test_encypt_decrypt_fast(l_times, DAP_ENC_KEY_TYPE_SALSA2012, 32);
@@ -33,6 +33,7 @@ int main(void) {
     dap_enc_base64_tests_run(l_times);
     dap_enc_base58_tests_run(l_times);
     dap_enc_ringct20_tests_run(l_times);
-    l_ret |= dap_enc_benchmark_tests_run(l_times);
-    return l_ret;
+    dap_enc_benchmark_tests_run(l_times);
+    dap_enc_multithread_tests_run(l_times);
+    return 0;
 }

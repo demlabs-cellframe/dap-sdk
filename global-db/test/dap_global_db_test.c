@@ -530,7 +530,7 @@ static void s_test_close_db(void)
 }
 
 
-void s_test_all(size_t a_count)
+static void s_test_all(size_t a_count)
 {
     s_test_write(a_count);
     s_test_read(a_count);
@@ -561,7 +561,7 @@ void s_test_all(size_t a_count)
 }
 
 
-void *s_test_thread_rewrite_records(void *a_arg)
+static void *s_test_thread_rewrite_records(void *a_arg)
 {
     size_t l_count = *(size_t *)a_arg;
     s_test_tx_start_end(l_count, true);
@@ -569,7 +569,7 @@ void *s_test_thread_rewrite_records(void *a_arg)
     return NULL;
 }
 
-void *s_test_thread(void *a_arg)
+static void *s_test_thread(void *a_arg)
 {
     size_t l_count = *(size_t *)a_arg;
     s_test_read(l_count);
@@ -586,7 +586,7 @@ void *s_test_thread(void *a_arg)
     return NULL;
 }
 
-void s_test_multithread(size_t a_count)
+static void s_test_multithread(size_t a_count)
 {
     uint32_t l_thread_count = 2;
     log_it(L_INFO, "Test with %u threads", l_thread_count);
