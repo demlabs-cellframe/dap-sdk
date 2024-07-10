@@ -74,21 +74,33 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
     return l_ret;
 }
 
-void *s_test_thread_dilithium(void *a_arg) {
+static void *s_test_thread_dilithium(void *a_arg) {
     int a_times = *(int *)a_arg;
     s_test_thread(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, a_times);
     pthread_exit(NULL);
 }
 
-void *s_test_thread_ecdsa(void *a_arg) {
+static void *s_test_thread_falcon(void *a_arg) {
+    int a_times = *(int *)a_arg;
+    s_test_thread(DAP_ENC_KEY_TYPE_SIG_FALCON, a_times);
+    pthread_exit(NULL);
+}
+
+static void *s_test_thread_ecdsa(void *a_arg) {
     int a_times = *(int *)a_arg;
     s_test_thread(DAP_ENC_KEY_TYPE_SIG_ECDSA, a_times);
     pthread_exit(NULL);
 }
 
-void *s_test_thread_sphincs(void *a_arg) {
+static void *s_test_thread_sphincs(void *a_arg) {
     int a_times = *(int *)a_arg;
     s_test_thread(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, a_times);
+    pthread_exit(NULL);
+}
+
+static void *s_test_thread_shipovnik(void *a_arg) {
+    int a_times = *(int *)a_arg;
+    s_test_thread(DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK, a_times);
     pthread_exit(NULL);
 }
 
@@ -109,16 +121,22 @@ static void s_test_multithread(const char *a_name, void *(*a_func)(void *), int 
 
 int dap_enc_multithread_tests_run(int a_times)
 {
-    dap_print_module_name("Multithread tests");
+    dap_print_module_name("Multithread sign create and verify");
 
-    s_test_multithread("Dilithium", s_test_thread_sphincs, a_times);
+    s_test_multithread("Dilithium", s_test_thread_dilithium, a_times);
     dap_pass_msg("Dilithium multithread tests");
 
-    s_test_multithread("ECDSA", s_test_thread_sphincs, a_times);
+    s_test_multithread("Falcon", s_test_thread_falcon, a_times);
+    dap_pass_msg("Falcon multithread tests");
+
+    s_test_multithread("ECDSA", s_test_thread_ecdsa, a_times);
     dap_pass_msg("ECDSA multithread tests");
 
     s_test_multithread("Sphincs plus", s_test_thread_sphincs, a_times);
     dap_pass_msg("Sphincs plus multithread tests");
+
+    s_test_multithread("Shipovnik", s_test_thread_shipovnik, a_times);
+    dap_pass_msg("Shipovnik plus multithread tests");
     return 0;
 }
 
