@@ -229,7 +229,7 @@ static void test_serialize_deserialize(dap_enc_key_type_t key_type, bool enc_tes
     uint8_t seed[seed_size];
 
     randombytes(seed, seed_size);
-
+    dap_assert(true, "prepared dap_enc_key_new_generate");
 //  for key_type==DAP_ENC_KEY_TYPE_OAES must be: key_size=[16|24|32] and kex_size>=key_size
     dap_enc_key_t* key = dap_enc_key_new_generate(key_type, kex_data, kex_size, seed, seed_size, 32);
     size_t l_buflen = 0;
