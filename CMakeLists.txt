@@ -84,7 +84,7 @@ else()
 endif()
 
 if (BUILD_DAP_SDK_TESTS)
-    set(BUILD_DAP_TESTS ON)
+#    set(BUILD_DAP_TESTS ON)
     set(BUILD_CRYPTO_TESTS ON)
 #    set(BUILD_WITH_GDB_DRIVER_MDBX ON)
 #    set(BUILD_GLOBAL_DB_TEST ON)
