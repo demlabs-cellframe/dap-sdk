@@ -74,15 +74,13 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
 
     printf("7 %d\n", s_default_config);
     fflush(stdout);
-    if(sphincsplus_set_config(s_default_config) || sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seedbuf)) {
-        log_it(L_CRITICAL, "Error generating Sphincs key pair");
-        printf("Error generating Sphincs key pair\n");
-        fflush(stdout);
-        DAP_DEL_MULTY(l_skey->data, l_pkey->data, l_skey, l_pkey);
-        return;
-    }
+    sphincsplus_set_config(s_default_config) 
 
-    printf("8\n");
+    printf("8 %d %d\n", );
+    fflush(stdout);
+    sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seedbuf)
+
+    printf("9\n");
     fflush(stdout);
     l_skey->params = l_params;
     l_pkey->params = l_params;
