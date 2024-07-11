@@ -91,7 +91,7 @@ if (BUILD_DAP_SDK_TESTS)
     set(DAPSDK_MODULES "crypto io network-core network-server network-link_manager network-client global-db test-framework")
 #    add_definitions("-DDAP_CHAIN_GDB_ENGINE_MDBX")
 #    set(DAPSDK_MODULES ${DAPSDK_MODULES} global-db)
-#    set(SPHINCSPLUS_FLEX ON)
+    set(SPHINCSPLUS_FLEX ON)
     message("[+] Enable dap_sdk_tests")
 endif ()
 
