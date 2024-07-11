@@ -184,14 +184,10 @@ static inline dap_events_socket_t *s_dap_evsock_alloc (void)
 #if defined DAP_EVENTS_CAPS_IOCP
 
 static long s_dap_es_set_flag(dap_events_socket_t *a_es, dap_context_t* a_c, char* a_fl, OVERLAPPED *a_ol) {
-    if (!a_es) {
-        log_it(L_ERROR, "Es is NULL");
-        return ERROR_INVALID_PARAMETER;
-    }
-    if (!a_ol || !a_ol->hEvent) {
-        log_it(L_ERROR, "Flag setter must use OL event handle");
-        return ERROR_INVALID_PARAMETER;
-    }
+    if (!a_es)
+        return ERROR_NOT_FOUND;
+    if (!a_ol || !a_ol->hEvent)
+        return log_it(L_ERROR, "Flag setter must use overlapped event handle"), ERROR_INVALID_PARAMETER;
     uint32_t flag = *(uint32_t*)a_fl;
     if ( WaitForSingleObject(a_ol->hEvent, 0) == WAIT_OBJECT_0 ) {
         switch (flag) {
@@ -217,13 +213,15 @@ static long s_dap_es_set_flag(dap_events_socket_t *a_es, dap_context_t* a_c, cha
 }
 
 static long s_dap_es_reassign(dap_events_socket_t *a_es, dap_context_t* a_c, char* a_buf, OVERLAPPED *a_ol) {
+    if (!a_es)
+        return ERROR_NOT_FOUND;
     if ( !a_ol->hEvent )
         return log_it(L_ERROR, "Reassignment must use OL event"), ERROR_INVALID_PARAMETER;
 
     dap_worker_t *l_new_worker = *(dap_worker_t**)a_buf;
     if ( a_es->was_reassigned && a_es->flags & DAP_SOCK_REASSIGN_ONCE )
     return log_it(L_INFO, "Worker switch with DAP_SOCK_REASSIGN_ONCE allowed only once, declined switch from %u to %u",
-                    a_es->worker->id, l_new_worker->id), ERROR_INVALID_ACCESS;
+                    a_es->worker->id, l_new_worker->id), ERROR_ACCESS_DENIED;
     else
         return dap_events_socket_reassign_between_workers_unsafe(a_es, l_new_worker), ERROR_CONTEXT_EXPIRED;
 }
@@ -1281,7 +1279,8 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
         debug_if(g_debug_reactor, L_DEBUG, "Pending \"%s\" on es "DAP_FORMAT_ESOCKET_UUID, func, a_es->uuid);
         return;
     default:
-        debug_if(g_debug_reactor, L_DEBUG, "\"%s\" on es "DAP_FORMAT_ESOCKET_UUID" failed, error %d", func, a_es->uuid, l_res);
+        debug_if(g_debug_reactor, L_DEBUG, "\"%s\" on es "DAP_FORMAT_ESOCKET_UUID" failed, error %d: \"%s\"",
+                                           func, a_es->uuid, l_res, dap_strerror(l_res));
         dap_events_socket_descriptor_close(a_es);
         return;
     }
@@ -1385,8 +1384,8 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         debug_if(g_debug_reactor, L_DEBUG, "\"%s\" from "DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" completed immediately, received %lu bytes",
                                   func, a_esocket->uuid, a_esocket->socket, dap_events_socket_get_type_str(a_esocket), bytes);
         ++a_esocket->pending;
-        ResetEvent(ol->ol.hEvent);
-        a_esocket->buf_in_size += bytes;
+        //ResetEvent(ol->ol.hEvent);
+        //a_esocket->buf_in_size += bytes;
         return;
     default:
         log_it(L_ERROR, "Operation \"%s\" on "DAP_FORMAT_ESOCKET_UUID" failed with error %lu", func, a_esocket->uuid, GetLastError());
@@ -1444,8 +1443,8 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_esocket, b
             if (a_esocket->buf_out_size) { // Append current buf, if not empty, to OL buf
                 memcpy(ol->buf + a_size, a_esocket->buf_out, a_esocket->buf_out_size);
             }
-            if ( a_esocket->buf_out_size += a_size ) { // Write full appended buf
-                l_res = WSASend( a_esocket->socket, &(WSABUF){ .len = a_size + a_esocket->buf_out_size, .buf = ol->buf },
+            if ( a_size += a_esocket->buf_out_size ) { // Write full appended buf
+                l_res = WSASend( a_esocket->socket, &(WSABUF){ .len = a_size, .buf = ol->buf },
                                  1, &bytes, flags, (OVERLAPPED*)ol, NULL );
                 func = "WSASend";
                 a_esocket->buf_out_size = 0;
@@ -1457,9 +1456,9 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_esocket, b
         if (a_esocket->buf_out_size) { // Append current buf, if not empty, to OL buf
             memcpy(ol->buf + a_size, a_esocket->buf_out, a_esocket->buf_out_size);
         }
-        if ( a_esocket->buf_out_size += a_size ) {
+        if ( a_size += a_esocket->buf_out_size ) {
             INT l_len = sizeof(a_esocket->addr_storage);
-            l_res = WSASendTo( a_esocket->socket, &(WSABUF) { .len = a_esocket->buf_out_size, .buf = ol->buf },
+            l_res = WSASendTo( a_esocket->socket, &(WSABUF) { .len = a_size, .buf = ol->buf },
                                1, &bytes, flags, (LPSOCKADDR)&a_esocket->addr_storage, l_len, (OVERLAPPED*)ol, NULL );
             func = "WSASendTo";
             a_esocket->buf_out_size = 0;
@@ -1981,6 +1980,7 @@ size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_data_size);
     *ol = (dap_overlapped_t) { .uid = a_es_uuid, .op = io_write };
     memcpy(ol->buf, a_data, a_data_size);
+    debug_if(g_debug_reactor, L_INFO, "Write %lu bytes to es ["DAP_FORMAT_ESOCKET_UUID": worker %d]", a_data_size, a_es_uuid, a_w->id);
     return PostQueuedCompletionStatus(a_w->context->iocp, a_data_size, 0, (OVERLAPPED*)ol)
         ? a_data_size
         : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %d",

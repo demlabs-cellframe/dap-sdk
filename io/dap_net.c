@@ -1,4 +1,4 @@
-#ifndef _WIN32
+#ifndef DAP_OS_WINDOWS
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -16,6 +16,7 @@
 //#define INVALID_SOCKET  -1  // for win32 =  (SOCKET)(~0)
 // for Windows
 #else
+#define poll WSAPoll
 #include <winsock2.h>
 #include <windows.h>
 #include <mswsock.h>

@@ -403,17 +403,19 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             if ( ol && ol->cb ) {
                 l_errno = ol->cb(l_cur, a_context, ol->buf, &ol->ol);
                 ol->cb = NULL;
-                debug_if(g_debug_reactor, L_DEBUG, "Per-I/O callabck on %p returned %d", l_cur, l_errno);
+                debug_if(g_debug_reactor, L_DEBUG, "Per-I/O callabck on %p returned %d: \"%s\"",
+                                                   l_cur, l_errno, dap_strerror(l_errno));
                 switch (l_errno) {
                 case NO_ERROR:
-                break;
+                    break;
                 case ERROR_CONTINUE:
                     ol = NULL;
                 default:
                     continue;
                 }
-            }
-
+            } else if ( !l_cur )
+                continue;
+                
             /*if ( !l_cur ) {
                 log_it(L_ERROR, "NULL esocket completion, nothing to do");
                 continue;
@@ -431,7 +433,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             DWORD l_buf_in_size = l_cur->buf_in_size, l_buf_out_size = l_cur->buf_out_size;
             ev_signaled = ev ? WaitForSingleObject(ev, 0) == WAIT_OBJECT_0 : FALSE;
             debug_if(g_debug_reactor, L_DEBUG, "\n\tCompletion on \"%s\" "DAP_FORMAT_ESOCKET_UUID", bytes: %lu, operation: '%c', "
-                     "flags: %d [%s:%s:%s:%s:%s], sizes in/out: %lu/%lu, OL event state: %s",
+                     "flags: %d [%s:%s:%s:%s:%s], sizes in/out: %lu/%lu, OL event state: %s, pending ops: %d",
                      dap_events_socket_get_type_str(l_cur), l_cur->uuid, l_bytes,
                      op ? op : ' ', l_cur_flags,
                      l_cur_flags & DAP_SOCK_READY_TO_READ  ? "READ"    : "",
@@ -440,7 +442,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                      l_cur_flags & DAP_SOCK_SIGNAL_CLOSE   ? "CLOSE"   : "",
                      l_cur->no_close                       ? "NOCLOSE" : "",
                      l_buf_in_size, l_buf_out_size,
-                     ev ? ev_signaled ? "SET" : "UNSET" : "N/A");  
+                     ev ? ev_signaled ? "SET" : "UNSET" : "N/A",
+                     l_cur->pending);
             if (!l_cur->context && FLAG_CLOSE(l_cur->flags)) { // Pending delete, socket will be closed
                 if (!l_cur->pending)
                     dap_events_socket_delete_unsafe(l_cur, FLAG_KEEP_INHERITOR(l_cur->flags));
@@ -452,7 +455,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 l_cur->pending_read = 0;
             switch (l_cur->type) {
             case DESCRIPTOR_TYPE_SOCKET_LISTENING:
-                --l_cur->pending;
+                if (ev_signaled)
+                    --l_cur->pending;
                 // AcceptEx completed
                 if (!l_bytes) {
                     // WSAGetOverlappedResult() likely invokes another discouraged syscall
@@ -491,7 +495,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
             case DESCRIPTOR_TYPE_PIPE:
             case DESCRIPTOR_TYPE_FILE:
-                --l_cur->pending;
+                if (ev_signaled)
+                    --l_cur->pending;
                 // TODO: do required stuff
             break;
 
@@ -515,7 +520,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     break;
                 }
                 */
-                --l_cur->pending;
+                if (ev_signaled)
+                    --l_cur->pending;
                 l_errno = 0;
                 switch (op) {
                 case io_read:
@@ -538,7 +544,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
 
                         break;
-                    } else if (ev_signaled)
+                    } else //if (ev_signaled)
                         l_cur->buf_in_size += l_bytes;
 
                     if (l_cur->callbacks.read_callback) {

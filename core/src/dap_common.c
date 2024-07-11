@@ -706,10 +706,11 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
 char *dap_strerror(long long err) {
 #ifdef DAP_OS_WINDOWS
     *s_last_error = '\0';
-    FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-                  NULL, err, MAKELANGID (LANG_NEUTRAL, SUBLANG_DEFAULT),
-                  s_last_error, LAST_ERROR_MAX, NULL);
-    if ( !*s_last_error )
+    DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
+                  NULL, err, MAKELANGID (LANG_NEUTRAL, SUBLANG_DEFAULT), s_last_error, LAST_ERROR_MAX, NULL);
+    if (l_len)
+        *(s_last_error + l_len - 1) = '\0';
+    else
 #else
     if ( strerror_r(err, s_last_error, LAST_ERROR_MAX) )
 #endif

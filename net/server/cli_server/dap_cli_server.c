@@ -330,7 +330,7 @@ static bool s_cli_cmd_exec(void *a_arg) {
                                             "%s", strlen(l_ret), l_ret);
     dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination
-    dap_events_socket_remove_and_delete_mt(l_arg->worker, l_arg->es_uid);
+    //dap_events_socket_remove_and_delete_mt(l_arg->worker, l_arg->es_uid); // No need...
     DAP_DEL_MULTY(l_ret, l_full_ret, a_arg);
     return false;
 }
