@@ -399,3 +399,9 @@ int sphincsplus_get_params(sphincsplus_config_t a_config, sphincsplus_base_param
     *a_params = s_params[a_config];
     return 0;
 }
+
+
+sphincsplus_params_t sphincsplus_get_current_params()
+{
+    return g_sphincsplus_params_current;
+}

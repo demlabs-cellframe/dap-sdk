@@ -72,11 +72,13 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
     DAP_NEW_Z_SIZE_RET(l_skey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(&l_params), l_skey, l_pkey);
     DAP_NEW_Z_SIZE_RET(l_pkey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(&l_params), l_skey->data, l_skey, l_pkey);
 
-    printf("7 %d\n", s_default_config);
+    sphincsplus_params_t current = sphincsplus_get_current_params();
+    printf("7 %d %d %d\n", s_default_config, current.base_params.config, current.base_params.spx_n);
     fflush(stdout);
     sphincsplus_set_config(s_default_config);
 
-    printf("8\n");
+    current = sphincsplus_get_current_params();
+    printf("8 %d %d %d\n", s_default_config, current.base_params.config, current.base_params.spx_n);
     fflush(stdout);
     sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seedbuf);
 

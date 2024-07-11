@@ -102,7 +102,7 @@ int sphincsplus_set_config(sphincsplus_config_t a_config);
 int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params);
 int sphincsplus_get_params(sphincsplus_config_t a_config, sphincsplus_base_params_t *a_params);
 int sphincsplus_check_params(const sphincsplus_base_params_t *a_base_params);
-
+sphincsplus_params_t sphincsplus_get_current_params();
 #endif  // __SPHINCSPLUS_PARAMS__
 
 
