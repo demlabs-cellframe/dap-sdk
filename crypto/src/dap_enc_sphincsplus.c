@@ -52,7 +52,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
     uint64_t l_key_size = dap_enc_sig_sphincsplus_crypto_sign_seedbytes(s_default_config);
     unsigned char l_seedbuf[l_key_size];
 
-    printf("5\n");
+    printf("5 key size = %d\n", l_key_size);
     fflush(stdout);
     if(a_seed && a_seed_size > 0) {
         SHA3_256((unsigned char *) l_seedbuf, (const unsigned char *) a_seed, a_seed_size);
