@@ -16,7 +16,7 @@
 /*
  * Returns the length of a secret key, in bytes
  */
-uint64_t sphincsplus_crypto_sign_secretkeybytes(void)
+size_t sphincsplus_crypto_sign_secretkeybytes(void)
 {
     return SPX_CRYPTO_SECRETKEYBYTES;
 }
@@ -24,7 +24,7 @@ uint64_t sphincsplus_crypto_sign_secretkeybytes(void)
 /*
  * Returns the length of a public key, in bytes
  */
-uint64_t sphincsplus_crypto_sign_publickeybytes(void)
+size_t sphincsplus_crypto_sign_publickeybytes(void)
 {
     return SPX_CRYPTO_PUBLICKEYBYTES;
 }
@@ -32,7 +32,7 @@ uint64_t sphincsplus_crypto_sign_publickeybytes(void)
 /*
  * Returns the length of a signature, in bytes
  */
-uint64_t sphincsplus_crypto_sign_bytes(void)
+size_t sphincsplus_crypto_sign_bytes(void)
 {
     return SPX_CRYPTO_BYTES;
 }
@@ -40,7 +40,7 @@ uint64_t sphincsplus_crypto_sign_bytes(void)
 /*
  * Returns the length of the seed required to generate a key pair, in bytes
  */
-uint64_t sphincsplus_crypto_sign_seedbytes(void)
+size_t sphincsplus_crypto_sign_seedbytes(void)
 {
     return SPX_CRYPTO_SEEDBYTES;
 }
