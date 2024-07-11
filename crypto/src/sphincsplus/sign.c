@@ -42,6 +42,8 @@ uint64_t sphincsplus_crypto_sign_bytes(void)
  */
 uint64_t sphincsplus_crypto_sign_seedbytes(void)
 {
+    printf("SPX_CRYPTO_SEEDBYTES = %d, SPX_N = %d\n", SPX_CRYPTO_SEEDBYTES, SPX_N);
+    fflush(stdout);
     return SPX_CRYPTO_SEEDBYTES;
 }
 
