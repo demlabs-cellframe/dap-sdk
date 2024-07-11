@@ -64,6 +64,7 @@ int dap_cert_file_save(dap_cert_t * a_cert, const char * a_cert_file_path)
         }else{
             log_it(L_ERROR,"Can't serialize certificate in memory");
             fclose(l_file);
+            remove(a_cert_file_path);
             return -4;
         }
     }else{
@@ -161,13 +162,13 @@ void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t
         if (l_meta_arr == NULL) {
             l_meta_arr = DAP_NEW(dap_cert_metadata_t *);
             if (!l_meta_arr) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 return;
             }
         } else {
             l_meta_arr = DAP_REALLOC_COUNT(l_meta_arr, l_meta_items_count + 1);
             if (!l_meta_arr) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 return;
             }
         }

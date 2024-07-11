@@ -170,7 +170,7 @@ dap_http_url_proc_t * dap_http_add_proc(dap_http_server_t *a_http, const char *a
 {
     dap_http_url_proc_t *l_url_proc = DAP_NEW_Z(dap_http_url_proc_t);
     if (!l_url_proc) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
 

@@ -41,7 +41,7 @@ dap_http_user_agent_ptr_t dap_http_user_agent_new(const char* a_name,
 
     dap_http_user_agent_ptr_t l_res = DAP_NEW_Z(struct dap_http_user_agent);
     if (!l_res) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
     l_res->name = dap_strdup(a_name);
@@ -88,7 +88,7 @@ dap_http_user_agent_ptr_t dap_http_user_agent_new_from_str(const char* a_user_ag
 
     l_result = DAP_NEW_Z(struct dap_http_user_agent);
     if (!l_result) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         goto END;
     }
     l_result->name = dap_strdup(l_name);

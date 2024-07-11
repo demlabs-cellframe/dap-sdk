@@ -127,7 +127,7 @@ static inline void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback
 {
     dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
     if (!l_cmd_item) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
     snprintf(l_cmd_item->name,sizeof (l_cmd_item->name),"%s",a_name);
