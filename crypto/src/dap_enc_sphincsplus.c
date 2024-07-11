@@ -27,32 +27,32 @@ void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key)
 void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_buf, size_t a_kex_size,
         const void *a_seed, size_t a_seed_size, size_t a_key_size)
 {
-    log_it(L_ERROR, "1");
+    printf("1\n");
     fflush(stdout);
     (void) a_kex_buf;
     (void) a_kex_size;
     (void) a_key_size;
 
-    log_it(L_ERROR, "2");
+    printf("2\n");
     fflush(stdout);
     sphincsplus_private_key_t *l_skey = NULL;
     sphincsplus_public_key_t *l_pkey = NULL;
     sphincsplus_base_params_t l_params = {0};
 
-    log_it(L_ERROR, "3");
+    printf("3\n");
     fflush(stdout);
     if (sphincsplus_get_params(s_default_config, &l_params)) {
         log_it(L_CRITICAL, "Error load sphincsplus config");
         return;
     }
     
-    log_it(L_ERROR, "4");
+    printf("4\n");
     fflush(stdout);
     // seed norming
     uint64_t l_key_size = dap_enc_sig_sphincsplus_crypto_sign_seedbytes(s_default_config);
     unsigned char l_seedbuf[l_key_size];
 
-    log_it(L_ERROR, "5");
+    printf("5\n");
     fflush(stdout);
     if(a_seed && a_seed_size > 0) {
         SHA3_256((unsigned char *) l_seedbuf, (const unsigned char *) a_seed, a_seed_size);
@@ -60,7 +60,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
         randombytes(l_seedbuf, l_key_size);
     }
 
-    log_it(L_ERROR, "6");
+    printf("6\n");;
     fflush(stdout);
     // creating key pair
     dap_enc_sig_sphincsplus_key_new(a_key);
@@ -72,7 +72,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
     DAP_NEW_Z_SIZE_RET(l_skey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(&l_params), l_skey, l_pkey);
     DAP_NEW_Z_SIZE_RET(l_pkey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(&l_params), l_skey->data, l_skey, l_pkey);
 
-    log_it(L_ERROR, "7");
+    printf("7\n");
     fflush(stdout);
     if(sphincsplus_set_config(s_default_config) || sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seedbuf)) {
         log_it(L_CRITICAL, "Error generating Sphincs key pair");
@@ -80,7 +80,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
         return;
     }
 
-    log_it(L_ERROR, "8");
+    printf("8\n");
     fflush(stdout);
     l_skey->params = l_params;
     l_pkey->params = l_params;
