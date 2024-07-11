@@ -233,6 +233,7 @@ static void test_serialize_deserialize(dap_enc_key_type_t key_type, bool enc_tes
 //  for key_type==DAP_ENC_KEY_TYPE_OAES must be: key_size=[16|24|32] and kex_size>=key_size
     dap_enc_key_t* key = dap_enc_key_new_generate(key_type, kex_data, kex_size, seed, seed_size, 32);
     size_t l_buflen = 0;
+    dap_assert(true, "dap_enc_key_new_generate");
     uint8_t *l_ser_key = dap_enc_key_serialize(key, &l_buflen);
     _write_key_in_file(l_ser_key, l_buflen, TEST_SER_FILE_NAME);
     uint8_t *l_deser_key = _read_key_from_file(TEST_SER_FILE_NAME, l_buflen);
