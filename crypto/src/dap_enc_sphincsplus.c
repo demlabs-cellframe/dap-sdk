@@ -80,9 +80,11 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
     current = sphincsplus_get_current_params();
     printf("8 %d %d %d\n", s_default_config, current.base_params.config, current.base_params.spx_n);
     fflush(stdout);
+    printf("9 %p %p %p %p %d\n", l_pkey, l_pkey->data,l_skey, l_skey->data, l_key_size);
+    fflush(stdout);
     sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seedbuf);
 
-    printf("9\n");
+    printf("10\n");
     fflush(stdout);
     l_skey->params = l_params;
     l_pkey->params = l_params;
