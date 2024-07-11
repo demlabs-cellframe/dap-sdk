@@ -74,11 +74,11 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
 
     printf("7 %d\n", s_default_config);
     fflush(stdout);
-    sphincsplus_set_config(s_default_config) 
+    sphincsplus_set_config(s_default_config);
 
-    printf("8 %d %d\n", );
+    printf("8\n");
     fflush(stdout);
-    sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seedbuf)
+    sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seedbuf);
 
     printf("9\n");
     fflush(stdout);
