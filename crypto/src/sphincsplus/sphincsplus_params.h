@@ -6,7 +6,6 @@
 
 // not change, only add
 typedef enum sphincsplus_config {
-    SPHINCSPLUS_CONFIG_MIN_ARG,
     SPHINCSPLUS_HARAKA_128F,
     SPHINCSPLUS_HARAKA_128S,
     SPHINCSPLUS_HARAKA_192F,

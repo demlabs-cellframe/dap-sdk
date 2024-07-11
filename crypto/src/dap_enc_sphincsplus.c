@@ -9,8 +9,8 @@
 static const sphincsplus_config_t s_default_config = SPHINCSPLUS_SHA2_128F;
 static const sphincsplus_difficulty_t s_default_difficulty = SPHINCSPLUS_SIMPLE;
 #else
-static sphincsplus_config_t s_default_config = SPHINCSPLUS_SHAKE_128F;
-static sphincsplus_difficulty_t s_default_difficulty = SPHINCSPLUS_SIMPLE;
+static _Thread_local sphincsplus_config_t s_default_config = SPHINCSPLUS_SHAKE_128F;
+static _Thread_local sphincsplus_difficulty_t s_default_difficulty = SPHINCSPLUS_SIMPLE;
 #endif
 
 
@@ -72,10 +72,12 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
     DAP_NEW_Z_SIZE_RET(l_skey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(&l_params), l_skey, l_pkey);
     DAP_NEW_Z_SIZE_RET(l_pkey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(&l_params), l_skey->data, l_skey, l_pkey);
 
-    printf("7\n");
+    printf("7 %d\n", s_default_config);
     fflush(stdout);
     if(sphincsplus_set_config(s_default_config) || sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seedbuf)) {
         log_it(L_CRITICAL, "Error generating Sphincs key pair");
+        printf("Error generating Sphincs key pair\n");
+        fflush(stdout);
         DAP_DEL_MULTY(l_skey->data, l_pkey->data, l_skey, l_pkey);
         return;
     }
