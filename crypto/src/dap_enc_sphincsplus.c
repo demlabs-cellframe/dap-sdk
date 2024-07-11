@@ -9,7 +9,7 @@
 static const sphincsplus_config_t s_default_config = SPHINCSPLUS_SHA2_128F;
 static const sphincsplus_difficulty_t s_default_difficulty = SPHINCSPLUS_SIMPLE;
 #else
-static _Thread_local sphincsplus_config_t s_default_config = SPHINCSPLUS_SHA2_128F;
+static _Thread_local sphincsplus_config_t s_default_config = SPHINCSPLUS_SHAKE_128F;
 static _Thread_local sphincsplus_difficulty_t s_default_difficulty = SPHINCSPLUS_SIMPLE;
 #endif
 
