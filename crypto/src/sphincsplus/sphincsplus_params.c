@@ -383,6 +383,7 @@ int sphincsplus_set_params(const sphincsplus_base_params_t *a_base_params)
 int sphincsplus_set_config(sphincsplus_config_t a_config) {
     if (a_config < SPHINCSPLUS_HARAKA_128F || a_config >= SPHINCSPLUS_CONFIG_MAX_ARG) {
         log_it(L_ERROR, "Wrong sphincplus sig config");
+        printf("Wrong sphincplus sig config %d \n", a_config);
         return -1;
     }
     return sphincsplus_set_params(&s_params[a_config]);

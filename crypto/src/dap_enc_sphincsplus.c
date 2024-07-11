@@ -46,13 +46,13 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
         return;
     }
     
-    printf("4\n");
+    printf("4 %d\n", s_default_config);
     fflush(stdout);
     // seed norming
     uint64_t l_key_size = dap_enc_sig_sphincsplus_crypto_sign_seedbytes(s_default_config);
     unsigned char l_seedbuf[l_key_size];
 
-    printf("5 key size = %d\n", l_key_size);
+    printf("5 key size = %zu\n", l_key_size);
     fflush(stdout);
     if(a_seed && a_seed_size > 0) {
         SHA3_256((unsigned char *) l_seedbuf, (const unsigned char *) a_seed, a_seed_size);
@@ -60,7 +60,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
         randombytes(l_seedbuf, l_key_size);
     }
 
-    printf("6\n");;
+    printf("6 key size = %zu\n", l_key_size);;
     fflush(stdout);
     // creating key pair
     dap_enc_sig_sphincsplus_key_new(a_key);
@@ -80,7 +80,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, const void *
     current = sphincsplus_get_current_params();
     printf("8 %d %d %d\n", s_default_config, current.base_params.config, current.base_params.spx_n);
     fflush(stdout);
-    printf("9 %p %p %p %p %d\n", l_pkey, l_pkey->data,l_skey, l_skey->data, l_key_size);
+    printf("9 %p %p %p %p %zu\n", l_pkey, l_pkey->data,l_skey, l_skey->data, l_key_size);
     fflush(stdout);
     sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seedbuf);
 
