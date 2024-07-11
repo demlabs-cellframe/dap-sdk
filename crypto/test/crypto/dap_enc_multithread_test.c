@@ -29,7 +29,6 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
     DAP_NEW_Z_COUNT_RET_VAL(l_signs, dap_sign_t*, a_times, 1, NULL);
     DAP_NEW_Z_COUNT_RET_VAL(l_source, uint8_t*, a_times, 1, l_signs);
 
-    int l_t1 = 0;
     for (int i = 0; i < a_times; ++i) {
         randombytes(seed, seed_size);
 
@@ -38,7 +37,6 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
         DAP_NEW_Z_SIZE_RET_VAL(l_source[i], uint8_t, l_source_size[i], 1, NULL);
         randombytes(l_source[i], l_source_size[i]);
         
-        l_t1 = get_cur_time_msec();
         dap_enc_key_t *key = s_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
         if (key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
             l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i], 0);
@@ -53,7 +51,6 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
         dap_enc_key_delete(key);
     }
 
-    l_t1 = get_cur_time_msec();
     for(int i = 0; i < a_times; ++i) {
         int l_verified = 0;
        if (dap_sign_type_to_key_type(l_signs[i]->header.type) == DAP_ENC_KEY_TYPE_SIG_ECDSA)
