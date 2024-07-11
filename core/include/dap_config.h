@@ -48,7 +48,7 @@ double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_
 
 #define dap_config_get_item_bool(a_conf, a_path, a_item) dap_config_get_item_bool_default(a_conf, a_path, a_item, false)
 
-#define dap_config_get_item_str(a_conf, a_path, a_item) dap_config_get_item_str_default(a_conf, a_path, a_item, DAP_CAST_PTR(const char, NULL) )
+#define dap_config_get_item_str(a_conf, a_path, a_item) dap_config_get_item_str_default(a_conf, a_path, a_item, NULL)
 
 #define dap_config_get_item_uint16(a_conf, a_path, a_item) (uint16_t)_dap_config_get_item_uint(a_conf, a_path, a_item, 0)
 #define dap_config_get_item_uint16_default(a_conf, a_path, a_item, a_default) (uint16_t)_dap_config_get_item_uint(a_conf, a_path, a_item, a_default)

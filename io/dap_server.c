@@ -348,78 +348,13 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
 }
 
 /**
- * @brief s_server_run
- * @param a_server
- * @param a_callbacks
- */
-/*static int s_server_run(dap_server_t *a_server)
-{
-// sanity check
-    dap_return_val_if_pass(!a_server || !a_server->es_listeners, -1);
-// func work
-    dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
-    int arg_size = 0;
-    switch (a_server->type) {
-        case DAP_SERVER_TCP:
-        case DAP_SERVER_UDP:    arg_size = sizeof(struct sockaddr_in); break;
-        case DAP_SERVER_TCP_V6: arg_size = sizeof(struct sockaddr_in6); break;
-#ifdef DAP_OS_LINUX
-        case DAP_SERVER_LOCAL:  arg_size = sizeof(struct sockaddr_un); break;
-#endif
-    }
-    if ( bind(l_es->socket, (struct sockaddr*)&l_es->addr_storage, arg_size ) < 0) {
-#ifdef DAP_OS_WINDOWS
-        log_it(L_ERROR, "Bind error: %d", WSAGetLastError());
-        closesocket(l_es->socket);
-#else
-        log_it(L_ERROR,"Bind error %d: %s", errno, dap_strerror(errno));
-        close(l_es->socket);
-        if ( errno == EACCES ) // EACCES=13
-            log_it( L_ERROR, "Server can't start. Permission denied");
-#endif
-        return -1;
-    } else {
-        log_it(L_INFO, "Binded %s:%u", l_es->listener_addr_str, l_es->listener_port);
-        listen(l_es->socket, SOMAXCONN);
-    }
-#ifdef DAP_OS_WINDOWS
-     u_long l_mode = 1;
-     ioctlsocket(l_es->socket, (long)FIONBIO, &l_mode);
-#else
-    fcntl(l_es->socket, F_SETFL, O_NONBLOCK);
-#endif
-    pthread_mutex_init(&a_server->started_mutex,NULL);
-    pthread_cond_init(&a_server->started_cond,NULL);
-
-#if defined DAP_EVENTS_CAPS_EPOLL
-    l_es->ev_base_flags = EPOLLIN;
-#ifdef EPOLLEXCLUSIVE
-    l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
-#endif
-#endif
-    l_es->type = a_server->type == DAP_SERVER_TCP ? DESCRIPTOR_TYPE_SOCKET_LISTENING : DESCRIPTOR_TYPE_SOCKET_UDP;
-    l_es->_inheritor = a_server;
-    pthread_mutex_lock(&a_server->started_mutex);
-    dap_worker_add_events_socket_auto(l_es);
-    while (!a_server->started)
-        pthread_cond_wait(&a_server->started_cond, &a_server->started_mutex);
-    pthread_mutex_unlock(&a_server->started_mutex);
-    return 0;
-} */
-
-/**
  * @brief s_es_server_new
  * @param a_es
  * @param a_arg
  */
 static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg)
 {
-    log_it(L_DEBUG, "Created server socket "DAP_FORMAT_ESOCKET_UUID" on worker %u", a_es->uuid, a_es->worker->id);;
-    /*dap_server_t *l_server = a_es->server;
-    pthread_mutex_lock( &l_server->started_mutex);
-    l_server->started = true;
-    pthread_cond_broadcast( &l_server->started_cond);
-    pthread_mutex_unlock( &l_server->started_mutex);*/
+    log_it(L_DEBUG, "Created server socket %d with uuid "DAP_FORMAT_ESOCKET_UUID" on worker %u", a_es->socket, a_es->uuid, a_es->worker->id);
 }
 
 /**
@@ -455,7 +390,8 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
 #ifdef DAP_OS_WINDOWS
         _set_errno(WSAGetLastError());
 #endif
-        log_it(L_ERROR, "Accept error: %s", dap_strerror(errno));
+        log_it(L_ERROR, "Server socket %d accept() error %d: %s",
+                        a_es_listener->socket, errno, dap_strerror(errno));
         return;
     }
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
@@ -480,7 +416,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
 #ifdef DAP_OS_WINDOWS
             _set_errno(WSAGetLastError());
 #endif
-            log_it(L_ERROR, "getnameinfo error: %s", dap_strerror(errno));
+            log_it(L_ERROR, "getnameinfo() error %d: %s", errno, dap_strerror(errno));
             return;
         } 
         l_es_new->remote_port = strtol(l_port_str, NULL, 10);

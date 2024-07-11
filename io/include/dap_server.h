@@ -49,25 +49,6 @@ extern LPFN_GETACCEPTEXSOCKADDRS    pfnGetAcceptExSockaddrs;
 #else
 #error "No poll headers for your platform"
 #endif
-/*
-typedef enum dap_server_type {
-    DAP_SERVER_TCP,
-    DAP_SERVER_TCP_V6,
-    DAP_SERVER_UDP,
-    DAP_SERVER_LOCAL
-} dap_server_type_t;
-
-DAP_STATIC_INLINE const char *dap_server_type_str(dap_server_type_t a_type)
-{
-    switch (a_type) {
-    case DAP_SERVER_TCP:    return "TCP/IPv4";
-    case DAP_SERVER_TCP_V6: return "TCP/IPv6";
-    case DAP_SERVER_UDP:    return "UDP/IPv4";
-    case DAP_SERVER_LOCAL:  return "UNIX LOCAL";
-    default:                return "UNKNOWN";
-    }
-}
-*/
 
 struct dap_server;
 typedef void (*dap_server_callback_t) (struct dap_server*, void*); // Callback for specific server's operations
@@ -78,8 +59,6 @@ typedef struct dap_server {
     dap_cpu_stats_t cpu_stats;
     dap_list_t *es_listeners;
     void *_inheritor;
-    //pthread_cond_t started_cond;
-    //pthread_mutex_t started_mutex;
 } dap_server_t;
 
 int dap_server_init( ); // Init server module
