@@ -194,6 +194,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
         break;
     case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
 #ifdef DAP_OS_LINUX
+    {
         char *l_dir = dap_path_get_dirname(a_addr);
         dap_mkdir_with_parents(l_dir);
         int a = access(l_dir, W_OK|R_OK);
@@ -209,7 +210,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
         l_len = SUN_LEN(&l_unaddr);
         memcpy(&l_saddr, &l_unaddr, sizeof(l_unaddr));
         l_fam = AF_UNIX;
-        break;
+    } break;
 #else
         log_it(L_ERROR, "Can't use UNIX socket on this platform");
         return 1;
