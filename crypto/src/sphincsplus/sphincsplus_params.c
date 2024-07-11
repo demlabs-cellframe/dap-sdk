@@ -384,9 +384,13 @@ int sphincsplus_set_config(sphincsplus_config_t a_config) {
     if (a_config < SPHINCSPLUS_HARAKA_128F || a_config >= SPHINCSPLUS_CONFIG_MAX_ARG) {
         log_it(L_ERROR, "Wrong sphincplus sig config");
         printf("Wrong sphincplus sig config %d \n", a_config);
+        fflush(stdout);
         return -1;
     }
-    return sphincsplus_set_params(&s_params[a_config]);
+    int l_ret = sphincsplus_set_params(&s_params[a_config]);
+    printf("lret = %d\n", l_ret);
+    fflush(stdout);
+    return l_ret;
 }
 
 int sphincsplus_get_params(sphincsplus_config_t a_config, sphincsplus_base_params_t *a_params) {
