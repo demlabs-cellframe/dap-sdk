@@ -55,24 +55,41 @@ uint64_t sphincsplus_crypto_sign_seedbytes(void)
 int sphincsplus_crypto_sign_seed_keypair(unsigned char *pk, unsigned char *sk,
                              const unsigned char *seed)
 {
+    printf("\t7.1 %p %p %p %d\n", pk, sk, seed, SPX_N);
+    fflush(stdout);
     spx_ctx ctx;
 
     /* Initialize SK_SEED, SK_PRF and PUB_SEED from seed. */
     memcpy(sk, seed, SPX_CRYPTO_SEEDBYTES);
 
+    printf("\t7.2 %p %p %p %d\n", pk, sk, seed, SPX_N);
+    fflush(stdout);
+
     memcpy(pk, sk + 2*SPX_N, SPX_N);
+    printf("\t7.3 %p %p %p %d\n", pk, sk, seed, SPX_N);
+    fflush(stdout);
 
     memcpy(ctx.pub_seed, pk, SPX_N);
+    printf("\t7.4 %p %p %p %d\n", pk, sk, seed, SPX_N);
+    fflush(stdout);
     memcpy(ctx.sk_seed, sk, SPX_N);
+    printf("\t7.5 %p %p %p %d\n", pk, sk, seed, SPX_N);
+    fflush(stdout);
 
     /* This hook allows the hash function instantiation to do whatever
        preparation or computation it needs, based on the public seed. */
     initialize_hash_function(&ctx);
+    printf("\t7.6 %p %p %p %d\n", pk, sk, seed, SPX_N);
+    fflush(stdout);
 
     /* Compute root node of the top-most subtree. */
     merkle_gen_root(sk + 3*SPX_N, &ctx);
+    printf("\t7.7 %p %p %p %d\n", pk, sk, seed, SPX_N);
+    fflush(stdout);
 
     memcpy(pk + SPX_N, sk + 3*SPX_N, SPX_N);
+    printf("\t7.8 %p %p %p %d\n", pk, sk, seed, SPX_N);
+    fflush(stdout);
 
     return 0;
 }
