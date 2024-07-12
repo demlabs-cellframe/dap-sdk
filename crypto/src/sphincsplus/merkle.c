@@ -45,6 +45,9 @@ void merkle_sign(uint8_t *sig, unsigned char *root,
                 SPX_TREE_HEIGHT,
                 wots_gen_leafx1,
                 tree_addr, &info);
+
+    printf("\t\t\t Treehash finish\n");
+    fflush(stdout);
 }
 
 /* Compute root node of the top-most subtree. */

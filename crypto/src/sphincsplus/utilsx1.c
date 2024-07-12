@@ -54,7 +54,11 @@ void treehashx1(unsigned char *root, unsigned char *auth_path,
             /* Check if we hit the top of the tree */
             if (h == tree_height) {
                 /* We hit the root; return it */
+
+                printf("\t\t\t\t Root copy start\n");
+                fflush(stdout);
                 memcpy( root, &current[SPX_N], SPX_N );
+                printf("\t\t\t\t Root copy finish\n");
                 return;
             }
 

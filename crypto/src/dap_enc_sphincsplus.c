@@ -59,8 +59,8 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
 
     DAP_NEW_Z_SIZE_RET(l_skey, sphincsplus_private_key_t, a_key->priv_key_data_size, l_seed_buf);
     DAP_NEW_Z_SIZE_RET(l_pkey, sphincsplus_public_key_t, a_key->pub_key_data_size, l_seed_buf, l_skey);
-    DAP_NEW_Z_SIZE_RET(l_skey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes() + 100, l_seed_buf, l_skey, l_pkey);
-    DAP_NEW_Z_SIZE_RET(l_pkey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_publickeybytes() + 100, l_seed_buf, l_skey->data, l_skey, l_pkey);
+    DAP_NEW_Z_SIZE_RET(l_skey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(), l_seed_buf, l_skey, l_pkey);
+    DAP_NEW_Z_SIZE_RET(l_pkey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(), l_seed_buf, l_skey->data, l_skey, l_pkey);
     
     sphincsplus_params_t current = sphincsplus_get_current_params();
     printf("7 %d %d %d, skey size = %zu, pkeysize = %zu\n", s_default_config, current.base_params.config, current.base_params.spx_n, dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(), dap_enc_sig_sphincsplus_crypto_sign_publickeybytes());
