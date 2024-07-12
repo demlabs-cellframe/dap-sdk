@@ -48,7 +48,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
     DAP_NEW_Z_SIZE_RET(l_seed_buf, unsigned char, l_key_size, NULL);
 
     if(a_seed && a_seed_size > 0) {
-        SHA3_256(l_seed_buf, (const unsigned char *) a_seed, a_seed_size);
+        SHAKE256(l_seed_buf, a_seed_size, (const unsigned char *) a_seed, a_seed_size);
     } else {
         randombytes(l_seed_buf, l_key_size);
     }
@@ -71,7 +71,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
 
     if(sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seed_buf)) {
         log_it(L_CRITICAL, "Error generating Sphincs key pair");
-        DAP_DEL_MULTY(l_skey->data, l_pkey->data, l_skey, l_pkey);
+        DAP_DEL_MULTY(l_skey->data, l_pkey->data, l_skey, l_pkey, l_seed_buf);
         return;
     }
 
@@ -84,6 +84,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
 
     printf("10\n");
     fflush(stdout);
+    DAP_DEL_Z(l_seed_buf);
     l_skey->params = l_params;
     l_pkey->params = l_params;
     a_key->priv_key_data = l_skey;

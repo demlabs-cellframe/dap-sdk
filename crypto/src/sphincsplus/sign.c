@@ -16,7 +16,7 @@
 /*
  * Returns the length of a secret key, in bytes
  */
-size_t sphincsplus_crypto_sign_secretkeybytes(void)
+uint64_t sphincsplus_crypto_sign_secretkeybytes(void)
 {
     return SPX_CRYPTO_SECRETKEYBYTES;
 }
@@ -24,7 +24,7 @@ size_t sphincsplus_crypto_sign_secretkeybytes(void)
 /*
  * Returns the length of a public key, in bytes
  */
-size_t sphincsplus_crypto_sign_publickeybytes(void)
+uint64_t sphincsplus_crypto_sign_publickeybytes(void)
 {
     return SPX_CRYPTO_PUBLICKEYBYTES;
 }
@@ -32,7 +32,7 @@ size_t sphincsplus_crypto_sign_publickeybytes(void)
 /*
  * Returns the length of a signature, in bytes
  */
-size_t sphincsplus_crypto_sign_bytes(void)
+uint64_t sphincsplus_crypto_sign_bytes(void)
 {
     return SPX_CRYPTO_BYTES;
 }
@@ -40,7 +40,7 @@ size_t sphincsplus_crypto_sign_bytes(void)
 /*
  * Returns the length of the seed required to generate a key pair, in bytes
  */
-size_t sphincsplus_crypto_sign_seedbytes(void)
+uint64_t sphincsplus_crypto_sign_seedbytes(void)
 {
     printf("SPX_CRYPTO_SEEDBYTES = %d, SPX_N = %d\n", SPX_CRYPTO_SEEDBYTES, SPX_N);
     fflush(stdout);
@@ -249,7 +249,7 @@ int sphincsplus_crypto_sign(unsigned char *sm, uint64_t *smlen,
                 const unsigned char *m, uint64_t mlen,
                 const unsigned char *sk)
 {
-    size_t siglen;
+    uint64_t siglen;
 
     sphincsplus_crypto_sign_signature(sm, &siglen, m, (size_t)mlen, sk);
 

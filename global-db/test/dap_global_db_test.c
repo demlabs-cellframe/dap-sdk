@@ -88,7 +88,7 @@ static int s_test_write(size_t a_count)
     size_t l_rewrite_count = rand() % (a_count / 2) + 2; 
     for (size_t i = 0; i < a_count; ++i)
     {
-        dap_test_msg("Write %zu record in GDB", i);
+        log_it(L_DEBUG, "Write %zu record in GDB", i);
 
         l_store_obj.group = DAP_DB$T_GROUP; 
         snprintf(l_key, sizeof(l_key) - 1, "KEY$%08zx", i); // add bad to check rewrite          /* Generate a key of record */
@@ -111,12 +111,12 @@ static int s_test_write(size_t a_count)
             l_store_obj.flags = i % DAP_DB$SZ_HOLES ? 0 : DAP_GLOBAL_DB_RECORD_DEL;
         }
         l_store_obj.sign = dap_store_obj_sign(&l_store_obj, l_enc_key, &l_store_obj.crc);
-        dap_test_msg("Store object: [%s, %s, %zu octets]", l_store_obj.group, l_store_obj.key, l_store_obj.value_len);
+        log_it(L_DEBUG, "Store object: [%s, %s, %zu octets]", l_store_obj.group, l_store_obj.key, l_store_obj.value_len);
 
         l_time = get_cur_time_msec();
         ret = dap_global_db_driver_add(&l_store_obj, 1);
         s_write += get_cur_time_msec() - l_time;
-        dap_assert_PIF(!ret, "Write record to DB is ok");
+        dap_assert_PIF(!ret, "Write record to DB");
 
         // rewrite block
         if ( i < l_rewrite_count) {
@@ -131,7 +131,7 @@ static int s_test_write(size_t a_count)
             l_time = get_cur_time_msec();
             ret = dap_global_db_driver_add(&l_store_obj, 1);
             s_write += get_cur_time_msec() - l_time;
-            dap_assert_PIF(!ret, "Rewrite with key conflict record to DB is ok");
+            dap_assert_PIF(!ret, "Rewrite with key conflict record to DB");
         }
 
         l_store_obj.group = DAP_DB$T_GROUP_WRONG;
@@ -141,7 +141,7 @@ static int s_test_write(size_t a_count)
         l_time = get_cur_time_msec();
         ret = dap_global_db_driver_add(&l_store_obj, 1);
         s_write += get_cur_time_msec() - l_time;
-        dap_assert_PIF(!ret, "Write record to wrong group DB is ok");
+        dap_assert_PIF(!ret, "Write record to wrong group DB");
         DAP_DEL_Z(l_store_obj.sign);
     }
     dap_enc_key_delete(l_enc_key);
@@ -166,13 +166,13 @@ static int s_test_read(size_t a_count)
         dap_assert_PIF(l_store_obj, "Record-Not-Found");
         if (l_store_obj->sign)  // to test rewriting with hash conflict some records wiwthout sign
             dap_assert_PIF(dap_global_db_pkt_check_sign_crc(l_store_obj), "Record sign not verified");
-        dap_assert_PIF(!strcmp(DAP_DB$T_GROUP, l_store_obj->group), "Wrong group");
-        dap_assert_PIF(!strcmp(l_key, l_store_obj->key), "Wrong group");
+        dap_assert_PIF(!strcmp(DAP_DB$T_GROUP, l_store_obj->group), "Check group name");
+        dap_assert_PIF(!strcmp(l_key, l_store_obj->key), "Check key name");
 
         prec = (dap_db_test_record_t *) l_store_obj->value;
-        dap_test_msg("Retrieved object: [%s, %s, %zu octets]", l_store_obj->group, l_store_obj->key,
+        log_it(L_DEBUG, "Retrieved object: [%s, %s, %zu octets]", l_store_obj->group, l_store_obj->key,
                      l_store_obj->value_len);
-        dap_test_msg("Record: ['%.*s', %d octets]", prec->len, prec->data, prec->len);
+        log_it(L_DEBUG, "Record: ['%.*s', %d octets]", prec->len, prec->data, prec->len);
         dap_hash_fast(prec->data, prec->len,
                       &csum);                       /* Compute a hash of the payload part of the record */
         dap_assert_PIF(memcmp(&csum, &prec->csum, sizeof(dap_chain_hash_fast_t)) == 0,
@@ -502,7 +502,7 @@ static void s_test_tx_start_end(size_t a_count, bool a_missing_allow)
     s_tx_start_end += get_cur_time_msec() - l_time;
 
     if (!a_missing_allow) {
-        dap_assert_PIF(!ret || ret == DAP_GLOBAL_DB_RC_NOT_FOUND, "Erased records from DB is ok");
+        dap_assert_PIF(!ret || ret == DAP_GLOBAL_DB_RC_NOT_FOUND, "Erased records from DB");
         dap_assert_PIF(a_count - l_count + dap_global_db_driver_hash_is_blank(&l_hash_last) == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true), "Wrong records count after erasing");
     }
     // restore erased records
@@ -514,7 +514,7 @@ static void s_test_tx_start_end(size_t a_count, bool a_missing_allow)
     ret = dap_global_db_driver_apply(l_objs, l_count);
     s_tx_start_end += get_cur_time_msec() - l_time;
 
-    dap_assert_PIF(!ret, "Restore records to DB is ok");
+    dap_assert_PIF(!ret, "Restore records to DB");
     if (!a_missing_allow) {
         dap_assert_PIF(a_count == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true), "Wrong records count after restoring");
     }
@@ -610,6 +610,7 @@ static void s_test_multithread(size_t a_count)
 
 int main(int argc, char **argv)
 {
+    dap_log_level_set(L_ERROR);
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
     dap_print_module_name("SQLite");
     s_test_create_db("sqlite");
@@ -634,8 +635,9 @@ int main(int argc, char **argv)
     int l_t2 = get_cur_time_msec();
     char l_msg[120] = {0};
     sprintf(l_msg, "Tests to %zu records", l_count);
+dap_print_module_name("Multithread");
     s_test_multithread(l_count);
-
+dap_print_module_name("Benchmark");
     benchmark_mgs_time(l_msg, l_t2 - l_t1);
     benchmark_mgs_time("Tests to write", s_write);
     benchmark_mgs_time("Tests to read", s_read);
