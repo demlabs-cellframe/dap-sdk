@@ -38,46 +38,18 @@ size_t dap_enc_sig_sphincsplus_crypto_sign_publickeybytes();
 size_t dap_enc_sig_sphincsplus_crypto_sign_bytes();
 size_t dap_enc_sig_sphincsplus_crypto_sign_seedbytes();
 
-DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_deser_sig_size(UNUSED_ARG const void *a_in)
-{
-    return sizeof(sphincsplus_signature_t);
-}
+uint64_t dap_enc_sig_sphincsplus_deser_sig_size(UNUSED_ARG const void *a_in);
 
-DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_deser_private_key_size(UNUSED_ARG const void *a_in)
-{
-    return sizeof(sphincsplus_private_key_t);
-}
+uint64_t dap_enc_sig_sphincsplus_deser_private_key_size(UNUSED_ARG const void *a_in);
 
-DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_deser_public_key_size(UNUSED_ARG const void *a_in)
-{
-    return sizeof(sphincsplus_public_key_t);
-}
 
-DAP_STATIC_INLINE size_t dap_enc_sig_sphincsplus_ser_sig_size(const void *a_sign)
-{
-    if (!a_sign)
-        return 0;
-        
-    return ((sphincsplus_signature_t *)a_sign)->sig_len + sizeof(uint64_t) * 2 + sizeof(sphincsplus_base_params_t);
-}
+uint64_t dap_enc_sig_sphincsplus_deser_public_key_size(UNUSED_ARG const void *a_in);
 
-DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_ser_private_key_size(const void *a_skey)
-{
-// sanity check
-    if(!a_skey)
-        return 0;
-// func work
-    return sizeof(uint64_t) + sizeof(sphincsplus_base_params_t) + dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(&((sphincsplus_private_key_t *)a_skey)->params);
-}
+size_t dap_enc_sig_sphincsplus_ser_sig_size(const void *a_sign);
 
-DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_ser_public_key_size(const void *a_pkey)
-{
-// sanity check
-    if(!a_pkey)
-        return 0;
-// func work
-    return sizeof(uint64_t) + sizeof(sphincsplus_base_params_t) + dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(&((sphincsplus_public_key_t *)a_pkey)->params);
-}
+uint64_t dap_enc_sig_sphincsplus_ser_private_key_size(const void *a_skey);
+
+uint64_t dap_enc_sig_sphincsplus_ser_public_key_size(const void *a_pkey);
 
 #ifdef DAP_CRYPTO_TESTS
 void dap_enc_sig_sphincsplus_set_default_config (sphincsplus_config_t  a_new_config);

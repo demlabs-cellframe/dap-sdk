@@ -431,3 +431,44 @@ inline int dap_enc_sig_sphincsplus_get_configs_count()
     return SPHINCSPLUS_CONFIG_MAX_ARG - 1;
 }
 #endif
+
+uint64_t dap_enc_sig_sphincsplus_deser_sig_size(UNUSED_ARG const void *a_in)
+{
+    return sizeof(sphincsplus_signature_t);
+}
+
+uint64_t dap_enc_sig_sphincsplus_deser_private_key_size(UNUSED_ARG const void *a_in)
+{
+    return sizeof(sphincsplus_private_key_t);
+}
+
+uint64_t dap_enc_sig_sphincsplus_deser_public_key_size(UNUSED_ARG const void *a_in)
+{
+    return sizeof(sphincsplus_public_key_t);
+}
+
+size_t dap_enc_sig_sphincsplus_ser_sig_size(const void *a_sign)
+{
+    if (!a_sign)
+        return 0;
+        
+    return ((sphincsplus_signature_t *)a_sign)->sig_len + sizeof(uint64_t) * 2 + sizeof(sphincsplus_base_params_t);
+}
+
+uint64_t dap_enc_sig_sphincsplus_ser_private_key_size(const void *a_skey)
+{
+// sanity check
+    if(!a_skey)
+        return 0;
+// func work
+    return sizeof(uint64_t) + sizeof(sphincsplus_base_params_t) + dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(&((sphincsplus_private_key_t *)a_skey)->params);
+}
+
+uint64_t dap_enc_sig_sphincsplus_ser_public_key_size(const void *a_pkey)
+{
+// sanity check
+    if(!a_pkey)
+        return 0;
+// func work
+    return sizeof(uint64_t) + sizeof(sphincsplus_base_params_t) + dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(&((sphincsplus_public_key_t *)a_pkey)->params);
+}
