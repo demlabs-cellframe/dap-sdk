@@ -64,6 +64,7 @@ int dap_cert_file_save(dap_cert_t * a_cert, const char * a_cert_file_path)
         }else{
             log_it(L_ERROR,"Can't serialize certificate in memory");
             fclose(l_file);
+            remove(a_cert_file_path);
             return -4;
         }
     }else{

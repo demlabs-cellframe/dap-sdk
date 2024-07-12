@@ -116,7 +116,7 @@ static int s_test_write(size_t a_count)
         l_time = get_cur_time_msec();
         ret = dap_global_db_driver_add(&l_store_obj, 1);
         s_write += get_cur_time_msec() - l_time;
-        dap_assert_PIF(!ret, "Write record to DB is ok");
+        dap_assert_PIF(!ret, "Write record to DB");
 
         // rewrite block
         if ( i < l_rewrite_count) {
@@ -131,7 +131,7 @@ static int s_test_write(size_t a_count)
             l_time = get_cur_time_msec();
             ret = dap_global_db_driver_add(&l_store_obj, 1);
             s_write += get_cur_time_msec() - l_time;
-            dap_assert_PIF(!ret, "Rewrite with key conflict record to DB is ok");
+            dap_assert_PIF(!ret, "Rewrite with key conflict record to DB");
         }
 
         l_store_obj.group = DAP_DB$T_GROUP_WRONG;
@@ -141,7 +141,7 @@ static int s_test_write(size_t a_count)
         l_time = get_cur_time_msec();
         ret = dap_global_db_driver_add(&l_store_obj, 1);
         s_write += get_cur_time_msec() - l_time;
-        dap_assert_PIF(!ret, "Write record to wrong group DB is ok");
+        dap_assert_PIF(!ret, "Write record to wrong group DB");
         DAP_DEL_Z(l_store_obj.sign);
     }
     dap_enc_key_delete(l_enc_key);
@@ -166,8 +166,8 @@ static int s_test_read(size_t a_count)
         dap_assert_PIF(l_store_obj, "Record-Not-Found");
         if (l_store_obj->sign)  // to test rewriting with hash conflict some records wiwthout sign
             dap_assert_PIF(dap_global_db_pkt_check_sign_crc(l_store_obj), "Record sign not verified");
-        dap_assert_PIF(!strcmp(DAP_DB$T_GROUP, l_store_obj->group), "Wrong group");
-        dap_assert_PIF(!strcmp(l_key, l_store_obj->key), "Wrong group");
+        dap_assert_PIF(!strcmp(DAP_DB$T_GROUP, l_store_obj->group), "Check group name");
+        dap_assert_PIF(!strcmp(l_key, l_store_obj->key), "Check key name");
 
         prec = (dap_db_test_record_t *) l_store_obj->value;
         log_it(L_DEBUG, "Retrieved object: [%s, %s, %zu octets]", l_store_obj->group, l_store_obj->key,
@@ -502,7 +502,7 @@ static void s_test_tx_start_end(size_t a_count, bool a_missing_allow)
     s_tx_start_end += get_cur_time_msec() - l_time;
 
     if (!a_missing_allow) {
-        dap_assert_PIF(!ret || ret == DAP_GLOBAL_DB_RC_NOT_FOUND, "Erased records from DB is ok");
+        dap_assert_PIF(!ret || ret == DAP_GLOBAL_DB_RC_NOT_FOUND, "Erased records from DB");
         dap_assert_PIF(a_count - l_count + dap_global_db_driver_hash_is_blank(&l_hash_last) == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true), "Wrong records count after erasing");
     }
     // restore erased records
@@ -514,7 +514,7 @@ static void s_test_tx_start_end(size_t a_count, bool a_missing_allow)
     ret = dap_global_db_driver_apply(l_objs, l_count);
     s_tx_start_end += get_cur_time_msec() - l_time;
 
-    dap_assert_PIF(!ret, "Restore records to DB is ok");
+    dap_assert_PIF(!ret, "Restore records to DB");
     if (!a_missing_allow) {
         dap_assert_PIF(a_count == dap_global_db_driver_count(DAP_DB$T_GROUP, (dap_global_db_driver_hash_t){0}, true), "Wrong records count after restoring");
     }
