@@ -993,17 +993,9 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
                         // Accept connection
                         if (l_cur->callbacks.accept_callback) {
-                            struct sockaddr_storage l_remote_addr;
-                            void *l_remote_addr_ptr = &l_remote_addr;
-                            socklen_t l_remote_addr_size = sizeof(l_remote_addr);
-#ifdef DAP_OS_UNIX
-                            struct sockaddr_un l_remote_path;
-                            if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING) {
-                                l_remote_addr_ptr = &l_remote_path;
-                                l_remote_addr_size = sizeof(l_remote_path);
-                            }
-#endif
-                            SOCKET l_remote_socket = accept(l_cur->socket, (struct sockaddr *)l_remote_addr_ptr, &l_remote_addr_size);
+                            struct sockaddr_storage l_addr_storage = { };
+                            socklen_t l_remote_addr_size = sizeof(l_addr_storage);
+                            SOCKET l_remote_socket = accept(l_cur->socket, (struct sockaddr*)&l_addr_storage, &l_remote_addr_size);
 #ifdef DAP_OS_WINDOWS
                             /*u_long l_mode = 1;
                             ioctlsocket((SOCKET)l_remote_socket, (long)FIONBIO, &l_mode); */
@@ -1031,7 +1023,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 }
                             }
 #endif
-                            l_cur->callbacks.accept_callback(l_cur, l_remote_socket, l_remote_addr_ptr);
+                            l_cur->callbacks.accept_callback(l_cur, l_remote_socket, &l_addr_storage);
                         }else
                             log_it(L_ERROR,"No accept_callback on listening socket");
                     break;

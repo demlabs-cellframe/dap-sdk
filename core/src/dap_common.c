@@ -724,7 +724,7 @@ char *dap_strerror(long long err) {
 #ifdef DAP_OS_WINDOWS
     *s_last_error = '\0';
     DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
-                  NULL, err, MAKELANGID (LANG_NEUTRAL, SUBLANG_DEFAULT), s_last_error, LAST_ERROR_MAX, NULL);
+                  NULL, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_last_error, LAST_ERROR_MAX, NULL);
     if (l_len)
         *(s_last_error + l_len - 1) = '\0';
     else

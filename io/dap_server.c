@@ -406,7 +406,9 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
 #ifdef DAP_OS_UNIX
     case AF_UNIX:
         l_es_new->type = DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT;
-        strncpy(l_es_new->remote_addr_str, ((struct sockaddr_un*)a_remote_addr)->sun_path, sizeof(l_es_new->remote_addr_str) - 1);
+        //strncpy(l_es_new->remote_addr_str, ((struct sockaddr_un*)a_remote_addr)->sun_path, sizeof(l_es_new->remote_addr_str) - 1);
+        log_it(L_INFO, "Connection accepted at \"%s\", socket %"DAP_FORMAT_SOCKET,
+                   a_es_listener->remote_addr_str, a_remote_socket);
         break;
 #endif
     case AF_INET:
@@ -421,12 +423,13 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
             return;
         } 
         l_es_new->remote_port = strtol(l_port_str, NULL, 10);
+        log_it(L_INFO, "Connection accepted from %s : %hu, socket %"DAP_FORMAT_SOCKET,
+                        l_es_new->remote_addr_str, l_es_new->remote_port, a_remote_socket);
         break;
     default:
         log_it(L_ERROR, "Unsupported protocol family %hu from accept()", l_family);
+        break;
     }
-    log_it(L_INFO, "Connection accepted from %s : %hu, socket %"DAP_FORMAT_SOCKET,
-                   l_es_new->remote_addr_str, l_es_new->remote_port, a_remote_socket);
 #ifdef DAP_EVENTS_CAPS_IOCP
     dap_worker_add_events_socket( dap_events_worker_get_auto(), l_es_new );
 #else

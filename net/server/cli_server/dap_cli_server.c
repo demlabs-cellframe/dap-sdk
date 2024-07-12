@@ -418,15 +418,15 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     // -verbose
     if(l_verbose) {
         if (str_reply) {
-            reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, (str_reply) ? str_reply : "");
+            reply_body = dap_strdup_printf("%d\r\nret_code: %d\r\n%s\r\n", res, res, str_reply);
+            DAP_DELETE(str_reply);
         } else {
             json_object* json_res = json_object_new_object();
             json_object_object_add(json_res, "ret_code", json_object_new_int(res));
             json_object_array_add(json_com_res, json_res);
         }
-    } else{
-        reply_body = dap_strdup_printf("%s", (str_reply) ? str_reply : "");
-    }
+    } else
+        reply_body = str_reply;
 
     // create response
     dap_json_rpc_response_t* response = reply_body
@@ -436,6 +436,5 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     char* response_string = dap_json_rpc_response_to_string(response);
     dap_json_rpc_response_free(response);
     dap_json_rpc_request_free(request);
-    DAP_DELETE(str_reply);
     return response_string;
 }
