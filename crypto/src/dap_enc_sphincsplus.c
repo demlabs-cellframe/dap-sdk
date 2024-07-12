@@ -50,7 +50,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
         randombytes(l_seed_buf, l_seed_buf_size);
     }
 
-    printf("6 key size = %zu\n", l_seed_buf_size);;
+    printf("6 key size = %zu, skey size = %zu, pkeysize = %zu\n", l_seed_buf_size, dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(), dap_enc_sig_sphincsplus_crypto_sign_publickeybytes());;
     fflush(stdout);
     // creating key pair
     dap_enc_sig_sphincsplus_key_new(a_key);
@@ -63,7 +63,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
     DAP_NEW_Z_SIZE_RET(l_pkey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(), l_seed_buf, l_skey->data, l_skey, l_pkey);
     
     sphincsplus_params_t current = sphincsplus_get_current_params();
-    printf("7 %d %d %d\n", s_default_config, current.base_params.config, current.base_params.spx_n);
+    printf("7 %d %d %d, skey size = %zu, pkeysize = %zu\n", s_default_config, current.base_params.config, current.base_params.spx_n, dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(), dap_enc_sig_sphincsplus_crypto_sign_publickeybytes());
     fflush(stdout);
 
     if(sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seed_buf)) {
