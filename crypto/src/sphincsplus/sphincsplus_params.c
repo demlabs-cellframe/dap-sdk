@@ -4,7 +4,7 @@
 
 #define LOG_TAG "dap_enc_sig_sphincsplus_params"
 
-_Thread_local sphincsplus_params_t g_sphincsplus_params_current = {0};
+sphincsplus_params_t g_sphincsplus_params_current = {0};
 
 #define s_haraka_offsets {\
     .spx_offset_layer = 3,\
