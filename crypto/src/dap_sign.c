@@ -481,7 +481,8 @@ size_t dap_sign_get_size(dap_sign_t * a_chain_sign)
 
 dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t *a_signs_count)
 {
-    dap_return_val_if_fail(a_data && a_signs_count && *a_signs_count, NULL);
+    dap_return_val_if_fail(a_signs_count && *a_signs_count, NULL);
+    dap_return_val_if_fail(a_data && a_data_size, (*a_signs_count = 0, NULL));
     dap_sign_t **l_ret = NULL;
     size_t i = 0, l_sign_size = 0;
     for (size_t l_offset = 0; l_offset < a_data_size; l_offset += l_sign_size) {
@@ -499,7 +500,7 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
             if (l_repeat)
                 continue;
         } else
-            DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_sign_t *, a_signs_count, NULL, NULL);
+            DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_sign_t *, *a_signs_count, NULL, NULL);
         l_ret[i++] = l_sign;
         if (i == *a_signs_count)
             break;
