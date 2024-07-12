@@ -24,6 +24,8 @@ void merkle_sign(uint8_t *sig, unsigned char *root,
     struct leaf_info_x1 info = { 0 };
     unsigned steps[ SPX_WOTS_LEN ];
 
+    printf("\t\t\t Steps start\n");
+    fflush(stdout);
     info.wots_sig = sig;
     chain_lengths(steps, root);
     info.wots_steps = steps;
@@ -34,6 +36,9 @@ void merkle_sign(uint8_t *sig, unsigned char *root,
     copy_subtree_addr(&info.pk_addr[0], wots_addr);
 
     info.wots_sign_leaf = idx_leaf;
+
+    printf("\t\t\t Treehash start\n");
+    fflush(stdout);
 
     treehashx1(root, auth_path, ctx,
                 idx_leaf, 0,
@@ -51,9 +56,12 @@ void merkle_gen_root(unsigned char *root, const spx_ctx *ctx)
     unsigned char auth_path[SPX_TREE_HEIGHT * SPX_N + SPX_WOTS_BYTES];
     uint32_t top_tree_addr[8] = {0};
     uint32_t wots_addr[8] = {0};
-
+    
     set_layer_addr(top_tree_addr, SPX_D - 1);
     set_layer_addr(wots_addr, SPX_D - 1);
+
+    printf("\t\tMerkel start\n");
+    fflush(stdout);
 
     merkle_sign(auth_path, root, ctx,
                 wots_addr, top_tree_addr,
