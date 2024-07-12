@@ -8,6 +8,7 @@
 #include "merkle.h"
 #include "address.h"
 #include "params.h"
+#include <stdio.h>
 
 /*
  * This generates a Merkle signature (WOTS signature followed by the Merkle

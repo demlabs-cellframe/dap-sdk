@@ -12,6 +12,7 @@
 #include "randombytes.h"
 #include "utils.h"
 #include "merkle.h"
+#include <stdio.h>
 
 /*
  * Returns the length of a secret key, in bytes

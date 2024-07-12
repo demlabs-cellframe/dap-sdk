@@ -5,6 +5,7 @@
 #include "params.h"
 #include "thash.h"
 #include "address.h"
+#include <stdio.h>
 
 /*
  * Generate the entire Merkle tree, computing the authentication path for
