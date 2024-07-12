@@ -494,7 +494,7 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
         if (ret) {
             // Check duplicate signs
             for (size_t j = 0; j < i; j++) {
-                if (dap_sign_compare_pkeys(l_sign, ret[i])) {
+                if (dap_sign_compare_pkeys(l_sign, ret[j])) {
                     l_repeat = true;
                     break;
                 }
