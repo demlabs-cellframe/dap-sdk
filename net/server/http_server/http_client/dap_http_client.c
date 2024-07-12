@@ -330,7 +330,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 //  log_it( L_DEBUG, "dap_http_client_read..." );
     unsigned l_iter_count = 0;
     do{
-        debug_if(s_debug_http, L_DEBUG, "HTTP client in state read %d taked bytes in input %"DAP_UINT64_FORMAT_U, l_http_client->state_read, a_esocket->buf_in_size );
+        debug_if(s_debug_http, L_DEBUG, "HTTP client in state read %d taked bytes in input %zu", l_http_client->state_read, a_esocket->buf_in_size );
 
         switch( l_http_client->state_read )
         {

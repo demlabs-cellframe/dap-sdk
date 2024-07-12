@@ -610,7 +610,7 @@ static void s_test_multithread(size_t a_count)
 
 int main(int argc, char **argv)
 {
-    dap_log_level_set(L_CRITICAL);
+    dap_log_level_set(L_ERROR);
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
     dap_print_module_name("SQLite");
     s_test_create_db("sqlite");

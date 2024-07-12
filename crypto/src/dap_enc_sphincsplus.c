@@ -57,10 +57,10 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
 
     if(sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seed_buf)) {
         log_it(L_CRITICAL, "Error generating Sphincs key pair");
-        DAP_DEL_MULTY(l_skey->data, l_pkey->data, l_skey, l_pkey);
+        DAP_DEL_MULTY(l_skey->data, l_pkey->data, l_skey, l_pkey, l_seed_buf);
         return;
     }
-
+    DAP_DEL_Z(l_seed_buf);
     l_skey->params = l_params;
     l_pkey->params = l_params;
     a_key->priv_key_data = l_skey;
