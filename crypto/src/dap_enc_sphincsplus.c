@@ -38,12 +38,12 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
     }
     
     // seed norming
-    size_t l_key_size = dap_enc_sig_sphincsplus_crypto_sign_seedbytes();
-    DAP_NEW_Z_SIZE_RET(l_seed_buf, unsigned char, l_key_size, NULL);
+    size_t l_seed_buf_size = dap_enc_sig_sphincsplus_crypto_sign_seedbytes();
+    DAP_NEW_Z_SIZE_RET(l_seed_buf, unsigned char, l_seed_buf_size, NULL);
     if(a_seed && a_seed_size > 0) {
-        SHAKE256(l_seed_buf, a_seed_size, (const unsigned char *) a_seed, a_seed_size);
+        SHAKE256(l_seed_buf, l_seed_buf_size, (const unsigned char *) a_seed, a_seed_size);
     } else {
-        randombytes(l_seed_buf, l_key_size);
+        randombytes(l_seed_buf, l_seed_buf_size);
     }
     // creating key pair
     dap_enc_sig_sphincsplus_key_new(a_key);
