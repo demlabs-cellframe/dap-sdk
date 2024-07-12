@@ -330,7 +330,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                             ? "GLOBAL_DB_SYNC_START" : "GLOBAL_DB_GROUP_REQUEST", l_pkt->group);
         byte_t *l_arg = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_node_addr_t) + sizeof(byte_t) + l_ch_pkt->hdr.data_size);
         if (!l_arg) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             break;
         }
         memcpy(l_arg + sizeof(dap_stream_node_addr_t) + sizeof(byte_t), l_pkt, l_ch_pkt->hdr.data_size);
@@ -359,7 +359,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             break;
         byte_t *l_arg = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_node_addr_t) + l_ch_pkt->hdr.data_size);
         if (!l_arg) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             break;
         }
         memcpy(l_arg + sizeof(dap_stream_node_addr_t), l_pkt, l_ch_pkt->hdr.data_size);
