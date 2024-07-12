@@ -33,6 +33,7 @@ int main(void) {
     dap_enc_base64_tests_run(l_times);
     dap_enc_base58_tests_run(l_times);
     dap_enc_ringct20_tests_run(l_times);
+    dap_enc_dilithium_tests_run(l_times);
     l_ret |= dap_enc_benchmark_tests_run(l_times);
     return l_ret;
 }
