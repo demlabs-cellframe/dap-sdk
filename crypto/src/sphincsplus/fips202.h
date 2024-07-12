@@ -17,9 +17,10 @@ void shake128_inc_init(uint64_t *s_inc);
 void shake128_inc_absorb(uint64_t *s_inc, const uint8_t *input, size_t inlen);
 void shake128_inc_finalize(uint64_t *s_inc);
 void shake128_inc_squeeze(uint8_t *output, size_t outlen, uint64_t *s_inc);
-
-extern void shake256_absorb(uint64_t *s, const uint8_t *input, size_t inlen);
-extern void shake256_squeezeblocks(uint8_t *output, size_t nblocks, uint64_t *s);
+#define shake256_absorb shake256_absorb_spx
+void shake256_absorb(uint64_t *s, const uint8_t *input, size_t inlen);
+#define shake256_squeezeblocks shake256_squeezeblocks_spx
+void shake256_squeezeblocks(uint8_t *output, size_t nblocks, uint64_t *s);
 
 void shake256_inc_init(uint64_t *s_inc);
 void shake256_inc_absorb(uint64_t *s_inc, const uint8_t *input, size_t inlen);
@@ -28,8 +29,8 @@ void shake256_inc_squeeze(uint8_t *output, size_t outlen, uint64_t *s_inc);
 
 void shake128(uint8_t *output, size_t outlen,
               const uint8_t *input, size_t inlen);
-
-extern void shake256(uint8_t *output, size_t outlen,
+#define shake256 shake256_spx
+void shake256(uint8_t *output, size_t outlen,
               const uint8_t *input, size_t inlen);
 
 void sha3_256_inc_init(uint64_t *s_inc);
