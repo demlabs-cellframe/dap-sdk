@@ -481,18 +481,20 @@ size_t dap_sign_get_size(dap_sign_t * a_chain_sign)
 
 dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t *a_signs_count)
 {
-    dap_return_val_if_fail(a_signs_count && *a_signs_count, NULL);
+    const uint16_t l_realloc_count = 10;
+    dap_return_val_if_fail(a_signs_count, NULL);
     dap_return_val_if_fail(a_data && a_data_size, (*a_signs_count = 0, NULL));
-    dap_sign_t **l_ret = NULL;
+    size_t l_signs_count = *a_signs_count ? *a_signs_count : l_realloc_count;
+    dap_sign_t **ret = NULL;
     size_t i = 0, l_sign_size = 0;
     for (size_t l_offset = 0; l_offset < a_data_size; l_offset += l_sign_size) {
         dap_sign_t *l_sign = (dap_sign_t *)((byte_t *)a_data + l_offset);
         l_sign_size = dap_sign_get_size(l_sign);
         bool l_repeat = false;
-        if (l_ret) {
+        if (ret) {
             // Check duplicate signs
             for (size_t j = 0; j < i; j++) {
-                if (dap_sign_compare_pkeys(l_sign, l_ret[i])) {
+                if (dap_sign_compare_pkeys(l_sign, ret[i])) {
                     l_repeat = true;
                     break;
                 }
@@ -500,13 +502,21 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
             if (l_repeat)
                 continue;
         } else
-            DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_sign_t *, *a_signs_count, NULL, NULL);
-        l_ret[i++] = l_sign;
-        if (i == *a_signs_count)
+            DAP_NEW_Z_COUNT_RET_VAL(ret, dap_sign_t *, l_signs_count, NULL, NULL);
+        ret[i++] = l_sign;
+        if (*a_signs_count && i == *a_signs_count)
             break;
+        if (i == l_signs_count) {
+            l_signs_count += l_realloc_count;
+            ret = (dap_sign_t **)DAP_REALLOC(ret, l_signs_count * sizeof(dap_sign_t *));
+            if (!ret) {
+                log_it(L_CRITICAL, c_error_memory_alloc);
+                return NULL;
+            }
+        }
     }
     *a_signs_count = i;
-    return l_ret;
+    return ret;
 }
 
 /**
