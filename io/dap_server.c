@@ -304,7 +304,8 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
         uint16_t l_count = 0, i;
     #ifdef DAP_OS_LINUX
         l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PATH, &l_count);
-        mode_t l_mode = strtol( dap_config_get_item_str_default(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PERMISSIONS, "0770"), NULL, 8 );
+        mode_t l_mode = 0666;
+            //strtol( dap_config_get_item_str_default(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PERMISSIONS, "0666"), NULL, 8 );
         for (i = 0; i < l_count; ++i) {
             if ( dap_server_listen_addr_add(l_server, l_addrs[i], l_mode, DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING, &l_callbacks) )
                 log_it(L_ERROR, "Can't add path \"%s\" to server", l_addrs[i]);
@@ -317,9 +318,13 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
         l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_LISTEN_ADDRS, &l_count);
         for (i = 0; i < l_count; ++i) {
             char l_cur_ip[INET6_ADDRSTRLEN] = { '\0' }; uint16_t l_cur_port = 0;
-            if ( 0 > dap_net_parse_config_address( l_addrs[i], l_cur_ip, &l_cur_port, NULL, NULL) )
-                    log_it( L_ERROR, "Incorrect format of address \"%s\", fix net config and restart node", l_addrs[i] );
-            else if ( dap_server_listen_addr_add(l_server, l_cur_ip, l_cur_port, DESCRIPTOR_TYPE_SOCKET_LISTENING, &l_callbacks) )
+            if ( 0 > dap_net_parse_config_address( l_addrs[i], l_cur_ip, &l_cur_port, NULL, NULL) ) {
+                log_it( L_ERROR, "Incorrect format of address \"%s\", fix net config and restart node", l_addrs[i] );
+                continue;
+            }
+            if ( !l_cur_port ) // Probably need old format
+                l_cur_port = dap_config_get_item_int16(g_config, a_cfg_section, DAP_CFG_PARAM_LEGACY_PORT);
+            if ( dap_server_listen_addr_add(l_server, l_cur_ip, l_cur_port, DESCRIPTOR_TYPE_SOCKET_LISTENING, &l_callbacks) )
                 log_it( L_ERROR, "Can't add address \"%s : %u\" to listen in server", l_cur_ip, l_cur_port);
         }
     }
