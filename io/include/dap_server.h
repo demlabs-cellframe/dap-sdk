@@ -72,4 +72,5 @@ dap_server_t* dap_server_new(const char *a_cfg_section,
                              dap_events_socket_callbacks_t *a_client_callbacks);
 int dap_server_listen_addr_add(dap_server_t *a_server, const char *a_addr, uint16_t a_port, 
                                dap_events_desc_type_t a_type, dap_events_socket_callbacks_t *a_callbacks);
+int dap_server_callbacks_set(dap_server_t*, dap_events_socket_callbacks_t*, dap_events_socket_callbacks_t*);
 void dap_server_delete(dap_server_t *a_server);

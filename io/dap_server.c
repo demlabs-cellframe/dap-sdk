@@ -151,29 +151,6 @@ dap_server_t* dap_server_get_default()
 }
 
 /**
- * @brief dap_server_delete
- * @param a_server
- */
-void dap_server_delete(dap_server_t *a_server)
-{
-// sanity check
-    dap_return_if_pass(!a_server);
-// func work
-    while (a_server->es_listeners) {
-        dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
-        dap_events_socket_remove_and_delete_mt(l_es->worker, l_es->uuid); // TODO unsafe moment. Replace storage to uuids
-        dap_list_t *l_tmp = a_server->es_listeners;
-        a_server->es_listeners = l_tmp->next;
-        DAP_DELETE(l_tmp);
-    }
-    if(a_server->delete_callback)
-        a_server->delete_callback(a_server,NULL);
-
-    DAP_DELETE(a_server->_inheritor);
-    DAP_DELETE(a_server);
-}
-
-/**
  * @brief add listen addr to server
  * @param a_server - server to add addr
  * @param a_addr - addr or path to local
@@ -296,6 +273,11 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
     return 0;
 }
 
+int dap_server_callbacks_set(dap_server_t* a_server, dap_events_socket_callbacks_t *a_server_cbs, dap_events_socket_callbacks_t *a_client_cbs) {
+    //TODO
+    return 0;
+}
+
 /**
  * @brief dap_server_new
  * @param a_events
@@ -306,7 +288,6 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
  */
 dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callbacks_t *a_server_callbacks, dap_events_socket_callbacks_t *a_client_callbacks)
 {
-    dap_return_val_if_pass(!a_cfg_section, NULL);
     dap_server_t *l_server = NULL;
     DAP_NEW_Z_RET_VAL(l_server, dap_server_t, NULL, NULL);
     dap_events_socket_callbacks_t l_callbacks = {
@@ -318,32 +299,33 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
     };
     if (a_client_callbacks)
         l_server->client_callbacks = *a_client_callbacks;
-    char **l_addrs = NULL;
-    uint16_t l_count = 0, i;
-#ifdef DAP_OS_LINUX
-    l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PATH, &l_count);
-    mode_t l_mode = strtol( dap_config_get_item_str_default(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PERMISSIONS, "0770"), NULL, 8 );
-    for (i = 0; i < l_count; ++i) {
-        if ( dap_server_listen_addr_add(l_server, l_addrs[i], l_mode, DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING, &l_callbacks) )
-            log_it(L_ERROR, "Can't add path \"%s\" to server", l_addrs[i]);
-        else
-            if ( 0 > chmod(l_addrs[i], l_mode) )
-                log_it(L_ERROR, "chmod() on socket path failed, errno %d: \"%s\"",
-                                errno, dap_strerror(errno));
-    }
-#endif
-    l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_LISTEN_ADDRS, &l_count);
-    for (i = 0; i < l_count; ++i) {
-        char l_cur_ip[INET6_ADDRSTRLEN] = { '\0' }; uint16_t l_cur_port = 0;
-        if ( 0 > dap_net_parse_config_address( l_addrs[i], l_cur_ip, &l_cur_port, NULL, NULL) )
-                log_it( L_ERROR, "Incorrect format of address \"%s\", fix net config and restart node", l_addrs[i] );
-        else if ( dap_server_listen_addr_add(l_server, l_cur_ip, l_cur_port, DESCRIPTOR_TYPE_SOCKET_LISTENING, &l_callbacks) )
-            log_it( L_ERROR, "Can't add address \"%s : %u\" to listen in server", l_cur_ip, l_cur_port);
+    if (a_cfg_section) {
+        char **l_addrs = NULL;
+        uint16_t l_count = 0, i;
+    #ifdef DAP_OS_LINUX
+        l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PATH, &l_count);
+        mode_t l_mode = strtol( dap_config_get_item_str_default(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PERMISSIONS, "0770"), NULL, 8 );
+        for (i = 0; i < l_count; ++i) {
+            if ( dap_server_listen_addr_add(l_server, l_addrs[i], l_mode, DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING, &l_callbacks) )
+                log_it(L_ERROR, "Can't add path \"%s\" to server", l_addrs[i]);
+            else
+                if ( 0 > chmod(l_addrs[i], l_mode) )
+                    log_it(L_ERROR, "chmod() on socket path failed, errno %d: \"%s\"",
+                                    errno, dap_strerror(errno));
+        }
+    #endif
+        l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_LISTEN_ADDRS, &l_count);
+        for (i = 0; i < l_count; ++i) {
+            char l_cur_ip[INET6_ADDRSTRLEN] = { '\0' }; uint16_t l_cur_port = 0;
+            if ( 0 > dap_net_parse_config_address( l_addrs[i], l_cur_ip, &l_cur_port, NULL, NULL) )
+                    log_it( L_ERROR, "Incorrect format of address \"%s\", fix net config and restart node", l_addrs[i] );
+            else if ( dap_server_listen_addr_add(l_server, l_cur_ip, l_cur_port, DESCRIPTOR_TYPE_SOCKET_LISTENING, &l_callbacks) )
+                log_it( L_ERROR, "Can't add address \"%s : %u\" to listen in server", l_cur_ip, l_cur_port);
+        }
     }
     if (!l_server->es_listeners) {
-        log_it(L_ERROR, "Server not created");
-        DAP_DELETE(l_server);
-        return NULL;
+        log_it(L_INFO, "Server with no listeners created. "
+                       "You may add them later with dap_server_listen_addr_add()");
     }
     return l_server;
 }
@@ -406,7 +388,6 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
 #ifdef DAP_OS_UNIX
     case AF_UNIX:
         l_es_new->type = DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT;
-        //strncpy(l_es_new->remote_addr_str, ((struct sockaddr_un*)a_remote_addr)->sun_path, sizeof(l_es_new->remote_addr_str) - 1);
         log_it(L_INFO, "Connection accepted at \"%s\", socket %"DAP_FORMAT_SOCKET,
                    a_es_listener->remote_addr_str, a_remote_socket);
         break;
@@ -455,4 +436,25 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     } else
         dap_worker_add_events_socket(l_worker, l_es_new);
 #endif
+}
+
+/**
+ * @brief Delete server
+ * @param a_server
+ */
+void dap_server_delete(dap_server_t *a_server)
+{
+    dap_return_if_pass(!a_server);
+    while (a_server->es_listeners) {
+        dap_events_socket_t *l_es = (dap_events_socket_t *)a_server->es_listeners->data;
+        dap_events_socket_remove_and_delete_mt(l_es->worker, l_es->uuid); // TODO unsafe moment. Replace storage to uuids
+        dap_list_t *l_tmp = a_server->es_listeners;
+        a_server->es_listeners = l_tmp->next;
+        DAP_DELETE(l_tmp);
+    }
+    if(a_server->delete_callback)
+        a_server->delete_callback(a_server,NULL);
+
+    //DAP_DELETE(a_server->_inheritor);
+    DAP_DELETE(a_server);
 }
