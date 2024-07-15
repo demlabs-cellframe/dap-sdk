@@ -20,8 +20,8 @@ void Signature_Test()
     // uint8_t pk[CRYPTO_PUBLICKEYBYTES];
     // uint8_t sk[CRYPTO_SECRETKEYBYTES];
 
-    dilithium_private_key *sk;
-    dilithium_public_key *pk;
+    dilithium_private_key_t *sk;
+    dilithium_public_key_t *pk;
     dilithium_kind_t kind;
     unsigned char m[MLEN + CRYPTO_BYTES];
     unsigned long long mlen;
