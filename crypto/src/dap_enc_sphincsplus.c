@@ -25,7 +25,7 @@ void dap_enc_sig_sphincsplus_key_new(dap_enc_key_t *a_key)
     a_key->sign_verify = dap_enc_sig_sphincsplus_verify_sign;
 }
 
-void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *a_kex_buf, size_t a_kex_size,
+void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *a_kex_buf, UNUSED_ARG size_t a_kex_size,
         const void *a_seed, size_t a_seed_size, UNUSED_ARG size_t a_key_size)
 {
     sphincsplus_private_key_t *l_skey = NULL;

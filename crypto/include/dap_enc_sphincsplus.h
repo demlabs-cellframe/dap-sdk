@@ -53,7 +53,7 @@ DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_deser_public_key_size(UNUSED_
     return sizeof(sphincsplus_public_key_t);
 }
 
-DAP_STATIC_INLINE size_t dap_enc_sig_sphincsplus_ser_sig_size(const void *a_sign)
+DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_ser_sig_size(const void *a_sign)
 {
     if (!a_sign)
         return 0;
