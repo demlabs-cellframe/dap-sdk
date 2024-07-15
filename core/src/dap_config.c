@@ -82,7 +82,7 @@ void dap_config_dump(dap_config_t *a_conf) {
             log_it(L_DEBUG, " String param: %s = %s", l_item->name, l_item->val.val_str);
             break;
         case DAP_CONFIG_ITEM_DECIMAL:
-            log_it(L_DEBUG, " Int param: %s = %"DAP_UINT64_FORMAT_U"", l_item->name, l_item->val.val_int);
+            log_it(L_DEBUG, " Int param: %s = %"DAP_UINT64_FORMAT_U, l_item->name, l_item->val.val_int);
             break;
         case DAP_CONFIG_ITEM_BOOL:
             log_it(L_DEBUG, " Bool param: %s = %d", l_item->name, l_item->val.val_bool);

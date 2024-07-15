@@ -149,7 +149,7 @@ size_t dap_enc_sig_sphincsplus_open_sign_msg(dap_enc_key_t *a_key, const void *a
     if(sphincsplus_set_params(&l_pkey->params)) {
         return 0;
     }
-    uint32_t l_sign_bytes = dap_enc_sig_sphincsplus_crypto_sign_bytes();
+    size_t l_sign_bytes = dap_enc_sig_sphincsplus_crypto_sign_bytes();
 
     if(a_out_size_max < l_sign_bytes) {
         log_it(L_ERROR, "Bad signature size");
@@ -369,7 +369,7 @@ void sphincsplus_signature_delete(void *a_sig){
 /*
  * Returns the length of a secret key, in bytes
  */
-inline size_t dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes()
+inline uint64_t dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes()
 {
     return sphincsplus_crypto_sign_secretkeybytes();
 }
@@ -377,7 +377,7 @@ inline size_t dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes()
 /*
  * Returns the length of a public key, in bytes
  */
-inline size_t dap_enc_sig_sphincsplus_crypto_sign_publickeybytes()
+inline uint64_t dap_enc_sig_sphincsplus_crypto_sign_publickeybytes()
 {
     return sphincsplus_crypto_sign_publickeybytes();
 }
@@ -385,7 +385,7 @@ inline size_t dap_enc_sig_sphincsplus_crypto_sign_publickeybytes()
 /*
  * Returns the length of the seed required to generate a key pair, in bytes
  */
-inline size_t dap_enc_sig_sphincsplus_crypto_sign_seedbytes()
+inline uint64_t dap_enc_sig_sphincsplus_crypto_sign_seedbytes()
 {
     return sphincsplus_crypto_sign_seedbytes();
 }
@@ -393,12 +393,12 @@ inline size_t dap_enc_sig_sphincsplus_crypto_sign_seedbytes()
 /*
  * Returns the length of a signature, in bytes
  */
-inline size_t dap_enc_sig_sphincsplus_crypto_sign_bytes()
+inline uint64_t dap_enc_sig_sphincsplus_crypto_sign_bytes()
 {
     return sphincsplus_crypto_sign_bytes();
 }
 
-inline size_t dap_enc_sig_sphincsplus_calc_signature_unserialized_size()
+inline uint64_t dap_enc_sig_sphincsplus_calc_signature_unserialized_size()
 {
     return sizeof(sphincsplus_signature_t); 
 }

@@ -3,6 +3,7 @@
 #include "dap_test.h"
 #include "dap_enc_test.h"
 #include "rand/dap_rand.h"
+#include "dap_enc_sphincsplus.h"
 
 #define LOG_TAG "dap_crypto_multithread_tests"
 

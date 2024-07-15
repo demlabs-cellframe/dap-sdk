@@ -33,10 +33,10 @@ void *dap_enc_sig_sphincsplus_read_signature(const uint8_t *a_buf, size_t a_bufl
 void *dap_enc_sig_sphincsplus_read_private_key(const uint8_t *a_buf, size_t a_buflen);
 void *dap_enc_sig_sphincsplus_read_public_key(const uint8_t *a_buf, size_t a_buflen);
 
-size_t dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes();
-size_t dap_enc_sig_sphincsplus_crypto_sign_publickeybytes();
-size_t dap_enc_sig_sphincsplus_crypto_sign_bytes();
-size_t dap_enc_sig_sphincsplus_crypto_sign_seedbytes();
+uint64_t dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes();
+uint64_t dap_enc_sig_sphincsplus_crypto_sign_publickeybytes();
+uint64_t dap_enc_sig_sphincsplus_crypto_sign_bytes();
+uint64_t dap_enc_sig_sphincsplus_crypto_sign_seedbytes();
 
 DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_deser_sig_size(UNUSED_ARG const void *a_in)
 {
