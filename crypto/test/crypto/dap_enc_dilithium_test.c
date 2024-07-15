@@ -1,6 +1,6 @@
 #include "dap_enc_dilithium_test.h"
 #include "dap_enc_dilithium.h"
-//#include "ringct20/ringct20_params.h"
+#include "sig_dilithium/dilithium_params.h"
 #include "rand/dap_rand.h"
 
 #define MLEN 59
@@ -26,14 +26,21 @@ void Signature_Test()
     unsigned char m[MLEN + CRYPTO_BYTES];
     unsigned long long mlen;
 
+    dilithium_signature *sm;
+
+    void *seed;
+    size_t seed_size;
+
 
 
     for(int i = 0; i < NTESTS; ++i) {
 
-        randombytes(m, MLEN);
+        //randombytes(m, MLEN);
 
-        dilithium_crypto_sign_keypair(pk, sk, kind, const void * seed, size_t seed_size);
-        dilithium_crypto_sign( dilithium_signature_t *sig, &m, mlen, pk);
+        //dilithium_crypto_sign_keypair calls randombytes to populate seed
+        dilithium_crypto_sign_keypair(pk, sk, kind, seed, seed_size);
+
+        dilithium_crypto_sign( sm, &m, mlen, pk);
 
         ret = crypto_sign_open(m2, &mlen, sm, smlen, pk);
 
@@ -73,4 +80,12 @@ void Signature_Test()
     printf("CRYPTO_BYTES = %d\n", CRYPTO_BYTES);
 
 
+}
+
+
+void dap_enc_dilithium_tests_run(int a_times) {
+    dap_print_module_name("dap_enc_dilithium");
+    char l_msg[120] = {0};
+    sprintf(l_msg, "signing and verifying message %d times", a_times);
+    benchmark_mgs_time(l_msg, benchmark_test_time(test_encode_decode_base58, a_times));
 }
