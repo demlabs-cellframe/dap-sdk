@@ -134,6 +134,7 @@ int dap_enc_multithread_tests_run(int a_times)
 
     s_test_multithread("Shipovnik", s_test_thread_shipovnik, a_times);
     dap_pass_msg("Shipovnik plus multithread tests");
+    dap_cleanup_test_case();
     return 0;
 }
 

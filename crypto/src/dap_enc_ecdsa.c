@@ -11,12 +11,13 @@
 
 static enum DAP_ECDSA_SIGN_SECURITY _ecdsa_type = ECDSA_MIN_SIZE; // by default
 static _Thread_local ecdsa_context_t *s_context = NULL;  // local connection
-static _Thread_local pthread_key_t s_context_destructor_key;
 
 const char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address);
 
-static void s_context_destructor(void *a_context) {
-    secp256k1_context_destroy((ecdsa_context_t *)a_context);
+static void s_context_destructor(UNUSED_ARG void *a_context) {
+    secp256k1_context_destroy(s_context);
+    log_it(L_DEBUG, "ECDSA context is destroyed @%p", s_context);
+    s_context = NULL;
 }
 
 //void dap_enc_sig_ecdsa_set_type(enum DAP_ECDSA_SIGN_SECURITY type)
@@ -32,8 +33,9 @@ static ecdsa_context_t *s_context_create()
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return NULL;
         }
+        pthread_key_t s_context_destructor_key;
         pthread_key_create(&s_context_destructor_key, s_context_destructor);
-        pthread_setspecific(s_context_destructor_key, (void *)s_context);
+        pthread_setspecific(s_context_destructor_key, (const void *)s_context);
         log_it(L_DEBUG, "ECDSA context is created @%p", s_context);
     }
     unsigned char l_random_seed[32];
@@ -60,6 +62,12 @@ void dap_enc_sig_ecdsa_key_new(dap_enc_key_t *a_key) {
         .sign_get   = dap_enc_sig_ecdsa_get_sign,
         .sign_verify= dap_enc_sig_ecdsa_verify_sign
     };
+}
+
+void dap_enc_sig_ecdsa_deinit() {
+    if (s_context) {
+        s_context_destructor(NULL);
+    }
 }
 
 
