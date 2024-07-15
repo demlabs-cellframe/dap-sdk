@@ -3,6 +3,7 @@
 #include "dap_enc_test.h"
 #include "dap_enc_benchmark_test.h"
 #include "dap_enc_ringct20_test.h"
+#include "dap_enc_dilithium_test.h"
 #include "rand/dap_rand.h"
 #include "dap_common.h"
 
