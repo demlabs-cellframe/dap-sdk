@@ -54,7 +54,10 @@ int dap_enc_sig_shipovnik_verify_sign(struct dap_enc_key* key, const void* msg, 
         return -12;
     }
     int l_ret = shipovnik_verify(key->pub_key_data, signature, msg, msg_size);
-    return l_ret ? 0 : ( log_it(L_ERROR, "Failed to verify message, error %d", l_ret), l_ret );
+    if (l_ret) {
+        log_it(L_ERROR, "Failed to verify message, error %d", l_ret);
+    }
+    return l_ret;
 }
 
 void dap_enc_sig_shipovnik_signature_delete(void *a_sig){
