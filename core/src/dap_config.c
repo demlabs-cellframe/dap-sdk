@@ -467,9 +467,7 @@ const char *dap_config_get_item_str_path_default(dap_config_t *a_config, const c
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
         return a_default;
     }
-    char l_abs_path[strlen(a_config->path) + 5];
-    dap_stpcpy(l_abs_path, a_config->path);
-    char *l_dir = dap_path_get_dirname(l_abs_path), *l_ret = dap_canonicalize_filename(l_item->val.val_str, l_dir);
+    char *l_dir = dap_path_get_dirname(a_config->path), *l_ret = dap_canonicalize_filename(l_item->val.val_str, l_dir);
     //log_it(L_DEBUG, "Config-path item: %s: composed from %s and %s", l_ret, l_item->val.val_str, l_dir);
     return DAP_DELETE(l_dir), l_ret;
 }
