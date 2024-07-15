@@ -1,4 +1,4 @@
-#ifndef _WIN32
+#ifndef DAP_OS_WINDOWS
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -16,6 +16,7 @@
 //#define INVALID_SOCKET  -1  // for win32 =  (SOCKET)(~0)
 // for Windows
 #else
+#define poll WSAPoll
 #include <winsock2.h>
 #include <windows.h>
 #include <mswsock.h>
@@ -29,45 +30,39 @@
 #include "dap_strfuncs.h"
 #define LOG_TAG "dap_net"
 
-#ifdef _WIN32
-  #define poll WSAPoll
-#endif
-
-int dap_net_resolve_host(const char *a_host, const char *a_port, struct sockaddr_storage *a_addr_out, bool a_passive_flag)
+int dap_net_resolve_host(const char *a_host, const char *a_port, bool a_numeric_only, struct sockaddr_storage *a_addr_out, int *a_family)
 {
-    dap_return_val_if_fail(a_addr_out && a_host, -1);
-    int l_ret = 0;
-    struct addrinfo l_hints = {
-        .ai_flags   = a_passive_flag
-            ? AI_CANONNAME | AI_PASSIVE | AI_V4MAPPED | AI_ADDRCONFIG
-            : AI_CANONNAME | AI_V4MAPPED | AI_ADDRCONFIG,
-        .ai_family  = AF_UNSPEC,
-        .ai_socktype= SOCK_STREAM,
-    }, *l_res;
+    dap_return_val_if_fail_err(a_addr_out, -1, "Required storage is not provided");
+    memset(a_addr_out, 0, sizeof(*a_addr_out));
+    int l_ret = 0,
+        l_ai_flags = a_numeric_only
+            ? AI_NUMERICHOST
+            : AI_CANONNAME | AI_V4MAPPED | AI_ADDRCONFIG;
+    if ( !a_host )
+        l_ai_flags |= AI_PASSIVE;
+    if ( a_port )
+        l_ai_flags |= AI_NUMERICSERV;
 
+    struct addrinfo *l_res, l_hints = { .ai_flags = l_ai_flags, .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM };
+    if (a_family)
+        *a_family = AF_UNSPEC;
     if (( l_ret = getaddrinfo(a_host, a_port, &l_hints, &l_res) ))
-        return l_ret;
-
-    // for (struct addrinfo *l_res_it = l_res; l_res_it; l_res_it = l_res_it->ai_next) // What shall we do?
-    {
-        memset(a_addr_out, 0, sizeof(*a_addr_out));
-        memcpy(a_addr_out, l_res->ai_addr, l_res->ai_addrlen);
-    }
+        return log_it(L_ERROR, "getaddrinfo() failed, error %d \"%s\"", l_ret, gai_strerror(l_ret) ), -2;
+    if (a_family)
+        *a_family = l_res->ai_family;
+    l_ret = l_res->ai_addrlen;
+    memcpy(a_addr_out, l_res->ai_addr, l_res->ai_addrlen);
     freeaddrinfo(l_res);
-    return 0;
+    return l_ret;
 }
 
-
-int dap_net_parse_hostname(const char *a_src, char *a_addr, uint16_t *a_port) {
-    if (!a_src)
-        return -1;
-    if (!a_addr && !a_port)
-        return log_it(L_ERROR, "No output buffers provided!"), -2;
-        
-    char l_type = 0, *l_cpos = NULL, *l_bpos = NULL;
+int dap_net_parse_config_address(const char *a_src, char *a_addr, uint16_t *a_port, struct sockaddr_storage *a_saddr, int *a_family) {
+    dap_return_val_if_fail_err( !!a_src && ( !!a_addr || !!a_port ), 0, "Required args are not provided");
+    int l_len = 0, l_type = 0;
+    char *l_bpos = NULL, *l_cpos = NULL;
     /*  
-        type 4,5 - hostname or IPv4 (no port, with port)
-        type 6,7 - IPv6 (no port, with port)
+        type 4,5 - possibly hostname or IPv4 (no port, with port)
+        type 6,7 - possibly IPv6 (no port, with port)
     */
     if ((l_cpos = strrchr(a_src, ':') )) {
         l_type = strchr(a_src, ':') == l_cpos ? 5 : 6;
@@ -80,9 +75,8 @@ int dap_net_parse_hostname(const char *a_src, char *a_addr, uint16_t *a_port) {
         a_src++;
         l_type = 7;
     } else if ( (l_bpos = strrchr(a_src, ']')) )
-        return -1;
+        return -2;
     
-    int l_len;
     switch (l_type) {
     case 4:
     case 6:
@@ -98,9 +92,16 @@ int dap_net_parse_hostname(const char *a_src, char *a_addr, uint16_t *a_port) {
         l_len = l_bpos - a_src;
         break;
     default:
-        return -1;
+        log_it(L_ERROR, "Couldn't define address \"%s\" type", a_src);
+        return 0;
     }
-    return l_len > 0xFF ? -2 : ( dap_strncpy(a_addr, a_src, l_len), 0 );
+    if ( l_len > DAP_HOSTADDR_STRLEN || !l_len )
+        return log_it(L_ERROR, "Can't parse config string \"%s\", invalid address size %d", a_src, l_len), -3;
+    char *a_addr2 = a_addr ? a_addr : a_saddr ? DAP_NEW_STACK_SIZE(char, l_len + 1) : NULL;
+    if ( !a_addr2 )
+        return l_len;
+    dap_strncpy(a_addr2, a_src, l_len);
+    return a_saddr ? dap_net_resolve_host(a_addr2, a_port ? dap_itoa(*a_port) : NULL, true, a_saddr, a_family) : l_len;
 }
 
 /**
