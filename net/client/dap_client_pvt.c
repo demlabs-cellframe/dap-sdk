@@ -518,12 +518,13 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     l_es->flags |= DAP_SOCK_READY_TO_WRITE;
                 #endif
                     l_es->_inheritor = a_client_pvt->client;
-                    if ( dap_net_resolve_host(a_client_pvt->client->link_info.uplink_addr,
+                    if ( 0 > dap_net_resolve_host(a_client_pvt->client->link_info.uplink_addr,
                                               dap_itoa(a_client_pvt->client->link_info.uplink_port),
-                                              &l_es->addr_storage,
-                                              false)
+                                              false, &l_es->addr_storage, NULL)
                     ) {
-                        log_it(L_ERROR, "Wrong remote address '%s : %u'", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
+                        log_it(L_ERROR, "Wrong remote address '%s : %u'", 
+                                        a_client_pvt->client->link_info.uplink_addr,
+                                        a_client_pvt->client->link_info.uplink_port);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_WRONG_ADDRESS;
                         s_stage_status_after(a_client_pvt);

@@ -262,6 +262,9 @@ typedef union dap_stream_node_addr {
     uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
 } DAP_ALIGN_PACKED dap_stream_node_addr_t;
 
+#define DAP_STRINGIFY_1(s) #s
+#define DAP_STRINGIFY(s) DAP_STRINGIFY_1(s)
+
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
 #define NODE_ADDR_FP_ARGS(a)  a->words[2],a->words[3],a->words[0],a->words[1]
@@ -742,15 +745,11 @@ void    *l_ptr;
         return  l_ptr;
 }
 
-
-
-
-
 #else
 #define dump_it(v,s,l)
 #endif
 
-const char * log_error(void);
+char *dap_strerror(long long err);
 void dap_log_level_set(enum dap_log_level ll);
 enum dap_log_level dap_log_level_get(void);
 void dap_set_log_tag_width(size_t width);
@@ -786,6 +785,7 @@ static inline void *dap_mempcpy(void *a_dest, const void *a_src, size_t n)
     return ((byte_t *)memcpy(a_dest, a_src, n)) + n;
 }
 
+DAP_STATIC_INLINE int dap_is_letter(char c) { return dap_ascii_isalpha(c); }
 DAP_STATIC_INLINE int dap_is_alpha(char c) { return dap_ascii_isalnum(c); }
 DAP_STATIC_INLINE int dap_is_digit(char c) { return dap_ascii_isdigit(c); }
 DAP_STATIC_INLINE int dap_is_xdigit(char c) {return dap_ascii_isxdigit(c);}

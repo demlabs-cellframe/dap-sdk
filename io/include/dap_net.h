@@ -43,6 +43,11 @@
 
 #include "dap_events_socket.h"
 
-int dap_net_resolve_host(const char *a_host, const char *a_port, struct sockaddr_storage *a_addr_out, bool a_passive_flag);
-int dap_net_parse_hostname(const char *a_src, char *a_addr, uint16_t *a_port);
+#define DAP_CFG_PARAM_LISTEN_ADDRS      "listen-address"
+#define DAP_CFG_PARAM_SOCK_PATH         "listen-path"
+#define DAP_CFG_PARAM_SOCK_PERMISSIONS  "listen-unix-socket-permissions"
+#define DAP_CFG_PARAM_LEGACY_PORT       "listen-port-tcp"
+
+int dap_net_resolve_host(const char *a_host, const char *a_port, bool a_numeric_only, struct sockaddr_storage *a_addr_out, int *a_family);
+int dap_net_parse_config_address(const char *a_src, char *a_addr, uint16_t *a_port, struct sockaddr_storage *a_saddr, int *a_family);
 long dap_net_recv(SOCKET sd, unsigned char *buf, size_t bufsize, int timeout);
