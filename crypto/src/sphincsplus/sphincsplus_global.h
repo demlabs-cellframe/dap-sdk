@@ -4,7 +4,7 @@
 #include "sphincsplus_params.h"
 
 
-extern sphincsplus_params_t g_sphincsplus_params_current;
+extern _Thread_local sphincsplus_params_t g_sphincsplus_params_current;
 
 #ifdef SPHINCSPLUS_FLEX  //defined in cmake
 
