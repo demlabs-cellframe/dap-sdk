@@ -12,8 +12,6 @@
 static enum DAP_ECDSA_SIGN_SECURITY _ecdsa_type = ECDSA_MIN_SIZE; // by default
 static _Thread_local ecdsa_context_t *s_context = NULL;  // local connection
 
-const char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address);
-
 static void s_context_destructor(UNUSED_ARG void *a_context) {
     secp256k1_context_destroy(s_context);
     log_it(L_DEBUG, "ECDSA context is destroyed @%p", s_context);
