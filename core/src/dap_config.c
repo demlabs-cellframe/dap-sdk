@@ -82,7 +82,7 @@ void dap_config_dump(dap_config_t *a_conf) {
             log_it(L_DEBUG, " String param: %s = %s", l_item->name, l_item->val.val_str);
             break;
         case DAP_CONFIG_ITEM_DECIMAL:
-            log_it(L_DEBUG, " Int param: %s = %ld", l_item->name, l_item->val.val_int);
+            log_it(L_DEBUG, " Int param: %s = %"DAP_UINT64_FORMAT_U, l_item->name, l_item->val.val_int);
             break;
         case DAP_CONFIG_ITEM_BOOL:
             log_it(L_DEBUG, " Bool param: %s = %d", l_item->name, l_item->val.val_bool);
@@ -432,7 +432,7 @@ uint64_t _dap_config_get_item_uint(dap_config_t *a_config, const char *a_section
     switch (l_item->type) {
     case DAP_CONFIG_ITEM_DECIMAL:
         return l_item->val.val_int < 0
-                ? log_it(L_WARNING, "Unsigned parameter \"%s\" requested, but the value is negative: %ld",
+                ? log_it(L_WARNING, "Unsigned parameter \"%s\" requested, but the value is negative: %"DAP_UINT64_FORMAT_U,
                          l_item->name, l_item->val.val_int), a_default
                 : (uint64_t)l_item->val.val_int;
     default:

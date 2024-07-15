@@ -60,9 +60,15 @@ static char s_filename_db [MAX_PATH];
 static const char s_attempts_count = 7;
 static const int s_sleep_period = 500 * 1000;  /* Wait 0.5 sec */;
 static bool s_db_inited = false;
-static dap_list_t *s_conn_list = NULL;  // list of all connections
 static _Thread_local conn_list_item_t *s_conn = NULL;  // local connection
-static pthread_rwlock_t s_conn_list_rwlock = PTHREAD_RWLOCK_INITIALIZER; 
+
+
+static void s_connection_destructor(UNUSED_ARG void *a_conn) {
+    sqlite3_close(s_conn->conn);
+    log_it(L_DEBUG, "Close  connection: @%p/%p, usage: %llu", s_conn, s_conn->conn, s_conn->usage);
+    DAP_DEL_Z(s_conn);
+}
+
 
 /**
  * @brief Opens a SQLite database and adds byte_to_bin function.
@@ -236,25 +242,19 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
 // func work
     static int l_conn_idx = 0;
     if (!s_conn) {
-        pthread_rwlock_wrlock(&s_conn_list_rwlock);
-        s_conn = DAP_NEW_Z(conn_list_item_t);
-        if (!s_conn) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            pthread_rwlock_unlock(&s_conn_list_rwlock);
-            return NULL;
-        }
+        DAP_NEW_Z_RET_VAL(s_conn, conn_list_item_t, NULL, NULL);
+        pthread_key_t s_destructor_key;
+        pthread_key_create(&s_destructor_key, s_connection_destructor);
+        pthread_setspecific(s_destructor_key, (const void *)s_conn);
         char *l_error_message = NULL;
         if ( !(s_conn->conn = s_db_sqlite_open(s_filename_db, SQLITE_OPEN_READWRITE, &l_error_message)) ) {
             log_it(L_ERROR, "Can't init sqlite err: \"%s\"", l_error_message ? l_error_message: "UNKNOWN");
             sqlite3_free(l_error_message);
             DAP_DEL_Z(s_conn);
-            pthread_rwlock_unlock(&s_conn_list_rwlock);
             return NULL;
         }
         s_conn->idx = l_conn_idx++;
         log_it(L_DEBUG, "SQL connection #%d is created @%p", s_conn->idx, s_conn);
-        s_conn_list = dap_list_append(s_conn_list, s_conn);
-        pthread_rwlock_unlock(&s_conn_list_rwlock);
     }
     // busy check
     if (a_trans) {
@@ -280,20 +280,12 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
  */
 int s_db_sqlite_deinit(void)
 {
-    pthread_rwlock_wrlock(&s_conn_list_rwlock);
-        if (!s_db_inited) {
-            log_it(L_WARNING, "SQLite driver already deinited");
-            pthread_rwlock_unlock(&s_conn_list_rwlock);
-            return -1;
-        }
-        dap_list_t *l_item = NULL;
-        DL_FOREACH(s_conn_list, l_item) {
-            sqlite3_close(((conn_list_item_t *)l_item->data)->conn);
-        }
-        dap_list_free_full(s_conn_list, NULL);
-        s_conn_list = NULL;
-        s_db_inited = false;
-    pthread_rwlock_unlock(&s_conn_list_rwlock);
+    if (!s_db_inited) {
+        log_it(L_WARNING, "SQLite driver already deinited");
+        return -1;
+    }
+    s_connection_destructor(NULL);
+    s_db_inited = false;
     return sqlite3_shutdown();
 }
 

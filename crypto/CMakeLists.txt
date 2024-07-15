@@ -464,6 +464,7 @@ endif()
 if(BUILD_CRYPTO_TESTS)
     enable_testing()
     add_subdirectory(test)
+    add_definitions("-DDAP_CRYPTO_TESTS")
 endif()
 
 if(INSTALL_DAP_SDK)

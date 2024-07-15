@@ -88,7 +88,7 @@ static int s_test_write(size_t a_count)
     size_t l_rewrite_count = rand() % (a_count / 2) + 2; 
     for (size_t i = 0; i < a_count; ++i)
     {
-        dap_test_msg("Write %zu record in GDB", i);
+        log_it(L_DEBUG, "Write %zu record in GDB", i);
 
         l_store_obj.group = DAP_DB$T_GROUP; 
         snprintf(l_key, sizeof(l_key) - 1, "KEY$%08zx", i); // add bad to check rewrite          /* Generate a key of record */
@@ -111,7 +111,7 @@ static int s_test_write(size_t a_count)
             l_store_obj.flags = i % DAP_DB$SZ_HOLES ? 0 : DAP_GLOBAL_DB_RECORD_DEL;
         }
         l_store_obj.sign = dap_store_obj_sign(&l_store_obj, l_enc_key, &l_store_obj.crc);
-        dap_test_msg("Store object: [%s, %s, %zu octets]", l_store_obj.group, l_store_obj.key, l_store_obj.value_len);
+        log_it(L_DEBUG, "Store object: [%s, %s, %zu octets]", l_store_obj.group, l_store_obj.key, l_store_obj.value_len);
 
         l_time = get_cur_time_msec();
         ret = dap_global_db_driver_add(&l_store_obj, 1);
@@ -170,9 +170,9 @@ static int s_test_read(size_t a_count)
         dap_assert_PIF(!strcmp(l_key, l_store_obj->key), "Check key name");
 
         prec = (dap_db_test_record_t *) l_store_obj->value;
-        dap_test_msg("Retrieved object: [%s, %s, %zu octets]", l_store_obj->group, l_store_obj->key,
+        log_it(L_DEBUG, "Retrieved object: [%s, %s, %zu octets]", l_store_obj->group, l_store_obj->key,
                      l_store_obj->value_len);
-        dap_test_msg("Record: ['%.*s', %d octets]", prec->len, prec->data, prec->len);
+        log_it(L_DEBUG, "Record: ['%.*s', %d octets]", prec->len, prec->data, prec->len);
         dap_hash_fast(prec->data, prec->len,
                       &csum);                       /* Compute a hash of the payload part of the record */
         dap_assert_PIF(memcmp(&csum, &prec->csum, sizeof(dap_chain_hash_fast_t)) == 0,
@@ -530,7 +530,7 @@ static void s_test_close_db(void)
 }
 
 
-void s_test_all(size_t a_count)
+static void s_test_all(size_t a_count)
 {
     s_test_write(a_count);
     s_test_read(a_count);
@@ -561,7 +561,7 @@ void s_test_all(size_t a_count)
 }
 
 
-void *s_test_thread_rewrite_records(void *a_arg)
+static void *s_test_thread_rewrite_records(void *a_arg)
 {
     size_t l_count = *(size_t *)a_arg;
     s_test_tx_start_end(l_count, true);
@@ -569,7 +569,7 @@ void *s_test_thread_rewrite_records(void *a_arg)
     return NULL;
 }
 
-void *s_test_thread(void *a_arg)
+static void *s_test_thread(void *a_arg)
 {
     size_t l_count = *(size_t *)a_arg;
     s_test_read(l_count);
@@ -586,7 +586,7 @@ void *s_test_thread(void *a_arg)
     return NULL;
 }
 
-void s_test_multithread(size_t a_count)
+static void s_test_multithread(size_t a_count)
 {
     uint32_t l_thread_count = 2;
     log_it(L_INFO, "Test with %u threads", l_thread_count);
@@ -610,6 +610,7 @@ void s_test_multithread(size_t a_count)
 
 int main(int argc, char **argv)
 {
+    dap_log_level_set(L_ERROR);
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
     dap_print_module_name("SQLite");
     s_test_create_db("sqlite");
@@ -634,8 +635,9 @@ int main(int argc, char **argv)
     int l_t2 = get_cur_time_msec();
     char l_msg[120] = {0};
     sprintf(l_msg, "Tests to %zu records", l_count);
+dap_print_module_name("Multithread");
     s_test_multithread(l_count);
-
+dap_print_module_name("Benchmark");
     benchmark_mgs_time(l_msg, l_t2 - l_t1);
     benchmark_mgs_time("Tests to write", s_write);
     benchmark_mgs_time("Tests to read", s_read);

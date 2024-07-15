@@ -231,7 +231,7 @@ static void s_notify_server_callback_new(dap_events_socket_t * a_es, UNUSED_ARG 
         l_hh_new->worker_id = a_es->worker->id;
     } else {
         if (!a_es->context || !a_es->worker) {
-            log_it(L_ERROR, "Invalid esocket arg with uuid %zu: broken context", a_es->uuid);
+            log_it(L_ERROR, "Invalid esocket arg with uuid %"DAP_UINT64_FORMAT_U": broken context", a_es->uuid);
             pthread_rwlock_unlock(&s_notify_server_clients_mutex);
             return;
         }

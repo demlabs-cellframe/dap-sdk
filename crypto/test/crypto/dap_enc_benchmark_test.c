@@ -95,14 +95,15 @@ static int s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *a
 {
     int l_ret = 0;
     size_t seed_size = sizeof(uint8_t);
-    uint8_t seed[seed_size];
+    uint8_t seed[sizeof(uint8_t)];
+    randombytes(seed, seed_size);
     uint8_t **l_signs = NULL;
     uint8_t **l_source = NULL;
     dap_enc_key_t **l_keys = NULL;
     size_t l_source_size[a_times];
-    dap_enc_key_t *l_key = dap_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
-    size_t max_signature_size = dap_sign_create_output_unserialized_calc_size(l_key, 0);
-    dap_enc_key_delete(l_key);
+    dap_enc_key_t *l_key_temp = dap_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
+    size_t max_signature_size = dap_sign_create_output_unserialized_calc_size(l_key_temp, 0);
+    dap_enc_key_delete(l_key_temp);
 
     DAP_NEW_Z_COUNT_RET_VAL(l_signs, uint8_t*, a_times, 1, NULL);
     DAP_NEW_Z_COUNT_RET_VAL(l_source, uint8_t*, a_times, 1, l_signs);

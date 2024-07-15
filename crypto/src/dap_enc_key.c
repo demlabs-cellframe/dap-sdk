@@ -598,7 +598,7 @@ void dap_enc_key_deinit()
 #ifdef DAP_PQRL
     dap_pqrl_deinit();
 #endif
-
+    dap_enc_sig_ecdsa_deinit();
 }
 
 /**
