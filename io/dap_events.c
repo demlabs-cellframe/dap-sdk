@@ -83,7 +83,6 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include <mswsock.h>
 #include <ws2tcpip.h>
 #include <io.h>
-
 #endif
 
 #include <utlist.h>
@@ -99,6 +98,14 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include "dap_config.h"
 
 #define LOG_TAG "dap_events"
+
+#ifdef DAP_EVENTS_CAPS_IOCP
+LPFN_ACCEPTEX             pfnAcceptEx               = NULL;
+LPFN_GETACCEPTEXSOCKADDRS pfnGetAcceptExSockaddrs   = NULL;
+LPFN_CONNECTEX            pfnConnectEx              = NULL; 
+LPFN_DISCONNECTEX         pfnDisconnectEx           = NULL;
+pfn_RtlNtStatusToDosError pfnRtlNtStatusToDosError  = NULL;
+#endif
 
 bool g_debug_reactor = false;
 static int s_workers_init = 0;
@@ -224,13 +231,45 @@ int dap_events_init( uint32_t a_threads_count, size_t a_conn_timeout )
 #ifdef DAP_OS_WINDOWS
     WSADATA wsaData;
     int ret = WSAStartup(MAKEWORD(2, 2), &wsaData);
-    if (ret != 0) {
-        log_it(L_CRITICAL, "Couldn't init Winsock DLL, error: %d", ret);
-        return 2;
-    }
-#endif
-    g_debug_reactor = g_config ? dap_config_get_item_bool_default(g_config, "general", "debug_reactor", false) : false;
+    if (ret)
+        return _set_errno(WSAGetLastError()),
+            log_it(L_CRITICAL, "Couldn't init Winsock DLL, error %d: %s", errno, dap_strerror(errno)),
+            -1;
+#ifdef DAP_EVENTS_CAPS_IOCP
+    HMODULE ntdll = GetModuleHandle("ntdll.dll");
+    if ( !ntdll || !(pfnRtlNtStatusToDosError = (pfn_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError")) )
+        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())), -1;
 
+    SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);
+    DWORD l_bytes = 0;
+    static GUID guidAcceptEx             = WSAID_ACCEPTEX,
+                guidGetAcceptExSockaddrs = WSAID_GETACCEPTEXSOCKADDRS,
+                guidConnectEx            = WSAID_CONNECTEX,
+                guidDisconnectEx         = WSAID_DISCONNECTEX;
+
+#define GetExtFuncPtr(func) ({                                          \
+    if ((ret = WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,   \
+                        &guid##func, sizeof(guid##func),                \
+                        &pfn##func, sizeof(pfn##func),                  \
+                        &l_bytes, NULL, NULL)) == SOCKET_ERROR)         \
+    {                                                                   \
+        _set_errno(WSAGetLastError());                                  \
+        log_it(L_ERROR,"WSAIoctl error %d getting function \"%s\": %s", \
+                       errno, DAP_STRINGIFY(func), dap_strerror(errno));\
+        closesocket(l_socket);                                          \
+    }                                                                   \
+    ret; })
+
+    if ( GetExtFuncPtr(AcceptEx)             ||
+         GetExtFuncPtr(GetAcceptExSockaddrs) ||
+         GetExtFuncPtr(ConnectEx)            ||
+         GetExtFuncPtr(DisconnectEx) ) 
+            return -2;
+    closesocket(l_socket);
+#undef GetExtFuncPtr
+#endif // DAP_EVENTS_CAPS_IOCP
+#endif // DAP_OS_WINDOWS
+    g_debug_reactor = dap_config_get_item_bool_default(g_config, "general", "debug_reactor", false);
     uint32_t l_cpu_count = dap_get_cpu_count();
     if (a_threads_count > l_cpu_count)
         a_threads_count = l_cpu_count;
@@ -279,7 +318,7 @@ void dap_events_deinit( )
         DAP_DELETE( s_workers );
 
     s_workers_init = 0;
-#ifdef __WIN32
+#ifdef DAP_OS_WINDOWS
     WSACleanup();
 #endif
 }

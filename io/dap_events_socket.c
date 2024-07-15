@@ -102,12 +102,6 @@ const char *s_socket_type_to_str[] = {
     [DESCRIPTOR_TYPE_EVENT]                 = "EVENT"
 };
 
-#ifdef DAP_EVENTS_CAPS_IOCP
-LPFN_CONNECTEX pfnConnectEx        = NULL;
-LPFN_DISCONNECTEX pfnDisconnectEx  = NULL;
-pfn_RtlNtStatusToDosError pfnRtlNtStatusToDosError = NULL;
-#endif
-
 // Item for QUEUE_PTR input esocket
 struct queue_ptr_input_item{
     dap_events_socket_t * esocket;
@@ -290,11 +284,6 @@ static inline void s_dap_evsock_free(dap_events_socket_t *a_es)
  */
 int dap_events_socket_init( void )
 {
-#ifdef DAP_EVENTS_CAPS_IOCP
-    HMODULE ntdll = GetModuleHandle("ntdll.dll");
-    if ( !ntdll || !(pfnRtlNtStatusToDosError = (pfn_RtlNtStatusToDosError)GetProcAddress(ntdll, "RtlNtStatusToDosError")) )
-        return log_it(L_CRITICAL, "Ntdll error"), -1;
-#endif
     log_it(L_NOTICE,"Initialized events socket module");
 
 #ifdef  DAP_SYS_DEBUG
