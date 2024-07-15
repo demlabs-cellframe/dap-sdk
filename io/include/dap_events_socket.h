@@ -447,6 +447,14 @@ size_t  dap_events_socket_insert_buf_out(dap_events_socket_t * a_es, void *a_dat
 DAP_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t* a_es) {
     return s_socket_type_to_str[a_es->type];
 }
+DAP_INLINE int dap_close_socket(SOCKET s) {
+    return
+#ifdef DAP_OS_WINDOWS
+    closesocket(s);
+#else
+    close(s);
+#endif
+}
 
 #ifdef DAP_EVENTS_CAPS_IOCP
 
