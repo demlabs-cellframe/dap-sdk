@@ -77,8 +77,10 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
     if (err_parse_request){
         DAP_FREE(request->method);
         DAP_FREE(request);
+        json_object_put(jobj);
         return NULL;
     }
+    json_object_put(jobj);
     return request;
 }
 
