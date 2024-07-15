@@ -47,5 +47,6 @@ void dap_enc_sig_ecdsa_signature_delete(void *a_sig);
 void dap_enc_sig_ecdsa_private_key_delete(void* privateKey);
 void dap_enc_sig_ecdsa_public_key_delete(void* publicKey);
 void dap_enc_sig_ecdsa_private_and_public_keys_delete(dap_enc_key_t* a_key);
+void dap_enc_sig_ecdsa_deinit();
 
 #endif

@@ -119,8 +119,8 @@ int dap_enc_sig_multisign_forming_keys(dap_enc_key_t *a_key, const dap_multi_sig
     for(uint8_t i = 0; i < a_params->key_count; ++i) {
         uint64_t l_ser_skey_len = 0;
         uint64_t l_ser_pkey_len = 0;
-        uint8_t *l_ser_skey = dap_enc_key_serialize_priv_key(a_params->keys[i], &l_ser_skey_len);
-        uint8_t *l_ser_pkey = dap_enc_key_serialize_pub_key(a_params->keys[i], &l_ser_pkey_len);
+        uint8_t *l_ser_skey = dap_enc_key_serialize_priv_key(a_params->keys[i], (size_t *)&l_ser_skey_len);
+        uint8_t *l_ser_pkey = dap_enc_key_serialize_pub_key(a_params->keys[i], (size_t *)&l_ser_pkey_len);
         memcpy(l_skey->data + l_mem_bias_skey, l_ser_skey, l_ser_skey_len);
         memcpy(l_pkey->data + l_mem_bias_pkey, l_ser_pkey, l_ser_pkey_len);
         l_mem_bias_skey += l_ser_skey_len;

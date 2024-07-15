@@ -247,7 +247,7 @@ int sphincsplus_crypto_sign(unsigned char *sm, uint64_t *smlen,
                 const unsigned char *m, uint64_t mlen,
                 const unsigned char *sk)
 {
-    size_t siglen;
+    uint64_t siglen;
 
     sphincsplus_crypto_sign_signature(sm, &siglen, m, (size_t)mlen, sk);
 
