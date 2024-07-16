@@ -323,17 +323,10 @@ uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
  * @return true 
  * @return false 
  */
-bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t * a_sign_hash)
+bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_hash)
 {
-    if(!a_sign){
-        log_it( L_WARNING, "Sign is NULL on enter");
-        return false;
-    }
-    if( !a_sign->header.sign_pkey_size ){
-        log_it( L_WARNING, "Sign public key's size is 0");
-        return false;
-    }
-    return dap_hash_fast( a_sign->pkey_n_sign,a_sign->header.sign_pkey_size,a_sign_hash );
+    dap_return_val_if_fail(a_sign && a_sign->header.sign_pkey_size, false);
+    return dap_hash_fast(a_sign->pkey_n_sign, a_sign->header.sign_pkey_size, a_sign_hash);
 }
 
 /**
@@ -349,11 +342,7 @@ bool dap_sign_compare_pkeys(dap_sign_t *l_sign1, dap_sign_t *l_sign2)
     // Get public key from sign
     const uint8_t *l_pkey_ser1 = dap_sign_get_pkey(l_sign1, &l_pkey_ser_size1);
     const uint8_t *l_pkey_ser2 = dap_sign_get_pkey(l_sign2, &l_pkey_ser_size2);
-    if(l_pkey_ser_size1 == l_pkey_ser_size2) {
-        if(!memcmp(l_pkey_ser1, l_pkey_ser2, l_pkey_ser_size1))
-            return true;
-    }
-    return false;
+    return l_pkey_ser_size1 == l_pkey_ser_size2 && !memcmp(l_pkey_ser1, l_pkey_ser2, l_pkey_ser_size1);
 }
 
 /**
@@ -364,9 +353,11 @@ bool dap_sign_compare_pkeys(dap_sign_t *l_sign1, dap_sign_t *l_sign2)
  * @return true 
  * @return false 
  */
-bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size) {
-    return (a_sign->header.sign_size) && (a_sign->header.sign_pkey_size) && (a_sign->header.type.type != SIG_TYPE_NULL)
-           && ((uint32_t)a_sign->header.sign_size + a_sign->header.sign_pkey_size + sizeof(*a_sign) <= (uint32_t)a_max_sign_size);
+bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size)
+{
+    return (a_max_sign_size > sizeof(dap_sign_t)) && (a_sign->header.sign_size) &&
+           (a_sign->header.sign_pkey_size) && (a_sign->header.type.type != SIG_TYPE_NULL) &&
+           ((uint64_t)a_sign->header.sign_size + a_sign->header.sign_pkey_size + sizeof(dap_sign_t) <= (uint64_t)a_max_sign_size);
 }
 
 /**
