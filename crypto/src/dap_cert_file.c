@@ -64,6 +64,7 @@ int dap_cert_file_save(dap_cert_t * a_cert, const char * a_cert_file_path)
         }else{
             log_it(L_ERROR,"Can't serialize certificate in memory");
             fclose(l_file);
+            remove(a_cert_file_path);
             return -4;
         }
     }else{
@@ -161,13 +162,13 @@ void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t
         if (l_meta_arr == NULL) {
             l_meta_arr = DAP_NEW(dap_cert_metadata_t *);
             if (!l_meta_arr) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 return;
             }
         } else {
             l_meta_arr = DAP_REALLOC_COUNT(l_meta_arr, l_meta_items_count + 1);
             if (!l_meta_arr) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 return;
             }
         }
@@ -403,15 +404,15 @@ dap_cert_t* dap_cert_mem_load(const void * a_data, size_t a_data_size)
     }
     if (l_hdr.version >= 1 ){
         if (dap_enc_debug_more()) {
-            log_it(L_DEBUG,"sizeof(l_hdr)=%"DAP_UINT64_FORMAT_U" "
+            log_it(L_DEBUG,"sizeof(l_hdr)=%zu "
                    "l_hdr.data_pvt_size=%"DAP_UINT64_FORMAT_U" "
                    "l_hdr.data_size=%"DAP_UINT64_FORMAT_U" "
                    "l_hdr.metadata_size=%"DAP_UINT64_FORMAT_U" "
-                   "a_data_size=%"DAP_UINT64_FORMAT_U" ",
+                   "a_data_size=%zu ",
                    sizeof(l_hdr), l_hdr.data_pvt_size, l_hdr.data_size, l_hdr.metadata_size, a_data_size);
         }
         if ( (sizeof(l_hdr) + l_hdr.data_size+l_hdr.data_pvt_size +l_hdr.metadata_size) > a_data_size ){
-            log_it(L_ERROR,"Corrupted cert data, data sections size is smaller than exists on the disk! (%"DAP_UINT64_FORMAT_U" expected, %"DAP_UINT64_FORMAT_U" on disk)",
+            log_it(L_ERROR,"Corrupted cert data, data sections size is smaller than exists on the disk! (%"DAP_UINT64_FORMAT_U" expected, %zu on disk)",
                     sizeof(l_hdr)+l_hdr.data_pvt_size+l_hdr.data_size+l_hdr.metadata_size, a_data_size);
             goto l_exit;
         }

@@ -128,8 +128,8 @@
 
 #define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
 
-extern const char *g_error_memory_alloc;
-extern const char *g_error_sanity_check;
+extern const char *c_error_memory_alloc;
+extern const char *c_error_sanity_check;
 void dap_delete_multy(int a_count, ...);
 uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...);
 int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, ...);
@@ -233,15 +233,15 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 // c - count element
 // val - return value if error
 // ... what need free if error, if nothing  write NULL
-#define DAP_NEW_Z_RET(a, t, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
-#define DAP_NEW_Z_RET_VAL(a, t, ret_val, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
-#define DAP_NEW_Z_SIZE_RET(a, t, s, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
-#define DAP_NEW_Z_SIZE_RET_VAL(a, t, s, ret_val, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
-#define DAP_NEW_Z_COUNT_RET(a, t, c, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
-#define DAP_NEW_Z_COUNT_RET_VAL(a, t, c, ret_val, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
+#define DAP_NEW_Z_RET(a, t, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
+#define DAP_NEW_Z_RET_VAL(a, t, ret_val, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
+#define DAP_NEW_Z_SIZE_RET(a, t, s, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
+#define DAP_NEW_Z_SIZE_RET_VAL(a, t, s, ret_val, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
+#define DAP_NEW_Z_COUNT_RET(a, t, c, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
+#define DAP_NEW_Z_COUNT_RET_VAL(a, t, c, ret_val, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
 
-#define dap_return_if_pass(expr)                        dap_return_if_pass_err(expr,g_error_sanity_check)
-#define dap_return_val_if_pass(expr,val)                dap_return_val_if_pass_err(expr,val,g_error_sanity_check)
+#define dap_return_if_pass(expr)                        dap_return_if_pass_err(expr,c_error_sanity_check)
+#define dap_return_val_if_pass(expr,val)                dap_return_val_if_pass_err(expr,val,c_error_sanity_check)
 #define dap_return_if_pass_err(expr,err_str)            {if(expr) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", err_str); return;}}
 #define dap_return_val_if_pass_err(expr,val,err_str)    {if(expr) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", err_str); return (val);}}
 #define dap_return_if_fail(expr)                        dap_return_if_pass(!(expr));
@@ -261,6 +261,9 @@ typedef union dap_stream_node_addr {
     uint16_t words[sizeof(uint64_t)/2];
     uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
 } DAP_ALIGN_PACKED dap_stream_node_addr_t;
+
+#define DAP_STRINGIFY_1(s) #s
+#define DAP_STRINGIFY(s) DAP_STRINGIFY_1(s)
 
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
@@ -471,6 +474,9 @@ typedef enum dap_log_level {
   L_ERROR     = 7,
   L_CRITICAL  = 8,
   L_TOTAL,
+#ifdef DAP_TPS_TEST
+  L_TPS  = 15,
+#endif
 
 } dap_log_level_t;
 
@@ -739,15 +745,14 @@ void    *l_ptr;
         return  l_ptr;
 }
 
-
-
-
-
 #else
 #define dump_it(v,s,l)
 #endif
 
-const char * log_error(void);
+char *dap_strerror(long long err);
+#ifdef DAP_OS_WINDOWS
+char *dap_str_ntstatus(DWORD err);
+#endif
 void dap_log_level_set(enum dap_log_level ll);
 enum dap_log_level dap_log_level_get(void);
 void dap_set_log_tag_width(size_t width);
@@ -783,6 +788,7 @@ static inline void *dap_mempcpy(void *a_dest, const void *a_src, size_t n)
     return ((byte_t *)memcpy(a_dest, a_src, n)) + n;
 }
 
+DAP_STATIC_INLINE int dap_is_letter(char c) { return dap_ascii_isalpha(c); }
 DAP_STATIC_INLINE int dap_is_alpha(char c) { return dap_ascii_isalnum(c); }
 DAP_STATIC_INLINE int dap_is_digit(char c) { return dap_ascii_isdigit(c); }
 DAP_STATIC_INLINE int dap_is_xdigit(char c) {return dap_ascii_isxdigit(c);}

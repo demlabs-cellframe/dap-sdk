@@ -127,7 +127,11 @@ file( GLOB CRYPTO_SRCS
       ${SPHINCS_SRCS}
 ) 
 
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+if (BUILD_WITH_TPS_TEST)
+    set (BUILD_WITH_ECDSA ON)
+endif()
+
+if (BUILD_WITH_ECDSA)
     file (GLOB ECDSA_SRC src/sig_ecdsa/*.c)
     set (CRYPTO_SRCS ${CRYPTO_SRCS} ${ECDSA_SRC})
     add_definitions("-DDAP_ECDSA")
@@ -162,7 +166,7 @@ file( GLOB CRYPTO_HEADERS
       ${SPHINCS_HEADERS}
       include/*.h
 )
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+if (BUILD_WITH_ECDSA)
     file (GLOB ECDSA_HDR src/sig_ecdsa/*.h)
     set (CRYPTO_HEADERS ${CRYPTO_HEADERS} ${ECDSA_HDR})
 else()
@@ -266,7 +270,7 @@ if(UNIX)
 endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+if (BUILD_WITH_ECDSA)
     target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include)
     target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/src)
 endif()
@@ -274,6 +278,7 @@ endif()
 if(BUILD_CRYPTO_TESTS)
     enable_testing()
     add_subdirectory(test)
+    add_definitions("-DDAP_CRYPTO_TESTS")
 endif()
 
 if(INSTALL_DAP_SDK)

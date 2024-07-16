@@ -265,29 +265,29 @@ static void test_serialize_deserialize(dap_enc_key_type_t key_type, bool enc_tes
     dap_assert(key->_inheritor_size == key2->_inheritor_size, "Inheritor data size");
     dap_assert(!memcmp(key->_inheritor, key2->_inheritor, key->_inheritor_size), "Inheritor data");
 
-    const char* source = "simple test";
-    size_t source_size = strlen(source);
+    if (enc_test) {    
+        const char* source = "simple test";
+        size_t source_size = strlen(source);
 
-    size_t encrypt_size = dap_enc_code_out_size(key, source_size, DAP_ENC_DATA_TYPE_RAW);
-    uint8_t encrypt_result[encrypt_size];
+        size_t encrypt_size = dap_enc_code_out_size(key, source_size, DAP_ENC_DATA_TYPE_RAW);
+        uint8_t encrypt_result[encrypt_size];
 
 
-    size_t encrypted_size = dap_enc_code(key2, source,
-                                         source_size,
-                                         encrypt_result,
-                                         encrypt_size,
-                                         DAP_ENC_DATA_TYPE_RAW);
+        size_t encrypted_size = dap_enc_code(key2, source,
+                                            source_size,
+                                            encrypt_result,
+                                            encrypt_size,
+                                            DAP_ENC_DATA_TYPE_RAW);
 
-    size_t min_decode_size = dap_enc_decode_out_size(key, encrypt_size, DAP_ENC_DATA_TYPE_RAW);
+        size_t min_decode_size = dap_enc_decode_out_size(key, encrypt_size, DAP_ENC_DATA_TYPE_RAW);
 
-    uint8_t decode_result[min_decode_size];
-    size_t decode_size = dap_enc_decode(key,
-                                        encrypt_result,
-                                        encrypted_size,
-                                        decode_result,
-                                        min_decode_size,
-                                        DAP_ENC_DATA_TYPE_RAW);
-    if (enc_test) {
+        uint8_t decode_result[min_decode_size];
+        size_t decode_size = dap_enc_decode(key,
+                                            encrypt_result,
+                                            encrypted_size,
+                                            decode_result,
+                                            min_decode_size,
+                                            DAP_ENC_DATA_TYPE_RAW);
         dap_assert_PIF(source_size == decode_size, "Check result decode size");
 
         dap_assert_PIF(memcmp(source, decode_result, source_size) == 0,

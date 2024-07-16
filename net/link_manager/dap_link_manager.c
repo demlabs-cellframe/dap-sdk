@@ -759,7 +759,7 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
     if (!l_link) {
         l_link = DAP_NEW_Z(dap_link_t);
         if (!l_link) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return NULL;
         }
         debug_if(s_debug_more, L_NOTICE, "Create new link to node " NODE_ADDR_FP_STR "", NODE_ADDR_FP_ARGS(a_node_addr));
@@ -868,7 +868,7 @@ int dap_link_manager_link_update(dap_stream_node_addr_t *a_node_addr, const char
         return -2;
     }
     struct sockaddr_storage l_numeric_addr;
-    if ( dap_net_resolve_host(a_host, dap_itoa(a_port), &l_numeric_addr, false) ) {
+    if ( 0 > dap_net_resolve_host(a_host, dap_itoa(a_port), false, &l_numeric_addr, NULL) ) {
         log_it(L_ERROR, "Wrong uplink address '%s : %u'", a_host, a_port);
         return -6;
     }
@@ -899,7 +899,7 @@ int dap_link_manager_link_update(dap_stream_node_addr_t *a_node_addr, const char
 // func work
     l_args->host = dap_strdup(a_host);
     if (!l_args->host) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_args);
         return -7;
     }
@@ -1069,7 +1069,7 @@ void dap_link_manager_stream_delete(dap_stream_node_addr_t *a_node_addr)
     dap_return_if_fail(a_node_addr);
     dap_stream_node_addr_t *l_args = DAP_DUP(a_node_addr);
     if (!l_args) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
     dap_proc_thread_callback_add_pri(s_query_thread, s_stream_delete_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
@@ -1301,7 +1301,7 @@ dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_cou
 // memry alloc
     dap_stream_node_addr_t *l_ret = DAP_NEW_Z_COUNT(dap_stream_node_addr_t, l_node_count);
     if (!l_ret) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         dap_global_db_objs_delete(l_objs, l_node_count);
         return NULL;
     }

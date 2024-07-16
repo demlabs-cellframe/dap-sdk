@@ -176,7 +176,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     // add to dap_worker
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid_ptr) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
     *l_es_uuid_ptr = a_esocket->uuid;
@@ -606,7 +606,7 @@ dap_client_http_t * dap_client_http_request_custom (
     // create private struct
     dap_client_http_t *l_client_http = DAP_NEW_Z(dap_client_http_t);
     if (!l_client_http) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
         return NULL;
@@ -623,7 +623,7 @@ dap_client_http_t * dap_client_http_request_custom (
     if (a_request && a_request_size) {
         l_client_http->request = DAP_NEW_Z_SIZE(byte_t, a_request_size + 1);
         if (!l_client_http->request) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DEL_Z(l_client_http);
             if(a_error_callback)
                 a_error_callback(errno, a_callbacks_arg);
@@ -640,7 +640,7 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->response_size_max = DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX;
     l_client_http->response = DAP_NEW_Z_SIZE(uint8_t, DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX);
     if (!l_client_http->response) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_client_http->request, l_client_http);
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
@@ -649,7 +649,7 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->worker = a_worker;
     l_client_http->is_over_ssl = a_over_ssl;
 
-    if ( dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), &l_ev_socket->addr_storage, false) ) {
+    if ( 0 > dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), false, &l_ev_socket->addr_storage, NULL) ) {
         log_it(L_ERROR, "Wrong remote address '%s : %u'", a_uplink_addr, a_uplink_port);
             s_client_http_delete(l_client_http);
             l_ev_socket->_inheritor = NULL;
@@ -734,7 +734,7 @@ dap_client_http_t * dap_client_http_request_custom (
         dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         if (!l_ev_uuid_ptr) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DEL_MULTY(l_client_http->response, l_client_http->request, l_client_http);
             if(a_error_callback)
                 a_error_callback(errno, a_callbacks_arg);

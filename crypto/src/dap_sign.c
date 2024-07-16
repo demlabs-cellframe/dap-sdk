@@ -169,6 +169,17 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
 }
 
 /**
+ * @brief The function checks the signature type to see if it is outdated.
+ * @param a_sign_type
+ * @return bool
+ */
+bool dap_sign_type_is_depricated(dap_sign_type_t a_sign_type){
+    if (a_sign_type.type == SIG_TYPE_PICNIC || a_sign_type.type == SIG_TYPE_BLISS || a_sign_type.type == SIG_TYPE_TESLA)
+        return true;
+    return false;
+}
+
+/**
  * @brief encrypt data
  * call a_key->sign_get
  * @param a_key dap_enc_key_t key object
@@ -213,7 +224,7 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
 dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
         const size_t a_data_size, size_t a_output_wish_size)
 {
-    dap_return_val_if_pass(!a_key, NULL);
+    dap_return_val_if_fail(a_key && a_key->priv_key_data && a_key->priv_key_data_size, NULL);
     const void * l_sign_data;
     size_t l_sign_data_size;
 

@@ -237,7 +237,7 @@ bool dap_global_db_ch_check_store_obj(dap_store_obj_t *a_obj, dap_stream_node_ad
         if (a_obj->sign && dap_sign_get_pkey_hash(a_obj->sign, &l_sign_hash))
            dap_stream_node_addr_from_hash(&l_sign_hash, &l_signer_addr);
         log_it(L_DEBUG, "Unpacked object: type='%c', group=\"%s\" key=\"%s\""
-                " timestamp=\"%s\" value_len=%"DAP_UINT64_FORMAT_U" signer_addr=%s",
+                " timestamp=\"%s\" value_len=%zu signer_addr=%s",
                     dap_store_obj_get_type(a_obj),
                         a_obj->group, a_obj->key, l_ts_str, a_obj->value_len,
                             a_obj->sign ? dap_stream_node_addr_to_str_static(l_signer_addr) : "UNSIGNED");
@@ -330,7 +330,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
                             ? "GLOBAL_DB_SYNC_START" : "GLOBAL_DB_GROUP_REQUEST", l_pkt->group);
         byte_t *l_arg = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_node_addr_t) + sizeof(byte_t) + l_ch_pkt->hdr.data_size);
         if (!l_arg) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             break;
         }
         memcpy(l_arg + sizeof(dap_stream_node_addr_t) + sizeof(byte_t), l_pkt, l_ch_pkt->hdr.data_size);
@@ -359,7 +359,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             break;
         byte_t *l_arg = DAP_NEW_Z_SIZE(byte_t, sizeof(dap_stream_node_addr_t) + l_ch_pkt->hdr.data_size);
         if (!l_arg) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             break;
         }
         memcpy(l_arg + sizeof(dap_stream_node_addr_t), l_pkt, l_ch_pkt->hdr.data_size);

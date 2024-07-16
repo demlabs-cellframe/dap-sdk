@@ -76,8 +76,8 @@ const uint256_t uint256_max = {.hi = uint128_max, .lo = uint128_max};
 
 const uint512_t uint512_0 = {};
 
-const char *g_error_memory_alloc = "Memory allocation error";
-const char *g_error_sanity_check = "Sanity check error";
+const char *c_error_memory_alloc = "Memory allocation error";
+const char *c_error_sanity_check = "Sanity check error";
 
 static const char *s_log_level_tag[ 16 ] = {
     " [DBG] ", // L_DEBUG     = 0
@@ -95,7 +95,11 @@ static const char *s_log_level_tag[ 16 ] = {
     " [---] ", //             = 12
     " [---] ", //             = 13
     " [---] ", //             = 14
+#ifdef DAP_TPS_TEST
+    " [TPS] ", // L_TPS       = 15
+#else
     " [---] ", //             = 15
+#endif
 };
 
 const char *s_ansi_seq_color[ 16 ] = {
@@ -115,7 +119,11 @@ const char *s_ansi_seq_color[ 16 ] = {
     "", //             = 12
     "", //             = 13
     "", //             = 14
+#ifdef DAP_TPS_TEST
+    "\x1b[1;32;40m",   // L_TPS      = 15,
+#else
     "", //             = 15
+#endif
 };
 
 static unsigned int s_ansi_seq_color_len[16] = {0};
@@ -144,10 +152,10 @@ static unsigned int s_ansi_seq_color_len[16] = {0};
 static volatile bool s_log_term_signal = false;
 char* g_sys_dir_path = NULL;
 
-static char s_last_error[LAST_ERROR_MAX]    = {'\0'},
-    s_log_file_path[MAX_PATH]               = {'\0'},
-    s_log_dir_path[MAX_PATH]                = {'\0'},
-    s_log_tag_fmt_str[10]                   = {'\0'};
+static _Thread_local char s_last_error[LAST_ERROR_MAX] = {'\0'};
+static char s_log_file_path[MAX_PATH]   = {'\0'},
+            s_log_dir_path[MAX_PATH]    = {'\0'},
+            s_log_tag_fmt_str[10]       = {'\0'};
 
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
@@ -388,6 +396,15 @@ static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
 void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
         return;
+#ifdef DAP_TPS_TEST
+    if (a_ll != L_TPS) {
+        FILE *l_file = fopen("/opt/cellframe-node/share/ca/without_logs.txt", "r");
+        if (l_file) {
+            fclose(l_file);
+            return;
+        }
+    }
+#endif
     static _Thread_local char s_format[LOG_FORMAT_LEN] = { '\0' };
     unsigned offset = s_ansi_seq_color_len[a_ll];
     memcpy(s_format, s_ansi_seq_color[a_ll], offset);
@@ -703,11 +720,35 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
  * @brief log_error Error log
  * @return
  */
-const char *log_error()
-{
+char *dap_strerror(long long err) {
+#ifdef DAP_OS_WINDOWS
+    *s_last_error = '\0';
+    DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
+                  NULL, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_last_error, LAST_ERROR_MAX, NULL);
+    if (l_len)
+        *(s_last_error + l_len - 1) = '\0';
+    else
+#else
+    if ( strerror_r(err, s_last_error, LAST_ERROR_MAX) )
+#endif
+        snprintf(s_last_error, LAST_ERROR_MAX, "Unknown error code %lld", err);
     return s_last_error;
 }
 
+#ifdef DAP_OS_WINDOWS
+char *dap_str_ntstatus(DWORD err) {
+    HMODULE ntdll = GetModuleHandle("ntdll.dll");
+    if (!ntdll)
+        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())),
+            s_last_error;
+    *s_last_error = '\0';
+    DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
+                  ntdll, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_last_error, LAST_ERROR_MAX, NULL);
+    return ( l_len 
+        ? *(s_last_error + l_len - 1) = '\0'
+        : snprintf(s_last_error, LAST_ERROR_MAX, "Unknown error code %lld", err) ), s_last_error;
+}
+#endif
 
 #if 1
 #define INT_DIGITS 19   /* enough for 64 bit integer */
@@ -1193,7 +1234,7 @@ static void s_bsd_callback(void *a_arg)
 dap_interval_timer_t dap_interval_timer_create(unsigned int a_msec, dap_timer_callback_t a_callback, void *a_param) {
     dap_timer_interface_t *l_timer_obj = DAP_NEW_Z(dap_timer_interface_t);
     if (!l_timer_obj) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
     l_timer_obj->callback   = a_callback;

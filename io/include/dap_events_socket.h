@@ -151,14 +151,16 @@ typedef void (*dap_events_socket_callback_accept_t) (dap_events_socket_t *, SOCK
 typedef void (*dap_events_socket_callback_connected_t) (dap_events_socket_t * ); // Callback for connected client connection
 typedef void (*dap_events_socket_worker_callback_t) (dap_events_socket_t *,dap_worker_t * ); // Callback for specific client operations
 #ifdef DAP_EVENTS_CAPS_IOCP
+typedef ULONG (*pfn_RtlNtStatusToDosError)(NTSTATUS s);
 typedef enum per_io_type {
     io_read     = 'r',  // Read from es
     io_write    = 'w'   // Write to es
 } per_io_type_t;
 
-extern LPFN_CONNECTEX pfnConnectEx;
-extern LPFN_DISCONNECTEX pfnDisconnectEx;
-typedef ULONG (*pfn_RtlNtStatusToDosError)(NTSTATUS s);
+extern LPFN_ACCEPTEX             pfnAcceptEx;
+extern LPFN_GETACCEPTEXSOCKADDRS pfnGetAcceptExSockaddrs;
+extern LPFN_CONNECTEX            pfnConnectEx;
+extern LPFN_DISCONNECTEX         pfnDisconnectEx;
 extern pfn_RtlNtStatusToDosError pfnRtlNtStatusToDosError;
 #endif
 
@@ -446,6 +448,14 @@ size_t  dap_events_socket_insert_buf_out(dap_events_socket_t * a_es, void *a_dat
 
 DAP_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t* a_es) {
     return s_socket_type_to_str[a_es->type];
+}
+DAP_INLINE int dap_close_socket(SOCKET s) {
+    return
+#ifdef DAP_OS_WINDOWS
+    closesocket(s);
+#else
+    close(s);
+#endif
 }
 
 #ifdef DAP_EVENTS_CAPS_IOCP

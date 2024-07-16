@@ -57,10 +57,18 @@ extern int g_dap_global_db_debug_more;                         /* Enable extensi
 
 static char s_filename_db [MAX_PATH];
 
+static const char s_attempts_count = 7;
+static const int s_sleep_period = 500 * 1000;  /* Wait 0.5 sec */;
 static bool s_db_inited = false;
-static dap_list_t *s_conn_list = NULL;  // list of all connections
 static _Thread_local conn_list_item_t *s_conn = NULL;  // local connection
-static pthread_rwlock_t s_conn_list_rwlock = PTHREAD_RWLOCK_INITIALIZER; 
+
+
+static void s_connection_destructor(UNUSED_ARG void *a_conn) {
+    sqlite3_close(s_conn->conn);
+    log_it(L_DEBUG, "Close  connection: @%p/%p, usage: %llu", s_conn, s_conn->conn, s_conn->usage);
+    DAP_DEL_Z(s_conn);
+}
+
 
 /**
  * @brief Opens a SQLite database and adds byte_to_bin function.
@@ -76,7 +84,7 @@ sqlite3* s_db_sqlite_open(const char *a_filename_utf8, int a_flags, char **a_err
     int l_rc = sqlite3_open_v2(a_filename_utf8, &l_db, a_flags, NULL); // SQLITE_OPEN_FULLMUTEX by default set with sqlite3_config SERIALIZED
     // if unable to open the database file
     if(l_rc == SQLITE_CANTOPEN) {
-        log_it(L_WARNING,"No database on path %s, creating one from scratch", a_filename_utf8);
+        log_it(L_DEBUG,"No database on path %s, creating one from scratch", a_filename_utf8);
         if(l_db)
             sqlite3_close(l_db);
         // try to create database
@@ -127,24 +135,72 @@ static void s_db_sqlite_clean(conn_list_item_t *a_conn, size_t a_count, ... ) {
 /**
  * @brief One step to sqlite3_stmt with 7 try is sql bust
  * @param a_stmt sqlite3_stmt to step
+ * @param a_error_msg module name
  * @return result code
  */
-static int s_db_sqlite_step(sqlite3_stmt *a_stmt)
+static int s_db_sqlite_step(sqlite3_stmt *a_stmt, const char *a_error_msg)
 {
     dap_return_val_if_pass(!a_stmt, SQLITE_ERROR);
     int l_ret = 0;
-    for ( int i = 7; i--; ) {
+    for ( char i = s_attempts_count; i--; ) {
         l_ret = sqlite3_step(a_stmt);
-        if (l_ret != SQLITE_BUSY)
+        if (l_ret != SQLITE_BUSY && l_ret != SQLITE_LOCKED)
             break;
-        dap_usleep(500 * 1000);  /* Wait 0.5 sec */
+        dap_usleep(s_sleep_period);
     }
+    debug_if(l_ret != SQLITE_ROW && l_ret != SQLITE_DONE, L_DEBUG, "SQLite step in %s error %d(%s)", a_error_msg ? a_error_msg : "", l_ret, sqlite3_errstr(l_ret));
+    return l_ret;
+}
+
+/**
+ * @brief One step to sqlite3_stmt with 7 try is sql bust
+ * @param a_db a pointer to an instance of SQLite connection
+ * @param a_str_query SQL query string
+ * @param a_stmt pointer to generate sqlite3_stmt
+ * @param a_error_msg module name
+ * @return result code
+ */
+static int s_db_sqlite_prepare(sqlite3 *a_db, const char *a_str_query, sqlite3_stmt **a_stmt, const char *a_error_msg)
+{
+    dap_return_val_if_pass(!a_stmt || !a_str_query || !a_stmt, SQLITE_ERROR);
+    int l_ret = 0;
+    for (char i = s_attempts_count; i--; ) {
+        l_ret = sqlite3_prepare_v2(a_db, a_str_query, -1, a_stmt, NULL);
+        if (l_ret != SQLITE_BUSY && l_ret != SQLITE_LOCKED)
+            break;
+        dap_usleep(s_sleep_period);
+    }
+    debug_if(l_ret != SQLITE_OK, L_DEBUG, "SQLite prepare %s error %d(%s)", a_error_msg ? a_error_msg : "", sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
+    return l_ret;
+}
+
+/**
+ * @brief One step to sqlite3_stmt with 7 try is sql bust
+ * @param a_stmt sqlite3_stmt to step
+ * @param a_pos blob element position in query
+ * @param a_data blob data
+ * @param a_data_size blob data size
+ * @param a_destructor SQL destructor type
+ * @param a_error_msg module name
+ * @return result code
+ */
+static int s_db_sqlite_bind_blob64(sqlite3_stmt *a_stmt, int a_pos, const void *a_data, sqlite3_uint64 a_data_size, sqlite3_destructor_type a_destructor, const char *a_error_msg)
+{
+    dap_return_val_if_pass(!a_stmt || !a_data || !a_data_size || a_pos < 0, SQLITE_ERROR);
+    int l_ret = 0;
+    for ( char i = s_attempts_count; i--; ) {
+        l_ret = sqlite3_bind_blob64(a_stmt, a_pos, a_data, a_data_size, a_destructor);
+        if (l_ret != SQLITE_BUSY && l_ret != SQLITE_LOCKED)
+            break;
+        dap_usleep(s_sleep_period);
+    }
+    debug_if(l_ret != SQLITE_OK, L_DEBUG, "SQLite bind blob64 %s error %d(%s)", a_error_msg ? a_error_msg : "", l_ret, sqlite3_errstr(l_ret));
     return l_ret;
 }
 
 /**
  * @brief Executes SQL statements.
- * @param a_conn a pointer to an instance of SQLite connection
+ * @param a_db a pointer to an instance of SQLite connection
  * @param a_query the SQL statement
  * @param a_hash pointer to data hash
  * @param a_value pointer to data
@@ -152,46 +208,26 @@ static int s_db_sqlite_step(sqlite3_stmt *a_stmt)
  * @param a_sign record sign
  * @return result code.
  */
-static int s_db_sqlite_exec(sqlite3 *a_conn, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign)
+static int s_db_sqlite_exec(sqlite3 *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign)
 {
+    dap_return_val_if_pass(!a_db || !a_query, SQLITE_ERROR);
     int l_ret = 0;
     sqlite3_stmt *l_stmt = NULL;
     if (
-        (l_ret = sqlite3_prepare_v2(a_conn, a_query, -1, &l_stmt, NULL)) != SQLITE_OK ||
-        (a_hash && (l_ret = sqlite3_bind_blob64(l_stmt, 1, a_hash, sizeof(*a_hash), SQLITE_STATIC)) != SQLITE_OK) ||
-        (a_value && (l_ret = sqlite3_bind_blob64(l_stmt, 2, a_value, a_value_len, SQLITE_STATIC)) != SQLITE_OK) ||
-        (a_sign && (l_ret = sqlite3_bind_blob64(l_stmt, 3, a_sign, dap_sign_get_size(a_sign), SQLITE_STATIC)) != SQLITE_OK)
+        (l_ret = s_db_sqlite_prepare(a_db, a_query, &l_stmt, a_query)) != SQLITE_OK ||
+        (a_hash && (l_ret = s_db_sqlite_bind_blob64(l_stmt, 1, a_hash, sizeof(*a_hash), SQLITE_STATIC, a_query)) != SQLITE_OK) ||
+        (a_value && (l_ret = s_db_sqlite_bind_blob64(l_stmt, 2, a_value, a_value_len, SQLITE_STATIC, a_query)) != SQLITE_OK) ||
+        (a_sign && (l_ret = s_db_sqlite_bind_blob64(l_stmt, 3, a_sign, dap_sign_get_size(a_sign), SQLITE_STATIC, a_query)) != SQLITE_OK)
         ) {
-        log_it(L_ERROR, "SQL error execute query %s %d(%s)", a_query, sqlite3_errcode(a_conn), sqlite3_errmsg(a_conn));
+        sqlite3_finalize(l_stmt);
         return l_ret;
     }
-    l_ret = s_db_sqlite_step(l_stmt);
+    l_ret = s_db_sqlite_step(l_stmt, a_query);
     sqlite3_finalize(l_stmt);
     if (l_ret != SQLITE_DONE && l_ret != SQLITE_ROW) {
-        log_it(L_ERROR, "SQL error %d(%s)", sqlite3_errcode(a_conn), sqlite3_errmsg(a_conn));
         return l_ret;
     }
     return SQLITE_OK;
-}
-
-/**
- * @brief Connection configuration
- * @param a_conn connection
- */
-static inline void s_db_sqlite_prepare_connection(sqlite3 *a_conn)
-{
-// sanity check
-    dap_return_if_pass(!a_conn);
-// func work
-    if((s_db_sqlite_exec(a_conn, "PRAGMA synchronous = NORMAL", NULL, NULL, 0, NULL)))
-        log_it(L_ERROR, "can't set new synchronous mode\n");
-    if(s_db_sqlite_exec(a_conn, "PRAGMA journal_mode = OFF", NULL, NULL, 0, NULL))
-        log_it(L_ERROR, "can't set new journal mode\n");
-    if(s_db_sqlite_exec(a_conn, "PRAGMA page_size = 4096", NULL, NULL, 0, NULL))
-        log_it(L_ERROR, "can't set page_size\n");
-// vacuum need?
-    // if(s_db_sqlite_exec(a_conn, "PRAGMA auto_vacuum = INCREMENTAL", NULL, NULL, 0, NULL))
-    //     log_it(L_ERROR, "can't set autovacuum mode\n");
 }
 
 /**
@@ -206,26 +242,19 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
 // func work
     static int l_conn_idx = 0;
     if (!s_conn) {
-        pthread_rwlock_wrlock(&s_conn_list_rwlock);
-        s_conn = DAP_NEW_Z(conn_list_item_t);
-        if (!s_conn) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
-            pthread_rwlock_unlock(&s_conn_list_rwlock);
-            return NULL;
-        }
+        DAP_NEW_Z_RET_VAL(s_conn, conn_list_item_t, NULL, NULL);
+        pthread_key_t s_destructor_key;
+        pthread_key_create(&s_destructor_key, s_connection_destructor);
+        pthread_setspecific(s_destructor_key, (const void *)s_conn);
         char *l_error_message = NULL;
         if ( !(s_conn->conn = s_db_sqlite_open(s_filename_db, SQLITE_OPEN_READWRITE, &l_error_message)) ) {
             log_it(L_ERROR, "Can't init sqlite err: \"%s\"", l_error_message ? l_error_message: "UNKNOWN");
             sqlite3_free(l_error_message);
             DAP_DEL_Z(s_conn);
-            pthread_rwlock_unlock(&s_conn_list_rwlock);
             return NULL;
         }
-        s_db_sqlite_prepare_connection(s_conn->conn);
         s_conn->idx = l_conn_idx++;
         log_it(L_DEBUG, "SQL connection #%d is created @%p", s_conn->idx, s_conn);
-        s_conn_list = dap_list_append(s_conn_list, s_conn);
-        pthread_rwlock_unlock(&s_conn_list_rwlock);
     }
     // busy check
     if (a_trans) {
@@ -251,20 +280,12 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
  */
 int s_db_sqlite_deinit(void)
 {
-    pthread_rwlock_wrlock(&s_conn_list_rwlock);
-        if (!s_db_inited) {
-            log_it(L_WARNING, "SQLite driver already deinited");
-            pthread_rwlock_unlock(&s_conn_list_rwlock);
-            return -1;
-        }
-        dap_list_t *l_item = NULL;
-        DL_FOREACH(s_conn_list, l_item) {
-            sqlite3_close(((conn_list_item_t *)l_item->data)->conn);
-        }
-        dap_list_free_full(s_conn_list, NULL);
-        s_conn_list = NULL;
-        s_db_inited = false;
-    pthread_rwlock_unlock(&s_conn_list_rwlock);
+    if (!s_db_inited) {
+        log_it(L_WARNING, "SQLite driver already deinited");
+        return -1;
+    }
+    s_connection_destructor(NULL);
+    s_db_inited = false;
     return sqlite3_shutdown();
 }
 
@@ -349,7 +370,7 @@ static int s_db_sqlite_fill_one_item(const char *a_group, dap_store_obj_t *a_obj
 // sanity check
     dap_return_val_if_pass(!a_group || !a_obj || !a_stmt, SQLITE_ERROR);
 // preparing
-    int l_ret = s_db_sqlite_step(a_stmt);
+    int l_ret = s_db_sqlite_step(a_stmt, "fill one item");
     if(l_ret != SQLITE_ROW)
         goto clean_and_ret;
     a_obj->group = dap_strdup(a_group);
@@ -409,14 +430,13 @@ static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, boo
         goto clean_and_ret;
     }
     
-    if(sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_stmt, NULL)!= SQLITE_OK) {
-        log_it(L_ERROR, "SQLite last read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+    if(s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, "last read")!= SQLITE_OK) {
         goto clean_and_ret;
     }
 // memory alloc
     l_ret = DAP_NEW_Z(dap_store_obj_t);
     if (!l_ret) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         goto clean_and_ret;
     }
 // fill item
@@ -446,12 +466,13 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !a_hashes || !a_count || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
 // preparing
+    const char *l_error_msg = "get by hash";
     dap_global_db_pkt_pack_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL, *l_stmt_size = NULL;
     char *l_blob_str = DAP_NEW_Z_SIZE(char, a_count * 2);
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
     if (!l_blob_str || !l_table_name) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_table_name, l_blob_str);
         goto clean_and_ret;
     }
@@ -464,35 +485,31 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
-    char *l_str_query_size = sqlite3_mprintf("SELECT SUM(LENGTH(key) + LENGTH(value) + LENGTH(sign)) FROM '%s' "
+    char *l_str_query_size = sqlite3_mprintf("SELECT SUM(LENGTH(key)) + SUM(LENGTH(value)) + SUM(LENGTH(sign)) FROM '%s' "
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
     char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s'"
                                         " WHERE driver_key IN (%s) ORDER BY driver_key",
                                         l_table_name, l_blob_str);
-    DAP_DEL_MULTY(l_table_name, l_blob_str);
     if (!l_str_query_count || !l_str_query) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
     }
-    if(sqlite3_prepare_v2(l_conn->conn, l_str_query_count, -1, &l_stmt_count, NULL)!= SQLITE_OK ||
-        sqlite3_prepare_v2(l_conn->conn, l_str_query_size, -1, &l_stmt_size, NULL)!= SQLITE_OK ||
-        sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_stmt, NULL)!= SQLITE_OK)
+    if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_prepare(l_conn->conn, l_str_query_size, &l_stmt_size, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK)
     {
-        log_it(L_ERROR, "SQLite get by hash error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
         goto clean_and_ret;
     }
     for (size_t i = 1; i <= a_count; ++i) {
-        if( sqlite3_bind_blob64(l_stmt_count, i, a_hashes + i - 1, sizeof(*a_hashes), SQLITE_STATIC) != SQLITE_OK ||
-            sqlite3_bind_blob64(l_stmt_size, i, a_hashes + i - 1, sizeof(*a_hashes), SQLITE_STATIC) != SQLITE_OK ||
-            sqlite3_bind_blob64(l_stmt, i, a_hashes + i - 1, sizeof(*a_hashes), SQLITE_STATIC) != SQLITE_OK)
+        if( s_db_sqlite_bind_blob64(l_stmt_count, i, a_hashes + i - 1, sizeof(*a_hashes), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
+            s_db_sqlite_bind_blob64(l_stmt_size, i, a_hashes + i - 1, sizeof(*a_hashes), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
+            s_db_sqlite_bind_blob64(l_stmt, i, a_hashes + i - 1, sizeof(*a_hashes), SQLITE_STATIC, l_error_msg) != SQLITE_OK)
         {
-            log_it(L_ERROR, "SQLite get by hash error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
             goto clean_and_ret;
         }
     }
-    if (s_db_sqlite_step(l_stmt_count) != SQLITE_ROW || s_db_sqlite_step(l_stmt_size) != SQLITE_ROW) {
-        log_it(L_ERROR, "SQLite get by hash error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+    if (s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW || s_db_sqlite_step(l_stmt_size, l_error_msg) != SQLITE_ROW) {
         goto clean_and_ret;
     }
 // memory alloc
@@ -506,7 +523,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     size_t l_data_size = l_count * (sizeof(dap_global_db_pkt_t) + l_group_name_len + 1) + l_size;
     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_data_size, NULL, l_str_query_count, l_str_query);
 // data forming
-    for (size_t i = 0; i < l_count && s_db_sqlite_step(l_stmt) == SQLITE_ROW; ++i) {
+    for (size_t i = 0; i < l_count && l_ret->data_size < l_data_size && s_db_sqlite_step(l_stmt, l_error_msg) == SQLITE_ROW; ++i) {
         dap_global_db_pkt_t *l_cur_pkt = (dap_global_db_pkt_t *)(l_ret->data + l_ret->data_size);
         size_t l_count_col = sqlite3_column_count(l_stmt);
         l_cur_pkt->group_len = l_group_name_len;
@@ -522,8 +539,9 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
                 continue;
             }
             if (j == 1 && sqlite3_column_type(l_stmt, j) == SQLITE_TEXT) {
-                l_cur_pkt->key_len = sqlite3_column_bytes(l_stmt, j) + 1;
+                l_cur_pkt->key_len = sqlite3_column_bytes(l_stmt, j);
                 memcpy(l_cur_pkt->data + l_cur_pkt->data_len, sqlite3_column_text(l_stmt, j), l_cur_pkt->key_len);
+                l_cur_pkt->key_len++;
                 l_cur_pkt->data_len += l_cur_pkt->key_len;
                 continue;
             }
@@ -539,9 +557,13 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
                 continue;
             }
             if (j == 4 && sqlite3_column_type(l_stmt, j) == SQLITE_BLOB) {
-                if (sqlite3_column_bytes(l_stmt, j)) {
+                size_t l_sign_size = sqlite3_column_bytes(l_stmt, j);
+                if (l_sign_size) {
                     dap_sign_t *l_sign = (dap_sign_t *)sqlite3_column_blob(l_stmt, j);
-                    size_t l_sign_size = dap_sign_get_size(l_sign);
+                    if (l_sign_size != dap_sign_get_size(l_sign)) {
+                        log_it(L_ERROR, "Wrong sign size from global_db");
+                        goto clean_and_ret;
+                    }
                     memcpy(l_cur_pkt->data + l_cur_pkt->data_len, sqlite3_column_blob(l_stmt, j), l_sign_size);
                     l_cur_pkt->data_len += l_sign_size;
                 }
@@ -556,6 +578,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     }
 clean_and_ret:
     s_db_sqlite_clean(l_conn, 3, l_str_query, l_str_query_count, l_str_query_size, l_stmt, l_stmt_count, l_stmt_size);
+    DAP_DEL_MULTY(l_table_name, l_blob_str);
     return l_ret;
 }
 
@@ -571,6 +594,7 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
 // preparing
+    const char *l_error_msg = "hashes read";
     dap_global_db_hash_pkt_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
@@ -587,13 +611,12 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
         goto clean_and_ret;
     }
     
-    if(sqlite3_prepare_v2(l_conn->conn, l_str_query_count, -1, &l_stmt_count, NULL)!= SQLITE_OK ||
-        sqlite3_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC) != SQLITE_OK ||
-        sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_stmt, NULL)!= SQLITE_OK ||
-        sqlite3_bind_blob64(l_stmt, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC) != SQLITE_OK ||
-        s_db_sqlite_step(l_stmt_count) != SQLITE_ROW)
+    if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
+        s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_bind_blob64(l_stmt, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
+        s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
     {
-        log_it(L_ERROR, "SQLite hashes read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
         goto clean_and_ret;
     }
 // memory alloc
@@ -614,7 +637,7 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
     byte_t *l_curr_point = l_ret->group_n_hashses + l_ret->group_name_len;
     memcpy(l_ret->group_n_hashses, a_group, l_group_name_len);
     int l_count_col = sqlite3_column_count(l_stmt);
-    for(;l_count_out < l_count && s_db_sqlite_step(l_stmt) == SQLITE_ROW && sqlite3_column_type(l_stmt, 0) == SQLITE_BLOB; ++l_count_out) {
+    for(;l_count_out < l_count && s_db_sqlite_step(l_stmt, l_error_msg) == SQLITE_ROW && sqlite3_column_type(l_stmt, 0) == SQLITE_BLOB; ++l_count_out) {
         byte_t *l_current_hash = (byte_t*) sqlite3_column_blob(l_stmt, 0);
         memcpy(l_curr_point, l_current_hash, sizeof(dap_global_db_driver_hash_t));
         l_curr_point += sizeof(dap_global_db_driver_hash_t);
@@ -640,6 +663,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
 // preparing
+    const char *l_error_msg = "conditional read";
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
@@ -659,13 +683,12 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
         goto clean_and_ret;
     }
     
-    if(sqlite3_prepare_v2(l_conn->conn, l_str_query_count, -1, &l_stmt_count, NULL)!= SQLITE_OK ||
-        sqlite3_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC) != SQLITE_OK ||
-        sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_stmt, NULL)!= SQLITE_OK ||
-        sqlite3_bind_blob64(l_stmt, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC) != SQLITE_OK ||
-        s_db_sqlite_step(l_stmt_count) != SQLITE_ROW)
+    if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
+        s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_bind_blob64(l_stmt, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
+        s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
     {
-        log_it(L_ERROR, "SQLite conditional read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
         goto clean_and_ret;
     }
 // memory alloc
@@ -709,6 +732,7 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const ch
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
 // func work
+    const char *l_error_msg = "read";
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
@@ -730,11 +754,10 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const ch
         goto clean_and_ret;
     }
     
-    if(sqlite3_prepare_v2(l_conn->conn, l_str_query_count, -1, &l_stmt_count, NULL)!= SQLITE_OK ||
-        sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_stmt, NULL)!= SQLITE_OK ||
-        s_db_sqlite_step(l_stmt_count) != SQLITE_ROW)
+    if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
     {
-        log_it(L_ERROR, "SQLite read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
         goto clean_and_ret;
     }
 // memory alloc
@@ -772,6 +795,7 @@ static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group_mask || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
 // preparing
+    const char *l_error_msg = "get groups";
     dap_list_t* l_ret = NULL;
     sqlite3_stmt *l_stmt = NULL;
     char *l_mask = NULL;
@@ -781,13 +805,12 @@ static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
         goto clean_and_ret;
     }
     
-    if(sqlite3_prepare_v2(l_conn->conn, l_str_query, -1, &l_stmt, NULL)!= SQLITE_OK) {
-        log_it(L_ERROR, "SQLite get groups error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+    if(s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK) {
         goto clean_and_ret;
     }
     l_mask = dap_str_replace_char(a_group_mask, '.', '_');
     int l_ret_code = 0;
-    for (l_ret_code = s_db_sqlite_step(l_stmt); l_ret_code == SQLITE_ROW && sqlite3_column_type(l_stmt, 0) == SQLITE_TEXT; l_ret_code = s_db_sqlite_step(l_stmt)) {
+    for (l_ret_code = s_db_sqlite_step(l_stmt, l_error_msg); l_ret_code == SQLITE_ROW && sqlite3_column_type(l_stmt, 0) == SQLITE_TEXT; l_ret_code = s_db_sqlite_step(l_stmt, l_error_msg)) {
         const char *l_table_name = (const char *)sqlite3_column_text(l_stmt, 0);
         if (dap_global_db_group_match_mask(l_table_name, l_mask))
             l_ret = dap_list_prepend(l_ret, dap_str_replace_char(l_table_name, '_', '.'));
@@ -814,6 +837,7 @@ static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_dr
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), 0);
 // preparing
+    const char *l_error_msg = "count read";
     size_t l_ret = 0;
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
@@ -827,11 +851,10 @@ static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_dr
         goto clean_and_ret;
     }
     
-    if(sqlite3_prepare_v2(l_conn->conn, l_str_query_count, -1, &l_stmt_count, NULL)!= SQLITE_OK ||
-        sqlite3_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC) != SQLITE_OK ||
-        s_db_sqlite_step(l_stmt_count) != SQLITE_ROW)
+    if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
+        s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
     {
-        log_it(L_ERROR, "SQLite count read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
         goto clean_and_ret;
     }
     l_ret = sqlite3_column_int64(l_stmt_count, 0);
@@ -852,6 +875,7 @@ static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), false);
 // preparing
+    const char *l_error_msg = "is hash read";
     bool l_ret = false;
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
@@ -864,11 +888,10 @@ static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t
         goto clean_and_ret;
     }
     
-    if(sqlite3_prepare_v2(l_conn->conn, l_str_query_count, -1, &l_stmt_count, NULL)!= SQLITE_OK ||
-        sqlite3_bind_blob64(l_stmt_count, 1, &a_hash, sizeof(a_hash), SQLITE_STATIC) != SQLITE_OK ||
-        s_db_sqlite_step(l_stmt_count) != SQLITE_ROW)
+    if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash, sizeof(a_hash), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
+        s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
     {
-        log_it(L_ERROR, "SQLite is hash read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
         goto clean_and_ret;
     }
     l_ret = (bool)sqlite3_column_int64(l_stmt_count, 0);
@@ -889,6 +912,7 @@ static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), false);
 // preparing
+    const char *l_error_msg = "is obj read";
     bool l_ret = false;
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
@@ -901,10 +925,9 @@ static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
         goto clean_and_ret;
     }
     
-    if(sqlite3_prepare_v2(l_conn->conn, l_str_query_count, -1, &l_stmt_count, NULL)!= SQLITE_OK ||
-        s_db_sqlite_step(l_stmt_count) != SQLITE_ROW)
+    if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
     {
-        log_it(L_ERROR, "SQLite is obj read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
         goto clean_and_ret;
     }
     l_ret = (bool)sqlite3_column_int64(l_stmt_count, 0);
@@ -936,7 +959,6 @@ static int s_db_sqlite_flush()
 #ifndef _WIN32
     sync();
 #endif
-    s_db_sqlite_prepare_connection(l_conn->conn);
     s_db_sqlite_free_connection(l_conn, false);
     s_db_sqlite_free_connection(l_conn, true);
     return 0;
@@ -999,7 +1021,6 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
     dap_return_val_if_pass_err(s_db_inited, -2, "SQLite driver already init")
 // func work
     int l_ret = -1, l_errno = errno;
-    sqlite3 *l_conn = NULL;
     char l_errbuf[255] = {0}, *l_error_message = NULL;
     if ( sqlite3_threadsafe() && !sqlite3_config(SQLITE_CONFIG_MULTITHREAD) )
         l_ret = sqlite3_initialize();
@@ -1028,9 +1049,7 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
             log_it(L_NOTICE, "Directory created");
     }
     DAP_DEL_Z(l_filename_dir);
-    // *PRAGMA page_size = bytes; // page size DB; it is reasonable to make it equal to the size of the disk cluster 4096
-    // *PRAGMA cache_size = -kibibytes; // by default it is equal to 2000 pages of database
-    //
+
     a_drv_callback->apply_store_obj         = s_db_sqlite_apply_store_obj;
     a_drv_callback->read_store_obj          = s_db_sqlite_read_store_obj;
     a_drv_callback->read_cond_store_obj     = s_db_sqlite_read_cond_store_obj;
@@ -1046,5 +1065,23 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
     a_drv_callback->read_hashes             = s_db_sqlite_read_hashes;
     a_drv_callback->is_hash                 = s_db_sqlite_is_hash;
     s_db_inited = true;
+
+    conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);
+    if (!l_conn) {
+        log_it(L_ERROR, "Can't create base connection\n");
+        s_db_inited = false;
+        return -3;
+    }
+
+    if((s_db_sqlite_exec(l_conn->conn, "PRAGMA synchronous = NORMAL", NULL, NULL, 0, NULL)))
+        log_it(L_ERROR, "can't set new synchronous mode\n");
+    if(s_db_sqlite_exec(l_conn->conn, "PRAGMA journal_mode = OFF", NULL, NULL, 0, NULL))
+        log_it(L_ERROR, "can't set new journal mode\n");
+    if(s_db_sqlite_exec(l_conn->conn, "PRAGMA page_size = 4096", NULL, NULL, 0, NULL))
+        log_it(L_ERROR, "can't set page_size\n");
+    // vacuum need?
+    // if(s_db_sqlite_exec(l_conn, "PRAGMA auto_vacuum = INCREMENTAL", NULL, NULL, 0, NULL))
+    //     log_it(L_ERROR, "can't set autovacuum mode\n");
+    s_db_sqlite_free_connection(l_conn, false);
     return l_ret;
 }
