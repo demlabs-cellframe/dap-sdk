@@ -750,6 +750,9 @@ void    *l_ptr;
 #endif
 
 char *dap_strerror(long long err);
+#ifdef DAP_OS_WINDOWS
+char *dap_str_ntstatus(DWORD err);
+#endif
 void dap_log_level_set(enum dap_log_level ll);
 enum dap_log_level dap_log_level_get(void);
 void dap_set_log_tag_width(size_t width);

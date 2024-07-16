@@ -77,14 +77,8 @@
 #define LOG_TAG "dap_server"
 
 static void s_es_server_new     (dap_events_socket_t *a_es, void *a_arg);
-static int s_server_run         (dap_server_t * a_server);
 static void s_es_server_accept  (dap_events_socket_t *a_es_listener, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr);
 static void s_es_server_error   (dap_events_socket_t *a_es, int a_arg);
-
-#ifdef DAP_EVENTS_CAPS_IOCP
-LPFN_ACCEPTEX               pfnAcceptEx                = NULL;
-LPFN_GETACCEPTEXSOCKADDRS   pfnGetAcceptExSockaddrs    = NULL;
-#endif
 
 static dap_server_t* s_default_server = NULL;
 
@@ -94,43 +88,7 @@ static dap_server_t* s_default_server = NULL;
  */
 int dap_server_init()
 {
-        int l_ret = 0;
-#ifdef DAP_EVENTS_CAPS_IOCP
-    SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);
-    DWORD l_bytes = 0;
-    static GUID l_guid_AcceptEx             = WSAID_ACCEPTEX,
-                l_guid_GetAcceptExSockaddrs = WSAID_GETACCEPTEXSOCKADDRS,
-                l_guid_ConnectEx            = WSAID_CONNECTEX,
-                l_guid_DisconnectEx         = WSAID_DISCONNECTEX;
-    if (
-            WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                     &l_guid_AcceptEx,  sizeof(l_guid_AcceptEx),
-                     &pfnAcceptEx,     sizeof(pfnAcceptEx),
-                     &l_bytes, NULL, NULL) == SOCKET_ERROR
-
-            || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                        &l_guid_GetAcceptExSockaddrs,   sizeof(l_guid_GetAcceptExSockaddrs),
-                        &pfnGetAcceptExSockaddrs,      sizeof(pfnGetAcceptExSockaddrs),
-                        &l_bytes, NULL, NULL) == SOCKET_ERROR
-
-            || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                        &l_guid_ConnectEx,  sizeof(l_guid_ConnectEx),
-                        &pfnConnectEx,     sizeof(pfnConnectEx),
-                        &l_bytes, NULL, NULL) == SOCKET_ERROR
-
-            || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                        &l_guid_DisconnectEx,   sizeof(l_guid_DisconnectEx),
-                        &pfnDisconnectEx,      sizeof(pfnDisconnectEx),
-                        &l_bytes, NULL, NULL) == SOCKET_ERROR
-            )
-    {
-        log_it(L_ERROR, "WSAIoctl() error %d", WSAGetLastError());
-        l_ret = -1;
-    }
-    closesocket(l_socket);
-#endif
-    log_it(L_NOTICE, "Server module init%s", l_ret ? " failed" : "");
-    return l_ret;
+    return log_it(L_NOTICE, "Server module initialized"), 0;
 }
 
 /**

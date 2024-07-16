@@ -735,6 +735,21 @@ char *dap_strerror(long long err) {
     return s_last_error;
 }
 
+#ifdef DAP_OS_WINDOWS
+char *dap_str_ntstatus(DWORD err) {
+    HMODULE ntdll = GetModuleHandle("ntdll.dll");
+    if (!ntdll)
+        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())),
+            s_last_error;
+    *s_last_error = '\0';
+    DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
+                  ntdll, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_last_error, LAST_ERROR_MAX, NULL);
+    return ( l_len 
+        ? *(s_last_error + l_len - 1) = '\0'
+        : snprintf(s_last_error, LAST_ERROR_MAX, "Unknown error code %lld", err) ), s_last_error;
+}
+#endif
+
 #if 1
 #define INT_DIGITS 19   /* enough for 64 bit integer */
 
