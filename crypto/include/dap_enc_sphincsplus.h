@@ -33,10 +33,10 @@ void *dap_enc_sig_sphincsplus_read_signature(const uint8_t *a_buf, size_t a_bufl
 void *dap_enc_sig_sphincsplus_read_private_key(const uint8_t *a_buf, size_t a_buflen);
 void *dap_enc_sig_sphincsplus_read_public_key(const uint8_t *a_buf, size_t a_buflen);
 
-uint64_t dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(const sphincsplus_base_params_t *a_params);
-uint64_t dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(const sphincsplus_base_params_t *a_params);
-uint64_t dap_enc_sig_sphincsplus_crypto_sign_bytes(const sphincsplus_base_params_t *a_params);
-uint64_t dap_enc_sig_sphincsplus_crypto_sign_seedbytes(sphincsplus_config_t a_config);
+uint64_t dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes();
+uint64_t dap_enc_sig_sphincsplus_crypto_sign_publickeybytes();
+uint64_t dap_enc_sig_sphincsplus_crypto_sign_bytes();
+uint64_t dap_enc_sig_sphincsplus_crypto_sign_seedbytes();
 
 DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_deser_sig_size(UNUSED_ARG const void *a_in)
 {
@@ -78,5 +78,10 @@ DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_ser_public_key_size(const voi
 // func work
     return sizeof(uint64_t) + sizeof(sphincsplus_base_params_t) + dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(&((sphincsplus_public_key_t *)a_pkey)->params);
 }
+
+#ifdef DAP_CRYPTO_TESTS
+void dap_enc_sig_sphincsplus_set_default_config (sphincsplus_config_t  a_new_config);
+int dap_enc_sig_sphincsplus_get_configs_count();
+#endif
 
 #endif //_DAP_ENC_SPHINCSPLUS_H

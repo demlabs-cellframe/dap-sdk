@@ -127,7 +127,11 @@ file( GLOB CRYPTO_SRCS
       ${SPHINCS_SRCS}
 ) 
 
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+if (BUILD_WITH_TPS_TEST)
+    set (BUILD_WITH_ECDSA ON)
+endif()
+
+if (BUILD_WITH_ECDSA)
     file (GLOB ECDSA_SRC src/sig_ecdsa/*.c)
     set (CRYPTO_SRCS ${CRYPTO_SRCS} ${ECDSA_SRC})
     add_definitions("-DDAP_ECDSA")
@@ -162,7 +166,7 @@ file( GLOB CRYPTO_HEADERS
       ${SPHINCS_HEADERS}
       include/*.h
 )
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+if (BUILD_WITH_ECDSA)
     file (GLOB ECDSA_HDR src/sig_ecdsa/*.h)
     set (CRYPTO_HEADERS ${CRYPTO_HEADERS} ${ECDSA_HDR})
 else()
@@ -185,7 +189,7 @@ file( GLOB XKCP_SRCS
 
 set( CRYPTO_INCLUDE_PRIVATE src/seed src/rand src/iaes src/oaes src/sha3 src/msrln src/sig_bliss src/sig_tesla src/sig_picnic src/sig_dilithium src/falcon src/sig_shipovnik src/sig_shipovnik/streebog src/sphincsplus src include)
 add_subdirectory (src/Kyber/crypto_kem/kyber512/optimized/)
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+if (BUILD_WITH_ECDSA)
     add_subdirectory (${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/ ${CMAKE_CURRENT_BINARY_DIR}/secp256k1)
 endif()
 
@@ -447,7 +451,7 @@ endif()
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/json-c)
 
 target_link_libraries(dap_crypto dap_core dap_crypto_kyber512 dap_json-c)
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+if (BUILD_WITH_ECDSA)
     target_link_libraries(dap_crypto secp256k1)
 endif()
 
@@ -456,7 +460,7 @@ if(UNIX)
 endif()
 
 target_include_directories(dap_crypto PUBLIC ../3rdparty/shishua)
-if (BUILD_WITH_TPS_TEST OR BUILD_WITH_ECDSA)
+if (BUILD_WITH_ECDSA)
     target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/include)
     target_include_directories(dap_crypto PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/secp256k1/src)
 endif()
@@ -464,6 +468,7 @@ endif()
 if(BUILD_CRYPTO_TESTS)
     enable_testing()
     add_subdirectory(test)
+    add_definitions("-DDAP_CRYPTO_TESTS")
 endif()
 
 if(INSTALL_DAP_SDK)

@@ -51,10 +51,9 @@
 #include "dap_http_server.h"
 #include "dap_http_header.h"
 #include "dap_http_client.h"
+#include "dap_strfuncs.h"
 
 #define LOG_TAG "http"
-
-
 /**
  * @brief dap_http_init // Init HTTP module
  * @return Zero if ok others if not
@@ -91,22 +90,25 @@ void dap_http_deinit()
  * @param a_server_name          Server name
  * @return 0 if ok lesser number if error
  */
-int dap_http_new( dap_server_t *a_server, const char * a_server_name )
+dap_server_t* dap_http_server_new(const char *a_cfg_section, const char *a_server_name)
 {
-    a_server->_inheritor = DAP_NEW_Z(dap_http_server_t);
-
-    dap_http_server_t *l_http = DAP_HTTP_SERVER( a_server );
-
-    l_http->server = a_server;
-    strncpy( l_http->server_name, a_server_name, sizeof(l_http->server_name)-1 );
-
-    a_server->client_callbacks.new_callback    = dap_http_client_new;
-    a_server->client_callbacks.delete_callback = dap_http_client_delete;
-    a_server->client_callbacks.read_callback   = dap_http_client_read;
-    a_server->client_callbacks.write_callback  = dap_http_client_write_callback;
-    a_server->client_callbacks.error_callback  = dap_http_client_error;
-
-    return 0;
+    dap_events_socket_callbacks_t l_client_callbacks = { 
+        .new_callback       = dap_http_client_new,
+        .delete_callback    = dap_http_client_delete,
+        .read_callback      = dap_http_client_read,
+        .write_callback     = dap_http_client_write_callback,
+        .error_callback     = dap_http_client_error
+    };
+    dap_server_t *l_server = dap_server_new(a_cfg_section, NULL, &l_client_callbacks);
+    if (!l_server) {
+        log_it(L_ERROR, "HTTP server was not created");
+        return NULL;
+    }
+    dap_http_server_t *l_http_server = DAP_NEW_Z(dap_http_server_t);
+    l_server->_inheritor = l_http_server;
+    l_http_server->server = l_server;
+    dap_strncpy(l_http_server->server_name, a_server_name, sizeof(l_http_server->server_name) - 1);
+    return l_server;
 }
 
 /**

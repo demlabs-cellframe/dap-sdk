@@ -184,14 +184,10 @@ static inline dap_events_socket_t *s_dap_evsock_alloc (void)
 #if defined DAP_EVENTS_CAPS_IOCP
 
 static long s_dap_es_set_flag(dap_events_socket_t *a_es, dap_context_t* a_c, char* a_fl, OVERLAPPED *a_ol) {
-    if (!a_es) {
-        log_it(L_ERROR, "Es is NULL");
-        return ERROR_INVALID_PARAMETER;
-    }
-    if (!a_ol || !a_ol->hEvent) {
-        log_it(L_ERROR, "Flag setter must use OL event handle");
-        return ERROR_INVALID_PARAMETER;
-    }
+    if (!a_es)
+        return ERROR_NOT_FOUND;
+    if (!a_ol || !a_ol->hEvent)
+        return log_it(L_ERROR, "Flag setter must use overlapped event handle"), ERROR_INVALID_PARAMETER;
     uint32_t flag = *(uint32_t*)a_fl;
     if ( WaitForSingleObject(a_ol->hEvent, 0) == WAIT_OBJECT_0 ) {
         switch (flag) {
@@ -217,13 +213,15 @@ static long s_dap_es_set_flag(dap_events_socket_t *a_es, dap_context_t* a_c, cha
 }
 
 static long s_dap_es_reassign(dap_events_socket_t *a_es, dap_context_t* a_c, char* a_buf, OVERLAPPED *a_ol) {
+    if (!a_es)
+        return ERROR_NOT_FOUND;
     if ( !a_ol->hEvent )
         return log_it(L_ERROR, "Reassignment must use OL event"), ERROR_INVALID_PARAMETER;
 
     dap_worker_t *l_new_worker = *(dap_worker_t**)a_buf;
     if ( a_es->was_reassigned && a_es->flags & DAP_SOCK_REASSIGN_ONCE )
     return log_it(L_INFO, "Worker switch with DAP_SOCK_REASSIGN_ONCE allowed only once, declined switch from %u to %u",
-                    a_es->worker->id, l_new_worker->id), ERROR_INVALID_ACCESS;
+                    a_es->worker->id, l_new_worker->id), ERROR_ACCESS_DENIED;
     else
         return dap_events_socket_reassign_between_workers_unsafe(a_es, l_new_worker), ERROR_CONTEXT_EXPIRED;
 }
@@ -693,7 +691,7 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
             if(l_read_ret > 0) {
                 //debug_if(l_read_ret > (ssize_t)sizeof(void*), L_MSG, "[!] Read %ld bytes from pipe [es %d]", l_read_ret, a_esocket->fd2);
                 if (l_read_ret % sizeof(void*)) {
-                    log_it(L_CRITICAL, "[!] Read unaligned chunk [%ld bytes] from pipe, skip it", l_read_ret);
+                    log_it(L_CRITICAL, "[!] Read unaligned chunk [%zd bytes] from pipe, skip it", l_read_ret);
                     return -3;
                 }
                 for (long shift = 0; shift < l_read_ret; shift += sizeof(void*)) {
@@ -969,18 +967,18 @@ static void *s_dap_events_socket_buf_thread(void *arg)
                 pthread_exit(NULL);
             }
         } else if (l_write_ret == (ssize_t)l_es->buf_out_size) {
-            debug_if(g_debug_reactor, L_DEBUG, "[!] Sent all %lu bytes to pipe [es %d]", l_write_ret, l_sock);
+            debug_if(g_debug_reactor, L_DEBUG, "[!] Sent all %zd bytes to pipe [es %d]", l_write_ret, l_sock);
             l_es->buf_out_size = 0;
             pthread_rwlock_unlock(&l_es->buf_out_lock);
             break;
         } else if (l_write_ret) {
-            debug_if(g_debug_reactor, L_DEBUG, "[!] Sent %lu / %lu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
+            debug_if(g_debug_reactor, L_DEBUG, "[!] Sent %zu / %zu bytes to pipe [es %d]", l_write_ret, l_es->buf_out_size, l_sock);
             l_es->buf_out_size -= l_write_ret;
             memmove(l_es->buf_out, l_es->buf_out + l_write_ret, l_es->buf_out_size);
         }
 
         if (l_write_ret % sizeof(arg))
-            log_it(L_CRITICAL, "[!] Sent unaligned chunk [%ld bytes] to pipe, possible data corruption!", l_write_ret);
+            log_it(L_CRITICAL, "[!] Sent unaligned chunk [%zd bytes] to pipe, possible data corruption!", l_write_ret);
         pthread_rwlock_unlock(&l_es->buf_out_lock);
     }
     pthread_exit(NULL);
@@ -1006,16 +1004,16 @@ static void s_add_ptr_to_buf(dap_events_socket_t * a_es, void* a_arg)
             return;
         }
         debug_if(g_debug_reactor, L_DEBUG, "[#%"DAP_UINT64_FORMAT_U"] Created thread %"DAP_UINT64_FORMAT_x", a_es: %p, a_arg: %p",
-                     atomic_load(&l_thd_count), l_thread, a_es, a_arg);
+                     atomic_load(&l_thd_count), (uint64_t)l_thread, a_es, a_arg);
     } else if (a_es->buf_out_size_max < a_es->buf_out_size + sizeof(void*)) {
         a_es->buf_out_size_max += l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        log_it(L_MSG, "Es %p (%d): increase capacity to %lu, actual size: %lu",
+        log_it(L_MSG, "Es %p (%d): increase capacity to %zu, actual size: %zu",
                a_es, a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + sizeof(void*) <= l_basic_buf_size / 2) && (a_es->buf_out_size_max > l_basic_buf_size)) {
         a_es->buf_out_size_max = l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        log_it(L_MSG, "Es %p (%d): decrease capacity to %lu, actual size: %lu",
+        log_it(L_MSG, "Es %p (%d): decrease capacity to %zu, actual size: %zu",
                a_es, a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
     *(void**)(a_es->buf_out + a_es->buf_out_size) = a_arg;
@@ -1147,18 +1145,6 @@ dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOC
     l_es->socket = a_sock;
     l_es->server = a_server;
     l_es->callbacks = *a_callbacks;
-    switch (a_server->type) {
-    case DAP_SERVER_UDP:
-        l_es->type = DESCRIPTOR_TYPE_SOCKET_UDP;
-        break;
-#ifdef DAP_OS_UNIX
-    case DAP_SERVER_LOCAL:
-        l_es->type = DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING;
-        break;
-#endif
-    default:
-        l_es->type = DESCRIPTOR_TYPE_SOCKET_LISTENING;
-    }
 
 #ifdef   DAP_SYS_DEBUG
     atomic_fetch_add(&s_memstat[MEMSTAT$K_BUF_OUT].alloc_nr, 1);
@@ -1219,30 +1205,22 @@ void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_
  */
 void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
 {
+    if ( a_esocket->socket > 0
+#ifdef DAP_OS_BSD
+        && a_esocket->type != DESCRIPTOR_TYPE_TIMER
+#endif    
+     ) {
 #ifdef DAP_OS_WINDOWS
-    if ( a_esocket->socket && (a_esocket->socket != INVALID_SOCKET) ) {
         //LINGER  lingerStruct = { .l_onoff = 1, .l_linger = 5 };
         //setsockopt(a_esocket->socket, SOL_SOCKET, SO_LINGER, (char*)&lingerStruct, sizeof(lingerStruct) );
         // We must set { 1, 0 } when connections must be reset (RST)
         shutdown(a_esocket->socket, SD_BOTH);
+#endif
         closesocket(a_esocket->socket);
     }
-    a_esocket->socket = a_esocket->socket2 = INVALID_SOCKET;
-
-#else
-    if ( a_esocket->socket && (a_esocket->socket != -1)) {
-#ifdef DAP_OS_BSD
-        if(a_esocket->type != DESCRIPTOR_TYPE_TIMER)
-#endif
-            close( a_esocket->socket );
-        if( a_esocket->fd2 > 0 ){
-            close( a_esocket->fd2);
-        }
-    }
-    a_esocket->fd2 = -1;
-    a_esocket->fd = -1;
-    a_esocket->socket = INVALID_SOCKET;
-#endif
+    if ( a_esocket->fd2 > 0 )
+        closesocket(a_esocket->fd2);
+    a_esocket->fd = a_esocket->fd2 = INVALID_SOCKET;
 }
 
 /**
@@ -1301,7 +1279,8 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
         debug_if(g_debug_reactor, L_DEBUG, "Pending \"%s\" on es "DAP_FORMAT_ESOCKET_UUID, func, a_es->uuid);
         return;
     default:
-        debug_if(g_debug_reactor, L_DEBUG, "\"%s\" on es "DAP_FORMAT_ESOCKET_UUID" failed, error %d", func, a_es->uuid, l_res);
+        debug_if(g_debug_reactor, L_DEBUG, "\"%s\" on es "DAP_FORMAT_ESOCKET_UUID" failed, error %d: \"%s\"",
+                                           func, a_es->uuid, l_res, dap_strerror(l_res));
         dap_events_socket_descriptor_close(a_es);
         return;
     }
@@ -1405,8 +1384,8 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         debug_if(g_debug_reactor, L_DEBUG, "\"%s\" from "DAP_FORMAT_ESOCKET_UUID" : %zu \"%s\" completed immediately, received %lu bytes",
                                   func, a_esocket->uuid, a_esocket->socket, dap_events_socket_get_type_str(a_esocket), bytes);
         ++a_esocket->pending;
-        ResetEvent(ol->ol.hEvent);
-        a_esocket->buf_in_size += bytes;
+        //ResetEvent(ol->ol.hEvent);
+        //a_esocket->buf_in_size += bytes;
         return;
     default:
         log_it(L_ERROR, "Operation \"%s\" on "DAP_FORMAT_ESOCKET_UUID" failed with error %lu", func, a_esocket->uuid, GetLastError());
@@ -1464,8 +1443,8 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_esocket, b
             if (a_esocket->buf_out_size) { // Append current buf, if not empty, to OL buf
                 memcpy(ol->buf + a_size, a_esocket->buf_out, a_esocket->buf_out_size);
             }
-            if ( a_esocket->buf_out_size += a_size ) { // Write full appended buf
-                l_res = WSASend( a_esocket->socket, &(WSABUF){ .len = a_size + a_esocket->buf_out_size, .buf = ol->buf },
+            if ( a_size += a_esocket->buf_out_size ) { // Write full appended buf
+                l_res = WSASend( a_esocket->socket, &(WSABUF){ .len = a_size, .buf = ol->buf },
                                  1, &bytes, flags, (OVERLAPPED*)ol, NULL );
                 func = "WSASend";
                 a_esocket->buf_out_size = 0;
@@ -1477,9 +1456,9 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_esocket, b
         if (a_esocket->buf_out_size) { // Append current buf, if not empty, to OL buf
             memcpy(ol->buf + a_size, a_esocket->buf_out, a_esocket->buf_out_size);
         }
-        if ( a_esocket->buf_out_size += a_size ) {
+        if ( a_size += a_esocket->buf_out_size ) {
             INT l_len = sizeof(a_esocket->addr_storage);
-            l_res = WSASendTo( a_esocket->socket, &(WSABUF) { .len = a_esocket->buf_out_size, .buf = ol->buf },
+            l_res = WSASendTo( a_esocket->socket, &(WSABUF) { .len = a_size, .buf = ol->buf },
                                1, &bytes, flags, (LPSOCKADDR)&a_esocket->addr_storage, l_len, (OVERLAPPED*)ol, NULL );
             func = "WSASendTo";
             a_esocket->buf_out_size = 0;
@@ -2001,6 +1980,7 @@ size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_data_size);
     *ol = (dap_overlapped_t) { .uid = a_es_uuid, .op = io_write };
     memcpy(ol->buf, a_data, a_data_size);
+    debug_if(g_debug_reactor, L_INFO, "Write %lu bytes to es ["DAP_FORMAT_ESOCKET_UUID": worker %d]", a_data_size, a_es_uuid, a_w->id);
     return PostQueuedCompletionStatus(a_w->context->iocp, a_data_size, 0, (OVERLAPPED*)ol)
         ? a_data_size
         : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
@@ -2108,16 +2088,16 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     if (a_es->buf_out_size_max < a_es->buf_out_size + a_data_size) {
         a_es->buf_out_size_max += dap_max(l_basic_buf_size, a_data_size);
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %lu, actual size: %lu", a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
+        log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + a_data_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
         a_es->buf_out_size_max = l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %lu, actual size: %lu",
+        log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
                a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
     memcpy(a_es->buf_out + a_es->buf_out_size, a_data, a_data_size);
     a_es->buf_out_size += a_data_size;
-    debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %lu",
+    debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %zu",
              a_data_size, dap_events_socket_get_type_str(a_es), a_es->uuid, a_es->buf_out_size);
     dap_events_socket_set_writable_unsafe(a_es, true);
     
