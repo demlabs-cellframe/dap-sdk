@@ -35,12 +35,11 @@
 enum dap_sign_type_enum {
     SIG_TYPE_NULL = 0x0000,
     SIG_TYPE_BLISS = 0x0001,
-    SIG_TYPE_DEFO = 0x0002, /// @brief key image for anonymous transaction
     SIG_TYPE_TESLA = 0x0003, /// @brief
     SIG_TYPE_PICNIC = 0x0101, /// @brief
     SIG_TYPE_DILITHIUM = 0x0102, /// @brief
     SIG_TYPE_FALCON = 0x0103, /// @brief Falcon signature
-    SIG_TYPE_SPHINCSPLUS = 0x0104, /// @brief Falcon signature
+    SIG_TYPE_SPHINCSPLUS = 0x0104, /// @brief Sphincs+ signature
     SIG_TYPE_ECDSA = 0x105,
     SIG_TYPE_SHIPOVNIK = 0x0106,
 #ifdef DAP_PQLR

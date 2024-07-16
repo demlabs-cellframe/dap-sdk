@@ -29,17 +29,17 @@
 #include "dap_sign.h"
 
 enum dap_pkey_type_enum {
-    PKEY_TYPE_NULL = 0x0000,
-    PKEY_TYPE_SIGN_BLISS = 0x0901,
-    PKEY_TYPE_SIGN_TESLA = 0x0902,
-    PKEY_TYPE_SIGN_DILITHIUM =  0x0903,
-    PKEY_TYPE_SIGN_PICNIC = 0x0102,
-    PKEY_TYPE_SIGN_FALCON = 0x0103,
-    PKEY_TYPE_SIGN_SPHINCSPLUS = 0x0104,
-    PKEY_TYPE_SIGN_ECDSA = 0x0105,
-    PKEY_TYPE_SIGN_SHIPOVNIK = 0x0106,
-    PKEY_TYPE_MULTI_CHAINED = 0xfffe,
-    PKEY_TYPE_MULTI = 0xffff ///  @brief Has inside subset of different keys
+    DAP_PKEY_TYPE_NULL = 0x0000,
+    DAP_PKEY_TYPE_SIGN_BLISS = 0x0901,
+    DAP_PKEY_TYPE_SIGN_TESLA = 0x0902,
+    DAP_PKEY_TYPE_SIGN_DILITHIUM =  0x0903,
+    DAP_PKEY_TYPE_SIGN_PICNIC = 0x0904,
+    DAP_PKEY_TYPE_SIGN_FALCON = 0x0905,
+    DAP_PKEY_TYPE_SIGN_SPHINCSPLUS = 0x0906,
+    DAP_PKEY_TYPE_SIGN_ECDSA = 0x0907,
+    DAP_PKEY_TYPE_SIGN_SHIPOVNIK = 0x0908,
+    DAP_PKEY_TYPE_MULTI_CHAINED = 0xfffe,
+    DAP_PKEY_TYPE_MULTI = 0xffff ///  @brief Has inside subset of different keys
 };
 typedef uint16_t dap_pkey_type_enum_t;
 
@@ -50,17 +50,17 @@ typedef union dap_pkey_type{
 
 DAP_STATIC_INLINE const char *dap_pkey_type_to_str(dap_pkey_type_t a_type){
     switch (a_type.type) {
-        case PKEY_TYPE_NULL:  return  "PKEY_TYPE_NULL";
-        case PKEY_TYPE_MULTI: return "PKEY_TYPE_MULTI";
-        case PKEY_TYPE_SIGN_BLISS: return "PKEY_TYPE_SIGN_BLISS";
-        case PKEY_TYPE_SIGN_TESLA: return "PKEY_TYPE_SIGN_TESLA";
-        case PKEY_TYPE_SIGN_PICNIC: return "PKEY_TYPE_SIGN_PICNIC";
-        case PKEY_TYPE_SIGN_DILITHIUM: return "PKEY_TYPE_SIGN_DILITHIUM";
-        case PKEY_TYPE_SIGN_FALCON: return "PKEY_TYPE_SIGN_FALCON";
-        case PKEY_TYPE_SIGN_SPHINCSPLUS: return "PKEY_TYPE_SIGN_SPHINCSPLUS";
-        case PKEY_TYPE_SIGN_ECDSA: return "PKEY_TYPE_SIGN_ECDSA";
-        case PKEY_TYPE_SIGN_SHIPOVNIK: return "PKEY_TYPE_SIGN_SHIPOVNIK";
-        case PKEY_TYPE_MULTI_CHAINED: return "PKEY_TYPE_MULTI_CHAINED";
+        case DAP_PKEY_TYPE_NULL:  return  "DAP_PKEY_TYPE_NULL";
+        case DAP_PKEY_TYPE_MULTI: return "DAP_PKEY_TYPE_MULTI";
+        case DAP_PKEY_TYPE_SIGN_BLISS: return "DAP_PKEY_TYPE_SIGN_BLISS";
+        case DAP_PKEY_TYPE_SIGN_TESLA: return "DAP_PKEY_TYPE_SIGN_TESLA";
+        case DAP_PKEY_TYPE_SIGN_PICNIC: return "DAP_PKEY_TYPE_SIGN_PICNIC";
+        case DAP_PKEY_TYPE_SIGN_DILITHIUM: return "DAP_PKEY_TYPE_SIGN_DILITHIUM";
+        case DAP_PKEY_TYPE_SIGN_FALCON: return "DAP_PKEY_TYPE_SIGN_FALCON";
+        case DAP_PKEY_TYPE_SIGN_SPHINCSPLUS: return "DAP_PKEY_TYPE_SIGN_SPHINCSPLUS";
+        case DAP_PKEY_TYPE_SIGN_ECDSA: return "DAP_PKEY_TYPE_SIGN_ECDSA";
+        case DAP_PKEY_TYPE_SIGN_SHIPOVNIK: return "DAP_PKEY_TYPE_SIGN_SHIPOVNIK";
+        case DAP_PKEY_TYPE_MULTI_CHAINED: return "DAP_PKEY_TYPE_MULTI_CHAINED";
         default: return "UNDEFINED";
     }
 }
@@ -75,15 +75,15 @@ DAP_STATIC_INLINE dap_sign_type_t dap_pkey_type_to_sign_type(dap_pkey_type_t a_p
 {
     dap_sign_type_t l_sign_type = {0};
     switch (a_pkey_type.type){
-        case PKEY_TYPE_SIGN_BLISS: l_sign_type.type = SIG_TYPE_BLISS; break;
-        case PKEY_TYPE_SIGN_PICNIC: l_sign_type.type = SIG_TYPE_PICNIC; break;
-        case PKEY_TYPE_SIGN_TESLA: l_sign_type.type = SIG_TYPE_TESLA; break;
-        case PKEY_TYPE_SIGN_DILITHIUM : l_sign_type.type = SIG_TYPE_DILITHIUM; break;
-        case PKEY_TYPE_SIGN_FALCON : l_sign_type.type = SIG_TYPE_FALCON; break;
-        case PKEY_TYPE_SIGN_SPHINCSPLUS : l_sign_type.type = SIG_TYPE_SPHINCSPLUS; break;
-        case PKEY_TYPE_SIGN_ECDSA: l_sign_type.type = SIG_TYPE_ECDSA; break;
-        case PKEY_TYPE_SIGN_SHIPOVNIK: l_sign_type.type = SIG_TYPE_SHIPOVNIK; break;
-        case PKEY_TYPE_MULTI_CHAINED: l_sign_type.type = SIG_TYPE_MULTI_CHAINED; break;
+        case DAP_PKEY_TYPE_SIGN_BLISS: l_sign_type.type = SIG_TYPE_BLISS; break;
+        case DAP_PKEY_TYPE_SIGN_PICNIC: l_sign_type.type = SIG_TYPE_PICNIC; break;
+        case DAP_PKEY_TYPE_SIGN_TESLA: l_sign_type.type = SIG_TYPE_TESLA; break;
+        case DAP_PKEY_TYPE_SIGN_DILITHIUM : l_sign_type.type = SIG_TYPE_DILITHIUM; break;
+        case DAP_PKEY_TYPE_SIGN_FALCON : l_sign_type.type = SIG_TYPE_FALCON; break;
+        case DAP_PKEY_TYPE_SIGN_SPHINCSPLUS : l_sign_type.type = SIG_TYPE_SPHINCSPLUS; break;
+        case DAP_PKEY_TYPE_SIGN_ECDSA: l_sign_type.type = SIG_TYPE_ECDSA; break;
+        case DAP_PKEY_TYPE_SIGN_SHIPOVNIK: l_sign_type.type = SIG_TYPE_SHIPOVNIK; break;
+        case DAP_PKEY_TYPE_MULTI_CHAINED: l_sign_type.type = SIG_TYPE_MULTI_CHAINED; break;
 
         default: l_sign_type.type = SIG_TYPE_NULL; break;
     }
@@ -100,16 +100,16 @@ DAP_STATIC_INLINE dap_pkey_type_t dap_pkey_type_from_sign_type(dap_sign_type_t a
 {
     dap_pkey_type_t l_pkey_type = {0};
     switch (a_sign_type.type){
-        case SIG_TYPE_BLISS: l_pkey_type.type = PKEY_TYPE_SIGN_BLISS; break;
-        case SIG_TYPE_PICNIC: l_pkey_type.type = PKEY_TYPE_SIGN_PICNIC; break;
-        case SIG_TYPE_TESLA: l_pkey_type.type = PKEY_TYPE_SIGN_TESLA; break;
-        case SIG_TYPE_DILITHIUM: l_pkey_type.type = PKEY_TYPE_SIGN_DILITHIUM; break;
-        case SIG_TYPE_FALCON: l_pkey_type.type = PKEY_TYPE_SIGN_FALCON; break;
-        case SIG_TYPE_SPHINCSPLUS: l_pkey_type.type = PKEY_TYPE_SIGN_SPHINCSPLUS; break;
-        case SIG_TYPE_ECDSA: l_pkey_type.type = PKEY_TYPE_SIGN_ECDSA; break;
-        case SIG_TYPE_SHIPOVNIK: l_pkey_type.type = PKEY_TYPE_SIGN_SHIPOVNIK; break;
-        case SIG_TYPE_MULTI_CHAINED: l_pkey_type.type = PKEY_TYPE_MULTI_CHAINED; break;
-        default: l_pkey_type.type = PKEY_TYPE_NULL; break;
+        case SIG_TYPE_BLISS: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_BLISS; break;
+        case SIG_TYPE_PICNIC: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_PICNIC; break;
+        case SIG_TYPE_TESLA: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_TESLA; break;
+        case SIG_TYPE_DILITHIUM: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_DILITHIUM; break;
+        case SIG_TYPE_FALCON: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_FALCON; break;
+        case SIG_TYPE_SPHINCSPLUS: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_SPHINCSPLUS; break;
+        case SIG_TYPE_ECDSA: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_ECDSA; break;
+        case SIG_TYPE_SHIPOVNIK: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_SHIPOVNIK; break;
+        case SIG_TYPE_MULTI_CHAINED: l_pkey_type.type = DAP_PKEY_TYPE_MULTI_CHAINED; break;
+        default: l_pkey_type.type = DAP_PKEY_TYPE_NULL; break;
     }
     return l_pkey_type;
 }
@@ -123,15 +123,15 @@ DAP_STATIC_INLINE dap_pkey_type_t dap_pkey_type_from_sign_type(dap_sign_type_t a
 DAP_STATIC_INLINE dap_enc_key_type_t dap_pkey_type_to_enc_key_type(dap_pkey_type_t a_pkey_type)
 {
     switch (a_pkey_type.type){
-        case PKEY_TYPE_SIGN_BLISS: return DAP_ENC_KEY_TYPE_SIG_BLISS;
-        case PKEY_TYPE_SIGN_PICNIC: return DAP_ENC_KEY_TYPE_SIG_PICNIC;
-        case PKEY_TYPE_SIGN_TESLA: return DAP_ENC_KEY_TYPE_SIG_TESLA;
-        case PKEY_TYPE_SIGN_DILITHIUM: return DAP_ENC_KEY_TYPE_SIG_DILITHIUM;
-        case PKEY_TYPE_SIGN_FALCON: return DAP_ENC_KEY_TYPE_SIG_FALCON;
-        case PKEY_TYPE_SIGN_SPHINCSPLUS: return DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
-        case PKEY_TYPE_SIGN_ECDSA: return DAP_ENC_KEY_TYPE_SIG_ECDSA;
-        case PKEY_TYPE_SIGN_SHIPOVNIK: return DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK;
-        case PKEY_TYPE_MULTI_CHAINED: return DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED;
+        case DAP_PKEY_TYPE_SIGN_BLISS: return DAP_ENC_KEY_TYPE_SIG_BLISS;
+        case DAP_PKEY_TYPE_SIGN_PICNIC: return DAP_ENC_KEY_TYPE_SIG_PICNIC;
+        case DAP_PKEY_TYPE_SIGN_TESLA: return DAP_ENC_KEY_TYPE_SIG_TESLA;
+        case DAP_PKEY_TYPE_SIGN_DILITHIUM: return DAP_ENC_KEY_TYPE_SIG_DILITHIUM;
+        case DAP_PKEY_TYPE_SIGN_FALCON: return DAP_ENC_KEY_TYPE_SIG_FALCON;
+        case DAP_PKEY_TYPE_SIGN_SPHINCSPLUS: return DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS;
+        case DAP_PKEY_TYPE_SIGN_ECDSA: return DAP_ENC_KEY_TYPE_SIG_ECDSA;
+        case DAP_PKEY_TYPE_SIGN_SHIPOVNIK: return DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK;
+        case DAP_PKEY_TYPE_MULTI_CHAINED: return DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED;
         default:;
     }
     return DAP_ENC_KEY_TYPE_INVALID;
@@ -147,16 +147,16 @@ DAP_STATIC_INLINE dap_pkey_type_t dap_pkey_type_from_enc_key_type(dap_enc_key_ty
 {
     dap_pkey_type_t l_pkey_type={0};
     switch (a_key_type){
-        case DAP_ENC_KEY_TYPE_SIG_BLISS: l_pkey_type.type = PKEY_TYPE_SIGN_BLISS; break;
-        case DAP_ENC_KEY_TYPE_SIG_PICNIC: l_pkey_type.type = PKEY_TYPE_SIGN_PICNIC; break;
-        case DAP_ENC_KEY_TYPE_SIG_TESLA: l_pkey_type.type = PKEY_TYPE_SIGN_TESLA; break;
-        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: l_pkey_type.type = PKEY_TYPE_SIGN_DILITHIUM; break;
-        case DAP_ENC_KEY_TYPE_SIG_FALCON: l_pkey_type.type = PKEY_TYPE_SIGN_FALCON; break;
-        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_pkey_type.type = PKEY_TYPE_SIGN_SPHINCSPLUS; break;
-        case DAP_ENC_KEY_TYPE_SIG_ECDSA: l_pkey_type.type = PKEY_TYPE_SIGN_ECDSA; break;
-        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK: l_pkey_type.type = PKEY_TYPE_SIGN_SHIPOVNIK; break;
-        case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED: l_pkey_type.type = PKEY_TYPE_MULTI_CHAINED; break;
-        default: l_pkey_type.type = PKEY_TYPE_NULL; break;
+        case DAP_ENC_KEY_TYPE_SIG_BLISS: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_BLISS; break;
+        case DAP_ENC_KEY_TYPE_SIG_PICNIC: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_PICNIC; break;
+        case DAP_ENC_KEY_TYPE_SIG_TESLA: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_TESLA; break;
+        case DAP_ENC_KEY_TYPE_SIG_DILITHIUM: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_DILITHIUM; break;
+        case DAP_ENC_KEY_TYPE_SIG_FALCON: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_FALCON; break;
+        case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_SPHINCSPLUS; break;
+        case DAP_ENC_KEY_TYPE_SIG_ECDSA: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_ECDSA; break;
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK: l_pkey_type.type = DAP_PKEY_TYPE_SIGN_SHIPOVNIK; break;
+        case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED: l_pkey_type.type = DAP_PKEY_TYPE_MULTI_CHAINED; break;
+        default: l_pkey_type.type = DAP_PKEY_TYPE_NULL; break;
     }
     return l_pkey_type;
 }
@@ -176,10 +176,6 @@ typedef struct dap_pkey {
 DAP_STATIC_INLINE size_t dap_pkey_get_size(dap_pkey_t *a_pkey) { return sizeof(dap_pkey_t) + a_pkey->header.size; }
 
 dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key);
-
-bool dap_pkey_match(dap_pkey_t *a_pkey1, dap_pkey_t *a_pkey2);
-
-bool dap_pkey_match_sign(dap_pkey_t *a_pkey, dap_sign_t *a_sign);
 
 bool dap_pkey_get_hash(dap_pkey_t *a_pkey, dap_chain_hash_fast_t *a_out_hash);
 
