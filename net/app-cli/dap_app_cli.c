@@ -130,10 +130,12 @@ static int shell_reader_loop()
     rl_initialize(); /* Bind our completer. */
     int done = 0;
     // Loop reading and executing lines until the user quits.
-    for(; done == 0;) {
+    while (!done) {
         // Read a line of input
-        if ( !(line = rl_readline("> ")) )
+        if ( !(line = rl_readline("> ")) ) {
+            printf("\r\n");
             break;
+        }
 
         /* Remove leading and trailing whitespace from the line.
          Then, if there is anything left, add it to the history list
@@ -141,10 +143,8 @@ static int shell_reader_loop()
         if (*(s = dap_strstrip(line)) )
         {
             dap_app_cli_connect_param_t cparam = dap_app_cli_connect();
-            if ( (dap_app_cli_connect_param_t)~0 == cparam ) {
-                printf("Can't connect to \"%lu\"\n", cparam);
-                return -1;
-            }
+            if ( (dap_app_cli_connect_param_t)~0 == cparam )
+                return DAP_DELETE(line), printf("Can't connect to CLI server\r\n"), -3;
             add_history(s);
             execute_line(cparam, s);
             dap_app_cli_disconnect(cparam);
@@ -225,10 +225,8 @@ int dap_app_cli_main(const char *a_app_name, int a_argc, const char **a_argv)
         };
         // Send command
         dap_app_cli_connect_param_t cparam = dap_app_cli_connect();
-        if ( (dap_app_cli_connect_param_t)~0 == cparam ) {
-            printf("Can't connect to cli socket\n");
-            return -4;
-        }
+        if ( (dap_app_cli_connect_param_t)~0 == cparam )
+            return printf("Can't connect to CLI server\r\n"), -3;
         l_res = dap_app_cli_post_command(cparam, &cmd);
         dap_app_cli_disconnect(cparam);
     } else {

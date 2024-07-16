@@ -40,11 +40,6 @@
 #include <sys/timerfd.h>
 #define EPOLL_HANDLE  int
 #elif defined(DAP_OS_WINDOWS)
-#include "winsock.h"
-#ifdef DAP_EVENTS_CAPS_IOCP
-extern LPFN_ACCEPTEX                pfnAcceptEx;
-extern LPFN_GETACCEPTEXSOCKADDRS    pfnGetAcceptExSockaddrs;
-#endif
 #elif defined(DAP_OS_BSD)
 #else
 #error "No poll headers for your platform"
