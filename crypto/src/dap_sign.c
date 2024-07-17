@@ -478,9 +478,11 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
     size_t l_signs_count = *a_signs_count ? *a_signs_count : l_realloc_count;
     dap_sign_t **ret = NULL;
     size_t i = 0, l_sign_size = 0;
-    for (size_t l_offset = 0; l_offset < a_data_size; l_offset += l_sign_size) {
+    for (size_t l_offset = 0; l_offset + sizeof(dap_sign_t) < a_data_size; l_offset += l_sign_size) {
         dap_sign_t *l_sign = (dap_sign_t *)((byte_t *)a_data + l_offset);
         l_sign_size = dap_sign_get_size(l_sign);
+        if (l_offset + l_sign_size > l_offset || l_offset + l_sign_size > a_data_size)
+            break;
         bool l_repeat = false;
         if (ret) {
             // Check duplicate signs
