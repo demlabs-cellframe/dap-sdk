@@ -369,7 +369,8 @@ char *dap_cli_cmd_exec(char *a_req_str) {
                     l_ptr +=1;
                 }
             }
-            log_it(L_DEBUG, "execute command=%s", l_str_cmd);
+            debug_if( dap_config_get_item_bool_default(g_config, "cli-server", "debug-more", false),
+                      L_DEBUG, "execute command=%s", l_str_cmd );
             DAP_DELETE(l_str_cmd);
         }
 
