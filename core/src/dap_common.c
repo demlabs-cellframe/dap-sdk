@@ -160,8 +160,8 @@ static char s_log_file_path[MAX_PATH]   = {'\0'},
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
 
-#define LOG_FORMAT_LEN 4096
-
+#define LOG_FORMAT_LEN  4096
+#define LOG_BUF_SIZE    32768
 static char* s_appname = NULL;
 
 DAP_STATIC_INLINE int s_update_log_time(char *a_datetime_str) {
@@ -326,11 +326,12 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
             fprintf( stderr, "Can't open log file %s \n", a_log_file_path );
             return -1;   //switch off show log in cosole if file not open
         }
-        setvbuf(s_log_file, NULL,
 #ifdef DAP_OS_WINDOWS
-        _IONBF, 0);
+        static char s_buf_file[LOG_BUF_SIZE], s_buf_stdout[LOG_BUF_SIZE];
+        setvbuf(stdout, s_buf_file, _IOFBF, LOG_BUF_SIZE);
+        setvbuf(s_log_file, s_buf_stdout, _IOFBF, LOG_BUF_SIZE);
 #else
-        _IOLBF, LOG_FORMAT_LEN / 8);
+        setvbuf(s_log_file, NULL, _IOLBF, LOG_BUF_SIZE);
 #endif
         if (a_log_dirpath != s_log_dir_path)
             dap_stpcpy(s_log_dir_path,  a_log_dirpath);
@@ -376,7 +377,6 @@ static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
     va_list va_file;
     va_copy(va_file, va);
     vfprintf(stdout, a_fmt, va);
-    fflush(stdout);
     if (!s_log_file) {
         if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file) {
             va_end(va_file);
@@ -384,6 +384,10 @@ static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
         }
     }
     vfprintf(s_log_file, a_fmt + a_off, va_file);
+#ifdef DAP_OS_WINDOWS
+    fflush(s_log_file);
+    fflush(stdout);
+#endif
     va_end(va_file);
 }
 
