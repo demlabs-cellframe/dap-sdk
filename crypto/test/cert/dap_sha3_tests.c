@@ -74,7 +74,7 @@ static inline double gettimefloat( void )
 }
 
 #include "dap_hash.h"
-#include "XKCP/lib/high/Keccak/FIPS202/KeccakHash.h"
+#include "KeccakHash.h"
 #include "fips202.h"
 #include "SimpleFIPS202.h"
 /*
