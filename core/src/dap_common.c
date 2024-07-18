@@ -386,8 +386,8 @@ static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
     vfprintf(s_log_file, a_fmt + a_off, va_file);
 #ifdef DAP_OS_WINDOWS
     fflush(s_log_file);
-    fflush(stdout);
 #endif
+    fflush(stdout);
     va_end(va_file);
 }
 
