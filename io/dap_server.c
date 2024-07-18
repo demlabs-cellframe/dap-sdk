@@ -128,7 +128,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
         l_len = dap_net_resolve_host(a_addr, dap_itoa(a_port), true, &l_saddr, &l_fam);
         break;
     case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
-#ifdef DAP_OS_LINUX
+#if defined DAP_OS_LINUX || defined DAP_OS_DARWIN
     {
         char *l_dir = dap_path_get_dirname(a_addr);
         dap_mkdir_with_parents(l_dir);
@@ -260,7 +260,7 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
     if (a_cfg_section) {
         char **l_addrs = NULL;
         uint16_t l_count = 0, i;
-    #ifdef DAP_OS_LINUX
+    #if defined DAP_OS_LINUX || defined DAP_OS_DARWIN
         l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PATH, &l_count);
         mode_t l_mode = 0666;
             //strtol( dap_config_get_item_str_default(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PERMISSIONS, "0666"), NULL, 8 );
