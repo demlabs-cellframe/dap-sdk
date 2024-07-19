@@ -40,11 +40,6 @@
 #include <sys/timerfd.h>
 #define EPOLL_HANDLE  int
 #elif defined(DAP_OS_WINDOWS)
-#include "winsock.h"
-#ifdef DAP_EVENTS_CAPS_IOCP
-extern LPFN_ACCEPTEX                pfnAcceptEx;
-extern LPFN_GETACCEPTEXSOCKADDRS    pfnGetAcceptExSockaddrs;
-#endif
 #elif defined(DAP_OS_BSD)
 #else
 #error "No poll headers for your platform"
@@ -59,6 +54,7 @@ typedef struct dap_server {
     dap_cpu_stats_t cpu_stats;
     dap_list_t *es_listeners;
     void *_inheritor;
+    bool ext_log;
 } dap_server_t;
 
 int dap_server_init( ); // Init server module

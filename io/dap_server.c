@@ -77,14 +77,8 @@
 #define LOG_TAG "dap_server"
 
 static void s_es_server_new     (dap_events_socket_t *a_es, void *a_arg);
-static int s_server_run         (dap_server_t * a_server);
 static void s_es_server_accept  (dap_events_socket_t *a_es_listener, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr);
 static void s_es_server_error   (dap_events_socket_t *a_es, int a_arg);
-
-#ifdef DAP_EVENTS_CAPS_IOCP
-LPFN_ACCEPTEX               pfnAcceptEx                = NULL;
-LPFN_GETACCEPTEXSOCKADDRS   pfnGetAcceptExSockaddrs    = NULL;
-#endif
 
 static dap_server_t* s_default_server = NULL;
 
@@ -94,43 +88,7 @@ static dap_server_t* s_default_server = NULL;
  */
 int dap_server_init()
 {
-        int l_ret = 0;
-#ifdef DAP_EVENTS_CAPS_IOCP
-    SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);
-    DWORD l_bytes = 0;
-    static GUID l_guid_AcceptEx             = WSAID_ACCEPTEX,
-                l_guid_GetAcceptExSockaddrs = WSAID_GETACCEPTEXSOCKADDRS,
-                l_guid_ConnectEx            = WSAID_CONNECTEX,
-                l_guid_DisconnectEx         = WSAID_DISCONNECTEX;
-    if (
-            WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                     &l_guid_AcceptEx,  sizeof(l_guid_AcceptEx),
-                     &pfnAcceptEx,     sizeof(pfnAcceptEx),
-                     &l_bytes, NULL, NULL) == SOCKET_ERROR
-
-            || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                        &l_guid_GetAcceptExSockaddrs,   sizeof(l_guid_GetAcceptExSockaddrs),
-                        &pfnGetAcceptExSockaddrs,      sizeof(pfnGetAcceptExSockaddrs),
-                        &l_bytes, NULL, NULL) == SOCKET_ERROR
-
-            || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                        &l_guid_ConnectEx,  sizeof(l_guid_ConnectEx),
-                        &pfnConnectEx,     sizeof(pfnConnectEx),
-                        &l_bytes, NULL, NULL) == SOCKET_ERROR
-
-            || WSAIoctl(l_socket, SIO_GET_EXTENSION_FUNCTION_POINTER,
-                        &l_guid_DisconnectEx,   sizeof(l_guid_DisconnectEx),
-                        &pfnDisconnectEx,      sizeof(pfnDisconnectEx),
-                        &l_bytes, NULL, NULL) == SOCKET_ERROR
-            )
-    {
-        log_it(L_ERROR, "WSAIoctl() error %d", WSAGetLastError());
-        l_ret = -1;
-    }
-    closesocket(l_socket);
-#endif
-    log_it(L_NOTICE, "Server module init%s", l_ret ? " failed" : "");
-    return l_ret;
+    return log_it(L_NOTICE, "Server module initialized"), 0;
 }
 
 /**
@@ -170,7 +128,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
         l_len = dap_net_resolve_host(a_addr, dap_itoa(a_port), true, &l_saddr, &l_fam);
         break;
     case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
-#ifdef DAP_OS_LINUX
+#if defined DAP_OS_LINUX || defined DAP_OS_DARWIN
     {
         char *l_dir = dap_path_get_dirname(a_addr);
         dap_mkdir_with_parents(l_dir);
@@ -302,7 +260,7 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
     if (a_cfg_section) {
         char **l_addrs = NULL;
         uint16_t l_count = 0, i;
-    #ifdef DAP_OS_LINUX
+    #if defined DAP_OS_LINUX || defined DAP_OS_DARWIN
         l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PATH, &l_count);
         mode_t l_mode = 0666;
             //strtol( dap_config_get_item_str_default(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PERMISSIONS, "0666"), NULL, 8 );
@@ -332,6 +290,7 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
         log_it(L_INFO, "Server with no listeners created. "
                        "You may add them later with dap_server_listen_addr_add()");
     }
+    l_server->ext_log = dap_config_get_item_bool_default(g_config, a_cfg_section, "debug-more", false);
     return l_server;
 }
 
@@ -370,10 +329,10 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     assert(l_server);
 
     dap_events_socket_t * l_es_new = NULL;
-    log_it(L_DEBUG, "Listening socket %"DAP_FORMAT_SOCKET" uuid "DAP_FORMAT_ESOCKET_UUID" binded on %s:%u "
-                    "accepted new connection from remote %"DAP_FORMAT_SOCKET"",
-                    a_es_listener->socket, a_es_listener->uuid,
-                    a_es_listener->listener_addr_str, a_es_listener->listener_port, a_remote_socket);
+    debug_if(l_server->ext_log, L_DEBUG, "Listening socket %"DAP_FORMAT_SOCKET" uuid "DAP_FORMAT_ESOCKET_UUID" binded on %s:%u "
+                                         "accepted new connection from remote %"DAP_FORMAT_SOCKET"",
+                                         a_es_listener->socket, a_es_listener->uuid,
+                                         a_es_listener->listener_addr_str, a_es_listener->listener_port, a_remote_socket);
     if (a_remote_socket < 0) {
 #ifdef DAP_OS_WINDOWS
         _set_errno(WSAGetLastError());
@@ -393,8 +352,8 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
 #ifdef DAP_OS_UNIX
     case AF_UNIX:
         l_es_new->type = DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT;
-        log_it(L_INFO, "Connection accepted at \"%s\", socket %"DAP_FORMAT_SOCKET,
-                   a_es_listener->remote_addr_str, a_remote_socket);
+        debug_if(l_server->ext_log, L_INFO, "Connection accepted at \"%s\", socket %"DAP_FORMAT_SOCKET,
+                                            a_es_listener->remote_addr_str, a_remote_socket);
         break;
 #endif
     case AF_INET:
@@ -409,8 +368,8 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
             return;
         } 
         l_es_new->remote_port = strtol(l_port_str, NULL, 10);
-        log_it(L_INFO, "Connection accepted from %s : %hu, socket %"DAP_FORMAT_SOCKET,
-                        l_es_new->remote_addr_str, l_es_new->remote_port, a_remote_socket);
+        debug_if(l_server->ext_log, L_INFO, "Connection accepted from %s : %hu, socket %"DAP_FORMAT_SOCKET,
+                                            l_es_new->remote_addr_str, l_es_new->remote_port, a_remote_socket);
         break;
     default:
         log_it(L_ERROR, "Unsupported protocol family %hu from accept()", l_family);
