@@ -484,7 +484,7 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
     while (l_pos < l_end) {
         l_sign = (dap_sign_t*)l_pos;
         size_t l_sign_size = dap_sign_get_size(l_sign);
-        if (!l_sign_size || l_sign_size > l_end - l_pos) {
+        if (!l_sign_size || l_sign_size > (size_t)(l_end - l_pos)) {
             log_it(L_ERROR, "Broken sign, size: %lu, unprocessed bytes left: %zu");
             break;
         }
