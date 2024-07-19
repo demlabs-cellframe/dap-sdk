@@ -485,7 +485,7 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
         l_sign = (dap_sign_t*)l_pos;
         size_t l_sign_size = dap_sign_get_size(l_sign);
         if (!l_sign_size || l_sign_size > (size_t)(l_end - l_pos)) {
-            log_it(L_ERROR, "Broken sign, size: %lu, unprocessed bytes left: %zu");
+            log_it(L_ERROR, "Broken sign, size: %lu, unprocessed bytes left: %zu", l_sign_size, (size_t)(l_end - l_pos));
             break;
         }
         l_pos += l_sign_size;
@@ -496,7 +496,7 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
         }
         if (l_dup)
             continue;
-        l_ret_signs = DAP_REALLOC_COUNT(dap_sign_t*, l_count + 1);
+        l_ret_signs = DAP_REALLOC_COUNT(l_ret_signs, l_count + 1);
         l_ret_signs[l_count++] = l_sign;        
     }
     if (l_pos != l_end) {
