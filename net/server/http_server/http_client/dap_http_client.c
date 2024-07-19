@@ -493,7 +493,6 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         // No data, its over
                         dap_http_client_write(l_http_client);
                 }
-
                 dap_events_socket_shrink_buf_in( a_esocket, l_len);         /* Shrink input buffer over whole HTTP header */
             } break;
 
