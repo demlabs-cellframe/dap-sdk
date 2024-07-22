@@ -23,6 +23,7 @@
 */
 #define _POSIX_THREAD_SAFE_FUNCTIONS
 #include <locale.h>
+#include <getopt.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_string.h"
@@ -198,6 +199,61 @@ void dap_set_appname(const char * a_appname)
 {
     s_appname = dap_strdup(a_appname);
 
+}
+
+
+/// @brief remove argument by flag
+/// @param argc 
+/// @param argv 
+/// @param arg_to_remove -L or -long
+void dap_remove_argument(int *argc, char **argv, const char *arg_to_remove) {
+    for (int i = 1; i < *argc; i++) {
+        if (strcmp(argv[i], arg_to_remove) == 0) {
+            if (i + 1 < *argc) {
+                for (int j = i; j <= *argc - 2; j++) {
+                    argv[j] = argv[j + 2];
+                }
+                argv[*argc-1] = NULL;
+                argv[*argc-2] = NULL;
+                *argc -= 2;
+            }
+            return;
+        }
+    }
+}
+
+char * dap_get_path_relative_cfg(int *argc, const char **argv) {
+    int opt;
+    char* relative_path = NULL;
+    static const struct option long_options[] = {
+        {"relative_path", required_argument, 0, 'B'},
+        {0, 0, 0, 0}
+    };
+    while ((opt = getopt_long(*argc, argv, "B:", long_options, NULL)) != -1) {
+        switch (opt)
+        {
+        case 'B':
+            relative_path = optarg;
+            dap_remove_argument(argc,argv, "-B");
+            break;
+        default:
+            break;
+        }
+    }
+
+    if (!relative_path) {
+    #ifdef DAP_OS_WINDOWS
+        relative_path = dap_strdup_printf("%s/%s", regGetUsrPath(), dap_get_appname());
+    #elif DAP_OS_MAC
+        relative_path = dap_strdup_printf("/Applications/CellframeNode.app/Contents/Resources");
+    #elif DAP_OS_ANDROID
+        relative_path = dap_strdup_printf("/storage/emulated/0/opt/%s",dap_get_appname());
+    #elif DAP_OS_UNIX
+        relative_path = dap_strdup_printf("/opt/%s", dap_get_appname());
+    #endif
+    }
+
+    return relative_path;
 }
 
 enum dap_log_level dap_log_level_get( void ) {
