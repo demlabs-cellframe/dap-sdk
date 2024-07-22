@@ -72,28 +72,35 @@ static bool s_cli_cmd_exec(void *a_arg);
 DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, UNUSED_ARG void *a_arg) {
     static const char l_content_len_str[] = "Content-Length: ";
     char *l_len_token = strstr((char*)a_es->buf_in, l_content_len_str);
+#define m_dump_error_and_ret ({ \
+    const char l_error_str[] = "{ \"type\": 0, \"result\":\" Invalid request\", \"errors\": null, \"id\": 1 }", \
+        l_err_format_str[] = "HTTP/1.1 400 Bad Request\r\nContent-Length: %zu\r\n\r\n%s"; \
+    dap_events_socket_write_f_unsafe(a_es, l_err_format_str, sizeof(l_error_str) - 1, l_error_str); \
+    char *buf_dump = dap_dump_hex(a_es->buf_in, dap_max(a_es->buf_in_size, 65536)); \
+    log_it(L_DEBUG, "Incomplete cmd request: %s", buf_dump); \
+    DAP_DELETE(buf_dump); \
+})
     if (!l_len_token || !strpbrk(l_len_token, "\r\n"))
-        return;
+        return m_dump_error_and_ret;
     long l_cmd_len = strtol(l_len_token + sizeof(l_content_len_str) - 1, NULL, 10);
-    if (!l_cmd_len || l_cmd_len > 65536) {
-        log_it(L_DEBUG, "Incomplete cmd request");
-        return;
-    }
+    
+    if (!l_cmd_len || l_cmd_len > 65536)
+        return m_dump_error_and_ret;
+
     static const char l_head_end_str[] = "\r\n\r\n";
     char *l_hdr_end_token = strstr(l_len_token, l_head_end_str);
-    if (!l_hdr_end_token) {
-        log_it(L_DEBUG, "Incomplete cmd request");
-        return;
-    } else
+    if (!l_hdr_end_token)
+        return m_dump_error_and_ret;
+    else
         l_hdr_end_token += ( sizeof(l_head_end_str) - 1 );
-    if (a_es->buf_in_size > l_cmd_len + (size_t)(l_hdr_end_token - (char*)a_es->buf_in)) {
-        log_it(L_DEBUG, "Incomplete cmd request");
-        return;
-    }
+    if (a_es->buf_in_size > l_cmd_len + (size_t)(l_hdr_end_token - (char*)a_es->buf_in))
+        return m_dump_error_and_ret;
     cli_cmd_arg_t *l_arg = DAP_NEW_Z_SIZE(cli_cmd_arg_t, sizeof(cli_cmd_arg_t) + l_cmd_len + 1);
     *l_arg = (cli_cmd_arg_t){ .worker = a_es->worker, .es_uid = a_es->uuid, .buf_size = l_cmd_len };
     memcpy(l_arg->buf, l_hdr_end_token, l_cmd_len);
     dap_proc_thread_callback_add_pri(a_es->worker->proc_queue_input, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
+    a_es->buf_in_size = 0;
+#undef m_dump_error_and_ret
 }
 
 /**
