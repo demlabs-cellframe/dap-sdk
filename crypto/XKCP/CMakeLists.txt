@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 include (../../cmake/TargetArch_Detection.cmake)
 target_architecture(TARGET_ARCH)
-message("TAracrc ${TARGET_ARCH}")
+
 project (dap_crypto_XKCP)
 
 SET(XKCP_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/xkcp_build_src/)
