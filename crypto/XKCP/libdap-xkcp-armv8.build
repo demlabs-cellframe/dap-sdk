@@ -1,4 +1,4 @@
 <?xml version="1.0"?>
 <group>
-	<target name="libdap-XKCP-armv8.a" inherits="FIPS202 K1600-ARMv8A"/>
+	<target name="libdap-XKCP-armv8.a" inherits="KeccakSponge FIPS202 K1600-ARMv8A"/>
 </group>
