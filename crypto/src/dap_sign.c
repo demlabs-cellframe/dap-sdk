@@ -31,7 +31,6 @@
 #include "dap_sign.h"
 #include "dap_enc_base58.h"
 #include "dap_json_rpc_errors.h"
-#include "dap_list.h"
 
 #define LOG_TAG "dap_sign"
 
@@ -340,9 +339,9 @@ bool dap_sign_compare_pkeys(dap_sign_t *l_sign1, dap_sign_t *l_sign2)
 {
     size_t l_pkey_ser_size1 = 0, l_pkey_ser_size2 = 0;
     // Get public key from sign
-    const uint8_t *l_pkey_ser1 = dap_sign_get_pkey(l_sign1, &l_pkey_ser_size1);
-    const uint8_t *l_pkey_ser2 = dap_sign_get_pkey(l_sign2, &l_pkey_ser_size2);
-    return l_pkey_ser_size1 == l_pkey_ser_size2 && !memcmp(l_pkey_ser1, l_pkey_ser2, l_pkey_ser_size1);
+    const uint8_t   *l_pkey_ser1 = dap_sign_get_pkey(l_sign1, &l_pkey_ser_size1),
+                    *l_pkey_ser2 = dap_sign_get_pkey(l_sign2, &l_pkey_ser_size2);
+    return (l_pkey_ser_size1 == l_pkey_ser_size2) && !memcmp(l_pkey_ser1, l_pkey_ser2, l_pkey_ser_size1);
 }
 
 /**
@@ -483,16 +482,16 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
         l_sign_size = dap_sign_get_size(l_sign);
         if (l_offset + l_sign_size < l_offset || l_offset + l_sign_size > a_data_size)
             break;
-        bool l_repeat = false;
+        bool l_dup = false;
         if (ret) {
             // Check duplicate signs
             for (size_t j = 0; j < i; j++) {
                 if (dap_sign_compare_pkeys(l_sign, ret[j])) {
-                    l_repeat = true;
+                    l_dup = true;
                     break;
                 }
             }
-            if (l_repeat)
+            if (l_dup)
                 continue;
         } else
             DAP_NEW_Z_COUNT_RET_VAL(ret, dap_sign_t *, l_signs_count, NULL, NULL);
@@ -501,7 +500,7 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
             break;
         if (i == l_signs_count) {
             l_signs_count += l_realloc_count;
-            ret = (dap_sign_t **)DAP_REALLOC(ret, l_signs_count * sizeof(dap_sign_t *));
+            ret = DAP_REALLOC_COUNT(ret, l_signs_count);
             if (!ret) {
                 log_it(L_CRITICAL, c_error_memory_alloc);
                 return NULL;

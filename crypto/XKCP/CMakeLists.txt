@@ -9,9 +9,9 @@ message("[*] XKCP make CC: ${CMAKE_C_COMPILER}")
 message("[*] XKCP make AR: ${CMAKE_AR}")
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/ DESTINATION ${XKCP_BUILD_DIR})
 
-
+message("[*] XKCP OSXSYSROOT: ${CMAKE_OSX_SYSROOT}")
 add_custom_target(BuildXKCP ALL
-    COMMAND ${CMAKE_COMMAND}  -E env AR=${CMAKE_AR} CC=${CMAKE_C_COMPILER}   ${CMAKE_MAKE_PROGRAM} -C ./xkcp_build_src libdap-XKCP.a
+    COMMAND ${CMAKE_COMMAND}  -E env AR=${CMAKE_AR} CC=${CMAKE_C_COMPILER} SDKROOT=${CMAKE_OSX_SYSROOT}  ${CMAKE_MAKE_PROGRAM} -C ./xkcp_build_src libdap-XKCP.a
 )
 
 SET(XKCP_BUILD_INCLUDES ${XKCP_BUILD_DIR}/bin/libdap-XKCP.a.headers/)
