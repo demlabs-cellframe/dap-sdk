@@ -93,8 +93,8 @@ void dap_http_header_deinit()
  * @return Zero if parsed well -1 if it wasn't HTTP header 1 if its "\r\n" string
  */
 #define	CRLF    "\r\n"
-#define	CR    '\r'
-#define	LF    '\n'
+#define	CR      '\r'
+#define	LF      '\n'
 
 int dap_http_header_parse(dap_http_client_t *cl_ht, const char *ht_line, size_t ht_line_len)
 {
