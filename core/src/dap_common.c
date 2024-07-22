@@ -210,7 +210,7 @@ void dap_remove_argument(int *argc, char **argv, const char *arg_to_remove) {
     for (int i = 1; i < *argc; i++) {
         if (strcmp(argv[i], arg_to_remove) == 0) {
             if (i + 1 < *argc) {
-                for (int j = i; j <= *argc - 2; j++) {
+                for (int j = i; j < *argc - 2; j++) {
                     argv[j] = argv[j + 2];
                 }
                 argv[*argc-1] = NULL;
@@ -235,7 +235,7 @@ char * dap_get_path_relative_cfg(int *argc, const char **argv) {
         case 'B':
             relative_path = optarg;
             dap_remove_argument(argc,argv, "-B");
-            break;
+            return relative_path;
         default:
             break;
         }
