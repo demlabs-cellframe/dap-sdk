@@ -58,20 +58,41 @@ static bool s_debug_cli = false;
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
 
-static inline void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex);
+static inline void s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex);
 
 typedef struct cli_cmd_arg {
     dap_worker_t *worker;
     dap_events_socket_uuid_t es_uid;
+    size_t buf_size;
     char buf[];
 } cli_cmd_arg_t;
 
 static bool s_cli_cmd_exec(void *a_arg);
 
 DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, UNUSED_ARG void *a_arg) {
-    cli_cmd_arg_t *l_arg = DAP_NEW_Z_SIZE(cli_cmd_arg_t, sizeof(cli_cmd_arg_t) + a_es->buf_in_size);
-    *l_arg = (cli_cmd_arg_t){ .worker = a_es->worker, .es_uid = a_es->uuid };
-    memcpy(l_arg->buf, a_es->buf_in, a_es->buf_in_size);
+    static const char l_content_len_str[] = "Content-Length: ";
+    char *l_len_token = strstr((char*)a_es->buf_in, l_content_len_str);
+    if (!l_len_token || !strpbrk(l_len_token, "\r\n"))
+        return;
+    long l_cmd_len = strtol(l_len_token + sizeof(l_content_len_str) - 1, NULL, 10);
+    if (!l_cmd_len || l_cmd_len > 65536) {
+        log_it(L_DEBUG, "Incomplete cmd request");
+        return;
+    }
+    static const char l_head_end_str[] = "\r\n\r\n";
+    char *l_hdr_end_token = strstr(l_len_token, l_head_end_str);
+    if (!l_hdr_end_token) {
+        log_it(L_DEBUG, "Incomplete cmd request");
+        return;
+    } else
+        l_hdr_end_token += ( sizeof(l_head_end_str) - 1 );
+    if (a_es->buf_in_size > l_cmd_len + (size_t)(l_hdr_end_token - (char*)a_es->buf_in)) {
+        log_it(L_DEBUG, "Incomplete cmd request");
+        return;
+    }
+    cli_cmd_arg_t *l_arg = DAP_NEW_Z_SIZE(cli_cmd_arg_t, sizeof(cli_cmd_arg_t) + l_cmd_len + 1);
+    *l_arg = (cli_cmd_arg_t){ .worker = a_es->worker, .es_uid = a_es->uuid, .buf_size = l_cmd_len };
+    memcpy(l_arg->buf, l_hdr_end_token, l_cmd_len);
     dap_proc_thread_callback_add_pri(a_es->worker->proc_queue_input, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
 }
 
@@ -324,11 +345,10 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
 
 static bool s_cli_cmd_exec(void *a_arg) {
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
-    char    *l_cmd = strstr(l_arg->buf, "\r\n\r\n") + 4,
-            *l_ret = dap_cli_cmd_exec(l_cmd),
+    char    *l_ret = dap_cli_cmd_exec(l_arg->buf),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                             "Content-Length: %zu\r\n\r\n"
-                                            "%s", strlen(l_ret), l_ret);
+                                            "%s", dap_strlen(l_ret), l_ret);
     dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination
     //dap_events_socket_remove_and_delete_mt(l_arg->worker, l_arg->es_uid); // No need...
@@ -370,7 +390,8 @@ char *dap_cli_cmd_exec(char *a_req_str) {
                     l_ptr +=1;
                 }
             }
-            log_it(L_DEBUG, "execute command=%s", l_str_cmd);
+            debug_if( dap_config_get_item_bool_default(g_config, "cli-server", "debug-more", false),
+                      L_DEBUG, "execute command=%s", l_str_cmd );
             DAP_DELETE(l_str_cmd);
         }
 
