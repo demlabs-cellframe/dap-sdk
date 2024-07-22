@@ -228,7 +228,8 @@ The fragments below allow to select the desired implementation of the permutatio
     </fragment>
 
     <fragment name="K1600-AVX512" inherits="K1600 optimized">
-        <s>lib/low/KeccakP-1600/AVX512/KeccakP-1600-AVX512.s</s>
+        
+        <s gcc="-Wa,-defsym,old_gas_syntax=1 -Wa,-defsym,no_plt=1">lib/low/KeccakP-1600/AVX512/KeccakP-1600-AVX512.s</s>
         <h>lib/low/KeccakP-1600/AVX512/KeccakP-1600-SnP.h</h>
     </fragment>
 
