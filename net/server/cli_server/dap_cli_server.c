@@ -76,7 +76,7 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, UNUSED_ARG 
     const char l_error_str[] = "{ \"type\": 0, \"result\":\" Invalid request\", \"errors\": null, \"id\": 1 }", \
         l_err_format_str[] = "HTTP/1.1 400 Bad Request\r\nContent-Length: %zu\r\n\r\n%s"; \
     dap_events_socket_write_f_unsafe(a_es, l_err_format_str, sizeof(l_error_str) - 1, l_error_str); \
-    char *buf_dump = dap_dump_hex(a_es->buf_in, dap_max(a_es->buf_in_size, 65536)); \
+    char *buf_dump = dap_dump_hex(a_es->buf_in, dap_max(a_es->buf_in_size, (size_t)65536)); \
     log_it(L_DEBUG, "Incomplete cmd request: %s", buf_dump); \
     DAP_DELETE(buf_dump); \
 })
