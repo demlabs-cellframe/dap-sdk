@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<group>
+	<target name="libdap-XKCP-x8664.a" inherits="FIPS202 K1600-AVX512"/>
+</group>
