@@ -201,40 +201,20 @@ void dap_set_appname(const char * a_appname)
 
 }
 
-
-/// @brief remove argument by flag
-/// @param argc 
-/// @param argv 
-/// @param arg_to_remove -L or -long
-void dap_remove_argument(int *argc, char **argv, const char *arg_to_remove) {
-    for (int i = 1; i < *argc; i++) {
-        if (strcmp(argv[i], arg_to_remove) == 0) {
-            if (i + 1 < *argc) {
-                for (int j = i; j < *argc - 2; j++) {
-                    argv[j] = argv[j + 2];
-                }
-                argv[*argc-1] = NULL;
-                argv[*argc-2] = NULL;
-                *argc -= 2;
-            }
-            return;
-        }
-    }
-}
-
-char * dap_get_path_relative_cfg(int *argc, const char **argv) {
+char * dap_get_path_relative_cfg(int *argc, char ***argv) {
     int opt;
     char* relative_path = NULL;
     static const struct option long_options[] = {
         {"relative_path", required_argument, 0, 'B'},
         {0, 0, 0, 0}
     };
-    while ((opt = getopt_long(*argc, argv, "B:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(*argc, *argv, "B:", long_options, NULL)) != -1) {
         switch (opt)
         {
         case 'B':
             relative_path = optarg;
-            dap_remove_argument(argc,argv, "-B");
+            *argc -=2;
+            *argv += 2;
             return relative_path;
         default:
             break;
