@@ -1,4 +1,0 @@
-<?xml version="1.0"?>
-<group>
-	<target name="libdap-XKCP.a" inherits="KeccakSponge FIPS202 SP800-185 K1600-plain-64bits-ua"/>
-</group>

@@ -13,10 +13,8 @@ extern "C" {
 
 #include "dap_common.h"
 
-#include "sha3/fips202.h"
-
-//#include "KeccakHash.h"
-//#include "SimpleFIPS202.h"
+#include "KeccakHash.h"
+#include "SimpleFIPS202.h"
 //#include "SP800-185.h"
 
 #include "rand/dap_rand.h"

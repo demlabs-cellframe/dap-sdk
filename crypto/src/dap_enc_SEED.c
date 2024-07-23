@@ -7,7 +7,7 @@
 #include "dap_enc_SEED.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
-#include "sha3/KeccakHash.h"
+#include "KeccakHash.h"
 
 #define LOG_TAG "dap_enc_seed"
 //#  define SEED_BLOCK_SIZE 16

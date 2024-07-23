@@ -1,7 +1,7 @@
 #include "msrln_priv.h"
 
 //#include "KeccakHash.h"
-//#include "SimpleFIPS202.h"
+#include "fips202.h"
 
 #define LOG_TAG "RANDOM"
 

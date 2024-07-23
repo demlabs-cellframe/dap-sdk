@@ -506,6 +506,39 @@ extern "C" {
 })
 #endif
 
+#include <limits.h>
+
+#define dap_abs(a) ( (a) >= 0 ? (a) : -(a) )
+
+#define dap_maxval(v) _Generic( (v),                            \
+    signed char : SCHAR_MAX,                                    \
+           char : CHAR_MAX,       unsigned char : UCHAR_MAX,    \
+          short : SHRT_MAX,      unsigned short : USHRT_MAX,    \
+            int : INT_MAX,         unsigned int : UINT_MAX,     \
+           long : LONG_MAX,       unsigned long : ULONG_MAX,    \
+      long long : LLONG_MAX, unsigned long long : ULLONG_MAX,   \
+        default : 0 )
+
+#define dap_minval(v) _Generic( (v),\
+    signed char : SCHAR_MIN,        \
+           char : CHAR_MIN,         \
+          short : SHRT_MIN,         \
+            int : INT_MIN,          \
+           long : LONG_MIN,         \
+      long long : LLONG_MIN,        \
+        default : 0 )
+
+#define dap_maxuval(v) _Generic( (v),                           \
+    signed char : UCHAR_MAX,                                    \
+           char : UCHAR_MAX,       unsigned char : UCHAR_MAX,   \
+          short : USHRT_MAX,      unsigned short : USHRT_MAX,   \
+            int : UINT_MAX,         unsigned int : UINT_MAX,    \
+           long : ULONG_MAX,       unsigned long : ULONG_MAX,   \
+      long long : ULLONG_MAX, unsigned long long : ULLONG_MAX,  \
+        default : 0 )
+
+#define dap_is_signed(v) ( dap_minval(v) < 0 )
+
 #if defined (__GNUC__) || defined (__clang__)
 #define dap_add(a,b)                                    \
 ({                                                      \
@@ -525,47 +558,20 @@ extern "C" {
     __builtin_mul_overflow_p(_a,_b,_a) ? _a : (_a * _b);\
 })
 #else
-#include <limits.h>
-#define dap_maxval(v) _Generic( (v),                            \
-    signed char : SCHAR_MAX,                                    \
-           char : CHAR_MAX,       unsigned char : UCHAR_MAX,    \
-          short : SHRT_MAX,      unsigned short : USHRT_MAX,    \
-            int : INT_MAX,         unsigned int : UINT_MAX,     \
-           long : LONG_MAX,       unsigned long : ULONG_MAX,    \
-      long long : LLONG_MAX, unsigned long long : ULLONG_MAX,   \
-        default : 0 )
-
-#define dap_minval(v) _Generic( (v),\
-    signed char : SCHAR_MIN,        \
-           char : CHAR_MIN,         \
-          short : SHRT_MIN,         \
-            int : INT_MIN,          \
-           long : LONG_MIN,         \
-      long long : LLONG_MIN,        \
-        default : 0 )
-
-#define dap_unsigned_cast(v) ({                 \
-    __typeof__(v) _v = (v);                     \
-    _Generic( _v,                               \
-        signed char : (unsigned char) _v,       \
-               char : (unsigned char) _v,       \
-              short : (unsigned short) _v,      \
-                int : (unsigned int) _v,        \
-               long : (unsigned long) _v,       \
-          long long : (unsigned long long)_v,   \
-            default : _v);                      \
+#define dap_add(a,b)                                \
+({                                                  \
+    __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
+    _b > 0 && ( _a >= 0 && _b < dap_maxval(_a) - _a || _a < 0 && _b < dap_maxuval(_a) + _a )\
+        ? _a + _b : _a;                             \
 })
 
-#define dap_abs(a) ( (a) >= 0 ? (a) : -(a) )
-
-#define dap_add(a,b)                                                                \
-({                                                                                  \
-    __typeof__(a) _a = (a); __typeof__(b) _b = (b);                                 \
-    (_a >= 0 && (_b < dap_maxval(_a) - _a)) || (_a < 0 && (b > dap_minval(_a) - _a))\
-        ? _a + _b : 0;                                                              \
+#define dap_sub(a,b)                                \
+({                                                  \
+    __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
+    _b > 0 && ( !dap_is_signed(_a) && _b <= _a || dap_is_signed(_a) && _a >= 0 && _b < dap_maxuval(_a) - _a || _a < 0 && _b < -(dap_minval(_a) - _a) )\
+        ? _a - _b : _a;                             \
 })
 
-#define dap_sub(a,b) dap_add(a,-(b))
 #define dap_mul(a,b) a*b // TODO!
 #endif
 

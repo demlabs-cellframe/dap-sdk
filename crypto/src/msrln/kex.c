@@ -2,8 +2,8 @@
 #include <stdlib.h>
 #include "msrln_priv.h"
 
-#include "KeccakHash.h"
-#include "SimpleFIPS202.h"
+//#include "KeccakHash.h"
+#include "fips202.h"
 
 
 // N^-1 * prime_scale^-8

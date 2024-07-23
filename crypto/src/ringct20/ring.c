@@ -1,6 +1,6 @@
 #include <stdio.h>
 #include "ring.h"
-#include "sha3/KeccakHash.h"
+#include "KeccakHash.h"
 
 
 #define Keccak_HashInitialize_SHA3_KDF(hashInstance, out_bytes)        Keccak_HashInitialize(hashInstance, 1088,  512, out_bytes*8, 0x06)
