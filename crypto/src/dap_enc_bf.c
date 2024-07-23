@@ -7,7 +7,7 @@
 #include "dap_enc_bf.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
-#include "sha3/KeccakHash.h"
+#include "KeccakHash.h"
 
 #define LOG_TAG "dap_enc_blowfish"
 
