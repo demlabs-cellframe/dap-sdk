@@ -19,7 +19,10 @@ http://creativecommons.org/publicdomain/zero/1.0/
     <xi:include href="tests/SUPERCOP/SUPERCOP.build"/>
     <xi:include href="tests/NIST_LWC/NIST_LWC.build"/>
     <xi:include href="doc/HOWTO-customize.build"/>
-	<xi:include href="libdap-custom.build"/>
+	<xi:include href="libdap-xkcp-armv7.build"/>
+    <xi:include href="libdap-xkcp-armv8.build"/>
+    <xi:include href="libdap-xkcp-x8664.build"/>
+    <xi:include href="libdap-xkcp-reference.build"/>
 
     <!-- For the name of the targets, please see the end of this file. -->
 
