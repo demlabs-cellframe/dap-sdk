@@ -25,8 +25,6 @@
 #pragma once
 
 #include "dap_common.h"
-#include "dap_hash_keccak.h"
-
 #include "KeccakHash.h"
 #include "SimpleFIPS202.h"
 

@@ -1,8 +1,6 @@
 #include <stdint.h>
 #include "dilithium_poly.h"
-
-//#include "KeccakHash.h"
-//#include "SimpleFIPS202.h"
+#include "fips202.h"
 
 /*************************************************/
 void poly_reduce(poly *a) {

@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "fips202.h"
+#include "spx_fips202.h"
 
 #define SPX_NROUNDS 24
 #define SPX_ROL(a, offset) (((a) << (offset)) ^ ((a) >> (64 - (offset))))

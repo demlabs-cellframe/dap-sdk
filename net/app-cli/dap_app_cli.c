@@ -219,7 +219,7 @@ int dap_app_cli_main(const char *a_app_name, int a_argc, const char **a_argv)
     if (a_argc > 1){
         // Call the function
         dap_app_cli_cmd_state_t cmd = {
-            .cmd_name           = a_argv[1],
+            .cmd_name           = (char *)a_argv[1],
             .cmd_param_count    = a_argc - 2,
             .cmd_param          = a_argc - 2 > 0 ? (char**)(a_argv + 2) : NULL
         };

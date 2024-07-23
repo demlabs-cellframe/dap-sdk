@@ -322,17 +322,10 @@ uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
  * @return true 
  * @return false 
  */
-bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t * a_sign_hash)
+bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_hash)
 {
-    if(!a_sign){
-        log_it( L_WARNING, "Sign is NULL on enter");
-        return false;
-    }
-    if( !a_sign->header.sign_pkey_size ){
-        log_it( L_WARNING, "Sign public key's size is 0");
-        return false;
-    }
-    return dap_hash_fast( a_sign->pkey_n_sign,a_sign->header.sign_pkey_size,a_sign_hash );
+    dap_return_val_if_fail(a_sign && a_sign->header.sign_pkey_size, false);
+    return dap_hash_fast(a_sign->pkey_n_sign, a_sign->header.sign_pkey_size, a_sign_hash);
 }
 
 /**
@@ -359,9 +352,11 @@ bool dap_sign_compare_pkeys(dap_sign_t *l_sign1, dap_sign_t *l_sign2)
  * @return true 
  * @return false 
  */
-bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size) {
-    return (a_sign->header.sign_size) && (a_sign->header.sign_pkey_size) && (a_sign->header.type.type != SIG_TYPE_NULL)
-           && ((uint32_t)a_sign->header.sign_size + a_sign->header.sign_pkey_size + sizeof(*a_sign) <= (uint32_t)a_max_sign_size);
+bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size)
+{
+    return (a_max_sign_size > sizeof(dap_sign_t)) && (a_sign->header.sign_size) &&
+           (a_sign->header.sign_pkey_size) && (a_sign->header.type.type != SIG_TYPE_NULL) &&
+           ((uint64_t)a_sign->header.sign_size + a_sign->header.sign_pkey_size + sizeof(dap_sign_t) <= (uint64_t)a_max_sign_size);
 }
 
 /**
@@ -474,36 +469,46 @@ size_t dap_sign_get_size(dap_sign_t * a_chain_sign)
     return (sizeof(dap_sign_t) + a_chain_sign->header.sign_size + a_chain_sign->header.sign_pkey_size);
 }
 
-
 dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t *a_signs_count)
 {
-    dap_return_val_if_fail(a_data && a_signs_count && a_data_size, NULL);
-    byte_t *l_pos = a_data, *l_end = l_pos + a_data_size;
-    dap_sign_t **l_ret_signs = NULL, *l_sign = NULL;
-    size_t l_count = 0;
-    while (l_pos < l_end) {
-        l_sign = (dap_sign_t*)l_pos;
-        size_t l_sign_size = dap_sign_get_size(l_sign);
-        if (!l_sign_size || l_sign_size > (size_t)(l_end - l_pos)) {
-            log_it(L_ERROR, "Broken sign, size: %lu, unprocessed bytes left: %zu", l_sign_size, (size_t)(l_end - l_pos));
+    const uint16_t l_realloc_count = 10;
+    dap_return_val_if_fail(a_signs_count, NULL);
+    dap_return_val_if_fail(a_data && a_data_size, (*a_signs_count = 0, NULL));
+    size_t l_signs_count = *a_signs_count ? *a_signs_count : l_realloc_count;
+    dap_sign_t **ret = NULL;
+    size_t i = 0, l_sign_size = 0;
+    for (size_t l_offset = 0; l_offset + sizeof(dap_sign_t) < a_data_size; l_offset += l_sign_size) {
+        dap_sign_t *l_sign = (dap_sign_t *)((byte_t *)a_data + l_offset);
+        l_sign_size = dap_sign_get_size(l_sign);
+        if (l_offset + l_sign_size < l_offset || l_offset + l_sign_size > a_data_size)
             break;
-        }
-        l_pos += l_sign_size;
         bool l_dup = false;
-        for (size_t i = 0; i < l_count; ++i) {
-            if (( l_dup = dap_sign_compare_pkeys(l_ret_signs[i], l_sign) ))
-                break;
+        if (ret) {
+            // Check duplicate signs
+            for (size_t j = 0; j < i; j++) {
+                if (dap_sign_compare_pkeys(l_sign, ret[j])) {
+                    l_dup = true;
+                    break;
+                }
+            }
+            if (l_dup)
+                continue;
+        } else
+            DAP_NEW_Z_COUNT_RET_VAL(ret, dap_sign_t *, l_signs_count, NULL, NULL);
+        ret[i++] = l_sign;
+        if (*a_signs_count && i == *a_signs_count)
+            break;
+        if (i == l_signs_count) {
+            l_signs_count += l_realloc_count;
+            ret = DAP_REALLOC_COUNT(ret, l_signs_count);
+            if (!ret) {
+                log_it(L_CRITICAL, c_error_memory_alloc);
+                return NULL;
+            }
         }
-        if (l_dup)
-            continue;
-        l_ret_signs = DAP_REALLOC_COUNT(l_ret_signs, l_count + 1);
-        l_ret_signs[l_count++] = l_sign;        
     }
-    if (l_pos != l_end) {
-        log_it(L_ERROR, "Inconsistent signs storage, residual %lu bytes", l_end - l_pos);
-    }
-    *a_signs_count = l_count;
-    return l_ret_signs;
+    *a_signs_count = i;
+    return ret;
 }
 
 /**

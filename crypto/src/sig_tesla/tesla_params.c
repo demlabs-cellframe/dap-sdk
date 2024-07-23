@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <string.h>
 #include "tesla_params.h"
+#include "fips202.h"
 
 static const tesla_param_t tesla_params[] = {
 
