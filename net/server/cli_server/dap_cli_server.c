@@ -417,7 +417,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
             if (json_commands(cmd_name)) {
                 res = l_cmd->func(argc, l_argv, (void *)&json_com_res);
             } else if (l_cmd->arg_func) {
-                res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, &str_reply);
+                res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, (void *)&str_reply);
             } else {
                 res = l_cmd->func(argc, l_argv, (void *)&str_reply);
             }

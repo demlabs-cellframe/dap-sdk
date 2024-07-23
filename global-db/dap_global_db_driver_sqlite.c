@@ -474,7 +474,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     if (!l_blob_str || !l_table_name) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_table_name, l_blob_str);
-        goto clean_and_ret;
+        return NULL;
     }
     for (size_t i = 0; i < a_count * 2; i += 2) {
         l_blob_str[i] = '?';

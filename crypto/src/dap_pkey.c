@@ -38,7 +38,7 @@ dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key)
 {
     if (a_key->pub_key_data_size > 0) {
         dap_pkey_type_t l_type = dap_pkey_type_from_enc_key_type(a_key->type);
-        if (l_type.type == PKEY_TYPE_NULL) {
+        if (l_type.type == DAP_PKEY_TYPE_NULL) {
             log_it(L_WARNING, "No serialization preset");
             return NULL;
         }
@@ -59,21 +59,6 @@ dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key)
         return NULL;
     }
     return NULL;
-}
-
-bool dap_pkey_match(dap_pkey_t *a_pkey1, dap_pkey_t *a_pkey2) {
-    if (a_pkey1->header.size == a_pkey2->header.size) {
-        if (!memcmp(a_pkey1->pkey, a_pkey2->pkey, a_pkey1->header.size))
-            return true;
-    }
-    return false;
-}
-
-bool dap_pkey_match_sign(dap_pkey_t *a_pkey, dap_sign_t *a_sign)
-{
-    return a_pkey->header.size == a_sign->header.sign_pkey_size &&
-            !memcmp(a_pkey->pkey, a_sign->pkey_n_sign, a_pkey->header.size) &&
-            a_pkey->header.type.type == dap_pkey_type_from_sign_type(a_sign->header.type).type;
 }
 
 bool dap_pkey_get_hash(dap_pkey_t *a_pkey, dap_chain_hash_fast_t *a_out_hash)
