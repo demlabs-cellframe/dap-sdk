@@ -558,17 +558,18 @@ extern "C" {
     __builtin_mul_overflow_p(_a,_b,_a) ? _a : (_a * _b);\
 })
 #else
-#define dap_add(a,b)                                                                        \
-({                                                                                          \
-    __typeof__(a) _a = (a); __typeof__(b) _b = (b);                                         \
+#define dap_add(a,b)                                \
+({                                                  \
+    __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
     _b > 0 && ( _a >= 0 && _b < dap_maxval(_a) - _a || _a < 0 && _b < dap_maxuval(_a) + _a )\
-        ? _a + _b : _a;                                                                     \
+        ? _a + _b : _a;                             \
 })
 
-#define dap_sub(a,b) ({                             \
+#define dap_sub(a,b)                                \
+({                                                  \
     __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
     _b > 0 && ( !dap_is_signed(_a) && _b <= _a || dap_is_signed(_a) && _a >= 0 && _b < dap_maxuval(_a) - _a || _a < 0 && _b < -(dap_minval(_a) - _a) )\
-        ? _a - _b : _a; \
+        ? _a - _b : _a;                             \
 })
 
 #define dap_mul(a,b) a*b // TODO!
