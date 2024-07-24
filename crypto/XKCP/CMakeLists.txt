@@ -6,16 +6,22 @@ project (dap_crypto_XKCP)
 
 SET(XKCP_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/xkcp_build_src/)
 
+include(CheckCCompilerFlag)
+unset(COMPILER_SUPPORTS_MARCH_NATIVE CACHE)
+CHECK_C_COMPILER_FLAG(-march=native COMPILER_SUPPORTS_MARCH_NATIVE)
+if(COMPILER_SUPPORTS_MARCH_NATIVE)
+    SET(TARGET_POSTFIX "-native")
+endif()
 
 
 if (${TARGET_ARCH} MATCHES "x86_64")
-    SET(XKCP_TARGET libdap-XKCP-x8664.a)
+    SET(XKCP_TARGET libdap-XKCP-x8664${TARGET_POSTFIX}.a)
 elseif(${TARGET_ARCH} MATCHES "armv7")
-    SET(XKCP_TARGET libdap-XKCP-armv7.a)
+    SET(XKCP_TARGET libdap-XKCP-armv7${TARGET_POSTFIX}.a)
 elseif(${TARGET_ARCH} MATCHES "armv8")
-    SET(XKCP_TARGET libdap-XKCP-armv8.a)
+    SET(XKCP_TARGET libdap-XKCP-armv8${TARGET_POSTFIX}.a)
 else()
-    SET(XKCP_TARGET libdap-XKCP-ref.a)
+    SET(XKCP_TARGET libdap-XKCP-ref${TARGET_POSTFIX}.a)
 endif()
 
 message("[*] XKCP target: ${TARGET_ARCH} ${XKCP_TARGET}")
@@ -23,6 +29,8 @@ message("[*] XKCP build dir: ${XKCP_BUILD_DIR}")
 message("[*] XKCP make command: ${CMAKE_MAKE_PROGRAM}")
 message("[*] XKCP make CC: ${CMAKE_C_COMPILER}")
 message("[*] XKCP make AR: ${CMAKE_AR}")
+message("[*] XKCP compiller supports -march=native: ${COMPILER_SUPPORTS_MARCH_NATIVE}")
+
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/ DESTINATION ${XKCP_BUILD_DIR})
 
 message("[*] XKCP OSXSYSROOT: ${CMAKE_OSX_SYSROOT}")
