@@ -116,13 +116,14 @@
 
 #define UNUSED_ARG __attribute__((__unused__))
 
-#ifndef likely
+// TODO pipelines fix to enable this macros
+/*#ifndef likely
 #   if (defined(__GNUC__) || __has_builtin(__builtin_expect)) && !defined(__COVERITY__)
 #       define likely(cond) __builtin_expect(!!(cond), 1)
 #   else
 #       define likely(x) (!!(x))
 #   endif
-#endif /* likely */
+#endif // likely
 
 #ifndef unlikely
 #   if (defined(__GNUC__) || __has_builtin(__builtin_expect)) && !defined(__COVERITY__)
@@ -130,7 +131,8 @@
 #   else
 #       define unlikely(x) (!!(x))
 #   endif
-#endif /* unlikely */
+#endif // unlikely
+ */
 
 #ifndef ROUNDUP
   #define ROUNDUP(n,width) (((n) + (width) - 1) & ~(unsigned)((width) - 1))
