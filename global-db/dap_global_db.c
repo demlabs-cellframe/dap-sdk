@@ -166,7 +166,7 @@ int dap_global_db_init()
             goto lb_return;
         }
 
-        const char *l_gdb_path_cfg = dap_config_get_item_str(g_config, "global_db", "path");
+        char *l_gdb_path_cfg = dap_config_get_item_str_path_default(g_config, "global_db", "path", NULL);
         s_dbi->storage_path = l_gdb_path_cfg ? dap_strdup(l_gdb_path_cfg) : dap_strdup_printf("%s/var/lib/global_db", g_sys_dir_path);
         const char *l_driver_name = dap_config_get_item_str(g_config, "global_db", "driver");
         s_dbi->driver_name = dap_strdup(l_driver_name ? l_driver_name :

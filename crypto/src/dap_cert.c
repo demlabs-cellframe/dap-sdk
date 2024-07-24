@@ -75,12 +75,13 @@ int dap_cert_init() // TODO deinit too
 {
     uint16_t l_ca_folders_size = 0;
     char ** l_ca_folders;
-    l_ca_folders = dap_config_get_array_str(g_config, "resources", "ca_folders", &l_ca_folders_size);
+    l_ca_folders = dap_config_get_item_str_path_array(g_config, "resources", "ca_folders", &l_ca_folders_size);
     utarray_new(s_cert_folders, &ut_str_icd);
     utarray_reserve(s_cert_folders, l_ca_folders_size);
     for (uint16_t i=0; i < l_ca_folders_size; i++) {
         dap_cert_add_folder(l_ca_folders[i]);
     }
+    dap_config_get_item_str_path_array_free(l_ca_folders, &l_ca_folders_size);
     return 0;
 }
 

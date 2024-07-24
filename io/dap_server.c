@@ -261,7 +261,7 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
         char **l_addrs = NULL;
         uint16_t l_count = 0, i;
     #if defined DAP_OS_LINUX || defined DAP_OS_DARWIN
-        l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PATH, &l_count);
+        l_addrs = dap_config_get_item_str_path_array(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PATH, &l_count);
         mode_t l_mode = 0666;
             //strtol( dap_config_get_item_str_default(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PERMISSIONS, "0666"), NULL, 8 );
         for (i = 0; i < l_count; ++i) {
@@ -272,6 +272,7 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
                     log_it(L_ERROR, "chmod() on socket path failed, errno %d: \"%s\"",
                                     errno, dap_strerror(errno));
         }
+        dap_config_get_item_str_path_array_free(l_addrs, &l_count);
     #endif
         l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_LISTEN_ADDRS, &l_count);
         for (i = 0; i < l_count; ++i) {

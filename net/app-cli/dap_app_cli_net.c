@@ -118,9 +118,11 @@ static int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli
 dap_app_cli_connect_param_t dap_app_cli_connect()
 {
     SOCKET l_socket = ~0;
-    int l_arg_len = 0;
+    int l_arg_len = 0, l_array_count;
     struct sockaddr_storage l_saddr = { };
-    const char *l_addr = dap_config_get_item_str(g_config, "cli-server", DAP_CFG_PARAM_SOCK_PATH);
+    char **l_addrs = dap_config_get_item_str_path_array(g_config, "cli-server", DAP_CFG_PARAM_SOCK_PATH, &l_array_count);
+    char * l_addr = dap_strdup(l_addrs[0]);
+    dap_config_get_item_str_path_array_free(l_addrs, &l_array_count);
     if (l_addr) {
 #ifdef DAP_OS_WINDOWS
         printf("Unix socket-based server is not yet implemented, consider localhost usage\n"); // TODO
