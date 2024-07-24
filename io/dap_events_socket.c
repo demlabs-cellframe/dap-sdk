@@ -263,7 +263,7 @@ static inline void s_dap_evsock_free(dap_events_socket_t *a_es)
 {
 #ifdef DAP_SYS_DEBUG
     pthread_rwlock_wrlock(&s_evsocks_lock);
-    dap_events_socket_t *l_es;
+    dap_events_socket_t *l_es = NULL;
     HASH_FIND(hh2, s_esockets, &a_es->uuid, sizeof(l_es->uuid), l_es);
     if (l_es)
         HASH_DELETE(hh2, s_esockets, l_es); /* Remove record from the table */

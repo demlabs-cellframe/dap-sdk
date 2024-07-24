@@ -268,7 +268,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_all()
  */
 dap_plugin_manifest_t *dap_plugin_manifest_find(const char *a_name)
 {
-    dap_plugin_manifest_t *l_ret;
+    dap_plugin_manifest_t *l_ret = NULL;
     HASH_FIND_STR(s_manifests,a_name,l_ret);
     return l_ret;
 }
@@ -327,7 +327,7 @@ static void s_manifest_delete(dap_plugin_manifest_t *a_manifest)
  */
 bool dap_plugins_manifest_remove(const char *a_name)
 {
-    dap_plugin_manifest_t *l_manifest;
+    dap_plugin_manifest_t *l_manifest = NULL;
     HASH_FIND_STR(s_manifests, a_name,l_manifest);
     if(l_manifest)
         HASH_DEL(s_manifests, l_manifest);

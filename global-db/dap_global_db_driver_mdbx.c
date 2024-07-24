@@ -213,7 +213,7 @@ char    l_buf[1024] = {0};
 static dap_db_ctx_t *s_cre_db_ctx_for_group(const char *a_group, int a_flags, MDBX_txn *a_txn)
 {
 int rc;
-dap_db_ctx_t *l_db_ctx;
+dap_db_ctx_t *l_db_ctx = NULL;
 size_t l_name_len;
 MDBX_val    l_key_iov, l_data_iov;
 

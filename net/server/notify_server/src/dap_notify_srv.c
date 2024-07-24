@@ -221,7 +221,7 @@ static void s_notify_server_callback_queue(dap_events_socket_t * a_es, void * a_
  */
 static void s_notify_server_callback_new(dap_events_socket_t * a_es, UNUSED_ARG void *a_arg)
 {
-    dap_events_socket_handler_hh_t * l_hh_new;
+    dap_events_socket_handler_hh_t *l_hh_new = NULL;
     pthread_rwlock_wrlock(&s_notify_server_clients_mutex);
     HASH_FIND(hh,s_notify_server_clients, &a_es->uuid, sizeof (a_es->uuid), l_hh_new);
     if (l_hh_new){

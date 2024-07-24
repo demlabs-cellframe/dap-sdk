@@ -1177,7 +1177,7 @@ dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a
         log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
         return NULL;
     }
-    dap_stream_t *it;
+    dap_stream_t *it = NULL;
     size_t l_streams_count = 0, i = 0;
     if (a_cluster) {
         pthread_rwlock_rdlock(&a_cluster->members_lock);
