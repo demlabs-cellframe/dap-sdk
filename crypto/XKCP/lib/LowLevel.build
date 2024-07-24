@@ -118,9 +118,14 @@ The fragments below allow to select the desired implementation of the permutatio
         <gcc>-fomit-frame-pointer</gcc>
         <gcc>-O2</gcc>
         <gcc>-g0</gcc>
-        <gcc>-march=native</gcc>
         <gcc>-mtune=native</gcc>
     </fragment>
+
+    <fragment name="optimized-march-native">
+        <gcc>-march=native</gcc>
+    </fragment>
+
+    
 
     <!-- Keccak-p[1600] -->
 
@@ -217,7 +222,7 @@ The fragments below allow to select the desired implementation of the permutatio
     </fragment>
 
     <fragment name="K1600-AVX2" inherits="K1600 optimized">
-        <s>lib/low/KeccakP-1600/AVX2/KeccakP-1600-AVX2.s</s>
+        <s gcc="-Wa,-defsym,old_gas_syntax=1 -Wa,-defsym,no_plt=1" >lib/low/KeccakP-1600/AVX2/KeccakP-1600-AVX2.s</s>
         <h>lib/low/KeccakP-1600/AVX2/KeccakP-1600-SnP.h</h>
     </fragment>
 
