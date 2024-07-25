@@ -6,7 +6,7 @@ project (dap_crypto_XKCP)
 
 add_library(${PROJECT_NAME} STATIC IMPORTED GLOBAL)
 
-option(DAP_CRYPTO_XKCP_USE_PREBUILDS "Use prebuilded optimizations" ON)
+option(DAP_CRYPTO_XKCP_USE_PREBUILDS "Use prebuilded optimizations" OFF)
 option(DAP_CRYPTO_XKCP_REFERENCE "Use xkcp reference implemintation" OFF)
 
 IF (DAP_CRYPTO_XKCP_USE_PREBUILDS)
