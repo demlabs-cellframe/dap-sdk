@@ -204,17 +204,18 @@ void dap_set_appname(const char * a_appname)
 char * dap_get_path_relative_cfg(int *argc, char ***argv) {
     int opt;
     char* relative_path = NULL;
-    static const struct option long_options[] = {
+    static const struct option long_options_path[] = {
         {"relative_path", required_argument, 0, 'B'},
         {0, 0, 0, 0}
     };
-    while ((opt = getopt_long(*argc, *argv, "B:", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(*argc, *argv, "B:", long_options_path, NULL)) != -1) {
         switch (opt)
         {
         case 'B':
             relative_path = optarg;
             *argc -=2;
             *argv += 2;
+            optind = 1;
             return relative_path;
         default:
             break;
@@ -233,6 +234,7 @@ char * dap_get_path_relative_cfg(int *argc, char ***argv) {
     #endif
     }
 
+    optind = 1;
     return relative_path;
 }
 
