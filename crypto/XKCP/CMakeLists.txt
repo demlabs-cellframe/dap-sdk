@@ -4,6 +4,25 @@ target_architecture(TARGET_ARCH)
 
 project (dap_crypto_XKCP)
 
+#locate make & xsltproc tools 
+find_program(XMLSTYLEPROC xsltproc)
+if(NOT XMLSTYLEPROC)
+    message(FATAL_ERROR "xsltproc required for XKCP build.")
+endif()
+
+find_program(MAKE make)
+if(NOT MAKE)
+    find_program(MAKE gmake)
+endif()
+
+if(NOT MAKE)
+    find_program(MAKE mingw32-make)
+endif()
+
+if(NOT MAKE)
+    message(FATAL_ERROR "gnu-make required for XKCP build")
+endif()
+
 add_library(${PROJECT_NAME} STATIC IMPORTED GLOBAL)
 
 option(DAP_CRYPTO_XKCP_REFERENCE "Use xkcp reference implemintation" OFF)
@@ -38,23 +57,25 @@ SET(XKCP_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/xkcp_build_src/)
 message("[*] XKCP build from src")
 message("[*] XKCP target: ${TARGET_ARCH} ${XKCP_TARGET}")
 message("[*] XKCP build dir: ${XKCP_BUILD_DIR}")
-message("[*] XKCP make command: ${CMAKE_MAKE_PROGRAM}")
+message("[*] XKCP make command: ${MAKE}")
 message("[*] XKCP make CC: ${CMAKE_C_COMPILER}")
 message("[*] XKCP make AR: ${CMAKE_AR}")
 message("[*] XKCP compiller supports -march=native: ${COMPILER_SUPPORTS_MARCH_NATIVE}")
 message("[*] XKCP SYSROOT: ${CMAKE_OSX_SYSROOT}")
 
-
-file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/ DESTINATION ${XKCP_BUILD_DIR})
-add_custom_target(BuildXKCP ALL
-    COMMAND ${CMAKE_COMMAND}  -E env AR=${CMAKE_AR} CC=${CMAKE_C_COMPILER} SDKROOT=${CMAKE_OSX_SYSROOT}  ${CMAKE_MAKE_PROGRAM} -C ./xkcp_build_src ${XKCP_TARGET}
-)
-
 SET(XKCP_BUILD_INCLUDES ${XKCP_BUILD_DIR}/bin/${XKCP_TARGET}.headers/)
 SET(XKCP_BUILD_LIB ${XKCP_BUILD_DIR}/bin/${XKCP_TARGET})
+
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/ DESTINATION ${XKCP_BUILD_DIR})
+
+add_custom_target(BuildXKCP ALL
+    COMMAND ${CMAKE_COMMAND}  -E env AR=${CMAKE_AR} CC=${CMAKE_C_COMPILER} SDKROOT=${CMAKE_OSX_SYSROOT}  ${MAKE} -C ./xkcp_build_src ${XKCP_TARGET}
+    BYPRODUCTS ${XKCP_BUILD_LIB}
+)
+
+
 file(MAKE_DIRECTORY ${XKCP_BUILD_INCLUDES})
 
-add_dependencies(${PROJECT_NAME} BuildXKCP) 
 
 #hack to create a path for INTERFACE_INCLUDE_DIRECTORIES, with will be populated later
 
@@ -68,6 +89,9 @@ set_target_properties(${PROJECT_NAME}
 
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER ${XKCP_BUILD_INCLUDES})
 
+
+
+add_dependencies(${PROJECT_NAME} BuildXKCP) 
 
 if(INSTALL_DAP_SDK)
 
