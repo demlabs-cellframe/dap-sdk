@@ -188,6 +188,7 @@ int json_commands(const char * a_name) {
             "block",
             "dag",
             "token",
+            "esbocs",
             "global_db",
             "net"
     };
