@@ -71,9 +71,8 @@ void dap_list_free_full(dap_list_t *a_list, dap_callback_destroyed_t a_free_func
  */
 dap_list_t *dap_list_append(dap_list_t *a_list, void *a_data)
 {
-// sanity check
-    dap_return_val_if_pass(!a_data, a_list);
-//func work
+    if(!a_data)
+        return a_list;
     dap_list_t *l_el = NULL;
     DAP_NEW_Z_RET_VAL(l_el, dap_list_t, a_list, NULL);
     l_el->data = a_data;
