@@ -674,7 +674,7 @@ dap_client_http_t * dap_client_http_request_custom (
     }
 #ifdef DAP_EVENTS_CAPS_IOCP
     log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
-    l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
+    l_client_http->worker = a_worker ? a_worker : dap_worker_get_current();
     l_ev_socket->flags &= ~DAP_SOCK_READY_TO_READ;
     l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
     dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_DUP(&l_ev_socket->uuid);
@@ -691,7 +691,7 @@ dap_client_http_t * dap_client_http_request_custom (
     int l_err = connect(l_socket, (struct sockaddr *) &l_ev_socket->addr_storage, sizeof(struct sockaddr_in));
     if (l_err == 0){
         log_it(L_DEBUG, "Connected momentaly with %s:%u!", a_uplink_addr, a_uplink_port);
-        l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
+        l_client_http->worker = a_worker ? a_worker : dap_worker_get_current();
         l_client_http->es = l_ev_socket;
         if (a_over_ssl) {
 #ifndef DAP_NET_CLIENT_NO_SSL
@@ -705,7 +705,7 @@ dap_client_http_t * dap_client_http_request_custom (
         int l_err2 = WSAGetLastError();
         if (l_err2 == WSAEWOULDBLOCK) {
             log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
-            l_client_http->worker = a_worker?a_worker: dap_events_worker_get_auto();
+            l_client_http->worker = a_worker?a_worker: dap_worker_get_current();
             dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
             dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
             *l_ev_uuid_ptr = l_ev_socket->uuid;
@@ -729,7 +729,7 @@ dap_client_http_t * dap_client_http_request_custom (
 #else
     else if( errno == EINPROGRESS && l_err == -1){
         log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
-        l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
+        l_client_http->worker = a_worker ? a_worker : dap_worker_get_current();
         l_client_http->es = l_ev_socket;
         dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
