@@ -3,10 +3,8 @@ project (dap_core)
 
 add_definitions("-D_GNU_SOURCE") 
 
-add_definitions("-DENABLE_OVERRIDE")
-
-file (GLOB CORE_HEADERS include/*.h )
-file (GLOB CORE_SRCS src/*.c src/etc/*.c ../3rdparty/rpmalloc/rpmalloc/rpmalloc.h)
+file (GLOB CORE_HEADERS include/*.h ../3rdparty/rpmalloc/rpmalloc/rpmalloc.h)
+file (GLOB CORE_SRCS src/*.c src/etc/*.c ../3rdparty/rpmalloc/rpmalloc/rpmalloc.c)
 
 if(UNIX)
     file (GLOB CORE_HEADERS ${CORE_HEADERS} include/unix/*.h src/unix/*.h)
@@ -20,18 +18,20 @@ if(UNIX)
         file (GLOB CORE_SRCS ${CORE_SRCS} src/unix/linux/*.c)
     endif()
 elseif(WIN32)
-    file (GLOB CORE_SRCS ${CORE_SRCS} src/win32/*.c)
+    file (GLOB CORE_SRCS ${CORE_SRCS} src/win32/*.c ../3rdparty/strptime.c)
     set_source_files_properties(../3rdparty/strptime PROPERTIES COMPILE_FLAGS -Wno-deprecated-declarations)
 endif()
-
 add_library(${PROJECT_NAME} STATIC ${CORE_SRCS} ${CORE_HEADERS})
-
+target_compile_definitions(${PROJECT_NAME} PUBLIC ENABLE_OVERRIDE=1 ENABLE_PRELOAD=1)
 #This paths will be used by project-dependent project libraries
-target_include_directories(${PROJECT_NAME} INTERFACE ../3rdparty/rpmalloc/rpmalloc)
-target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
-target_include_directories(${PROJECT_NAME} PUBLIC )
-
+target_include_directories(${PROJECT_NAME} PUBLIC . 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty
+    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/rpmalloc/rpmalloc
+    ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
+#target_include_directories(${PROJECT_NAME} PUBLIC . )
 if(WIN32)
+    include_directories(../3rdparty/rpmalloc/rpmalloc)
     include_directories(include/)
     add_subdirectory(src/win32)
     set(CORE_LIBRARIES dap_core_win32)
