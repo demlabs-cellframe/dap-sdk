@@ -505,6 +505,7 @@ int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_fast_t *a_out_hash)
     if (!l_pub_key || !l_pub_key_size)
         return -2;
     dap_hash_fast(l_pub_key, l_pub_key_size, a_out_hash);
+    DAP_DELETE(l_pub_key);
     return 0;
 }
 
@@ -519,17 +520,15 @@ int dap_cert_compare_with_sign (dap_cert_t *a_cert,const dap_sign_t *a_sign)
 {
     dap_return_val_if_pass(!a_cert || !a_cert->enc_key || !a_sign, -4);
     if ( dap_sign_type_from_key_type( a_cert->enc_key->type ).type == a_sign->header.type.type ){
-        int l_ret;
         size_t l_pub_key_size = 0;
         // serialize public key
         uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_cert->enc_key, &l_pub_key_size);
-        if ( l_pub_key_size == a_sign->header.sign_pkey_size){
-            l_ret = memcmp ( l_pub_key, a_sign->pkey_n_sign, a_sign->header.sign_pkey_size );
-        }else
-            l_ret = -2; // Wrong pkey size
+        int l_ret = l_pub_key_size == a_sign->header.sign_pkey_size
+            ? memcmp(l_pub_key, a_sign->pkey_n_sign, a_sign->header.sign_pkey_size)
+            : -2;
         DAP_DELETE(l_pub_key);
         return l_ret;
-    }else
+    } else
         return -3; // Wrong sign type
 }
 
