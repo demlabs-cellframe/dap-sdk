@@ -491,15 +491,17 @@ const char **dap_config_get_array_str(dap_config_t *a_config, const char *a_sect
 }
 
 char **dap_config_get_item_str_path_array(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length) { 
-    char ** addrs_relative = dap_config_get_array_str(a_config, a_section, a_item_name, array_length);
+    char ** conf_relative = dap_config_get_array_str(a_config, a_section, a_item_name, array_length);
+    char ** addrs_relative = DAP_NEW_SIZE(char*, array_length);
     for (int i = 0; i < *array_length; ++i)
-        addrs_relative[i] =  dap_canonicalize_filename(addrs_relative[i], dap_path_get_dirname(a_config->path));
+        addrs_relative[i] =  dap_canonicalize_filename(conf_relative[i], dap_path_get_dirname(a_config->path));
     return addrs_relative;
 }
 
 void dap_config_get_item_str_path_array_free(char **paths_array, uint16_t *array_length) {
     for (int i = 0; i < *array_length; ++i)
         DAP_DEL_Z(paths_array[0]);
+    DAP_DEL_Z(paths_array);
 }
 
 double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, double a_default) {
