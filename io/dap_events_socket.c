@@ -263,7 +263,7 @@ static inline void s_dap_evsock_free(dap_events_socket_t *a_es)
 {
 #ifdef DAP_SYS_DEBUG
     pthread_rwlock_wrlock(&s_evsocks_lock);
-    dap_events_socket_t *l_es;
+    dap_events_socket_t *l_es = NULL;
     HASH_FIND(hh2, s_esockets, &a_es->uuid, sizeof(l_es->uuid), l_es);
     if (l_es)
         HASH_DELETE(hh2, s_esockets, l_es); /* Remove record from the table */
@@ -1978,7 +1978,7 @@ size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t); if (!l_msg) return 0;
     l_msg->esocket_uuid = a_es_uuid;
     if (a_data && a_data_size)
-        l_msg->data = DAP_DUP_SIZE(a_data, a_data_size);
+        l_msg->data = a_data; // DAP_DUP_SIZE(a_data, a_data_size);
     l_msg->data_size = a_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 

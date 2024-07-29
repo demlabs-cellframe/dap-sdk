@@ -317,7 +317,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
     size_t read_bytes = 0;
 
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
-    dap_http_url_proc_t *url_proc;
+    dap_http_url_proc_t *url_proc = NULL;
     dap_http_cache_t * l_http_cache;
 
     /*

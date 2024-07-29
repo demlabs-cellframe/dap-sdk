@@ -6,7 +6,7 @@ static dap_json_rpc_request_handler_t *s_handler_hash_table = NULL;
 
 int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t *a_func)
 {
-    dap_json_rpc_request_handler_t *l_handler;
+    dap_json_rpc_request_handler_t *l_handler = NULL;
     HASH_FIND_STR(s_handler_hash_table, a_name, l_handler);
     if (l_handler == NULL){
         l_handler = DAP_NEW(dap_json_rpc_request_handler_t);
@@ -24,7 +24,7 @@ int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t
 }
 int dap_json_rpc_unregistration_request_handler(const char *a_name)
 {
-    dap_json_rpc_request_handler_t *l_handler;
+    dap_json_rpc_request_handler_t *l_handler = NULL;
     HASH_FIND_STR(s_handler_hash_table, a_name, l_handler);
     if (l_handler == NULL){
         return 1;

@@ -188,6 +188,8 @@ int json_commands(const char * a_name) {
             "block",
             "dag",
             "token",
+            "esbocs",
+            "global_db",
             "net"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
@@ -358,7 +360,7 @@ static bool s_cli_cmd_exec(void *a_arg) {
     dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination
     //dap_events_socket_remove_and_delete_mt(l_arg->worker, l_arg->es_uid); // No need...
-    DAP_DEL_MULTY(l_ret, l_full_ret, a_arg);
+    DAP_DEL_MULTY(l_ret, /*l_full_ret,*/ a_arg);
     return false;
 }
 

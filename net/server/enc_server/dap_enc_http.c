@@ -109,7 +109,6 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         size_t l_block_key_size=32;
         int l_protocol_version = 0;
         size_t l_sign_count = 0;
-        char *encrypt_msg = NULL, *encrypt_id = NULL;
         sscanf(cl_st->http_client->in_query_string, "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu,protocol_version=%d,sign_count=%zu",
                                       &l_enc_block_type,&l_pkey_exchange_type,&l_pkey_exchange_size,&l_block_key_size, &l_protocol_version, &l_sign_count);
 
@@ -175,15 +174,8 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             log_it(L_DEBUG, "Callback for ACL is not set, pass anauthorized");
         }
     
-        if (
-            !(encrypt_msg = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(l_pkey_exchange_key->pub_key_data_size) + 1)) ||
-            !(encrypt_id = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1))
-        ) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            dap_enc_key_delete(l_pkey_exchange_key);
-            *return_code = Http_Status_InternalServerError;
-            return;
-        }
+        char    *encrypt_msg = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(l_pkey_exchange_key->pub_key_data_size) + 1),
+                encrypt_id[DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1] = { '\0' };
         dap_enc_base64_encode(l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, encrypt_msg, DAP_ENC_DATA_TYPE_B64);
 
         l_enc_key_ks->key = dap_enc_key_new_generate(l_enc_block_type,
@@ -203,6 +195,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, 0);
             if (!l_node_sign) {
                 dap_enc_key_delete(l_pkey_exchange_key);
+                DAP_DELETE(encrypt_msg);
                 *return_code = Http_Status_InternalServerError;
                 return;
             }
@@ -214,6 +207,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                 log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 dap_enc_key_delete(l_pkey_exchange_key);
                 *return_code = Http_Status_InternalServerError;
+                DAP_DELETE(encrypt_msg);
                 DAP_DELETE(l_node_sign);
                 return;
             }
@@ -222,7 +216,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         }
 
         _enc_http_write_reply(cl_st, encrypt_id, encrypt_msg, l_node_sign_msg);
-
+        DAP_DELETE(encrypt_msg);
         dap_enc_key_delete(l_pkey_exchange_key);
         DAP_DEL_Z(l_node_sign_msg);
 

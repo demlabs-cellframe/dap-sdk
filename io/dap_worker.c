@@ -331,6 +331,7 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
     dap_events_socket_t *l_msg_es = dap_context_find(l_context, l_msg->esocket_uuid);
     if ( l_msg_es == NULL){
         log_it(L_INFO, "We got i/o message for esocket %"DAP_UINT64_FORMAT_U" thats now not in list. Lost %zu data", l_msg->esocket_uuid, l_msg->data_size);
+        DAP_DELETE(l_msg->data);
         DAP_DELETE(l_msg);
         return;
     }

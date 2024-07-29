@@ -391,7 +391,7 @@ int dap_cert_add(dap_cert_t *a_cert)
 {
     if (!a_cert)
         return -2;
-    dap_cert_item_t *l_cert_item;
+    dap_cert_item_t *l_cert_item = NULL;
     HASH_FIND_STR(s_certs, a_cert->name, l_cert_item);
     if (l_cert_item) {
         log_it(L_WARNING, "Certificate with name %s already present in memory", a_cert->name);

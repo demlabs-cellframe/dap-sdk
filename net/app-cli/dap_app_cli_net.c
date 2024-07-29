@@ -89,21 +89,16 @@ static int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli
             break;
         l_hdr_end_token += ( sizeof(l_head_end_str) - 1 );
         l_cmd->hdr_len = l_hdr_end_token - l_cmd->cmd_res;
-        if (l_cmd->cmd_res_len + l_cmd->hdr_len > l_cmd->cmd_res_cur) {
+        if (l_cmd->cmd_res_len + l_cmd->hdr_len > l_cmd->cmd_res_cur)
             l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_len + l_cmd->hdr_len + 1);
-            a_status = 4;
-            break;
-        } else
-            ++a_status;
+        ++a_status;
     }
     case 3:
-        *(l_cmd->cmd_res + l_cmd->cmd_res_cur) = '\0';
-        a_status = 0;
-        break;
-    case 4:
     default:
-        if (l_cmd->cmd_res_len + l_cmd->hdr_len == l_cmd->cmd_res_cur)
-            --a_status;
+        if (l_cmd->cmd_res_len + l_cmd->hdr_len <= l_cmd->cmd_res_cur) {
+            *(l_cmd->cmd_res + l_cmd->cmd_res_cur) = '\0';
+            a_status = 0;
+        }
         break;
     }
     return a_status;
