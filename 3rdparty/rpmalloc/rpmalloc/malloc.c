@@ -356,14 +356,14 @@ _global_rpmalloc_init(void) {
 	rpmalloc_initialize();
 }
 
-#if !defined(__MINGW32__) && ( defined(__clang__) || defined(__GNUC__) )
+#if defined(__clang__) || defined(__GNUC__)
 
 static void __attribute__((constructor))
 initializer(void) {
 	_global_rpmalloc_init();
 }
 
-#elif defined(_MSC_VER) || defined(__MINGW32__)
+#elif defined(_MSC_VER)
 
 static int
 _global_rpmalloc_xib(void) {
