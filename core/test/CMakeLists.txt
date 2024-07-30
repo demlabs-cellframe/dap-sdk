@@ -17,6 +17,7 @@ endif()
 add_executable(${PROJECT_NAME} ${SRCS} ${PLATROFM_DEP_SRC})  
 target_link_libraries(core_test dap_test dap_core pthread)
 
+if (DAP_USE_RPMALLOC)
 add_executable(rpmalloc_test
   ../../3rdparty/rpmalloc/test/test.h
   ../../3rdparty/rpmalloc/test/thread.h 
@@ -25,12 +26,6 @@ add_executable(rpmalloc_test
 )
 target_link_libraries(rpmalloc_test dap_core m pthread dl)
 target_include_directories(rpmalloc_test PRIVATE ../../3rdparty/rpmalloc/test)
-
-add_test(
-    NAME core-test
-    COMMAND core_test
-)
-
 if (NOT PLATFORM_ARM AND VERSION MATCHES "7l")
     add_test(
         NAME rpm-test
@@ -38,7 +33,13 @@ if (NOT PLATFORM_ARM AND VERSION MATCHES "7l")
     )
 else()
     message("[-] Disable rpm test")
-endif ()
+endif()
+endif(DAP_USE_RPMALLOC)
+
+add_test(
+    NAME core-test
+    COMMAND core_test
+)
 
 if(UNIX)
     target_include_directories(${PROJECT_NAME} PRIVATE unix)
