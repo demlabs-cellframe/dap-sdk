@@ -89,11 +89,13 @@ extern inline size_t RPMALLOC_CDECL malloc_usable_size(void* ptr) { return rpmal
 extern inline size_t RPMALLOC_CDECL malloc_size(void* ptr) { return rpmalloc_usable_size(ptr); }
 
 #ifdef _WIN32
+#define _msize(ptr) rpmalloc_usable_size(ptr)
+#define _msize_base(ptr) _msize(ptr)
 extern inline RPMALLOC_RESTRICT void* RPMALLOC_CDECL _malloc_base(size_t size) { return rpmalloc(size); }
 extern inline void RPMALLOC_CDECL _free_base(void* ptr) { rpfree(ptr); }
 extern inline RPMALLOC_RESTRICT void* RPMALLOC_CDECL _calloc_base(size_t count, size_t size) { return rpcalloc(count, size); }
-extern inline size_t RPMALLOC_CDECL _msize(void* ptr) { return rpmalloc_usable_size(ptr); }
-extern inline size_t RPMALLOC_CDECL _msize_base(void* ptr) { return rpmalloc_usable_size(ptr); }
+//extern inline size_t RPMALLOC_CDECL _msize(void* ptr) { return rpmalloc_usable_size(ptr); }
+//extern inline size_t RPMALLOC_CDECL _msize_base(void* ptr) { return rpmalloc_usable_size(ptr); }
 extern inline RPMALLOC_RESTRICT void* RPMALLOC_CDECL _realloc_base(void* ptr, size_t size) { return rprealloc(ptr, size); }
 #endif
 
@@ -354,14 +356,14 @@ _global_rpmalloc_init(void) {
 	rpmalloc_initialize();
 }
 
-#if defined(__clang__) || defined(__GNUC__)
+#if !defined(__MINGW32__) && ( defined(__clang__) || defined(__GNUC__) )
 
 static void __attribute__((constructor))
 initializer(void) {
 	_global_rpmalloc_init();
 }
 
-#elif defined(_MSC_VER)
+#elif defined(_MSC_VER) || defined(__MINGW32__)
 
 static int
 _global_rpmalloc_xib(void) {
