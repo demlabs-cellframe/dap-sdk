@@ -876,7 +876,8 @@ uint8_t *dap_enc_key_serialize(dap_enc_key_t *a_key, size_t *a_buflen)
 
 // out work
     DAP_DEL_MULTY(l_ser_skey, l_ser_pkey);
-    a_buflen ? *a_buflen = l_buflen : 0;
+    if (a_buflen)
+        *a_buflen = l_buflen;
     return l_ret;
 }
 
