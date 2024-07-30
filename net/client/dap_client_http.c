@@ -505,7 +505,8 @@ static void s_client_http_delete(dap_client_http_t * a_client_http)
 {
     dap_return_if_fail(a_client_http);
     debug_if(s_debug_more, L_DEBUG, "HTTP client delete");
-
+    if (a_client_http->timer)
+        dap_timerfd_delete_unsafe(a_client_http->timer);
     DAP_DEL_Z(a_client_http->method);
     DAP_DEL_Z(a_client_http->request_content_type);
     DAP_DEL_Z(a_client_http->cookie);
@@ -730,14 +731,15 @@ dap_client_http_t * dap_client_http_request_custom (
     else if( errno == EINPROGRESS && l_err == -1){
         log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
         l_client_http->worker = a_worker ? a_worker : dap_worker_get_current();
+        if (!l_client_http->worker)
+            l_client_http->worker = dap_worker_get_auto();
         l_client_http->es = l_ev_socket;
-        dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         if (!l_ev_uuid_ptr) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            DAP_DEL_MULTY(l_client_http->response, l_client_http->request, l_client_http);
-            if(a_error_callback)
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            if (a_error_callback)
                 a_error_callback(errno, a_callbacks_arg);
+            DAP_DEL_MULTY(l_client_http->response, l_client_http->request, l_client_http);
             return NULL;
         }
         *l_ev_uuid_ptr = l_ev_socket->uuid;
@@ -747,6 +749,7 @@ dap_client_http_t * dap_client_http_request_custom (
                    l_client_http->worker->id, *l_ev_uuid_ptr);
             DAP_DEL_Z(l_ev_uuid_ptr);
         }
+        dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         return l_client_http;
     }
     else{
@@ -819,8 +822,6 @@ dap_client_http_t *dap_client_http_request(dap_worker_t * a_worker,const char *a
 
 void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
 {
-    if (a_client_http->timer)
-        dap_timerfd_delete_unsafe(a_client_http->timer);
     if (a_client_http->es) {
         a_client_http->es->callbacks.delete_callback = NULL;
         dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);
