@@ -199,7 +199,9 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
     #define DAP_DUP_SIZE(a, s)    memcpy(s_vm_get(__func__, __LINE__, s), a, s)
 
 #else
+#ifndef DAP_OS_WINDOWS
 #include "rpmalloc.h"
+#endif
 #define DAP_MALLOC(p)         malloc(p)
 #define DAP_FREE(p)           free(p)
 #define DAP_CALLOC(p, s)      ({ size_t s1 = (size_t)(s); s1 > 0 ? calloc(p, s1) : DAP_CAST_PTR(void, NULL); })

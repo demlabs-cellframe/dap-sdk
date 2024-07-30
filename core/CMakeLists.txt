@@ -3,12 +3,12 @@ project (dap_core)
 
 add_definitions("-D_GNU_SOURCE") 
 
-file (GLOB CORE_HEADERS include/*.h ../3rdparty/rpmalloc/rpmalloc/rpmalloc.h)
-file (GLOB CORE_SRCS src/*.c src/etc/*.c ../3rdparty/rpmalloc/rpmalloc/rpmalloc.c)
+file (GLOB CORE_HEADERS include/*.h)
+file (GLOB CORE_SRCS src/*.c src/etc/*.c)
 
 if(UNIX)
-    file (GLOB CORE_HEADERS ${CORE_HEADERS} include/unix/*.h src/unix/*.h)
-    file (GLOB CORE_SRCS ${CORE_SRCS} src/unix/*.c)
+    file (GLOB CORE_HEADERS ${CORE_HEADERS} include/unix/*.h src/unix/*.h ../3rdparty/rpmalloc/rpmalloc/rpmalloc.h)
+    file (GLOB CORE_SRCS ${CORE_SRCS} src/unix/*.c ../3rdparty/rpmalloc/rpmalloc/rpmalloc.c)
 
     if(DARWIN)
         file (GLOB CORE_HEADERS ${CORE_HEADERS} src/darwin/macos/*.h)
@@ -31,7 +31,6 @@ target_include_directories(${PROJECT_NAME} PUBLIC .
     ${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/uthash/src)
 #target_include_directories(${PROJECT_NAME} PUBLIC . )
 if(WIN32)
-    include_directories(../3rdparty/rpmalloc/rpmalloc)
     include_directories(include/)
     add_subdirectory(src/win32)
     set(CORE_LIBRARIES dap_core_win32)
