@@ -23,7 +23,7 @@ add_executable(rpmalloc_test
   ../../3rdparty/rpmalloc/test/thread.c
   ../../3rdparty/rpmalloc/test/main.c
 )
-target_link_libraries(rpmalloc_test dap_core m pthread)
+target_link_libraries(rpmalloc_test dap_core m pthread dl)
 target_include_directories(rpmalloc_test PRIVATE ../../3rdparty/rpmalloc/test)
 
 add_test(
