@@ -201,43 +201,6 @@ void dap_set_appname(const char * a_appname)
 
 }
 
-char * dap_get_path_relative_cfg(int *argc, char ***argv) {
-    int opt;
-    char* relative_path = NULL;
-    static const struct option long_options_path[] = {
-        {"relative_path", required_argument, 0, 'B'},
-        {0, 0, 0, 0}
-    };
-    while ((opt = getopt_long(*argc, *argv, "B:", long_options_path, NULL)) != -1) {
-        switch (opt)
-        {
-        case 'B':
-            relative_path = optarg;
-            *argc -=2;
-            *argv += 2;
-            optind = 1;
-            return relative_path;
-        default:
-            break;
-        }
-    }
-
-    if (!relative_path) {
-    #ifdef DAP_OS_WINDOWS
-        relative_path = dap_strdup_printf("%s/%s", regGetUsrPath(), dap_get_appname());
-    #elif DAP_OS_MAC
-        relative_path = dap_strdup_printf("/Applications/CellframeNode.app/Contents/Resources");
-    #elif DAP_OS_ANDROID
-        relative_path = dap_strdup_printf("/storage/emulated/0/opt/%s",dap_get_appname());
-    #elif DAP_OS_UNIX
-        relative_path = dap_strdup_printf("/opt/%s", dap_get_appname());
-    #endif
-    }
-
-    optind = 1;
-    return relative_path;
-}
-
 enum dap_log_level dap_log_level_get( void ) {
     return s_dap_log_level ;
 }
