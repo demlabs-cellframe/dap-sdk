@@ -31,10 +31,12 @@
 #include "dap_sign.h"
 #include "dap_enc_base58.h"
 #include "dap_json_rpc_errors.h"
+#include "dap_config.h"
 
 #define LOG_TAG "dap_sign"
 
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
+static bool s_dap_sign_debug_more = false;
 
 /**
  * @brief dap_sign_init
@@ -44,6 +46,7 @@ static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
 int dap_sign_init(uint8_t a_sign_hash_type_default)
 {
     s_sign_hash_type_default = a_sign_hash_type_default;
+    s_dap_sign_debug_more = dap_config_get_item_bool_default(g_config, "sign", "debug_more", false);
     return 0;
 }
 
@@ -465,7 +468,10 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
  */
 size_t dap_sign_get_size(dap_sign_t * a_chain_sign)
 {
-    dap_return_val_if_pass(!a_chain_sign || a_chain_sign->header.type.type == SIG_TYPE_NULL, 0);
+    if (!a_chain_sign || a_chain_sign->header.type.type == SIG_TYPE_NULL) {
+        debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
+        return 0;
+    }
     return (sizeof(dap_sign_t) + a_chain_sign->header.sign_size + a_chain_sign->header.sign_pkey_size);
 }
 
