@@ -1,6 +1,7 @@
 #include "dap_common_test.h"
 
-static void s_test_put_int() {
+static void s_test_put_int()
+{
     dap_print_module_name("dap_common");
     const int INT_VAL = 10;
     const char * EXPECTED_RESULT = "10";
@@ -9,7 +10,9 @@ static void s_test_put_int() {
                "Check string result from itoa");
 }
 
-static void s_test_overflow() {
+static void s_test_overflow()
+{
+    dap_print_module_name("dap_overflow");
     signed char l_signed_char_a = dap_maxval(l_signed_char_a);
     char l_char_a = dap_maxval(l_char_a);
     unsigned char l_unsigned_char_a = dap_maxval(l_unsigned_char_a);
@@ -59,7 +62,17 @@ static void s_test_overflow() {
     dap_assert(l_unsigned_long_long_a == dap_sub(l_unsigned_long_long_a, 1), "Check unsigned long long sub overflow");
 }
 
-void dap_common_test_run() {
+static void s_test_benchmark_overflow(int a_times)
+{
+}
+
+static void s_test_benchmark(int a_times)
+{
+    s_test_benchmark_overflow(a_times);
+}
+void dap_common_test_run()
+{
     s_test_put_int();
     s_test_overflow();
+    s_test_benchmark(1000000);
 }
