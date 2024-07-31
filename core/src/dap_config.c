@@ -482,15 +482,17 @@ const char **dap_config_get_array_str(dap_config_t *a_config, const char *a_sect
         log_it(L_WARNING, "Parameter \"%s\" '%c' is not array", l_item->name, l_item->type);
         if (array_length)
             *array_length = 1;
-        static _Thread_local char* s_ret = NULL;
-        return s_ret = (char*)dap_config_get_item_str(a_config, a_section, a_item_name), &s_ret;
+        static _Thread_local const char* s_ret = NULL;
+        return s_ret = dap_config_get_item_str(a_config, a_section, a_item_name), &s_ret;
     }
     if (array_length)
         *array_length = dap_str_countv(l_item->val.val_arr);
-    return l_item->val.val_arr;
+    return (const char**)l_item->val.val_arr;
 }
 
 char **dap_config_get_item_str_path_array(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length) { 
+    if (!array_length)
+        return NULL;
     const char ** conf_relative = dap_config_get_array_str(a_config, a_section, a_item_name, array_length);
     char ** addrs_relative = DAP_NEW_Z_COUNT(char*, *array_length);
     for (int i = 0; i < *array_length; ++i)
@@ -499,6 +501,8 @@ char **dap_config_get_item_str_path_array(dap_config_t *a_config, const char *a_
 }
 
 void dap_config_get_item_str_path_array_free(char **paths_array, uint16_t *array_length) {
+    if (!array_length)
+        return;
     for (int i = 0; i < *array_length; ++i)
         DAP_DEL_Z(paths_array[0]);
     DAP_DEL_Z(paths_array);
