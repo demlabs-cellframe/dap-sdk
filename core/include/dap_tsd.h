@@ -48,6 +48,13 @@ dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type
 #define dap_tsd_get_string(a)  ( ((char*) a->data )[a->size-1] == '\0'? (char*) a->data  : DAP_TSD_CORRUPTED_STRING )
 #define dap_tsd_get_string_const(a)  ( ((const char*) a->data )[a->size-1] == '\0'? (const char*) a->data : DAP_TSD_CORRUPTED_STRING )
 
-#define dap_tsd_size(a) (sizeof(*a)+(size_t)a->size)
+#define dap_tsd_size(a) (sizeof(*(a))+(size_t)(a)->size)
 
 #define dap_tsd_size_check(a, offset, total_size) ( (total_size - offset) >= dap_tsd_size(a) )
+
+#define dap_tsd_iter(iter, iter_size, data, size)                                                                                           \
+    for (   byte_t *l_pos = (data), *l_end = l_pos + (size) > l_pos ? l_pos + (size) : l_pos;                                               \
+            !!(iter = l_pos < l_end - sizeof(dap_tsd_t) && (iter_size = dap_tsd_size((dap_tsd_t*)l_pos)) > 0 && l_pos <= l_end - iter_size  \
+                ? (dap_tsd_t*)l_pos : NULL);                                                                                                \
+            l_pos += iter_size                                                                                                              \
+        )

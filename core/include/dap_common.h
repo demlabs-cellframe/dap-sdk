@@ -236,6 +236,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_REALLOC(p, s)     ({ size_t s1 = (size_t)(s); s1 > 0 ? realloc(p, s1) : ({ DAP_DEL_Z(p); DAP_CAST_PTR(void, NULL); }); })
 #define DAP_REALLOC_COUNT(p, c) ({ size_t s1 = sizeof(*(p)); size_t c1 = (size_t)(c); c1 > 0 ? realloc(p, c1 * s1) : ({ DAP_DEL_Z(p); DAP_CAST_PTR(void, NULL); }); })
 #define DAP_DELETE(p)         free((void*)(p))
+#define DAP_DELETE_COUNT(p,c) for (size_t c1 = p ? (size_t)(c) : 0; c1; DAP_DELETE(p[--c1]));
 #define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? calloc(1, sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : DAP_CAST_PTR(void, NULL); })
 #define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (p) ? (size_t)(s) : 0; void *p1 = (p) && (s1 > 0) ? calloc(1, s1) : NULL; p1 ? memcpy(p1, (p), s1) : DAP_CAST_PTR(void, NULL); })
 #endif
@@ -244,7 +245,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define VA_NARGS(...) VA_NARGS_IMPL(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 #define DAP_DEL_MULTY(...) dap_delete_multy(VA_NARGS(__VA_ARGS__), __VA_ARGS__)
 
-#define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
+#define DAP_DEL_Z(a)          do { DAP_DELETE(a); (a) = NULL; } while (0);
 // a - pointer to alloc
 // t - type return pointer
 // s - size to alloc
