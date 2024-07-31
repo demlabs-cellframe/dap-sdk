@@ -25,6 +25,7 @@
 #include <pthread.h>
 #include "dap_common.h"
 #include "dap_events_socket.h"
+#include "dap_events.h"
 
 typedef struct dap_context dap_context_t;
 typedef struct dap_timerfd dap_timerfd_t;
@@ -88,6 +89,7 @@ void dap_worker_deinit();
 static inline dap_worker_t * dap_worker_get_current(){
     return (dap_worker_t*) pthread_getspecific(g_pth_key_worker);
 }
+#define dap_worker_get_auto dap_events_worker_get_auto
 
 int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socket_t *a_esocket);
 void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket);
