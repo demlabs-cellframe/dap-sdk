@@ -70,6 +70,7 @@ if(BUILD_DAP_TESTS)
     enable_testing()
     add_definitions("-DDAP_NETWORK_MONITOR_TEST_OFF")
     add_subdirectory(test)
+    add_definitions ("-DDAP_CORE_TESTS")
 endif()
 
 if(INSTALL_DAP_SDK)

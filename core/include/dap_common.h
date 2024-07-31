@@ -543,40 +543,59 @@ extern "C" {
 
 #define dap_is_signed(v) ( dap_minval(v) < 0 )
 
-#if defined (__GNUC__) || defined (__clang__)
-#define dap_add(a,b)                                    \
-({                                                      \
-    __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-    __builtin_add_overflow_p(_a,_b,_a) ? _a : (_a + _b);\
-})
+#if !defined (DAP_CORE_TESTS) && (defined (__GNUC__) || defined (__clang__))
+    #define dap_add(a,b)                                    \
+    ({                                                      \
+        __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+        __builtin_add_overflow_p(_a,_b,_a) ? _a : (_a + _b);\
+    })
 
-#define dap_sub(a,b)                                    \
-({                                                      \
-    __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-    __builtin_sub_overflow_p(_a,_b,_a) ? _a : (_a - _b);\
-})
+    #define dap_sub(a,b)                                    \
+    ({                                                      \
+        __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+        __builtin_sub_overflow_p(_a,_b,_a) ? _a : (_a - _b);\
+    })
 
-#define dap_mul(a,b)                                    \
-({                                                      \
-    __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
-    __builtin_mul_overflow_p(_a,_b,_a) ? _a : (_a * _b);\
-})
+    #define dap_mul(a,b)                                    \
+    ({                                                      \
+        __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+        __builtin_mul_overflow_p(_a,_b,_a) ? _a : (_a * _b);\
+    })
 #else
-#define dap_add(a,b)                                \
-({                                                  \
-    __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
-    _b > 0 && ( _a >= 0 && _b < dap_maxval(_a) - _a || _a < 0 && _b < dap_maxuval(_a) + _a )\
-        ? _a + _b : _a;                             \
-})
+    #ifdef DAP_CORE_TESTS
+        #define dap_add_builtin(a,b)                                    \
+        ({                                                      \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+            __builtin_add_overflow_p(_a,_b,_a) ? _a : (_a + _b);\
+        })
 
-#define dap_sub(a,b)                                \
-({                                                  \
-    __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
-    _b > 0 && ( !dap_is_signed(_a) && _b <= _a || dap_is_signed(_a) && _a >= 0 && _b < dap_maxuval(_a) - _a || _a < 0 && _b < -(dap_minval(_a) - _a) )\
-        ? _a - _b : _a;                             \
-})
+        #define dap_sub_builtin(a,b)                                    \
+        ({                                                      \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+            __builtin_sub_overflow_p(_a,_b,_a) ? _a : (_a - _b);\
+        })
 
-#define dap_mul(a,b) a*b // TODO!
+        #define dap_mul_builtin(a,b)                                    \
+        ({                                                      \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+            __builtin_mul_overflow_p(_a,_b,_a) ? _a : (_a * _b);\
+        })
+    #endif
+    #define dap_add(a,b)                                \
+    ({                                                  \
+        __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
+        _b > 0 && ( _a >= 0 && _b < dap_maxval(_a) - _a || _a < 0 && _b < dap_maxuval(_a) + _a )\
+            ? _a + _b : _a;                             \
+    })
+
+    #define dap_sub(a,b)                                \
+    ({                                                  \
+        __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
+        _b > 0 && ( !dap_is_signed(_a) && _b <= _a || dap_is_signed(_a) && _a >= 0 && _b < dap_maxuval(_a) - _a || _a < 0 && _b < -(dap_minval(_a) - _a) )\
+            ? _a - _b : _a;                             \
+    })
+
+    #define dap_mul(a,b) a*b // TODO!
 #endif
 
 

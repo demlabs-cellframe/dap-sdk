@@ -1,6 +1,7 @@
 #include "dap_common_test.h"
 
-void test_put_int() {
+static void s_test_put_int() {
+    dap_print_module_name("dap_common");
     const int INT_VAL = 10;
     const char * EXPECTED_RESULT = "10";
     char * result_arr = dap_itoa(INT_VAL);
@@ -8,7 +9,11 @@ void test_put_int() {
                "Check string result from itoa");
 }
 
+static void s_test_overflow() {
+
+}
+
 void dap_common_test_run() {
-    dap_print_module_name("dap_common");
-    test_put_int();
+    s_test_put_int();
+    s_test_overflow();
 }
