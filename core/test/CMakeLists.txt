@@ -17,47 +17,15 @@ endif()
 add_executable(${PROJECT_NAME} ${SRCS} ${PLATROFM_DEP_SRC})  
 target_link_libraries(core_test dap_test dap_core pthread)
 
+if (DAP_USE_RPMALLOC)
 add_executable(rpmalloc_test
-  rpmalloc/test/main.c 
-  rpmalloc/test/thread.c
-  rpmalloc/test/timer.c
+  ../../3rdparty/rpmalloc/test/test.h
+  ../../3rdparty/rpmalloc/test/thread.h 
+  ../../3rdparty/rpmalloc/test/thread.c
+  ../../3rdparty/rpmalloc/test/main.c
 )
-target_link_libraries(rpmalloc_test dap_core pthread)
-target_include_directories(rpmalloc_test PRIVATE rpmalloc/test/)
-
-add_executable(rpmalloc_bench
-  rpmalloc/benchmark/main.c 
-  rpmalloc/benchmark/benchmark.c
-  rpmalloc/test/thread.c
-  rpmalloc/test/timer.c
-)
-if(WIN32)
-	target_link_libraries(rpmalloc_bench dap_core m pthread ntdll psapi shlwapi)
-endif()
-if(UNIX)
-	target_link_libraries(rpmalloc_bench dap_core m pthread)
-endif()
-	target_include_directories(rpmalloc_bench PRIVATE rpmalloc/benchmark/ rpmalloc/test/)
-
-add_executable(crtmalloc_bench
-  rpmalloc/benchmark/main.c 
-  rpmalloc/benchmark/crt_benchmark.c
-  rpmalloc/test/thread.c
-  rpmalloc/test/timer.c
-)
-if(WIN32)
-	target_link_libraries(crtmalloc_bench dap_core m pthread ntdll psapi shlwapi)
-endif()
-if(UNIX)
-	target_link_libraries(crtmalloc_bench dap_core m pthread)
-endif()
-target_include_directories(crtmalloc_bench PRIVATE rpmalloc/benchmark/ rpmalloc/test/)
-
-add_test(
-    NAME core-test
-    COMMAND core_test
-)
-
+target_link_libraries(rpmalloc_test dap_core m pthread dl)
+target_include_directories(rpmalloc_test PRIVATE ../../3rdparty/rpmalloc/test)
 if (NOT PLATFORM_ARM AND VERSION MATCHES "7l")
     add_test(
         NAME rpm-test
@@ -65,7 +33,13 @@ if (NOT PLATFORM_ARM AND VERSION MATCHES "7l")
     )
 else()
     message("[-] Disable rpm test")
-endif ()
+endif()
+endif(DAP_USE_RPMALLOC)
+
+add_test(
+    NAME core-test
+    COMMAND core_test
+)
 
 if(UNIX)
     target_include_directories(${PROJECT_NAME} PRIVATE unix)

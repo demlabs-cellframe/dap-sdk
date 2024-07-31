@@ -502,7 +502,7 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
             l_signs_count += l_realloc_count;
             ret = DAP_REALLOC_COUNT(ret, l_signs_count);
             if (!ret) {
-                log_it(L_CRITICAL, c_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 return NULL;
             }
         }
