@@ -584,17 +584,15 @@ extern "C" {
     #define dap_add(a,b)                                \
     ({                                                  \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
-        _b > 0 && ( _a >= 0 && _b < dap_maxval(_a) - _a || _a < 0 && _b < dap_maxuval(_a) + _a )\
-            ? _a + _b : _a;                             \
+        ((_b > 0 && _a > dap_maxval(_a) - _a) || (_b < 0 && _a < dap_minval(_a) - _a))\
+            ? _a : (_a + _b);                             \
     })
-
     #define dap_sub(a,b)                                \
     ({                                                  \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
-        _b > 0 && ( !dap_is_signed(_a) && _b <= _a || dap_is_signed(_a) && _a >= 0 && _b < dap_maxuval(_a) - _a || _a < 0 && _b < -(dap_minval(_a) - _a) )\
-            ? _a - _b : _a;                             \
+        ((_b < 0 && _a > dap_maxval(_a) + _b) || (_b > 0 && _a < dap_minval(_a) + _b))\
+            ? _a : (_a - _b);                      \
     })
-
     #define dap_mul(a,b) a*b // TODO!
 #endif
 
