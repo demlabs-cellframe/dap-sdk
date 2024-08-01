@@ -584,7 +584,7 @@ extern "C" {
     #define dap_add(a,b)                                \
     ({                                                  \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
-        ((_b > 0 && _a > dap_maxval(_a) - _a) || (_b < 0 && _a < dap_minval(_a) - _a))\
+        ((_b > 0 && _a > dap_maxval(_a) - _b) || (_b < 0 && _a < dap_minval(_a) - _b))\
             ? _a : (_a + _b);                             \
     })
     #define dap_sub(a,b)                                \
