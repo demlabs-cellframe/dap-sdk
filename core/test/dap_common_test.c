@@ -253,8 +253,218 @@ static void s_test_overflow()
         "Check unsigned long long MUL overflow");
 }
 
-static void s_test_benchmark_overflow(int a_times)
+static void s_test_benchmark_overflow_add(long a_times)
 {
+    dap_print_module_name("dap_benchmark_overflow_add");
+    char l_char_a = dap_maxval(l_char_a);
+    long long l_long_long_a = dap_maxval(l_long_long_a);
+    unsigned char l_unsigned_char_a = dap_maxval(l_unsigned_char_a);
+    unsigned long long l_unsigned_long_long_a = dap_maxval(l_unsigned_long_long_a);
+    
+    char l_msg[120] = {0};
+    int l_cur_1 = 0, l_cur_2 = 0, l_builtin = 0;
+
+
+    l_cur_1 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_add(l_char_a, (char)1);
+    l_cur_2 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_add_builtin(l_char_a, (char)1);
+    l_builtin = get_cur_time_msec();
+
+    sprintf(l_msg, "Check overflow %d times to custom char", a_times);
+    benchmark_mgs_time(l_msg, l_cur_2 - l_cur_1);
+    sprintf(l_msg, "Check overflow %d times to __builtin char", a_times);
+    benchmark_mgs_time(l_msg, l_builtin - l_cur_2);
+
+
+    l_cur_1 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_add(l_long_long_a, (long long)1);
+    l_cur_2 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_add_builtin(l_long_long_a, (long long)1);
+    l_builtin = get_cur_time_msec();
+
+    sprintf(l_msg, "Check overflow %d times to custom long long", a_times);
+    benchmark_mgs_time(l_msg, l_cur_2 - l_cur_1);
+    sprintf(l_msg, "Check overflow %d times to __builtin long long", a_times);
+    benchmark_mgs_time(l_msg, l_builtin - l_cur_2);
+
+
+    l_cur_1 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_add(l_unsigned_char_a, (unsigned char)1);
+    l_cur_2 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_add_builtin(l_unsigned_char_a, (unsigned char)1);
+    l_builtin = get_cur_time_msec();
+
+    sprintf(l_msg, "Check overflow %d times to custom  unsigned char", a_times);
+    benchmark_mgs_time(l_msg, l_cur_2 - l_cur_1);
+    sprintf(l_msg, "Check overflow %d times to __builtin unsigned char", a_times);
+    benchmark_mgs_time(l_msg, l_builtin - l_cur_2);
+
+
+    l_cur_1 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_add(l_unsigned_long_long_a, (unsigned long long)1);
+    l_cur_2 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_add_builtin(l_unsigned_long_long_a, (unsigned long long)1);
+    l_builtin = get_cur_time_msec();
+
+    sprintf(l_msg, "Check overflow %d times to custom unsigned long long", a_times);
+    benchmark_mgs_time(l_msg, l_cur_2 - l_cur_1);
+    sprintf(l_msg, "Check overflow %d times to __builtin unsigned long long", a_times);
+    benchmark_mgs_time(l_msg, l_builtin - l_cur_2);
+
+}
+
+static void s_test_benchmark_overflow_sub(long a_times)
+{
+    dap_print_module_name("dap_benchmark_overflow_sub");
+    char l_char_a = dap_minval(l_char_a);
+    long long l_long_long_a = dap_minval(l_long_long_a);
+    unsigned char l_unsigned_char_a = dap_minval(l_unsigned_char_a);
+    unsigned long long l_unsigned_long_long_a = dap_minval(l_unsigned_long_long_a);
+    
+    char l_msg[120] = {0};
+    int l_cur_1 = 0, l_cur_2 = 0, l_builtin = 0;
+
+
+    l_cur_1 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_sub(l_char_a, (char)1);
+    l_cur_2 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_sub_builtin(l_char_a, (char)1);
+    l_builtin = get_cur_time_msec();
+
+    sprintf(l_msg, "Check overflow %d times to custom char", a_times);
+    benchmark_mgs_time(l_msg, l_cur_2 - l_cur_1);
+    sprintf(l_msg, "Check overflow %d times to __builtin char", a_times);
+    benchmark_mgs_time(l_msg, l_builtin - l_cur_2);
+
+
+    l_cur_1 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_sub(l_long_long_a, (long long)1);
+    l_cur_2 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_sub_builtin(l_long_long_a, (long long)1);
+    l_builtin = get_cur_time_msec();
+
+    sprintf(l_msg, "Check overflow %d times to custom long long", a_times);
+    benchmark_mgs_time(l_msg, l_cur_2 - l_cur_1);
+    sprintf(l_msg, "Check overflow %d times to __builtin long long", a_times);
+    benchmark_mgs_time(l_msg, l_builtin - l_cur_2);
+
+
+    l_cur_1 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_sub(l_unsigned_char_a, (unsigned char)1);
+    l_cur_2 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_sub_builtin(l_unsigned_char_a, (unsigned char)1);
+    l_builtin = get_cur_time_msec();
+
+    sprintf(l_msg, "Check overflow %d times to custom  unsigned char", a_times);
+    benchmark_mgs_time(l_msg, l_cur_2 - l_cur_1);
+    sprintf(l_msg, "Check overflow %d times to __builtin unsigned char", a_times);
+    benchmark_mgs_time(l_msg, l_builtin - l_cur_2);
+
+
+    l_cur_1 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_sub(l_unsigned_long_long_a, (unsigned long long)1);
+    l_cur_2 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_sub_builtin(l_unsigned_long_long_a, (unsigned long long)1);
+    l_builtin = get_cur_time_msec();
+
+    sprintf(l_msg, "Check overflow %d times to custom unsigned long long", a_times);
+    benchmark_mgs_time(l_msg, l_cur_2 - l_cur_1);
+    sprintf(l_msg, "Check overflow %d times to __builtin unsigned long long", a_times);
+    benchmark_mgs_time(l_msg, l_builtin - l_cur_2);
+
+}
+
+static void s_test_benchmark_overflow_mul(long a_times)
+{
+    dap_print_module_name("dap_benchmark_overflow_mul");
+    char l_char_a = dap_maxval(l_char_a) / 2 + 1;
+    long long l_long_long_a = dap_maxval(l_long_long_a) / 2 + 1;
+    unsigned char l_unsigned_char_a = dap_maxval(l_unsigned_char_a) / 2 + 1;
+    unsigned long long l_unsigned_long_long_a = dap_maxval(l_unsigned_long_long_a) / 2 + 1;
+    
+    char l_msg[120] = {0};
+    int l_cur_1 = 0, l_cur_2 = 0, l_builtin = 0;
+
+
+    l_cur_1 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_mul(l_char_a, (char)2);
+    l_cur_2 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_mul_builtin(l_char_a, (char)2);
+    l_builtin = get_cur_time_msec();
+
+    sprintf(l_msg, "Check overflow %d times to custom char", a_times);
+    benchmark_mgs_time(l_msg, l_cur_2 - l_cur_1);
+    sprintf(l_msg, "Check overflow %d times to __builtin char", a_times);
+    benchmark_mgs_time(l_msg, l_builtin - l_cur_2);
+
+
+    l_cur_1 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_mul(l_long_long_a, (long long)2);
+    l_cur_2 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_mul_builtin(l_long_long_a, (long long)2);
+    l_builtin = get_cur_time_msec();
+
+    sprintf(l_msg, "Check overflow %d times to custom long long", a_times);
+    benchmark_mgs_time(l_msg, l_cur_2 - l_cur_1);
+    sprintf(l_msg, "Check overflow %d times to __builtin long long", a_times);
+    benchmark_mgs_time(l_msg, l_builtin - l_cur_2);
+
+
+    l_cur_1 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_mul(l_unsigned_char_a, (unsigned char)2);
+    l_cur_2 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_mul_builtin(l_unsigned_char_a, (unsigned char)2);
+    l_builtin = get_cur_time_msec();
+
+    sprintf(l_msg, "Check overflow %d times to custom  unsigned char", a_times);
+    benchmark_mgs_time(l_msg, l_cur_2 - l_cur_1);
+    sprintf(l_msg, "Check overflow %d times to __builtin unsigned char", a_times);
+    benchmark_mgs_time(l_msg, l_builtin - l_cur_2);
+
+
+    l_cur_1 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_mul(l_unsigned_long_long_a, (unsigned long long)2);
+    l_cur_2 = get_cur_time_msec();
+    for (long i = 0; i < a_times; ++i)
+        dap_mul_builtin(l_unsigned_long_long_a, (unsigned long long)2);
+    l_builtin = get_cur_time_msec();
+
+    sprintf(l_msg, "Check overflow %d times to custom unsigned long long", a_times);
+    benchmark_mgs_time(l_msg, l_cur_2 - l_cur_1);
+    sprintf(l_msg, "Check overflow %d times to __builtin unsigned long long", a_times);
+    benchmark_mgs_time(l_msg, l_builtin - l_cur_2);
+
+}
+
+static void s_test_benchmark_overflow(long a_times)
+{
+    s_test_benchmark_overflow_add(a_times);
+    s_test_benchmark_overflow_sub(a_times);
+    s_test_benchmark_overflow_mul(a_times);
 }
 
 static void s_test_benchmark(int a_times)
@@ -265,5 +475,5 @@ void dap_common_test_run()
 {
     s_test_put_int();
     s_test_overflow();
-    s_test_benchmark(1000000);
+    s_test_benchmark(100);
 }
