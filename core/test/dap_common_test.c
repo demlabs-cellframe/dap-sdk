@@ -24,11 +24,7 @@ static void s_test_overflow()
     unsigned int l_unsigned_int_a = dap_maxval(l_unsigned_int_a);
     unsigned long l_unsigned_long_a = dap_maxval(l_unsigned_long_a);
     unsigned long long l_unsigned_long_long_a = dap_maxval(l_unsigned_long_long_a);
-
-#ifdef DAP_CORE_TESTS
-    int q = 1;
-#endif
-    q++;
+// ADD
     dap_assert(
         l_char_a == dap_add(l_char_a, (char)1) &&
         l_char_a == dap_add_builtin(l_char_a, (char)1) &&
@@ -64,19 +60,18 @@ static void s_test_overflow()
     dap_assert(l_unsigned_long_a == dap_add(l_unsigned_long_a, (unsigned long)1) && l_unsigned_long_a == dap_add_builtin(l_unsigned_long_a, (unsigned long)1), "Check unsigned long ADD overflow");
     dap_assert(l_unsigned_long_long_a == dap_add(l_unsigned_long_long_a, (unsigned long long)1) && l_unsigned_long_long_a == dap_add_builtin(l_unsigned_long_long_a, (unsigned long long)1), "Check unsigned long long ADD overflow");
 
-    l_signed_char_a = dap_minval(l_signed_char_a);
     l_char_a = dap_minval(l_char_a);
-    l_unsigned_char_a = dap_minval(l_unsigned_char_a);
     l_short_a = dap_minval(l_short_a);
-    l_unsigned_short_a = dap_minval(l_unsigned_short_a);
     l_int_a = dap_minval(l_int_a);
-    l_unsigned_int_a = dap_minval(l_unsigned_int_a);
     l_long_a = dap_minval(l_long_a);
-    l_unsigned_long_a = dap_minval(l_unsigned_long_a);
     l_long_long_a = dap_minval(l_long_long_a);
+    l_signed_char_a = dap_minval(l_signed_char_a);
+    l_unsigned_char_a = dap_minval(l_unsigned_char_a);
+    l_unsigned_short_a = dap_minval(l_unsigned_short_a);
+    l_unsigned_int_a = dap_minval(l_unsigned_int_a);
+    l_unsigned_long_a = dap_minval(l_unsigned_long_a);
     l_unsigned_long_long_a = dap_minval(l_unsigned_long_long_a);
 
-    printf("%d %d %d %d\n", dap_sub(l_char_a, (char)1), dap_sub_builtin(l_char_a, (char)1), dap_sub(l_char_a, (char)-1), dap_sub_builtin(l_char_a, (char)-1));
     dap_assert(
         l_char_a == dap_sub(l_char_a, (char)1) &&
         l_char_a == dap_sub_builtin(l_char_a, (char)1) &&
@@ -89,7 +84,8 @@ static void s_test_overflow()
         "Check short SUB overflow");
     dap_assert(
         l_int_a == dap_sub(l_int_a, (int)1) &&
-        l_int_a == dap_sub_builtin(l_int_a, (int)1),
+        l_int_a == dap_sub_builtin(l_int_a, (int)1) &&
+        dap_sub(l_int_a, (int)-1) == dap_sub_builtin(l_int_a, (int)-1),
         "Check int SUB overflow");
     dap_assert(
         l_long_a == dap_sub(l_long_a, (long)1) &&
@@ -112,8 +108,149 @@ static void s_test_overflow()
     dap_assert(l_unsigned_long_a == dap_sub(l_unsigned_long_a, (unsigned long)1) && l_unsigned_long_a == dap_sub_builtin(l_unsigned_long_a, (unsigned long)1), "Check unsigned long SUB overflow");
     dap_assert(l_unsigned_long_long_a == dap_sub(l_unsigned_long_long_a, (unsigned long long)1) && l_unsigned_long_long_a == dap_sub_builtin(l_unsigned_long_long_a, (unsigned long long)1), "Check unsigned long long SUB overflow");
 
+// MUL
+    l_char_a = dap_maxval(l_char_a) / 3 + 1;
+    l_short_a = dap_maxval(l_short_a) / 3 + 1;
+    l_int_a = dap_maxval(l_int_a) / 3 + 1;
+    l_long_a = dap_maxval(l_long_a) / 3 + 1;
+    l_long_long_a = dap_maxval(l_long_long_a) / 3 + 1;
+    l_signed_char_a = dap_maxval(l_signed_char_a) / 3 + 1;
+    l_unsigned_char_a = dap_maxval(l_unsigned_char_a) / 3 + 1;
+    l_unsigned_short_a = dap_maxval(l_unsigned_short_a) / 3 + 1;
+    l_unsigned_int_a = dap_maxval(l_unsigned_int_a) / 3 + 1;
+    l_unsigned_long_a = dap_maxval(l_unsigned_long_a) / 3 + 1;
+    l_unsigned_long_long_a = dap_maxval(l_unsigned_long_long_a) / 3 + 1;
+    // signed
+    dap_assert(
+        0 == dap_mul(l_char_a, (char)0) &&
+        l_char_a == dap_mul(l_char_a, (char)1) &&
+        l_char_a * 2 == dap_mul(l_char_a, (char)2) &&
+        l_char_a == dap_mul(l_char_a, (char)3) &&
+        0 == dap_mul_builtin(l_char_a, (char)0) &&
+        l_char_a == dap_mul_builtin(l_char_a, (char)1) &&
+        l_char_a * 2 == dap_mul_builtin(l_char_a, (char)2) &&
+        l_char_a == dap_mul_builtin(l_char_a, (char)3) &&
+        dap_mul(l_char_a, (char)-1) == dap_mul_builtin(l_char_a, (char)-1) &&
+        dap_mul(l_char_a, (char)-2) == dap_mul_builtin(l_char_a, (char)-2) &&
+        dap_mul(l_char_a, (char)-3) == dap_mul_builtin(l_char_a, (char)-3),
+        "Check char MUL overflow");
+    dap_assert(
+        0 == dap_mul(l_short_a, (short)0) &&
+        l_short_a == dap_mul(l_short_a, (short)1) &&
+        l_short_a * 2 == dap_mul(l_short_a, (short)2) &&
+        l_short_a == dap_mul(l_short_a, (short)3) && 
+        0 == dap_mul_builtin(l_short_a, (short)0) && 
+        l_short_a == dap_mul_builtin(l_short_a, (short)1) && 
+        l_short_a * 2 == dap_mul_builtin(l_short_a, (short)2) && 
+        l_short_a == dap_mul_builtin(l_short_a, (short)3) && 
+        dap_mul(l_short_a, (short)-1) == dap_mul_builtin(l_short_a, (short)-1) && 
+        dap_mul(l_short_a, (short)-2) == dap_mul_builtin(l_short_a, (short)-2) &&
+        dap_mul(l_short_a, (short)-3) == dap_mul_builtin(l_short_a, (short)-3), 
+        "Check short MUL overflow");
+    dap_assert(
+        0 == dap_mul(l_int_a, (int)0) &&
+        l_int_a == dap_mul(l_int_a, (int)1) &&
+        l_int_a * 2 == dap_mul(l_int_a, (int)2) &&
+        l_int_a == dap_mul(l_int_a, (int)3) &&
+        0 == dap_mul_builtin(l_int_a, (int)0) &&
+        l_int_a == dap_mul_builtin(l_int_a, (int)1) &&
+        l_int_a * 2 == dap_mul_builtin(l_int_a, (int)2) &&
+        l_int_a == dap_mul_builtin(l_int_a, (int)3) &&
+        dap_mul(l_int_a, (int)-1) == dap_mul_builtin(l_int_a, (int)-1) &&
+        dap_mul(l_int_a, (int)-2) == dap_mul_builtin(l_int_a, (int)-2) &&
+        dap_mul(l_int_a, (int)-3) == dap_mul_builtin(l_int_a, (int)-3),
+        "Check int MUL overflow");
+    dap_assert(
+        0 == dap_mul(l_long_a, (long)0) &&
+        l_long_a == dap_mul(l_long_a, (long)1) &&
+        l_long_a * 2== dap_mul(l_long_a, (long)2) &&
+        l_long_a == dap_mul(l_long_a, (long)3) &&
+        0 == dap_mul_builtin(l_long_a, (long)0) &&
+        l_long_a == dap_mul_builtin(l_long_a, (long)1) &&
+        l_long_a * 2== dap_mul_builtin(l_long_a, (long)2) &&
+        l_long_a == dap_mul_builtin(l_long_a, (long)3) &&
+        dap_mul(l_long_a, (long)-1) == dap_mul_builtin(l_long_a, (long)-1) &&
+        dap_mul(l_long_a, (long)-2) == dap_mul_builtin(l_long_a, (long)-2) &&
+        dap_mul(l_long_a, (long)-3) == dap_mul_builtin(l_long_a, (long)-3),
+        "Check long MUL overflow");
+    dap_assert(
+        0 == dap_mul(l_long_long_a, (long long)0) &&
+        l_long_long_a == dap_mul(l_long_long_a, (long long)1) &&
+        l_long_long_a * 2 == dap_mul(l_long_long_a, (long long)2) &&
+        l_long_long_a == dap_mul(l_long_long_a, (long long)3) &&
+        0 == dap_mul_builtin(l_long_long_a, (long long)0) &&
+        l_long_long_a == dap_mul_builtin(l_long_long_a, (long long)1) &&
+        l_long_long_a * 2 == dap_mul_builtin(l_long_long_a, (long long)2) &&
+        l_long_long_a == dap_mul_builtin(l_long_long_a, (long long)3) &&
+        dap_mul(l_long_long_a, (long long)-1) == dap_mul_builtin(l_long_long_a, (long long)-1) &&
+        dap_mul(l_long_long_a, (long long)-2) == dap_mul_builtin(l_long_long_a, (long long)-2) &&
+        dap_mul(l_long_long_a, (long long)-3) == dap_mul_builtin(l_long_long_a, (long long)-3),
+        "Check long long MUL overflow");
+    dap_assert(
+        0 == dap_mul(l_signed_char_a, (signed char)0) &&
+        l_signed_char_a == dap_mul(l_signed_char_a, (signed char)1) &&
+        l_signed_char_a * 2== dap_mul(l_signed_char_a, (signed char)2) &&
+        l_signed_char_a == dap_mul(l_signed_char_a, (signed char)3) &&
+        0 == dap_mul_builtin(l_signed_char_a, (signed char)0) &&
+        l_signed_char_a == dap_mul_builtin(l_signed_char_a, (signed char)1) &&
+        l_signed_char_a * 2 == dap_mul_builtin(l_signed_char_a, (signed char)2) &&
+        l_signed_char_a == dap_mul_builtin(l_signed_char_a, (signed char)3) &&
+        dap_mul(l_signed_char_a, (signed char)-1) == dap_mul_builtin(l_signed_char_a, (signed char)-1) &&
+        dap_mul(l_signed_char_a, (signed char)-2) == dap_mul_builtin(l_signed_char_a, (signed char)-2) &&
+        dap_mul(l_signed_char_a, (signed char)-3) == dap_mul_builtin(l_signed_char_a, (signed char)-3),
+        "Check signed char MUL overflow");
 
-
+    // unsigned
+    dap_assert(
+        0 == dap_mul(l_unsigned_char_a, (unsigned char)0) &&
+        l_unsigned_char_a == dap_mul(l_unsigned_char_a, (unsigned char)1) &&
+        l_unsigned_char_a * 2== dap_mul(l_unsigned_char_a, (unsigned char)2) &&
+        l_unsigned_char_a == dap_mul(l_unsigned_char_a, (unsigned char)3) &&
+        0 == dap_mul_builtin(l_unsigned_char_a, (unsigned char)0) &&
+        l_unsigned_char_a == dap_mul_builtin(l_unsigned_char_a, (unsigned char)1) &&
+        l_unsigned_char_a * 2 == dap_mul_builtin(l_unsigned_char_a, (unsigned char)2) &&
+        l_unsigned_char_a == dap_mul_builtin(l_unsigned_char_a, (unsigned char)3),
+        "Check unsigned char MUL overflow");
+    dap_assert(
+        0 == dap_mul(l_unsigned_short_a, (unsigned short)0) &&
+        l_unsigned_short_a == dap_mul(l_unsigned_short_a, (unsigned short)1) &&
+        l_unsigned_short_a * 2== dap_mul(l_unsigned_short_a, (unsigned short)2) &&
+        l_unsigned_short_a == dap_mul(l_unsigned_short_a, (unsigned short)3) &&
+        0 == dap_mul_builtin(l_unsigned_short_a, (unsigned short)0) &&
+        l_unsigned_short_a == dap_mul_builtin(l_unsigned_short_a, (unsigned short)1) &&
+        l_unsigned_short_a * 2 == dap_mul_builtin(l_unsigned_short_a, (unsigned short)2) &&
+        l_unsigned_short_a == dap_mul_builtin(l_unsigned_short_a, (unsigned short)3),
+        "Check unsigned short MUL overflow");
+    dap_assert(
+        0 == dap_mul(l_unsigned_int_a, (unsigned int)0) &&
+        l_unsigned_int_a == dap_mul(l_unsigned_int_a, (unsigned int)1) &&
+        l_unsigned_int_a * 2 == dap_mul(l_unsigned_int_a, (unsigned int)2) &&
+        l_unsigned_int_a == dap_mul(l_unsigned_int_a, (unsigned int)3) &&
+        0 == dap_mul_builtin(l_unsigned_int_a, (unsigned int)0) &&
+        l_unsigned_int_a == dap_mul_builtin(l_unsigned_int_a, (unsigned int)1) &&
+        l_unsigned_int_a * 2 == dap_mul_builtin(l_unsigned_int_a, (unsigned int)2) &&
+        l_unsigned_int_a == dap_mul_builtin(l_unsigned_int_a, (unsigned int)3),
+        "Check unsigned int MUL overflow");
+    dap_assert(
+        0 == dap_mul(l_unsigned_long_a, (unsigned long)0) &&
+        l_unsigned_long_a == dap_mul(l_unsigned_long_a, (unsigned long)1) &&
+        l_unsigned_long_a * 2 == dap_mul(l_unsigned_long_a, (unsigned long)2) &&
+        l_unsigned_long_a == dap_mul(l_unsigned_long_a, (unsigned long)3) &&
+        0 == dap_mul_builtin(l_unsigned_long_a, (unsigned long)0) &&
+        l_unsigned_long_a == dap_mul_builtin(l_unsigned_long_a, (unsigned long)1) &&
+        l_unsigned_long_a * 2 == dap_mul_builtin(l_unsigned_long_a, (unsigned long)2) &&
+        l_unsigned_long_a == dap_mul_builtin(l_unsigned_long_a, (unsigned long)3),
+        "Check unsigned long MUL overflow");
+    dap_assert(
+        0 == dap_mul(l_unsigned_long_long_a, (unsigned long long)0) &&
+        l_unsigned_long_long_a == dap_mul(l_unsigned_long_long_a, (unsigned long long)1) &&
+        l_unsigned_long_long_a * 2 == dap_mul(l_unsigned_long_long_a, (unsigned long long)2) &&
+        l_unsigned_long_long_a == dap_mul(l_unsigned_long_long_a, (unsigned long long)3) &&
+        0 == dap_mul_builtin(l_unsigned_long_long_a, (unsigned long long)0) &&
+        l_unsigned_long_long_a == dap_mul_builtin(l_unsigned_long_long_a, (unsigned long long)1) &&
+        l_unsigned_long_long_a * 2 == dap_mul_builtin(l_unsigned_long_long_a, (unsigned long long)2) &&
+        l_unsigned_long_long_a == dap_mul_builtin(l_unsigned_long_long_a, (unsigned long long)3),
+        "Check unsigned long long MUL overflow");
 }
 
 static void s_test_benchmark_overflow(int a_times)

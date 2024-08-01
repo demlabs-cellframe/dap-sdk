@@ -593,7 +593,17 @@ extern "C" {
         ((_b < 0 && _a > dap_maxval(_a) + _b) || (_b > 0 && _a < dap_minval(_a) + _b))\
             ? _a : (_a - _b);                      \
     })
-    #define dap_mul(a,b) a*b // TODO!
+    #define dap_mul(a,b)                                \
+    ({                                                  \
+        __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
+        ( \
+            /*_a positive*/\
+            (_a > 0 && ((_b > 0 && _a > dap_maxval(_a) / _b) || _b < dap_minval(_a) / _a)) || \
+            /*_a negative*/\
+            (_a <= 0 && ((_b > 0 && _a < dap_minval(_a) / _b) || (_a != 0 && _b < dap_maxval(_a) / _a))) \
+        ) \
+        ? _a : (_a * _b); \
+    })
 #endif
 
 
