@@ -1077,7 +1077,7 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
     for (size_t i = 0; i < a_store_objs_count; i++) {
         l_ret = s_store_obj_apply(a_dbi, a_store_objs + i);
         if (l_ret)
-            log_it(L_ERROR, "Can't save raw gdb data to %s/%s, code %d", (a_store_objs + i)->group, (a_store_objs + i)->key, l_ret);
+            debug_if(g_dap_global_db_debug_more, L_ERROR, "Can't save raw gdb data to %s/%s, code %d", (a_store_objs + i)->group, (a_store_objs + i)->key, l_ret);
     }
     if (a_store_objs_count > 1)
         dap_global_db_driver_txn_end(!l_ret);
