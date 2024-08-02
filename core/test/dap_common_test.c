@@ -622,7 +622,7 @@ static void s_test_overflow_diff_types(uint64_t a_times)
         l_b = l_a + 1;
     char q = 54;
     for (uint64_t i = 0; i < a_times; ++i) {
-        dap_randombytes(l_a, sizeof(l_a) * 2);
+        randombytes(l_a, sizeof(l_a) * 2);
         for (s_data_type t1 = 0; t1 < TYPE_COUNT; ++t1) {
             for (s_data_type t2 = 0; t2 < TYPE_COUNT; ++t2) {
                 char l_msg[100];
@@ -649,8 +649,8 @@ static void s_test_benchmark_overflow_one(uint64_t a_times, benchmark_callback a
             l_custom = 0;
             l_builtin = 0;
             for (uint64_t total = 0; total < a_times; ) {
-                dap_randombytes(l_chars_array_a, s_array_size);
-                dap_randombytes(l_chars_array_b, s_array_size);
+                randombytes(l_chars_array_a, s_array_size);
+                randombytes(l_chars_array_b, s_array_size);
                 l_cur_1 = get_cur_time_msec();
                 for (uint64_t i = 0; i < s_el_count; ++i)
                     a_custom_func(l_chars_array_a, l_chars_array_b, i, t);
