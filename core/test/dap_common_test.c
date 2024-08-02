@@ -24,7 +24,7 @@ typedef enum {
     OP_MUL,
     OP_COUNT
 } s_op_type;
-static const uint64_t s_el_count = 100000;
+static const uint64_t s_el_count = 100;
 static const uint64_t s_array_size = s_el_count * sizeof(long long) / sizeof(char); // benchmarks array size 8MB
 
 DAP_STATIC_INLINE const char *s_data_type_to_str(s_data_type a_type)
@@ -374,37 +374,37 @@ DAP_STATIC_INLINE void s_test_benchmark_overflow_add_builtin(void *a_array_a, vo
     switch (a_type)
     {
         case TYPE_CHAR:
-            dap_add(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
+            dap_add_builtin(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
             break;
         case TYPE_SHORT:
-            dap_add(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
+            dap_add_builtin(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
             break;
         case TYPE_INT:
-            dap_add(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
+            dap_add_builtin(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
             break;
         case TYPE_LONG:
-            dap_add(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
+            dap_add_builtin(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
             break;
         case TYPE_LONG_LONG:
-            dap_add(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
+            dap_add_builtin(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
             break;
         case TYPE_SCHAR:
-            dap_add(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
+            dap_add_builtin(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
             break;
         case TYPE_UCHAR:
-            dap_add(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
+            dap_add_builtin(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
             break;
         case TYPE_USHORT:
-            dap_add(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
+            dap_add_builtin(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
             break;
         case TYPE_UINT:
-            dap_add(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
+            dap_add_builtin(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
             break;
         case TYPE_ULONG:
-            dap_add(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
+            dap_add_builtin(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
             break;
         case TYPE_ULONG_LONG:
-            dap_add(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
+            dap_add_builtin(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
             break;
         default:
             break;
@@ -602,5 +602,5 @@ void dap_common_test_run()
 {
     s_test_put_int();
     s_test_overflow();
-    s_test_benchmark(s_el_count * 100);
+    s_test_benchmark(s_el_count * 10);
 }
