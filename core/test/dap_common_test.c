@@ -50,6 +50,17 @@ DAP_STATIC_INLINE const char *s_data_type_to_str(s_data_type a_type)
     }
 }
 
+DAP_STATIC_INLINE const char *s_op_type_to_str(s_op_type a_type)
+{
+    switch (a_type)
+    {
+        case OP_ADD: return "CHAR";
+        case OP_SUB: return "SHORT";
+        case OP_MUL: return "INT";
+        default: return "UNDEFINED";
+    }
+}
+
 static void s_test_put_int()
 {
     dap_print_module_name("dap_common");
@@ -58,6 +69,258 @@ static void s_test_put_int()
     char * result_arr = dap_itoa(INT_VAL);
     dap_assert(strcmp(result_arr, EXPECTED_RESULT) == 0,
                "Check string result from itoa");
+}
+
+DAP_STATIC_INLINE void s_overflow_add_custom(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
+{
+    switch (a_type)
+    {
+        case TYPE_CHAR:
+            dap_add(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
+            break;
+        case TYPE_SHORT:
+            dap_add(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
+            break;
+        case TYPE_INT:
+            dap_add(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG:
+            dap_add(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG_LONG:
+            dap_add(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
+            break;
+        case TYPE_SCHAR:
+            dap_add(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
+            break;
+        case TYPE_UCHAR:
+            dap_add(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
+            break;
+        case TYPE_USHORT:
+            dap_add(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
+            break;
+        case TYPE_UINT:
+            dap_add(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG:
+            dap_add(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG_LONG:
+            dap_add(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
+            break;
+        default:
+            break;
+    }
+}
+
+DAP_STATIC_INLINE void s_overflow_add_builtin(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
+{
+    switch (a_type)
+    {
+        case TYPE_CHAR:
+            dap_add_builtin(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
+            break;
+        case TYPE_SHORT:
+            dap_add_builtin(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
+            break;
+        case TYPE_INT:
+            dap_add_builtin(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG:
+            dap_add_builtin(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG_LONG:
+            dap_add_builtin(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
+            break;
+        case TYPE_SCHAR:
+            dap_add_builtin(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
+            break;
+        case TYPE_UCHAR:
+            dap_add_builtin(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
+            break;
+        case TYPE_USHORT:
+            dap_add_builtin(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
+            break;
+        case TYPE_UINT:
+            dap_add_builtin(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG:
+            dap_add_builtin(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG_LONG:
+            dap_add_builtin(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
+            break;
+        default:
+            break;
+    }
+}
+
+DAP_STATIC_INLINE void s_overflow_sub_custom(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
+{
+    switch (a_type)
+    {
+        case TYPE_CHAR:
+            dap_sub(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
+            break;
+        case TYPE_SHORT:
+            dap_sub(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
+            break;
+        case TYPE_INT:
+            dap_sub(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG:
+            dap_sub(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG_LONG:
+            dap_sub(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
+            break;
+        case TYPE_SCHAR:
+            dap_sub(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
+            break;
+        case TYPE_UCHAR:
+            dap_sub(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
+            break;
+        case TYPE_USHORT:
+            dap_sub(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
+            break;
+        case TYPE_UINT:
+            dap_sub(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG:
+            dap_sub(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG_LONG:
+            dap_sub(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
+            break;
+        default:
+            break;
+    }
+}
+
+DAP_STATIC_INLINE void s_overflow_sub_builtin(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
+{
+    switch (a_type)
+    {
+        case TYPE_CHAR:
+            dap_sub_builtin(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
+            break;
+        case TYPE_SHORT:
+            dap_sub_builtin(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
+            break;
+        case TYPE_INT:
+            dap_sub_builtin(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG:
+            dap_sub_builtin(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG_LONG:
+            dap_sub_builtin(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
+            break;
+        case TYPE_SCHAR:
+            dap_sub_builtin(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
+            break;
+        case TYPE_UCHAR:
+            dap_sub_builtin(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
+            break;
+        case TYPE_USHORT:
+            dap_sub_builtin(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
+            break;
+        case TYPE_UINT:
+            dap_sub_builtin(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG:
+            dap_sub_builtin(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG_LONG:
+            dap_sub_builtin(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
+            break;
+        default:
+            break;
+    }
+}
+
+DAP_STATIC_INLINE void s_overflow_mul_custom(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
+{
+    switch (a_type)
+    {
+        case TYPE_CHAR:
+            dap_mul(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
+            break;
+        case TYPE_SHORT:
+            dap_mul(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
+            break;
+        case TYPE_INT:
+            dap_mul(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG:
+            dap_mul(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG_LONG:
+            dap_mul(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
+            break;
+        case TYPE_SCHAR:
+            dap_mul(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
+            break;
+        case TYPE_UCHAR:
+            dap_mul(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
+            break;
+        case TYPE_USHORT:
+            dap_mul(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
+            break;
+        case TYPE_UINT:
+            dap_mul(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG:
+            dap_mul(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG_LONG:
+            dap_mul(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
+            break;
+        default:
+            break;
+    }
+}
+
+DAP_STATIC_INLINE void s_overflow_mul_builtin(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
+{
+    switch (a_type)
+    {
+        case TYPE_CHAR:
+            dap_mul_builtin(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
+            break;
+        case TYPE_SHORT:
+            dap_mul_builtin(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
+            break;
+        case TYPE_INT:
+            dap_mul_builtin(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG:
+            dap_mul_builtin(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG_LONG:
+            dap_mul_builtin(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
+            break;
+        case TYPE_SCHAR:
+            dap_mul_builtin(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
+            break;
+        case TYPE_UCHAR:
+            dap_mul_builtin(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
+            break;
+        case TYPE_USHORT:
+            dap_mul_builtin(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
+            break;
+        case TYPE_UINT:
+            dap_mul_builtin(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG:
+            dap_mul_builtin(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG_LONG:
+            dap_mul_builtin(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
+            break;
+        default:
+            break;
+    }
 }
 
 static void s_test_overflow()
@@ -331,256 +594,22 @@ static void s_test_overflow()
         "Check unsigned long long MUL overflow");
 }
 
-DAP_STATIC_INLINE void s_test_benchmark_overflow_add_custom(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
+static void s_test_overflow_diff_types()
 {
-    switch (a_type)
-    {
-        case TYPE_CHAR:
-            dap_add(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
-            break;
-        case TYPE_SHORT:
-            dap_add(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
-            break;
-        case TYPE_INT:
-            dap_add(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
-            break;
-        case TYPE_LONG:
-            dap_add(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
-            break;
-        case TYPE_LONG_LONG:
-            dap_add(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
-            break;
-        case TYPE_SCHAR:
-            dap_add(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
-            break;
-        case TYPE_UCHAR:
-            dap_add(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
-            break;
-        case TYPE_USHORT:
-            dap_add(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
-            break;
-        case TYPE_UINT:
-            dap_add(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
-            break;
-        case TYPE_ULONG:
-            dap_add(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
-            break;
-        case TYPE_ULONG_LONG:
-            dap_add(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
-            break;
-        default:
-            break;
-    }
-}
+    dap_print_module_name("dap_overflow_add_diff_types");
+    char l_msg[120] = {0};
+    int l_cur_1 = 0, l_cur_2 = 0, l_custom = 0, l_builtin = 0;
+    unsigned char
+        *l_chars_array_a = NULL,
+        *l_chars_array_b = NULL;
+    DAP_NEW_Z_SIZE_RET(l_chars_array_a, unsigned char, s_array_size, NULL);
+    DAP_NEW_Z_SIZE_RET(l_chars_array_b, unsigned char, s_array_size, l_chars_array_a);
 
-DAP_STATIC_INLINE void s_test_benchmark_overflow_add_builtin(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
-{
-    switch (a_type)
-    {
-        case TYPE_CHAR:
-            dap_add_builtin(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
-            break;
-        case TYPE_SHORT:
-            dap_add_builtin(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
-            break;
-        case TYPE_INT:
-            dap_add_builtin(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
-            break;
-        case TYPE_LONG:
-            dap_add_builtin(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
-            break;
-        case TYPE_LONG_LONG:
-            dap_add_builtin(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
-            break;
-        case TYPE_SCHAR:
-            dap_add_builtin(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
-            break;
-        case TYPE_UCHAR:
-            dap_add_builtin(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
-            break;
-        case TYPE_USHORT:
-            dap_add_builtin(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
-            break;
-        case TYPE_UINT:
-            dap_add_builtin(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
-            break;
-        case TYPE_ULONG:
-            dap_add_builtin(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
-            break;
-        case TYPE_ULONG_LONG:
-            dap_add_builtin(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
-            break;
-        default:
-            break;
+    for (s_data_type t = 0; t < TYPE_COUNT; ++t) {
+        randombytes(l_chars_array_a, s_array_size);
+        randombytes(l_chars_array_b, s_array_size);
     }
-}
-
-DAP_STATIC_INLINE void s_test_benchmark_overflow_sub_custom(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
-{
-    switch (a_type)
-    {
-        case TYPE_CHAR:
-            dap_sub(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
-            break;
-        case TYPE_SHORT:
-            dap_sub(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
-            break;
-        case TYPE_INT:
-            dap_sub(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
-            break;
-        case TYPE_LONG:
-            dap_sub(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
-            break;
-        case TYPE_LONG_LONG:
-            dap_sub(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
-            break;
-        case TYPE_SCHAR:
-            dap_sub(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
-            break;
-        case TYPE_UCHAR:
-            dap_sub(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
-            break;
-        case TYPE_USHORT:
-            dap_sub(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
-            break;
-        case TYPE_UINT:
-            dap_sub(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
-            break;
-        case TYPE_ULONG:
-            dap_sub(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
-            break;
-        case TYPE_ULONG_LONG:
-            dap_sub(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
-            break;
-        default:
-            break;
-    }
-}
-
-DAP_STATIC_INLINE void s_test_benchmark_overflow_sub_builtin(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
-{
-    switch (a_type)
-    {
-        case TYPE_CHAR:
-            dap_sub_builtin(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
-            break;
-        case TYPE_SHORT:
-            dap_sub_builtin(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
-            break;
-        case TYPE_INT:
-            dap_sub_builtin(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
-            break;
-        case TYPE_LONG:
-            dap_sub_builtin(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
-            break;
-        case TYPE_LONG_LONG:
-            dap_sub_builtin(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
-            break;
-        case TYPE_SCHAR:
-            dap_sub_builtin(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
-            break;
-        case TYPE_UCHAR:
-            dap_sub_builtin(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
-            break;
-        case TYPE_USHORT:
-            dap_sub_builtin(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
-            break;
-        case TYPE_UINT:
-            dap_sub_builtin(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
-            break;
-        case TYPE_ULONG:
-            dap_sub_builtin(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
-            break;
-        case TYPE_ULONG_LONG:
-            dap_sub_builtin(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
-            break;
-        default:
-            break;
-    }
-}
-
-DAP_STATIC_INLINE void s_test_benchmark_overflow_mul_custom(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
-{
-    switch (a_type)
-    {
-        case TYPE_CHAR:
-            dap_mul(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
-            break;
-        case TYPE_SHORT:
-            dap_mul(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
-            break;
-        case TYPE_INT:
-            dap_mul(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
-            break;
-        case TYPE_LONG:
-            dap_mul(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
-            break;
-        case TYPE_LONG_LONG:
-            dap_mul(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
-            break;
-        case TYPE_SCHAR:
-            dap_mul(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
-            break;
-        case TYPE_UCHAR:
-            dap_mul(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
-            break;
-        case TYPE_USHORT:
-            dap_mul(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
-            break;
-        case TYPE_UINT:
-            dap_mul(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
-            break;
-        case TYPE_ULONG:
-            dap_mul(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
-            break;
-        case TYPE_ULONG_LONG:
-            dap_mul(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
-            break;
-        default:
-            break;
-    }
-}
-
-DAP_STATIC_INLINE void s_test_benchmark_overflow_mul_builtin(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
-{
-    switch (a_type)
-    {
-        case TYPE_CHAR:
-            dap_mul_builtin(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
-            break;
-        case TYPE_SHORT:
-            dap_mul_builtin(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
-            break;
-        case TYPE_INT:
-            dap_mul_builtin(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
-            break;
-        case TYPE_LONG:
-            dap_mul_builtin(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
-            break;
-        case TYPE_LONG_LONG:
-            dap_mul_builtin(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
-            break;
-        case TYPE_SCHAR:
-            dap_mul_builtin(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
-            break;
-        case TYPE_UCHAR:
-            dap_mul_builtin(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
-            break;
-        case TYPE_USHORT:
-            dap_mul_builtin(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
-            break;
-        case TYPE_UINT:
-            dap_mul_builtin(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
-            break;
-        case TYPE_ULONG:
-            dap_mul_builtin(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
-            break;
-        case TYPE_ULONG_LONG:
-            dap_mul_builtin(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
-            break;
-        default:
-            break;
-    }
+    DAP_DEL_MULTY(l_chars_array_a, l_chars_array_b);
 }
 
 static void s_test_benchmark_overflow_one(uint64_t a_times, benchmark_callback a_custom_func, benchmark_callback a_builtin_func)
@@ -621,11 +650,11 @@ static void s_test_benchmark_overflow_one(uint64_t a_times, benchmark_callback a
 static void s_test_benchmark_overflow(uint64_t a_times)
 {
     dap_print_module_name("dap_benchmark_overflow_add");
-    s_test_benchmark_overflow_one(a_times, s_test_benchmark_overflow_add_custom, s_test_benchmark_overflow_add_builtin);
+    s_test_benchmark_overflow_one(a_times, s_overflow_add_custom, s_overflow_add_builtin);
     dap_print_module_name("dap_benchmark_overflow_sub");
-    s_test_benchmark_overflow_one(a_times, s_test_benchmark_overflow_sub_custom, s_test_benchmark_overflow_sub_builtin);
+    s_test_benchmark_overflow_one(a_times, s_overflow_sub_custom, s_overflow_sub_builtin);
     dap_print_module_name("dap_benchmark_overflow_mul");
-    s_test_benchmark_overflow_one(a_times, s_test_benchmark_overflow_mul_custom, s_test_benchmark_overflow_mul_builtin);
+    s_test_benchmark_overflow_one(a_times, s_overflow_mul_custom, s_overflow_mul_builtin);
 }
 
 static void s_test_benchmark(uint64_t a_times)
@@ -636,5 +665,6 @@ void dap_common_test_run()
 {
     s_test_put_int();
     s_test_overflow();
+    s_test_overflow_diff_types();
     s_test_benchmark(s_el_count * 1000);
 }
