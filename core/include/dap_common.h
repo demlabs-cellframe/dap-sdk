@@ -71,7 +71,6 @@
 #include <dispatch/dispatch.h>
 #endif
 #include "portable_endian.h"
-#include "dap_config.h"
 
 #define BIT( x ) ( 1 << x )
 
@@ -953,4 +952,4 @@ DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_a
 
 const char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address);
 
-void dap_common_enable_cleaner_log(dap_config_t *a_config);
+void dap_common_enable_cleaner_log(size_t a_timeout, size_t *a_max_size);

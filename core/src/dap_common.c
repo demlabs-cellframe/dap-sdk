@@ -304,26 +304,18 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, .
 }
 
 int s_dap_log_open(const char *a_log_file_path) {
-    s_log_file = fopen( a_log_file_path , "a" );
-    if( s_log_file == NULL)
-        s_log_file = fopen( a_log_file_path , "w" );
+    if (s_log_file) {
+        s_log_file = freopen(a_log_file_path, "w", s_log_file);
+    } else {
+        s_log_file = fopen( a_log_file_path , "a" );
+        if( s_log_file == NULL)
+            s_log_file = fopen( a_log_file_path , "w" );
+    }
     if ( s_log_file == NULL ) {
         fprintf( stderr, "Can't open log file %s \n", a_log_file_path );
         return -1;   //switch off show log in cosole if file not open
     }
 #ifdef DAP_OS_WINDOWS
-    static char s_buf_file[LOG_BUF_SIZE], s_buf_stdout[LOG_BUF_SIZE];
-    setvbuf(stdout, s_buf_file, _IOFBF, LOG_BUF_SIZE);
-    setvbuf(s_log_file, s_buf_stdout, _IOFBF, LOG_BUF_SIZE);
-#else
-    setvbuf(s_log_file, NULL, _IOLBF, LOG_BUF_SIZE);
-#endif
-    return 0;
-}
-
-int s_dap_log_reopen(const char *a_log_file_path){
-    s_log_file = freopen(a_log_file_path, "w", s_log_file);
-    #ifdef DAP_OS_WINDOWS
     static char s_buf_file[LOG_BUF_SIZE], s_buf_stdout[LOG_BUF_SIZE];
     setvbuf(stdout, s_buf_file, _IOFBF, LOG_BUF_SIZE);
     setvbuf(s_log_file, s_buf_stdout, _IOFBF, LOG_BUF_SIZE);
@@ -1510,8 +1502,8 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
 #endif
 }
 
-void dap_common_log_cleanner_interval(int a_max_size) {
-    size_t l_max_size = (size_t)a_max_size;
+static void s_dap_common_log_cleanner_interval(void *a_max_size) {
+    size_t l_max_size = *((size_t*)a_max_size);
     size_t l_log_size = ftell(s_log_file);
     if (l_log_size == 0){
         log_it(L_ERROR, "The size of the log file could not be determined; cleaning is impossible.");
@@ -1520,24 +1512,17 @@ void dap_common_log_cleanner_interval(int a_max_size) {
         if (l_size_mb > l_max_size) {
             char *l_new_file = dap_strdup_printf("%s.old", s_log_file_path);
             rename(s_log_file_path, l_new_file);
-            s_dap_log_reopen(s_log_file_path);
+            if (s_dap_log_open(s_log_file_path)) {
+                log_it(L_CRITICAL, "An error occurred The logging thread was not reopened.");
+            }
             log_it(L_NOTICE, "log file overwritten.");
             remove(l_new_file);
             DAP_DELETE(l_new_file);
         }
     }
 }
-void dap_common_enable_cleaner_log(dap_config_t *a_config){
-    bool l_enabled = dap_config_get_item_bool_default(a_config, "log", "rotate_enabled", false);
-    if (l_enabled) {
-        int64_t l_timeout = dap_config_get_item_int64(a_config, "log", "rotate_timeout") * 60000;
-        int64_t l_max_file_size = dap_config_get_item_int64(g_config, "log", "rotate_size");
-        log_it(L_NOTICE, "Cleaning of log files is enabled. Maximum log file size %ld MB. Re-check every %ld minutes.",
-               l_max_file_size, l_timeout);
-        dap_interval_timer_t l_ivt = dap_interval_timer_create(l_timeout, dap_common_log_cleanner_interval, l_max_file_size);
-    } else {
-        log_it(L_DEBUG, "Log clearing disabled");
-    }
+void dap_common_enable_cleaner_log(size_t a_timeout, size_t *a_max_size){
+    dap_interval_timer_create(a_timeout, s_dap_common_log_cleanner_interval, a_max_size);
 }
 
 #ifdef __cplusplus
