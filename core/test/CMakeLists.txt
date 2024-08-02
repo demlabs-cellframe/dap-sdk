@@ -15,7 +15,7 @@ if (OFF_CORE_CELLFRAME_SDK_TESTS_OFF MATCHES "network-monitor")
 endif()
 
 add_executable(${PROJECT_NAME} ${SRCS} ${PLATROFM_DEP_SRC})  
-target_link_libraries(core_test dap_test dap_core pthread)
+target_link_libraries(core_test dap_test dap_core dap_crypto pthread)
 
 if (DAP_USE_RPMALLOC)
 add_executable(rpmalloc_test
@@ -24,7 +24,7 @@ add_executable(rpmalloc_test
   ../../3rdparty/rpmalloc/test/thread.c
   ../../3rdparty/rpmalloc/test/main.c
 )
-target_link_libraries(rpmalloc_test dap_core m pthread dl)
+target_link_libraries(rpmalloc_test dap_core dap_crypto m pthread dl)
 target_include_directories(rpmalloc_test PRIVATE ../../3rdparty/rpmalloc/test)
 if (NOT PLATFORM_ARM AND VERSION MATCHES "7l")
     add_test(
