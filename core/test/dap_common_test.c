@@ -3,7 +3,48 @@
 
 #define LOG_TAG "dap_common_test"
 
-static const uint64_t s_array_size = 1024 * 1024 * sizeof(long long) / sizeof(char); // benchmarks array size 8MB
+typedef enum {
+    TYPE_CHAR,
+    TYPE_SHORT,
+    TYPE_INT,
+    TYPE_LONG,
+    TYPE_LONG_LONG,
+    TYPE_SCHAR,
+    TYPE_UCHAR,
+    TYPE_USHORT,
+    TYPE_UINT,
+    TYPE_ULONG,
+    TYPE_ULONG_LONG,
+    TYPE_COUNT
+} s_data_type;
+
+typedef enum {
+    OP_ADD,
+    OP_SUB,
+    OP_MUL,
+    OP_COUNT
+} s_op_type;
+static const uint64_t s_el_count = 100000;
+static const uint64_t s_array_size = s_el_count * sizeof(long long) / sizeof(char); // benchmarks array size 8MB
+
+DAP_STATIC_INLINE const char *s_data_type_to_str(s_data_type a_type)
+{
+    switch (a_type)
+    {
+        case TYPE_CHAR: return "CHAR";
+        case TYPE_SHORT: return "SHORT";
+        case TYPE_INT: return "INT";
+        case TYPE_LONG: return "LONG";
+        case TYPE_LONG_LONG: return "LONG LONG";
+        case TYPE_SCHAR: return "SIGNED CHAR";
+        case TYPE_UCHAR: return "UNSIGNED CHAR";
+        case TYPE_USHORT: return "UNSIGNED SHORT";
+        case TYPE_UINT: return "UNSIGNED INT";
+        case TYPE_ULONG: return "UNSIGNED LONG";
+        case TYPE_ULONG_LONG: return "UNSIGNED LONG LONG";
+        default: return "UNDEFINED";
+    }
+}
 
 static void s_test_put_int()
 {
@@ -286,13 +327,94 @@ static void s_test_overflow()
         "Check unsigned long long MUL overflow");
 }
 
+DAP_STATIC_INLINE void s_test_benchmark_overflow_add_custom(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
+{
+    switch (a_type)
+    {
+        case TYPE_CHAR:
+            dap_add(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
+            break;
+        case TYPE_SHORT:
+            dap_add(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
+            break;
+        case TYPE_INT:
+            dap_add(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG:
+            dap_add(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG_LONG:
+            dap_add(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
+            break;
+        case TYPE_SCHAR:
+            dap_add(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
+            break;
+        case TYPE_UCHAR:
+            dap_add(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
+            break;
+        case TYPE_USHORT:
+            dap_add(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
+            break;
+        case TYPE_UINT:
+            dap_add(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG:
+            dap_add(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG_LONG:
+            dap_add(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
+            break;
+        default:
+            break;
+    }
+}
+
+DAP_STATIC_INLINE void s_test_benchmark_overflow_add_builtin(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)
+{
+    switch (a_type)
+    {
+        case TYPE_CHAR:
+            dap_add(*((char *)a_array_a + a_pos), *((char *)a_array_b + a_pos));
+            break;
+        case TYPE_SHORT:
+            dap_add(*((short *)a_array_a + a_pos), *((short *)a_array_b + a_pos));
+            break;
+        case TYPE_INT:
+            dap_add(*((int *)a_array_a + a_pos), *((int *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG:
+            dap_add(*((long *)a_array_a + a_pos), *((long *)a_array_b + a_pos));
+            break;
+        case TYPE_LONG_LONG:
+            dap_add(*((long long *)a_array_a + a_pos), *((long long *)a_array_b + a_pos));
+            break;
+        case TYPE_SCHAR:
+            dap_add(*((signed char *)a_array_a + a_pos), *((signed char *)a_array_b + a_pos));
+            break;
+        case TYPE_UCHAR:
+            dap_add(*((unsigned char *)a_array_a + a_pos), *((unsigned char *)a_array_b + a_pos));
+            break;
+        case TYPE_USHORT:
+            dap_add(*((unsigned short *)a_array_a + a_pos), *((unsigned short *)a_array_b + a_pos));
+            break;
+        case TYPE_UINT:
+            dap_add(*((unsigned int *)a_array_a + a_pos), *((unsigned int *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG:
+            dap_add(*((unsigned long *)a_array_a + a_pos), *((unsigned long *)a_array_b + a_pos));
+            break;
+        case TYPE_ULONG_LONG:
+            dap_add(*((unsigned long long *)a_array_a + a_pos), *((unsigned long long *)a_array_b + a_pos));
+            break;
+        default:
+            break;
+    }
+
+}
+
 static void s_test_benchmark_overflow_add(uint64_t a_times)
 {
     dap_print_module_name("dap_benchmark_overflow_add");
-    char l_char = dap_maxval(l_char);
-    long long l_long_long = dap_maxval(l_long_long);
-    unsigned char l_unsigned_char = dap_maxval(l_unsigned_char);
-    unsigned long long l_unsigned_long_long = dap_maxval(l_unsigned_long_long);
     
     char l_msg[120] = {0};
     int l_cur_1 = 0, l_cur_2 = 0, l_custom = 0, l_builtin = 0;
@@ -302,85 +424,28 @@ static void s_test_benchmark_overflow_add(uint64_t a_times)
     DAP_NEW_Z_SIZE_RET(l_chars_array_a, unsigned char, s_array_size, NULL);
     DAP_NEW_Z_SIZE_RET(l_chars_array_b, unsigned char, s_array_size, l_chars_array_a);
 
-    for (uint64_t i = 0; i < a_times; i += s_array_size) {
-        randombytes(l_chars_array_a, s_array_size);
-        randombytes(l_chars_array_b, s_array_size);
-        l_cur_1 = get_cur_time_msec();
-        for (uint64_t j = 0; j < s_array_size; ++j)
-            dap_add((char)l_chars_array_a[j], (char)l_chars_array_b[j]);
-        l_cur_2 = get_cur_time_msec();
-        for (uint64_t j = 0; j < s_array_size; ++j)
-            dap_add_builtin((char)l_chars_array_a[j], (char)l_chars_array_b[j]);
-        l_builtin += get_cur_time_msec() - l_cur_2;
-        l_custom += l_cur_2 - l_cur_1;
+    for (s_data_type t = 0; t < TYPE_COUNT; ++t) {
+        if (t == TYPE_CHAR || t == TYPE_LONG_LONG || t == TYPE_UCHAR || t == TYPE_ULONG_LONG) {
+            l_custom = 0;
+            l_builtin = 0;
+            for (uint64_t total = 0; total < a_times; ) {
+                randombytes(l_chars_array_a, s_array_size);
+                randombytes(l_chars_array_b, s_array_size);
+                l_cur_1 = get_cur_time_msec();
+                for (uint64_t i = 0; i < s_el_count; ++i)
+                    s_test_benchmark_overflow_add_custom(l_chars_array_a, l_chars_array_b, i, t);
+                l_cur_2 = get_cur_time_msec();
+                for (uint64_t i = 0; i < s_el_count; ++i, ++total)
+                    s_test_benchmark_overflow_add_builtin(l_chars_array_a, l_chars_array_b, i, t);
+                l_builtin += get_cur_time_msec() - l_cur_2;
+                l_custom += l_cur_2 - l_cur_1;
+            }
+            sprintf(l_msg, "Check overflow %"DAP_UINT64_FORMAT_U" times to custom %s", a_times, s_data_type_to_str(t));
+            benchmark_mgs_time(l_msg, l_custom);
+            sprintf(l_msg, "Check overflow %"DAP_UINT64_FORMAT_U" times to __builtin %s", a_times, s_data_type_to_str(t));
+            benchmark_mgs_time(l_msg, l_builtin);
+        }
     }
-
-    
-    sprintf(l_msg, "Check overflow %"DAP_UINT64_FORMAT_U" times to custom char", a_times);
-    benchmark_mgs_time(l_msg, l_custom);
-    sprintf(l_msg, "Check overflow %"DAP_UINT64_FORMAT_U" times to __builtin char", a_times);
-    benchmark_mgs_time(l_msg, l_builtin);
-
-    l_custom = 0;
-    l_builtin = 0;
-    for (uint64_t i = 0; i < a_times; i += s_array_size) {
-        randombytes(l_chars_array_a, s_array_size);
-        randombytes(l_chars_array_b, s_array_size);
-        l_cur_1 = get_cur_time_msec();
-        for (uint64_t j = 0; j < s_array_size; ++j)
-            dap_add((long long)l_chars_array_a[j], (long long)l_chars_array_b[j]);
-        l_cur_2 = get_cur_time_msec();
-        for (uint64_t j = 0; j < s_array_size; ++j)
-            dap_add_builtin((long long)l_chars_array_a[j], (long long)l_chars_array_b[j]);
-        l_builtin += get_cur_time_msec() - l_cur_2;
-        l_custom += l_cur_2 - l_cur_1;
-    }
-
-    sprintf(l_msg, "Check overflow %"DAP_UINT64_FORMAT_U" times to custom long long", a_times);
-    benchmark_mgs_time(l_msg, l_custom);
-    sprintf(l_msg, "Check overflow %"DAP_UINT64_FORMAT_U" times to __builtin long long", a_times);
-    benchmark_mgs_time(l_msg, l_builtin);
-
-    l_custom = 0;
-    l_builtin = 0;
-    for (uint64_t i = 0; i < a_times; i += s_array_size) {
-        randombytes(l_chars_array_a, s_array_size);
-        randombytes(l_chars_array_b, s_array_size);
-        l_cur_1 = get_cur_time_msec();
-        for (uint64_t j = 0; j < s_array_size; ++j)
-            dap_add((unsigned char)l_chars_array_a[j], (unsigned char)l_chars_array_b[j]);
-        l_cur_2 = get_cur_time_msec();
-        for (uint64_t j = 0; j < s_array_size; ++j)
-            dap_add_builtin((unsigned char)l_chars_array_a[j], (unsigned char)l_chars_array_b[j]);
-        l_builtin += get_cur_time_msec() - l_cur_2;
-        l_custom += l_cur_2 - l_cur_1;
-    }
-
-    sprintf(l_msg, "Check overflow %"DAP_UINT64_FORMAT_U" times to custom  unsigned char", a_times);
-    benchmark_mgs_time(l_msg, l_custom);
-    sprintf(l_msg, "Check overflow %"DAP_UINT64_FORMAT_U" times to __builtin unsigned char", a_times);
-    benchmark_mgs_time(l_msg, l_builtin);
-
-    l_custom = 0;
-    l_builtin = 0;
-    for (uint64_t i = 0; i < a_times; i += s_array_size) {
-        randombytes(l_chars_array_a, s_array_size);
-        randombytes(l_chars_array_b, s_array_size);
-        l_cur_1 = get_cur_time_msec();
-        for (uint64_t j = 0; j < s_array_size; ++j)
-            dap_add((unsigned long long)l_chars_array_a[j], (unsigned long long)l_chars_array_b[j]);
-        l_cur_2 = get_cur_time_msec();
-        for (uint64_t j = 0; j < s_array_size; ++j)
-            dap_add_builtin((unsigned long long)l_chars_array_a[j], (unsigned long long)l_chars_array_b[j]);
-        l_builtin += get_cur_time_msec() - l_cur_2;
-        l_custom += l_cur_2 - l_cur_1;
-    }
-
-    sprintf(l_msg, "Check overflow %"DAP_UINT64_FORMAT_U" times to custom unsigned long long", a_times);
-    benchmark_mgs_time(l_msg, l_custom);
-    sprintf(l_msg, "Check overflow %"DAP_UINT64_FORMAT_U" times to __builtin unsigned long long", a_times);
-    benchmark_mgs_time(l_msg, l_builtin);
-
     DAP_DEL_MULTY(l_chars_array_a, l_chars_array_b);
 }
 
@@ -537,5 +602,5 @@ void dap_common_test_run()
 {
     s_test_put_int();
     s_test_overflow();
-    s_test_benchmark(s_array_size * 100);
+    s_test_benchmark(s_el_count * 100);
 }
