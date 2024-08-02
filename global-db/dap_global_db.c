@@ -1336,7 +1336,7 @@ static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_gr
     dap_store_obj_t l_store_obj = {
         .key        = a_key,
         .group      = (char *)a_group,
-        .flags      = DAP_GLOBAL_DB_RECORD_NEW | DAP_GLOBAL_DB_RECORD_DEL,
+        .flags      = DAP_GLOBAL_DB_RECORD_NEW | DAP_GLOBAL_DB_RECORD_ERASE,
         .timestamp  = dap_nanotime_now()
     };
     if (a_key)

@@ -1014,9 +1014,11 @@ dap_db_ctx_t *l_db_ctx, *l_db_ctx2;
  */
 static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX_txn *a_txn)
 {
-    dap_return_val_if_fail(a_store_obj && a_store_obj->group && a_store_obj->crc, -EINVAL)     /* Sanity checks ... */
+    dap_return_val_if_fail(a_store_obj && a_store_obj->group && (a_store_obj->crc || !a_store_obj->key), -EINVAL)     /* Sanity checks ... */
 
     uint8_t l_type_erase = a_store_obj->flags & DAP_GLOBAL_DB_RECORD_ERASE;
+    dap_return_val_if_fail(a_store_obj->key || l_type_erase, -EINVAL);
+
     dap_db_ctx_t *l_db_ctx;
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group)) ) {               /* Get a DB context for the group */
                                                                                     /* Group is not found ? Try to create table for new group */
