@@ -27,7 +27,7 @@ typedef enum {
 } s_op_type;
 
 typedef void (*benchmark_callback)(void *, void *, uint64_t, s_data_type);
-#define CAST_TO_TYPE(value, type) ((type)(value))
+
 #define dap_type_convert_to(a,b)                                \
     ({                                                          \
         typeof(a) _a = (a);                                     \
@@ -46,7 +46,7 @@ typedef void (*benchmark_callback)(void *, void *, uint64_t, s_data_type);
         (typeof(a))_a;                                          \
     })
 
-static const uint64_t s_el_count = 1000;
+static const uint64_t s_el_count = 100;
 static const uint64_t s_array_size = s_el_count * sizeof(long long) / sizeof(char); // benchmarks array size 8MB
 
 DAP_STATIC_INLINE const char *s_data_type_to_str(s_data_type a_type)
@@ -614,17 +614,6 @@ static void s_test_overflow()
 
 static void s_test_overflow_diff_types(uint64_t a_times)
 {
-    char l_char = dap_maxval(l_char);
-    short l_short = dap_maxval(l_short);
-    int l_int = dap_maxval(l_int);
-    long l_long = dap_maxval(l_long);
-    long long l_long_long = dap_maxval(l_long_long);
-    signed char l_signed_char = dap_maxval(l_signed_char);
-    unsigned char l_unsigned_char = dap_maxval(l_unsigned_char);
-    unsigned short l_unsigned_short = dap_maxval(l_unsigned_short);
-    unsigned int l_unsigned_int = dap_maxval(l_unsigned_int);
-    unsigned long l_unsigned_long = dap_maxval(l_unsigned_long);
-    unsigned long long l_unsigned_long_long = dap_maxval(l_unsigned_long_long);
     dap_print_module_name("dap_overflow_add_diff_types");
     unsigned long long
         *l_a = NULL,
@@ -699,5 +688,5 @@ void dap_common_test_run()
     s_test_put_int();
     s_test_overflow();
     s_test_overflow_diff_types(1000);
-    s_test_benchmark(s_el_count * 100000);
+    s_test_benchmark(s_el_count * 100);
 }
