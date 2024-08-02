@@ -220,7 +220,7 @@ MDBX_val    l_key_iov, l_data_iov;
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Init group/table '%s', flags: %#x ...", a_group, a_flags);
 
 
-    dap_assert( !pthread_rwlock_rdlock(&s_db_ctxs_rwlock) );                /* Get RD lock for lookup only */
+    dap_assert( !pthread_rwlock_wrlock(&s_db_ctxs_rwlock) );                /* Get RD lock for lookup only */
     HASH_FIND_STR(s_db_ctxs, a_group, l_db_ctx);                            /* Is there exist context for the group ? */
 
     if ( l_db_ctx ) {                                                       /* Found! Good job - return DB context */
@@ -230,11 +230,14 @@ MDBX_val    l_key_iov, l_data_iov;
 
     /* So , at this point we are going to create (if not exist)  'table' for new group */
 
-    if ( (l_name_len = strlen(a_group)) >(int) DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX )                /* Check length of the group name */
+    if ( (l_name_len = strlen(a_group)) >(int) DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX ) {              /* Check length of the group name */
+        dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
         return  log_it(L_ERROR, "Group name '%s' is too long (%zu>%lu)", a_group, l_name_len, DAP_GLOBAL_DB_GROUP_NAME_SIZE_MAX), NULL;
-
-    if ( !(l_db_ctx = DAP_NEW_Z(dap_db_ctx_t)) )                            /* Allocate zeroed memory for new DB context */
+    }
+    if ( !(l_db_ctx = DAP_NEW_Z(dap_db_ctx_t)) ) {                            /* Allocate zeroed memory for new DB context */
+        dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
         return  log_it(L_ERROR, "Cannot allocate DB context for '%s', errno=%d", a_group, errno), NULL;
+    }
 
     memcpy(l_db_ctx->name, a_group, l_db_ctx->namelen = l_name_len);             /* Store group name in the DB context */
     /*
@@ -243,11 +246,13 @@ MDBX_val    l_key_iov, l_data_iov;
     MDBX_txn *l_txn = a_txn;
     if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) ) {
         DAP_DEL_Z(l_db_ctx);
+        dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
         return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
 
     if  ( MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) ) {
         DAP_DEL_Z(l_db_ctx);
+        dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
         return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
 
@@ -260,12 +265,16 @@ MDBX_val    l_key_iov, l_data_iov;
     if (MDBX_SUCCESS != (rc = mdbx_put(l_txn, s_db_master_dbi, &l_key_iov, &l_data_iov, MDBX_NOOVERWRITE))
          && (rc != MDBX_KEYEXIST)) {
         log_it (L_ERROR, "mdbx_put: (%d) %s", rc, mdbx_strerror(rc));
-        if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_abort(l_txn)) )
+        if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_abort(l_txn)) ) {
+            dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
             return  log_it(L_CRITICAL, "mdbx_txn_abort: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+        }
     }
 
-    if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn)) )
+    if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_commit(l_txn)) ) {
+        dap_assert( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
         return  log_it(L_CRITICAL, "mdbx_txn_commit: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+    }
 
     /*
     ** Add new DB Context for the group into the hash for quick access
@@ -1087,7 +1096,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
             /* Drop the whole table */
             if (MDBX_SUCCESS != (rc = mdbx_drop(a_txn, l_db_ctx->dbi, true)))
                 log_it (L_ERROR, "mdbx_drop: (%d) %s", rc, mdbx_strerror(rc));
-            dap_assert ( !pthread_rwlock_rdlock(&s_db_ctxs_rwlock) );
+            dap_assert ( !pthread_rwlock_wrlock(&s_db_ctxs_rwlock) );
             HASH_DEL(s_db_ctxs, l_db_ctx);
             dap_assert ( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
             DAP_DELETE(l_db_ctx);
