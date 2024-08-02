@@ -67,6 +67,7 @@ target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES} dap_json-c)
 
 if(BUILD_DAP_TESTS)
     add_definitions ("-DDAP_CORE_TESTS")
+    add_compile_options(-Wno-error=sign-compare)
     message("Enabled dap_core test")
     enable_testing()
     add_definitions("-DDAP_NETWORK_MONITOR_TEST_OFF")

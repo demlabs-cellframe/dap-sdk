@@ -27,8 +27,26 @@ typedef enum {
 } s_op_type;
 
 typedef void (*benchmark_callback)(void *, void *, uint64_t, s_data_type);
+#define CAST_TO_TYPE(value, type) ((type)(value))
+#define dap_type_convert_to(a,b)                                \
+    ({                                                          \
+        typeof(a) _a = (a);                                     \
+        typeof(b) _b = (b);                                     \
+        _b == TYPE_CHAR ? (char)_a :                            \
+        _b == TYPE_SHORT ? (short)_a :                          \
+        _b == TYPE_INT ? (int)_a :                              \
+        _b == TYPE_LONG ? (long)_a :                            \
+        _b == TYPE_LONG_LONG ? (long long)_a :                  \
+        _b == TYPE_SCHAR ? (signed char)_a :                    \
+        _b == TYPE_UCHAR ? (unsigned char)_a :                  \
+        _b == TYPE_USHORT ? (unsigned short)_a :                \
+        _b == TYPE_UINT ? (unsigned int)_a :                    \
+        _b == TYPE_ULONG ? (unsigned long)_a :                  \
+        _b == TYPE_ULONG_LONG ? (unsigned long long)_a :        \
+        (typeof(a))_a;                                          \
+    })
 
-static const uint64_t s_el_count = 100000;
+static const uint64_t s_el_count = 1000;
 static const uint64_t s_array_size = s_el_count * sizeof(long long) / sizeof(char); // benchmarks array size 8MB
 
 DAP_STATIC_INLINE const char *s_data_type_to_str(s_data_type a_type)
@@ -594,22 +612,37 @@ static void s_test_overflow()
         "Check unsigned long long MUL overflow");
 }
 
-static void s_test_overflow_diff_types()
+static void s_test_overflow_diff_types(uint64_t a_times)
 {
+    char l_char = dap_maxval(l_char);
+    short l_short = dap_maxval(l_short);
+    int l_int = dap_maxval(l_int);
+    long l_long = dap_maxval(l_long);
+    long long l_long_long = dap_maxval(l_long_long);
+    signed char l_signed_char = dap_maxval(l_signed_char);
+    unsigned char l_unsigned_char = dap_maxval(l_unsigned_char);
+    unsigned short l_unsigned_short = dap_maxval(l_unsigned_short);
+    unsigned int l_unsigned_int = dap_maxval(l_unsigned_int);
+    unsigned long l_unsigned_long = dap_maxval(l_unsigned_long);
+    unsigned long long l_unsigned_long_long = dap_maxval(l_unsigned_long_long);
     dap_print_module_name("dap_overflow_add_diff_types");
-    char l_msg[120] = {0};
-    int l_cur_1 = 0, l_cur_2 = 0, l_custom = 0, l_builtin = 0;
-    unsigned char
-        *l_chars_array_a = NULL,
-        *l_chars_array_b = NULL;
-    DAP_NEW_Z_SIZE_RET(l_chars_array_a, unsigned char, s_array_size, NULL);
-    DAP_NEW_Z_SIZE_RET(l_chars_array_b, unsigned char, s_array_size, l_chars_array_a);
-
-    for (s_data_type t = 0; t < TYPE_COUNT; ++t) {
-        randombytes(l_chars_array_a, s_array_size);
-        randombytes(l_chars_array_b, s_array_size);
+    unsigned long long
+        *l_a = NULL,
+        *l_b = NULL; 
+        DAP_NEW_Z_COUNT_RET(l_a, __typeof__(l_a), 2, NULL);
+        l_b = l_a + 1;
+    char q = 54;
+    for (uint64_t i = 0; i < a_times; ++i) {
+        dap_randombytes(l_a, sizeof(l_a) * 2);
+        for (s_data_type t1 = 0; t1 < TYPE_COUNT; ++t1) {
+            for (s_data_type t2 = 0; t2 < TYPE_COUNT; ++t2) {
+                char l_msg[100];
+                sprintf(l_msg, "ADD %s and %s", s_data_type_to_str(t1), s_data_type_to_str(t2));
+                dap_assert_PIF(dap_add(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)) == dap_add_builtin(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)), l_msg);
+            }
+        }
     }
-    DAP_DEL_MULTY(l_chars_array_a, l_chars_array_b);
+    DAP_DELETE(l_a);
 }
 
 static void s_test_benchmark_overflow_one(uint64_t a_times, benchmark_callback a_custom_func, benchmark_callback a_builtin_func)
@@ -627,8 +660,8 @@ static void s_test_benchmark_overflow_one(uint64_t a_times, benchmark_callback a
             l_custom = 0;
             l_builtin = 0;
             for (uint64_t total = 0; total < a_times; ) {
-                randombytes(l_chars_array_a, s_array_size);
-                randombytes(l_chars_array_b, s_array_size);
+                dap_randombytes(l_chars_array_a, s_array_size);
+                dap_randombytes(l_chars_array_b, s_array_size);
                 l_cur_1 = get_cur_time_msec();
                 for (uint64_t i = 0; i < s_el_count; ++i)
                     a_custom_func(l_chars_array_a, l_chars_array_b, i, t);
@@ -665,6 +698,6 @@ void dap_common_test_run()
 {
     s_test_put_int();
     s_test_overflow();
-    s_test_overflow_diff_types();
-    s_test_benchmark(s_el_count * 1000);
+    s_test_overflow_diff_types(1000);
+    s_test_benchmark(s_el_count * 100000);
 }
