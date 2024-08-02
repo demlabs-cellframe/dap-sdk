@@ -1508,7 +1508,7 @@ static void s_dap_common_log_cleanner_interval(void *a_max_size) {
     if (l_log_size == 0){
         log_it(L_ERROR, "The size of the log file could not be determined; cleaning is impossible.");
     } else {
-        size_t l_size_mb = l_log_size / 1024;
+        size_t l_size_mb = l_log_size / 1048576;
         if (l_size_mb > l_max_size) {
             char *l_new_file = dap_strdup_printf("%s.old", s_log_file_path);
             rename(s_log_file_path, l_new_file);
