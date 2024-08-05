@@ -677,6 +677,8 @@ dap_client_http_t * dap_client_http_request_custom (
 #ifdef DAP_EVENTS_CAPS_IOCP
     log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
     l_client_http->worker = a_worker ? a_worker : dap_worker_get_current();
+    if (!l_client_http->worker)
+        l_client_http->worker = dap_worker_get_auto();
     l_ev_socket->flags &= ~DAP_SOCK_READY_TO_READ;
     l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
     dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_DUP(&l_ev_socket->uuid);
@@ -708,9 +710,9 @@ dap_client_http_t * dap_client_http_request_custom (
         if (l_err2 == WSAEWOULDBLOCK) {
             log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
             l_client_http->worker = a_worker?a_worker: dap_worker_get_current();
-            dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
             if (!l_client_http->worker)
                 l_client_http->worker = dap_worker_get_auto();
+            dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
             dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
             *l_ev_uuid_ptr = l_ev_socket->uuid;
             l_client_http->timer = dap_timerfd_start_on_worker(l_client_http->worker, s_client_timeout_ms, s_timer_timeout_check, l_ev_uuid_ptr);
