@@ -79,6 +79,14 @@ DAP_STATIC_INLINE const char *s_op_type_to_str(s_op_type a_type)
     }
 }
 
+DAP_STATIC_INLINE s_randombytes(unsigned char *a_array, uint64_t a_len)
+{
+    srand(time(NULL));
+    for (uint64_t i = 0; i < a_len; i += sizeof(int)) {
+        *(int*)(a_array + i) = rand();
+    }
+}
+
 static void s_test_put_int()
 {
     dap_print_module_name("dap_common");
@@ -622,16 +630,20 @@ static void s_test_overflow_diff_types(uint64_t a_times)
         l_b = l_a + 1;
     char q = 54;
     for (uint64_t i = 0; i < a_times; ++i) {
-        randombytes(l_a, sizeof(l_a) * 2);
+        s_randombytes((unsigned char *)l_a, sizeof(l_a) * 2);
         for (s_data_type t1 = 0; t1 < TYPE_COUNT; ++t1) {
+            char l_msg[100];
             for (s_data_type t2 = 0; t2 < TYPE_COUNT; ++t2) {
-                char l_msg[100];
                 sprintf(l_msg, "ADD %s and %s", s_data_type_to_str(t1), s_data_type_to_str(t2));
                 dap_assert_PIF(dap_add(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)) == dap_add_builtin(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)), l_msg);
                 sprintf(l_msg, "SUB %s and %s", s_data_type_to_str(t1), s_data_type_to_str(t2));
                 dap_assert_PIF(dap_sub(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)) == dap_sub_builtin(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)), l_msg);
                 sprintf(l_msg, "MUL %s and %s", s_data_type_to_str(t1), s_data_type_to_str(t2));
                 dap_assert_PIF(dap_mul(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)) == dap_mul_builtin(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)), l_msg);
+            }
+            if (i + 1 == a_times) {
+                sprintf(l_msg, "%s check with others", s_data_type_to_str(t1));
+                dap_assert(true, l_msg);
             }
         }
     }
@@ -653,8 +665,8 @@ static void s_test_benchmark_overflow_one(uint64_t a_times, benchmark_callback a
             l_custom = 0;
             l_builtin = 0;
             for (uint64_t total = 0; total < a_times; ) {
-                randombytes(l_chars_array_a, s_array_size);
-                randombytes(l_chars_array_b, s_array_size);
+                s_randombytes(l_chars_array_a, s_array_size);
+                s_randombytes(l_chars_array_b, s_array_size);
                 l_cur_1 = get_cur_time_msec();
                 for (uint64_t i = 0; i < s_el_count; ++i)
                     a_custom_func(l_chars_array_a, l_chars_array_b, i, t);
