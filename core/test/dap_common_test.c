@@ -628,6 +628,10 @@ static void s_test_overflow_diff_types(uint64_t a_times)
                 char l_msg[100];
                 sprintf(l_msg, "ADD %s and %s", s_data_type_to_str(t1), s_data_type_to_str(t2));
                 dap_assert_PIF(dap_add(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)) == dap_add_builtin(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)), l_msg);
+                sprintf(l_msg, "SUB %s and %s", s_data_type_to_str(t1), s_data_type_to_str(t2));
+                dap_assert_PIF(dap_sub(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)) == dap_sub_builtin(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)), l_msg);
+                sprintf(l_msg, "MUL %s and %s", s_data_type_to_str(t1), s_data_type_to_str(t2));
+                dap_assert_PIF(dap_mul(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)) == dap_mul_builtin(dap_type_convert_to(*l_a, t1), dap_type_convert_to(*l_b, t2)), l_msg);
             }
         }
     }

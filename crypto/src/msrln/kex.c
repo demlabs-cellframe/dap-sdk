@@ -333,7 +333,7 @@ CRYPTO_MSRLN_STATUS HelpRec(const uint32_t* x, uint32_t* rvec, const unsigned ch
     unsigned char bit, random_bits[32];
     uint32_t v0[4], v1[4];
 
-    randombytes( random_bits, 32);
+    dap_randombytes( random_bits, 32);
     CRYPTO_MSRLN_STATUS Status = CRYPTO_MSRLN_SUCCESS;
 
 #if defined(ASM_SUPPORT) && (SIMD_SUPPORT == AVX2_SUPPORT)         
@@ -429,7 +429,7 @@ CRYPTO_MSRLN_STATUS get_error(int32_t* e, unsigned char* seed, unsigned int nonc
     uint8_t *pacc1 = (uint8_t *) &acc1, *pacc2 = (uint8_t *) &acc2;
     unsigned int i, j;
 
-    randombytes( stream, 3 * PARAMETER_N);
+    dap_randombytes( stream, 3 * PARAMETER_N);
 
 #if defined(ASM_SUPPORT) && (SIMD_SUPPORT == AVX2_SUPPORT)
     error_sampling_asm(stream, e);
@@ -510,7 +510,7 @@ CRYPTO_MSRLN_STATUS MSRLN_KeyGeneration_A(int32_t* SecretKeyA, unsigned char* Pu
     unsigned char error_seed[ERROR_SEED_BYTES];
     CRYPTO_MSRLN_STATUS Status = CRYPTO_MSRLN_ERROR_UNKNOWN;
 
-    Status = randombytes( seed, SEED_BYTES);
+    Status = dap_randombytes( seed, SEED_BYTES);
 
     if (Status != CRYPTO_MSRLN_SUCCESS) {
         return Status;
