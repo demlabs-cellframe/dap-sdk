@@ -304,6 +304,28 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, .
     return 0;
 }
 
+int s_dap_log_open(const char *a_log_file_path) {
+    if (s_log_file) {
+        s_log_file = freopen(a_log_file_path, "w", s_log_file);
+    } else {
+        s_log_file = fopen( a_log_file_path , "a" );
+        if( s_log_file == NULL)
+            s_log_file = fopen( a_log_file_path , "w" );
+    }
+    if ( s_log_file == NULL ) {
+        fprintf( stderr, "Can't open log file %s \n", a_log_file_path );
+        return -1;   //switch off show log in cosole if file not open
+    }
+#ifdef DAP_OS_WINDOWS
+    static char s_buf_file[LOG_BUF_SIZE], s_buf_stdout[LOG_BUF_SIZE];
+    setvbuf(stdout, s_buf_file, _IOFBF, LOG_BUF_SIZE);
+    setvbuf(s_log_file, s_buf_stdout, _IOFBF, LOG_BUF_SIZE);
+#else
+    setvbuf(s_log_file, NULL, _IOLBF, LOG_BUF_SIZE);
+#endif
+    return 0;
+}
+
 /**
  * @brief this function is used for dap sdk modules initialization
  * @param a_console_title const char *: set console title. Can be result of dap_get_appname(). For example: cellframe-node
@@ -320,20 +342,8 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
     for (int i = 0; i < 16; ++i)
             s_ansi_seq_color_len[i] =(unsigned int) strlen(s_ansi_seq_color[i]);
     if ( a_log_file_path && a_log_file_path[0] ) {
-        s_log_file = fopen( a_log_file_path , "a" );
-        if( s_log_file == NULL)
-            s_log_file = fopen( a_log_file_path , "w" );
-        if ( s_log_file == NULL ) {
-            fprintf( stderr, "Can't open log file %s \n", a_log_file_path );
-            return -1;   //switch off show log in cosole if file not open
-        }
-#ifdef DAP_OS_WINDOWS
-        static char s_buf_file[LOG_BUF_SIZE], s_buf_stdout[LOG_BUF_SIZE];
-        setvbuf(stdout, s_buf_file, _IOFBF, LOG_BUF_SIZE);
-        setvbuf(s_log_file, s_buf_stdout, _IOFBF, LOG_BUF_SIZE);
-#else
-        setvbuf(s_log_file, NULL, _IOLBF, LOG_BUF_SIZE);
-#endif
+        if (s_dap_log_open(a_log_file_path))
+            return -1;
         if (a_log_dirpath != s_log_dir_path)
             dap_stpcpy(s_log_dir_path,  a_log_dirpath);
         if (a_log_file_path != s_log_file_path)
@@ -1491,6 +1501,29 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
         *a_err = l_err;
     return l_res;
 #endif
+}
+
+static void s_dap_common_log_cleanner_interval(void *a_max_size) {
+    size_t l_max_size = *((size_t*)a_max_size);
+    size_t l_log_size = ftell(s_log_file);
+    if (l_log_size == 0){
+        log_it(L_ERROR, "The size of the log file could not be determined; cleaning is impossible.");
+    } else {
+        size_t l_size_mb = l_log_size / 1048576;
+        if (l_size_mb > l_max_size) {
+            char *l_new_file = dap_strdup_printf("%s.old", s_log_file_path);
+            rename(s_log_file_path, l_new_file);
+            if (s_dap_log_open(s_log_file_path)) {
+                log_it(L_CRITICAL, "An error occurred The logging thread was not reopened.");
+            }
+            log_it(L_NOTICE, "log file overwritten.");
+            remove(l_new_file);
+            DAP_DELETE(l_new_file);
+        }
+    }
+}
+void dap_common_enable_cleaner_log(size_t a_timeout, size_t *a_max_size){
+    dap_interval_timer_create(a_timeout, s_dap_common_log_cleanner_interval, a_max_size);
 }
 
 #ifdef __cplusplus
