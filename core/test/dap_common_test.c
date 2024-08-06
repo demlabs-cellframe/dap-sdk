@@ -142,32 +142,22 @@ static void s_test_overflow()
     unsigned long l_unsigned_long = dap_maxval(l_unsigned_long);
     unsigned long long l_unsigned_long_long = dap_maxval(l_unsigned_long_long);
 // base tests
-    // char ADD
-    for (int i = dap_minval(l_char); i <= dap_maxval(l_char); ++i)
-        for (int j = dap_minval(l_char); j <= dap_maxval(l_char); ++j) 
-            dap_assert_PIF(dap_add((char)i, (char)j) == dap_add_builtin((char)i, (char)j), "Base char ADD test");
-    // unsigned char ADD
-    for (unsigned int i = dap_minval(l_unsigned_char); i <= dap_maxval(l_unsigned_char); ++i)
-        for (unsigned int j = dap_minval(l_unsigned_char); j <= dap_maxval(l_unsigned_char); ++j)
-            dap_assert_PIF(dap_add((unsigned char)i, (unsigned char)j) == dap_add_builtin((unsigned char)i, (unsigned char)j), "Base unsigned char ADD test");
-    
-    // char SUB
-    for (int i = dap_minval(l_char); i <= dap_maxval(l_char); ++i)
-        for (int j = dap_minval(l_char); j <= dap_maxval(l_char); ++j) 
-            dap_assert_PIF(dap_sub((char)i, (char)j) == dap_sub_builtin((char)i, (char)j), "Base char SUB test");
-    // unsigned char SUB
-    for (unsigned int i = dap_minval(l_unsigned_char); i <= dap_maxval(l_unsigned_char); ++i)
-        for (unsigned int j = dap_minval(l_unsigned_char); j <= dap_maxval(l_unsigned_char); ++j)
-            dap_assert_PIF(dap_sub((unsigned char)i, (unsigned char)j) == dap_sub_builtin((unsigned char)i, (unsigned char)j), "Base unsigned char SUB test");
-    
-    // char MUL
-    for (int i = dap_minval(l_char); i <= dap_maxval(l_char); ++i)
-        for (int j = dap_minval(l_char); j <= dap_maxval(l_char); ++j) 
-            dap_assert_PIF(dap_mul((char)i, (char)j) == dap_mul_builtin((char)i, (char)j), "Base char MUL test");
-    // unsigned char MUL
-    for (unsigned int i = dap_minval(l_unsigned_char); i <= dap_maxval(l_unsigned_char); ++i)
-        for (unsigned int j = dap_minval(l_unsigned_char); j <= dap_maxval(l_unsigned_char); ++j)
-            dap_assert_PIF(dap_mul((unsigned char)i, (unsigned char)j) == dap_mul_builtin((unsigned char)i, (unsigned char)j), "Base unsigned char MUL test");
+    // char
+    for (int i = dap_minval(l_char); i <= dap_maxval(l_char); ++i) {
+        for (int j = dap_minval(l_char); j <= dap_maxval(l_char); ++j)  {
+            dap_assert_PIF(dap_add((char)i, (char)j) == dap_add_builtin((char)i, (char)j), "Base CHAR ADD test");
+            dap_assert_PIF(dap_sub((char)i, (char)j) == dap_sub_builtin((char)i, (char)j), "Base CHAR SUB test");
+            dap_assert_PIF(dap_mul((char)i, (char)j) == dap_mul_builtin((char)i, (char)j), "Base CHAR MUL test");
+        }
+    }
+    // unsigned char
+    for (int i = dap_minval(l_unsigned_char); i <= dap_maxval(l_unsigned_char); ++i) {
+        for (int j = dap_minval(l_unsigned_char); j <= dap_maxval(l_unsigned_char); ++j)  {
+            dap_assert_PIF(dap_add((unsigned char)i, (unsigned char)j) == dap_add_builtin((unsigned char)i, (unsigned char)j), "Base UNSIGNED CHAR ADD test");
+            dap_assert_PIF(dap_sub((unsigned char)i, (unsigned char)j) == dap_sub_builtin((unsigned char)i, (unsigned char)j), "Base UNSIGNED CHAR SUB test");
+            dap_assert_PIF(dap_mul((unsigned char)i, (unsigned char)j) == dap_mul_builtin((unsigned char)i, (unsigned char)j), "Base UNSIGNED CHAR MUL test");
+        }
+    }
 
 // ADD
     dap_assert(
@@ -439,7 +429,7 @@ static void s_test_benchmark_overflow_one(uint64_t a_times, benchmark_callback a
     DAP_NEW_Z_SIZE_RET(l_chars_array_b, unsigned char, s_array_size, l_chars_array_a);
 
     for (s_data_type t = 0; t < TYPE_COUNT; ++t) {
-        if (t == TYPE_CHAR || t == TYPE_LONG_LONG || t == TYPE_UCHAR || t == TYPE_ULONG_LONG) {
+        // if (t == TYPE_CHAR || t == TYPE_INT || t == TYPE_LONG_LONG || t == TYPE_UCHAR || t == TYPE_ULONG_LONG) {
             l_custom = 0;
             l_builtin = 0;
             for (uint64_t total = 0; total < a_times; ) {
@@ -458,7 +448,7 @@ static void s_test_benchmark_overflow_one(uint64_t a_times, benchmark_callback a
             benchmark_mgs_time(l_msg, l_custom);
             sprintf(l_msg, "Check overflow %"DAP_UINT64_FORMAT_U" times to __builtin %s", a_times, s_data_type_to_str(t));
             benchmark_mgs_time(l_msg, l_builtin);
-        }
+        // }
     }
     DAP_DEL_MULTY(l_chars_array_a, l_chars_array_b);
 }
