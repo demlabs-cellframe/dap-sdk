@@ -23,7 +23,6 @@
 */
 #define _POSIX_THREAD_SAFE_FUNCTIONS
 #include <locale.h>
-#include <getopt.h>
 #include "dap_common.h"
 #include "dap_strfuncs.h"
 #include "dap_string.h"
