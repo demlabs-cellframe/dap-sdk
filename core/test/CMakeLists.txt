@@ -3,7 +3,6 @@ cmake_minimum_required(VERSION 3.10)
 project(core_test)
 
 set(CMAKE_C_STANDARD 11)
-add_compile_options(-Wno-error=sign-compare)
 file(GLOB SRCS *.c)
 
 
