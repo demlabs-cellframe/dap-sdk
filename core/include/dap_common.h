@@ -514,6 +514,8 @@ extern "C" {
 
 #define dap_abs(a) ( (a) >= 0 ? (a) : -(a) )
 
+#define dap_maxlluval ULLONG_MAX
+
 #define dap_maxval(v) _Generic( (v),                            \
     signed char : SCHAR_MAX,                                    \
            char : CHAR_MAX,       unsigned char : UCHAR_MAX,    \
@@ -614,7 +616,7 @@ extern "C" {
                     ) ||                                        \
                     (                                           \
                         _b < 0 && \
-                        (long long)_a < (long long)(dap_minval(_a) - _b) \
+                        (long long)_a < (long long)((long long)dap_minval(_a) - _b) \
                     )                                           \
                 )                                               \
             ) ||                                                \
@@ -636,53 +638,31 @@ extern "C" {
         }                                                       \
         _a;                                                     \
     })
+    // ((_b < 0 && _a > dap_maxval(_a) + _b) || (_b > 0 && _a < dap_minval(_a) + _b))
     #define dap_sub(a,b)                                \
     ({                                                          \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
-        /*printf("Max value %lld\t\t\t\t%llu\n", (long long int)dap_maxval(_a), (long long unsigned int)dap_maxval(_a));*/ \
-        if (!(                                                  \
-            (                                                   \
-                _a > 0 &&                                       \
-                (                                               \
-                    (                                           \
-                        _b > 0 &&                               \
-                        (long long)_a < (long long)((long long)dap_minval(_a) + _b) \
-                    ) ||                                        \
-                    (                                           \
-                        _b < 0 && \
-                        (long long)_a > (long long)((long long)dap_maxval(_a) + _b) \
-                    )                                           \
-                )                                               \
-            ) ||                                                \
-            (                                                   \
-                _a < 0 &&                                       \
-                (                                               \
-                    (                                           \
-                        _b < 0 && \
-                        (long long)_a > (long long)(dap_maxval(_a) + _b) \
-                    ) ||                                        \
-                    (                                           \
-                        _b > 0 && \
-                        (long long)_a < (long long)((long long)dap_minval(_a) + _b) \
-                    )                                           \
-                )                                               \
-            ) ||                                                \
-            (                                                   \
-                _a == 0 &&                                       \
-                (                                               \
-                    (                                           \
-                        _b < 0 && \
-                        (long long)_b < (long long)(-dap_maxval(_a)) \
-                    ) ||                                        \
-                    (                                           \
-                        _b > 0 && \
-                        (long long)_a < (long long)((long long)dap_minval(_a) + _b) \
-                    )                                           \
-                )                                               \
-            )                                                   \
-        )) {                                                    \
-            _a -= _b;                                           \
-        }                                                       \
+        unsigned long long _a_umax = dap_maxuval(_a);            \
+        unsigned long long _b_umax = dap_maxuval(_b);            \
+        unsigned long long _bias = dap_maxlluval - dap_max(_a_umax, _b_umax); \
+        if (_a_umax != dap_maxlluval && _b_umax != dap_maxlluval) { \
+            if (!( \
+                (_b < 0 && (_bias + _a) > (_bias + dap_maxval(_a) + _b)) || \
+                (_b > 0 && (_bias + _a) < (_bias + dap_minval(_a) + _b)) \
+                )) { _a -= _b; }                    \
+        } else { \
+            if (dap_is_signed(_a)) { \
+                if (!( \
+                    (_b < 0 && (long long)_a > (long long)(dap_maxval(_a) + _b)) || \
+                    (_b > 0 && (long long)_a < (long long)(dap_minval(_a) + _b)) \
+                    )) { _a -= _b; } \
+            } else { \
+                if (!( \
+                    (_b < 0 && (unsigned long long)_a > (unsigned long long)(dap_maxval(_a) + _b)) || \
+                    (_b > 0 && (unsigned long long)_a < (unsigned long long)_b) \
+                    )) { _a -= _b; } \
+            } \
+        } \
         _a;                                                     \
     })
     #define dap_mul(a,b)                                \
