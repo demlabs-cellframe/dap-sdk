@@ -72,7 +72,10 @@ add_custom_target(BuildXKCP ALL
     COMMAND ${CMAKE_COMMAND}  -E env AR=${CMAKE_AR} CC=${CMAKE_C_COMPILER} SDKROOT=${CMAKE_OSX_SYSROOT}  ${MAKE} -C ./xkcp_build_src ${XKCP_TARGET}
     BYPRODUCTS ${XKCP_BUILD_LIB}
 )
-target_link_options(${PROJECT_NAME} INTERFACE -z noexecstack)
+
+if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    target_link_options(${PROJECT_NAME} INTERFACE -z noexecstack)
+endif()
 
 file(MAKE_DIRECTORY ${XKCP_BUILD_INCLUDES})
 
