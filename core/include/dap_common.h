@@ -601,40 +601,55 @@ extern "C" {
             _a;                                                 \
         })
     #endif
-
+    // ((_b > 0 && _a > dap_maxval(_a) - _b) || (_b < 0 && _a < dap_minval(_a) - _b))
+    /*
+        #define dap_add(a,b)                                        \
+    ({                                                          \
+        __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+        unsigned long long _a_umax = dap_maxuval(_a);            \
+        unsigned long long _b_umax = dap_maxuval(_b);            \
+        unsigned long long _bias = dap_maxlluval - dap_max(_a_umax, _b_umax); \
+        if (_a_umax != dap_maxlluval && _b_umax != dap_maxlluval) { \
+            if (!( \
+                (_b > 0 && (_bias + _a) > (_bias + dap_maxval(_a) - _b)) || \
+                (_b < 0 && (_bias + _a) < (_bias + dap_minval(_a) - _b)) \
+                )) \
+            { _a += _b; }                    \
+        } else { \
+            if (dap_is_signed(_a)) { \
+                if (!( \
+                    (_b > 0 && (long long)_a > (long long)((long long)dap_maxval(_a) - _b)) || \
+                    (_b < 0 && (long long)_a < (long long)((long long)dap_minval(_a) - _b)) \
+                    )) \
+                { _a += _b; } \
+            } else { \
+                if (!( \
+                    (_b > 0 && (unsigned long long)_a > (unsigned long long)((unsigned long long)dap_maxval(_a) - _b)) || \
+                    (_b < 0 && (unsigned long long)_a < (unsigned long long)((unsigned long long)0 - _b)) \
+                    )) \
+                { _a += _b; } \
+            } \
+        } \
+        _a;                                                     \
+    })
+    */
     #define dap_add(a,b)                                        \
     ({                                                          \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
         if (!(                                                  \
-            (                                                   \
-                _a >= 0 &&                                       \
+            ( _a >= 0 &&                                       \
                 (                                               \
-                    (                                           \
-                        _b > 0 &&                               \
-                        (unsigned long long)_b > (unsigned long long)(dap_maxval(_a) - _a) \
-                    ) ||                                        \
-                    (                                           \
-                        _b < 0 && \
-                        (long long)_a < (long long)((long long)dap_minval(_a) - _b) \
-                    )                                           \
+                    ( _b > 0 && (unsigned long long)_b > (unsigned long long)(dap_maxval(_a) - _a) ) || \
+                    ( _b < 0 && (long long)_a < (long long)((long long)dap_minval(_a) - _b) ) \
                 )                                               \
             ) ||                                                \
-            (                                                   \
-                _a < 0 &&                                       \
+            (  _a < 0 &&                                       \
                 (                                               \
-                    (                                           \
-                        _b < 0 && \
-                        (long long)_b < (long long)(dap_minval(_a) - _a) \
-                    ) ||                                        \
-                    (                                           \
-                        _b > 0 && \
-                        (long long)_a > (long long)((long long)dap_maxval(_a) - _b) \
-                    )                                           \
+                    ( _b < 0 && (long long)_b < (long long)(dap_minval(_a) - _a) ) || \
+                    ( _b > 0 && (long long)_a > (long long)((long long)dap_maxval(_a) - _b) ) \
                 )                                               \
             )                                                   \
-        )) {                                                    \
-            _a += _b;                                           \
-        }                                                       \
+        )) { _a += _b; }                                              \
         _a;                                                     \
     })
     #define dap_sub(a,b)                                \
@@ -647,22 +662,29 @@ extern "C" {
             if (!( \
                 (_b < 0 && (_bias + _a) > (_bias + dap_maxval(_a) + _b)) || \
                 (_b > 0 && (_bias + _a) < (_bias + dap_minval(_a) + _b)) \
-                )) { _a -= _b; }                    \
+                )) \
+            { _a -= _b; }                    \
         } else { \
             if (dap_is_signed(_a)) { \
                 if (!( \
-                    (_b < 0 && (long long)_a > (long long)(dap_maxval(_a) + _b)) || \
-                    (_b > 0 && (long long)_a < (long long)(dap_minval(_a) + _b)) \
-                    )) { _a -= _b; } \
+                    (_b < 0 && (long long)_a > (long long)((long long)dap_maxval(_a) + _b)) || \
+                    (_b > 0 && (long long)_a < (long long)((long long)dap_minval(_a) + _b)) \
+                    )) \
+                { _a -= _b; } \
             } else { \
                 if (!( \
-                    (_b < 0 && (unsigned long long)_a > (unsigned long long)(dap_maxval(_a) + _b)) || \
+                    (_b < 0 && (unsigned long long)_a > (unsigned long long)((unsigned long long)dap_maxval(_a) + _b)) || \
                     (_b > 0 && (unsigned long long)_a < (unsigned long long)_b) \
-                    )) { _a -= _b; } \
+                    )) \
+                { _a -= _b; } \
             } \
         } \
         _a;                                                     \
     })
+    // /*_a positive*/
+    // (_a > 0 && ((_b > 0 && _a > dap_maxval(_a) / _b) || _b < dap_minval(_a) / _a)) || 
+    // /*_a negative*/
+    // (_a <= 0 && ((_b > 0 && _a < dap_minval(_a) / _b) || (_a != 0 && _b < dap_maxval(_a) / _a))) 
     #define dap_mul(a,b)                                \
     ({                                                  \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b); \

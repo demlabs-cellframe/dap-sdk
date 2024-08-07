@@ -3,7 +3,6 @@
 
 #define LOG_TAG "dap_common_test"
 
-
 typedef enum {
     TYPE_CHAR,
     TYPE_SHORT,
@@ -18,13 +17,6 @@ typedef enum {
     TYPE_ULONG_LONG,
     TYPE_COUNT
 } s_data_type;
-
-typedef enum {
-    OP_ADD,
-    OP_SUB,
-    OP_MUL,
-    OP_COUNT
-} s_op_type;
 
 typedef void (*benchmark_callback)(void *, void *, uint64_t, s_data_type);
 
@@ -47,17 +39,6 @@ DAP_STATIC_INLINE const char *s_data_type_to_str(s_data_type a_type)
         case TYPE_UINT: return "UNSIGNED INT";
         case TYPE_ULONG: return "UNSIGNED LONG";
         case TYPE_ULONG_LONG: return "UNSIGNED LONG LONG";
-        default: return "UNDEFINED";
-    }
-}
-
-DAP_STATIC_INLINE const char *s_op_type_to_str(s_op_type a_type)
-{
-    switch (a_type)
-    {
-        case OP_ADD: return "CHAR";
-        case OP_SUB: return "SHORT";
-        case OP_MUL: return "INT";
         default: return "UNDEFINED";
     }
 }
@@ -347,9 +328,6 @@ static void s_test_overflow()
     unsigned long l_unsigned_long = dap_maxval(l_unsigned_long);
     unsigned long long l_unsigned_long_long = dap_maxval(l_unsigned_long_long);
 
-    int q = NULL;
-    // typeof((dap_type_convert_to(q, TYPE_CHAR))) q2 = 0;
-    // printf("%lld\n",(dap_maxval((dap_type_convert_to(q, TYPE_CHAR)))));
 // base tests
     // char
     for (int i = dap_minval(l_char); i <= dap_maxval(l_char); ++i) {
@@ -603,7 +581,7 @@ static void s_test_overflow_diff_types(uint64_t a_times)
     unsigned long long
         *l_a = NULL,
         *l_b = NULL; 
-        DAP_NEW_Z_COUNT_RET(l_a, __typeof__(l_a), 2, NULL);
+        DAP_NEW_Z_COUNT_RET(l_a, unsigned long long, 2, NULL);
         l_b = l_a + 1;
     char q = 54;
     for (uint64_t i = 0; i < a_times; ++i) {
