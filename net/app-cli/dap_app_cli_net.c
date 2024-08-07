@@ -114,9 +114,13 @@ dap_app_cli_connect_param_t dap_app_cli_connect()
 {
     SOCKET l_socket = ~0;
     int l_arg_len = 0;
+    uint16_t l_array_count;
     struct sockaddr_storage l_saddr = { };
-    const char *l_addr = dap_config_get_item_str(g_config, "cli-server", DAP_CFG_PARAM_SOCK_PATH);
+    char **l_addrs = dap_config_get_item_str_path_array(g_config, "cli-server", DAP_CFG_PARAM_SOCK_PATH, &l_array_count);
+    char *l_addr = l_addrs ? l_addrs[0] : NULL;
     if (l_addr) {
+        l_addrs[0] = NULL;
+        dap_config_get_item_str_path_array_free(l_addrs, &l_array_count);
 #ifdef DAP_OS_WINDOWS
         printf("Unix socket-based server is not yet implemented, consider localhost usage\n"); // TODO
         return ~0;
@@ -129,8 +133,9 @@ dap_app_cli_connect_param_t dap_app_cli_connect()
         strncpy(l_saddr_un.sun_path, l_addr, sizeof(l_saddr_un.sun_path) - 1);
         l_arg_len = SUN_LEN(&l_saddr_un);
         memcpy(&l_saddr, &l_saddr_un, l_arg_len);
+        DAP_DEL_Z(l_addr);
 #endif
-    } else if ( !!(l_addr = dap_config_get_item_str(g_config, "cli-server", DAP_CFG_PARAM_LISTEN_ADDRS)) ) {
+    } else if ( !!(l_addr = (char *)dap_config_get_item_str(g_config, "cli-server", DAP_CFG_PARAM_LISTEN_ADDRS)) ) {
         if ( -1 == (l_socket = socket(AF_INET, SOCK_STREAM, 0)) ) {
 #ifdef DAP_OS_WINDOWS
             _set_errno( WSAGetLastError() );
