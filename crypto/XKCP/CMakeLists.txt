@@ -73,7 +73,7 @@ add_custom_target(BuildXKCP ALL
     BYPRODUCTS ${XKCP_BUILD_LIB}
 )
 
-if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
+if ((CMAKE_C_COMPILER_ID STREQUAL "GNU") AND NOT WIN32)
     target_link_options(${PROJECT_NAME} INTERFACE -z noexecstack)
 endif()
 
