@@ -605,7 +605,6 @@ extern "C" {
     #define dap_add(a,b)                                        \
     ({                                                          \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
-        /*printf("Max value %lld\t\t\t\t%llu\n", (long long int)dap_maxval(_a), (long long unsigned int)dap_maxval(_a));*/ \
         if (!(                                                  \
             (                                                   \
                 _a >= 0 &&                                       \
@@ -638,7 +637,6 @@ extern "C" {
         }                                                       \
         _a;                                                     \
     })
-    // ((_b < 0 && _a > dap_maxval(_a) + _b) || (_b > 0 && _a < dap_minval(_a) + _b))
     #define dap_sub(a,b)                                \
     ({                                                          \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
@@ -668,13 +666,13 @@ extern "C" {
     #define dap_mul(a,b)                                \
     ({                                                  \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
-        ( \
+        if (!( \
             /*_a positive*/\
-            (_a > 0 && ((_b > 0 && _a > dap_maxval(_a) / _b) || _b < dap_minval(_a) / _a)) || \
+            (_a > 0 && ((_b > 0 && (unsigned long long)_a > (unsigned long long)(dap_maxval(_a) / _b)) || (_b < 0 && ((long long)_b < (long long)(dap_minval(_a) / _a))))) || \
             /*_a negative*/\
-            (_a <= 0 && ((_b > 0 && _a < dap_minval(_a) / _b) || (_a != 0 && _b < dap_maxval(_a) / _a))) \
-        ) \
-        ? _a : (_a * _b); \
+            (_a <= 0 && ((_b > 0 && (long long)_a < (long long)(dap_minval(_a) / _b)) || (_a != 0 && _b < 0 && (long long)_b < (long long)(dap_maxval(_a) / _a)))) \
+        )) { (_a *= _b); } \
+        _a; \
     })
 #endif
 
