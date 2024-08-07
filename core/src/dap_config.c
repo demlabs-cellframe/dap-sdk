@@ -462,10 +462,10 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
 char *dap_config_get_item_str_path_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_default) {
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
-        return a_default;
+        return dap_strdup(a_default);
     if (l_item->type != DAP_CONFIG_ITEM_STRING) {
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
-        return a_default;
+        return dap_strdup(a_default);
     }
     char *l_dir = dap_path_get_dirname(a_config->path), *l_ret = dap_canonicalize_filename(l_item->val.val_str, l_dir);
     //log_it(L_DEBUG, "Config-path item: %s: composed from %s and %s", l_ret, l_item->val.val_str, l_dir);
