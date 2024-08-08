@@ -20,8 +20,8 @@ typedef enum {
 
 typedef void (*benchmark_callback)(void *, void *, uint64_t, s_data_type);
 
-static const uint64_t s_times = 10000;
-static const uint64_t s_el_count = 10;
+static const uint64_t s_times = 100;
+static const uint64_t s_el_count = 100;
 static const uint64_t s_array_size = s_el_count * sizeof(long long) / sizeof(char); // benchmarks array size 8MB
 
 DAP_STATIC_INLINE const char *s_data_type_to_str(s_data_type a_type)
@@ -1097,8 +1097,10 @@ static void s_test_overflow_diff_types_boundary()
     dap_print_module_name("dap_overflow_add_diff_types_boundary_min");
     *l_b = 0;
     s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    dap_assert(true, "b = 0");
     *l_b = 1;
     s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    dap_assert(true, "b = 1");
     (*(char *)l_b) = -1;
     s_test_overflow_diff_types_boundary_min(l_a, l_b);
     (*(short *)l_b) = -1;
@@ -1111,6 +1113,7 @@ static void s_test_overflow_diff_types_boundary()
     s_test_overflow_diff_types_boundary_min(l_a, l_b);
     (*(signed char *)l_b) = -1;
     s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    dap_assert(true, "b = -1");
 
     (*(char *)l_b) = dap_minval((char)0);
     s_test_overflow_diff_types_boundary_min(l_a, l_b);
@@ -1124,6 +1127,7 @@ static void s_test_overflow_diff_types_boundary()
     s_test_overflow_diff_types_boundary_min(l_a, l_b);
     (*(signed char *)l_b) = dap_minval((signed char)0);
     s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    dap_assert(true, "b = min");
 
     (*(char *)l_b) = dap_maxval((char)0);
     s_test_overflow_diff_types_boundary_min(l_a, l_b);
@@ -1137,12 +1141,15 @@ static void s_test_overflow_diff_types_boundary()
     s_test_overflow_diff_types_boundary_min(l_a, l_b);
     (*(signed char *)l_b) = dap_maxval((signed char)0);
     s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    dap_assert(true, "b = max");
 
     dap_print_module_name("dap_overflow_add_diff_types_boundary_max");
     *l_b = 0;
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    dap_assert(true, "b = 0");
     *l_b = 1;
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    dap_assert(true, "b = 1");
     (*(char *)l_b) = -1;
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
     (*(short *)l_b) = -1;
@@ -1155,6 +1162,7 @@ static void s_test_overflow_diff_types_boundary()
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
     (*(signed char *)l_b) = -1;
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    dap_assert(true, "b = -1");
 
     (*(char *)l_b) = dap_minval((char)0);
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
@@ -1168,6 +1176,7 @@ static void s_test_overflow_diff_types_boundary()
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
     (*(signed char *)l_b) = dap_minval((signed char)0);
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    dap_assert(true, "b = min");
 
     (*(char *)l_b) = dap_maxval((char)0);
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
@@ -1181,6 +1190,7 @@ static void s_test_overflow_diff_types_boundary()
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
     (*(signed char *)l_b) = dap_maxval((signed char)0);
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    dap_assert(true, "b = max");
 
     DAP_DELETE(l_a);
 }

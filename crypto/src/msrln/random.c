@@ -46,7 +46,7 @@ CRYPTO_MSRLN_STATUS MSRLN_get_error(const unsigned char* seed, unsigned int seed
     UNREFERENCED_PARAMETER(nonce);
     UNREFERENCED_PARAMETER(nonce_nbytes);
 
-    dap_randombytes( stream_array, array_nbytes);
+    randombytes( stream_array, array_nbytes);
 
     return CRYPTO_MSRLN_SUCCESS;
 }

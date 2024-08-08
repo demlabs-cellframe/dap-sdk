@@ -23,7 +23,7 @@ static __inline void delay(unsigned int count)
 uint32_t random_uint32_t(const uint32_t MAX_NUMBER)
 {
     uint32_t ret;
-    dap_randombytes(&ret, 4);
+    randombytes(&ret, 4);
     ret %= MAX_NUMBER;
     return ret;
 }
@@ -35,7 +35,7 @@ uint32_t random_uint32_t(const uint32_t MAX_NUMBER)
 byte_t dap_random_byte()
 {
     byte_t ret;
-    dap_randombytes(&ret, 1);
+    randombytes(&ret, 1);
     return ret;
 }
 
@@ -46,24 +46,24 @@ byte_t dap_random_byte()
 uint16_t dap_random_uint16()
 {
     uint16_t l_ret;
-    dap_randombytes(&l_ret, 2);
+    randombytes(&l_ret, 2);
     return l_ret;
 }
 
 
-int dap_dap_randombase64(void*random_array, unsigned int size)
+int randombase64(void*random_array, unsigned int size)
 {
     int off = size - (size/4)*3;
     unsigned int odd_signs = size - ((size/4)*4);
     if(odd_signs < size)
     {
-        dap_randombytes(random_array + off, (size/4)*3);
+        randombytes(random_array + off, (size/4)*3);
         dap_enc_base64_encode(random_array + off, (size/4)*3,random_array,DAP_ENC_DATA_TYPE_B64);
     }
     if(odd_signs)
     {
         uint8_t tmpv[7];
-        dap_randombytes(tmpv+4,3);
+        randombytes(tmpv+4,3);
         dap_enc_base64_encode(tmpv + 4, 3,(char*)tmpv,DAP_ENC_DATA_TYPE_B64);
         for(unsigned int i = 0; i < odd_signs; ++i)
         {
@@ -74,7 +74,7 @@ int dap_dap_randombase64(void*random_array, unsigned int size)
 }
 
 
-int dap_randombytes(void* random_array, unsigned int nbytes)
+int randombytes(void* random_array, unsigned int nbytes)
 { // Generation of "nbytes" of random values
     
 #if defined(_WIN32)
