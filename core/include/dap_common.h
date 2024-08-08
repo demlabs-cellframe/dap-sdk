@@ -606,8 +606,8 @@ extern "C" {
     ({                                                          \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
         if (!( \
-            ((_b > 0 && (long double)_a > (long double)dap_maxval(_a) - (long double)_b) || \
-            (_b < 0 && (long double)_a < (long double)dap_minval(_a) - (long double)_b)) \
+            (((long double)_b > 0 && (long double)_a > (long double)dap_maxval(_a) - (long double)_b) || \
+            ((long double)_b < 0 && (long double)_a < (long double)dap_minval(_a) - (long double)_b)) \
         )) { (_a += _b); } \
         (_a); \
     })
@@ -616,8 +616,8 @@ extern "C" {
     ({                                                          \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
         if (!( \
-            (_b < 0 && (long double)_a > (long double)dap_maxval(_a) + (long double)_b) || \
-            (_b > 0 && (long double)_a < (long double)dap_minval(_a) + (long double)_b) \
+            ((long double)_b < 0 && (long double)_a > (long double)dap_maxval(_a) + (long double)_b) || \
+            ((long double)_b > 0 && (long double)_a < (long double)dap_minval(_a) + (long double)_b) \
         )) { (_a -= _b); } \
         (_a); \
     })
@@ -627,9 +627,15 @@ extern "C" {
         __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
         if (!( \
             /*_a positive*/\
-            (_a > 0 && ((_b > 0 && (long double)_a > (long double)((long double)dap_maxval(_a) / (long double)_b)) || (_b < 0 && ((long double)_b < (long double)((long double)dap_minval(_a) / (long double)_a))))) || \
+            ((long double)_a > 0 && ( \
+                ((long double)_b > 0 && (long double)_a > (long double)((long double)dap_maxval(_a) / (long double)_b)) || \
+                ((long double)_b < 0 && ((long double)_b < (long double)((long double)dap_minval(_a) / (long double)_a))))\
+            ) || \
             /*_a negative*/\
-            (_a <= 0 && ((_b > 0 && (long double)_a < (long double)((long double)dap_minval(_a) / (long double)_b)) || (_a != 0 && _b < 0 && (long double)_b < (long double)((long double)dap_maxval(_a) / (long double)_a)))) \
+            (_a <= 0 && ( \
+                ((long double)_b > 0 && (long double)_a < (long double)((long double)dap_minval(_a) / (long double)_b)) || \
+                (_a != 0 && (long double)_b < 0 && (long double)_b < (long double)((long double)dap_maxval(_a) / (long double)_a))) \
+            ) \
         )) { (_a *= _b); } \
         _a; \
     })
