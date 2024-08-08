@@ -514,8 +514,6 @@ extern "C" {
 
 #define dap_abs(a) ( (a) >= 0 ? (a) : -(a) )
 
-#define dap_maxlluval ULLONG_MAX
-
 #define dap_maxval(v) _Generic( (v),                            \
     signed char : SCHAR_MAX,                                    \
            char : CHAR_MAX,       unsigned char : UCHAR_MAX,    \

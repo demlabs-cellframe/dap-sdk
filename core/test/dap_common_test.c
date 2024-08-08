@@ -409,14 +409,9 @@ static void s_test_overflow()
         l_int == dap_sub_builtin(l_int, (int)1) &&
         dap_sub(l_int, (int)-1) == dap_sub_builtin(l_int, (int)-1),
         "Check int SUB overflow");
-    // printf("Check short SUB overflow,\n\t%ld == %ld (dap)\n\t%ld == %ld (__builtin)\n\t%ld == %ld (dap == __builtin)\n", l_long, dap_sub(l_long, (long)1), l_long, dap_sub_builtin(l_long, (long)1), dap_sub(l_long, (long)-1), dap_sub_builtin(l_long, (long)-1));
-    // printf("%d\n", dap_sub(l_long, (long)-1) == dap_sub_builtin(l_long, (long)-1));
-    // (_b < 0 && (_bias + _a) > (_bias + dap_maxval(_a) + _b))
-    long long a = (unsigned long)0 + l_long;
-    long long b = (unsigned long)0 + dap_maxval(l_long) + (long)-1;
     dap_assert(
-        // l_long == dap_sub(l_long, (long)1) &&
-        // l_long == dap_sub_builtin(l_long, (long)1) &&
+        l_long == dap_sub(l_long, (long)1) &&
+        l_long == dap_sub_builtin(l_long, (long)1) &&
         dap_sub(l_long, (long)-1) == dap_sub_builtin(l_long, (long)-1),
         "Check long SUB overflow");
     dap_assert(
@@ -715,9 +710,7 @@ static void s_test_overflow_diff_types(unsigned long long *l_a, unsigned long lo
     dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED INT and UNSIGNED LONG LONG");
     dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED LONG and UNSIGNED LONG LONG");
     dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED LONG LONG and UNSIGNED LONG LONG");
-    // if (i + 1 == a_times) {
-    //     dap_assert(true, "ADD");
-    // }
+
 // SUB
     // char
     dap_assert_PIF(dap_sub(*(char*)l_a, *(char*)l_b) == dap_sub_builtin(*(char*)l_a, *(char*)l_b), "SUB CHAR and CHAR");
@@ -851,9 +844,7 @@ static void s_test_overflow_diff_types(unsigned long long *l_a, unsigned long lo
     dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED INT and UNSIGNED LONG LONG");
     dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED LONG and UNSIGNED LONG LONG");
     dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED LONG LONG");
-    // if (i + 1 == a_times) {
-    //     dap_assert(true, "SUB");
-    // }
+
 // MUL
     // char
     dap_assert_PIF(dap_mul(*(char*)l_a, *(char*)l_b) == dap_mul_builtin(*(char*)l_a, *(char*)l_b), "MUL CHAR and CHAR");
@@ -987,9 +978,6 @@ static void s_test_overflow_diff_types(unsigned long long *l_a, unsigned long lo
     dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED INT and UNSIGNED LONG LONG");
     dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED LONG and UNSIGNED LONG LONG");
     dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED LONG LONG and UNSIGNED LONG LONG");
-    // if (i + 1 == a_times) {
-    //     dap_assert(true, "MUL");
-    // }
 }
 
 static void s_test_overflow_diff_types_boundary_min(unsigned long long *l_a, unsigned long long *l_b)
@@ -1207,6 +1195,9 @@ static void s_test_overflow_diff_types_rand(uint64_t a_times)
         s_randombytes((unsigned char *)l_a, sizeof(l_a) * 2);
         s_test_overflow_diff_types(l_a, l_b);
     }
+    char l_msg[100];
+    sprintf(l_msg, "ADD SUB MUL %"DAP_UINT64_FORMAT_U" times", a_times);
+    dap_assert(true, l_msg);
     DAP_DELETE(l_a);
 }
 
