@@ -26,6 +26,7 @@ endif()
 add_library(${PROJECT_NAME} STATIC IMPORTED GLOBAL)
 
 option(DAP_CRYPTO_XKCP_REFERENCE "Use xkcp reference implemintation" OFF)
+option(DAP_CRYPTO_XKCP_PLAINC "Use xkcp plain-c implemintation" OFF)
 
 #if building from src - check for compiller support
 include(CheckCCompilerFlag)
@@ -53,6 +54,11 @@ IF (DAP_CRYPTO_XKCP_REFERENCE)
     message("[!] XKCP: Force use reference impl for ${TARGET_ARCH}")
 endif()
 
+IF (DAP_CRYPTO_XKCP_PLAINC)
+    SET(XKCP_TARGET libdap-XKCP-plainc${TARGET_POSTFIX}.a)
+    message("[!] XKCP: Force use plain-c impl for ${TARGET_ARCH}")
+endif()
+
 SET(XKCP_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/xkcp_build_src/)
 message("[*] XKCP build from src")
 message("[*] XKCP target: ${TARGET_ARCH} ${XKCP_TARGET}")
@@ -72,10 +78,7 @@ add_custom_target(BuildXKCP ALL
     COMMAND ${CMAKE_COMMAND}  -E env AR=${CMAKE_AR} CC=${CMAKE_C_COMPILER} SDKROOT=${CMAKE_OSX_SYSROOT}  ${MAKE} -C ./xkcp_build_src ${XKCP_TARGET}
     BYPRODUCTS ${XKCP_BUILD_LIB}
 )
-
-if ((CMAKE_C_COMPILER_ID STREQUAL "GNU") AND NOT WIN32)
-    target_link_options(${PROJECT_NAME} INTERFACE -z noexecstack)
-endif()
+target_link_options(${PROJECT_NAME} INTERFACE -z noexecstack)
 
 file(MAKE_DIRECTORY ${XKCP_BUILD_INCLUDES})
 
