@@ -463,6 +463,8 @@ static bool s_socket_all_check_activity( void * a_arg)
  */
 void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket)
 {
+    if (!a_worker || !a_events_socket)
+        return;
     dap_return_if_fail(a_worker && a_events_socket);
 #ifdef DAP_EVENTS_CAPS_IOCP
     int l_ret = 0;

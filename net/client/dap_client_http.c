@@ -68,19 +68,9 @@ static WOLFSSL_CTX *s_ctx;
 #endif
 
 http_status_code_t s_extract_http_code(void *a_response, size_t a_response_size) {
-    char l_http_code_str[3] = {'\0'};
-    size_t l_first_space = 0;
-    for (;l_first_space < a_response_size; l_first_space++) {
-        if (((const char*)a_response)[l_first_space] == ' ')
-            break;
-    }
-    if (l_first_space + 3 > a_response_size)
-        return 0;
-    l_http_code_str[0] = ((const char*)a_response)[l_first_space+1];
-    l_http_code_str[1] = ((const char*)a_response)[l_first_space+2];
-    l_http_code_str[2] = ((const char*)a_response)[l_first_space+3];
-    http_status_code_t l_http_code = strtoul(l_http_code_str, NULL, 10);
-    return l_http_code;
+    char l_ver[16] = { '\0' };
+    int l_err = 0, l_ret = sscanf((char*)a_response, "%[^ ] %d", l_ver, &l_err);
+    return l_ret == 2 && !dap_strncmp(l_ver, "HTTP/", 5) ? (http_status_code_t)l_err : 0;
 }
 
 /**
@@ -676,6 +666,8 @@ dap_client_http_t * dap_client_http_request_custom (
 #ifdef DAP_EVENTS_CAPS_IOCP
     log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
     l_client_http->worker = a_worker ? a_worker : dap_worker_get_current();
+    if (!l_client_http->worker)
+        l_client_http->worker = dap_events_worker_get_auto();
     l_ev_socket->flags &= ~DAP_SOCK_READY_TO_READ;
     l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
     dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_DUP(&l_ev_socket->uuid);

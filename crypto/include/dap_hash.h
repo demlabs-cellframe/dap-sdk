@@ -44,6 +44,9 @@ typedef union dap_chain_hash_fast{
 } DAP_ALIGN_PACKED dap_chain_hash_fast_t;
 typedef dap_chain_hash_fast_t dap_hash_fast_t;
 typedef dap_hash_fast_t dap_hash_t;
+typedef struct dap_hash_str {
+    char s[DAP_HASH_FAST_STR_SIZE];
+} dap_hash_str_t;
 
 #ifdef __cplusplus
 extern "C" {
