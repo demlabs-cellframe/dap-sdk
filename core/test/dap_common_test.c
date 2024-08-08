@@ -18,55 +18,6 @@ typedef enum {
     TYPE_COUNT
 } s_data_type;
 
-#define dap_convert_type_to(a,b)                                        \
-({                                                          \
-    __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
-    char l_char = 0; \
-    short l_short = 0; \
-    int l_int = 0; \
-    long l_long = 0; \
-    long long l_long_long = 0; \
-    signed char l_signed_char = 0; \
-    unsigned char l_unsigned_char = 0; \
-    unsigned short l_unsigned_short = 0; \
-    unsigned int l_unsigned_int = 0; \
-    unsigned long l_unsigned_long = 0; \
-    unsigned long long l_unsigned_long_long = 0; \
-    if (_b == TYPE_CHAR) l_char = _a; \
-    else if (_b == TYPE_SHORT) l_short = _a; \
-    else if (_b == TYPE_INT) l_int = _a; \
-    else if (_b == TYPE_LONG) l_long = _a; \
-    else if (_b == TYPE_LONG_LONG) l_long_long = _a; \
-    else if (_b == TYPE_SCHAR) l_signed_char = _a; \
-    else if (_b == TYPE_UCHAR) l_unsigned_char = _a; \
-    else if (_b == TYPE_USHORT) l_unsigned_short = _a; \
-    else if (_b == TYPE_UINT) l_unsigned_int = _a; \
-    else if (_b == TYPE_ULONG) l_unsigned_long = _a; \
-    else if (_b == TYPE_ULONG_LONG) l_unsigned_long_long = _a; \
-    _b == TYPE_CHAR ? l_char :                            \
-    _b == TYPE_SHORT ? l_short :                          \
-    _b == TYPE_INT ? l_int :                              \
-    _b == TYPE_LONG ? l_long :                            \
-    _b == TYPE_LONG_LONG ? l_long_long :                  \
-    _b == TYPE_SCHAR ? l_signed_char :                    \
-    _b == TYPE_UCHAR ? l_unsigned_char :                  \
-    _b == TYPE_USHORT ? l_unsigned_short :                \
-    _b == TYPE_UINT ? l_unsigned_int :                    \
-    _b == TYPE_ULONG ? l_unsigned_long :                  \
-    _b == TYPE_ULONG_LONG ? l_unsigned_long_long :        \
-    _a;                                          \
-})
-
-char s_sprintf_static(const char *a_format, ...)
-{
-    static _Thread_local char s_buf[1000] = { '\0' };
-    va_list l_args;
-    va_start(l_args, a_format);
-    snprintf(s_buf, 999, a_format, l_args);
-    va_end(l_args);
-    return s_buf;
-}
-
 typedef void (*benchmark_callback)(void *, void *, uint64_t, s_data_type);
 
 static const uint64_t s_times = 10000;
@@ -1041,30 +992,51 @@ static void s_test_overflow_diff_types(unsigned long long *l_a, unsigned long lo
     // }
 }
 
-static void s_test_overflow_diff_types_boundary_min()
+static void s_test_overflow_diff_types_boundary_min(unsigned long long *l_a, unsigned long long *l_b)
 {
-    dap_print_module_name("dap_overflow_add_diff_types_boundary_min");
-    unsigned long long
-    *l_a = NULL,
-    *l_b = NULL; 
-    DAP_NEW_Z_COUNT_RET(l_a, unsigned long long, 2, NULL);
-    l_b = l_a + 1;
-    
-    *((char *)l_a) = dap_maxval((char)0);
+    *((char *)l_a) = dap_minval((char)0);
     s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
     
-    *((short *)l_a) = dap_maxval((short)0);
-    *((int *)l_a) = dap_maxval((int)0);
-    *((long *)l_a) = dap_maxval((long)0);
-    *((long long *)l_a) = dap_maxval((long long)0);
-    *((signed char *)l_a) = dap_maxval((signed char)0);
-    *((unsigned char *)l_a) = dap_maxval((unsigned char)0);
-    *((unsigned short *)l_a) = dap_maxval((unsigned short)0);
-    *((unsigned int *)l_a) = dap_maxval((unsigned int)0);
-    *((unsigned long *)l_a) = dap_maxval((unsigned long)0);
-    *((unsigned long long*)l_a) = dap_maxval((unsigned long long)0);
-
-    DAP_DELETE(l_a);
+    *((short *)l_a) = dap_minval((short)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((int *)l_a) = dap_minval((int)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((long *)l_a) = dap_minval((long)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((long long *)l_a) = dap_minval((long long)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((signed char *)l_a) = dap_minval((signed char)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((unsigned char *)l_a) = dap_minval((unsigned char)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((unsigned short *)l_a) = dap_minval((unsigned short)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((unsigned int *)l_a) = dap_minval((unsigned int)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((unsigned long *)l_a) = dap_minval((unsigned long)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((unsigned long long*)l_a) = dap_minval((unsigned long long)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
 }
 
 static void s_test_overflow_diff_types_boundary_max(unsigned long long *l_a, unsigned long long *l_b)
@@ -1121,6 +1093,51 @@ static void s_test_overflow_diff_types_boundary()
     *l_b = NULL; 
     DAP_NEW_Z_COUNT_RET(l_a, unsigned long long, 2, NULL);
     l_b = l_a + 1;
+
+    dap_print_module_name("dap_overflow_add_diff_types_boundary_min");
+    *l_b = 0;
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    *l_b = 1;
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(char *)l_b) = -1;
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(short *)l_b) = -1;
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(int *)l_b) = -1;
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(long *)l_b) = -1;
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(long long *)l_b) = -1;
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(signed char *)l_b) = -1;
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+
+    (*(char *)l_b) = dap_minval((char)0);
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(short *)l_b) = dap_minval((short)0);
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(int *)l_b) = dap_minval((int)0);
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(long *)l_b) = dap_minval((long)0);
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(long long *)l_b) = dap_minval((long long)0);
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(signed char *)l_b) = dap_minval((signed char)0);
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+
+    (*(char *)l_b) = dap_maxval((char)0);
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(short *)l_b) = dap_maxval((short)0);
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(int *)l_b) = dap_maxval((int)0);
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(long *)l_b) = dap_maxval((long)0);
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(long long *)l_b) = dap_maxval((long long)0);
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+    (*(signed char *)l_b) = dap_maxval((signed char)0);
+    s_test_overflow_diff_types_boundary_min(l_a, l_b);
+
     dap_print_module_name("dap_overflow_add_diff_types_boundary_max");
     *l_b = 0;
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
@@ -1150,6 +1167,19 @@ static void s_test_overflow_diff_types_boundary()
     (*(long long *)l_b) = dap_minval((long long)0);
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
     (*(signed char *)l_b) = dap_minval((signed char)0);
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+
+    (*(char *)l_b) = dap_maxval((char)0);
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(short *)l_b) = dap_maxval((short)0);
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(int *)l_b) = dap_maxval((int)0);
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(long *)l_b) = dap_maxval((long)0);
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(long long *)l_b) = dap_maxval((long long)0);
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(signed char *)l_b) = dap_maxval((signed char)0);
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
 
     DAP_DELETE(l_a);
