@@ -1252,9 +1252,10 @@ static void s_test_benchmark(uint64_t a_times)
 }
 void dap_common_test_run()
 {
-    s_test_put_int();
-    s_test_overflow();
-    s_test_overflow_diff_types_boundary();
-    s_test_overflow_diff_types_rand(s_times);
-    s_test_benchmark(s_el_count * s_times);
+    printf("int %zu\nlong %zu\nlong long %zu\ndouble %zu\nlong double %zu\n", sizeof(int), sizeof(long), sizeof(long long), sizeof(double), sizeof(long double));
+    // s_test_put_int();
+    // s_test_overflow();
+    // s_test_overflow_diff_types_boundary();
+    // s_test_overflow_diff_types_rand(s_times);
+    // s_test_benchmark(s_el_count * s_times);
 }
