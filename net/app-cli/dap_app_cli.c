@@ -203,13 +203,11 @@ JNIEXPORT jstring JNICALL Java_com_CellframeWallet_Node_cellframeNodeCliMain(JNI
 #endif
 int dap_app_cli_main(const char *a_app_name, int a_argc, const char **a_argv)
 {
-    {
-        char l_config_dir[MAX_PATH] = {'\0'};
-        sprintf(l_config_dir, "%s/etc", g_sys_dir_path);
-        dap_config_init(l_config_dir);
-    }
+    char l_config_dir[MAX_PATH] = {'\0'};
+    sprintf(l_config_dir, "%s/etc", g_sys_dir_path);
+    dap_config_init(l_config_dir);
     if ( !(g_config = dap_config_open(a_app_name)) ) {
-        printf("Can't init general configurations %s.cfg\n", a_app_name);
+        printf("Can't init general configurations %s/%s.cfg\n", l_config_dir, a_app_name);
         return -3;
     }
     

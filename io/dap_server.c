@@ -258,22 +258,22 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
     if (a_client_callbacks)
         l_server->client_callbacks = *a_client_callbacks;
     if (a_cfg_section) {
-        char **l_addrs = NULL;
         uint16_t l_count = 0, i;
-    #if defined DAP_OS_LINUX || defined DAP_OS_DARWIN
-        l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PATH, &l_count);
+#if defined DAP_OS_LINUX || defined DAP_OS_DARWIN
+        char **l_paths = dap_config_get_item_str_path_array(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PATH, &l_count);
         mode_t l_mode = 0666;
             //strtol( dap_config_get_item_str_default(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PERMISSIONS, "0666"), NULL, 8 );
         for (i = 0; i < l_count; ++i) {
-            if ( dap_server_listen_addr_add(l_server, l_addrs[i], l_mode, DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING, &l_callbacks) )
-                log_it(L_ERROR, "Can't add path \"%s\" to server", l_addrs[i]);
+            if ( dap_server_listen_addr_add(l_server, l_paths[i], l_mode, DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING, &l_callbacks) )
+                log_it(L_ERROR, "Can't add path \"%s\" to server", l_paths[i]);
             else
-                if ( 0 > chmod(l_addrs[i], l_mode) )
+                if ( 0 > chmod(l_paths[i], l_mode) )
                     log_it(L_ERROR, "chmod() on socket path failed, errno %d: \"%s\"",
                                     errno, dap_strerror(errno));
         }
-    #endif
-        l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_LISTEN_ADDRS, &l_count);
+        dap_config_get_item_str_path_array_free(l_paths, &l_count);
+#endif
+        const char **l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_LISTEN_ADDRS, &l_count);
         for (i = 0; i < l_count; ++i) {
             char l_cur_ip[INET6_ADDRSTRLEN] = { '\0' }; uint16_t l_cur_port = 0;
             if ( 0 > dap_net_parse_config_address( l_addrs[i], l_cur_ip, &l_cur_port, NULL, NULL) ) {

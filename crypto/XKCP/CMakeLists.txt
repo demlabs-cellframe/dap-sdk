@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.13)
 include (../../cmake/TargetArch_Detection.cmake)
 target_architecture(TARGET_ARCH)
 
@@ -45,7 +45,7 @@ elseif(${TARGET_ARCH} MATCHES "armv8")
 else()
     SET(XKCP_TARGET libdap-XKCP-ref${TARGET_POSTFIX}.a)
     message("[!] XKCP: Unknown architecture ${TARGET_ARCH}, use reference inplementation")
-    set(DAP_CRYPTO_XKCP_USE_PREBUILDS OFF) 
+    set(DAP_CRYPTO_XKCP_REFERENCE ON)
 endif()
 
 IF (DAP_CRYPTO_XKCP_REFERENCE)
@@ -73,6 +73,9 @@ add_custom_target(BuildXKCP ALL
     BYPRODUCTS ${XKCP_BUILD_LIB}
 )
 
+if ((CMAKE_C_COMPILER_ID STREQUAL "GNU") AND NOT WIN32)
+    target_link_options(${PROJECT_NAME} INTERFACE -z noexecstack)
+endif()
 
 file(MAKE_DIRECTORY ${XKCP_BUILD_INCLUDES})
 
