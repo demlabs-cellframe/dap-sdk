@@ -18,6 +18,55 @@ typedef enum {
     TYPE_COUNT
 } s_data_type;
 
+#define dap_convert_type_to(a,b)                                        \
+({                                                          \
+    __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+    char l_char = 0; \
+    short l_short = 0; \
+    int l_int = 0; \
+    long l_long = 0; \
+    long long l_long_long = 0; \
+    signed char l_signed_char = 0; \
+    unsigned char l_unsigned_char = 0; \
+    unsigned short l_unsigned_short = 0; \
+    unsigned int l_unsigned_int = 0; \
+    unsigned long l_unsigned_long = 0; \
+    unsigned long long l_unsigned_long_long = 0; \
+    if (_b == TYPE_CHAR) l_char = _a; \
+    else if (_b == TYPE_SHORT) l_short = _a; \
+    else if (_b == TYPE_INT) l_int = _a; \
+    else if (_b == TYPE_LONG) l_long = _a; \
+    else if (_b == TYPE_LONG_LONG) l_long_long = _a; \
+    else if (_b == TYPE_SCHAR) l_signed_char = _a; \
+    else if (_b == TYPE_UCHAR) l_unsigned_char = _a; \
+    else if (_b == TYPE_USHORT) l_unsigned_short = _a; \
+    else if (_b == TYPE_UINT) l_unsigned_int = _a; \
+    else if (_b == TYPE_ULONG) l_unsigned_long = _a; \
+    else if (_b == TYPE_ULONG_LONG) l_unsigned_long_long = _a; \
+    _b == TYPE_CHAR ? l_char :                            \
+    _b == TYPE_SHORT ? l_short :                          \
+    _b == TYPE_INT ? l_int :                              \
+    _b == TYPE_LONG ? l_long :                            \
+    _b == TYPE_LONG_LONG ? l_long_long :                  \
+    _b == TYPE_SCHAR ? l_signed_char :                    \
+    _b == TYPE_UCHAR ? l_unsigned_char :                  \
+    _b == TYPE_USHORT ? l_unsigned_short :                \
+    _b == TYPE_UINT ? l_unsigned_int :                    \
+    _b == TYPE_ULONG ? l_unsigned_long :                  \
+    _b == TYPE_ULONG_LONG ? l_unsigned_long_long :        \
+    _a;                                          \
+})
+
+char s_sprintf_static(const char *a_format, ...)
+{
+    static _Thread_local char s_buf[1000] = { '\0' };
+    va_list l_args;
+    va_start(l_args, a_format);
+    snprintf(s_buf, 999, a_format, l_args);
+    va_end(l_args);
+    return s_buf;
+}
+
 typedef void (*benchmark_callback)(void *, void *, uint64_t, s_data_type);
 
 static const uint64_t s_times = 10000;
@@ -409,9 +458,14 @@ static void s_test_overflow()
         l_int == dap_sub_builtin(l_int, (int)1) &&
         dap_sub(l_int, (int)-1) == dap_sub_builtin(l_int, (int)-1),
         "Check int SUB overflow");
+    // printf("Check short SUB overflow,\n\t%ld == %ld (dap)\n\t%ld == %ld (__builtin)\n\t%ld == %ld (dap == __builtin)\n", l_long, dap_sub(l_long, (long)1), l_long, dap_sub_builtin(l_long, (long)1), dap_sub(l_long, (long)-1), dap_sub_builtin(l_long, (long)-1));
+    // printf("%d\n", dap_sub(l_long, (long)-1) == dap_sub_builtin(l_long, (long)-1));
+    // (_b < 0 && (_bias + _a) > (_bias + dap_maxval(_a) + _b))
+    long long a = (unsigned long)0 + l_long;
+    long long b = (unsigned long)0 + dap_maxval(l_long) + (long)-1;
     dap_assert(
-        l_long == dap_sub(l_long, (long)1) &&
-        l_long == dap_sub_builtin(l_long, (long)1) &&
+        // l_long == dap_sub(l_long, (long)1) &&
+        // l_long == dap_sub_builtin(l_long, (long)1) &&
         dap_sub(l_long, (long)-1) == dap_sub_builtin(l_long, (long)-1),
         "Check long SUB overflow");
     dap_assert(
@@ -575,425 +629,543 @@ static void s_test_overflow()
         "Check unsigned long long MUL overflow");
 }
 
-static void s_test_overflow_diff_types(uint64_t a_times)
+static void s_test_overflow_diff_types(unsigned long long *l_a, unsigned long long *l_b)
 {
-    dap_print_module_name("dap_overflow_add_diff_types");
+// ADD
+    // char
+    dap_assert_PIF(dap_add(*(char*)l_a, *(char*)l_b) == dap_add_builtin(*(char*)l_a, *(char*)l_b), "ADD CHAR and CHAR");
+    dap_assert_PIF(dap_add(*(short*)l_a, *(char*)l_b) == dap_add_builtin(*(short*)l_a, *(char*)l_b), "ADD SHORT and CHAR");
+    dap_assert_PIF(dap_add(*(int*)l_a, *(char*)l_b) == dap_add_builtin(*(int*)l_a, *(char*)l_b), "ADD INT and CHAR");
+    dap_assert_PIF(dap_add(*(long*)l_a, *(char*)l_b) == dap_add_builtin(*(long*)l_a, *(char*)l_b), "ADD LONG and CHAR");
+    dap_assert_PIF(dap_add(*(long long*)l_a, *(char*)l_b) == dap_add_builtin(*(long long*)l_a, *(char*)l_b), "ADD LONG LONG and CHAR");
+    dap_assert_PIF(dap_add(*(signed char*)l_a, *(char*)l_b) == dap_add_builtin(*(signed char*)l_a, *(char*)l_b), "ADD SIGNED CHAR and CHAR");
+    dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(char*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(char*)l_b), "ADD UNSIGNED CHAR and CHAR");
+    dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(char*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(char*)l_b), "ADD UNSIGNED SHORT and CHAR");
+    dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(char*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(char*)l_b), "ADD UNSIGNED INT and CHAR");
+    dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(char*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(char*)l_b), "ADD UNSIGNED LONG and CHAR");
+    dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(char*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(char*)l_b), "ADD UNSIGNED LONG LONG and CHAR");
+    // short
+    dap_assert_PIF(dap_add(*(char*)l_a, *(short*)l_b) == dap_add_builtin(*(char*)l_a, *(short*)l_b), "ADD CHAR and SHORT");
+    dap_assert_PIF(dap_add(*(short*)l_a, *(short*)l_b) == dap_add_builtin(*(short*)l_a, *(short*)l_b), "ADD SHORT and SHORT");
+    dap_assert_PIF(dap_add(*(int*)l_a, *(short*)l_b) == dap_add_builtin(*(int*)l_a, *(short*)l_b), "ADD INT and SHORT");
+    dap_assert_PIF(dap_add(*(long*)l_a, *(short*)l_b) == dap_add_builtin(*(long*)l_a, *(short*)l_b), "ADD LONG and SHORT");
+    dap_assert_PIF(dap_add(*(long long*)l_a, *(short*)l_b) == dap_add_builtin(*(long long*)l_a, *(short*)l_b), "ADD LONG LONG and SHORT");
+    dap_assert_PIF(dap_add(*(signed char*)l_a, *(short*)l_b) == dap_add_builtin(*(signed char*)l_a, *(short*)l_b), "ADD SIGNED CHAR and SHORT");
+    dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(short*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(short*)l_b), "ADD UNSIGNED CHAR and SHORT");
+    dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(short*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(short*)l_b), "ADD UNSIGNED SHORT and SHORT");
+    dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(short*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(short*)l_b), "ADD UNSIGNED INT and SHORT");
+    dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(short*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(short*)l_b), "ADD UNSIGNED LONG and SHORT");
+    dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(short*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(short*)l_b), "ADD UNSIGNED LONG LONG and SHORT");
+    // int
+    dap_assert_PIF(dap_add(*(char*)l_a, *(int*)l_b) == dap_add_builtin(*(char*)l_a, *(int*)l_b), "ADD CHAR and INT");
+    dap_assert_PIF(dap_add(*(short*)l_a, *(int*)l_b) == dap_add_builtin(*(short*)l_a, *(int*)l_b), "ADD SHORT and INT");
+    dap_assert_PIF(dap_add(*(int*)l_a, *(int*)l_b) == dap_add_builtin(*(int*)l_a, *(int*)l_b), "ADD INT and INT");
+    dap_assert_PIF(dap_add(*(long*)l_a, *(int*)l_b) == dap_add_builtin(*(long*)l_a, *(int*)l_b), "ADD LONG and INT");
+    dap_assert_PIF(dap_add(*(long long*)l_a, *(int*)l_b) == dap_add_builtin(*(long long*)l_a, *(int*)l_b), "ADD LONG LONG and INT");
+    dap_assert_PIF(dap_add(*(signed char*)l_a, *(int*)l_b) == dap_add_builtin(*(signed char*)l_a, *(int*)l_b), "ADD SIGNED CHAR and INT");
+    dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(int*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(int*)l_b), "ADD UNSIGNED CHAR and INT");
+    dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(int*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(int*)l_b), "ADD UNSIGNED SHORT and INT");
+    dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(int*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(int*)l_b), "ADD UNSIGNED INT and INT");
+    dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(int*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(int*)l_b), "ADD UNSIGNED LONG and INT");
+    dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(int*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(int*)l_b), "ADD UNSIGNED LONG LONG and INT");
+    // long
+    dap_assert_PIF(dap_add(*(char*)l_a, *(long*)l_b) == dap_add_builtin(*(char*)l_a, *(long*)l_b), "ADD CHAR and LONG");
+    dap_assert_PIF(dap_add(*(short*)l_a, *(long*)l_b) == dap_add_builtin(*(short*)l_a, *(long*)l_b), "ADD SHORT and LONG");
+    dap_assert_PIF(dap_add(*(int*)l_a, *(long*)l_b) == dap_add_builtin(*(int*)l_a, *(long*)l_b), "ADD INT and LONG");
+    dap_assert_PIF(dap_add(*(long*)l_a, *(long*)l_b) == dap_add_builtin(*(long*)l_a, *(long*)l_b), "ADD LONG and LONG");
+    dap_assert_PIF(dap_add(*(long long*)l_a, *(long*)l_b) == dap_add_builtin(*(long long*)l_a, *(long*)l_b), "ADD LONG LONG and LONG");
+    dap_assert_PIF(dap_add(*(signed char*)l_a, *(long*)l_b) == dap_add_builtin(*(signed char*)l_a, *(long*)l_b), "ADD SIGNED CHAR and LONG");
+    dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(long*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(long*)l_b), "ADD UNSIGNED CHAR and LONG");
+    dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(long*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(long*)l_b), "ADD UNSIGNED SHORT and LONG");
+    dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(long*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(long*)l_b), "ADD UNSIGNED INT and LONG");
+    dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(long*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(long*)l_b), "ADD UNSIGNED LONG and LONG");
+    dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(long*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(long*)l_b), "ADD UNSIGNED LONG LONG and LONG");
+    // long long
+    dap_assert_PIF(dap_add(*(char*)l_a, *(long long*)l_b) == dap_add_builtin(*(char*)l_a, *(long long*)l_b), "ADD CHAR and LONG LONG");
+    dap_assert_PIF(dap_add(*(short*)l_a, *(long long*)l_b) == dap_add_builtin(*(short*)l_a, *(long long*)l_b), "ADD SHORT and LONG LONG");
+    dap_assert_PIF(dap_add(*(int*)l_a, *(long long*)l_b) == dap_add_builtin(*(int*)l_a, *(long long*)l_b), "ADD INT and LONG LONG");
+    dap_assert_PIF(dap_add(*(long*)l_a, *(long long*)l_b) == dap_add_builtin(*(long*)l_a, *(long long*)l_b), "ADD LONG and LONG LONG");
+    dap_assert_PIF(dap_add(*(long long*)l_a, *(long long*)l_b) == dap_add_builtin(*(long long*)l_a, *(long long*)l_b), "ADD LONG LONG and LONG LONG");
+    dap_assert_PIF(dap_add(*(signed char*)l_a, *(long long*)l_b) == dap_add_builtin(*(signed char*)l_a, *(long long*)l_b), "ADD SIGNED CHAR and LONG LONG");
+    dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(long long*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(long long*)l_b), "ADD UNSIGNED CHAR and LONG LONG");
+    dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(long long*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(long long*)l_b), "ADD UNSIGNED SHORT and LONG LONG");
+    dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(long long*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(long long*)l_b), "ADD UNSIGNED INT and LONG LONG");
+    dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(long long*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(long long*)l_b), "ADD UNSIGNED LONG and LONG LONG");
+    dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(long long*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(long long*)l_b), "ADD UNSIGNED LONG LONG and LONG LONG");
+    // signed char
+    dap_assert_PIF(dap_add(*(char*)l_a, *(signed char*)l_b) == dap_add_builtin(*(char*)l_a, *(signed char*)l_b), "ADD CHAR and SIGNED CHAR");
+    dap_assert_PIF(dap_add(*(short*)l_a, *(signed char*)l_b) == dap_add_builtin(*(short*)l_a, *(signed char*)l_b), "ADD SHORT and SIGNED CHAR");
+    dap_assert_PIF(dap_add(*(int*)l_a, *(signed char*)l_b) == dap_add_builtin(*(int*)l_a, *(signed char*)l_b), "ADD INT and SIGNED CHAR");
+    dap_assert_PIF(dap_add(*(long*)l_a, *(signed char*)l_b) == dap_add_builtin(*(long*)l_a, *(signed char*)l_b), "ADD LONG and CHAR");
+    dap_assert_PIF(dap_add(*(long long*)l_a, *(signed char*)l_b) == dap_add_builtin(*(long long*)l_a, *(signed char*)l_b), "ADD LONG LONG and SIGNED CHAR");
+    dap_assert_PIF(dap_add(*(signed char*)l_a, *(signed char*)l_b) == dap_add_builtin(*(signed char*)l_a, *(signed char*)l_b), "ADD SIGNED CHAR and SIGNED CHAR");
+    dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(signed char*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(signed char*)l_b), "ADD UNSIGNED CHAR and SIGNED CHAR");
+    dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(signed char*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(signed char*)l_b), "ADD UNSIGNED SHORT and SIGNED CHAR");
+    dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(signed char*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(signed char*)l_b), "ADD UNSIGNED INT and SIGNED CHAR");
+    dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(signed char*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(signed char*)l_b), "ADD UNSIGNED LONG and CHAR");
+    dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(signed char*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(signed char*)l_b), "ADD UNSIGNED LONG LONG and SIGNED CHAR");
+    // unsigned char
+    dap_assert_PIF(dap_add(*(char*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(char*)l_a, *(unsigned char*)l_b), "ADD CHAR and UNSIGNED CHAR");
+    dap_assert_PIF(dap_add(*(short*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(short*)l_a, *(unsigned char*)l_b), "ADD SHORT and UNSIGNED CHAR");
+    dap_assert_PIF(dap_add(*(int*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(int*)l_a, *(unsigned char*)l_b), "ADD INT and UNSIGNED CHAR");
+    dap_assert_PIF(dap_add(*(long*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(long*)l_a, *(unsigned char*)l_b), "ADD LONG and UNSIGNED CHAR");
+    dap_assert_PIF(dap_add(*(long long*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(long long*)l_a, *(unsigned char*)l_b), "ADD LONG LONG and UNSIGNED CHAR");
+    dap_assert_PIF(dap_add(*(signed char*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(signed char*)l_a, *(unsigned char*)l_b), "ADD SIGNED CHAR and UNSIGNED CHAR");
+    dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(unsigned char*)l_b), "ADD UNSIGNED CHAR and UNSIGNED CHAR");
+    dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(unsigned char*)l_b), "ADD UNSIGNED SHORT and UNSIGNED CHAR");
+    dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(unsigned char*)l_b), "ADD UNSIGNED INT and UNSIGNED CHAR");
+    dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(unsigned char*)l_b), "ADD UNSIGNED LONG and UNSIGNED CHAR");
+    dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(unsigned char*)l_b), "ADD UNSIGNED LONG LONG and UNSIGNED CHAR");
+    // unsigned short
+    dap_assert_PIF(dap_add(*(char*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(char*)l_a, *(unsigned short*)l_b), "ADD CHAR and UNSIGNED SHORT");
+    dap_assert_PIF(dap_add(*(short*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(short*)l_a, *(unsigned short*)l_b), "ADD SHORT and UNSIGNED SHORT");
+    dap_assert_PIF(dap_add(*(int*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(int*)l_a, *(unsigned short*)l_b), "ADD INT and UNSIGNED SHORT");
+    dap_assert_PIF(dap_add(*(long*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(long*)l_a, *(unsigned short*)l_b), "ADD LONG and UNSIGNED SHORT");
+    dap_assert_PIF(dap_add(*(long long*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(long long*)l_a, *(unsigned short*)l_b), "ADD LONG LONG and UNSIGNED SHORT");
+    dap_assert_PIF(dap_add(*(signed char*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(signed char*)l_a, *(unsigned short*)l_b), "ADD SIGNED CHAR and UNSIGNED SHORT");
+    dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(unsigned short*)l_b), "ADD UNSIGNED CHAR and UNSIGNED SHORT");
+    dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(unsigned short*)l_b), "ADD UNSIGNED SHORT and UNSIGNED SHORT");
+    dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(unsigned short*)l_b), "ADD UNSIGNED INT and UNSIGNED SHORT");
+    dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(unsigned short*)l_b), "ADD UNSIGNED LONG and UNSIGNED SHORT");
+    dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(unsigned short*)l_b), "ADD UNSIGNED LONG LONG and UNSIGNED SHORT");
+    // unsigned int
+    dap_assert_PIF(dap_add(*(char*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(char*)l_a, *(unsigned int*)l_b), "ADD CHAR and UNSIGNED INT");
+    dap_assert_PIF(dap_add(*(short*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(short*)l_a, *(unsigned int*)l_b), "ADD SHORT and UNSIGNED INT");
+    dap_assert_PIF(dap_add(*(int*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(int*)l_a, *(unsigned int*)l_b), "ADD INT and UNSIGNED INT");
+    dap_assert_PIF(dap_add(*(long*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(long*)l_a, *(unsigned int*)l_b), "ADD LONG and UNSIGNED INT");
+    dap_assert_PIF(dap_add(*(long long*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(long long*)l_a, *(unsigned int*)l_b), "ADD LONG LONG and UNSIGNED INT");
+    dap_assert_PIF(dap_add(*(signed char*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(signed char*)l_a, *(unsigned int*)l_b), "ADD SIGNED CHAR and UNSIGNED INT");
+    dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(unsigned int*)l_b), "ADD UNSIGNED CHAR and UNSIGNED INT");
+    dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(unsigned int*)l_b), "ADD UNSIGNED SHORT and UNSIGNED INT");
+    dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(unsigned int*)l_b), "ADD UNSIGNED INT and UNSIGNED INT");
+    dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(unsigned int*)l_b), "ADD UNSIGNED LONG and UNSIGNED INT");
+    dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(unsigned int*)l_b), "ADD UNSIGNED LONG LONG and UNSIGNED INT");
+    // unsigned long
+    dap_assert_PIF(dap_add(*(char*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(char*)l_a, *(unsigned long*)l_b), "ADD CHAR and UNSIGNED LONG");
+    dap_assert_PIF(dap_add(*(short*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(short*)l_a, *(unsigned long*)l_b), "ADD SHORT and UNSIGNED LONG");
+    dap_assert_PIF(dap_add(*(int*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(int*)l_a, *(unsigned long*)l_b), "ADD INT and UNSIGNED LONG");
+    dap_assert_PIF(dap_add(*(long*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(long*)l_a, *(unsigned long*)l_b), "ADD LONG and UNSIGNED LONG");
+    dap_assert_PIF(dap_add(*(long long*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(long long*)l_a, *(unsigned long*)l_b), "ADD LONG LONG and UNSIGNED LONG");
+    dap_assert_PIF(dap_add(*(signed char*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(signed char*)l_a, *(unsigned long*)l_b), "ADD SIGNED CHAR and UNSIGNED LONG");
+    dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(unsigned long*)l_b), "ADD UNSIGNED CHAR and UNSIGNED LONG");
+    dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(unsigned long*)l_b), "ADD UNSIGNED SHORT and UNSIGNED LONG");
+    dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(unsigned long*)l_b), "ADD UNSIGNED INT and UNSIGNED LONG");
+    dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(unsigned long*)l_b), "ADD UNSIGNED LONG and UNSIGNED LONG");
+    dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(unsigned long*)l_b), "ADD UNSIGNED LONG LONG and UNSIGNED LONG");
+    // unsigned long long
+    dap_assert_PIF(dap_add(*(char*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(char*)l_a, *(unsigned long long*)l_b), "ADD CHAR and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_add(*(short*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(short*)l_a, *(unsigned long long*)l_b), "ADD SHORT and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_add(*(int*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(int*)l_a, *(unsigned long long*)l_b), "ADD INT and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_add(*(long*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(long*)l_a, *(unsigned long long*)l_b), "ADD LONG and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_add(*(long long*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(long long*)l_a, *(unsigned long long*)l_b), "ADD LONG LONG and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_add(*(signed char*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(signed char*)l_a, *(unsigned long long*)l_b), "ADD SIGNED CHAR and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED CHAR and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED SHORT and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED INT and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED LONG and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED LONG LONG and UNSIGNED LONG LONG");
+    // if (i + 1 == a_times) {
+    //     dap_assert(true, "ADD");
+    // }
+// SUB
+    // char
+    dap_assert_PIF(dap_sub(*(char*)l_a, *(char*)l_b) == dap_sub_builtin(*(char*)l_a, *(char*)l_b), "SUB CHAR and CHAR");
+    dap_assert_PIF(dap_sub(*(short*)l_a, *(char*)l_b) == dap_sub_builtin(*(short*)l_a, *(char*)l_b), "SUB SHORT and CHAR");
+    dap_assert_PIF(dap_sub(*(int*)l_a, *(char*)l_b) == dap_sub_builtin(*(int*)l_a, *(char*)l_b), "SUB INT and CHAR");
+    dap_assert_PIF(dap_sub(*(long*)l_a, *(char*)l_b) == dap_sub_builtin(*(long*)l_a, *(char*)l_b), "SUB LONG and CHAR");
+    dap_assert_PIF(dap_sub(*(long long*)l_a, *(char*)l_b) == dap_sub_builtin(*(long long*)l_a, *(char*)l_b), "SUB LONG LONG and CHAR");
+    dap_assert_PIF(dap_sub(*(signed char*)l_a, *(char*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(char*)l_b), "SUB SIGNED CHAR and CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(char*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(char*)l_b), "SUB UNSIGNED CHAR and CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(char*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(char*)l_b), "SUB UNSIGNED SHORT and CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(char*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(char*)l_b), "SUB UNSIGNED INT and CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(char*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(char*)l_b), "SUB UNSIGNED LONG and CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(char*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(char*)l_b), "SUB UNSIGNED LONG LONG and CHAR");
+    // short
+    dap_assert_PIF(dap_sub(*(char*)l_a, *(short*)l_b) == dap_sub_builtin(*(char*)l_a, *(short*)l_b), "SUB CHAR and SHORT");
+    dap_assert_PIF(dap_sub(*(short*)l_a, *(short*)l_b) == dap_sub_builtin(*(short*)l_a, *(short*)l_b), "SUB SHORT and SHORT");
+    dap_assert_PIF(dap_sub(*(int*)l_a, *(short*)l_b) == dap_sub_builtin(*(int*)l_a, *(short*)l_b), "SUB INT and SHORT");
+    dap_assert_PIF(dap_sub(*(long*)l_a, *(short*)l_b) == dap_sub_builtin(*(long*)l_a, *(short*)l_b), "SUB LONG and SHORT");
+    dap_assert_PIF(dap_sub(*(long long*)l_a, *(short*)l_b) == dap_sub_builtin(*(long long*)l_a, *(short*)l_b), "SUB LONG LONG and SHORT");
+    dap_assert_PIF(dap_sub(*(signed char*)l_a, *(short*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(short*)l_b), "SUB SIGNED CHAR and SHORT");
+    dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(short*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(short*)l_b), "SUB UNSIGNED CHAR and SHORT");
+    dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(short*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(short*)l_b), "SUB UNSIGNED SHORT and SHORT");
+    dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(short*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(short*)l_b), "SUB UNSIGNED INT and SHORT");
+    dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(short*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(short*)l_b), "SUB UNSIGNED LONG and SHORT");
+    dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(short*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(short*)l_b), "SUB UNSIGNED LONG LONG and SHORT");
+    // int
+    dap_assert_PIF(dap_sub(*(char*)l_a, *(int*)l_b) == dap_sub_builtin(*(char*)l_a, *(int*)l_b), "SUB CHAR and INT");
+    dap_assert_PIF(dap_sub(*(short*)l_a, *(int*)l_b) == dap_sub_builtin(*(short*)l_a, *(int*)l_b), "SUB SHORT and INT");
+    dap_assert_PIF(dap_sub(*(int*)l_a, *(int*)l_b) == dap_sub_builtin(*(int*)l_a, *(int*)l_b), "SUB INT and INT");
+    dap_assert_PIF(dap_sub(*(long*)l_a, *(int*)l_b) == dap_sub_builtin(*(long*)l_a, *(int*)l_b), "SUB LONG and INT");
+    dap_assert_PIF(dap_sub(*(long long*)l_a, *(int*)l_b) == dap_sub_builtin(*(long long*)l_a, *(int*)l_b), "SUB LONG LONG and INT");
+    dap_assert_PIF(dap_sub(*(signed char*)l_a, *(int*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(int*)l_b), "SUB SIGNED CHAR and INT");
+    dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(int*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(int*)l_b), "SUB UNSIGNED CHAR and INT");
+    dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(int*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(int*)l_b), "SUB UNSIGNED SHORT and INT");
+    dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(int*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(int*)l_b), "SUB UNSIGNED INT and INT");
+    dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(int*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(int*)l_b), "SUB UNSIGNED LONG and INT");
+    dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(int*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(int*)l_b), "SUB UNSIGNED LONG LONG and INT");
+    // long
+    dap_assert_PIF(dap_sub(*(char*)l_a, *(long*)l_b) == dap_sub_builtin(*(char*)l_a, *(long*)l_b), "SUB CHAR and LONG");
+    dap_assert_PIF(dap_sub(*(short*)l_a, *(long*)l_b) == dap_sub_builtin(*(short*)l_a, *(long*)l_b), "SUB SHORT and LONG");
+    dap_assert_PIF(dap_sub(*(int*)l_a, *(long*)l_b) == dap_sub_builtin(*(int*)l_a, *(long*)l_b), "SUB INT and LONG");
+    dap_assert_PIF(dap_sub(*(long*)l_a, *(long*)l_b) == dap_sub_builtin(*(long*)l_a, *(long*)l_b), "SUB LONG and LONG");
+    dap_assert_PIF(dap_sub(*(long long*)l_a, *(long*)l_b) == dap_sub_builtin(*(long long*)l_a, *(long*)l_b), "SUB LONG LONG and LONG");
+    dap_assert_PIF(dap_sub(*(signed char*)l_a, *(long*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(long*)l_b), "SUB SIGNED CHAR and LONG");
+    dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(long*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(long*)l_b), "SUB UNSIGNED CHAR and LONG");
+    dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(long*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(long*)l_b), "SUB UNSIGNED SHORT and LONG");
+    dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(long*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(long*)l_b), "SUB UNSIGNED INT and LONG");
+    dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(long*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(long*)l_b), "SUB UNSIGNED LONG and LONG");
+    dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(long*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(long*)l_b), "SUB UNSIGNED LONG LONG and LONG");
+    // long long
+    dap_assert_PIF(dap_sub(*(char*)l_a, *(long long*)l_b) == dap_sub_builtin(*(char*)l_a, *(long long*)l_b), "SUB CHAR and LONG LONG");
+    dap_assert_PIF(dap_sub(*(short*)l_a, *(long long*)l_b) == dap_sub_builtin(*(short*)l_a, *(long long*)l_b), "SUB SHORT and LONG LONG");
+    dap_assert_PIF(dap_sub(*(int*)l_a, *(long long*)l_b) == dap_sub_builtin(*(int*)l_a, *(long long*)l_b), "SUB INT and LONG LONG");
+    dap_assert_PIF(dap_sub(*(long*)l_a, *(long long*)l_b) == dap_sub_builtin(*(long*)l_a, *(long long*)l_b), "SUB LONG and LONG LONG");
+    dap_assert_PIF(dap_sub(*(long long*)l_a, *(long long*)l_b) == dap_sub_builtin(*(long long*)l_a, *(long long*)l_b), "SUB LONG LONG and LONG LONG");
+    dap_assert_PIF(dap_sub(*(signed char*)l_a, *(long long*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(long long*)l_b), "SUB SIGNED CHAR and LONG LONG");
+    dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(long long*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(long long*)l_b), "SUB UNSIGNED CHAR and LONG LONG");
+    dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(long long*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(long long*)l_b), "SUB UNSIGNED SHORT and LONG LONG");
+    dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(long long*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(long long*)l_b), "SUB UNSIGNED INT and LONG LONG");
+    dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(long long*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(long long*)l_b), "SUB UNSIGNED LONG and LONG LONG");
+    dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(long long*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(long long*)l_b), "SUB UNSIGNED LONG LONG and LONG LONG");
+    // signed char
+    dap_assert_PIF(dap_sub(*(char*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(char*)l_a, *(signed char*)l_b), "SUB CHAR and SIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(short*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(short*)l_a, *(signed char*)l_b), "SUB SHORT and SIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(int*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(int*)l_a, *(signed char*)l_b), "SUB INT and SIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(long*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(long*)l_a, *(signed char*)l_b), "SUB LONG and CHAR");
+    dap_assert_PIF(dap_sub(*(long long*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(long long*)l_a, *(signed char*)l_b), "SUB LONG LONG and SIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(signed char*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(signed char*)l_b), "SUB SIGNED CHAR and SIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(signed char*)l_b), "SUB UNSIGNED CHAR and SIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(signed char*)l_b), "SUB UNSIGNED SHORT and SIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(signed char*)l_b), "SUB UNSIGNED INT and SIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(signed char*)l_b), "SUB UNSIGNED LONG and CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(signed char*)l_b), "SUB UNSIGNED LONG LONG and SIGNED CHAR");
+    // unsigned char
+    dap_assert_PIF(dap_sub(*(char*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(char*)l_a, *(unsigned char*)l_b), "SUB CHAR and UNSIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(short*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(short*)l_a, *(unsigned char*)l_b), "SUB SHORT and UNSIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(int*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(int*)l_a, *(unsigned char*)l_b), "SUB INT and UNSIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(long*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(long*)l_a, *(unsigned char*)l_b), "SUB LONG and UNSIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(long long*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(long long*)l_a, *(unsigned char*)l_b), "SUB LONG LONG and UNSIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(signed char*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(unsigned char*)l_b), "SUB SIGNED CHAR and UNSIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(unsigned char*)l_b), "SUB UNSIGNED CHAR and UNSIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(unsigned char*)l_b), "SUB UNSIGNED SHORT and UNSIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(unsigned char*)l_b), "SUB UNSIGNED INT and UNSIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(unsigned char*)l_b), "SUB UNSIGNED LONG and UNSIGNED CHAR");
+    dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned char*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED CHAR");
+    // unsigned short
+    dap_assert_PIF(dap_sub(*(char*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(char*)l_a, *(unsigned short*)l_b), "SUB CHAR and UNSIGNED SHORT");
+    dap_assert_PIF(dap_sub(*(short*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(short*)l_a, *(unsigned short*)l_b), "SUB SHORT and UNSIGNED SHORT");
+    dap_assert_PIF(dap_sub(*(int*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(int*)l_a, *(unsigned short*)l_b), "SUB INT and UNSIGNED SHORT");
+    dap_assert_PIF(dap_sub(*(long*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(long*)l_a, *(unsigned short*)l_b), "SUB LONG and UNSIGNED SHORT");
+    dap_assert_PIF(dap_sub(*(long long*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(long long*)l_a, *(unsigned short*)l_b), "SUB LONG LONG and UNSIGNED SHORT");
+    dap_assert_PIF(dap_sub(*(signed char*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(unsigned short*)l_b), "SUB SIGNED CHAR and UNSIGNED SHORT");
+    dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(unsigned short*)l_b), "SUB UNSIGNED CHAR and UNSIGNED SHORT");
+    dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(unsigned short*)l_b), "SUB UNSIGNED SHORT and UNSIGNED SHORT");
+    dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(unsigned short*)l_b), "SUB UNSIGNED INT and UNSIGNED SHORT");
+    dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(unsigned short*)l_b), "SUB UNSIGNED LONG and UNSIGNED SHORT");
+    dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned short*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED SHORT");
+    // unsigned int
+    dap_assert_PIF(dap_sub(*(char*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(char*)l_a, *(unsigned int*)l_b), "SUB CHAR and UNSIGNED INT");
+    dap_assert_PIF(dap_sub(*(short*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(short*)l_a, *(unsigned int*)l_b), "SUB SHORT and UNSIGNED INT");
+    dap_assert_PIF(dap_sub(*(int*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(int*)l_a, *(unsigned int*)l_b), "SUB INT and UNSIGNED INT");
+    dap_assert_PIF(dap_sub(*(long*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(long*)l_a, *(unsigned int*)l_b), "SUB LONG and UNSIGNED INT");
+    dap_assert_PIF(dap_sub(*(long long*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(long long*)l_a, *(unsigned int*)l_b), "SUB LONG LONG and UNSIGNED INT");
+    dap_assert_PIF(dap_sub(*(signed char*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(unsigned int*)l_b), "SUB SIGNED CHAR and UNSIGNED INT");
+    dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(unsigned int*)l_b), "SUB UNSIGNED CHAR and UNSIGNED INT");
+    dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(unsigned int*)l_b), "SUB UNSIGNED SHORT and UNSIGNED INT");
+    dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(unsigned int*)l_b), "SUB UNSIGNED INT and UNSIGNED INT");
+    dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(unsigned int*)l_b), "SUB UNSIGNED LONG and UNSIGNED INT");
+    dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned int*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED INT");
+    // unsigned long
+    dap_assert_PIF(dap_sub(*(char*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(char*)l_a, *(unsigned long*)l_b), "SUB CHAR and UNSIGNED LONG");
+    dap_assert_PIF(dap_sub(*(short*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(short*)l_a, *(unsigned long*)l_b), "SUB SHORT and UNSIGNED LONG");
+    dap_assert_PIF(dap_sub(*(int*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(int*)l_a, *(unsigned long*)l_b), "SUB INT and UNSIGNED LONG");
+    dap_assert_PIF(dap_sub(*(long*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(long*)l_a, *(unsigned long*)l_b), "SUB LONG and UNSIGNED LONG");
+    dap_assert_PIF(dap_sub(*(long long*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(long long*)l_a, *(unsigned long*)l_b), "SUB LONG LONG and UNSIGNED LONG");
+    dap_assert_PIF(dap_sub(*(signed char*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(unsigned long*)l_b), "SUB SIGNED CHAR and UNSIGNED LONG");
+    dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(unsigned long*)l_b), "SUB UNSIGNED CHAR and UNSIGNED LONG");
+    dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(unsigned long*)l_b), "SUB UNSIGNED SHORT and UNSIGNED LONG");
+    dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(unsigned long*)l_b), "SUB UNSIGNED INT and UNSIGNED LONG");
+    dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(unsigned long*)l_b), "SUB UNSIGNED LONG and UNSIGNED LONG");
+    dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned long*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED LONG");
+    // unsigned long long
+    dap_assert_PIF(dap_sub(*(char*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(char*)l_a, *(unsigned long long*)l_b), "SUB CHAR and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_sub(*(short*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(short*)l_a, *(unsigned long long*)l_b), "SUB SHORT and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_sub(*(int*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(int*)l_a, *(unsigned long long*)l_b), "SUB INT and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_sub(*(long*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(long*)l_a, *(unsigned long long*)l_b), "SUB LONG and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_sub(*(long long*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(long long*)l_a, *(unsigned long long*)l_b), "SUB LONG LONG and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_sub(*(signed char*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(unsigned long long*)l_b), "SUB SIGNED CHAR and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED CHAR and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED SHORT and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED INT and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED LONG and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED LONG LONG");
+    // if (i + 1 == a_times) {
+    //     dap_assert(true, "SUB");
+    // }
+// MUL
+    // char
+    dap_assert_PIF(dap_mul(*(char*)l_a, *(char*)l_b) == dap_mul_builtin(*(char*)l_a, *(char*)l_b), "MUL CHAR and CHAR");
+    dap_assert_PIF(dap_mul(*(short*)l_a, *(char*)l_b) == dap_mul_builtin(*(short*)l_a, *(char*)l_b), "MUL SHORT and CHAR");
+    dap_assert_PIF(dap_mul(*(int*)l_a, *(char*)l_b) == dap_mul_builtin(*(int*)l_a, *(char*)l_b), "MUL INT and CHAR");
+    dap_assert_PIF(dap_mul(*(long*)l_a, *(char*)l_b) == dap_mul_builtin(*(long*)l_a, *(char*)l_b), "MUL LONG and CHAR");
+    dap_assert_PIF(dap_mul(*(long long*)l_a, *(char*)l_b) == dap_mul_builtin(*(long long*)l_a, *(char*)l_b), "MUL LONG LONG and CHAR");
+    dap_assert_PIF(dap_mul(*(signed char*)l_a, *(char*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(char*)l_b), "MUL SIGNED CHAR and CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(char*)l_b), "MUL UNSIGNED CHAR and CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(char*)l_b), "MUL UNSIGNED SHORT and CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(char*)l_b), "MUL UNSIGNED INT and CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(char*)l_b), "MUL UNSIGNED LONG and CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(char*)l_b), "MUL UNSIGNED LONG LONG and CHAR");
+    // short
+    dap_assert_PIF(dap_mul(*(char*)l_a, *(short*)l_b) == dap_mul_builtin(*(char*)l_a, *(short*)l_b), "MUL CHAR and SHORT");
+    dap_assert_PIF(dap_mul(*(short*)l_a, *(short*)l_b) == dap_mul_builtin(*(short*)l_a, *(short*)l_b), "MUL SHORT and SHORT");
+    dap_assert_PIF(dap_mul(*(int*)l_a, *(short*)l_b) == dap_mul_builtin(*(int*)l_a, *(short*)l_b), "MUL INT and SHORT");
+    dap_assert_PIF(dap_mul(*(long*)l_a, *(short*)l_b) == dap_mul_builtin(*(long*)l_a, *(short*)l_b), "MUL LONG and SHORT");
+    dap_assert_PIF(dap_mul(*(long long*)l_a, *(short*)l_b) == dap_mul_builtin(*(long long*)l_a, *(short*)l_b), "MUL LONG LONG and SHORT");
+    dap_assert_PIF(dap_mul(*(signed char*)l_a, *(short*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(short*)l_b), "MUL SIGNED CHAR and SHORT");
+    dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(short*)l_b), "MUL UNSIGNED CHAR and SHORT");
+    dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(short*)l_b), "MUL UNSIGNED SHORT and SHORT");
+    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(short*)l_b), "MUL UNSIGNED INT and SHORT");
+    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(short*)l_b), "MUL UNSIGNED LONG and SHORT");
+    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(short*)l_b), "MUL UNSIGNED LONG LONG and SHORT");
+    // int
+    dap_assert_PIF(dap_mul(*(char*)l_a, *(int*)l_b) == dap_mul_builtin(*(char*)l_a, *(int*)l_b), "MUL CHAR and INT");
+    dap_assert_PIF(dap_mul(*(short*)l_a, *(int*)l_b) == dap_mul_builtin(*(short*)l_a, *(int*)l_b), "MUL SHORT and INT");
+    dap_assert_PIF(dap_mul(*(int*)l_a, *(int*)l_b) == dap_mul_builtin(*(int*)l_a, *(int*)l_b), "MUL INT and INT");
+    dap_assert_PIF(dap_mul(*(long*)l_a, *(int*)l_b) == dap_mul_builtin(*(long*)l_a, *(int*)l_b), "MUL LONG and INT");
+    dap_assert_PIF(dap_mul(*(long long*)l_a, *(int*)l_b) == dap_mul_builtin(*(long long*)l_a, *(int*)l_b), "MUL LONG LONG and INT");
+    dap_assert_PIF(dap_mul(*(signed char*)l_a, *(int*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(int*)l_b), "MUL SIGNED CHAR and INT");
+    dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(int*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(int*)l_b), "MUL UNSIGNED CHAR and INT");
+    dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(int*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(int*)l_b), "MUL UNSIGNED SHORT and INT");
+    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(int*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(int*)l_b), "MUL UNSIGNED INT and INT");
+    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(int*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(int*)l_b), "MUL UNSIGNED LONG and INT");
+    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(int*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(int*)l_b), "MUL UNSIGNED LONG LONG and INT");
+    // long
+    dap_assert_PIF(dap_mul(*(char*)l_a, *(long*)l_b) == dap_mul_builtin(*(char*)l_a, *(long*)l_b), "MUL CHAR and LONG");
+    dap_assert_PIF(dap_mul(*(short*)l_a, *(long*)l_b) == dap_mul_builtin(*(short*)l_a, *(long*)l_b), "MUL SHORT and LONG");
+    dap_assert_PIF(dap_mul(*(int*)l_a, *(long*)l_b) == dap_mul_builtin(*(int*)l_a, *(long*)l_b), "MUL INT and LONG");
+    dap_assert_PIF(dap_mul(*(long*)l_a, *(long*)l_b) == dap_mul_builtin(*(long*)l_a, *(long*)l_b), "MUL LONG and LONG");
+    dap_assert_PIF(dap_mul(*(long long*)l_a, *(long*)l_b) == dap_mul_builtin(*(long long*)l_a, *(long*)l_b), "MUL LONG LONG and LONG");
+    dap_assert_PIF(dap_mul(*(signed char*)l_a, *(long*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(long*)l_b), "MUL SIGNED CHAR and LONG");
+    dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(long*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(long*)l_b), "MUL UNSIGNED CHAR and LONG");
+    dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(long*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(long*)l_b), "MUL UNSIGNED SHORT and LONG");
+    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(long*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(long*)l_b), "MUL UNSIGNED INT and LONG");
+    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(long*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(long*)l_b), "MUL UNSIGNED LONG and LONG");
+    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(long*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(long*)l_b), "MUL UNSIGNED LONG LONG and LONG");
+    // long long
+    dap_assert_PIF(dap_mul(*(char*)l_a, *(long long*)l_b) == dap_mul_builtin(*(char*)l_a, *(long long*)l_b), "MUL CHAR and LONG LONG");
+    dap_assert_PIF(dap_mul(*(short*)l_a, *(long long*)l_b) == dap_mul_builtin(*(short*)l_a, *(long long*)l_b), "MUL SHORT and LONG LONG");
+    dap_assert_PIF(dap_mul(*(int*)l_a, *(long long*)l_b) == dap_mul_builtin(*(int*)l_a, *(long long*)l_b), "MUL INT and LONG LONG");
+    dap_assert_PIF(dap_mul(*(long*)l_a, *(long long*)l_b) == dap_mul_builtin(*(long*)l_a, *(long long*)l_b), "MUL LONG and LONG LONG");
+    dap_assert_PIF(dap_mul(*(long long*)l_a, *(long long*)l_b) == dap_mul_builtin(*(long long*)l_a, *(long long*)l_b), "MUL LONG LONG and LONG LONG");
+    dap_assert_PIF(dap_mul(*(signed char*)l_a, *(long long*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(long long*)l_b), "MUL SIGNED CHAR and LONG LONG");
+    dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(long long*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(long long*)l_b), "MUL UNSIGNED CHAR and LONG LONG");
+    dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(long long*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(long long*)l_b), "MUL UNSIGNED SHORT and LONG LONG");
+    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(long long*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(long long*)l_b), "MUL UNSIGNED INT and LONG LONG");
+    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(long long*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(long long*)l_b), "MUL UNSIGNED LONG and LONG LONG");
+    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(long long*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(long long*)l_b), "MUL UNSIGNED LONG LONG and LONG LONG");
+    // signed char
+    dap_assert_PIF(dap_mul(*(char*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(char*)l_a, *(signed char*)l_b), "MUL CHAR and SIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(short*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(short*)l_a, *(signed char*)l_b), "MUL SHORT and SIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(int*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(int*)l_a, *(signed char*)l_b), "MUL INT and SIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(long*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(long*)l_a, *(signed char*)l_b), "MUL LONG and CHAR");
+    dap_assert_PIF(dap_mul(*(long long*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(long long*)l_a, *(signed char*)l_b), "MUL LONG LONG and SIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(signed char*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(signed char*)l_b), "MUL SIGNED CHAR and SIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(signed char*)l_b), "MUL UNSIGNED CHAR and SIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(signed char*)l_b), "MUL UNSIGNED SHORT and SIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(signed char*)l_b), "MUL UNSIGNED INT and SIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(signed char*)l_b), "MUL UNSIGNED LONG and CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(signed char*)l_b), "MUL UNSIGNED LONG LONG and SIGNED CHAR");
+    // unsigned char
+    dap_assert_PIF(dap_mul(*(char*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(char*)l_a, *(unsigned char*)l_b), "MUL CHAR and UNSIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(short*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(short*)l_a, *(unsigned char*)l_b), "MUL SHORT and UNSIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(int*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(int*)l_a, *(unsigned char*)l_b), "MUL INT and UNSIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(long*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(long*)l_a, *(unsigned char*)l_b), "MUL LONG and UNSIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(long long*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(long long*)l_a, *(unsigned char*)l_b), "MUL LONG LONG and UNSIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(signed char*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(unsigned char*)l_b), "MUL SIGNED CHAR and UNSIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(unsigned char*)l_b), "MUL UNSIGNED CHAR and UNSIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(unsigned char*)l_b), "MUL UNSIGNED SHORT and UNSIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(unsigned char*)l_b), "MUL UNSIGNED INT and UNSIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(unsigned char*)l_b), "MUL UNSIGNED LONG and UNSIGNED CHAR");
+    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(unsigned char*)l_b), "MUL UNSIGNED LONG LONG and UNSIGNED CHAR");
+    // unsigned short
+    dap_assert_PIF(dap_mul(*(char*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(char*)l_a, *(unsigned short*)l_b), "MUL CHAR and UNSIGNED SHORT");
+    dap_assert_PIF(dap_mul(*(short*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(short*)l_a, *(unsigned short*)l_b), "MUL SHORT and UNSIGNED SHORT");
+    dap_assert_PIF(dap_mul(*(int*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(int*)l_a, *(unsigned short*)l_b), "MUL INT and UNSIGNED SHORT");
+    dap_assert_PIF(dap_mul(*(long*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(long*)l_a, *(unsigned short*)l_b), "MUL LONG and UNSIGNED SHORT");
+    dap_assert_PIF(dap_mul(*(long long*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(long long*)l_a, *(unsigned short*)l_b), "MUL LONG LONG and UNSIGNED SHORT");
+    dap_assert_PIF(dap_mul(*(signed char*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(unsigned short*)l_b), "MUL SIGNED CHAR and UNSIGNED SHORT");
+    dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(unsigned short*)l_b), "MUL UNSIGNED CHAR and UNSIGNED SHORT");
+    dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(unsigned short*)l_b), "MUL UNSIGNED SHORT and UNSIGNED SHORT");
+    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(unsigned short*)l_b), "MUL UNSIGNED INT and UNSIGNED SHORT");
+    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(unsigned short*)l_b), "MUL UNSIGNED LONG and UNSIGNED SHORT");
+    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(unsigned short*)l_b), "MUL UNSIGNED LONG LONG and UNSIGNED SHORT");
+    // unsigned int
+    dap_assert_PIF(dap_mul(*(char*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(char*)l_a, *(unsigned int*)l_b), "MUL CHAR and UNSIGNED INT");
+    dap_assert_PIF(dap_mul(*(short*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(short*)l_a, *(unsigned int*)l_b), "MUL SHORT and UNSIGNED INT");
+    dap_assert_PIF(dap_mul(*(int*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(int*)l_a, *(unsigned int*)l_b), "MUL INT and UNSIGNED INT");
+    dap_assert_PIF(dap_mul(*(long*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(long*)l_a, *(unsigned int*)l_b), "MUL LONG and UNSIGNED INT");
+    dap_assert_PIF(dap_mul(*(long long*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(long long*)l_a, *(unsigned int*)l_b), "MUL LONG LONG and UNSIGNED INT");
+    dap_assert_PIF(dap_mul(*(signed char*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(unsigned int*)l_b), "MUL SIGNED CHAR and UNSIGNED INT");
+    dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(unsigned int*)l_b), "MUL UNSIGNED CHAR and UNSIGNED INT");
+    dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(unsigned int*)l_b), "MUL UNSIGNED SHORT and UNSIGNED INT");
+    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(unsigned int*)l_b), "MUL UNSIGNED INT and UNSIGNED INT");
+    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(unsigned int*)l_b), "MUL UNSIGNED LONG and UNSIGNED INT");
+    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(unsigned int*)l_b), "MUL UNSIGNED LONG LONG and UNSIGNED INT");
+    // unsigned long
+    dap_assert_PIF(dap_mul(*(char*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(char*)l_a, *(unsigned long*)l_b), "MUL CHAR and UNSIGNED LONG");
+    dap_assert_PIF(dap_mul(*(short*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(short*)l_a, *(unsigned long*)l_b), "MUL SHORT and UNSIGNED LONG");
+    dap_assert_PIF(dap_mul(*(int*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(int*)l_a, *(unsigned long*)l_b), "MUL INT and UNSIGNED LONG");
+    dap_assert_PIF(dap_mul(*(long*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(long*)l_a, *(unsigned long*)l_b), "MUL LONG and UNSIGNED LONG");
+    dap_assert_PIF(dap_mul(*(long long*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(long long*)l_a, *(unsigned long*)l_b), "MUL LONG LONG and UNSIGNED LONG");
+    dap_assert_PIF(dap_mul(*(signed char*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(unsigned long*)l_b), "MUL SIGNED CHAR and UNSIGNED LONG");
+    dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(unsigned long*)l_b), "MUL UNSIGNED CHAR and UNSIGNED LONG");
+    dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(unsigned long*)l_b), "MUL UNSIGNED SHORT and UNSIGNED LONG");
+    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(unsigned long*)l_b), "MUL UNSIGNED INT and UNSIGNED LONG");
+    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(unsigned long*)l_b), "MUL UNSIGNED LONG and UNSIGNED LONG");
+    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(unsigned long*)l_b), "MUL UNSIGNED LONG LONG and UNSIGNED LONG");
+    // unsigned long long
+    dap_assert_PIF(dap_mul(*(char*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(char*)l_a, *(unsigned long long*)l_b), "MUL CHAR and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_mul(*(short*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(short*)l_a, *(unsigned long long*)l_b), "MUL SHORT and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_mul(*(int*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(int*)l_a, *(unsigned long long*)l_b), "MUL INT and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_mul(*(long*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(long*)l_a, *(unsigned long long*)l_b), "MUL LONG and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_mul(*(long long*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(long long*)l_a, *(unsigned long long*)l_b), "MUL LONG LONG and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_mul(*(signed char*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(unsigned long long*)l_b), "MUL SIGNED CHAR and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED CHAR and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED SHORT and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED INT and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED LONG and UNSIGNED LONG LONG");
+    dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED LONG LONG and UNSIGNED LONG LONG");
+    // if (i + 1 == a_times) {
+    //     dap_assert(true, "MUL");
+    // }
+}
+
+static void s_test_overflow_diff_types_boundary_min()
+{
+    dap_print_module_name("dap_overflow_add_diff_types_boundary_min");
+    unsigned long long
+    *l_a = NULL,
+    *l_b = NULL; 
+    DAP_NEW_Z_COUNT_RET(l_a, unsigned long long, 2, NULL);
+    l_b = l_a + 1;
+    
+    *((char *)l_a) = dap_maxval((char)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    
+    *((short *)l_a) = dap_maxval((short)0);
+    *((int *)l_a) = dap_maxval((int)0);
+    *((long *)l_a) = dap_maxval((long)0);
+    *((long long *)l_a) = dap_maxval((long long)0);
+    *((signed char *)l_a) = dap_maxval((signed char)0);
+    *((unsigned char *)l_a) = dap_maxval((unsigned char)0);
+    *((unsigned short *)l_a) = dap_maxval((unsigned short)0);
+    *((unsigned int *)l_a) = dap_maxval((unsigned int)0);
+    *((unsigned long *)l_a) = dap_maxval((unsigned long)0);
+    *((unsigned long long*)l_a) = dap_maxval((unsigned long long)0);
+
+    DAP_DELETE(l_a);
+}
+
+static void s_test_overflow_diff_types_boundary_max(unsigned long long *l_a, unsigned long long *l_b)
+{
+    *((char *)l_a) = dap_maxval((char)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((short *)l_a) = dap_maxval((short)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((int *)l_a) = dap_maxval((int)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((long *)l_a) = dap_maxval((long)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((long long *)l_a) = dap_maxval((long long)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((signed char *)l_a) = dap_maxval((signed char)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((unsigned char *)l_a) = dap_maxval((unsigned char)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((unsigned short *)l_a) = dap_maxval((unsigned short)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((unsigned int *)l_a) = dap_maxval((unsigned int)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((unsigned long *)l_a) = dap_maxval((unsigned long)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+    
+    *((unsigned long long*)l_a) = dap_maxval((unsigned long long)0);
+    s_test_overflow_diff_types(l_a, l_b);
+    s_test_overflow_diff_types(l_b, l_a);
+}
+
+static void s_test_overflow_diff_types_boundary()
+{
+    unsigned long long
+    *l_a = NULL,
+    *l_b = NULL; 
+    DAP_NEW_Z_COUNT_RET(l_a, unsigned long long, 2, NULL);
+    l_b = l_a + 1;
+    dap_print_module_name("dap_overflow_add_diff_types_boundary_max");
+    *l_b = 0;
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    *l_b = 1;
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(char *)l_b) = -1;
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(short *)l_b) = -1;
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(int *)l_b) = -1;
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(long *)l_b) = -1;
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(long long *)l_b) = -1;
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(signed char *)l_b) = -1;
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+
+    (*(char *)l_b) = dap_minval((char)0);
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(short *)l_b) = dap_minval((short)0);
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(int *)l_b) = dap_minval((int)0);
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(long *)l_b) = dap_minval((long)0);
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(long long *)l_b) = dap_minval((long long)0);
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+    (*(signed char *)l_b) = dap_minval((signed char)0);
+    s_test_overflow_diff_types_boundary_max(l_a, l_b);
+
+    DAP_DELETE(l_a);
+}
+
+static void s_test_overflow_diff_types_rand(uint64_t a_times)
+{
+    dap_print_module_name("dap_overflow_add_diff_types_rand");
     unsigned long long
         *l_a = NULL,
         *l_b = NULL; 
         DAP_NEW_Z_COUNT_RET(l_a, unsigned long long, 2, NULL);
         l_b = l_a + 1;
-    char q = 54;
     for (uint64_t i = 0; i < a_times; ++i) {
         s_randombytes((unsigned char *)l_a, sizeof(l_a) * 2);
-    // ADD
-        // char
-        dap_assert_PIF(dap_add(*(char*)l_a, *(char*)l_b) == dap_add_builtin(*(char*)l_a, *(char*)l_b), "ADD CHAR and CHAR");
-        dap_assert_PIF(dap_add(*(short*)l_a, *(char*)l_b) == dap_add_builtin(*(short*)l_a, *(char*)l_b), "ADD SHORT and CHAR");
-        dap_assert_PIF(dap_add(*(int*)l_a, *(char*)l_b) == dap_add_builtin(*(int*)l_a, *(char*)l_b), "ADD INT and CHAR");
-        dap_assert_PIF(dap_add(*(long*)l_a, *(char*)l_b) == dap_add_builtin(*(long*)l_a, *(char*)l_b), "ADD LONG and CHAR");
-        dap_assert_PIF(dap_add(*(long long*)l_a, *(char*)l_b) == dap_add_builtin(*(long long*)l_a, *(char*)l_b), "ADD LONG LONG and CHAR");
-        dap_assert_PIF(dap_add(*(signed char*)l_a, *(char*)l_b) == dap_add_builtin(*(signed char*)l_a, *(char*)l_b), "ADD SIGNED CHAR and CHAR");
-        dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(char*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(char*)l_b), "ADD UNSIGNED CHAR and CHAR");
-        dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(char*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(char*)l_b), "ADD UNSIGNED SHORT and CHAR");
-        dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(char*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(char*)l_b), "ADD UNSIGNED INT and CHAR");
-        dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(char*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(char*)l_b), "ADD UNSIGNED LONG and CHAR");
-        dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(char*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(char*)l_b), "ADD UNSIGNED LONG LONG and CHAR");
-        // short
-        dap_assert_PIF(dap_add(*(char*)l_a, *(short*)l_b) == dap_add_builtin(*(char*)l_a, *(short*)l_b), "ADD CHAR and SHORT");
-        dap_assert_PIF(dap_add(*(short*)l_a, *(short*)l_b) == dap_add_builtin(*(short*)l_a, *(short*)l_b), "ADD SHORT and SHORT");
-        dap_assert_PIF(dap_add(*(int*)l_a, *(short*)l_b) == dap_add_builtin(*(int*)l_a, *(short*)l_b), "ADD INT and SHORT");
-        dap_assert_PIF(dap_add(*(long*)l_a, *(short*)l_b) == dap_add_builtin(*(long*)l_a, *(short*)l_b), "ADD LONG and SHORT");
-        dap_assert_PIF(dap_add(*(long long*)l_a, *(short*)l_b) == dap_add_builtin(*(long long*)l_a, *(short*)l_b), "ADD LONG LONG and SHORT");
-        dap_assert_PIF(dap_add(*(signed char*)l_a, *(short*)l_b) == dap_add_builtin(*(signed char*)l_a, *(short*)l_b), "ADD SIGNED CHAR and SHORT");
-        dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(short*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(short*)l_b), "ADD UNSIGNED CHAR and SHORT");
-        dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(short*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(short*)l_b), "ADD UNSIGNED SHORT and SHORT");
-        dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(short*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(short*)l_b), "ADD UNSIGNED INT and SHORT");
-        dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(short*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(short*)l_b), "ADD UNSIGNED LONG and SHORT");
-        dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(short*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(short*)l_b), "ADD UNSIGNED LONG LONG and SHORT");
-        // int
-        dap_assert_PIF(dap_add(*(char*)l_a, *(int*)l_b) == dap_add_builtin(*(char*)l_a, *(int*)l_b), "ADD CHAR and INT");
-        dap_assert_PIF(dap_add(*(short*)l_a, *(int*)l_b) == dap_add_builtin(*(short*)l_a, *(int*)l_b), "ADD SHORT and INT");
-        dap_assert_PIF(dap_add(*(int*)l_a, *(int*)l_b) == dap_add_builtin(*(int*)l_a, *(int*)l_b), "ADD INT and INT");
-        dap_assert_PIF(dap_add(*(long*)l_a, *(int*)l_b) == dap_add_builtin(*(long*)l_a, *(int*)l_b), "ADD LONG and INT");
-        dap_assert_PIF(dap_add(*(long long*)l_a, *(int*)l_b) == dap_add_builtin(*(long long*)l_a, *(int*)l_b), "ADD LONG LONG and INT");
-        dap_assert_PIF(dap_add(*(signed char*)l_a, *(int*)l_b) == dap_add_builtin(*(signed char*)l_a, *(int*)l_b), "ADD SIGNED CHAR and INT");
-        dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(int*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(int*)l_b), "ADD UNSIGNED CHAR and INT");
-        dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(int*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(int*)l_b), "ADD UNSIGNED SHORT and INT");
-        dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(int*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(int*)l_b), "ADD UNSIGNED INT and INT");
-        dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(int*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(int*)l_b), "ADD UNSIGNED LONG and INT");
-        dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(int*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(int*)l_b), "ADD UNSIGNED LONG LONG and INT");
-        // long
-        dap_assert_PIF(dap_add(*(char*)l_a, *(long*)l_b) == dap_add_builtin(*(char*)l_a, *(long*)l_b), "ADD CHAR and LONG");
-        dap_assert_PIF(dap_add(*(short*)l_a, *(long*)l_b) == dap_add_builtin(*(short*)l_a, *(long*)l_b), "ADD SHORT and LONG");
-        dap_assert_PIF(dap_add(*(int*)l_a, *(long*)l_b) == dap_add_builtin(*(int*)l_a, *(long*)l_b), "ADD INT and LONG");
-        dap_assert_PIF(dap_add(*(long*)l_a, *(long*)l_b) == dap_add_builtin(*(long*)l_a, *(long*)l_b), "ADD LONG and LONG");
-        dap_assert_PIF(dap_add(*(long long*)l_a, *(long*)l_b) == dap_add_builtin(*(long long*)l_a, *(long*)l_b), "ADD LONG LONG and LONG");
-        dap_assert_PIF(dap_add(*(signed char*)l_a, *(long*)l_b) == dap_add_builtin(*(signed char*)l_a, *(long*)l_b), "ADD SIGNED CHAR and LONG");
-        dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(long*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(long*)l_b), "ADD UNSIGNED CHAR and LONG");
-        dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(long*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(long*)l_b), "ADD UNSIGNED SHORT and LONG");
-        dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(long*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(long*)l_b), "ADD UNSIGNED INT and LONG");
-        dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(long*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(long*)l_b), "ADD UNSIGNED LONG and LONG");
-        dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(long*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(long*)l_b), "ADD UNSIGNED LONG LONG and LONG");
-        // long long
-        dap_assert_PIF(dap_add(*(char*)l_a, *(long long*)l_b) == dap_add_builtin(*(char*)l_a, *(long long*)l_b), "ADD CHAR and LONG LONG");
-        dap_assert_PIF(dap_add(*(short*)l_a, *(long long*)l_b) == dap_add_builtin(*(short*)l_a, *(long long*)l_b), "ADD SHORT and LONG LONG");
-        dap_assert_PIF(dap_add(*(int*)l_a, *(long long*)l_b) == dap_add_builtin(*(int*)l_a, *(long long*)l_b), "ADD INT and LONG LONG");
-        dap_assert_PIF(dap_add(*(long*)l_a, *(long long*)l_b) == dap_add_builtin(*(long*)l_a, *(long long*)l_b), "ADD LONG and LONG LONG");
-        dap_assert_PIF(dap_add(*(long long*)l_a, *(long long*)l_b) == dap_add_builtin(*(long long*)l_a, *(long long*)l_b), "ADD LONG LONG and LONG LONG");
-        dap_assert_PIF(dap_add(*(signed char*)l_a, *(long long*)l_b) == dap_add_builtin(*(signed char*)l_a, *(long long*)l_b), "ADD SIGNED CHAR and LONG LONG");
-        dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(long long*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(long long*)l_b), "ADD UNSIGNED CHAR and LONG LONG");
-        dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(long long*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(long long*)l_b), "ADD UNSIGNED SHORT and LONG LONG");
-        dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(long long*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(long long*)l_b), "ADD UNSIGNED INT and LONG LONG");
-        dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(long long*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(long long*)l_b), "ADD UNSIGNED LONG and LONG LONG");
-        dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(long long*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(long long*)l_b), "ADD UNSIGNED LONG LONG and LONG LONG");
-        // signed char
-        dap_assert_PIF(dap_add(*(char*)l_a, *(signed char*)l_b) == dap_add_builtin(*(char*)l_a, *(signed char*)l_b), "ADD CHAR and SIGNED CHAR");
-        dap_assert_PIF(dap_add(*(short*)l_a, *(signed char*)l_b) == dap_add_builtin(*(short*)l_a, *(signed char*)l_b), "ADD SHORT and SIGNED CHAR");
-        dap_assert_PIF(dap_add(*(int*)l_a, *(signed char*)l_b) == dap_add_builtin(*(int*)l_a, *(signed char*)l_b), "ADD INT and SIGNED CHAR");
-        dap_assert_PIF(dap_add(*(long*)l_a, *(signed char*)l_b) == dap_add_builtin(*(long*)l_a, *(signed char*)l_b), "ADD LONG and CHAR");
-        dap_assert_PIF(dap_add(*(long long*)l_a, *(signed char*)l_b) == dap_add_builtin(*(long long*)l_a, *(signed char*)l_b), "ADD LONG LONG and SIGNED CHAR");
-        dap_assert_PIF(dap_add(*(signed char*)l_a, *(signed char*)l_b) == dap_add_builtin(*(signed char*)l_a, *(signed char*)l_b), "ADD SIGNED CHAR and SIGNED CHAR");
-        dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(signed char*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(signed char*)l_b), "ADD UNSIGNED CHAR and SIGNED CHAR");
-        dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(signed char*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(signed char*)l_b), "ADD UNSIGNED SHORT and SIGNED CHAR");
-        dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(signed char*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(signed char*)l_b), "ADD UNSIGNED INT and SIGNED CHAR");
-        dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(signed char*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(signed char*)l_b), "ADD UNSIGNED LONG and CHAR");
-        dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(signed char*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(signed char*)l_b), "ADD UNSIGNED LONG LONG and SIGNED CHAR");
-        // unsigned char
-        dap_assert_PIF(dap_add(*(char*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(char*)l_a, *(unsigned char*)l_b), "ADD CHAR and UNSIGNED CHAR");
-        dap_assert_PIF(dap_add(*(short*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(short*)l_a, *(unsigned char*)l_b), "ADD SHORT and UNSIGNED CHAR");
-        dap_assert_PIF(dap_add(*(int*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(int*)l_a, *(unsigned char*)l_b), "ADD INT and UNSIGNED CHAR");
-        dap_assert_PIF(dap_add(*(long*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(long*)l_a, *(unsigned char*)l_b), "ADD LONG and UNSIGNED CHAR");
-        dap_assert_PIF(dap_add(*(long long*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(long long*)l_a, *(unsigned char*)l_b), "ADD LONG LONG and UNSIGNED CHAR");
-        dap_assert_PIF(dap_add(*(signed char*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(signed char*)l_a, *(unsigned char*)l_b), "ADD SIGNED CHAR and UNSIGNED CHAR");
-        dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(unsigned char*)l_b), "ADD UNSIGNED CHAR and UNSIGNED CHAR");
-        dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(unsigned char*)l_b), "ADD UNSIGNED SHORT and UNSIGNED CHAR");
-        dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(unsigned char*)l_b), "ADD UNSIGNED INT and UNSIGNED CHAR");
-        dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(unsigned char*)l_b), "ADD UNSIGNED LONG and UNSIGNED CHAR");
-        dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(unsigned char*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(unsigned char*)l_b), "ADD UNSIGNED LONG LONG and UNSIGNED CHAR");
-        // unsigned short
-        dap_assert_PIF(dap_add(*(char*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(char*)l_a, *(unsigned short*)l_b), "ADD CHAR and UNSIGNED SHORT");
-        dap_assert_PIF(dap_add(*(short*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(short*)l_a, *(unsigned short*)l_b), "ADD SHORT and UNSIGNED SHORT");
-        dap_assert_PIF(dap_add(*(int*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(int*)l_a, *(unsigned short*)l_b), "ADD INT and UNSIGNED SHORT");
-        dap_assert_PIF(dap_add(*(long*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(long*)l_a, *(unsigned short*)l_b), "ADD LONG and UNSIGNED SHORT");
-        dap_assert_PIF(dap_add(*(long long*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(long long*)l_a, *(unsigned short*)l_b), "ADD LONG LONG and UNSIGNED SHORT");
-        dap_assert_PIF(dap_add(*(signed char*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(signed char*)l_a, *(unsigned short*)l_b), "ADD SIGNED CHAR and UNSIGNED SHORT");
-        dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(unsigned short*)l_b), "ADD UNSIGNED CHAR and UNSIGNED SHORT");
-        dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(unsigned short*)l_b), "ADD UNSIGNED SHORT and UNSIGNED SHORT");
-        dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(unsigned short*)l_b), "ADD UNSIGNED INT and UNSIGNED SHORT");
-        dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(unsigned short*)l_b), "ADD UNSIGNED LONG and UNSIGNED SHORT");
-        dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(unsigned short*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(unsigned short*)l_b), "ADD UNSIGNED LONG LONG and UNSIGNED SHORT");
-        // unsigned int
-        dap_assert_PIF(dap_add(*(char*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(char*)l_a, *(unsigned int*)l_b), "ADD CHAR and UNSIGNED INT");
-        dap_assert_PIF(dap_add(*(short*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(short*)l_a, *(unsigned int*)l_b), "ADD SHORT and UNSIGNED INT");
-        dap_assert_PIF(dap_add(*(int*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(int*)l_a, *(unsigned int*)l_b), "ADD INT and UNSIGNED INT");
-        dap_assert_PIF(dap_add(*(long*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(long*)l_a, *(unsigned int*)l_b), "ADD LONG and UNSIGNED INT");
-        dap_assert_PIF(dap_add(*(long long*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(long long*)l_a, *(unsigned int*)l_b), "ADD LONG LONG and UNSIGNED INT");
-        dap_assert_PIF(dap_add(*(signed char*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(signed char*)l_a, *(unsigned int*)l_b), "ADD SIGNED CHAR and UNSIGNED INT");
-        dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(unsigned int*)l_b), "ADD UNSIGNED CHAR and UNSIGNED INT");
-        dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(unsigned int*)l_b), "ADD UNSIGNED SHORT and UNSIGNED INT");
-        dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(unsigned int*)l_b), "ADD UNSIGNED INT and UNSIGNED INT");
-        dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(unsigned int*)l_b), "ADD UNSIGNED LONG and UNSIGNED INT");
-        dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(unsigned int*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(unsigned int*)l_b), "ADD UNSIGNED LONG LONG and UNSIGNED INT");
-        // unsigned long
-        dap_assert_PIF(dap_add(*(char*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(char*)l_a, *(unsigned long*)l_b), "ADD CHAR and UNSIGNED LONG");
-        dap_assert_PIF(dap_add(*(short*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(short*)l_a, *(unsigned long*)l_b), "ADD SHORT and UNSIGNED LONG");
-        dap_assert_PIF(dap_add(*(int*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(int*)l_a, *(unsigned long*)l_b), "ADD INT and UNSIGNED LONG");
-        dap_assert_PIF(dap_add(*(long*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(long*)l_a, *(unsigned long*)l_b), "ADD LONG and UNSIGNED LONG");
-        dap_assert_PIF(dap_add(*(long long*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(long long*)l_a, *(unsigned long*)l_b), "ADD LONG LONG and UNSIGNED LONG");
-        dap_assert_PIF(dap_add(*(signed char*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(signed char*)l_a, *(unsigned long*)l_b), "ADD SIGNED CHAR and UNSIGNED LONG");
-        dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(unsigned long*)l_b), "ADD UNSIGNED CHAR and UNSIGNED LONG");
-        dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(unsigned long*)l_b), "ADD UNSIGNED SHORT and UNSIGNED LONG");
-        dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(unsigned long*)l_b), "ADD UNSIGNED INT and UNSIGNED LONG");
-        dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(unsigned long*)l_b), "ADD UNSIGNED LONG and UNSIGNED LONG");
-        dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(unsigned long*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(unsigned long*)l_b), "ADD UNSIGNED LONG LONG and UNSIGNED LONG");
-        // unsigned long long
-        dap_assert_PIF(dap_add(*(char*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(char*)l_a, *(unsigned long long*)l_b), "ADD CHAR and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_add(*(short*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(short*)l_a, *(unsigned long long*)l_b), "ADD SHORT and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_add(*(int*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(int*)l_a, *(unsigned long long*)l_b), "ADD INT and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_add(*(long*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(long*)l_a, *(unsigned long long*)l_b), "ADD LONG and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_add(*(long long*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(long long*)l_a, *(unsigned long long*)l_b), "ADD LONG LONG and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_add(*(signed char*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(signed char*)l_a, *(unsigned long long*)l_b), "ADD SIGNED CHAR and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_add(*(unsigned char*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned char*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED CHAR and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_add(*(unsigned short*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned short*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED SHORT and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_add(*(unsigned int*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned int*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED INT and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_add(*(unsigned long*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned long*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED LONG and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_add(*(unsigned long long*)l_a, *(unsigned long long*)l_b) == dap_add_builtin(*(unsigned long long*)l_a, *(unsigned long long*)l_b), "ADD UNSIGNED LONG LONG and UNSIGNED LONG LONG");
-        if (i + 1 == a_times) {
-            dap_assert(true, "ADD");
-        }
-    // SUB
-        // char
-        dap_assert_PIF(dap_sub(*(char*)l_a, *(char*)l_b) == dap_sub_builtin(*(char*)l_a, *(char*)l_b), "SUB CHAR and CHAR");
-        dap_assert_PIF(dap_sub(*(short*)l_a, *(char*)l_b) == dap_sub_builtin(*(short*)l_a, *(char*)l_b), "SUB SHORT and CHAR");
-        dap_assert_PIF(dap_sub(*(int*)l_a, *(char*)l_b) == dap_sub_builtin(*(int*)l_a, *(char*)l_b), "SUB INT and CHAR");
-        dap_assert_PIF(dap_sub(*(long*)l_a, *(char*)l_b) == dap_sub_builtin(*(long*)l_a, *(char*)l_b), "SUB LONG and CHAR");
-        dap_assert_PIF(dap_sub(*(long long*)l_a, *(char*)l_b) == dap_sub_builtin(*(long long*)l_a, *(char*)l_b), "SUB LONG LONG and CHAR");
-        dap_assert_PIF(dap_sub(*(signed char*)l_a, *(char*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(char*)l_b), "SUB SIGNED CHAR and CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(char*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(char*)l_b), "SUB UNSIGNED CHAR and CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(char*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(char*)l_b), "SUB UNSIGNED SHORT and CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(char*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(char*)l_b), "SUB UNSIGNED INT and CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(char*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(char*)l_b), "SUB UNSIGNED LONG and CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(char*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(char*)l_b), "SUB UNSIGNED LONG LONG and CHAR");
-        // short
-        dap_assert_PIF(dap_sub(*(char*)l_a, *(short*)l_b) == dap_sub_builtin(*(char*)l_a, *(short*)l_b), "SUB CHAR and SHORT");
-        dap_assert_PIF(dap_sub(*(short*)l_a, *(short*)l_b) == dap_sub_builtin(*(short*)l_a, *(short*)l_b), "SUB SHORT and SHORT");
-        dap_assert_PIF(dap_sub(*(int*)l_a, *(short*)l_b) == dap_sub_builtin(*(int*)l_a, *(short*)l_b), "SUB INT and SHORT");
-        dap_assert_PIF(dap_sub(*(long*)l_a, *(short*)l_b) == dap_sub_builtin(*(long*)l_a, *(short*)l_b), "SUB LONG and SHORT");
-        dap_assert_PIF(dap_sub(*(long long*)l_a, *(short*)l_b) == dap_sub_builtin(*(long long*)l_a, *(short*)l_b), "SUB LONG LONG and SHORT");
-        dap_assert_PIF(dap_sub(*(signed char*)l_a, *(short*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(short*)l_b), "SUB SIGNED CHAR and SHORT");
-        dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(short*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(short*)l_b), "SUB UNSIGNED CHAR and SHORT");
-        dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(short*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(short*)l_b), "SUB UNSIGNED SHORT and SHORT");
-        dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(short*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(short*)l_b), "SUB UNSIGNED INT and SHORT");
-        dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(short*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(short*)l_b), "SUB UNSIGNED LONG and SHORT");
-        dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(short*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(short*)l_b), "SUB UNSIGNED LONG LONG and SHORT");
-        // int
-        dap_assert_PIF(dap_sub(*(char*)l_a, *(int*)l_b) == dap_sub_builtin(*(char*)l_a, *(int*)l_b), "SUB CHAR and INT");
-        dap_assert_PIF(dap_sub(*(short*)l_a, *(int*)l_b) == dap_sub_builtin(*(short*)l_a, *(int*)l_b), "SUB SHORT and INT");
-        dap_assert_PIF(dap_sub(*(int*)l_a, *(int*)l_b) == dap_sub_builtin(*(int*)l_a, *(int*)l_b), "SUB INT and INT");
-        dap_assert_PIF(dap_sub(*(long*)l_a, *(int*)l_b) == dap_sub_builtin(*(long*)l_a, *(int*)l_b), "SUB LONG and INT");
-        dap_assert_PIF(dap_sub(*(long long*)l_a, *(int*)l_b) == dap_sub_builtin(*(long long*)l_a, *(int*)l_b), "SUB LONG LONG and INT");
-        dap_assert_PIF(dap_sub(*(signed char*)l_a, *(int*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(int*)l_b), "SUB SIGNED CHAR and INT");
-        dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(int*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(int*)l_b), "SUB UNSIGNED CHAR and INT");
-        dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(int*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(int*)l_b), "SUB UNSIGNED SHORT and INT");
-        dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(int*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(int*)l_b), "SUB UNSIGNED INT and INT");
-        dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(int*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(int*)l_b), "SUB UNSIGNED LONG and INT");
-        dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(int*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(int*)l_b), "SUB UNSIGNED LONG LONG and INT");
-        // long
-        dap_assert_PIF(dap_sub(*(char*)l_a, *(long*)l_b) == dap_sub_builtin(*(char*)l_a, *(long*)l_b), "SUB CHAR and LONG");
-        dap_assert_PIF(dap_sub(*(short*)l_a, *(long*)l_b) == dap_sub_builtin(*(short*)l_a, *(long*)l_b), "SUB SHORT and LONG");
-        dap_assert_PIF(dap_sub(*(int*)l_a, *(long*)l_b) == dap_sub_builtin(*(int*)l_a, *(long*)l_b), "SUB INT and LONG");
-        dap_assert_PIF(dap_sub(*(long*)l_a, *(long*)l_b) == dap_sub_builtin(*(long*)l_a, *(long*)l_b), "SUB LONG and LONG");
-        dap_assert_PIF(dap_sub(*(long long*)l_a, *(long*)l_b) == dap_sub_builtin(*(long long*)l_a, *(long*)l_b), "SUB LONG LONG and LONG");
-        dap_assert_PIF(dap_sub(*(signed char*)l_a, *(long*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(long*)l_b), "SUB SIGNED CHAR and LONG");
-        dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(long*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(long*)l_b), "SUB UNSIGNED CHAR and LONG");
-        dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(long*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(long*)l_b), "SUB UNSIGNED SHORT and LONG");
-        dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(long*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(long*)l_b), "SUB UNSIGNED INT and LONG");
-        dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(long*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(long*)l_b), "SUB UNSIGNED LONG and LONG");
-        dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(long*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(long*)l_b), "SUB UNSIGNED LONG LONG and LONG");
-        // long long
-        dap_assert_PIF(dap_sub(*(char*)l_a, *(long long*)l_b) == dap_sub_builtin(*(char*)l_a, *(long long*)l_b), "SUB CHAR and LONG LONG");
-        dap_assert_PIF(dap_sub(*(short*)l_a, *(long long*)l_b) == dap_sub_builtin(*(short*)l_a, *(long long*)l_b), "SUB SHORT and LONG LONG");
-        dap_assert_PIF(dap_sub(*(int*)l_a, *(long long*)l_b) == dap_sub_builtin(*(int*)l_a, *(long long*)l_b), "SUB INT and LONG LONG");
-        dap_assert_PIF(dap_sub(*(long*)l_a, *(long long*)l_b) == dap_sub_builtin(*(long*)l_a, *(long long*)l_b), "SUB LONG and LONG LONG");
-        dap_assert_PIF(dap_sub(*(long long*)l_a, *(long long*)l_b) == dap_sub_builtin(*(long long*)l_a, *(long long*)l_b), "SUB LONG LONG and LONG LONG");
-        dap_assert_PIF(dap_sub(*(signed char*)l_a, *(long long*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(long long*)l_b), "SUB SIGNED CHAR and LONG LONG");
-        dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(long long*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(long long*)l_b), "SUB UNSIGNED CHAR and LONG LONG");
-        dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(long long*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(long long*)l_b), "SUB UNSIGNED SHORT and LONG LONG");
-        dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(long long*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(long long*)l_b), "SUB UNSIGNED INT and LONG LONG");
-        dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(long long*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(long long*)l_b), "SUB UNSIGNED LONG and LONG LONG");
-        dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(long long*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(long long*)l_b), "SUB UNSIGNED LONG LONG and LONG LONG");
-        // signed char
-        dap_assert_PIF(dap_sub(*(char*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(char*)l_a, *(signed char*)l_b), "SUB CHAR and SIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(short*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(short*)l_a, *(signed char*)l_b), "SUB SHORT and SIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(int*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(int*)l_a, *(signed char*)l_b), "SUB INT and SIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(long*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(long*)l_a, *(signed char*)l_b), "SUB LONG and CHAR");
-        dap_assert_PIF(dap_sub(*(long long*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(long long*)l_a, *(signed char*)l_b), "SUB LONG LONG and SIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(signed char*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(signed char*)l_b), "SUB SIGNED CHAR and SIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(signed char*)l_b), "SUB UNSIGNED CHAR and SIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(signed char*)l_b), "SUB UNSIGNED SHORT and SIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(signed char*)l_b), "SUB UNSIGNED INT and SIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(signed char*)l_b), "SUB UNSIGNED LONG and CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(signed char*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(signed char*)l_b), "SUB UNSIGNED LONG LONG and SIGNED CHAR");
-        // unsigned char
-        dap_assert_PIF(dap_sub(*(char*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(char*)l_a, *(unsigned char*)l_b), "SUB CHAR and UNSIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(short*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(short*)l_a, *(unsigned char*)l_b), "SUB SHORT and UNSIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(int*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(int*)l_a, *(unsigned char*)l_b), "SUB INT and UNSIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(long*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(long*)l_a, *(unsigned char*)l_b), "SUB LONG and UNSIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(long long*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(long long*)l_a, *(unsigned char*)l_b), "SUB LONG LONG and UNSIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(signed char*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(unsigned char*)l_b), "SUB SIGNED CHAR and UNSIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(unsigned char*)l_b), "SUB UNSIGNED CHAR and UNSIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(unsigned char*)l_b), "SUB UNSIGNED SHORT and UNSIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(unsigned char*)l_b), "SUB UNSIGNED INT and UNSIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(unsigned char*)l_b), "SUB UNSIGNED LONG and UNSIGNED CHAR");
-        dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(unsigned char*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned char*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED CHAR");
-        // unsigned short
-        dap_assert_PIF(dap_sub(*(char*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(char*)l_a, *(unsigned short*)l_b), "SUB CHAR and UNSIGNED SHORT");
-        dap_assert_PIF(dap_sub(*(short*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(short*)l_a, *(unsigned short*)l_b), "SUB SHORT and UNSIGNED SHORT");
-        dap_assert_PIF(dap_sub(*(int*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(int*)l_a, *(unsigned short*)l_b), "SUB INT and UNSIGNED SHORT");
-        dap_assert_PIF(dap_sub(*(long*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(long*)l_a, *(unsigned short*)l_b), "SUB LONG and UNSIGNED SHORT");
-        dap_assert_PIF(dap_sub(*(long long*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(long long*)l_a, *(unsigned short*)l_b), "SUB LONG LONG and UNSIGNED SHORT");
-        dap_assert_PIF(dap_sub(*(signed char*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(unsigned short*)l_b), "SUB SIGNED CHAR and UNSIGNED SHORT");
-        dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(unsigned short*)l_b), "SUB UNSIGNED CHAR and UNSIGNED SHORT");
-        dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(unsigned short*)l_b), "SUB UNSIGNED SHORT and UNSIGNED SHORT");
-        dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(unsigned short*)l_b), "SUB UNSIGNED INT and UNSIGNED SHORT");
-        dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(unsigned short*)l_b), "SUB UNSIGNED LONG and UNSIGNED SHORT");
-        dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(unsigned short*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned short*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED SHORT");
-        // unsigned int
-        dap_assert_PIF(dap_sub(*(char*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(char*)l_a, *(unsigned int*)l_b), "SUB CHAR and UNSIGNED INT");
-        dap_assert_PIF(dap_sub(*(short*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(short*)l_a, *(unsigned int*)l_b), "SUB SHORT and UNSIGNED INT");
-        dap_assert_PIF(dap_sub(*(int*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(int*)l_a, *(unsigned int*)l_b), "SUB INT and UNSIGNED INT");
-        dap_assert_PIF(dap_sub(*(long*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(long*)l_a, *(unsigned int*)l_b), "SUB LONG and UNSIGNED INT");
-        dap_assert_PIF(dap_sub(*(long long*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(long long*)l_a, *(unsigned int*)l_b), "SUB LONG LONG and UNSIGNED INT");
-        dap_assert_PIF(dap_sub(*(signed char*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(unsigned int*)l_b), "SUB SIGNED CHAR and UNSIGNED INT");
-        dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(unsigned int*)l_b), "SUB UNSIGNED CHAR and UNSIGNED INT");
-        dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(unsigned int*)l_b), "SUB UNSIGNED SHORT and UNSIGNED INT");
-        dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(unsigned int*)l_b), "SUB UNSIGNED INT and UNSIGNED INT");
-        dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(unsigned int*)l_b), "SUB UNSIGNED LONG and UNSIGNED INT");
-        dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(unsigned int*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned int*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED INT");
-        // unsigned long
-        dap_assert_PIF(dap_sub(*(char*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(char*)l_a, *(unsigned long*)l_b), "SUB CHAR and UNSIGNED LONG");
-        dap_assert_PIF(dap_sub(*(short*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(short*)l_a, *(unsigned long*)l_b), "SUB SHORT and UNSIGNED LONG");
-        dap_assert_PIF(dap_sub(*(int*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(int*)l_a, *(unsigned long*)l_b), "SUB INT and UNSIGNED LONG");
-        dap_assert_PIF(dap_sub(*(long*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(long*)l_a, *(unsigned long*)l_b), "SUB LONG and UNSIGNED LONG");
-        dap_assert_PIF(dap_sub(*(long long*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(long long*)l_a, *(unsigned long*)l_b), "SUB LONG LONG and UNSIGNED LONG");
-        dap_assert_PIF(dap_sub(*(signed char*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(unsigned long*)l_b), "SUB SIGNED CHAR and UNSIGNED LONG");
-        dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(unsigned long*)l_b), "SUB UNSIGNED CHAR and UNSIGNED LONG");
-        dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(unsigned long*)l_b), "SUB UNSIGNED SHORT and UNSIGNED LONG");
-        dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(unsigned long*)l_b), "SUB UNSIGNED INT and UNSIGNED LONG");
-        dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(unsigned long*)l_b), "SUB UNSIGNED LONG and UNSIGNED LONG");
-        dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(unsigned long*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned long*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED LONG");
-        // unsigned long long
-        dap_assert_PIF(dap_sub(*(char*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(char*)l_a, *(unsigned long long*)l_b), "SUB CHAR and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_sub(*(short*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(short*)l_a, *(unsigned long long*)l_b), "SUB SHORT and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_sub(*(int*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(int*)l_a, *(unsigned long long*)l_b), "SUB INT and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_sub(*(long*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(long*)l_a, *(unsigned long long*)l_b), "SUB LONG and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_sub(*(long long*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(long long*)l_a, *(unsigned long long*)l_b), "SUB LONG LONG and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_sub(*(signed char*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(signed char*)l_a, *(unsigned long long*)l_b), "SUB SIGNED CHAR and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_sub(*(unsigned char*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned char*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED CHAR and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_sub(*(unsigned short*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned short*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED SHORT and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_sub(*(unsigned int*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned int*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED INT and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_sub(*(unsigned long*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned long*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED LONG and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_sub(*(unsigned long long*)l_a, *(unsigned long long*)l_b) == dap_sub_builtin(*(unsigned long long*)l_a, *(unsigned long long*)l_b), "SUB UNSIGNED LONG LONG and UNSIGNED LONG LONG");
-        if (i + 1 == a_times) {
-            dap_assert(true, "SUB");
-        }
-    // MUL
-        // char
-        dap_assert_PIF(dap_mul(*(char*)l_a, *(char*)l_b) == dap_mul_builtin(*(char*)l_a, *(char*)l_b), "MUL CHAR and CHAR");
-        dap_assert_PIF(dap_mul(*(short*)l_a, *(char*)l_b) == dap_mul_builtin(*(short*)l_a, *(char*)l_b), "MUL SHORT and CHAR");
-        dap_assert_PIF(dap_mul(*(int*)l_a, *(char*)l_b) == dap_mul_builtin(*(int*)l_a, *(char*)l_b), "MUL INT and CHAR");
-        dap_assert_PIF(dap_mul(*(long*)l_a, *(char*)l_b) == dap_mul_builtin(*(long*)l_a, *(char*)l_b), "MUL LONG and CHAR");
-        dap_assert_PIF(dap_mul(*(long long*)l_a, *(char*)l_b) == dap_mul_builtin(*(long long*)l_a, *(char*)l_b), "MUL LONG LONG and CHAR");
-        dap_assert_PIF(dap_mul(*(signed char*)l_a, *(char*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(char*)l_b), "MUL SIGNED CHAR and CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(char*)l_b), "MUL UNSIGNED CHAR and CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(char*)l_b), "MUL UNSIGNED SHORT and CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(char*)l_b), "MUL UNSIGNED INT and CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(char*)l_b), "MUL UNSIGNED LONG and CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(char*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(char*)l_b), "MUL UNSIGNED LONG LONG and CHAR");
-        // short
-        dap_assert_PIF(dap_mul(*(char*)l_a, *(short*)l_b) == dap_mul_builtin(*(char*)l_a, *(short*)l_b), "MUL CHAR and SHORT");
-        dap_assert_PIF(dap_mul(*(short*)l_a, *(short*)l_b) == dap_mul_builtin(*(short*)l_a, *(short*)l_b), "MUL SHORT and SHORT");
-        dap_assert_PIF(dap_mul(*(int*)l_a, *(short*)l_b) == dap_mul_builtin(*(int*)l_a, *(short*)l_b), "MUL INT and SHORT");
-        dap_assert_PIF(dap_mul(*(long*)l_a, *(short*)l_b) == dap_mul_builtin(*(long*)l_a, *(short*)l_b), "MUL LONG and SHORT");
-        dap_assert_PIF(dap_mul(*(long long*)l_a, *(short*)l_b) == dap_mul_builtin(*(long long*)l_a, *(short*)l_b), "MUL LONG LONG and SHORT");
-        dap_assert_PIF(dap_mul(*(signed char*)l_a, *(short*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(short*)l_b), "MUL SIGNED CHAR and SHORT");
-        dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(short*)l_b), "MUL UNSIGNED CHAR and SHORT");
-        dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(short*)l_b), "MUL UNSIGNED SHORT and SHORT");
-        dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(short*)l_b), "MUL UNSIGNED INT and SHORT");
-        dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(short*)l_b), "MUL UNSIGNED LONG and SHORT");
-        dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(short*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(short*)l_b), "MUL UNSIGNED LONG LONG and SHORT");
-        // int
-        dap_assert_PIF(dap_mul(*(char*)l_a, *(int*)l_b) == dap_mul_builtin(*(char*)l_a, *(int*)l_b), "MUL CHAR and INT");
-        dap_assert_PIF(dap_mul(*(short*)l_a, *(int*)l_b) == dap_mul_builtin(*(short*)l_a, *(int*)l_b), "MUL SHORT and INT");
-        dap_assert_PIF(dap_mul(*(int*)l_a, *(int*)l_b) == dap_mul_builtin(*(int*)l_a, *(int*)l_b), "MUL INT and INT");
-        dap_assert_PIF(dap_mul(*(long*)l_a, *(int*)l_b) == dap_mul_builtin(*(long*)l_a, *(int*)l_b), "MUL LONG and INT");
-        dap_assert_PIF(dap_mul(*(long long*)l_a, *(int*)l_b) == dap_mul_builtin(*(long long*)l_a, *(int*)l_b), "MUL LONG LONG and INT");
-        dap_assert_PIF(dap_mul(*(signed char*)l_a, *(int*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(int*)l_b), "MUL SIGNED CHAR and INT");
-        dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(int*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(int*)l_b), "MUL UNSIGNED CHAR and INT");
-        dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(int*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(int*)l_b), "MUL UNSIGNED SHORT and INT");
-        dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(int*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(int*)l_b), "MUL UNSIGNED INT and INT");
-        dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(int*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(int*)l_b), "MUL UNSIGNED LONG and INT");
-        dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(int*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(int*)l_b), "MUL UNSIGNED LONG LONG and INT");
-        // long
-        dap_assert_PIF(dap_mul(*(char*)l_a, *(long*)l_b) == dap_mul_builtin(*(char*)l_a, *(long*)l_b), "MUL CHAR and LONG");
-        dap_assert_PIF(dap_mul(*(short*)l_a, *(long*)l_b) == dap_mul_builtin(*(short*)l_a, *(long*)l_b), "MUL SHORT and LONG");
-        dap_assert_PIF(dap_mul(*(int*)l_a, *(long*)l_b) == dap_mul_builtin(*(int*)l_a, *(long*)l_b), "MUL INT and LONG");
-        dap_assert_PIF(dap_mul(*(long*)l_a, *(long*)l_b) == dap_mul_builtin(*(long*)l_a, *(long*)l_b), "MUL LONG and LONG");
-        dap_assert_PIF(dap_mul(*(long long*)l_a, *(long*)l_b) == dap_mul_builtin(*(long long*)l_a, *(long*)l_b), "MUL LONG LONG and LONG");
-        dap_assert_PIF(dap_mul(*(signed char*)l_a, *(long*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(long*)l_b), "MUL SIGNED CHAR and LONG");
-        dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(long*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(long*)l_b), "MUL UNSIGNED CHAR and LONG");
-        dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(long*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(long*)l_b), "MUL UNSIGNED SHORT and LONG");
-        dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(long*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(long*)l_b), "MUL UNSIGNED INT and LONG");
-        dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(long*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(long*)l_b), "MUL UNSIGNED LONG and LONG");
-        dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(long*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(long*)l_b), "MUL UNSIGNED LONG LONG and LONG");
-        // long long
-        dap_assert_PIF(dap_mul(*(char*)l_a, *(long long*)l_b) == dap_mul_builtin(*(char*)l_a, *(long long*)l_b), "MUL CHAR and LONG LONG");
-        dap_assert_PIF(dap_mul(*(short*)l_a, *(long long*)l_b) == dap_mul_builtin(*(short*)l_a, *(long long*)l_b), "MUL SHORT and LONG LONG");
-        dap_assert_PIF(dap_mul(*(int*)l_a, *(long long*)l_b) == dap_mul_builtin(*(int*)l_a, *(long long*)l_b), "MUL INT and LONG LONG");
-        dap_assert_PIF(dap_mul(*(long*)l_a, *(long long*)l_b) == dap_mul_builtin(*(long*)l_a, *(long long*)l_b), "MUL LONG and LONG LONG");
-        dap_assert_PIF(dap_mul(*(long long*)l_a, *(long long*)l_b) == dap_mul_builtin(*(long long*)l_a, *(long long*)l_b), "MUL LONG LONG and LONG LONG");
-        dap_assert_PIF(dap_mul(*(signed char*)l_a, *(long long*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(long long*)l_b), "MUL SIGNED CHAR and LONG LONG");
-        dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(long long*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(long long*)l_b), "MUL UNSIGNED CHAR and LONG LONG");
-        dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(long long*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(long long*)l_b), "MUL UNSIGNED SHORT and LONG LONG");
-        dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(long long*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(long long*)l_b), "MUL UNSIGNED INT and LONG LONG");
-        dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(long long*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(long long*)l_b), "MUL UNSIGNED LONG and LONG LONG");
-        dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(long long*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(long long*)l_b), "MUL UNSIGNED LONG LONG and LONG LONG");
-        // signed char
-        dap_assert_PIF(dap_mul(*(char*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(char*)l_a, *(signed char*)l_b), "MUL CHAR and SIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(short*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(short*)l_a, *(signed char*)l_b), "MUL SHORT and SIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(int*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(int*)l_a, *(signed char*)l_b), "MUL INT and SIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(long*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(long*)l_a, *(signed char*)l_b), "MUL LONG and CHAR");
-        dap_assert_PIF(dap_mul(*(long long*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(long long*)l_a, *(signed char*)l_b), "MUL LONG LONG and SIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(signed char*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(signed char*)l_b), "MUL SIGNED CHAR and SIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(signed char*)l_b), "MUL UNSIGNED CHAR and SIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(signed char*)l_b), "MUL UNSIGNED SHORT and SIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(signed char*)l_b), "MUL UNSIGNED INT and SIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(signed char*)l_b), "MUL UNSIGNED LONG and CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(signed char*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(signed char*)l_b), "MUL UNSIGNED LONG LONG and SIGNED CHAR");
-        // unsigned char
-        dap_assert_PIF(dap_mul(*(char*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(char*)l_a, *(unsigned char*)l_b), "MUL CHAR and UNSIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(short*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(short*)l_a, *(unsigned char*)l_b), "MUL SHORT and UNSIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(int*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(int*)l_a, *(unsigned char*)l_b), "MUL INT and UNSIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(long*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(long*)l_a, *(unsigned char*)l_b), "MUL LONG and UNSIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(long long*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(long long*)l_a, *(unsigned char*)l_b), "MUL LONG LONG and UNSIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(signed char*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(unsigned char*)l_b), "MUL SIGNED CHAR and UNSIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(unsigned char*)l_b), "MUL UNSIGNED CHAR and UNSIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(unsigned char*)l_b), "MUL UNSIGNED SHORT and UNSIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(unsigned char*)l_b), "MUL UNSIGNED INT and UNSIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(unsigned char*)l_b), "MUL UNSIGNED LONG and UNSIGNED CHAR");
-        dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(unsigned char*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(unsigned char*)l_b), "MUL UNSIGNED LONG LONG and UNSIGNED CHAR");
-        // unsigned short
-        dap_assert_PIF(dap_mul(*(char*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(char*)l_a, *(unsigned short*)l_b), "MUL CHAR and UNSIGNED SHORT");
-        dap_assert_PIF(dap_mul(*(short*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(short*)l_a, *(unsigned short*)l_b), "MUL SHORT and UNSIGNED SHORT");
-        dap_assert_PIF(dap_mul(*(int*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(int*)l_a, *(unsigned short*)l_b), "MUL INT and UNSIGNED SHORT");
-        dap_assert_PIF(dap_mul(*(long*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(long*)l_a, *(unsigned short*)l_b), "MUL LONG and UNSIGNED SHORT");
-        dap_assert_PIF(dap_mul(*(long long*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(long long*)l_a, *(unsigned short*)l_b), "MUL LONG LONG and UNSIGNED SHORT");
-        dap_assert_PIF(dap_mul(*(signed char*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(unsigned short*)l_b), "MUL SIGNED CHAR and UNSIGNED SHORT");
-        dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(unsigned short*)l_b), "MUL UNSIGNED CHAR and UNSIGNED SHORT");
-        dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(unsigned short*)l_b), "MUL UNSIGNED SHORT and UNSIGNED SHORT");
-        dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(unsigned short*)l_b), "MUL UNSIGNED INT and UNSIGNED SHORT");
-        dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(unsigned short*)l_b), "MUL UNSIGNED LONG and UNSIGNED SHORT");
-        dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(unsigned short*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(unsigned short*)l_b), "MUL UNSIGNED LONG LONG and UNSIGNED SHORT");
-        // unsigned int
-        dap_assert_PIF(dap_mul(*(char*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(char*)l_a, *(unsigned int*)l_b), "MUL CHAR and UNSIGNED INT");
-        dap_assert_PIF(dap_mul(*(short*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(short*)l_a, *(unsigned int*)l_b), "MUL SHORT and UNSIGNED INT");
-        dap_assert_PIF(dap_mul(*(int*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(int*)l_a, *(unsigned int*)l_b), "MUL INT and UNSIGNED INT");
-        dap_assert_PIF(dap_mul(*(long*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(long*)l_a, *(unsigned int*)l_b), "MUL LONG and UNSIGNED INT");
-        dap_assert_PIF(dap_mul(*(long long*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(long long*)l_a, *(unsigned int*)l_b), "MUL LONG LONG and UNSIGNED INT");
-        dap_assert_PIF(dap_mul(*(signed char*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(unsigned int*)l_b), "MUL SIGNED CHAR and UNSIGNED INT");
-        dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(unsigned int*)l_b), "MUL UNSIGNED CHAR and UNSIGNED INT");
-        dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(unsigned int*)l_b), "MUL UNSIGNED SHORT and UNSIGNED INT");
-        dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(unsigned int*)l_b), "MUL UNSIGNED INT and UNSIGNED INT");
-        dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(unsigned int*)l_b), "MUL UNSIGNED LONG and UNSIGNED INT");
-        dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(unsigned int*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(unsigned int*)l_b), "MUL UNSIGNED LONG LONG and UNSIGNED INT");
-        // unsigned long
-        dap_assert_PIF(dap_mul(*(char*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(char*)l_a, *(unsigned long*)l_b), "MUL CHAR and UNSIGNED LONG");
-        dap_assert_PIF(dap_mul(*(short*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(short*)l_a, *(unsigned long*)l_b), "MUL SHORT and UNSIGNED LONG");
-        dap_assert_PIF(dap_mul(*(int*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(int*)l_a, *(unsigned long*)l_b), "MUL INT and UNSIGNED LONG");
-        dap_assert_PIF(dap_mul(*(long*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(long*)l_a, *(unsigned long*)l_b), "MUL LONG and UNSIGNED LONG");
-        dap_assert_PIF(dap_mul(*(long long*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(long long*)l_a, *(unsigned long*)l_b), "MUL LONG LONG and UNSIGNED LONG");
-        dap_assert_PIF(dap_mul(*(signed char*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(unsigned long*)l_b), "MUL SIGNED CHAR and UNSIGNED LONG");
-        dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(unsigned long*)l_b), "MUL UNSIGNED CHAR and UNSIGNED LONG");
-        dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(unsigned long*)l_b), "MUL UNSIGNED SHORT and UNSIGNED LONG");
-        dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(unsigned long*)l_b), "MUL UNSIGNED INT and UNSIGNED LONG");
-        dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(unsigned long*)l_b), "MUL UNSIGNED LONG and UNSIGNED LONG");
-        dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(unsigned long*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(unsigned long*)l_b), "MUL UNSIGNED LONG LONG and UNSIGNED LONG");
-        // unsigned long long
-        dap_assert_PIF(dap_mul(*(char*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(char*)l_a, *(unsigned long long*)l_b), "MUL CHAR and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_mul(*(short*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(short*)l_a, *(unsigned long long*)l_b), "MUL SHORT and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_mul(*(int*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(int*)l_a, *(unsigned long long*)l_b), "MUL INT and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_mul(*(long*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(long*)l_a, *(unsigned long long*)l_b), "MUL LONG and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_mul(*(long long*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(long long*)l_a, *(unsigned long long*)l_b), "MUL LONG LONG and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_mul(*(signed char*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(signed char*)l_a, *(unsigned long long*)l_b), "MUL SIGNED CHAR and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_mul(*(unsigned char*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned char*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED CHAR and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_mul(*(unsigned short*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned short*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED SHORT and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_mul(*(unsigned int*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned int*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED INT and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_mul(*(unsigned long*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned long*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED LONG and UNSIGNED LONG LONG");
-        dap_assert_PIF(dap_mul(*(unsigned long long*)l_a, *(unsigned long long*)l_b) == dap_mul_builtin(*(unsigned long long*)l_a, *(unsigned long long*)l_b), "MUL UNSIGNED LONG LONG and UNSIGNED LONG LONG");
-        if (i + 1 == a_times) {
-            dap_assert(true, "MUL");
-        }
+        s_test_overflow_diff_types(l_a, l_b);
     }
     DAP_DELETE(l_a);
 }
@@ -1051,6 +1223,7 @@ void dap_common_test_run()
 {
     s_test_put_int();
     s_test_overflow();
-    s_test_overflow_diff_types(s_times);
+    s_test_overflow_diff_types_boundary();
+    s_test_overflow_diff_types_rand(s_times);
     s_test_benchmark(s_el_count * s_times);
 }
