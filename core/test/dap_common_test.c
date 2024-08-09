@@ -1253,9 +1253,57 @@ static void s_test_benchmark(uint64_t a_times)
 void dap_common_test_run()
 {
     printf("int %zu\nlong %zu\nlong long %zu\ndouble %zu\nlong double %zu\n", sizeof(int), sizeof(long), sizeof(long long), sizeof(double), sizeof(long double));
-    // s_test_put_int();
-    // s_test_overflow();
-    // s_test_overflow_diff_types_boundary();
-    // s_test_overflow_diff_types_rand(s_times);
-    // s_test_benchmark(s_el_count * s_times);
+    
+
+    // unsigned char c = 160;
+    // unsigned char a1 = dap_maxval(a1) / 3;
+    // unsigned char b1 = dap_maxval(b1) / 5;
+
+    // unsigned char b2_l = (b1 & 0x0F);
+    // unsigned char b2_u = (((b1))>>(sizeof(b1) * 4));
+
+    // unsigned char a2_u = ((a1)>>(sizeof(a1) * 4));
+    // unsigned char a2_l_2 = ((a1)<<(sizeof(a1) * 4));
+    // unsigned char a2_l = ((a2_l_2)>>(sizeof(a1) * 4));
+
+    // unsigned char result_l = b2_l + a2_l;
+    // unsigned char result_u = b2_u + a2_u + (result_l>>(sizeof(a1) * 4));
+
+    // printf("%u %u\n", b1 + a1, (result_u<<(sizeof(a1) * 4)) + ((result_l<<(sizeof(a1) * 4))>>(sizeof(a1) * 4)));
+    
+    // char a = 0 , b = 0;
+
+    // for (int i = dap_minval(a); i <= dap_maxval(a); ++i) {
+    //     a = i;
+    //     for (int j = dap_minval(b); j <= dap_maxval(b); ++j) {
+    //         b = j;
+    //         // s_randombytes(&a, 1);
+    //         // s_randombytes(&b, 1);
+
+    //         long long a_low = a < 0 ? ~((~a) & 0x0F) : ((a) & 0x0F);
+    //         long long a_high = a < 0 ? ~((~a) & 0xF0) : ((a)>>(sizeof(a) * 4));
+
+    //         long long b_low = b < 0 ? ~((~b) & 0x0F) : ((b) & 0x0F);;
+    //         long long b_high = b < 0 ? ~((~b) & 0xF0) : ((b)>>(sizeof(a) * 4));
+
+    //         long long a_b_delta = a_low + b_low;
+    //         long long a_b_delta2 = a_b_delta < 0 ? ~((~a_b_delta)>>(sizeof(a) * 4) & 0x0F) : ((a_b_delta)>>(sizeof(a) * 4));
+    //         long long result = a_high + b_high + a_b_delta2;
+    //         long long result2 = result < 0 ? ((~result)>>(sizeof(a) * 4)) : ((result)>>(sizeof(a) * 4));
+
+    //         printf("a = %d b = %d a + b = %lld result = %lld result_2 = %lld\n", a, b, (long long)(a + b), result, result2);
+    //         if (result2) {
+    //             dap_assert(a == dap_add_builtin(a, b), "FUCK");
+    //         } else {
+    //             dap_assert(a + b == dap_add_builtin(a, b), "FUCK FUCK");
+    //         }
+    //     }
+    // }
+    
+    
+    s_test_put_int();
+    s_test_overflow();
+    s_test_overflow_diff_types_boundary();
+    s_test_overflow_diff_types_rand(s_times);
+    s_test_benchmark(s_el_count * s_times);
 }

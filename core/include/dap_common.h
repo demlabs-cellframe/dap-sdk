@@ -604,8 +604,8 @@ extern "C" {
     ({                                                          \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
         if (!( \
-            (((int64_t)_b > 0 && (int64_t)_a > (int64_t)dap_maxval(_a) - (int64_t)_b) || \
-            ((int64_t)_b < 0 && (int64_t)_a < (int64_t)dap_minval(_a) - (int64_t)_b)) \
+            (((__int128_t)_b > 0 && (__int128_t)_a > (__int128_t)dap_maxval(_a) - (__int128_t)_b) || \
+            ((__int128_t)_b < 0 && (__int128_t)_a < (__int128_t)dap_minval(_a) - (__int128_t)_b)) \
         )) { (_a += _b); } \
         (_a); \
     })
@@ -614,8 +614,8 @@ extern "C" {
     ({                                                          \
         __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
         if (!( \
-            ((int64_t)_b < 0 && (int64_t)_a > (int64_t)dap_maxval(_a) + (int64_t)_b) || \
-            ((int64_t)_b > 0 && (int64_t)_a < (int64_t)dap_minval(_a) + (int64_t)_b) \
+            ((__int128_t)_b < 0 && (__int128_t)_a > (__int128_t)dap_maxval(_a) + (__int128_t)_b) || \
+            ((__int128_t)_b > 0 && (__int128_t)_a < (__int128_t)dap_minval(_a) + (__int128_t)_b) \
         )) { (_a -= _b); } \
         (_a); \
     })
@@ -625,14 +625,14 @@ extern "C" {
         __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
         if (!( \
             /*_a positive*/\
-            ((int64_t)_a > 0 && ( \
-                ((int64_t)_b > 0 && (int64_t)_a > (int64_t)((int64_t)dap_maxval(_a) / (int64_t)_b)) || \
-                ((int64_t)_b < 0 && ((int64_t)_b < (int64_t)((int64_t)dap_minval(_a) / (int64_t)_a))))\
+            ((__int128_t)_a > 0 && ( \
+                ((__int128_t)_b > 0 && (__int128_t)_a > (__int128_t)((__int128_t)dap_maxval(_a) / (__int128_t)_b)) || \
+                ((__int128_t)_b < 0 && ((__int128_t)_b < (__int128_t)((__int128_t)dap_minval(_a) / (__int128_t)_a))))\
             ) || \
             /*_a negative*/\
             (_a <= 0 && ( \
-                ((int64_t)_b > 0 && (int64_t)_a < (int64_t)((int64_t)dap_minval(_a) / (int64_t)_b)) || \
-                (_a != 0 && (int64_t)_b < 0 && (int64_t)_b < (int64_t)((int64_t)dap_maxval(_a) / (int64_t)_a))) \
+                ((__int128_t)_b > 0 && (__int128_t)_a < (__int128_t)((__int128_t)dap_minval(_a) / (__int128_t)_b)) || \
+                (_a != 0 && (__int128_t)_b < 0 && (__int128_t)_b < (__int128_t)((__int128_t)dap_maxval(_a) / (__int128_t)_a))) \
             ) \
         )) { (_a *= _b); } \
         _a; \
