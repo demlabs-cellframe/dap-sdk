@@ -542,6 +542,9 @@ extern "C" {
         default : 0 )
 
 #define dap_is_signed(v) ( dap_minval(v) < 0 )
+#define DAP_HUGE_SIGNED_TYPE long long int
+#define DAP_HUGE_UNSIGNED_TYPE unsigned long long int
+#define DAP_HUGE_NATURAL_TYPE long double
 
 #if !defined (DAP_CORE_TESTS) && (defined (__GNUC__) || defined (__clang__))
     #define dap_add(a,b)                                        \
@@ -600,43 +603,127 @@ extern "C" {
         })
     #endif
     
-    #define dap_add(a,b)                                \
-    ({                                                          \
-        __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
-        if (!( \
-            (((__int128_t)_b > 0 && (__int128_t)_a > (__int128_t)dap_maxval(_a) - (__int128_t)_b) || \
-            ((__int128_t)_b < 0 && (__int128_t)_a < (__int128_t)dap_minval(_a) - (__int128_t)_b)) \
-        )) { (_a += _b); } \
-        (_a); \
-    })
+    #if (true)
+        #define dap_add(a,b)                                \
+        ({                                                          \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+            long long l_koef = (long long)pow(16, sizeof(a)); \
+            long long a_high = (a) / l_koef; \
+            long long a_low = a - a_high * l_koef; \
+            long long a_min_high = dap_minval(a) / l_koef; \
+            long long a_min_low = dap_minval(a) - a_min_high * l_koef; \
+            long long a_max_high = dap_maxval(a) / l_koef; \
+            long long a_max_low = dap_maxval(a) - a_max_high * l_koef; \
+            long long b_high = (b) / l_koef; \
+            long long b_low = b - b_high * l_koef; \
+            long long a_b_delta = a_low + b_low; \
+            long long a_b_delta_hight = a_b_delta / l_koef; \
+            long long a_b_delta_low = a_b_delta - a_b_delta_hight * l_koef; \
+            long long a_b_hight = a_high + b_high + a_b_delta_hight; \
+            if (a_b_hight > 0 && a_b_delta_low < 0) { \
+                a_b_hight--; \
+                a_b_delta_low += l_koef; \
+            } \
+            if (a_b_hight < 0 && a_b_delta_low > 0) { \
+                a_b_hight++; \
+                a_b_delta_low -= l_koef; \
+            } \
+            if (!( \
+                (a_b_hight < a_min_high) || \
+                (a_b_hight > a_max_high) || \
+                (a_b_hight == a_min_high && a_b_delta_low < a_min_low) \
+            )) { (_a += _b); } \
+            (_a); \
+        })
 
-    #define dap_sub(a,b)                                \
-    ({                                                          \
-        __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
-        if (!( \
-            ((__int128_t)_b < 0 && (__int128_t)_a > (__int128_t)dap_maxval(_a) + (__int128_t)_b) || \
-            ((__int128_t)_b > 0 && (__int128_t)_a < (__int128_t)dap_minval(_a) + (__int128_t)_b) \
-        )) { (_a -= _b); } \
-        (_a); \
-    })
+        #define dap_sub(a,b)                                \
+        ({                                                          \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+            long long l_koef = (long long)pow(16.0, (double)sizeof(a)); \
+            long long a_high = (a) / l_koef; \
+            long long a_low = a - a_high * l_koef; \
+            long long a_min_high = dap_minval(a) / l_koef; \
+            long long a_min_low = dap_minval(a) - a_min_high * l_koef; \
+            long long a_max_high = dap_maxval(a) / l_koef; \
+            long long a_max_low = dap_maxval(a) - a_max_high * l_koef; \
+            long long b_high = (b) / l_koef; \
+            long long b_low = b - b_high * l_koef; \
+            long long a_b_delta = a_low - b_low; \
+            long long a_b_delta_hight = a_b_delta / l_koef; \
+            long long a_b_delta_low = a_b_delta - a_b_delta_hight * l_koef; \
+            long long a_b_hight = a_high - b_high + a_b_delta_hight; \
+            if (a_b_hight > 0 && a_b_delta_low < 0) { \
+                a_b_hight--; \
+                a_b_delta_low += l_koef; \
+            } \
+            if (a_b_hight < 0 && a_b_delta_low > 0) { \
+                a_b_hight++; \
+                a_b_delta_low -= l_koef; \
+            } \
+            if (!( \
+                (a_b_hight < a_min_high) || \
+                (a_b_hight > a_max_high) || \
+                (a_b_hight == a_min_high && a_b_delta_low < a_min_low) \
+            )) { (_a -= _b); } \
+            (_a); \
+        })
+        
+        #define dap_mul(a,b)                                \
+        ({                                                  \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
+            if (!( \
+                /*_a positive*/\
+                ((DAP_HUGE_NATURAL_TYPE)_a > 0 && ( \
+                    ((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a > (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) / (DAP_HUGE_NATURAL_TYPE)_b)) || \
+                    ((DAP_HUGE_NATURAL_TYPE)_b < 0 && ((DAP_HUGE_NATURAL_TYPE)_b < (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_minval(_a) / (DAP_HUGE_NATURAL_TYPE)_a))))\
+                ) || \
+                /*_a negative*/\
+                (_a <= 0 && ( \
+                    ((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a < (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_minval(_a) / (DAP_HUGE_NATURAL_TYPE)_b)) || \
+                    (_a != 0 && (DAP_HUGE_NATURAL_TYPE)_b < 0 && (DAP_HUGE_NATURAL_TYPE)_b < (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) / (DAP_HUGE_NATURAL_TYPE)_a))) \
+                ) \
+            )) { (_a *= _b); } \
+            _a; \
+        })
+    #else
+        #define dap_add(a,b)                                \
+        ({                                                          \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+            if (!( \
+                (((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a > (DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) - (DAP_HUGE_NATURAL_TYPE)_b) || \
+                ((DAP_HUGE_NATURAL_TYPE)_b < 0 && (DAP_HUGE_NATURAL_TYPE)_a < (DAP_HUGE_NATURAL_TYPE)dap_minval(_a) - (DAP_HUGE_NATURAL_TYPE)_b)) \
+            )) { (_a += _b); } \
+            (_a); \
+        })
     
-    #define dap_mul(a,b)                                \
-    ({                                                  \
-        __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
-        if (!( \
-            /*_a positive*/\
-            ((__int128_t)_a > 0 && ( \
-                ((__int128_t)_b > 0 && (__int128_t)_a > (__int128_t)((__int128_t)dap_maxval(_a) / (__int128_t)_b)) || \
-                ((__int128_t)_b < 0 && ((__int128_t)_b < (__int128_t)((__int128_t)dap_minval(_a) / (__int128_t)_a))))\
-            ) || \
-            /*_a negative*/\
-            (_a <= 0 && ( \
-                ((__int128_t)_b > 0 && (__int128_t)_a < (__int128_t)((__int128_t)dap_minval(_a) / (__int128_t)_b)) || \
-                (_a != 0 && (__int128_t)_b < 0 && (__int128_t)_b < (__int128_t)((__int128_t)dap_maxval(_a) / (__int128_t)_a))) \
-            ) \
-        )) { (_a *= _b); } \
-        _a; \
-    })
+        #define dap_sub(a,b)                                \
+        ({                                                          \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+            if (!( \
+                ((DAP_HUGE_NATURAL_TYPE)_b < 0 && (DAP_HUGE_NATURAL_TYPE)_a > (DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) + (DAP_HUGE_NATURAL_TYPE)_b) || \
+                ((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a < (DAP_HUGE_NATURAL_TYPE)dap_minval(_a) + (DAP_HUGE_NATURAL_TYPE)_b) \
+            )) { (_a -= _b); } \
+            (_a); \
+        })
+        
+        #define dap_mul(a,b)                                \
+        ({                                                  \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
+            if (!( \
+                /*_a positive*/\
+                ((DAP_HUGE_NATURAL_TYPE)_a > 0 && ( \
+                    ((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a > (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) / (DAP_HUGE_NATURAL_TYPE)_b)) || \
+                    ((DAP_HUGE_NATURAL_TYPE)_b < 0 && ((DAP_HUGE_NATURAL_TYPE)_b < (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_minval(_a) / (DAP_HUGE_NATURAL_TYPE)_a))))\
+                ) || \
+                /*_a negative*/\
+                (_a <= 0 && ( \
+                    ((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a < (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_minval(_a) / (DAP_HUGE_NATURAL_TYPE)_b)) || \
+                    (_a != 0 && (DAP_HUGE_NATURAL_TYPE)_b < 0 && (DAP_HUGE_NATURAL_TYPE)_b < (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) / (DAP_HUGE_NATURAL_TYPE)_a))) \
+                ) \
+            )) { (_a *= _b); } \
+            _a; \
+        })
+    #endif
 #endif
 
 

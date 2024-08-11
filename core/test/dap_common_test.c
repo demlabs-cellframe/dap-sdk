@@ -327,7 +327,6 @@ static void s_test_overflow()
     unsigned int l_unsigned_int = dap_maxval(l_unsigned_int);
     unsigned long l_unsigned_long = dap_maxval(l_unsigned_long);
     unsigned long long l_unsigned_long_long = dap_maxval(l_unsigned_long_long);
-
 // base tests
     // char
     for (int i = dap_minval(l_char); i <= dap_maxval(l_char); ++i) {
@@ -1252,59 +1251,59 @@ static void s_test_benchmark(uint64_t a_times)
 }
 void dap_common_test_run()
 {
-    printf("int %zu\nlong %zu\nlong long %zu\ndouble %zu\nlong double %zu\n", sizeof(int), sizeof(long), sizeof(long long), sizeof(double), sizeof(long double));
-    
+  
+    // char a = 0;
+    // unsigned short b = 0;
 
-    // unsigned char c = 160;
-    // unsigned char a1 = dap_maxval(a1) / 3;
-    // unsigned char b1 = dap_maxval(b1) / 5;
+    // for (int i = dap_minval(a); i <= dap_maxval(a); ++i) {
+    //     a = i;
+    //     for (int j = dap_minval(b); j <= dap_maxval(b); ++j) {
+    //         b = j;
+    //         long long l_koef = (long long)pow(16, sizeof(a));
+    //         long long a_high = (a) / l_koef;
+    //         long long a_low = a - a_high * l_koef;
 
-    // unsigned char b2_l = (b1 & 0x0F);
-    // unsigned char b2_u = (((b1))>>(sizeof(b1) * 4));
+    //         long long a_min_high = dap_minval(a) / l_koef;
+    //         long long a_min_low = dap_minval(a) - a_min_high * l_koef;
 
-    // unsigned char a2_u = ((a1)>>(sizeof(a1) * 4));
-    // unsigned char a2_l_2 = ((a1)<<(sizeof(a1) * 4));
-    // unsigned char a2_l = ((a2_l_2)>>(sizeof(a1) * 4));
+    //         long long a_max_high = dap_maxval(a) / l_koef;
+    //         long long a_max_low = dap_maxval(a) - a_max_high * l_koef;
 
-    // unsigned char result_l = b2_l + a2_l;
-    // unsigned char result_u = b2_u + a2_u + (result_l>>(sizeof(a1) * 4));
+    //         long long b_high = (b) / l_koef;
+    //         long long b_low = b - b_high * l_koef;
 
-    // printf("%u %u\n", b1 + a1, (result_u<<(sizeof(a1) * 4)) + ((result_l<<(sizeof(a1) * 4))>>(sizeof(a1) * 4)));
-    
-    unsigned short a = 0;
-    unsigned char b = 0;
+    //         long long a_b_delta = a_low + b_low;
+    //         long long a_b_delta_hight = a_b_delta / l_koef;
+    //         long long a_b_delta_low = a_b_delta - a_b_delta_hight * l_koef;
 
-    for (int i = dap_minval(a); i <= dap_maxval(a); ++i) {
-        a = i;
-        for (int j = dap_minval(b); j <= dap_maxval(b); ++j) {
-            b = j;
-            // s_randombytes(&a, 1);
-            // s_randombytes(&b, 1);
-            long long l_koef = (long long)pow(16, sizeof(a));
-            long long a_high = (a) / l_koef;
-            long long a_low = a - a_high * l_koef;
+    //         long long a_b_hight = a_high + b_high + a_b_delta_hight;
 
-            long long b_high = (b) / l_koef;
-            long long b_low = b - b_high * l_koef;
+    //         if (a_b_hight > 0 && a_b_delta_low < 0) {
+    //             a_b_hight--;
+    //             a_b_delta_low += l_koef;
+    //         }
+    //         if (a_b_hight < 0 && a_b_delta_low > 0) {
+    //             a_b_hight++;
+    //             a_b_delta_low -= l_koef;
+    //         }
 
-            long long a_b_delta = a_low + b_low;
-            long long a_b_delta2 = a_b_delta / l_koef;
-            long long result = a_high + b_high + a_b_delta2;
-            long long result2 = result / l_koef;
 
-            // printf("a = %d b = %d a + b = %lld result = %lld result_2 = %lld\n", a, b, (long long)(a + b), result, result2);
-            if (result2) {
-                dap_assert_PIF(a == dap_add_builtin(a, b), "FUCK");
-            } else {
-                dap_assert_PIF(a + b == dap_add_builtin(a, b), "FUCK FUCK");
-            }
-        }
-    }
+    //         bool l_overflow = (a_b_hight < a_min_high) ||
+    //             (a_b_hight > a_max_high) ||
+    //             (a_b_hight == a_min_high && a_b_delta_low < a_min_low);
+
+    //         if (l_overflow) {
+    //             dap_assert_PIF(a == dap_add_builtin(a, b), "FUCK");
+    //         } else {
+    //             dap_assert_PIF(a + b == dap_add_builtin(a, b), "FUCK FUCK");
+    //         }
+    //     }
+    // }
     
     
     s_test_put_int();
-    // s_test_overflow();
-    // s_test_overflow_diff_types_boundary();
-    // s_test_overflow_diff_types_rand(s_times);
-    // s_test_benchmark(s_el_count * s_times);
+    s_test_overflow();
+    s_test_overflow_diff_types_boundary();
+    s_test_overflow_diff_types_rand(s_times);
+    s_test_benchmark(s_el_count * s_times);
 }
