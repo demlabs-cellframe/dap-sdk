@@ -87,7 +87,7 @@ extern "C" {
 
 int dap_sign_init(uint8_t a_sign_hash_type_default);
 
-size_t dap_sign_get_size(dap_sign_t * a_chain_sign);
+uint64_t dap_sign_get_size(dap_sign_t * a_chain_sign);
 
 int dap_sign_verify (dap_sign_t * a_chain_sign, const void * a_data, const size_t a_data_size);
 bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size);
