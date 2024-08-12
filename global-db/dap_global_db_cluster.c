@@ -175,6 +175,7 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
     //if (a_cluster->links_cluster)
     //    dap_cluster_delete(a_cluster->links_cluster);
     // TODO make a reference counter for cluster mnemonims
+    if (!a_cluster) return; //happens when no network connection available
     dap_cluster_delete(a_cluster->role_cluster);
     DAP_DELETE(a_cluster->groups_mask);
     DL_DELETE(a_cluster->dbi->clusters, a_cluster);
