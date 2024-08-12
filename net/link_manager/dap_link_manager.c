@@ -633,8 +633,11 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
         }
         dap_list_free_full(l_connections_for_addr, NULL);
     }
+    
     if (l_link_preserve)
         return;
+
+    dap_list_free(l_link->uplink.associated_nets);
     dap_list_free(l_link->static_clusters);
     HASH_DEL(s_link_manager->links, l_link);
     DAP_DEL_Z(*a_link);
