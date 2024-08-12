@@ -260,8 +260,7 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
         if ( time(NULL)- l_client_http->ts_last_read >= (time_t) s_client_timeout_read_after_connect_ms){
             log_it(L_WARNING, "Timeout for reading after connect for request http://%s:%u/%s, possible uplink is on heavy load or DPI between you",
                    l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path);
-            
-           
+
             l_client_http->timer = NULL;
             
             if(l_client_http->error_callback) {
@@ -271,6 +270,8 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
             l_client_http->is_closed_by_timeout = true;
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout",
                    l_es->remote_addr_str, l_es->socket, l_es->type);
+
+            if (l_client_http->timer->callback_arg) DAP_DEL_Z(l_client_http->timer->callback_arg)
             dap_events_socket_remove_and_delete_unsafe(l_es, true);
         } else
             return true;
@@ -278,6 +279,7 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
         if(s_debug_more)
             log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid_ptr);
     }
+
     DAP_DEL_Z(l_es_uuid_ptr);
     return false;
 }
