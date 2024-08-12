@@ -258,7 +258,7 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
     if (a_client_callbacks)
         l_server->client_callbacks = *a_client_callbacks;
     if (a_cfg_section) {
-        char **l_addrs = NULL;
+        const char **l_addrs = NULL;
         uint16_t l_count = 0, i;
     #if defined DAP_OS_LINUX || defined DAP_OS_DARWIN
         l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_SOCK_PATH, &l_count);

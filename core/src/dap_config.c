@@ -472,7 +472,7 @@ const char *dap_config_get_item_str_path_default(dap_config_t *a_config, const c
     return DAP_DELETE(l_dir), l_ret;
 }
 
-char **dap_config_get_array_str(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length) {
+const char **dap_config_get_array_str(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length) {
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (array_length)
         *array_length = 0;
@@ -482,12 +482,12 @@ char **dap_config_get_array_str(dap_config_t *a_config, const char *a_section, c
         log_it(L_WARNING, "Parameter \"%s\" '%c' is not array", l_item->name, l_item->type);
         if (array_length)
             *array_length = 1;
-        static _Thread_local char* s_ret = NULL;
-        return s_ret = (char*)dap_config_get_item_str(a_config, a_section, a_item_name), &s_ret;
+        static const _Thread_local char* s_ret = NULL;
+        return s_ret = dap_config_get_item_str(a_config, a_section, a_item_name), &s_ret;
     }
     if (array_length)
         *array_length = dap_str_countv(l_item->val.val_arr);
-    return l_item->val.val_arr;
+    return (const char**)l_item->val.val_arr;
 }
 
 double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, double a_default) {

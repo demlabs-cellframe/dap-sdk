@@ -182,10 +182,10 @@ int dap_global_db_init()
             log_it(L_ERROR, "Can't find node addr cerificate, all new records will be usigned");
 
         uint16_t l_size_ban_list = 0, l_size_white_list = 0;
-        char **l_ban_list = dap_config_get_array_str(g_config, "global_db", "ban_list_sync_groups", &l_size_ban_list);
+        const char **l_ban_list = dap_config_get_array_str(g_config, "global_db", "ban_list_sync_groups", &l_size_ban_list);
         for (int i = 0; i < l_size_ban_list; i++)
             s_dbi->blacklist = dap_list_append(s_dbi->blacklist, dap_strdup(l_ban_list[i]));
-        char **l_white_list = dap_config_get_array_str(g_config, "global_db", "white_list_sync_groups", &l_size_white_list);
+        const char **l_white_list = dap_config_get_array_str(g_config, "global_db", "white_list_sync_groups", &l_size_white_list);
         for (int i = 0; i < l_size_white_list; i++)
             s_dbi->whitelist = dap_list_append(s_dbi->whitelist, dap_strdup(l_white_list[i]));
         // One year for objects lifetime by default
