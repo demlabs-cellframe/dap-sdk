@@ -262,7 +262,6 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
                    l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path);
             
             if (l_client_http->timer->callback_arg) DAP_DEL_Z(l_client_http->timer->callback_arg)
-                dap_timerfd_delete_unsafe(l_client_http->timer);
             l_client_http->timer = NULL;
             
             if(l_client_http->error_callback) {
