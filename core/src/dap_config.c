@@ -459,13 +459,13 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
     }
 }
 
-const char *dap_config_get_item_str_path_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_default) {
+char *dap_config_get_item_str_path_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_default) {
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
-        return a_default;
+        return dap_strdup(a_default);
     if (l_item->type != DAP_CONFIG_ITEM_STRING) {
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
-        return a_default;
+        return dap_strdup(a_default);
     }
     char *l_dir = dap_path_get_dirname(a_config->path), *l_ret = dap_canonicalize_filename(l_item->val.val_str, l_dir);
     //log_it(L_DEBUG, "Config-path item: %s: composed from %s and %s", l_ret, l_item->val.val_str, l_dir);
@@ -482,12 +482,30 @@ const char **dap_config_get_array_str(dap_config_t *a_config, const char *a_sect
         log_it(L_WARNING, "Parameter \"%s\" '%c' is not array", l_item->name, l_item->type);
         if (array_length)
             *array_length = 1;
-        static const _Thread_local char* s_ret = NULL;
+        static _Thread_local const char* s_ret = NULL;
         return s_ret = dap_config_get_item_str(a_config, a_section, a_item_name), &s_ret;
     }
     if (array_length)
         *array_length = dap_str_countv(l_item->val.val_arr);
     return (const char**)l_item->val.val_arr;
+}
+
+char **dap_config_get_item_str_path_array(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length) { 
+    if (!array_length)
+        return NULL;
+    const char ** conf_relative = dap_config_get_array_str(a_config, a_section, a_item_name, array_length);
+    char ** addrs_relative = DAP_NEW_Z_COUNT(char*, *array_length);
+    for (int i = 0; i < *array_length; ++i)
+        addrs_relative[i] =  dap_canonicalize_filename(conf_relative[i], dap_path_get_dirname(a_config->path));
+    return addrs_relative;
+}
+
+void dap_config_get_item_str_path_array_free(char **paths_array, uint16_t *array_length) {
+    if (!array_length)
+        return;
+    for (int i = 0; i < *array_length; ++i)
+        DAP_DEL_Z(paths_array[0]);
+    DAP_DEL_Z(paths_array);
 }
 
 double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, double a_default) {

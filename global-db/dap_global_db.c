@@ -166,15 +166,11 @@ int dap_global_db_init()
             goto lb_return;
         }
 
-        const char *l_gdb_path_cfg = dap_config_get_item_str(g_config, "global_db", "path");
-        s_dbi->storage_path = l_gdb_path_cfg ? dap_strdup(l_gdb_path_cfg) : dap_strdup_printf("%s/var/lib/global_db", g_sys_dir_path);
+        char *l_gdb_path_cfg = dap_config_get_item_str_path_default(g_config, "global_db", "path", NULL);
+        s_dbi->storage_path = l_gdb_path_cfg ? l_gdb_path_cfg : dap_strdup_printf("%s/var/lib/global_db", g_sys_dir_path);
         const char *l_driver_name = dap_config_get_item_str(g_config, "global_db", "driver");
-        s_dbi->driver_name = dap_strdup(l_driver_name ? l_driver_name :
-#ifdef DAP_OS_DARWIN
-                                                                        "sqlite3");
-#else
-                                                                        "mdbx");
-#endif
+        s_dbi->driver_name = dap_strdup(l_driver_name ? l_driver_name : "mdbx");
+        
         dap_cert_t *l_signing_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
         if (l_signing_cert)
             s_dbi->signing_key = l_signing_cert->enc_key;
