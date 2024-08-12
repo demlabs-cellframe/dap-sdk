@@ -26,6 +26,7 @@ endif()
 add_library(${PROJECT_NAME} STATIC IMPORTED GLOBAL)
 
 option(DAP_CRYPTO_XKCP_REFERENCE "Use xkcp reference implemintation" OFF)
+option(DAP_CRYPTO_XKCP_PLAINC "Use xkcp plain-c implemintation" OFF)
 
 #if building from src - check for compiller support
 include(CheckCCompilerFlag)
@@ -51,6 +52,11 @@ endif()
 IF (DAP_CRYPTO_XKCP_REFERENCE)
     SET(XKCP_TARGET libdap-XKCP-ref${TARGET_POSTFIX}.a)
     message("[!] XKCP: Force use reference impl for ${TARGET_ARCH}")
+endif()
+
+IF (DAP_CRYPTO_XKCP_PLAINC)
+    SET(XKCP_TARGET libdap-XKCP-plainc${TARGET_POSTFIX}.a)
+    message("[!] XKCP: Force use plain-c impl for ${TARGET_ARCH}")
 endif()
 
 SET(XKCP_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/xkcp_build_src/)
