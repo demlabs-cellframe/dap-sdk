@@ -139,7 +139,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     }
     size_t l_dependencies_count = j_dependencies ? (size_t)json_object_array_length(j_dependencies) : 0;
     size_t l_params_count =      j_params ? (size_t)json_object_array_length(j_params) : 0;
-    log_it(L_ERROR, "%zu %zu", l_dependencies_count, l_params_count);
+
     char ** l_dependencies_names = NULL, **l_params = NULL;
     // Read dependencies;
     if(l_dependencies_count)
