@@ -545,6 +545,8 @@ extern "C" {
 #define DAP_HUGE_SIGNED_TYPE long long int
 #define DAP_HUGE_UNSIGNED_TYPE unsigned long long int
 #define DAP_HUGE_NATURAL_TYPE long double
+#define DAP_HUGE_SIGNED_SIZE __SIZEOF_LONG_LONG__
+#define DAP_HUGE_NATURAL_SIZE __SIZEOF_LONG_DOUBLE__
 
 #if !defined (DAP_CORE_TESTS) && (defined (__GNUC__) || defined (__clang__))
     #define dap_add(a,b)                                        \
@@ -603,7 +605,7 @@ extern "C" {
         })
     #endif
     
-    #if (true)
+    #if ( DAP_HUGE_NATURAL_SIZE / DAP_HUGE_SIGNED_SIZE < 2 )
         #define dap_add(a,b)                                \
         ({                                                          \
             __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
