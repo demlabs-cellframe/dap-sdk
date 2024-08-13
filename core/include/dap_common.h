@@ -674,16 +674,16 @@ extern "C" {
             bool a_negative = _a < 0; \
             bool b_negative = _b < 0; \
             DAP_HUGE_SIGNED_TYPE l_koef = (DAP_HUGE_SIGNED_TYPE)pow(16.0, sizeof(_a)); \
-            DAP_HUGE_UNSIGNED_TYPE a_high = labs((_a) / l_koef); \
-            DAP_HUGE_UNSIGNED_TYPE b_high = labs((_b) / l_koef); \
+            DAP_HUGE_UNSIGNED_TYPE a_high = llabs((_a) / l_koef); \
+            DAP_HUGE_UNSIGNED_TYPE b_high = llabs((_b) / l_koef); \
             DAP_HUGE_SIGNED_TYPE a_high_not_abs = (_a) / l_koef; \
             DAP_HUGE_SIGNED_TYPE b_high_not_abs = (_b) / l_koef; \
             DAP_HUGE_UNSIGNED_TYPE a_b_high_hight = a_high * b_high; \
-            DAP_HUGE_UNSIGNED_TYPE a_low = labs(_a - a_high_not_abs * l_koef); \
-            DAP_HUGE_UNSIGNED_TYPE b_low = labs(_b - b_high_not_abs * l_koef); \
+            DAP_HUGE_UNSIGNED_TYPE a_low = llabs(_a - a_high_not_abs * l_koef); \
+            DAP_HUGE_UNSIGNED_TYPE b_low = llabs(_b - b_high_not_abs * l_koef); \
             \
-            DAP_HUGE_UNSIGNED_TYPE a_min_high = labs(dap_minval(_a) / l_koef); \
-            DAP_HUGE_UNSIGNED_TYPE a_min_low = labs(dap_minval(_a) + a_min_high * l_koef); \
+            DAP_HUGE_UNSIGNED_TYPE a_min_high = llabs(dap_minval(_a) / l_koef); \
+            DAP_HUGE_UNSIGNED_TYPE a_min_low = llabs(dap_minval(_a) + a_min_high * l_koef); \
             \
             DAP_HUGE_UNSIGNED_TYPE a_max_high = dap_maxval(_a) / l_koef; \
             DAP_HUGE_UNSIGNED_TYPE a_max_low = dap_maxval(_a) - a_max_high * l_koef; \

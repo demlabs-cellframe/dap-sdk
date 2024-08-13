@@ -1253,56 +1253,6 @@ static void s_test_benchmark(uint64_t a_times)
 }
 void dap_common_test_run()
 {
-  
-    // char a = 0;
-    // unsigned short b = 0;
-
-    // for (int i = dap_minval(a); i <= dap_maxval(a); ++i) {
-    //     a = i;
-    //     for (int j = dap_minval(b); j <= dap_maxval(b); ++j) {
-    //         b = j;
-    //         long long l_koef = (long long)pow(16, sizeof(a));
-    //         long long a_high = (a) / l_koef;
-    //         long long a_low = a - a_high * l_koef;
-
-    //         long long a_min_high = dap_minval(a) / l_koef;
-    //         long long a_min_low = dap_minval(a) - a_min_high * l_koef;
-
-    //         long long a_max_high = dap_maxval(a) / l_koef;
-    //         long long a_max_low = dap_maxval(a) - a_max_high * l_koef;
-
-    //         long long b_high = (b) / l_koef;
-    //         long long b_low = b - b_high * l_koef;
-
-    //         long long a_b_delta = a_low + b_low;
-    //         long long a_b_delta_hight = a_b_delta / l_koef;
-    //         long long a_b_delta_low = a_b_delta - a_b_delta_hight * l_koef;
-
-    //         long long a_b_hight = a_high + b_high + a_b_delta_hight;
-
-    //         if (a_b_hight > 0 && a_b_delta_low < 0) {
-    //             a_b_hight--;
-    //             a_b_delta_low += l_koef;
-    //         }
-    //         if (a_b_hight < 0 && a_b_delta_low > 0) {
-    //             a_b_hight++;
-    //             a_b_delta_low -= l_koef;
-    //         }
-
-
-    //         bool l_overflow = (a_b_hight < a_min_high) ||
-    //             (a_b_hight > a_max_high) ||
-    //             (a_b_hight == a_min_high && a_b_delta_low < a_min_low);
-
-    //         if (l_overflow) {
-    //             dap_assert_PIF(a == dap_add_builtin(a, b), "FUCK");
-    //         } else {
-    //             dap_assert_PIF(a + b == dap_add_builtin(a, b), "FUCK FUCK");
-    //         }
-    //     }
-    // }
-    
-    
     s_test_put_int();
     s_test_overflow();
     s_test_overflow_diff_types_boundary();
