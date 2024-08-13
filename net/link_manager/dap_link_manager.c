@@ -562,6 +562,8 @@ bool s_link_drop_callback(void *a_arg)
     dap_link_t *l_link = s_link_manager_link_find(&l_args->addr);
     if (l_link)
         s_link_drop(l_link, l_args->disconnected);
+    
+    DAP_DEL_Z(l_args); //cause it was allocated in  s_client_error_callback
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     return false;
 }
@@ -582,6 +584,7 @@ void s_client_error_callback(dap_client_t *a_client, void *a_arg)
     DAP_NEW_Z_RET(l_args, struct link_drop_args, NULL);
 // func work
     *l_args = (struct link_drop_args) { .addr = l_link->addr, .disconnected = a_arg };
+    
     dap_proc_thread_callback_add_pri(s_query_thread, s_link_drop_callback, l_args, DAP_QUEUE_MSG_PRIORITY_HIGH);
 }
 
@@ -630,8 +633,11 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
         }
         dap_list_free_full(l_connections_for_addr, NULL);
     }
+    
     if (l_link_preserve)
         return;
+
+    dap_list_free(l_link->uplink.associated_nets);
     dap_list_free(l_link->static_clusters);
     HASH_DEL(s_link_manager->links, l_link);
     DAP_DEL_Z(*a_link);
@@ -951,6 +957,7 @@ static bool s_stream_add_callback(void *a_arg)
         log_it(L_ERROR, "Can't %s link for address " NODE_ADDR_FP_STR,
                  l_args->uplink ? "find" : "create", NODE_ADDR_FP_ARGS(l_node_addr));
         pthread_rwlock_unlock(&s_link_manager->links_lock);
+        
         DAP_DELETE(l_args);
         return false;
     }

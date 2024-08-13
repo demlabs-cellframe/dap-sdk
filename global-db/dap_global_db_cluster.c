@@ -175,6 +175,7 @@ void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
     //if (a_cluster->links_cluster)
     //    dap_cluster_delete(a_cluster->links_cluster);
     // TODO make a reference counter for cluster mnemonims
+    if (!a_cluster) return; //happens when no network connection available
     dap_cluster_delete(a_cluster->role_cluster);
     DAP_DELETE(a_cluster->groups_mask);
     DL_DELETE(a_cluster->dbi->clusters, a_cluster);
@@ -264,9 +265,12 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
             dap_stream_ch_pkt_send_by_addr(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START,
                                            l_msg, dap_global_db_start_pkt_get_size(l_msg));
         }
-        dap_list_free(l_groups);
+
+        dap_list_free_full(l_groups, NULL);
+        
         l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
         l_cluster->sync_context.stage_last_activity = dap_time_now();
+
     } break;
     case DAP_GLOBAL_DB_SYNC_STATE_IDLE:
         if (dap_time_now() - l_cluster->sync_context.stage_last_activity >

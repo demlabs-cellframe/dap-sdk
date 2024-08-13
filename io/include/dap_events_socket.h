@@ -138,6 +138,9 @@ typedef struct dap_worker dap_worker_t;
 typedef struct dap_context dap_context_t;
 
 typedef struct dap_server dap_server_t;
+
+typedef size_t (*dap_events_socket_clear_buf)(char*, size_t);
+
 typedef void (*dap_events_socket_callback_t) (dap_events_socket_t *,void * ); // Callback for specific client operations
 typedef bool (*dap_events_socket_write_callback_t)(dap_events_socket_t *, void *); // Callback for write client operation
 typedef void (*dap_events_socket_callback_error_ptr_t) (dap_events_socket_t *, int, void * ); // Callback for specific client operations
@@ -267,6 +270,9 @@ typedef struct dap_events_socket {
     bool was_reassigned; // Was reassigment at least once
 
     byte_t *buf_in, *buf_out;
+    dap_events_socket_clear_buf cb_buf_cleaner;
+
+
 
 #ifdef DAP_EVENTS_CAPS_IOCP
     DWORD   
