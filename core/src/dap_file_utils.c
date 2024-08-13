@@ -498,7 +498,6 @@ void dap_subs_free(dap_list_name_directories_t *subs_list){
         DAP_FREE(l_element->name_directory);
         DAP_DELETE(l_element);
     }
-    dap_list_free_full(subs_list);
 }
 
 dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
