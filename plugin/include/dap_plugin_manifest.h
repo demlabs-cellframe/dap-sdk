@@ -39,9 +39,9 @@ typedef struct dap_plugin_manifest{
     char *description;
 
 
-    char * type;// Plugin type
-    char * path;// Path to the directory
-    dap_config_t * config; // Config file
+    char *type;             // Plugin type
+    const char *path;       // Path to the directory
+    dap_config_t * config;  // Config file
 
     // Dependencies
     struct dap_plugin_manifest_dependence *dependencies;  // Solved dependencies with links on same manifests
