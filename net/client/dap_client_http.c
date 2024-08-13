@@ -261,7 +261,6 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
             log_it(L_WARNING, "Timeout for reading after connect for request http://%s:%u/%s, possible uplink is on heavy load or DPI between you",
                    l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path);
                    
-            //if (l_client_http->timer->callback_arg) DAP_DEL_Z(l_client_http->timer->callback_arg)
             l_client_http->timer = NULL;
             
             if(l_client_http->error_callback) {
@@ -512,9 +511,8 @@ static void s_client_http_delete(dap_client_http_t * a_client_http)
 {
     dap_return_if_fail(a_client_http);
     debug_if(s_debug_more, L_DEBUG, "HTTP client delete");
-    if (a_client_http->timer)
-    {
-        if (a_client_http->timer->callback_arg) DAP_DEL_Z(a_client_http->timer->callback_arg);
+    if (a_client_http->timer) {
+        DAP_DEL_Z(a_client_http->timer->callback_arg);
         dap_timerfd_delete_unsafe(a_client_http->timer);
     }
     DAP_DEL_Z(a_client_http->method);
