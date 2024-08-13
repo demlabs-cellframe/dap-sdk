@@ -45,10 +45,12 @@ DAP_STATIC_INLINE const char *s_data_type_to_str(s_data_type a_type)
 
 DAP_STATIC_INLINE void s_randombytes(unsigned char *a_array, uint64_t a_len)
 {
-    srand(time(NULL));
+    static int l_rand_add = 0;
+    srand(time(NULL)  + l_rand_add);
     for (uint64_t i = 0; i < a_len; i += sizeof(int)) {
         *(int*)(a_array + i) = rand();
     }
+    l_rand_add++;
 }
 
 static void s_test_put_int()
