@@ -262,6 +262,7 @@ static void s_go_stage_on_client_worker_unsafe(void *a_arg)
             log_it(L_DEBUG, "Already have target state %s", dap_client_stage_str(l_stage_target));
             if (l_stage_end_callback)
                 l_stage_end_callback(l_client, l_client->callbacks_arg);
+            DAP_DELETE(a_arg);
             return;
         }
         if (l_client->stage_target < l_stage_target) {
@@ -271,6 +272,7 @@ static void s_go_stage_on_client_worker_unsafe(void *a_arg)
             dap_client_pvt_stage_transaction_begin(l_client_pvt,
                                                    l_cur_stage + 1,
                                                    s_stage_fsm_operator_unsafe);
+            DAP_DELETE(a_arg);
             return;
         }
     }

@@ -1604,7 +1604,7 @@ static void s_queue_io_msg_delete( struct queue_io_msg * a_msg)
         dap_store_obj_free(a_msg->values_raw, a_msg->values_raw_total);
     default:;
     }
-    DAP_DELETE(a_msg);
+    DAP_DEL_Z(a_msg);
 }
 
 /**
