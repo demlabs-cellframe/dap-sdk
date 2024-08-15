@@ -51,7 +51,8 @@ typedef void (*dap_gossip_callback_payload_t)(void *a_payload, size_t a_payload_
 #define DAP_GOSSIP_CURRENT_VERSION  1
 #define DAP_GOSSIP_LIFETIME         15      // seconds
 
-DAP_STATIC_INLINE size_t dap_gossip_msg_get_size(dap_gossip_msg_t *a_msg) { return sizeof(dap_gossip_msg_t) + a_msg->trace_len + a_msg->payload_len; }
+DAP_STATIC_INLINE uint64_t dap_gossip_msg_get_size(dap_gossip_msg_t *a_msg) { return sizeof(dap_gossip_msg_t) + (uint64_t)a_msg->trace_len + a_msg->payload_len <  sizeof(dap_gossip_msg_t) + (uint64_t)a_msg->trace_len
+                                                                                    ? 0 : sizeof(dap_gossip_msg_t) + (uint64_t)a_msg->trace_len + a_msg->payload_len; }
 int dap_stream_ch_gossip_init();
 void dap_stream_ch_gossip_deinit();
 void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const void *a_payload, size_t a_payload_size, dap_hash_fast_t *a_payload_hash);
