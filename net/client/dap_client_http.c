@@ -68,20 +68,9 @@ static WOLFSSL_CTX *s_ctx;
 #endif
 
 http_status_code_t s_extract_http_code(void *a_response, size_t a_response_size) {
-    char l_http_code_str[4] = {'\0'};
-    size_t l_first_space = 0;
-    for (;l_first_space < a_response_size; l_first_space++) {
-        if (((const char*)a_response)[l_first_space] == ' ')
-            break;
-    }
-    if (l_first_space + 3 > a_response_size)
-        return 0;
-    l_http_code_str[0] = ((const char*)a_response)[l_first_space+1];
-    l_http_code_str[1] = ((const char*)a_response)[l_first_space+2];
-    l_http_code_str[2] = ((const char*)a_response)[l_first_space+3];
-    l_http_code_str[3] = '\0';
-    http_status_code_t l_http_code = strtoul(l_http_code_str, NULL, 10);
-    return l_http_code;
+    char l_ver[16] = { '\0' };
+    int l_err = 0, l_ret = sscanf((char*)a_response, "%[^ ] %d", l_ver, &l_err);
+    return l_ret == 2 && !dap_strncmp(l_ver, "HTTP/", 5) ? (http_status_code_t)l_err : 0;
 }
 
 /**
