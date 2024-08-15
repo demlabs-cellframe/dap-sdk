@@ -24,8 +24,6 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #pragma once
 
 #include "dap_time.h"
-#include "dap_stream_cluster.h"
-#include "dap_global_db.h"
 #include "dap_global_db_driver.h"
 
 #define DAP_GLOBAL_DB_WRITE_SERIALIZED
@@ -42,9 +40,9 @@ typedef struct dap_global_db_pkt {
     byte_t data[];
 } DAP_ALIGN_PACKED dap_global_db_pkt_t;
 
-DAP_STATIC_INLINE size_t dap_global_db_pkt_get_size(dap_global_db_pkt_t *a_pkt)
+DAP_STATIC_INLINE uint32_t dap_global_db_pkt_get_size(dap_global_db_pkt_t *a_pkt)
 {
-    return sizeof(*a_pkt) + a_pkt->data_len;
+    return (uint32_t)sizeof(*a_pkt) + a_pkt->data_len > a_pkt->data_len ? (uint32_t)sizeof(*a_pkt) + a_pkt->data_len : 0;
 }
 
 typedef struct dap_global_db_pkt_pack {
@@ -53,9 +51,9 @@ typedef struct dap_global_db_pkt_pack {
     byte_t data[];
 } DAP_ALIGN_PACKED dap_global_db_pkt_pack_t;
 
-DAP_STATIC_INLINE size_t dap_global_db_pkt_pack_get_size(dap_global_db_pkt_pack_t *a_pkt_pack)
+DAP_STATIC_INLINE uint64_t dap_global_db_pkt_pack_get_size(dap_global_db_pkt_pack_t *a_pkt_pack)
 {
-    return sizeof(*a_pkt_pack) + a_pkt_pack->data_size;
+    return (uint64_t)sizeof(*a_pkt_pack) + a_pkt_pack->data_size > a_pkt_pack->data_size ? (uint64_t)sizeof(*a_pkt_pack) + a_pkt_pack->data_size : 0;
 }
 
 typedef struct dap_global_db_hash_pkt {
@@ -64,9 +62,11 @@ typedef struct dap_global_db_hash_pkt {
     byte_t group_n_hashses[];
 } DAP_ALIGN_PACKED dap_global_db_hash_pkt_t;
 
-DAP_STATIC_INLINE size_t dap_global_db_hash_pkt_get_size(dap_global_db_hash_pkt_t *a_hash_pkt)
+DAP_STATIC_INLINE uint64_t dap_global_db_hash_pkt_get_size(dap_global_db_hash_pkt_t *a_hash_pkt)
 {
-    return sizeof(dap_global_db_hash_pkt_t) + a_hash_pkt->group_name_len + a_hash_pkt->hashes_count * sizeof(dap_global_db_driver_hash_t);
+    if (a_hash_pkt->hashes_count >= UINT32_MAX / sizeof(dap_global_db_driver_hash_t))
+        return 0;
+    return (uint64_t)sizeof(dap_global_db_hash_pkt_t) + a_hash_pkt->group_name_len + a_hash_pkt->hashes_count * sizeof(dap_global_db_driver_hash_t);
 }
 
 typedef struct dap_global_db_start_pkt {
@@ -75,9 +75,9 @@ typedef struct dap_global_db_start_pkt {
     byte_t group[];
 } DAP_ALIGN_PACKED dap_global_db_start_pkt_t;
 
-DAP_STATIC_INLINE size_t dap_global_db_start_pkt_get_size(dap_global_db_start_pkt_t *a_start_pkt)
+DAP_STATIC_INLINE uint32_t dap_global_db_start_pkt_get_size(dap_global_db_start_pkt_t *a_start_pkt)
 {
-    return sizeof(dap_global_db_start_pkt_t) + a_start_pkt->group_len;
+    return (uint32_t)sizeof(dap_global_db_start_pkt_t) + a_start_pkt->group_len;
 }
 
 dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old_pkt, dap_global_db_pkt_t *a_new_pkt);

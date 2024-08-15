@@ -41,6 +41,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 #include "dap_global_db_pkt.h"
+#include "dap_global_db.h"
 
 #define LOG_TAG "db_sqlite"
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_SQLITE
