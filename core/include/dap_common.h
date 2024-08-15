@@ -231,7 +231,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define VA_NARGS(...) VA_NARGS_IMPL(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 #define DAP_DEL_MULTY(...) dap_delete_multy(VA_NARGS(__VA_ARGS__), __VA_ARGS__)
 
-#define DAP_DEL_Z(a)          do { DAP_DELETE(a); (a) = NULL; } while (0);
+#define DAP_DEL_Z(a)          do if (a) { DAP_DELETE(a); (a) = NULL; } while (0);
 // a - pointer to alloc
 // t - type return pointer
 // s - size to alloc

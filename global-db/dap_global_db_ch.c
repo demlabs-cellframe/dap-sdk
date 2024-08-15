@@ -293,7 +293,6 @@ static bool s_process_record(void *a_arg)
     return false;
 }
 
-
 static void s_gossip_payload_callback(void *a_payload, size_t a_payload_size, dap_stream_node_addr_t a_sender_addr)
 {
     dap_global_db_pkt_t *l_pkt = a_payload;
