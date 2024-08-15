@@ -124,7 +124,7 @@ const char* dap_path_get_ext(const char *a_filename);
  * @return dap_list_t type variable that contains a list of subdirectories.
  */
 dap_list_name_directories_t *dap_get_subs(const char *a_path_name);
-
+void dap_subs_free(dap_list_name_directories_t *subs_list);
 
 /*
  * Reads an entire file into allocated memory, with error checking.
