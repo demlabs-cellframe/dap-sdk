@@ -88,20 +88,6 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 #define LOG_TAG "dap_events_socket"
 
-const char *s_socket_type_to_str[] = {
-    [DESCRIPTOR_TYPE_SOCKET_CLIENT]         = "CLIENT",
-    [DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT]   = "LOCAL_CLIENT",
-    [DESCRIPTOR_TYPE_SOCKET_LISTENING]      = "SERVER",
-    [DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING]= "LOCAL_SERVER",
-    [DESCRIPTOR_TYPE_SOCKET_UDP]            = "CLIENT_UDP",
-    [DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL]     = "CLIENT_SSL",
-    [DESCRIPTOR_TYPE_FILE]                  = "FILE",
-    [DESCRIPTOR_TYPE_PIPE]                  = "PIPE",
-    [DESCRIPTOR_TYPE_QUEUE]                 = "QUEUE",
-    [DESCRIPTOR_TYPE_TIMER]                 = "TIMER",
-    [DESCRIPTOR_TYPE_EVENT]                 = "EVENT"
-};
-
 // Item for QUEUE_PTR input esocket
 struct queue_ptr_input_item{
     dap_events_socket_t * esocket;
