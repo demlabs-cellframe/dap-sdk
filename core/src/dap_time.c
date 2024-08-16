@@ -175,7 +175,7 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
         return l_time;
     }
     struct tm l_tm = {};
-    strptime(a_time_str, "%a, %d %b %Y %T %z", &l_tm);
+    strptime(a_time_str, "%d %b %Y %T %z", &l_tm);
 
     time_t tmp = mktime(&l_tm);
     l_time = (tmp <= 0) ? 0 : tmp;
