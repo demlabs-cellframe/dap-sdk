@@ -216,18 +216,10 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
         log_it(L_ERROR, "Can't activate timer on link manager");
         return -3;
     }
-// clean ignore group
+// clean ignore and connections group
     size_t l_node_count = 0;
-    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(s_ignored_group_local, &l_node_count);
-    for(size_t i = 0; i < l_node_count; ++i) {
-        dap_global_db_del_sync(s_ignored_group_local, l_objs[i].key);
-    }
-    dap_global_db_objs_delete(l_objs, l_node_count);
-    l_objs = dap_global_db_get_all_sync(s_connections_group_local, &l_node_count);
-    for(size_t i = 0; i < l_node_count; ++i) {
-        dap_global_db_del_sync(s_connections_group_local, l_objs[i].key);
-    }
-    dap_global_db_objs_delete(l_objs, l_node_count);
+    dap_global_db_del_sync(s_ignored_group_local, NULL);
+    dap_global_db_del_sync(s_connections_group_local, NULL);
 // start
     dap_link_manager_set_condition(true);
     return 0;
