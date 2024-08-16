@@ -88,20 +88,6 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 #define LOG_TAG "dap_events_socket"
 
-const char *s_socket_type_to_str[] = {
-    [DESCRIPTOR_TYPE_SOCKET_CLIENT]         = "CLIENT",
-    [DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT]   = "LOCAL_CLIENT",
-    [DESCRIPTOR_TYPE_SOCKET_LISTENING]      = "SERVER",
-    [DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING]= "LOCAL_SERVER",
-    [DESCRIPTOR_TYPE_SOCKET_UDP]            = "CLIENT_UDP",
-    [DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL]     = "CLIENT_SSL",
-    [DESCRIPTOR_TYPE_FILE]                  = "FILE",
-    [DESCRIPTOR_TYPE_PIPE]                  = "PIPE",
-    [DESCRIPTOR_TYPE_QUEUE]                 = "QUEUE",
-    [DESCRIPTOR_TYPE_TIMER]                 = "TIMER",
-    [DESCRIPTOR_TYPE_EVENT]                 = "EVENT"
-};
-
 // Item for QUEUE_PTR input esocket
 struct queue_ptr_input_item{
     dap_events_socket_t * esocket;
@@ -2080,11 +2066,11 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     if (a_es->buf_out_size_max < a_es->buf_out_size + a_data_size) {
         a_es->buf_out_size_max += dap_max(l_basic_buf_size, a_data_size);
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
+        debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + a_data_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
         a_es->buf_out_size_max = l_basic_buf_size;
         a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
-        log_it(L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
+        debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": decrease capacity to %zu, actual size: %zu",
                a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     }
     memcpy(a_es->buf_out + a_es->buf_out_size, a_data, a_data_size);
