@@ -452,9 +452,26 @@ DAP_STATIC_INLINE size_t dap_events_socket_get_free_buf_size(dap_events_socket_t
 size_t  dap_events_socket_pop_from_buf_in(dap_events_socket_t *sc, void * data, size_t data_size);
 size_t  dap_events_socket_insert_buf_out(dap_events_socket_t * a_es, void *a_data, size_t a_data_size);
 
-DAP_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t* a_es) {
-    return s_socket_type_to_str[a_es->type];
+DAP_STATIC_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t *a_es)
+{
+    if (!a_es)
+        return "CORRUPTED";
+    switch (a_es->type) {
+    case DESCRIPTOR_TYPE_SOCKET_CLIENT:         return "CLIENT";
+    case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:   return "LOCAL_CLIENT";
+    case DESCRIPTOR_TYPE_SOCKET_LISTENING:      return "SERVER";
+    case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:return "LOCAL_SERVER";
+    case DESCRIPTOR_TYPE_SOCKET_UDP:            return "CLIENT_UDP";
+    case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL:     return "CLIENT_SSL";
+    case DESCRIPTOR_TYPE_FILE:                  return "FILE";
+    case DESCRIPTOR_TYPE_PIPE:                  return "PIPE";
+    case DESCRIPTOR_TYPE_QUEUE:                 return "QUEUE";
+    case DESCRIPTOR_TYPE_TIMER:                 return "TIMER";
+    case DESCRIPTOR_TYPE_EVENT:                 return "EVENT";
+    default:                                    return "UNKNOWN";
+    }
 }
+
 DAP_INLINE int dap_close_socket(SOCKET s) {
     return
 #ifdef DAP_OS_WINDOWS
