@@ -16,7 +16,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
                     COMMAND bash -c "awk -F= '/^ID=/{print $2}' /etc/os-release |tr -d '\n' | tr -d '\"'"
                     OUTPUT_VARIABLE DEBIAN_OS_RELEASE_NAME
     )
-    
+
 elseif(${CMAKE_SYSTEM_NAME} MATCHES "Android")
     set(ANDROID ON)
     set(UNIX ON)
@@ -249,3 +249,9 @@ elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv8")
     set(VERSION "8")
     message("[*] Platform armv8")
 endif ()
+
+if ( CELLFRAME_NO_OPTIMIZATION )
+    set(CMAKE_CXX_FLAGS "-march=core2")
+    set(CMAKE_C_FLAGS "-march=core2")
+endif ()
+
