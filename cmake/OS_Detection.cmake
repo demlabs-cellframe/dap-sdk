@@ -16,7 +16,7 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
                     COMMAND bash -c "awk -F= '/^ID=/{print $2}' /etc/os-release |tr -d '\n' | tr -d '\"'"
                     OUTPUT_VARIABLE DEBIAN_OS_RELEASE_NAME
     )
-    
+
 elseif(${CMAKE_SYSTEM_NAME} MATCHES "Android")
     set(ANDROID ON)
     set(UNIX ON)
