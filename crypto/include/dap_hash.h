@@ -26,7 +26,7 @@
 
 #include "dap_common.h"
 #include "KeccakHash.h"
-#include "SimpleFIPS202.h"
+
 
 #define DAP_HASH_FAST_SIZE          32
 #define DAP_CHAIN_HASH_FAST_SIZE    DAP_HASH_FAST_SIZE
@@ -48,6 +48,8 @@ typedef dap_hash_fast_t dap_hash_t;
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#include "SimpleFIPS202.h"
 
 int dap_chain_hash_fast_from_str( const char * a_hash_str, dap_hash_fast_t *a_hash);
 int dap_chain_hash_fast_from_hex_str( const char *a_hex_str, dap_chain_hash_fast_t *a_hash);
