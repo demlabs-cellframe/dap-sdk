@@ -163,7 +163,7 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
 
 /**
  * @brief Get time_t from string with RFC822 formatted
- * @brief (not WIN32) "%a, %d %b %y %T %z" == "Tue, 02 Aug 22 19:50:41 +0300"
+ * @brief (not WIN32) "%d %b %y %T %z" == "02 Aug 22 19:50:41 +0300"
  * @brief (WIN32) !DOES NOT WORK! please, use dap_time_from_str_simplified()
  * @param[out] a_time_str
  * @return time from string or 0 if bad time forma
@@ -175,7 +175,7 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
         return l_time;
     }
     struct tm l_tm = {};
-    strptime(a_time_str, "%a, %d %b %Y %T %z", &l_tm);
+    strptime(a_time_str, "%d %b %Y %T %z", &l_tm);
 
     time_t tmp = mktime(&l_tm);
     l_time = (tmp <= 0) ? 0 : tmp;
