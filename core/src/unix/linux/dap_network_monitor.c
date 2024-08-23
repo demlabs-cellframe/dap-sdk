@@ -153,7 +153,7 @@ static void _route_msg_handler(struct nlmsghdr *nlh,
 
     route_attribute_len = RTM_PAYLOAD(nlh);
 
-    for ( ; NLMSG_OK(nlh, received_bytes); \
+    for ( ; NLMSG_OK(nlh, (size_t)received_bytes); \
                        nlh = NLMSG_NEXT(nlh, received_bytes))
        {
            /* Get the route data */
@@ -246,7 +246,7 @@ static void* network_monitor_worker(void *arg)
     while ((len = recvmsg(_net_notification.socket, &msg, 0)) > 0){
         _send_NLM_F_ACK_msg(_net_notification.socket);
 
-        for (nlh = (struct nlmsghdr *) buf; (NLMSG_OK(nlh, len)) && (nlh->nlmsg_type != NLMSG_DONE); nlh = NLMSG_NEXT(nlh, len)) {
+        for (nlh = (struct nlmsghdr *) buf; (NLMSG_OK(nlh, (size_t)len)) && (nlh->nlmsg_type != NLMSG_DONE); nlh = NLMSG_NEXT(nlh, len)) {
             if (nlh->nlmsg_type == NLMSG_ERROR){
                 /* Do some error handling. */
                 log_it(L_DEBUG, "There an error! nlmsg_type %d", nlh->nlmsg_type);
