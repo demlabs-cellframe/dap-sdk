@@ -118,7 +118,6 @@ The fragments below allow to select the desired implementation of the permutatio
         <gcc>-fomit-frame-pointer</gcc>
         <gcc>-O2</gcc>
         <gcc>-g0</gcc>
-        <gcc>-mtune=native</gcc>
     </fragment>
 
     <fragment name="optimized-march-native">

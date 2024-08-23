@@ -65,6 +65,7 @@ message("[*] XKCP target: ${TARGET_ARCH} ${XKCP_TARGET}")
 message("[*] XKCP build dir: ${XKCP_BUILD_DIR}")
 message("[*] XKCP make command: ${MAKE}")
 message("[*] XKCP make CC: ${CMAKE_C_COMPILER}")
+message("[*] XKCP make COMPILER_TARGET: ${CMAKE_C_COMPILER_TARGET}")
 message("[*] XKCP make AR: ${CMAKE_AR}")
 message("[*] XKCP compiller supports -march=native: ${COMPILER_SUPPORTS_MARCH_NATIVE}")
 message("[*] XKCP SYSROOT: ${CMAKE_OSX_SYSROOT}")
@@ -74,8 +75,16 @@ SET(XKCP_BUILD_LIB ${XKCP_BUILD_DIR}/bin/${XKCP_TARGET})
 
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/ DESTINATION ${XKCP_BUILD_DIR})
 
+if (CMAKE_C_COMPILER_TARGET)
+    set(MAKE_C_FLAGS "--target=${CMAKE_C_COMPILER_TARGET} ${CMAKE_C_FLAGS} ")
+else()
+    set(MAKE_C_FLAGS "${CMAKE_C_FLAGS}")
+endif()
+
+message("[*] XKCP CFLAGS: ${MAKE_C_FLAGS}")
+
 add_custom_target(BuildXKCP ALL
-    COMMAND ${CMAKE_COMMAND}  -E env AR=${CMAKE_AR} CC=${CMAKE_C_COMPILER} SDKROOT=${CMAKE_OSX_SYSROOT}  ${MAKE} -C ./xkcp_build_src ${XKCP_TARGET}
+    COMMAND ${CMAKE_COMMAND}  -E env AR=${CMAKE_AR} CC=${CMAKE_C_COMPILER} CFLAGS=${MAKE_C_FLAGS} SDKROOT=${CMAKE_OSX_SYSROOT}  ${MAKE} -C ./xkcp_build_src ${XKCP_TARGET}
     BYPRODUCTS ${XKCP_BUILD_LIB}
 )
 
