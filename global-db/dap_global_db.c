@@ -635,12 +635,8 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
         *a_is_pinned = l_store_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED;
     if (a_ts)
         *a_ts = l_store_obj->timestamp;
-    byte_t *l_res = DAP_DUP_SIZE(l_store_obj->value, l_store_obj->value_len);
-    if (!l_res) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        dap_store_obj_free_one(l_store_obj);
-        return NULL;
-    }
+    byte_t *l_res = l_store_obj->value;
+    l_store_obj->value = NULL;
     dap_store_obj_free_one(l_store_obj);
     return l_res;
 }
@@ -1332,7 +1328,7 @@ static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_gr
     dap_store_obj_t l_store_obj = {
         .key        = a_key,
         .group      = (char *)a_group,
-        .flags      = DAP_GLOBAL_DB_RECORD_NEW | DAP_GLOBAL_DB_RECORD_DEL,
+        .flags      = DAP_GLOBAL_DB_RECORD_NEW | (a_key ? DAP_GLOBAL_DB_RECORD_DEL : DAP_GLOBAL_DB_RECORD_ERASE),
         .timestamp  = dap_nanotime_now()
     };
     if (a_key)

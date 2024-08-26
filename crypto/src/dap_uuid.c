@@ -100,7 +100,7 @@ _Thread_local static char s_buf[sizeof(uint128_t) * 2 + 3];
 
 const char *dap_guuid_to_hex_str(dap_guuid_t a_guuid)
 {
-    sprintf(s_buf, "0x%016" DAP_UINT64_FORMAT_x "%016" DAP_UINT64_FORMAT_x, a_guuid.net_id, a_guuid.srv_id);
+    sprintf(s_buf, "0x%016" DAP_UINT64_FORMAT_X "%016" DAP_UINT64_FORMAT_X, a_guuid.net_id, a_guuid.srv_id);
     return (const char *)s_buf;
 }
 
