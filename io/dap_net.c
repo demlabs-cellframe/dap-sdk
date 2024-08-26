@@ -25,6 +25,8 @@
 
 #include <errno.h>
 #include <string.h>
+
+#include "dap_common.h"
 #include "dap_net.h"
 
 #define LOG_TAG "dap_net"
@@ -51,8 +53,10 @@ int dap_net_resolve_host(const char *a_host, int ai_family, struct sockaddr *a_a
     l_hints.ai_flags = AI_CANONNAME;
 
     int l_res_code = getaddrinfo(a_host, NULL, &l_hints, &l_res);
-    if (l_res_code)
+    if (l_res_code){
+        log_it(L_NOTIFY, "[dap_net] getaddrinfo() returned code %d", l_res_code);
         return l_res_code;
+    }
 
     while(l_res)
     {
@@ -69,7 +73,8 @@ int dap_net_resolve_host(const char *a_host, int ai_family, struct sockaddr *a_a
                 break;
             }
         if(l_cur_addr) {
-            freeaddrinfo(l_res);
+            if(l_res)
+                freeaddrinfo(l_res);
             return 0;
         }
         l_res = l_res->ai_next;
@@ -104,7 +109,7 @@ int res;
         return -1;
 
     if ( 0 >= (res = recv(sd, (char *)buf, bufsize, 0)) )
-        printf("[s_recv] recv()->%d, errno: %d\n", res, errno);
+        log_it(L_NOTIFY, "[s_recv] recv()->%d, errno: %d\n", res, errno);
 
     return res;
 }
