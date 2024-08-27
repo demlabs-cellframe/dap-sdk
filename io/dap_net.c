@@ -122,7 +122,7 @@ int res;
         return -1;
 
     if ( 0 >= (res = recv(sd, (char *)buf, bufsize, 0)) )
-        log_it(L_NOTIFY, "[s_recv] recv()->%d, errno: %d\n", res, errno);
+        log_it(L_NOTICE, "[s_recv] recv()->%d, errno: %d\n", res, errno);
 
     return res;
 }
