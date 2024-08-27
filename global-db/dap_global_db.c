@@ -283,8 +283,6 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     dap_global_db_role_t l_signer_role = DAP_GDB_MEMBER_ROLE_INVALID;
     if (a_obj->sign) {
         dap_stream_node_addr_t l_signer_addr = dap_stream_node_addr_from_sign(a_obj->sign);
-        debug_if(g_dap_global_db_debug_more, L_NOTICE, "Signer node addr "NODE_ADDR_FP_STR,
-                                                                        NODE_ADDR_FP_ARGS_S(l_signer_addr));
         l_signer_role = dap_cluster_member_find_role(l_cluster->role_cluster, &l_signer_addr);
     }
     if (l_signer_role == DAP_GDB_MEMBER_ROLE_INVALID)
