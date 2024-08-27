@@ -25,6 +25,8 @@
 
 #include <errno.h>
 #include <string.h>
+
+#include "dap_common.h"
 #include "dap_net.h"
 #include "dap_common.h"
 
@@ -120,7 +122,7 @@ int res;
         return -1;
 
     if ( 0 >= (res = recv(sd, (char *)buf, bufsize, 0)) )
-        printf("[s_recv] recv()->%d, errno: %d\n", res, errno);
+        log_it(L_NOTIFY, "[s_recv] recv()->%d, errno: %d\n", res, errno);
 
     return res;
 }
