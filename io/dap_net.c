@@ -72,7 +72,8 @@ int dap_net_resolve_host(const char *a_host, int ai_family, struct sockaddr *a_a
                 break;
             }
         if(l_cur_addr) {
-            freeaddrinfo(l_res1);
+	    if(l_res1)
+        	freeaddrinfo(l_res1);
             return 0;
         }
         l_res = l_res->ai_next;
