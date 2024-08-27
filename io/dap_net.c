@@ -26,6 +26,7 @@
 #include <errno.h>
 #include <string.h>
 #include "dap_net.h"
+#include "dap_common.h"
 
 #define LOG_TAG "dap_net"
 
@@ -42,7 +43,8 @@
  */
 int dap_net_resolve_host(const char *a_host, int ai_family, struct sockaddr *a_addr_out)
 {
-    struct addrinfo l_hints, *l_res;
+    log_it(L_DEBUG, "dap_net_resolve_host() called for host \"%s\"", a_host);
+    struct addrinfo l_hints, *l_res = NULL;
     void *l_cur_addr = NULL;
 
     memset(&l_hints, 0, sizeof(l_hints));
@@ -51,9 +53,12 @@ int dap_net_resolve_host(const char *a_host, int ai_family, struct sockaddr *a_a
     l_hints.ai_flags = AI_CANONNAME;
 
     int l_res_code = getaddrinfo(a_host, NULL, &l_hints, &l_res);
+
     if (l_res_code) {
-        if (l_res)
+        if (l_res){
+            log_it(L_NOTICE, "getaddrinfo() returned code %d", l_res_code);
             freeaddrinfo(l_res);
+        }
         return l_res_code;
     }
     struct addrinfo *l_res1 = l_res;
@@ -65,21 +70,28 @@ int dap_net_resolve_host(const char *a_host, int ai_family, struct sockaddr *a_a
             case AF_INET:
                 l_cur_addr = &((struct sockaddr_in *) l_res->ai_addr)->sin_addr;
                 memcpy(a_addr_out, l_cur_addr, sizeof(struct in_addr));
+                log_it(L_DEBUG,"Found ip addr \"%s\"", inet_ntop(AF_INET, l_cur_addr,NULL,sizeof(struct in_addr)  ));
+
                 break;
             case AF_INET6:
                 l_cur_addr = &((struct sockaddr_in6 *) l_res->ai_addr)->sin6_addr;
                 memcpy(a_addr_out, l_cur_addr, sizeof(struct in6_addr));
+                log_it(L_DEBUG,"Found ip addr \"%s\"", inet_ntop(AF_INET6, l_cur_addr,NULL,sizeof(struct in6_addr)  ));
                 break;
             }
         if(l_cur_addr) {
-	    if(l_res1)
+            if(l_res1){
         	freeaddrinfo(l_res1);
+                log_it(L_NOTICE, "freeaddrinfo() called at the middle");
+            }
             return 0;
         }
         l_res = l_res->ai_next;
     }
-    if (l_res1)
+    if (l_res1){
+        log_it(L_NOTICE, "freeaddrinfo() called at the end");
         freeaddrinfo(l_res1);
+    }
     return -1;
 }
 
