@@ -53,6 +53,8 @@
 
 #define LOG_TAG "dap_common"
 
+typedef void (*print_callback) (unsigned a_off, const char *a_fmt, va_list va);
+
 
 #ifndef DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = {};
@@ -147,6 +149,9 @@ static char s_last_error[LAST_ERROR_MAX]    = {'\0'},
 
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
+static void print_it (unsigned a_off, const char *a_fmt, va_list va);
+static void print_it_no_terminal (unsigned a_off, const char *a_fmt, va_list va);
+static print_callback s_print_callback = print_it;
 
 #define LOG_FORMAT_LEN 4096
 
@@ -238,6 +243,14 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
     return 0;
 }
 
+void dap_log_set_print_enabled (bool a_enabled)
+{
+  if (a_enabled)
+    s_print_callback = print_it;
+  else
+    s_print_callback = print_it_no_terminal;
+}
+
 #ifdef WIN32
 int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename ) {
 
@@ -270,11 +283,24 @@ void dap_common_deinit( ) {
         fclose(s_log_file);
 }
 
-static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
+void print_it(unsigned a_off, const char *a_fmt, va_list va) {
     va_list va_file;
     va_copy(va_file, va);
     vfprintf(stdout, a_fmt, va);
     fflush(stdout);
+    if (!s_log_file) {
+        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file) {
+            va_end(va_file);
+            return;
+        }
+    }
+    vfprintf(s_log_file, a_fmt + a_off, va_file);
+    va_end(va_file);
+}
+
+void print_it_no_terminal(unsigned a_off, const char *a_fmt, va_list va) {
+    va_list va_file;
+    va_copy(va_file, va);
     if (!s_log_file) {
         if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file) {
             va_end(va_file);
@@ -307,7 +333,7 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
     }
     va_list va;
     va_start(va, a_fmt);
-    print_it(s_ansi_seq_color_len[a_ll], s_format, va);
+    s_print_callback(s_ansi_seq_color_len[a_ll], s_format, va); // print_it
     va_end(va);
 }
 
