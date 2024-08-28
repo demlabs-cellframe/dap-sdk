@@ -14,3 +14,9 @@ if (BUILD_LIB_DAP_SERVER_TESTS)
 endif()
 
 
+
+if(INSTALL_DAP_SDK)
+
+INSTALL(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/http_status_code.h DESTINATION include/dap/net/)
+
+endif()
