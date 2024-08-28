@@ -1396,7 +1396,8 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_esocket, b
             : a_ol;
         if (ol->ol.hEvent) ResetEvent(ol->ol.hEvent);
         else ol->ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL); 
-        ol->op = io_write;           
+        ol->op = io_write;
+        bytes = a_size + a_esocket->buf_out_size;
     } else {
         ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_esocket->buf_out_size);
         *ol = (dap_overlapped_t) { .ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL), .op = io_write };
@@ -2078,8 +2079,6 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %zu",
              a_data_size, dap_events_socket_get_type_str(a_es), a_es->uuid, a_es->buf_out_size);
     dap_events_socket_set_writable_unsafe(a_es, true);
-    
-
     return a_data_size;
 }
 
