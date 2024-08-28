@@ -180,7 +180,7 @@ if(UNIX)
     endif()
 
     if (ANDROID)
-        set(_CCOPT "-std=gnu11 ${CFLAGS_WARNINGS} -fforce-enable-int128 -fno-strict-aliasing")
+        set(_CCOPT "-std=gnu11 ${CFLAGS_WARNINGS} -fno-strict-aliasing")
         if(DAP_DEBUG)
             set(_CCOPT "${_CCOPT} -DDAP_DEBUG -g3 -ggdb -fno-eliminate-unused-debug-symbols")
         endif()

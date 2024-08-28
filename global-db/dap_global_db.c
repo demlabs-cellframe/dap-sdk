@@ -283,8 +283,6 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     dap_global_db_role_t l_signer_role = DAP_GDB_MEMBER_ROLE_INVALID;
     if (a_obj->sign) {
         dap_stream_node_addr_t l_signer_addr = dap_stream_node_addr_from_sign(a_obj->sign);
-        debug_if(g_dap_global_db_debug_more, L_NOTICE, "Signer node addr "NODE_ADDR_FP_STR,
-                                                                        NODE_ADDR_FP_ARGS_S(l_signer_addr));
         l_signer_role = dap_cluster_member_find_role(l_cluster->role_cluster, &l_signer_addr);
     }
     if (l_signer_role == DAP_GDB_MEMBER_ROLE_INVALID)
@@ -319,8 +317,8 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
         }
     }
     if (l_read_obj && l_cluster->owner_root_access &&
-            a_obj->sign && l_read_obj->sign &&
-            dap_sign_compare_pkeys(a_obj->sign, l_read_obj->sign))
+            a_obj->sign && (!l_read_obj->sign ||
+            dap_sign_compare_pkeys(a_obj->sign, l_read_obj->sign)))
         l_signer_role = DAP_GDB_MEMBER_ROLE_ROOT;
     if (l_signer_role < l_required_role) {
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Global DB record with group %s and key %s is rejected "
@@ -341,6 +339,10 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
             a_obj->sign = dap_store_obj_sign(a_obj, a_dbi->signing_key, &a_obj->crc);
             debug_if(g_dap_global_db_debug_more, L_WARNING, "DB record with group %s and key %s need time correction for %"DAP_UINT64_FORMAT_U" seconds to be properly applied",
                                                             a_obj->group, a_obj->key, dap_nanotime_to_sec(l_time_diff));
+            if (!a_obj->sign) {
+                log_it(L_ERROR, "Can't sign object with group %s and key %s", a_obj->group, a_obj->key);
+                return -20;
+            }
         } else {
             debug_if(g_dap_global_db_debug_more, L_DEBUG, "DB record with group %s and key %s is not applied. It's older than existed record with same key",
                                                             a_obj->group, a_obj->key);
