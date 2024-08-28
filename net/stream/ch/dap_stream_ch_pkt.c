@@ -313,10 +313,11 @@ size_t dap_stream_ch_pkt_write_unsafe(dap_stream_ch_t * a_ch,  uint8_t a_type, c
         .seq_id     = a_ch->stream->seq_id++
     };
 
-    debug_if(dap_stream_get_dump_packet_headers(), L_INFO, "Outgoing channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"DAP_UINT64_FORMAT_X" enc_type=0x%02hhX",
-        (char) l_hdr.id, l_hdr.data_size, l_hdr.type, l_hdr.seq_id , l_hdr.enc_type);
+    debug_if(dap_stream_get_dump_packet_headers(), L_INFO,
+             "Outgoing channel packet: id='%c' size=%u type=0x%02X seq_id=0x%016"DAP_UINT64_FORMAT_X" enc_type=0x%02hhX",
+            (char) l_hdr.id, l_hdr.data_size, l_hdr.type, l_hdr.seq_id , l_hdr.enc_type);
 
-    const size_t l_max_fragm_size = DAP_STREAM_PKT_FRAGMENT_SIZE - DAP_STREAM_PKT_ENCRYPTION_OVERHEAD - sizeof(dap_stream_fragment_pkt_t);
+    static const size_t l_max_fragm_size = DAP_STREAM_PKT_FRAGMENT_SIZE - DAP_STREAM_PKT_ENCRYPTION_OVERHEAD - sizeof(dap_stream_fragment_pkt_t);
     if (l_data_size > 0 && l_data_size <= l_max_fragm_size) {
         *(dap_stream_ch_pkt_hdr_t*)l_buf = l_hdr;
         memcpy(l_buf + sizeof(dap_stream_ch_pkt_hdr_t), a_data, a_data_size);
