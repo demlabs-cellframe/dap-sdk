@@ -53,6 +53,8 @@
 
 #define LOG_TAG "dap_common"
 
+typedef void (*print_callback) (unsigned a_off, const char *a_fmt, va_list va);
+
 
 #ifndef DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = {};
@@ -168,6 +170,11 @@ static char s_last_error[LAST_ERROR_MAX]    = {'\0'},
 
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
+static void print_it (unsigned a_off, const char *a_fmt, va_list va);
+static void print_it_no_terminal (unsigned a_off, const char *a_fmt, va_list va);
+static print_callback s_print_callback = print_it;
+
+#define LOG_FORMAT_LEN 4096
 
 #define STR_LOG_BUF_MAX 1024
 
@@ -259,6 +266,14 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
     return 0;
 }
 
+void dap_log_set_print_enabled (bool a_enabled)
+{
+  if (a_enabled)
+    s_print_callback = print_it;
+  else
+    s_print_callback = print_it_no_terminal;
+}
+
 #ifdef WIN32
 int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename ) {
 
@@ -291,6 +306,34 @@ void dap_common_deinit( ) {
         fclose(s_log_file);
 }
 
+void print_it(unsigned a_off, const char *a_fmt, va_list va) {
+    va_list va_file;
+    va_copy(va_file, va);
+    vfprintf(stdout, a_fmt, va);
+    fflush(stdout);
+    if (!s_log_file) {
+        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file) {
+            va_end(va_file);
+            return;
+        }
+    }
+    vfprintf(s_log_file, a_fmt + a_off, va_file);
+    va_end(va_file);
+}
+
+void print_it_no_terminal(unsigned a_off, const char *a_fmt, va_list va) {
+    va_list va_file;
+    va_copy(va_file, va);
+    if (!s_log_file) {
+        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file) {
+            va_end(va_file);
+            return;
+        }
+    }
+    vfprintf(s_log_file, a_fmt + a_off, va_file);
+    va_end(va_file);
+}
+
 /**
  * @brief _log_it
  * @param log_tag
@@ -299,31 +342,22 @@ void dap_common_deinit( ) {
  */
 void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum dap_log_level a_ll, const char *a_fmt, ...) {
     if ( a_ll < s_dap_log_level || a_ll >= 16 || !a_log_tag )
-        return;
-    char log_str[STR_LOG_BUF_MAX] = { '\0' };
-    size_t offset = s_ansi_seq_color_len[a_ll];
-    memcpy(log_str, s_ansi_seq_color[a_ll], offset);
-    offset += s_update_log_time(log_str + offset);
+      return;
+
+    static _Thread_local char s_format[LOG_FORMAT_LEN] = { '\0' };
+    unsigned offset = s_ansi_seq_color_len[a_ll];
+    memcpy(s_format, s_ansi_seq_color[a_ll], offset);
+    offset += s_update_log_time(s_format + offset);
     offset += func_name
-            ? snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s][%s:%d] ", s_log_level_tag[a_ll], a_log_tag, func_name, line_num)
-            : snprintf(log_str + offset, STR_LOG_BUF_MAX - offset, "%s[%s%s", s_log_level_tag[a_ll], a_log_tag, "] ");
+            ? snprintf(s_format + offset, LOG_FORMAT_LEN - offset,"%s[%s][%s:%d] %s\n", s_log_level_tag[a_ll], a_log_tag, func_name, line_num, a_fmt)
+            : snprintf(s_format + offset, LOG_FORMAT_LEN - offset, "%s[%s] %s\n", s_log_level_tag[a_ll], a_log_tag, a_fmt);
+    if (offset >= LOG_FORMAT_LEN) {
+        return;
+    }
     va_list va;
     va_start(va, a_fmt);
-    if (offset < STR_LOG_BUF_MAX) {
-        offset += vsnprintf(log_str + offset, STR_LOG_BUF_MAX - offset, a_fmt, va);
-    }
+    s_print_callback(s_ansi_seq_color_len[a_ll], s_format, va); // print_it
     va_end(va);
-    char *pos = offset < STR_LOG_BUF_MAX
-            ? memcpy(&log_str[offset--], "\n", 1) + 1
-            : memcpy(&log_str[STR_LOG_BUF_MAX - 5], "...\n", 4) + 4;
-    offset = pos - log_str;
-    fwrite(log_str, offset, 1, stdout);
-    fflush(stdout);
-    if (!s_log_file) {
-        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file)
-        return;
-    }
-    fwrite(log_str + s_ansi_seq_color_len[a_ll], offset - s_ansi_seq_color_len[a_ll], 1, s_log_file);
 }
 
 char *dap_dump_hex(byte_t *a_data, size_t a_len) {
