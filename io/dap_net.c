@@ -42,7 +42,7 @@
  */
 int dap_net_resolve_host(const char *a_host, int ai_family, struct sockaddr *a_addr_out)
 {
-    struct addrinfo l_hints, *l_res;
+    struct addrinfo l_hints ={}, *l_res = NULL;
     void *l_cur_addr = NULL;
 
     memset(&l_hints, 0, sizeof(l_hints));
@@ -72,7 +72,8 @@ int dap_net_resolve_host(const char *a_host, int ai_family, struct sockaddr *a_a
                 break;
             }
         if(l_cur_addr) {
-            freeaddrinfo(l_res1);
+	    if(l_res1)
+                freeaddrinfo(l_res1);
             return 0;
         }
         l_res = l_res->ai_next;
