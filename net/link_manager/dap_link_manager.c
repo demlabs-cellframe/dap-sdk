@@ -25,6 +25,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #include "dap_link_manager.h"
 #include "dap_global_db.h"
+#include "dap_global_db_driver.h"
 #include "dap_stream_cluster.h"
 #include "dap_worker.h"
 #include "dap_config.h"
@@ -37,7 +38,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #define DAP_LINK(a) ((dap_link_t *)(a)->_inheritor)
 
 static const char *s_heated_group_local_prefix = "local.nodes.heated.0x";
-static const uint64_t s_cooling_period = 1800 /*sec*/ * 1000000000LLU;
+static const uint64_t s_cooling_period = 900 /*sec*/ * 1000000000LLU;
 
 typedef struct dap_managed_net {
     bool active;
@@ -91,27 +92,41 @@ DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
 }
 
 /**
+ * @brief forming group name for each net
+ * @return NULL if error other group name
+ */
+DAP_STATIC_INLINE char *s_hot_group_forming(uint64_t a_net_id)
+{ 
+    char *l_ret = NULL;
+    DAP_NEW_Z_SIZE_RET_VAL(l_ret, char, strlen(s_heated_group_local_prefix) + 17, NULL, NULL);
+    sprintf(l_ret, "%s%016"DAP_UINT64_FORMAT_x, s_heated_group_local_prefix, a_net_id);
+    printf("%s\n", l_ret);
+    return l_ret;
+}
+
+/**
  * @brief update hot list
  * @return NOT 0 if list empty
  */
 static int s_update_hot_list(uint64_t a_net_id)
 {
     size_t l_node_count = 0;
-    char l_heated_group[50] = {0};
-    snprintf(l_heated_group, sizeof(l_heated_group) - 1, "%s%016"DAP_UINT64_FORMAT_x, s_heated_group_local_prefix, a_net_id);
-    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(l_heated_group, &l_node_count);
+    char *l_hot_group = s_hot_group_forming(a_net_id);
+    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(l_hot_group, &l_node_count);
     if (!l_node_count || !l_objs) {
         log_it(L_DEBUG, "Hot list is empty");
+        DAP_DEL_Z(l_hot_group);
         return 1;
     }
     dap_nanotime_t l_time_now = dap_nanotime_now();
     size_t l_deleted = 0;
     for(size_t i = 0; i < l_node_count; ++i) {
         if(l_time_now > l_objs[i].timestamp + s_cooling_period) {
-            dap_global_db_del_sync(l_heated_group, l_objs[i].key);
+            dap_global_db_del_sync(l_hot_group, l_objs[i].key);
             ++l_deleted;
         }
     }
+    DAP_DEL_Z(l_hot_group);
     dap_global_db_objs_delete(l_objs, l_node_count);
     if (l_deleted == l_node_count) {
         log_it(L_DEBUG, "Hot list cleared");
@@ -130,9 +145,9 @@ static void s_node_hot_list_add(dap_stream_node_addr_t a_node_addr, uint64_t a_a
     dap_return_if_pass(!a_node_addr.uint64);
 // func work
     const char *l_node_addr_str = dap_stream_node_addr_to_str_static(a_node_addr);
-    char l_heated_group[50] = {0};
-    snprintf(l_heated_group, sizeof(l_heated_group) - 1, "%s%016"DAP_UINT64_FORMAT_x, s_heated_group_local_prefix, a_associated_net_id);
-    dap_global_db_set_sync(l_heated_group, l_node_addr_str, NULL, 0, false);
+    char *l_hot_group = s_hot_group_forming(a_associated_net_id);
+    dap_global_db_set_sync(l_hot_group, l_node_addr_str, NULL, 0, false);
+    DAP_DEL_Z(l_hot_group);
 }
 
 // debug_more funcs
@@ -196,7 +211,12 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
         return -3;
     }
 // clean ignore and connections group
-    size_t l_node_count = 0;
+    dap_list_t *l_groups = dap_global_db_driver_get_groups_by_mask(s_heated_group_local_prefix);
+    dap_list_t *l_item_cut = NULL;
+    DL_FOREACH(l_groups, l_item_cut) {
+        dap_global_db_erase_table_sync((const char*)(l_item_cut->data));
+    }
+    dap_list_free_full(l_groups, NULL);
 // start
     dap_link_manager_set_condition(true);
     return 0;
@@ -1273,9 +1293,9 @@ dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_cou
     if(s_update_hot_list(a_net_id))
         return NULL;
     size_t l_node_count = 0;
-    char l_heated_group[50] = {0};
-    snprintf(l_heated_group, sizeof(l_heated_group) - 1, "%s%016"DAP_UINT64_FORMAT_x, s_heated_group_local_prefix, a_net_id);
-    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(l_heated_group, &l_node_count);
+    char *l_hot_group = s_hot_group_forming(a_net_id);
+    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(l_hot_group, &l_node_count);
+    DAP_DEL_Z(l_hot_group);
     if (!l_node_count || !l_objs) {        
         log_it(L_DEBUG, "Hot list is empty");
         return NULL;
@@ -1294,15 +1314,4 @@ dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_cou
     if (a_ignored_count)
         *a_ignored_count = l_node_count;
     return l_ret;
-}
-
-/**
- * @brief clean hotted table
- * @param a_net_id output count of finded addrs
- */
-void dap_link_manager_erase_ignored_table(uint64_t a_net_id)
-{
-    char l_heated_group[50] = {0};
-    snprintf(l_heated_group, sizeof(l_heated_group) - 1, "%s%016"DAP_UINT64_FORMAT_x, s_heated_group_local_prefix, a_net_id);
-    dap_global_db_del_sync(l_heated_group, NULL);
 }

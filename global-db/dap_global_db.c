@@ -1385,6 +1385,28 @@ int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_cal
 }
 
 /**
+ * @brief erase table, call dap_global_db_del_sync with NULL key
+ * @param a_group - table name
+ * @return result of dap_global_db_del_sync
+ */
+DAP_INLINE int dap_global_db_erase_table_sync(const char *a_group)
+{
+    return dap_global_db_del_sync(a_group, NULL);
+}
+
+/**
+ * @brief erase table, call dap_global_db_del with NULL key
+ * @param a_group - table name
+ * @param a_callback - callback result
+ * @param a_arg - callback args
+ * @return result of dap_global_db_del
+ */
+DAP_INLINE int dap_global_db_erase_table(const char *a_group, dap_global_db_callback_result_t a_callback, void *a_arg)
+{
+    return dap_global_db_del(a_group, NULL, a_callback, a_arg);
+}
+
+/**
  * @brief s_msg_opcode_delete
  * @param a_msg
  * @return
@@ -1818,3 +1840,4 @@ bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_nu
     }
     return ret;
 }
+
