@@ -37,7 +37,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define DAP_LINK(a) ((dap_link_t *)(a)->_inheritor)
 
-static const char *s_heated_group_local_prefix = "local.nodes.heated.0x";
+static const char s_heated_group_local_prefix[] = "local.nodes.heated.0x";
 static const uint64_t s_cooling_period = 900 /*sec*/ * 1000000000LLU;
 
 typedef struct dap_managed_net {
@@ -97,11 +97,7 @@ DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
  */
 DAP_STATIC_INLINE char *s_hot_group_forming(uint64_t a_net_id)
 { 
-    char *l_ret = NULL;
-    DAP_NEW_Z_SIZE_RET_VAL(l_ret, char, strlen(s_heated_group_local_prefix) + 17, NULL, NULL);
-    sprintf(l_ret, "%s%016"DAP_UINT64_FORMAT_x, s_heated_group_local_prefix, a_net_id);
-    printf("%s\n", l_ret);
-    return l_ret;
+    return dap_strdup_printf("%s%016"DAP_UINT64_FORMAT_x, s_heated_group_local_prefix, a_net_id);
 }
 
 /**
