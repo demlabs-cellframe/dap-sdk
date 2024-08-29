@@ -34,12 +34,17 @@ int dap_net_resolve_host(const char *a_host, const char *a_port, bool a_numeric_
 {
     dap_return_val_if_fail_err(a_addr_out, -1, "Required storage is not provided");
     memset(a_addr_out, 0, sizeof(*a_addr_out));
-    int l_ret = 0,
-        l_ai_flags = a_numeric_only
-            ? AI_NUMERICHOST
-            : AI_CANONNAME | AI_V4MAPPED | AI_ADDRCONFIG;
+
+    
+    int l_ret = 0;
+    #ifdef ANDROID //on android  AI_MASK is  (AI_PASSIVE | AI_CANONNAME | AI_NUMERICHOST | AI_NUMERICSERV )
+        int l_ai_flags = a_numeric_only ? AI_NUMERICHOST : AI_CANONNAME ;
+    #else
+        int l_ai_flags = a_numeric_only ? AI_NUMERICHOST : AI_CANONNAME | AI_V4MAPPED | AI_ADDRCONFIG;
+    #endif
     if ( !a_host )
         l_ai_flags |= AI_PASSIVE;
+    
     if ( a_port )
         l_ai_flags |= AI_NUMERICSERV;
 
