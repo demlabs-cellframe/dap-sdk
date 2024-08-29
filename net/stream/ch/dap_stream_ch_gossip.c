@@ -143,6 +143,7 @@ void dap_gossip_msg_issue(dap_cluster_t *a_cluster, const char a_ch_id, const vo
     }
     l_msg_item->payload_hash = *a_payload_hash;
     l_msg_item->timestamp = dap_nanotime_now();
+    l_msg_item->with_payload = true;
     dap_gossip_msg_t *l_msg = (dap_gossip_msg_t *)l_msg_item->message;
     l_msg->version = DAP_GOSSIP_CURRENT_VERSION;
     l_msg->payload_ch_id = a_ch_id;
