@@ -1274,7 +1274,6 @@ void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool
 void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bool a_is_ready, dap_overlapped_t *a_ol) {
     if (a_esocket->flags & DAP_SOCK_SIGNAL_CLOSE) {
         debug_if(g_debug_reactor, L_DEBUG, "Attempt to read from closing socket %p, dump it", a_esocket);
-        dap_events_socket_remove_and_delete_unsafe(a_esocket, false);
         return;
     }
     if (!a_is_ready) {
@@ -1356,6 +1355,10 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
             return;
         default:
             log_it(L_ERROR, "\"%s\" failed with error %d", func, l_err);
+            if ( a_esocket->callbacks.error_callback )
+                a_esocket->callbacks.error_callback(a_esocket, l_err);
+            a_esocket->flags = DAP_SOCK_SIGNAL_CLOSE;
+            dap_events_socket_remove_and_delete_mt(a_esocket->worker, a_esocket->uuid);
         }
     break;
     case 0:
@@ -1367,6 +1370,10 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_esocket, bo
         return;
     default:
         log_it(L_ERROR, "Operation \"%s\" on "DAP_FORMAT_ESOCKET_UUID" failed with error %lu", func, a_esocket->uuid, GetLastError());
+        if ( a_esocket->callbacks.error_callback )
+            a_esocket->callbacks.error_callback(a_esocket, l_err);
+        a_esocket->flags = DAP_SOCK_SIGNAL_CLOSE;
+        dap_events_socket_remove_and_delete_mt(a_esocket->worker, a_esocket->uuid);
     }
     dap_overlapped_free(ol);
     return;
@@ -1396,7 +1403,8 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_esocket, b
             : a_ol;
         if (ol->ol.hEvent) ResetEvent(ol->ol.hEvent);
         else ol->ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL); 
-        ol->op = io_write;           
+        ol->op = io_write;
+        bytes = a_size + a_esocket->buf_out_size;
     } else {
         ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_esocket->buf_out_size);
         *ol = (dap_overlapped_t) { .ol.hEvent = CreateEvent(0, TRUE, FALSE, NULL), .op = io_write };
@@ -1470,6 +1478,10 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_esocket, b
             return;
         default:
             log_it(L_ERROR, "\"%s\" failed with error %d", func, l_err);
+            if ( a_esocket->callbacks.error_callback )
+                a_esocket->callbacks.error_callback(a_esocket, l_err);
+            a_esocket->flags = DAP_SOCK_SIGNAL_CLOSE;
+            dap_events_socket_remove_and_delete_mt(a_esocket->worker, a_esocket->uuid);
         }
     break;
     case 0:
@@ -1479,6 +1491,10 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_esocket, b
         return;
     default:
         log_it(L_ERROR, "Operation \"%s\" on "DAP_FORMAT_ESOCKET_UUID" failed with error %lu", func, a_esocket->uuid, GetLastError());
+        if ( a_esocket->callbacks.error_callback )
+            a_esocket->callbacks.error_callback(a_esocket, l_err);
+        a_esocket->flags = DAP_SOCK_SIGNAL_CLOSE;
+        dap_events_socket_remove_and_delete_mt(a_esocket->worker, a_esocket->uuid);
     }
     dap_overlapped_free(ol);
 }
@@ -2078,8 +2094,6 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
     debug_if(g_debug_reactor, L_DEBUG, "Write %zu bytes to \"%s\" "DAP_FORMAT_ESOCKET_UUID", total size: %zu",
              a_data_size, dap_events_socket_get_type_str(a_es), a_es->uuid, a_es->buf_out_size);
     dap_events_socket_set_writable_unsafe(a_es, true);
-    
-
     return a_data_size;
 }
 
