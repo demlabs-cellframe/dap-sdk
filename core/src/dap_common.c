@@ -54,6 +54,7 @@
 
 #define LOG_TAG "dap_common"
 
+typedef void (*print_callback) (unsigned a_off, const char *a_fmt, va_list va);
 
 #ifndef DAP_GLOBAL_IS_INT128
 const uint128_t uint128_0 = {};
@@ -159,6 +160,72 @@ static char s_log_file_path[MAX_PATH]   = {'\0'},
 
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
+
+static void print_it_stdout (unsigned a_off, const char *a_fmt, va_list va);
+static void print_it_stderr (unsigned a_off, const char *a_fmt, va_list va);
+static void print_it_fd (unsigned a_off, const char *a_fmt, va_list va);
+static void print_it_none (unsigned a_off, const char *a_fmt, va_list va){}
+#if ANDROID
+static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va);
+#endif
+
+static print_callback s_print_callback = print_it_stdout;
+static void *s_print_param = NULL;
+
+
+static void print_it_stdout(unsigned a_off, const char *a_fmt, va_list va)
+{
+    vfprintf(stdout, a_fmt, va);
+}
+
+static void print_it_stderr(unsigned a_off, const char *a_fmt, va_list va)
+{
+    vfprintf(stderr, a_fmt, va);
+}
+
+static void print_it_fd(unsigned a_off, const char *a_fmt, va_list va)
+{
+    vfprintf(s_print_param, a_fmt, va);
+}
+
+#if ANDROID
+#include <android/log.h>
+
+static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va)
+{
+    __android_log_vprint(ANDROID_LOG_INFO, s_print_param, a_fmt, va);
+}
+
+#endif
+void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
+{
+  switch (output)
+  {
+    case LOGGER_OUTPUT_STDOUT:
+        s_print_callback = print_it_stdout;
+        break;
+    case LOGGER_OUTPUT_STDERR:
+        s_print_callback = print_it_stderr;
+        break;
+    case LOGGER_OUTPUT_FD:
+        s_print_callback = print_it_fd;
+        s_print_param = param;
+        break;
+    case LOGGER_OUTPUT_NONE:
+        s_print_callback = print_it_none;
+        break;
+    
+    #ifdef ANDROID
+    case LOGGER_OUTPUT_ALOG:
+        s_print_callback = print_it_alog;
+        s_print_param = param;
+        break;
+    #endif
+
+  default:
+    break;
+  }
+}
 
 #define LOG_FORMAT_LEN  4096
 #define LOG_BUF_SIZE    32768
@@ -383,10 +450,12 @@ void dap_common_deinit( ) {
         fclose(s_log_file);
 }
 
+void dap_log_set_external_output (LOGGER_EXTERNAL_OUTPUT output, void *param);
+
 static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
     va_list va_file;
     va_copy(va_file, va);
-    vfprintf(stdout, a_fmt, va);
+    s_print_callback(a_off, a_fmt, va);
     if (!s_log_file) {
         if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file) {
             va_end(va_file);
