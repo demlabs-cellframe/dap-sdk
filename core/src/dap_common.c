@@ -450,8 +450,6 @@ void dap_common_deinit( ) {
         fclose(s_log_file);
 }
 
-void dap_log_set_external_output (LOGGER_EXTERNAL_OUTPUT output, void *param);
-
 static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
     va_list va_file;
     va_copy(va_file, va);
