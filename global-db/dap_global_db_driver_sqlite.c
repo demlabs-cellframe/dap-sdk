@@ -315,7 +315,9 @@ static int s_db_sqlite_create_group_table(const char *a_table_name, conn_list_it
 int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
 {
 // sanity check
-    dap_return_val_if_pass(!a_store_obj || !a_store_obj->group || !a_store_obj->crc, -EINVAL);
+    dap_return_val_if_pass(!a_store_obj || !a_store_obj->group || (!a_store_obj->crc && a_store_obj->key), -EINVAL);
+    uint8_t l_type_erase = a_store_obj->flags & DAP_GLOBAL_DB_RECORD_ERASE;
+    dap_return_val_if_pass(!a_store_obj->key && !l_type_erase, -EINVAL);
 // func work
     // execute request
     conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);
@@ -325,7 +327,6 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
     int l_ret = 0;
     char *l_query = NULL;
     char *l_table_name = dap_str_replace_char(a_store_obj->group, '.', '_');
-    uint8_t l_type_erase = a_store_obj->flags & DAP_GLOBAL_DB_RECORD_ERASE;
     if (!l_type_erase) {
         if (!a_store_obj->key) {
             log_it(L_ERROR, "Global DB store object unsigned");
