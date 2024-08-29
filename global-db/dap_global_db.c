@@ -1342,6 +1342,7 @@ static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_gr
         DAP_DELETE(l_store_obj.sign);
     } else {
         // Drop the whole table
+        l_store_obj.flags |= DAP_GLOBAL_DB_RECORD_ERASE;
         l_res = dap_global_db_driver_apply(&l_store_obj, 1);
         if (l_res)
             log_it(L_ERROR, "Can't delete group %s", l_store_obj.group);
@@ -1383,6 +1384,28 @@ int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_cal
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent del request for \"%s\" group \"%s\" key", a_group, a_key);
 
     return l_ret;
+}
+
+/**
+ * @brief erase table, call dap_global_db_del_sync with NULL key
+ * @param a_group - table name
+ * @return result of dap_global_db_del_sync
+ */
+DAP_INLINE int dap_global_db_erase_table_sync(const char *a_group)
+{
+    return dap_global_db_del_sync(a_group, NULL);
+}
+
+/**
+ * @brief erase table, call dap_global_db_del with NULL key
+ * @param a_group - table name
+ * @param a_callback - callback result
+ * @param a_arg - callback args
+ * @return result of dap_global_db_del
+ */
+DAP_INLINE int dap_global_db_erase_table(const char *a_group, dap_global_db_callback_result_t a_callback, void *a_arg)
+{
+    return dap_global_db_del(a_group, NULL, a_callback, a_arg);
 }
 
 /**
@@ -1819,3 +1842,4 @@ bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_nu
     }
     return ret;
 }
+

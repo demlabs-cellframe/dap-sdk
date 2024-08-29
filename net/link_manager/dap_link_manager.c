@@ -25,6 +25,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #include "dap_link_manager.h"
 #include "dap_global_db.h"
+#include "dap_global_db_driver.h"
 #include "dap_stream_cluster.h"
 #include "dap_worker.h"
 #include "dap_config.h"
@@ -36,9 +37,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 
 #define DAP_LINK(a) ((dap_link_t *)(a)->_inheritor)
 
-static const char* s_connections_group_local = "local.connections.statistic";
-static const char* s_ignored_group_local = "local.nodes.ignored";
-static const uint64_t s_ignored_period = (uint64_t)1800 /*sec*/ * (uint64_t)1000000000;;
+static const char s_heated_group_local_prefix[] = "local.nodes.heated.0x";
+static const uint64_t s_cooling_period = 900 /*sec*/ * 1000000000LLU;
 
 typedef struct dap_managed_net {
     bool active;
@@ -47,12 +47,6 @@ typedef struct dap_managed_net {
     uint32_t min_links_num;     // min links required in each net
     dap_list_t *link_clusters;
 } dap_managed_net_t;
-// struct to fix connections statistic
-typedef struct dap_connections_statistics {
-    uint64_t attempts_count;
-    uint64_t successs_count;
-    bool ignored;
-} dap_connections_statistics_t;
 
 static bool s_debug_more = false;
 static const char *s_init_error = "Link manager not inited";
@@ -98,62 +92,58 @@ DAP_STATIC_INLINE dap_managed_net_t *s_find_net_by_id(uint64_t a_net_id)
 }
 
 /**
- * @brief update ignored list
+ * @brief forming group name for each net
+ * @return NULL if error other group name
+ */
+DAP_STATIC_INLINE char *s_hot_group_forming(uint64_t a_net_id)
+{ 
+    return dap_strdup_printf("%s%016"DAP_UINT64_FORMAT_x, s_heated_group_local_prefix, a_net_id);
+}
+
+/**
+ * @brief update hot list
  * @return NOT 0 if list empty
  */
-static int s_update_ignored_list()
+static int s_update_hot_list(uint64_t a_net_id)
 {
     size_t l_node_count = 0;
-    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(s_ignored_group_local, &l_node_count);
+    char *l_hot_group = s_hot_group_forming(a_net_id);
+    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(l_hot_group, &l_node_count);
     if (!l_node_count || !l_objs) {
-        log_it(L_DEBUG, "Ignore list is empty");
-        return -1;
+        log_it(L_DEBUG, "Hot list is empty");
+        DAP_DEL_Z(l_hot_group);
+        return 1;
     }
     dap_nanotime_t l_time_now = dap_nanotime_now();
     size_t l_deleted = 0;
     for(size_t i = 0; i < l_node_count; ++i) {
-        if(l_time_now > l_objs[i].timestamp + s_ignored_period) {
-            dap_global_db_del_sync(s_ignored_group_local, l_objs[i].key);
+        if(l_time_now > l_objs[i].timestamp + s_cooling_period) {
+            dap_global_db_del_sync(l_hot_group, l_objs[i].key);
             ++l_deleted;
         }
     }
+    DAP_DEL_Z(l_hot_group);
     dap_global_db_objs_delete(l_objs, l_node_count);
     if (l_deleted == l_node_count) {
-        log_it(L_DEBUG, "Ignore list cleared");
-        return -2;
+        log_it(L_DEBUG, "Hot list cleared");
+        return 2;
     }
     return 0;
 }
 
 /**
- * @brief update in GDB information about connections
- * @param a_node_addr - node addr to fix
- * @param a_attempt - if true add to attempts counter
- * @param a_success - if true add to success counter
- * @param a_error - if true add to error counter
+ * @brief add node add in local GDB group
+ * @param a_node_addr - node addr to adding
  */
-static void s_update_connection_state(dap_stream_node_addr_t a_node_addr, bool a_attempt, bool a_success)
+static void s_node_hot_list_add(dap_stream_node_addr_t a_node_addr, uint64_t a_associated_net_id)
 {
 // sanity check
     dap_return_if_pass(!a_node_addr.uint64);
 // func work
     const char *l_node_addr_str = dap_stream_node_addr_to_str_static(a_node_addr);
-    dap_connections_statistics_t *l_stat = (dap_connections_statistics_t *)dap_global_db_get_sync(s_connections_group_local, l_node_addr_str, NULL, NULL, NULL);
-    if (!l_stat) {
-        log_it(L_NOTICE, "Creating new connections staticstics record in GDB for the node %s", l_node_addr_str);
-        DAP_NEW_Z_RET(l_stat, dap_connections_statistics_t, NULL);
-    }
-    bool l_old_ignored_state = l_stat->ignored;
-    l_stat->attempts_count += a_attempt;
-    l_stat->successs_count += a_success;
-    l_stat->ignored = (double)(l_stat->successs_count + 100)  / (double)(l_stat->attempts_count + 100) < 0.9;
-    if(dap_global_db_set_sync(s_connections_group_local, l_node_addr_str, l_stat, sizeof(*l_stat), false)) {
-        log_it(L_ERROR, "Can't update connections staticstics record in GDB for the node %s", l_node_addr_str);
-    }
-    // ignored table, add
-    if (l_stat->ignored)
-        dap_global_db_set_sync(s_ignored_group_local, l_node_addr_str, NULL, 0, false);
-    DAP_DELETE(l_stat);
+    char *l_hot_group = s_hot_group_forming(a_associated_net_id);
+    dap_global_db_set_sync(l_hot_group, l_node_addr_str, NULL, 0, false);
+    DAP_DEL_Z(l_hot_group);
 }
 
 // debug_more funcs
@@ -216,13 +206,13 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
         log_it(L_ERROR, "Can't activate timer on link manager");
         return -3;
     }
-// clean ignore group
-    size_t l_node_count = 0;
-    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(s_ignored_group_local, &l_node_count);
-    for(size_t i = 0; i < l_node_count; ++i) {
-        dap_global_db_del_sync(s_ignored_group_local, l_objs[i].key);
+// clean ignore and connections group
+    dap_list_t *l_groups = dap_global_db_driver_get_groups_by_mask(s_heated_group_local_prefix);
+    dap_list_t *l_item_cut = NULL;
+    DL_FOREACH(l_groups, l_item_cut) {
+        dap_global_db_erase_table_sync((const char*)(l_item_cut->data));
     }
-    dap_global_db_objs_delete(l_objs, l_node_count);
+    dap_list_free_full(l_groups, NULL);
 // start
     dap_link_manager_set_condition(true);
     return 0;
@@ -498,7 +488,6 @@ void s_client_connected_callback(dap_client_t *a_client, void UNUSED_ARG *a_arg)
     l_link->uplink.attempts_count = 0;
     l_link->uplink.state = LINK_STATE_ESTABLISHED;
     l_link->uplink.es_uuid = DAP_CLIENT_PVT(a_client)->stream_es->uuid;
-    s_update_connection_state(l_link->addr, false, true);
 }
 
 void s_link_drop(dap_link_t *a_link, bool a_disconnected)
@@ -659,7 +648,6 @@ static void s_link_connect(dap_link_t *a_link)
     log_it(L_INFO, "Connecting to node " NODE_ADDR_FP_STR ", addr %s : %d", NODE_ADDR_FP_ARGS_S(a_link->uplink.client->link_info.node_addr),
                                     a_link->uplink.client->link_info.uplink_addr, a_link->uplink.client->link_info.uplink_port);
     dap_client_go_stage(a_link->uplink.client, STAGE_STREAM_STREAMING, s_client_connected_callback);
-    s_update_connection_state(a_link->addr, true, false);
 }
 
 /**
@@ -812,6 +800,7 @@ inline int dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, uin
         return -1;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
     dap_link_t *l_link = s_link_manager_link_create(a_node_addr, true, a_associated_net_id);
+    s_node_hot_list_add(*a_node_addr, a_associated_net_id);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     return l_link ? 0 : -2;
 }
@@ -1295,17 +1284,19 @@ dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, 
  * @param a_ignored_count output count of finded addrs
  * @return pointer to dap_stream_node_addr_t array or NULL
  */
-dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_count)
+dap_stream_node_addr_t *dap_link_manager_get_ignored_addrs(size_t *a_ignored_count, uint64_t a_net_id)
 {
-    if(s_update_ignored_list())
+    if(s_update_hot_list(a_net_id))
         return NULL;
     size_t l_node_count = 0;
-    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(s_ignored_group_local, &l_node_count);
+    char *l_hot_group = s_hot_group_forming(a_net_id);
+    dap_global_db_obj_t *l_objs = dap_global_db_get_all_sync(l_hot_group, &l_node_count);
+    DAP_DEL_Z(l_hot_group);
     if (!l_node_count || !l_objs) {        
-        log_it(L_DEBUG, "Ignore list is empty");
+        log_it(L_DEBUG, "Hot list is empty");
         return NULL;
     }
-// memry alloc
+// memory alloc
     dap_stream_node_addr_t *l_ret = DAP_NEW_Z_COUNT(dap_stream_node_addr_t, l_node_count);
     if (!l_ret) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
