@@ -248,12 +248,11 @@ static bool s_stream_timer_timeout_check(void * a_arg)
                    l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
             l_client_pvt->is_closed_by_timeout = true;
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout", l_es->remote_addr_str, l_es->socket, l_es->type);
-            // Esocket wiil be removed here!
             if (l_es->callbacks.error_callback)
                 l_es->callbacks.error_callback(l_es, ETIMEDOUT);
-        }else
-            if(s_debug_more)
-                log_it(L_DEBUG,"Socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
+            dap_events_socket_remove_and_delete_unsafe(l_es, true);
+        } else
+            debug_if(s_debug_more, L_DEBUG, "Socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
     }else
         if(s_debug_more)
             log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid_ptr);
@@ -1410,7 +1409,7 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
         l_client_pvt->last_error = ERROR_STREAM_RESPONSE_WRONG;
     }
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
-    l_client_pvt->stream->esocket = NULL; // Prevent to delete twice
+    l_client_pvt->stream->esocket = NULL;   // Prevent to delete twice
     s_stage_status_after(l_client_pvt);
-    a_es->_inheritor = NULL; // To prevent delete in reactor
+    a_es->_inheritor = NULL;                // To prevent delete in reactor
 }
