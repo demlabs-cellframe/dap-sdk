@@ -44,6 +44,9 @@ typedef union dap_chain_hash_fast{
 } DAP_ALIGN_PACKED dap_chain_hash_fast_t;
 typedef dap_chain_hash_fast_t dap_hash_fast_t;
 typedef dap_hash_fast_t dap_hash_t;
+typedef struct dap_hash_str {
+    char s[DAP_HASH_FAST_STR_SIZE];
+} dap_hash_str_t;
 
 #ifdef __cplusplus
 extern "C" {
@@ -83,7 +86,7 @@ DAP_STATIC_INLINE bool dap_hash_fast( const void *a_data_in, size_t a_data_in_si
  * @param a_hash2 - dap_hash_fast_t hash2
  * @return
  */
-DAP_STATIC_INLINE bool dap_hash_fast_compare(dap_hash_fast_t *a_hash1, dap_hash_fast_t *a_hash2)
+DAP_STATIC_INLINE bool dap_hash_fast_compare(const dap_hash_fast_t *a_hash1, const dap_hash_fast_t *a_hash2)
 {
     if(!a_hash1 || !a_hash2)
         return false;
@@ -98,7 +101,7 @@ DAP_STATIC_INLINE bool dap_hash_fast_compare(dap_hash_fast_t *a_hash1, dap_hash_
  * @return false
  */
 
-DAP_STATIC_INLINE bool dap_hash_fast_is_blank( dap_hash_fast_t *a_hash )
+DAP_STATIC_INLINE bool dap_hash_fast_is_blank( const dap_hash_fast_t *a_hash )
 {
     static dap_hash_fast_t l_blank_hash = {};
     return dap_hash_fast_compare(a_hash, &l_blank_hash);

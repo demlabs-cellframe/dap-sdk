@@ -466,13 +466,13 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
  * @param a_chain_sign dap_sign_t object
  * @return size_t 
  */
-size_t dap_sign_get_size(dap_sign_t * a_chain_sign)
+uint64_t dap_sign_get_size(dap_sign_t * a_chain_sign)
 {
     if (!a_chain_sign || a_chain_sign->header.type.type == SIG_TYPE_NULL) {
         debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
         return 0;
     }
-    return (sizeof(dap_sign_t) + a_chain_sign->header.sign_size + a_chain_sign->header.sign_pkey_size);
+    return (uint64_t)sizeof(dap_sign_t) + a_chain_sign->header.sign_size + a_chain_sign->header.sign_pkey_size;
 }
 
 dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t *a_signs_count)
@@ -482,8 +482,8 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
     dap_return_val_if_fail(a_data && a_data_size, (*a_signs_count = 0, NULL));
     size_t l_signs_count = *a_signs_count ? *a_signs_count : l_realloc_count;
     dap_sign_t **ret = NULL;
-    size_t i = 0, l_sign_size = 0;
-    for (size_t l_offset = 0; l_offset + sizeof(dap_sign_t) < a_data_size; l_offset += l_sign_size) {
+    uint64_t i = 0, l_sign_size = 0;
+    for (uint64_t l_offset = 0; l_offset + sizeof(dap_sign_t) < a_data_size; l_offset += l_sign_size) {
         dap_sign_t *l_sign = (dap_sign_t *)((byte_t *)a_data + l_offset);
         l_sign_size = dap_sign_get_size(l_sign);
         if (l_offset + l_sign_size <= l_offset || l_offset + l_sign_size > a_data_size)

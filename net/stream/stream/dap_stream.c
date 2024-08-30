@@ -675,11 +675,7 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
  */
 size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
 {
-    dap_stream_pkt_t *l_pkt = NULL;
-    if(!a_stream || !a_stream->esocket || !a_stream->esocket->buf_in) {
-        log_it(L_ERROR, "Arguments is NULL for dap_stream_data_proc_read");
-        return 0;
-    }
+    dap_return_val_if_fail(a_stream && a_stream->esocket && a_stream->esocket->buf_in, 0);
 
     byte_t *l_buf_in = a_stream->esocket->buf_in;
     size_t l_buf_in_size = a_stream->esocket->buf_in_size;
@@ -702,6 +698,7 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
     l_buf_in_size = a_stream->pkt_buf_in_data_size;
     size_t l_buf_in_left = l_buf_in_size;
 
+    dap_stream_pkt_t *l_pkt = NULL;
     if(l_buf_in_left >= sizeof(dap_stream_pkt_hdr_t)) {
         // Now lets see how many packets we have in buffer now
         while(l_buf_in_left > 0 && (l_pkt = dap_stream_pkt_detect(l_buf_in, l_buf_in_left))) { // Packet signature detected
