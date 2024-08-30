@@ -160,6 +160,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
 {
     if (sizeof(dap_global_db_pkt_t) > a_bound_size ||            /* Check for buffer boundaries */
             dap_global_db_pkt_get_size(a_pkt) > a_bound_size ||
+            a_pkt->group_len + a_pkt->key_len + a_pkt->value_len < a_pkt->value_len ||
             a_pkt->group_len + a_pkt->key_len + a_pkt->value_len > a_pkt->data_len) {
         log_it(L_ERROR, "Broken GDB element: size is incorrect");
         return NULL;
