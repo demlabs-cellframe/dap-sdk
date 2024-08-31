@@ -333,8 +333,6 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
 
     // if buffer is overfull then read once more
 
-    }
-
     // search http header
     if(!l_client_http->is_header_read && l_client_http->response_size > 4
             && !l_client_http->content_length) {
