@@ -249,7 +249,7 @@ elseif (${CMAKE_SYSTEM_PROCESSOR} MATCHES "armv8")
     message("[*] Platform armv8")
 endif ()
 
-if ( CELLFRAME_NO_OPTIMIZATION )
+if ( CELLFRAME_NO_OPTIMIZATION and PLATFORM_X86_64)
     set(CMAKE_CXX_FLAGS "-march=core2")
     set(CMAKE_C_FLAGS "-march=core2")
 endif ()
