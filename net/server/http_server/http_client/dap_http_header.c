@@ -93,8 +93,8 @@ void dap_http_header_deinit()
  * @return Zero if parsed well -1 if it wasn't HTTP header 1 if its "\r\n" string
  */
 #define	CRLF    "\r\n"
-#define	CR    '\r'
-#define	LF    '\n'
+#define	CR      '\r'
+#define	LF      '\n'
 
 int dap_http_header_parse(dap_http_client_t *cl_ht, const char *ht_line, size_t ht_line_len)
 {
@@ -203,7 +203,7 @@ inline dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const c
 {
     dap_http_header_t *l_new_header = DAP_NEW_Z(dap_http_header_t);
     if (!l_new_header) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
 
@@ -288,7 +288,7 @@ dap_http_header_t * dap_http_headers_dup(dap_http_header_t * a_top)
     DL_FOREACH(a_top,l_hdr){
         dap_http_header_t * l_hdr_copy = DAP_NEW_Z(dap_http_header_t);
         if (!l_hdr_copy) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return l_ret;
         }
 

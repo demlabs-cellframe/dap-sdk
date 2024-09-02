@@ -265,29 +265,29 @@ static void test_serialize_deserialize(dap_enc_key_type_t key_type, bool enc_tes
     dap_assert(key->_inheritor_size == key2->_inheritor_size, "Inheritor data size");
     dap_assert(!memcmp(key->_inheritor, key2->_inheritor, key->_inheritor_size), "Inheritor data");
 
-    const char* source = "simple test";
-    size_t source_size = strlen(source);
+    if (enc_test) {    
+        const char* source = "simple test";
+        size_t source_size = strlen(source);
 
-    size_t encrypt_size = dap_enc_code_out_size(key, source_size, DAP_ENC_DATA_TYPE_RAW);
-    uint8_t encrypt_result[encrypt_size];
+        size_t encrypt_size = dap_enc_code_out_size(key, source_size, DAP_ENC_DATA_TYPE_RAW);
+        uint8_t encrypt_result[encrypt_size];
 
 
-    size_t encrypted_size = dap_enc_code(key2, source,
-                                         source_size,
-                                         encrypt_result,
-                                         encrypt_size,
-                                         DAP_ENC_DATA_TYPE_RAW);
+        size_t encrypted_size = dap_enc_code(key2, source,
+                                            source_size,
+                                            encrypt_result,
+                                            encrypt_size,
+                                            DAP_ENC_DATA_TYPE_RAW);
 
-    size_t min_decode_size = dap_enc_decode_out_size(key, encrypt_size, DAP_ENC_DATA_TYPE_RAW);
+        size_t min_decode_size = dap_enc_decode_out_size(key, encrypt_size, DAP_ENC_DATA_TYPE_RAW);
 
-    uint8_t decode_result[min_decode_size];
-    size_t decode_size = dap_enc_decode(key,
-                                        encrypt_result,
-                                        encrypted_size,
-                                        decode_result,
-                                        min_decode_size,
-                                        DAP_ENC_DATA_TYPE_RAW);
-    if (enc_test) {
+        uint8_t decode_result[min_decode_size];
+        size_t decode_size = dap_enc_decode(key,
+                                            encrypt_result,
+                                            encrypted_size,
+                                            decode_result,
+                                            min_decode_size,
+                                            DAP_ENC_DATA_TYPE_RAW);
         dap_assert_PIF(source_size == decode_size, "Check result decode size");
 
         dap_assert_PIF(memcmp(source, decode_result, source_size) == 0,
@@ -330,8 +330,8 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     // create new key2
     dap_enc_key_t *key2 = dap_enc_key_new(key_type);
     // Deserialize key2
-    dap_enc_key_deserialize_pub_key(key2, l_data_pub_read, l_data_pub_size);
-    dap_enc_key_deserialize_priv_key(key2, l_data_priv_read, l_data_priv_size);
+    dap_assert(!dap_enc_key_deserialize_pub_key(key2, l_data_pub_read, l_data_pub_size), "Pub key deserialize");
+    dap_assert(!dap_enc_key_deserialize_priv_key(key2, l_data_priv_read, l_data_priv_size), "Priv key deserialize");
 
     DAP_DEL_MULTY(l_data_pub, l_data_pub_read, l_data_priv, l_data_priv_read);
 
@@ -369,9 +369,9 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
 
     // serialize & deserialize signature
     size_t sig_buf_len = sig_buf_size;
-    uint8_t *l_sign_tmp = dap_enc_key_serialize_sign(key2, sig_buf, &sig_buf_len);
+    uint8_t *l_sign_tmp = dap_enc_key_serialize_sign(key2->type, sig_buf, &sig_buf_len);
     dap_enc_key_signature_delete(key_type, sig_buf);
-    sig_buf = dap_enc_key_deserialize_sign(key2, l_sign_tmp, &sig_buf_len);
+    sig_buf = dap_enc_key_deserialize_sign(key2->type, l_sign_tmp, &sig_buf_len);
     DAP_DELETE(l_sign_tmp);
 
     dap_assert_PIF(sig_buf, "Check serialize->deserialize signature");
@@ -420,7 +420,7 @@ void dap_enc_tests_run() {
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_FALCON, false);
     dap_print_module_name("dap_enc serialize->deserialize SPHINCSPLUS");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, false);
-#ifdef DAP_TPS_TEST
+#ifdef DAP_ECDSA
     dap_print_module_name("dap_enc serialize->deserialize ECDSA");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_ECDSA, false);
 #endif
@@ -443,7 +443,7 @@ void dap_enc_tests_run() {
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_FALCON);
     dap_print_module_name("dap_enc_sig serialize->deserialize SPHINCSPLUS");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS);
-#ifdef DAP_TPS_TEST
+#ifdef DAP_ECDSA
     dap_print_module_name("dap_enc_sig serialize->deserialize ECDSA");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_ECDSA);
 #endif

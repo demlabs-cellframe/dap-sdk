@@ -7,7 +7,7 @@
 #include "dap_enc_bf.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
-#include "sha3/KeccakHash.h"
+#include "KeccakHash.h"
 
 #define LOG_TAG "dap_enc_blowfish"
 
@@ -37,7 +37,7 @@ void dap_enc_bf_key_delete(struct dap_enc_key *a_key)
     if(a_key->priv_key_data != NULL)
     {
         randombytes(a_key->priv_key_data,a_key->priv_key_data_size);
-        //DAP_DELETE(a_key->priv_key_data);
+        DAP_DEL_Z(a_key->priv_key_data);
     }
     a_key->priv_key_data_size = 0;
 }

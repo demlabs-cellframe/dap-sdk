@@ -203,7 +203,7 @@ static void s_stream_connected(dap_client_pvt_t * a_client_pvt)
     s_stage_status_after(a_client_pvt);
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid_ptr) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
     assert(a_client_pvt->stream_es);
@@ -248,12 +248,11 @@ static bool s_stream_timer_timeout_check(void * a_arg)
                    l_client->link_info.uplink_addr, l_client->link_info.uplink_port);
             l_client_pvt->is_closed_by_timeout = true;
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout", l_es->remote_addr_str, l_es->socket, l_es->type);
-            // Esocket wiil be removed here!
             if (l_es->callbacks.error_callback)
                 l_es->callbacks.error_callback(l_es, ETIMEDOUT);
-        }else
-            if(s_debug_more)
-                log_it(L_DEBUG,"Socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
+            dap_events_socket_remove_and_delete_unsafe(l_es, true);
+        } else
+            debug_if(s_debug_more, L_DEBUG, "Socket %"DAP_FORMAT_SOCKET" is connected, close check timer", l_es->socket);
     }else
         if(s_debug_more)
             log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid_ptr);
@@ -348,7 +347,7 @@ int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *
     *a_data = DAP_REALLOC(*a_data, (*a_size + l_sign_size) * sizeof(uint8_t));
     if (!*a_data) {
         DAP_DELETE(l_sign);
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return 0;
     }
     memcpy(*a_data + *a_size, l_sign, l_sign_size);
@@ -518,12 +517,13 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     l_es->flags |= DAP_SOCK_READY_TO_WRITE;
                 #endif
                     l_es->_inheritor = a_client_pvt->client;
-                    if ( dap_net_resolve_host(a_client_pvt->client->link_info.uplink_addr,
+                    if ( 0 > dap_net_resolve_host(a_client_pvt->client->link_info.uplink_addr,
                                               dap_itoa(a_client_pvt->client->link_info.uplink_port),
-                                              &l_es->addr_storage,
-                                              false)
+                                              false, &l_es->addr_storage, NULL)
                     ) {
-                        log_it(L_ERROR, "Wrong remote address '%s : %u'", a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port);
+                        log_it(L_ERROR, "Wrong remote address '%s : %u'", 
+                                        a_client_pvt->client->link_info.uplink_addr,
+                                        a_client_pvt->client->link_info.uplink_port);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_WRONG_ADDRESS;
                         s_stage_status_after(a_client_pvt);
@@ -536,7 +536,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     a_client_pvt->stream = dap_stream_new_es_client(l_es, &a_client_pvt->client->link_info.node_addr,
                                                                     a_client_pvt->authorized);
                     if (!a_client_pvt->stream) {
-                        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                         s_stage_status_after(a_client_pvt);
@@ -579,7 +579,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         // Add check timer
                         dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
                         if (!l_stream_es_uuid_ptr) {
-                            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                             a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                             a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                             s_stage_status_after(a_client_pvt);
@@ -608,7 +608,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         dap_worker_add_events_socket(l_worker, l_es);
                         dap_events_socket_uuid_t * l_stream_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
                         if (!l_stream_es_uuid_ptr) {
-                            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                             a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                             a_client_pvt->last_error = ERROR_STREAM_ABORTED;
                             s_stage_status_after(a_client_pvt);
@@ -1130,7 +1130,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
 static void s_enc_init_error(dap_client_t * a_client, UNUSED_ARG void *a_arg, int a_err_code)
 {
     dap_client_pvt_t * l_client_pvt = DAP_CLIENT_PVT(a_client);
-    log_it(L_ERROR, "ENC: Can't init ecnryption session, err code %d", a_err_code);
+    log_it(L_ERROR, "ENC: Can't init encryption session, err code %d", a_err_code);
     if (!l_client_pvt) return;
     if (a_err_code == ETIMEDOUT) {
         l_client_pvt->last_error = ERROR_NETWORK_CONNECTION_TIMEOUT;
@@ -1155,7 +1155,7 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
         log_it(L_DEBUG, "STREAM_CTL response %zu bytes length recieved", a_data_size);
     char * l_response_str = DAP_NEW_Z_SIZE(char, a_data_size + 1);
     if (!l_response_str) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
     memcpy(l_response_str, a_data, (uint32_t)a_data_size);
@@ -1174,7 +1174,7 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
         int l_arg_count;
         char *l_stream_key = DAP_NEW_Z_SIZE(char, 4096 * 3);
         if (!l_stream_key) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DEL_Z(l_response_str);
             return;
         }
@@ -1409,7 +1409,7 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
         l_client_pvt->last_error = ERROR_STREAM_RESPONSE_WRONG;
     }
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
-    l_client_pvt->stream->esocket = NULL; // Prevent to delete twice
+    l_client_pvt->stream->esocket = NULL;   // Prevent to delete twice
     s_stage_status_after(l_client_pvt);
-    a_es->_inheritor = NULL; // To prevent delete in reactor
+    a_es->_inheritor = NULL;                // To prevent delete in reactor
 }

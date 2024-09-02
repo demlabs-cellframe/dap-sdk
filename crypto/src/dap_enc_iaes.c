@@ -21,7 +21,10 @@ typedef struct dap_enc_aes_key {
 
 void dap_enc_aes_key_delete(struct dap_enc_key *a_key)
 {
-    free(a_key->_inheritor);
+    DAP_DEL_Z(a_key->_inheritor);
+    DAP_DEL_Z(a_key->priv_key_data);
+    a_key->_inheritor_size = 0;
+    a_key->priv_key_data_size = 0;
     //No need any specific actions
 }
 
@@ -54,7 +57,7 @@ void dap_enc_aes_key_generate(struct dap_enc_key * a_key, const void *kex_buf,
 
     uint8_t * id_concat_kex = (uint8_t *) malloc(kex_size + seed_size);
     if (!id_concat_kex) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
 

@@ -7,12 +7,12 @@ static dap_json_rpc_notification_handler_t *s_handler_notifications = NULL;
 
 int dap_json_rpc_notification_registration(const char *a_method, notification_handler_func_t *a_notification_func)
 {
-    dap_json_rpc_notification_handler_t *l_handler;
+    dap_json_rpc_notification_handler_t *l_handler = NULL;
     HASH_FIND_STR(s_handler_notifications, a_method, l_handler);
     if (l_handler == 0){
         l_handler = DAP_NEW(dap_json_rpc_notification_handler_t);
         if (!l_handler) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return -1;
         }
         l_handler->method = dap_strdup(a_method);
@@ -25,7 +25,7 @@ int dap_json_rpc_notification_registration(const char *a_method, notification_ha
 }
 void dap_json_rpc_notification_unregistration(const char *a_method)
 {
-    dap_json_rpc_notification_handler_t *l_handler;
+    dap_json_rpc_notification_handler_t *l_handler = NULL;
     HASH_FIND_STR(s_handler_notifications, a_method, l_handler);
     if (l_handler != NULL){
         HASH_DEL(s_handler_notifications, l_handler);

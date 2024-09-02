@@ -196,15 +196,10 @@ void dap_client_queue_clear(dap_client_t *a_client)
  */
 void dap_client_set_auth_cert(dap_client_t *a_client, const char *a_cert_name)
 {
-    static dap_cert_t *l_cert = NULL;
-
-    if (a_client == NULL || a_cert_name == NULL) {
-        log_it(L_ERROR,"Client or cert-name is NULL for dap_client_set_auth_cert");
-        return;
-    }
-    l_cert = dap_cert_find_by_name(a_cert_name);
+    dap_return_if_fail(a_client && a_cert_name);
+    dap_cert_t *l_cert = dap_cert_find_by_name(a_cert_name);
     if (!l_cert) {
-        log_it(L_ERROR,"l_cert is NULL by dap_cert_find_by_name");
+        log_it(L_ERROR, "Certificate %s not found", a_cert_name);
         return;
     }
     a_client->auth_cert = l_cert;
@@ -267,6 +262,7 @@ static void s_go_stage_on_client_worker_unsafe(void *a_arg)
             log_it(L_DEBUG, "Already have target state %s", dap_client_stage_str(l_stage_target));
             if (l_stage_end_callback)
                 l_stage_end_callback(l_client, l_client->callbacks_arg);
+            DAP_DELETE(a_arg);
             return;
         }
         if (l_client->stage_target < l_stage_target) {
@@ -276,6 +272,7 @@ static void s_go_stage_on_client_worker_unsafe(void *a_arg)
             dap_client_pvt_stage_transaction_begin(l_client_pvt,
                                                    l_cur_stage + 1,
                                                    s_stage_fsm_operator_unsafe);
+            DAP_DELETE(a_arg);
             return;
         }
     }

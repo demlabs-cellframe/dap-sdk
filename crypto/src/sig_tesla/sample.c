@@ -5,6 +5,7 @@
 **************************************************************************************/
 
 #include "tesla_params.h"
+#include "fips202.h"
 
 #define round_double(x) (uint64_t)(x + 0.5)
 

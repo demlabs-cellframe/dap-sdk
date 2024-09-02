@@ -166,3 +166,6 @@ int dap_global_db_flush_sync();
 
 bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_null_key);
 bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask);
+
+int dap_global_db_erase_table_sync(const char *a_group);
+int dap_global_db_erase_table(const char *a_group, dap_global_db_callback_result_t a_callback, void *a_arg);

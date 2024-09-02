@@ -118,7 +118,7 @@ int dap_http_folder_add(dap_http_server_t *sh, const char *url_path, const char 
 
   dap_http_url_proc_folder_t *up_folder = (dap_http_url_proc_folder_t *)calloc( 1, sizeof(dap_http_url_proc_folder_t) );
   if (!up_folder) {
-    log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+    log_it(L_CRITICAL, "%s", c_error_memory_alloc);
     return -1;
   }
   strncpy( up_folder->local_path, local_path, sizeof(up_folder->local_path)-1 );

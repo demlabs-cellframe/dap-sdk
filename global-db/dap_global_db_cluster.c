@@ -106,7 +106,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     }
     dap_global_db_cluster_t *l_cluster = DAP_NEW_Z(dap_global_db_cluster_t);
     if (!l_cluster) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
     if (a_mnemonim)
@@ -134,7 +134,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     }
     l_cluster->groups_mask = dap_strdup(a_group_mask);
     if (!l_cluster->groups_mask) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         dap_cluster_delete(l_cluster->role_cluster);
         dap_cluster_delete(l_cluster->links_cluster);
         DAP_DELETE(l_cluster);
@@ -172,8 +172,10 @@ dap_cluster_member_t *dap_global_db_cluster_member_add(dap_global_db_cluster_t *
 
 void dap_global_db_cluster_delete(dap_global_db_cluster_t *a_cluster)
 {
-    if (a_cluster->links_cluster)
-        dap_cluster_delete(a_cluster->links_cluster);
+    //if (a_cluster->links_cluster)
+    //    dap_cluster_delete(a_cluster->links_cluster);
+    // TODO make a reference counter for cluster mnemonims
+    if (!a_cluster) return; //happens when no network connection available
     dap_cluster_delete(a_cluster->role_cluster);
     DAP_DELETE(a_cluster->groups_mask);
     DL_DELETE(a_cluster->dbi->clusters, a_cluster);
@@ -263,9 +265,12 @@ static void s_gdb_cluster_sync_timer_callback(void *a_arg)
             dap_stream_ch_pkt_send_by_addr(&l_current_link, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_START,
                                            l_msg, dap_global_db_start_pkt_get_size(l_msg));
         }
-        dap_list_free(l_groups);
+
+        dap_list_free_full(l_groups, NULL);
+        
         l_cluster->sync_context.state = DAP_GLOBAL_DB_SYNC_STATE_IDLE;
         l_cluster->sync_context.stage_last_activity = dap_time_now();
+
     } break;
     case DAP_GLOBAL_DB_SYNC_STATE_IDLE:
         if (dap_time_now() - l_cluster->sync_context.stage_last_activity >

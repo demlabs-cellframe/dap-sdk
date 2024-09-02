@@ -331,6 +331,7 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
     dap_events_socket_t *l_msg_es = dap_context_find(l_context, l_msg->esocket_uuid);
     if ( l_msg_es == NULL){
         log_it(L_INFO, "We got i/o message for esocket %"DAP_UINT64_FORMAT_U" thats now not in list. Lost %zu data", l_msg->esocket_uuid, l_msg->data_size);
+        DAP_DELETE(l_msg->data);
         DAP_DELETE(l_msg);
         return;
     }
@@ -538,7 +539,7 @@ void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker
     dap_return_if_fail(a_es_input && a_callback);
     dap_worker_msg_callback_t * l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
     if (!l_msg) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
     l_msg->callback = a_callback;
@@ -562,7 +563,7 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
     dap_return_if_fail(a_worker && a_callback);
     dap_worker_msg_callback_t *l_msg = DAP_NEW_Z(dap_worker_msg_callback_t);
     if (!l_msg) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
     *l_msg = (dap_worker_msg_callback_t) { .callback = a_callback, .arg = a_arg };

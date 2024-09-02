@@ -44,6 +44,7 @@
 #endif
 
 #include "dap_common.h"
+#include "dap_net.h"
 #include "dap_string.h"
 #include "dap_strfuncs.h"
 #include "dap_cli_server.h" // for UNIX_SOCKET_FILE
@@ -54,80 +55,53 @@
 #include "dap_json_rpc_request.h"
 #include "dap_json_rpc_response.h"
 
-static int s_status;
+#define CLI_SERVER_DEFAULT_PORT 12345
 
-//staic function to receive http data
-static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_cli_cmd_state_t *l_cmd)
+static int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli_cmd_state_t *l_cmd, int a_status)
 {
-    ssize_t l_recv_len = recv(*socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], DAP_CLI_HTTP_RESPONSE_SIZE_MAX, 0);
-    if (l_recv_len == 0) {
-        s_status = DAP_CLI_ERROR_INCOMPLETE;
-        return;
-    }
-    if (l_recv_len == -1) {
+    ssize_t l_recv_len = recv(socket, l_cmd->cmd_res + l_cmd->cmd_res_cur, DAP_CLI_HTTP_RESPONSE_SIZE_MAX, 0);
+    switch (l_recv_len) {
+    case 0: return DAP_CLI_ERROR_INCOMPLETE;
+    case -1:
 #ifdef DAP_OS_WINDOWS
-        int l_errno = WSAGetLastError();
-        if (l_errno == WSAEWOULDBLOCK) {
-#else
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+        _set_errno(WSAGetLastError());
 #endif
-            s_status = DAP_CLI_ERROR_TIMEOUT;
-        } else {
-            s_status = DAP_CLI_ERROR_SOCKET;
-        }
-        return;
+        return errno == EAGAIN || errno == EWOULDBLOCK ? DAP_CLI_ERROR_TIMEOUT : DAP_CLI_ERROR_SOCKET;
+    default: 
+        break;
     }
-    l_cmd->cmd_res_cur +=(size_t) l_recv_len;
-    switch (s_status) {
-        case 1: {   // Find content length
-            const char *l_cont_len_str = "Content-Length: ";
-            char *l_str_ptr = strstr(l_cmd->cmd_res, l_cont_len_str);
-            if (l_str_ptr && strstr(l_str_ptr, "\r\n")) {
-                l_cmd->cmd_res_len = atoi(l_str_ptr + strlen(l_cont_len_str));
-                if (l_cmd->cmd_res_len == 0) {
-                    s_status = DAP_CLI_ERROR_FORMAT;
-                    break;
-                }
-                else {
-                    s_status++;
-                }
-            } else {
-                break;
-            }
-        }
-        case 2: {   // Find header end and throw out header
-            const char *l_head_end_str = "\r\n\r\n";
-            char *l_str_ptr = strstr(l_cmd->cmd_res, l_head_end_str);
-            if (l_str_ptr) {
-                l_str_ptr += strlen(l_head_end_str);
-                size_t l_head_size = l_str_ptr - l_cmd->cmd_res;
-                memmove(l_cmd->cmd_res, l_str_ptr, l_cmd->cmd_res_cur - l_head_size);
-                l_cmd->cmd_res_cur -= l_head_size;
-                // read rest of data
-                if(l_cmd->cmd_res_cur < l_cmd->cmd_res_len) {
-                    l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_len + 1);
-                    while((l_cmd->cmd_res_len - l_cmd->cmd_res_cur) > 0) {
-                        ssize_t l_recv_len = recv(*socket, &l_cmd->cmd_res[l_cmd->cmd_res_cur], l_cmd->cmd_res_len - l_cmd->cmd_res_cur, 0);
-                        if(l_recv_len <= 0)
-                            break;
-                        l_cmd->cmd_res_cur += l_recv_len;
-                    }
-                }
-                s_status++;
-            } else {
-                break;
-            }
-        }
-        default:
-        case 3: {   // Complete command reply
-            if (l_cmd->cmd_res_cur == l_cmd->cmd_res_len) {
-                l_cmd->cmd_res[l_cmd->cmd_res_cur] = 0;
-                s_status = 0;
-            } else {
-                s_status = DAP_CLI_ERROR_FORMAT;
-            }
-        } break;
+    l_cmd->cmd_res_cur += l_recv_len;
+    switch (a_status) {
+    case 1: {   // Find content length
+        static const char l_content_len_str[] = "Content-Length: ";
+        char *l_len_token = strstr(l_cmd->cmd_res, l_content_len_str);
+        if (!l_len_token || !strpbrk(l_len_token, "\r\n"))
+            break;
+        if (( l_cmd->cmd_res_len = strtol(l_len_token + sizeof(l_content_len_str) - 1, NULL, 10) ))
+            ++a_status;
+        else
+            return DAP_CLI_ERROR_FORMAT;
     }
+    case 2: {   // Find header end and throw out header
+        static const char l_head_end_str[] = "\r\n\r\n";
+        char *l_hdr_end_token = strstr(l_cmd->cmd_res, l_head_end_str);
+        if (!l_hdr_end_token)
+            break;
+        l_hdr_end_token += ( sizeof(l_head_end_str) - 1 );
+        l_cmd->hdr_len = l_hdr_end_token - l_cmd->cmd_res;
+        if (l_cmd->cmd_res_len + l_cmd->hdr_len > l_cmd->cmd_res_cur)
+            l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_len + l_cmd->hdr_len + 1);
+        ++a_status;
+    }
+    case 3:
+    default:
+        if (l_cmd->cmd_res_len + l_cmd->hdr_len <= l_cmd->cmd_res_cur) {
+            *(l_cmd->cmd_res + l_cmd->cmd_res_cur) = '\0';
+            a_status = 0;
+        }
+        break;
+    }
+    return a_status;
 }
 
 /**
@@ -136,87 +110,70 @@ static void dap_app_cli_http_read(dap_app_cli_connect_param_t *socket, dap_app_c
  * @param a_socket_path
  * @return if connect established, else NULL
  */
-dap_app_cli_connect_param_t* dap_app_cli_connect(const char *a_socket_path)
+dap_app_cli_connect_param_t dap_app_cli_connect()
 {
-    // set socket param
-    int buffsize = DAP_CLI_HTTP_RESPONSE_SIZE_MAX;
-#if defined(__WIN32) || defined(ANDROID)
-    // TODO connect to the named pipe "\\\\.\\pipe\\node_cli.pipe"
-    uint16_t l_cli_port = a_socket_path ? strtod(a_socket_path, NULL) : 0;
-    if (!l_cli_port)
-        return NULL;
-    SOCKET l_socket = socket(AF_INET, SOCK_STREAM, 0);
+    SOCKET l_socket = ~0;
+    int l_arg_len = 0;
+    uint16_t l_array_count;
+    struct sockaddr_storage l_saddr = { };
+    char **l_addrs = dap_config_get_item_str_path_array(g_config, "cli-server", DAP_CFG_PARAM_SOCK_PATH, &l_array_count);
+    char *l_addr = l_addrs ? l_addrs[0] : NULL;
+    if (l_addr) {
+        l_addrs[0] = NULL;
+        dap_config_get_item_str_path_array_free(l_addrs, &l_array_count);
+#ifdef DAP_OS_WINDOWS
+        printf("Unix socket-based server is not yet implemented, consider localhost usage\n"); // TODO
+        return ~0;
 #else
-    if (!a_socket_path) {
-        return NULL;
-    }
-    // create socket
-    int l_socket = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (l_socket < 0) {
-        return NULL;
-    }
-    struct timeval l_to = {DAP_CLI_HTTP_TIMEOUT, 0};
+        if ( -1 == (l_socket = socket(AF_UNIX, SOCK_STREAM, 0)) ) {
+            printf ("socket() error %d", errno);
+            return ~0;
+        }
+        struct sockaddr_un l_saddr_un = { .sun_family = AF_UNIX };
+        strncpy(l_saddr_un.sun_path, l_addr, sizeof(l_saddr_un.sun_path) - 1);
+        l_arg_len = SUN_LEN(&l_saddr_un);
+        memcpy(&l_saddr, &l_saddr_un, l_arg_len);
+        DAP_DEL_Z(l_addr);
 #endif
-    // connect
-    int l_addr_len;
-#ifdef WIN32
-    struct sockaddr_in l_remote_addr = {
-        .sin_family = AF_INET, .sin_port = htons(l_cli_port), .sin_addr = {{ .S_addr = htonl(INADDR_LOOPBACK) }}
-    };
-    l_addr_len = sizeof(struct sockaddr_in);
-#elif defined(DAP_OS_ANDROID)
-    struct sockaddr_in l_remote_addr = {
-        .sin_family = AF_INET, .sin_port = htons(l_cli_port), .sin_addr = { .s_addr = htonl(INADDR_LOOPBACK) }
-    };
-    l_addr_len = sizeof(struct sockaddr_in);
-#else
-    struct sockaddr_un l_remote_addr;
-    l_remote_addr.sun_family =  AF_UNIX;
-    strcpy(l_remote_addr.sun_path, a_socket_path);
-    l_addr_len = SUN_LEN(&l_remote_addr);
+    } else if ( !!(l_addr = (char *)dap_config_get_item_str(g_config, "cli-server", DAP_CFG_PARAM_LISTEN_ADDRS)) ) {
+        if ( -1 == (l_socket = socket(AF_INET, SOCK_STREAM, 0)) ) {
+#ifdef DAP_OS_WINDOWS
+            _set_errno( WSAGetLastError() );
 #endif
-    if (connect(l_socket, (struct sockaddr *)&l_remote_addr, l_addr_len) == SOCKET_ERROR) {
-#ifdef __WIN32
+            printf ("socket() error %d", errno);
+            return ~0;
+        }
+        char l_ip[INET6_ADDRSTRLEN] = { '\0' }; uint16_t l_port = 0;
+        if ( 0 > (l_arg_len = dap_net_parse_config_address(l_addr, l_ip, &l_port, &l_saddr, NULL)) ) {
+            printf ("Incorrect address \"%s\" format\n", l_addr);
+            return ~0;
+        }
+    } else {
+        printf("CLI server is not set, check config");
+        return ~0;
+    }
+    
+    if ( connect(l_socket, (struct sockaddr*)&l_saddr, l_arg_len) == SOCKET_ERROR ) {
+#ifdef DAP_OS_WINDOWS
             _set_errno(WSAGetLastError());
 #endif
-        printf("Socket connection err: %d\n", errno);
+        printf("connect() error %d: \"%s\"\n", errno, dap_strerror(errno));
         closesocket(l_socket);
-        return NULL;
+        return ~0;
     }
-    dap_app_cli_connect_param_t *l_ret = DAP_NEW_Z(dap_app_cli_connect_param_t);
-    if (!l_ret) {
-        closesocket(l_socket);
-        printf("Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        return NULL;
-    }
-    *l_ret = l_socket;
-    return l_ret;
+    return (dap_app_cli_connect_param_t)l_socket;
 }
 
 /* if cli command argument contains one of the following symbol
  argument is going to be encoded to base64 */
-static const char* s_dap_app_cli_forbidden_symbols[] = {"\r\n", ";", ""};
 
-bool s_dap_app_cli_cmd_contains_forbidden_symbol(const char * a_cmd_param){
-    for(int i = 0; s_dap_app_cli_forbidden_symbols[i][0] != '\0'; i++){
-        if(strstr(a_cmd_param, s_dap_app_cli_forbidden_symbols[i]))
-            return true;
-    }
-    return false;
+
+DAP_STATIC_INLINE bool s_dap_app_cli_cmd_contains_forbidden_symbol(const char * a_cmd_param) {
+    static const char* s_dap_app_cli_forbidden_symbols = ";\r\n";
+    return !!strpbrk(a_cmd_param, s_dap_app_cli_forbidden_symbols);
 }
 
-/**
- * Send request to kelvin-node
- *
- * return 0 if OK, else error code
- */
-int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli_cmd_state_t *a_cmd )
-{
-    if(!a_socket || !a_cmd || !a_cmd->cmd_name) {
-        assert(0);
-        return -1;
-    }    
-    a_cmd->cmd_res_cur = 0;
+char *dap_app_cli_form_command(dap_app_cli_cmd_state_t *a_cmd) {
     dap_string_t *l_cmd_data = dap_string_new(a_cmd->cmd_name);
     if (a_cmd->cmd_param) {
         for (int i = 0; i < a_cmd->cmd_param_count; i++) {
@@ -232,8 +189,34 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
             }
         }
     }
+    char *ret = l_cmd_data->str;
+    dap_string_free(l_cmd_data, false);
+    return ret;
+}
+
+
+/**
+ * Send request to node
+ *
+ * return 0 if OK, else error code
+ */
+int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_cmd_state_t *a_cmd )
+{
+    if(a_socket == (dap_app_cli_connect_param_t)~0 || !a_cmd || !a_cmd->cmd_name) {
+        assert(0);
+        return -1;
+    }
+    a_cmd->cmd_res_cur = 0;
+    // json_object* cmd = json_object_new_object();
+    // int ret = json_object_object_add(cmd, "command", json_object_new_string(l_cmd_data->str));
+    // if (ret != 0) {
+    //     printf("JSON creating error");
+    //     return -1;
+    // }
     dap_json_rpc_params_t * params = dap_json_rpc_params_create();
-    dap_json_rpc_params_add_data(params, l_cmd_data->str, TYPE_PARAM_STRING);
+    char *l_cmd_str = dap_app_cli_form_command(a_cmd);
+    dap_json_rpc_params_add_data(params, l_cmd_str, TYPE_PARAM_STRING);
+    DAP_DELETE(l_cmd_str);
     uint64_t l_id_response = dap_json_rpc_response_get_new_id();
     dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(a_cmd->cmd_name, params, l_id_response);
     char * request_str = dap_json_rpc_request_to_json_string(a_request);
@@ -246,7 +229,7 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
                                    "\r\n"
                                    "%s", strlen(request_str), request_str);
     DAP_DELETE(request_str);
-    size_t res = send(*a_socket, l_post_data->str, l_post_data->len, 0);
+    size_t res = send(a_socket, l_post_data->str, l_post_data->len, 0);
     if (res != l_post_data->len) {
         dap_json_rpc_request_free(a_request);
         printf("Error sending to server");
@@ -255,16 +238,16 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
 
     //wait for command execution
     time_t l_start_time = time(NULL);
-    s_status = 1;
+    int l_status = 1;
     a_cmd->cmd_res = DAP_NEW_Z_SIZE(char, DAP_CLI_HTTP_RESPONSE_SIZE_MAX);
-    while(s_status > 0) {
-        dap_app_cli_http_read(a_socket, a_cmd);
+    while (l_status > 0) {
+        l_status = dap_app_cli_http_read(a_socket, a_cmd, l_status);
         if ((time(NULL) - l_start_time > DAP_CLI_HTTP_TIMEOUT)&&!a_cmd->cmd_res)
-            s_status = DAP_CLI_ERROR_TIMEOUT;
+            l_status = DAP_CLI_ERROR_TIMEOUT;
     }
     // process result
-    if (!s_status && a_cmd->cmd_res) {
-        dap_json_rpc_response_t* response = dap_json_rpc_response_from_string(a_cmd->cmd_res);
+    if (!l_status && a_cmd->cmd_res) {
+        dap_json_rpc_response_t* response = dap_json_rpc_response_from_string(a_cmd->cmd_res + a_cmd->hdr_len);
         if (l_id_response != response->id) {
             printf("Wrong response from server\n");
             dap_json_rpc_request_free(a_request);
@@ -278,15 +261,13 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t *a_socket, dap_app_cli
     }
     DAP_DELETE(a_cmd->cmd_res);
     dap_json_rpc_request_free(a_request);
-    dap_string_free(l_cmd_data, true);
     dap_string_free(l_post_data, true);
-    return s_status;
+    return l_status;
 }
 
 
-int dap_app_cli_disconnect(dap_app_cli_connect_param_t *a_socket)
+int dap_app_cli_disconnect(dap_app_cli_connect_param_t a_socket)
 {
-    closesocket(*a_socket);
-    DAP_DELETE(a_socket);
+    closesocket(a_socket);
     return 0;
 }

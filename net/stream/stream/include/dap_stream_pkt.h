@@ -34,7 +34,7 @@ typedef struct dap_stream_session dap_stream_session_t;
 
 #define DAP_STREAM_PKT_ENCRYPTION_OVERHEAD 200 //in fact is's about 2*16+15 for OAES
 
-typedef struct dap_stream_pkt_hdr{
+typedef struct dap_stream_pkt_hdr {
     uint8_t sig[STREAM_PKT_SIG_SIZE];  // Signature to find out beginning of the frame
     uint32_t size;
     uint64_t timestamp;
@@ -43,23 +43,23 @@ typedef struct dap_stream_pkt_hdr{
     uint64_t dst_addr; // Destination address ( general#domain.net )
 } DAP_ALIGN_PACKED dap_stream_pkt_hdr_t;
 
-typedef struct dap_stream_fragment_pkt{
+typedef struct dap_stream_fragment_pkt {
     uint32_t size; // fragment size
     uint32_t mem_shift; // fragment shift inside origin packet
     uint32_t full_size; // full origin packet size
     uint8_t data[];
 } DAP_ALIGN_PACKED dap_stream_fragment_pkt_t;
 
-typedef struct dap_stream_pkt{
+typedef struct dap_stream_pkt {
     dap_stream_pkt_hdr_t hdr;
     uint8_t data[];
 } DAP_ALIGN_PACKED dap_stream_pkt_t;
 
-typedef struct stream_srv_pkt{
+typedef struct dap_stream_srv_pkt {
     uint32_t session_id;
     uint8_t enc_type;
     uint32_t coockie;
-} DAP_ALIGN_PACKED stream_srv_pkt_t;
+} DAP_ALIGN_PACKED dap_stream_srv_pkt_t;
 
 extern const uint8_t c_dap_stream_sig[8];
 

@@ -34,6 +34,7 @@
 #include "dap_config.h"
 #include "dap_cert.h"
 #include "dap_crc64.h"
+#include "dap_sign.h"
 
 #define LOG_TAG "dap_enc"
 
@@ -52,6 +53,7 @@ int dap_enc_init()
     dap_cert_init();
     dap_crc64_init();
     s_debug_more = g_config ? dap_config_get_item_bool_default(g_config, "crypto", "debug_more", false) : false;
+    dap_sign_init(DAP_SIGN_HASH_TYPE_SHA3);
     return 0;
 }
 
@@ -76,7 +78,7 @@ bool dap_enc_debug_more()
  */
 size_t dap_enc_code_out_size(dap_enc_key_t* a_key, const size_t a_buf_in_size, dap_enc_data_type_t type)
 {
-    size_t raw_encode_data_size = dap_enc_key_get_enc_size(a_key, a_buf_in_size);
+    size_t raw_encode_data_size = dap_enc_key_get_enc_size(a_key->type, a_buf_in_size);
     if(raw_encode_data_size == 0) {
         log_it(L_ERROR, "dap_enc_key_get_enc_size return 0");
         return 0;
@@ -95,7 +97,7 @@ size_t dap_enc_code_out_size(dap_enc_key_t* a_key, const size_t a_buf_in_size, d
  */
 size_t dap_enc_decode_out_size(dap_enc_key_t* a_key, const size_t a_buf_in_size, dap_enc_data_type_t type)
 {
-    size_t raw_decode_data_size = dap_enc_key_get_dec_size(a_key, a_buf_in_size);
+    size_t raw_decode_data_size = dap_enc_key_get_dec_size(a_key->type, a_buf_in_size);
     if(raw_decode_data_size == 0) {
         log_it(L_ERROR, "dap_enc_key_get_enc_size return 0");
         return 0;

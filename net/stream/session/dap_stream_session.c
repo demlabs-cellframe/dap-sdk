@@ -97,7 +97,7 @@ void dap_stream_session_get_list_sessions_unlock(void)
 
 dap_stream_session_t * dap_stream_session_pure_new()
 {
-dap_stream_session_t *l_stm_sess, *l_stm_tmp;
+dap_stream_session_t *l_stm_sess, *l_stm_tmp = NULL;
 uint32_t session_id = 0;
 
     if ( !(l_stm_sess = DAP_NEW_Z(dap_stream_session_t)) )              /* Preallocate new session context */
@@ -123,7 +123,7 @@ uint32_t session_id = 0;
        l_stm_sess->time_created = time(NULL);
        l_stm_sess->create_empty = true;
 
-       log_it(L_INFO, "Created session context [stm_sess:%p, id:%u, ts:%ld]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
+       log_it(L_INFO, "Created session context [stm_sess:%p, id:%u, ts:%"DAP_UINT64_FORMAT_U"]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
 
        return l_stm_sess;
 }
@@ -159,7 +159,7 @@ dap_stream_session_t *dap_stream_session_id_mt(uint32_t a_id)
  */
 dap_stream_session_t *dap_stream_session_id_unsafe(uint32_t id )
 {
-    dap_stream_session_t *ret;
+    dap_stream_session_t *ret = NULL;
     HASH_FIND(hh, s_sessions, &id, sizeof(uint32_t), ret);
     return ret;
 }
@@ -199,7 +199,7 @@ dap_stream_session_t *l_stm_sess;
     HASH_DEL(s_sessions, l_stm_sess);
     dap_stream_session_unlock();
 
-    log_it(L_INFO, "Delete session context [stm_sess:%p, id:%u, ts:%ld]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
+    log_it(L_INFO, "Delete session context [stm_sess:%p, id:%u, ts:%"DAP_UINT64_FORMAT_U"]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
 
     if (l_stm_sess->callback_delete)
         l_stm_sess->callback_delete(l_stm_sess, NULL);

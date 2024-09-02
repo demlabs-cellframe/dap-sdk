@@ -151,7 +151,7 @@ char *rl_readline(const char *prompt)
 
     // Set up the prompt
     rl_set_prompt(prompt);
-    while (fgets(value + l_shift, l_basic_len, rl_instream)) {
+    while ( fgets(value + l_shift, l_basic_len, rl_instream) ) {
         unsigned l_eol = strcspn(value + l_shift, "\r\n") + l_shift;
         if (l_eol == l_value_len - 1) {
             l_shift = l_eol;
@@ -163,7 +163,7 @@ char *rl_readline(const char *prompt)
             break;
         }
     }
-    return (value);
+    return feof(rl_instream) ? ( DAP_DELETE(value), NULL ) : value;
 }
 
 static char* _rl_get_locale_var(const char *v)

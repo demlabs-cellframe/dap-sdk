@@ -109,7 +109,6 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         size_t l_block_key_size=32;
         int l_protocol_version = 0;
         size_t l_sign_count = 0;
-        char *encrypt_msg = NULL, *encrypt_id = NULL;
         sscanf(cl_st->http_client->in_query_string, "enc_type=%d,pkey_exchange_type=%d,pkey_exchange_size=%zu,block_key_size=%zu,protocol_version=%d,sign_count=%zu",
                                       &l_enc_block_type,&l_pkey_exchange_type,&l_pkey_exchange_size,&l_block_key_size, &l_protocol_version, &l_sign_count);
 
@@ -175,15 +174,8 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             log_it(L_DEBUG, "Callback for ACL is not set, pass anauthorized");
         }
     
-        if (
-            !(encrypt_msg = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(l_pkey_exchange_key->pub_key_data_size) + 1)) ||
-            !(encrypt_id = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1))
-        ) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
-            dap_enc_key_delete(l_pkey_exchange_key);
-            *return_code = Http_Status_InternalServerError;
-            return;
-        }
+        char    *encrypt_msg = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(l_pkey_exchange_key->pub_key_data_size) + 1),
+                encrypt_id[DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1] = { '\0' };
         dap_enc_base64_encode(l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, encrypt_msg, DAP_ENC_DATA_TYPE_B64);
 
         l_enc_key_ks->key = dap_enc_key_new_generate(l_enc_block_type,
@@ -203,6 +195,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, 0);
             if (!l_node_sign) {
                 dap_enc_key_delete(l_pkey_exchange_key);
+                DAP_DELETE(encrypt_msg);
                 *return_code = Http_Status_InternalServerError;
                 return;
             }
@@ -211,9 +204,10 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
 
             l_node_sign_msg = DAP_NEW_Z_SIZE(char, l_node_sign_size_new);
             if (!l_node_sign_msg) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 dap_enc_key_delete(l_pkey_exchange_key);
                 *return_code = Http_Status_InternalServerError;
+                DAP_DELETE(encrypt_msg);
                 DAP_DELETE(l_node_sign);
                 return;
             }
@@ -222,7 +216,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
         }
 
         _enc_http_write_reply(cl_st, encrypt_id, encrypt_msg, l_node_sign_msg);
-
+        DAP_DELETE(encrypt_msg);
         dap_enc_key_delete(l_pkey_exchange_key);
         DAP_DEL_Z(l_node_sign_msg);
 
@@ -257,7 +251,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
     if(l_key){
         enc_http_delegate_t * dg = DAP_NEW_Z(enc_http_delegate_t);
         if (!dg) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DEL_Z(dg);
             return NULL;
         }
@@ -274,7 +268,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
             size_t l_dg_request_size_max = a_http_simple->request_size;
             dg->request= DAP_NEW_SIZE( void , l_dg_request_size_max+1);
             if (!dg->request) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 DAP_DEL_Z(dg);
                 return NULL;
             }
@@ -296,7 +290,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         if(l_url_path_size_max){
             dg->url_path= DAP_NEW_SIZE(char,l_url_path_size_max+1);
             if (!dg->url_path) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 DAP_DEL_Z(dg->request);
                 DAP_DEL_Z(dg);
                 return NULL;
@@ -312,7 +306,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         if(l_in_query_size){
             dg->in_query= DAP_NEW_SIZE(char, l_in_query_size+1);
             if (!dg->in_query) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 DAP_DEL_Z(dg->request);
                 DAP_DEL_Z(dg->url_path);
                 DAP_DEL_Z(dg);
@@ -324,7 +318,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
         }
         dg->response = calloc(1,a_http_simple->reply_size_max+1);
         if (!dg->response) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DEL_Z(dg->in_query);
             DAP_DEL_Z(dg->request);
             DAP_DEL_Z(dg->url_path);

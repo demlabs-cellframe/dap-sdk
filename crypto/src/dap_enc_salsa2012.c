@@ -7,7 +7,7 @@
 #include "dap_enc_salsa2012.h"
 #include "dap_common.h"
 #include "rand/dap_rand.h"
-#include "sha3/KeccakHash.h"
+#include "KeccakHash.h"
 
 #define LOG_TAG "dap_enc_salsa2012"
 #define SALSA20_KEY_SIZE 32
@@ -53,12 +53,12 @@ void dap_enc_salsa2012_key_generate(struct dap_enc_key * a_key, const void *kex_
  */
 void dap_enc_salsa2012_key_delete(struct dap_enc_key *a_key)
 {
-    if(a_key->priv_key_data != NULL)
+    if(a_key->priv_key_data)
     {
         randombytes(a_key->priv_key_data,a_key->priv_key_data_size);
-        //DAP_DELETE(a_key->priv_key_data);
+        DAP_DEL_Z(a_key->priv_key_data);
     }
-    //a_key->priv_key_data_size = 0;
+    a_key->priv_key_data_size = 0;
 }
 
 //------SALSA2012-----------

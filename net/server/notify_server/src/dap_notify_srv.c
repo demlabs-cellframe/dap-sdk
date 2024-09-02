@@ -62,31 +62,21 @@ void dap_notify_srv_set_callback_new(dap_events_socket_callback_t a_cb) {
  */
 int dap_notify_server_init()
 {
-    uint16_t l_notify_addrs_count = 0;
-    char **l_notify_addrs = dap_config_get_array_str(g_config, "notify_server", "listen_path", &l_notify_addrs_count);
-    if( l_notify_addrs ) {
-        s_notify_server = dap_server_new(l_notify_addrs, l_notify_addrs_count, DAP_SERVER_LOCAL, NULL);
-    } else if ( (l_notify_addrs = dap_config_get_array_str(g_config, "notify_server", "listen_address", &l_notify_addrs_count)) ) {
-        s_notify_server = dap_server_new(l_notify_addrs, l_notify_addrs_count, DAP_SERVER_TCP, NULL);
-    } else {
-        log_it(L_INFO,"Notify server is not configured, nothing to init but thats okay");
-        return 0;
-    }
-
-    if (!s_notify_server) {
-        log_it(L_ERROR,"Notify server not initalized, check config");
+    dap_events_socket_callbacks_t l_client_callbacks = {
+        .new_callback = s_notify_server_callback_new,
+        .delete_callback = s_notify_server_callback_delete
+    };
+    if ( !(s_notify_server = dap_server_new("notify_server", NULL, &l_client_callbacks)) ) {
+        log_it(L_INFO, "Notify server not initalized");
         return -1;
     }
-    s_notify_server->client_callbacks.new_callback = s_notify_server_callback_new;
-    s_notify_server->client_callbacks.delete_callback = s_notify_server_callback_delete;
-    s_notify_server_queue = dap_events_socket_create_type_queue_ptr_mt(dap_events_worker_get_auto(),s_notify_server_callback_queue);
+    s_notify_server_queue = dap_events_socket_create_type_queue_ptr_mt(dap_events_worker_get_auto(), s_notify_server_callback_queue);
     uint32_t l_workers_count = dap_events_thread_get_count();
-    DAP_NEW_Z_COUNT_RET_VAL(s_notify_server_queue_inter, dap_events_socket_t *, l_workers_count, -2, NULL);
-    for(uint32_t i = 0; i < l_workers_count; i++){
+    DAP_NEW_Z_COUNT_RET_VAL(s_notify_server_queue_inter, dap_events_socket_t*, l_workers_count, -2, NULL);
+    for (uint32_t i = 0; i < l_workers_count; ++i) {
         s_notify_server_queue_inter[i] = dap_events_socket_queue_ptr_create_input(s_notify_server_queue);
         dap_events_socket_assign_on_worker_mt(s_notify_server_queue_inter[i], dap_events_worker_get(i));
     }
-
     log_it(L_NOTICE,"Notify server initalized");
     return 0;
 }
@@ -137,7 +127,7 @@ int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char * a_format,.
     char *l_str = DAP_NEW_SIZE(char, l_str_size);
     if (!l_str) {
         va_end(ap_copy);
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return -1;
     }
     vsprintf(l_str, a_format, ap_copy);
@@ -183,7 +173,7 @@ int dap_notify_server_send_f_mt(const char *a_format, ...)
     char *l_str = DAP_NEW_SIZE(char, l_str_size);
     if (!l_str) {
         va_end(ap_copy);
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return -1;
     }
     vsprintf(l_str, a_format, ap_copy);
@@ -231,7 +221,7 @@ static void s_notify_server_callback_queue(dap_events_socket_t * a_es, void * a_
  */
 static void s_notify_server_callback_new(dap_events_socket_t * a_es, UNUSED_ARG void *a_arg)
 {
-    dap_events_socket_handler_hh_t * l_hh_new;
+    dap_events_socket_handler_hh_t *l_hh_new = NULL;
     pthread_rwlock_wrlock(&s_notify_server_clients_mutex);
     HASH_FIND(hh,s_notify_server_clients, &a_es->uuid, sizeof (a_es->uuid), l_hh_new);
     if (l_hh_new){
@@ -241,13 +231,13 @@ static void s_notify_server_callback_new(dap_events_socket_t * a_es, UNUSED_ARG 
         l_hh_new->worker_id = a_es->worker->id;
     } else {
         if (!a_es->context || !a_es->worker) {
-            log_it(L_ERROR, "Invalid esocket arg with uuid %zu: broken context", a_es->uuid);
+            log_it(L_ERROR, "Invalid esocket arg with uuid %"DAP_UINT64_FORMAT_U": broken context", a_es->uuid);
             pthread_rwlock_unlock(&s_notify_server_clients_mutex);
             return;
         }
         l_hh_new = DAP_NEW_Z(dap_events_socket_handler_hh_t);
         if (!l_hh_new) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             pthread_rwlock_unlock(&s_notify_server_clients_mutex);
             return;
         }

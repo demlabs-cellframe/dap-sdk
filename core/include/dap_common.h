@@ -116,6 +116,24 @@
 
 #define UNUSED_ARG __attribute__((__unused__))
 
+// TODO pipelines fix to enable this macros
+/*#ifndef likely
+#   if (defined(__GNUC__) || __has_builtin(__builtin_expect)) && !defined(__COVERITY__)
+#       define likely(cond) __builtin_expect(!!(cond), 1)
+#   else
+#       define likely(x) (!!(x))
+#   endif
+#endif // likely
+
+#ifndef unlikely
+#   if (defined(__GNUC__) || __has_builtin(__builtin_expect)) && !defined(__COVERITY__)
+#       define unlikely(cond) __builtin_expect(!!(cond), 0)
+#   else
+#       define unlikely(x) (!!(x))
+#   endif
+#endif // unlikely
+ */
+
 #ifndef ROUNDUP
   #define ROUNDUP(n,width) (((n) + (width) - 1) & ~(unsigned)((width) - 1))
 #endif
@@ -128,30 +146,13 @@
 
 #define HASH_LAST(head) ( (head) ? ELMT_FROM_HH((head)->hh.tbl, (head)->hh.tbl->tail) : NULL );
 
-extern const char *g_error_memory_alloc;
-extern const char *g_error_sanity_check;
+extern const char *c_error_memory_alloc;
+extern const char *c_error_sanity_check;
 void dap_delete_multy(int a_count, ...);
 uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...);
 int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, ...);
 
-#if DAP_USE_RPMALLOC
-  #include "rpmalloc.h"
-  #define DAP_MALLOC(a)         rpmalloc(a)
-  #define DAP_FREE(a)           rpfree(a)
-  #define DAP_CALLOC(a, b)      rpcalloc(a, b)
-  #define DAP_ALMALLOC(a, b)    rpaligned_alloc(a, b)
-  #define DAP_ALREALLOC(a,b,c)  rpaligned_realloc(a, b, c, 0, 0)
-  #define DAP_ALFREE(a)         rpfree(a)
-  #define DAP_NEW(a)            DAP_CAST_REINT(a, rpmalloc(sizeof(a)))
-  #define DAP_NEW_SIZE(a, b)    DAP_CAST_REINT(a, rpmalloc(b))
-  #define DAP_NEW_Z(a)          DAP_CAST_REINT(a, rpcalloc(1,sizeof(a)))
-  #define DAP_NEW_Z_SIZE(a, b)  DAP_CAST_REINT(a, rpcalloc(1,b))
-  #define DAP_REALLOC(a, b)     rprealloc(a,b)
-  #define DAP_DELETE(a)         rpfree(a)
-  #define DAP_DUP(a)            memcpy(rpmalloc(sizeof(*a)), a, sizeof(*a))
-  #define DAP_DUP_SIZE(a, s)    memcpy(rpmalloc(s), a, s)
-#elif   DAP_SYS_DEBUG
-
+#if   DAP_SYS_DEBUG
 #include    <assert.h>
 
 #define     MEMSTAT$SZ_NAME     63            dap_global_db_del_sync(l_gdb_group, l_objs[i].key);
@@ -198,6 +199,9 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
     #define DAP_DUP_SIZE(a, s)    memcpy(s_vm_get(__func__, __LINE__, s), a, s)
 
 #else
+#ifdef DAP_USE_RPMALLOC
+#include "rpmalloc.h"
+#endif
 #define DAP_MALLOC(p)         malloc(p)
 #define DAP_FREE(p)           free(p)
 #define DAP_CALLOC(p, s)      ({ size_t s1 = (size_t)(s); s1 > 0 ? calloc(p, s1) : DAP_CAST_PTR(void, NULL); })
@@ -218,6 +222,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_REALLOC(p, s)     ({ size_t s1 = (size_t)(s); s1 > 0 ? realloc(p, s1) : ({ DAP_DEL_Z(p); DAP_CAST_PTR(void, NULL); }); })
 #define DAP_REALLOC_COUNT(p, c) ({ size_t s1 = sizeof(*(p)); size_t c1 = (size_t)(c); c1 > 0 ? realloc(p, c1 * s1) : ({ DAP_DEL_Z(p); DAP_CAST_PTR(void, NULL); }); })
 #define DAP_DELETE(p)         free((void*)(p))
+#define DAP_DELETE_COUNT(p,c) for (size_t c1 = p ? (size_t)(c) : 0; c1; DAP_DELETE(p[--c1]));
 #define DAP_DUP(p)            ({ void *p1 = (uintptr_t)(p) != 0 ? calloc(1, sizeof(*(p))) : NULL; p1 ? memcpy(p1, (p), sizeof(*(p))) : DAP_CAST_PTR(void, NULL); })
 #define DAP_DUP_SIZE(p, s)    ({ size_t s1 = (p) ? (size_t)(s) : 0; void *p1 = (p) && (s1 > 0) ? calloc(1, s1) : NULL; p1 ? memcpy(p1, (p), s1) : DAP_CAST_PTR(void, NULL); })
 #endif
@@ -226,22 +231,22 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define VA_NARGS(...) VA_NARGS_IMPL(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 #define DAP_DEL_MULTY(...) dap_delete_multy(VA_NARGS(__VA_ARGS__), __VA_ARGS__)
 
-#define DAP_DEL_Z(a)          do { if (a) { DAP_DELETE(a); (a) = NULL; } } while (0);
+#define DAP_DEL_Z(a)          do if (a) { DAP_DELETE(a); (a) = NULL; } while (0);
 // a - pointer to alloc
 // t - type return pointer
 // s - size to alloc
 // c - count element
 // val - return value if error
 // ... what need free if error, if nothing  write NULL
-#define DAP_NEW_Z_RET(a, t, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
-#define DAP_NEW_Z_RET_VAL(a, t, ret_val, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
-#define DAP_NEW_Z_SIZE_RET(a, t, s, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
-#define DAP_NEW_Z_SIZE_RET_VAL(a, t, s, ret_val, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
-#define DAP_NEW_Z_COUNT_RET(a, t, c, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
-#define DAP_NEW_Z_COUNT_RET_VAL(a, t, c, ret_val, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", g_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
+#define DAP_NEW_Z_RET(a, t, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
+#define DAP_NEW_Z_RET_VAL(a, t, ret_val, ...)      do { if (!(a = DAP_NEW_Z(t))) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
+#define DAP_NEW_Z_SIZE_RET(a, t, s, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
+#define DAP_NEW_Z_SIZE_RET_VAL(a, t, s, ret_val, ...)      do { if (!(a = DAP_NEW_Z_SIZE(t, s))) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
+#define DAP_NEW_Z_COUNT_RET(a, t, c, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return; } } while (0);
+#define DAP_NEW_Z_COUNT_RET_VAL(a, t, c, ret_val, ...)      do { if (!(a = DAP_NEW_Z_COUNT(t, c))) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return ret_val; } } while (0);
 
-#define dap_return_if_pass(expr)                        dap_return_if_pass_err(expr,g_error_sanity_check)
-#define dap_return_val_if_pass(expr,val)                dap_return_val_if_pass_err(expr,val,g_error_sanity_check)
+#define dap_return_if_pass(expr)                        dap_return_if_pass_err(expr,c_error_sanity_check)
+#define dap_return_val_if_pass(expr,val)                dap_return_val_if_pass_err(expr,val,c_error_sanity_check)
 #define dap_return_if_pass_err(expr,err_str)            {if(expr) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", err_str); return;}}
 #define dap_return_val_if_pass_err(expr,val,err_str)    {if(expr) {_log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", err_str); return (val);}}
 #define dap_return_if_fail(expr)                        dap_return_if_pass(!(expr));
@@ -261,6 +266,9 @@ typedef union dap_stream_node_addr {
     uint16_t words[sizeof(uint64_t)/2];
     uint8_t raw[sizeof(uint64_t)];  // Access to selected octects
 } DAP_ALIGN_PACKED dap_stream_node_addr_t;
+
+#define DAP_STRINGIFY_1(s) #s
+#define DAP_STRINGIFY(s) DAP_STRINGIFY_1(s)
 
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
 #define NODE_ADDR_FP_STR      "%04hX::%04hX::%04hX::%04hX"
@@ -460,7 +468,6 @@ typedef int dap_spinlock_t;
  */
 
 typedef enum dap_log_level {
-
   L_DEBUG     = 0,
   L_INFO      = 1,
   L_NOTICE    = 2,
@@ -471,7 +478,9 @@ typedef enum dap_log_level {
   L_ERROR     = 7,
   L_CRITICAL  = 8,
   L_TOTAL,
-
+#ifdef DAP_TPS_TEST
+  L_TPS  = 15,
+#endif
 } dap_log_level_t;
 
 typedef void *dap_interval_timer_t;
@@ -501,6 +510,242 @@ extern "C" {
     _a < _b ? _a : _b;      \
 })
 #endif
+
+#include <limits.h>
+
+#define dap_abs(a) ( (a) >= 0 ? (a) : -(a) )
+
+#define dap_maxval(v) _Generic( (v),                            \
+    signed char : SCHAR_MAX,                                    \
+           char : CHAR_MAX,       unsigned char : UCHAR_MAX,    \
+          short : SHRT_MAX,      unsigned short : USHRT_MAX,    \
+            int : INT_MAX,         unsigned int : UINT_MAX,     \
+           long : LONG_MAX,       unsigned long : ULONG_MAX,    \
+      long long : LLONG_MAX, unsigned long long : ULLONG_MAX,   \
+        default : 0 )
+
+#define dap_minval(v) _Generic( (v),\
+    signed char : SCHAR_MIN,        \
+           char : CHAR_MIN,         \
+          short : SHRT_MIN,         \
+            int : INT_MIN,          \
+           long : LONG_MIN,         \
+      long long : LLONG_MIN,        \
+        default : 0 )
+
+#define dap_maxuval(v) _Generic( (v),                           \
+    signed char : UCHAR_MAX,                                    \
+           char : UCHAR_MAX,       unsigned char : UCHAR_MAX,   \
+          short : USHRT_MAX,      unsigned short : USHRT_MAX,   \
+            int : UINT_MAX,         unsigned int : UINT_MAX,    \
+           long : ULONG_MAX,       unsigned long : ULONG_MAX,   \
+      long long : ULLONG_MAX, unsigned long long : ULLONG_MAX,  \
+        default : 0 )
+
+#define dap_is_signed(v) ( dap_minval(v) < 0 )
+#define DAP_HUGE_SIGNED_TYPE long long int
+#define DAP_HUGE_UNSIGNED_TYPE unsigned long long int
+#define DAP_HUGE_NATURAL_TYPE long double
+#define DAP_HUGE_SIGNED_SIZE __SIZEOF_LONG_LONG__
+#define DAP_HUGE_NATURAL_SIZE __SIZEOF_LONG_DOUBLE__
+
+#if !defined (DAP_CORE_TESTS) && (defined (__GNUC__) || defined (__clang__))
+    #define dap_add(a,b)                                        \
+    ({                                                          \
+        __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+        if (!__builtin_add_overflow_p(_a,_b,_a)) {              \
+            _a += b;                                            \
+        }                                                       \
+        _a;                                                     \
+    })
+
+    #define dap_sub(a,b)                                        \
+    ({                                                          \
+        __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+        if (!__builtin_sub_overflow_p(_a,_b,_a)) {              \
+            _a -= b;                                            \
+        }                                                       \
+        _a;                                                     \
+    })
+
+    #define dap_mul(a,b)                                        \
+    ({                                                          \
+        __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+        if (!__builtin_mul_overflow_p(_a,_b,_a)) {              \
+            _a *= b;                                            \
+        }                                                       \
+        _a;                                                     \
+    })
+#else
+    #ifdef DAP_CORE_TESTS
+        #define dap_add_builtin(a,b)                            \
+        ({                                                      \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+            if (!__builtin_add_overflow_p(_a,_b,_a)) {          \
+                (_a += b);                                        \
+            }                                                   \
+            (_a);                                                 \
+        })
+
+        #define dap_sub_builtin(a,b)                            \
+        ({                                                      \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+            if (!__builtin_sub_overflow_p(_a,_b,_a)) {          \
+                (_a -= b);                                        \
+            }                                                   \
+            (_a);                                                 \
+        })
+
+        #define dap_mul_builtin(a,b)                            \
+        ({                                                      \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);     \
+            if (!__builtin_mul_overflow_p(_a,_b,_a)) {          \
+                (_a *= b);                                        \
+            }                                                   \
+            (_a);                                                 \
+        })
+    #endif
+    
+    #if ( DAP_HUGE_NATURAL_SIZE / DAP_HUGE_SIGNED_SIZE < 2 )
+        #define dap_add(a,b)                                \
+        ({                                                          \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+            DAP_HUGE_SIGNED_TYPE l_koef = (DAP_HUGE_SIGNED_TYPE)pow(16, sizeof(a)); \
+            DAP_HUGE_SIGNED_TYPE a_high = (_a) / l_koef; \
+            DAP_HUGE_SIGNED_TYPE b_high = (_b) / l_koef; \
+            \
+            DAP_HUGE_SIGNED_TYPE a_min_high = dap_minval(_a) / l_koef; \
+            DAP_HUGE_SIGNED_TYPE a_min_low = dap_minval(_a) - a_min_high * l_koef; \
+            DAP_HUGE_SIGNED_TYPE a_max_high = dap_maxval(_a) / l_koef; \
+            DAP_HUGE_SIGNED_TYPE a_max_low = dap_maxval(_a) - a_max_high * l_koef; \
+            \
+            DAP_HUGE_SIGNED_TYPE a_b_delta = (_a - a_high * l_koef) + (_b - b_high * l_koef); \
+            DAP_HUGE_SIGNED_TYPE a_b_delta_hight = a_b_delta / l_koef; \
+            DAP_HUGE_SIGNED_TYPE a_b_delta_low = a_b_delta - a_b_delta_hight * l_koef; \
+            \
+            DAP_HUGE_SIGNED_TYPE a_b_hight = a_high + b_high + a_b_delta_hight; \
+            if (a_b_hight > 0 && a_b_delta_low < 0) { \
+                a_b_hight--; \
+                a_b_delta_low += l_koef; \
+            } else if (a_b_hight < 0 && a_b_delta_low > 0) { \
+                a_b_hight++; \
+                a_b_delta_low -= l_koef; \
+            } \
+            if (!( \
+                (a_b_hight < a_min_high) || \
+                (a_b_hight > a_max_high) || \
+                (a_b_hight == a_min_high && a_b_delta_low < a_min_low) \
+            )) { (_a += _b); } \
+            (_a); \
+        })
+
+        #define dap_sub(a,b)                                \
+        ({                                                          \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+            DAP_HUGE_SIGNED_TYPE l_koef = (DAP_HUGE_SIGNED_TYPE)pow(16.0, (double)sizeof(a)); \
+            DAP_HUGE_SIGNED_TYPE a_high = (_a) / l_koef; \
+            DAP_HUGE_SIGNED_TYPE b_high = (_b) / l_koef; \
+            \
+            DAP_HUGE_SIGNED_TYPE a_min_high = dap_minval(_a) / l_koef; \
+            DAP_HUGE_SIGNED_TYPE a_min_low = dap_minval(_a) - a_min_high * l_koef; \
+            DAP_HUGE_SIGNED_TYPE a_max_high = dap_maxval(_a) / l_koef; \
+            DAP_HUGE_SIGNED_TYPE a_max_low = dap_maxval(_a) - a_max_high * l_koef; \
+            \
+            DAP_HUGE_SIGNED_TYPE a_b_delta = (_a - a_high * l_koef) - (_b - b_high * l_koef); \
+            DAP_HUGE_SIGNED_TYPE a_b_delta_hight = a_b_delta / l_koef; \
+            DAP_HUGE_SIGNED_TYPE a_b_delta_low = a_b_delta - a_b_delta_hight * l_koef; \
+            \
+            DAP_HUGE_SIGNED_TYPE a_b_hight = a_high - b_high + a_b_delta_hight; \
+            if (a_b_hight > 0 && a_b_delta_low < 0) { \
+                a_b_hight--; \
+                a_b_delta_low += l_koef; \
+            } else if (a_b_hight < 0 && a_b_delta_low > 0) { \
+                a_b_hight++; \
+                a_b_delta_low -= l_koef; \
+            } \
+            if (!( \
+                (a_b_hight < a_min_high) || \
+                (a_b_hight > a_max_high) || \
+                (a_b_hight == a_min_high && a_b_delta_low < a_min_low) \
+            )) { (_a -= _b); } \
+            (_a); \
+        })
+        
+        #define dap_mul(a,b)                                \
+        ({                                                  \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
+            bool a_negative = _a < 0; \
+            bool b_negative = _b < 0; \
+            DAP_HUGE_SIGNED_TYPE l_koef = (DAP_HUGE_SIGNED_TYPE)pow(16.0, sizeof(_a)); \
+            DAP_HUGE_UNSIGNED_TYPE a_high = llabs((_a) / l_koef); \
+            DAP_HUGE_UNSIGNED_TYPE b_high = llabs((_b) / l_koef); \
+            DAP_HUGE_SIGNED_TYPE a_high_not_abs = (_a) / l_koef; \
+            DAP_HUGE_SIGNED_TYPE b_high_not_abs = (_b) / l_koef; \
+            DAP_HUGE_UNSIGNED_TYPE a_b_high_hight = a_high * b_high; \
+            DAP_HUGE_UNSIGNED_TYPE a_low = llabs(_a - a_high_not_abs * l_koef); \
+            DAP_HUGE_UNSIGNED_TYPE b_low = llabs(_b - b_high_not_abs * l_koef); \
+            \
+            DAP_HUGE_UNSIGNED_TYPE a_min_high = llabs(dap_minval(_a) / l_koef); \
+            DAP_HUGE_UNSIGNED_TYPE a_min_low = llabs(dap_minval(_a) + a_min_high * l_koef); \
+            \
+            DAP_HUGE_UNSIGNED_TYPE a_max_high = dap_maxval(_a) / l_koef; \
+            DAP_HUGE_UNSIGNED_TYPE a_max_low = dap_maxval(_a) - a_max_high * l_koef; \
+            \
+            DAP_HUGE_UNSIGNED_TYPE a_b_delta = a_low * b_low; \
+            DAP_HUGE_UNSIGNED_TYPE a_b_delta_hight = a_b_delta / l_koef; \
+            DAP_HUGE_UNSIGNED_TYPE a_b_delta_low = a_b_delta - a_b_delta_hight * l_koef; \
+            \
+            DAP_HUGE_UNSIGNED_TYPE a_b_hight = a_high * b_low + b_high * a_low +  a_b_delta_hight; \
+            if (!( \
+                (a_b_high_hight > a_min_high / l_koef) || \
+                (a_b_high_hight > a_max_high / l_koef) || \
+                (a_negative != b_negative && a_b_hight > a_min_high) || \
+                (a_negative == b_negative && a_b_hight > a_max_high) || \
+                (a_negative != b_negative && a_b_hight == a_min_high && a_b_delta_low > a_min_low) \
+            )) { (_a *= _b); } \
+            (_a); \
+        })
+    #else
+        #define dap_add(a,b)                                \
+        ({                                                          \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+            if (!( \
+                (((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a > (DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) - (DAP_HUGE_NATURAL_TYPE)_b) || \
+                ((DAP_HUGE_NATURAL_TYPE)_b < 0 && (DAP_HUGE_NATURAL_TYPE)_a < (DAP_HUGE_NATURAL_TYPE)dap_minval(_a) - (DAP_HUGE_NATURAL_TYPE)_b)) \
+            )) { (_a += _b); } \
+            (_a); \
+        })
+    
+        #define dap_sub(a,b)                                \
+        ({                                                          \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b);         \
+            if (!( \
+                ((DAP_HUGE_NATURAL_TYPE)_b < 0 && (DAP_HUGE_NATURAL_TYPE)_a > (DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) + (DAP_HUGE_NATURAL_TYPE)_b) || \
+                ((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a < (DAP_HUGE_NATURAL_TYPE)dap_minval(_a) + (DAP_HUGE_NATURAL_TYPE)_b) \
+            )) { (_a -= _b); } \
+            (_a); \
+        })
+        
+        #define dap_mul(a,b)                                \
+        ({                                                  \
+            __typeof__(a) _a = (a); __typeof__(b) _b = (b); \
+            if (!( \
+                /*_a positive*/\
+                ((DAP_HUGE_NATURAL_TYPE)_a > 0 && ( \
+                    ((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a > (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) / (DAP_HUGE_NATURAL_TYPE)_b)) || \
+                    ((DAP_HUGE_NATURAL_TYPE)_b < 0 && ((DAP_HUGE_NATURAL_TYPE)_b < (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_minval(_a) / (DAP_HUGE_NATURAL_TYPE)_a))))\
+                ) || \
+                /*_a negative*/\
+                (_a <= 0 && ( \
+                    ((DAP_HUGE_NATURAL_TYPE)_b > 0 && (DAP_HUGE_NATURAL_TYPE)_a < (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_minval(_a) / (DAP_HUGE_NATURAL_TYPE)_b)) || \
+                    (_a != 0 && (DAP_HUGE_NATURAL_TYPE)_b < 0 && (DAP_HUGE_NATURAL_TYPE)_b < (DAP_HUGE_NATURAL_TYPE)((DAP_HUGE_NATURAL_TYPE)dap_maxval(_a) / (DAP_HUGE_NATURAL_TYPE)_a))) \
+                ) \
+            )) { (_a *= _b); } \
+            _a; \
+        })
+    #endif
+#endif
+
 
 static const DAP_ALIGNED(16) uint16_t htoa_lut256[ 256 ] = {
 
@@ -623,6 +868,21 @@ extern char *g_sys_dir_path;
 int dap_common_init( const char *console_title, const char *a_log_file, const char *a_log_dirpath );
 int wdap_common_init( const char *console_title, const wchar_t *a_wlog_file);
 
+typedef enum 
+{
+    LOGGER_OUTPUT_NONE,
+    LOGGER_OUTPUT_STDOUT,
+    LOGGER_OUTPUT_STDERR,
+    LOGGER_OUTPUT_FD,
+
+    #ifdef ANDROID
+        LOGGER_OUTPUT_ALOG,
+    #endif
+
+} LOGGER_EXTERNAL_OUTPUT;
+
+void dap_log_set_external_output (LOGGER_EXTERNAL_OUTPUT output, void *param);
+
 void dap_common_deinit(void);
 
 // set max items in log list
@@ -739,15 +999,14 @@ void    *l_ptr;
         return  l_ptr;
 }
 
-
-
-
-
 #else
 #define dump_it(v,s,l)
 #endif
 
-const char * log_error(void);
+char *dap_strerror(long long err);
+#ifdef DAP_OS_WINDOWS
+char *dap_str_ntstatus(DWORD err);
+#endif
 void dap_log_level_set(enum dap_log_level ll);
 enum dap_log_level dap_log_level_get(void);
 void dap_set_log_tag_width(size_t width);
@@ -783,6 +1042,7 @@ static inline void *dap_mempcpy(void *a_dest, const void *a_src, size_t n)
     return ((byte_t *)memcpy(a_dest, a_src, n)) + n;
 }
 
+DAP_STATIC_INLINE int dap_is_letter(char c) { return dap_ascii_isalpha(c); }
 DAP_STATIC_INLINE int dap_is_alpha(char c) { return dap_ascii_isalnum(c); }
 DAP_STATIC_INLINE int dap_is_digit(char c) { return dap_ascii_isdigit(c); }
 DAP_STATIC_INLINE int dap_is_xdigit(char c) {return dap_ascii_isxdigit(c);}
@@ -859,3 +1119,5 @@ DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_ad
 DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
 
 const char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address);
+
+void dap_common_enable_cleaner_log(size_t a_timeout, size_t *a_max_size);

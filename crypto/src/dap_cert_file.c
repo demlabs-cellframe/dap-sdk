@@ -33,7 +33,7 @@
 
 #define LOG_TAG "dap_cert_file"
 
-static const char s_key_inheritor[] = "Inheritor";
+static const char s_key_inheritor[] = "inheritor";
 
 /**
  * @brief dap_cert_file_save
@@ -64,6 +64,7 @@ int dap_cert_file_save(dap_cert_t * a_cert, const char * a_cert_file_path)
         }else{
             log_it(L_ERROR,"Can't serialize certificate in memory");
             fclose(l_file);
+            remove(a_cert_file_path);
             return -4;
         }
     }else{
@@ -117,14 +118,25 @@ void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t
         l_mem_shift += sizeof(uint32_t);
         dap_cert_metadata_type_t l_meta_type = (dap_cert_metadata_type_t)a_data[l_mem_shift++];
         const uint8_t *l_value = &a_data[l_mem_shift];
-        l_mem_shift += l_value_size;
         uint16_t l_tmp16;
         uint32_t l_tmp32;
         uint64_t l_tmp64;
         switch (l_meta_type) {
         case DAP_CERT_META_STRING:
         case DAP_CERT_META_SIGN:
+            break;
         case DAP_CERT_META_CUSTOM:
+            if(!strcmp(l_key_str, s_key_inheritor)) {
+                if (a_cert->enc_key->_inheritor) {
+                    log_it(L_DEBUG, "Few inheritor records in cert metadata");
+                    break;
+                }
+                DAP_NEW_Z_SIZE_RET(a_cert->enc_key->_inheritor, byte_t, l_value_size, NULL);
+                a_cert->enc_key->_inheritor_size = l_value_size;
+                a_cert->enc_key->_inheritor = DAP_DUP_SIZE(a_data + l_mem_shift, a_cert->enc_key->_inheritor_size);
+                l_mem_shift += l_value_size;
+                continue;
+            }
             break;
         default:
             switch (l_value_size) {
@@ -150,16 +162,17 @@ void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t
         if (l_meta_arr == NULL) {
             l_meta_arr = DAP_NEW(dap_cert_metadata_t *);
             if (!l_meta_arr) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 return;
             }
         } else {
             l_meta_arr = DAP_REALLOC_COUNT(l_meta_arr, l_meta_items_count + 1);
             if (!l_meta_arr) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 return;
             }
         }
+        l_mem_shift += l_value_size;
         l_meta_arr[l_meta_items_count++] = l_new_meta;
     }
     if(l_meta_items_count){
@@ -391,15 +404,15 @@ dap_cert_t* dap_cert_mem_load(const void * a_data, size_t a_data_size)
     }
     if (l_hdr.version >= 1 ){
         if (dap_enc_debug_more()) {
-            log_it(L_DEBUG,"sizeof(l_hdr)=%"DAP_UINT64_FORMAT_U" "
+            log_it(L_DEBUG,"sizeof(l_hdr)=%zu "
                    "l_hdr.data_pvt_size=%"DAP_UINT64_FORMAT_U" "
                    "l_hdr.data_size=%"DAP_UINT64_FORMAT_U" "
                    "l_hdr.metadata_size=%"DAP_UINT64_FORMAT_U" "
-                   "a_data_size=%"DAP_UINT64_FORMAT_U" ",
+                   "a_data_size=%zu ",
                    sizeof(l_hdr), l_hdr.data_pvt_size, l_hdr.data_size, l_hdr.metadata_size, a_data_size);
         }
         if ( (sizeof(l_hdr) + l_hdr.data_size+l_hdr.data_pvt_size +l_hdr.metadata_size) > a_data_size ){
-            log_it(L_ERROR,"Corrupted cert data, data sections size is smaller than exists on the disk! (%"DAP_UINT64_FORMAT_U" expected, %"DAP_UINT64_FORMAT_U" on disk)",
+            log_it(L_ERROR,"Corrupted cert data, data sections size is smaller than exists on the disk! (%"DAP_UINT64_FORMAT_U" expected, %zu on disk)",
                     sizeof(l_hdr)+l_hdr.data_pvt_size+l_hdr.data_size+l_hdr.metadata_size, a_data_size);
             goto l_exit;
         }

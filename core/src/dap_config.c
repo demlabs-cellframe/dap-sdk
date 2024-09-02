@@ -82,7 +82,7 @@ void dap_config_dump(dap_config_t *a_conf) {
             log_it(L_DEBUG, " String param: %s = %s", l_item->name, l_item->val.val_str);
             break;
         case DAP_CONFIG_ITEM_DECIMAL:
-            log_it(L_DEBUG, " Int param: %s = %ld", l_item->name, l_item->val.val_int);
+            log_it(L_DEBUG, " Int param: %s = %"DAP_UINT64_FORMAT_U, l_item->name, l_item->val.val_int);
             break;
         case DAP_CONFIG_ITEM_BOOL:
             log_it(L_DEBUG, " Bool param: %s = %d", l_item->name, l_item->val.val_bool);
@@ -432,7 +432,7 @@ uint64_t _dap_config_get_item_uint(dap_config_t *a_config, const char *a_section
     switch (l_item->type) {
     case DAP_CONFIG_ITEM_DECIMAL:
         return l_item->val.val_int < 0
-                ? log_it(L_WARNING, "Unsigned parameter \"%s\" requested, but the value is negative: %ld",
+                ? log_it(L_WARNING, "Unsigned parameter \"%s\" requested, but the value is negative: %"DAP_UINT64_FORMAT_U,
                          l_item->name, l_item->val.val_int), a_default
                 : (uint64_t)l_item->val.val_int;
     default:
@@ -448,48 +448,68 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
     case DAP_CONFIG_ITEM_STRING:
         return l_item->val.val_str;
     case DAP_CONFIG_ITEM_ARRAY:
-        return l_item->val.val_arr[0];
+        return *l_item->val.val_arr;
     case DAP_CONFIG_ITEM_DECIMAL:
         return dap_itoa(l_item->val.val_int);
     case DAP_CONFIG_ITEM_BOOL:
-        return dap_itoa(l_item->val.val_bool);
+        return l_item->val.val_bool ? "true" : "false";
     default:
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
         return a_default;
     }
 }
 
-const char *dap_config_get_item_str_path_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_default) {
+char *dap_config_get_item_str_path_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_default) {
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (!l_item)
-        return a_default;
+        return dap_strdup(a_default);
     if (l_item->type != DAP_CONFIG_ITEM_STRING) {
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
-        return a_default;
+        return dap_strdup(a_default);
     }
-    char l_abs_path[strlen(a_config->path) + 5];
-    dap_stpcpy(l_abs_path, a_config->path);
-    char *l_dir = dap_path_get_dirname(l_abs_path);
-    char *l_ret = dap_canonicalize_filename(l_item->val.val_str, l_dir);
-    log_it(L_DEBUG, "Config-path item: %s: composed from %s and %s",
-           l_ret, l_item->val.val_str, l_dir);
-    DAP_DELETE(l_dir);
-    return l_ret;
+    char *l_dir = dap_path_get_dirname(a_config->path), *l_ret = dap_canonicalize_filename(l_item->val.val_str, l_dir);
+    //log_it(L_DEBUG, "Config-path item: %s: composed from %s and %s", l_ret, l_item->val.val_str, l_dir);
+    return DAP_DELETE(l_dir), l_ret;
 }
 
-char **dap_config_get_array_str(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length) {
+const char **dap_config_get_array_str(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length) {
     dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
     if (array_length)
         *array_length = 0;
     if (!l_item)
         return NULL;
     if (l_item->type != DAP_CONFIG_ITEM_ARRAY) {
-        log_it(L_ERROR, "Parameter \"%s\" '%c' is not array", l_item->name, l_item->type);
-        return NULL;
+        log_it(L_WARNING, "Parameter \"%s\" '%c' is not array", l_item->name, l_item->type);
+        if (array_length)
+            *array_length = 1;
+        static _Thread_local const char* s_ret = NULL;
+        return s_ret = dap_config_get_item_str(a_config, a_section, a_item_name), &s_ret;
     }
     if (array_length)
         *array_length = dap_str_countv(l_item->val.val_arr);
-    return l_item->val.val_arr;
+    return (const char**)l_item->val.val_arr;
+}
+
+char **dap_config_get_item_str_path_array(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length) { 
+    if (!array_length)
+        return NULL;
+    const char ** conf_relative = dap_config_get_array_str(a_config, a_section, a_item_name, array_length);
+    char ** addrs_relative = DAP_NEW_Z_COUNT(char*, *array_length);
+    for (int i = 0; i < *array_length; ++i)
+    {
+        char * l_cfgpath = dap_path_get_dirname(a_config->path);
+        addrs_relative[i] =  dap_canonicalize_filename(conf_relative[i], l_cfgpath);
+        DAP_DELETE(l_cfgpath);
+    }
+    return addrs_relative;
+}
+
+void dap_config_get_item_str_path_array_free(char **paths_array, uint16_t *array_length) {
+    if (!array_length)
+        return;
+    for (int i = 0; i < *array_length; ++i)
+        DAP_DEL_Z(paths_array[i]);
+    DAP_DEL_Z(paths_array);
 }
 
 double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, double a_default) {
@@ -502,8 +522,7 @@ double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_
     case DAP_CONFIG_ITEM_DECIMAL:
         return (double)l_item->val.val_int;
     default:
-        log_it(L_ERROR, "Parameter \"%s\" '%c' can't be represented as double", l_item->name, l_item->type);
-        return a_default;
+        return log_it(L_ERROR, "Parameter \"%s\" '%c' can't be represented as double", l_item->name, l_item->type), a_default;
     }
 }
 

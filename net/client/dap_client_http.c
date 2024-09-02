@@ -68,19 +68,9 @@ static WOLFSSL_CTX *s_ctx;
 #endif
 
 http_status_code_t s_extract_http_code(void *a_response, size_t a_response_size) {
-    char l_http_code_str[3] = {'\0'};
-    size_t l_first_space = 0;
-    for (;l_first_space < a_response_size; l_first_space++) {
-        if (((const char*)a_response)[l_first_space] == ' ')
-            break;
-    }
-    if (l_first_space + 3 > a_response_size)
-        return 0;
-    l_http_code_str[0] = ((const char*)a_response)[l_first_space+1];
-    l_http_code_str[1] = ((const char*)a_response)[l_first_space+2];
-    l_http_code_str[2] = ((const char*)a_response)[l_first_space+3];
-    http_status_code_t l_http_code = strtoul(l_http_code_str, NULL, 10);
-    return l_http_code;
+    char l_ver[16] = { '\0' };
+    int l_err = 0, l_ret = sscanf((char*)a_response, "%[^ ] %d", l_ver, &l_err);
+    return l_ret == 2 && !dap_strncmp(l_ver, "HTTP/", 5) ? (http_status_code_t)l_err : 0;
 }
 
 /**
@@ -176,7 +166,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     // add to dap_worker
     dap_events_socket_uuid_t * l_es_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
     if (!l_es_uuid_ptr) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return;
     }
     *l_es_uuid_ptr = a_esocket->uuid;
@@ -259,7 +249,9 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
         if ( time(NULL)- l_client_http->ts_last_read >= (time_t) s_client_timeout_read_after_connect_ms){
             log_it(L_WARNING, "Timeout for reading after connect for request http://%s:%u/%s, possible uplink is on heavy load or DPI between you",
                    l_client_http->uplink_addr, l_client_http->uplink_port, l_client_http->path);
+                   
             l_client_http->timer = NULL;
+            
             if(l_client_http->error_callback) {
                 l_client_http->error_callback(ETIMEDOUT, l_client_http->callbacks_arg);
                 l_client_http->were_callbacks_called = true;
@@ -267,6 +259,8 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
             l_client_http->is_closed_by_timeout = true;
             log_it(L_INFO, "Close %s sock %"DAP_FORMAT_SOCKET" type %d by timeout",
                    l_es->remote_addr_str, l_es->socket, l_es->type);
+
+            
             dap_events_socket_remove_and_delete_unsafe(l_es, true);
         } else
             return true;
@@ -274,6 +268,7 @@ static bool s_timer_timeout_after_connected_check(void * a_arg)
         if(s_debug_more)
             log_it(L_DEBUG,"Esocket %"DAP_UINT64_FORMAT_U" is finished, close check timer", *l_es_uuid_ptr);
     }
+
     DAP_DEL_Z(l_es_uuid_ptr);
     return false;
 }
@@ -505,7 +500,10 @@ static void s_client_http_delete(dap_client_http_t * a_client_http)
 {
     dap_return_if_fail(a_client_http);
     debug_if(s_debug_more, L_DEBUG, "HTTP client delete");
-
+    if (a_client_http->timer) {
+        DAP_DEL_Z(a_client_http->timer->callback_arg);
+        dap_timerfd_delete_unsafe(a_client_http->timer);
+    }
     DAP_DEL_Z(a_client_http->method);
     DAP_DEL_Z(a_client_http->request_content_type);
     DAP_DEL_Z(a_client_http->cookie);
@@ -606,7 +604,7 @@ dap_client_http_t * dap_client_http_request_custom (
     // create private struct
     dap_client_http_t *l_client_http = DAP_NEW_Z(dap_client_http_t);
     if (!l_client_http) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
         return NULL;
@@ -623,7 +621,7 @@ dap_client_http_t * dap_client_http_request_custom (
     if (a_request && a_request_size) {
         l_client_http->request = DAP_NEW_Z_SIZE(byte_t, a_request_size + 1);
         if (!l_client_http->request) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DEL_Z(l_client_http);
             if(a_error_callback)
                 a_error_callback(errno, a_callbacks_arg);
@@ -640,7 +638,7 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->response_size_max = DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX;
     l_client_http->response = DAP_NEW_Z_SIZE(uint8_t, DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX);
     if (!l_client_http->response) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_client_http->request, l_client_http);
         if(a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
@@ -649,7 +647,7 @@ dap_client_http_t * dap_client_http_request_custom (
     l_client_http->worker = a_worker;
     l_client_http->is_over_ssl = a_over_ssl;
 
-    if ( dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), &l_ev_socket->addr_storage, false) ) {
+    if ( 0 > dap_net_resolve_host(a_uplink_addr, dap_itoa(a_uplink_port), false, &l_ev_socket->addr_storage, NULL) ) {
         log_it(L_ERROR, "Wrong remote address '%s : %u'", a_uplink_addr, a_uplink_port);
             s_client_http_delete(l_client_http);
             l_ev_socket->_inheritor = NULL;
@@ -674,7 +672,9 @@ dap_client_http_t * dap_client_http_request_custom (
     }
 #ifdef DAP_EVENTS_CAPS_IOCP
     log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
-    l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
+    l_client_http->worker = a_worker ? a_worker : dap_worker_get_current();
+    if (!l_client_http->worker)
+        l_client_http->worker = dap_worker_get_auto();
     l_ev_socket->flags &= ~DAP_SOCK_READY_TO_READ;
     l_ev_socket->flags |= DAP_SOCK_READY_TO_WRITE;
     dap_events_socket_uuid_t *l_ev_uuid_ptr = DAP_DUP(&l_ev_socket->uuid);
@@ -691,7 +691,7 @@ dap_client_http_t * dap_client_http_request_custom (
     int l_err = connect(l_socket, (struct sockaddr *) &l_ev_socket->addr_storage, sizeof(struct sockaddr_in));
     if (l_err == 0){
         log_it(L_DEBUG, "Connected momentaly with %s:%u!", a_uplink_addr, a_uplink_port);
-        l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
+        l_client_http->worker = a_worker ? a_worker : dap_worker_get_current();
         l_client_http->es = l_ev_socket;
         if (a_over_ssl) {
 #ifndef DAP_NET_CLIENT_NO_SSL
@@ -705,7 +705,9 @@ dap_client_http_t * dap_client_http_request_custom (
         int l_err2 = WSAGetLastError();
         if (l_err2 == WSAEWOULDBLOCK) {
             log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
-            l_client_http->worker = a_worker?a_worker: dap_events_worker_get_auto();
+            l_client_http->worker = a_worker?a_worker: dap_worker_get_current();
+            if (!l_client_http->worker)
+                l_client_http->worker = dap_worker_get_auto();
             dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
             dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
             *l_ev_uuid_ptr = l_ev_socket->uuid;
@@ -729,15 +731,16 @@ dap_client_http_t * dap_client_http_request_custom (
 #else
     else if( errno == EINPROGRESS && l_err == -1){
         log_it(L_DEBUG, "Connecting to %s:%u", a_uplink_addr, a_uplink_port);
-        l_client_http->worker = a_worker ? a_worker : dap_events_worker_get_auto();
+        l_client_http->worker = a_worker ? a_worker : dap_worker_get_current();
+        if (!l_client_http->worker)
+            l_client_http->worker = dap_worker_get_auto();
         l_client_http->es = l_ev_socket;
-        dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         dap_events_socket_uuid_t * l_ev_uuid_ptr = DAP_NEW_Z(dap_events_socket_uuid_t);
         if (!l_ev_uuid_ptr) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
-            DAP_DEL_MULTY(l_client_http->response, l_client_http->request, l_client_http);
-            if(a_error_callback)
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+            if (a_error_callback)
                 a_error_callback(errno, a_callbacks_arg);
+            DAP_DEL_MULTY(l_client_http->response, l_client_http->request, l_client_http);
             return NULL;
         }
         *l_ev_uuid_ptr = l_ev_socket->uuid;
@@ -747,6 +750,7 @@ dap_client_http_t * dap_client_http_request_custom (
                    l_client_http->worker->id, *l_ev_uuid_ptr);
             DAP_DEL_Z(l_ev_uuid_ptr);
         }
+        dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         return l_client_http;
     }
     else{
@@ -819,8 +823,6 @@ dap_client_http_t *dap_client_http_request(dap_worker_t * a_worker,const char *a
 
 void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
 {
-    if (a_client_http->timer)
-        dap_timerfd_delete_unsafe(a_client_http->timer);
     if (a_client_http->es) {
         a_client_http->es->callbacks.delete_callback = NULL;
         dap_events_socket_remove_and_delete_unsafe(a_client_http->es, true);

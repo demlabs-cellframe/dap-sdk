@@ -488,6 +488,18 @@ char* dap_path_get_dirname(const char *a_file_name)
     return l_base;
 }
 
+void dap_subs_free(dap_list_name_directories_t *subs_list){
+
+    dap_list_name_directories_t *l_element;
+    dap_list_name_directories_t *l_tmp;
+    
+    LL_FOREACH_SAFE(subs_list, l_element, l_tmp){
+        LL_DELETE(subs_list, l_element);
+        DAP_FREE(l_element->name_directory);
+        DAP_DELETE(l_element);
+    }
+}
+
 dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
     dap_list_name_directories_t *list = NULL;
     dap_list_name_directories_t *element;
@@ -516,7 +528,7 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
         if (strcmp(entry->d_name, "..") != 0 && strcmp(entry->d_name, ".") != 0 && entry->d_type == DT_DIR){
             element = (dap_list_name_directories_t *)malloc(sizeof(dap_list_name_directories_t));
             if (!element) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 closedir(dir);
                 DAP_DEL_Z(list);
                 return NULL;
@@ -1297,7 +1309,7 @@ char* dap_get_current_dir(void)
         DAP_DELETE(buffer);
         buffer = DAP_NEW_SIZE(char, max_len + 1);
         if (!buffer) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DEL_Z(dir);
             return NULL;
         }

@@ -74,13 +74,13 @@ static UT_array *s_cert_folders = NULL;
 int dap_cert_init() // TODO deinit too
 {
     uint16_t l_ca_folders_size = 0;
-    char ** l_ca_folders;
-    l_ca_folders = dap_config_get_array_str(g_config, "resources", "ca_folders", &l_ca_folders_size);
+    char **l_ca_folders = dap_config_get_item_str_path_array(g_config, "resources", "ca_folders", &l_ca_folders_size);
     utarray_new(s_cert_folders, &ut_str_icd);
     utarray_reserve(s_cert_folders, l_ca_folders_size);
     for (uint16_t i=0; i < l_ca_folders_size; i++) {
         dap_cert_add_folder(l_ca_folders[i]);
     }
+    dap_config_get_item_str_path_array_free(l_ca_folders, &l_ca_folders_size);
     return 0;
 }
 
@@ -207,7 +207,7 @@ int dap_cert_add_cert_sign(dap_cert_t * a_cert, dap_cert_t * a_cert_signer)
     if (a_cert->enc_key->pub_key_data_size && a_cert->enc_key->pub_key_data) {
         dap_sign_item_t * l_sign_item = DAP_NEW_Z(dap_sign_item_t);
         if (!l_sign_item) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return -1;
         }
         l_sign_item->sign = dap_cert_sign (a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_data_size,0);
@@ -336,9 +336,8 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
             l_ret = l_cert_item->cert ;
         } else {
             uint16_t l_ca_folders_size = 0;
-            char **l_ca_folders;
             char *l_cert_path = NULL;
-            l_ca_folders = dap_config_get_array_str(g_config, "resources", "ca_folders", &l_ca_folders_size);
+            char **l_ca_folders = dap_config_get_item_str_path_array(g_config, "resources", "ca_folders", &l_ca_folders_size);
             for (uint16_t i = 0; i < l_ca_folders_size; ++i) {
                 l_cert_path = dap_strjoin("", l_ca_folders[i], "/", a_cert_name, ".dcert", (char *)NULL);
                 l_ret = dap_cert_file_load(l_cert_path);
@@ -346,6 +345,7 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
                 if (l_ret)
                     break;
             }
+            dap_config_get_item_str_path_array_free(l_ca_folders, &l_ca_folders_size);
         }
     }
     if (!l_ret)
@@ -373,7 +373,7 @@ dap_cert_t * dap_cert_new(const char * a_name)
 {
     dap_cert_t * l_ret = DAP_NEW_Z(dap_cert_t);
     if (!l_ret) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
     l_ret->_pvt = DAP_NEW_Z(dap_cert_pvt_t);
@@ -390,7 +390,7 @@ int dap_cert_add(dap_cert_t *a_cert)
 {
     if (!a_cert)
         return -2;
-    dap_cert_item_t *l_cert_item;
+    dap_cert_item_t *l_cert_item = NULL;
     HASH_FIND_STR(s_certs, a_cert->name, l_cert_item);
     if (l_cert_item) {
         log_it(L_WARNING, "Certificate with name %s already present in memory", a_cert->name);
@@ -398,7 +398,7 @@ int dap_cert_add(dap_cert_t *a_cert)
     }
     l_cert_item = DAP_NEW_Z(dap_cert_item_t);
     if (!l_cert_item) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return -2;
     }
     snprintf(l_cert_item->name, sizeof(l_cert_item->name), "%s", a_cert->name);
@@ -505,6 +505,7 @@ int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_fast_t *a_out_hash)
     if (!l_pub_key || !l_pub_key_size)
         return -2;
     dap_hash_fast(l_pub_key, l_pub_key_size, a_out_hash);
+    DAP_DELETE(l_pub_key);
     return 0;
 }
 
@@ -519,17 +520,15 @@ int dap_cert_compare_with_sign (dap_cert_t *a_cert,const dap_sign_t *a_sign)
 {
     dap_return_val_if_pass(!a_cert || !a_cert->enc_key || !a_sign, -4);
     if ( dap_sign_type_from_key_type( a_cert->enc_key->type ).type == a_sign->header.type.type ){
-        int l_ret;
         size_t l_pub_key_size = 0;
         // serialize public key
         uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_cert->enc_key, &l_pub_key_size);
-        if ( l_pub_key_size == a_sign->header.sign_pkey_size){
-            l_ret = memcmp ( l_pub_key, a_sign->pkey_n_sign, a_sign->header.sign_pkey_size );
-        }else
-            l_ret = -2; // Wrong pkey size
+        int l_ret = l_pub_key_size == a_sign->header.sign_pkey_size
+            ? memcmp(l_pub_key, a_sign->pkey_n_sign, a_sign->header.sign_pkey_size)
+            : -2;
         DAP_DELETE(l_pub_key);
         return l_ret;
-    }else
+    } else
         return -3; // Wrong sign type
 }
 
@@ -584,7 +583,7 @@ char *dap_cert_dump(dap_cert_t *a_cert)
             default:
                 l_str = l_meta_item->length ? DAP_NEW_Z_SIZE(char, l_meta_item->length * 2 + 1) : NULL;
                 if (l_meta_item->length && !l_str) {
-                    log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                    log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                     break;
                 }
                 dap_bin2hex(l_str, l_meta_item->value, l_meta_item->length);

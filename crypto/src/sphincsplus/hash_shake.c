@@ -5,7 +5,7 @@
 #include "utils.h"
 #include "params.h"
 #include "hash.h"
-#include "fips202.h"
+#include "spx_fips202.h"
 
 /* For SHAKE256, there is no immediate reason to initialize at the start,
    so this function is an empty operation. */

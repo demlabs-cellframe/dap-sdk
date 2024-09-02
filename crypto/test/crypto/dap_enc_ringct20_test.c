@@ -423,7 +423,7 @@ static void test_signing_verifying2(void)
     }
 
     size_t allpbk_size = CRUTCH_gen_pbk_list(p, &allpbk_buf, allpbknum);
-    key->getallpbkList(key, allpbk_buf,allpbk_size);
+    key->get_all_pbk_list(key, allpbk_buf,allpbk_size);
 
     size_t max_signature_size = dap_enc_ringct20_calc_signature_size();
     uint8_t* sig = calloc(max_signature_size, 1);

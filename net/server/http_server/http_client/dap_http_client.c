@@ -317,7 +317,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
     size_t read_bytes = 0;
 
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
-    dap_http_url_proc_t *url_proc;
+    dap_http_url_proc_t *url_proc = NULL;
     dap_http_cache_t * l_http_cache;
 
     /*
@@ -330,12 +330,14 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 //  log_it( L_DEBUG, "dap_http_client_read..." );
     unsigned l_iter_count = 0;
     do{
-        debug_if(s_debug_http, L_DEBUG, "HTTP client in state read %d taked bytes in input %"DAP_UINT64_FORMAT_U, l_http_client->state_read, a_esocket->buf_in_size );
+        debug_if(s_debug_http, L_DEBUG, "HTTP client in state read %d taked bytes in input %"DAP_UINT64_FORMAT_U, 
+                                        l_http_client->state_read, a_esocket->buf_in_size );
 
         switch( l_http_client->state_read )
         {
             case DAP_HTTP_CLIENT_STATE_START: { // Beginning of the session. We try to detect URL with CRLF pair at end
-                if (l_http_client->esocket->server->type == DAP_SERVER_TCP || l_http_client->esocket->server->type == DAP_SERVER_UDP) {
+                if (l_http_client->esocket->type == DESCRIPTOR_TYPE_SOCKET_CLIENT 
+                    || l_http_client->esocket->type == DESCRIPTOR_TYPE_SOCKET_UDP) {
                     if ( dap_http_ban_list_client_check(l_http_client->esocket->remote_addr_str, NULL, NULL) ) {
                         log_it(L_ERROR, "Client %s is banned", l_http_client->esocket->remote_addr_str);
                         s_report_error_and_restart( a_esocket, l_http_client, Http_Status_Forbidden);
@@ -492,7 +494,6 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         // No data, its over
                         dap_http_client_write(l_http_client);
                 }
-
                 dap_events_socket_shrink_buf_in( a_esocket, l_len);         /* Shrink input buffer over whole HTTP header */
             } break;
 

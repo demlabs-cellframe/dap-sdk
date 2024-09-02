@@ -104,7 +104,7 @@ struct dap_http_url_proc * dap_http_simple_proc_add( dap_http_server_t *a_http, 
 {
     dap_http_simple_url_proc_t *l_url_proc = DAP_NEW_Z( dap_http_simple_url_proc_t );
     if (!l_url_proc) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
 
@@ -188,7 +188,7 @@ int dap_http_simple_set_supported_user_agents( const char *user_agents, ... )
 
     user_agents_item_t *item = calloc( 1, sizeof (user_agents_item_t) );
     if (!item) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         va_end(argptr);
         s_free_user_agents_list();
         return 0;
@@ -322,7 +322,7 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
  */
 static bool s_proc_queue_callback(void *a_arg)
 {
-     dap_http_simple_t *l_http_simple = (dap_http_simple_t*) a_arg;
+    dap_http_simple_t *l_http_simple = (dap_http_simple_t*) a_arg;
     log_it(L_DEBUG, "dap http simple proc");
     if (!l_http_simple->http_client) {
         log_it(L_ERROR, "[!] HTTP client is already deleted!");

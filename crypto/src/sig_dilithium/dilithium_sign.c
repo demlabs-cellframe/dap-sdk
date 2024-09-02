@@ -2,7 +2,7 @@
 #include "dilithium_sign.h"
 
 //#include "KeccakHash.h"
-#include "SimpleFIPS202.h"
+#include "fips202.h"
 
 #define LOG_TAG "dap_crypto_sign_dilithium"
 

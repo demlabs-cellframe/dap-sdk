@@ -161,20 +161,16 @@ int dap_global_db_init()
     if (s_dbi == NULL) {
         s_dbi = DAP_NEW_Z(dap_global_db_instance_t);
         if (!s_dbi) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             l_rc = -5;
             goto lb_return;
         }
 
-        const char *l_gdb_path_cfg = dap_config_get_item_str(g_config, "global_db", "path");
-        s_dbi->storage_path = l_gdb_path_cfg ? dap_strdup(l_gdb_path_cfg) : dap_strdup_printf("%s/var/lib/global_db", g_sys_dir_path);
+        char *l_gdb_path_cfg = dap_config_get_item_str_path_default(g_config, "global_db", "path", NULL);
+        s_dbi->storage_path = l_gdb_path_cfg ? l_gdb_path_cfg : dap_strdup_printf("%s/var/lib/global_db", g_sys_dir_path);
         const char *l_driver_name = dap_config_get_item_str(g_config, "global_db", "driver");
-        s_dbi->driver_name = dap_strdup(l_driver_name ? l_driver_name :
-#ifdef DAP_OS_DARWIN
-                                                                        "sqlite3");
-#else
-                                                                        "mdbx");
-#endif
+        s_dbi->driver_name = dap_strdup(l_driver_name ? l_driver_name : "mdbx");
+        
         dap_cert_t *l_signing_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
         if (l_signing_cert)
             s_dbi->signing_key = l_signing_cert->enc_key;
@@ -182,10 +178,10 @@ int dap_global_db_init()
             log_it(L_ERROR, "Can't find node addr cerificate, all new records will be usigned");
 
         uint16_t l_size_ban_list = 0, l_size_white_list = 0;
-        char **l_ban_list = dap_config_get_array_str(g_config, "global_db", "ban_list_sync_groups", &l_size_ban_list);
+        const char **l_ban_list = dap_config_get_array_str(g_config, "global_db", "ban_list_sync_groups", &l_size_ban_list);
         for (int i = 0; i < l_size_ban_list; i++)
             s_dbi->blacklist = dap_list_append(s_dbi->blacklist, dap_strdup(l_ban_list[i]));
-        char **l_white_list = dap_config_get_array_str(g_config, "global_db", "white_list_sync_groups", &l_size_white_list);
+        const char **l_white_list = dap_config_get_array_str(g_config, "global_db", "white_list_sync_groups", &l_size_white_list);
         for (int i = 0; i < l_size_white_list; i++)
             s_dbi->whitelist = dap_list_append(s_dbi->whitelist, dap_strdup(l_white_list[i]));
         // One year for objects lifetime by default
@@ -287,8 +283,6 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     dap_global_db_role_t l_signer_role = DAP_GDB_MEMBER_ROLE_INVALID;
     if (a_obj->sign) {
         dap_stream_node_addr_t l_signer_addr = dap_stream_node_addr_from_sign(a_obj->sign);
-        debug_if(g_dap_global_db_debug_more, L_NOTICE, "Signer node addr "NODE_ADDR_FP_STR,
-                                                                        NODE_ADDR_FP_ARGS_S(l_signer_addr));
         l_signer_role = dap_cluster_member_find_role(l_cluster->role_cluster, &l_signer_addr);
     }
     if (l_signer_role == DAP_GDB_MEMBER_ROLE_INVALID)
@@ -323,8 +317,8 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
         }
     }
     if (l_read_obj && l_cluster->owner_root_access &&
-            a_obj->sign && l_read_obj->sign &&
-            dap_sign_compare_pkeys(a_obj->sign, l_read_obj->sign))
+            a_obj->sign && (!l_read_obj->sign ||
+            dap_sign_compare_pkeys(a_obj->sign, l_read_obj->sign)))
         l_signer_role = DAP_GDB_MEMBER_ROLE_ROOT;
     if (l_signer_role < l_required_role) {
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Global DB record with group %s and key %s is rejected "
@@ -343,8 +337,12 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
             DAP_DEL_Z(a_obj->sign);
             a_obj->crc = 0;
             a_obj->sign = dap_store_obj_sign(a_obj, a_dbi->signing_key, &a_obj->crc);
-            debug_if(g_dap_global_db_debug_more, L_WARNING, "DB record with group %s and key %s need time correction for %zu seconds to be properly applied",
+            debug_if(g_dap_global_db_debug_more, L_WARNING, "DB record with group %s and key %s need time correction for %"DAP_UINT64_FORMAT_U" seconds to be properly applied",
                                                             a_obj->group, a_obj->key, dap_nanotime_to_sec(l_time_diff));
+            if (!a_obj->sign) {
+                log_it(L_ERROR, "Can't sign object with group %s and key %s", a_obj->group, a_obj->key);
+                return -20;
+            }
         } else {
             debug_if(g_dap_global_db_debug_more, L_DEBUG, "DB record with group %s and key %s is not applied. It's older than existed record with same key",
                                                             a_obj->group, a_obj->key);
@@ -429,13 +427,13 @@ int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_cal
     l_msg->opcode = MSG_OPCODE_GET;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->key = dap_strdup(a_key);
     if (!l_msg->key) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -503,13 +501,13 @@ int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_
     l_msg->opcode = MSG_OPCODE_GET_RAW;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->key = dap_strdup(a_key);
     if (!l_msg->key) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -574,13 +572,13 @@ int dap_global_db_get_del_ts(const char *a_group, const char *a_key, dap_global_
     l_msg->opcode = MSG_OPCODE_GET_DEL_TS;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->key = dap_strdup(a_key);
     if (!l_msg->key) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -628,7 +626,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
     if (a_key) {
         *a_key = dap_strdup(l_store_obj->key);
         if (!*a_key) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             dap_store_obj_free_one(l_store_obj);
             return NULL;
         }
@@ -639,12 +637,8 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
         *a_is_pinned = l_store_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED;
     if (a_ts)
         *a_ts = l_store_obj->timestamp;
-    byte_t *l_res = DAP_DUP_SIZE(l_store_obj->value, l_store_obj->value_len);
-    if (!l_res) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
-        dap_store_obj_free_one(l_store_obj);
-        return NULL;
-    }
+    byte_t *l_res = l_store_obj->value;
+    l_store_obj->value = NULL;
     dap_store_obj_free_one(l_store_obj);
     return l_res;
 }
@@ -666,7 +660,7 @@ int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t
     l_msg->opcode = MSG_OPCODE_GET_LAST;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -732,7 +726,7 @@ int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_resu
     l_msg->opcode = MSG_OPCODE_GET_LAST_RAW;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -794,7 +788,7 @@ int dap_global_db_get_all(const char *a_group, size_t a_results_page_size, dap_g
     l_msg->opcode = MSG_OPCODE_GET_ALL;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -894,7 +888,7 @@ int dap_global_db_get_all_raw(const char *a_group, size_t a_results_page_size, d
     l_msg->opcode = MSG_OPCODE_GET_ALL_RAW;
     l_msg->group = dap_strdup(a_group);
     if (l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -1016,19 +1010,19 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
     l_msg->opcode = MSG_OPCODE_SET;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->key = dap_strdup(a_key);
     if (!l_msg->key) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->value = DAP_DUP_SIZE(a_value, a_value_length);
     if (!l_msg->value && a_value) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_msg->key, l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -1077,7 +1071,7 @@ int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_
     for (size_t i = 0; i < a_store_objs_count; i++) {
         l_ret = s_store_obj_apply(a_dbi, a_store_objs + i);
         if (l_ret)
-            log_it(L_ERROR, "Can't save raw gdb data to %s/%s, code %d", (a_store_objs + i)->group, (a_store_objs + i)->key, l_ret);
+            debug_if(g_dap_global_db_debug_more, L_ERROR, "Can't save raw gdb data to %s/%s, code %d", (a_store_objs + i)->group, (a_store_objs + i)->key, l_ret);
     }
     if (a_store_objs_count > 1)
         dap_global_db_driver_txn_end(!l_ret);
@@ -1110,7 +1104,7 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
 
     l_msg->values_raw = dap_store_obj_copy(a_store_objs, a_store_objs_count);
     if (!l_msg->values_raw) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -1164,11 +1158,12 @@ int dap_global_db_set_multiple_zc(const char *a_group, dap_global_db_obj_t *a_va
     l_msg->opcode = MSG_OPCODE_SET_MULTIPLE;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->values = a_values;
+    l_msg->value_is_pinned = false;
     l_msg->values_count = a_values_count;
     l_msg->callback_arg = a_arg;
     l_msg->callback_results = a_callback;
@@ -1190,19 +1185,17 @@ int dap_global_db_set_multiple_zc(const char *a_group, dap_global_db_obj_t *a_va
  */
 static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
 {
-    int l_ret = -1;
+    int l_ret = 0;
     size_t i=0;
+#ifdef DAP_TPS_TEST
+    FILE *l_mempool_file = fopen("/opt/cellframe-node/share/ca/mempool_start.txt", "a");
+    fclose(l_mempool_file);
+    log_it(L_TPS, "Start write %zu records to mempool", a_msg->values_count);
+#endif
     if(a_msg->values_count>0) {
         dap_store_obj_t l_store_obj = {};
-        l_ret = 0;
         for(;  i < a_msg->values_count && l_ret == 0  ; i++ ) {
-            l_store_obj.flags = a_msg->values[i].is_pinned ? DAP_GLOBAL_DB_RECORD_PINNED : 0;
-            l_store_obj.key =  a_msg->values[i].key;
-            l_store_obj.group = a_msg->group;
-            l_store_obj.value = a_msg->values[i].value;
-            l_store_obj.value_len = a_msg->values[i].value_len;
-            l_store_obj.timestamp = a_msg->values[i].timestamp;
-            l_ret = s_store_obj_apply(a_msg->dbi, &l_store_obj);
+            l_ret = s_set_sync_with_ts(a_msg->dbi, a_msg->group, a_msg->values[i].key, a_msg->values[i].value, a_msg->values[i].value_len, a_msg->value_is_pinned, a_msg->values[i].timestamp);
         }
     }
     if(a_msg->callback_results) {
@@ -1212,6 +1205,11 @@ static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
                                 a_msg->values, a_msg->callback_arg);
     }
     dap_global_db_objs_delete( a_msg->values, a_msg->values_count);
+#ifdef DAP_TPS_TEST
+    l_mempool_file = fopen("/opt/cellframe-node/share/ca/mempool_finish.txt", "a");
+    fclose(l_mempool_file);
+    log_it(L_TPS, "Finish write %zu records to mempool ", a_msg->values_count);
+#endif
 }
 
 /* *** Pin/unpin functions group *** */
@@ -1255,13 +1253,13 @@ int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callba
     l_msg->opcode = MSG_OPCODE_PIN;
     l_msg->group = dap_strdup(a_group);
     if (!l_msg->group) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DELETE(l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
     l_msg->key = dap_strdup(a_key);
     if (!l_msg->key) {
-        log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
@@ -1332,7 +1330,7 @@ static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_gr
     dap_store_obj_t l_store_obj = {
         .key        = a_key,
         .group      = (char *)a_group,
-        .flags      = DAP_GLOBAL_DB_RECORD_NEW | DAP_GLOBAL_DB_RECORD_DEL,
+        .flags      = DAP_GLOBAL_DB_RECORD_NEW | (a_key ? DAP_GLOBAL_DB_RECORD_DEL : DAP_GLOBAL_DB_RECORD_ERASE),
         .timestamp  = dap_nanotime_now()
     };
     if (a_key)
@@ -1344,6 +1342,7 @@ static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_gr
         DAP_DELETE(l_store_obj.sign);
     } else {
         // Drop the whole table
+        l_store_obj.flags |= DAP_GLOBAL_DB_RECORD_ERASE;
         l_res = dap_global_db_driver_apply(&l_store_obj, 1);
         if (l_res)
             log_it(L_ERROR, "Can't delete group %s", l_store_obj.group);
@@ -1385,6 +1384,28 @@ int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_cal
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent del request for \"%s\" group \"%s\" key", a_group, a_key);
 
     return l_ret;
+}
+
+/**
+ * @brief erase table, call dap_global_db_del_sync with NULL key
+ * @param a_group - table name
+ * @return result of dap_global_db_del_sync
+ */
+DAP_INLINE int dap_global_db_erase_table_sync(const char *a_group)
+{
+    return dap_global_db_del_sync(a_group, NULL);
+}
+
+/**
+ * @brief erase table, call dap_global_db_del with NULL key
+ * @param a_group - table name
+ * @param a_callback - callback result
+ * @param a_arg - callback args
+ * @return result of dap_global_db_del
+ */
+DAP_INLINE int dap_global_db_erase_table(const char *a_group, dap_global_db_callback_result_t a_callback, void *a_arg)
+{
+    return dap_global_db_del(a_group, NULL, a_callback, a_arg);
 }
 
 /**
@@ -1473,7 +1494,7 @@ dap_global_db_obj_t *dap_global_db_objs_copy(const dap_global_db_obj_t *a_objs_s
         if (l_obj->key) {
             l_cur->key = dap_strdup(l_obj->key);
             if (!l_cur->key) {
-                log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                 DAP_DELETE(l_objs_dest);
                 return NULL;
             }
@@ -1484,7 +1505,7 @@ dap_global_db_obj_t *dap_global_db_objs_copy(const dap_global_db_obj_t *a_objs_s
             if (l_obj->value_len) {
                 l_cur->value = DAP_DUP_SIZE(l_obj->value, l_obj->value_len);
                 if (!l_cur->value) {
-                    log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+                    log_it(L_CRITICAL, "%s", c_error_memory_alloc);
                     DAP_DEL_MULTY(l_cur->key, l_objs_dest);
                     return NULL;
                 }
@@ -1604,7 +1625,7 @@ static void s_queue_io_msg_delete( struct queue_io_msg * a_msg)
         dap_store_obj_free(a_msg->values_raw, a_msg->values_raw_total);
     default:;
     }
-    DAP_DELETE(a_msg);
+    DAP_DEL_Z(a_msg);
 }
 
 /**
@@ -1821,3 +1842,4 @@ bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_nu
     }
     return ret;
 }
+

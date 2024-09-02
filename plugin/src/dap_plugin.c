@@ -32,6 +32,8 @@ This file is part of DAP (Distributed Applications Platform) the open source pro
 
 #include "dap_plugin.h"
 #include "dap_strfuncs.h"
+#include "dap_list.h"
+
 
 #define LOG_TAG "dap_plugin"
 
@@ -75,9 +77,9 @@ int dap_plugin_init(const char * a_root_path)
         log_it(L_ERROR, "Can't find \"%s\" directory", s_plugins_root_path);
         return -1;
     }
+
     dap_plugin_manifest_init();
     dap_plugin_command_init();
-
     dap_plugin_binary_init();
 
 
@@ -96,6 +98,8 @@ int dap_plugin_init(const char * a_root_path)
         }
         DAP_FREE(l_name_file);
     }
+
+    dap_subs_free(l_list_plugins_name);
     s_solve_dependencies();
     return 0;
 }
@@ -267,7 +271,7 @@ static int s_start(dap_plugin_manifest_t * a_manifest)
     }else{ // Successfully
         struct plugin_module * l_module = DAP_NEW_Z(struct plugin_module);
         if (!l_module) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return -1;
         }
         l_module->pvt_data = l_pvt_data;

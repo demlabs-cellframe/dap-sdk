@@ -31,6 +31,8 @@
 
 static void s_ch_io_callback(dap_events_socket_t * a_es, void * a_msg);
 static void s_ch_send_callback(dap_events_socket_t *a_es, void *a_msg);
+static size_t s_cb_msg_buf_clean(char *a_buf_out, size_t a_buf_size) ;
+
 
 /**
  * @brief dap_stream_worker_init
@@ -60,6 +62,7 @@ int dap_stream_worker_init()
         if(! l_stream_worker->queue_ch_io)
             return -6;
         l_stream_worker->queue_ch_send = dap_events_socket_create_type_queue_ptr_mt(l_worker, s_ch_send_callback);
+        l_stream_worker->queue_ch_send->cb_buf_cleaner = s_cb_msg_buf_clean; 
         if (!l_stream_worker->queue_ch_send)
             return -7;
     }
@@ -69,7 +72,7 @@ int dap_stream_worker_init()
         dap_stream_worker_t *l_stream_worker_inp = (dap_stream_worker_t *)l_worker_inp->_inheritor;
         l_stream_worker_inp->queue_ch_io_input = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * l_worker_count);
         if (!l_stream_worker_inp->queue_ch_io_input) {
-            log_it(L_CRITICAL, "%s", g_error_memory_alloc);
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return -8;
         }
         for (uint32_t j = 0; j < l_worker_count; j++) {
@@ -151,4 +154,15 @@ ret_n_clear:
         DAP_DELETE(l_msg->data);
     }
     DAP_DELETE(l_msg);
+}
+
+static size_t s_cb_msg_buf_clean(char *a_buf_out, size_t a_buf_size) 
+{
+    for (size_t shift = 0; shift < a_buf_size; shift += sizeof( dap_stream_worker_msg_send_t*)) {
+        dap_stream_worker_msg_send_t* l_msg = (dap_stream_worker_msg_send_t*)(a_buf_out + shift);
+        DAP_DELETE(l_msg->data);
+        DAP_DELETE(l_msg);
+        log_it(L_WARNING, "MSG BUF CLEAN!");
+    }
+    return 0;
 }

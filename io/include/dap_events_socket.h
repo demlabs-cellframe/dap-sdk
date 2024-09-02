@@ -101,7 +101,7 @@ typedef struct queue_entry {
 #include "wepoll.h"
 #elif defined (DAP_EVENTS_CAPS_IOCP)
 #include <mswsock.h>
-#define MAX_IOCP_ENTRIES 0xf // Maximum count of IOCP entries to fetch at once
+#define MAX_IOCP_ENTRIES 255 // Maximum count of IOCP entries to fetch at once
 #elif defined (DAP_EVENTS_CAPS_EPOLL)
 #include <sys/epoll.h>
 #define EPOLL_HANDLE  int
@@ -138,6 +138,9 @@ typedef struct dap_worker dap_worker_t;
 typedef struct dap_context dap_context_t;
 
 typedef struct dap_server dap_server_t;
+
+typedef size_t (*dap_events_socket_clear_buf)(char*, size_t);
+
 typedef void (*dap_events_socket_callback_t) (dap_events_socket_t *,void * ); // Callback for specific client operations
 typedef bool (*dap_events_socket_write_callback_t)(dap_events_socket_t *, void *); // Callback for write client operation
 typedef void (*dap_events_socket_callback_error_ptr_t) (dap_events_socket_t *, int, void * ); // Callback for specific client operations
@@ -151,14 +154,16 @@ typedef void (*dap_events_socket_callback_accept_t) (dap_events_socket_t *, SOCK
 typedef void (*dap_events_socket_callback_connected_t) (dap_events_socket_t * ); // Callback for connected client connection
 typedef void (*dap_events_socket_worker_callback_t) (dap_events_socket_t *,dap_worker_t * ); // Callback for specific client operations
 #ifdef DAP_EVENTS_CAPS_IOCP
+typedef ULONG (*pfn_RtlNtStatusToDosError)(NTSTATUS s);
 typedef enum per_io_type {
     io_read     = 'r',  // Read from es
     io_write    = 'w'   // Write to es
 } per_io_type_t;
 
-extern LPFN_CONNECTEX pfnConnectEx;
-extern LPFN_DISCONNECTEX pfnDisconnectEx;
-typedef ULONG (*pfn_RtlNtStatusToDosError)(NTSTATUS s);
+extern LPFN_ACCEPTEX             pfnAcceptEx;
+extern LPFN_GETACCEPTEXSOCKADDRS pfnGetAcceptExSockaddrs;
+extern LPFN_CONNECTEX            pfnConnectEx;
+extern LPFN_DISCONNECTEX         pfnDisconnectEx;
 extern pfn_RtlNtStatusToDosError pfnRtlNtStatusToDosError;
 #endif
 
@@ -265,6 +270,9 @@ typedef struct dap_events_socket {
     bool was_reassigned; // Was reassigment at least once
 
     byte_t *buf_in, *buf_out;
+    dap_events_socket_clear_buf cb_buf_cleaner;
+
+
 
 #ifdef DAP_EVENTS_CAPS_IOCP
     DWORD   
@@ -321,7 +329,7 @@ typedef struct dap_events_socket {
 
     int64_t kqueue_data;
 #elif defined DAP_EVENTS_CAPS_IOCP
-    byte_t pending : 7, pending_read : 1;
+    uint_fast16_t pending : 15, pending_read : 1;
 #endif
 
     dap_events_socket_callbacks_t callbacks;
@@ -444,8 +452,33 @@ DAP_STATIC_INLINE size_t dap_events_socket_get_free_buf_size(dap_events_socket_t
 size_t  dap_events_socket_pop_from_buf_in(dap_events_socket_t *sc, void * data, size_t data_size);
 size_t  dap_events_socket_insert_buf_out(dap_events_socket_t * a_es, void *a_data, size_t a_data_size);
 
-DAP_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t* a_es) {
-    return s_socket_type_to_str[a_es->type];
+DAP_STATIC_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t *a_es)
+{
+    if (!a_es)
+        return "CORRUPTED";
+    switch (a_es->type) {
+    case DESCRIPTOR_TYPE_SOCKET_CLIENT:         return "CLIENT";
+    case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:   return "LOCAL_CLIENT";
+    case DESCRIPTOR_TYPE_SOCKET_LISTENING:      return "SERVER";
+    case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:return "LOCAL_SERVER";
+    case DESCRIPTOR_TYPE_SOCKET_UDP:            return "CLIENT_UDP";
+    case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL:     return "CLIENT_SSL";
+    case DESCRIPTOR_TYPE_FILE:                  return "FILE";
+    case DESCRIPTOR_TYPE_PIPE:                  return "PIPE";
+    case DESCRIPTOR_TYPE_QUEUE:                 return "QUEUE";
+    case DESCRIPTOR_TYPE_TIMER:                 return "TIMER";
+    case DESCRIPTOR_TYPE_EVENT:                 return "EVENT";
+    default:                                    return "UNKNOWN";
+    }
+}
+
+DAP_INLINE int dap_close_socket(SOCKET s) {
+    return
+#ifdef DAP_OS_WINDOWS
+    closesocket(s);
+#else
+    close(s);
+#endif
 }
 
 #ifdef DAP_EVENTS_CAPS_IOCP

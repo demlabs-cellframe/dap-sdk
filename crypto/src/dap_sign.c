@@ -31,11 +31,12 @@
 #include "dap_sign.h"
 #include "dap_enc_base58.h"
 #include "dap_json_rpc_errors.h"
-#include "dap_list.h"
+#include "dap_config.h"
 
 #define LOG_TAG "dap_sign"
 
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
+static bool s_dap_sign_debug_more = false;
 
 /**
  * @brief dap_sign_init
@@ -45,6 +46,7 @@ static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
 int dap_sign_init(uint8_t a_sign_hash_type_default)
 {
     s_sign_hash_type_default = a_sign_hash_type_default;
+    s_dap_sign_debug_more = dap_config_get_item_bool_default(g_config, "sign", "debug_more", false);
     return 0;
 }
 
@@ -169,6 +171,17 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
 }
 
 /**
+ * @brief The function checks the signature type to see if it is outdated.
+ * @param a_sign_type
+ * @return bool
+ */
+bool dap_sign_type_is_depricated(dap_sign_type_t a_sign_type){
+    if (a_sign_type.type == SIG_TYPE_PICNIC || a_sign_type.type == SIG_TYPE_BLISS || a_sign_type.type == SIG_TYPE_TESLA)
+        return true;
+    return false;
+}
+
+/**
  * @brief encrypt data
  * call a_key->sign_get
  * @param a_key dap_enc_key_t key object
@@ -213,7 +226,7 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
 dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
         const size_t a_data_size, size_t a_output_wish_size)
 {
-    dap_return_val_if_pass(!a_key, NULL);
+    dap_return_val_if_fail(a_key && a_key->priv_key_data && a_key->priv_key_data_size, NULL);
     const void * l_sign_data;
     size_t l_sign_data_size;
 
@@ -247,7 +260,7 @@ dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
             return NULL;
         } else {
             size_t l_sign_ser_size = l_sign_unserialized_size;
-            uint8_t *l_sign_ser = dap_enc_key_serialize_sign(a_key, l_sign_unserialized, &l_sign_ser_size);
+            uint8_t *l_sign_ser = dap_enc_key_serialize_sign(a_key->type, l_sign_unserialized, &l_sign_ser_size);
             if ( l_sign_ser ){
                 dap_sign_t *l_ret = NULL;
                 DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_sign_t, sizeof(dap_sign_hdr_t) + l_sign_ser_size + l_pub_key_size, NULL, l_sign_unserialized, l_pub_key, l_sign_ser);
@@ -312,17 +325,10 @@ uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
  * @return true 
  * @return false 
  */
-bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t * a_sign_hash)
+bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_hash)
 {
-    if(!a_sign){
-        log_it( L_WARNING, "Sign is NULL on enter");
-        return false;
-    }
-    if( !a_sign->header.sign_pkey_size ){
-        log_it( L_WARNING, "Sign public key's size is 0");
-        return false;
-    }
-    return dap_hash_fast( a_sign->pkey_n_sign,a_sign->header.sign_pkey_size,a_sign_hash );
+    dap_return_val_if_fail(a_sign && a_sign->header.sign_pkey_size, false);
+    return dap_hash_fast(a_sign->pkey_n_sign, a_sign->header.sign_pkey_size, a_sign_hash);
 }
 
 /**
@@ -336,13 +342,9 @@ bool dap_sign_compare_pkeys(dap_sign_t *l_sign1, dap_sign_t *l_sign2)
 {
     size_t l_pkey_ser_size1 = 0, l_pkey_ser_size2 = 0;
     // Get public key from sign
-    const uint8_t *l_pkey_ser1 = dap_sign_get_pkey(l_sign1, &l_pkey_ser_size1);
-    const uint8_t *l_pkey_ser2 = dap_sign_get_pkey(l_sign2, &l_pkey_ser_size2);
-    if(l_pkey_ser_size1 == l_pkey_ser_size2) {
-        if(!memcmp(l_pkey_ser1, l_pkey_ser2, l_pkey_ser_size1))
-            return true;
-    }
-    return false;
+    const uint8_t   *l_pkey_ser1 = dap_sign_get_pkey(l_sign1, &l_pkey_ser_size1),
+                    *l_pkey_ser2 = dap_sign_get_pkey(l_sign2, &l_pkey_ser_size2);
+    return (l_pkey_ser_size1 == l_pkey_ser_size2) && !memcmp(l_pkey_ser1, l_pkey_ser2, l_pkey_ser_size1);
 }
 
 /**
@@ -353,9 +355,11 @@ bool dap_sign_compare_pkeys(dap_sign_t *l_sign1, dap_sign_t *l_sign2)
  * @return true 
  * @return false 
  */
-bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size) {
-    return (a_sign->header.sign_size) && (a_sign->header.sign_pkey_size) && (a_sign->header.type.type != SIG_TYPE_NULL)
-           && ((uint32_t)a_sign->header.sign_size + a_sign->header.sign_pkey_size + sizeof(*a_sign) <= (uint32_t)a_max_sign_size);
+bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size)
+{
+    return (a_max_sign_size > sizeof(dap_sign_t)) && (a_sign->header.sign_size) &&
+           (a_sign->header.sign_pkey_size) && (a_sign->header.type.type != SIG_TYPE_NULL) &&
+           ((uint64_t)a_sign->header.sign_size + a_sign->header.sign_pkey_size + sizeof(dap_sign_t) <= (uint64_t)a_max_sign_size);
 }
 
 /**
@@ -373,7 +377,10 @@ dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign)
     uint8_t *l_pkey = dap_sign_get_pkey(a_chain_sign, &l_pkey_size);
     dap_enc_key_t * l_ret =  dap_enc_key_new(l_type);
     // deserialize public key
-    dap_enc_key_deserialize_pub_key(l_ret, l_pkey, l_pkey_size);
+    if (dap_enc_key_deserialize_pub_key(l_ret, l_pkey, l_pkey_size)) {
+        log_it(L_ERROR, "Error in enc pub key deserialize");
+        DAP_DEL_Z(l_ret);
+    }
     return l_ret;
 }
 
@@ -404,7 +411,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
 
     size_t l_sign_data_size = a_chain_sign->header.sign_size;
     // deserialize signature
-    uint8_t *l_sign_data = dap_enc_key_deserialize_sign(l_key, l_sign_data_ser, &l_sign_data_size);
+    uint8_t *l_sign_data = dap_enc_key_deserialize_sign(l_key->type, l_sign_data_ser, &l_sign_data_size);
 
     if ( !l_sign_data ){
         log_it(L_WARNING,"Incorrect signature, can't deserialize signature's data");
@@ -459,55 +466,55 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
  * @param a_chain_sign dap_sign_t object
  * @return size_t 
  */
-size_t dap_sign_get_size(dap_sign_t * a_chain_sign)
+uint64_t dap_sign_get_size(dap_sign_t * a_chain_sign)
 {
-    dap_return_val_if_pass(!a_chain_sign || a_chain_sign->header.type.type == SIG_TYPE_NULL, 0);
-    return (sizeof(dap_sign_t) + a_chain_sign->header.sign_size + a_chain_sign->header.sign_pkey_size);
+    if (!a_chain_sign || a_chain_sign->header.type.type == SIG_TYPE_NULL) {
+        debug_if(s_dap_sign_debug_more, L_WARNING, "Sanity check error in dap_sign_get_size");
+        return 0;
+    }
+    return (uint64_t)sizeof(dap_sign_t) + a_chain_sign->header.sign_size + a_chain_sign->header.sign_pkey_size;
 }
-
 
 dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t *a_signs_count)
 {
-    size_t l_offset = 0;
-    dap_list_t *l_list_signs = NULL;
-    while (l_offset < a_data_size) {
-        dap_sign_t *l_sign = (dap_sign_t *)(a_data+l_offset);
-        size_t l_sign_size = dap_sign_get_size(l_sign);
-        if (!l_sign_size){
+    const uint16_t l_realloc_count = 10;
+    dap_return_val_if_fail(a_signs_count, NULL);
+    dap_return_val_if_fail(a_data && a_data_size, (*a_signs_count = 0, NULL));
+    size_t l_signs_count = *a_signs_count ? *a_signs_count : l_realloc_count;
+    dap_sign_t **ret = NULL;
+    uint64_t i = 0, l_sign_size = 0;
+    for (uint64_t l_offset = 0; l_offset + sizeof(dap_sign_t) < a_data_size; l_offset += l_sign_size) {
+        dap_sign_t *l_sign = (dap_sign_t *)((byte_t *)a_data + l_offset);
+        l_sign_size = dap_sign_get_size(l_sign);
+        if (l_offset + l_sign_size <= l_offset || l_offset + l_sign_size > a_data_size)
             break;
-        }
-        if (l_sign_size > a_data_size-l_offset ){
-            break;
-        }
-        // Check duplicate signs
-        bool l_sign_duplicate = false;
-        if (l_list_signs) {
-            dap_list_t *l_list = dap_list_first(l_list_signs);
-            while (l_list) {
-                if ( memcmp( ((dap_sign_t *)l_list->data)->pkey_n_sign,
-                            l_sign->pkey_n_sign, l_sign->header.sign_pkey_size ) == 0 ) {
-                    l_sign_duplicate = true;
+        bool l_dup = false;
+        if (ret) {
+            // Check duplicate signs
+            for (size_t j = 0; j < i; j++) {
+                if (dap_sign_compare_pkeys(l_sign, ret[j])) {
+                    l_dup = true;
                     break;
                 }
-                l_list = l_list->next;
+            }
+            if (l_dup)
+                continue;
+        } else
+            DAP_NEW_Z_COUNT_RET_VAL(ret, dap_sign_t *, l_signs_count, NULL, NULL);
+        ret[i++] = l_sign;
+        if (*a_signs_count && i == *a_signs_count)
+            break;
+        if (i == l_signs_count) {
+            l_signs_count += l_realloc_count;
+            ret = DAP_REALLOC_COUNT(ret, l_signs_count);
+            if (!ret) {
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+                return NULL;
             }
         }
-        if (!l_sign_duplicate) {
-            l_list_signs = dap_list_append(l_list_signs, l_sign);
-        }
-        l_offset += l_sign_size;
     }
-    unsigned int l_list_length = dap_list_length(l_list_signs);
-    *a_signs_count = (size_t)l_list_length;
-    if (!l_list_length)
-        return NULL;
-    dap_sign_t **l_ret = NULL;
-    DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_sign_t*, sizeof(dap_sign_t *)*l_list_length, NULL, NULL);
-    unsigned int i = 0;
-    for (dap_list_t *l_list = l_list_signs; l_list; l_list = l_list->next)
-        l_ret[i++] = l_list->data;
-    dap_list_free(l_list_signs);
-    return l_ret;
+    *a_signs_count = i;
+    return ret;
 }
 
 /**
