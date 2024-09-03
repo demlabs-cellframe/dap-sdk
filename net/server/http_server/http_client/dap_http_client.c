@@ -637,7 +637,7 @@ void dap_http_client_out_header_generate(dap_http_client_t *a_http_client)
     if ( a_http_client->out_connection_close || !a_http_client->keep_alive )
         dap_http_header_add( &a_http_client->out_headers, "Connection","Close" );
 
-    dap_http_header_add( &a_http_client->out_headers, "Server-Name", a_http_client->http->server_name );
+    dap_http_header_add( &a_http_client->out_headers, "Server", a_http_client->http->server_name );
 
     log_it( L_DEBUG,"Output: Headers generated" );
 }
