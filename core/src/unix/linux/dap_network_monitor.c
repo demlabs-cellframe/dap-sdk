@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <errno.h>
 
 #ifdef __ANDROID__
 
@@ -40,25 +41,31 @@ int thread_cancelable()
 
 #define LOG_TAG "dap_network_monitor"
 
-static bool _send_NLM_F_ACK_msg(int fd)
-{
+static bool _send_NLM_F_ACK_msg(int fd) {
     static int sequence_number = 0;
 
     struct nlmsghdr *nh = DAP_NEW_Z(struct nlmsghdr);
+    if (!nh) {
+        log_it(L_ERROR, "Memory allocation failed");
+        return false;
+    }
+
     struct sockaddr_nl sa;
-    struct iovec iov = { &nh, nh->nlmsg_len };
-    struct msghdr msg = {&sa, sizeof(sa), &iov, 1, NULL, 0, 0};
+    struct iovec iov = { nh, sizeof(struct nlmsghdr) };
+    struct msghdr msg = { &sa, sizeof(sa), &iov, 1, NULL, 0, 0 };
 
     memset(&sa, 0, sizeof(sa));
     sa.nl_family = AF_NETLINK;
     nh->nlmsg_pid = getpid();
     nh->nlmsg_seq = ++sequence_number;
     nh->nlmsg_flags |= NLM_F_ACK;
+    nh->nlmsg_len = sizeof(struct nlmsghdr);
 
     ssize_t rc = sendmsg(fd, &msg, 0);
     if (rc == -1) {
-          log_it(L_ERROR, "sendmsg failed");
-          return false;
+        log_it(L_ERROR, "sendmsg failed");
+        DAP_DELETE(nh);
+        return false;
     }
 
     DAP_DELETE(nh);
@@ -78,7 +85,7 @@ int dap_network_monitor_init(dap_network_monitor_notification_callback_t cb)
     memset((void*)&_net_notification, 0, sizeof(_net_notification));
 
     if ((_net_notification.socket = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE)) == -1) {
-        log_it(L_ERROR, "Can't open notification socket");
+        log_it(L_ERROR, "Can't open notification socket: %s", strerror(errno));
         return -1;
     }
 
@@ -87,12 +94,17 @@ int dap_network_monitor_init(dap_network_monitor_notification_callback_t cb)
     addr.nl_groups = RTMGRP_LINK | RTMGRP_IPV4_IFADDR | RTMGRP_IPV4_ROUTE;
     if (bind(_net_notification.socket, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
         log_it(L_ERROR, "Can't bind notification socket");
+        close(_net_notification.socket);
         return -2;
     }
 
     pthread_barrier_t barrier;
 
-    pthread_barrier_init(&barrier, NULL, 2);
+    if (pthread_barrier_init(&barrier, NULL, 2) != 0) {
+        log_it(L_ERROR, "Error initializing barrier");
+        close(_net_notification.socket);
+        return -4;
+    }
 
     #ifdef __ANDROID__
         thread_cancelable(); //to allow pthread_cancel simulation to work;
@@ -100,6 +112,8 @@ int dap_network_monitor_init(dap_network_monitor_notification_callback_t cb)
 
     if(pthread_create(&_net_notification.thread, NULL, network_monitor_worker, &barrier) != 0) {
         log_it(L_ERROR, "Error create notification thread");
+        pthread_barrier_destroy(&barrier);
+        close(_net_notification.socket);
         return -3;
     }
 
@@ -153,8 +167,7 @@ static void _route_msg_handler(struct nlmsghdr *nlh,
 
     route_attribute_len = RTM_PAYLOAD(nlh);
 
-    for ( ; NLMSG_OK(nlh, received_bytes); \
-                       nlh = NLMSG_NEXT(nlh, received_bytes))
+    for ( ; NLMSG_OK(nlh, (unsigned int)received_bytes); nlh = NLMSG_NEXT(nlh, received_bytes))
        {
            /* Get the route data */
            route_entry = (struct rtmsg *) NLMSG_DATA(nlh);
@@ -184,7 +197,6 @@ static void _route_msg_handler(struct nlmsghdr *nlh,
                if (route_attribute->rta_type == RTA_GATEWAY)
                {
                    result->route.gateway_address = htonl(*(uint32_t*)RTA_DATA(route_attribute));
-;
                    inet_ntop(AF_INET, RTA_DATA(route_attribute),
                                                 result->route.s_gateway_address,
                                                 sizeof(result->route.s_gateway_address));
@@ -200,7 +212,7 @@ static void _link_msg_handler(struct nlmsghdr *nlh,
 {
     (void) sa;
     struct ifaddrmsg *ifa=NLMSG_DATA(nlh);
-    struct ifinfomsg *ifi=NLMSG_DATA(nlh);;
+    struct ifinfomsg *ifi=NLMSG_DATA(nlh);
 
     switch (nlh->nlmsg_type){
         case RTM_NEWLINK:
@@ -246,24 +258,35 @@ static void* network_monitor_worker(void *arg)
     while ((len = recvmsg(_net_notification.socket, &msg, 0)) > 0){
         _send_NLM_F_ACK_msg(_net_notification.socket);
 
-        for (nlh = (struct nlmsghdr *) buf; (NLMSG_OK(nlh, len)) && (nlh->nlmsg_type != NLMSG_DONE); nlh = NLMSG_NEXT(nlh, len)) {
-            if (nlh->nlmsg_type == NLMSG_ERROR){
-                /* Do some error handling. */
-                log_it(L_DEBUG, "There an error! nlmsg_type %d", nlh->nlmsg_type);
+        for (nlh = (struct nlmsghdr *) buf; NLMSG_OK(nlh, (unsigned int)len) && nlh->nlmsg_type != NLMSG_DONE; nlh = NLMSG_NEXT(nlh, len)) {
+            if (nlh->nlmsg_type == NLMSG_ERROR) {
+                struct nlmsgerr *err = (struct nlmsgerr *)NLMSG_DATA(nlh);
+                if (err->error != 0) {
+                    log_it(L_ERROR, "Netlink error: %s", strerror(-err->error));
+                }
                 break;
             }
 
             clear_results(&callback_result);
 
             callback_result.type = nlh->nlmsg_type;
-            if (nlh->nlmsg_type == RTM_NEWADDR || nlh->nlmsg_type == RTM_DELADDR) {
+            switch (nlh->nlmsg_type) {
+            case RTM_NEWADDR:
+            case RTM_DELADDR:
                 _ip_addr_msg_handler(nlh, &callback_result);
-            } else if(nlh->nlmsg_type == RTM_NEWROUTE || nlh->nlmsg_type == RTM_DELROUTE) {
+                break;
+
+            case RTM_NEWROUTE:
+            case RTM_DELROUTE:
                 _route_msg_handler(nlh, &callback_result, len);
-            } else if (nlh->nlmsg_type == RTM_NEWLINK || nlh->nlmsg_type == RTM_DELLINK){
+                break;
+
+            case RTM_NEWLINK:
+            case RTM_DELLINK:
                 _link_msg_handler(nlh, &callback_result, sa);
-            }
-            else{
+                break;
+
+            default:
                 log_it(L_DEBUG, "Not supported msg type %d", nlh->nlmsg_type);
                 continue;
             }
@@ -275,5 +298,11 @@ static void* network_monitor_worker(void *arg)
             }
         }
     }
+
+    if (len == -1) {
+        log_it(L_ERROR, "recvmsg failed: %s", strerror(errno));
+    }
+
+
     return NULL;
 }

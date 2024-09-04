@@ -28,6 +28,9 @@
 extern "C" {
 #endif
 
+//Size sufficient to store the current domain name.
+#define HOST_IDENTIFIER_MAX_LEN 22
+
 typedef void (*dap_client_http_callback_error_t)(int, void *); // Callback for specific http client operations
 typedef void (*dap_client_http_callback_error_ext_t)(int,int , void *,size_t, void *); // Callback with extended error processing
 typedef void (*dap_client_http_callback_data_t)(void *, size_t, void *); // Callback for specific http client operations
@@ -56,7 +59,7 @@ typedef struct dap_client_http {
     size_t response_size_max;
 
     // Request args
-    char uplink_addr[INET_ADDRSTRLEN];
+    char uplink_addr[HOST_IDENTIFIER_MAX_LEN];
     uint16_t uplink_port;
     char *method;
     char *request_content_type;
