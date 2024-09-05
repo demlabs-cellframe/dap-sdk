@@ -144,11 +144,8 @@ static void s_client_internal_clean(dap_client_pvt_t *a_client_pvt)
     }
     if (a_client_pvt->stream_es) {
         dap_stream_delete_unsafe(a_client_pvt->stream);
-        a_client_pvt->stream = NULL;
-        a_client_pvt->stream_es->_inheritor = NULL;
-        a_client_pvt->stream_es = NULL;
+        a_client_pvt->stream = a_client_pvt->stream_es = a_client_pvt->stream_key = NULL;
         a_client_pvt->stream_id = 0;
-        a_client_pvt->stream_key = NULL;
     }
 
     DAP_DEL_Z(a_client_pvt->session_key_id);
