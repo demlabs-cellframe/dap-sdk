@@ -383,7 +383,7 @@ int s_dap_log_open(const char *a_log_file_path) {
         return -1;   //switch off show log in cosole if file not open
     }
 #ifdef DAP_OS_WINDOWS
-    static char s_buf_file[LOG_BUF_SIZE], s_buf_stdout[LOG_BUF_SIZE];
+    static _Thread_local char s_buf_file[LOG_BUF_SIZE], s_buf_stdout[LOG_BUF_SIZE];
     setvbuf(stdout, s_buf_file, _IOFBF, LOG_BUF_SIZE);
     setvbuf(s_log_file, s_buf_stdout, _IOFBF, LOG_BUF_SIZE);
 #else
@@ -453,7 +453,7 @@ void dap_common_deinit( ) {
 static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
     va_list va_file;
     va_copy(va_file, va);
-    s_print_callback(a_off, a_fmt, va);
+    //s_print_callback(a_off, a_fmt, va);
     if (!s_log_file) {
         if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file) {
             va_end(va_file);
@@ -464,7 +464,7 @@ static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
 #ifdef DAP_OS_WINDOWS
     fflush(s_log_file);
 #endif
-    fflush(stdout);
+    //fflush(stdout);
     va_end(va_file);
 }
 
