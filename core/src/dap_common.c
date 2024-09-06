@@ -211,21 +211,13 @@ void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
   switch (output)
   {
     case LOGGER_OUTPUT_STDOUT: {
-        static _Thread_local char s_buf_stdout[LOG_BUF_SIZE];
-#ifdef DAP_OS_WINDOWS
-        setvbuf(stdout, s_buf_stdout, _IOFBF, LOG_BUF_SIZE);
-#else
+        static char s_buf_stdout[LOG_BUF_SIZE];
         setvbuf(stdout, s_buf_stdout, _IOLBF, LOG_BUF_SIZE);
-#endif
         s_print_callback = print_it_stdout;
     }
     break;
     case LOGGER_OUTPUT_STDERR: {
-        #ifdef DAP_OS_WINDOWS
-        setvbuf(stderr, NULL, _IOFBF, LOG_BUF_SIZE);
-#else
         setvbuf(stderr, NULL, _IOLBF, LOG_BUF_SIZE);
-#endif
         s_print_callback = print_it_stderr;
     }
     break;
@@ -253,9 +245,7 @@ static char* s_appname = NULL;
 DAP_STATIC_INLINE int s_update_log_time(char *a_datetime_str) {
     time_t t = time(NULL);
     struct tm tmptime;
-    return localtime_r(&t, &tmptime)
-            ? strftime(a_datetime_str, 32, "[%x-%X]", &tmptime)
-            : 0;
+    return localtime_r(&t, &tmptime) ? strftime(a_datetime_str, 32, "[%x-%X]", &tmptime) : 0;
 }
 
 /**
@@ -390,24 +380,10 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, .
 }
 
 int s_dap_log_open(const char *a_log_file_path) {
-    if (s_log_file) {
-        s_log_file = freopen(a_log_file_path, "w", s_log_file);
-    } else {
-        s_log_file = fopen( a_log_file_path , "a" );
-        if( s_log_file == NULL)
-            s_log_file = fopen( a_log_file_path , "w" );
-    }
-    if ( s_log_file == NULL ) {
-        fprintf( stderr, "Can't open log file %s \n", a_log_file_path );
-        return -1;   //switch off show log in cosole if file not open
-    }
-    static _Thread_local char s_buf_file[LOG_BUF_SIZE];
-#ifdef DAP_OS_WINDOWS
-    setvbuf(s_log_file, s_buf_file, _IOFBF, LOG_BUF_SIZE);
-#else
-    setvbuf(s_log_file, s_buf_file, _IOLBF, LOG_BUF_SIZE);
-#endif
-    return 0;
+    if (! (s_log_file = s_log_file ? freopen(a_log_file_path, "w", s_log_file) : fopen( a_log_file_path , "a" )) )
+        return fprintf( stderr, "Can't open log file %s \n", a_log_file_path ), -1;
+    static char s_buf_file[LOG_BUF_SIZE];
+    return setvbuf(s_log_file, s_buf_file, _IOLBF, LOG_BUF_SIZE);
 }
 
 /**
