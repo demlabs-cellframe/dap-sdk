@@ -515,9 +515,6 @@ The fragments below allow to select the desired implementation of the permutatio
         <h>lib/low/Xoodoo-times16/AVX512/Xoodoo-times16-SnP.h</h>
     </fragment>
 
-    <fragment name="noopt">
-        <gcc>-march=core2</gcc>
-    </fragment>
 
 
 </group>
