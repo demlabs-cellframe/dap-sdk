@@ -219,11 +219,21 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
 #ifdef DAP_EVENTS_CAPS_IOCP
     a_esocket->no_close = true;
 #endif
-    dap_events_socket_write_f_unsafe(a_esocket, "%s /%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n" "%s",
-                                     l_client_http->method, l_client_http->path, l_get_str,
-                                     l_client_http->uplink_addr, l_request_headers,
-                                     l_client_http->request && l_client_http->request_size
-                                     ? (char*)l_client_http->request : "");
+
+
+    int l_out_size = strlen(l_client_http->method) + strlen(l_client_http->path) +
+                     strlen(l_client_http->uplink_addr) + strlen(l_request_headers) + strlen(" / HTTP/1.1\r\nHost: \r\n\r\n");
+
+    l_out_size += l_client_http->request_size + 1;
+
+    char *l_out_buf = DAP_NEW_SIZE(char, l_out_size);
+    int l_buf_offset = snprintf(l_out_buf,l_out_size,"%s /%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
+                                                l_client_http->method, l_client_http->path, l_get_str,
+                                                l_client_http->uplink_addr, l_request_headers);
+
+
+    memcpy(l_out_buf + l_buf_offset, l_client_http->request, l_client_http->request_size);
+    dap_events_socket_write_unsafe(a_esocket, l_out_buf, l_out_size);
 }
 
 /**
