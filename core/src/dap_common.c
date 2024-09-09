@@ -230,10 +230,10 @@ void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
         s_print_callback = print_it_none;
         break;
     #ifdef ANDROID
-    case LOGGER_OUTPUT_ALOG:
+    /*case LOGGER_OUTPUT_ALOG:
         s_print_callback = print_it_alog;
         s_print_param = param;
-        break;
+        break;*/
     #endif
 
   default:
