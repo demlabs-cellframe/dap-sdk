@@ -13,13 +13,6 @@ static enum DAP_DILITHIUM_SIGN_SECURITY _dilithium_type = DILITHIUM_MIN_SIZE; //
 //// WARNING! Its because of accident with wrong sizes on mobile 32bit platforms
 //// Remove it after you'll update all mobile keys
 
-static bool s_debug_more = false;
-
-void dap_enc_sig_dilithium_init(bool a_type)
-{
-    s_debug_more = a_type;
-}
-
 void dap_enc_sig_dilithium_set_type(enum DAP_DILITHIUM_SIGN_SECURITY type)
 {
     _dilithium_type = type;
@@ -89,7 +82,7 @@ int dap_enc_sig_dilithium_verify_sign(dap_enc_key_t *a_key, const void *a_msg,
     }
     int l_ret = dilithium_crypto_sign_open( (unsigned char *)a_msg, a_msg_size, (dilithium_signature_t *)a_sig, a_key->pub_key_data);
     if(l_ret)
-        debug_if(s_debug_more, L_WARNING, "Wrong signature, can't open with code %d", l_ret);
+        debug_if(dap_get_enc_debug_more(), L_WARNING, "Wrong signature, can't open with code %d", l_ret);
 
     return l_ret;
 }

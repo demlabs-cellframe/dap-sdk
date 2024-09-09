@@ -47,6 +47,10 @@
 
 static bool s_debug_more = false;
 
+bool dap_get_enc_debug_more() {
+    return s_debug_more;
+}
+
 int dap_enc_init()
 {
     srand(time(NULL));
@@ -54,7 +58,6 @@ int dap_enc_init()
     dap_cert_init();
     dap_crc64_init();
     s_debug_more = g_config ? dap_config_get_item_bool_default(g_config, "crypto", "debug_more", false) : false;
-    dap_enc_sig_dilithium_init(s_debug_more);
     dap_sign_init(DAP_SIGN_HASH_TYPE_SHA3);
     return 0;
 }

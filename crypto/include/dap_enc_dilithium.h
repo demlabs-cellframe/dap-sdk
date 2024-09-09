@@ -9,8 +9,6 @@ enum DAP_DILITHIUM_SIGN_SECURITY {
     DILITHIUM_TOY = 0, DILITHIUM_MAX_SPEED, DILITHIUM_MIN_SIZE, DILITHIUM_MAX_SECURITY
 };
 
-void dap_enc_sig_dilithium_init(bool a_type);
-
 void dap_enc_sig_dilithium_set_type(enum DAP_DILITHIUM_SIGN_SECURITY type);
 
 void dap_enc_sig_dilithium_key_new(dap_enc_key_t *a_key);
