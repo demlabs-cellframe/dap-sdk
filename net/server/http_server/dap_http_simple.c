@@ -251,12 +251,12 @@ static bool s_http_client_headers_write(dap_http_client_t *cl_ht, void *a_arg)
     assert(a_arg == l_hs);
     if (!l_hs)
         return false;
-    if (cl_ht->reply_status_code == Http_Status_OK) {
-        for (dap_http_header_t *i = l_hs->ext_headers; i; i = i->next) {
-            dap_http_out_header_add(cl_ht, i->name, i->value);
-            log_it(L_DEBUG, "Added http header. %s: %s", i->name, i->value);
-        }
+
+    for (dap_http_header_t *i = l_hs->ext_headers; i; i = i->next) {
+        dap_http_out_header_add(cl_ht, i->name, i->value);
+        log_it(L_DEBUG, "Added http header. %s: %s", i->name, i->value);
     }
+    
     return !l_hs->generate_default_header;
 }
 

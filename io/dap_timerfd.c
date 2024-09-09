@@ -97,6 +97,8 @@ void CALLBACK TimerCallback(void* arg, BOOLEAN flag) {
  */
 dap_timerfd_t* dap_timerfd_start_on_worker(dap_worker_t * a_worker, uint64_t a_timeout_ms, dap_timerfd_callback_t a_callback, void *a_callback_arg)
 {
+    if (!a_worker)
+        return NULL;
     dap_timerfd_t* l_timerfd = dap_timerfd_create( a_timeout_ms, a_callback, a_callback_arg);
     if (!l_timerfd) {
         log_it(L_CRITICAL,"Can't create timer");

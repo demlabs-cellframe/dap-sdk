@@ -2,7 +2,7 @@
 
 #define LOG_TAG "dap_json_rpc_errors"
 
-static dap_json_rpc_error_t *s_errors;
+static _Thread_local dap_json_rpc_error_t *s_errors;
 int _dap_json_rpc_error_cmp_by_code(dap_json_rpc_error_t *a_error, int a_code_error);
 
 int dap_json_rpc_error_init(void)
@@ -21,6 +21,7 @@ void dap_json_rpc_error_deinit(void)
             DAP_FREE(err);
         }
     }
+    s_errors = NULL;
 }
 
 dap_json_rpc_error_JSON_t * dap_json_rpc_error_JSON_create()

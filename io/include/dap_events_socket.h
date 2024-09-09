@@ -101,7 +101,7 @@ typedef struct queue_entry {
 #include "wepoll.h"
 #elif defined (DAP_EVENTS_CAPS_IOCP)
 #include <mswsock.h>
-#define MAX_IOCP_ENTRIES 0xf // Maximum count of IOCP entries to fetch at once
+#define MAX_IOCP_ENTRIES 255 // Maximum count of IOCP entries to fetch at once
 #elif defined (DAP_EVENTS_CAPS_EPOLL)
 #include <sys/epoll.h>
 #define EPOLL_HANDLE  int
@@ -329,7 +329,7 @@ typedef struct dap_events_socket {
 
     int64_t kqueue_data;
 #elif defined DAP_EVENTS_CAPS_IOCP
-    byte_t pending : 7, pending_read : 1;
+    uint_fast16_t pending : 15, pending_read : 1;
 #endif
 
     dap_events_socket_callbacks_t callbacks;

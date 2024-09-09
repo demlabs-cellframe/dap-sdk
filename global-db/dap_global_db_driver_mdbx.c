@@ -1035,7 +1035,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
             return  log_it(L_WARNING, "Cannot create DB context for the group '%s'", a_store_obj->group), -EIO;
         log_it(L_NOTICE, "DB context for the group '%s' has been created", a_store_obj->group);
         if (l_type_erase)                                                           /* Nothing to do anymore */
-            return 1;
+            return a_store_obj->key ? DAP_GLOBAL_DB_RC_NOT_FOUND : DAP_GLOBAL_DB_RC_SUCCESS;
     }
     int rc = -EIO;
     MDBX_val l_key = {}, l_data;

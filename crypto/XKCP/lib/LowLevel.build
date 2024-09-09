@@ -118,7 +118,6 @@ The fragments below allow to select the desired implementation of the permutatio
         <gcc>-fomit-frame-pointer</gcc>
         <gcc>-O2</gcc>
         <gcc>-g0</gcc>
-        <gcc>-mtune=native</gcc>
     </fragment>
 
     <fragment name="optimized-march-native">
@@ -515,5 +514,7 @@ The fragments below allow to select the desired implementation of the permutatio
         <c gcc="-mavx512f -mavx512vl">lib/low/Xoodoo-times16/AVX512/Xoodoo-times16-SIMD512.c</c>
         <h>lib/low/Xoodoo-times16/AVX512/Xoodoo-times16-SnP.h</h>
     </fragment>
+
+
 
 </group>

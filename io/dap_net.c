@@ -34,19 +34,24 @@ int dap_net_resolve_host(const char *a_host, const char *a_port, bool a_numeric_
 {
     dap_return_val_if_fail_err(a_addr_out, -1, "Required storage is not provided");
     memset(a_addr_out, 0, sizeof(*a_addr_out));
-    int l_ret = 0,
-        l_ai_flags = a_numeric_only
-            ? AI_NUMERICHOST
-            : AI_CANONNAME | AI_V4MAPPED | AI_ADDRCONFIG;
+
+    
+    int l_ret = 0;
+    #ifdef ANDROID //on android  AI_MASK is  (AI_PASSIVE | AI_CANONNAME | AI_NUMERICHOST | AI_NUMERICSERV )
+        int l_ai_flags = a_numeric_only ? AI_NUMERICHOST : AI_CANONNAME ;
+    #else
+        int l_ai_flags = a_numeric_only ? AI_NUMERICHOST : AI_CANONNAME | AI_V4MAPPED | AI_ADDRCONFIG;
+    #endif
     if ( !a_host )
         l_ai_flags |= AI_PASSIVE;
+    
     if ( a_port )
         l_ai_flags |= AI_NUMERICSERV;
 
-    struct addrinfo *l_res, l_hints = { .ai_flags = l_ai_flags, .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM };
+    struct addrinfo *l_res = NULL, l_hints = { .ai_flags = l_ai_flags, .ai_family = AF_UNSPEC, .ai_socktype = SOCK_STREAM };
     if (a_family)
         *a_family = AF_UNSPEC;
-    if (( l_ret = getaddrinfo(a_host, a_port, &l_hints, &l_res) ))
+    if (( l_ret = getaddrinfo(a_host, a_port, &l_hints, &l_res) ) || !l_res )
         return log_it(L_ERROR, "getaddrinfo() failed, error %d \"%s\"", l_ret, gai_strerror(l_ret) ), -2;
     if (a_family)
         *a_family = l_res->ai_family;
