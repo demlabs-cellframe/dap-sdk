@@ -231,10 +231,15 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
         return;
     }
 
-    ssize_t l_out_buf_size = l_header_size + l_client_http->request_size + 1;
-    l_out_buf = DAP_REALLOC(l_out_buf, l_out_buf_size);
+    
+    ssize_t l_out_buf_size = l_header_size;
+    if (l_client_http->request && l_client_http->request_size){
+        l_out_buf_size += l_client_http->request_size + 1;
+        l_out_buf = DAP_REALLOC(l_out_buf, l_out_buf_size);
+        memcpy(l_out_buf + l_header_size, l_client_http->request, l_client_http->request_size);
+    }
+        
 
-    memcpy(l_out_buf + l_header_size, l_client_http->request, l_client_http->request_size);
     dap_events_socket_write_unsafe(a_esocket, l_out_buf, l_out_buf_size);
     DAP_DEL_Z(l_out_buf);
 }
