@@ -35,7 +35,6 @@
 #include "dap_cert.h"
 #include "dap_crc64.h"
 #include "dap_sign.h"
-#include "dap_enc_dilithium.h"
 
 #define LOG_TAG "dap_enc"
 
