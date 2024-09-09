@@ -46,6 +46,10 @@
 
 static bool s_debug_more = false;
 
+bool dap_get_enc_debug_more() {
+    return s_debug_more;
+}
+
 int dap_enc_init()
 {
     srand(time(NULL));
