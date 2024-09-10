@@ -22,6 +22,8 @@ tests:amd64.debian:
     script:
       - mkdir build
       - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc) && ctest --verbose
+      - cd build && make cppcheck
+      
 
 tests:arm32.debian:
     extends: .tests
