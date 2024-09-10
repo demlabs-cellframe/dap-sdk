@@ -260,6 +260,8 @@ endif ()
 FIND_PROGRAM(CPPCHECK "cppcheck")
 IF(CPPCHECK)
     # Set export commands on
+    message("[!] CPPCHECK FOUND, ADDED TARGET CPPCHECK")
+
     SET(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
     ADD_CUSTOM_TARGET(
