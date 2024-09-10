@@ -423,6 +423,8 @@ void dap_enc_tests_run() {
 #ifdef DAP_ECDSA
     dap_print_module_name("dap_enc serialize->deserialize ECDSA");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_ECDSA, false);
+    dap_print_module_name("dap_enc serialize->deserialize multisign ECDSA+DILITHIUM");
+    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM, false);
 #endif
     dap_print_module_name("dap_enc serialize->deserialize IAES");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_IAES, true);

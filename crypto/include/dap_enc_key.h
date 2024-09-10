@@ -117,6 +117,7 @@ typedef enum dap_enc_key_type {
     DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK=27,
 
     DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED = 100,
+    DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM = 101,
 
 #ifdef DAP_PQLR
     // QApp PQLR library integration
@@ -129,7 +130,7 @@ typedef enum dap_enc_key_type {
 
     DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_PQLR_KEM_NEWHOPE,
 #else
-    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED,
+    DAP_ENC_KEY_TYPE_LAST = DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM,
 #endif
 } dap_enc_key_type_t;
 

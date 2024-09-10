@@ -42,6 +42,7 @@
 #include "dap_enc_multisign.h"
 #ifdef DAP_ECDSA
 #include "dap_enc_ecdsa.h"
+#include "dap_enc_multisign_prepared.h"
 #endif
 #include "dap_enc_shipovnik.h"
 #include "dap_enc_ringct20.h"
@@ -406,6 +407,44 @@ dap_enc_key_callbacks_t s_callbacks[]={
     },
 
 
+  [DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM]={
+        .name =                             "MULTISIG_ECDSA_DILITHIUM",
+#ifdef DAP_ECDSA
+        .enc =                              NULL,
+        .dec =                              NULL,
+        .enc_na =                           NULL,
+        .dec_na =                           NULL,
+        .gen_key_public =                   NULL,
+        .gen_bob_shared_key =               NULL,
+        .gen_alice_shared_key =             NULL,
+        .enc_out_size =                     NULL,
+        .dec_out_size =                     NULL,
+    
+        .new_callback =                     dap_enc_sig_multisign_ecdsa_dilithium_key_new,
+        .new_generate_callback =            dap_enc_sig_multisign_ecdsa_dilithium_key_new_generate,
+
+        .delete_callback =                  dap_enc_sig_multisign_key_delete,
+        .del_pub_key =                      NULL,
+        .del_priv_key =                     NULL,
+
+        .sign_get =                         dap_enc_sig_multisign_get_sign,
+        .sign_verify =                      dap_enc_sig_multisign_verify_sign,
+
+        .ser_sign =                         dap_enc_sig_multisign_write_signature,
+        .ser_priv_key =                     NULL,
+        .ser_pub_key =                      NULL,
+        .ser_priv_key_size =                NULL,
+        .ser_pub_key_size =                 NULL,
+
+        .deser_sign =                       dap_enc_sig_multisign_read_signature,
+        .deser_priv_key =                   NULL,
+        .deser_pub_key =                    NULL,
+        .deser_sign_size =                  dap_enc_sig_multisign_deser_sig_size,
+        .deser_pub_key_size =               NULL,
+        .deser_priv_key_size =              NULL,
+#endif
+    },
+
 
     [DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK]={
           .name =                             "SIG_SHIPOVNIK",
@@ -531,7 +570,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .deser_priv_key_size =              dap_enc_sig_sphincsplus_deser_private_key_size,
     },
     [DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED]={
-        .name =                             "MULTI_CHAINED",
+        .name =                             "MULTISIG_CHAINED",
         .enc =                              NULL,
         .dec =                              NULL,
         .enc_na =                           NULL,
@@ -622,6 +661,7 @@ uint8_t *dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
+        case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:
             if (!s_callbacks[a_key_type].ser_sign) {
                 log_it(L_ERROR, "No callback for signature serialize to %s enc key", dap_enc_get_type_name(a_key_type));
                 return NULL;
@@ -658,6 +698,7 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
+        case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:
             if (!s_callbacks[a_key_type].deser_sign || !s_callbacks[a_key_type].deser_sign_size) {
                 log_it(L_ERROR, "No callback for signature deserialize to %s enc key", dap_enc_get_type_name(a_key_type));
                 return NULL;
@@ -1178,6 +1219,7 @@ size_t dap_enc_calc_signature_unserialized_size(dap_enc_key_t *a_key)
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
+        case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:
             if (!s_callbacks[a_key->type].deser_sign_size) {
                 log_it(L_ERROR, "No callback for signature deserialize size calc to %s enc key", dap_enc_get_type_name(a_key->type));
                 break;
