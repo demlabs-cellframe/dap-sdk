@@ -450,7 +450,7 @@ void dap_enc_tests_run() {
 #ifdef DAP_ECDSA
     dap_print_module_name("dap_enc_sig serialize->deserialize ECDSA");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_ECDSA);
-    dap_print_module_name("dap_enc_sig serialize->deserialize multisign ECDSA+DILITHIUM");
+    dap_print_module_name("dap_enc_sig serialize->deserialize ECDSA+DILITHIUM");
     test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM);
 #endif
     dap_print_module_name("dap_enc_sig serialize->deserialize SHIPOVNIK");
