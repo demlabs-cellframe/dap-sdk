@@ -408,7 +408,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
 
 
   [DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM]={
-        .name =                             "MULTISIG_ECDSA_DILITHIUM",
+        .name =                             "SIG_MULTI_ECDSA_DILITHIUM",
 #ifdef DAP_ECDSA
         .enc =                              NULL,
         .dec =                              NULL,
@@ -570,7 +570,7 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .deser_priv_key_size =              dap_enc_sig_sphincsplus_deser_private_key_size,
     },
     [DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED]={
-        .name =                             "MULTISIG_CHAINED",
+        .name =                             "SIG_MULTI_CHAINED",
         .enc =                              NULL,
         .dec =                              NULL,
         .enc_na =                           NULL,

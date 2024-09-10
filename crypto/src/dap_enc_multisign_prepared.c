@@ -41,6 +41,5 @@ void dap_enc_sig_multisign_ecdsa_dilithium_key_new_generate(dap_enc_key_t *a_key
     dap_return_if_pass(a_key->type != DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM);
 // memory alloc
     const dap_enc_key_type_t l_key_types[2] = {DAP_ENC_KEY_TYPE_SIG_ECDSA, DAP_ENC_KEY_TYPE_SIG_DILITHIUM};
-    dap_enc_key_t *l_keys[2];
     dap_enc_sig_multisign_key_new_generate(a_key, l_key_types, 2, a_seed, a_seed_size, 0);
 }
