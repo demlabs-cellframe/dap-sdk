@@ -22,24 +22,23 @@
 */
 
 #if defined(DAP_OS_WINDOWS)
+#ifdef DAP_EVENTS_CAPS_WEPOLL
 #include "wepoll.h"
+#endif
 #include <ws2tcpip.h>
-
-#elif defined(DAP_OS_LINUX)
+#else
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <netdb.h>
+#include <sys/un.h>
+#if defined(DAP_OS_LINUX)
 #include <sys/epoll.h>
-#include <netdb.h>
 #include <sys/timerfd.h>
-#include <sys/un.h>
 #elif defined (DAP_OS_BSD)
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
 #include <sys/event.h>
-#include <sys/un.h>
-#include <netdb.h>
+#endif
 #endif
 
 #include <sys/types.h>
