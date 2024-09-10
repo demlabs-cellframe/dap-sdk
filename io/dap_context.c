@@ -378,8 +378,11 @@ int dap_worker_thread_loop(dap_context_t * a_context)
     DWORD l_bytes = 0, l_entries_num = 0;
     OVERLAPPED_ENTRY ol_entries[MAX_IOCP_ENTRIES] = { };
     do {
-        if ( !GetQueuedCompletionStatusEx(a_context->iocp, ol_entries, MAX_IOCP_ENTRIES, &l_entries_num, INFINITE, FALSE) ) {
+        if ( !GetQueuedCompletionStatusEx(a_context->iocp, ol_entries, MAX_IOCP_ENTRIES, &l_entries_num, INFINITE, true) ) {
             switch ( l_errno = GetLastError() ) {
+            case WAIT_IO_COMPLETION:
+                log_it(L_MSG, "Soma APC fired");
+            continue;
             case ERROR_ABANDONED_WAIT_0:
                 log_it(L_ERROR, "Completion port on context %u is closed", a_context->id);
             break;

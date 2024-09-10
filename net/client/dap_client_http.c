@@ -174,6 +174,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     if (!l_client_http->timer) {
         DAP_DELETE(l_es_uuid_ptr);
         log_it(L_ERROR, "Can't run timerfo after connection check on worker id %u", l_client_http->worker->id);
+        return;
     }
 
     char l_request_headers[1024] = { [0]='\0' };
@@ -219,11 +220,28 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
 #ifdef DAP_EVENTS_CAPS_IOCP
     a_esocket->no_close = true;
 #endif
-    dap_events_socket_write_f_unsafe(a_esocket, "%s /%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n" "%s",
-                                     l_client_http->method, l_client_http->path, l_get_str,
-                                     l_client_http->uplink_addr, l_request_headers,
-                                     l_client_http->request && l_client_http->request_size
-                                     ? (char*)l_client_http->request : "");
+
+    char *l_out_buf = NULL;
+    int l_header_size = asprintf(&l_out_buf, "%s /%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
+                                                l_client_http->method, l_client_http->path, l_get_str,
+                                                l_client_http->uplink_addr, l_request_headers);
+    
+    if(!l_out_buf || l_header_size == -1){
+        log_it(L_ERROR, "Can't create headers string or memory allocation error.");
+        return;
+    }
+
+    
+    ssize_t l_out_buf_size = l_header_size;
+    if (l_client_http->request && l_client_http->request_size){
+        l_out_buf_size += l_client_http->request_size + 1;
+        l_out_buf = DAP_REALLOC(l_out_buf, l_out_buf_size);
+        memcpy(l_out_buf + l_header_size, l_client_http->request, l_client_http->request_size);
+    }
+        
+
+    dap_events_socket_write_unsafe(a_esocket, l_out_buf, l_out_buf_size);
+    DAP_DEL_Z(l_out_buf);
 }
 
 /**

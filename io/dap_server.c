@@ -22,24 +22,23 @@
 */
 
 #if defined(DAP_OS_WINDOWS)
+#ifdef DAP_EVENTS_CAPS_WEPOLL
 #include "wepoll.h"
+#endif
 #include <ws2tcpip.h>
-
-#elif defined(DAP_OS_LINUX)
+#else
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <netdb.h>
+#include <sys/un.h>
+#if defined(DAP_OS_LINUX)
 #include <sys/epoll.h>
-#include <netdb.h>
 #include <sys/timerfd.h>
-#include <sys/un.h>
 #elif defined (DAP_OS_BSD)
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
 #include <sys/event.h>
-#include <sys/un.h>
-#include <netdb.h>
+#endif
 #endif
 
 #include <sys/types.h>
@@ -370,6 +369,9 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         l_es_new->remote_port = strtol(l_port_str, NULL, 10);
         debug_if(l_server->ext_log, L_INFO, "Connection accepted from %s : %hu, socket %"DAP_FORMAT_SOCKET,
                                             l_es_new->remote_addr_str, l_es_new->remote_port, a_remote_socket);
+        int one = 1;
+        if ( setsockopt(l_es_new->socket, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one)) < 0 )
+            log_it(L_WARNING, "Can't disable Nagle alg, error %d: %s", errno, dap_strerror(errno));
         break;
     default:
         log_it(L_ERROR, "Unsupported protocol family %hu from accept()", l_family);

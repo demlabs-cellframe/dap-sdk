@@ -158,11 +158,12 @@ ret_n_clear:
 
 static size_t s_cb_msg_buf_clean(char *a_buf_out, size_t a_buf_size) 
 {
-    for (size_t shift = 0; shift < a_buf_size; shift += sizeof( dap_stream_worker_msg_send_t*)) {
-        dap_stream_worker_msg_send_t* l_msg = (dap_stream_worker_msg_send_t*)(a_buf_out + shift);
+    size_t l_total_size = 0;
+    for (size_t shift = 0; shift < a_buf_size; shift += sizeof(dap_stream_worker_msg_send_t*)) {
+        dap_stream_worker_msg_send_t* l_msg = *(dap_stream_worker_msg_send_t**)(a_buf_out + shift);
+        l_total_size += l_msg->data_size;
         DAP_DELETE(l_msg->data);
         DAP_DELETE(l_msg);
-        log_it(L_WARNING, "MSG BUF CLEAN!");
     }
-    return 0;
+    return l_total_size;
 }
