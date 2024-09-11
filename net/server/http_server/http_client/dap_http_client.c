@@ -493,6 +493,10 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                     } else if (l_http_client->proc->cache)
                         // No data, its over
                         dap_http_client_write(l_http_client);
+                    else {
+                        a_esocket->buf_in_size = 0;
+                        break;
+                    }
                 }
                 dap_events_socket_shrink_buf_in( a_esocket, l_len);         /* Shrink input buffer over whole HTTP header */
             } break;
@@ -562,13 +566,15 @@ void dap_http_client_write(dap_http_client_t *a_http_client)
                                                             "%s: %s" CRLF, hdr->name, hdr->value);
         dap_http_header_remove( &a_http_client->out_headers, hdr );
     }
-    dap_events_socket_write_unsafe(a_http_client->esocket, CRLF, 2);/* Add final CRLF - HTTP's End-Of-Header */
+    dap_events_socket_write_unsafe(a_http_client->esocket, CRLF, 2); /* Add final CRLF - HTTP's End-Of-Header */
 }
 
 bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
 {
     dap_return_val_if_fail(a_esocket, false);
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
+    if (!l_http_client)
+        return false;
     if (l_http_client->reply_status_code != Http_Status_OK || l_http_client->state_read == DAP_HTTP_CLIENT_STATE_NONE) {
         // No write data if error code set
         l_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;

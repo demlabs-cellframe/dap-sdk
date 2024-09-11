@@ -169,21 +169,30 @@ static void print_it_none (unsigned a_off, const char *a_fmt, va_list va){}
 static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va);
 #endif
 
-static print_callback s_print_callback = print_it_stdout;
-static void *s_print_param = NULL;
+#define LOG_FORMAT_LEN  4096
+#define LOG_BUF_SIZE    32768
+
+static print_callback s_print_callback = print_it_none;
+//static void *s_print_param = NULL;
 
 
 static void print_it_stdout(unsigned a_off, const char *a_fmt, va_list va)
 {
     vfprintf(stdout, a_fmt, va);
+#ifdef DAP_OS_WINDOWS
+    fflush(stdout);
+#endif
 }
 
 static void print_it_stderr(unsigned a_off, const char *a_fmt, va_list va)
 {
     vfprintf(stderr, a_fmt, va);
+#ifdef DAP_OS_WINDOWS
+    fflush(stderr);
+#endif
 }
 
-static void print_it_fd(unsigned a_off, const char *a_fmt, va_list va)
+/*static void print_it_fd(unsigned a_off, const char *a_fmt, va_list va)
 {
     vfprintf(s_print_param, a_fmt, va);
 }
@@ -196,30 +205,35 @@ static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va)
     __android_log_vprint(ANDROID_LOG_INFO, s_print_param, a_fmt, va);
 }
 
-#endif
+#endif*/
+
 void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
 {
   switch (output)
   {
-    case LOGGER_OUTPUT_STDOUT:
+    case LOGGER_OUTPUT_STDOUT: {
+        static char s_buf_stdout[LOG_BUF_SIZE];
+        setvbuf(stdout, s_buf_stdout, _IOLBF, LOG_BUF_SIZE);
         s_print_callback = print_it_stdout;
-        break;
-    case LOGGER_OUTPUT_STDERR:
+    }
+    break;
+    case LOGGER_OUTPUT_STDERR: {
+        setvbuf(stderr, NULL, _IOLBF, LOG_BUF_SIZE);
         s_print_callback = print_it_stderr;
-        break;
-    case LOGGER_OUTPUT_FD:
+    }
+    break;
+    /*case LOGGER_OUTPUT_FD:
         s_print_callback = print_it_fd;
         s_print_param = param;
-        break;
+        break;*/
     case LOGGER_OUTPUT_NONE:
         s_print_callback = print_it_none;
         break;
-    
     #ifdef ANDROID
-    case LOGGER_OUTPUT_ALOG:
+    /*case LOGGER_OUTPUT_ALOG:
         s_print_callback = print_it_alog;
         s_print_param = param;
-        break;
+        break;*/
     #endif
 
   default:
@@ -227,16 +241,12 @@ void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
   }
 }
 
-#define LOG_FORMAT_LEN  4096
-#define LOG_BUF_SIZE    32768
 static char* s_appname = NULL;
 
 DAP_STATIC_INLINE int s_update_log_time(char *a_datetime_str) {
     time_t t = time(NULL);
     struct tm tmptime;
-    return localtime_r(&t, &tmptime)
-            ? strftime(a_datetime_str, 32, "[%x-%X]", &tmptime)
-            : 0;
+    return localtime_r(&t, &tmptime) ? strftime(a_datetime_str, 32, "[%x-%X]", &tmptime) : 0;
 }
 
 /**
@@ -371,25 +381,10 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, .
 }
 
 int s_dap_log_open(const char *a_log_file_path) {
-    if (s_log_file) {
-        s_log_file = freopen(a_log_file_path, "w", s_log_file);
-    } else {
-        s_log_file = fopen( a_log_file_path , "a" );
-        if( s_log_file == NULL)
-            s_log_file = fopen( a_log_file_path , "w" );
-    }
-    if ( s_log_file == NULL ) {
-        fprintf( stderr, "Can't open log file %s \n", a_log_file_path );
-        return -1;   //switch off show log in cosole if file not open
-    }
-#ifdef DAP_OS_WINDOWS
-    static char s_buf_file[LOG_BUF_SIZE], s_buf_stdout[LOG_BUF_SIZE];
-    setvbuf(stdout, s_buf_file, _IOFBF, LOG_BUF_SIZE);
-    setvbuf(s_log_file, s_buf_stdout, _IOFBF, LOG_BUF_SIZE);
-#else
-    setvbuf(s_log_file, NULL, _IOLBF, LOG_BUF_SIZE);
-#endif
-    return 0;
+    if (! (s_log_file = s_log_file ? freopen(a_log_file_path, "w", s_log_file) : fopen( a_log_file_path , "a" )) )
+        return fprintf( stderr, "Can't open log file %s \n", a_log_file_path ), -1;
+    static char s_buf_file[LOG_BUF_SIZE];
+    return setvbuf(s_log_file, s_buf_file, _IOLBF, LOG_BUF_SIZE);
 }
 
 /**
@@ -464,7 +459,6 @@ static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
 #ifdef DAP_OS_WINDOWS
     fflush(s_log_file);
 #endif
-    fflush(stdout);
     va_end(va_file);
 }
 

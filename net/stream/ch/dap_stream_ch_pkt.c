@@ -245,9 +245,9 @@ int dap_stream_ch_pkt_send_by_addr(dap_stream_node_addr_t *a_addr, const char a_
 {
     dap_worker_t *l_worker = NULL;
     dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr(a_addr, &l_worker);
-    if (!l_worker)
-        return -1;
-    return dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_es_uuid, a_ch_id, a_type, a_data, a_data_size);
+    return l_worker
+        ? dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_es_uuid, a_ch_id, a_type, a_data, a_data_size)
+        : -1;
 }
 
 /**
