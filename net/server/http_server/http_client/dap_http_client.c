@@ -494,7 +494,6 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         // No data, its over
                         dap_http_client_write(l_http_client);
                     else {
-                        l_http_client->state_read = DAP_HTTP_CLIENT_STATE_NONE;
                         a_esocket->buf_in_size = 0;
                         break;
                     }
