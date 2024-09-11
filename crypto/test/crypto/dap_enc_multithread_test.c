@@ -83,13 +83,19 @@ static void *s_test_thread_falcon(void *a_arg) {
     s_test_thread(DAP_ENC_KEY_TYPE_SIG_FALCON, a_times);
     pthread_exit(NULL);
 }
-
+#ifdef DAP_ECDSA 
 static void *s_test_thread_ecdsa(void *a_arg) {
     int a_times = *(int *)a_arg;
     s_test_thread(DAP_ENC_KEY_TYPE_SIG_ECDSA, a_times);
     pthread_exit(NULL);
 }
 
+static void *s_test_thread_multisign_ecdsa_dilithium(void *a_arg) {
+    int a_times = *(int *)a_arg;
+    s_test_thread(DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM, a_times);
+    pthread_exit(NULL);
+}
+#endif
 static void *s_test_thread_sphincs(void *a_arg) {
     int a_times = *(int *)a_arg;
     s_test_thread(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, a_times);
@@ -126,10 +132,13 @@ int dap_enc_multithread_tests_run(int a_times)
 
     s_test_multithread("Falcon", s_test_thread_falcon, a_times);
     dap_pass_msg("Falcon multithread tests");
-
+#ifdef DAP_ECDSA 
     s_test_multithread("ECDSA", s_test_thread_ecdsa, a_times);
     dap_pass_msg("ECDSA multithread tests");
 
+    s_test_multithread("ECDSA+DILITHIUM", s_test_thread_multisign_ecdsa_dilithium, a_times);
+    dap_pass_msg("ECDSA+DILITHIUM multithread tests");
+#endif
     s_test_multithread("Sphincs plus", s_test_thread_sphincs, a_times);
     dap_pass_msg("Sphincs plus multithread tests");
 

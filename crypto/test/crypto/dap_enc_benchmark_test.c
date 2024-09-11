@@ -5,8 +5,6 @@
 #include "rand/dap_rand.h"
 #define LOG_TAG "dap_crypto_benchmark_tests"
 
-//#define SIGNATURE_TYPE_COUNT 7
-#define SIGN_COUNT 5
 #define KEYS_TOTAL_COUNT 10
 
 dap_enc_key_type_t s_key_type_arr[] = {
@@ -18,6 +16,7 @@ dap_enc_key_type_t s_key_type_arr[] = {
         DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,
 #ifdef DAP_ECDSA
         DAP_ENC_KEY_TYPE_SIG_ECDSA,
+        DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM,
 #endif
         DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK };
 
@@ -279,6 +278,7 @@ static int s_sign_verify_tests_run(int a_times)
     l_ret |= s_sign_verify_test_becnhmark("SPHINCSPLUS", DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, a_times);
 #ifdef DAP_ECDSA
     l_ret |= s_sign_verify_test_becnhmark("ECDSA", DAP_ENC_KEY_TYPE_SIG_ECDSA, a_times);
+    l_ret |= s_sign_verify_test_becnhmark("ECDSA+DILITHIUM", DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM, a_times);
 #endif
     l_ret |= s_sign_verify_test_becnhmark("SHIPOVNIK", DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK, a_times);
     l_ret |= s_sign_verify_test_becnhmark("MULTISIGN", DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED, a_times);
