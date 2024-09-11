@@ -26,6 +26,8 @@
 
 #include "dap_enc_multisign.h"
 
+#ifdef DAP_ECDSA
 void dap_enc_sig_multisign_ecdsa_dilithium_key_new(dap_enc_key_t *a_key);
 void dap_enc_sig_multisign_ecdsa_dilithium_key_new_generate(dap_enc_key_t *a_key, const void *a_kex_buf, size_t a_kex_size,
         const void *a_seed, size_t a_seed_size, size_t a_key_size);
+#endif

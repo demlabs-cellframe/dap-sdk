@@ -49,7 +49,7 @@ enum dap_sign_type_enum {
 #endif
     SIG_TYPE_MULTI_ECDSA_DILITHIUM = 0x0eff,
     SIG_TYPE_MULTI_CHAINED = 0x0f00, ///  @brief Has inside subset of different signatures and sign composed with all of them
-    SIG_TYPE_MULTI_COMBINED = 0x0f01, ///  @brief Has inside subset of different public keys and sign composed with all of appropriate private keys
+    SIG_TYPE_MULTI_COMBINED = 0x0f01 ///  @brief Has inside subset of different public keys and sign composed with all of appropriate private keys
 };
 typedef uint32_t dap_sign_type_enum_t;
 

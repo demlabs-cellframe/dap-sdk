@@ -276,7 +276,7 @@ static int s_sign_verify_tests_run(int a_times)
     l_ret |= s_sign_verify_test_becnhmark("DILITHIUM", DAP_ENC_KEY_TYPE_SIG_DILITHIUM, a_times);
     l_ret |= s_sign_verify_test_becnhmark("FALCON", DAP_ENC_KEY_TYPE_SIG_FALCON, a_times);
     l_ret |= s_sign_verify_test_becnhmark("SPHINCSPLUS", DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, a_times);
-#ifdef DAP_ECDSA 
+#ifdef DAP_ECDSA
     l_ret |= s_sign_verify_test_becnhmark("ECDSA", DAP_ENC_KEY_TYPE_SIG_ECDSA, a_times);
     l_ret |= s_sign_verify_test_becnhmark("ECDSA+DILITHIUM", DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM, a_times);
 #endif
