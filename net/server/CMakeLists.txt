@@ -5,6 +5,7 @@ add_subdirectory(cli_server)
 add_subdirectory(notify_server)
 add_subdirectory(http_server)
 add_subdirectory(enc_server)
+add_subdirectory(dns_server)
 add_subdirectory(json_rpc)
 
 
