@@ -370,8 +370,8 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         debug_if(l_server->ext_log, L_INFO, "Connection accepted from %s : %hu, socket %"DAP_FORMAT_SOCKET,
                                             l_es_new->remote_addr_str, l_es_new->remote_port, a_remote_socket);
         int one = 1;
-        if ( setsockopt(l_es_new->socket, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one)) < 0 )
-            log_it(L_WARNING, "Can't disable Nagle alg, error %d: %s", errno, dap_strerror(errno));
+        //if ( setsockopt(l_es_new->socket, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one)) < 0 )
+        //    log_it(L_WARNING, "Can't disable Nagle alg, error %d: %s", errno, dap_strerror(errno));
         break;
     default:
         log_it(L_ERROR, "Unsupported protocol family %hu from accept()", l_family);
