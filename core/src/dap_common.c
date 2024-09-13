@@ -172,7 +172,7 @@ static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va);
 #define LOG_FORMAT_LEN  4096
 #define LOG_BUF_SIZE    32768
 
-static print_callback s_print_callback = print_it_none;
+static print_callback s_print_callback = print_it_stdout;
 //static void *s_print_param = NULL;
 
 
