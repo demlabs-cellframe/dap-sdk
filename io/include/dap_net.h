@@ -49,7 +49,7 @@
 #define DAP_CFG_PARAM_LEGACY_PORT       "listen-port-tcp"
 
 #ifdef __cplusplus
-extern "c" {
+extern "C" {
 #endif
 
 
