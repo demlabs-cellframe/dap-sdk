@@ -83,6 +83,7 @@ dap_sign_type_t dap_sign_type_from_key_type( dap_enc_key_type_t a_key_type)
         case DAP_ENC_KEY_TYPE_SIG_ECDSA: l_sign_type.type = SIG_TYPE_ECDSA; break;
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK: l_sign_type.type = SIG_TYPE_SHIPOVNIK; break;
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED: l_sign_type.type = SIG_TYPE_MULTI_CHAINED; break;
+        case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM: l_sign_type.type = SIG_TYPE_MULTI_ECDSA_DILITHIUM; break;
         default: l_sign_type.raw = 0;
     }
     return l_sign_type;
@@ -105,6 +106,7 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
         case SIG_TYPE_ECDSA: return DAP_ENC_KEY_TYPE_SIG_ECDSA;
         case SIG_TYPE_SHIPOVNIK: return DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK;
         case SIG_TYPE_MULTI_CHAINED: return DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED;
+        case SIG_TYPE_MULTI_ECDSA_DILITHIUM: return DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM;
         default: return DAP_ENC_KEY_TYPE_INVALID;
     }
 }
@@ -130,6 +132,7 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
         case SIG_TYPE_SHIPOVNIK: return "sig_shipovnik";
         case SIG_TYPE_MULTI_COMBINED: return "sig_multi_combined";
         case SIG_TYPE_MULTI_CHAINED: return "sig_multi_chained";
+        case SIG_TYPE_MULTI_ECDSA_DILITHIUM: return "sig_multi_ecdsa_dil";
         default: return "UNDEFINED";//DAP_ENC_KEY_TYPE_NULL;
     }
 
@@ -150,18 +153,20 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
         l_sign_type.type = SIG_TYPE_TESLA;
     } else if ( !dap_strcmp (a_type_str,"sig_picnic") ){
         l_sign_type.type = SIG_TYPE_PICNIC;
-    }else if ( !dap_strcmp (a_type_str,"sig_dil") ){
+    } else if ( !dap_strcmp (a_type_str,"sig_dil") ){
         l_sign_type.type = SIG_TYPE_DILITHIUM;
-    }else if ( !dap_strcmp (a_type_str, "sig_falcon") ) {
+    } else if ( !dap_strcmp (a_type_str, "sig_falcon") ) {
         l_sign_type.type = SIG_TYPE_FALCON;
-    }else if ( !dap_strcmp (a_type_str, "sig_sphincs") ) {
+    } else if ( !dap_strcmp (a_type_str, "sig_sphincs") ) {
          l_sign_type.type = SIG_TYPE_SPHINCSPLUS;
-    }else if ( !dap_strcmp (a_type_str, "sig_ecdsa") ) {
+    } else if ( !dap_strcmp (a_type_str, "sig_ecdsa") ) {
          l_sign_type.type = SIG_TYPE_ECDSA;
-    }else if ( !dap_strcmp (a_type_str, "sig_shipovnik") ) {
+    } else if ( !dap_strcmp (a_type_str, "sig_shipovnik") ) {
          l_sign_type.type = SIG_TYPE_SHIPOVNIK;
-    }else if ( !dap_strcmp (a_type_str,"sig_multi_chained") ){
+    } else if ( !dap_strcmp (a_type_str,"sig_multi_chained") ){
         l_sign_type.type = SIG_TYPE_MULTI_CHAINED;
+    } else if ( !dap_strcmp (a_type_str,"sig_multi_ecdsa_dil") ){
+        l_sign_type.type = SIG_TYPE_MULTI_ECDSA_DILITHIUM;
     // } else if ( !dap_strcmp (a_type_str,"sig_multi_combined") ){
     //     l_sign_type.type = SIG_TYPE_MULTI_COMBINED;
     } else {
@@ -208,6 +213,7 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
+        case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:
             return a_key->sign_get(a_key, a_data, a_data_size, a_output, *a_output_size);
         default:
             return -1;
@@ -449,6 +455,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
+        case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:
             l_ret = l_key->sign_verify(l_key, l_verify_data, l_verify_data_size, l_sign_data, l_sign_data_size);
             break;
         default:
