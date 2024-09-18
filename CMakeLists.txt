@@ -67,7 +67,7 @@ endif()
 if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
 
     set(DAPSDK_MODULES "core crypto io network-core network-link_manager network-client network-server")
-    set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m)
+    set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client dap_dns_server m)
     if(NOT ANDROID)
         set(CELLFRAME_LIBS ${CELLFRAME_LIBS} pthread)
     endif()
