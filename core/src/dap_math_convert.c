@@ -380,7 +380,7 @@ uint256_t dap_uint256_scan_uninteger(const char *a_str_uninteger)
 uint256_t dap_uint256_scan_decimal(const char *a_str_decimal)
 {
     int l_len, l_pos;
-    char    l_buf  [DAP_CHAIN$SZ_MAX256DEC + 8] = {0}, *l_point;
+    char    l_buf  [DAP_CHAIN$SZ_MAX256DEC + 8] = {0}, *l_point = NULL;
 
     /* "12300000000.0000456" */
     if ( (l_len = strnlen(a_str_decimal, DATOSHI_POW256 + 2)) > DATOSHI_POW256 + 1)/* Check for legal length */ /* 1 symbol for \0, one for '.', if more, there is an error */
@@ -388,20 +388,25 @@ uint256_t dap_uint256_scan_decimal(const char *a_str_decimal)
                        l_len, DATOSHI_POW256 + 1), uint256_0;
 
     /* Find , check and remove 'precision' dot symbol */
-    memcpy (l_buf, a_str_decimal, l_len);                                         /* Make local copy */
-    if ( !(l_point = memchr(l_buf, '.', l_len)) )                           /* Is there 'dot' ? */
-        return  log_it(L_WARNING, "Incorrect balance format of '%s' - no precision mark", a_str_decimal),
+    memcpy (l_buf, a_str_decimal, l_len);                                       /* Make local copy */
+    l_point = memchr(l_buf, '.', l_len);
+    if ( l_point == (char *)l_buf || l_point == (char *)l_buf + l_len - 1)                           /* Is there 'dot' ? */
+        return  log_it(L_WARNING, "Incorrect balance format of '%s' - error precision mark", a_str_decimal),
                 uint256_0;
+    if (!l_point) {
+        l_point = l_buf + strlen(l_buf);
+        l_pos = 0;
+    } else {
+        l_pos = l_len - (l_point - l_buf);                                      /* Check number of decimals after dot */
+        l_pos--;
+        if ( (l_pos ) >  DATOSHI_DEGREE )
+            return  log_it(L_WARNING, "Incorrect balance format of '%s' - too much precision", l_buf), uint256_0;
 
-    l_pos = l_len - (l_point - l_buf);                                      /* Check number of decimals after dot */
-    l_pos--;
-    if ( (l_pos ) >  DATOSHI_DEGREE )
-        return  log_it(L_WARNING, "Incorrect balance format of '%s' - too much precision", l_buf), uint256_0;
-
-    /* "123.456" -> "123456" */
-    memmove(l_point, l_point + 1, l_pos);                                   /* Shift left a right part of the decimal string
-                                                                              to dot symbol place */
-    *(l_point + l_pos) = '\0';
+        /* "123.456" -> "123456" */
+        memmove(l_point, l_point + 1, l_pos);                                   /* Shift left a right part of the decimal string
+                                                                                to dot symbol place */
+        *(l_point + l_pos) = '\0';
+    }
 
     /* Add trailer zeros:
      *                pos
