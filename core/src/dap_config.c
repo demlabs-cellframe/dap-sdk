@@ -42,7 +42,7 @@ int dap_config_init(const char *a_configs_path)
         return -1;
     }
 #endif
-    if(dap_dir_test(a_configs_path) || !dap_mkdir_with_parents(a_configs_path)) {
+    if(dap_dir_test(a_configs_path)) {
         DAP_DEL_Z(s_configs_path);
         s_configs_path = dap_strdup(a_configs_path);
         return 0;
@@ -527,6 +527,8 @@ double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_
 }
 
 void dap_config_close(dap_config_t *a_conf) {
+    if (!a_conf)
+        return;
     DAP_DELETE(a_conf->path);
     dap_config_item_t *l_item = NULL, *l_tmp = NULL;
     HASH_ITER(hh, a_conf->items, l_item, l_tmp) {
