@@ -121,9 +121,7 @@ dap_app_cli_connect_param_t dap_app_cli_connect()
     if (l_addr) {
         l_addrs[0] = NULL;
         dap_config_get_item_str_path_array_free(l_addrs, &l_array_count);
-#ifdef DAP_OS_WINDOWS
-        printf("Unix socket-based server is not yet implemented, consider localhost usage\n"); // TODO
-        return ~0;
+#if defined(DAP_OS_WINDOWS) || defined(DAP_OS_ANDROID)
 #else
         if ( -1 == (l_socket = socket(AF_UNIX, SOCK_STREAM, 0)) ) {
             printf ("socket() error %d", errno);

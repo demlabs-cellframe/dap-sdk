@@ -154,6 +154,28 @@ static int shell_reader_loop()
     return 0;
 }
 
+
+char *dap_cli_exec(int argc, char **argv) {
+
+    dap_app_cli_cmd_state_t cmd = {
+            .cmd_name           = (char*)argv[0],
+            .cmd_param_count    = argc - 2,
+            .cmd_param          = argc - 2 > 0 ? (char**)(argv + 1) : NULL
+    };
+
+    char *l_cmd_str = dap_app_cli_form_command(&cmd);
+    dap_json_rpc_params_t *params = dap_json_rpc_params_create();
+    dap_json_rpc_params_add_data(params, l_cmd_str, TYPE_PARAM_STRING);
+    DAP_DELETE(l_cmd_str);
+    dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(cmd.cmd_name, params, 0);
+    char    *req_str = dap_json_rpc_request_to_json_string(a_request),
+            *res = dap_cli_cmd_exec(req_str);
+    dap_json_rpc_request_free(a_request);
+    return res;
+
+
+}
+
 #ifdef DAP_OS_ANDROID
 JNIEXPORT jstring JNICALL Java_com_CellframeWallet_Node_cellframeNodeCliMain(JNIEnv *javaEnv, jobject __unused jobj, jobjectArray argvStr)
 {
