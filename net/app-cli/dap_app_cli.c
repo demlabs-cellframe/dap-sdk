@@ -34,10 +34,10 @@
 #include "dap_app_cli.h"
 #include "dap_app_cli_net.h"
 #include "dap_app_cli_shell.h"
-
-#ifdef DAP_OS_ANDROID
 #include "dap_json_rpc_params.h"
 #include "dap_json_rpc_request.h"
+
+#ifdef DAP_OS_ANDROID
 #include <android/log.h>
 #include <jni.h>
 static dap_config_t *cli_config;
