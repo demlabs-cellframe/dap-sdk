@@ -32,6 +32,7 @@
 
 typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, void **a_str_reply);
 typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, void **a_str_reply);
+typedef int (*dap_cli_server_cmd_check_callback_t)(char *a_cmd_name, int argc, char **argv, void **a_str_reply);
 
 typedef void (*dap_cli_server_override_log_cmd_callback_t)(const char*);
 
@@ -50,6 +51,7 @@ typedef struct dap_cli_cmd{
     char *doc; /* Documentation for this function.  */
     char *doc_ex; /* Full documentation for this function.  */
     dap_cli_server_cmd_override_t overrides; /* Used to change default behaviour */
+    void *checks_list;
     UT_hash_handle hh;
 } dap_cli_cmd_t;
 
@@ -75,7 +77,7 @@ dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name);
 
 void dap_cli_server_alias_add(const char *a_alias, const char *a_pre_cmd, dap_cli_cmd_t *a_cmd);
 dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_cli, char **a_append, char **a_ncmd);
-
+void dap_cli_server_cmd_check_add(const char *a_name, dap_cli_server_cmd_callback_t a_func);
 //for json
 int json_commands(const char * a_name);
 char *dap_cli_cmd_exec(char *a_req_str);

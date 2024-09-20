@@ -424,11 +424,19 @@ char *dap_cli_cmd_exec(char *a_req_str) {
         // Call the command function
         if(l_cmd &&  l_argv && l_cmd->func) {
             if (json_commands(cmd_name)) {
-                res = l_cmd->func(argc, l_argv, (void *)&json_com_res);
+                    res = l_cmd->func(argc, l_argv, (void *)&json_com_res);
             } else if (l_cmd->arg_func) {
                 res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, (void *)&str_reply);
             } else {
-                res = l_cmd->func(argc, l_argv, (void *)&str_reply);
+                int l_check_res = 0;
+                dap_list_t *l_curr_func_check = NULL;
+                DL_FOREACH((dap_list_t *)(l_cmd->checks_list), l_curr_func_check) {
+                    l_check_res = ((dap_cli_server_cmd_check_callback_t)(l_curr_func_check->data))(l_cmd->name, argc, l_argv, (void *)&str_reply);
+                    if (l_check_res)
+                        break;
+                }
+                if (!l_check_res)
+                    res = l_cmd->func(argc, l_argv, (void *)&str_reply);
             }
         } else if (l_cmd) {
             log_it(L_WARNING,"NULL arguments for input for command \"%s\"", str_cmd);
@@ -467,4 +475,15 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     dap_json_rpc_response_free(response);
     dap_json_rpc_request_free(request);
     return response_string;
+}
+
+
+void dap_cli_server_cmd_check_add(const char *a_name, dap_cli_server_cmd_callback_t a_func)
+{
+    dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(a_name);
+    if (!l_cmd) {
+        log_it(L_ERROR, "Command %s not found", a_name);
+        return;
+    }
+    l_cmd->checks_list = (void *)dap_list_append((dap_list_t *)(l_cmd->checks_list), a_func);
 }
