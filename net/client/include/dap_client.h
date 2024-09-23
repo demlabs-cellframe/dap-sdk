@@ -23,7 +23,7 @@
 */
 #pragma once
 
-#include "dap_events.h"
+#include "dap_net.h"
 #include <stdint.h>
 #include "dap_enc_key.h"
 #include "dap_stream.h"
@@ -76,12 +76,6 @@ typedef struct dap_client dap_client_t;
 typedef void (*dap_client_callback_t) (dap_client_t *, void *);
 typedef void (*dap_client_callback_int_t) (dap_client_t *, void *, int);
 typedef void (*dap_client_callback_data_size_t) (dap_client_t *, void *, size_t);
-
-typedef struct dap_link_info {
-    dap_stream_node_addr_t node_addr;
-    char uplink_addr[DAP_HOSTADDR_STRLEN];
-    uint16_t uplink_port;
-} DAP_ALIGN_PACKED dap_link_info_t;
 
 /**
  * @brief The dap_client struct
