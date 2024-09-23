@@ -42,7 +42,7 @@ int dap_config_init(const char *a_configs_path)
         return -1;
     }
 #endif
-    if(dap_dir_test(a_configs_path) || !dap_mkdir_with_parents(a_configs_path)) {
+    if(dap_dir_test(a_configs_path)) {
         DAP_DEL_Z(s_configs_path);
         s_configs_path = dap_strdup(a_configs_path);
         return 0;
