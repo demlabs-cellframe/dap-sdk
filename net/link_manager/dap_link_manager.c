@@ -51,7 +51,7 @@ typedef struct dap_managed_net {
 static bool s_debug_more = false;
 static const char *s_init_error = "Link manager not inited";
 static uint32_t s_timer_update_states = 2000;
-static uint32_t s_max_attempts_num = 3;
+static uint32_t s_max_attempts_num = 1;
 static uint32_t s_reconnect_delay = 20; // sec
 static dap_link_manager_t *s_link_manager = NULL;
 static dap_proc_thread_t *s_query_thread = NULL;
