@@ -300,9 +300,13 @@ dap_config_t *dap_config_open(const char* a_file_path) {
     }
     log_it(L_DEBUG, "Looking for config name %s...", a_file_path);
     char l_path[MAX_PATH] = { '\0' };
+    const char *l_suffix = "";
+    size_t l_path_len = strlen(a_file_path);
+    if (l_path_len < 4 || strcmp(a_file_path + l_path_len - 4, ".cfg"))
+        l_suffix = ".cfg";
     int l_pos = dap_strncmp(a_file_path, s_configs_path, strlen(s_configs_path) - 4)
-            ? snprintf(l_path, MAX_PATH, "%s/%s.cfg", s_configs_path, a_file_path)
-            : snprintf(l_path, MAX_PATH, "%s.cfg", a_file_path);
+            ? snprintf(l_path, MAX_PATH, "%s/%s%s", s_configs_path, a_file_path, l_suffix)
+            : snprintf(l_path, MAX_PATH, "%s%s", a_file_path, l_suffix);
 
     if (l_pos >= MAX_PATH) {
         log_it(L_ERROR, "Too long config name!");

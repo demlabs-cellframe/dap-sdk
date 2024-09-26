@@ -48,11 +48,20 @@
 #define DAP_CFG_PARAM_SOCK_PERMISSIONS  "listen-unix-socket-permissions"
 #define DAP_CFG_PARAM_LEGACY_PORT       "listen-port-tcp"
 
+typedef struct dap_link_info {
+    dap_stream_node_addr_t node_addr;
+    char uplink_addr[DAP_HOSTADDR_STRLEN];
+    uint16_t uplink_port;
+} DAP_ALIGN_PACKED dap_link_info_t;
+
+typedef struct dap_net_links {
+    uint64_t count_node;
+    byte_t nodes_info[];
+} DAP_ALIGN_PACKED dap_net_links_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-
 
 int dap_net_resolve_host(const char *a_host, const char *a_port, bool a_numeric_only, struct sockaddr_storage *a_addr_out, int *a_family);
 int dap_net_parse_config_address(const char *a_src, char *a_addr, uint16_t *a_port, struct sockaddr_storage *a_saddr, int *a_family);
