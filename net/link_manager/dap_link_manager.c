@@ -1234,7 +1234,7 @@ void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member
  * @param a_downlinks_count output count of finded downlinks
  * @return pointer to dap_stream_node_addr_t array, first uplinks, second downlinks, or NULL
  */
-dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count, bool a_uplinks_only)
+dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count, bool a_established_only)
 {
 // sanity check
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
@@ -1255,13 +1255,13 @@ dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, 
     for (size_t i =  0; i < l_cur_count; ++i) {
         dap_link_t *l_link = NULL;
         HASH_FIND(hh, s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
-        if (!l_link || (l_link->is_uplink && l_link->uplink.state != LINK_STATE_ESTABLISHED)) {
+        if (!l_link || (l_link->is_uplink && a_established_only && l_link->uplink.state != LINK_STATE_ESTABLISHED)) {
             continue;
         } else if (l_link->is_uplink) {  // first uplinks, second downlinks
             l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_ret[l_uplinks_count].uint64;
             l_ret[l_uplinks_count].uint64 = l_link->addr.uint64;
             ++l_uplinks_count;
-        } else if (!a_uplinks_only) {
+        } else {
             l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_link->addr.uint64;
             ++l_downlinks_count;
         }
