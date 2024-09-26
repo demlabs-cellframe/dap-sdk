@@ -54,6 +54,14 @@ typedef struct dap_link_info {
     uint16_t uplink_port;
 } DAP_ALIGN_PACKED dap_link_info_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int dap_net_resolve_host(const char *a_host, const char *a_port, bool a_numeric_only, struct sockaddr_storage *a_addr_out, int *a_family);
 int dap_net_parse_config_address(const char *a_src, char *a_addr, uint16_t *a_port, struct sockaddr_storage *a_saddr, int *a_family);
 long dap_net_recv(SOCKET sd, unsigned char *buf, size_t bufsize, int timeout);
+
+#ifdef __cplusplus
+}
+#endif

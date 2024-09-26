@@ -251,9 +251,34 @@ endif ()
 
 if ( CELLFRAME_NO_OPTIMIZATION)
     if (PLATFORM_X86_64)
-        set(CMAKE_CXX_FLAGS "-march=core2")
-        set(CMAKE_C_FLAGS "-march=core2")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=core2")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=core2")
     endif()
     set(DAP_CRYPTO_XKCP_PLAINC ON)
 endif ()
 
+FIND_PROGRAM(CPPCHECK "cppcheck")
+IF(CPPCHECK)
+    # Set export commands on
+    message("[!] CPPCHECK FOUND, ADDED TARGET CPPCHECK")
+
+    SET(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+    ADD_CUSTOM_TARGET(
+        cppcheck
+        COMMAND
+            ${CPPCHECK} --enable=all --project=${CMAKE_BINARY_DIR}/compile_commands.json --std=c++11 --verbose --quiet
+            --xml-version=2 --language=c++ --suppress=missingIncludeSystem
+            --output-file=${CMAKE_BINARY_DIR}/cppcheck_results.xml ${CHECK_CXX_SOURCE_FILES}
+        COMMENT "Generate cppcheck report for the project")
+
+    FIND_PROGRAM(CPPCHECK_HTML "cppcheck-htmlreport")
+    IF(CPPCHECK_HTML)
+        ADD_CUSTOM_TARGET(
+            cppcheck-html
+            COMMAND ${CPPCHECK_HTML} --title=${CMAKE_PROJECT_NAME} --file=${CMAKE_BINARY_DIR}/cppcheck_results.xml
+                    --report-dir=${CMAKE_BINARY_DIR}/cppcheck_results --source-dir=${CMAKE_SOURCE_DIR}
+            COMMENT "Convert cppcheck report to HTML output")
+        ADD_DEPENDENCIES(cppcheck-html cppcheck)
+    ENDIF()
+ENDIF()
