@@ -27,6 +27,7 @@
 
 #include <stdint.h>
 #include "dap_worker.h"
+#include "dap_net.h"
 
 #define DNS_LISTEN_PORT 53      // UDP
 #define DNS_LISTEN_PORT_STR "53"      // UDP
@@ -37,14 +38,8 @@ typedef struct _dap_dns_buf_t {
     uint32_t size;
 } dap_dns_buf_t;
 
-typedef struct dap_chain_net_links {
-    uint64_t count_node;
-    byte_t nodes_info[];
-} DAP_ALIGN_PACKED dap_chain_net_links_t;
-
-
 // node info request callbacks
-typedef void (*dap_dns_client_node_info_request_success_callback_t) (dap_worker_t *a_worker, dap_chain_net_links_t *a_result, void *a_arg);
+typedef void (*dap_dns_client_node_info_request_success_callback_t) (dap_worker_t *a_worker, dap_net_links_t *a_result, void *a_arg);
 typedef void (*dap_dns_client_node_info_request_error_callback_t) (dap_worker_t *a_worker, void *a_arg, int a_errno);
 
 int dap_chain_node_info_dns_request(dap_worker_t *a_worker, struct in_addr a_addr, uint16_t a_port, char *a_name,

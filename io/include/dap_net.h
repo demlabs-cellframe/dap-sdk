@@ -54,6 +54,11 @@ typedef struct dap_link_info {
     uint16_t uplink_port;
 } DAP_ALIGN_PACKED dap_link_info_t;
 
+typedef struct dap_net_links {
+    uint64_t count_node;
+    byte_t nodes_info[];
+} DAP_ALIGN_PACKED dap_net_links_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif

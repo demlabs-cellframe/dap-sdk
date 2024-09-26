@@ -84,7 +84,7 @@ static void s_dns_client_esocket_read_callback(dap_events_socket_t * a_esocket, 
         return;
     }
 
-    dap_chain_net_links_t *l_link_full_node_list = DAP_NEW_Z_SIZE(dap_chain_net_links_t,sizeof(dap_chain_net_links_t) + sizeof(dap_link_info_t));
+    dap_net_links_t *l_link_full_node_list = DAP_NEW_Z_SIZE(dap_net_links_t,sizeof(dap_net_links_t) + sizeof(dap_link_info_t));
     l_cur = l_buf + l_addr_point;
     *(dap_link_info_t *)l_link_full_node_list->nodes_info = *(dap_link_info_t *)l_cur;
     l_link_full_node_list->count_node = 1;
