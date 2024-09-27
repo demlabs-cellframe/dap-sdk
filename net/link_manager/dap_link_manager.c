@@ -167,15 +167,24 @@ DAP_STATIC_INLINE void s_debug_accounting_link_in_net(bool a_uplink, dap_stream_
 DAP_STATIC_INLINE void s_link_manager_print_links_info(dap_link_manager_t *a_link_manager)
 {
     dap_link_t *l_link = NULL, *l_tmp = NULL;
-    printf("| Uplink |\tNode addr\t|Active Clusters|Static clusters|\n"
+    dap_string_t *l_report = dap_string_new("\n| Uplink |\tNode addr\t|Active Clusters|Static clusters|\tNet IDs\t\n"
             "-----------------------------------------------------------------\n");
-    HASH_ITER(hh, a_link_manager->links, l_link, l_tmp)
-        printf("| %5s  |"NODE_ADDR_FP_STR"|\t%"DAP_UINT64_FORMAT_U
-                                            "\t|\t%"DAP_UINT64_FORMAT_U"\t|\n",
+    HASH_ITER(hh, a_link_manager->links, l_link, l_tmp) {
+        dap_string_append_printf(l_report, "| %5s  |"NODE_ADDR_FP_STR"|\t%"DAP_UINT64_FORMAT_U
+                                            "\t|\t%"DAP_UINT64_FORMAT_U"\t| ",
                                  l_link->is_uplink ? "True" : "False",
                                  NODE_ADDR_FP_ARGS_S(l_link->addr),
                                  dap_list_length(l_link->active_clusters),
                                  dap_list_length(l_link->static_clusters));
+        dap_list_t *it, *tmp;
+        DL_FOREACH_SAFE(l_link->uplink.associated_nets, it, tmp) {
+            dap_managed_net_t *l_net = it->data;
+            dap_string_append_printf(l_report, " %"DAP_UINT64_FORMAT_x, l_net->id);
+        }
+        dap_string_append_printf(l_report, "%s", "\n");
+    }
+    log_it(L_DEBUG, "%s", l_report->str);
+    dap_string_free(l_report, true);
 }
 
 // General functional
@@ -760,7 +769,9 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
         l_link->addr.uint64 = a_node_addr->uint64;
         l_link->link_manager = s_link_manager;
         HASH_ADD(hh, s_link_manager->links, addr, sizeof(*a_node_addr), l_link);
-    }
+    }   
+    if (s_debug_more)
+        s_link_manager_print_links_info(s_link_manager);
     if (a_with_client) {
         if (!l_link->uplink.client)
             l_link->uplink.client = dap_client_new(s_client_error_callback, NULL);
@@ -781,8 +792,6 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
             l_net->uplinks++;
         }
     }
-    if (s_debug_more)
-        s_link_manager_print_links_info(s_link_manager);
     return l_link;
 }
 
