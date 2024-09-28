@@ -42,6 +42,8 @@ typedef struct dap_app_cli_cmd_state {
 extern "C" {
 #endif
 int dap_app_cli_main(const char *a_app_name, int argc, const char **argv);
+char *dap_cli_exec(int argc, char **argv);
+
 #ifdef __cplusplus
 }
 #endif
