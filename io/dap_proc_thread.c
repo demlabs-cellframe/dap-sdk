@@ -55,7 +55,6 @@ int dap_proc_thread_create(dap_proc_thread_t *a_thread, int a_cpu_id)
                                 s_context_callback_started, s_context_callback_stopped, a_thread);
     if (l_ret) {
         log_it(L_CRITICAL, "Create thread failed with code %d", l_ret);
-        return l_ret;
     }
     return l_ret;
 }
