@@ -73,9 +73,9 @@ DAP_STATIC_INLINE int dap_proc_thread_callback_add(dap_proc_thread_t *a_thread, 
 {
     return dap_proc_thread_callback_add_pri(a_thread, a_callback, a_callback_arg, DAP_QUEUE_MSG_PRIORITY_NORMAL);
 }
-int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, dap_queue_msg_priority_t a_priority);
+int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, bool a_oneshot, dap_queue_msg_priority_t a_priority);
 DAP_STATIC_INLINE int dap_proc_thread_timer_add(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms)
 {
-    return dap_proc_thread_timer_add_pri(a_thread, a_callback, a_callback_arg, a_timeout_ms, DAP_QUEUE_MSG_PRIORITY_NORMAL);
+    return dap_proc_thread_timer_add_pri(a_thread, a_callback, a_callback_arg, a_timeout_ms, false, DAP_QUEUE_MSG_PRIORITY_NORMAL);
 }
 size_t dap_proc_thread_get_avg_queue_size();
