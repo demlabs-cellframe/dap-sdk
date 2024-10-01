@@ -50,7 +50,7 @@ typedef struct dap_managed_net {
 
 static bool s_debug_more = false;
 static const char *s_init_error = "Link manager not inited";
-static uint32_t s_timer_update_states = 2000;
+static uint32_t s_timer_update_states = 5000;
 static uint32_t s_max_attempts_num = 1;
 static uint32_t s_reconnect_delay = 20; // sec
 static dap_link_manager_t *s_link_manager = NULL;
@@ -409,7 +409,6 @@ void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
     }
     if (a_new_condition)
         return;
-    l_net->uplinks = 0;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
     dap_link_t *l_link_it, *l_link_tmp;
     HASH_ITER(hh, s_link_manager->links, l_link_it, l_link_tmp) {
@@ -523,7 +522,6 @@ void s_link_drop(dap_link_t *a_link, bool a_disconnected)
                 if (l_is_permanent_link)
                     continue;
                 DL_DELETE(a_link->uplink.associated_nets, it);
-                l_net->uplinks--;
             }
         }
         if (!a_link->active_clusters && !a_link->uplink.associated_nets && !a_link->static_clusters) {
@@ -722,9 +720,11 @@ void s_links_request(dap_link_manager_t *a_link_manager)
     dap_list_t *l_item = NULL;
     DL_FOREACH(a_link_manager->nets, l_item) {
         dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
-        if (l_net->active && a_link_manager->callbacks.link_request &&
-                l_net->uplinks < l_net->min_links_num)
-            a_link_manager->callbacks.link_request(l_net->id);
+        if (l_net->active ) {
+            l_net->uplinks = dap_link_manager_links_count(l_net->id);
+            if (a_link_manager->callbacks.link_request && l_net->uplinks < l_net->min_links_num)
+                    a_link_manager->callbacks.link_request(l_net->id);
+        }
     }
 }
 
@@ -789,7 +789,6 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
                     return NULL;
                 }
             l_link->uplink.associated_nets = dap_list_append(l_link->uplink.associated_nets, l_net);
-            l_net->uplinks++;
         }
     }
     return l_link;
@@ -1129,7 +1128,6 @@ static bool s_link_accounting_callback(void *a_arg)
             }
         }
         l_link->uplink.associated_nets = dap_list_remove(l_link->uplink.associated_nets, l_net);
-        l_net->uplinks--;
         if (l_link->uplink.client && !l_link->uplink.associated_nets && !l_link->static_clusters)
             s_link_delete(&l_link, false, false);
     }
