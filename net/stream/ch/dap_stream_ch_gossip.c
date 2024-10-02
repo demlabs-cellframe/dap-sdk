@@ -239,7 +239,7 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         debug_if(s_debug_more, L_INFO, "IN: GOSSIP_DATA packet for hash %s", dap_hash_fast_to_str_static(&l_msg->payload_hash));
         unsigned l_hash_value = 0;
         HASH_VALUE(&l_msg->payload_hash, sizeof(dap_hash_t), l_hash_value);
-        struct gossip_msg_item *l_payload_item = NULL;
+        struct gossip_msg_item *l_payload_item = NULL, *l_payload_item_new;
         pthread_rwlock_wrlock(&s_gossip_lock);
         HASH_FIND_BYHASHVALUE(hh, s_gossip_last_msgs, &l_msg->payload_hash, sizeof(dap_hash_t), l_hash_value, l_payload_item);
         if (!l_payload_item || l_payload_item->with_payload) {
@@ -278,14 +278,16 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             pthread_rwlock_unlock(&s_gossip_lock);
             break;
         }
-        HASH_DEL(s_gossip_last_msgs, l_payload_item);
         size_t l_payload_item_size = dap_gossip_msg_get_size(l_msg) + sizeof(g_node_addr) + sizeof(struct gossip_msg_item);
-        l_payload_item = DAP_REALLOC(l_payload_item, l_payload_item_size);
-        if (!l_payload_item) {
+        l_payload_item_new = DAP_REALLOC(l_payload_item, l_payload_item_size);
+        if (!l_payload_item_new) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             pthread_rwlock_unlock(&s_gossip_lock);
             break;
         }
+        HASH_DEL(s_gossip_last_msgs, l_payload_item);
+        l_payload_item = l_payload_item_new;
+        HASH_ADD_BYHASHVALUE(hh, s_gossip_last_msgs, payload_hash, sizeof(dap_hash_t), l_hash_value, l_payload_item);
         l_payload_item->with_payload = true;
         // Copy message and append g_node_addr to pathtrace
         dap_gossip_msg_t *l_msg_new = (dap_gossip_msg_t *)l_payload_item->message;
@@ -293,7 +295,6 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
         l_msg_new->trace_len = l_msg->trace_len + sizeof(g_node_addr);
         *(dap_stream_node_addr_t *)(l_msg_new->trace_n_payload + l_msg->trace_len) = g_node_addr;
         memcpy(l_msg_new->trace_n_payload + l_msg_new->trace_len, l_msg->trace_n_payload + l_msg->trace_len, l_msg->payload_len);
-        HASH_ADD_BYHASHVALUE(hh, s_gossip_last_msgs, payload_hash, sizeof(dap_hash_t), l_hash_value, l_payload_item);
         // Broadcast new message
         debug_if(s_debug_more, L_INFO, "OUT: GOSSIP_HASH broadcast for hash %s",
                                         dap_hash_fast_to_str_static(&l_msg_new->payload_hash));
