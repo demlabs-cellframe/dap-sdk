@@ -78,10 +78,3 @@ int dap_chain_hash_fast_from_str( const char *a_hash_str, dap_chain_hash_fast_t 
 {
     return dap_chain_hash_fast_from_hex_str(a_hash_str, a_hash) && dap_chain_hash_fast_from_base58_str(a_hash_str, a_hash);
 }
-
-const char *dap_chain_hash_fast_to_str_static(const dap_hash_fast_t *a_hash)
-{
-    _Thread_local static char s_hash_str[DAP_HASH_FAST_STR_SIZE];
-    return dap_chain_hash_fast_to_str(a_hash, s_hash_str, sizeof(s_hash_str)) == DAP_CHAIN_HASH_FAST_STR_SIZE
-           ? s_hash_str : NULL;
-}

@@ -127,8 +127,13 @@ DAP_STATIC_INLINE int dap_chain_hash_fast_to_str(const dap_hash_fast_t *a_hash, 
     return DAP_CHAIN_HASH_FAST_STR_SIZE;
 }
 
-const char *dap_chain_hash_fast_to_str_static(const dap_hash_fast_t *a_hash);
+DAP_STATIC_INLINE dap_hash_str_t dap_chain_hash_fast_to_hash_str(const dap_hash_fast_t *a_hash) {
+    dap_hash_str_t l_ret = { };
+    dap_chain_hash_fast_to_str(a_hash, l_ret.s, DAP_CHAIN_HASH_FAST_STR_SIZE);
+    return l_ret;
+}
 
+#define dap_chain_hash_fast_to_str_static(hash) dap_chain_hash_fast_to_hash_str(hash).s
 #define dap_hash_fast_to_str dap_chain_hash_fast_to_str
 #define dap_hash_fast_to_str_static dap_chain_hash_fast_to_str_static
 
