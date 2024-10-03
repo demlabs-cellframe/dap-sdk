@@ -196,16 +196,16 @@ static void print_it_stderr(unsigned a_off, const char *a_fmt, va_list va)
 {
     vfprintf(s_print_param, a_fmt, va);
 }
-
+*/
 #if ANDROID
 #include <android/log.h>
 
 static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va)
 {
-    __android_log_vprint(ANDROID_LOG_INFO, s_print_param, a_fmt, va);
+    __android_log_vprint(ANDROID_LOG_INFO, "CellframeNodeNative", a_fmt, va);
 }
 
-#endif*/
+#endif
 
 void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
 {
@@ -230,10 +230,9 @@ void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
         s_print_callback = print_it_none;
         break;
     #ifdef ANDROID
-    /*case LOGGER_OUTPUT_ALOG:
+    case LOGGER_OUTPUT_ALOG:
         s_print_callback = print_it_alog;
-        s_print_param = param;
-        break;*/
+        break;
     #endif
 
   default:

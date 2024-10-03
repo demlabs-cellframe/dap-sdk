@@ -1337,16 +1337,16 @@ static void s_stream_es_callback_read(dap_events_socket_t * a_es, void * arg)
                         l_client_pvt->stage_status = STAGE_STATUS_DONE;
                         s_stage_status_after(l_client_pvt);
 
-                        dap_stream_data_proc_read(l_client_pvt->stream);
-                        dap_events_socket_shrink_buf_in(a_es, a_es->buf_in_size);
+                        size_t l_bytes_read = dap_stream_data_proc_read(l_client_pvt->stream);
+                        dap_events_socket_shrink_buf_in(a_es, l_bytes_read);
                     }
                 }
             }
         }
             break;
         case STAGE_STREAM_STREAMING: { // if streaming - process data with stream processor
-            dap_stream_data_proc_read(l_client_pvt->stream);
-            dap_events_socket_shrink_buf_in(a_es, a_es->buf_in_size);
+            size_t l_bytes_read = dap_stream_data_proc_read(l_client_pvt->stream);
+            dap_events_socket_shrink_buf_in(a_es, l_bytes_read);
         }
             break;
         default: {
