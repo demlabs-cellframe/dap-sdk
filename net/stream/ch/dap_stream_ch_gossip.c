@@ -279,13 +279,13 @@ static bool s_stream_ch_packet_in(dap_stream_ch_t *a_ch, void *a_arg)
             break;
         }
         size_t l_payload_item_size = dap_gossip_msg_get_size(l_msg) + sizeof(g_node_addr) + sizeof(struct gossip_msg_item);
+        HASH_DEL(s_gossip_last_msgs, l_payload_item);
         l_payload_item_new = DAP_REALLOC(l_payload_item, l_payload_item_size);
         if (!l_payload_item_new) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             pthread_rwlock_unlock(&s_gossip_lock);
             break;
         }
-        HASH_DEL(s_gossip_last_msgs, l_payload_item);
         l_payload_item = l_payload_item_new;
         HASH_ADD_BYHASHVALUE(hh, s_gossip_last_msgs, payload_hash, sizeof(dap_hash_t), l_hash_value, l_payload_item);
         l_payload_item->with_payload = true;
