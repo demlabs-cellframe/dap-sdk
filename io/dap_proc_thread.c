@@ -74,7 +74,7 @@ int dap_proc_thread_init(uint32_t a_threads_count)
     s_threads = DAP_NEW_Z_SIZE(dap_proc_thread_t, sizeof(dap_proc_thread_t) * s_threads_count);
     int l_ret = 0;
     for (uint32_t i = 0; i < s_threads_count && !l_ret; ++i) {
-        int l_ret = dap_proc_thread_create(s_threads + i, i);
+        l_ret = dap_proc_thread_create(s_threads + i, i);
     }
     return l_ret;
 }
