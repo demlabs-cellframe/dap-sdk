@@ -36,8 +36,7 @@ typedef enum dap_json_rpc_response_type_result{
     TYPE_RESPONSE_JSON,
     TYPE_RESPONSE_INTEGER,
     TYPE_RESPONSE_DOUBLE,
-    TYPE_RESPONSE_BOOLEAN,
-    TYPE_RESPONSE_ERROR
+    TYPE_RESPONSE_BOOLEAN
 }dap_json_rpc_response_type_result_t;
 
 typedef struct dap_json_rpc_response_JSON
@@ -60,7 +59,6 @@ typedef struct dap_json_rpc_response
         bool result_boolean;
         json_object *result_json_object;
     };
-    json_object* json_arr_errors;
     uint64_t id;
 }dap_json_rpc_response_t;
 

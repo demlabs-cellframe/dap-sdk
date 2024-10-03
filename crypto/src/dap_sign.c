@@ -549,11 +549,11 @@ void dap_sign_get_information(dap_sign_t* a_sign, dap_string_t *a_str_out, const
  * @param a_sign Signature can be NULL
  * @param a_json_out The output string pointer
  */
-void dap_sign_get_information_json(dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type)
+void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type)
 {
     json_object_object_add(a_json_out,"Signature", json_object_new_string(""));
     if (!a_sign) {
-        dap_json_rpc_error_add(-1, "Corrupted signature data");
+        dap_json_rpc_error_add(a_json_arr_reply, -1, "Corrupted signature data");
         return;
     }
     dap_chain_hash_fast_t l_hash_pkey;
