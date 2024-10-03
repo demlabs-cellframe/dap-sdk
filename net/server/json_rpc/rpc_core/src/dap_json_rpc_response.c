@@ -1,6 +1,7 @@
 #include "dap_json_rpc_response.h"
 
 #define LOG_TAG "dap_json_rpc_response"
+#define INDENTATION_LEVEL "    "
 
 dap_json_rpc_response_t *dap_json_rpc_response_init()
 {
@@ -182,7 +183,7 @@ void json_print_object(json_object *obj, int indent_level) {
         case json_type_object: {
             json_object_object_foreach(obj, key, val) {
                 for (int i = 0; i <= indent_level; i++) {
-                    printf("    "); // indentation level
+                    printf(INDENTATION_LEVEL); // indentation level
                 }
                 printf("%s: ", key);
                 json_print_value(val, key, indent_level + 1, false);
@@ -193,10 +194,13 @@ void json_print_object(json_object *obj, int indent_level) {
         case json_type_array: {
             int length = json_object_array_length(obj);
             for (int i = 0; i < length; i++) {
+                for (int j = 0; j <= indent_level; j++) {
+                    printf(INDENTATION_LEVEL); // indentation level
+                }
                 json_object *item = json_object_array_get_idx(obj, i);
                 json_print_value(item, NULL, indent_level + 1, length - 1 - i);
+                printf("\n");
             }
-            printf("\n");
             break;
         }
         default:

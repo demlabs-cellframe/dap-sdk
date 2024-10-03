@@ -127,8 +127,13 @@ DAP_STATIC_INLINE int dap_chain_hash_fast_to_str(const dap_hash_fast_t *a_hash, 
     return DAP_CHAIN_HASH_FAST_STR_SIZE;
 }
 
-const char *dap_chain_hash_fast_to_str_static(const dap_hash_fast_t *a_hash);
+DAP_STATIC_INLINE dap_hash_str_t dap_chain_hash_fast_to_hash_str(const dap_hash_fast_t *a_hash) {
+    dap_hash_str_t l_ret = { };
+    dap_chain_hash_fast_to_str(a_hash, l_ret.s, DAP_CHAIN_HASH_FAST_STR_SIZE);
+    return l_ret;
+}
 
+#define dap_chain_hash_fast_to_str_static(hash) dap_chain_hash_fast_to_hash_str(hash).s
 #define dap_hash_fast_to_str dap_chain_hash_fast_to_str
 #define dap_hash_fast_to_str_static dap_chain_hash_fast_to_str_static
 
@@ -164,13 +169,14 @@ DAP_STATIC_INLINE char *dap_hash_fast_str_new( const void *a_data, size_t a_data
     return NULL;
 }
 
-#define dap_get_data_hash_str_static(data,data_size,strname) \
-do { \
-    strname = DAP_NEW_STACK_SIZE(char, DAP_CHAIN_HASH_FAST_STR_SIZE); \
-    dap_hash_fast_t dummy_hash; \
-    dap_hash_fast(data,data_size,&dummy_hash); \
-    dap_chain_hash_fast_to_str(&dummy_hash,strname,DAP_CHAIN_HASH_FAST_STR_SIZE); \
-} while (0)
+DAP_STATIC_INLINE dap_hash_str_t dap_get_data_hash_str(const void *a_data, size_t a_data_size)
+{
+    dap_hash_str_t l_ret = { };
+    dap_hash_fast_t dummy_hash;
+    dap_hash_fast(a_data, a_data_size, &dummy_hash);
+    dap_chain_hash_fast_to_str(&dummy_hash, l_ret.s, DAP_CHAIN_HASH_FAST_STR_SIZE);
+    return l_ret;
+}
 
 #ifdef __cplusplus
 }

@@ -48,8 +48,14 @@ pthread_rwlock_t s_notify_server_clients_mutex = PTHREAD_RWLOCK_INITIALIZER;
 static void s_notify_server_callback_queue(dap_events_socket_t * a_es, void * a_arg);
 static void s_notify_server_callback_new(dap_events_socket_t * a_es, void * a_arg);
 static void s_notify_server_callback_delete(dap_events_socket_t * a_es, void * a_arg);
-
+static dap_notify_data_user_callback_t s_notify_data_user_callback = NULL;
 dap_events_socket_callback_t s_notify_server_callback_new_ex = NULL;
+
+void dap_notify_data_set_user_callback(dap_notify_data_user_callback_t callback)
+{
+    s_notify_data_user_callback = callback;
+}
+
 
 void dap_notify_srv_set_callback_new(dap_events_socket_callback_t a_cb) {
     s_notify_server_callback_new_ex = a_cb;
@@ -144,6 +150,7 @@ int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char * a_format,.
  */
 int dap_notify_server_send_mt(const char *a_data)
 {
+    if (s_notify_data_user_callback) s_notify_data_user_callback(a_data);
     if(!s_notify_server_queue) // If not initialized - nothing to notify
         return 0;
     return dap_events_socket_queue_ptr_send(s_notify_server_queue, dap_strdup(a_data));
@@ -157,8 +164,9 @@ int dap_notify_server_send_mt(const char *a_data)
  */
 int dap_notify_server_send_f_mt(const char *a_format, ...)
 {
-    if(!s_notify_server_queue) // If not initialized - nothing to notify
+    if (!s_notify_data_user_callback && s_notify_server_queue)
         return 0;
+
     va_list ap, ap_copy;
     va_start(ap, a_format);
     va_copy(ap_copy, ap);
@@ -178,6 +186,13 @@ int dap_notify_server_send_f_mt(const char *a_format, ...)
     }
     vsprintf(l_str, a_format, ap_copy);
     va_end(ap_copy);
+
+    if (s_notify_data_user_callback) s_notify_data_user_callback(l_str);
+    
+
+    if(!s_notify_server_queue) // If not initialized - nothing to notify
+        return 0;
+
     int l_ret = dap_events_socket_queue_ptr_send(s_notify_server_queue, l_str);
     DAP_DELETE(l_str);
     return l_ret;

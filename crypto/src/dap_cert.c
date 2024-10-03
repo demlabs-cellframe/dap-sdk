@@ -236,11 +236,8 @@ dap_cert_t * dap_cert_generate_mem_with_seed(const char * a_cert_name, dap_enc_k
     if (l_enc_key) {
         dap_cert_t * l_cert = dap_cert_new(a_cert_name);
         l_cert->enc_key = l_enc_key;
-        if (a_seed && a_seed_size) {
-            char *l_hash_str;
-            dap_get_data_hash_str_static(a_seed, a_seed_size, l_hash_str);
-            log_it(L_DEBUG, "Certificate generated with seed hash %s", l_hash_str);
-        }
+        if (a_seed && a_seed_size)
+            log_it(L_DEBUG, "Certificate generated with seed hash %s", dap_get_data_hash_str(a_seed, a_seed_size).s);
         return l_cert;
     } else {
         log_it(L_ERROR,"Can't generate key in memory!");
@@ -607,11 +604,7 @@ char *dap_cert_dump(dap_cert_t *a_cert)
 const char *dap_cert_get_folder(int a_n_folder_path)
 {
     char **l_p = utarray_eltptr(s_cert_folders, (u_int)a_n_folder_path);
-    if (!l_p) {
-        log_it(L_ERROR, "No default cert path check 'ca_folders' in cellframe-node.cfg");
-        return NULL;
-    } else
-        return *l_p;
+    return l_p ? *l_p : ( log_it(L_ERROR, "No default cert path, check \"ca_folders\" in cellframe-node.cfg"), NULL );
 }
 
 

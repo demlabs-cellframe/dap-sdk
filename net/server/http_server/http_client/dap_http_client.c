@@ -313,8 +313,8 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 
     byte_t *l_peol;
     char *l_cp;
-    int l_len, l_ret;
-    size_t read_bytes = 0;
+    int l_ret;
+    size_t l_len = 0;
 
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT( a_esocket );
     dap_http_url_proc_t *url_proc = NULL;
@@ -498,7 +498,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                         break;
                     }
                 }
-                dap_events_socket_shrink_buf_in( a_esocket, l_len);         /* Shrink input buffer over whole HTTP header */
+                dap_events_socket_shrink_buf_in(a_esocket, l_len);         /* Shrink input buffer over whole HTTP header */
             } break;
 
             case DAP_HTTP_CLIENT_STATE_DATA:{
@@ -507,8 +507,8 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 pthread_rwlock_rdlock(&l_http_client->proc->cache_rwlock);
                 if ( l_http_client->proc->cache == NULL && l_http_client->proc->data_read_callback ) {
                     pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
-                    l_http_client->proc->data_read_callback( l_http_client, &read_bytes );
-                    dap_events_socket_shrink_buf_in( a_esocket, read_bytes );
+                    l_http_client->proc->data_read_callback( l_http_client, &l_len );
+                    dap_events_socket_shrink_buf_in( a_esocket, l_len );
                 } else {
                     pthread_rwlock_unlock(&l_http_client->proc->cache_rwlock);
                     a_esocket->buf_in_size = 0;
@@ -519,14 +519,12 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 a_esocket->buf_in_size = 0;
             } break;
         } // switch
-        if (l_iter_count++ > 1000) {
+        if (++l_iter_count > 1000) {
             log_it(L_ERROR, "Indefinite loop in DAP HTTP client read");
             s_report_error_and_restart( a_esocket, l_http_client, Http_Status_LoopDetected );
             break;
         }
-    } while (a_esocket->buf_in_size);
-//  log_it( L_DEBUG, "dap_http_client_read...exit" );
-//  Sleep(100);
+    } while (a_esocket->buf_in_size && l_len);
 }
 
 /**
