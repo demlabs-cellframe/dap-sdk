@@ -50,8 +50,8 @@ typedef struct dap_managed_net {
 
 static bool s_debug_more = false;
 static const char *s_init_error = "Link manager not inited";
-static uint32_t s_timer_update_states = 2000;
-static uint32_t s_max_attempts_num = 3;
+static uint32_t s_timer_update_states = 5000;
+static uint32_t s_max_attempts_num = 1;
 static uint32_t s_reconnect_delay = 20; // sec
 static dap_link_manager_t *s_link_manager = NULL;
 static dap_proc_thread_t *s_query_thread = NULL;
@@ -167,15 +167,24 @@ DAP_STATIC_INLINE void s_debug_accounting_link_in_net(bool a_uplink, dap_stream_
 DAP_STATIC_INLINE void s_link_manager_print_links_info(dap_link_manager_t *a_link_manager)
 {
     dap_link_t *l_link = NULL, *l_tmp = NULL;
-    printf("| Uplink |\tNode addr\t|Active Clusters|Static clusters|\n"
+    dap_string_t *l_report = dap_string_new("\n| Uplink |\tNode addr\t|Active Clusters|Static clusters|\tNet IDs\t\n"
             "-----------------------------------------------------------------\n");
-    HASH_ITER(hh, a_link_manager->links, l_link, l_tmp)
-        printf("| %5s  |"NODE_ADDR_FP_STR"|\t%"DAP_UINT64_FORMAT_U
-                                            "\t|\t%"DAP_UINT64_FORMAT_U"\t|\n",
+    HASH_ITER(hh, a_link_manager->links, l_link, l_tmp) {
+        dap_string_append_printf(l_report, "| %5s  |"NODE_ADDR_FP_STR"|\t%"DAP_UINT64_FORMAT_U
+                                            "\t|\t%"DAP_UINT64_FORMAT_U"\t| ",
                                  l_link->is_uplink ? "True" : "False",
                                  NODE_ADDR_FP_ARGS_S(l_link->addr),
                                  dap_list_length(l_link->active_clusters),
                                  dap_list_length(l_link->static_clusters));
+        dap_list_t *it, *tmp;
+        DL_FOREACH_SAFE(l_link->uplink.associated_nets, it, tmp) {
+            dap_managed_net_t *l_net = it->data;
+            dap_string_append_printf(l_report, " %"DAP_UINT64_FORMAT_x, l_net->id);
+        }
+        dap_string_append_printf(l_report, "%s", "\n");
+    }
+    log_it(L_DEBUG, "%s", l_report->str);
+    dap_string_free(l_report, true);
 }
 
 // General functional
@@ -400,7 +409,6 @@ void dap_link_manager_set_net_condition(uint64_t a_net_id, bool a_new_condition)
     }
     if (a_new_condition)
         return;
-    l_net->uplinks = 0;
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
     dap_link_t *l_link_it, *l_link_tmp;
     HASH_ITER(hh, s_link_manager->links, l_link_it, l_link_tmp) {
@@ -514,7 +522,6 @@ void s_link_drop(dap_link_t *a_link, bool a_disconnected)
                 if (l_is_permanent_link)
                     continue;
                 DL_DELETE(a_link->uplink.associated_nets, it);
-                l_net->uplinks--;
             }
         }
         if (!a_link->active_clusters && !a_link->uplink.associated_nets && !a_link->static_clusters) {
@@ -713,9 +720,11 @@ void s_links_request(dap_link_manager_t *a_link_manager)
     dap_list_t *l_item = NULL;
     DL_FOREACH(a_link_manager->nets, l_item) {
         dap_managed_net_t *l_net = (dap_managed_net_t *)l_item->data;
-        if (l_net->active && a_link_manager->callbacks.link_request &&
-                l_net->uplinks < l_net->min_links_num)
-            a_link_manager->callbacks.link_request(l_net->id);
+        if (l_net->active ) {
+            l_net->uplinks = dap_link_manager_links_count(l_net->id);
+            if (a_link_manager->callbacks.link_request && l_net->uplinks < l_net->min_links_num)
+                    a_link_manager->callbacks.link_request(l_net->id);
+        }
     }
 }
 
@@ -760,7 +769,9 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
         l_link->addr.uint64 = a_node_addr->uint64;
         l_link->link_manager = s_link_manager;
         HASH_ADD(hh, s_link_manager->links, addr, sizeof(*a_node_addr), l_link);
-    }
+    }   
+    if (s_debug_more)
+        s_link_manager_print_links_info(s_link_manager);
     if (a_with_client) {
         if (!l_link->uplink.client)
             l_link->uplink.client = dap_client_new(s_client_error_callback, NULL);
@@ -778,11 +789,8 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
                     return NULL;
                 }
             l_link->uplink.associated_nets = dap_list_append(l_link->uplink.associated_nets, l_net);
-            l_net->uplinks++;
         }
     }
-    if (s_debug_more)
-        s_link_manager_print_links_info(s_link_manager);
     return l_link;
 }
 
@@ -1120,7 +1128,6 @@ static bool s_link_accounting_callback(void *a_arg)
             }
         }
         l_link->uplink.associated_nets = dap_list_remove(l_link->uplink.associated_nets, l_net);
-        l_net->uplinks--;
         if (l_link->uplink.client && !l_link->uplink.associated_nets && !l_link->static_clusters)
             s_link_delete(&l_link, false, false);
     }
@@ -1234,7 +1241,7 @@ void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member
  * @param a_downlinks_count output count of finded downlinks
  * @return pointer to dap_stream_node_addr_t array, first uplinks, second downlinks, or NULL
  */
-dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count, bool a_uplinks_only)
+dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count, bool a_established_only)
 {
 // sanity check
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
@@ -1255,13 +1262,13 @@ dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, 
     for (size_t i =  0; i < l_cur_count; ++i) {
         dap_link_t *l_link = NULL;
         HASH_FIND(hh, s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
-        if (!l_link || (l_link->is_uplink && l_link->uplink.state != LINK_STATE_ESTABLISHED)) {
+        if (!l_link || (l_link->is_uplink && a_established_only && l_link->uplink.state != LINK_STATE_ESTABLISHED)) {
             continue;
         } else if (l_link->is_uplink) {  // first uplinks, second downlinks
             l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_ret[l_uplinks_count].uint64;
             l_ret[l_uplinks_count].uint64 = l_link->addr.uint64;
             ++l_uplinks_count;
-        } else if (!a_uplinks_only) {
+        } else {
             l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_link->addr.uint64;
             ++l_downlinks_count;
         }
