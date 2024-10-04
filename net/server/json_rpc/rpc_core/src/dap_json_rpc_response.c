@@ -68,7 +68,6 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
                 log_it(L_ERROR, "Unsupported response type");
                 break;
         }
-        dap_json_rpc_error_deinit();
         DAP_FREE(response);
     }
 }
