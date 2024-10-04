@@ -1,4 +1,5 @@
 #include "dap_json_rpc_request_handler.h"
+#include "dap_cli_server.h"
 
 #define LOG_TAG "dap_json_rpc_request_handler"
 
@@ -37,32 +38,13 @@ int dap_json_rpc_unregistration_request_handler(const char *a_name)
     }
 }
 
-#if 0
-void dap_json_rpc_request_handler(dap_json_rpc_request_t *a_request,  dap_http_simple_t *a_client)
+int dap_json_rpc_request_handler(const char * a_request,  dap_http_simple_t *a_http_simple)
 {
-    // log_it(L_DEBUG, "Processing request");
-    // if (a_request->id == 0){
-    //     dap_json_rpc_notification_handler(a_request->method, a_request->params);
-    // } else {
-    //     dap_json_rpc_response_t *l_response = DAP_NEW(dap_json_rpc_response_t);
-    //     if (!l_response) {
-    //         log_it(L_CRITICAL, "Memory allocation error");
-    //         return;
-    //     }
-    //     l_response->id = a_request->id;
-    //     dap_json_rpc_request_handler_t *l_handler = NULL;
-    //     HASH_FIND_STR(s_handler_hash_table, a_request->method, l_handler);
-    //     if (l_handler == NULL){
-    //         dap_json_rpc_error_t *l_err = dap_json_rpc_error_search_by_code(1);
-    //         l_response->type_result = TYPE_RESPONSE_NULL;
-    //         l_response->error = l_err;
-    //         log_it(L_NOTICE, "Can't processing the request. Handler %s not registration. ", a_request->method);
-    //     } else {
-    //         l_response->error = NULL;
-    //         l_handler->func(a_request->params, l_response, a_request->method);
-    //         log_it(L_NOTICE, "Calling handler request name: %s", a_request->method);
-    //     }
-    //     dap_json_rpc_response_send(l_response, a_client);
-    // }
+    log_it(L_DEBUG, "Processing request");
+    const char* l_response = dap_cli_cmd_exec(a_request);
+    size_t res = dap_http_simple_reply(a_http_simple, (void*)l_response, strlen(l_response));
+    if (!res)
+        log_it(L_ERROR, "Error in json-rpc reply");
+    DAP_DEL_Z(l_response);
+    return 0;
 }
-#endif

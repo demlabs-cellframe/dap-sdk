@@ -60,7 +60,6 @@ typedef struct dap_json_rpc_response
         bool result_boolean;
         json_object *result_json_object;
     };
-    json_object* json_arr_errors;
     uint64_t id;
 }dap_json_rpc_response_t;
 

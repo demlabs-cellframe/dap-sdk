@@ -27,7 +27,6 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
     response->id = id;
     json_object* errors = dap_json_rpc_error_get();
     response->type = type;
-    if (!errors) {
 
         switch(response->type){
             case TYPE_RESPONSE_STRING:
@@ -47,25 +46,6 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
                 DAP_FREE(response);
                 return NULL;
         }
-    } else {
-        switch(response->type) {
-            case TYPE_RESPONSE_STRING:
-                DAP_DEL_Z(result);
-                break;
-            case TYPE_RESPONSE_JSON:
-                if (result)
-                    json_object_put(result);
-                break;
-            case TYPE_RESPONSE_BOOLEAN:
-            case TYPE_RESPONSE_DOUBLE:
-            case TYPE_RESPONSE_INTEGER:
-            case TYPE_RESPONSE_NULL:
-            case TYPE_RESPONSE_ERROR:
-                break;
-        }
-        response->type = TYPE_RESPONSE_ERROR;
-        response->json_arr_errors = errors;
-    }
     return response;
 }
 
@@ -83,9 +63,6 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
             case TYPE_RESPONSE_DOUBLE:
             case TYPE_RESPONSE_BOOLEAN:
             case TYPE_RESPONSE_NULL:
-            case TYPE_RESPONSE_ERROR:
-            if (response->json_arr_errors)
-                json_object_put(response->json_arr_errors);
             break;
             default:
                 log_it(L_ERROR, "Unsupported response type");
@@ -128,13 +105,6 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
         case TYPE_RESPONSE_NULL:
             json_object_object_add(jobj, "result", NULL);
             break;
-    }
-
-    // json errors
-    if (response->type == TYPE_RESPONSE_ERROR) {
-        json_object_object_add(jobj, "errors", json_object_get(response->json_arr_errors));
-    } else {
-        json_object_object_add(jobj, "errors", json_object_new_null());
     }
 
     // json id
@@ -186,9 +156,6 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
                 case TYPE_RESPONSE_JSON:
                     response->result_json_object = json_object_get(result_obj);
                     break;
-                case TYPE_RESPONSE_ERROR:
-                    json_object_object_get_ex(jobj, "errors", &result_obj);
-                    response->json_arr_errors = json_object_get(result_obj);
                 case TYPE_RESPONSE_NULL:
                     break;
             }
@@ -371,26 +338,6 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                     break;
             }
             break;
-        case TYPE_RESPONSE_ERROR:
-            if (!response->json_arr_errors) {
-                printf("json errors is NULL");
-                return -4;
-            }
-            int errors_count = json_object_array_length(response->json_arr_errors);
-            for (int i = 0; i < errors_count; i++) {
-                    struct json_object *json_obj = json_object_array_get_idx(response->json_arr_errors, i);
-                    struct json_object *error_obj;
-                    if (json_object_object_get_ex(json_obj, "error", &error_obj)) {
-                        struct json_object *code_obj, *message_obj;
-                        if (json_object_object_get_ex(error_obj, "code", &code_obj) &&
-                            json_object_object_get_ex(error_obj, "message", &message_obj)) {
-                            int code = json_object_get_int(code_obj);
-                            const char *message = json_object_get_string(message_obj);
-                            printf("Error %d: %s\n", code, message);
-                        }
-                    }
-            }
-            break;
     }
     return 0;
 }
@@ -405,48 +352,34 @@ void dap_json_rpc_request_JSON_free(dap_json_rpc_request_JSON_t *l_request_JSON)
     DAP_FREE(l_request_JSON);
 }
 
-#if 0
-// doesn't work
-void dap_json_rpc_response_send(dap_json_rpc_response_t *a_response, dap_http_simple_t *a_client)
-{
-    json_object *l_jobj = json_object_new_object();
-    json_object *l_obj_id = json_object_new_int64(a_response->id);
-    json_object *l_obj_result = NULL;
-    json_object *l_obj_error = NULL;
-    const char *str_response = NULL;
-    if (a_response->json_arr_errors == NULL){
-        l_obj_error = json_object_new_null();
-        switch (a_response->type) {
-            case TYPE_RESPONSE_STRING:
-                l_obj_result = json_object_new_string(a_response->result_string);
-                break;
-            case TYPE_RESPONSE_DOUBLE:
-                l_obj_result = json_object_new_double(a_response->result_double);
-                break;
-            case TYPE_RESPONSE_BOOLEAN:
-                l_obj_result = json_object_new_boolean(a_response->result_boolean);
-                break;
-            case TYPE_RESPONSE_INTEGER:
-                l_obj_result = json_object_new_int64(a_response->result_int);
-                break;
-            case TYPE_RESPONSE_JSON:
-                l_obj_result = json_object_get(a_response->result_json_object);
-                json_object_put(a_response->result_json_object);
-                break;
-            default:{}
-        }
-    }else{
-        // l_obj_error = json_object_new_object();
-        // json_object *l_obj_err_code = json_object_new_int(a_response->error->code_error);
-        // json_object *l_obj_err_msg = json_object_new_string(a_response->error->msg);
-        // json_object_object_add(l_obj_error, "code", l_obj_err_code);
-        // json_object_object_add(l_obj_error, "message", l_obj_err_msg);
-    }
-    json_object_object_add(l_jobj, "result", l_obj_result);
-    json_object_object_add(l_jobj, "id", l_obj_id);
-    json_object_object_add(l_jobj, "error", l_obj_error);
-    str_response = json_object_to_json_string(l_jobj);
-    dap_http_simple_reply(a_client, (void *)str_response, strlen(str_response));
-    json_object_put(l_jobj);
-}
-#endif
+// void dap_json_rpc_response_send(dap_json_rpc_response_t *a_response, dap_http_simple_t *a_client)
+// {
+//     json_object *l_jobj = json_object_new_object();
+//     json_object *l_obj_id = json_object_new_int64(a_response->id);
+//     json_object *l_obj_result = NULL;
+//     const char *str_response = NULL;
+//     switch (a_response->type) {
+//         case TYPE_RESPONSE_STRING:
+//             l_obj_result = json_object_new_string(a_response->result_string);
+//             break;
+//         case TYPE_RESPONSE_DOUBLE:
+//             l_obj_result = json_object_new_double(a_response->result_double);
+//             break;
+//         case TYPE_RESPONSE_BOOLEAN:
+//             l_obj_result = json_object_new_boolean(a_response->result_boolean);
+//             break;
+//         case TYPE_RESPONSE_INTEGER:
+//             l_obj_result = json_object_new_int64(a_response->result_int);
+//             break;
+//         case TYPE_RESPONSE_JSON:
+//             l_obj_result = json_object_get(a_response->result_json_object);
+//             json_object_put(a_response->result_json_object);
+//             break;
+//         default:{}
+//     }
+//     json_object_object_add(l_jobj, "result", l_obj_result);
+//     json_object_object_add(l_jobj, "id", l_obj_id);
+//     str_response = json_object_to_json_string(l_jobj);
+//     dap_http_simple_reply(a_client, (void *)str_response, strlen(str_response));
+//     json_object_put(l_jobj);
+// }
