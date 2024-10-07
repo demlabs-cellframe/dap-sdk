@@ -191,7 +191,8 @@ int json_commands(const char * a_name) {
             "esbocs",
             "global_db",
             "net",
-            "srv_stake"
+            "srv_stake",
+            "voting"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
