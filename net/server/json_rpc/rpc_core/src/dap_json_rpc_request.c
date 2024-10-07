@@ -1,4 +1,5 @@
 #include "dap_json_rpc_request.h"
+#include "dap_cert.h"
 
 #define LOG_TAG "dap_json_rpc_request"
 
@@ -100,14 +101,41 @@ char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_reques
     return l_str;
 }
 
+char *dap_json_rpc_http_request_to_json_string(dap_json_rpc_http_request_t *a_request) {
+    char *l_str = dap_json_rpc_request_to_json_string(a_request->request);
+    return dap_strcat2(l_str, *(char*)a_request->tsd_n_signs);
+}
+
+dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_request_t *a_request, dap_cert_t* a_cert) {
+    char *l_str = dap_json_rpc_request_to_json_string(a_request);
+    dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, size_of(l_str), 0);
+    if (!l_sign) {
+        log_it(L_ERROR, "Decree signing failed");
+        DAP_DELETE(l_str);
+        return NULL;
+    }
+    dap_json_rpc_http_request_t* ret = NULL;
+    size_t l_sign_size = dap_sign_get_size(l_sign);
+    ret->request = a_request;
+    ret->header.signs_size = l_sign_size;
+    ret->tsd_n_signs = DAP_NEW_Z_SIZE(byte_t, l_sign_size);
+    memcpy(ret->tsd_n_signs, l_sign, l_sign_size);
+    DAP_DELETE(l_str);
+    DAP_DELETE(l_sign);
+    return ret;
+}
+
 void dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, dap_json_rpc_response_handler_func_t *response_handler,
                                const char *a_uplink_addr, const uint16_t a_uplink_port,
                                dap_client_http_callback_error_t func_error)
 {
     uint64_t l_id_response = dap_json_rpc_response_registration(response_handler);
     a_request->id = l_id_response;
-    char *l_str = dap_json_rpc_request_to_json_string(a_request);
+    dap_cert_t* l_cert = dap_cert_find_by_name("node_addr");
+    dap_json_rpc_http_request_sign_by_cert(a_request, l_cert);
+    dap_json_rpc_http_request_t * l_http_request = dap_json_rpc_request_sign_by_cert(a_request, l_cert);
+    char * l_http_str = dap_json_rpc_http_request_to_json_string(l_http_request);
     log_it(L_NOTICE, "Sending request in address: %s", a_uplink_addr);
-    dap_client_http_request(NULL,a_uplink_addr, a_uplink_port, "GET", "application/json", s_url_service, l_str, strlen(l_str),
+    dap_client_http_request(NULL,a_uplink_addr, a_uplink_port, "GET", "application/json", s_url_service, l_http_str, strlen(l_http_str),
                             NULL, dap_json_rpc_response_accepted, func_error, NULL, NULL);
 }

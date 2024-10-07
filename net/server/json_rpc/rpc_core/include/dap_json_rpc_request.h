@@ -31,6 +31,17 @@
 extern "C"{
 #endif
 
+
+typedef struct dap_json_rpc_http_request
+{
+    struct {
+        uint32_t data_size;
+        uint32_t signs_size;
+    } DAP_ALIGN_PACKED header;
+    dap_json_rpc_request_t * request;
+    byte_t tsd_n_signs[];
+}dap_json_rpc_http_request_t;
+
 typedef struct dap_json_rpc_request
 {
     char* method;
