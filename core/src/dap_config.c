@@ -145,26 +145,23 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
         l_eol = strcspn(l_line, "#\r\n");
         l_line[l_eol] = '\0';
         {
-            char *l_tmp = l_line, *l_tmp1 = l_line;
-            int l_shift = 0;
+            char *l_read = l_line, *l_write = l_line;
             do {
-                while(isspace(*l_tmp1)) {
-                    ++l_tmp1;
-                    ++l_shift;
-                }
-            } while((*l_tmp++ = *l_tmp1++));
+                if ( !isspace(*l_read) )
+                    *l_write++ = *l_read;
+            } while (*l_read++);
+            l_eol = (unsigned)(l_write - l_line - 1);
         }
-        unsigned l_stripped_len = strlen(l_line);
-        if (!l_stripped_len) {
+        if (!l_eol) {
             // No useful data remained
             continue;
         }
         char *l_key = NULL, *l_val = NULL;
         if (!l_values_arr) {
-            --l_stripped_len;
-            if (l_line[0] == '[' && l_line[l_stripped_len] == ']') {
+            --l_eol;
+            if (l_line[0] == '[' && l_line[l_eol] == ']') {
                 // A section start
-                l_line[l_stripped_len] = '\0';
+                l_line[l_eol] = '\0';
                 DAP_DEL_Z(l_section);
                 l_section = dap_strdup(l_line + 1);
                 continue;
@@ -173,12 +170,11 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
                        a_abs_path, l_line_counter);
                 continue;
             }
-            if (!strchr(l_line, '=')) {
+            if (! (l_key = strtok_r(l_line, "=", &l_val)) || !l_val ) {
                 log_it(L_WARNING, "Config \"%s\": unknown pattern on line %d, dump it",
-                       a_abs_path, l_line_counter);
+                                  a_abs_path, l_line_counter);
                 continue;
             }
-            l_key = strtok_r(l_line, "=", &l_val);
         } else {
             l_val = l_line;
         }
