@@ -73,7 +73,11 @@ dap_json_rpc_error_t *dap_json_rpc_create_from_json_object(json_object *a_jobj);
 
 void dap_json_rpc_add_standart_erros(void);
 
-#define dap_json_rpc_allocation_error(a_json_arr_reply) log_it(L_CRITICAL, "%s", c_error_memory_alloc); dap_json_rpc_error_add(a_json_arr_reply, DAP_JSON_RPC_ERR_CODE_MEMORY_ALLOCATED, "[%s] %s",  LOG_TAG, c_error_memory_alloc)
+#define dap_json_rpc_allocation_error(a_json_arr_reply) \
+    do {    \
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc); \
+        dap_json_rpc_error_add(a_json_arr_reply, DAP_JSON_RPC_ERR_CODE_MEMORY_ALLOCATED, "[%s] %s",  LOG_TAG, c_error_memory_alloc); \
+    } while (0)
 
 #ifdef __cplusplus
 }
