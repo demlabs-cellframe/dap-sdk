@@ -31,6 +31,12 @@
 extern "C"{
 #endif
 
+typedef struct dap_json_rpc_request
+{
+    char* method;
+    dap_json_rpc_params_t *params;
+    uint64_t id;
+}dap_json_rpc_request_t;
 
 typedef struct dap_json_rpc_http_request
 {
@@ -41,13 +47,6 @@ typedef struct dap_json_rpc_http_request
     dap_json_rpc_request_t * request;
     byte_t tsd_n_signs[];
 }dap_json_rpc_http_request_t;
-
-typedef struct dap_json_rpc_request
-{
-    char* method;
-    dap_json_rpc_params_t *params;
-    uint64_t id;
-}dap_json_rpc_request_t;
 
 int dap_json_rpc_request_init(const char *a_url_service);
 /**
@@ -80,6 +79,8 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data);
  *         or NULL on failure.
  */
 char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_request);
+dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data);
+char * dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request, size_t *a_total_size);
 
 void dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, dap_json_rpc_response_handler_func_t *response_handler,
                                const char *a_uplink_addr, const uint16_t a_uplink_port,

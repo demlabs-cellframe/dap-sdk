@@ -5,7 +5,7 @@
 #include "dap_config.h"
 
 #define LOG_TAG "dap_json_rpc_rpc"
-#define DAP_EXEC_CMD_URL "exec_cmd"
+#define DAP_EXEC_CMD_URL "/exec_cmd"
 
 static bool init_module = false;
 typedef struct dap_exec_cmd_pkey {
@@ -17,8 +17,8 @@ static pthread_rwlock_t s_exec_cmd_rwlock;
 
 static int dap_json_rpc_map_init(dap_config_t *a_config) {
     s_exec_cmd_map = NULL;
-    int l_array_length = 0;
-    char ** l_pkeys = dap_config_get_array_str(a_config, "server", "exec_cmd", &l_array_length);
+    uint16_t  l_array_length = 0;
+    const char ** l_pkeys = dap_config_get_array_str(a_config, "server", "exec_cmd", &l_array_length);
     for (size_t i = 0; i < l_array_length; i++) {
         dap_pkey_t *l_ret = DAP_NEW_SIZE(dap_pkey_t, sizeof(dap_pkey_t) + sizeof(l_pkeys[i]));
         dap_pkey_type_t l_ret_type = {0};

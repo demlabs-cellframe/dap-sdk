@@ -7,9 +7,10 @@ static char *s_url_service = NULL;
 
 int dap_json_rpc_request_init(const char *a_url_service)
 {
-    if (s_url_service == NULL){
+    if (s_url_service == NULL)
+    {
         s_url_service = dap_strdup(a_url_service);
-        return  0;
+        return 0;
     }
     return 1;
 }
@@ -17,7 +18,8 @@ int dap_json_rpc_request_init(const char *a_url_service)
 dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_json_rpc_params_t *a_params, int64_t a_id)
 {
     dap_json_rpc_request_t *request = DAP_NEW(dap_json_rpc_request_t);
-    if (!request) {
+    if (!request)
+    {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
     }
     request->method = dap_strdup(a_method);
@@ -26,10 +28,12 @@ dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_
     return request;
 }
 
-void dap_json_rpc_request_free(dap_json_rpc_request_t *request) {
-    if (request) {
+void dap_json_rpc_request_free(dap_json_rpc_request_t *request)
+{
+    if (request)
+    {
         DAP_DEL_Z(request->method);
-        if (request->params) 
+        if (request->params)
             dap_json_rpc_params_remove_all(request->params);
         DAP_FREE(request);
     }
@@ -45,37 +49,51 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
     json_object *jobj_params = NULL;
 
     dap_json_rpc_request_t *request = DAP_NEW_Z(dap_json_rpc_request_t);
-    if (!request) {
+    if (!request)
+    {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return NULL;
     }
 
-    if (jterr == json_tokener_success){
-        if (json_object_object_get_ex(jobj, "id", &jobj_id)){
+    if (jterr == json_tokener_success)
+    {
+        if (json_object_object_get_ex(jobj, "id", &jobj_id))
+        {
             request->id = json_object_get_int64(jobj_id);
-        }else{
+        }
+        else
+        {
             log_it(L_ERROR, "Error parse JSON string, Can't searching id request");
             err_parse_request = true;
         }
 
-        if (json_object_object_get_ex(jobj, "method", &jobj_method)){
+        if (json_object_object_get_ex(jobj, "method", &jobj_method))
+        {
             request->method = dap_strdup(json_object_get_string(jobj_method));
-        }else{
-            log_it(L_ERROR, "Error parse JSON string, Can't searching method for request with id: %"DAP_UINT64_FORMAT_U, request->id);
+        }
+        else
+        {
+            log_it(L_ERROR, "Error parse JSON string, Can't searching method for request with id: %" DAP_UINT64_FORMAT_U, request->id);
             err_parse_request = true;
         }
 
-        if (json_object_object_get_ex(jobj, "params", &jobj_params) && !err_parse_request){
+        if (json_object_object_get_ex(jobj, "params", &jobj_params) && !err_parse_request)
+        {
             request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
-        }else{
-            log_it(L_ERROR, "Error parse JSON string, Can't searching array params for request with id: %"DAP_UINT64_FORMAT_U, request->id);
+        }
+        else
+        {
+            log_it(L_ERROR, "Error parse JSON string, Can't searching array params for request with id: %" DAP_UINT64_FORMAT_U, request->id);
             err_parse_request = true;
         }
-    } else {
+    }
+    else
+    {
         log_it(L_ERROR, "Error parse json tokener: %s", json_tokener_error_desc(jterr));
         err_parse_request = true;
     }
-    if (err_parse_request){
+    if (err_parse_request)
+    {
         DAP_FREE(request->method);
         DAP_FREE(request);
         json_object_put(jobj);
@@ -88,38 +106,97 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
 char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_request)
 {
     char *params_json = dap_json_rpc_params_get_string_json(a_request->params);
-    if (!params_json) {
+    if (!params_json)
+    {
         log_it(L_CRITICAL, "Failed to generate JSON for params");
         return NULL;
     }
 
     char *l_str = dap_strdup_printf(
-        "{\"method\":\"%s\", \"params\":%s, \"id\":\"%"DAP_UINT64_FORMAT_U"\" }",
+        "{\"method\":\"%s\", \"params\":%s, \"id\":\"%" DAP_UINT64_FORMAT_U "\" }",
         a_request->method, params_json, a_request->id);
 
-    DAP_FREE(params_json); 
+    DAP_FREE(params_json);
     return l_str;
 }
 
-char *dap_json_rpc_http_request_to_json_string(dap_json_rpc_http_request_t *a_request) {
+char * dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request, size_t *a_total_size)
+{
+    *a_total_size = a_request->header.data_size + a_request->header.signs_size + sizeof(a_request->header);
+    char *a_output = DAP_NEW_SIZE(char, *a_total_size);
+    if (!a_output)
+    {
+        return 0;
+    }
+
+    char *ptr = a_output;
+
+    memcpy(ptr, &a_request->header.data_size, sizeof(a_request->header.data_size));
+    ptr += sizeof(a_request->header.data_size);
+
+    memcpy(ptr, &a_request->header.signs_size, sizeof(a_request->header.signs_size));
+    ptr += sizeof(a_request->header.signs_size);
+
     char *l_str = dap_json_rpc_request_to_json_string(a_request->request);
-    return dap_strcat2(l_str, *(char*)a_request->tsd_n_signs);
+    memcpy(ptr, l_str, a_request->header.data_size);
+    ptr += a_request->header.data_size;
+    DAP_DEL_Z(l_str);
+
+    memcpy(ptr, a_request->tsd_n_signs, a_request->header.signs_size);
+    ptr += a_request->header.signs_size;
+
+    return a_output;
 }
 
-dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_request_t *a_request, dap_cert_t* a_cert) {
+dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data)
+{
+    char *ptr = (char *)data;
+    dap_json_rpc_http_request_t *l_http_request = DAP_NEW_Z(dap_json_rpc_http_request_t);
+    if (!l_http_request)
+    {
+        return NULL;
+    }
+
+    memcpy(&l_http_request->header, ptr, sizeof(l_http_request->header));
+    ptr += sizeof(l_http_request->header);
+
+    char *l_request_str = DAP_NEW_Z_SIZE(char, l_http_request->header.data_size);
+    memcpy(&l_http_request, ptr, l_http_request->header.data_size);
+    l_http_request->request = dap_json_rpc_request_from_json(l_request_str);
+    if (!l_http_request->request)
+    {
+        DAP_DEL_Z(l_http_request);
+        return NULL;
+    }
+    ptr += sizeof(l_http_request->header.data_size);
+
+    if (l_http_request->header.signs_size > 0) {
+        l_http_request = DAP_REALLOC(l_http_request, sizeof(dap_json_rpc_http_request_t) + l_http_request->header.signs_size);
+        memcpy(l_http_request->tsd_n_signs, ptr, l_http_request->header.signs_size);
+    }
+
+    return l_http_request;
+}
+
+dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_request_t *a_request, dap_cert_t *a_cert)
+{
     char *l_str = dap_json_rpc_request_to_json_string(a_request);
-    dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, size_of(l_str), 0);
-    if (!l_sign) {
+    dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, sizeof(l_str), 0);
+    if (!l_sign)
+    {
         log_it(L_ERROR, "Decree signing failed");
         DAP_DELETE(l_str);
         return NULL;
     }
-    dap_json_rpc_http_request_t* ret = NULL;
+    dap_json_rpc_http_request_t *ret = DAP_NEW_Z(dap_json_rpc_http_request_t);
     size_t l_sign_size = dap_sign_get_size(l_sign);
     ret->request = a_request;
+    ret->header.data_size = strlen(l_str);
     ret->header.signs_size = l_sign_size;
-    ret->tsd_n_signs = DAP_NEW_Z_SIZE(byte_t, l_sign_size);
-    memcpy(ret->tsd_n_signs, l_sign, l_sign_size);
+    if (ret->header.signs_size >0) {
+        ret = DAP_REALLOC(ret, sizeof(dap_json_rpc_http_request_t) + ret->header.signs_size);
+        memcpy(ret->tsd_n_signs, l_sign, l_sign_size);
+    }
     DAP_DELETE(l_str);
     DAP_DELETE(l_sign);
     return ret;
@@ -131,11 +208,13 @@ void dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, dap_json_rpc_r
 {
     uint64_t l_id_response = dap_json_rpc_response_registration(response_handler);
     a_request->id = l_id_response;
-    dap_cert_t* l_cert = dap_cert_find_by_name("node_addr");
-    dap_json_rpc_http_request_sign_by_cert(a_request, l_cert);
-    dap_json_rpc_http_request_t * l_http_request = dap_json_rpc_request_sign_by_cert(a_request, l_cert);
-    char * l_http_str = dap_json_rpc_http_request_to_json_string(l_http_request);
+    dap_cert_t *l_cert = dap_cert_find_by_name("node_addr");
+    dap_json_rpc_http_request_t *l_http_request = dap_json_rpc_request_sign_by_cert(a_request, l_cert);
+    size_t l_http_length = 0;
+    char *l_http_str = dap_json_rpc_http_request_serialize(l_http_request, &l_http_length);
     log_it(L_NOTICE, "Sending request in address: %s", a_uplink_addr);
-    dap_client_http_request(NULL,a_uplink_addr, a_uplink_port, "GET", "application/json", s_url_service, l_http_str, strlen(l_http_str),
+    dap_client_http_request(NULL, a_uplink_addr, a_uplink_port, "GET", "application/json", s_url_service, l_http_str, l_http_length,
                             NULL, dap_json_rpc_response_accepted, func_error, NULL, NULL);
+    DAP_DEL_Z(l_http_request);
+    DAP_DEL_Z(l_http_str);
 }

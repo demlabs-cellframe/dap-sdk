@@ -41,7 +41,10 @@ int dap_json_rpc_unregistration_request_handler(const char *a_name)
 int dap_json_rpc_request_handler(const char * a_request,  dap_http_simple_t *a_http_simple)
 {
     log_it(L_DEBUG, "Processing request");
-    const char* l_response = dap_cli_cmd_exec(a_request);
+    dap_json_rpc_http_request_t* l_http_request = dap_json_rpc_http_request_deserialize(a_request);
+    // dap_sign_get_pkey_hash();
+    // dap_sign_verify();
+    const char* l_response = dap_cli_cmd_exec(dap_json_rpc_request_to_json_string(l_http_request->request));
     size_t res = dap_http_simple_reply(a_http_simple, (void*)l_response, strlen(l_response));
     if (!res)
         log_it(L_ERROR, "Error in json-rpc reply");

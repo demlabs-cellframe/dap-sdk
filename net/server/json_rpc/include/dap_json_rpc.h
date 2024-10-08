@@ -29,6 +29,7 @@
 #include "dap_strfuncs.h"
 #include "dap_json_rpc_request.h"
 #include "dap_json_rpc_request_handler.h"
+#include "dap_config.h"
 
 #ifdef __cplusplus
 extern "C"{
