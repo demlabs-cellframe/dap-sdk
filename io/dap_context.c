@@ -371,7 +371,7 @@ static void *s_context_thread(void *a_arg)
  */
 int dap_worker_thread_loop(dap_context_t * a_context)
 {
-    int l_errno = 0, l_selected_sockets = 0;
+    int l_errno;
     dap_events_socket_t *l_cur = NULL;
 
 #ifdef DAP_EVENTS_CAPS_IOCP
@@ -390,12 +390,12 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 log_it(L_ERROR, "GetQueuedCompletionStatusEx failed, errno %u", l_errno);
             }
             break;
-        }        
+        }
         dap_overlapped_t *ol;
         HANDLE ev; WINBOOL ev_signaled;
         per_io_type_t op;
         debug_if(g_debug_reactor, L_INFO, "Completed %lu items in context #%d", l_entries_num, a_context->id);
-        for (ULONG i = 0; i < l_entries_num; dap_overlapped_free(ol), ++i) {
+        for (ULONG i = 0; i < l_entries_num; dap_overlapped_free(ol), ++i, l_errno = 0) {
             // DWORD flags;
             ol = (dap_overlapped_t*)ol_entries[i].lpOverlapped;
             op = ol ? ol->op : 0;
@@ -461,17 +461,16 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 if (ev_signaled)
                     --l_cur->pending;
                 // AcceptEx completed
-                if (!l_bytes) {
-                    // WSAGetOverlappedResult() likely invokes another discouraged syscall
-                    if ( (l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal)) ) {
-                        log_it(L_ERROR, "\"AcceptEx\" on "DAP_FORMAT_ESOCKET_UUID" : %zu failed, error %d",
-                                        l_cur->uuid, l_cur->socket, l_errno);
-                        if ( l_cur->callbacks.error_callback )
-                            l_cur->callbacks.error_callback(l_cur, l_errno);
-                        l_cur->flags = DAP_SOCK_SIGNAL_CLOSE;
-                        break;
-                    }
+                // WSAGetOverlappedResult() likely invokes another discouraged syscall
+                if ( NT_ERROR(ol->ol.Internal) ) {
+                    log_it(L_ERROR, "\"AcceptEx\" on "DAP_FORMAT_ESOCKET_UUID" : %zu failed, ntstatus %llx : %s",
+                                    l_cur->uuid, l_cur->socket, ol->ol.Internal, dap_str_ntstatus(ol->ol.Internal));
+                    //l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
+                    dap_events_socket_set_readable_unsafe_ex(l_cur, true, ol);
+                    ol = NULL;
+                    break;
                 }
+                
                 if (!l_cur->callbacks.accept_callback) {
                     log_it(L_ERROR, "Listening socket "DAP_FORMAT_ESOCKET_UUID" : %zu has no accept callback, nothing to do. Dump eet",
                            l_cur->uuid, l_cur->socket);
@@ -479,10 +478,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     break;
                 }
                 if ( setsockopt(l_cur->socket2, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)&l_cur->socket, sizeof(l_cur->socket)) ) {
-                    log_it(L_ERROR, "setsockopt SO_UPDATE_ACCEPT_CONTEXT failed, errno %d", l_errno = WSAGetLastError());
-                    if ( l_cur->callbacks.error_callback )
-                        l_cur->callbacks.error_callback(l_cur, l_errno);
-                    l_cur->flags = DAP_SOCK_SIGNAL_CLOSE;
+                    l_errno = WSAGetLastError();
+                    log_it(L_ERROR, "setsockopt SO_UPDATE_ACCEPT_CONTEXT failed, errno %d", l_errno);
                     break;
                 }
                 LPSOCKADDR l_local_addr = NULL, l_remote_addr = NULL;
@@ -525,7 +522,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 */
                 if (ev_signaled)
                     --l_cur->pending;
-                l_errno = 0;
                 switch (op) {
                 case io_read:
                     if ( !ev ) {
@@ -534,19 +530,14 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         ol = NULL;
                         continue;
                     } else if ( !l_bytes ) {
-                        if ( !(l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal)) ) {
-                            int optlen = sizeof(int);
-                            if ( getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (char*)&l_errno, &optlen) )
-                                log_it(L_ERROR, "getsockopt SO_ERROR failed, errno %d", l_errno = WSAGetLastError());
-                        }
-                        if (l_errno)
-                            log_it(L_ERROR, "Connection to %s : %u closed with error %d, NTSTATUS %x",
-                                l_cur->remote_addr_str, l_cur->remote_port, l_errno, ol->ol.Internal);
-                        else
+                        if ( NT_ERROR(ol->ol.Internal) ) {
+                            l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
+                            log_it(L_ERROR, "Connection to %s : %u closed with error %d, ntstatus %llx: %s",
+                                            l_cur->remote_addr_str, l_cur->remote_port, l_errno, ol->ol.Internal, 
+                                            dap_str_ntstatus(ol->ol.Internal));  
+                        } else 
                             log_it(L_INFO, "Connection to %s : %u closed", l_cur->remote_addr_str, l_cur->remote_port);
-
                         l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;
-
                         break;
                     } else //if (ev_signaled)
                         l_cur->buf_in_size += l_bytes;
@@ -577,26 +568,19 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         continue;
                     }
                     if ( !l_cur->server && l_cur->flags & DAP_SOCK_CONNECTING ) {
-                        UINT seconds = 0;
-                        int optlen = sizeof(int);
-                        if ( getsockopt(l_cur->socket, SOL_SOCKET, SO_CONNECT_TIME, (char*)&seconds, (PINT)&optlen) ) {
-                            log_it(L_ERROR, "getsockopt SO_CONNECT_TIME failed, errno %d", l_errno = WSAGetLastError());
-                            break;
-                        } else if (seconds == 0xFFFFFFFF) {
-                            optlen = sizeof(int);
-                            l_errno = WSAGetLastError();
-                            if ( !l_errno && getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (char*)&l_errno, (PINT)&optlen) )
-                                log_it(L_ERROR, "getsockopt SO_ERROR failed, errno %d", l_errno = WSAGetLastError());
-                            else
-                                log_it(L_ERROR, "Connection to %s : %u failed, error %d",
-                                                l_cur->remote_addr_str, l_cur->remote_port, l_errno);
+                        if ( NT_ERROR(ol->ol.Internal) ) {
+                            l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
+                            log_it(L_ERROR, "ConnectEx to %s : %u failed, ntstatus %llx: %s",
+                                            l_cur->remote_addr_str, l_cur->remote_port, ol->ol.Internal, 
+                                            dap_str_ntstatus(ol->ol.Internal));
                             break;
                         } else if ( setsockopt(l_cur->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0) ) {
-                            log_it(L_ERROR, "setsockopt SO_UPDATE_CONNECT_CONTEXT failed, errno %d", l_errno = WSAGetLastError());
+                            l_errno = WSAGetLastError();
+                            log_it(L_ERROR, "setsockopt SO_UPDATE_CONNECT_CONTEXT failed, errno %d", l_errno);
                             break;
                         }
-                        log_it(L_INFO, "ConnectEx to %s : %u succeeded in %d seconds",
-                                        l_cur->remote_addr_str, l_cur->remote_port, seconds);
+                        log_it(L_INFO, "ConnectEx to %s : %u succeeded",
+                                        l_cur->remote_addr_str, l_cur->remote_port);
                         l_cur->flags &= ~DAP_SOCK_CONNECTING;
                         if (l_cur->callbacks.connected_callback)
                             l_cur->callbacks.connected_callback(l_cur);
@@ -606,15 +590,12 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         //}
                         break;
                     } else if ( !l_bytes ) {
-                        if ( !(l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal)) ) {
-                            int optlen = sizeof(int);
-                            if ( getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (char*)&l_errno, &optlen) )
-                                log_it(L_ERROR, "getsockopt SO_ERROR failed, errno %d", l_errno = WSAGetLastError());
-                        }
-                        if (l_errno)
-                            log_it(L_ERROR, "Connection on es %zu to remote %s : %u closed with error %d, NTSTATUS %x",
-                                           l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port, l_errno, ol->ol.Internal);
-                        else
+                        if ( NT_ERROR(ol->ol.Internal) ) {
+                            l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
+                            log_it(L_ERROR, "Connection on es %zu to remote %s : %u closed with ntstatus %llx: %s",
+                                           l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port, ol->ol.Internal,
+                                           dap_str_ntstatus(ol->ol.Internal));
+                        } else
                             log_it(L_INFO, "Connection on es %zu to remote %s : %u closed",
                                            l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port);
                         break;
@@ -626,13 +607,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 
                 break; // io_write
                 default: break;
-                }
-
-                if (l_errno) {
-                    if ( l_cur->callbacks.error_callback )
-                        l_cur->callbacks.error_callback(l_cur, l_errno);
-                    l_cur->no_close = false;
-                    l_cur->flags = DAP_SOCK_SIGNAL_CLOSE;
                 }
             break;
 
@@ -681,7 +655,12 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 log_it(L_DEBUG, "Finished completion of i/o op '%c' on es "DAP_FORMAT_ESOCKET_UUID"%s",
                                 op ? op : ' ', l_cur->uuid, states);
             }
-
+            if (l_errno) {
+                if ( l_cur->callbacks.error_callback )
+                    l_cur->callbacks.error_callback(l_cur, l_errno);
+                l_cur->no_close = false;
+                l_cur->flags = DAP_SOCK_SIGNAL_CLOSE;
+            }
             // Final check
             if ( FLAG_CLOSE(l_cur->flags) )
                 dap_events_socket_remove_and_delete_unsafe(l_cur, false);
@@ -691,7 +670,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
     socklen_t l_error_len = sizeof(l_errno);
     char l_error_buf[128] = {0};
     ssize_t l_bytes_sent = 0, l_bytes_read = 0, l_sockets_max;
-
+    int l_selected_sockets = 0;
     do {
 #ifdef DAP_EVENTS_CAPS_EPOLL
         struct epoll_event *l_epoll_events = a_context->epoll_events;

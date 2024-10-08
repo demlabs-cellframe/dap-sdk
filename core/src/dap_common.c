@@ -153,7 +153,6 @@ static unsigned int s_ansi_seq_color_len[16] = {0};
 static volatile bool s_log_term_signal = false;
 char* g_sys_dir_path = NULL;
 
-static _Thread_local char s_last_error[LAST_ERROR_MAX] = {'\0'};
 static char s_log_file_path[MAX_PATH]   = {'\0'},
             s_log_dir_path[MAX_PATH]    = {'\0'},
             s_log_tag_fmt_str[10]       = {'\0'};
@@ -795,32 +794,33 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
  * @return
  */
 char *dap_strerror(long long err) {
+    static _Thread_local char s_error[LAST_ERROR_MAX] = {'\0'};
 #ifdef DAP_OS_WINDOWS
-    *s_last_error = '\0';
+    *s_error = '\0';
     DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
-                  NULL, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_last_error, LAST_ERROR_MAX, NULL);
+                  NULL, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_error, LAST_ERROR_MAX, NULL);
     if (l_len)
-        *(s_last_error + l_len - 1) = '\0';
+        *(s_error + l_len - 1) = '\0';
     else
 #else
     if ( strerror_r(err, s_last_error, LAST_ERROR_MAX) )
 #endif
-        snprintf(s_last_error, LAST_ERROR_MAX, "Unknown error code %lld", err);
-    return s_last_error;
+        snprintf(s_error, LAST_ERROR_MAX, "Unknown error code %lld", err);
+    return s_error;
 }
 
 #ifdef DAP_OS_WINDOWS
 char *dap_str_ntstatus(DWORD err) {
+    static _Thread_local char s_nterror[LAST_ERROR_MAX] = {'\0'};
     HMODULE ntdll = GetModuleHandle("ntdll.dll");
     if (!ntdll)
-        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())),
-            s_last_error;
-    *s_last_error = '\0';
+        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())), s_nterror;
+    *s_nterror = '\0';
     DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
-                  ntdll, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_last_error, LAST_ERROR_MAX, NULL);
+                  ntdll, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_nterror, LAST_ERROR_MAX, NULL);
     return ( l_len 
-        ? *(s_last_error + l_len - 1) = '\0'
-        : snprintf(s_last_error, LAST_ERROR_MAX, "Unknown error code %lld", err) ), s_last_error;
+        ? *(s_nterror + l_len - 1) = '\0'
+        : snprintf(s_nterror, LAST_ERROR_MAX, "Unknown error code %lld", err) ), s_nterror;
 }
 #endif
 
@@ -1107,6 +1107,7 @@ size_t dap_bin2hex(char *a_out, const void *a_in, size_t a_len)
         *a_out++ = hex[*l_in >> 4];
         *a_out++ = hex[*l_in++ & 0x0F];
     }
+    *a_out = '\0';
     return a_len;
 }
 
