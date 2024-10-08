@@ -1107,6 +1107,7 @@ size_t dap_bin2hex(char *a_out, const void *a_in, size_t a_len)
         *a_out++ = hex[*l_in >> 4];
         *a_out++ = hex[*l_in++ & 0x0F];
     }
+    *a_out = "/0";
     return a_len;
 }
 

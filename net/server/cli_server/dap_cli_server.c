@@ -190,6 +190,7 @@ int json_commands(const char * a_name) {
             "token",
             "esbocs",
             "global_db",
+            "net_srv",
             "net"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
