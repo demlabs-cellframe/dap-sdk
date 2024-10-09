@@ -40,9 +40,26 @@ void dap_json_rpc_response_unregistration(uint64_t a_id)
     }
 }
 
-void dap_json_rpc_response_handler(dap_json_rpc_response_t *a_response)
+void  dap_json_rpc_response_handler(dap_json_rpc_response_t *a_response)
 {
-    dap_json_rpc_response_printf_result(a_response, NULL);
+    log_it(L_MSG, "Get response");
+    switch(a_response->type) {
+        case TYPE_RESPONSE_STRING:
+            log_it(L_MSG, "response: %s", a_response->result_string);
+            break;
+        case TYPE_RESPONSE_INTEGER:
+            break;
+        case TYPE_RESPONSE_DOUBLE:
+            break;
+        case TYPE_RESPONSE_BOOLEAN:
+            break;
+        case TYPE_RESPONSE_NULL:
+            printf("response type is NULL\n");
+            break;
+        case TYPE_RESPONSE_JSON:
+            log_it(L_MSG, "response: %s", json_object_to_json_string(a_response->result_json_object));
+            break;
+    }
     // dap_json_rpc_response_handler_t *l_handler = NULL;
     // HASH_FIND_INT(s_response_handlers, (void*)a_response->id, l_handler);
     // if (l_handler != NULL){
@@ -61,7 +78,7 @@ uint64_t dap_json_rpc_response_get_new_id(void)
     return l_ret;
 }
 
-void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj, http_status_code_t http_status)
+void * dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj, http_status_code_t http_status)
 {
     (void)http_status;
     (void)a_obj;
@@ -72,4 +89,5 @@ void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_ob
     DAP_FREE(l_str);
     dap_json_rpc_response_handler(l_response);
     dap_json_rpc_response_free(l_response);
+    return NULL;
 }

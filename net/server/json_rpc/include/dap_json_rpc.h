@@ -30,6 +30,7 @@
 #include "dap_json_rpc_request.h"
 #include "dap_json_rpc_request_handler.h"
 #include "dap_config.h"
+#include "dap_hash.h"
 
 #ifdef __cplusplus
 extern "C"{

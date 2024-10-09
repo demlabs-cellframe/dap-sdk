@@ -1,15 +1,19 @@
 #include "dap_json_rpc.h"
 #include "dap_json_rpc_request_handler.h"
+#include "dap_json_rpc_response_handler.h"
 #include "dap_http_server.h"
 #include "dap_pkey.h"
 #include "dap_config.h"
+#include "dap_cli_server.h"
 
 #define LOG_TAG "dap_json_rpc_rpc"
 #define DAP_EXEC_CMD_URL "/exec_cmd"
 
+static int com_exec_cmd(int argc, char **argv, void **reply);
+
 static bool init_module = false;
 typedef struct dap_exec_cmd_pkey {
-    dap_hash_fast_t *pkey;
+    dap_hash_fast_t pkey;
     UT_hash_handle hh;
 } dap_exec_cmd_pkey_t;
 static dap_exec_cmd_pkey_t *s_exec_cmd_map;
@@ -20,8 +24,8 @@ static int dap_json_rpc_map_init(dap_config_t *a_config) {
     uint16_t  l_array_length = 0;
     const char ** l_pkeys = dap_config_get_array_str(a_config, "server", "exec_cmd", &l_array_length);
     for (size_t i = 0; i < l_array_length; i++) {
-        dap_hash_fast_t *l_pkey = {0};
-        dap_chain_hash_fast_from_str(l_pkeys[i], l_pkey);
+        dap_hash_fast_t l_pkey = {0};
+        dap_chain_hash_fast_from_str(l_pkeys[i], &l_pkey);
         dap_exec_cmd_pkey_t* l_exec_cmd_pkey = DAP_NEW_Z(dap_exec_cmd_pkey_t);
         l_exec_cmd_pkey->pkey = l_pkey;
         HASH_ADD(hh, s_exec_cmd_map, pkey, sizeof(dap_exec_cmd_pkey_t), l_exec_cmd_pkey);
@@ -41,7 +45,7 @@ static int dap_json_rpc_map_deinit() {
 bool dap_check_node_pkey_in_map(dap_hash_fast_t *a_pkey){
     dap_exec_cmd_pkey_t* l_exec_cmd_pkey = NULL, *tmp = NULL;
     HASH_ITER(hh, s_exec_cmd_map, l_exec_cmd_pkey, tmp) {
-        if (dap_hash_fast_compare(l_exec_cmd_pkey->pkey, a_pkey))
+        if (dap_hash_fast_compare(&l_exec_cmd_pkey->pkey, a_pkey))
             return true;
     }
     return false;
@@ -63,8 +67,7 @@ int dap_json_rpc_init(dap_server_t* a_http_server, dap_config_t *a_config)
 
     dap_json_rpc_map_init(a_config);
     dap_json_rpc_request_init(DAP_EXEC_CMD_URL);
-    dap_cli_server_cmd_add ("exec_cmd", com_exec_cmd, "Exec cmd\n");
-
+    dap_cli_server_cmd_add ("exec_cmd", com_exec_cmd, "Exec cmd\n", "Exec cmd\n");
     dap_http_simple_proc_add(l_http, DAP_EXEC_CMD_URL, 24000, dap_json_rpc_http_proc);
     return 0;
 }
@@ -95,9 +98,28 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
 }
 
 static int com_exec_cmd(int argc, char **argv, void **reply) {
-    json_object ** json_arr_reply = (json_object **) reply;
-    char * l_cmd_str = NULL;
+    json_object ** a_json_arr_reply = (json_object **) reply;
+    const char * l_cmd_arg_str = NULL, * l_ip_str = NULL, * l_port_str = NULL;
     int arg_index = 1;
-    dap_cli_server_cmd_find_option_val(argv, arg_index, argc, "-cmd", &l_cmd_str);
+    dap_cli_server_cmd_find_option_val(argv, arg_index, argc, "-cmd", &l_cmd_arg_str);
+    dap_cli_server_cmd_find_option_val(argv, arg_index, argc, "-ip", &l_ip_str);
+    dap_cli_server_cmd_find_option_val(argv, arg_index, argc, "-port", &l_port_str);
+
+    dap_json_rpc_params_t * params = dap_json_rpc_params_create();
+    char *l_cmd_str = dap_strdup(l_cmd_arg_str);
+    for(int i = 0; l_cmd_str[i] != '\0'; i++) {
+        if (l_cmd_str[i] == ',')
+            l_cmd_str[i] = ';';
+    }
+    dap_json_rpc_params_add_data(params, l_cmd_str, TYPE_PARAM_STRING);
+    uint64_t l_id_response = dap_json_rpc_response_get_new_id();
+    char ** l_cmd_arr_str = dap_strsplit(l_cmd_str, ";", -1);
+    dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(l_cmd_arr_str[0], params, l_id_response);
+    dap_strfreev(l_cmd_arr_str);
+    // char * request_str = dap_json_rpc_request_to_json_string(a_request);
+    DAP_DEL_Z(l_cmd_str);
+    dap_json_rpc_request_send(a_request, dap_json_rpc_response_accepted, l_ip_str, atoi(l_port_str), NULL);
+    log_it(L_INFO, "com_exec send request");
+    json_object_array_add(*a_json_arr_reply, json_object_new_string("DONE"));
     return 0;
 }

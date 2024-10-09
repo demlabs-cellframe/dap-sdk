@@ -202,19 +202,19 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
     return ret;
 }
 
-void dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, dap_json_rpc_response_handler_func_t *response_handler,
+void dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, void* response_handler,
                                const char *a_uplink_addr, const uint16_t a_uplink_port,
                                dap_client_http_callback_error_t func_error)
 {
     uint64_t l_id_response = dap_json_rpc_response_registration(response_handler);
-    a_request->id = l_id_response;
+    a_request->id = 0;
     dap_cert_t *l_cert = dap_cert_find_by_name("node_addr");
     dap_json_rpc_http_request_t *l_http_request = dap_json_rpc_request_sign_by_cert(a_request, l_cert);
     size_t l_http_length = 0;
     char *l_http_str = dap_json_rpc_http_request_serialize(l_http_request, &l_http_length);
     log_it(L_NOTICE, "Sending request in address: %s", a_uplink_addr);
     dap_client_http_request(NULL, a_uplink_addr, a_uplink_port, "GET", "application/json", s_url_service, l_http_str, l_http_length,
-                            NULL, dap_json_rpc_response_accepted, func_error, NULL, NULL);
+                            NULL, response_handler, func_error, NULL, NULL);
     DAP_DEL_Z(l_http_request);
     DAP_DEL_Z(l_http_str);
 }
