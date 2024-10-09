@@ -9,4 +9,6 @@ build_dependencies:
     - 'xsltproc'
     - 'curl'
     - 'jq'
+    - 'cppcheck'
+    - 'python3-xmltodict'
     

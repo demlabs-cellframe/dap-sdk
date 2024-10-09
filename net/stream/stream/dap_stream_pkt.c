@@ -33,37 +33,6 @@
 
 const uint8_t c_dap_stream_sig [STREAM_PKT_SIG_SIZE] = {0xa0,0x95,0x96,0xa9,0x9e,0x5c,0xfb,0xfa};
 
-dap_stream_pkt_t * dap_stream_pkt_detect(void * a_data, size_t data_size)
-{
-    uint8_t * sig_start=(uint8_t*) a_data;
-    dap_stream_pkt_t * hpkt = NULL;
-    size_t length_left = data_size;
-
-    while ( (sig_start = memchr(sig_start, c_dap_stream_sig[0], length_left)) ) {
-        length_left = data_size - (size_t)(sig_start - (uint8_t *)a_data);
-        if(length_left < sizeof(c_dap_stream_sig) )
-            break;
-
-        if ( !memcmp(sig_start, c_dap_stream_sig, sizeof(c_dap_stream_sig)) ) {
-            hpkt = (dap_stream_pkt_t *)sig_start;
-            if (length_left < sizeof(dap_stream_ch_pkt_hdr_t)) {
-                //log_it(L_ERROR, "Too small packet size %zu", length_left); // it's not an error, just random case
-                hpkt = NULL;
-                break;
-            }
-            if(hpkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX ){
-                log_it(L_ERROR, "Too big packet size %u (%#x), type:%d(%#x)",
-                       hpkt->hdr.size, hpkt->hdr.size, hpkt->hdr.type, hpkt->hdr.type);
-                hpkt = NULL;
-            }
-            break;
-        } else
-            sig_start++;
-    }
-
-    return hpkt;
-}
-
 /**
  * @brief stream_pkt_read
  * @param sid
@@ -94,10 +63,8 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     dap_stream_pkt_hdr_t *l_pkt_hdr = (dap_stream_pkt_hdr_t*)s_pkt_buf;
     *l_pkt_hdr = (dap_stream_pkt_hdr_t) { .size = dap_enc_code( l_key, a_data, a_data_size, s_pkt_buf + sizeof(*l_pkt_hdr),
                                                                 l_full_size - sizeof(*l_pkt_hdr), DAP_ENC_DATA_TYPE_RAW ),
-                                          .type = a_type,
-                                          .timestamp = dap_time_now(),
-                                          .src_addr = g_node_addr.uint64,
-                                          .dst_addr = a_stream->node.uint64 };
+                                          .timestamp = dap_time_now(), .type = a_type,
+                                          .src_addr = g_node_addr.uint64, .dst_addr = a_stream->node.uint64 };
     memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
     return dap_events_socket_write_unsafe(a_stream->esocket, s_pkt_buf, l_full_size);
 }
