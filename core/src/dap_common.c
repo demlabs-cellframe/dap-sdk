@@ -803,7 +803,7 @@ char *dap_strerror(long long err) {
         *(s_error + l_len - 1) = '\0';
     else
 #else
-    if ( strerror_r(err, s_last_error, LAST_ERROR_MAX) )
+    if ( strerror_r(err, s_error, LAST_ERROR_MAX) )
 #endif
         snprintf(s_error, LAST_ERROR_MAX, "Unknown error code %lld", err);
     return s_error;
