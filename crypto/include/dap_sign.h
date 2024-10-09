@@ -132,6 +132,7 @@ DAP_STATIC_INLINE const char *dap_sign_get_str_recommended_types(){
     return "sig_dil\nsig_falcon\n"
 #ifdef DAP_ECDSA
     "sig_ecdsa\n"
+    "sig_multi_ecdsa_dil\n"
 #endif
     "sig_sphincs\nsig_shipovnik\nsig_multi_chained\n";
 }
