@@ -587,3 +587,16 @@ void dap_sign_get_information_json(dap_sign_t* a_sign, json_object *a_json_out, 
     json_object_object_add(a_json_out,"Signature size",json_object_new_uint64(a_sign->header.sign_size));
 
 }
+
+/**
+ * @brief return string with recommended types
+ * @return string with recommended types
+ */
+DAP_INLINE const char *dap_sign_get_str_recommended_types(){
+    return "sig_dil\nsig_falcon\n"
+#ifdef DAP_ECDSA
+    "sig_ecdsa\n"
+    "sig_multi_ecdsa_dil\n"
+#endif
+    "sig_sphincs\nsig_shipovnik\nsig_multi_chained\n";
+}
