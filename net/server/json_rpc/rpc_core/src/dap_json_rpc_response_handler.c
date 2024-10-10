@@ -78,16 +78,21 @@ uint64_t dap_json_rpc_response_get_new_id(void)
     return l_ret;
 }
 
-void * dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj, http_status_code_t http_status)
+void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj, http_status_code_t http_status)
 {
-    (void)http_status;
-    (void)a_obj;
-    log_it(L_NOTICE, "Pre handling response");
-    char *l_str = DAP_NEW_SIZE(char, a_size_data);
-    memcpy(l_str, a_data, a_size_data);
-    dap_json_rpc_response_t *l_response = dap_json_rpc_response_from_string(l_str);
-    DAP_FREE(l_str);
-    dap_json_rpc_response_handler(l_response);
-    dap_json_rpc_response_free(l_response);
-    return NULL;
+    if(http_status == Http_Status_OK) {
+        (void)http_status;
+        (void)a_obj;
+        log_it(L_NOTICE, "Pre handling response");
+        char *l_str = DAP_NEW_SIZE(char, a_size_data);
+        memcpy(l_str, a_data, a_size_data);
+        dap_json_rpc_response_t *l_response = dap_json_rpc_response_from_string(l_str);
+        DAP_FREE(l_str);
+        dap_json_rpc_response_handler(l_response);
+        dap_json_rpc_response_free(l_response);
+        return;
+    } else {
+        log_it(L_ERROR, "Response error code: %d", http_status);
+        return;
+    }
 }

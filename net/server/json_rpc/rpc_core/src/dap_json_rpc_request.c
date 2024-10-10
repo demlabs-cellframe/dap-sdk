@@ -202,19 +202,24 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
     return ret;
 }
 
-void dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, void* response_handler,
+int dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, void* response_handler,
                                const char *a_uplink_addr, const uint16_t a_uplink_port,
                                dap_client_http_callback_error_t func_error)
 {
     uint64_t l_id_response = dap_json_rpc_response_registration(response_handler);
     a_request->id = 0;
-    dap_cert_t *l_cert = dap_cert_find_by_name("node_addr");
+    dap_cert_t *l_cert = dap_cert_find_by_name("node-addr");
+    if (!l_cert) {
+        log_it(L_ERROR, "Can't load cert");
+        return -1;
+    }
     dap_json_rpc_http_request_t *l_http_request = dap_json_rpc_request_sign_by_cert(a_request, l_cert);
     size_t l_http_length = 0;
     char *l_http_str = dap_json_rpc_http_request_serialize(l_http_request, &l_http_length);
     log_it(L_NOTICE, "Sending request in address: %s", a_uplink_addr);
-    dap_client_http_request(NULL, a_uplink_addr, a_uplink_port, "GET", "application/json", s_url_service, l_http_str, l_http_length,
+    dap_client_http_request(dap_worker_get_auto(), a_uplink_addr, a_uplink_port, "GET", "application/json", s_url_service, l_http_str, l_http_length,
                             NULL, response_handler, func_error, NULL, NULL);
     DAP_DEL_Z(l_http_request);
     DAP_DEL_Z(l_http_str);
+    return 0;
 }
