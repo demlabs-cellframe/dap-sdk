@@ -60,11 +60,6 @@ typedef struct dap_stream {
     char *service_key;
     bool is_client_to_uplink;
 
-    struct dap_stream_pkt *in_pkt;
-    struct dap_stream_pkt *pkt_buf_in;
-    size_t pkt_buf_in_data_size;
-    size_t pkt_buf_in_size_expected;
-
     uint8_t *buf_fragments, *pkt_cache;
     size_t buf_fragments_size_total;// Full size of all fragments
     size_t buf_fragments_size_filled;// Received size
