@@ -499,53 +499,34 @@ char *dap_dump_hex(byte_t *a_data, size_t a_len) {
 #define BYTES_IN_LINE 16
     if (!a_data || !a_len)
         return NULL;
-
-    size_t l_len = HEX_LINE_LEN * (a_len / BYTES_IN_LINE);
-    if (a_len % BYTES_IN_LINE)
-        l_len += HEX_LINE_LEN;
+    static const char hex[] = "0123456789ABCDEF";
+    size_t  l_div = a_len / BYTES_IN_LINE,
+            l_rem = a_len % BYTES_IN_LINE,
+            l_len = HEX_LINE_LEN * (l_div + !!l_rem),
+            l_line_len = BYTES_IN_LINE,
+            l_shift = 0, i, j;
 
     char *l_ret = DAP_NEW_Z_SIZE(char, l_len + 1);
-    if (!l_ret) {
-        if (a_len)
-            log_it(L_CRITICAL, "Memory allocation error!");
-        return NULL;
-    }
+    if (!l_ret)
+        return log_it(L_CRITICAL, "Memory allocation error!"), NULL;
+
     memset(l_ret, ' ', l_len);
-    byte_t *l_data = a_data, low, high;
-    size_t  l_shift = 0, i, j,
-            l_rem = a_len % BYTES_IN_LINE,
-            l_div = a_len / BYTES_IN_LINE;
-
     for (i = 0; i < l_div; ++i) {
+print_line:
         l_shift = snprintf(l_ret, HEX_LINE_LEN, "  +%04lx:  ", i * BYTES_IN_LINE);
-        //l_ret[l_shift] = ' ';
-        memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
-        for (j = 0; j < BYTES_IN_LINE; ++j, ++l_data) {
-            high    = (*l_data) >> 4;
-            low     = (*l_data) & 0x0f;
-
-            l_ret[l_shift + j*3]            = high + ((high < 10) ? '0' : 'a' - 10);
-            l_ret[l_shift + j*3 + 1]        = low + ((low < 10) ? '0' : 'a' - 10);
-            l_ret[l_shift + BYTES_IN_LINE*3 + 2 + j] = isprint(*l_data) ? *l_data : '.';
+        //memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
+        for (j = 0; j < l_line_len; ++j, ++a_data) {
+            short l_pos = l_shift + j*3;
+            l_ret[l_pos] = hex[*a_data >> 4];
+            l_ret[++l_pos] = hex[*a_data & 0x0f];
+            l_ret[l_shift + BYTES_IN_LINE*3 + 2 + j] = isprint(*a_data) ? *a_data : '.';
         }
         l_ret[HEX_LINE_LEN - 1] = '\n';
         l_ret += HEX_LINE_LEN;
     }
-
-    if (l_rem) {
-        l_shift = snprintf(l_ret, HEX_LINE_LEN, "  +%04lx:  ", i * BYTES_IN_LINE);
-        //l_ret[l_shift] = ' ';
-        memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
-        for (j = 0; j < l_rem; ++j, ++l_data) {
-            high    = (*l_data) >> 4;
-            low     = (*l_data) & 0x0f;
-
-            l_ret[l_shift + j*3]            = high + ((high < 10) ? '0' : 'a' - 10);
-            l_ret[l_shift + j*3 + 1]        = low + ((low < 10) ? '0' : 'a' - 10);
-            l_ret[l_shift + BYTES_IN_LINE*3 + 2 + j] = isprint(*l_data) ? *l_data : '.';
-        }
-        l_ret[HEX_LINE_LEN - 1] = '\n';
-        l_ret += HEX_LINE_LEN;
+    if (( l_line_len = l_rem )) {
+        l_rem = 0;
+        goto print_line;
     }
     return l_ret - l_len;
 #undef HEX_LINE_LEN

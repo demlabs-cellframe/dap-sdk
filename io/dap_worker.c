@@ -136,10 +136,9 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
         return -1;
     }
 #elif defined DAP_EVENTS_CAPS_IOCP
-    if ( !(a_context->iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1)) ) {
-        log_it(L_CRITICAL, "Creating IOCP failed! Errno %d", WSAGetLastError());
-        return -1;
-    }
+    if ( !(a_context->iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1)) )
+        return log_it(L_CRITICAL, "Creating IOCP failed! Error %d: \"%s\"",
+                                  GetLastError(), dap_strerror(GetLastError())), -1;
 #else
 #error "Unimplemented dap_context_init for this platform"
 #endif
@@ -362,42 +361,40 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
     }
     DAP_DELETE(l_msg);
 }
-#else 
-static long s_dap_es_assign_to_context(dap_events_socket_t *a_es, dap_context_t *a_context, char* a_buf, OVERLAPPED *a_ol) {
-    if ( !a_es || !a_es->worker )
-        return log_it(L_ERROR, "Invalid es scheduled to be added, dumpt it"), ERROR_INVALID_PARAMETER;
-    if ( dap_context_find(a_context, a_es->uuid) )
-        return ERROR_ALREADY_ASSIGNED;
-    int l_ret = dap_worker_add_events_socket_unsafe(a_es->worker, a_es);
-    if (l_ret) {
-        log_it(L_ERROR, "Can't add es "DAP_FORMAT_ESOCKET_UUID" \"%s\" [%s] to worker #%d in context %d, error %d",
-                        a_es->uuid, dap_events_socket_get_type_str(a_es),
-                        a_es->socket == INVALID_SOCKET ? "" : dap_itoa(a_es->socket),
-                        a_es->worker->id, a_context->id, l_ret);
-        return l_ret;
+#else
+void s_es_assign_to_context(dap_context_t *a_c, OVERLAPPED *a_ol) {
+    dap_events_socket_t *l_es = (dap_events_socket_t*)a_ol->Pointer;
+    if (!l_es->worker)
+        return log_it(L_ERROR, "Es %p error: worker unset");
+    dap_events_socket_t *l_sought_es = dap_context_find(a_c, l_es->uuid);
+    if ( l_sought_es ) {
+        if ( l_sought_es == l_es )
+            log_it(L_ERROR, "Es %p and %p assigned to context %d have the same uid "DAP_FORMAT_ESOCKET_UUID"! Possibly a dup!",
+                                    l_es, l_sought_es, a_c->id, l_es->uuid);
+        return;
     }
-    debug_if(g_debug_reactor, L_DEBUG, "Added es "DAP_FORMAT_ESOCKET_UUID" \"%s\" [%s] to worker #%d in context %d",
-                                        a_es->uuid, dap_events_socket_get_type_str(a_es),
-                                        a_es->socket == INVALID_SOCKET ? "" : dap_itoa(a_es->socket),
-                                        a_es->worker->id, a_context->id);
+    int l_err = dap_worker_add_events_socket_unsafe(l_es->worker, l_es);
+    debug_if(l_err || g_debug_reactor, l_err ? L_ERROR : L_DEBUG, "%s es "DAP_FORMAT_ESOCKET_UUID" \"%s\" [%s] to worker #%d in context %d",
+                                       l_err ? "Can't add" : "Added", l_es->uuid, dap_events_socket_get_type_str(l_es),
+                                       l_es->socket == INVALID_SOCKET ? "" : dap_itoa(l_es->socket),
+                                       l_es->worker->id, a_c->id);
+    if (l_err)
+        return;
 
-    if (!a_es->is_initalized && a_es->callbacks.new_callback)
-        a_es->callbacks.new_callback(a_es, NULL);
+    if (!l_es->is_initalized && l_es->callbacks.new_callback)
+        l_es->callbacks.new_callback(l_es, NULL);
+    if (l_es->callbacks.worker_assign_callback)
+        l_es->callbacks.worker_assign_callback(l_es, l_es->worker);
 
-    if (a_es->callbacks.worker_assign_callback)
-        a_es->callbacks.worker_assign_callback(a_es, a_es->worker);
+    l_es->is_initalized = true;
+    if (l_es->type >= DESCRIPTOR_TYPE_FILE)
+        return;
 
-    a_es->is_initalized = true;
-
-    if (a_es->type >= DESCRIPTOR_TYPE_FILE)
-        return ERROR_CONTEXT_EXPIRED;
-
-    if ( FLAG_READ_NOCLOSE(a_es->flags) ) {
-        dap_events_socket_set_readable_unsafe_ex(a_es, true, NULL);
-    } else if ( FLAG_WRITE_NOCLOSE(a_es->flags) ) {
-        dap_events_socket_set_writable_unsafe_ex(a_es, true, 0, NULL);
+    if ( FLAG_READ_NOCLOSE(l_es->flags) ) {
+        dap_events_socket_set_readable_unsafe(l_es, true);
+    } else if ( FLAG_WRITE_NOCLOSE(l_es->flags) ) {
+        dap_events_socket_set_writable_unsafe(l_es, true);
     }
-    return ERROR_CONTEXT_EXPIRED;
 }
 #endif
 
@@ -467,19 +464,14 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
 #ifdef DAP_EVENTS_CAPS_IOCP
     int l_ret = 0;
     a_events_socket->worker = a_worker;
-    if ( dap_worker_get_current() == a_worker ) {
-        switch ( l_ret = s_dap_es_assign_to_context(a_events_socket, a_worker->context, NULL, NULL) ) {
-        case 0:
-        case ERROR_CONTEXT_EXPIRED:
-            l_ret = 0;
-        break;
-        default: break;
-        }
-    } else {
+    if ( dap_worker_get_current() == a_worker )
+        s_es_assign_to_context(a_worker->context, &(OVERLAPPED){ .Pointer = a_events_socket });
+    else {
         a_events_socket->worker = a_worker;
         dap_overlapped_t *ol = DAP_NEW_Z(dap_overlapped_t);
-        ol->cb = s_dap_es_assign_to_context;
-        l_ret = PostQueuedCompletionStatus(a_worker->context->iocp, 0, (ULONG_PTR)a_events_socket, (OVERLAPPED*)ol)
+        ol->ol.Pointer = a_events_socket;
+        ol->op = io_call;
+        l_ret = PostQueuedCompletionStatus(a_worker->context->iocp, 0, (ULONG_PTR)s_es_assign_to_context, (OVERLAPPED*)ol)
             ? 0 : ( DAP_DELETE(ol), GetLastError() );
     }
     if (l_ret)
