@@ -427,6 +427,7 @@ uint64_t _dap_config_get_item_uint(dap_config_t *a_config, const char *a_section
         return a_default;
     switch (l_item->type) {
     case DAP_CONFIG_ITEM_DECIMAL:
+        log_it(L_ERROR, "l_items_count = %lld ", l_item->val.val_int);
         return l_item->val.val_int < 0
                 ? log_it(L_WARNING, "Unsigned parameter \"%s\" requested, but the value is negative: %"DAP_UINT64_FORMAT_U,
                          l_item->name, l_item->val.val_int), a_default
