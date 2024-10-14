@@ -87,9 +87,6 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
         case TYPE_RESPONSE_STRING:
             json_object_object_add(jobj, "result", json_object_new_string(response->result_string));
             break;
-        case TYPE_RESPONSE_ERROR:
-            json_object_object_add(jobj, "result", json_object_new_null());
-            break;
         case TYPE_RESPONSE_INTEGER:
             json_object_object_add(jobj, "result", json_object_new_int64(response->result_int));
             break;
