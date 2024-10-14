@@ -196,16 +196,16 @@ static void print_it_stderr(unsigned a_off, const char *a_fmt, va_list va)
 {
     vfprintf(s_print_param, a_fmt, va);
 }
-
+*/
 #if ANDROID
 #include <android/log.h>
 
 static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va)
 {
-    __android_log_vprint(ANDROID_LOG_INFO, s_print_param, a_fmt, va);
+    __android_log_vprint(ANDROID_LOG_INFO, "CellframeNodeNative", a_fmt, va);
 }
 
-#endif*/
+#endif
 
 void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
 {
@@ -230,10 +230,9 @@ void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
         s_print_callback = print_it_none;
         break;
     #ifdef ANDROID
-    /*case LOGGER_OUTPUT_ALOG:
+    case LOGGER_OUTPUT_ALOG:
         s_print_callback = print_it_alog;
-        s_print_param = param;
-        break;*/
+        break;
     #endif
 
   default:
@@ -380,8 +379,8 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, .
     return 0;
 }
 
-int s_dap_log_open(const char *a_log_file_path) {
-    if (! (s_log_file = s_log_file ? freopen(a_log_file_path, "w", s_log_file) : fopen( a_log_file_path , "a" )) )
+static int s_dap_log_open(const char *a_log_file_path, bool a_new) {
+    if (! (s_log_file = s_log_file ? freopen(a_log_file_path, a_new ? "w" : "a", s_log_file) : fopen( a_log_file_path, a_new ? "w" : "a" )) )
         return fprintf( stderr, "Can't open log file %s \n", a_log_file_path ), -1;
     static char s_buf_file[LOG_BUF_SIZE];
     return setvbuf(s_log_file, s_buf_file, _IOLBF, LOG_BUF_SIZE);
@@ -403,7 +402,7 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
     for (int i = 0; i < 16; ++i)
             s_ansi_seq_color_len[i] =(unsigned int) strlen(s_ansi_seq_color[i]);
     if ( a_log_file_path && a_log_file_path[0] ) {
-        if (s_dap_log_open(a_log_file_path))
+        if (s_dap_log_open(a_log_file_path, false))
             return -1;
         if (a_log_dirpath != s_log_dir_path)
             dap_stpcpy(s_log_dir_path,  a_log_dirpath);
@@ -1564,26 +1563,19 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
 }
 
 static void s_dap_common_log_cleanner_interval(void *a_max_size) {
-    size_t l_max_size = *((size_t*)a_max_size);
-    size_t l_log_size = ftell(s_log_file);
-    if (l_log_size == 0){
-        log_it(L_ERROR, "The size of the log file could not be determined; cleaning is impossible.");
-    } else {
-        size_t l_size_mb = l_log_size / 1048576;
-        if (l_size_mb > l_max_size) {
-            char *l_new_file = dap_strdup_printf("%s.old", s_log_file_path);
-            rename(s_log_file_path, l_new_file);
-            if (s_dap_log_open(s_log_file_path)) {
-                log_it(L_CRITICAL, "An error occurred The logging thread was not reopened.");
-            }
-            log_it(L_NOTICE, "log file overwritten.");
-            remove(l_new_file);
-            DAP_DELETE(l_new_file);
-        }
+    size_t  l_max_size = DAP_POINTER_TO_SIZE(a_max_size),
+            l_log_size = ftello(s_log_file);
+    switch (l_log_size) {
+        case -1:    return log_it(L_ERROR, "Can't tell log file size, error %d :\"%s\"", errno, dap_strerror(errno));
+        case 0:     return log_it(L_ERROR, "Log file is empty");
+        default:
+            if ( l_log_size / 1048576 > l_max_size && s_dap_log_open(s_log_file_path, true) )
+                return log_it(L_ERROR, "Can't reopen log file \"%s\"", s_log_file_path);
     }
+    
 }
-void dap_common_enable_cleaner_log(size_t a_timeout, size_t *a_max_size){
-    dap_interval_timer_create(a_timeout, s_dap_common_log_cleanner_interval, a_max_size);
+void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size){
+    dap_interval_timer_create(a_timeout, s_dap_common_log_cleanner_interval, DAP_SIZE_TO_POINTER(a_max_size));
 }
 
 #ifdef __cplusplus
