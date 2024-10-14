@@ -153,7 +153,6 @@ static unsigned int s_ansi_seq_color_len[16] = {0};
 static volatile bool s_log_term_signal = false;
 char* g_sys_dir_path = NULL;
 
-static _Thread_local char s_last_error[LAST_ERROR_MAX] = {'\0'};
 static char s_log_file_path[MAX_PATH]   = {'\0'},
             s_log_dir_path[MAX_PATH]    = {'\0'},
             s_log_tag_fmt_str[10]       = {'\0'};
@@ -500,53 +499,34 @@ char *dap_dump_hex(byte_t *a_data, size_t a_len) {
 #define BYTES_IN_LINE 16
     if (!a_data || !a_len)
         return NULL;
-
-    size_t l_len = HEX_LINE_LEN * (a_len / BYTES_IN_LINE);
-    if (a_len % BYTES_IN_LINE)
-        l_len += HEX_LINE_LEN;
+    static const char hex[] = "0123456789ABCDEF";
+    size_t  l_div = a_len / BYTES_IN_LINE,
+            l_rem = a_len % BYTES_IN_LINE,
+            l_len = HEX_LINE_LEN * (l_div + !!l_rem),
+            l_line_len = BYTES_IN_LINE,
+            l_shift = 0, i, j;
 
     char *l_ret = DAP_NEW_Z_SIZE(char, l_len + 1);
-    if (!l_ret) {
-        if (a_len)
-            log_it(L_CRITICAL, "Memory allocation error!");
-        return NULL;
-    }
+    if (!l_ret)
+        return log_it(L_CRITICAL, "Memory allocation error!"), NULL;
+
     memset(l_ret, ' ', l_len);
-    byte_t *l_data = a_data, low, high;
-    size_t  l_shift = 0, i, j,
-            l_rem = a_len % BYTES_IN_LINE,
-            l_div = a_len / BYTES_IN_LINE;
-
     for (i = 0; i < l_div; ++i) {
+print_line:
         l_shift = snprintf(l_ret, HEX_LINE_LEN, "  +%04lx:  ", i * BYTES_IN_LINE);
-        //l_ret[l_shift] = ' ';
-        memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
-        for (j = 0; j < BYTES_IN_LINE; ++j, ++l_data) {
-            high    = (*l_data) >> 4;
-            low     = (*l_data) & 0x0f;
-
-            l_ret[l_shift + j*3]            = high + ((high < 10) ? '0' : 'a' - 10);
-            l_ret[l_shift + j*3 + 1]        = low + ((low < 10) ? '0' : 'a' - 10);
-            l_ret[l_shift + BYTES_IN_LINE*3 + 2 + j] = isprint(*l_data) ? *l_data : '.';
+        //memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
+        for (j = 0; j < l_line_len; ++j, ++a_data) {
+            short l_pos = l_shift + j*3;
+            l_ret[l_pos] = hex[*a_data >> 4];
+            l_ret[++l_pos] = hex[*a_data & 0x0f];
+            l_ret[l_shift + BYTES_IN_LINE*3 + 2 + j] = isprint(*a_data) ? *a_data : '.';
         }
         l_ret[HEX_LINE_LEN - 1] = '\n';
         l_ret += HEX_LINE_LEN;
     }
-
-    if (l_rem) {
-        l_shift = snprintf(l_ret, HEX_LINE_LEN, "  +%04lx:  ", i * BYTES_IN_LINE);
-        //l_ret[l_shift] = ' ';
-        memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
-        for (j = 0; j < l_rem; ++j, ++l_data) {
-            high    = (*l_data) >> 4;
-            low     = (*l_data) & 0x0f;
-
-            l_ret[l_shift + j*3]            = high + ((high < 10) ? '0' : 'a' - 10);
-            l_ret[l_shift + j*3 + 1]        = low + ((low < 10) ? '0' : 'a' - 10);
-            l_ret[l_shift + BYTES_IN_LINE*3 + 2 + j] = isprint(*l_data) ? *l_data : '.';
-        }
-        l_ret[HEX_LINE_LEN - 1] = '\n';
-        l_ret += HEX_LINE_LEN;
+    if (( l_line_len = l_rem )) {
+        l_rem = 0;
+        goto print_line;
     }
     return l_ret - l_len;
 #undef HEX_LINE_LEN
@@ -795,32 +775,33 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
  * @return
  */
 char *dap_strerror(long long err) {
+    static _Thread_local char s_error[LAST_ERROR_MAX] = {'\0'};
 #ifdef DAP_OS_WINDOWS
-    *s_last_error = '\0';
+    *s_error = '\0';
     DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
-                  NULL, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_last_error, LAST_ERROR_MAX, NULL);
+                  NULL, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_error, LAST_ERROR_MAX, NULL);
     if (l_len)
-        *(s_last_error + l_len - 1) = '\0';
+        *(s_error + l_len - 1) = '\0';
     else
 #else
-    if ( strerror_r(err, s_last_error, LAST_ERROR_MAX) )
+    if ( strerror_r(err, s_error, LAST_ERROR_MAX) )
 #endif
-        snprintf(s_last_error, LAST_ERROR_MAX, "Unknown error code %lld", err);
-    return s_last_error;
+        snprintf(s_error, LAST_ERROR_MAX, "Unknown error code %lld", err);
+    return s_error;
 }
 
 #ifdef DAP_OS_WINDOWS
 char *dap_str_ntstatus(DWORD err) {
+    static _Thread_local char s_nterror[LAST_ERROR_MAX] = {'\0'};
     HMODULE ntdll = GetModuleHandle("ntdll.dll");
     if (!ntdll)
-        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())),
-            s_last_error;
-    *s_last_error = '\0';
+        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())), s_nterror;
+    *s_nterror = '\0';
     DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
-                  ntdll, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_last_error, LAST_ERROR_MAX, NULL);
+                  ntdll, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_nterror, LAST_ERROR_MAX, NULL);
     return ( l_len 
-        ? *(s_last_error + l_len - 1) = '\0'
-        : snprintf(s_last_error, LAST_ERROR_MAX, "Unknown error code %lld", err) ), s_last_error;
+        ? *(s_nterror + l_len - 1) = '\0'
+        : snprintf(s_nterror, LAST_ERROR_MAX, "Unknown error code %lld", err) ), s_nterror;
 }
 #endif
 
@@ -1107,6 +1088,7 @@ size_t dap_bin2hex(char *a_out, const void *a_in, size_t a_len)
         *a_out++ = hex[*l_in >> 4];
         *a_out++ = hex[*l_in++ & 0x0F];
     }
+    *a_out = '\0';
     return a_len;
 }
 
