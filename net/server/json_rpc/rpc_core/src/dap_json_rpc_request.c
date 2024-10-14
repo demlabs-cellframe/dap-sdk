@@ -234,7 +234,7 @@ int dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, void* response_
     char *l_http_str = dap_json_rpc_http_request_serialize(l_http_request, &l_http_length);
 
     log_it(L_NOTICE, "Sending request in address: %s", a_uplink_addr);
-    dap_client_http_request(dap_worker_get_auto(), a_uplink_addr, a_uplink_port, "GET", "application/json", s_url_service, l_http_str, l_http_length,
+    dap_client_http_request(dap_worker_get_auto(), a_uplink_addr, a_uplink_port, "GET", "application/json", "exec_cmd", l_http_str, l_http_length,
                             NULL, response_handler, func_error, NULL, NULL);
     DAP_DEL_Z(l_http_request);
     DAP_DEL_Z(l_http_str);

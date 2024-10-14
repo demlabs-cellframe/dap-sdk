@@ -67,8 +67,8 @@ int dap_json_rpc_init(dap_server_t* a_http_server, dap_config_t *a_config)
     }
 
     dap_json_rpc_map_init(a_config);
-    dap_json_rpc_request_init(DAP_EXEC_CMD_URL);
-    dap_http_simple_proc_add(l_http, DAP_EXEC_CMD_URL, 24000, dap_json_rpc_http_proc);
+    dap_json_rpc_request_init("/exec_cmd");
+    dap_http_simple_proc_add(l_http, "/exec_cmd", 24000, dap_json_rpc_http_proc);
     return 0;
 }
 
@@ -98,5 +98,5 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
                                           "this is a string the name of the method, id is a number and params "
                                           "is an array that can contain strings, numbers and boolean values.");
     }
-    dap_json_rpc_request_handler(a_http_simple->request, a_http_simple);
+    dap_json_rpc_request_handler(a_http_simple->http_client->in_query_string, a_http_simple);
 }
