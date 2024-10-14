@@ -10,7 +10,7 @@
 #include "dap_chain_net.h"
 
 #define LOG_TAG "dap_json_rpc_rpc"
-#define DAP_EXEC_CMD_URL "/exec_cmd"
+#define DAP_EXEC_CMD_URL "exec_cmd"
 
 static int com_exec_cmd(int argc, char **argv, void **reply);
 
@@ -135,7 +135,7 @@ static int com_exec_cmd(int argc, char **argv, void **reply) {
     dap_chain_node_addr_from_str(&l_node_addr, l_ip_str);
     dap_chain_node_info_t *l_remote = dap_chain_node_info_read(l_net, &l_node_addr);
     DAP_DEL_Z(l_cmd_str);
-    if (!dap_json_rpc_request_send(a_request, dap_json_rpc_response_accepted, l_remote->ext_host, l_remote->ext_port, NULL))
+    if (!dap_json_rpc_request_send(a_request, dap_json_rpc_response_accepted, l_remote->ext_host, l_remote->ext_port, dap_json_rpc_error_callback))
         log_it(L_INFO, "com_exec sent request to %s:%d", l_remote->ext_host, l_remote->ext_port);
 
     json_object_array_add(*a_json_arr_reply, json_object_new_string("DONE"));

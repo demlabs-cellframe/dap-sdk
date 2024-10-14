@@ -120,58 +120,74 @@ char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_reques
     return l_str;
 }
 
-char * dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request, size_t *a_total_size)
+char *dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request, size_t *a_total_size)
 {
     *a_total_size = a_request->header.data_size + a_request->header.signs_size + sizeof(a_request->header);
+
     char *a_output = DAP_NEW_SIZE(char, *a_total_size);
-    if (!a_output)
-    {
-        return 0;
+    if (!a_output) {
+        return NULL;
     }
 
     char *ptr = a_output;
 
-    memcpy(ptr, &a_request->header.data_size, sizeof(a_request->header.data_size));
-    ptr += sizeof(a_request->header.data_size);
-
-    memcpy(ptr, &a_request->header.signs_size, sizeof(a_request->header.signs_size));
-    ptr += sizeof(a_request->header.signs_size);
+    memcpy(ptr, &a_request->header, sizeof(a_request->header));
+    ptr += sizeof(a_request->header);
 
     char *l_str = dap_json_rpc_request_to_json_string(a_request->request);
+    if (!l_str) {
+        DAP_DEL_Z(a_output);
+        return NULL;
+    }
+
     memcpy(ptr, l_str, a_request->header.data_size);
     ptr += a_request->header.data_size;
     DAP_DEL_Z(l_str);
 
     memcpy(ptr, a_request->tsd_n_signs, a_request->header.signs_size);
-    ptr += a_request->header.signs_size;
 
     return a_output;
 }
 
-dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data)
+dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data, size_t data_size)
 {
+    if (data_size < sizeof(dap_json_rpc_http_request_t))
+        return NULL;
+
     char *ptr = (char *)data;
     dap_json_rpc_http_request_t *l_http_request = DAP_NEW_Z(dap_json_rpc_http_request_t);
     if (!l_http_request)
-    {
         return NULL;
-    }
 
     memcpy(&l_http_request->header, ptr, sizeof(l_http_request->header));
     ptr += sizeof(l_http_request->header);
 
-    char *l_request_str = DAP_NEW_Z_SIZE(char, l_http_request->header.data_size);
-    memcpy(&l_http_request, ptr, l_http_request->header.data_size);
-    l_http_request->request = dap_json_rpc_request_from_json(l_request_str);
-    if (!l_http_request->request)
-    {
+    if (data_size < (sizeof(l_http_request->header) + l_http_request->header.data_size + l_http_request->header.signs_size)) {
         DAP_DEL_Z(l_http_request);
         return NULL;
     }
-    ptr += sizeof(l_http_request->header.data_size);
+
+    char *l_request_str = DAP_NEW_Z_SIZE(char, l_http_request->header.data_size);
+    if (!l_request_str) {
+        DAP_DEL_Z(l_http_request);
+        return NULL;
+    }
+
+    memcpy(l_request_str, ptr, l_http_request->header.data_size);
+    l_http_request->request = dap_json_rpc_request_from_json(l_request_str);
+    DAP_DEL_Z(l_request_str);
+
+    if (!l_http_request->request) {
+        DAP_DEL_Z(l_http_request);
+        return NULL;
+    }
+    ptr += l_http_request->header.data_size;
 
     if (l_http_request->header.signs_size > 0) {
         l_http_request = DAP_REALLOC(l_http_request, sizeof(dap_json_rpc_http_request_t) + l_http_request->header.signs_size);
+        if (!l_http_request) {
+            return NULL;
+        }
         memcpy(l_http_request->tsd_n_signs, ptr, l_http_request->header.signs_size);
     }
 
@@ -204,7 +220,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
 
 int dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, void* response_handler,
                                const char *a_uplink_addr, const uint16_t a_uplink_port,
-                               dap_client_http_callback_error_t func_error)
+                               dap_client_http_callback_error_t * func_error)
 {
     uint64_t l_id_response = dap_json_rpc_response_registration(response_handler);
     a_request->id = 0;
@@ -216,6 +232,7 @@ int dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, void* response_
     dap_json_rpc_http_request_t *l_http_request = dap_json_rpc_request_sign_by_cert(a_request, l_cert);
     size_t l_http_length = 0;
     char *l_http_str = dap_json_rpc_http_request_serialize(l_http_request, &l_http_length);
+
     log_it(L_NOTICE, "Sending request in address: %s", a_uplink_addr);
     dap_client_http_request(dap_worker_get_auto(), a_uplink_addr, a_uplink_port, "GET", "application/json", s_url_service, l_http_str, l_http_length,
                             NULL, response_handler, func_error, NULL, NULL);
