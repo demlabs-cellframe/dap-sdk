@@ -6,7 +6,7 @@
 #include "dap_config.h"
 
 #define LOG_TAG "dap_json_rpc_rpc"
-#define DAP_EXEC_CMD_URL "exec_cmd"
+#define DAP_EXEC_CMD_URL "/exec_cmd"
 
 static bool exec_cmd_module = false;
 typedef struct dap_exec_cmd_pkey {
