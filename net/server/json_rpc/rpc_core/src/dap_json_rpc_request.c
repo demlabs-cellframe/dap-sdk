@@ -151,8 +151,10 @@ char *dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request
 
 dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data, size_t data_size)
 {
-    if (data_size < sizeof(dap_json_rpc_http_request_t))
+    if (data_size < sizeof(dap_json_rpc_http_request_t)) {
+        log_it(L_ERROR, "Wrong size of request data");
         return NULL;
+    }
 
     char *ptr = (char *)data;
     dap_json_rpc_http_request_t *l_http_request = DAP_NEW_Z(dap_json_rpc_http_request_t);
@@ -163,6 +165,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *d
     ptr += sizeof(l_http_request->header);
 
     if (data_size < (sizeof(l_http_request->header) + l_http_request->header.data_size + l_http_request->header.signs_size)) {
+        log_it(L_ERROR, "Wrong size of request");
         DAP_DEL_Z(l_http_request);
         return NULL;
     }
@@ -178,6 +181,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *d
     DAP_DEL_Z(l_request_str);
 
     if (!l_http_request->request) {
+        log_it(L_ERROR, "Can't parse request from string");
         DAP_DEL_Z(l_http_request);
         return NULL;
     }
