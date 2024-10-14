@@ -483,6 +483,7 @@ const char **dap_config_get_array_str(dap_config_t *a_config, const char *a_sect
     }
     if (array_length)
         *array_length = dap_str_countv(l_item->val.val_arr);
+    log_it(L_ERROR, "dap_str_countv = %zu", dap_str_countv(l_item->val.val_arr));
     return (const char**)l_item->val.val_arr;
 }
 
