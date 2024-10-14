@@ -98,5 +98,5 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
                                           "this is a string the name of the method, id is a number and params "
                                           "is an array that can contain strings, numbers and boolean values.");
     }
-    dap_json_rpc_request_handler(a_http_simple->http_client->in_query_string, a_http_simple);
+    dap_json_rpc_request_handler(a_http_simple->request, a_http_simple);
 }
