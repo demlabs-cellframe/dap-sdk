@@ -48,7 +48,7 @@ int dap_json_rpc_request_handler(const char * a_request,  dap_http_simple_t *a_h
         return -1;
     }
     log_it(L_INFO, "Processing exec_cmd request");
-    dap_json_rpc_http_request_t* l_http_request = dap_json_rpc_http_request_deserialize(a_request, a_http_simple->request_size);
+    dap_json_rpc_http_request_t* l_http_request = dap_json_rpc_http_request_deserialize(a_request, a_http_simple->http_client->in_query_string_len);
     if (!l_http_request) {
         log_it(L_ERROR, "Can't read request");
         return -2;
