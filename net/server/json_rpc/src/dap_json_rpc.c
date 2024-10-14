@@ -5,7 +5,6 @@
 #include "dap_pkey.h"
 #include "dap_config.h"
 #include "dap_cli_server.h"
-#include "dap_chain_common.h"
 #include "dap_chain_node.h"
 #include "dap_chain_net.h"
 
