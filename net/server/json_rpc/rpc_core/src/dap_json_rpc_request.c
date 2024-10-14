@@ -152,7 +152,7 @@ char *dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request
 dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data, size_t data_size)
 {
     if (data_size < sizeof(dap_json_rpc_http_request_t)) {
-        log_it(L_ERROR, "Wrong size of request data");
+        log_it(L_ERROR, "Wrong size of request data %d", data_size);
         return NULL;
     }
 
