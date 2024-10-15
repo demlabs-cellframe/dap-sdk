@@ -69,7 +69,9 @@ typedef struct dap_context {
     // Flags
     bool is_running; // Is running
     uint32_t running_flags; // Flags passed for _run function
-
+#ifdef DAP_OS_WINDOWS
+    HANDLE th;
+#endif
     // Inheritor
     void * _inheritor;  // dap_proc_thread_t, dap_worker_t
 

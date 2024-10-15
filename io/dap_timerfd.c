@@ -81,8 +81,10 @@ dap_timerfd_t* dap_timerfd_start(uint64_t a_timeout_ms, dap_timerfd_callback_t a
 #ifdef DAP_OS_WINDOWS
 void CALLBACK TimerCallback(void* arg, BOOLEAN flag) {
     dap_timerfd_t *l_timerfd = (dap_timerfd_t*)arg;
-    if ( l_timerfd->events_socket && PostQueuedCompletionStatus(l_timerfd->events_socket->worker->context->iocp, 0, (ULONG_PTR)l_timerfd->events_socket, NULL) )
-        ++l_timerfd->events_socket->pending;
+    if ( l_timerfd->events_socket ) {
+        l_timerfd->events_socket->pending_read = 1;
+        PostQueuedCompletionStatus(l_timerfd->events_socket->worker->context->iocp, 0, (ULONG_PTR)l_timerfd->events_socket, NULL);
+    }
 }
 #endif
 
@@ -207,7 +209,7 @@ dap_timerfd_t* dap_timerfd_create(uint64_t a_timeout_ms, dap_timerfd_callback_t 
     l_events_socket->socket = l_tfd;
 #elif defined DAP_EVENTS_CAPS_IOCP
     if ( !CreateTimerQueueTimer(&l_timerfd->th, hTimerQueue, (WAITORTIMERCALLBACK)TimerCallback,
-                               l_timerfd, (DWORD)a_timeout_ms, 0, WT_EXECUTEINTIMERTHREAD | WT_EXECUTEONLYONCE) ) {
+                                l_timerfd, (DWORD)a_timeout_ms, 0, WT_EXECUTEONLYONCE) ) {
         log_it(L_CRITICAL, "Timer not set, error %lu", GetLastError());
         DAP_DELETE(l_timerfd);
         return NULL;
@@ -246,7 +248,7 @@ void dap_timerfd_reset_unsafe(dap_timerfd_t *a_timerfd)
 #elif defined (DAP_OS_WINDOWS)
     DeleteTimerQueueTimer(hTimerQueue, a_timerfd->th, NULL);
     if ( !CreateTimerQueueTimer(&a_timerfd->th, hTimerQueue, (WAITORTIMERCALLBACK)TimerCallback,
-                                a_timerfd, (DWORD)a_timerfd->timeout_ms, 0, WT_EXECUTEINTIMERTHREAD | WT_EXECUTEONLYONCE) )
+                                a_timerfd, (DWORD)a_timerfd->timeout_ms, 0, WT_EXECUTEONLYONCE) )
         log_it(L_CRITICAL, "Timer not reset, error %lu", GetLastError());
 #else
 #error "No timer reset realization for your platform"

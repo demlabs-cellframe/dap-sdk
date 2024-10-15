@@ -1,7 +1,8 @@
 #include "dap_enc_sphincsplus.h"
-#include "sphincsplus/randombytes.h"
+//#include "sphincsplus/randombytes.h"
 #include "api.h"
 #include "dap_hash.h"
+#include "dap_rand.h"
 #include "fips202.h"
 
 #define LOG_TAG "dap_enc_sig_sphincsplus"
