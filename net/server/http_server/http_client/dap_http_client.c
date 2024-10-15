@@ -368,7 +368,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
 
                                                                             /* Parse HTTP's start-line */
                 if ( 0 > s_http_start_line_parse(l_http_client, (char *) a_esocket->buf_in, l_len) ) {
-                    log_it( L_WARNING, "Error parsing request line '%.*s'", l_len, a_esocket->buf_in );
+                    log_it( L_WARNING, "Error parsing request line '%.*s'", (int)l_len, a_esocket->buf_in );
                     s_report_error_and_restart( a_esocket, l_http_client, Http_Status_BadRequest );
                     break;
                 }
@@ -460,7 +460,7 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
                 l_len = l_peol - a_esocket->buf_in;
 
                 if ( 0 > (l_ret = dap_http_header_parse( l_http_client, (char *) a_esocket->buf_in, l_len )) ) {
-                    log_it( L_WARNING, "Input: not a valid header '%.*s'", l_len, a_esocket->buf_in );
+                    log_it( L_WARNING, "Input: not a valid header '%.*s'", (int)l_len, a_esocket->buf_in );
                 }else if ( l_ret == 1 ) {
                     log_it( L_INFO, "Input: HTTP headers are over" );
 

@@ -683,7 +683,7 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
         if ( !memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig)) ) {
             dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
             if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
-                log_it(L_ERROR, "Invalid packet size %lu, dump it", l_pkt->hdr.size);
+                log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
                 l_shift = sizeof(dap_stream_pkt_hdr_t);
             } else if ( (l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos) ) {
                 debug_if(s_dump_packet_headers, L_DEBUG, "Processing full packet, size %lu", l_shift);
