@@ -960,10 +960,11 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
 void s_stream_delete_from_list(dap_stream_t *a_stream)
 {
     dap_return_if_fail(a_stream);
-    if ( pthread_rwlock_wrlock(&s_streams_lock) == EDEADLK ) {
-        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
-        return;
-    }
+    int lock = pthread_rwlock_wrlock(&s_streams_lock);
+    assert(lock != EDEADLK);
+    if ( lock == EDEADLK )
+        return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
+
     dap_stream_t *l_stream = NULL;
     if (a_stream->prev)
         DL_DELETE(s_streams, a_stream);
@@ -989,10 +990,10 @@ int dap_stream_add_to_list(dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream, -1);
     int l_ret = 0;
-    if ( pthread_rwlock_wrlock(&s_streams_lock) == EDEADLK ) {
-        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
-        return -666;
-    }
+    int lock = pthread_rwlock_wrlock(&s_streams_lock);
+    assert(lock != EDEADLK);
+    if ( lock == EDEADLK )
+        return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), -666;
     DL_APPEND(s_streams, a_stream);
     if (a_stream->authorized)
         l_ret = s_stream_add_to_hashtable(a_stream);
@@ -1011,10 +1012,11 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr,
     dap_return_val_if_fail(a_addr && a_addr->uint64, 0);
     dap_stream_t *l_auth_stream = NULL;
     dap_events_socket_uuid_t l_ret = 0;
-    if ( pthread_rwlock_rdlock(&s_streams_lock) == EDEADLK ) {
-        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
-        return 0;
-    }
+    int lock = pthread_rwlock_rdlock(&s_streams_lock);
+    assert(lock != EDEADLK);
+    if ( lock == EDEADLK )
+        return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), 0;
+
     HASH_FIND(hh, s_authorized_streams, a_addr, sizeof(*a_addr), l_auth_stream);
     if (l_auth_stream) {
         if (a_worker)
@@ -1032,10 +1034,11 @@ dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr)
     dap_return_val_if_fail(a_addr, l_ret);
     dap_stream_t *l_stream;
 
-    if ( pthread_rwlock_rdlock(&s_streams_lock) == EDEADLK ) {
-        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
-        return NULL;
-    }
+    int lock = pthread_rwlock_rdlock(&s_streams_lock);
+    assert(lock != EDEADLK);
+    if ( lock == EDEADLK )
+        return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), NULL;
+
     DL_FOREACH(s_streams, l_stream) {
         if (!l_stream->authorized || a_addr->uint64 != l_stream->node.uint64)
             continue;
@@ -1111,10 +1114,11 @@ static void s_stream_fill_info(dap_stream_t *a_stream, dap_stream_info_t *a_out_
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count)
 {
     dap_return_val_if_pass(!a_cluster && !s_streams, NULL);
-    if ( pthread_rwlock_rdlock(&s_streams_lock) == EDEADLK ) {
-        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
-        return NULL;
-    }
+    int lock = pthread_rwlock_rdlock(&s_streams_lock);
+    assert(lock != EDEADLK);
+    if ( lock == EDEADLK )
+        return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), NULL;
+
     dap_stream_t *it = NULL;
     size_t l_streams_count = 0, i = 0;
     if (a_cluster) {
@@ -1128,7 +1132,7 @@ dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a
         pthread_rwlock_unlock(&s_streams_lock);
         return NULL;
     }
-    dap_stream_info_t *l_ret = DAP_NEW_Z_SIZE(dap_stream_info_t, sizeof(dap_stream_info_t) * l_streams_count);
+    dap_stream_info_t *l_ret = DAP_NEW_Z_COUNT(dap_stream_info_t, l_streams_count);
     if (!l_ret) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         if (a_cluster)
