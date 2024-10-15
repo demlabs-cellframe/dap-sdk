@@ -310,7 +310,7 @@ static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg)
  */
 static void s_es_server_error(dap_events_socket_t *a_es, int a_errno)
 {
-    log_it(L_WARNING, "Server socket %d error %d: %s", a_errno, dap_strerror(a_errno));
+    log_it(L_WARNING, "Server socket %d error %d: %s", a_es->socket, a_errno, dap_strerror(a_errno));
 }
 
 /**

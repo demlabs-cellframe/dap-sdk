@@ -809,13 +809,9 @@ void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket)
         eventfd_t l_value;
         if(eventfd_read( a_esocket->fd, &l_value)==0 ){ // would block if not ready
             a_esocket->callbacks.event_callback(a_esocket, l_value);
-        }else if ( (errno != EAGAIN) && (errno != EWOULDBLOCK) ){  // we use blocked socket for now but who knows...
-            int l_errno = errno;
-            char l_errbuf[128];
-            l_errbuf[0]=0;
-            strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-            log_it(L_WARNING, "Can't read packet from event fd: \"%s\"(%d)", l_errbuf, l_errno);
-        }else
+        }else if ( (errno != EAGAIN) && (errno != EWOULDBLOCK) )
+            log_it(L_WARNING, "Can't read packet from event fd, error %d: \"%s\"", errno, dap_strerror(errno));
+        else
             return; // do nothing
 #elif defined DAP_EVENTS_CAPS_WEPOLL
         u_short l_value;
@@ -1668,14 +1664,7 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
 #else
 #error "Not implemented dap_events_socket_queue_ptr_send() for this platform"
 #endif
-    if(l_ret == sizeof(a_arg) )
-        return 0;
-    else{
-        char l_errbuf[128];
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        log_it(L_ERROR,"Send queue ptr error: \"%s\" code %d", l_errbuf, l_errno);
-        return l_errno;
-    }
+    return l_ret == sizeof(a_arg) ? 0 : ( log_it(L_ERROR,"Send queue ptr error %d: \"%s\"", l_errno, dap_strerror(l_errno)), l_errno );
 }
 
 #endif

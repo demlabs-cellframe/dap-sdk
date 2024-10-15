@@ -487,13 +487,11 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
             ? s_queue_es_add(a_worker->queue_es_new, a_events_socket)
             : dap_events_socket_queue_ptr_send(a_worker->queue_es_new, a_events_socket);
 
-    if (l_ret) {
-        char l_errbuf[128] = { '\0' };
-        strerror_r(l_ret, l_errbuf, sizeof(l_errbuf));
+    if (l_ret)
         log_it(L_ERROR, dap_worker_get_current() == a_worker
                ? "Can't assign esocket to worker: \"%s\"(code %d)"
-               : "Can't send pointer in queue: \"%s\"(code %d)", l_errbuf, l_ret);
-    } else 
+               : "Can't send pointer in queue: \"%s\"(code %d)", dap_strerror(l_ret), l_ret);
+    else 
         debug_if(g_debug_reactor, L_DEBUG,
                "Sent es %p \"%s\" [%s] to worker #%d",
                a_events_socket, dap_events_socket_get_type_str(a_events_socket),
@@ -511,13 +509,9 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
 void dap_worker_add_events_socket_inter(dap_events_socket_t *a_es_input, dap_events_socket_t *a_events_socket)
 {
     dap_return_if_fail(a_es_input && a_events_socket);
-    if( dap_events_socket_queue_ptr_send_to_input( a_es_input, a_events_socket ) != 0 ){
-        int l_errno = errno;
-        char l_errbuf[128];
-        *l_errbuf = 0;
-        strerror_r(l_errno,l_errbuf,sizeof (l_errbuf));
-        log_it(L_ERROR, "Cant send pointer to interthread queue input: \"%s\"(code %d)", l_errbuf, l_errno);
-    }
+    if( dap_events_socket_queue_ptr_send_to_input( a_es_input, a_events_socket ) )
+        log_it(L_ERROR, "Cant send pointer to interthread queue input: \"%s\"(code %d)",
+                        dap_strerror(errno), errno);
 }
 
 /**
@@ -536,13 +530,9 @@ void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker
     }
     l_msg->callback = a_callback;
     l_msg->arg = a_arg;
-    int l_ret=dap_events_socket_queue_ptr_send_to_input (a_es_input ,l_msg );
-    if(l_ret != 0 ){
-        char l_errbuf[128];
-        *l_errbuf = 0;
-        strerror_r(l_ret,l_errbuf,sizeof (l_errbuf));
-        log_it(L_ERROR, "Cant send pointer in queue input: \"%s\"(code %d)", l_errbuf, l_ret);
-    }
+    if ( dap_events_socket_queue_ptr_send_to_input (a_es_input ,l_msg ) )
+        log_it(L_ERROR, "Cant send pointer to queue input: \"%s\"(code %d)",
+                        dap_strerror(errno), errno);
 
 }
 #endif
@@ -559,13 +549,9 @@ void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t 
         return;
     }
     *l_msg = (dap_worker_msg_callback_t) { .callback = a_callback, .arg = a_arg };
-    int l_ret = dap_events_socket_queue_ptr_send( a_worker->queue_callback, l_msg );
-    if (l_ret) {
-        char l_errbuf[128];
-        *l_errbuf = 0;
-        strerror_r(l_ret,l_errbuf,sizeof (l_errbuf));
-        log_it(L_ERROR, "Cant send pointer in queue: \"%s\"(code %d)", l_errbuf, l_ret);
-    }
+    if ( dap_events_socket_queue_ptr_send( a_worker->queue_callback, l_msg ) )
+        log_it(L_ERROR, "Cant send pointer to queue input: \"%s\"(code %d)",
+                        dap_strerror(errno), errno);
 
 }
 
