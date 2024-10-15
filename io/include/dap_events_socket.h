@@ -156,6 +156,7 @@ typedef void (*dap_events_socket_worker_callback_t) (dap_events_socket_t *,dap_w
 #ifdef DAP_EVENTS_CAPS_IOCP
 typedef ULONG (*pfn_RtlNtStatusToDosError)(NTSTATUS s);
 typedef enum per_io_type {
+    io_call     = 'c',  // Callback
     io_read     = 'r',  // Read from es
     io_write    = 'w'   // Write to es
 } per_io_type_t;
@@ -329,7 +330,7 @@ typedef struct dap_events_socket {
 
     int64_t kqueue_data;
 #elif defined DAP_EVENTS_CAPS_IOCP
-    uint_fast16_t pending : 15, pending_read : 1;
+    uint_fast16_t pending_read : 1, pending_write : 15;
 #endif
 
     dap_events_socket_callbacks_t callbacks;
@@ -364,15 +365,10 @@ typedef struct dap_events_socket_handler_hh{
 } dap_events_socket_handler_hh_t;
 
 #ifdef DAP_EVENTS_CAPS_IOCP
-/* Callback invoked on per-i/o basis 
-    Should return 0 if some further actions required within current completion, non-zero otherwise,
-    having ERROR_CONTINUE for OVERLAPPED will be reused in further I/O (must be NULLed by caller)
-*/
-typedef long (*dap_es_per_io_callback_ex_t) (dap_events_socket_t*, dap_context_t*, char*, OVERLAPPED*);
+/* Callback invoked on per-i/o basis */
+typedef void (*dap_per_io_func)(dap_context_t*, OVERLAPPED*);
 typedef struct dap_overlapped {
     OVERLAPPED ol;
-    dap_events_socket_uuid_t uid;
-    dap_es_per_io_callback_ex_t cb;
     char op, buf[];
 } dap_overlapped_t;
 #endif
