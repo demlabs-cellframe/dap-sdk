@@ -231,6 +231,98 @@ void* _read_key_from_file(const char* file_name, size_t key_size)
     return resut_key;
 }
 
+static void test_key_generate_by_seed(dap_enc_key_type_t a_key_type)
+{
+    const size_t seed_size = 1 + random_uint32_t( 1000);
+    uint8_t seed[seed_size];
+    randombytes(seed, seed_size);
+
+    size_t
+        l_priv_key_data_size_1 = 0,
+        l_priv_key_data_size_2 = 0,
+        l_priv_key_data_size_3 = 0,
+        l_priv_key_data_size_4 = 0,
+        l_priv_key_data_size_5 = 0,
+        l_pub_key_data_size_1 = 0,
+        l_pub_key_data_size_2 = 0,
+        l_pub_key_data_size_3 = 0,
+        l_pub_key_data_size_4 = 0,
+        l_pub_key_data_size_5 = 0;
+
+    dap_enc_key_t* l_key_1 = dap_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
+    dap_enc_key_t* l_key_2 = dap_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
+    dap_enc_key_t* l_key_3 = dap_enc_key_new_generate(a_key_type, NULL, 0, NULL, seed_size, 0);
+    dap_enc_key_t* l_key_4 = dap_enc_key_new_generate(a_key_type, NULL, 0, seed, 0, 0);
+    dap_enc_key_t* l_key_5 = dap_enc_key_new_generate(a_key_type, NULL, 0, NULL, 0, 0);
+
+
+    uint8_t *l_priv_key_data_1 = dap_enc_key_serialize_priv_key(l_key_1, &l_priv_key_data_size_1);
+    uint8_t *l_priv_key_data_2 = dap_enc_key_serialize_priv_key(l_key_2, &l_priv_key_data_size_2);
+    uint8_t *l_priv_key_data_3 = dap_enc_key_serialize_priv_key(l_key_3, &l_priv_key_data_size_3);
+    uint8_t *l_priv_key_data_4 = dap_enc_key_serialize_priv_key(l_key_4, &l_priv_key_data_size_4);
+    uint8_t *l_priv_key_data_5 = dap_enc_key_serialize_priv_key(l_key_5, &l_priv_key_data_size_5);
+
+    uint8_t *l_pub_key_data_1 = dap_enc_key_serialize_pub_key(l_key_1, &l_pub_key_data_size_1);
+    uint8_t *l_pub_key_data_2 = dap_enc_key_serialize_pub_key(l_key_2, &l_pub_key_data_size_2);
+    uint8_t *l_pub_key_data_3 = dap_enc_key_serialize_pub_key(l_key_3, &l_pub_key_data_size_3);
+    uint8_t *l_pub_key_data_4 = dap_enc_key_serialize_pub_key(l_key_4, &l_pub_key_data_size_4);
+    uint8_t *l_pub_key_data_5 = dap_enc_key_serialize_pub_key(l_key_5, &l_pub_key_data_size_5);
+
+    dap_assert_PIF(l_priv_key_data_size_1 && l_pub_key_data_size_1 &&
+                    l_priv_key_data_size_2 && l_pub_key_data_size_2 &&
+                    l_priv_key_data_size_3 && l_pub_key_data_size_3 &&
+                    l_priv_key_data_size_4 && l_pub_key_data_size_4 &&
+                    l_priv_key_data_size_5 && l_pub_key_data_size_5 &&
+
+                    l_priv_key_data_1 && l_pub_key_data_1 &&
+                    l_priv_key_data_2 && l_pub_key_data_2 &&
+                    l_priv_key_data_3 && l_pub_key_data_3 &&
+                    l_priv_key_data_4 && l_pub_key_data_4 &&
+                    l_priv_key_data_5 && l_pub_key_data_5,
+                    "Priv and pub data serialisation");
+
+    dap_assert_PIF(l_priv_key_data_size_1 == l_priv_key_data_size_2, "Equal priv_key_data_size");
+    dap_assert_PIF(l_priv_key_data_size_1 == l_priv_key_data_size_3, "Equal priv_key_data_size");
+    dap_assert_PIF(l_priv_key_data_size_1 == l_priv_key_data_size_4, "Equal priv_key_data_size");
+    dap_assert_PIF(l_priv_key_data_size_1 == l_priv_key_data_size_5, "Equal priv_key_data_size");
+
+    dap_assert_PIF(l_pub_key_data_size_1 == l_pub_key_data_size_2, "Equal pub_key_data_size");
+    dap_assert_PIF(l_pub_key_data_size_1 == l_pub_key_data_size_3, "Equal pub_key_data_size");
+    dap_assert_PIF(l_pub_key_data_size_1 == l_pub_key_data_size_4, "Equal pub_key_data_size");
+    dap_assert_PIF(l_pub_key_data_size_1 == l_pub_key_data_size_5, "Equal pub_key_data_size");
+
+    dap_assert_PIF(!memcmp(l_priv_key_data_1, l_priv_key_data_2, l_priv_key_data_size_1), "Equal priv_key_data with same seed");
+    dap_assert_PIF(memcmp(l_priv_key_data_1, l_priv_key_data_3, l_priv_key_data_size_1), "Different priv_key_data with not same seed");
+    dap_assert_PIF(memcmp(l_priv_key_data_1, l_priv_key_data_4, l_priv_key_data_size_1), "Different priv_key_data with not same seed");
+    dap_assert_PIF(memcmp(l_priv_key_data_1, l_priv_key_data_5, l_priv_key_data_size_1), "Different priv_key_data with not same seed");
+
+    dap_assert_PIF(memcmp(l_priv_key_data_3, l_priv_key_data_4, l_priv_key_data_size_1), "Different priv_key_data without seed");
+    dap_assert_PIF(memcmp(l_priv_key_data_3, l_priv_key_data_5, l_priv_key_data_size_1), "Different priv_key_data without seed");
+    dap_assert_PIF(memcmp(l_priv_key_data_4, l_priv_key_data_5, l_priv_key_data_size_1), "Different priv_key_data without seed");
+
+    dap_assert_PIF(!memcmp(l_pub_key_data_1, l_pub_key_data_2, l_pub_key_data_size_1), "Equal pub_key_data with same seed");
+    dap_assert_PIF(memcmp(l_pub_key_data_1, l_pub_key_data_3, l_pub_key_data_size_1), "Different pub_key_data with not same seed");
+    dap_assert_PIF(memcmp(l_pub_key_data_1, l_pub_key_data_4, l_pub_key_data_size_1), "Different pub_key_data with not same seed");
+    dap_assert_PIF(memcmp(l_pub_key_data_1, l_pub_key_data_5, l_pub_key_data_size_1), "Different pub_key_data with not same seed");
+
+    dap_assert_PIF(memcmp(l_pub_key_data_3, l_pub_key_data_4, l_pub_key_data_size_1), "Different pub_key_data without seed");
+    dap_assert_PIF(memcmp(l_pub_key_data_3, l_pub_key_data_5, l_pub_key_data_size_1), "Different pub_key_data without seed");
+    dap_assert_PIF(memcmp(l_pub_key_data_4, l_pub_key_data_5, l_pub_key_data_size_1), "Different pub_key_data without seed");
+
+    dap_enc_key_delete(l_key_1);
+    dap_enc_key_delete(l_key_2);
+    dap_enc_key_delete(l_key_3);
+    dap_enc_key_delete(l_key_4);
+    dap_enc_key_delete(l_key_5);
+
+    DAP_DEL_MULTY(  l_priv_key_data_1, l_pub_key_data_1,
+                    l_priv_key_data_2, l_pub_key_data_2,
+                    l_priv_key_data_3, l_pub_key_data_3,
+                    l_priv_key_data_4, l_pub_key_data_4,
+                    l_priv_key_data_5, l_pub_key_data_5);
+    dap_assert(true, s_key_type_to_str(a_key_type));
+}
+
 /**
  * @key_type may be DAP_ENC_KEY_TYPE_IAES, DAP_ENC_KEY_TYPE_OAES
  */
@@ -421,6 +513,12 @@ void dap_enc_tests_run() {
     test_encode_decode_raw(500);
     test_encode_decode_raw_b64(500);
     test_encode_decode_raw_b64_url_safe(500);
+
+    dap_print_module_name("key generate by seed");
+    for (size_t i = 0; i < c_keys_count; ++i) {
+        test_key_generate_by_seed(c_key_type_arr[i]);
+    }
+
     for (size_t i = 0; i < c_keys_count; ++i) {
         char l_module_name[128] = { 0 };
         snprintf(l_module_name, sizeof(l_module_name) - 1, "dap_enc serialize->deserialize %s", s_key_type_to_str(c_key_type_arr[i]));
