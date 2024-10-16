@@ -90,6 +90,8 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
 
     // const char* l_query = a_http_simple->http_client->in_query_string;
     // uint32_t l_query_length = a_http_simple->http_client->in_query_string_len;
+    log_it(L_MSG, "query str = %s\n", a_http_simple->http_client->in_query_string);
+    log_it(L_MSG, "request str = %s\n", a_http_simple->request);
     *l_return_code = Http_Status_OK;
     if (!a_http_simple->request){
         *l_return_code = Http_Status_NoContent;
