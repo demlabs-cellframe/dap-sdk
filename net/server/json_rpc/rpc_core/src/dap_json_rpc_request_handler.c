@@ -61,6 +61,10 @@ int dap_json_rpc_request_handler(const char * a_request,  dap_http_simple_t *a_h
     l_sign_correct =  dap_check_node_pkey_in_map(&l_sign_pkey_hash);
     if (l_sign_correct)
         l_sign_correct = !dap_sign_verify_all(l_sign, l_http_request->header.signs_size, l_data_str, sizeof(l_data_str));
+    if (!l_sign_correct) {
+        dap_http_simple_reply_f(a_http_simple, "You have no rights");
+        return 0;
+    }
     const char* l_response = dap_cli_cmd_exec(l_data_str);
     size_t res = dap_http_simple_reply(a_http_simple, (void*)l_response, strlen(l_response));
     if (!res)
