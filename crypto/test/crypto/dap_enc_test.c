@@ -8,6 +8,18 @@
 
 #define LOG_TAG "dap_crypto_enc_tests"
 
+dap_enc_key_type_t s_key_type_arr[] = {
+        DAP_ENC_KEY_TYPE_SIG_TESLA,
+        DAP_ENC_KEY_TYPE_SIG_BLISS,
+        DAP_ENC_KEY_TYPE_SIG_DILITHIUM,
+        // DAP_ENC_KEY_TYPE_SIG_PICNIC,
+        DAP_ENC_KEY_TYPE_SIG_FALCON,
+        DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,
+#ifdef DAP_ECDSA
+        DAP_ENC_KEY_TYPE_SIG_ECDSA,
+#endif
+        DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK };
+
 int get_cur_time_msec();
 
 #define TEST_SER_FILE_NAME "keystorage.txt"
@@ -408,46 +420,23 @@ void dap_enc_tests_run() {
     test_encode_decode_raw(500);
     test_encode_decode_raw_b64(500);
     test_encode_decode_raw_b64_url_safe(500);
-    dap_print_module_name("dap_enc serialize->deserialize BLISS");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_BLISS, false);
-    dap_print_module_name("dap_enc serialize->deserialize PICNIC");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_PICNIC, false);
-    dap_print_module_name("dap_enc serialize->deserialize TESLA");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_TESLA, false);
-    dap_print_module_name("dap_enc serialize->deserialize DILITHIUM");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, false);
-    dap_print_module_name("dap_enc serialize->deserialize FALCON");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_FALCON, false);
-    dap_print_module_name("dap_enc serialize->deserialize SPHINCSPLUS");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, false);
-#ifdef DAP_ECDSA
-    dap_print_module_name("dap_enc serialize->deserialize ECDSA");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_ECDSA, false);
-#endif
+    for (size_t i = 0; i < sizeof(s_key_type_arr) / sizeof(dap_enc_key_type_t); ++i) {
+        char l_module_name[128] = { 0 };
+        snprintf(l_module_name, sizeof(l_module_name) - 1, "dap_enc serialize->deserialize %s", s_key_type_to_str(s_key_type_arr[i]));
+        dap_print_module_name(l_module_name);
+        test_serialize_deserialize(s_key_type_arr[i], false);
+    }
+
     dap_print_module_name("dap_enc serialize->deserialize IAES");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_IAES, true);
-    dap_print_module_name("dap_enc serialize->deserialize SHIPOVNIK");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK, false);
     dap_print_module_name("dap_enc serialize->deserialize OAES");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_OAES, true);
 
-    dap_print_module_name("dap_enc_sig serialize->deserialize BLISS");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_BLISS);
-    dap_print_module_name("dap_enc_sig serialize->deserialize PICNIC");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_PICNIC);
-    dap_print_module_name("dap_enc_sig serialize->deserialize TESLA");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_TESLA);
-    dap_print_module_name("dap_enc_sig serialize->deserialize DILITHIUM");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_DILITHIUM);
-    dap_print_module_name("dap_enc_sig serialize->deserialize FALCON");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_FALCON);
-    dap_print_module_name("dap_enc_sig serialize->deserialize SPHINCSPLUS");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS);
-#ifdef DAP_ECDSA
-    dap_print_module_name("dap_enc_sig serialize->deserialize ECDSA");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_ECDSA);
-#endif
-    dap_print_module_name("dap_enc_sig serialize->deserialize SHIPOVNIK");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK);
+    for (size_t i = 0; i < sizeof(s_key_type_arr) / sizeof(dap_enc_key_type_t); ++i) {
+        char l_module_name[128] = { 0 };
+        snprintf(l_module_name, sizeof(l_module_name) - 1, "dap_enc_sig serialize->deserialize %s", s_key_type_to_str(s_key_type_arr[i]));
+        dap_print_module_name(l_module_name);
+        test_serialize_deserialize_pub_priv(s_key_type_arr[i]);
+    }
     dap_cleanup_test_case();
 }
