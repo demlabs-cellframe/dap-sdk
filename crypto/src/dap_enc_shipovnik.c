@@ -30,7 +30,7 @@ void dap_enc_sig_shipovnik_key_new_generate(dap_enc_key_t * key, UNUSED_ARG cons
         log_it(L_DEBUG, "Generate key with random seed");
         shipovnik_generate_keys(key->priv_key_data, key->pub_key_data);
     } else {
-        uint16_t l_seed_buf[N_shipovnik] = { 0 };
+        uint32_t l_seed_buf[N_shipovnik] = { 0 };
         shake256(l_seed_buf, sizeof(l_seed_buf), seed, seed_size);
         shipovnik_generate_keys_with_seed(key->priv_key_data, key->pub_key_data, l_seed_buf);
     }

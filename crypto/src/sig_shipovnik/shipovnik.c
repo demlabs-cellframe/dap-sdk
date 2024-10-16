@@ -48,7 +48,9 @@ void shipovnik_generate_keys(uint8_t *sk, uint8_t *pk) {
   syndrome(H_PRIME, sk, pk);
 }
 
-void shipovnik_generate_keys_with_seed(uint8_t *sk, uint8_t *pk, uint16_t s[N_shipovnik]) {
+void shipovnik_generate_keys_with_seed(uint8_t *sk, uint8_t *pk, uint32_t *seed) {
+  ALLOC_ON_STACK(uint16_t, s, N_shipovnik);
+  gen_vector_with_seed(s, seed);
   for (size_t i = 0; i < N_shipovnik; ++i) {
     size_t j = i / 8;
     sk[j] <<= 1;

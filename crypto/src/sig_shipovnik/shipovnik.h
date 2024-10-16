@@ -48,7 +48,7 @@ void shipovnik_generate_keys(uint8_t *sk, uint8_t *pk);
  * @param[out] pk Contiguous array to receive public key, of size
  *   `SHIPOVNIK_PUBLICKEYBYTES`.
  */
-void shipovnik_generate_keys_with_seed(uint8_t *sk, uint8_t *pk, uint16_t s[N_shipovnik]);
+void shipovnik_generate_keys_with_seed(uint8_t *sk, uint8_t *pk, uint32_t *s);
 
 /**
  * @brief Generates signature for given message according to secret key.
