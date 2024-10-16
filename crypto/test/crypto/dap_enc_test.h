@@ -1,19 +1,8 @@
 #pragma once
 #include "dap_enc_key.h"
 
-extern dap_enc_key_type_t s_key_type_arr[];
-
-dap_enc_key_type_t s_key_type_arr[] = {
-        DAP_ENC_KEY_TYPE_SIG_TESLA,
-        DAP_ENC_KEY_TYPE_SIG_BLISS,
-        DAP_ENC_KEY_TYPE_SIG_DILITHIUM,
-        // DAP_ENC_KEY_TYPE_SIG_PICNIC,
-        DAP_ENC_KEY_TYPE_SIG_FALCON,
-        DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,
-#ifdef DAP_ECDSA
-        DAP_ENC_KEY_TYPE_SIG_ECDSA,
-#endif
-        DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK };
+extern const dap_enc_key_type_t c_key_type_arr[];
+extern const size_t c_keys_count;
 
 DAP_STATIC_INLINE const char *s_key_type_to_str(dap_enc_key_type_t a_signe_key_type)
 {
@@ -37,6 +26,6 @@ void test_encypt_decrypt(int count_steps, const dap_enc_key_type_t key_type, con
 void test_encypt_decrypt_fast(int count_steps, const dap_enc_key_type_t key_type, const int cipher_key_size);
 
 void dap_enc_tests_run(void);
-int dap_enc_benchmark_tests_run(int a_times);
+void dap_enc_benchmark_tests_run(int a_times);
 void dap_init_test_case();
 void dap_cleanup_test_case();

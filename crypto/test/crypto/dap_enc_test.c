@@ -8,7 +8,7 @@
 
 #define LOG_TAG "dap_crypto_enc_tests"
 
-dap_enc_key_type_t s_key_type_arr[] = {
+const dap_enc_key_type_t c_key_type_arr[] = {
         DAP_ENC_KEY_TYPE_SIG_TESLA,
         DAP_ENC_KEY_TYPE_SIG_BLISS,
         DAP_ENC_KEY_TYPE_SIG_DILITHIUM,
@@ -19,6 +19,7 @@ dap_enc_key_type_t s_key_type_arr[] = {
         DAP_ENC_KEY_TYPE_SIG_ECDSA,
 #endif
         DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK };
+const size_t c_keys_count = sizeof(c_key_type_arr) / sizeof(dap_enc_key_type_t);
 
 int get_cur_time_msec();
 
@@ -420,11 +421,11 @@ void dap_enc_tests_run() {
     test_encode_decode_raw(500);
     test_encode_decode_raw_b64(500);
     test_encode_decode_raw_b64_url_safe(500);
-    for (size_t i = 0; i < sizeof(s_key_type_arr) / sizeof(dap_enc_key_type_t); ++i) {
+    for (size_t i = 0; i < c_keys_count; ++i) {
         char l_module_name[128] = { 0 };
-        snprintf(l_module_name, sizeof(l_module_name) - 1, "dap_enc serialize->deserialize %s", s_key_type_to_str(s_key_type_arr[i]));
+        snprintf(l_module_name, sizeof(l_module_name) - 1, "dap_enc serialize->deserialize %s", s_key_type_to_str(c_key_type_arr[i]));
         dap_print_module_name(l_module_name);
-        test_serialize_deserialize(s_key_type_arr[i], false);
+        test_serialize_deserialize(c_key_type_arr[i], false);
     }
 
     dap_print_module_name("dap_enc serialize->deserialize IAES");
@@ -432,11 +433,11 @@ void dap_enc_tests_run() {
     dap_print_module_name("dap_enc serialize->deserialize OAES");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_OAES, true);
 
-    for (size_t i = 0; i < sizeof(s_key_type_arr) / sizeof(dap_enc_key_type_t); ++i) {
+    for (size_t i = 0; i < c_keys_count; ++i) {
         char l_module_name[128] = { 0 };
-        snprintf(l_module_name, sizeof(l_module_name) - 1, "dap_enc_sig serialize->deserialize %s", s_key_type_to_str(s_key_type_arr[i]));
+        snprintf(l_module_name, sizeof(l_module_name) - 1, "dap_enc_sig serialize->deserialize %s", s_key_type_to_str(c_key_type_arr[i]));
         dap_print_module_name(l_module_name);
-        test_serialize_deserialize_pub_priv(s_key_type_arr[i]);
+        test_serialize_deserialize_pub_priv(c_key_type_arr[i]);
     }
     dap_cleanup_test_case();
 }
