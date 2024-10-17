@@ -31,7 +31,7 @@ void dap_enc_sig_shipovnik_key_new_generate(dap_enc_key_t * key, UNUSED_ARG cons
         shipovnik_generate_keys(key->priv_key_data, key->pub_key_data);
     } else {
         uint32_t l_seed_buf[N_shipovnik] = { 0 };
-        shake256(l_seed_buf, sizeof(l_seed_buf), seed, seed_size);
+        shake256((unsigned char *)l_seed_buf, sizeof(l_seed_buf), seed, seed_size);
         shipovnik_generate_keys_with_seed(key->priv_key_data, key->pub_key_data, l_seed_buf);
     }
 }
@@ -49,7 +49,7 @@ int dap_enc_sig_shipovnik_get_sign(struct dap_enc_key* key, const void* msg, con
     }
     size_t l_size = 0;
     shipovnik_sign(key->priv_key_data, msg, msg_size, signature, &l_size);
-    return signature_size ? 0 : ( log_it(L_ERROR, "Failed to sign message"), -1 );
+    return l_size ? 0 : ( log_it(L_ERROR, "Failed to sign message"), -1 );
 }
 
 int dap_enc_sig_shipovnik_verify_sign(struct dap_enc_key* key, const void* msg, const size_t msg_size, void* signature, const size_t signature_size)
