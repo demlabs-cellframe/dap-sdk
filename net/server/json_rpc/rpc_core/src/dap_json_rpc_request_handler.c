@@ -41,17 +41,17 @@ int dap_json_rpc_unregistration_request_handler(const char *a_name)
     }
 }
 
-int dap_json_rpc_request_handler(const char * a_request,  dap_http_simple_t *a_http_simple)
+char * dap_json_rpc_request_handler(const char * a_request,  dap_http_simple_t *a_http_simple)
 {
     if (!a_request) {
         log_it(L_ERROR, "Empty request");
-        return -1;
+        return NULL;
     }
     log_it(L_INFO, "Processing exec_cmd request");
     dap_json_rpc_http_request_t* l_http_request = dap_json_rpc_http_request_deserialize(a_request, a_http_simple->request_size);
     if (!l_http_request) {
         log_it(L_ERROR, "Can't read request");
-        return -2;
+        return NULL;
     }
     char * l_data_str = dap_json_rpc_request_to_json_string(l_http_request->request);
     dap_hash_fast_t l_sign_pkey_hash;
@@ -62,14 +62,18 @@ int dap_json_rpc_request_handler(const char * a_request,  dap_http_simple_t *a_h
     if (l_sign_correct)
         l_sign_correct = !dap_sign_verify_all(l_sign, l_http_request->header.signs_size, l_data_str, sizeof(l_data_str));
     if (!l_sign_correct) {
-        dap_http_simple_reply_f(a_http_simple, "You have no rights");
-        return 0;
+        dap_json_rpc_response_t* l_no_rights_res = dap_json_rpc_response_create("You have no rights", TYPE_RESPONSE_STRING, l_http_request->request->id);
+        char * l_no_rights_res_str = dap_json_rpc_response_to_string(l_no_rights_res);
+        dap_http_simple_reply(a_http_simple, l_no_rights_res_str, strlen(l_no_rights_res_str));
+        dap_json_rpc_http_request_free(l_http_request);
+        return NULL;
     }
     const char* l_response = dap_cli_cmd_exec(l_data_str);
-    size_t res = dap_http_simple_reply(a_http_simple, (void*)l_response, strlen(l_response));
-    if (!res)
-        log_it(L_ERROR, "Error in json-rpc reply");
-    log_it(L_INFO, "reply for exec_cmd");
-    DAP_DEL_Z(l_response);
-    return 0;
+    // size_t res = dap_http_simple_reply(a_http_simple, (void*)l_response, strlen(l_response));
+    // if (!res)
+    //     log_it(L_ERROR, "Error in json-rpc reply");
+    // log_it(L_INFO, "reply for exec_cmd");
+    dap_json_rpc_http_request_free(l_http_request);
+    // DAP_DEL_Z(l_response);
+    return l_response;
 }

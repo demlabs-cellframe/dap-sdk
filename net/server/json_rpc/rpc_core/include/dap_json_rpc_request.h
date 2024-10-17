@@ -81,6 +81,8 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data);
 char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_request);
 dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data, size_t data_size);
 char * dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request, size_t *a_total_size);
+void dap_json_rpc_http_request_free(dap_json_rpc_http_request_t *a_http_request);
+char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request);
 
 int dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, void *response_handler,
                                const char *a_uplink_addr, const uint16_t a_uplink_port,

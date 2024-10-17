@@ -152,7 +152,7 @@ char *dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request
 dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data, size_t data_size)
 {
     if (data_size < sizeof(dap_json_rpc_http_request_t)) {
-        log_it(L_ERROR, "Wrong size of request data %d", data_size);
+        log_it(L_ERROR, "Wrong size of request data %lu", data_size);
         return NULL;
     }
 
@@ -196,6 +196,17 @@ dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *d
     }
 
     return l_http_request;
+}
+
+void dap_json_rpc_http_request_free(dap_json_rpc_http_request_t *a_http_request)
+{
+    if (!a_http_request)
+        return;
+
+    if (a_http_request->request)
+        dap_json_rpc_request_free(a_http_request->request);
+
+    DAP_DEL_Z(a_http_request);
 }
 
 dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_request_t *a_request, dap_cert_t *a_cert)
@@ -243,4 +254,19 @@ int dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, void* response_
     DAP_DEL_Z(l_http_request);
     DAP_DEL_Z(l_http_str);
     return 0;
+}
+
+
+char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request) {
+    uint64_t l_id_response = dap_json_rpc_response_registration(a_request);
+    a_request->id = 0;
+    dap_cert_t *l_cert = dap_cert_find_by_name("node-addr");
+    if (!l_cert) {
+        log_it(L_ERROR, "Can't load cert");
+        return NULL;
+    }
+    dap_json_rpc_http_request_t *l_http_request = dap_json_rpc_request_sign_by_cert(a_request, l_cert);
+    size_t l_http_length = 0;
+    char *l_http_str = dap_json_rpc_http_request_serialize(l_http_request, &l_http_length);
+    return l_http_str;
 }
