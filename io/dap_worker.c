@@ -181,15 +181,16 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
 {
     int err = dap_context_add(a_worker->context, a_esocket);
     if (!err) {
-#ifndef DAP_EVENTS_CAPS_IOCP
-        a_esocket->is_initalized = true;
-#endif
         switch (a_esocket->type) {
         case DESCRIPTOR_TYPE_SOCKET_UDP:
         case DESCRIPTOR_TYPE_SOCKET_CLIENT:
         case DESCRIPTOR_TYPE_SOCKET_LISTENING:
             a_esocket->last_time_active = time(NULL);
-        default:;
+#ifdef SO_INCOMING_CPU
+            int l_cpu = a_worker->context->cpu_id;
+            setsockopt(a_esocket->socket , SOL_SOCKET, SO_INCOMING_CPU, &l_cpu, sizeof(l_cpu));
+#endif
+        default: break;
         }
     }
     return err;
@@ -209,11 +210,9 @@ static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
     assert(l_context);
     dap_worker_t * l_worker = a_es->worker;
     assert(l_worker);
+    if (!a_arg)
+        return log_it(L_ERROR,"NULL esocket accepted to add on worker #%u", l_worker->id), -1;
     dap_events_socket_t * l_es_new =(dap_events_socket_t *) a_arg;
-    if (!l_es_new){
-        log_it(L_ERROR,"NULL esocket accepted to add on worker #%u", l_worker->id);
-        return -1;
-    }
 
     debug_if(g_debug_reactor, L_DEBUG, "Added es %p \"%s\" [%s] to worker #%d",
              l_es_new, dap_events_socket_get_type_str(l_es_new),
@@ -234,20 +233,7 @@ static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
             return -2;
         }
 
-    switch( l_es_new->type){
-
-        case DESCRIPTOR_TYPE_SOCKET_UDP:
-        case DESCRIPTOR_TYPE_SOCKET_CLIENT:
-        case DESCRIPTOR_TYPE_SOCKET_LISTENING:{
-            l_es_new->last_time_active = time(NULL);
-#if defined (DAP_OS_UNIX) && defined (SO_INCOMING_CPU)
-            int l_cpu = l_worker->context->cpu_id;
-            setsockopt(l_es_new->socket , SOL_SOCKET, SO_INCOMING_CPU, &l_cpu, sizeof(l_cpu));
-#endif
-        } break;
-        default: {}
-    }
-    if (dap_context_add(l_context, l_es_new)) {
+    if ( dap_worker_add_events_socket_unsafe(l_worker, l_es_new) ) {
         log_it(L_ERROR, "Can't add event socket's handler to worker i/o poll mechanism with error %d", errno);
         return -3;
     }
@@ -261,7 +247,6 @@ static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
         l_es_new->callbacks.worker_assign_callback(l_es_new, l_worker);
 
     l_es_new->is_initalized = true;
-
     return 0;
 }
 
