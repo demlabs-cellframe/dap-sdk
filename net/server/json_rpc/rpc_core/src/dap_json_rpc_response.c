@@ -1,13 +1,13 @@
 #include "dap_json_rpc_response.h"
 
 #define LOG_TAG "dap_json_rpc_response"
+#define INDENTATION_LEVEL "    "
 
 dap_json_rpc_response_t *dap_json_rpc_response_init()
 {
     dap_json_rpc_response_t *response = DAP_NEW(dap_json_rpc_response_t);
     if (!response)
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-    dap_json_rpc_error_init();
     return response;
 }
 
@@ -25,27 +25,26 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
     }
     
     response->id = id;
-    json_object* errors = dap_json_rpc_error_get();
     response->type = type;
 
-        switch(response->type){
-            case TYPE_RESPONSE_STRING:
-                response->result_string = (char*)result; break;
-            case TYPE_RESPONSE_INTEGER:
-                response->result_int = *((int64_t*)result); break;
-            case TYPE_RESPONSE_DOUBLE:
-                response->result_double = *((double*)result); break;
-            case TYPE_RESPONSE_BOOLEAN:
-                response->result_boolean = *((bool*)result); break;
-            case TYPE_RESPONSE_JSON:
-                response->result_json_object = result; break;
-            case TYPE_RESPONSE_NULL:
-                break;
-            default:
-                log_it(L_ERROR, "Wrong response type");
-                DAP_FREE(response);
-                return NULL;
-        }
+    switch(response->type){
+        case TYPE_RESPONSE_STRING:
+            response->result_string = (char*)result; break;
+        case TYPE_RESPONSE_INTEGER:
+            response->result_int = *((int64_t*)result); break;
+        case TYPE_RESPONSE_DOUBLE:
+            response->result_double = *((double*)result); break;
+        case TYPE_RESPONSE_BOOLEAN:
+            response->result_boolean = *((bool*)result); break;
+        case TYPE_RESPONSE_JSON:
+            response->result_json_object = result; break;
+        case TYPE_RESPONSE_NULL:
+            break;
+        default:
+            log_it(L_ERROR, "Wrong response type");
+            DAP_FREE(response);
+            return NULL;
+    }
     return response;
 }
 
@@ -68,7 +67,6 @@ void dap_json_rpc_response_free(dap_json_rpc_response_t *response)
                 log_it(L_ERROR, "Unsupported response type");
                 break;
         }
-        dap_json_rpc_error_deinit();
         DAP_FREE(response);
     }
 }
@@ -86,9 +84,6 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response) {
     switch (response->type) {
         case TYPE_RESPONSE_STRING:
             json_object_object_add(jobj, "result", json_object_new_string(response->result_string));
-            break;
-        case TYPE_RESPONSE_ERROR:
-            json_object_object_add(jobj, "result", json_object_new_null());
             break;
         case TYPE_RESPONSE_INTEGER:
             json_object_object_add(jobj, "result", json_object_new_int64(response->result_int));
@@ -171,17 +166,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
 
 int json_print_commands(const char * a_name) {
     const char* long_cmd[] = {
-            "tx_history",
-            "tx_wallet",
-            "tx_ledger",
-            "tx_create",
-            "tx_create_json",
-            "tx_verify",
-            "tx_cond_create",
-            "tx_cond_remove",
-            "tx_cond_unspent_find",
-            "mempool_list",
-            "net"
+            "tx_history"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
@@ -198,7 +183,7 @@ void json_print_object(json_object *obj, int indent_level) {
         case json_type_object: {
             json_object_object_foreach(obj, key, val) {
                 for (int i = 0; i <= indent_level; i++) {
-                    printf("    "); // indentation level
+                    printf(INDENTATION_LEVEL); // indentation level
                 }
                 printf("%s: ", key);
                 json_print_value(val, key, indent_level + 1, false);
@@ -209,10 +194,13 @@ void json_print_object(json_object *obj, int indent_level) {
         case json_type_array: {
             int length = json_object_array_length(obj);
             for (int i = 0; i < length; i++) {
+                for (int j = 0; j <= indent_level; j++) {
+                    printf(INDENTATION_LEVEL); // indentation level
+                }
                 json_object *item = json_object_array_get_idx(obj, i);
                 json_print_value(item, NULL, indent_level + 1, length - 1 - i);
+                printf("\n");
             }
-            printf("\n");
             break;
         }
         default:
@@ -247,21 +235,45 @@ void json_print_value(json_object *obj, const char *key, int indent_level, bool 
 }
 
 void json_print_for_tx_history(dap_json_rpc_response_t* response) {
-    int result_count = json_object_array_length(response->result_json_object);
-    json_object * json_obj_items = json_object_array_get_idx(response->result_json_object, 0);
-    json_print_object(json_obj_items, 0);
-    if (result_count == 2) {
-        json_object * json_obj_response = json_object_array_get_idx(response->result_json_object, 1);
-        json_object * j_obj_net_name, * j_obj_chain, *j_obj_sum, *j_obj_accepted, *j_obj_rejected;
-        json_object_object_get_ex(json_obj_response, "network", &j_obj_net_name);
-        json_object_object_get_ex(json_obj_response, "chain", &j_obj_chain);
-        json_object_object_get_ex(json_obj_response, "tx_sum", &j_obj_sum);
-        json_object_object_get_ex(json_obj_response, "accepted_tx", &j_obj_accepted);
-        json_object_object_get_ex(json_obj_response, "rejected_tx", &j_obj_rejected);
-        printf("Print %d transactions in network %s chain %s. \n"
-                "Of which %d were accepted into the ledger and %d were rejected.\n", 
-                json_object_get_int(j_obj_sum), json_object_get_string(j_obj_net_name),
-                json_object_get_string(j_obj_chain),json_object_get_int(j_obj_accepted), json_object_get_int(j_obj_rejected));
+    if (!response || !response->result_json_object) {
+        printf("Response is empty\n");
+        return;
+    }
+    if (json_object_get_type(response->result_json_object) == json_type_array) {
+        int result_count = json_object_array_length(response->result_json_object);
+        if (result_count <= 0) {
+            printf("Response array is empty\n");
+            return;
+        }
+        for (int i = 0; i < result_count; i++) {
+            struct json_object *json_obj_result = json_object_array_get_idx(response->result_json_object, i);
+            if (!json_obj_result) {
+                printf("Failed to get array element at index %d\n", i);
+                continue;
+            }
+
+            json_object *j_obj_sum, *j_obj_accepted, *j_obj_rejected, *j_obj_chain, *j_obj_net_name;
+            if (json_object_object_get_ex(json_obj_result, "tx_sum", &j_obj_sum) &&
+                json_object_object_get_ex(json_obj_result, "accepted_tx", &j_obj_accepted) &&
+                json_object_object_get_ex(json_obj_result, "rejected_tx", &j_obj_rejected)) {
+                json_object_object_get_ex(json_obj_result, "chain", &j_obj_chain);
+                json_object_object_get_ex(json_obj_result, "network", &j_obj_net_name);
+
+                if (j_obj_sum && j_obj_accepted && j_obj_rejected && j_obj_chain && j_obj_net_name) {
+                    printf("Print %d transactions in network %s chain %s. \n"
+                            "Of which %d were accepted into the ledger and %d were rejected.\n",
+                            json_object_get_int(j_obj_sum), json_object_get_string(j_obj_net_name),
+                            json_object_get_string(j_obj_chain), json_object_get_int(j_obj_accepted), json_object_get_int(j_obj_rejected));
+                } else {
+                    printf("Missing required fields in array element at index %d\n", i);
+                }
+            } else {
+                json_print_object(json_obj_result, 0);
+            }
+            printf("\n");
+        }
+    } else {
+        json_print_object(response->result_json_object, 0);
     }
 }
 
@@ -317,23 +329,7 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                 case 1: json_print_for_tx_history(response); break; return 0;
                 // case 2: json_print_for_mempool_list(response); break; return 0;
                 default: {
-                        int json_type = 0;
-                        json_object_is_type(response->result_json_object, json_type);
-                        if (json_type == json_type_array) {                                     /* print json array */ 
-                            int result_count = json_object_array_length(response->result_json_object);
-                            if (result_count <= 0) {
-                                printf("response json array length is 0\n");
-                                return -3;
-                            }
-                            for (int i = 0; i < result_count; i++) {
-                                struct json_object * json_obj_result = json_object_array_get_idx(response->result_json_object, i);
-                                json_print_object(json_obj_result, 0);
-                                printf("\n");
-                                json_object_put(json_obj_result);
-                            }
-                        } else {                                                                /* print json */ 
-                            json_print_object(response->result_json_object, 0);
-                        }
+                        json_print_object(response->result_json_object, 0);
                     }
                     break;
             }

@@ -1337,16 +1337,16 @@ static void s_stream_es_callback_read(dap_events_socket_t * a_es, void * arg)
                         l_client_pvt->stage_status = STAGE_STATUS_DONE;
                         s_stage_status_after(l_client_pvt);
 
-                        dap_stream_data_proc_read(l_client_pvt->stream);
-                        dap_events_socket_shrink_buf_in(a_es, a_es->buf_in_size);
+                        size_t l_bytes_read = dap_stream_data_proc_read(l_client_pvt->stream);
+                        dap_events_socket_shrink_buf_in(a_es, l_bytes_read);
                     }
                 }
             }
         }
             break;
         case STAGE_STREAM_STREAMING: { // if streaming - process data with stream processor
-            dap_stream_data_proc_read(l_client_pvt->stream);
-            dap_events_socket_shrink_buf_in(a_es, a_es->buf_in_size);
+            size_t l_bytes_read = dap_stream_data_proc_read(l_client_pvt->stream);
+            dap_events_socket_shrink_buf_in(a_es, l_bytes_read);
         }
             break;
         default: {
@@ -1387,26 +1387,18 @@ static bool s_stream_es_callback_write(dap_events_socket_t * a_es, UNUSED_ARG vo
  */
 static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
 {
-    if (!a_es->_inheritor || !a_es ) {
-        log_it(L_WARNING, "No client with client stream erro callback");
-        return;
-    }
+    if ( !a_es || !a_es->_inheritor )
+        return log_it(L_ERROR, "Stream error on undefined client. How on earth is that possible?");
+
     dap_client_t *l_client = DAP_ESOCKET_CLIENT(a_es);
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
-
-    char l_errbuf[128];
-    if (a_error)
-        strerror_r(a_error, l_errbuf, sizeof(l_errbuf));
-    else
-        strncpy(l_errbuf, "Unknown error", sizeof(l_errbuf) - 1);
-
-    log_it(L_WARNING, "STREAM error \"%s\" (code %d)", l_errbuf, a_error);
-
-    if (a_error == ETIMEDOUT) {
-        l_client_pvt->last_error = ERROR_NETWORK_CONNECTION_TIMEOUT;
-    } else {
-        l_client_pvt->last_error = ERROR_STREAM_RESPONSE_WRONG;
-    }
+    log_it(L_WARNING, "STREAM error %d: \"%s\"", a_error, dap_strerror(a_error));
+#ifdef DAP_OS_WINDOWS
+    if (a_error == ERROR_SEM_TIMEOUT)
+        a_error = ETIMEDOUT;
+#endif
+    l_client_pvt->last_error = a_error == ETIMEDOUT
+        ? ERROR_NETWORK_CONNECTION_TIMEOUT : ERROR_STREAM_RESPONSE_WRONG;
     l_client_pvt->stage_status = STAGE_STATUS_ERROR;
     l_client_pvt->stream->esocket = NULL;   // Prevent to delete twice
     s_stage_status_after(l_client_pvt);

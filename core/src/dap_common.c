@@ -153,7 +153,6 @@ static unsigned int s_ansi_seq_color_len[16] = {0};
 static volatile bool s_log_term_signal = false;
 char* g_sys_dir_path = NULL;
 
-static _Thread_local char s_last_error[LAST_ERROR_MAX] = {'\0'};
 static char s_log_file_path[MAX_PATH]   = {'\0'},
             s_log_dir_path[MAX_PATH]    = {'\0'},
             s_log_tag_fmt_str[10]       = {'\0'};
@@ -196,16 +195,16 @@ static void print_it_stderr(unsigned a_off, const char *a_fmt, va_list va)
 {
     vfprintf(s_print_param, a_fmt, va);
 }
-
+*/
 #if ANDROID
 #include <android/log.h>
 
 static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va)
 {
-    __android_log_vprint(ANDROID_LOG_INFO, s_print_param, a_fmt, va);
+    __android_log_vprint(ANDROID_LOG_INFO, "CellframeNodeNative", a_fmt, va);
 }
 
-#endif*/
+#endif
 
 void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
 {
@@ -230,10 +229,9 @@ void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
         s_print_callback = print_it_none;
         break;
     #ifdef ANDROID
-    /*case LOGGER_OUTPUT_ALOG:
+    case LOGGER_OUTPUT_ALOG:
         s_print_callback = print_it_alog;
-        s_print_param = param;
-        break;*/
+        break;
     #endif
 
   default:
@@ -380,8 +378,8 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, .
     return 0;
 }
 
-int s_dap_log_open(const char *a_log_file_path) {
-    if (! (s_log_file = s_log_file ? freopen(a_log_file_path, "w", s_log_file) : fopen( a_log_file_path , "a" )) )
+static int s_dap_log_open(const char *a_log_file_path, bool a_new) {
+    if (! (s_log_file = s_log_file ? freopen(a_log_file_path, a_new ? "w" : "a", s_log_file) : fopen( a_log_file_path, a_new ? "w" : "a" )) )
         return fprintf( stderr, "Can't open log file %s \n", a_log_file_path ), -1;
     static char s_buf_file[LOG_BUF_SIZE];
     return setvbuf(s_log_file, s_buf_file, _IOLBF, LOG_BUF_SIZE);
@@ -403,7 +401,7 @@ int dap_common_init( const char *a_console_title, const char *a_log_file_path, c
     for (int i = 0; i < 16; ++i)
             s_ansi_seq_color_len[i] =(unsigned int) strlen(s_ansi_seq_color[i]);
     if ( a_log_file_path && a_log_file_path[0] ) {
-        if (s_dap_log_open(a_log_file_path))
+        if (s_dap_log_open(a_log_file_path, false))
             return -1;
         if (a_log_dirpath != s_log_dir_path)
             dap_stpcpy(s_log_dir_path,  a_log_dirpath);
@@ -501,53 +499,34 @@ char *dap_dump_hex(byte_t *a_data, size_t a_len) {
 #define BYTES_IN_LINE 16
     if (!a_data || !a_len)
         return NULL;
-
-    size_t l_len = HEX_LINE_LEN * (a_len / BYTES_IN_LINE);
-    if (a_len % BYTES_IN_LINE)
-        l_len += HEX_LINE_LEN;
+    static const char hex[] = "0123456789ABCDEF";
+    size_t  l_div = a_len / BYTES_IN_LINE,
+            l_rem = a_len % BYTES_IN_LINE,
+            l_len = HEX_LINE_LEN * (l_div + !!l_rem),
+            l_line_len = BYTES_IN_LINE,
+            l_shift = 0, i, j;
 
     char *l_ret = DAP_NEW_Z_SIZE(char, l_len + 1);
-    if (!l_ret) {
-        if (a_len)
-            log_it(L_CRITICAL, "Memory allocation error!");
-        return NULL;
-    }
+    if (!l_ret)
+        return log_it(L_CRITICAL, "Memory allocation error!"), NULL;
+
     memset(l_ret, ' ', l_len);
-    byte_t *l_data = a_data, low, high;
-    size_t  l_shift = 0, i, j,
-            l_rem = a_len % BYTES_IN_LINE,
-            l_div = a_len / BYTES_IN_LINE;
-
     for (i = 0; i < l_div; ++i) {
+print_line:
         l_shift = snprintf(l_ret, HEX_LINE_LEN, "  +%04lx:  ", i * BYTES_IN_LINE);
-        //l_ret[l_shift] = ' ';
-        memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
-        for (j = 0; j < BYTES_IN_LINE; ++j, ++l_data) {
-            high    = (*l_data) >> 4;
-            low     = (*l_data) & 0x0f;
-
-            l_ret[l_shift + j*3]            = high + ((high < 10) ? '0' : 'a' - 10);
-            l_ret[l_shift + j*3 + 1]        = low + ((low < 10) ? '0' : 'a' - 10);
-            l_ret[l_shift + BYTES_IN_LINE*3 + 2 + j] = isprint(*l_data) ? *l_data : '.';
+        //memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
+        for (j = 0; j < l_line_len; ++j, ++a_data) {
+            short l_pos = l_shift + j*3;
+            l_ret[l_pos] = hex[*a_data >> 4];
+            l_ret[++l_pos] = hex[*a_data & 0x0f];
+            l_ret[l_shift + BYTES_IN_LINE*3 + 2 + j] = isprint(*a_data) ? *a_data : '.';
         }
         l_ret[HEX_LINE_LEN - 1] = '\n';
         l_ret += HEX_LINE_LEN;
     }
-
-    if (l_rem) {
-        l_shift = snprintf(l_ret, HEX_LINE_LEN, "  +%04lx:  ", i * BYTES_IN_LINE);
-        //l_ret[l_shift] = ' ';
-        memset(l_ret + l_shift, ' ', HEX_LINE_LEN - l_shift);
-        for (j = 0; j < l_rem; ++j, ++l_data) {
-            high    = (*l_data) >> 4;
-            low     = (*l_data) & 0x0f;
-
-            l_ret[l_shift + j*3]            = high + ((high < 10) ? '0' : 'a' - 10);
-            l_ret[l_shift + j*3 + 1]        = low + ((low < 10) ? '0' : 'a' - 10);
-            l_ret[l_shift + BYTES_IN_LINE*3 + 2 + j] = isprint(*l_data) ? *l_data : '.';
-        }
-        l_ret[HEX_LINE_LEN - 1] = '\n';
-        l_ret += HEX_LINE_LEN;
+    if (( l_line_len = l_rem )) {
+        l_rem = 0;
+        goto print_line;
     }
     return l_ret - l_len;
 #undef HEX_LINE_LEN
@@ -796,32 +775,33 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
  * @return
  */
 char *dap_strerror(long long err) {
+    static _Thread_local char s_error[LAST_ERROR_MAX] = {'\0'};
 #ifdef DAP_OS_WINDOWS
-    *s_last_error = '\0';
+    *s_error = '\0';
     DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
-                  NULL, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_last_error, LAST_ERROR_MAX, NULL);
+                  NULL, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_error, LAST_ERROR_MAX, NULL);
     if (l_len)
-        *(s_last_error + l_len - 1) = '\0';
+        *(s_error + l_len - 1) = '\0';
     else
 #else
-    if ( strerror_r(err, s_last_error, LAST_ERROR_MAX) )
+    if ( strerror_r(err, s_error, LAST_ERROR_MAX) )
 #endif
-        snprintf(s_last_error, LAST_ERROR_MAX, "Unknown error code %lld", err);
-    return s_last_error;
+        snprintf(s_error, LAST_ERROR_MAX, "Unknown error code %lld", err);
+    return s_error;
 }
 
 #ifdef DAP_OS_WINDOWS
 char *dap_str_ntstatus(DWORD err) {
+    static _Thread_local char s_nterror[LAST_ERROR_MAX] = {'\0'};
     HMODULE ntdll = GetModuleHandle("ntdll.dll");
     if (!ntdll)
-        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())),
-            s_last_error;
-    *s_last_error = '\0';
+        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())), s_nterror;
+    *s_nterror = '\0';
     DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
-                  ntdll, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_last_error, LAST_ERROR_MAX, NULL);
+                  ntdll, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_nterror, LAST_ERROR_MAX, NULL);
     return ( l_len 
-        ? *(s_last_error + l_len - 1) = '\0'
-        : snprintf(s_last_error, LAST_ERROR_MAX, "Unknown error code %lld", err) ), s_last_error;
+        ? *(s_nterror + l_len - 1) = '\0'
+        : snprintf(s_nterror, LAST_ERROR_MAX, "Unknown error code %lld", err) ), s_nterror;
 }
 #endif
 
@@ -1108,6 +1088,7 @@ size_t dap_bin2hex(char *a_out, const void *a_in, size_t a_len)
         *a_out++ = hex[*l_in >> 4];
         *a_out++ = hex[*l_in++ & 0x0F];
     }
+    *a_out = '\0';
     return a_len;
 }
 
@@ -1564,26 +1545,19 @@ ssize_t dap_writev(dap_file_handle_t a_hf, const char* a_filename, iovec_t const
 }
 
 static void s_dap_common_log_cleanner_interval(void *a_max_size) {
-    size_t l_max_size = *((size_t*)a_max_size);
-    size_t l_log_size = ftell(s_log_file);
-    if (l_log_size == 0){
-        log_it(L_ERROR, "The size of the log file could not be determined; cleaning is impossible.");
-    } else {
-        size_t l_size_mb = l_log_size / 1048576;
-        if (l_size_mb > l_max_size) {
-            char *l_new_file = dap_strdup_printf("%s.old", s_log_file_path);
-            rename(s_log_file_path, l_new_file);
-            if (s_dap_log_open(s_log_file_path)) {
-                log_it(L_CRITICAL, "An error occurred The logging thread was not reopened.");
-            }
-            log_it(L_NOTICE, "log file overwritten.");
-            remove(l_new_file);
-            DAP_DELETE(l_new_file);
-        }
+    size_t  l_max_size = DAP_POINTER_TO_SIZE(a_max_size),
+            l_log_size = ftello(s_log_file);
+    switch (l_log_size) {
+        case -1:    return log_it(L_ERROR, "Can't tell log file size, error %d :\"%s\"", errno, dap_strerror(errno));
+        case 0:     return log_it(L_ERROR, "Log file is empty");
+        default:
+            if ( l_log_size / 1048576 > l_max_size && s_dap_log_open(s_log_file_path, true) )
+                return log_it(L_ERROR, "Can't reopen log file \"%s\"", s_log_file_path);
     }
+    
 }
-void dap_common_enable_cleaner_log(size_t a_timeout, size_t *a_max_size){
-    dap_interval_timer_create(a_timeout, s_dap_common_log_cleanner_interval, a_max_size);
+void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size){
+    dap_interval_timer_create(a_timeout, s_dap_common_log_cleanner_interval, DAP_SIZE_TO_POINTER(a_max_size));
 }
 
 #ifdef __cplusplus

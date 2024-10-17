@@ -81,7 +81,7 @@ static dap_enc_key_type_t   s_stream_get_preferred_encryption_type = DAP_ENC_KEY
 
 static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream);
 
-static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *l_pkt, size_t l_pkt_size);
+static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *l_pkt);
 
 // Callbacks for HTTP client
 static void s_http_client_headers_read(dap_http_client_t * a_http_client, void * a_arg); // Prepare stream when all headers are read
@@ -429,7 +429,6 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
 
     s_stream_delete_from_list(a_stream);
     DAP_DEL_Z(a_stream->buf_fragments);
-    DAP_DEL_Z(a_stream->pkt_buf_in);
     DAP_DELETE(a_stream);
     log_it(L_NOTICE,"Stream connection is over");
 }
@@ -676,96 +675,38 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
 size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream && a_stream->esocket && a_stream->esocket->buf_in, 0);
-
-    byte_t *l_buf_in = a_stream->esocket->buf_in;
-    size_t l_buf_in_size = a_stream->esocket->buf_in_size;
-
-    // Save the received data to stream memory
-    if (!a_stream->pkt_buf_in) {
-        a_stream->pkt_buf_in = DAP_DUP_SIZE(l_buf_in, l_buf_in_size);
-        a_stream->pkt_buf_in_data_size = l_buf_in_size;
-    } else {
-        debug_if(s_dump_packet_headers, L_DEBUG, "dap_stream_data_proc_read() Receive previously unprocessed data %zu bytes + new %zu bytes",
-                                                  a_stream->pkt_buf_in_data_size, l_buf_in_size);
-        // The current data is added to rest of the previous package
-        a_stream->pkt_buf_in = DAP_REALLOC(a_stream->pkt_buf_in, a_stream->pkt_buf_in_data_size + l_buf_in_size);
-        memcpy((byte_t*)a_stream->pkt_buf_in + a_stream->pkt_buf_in_data_size, l_buf_in, l_buf_in_size);
-        // Increase the size of pkt_buf_in
-        a_stream->pkt_buf_in_data_size += l_buf_in_size;
-    }
-    // Switch to stream memory
-    l_buf_in = (byte_t*) a_stream->pkt_buf_in;
-    l_buf_in_size = a_stream->pkt_buf_in_data_size;
-    size_t l_buf_in_left = l_buf_in_size;
-
-    dap_stream_pkt_t *l_pkt = NULL;
-    if(l_buf_in_left >= sizeof(dap_stream_pkt_hdr_t)) {
-        // Now lets see how many packets we have in buffer now
-        while(l_buf_in_left > 0 && (l_pkt = dap_stream_pkt_detect(l_buf_in, l_buf_in_left))) { // Packet signature detected
-            if(l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
-                log_it(L_ERROR, "dap_stream_data_proc_read() Too big packet size %u, drop %zu bytes", l_pkt->hdr.size, l_buf_in_left);
-                // Skip this packet
-                l_buf_in_left = 0;
+    byte_t *l_pos = a_stream->esocket->buf_in, *l_end = l_pos + a_stream->esocket->buf_in_size;
+    size_t l_shift = 0, l_processed_size = 0;
+    while ( l_pos < l_end && (l_pos = memchr( l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos))) ) {
+        if ( (size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t) )
+            break;
+        if ( !memcmp(l_pos, c_dap_stream_sig, sizeof(c_dap_stream_sig)) ) {
+            dap_stream_pkt_t *l_pkt = (dap_stream_pkt_t*)l_pos;
+            if (l_pkt->hdr.size > DAP_STREAM_PKT_SIZE_MAX) {
+                log_it(L_ERROR, "Invalid packet size %u, dump it", l_pkt->hdr.size);
+                l_shift = sizeof(dap_stream_pkt_hdr_t);
+            } else if ( (l_shift = sizeof(dap_stream_pkt_hdr_t) + l_pkt->hdr.size) <= (size_t)(l_end - l_pos) ) {
+                debug_if(s_dump_packet_headers, L_DEBUG, "Processing full packet, size %lu", l_shift);
+                s_stream_proc_pkt_in(a_stream, l_pkt);
+            } else
                 break;
-            }
-
-            size_t l_pkt_offset = (((uint8_t*) l_pkt) - l_buf_in);
-            l_buf_in += l_pkt_offset;
-            l_buf_in_left -= l_pkt_offset;
-
-            size_t l_pkt_size = l_pkt->hdr.size + sizeof(dap_stream_pkt_hdr_t);
-
-            //log_it(L_DEBUG, "read packet offset=%zu size=%zu buf_in_left=%zu)",l_pkt_offset, l_pkt_size, l_buf_in_left);
-
-            // Got the whole package
-            if(l_buf_in_left >= l_pkt_size) {
-                // Process data
-                s_stream_proc_pkt_in(a_stream, (dap_stream_pkt_t*) l_pkt, l_pkt_size);
-                // Go to the next data
-                l_buf_in += l_pkt_size;
-                l_buf_in_left -= l_pkt_size;
-            } else {
-                debug_if(s_dump_packet_headers,L_DEBUG, "Input: Not all stream packet in input (pkt_size=%zu buf_in_left=%zu)", l_pkt_size, l_buf_in_left);
-                break;
-            }
-        }
+            l_pos += l_shift;
+            l_processed_size += l_shift;
+        } else
+            ++l_pos;
     }
-
-    if(l_buf_in_left > 0) {
-        // Save the received data to stream memory for the next piece of data
-        if(!l_pkt) {
-            // pkt header not found, maybe l_buf_in_left is too small to detect pkt header, will do that next time
-            l_pkt = (dap_stream_pkt_t*) l_buf_in;
-            debug_if(s_dump_packet_headers, L_DEBUG, "dap_stream_data_proc_read() left unprocessed data %zu bytes, l_pkt=0", l_buf_in_left);
-        }
-        if(l_pkt) {
-            a_stream->pkt_buf_in_data_size = l_buf_in_left;
-            if(l_pkt != a_stream->pkt_buf_in){
-                memmove(a_stream->pkt_buf_in, l_pkt, a_stream->pkt_buf_in_data_size);
-                //log_it(L_DEBUG, "dap_stream_data_proc_read() l_pkt=%zu != a_stream->pkt_buf_in=%zu", l_pkt, a_stream->pkt_buf_in);
-            }
-
-            debug_if(s_dump_packet_headers,L_DEBUG, "dap_stream_data_proc_read() left unprocessed data %zu bytes", l_buf_in_left);
-        }
-        else {
-            log_it(L_ERROR, "dap_stream_data_proc_read() pkt header not found, drop %zu bytes", l_buf_in_left);
-            DAP_DEL_Z(a_stream->pkt_buf_in);
-            a_stream->pkt_buf_in_data_size = 0;
-        }
-    }
-    else {
-        DAP_DEL_Z(a_stream->pkt_buf_in);
-        a_stream->pkt_buf_in_data_size = 0;
-    }
-    return a_stream->esocket->buf_in_size; //a_stream->conn->buf_in_size;
+    debug_if( s_dump_packet_headers && l_processed_size, L_DEBUG, "Processed %lu / %lu bytes",
+              l_processed_size, (size_t)(l_end - a_stream->esocket->buf_in) );
+    return l_processed_size;
 }
 
 /**
  * @brief stream_proc_pkt_in
  * @param sid
  */
-static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pkt, size_t a_pkt_size)
+static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pkt)
 {
+    size_t a_pkt_size = sizeof(dap_stream_pkt_hdr_t) + a_pkt->hdr.size;
     bool l_is_clean_fragments = false;
     a_stream->is_active = true;
 
@@ -1019,10 +960,11 @@ int s_stream_add_to_hashtable(dap_stream_t *a_stream)
 void s_stream_delete_from_list(dap_stream_t *a_stream)
 {
     dap_return_if_fail(a_stream);
-    if ( pthread_rwlock_wrlock(&s_streams_lock) == EDEADLK ) {
-        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
-        return;
-    }
+    int lock = pthread_rwlock_wrlock(&s_streams_lock);
+    assert(lock != EDEADLK);
+    if ( lock == EDEADLK )
+        return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
+
     dap_stream_t *l_stream = NULL;
     if (a_stream->prev)
         DL_DELETE(s_streams, a_stream);
@@ -1048,10 +990,10 @@ int dap_stream_add_to_list(dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream, -1);
     int l_ret = 0;
-    if ( pthread_rwlock_wrlock(&s_streams_lock) == EDEADLK ) {
-        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
-        return -666;
-    }
+    int lock = pthread_rwlock_wrlock(&s_streams_lock);
+    assert(lock != EDEADLK);
+    if ( lock == EDEADLK )
+        return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), -666;
     DL_APPEND(s_streams, a_stream);
     if (a_stream->authorized)
         l_ret = s_stream_add_to_hashtable(a_stream);
@@ -1070,10 +1012,11 @@ dap_events_socket_uuid_t dap_stream_find_by_addr(dap_stream_node_addr_t *a_addr,
     dap_return_val_if_fail(a_addr && a_addr->uint64, 0);
     dap_stream_t *l_auth_stream = NULL;
     dap_events_socket_uuid_t l_ret = 0;
-    if ( pthread_rwlock_rdlock(&s_streams_lock) == EDEADLK ) {
-        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
-        return 0;
-    }
+    int lock = pthread_rwlock_rdlock(&s_streams_lock);
+    assert(lock != EDEADLK);
+    if ( lock == EDEADLK )
+        return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), 0;
+
     HASH_FIND(hh, s_authorized_streams, a_addr, sizeof(*a_addr), l_auth_stream);
     if (l_auth_stream) {
         if (a_worker)
@@ -1091,10 +1034,11 @@ dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr)
     dap_return_val_if_fail(a_addr, l_ret);
     dap_stream_t *l_stream;
 
-    if ( pthread_rwlock_rdlock(&s_streams_lock) == EDEADLK ) {
-        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
-        return NULL;
-    }
+    int lock = pthread_rwlock_rdlock(&s_streams_lock);
+    assert(lock != EDEADLK);
+    if ( lock == EDEADLK )
+        return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), NULL;
+
     DL_FOREACH(s_streams, l_stream) {
         if (!l_stream->authorized || a_addr->uint64 != l_stream->node.uint64)
             continue;
@@ -1170,10 +1114,11 @@ static void s_stream_fill_info(dap_stream_t *a_stream, dap_stream_info_t *a_out_
 dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a_count)
 {
     dap_return_val_if_pass(!a_cluster && !s_streams, NULL);
-    if ( pthread_rwlock_rdlock(&s_streams_lock) == EDEADLK ) {
-        log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
-        return NULL;
-    }
+    int lock = pthread_rwlock_rdlock(&s_streams_lock);
+    assert(lock != EDEADLK);
+    if ( lock == EDEADLK )
+        return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), NULL;
+
     dap_stream_t *it = NULL;
     size_t l_streams_count = 0, i = 0;
     if (a_cluster) {
@@ -1187,7 +1132,7 @@ dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a
         pthread_rwlock_unlock(&s_streams_lock);
         return NULL;
     }
-    dap_stream_info_t *l_ret = DAP_NEW_Z_SIZE(dap_stream_info_t, sizeof(dap_stream_info_t) * l_streams_count);
+    dap_stream_info_t *l_ret = DAP_NEW_Z_COUNT(dap_stream_info_t, l_streams_count);
     if (!l_ret) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         if (a_cluster)

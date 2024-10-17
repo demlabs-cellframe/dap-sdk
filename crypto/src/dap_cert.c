@@ -604,7 +604,7 @@ char *dap_cert_dump(dap_cert_t *a_cert)
 const char *dap_cert_get_folder(int a_n_folder_path)
 {
     char **l_p = utarray_eltptr(s_cert_folders, (u_int)a_n_folder_path);
-    return *l_p;
+    return l_p ? *l_p : ( log_it(L_ERROR, "No default cert path, check \"ca_folders\" in cellframe-node.cfg"), NULL );
 }
 
 
