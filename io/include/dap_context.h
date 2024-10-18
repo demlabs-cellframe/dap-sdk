@@ -158,7 +158,7 @@ void dap_context_wait(dap_context_t * a_context);
  * @brief dap_context_current Get current context
  * @return Returns current context(if present, if not returns NULL)
  */
-static dap_context_t* dap_context_current();
+dap_context_t* dap_context_current();
 
 /// ALL THIS FUNCTIONS ARE UNSAFE AND SHOULD BE MOVED TO DAP_WORKER SUBTYPE! CALL THEM ONLY INSIDE THEIR OWN CONTEXT!!
 

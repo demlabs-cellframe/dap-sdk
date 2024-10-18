@@ -113,7 +113,7 @@ void dap_context_deinit()
 {
 }
 
-static dap_context_t* dap_context_current() {
+dap_context_t* dap_context_current() {
     return s_context;
 }
 
