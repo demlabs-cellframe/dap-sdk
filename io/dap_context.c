@@ -86,19 +86,15 @@
 #include "dap_proc_thread.h"
 #include "dap_worker.h"
 
-pthread_key_t g_dap_context_pth_key; // Thread-specific object with pointer on current context
+static _Thread_local dap_context_t *s_context = NULL;
 
 static void *s_context_thread(void *arg); // Context thread
-
-pthread_rwlock_t s_contexts_rwlock = PTHREAD_RWLOCK_INITIALIZER;
-dap_list_t * s_contexts = NULL;
 /**
  * @brief dap_context_init
  * @return
  */
 int dap_context_init()
 {
-    pthread_key_create(&g_dap_context_pth_key,NULL);
 #ifdef DAP_OS_UNIX
     struct rlimit l_fdlimit;
     if (getrlimit(RLIMIT_NOFILE, &l_fdlimit))
@@ -113,14 +109,12 @@ int dap_context_init()
     return 0;
 }
 
-void dap_context_current_print(pthread_key_t g_dap_context_pth_key)
-{
-        log_it(L_ATT, "[!] Not found data by key %d in LTS", g_dap_context_pth_key);
-}
-
 void dap_context_deinit()
 {
-    pthread_key_delete(g_dap_context_pth_key);
+}
+
+static dap_context_t* dap_context_current() {
+    return s_context;
 }
 
 /**
@@ -138,10 +132,6 @@ dap_context_t * dap_context_new(int a_type)
    l_context->id = s_context_id_max;
    l_context->type = a_type;
    s_context_id_max++;
-
-   pthread_rwlock_wrlock(&s_contexts_rwlock);
-   s_contexts = dap_list_prepend(s_contexts,l_context);
-   pthread_rwlock_unlock(&s_contexts_rwlock);
    return l_context;
 }
 
@@ -262,7 +252,9 @@ static void *s_context_thread(void *a_arg)
     dap_context_msg_run_t * l_msg = (dap_context_msg_run_t*) a_arg;
     dap_context_t * l_context = l_msg->context;
     assert(l_context);
-
+    if (s_context)
+        return log_it( L_ERROR, "Context %d already bound to current thread", s_context->id ), NULL;
+    s_context = l_context;
     l_context->cpu_id = l_msg->cpu_id;
     int l_priority = l_msg->priority;
 #ifdef DAP_OS_WINDOWS
@@ -320,8 +312,6 @@ static void *s_context_thread(void *a_arg)
         pthread_setschedparam(pthread_self(), l_sched_policy, &l_sched_params);;
     }
 #endif // DAP_OS_WINDOWS
-
-    pthread_setspecific(g_dap_context_pth_key, l_context);
     // Now we're running and initalized for sure, so we can assign flags to the current context
     l_context->running_flags = l_msg->flags;
     l_context->is_running = true;
@@ -353,11 +343,6 @@ static void *s_context_thread(void *a_arg)
         l_msg->callback_stopped(l_context, l_msg->callback_arg);
 
     log_it(L_NOTICE,"Exiting context #%u", l_context->id);
-
-    // Removes from the list
-    pthread_rwlock_wrlock(&s_contexts_rwlock);
-    s_contexts = dap_list_remove (s_contexts,l_context);
-    pthread_rwlock_unlock(&s_contexts_rwlock);
 
     // Free memory. Because nobody expected to work with context outside itself it have to be safe
     pthread_cond_destroy(&l_context->started_cond);

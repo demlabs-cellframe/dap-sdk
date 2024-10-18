@@ -45,7 +45,7 @@ typedef struct dap_worker_msg_callback {
     void * arg;
 } dap_worker_msg_callback_t;
 
-pthread_key_t g_pth_key_worker;
+static _Thread_local dap_worker_t* s_worker = NULL;
 
 static time_t s_connection_timeout = 60;    // seconds
 
@@ -58,6 +58,10 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg);
 #endif
 static void s_queue_callback_callback( dap_events_socket_t * a_es, void * a_arg);
 
+dap_worker_t *dap_worker_get_current() {
+    return s_worker;
+}
+
 /**
  * @brief dap_worker_init
  * @param a_threads_count
@@ -68,8 +72,6 @@ int dap_worker_init( size_t a_conn_timeout )
 {
     if ( a_conn_timeout )
       s_connection_timeout = a_conn_timeout;
-
-    pthread_key_create( &g_pth_key_worker, NULL);
 
     return 0;
 }
@@ -99,10 +101,11 @@ static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags)
  */
 int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
 {
-    dap_worker_t *l_worker = (dap_worker_t *) a_arg;
+    dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
-    pthread_setspecific(g_pth_key_worker, l_worker);
-
+    if (s_worker)
+        return log_it(L_ERROR, "Worker %d is already assigned to current thread %u", s_worker->id), -1;
+    s_worker = l_worker;
 #if defined(DAP_EVENTS_CAPS_KQUEUE)
     a_context->kqueue_fd = kqueue();
 
