@@ -141,10 +141,9 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         }
         char * l_res_str = dap_json_rpc_request_handler(a_http_simple->request, a_http_simple);
         enc_http_reply(l_dg, l_res_str, strlen(l_res_str));
-                         DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
-            *return_code = Http_Status_OK;
+        *return_code = Http_Status_OK;
 
-            log_it(L_INFO," New stream session %u initialized",l_stream_session->id);
+        log_it(L_INFO," New stream session %u initialized",l_stream_session->id);
 
 
     }
