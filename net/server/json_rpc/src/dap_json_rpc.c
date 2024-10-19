@@ -106,7 +106,6 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         dap_enc_key_type_t l_enc_type = dap_stream_get_preferred_encryption_type();
         size_t l_enc_key_size = 32;
         int l_enc_headers = 0;
-        bool l_is_legacy=true;
         char *l_tok_tmp;
         char *l_tok = strtok_r(l_dg->url_path, ",", &l_tok_tmp);
         while (l_tok) {
@@ -114,24 +113,16 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             char *l_subtok_value = strchr(l_tok, '=');
             if (l_subtok_value && l_subtok_value != l_subtok_name) {
                 *l_subtok_value++ = '\0';
-                //log_it(L_DEBUG, "tok = %s value =%s",l_subtok_name,l_subtok_value);
                 if (strcmp(l_subtok_name,"channels")==0 ){
                     strncpy(l_channels_str,l_subtok_value,sizeof (l_channels_str)-1);
-                    //log_it(L_DEBUG,"Param: channels=%s",l_channels_str);
                 }else if(strcmp(l_subtok_name,"enc_type")==0){
                     l_enc_type = atoi(l_subtok_value);
-                    //log_it(L_DEBUG,"Param: enc_type=%s",dap_enc_get_type_name(l_enc_type));
-                    l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_key_size")==0){
-                    // TODO impliment enc_key_size influence
                     l_enc_key_size = (size_t) atoi(l_subtok_value);
                     if (l_enc_key_size > l_dg->request_size )
                         l_enc_key_size = 32;
-                    //log_it(L_DEBUG,"Param: enc_key_size=%d", l_enc_key_size);
-                    l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_headers")==0){
                     l_enc_headers = atoi(l_subtok_value);
-                    //log_it(L_DEBUG,"Param: enc_headers=%d",l_enc_headers);
                 }
             }
             l_tok = strtok_r(NULL, ",", &l_tok_tmp);
@@ -150,6 +141,26 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         }
         char * l_res_str = dap_json_rpc_request_handler(a_http_simple->request, a_http_simple);
         enc_http_reply(l_dg, l_res_str, strlen(l_res_str));
+                         DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
+            *return_code = Http_Status_OK;
+
+            log_it(L_INFO," New stream session %u initialized",l_stream_session->id);
+
+
+    }
+
+    enc_http_reply_encode(a_http_simple,l_dg);
+    // dap_enc_ks_delete(l_hdr_key_id->value);
+    enc_http_delegate_delete(l_dg);
+    
+}
+
+            // DAP_DELETE(l_key_str);
+    // }else{
+    //     log_it(L_ERROR,"Wrong request: \"%s\"",l_dg->in_query);
+    //     *return_code = Http_Status_BadRequest;
+    // }
+
         // if(l_new_session){
         //     l_stream_session = dap_stream_session_pure_new();
         //     strncpy(l_stream_session->active_channels, l_channels_str, l_channels_str_size);
@@ -172,20 +183,8 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             //     enc_http_reply_f(l_dg, "%u %s", l_stream_session->id, l_key_str);
             // else
             //     enc_http_reply_f(l_dg, "%u %s %u %d %d", l_stream_session->id, l_key_str,
-            //                            DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
-            *return_code = Http_Status_OK;
+            //   
 
-            log_it(L_INFO," New stream session %u initialized",l_stream_session->id);
-
-            // DAP_DELETE(l_key_str);
-    }else{
-        log_it(L_ERROR,"Wrong request: \"%s\"",l_dg->in_query);
-        *return_code = Http_Status_BadRequest;
-    }
-
-    enc_http_reply_encode(a_http_simple,l_dg);
-    // dap_enc_ks_delete(l_hdr_key_id->value);
-    enc_http_delegate_delete(l_dg);
     // log_it(L_INFO, "Proc exec_cmd request");
     // http_status_code_t *l_return_code = (http_status_code_t*)a_arg;
     // *l_return_code = Http_Status_OK;
@@ -199,5 +198,3 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
     //                                       "this is a string the name of the method, id is a number and params "
     //                                       "is an array that can contain strings, numbers and boolean values.");
     // }
-    
-}

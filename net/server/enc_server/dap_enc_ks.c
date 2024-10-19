@@ -73,6 +73,7 @@ void s_save_key_in_storge(dap_enc_ks_key_t *a_key)
         //dap_memcache_put(a_key->id, l_serialize_key, sizeof (dap_enc_key_serialize_t), s_memcache_expiration_key);
         free(l_serialize_key);
     }
+    log_it(L_MSG, "New ks key added %s", a_key->id);
 }
 
 
@@ -160,6 +161,7 @@ dap_enc_ks_key_t * dap_enc_ks_add(struct dap_enc_key * key)
 
 void dap_enc_ks_delete(const char *id)
 {
+    log_it(L_MSG, "New ks key deleted %s", id);
     dap_enc_ks_key_t *delItem = dap_enc_ks_find(id);
     if (delItem) {
         HASH_DEL (_ks, delItem);
