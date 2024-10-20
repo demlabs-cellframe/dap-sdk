@@ -1544,7 +1544,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
     }
 
 #ifdef DAP_EVENTS_CAPS_IOCP
-    // TODO: reassignment requires some extra calls to WDK:
+    // TODO: reassignment requires some extra calls to WDK. Also there must be no pending I/O ops
     /*
         #include <ntifs.h>
         int len = sizeof(FILE_COMPLETION_INFORMATION);
