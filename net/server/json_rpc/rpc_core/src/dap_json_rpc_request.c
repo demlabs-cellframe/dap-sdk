@@ -252,7 +252,7 @@ int dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, void* response_
 }
 
 
-char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request) {
+char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size){
     uint64_t l_id_response = dap_json_rpc_response_registration(a_request);
     a_request->id = 0;
     dap_cert_t *l_cert = dap_cert_find_by_name("node-addr");
@@ -262,6 +262,6 @@ char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request) {
     }
     dap_json_rpc_http_request_t *l_http_request = dap_json_rpc_request_sign_by_cert(a_request, l_cert);
     size_t l_http_length = 0;
-    char *l_http_str = dap_json_rpc_http_request_serialize(l_http_request, &l_http_length);
+    char *l_http_str = dap_json_rpc_http_request_serialize(l_http_request, output_data_size);
     return l_http_str;
 }
