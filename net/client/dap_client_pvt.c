@@ -1394,7 +1394,7 @@ static void s_stream_es_callback_error(dap_events_socket_t * a_es, int a_error)
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(l_client);
     log_it(L_WARNING, "STREAM error %d: \"%s\"", a_error, dap_strerror(a_error));
 #ifdef DAP_OS_WINDOWS
-    if (a_error == ERROR_SEM_TIMEOUT)
+    if (a_error == WSAETIMEDOUT || a_error == ERROR_SEM_TIMEOUT)
         a_error = ETIMEDOUT;
 #endif
     l_client_pvt->last_error = a_error == ETIMEDOUT

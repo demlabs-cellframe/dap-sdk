@@ -136,9 +136,6 @@ struct {
 #define DAP_CONTEXT_PRIORITY_LOW    -3
 #endif
 
-// pthread kernel object for current context pointer
-extern pthread_key_t g_dap_context_pth_key;
-
 /// Next functions are thread-safe
 int dap_context_init(); // Init
 void dap_context_deinit(); // Deinit
@@ -156,21 +153,12 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
 
 void dap_context_stop_n_kill(dap_context_t * a_context);
 void dap_context_wait(dap_context_t * a_context);
-void dap_context_current_print(pthread_key_t g_dap_context_pth_key);
 
 /**
  * @brief dap_context_current Get current context
  * @return Returns current context(if present, if not returns NULL)
  */
-static inline dap_context_t * dap_context_current()
-{
-    dap_context_t* l_ret = (dap_context_t*) pthread_getspecific(g_dap_context_pth_key);
-    if (!l_ret) {
-        dap_context_current_print(g_dap_context_pth_key);
-    }
-    return l_ret;
-
-}
+dap_context_t* dap_context_current();
 
 /// ALL THIS FUNCTIONS ARE UNSAFE AND SHOULD BE MOVED TO DAP_WORKER SUBTYPE! CALL THEM ONLY INSIDE THEIR OWN CONTEXT!!
 
