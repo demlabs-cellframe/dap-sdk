@@ -149,7 +149,11 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             }
         }
         char * l_res_str = dap_json_rpc_request_handler(a_http_simple->request, a_http_simple);
-        enc_http_reply(l_dg, l_res_str, strlen(l_res_str));
+        if (l_res_str) {
+            enc_http_reply(l_dg, l_res_str, strlen(l_res_str));
+        } else {
+            enc_http_reply(l_dg, "Empty reply", strlen("Empty reply"));
+        }
         // if(l_new_session){
         //     l_stream_session = dap_stream_session_pure_new();
         //     strncpy(l_stream_session->active_channels, l_channels_str, l_channels_str_size);
