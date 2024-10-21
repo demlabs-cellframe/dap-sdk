@@ -182,14 +182,14 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             log_it(L_INFO," New stream session %u initialized",l_stream_session->id);
 
             // DAP_DELETE(l_key_str);
+        enc_http_reply_encode(a_http_simple,l_dg);
+        // dap_enc_ks_delete(l_hdr_key_id->value);
+        enc_http_delegate_delete(l_dg);
     }else{
         log_it(L_ERROR,"Wrong request: \"%s\"",l_dg->in_query);
         *return_code = Http_Status_BadRequest;
     }
 
-    enc_http_reply_encode(a_http_simple,l_dg);
-    // dap_enc_ks_delete(l_hdr_key_id->value);
-    enc_http_delegate_delete(l_dg);
     // log_it(L_INFO, "Proc exec_cmd request");
     // http_status_code_t *l_return_code = (http_status_code_t*)a_arg;
     // *l_return_code = Http_Status_OK;
