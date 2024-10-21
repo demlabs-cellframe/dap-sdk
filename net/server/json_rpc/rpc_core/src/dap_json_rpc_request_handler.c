@@ -41,14 +41,14 @@ int dap_json_rpc_unregistration_request_handler(const char *a_name)
     }
 }
 
-char * dap_json_rpc_request_handler(const char * a_request,  dap_http_simple_t *a_http_simple)
+char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_size)
 {
     if (!a_request) {
         log_it(L_ERROR, "Empty request");
         return NULL;
     }
     log_it(L_INFO, "Processing exec_cmd request");
-    dap_json_rpc_http_request_t* l_http_request = dap_json_rpc_http_request_deserialize(a_request, a_http_simple->request_size);
+    dap_json_rpc_http_request_t* l_http_request = dap_json_rpc_http_request_deserialize(a_request, a_request_size);
     if (!l_http_request) {
         log_it(L_ERROR, "Can't read request");
         return NULL;
@@ -64,7 +64,6 @@ char * dap_json_rpc_request_handler(const char * a_request,  dap_http_simple_t *
     if (!l_sign_correct) {
         dap_json_rpc_response_t* l_no_rights_res = dap_json_rpc_response_create("You have no rights", TYPE_RESPONSE_STRING, l_http_request->request->id);
         char * l_no_rights_res_str = dap_json_rpc_response_to_string(l_no_rights_res);
-        dap_http_simple_reply(a_http_simple, l_no_rights_res_str, strlen(l_no_rights_res_str));
         dap_json_rpc_http_request_free(l_http_request);
         return NULL;
     }

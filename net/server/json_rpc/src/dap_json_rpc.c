@@ -148,7 +148,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
                 return;
             }
         }
-        char * l_res_str = dap_json_rpc_request_handler(a_http_simple->request, a_http_simple);
+        char * l_res_str = dap_json_rpc_request_handler(l_dg->request, l_dg->request_size);
         if (l_res_str) {
             enc_http_reply(l_dg, l_res_str, strlen(l_res_str));
         } else {
