@@ -179,8 +179,6 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             //                            DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
             *return_code = Http_Status_OK;
 
-            log_it(L_INFO," New stream session %u initialized",l_stream_session->id);
-
             // DAP_DELETE(l_key_str);
         enc_http_reply_encode(a_http_simple,l_dg);
         // dap_enc_ks_delete(l_hdr_key_id->value);
