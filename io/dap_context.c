@@ -406,7 +406,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                            : dap_context_find(a_context, (dap_events_socket_uuid_t)ol_entries[i].lpCompletionKey);
                 if ( !l_cur ) {
                     if (ev) log_it(L_ERROR, "Completion of op '%c', but key is null! Lost %lu bytes", op, l_bytes);
-                    else    log_it(L_ERROR, "Completion of op '%c', but key %"DAP_FORMAT_ESOCKET_UUID" not found! Lost %lu bytes",
+                    else    log_it(L_ERROR, "Completion of op '%c', but key "DAP_FORMAT_ESOCKET_UUID" not found! Lost %lu bytes",
                                             op, (dap_events_socket_uuid_t)ol_entries[i].lpCompletionKey, l_bytes);
                     continue;
                 }
