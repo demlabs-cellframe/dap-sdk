@@ -415,27 +415,12 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
  */
 static void s_http_error(dap_events_socket_t * a_es, int a_errno)
 {
-    if (a_es == NULL) {
-        log_it(L_ERROR,"Esocket is NULL for s_http_error");
-        return;
-    }
-    char l_errbuf[128];
-    l_errbuf[0] = '\0';
-    if (a_errno == ETIMEDOUT){
-        strncpy(l_errbuf,"Connection timeout", sizeof (l_errbuf)-1);
-    }else if (a_errno == ECONNREFUSED){
-        strncpy(l_errbuf,"Host is down", sizeof (l_errbuf)-1);
-    }else if (a_errno == EHOSTUNREACH){
-        strncpy(l_errbuf,"No route to host", sizeof (l_errbuf)-1);
-    }else if(a_errno)
-        strerror_r(a_errno, l_errbuf, sizeof (l_errbuf));
-    else
-        strncpy(l_errbuf,"Unknown Error", sizeof (l_errbuf)-1);
+    if (!a_es)
+        return log_it(L_ERROR, "s_http_error: es is null!");
 
-    if (a_es->flags & DAP_SOCK_CONNECTING){
-        log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET" connecting error: %s (code %d)" , a_es->socket, l_errbuf, a_errno);
-    }else
-        log_it(L_WARNING, "Socket %"DAP_FORMAT_SOCKET" error: %s (code %d)", a_es->socket, l_errbuf, a_errno);
+    log_it( L_WARNING, "Socket %"DAP_FORMAT_SOCKET" %serror %d: %s",
+                        a_es->socket, a_es->flags & DAP_SOCK_CONNECTING ? "connecting " : "",
+                        a_errno, dap_strerror(a_errno) );
 
     dap_client_http_t * l_client_http = DAP_CLIENT_HTTP(a_es);
 

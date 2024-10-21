@@ -75,8 +75,6 @@ typedef struct dap_worker_msg_io{
 // Message for callback execution
 typedef void (*dap_worker_callback_t)(void *a_arg);
 
-extern pthread_key_t g_pth_key_worker;
-
 #define DAP_WORKER(a) (dap_worker_t *)((a)->_inheritor)
 
 #ifdef __cplusplus
@@ -86,9 +84,7 @@ extern "C" {
 int dap_worker_init( size_t a_conn_timeout );
 void dap_worker_deinit();
 
-static inline dap_worker_t * dap_worker_get_current(){
-    return (dap_worker_t*) pthread_getspecific(g_pth_key_worker);
-}
+dap_worker_t *dap_worker_get_current();
 #define dap_worker_get_auto dap_events_worker_get_auto
 
 int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socket_t *a_esocket);
