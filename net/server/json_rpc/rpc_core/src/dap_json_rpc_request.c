@@ -113,18 +113,18 @@ static void s_exec_cmd_error_handler(int a_error_code, void *a_arg){
 #endif
 }
 
-static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_request, char **a_response, size_t *a_response_size)
+static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_request, char **a_response_out, size_t *a_response_out_size)
 {
     int ret = 0;
-    char *l_enc_response = NULL;
-    size_t l_enc_response_size = 0;
+    char *l_response = NULL;
+    size_t l_response_size = 0;
 
 #ifdef DAP_OS_WINDOWS
     EnterCriticalSection(&a_exec_cmd_request->wait_crit_sec);
     if (a_exec_cmd_request->error_code != 0) {
         ret = a_exec_cmd_request->error_code;
     } else {
-        l_enc_response = dap_strdup(a_exec_cmd_request->response);
+        l_enc_response = a_exec_cmd_request->response;
         l_enc_response_size = a_exec_cmd_request->response_size;
         ret = 0;
     }
@@ -134,32 +134,31 @@ static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_r
     if (a_exec_cmd_request->error_code != 0) {
         ret = a_exec_cmd_request->error_code;
     } else {
-        l_enc_response = dap_strdup(a_exec_cmd_request->response);
-        l_enc_response_size = a_exec_cmd_request->response_size;
+        l_response = a_exec_cmd_request->response;
+        l_response_size = a_exec_cmd_request->response_size;
         ret = 0; 
     }
     pthread_mutex_unlock(&a_exec_cmd_request->wait_mutex);
 #endif
     if (a_exec_cmd_request->error_code) {
         log_it(L_ERROR, "Response error code: %d", ret);
-        ret - 1;
-    } else if (l_enc_response) {
-        dap_client_pvt_t * l_client_pvt = a_exec_cmd_request->client_pvt;
-        l_client_pvt->http_client = NULL;
-        size_t l_response_dec_size_max = l_enc_response_size ? l_enc_response_size * 2 + 16 : 0;
-        *a_response = l_enc_response_size ? DAP_NEW_Z_SIZE(char, l_response_dec_size_max) : NULL;
-        *a_response_size = 0;
-        if(l_enc_response_size)
-            *a_response_size = dap_enc_decode(l_client_pvt->session_key,
-                                    l_enc_response, l_enc_response_size,
-                                    *a_response, l_response_dec_size_max,
-                                    DAP_ENC_DATA_TYPE_RAW);
-        if (l_enc_response) {
-            DAP_DEL_Z(l_enc_response);
-        }
+        ret = - 1;
+    } else if (l_response) {
+            dap_client_pvt_t * l_client_pvt = a_exec_cmd_request->client_pvt;
+            l_client_pvt->http_client = NULL;
+            size_t l_response_dec_size_max = l_response_size ? l_response_size * 2 + 16 : 0;
+            char * l_response_dec = l_response_size ? DAP_NEW_Z_SIZE(char, l_response_dec_size_max) : NULL;
+            size_t l_response_dec_size = 0;
+            if(l_response_size)
+                l_response_dec_size = dap_enc_decode(l_client_pvt->session_key,
+                        l_response, l_response_size,
+                        l_response_dec, l_response_dec_size_max,
+                        DAP_ENC_DATA_TYPE_RAW);
+            *a_response_out = l_response_dec;
+            *a_response_out_size = l_response_dec_size;
     } else {
         log_it(L_ERROR, "Empty response in json-rpc");
-        ret -2;
+        ret = -2;
     }
 
     return ret;
@@ -178,10 +177,8 @@ static int dap_chain_exec_cmd_list_wait(struct exec_cmd_request *a_exec_cmd_requ
     return LeaveCriticalSection(&a_exec_cmd_request->wait_crit_sec), a_exec_cmd_request->response;     
 #else
     pthread_mutex_lock(&a_exec_cmd_request->wait_mutex);
-    if(a_exec_cmd_request->response) {
-        pthread_mutex_unlock(&a_exec_cmd_request->wait_mutex);
-        return EXEC_CMD_OK;
-    }
+    if(a_exec_cmd_request->response)
+        return pthread_mutex_unlock(&a_exec_cmd_request->wait_mutex), EXEC_CMD_OK;
     struct timespec l_cond_timeout;
 #ifdef DAP_OS_DARWIN
     l_cond_timeout = (struct timespec){ .tv_sec = a_timeout_ms / 1000 };
@@ -199,17 +196,17 @@ static int dap_chain_exec_cmd_list_wait(struct exec_cmd_request *a_exec_cmd_requ
         ) {
         case ETIMEDOUT:
             a_exec_cmd_request->response = "ERR_WAIT_TIMEOUT";
+            return EXEC_CMD_ERR_WAIT_TIMEOUT;
         default:
             break;
         }
     }
-    pthread_mutex_unlock(&a_exec_cmd_request->wait_mutex);
-    return  EXEC_CMD_ERR_WAIT_TIMEOUT;
+    return pthread_mutex_unlock(&a_exec_cmd_request->wait_mutex), EXEC_CMD_OK;
 #endif
 }
 
 char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_request_data_str, size_t a_request_data_size,
-                                char ** a_path, size_t * a_enc_request_size, char * a_custom_header) {
+                                char ** a_path, size_t * a_enc_request_size, char ** a_custom_header) {
 
     const char * l_sub_url = dap_strdup_printf("channels=%s,enc_type=%d,enc_key_size=%zu,enc_headers=%d",
                                                     a_client_internal->client->active_channels,
@@ -276,11 +273,11 @@ char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_re
     }
 
     size_t l_size_required = a_client_internal->session_key_id ? strlen(a_client_internal->session_key_id) + 40 : 40;
-    a_custom_header = DAP_NEW_Z_SIZE(char, l_size_required);
-    size_t l_off = snprintf(a_custom_header, l_size_required, "KeyID: %s\r\n", 
+    *a_custom_header = DAP_NEW_Z_SIZE(char, l_size_required);
+    size_t l_off = snprintf(*a_custom_header, l_size_required, "KeyID: %s\r\n", 
                             a_client_internal->session_key_id ? a_client_internal->session_key_id : "NULL");
     if (a_client_internal->is_close_session)
-        snprintf(a_custom_header + l_off, l_size_required - l_off, "%s\r\n", "SessionCloseAfterRequest: true");
+        snprintf(*a_custom_header + l_off, l_size_required - l_off, "%s\r\n", "SessionCloseAfterRequest: true");
     
     DAP_DEL_Z(l_sub_url_enc);
     DAP_DEL_Z(l_query_enc);
@@ -516,7 +513,7 @@ char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t
     return l_http_str;
 }
 
-int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, char* a_response) {
+int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, char** a_response) {
     size_t l_request_data_size = 0, l_enc_request_size, l_response_size;
     char* l_custom_header = NULL, *l_path = NULL;
 
@@ -524,7 +521,7 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
     if (!l_request_data_str) {
         return -1;
     }
-    char * l_enc_request = dap_json_rpc_enc_request(a_client_internal, l_request_data_str, l_request_data_size, &l_path, &l_enc_request_size, l_custom_header);
+    char * l_enc_request = dap_json_rpc_enc_request(a_client_internal, l_request_data_str, l_request_data_size, &l_path, &l_enc_request_size, &l_custom_header);
     DAP_DEL_Z(l_request_data_str);
     if (!l_enc_request || !l_path) {
         DAP_DEL_Z(l_request_data_str);
@@ -554,23 +551,21 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
     int l_ret = dap_chain_exec_cmd_list_wait(l_exec_cmd_request, 10000);
     switch (l_ret) {
         case EXEC_CMD_OK :{
-            s_exec_cmd_request_get_response(l_exec_cmd_request, &a_response, &l_response_size);
+            s_exec_cmd_request_get_response(l_exec_cmd_request, a_response, &l_response_size);
             log_it(L_DEBUG, "Get response from %s:%d, response size = %lu",
                             a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_response_size);
             break;
         }
         case EXEC_CMD_ERR_WAIT_TIMEOUT: {
-            a_response = dap_strdup("Response time run out ");
+            *a_response = dap_strdup("Response time run out ");
             log_it(L_ERROR, "Response time from %s:%d  run out",
                             a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port);
-            l_response_size = strlen(a_response);
             break;
         }
         case EXEC_CMD_ERR_UNKNOWN : {
-            a_response = dap_strdup("Unknown error in json-rpc");
+            *a_response = dap_strdup("Unknown error in json-rpc");
             log_it(L_ERROR, "Response from %s:%d has unknown error",
                             a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port);
-            l_response_size = strlen(a_response);
             break;
         }
     }

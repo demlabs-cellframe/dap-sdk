@@ -92,10 +92,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
 {
     log_it(L_DEBUG,"Proc enc http exec_cmd request");
     http_status_code_t *return_code = (http_status_code_t *)a_arg;
-
-   // unsigned int proto_version;
     dap_stream_session_t *l_stream_session = NULL;
-   // unsigned int action_cmd=0;
     bool l_new_session = false;
 
     enc_http_delegate_t *l_dg = enc_http_request_decode(a_http_simple);
@@ -114,24 +111,18 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             char *l_subtok_value = strchr(l_tok, '=');
             if (l_subtok_value && l_subtok_value != l_subtok_name) {
                 *l_subtok_value++ = '\0';
-                //log_it(L_DEBUG, "tok = %s value =%s",l_subtok_name,l_subtok_value);
                 if (strcmp(l_subtok_name,"channels")==0 ){
                     strncpy(l_channels_str,l_subtok_value,sizeof (l_channels_str)-1);
-                    //log_it(L_DEBUG,"Param: channels=%s",l_channels_str);
                 }else if(strcmp(l_subtok_name,"enc_type")==0){
                     l_enc_type = atoi(l_subtok_value);
-                    //log_it(L_DEBUG,"Param: enc_type=%s",dap_enc_get_type_name(l_enc_type));
                     l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_key_size")==0){
-                    // TODO impliment enc_key_size influence
                     l_enc_key_size = (size_t) atoi(l_subtok_value);
                     if (l_enc_key_size > l_dg->request_size )
                         l_enc_key_size = 32;
-                    //log_it(L_DEBUG,"Param: enc_key_size=%d", l_enc_key_size);
                     l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_headers")==0){
                     l_enc_headers = atoi(l_subtok_value);
-                    //log_it(L_DEBUG,"Param: enc_headers=%d",l_enc_headers);
                 }
             }
             l_tok = strtok_r(NULL, ",", &l_tok_tmp);
@@ -152,54 +143,13 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         if (l_res_str) {
             enc_http_reply(l_dg, l_res_str, strlen(l_res_str));
         } else {
-            enc_http_reply(l_dg, "Empty reply", strlen("Empty reply"));
+            enc_http_reply(l_dg, "Wrong request", strlen("Wrong request"));
         }
-        // if(l_new_session){
-        //     l_stream_session = dap_stream_session_pure_new();
-        //     strncpy(l_stream_session->active_channels, l_channels_str, l_channels_str_size);
-        //     char *l_key_str = DAP_NEW_Z_SIZE(char, KEX_KEY_STR_SIZE + 1);
-        //     dap_random_string_fill(l_key_str, KEX_KEY_STR_SIZE);
-        //     l_stream_session->key = dap_enc_key_new_generate( l_enc_type, l_key_str, KEX_KEY_STR_SIZE,
-        //                                        NULL, 0, 32);
-        //     dap_http_header_t *l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
-        //     if (l_hdr_key_id) {
-        //         dap_enc_ks_key_t *l_ks_key = dap_enc_ks_find(l_hdr_key_id->value);
-        //         if (!l_ks_key) {
-        //             log_it(L_WARNING, "Key with ID %s not found", l_hdr_key_id->value);
-        //             *return_code = Http_Status_BadRequest;
-        //             return;
-        //         }
-        //         l_stream_session->acl = l_ks_key->acl_list;
-        //         l_stream_session->node = l_ks_key->node_addr;
-        //     }
-            // if (l_is_legacy)
-            //     enc_http_reply_f(l_dg, "%u %s", l_stream_session->id, l_key_str);
-            // else
-            //     enc_http_reply_f(l_dg, "%u %s %u %d %d", l_stream_session->id, l_key_str,
-            //                            DAP_PROTOCOL_VERSION, l_enc_type, l_enc_headers);
-            *return_code = Http_Status_OK;
-
-            // DAP_DELETE(l_key_str);
+        *return_code = Http_Status_OK;
         enc_http_reply_encode(a_http_simple,l_dg);
-        // dap_enc_ks_delete(l_hdr_key_id->value);
         enc_http_delegate_delete(l_dg);
     }else{
         log_it(L_ERROR,"Wrong request");
         *return_code = Http_Status_BadRequest;
     }
-
-    // log_it(L_INFO, "Proc exec_cmd request");
-    // http_status_code_t *l_return_code = (http_status_code_t*)a_arg;
-    // *l_return_code = Http_Status_OK;
-    // strcpy(a_http_simple->reply_mime, "application/json");
-
-    // *l_return_code = Http_Status_OK;
-    // if (!a_http_simple->request){
-    //     *l_return_code = Http_Status_NoContent;
-    //     dap_http_simple_reply_f(a_http_simple, "JSON-RPC request was not formed. "
-    //                                       "JSON-RPC must represent a method containing objects from an object, "
-    //                                       "this is a string the name of the method, id is a number and params "
-    //                                       "is an array that can contain strings, numbers and boolean values.");
-    // }
-    
 }

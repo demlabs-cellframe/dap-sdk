@@ -65,14 +65,9 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
         dap_json_rpc_response_t* l_no_rights_res = dap_json_rpc_response_create("You have no rights", TYPE_RESPONSE_STRING, l_http_request->request->id);
         char * l_no_rights_res_str = dap_json_rpc_response_to_string(l_no_rights_res);
         dap_json_rpc_http_request_free(l_http_request);
-        return NULL;
+        return l_no_rights_res_str;
     }
-    const char* l_response = dap_cli_cmd_exec(l_data_str);
-    // size_t res = dap_http_simple_reply(a_http_simple, (void*)l_response, strlen(l_response));
-    // if (!res)
-    //     log_it(L_ERROR, "Error in json-rpc reply");
-    // log_it(L_INFO, "reply for exec_cmd");
+    char* l_response = dap_cli_cmd_exec(l_data_str);
     dap_json_rpc_http_request_free(l_http_request);
-    // DAP_DEL_Z(l_response);
     return l_response;
 }
