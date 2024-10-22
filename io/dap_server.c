@@ -225,9 +225,9 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
     l_es->listener_port = a_port;
     l_es->addr_storage = l_saddr;
     l_es->type = a_type;
-    dap_worker_add_events_socket_auto(l_es);
+    l_es->no_close = true;
     a_server->es_listeners = dap_list_prepend(a_server->es_listeners, l_es);
-    return 0;
+    return dap_worker_add_events_socket_auto(l_es) ? 0 : -1;
 }
 
 int dap_server_callbacks_set(dap_server_t* a_server, dap_events_socket_callbacks_t *a_server_cbs, dap_events_socket_callbacks_t *a_client_cbs) {
@@ -308,12 +308,9 @@ static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg)
  * @param a_es
  * @param a_arg
  */
-static void s_es_server_error(UNUSED_ARG dap_events_socket_t *a_es, UNUSED_ARG int a_arg)
+static void s_es_server_error(dap_events_socket_t *a_es, int a_errno)
 {
-#ifdef DAP_OS_WINDOWS
-    _set_errno(WSAGetLastError());
-#endif
-    log_it(L_WARNING, "Socket error %d: %s", errno, dap_strerror(errno));
+    log_it(L_WARNING, "Server socket %d error %d: %s", a_es->socket, a_errno, dap_strerror(a_errno));
 }
 
 /**
@@ -377,31 +374,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         log_it(L_ERROR, "Unsupported protocol family %hu from accept()", l_family);
         break;
     }
-#ifdef DAP_EVENTS_CAPS_IOCP
     dap_worker_add_events_socket( dap_events_worker_get_auto(), l_es_new );
-#else
-    dap_worker_t *l_worker = dap_events_worker_get_auto();
-    if (l_worker->id == a_es_listener->worker->id) {
-#ifdef DAP_OS_UNIX
-#if defined (SO_INCOMING_CPU)
-        int l_cpu = l_worker->id;
-        setsockopt(l_es_new->socket , SOL_SOCKET, SO_INCOMING_CPU, &l_cpu, sizeof(l_cpu));
-#endif
-#endif
-        l_es_new->worker = l_worker;
-        l_es_new->last_time_active = time(NULL);
-        if (dap_worker_add_events_socket_unsafe(l_worker, l_es_new)) {
-            log_it(L_CRITICAL, "Can't add event socket's handler to worker i/o poll mechanism with error %d", errno);
-            return;
-        }
-        if (l_es_new->callbacks.new_callback)
-            l_es_new->callbacks.new_callback(l_es_new, NULL);
-        l_es_new->is_initalized = true;
-        debug_if(g_debug_reactor, L_INFO, "Direct addition of esocket %p uuid 0x%"DAP_UINT64_FORMAT_x" to worker %d",
-                 l_es_new, l_es_new->uuid, l_worker->id);
-    } else
-        dap_worker_add_events_socket(l_worker, l_es_new);
-#endif
 }
 
 /**
