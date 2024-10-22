@@ -184,7 +184,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         // dap_enc_ks_delete(l_hdr_key_id->value);
         enc_http_delegate_delete(l_dg);
     }else{
-        log_it(L_ERROR,"Wrong request: \"%s\"",l_dg->in_query);
+        log_it(L_ERROR,"Wrong request");
         *return_code = Http_Status_BadRequest;
     }
 

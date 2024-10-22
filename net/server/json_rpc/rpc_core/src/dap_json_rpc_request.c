@@ -21,9 +21,7 @@ struct exec_cmd_request {
 };
 
 enum ExecCmdRetCode {
-    EXEC_CMD_OK = 1,
-    EXEC_CMD_ERR_NO_SERVER,
-    EXEC_CMDERR_HANDSHAKE,
+    EXEC_CMD_OK = 0,
     EXEC_CMD_ERR_WAIT_TIMEOUT,
     EXEC_CMD_ERR_UNKNOWN
 };
@@ -115,7 +113,7 @@ static void s_exec_cmd_error_handler(int a_error_code, void *a_arg){
 #endif
 }
 
-static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_request, char **a_response, size_t *a_response_size, int timeout_ms)
+static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_request, char **a_response, size_t *a_response_size)
 {
     int ret = 0;
     char *l_enc_response = NULL;
@@ -175,7 +173,7 @@ static int dap_chain_exec_cmd_list_wait(struct exec_cmd_request *a_exec_cmd_requ
         return LeaveCriticalSection(&a_exec_cmd_request->wait_crit_sec), a_exec_cmd_request->response;
     while (!a_exec_cmd_request->response) {
         if ( !SleepConditionVariableCS(&a_exec_cmd_request->wait_cond, &a_exec_cmd_request->wait_crit_sec, a_timeout_ms) )
-            a_exec_cmd_request->response = GetLastError() == ERROR_TIMEOUT ? ERR_WAIT_TIMEOUT : ERR_UNKNOWN;
+            a_exec_cmd_request->response = GetLastError() == ERROR_TIMEOUT ? EXEC_CMD_ERR_WAIT_TIMEOUT : EXEC_CMD_ERR_UNKNOWN;
     }
     return LeaveCriticalSection(&a_exec_cmd_request->wait_crit_sec), a_exec_cmd_request->response;     
 #else
@@ -519,7 +517,7 @@ char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t
 }
 
 int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, char* a_response) {
-    size_t l_request_data_size = 0, l_enc_request_size;
+    size_t l_request_data_size = 0, l_enc_request_size, l_response_size;
     char* l_custom_header = NULL, *l_path = NULL;
 
     char* l_request_data_str =  dap_json_rpc_request_to_http_str(a_request, &l_request_data_size);
@@ -541,6 +539,9 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
         return -3;
     }
 
+    log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %lu",
+                     a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_path, l_enc_request_size);
+
     a_client_internal->http_client = dap_client_http_request(
                                     a_client_internal->worker, 
                                     a_client_internal->client->link_info.uplink_addr,
@@ -552,9 +553,27 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
 
     int l_ret = dap_chain_exec_cmd_list_wait(l_exec_cmd_request, 10000);
     switch (l_ret) {
-        case EXEC_CMD_OK{
-
+        case EXEC_CMD_OK :{
+            s_exec_cmd_request_get_response(l_exec_cmd_request, &a_response, &l_response_size);
+            log_it(L_DEBUG, "Get response from %s:%d, response size = %lu",
+                            a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_response_size);
+            break;
         }
+        case EXEC_CMD_ERR_WAIT_TIMEOUT: {
+            a_response = dap_strdup("Response time run out ");
+            log_it(L_ERROR, "Response time from %s:%d  run out",
+                            a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port);
+            l_response_size = strlen(a_response);
+            break;
+        }
+        case EXEC_CMD_ERR_UNKNOWN : {
+            a_response = dap_strdup("Unknown error in json-rpc");
+            log_it(L_ERROR, "Response from %s:%d has unknown error",
+                            a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port);
+            l_response_size = strlen(a_response);
+            break;
+        }
+    }
 
     DAP_DEL_Z(l_custom_header);
     DAP_DEL_Z(l_path);
