@@ -191,7 +191,9 @@ int json_commands(const char * a_name) {
             "esbocs",
             "global_db",
             "net_srv",
-            "net"
+            "net",
+            "srv_stake",
+            "voting"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
@@ -385,7 +387,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     char *str_cmd = dap_json_rpc_params_get(params, 0);
     int res = -1;
     char *str_reply = NULL;
-    json_object* json_com_res = json_object_new_array();
+    json_object* l_json_arr_reply = json_object_new_array();
     if(l_cmd){
         if(l_cmd->overrides.log_cmd_call)
             l_cmd->overrides.log_cmd_call(str_cmd);
@@ -425,7 +427,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
         // Call the command function
         if(l_cmd &&  l_argv && l_cmd->func) {
             if (json_commands(cmd_name)) {
-                res = l_cmd->func(argc, l_argv, (void *)&json_com_res);
+                res = l_cmd->func(argc, l_argv, (void *)&l_json_arr_reply);
             } else if (l_cmd->arg_func) {
                 res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, (void *)&str_reply);
             } else {
@@ -433,16 +435,16 @@ char *dap_cli_cmd_exec(char *a_req_str) {
             }
         } else if (l_cmd) {
             log_it(L_WARNING,"NULL arguments for input for command \"%s\"", str_cmd);
-            dap_json_rpc_error_add(-1, "NULL arguments for input for command \"%s\"", str_cmd);
+            dap_json_rpc_error_add(l_json_arr_reply, -1, "NULL arguments for input for command \"%s\"", str_cmd);
         }else {
             log_it(L_WARNING,"No function for command \"%s\" but it registred?!", str_cmd);
-            dap_json_rpc_error_add(-1, "No function for command \"%s\" but it registred?!", str_cmd);
+            dap_json_rpc_error_add(l_json_arr_reply, -1, "No function for command \"%s\" but it registred?!", str_cmd);
         }
         // find '-verbose' command
         l_verbose = dap_cli_server_cmd_find_option_val(l_argv, 1, argc, "-verbose", NULL);
         dap_strfreev(l_argv);
     } else {
-        dap_json_rpc_error_add(-1, "can't recognize command=%s", str_cmd);
+        dap_json_rpc_error_add(l_json_arr_reply, -1, "can't recognize command=%s", str_cmd);
         log_it(L_ERROR,"Reply string: \"%s\"", str_reply);
     }
     char *reply_body = NULL;
@@ -454,7 +456,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
         } else {
             json_object* json_res = json_object_new_object();
             json_object_object_add(json_res, "ret_code", json_object_new_int(res));
-            json_object_array_add(json_com_res, json_res);
+            json_object_array_add(l_json_arr_reply, json_res);
         }
     } else
         reply_body = str_reply;
@@ -462,8 +464,8 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     // create response
     dap_json_rpc_response_t* response = reply_body
             ? dap_json_rpc_response_create(reply_body, TYPE_RESPONSE_STRING, request->id)
-            : dap_json_rpc_response_create(json_object_get(json_com_res), TYPE_RESPONSE_JSON, request->id);
-    json_object_put(json_com_res);
+            : dap_json_rpc_response_create(json_object_get(l_json_arr_reply), TYPE_RESPONSE_JSON, request->id);
+    json_object_put(l_json_arr_reply);
     char* response_string = dap_json_rpc_response_to_string(response);
     dap_json_rpc_response_free(response);
     dap_json_rpc_request_free(request);

@@ -104,11 +104,11 @@ bool s_proc_thread_reader(void *a_arg)
     dap_global_db_hash_pkt_t *l_hashes_pkt = dap_global_db_driver_hashes_read(l_group, l_pkt->last_hash);
     if (l_hashes_pkt && l_hashes_pkt->hashes_count) {
         dap_global_db_driver_hash_t *l_hashes_diff = (dap_global_db_driver_hash_t *)(l_hashes_pkt->group_n_hashses + l_hashes_pkt->group_name_len);
-        uint64_t l_time_store_lim_sec = l_cluster->ttl ? l_cluster->ttl : l_cluster->dbi->store_time_limit * 3600ULL;
-        uint64_t l_limit_time = l_time_store_lim_sec ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_sec) : 0;
-        if (l_limit_time) {
+        dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
+        if (l_ttl) {
+            dap_nanotime_t l_now = dap_nanotime_now();
             uint32_t i;
-            for (i = 0; i < l_hashes_pkt->hashes_count && be64toh((l_hashes_diff + i)->bets) < l_limit_time; i++) {
+            for (i = 0; i < l_hashes_pkt->hashes_count && be64toh((l_hashes_diff + i)->bets) + l_ttl < l_now; i++) {
                 if (dap_global_db_driver_hash_is_blank(l_hashes_diff + i))
                     break;
                 dap_store_obj_t l_to_del = { .timestamp = be64toh((l_hashes_diff + i)->bets),
