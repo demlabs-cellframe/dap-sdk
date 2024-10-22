@@ -108,7 +108,7 @@ static void s_exec_cmd_error_handler(int a_error_code, void *a_arg){
 #endif
 }
 
-static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_request, char **a_response_out, size_t *a_response_out_size)
+static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_request, json_object **a_response_out, size_t *a_response_out_size)
 {
     int ret = 0;
     char *l_response = NULL;
@@ -149,7 +149,7 @@ static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_r
                         l_response, l_response_size,
                         l_response_dec, l_response_dec_size_max,
                         DAP_ENC_DATA_TYPE_RAW);
-            *a_response_out = l_response_dec;
+            *a_response_out = json_tokener_parse(l_response_dec);
             *a_response_out_size = l_response_dec_size;
     } else {
         log_it(L_ERROR, "Empty response in json-rpc");
@@ -508,7 +508,7 @@ char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t
     return l_http_str;
 }
 
-int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, char** a_response) {
+int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, json_object** a_response) {
     size_t l_request_data_size = 0, l_enc_request_size, l_response_size;
     char* l_custom_header = NULL, *l_path = NULL;
 
@@ -547,7 +547,9 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
     switch (l_ret) {
         case EXEC_CMD_OK :{
             if (s_exec_cmd_request_get_response(l_exec_cmd_request, a_response, &l_response_size)) {
-                *a_response = dap_strdup_printf("Response error code: %d", l_exec_cmd_request->error_code);
+                char * l_err = dap_strdup_printf("Response error code: %d", l_exec_cmd_request->error_code);
+                *a_response = json_object_new_string(l_err);
+                DAP_DEL_Z(l_err);
                 break;
             }
             log_it(L_DEBUG, "Get response from %s:%d, response size = %lu",
@@ -555,13 +557,13 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
             break;
         }
         case EXEC_CMD_ERR_WAIT_TIMEOUT: {
-            *a_response = dap_strdup("Response time run out ");
+            *a_response = json_object_new_string("Response time run out ");
             log_it(L_ERROR, "Response time from %s:%d  run out",
                             a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port);
             break;
         }
         case EXEC_CMD_ERR_UNKNOWN : {
-            *a_response = dap_strdup("Unknown error in json-rpc");
+            *a_response = json_object_new_string("Unknown error in json-rpc");
             log_it(L_ERROR, "Response from %s:%d has unknown error",
                             a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port);
             break;
