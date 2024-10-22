@@ -1,9 +1,31 @@
 #include "dap_json_rpc_request.h"
 #include "dap_cert.h"
+#include "dap_enc.h"
 
 #define LOG_TAG "dap_json_rpc_request"
 
 static char *s_url_service = NULL;
+
+struct exec_cmd_request {
+    dap_client_pvt_t * client_pvt;
+#ifdef DAP_OS_WINDOWS
+    CONDITION_VARIABLE wait_cond;
+    CRITICAL_SECTION wait_crit_sec;
+#else
+    pthread_cond_t wait_cond;
+    pthread_mutex_t wait_mutex;
+#endif
+    char* response;
+    size_t response_size;
+};
+
+enum ExecCmdRetCode {
+    EXEC_CMD_OK = 1,
+    EXEC_CMD_ERR_NO_SERVER,
+    EXEC_CMDERR_HANDSHAKE,
+    EXEC_CMD_ERR_WAIT_TIMEOUT,
+    EXEC_CMD_ERR_UNKNOWN
+};
 
 int dap_json_rpc_request_init(const char *a_url_service)
 {
@@ -14,6 +36,196 @@ int dap_json_rpc_request_init(const char *a_url_service)
     }
     return 1;
 }
+
+static struct exec_cmd_request* s_exec_cmd_request_init(dap_client_pvt_t * a_client_pvt)
+{
+    struct exec_cmd_request *l_exec_cmd_request = DAP_NEW_Z(struct exec_cmd_request);
+    if (!l_exec_cmd_request)
+        return NULL;
+    l_exec_cmd_request->client_pvt = a_client_pvt;
+#ifdef DAP_OS_WINDOWS
+    InitializeCriticalSection(&l_exec_cmd_request->wait_crit_sec);
+    InitializeConditionVariable(&l_exec_cmd_request->wait_cond);
+#else
+    pthread_mutex_init(&l_exec_cmd_request->wait_mutex, NULL);
+#ifdef DAP_OS_DARWIN
+    pthread_cond_init(&l_exec_cmd_request->wait_cond, NULL);
+#else
+    pthread_condattr_t attr;
+    pthread_condattr_init(&attr);
+    pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
+    pthread_cond_init(&l_exec_cmd_request->wait_cond, &attr);    
+#endif
+#endif
+    return l_exec_cmd_request;
+}
+
+static void s_exec_cmd_response_handler(void *a_response, size_t a_response_size, void *a_arg,
+                                            http_status_code_t http_status_code) {
+    (void)http_status_code;
+    struct exec_cmd_request *l_exec_cmd_request = (struct exec_cmd_request *)a_arg;
+#ifdef DAP_OS_WINDOWS
+    EnterCriticalSection(&l_exec_cmd_request->wait_crit_sec);
+#else
+    pthread_mutex_lock(&l_exec_cmd_request->wait_mutex);
+#endif
+
+    dap_client_pvt_t * l_client_pvt = l_exec_cmd_request->client_pvt;
+    l_client_pvt->http_client = NULL;
+        size_t l_response_dec_size_max = a_response_size ? a_response_size * 2 + 16 : 0;
+        char * l_response_dec = a_response_size ? DAP_NEW_Z_SIZE(char, l_response_dec_size_max) : NULL;
+        size_t l_response_dec_size = 0;
+        if(a_response_size)
+            l_response_dec_size = dap_enc_decode(l_client_pvt->session_key,
+                    a_response, a_response_size,
+                    l_response_dec, l_response_dec_size_max,
+                    DAP_ENC_DATA_TYPE_RAW);
+
+        l_exec_cmd_request->response = l_response_dec;
+        l_exec_cmd_request->response_size = l_response_dec_size;
+#ifdef DAP_OS_WINDOWS
+    WakeConditionVariable(&l_exec_cmd_request->wait_cond);
+    LeaveCriticalSection(&l_exec_cmd_request->wait_crit_sec);
+#else
+    pthread_cond_signal(&l_exec_cmd_request->wait_cond);
+    pthread_mutex_unlock(&l_exec_cmd_request->wait_mutex);
+#endif
+}
+
+static void s_exec_cmd_error_handler(int a_error_code, void *a_arg){
+    struct exec_cmd_request * l_exec_cmd_request = (struct exec_cmd_request *)a_arg;
+#ifdef DAP_OS_WINDOWS
+    EnterCriticalSection(&l_exec_cmd_request->wait_crit_sec);
+    l_exec_cmd_request->response = a_error_code;
+    WakeConditionVariable(&l_exec_cmd_request->wait_cond);
+    LeaveCriticalSection(&l_exec_cmd_request->wait_crit_sec);
+#else
+    pthread_mutex_lock(&l_exec_cmd_request->wait_mutex);
+    // l_exec_cmd_request->response = a_error_code;
+    pthread_cond_signal(&l_exec_cmd_request->wait_cond);
+    pthread_mutex_unlock(&l_exec_cmd_request->wait_mutex);
+#endif
+}
+
+
+static int dap_chain_exec_cmd_list_wait(struct exec_cmd_request *a_exec_cmd_request, int a_timeout_ms) {
+#ifdef DAP_OS_WINDOWS
+    EnterCriticalSection(&a_exec_cmd_request->wait_crit_sec);
+    if (a_exec_cmd_request->response)
+        return LeaveCriticalSection(&a_exec_cmd_request->wait_crit_sec), a_exec_cmd_request->response;
+    while (!a_exec_cmd_request->response) {
+        if ( !SleepConditionVariableCS(&a_exec_cmd_request->wait_cond, &a_exec_cmd_request->wait_crit_sec, a_timeout_ms) )
+            a_exec_cmd_request->response = GetLastError() == ERROR_TIMEOUT ? ERR_WAIT_TIMEOUT : ERR_UNKNOWN;
+    }
+    return LeaveCriticalSection(&a_exec_cmd_request->wait_crit_sec), a_exec_cmd_request->response;     
+#else
+    pthread_mutex_lock(&a_exec_cmd_request->wait_mutex);
+    if(a_exec_cmd_request->response) {
+        pthread_mutex_unlock(&a_exec_cmd_request->wait_mutex);
+        return EXEC_CMD_OK;
+    }
+    struct timespec l_cond_timeout;
+#ifdef DAP_OS_DARWIN
+    l_cond_timeout = (struct timespec){ .tv_sec = a_timeout_ms / 1000 };
+#else
+    clock_gettime(CLOCK_MONOTONIC, &l_cond_timeout);
+    l_cond_timeout.tv_sec += a_timeout_ms / 1000;
+#endif
+    while (!a_exec_cmd_request->response) {
+        switch (
+#ifdef DAP_OS_DARWIN
+            pthread_cond_timedwait_relative_np(&a_exec_cmd_request->wait_cond, &a_exec_cmd_request->wait_mutex, &l_cond_timeout)
+#else
+            pthread_cond_timedwait(&a_exec_cmd_request->wait_cond, &a_exec_cmd_request->wait_mutex, &l_cond_timeout)
+#endif
+        ) {
+        case ETIMEDOUT:
+            a_exec_cmd_request->response = "ERR_WAIT_TIMEOUT";
+        default:
+            break;
+        }
+    }
+    pthread_mutex_unlock(&a_exec_cmd_request->wait_mutex);
+    return  EXEC_CMD_ERR_WAIT_TIMEOUT;
+#endif
+}
+
+char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_request_data_str, size_t a_request_data_size,
+                                char ** a_path, size_t * a_enc_request_size, char * a_custom_header) {
+
+    const char * l_sub_url = dap_strdup_printf("channels=%s,enc_type=%d,enc_key_size=%zu,enc_headers=%d",
+                                                     a_client_internal->client->active_channels, a_client_internal->session_key_type,
+                                                     a_client_internal->session_key_block_size, 0);
+
+    bool is_query_enc = true;
+    const char * a_query = "type=tcp,maxconn=4";
+    size_t l_sub_url_size = l_sub_url ? strlen(l_sub_url) : 0;
+    size_t l_query_size = a_query ? strlen(a_query) : 0;
+
+    size_t l_sub_url_enc_size_max = l_sub_url_size ? (5 * l_sub_url_size + 16) : 0;
+    char *l_sub_url_enc = l_sub_url_size ? DAP_NEW_Z_SIZE(char, l_sub_url_enc_size_max + 1) : NULL;
+
+    size_t l_query_enc_size_max = (is_query_enc) ? (l_query_size * 5 + 16) : l_query_size;
+    char *l_query_enc =
+            (is_query_enc) ? (l_query_size ? DAP_NEW_Z_SIZE(char, l_query_enc_size_max + 1) : NULL) : (char*) a_query;
+
+    size_t l_request_enc_size_max = a_request_data_size ? a_request_data_size * 2 + 16 : 0;
+    char * l_request_enc = a_request_data_size ? DAP_NEW_Z_SIZE(char, l_request_enc_size_max + 1) : NULL;
+
+    a_client_internal->is_encrypted = true;
+    dap_enc_data_type_t l_enc_type;
+
+    if(a_client_internal->uplink_protocol_version >= 21)
+        l_enc_type = DAP_ENC_DATA_TYPE_B64_URLSAFE;
+    else
+        l_enc_type = DAP_ENC_DATA_TYPE_B64;
+
+    if(l_sub_url_size)
+        dap_enc_code(a_client_internal->session_key,
+                l_sub_url, l_sub_url_size,
+                l_sub_url_enc, l_sub_url_enc_size_max,
+                l_enc_type);
+
+    if(is_query_enc && l_query_size)
+        dap_enc_code(a_client_internal->session_key,
+                a_query, l_query_size,
+                l_query_enc, l_query_enc_size_max,
+                l_enc_type);
+
+    if(a_request_data_size)
+        *a_enc_request_size = dap_enc_code(a_client_internal->session_key,
+                a_request_data_str, a_request_data_size,
+                l_request_enc, l_request_enc_size_max,
+                DAP_ENC_DATA_TYPE_RAW);
+
+    size_t l_path_size= l_query_enc_size_max + l_sub_url_enc_size_max + 1;
+    const char * path = "exec_cmd";
+    *a_path = DAP_NEW_Z_SIZE(char, l_path_size);
+    a_path[0] = '\0';
+    if(path) {
+        if(l_sub_url_size){
+            if(l_query_size){
+                snprintf(*a_path, l_path_size, "%s/%s?%s", path?path:"",
+                             l_sub_url_enc?l_sub_url_enc:"",
+                                   l_query_enc?l_query_enc:"");
+            }else{
+                snprintf(*a_path, l_path_size, "%s/%s", path, l_sub_url_enc);
+            }
+        } else {
+            dap_stpcpy(*a_path, path);
+        }
+    }
+
+    size_t l_size_required = a_client_internal->session_key_id ? strlen(a_client_internal->session_key_id) + 40 : 40;
+    a_custom_header = DAP_NEW_Z_SIZE(char, l_size_required);
+    size_t l_off = snprintf(a_custom_header, l_size_required, "KeyID: %s\r\n", a_client_internal->session_key_id ? a_client_internal->session_key_id : "NULL");
+    if (a_client_internal->is_close_session)
+        snprintf(a_custom_header + l_off, l_size_required - l_off, "%s\r\n", "SessionCloseAfterRequest: true");
+    DAP_DEL_Z(l_sub_url_enc);
+    DAP_DEL_Z(l_query_enc);
+    return l_request_enc;
+}
+
 
 dap_json_rpc_request_t *dap_json_rpc_request_creation(const char *a_method, dap_json_rpc_params_t *a_params, int64_t a_id)
 {
@@ -228,30 +440,6 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
     return ret;
 }
 
-int dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, void* response_handler,
-                               const char *a_uplink_addr, const uint16_t a_uplink_port,
-                               dap_client_http_callback_error_t * func_error)
-{
-    uint64_t l_id_response = dap_json_rpc_response_registration(response_handler);
-    a_request->id = 0;
-    dap_cert_t *l_cert = dap_cert_find_by_name("node-addr");
-    if (!l_cert) {
-        log_it(L_ERROR, "Can't load cert");
-        return -1;
-    }
-    dap_json_rpc_http_request_t *l_http_request = dap_json_rpc_request_sign_by_cert(a_request, l_cert);
-    size_t l_http_length = 0;
-    char *l_http_str = dap_json_rpc_http_request_serialize(l_http_request, &l_http_length);
-
-    log_it(L_NOTICE, "Sending request in address: %s", a_uplink_addr);
-    dap_client_http_request(dap_worker_get_auto(), a_uplink_addr, a_uplink_port, "POST", "application/json", "exec_cmd", l_http_str, l_http_length,
-                            NULL, response_handler, func_error, NULL, NULL);
-    DAP_DEL_Z(l_http_request);
-    DAP_DEL_Z(l_http_str);
-    return 0;
-}
-
-
 char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size){
     uint64_t l_id_response = dap_json_rpc_response_registration(a_request);
     a_request->id = 0;
@@ -264,4 +452,27 @@ char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t
     size_t l_http_length = 0;
     char *l_http_str = dap_json_rpc_http_request_serialize(l_http_request, output_data_size);
     return l_http_str;
+}
+
+int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, char* a_response) {
+    size_t l_request_data_size = 0, l_enc_request_size;
+    char* l_custom_header = NULL, *l_path = NULL;
+
+    char* l_request_data_str =  dap_json_rpc_request_to_http_str(a_request, &l_request_data_size);
+    char * l_enc_request = dap_json_rpc_enc_request(a_client_internal, l_request_data_str, l_request_data_size, &l_path, &l_enc_request_size, l_custom_header);
+
+    struct exec_cmd_request* l_exec_cmd_request = s_exec_cmd_request_init(a_client_internal);
+
+    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker, a_client_internal->client->link_info.uplink_addr,
+                        a_client_internal->client->link_info.uplink_port,
+                        "POST", "application/json",
+                        l_path, l_enc_request, l_enc_request_size, NULL,
+                        s_exec_cmd_response_handler, s_exec_cmd_error_handler, l_exec_cmd_request, l_custom_header);
+
+    int l_ret = dap_chain_exec_cmd_list_wait(l_exec_cmd_request, 10000);
+    a_response = dap_strdup(l_exec_cmd_request->response);
+    DAP_DEL_Z(l_custom_header);
+    DAP_DEL_Z(l_path);
+    DAP_DEL_Z(l_enc_request);
+    return 0;
 }

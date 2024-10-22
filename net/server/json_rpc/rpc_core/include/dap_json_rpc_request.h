@@ -26,6 +26,7 @@
 #include "dap_json_rpc_response_handler.h"
 #include "dap_json_rpc_params.h"
 #include "dap_client_http.h"
+#include "dap_client_pvt.h"
 
 #ifdef __cplusplus
 extern "C"{
@@ -84,9 +85,10 @@ char * dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_reques
 void dap_json_rpc_http_request_free(dap_json_rpc_http_request_t *a_http_request);
 char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size);
 
-int dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, void *response_handler,
-                               const char *a_uplink_addr, const uint16_t a_uplink_port,
-                               dap_client_http_callback_error_t * func_error);
+char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_request_data_str, size_t a_request_data_size,
+                                char ** a_path, size_t * a_enc_request_size, char * a_custom_header);
+
+int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, char* a_response);
 
 #ifdef __cplusplus
 }
