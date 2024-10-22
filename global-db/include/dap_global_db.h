@@ -41,7 +41,7 @@ typedef struct dap_global_db_instance {
     const char *driver_name;    // GlobalDB driver name
     dap_list_t *whitelist;
     dap_list_t *blacklist;
-    uint32_t store_time_limit;
+    uint64_t store_time_limit;
     dap_global_db_cluster_t *clusters;
     dap_enc_key_t *signing_key;
     uint32_t sync_idle_time;
