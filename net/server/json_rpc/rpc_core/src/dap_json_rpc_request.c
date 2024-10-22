@@ -124,8 +124,8 @@ static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_r
     if (a_exec_cmd_request->error_code != 0) {
         ret = a_exec_cmd_request->error_code;
     } else {
-        l_enc_response = a_exec_cmd_request->response;
-        l_enc_response_size = a_exec_cmd_request->response_size;
+        l_response = a_exec_cmd_request->response;
+        l_response_size = a_exec_cmd_request->response_size;
         ret = 0;
     }
     LeaveCriticalSection(&a_exec_cmd_request->wait_crit_sec);
@@ -551,7 +551,10 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
     int l_ret = dap_chain_exec_cmd_list_wait(l_exec_cmd_request, 10000);
     switch (l_ret) {
         case EXEC_CMD_OK :{
-            s_exec_cmd_request_get_response(l_exec_cmd_request, a_response, &l_response_size);
+            if (s_exec_cmd_request_get_response(l_exec_cmd_request, a_response, &l_response_size)) {
+                *a_response = dap_strdup_printf("Response error code: %d", l_exec_cmd_request->error_code);
+                break;
+            }
             log_it(L_DEBUG, "Get response from %s:%d, response size = %lu",
                             a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_response_size);
             break;
