@@ -70,11 +70,6 @@ void s_exec_cmd_request_free(struct exec_cmd_request *a_exec_cmd_request)
     pthread_mutex_destroy(&a_exec_cmd_request->wait_mutex);
     pthread_cond_destroy(&a_exec_cmd_request->wait_cond);
 #endif
-
-    if (a_exec_cmd_request->response) {
-        DAP_DEL_Z(a_exec_cmd_request->response);
-    }
-
     DAP_DEL_Z(a_exec_cmd_request);
 }
 
