@@ -124,13 +124,8 @@ static inline int dap_sign_verify_all(dap_sign_t * a_sign, const size_t a_sign_s
     return 0;
 }
 
-/**
- * @brief
- * @return
- */
-DAP_STATIC_INLINE const char *dap_sign_get_str_recommended_types(){
-    return "sig_dil\nsig_falcon\nsig_sphincs\nsig_shipovnik\nsig_multi_chained\n";
-}
+const char *dap_sign_get_str_recommended_types();
+
 // Create sign of data hash with key provided algorythm of signing and hashing (independently)
 dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, size_t a_output_wish_size );
 //Create sign on raw data without hashing. Singing algorythm is key provided
@@ -155,7 +150,7 @@ bool dap_sign_type_is_depricated(dap_sign_type_t a_sign_type);
 dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t *a_signs_count);
 
 void dap_sign_get_information(dap_sign_t *a_sign, dap_string_t *a_str_out, const char *a_hash_out_type);
-void dap_sign_get_information_json(dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type);
+void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type);
 
 #ifdef __cplusplus
 }

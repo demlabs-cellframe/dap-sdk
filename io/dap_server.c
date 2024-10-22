@@ -308,12 +308,9 @@ static void s_es_server_new(dap_events_socket_t *a_es, void * a_arg)
  * @param a_es
  * @param a_arg
  */
-static void s_es_server_error(UNUSED_ARG dap_events_socket_t *a_es, UNUSED_ARG int a_arg)
+static void s_es_server_error(dap_events_socket_t *a_es, int a_errno)
 {
-#ifdef DAP_OS_WINDOWS
-    _set_errno(WSAGetLastError());
-#endif
-    log_it(L_WARNING, "Socket error %d: %s", errno, dap_strerror(errno));
+    log_it(L_WARNING, "Server socket %d error %d: %s", a_es->socket, a_errno, dap_strerror(a_errno));
 }
 
 /**

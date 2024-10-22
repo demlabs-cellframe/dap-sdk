@@ -220,25 +220,24 @@ struct timer_arg {
     dap_proc_thread_t *thread;
     dap_thread_timer_callback_t callback;
     void *callback_arg;
+    bool oneshot;
     dap_queue_msg_priority_t priority;
 };
 
 static bool s_thread_timer_callback(void *a_arg)
 {
     struct timer_arg *l_arg = a_arg;
-    l_arg->callback(l_arg->callback_arg);
-    return false;
+    return l_arg->callback(l_arg->callback_arg), false;
 }
 
 static bool s_timer_callback(void *a_arg)
 {
     struct timer_arg *l_arg = a_arg;
-    dap_proc_thread_callback_add_pri(l_arg->thread, s_thread_timer_callback, l_arg, l_arg->priority);
-    // Repeat after exit
-    return true;
+    // Repeat after exit, if not oneshot
+    return dap_proc_thread_callback_add_pri(l_arg->thread, s_thread_timer_callback, l_arg, l_arg->priority), !l_arg->oneshot;
 }
 
-int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, dap_queue_msg_priority_t a_priority)
+int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_callback_t a_callback, void *a_callback_arg, uint64_t a_timeout_ms, bool a_oneshot, dap_queue_msg_priority_t a_priority)
 {
     dap_return_val_if_fail(a_callback && a_timeout_ms, -1);
     dap_proc_thread_t *l_thread = a_thread ? a_thread : dap_proc_thread_get_auto();
@@ -248,7 +247,9 @@ int dap_proc_thread_timer_add_pri(dap_proc_thread_t *a_thread, dap_thread_timer_
         return -2;
     }
     struct timer_arg *l_timer_arg = DAP_NEW_Z(struct timer_arg);
-    *l_timer_arg = (struct timer_arg){ .thread = l_thread, .callback = a_callback, .callback_arg = a_callback_arg, .priority = a_priority };
+    *l_timer_arg = (struct timer_arg){  .thread = l_thread, .callback = a_callback,
+                                        .callback_arg = a_callback_arg,
+                                        .oneshot = a_oneshot, .priority = a_priority };
     dap_timerfd_start_on_worker(l_worker, a_timeout_ms, s_timer_callback, l_timer_arg);
     return 0;
 }

@@ -34,10 +34,10 @@
 #include "dap_app_cli.h"
 #include "dap_app_cli_net.h"
 #include "dap_app_cli_shell.h"
-
-#ifdef DAP_OS_ANDROID
 #include "dap_json_rpc_params.h"
 #include "dap_json_rpc_request.h"
+
+#ifdef DAP_OS_ANDROID
 #include <android/log.h>
 #include <jni.h>
 static dap_config_t *cli_config;
@@ -152,6 +152,28 @@ static int shell_reader_loop()
         DAP_DELETE(line);
     }
     return 0;
+}
+
+
+char *dap_cli_exec(int argc, char **argv) {
+
+    dap_app_cli_cmd_state_t cmd = {
+            .cmd_name           = (char*)argv[0],
+            .cmd_param_count    = argc - 2,
+            .cmd_param          = argc - 2 > 0 ? (char**)(argv + 1) : NULL
+    };
+
+    char *l_cmd_str = dap_app_cli_form_command(&cmd);
+    dap_json_rpc_params_t *params = dap_json_rpc_params_create();
+    dap_json_rpc_params_add_data(params, l_cmd_str, TYPE_PARAM_STRING);
+    DAP_DELETE(l_cmd_str);
+    dap_json_rpc_request_t *a_request = dap_json_rpc_request_creation(cmd.cmd_name, params, 0);
+    char    *req_str = dap_json_rpc_request_to_json_string(a_request),
+            *res = dap_cli_cmd_exec(req_str);
+    dap_json_rpc_request_free(a_request);
+    return res;
+
+
 }
 
 #ifdef DAP_OS_ANDROID
