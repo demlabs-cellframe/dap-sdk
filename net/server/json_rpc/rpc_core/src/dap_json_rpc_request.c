@@ -570,6 +570,8 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
         }
     }
 
+    s_exec_cmd_request_free(l_exec_cmd_request);
+
     DAP_DEL_Z(l_custom_header);
     DAP_DEL_Z(l_path);
     DAP_DEL_Z(l_enc_request);
