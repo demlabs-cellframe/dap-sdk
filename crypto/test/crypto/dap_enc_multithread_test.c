@@ -127,14 +127,17 @@ int dap_enc_multithread_tests_run(int a_times)
     s_test_multithread("Falcon", s_test_thread_falcon, a_times);
     dap_pass_msg("Falcon multithread tests");
 
-    s_test_multithread("ECDSA", s_test_thread_ecdsa, a_times);
-    dap_pass_msg("ECDSA multithread tests");
-
     s_test_multithread("Sphincs plus", s_test_thread_sphincs, a_times);
     dap_pass_msg("Sphincs plus multithread tests");
 
+#ifdef DAP_ECDSA
+    s_test_multithread("ECDSA", s_test_thread_ecdsa, a_times);
+    dap_pass_msg("ECDSA multithread tests");
+#endif
+#ifdef DAP_SHIPOVNIK
     s_test_multithread("Shipovnik", s_test_thread_shipovnik, a_times);
     dap_pass_msg("Shipovnik plus multithread tests");
+#endif
     dap_cleanup_test_case();
     return 0;
 }

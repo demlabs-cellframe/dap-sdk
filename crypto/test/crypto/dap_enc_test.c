@@ -18,7 +18,10 @@ const dap_enc_key_type_t c_key_type_arr[] = {
 #ifdef DAP_ECDSA
         DAP_ENC_KEY_TYPE_SIG_ECDSA,
 #endif
-        DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK };
+#ifdef DAP_SHIPOVNIK
+        DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK
+#endif
+        };
 const size_t c_keys_count = sizeof(c_key_type_arr) / sizeof(dap_enc_key_type_t);
 
 int get_cur_time_msec();

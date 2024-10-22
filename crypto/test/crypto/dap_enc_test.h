@@ -16,7 +16,9 @@ DAP_STATIC_INLINE const char *s_key_type_to_str(dap_enc_key_type_t a_signe_key_t
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA: return "ECDSA";
 #endif
+#ifdef DAP_SHIPOVNIK
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK: return "SHIPOVNIK";
+#endif
         default: return "UNDEFINED";//DAP_ENC_KEY_TYPE_NULL;
     }
 
