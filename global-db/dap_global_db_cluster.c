@@ -41,13 +41,12 @@ static dap_global_db_cluster_t *s_local_cluster = NULL, *s_global_cluster = NULL
 int dap_global_db_cluster_init()
 {
     dap_global_db_ch_init();
-
     // Pseudo-cluster for global scope
     if ( !(s_global_cluster = dap_global_db_cluster_add(
                 dap_global_db_instance_get_default(), DAP_STREAM_CLUSTER_GLOBAL,
-                *(dap_guuid_t *)&uint128_0, DAP_GLOBAL_DB_CLUSTER_GLOBAL,
-                DAP_GLOBAL_DB_UNCLUSTERED_TTL, true,
-                DAP_GDB_MEMBER_ROLE_GUEST, DAP_CLUSTER_TYPE_SYSTEM)))
+                *(dap_guuid_t*)&uint128_0, DAP_GLOBAL_DB_CLUSTER_GLOBAL,
+                dap_config_get_item_uint64_default(g_config, "global_db", "ttl_unclustered", DAP_GLOBAL_DB_UNCLUSTERED_TTL),
+                true, DAP_GDB_MEMBER_ROLE_GUEST, DAP_CLUSTER_TYPE_SYSTEM)))
         return -1;
 
     // Pseudo-cluster for local scope (unsynced groups).
@@ -94,7 +93,7 @@ void dap_global_db_cluster_broadcast(dap_global_db_cluster_t *a_cluster, dap_sto
 }
 
 dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_dbi, const char *a_mnemonim, dap_guuid_t a_guuid,
-                                                   const char *a_group_mask, uint32_t a_ttl, bool a_owner_root_access,
+                                                   const char *a_group_mask, uint64_t a_ttl, bool a_owner_root_access,
                                                    dap_global_db_role_t a_default_role, dap_cluster_type_t a_links_cluster_role)
 {
     dap_global_db_cluster_t *it;
@@ -140,7 +139,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
         DAP_DELETE(l_cluster);
         return NULL;
     }
-    l_cluster->ttl = (uint64_t)a_ttl * 3600;    // Convert to seconds
+    l_cluster->ttl = a_dbi->store_time_limit ? a_ttl ? dap_min(a_dbi->store_time_limit, a_ttl) : a_dbi->store_time_limit : a_ttl;
     l_cluster->default_role = a_default_role;
     l_cluster->owner_root_access = a_owner_root_access;
     l_cluster->dbi = a_dbi;
