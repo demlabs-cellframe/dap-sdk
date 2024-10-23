@@ -150,6 +150,9 @@ static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_r
                         l_response_dec, l_response_dec_size_max,
                         DAP_ENC_DATA_TYPE_RAW);
             *a_response_out = json_tokener_parse(l_response_dec);
+            if (!*a_response_out && l_response_dec) {
+                *a_response_out = json_object_new_string(l_response_dec);
+            }
             *a_response_out_size = l_response_dec_size;
     } else {
         log_it(L_ERROR, "Empty response in json-rpc");
@@ -543,7 +546,7 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
                                     s_exec_cmd_response_handler, s_exec_cmd_error_handler, 
                                     l_exec_cmd_request, l_custom_header);
 
-    int l_ret = dap_chain_exec_cmd_list_wait(l_exec_cmd_request, 10000);
+    int l_ret = dap_chain_exec_cmd_list_wait(l_exec_cmd_request, 100000);
     switch (l_ret) {
         case EXEC_CMD_OK :{
             if (s_exec_cmd_request_get_response(l_exec_cmd_request, a_response, &l_response_size)) {
