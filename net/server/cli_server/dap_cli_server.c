@@ -399,7 +399,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
         dap_cli_handler_cl_t *l_handler = NULL;
         HASH_FIND_STR(s_json_rpc_handler, cmd_name, l_handler);
         if (!l_handler) {
-            dap_json_rpc_error_add(1, "Can't find handler '%s' method", cmd_name);
+            dap_json_rpc_error_add(l_obj_ret, 1, "Can't find handler '%s' method", cmd_name);
         } else {
             dap_json_rpc_params_t *params = request->params;
             if (params->length == 1){
