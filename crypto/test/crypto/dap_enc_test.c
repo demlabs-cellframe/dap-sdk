@@ -7,6 +7,7 @@
 #include "dap_enc.h"
 
 #define LOG_TAG "dap_crypto_enc_tests"
+#define DAP_CHAIN_ATOM_MAX_SIZE (256 * 1024) // 256 KB
 
 const dap_enc_key_type_t c_key_type_arr[] = {
         DAP_ENC_KEY_TYPE_SIG_TESLA,
@@ -483,6 +484,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     DAP_DELETE(l_sign_tmp);
 
     dap_assert_PIF(sig_buf, "Check serialize->deserialize signature");
+    dap_assert(sig_buf_len < DAP_CHAIN_ATOM_MAX_SIZE, "Check signature size");  // if fail new sign, recheck define in cellframe-sdk
 
     // decode by key2
     switch (key_type) {
