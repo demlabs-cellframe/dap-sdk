@@ -227,7 +227,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
     l_es->type = a_type;
     l_es->no_close = true;
     a_server->es_listeners = dap_list_prepend(a_server->es_listeners, l_es);
-    return !!dap_worker_add_events_socket_auto(l_es);
+    return dap_worker_add_events_socket_auto(l_es) ? 0 : -1;
 }
 
 int dap_server_callbacks_set(dap_server_t* a_server, dap_events_socket_callbacks_t *a_server_cbs, dap_events_socket_callbacks_t *a_client_cbs) {
