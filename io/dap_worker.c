@@ -45,7 +45,7 @@ typedef struct dap_worker_msg_callback {
     void * arg;
 } dap_worker_msg_callback_t;
 
-pthread_key_t g_pth_key_worker;
+static _Thread_local dap_worker_t* s_worker = NULL;
 
 static time_t s_connection_timeout = 60;    // seconds
 
@@ -58,6 +58,10 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg);
 #endif
 static void s_queue_callback_callback( dap_events_socket_t * a_es, void * a_arg);
 
+dap_worker_t *dap_worker_get_current() {
+    return s_worker;
+}
+
 /**
  * @brief dap_worker_init
  * @param a_threads_count
@@ -68,8 +72,6 @@ int dap_worker_init( size_t a_conn_timeout )
 {
     if ( a_conn_timeout )
       s_connection_timeout = a_conn_timeout;
-
-    pthread_key_create( &g_pth_key_worker, NULL);
 
     return 0;
 }
@@ -99,10 +101,11 @@ static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags)
  */
 int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
 {
-    dap_worker_t *l_worker = (dap_worker_t *) a_arg;
+    dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
-    pthread_setspecific(g_pth_key_worker, l_worker);
-
+    if (s_worker)
+        return log_it(L_ERROR, "Worker %d is already assigned to current thread %u", s_worker->id), -1;
+    s_worker = l_worker;
 #if defined(DAP_EVENTS_CAPS_KQUEUE)
     a_context->kqueue_fd = kqueue();
 
@@ -181,15 +184,16 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
 {
     int err = dap_context_add(a_worker->context, a_esocket);
     if (!err) {
-#ifndef DAP_EVENTS_CAPS_IOCP
-        a_esocket->is_initalized = true;
-#endif
         switch (a_esocket->type) {
         case DESCRIPTOR_TYPE_SOCKET_UDP:
         case DESCRIPTOR_TYPE_SOCKET_CLIENT:
         case DESCRIPTOR_TYPE_SOCKET_LISTENING:
             a_esocket->last_time_active = time(NULL);
-        default:;
+#ifdef SO_INCOMING_CPU
+            int l_cpu = a_worker->context->cpu_id;
+            setsockopt(a_esocket->socket , SOL_SOCKET, SO_INCOMING_CPU, &l_cpu, sizeof(l_cpu));
+#endif
+        default: break;
         }
     }
     return err;
@@ -209,11 +213,9 @@ static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
     assert(l_context);
     dap_worker_t * l_worker = a_es->worker;
     assert(l_worker);
+    if (!a_arg)
+        return log_it(L_ERROR,"NULL esocket accepted to add on worker #%u", l_worker->id), -1;
     dap_events_socket_t * l_es_new =(dap_events_socket_t *) a_arg;
-    if (!l_es_new){
-        log_it(L_ERROR,"NULL esocket accepted to add on worker #%u", l_worker->id);
-        return -1;
-    }
 
     debug_if(g_debug_reactor, L_DEBUG, "Added es %p \"%s\" [%s] to worker #%d",
              l_es_new, dap_events_socket_get_type_str(l_es_new),
@@ -234,20 +236,7 @@ static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
             return -2;
         }
 
-    switch( l_es_new->type){
-
-        case DESCRIPTOR_TYPE_SOCKET_UDP:
-        case DESCRIPTOR_TYPE_SOCKET_CLIENT:
-        case DESCRIPTOR_TYPE_SOCKET_LISTENING:{
-            l_es_new->last_time_active = time(NULL);
-#if defined (DAP_OS_UNIX) && defined (SO_INCOMING_CPU)
-            int l_cpu = l_worker->context->cpu_id;
-            setsockopt(l_es_new->socket , SOL_SOCKET, SO_INCOMING_CPU, &l_cpu, sizeof(l_cpu));
-#endif
-        } break;
-        default: {}
-    }
-    if (dap_context_add(l_context, l_es_new)) {
+    if ( dap_worker_add_events_socket_unsafe(l_worker, l_es_new) ) {
         log_it(L_ERROR, "Can't add event socket's handler to worker i/o poll mechanism with error %d", errno);
         return -3;
     }
@@ -261,7 +250,6 @@ static int s_queue_es_add(dap_events_socket_t *a_es, void * a_arg)
         l_es_new->callbacks.worker_assign_callback(l_es_new, l_worker);
 
     l_es_new->is_initalized = true;
-
     return 0;
 }
 
