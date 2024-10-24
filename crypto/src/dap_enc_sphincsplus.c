@@ -89,9 +89,7 @@ int dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg_in,
     DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_bytes(), -3, NULL);
 
     l_sign->sig_params = l_skey->params;
-    int l_ret = sphincsplus_crypto_sign_signature(l_sign->sig_data, &l_sign->sig_len, (const unsigned char *)a_msg_in, a_msg_size, l_skey->data);
-    
-    return l_ret;
+    return sphincsplus_crypto_sign_signature(l_sign->sig_data, &l_sign->sig_len, (const unsigned char *)a_msg_in, a_msg_size, l_skey->data);
 }
 
 size_t dap_enc_sig_sphincsplus_get_sign_msg(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size,

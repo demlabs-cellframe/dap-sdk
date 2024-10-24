@@ -148,7 +148,8 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     DL_APPEND(a_dbi->clusters, l_cluster);
     if (dap_strcmp(DAP_STREAM_CLUSTER_LOCAL, a_mnemonim))
         dap_proc_thread_timer_add(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000);
-    log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s", dap_guuid_to_hex_str(a_guuid), a_group_mask);
+    log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s, TTL %s",
+                    dap_guuid_to_hex_str(a_guuid), a_group_mask, l_cluster->ttl ? dap_itoa(l_cluster->ttl) : "unlimited");
     return l_cluster;
 }
 
