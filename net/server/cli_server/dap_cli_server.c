@@ -395,22 +395,22 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     // command is found
     char *cmd_name = request->method;
     if (is_json_clear_method(cmd_name)) {
-        json_object *l_obj_ret = json_object_new_object();
+        json_object *l_obj_arr_ret = json_object_new_array();
         dap_cli_handler_cl_t *l_handler = NULL;
         HASH_FIND_STR(s_json_rpc_handler, cmd_name, l_handler);
         if (!l_handler) {
-            dap_json_rpc_error_add(l_obj_ret, 1, "Can't find handler '%s' method", cmd_name);
+            dap_json_rpc_error_add(l_obj_arr_ret, 1, "Can't find handler '%s' method", cmd_name);
         } else {
             dap_json_rpc_params_t *params = request->params;
             if (params->length == 1) {
                 json_object *l_obj_params = dap_json_rpc_params_get(params, 0);
-                l_handler->func(l_obj_params, l_obj_ret);
+                l_handler->func(l_obj_params, l_obj_arr_ret);
             }
         }
-        dap_json_rpc_response_t *l_response = dap_json_rpc_response_create(l_obj_ret,
+        dap_json_rpc_response_t *l_response = dap_json_rpc_response_create(json_object_get(l_obj_arr_ret),
                                                                            TYPE_RESPONSE_JSON, request->id);
         char *response_string = dap_json_rpc_response_to_string(l_response);
-        json_object_put(l_obj_ret);
+        json_object_put(l_obj_arr_ret);
         dap_json_rpc_response_free(l_response);
         dap_json_rpc_request_free(request);
         return response_string;
