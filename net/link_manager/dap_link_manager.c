@@ -245,7 +245,7 @@ void dap_link_manager_deinit()
     DL_FOREACH_SAFE(s_link_manager->nets, it, tmp)
         dap_link_manager_remove_net(((dap_managed_net_t *)it->data)->id);
     pthread_rwlock_destroy(&s_link_manager->links_lock);
-    DAP_DELETE(s_link_manager);
+    DAP_DEL_Z(s_link_manager);
 }
 
 /**
