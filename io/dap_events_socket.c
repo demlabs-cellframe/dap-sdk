@@ -1309,14 +1309,20 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
 
         case DESCRIPTOR_TYPE_SOCKET_LISTENING:
         case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
-            if ( (a_es->socket2 = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == INVALID_SOCKET )
+            if ( (a_es->socket2 = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == INVALID_SOCKET ) {
                 log_it(L_ERROR, "Failed to create socket for accept()'ing, errno %d", WSAGetLastError());
-            else {
-                l_err = pfnAcceptEx( a_es->socket, a_es->socket2, (LPVOID)(a_es->buf_in), 0,
-                                     sizeof(SOCKADDR_STORAGE) + 16, sizeof(SOCKADDR_STORAGE) + 16, 
-                                     &bytes, (OVERLAPPED*)ol ) ? ERROR_SUCCESS : WSAGetLastError();
-                func = "AcceptEx";
+                break;
             }
+            u_long l_option = 1;
+            if ( setsockopt(a_es->socket2, SOL_SOCKET, SO_REUSEADDR, (const char*)&l_option, sizeof(int)) < 0 ) {
+                _set_errno( WSAGetLastError() );
+                log_it(L_ERROR, "setsockopt(SO_REUSEADDR) on socket %d failed, error %d: \"%s\"",
+                                a_es->socket2, errno, dap_strerror(errno));
+            }
+            l_err = pfnAcceptEx( a_es->socket, a_es->socket2, (LPVOID)(a_es->buf_in), 0,
+                                 sizeof(SOCKADDR_STORAGE) + 16, sizeof(SOCKADDR_STORAGE) + 16, 
+                                 &bytes, (OVERLAPPED*)ol ) ? ERROR_SUCCESS : WSAGetLastError();
+            func = "AcceptEx";
             break;
 
         case DESCRIPTOR_TYPE_FILE:

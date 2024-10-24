@@ -63,9 +63,7 @@ extern "C" {
 
 int dap_cert_init();
 
-DAP_STATIC_INLINE const char *dap_cert_get_str_recommended_sign(){
-    return "sig_dil\nsig_falcon\nsig_sphincs\nsig_shipovnik\n";
-}
+const char *dap_cert_get_str_recommended_sign();
 
 dap_cert_t *dap_cert_new(const char *a_name);
 int dap_cert_add(dap_cert_t *a_cert);
