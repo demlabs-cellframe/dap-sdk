@@ -76,6 +76,12 @@ void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a
             }
             memcpy(new_param->value_param, a_value, value_size);
             break;
+        case TYPE_PARAM_JSON: {
+            json_object *l_jobj_value = (json_object*)a_value;
+            json_object *l_obj_dist = NULL;
+            json_object_deep_copy(l_jobj_value, &l_obj_dist, NULL);
+            new_param->value_param = l_obj_dist;
+        } break;
         default:
             new_param->value_param = NULL;
             break;
@@ -102,7 +108,11 @@ void dap_json_rpc_params_add_param(dap_json_rpc_params_t *a_params, dap_json_rpc
 
 void dap_json_rpc_param_remove(dap_json_rpc_param_t *param)
 {
-    DAP_DEL_Z(param->value_param);
+    if (param->type == TYPE_PARAM_JSON) {
+        json_object *l_obj = (json_object*)param->value_param;
+        json_object_put(l_obj);
+    } else
+        DAP_DEL_Z(param->value_param);
     DAP_DEL_Z(param);
 }
 
@@ -165,6 +175,10 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *
             case json_type_double: {
                 double l_double_tmp = json_object_get_double(jobj);
                 dap_json_rpc_params_add_data(params, &l_double_tmp, TYPE_PARAM_DOUBLE);
+                break;
+            }
+            case json_type_object: {
+                dap_json_rpc_params_add_data(params, jobj, TYPE_PARAM_JSON);
                 break;
             }
             default:

@@ -29,6 +29,7 @@
 #include "dap_common.h"
 #include "dap_config.h"
 #include "uthash.h"
+#include "json.h"
 
 typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, void **a_str_reply);
 typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, void **a_str_reply);
@@ -79,3 +80,14 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_cli, char **a_appe
 //for json
 int json_commands(const char * a_name);
 char *dap_cli_cmd_exec(char *a_req_str);
+
+/* For using clear json_rpc */
+typedef void (handler_func_cli_t)(json_object *a_params, json_object *a_reply);
+
+typedef struct dap_cli_handler_cl {
+    const char *method;
+    handler_func_cli_t *func;
+    UT_hash_handle hh;
+}dap_cli_handler_cl_t;
+
+void dap_json_rpc_cli_handler_add(const char *a_method, handler_func_cli_t* a_fund);
