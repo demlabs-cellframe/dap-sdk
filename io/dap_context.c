@@ -349,6 +349,7 @@ static void *s_context_thread(void *a_arg)
     pthread_cond_destroy(&l_context->started_cond);
     pthread_mutex_destroy(&l_context->started_mutex);
     DAP_DELETE(l_context);
+    DAP_DELETE(l_msg);
 
     return NULL;
 }
