@@ -354,12 +354,15 @@ bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_ha
  * @param l_sign2
  * @return true or false
  */
-bool dap_sign_compare_pkeys(dap_sign_t *l_sign1, dap_sign_t *l_sign2)
+bool dap_sign_compare_pkeys(dap_sign_t *a_sign1, dap_sign_t *a_sign2)
 {
+    dap_return_val_if_fail(a_sign1 && a_sign2, false);
+    if (a_sign1->header.type.type != a_sign2->header.type.type)
+        return false;
     size_t l_pkey_ser_size1 = 0, l_pkey_ser_size2 = 0;
     // Get public key from sign
-    const uint8_t   *l_pkey_ser1 = dap_sign_get_pkey(l_sign1, &l_pkey_ser_size1),
-                    *l_pkey_ser2 = dap_sign_get_pkey(l_sign2, &l_pkey_ser_size2);
+    const uint8_t   *l_pkey_ser1 = dap_sign_get_pkey(a_sign1, &l_pkey_ser_size1),
+                    *l_pkey_ser2 = dap_sign_get_pkey(a_sign2, &l_pkey_ser_size2);
     return (l_pkey_ser_size1 == l_pkey_ser_size2) && !memcmp(l_pkey_ser1, l_pkey_ser2, l_pkey_ser_size1);
 }
 
