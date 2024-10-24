@@ -7,6 +7,23 @@
 #include "dap_enc.h"
 
 #define LOG_TAG "dap_crypto_enc_tests"
+#define DAP_CHAIN_ATOM_MAX_SIZE (256 * 1024) // 256 KB
+
+const dap_enc_key_type_t c_key_type_arr[] = {
+        DAP_ENC_KEY_TYPE_SIG_TESLA,
+        DAP_ENC_KEY_TYPE_SIG_BLISS,
+        DAP_ENC_KEY_TYPE_SIG_DILITHIUM,
+        // DAP_ENC_KEY_TYPE_SIG_PICNIC,
+        DAP_ENC_KEY_TYPE_SIG_FALCON,
+        DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,
+#ifdef DAP_ECDSA
+        DAP_ENC_KEY_TYPE_SIG_ECDSA,
+#endif
+#ifdef DAP_SHIPOVNIK
+        DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK
+#endif
+        };
+const size_t c_keys_count = sizeof(c_key_type_arr) / sizeof(dap_enc_key_type_t);
 
 int get_cur_time_msec();
 
@@ -218,6 +235,98 @@ void* _read_key_from_file(const char* file_name, size_t key_size)
     return resut_key;
 }
 
+static void test_key_generate_by_seed(dap_enc_key_type_t a_key_type)
+{
+    const size_t seed_size = 1 + random_uint32_t( 1000);
+    uint8_t seed[seed_size];
+    randombytes(seed, seed_size);
+
+    size_t
+        l_priv_key_data_size_1 = 0,
+        l_priv_key_data_size_2 = 0,
+        l_priv_key_data_size_3 = 0,
+        l_priv_key_data_size_4 = 0,
+        l_priv_key_data_size_5 = 0,
+        l_pub_key_data_size_1 = 0,
+        l_pub_key_data_size_2 = 0,
+        l_pub_key_data_size_3 = 0,
+        l_pub_key_data_size_4 = 0,
+        l_pub_key_data_size_5 = 0;
+
+    dap_enc_key_t* l_key_1 = dap_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
+    dap_enc_key_t* l_key_2 = dap_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
+    dap_enc_key_t* l_key_3 = dap_enc_key_new_generate(a_key_type, NULL, 0, NULL, seed_size, 0);
+    dap_enc_key_t* l_key_4 = dap_enc_key_new_generate(a_key_type, NULL, 0, seed, 0, 0);
+    dap_enc_key_t* l_key_5 = dap_enc_key_new_generate(a_key_type, NULL, 0, NULL, 0, 0);
+
+
+    uint8_t *l_priv_key_data_1 = dap_enc_key_serialize_priv_key(l_key_1, &l_priv_key_data_size_1);
+    uint8_t *l_priv_key_data_2 = dap_enc_key_serialize_priv_key(l_key_2, &l_priv_key_data_size_2);
+    uint8_t *l_priv_key_data_3 = dap_enc_key_serialize_priv_key(l_key_3, &l_priv_key_data_size_3);
+    uint8_t *l_priv_key_data_4 = dap_enc_key_serialize_priv_key(l_key_4, &l_priv_key_data_size_4);
+    uint8_t *l_priv_key_data_5 = dap_enc_key_serialize_priv_key(l_key_5, &l_priv_key_data_size_5);
+
+    uint8_t *l_pub_key_data_1 = dap_enc_key_serialize_pub_key(l_key_1, &l_pub_key_data_size_1);
+    uint8_t *l_pub_key_data_2 = dap_enc_key_serialize_pub_key(l_key_2, &l_pub_key_data_size_2);
+    uint8_t *l_pub_key_data_3 = dap_enc_key_serialize_pub_key(l_key_3, &l_pub_key_data_size_3);
+    uint8_t *l_pub_key_data_4 = dap_enc_key_serialize_pub_key(l_key_4, &l_pub_key_data_size_4);
+    uint8_t *l_pub_key_data_5 = dap_enc_key_serialize_pub_key(l_key_5, &l_pub_key_data_size_5);
+
+    dap_assert_PIF(l_priv_key_data_size_1 && l_pub_key_data_size_1 &&
+                    l_priv_key_data_size_2 && l_pub_key_data_size_2 &&
+                    l_priv_key_data_size_3 && l_pub_key_data_size_3 &&
+                    l_priv_key_data_size_4 && l_pub_key_data_size_4 &&
+                    l_priv_key_data_size_5 && l_pub_key_data_size_5 &&
+
+                    l_priv_key_data_1 && l_pub_key_data_1 &&
+                    l_priv_key_data_2 && l_pub_key_data_2 &&
+                    l_priv_key_data_3 && l_pub_key_data_3 &&
+                    l_priv_key_data_4 && l_pub_key_data_4 &&
+                    l_priv_key_data_5 && l_pub_key_data_5,
+                    "Priv and pub data serialisation");
+
+    dap_assert_PIF(l_priv_key_data_size_1 == l_priv_key_data_size_2, "Equal priv_key_data_size");
+    dap_assert_PIF(l_priv_key_data_size_1 == l_priv_key_data_size_3, "Equal priv_key_data_size");
+    dap_assert_PIF(l_priv_key_data_size_1 == l_priv_key_data_size_4, "Equal priv_key_data_size");
+    dap_assert_PIF(l_priv_key_data_size_1 == l_priv_key_data_size_5, "Equal priv_key_data_size");
+
+    dap_assert_PIF(l_pub_key_data_size_1 == l_pub_key_data_size_2, "Equal pub_key_data_size");
+    dap_assert_PIF(l_pub_key_data_size_1 == l_pub_key_data_size_3, "Equal pub_key_data_size");
+    dap_assert_PIF(l_pub_key_data_size_1 == l_pub_key_data_size_4, "Equal pub_key_data_size");
+    dap_assert_PIF(l_pub_key_data_size_1 == l_pub_key_data_size_5, "Equal pub_key_data_size");
+
+    dap_assert_PIF(!memcmp(l_priv_key_data_1, l_priv_key_data_2, l_priv_key_data_size_1), "Equal priv_key_data with same seed");
+    dap_assert_PIF(memcmp(l_priv_key_data_1, l_priv_key_data_3, l_priv_key_data_size_1), "Different priv_key_data with not same seed");
+    dap_assert_PIF(memcmp(l_priv_key_data_1, l_priv_key_data_4, l_priv_key_data_size_1), "Different priv_key_data with not same seed");
+    dap_assert_PIF(memcmp(l_priv_key_data_1, l_priv_key_data_5, l_priv_key_data_size_1), "Different priv_key_data with not same seed");
+
+    dap_assert_PIF(memcmp(l_priv_key_data_3, l_priv_key_data_4, l_priv_key_data_size_1), "Different priv_key_data without seed");
+    dap_assert_PIF(memcmp(l_priv_key_data_3, l_priv_key_data_5, l_priv_key_data_size_1), "Different priv_key_data without seed");
+    dap_assert_PIF(memcmp(l_priv_key_data_4, l_priv_key_data_5, l_priv_key_data_size_1), "Different priv_key_data without seed");
+
+    dap_assert_PIF(!memcmp(l_pub_key_data_1, l_pub_key_data_2, l_pub_key_data_size_1), "Equal pub_key_data with same seed");
+    dap_assert_PIF(memcmp(l_pub_key_data_1, l_pub_key_data_3, l_pub_key_data_size_1), "Different pub_key_data with not same seed");
+    dap_assert_PIF(memcmp(l_pub_key_data_1, l_pub_key_data_4, l_pub_key_data_size_1), "Different pub_key_data with not same seed");
+    dap_assert_PIF(memcmp(l_pub_key_data_1, l_pub_key_data_5, l_pub_key_data_size_1), "Different pub_key_data with not same seed");
+
+    dap_assert_PIF(memcmp(l_pub_key_data_3, l_pub_key_data_4, l_pub_key_data_size_1), "Different pub_key_data without seed");
+    dap_assert_PIF(memcmp(l_pub_key_data_3, l_pub_key_data_5, l_pub_key_data_size_1), "Different pub_key_data without seed");
+    dap_assert_PIF(memcmp(l_pub_key_data_4, l_pub_key_data_5, l_pub_key_data_size_1), "Different pub_key_data without seed");
+
+    dap_enc_key_delete(l_key_1);
+    dap_enc_key_delete(l_key_2);
+    dap_enc_key_delete(l_key_3);
+    dap_enc_key_delete(l_key_4);
+    dap_enc_key_delete(l_key_5);
+
+    DAP_DEL_MULTY(  l_priv_key_data_1, l_pub_key_data_1,
+                    l_priv_key_data_2, l_pub_key_data_2,
+                    l_priv_key_data_3, l_pub_key_data_3,
+                    l_priv_key_data_4, l_pub_key_data_4,
+                    l_priv_key_data_5, l_pub_key_data_5);
+    dap_assert(true, s_key_type_to_str(a_key_type));
+}
+
 /**
  * @key_type may be DAP_ENC_KEY_TYPE_IAES, DAP_ENC_KEY_TYPE_OAES
  */
@@ -375,6 +484,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
     DAP_DELETE(l_sign_tmp);
 
     dap_assert_PIF(sig_buf, "Check serialize->deserialize signature");
+    dap_assert(sig_buf_len < DAP_CHAIN_ATOM_MAX_SIZE, "Check signature size");  // if fail new sign, recheck define in cellframe-sdk
 
     // decode by key2
     switch (key_type) {
@@ -408,46 +518,29 @@ void dap_enc_tests_run() {
     test_encode_decode_raw(500);
     test_encode_decode_raw_b64(500);
     test_encode_decode_raw_b64_url_safe(500);
-    dap_print_module_name("dap_enc serialize->deserialize BLISS");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_BLISS, false);
-    dap_print_module_name("dap_enc serialize->deserialize PICNIC");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_PICNIC, false);
-    dap_print_module_name("dap_enc serialize->deserialize TESLA");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_TESLA, false);
-    dap_print_module_name("dap_enc serialize->deserialize DILITHIUM");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_DILITHIUM, false);
-    dap_print_module_name("dap_enc serialize->deserialize FALCON");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_FALCON, false);
-    dap_print_module_name("dap_enc serialize->deserialize SPHINCSPLUS");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS, false);
-#ifdef DAP_ECDSA
-    dap_print_module_name("dap_enc serialize->deserialize ECDSA");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_ECDSA, false);
-#endif
+
+    dap_print_module_name("key generate by seed");
+    for (size_t i = 0; i < c_keys_count; ++i) {
+        test_key_generate_by_seed(c_key_type_arr[i]);
+    }
+
+    for (size_t i = 0; i < c_keys_count; ++i) {
+        char l_module_name[128] = { 0 };
+        snprintf(l_module_name, sizeof(l_module_name) - 1, "dap_enc serialize->deserialize %s", s_key_type_to_str(c_key_type_arr[i]));
+        dap_print_module_name(l_module_name);
+        test_serialize_deserialize(c_key_type_arr[i], false);
+    }
+
     dap_print_module_name("dap_enc serialize->deserialize IAES");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_IAES, true);
-    dap_print_module_name("dap_enc serialize->deserialize SHIPOVNIK");
-    test_serialize_deserialize(DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK, false);
     dap_print_module_name("dap_enc serialize->deserialize OAES");
     test_serialize_deserialize(DAP_ENC_KEY_TYPE_OAES, true);
 
-    dap_print_module_name("dap_enc_sig serialize->deserialize BLISS");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_BLISS);
-    dap_print_module_name("dap_enc_sig serialize->deserialize PICNIC");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_PICNIC);
-    dap_print_module_name("dap_enc_sig serialize->deserialize TESLA");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_TESLA);
-    dap_print_module_name("dap_enc_sig serialize->deserialize DILITHIUM");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_DILITHIUM);
-    dap_print_module_name("dap_enc_sig serialize->deserialize FALCON");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_FALCON);
-    dap_print_module_name("dap_enc_sig serialize->deserialize SPHINCSPLUS");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS);
-#ifdef DAP_ECDSA
-    dap_print_module_name("dap_enc_sig serialize->deserialize ECDSA");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_ECDSA);
-#endif
-    dap_print_module_name("dap_enc_sig serialize->deserialize SHIPOVNIK");
-    test_serialize_deserialize_pub_priv(DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK);
+    for (size_t i = 0; i < c_keys_count; ++i) {
+        char l_module_name[128] = { 0 };
+        snprintf(l_module_name, sizeof(l_module_name) - 1, "dap_enc_sig serialize->deserialize %s", s_key_type_to_str(c_key_type_arr[i]));
+        dap_print_module_name(l_module_name);
+        test_serialize_deserialize_pub_priv(c_key_type_arr[i]);
+    }
     dap_cleanup_test_case();
 }
