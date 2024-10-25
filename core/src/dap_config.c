@@ -549,12 +549,10 @@ int dap_config_stream_addrs_parse(dap_config_t *a_cfg, const char *a_config, con
         log_it(L_DEBUG, "Start parse stream addrs in cofnig %s section %s", a_config, a_section);
         DAP_NEW_Z_COUNT_RET_VAL(*a_addrs, dap_stream_node_addr_t, *a_addrs_count, -2, NULL);
         for (uint16_t i = 0; i < *a_addrs_count; ++i) {
-            dap_stream_node_addr_t l_addr;
-            if (dap_stream_node_addr_from_str(&l_addr, l_nodes_addrs[i])) {
+            if (dap_stream_node_addr_from_str(*a_addrs + i, l_nodes_addrs[i])) {
                 log_it(L_ERROR, "Incorrect format of %s address \"%s\", fix net config and restart node", a_section, l_nodes_addrs[i]);
                 return -3;
             }
-            (*a_addrs)[i].uint64 = l_addr.uint64;
             log_it(L_DEBUG, "Stream addr " NODE_ADDR_FP_STR " parsed successfully", NODE_ADDR_FP_ARGS_S((*a_addrs)[i]));
         }
     }
