@@ -205,28 +205,24 @@ int dap_notify_server_send_f_mt(const char *a_format, ...)
  */
 static void s_notify_server_callback_queue(dap_events_socket_t * a_es, void * a_arg)
 {
+    size_t l_str_len = a_arg ? strlen((char*)a_arg) : 0;
+    if ( !l_str_len )
+        return;
     pthread_rwlock_rdlock(&s_notify_server_clients_mutex);
     dap_events_socket_handler_hh_t * l_socket_handler = NULL,* l_tmp = NULL;
-    HASH_ITER(hh, s_notify_server_clients, l_socket_handler, l_tmp){
+    HASH_ITER(hh, s_notify_server_clients, l_socket_handler, l_tmp) {
         uint32_t l_worker_id = l_socket_handler->worker_id;
-        if(l_worker_id>= dap_events_thread_get_count()){
+        if ( l_worker_id >= dap_events_thread_get_count() ) {
             log_it(L_ERROR,"Wrong worker id %u for send_inter() function", l_worker_id);
             continue;
         }
-        size_t l_str_len = a_arg? strlen((char*)a_arg): 0;
-        if(l_str_len){
-#ifdef DAP_EVENTS_CAPS_IOCP
-            dap_events_socket_write_mt( dap_events_worker_get(l_worker_id),
-                                       l_socket_handler->uuid, a_arg, l_str_len + 1 );
-#else
-            dap_events_socket_write_inter(a_es->worker->queue_es_io_input[l_worker_id],
-                                          l_socket_handler->uuid,
-                                          a_arg, l_str_len + 1);
-#endif
-        }
+        dap_events_socket_write_mt( dap_events_worker_get(l_worker_id),
+                                    l_socket_handler->uuid, a_arg, l_str_len + 1 );
     }
     pthread_rwlock_unlock(&s_notify_server_clients_mutex);
+#ifdef DAP_EVENTS_CAPS_IOCP
     DAP_DELETE(a_arg);
+#endif
 }
 
 /**
