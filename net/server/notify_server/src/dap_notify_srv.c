@@ -216,13 +216,18 @@ static void s_notify_server_callback_queue(dap_events_socket_t * a_es, void * a_
             log_it(L_ERROR,"Wrong worker id %u for send_inter() function", l_worker_id);
             continue;
         }
+        char *l_arg = 
+#ifdef DAP_EVENTS_CAPS_IOCP
+            a_arg;
+#else
+            DAP_DUP_SIZE(a_arg, l_str_len + 1);
+#endif
+        
         dap_events_socket_write_mt( dap_events_worker_get(l_worker_id),
-                                    l_socket_handler->uuid, a_arg, l_str_len + 1 );
+                                    l_socket_handler->uuid, l_arg, l_str_len + 1 );
     }
     pthread_rwlock_unlock(&s_notify_server_clients_mutex);
-#ifdef DAP_EVENTS_CAPS_IOCP
     DAP_DELETE(a_arg);
-#endif
 }
 
 /**
