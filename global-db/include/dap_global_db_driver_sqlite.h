@@ -30,3 +30,4 @@
 #define DAP_SQLITE_POOL_COUNT                   16
 
 int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_driver_callbacks_t *a_drv_callback);
+void dap_global_db_driver_sqlite_set_attempts_count(uint32_t a_attempts, bool a_force);
