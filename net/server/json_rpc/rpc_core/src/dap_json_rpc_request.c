@@ -438,7 +438,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *d
         return NULL;
     }
 
-    char *l_request_str = DAP_NEW_Z_SIZE(char, l_http_request->header.data_size);
+    char *l_request_str = DAP_NEW_Z_SIZE(char, l_http_request->header.data_size+1);
     if (!l_request_str) {
         DAP_DEL_Z(l_http_request);
         return NULL;
