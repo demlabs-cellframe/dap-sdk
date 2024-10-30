@@ -43,7 +43,7 @@
 #include <sys/stat.h>
 #include <stdarg.h>
 
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
 #include <windows.h>
 #include <io.h>
 #endif
@@ -93,7 +93,7 @@ bool dap_file_test(const char * a_file_path)
 {
     if(!a_file_path)
         return false;
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
     int attr = GetFileAttributesA(a_file_path);
     if(attr != -1 && (attr & FILE_ATTRIBUTE_NORMAL))
         return true;
@@ -117,7 +117,7 @@ bool dap_file_simple_test(const char * a_file_path)
 {
     if(!a_file_path)
         return false;
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
     int attr = GetFileAttributesA(a_file_path);
     if(attr != -1)
         return true;
@@ -141,7 +141,7 @@ bool dap_dir_test(const char * a_dir_path)
 {
     if(!a_dir_path)
         return false;
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
     int attr = GetFileAttributesA(a_dir_path);
     if(attr != -1 && (attr & FILE_ATTRIBUTE_DIRECTORY))
         return true;
@@ -175,7 +175,7 @@ int dap_mkdir_with_parents(const char *a_dir_path)
     memcpy(path, a_dir_path, strlen(a_dir_path));
     char *p;
     // skip the root component if it is present, i.e. the "/" in Unix or "C:\" in Windows
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
     if(((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z'))
             && (path[1] == ':') && DAP_IS_DIR_SEPARATOR(path[2])) {
         p = path + 3;
@@ -198,7 +198,7 @@ int dap_mkdir_with_parents(const char *a_dir_path)
             *p = '\0';
 
         if(!dap_dir_test(path)) {
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
             int result = mkdir(path);
 #else
             int result = mkdir(path, S_IRWXU | S_IRWXG | S_IRWXO);
@@ -252,7 +252,7 @@ char* dap_path_get_basename(const char *a_file_name)
         // string only containing slashes
         return dap_strdup(DAP_DIR_SEPARATOR_S);
 
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
     if (l_last_nonslash == 1 &&
             dap_ascii_isalpha(a_file_name[0]) &&
             a_file_name[1] == ':')
@@ -264,7 +264,7 @@ char* dap_path_get_basename(const char *a_file_name)
     while(l_base >= 0 && !DAP_IS_DIR_SEPARATOR(a_file_name[l_base]))
         l_base--;
 
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
     if (l_base == -1 &&
             dap_ascii_isalpha(a_file_name[0]) &&
             a_file_name[1] == ':')
@@ -304,7 +304,7 @@ bool dap_path_is_absolute(const char *a_file_name)
     if(DAP_IS_DIR_SEPARATOR(a_file_name[0]))
         return true;
 
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
     // Recognize drive letter on native Windows
     if (dap_ascii_isalpha(a_file_name[0]) &&
             a_file_name[1] == ':' && DAP_IS_DIR_SEPARATOR (a_file_name[2]))
@@ -338,7 +338,7 @@ const char *dap_path_skip_root (const char *file_name)
         char *p;
         p = strchr(file_name + 2, DAP_DIR_SEPARATOR);
 
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
       {
         char *q;
         q = strchr (file_name + 2, '/');
@@ -370,7 +370,7 @@ const char *dap_path_skip_root (const char *file_name)
         return (char*) file_name;
     }
 
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
   /* Skip X:\ */
   if (dap_ascii_isalpha (file_name[0]) &&
       file_name[1] == ':' &&
@@ -403,7 +403,7 @@ char* dap_path_get_dirname(const char *a_file_name)
 
     l_base = strrchr(a_file_name, DAP_DIR_SEPARATOR);
 
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
     {
         char *l_q;
         l_q = strrchr (a_file_name, '/');
@@ -414,7 +414,7 @@ char* dap_path_get_dirname(const char *a_file_name)
 
     if(!l_base)
     {
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
         if (dap_ascii_isalpha(a_file_name[0]) && a_file_name[1] == ':')
         {
             char l_drive_colon_dot[4];
@@ -434,7 +434,7 @@ char* dap_path_get_dirname(const char *a_file_name)
     while(l_base > a_file_name && DAP_IS_DIR_SEPARATOR(*l_base))
         l_base--;
 
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
     /* base points to the char before the last slash.
      *
      * In case file_name is the root of a drive (X:\) or a child of the
@@ -503,7 +503,7 @@ void dap_subs_free(dap_list_name_directories_t *subs_list){
 dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
     dap_list_name_directories_t *list = NULL;
     dap_list_name_directories_t *element;
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
     size_t m_size = strlen(a_path_dir);
     char *m_path = DAP_NEW_SIZE(char, m_size + 2);
     memcpy(m_path, a_path_dir, m_size);
@@ -639,7 +639,7 @@ static bool get_contents_stdio(const char *filename, FILE *f, char **contents, s
     return false;
 }
 
-#ifndef _WIN32
+#ifndef DAP_OS_WINDOWS
 
 static bool dap_get_contents_regfile(const char *filename, struct stat *stat_buf, int fd, char **contents,
         size_t *length)
@@ -730,7 +730,7 @@ static bool dap_get_contents_posix(const char *filename, char **contents, size_t
     }
 }
 
-#else  /* _WIN32 */
+#else  /* DAP_OS_WINDOWS */
 
 static bool dap_get_contents_win32(const char *filename, char **contents, size_t *length)
 {
@@ -761,7 +761,7 @@ bool dap_file_get_contents(const char *filename, char **contents, size_t *length
     if(length)
         *length = 0;
 
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
   return dap_get_contents_win32 (filename, contents, length);
 #else
     return dap_get_contents_posix(filename, contents, length);
@@ -940,7 +940,7 @@ char* dap_build_path(const char *separator, const char *first_element, ...)
     return str;
 }
 
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
 
 static char* dap_build_pathname_va(const char *first_element, va_list *args, char **str_array)
 {
@@ -1055,7 +1055,7 @@ static char* dap_build_filename_va(const char *first_argument, va_list *args, ch
 {
     char *str;
 
-#ifndef _WIN32
+#ifndef DAP_OS_WINDOWS
     str = dap_build_path_va(DAP_DIR_SEPARATOR_S, first_argument, args, str_array);
 #else
     str = dap_build_pathname_va(first_argument, args, str_array);
@@ -1269,7 +1269,7 @@ char* dap_canonicalize_filename(const char *filename, const char *relative_to)
  */
 char* dap_get_current_dir(void)
 {
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
 
   char *dir = NULL;
   wchar_t dummy[2], *wdir;
