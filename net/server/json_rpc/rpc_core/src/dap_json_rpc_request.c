@@ -548,7 +548,7 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
                                     s_exec_cmd_response_handler, s_exec_cmd_error_handler, 
                                     l_exec_cmd_request, l_custom_header);
 
-    int l_ret = dap_chain_exec_cmd_list_wait(l_exec_cmd_request, 100000);
+    int l_ret = dap_chain_exec_cmd_list_wait(l_exec_cmd_request, 15000);
     switch (l_ret) {
         case EXEC_CMD_OK :{
             if (s_exec_cmd_request_get_response(l_exec_cmd_request, a_response, &l_response_size)) {
