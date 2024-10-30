@@ -145,6 +145,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         } else {
             enc_http_reply(l_dg, "Wrong request", strlen("Wrong request"));
         }
+        DAP_DEL_Z(l_res_str);
         *return_code = Http_Status_OK;
         enc_http_reply_encode(a_http_simple,l_dg);
         enc_http_delegate_delete(l_dg);

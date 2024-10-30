@@ -69,5 +69,6 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
     }
     char* l_response = dap_cli_cmd_exec(l_data_str);
     dap_json_rpc_http_request_free(l_http_request);
+    DAP_DEL_MULTY(l_data_str);
     return l_response;
 }
