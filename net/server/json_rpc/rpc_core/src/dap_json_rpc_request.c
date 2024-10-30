@@ -151,7 +151,9 @@ static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_r
                         DAP_ENC_DATA_TYPE_RAW);
             *a_response_out = json_tokener_parse(l_response_dec);
             if (!*a_response_out && l_response_dec) {
-                *a_response_out = json_object_new_string(l_response_dec);
+                *a_response_out = json_object_new_string("Can't decode the response, check the access rights on the remote node");
+                log_it(L_DEBUG, "Wrong response %s", json_object_new_string(l_response_dec));
+                DAP_DEL_Z(l_response_dec);
             }
             *a_response_out_size = l_response_dec_size;
     } else {
