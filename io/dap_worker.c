@@ -99,12 +99,12 @@ static void s_event_exit_callback( dap_events_socket_t * a_es, uint64_t a_flags)
  * @param a_arg
  * @return
  */
-int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
+int dap_worker_context_callback_started(dap_context_t *a_context, void *a_arg)
 {
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
     if (s_worker)
-        return log_it(L_ERROR, "Worker %d is already assigned to current thread %u", s_worker->id), -1;
+        return log_it(L_ERROR, "Worker %u is already assigned to current thread", s_worker->id), -1;
     s_worker = l_worker;
 #if defined(DAP_EVENTS_CAPS_KQUEUE)
     a_context->kqueue_fd = kqueue();
