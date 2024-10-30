@@ -312,6 +312,8 @@ void dap_json_rpc_request_free(dap_json_rpc_request_t *request)
 
 dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
 {
+    if (!a_data)
+        return NULL;
     enum json_tokener_error jterr;
     bool err_parse_request = false;
     json_object *jobj = json_tokener_parse_verbose(a_data, &jterr);
@@ -442,12 +444,13 @@ dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *d
         return NULL;
     }
 
-    memcpy(l_request_str, ptr, l_http_request->header.data_size);
+    memcpy(l_request_str, ptr, l_http_request->header.data_size+1);
+    l_request_str[l_http_request->header.data_size] = '\0';
     l_http_request->request = dap_json_rpc_request_from_json(l_request_str);
     DAP_DEL_Z(l_request_str);
 
     if (!l_http_request->request) {
-        log_it(L_ERROR, "Can't parse request from string");
+        log_it(L_ERROR, "Can't parse request from string, length = %lu", l_http_request->header.data_size);
         DAP_DEL_Z(l_http_request);
         return NULL;
     }
