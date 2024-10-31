@@ -131,7 +131,7 @@ static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_r
             *a_response_out = json_tokener_parse(l_response_dec);
             if (!*a_response_out && l_response_dec) {
                 *a_response_out = json_object_new_string("Can't decode the response, check the access rights on the remote node");
-                log_it(L_DEBUG, "Wrong response %s", json_object_new_string(l_response_dec));
+                log_it(L_DEBUG, "Wrong response %s", l_response_dec);
                 DAP_DEL_Z(l_response_dec);
             }
             *a_response_out_size = l_response_dec_size;
@@ -429,7 +429,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *d
     DAP_DEL_Z(l_request_str);
 
     if (!l_http_request->request) {
-        log_it(L_ERROR, "Can't parse request from string, length = %lu", l_http_request->header.data_size);
+        log_it(L_ERROR, "Can't parse request from string, length = %d", l_http_request->header.data_size);
         DAP_DEL_Z(l_http_request);
         return NULL;
     }
