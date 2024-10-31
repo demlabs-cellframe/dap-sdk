@@ -70,7 +70,9 @@ void s_exec_cmd_request_free(struct exec_cmd_request *a_exec_cmd_request)
     pthread_mutex_destroy(&a_exec_cmd_request->wait_mutex);
     pthread_cond_destroy(&a_exec_cmd_request->wait_cond);
 #endif
+    DAP_DEL_Z(a_exec_cmd_request->response);
     DAP_DEL_Z(a_exec_cmd_request);
+
 }
 
 static void s_exec_cmd_response_handler(void *a_response, size_t a_response_size, void *a_arg,
@@ -82,7 +84,7 @@ static void s_exec_cmd_response_handler(void *a_response, size_t a_response_size
 #else
     pthread_mutex_lock(&l_exec_cmd_request->wait_mutex);
 #endif
-    l_exec_cmd_request->response = a_response;
+    l_exec_cmd_request->response = DAP_DUP_SIZE(a_response, a_response_size);
     l_exec_cmd_request->response_size = a_response_size;
 #ifdef DAP_OS_WINDOWS
     WakeConditionVariable(&l_exec_cmd_request->wait_cond);
@@ -111,42 +113,19 @@ static void s_exec_cmd_error_handler(int a_error_code, void *a_arg){
 static int s_exec_cmd_request_get_response(struct exec_cmd_request *a_exec_cmd_request, json_object **a_response_out, size_t *a_response_out_size)
 {
     int ret = 0;
-    char *l_response = NULL;
-    size_t l_response_size = 0;
 
-#ifdef DAP_OS_WINDOWS
-    EnterCriticalSection(&a_exec_cmd_request->wait_crit_sec);
-    if (a_exec_cmd_request->error_code != 0) {
-        ret = a_exec_cmd_request->error_code;
-    } else {
-        l_response = a_exec_cmd_request->response;
-        l_response_size = a_exec_cmd_request->response_size;
-        ret = 0;
-    }
-    LeaveCriticalSection(&a_exec_cmd_request->wait_crit_sec);
-#else
-    pthread_mutex_lock(&a_exec_cmd_request->wait_mutex);
-    if (a_exec_cmd_request->error_code != 0) {
-        ret = a_exec_cmd_request->error_code;
-    } else {
-        l_response = a_exec_cmd_request->response;
-        l_response_size = a_exec_cmd_request->response_size;
-        ret = 0; 
-    }
-    pthread_mutex_unlock(&a_exec_cmd_request->wait_mutex);
-#endif
     if (a_exec_cmd_request->error_code) {
         log_it(L_ERROR, "Response error code: %d", ret);
         ret = - 1;
-    } else if (l_response) {
+    } else if (a_exec_cmd_request->response) {
             dap_client_pvt_t * l_client_pvt = a_exec_cmd_request->client_pvt;
             l_client_pvt->http_client = NULL;
-            size_t l_response_dec_size_max = l_response_size ? l_response_size * 2 + 16 : 0;
-            char * l_response_dec = l_response_size ? DAP_NEW_Z_SIZE(char, l_response_dec_size_max) : NULL;
+            size_t l_response_dec_size_max = a_exec_cmd_request->response_size ? a_exec_cmd_request->response_size * 2 + 16 : 0;
+            char * l_response_dec = a_exec_cmd_request->response_size ? DAP_NEW_Z_SIZE(char, l_response_dec_size_max) : NULL;
             size_t l_response_dec_size = 0;
-            if(l_response_size)
+            if(a_exec_cmd_request->response_size)
                 l_response_dec_size = dap_enc_decode(l_client_pvt->session_key,
-                        l_response, l_response_size,
+                        a_exec_cmd_request->response, a_exec_cmd_request->response_size,
                         l_response_dec, l_response_dec_size_max,
                         DAP_ENC_DATA_TYPE_RAW);
             *a_response_out = json_tokener_parse(l_response_dec);
