@@ -78,7 +78,7 @@ int dap_notify_server_init()
     }
     s_notify_server_queue = dap_events_socket_create_type_queue_ptr_mt(dap_events_worker_get_auto(), s_notify_server_callback_queue);
     uint32_t l_workers_count = dap_events_thread_get_count();
-    DAP_NEW_Z_COUNT_RET_VAL(s_notify_server_queue_inter, dap_events_socket_t*, l_workers_count, -2, NULL);
+    s_notify_server_queue_inter = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_events_socket_t*, l_workers_count, -2);
     for (uint32_t i = 0; i < l_workers_count; ++i) {
         s_notify_server_queue_inter[i] = dap_events_socket_queue_ptr_create_input(s_notify_server_queue);
         dap_events_socket_assign_on_worker_mt(s_notify_server_queue_inter[i], dap_events_worker_get(i));
@@ -136,7 +136,7 @@ int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char * a_format,.
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return -1;
     }
-    vsprintf(l_str, a_format, ap_copy);
+    vsnprintf(l_str, l_str_size, a_format, ap_copy);
     va_end(ap_copy);
     int l_ret = dap_events_socket_queue_ptr_send_to_input(l_input, l_str);
     DAP_DELETE(l_str);
@@ -184,7 +184,7 @@ int dap_notify_server_send_f_mt(const char *a_format, ...)
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return -1;
     }
-    vsprintf(l_str, a_format, ap_copy);
+    vsnprintf(l_str, l_str_size, a_format, ap_copy);
     va_end(ap_copy);
 
     if (s_notify_data_user_callback) s_notify_data_user_callback(l_str);

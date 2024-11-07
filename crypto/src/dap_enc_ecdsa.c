@@ -77,8 +77,8 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const v
 // sanity check
     dap_return_if_pass(!a_key);
 // memory alloc
-    DAP_NEW_Z_RET(a_key->priv_key_data, ecdsa_private_key_t, NULL);
-    DAP_NEW_Z_RET(a_key->pub_key_data, ecdsa_public_key_t, a_key->priv_key_data);
+    a_key->priv_key_data = DAP_NEW_Z_RET_IF_FAIL(ecdsa_private_key_t);
+    a_key->pub_key_data = DAP_NEW_Z_RET_IF_FAIL(ecdsa_public_key_t, a_key->priv_key_data);
     ecdsa_context_t *l_ctx = s_context_create();
     if (!l_ctx) {
         log_it(L_ERROR, "Error creating ECDSA context in generating key pair");
@@ -157,8 +157,7 @@ int dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key *l_key, const void *a_msg, 
 uint8_t *dap_enc_sig_ecdsa_write_public_key(const void *a_public_key, size_t *a_buflen_out)
 {
     dap_return_val_if_pass(!a_public_key, NULL);
-    byte_t *l_buf = NULL;
-    DAP_NEW_Z_SIZE_RET_VAL(l_buf, byte_t, ECDSA_PKEY_SERIALIZED_SIZE, NULL, NULL);
+    byte_t *l_buf = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(byte_t, ECDSA_PKEY_SERIALIZED_SIZE, NULL);
 
     ecdsa_context_t *l_ctx = s_context_create();
 
@@ -182,12 +181,11 @@ void *dap_enc_sig_ecdsa_read_public_key(const uint8_t* a_buf, size_t a_buflen) {
 // sanity check
     dap_return_val_if_pass(!a_buf || a_buflen != ECDSA_PKEY_SERIALIZED_SIZE, NULL);
 // memory alloc
-    ecdsa_public_key_t *l_public_key = NULL;
-    DAP_NEW_Z_RET_VAL(l_public_key, ecdsa_public_key_t, NULL, NULL);
+    ecdsa_public_key_t *l_public_key = DAP_NEW_Z_RET_VAL_IF_FAIL(ecdsa_public_key_t, NULL);
     ecdsa_context_t *l_ctx = s_context_create();
     if (!l_ctx || secp256k1_ec_pubkey_parse(l_ctx, l_public_key, a_buf, a_buflen ) != 1) {
         log_it(L_CRITICAL, "Failed to deserialize pkey");
-        DAP_DEL_Z(l_public_key);
+        DAP_DELETE(l_public_key);
     }
     return l_public_key;
 }
@@ -195,8 +193,7 @@ void *dap_enc_sig_ecdsa_read_public_key(const uint8_t* a_buf, size_t a_buflen) {
 uint8_t *dap_enc_sig_ecdsa_write_signature(const void *a_sign, size_t *a_sign_len)
 {
     dap_return_val_if_pass(!a_sign || !a_sign_len, NULL);
-    byte_t *l_ret = NULL;
-    DAP_NEW_Z_SIZE_RET_VAL(l_ret, byte_t, sizeof(ecdsa_signature_t), NULL, NULL);
+    byte_t *l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(byte_t, sizeof(ecdsa_signature_t), NULL);
     ecdsa_context_t *l_ctx = s_context_create();
     if (!l_ctx || secp256k1_ecdsa_signature_serialize_compact(l_ctx, l_ret, (const ecdsa_signature_t*)a_sign) != 1) {
         log_it(L_ERROR, "Failed to serialize sign");
@@ -208,9 +205,7 @@ uint8_t *dap_enc_sig_ecdsa_write_signature(const void *a_sign, size_t *a_sign_le
 void *dap_enc_sig_ecdsa_read_signature(const uint8_t *a_buf, size_t a_buflen)
 {
     dap_return_val_if_pass(!a_buf || a_buflen != sizeof(ecdsa_signature_t), NULL);
-    ecdsa_signature_t *l_ret = NULL;
-    DAP_NEW_Z_RET_VAL(l_ret, ecdsa_signature_t, NULL, NULL);
-
+    ecdsa_signature_t *l_ret = DAP_NEW_Z_RET_VAL_IF_FAIL(ecdsa_signature_t, NULL);
     ecdsa_context_t *l_ctx = s_context_create();
     if (!l_ctx || secp256k1_ecdsa_signature_parse_compact(l_ctx, l_ret, a_buf) != 1) {
         log_it(L_ERROR, "Failed to deserialize sign");

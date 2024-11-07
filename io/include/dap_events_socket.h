@@ -30,7 +30,6 @@ typedef int SOCKET;
 #else
 #include <ws2tcpip.h>
 #include <mq.h>
-#define INVALID_SOCKET (SOCKET)(~0)
 #endif
 
 #include <pthread.h>

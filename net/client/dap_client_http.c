@@ -385,25 +385,22 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         l_client_http->is_header_read = false;
 
         // received not enough data
-        if(l_client_http->content_length
-                > (l_client_http->response_size - l_client_http->header_length)) {
+        if ( l_client_http->content_length > l_client_http->response_size - l_client_http->header_length )
             return;
-        }else{
-            // process data
-            if(l_client_http->response_callback)
-                l_client_http->response_callback(
-                        l_client_http->response + l_client_http->header_length,
-                        l_client_http->content_length,
-                        l_client_http->callbacks_arg, s_extract_http_code(
-                                l_client_http->response, l_client_http->response_size));
-            l_client_http->response_size -= l_client_http->header_length;
-            l_client_http->response_size -= l_client_http->content_length;
-            l_client_http->header_length = 0;
-            l_client_http->content_length = 0;
-            l_client_http->were_callbacks_called = true;
-            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-        }
-
+        // process data
+        l_client_http->response[dap_min(l_client_http->response_size, l_client_http->response_size_max - 1)] = '\0';
+        if(l_client_http->response_callback)
+            l_client_http->response_callback(
+                    l_client_http->response + l_client_http->header_length,
+                    l_client_http->content_length,
+                    l_client_http->callbacks_arg, s_extract_http_code(
+                            l_client_http->response, l_client_http->response_size));
+        l_client_http->response_size -= l_client_http->header_length;
+        l_client_http->response_size -= l_client_http->content_length;
+        l_client_http->header_length = 0;
+        l_client_http->content_length = 0;
+        l_client_http->were_callbacks_called = true;
+        a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
     }
 }
 

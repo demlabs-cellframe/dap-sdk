@@ -68,8 +68,7 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
     if (!l_items_number)
         return NULL;
 
-    dap_global_db_legacy_list_t *l_db_legacy_list;
-    DAP_NEW_Z_RET_VAL(l_db_legacy_list, dap_global_db_legacy_list_t, NULL, NULL);
+    dap_global_db_legacy_list_t *l_db_legacy_list = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_global_db_legacy_list_t, NULL);
     l_db_legacy_list->groups = l_db_legacy_list->current_group = l_groups;
     l_db_legacy_list->items_rest = l_db_legacy_list->items_number = l_items_number;
 

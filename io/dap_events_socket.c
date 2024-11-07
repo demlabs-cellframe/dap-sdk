@@ -1187,7 +1187,7 @@ void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
     }
     if ( a_esocket->fd2 > 0 )
         closesocket(a_esocket->fd2);
-    a_esocket->fd = a_esocket->fd2 = INVALID_SOCKET;
+    a_esocket->socket = a_esocket->socket2 = INVALID_SOCKET;
 }
 
 /**

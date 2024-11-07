@@ -46,6 +46,7 @@
 #ifdef DAP_OS_WINDOWS
 #include <windows.h>
 #include <io.h>
+#define realpath(abs_path, rel_path) _fullpath((rel_path), (abs_path), PATH_MAX)
 #endif
 
 #include "dap_common.h"
@@ -299,19 +300,12 @@ char* dap_path_get_basename(const char *a_file_name)
  */
 bool dap_path_is_absolute(const char *a_file_name)
 {
-    dap_return_val_if_fail(a_file_name != NULL, false);
-
-    if(DAP_IS_DIR_SEPARATOR(a_file_name[0]))
-        return true;
-
 #ifdef DAP_OS_WINDOWS
-    // Recognize drive letter on native Windows
-    if (dap_ascii_isalpha(a_file_name[0]) &&
-            a_file_name[1] == ':' && DAP_IS_DIR_SEPARATOR (a_file_name[2]))
-    return true;
+    return a_file_name && strlen(a_file_name) >= 3 
+        && dap_ascii_isalpha(a_file_name[0]) && a_file_name[1] == ':' && DAP_IS_DIR_SEPARATOR (a_file_name[2]);
+#else
+    return a_file_name && dap_ascii_isalpha(*a_file_name);
 #endif
-
-    return false;
 }
 
 /**
@@ -464,7 +458,7 @@ char* dap_path_get_dirname(const char *a_file_name)
         {
             l_len = (uint32_t) strlen (a_file_name) + 1;
             l_base = DAP_NEW_SIZE (char, l_len + 1);
-            strcpy (l_base, a_file_name);
+            strncpy (l_base, a_file_name, l_len - 1);
             l_base[l_len-1] = DAP_DIR_SEPARATOR;
             l_base[l_len] = 0;
             return l_base;
@@ -571,6 +565,7 @@ const char* dap_path_get_ext(const char *a_filename)
     return NULL ;
 }
 
+#if 0
 static bool get_contents_stdio(const char *filename, FILE *f, char **contents, size_t *length)
 {
     char buf[4096];
@@ -767,7 +762,46 @@ bool dap_file_get_contents(const char *filename, char **contents, size_t *length
     return dap_get_contents_posix(filename, contents, length);
 #endif
 }
+#endif
 
+char *dap_file_get_contents2(const char *a_filename, size_t *length)
+{
+    dap_return_val_if_fail(length, NULL);
+    if ( !dap_file_test(a_filename) )
+        return log_it(L_ERROR, "File \"%s\" not found"), NULL;
+    int l_err = 0;
+    FILE *f = fopen(a_filename, "rb");
+    if (!f) {
+#ifdef DAP_OS_WINDOWS
+        l_err = GetLastError();
+#else
+        l_err = errno;
+#endif
+        return log_it(L_ERROR, "Can't open file \"%s\", error %d: %s", a_filename, l_err, dap_strerror(l_err)), NULL;
+    }
+    off_t l_size = fseeko(f, 0, SEEK_END) ? ftello(f) : -1;
+    char *l_buffer = NULL;
+    if (l_size <= 0) {
+        log_it(L_ERROR, "Can't get file %s size or file is empty", a_filename);
+        l_err = -3;
+    } else if (!( l_buffer = DAP_NEW_Z_SIZE(char, l_size)) ) {
+        log_it(L_CRITICAL, c_error_memory_alloc);
+        l_err = -4;
+    } else {
+        rewind(f);
+        if ( fread(f, 1, l_size, f) < l_size ) {
+            log_it(L_ERROR, "Can't read full file %s", a_filename);
+            l_err = -5;
+        }
+    }
+    fclose(f);
+    if (l_err) {
+        DAP_DEL_Z(l_buffer);
+        *length = 0;
+    } else
+        *length = l_size;
+    return l_err ? ( DAP_DELETE(l_buffer), NULL ) : l_buffer;
+}
 
 
 
@@ -1126,6 +1160,10 @@ char* dap_build_filename(const char *first_element, ...)
  */
 char* dap_canonicalize_filename(const char *filename, const char *relative_to)
 {
+    char buf[MAX_PATH];
+    snprintf(buf, sizeof(buf), "%s/%s", relative_to, filename);
+    return realpath(buf, NULL);
+#if 0
     char *canon, *input, *output, *after_root, *output_start;
 
     dap_return_val_if_fail(relative_to == NULL || dap_path_is_absolute (relative_to), NULL);
@@ -1238,6 +1276,7 @@ char* dap_canonicalize_filename(const char *filename, const char *relative_to)
     *output = '\0';
 
     return canon;
+#endif
 }
 
 
@@ -1598,9 +1637,9 @@ static bool s_tar_file_add(int a_outfile, const char *a_fname, const char *a_fpa
     union tar_buffer l_buffer;
     if(!a_outfile)
         return false;
-    char *l_filebuf = NULL;
     size_t l_filelen = 0;
-    if(dap_file_get_contents(a_fpath, &l_filebuf, &l_filelen)) {
+    char *l_filebuf = dap_file_get_contents2(a_fpath, &l_filelen);
+    if(l_filebuf) {
         struct stat l_stat_info;
         int remaining = l_filelen; // how much is left to write
         // fill header

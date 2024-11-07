@@ -1077,12 +1077,7 @@ static void s_test_overflow_diff_types_boundary_max(unsigned long long *l_a, uns
 
 static void s_test_overflow_diff_types_boundary()
 {
-    unsigned long long
-    *l_a = NULL,
-    *l_b = NULL; 
-    DAP_NEW_Z_COUNT_RET(l_a, unsigned long long, 2, NULL);
-    l_b = l_a + 1;
-
+    unsigned long long l_a[2], *l_b = l_a + 1;
     dap_print_module_name("dap_overflow_add_diff_types_boundary_min");
     *l_b = 0;
     s_test_overflow_diff_types_boundary_min(l_a, l_b);
@@ -1180,38 +1175,27 @@ static void s_test_overflow_diff_types_boundary()
     (*(signed char *)l_b) = dap_maxval((signed char)0);
     s_test_overflow_diff_types_boundary_max(l_a, l_b);
     dap_assert(true, "b = max");
-
-    DAP_DELETE(l_a);
 }
 
 static void s_test_overflow_diff_types_rand(uint64_t a_times)
 {
     dap_print_module_name("dap_overflow_add_diff_types_rand");
-    unsigned long long
-        *l_a = NULL,
-        *l_b = NULL; 
-        DAP_NEW_Z_COUNT_RET(l_a, unsigned long long, 2, NULL);
-        l_b = l_a + 1;
+    unsigned long long l_a[2], *l_b = l_a + 1;
     for (uint64_t i = 0; i < a_times; ++i) {
-        s_randombytes((unsigned char *)l_a, sizeof(l_a) * 2);
+        s_randombytes((unsigned char*)l_a, sizeof(l_a) * 2);
         s_test_overflow_diff_types(l_a, l_b);
     }
     char l_msg[100];
-    sprintf(l_msg, "ADD SUB MUL %"DAP_UINT64_FORMAT_U" times", a_times);
+    snprintf(l_msg, sizeof(l_msg), "ADD SUB MUL %"DAP_UINT64_FORMAT_U" times", a_times);
     dap_assert(true, l_msg);
-    DAP_DELETE(l_a);
 }
 
 static void s_test_benchmark_overflow_one(uint64_t a_times, benchmark_callback a_custom_func, benchmark_callback a_builtin_func)
 {
     char l_msg[120] = {0};
     int l_cur_1 = 0, l_cur_2 = 0, l_custom = 0, l_builtin = 0;
-    unsigned char
-        *l_chars_array_a = NULL,
-        *l_chars_array_b = NULL;
-    DAP_NEW_Z_SIZE_RET(l_chars_array_a, unsigned char, s_array_size, NULL);
-    DAP_NEW_Z_SIZE_RET(l_chars_array_b, unsigned char, s_array_size, l_chars_array_a);
-
+    unsigned char l_chars_array_a[s_array_size + 1], l_chars_array_b[s_array_size + 1];
+    l_chars_array_a[s_array_size] = l_chars_array_b[s_array_size] = '\0';
     for (s_data_type t = 0; t < TYPE_COUNT; ++t) {
         // if (t == TYPE_CHAR || t == TYPE_INT || t == TYPE_LONG_LONG || t == TYPE_UCHAR || t == TYPE_ULONG_LONG) {
             l_custom = 0;
@@ -1234,7 +1218,6 @@ static void s_test_benchmark_overflow_one(uint64_t a_times, benchmark_callback a
             benchmark_mgs_time(l_msg, l_builtin);
         // }
     }
-    DAP_DEL_MULTY(l_chars_array_a, l_chars_array_b);
 }
 
 static void s_test_benchmark_overflow(uint64_t a_times)

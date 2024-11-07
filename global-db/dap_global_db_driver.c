@@ -212,8 +212,7 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
 dap_store_obj_t *dap_store_obj_copy_ext(dap_store_obj_t *a_store_obj, void *a_ext, size_t a_ext_size)
 {
-    dap_store_obj_t *l_ret;
-    DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_store_obj_t, sizeof(dap_store_obj_t) + a_ext_size, NULL, NULL);
+    dap_store_obj_t *l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_store_obj_t, sizeof(dap_store_obj_t) + a_ext_size, NULL);
     s_store_obj_copy_one(l_ret, a_store_obj);
     if (a_ext_size)
         memcpy(l_ret->ext, a_ext, a_ext_size);
@@ -242,12 +241,10 @@ void dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count)
     if(!a_store_obj || !a_store_count)
         return;
 
-    dap_store_obj_t *l_store_obj_cur = a_store_obj;
-
-    for ( ; a_store_count--; l_store_obj_cur++ ) {
-        DAP_DEL_MULTY(l_store_obj_cur->group, l_store_obj_cur->key, l_store_obj_cur->value, l_store_obj_cur->sign);
+    for ( dap_store_obj_t *l_cur = a_store_obj; --a_store_count; ++l_cur ) {
+        DAP_DEL_MULTY(l_cur->group, l_cur->key, l_cur->value, l_cur->sign);
     }
-    DAP_DEL_Z(a_store_obj);
+    DAP_DELETE(a_store_obj);
 }
 
 /**
