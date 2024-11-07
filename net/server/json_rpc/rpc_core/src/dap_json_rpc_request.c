@@ -70,7 +70,7 @@ void s_exec_cmd_request_free(struct exec_cmd_request *a_exec_cmd_request)
     pthread_mutex_destroy(&a_exec_cmd_request->wait_mutex);
     pthread_cond_destroy(&a_exec_cmd_request->wait_cond);
 #endif
-    DAP_DELETE(a_exec_cmd_request->response);
+    DAP_DELETE(a_exec_cmd_request->response);  // line 73
     DAP_DELETE(a_exec_cmd_request);
 
 }
@@ -176,7 +176,7 @@ static int dap_chain_exec_cmd_list_wait(struct exec_cmd_request *a_exec_cmd_requ
 #endif
         ) {
         case ETIMEDOUT:
-            a_exec_cmd_request->response = "ERR_WAIT_TIMEOUT";
+            a_exec_cmd_request->response = dap_strdup("ERR_WAIT_TIMEOUT");
             return EXEC_CMD_ERR_WAIT_TIMEOUT;
         default:
             break;
