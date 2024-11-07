@@ -70,9 +70,8 @@ void s_exec_cmd_request_free(struct exec_cmd_request *a_exec_cmd_request)
     pthread_mutex_destroy(&a_exec_cmd_request->wait_mutex);
     pthread_cond_destroy(&a_exec_cmd_request->wait_cond);
 #endif
-    if (a_exec_cmd_request)
-        DAP_DEL_Z(a_exec_cmd_request->response);
-    DAP_DEL_Z(a_exec_cmd_request);
+    DAP_DELETE(a_exec_cmd_request->response);
+    DAP_DELETE(a_exec_cmd_request);
 
 }
 
@@ -100,11 +99,13 @@ static void s_exec_cmd_error_handler(int a_error_code, void *a_arg){
     struct exec_cmd_request * l_exec_cmd_request = (struct exec_cmd_request *)a_arg;
 #ifdef DAP_OS_WINDOWS
     EnterCriticalSection(&l_exec_cmd_request->wait_crit_sec);
+    l_exec_cmd_request->response = NULL;
     l_exec_cmd_request->error_code = a_error_code;
     WakeConditionVariable(&l_exec_cmd_request->wait_cond);
     LeaveCriticalSection(&l_exec_cmd_request->wait_crit_sec);
 #else
     pthread_mutex_lock(&l_exec_cmd_request->wait_mutex);
+    l_exec_cmd_request->response = NULL;
     l_exec_cmd_request->error_code = a_error_code;
     pthread_cond_signal(&l_exec_cmd_request->wait_cond);
     pthread_mutex_unlock(&l_exec_cmd_request->wait_mutex);
