@@ -80,7 +80,7 @@ int dap_cert_init() // TODO deinit too
     for (uint16_t i=0; i < l_ca_folders_size; i++) {
         dap_cert_add_folder(l_ca_folders[i]);
     }
-    dap_config_get_item_str_path_array_free(l_ca_folders, &l_ca_folders_size);
+    dap_config_get_item_str_path_array_free(l_ca_folders, l_ca_folders_size);
     return 0;
 }
 
@@ -342,7 +342,7 @@ dap_cert_t *dap_cert_find_by_name(const char *a_cert_name)
                 if (l_ret)
                     break;
             }
-            dap_config_get_item_str_path_array_free(l_ca_folders, &l_ca_folders_size);
+            dap_config_get_item_str_path_array_free(l_ca_folders, l_ca_folders_size);
         }
     }
     if (!l_ret)

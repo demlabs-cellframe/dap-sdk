@@ -229,7 +229,7 @@ int dap_app_cli_main(const char *a_app_name, int a_argc, const char **a_argv)
         char l_config_dir[MAX_PATH];
         snprintf(l_config_dir, MAX_PATH, "%s/etc", g_sys_dir_path);
         if ( dap_config_init(l_config_dir) || !(g_config = dap_config_open(a_app_name)) )
-            return printf("Can't init general configurations %s/%s.cfg\n", l_config_dir, a_app_name), -3;
+            return printf("Can't init general config \"%s/%s.cfg\"\n", l_config_dir, a_app_name), -3;
     }
     int l_res = -1;
     if (a_argc > 1) {

@@ -223,7 +223,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_REALLOC_COUNT(p, c)     DAP_REALLOC(p, (c) * sizeof(__typeof__(p)))
 #define DAP_DELETE(p)         free((void*)(p))
 #define DAP_DEL_Z(p)          do { DAP_FREE(p); (p) = NULL; } while (0);
-#define DAP_DELETE_COUNT(p,c) for ( intmax_t _c = p ? (intmax_t)(c) : 0; _c > 0; DAP_DELETE(p[--_c]) );
+#define DAP_DEL_ARRAY(p,c)    for ( intmax_t _c = p ? (intmax_t)(c) : 0; _c > 0; DAP_DELETE(p[--_c]) );
 #define DAP_DUP_SIZE(p, s)    ({ intmax_t _s = (intmax_t)(s); void *_p = (p) ? calloc(1, _s) : NULL; _p ? DAP_CAST_PTR(__typeof__(p), memcpy(_p, (p), _s)) : NULL; })
 #define DAP_DUP(p)            DAP_DUP_SIZE( p, sizeof(__typeof__(p)) )
 
@@ -877,8 +877,8 @@ DAP_INLINE uint64_t dap_hex_to_uint(const char *arr, short size) {
 extern char *g_sys_dir_path;
 
 //int dap_common_init( const char * a_log_file );
-int dap_common_init( const char *console_title, const char *a_log_file, const char *a_log_dirpath );
-int wdap_common_init( const char *console_title, const wchar_t *a_wlog_file);
+int dap_common_init( const char *console_title, const char *a_log_file );
+int wdap_common_init( const char *console_title, const wchar_t *a_wlog_file );
 
 typedef enum 
 {

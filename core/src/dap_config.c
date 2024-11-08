@@ -496,7 +496,7 @@ char **dap_config_get_item_str_path_array(dap_config_t *a_config, const char *a_
 }
 
 void dap_config_get_item_str_path_array_free(char **paths_array, uint16_t array_length) {
-    DAP_DELETE_COUNT(paths_array, array_length);
+    DAP_DEL_ARRAY(paths_array, array_length);
     DAP_DELETE(paths_array);
 }
 

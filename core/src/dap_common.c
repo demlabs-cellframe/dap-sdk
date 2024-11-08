@@ -154,9 +154,7 @@ static unsigned int s_ansi_seq_color_len[ sizeof(s_ansi_seq_color) / sizeof(char
 static volatile bool s_log_term_signal = false;
 char* g_sys_dir_path = NULL;
 
-static char s_log_file_path[MAX_PATH],
-            s_log_dir_path[MAX_PATH],
-            s_log_tag_fmt_str[10];
+static char s_log_file_path[MAX_PATH + 1], s_log_tag_fmt_str[10];
 
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
@@ -386,19 +384,16 @@ static int s_dap_log_open(const char *a_log_file_path, bool a_new) {
  * @param a_log_dirpath const char *: path to log directory. Saved in s_log_dir_path variable. For example. C:\\Users\\Public\\Document\\cellframe-node\\var\\log
  * @return int. (0 if succcess, -1 if error)
  */
-int dap_common_init( const char *a_console_title, const char *a_log_file_path, const char *a_log_dirpath) {
+int dap_common_init( const char UNUSED_ARG *a_console_title, const char *a_log_file_path ) {
 
     // init randomer
     srand( (unsigned int)time(NULL) );
-    (void) a_console_title;
     strncpy( s_log_tag_fmt_str, "[%s]\t",sizeof (s_log_tag_fmt_str));
     for (int i = 0; i < 16; ++i)
             s_ansi_seq_color_len[i] =(unsigned int) strlen(s_ansi_seq_color[i]);
     if ( a_log_file_path && a_log_file_path[0] ) {
         if (s_dap_log_open(a_log_file_path, false))
             return -1;
-        if (a_log_dirpath != s_log_dir_path)
-            dap_stpcpy(s_log_dir_path,  a_log_dirpath);
         if (a_log_file_path != s_log_file_path)
             dap_stpcpy(s_log_file_path, a_log_file_path);
     }
@@ -442,7 +437,7 @@ static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
     va_copy(va_file, va);
     s_print_callback(a_off, a_fmt, va);
     if (!s_log_file) {
-        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file) {
+        if ( dap_common_init(dap_get_appname(), s_log_file_path ) || !s_log_file) {
             va_end(va_file);
             return;
         }
