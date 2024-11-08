@@ -167,7 +167,7 @@ static void print_it_none (unsigned a_off, const char *a_fmt, va_list va){}
 static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va);
 #endif
 
-#define LOG_FORMAT_LEN  4096
+#define LOG_FORMAT_LEN  2048
 #define LOG_BUF_SIZE    32768
 
 static print_callback s_print_callback = print_it_none;
@@ -467,7 +467,7 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
         }
     }
 #endif
-    static _Thread_local char s_format[LOG_FORMAT_LEN] = { '\0' };
+    char s_format[LOG_FORMAT_LEN] = { '\0' };
     unsigned offset = s_ansi_seq_color_len[a_ll];
     memcpy(s_format, s_ansi_seq_color[a_ll], offset);
     offset += s_update_log_time(s_format + offset);
