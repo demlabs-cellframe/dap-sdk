@@ -245,7 +245,8 @@ void dap_link_manager_deinit()
     DL_FOREACH_SAFE(s_link_manager->nets, it, tmp)
         dap_link_manager_remove_net(((dap_managed_net_t *)it->data)->id);
     pthread_rwlock_destroy(&s_link_manager->links_lock);
-    DAP_DEL_Z(s_link_manager);
+    pthread_rwlock_destroy(&s_link_manager->nets_lock);
+    DAP_DELETE(s_link_manager);
 }
 
 /**
@@ -267,6 +268,7 @@ dap_link_manager_t *dap_link_manager_new(const dap_link_manager_callbacks_t *a_c
     l_ret->max_attempts_num = s_max_attempts_num;
     l_ret->reconnect_delay = s_reconnect_delay;
     pthread_rwlock_init(&l_ret->links_lock, NULL);
+    pthread_rwlock_init(&l_ret->nets_lock, NULL);
     return l_ret;
 }
 
@@ -335,6 +337,7 @@ int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster, u
 {
     dap_return_val_if_pass(!s_link_manager || !a_net_id || !a_link_cluster, -2);
     dap_list_t *l_item = NULL;
+    pthread_rwlock_wrlock(&s_link_manager->nets_lock);
     DL_FOREACH(s_link_manager->nets, l_item) {
         if (a_net_id == ((dap_managed_net_t *)(l_item->data))->id) {
             log_it(L_ERROR, "Net ID 0x%016" DAP_UINT64_FORMAT_x " already managed", a_net_id);
@@ -347,6 +350,7 @@ int dap_link_manager_add_net(uint64_t a_net_id, dap_cluster_t *a_link_cluster, u
     l_net->min_links_num = a_min_links_number;
     l_net->link_clusters = dap_list_append(l_net->link_clusters, a_link_cluster);
     s_link_manager->nets = dap_list_append(s_link_manager->nets, (void *)l_net);
+    pthread_rwlock_unlock(&s_link_manager->nets_lock);
     return 0;
 }
 
