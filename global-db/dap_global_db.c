@@ -102,6 +102,7 @@ static pthread_cond_t s_check_db_cond = PTHREAD_COND_INITIALIZER; // Check versi
 static pthread_mutex_t s_check_db_mutex = PTHREAD_MUTEX_INITIALIZER; // Check version condition mutex
 #define INVALID_RETCODE +100500
 static int s_check_db_ret = INVALID_RETCODE; // Check version return value
+static dap_timerfd_t* l_check_pinned_db_objs_timer;
 
 static dap_global_db_instance_t *s_dbi = NULL; // GlobalDB instance is only static now
 
@@ -201,6 +202,9 @@ int dap_global_db_init()
     // Check version and update if need it
     if ( (l_rc = s_check_db_version()) )
         return log_it(L_ERROR, "GlobalDB version changed, please export or remove old version!"), l_rc;
+    
+    if ( (l_rc = s_check_pinned_db_objs()))
+        return log_it(L_ERROR, "GlobalDB pinned objs init failed"), l_rc;
 
 lb_return:
     if (l_rc == 0 )
@@ -233,6 +237,7 @@ inline dap_global_db_instance_t *dap_global_db_instance_get_default()
  * @brief dap_global_db_deinit, after fix ticket 9030 need add dap_global_db_instance_deinit()
  */
 void dap_global_db_deinit() {
+    s_check_pinned_db_objs_deinit();
     dap_global_db_instance_deinit();
     dap_global_db_driver_deinit();
     dap_global_db_cluster_deinit();
@@ -1228,10 +1233,13 @@ int s_db_object_pin_sync(dap_global_db_instance_t *a_dbi, const char *a_group, c
     int l_res = DAP_GLOBAL_DB_RC_NO_RESULTS;
     dap_store_obj_t *l_store_obj = dap_global_db_get_raw_sync(a_group, a_key);
     if (l_store_obj) {
-        if (a_pin)
+        if (a_pin) {
             l_store_obj->flags |= DAP_GLOBAL_DB_RECORD_PINNED;
-        else
+
+        } else {
             l_store_obj->flags ^= DAP_GLOBAL_DB_RECORD_PINNED;
+            
+        }
         l_res = dap_global_db_driver_apply(l_store_obj, 1);
         if (l_res) {
             log_it(L_ERROR,"Can't save pinned gdb data, code %d ", l_res);
@@ -1655,6 +1663,25 @@ static int s_check_db_version()
     pthread_mutex_unlock(&s_check_db_mutex);
     return l_ret;
 }
+
+static bool s_check_pinned_db_objs_callback() {
+
+} 
+
+static int s_check_pinned_db_objs_init() {
+    dap_global_db_obj_t * l_objs = dap_global_db_get_all_sync(l_gdb_group, &l_objs_size);
+    
+    for (size_t i = 0; i < l_objs_size; i++) {
+    l_check_pinned_db_objs_timer = dap_timerfd_start(5000, (dap_timerfd_callback_t)s_check_pinned_db_objs_callback, NULL);
+    if (!l_check_pinned_db_objs_timer)
+        return -88;
+    return 0;
+}
+
+static void s_check_pinned_db_objs_deinit() {
+    dap_timerfd_delete_mt(l_check_pinned_db_objs_timer->worker, l_check_pinned_db_objs_timer->esocket_uuid);
+}
+
 
 /**
  * @brief s_check_db_version_callback_get
