@@ -36,7 +36,21 @@ int dap_json_rpc_request_init(const char *a_url_service)
     return 1;
 }
 
-ondattr_t attr;
+static struct exec_cmd_request* s_exec_cmd_request_init(dap_client_pvt_t * a_client_pvt)
+{
+    struct exec_cmd_request *l_exec_cmd_request = DAP_NEW_Z(struct exec_cmd_request);
+    if (!l_exec_cmd_request)
+        return NULL;
+    l_exec_cmd_request->client_pvt = a_client_pvt;
+#ifdef DAP_OS_WINDOWS
+    InitializeCriticalSection(&l_exec_cmd_request->wait_crit_sec);
+    InitializeConditionVariable(&l_exec_cmd_request->wait_cond);
+#else
+    pthread_mutex_init(&l_exec_cmd_request->wait_mutex, NULL);
+#ifdef DAP_OS_DARWIN
+    pthread_cond_init(&l_exec_cmd_request->wait_cond, NULL);
+#else
+    pthread_condattr_t attr;
     pthread_condattr_init(&attr);
     pthread_condattr_setclock(&attr, CLOCK_MONOTONIC);
     pthread_cond_init(&l_exec_cmd_request->wait_cond, &attr);    
@@ -428,7 +442,8 @@ void dap_json_rpc_http_request_free(dap_json_rpc_http_request_t *a_http_request)
 
 dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_request_t *a_request, dap_cert_t *a_cert)
 {
-        dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, sizeof(l_str), 0);
+    char *l_str = dap_json_rpc_request_to_json_string(a_request);
+    dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, sizeof(l_str), 0);
     if (!l_sign)
     {
         log_it(L_ERROR, "Decree signing failed");

@@ -8,7 +8,7 @@
 
 static dap_json_rpc_request_handler_t *s_handler_hash_table = NULL;
 
-int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t *a_func)
+char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_size)
 {
 
     if (!a_request) {
