@@ -45,7 +45,7 @@ typedef struct dap_json_rpc_request_handler {
 int dap_json_rpc_registration_request_handler(const char *a_name, handler_func_t *a_func);
 int dap_json_rpc_unregistration_request_handler(const char *a_name);
 
-static void dap_json_rpc_request_handler(dap_json_rpc_request_t *a_request,  dap_http_simple_t *a_client) { };
+char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_size);
 
 #ifdef __cplusplus
 }
