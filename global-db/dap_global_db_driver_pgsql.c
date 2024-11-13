@@ -512,6 +512,61 @@ dap_store_obj_t *dap_db_driver_pgsql_read_cond_store_obj(const char *a_group, ui
     return l_obj;
 }
 
+dap_store_obj_t* dap_db_pgsql_read_store_obj_below_timestamp(const char *a_group, uint64_t a_timestamp) {
+    if (!a_group) 
+        return NULL;
+
+    PGconn *l_conn = s_pgsql_get_connection();
+    if (!l_conn) {
+        log_it(L_ERROR, "Can't acquire PostgreSQL connection from pool");
+        return NULL;
+    }
+
+    dap_store_obj_t *l_ret = NULL;
+    char *l_query_str = NULL;
+
+    l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE timestamp < '%" DAP_UINT64_FORMAT_U "' ORDER BY timestamp ASC", a_group, a_timestamp);
+    if (!l_query_str) {
+        log_it(L_ERROR, "Failed to allocate query string");
+        s_pgsql_free_connection(l_conn);
+        return NULL;
+    }
+
+    PGresult *l_res = PQexecParams(l_conn, l_query_str, 0, NULL, NULL, NULL, NULL, 1);
+    DAP_DELETE(l_query_str);
+
+    if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
+        log_it(L_ERROR, "Error executing query: %s", PQresultErrorMessage(l_res));
+        PQclear(l_res);
+        s_pgsql_free_connection(l_conn);
+        return NULL;
+    }
+
+    size_t l_count_out = PQntuples(l_res);
+    if (l_count_out > 0) {
+        l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * l_count_out);
+        if (!l_ret) {
+            log_it(L_ERROR, "Failed to allocate memory for result set");
+            PQclear(l_res);
+            s_pgsql_free_connection(l_conn);
+            return NULL;
+        }
+
+        for (size_t i = 0; i < l_count_out; i++) {
+            dap_store_obj_t *l_obj_cur = l_ret + i;
+            s_pgsql_fill_object(a_group, l_obj_cur, l_res, i);
+        }
+    } else {
+        log_it(L_INFO, "No records found below the specified timestamp");
+    }
+
+    PQclear(l_res);
+    s_pgsql_free_connection(l_conn);
+
+    return l_ret;
+}
+
+
 /**
  * @brief Gets a list of group names from a PostgreSQL database by a_group_mask.
  * @param a_group_mask a group name mask

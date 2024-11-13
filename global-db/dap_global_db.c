@@ -1666,12 +1666,34 @@ static int s_check_db_version()
 
 static bool s_check_pinned_db_objs_callback() {
 
-} 
+}
+
+static dap_global_db_obj_t* s_get_pinned_objs(const char *a_group, size_t *a_objs_count) {
+
+}
 
 static int s_check_pinned_db_objs_init() {
+
+
+
+    size_t l_objs_size = 0;
     dap_global_db_obj_t * l_objs = dap_global_db_get_all_sync(l_gdb_group, &l_objs_size);
     
+    dap_chain_cs_blocks_get_reward_group();
+    dap_chain_cs_blocks_get_fee_group();
+    dap_ledger_get_gdb_group();
+    dap_chain_net_srv_order_get_gdb_group();
+    dap_chain_net_srv_order_get_common_group();
+    dap_chain_net_srv_order_get_gdb_group(a_net)
+    fee
+    s_get_penalty_group()
+    "local.srv_statistic"
+    s_hot_group_forming
+    dap_chain_net_get_gdb_group_mempool_new();
+    dap_chain_net_get_gdb_group_acl();
     for (size_t i = 0; i < l_objs_size; i++) {
+        
+    }
     l_check_pinned_db_objs_timer = dap_timerfd_start(5000, (dap_timerfd_callback_t)s_check_pinned_db_objs_callback, NULL);
     if (!l_check_pinned_db_objs_timer)
         return -88;

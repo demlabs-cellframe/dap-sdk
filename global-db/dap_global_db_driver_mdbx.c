@@ -436,6 +436,7 @@ size_t     l_upper_limit_of_db_size = 16;
     */
     a_drv_dpt->apply_store_obj     = s_db_mdbx_apply_store_obj;
     a_drv_dpt->read_last_store_obj = s_db_mdbx_read_last_store_obj;
+    a_drv_dpt->read_last_store_obj = s_db_mdbx_read_last_store_obj;
     a_drv_dpt->get_by_hash         = s_db_mdbx_get_by_hash;
     a_drv_dpt->read_store_obj      = s_db_mdbx_read_store_obj;
     a_drv_dpt->read_cond_store_obj = s_db_mdbx_read_cond_store_obj;
@@ -681,6 +682,93 @@ ret:
         mdbx_txn_commit(l_txn);
     return l_obj;
 }
+
+dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, uint64_t a_timestamp) {
+    dap_return_val_if_fail(a_group, NULL);
+
+    int rc;
+    dap_db_ctx_t *l_db_ctx;
+    MDBX_val l_key = {0}, l_data = {0};
+    MDBX_cursor *l_cursor = NULL;
+    dap_store_obj_t *l_obj_arr = NULL;
+
+    if (!(l_db_ctx = s_get_db_ctx_for_group(a_group)))
+        return NULL;
+
+    MDBX_txn *l_txn = s_txn;
+    if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn))) {
+        log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc));
+        return NULL;
+    }
+
+    if (MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor))) {
+        log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", rc, mdbx_strerror(rc));
+        goto ret_obj_timestamp;
+    }
+
+    size_t l_sizeof_obj = 1, l_count_current = 0;
+    l_obj_arr = DAP_CALLOC(l_sizeof_obj, sizeof(dap_store_obj_t));
+    if (!l_obj_arr) {
+        log_it(L_ERROR, "Cannot allocate memory for store object, errno=%d", errno);
+        rc = MDBX_PROBLEM;
+        goto ret_obj_timestamp;
+    }
+
+    rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_FIRST);
+    while (rc == MDBX_SUCCESS) {
+        if (l_count_current >= l_sizeof_obj){
+            l_sizeof_obj *=2;
+            dap_store_obj_t* l_tmp = DAP_REALLOC(l_obj_arr, l_sizeof_obj*sizeof(dap_store_obj_t));
+            if (!l_tmp) {
+                log_it(L_ERROR, "Cannot allocate memory for store object, errno=%d", errno);
+                DAP_DELETE(l_obj_arr);
+                l_obj_arr = NULL;
+                rc = MDBX_PROBLEM;
+                break;
+            }
+            l_obj_arr = l_tmp;
+        }
+        if (s_fill_store_obj(a_group, &l_key, &l_data, (dap_store_obj_t *)l_obj_arr + l_count_current)) {
+            rc = MDBX_PROBLEM;
+            DAP_DELETE(l_obj_arr);
+            l_obj_arr = NULL;
+            break;
+        }
+
+        if (((dap_store_obj_t *)l_obj_arr + l_count_current)->timestamp > a_timestamp)
+            break;
+            
+        l_count_current++;
+
+        rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT);
+    }
+    
+    if (l_count_current > 0) {
+        // remove last object with greater timestamp
+        dap_store_obj_t *l_tmp = DAP_REALLOC(l_obj_arr, l_count_current * sizeof(dap_store_obj_t));
+        if (l_tmp) {
+            l_obj_arr = l_tmp;
+        }  else {
+            log_it(L_ERROR, "Cannot allocate memory for store object, errno=%d", errno);
+            DAP_DELETE(l_obj_arr);
+            rc = MDBX_PROBLEM;
+        }
+    }
+
+    if (rc != MDBX_SUCCESS && rc != MDBX_NOTFOUND && !l_obj_arr) {
+        log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
+    }
+
+ret_obj_timestamp:
+    if (l_cursor)
+        mdbx_cursor_close(l_cursor);
+    if (!s_txn)
+        mdbx_txn_commit(l_txn);
+
+    return l_obj_arr;
+}
+
+
 
 /*
  *  DESCRIPTION: An action routine to check a presence specified key in the group/table

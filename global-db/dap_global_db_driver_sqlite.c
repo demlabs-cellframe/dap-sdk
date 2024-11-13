@@ -786,6 +786,74 @@ clean_and_ret:
     return l_ret;
 }
 
+static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a_group, uint64_t a_timestamp) {
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_fail(a_group && (l_conn = s_db_sqlite_get_connection(false)), NULL);
+
+    const char *l_error_msg = "read below timestamp";
+    dap_store_obj_t *l_ret = NULL;
+    sqlite3_stmt *l_stmt = NULL;
+    char *l_table_name = dap_str_replace_char(a_group, '.', '_');
+    if (!l_table_name) {
+        log_it(L_ERROR, "Error replacing characters in table name");
+        goto clean_and_ret;
+    }
+
+    char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s' WHERE timestamp < ? ORDER BY timestamp ASC", l_table_name);
+    DAP_DEL_Z(l_table_name);
+    if (!l_str_query) {
+        log_it(L_ERROR, "Error in SQL request forming");
+        goto clean_and_ret;
+    }
+
+    if (s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg) != SQLITE_OK) {
+        log_it(L_ERROR, "Error preparing SQL query: %s", sqlite3_errmsg(l_conn->conn));
+        goto clean_and_ret;
+    }
+
+    if (sqlite3_bind_int64(l_stmt, 1, a_timestamp) != SQLITE_OK) {
+        log_it(L_ERROR, "Error binding parameter: %s", sqlite3_errmsg(l_conn->conn));
+        goto clean_and_ret;
+    }
+
+    size_t l_count_out = 0;
+    int ret;
+    while ((ret = sqlite3_step(l_stmt)) == SQLITE_ROW) {
+        l_count_out++;
+    }
+    if (rc != SQLITE_DONE) {
+        log_it(L_ERROR, "Error counting rows: %s", sqlite3_errmsg(l_conn->conn));
+        goto clean_and_ret;
+    }
+
+    if (l_count_out > 0) {
+        DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_store_obj_t, l_count_out, NULL, l_str_query);
+
+        sqlite3_reset(l_stmt);
+        sqlite3_clear_bindings(l_stmt);
+
+        sqlite3_bind_int64(l_stmt, 1, a_timestamp);
+        size_t l_row = 0;
+        while((ret = s_db_sqlite_fill_one_item(a_group, l_ret + l_row, l_stmt)) == SQLITE_ROW)
+            l_row++;
+
+        if (ret != SQLITE_DONE) {
+            log_it(L_ERROR, "Error fetching rows: %s", sqlite3_errmsg(l_conn->conn));
+            DAP_DEL_Z(l_ret);
+            l_ret = NULL;
+        }
+
+    } else {
+        log_it(L_INFO, "No records below the specified timestamp");
+    }
+
+clean_and_ret:
+    s_db_sqlite_clean(l_conn, 1, l_str_query, l_stmt);
+    return l_ret;
+}
+
+
+
 /**
  * @brief Gets a list of group names by a_group_mask.
  * @param a_group_mask a group name mask

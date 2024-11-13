@@ -129,6 +129,7 @@ typedef dap_store_obj_t* (*dap_global_db_driver_read_callback_t)(const char *a_g
 typedef dap_store_obj_t* (*dap_global_db_driver_read_cond_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count, bool a_with_holes);
 typedef dap_global_db_hash_pkt_t * (*dap_global_db_driver_read_hashes_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from);
 typedef dap_store_obj_t* (*dap_global_db_driver_read_last_callback_t)(const char *a_group, bool a_with_holes);
+typedef dap_store_obj_t* (*dap_global_db_driver_read_timestamp_callback_t)(dap_time_t* );
 typedef size_t (*dap_global_db_driver_read_count_callback_t)(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
 typedef dap_list_t* (*dap_global_db_driver_get_groups_callback_t)(const char *a_mask);
 typedef bool (*dap_global_db_driver_is_obj_callback_t)(const char *a_group, const char *a_key);
@@ -143,6 +144,7 @@ typedef struct dap_global_db_driver_callbacks {
                                                                               'store object' */
     dap_global_db_driver_read_callback_t       read_store_obj;                     /* Retreive 'store object' from DB */
     dap_global_db_driver_read_last_callback_t  read_last_store_obj;
+    dap_global_db_driver_read_timestamp_callback_t  read_store_obj_by_timestamp;
     dap_global_db_driver_read_cond_callback_t  read_cond_store_obj;
     dap_global_db_driver_read_hashes_callback_t read_hashes;
     dap_global_db_driver_read_count_callback_t read_count_store;
