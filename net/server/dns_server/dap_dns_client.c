@@ -240,7 +240,7 @@ int dap_chain_node_info_dns_request(dap_worker_t *a_worker, struct in_addr a_add
     l_esocket->remote_port = a_port;
     l_esocket->_inheritor = l_dns_client;
 
-    dap_events_socket_assign_on_worker_mt(l_esocket, a_worker);
+    dap_events_socket_assign_on_worker(l_esocket, a_worker);
     return 0;
 }
 

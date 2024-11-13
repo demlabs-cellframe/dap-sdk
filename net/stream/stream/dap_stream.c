@@ -286,7 +286,7 @@ static void s_check_session( unsigned int a_id, dap_events_socket_t *a_esocket )
 {
     dap_stream_session_t *l_session = NULL;
 
-    l_session = dap_stream_session_id_mt( a_id );
+    l_session = dap_stream_session_by_id( a_id );
 
     if ( l_session == NULL ) {
         log_it(L_ERROR,"No session id %u was found",a_id);
@@ -416,7 +416,7 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         dap_stream_ch_delete(a_stream->channel[a_stream->channel_count - 1]);
 
     if(a_stream->session)
-        dap_stream_session_close_mt(a_stream->session->id); // TODO make stream close after timeout, not momentaly
+        dap_stream_session_close(a_stream->session->id); // TODO make stream close after timeout, not momentaly
 
     if (a_stream->esocket) {
         a_stream->esocket->callbacks.delete_callback = NULL; // Prevent to remove twice
@@ -463,7 +463,7 @@ void s_http_client_headers_read(dap_http_client_t * a_http_client, void UNUSED_A
         log_it(L_INFO,"Query string [%s]",a_http_client->in_query_string);
         if(sscanf(a_http_client->in_query_string,"session_id=%u",&l_id) == 1 ||
                 sscanf(a_http_client->in_query_string,"fj913htmdgaq-d9hf=%u",&l_id) == 1) {
-            dap_stream_session_t *l_ss = dap_stream_session_id_mt(l_id);
+            dap_stream_session_t *l_ss = dap_stream_session_by_id(l_id);
             if(!l_ss) {
                 log_it(L_ERROR,"No session id %u was found", l_id);
                 a_http_client->reply_status_code = Http_Status_NotFound;

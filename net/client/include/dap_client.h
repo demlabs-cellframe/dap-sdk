@@ -124,11 +124,11 @@ void dap_client_set_uplink_unsafe(dap_client_t *a_client, dap_stream_node_addr_t
 dap_enc_key_t * dap_client_get_key_stream(dap_client_t * a_client);
 
 void dap_client_go_stage(dap_client_t * a_client, dap_client_stage_t a_stage_end, dap_client_callback_t a_stage_end_callback);
-void dap_client_delete_mt(dap_client_t * a_client);
+void dap_client_delete(dap_client_t * a_client);
 void dap_client_delete_unsafe(dap_client_t * a_client);
 
 ssize_t dap_client_write_unsafe(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
-int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
+int dap_client_write(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size);
 void dap_client_queue_clear(dap_client_t *a_client);
 
 void dap_client_request_enc_unsafe(dap_client_t * a_client, const char * a_path,const char * a_suburl,const char* a_query, void * a_request, size_t a_request_size,

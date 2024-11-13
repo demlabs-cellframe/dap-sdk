@@ -382,57 +382,50 @@ int dap_events_socket_init(void); //  Init clients module
 void dap_events_socket_deinit(void); // Deinit clients module
 
 dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, dap_events_socket_callbacks_t* a_callbacks);
-dap_events_socket_t * dap_events_socket_create_type_queue_ptr_mt(dap_worker_t * a_w, dap_events_socket_callback_queue_ptr_t a_callback);
+dap_events_socket_t * dap_events_socket_create_type_queue_ptr(dap_worker_t * a_w, dap_events_socket_callback_queue_ptr_t a_callback);
 int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket);
 
-dap_events_socket_t * dap_events_socket_create_type_event_unsafe(dap_worker_t * a_w, dap_events_socket_callback_event_t a_callback);
-dap_events_socket_t * dap_events_socket_create_type_event_mt(dap_worker_t * a_w, dap_events_socket_callback_event_t a_callback);
+dap_events_socket_t * dap_events_socket_create_type_event(dap_worker_t * a_w, dap_events_socket_callback_event_t a_callback);
 void dap_events_socket_event_proc_input_unsafe(dap_events_socket_t *a_esocket);
 
-dap_events_socket_t * dap_events_socket_create_type_pipe_unsafe(dap_worker_t * a_w, dap_events_socket_callback_t a_callback, uint32_t a_flags);
-dap_events_socket_t * dap_events_socket_create_type_pipe_mt(dap_worker_t * a_w, dap_events_socket_callback_t a_callback, uint32_t a_flags);
-
-dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket_t* a_es);
-int dap_events_socket_queue_ptr_send_to_input( dap_events_socket_t * a_es, void* a_arg);
+dap_events_socket_t * dap_events_socket_create_type_pipe(dap_worker_t * a_w, dap_events_socket_callback_t a_callback, uint32_t a_flags);
 
 int dap_events_socket_event_signal( dap_events_socket_t * a_es, uint64_t a_value);
 
 dap_events_socket_t *dap_events_socket_wrap_no_add(SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);
 dap_events_socket_t *dap_events_socket_wrap_listener(dap_server_t *a_server, SOCKET a_sock, dap_events_socket_callbacks_t *a_callbacks);
 
-void dap_events_socket_assign_on_worker_mt(dap_events_socket_t * a_es, struct dap_worker * a_worker);
-void dap_events_socket_reassign_between_workers_mt(dap_worker_t * a_worker_old, dap_events_socket_t * a_es, dap_worker_t * a_worker_new);
-void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t * a_es, dap_worker_t * a_worker_new);
+void dap_events_socket_assign_on_worker(dap_events_socket_t * a_es, struct dap_worker * a_worker);
+void dap_events_socket_reassign_between_workers(dap_worker_t *a_worker_old, dap_events_socket_uuid_t a_es_uuid, dap_worker_t *a_worker_new);
+void dap_events_socket_reassign_between_workers_unsafe(dap_events_socket_t *a_es, dap_worker_t *a_worker_new);
 
 size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_data, size_t a_data_size);
 DAP_PRINTF_ATTR(2, 3) ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *a_format, ...);
 
 // MT variants less
-void dap_events_socket_set_readable_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready);
-void dap_events_socket_set_writable_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready);
+void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready);
+void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, bool a_is_ready);
 
-// Universal variant thats trying to detect context, if found uses _inter if not uses _mt
-size_t dap_events_socket_write(dap_events_socket_uuid_t a_es_uuid, const void * a_data, size_t a_data_size,
-                               dap_events_socket_callback_t a_callback_success,
-                               dap_events_socket_callback_error_t a_callback_error, void * a_arg);
-
-
-size_t dap_events_socket_write_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, const void * a_data, size_t a_data_size);
-DAP_PRINTF_ATTR(3, 4) size_t dap_events_socket_write_f_mt(dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid, const char * a_format,...);
+size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, const void *a_data, size_t a_data_size);
+DAP_PRINTF_ATTR(3, 4) size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid, const char *a_format, ...);
 void dap_events_socket_delete_unsafe( dap_events_socket_t * a_esocket , bool a_preserve_inheritor);
 void dap_events_socket_remove_and_delete_unsafe( dap_events_socket_t *a_es, bool preserve_inheritor );
-#ifndef DAP_EVENTS_CAPS_IOCP
 
-void dap_events_socket_assign_on_worker_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_es);
-size_t dap_events_socket_write_inter(dap_events_socket_t * a_es_input, dap_events_socket_uuid_t a_es_uuid, const void * a_data, size_t a_data_size);
-DAP_PRINTF_ATTR(3, 4) size_t dap_events_socket_write_f_inter(dap_events_socket_t * a_es_input, dap_events_socket_uuid_t a_es_uuid,const char * a_format,...);
+#ifdef DAP_EVENTS_CAPS_IOCP
+void dap_events_socket_set_readable_unsafe_ex       (dap_events_socket_t*, bool, dap_overlapped_t*);
+void dap_events_socket_set_writable_unsafe_ex       (dap_events_socket_t*, bool, size_t, dap_overlapped_t*);
+int dap_events_socket_queue_data_send               (dap_events_socket_t*, const void*, size_t);
 
-void dap_events_socket_set_readable_unsafe(dap_events_socket_t * sc,bool is_ready);
-void dap_events_socket_set_writable_unsafe(dap_events_socket_t * sc,bool is_ready);
+#define dap_events_socket_set_readable_unsafe(es, flag)         dap_events_socket_set_readable_unsafe_ex(es, flag, NULL)
+#define dap_events_socket_set_writable_unsafe(es, flag)         dap_events_socket_set_writable_unsafe_ex(es, flag, 0, NULL)
+#define dap_events_socket_queue_ptr_send(es, arg)               dap_events_socket_queue_data_send(es, arg, 0)
+#else
+void dap_events_socket_set_readable_unsafe(dap_events_socket_t *a_esocket, bool is_ready);
+void dap_events_socket_set_writable_unsafe(dap_events_socket_t *a_esocket, bool is_ready);
 int dap_events_socket_queue_ptr_send( dap_events_socket_t * a_es, void* a_arg);
 #endif
 
-void dap_events_socket_remove_and_delete_mt( dap_worker_t * a_w, dap_events_socket_uuid_t a_es_uuid);
+void dap_events_socket_remove_and_delete(dap_worker_t *a_worker, dap_events_socket_uuid_t a_es_uuid);
 
 // Delayed removed
 void dap_events_socket_remove_and_delete_unsafe_delayed( dap_events_socket_t *a_es, bool a_preserve_inheritor);
@@ -485,14 +478,6 @@ DAP_STATIC_INLINE void dap_overlapped_free(dap_overlapped_t *ol) {
         CloseHandle(ol->ol.hEvent);
     DAP_DELETE(ol);
 }
-void dap_events_socket_set_readable_unsafe_ex       (dap_events_socket_t*, bool, dap_overlapped_t*);
-void dap_events_socket_set_writable_unsafe_ex       (dap_events_socket_t*, bool, size_t, dap_overlapped_t*);
-int dap_events_socket_queue_data_send               (dap_events_socket_t*, const void*, size_t);
-
-#define dap_events_socket_set_readable_unsafe(es, flag)         dap_events_socket_set_readable_unsafe_ex(es, flag, NULL)
-#define dap_events_socket_set_writable_unsafe(es, flag)         dap_events_socket_set_writable_unsafe_ex(es, flag, 0, NULL)
-#define dap_events_socket_queue_ptr_send(es, arg)               dap_events_socket_queue_data_send(es, arg, 0)
-
 #endif
 
 #ifdef DAP_EVENTS_CAPS_WEPOLL
@@ -514,7 +499,6 @@ DAP_STATIC_INLINE int dap_sendto(SOCKET s, u_short port, void* buf_out, size_t b
 
 }
 #endif
-
 
 #ifdef __cplusplus
 }

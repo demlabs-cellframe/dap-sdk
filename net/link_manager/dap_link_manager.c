@@ -618,14 +618,14 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
                     l_link->uplink.state = LINK_STATE_DISCONNECTED;
                 }
             } else
-                dap_client_delete_mt(l_link->uplink.client);
+                dap_client_delete(l_link->uplink.client);
         }
         // Drop downlinks if any
         dap_list_t *l_connections_for_addr = dap_stream_find_all_by_addr(&l_link->addr);
         for (dap_list_t *it = l_connections_for_addr; it; it = it->next) {
             dap_events_socket_uuid_ctrl_t *l_uuid_ctrl = it->data;
             if (l_uuid_ctrl->uuid != l_client_uuid)
-                dap_events_socket_remove_and_delete_mt(l_uuid_ctrl->worker, l_uuid_ctrl->uuid);
+                dap_events_socket_remove_and_delete(l_uuid_ctrl->worker, l_uuid_ctrl->uuid);
         }
         dap_list_free_full(l_connections_for_addr, NULL);
     }

@@ -301,10 +301,19 @@ static void s_timerfd_reset_worker_callback(void *a_arg)
  * @brief dap_timerfd_reset
  * @param a_tfd
  */
-void dap_timerfd_reset_mt(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid)
+void dap_timerfd_reset(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid)
 {
     if (!a_worker || !a_uuid)
         return;
+    dap_return_if_fail(a_worker);
+    if (a_worker == dap_worker_get_current()) {
+        dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_uuid);
+        if (!l_es) {
+            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
+            return;
+        }
+        return dap_timerfd_reset_unsafe(l_es->_inheritor);
+    }
     dap_events_socket_uuid_t *l_uuid = DAP_DUP(&a_uuid);
     dap_worker_exec_callback_on(a_worker, s_timerfd_reset_worker_callback, l_uuid);
 }
@@ -325,11 +334,11 @@ void dap_timerfd_delete_unsafe(dap_timerfd_t *a_timerfd)
        a_timerfd->events_socket->flags |= DAP_SOCK_SIGNAL_CLOSE;
 }
 
-void dap_timerfd_delete_mt(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid)
+void dap_timerfd_delete(dap_worker_t *a_worker, dap_events_socket_uuid_t a_uuid)
 {
     if (!a_worker || !a_uuid)
         return;
-    dap_events_socket_remove_and_delete_mt(a_worker, a_uuid);
+    dap_events_socket_remove_and_delete(a_worker, a_uuid);
 }
 
 #ifdef DAP_EVENTS_CAPS_IOCP

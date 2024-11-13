@@ -67,7 +67,7 @@ int dap_stream_ch_gossip_init()
 void dap_stream_ch_gossip_deinit()
 {
     if (s_gossip_timer)
-        dap_timerfd_delete_mt(s_gossip_timer->worker, s_gossip_timer->esocket_uuid);
+        dap_timerfd_delete(s_gossip_timer->worker, s_gossip_timer->esocket_uuid);
     pthread_rwlock_wrlock(&s_gossip_lock);
     struct gossip_msg_item *it, *tmp;
     HASH_ITER(hh, s_gossip_last_msgs, it, tmp) {

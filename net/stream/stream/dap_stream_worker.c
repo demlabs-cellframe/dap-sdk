@@ -58,31 +58,14 @@ int dap_stream_worker_init()
         l_stream_worker->worker = l_worker;
         pthread_rwlock_init( &l_stream_worker->channels_rwlock, NULL);
 
-        l_stream_worker->queue_ch_io = dap_events_socket_create_type_queue_ptr_mt( l_worker, s_ch_io_callback);
+        l_stream_worker->queue_ch_io = dap_events_socket_create_type_queue_ptr( l_worker, s_ch_io_callback);
         if(! l_stream_worker->queue_ch_io)
             return -6;
-        l_stream_worker->queue_ch_send = dap_events_socket_create_type_queue_ptr_mt(l_worker, s_ch_send_callback);
+        l_stream_worker->queue_ch_send = dap_events_socket_create_type_queue_ptr(l_worker, s_ch_send_callback);
         l_stream_worker->queue_ch_send->cb_buf_cleaner = s_cb_msg_buf_clean; 
         if (!l_stream_worker->queue_ch_send)
             return -7;
     }
-#ifndef DAP_EVENTS_CAPS_IOCP
-    for (uint32_t i = 0; i < l_worker_count; i++){
-        dap_worker_t *l_worker_inp = dap_events_worker_get(i);
-        dap_stream_worker_t *l_stream_worker_inp = (dap_stream_worker_t *)l_worker_inp->_inheritor;
-        l_stream_worker_inp->queue_ch_io_input = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * l_worker_count);
-        if (!l_stream_worker_inp->queue_ch_io_input) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            return -8;
-        }
-        for (uint32_t j = 0; j < l_worker_count; j++) {
-            dap_worker_t * l_worker = dap_events_worker_get(j);
-            dap_stream_worker_t *l_stream_worker = (dap_stream_worker_t*) l_worker->_inheritor;
-            l_stream_worker_inp->queue_ch_io_input[j] = dap_events_socket_queue_ptr_create_input(l_stream_worker->queue_ch_io);
-            dap_events_socket_assign_on_worker_mt(l_stream_worker_inp->queue_ch_io_input[j], l_worker_inp);
-        }
-    }
-#endif
     return 0;
 }
 

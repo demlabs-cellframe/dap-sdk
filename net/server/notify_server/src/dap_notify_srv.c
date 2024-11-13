@@ -32,20 +32,17 @@
 #include "dap_server.h"
 #include "dap_events.h"
 #include "dap_notify_srv.h"
+#include "dap_proc_thread.h"
 
 #define LOG_TAG "notify_server"
 
 
 dap_server_t * s_notify_server = NULL;
-dap_events_socket_t * s_notify_server_queue = NULL;
-
-dap_events_socket_t ** s_notify_server_queue_inter = NULL;
-
 
 dap_events_socket_handler_hh_t * s_notify_server_clients = NULL;
 pthread_rwlock_t s_notify_server_clients_mutex = PTHREAD_RWLOCK_INITIALIZER;
 
-static void s_notify_server_callback_queue(dap_events_socket_t * a_es, void * a_arg);
+static bool s_notify_server_callback_queue(void * a_arg);
 static void s_notify_server_callback_new(dap_events_socket_t * a_es, void * a_arg);
 static void s_notify_server_callback_delete(dap_events_socket_t * a_es, void * a_arg);
 static dap_notify_data_user_callback_t s_notify_data_user_callback = NULL;
@@ -76,13 +73,6 @@ int dap_notify_server_init()
         log_it(L_INFO, "Notify server not initalized");
         return -1;
     }
-    s_notify_server_queue = dap_events_socket_create_type_queue_ptr_mt(dap_events_worker_get_auto(), s_notify_server_callback_queue);
-    uint32_t l_workers_count = dap_events_thread_get_count();
-    DAP_NEW_Z_COUNT_RET_VAL(s_notify_server_queue_inter, dap_events_socket_t*, l_workers_count, -2, NULL);
-    for (uint32_t i = 0; i < l_workers_count; ++i) {
-        s_notify_server_queue_inter[i] = dap_events_socket_queue_ptr_create_input(s_notify_server_queue);
-        dap_events_socket_assign_on_worker_mt(s_notify_server_queue_inter[i], dap_events_worker_get(i));
-    }
     log_it(L_NOTICE,"Notify server initalized");
     return 0;
 }
@@ -95,30 +85,43 @@ void dap_notify_server_deinit()
 
 }
 
-/**
- * @brief dap_notify_server_create_inter
- * @return
- */
-struct dap_events_socket * dap_notify_server_create_inter()
+void s_notify_server_broadcast(const char *a_data)
 {
-    return NULL;
+    size_t l_str_len = dap_strlen(a_data);
+    if ( !l_str_len++ )
+        return;
+    if (s_notify_data_user_callback)
+        s_notify_data_user_callback(a_data);
+    pthread_rwlock_rdlock(&s_notify_server_clients_mutex);
+    for (dap_events_socket_handler_hh_t *it = s_notify_server_clients; it; it = it->hh.next) {
+        uint32_t l_worker_id = it->worker_id;
+        if ( l_worker_id >= dap_events_thread_get_count() ) {
+            log_it(L_ERROR, "Wrong worker id %u for interthread communication", l_worker_id);
+            continue;
+        }
+        dap_events_socket_write(dap_events_worker_get(l_worker_id), it->uuid, a_data, l_str_len);
+    }
+    pthread_rwlock_unlock(&s_notify_server_clients_mutex);
 }
 
 /**
- * @brief dap_notify_server_send_fmt_inter
- * @param a_input
+ * @brief dap_notify_server_send_fmt_mt
  * @param a_format
  * @return
  */
-int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char * a_format,...)
+int dap_notify_server_send(const char *a_data)
 {
-    if(!s_notify_server_queue_inter) // If not initialized - nothing to notify
-        return 0;
-    if(a_worker_id>= dap_events_thread_get_count()){
-        log_it(L_ERROR,"Wrong worker id %u for send_f_inter() function", a_worker_id);
-        return -10;
-    }
-    dap_events_socket_t * l_input = s_notify_server_queue_inter[a_worker_id];
+    return dap_proc_thread_callback_add_pri(NULL, s_notify_server_callback_queue, dap_strdup(a_data), DAP_QUEUE_MSG_PRIORITY_LOW);
+}
+
+
+/**
+ * @brief dap_notify_server_send_fmt_mt
+ * @param a_format
+ * @return
+ */
+int dap_notify_server_send_f(const char *a_format, ...)
+{
     va_list ap, ap_copy;
     va_start(ap, a_format);
     va_copy(ap_copy, ap);
@@ -138,64 +141,8 @@ int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char * a_format,.
     }
     vsprintf(l_str, a_format, ap_copy);
     va_end(ap_copy);
-    int l_ret = dap_events_socket_queue_ptr_send_to_input(l_input, l_str);
-    DAP_DELETE(l_str);
-    return l_ret;
-}
-
-/**
- * @brief dap_notify_server_send_fmt_mt
- * @param a_format
- * @return
- */
-int dap_notify_server_send_mt(const char *a_data)
-{
-    if (s_notify_data_user_callback) s_notify_data_user_callback(a_data);
-    if(!s_notify_server_queue) // If not initialized - nothing to notify
-        return 0;
-    return dap_events_socket_queue_ptr_send(s_notify_server_queue, dap_strdup(a_data));
-}
-
-
-/**
- * @brief dap_notify_server_send_fmt_mt
- * @param a_format
- * @return
- */
-int dap_notify_server_send_f_mt(const char *a_format, ...)
-{
-    if (!s_notify_data_user_callback && s_notify_server_queue)
-        return 0;
-
-    va_list ap, ap_copy;
-    va_start(ap, a_format);
-    va_copy(ap_copy, ap);
-    ssize_t l_str_size = vsnprintf(NULL, 0, a_format, ap);
-    va_end(ap);
-    if (l_str_size < 0) {
-        va_end(ap_copy);
-        log_it(L_ERROR,"Can't write out formatted data '%s'", a_format);
-        return l_str_size;
-    }
-    l_str_size++; // include trailing 0
-    char *l_str = DAP_NEW_SIZE(char, l_str_size);
-    if (!l_str) {
-        va_end(ap_copy);
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return -1;
-    }
-    vsprintf(l_str, a_format, ap_copy);
-    va_end(ap_copy);
-
-    if (s_notify_data_user_callback) s_notify_data_user_callback(l_str);
     
-
-    if(!s_notify_server_queue) // If not initialized - nothing to notify
-        return 0;
-
-    int l_ret = dap_events_socket_queue_ptr_send(s_notify_server_queue, l_str);
-    DAP_DELETE(l_str);
-    return l_ret;
+    return dap_proc_thread_callback_add_pri(NULL, s_notify_server_callback_queue, l_str, DAP_QUEUE_MSG_PRIORITY_LOW);
 }
 
 /**
@@ -203,31 +150,11 @@ int dap_notify_server_send_f_mt(const char *a_format, ...)
  * @param a_es
  * @param a_arg
  */
-static void s_notify_server_callback_queue(dap_events_socket_t * a_es, void * a_arg)
+static bool s_notify_server_callback_queue(void * a_arg)
 {
-    size_t l_str_len = a_arg ? strlen((char*)a_arg) : 0;
-    if ( !l_str_len )
-        return;
-    pthread_rwlock_rdlock(&s_notify_server_clients_mutex);
-    dap_events_socket_handler_hh_t * l_socket_handler = NULL,* l_tmp = NULL;
-    HASH_ITER(hh, s_notify_server_clients, l_socket_handler, l_tmp) {
-        uint32_t l_worker_id = l_socket_handler->worker_id;
-        if ( l_worker_id >= dap_events_thread_get_count() ) {
-            log_it(L_ERROR,"Wrong worker id %u for send_inter() function", l_worker_id);
-            continue;
-        }
-        char *l_arg = 
-#ifdef DAP_EVENTS_CAPS_IOCP
-            a_arg;
-#else
-            DAP_DUP_SIZE(a_arg, l_str_len + 1);
-#endif
-        
-        dap_events_socket_write_mt( dap_events_worker_get(l_worker_id),
-                                    l_socket_handler->uuid, l_arg, l_str_len + 1 );
-    }
-    pthread_rwlock_unlock(&s_notify_server_clients_mutex);
+    s_notify_server_broadcast(a_arg);
     DAP_DELETE(a_arg);
+    return false;
 }
 
 /**

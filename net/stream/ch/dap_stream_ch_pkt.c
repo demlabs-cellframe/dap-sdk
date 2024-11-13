@@ -40,7 +40,7 @@
 #include "dap_common.h"
 #include "dap_enc.h"
 #include "dap_enc_key.h"
-
+#include "dap_context.h"
 #include "dap_events_socket.h"
 #include "dap_stream.h"
 #include "dap_stream_ch.h"
@@ -67,13 +67,13 @@ void dap_stream_ch_pkt_deinit()
 }
 
 /**
- * @brief dap_stream_ch_pkt_write_f_mt
+ * @brief dap_stream_ch_pkt_write_f
  * @param a_ch_uuid
  * @param a_type
  * @param a_str
  * @return
  */
-size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char * a_format,...)
+size_t dap_stream_ch_pkt_write_f(dap_stream_worker_t * a_worker , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char * a_format,...)
 {
     if (!a_worker)
         return 0;
@@ -111,6 +111,20 @@ size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_
     va_end(ap_copy);
     va_end(ap);
 
+    if (a_worker->worker == dap_worker_get_current()) {
+        dap_stream_ch_t *l_ch = NULL;
+        pthread_rwlock_rdlock(&a_worker->channels_rwlock);
+        HASH_FIND(hh_worker, a_worker->channels , &a_ch_uuid , sizeof(a_ch_uuid), l_ch);
+        pthread_rwlock_unlock(&a_worker->channels_rwlock);
+        if (!l_ch) {
+            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " for channel %c doesn't exists in worker %u", a_worker->worker->id, (unsigned char)a_type);
+            return -5;
+        }
+        size_t ret = dap_stream_ch_pkt_write_unsafe(l_ch, a_type, l_msg->data, l_msg->data_size);
+        DAP_DELETE(l_msg->data);
+        DAP_DELETE(l_msg);
+        return ret;
+    }
     int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_ch_io, l_msg);
     if (l_ret!=0){
         log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
@@ -123,70 +137,26 @@ size_t dap_stream_ch_pkt_write_f_mt(dap_stream_worker_t * a_worker , dap_stream_
 }
 
 /**
- * @brief dap_stream_ch_pkt_write_f_inter
- * @param a_queue
- * @param a_ch_uuid
- * @param a_type
- * @param a_format
- * @return
- */
-size_t dap_stream_ch_pkt_write_f_inter(dap_events_socket_t * a_queue  , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const char * a_format,...)
-{
-    va_list ap, ap_copy;
-    va_start(ap, a_format);
-    va_copy(ap_copy, ap);
-    int l_data_size = vsnprintf(NULL, 0, a_format, ap);
-    va_end(ap);
-    if (l_data_size < 0) {
-        log_it(L_ERROR,"Can't write out formatted data '%s' with values",a_format);
-        va_end(ap_copy);
-        return 0;
-    }
-    l_data_size++; // include trailing 0
-    dap_stream_worker_msg_io_t *l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
-    if (!l_msg) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        va_end(ap_copy);
-        return 0;
-    }
-    l_msg->ch_uuid = a_ch_uuid;
-    l_msg->ch_pkt_type = a_type;
-    l_msg->data = DAP_NEW_SIZE(void, l_data_size);
-    if (!l_msg->data) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        va_end(ap_copy);
-        DAP_DELETE(l_msg);
-        return 0;
-    }
-    l_msg->data_size = l_data_size;
-    l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
-    l_data_size = vsprintf(l_msg->data, a_format, ap_copy);
-    va_end(ap_copy);
-
-    int l_ret= dap_events_socket_queue_ptr_send_to_input(a_queue , l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
-        DAP_DELETE(l_msg->data);
-        DAP_DELETE(l_msg);
-        return 0;
-    }
-    return l_data_size;
-
-}
-
-/**
- * @brief dap_stream_ch_pkt_write_mt
+ * @brief dap_stream_ch_pkt_write
  * @param a_ch
  * @param a_type
  * @param a_data
  * @param a_data_size
  * @return
  */
-size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_data, size_t a_data_size)
+size_t dap_stream_ch_pkt_write(dap_stream_worker_t *a_worker , dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_data, size_t a_data_size)
 {
-    if (!a_worker || !a_data) {
-        log_it(L_ERROR, "Arguments is NULL for dap_stream_ch_pkt_write_mt");
-        return 0;
+    dap_return_val_if_fail(a_worker && a_data && a_data_size, -1);
+    if (a_worker->worker == dap_worker_get_current()) {
+        dap_stream_ch_t *l_ch = NULL;
+        pthread_rwlock_rdlock(&a_worker->channels_rwlock);
+        HASH_FIND(hh_worker, a_worker->channels , &a_ch_uuid , sizeof(a_ch_uuid), l_ch);
+        pthread_rwlock_unlock(&a_worker->channels_rwlock);
+        if (!l_ch) {
+            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " for channel %c doesn't exists in worker %u", a_worker->worker->id, (unsigned char)a_type);
+            return -5;
+        }
+        return dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
     }
     dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
     if (!l_msg) {
@@ -210,9 +180,27 @@ size_t dap_stream_ch_pkt_write_mt(dap_stream_worker_t * a_worker , dap_stream_ch
     return a_data_size;
 }
 
-int dap_stream_ch_pkt_send_mt(dap_stream_worker_t *a_worker, dap_events_socket_uuid_t a_uuid, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
+int dap_stream_ch_pkt_send(dap_stream_worker_t *a_worker, dap_events_socket_uuid_t a_uuid, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
 {
-    dap_return_val_if_fail(a_worker && a_data, -1);
+    dap_return_val_if_fail(a_worker && a_data && a_data_size, -1);
+    if (a_worker->worker == dap_worker_get_current()) {
+        dap_events_socket_t *l_es = dap_context_find(a_worker->worker->context, a_uuid);
+        if (!l_es) {
+            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->worker->id);
+            return -5;
+        }
+        dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
+        if (!l_stream) {
+            log_it(L_ERROR, "No stream found by events socket descriptor "DAP_FORMAT_ESOCKET_UUID, l_es->uuid);
+            return -6;
+        }
+        dap_stream_ch_t *l_ch = dap_stream_ch_by_id_unsafe(l_stream, a_ch_id);
+        if (!l_ch) {
+            log_it(L_WARNING, "Stream found, but channel '%c' isn't set", a_ch_id);
+            return -7;
+        }
+        return dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
+    }
     dap_stream_worker_msg_send_t *l_msg = DAP_NEW_Z(dap_stream_worker_msg_send_t);
     if (!l_msg) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
@@ -246,41 +234,8 @@ int dap_stream_ch_pkt_send_by_addr(dap_stream_node_addr_t *a_addr, const char a_
     dap_worker_t *l_worker = NULL;
     dap_events_socket_uuid_t l_es_uuid = dap_stream_find_by_addr(a_addr, &l_worker);
     return l_worker
-        ? dap_stream_ch_pkt_send_mt(DAP_STREAM_WORKER(l_worker), l_es_uuid, a_ch_id, a_type, a_data, a_data_size)
+        ? dap_stream_ch_pkt_send(DAP_STREAM_WORKER(l_worker), l_es_uuid, a_ch_id, a_type, a_data, a_data_size)
         : -1;
-}
-
-/**
- * @brief dap_stream_ch_pkt_write_inter
- * @param a_queue
- * @param a_ch_uuid
- * @param a_type
- * @param a_data
- * @param a_data_size
- * @return
- */
-size_t dap_stream_ch_pkt_write_inter(dap_events_socket_t * a_queue_input, dap_stream_ch_uuid_t a_ch_uuid, uint8_t a_type, const void * a_data, size_t a_data_size)
-{
-    dap_stream_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_stream_worker_msg_io_t);
-    if (!l_msg) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return 0;
-    }
-    l_msg->ch_uuid = a_ch_uuid;
-    l_msg->ch_pkt_type = a_type;
-    if (a_data && a_data_size)
-        l_msg->data = DAP_DUP_SIZE(a_data, a_data_size);
-    l_msg->data_size = a_data_size;
-    l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
-
-    int l_ret= dap_events_socket_queue_ptr_send_to_input(a_queue_input, l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
-        DAP_DEL_Z(l_msg->data);
-        DAP_DELETE(l_msg);
-        return 0;
-    }
-    return a_data_size;
 }
 
 /**

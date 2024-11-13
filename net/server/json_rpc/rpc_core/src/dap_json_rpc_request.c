@@ -465,8 +465,9 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
 }
 
 
-char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size){
-    uint64_t l_id_response = dap_json_rpc_response_registration(a_request);
+char *dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t *output_data_size)
+{
+    //uint64_t l_id_response = dap_json_rpc_response_registration(a_request);
     a_request->id = 0;
     dap_cert_t *l_cert = dap_cert_find_by_name("node-addr");
     if (!l_cert) {

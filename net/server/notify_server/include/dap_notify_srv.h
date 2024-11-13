@@ -28,9 +28,9 @@
 
 int dap_notify_server_init();
 void dap_notify_server_deinit();
-DAP_PRINTF_ATTR(2, 3) int dap_notify_server_send_f_inter(uint32_t a_worker_id, const char *a_format, ...);
-int dap_notify_server_send_mt(const char * a_data);
-DAP_PRINTF_ATTR(1, 2) int dap_notify_server_send_f_mt(const char *a_format, ...);
+
+int dap_notify_server_send(const char * a_data);
+DAP_PRINTF_ATTR(1, 2) int dap_notify_server_send_f(const char *a_format, ...);
 
 typedef bool (*dap_notify_data_user_callback_t)(const char *data);
 void dap_notify_data_set_user_callback(dap_notify_data_user_callback_t callback);

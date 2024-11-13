@@ -87,11 +87,6 @@ void dap_stream_ch_delete(dap_stream_ch_t *a_ch);
 dap_stream_ch_t *dap_stream_ch_find_by_uuid_unsafe(dap_stream_worker_t *a_worker, dap_stream_ch_uuid_t a_uuid);
 dap_stream_ch_t *dap_stream_ch_by_id_unsafe(dap_stream_t *a_stream, const char a_ch_id);
 // MT-safe functions
-DAP_STATIC_INLINE bool dap_stream_ch_check_uuid_mt(dap_stream_worker_t *a_worker, dap_stream_ch_uuid_t a_ch_uuid)
-{
-    return dap_stream_ch_find_by_uuid_unsafe(a_worker, a_ch_uuid);
-}
-
 int dap_stream_ch_add_notifier(dap_stream_node_addr_t *a_stream_addr, uint8_t a_ch_id,
                              dap_stream_packet_direction_t a_direction, dap_stream_ch_notify_callback_t a_callback,
                              void *a_callback_arg);

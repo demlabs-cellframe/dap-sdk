@@ -162,10 +162,12 @@ static void s_client_write_on_worker(void *a_arg)
 
 }
 
-int dap_client_write_mt(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size)
+int dap_client_write(dap_client_t *a_client, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size)
 {
     if (DAP_CLIENT_PVT(a_client)->is_removing)
         return -1;
+    if (DAP_CLIENT_PVT(a_client)->worker == dap_worker_get_current())
+        return dap_client_write_unsafe(a_client, a_ch_id, a_type, a_data, a_data_size) > 0 ? 0 : -2;
     struct dap_client_write_args *l_args = DAP_NEW_SIZE(struct dap_client_write_args, sizeof(struct dap_client_write_args) + a_data_size);
     l_args->client = a_client;
     l_args->ch_id = a_ch_id;
@@ -223,10 +225,12 @@ void s_client_delete_on_worker(void *a_arg)
     dap_client_delete_unsafe(a_arg);
 }
 
-void dap_client_delete_mt(dap_client_t *a_client)
+void dap_client_delete(dap_client_t *a_client)
 {
     DAP_CLIENT_PVT(a_client)->is_removing = true;
     dap_worker_t *l_worker = DAP_CLIENT_PVT(a_client)->worker;
+    if (dap_worker_get_current() == l_worker)
+        return dap_client_delete_unsafe(a_client);
     dap_worker_exec_callback_on(l_worker, s_client_delete_on_worker, a_client);
 }
 

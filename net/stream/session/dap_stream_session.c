@@ -139,66 +139,32 @@ dap_stream_session_t * dap_stream_session_new(unsigned int media_id, bool open_p
 }
 
 /**
- * @brief dap_stream_session_id_mt
+ * @brief dap_stream_session_by_id
  * @param id
  * @return
  */
-dap_stream_session_t *dap_stream_session_id_mt(uint32_t a_id)
+dap_stream_session_t *dap_stream_session_by_id(uint32_t a_id)
 {
     dap_stream_session_t *l_ret = NULL;
-    dap_stream_session_lock();
+    pthread_mutex_lock(&s_sessions_mutex);
     HASH_FIND(hh, s_sessions, &a_id, sizeof(uint32_t), l_ret);
-    dap_stream_session_unlock();
+    pthread_mutex_unlock(&s_sessions_mutex);
     return l_ret;
 }
 
-/**
- * @brief dap_stream_session_id_unsafe
- * @param id
- * @return
- */
-dap_stream_session_t *dap_stream_session_id_unsafe(uint32_t id )
+int dap_stream_session_close(uint32_t a_id)
 {
-    dap_stream_session_t *ret = NULL;
-    HASH_FIND(hh, s_sessions, &id, sizeof(uint32_t), ret);
-    return ret;
-}
-
-/**
- * @brief dap_stream_session_lock
- */
-void dap_stream_session_lock()
-{
+    dap_stream_session_t *l_stm_sess = NULL;
+    log_it(L_INFO, "Close session id %u ...", a_id);
     pthread_mutex_lock(&s_sessions_mutex);
-}
-
-/**
- * @brief dap_stream_session_unlock
- */
-void dap_stream_session_unlock()
-{
-    pthread_mutex_unlock(&s_sessions_mutex);
-}
-
-
-int dap_stream_session_close_mt(uint32_t id)
-{
-dap_stream_session_t *l_stm_sess;
-
-    log_it(L_INFO, "Close session id %u ...", id);
-
-    dap_stream_session_lock();
-    if ( !(l_stm_sess = dap_stream_session_id_unsafe( id )) )
-    {
-        dap_stream_session_unlock();
-        log_it(L_WARNING, "Session id %u not found", id);
-
+    HASH_FIND(hh, s_sessions, &a_id, sizeof(uint32_t), l_stm_sess);
+    if (!l_stm_sess) {
+        pthread_mutex_unlock(&s_sessions_mutex);
+        log_it(L_WARNING, "Session id %u not found", a_id);
         return -1;
     }
-
     HASH_DEL(s_sessions, l_stm_sess);
-    dap_stream_session_unlock();
-
+    pthread_mutex_unlock(&s_sessions_mutex);
     log_it(L_INFO, "Delete session context [stm_sess:%p, id:%u, ts:%"DAP_UINT64_FORMAT_U"]",  l_stm_sess, l_stm_sess->id, l_stm_sess->time_created);
 
     if (l_stm_sess->callback_delete)

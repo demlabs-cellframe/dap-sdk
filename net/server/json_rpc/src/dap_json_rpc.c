@@ -54,10 +54,6 @@ bool dap_check_node_pkey_in_map(dap_hash_fast_t *a_pkey){
     return false;
 }
 
-dap_client_http_callback_error_t * dap_json_rpc_error_callback() {
-
-}
-
 int dap_json_rpc_init(dap_server_t* a_http_server, dap_config_t *a_config)
 {
     exec_cmd_module = true;
@@ -128,7 +124,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             l_tok = strtok_r(NULL, ",", &l_tok_tmp);
         }
         log_it(L_DEBUG,"Encryption type %s (enc headers %d)",dap_enc_get_type_name(l_enc_type), l_enc_headers);
-
+        UNUSED(l_is_legacy);
         dap_http_header_t *l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
         dap_enc_ks_key_t *l_ks_key = NULL;
         if (l_hdr_key_id) {

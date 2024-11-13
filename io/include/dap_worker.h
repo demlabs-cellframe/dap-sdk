@@ -35,17 +35,10 @@ typedef struct dap_worker {
     dap_proc_thread_t *proc_queue_input;
 #ifndef DAP_EVENTS_CAPS_IOCP
     // worker control queues
-    dap_events_socket_t *queue_es_new; // Queue socket for new socket
-    dap_events_socket_t **queue_es_new_input; // Queue socket for new socket
-
-    dap_events_socket_t *queue_es_delete; // Queue socke
-    dap_events_socket_t **queue_es_delete_input; // Queue socke
-
-    dap_events_socket_t *queue_es_reassign; // Queue for reassign between workers
-    dap_events_socket_t **queue_es_reassign_input; // Queue for reassign between workers
-
-    dap_events_socket_t *queue_es_io; // Queue socket for io ops
-    dap_events_socket_t **queue_es_io_input; // Queue socket for io ops between workers
+    dap_events_socket_t *queue_es_new;      // Queue socket for new event socket
+    dap_events_socket_t *queue_es_delete;   // Queue socket for remove event socket
+    dap_events_socket_t *queue_es_reassign; // Queue for reassign event socket between workers
+    dap_events_socket_t *queue_es_io;       // Queue socket for io ops
 #endif
     dap_events_socket_t *queue_callback;  /* Queue for pure callback on worker */
 
@@ -57,10 +50,9 @@ typedef struct dap_worker {
 } dap_worker_t;
 
 // Message for reassigment
-typedef struct dap_worker_msg_reassign{
-    dap_events_socket_t * esocket;
+typedef struct dap_worker_msg_reassign {
     dap_events_socket_uuid_t esocket_uuid;
-    dap_worker_t * worker_new;
+    dap_worker_t *worker_new;
 } dap_worker_msg_reassign_t;
 
 // Message for input/output queue
@@ -91,10 +83,7 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
 void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket);
 dap_worker_t *dap_worker_add_events_socket_auto( dap_events_socket_t * a_events_socket );
 void dap_worker_exec_callback_on(dap_worker_t * a_worker, dap_worker_callback_t a_callback, void * a_arg);
-#ifndef DAP_EVENTS_CAPS_IOCP
-void dap_worker_add_events_socket_inter(dap_events_socket_t * a_es_input, dap_events_socket_t * a_events_socket);
-void dap_worker_exec_callback_inter(dap_events_socket_t * a_es_input, dap_worker_callback_t a_callback, void * a_arg);
-#endif
+
 bool dap_worker_check_esocket_polled_now(); // Check if esocket is right now polled and present in list
 // Context callbacks
 int dap_worker_context_callback_started( dap_context_t * a_context, void *a_arg);

@@ -381,9 +381,9 @@ static bool s_cli_cmd_exec(void *a_arg) {
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                             "Content-Length: %zu\r\n\r\n"
                                             "%s", dap_strlen(l_ret), l_ret);
-    dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
+    dap_events_socket_write(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination
-    //dap_events_socket_remove_and_delete_mt(l_arg->worker, l_arg->es_uid); // No need...
+    //dap_events_socket_remove_and_delete(l_arg->worker, l_arg->es_uid); // No need...
     DAP_DEL_MULTY(l_ret, /*l_full_ret,*/ a_arg);
     return false;
 }

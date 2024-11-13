@@ -358,49 +358,6 @@ int dap_events_start()
             goto lb_err;
         }
     }
-#ifndef DAP_EVENTS_CAPS_IOCP
-    // Create inputs for inter-context message queues (here we can safety handle alien contexts fields)
-    for (size_t n = 0; n < s_threads_count; n++) {
-        s_workers[n]->queue_es_new_input      = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * s_threads_count);
-        if (!s_workers[n]->queue_es_new_input) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            l_ret = -6;
-            goto lb_err;
-        }
-        s_workers[n]->queue_es_delete_input   = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * s_threads_count);
-        if (!s_workers[n]->queue_es_delete_input) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            l_ret = -6;
-            goto lb_err;
-        }
-        s_workers[n]->queue_es_io_input       = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * s_threads_count);
-        if (!s_workers[n]->queue_es_io_input) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            l_ret = -6;
-            goto lb_err;
-        }
-        s_workers[n]->queue_es_reassign_input = DAP_NEW_Z_SIZE(dap_events_socket_t *, sizeof(dap_events_socket_t *) * s_threads_count);
-        if (!s_workers[n]->queue_es_reassign_input) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            l_ret = -6;
-            goto lb_err;
-        }
-        for (size_t i = 0; i < s_threads_count; i++) {
-            // Input of queue for new esockets
-            s_workers[n]->queue_es_new_input[i]      = dap_events_socket_queue_ptr_create_input(s_workers[i]->queue_es_new);
-            dap_worker_add_events_socket_unsafe(s_workers[n], s_workers[n]->queue_es_new_input[i]);
-            // Input of queue for removed esockets
-            s_workers[n]->queue_es_delete_input[i]   = dap_events_socket_queue_ptr_create_input(s_workers[i]->queue_es_delete);
-            dap_worker_add_events_socket_unsafe(s_workers[n], s_workers[n]->queue_es_delete_input[i]);
-            // Input of queue for writing to esockets
-            s_workers[n]->queue_es_io_input[i]       = dap_events_socket_queue_ptr_create_input(s_workers[i]->queue_es_io);
-            dap_worker_add_events_socket_unsafe(s_workers[n], s_workers[n]->queue_es_io_input[i]);
-            // Input of queue for esockets reassigning
-            s_workers[n]->queue_es_reassign_input[i] = dap_events_socket_queue_ptr_create_input(s_workers[i]->queue_es_reassign);
-            dap_worker_add_events_socket_unsafe(s_workers[n], s_workers[n]->queue_es_reassign_input[i]);
-        }
-    }
-#endif
     // Init callback processor
     if (dap_proc_thread_init(s_threads_count) != 0 ){
         log_it( L_CRITICAL, "Can't init proc threads" );
@@ -411,17 +368,8 @@ int dap_events_start()
     return 0;
 lb_err:
     log_it(L_CRITICAL,"Events init failed with code %d", l_ret);
-    for( uint32_t j = 0; j < s_threads_count; j++) {
-        if (s_workers[j]) {
-#ifndef DAP_EVENTS_CAPS_IOCP
-            DAP_DEL_Z(s_workers[j]->queue_es_new_input);
-            DAP_DEL_Z(s_workers[j]->queue_es_delete_input);
-            DAP_DEL_Z(s_workers[j]->queue_es_io_input);
-            DAP_DEL_Z(s_workers[j]->queue_es_reassign_input);
-#endif
-            DAP_DEL_Z(s_workers[j]);
-        }
-    }
+    for( uint32_t j = 0; j < s_threads_count; j++)
+        DAP_DEL_Z(s_workers[j]);
     return l_ret;
 }
 
