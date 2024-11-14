@@ -18,6 +18,23 @@
 
 #define DB_FILE "./base.tmp"
 
+static const char *s_db_types[] = {
+#ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
+    "sqlite",
+#endif
+#ifdef DAP_CHAIN_GDB_ENGINE_CUTTDB
+    "cdb",
+#endif
+#ifdef DAP_CHAIN_GDB_ENGINE_MDBX
+    "mdbx",
+#endif
+
+#ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
+    "pgsql",
+#endif
+    "none"
+};
+
 // benchmarks
 static int    s_write = 0;
 static int    s_read = 0;
@@ -654,46 +671,34 @@ static void s_test_multithread(size_t a_count)
 int main(int argc, char **argv)
 {
     dap_log_level_set(L_ERROR);
-#ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
-    dap_print_module_name("SQLite");
-    s_test_create_db("sqlite");
-#endif
-#ifdef DAP_CHAIN_GDB_ENGINE_CUTTDB
-    dap_print_module_name("CDB");
-    s_test_create_db("cdb");
-#endif
-#ifdef DAP_CHAIN_GDB_ENGINE_MDBX
-    dap_print_module_name("MDBX");
-    s_test_create_db("mdbx");
-#endif
-
-#ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
-    dap_print_module_name("PostgresQL");
-    s_test_create_db("pgsql");
-#endif
-
+    size_t l_db_count = sizeof(s_db_types) / sizeof(char *) - 1;
+    dap_assert_PIF(l_db_count, "Use minimum 1 DB driver");
     size_t l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + 2;
-    int l_t1 = get_cur_time_msec();
-    s_test_all(l_count);
-    int l_t2 = get_cur_time_msec();
-    char l_msg[120] = {0};
-    sprintf(l_msg, "Tests to %zu records", l_count);
-// dap_print_module_name("Multithread");  // TODO need update test, fail on pipelines
-     s_test_multithread(l_count);
-dap_print_module_name("Benchmark");
-    benchmark_mgs_time(l_msg, l_t2 - l_t1);
-    benchmark_mgs_time("Tests to write", s_write);
-    benchmark_mgs_time("Tests to read", s_read);
-    benchmark_mgs_time("Tests to read_cond_store", s_read_cond_store);
-    benchmark_mgs_time("Tests to count", s_count);
-    benchmark_mgs_time("Tests to tx_start_end", s_tx_start_end);
-    benchmark_mgs_time("Tests to flush", s_flush);
-    benchmark_mgs_time("Tests to is_obj", s_is_obj);
-    benchmark_mgs_time("Tests to is_hash", s_is_hash);
-    benchmark_mgs_time("Tests to last", s_last);
-    benchmark_mgs_time("Tests to read_hashes", s_read_hashes);
-    benchmark_mgs_time("Tests to get_by_hash", s_get_by_hash);
-    benchmark_mgs_time("Tests to get_groups_by_mask", s_get_groups_by_mask);
-    s_test_close_db();
+    for (size_t i = 0; i < l_db_count; ++i) {
+        dap_print_module_name(s_db_types[i]);
+        s_test_create_db(s_db_types[i]);
+        int l_t1 = get_cur_time_msec();
+        s_test_all(l_count);
+        int l_t2 = get_cur_time_msec();
+        char l_msg[120] = {0};
+        sprintf(l_msg, "Tests to %zu records", l_count);
+    dap_print_module_name("Multithread");  // TODO need update test, fail on pipelines
+        s_test_multithread(l_count);
+    dap_print_module_name("Benchmark");
+        benchmark_mgs_time(l_msg, l_t2 - l_t1);
+        benchmark_mgs_time("Tests to write", s_write);
+        benchmark_mgs_time("Tests to read", s_read);
+        benchmark_mgs_time("Tests to read_cond_store", s_read_cond_store);
+        benchmark_mgs_time("Tests to count", s_count);
+        benchmark_mgs_time("Tests to tx_start_end", s_tx_start_end);
+        benchmark_mgs_time("Tests to flush", s_flush);
+        benchmark_mgs_time("Tests to is_obj", s_is_obj);
+        benchmark_mgs_time("Tests to is_hash", s_is_hash);
+        benchmark_mgs_time("Tests to last", s_last);
+        benchmark_mgs_time("Tests to read_hashes", s_read_hashes);
+        benchmark_mgs_time("Tests to get_by_hash", s_get_by_hash);
+        benchmark_mgs_time("Tests to get_groups_by_mask", s_get_groups_by_mask);
+        s_test_close_db();
+    }
 }
 
