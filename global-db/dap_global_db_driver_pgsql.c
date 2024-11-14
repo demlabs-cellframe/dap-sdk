@@ -177,17 +177,18 @@ int dap_db_driver_pgsql_init(const char *a_filename_dir, dap_db_driver_callbacks
     }
     DAP_DELETE(l_conn_str);
     pthread_rwlock_init(&s_db_rwlock, 0);
-    a_drv_callback->transaction_start = dap_db_driver_pgsql_start_transaction;
-    a_drv_callback->transaction_end = dap_db_driver_pgsql_end_transaction;
-    a_drv_callback->apply_store_obj = dap_db_driver_pgsql_apply_store_obj;
-    a_drv_callback->read_store_obj = dap_db_driver_pgsql_read_store_obj;
-    a_drv_callback->read_cond_store_obj = dap_db_driver_pgsql_read_cond_store_obj;
-    a_drv_callback->read_last_store_obj = dap_db_driver_pgsql_read_last_store_obj;
-    a_drv_callback->get_groups_by_mask  = dap_db_driver_pgsql_get_groups_by_mask;
-    a_drv_callback->read_count_store = dap_db_driver_pgsql_read_count_store;
-    a_drv_callback->is_obj = dap_db_driver_pgsql_is_obj;
-    a_drv_callback->deinit = dap_db_driver_pgsql_deinit;
-    a_drv_callback->flush = dap_db_driver_pgsql_flush;
+    a_drv_callback->transaction_start           = dap_db_driver_pgsql_start_transaction;
+    a_drv_callback->transaction_end             = dap_db_driver_pgsql_end_transaction;
+    a_drv_callback->apply_store_obj             = dap_db_driver_pgsql_apply_store_obj;
+    a_drv_callback->read_store_obj              = dap_db_driver_pgsql_read_store_obj;
+    a_drv_callback->read_cond_store_obj         = dap_db_driver_pgsql_read_cond_store_obj;
+    a_drv_callback->read_store_obj_by_timestamp = dap_db_pgsql_read_store_obj_below_timestamp;
+    a_drv_callback->read_last_store_obj         = dap_db_driver_pgsql_read_last_store_obj;
+    a_drv_callback->get_groups_by_mask          = dap_db_driver_pgsql_get_groups_by_mask;
+    a_drv_callback->read_count_store            = dap_db_driver_pgsql_read_count_store;
+    a_drv_callback->is_obj                      = dap_db_driver_pgsql_is_obj;
+    a_drv_callback->deinit                      = dap_db_driver_pgsql_deinit;
+    a_drv_callback->flush                       = dap_db_driver_pgsql_flush;
     return 0;
 }
 
@@ -512,7 +513,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_cond_store_obj(const char *a_group, ui
     return l_obj;
 }
 
-dap_store_obj_t* dap_db_pgsql_read_store_obj_below_timestamp(const char *a_group, uint64_t a_timestamp) {
+dap_store_obj_t* dap_db_pgsql_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp) {
     if (!a_group) 
         return NULL;
 

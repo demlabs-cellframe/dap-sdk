@@ -434,21 +434,21 @@ size_t     l_upper_limit_of_db_size = 16;
     /*
     ** Fill the Driver Interface Table
     */
-    a_drv_dpt->apply_store_obj     = s_db_mdbx_apply_store_obj;
-    a_drv_dpt->read_last_store_obj = s_db_mdbx_read_last_store_obj;
-    a_drv_dpt->read_last_store_obj = s_db_mdbx_read_last_store_obj;
-    a_drv_dpt->get_by_hash         = s_db_mdbx_get_by_hash;
-    a_drv_dpt->read_store_obj      = s_db_mdbx_read_store_obj;
-    a_drv_dpt->read_cond_store_obj = s_db_mdbx_read_cond_store_obj;
-    a_drv_dpt->read_hashes         = s_db_mdbx_read_hashes;
-    a_drv_dpt->read_count_store    = s_db_mdbx_read_count_store;
-    a_drv_dpt->get_groups_by_mask  = s_db_mdbx_get_groups_by_mask;
-    a_drv_dpt->is_obj              = s_db_mdbx_is_obj;
-    a_drv_dpt->is_hash             = s_db_mdbx_is_hash;
-    a_drv_dpt->deinit              = s_db_mdbx_deinit;
-    a_drv_dpt->flush               = s_db_mdbx_flush;
-    a_drv_dpt->transaction_start   = s_db_mdbx_txn_start;
-    a_drv_dpt->transaction_end     = s_db_mdbx_txn_end;
+    a_drv_dpt->apply_store_obj             = s_db_mdbx_apply_store_obj;
+    a_drv_dpt->read_last_store_obj         = s_db_mdbx_read_last_store_obj;
+    a_drv_dpt->read_store_obj_by_timestamp = s_db_mdbx_read_store_obj_below_timestamp;
+    a_drv_dpt->get_by_hash                 = s_db_mdbx_get_by_hash;
+    a_drv_dpt->read_store_obj              = s_db_mdbx_read_store_obj;
+    a_drv_dpt->read_cond_store_obj         = s_db_mdbx_read_cond_store_obj;
+    a_drv_dpt->read_hashes                 = s_db_mdbx_read_hashes;
+    a_drv_dpt->read_count_store            = s_db_mdbx_read_count_store;
+    a_drv_dpt->get_groups_by_mask          = s_db_mdbx_get_groups_by_mask;
+    a_drv_dpt->is_obj                      = s_db_mdbx_is_obj;
+    a_drv_dpt->is_hash                     = s_db_mdbx_is_hash;
+    a_drv_dpt->deinit                      = s_db_mdbx_deinit;
+    a_drv_dpt->flush                       = s_db_mdbx_flush;
+    a_drv_dpt->transaction_start           = s_db_mdbx_txn_start;
+    a_drv_dpt->transaction_end             = s_db_mdbx_txn_end;
 
     /*
      * MDBX support transactions but on the current circuimstance we will not get
@@ -683,7 +683,7 @@ ret:
     return l_obj;
 }
 
-dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, uint64_t a_timestamp) {
+dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp) {
     dap_return_val_if_fail(a_group, NULL);
 
     int rc;
@@ -717,7 +717,7 @@ dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, u
     rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_FIRST);
     while (rc == MDBX_SUCCESS) {
         if (l_count_current >= l_sizeof_obj){
-            l_sizeof_obj *=2;
+            l_sizeof_obj += 16;
             dap_store_obj_t* l_tmp = DAP_REALLOC(l_obj_arr, l_sizeof_obj*sizeof(dap_store_obj_t));
             if (!l_tmp) {
                 log_it(L_ERROR, "Cannot allocate memory for store object, errno=%d", errno);

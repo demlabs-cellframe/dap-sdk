@@ -1672,25 +1672,33 @@ static dap_global_db_obj_t* s_get_pinned_objs(const char *a_group, size_t *a_obj
 
 }
 
+static dap_global_db_obj_t* s_get_all_pinned_objs(const char *a_group, size_t *a_objs_count) {
+
+}
+
 static int s_check_pinned_db_objs_init() {
 
 
 
     size_t l_objs_size = 0;
-    dap_global_db_obj_t * l_objs = dap_global_db_get_all_sync(l_gdb_group, &l_objs_size);
+    dap_nanotime_t l_check_ts = dap_nanotime_from_sec(3720); // one hour + 2min
+    dap_nanotime_t l_callback_ts = dap_nanotime_from_sec(3600); // one hour 
+    dap_nanotime_t l_timestamp = dap_nanotime_now() + l_callback_ts;
+
+    json_object* json_group_list = json_object_new_object();
+    dap_list_t *l_group_list = dap_global_db_driver_get_groups_by_mask("*");
+    size_t l_count = 0;
+    json_object* json_arr_group = json_object_new_array();
+    json_object* json_obj_list = NULL;
+    for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list), ++l_count) {
+        size_t l_ret_count;
+        dap_global_db_obj_t * l_ret = dap_global_db_get_all_raw_sync((char*)l_list->data, &l_ret_count);
+        s_get_all_pinned_objs();
+    }
+
+    dap_global_db_obj_t * l_objs = dap_global_db_driver_read_obj_below_timestamp(l_gdb_group, &l_objs_size);
     
-    dap_chain_cs_blocks_get_reward_group();
-    dap_chain_cs_blocks_get_fee_group();
-    dap_ledger_get_gdb_group();
-    dap_chain_net_srv_order_get_gdb_group();
-    dap_chain_net_srv_order_get_common_group();
-    dap_chain_net_srv_order_get_gdb_group(a_net)
-    fee
-    s_get_penalty_group()
-    "local.srv_statistic"
-    s_hot_group_forming
-    dap_chain_net_get_gdb_group_mempool_new();
-    dap_chain_net_get_gdb_group_acl();
+
     for (size_t i = 0; i < l_objs_size; i++) {
         
     }
