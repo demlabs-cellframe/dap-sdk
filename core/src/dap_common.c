@@ -171,7 +171,11 @@ static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va);
 #define LOG_FORMAT_LEN  4096
 #define LOG_BUF_SIZE    32768
 
+#ifdef DAP_TESTS
+static print_callback s_print_callback = print_it_stdout;
+#else
 static print_callback s_print_callback = print_it_none;
+#endif
 //static void *s_print_param = NULL;
 
 
