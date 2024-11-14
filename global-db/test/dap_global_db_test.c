@@ -62,7 +62,9 @@ static int s_test_create_db(const char *db_type)
     else
         unlink(DB_FILE);
     rc = dap_global_db_driver_init(db_type, DB_FILE);
-    dap_assert(rc == 0, "Initialization db driver");
+    char *l_msg = dap_strdup_printf("Initialization db driver. Code: %i", rc);
+    dap_assert(rc == 0, l_msg);
+    DAP_DELETE(l_msg);
     return rc;
 }
 
