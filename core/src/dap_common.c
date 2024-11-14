@@ -778,7 +778,7 @@ dap_error_str_t dap_strerror_(long long err) {
 }
 
 #ifdef DAP_OS_WINDOWS
-dap_error_str_t dap_str_ntstatus(DWORD err) {
+dap_error_str_t dap_str_ntstatus_(DWORD err) {
     dap_error_str_t l_ret = { };
     char *s_nterror = (char*)&l_ret;
     HMODULE ntdll = GetModuleHandle("ntdll.dll");
@@ -974,8 +974,7 @@ static const char l_possible_chars[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop
  */
 void dap_random_string_fill(char *str, size_t length) {
     for(size_t i = 0; i < length; i++)
-        str[i] = l_possible_chars[
-                rand() % (sizeof(l_possible_chars) - 1)];
+        str[i] = l_possible_chars[rand() % (sizeof(l_possible_chars) - 1)];
 }
 
 /**
