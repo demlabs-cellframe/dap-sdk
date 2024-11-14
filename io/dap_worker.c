@@ -33,6 +33,29 @@
 #include "dap_common.h"
 #include "dap_config.h"
 
+#if defined (DAP_OS_LINUX)
+#include <sys/epoll.h>
+#include <sys/types.h>
+#include <sys/select.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#elif defined (DAP_OS_BSD)
+#include <sys/types.h>
+#include <sys/select.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
+
+#elif defined (DAP_OS_WINDOWS)
+#include <winsock2.h>
+#include <windows.h>
+#include <mswsock.h>
+#include <io.h>
+#include <winternl.h>
+#include <ntstatus.h>
+#endif
+
 #ifndef DAP_NET_CLIENT_NO_SSL
 #include <wolfssl/options.h>
 #include "wolfssl/ssl.h"

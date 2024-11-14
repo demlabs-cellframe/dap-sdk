@@ -40,29 +40,6 @@
 #include <ws2tcpip.h>
 #endif
 
-#if defined (DAP_OS_LINUX)
-#include <sys/epoll.h>
-#include <sys/types.h>
-#include <sys/select.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#elif defined (DAP_OS_BSD)
-#include <sys/types.h>
-#include <sys/select.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-
-#elif defined (DAP_OS_WINDOWS)
-#include <winsock2.h>
-#include <windows.h>
-#include <mswsock.h>
-#include <io.h>
-#include <winternl.h>
-#include <ntstatus.h>
-#endif
-
 #ifdef DAP_OS_DARWIN
 #define NOTE_READ NOTE_LOWAT
 
