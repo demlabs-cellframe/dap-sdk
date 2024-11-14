@@ -413,7 +413,7 @@ void dap_events_socket_reassign_between_workers(dap_worker_t *a_worker_old, dap_
     ol->ol.Pointer = a_es_uuid;
     ol->op = io_call;
     if ( !PostQueuedCompletionStatus(a_worker_old->context->iocp, 0, (ULONG_PTR)s_es_reassign, (OVERLAPPED*)ol) ) {
-        log_it(L_ERROR, "Can't reassign es %p, error %d", a_es, GetLastError());
+        log_it(L_ERROR, "Can't reassign es % " DAP_UINT64_FORMAT_x ",  error %d", a_es_uuid, GetLastError());
         dap_overlapped_free(ol);
     }
     return;
