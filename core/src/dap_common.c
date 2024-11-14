@@ -50,8 +50,6 @@
 #define DAP_LOG_USE_SPINLOCK    0
 #define DAP_LOG_HISTORY         1
 
-#define LAST_ERROR_MAX  255
-
 #define LOG_TAG "dap_common"
 
 typedef void (*print_callback) (unsigned a_off, const char *a_fmt, va_list va);
@@ -297,7 +295,7 @@ void dap_set_log_tag_width(size_t a_width) {
  * @param int a_count - count deleted args
  * @param void* a_to_delete
  */
-void dap_delete_multy(char a_doof, ...)
+void dap_delete_multy(char *a_doof, ...)
 {
     va_list l_args_list;
     va_start(l_args_list, a_doof);
@@ -763,10 +761,10 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
  * @brief log_error Error log
  * @return
  */
-char *dap_strerror(long long err) {
-    static _Thread_local char s_error[LAST_ERROR_MAX] = {'\0'};
+dap_error_str_t dap_strerror_(long long err) {
+    dap_error_str_t l_ret = { };
+    char *s_error = (char*)&l_ret;
 #ifdef DAP_OS_WINDOWS
-    *s_error = '\0';
     DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
                   NULL, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_error, LAST_ERROR_MAX, NULL);
     if (l_len)
@@ -776,52 +774,50 @@ char *dap_strerror(long long err) {
     if ( strerror_r(err, s_error, LAST_ERROR_MAX) )
 #endif
         snprintf(s_error, LAST_ERROR_MAX, "Unknown error code %lld", err);
-    return s_error;
+    return l_ret;
 }
 
 #ifdef DAP_OS_WINDOWS
-char *dap_str_ntstatus(DWORD err) {
-    static _Thread_local char s_nterror[LAST_ERROR_MAX] = {'\0'};
+dap_error_str_t dap_str_ntstatus(DWORD err) {
+    dap_error_str_t l_ret = { };
+    char *s_nterror = (char*)&l_ret;
     HMODULE ntdll = GetModuleHandle("ntdll.dll");
     if (!ntdll)
-        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())), s_nterror;
-    *s_nterror = '\0';
+        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())), l_ret;
     DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
                   ntdll, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_nterror, LAST_ERROR_MAX, NULL);
     return ( l_len 
         ? *(s_nterror + l_len - 1) = '\0'
-        : snprintf(s_nterror, LAST_ERROR_MAX, "Unknown error code %lld", err) ), s_nterror;
+        : snprintf(s_nterror, LAST_ERROR_MAX, "Unknown error code %lld", err) ), l_ret;
 }
 #endif
 
 #if 1
-#define INT_DIGITS 19   /* enough for 64 bit integer */
 
 /**
  * @brief itoa  The function converts an integer num to a string equivalent and places the result in a string
  * @param[in] i number
  * @return
  */
-char *dap_itoa(long long i)
+dap_maxint_str_t dap_itoa_(long long i)
 {
     /* Room for INT_DIGITS digits, - and '\0' */
-    static _Thread_local char buf[INT_DIGITS + 2];
+    dap_maxint_str_t l_ret = { };
+    char *buf = (char*)&l_ret;
     char *p = buf + INT_DIGITS + 1; /* points to terminating '\0' */
     if (i >= 0) {
         do {
             *--p = '0' + (i % 10);
             i /= 10;
         } while (i != 0);
-        return p;
-    }
-    else {      /* i < 0 */
+    } else {      /* i < 0 */
         do {
             *--p = '0' - (i % 10);
             i /= 10;
         } while (i != 0);
         *--p = '-';
     }
-    return p;
+    return l_ret;
 }
 
 #endif
@@ -1552,11 +1548,13 @@ void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size){
 #ifdef __cplusplus
 extern "C" {
 #endif
-const char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address)
+
+
+dap_node_addr_str_t dap_stream_node_addr_to_str_static_(dap_stream_node_addr_t a_address)
 {
-    static _Thread_local char s_buf[23] = { '\0' };
-    snprintf(s_buf, sizeof(s_buf), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
-    return s_buf;
+    dap_node_addr_str_t l_ret = { };
+    snprintf((char*)&l_ret, sizeof(l_ret), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
+    return l_ret;
 }
 #ifdef __cplusplus
 }

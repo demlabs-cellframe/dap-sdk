@@ -167,14 +167,12 @@ bool dap_dir_test(const char * a_dir_path)
 int dap_mkdir_with_parents(const char *a_dir_path)
 {
     // validation of a pointer
-    if(a_dir_path == NULL || a_dir_path[0] == '\0') {
+    if (!a_dir_path || !*a_dir_path) {
         errno = EINVAL;
         return -1;
     }
-    char path[strlen(a_dir_path) + 1];
-    memset(path, '\0', strlen(a_dir_path) + 1);
-    memcpy(path, a_dir_path, strlen(a_dir_path));
-    char *p;
+    char path[strlen(a_dir_path) + 1], *p;
+    dap_strncpy(path, a_dir_path, sizeof(path) - 1);
     // skip the root component if it is present, i.e. the "/" in Unix or "C:\" in Windows
 #ifdef DAP_OS_WINDOWS
     if(((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z'))
@@ -768,7 +766,7 @@ char *dap_file_get_contents2(const char *a_filename, size_t *length)
 {
     dap_return_val_if_fail(length, NULL);
     if ( !dap_file_test(a_filename) )
-        return log_it(L_ERROR, "File \"%s\" not found"), NULL;
+        return log_it(L_ERROR, "File \"%s\" not found", a_filename), NULL;
     int l_err = 0;
     FILE *f = fopen(a_filename, "rb");
     if (!f) {
@@ -785,11 +783,11 @@ char *dap_file_get_contents2(const char *a_filename, size_t *length)
         log_it(L_ERROR, "Can't get file %s size or file is empty", a_filename);
         l_err = -3;
     } else if (!( l_buffer = DAP_NEW_Z_SIZE(char, l_size)) ) {
-        log_it(L_CRITICAL, c_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         l_err = -4;
     } else {
         rewind(f);
-        if ( fread(f, 1, l_size, f) < l_size ) {
+        if ( fread(l_buffer, 1, l_size, f) < (size_t)l_size ) {
             log_it(L_ERROR, "Can't read full file %s", a_filename);
             l_err = -5;
         }
@@ -1160,7 +1158,7 @@ char* dap_build_filename(const char *first_element, ...)
  */
 char* dap_canonicalize_filename(const char *filename, const char *relative_to)
 {
-    char buf[MAX_PATH];
+    char buf[MAX_PATH + 1];
     snprintf(buf, sizeof(buf), "%s/%s", relative_to, filename);
     return realpath(buf, NULL);
 #if 0

@@ -269,7 +269,7 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
                     log_it(L_ERROR, "chmod() on socket path failed, errno %d: \"%s\"",
                                     errno, dap_strerror(errno));
         }
-        dap_config_get_item_str_path_array_free(l_paths, &l_count);
+        dap_config_get_item_str_path_array_free(l_paths, l_count);
 #endif
         const char **l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_LISTEN_ADDRS, &l_count);
         for (i = 0; i < l_count; ++i) {

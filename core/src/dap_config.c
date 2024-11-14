@@ -295,7 +295,7 @@ dap_config_t *dap_config_open(const char* a_file_path) {
         return NULL;
     }
     log_it(L_DEBUG, "Looking for config name %s...", a_file_path);
-    char l_path[MAX_PATH] = { '\0' };
+    char l_path[MAX_PATH + 1] = "";
     int l_pos = dap_strncmp(a_file_path, s_configs_path, strlen(s_configs_path) - 4)
             ? snprintf(l_path, MAX_PATH, "%s/%s.cfg", s_configs_path, a_file_path)
             : snprintf(l_path, MAX_PATH, "%s.cfg", a_file_path);
@@ -445,8 +445,6 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
         return l_item->val.val_str;
     case DAP_CONFIG_ITEM_ARRAY:
         return *l_item->val.val_arr;
-    case DAP_CONFIG_ITEM_DECIMAL:
-        return dap_itoa(l_item->val.val_int);
     case DAP_CONFIG_ITEM_BOOL:
         return l_item->val.val_bool ? "true" : "false";
     default:
@@ -474,7 +472,7 @@ const char **dap_config_get_array_str(dap_config_t *a_config, const char *a_sect
         log_it(L_WARNING, "Parameter \"%s\" '%c' is not array", l_item->name, l_item->type);
         if (array_length)
             *array_length = 1;
-        static _Thread_local const char* s_ret = NULL;
+        static _Thread_local const char* s_ret;
         return s_ret = dap_config_get_item_str(a_config, a_section, a_item_name), &s_ret;
     }
     if (array_length)

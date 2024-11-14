@@ -370,7 +370,8 @@ dap_cert_t * dap_cert_new(const char * a_name)
 {
     dap_cert_t *l_ret = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_cert_t, NULL);
     l_ret->_pvt = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_cert_pvt_t, NULL, l_ret);
-    return snprintf(l_ret->name, sizeof(l_ret->name), "%s", a_name), l_ret;
+    strncpy(l_ret->name, a_name, sizeof(l_ret->name) - 1);
+    return l_ret;
 }
 
 int dap_cert_add(dap_cert_t *a_cert)
@@ -381,7 +382,7 @@ int dap_cert_add(dap_cert_t *a_cert)
     if (l_cert_item)
         return log_it(L_WARNING, "Certificate with name %s already present in memory", a_cert->name), -2;
     l_cert_item = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_cert_item_t, -3);
-    snprintf(l_cert_item->name, sizeof(l_cert_item->name), "%s", a_cert->name);
+    dap_strncpy(l_cert_item->name, a_cert->name, sizeof(l_cert_item->name) - 1);
     l_cert_item->cert = a_cert;
     HASH_ADD_STR(s_certs, name, l_cert_item);
     return 0;
@@ -636,17 +637,11 @@ dap_cert_metadata_t *dap_cert_new_meta(const char *a_key, dap_cert_metadata_type
         log_it(L_WARNING, "Incorrect arguments for dap_cert_new_meta()");
         return NULL;
     }
-    size_t l_meta_item_size = sizeof(dap_cert_metadata_t) + a_value_size + strlen(a_key) + 1;
-    dap_cert_metadata_t *l_new_meta = DAP_NEW_SIZE(void, l_meta_item_size);
-    if(!l_new_meta) {
-        log_it(L_ERROR, "Memory allocation error in %s, line %d", __PRETTY_FUNCTION__, __LINE__);
-        return NULL;
-    }
+    size_t l_keylen = strlen(a_key), l_meta_item_size = sizeof(dap_cert_metadata_t) + a_value_size + l_keylen + 1;
+    dap_cert_metadata_t *l_new_meta = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_cert_metadata_t, l_meta_item_size, NULL);
     l_new_meta->length = a_value_size;
     l_new_meta->type = a_type;
-    memcpy((void *)l_new_meta->value, a_value, a_value_size);
-    dap_stpcpy((char *)&l_new_meta->value[a_value_size], a_key);
-    l_new_meta->key = (const char *)&l_new_meta->value[a_value_size];
+    l_new_meta->key = strncpy( (char*)dap_mempcpy(l_new_meta->value, a_value, a_value_size), a_key, l_keylen );
     return l_new_meta;
 }
 

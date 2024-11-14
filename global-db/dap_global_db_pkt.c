@@ -41,7 +41,7 @@ dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old
     if (!a_new_pkt)
         return a_old_pkt;
     size_t l_add_size = dap_global_db_pkt_get_size(a_new_pkt);
-    dap_global_db_pkt_pack_t *l_old_pkt = a_old_pkt
+    dap_global_db_pkt_pack_t *l_old_pkt = !a_old_pkt
         ? DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_add_size, NULL)
         : DAP_REALLOC_RET_VAL_IF_FAIL(a_old_pkt, a_old_pkt->data_size + sizeof(dap_global_db_pkt_pack_t) + l_add_size, NULL);
     memcpy(l_old_pkt->data + l_old_pkt->data_size, a_new_pkt, l_add_size);
@@ -80,7 +80,7 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     if (a_store_obj->value_len)
         l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->value, a_store_obj->value_len);
     if (a_store_obj->sign)
-        l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->sign, l_sign_len);
+        memcpy(l_data_ptr, a_store_obj->sign, l_sign_len);
 
     assert((size_t)((byte_t *)l_data_ptr - l_pkt->data) == l_data_size_out);
     return l_pkt;

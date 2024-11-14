@@ -187,12 +187,9 @@ int dap_notify_server_send_f_mt(const char *a_format, ...)
     vsnprintf(l_str, l_str_size, a_format, ap_copy);
     va_end(ap_copy);
 
-    if (s_notify_data_user_callback) s_notify_data_user_callback(l_str);
+    if (s_notify_data_user_callback)
+        s_notify_data_user_callback(l_str);
     
-
-    if(!s_notify_server_queue) // If not initialized - nothing to notify
-        return 0;
-
     int l_ret = dap_events_socket_queue_ptr_send(s_notify_server_queue, l_str);
     DAP_DELETE(l_str);
     return l_ret;

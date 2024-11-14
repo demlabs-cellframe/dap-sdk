@@ -389,7 +389,7 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
         // get multisign hash data
         if (!i && !dap_multi_sign_hash_data(l_sign, a_msg, a_msg_size, &l_data_hash)) {
             log_it (L_ERROR, "Can't create multi-signature hash");
-            return -3;
+            return DAP_DELETE(l_step_sign), -3;
         }
         l_step_sign->header = l_sign->meta[i].sign_header;
         memcpy(l_step_sign->pkey_n_sign, l_pkeys->data + l_pkeys_mem_shift, l_pkey_size);

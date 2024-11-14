@@ -878,7 +878,6 @@ void dap_string_append_vprintf(dap_string_t *string, const char *format, va_list
  */
 void dap_string_prepend_vprintf(dap_string_t *a_string, const char *a_format, va_list a_args)
 {
-    const char l_oom [] = { "Out of memory@%s!" };
     char *buf, l_buf[128];
     size_t len;
 

@@ -302,7 +302,7 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
 
 void dap_client_pvt_queue_add(dap_client_pvt_t *a_client_pvt, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size)
 {
-    dap_client_pkt_queue_elm_t *l_pkt = DAP_NEW_SIZE(dap_client_pkt_queue_elm_t, sizeof(dap_client_pkt_queue_elm_t) + a_data_size);
+    dap_client_pkt_queue_elm_t *l_pkt = DAP_NEW_Z_SIZE(dap_client_pkt_queue_elm_t, sizeof(dap_client_pkt_queue_elm_t) + a_data_size);
     l_pkt->ch_id = a_ch_id;
     l_pkt->type = a_type;
     l_pkt->data_size = a_data_size;
@@ -586,15 +586,9 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                                                     s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                     }
                     else if (l_err != EINPROGRESS && l_err != -1){
-                        char l_errbuf[128] = {0};
-
-                        if (l_err)
-                            strerror_r(l_err,l_errbuf,sizeof (l_errbuf));
-                        else
-                            strncpy(l_errbuf,"Unknown Error",sizeof(l_errbuf)-1);
                         log_it(L_ERROR, "Remote address can't connect (%s:%hu) with sock_id %"DAP_FORMAT_SOCKET": \"%s\" (code %d)",
-                                            a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port,
-                                            l_es->socket, l_errbuf, l_err);
+                                        a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port,
+                                        l_es->socket, dap_strerror(l_err), l_err);
                         dap_events_socket_delete_unsafe(l_es, true);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_CONNECT;
@@ -822,8 +816,8 @@ void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char
                                      l_offset, l_suburl_enc_size, l_enc_type);
             if (l_query_enc_size) {
                 *l_offset++ = '?';
-                l_offset += dap_enc_code(a_client_internal->session_key, a_query, l_query_len,
-                                         l_offset, l_query_enc_size, l_enc_type);
+                dap_enc_code(a_client_internal->session_key, a_query, l_query_len,
+                             l_offset, l_query_enc_size, l_enc_type);
             }
         }
     }

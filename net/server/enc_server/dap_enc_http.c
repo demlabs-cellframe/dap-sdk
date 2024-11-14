@@ -256,12 +256,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
 
     dap_enc_key_t * l_key= dap_enc_ks_find_http(a_http_simple->http_client);
     if(l_key){
-        enc_http_delegate_t * dg = DAP_NEW_Z(enc_http_delegate_t);
-        if (!dg) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            DAP_DEL_Z(dg);
-            return NULL;
-        }
+        enc_http_delegate_t * dg = DAP_NEW_Z_RET_VAL_IF_FAIL(enc_http_delegate_t, NULL);
         dg->key=l_key;
         dg->http=a_http_simple->http_client;
        // dg->isOk=true;
@@ -398,7 +393,7 @@ size_t enc_http_reply_f(enc_http_delegate_t *a_http_delegate, const char *a_data
     char *l_buf = DAP_NEW_SIZE(char, mem_size);
     if (!l_buf) {
         va_end(ap_copy);
-        log_it(L_CRITICAL, c_error_memory_alloc);
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return 0;
     }
     vsnprintf(l_buf, mem_size, a_data, ap_copy);

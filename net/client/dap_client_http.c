@@ -752,16 +752,12 @@ dap_client_http_t * dap_client_http_request_custom (
         }
         dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         return l_client_http;
-    }
-    else{
-        char l_errbuf[128];
-        l_errbuf[0] = '\0';
-        strerror_r(errno, l_errbuf, sizeof (l_errbuf));
-        log_it(L_ERROR, "Connecting error: \"%s\" (code %d)", l_errbuf, errno);
+    } else {
+        log_it(L_ERROR, "Connecting error %d: \"%s\"", errno, dap_strerror(errno));
         s_client_http_delete( l_client_http);
         l_ev_socket->_inheritor = NULL;
         dap_events_socket_delete_unsafe( l_ev_socket, true);
-        if(a_error_callback)
+        if (a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
         return NULL;
     }

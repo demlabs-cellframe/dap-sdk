@@ -66,7 +66,7 @@ int dap_cert_file_save(dap_cert_t * a_cert, const char * a_cert_file_path)
         log_it(L_ERROR,"Can't serialize certificate in memory");
     } else if ( l_data_size -= fwrite(l_data, 1, l_data_size, l_file) ) {
         l_err = -4;
-        log_it(L_ERROR, "Can't write cert to disk, unprocessed %lu bytes", l_data_size);
+        log_it(L_ERROR, "Can't write cert to disk, unprocessed %u bytes", l_data_size);
     }
     fclose(l_file);
     DAP_DELETE(l_data);
@@ -107,22 +107,22 @@ void s_balance_the_tree(dap_cert_file_aux_t *a_reorder, size_t a_left_idx, size_
  */
 void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t a_size)
 {
-    dap_cert_metadata_t **l_meta_arr = NULL;
+    dap_cert_metadata_t **l_meta_arr = NULL, **l_newer_arr;
     int l_err = 0, q = 0;
     uint8_t *l_pos = (uint8_t*)a_data, *l_end = l_pos + a_size;
     while (!l_err && l_pos < l_end) {
         char *l_key_str = (char*)l_pos;
         if (!( l_pos = memchr(l_pos, '\0', (size_t)(l_end - l_pos)) ) || ++l_pos == l_end) {
-            l_pos = (uint8_t*)l_key_str;
+            //l_pos = (uint8_t*)l_key_str;
             break;
         }
         uint32_t l_value_size = le32toh(*l_pos);
         if (l_pos + sizeof(uint32_t) + /* sizeof(dap_cert_metadata_type_t) */ + 1 + l_value_size > l_end) {
-            l_pos = (uint8_t*)l_key_str;
+            //l_pos = (uint8_t*)l_key_str;
             break;
         }
         l_pos += sizeof(uint32_t);
-        dap_cert_metadata_type_t l_meta_type = (dap_cert_metadata_type_t)l_pos;
+        dap_cert_metadata_type_t l_meta_type = *(dap_cert_metadata_type_t*)l_pos;
         l_pos += /*sizeof(dap_cert_metadata_type_t)*/ 1;
         union { uint16_t l_tmp16; uint32_t l_tmp32; uint64_t l_tmp64; } l_tmp = { };
         uint8_t *l_value = l_pos;
@@ -164,14 +164,18 @@ void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t
             break;
         }
         if (l_err) {
-            l_pos = (uint8_t*)l_key_str;
+            //l_pos = (uint8_t*)l_key_str;
             break;
         }
         l_pos += l_value_size;
         dap_cert_metadata_t *l_new_meta = dap_cert_new_meta(l_key_str, l_meta_type, l_value, l_value_size);
         if ( !l_new_meta )
             break;
-        l_meta_arr = l_meta_arr ? DAP_REALLOC_COUNT(l_meta_arr, q + 1) : DAP_NEW_Z(dap_cert_metadata_t*);
+        if (l_meta_arr) {
+            l_newer_arr = DAP_REALLOC_COUNT_RET_IF_FAIL(l_meta_arr, q + 1, l_meta_arr);
+            l_meta_arr = l_newer_arr;
+        } else
+            l_meta_arr = DAP_NEW_Z_RET_IF_FAIL(dap_cert_metadata_t*);
         l_meta_arr[q++] = l_new_meta;
     }
     if (q) {
@@ -180,7 +184,7 @@ void dap_cert_deserialize_meta(dap_cert_t *a_cert, const uint8_t *a_data, size_t
         s_balance_the_tree(&l_reorder, 0, q - 1);
         size_t n = l_reorder_arr[0];
         a_cert->metadata = dap_binary_tree_insert(NULL, l_meta_arr[n]->key, (void*)l_meta_arr[n]);
-        for (size_t i = 1; i < q; ++i) {
+        for (int i = 1; i < q; ++i) {
             n = l_reorder_arr[i];
             dap_binary_tree_insert(a_cert->metadata, l_meta_arr[n]->key, (void *)l_meta_arr[n]);
         }
@@ -210,7 +214,15 @@ uint8_t *dap_cert_serialize_meta(dap_cert_t *a_cert, size_t *a_buflen_out)
     while (l_meta_list_item) {
         dap_cert_metadata_t *l_meta_item = l_meta_list_item->data;
         size_t l_meta_item_size = sizeof(uint32_t) + 1 + l_meta_item->length + strlen(l_meta_item->key) + 1;
-        l_buf = l_buf ? DAP_REALLOC(l_buf, l_mem_shift + l_meta_item_size) : DAP_NEW_Z_SIZE(uint8_t, l_meta_item_size);
+        if (!l_buf) {
+            if (!( l_buf = DAP_NEW_Z_SIZE(uint8_t, l_meta_item_size) ))
+                return dap_list_free(l_meta_list), log_it(L_CRITICAL, "%s", "Insufficient memory"), NULL;
+        } else {
+            uint8_t *l_new_buf = DAP_REALLOC(l_buf, l_mem_shift + l_meta_item_size);
+            if (!l_new_buf)
+                return DAP_DELETE(l_buf), dap_list_free(l_meta_list), log_it(L_CRITICAL, "%s", "Insufficient memory"), NULL;
+            l_buf = l_new_buf;
+        }
         strcpy((char *)&l_buf[l_mem_shift], l_meta_item->key);
         l_mem_shift += strlen(l_meta_item->key) + 1;
         *(uint32_t *)&l_buf[l_mem_shift] = htole32(l_meta_item->length);
@@ -339,7 +351,7 @@ dap_cert_t* dap_cert_mem_load(const void *a_data, size_t a_data_size)
     dap_return_val_if_fail_err(!!a_data, NULL, "No data provided to load cert from");
     dap_return_val_if_fail_err(a_data_size > sizeof(dap_cert_file_hdr_t), NULL, "Inconsistent cert data");
     dap_cert_t *l_ret = NULL;
-    const uint8_t *l_data = (const uint8_t*)a_data, *l_data_end = l_data + a_data_size;
+    const uint8_t *l_data = (const uint8_t*)a_data;
     dap_cert_file_hdr_t l_hdr = *(dap_cert_file_hdr_t*)l_data;
     l_data += sizeof(l_hdr);
     if ( l_hdr.sign != dap_cert_FILE_HDR_SIGN )
@@ -356,15 +368,16 @@ dap_cert_t* dap_cert_mem_load(const void *a_data, size_t a_data_size)
     size_t l_size_req = sizeof(l_hdr) + DAP_CERT_ITEM_NAME_MAX + l_hdr.data_size + l_hdr.data_pvt_size + l_hdr.metadata_size;
 
     if ( l_size_req > a_data_size )
-        return log_it(L_ERROR, "Cert data size exeeds file size, %llu > %llu", l_size_req, a_data_size), NULL;
+        return log_it(L_ERROR, "Cert data size exeeds file size, %zu > %zu", l_size_req, a_data_size), NULL;
 
     char l_name[DAP_CERT_ITEM_NAME_MAX];
-    dap_strncpy(l_name, l_data, DAP_CERT_ITEM_NAME_MAX - 1);
+    dap_strncpy(l_name, (const char*)l_data, DAP_CERT_ITEM_NAME_MAX - 1);
     l_data += DAP_CERT_ITEM_NAME_MAX;
     if (!( l_ret = dap_cert_new(l_name) ))
-        return log_it(L_ERROR, "Can't create cert '%s', error %d", l_ret), NULL;
-    else if (!( l_ret->enc_key = dap_enc_key_new(dap_sign_type_to_key_type(l_hdr.sign_type)) ));
-        return log_it(L_ERROR, "Can't init new key with sign type %s", dap_sign_type_to_str(l_hdr.sign_type)),
+        return log_it(L_ERROR, "Can't create cert '%s'", l_name), NULL;
+    else if (!( l_ret->enc_key = dap_enc_key_new(dap_sign_type_to_key_type(l_hdr.sign_type)) ))
+        return log_it(L_ERROR, "Can't init new key with sign type %s",
+                               dap_sign_type_to_str(l_hdr.sign_type)),
             dap_cert_delete(l_ret), NULL;
     l_ret->enc_key->last_used_timestamp = l_hdr.ts_last_used;
     

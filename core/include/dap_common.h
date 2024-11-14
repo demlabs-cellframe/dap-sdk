@@ -115,6 +115,7 @@
 #endif
 
 #define UNUSED_ARG __attribute__((__unused__))
+#define LAST_ERROR_MAX  256
 
 // TODO pipelines fix to enable this macros
 /*#ifndef likely
@@ -148,7 +149,7 @@
 
 extern const char *c_error_memory_alloc, *c_error_sanity_check, doof;
 /* Don't use these function directly! Rather use the corresponding macro's */
-void dap_delete_multy(char a_doof, ...);
+void dap_delete_multy(char *a_doof, ...);
 uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, ...);
 int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, ...);
 
@@ -202,35 +203,36 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #ifdef DAP_USE_RPMALLOC
 #include "rpmalloc.h"
 #endif
+#define DAP_TYPE_SIZE(p)      (intmax_t)sizeof( *(__typeof__(p)){ 0 } )
 #define DAP_MALLOC(s)         ({ intmax_t _s = (intmax_t)(s); _s > 0 ? malloc(_s) : NULL; })
 #define DAP_FREE(p)           free((void*)(p))
 #define DAP_CALLOC(n, s)      ({ intmax_t _s = (intmax_t)(s), _n = (intmax_t)(n); _s > 0 && _n > 0 ? calloc(_n, _s) : NULL; })
-#define DAP_REALLOC(p, s)     ({ intmax_t _s = (intmax_t)(s); _s > 0 ? DAP_CAST_PTR(__typeof__(p), realloc(p, _s)) : NULL; })
+#define DAP_REALLOC(p, s)     ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? realloc(p, _s) : NULL; })
 #define DAP_ALMALLOC(a, s)    ({ intmax_t _s = (intmax_t)(s), _a = (intmax_t)(a); _s > 0 && _a >= 0 ? _dap_aligned_alloc(_a, _s) : NULL; })
-#define DAP_ALREALLOC(p, s)   ({ intmax_t _s = (intmax_t)(s); _s > 0 ? _dap_aligned_realloc(p, _s) : NULL; })
+#define DAP_ALREALLOC(p, s)   ({ intmax_t _s = (intmax_t)(s); _s >= DAP_TYPE_SIZE(p) ? _dap_aligned_realloc(p, _s) : NULL; })
 #define DAP_ALFREE(p)         _dap_aligned_free(p)
 #define DAP_PAGE_ALMALLOC(p)  _dap_page_aligned_alloc(p)
 #define DAP_PAGE_ALFREE(p)    _dap_page_aligned_free(p)
 #define DAP_NEW(t)            DAP_CAST_PTR( t, malloc(sizeof(t)) )
-#define DAP_NEW_SIZE(t, s)    ({ intmax_t _s = (intmax_t)(s); _s > 0 ? DAP_CAST_PTR(t, malloc(_s)) : NULL; })
+#define DAP_NEW_SIZE(t, s)    ({ intmax_t _s = (intmax_t)(s); _s >= (intmax_t)(sizeof(t)) ? DAP_CAST_PTR(t, malloc(_s)) : NULL; })
 /* Auto memory! Do not inline! Do not modify the size in-call! */
-#define DAP_NEW_STACK(t)         DAP_CAST_PTR( t, alloca(sizeof(t)) )
-#define DAP_NEW_STACK_SIZE(t, s) DAP_CAST_PTR( t, (intmax_t)(s) > 0 ? alloca((intmax_t)(s)) : NULL )
+#define DAP_NEW_STACK(t)       &(t){ }
+#define DAP_NEW_STACK_SIZE(t, s) DAP_CAST_PTR( t, (intmax_t)(s) >= (intmax_t)(sizeof(t)) && (intmax_t)(s) < (1 << 15) ? alloca((intmax_t)(s)) : NULL )
 /* ... */
 #define DAP_NEW_Z(t)          DAP_CAST_PTR( t, calloc(1, sizeof(t)) )
 #define DAP_NEW_Z_SIZE(t, s)  DAP_CAST_PTR( t, DAP_CALLOC(1, s) )
 #define DAP_NEW_Z_COUNT(t, c) DAP_CAST_PTR( t, DAP_CALLOC(c, sizeof(t)) )
-#define DAP_REALLOC_COUNT(p, c)     DAP_REALLOC(p, (c) * sizeof(__typeof__(p)))
+#define DAP_REALLOC_COUNT(p, c) DAP_CAST_PTR( t, DAP_REALLOC(p, c * DAP_TYPE_SIZE(p)) )
 #define DAP_DELETE(p)         free((void*)(p))
 #define DAP_DEL_Z(p)          do { DAP_FREE(p); (p) = NULL; } while (0);
-#define DAP_DEL_ARRAY(p,c)    for ( intmax_t _c = p ? (intmax_t)(c) : 0; _c > 0; DAP_DELETE(p[--_c]) );
-#define DAP_DUP_SIZE(p, s)    ({ intmax_t _s = (intmax_t)(s); void *_p = (p) ? calloc(1, _s) : NULL; _p ? DAP_CAST_PTR(__typeof__(p), memcpy(_p, (p), _s)) : NULL; })
-#define DAP_DUP(p)            DAP_DUP_SIZE( p, sizeof(__typeof__(p)) )
+#define DAP_DEL_ARRAY(p, c)   for ( intmax_t _c = p ? (intmax_t)(c) : 0; _c > 0; DAP_DELETE(p[--_c]) );
+#define DAP_DUP_SIZE(p, s)    ({ intmax_t _s = (intmax_t)(s); __typeof__(p) _p = ( (uintptr_t)(p) && _s >= DAP_TYPE_SIZE(p) ) ? calloc(1, _s) : NULL; _p ? memcpy(_p, (p), _s) : NULL; })
+#define DAP_DUP(p)            ({ __typeof__(p) _p = (uintptr_t)(p) ? calloc(1, sizeof(*(p))) : NULL; if (_p) *_p = *(p); _p; })
 
 #endif
 
 #define DOOF_PTR (void*)&doof
-#define DAP_DEL_MULTY(...) dap_delete_multy(doof, ##__VA_ARGS__, DOOF_PTR)
+#define DAP_DEL_MULTY(...) dap_delete_multy(DOOF_PTR, ##__VA_ARGS__, DOOF_PTR)
 #define DAP_VA_SERIALIZE(data, size, ...) dap_serialize_multy(data, size, ##__VA_ARGS__, DOOF_PTR)
 #define DAP_VA_SERIALIZE_NEW(size, ...) DAP_VA_SERIALIZE(NULL, size, __VA_ARGS__)
 #define DAP_VA_DESERIALIZE(data, size, ...) dap_deserialize_multy(data, size, ##__VA_ARGS__, DOOF_PTR)
@@ -250,12 +252,16 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_REALLOC_RET_VAL_IF_FAIL(p, s, r, ...) ({ \
     void *_p = DAP_REALLOC(p, s); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
 })
+#define DAP_REALLOC_COUNT_RET_VAL_IF_FAIL(p, c, r, ...) ({ \
+    void *_p = DAP_REALLOC_COUNT(p, c); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
+})
 
 #define DAP_NEW_Z_RET_IF_FAIL(t, ...)           DAP_NEW_Z_RET_VAL_IF_FAIL(t, , __VA_ARGS__)
 #define DAP_NEW_Z_SIZE_RET_IF_FAIL(t, s, ...)   DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(t, s, , __VA_ARGS__)
 #define DAP_NEW_Z_COUNT_RET_IF_FAIL(t, c, ...)  DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(t, c, , __VA_ARGS__)
 #define DAP_DUP_SIZE_RET_IF_FAIL(p, s, ...)     DAP_DUP_SIZE_RET_VAL_IF_FAIL(p, s, , __VA_ARGS__)
 #define DAP_REALLOC_RET_IF_FAIL(p, s, ...)      DAP_REALLOC_RET_VAL_IF_FAIL(p, s, , __VA_ARGS__)
+#define DAP_REALLOC_COUNT_RET_IF_FAIL(p, c, ...) DAP_REALLOC_COUNT_RET_VAL_IF_FAIL(p, c, , __VA_ARGS__)
 
 #define dap_return_val_if_pass_err(e, r, s) do { if (e) { _log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", s); return r; } } while(0);
 #define dap_return_val_if_fail_err(e, r, s) dap_return_val_if_pass_err(!(e), r, s)
@@ -317,6 +323,10 @@ DAP_STATIC_INLINE uint64_t dap_page_roundup(uint64_t a) {
 DAP_STATIC_INLINE uint64_t dap_page_rounddown(uint64_t a) {
     return a & ( ~(dap_pagesize() - 1) ); 
 }
+
+typedef union dap_error_str {
+    const char s[LAST_ERROR_MAX];
+} dap_error_str_t;
 
 #ifdef DAP_OS_WINDOWS
 #define SIZE_64KB ( 1 << 16 )
@@ -1015,9 +1025,12 @@ void    *l_ptr;
 #define dump_it(v,s,l)
 #endif
 
-char *dap_strerror(long long err);
+dap_error_str_t dap_strerror_(long long err);
+#define dap_strerror(e) dap_strerror_(e).s
+
 #ifdef DAP_OS_WINDOWS
-char *dap_str_ntstatus(DWORD err);
+dap_error_str_t dap_str_ntstatus_(DWORD err);
+#define dap_str_ntstatus(e) dap_str_ntstatus_(e).s
 #endif
 void dap_log_level_set(enum dap_log_level ll);
 enum dap_log_level dap_log_level_get(void);
@@ -1026,7 +1039,12 @@ void dap_set_log_tag_width(size_t width);
 const char * dap_get_appname();
 void dap_set_appname(const char * a_appname);
 
-char *dap_itoa(long long i);
+#define INT_DIGITS 19   /* enough for 64 bit integer */
+typedef union dap_maxint_str {
+    const char s[INT_DIGITS + 2];
+} dap_maxint_str_t;
+dap_maxint_str_t dap_itoa_(long long i);
+#define dap_itoa(i) dap_itoa_(i).s
 
 unsigned dap_gettid();
 
@@ -1051,7 +1069,7 @@ void dap_interval_timer_deinit();
 
 static inline void *dap_mempcpy(void *a_dest, const void *a_src, size_t n)
 {
-    return ((byte_t*)memcpy(a_dest, a_src, n)) + n;
+    return n ? (byte_t*)memcpy(a_dest, a_src, n) + n : a_dest;
 }
 
 DAP_STATIC_INLINE int dap_is_letter(char c) { return dap_ascii_isalpha(c); }
@@ -1118,18 +1136,21 @@ int exec_silent(const char *a_cmd);
 
 DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str)
 {
-    if (!a_addr || !a_addr_str){
-        return -1;
-    }
-    if (sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4)
-        return 0;
-    if (sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, &a_addr->uint64) == 1)
-        return 0;
-    return -1;
+    if (!a_addr || !a_addr_str)
+        return -2;
+    return sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4
+        || sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, (uint64_t*)a_addr) == 1
+        || sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_X, (uint64_t*)a_addr) == 1
+        ? 0 : -1;
 }
 
 DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
 
-const char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address);
+#define DAP_NODE_ADDR_LEN 23
+typedef union dap_node_addr_str {
+    const char s[DAP_NODE_ADDR_LEN];
+} dap_node_addr_str_t;
+dap_node_addr_str_t dap_stream_node_addr_to_str_static_(dap_stream_node_addr_t a_address);
+#define dap_stream_node_addr_to_str_static(a) dap_stream_node_addr_to_str_static_(a).s
 
 void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size);

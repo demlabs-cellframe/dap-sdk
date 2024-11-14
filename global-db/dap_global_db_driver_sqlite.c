@@ -384,13 +384,13 @@ static int s_db_sqlite_fill_one_item(const char *a_group, dap_store_obj_t *a_obj
                 a_obj->crc = be64toh(l_driver_key->becrc);
             } else if ( i == 3 ) {
                 a_obj->value_len = sqlite3_column_bytes(a_stmt, i);
-                a_obj->value = DAP_DUP_SIZE(sqlite3_column_blob(a_stmt, i), a_obj->value_len);
+                a_obj->value = DAP_DUP_SIZE((byte_t*)sqlite3_column_blob(a_stmt, i), a_obj->value_len);
             } else if ( i == 4 ) {
-                 a_obj->sign = DAP_DUP_SIZE(sqlite3_column_blob(a_stmt, i), sqlite3_column_bytes(a_stmt, i));
+                 a_obj->sign = DAP_DUP_SIZE((dap_sign_t*)sqlite3_column_blob(a_stmt, i), sqlite3_column_bytes(a_stmt, i));
             } continue;
         case SQLITE_TEXT:
             if ( i == 1 ) {
-                 a_obj->key = dap_strdup((const char *)sqlite3_column_text(a_stmt, i));
+                 a_obj->key = dap_strdup((const char*)sqlite3_column_text(a_stmt, i));
             } continue;
         case SQLITE_INTEGER:
             if ( i == 2 ) {
@@ -580,7 +580,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     }
     l_ret->obj_count = i;
     if (i < l_count) {
-        log_it(L_ERROR, "Invalid pack size, only %d / %d pkts (%llu / %llu bytes) fit the storage",
+        log_it(L_ERROR, "Invalid pack size, only %ld / %ld pkts (%zu / %zu bytes) fit the storage",
                         i, l_count, l_ret->data_size, l_data_size);
         l_ret = DAP_REALLOC( l_ret, (size_t)(l_data_pos - (byte_t*)l_ret) );
     }
@@ -827,8 +827,8 @@ static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
     l_mask = dap_str_replace_char(a_group_mask, '.', '_');
     int rc = 0;
     while ( SQLITE_ROW == ( rc = s_db_sqlite_step(l_stmt, l_error_msg) ) && sqlite3_column_type(l_stmt, 0) == SQLITE_TEXT ) {
-        const char *l_table_name = sqlite3_column_text(l_stmt, 0);
-        if ( sqlite3_column_bytes(l_stmt, 0) != dap_strlen(l_table_name) + 1 ) {
+        const char *l_table_name = (const char*)sqlite3_column_text(l_stmt, 0);
+        if ( sqlite3_column_bytes(l_stmt, 0) != (int)dap_strlen(l_table_name) + 1 ) {
             log_it(L_ERROR, "Invalid table name length, skip it");
             continue;
         }
@@ -1039,8 +1039,8 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
     dap_return_val_if_pass(!a_filename_db, -1);
     dap_return_val_if_pass_err(s_db_inited, -2, "SQLite driver already init")
 // func work
-    int l_ret = -1, l_errno = errno;
-    char l_errbuf[255] = {0}, *l_error_message = NULL;
+    int l_ret = -1;
+    char l_errbuf[255] = "", *l_error_message = NULL;
     if ( sqlite3_threadsafe() && !sqlite3_config(SQLITE_CONFIG_MULTITHREAD) )
         l_ret = sqlite3_initialize();
 
@@ -1057,13 +1057,12 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
         log_it(L_NOTICE, "No directory %s, trying to create...",l_filename_dir);
 
         int l_mkdir_ret = dap_mkdir_with_parents(l_filename_dir);
-        l_errno = errno;
 
         if(!dap_dir_test(l_filename_dir)){
-            strerror_r(l_errno,l_errbuf,sizeof(l_errbuf));
-            log_it(L_ERROR, "Can't create directory, error code %d, error string \"%s\"", l_mkdir_ret, l_errbuf);
+            log_it(L_ERROR, "Can't create directory, error code %d, error %d: \"%s\"",
+                            l_mkdir_ret, errno, dap_strerror(errno));
             DAP_DELETE(l_filename_dir);
-            return -l_errno;
+            return -errno;
         }else
             log_it(L_NOTICE, "Directory created");
     }
