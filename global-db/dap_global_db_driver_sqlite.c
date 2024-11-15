@@ -255,14 +255,12 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
             return NULL;
         }
         s_conn->idx = l_conn_idx++;
-        // if((s_db_sqlite_exec(s_conn->conn, "PRAGMA synchronous = NORMAL", NULL, NULL, 0, NULL)))
-        //     log_it(L_ERROR, "can't set new synchronous mode\n");
-        // if(s_db_sqlite_exec(s_conn->conn, "PRAGMA journal_mode = WAL", NULL, NULL, 0, NULL))
-        //     log_it(L_ERROR, "can't set new journal mode\n");
-        // if(s_db_sqlite_exec(s_conn->conn, "PRAGMA page_size = 4096", NULL, NULL, 0, NULL))
-        //     log_it(L_ERROR, "can't set page_size\n");
-        // if (s_db_sqlite_exec(s_conn->conn, "PRAGMA threadsafety = 2", NULL, NULL, 0, NULL))
-        //     log_it(L_ERROR, "can't set threadsafety param\n");
+        if((s_db_sqlite_exec(s_conn->conn, "PRAGMA synchronous = NORMAL", NULL, NULL, 0, NULL)))
+            log_it(L_ERROR, "can't set new synchronous mode\n");
+        if(s_db_sqlite_exec(s_conn->conn, "PRAGMA journal_mode = WAL", NULL, NULL, 0, NULL))
+            log_it(L_ERROR, "can't set new journal mode\n");
+        if(s_db_sqlite_exec(s_conn->conn, "PRAGMA page_size = 4096", NULL, NULL, 0, NULL))
+            log_it(L_ERROR, "can't set page_size\n");
         log_it(L_DEBUG, "SQL connection #%d is created @%p", s_conn->idx, s_conn);
     }
     // busy check
@@ -1089,18 +1087,6 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
     }
 
     dap_global_db_driver_sqlite_set_attempts_count(dap_proc_thread_get_count(), false);
-
-    if((s_db_sqlite_exec(l_conn->conn, "PRAGMA synchronous = NORMAL", NULL, NULL, 0, NULL)))
-        log_it(L_ERROR, "can't set new synchronous mode\n");
-    if(s_db_sqlite_exec(l_conn->conn, "PRAGMA journal_mode = WAL", NULL, NULL, 0, NULL))
-        log_it(L_ERROR, "can't set new journal mode\n");
-    if(s_db_sqlite_exec(l_conn->conn, "PRAGMA page_size = 4096", NULL, NULL, 0, NULL))
-        log_it(L_ERROR, "can't set page_size\n");
-    // if (s_db_sqlite_exec(l_conn->conn, "PRAGMA threadsafety = 2", NULL, NULL, 0, NULL))
-    //     log_it(L_ERROR, "can't set threadsafety param\n");
-    // vacuum need?
-    // if(s_db_sqlite_exec(l_conn, "PRAGMA auto_vacuum = INCREMENTAL", NULL, NULL, 0, NULL))
-    //     log_it(L_ERROR, "can't set autovacuum mode\n");
     s_db_sqlite_free_connection(l_conn, false);
     return l_ret;
 }
