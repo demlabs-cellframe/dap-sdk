@@ -40,17 +40,35 @@ void dap_json_rpc_response_unregistration(uint64_t a_id)
     }
 }
 
-void dap_json_rpc_response_handler(dap_json_rpc_response_t *a_response)
+void  dap_json_rpc_response_handler(dap_json_rpc_response_t *a_response)
 {
-    dap_json_rpc_response_handler_t *l_handler = NULL;
-    HASH_FIND_INT(s_response_handlers, (void*)a_response->id, l_handler);
-    if (l_handler != NULL){
-        log_it(L_NOTICE, "Calling handler response id: %"DAP_UINT64_FORMAT_U, a_response->id);
-        l_handler->func(a_response);
-        dap_json_rpc_response_unregistration(a_response->id);
-    } else {
-        log_it(L_NOTICE, "Can't calling handler response id: %"DAP_UINT64_FORMAT_U". This handler not found", a_response->id);
+    log_it(L_MSG, "Get response");
+    switch(a_response->type) {
+        case TYPE_RESPONSE_STRING:
+            log_it(L_MSG, "response: %s", a_response->result_string);
+            break;
+        case TYPE_RESPONSE_INTEGER:
+            break;
+        case TYPE_RESPONSE_DOUBLE:
+            break;
+        case TYPE_RESPONSE_BOOLEAN:
+            break;
+        case TYPE_RESPONSE_NULL:
+            printf("response type is NULL\n");
+            break;
+        case TYPE_RESPONSE_JSON:
+            log_it(L_MSG, "response: %s", json_object_to_json_string(a_response->result_json_object));
+            break;
     }
+    // dap_json_rpc_response_handler_t *l_handler = NULL;
+    // HASH_FIND_INT(s_response_handlers, (void*)a_response->id, l_handler);
+    // if (l_handler != NULL){
+    //     log_it(L_NOTICE, "Calling handler response id: %"DAP_UINT64_FORMAT_U, a_response->id);
+    //     l_handler->func(a_response);
+    //     dap_json_rpc_response_unregistration(a_response->id);
+    // } else {
+    //     log_it(L_NOTICE, "Can't calling handler response id: %"DAP_UINT64_FORMAT_U". This handler not found", a_response->id);
+    // }
 }
 
 uint64_t dap_json_rpc_response_get_new_id(void)
@@ -62,13 +80,19 @@ uint64_t dap_json_rpc_response_get_new_id(void)
 
 void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, void *a_obj, http_status_code_t http_status)
 {
-    (void)http_status;
-    (void)a_obj;
-    log_it(L_NOTICE, "Pre handling response");
-    char *l_str = DAP_NEW_SIZE(char, a_size_data);
-    memcpy(l_str, a_data, a_size_data);
-    dap_json_rpc_response_t *l_response = dap_json_rpc_response_from_string(l_str);
-    DAP_FREE(l_str);
-    dap_json_rpc_response_handler(l_response);
-    dap_json_rpc_response_free(l_response);
+    if(http_status == Http_Status_OK) {
+        (void)http_status;
+        (void)a_obj;
+        log_it(L_NOTICE, "Pre handling response");
+        char *l_str = DAP_NEW_SIZE(char, a_size_data);
+        memcpy(l_str, a_data, a_size_data);
+        dap_json_rpc_response_t *l_response = dap_json_rpc_response_from_string(l_str);
+        DAP_FREE(l_str);
+        dap_json_rpc_response_handler(l_response);
+        dap_json_rpc_response_free(l_response);
+        return;
+    } else {
+        log_it(L_ERROR, "Response error code: %d", http_status);
+        return;
+    }
 }
