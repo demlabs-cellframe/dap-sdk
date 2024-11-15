@@ -1,4 +1,4 @@
-﻿﻿/// \file mdbx.h++
+﻿/// \file mdbx.h++
 /// \brief The libmdbx C++ API header file.
 ///
 /// \author Copyright (c) 2020-2022, Leonid Yuriev <leo@yuriev.ru>.

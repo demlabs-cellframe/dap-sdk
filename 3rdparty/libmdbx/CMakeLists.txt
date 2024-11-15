@@ -59,8 +59,6 @@ else()
   set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_AVAILABLE FALSE)
 endif()
 
-option(MDBX_BUILD_CXX "Build C++ portion" OFF)
-
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND
     EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test/CMakeLists.txt" AND
     EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/core.c" AND
@@ -529,7 +527,6 @@ if(MDBX_BUILD_CXX AND NOT CMAKE_CXX_COMPILER_LOADED)
   message(FATAL_ERROR "MDBX_BUILD_CXX=${MDBX_BUILD_CXX}: The C++ compiler is required to build the C++API.")
 endif()
 
-
 if(MDBX_BUILD_CXX)
   # determine library for C++ std::filesystem
   probe_libcxx_filesystem()
@@ -638,7 +635,6 @@ endif()
 set_target_properties(mdbx-static PROPERTIES PUBLIC_HEADER "${LIBMDBX_PUBLIC_HEADERS}")
 target_compile_definitions(mdbx-static PRIVATE MDBX_BUILD_SHARED_LIBRARY=0)
 target_setup_options(mdbx-static)
-
 libmdbx_setup_libs(mdbx-static INTERFACE)
 if(MDBX_BUILD_SHARED_LIBRARY)
   set_target_properties(mdbx-static PROPERTIES OUTPUT_NAME mdbx-static)
