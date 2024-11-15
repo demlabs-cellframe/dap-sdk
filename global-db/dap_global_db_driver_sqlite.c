@@ -786,7 +786,7 @@ clean_and_ret:
     return l_ret;
 }
 
-static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp) {
+static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * l_count) {
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_fail(a_group && (l_conn = s_db_sqlite_get_connection(false)), NULL);
 
@@ -849,6 +849,7 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a
 
 clean_and_ret:
     s_db_sqlite_clean(l_conn, 1, l_str_query, l_stmt);
+    *l_count = l_row;
     return l_obj_arr;
 }
 

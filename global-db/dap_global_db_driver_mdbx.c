@@ -93,6 +93,7 @@ static int              s_db_mdbx_deinit();
 static int              s_db_mdbx_flush(void);
 static int              s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj);
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group, bool a_with_holes);
+static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count);
 static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
 static bool             s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static bool             s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
@@ -683,7 +684,7 @@ ret:
     return l_obj;
 }
 
-dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp) {
+static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count) {
     dap_return_val_if_fail(a_group, NULL);
 
     int rc;
@@ -742,7 +743,7 @@ dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, d
 
         rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT);
     }
-    
+    *a_count = l_count_current;
     if (l_count_current > 0) {
         // remove last object with greater timestamp
         dap_store_obj_t *l_tmp = DAP_REALLOC(l_obj_arr, l_count_current * sizeof(dap_store_obj_t));

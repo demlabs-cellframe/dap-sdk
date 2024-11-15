@@ -513,7 +513,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_cond_store_obj(const char *a_group, ui
     return l_obj;
 }
 
-dap_store_obj_t* dap_db_pgsql_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp) {
+dap_store_obj_t* dap_db_pgsql_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count) {
     if (!a_group) 
         return NULL;
 
@@ -544,6 +544,7 @@ dap_store_obj_t* dap_db_pgsql_read_store_obj_below_timestamp(const char *a_group
     }
 
     size_t l_count_out = PQntuples(l_res);
+    *a_count = l_count_out;
     if (l_count_out > 0) {
         l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * l_count_out);
         if (!l_ret) {

@@ -103,6 +103,7 @@ static pthread_mutex_t s_check_db_mutex = PTHREAD_MUTEX_INITIALIZER; // Check ve
 #define INVALID_RETCODE +100500
 static int s_check_db_ret = INVALID_RETCODE; // Check version return value
 static dap_timerfd_t* l_check_pinned_db_objs_timer;
+static dap_timerfd_t* l_check_gdb_clean_timer;
 
 static dap_global_db_instance_t *s_dbi = NULL; // GlobalDB instance is only static now
 
@@ -117,6 +118,12 @@ static void s_check_db_version_callback_set (dap_global_db_instance_t *a_dbi, in
 // GlobalDB context start/stop callbacks
 static void s_context_callback_started( dap_context_t * a_context, void *a_arg);
 static int s_context_callback_stopped( dap_context_t * a_context, void *a_arg);
+
+static int s_gdb_clean_init();
+static void s_gdb_clean_deinit();
+static void s_check_pinned_db_objs_deinit();
+
+static int s_check_pinned_db_objs_init();
 
 // Opcode to string
 static const char *s_msg_opcode_to_str(enum queue_io_msg_opcode a_opcode);
@@ -203,8 +210,11 @@ int dap_global_db_init()
     if ( (l_rc = s_check_db_version()) )
         return log_it(L_ERROR, "GlobalDB version changed, please export or remove old version!"), l_rc;
     
-    if ( (l_rc = s_check_pinned_db_objs()))
+    if ( (l_rc = s_check_pinned_db_objs_init()))
         return log_it(L_ERROR, "GlobalDB pinned objs init failed"), l_rc;
+
+    if ( (l_rc = s_gdb_clean_init()))
+        return log_it(L_ERROR, "GlobalDB clean init failed"), l_rc;
 
 lb_return:
     if (l_rc == 0 )
@@ -238,6 +248,7 @@ inline dap_global_db_instance_t *dap_global_db_instance_get_default()
  */
 void dap_global_db_deinit() {
     s_check_pinned_db_objs_deinit();
+    s_gdb_clean_deinit();
     dap_global_db_instance_deinit();
     dap_global_db_driver_deinit();
     dap_global_db_cluster_deinit();
@@ -1664,47 +1675,103 @@ static int s_check_db_version()
     return l_ret;
 }
 
+static bool s_clean_old_obj_gdb_callback() {
+    dap_nanotime_t l_timestamp = dap_nanotime_now() +  dap_nanotime_from_sec(3605);
+    dap_nanotime_t l_time_now = dap_nanotime_now();
+    
+    dap_list_t *l_group_list = dap_global_db_driver_get_groups_by_mask("*");
+    size_t l_count = 0;
+    for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list), ++l_count) {
+        size_t l_ret_count;
+        dap_store_obj_t * l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now, &l_ret_count);
+        dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(s_dbi, l_ret->group);
+
+        dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
+        for(size_t i = 0; i < l_ret_count; i++) {
+            if (l_ret[i].flags & DAP_GLOBAL_DB_RECORD_PINNED) {
+                if (l_ret[i].timestamp + l_ttl < l_timestamp) {
+                    s_set_sync_with_ts(s_dbi, l_ret[i].group, l_ret[i].key, l_ret[i].value, l_ret[i].value_len, true, l_time_now);
+                }
+            } else {
+                if (l_ret[i].timestamp + l_ttl < l_time_now) {
+                    dap_store_obj_t l_to_delete = (dap_store_obj_t) { .group = l_ret[i].group, .key = l_ret[i].key};
+                    dap_global_db_driver_delete(&l_to_delete, 1);
+                }
+            }
+        }
+        dap_store_obj_free(l_ret, l_ret_count);
+    }
+    dap_list_free(l_group_list);
+}
+
+static int s_gdb_clean_init() {
+    dap_nanotime_t l_callback_ts = dap_nanotime_from_sec(3600); // one hour 
+    l_check_gdb_clean_timer = dap_timerfd_start(l_callback_ts, (dap_timerfd_callback_t)s_clean_old_obj_gdb_callback, NULL);
+    if (!l_check_gdb_clean_timer)
+        return -1;
+    return 0;
+}
+
+static void s_gdb_clean_deinit() {
+    dap_timerfd_delete_mt(l_check_gdb_clean_timer->worker, l_check_gdb_clean_timer->esocket_uuid);
+}
+
 static bool s_check_pinned_db_objs_callback() {
+    dap_nanotime_t l_timestamp = dap_nanotime_now() +  dap_nanotime_from_sec(3720);  // one hour + 2min
+    dap_nanotime_t l_time_now = dap_nanotime_now();
+    dap_list_t *l_group_list = dap_global_db_driver_get_groups_by_mask("*.pinned");
+    size_t l_count = 0;
+    for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list), ++l_count) {
+        size_t l_ret_count;
+        dap_store_obj_t * l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_timestamp, &l_ret_count); 
 
+        dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(s_dbi, l_ret->group);
+        dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
+
+        for(size_t i = 0; i < l_ret_count; i++) {
+            if (l_ret[i].timestamp + l_ttl < l_timestamp) {
+                s_set_sync_with_ts(s_dbi, l_ret[i].group, l_ret[i].key, l_ret[i].value, l_ret[i].value_len, true, l_time_now);
+            }
+        }
+        dap_store_obj_free(l_ret, l_ret_count);
+    }
+    dap_list_free(l_group_list);
 }
 
-static dap_global_db_obj_t* s_get_pinned_objs(const char *a_group, size_t *a_objs_count) {
-
+DAP_STATIC_INLINE char *dap_get_local_pinned_groups(const char *a_group)
+{
+    return dap_strdup_printf("local.%s.pinned", a_group);
 }
 
-static dap_global_db_obj_t* s_get_all_pinned_objs(const char *a_group, size_t *a_objs_count) {
-
+static bool s_get_all_pinned_objs_in_group(const char *a_group, dap_store_obj_t * a_objs, size_t a_objs_count) {
+    for(size_t i = 0; i < a_objs_count; i++) {
+        if (a_objs[i].flags & DAP_GLOBAL_DB_RECORD_PINNED) {
+           if (dap_global_db_set(dap_get_local_pinned_groups(a_group), a_objs[i].key, NULL, 0, true, NULL, NULL))
+                return false;
+        }
+    }
+    return true;
 }
 
 static int s_check_pinned_db_objs_init() {
-
-
-
     size_t l_objs_size = 0;
-    dap_nanotime_t l_check_ts = dap_nanotime_from_sec(3720); // one hour + 2min
     dap_nanotime_t l_callback_ts = dap_nanotime_from_sec(3600); // one hour 
-    dap_nanotime_t l_timestamp = dap_nanotime_now() + l_callback_ts;
 
-    json_object* json_group_list = json_object_new_object();
     dap_list_t *l_group_list = dap_global_db_driver_get_groups_by_mask("*");
     size_t l_count = 0;
-    json_object* json_arr_group = json_object_new_array();
-    json_object* json_obj_list = NULL;
     for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list), ++l_count) {
         size_t l_ret_count;
-        dap_global_db_obj_t * l_ret = dap_global_db_get_all_raw_sync((char*)l_list->data, &l_ret_count);
-        s_get_all_pinned_objs();
+        dap_store_obj_t  * l_ret = dap_global_db_get_all_raw_sync((char*)l_list->data, &l_ret_count);
+        if (s_get_all_pinned_objs_in_group((char*)l_list->data, l_ret, l_ret_count))
+            debug_if(g_dap_global_db_debug_more, L_INFO, "Pinned objs was added in pinned group");
+        else 
+            debug_if(g_dap_global_db_debug_more, L_ERROR, "Adding error in pinned group");
+        dap_store_obj_free(l_ret, l_ret_count);
     }
-
-    dap_global_db_obj_t * l_objs = dap_global_db_driver_read_obj_below_timestamp(l_gdb_group, &l_objs_size);
     
-
-    for (size_t i = 0; i < l_objs_size; i++) {
-        
-    }
-    l_check_pinned_db_objs_timer = dap_timerfd_start(5000, (dap_timerfd_callback_t)s_check_pinned_db_objs_callback, NULL);
+    l_check_pinned_db_objs_timer = dap_timerfd_start(l_callback_ts, (dap_timerfd_callback_t)s_check_pinned_db_objs_callback, NULL);
     if (!l_check_pinned_db_objs_timer)
-        return -88;
+        return -1;
     return 0;
 }
 

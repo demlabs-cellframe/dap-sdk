@@ -423,12 +423,12 @@ dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_ke
  * @param a_group
  * @param a_timestamp
  */
-dap_store_obj_t *dap_global_db_driver_read_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp)
+dap_store_obj_t *dap_global_db_driver_read_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * l_count)
 {
     dap_store_obj_t *l_ret = NULL;
     // read records using the selected database engine
     if (s_drv_callback.read_store_obj_by_timestamp)
-        l_ret = s_drv_callback.read_store_obj_by_timestamp(a_group, a_timestamp);
+        l_ret = s_drv_callback.read_store_obj_by_timestamp(a_group, a_timestamp, l_count);
     return l_ret;
 }
 
