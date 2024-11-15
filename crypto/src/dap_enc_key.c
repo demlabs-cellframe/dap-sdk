@@ -784,7 +784,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
             break;
         default:
             if (!a_key->priv_key_data || a_key->priv_key_data_size != a_buflen) {
-                void *l_new_key = DAP_REALLOC(a_key->priv_key_data, a_buflen);
+                void *l_new_key = DAP_REALLOC((byte_t*)a_key->priv_key_data, a_buflen);
                 if ( !l_new_key )
                     return log_it(L_CRITICAL, "%s", c_error_memory_alloc), -1;
                 a_key->priv_key_data = l_new_key;
@@ -843,7 +843,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
             break;
         default:
             if (!a_key->pub_key_data || a_key->pub_key_data_size != a_buflen) {
-                void *l_new_pkey = DAP_REALLOC(a_key->pub_key_data, a_buflen);
+                void *l_new_pkey = DAP_REALLOC((byte_t*)a_key->pub_key_data, a_buflen);
                 if ( !l_new_pkey )
                     return log_it(L_CRITICAL, "%s", c_error_memory_alloc), -1;
                 a_key->pub_key_data = l_new_pkey;

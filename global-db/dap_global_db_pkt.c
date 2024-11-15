@@ -108,12 +108,8 @@ dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uin
     if (a_checksum) {
         if (a_key) {
             size_t l_sign_len = dap_sign_get_size(l_sign);
-            l_pkt = DAP_REALLOC(l_pkt, dap_global_db_pkt_get_size(l_pkt) + l_sign_len);
-            if (!l_pkt) {
-                log_it(L_CRITICAL, "Not enough memory");
-                DAP_DELETE(l_sign);
-                return NULL;
-            }
+            dap_global_db_pkt_t *l_new_pkt = DAP_REALLOC_RET_VAL_IF_FAIL(l_pkt, dap_global_db_pkt_get_size(l_pkt) + l_sign_len, NULL, l_sign);
+            l_pkt = l_new_pkt;
             memcpy(l_pkt->data + l_pkt->data_len, l_sign, l_sign_len);
             l_pkt->data_len += l_sign_len;
         }

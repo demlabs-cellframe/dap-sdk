@@ -222,7 +222,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_NEW_Z(t)          DAP_CAST_PTR( t, calloc(1, sizeof(t)) )
 #define DAP_NEW_Z_SIZE(t, s)  DAP_CAST_PTR( t, DAP_CALLOC(1, s) )
 #define DAP_NEW_Z_COUNT(t, c) DAP_CAST_PTR( t, DAP_CALLOC(c, sizeof(t)) )
-#define DAP_REALLOC_COUNT(p, c) DAP_CAST_PTR( t, DAP_REALLOC(p, c * DAP_TYPE_SIZE(p)) )
+#define DAP_REALLOC_COUNT(p, c) DAP_CAST_PTR( t, DAP_REALLOC(p, (c) * DAP_TYPE_SIZE(p)) )
 #define DAP_DELETE(p)         free((void*)(p))
 #define DAP_DEL_Z(p)          do { DAP_FREE(p); (p) = NULL; } while (0);
 #define DAP_DEL_ARRAY(p, c)   for ( intmax_t _c = p ? (intmax_t)(c) : 0; _c > 0; DAP_DELETE(p[--_c]) );

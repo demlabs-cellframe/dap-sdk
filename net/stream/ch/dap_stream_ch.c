@@ -232,7 +232,7 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
         if(l_ch_new->proc->new_callback)
             l_ch_new->proc->new_callback(l_ch_new,NULL);
 
-        a_stream->channel = DAP_REALLOC(a_stream->channel, sizeof(dap_stream_ch_t *) * (a_stream->channel_count + 1));
+        a_stream->channel = DAP_REALLOC_COUNT(a_stream->channel, a_stream->channel_count + 1);
         a_stream->channel[l_ch_new->stream->channel_count++] = l_ch_new;
 
         return l_ch_new;

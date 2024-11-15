@@ -582,7 +582,12 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     if (i < l_count) {
         log_it(L_ERROR, "Invalid pack size, only %ld / %ld pkts (%zu / %zu bytes) fit the storage",
                         i, l_count, l_ret->data_size, l_data_size);
-        l_ret = DAP_REALLOC( l_ret, (size_t)(l_data_pos - (byte_t*)l_ret) );
+        size_t l_new_size = (size_t)(l_data_pos - (byte_t*)l_ret);
+        dap_global_db_pkt_pack_t *l_new_pack = DAP_REALLOC(l_ret, l_new_size);
+        if (l_new_pack)
+            l_ret = l_new_pack;
+        else
+            DAP_DEL_Z(l_ret);
     }
 clean_and_ret:
     s_db_sqlite_clean(l_conn, 3, l_str_query, l_str_query_count, l_str_query_size, l_stmt, l_stmt_count, l_stmt_size);

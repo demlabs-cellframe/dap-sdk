@@ -89,8 +89,12 @@ static int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli
             break;
         l_hdr_end_token += ( sizeof(l_head_end_str) - 1 );
         l_cmd->hdr_len = l_hdr_end_token - l_cmd->cmd_res;
-        if (l_cmd->cmd_res_len + l_cmd->hdr_len > l_cmd->cmd_res_cur)
-            l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_len + l_cmd->hdr_len + 1);
+        if (l_cmd->cmd_res_len + l_cmd->hdr_len > l_cmd->cmd_res_cur) {
+            char *l_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_len + l_cmd->hdr_len + 1);
+            if (!l_res)
+                return printf("Error: out of memory!"), DAP_CLI_ERROR_INCOMPLETE;
+            l_cmd->cmd_res = l_res;
+        }
         ++a_status;
     }
     case 3:

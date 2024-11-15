@@ -450,10 +450,16 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
     if( bytes_to_read ) {
         // Oops! The client sent more data than write in the CONTENT_LENGTH header
         if(l_http_simple->request_size + bytes_to_read > l_http_simple->request_size_max){
-            log_it(L_WARNING, "Oops! Client sent more data length=%zu than in content-length=%zu in request", l_http_simple->request_size + bytes_to_read, a_http_client->in_content_length);
+            log_it(L_WARNING, "Client sent more data length=%zu than in content-length=%zu in request", l_http_simple->request_size + bytes_to_read, a_http_client->in_content_length);
             l_http_simple->request_size_max = l_http_simple->request_size + bytes_to_read + 1;
             // increase input buffer
-            l_http_simple->request = DAP_REALLOC(l_http_simple->request, l_http_simple->request_size_max);
+            byte_t *l_req_new = DAP_REALLOC((byte_t*)l_http_simple->request, l_http_simple->request_size_max);
+            if (!l_req_new) {
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+                dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+                return;
+            }
+            l_http_simple->request = l_req_new;
         }
         if(l_http_simple->request){// request_byte=request
             memcpy( l_http_simple->request_byte + l_http_simple->request_size, a_http_client->esocket->buf_in, bytes_to_read );

@@ -2007,10 +2007,12 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
         return dap_events_socket_queue_data_send(a_es, a_data, a_data_size);
 #endif
     static const size_t l_basic_buf_size = DAP_EVENTS_SOCKET_BUF_LIMIT / 4;
-
+    byte_t *l_buf_out;
     if (a_es->buf_out_size_max < a_es->buf_out_size + a_data_size) {
         a_es->buf_out_size_max += dap_max(l_basic_buf_size, a_data_size);
-        a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
+        if (!( l_buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max) ))
+            return log_it(L_ERROR, "Can't increase capacity: OOM!"), 0;
+        a_es->buf_out = l_buf_out;
         debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + a_data_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
         a_es->buf_out_size_max = l_basic_buf_size;
