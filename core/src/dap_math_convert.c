@@ -474,17 +474,12 @@ char *dap_uint256_decimal_to_char(uint256_t a_decimal){ //dap_chain_balance_to_c
 
 const char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_round_position, bool is_round)
 {
-    char * l_tmp = dap_uint256_decimal_to_char(a_uint256);
-    const char* l_res = dap_uint256_char_to_round_char(l_tmp, a_round_position, is_round);
-    log_it(L_INFO,"%s : %s", l_tmp,l_res);
-    DAP_DELETE(l_tmp);
-    
-    return l_res;
+    return dap_uint256_char_to_round_char(dap_uint256_decimal_to_char(a_uint256), a_round_position, is_round);
 }
 
 const char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_pos, bool is_round)
 {
-    _Thread_local static char s_buf[DATOSHI_POW256 + 3] = {0};
+    _Thread_local static char s_buf[DATOSHI_POW256 + 3];
     memset(s_buf, 0, sizeof(s_buf));
     char *l_dot_pos = strchr(a_str_decimal, '.'), *l_res = s_buf;
     int l_len = strlen(a_str_decimal);
