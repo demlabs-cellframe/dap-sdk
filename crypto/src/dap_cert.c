@@ -641,7 +641,7 @@ dap_cert_metadata_t *dap_cert_new_meta(const char *a_key, dap_cert_metadata_type
     dap_cert_metadata_t *l_new_meta = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_cert_metadata_t, l_meta_item_size, NULL);
     l_new_meta->length = a_value_size;
     l_new_meta->type = a_type;
-    l_new_meta->key = strncpy( (char*)dap_mempcpy(l_new_meta->value, a_value, a_value_size), a_key, l_keylen );
+    l_new_meta->key = dap_strncpy( (char*)dap_mempcpy(l_new_meta->value, a_value, a_value_size), a_key, l_keylen );
     return l_new_meta;
 }
 

@@ -83,11 +83,14 @@ void dap_json_rpc_response_accepted(void *a_data, size_t a_size_data, UNUSED_ARG
     if (http_status != Http_Status_OK)
         return log_it(L_ERROR, "Reponse error %d", (int)http_status);
     log_it(L_NOTICE, "Pre handling response");
-    char *l_str = (char*)a_data, *l_dup = *(l_str + a_size_data)
-        ? ( DAP_NEW_Z_SIZE(char, a_size_data + 1), memcpy(l_dup, a_data, a_size_data) )
-        : l_str;
-    dap_json_rpc_response_t *l_response = dap_json_rpc_response_from_string(l_dup);
-    DAP_DELETE(l_dup);
+    dap_json_rpc_response_t *l_response;
+    if ( *((char*)a_data + a_size_data) ) {
+        char *l_dup = DAP_NEW_Z_SIZE_RET_IF_FAIL(char, a_size_data + 1);
+        memcpy(l_dup, a_data, a_size_data);
+        l_response = dap_json_rpc_response_from_string(l_dup);
+        DAP_DELETE(l_dup);
+    } else
+        l_response = dap_json_rpc_response_from_string((char*)a_data);
     dap_json_rpc_response_handler(l_response);
     dap_json_rpc_response_free(l_response);
 }
