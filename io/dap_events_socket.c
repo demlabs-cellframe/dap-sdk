@@ -202,7 +202,7 @@ int dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_d
     queue_entry_t *l_entry = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(queue_entry_t));
     *l_entry = (queue_entry_t) {
         .size = a_size,
-        .data = a_size ? DAP_DUP_SIZE(a_data, a_size) : (void*)a_data
+        .data = a_size ? DAP_DUP_SIZE((char*)a_data, a_size) : (void*)a_data
     };
     if (g_debug_reactor) {
         if (a_size)
