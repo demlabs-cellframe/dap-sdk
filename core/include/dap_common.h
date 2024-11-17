@@ -367,7 +367,7 @@ DAP_STATIC_INLINE void *_dap_aligned_alloc( uintptr_t alignment, uintptr_t size 
 
 DAP_STATIC_INLINE void *_dap_aligned_realloc( uintptr_t alignment, void *bptr, uintptr_t size )
 {
-    uintptr_t ptr = (uintptr_t) DAP_REALLOC( bptr, size + (alignment * 2) + sizeof(void *) );
+    uintptr_t ptr = (uintptr_t) DAP_REALLOC((uint8_t*)bptr, size + (alignment * 2) + sizeof(void *) );
 
     if ( !ptr )
         return (void *)ptr;
@@ -1044,7 +1044,7 @@ typedef union dap_maxint_str {
     const char s[INT_DIGITS + 2];
 } dap_maxint_str_t;
 dap_maxint_str_t dap_itoa_(long long i);
-#define dap_itoa(i) dap_itoa_(i).s
+#define dap_itoa(i) (char*)dap_itoa_(i).s
 
 unsigned dap_gettid();
 
