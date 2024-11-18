@@ -56,11 +56,12 @@ DAP_STATIC_INLINE void s_randombytes(unsigned char *a_array, uint64_t a_len)
 static void s_test_put_int()
 {
     dap_print_module_name("dap_common");
-    const int INT_VAL = 10;
-    const char * EXPECTED_RESULT = "10";
-    char * result_arr = dap_itoa(INT_VAL);
-    dap_assert(strcmp(result_arr, EXPECTED_RESULT) == 0,
-               "Check string result from itoa");
+
+    const long long ten = 10, minus_twenty = -20, maxv = LLONG_MAX, minv = LLONG_MIN;
+    const char ten_str[] = "10", minus_twenty_str[] = "-20", maxv_str[] = "9223372036854775807", minv_str[] = "-9223372036854775808";
+    char *res_ten = dap_itoa(ten), *res_minus_20 = dap_itoa(minus_twenty), *res_maxv = dap_itoa(maxv), *res_minv = dap_itoa(minv);
+    dap_assert(!strcmp(res_ten, ten_str) && !strcmp(minus_twenty_str, res_minus_20) 
+            && !strcmp(maxv_str, res_maxv) && !strcmp(minv_str, res_minv), "Check string result from itoa");
 }
 
 DAP_STATIC_INLINE void s_overflow_add_custom(void *a_array_a, void *a_array_b, uint64_t a_pos, s_data_type a_type)

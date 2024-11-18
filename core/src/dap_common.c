@@ -802,9 +802,7 @@ dap_error_str_t dap_str_ntstatus_(DWORD err) {
 dap_maxint_str_t dap_itoa_(long long i)
 {
     /* Room for INT_DIGITS digits, - and '\0' */
-    dap_maxint_str_t l_ret = { };
-    char *buf = (char*)&l_ret;
-    char *p = buf + INT_DIGITS + 1; /* points to terminating '\0' */
+    char buf[INT_DIGITS + 2], *p = buf + INT_DIGITS + 1; /* points to terminating '\0' */
     if (i >= 0) {
         do {
             *--p = '0' + (i % 10);
@@ -817,6 +815,8 @@ dap_maxint_str_t dap_itoa_(long long i)
         } while (i != 0);
         *--p = '-';
     }
+    dap_maxint_str_t l_ret = { };
+    memcpy(&l_ret, p, (size_t)(buf + sizeof(buf) - p - 1));
     return l_ret;
 }
 
