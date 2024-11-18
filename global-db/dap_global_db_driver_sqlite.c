@@ -468,15 +468,15 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     const char *l_error_msg = "get by hash";
     dap_global_db_pkt_pack_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL, *l_stmt_size = NULL;
-    char *l_table_name = dap_str_replace_char(a_group, '.', '_'), *l_blob_str = DAP_NEW_Z_SIZE(char, a_count * 2 + 1);
+    char *l_table_name = dap_str_replace_char(a_group, '.', '_'), *l_blob_str = DAP_NEW_Z_SIZE(char, a_count * 2);
     if (!l_blob_str || !l_table_name) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         DAP_DEL_MULTY(l_table_name, l_blob_str);
         return NULL;
     }
-    for (size_t k = 0; k < a_count; ++k) {
-        memcpy(l_blob_str + k*2, "?,", 2);
-    }
+    for (size_t k = 0; k < a_count; memcpy(l_blob_str + 2 * (k++), "?,", 2));
+    l_blob_str[2 * a_count - 1] = '\0';
+
     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
@@ -813,8 +813,8 @@ clean_and_ret:
 static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
 {
 // sanity check
-    conn_list_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group_mask || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
+    conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);
+    dap_return_val_if_pass(!a_group_mask || !l_conn, NULL);
 // preparing
     const char *l_error_msg = "get groups";
     dap_list_t* l_ret = NULL;
@@ -833,10 +833,6 @@ static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
     int rc = 0;
     while ( SQLITE_ROW == ( rc = s_db_sqlite_step(l_stmt, l_error_msg) ) && sqlite3_column_type(l_stmt, 0) == SQLITE_TEXT ) {
         const char *l_table_name = (const char*)sqlite3_column_text(l_stmt, 0);
-        if ( sqlite3_column_bytes(l_stmt, 0) != (int)dap_strlen(l_table_name) + 1 ) {
-            log_it(L_ERROR, "Invalid table name length, skip it");
-            continue;
-        }
         if (dap_global_db_group_match_mask(l_table_name, l_mask))
             l_ret = dap_list_prepend(l_ret, dap_str_replace_char(l_table_name, '_', '.'));
     }

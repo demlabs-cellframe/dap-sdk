@@ -80,7 +80,7 @@ dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
     if (a_store_obj->value_len)
         l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->value, a_store_obj->value_len);
     if (a_store_obj->sign)
-        memcpy(l_data_ptr, a_store_obj->sign, l_sign_len);
+        l_data_ptr = dap_mempcpy(l_data_ptr, a_store_obj->sign, l_sign_len);
 
     assert((size_t)((byte_t *)l_data_ptr - l_pkt->data) == l_data_size_out);
     return l_pkt;
