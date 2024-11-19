@@ -202,10 +202,19 @@
 #define SSIZE_MAX INTPTR_MAX
 #endif
 
-#if UINTPTR_MAX > 0xffffFFFFul || ULONG_MAX > 0xffffFFFFul
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+
+#if UINTPTR_MAX > 0xffffFFFFul || ULONG_MAX > 0xffffFFFFul || defined(_WIN64)
 #define MDBX_WORDBITS 64
+#pragma message("!!!!!!!!!!!!!!! UINTPTR_MAX =" TOSTRING(UINTPTR_MAX) TOSTRING(0xffffFFFFul))
+#pragma message("!!!!!!!!!!!!!!! ULONG_MAX =" TOSTRING(ULONG_MAX) TOSTRING(0xffffFFFFul))
+#error "!!!!!!!!!!!!!!!"
 #else
 #define MDBX_WORDBITS 32
+#pragma message("32!!!!!!!!!!!!!!! UINTPTR_MAX =" TOSTRING(UINTPTR_MAX) TOSTRING(0xffffFFFFul))
+#pragma message("32!!!!!!!!!!!!!!! ULONG_MAX =" TOSTRING(ULONG_MAX) TOSTRING(0xffffFFFFul))
+#error "32!!!!!!!!!!!!!!!"
 #endif /* MDBX_WORDBITS */
 
 /*----------------------------------------------------------------------------*/
