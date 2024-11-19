@@ -169,6 +169,7 @@ char *dap_build_filename (const char *first_element, ...);
  */
 char* dap_canonicalize_filename(const char *filename, const char *relative_to);
 
+char* dap_canonicalize_path(const char *a_filename, const char *a_path);
 /*
  * Gets the current directory
  * Returns: (type filename) (transfer full): the current directory

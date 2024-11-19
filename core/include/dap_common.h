@@ -232,6 +232,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #endif
 
 #define DOOF_PTR (void*)&doof
+#define DAP_NARGS_PTR(...)  ( sizeof( (void*[]){NULL, ##__VA_ARGS__} ) / sizeof(void*) - 1 )
 #define DAP_DEL_MULTY(...) dap_delete_multy(DOOF_PTR, ##__VA_ARGS__, DOOF_PTR)
 #define DAP_VA_SERIALIZE(data, size, ...) dap_serialize_multy(data, size, ##__VA_ARGS__, DOOF_PTR)
 #define DAP_VA_SERIALIZE_NEW(size, ...) DAP_VA_SERIALIZE(NULL, size, __VA_ARGS__)

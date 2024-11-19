@@ -457,7 +457,7 @@ char *dap_config_get_item_str_path_default(dap_config_t *a_config, const char *a
     const char *l_val = dap_config_get_item_str(a_config, a_section, a_item_name);
     if (!l_val)
         return dap_strdup(a_default);
-    char *l_dir = dap_path_get_dirname(a_config->path), *l_ret = dap_canonicalize_filename(l_val, l_dir);
+    char *l_dir = dap_path_get_dirname(a_config->path), *l_ret = dap_canonicalize_path(l_val, l_dir);
     //log_it(L_DEBUG, "Config-path item: %s: composed from %s and %s", l_ret, l_item->val.val_str, l_dir);
     return DAP_DELETE(l_dir), l_ret;
 }
@@ -488,7 +488,7 @@ char **dap_config_get_item_str_path_array(dap_config_t *a_config, const char *a_
         return NULL;
     char *l_cfgpath = dap_path_get_dirname(a_config->path), **addrs_relative = DAP_NEW_Z_COUNT(char*, *array_length);
     for (int i = 0; i < *array_length; ++i) {
-        addrs_relative[i] = dap_canonicalize_filename(conf_relative[i], l_cfgpath);
+        addrs_relative[i] = dap_canonicalize_path(conf_relative[i], l_cfgpath);
     }
     return DAP_DELETE(l_cfgpath), addrs_relative;
 }

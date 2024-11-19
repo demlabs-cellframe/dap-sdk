@@ -387,7 +387,6 @@ const char *dap_path_skip_root (const char *file_name)
  */
 char* dap_path_get_dirname(const char *a_file_name)
 {
-    log_it(L_DEBUG,"dap_path_get_dirname(a_file_name=\"%s\")", a_file_name);
     char *l_base;
     size_t l_len;
 
@@ -476,7 +475,6 @@ char* dap_path_get_dirname(const char *a_file_name)
     l_base = DAP_NEW_SIZE(char, l_len + 1);
     memcpy(l_base, a_file_name, l_len);
     l_base[l_len] = 0;
-    log_it(L_DEBUG,"l_base=%s",l_base);
     return l_base;
 }
 
@@ -1156,6 +1154,112 @@ char* dap_build_filename(const char *first_element, ...)
  * Returns: (type filename) (transfer full): a newly allocated string with the
  * canonical file path
  */
+char* dap_canonicalize_path(const char *a_filename, const char *a_path) {
+    if (!a_path)
+        a_path = "";
+    if (!a_filename)
+        a_filename = "";
+    char *path = dap_strdup_printf("%s/%s", a_path, a_filename);
+    size_t i = 0, j = 0, k = 0;
+
+    //Replace backslashes with forward slashes
+    while (path[i] != '\0') {
+        //Forward slash or backslash separator found?
+        if (path[i] == '/' || path[i] == '\\') {
+            path[k++] = '/';
+            while (path[i] == '/' || path[i] == '\\')
+                i++;
+        } else
+            path[k++] = path[i++];
+    }
+    path[k] = '\0';
+
+    i = j = k = 0;
+
+    do {
+        //Forward slash separator found
+        if ( path[i] == '/' || path[i] == '\0' ) {
+            //"." element found?
+            if ( (i - j) == 1 && path[j] == '.' ) {
+                //Check whether the pathname is empty
+                if (!k) {
+                    if (path[i] == '\0')
+                        path[k++] = '.';
+                    else if (path[i] == '/' && path[i + 1] == '\0') {
+                        strcpy(path + k, "./");
+                        k += 2;
+                    }
+                } else if (k > 1) {
+                    //Remove the final slash if necessary
+                    if ( path[i] == '\0' )
+                        k--;
+                }
+            }
+            //".." element found?
+            else if ( (i - j) == 2 && !strncmp(path + j, "..", 2) ) {
+                //Check whether the pathname is empty
+                if (!k) {
+                    strcpy(path + k, "..");
+                    k += 2;
+                    //Append a slash if necessary
+                    if (path[i] == '/')
+                        path[k++] = '/';
+                } else if (k > 1) {
+                    //Search the path for the previous slash
+                    for (j = 1; j < k; ++j) {
+                        if ( path[k - j - 1] == '/' )
+                            break;
+                    }
+                    //Slash separator found?
+                    if (j < k) {
+                        if (!strncmp(path + k - j, "..", 2)) {
+                            strcpy(path + k, "..");
+                            k += 2;
+                        } else
+                            k -= (j + 1);
+
+                        //Append a slash if necessary
+                        if (k == 0 && path[0] == '/' || path[i] == '/')
+                            path[k++] = '/';
+                    } else { //No slash separator found?
+                        if (k == 3 && !strncmp (path, "..", 2)) {
+                            strcpy(path + k, "..");
+                            k += 2;
+                            //Append a slash if necessary
+                            if (path[i] == '/')
+                                path[k++] = '/';
+                        } else if (path[i] == '\0') {
+                            *path = '.';
+                            k = 1;
+                        } else if (path[i] == '/' && path[i + 1] == '\0') {
+                            strcpy(path + k, "./");
+                            k = 2;
+                        } else
+                            k = 0;
+                    }
+                }
+            } else {
+                //Copy directory name
+                memmove (path + k, path + j, i - j);
+                //Advance write pointer
+                k += i - j;
+
+                //Append a slash if necessary
+                if (path[i] == '/')
+                    path[k++] = '/';
+            }
+
+            //Move to the next token
+            while (path[i] == '/')
+                i++;
+            j = i;
+        } else if (!k)
+            for ( ; path[i] == '.' || path[i] == '/'; ++i, ++j);
+    } while (path[i++] != '\0');
+    path[k] = '\0';
+    return path;
+}
+
 char* dap_canonicalize_filename(const char *filename, const char *relative_to)
 {
     char buf[MAX_PATH + 1];

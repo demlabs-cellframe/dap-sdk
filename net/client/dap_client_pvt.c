@@ -871,26 +871,24 @@ static void s_request_response(void * a_response, size_t a_response_size, void *
 {
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);
+    if ( !l_client_pvt->request_response_callback )
+        return log_it(L_ERROR, "No request_response_callback in encrypted client!");
     l_client_pvt->http_client = NULL;
-    char *l_response = NULL;
-    size_t l_len = 0;
-    if (a_response_size) {
-        if (l_client_pvt->is_encrypted && l_client_pvt->session_key) {
-            l_len = dap_enc_decode_out_size(a_response, a_response_size, DAP_ENC_DATA_TYPE_RAW);
-            l_response = DAP_NEW_SIZE(char, l_len + 1);
+    
+    if (a_response && a_response_size) {
+        if (l_client_pvt->is_encrypted) {
+            if (!l_client_pvt->session_key)
+                return log_it(L_ERROR, "No session key in encrypted client!");
+            size_t l_len = dap_enc_decode_out_size(l_client_pvt->session_key, a_response_size, DAP_ENC_DATA_TYPE_RAW);
+            char *l_response = DAP_NEW_Z_SIZE(char, l_len + 1);
             l_len = dap_enc_decode(l_client_pvt->session_key, a_response, a_response_size,
                                    l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
             l_response[l_len] = '\0';
-        } else {
-            l_response = DAP_NEW_Z_SIZE(char, a_response_size + 1);
-            l_len = dap_strncpy(l_response, a_response, a_response_size) - l_response;
-        }
+            l_client_pvt->request_response_callback(l_client_pvt->client, l_response, l_len);
+            DAP_DELETE(l_response);
+        } else
+            l_client_pvt->request_response_callback(l_client_pvt->client, a_response, a_response_size);
     }
-    if ( l_client_pvt->request_response_callback )
-        l_client_pvt->request_response_callback(l_client_pvt->client, l_response, l_len);
-    else
-        log_it(L_ERROR, "No request_response_callback for encrypted client %p", l_client_pvt->client );
-    DAP_DELETE(l_response);
 }
 
 /**
