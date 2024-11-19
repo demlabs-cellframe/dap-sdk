@@ -202,7 +202,7 @@
 #define SSIZE_MAX INTPTR_MAX
 #endif
 
-#if UINTPTR_MAX > 0xffffFFFFul || ULONG_MAX > 0xffffFFFFul || defined(_WIN64)
+#if UINTPTR_MAX > 0xffffFFFFul || ULONG_MAX > 0xffffFFFFul
 #define MDBX_WORDBITS 64
 #else
 #define MDBX_WORDBITS 32
