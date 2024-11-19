@@ -209,12 +209,10 @@
 #define MDBX_WORDBITS 64
 #pragma message("!!!!!!!!!!!!!!! UINTPTR_MAX =" TOSTRING(UINTPTR_MAX) TOSTRING(0xffffFFFFul))
 #pragma message("!!!!!!!!!!!!!!! ULONG_MAX =" TOSTRING(ULONG_MAX) TOSTRING(0xffffFFFFul))
-#error "!!!!!!!!!!!!!!!"
 #else
 #define MDBX_WORDBITS 32
 #pragma message("32!!!!!!!!!!!!!!! UINTPTR_MAX =" TOSTRING(UINTPTR_MAX) TOSTRING(0xffffFFFFul))
 #pragma message("32!!!!!!!!!!!!!!! ULONG_MAX =" TOSTRING(ULONG_MAX) TOSTRING(0xffffFFFFul))
-#error "32!!!!!!!!!!!!!!!"
 #endif /* MDBX_WORDBITS */
 
 /*----------------------------------------------------------------------------*/
@@ -34761,6 +34759,7 @@ static int lck_op(const mdbx_filehandle_t fd, int cmd, const int lck,
   STATIC_ASSERT(sizeof(off_t) >= sizeof(void *) &&
                 sizeof(off_t) >= sizeof(size_t));
 #ifdef __ANDROID_API__
+  #pragma message("!!!!!!!!!!!!!!! MDBX_WORDBITS =" TOSTRING(MDBX_WORDBITS))
   STATIC_ASSERT_MSG((sizeof(off_t) * 8 == MDBX_WORDBITS),
                     "The bitness of system `off_t` type is mismatch. Please "
                     "fix build and/or NDK configuration.");
