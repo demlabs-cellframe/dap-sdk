@@ -209,10 +209,12 @@
 #define MDBX_WORDBITS 64
 #pragma message("!!!!!!!!!!!!!!! UINTPTR_MAX =" TOSTRING(UINTPTR_MAX) TOSTRING(0xffffFFFFul))
 #pragma message("!!!!!!!!!!!!!!! ULONG_MAX =" TOSTRING(ULONG_MAX) TOSTRING(0xffffFFFFul))
+#pragma message("!!!!!!!!!!!!!!! MDBX_WORDBITS =" TOSTRING(MDBX_WORDBITS))
 #else
 #define MDBX_WORDBITS 32
 #pragma message("32!!!!!!!!!!!!!!! UINTPTR_MAX =" TOSTRING(UINTPTR_MAX) TOSTRING(0xffffFFFFul))
 #pragma message("32!!!!!!!!!!!!!!! ULONG_MAX =" TOSTRING(ULONG_MAX) TOSTRING(0xffffFFFFul))
+#pragma message("!!!!!!!!!!!!!!! MDBX_WORDBITS =" TOSTRING(MDBX_WORDBITS))
 #endif /* MDBX_WORDBITS */
 
 /*----------------------------------------------------------------------------*/
