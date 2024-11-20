@@ -295,11 +295,11 @@ void dap_set_log_tag_width(size_t a_width) {
  * @param int a_count - count deleted args
  * @param void* a_to_delete
  */
-void dap_delete_multy(char *a_doof, ...)
+void dap_delete_multy(size_t a_count, ...)
 {
     va_list l_args_list;
-    va_start(l_args_list, a_doof);
-    for ( void *l_cur; ( l_cur = va_arg(l_args_list, void*) ) != DOOF_PTR; DAP_DELETE(l_cur) );
+    va_start(l_args_list, a_count);
+    for ( void *l_cur; a_count-- && (( l_cur = va_arg(l_args_list, void*) ), 1); DAP_DELETE(l_cur) );
     va_end(l_args_list);
 }
 

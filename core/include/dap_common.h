@@ -140,8 +140,10 @@
 #endif
 
 #ifdef __cplusplus
-#define DAP_CAST_PTR(t,v) reinterpret_cast<t*>(v)
+#define DAP_CAST(t,v) reinterpret_cast<t>(v)
+#define DAP_CAST_PTR(t,v) DAP_CAST(t*,v)
 #else
+#define DAP_CAST(t,v) v
 #define DAP_CAST_PTR(t,v) v
 #endif
 
@@ -149,7 +151,7 @@
 
 extern const char *c_error_memory_alloc, *c_error_sanity_check, doof;
 /* Don't use these function directly! Rather use the corresponding macro's */
-void dap_delete_multy(char *a_doof, ...);
+void dap_delete_multy(size_t, ...);
 uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, ...);
 int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, ...);
 
@@ -226,14 +228,14 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_DELETE(p)         free((void*)(p))
 #define DAP_DEL_Z(p)          do { DAP_FREE(p); (p) = NULL; } while (0);
 #define DAP_DEL_ARRAY(p, c)   for ( intmax_t _c = p ? (intmax_t)(c) : 0; _c > 0; DAP_DELETE(p[--_c]) );
-#define DAP_DUP_SIZE(p, s)    ({ intmax_t _s = (intmax_t)(s); __typeof__(p) _p = ( (uintptr_t)(p) && _s >= DAP_TYPE_SIZE(p) ) ? calloc(1, _s) : NULL; _p ? memcpy(_p, (p), _s) : NULL; })
+#define DAP_DUP_SIZE(p, s)    ({ intmax_t _s = (intmax_t)(s); __typeof__(p) _p = ( (uintptr_t)(p) && _s >= DAP_TYPE_SIZE(p) ) ? DAP_CAST(__typeof__(p), calloc(1, _s)) : NULL; _p ? DAP_CAST(__typeof__(p), memcpy(_p, (p), _s)) : NULL; })
 #define DAP_DUP(p)            ({ __typeof__(p) _p = (uintptr_t)(p) ? calloc(1, sizeof(*(p))) : NULL; if (_p) *_p = *(p); _p; })
 
 #endif
 
 #define DOOF_PTR (void*)&doof
-#define DAP_NARGS_PTR(...)  ( sizeof( (void*[]){NULL, ##__VA_ARGS__} ) / sizeof(void*) - 1 )
-#define DAP_DEL_MULTY(...) dap_delete_multy(DOOF_PTR, ##__VA_ARGS__, DOOF_PTR)
+#define DAP_NARGS_PTRS(...)  ( sizeof( (void*[]){NULL, ##__VA_ARGS__} ) / sizeof(void*) - 1 )
+#define DAP_DEL_MULTY(...) dap_delete_multy(DAP_NARGS_PTRS(__VA_ARGS__), ##__VA_ARGS__)
 #define DAP_VA_SERIALIZE(data, size, ...) dap_serialize_multy(data, size, ##__VA_ARGS__, DOOF_PTR)
 #define DAP_VA_SERIALIZE_NEW(size, ...) DAP_VA_SERIALIZE(NULL, size, __VA_ARGS__)
 #define DAP_VA_DESERIALIZE(data, size, ...) dap_deserialize_multy(data, size, ##__VA_ARGS__, DOOF_PTR)
