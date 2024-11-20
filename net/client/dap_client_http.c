@@ -235,9 +235,7 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     ssize_t l_out_buf_size = l_header_size;
     if (l_client_http->request && l_client_http->request_size){
         l_out_buf_size += l_client_http->request_size + 1;
-        char *l_out_new = DAP_REALLOC(l_out_buf, l_out_buf_size);
-        if (!l_out_new)
-            return log_it(L_CRITICAL, "%s", c_error_memory_alloc), DAP_DELETE(l_out_buf);
+        char *l_out_new = DAP_REALLOC_RET_IF_FAIL(l_out_buf, l_out_buf_size, l_out_buf);
         l_out_buf = l_out_new;
         memcpy(l_out_buf + l_header_size, l_client_http->request, l_client_http->request_size);
     }

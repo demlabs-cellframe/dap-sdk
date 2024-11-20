@@ -447,6 +447,10 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
         return *l_item->val.val_arr;
     case DAP_CONFIG_ITEM_BOOL:
         return l_item->val.val_bool ? "true" : "false";
+    case DAP_CONFIG_ITEM_DECIMAL: {
+        static _Thread_local char s_ret[sizeof(dap_maxint_str_t)];
+        return (const char*)memcpy(s_ret, dap_itoa(l_item->val.val_int), sizeof(dap_maxint_str_t));
+    }
     default:
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
         return a_default;

@@ -763,7 +763,9 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
             }
             size_t l_data_len = l_record->key_len + l_record->value_len + l_record->sign_len + l_db_ctx->namelen + 1;
             size_t l_add_size = l_data_len + sizeof(dap_global_db_pkt_t);
-            dap_global_db_pkt_pack_t *l_new_pack = DAP_REALLOC(l_ret, l_ret->data_size + sizeof(dap_global_db_pkt_pack_t) + l_add_size);
+            dap_global_db_pkt_pack_t *l_new_pack = l_ret
+                ? DAP_REALLOC(l_ret, l_ret->data_size + sizeof(dap_global_db_pkt_pack_t) + l_add_size)
+                : DAP_NEW_Z_SIZE(dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_add_size);
             if (!l_new_pack) {
                 log_it(L_CRITICAL, "Cannot allocate a memory for store object packet");
                 rc = MDBX_PROBLEM;
