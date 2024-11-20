@@ -302,7 +302,7 @@ bool dap_path_is_absolute(const char *a_file_name)
     return a_file_name && strlen(a_file_name) >= 3 
         && dap_ascii_isalpha(a_file_name[0]) && a_file_name[1] == ':' && DAP_IS_DIR_SEPARATOR (a_file_name[2]);
 #else
-    return a_file_name && dap_ascii_isalpha(*a_file_name);
+    return a_file_name && DAP_IS_DIR_SEPARATOR(*a_file_name);
 #endif
 }
 

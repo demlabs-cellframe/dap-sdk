@@ -461,6 +461,8 @@ char *dap_config_get_item_str_path_default(dap_config_t *a_config, const char *a
     const char *l_val = dap_config_get_item_str(a_config, a_section, a_item_name);
     if (!l_val)
         return dap_strdup(a_default);
+    if ( dap_path_is_absolute(l_val) )
+        return dap_strdup(l_val);
     char *l_dir = dap_path_get_dirname(a_config->path), *l_ret = dap_canonicalize_path(l_val, l_dir);
     //log_it(L_DEBUG, "Config-path item: %s: composed from %s and %s", l_ret, l_item->val.val_str, l_dir);
     return DAP_DELETE(l_dir), l_ret;
