@@ -149,7 +149,7 @@
 
 extern const char *c_error_memory_alloc, *c_error_sanity_check, doof;
 /* Don't use these function directly! Rather use the corresponding macro's */
-void dap_delete_multy(char *a_doof, ...);
+void dap_delete_multy(size_t, ...);
 uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, ...);
 int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, ...);
 
@@ -232,8 +232,8 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #endif
 
 #define DOOF_PTR (void*)&doof
-#define DAP_NARGS_PTR(...)  ( sizeof( (void*[]){NULL, ##__VA_ARGS__} ) / sizeof(void*) - 1 )
-#define DAP_DEL_MULTY(...) dap_delete_multy(DOOF_PTR, ##__VA_ARGS__, DOOF_PTR)
+#define DAP_NARGS_PTRS(...)  ( sizeof( (void*[]){NULL, ##__VA_ARGS__} ) / sizeof(void*) - 1 )
+#define DAP_DEL_MULTY(...) dap_delete_multy(DAP_NARGS_PTRS(__VA_ARGS__), ##__VA_ARGS__)
 #define DAP_VA_SERIALIZE(data, size, ...) dap_serialize_multy(data, size, ##__VA_ARGS__, DOOF_PTR)
 #define DAP_VA_SERIALIZE_NEW(size, ...) DAP_VA_SERIALIZE(NULL, size, __VA_ARGS__)
 #define DAP_VA_DESERIALIZE(data, size, ...) dap_deserialize_multy(data, size, ##__VA_ARGS__, DOOF_PTR)

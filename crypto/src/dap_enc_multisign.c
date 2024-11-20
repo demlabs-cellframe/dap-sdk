@@ -61,11 +61,9 @@ void dap_enc_sig_multisign_key_new_generate(dap_enc_key_t *a_key, const void *a_
 void dap_enc_sig_multisign_key_delete(dap_enc_key_t *a_key)
 {
     dap_return_if_pass(!a_key);
-    DAP_DEL_Z(a_key->priv_key_data);
-    DAP_DEL_Z(a_key->pub_key_data);
-    a_key->priv_key_data_size = 0;
-    a_key->pub_key_data_size = 0;
-    dap_multi_sign_params_delete((dap_multi_sign_params_t *)a_key->_pvt);
+    DAP_DEL_MULTY(a_key->priv_key_data, a_key->pub_key_data);
+    a_key->priv_key_data_size = a_key->pub_key_data_size = 0;
+    dap_multi_sign_params_delete((dap_multi_sign_params_t*)a_key->_pvt);
 }
 
 /**
@@ -253,7 +251,8 @@ dap_multi_sign_params_t *dap_multi_sign_params_make(dap_sign_type_enum_t a_type,
  */
 void dap_multi_sign_params_delete(dap_multi_sign_params_t *a_params)
 {
-    dap_return_if_pass(!a_params);
+    if (!a_params)
+        return;
     for (size_t i = 0; i < a_params->key_count; ++i) {
         dap_enc_key_delete(a_params->keys[i]);
     }
