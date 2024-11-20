@@ -1219,7 +1219,7 @@ char* dap_canonicalize_path(const char *a_filename, const char *a_path) {
                             k -= (j + 1);
 
                         //Append a slash if necessary
-                        if (k == 0 && path[0] == '/' || path[i] == '/')
+                        if ((k == 0 && path[0] == '/') || path[i] == '/')
                             path[k++] = '/';
                     } else { //No slash separator found?
                         if (k == 3 && !strncmp (path, "..", 2)) {
