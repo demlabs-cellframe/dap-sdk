@@ -89,8 +89,12 @@ static int dap_app_cli_http_read(dap_app_cli_connect_param_t socket, dap_app_cli
             break;
         l_hdr_end_token += ( sizeof(l_head_end_str) - 1 );
         l_cmd->hdr_len = l_hdr_end_token - l_cmd->cmd_res;
-        if (l_cmd->cmd_res_len + l_cmd->hdr_len > l_cmd->cmd_res_cur)
-            l_cmd->cmd_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_len + l_cmd->hdr_len + 1);
+        if (l_cmd->cmd_res_len + l_cmd->hdr_len > l_cmd->cmd_res_cur) {
+            char *l_res = DAP_REALLOC(l_cmd->cmd_res, l_cmd->cmd_res_len + l_cmd->hdr_len + 1);
+            if (!l_res)
+                return printf("Error: out of memory!"), DAP_CLI_ERROR_INCOMPLETE;
+            l_cmd->cmd_res = l_res;
+        }
         ++a_status;
     }
     case 3:
@@ -116,40 +120,32 @@ dap_app_cli_connect_param_t dap_app_cli_connect()
     int l_arg_len = 0;
     uint16_t l_array_count;
     struct sockaddr_storage l_saddr = { };
-    char **l_addrs = dap_config_get_item_str_path_array(g_config, "cli-server", DAP_CFG_PARAM_SOCK_PATH, &l_array_count);
-    char *l_addr = l_addrs ? l_addrs[0] : NULL;
-    if (l_addr) {
-        l_addrs[0] = NULL;
-        dap_config_get_item_str_path_array_free(l_addrs, &l_array_count);
+    char *l_addr = NULL;
+    if (( l_addr = dap_config_get_item_str_path_default(g_config, "cli-server", DAP_CFG_PARAM_SOCK_PATH, NULL) )) {
 #if defined(DAP_OS_WINDOWS) || defined(DAP_OS_ANDROID)
 #else
-        if ( -1 == (l_socket = socket(AF_UNIX, SOCK_STREAM, 0)) ) {
-            printf ("socket() error %d", errno);
-            return ~0;
-        }
+        if ( -1 == (l_socket = socket(AF_UNIX, SOCK_STREAM, 0)) )
+            return printf ("socket() error %d: \"%s\"\r\n", errno, dap_strerror(errno)), ~0;
         struct sockaddr_un l_saddr_un = { .sun_family = AF_UNIX };
         strncpy(l_saddr_un.sun_path, l_addr, sizeof(l_saddr_un.sun_path) - 1);
         l_arg_len = SUN_LEN(&l_saddr_un);
         memcpy(&l_saddr, &l_saddr_un, l_arg_len);
-        DAP_DEL_Z(l_addr);
+        DAP_DELETE(l_addr);
 #endif
-    } else if ( !!(l_addr = (char *)dap_config_get_item_str(g_config, "cli-server", DAP_CFG_PARAM_LISTEN_ADDRS)) ) {
+    } else if (( l_addr = (char*)dap_config_get_item_str(g_config, "cli-server", DAP_CFG_PARAM_LISTEN_ADDRS) )) {
         if ( -1 == (l_socket = socket(AF_INET, SOCK_STREAM, 0)) ) {
 #ifdef DAP_OS_WINDOWS
             _set_errno( WSAGetLastError() );
 #endif
-            printf ("socket() error %d", errno);
-            return ~0;
+            return printf ("socket() error %d: \"%s\"\r\n", errno, dap_strerror(errno)), ~0;
         }
         char l_ip[INET6_ADDRSTRLEN] = { '\0' }; uint16_t l_port = 0;
         if ( 0 > (l_arg_len = dap_net_parse_config_address(l_addr, l_ip, &l_port, &l_saddr, NULL)) ) {
             printf ("Incorrect address \"%s\" format\n", l_addr);
             return ~0;
         }
-    } else {
-        printf("CLI server is not set, check config");
-        return ~0;
-    }
+    } else
+        return printf("CLI server is not set, check config"), ~0;
     
     if ( connect(l_socket, (struct sockaddr*)&l_saddr, l_arg_len) == SOCKET_ERROR ) {
 #ifdef DAP_OS_WINDOWS

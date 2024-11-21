@@ -235,7 +235,8 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
     ssize_t l_out_buf_size = l_header_size;
     if (l_client_http->request && l_client_http->request_size){
         l_out_buf_size += l_client_http->request_size + 1;
-        l_out_buf = DAP_REALLOC(l_out_buf, l_out_buf_size);
+        char *l_out_new = DAP_REALLOC_RET_IF_FAIL(l_out_buf, l_out_buf_size, l_out_buf);
+        l_out_buf = l_out_new;
         memcpy(l_out_buf + l_header_size, l_client_http->request, l_client_http->request_size);
     }
         
@@ -385,25 +386,22 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         l_client_http->is_header_read = false;
 
         // received not enough data
-        if(l_client_http->content_length
-                > (l_client_http->response_size - l_client_http->header_length)) {
+        if ( l_client_http->content_length > l_client_http->response_size - l_client_http->header_length )
             return;
-        }else{
-            // process data
-            if(l_client_http->response_callback)
-                l_client_http->response_callback(
-                        l_client_http->response + l_client_http->header_length,
-                        l_client_http->content_length,
-                        l_client_http->callbacks_arg, s_extract_http_code(
-                                l_client_http->response, l_client_http->response_size));
-            l_client_http->response_size -= l_client_http->header_length;
-            l_client_http->response_size -= l_client_http->content_length;
-            l_client_http->header_length = 0;
-            l_client_http->content_length = 0;
-            l_client_http->were_callbacks_called = true;
-            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-        }
-
+        // process data
+        l_client_http->response[dap_min(l_client_http->response_size, l_client_http->response_size_max - 1)] = '\0';
+        if(l_client_http->response_callback)
+            l_client_http->response_callback(
+                    l_client_http->response + l_client_http->header_length,
+                    l_client_http->content_length,
+                    l_client_http->callbacks_arg, s_extract_http_code(
+                            l_client_http->response, l_client_http->response_size));
+        l_client_http->response_size -= l_client_http->header_length;
+        l_client_http->response_size -= l_client_http->content_length;
+        l_client_http->header_length = 0;
+        l_client_http->content_length = 0;
+        l_client_http->were_callbacks_called = true;
+        a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
     }
 }
 
@@ -755,16 +753,12 @@ dap_client_http_t * dap_client_http_request_custom (
         }
         dap_worker_add_events_socket(l_client_http->worker, l_ev_socket);
         return l_client_http;
-    }
-    else{
-        char l_errbuf[128];
-        l_errbuf[0] = '\0';
-        strerror_r(errno, l_errbuf, sizeof (l_errbuf));
-        log_it(L_ERROR, "Connecting error: \"%s\" (code %d)", l_errbuf, errno);
+    } else {
+        log_it(L_ERROR, "Connecting error %d: \"%s\"", errno, dap_strerror(errno));
         s_client_http_delete( l_client_http);
         l_ev_socket->_inheritor = NULL;
         dap_events_socket_delete_unsafe( l_ev_socket, true);
-        if(a_error_callback)
+        if (a_error_callback)
             a_error_callback(errno, a_callbacks_arg);
         return NULL;
     }

@@ -150,12 +150,12 @@ static int dap_chain_exec_cmd_list_wait(struct exec_cmd_request *a_exec_cmd_requ
 #ifdef DAP_OS_WINDOWS
     EnterCriticalSection(&a_exec_cmd_request->wait_crit_sec);
     if (a_exec_cmd_request->response)
-        return LeaveCriticalSection(&a_exec_cmd_request->wait_crit_sec), a_exec_cmd_request->response;
+        return LeaveCriticalSection(&a_exec_cmd_request->wait_crit_sec), EXEC_CMD_OK;
     while (!a_exec_cmd_request->response) {
         if ( !SleepConditionVariableCS(&a_exec_cmd_request->wait_cond, &a_exec_cmd_request->wait_crit_sec, a_timeout_ms) )
-            a_exec_cmd_request->response = GetLastError() == ERROR_TIMEOUT ? EXEC_CMD_ERR_WAIT_TIMEOUT : EXEC_CMD_ERR_UNKNOWN;
+            a_exec_cmd_request->error_code = GetLastError() == ERROR_TIMEOUT ? EXEC_CMD_ERR_WAIT_TIMEOUT : EXEC_CMD_ERR_UNKNOWN;
     }
-    return LeaveCriticalSection(&a_exec_cmd_request->wait_crit_sec), a_exec_cmd_request->response;     
+    return LeaveCriticalSection(&a_exec_cmd_request->wait_crit_sec), a_exec_cmd_request->error_code;     
 #else
     pthread_mutex_lock(&a_exec_cmd_request->wait_mutex);
     if(a_exec_cmd_request->response)
@@ -175,14 +175,17 @@ static int dap_chain_exec_cmd_list_wait(struct exec_cmd_request *a_exec_cmd_requ
             pthread_cond_timedwait(&a_exec_cmd_request->wait_cond, &a_exec_cmd_request->wait_mutex, &l_cond_timeout)
 #endif
         ) {
+        case 0:
+            break;
         case ETIMEDOUT:
-            a_exec_cmd_request->response = dap_strdup("ERR_WAIT_TIMEOUT");
-            return EXEC_CMD_ERR_WAIT_TIMEOUT;
+            a_exec_cmd_request->error_code = EXEC_CMD_ERR_WAIT_TIMEOUT;
+            break;
         default:
+            a_exec_cmd_request->error_code = EXEC_CMD_ERR_UNKNOWN;
             break;
         }
     }
-    return pthread_mutex_unlock(&a_exec_cmd_request->wait_mutex), EXEC_CMD_OK;
+    return pthread_mutex_unlock(&a_exec_cmd_request->wait_mutex), a_exec_cmd_request->error_code;
 #endif
 }
 
@@ -484,7 +487,6 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
 }
 
 char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size){
-    uint64_t l_id_response = dap_json_rpc_response_registration(a_request);
     a_request->id = 0;
     dap_cert_t *l_cert = dap_cert_find_by_name("node-addr");
     if (!l_cert) {
@@ -502,23 +504,17 @@ int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc
     char* l_custom_header = NULL, *l_path = NULL;
 
     char* l_request_data_str =  dap_json_rpc_request_to_http_str(a_request, &l_request_data_size);
-    if (!l_request_data_str) {
+    if (!l_request_data_str)
         return -1;
-    }
+
     char * l_enc_request = dap_json_rpc_enc_request(a_client_internal, l_request_data_str, l_request_data_size, &l_path, &l_enc_request_size, &l_custom_header);
-    DAP_DEL_Z(l_request_data_str);
-    if (!l_enc_request || !l_path) {
-        DAP_DEL_Z(l_request_data_str);
-        DAP_DEL_Z(l_custom_header);
-        return -2;
-    }
+    DAP_DELETE(l_request_data_str);
+    if (!l_enc_request || !l_path)
+        return DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path), -1;
+
     struct exec_cmd_request* l_exec_cmd_request = s_exec_cmd_request_init(a_client_internal);
-    if (!l_exec_cmd_request) {
-        DAP_DEL_Z(l_custom_header);
-        DAP_DEL_Z(l_path);
-        DAP_DEL_Z(l_enc_request);
-        return -3;
-    }
+    if (!l_exec_cmd_request)
+        return DAP_DEL_MULTY(l_custom_header, l_enc_request, l_path), -1;
 
     log_it(L_DEBUG, "Send enc json-rpc request to %s:%d, path = %s, request size = %lu",
                      a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port, l_path, l_enc_request_size);

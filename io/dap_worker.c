@@ -104,7 +104,9 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
     if (s_worker)
-        return log_it(L_ERROR, "Worker %d is already assigned to current thread %u", s_worker->id), -1;
+        return log_it(L_ERROR, "Worker %d is already assigned to current thread %ld",
+                               s_worker->id, s_worker->context->thread_id),
+            -1;
     s_worker = l_worker;
 #if defined(DAP_EVENTS_CAPS_KQUEUE)
     a_context->kqueue_fd = kqueue();
@@ -283,8 +285,6 @@ static void s_queue_es_reassign_callback( dap_events_socket_t * a_es, void * a_a
     assert(a_es);
     dap_context_t * l_context = a_es->context;
     assert(l_context);
-    dap_worker_t * l_worker = a_es->worker;
-    assert(l_worker);
     dap_worker_msg_reassign_t * l_msg = (dap_worker_msg_reassign_t*) a_arg;
     assert(l_msg);
     dap_events_socket_t * l_es_reassign;

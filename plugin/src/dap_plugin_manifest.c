@@ -105,7 +105,7 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     if(!json_object_is_type(l_json, json_type_object)) {
         log_it(L_ERROR, "Invalid manifest structure, shoud be a json object: %s", a_file_path);
         json_object_put(l_json);
-       return NULL;
+        return NULL;
     }
 
     json_object *j_name = json_object_object_get(l_json, "name");
@@ -128,27 +128,25 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     if (!l_name || !l_version || !l_author || !l_description || !l_type)
     {
         log_it(L_ERROR, "Invalid manifest structure, insuficient fields %s", a_file_path);
+
         return NULL;
     }
 
     dap_plugin_manifest_t *l_manifest = NULL;
     HASH_FIND_STR(s_manifests, l_name, l_manifest);
-    if(l_manifest){
-        log_it(L_ERROR, "Plugin name \"%s\" is already present", l_name);
-        return NULL;
-    }
+    if (l_manifest)
+        return json_object_put(l_json), log_it(L_ERROR, "Plugin name \"%s\" is already present", l_name), l_manifest;
+
     size_t l_dependencies_count = j_dependencies ? (size_t)json_object_array_length(j_dependencies) : 0;
     size_t l_params_count =      j_params ? (size_t)json_object_array_length(j_params) : 0;
 
-    char ** l_dependencies_names = NULL, **l_params = NULL;
+    char **l_dependencies_names = NULL, **l_params = NULL;
     // Read dependencies;
     if(l_dependencies_count)
     {
-        l_dependencies_names = DAP_NEW_SIZE(char*, sizeof(char*)* l_dependencies_count );
-        if (!l_dependencies_names) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            return NULL;
-        }
+        if (!( l_dependencies_names = DAP_NEW_Z_COUNT(char*, l_dependencies_count) ))
+            return json_object_put(l_json), log_it(L_CRITICAL, "%s", c_error_memory_alloc), NULL;
+
         for (size_t i = 0; i <  l_dependencies_count; i++){
             l_dependencies_names[i] = dap_strdup(json_object_get_string(json_object_array_get_idx(j_dependencies, i)));
         }
@@ -157,10 +155,11 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     // Read additional params
     if(l_params_count)
     {
-        l_params = DAP_NEW_SIZE(char*, sizeof(char*)* l_params_count );
-        if (!l_params) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            return NULL;
+        if (!( l_params = DAP_NEW_Z_COUNT(char*, l_params_count) )) {
+            json_object_put(l_json);
+            DAP_DEL_ARRAY(l_dependencies_names, l_dependencies_count);
+            DAP_DELETE(l_dependencies_names);
+            return log_it(L_CRITICAL, "%s", c_error_memory_alloc), NULL;
         }
         for (size_t i = 0; i < l_params_count; i++){
             l_params[i] = dap_strdup(json_object_get_string(json_object_array_get_idx(j_params, i)));
@@ -168,10 +167,12 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     }
 
     // Create manifest itself
-    l_manifest = DAP_NEW_Z(dap_plugin_manifest_t);
-    if (!l_manifest) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
+    if (!( l_manifest = DAP_NEW_Z(dap_plugin_manifest_t) )) {
+        json_object_put(l_json);
+        DAP_DEL_ARRAY(l_dependencies_names, l_dependencies_count);
+        DAP_DEL_ARRAY(l_params, l_params_count);
+        DAP_DEL_MULTY(l_dependencies_names, l_params);
+        return log_it(L_CRITICAL, "%s", c_error_memory_alloc), NULL;
     }
 
     strncpy(l_manifest->name,l_name, sizeof(l_manifest->name)-1);
@@ -183,22 +184,14 @@ dap_plugin_manifest_t* dap_plugin_manifest_add_from_file(const char *a_file_path
     l_manifest->dependencies_count = l_dependencies_count;
     l_manifest->params_count = l_params_count;
     l_manifest->params = l_params;
+    l_manifest->path = l_path ? dap_strdup(l_path) : dap_path_get_dirname(a_file_path);
 
-    if(l_path){ // If targeted manualy plugin's path
-        l_manifest->path = l_path;
-    }else{ // Compose it from plugin root path
-        l_manifest->path = dap_path_get_dirname(a_file_path);
-    }
-
-    char * l_config_path = dap_strdup_printf("%s/%s", l_manifest->path,l_manifest->name );
-    char * l_config_path_test = dap_strdup_printf("%s.cfg", l_config_path);
+    char    *l_config_path = dap_strdup_printf("%s/%s", l_manifest->path, l_manifest->name),
+            *l_config_path_test = dap_strdup_printf("%s.cfg", l_config_path);
     if(dap_file_test(l_config_path_test)) // If present custom config
         l_manifest->config = dap_config_open(l_config_path);
-    DAP_DELETE(l_config_path);
-    DAP_DELETE(l_config_path_test);
-
-    HASH_ADD_STR(s_manifests,name,l_manifest);
-    
+    DAP_DEL_MULTY(l_config_path, l_config_path_test);
+    HASH_ADD_STR(s_manifests, name, l_manifest);
     json_object_put(l_json);
     return l_manifest;
 }
@@ -253,15 +246,10 @@ char* dap_plugin_manifests_get_list_dependencies(dap_plugin_manifest_t *a_elemen
  */
 static void s_manifest_delete(dap_plugin_manifest_t *a_manifest)
 {
-    DAP_DELETE(a_manifest->name);
-    DAP_DELETE(a_manifest->version);
-    DAP_DELETE(a_manifest->author);
-    DAP_DELETE(a_manifest->description);
-    if(a_manifest->dependencies_names){
-        for(size_t i = 0; i< a_manifest->dependencies_count; i++)
-            DAP_DELETE(a_manifest->dependencies_names[i]);
-        DAP_DELETE(a_manifest->dependencies_names);
-    }
+    DAP_DEL_ARRAY(a_manifest->dependencies_names, a_manifest->dependencies_count);
+    DAP_DEL_ARRAY(a_manifest->params, a_manifest->params_count);
+    DAP_DEL_MULTY(a_manifest->name, a_manifest->version, a_manifest->author, a_manifest->description,
+                  a_manifest->type, (char*)a_manifest->path, a_manifest->dependencies_names, a_manifest->params);
     dap_plugin_manifest_dependence_t * l_dep, *l_tmp;
     HASH_ITER(hh,a_manifest->dependencies,l_dep,l_tmp){
         HASH_DELETE(hh, a_manifest->dependencies, l_dep);

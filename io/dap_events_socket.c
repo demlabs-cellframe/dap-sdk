@@ -202,7 +202,7 @@ int dap_events_socket_queue_data_send(dap_events_socket_t *a_es, const void *a_d
     queue_entry_t *l_entry = DAP_ALMALLOC(MEMORY_ALLOCATION_ALIGNMENT, sizeof(queue_entry_t));
     *l_entry = (queue_entry_t) {
         .size = a_size,
-        .data = a_size ? DAP_DUP_SIZE(a_data, a_size) : (void*)a_data
+        .data = a_size ? DAP_DUP_SIZE((char*)a_data, a_size) : (void*)a_data
     };
     if (g_debug_reactor) {
         if (a_size)
@@ -590,13 +590,8 @@ dap_events_socket_t * dap_events_socket_queue_ptr_create_input(dap_events_socket
 
     if ( 0 >= (l_es->mqd = mq_open(l_mq_name, O_CREAT|O_WRONLY |O_NONBLOCK, 0700, &l_mq_attr)) )
     {
-        log_it(L_CRITICAL,"Can't create mqueue descriptor %s: \"%s\" code %d (%s)", l_mq_name, l_errbuf, errno,
-                           (strerror_r(errno, l_errbuf, sizeof (l_errbuf)), l_errbuf) );
-
-        DAP_DELETE(l_es->buf_in);
-        DAP_DELETE(l_es->buf_out);
-        DAP_DELETE(l_es);
-        return NULL;
+        log_it(L_CRITICAL,"Can't create mqueue descriptor %s, error %d: \"%s\"", l_mq_name, errno, dap_strerror(errno));
+        return DAP_DEL_MULTY(l_es->buf_in, l_es->buf_out, l_es), NULL;
     }
 
 #elif defined (DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined (DAP_EVENTS_CAPS_QUEUE_PIPE)
@@ -681,30 +676,14 @@ int dap_events_socket_queue_proc_input_unsafe(dap_events_socket_t * a_esocket)
                 a_esocket->callbacks.queue_ptr_callback(a_esocket, l_queue_ptr);
             }
             if (l_ret == -1) {
-                int l_errno = errno;
-                switch (l_errno) {
+                switch (errno) {
                 case EAGAIN:
                     debug_if(g_debug_reactor, L_INFO, "Received and processed %lu callbacks in 1 pass", l_shift / 8);
                     break;
-                default: {
-                    char l_errbuf[128];
-                    l_errbuf[0]=0;
-                    strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-                    log_it(L_ERROR, "mq_receive error in esocket queue_ptr:\"%s\" code %d", l_errbuf, l_errno);
-                    return -1;
-                }
+                default:
+                    return log_it(L_ERROR, "mq_receive error in esocket queue_ptr:\"%s\" code %d", dap_strerror(errno), errno), -1;
                 }
             }
-            ssize_t l_ret = mq_receive(a_esocket->mqd,(char*) &l_queue_ptr, sizeof (l_queue_ptr),NULL);
-            if (l_ret == -1){
-                int l_errno = errno;
-                char l_errbuf[128];
-                l_errbuf[0]=0;
-                strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-                log_it(L_ERROR, "Error in esocket queue_ptr:\"%s\" code %d", l_errbuf, l_errno);
-                return -1;
-            }
-            a_esocket->callbacks.queue_ptr_callback (a_esocket, l_queue_ptr);
 #elif defined DAP_EVENTS_CAPS_WEPOLL
             if(l_read > 0) {
                 debug_if(g_debug_reactor, L_NOTICE, "Got %ld bytes from socket", l_read);
@@ -1187,7 +1166,7 @@ void dap_events_socket_descriptor_close(dap_events_socket_t *a_esocket)
     }
     if ( a_esocket->fd2 > 0 )
         closesocket(a_esocket->fd2);
-    a_esocket->fd = a_esocket->fd2 = INVALID_SOCKET;
+    a_esocket->socket = a_esocket->socket2 = INVALID_SOCKET;
 }
 
 /**
@@ -1489,9 +1468,6 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
             int l_kevent_ret = kevent(l_kqueue_fd,&l_event,1,NULL,0,NULL);
             int l_errno = errno;
             if ( l_kevent_ret == -1 && l_errno != EINPROGRESS ){
-                char l_errbuf[128];
-                l_errbuf[0]=0;
-                strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
                 if (l_errno == EBADF){
                     log_it(L_ATT,"Set readable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %"DAP_UINT64_FORMAT_U":%" DAP_UINT64_FORMAT_U
                            " bytes",a_esocket->socket,a_esocket,a_esocket->buf_in_size,a_esocket->buf_out_size);
@@ -1499,7 +1475,7 @@ void dap_events_socket_set_readable_unsafe( dap_events_socket_t *a_esocket, bool
                     a_esocket->buf_in_size = a_esocket->buf_out_size = 0; // Reset everything from buffer, we close it now all
                 }else{
                     log_it(L_ERROR,"Can't update client socket %d state on kqueue fd for set_read op %d: \"%s\" (%d)",
-                                    a_esocket->socket, l_kqueue_fd, l_errbuf, l_errno);
+                                    a_esocket->socket, l_kqueue_fd, dap_strerror(l_errno), l_errno);
                 }
             }
         }
@@ -1540,9 +1516,6 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
             int l_kevent_ret=kevent(l_kqueue_fd,&l_event,1,NULL,0,NULL);
             int l_errno = errno;
             if ( l_kevent_ret == -1 && l_errno != EINPROGRESS && l_errno != ENOENT ){
-                char l_errbuf[128];
-                l_errbuf[0]=0;
-                strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
                 if (l_errno == EBADF){
                     log_it(L_ATT,"Set writable: socket %d (%p ) disconnected, rise CLOSE flag to remove from queue, lost %"DAP_UINT64_FORMAT_U":%" DAP_UINT64_FORMAT_U
                            " bytes",a_esocket->socket,a_esocket,a_esocket->buf_in_size,a_esocket->buf_out_size);
@@ -1550,7 +1523,7 @@ void dap_events_socket_set_writable_unsafe( dap_events_socket_t *a_esocket, bool
                     a_esocket->buf_in_size = a_esocket->buf_out_size = 0; // Reset everything from buffer, we close it now all
                 }else{
                     log_it(L_ERROR,"Can't update client socket %d state on kqueue fd for set_write op %d: \"%s\" (%d)",
-                                    a_esocket->socket, l_kqueue_fd, l_errbuf, l_errno);
+                                    a_esocket->socket, l_kqueue_fd, dap_strerror(l_errno), l_errno);
                 }
             }
         }
@@ -1595,12 +1568,9 @@ int dap_events_socket_queue_ptr_send( dap_events_socket_t *a_es, void *a_arg)
         log_it(L_ERROR, "Number of pending messages: %ld", a_es->buf_out_size);
         s_add_ptr_to_buf(a_es, a_arg);
         return 0;
-    default: {
-        char l_errbuf[128] = { '\0' };
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        log_it(L_ERROR, "Can't send ptr to queue:\"%s\" code %d", l_errbuf, l_errno);
-        return l_errno;
-    }}
+    default:
+        return log_it(L_ERROR, "Can't send ptr to queue, error %d:\"%s\"", l_errno, dap_strerror(l_errno)), l_errno;
+    }
     l_ret = mq_send(a_es->mqd, (const char *)&a_arg, sizeof (a_arg), 0);
     l_errno = errno;
     if ( l_ret == EPERM){
@@ -1833,7 +1803,7 @@ size_t dap_events_socket_write_inter(dap_events_socket_t * a_es_input, dap_event
     dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t); if( !l_msg) return 0;
     l_msg->esocket_uuid = a_es_uuid;
     if (a_data && a_data_size)
-        l_msg->data = DAP_DUP_SIZE(a_data ,a_data_size);
+        l_msg->data = DAP_DUP_SIZE((char*)a_data, a_data_size);
     l_msg->data_size = a_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
@@ -1927,7 +1897,7 @@ size_t dap_events_socket_write(dap_events_socket_uuid_t a_es_uuid, const void * 
  * @param l_data_size
  * @return
  */
-size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_uuid, const void *a_data, size_t a_data_size)
+size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_uuid, void *a_data, size_t a_data_size)
 {
 #ifdef DAP_EVENTS_CAPS_IOCP
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_data_size);
@@ -1939,21 +1909,17 @@ size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_
         : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
                                    a_es_uuid, a_w->context->id, GetLastError()), 0 );
 #else
-    dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t); if (!l_msg) return 0;
+    dap_worker_msg_io_t * l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_worker_msg_io_t, 0);
     l_msg->esocket_uuid = a_es_uuid;
     if (a_data && a_data_size)
         l_msg->data = (char*)a_data; // DAP_DUP_SIZE(a_data, a_data_size);
     l_msg->data_size = a_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
-    int l_ret= dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "wite mt: wasn't send pointer to queue: code %d", l_ret);
-        DAP_DEL_Z(l_msg->data);
-        DAP_DELETE(l_msg);
-        return 0;
-    }
-    return a_data_size;
+    int l_ret = dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg);
+    return l_ret
+        ? log_it(L_ERROR, "wite mt: wasn't send pointer to queue: code %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0
+        : a_data_size;
 #endif
 }
 
@@ -2037,10 +2003,12 @@ size_t dap_events_socket_write_unsafe(dap_events_socket_t *a_es, const void *a_d
         return dap_events_socket_queue_data_send(a_es, a_data, a_data_size);
 #endif
     static const size_t l_basic_buf_size = DAP_EVENTS_SOCKET_BUF_LIMIT / 4;
-
+    byte_t *l_buf_out;
     if (a_es->buf_out_size_max < a_es->buf_out_size + a_data_size) {
         a_es->buf_out_size_max += dap_max(l_basic_buf_size, a_data_size);
-        a_es->buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max);
+        if (!( l_buf_out = DAP_REALLOC(a_es->buf_out, a_es->buf_out_size_max) ))
+            return log_it(L_ERROR, "Can't increase capacity: OOM!"), 0;
+        a_es->buf_out = l_buf_out;
         debug_if(g_debug_reactor, L_MSG, "[!] Socket %"DAP_FORMAT_SOCKET": increase capacity to %zu, actual size: %zu", a_es->fd, a_es->buf_out_size_max, a_es->buf_out_size);
     } else if ((a_es->buf_out_size + a_data_size <= l_basic_buf_size / 4) && (a_es->buf_out_size_max > l_basic_buf_size)) {
         a_es->buf_out_size_max = l_basic_buf_size;
