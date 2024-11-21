@@ -241,22 +241,22 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_VA_DESERIALIZE(data, size, ...) dap_deserialize_multy(data, size, ##__VA_ARGS__, DOOF_PTR)
 
 #define DAP_NEW_Z_RET_VAL_IF_FAIL(t, r, ...) ({ \
-    t *_p = DAP_NEW_Z(t); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
+    t *_p = DAP_NEW_Z(t); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); if (DAP_NARGS_PTRS(__VA_ARGS__)) { DAP_DEL_MULTY(__VA_ARGS__); } return r; } _p; \
 })
 #define DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(t, s, r, ...) ({ \
-    t *_p = DAP_NEW_Z_SIZE(t, s); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
+    t *_p = DAP_NEW_Z_SIZE(t, s); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); if (DAP_NARGS_PTRS(__VA_ARGS__)) { DAP_DEL_MULTY(__VA_ARGS__); } return r; } _p; \
 })
 #define DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(t, c, r, ...) ({ \
-    t *_p = DAP_NEW_Z_COUNT(t, c); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
+    t *_p = DAP_NEW_Z_COUNT(t, c); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); if (DAP_NARGS_PTRS(__VA_ARGS__)) { DAP_DEL_MULTY(__VA_ARGS__); } return r; } _p; \
 })
 #define DAP_DUP_SIZE_RET_VAL_IF_FAIL(p, s, r, ...) ({ \
-    void *_p = DAP_DUP_SIZE(p, s); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
+    void *_p = DAP_DUP_SIZE(p, s); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); if (DAP_NARGS_PTRS(__VA_ARGS__)) { DAP_DEL_MULTY(__VA_ARGS__); } return r; } _p; \
 })
 #define DAP_REALLOC_RET_VAL_IF_FAIL(p, s, r, ...) ({ \
-    void *_p = DAP_REALLOC(p, s); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
+    void *_p = DAP_REALLOC(p, s); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); if (DAP_NARGS_PTRS(__VA_ARGS__)) { DAP_DEL_MULTY(__VA_ARGS__); } return r; } _p; \
 })
 #define DAP_REALLOC_COUNT_RET_VAL_IF_FAIL(p, c, r, ...) ({ \
-    void *_p = DAP_REALLOC_COUNT(p, c); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
+    void *_p = DAP_REALLOC_COUNT(p, c); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); if (DAP_NARGS_PTRS(__VA_ARGS__)) { DAP_DEL_MULTY(__VA_ARGS__); } return r; } _p; \
 })
 
 #define DAP_NEW_Z_RET_IF_FAIL(t, ...)           DAP_NEW_Z_RET_VAL_IF_FAIL(t, , __VA_ARGS__)
