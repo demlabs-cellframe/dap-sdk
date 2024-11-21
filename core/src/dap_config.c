@@ -489,14 +489,14 @@ const char **dap_config_get_array_str(dap_config_t *a_config, const char *a_sect
 char **dap_config_get_item_str_path_array(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length) { 
     if ( !array_length )
         return NULL;
-    const char **conf_relative = dap_config_get_array_str(a_config, a_section, a_item_name, array_length);
-    if ( !conf_relative || !*array_length )
+    const char **l_paths_cfg = dap_config_get_array_str(a_config, a_section, a_item_name, array_length);
+    if ( !l_paths_cfg || !*array_length )
         return NULL;
-    char *l_cfgpath = dap_path_get_dirname(a_config->path), **addrs_relative = DAP_NEW_Z_COUNT(char*, *array_length);
+    char *l_cfg_path = dap_path_get_dirname(a_config->path), **l_paths = DAP_NEW_Z_COUNT(char*, *array_length);
     for (int i = 0; i < *array_length; ++i) {
-        addrs_relative[i] = dap_canonicalize_path(conf_relative[i], l_cfgpath);
+        l_paths[i] = dap_path_is_absolute(l_paths_cfg[i]) ? dap_strdup(l_paths_cfg[i]) : dap_canonicalize_path(l_paths_cfg[i], l_cfg_path);
     }
-    return DAP_DELETE(l_cfgpath), addrs_relative;
+    return DAP_DELETE(l_cfg_path), l_paths;
 }
 
 void dap_config_get_item_str_path_array_free(char **paths_array, uint16_t array_length) {
