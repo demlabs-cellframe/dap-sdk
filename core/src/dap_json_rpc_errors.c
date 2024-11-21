@@ -57,7 +57,7 @@ int dap_json_rpc_error_add(json_object* a_json_arr_reply, int a_code_error, cons
 {
     va_list args;
     va_start(args, msg);
-    const char *l_msg = dap_strdup_vprintf(msg, args);
+    char *l_msg = dap_strdup_vprintf(msg, args);
     va_end(args);
 
     if (!a_json_arr_reply || !json_object_is_type(a_json_arr_reply, json_type_array)) {

@@ -39,7 +39,7 @@ typedef enum dap_cert_metadata_type {
     DAP_CERT_META_DATETIME_PERIOD,
     DAP_CERT_META_SIGN,
     DAP_CERT_META_CUSTOM
-} dap_cert_metadata_type_t;
+} DAP_PACKED dap_cert_metadata_type_t;
 
 typedef struct dap_cert_metadata {
     const char *key;

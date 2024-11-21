@@ -550,7 +550,7 @@ int s_fill_store_obj(const char *a_group, MDBX_val *a_key, MDBX_val *a_data, dap
         DAP_DELETE(a_obj->group);
         return log_it(L_ERROR, "Ivalid driver record with zero text key length"), -9;
     }
-    if ( !(a_obj->key = DAP_DUP_SIZE(l_record->key_n_value_n_sign, l_record->key_len)) ) {
+    if ( !(a_obj->key = DAP_DUP_SIZE((char*)l_record->key_n_value_n_sign, l_record->key_len)) ) {
         DAP_DELETE(a_obj->group);
         return log_it(L_CRITICAL, "Cannot allocate a memory for store object key"), -5;
     }
@@ -565,7 +565,7 @@ int s_fill_store_obj(const char *a_group, MDBX_val *a_key, MDBX_val *a_data, dap
     if (l_record->sign_len >= sizeof(dap_sign_t)) {
         dap_sign_t *l_sign = (dap_sign_t *)(l_record->key_n_value_n_sign + l_record->key_len + l_record->value_len);
         if (dap_sign_get_size(l_sign) != l_record->sign_len ||
-                !(a_obj->sign = (dap_sign_t *)DAP_DUP_SIZE(l_sign, l_record->sign_len))) {
+                !(a_obj->sign = DAP_DUP_SIZE(l_sign, l_record->sign_len))) {
             DAP_DELETE(a_obj->group);
             DAP_DELETE(a_obj->key);
             DAP_DEL_Z(a_obj->value);
@@ -763,14 +763,16 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
             }
             size_t l_data_len = l_record->key_len + l_record->value_len + l_record->sign_len + l_db_ctx->namelen + 1;
             size_t l_add_size = l_data_len + sizeof(dap_global_db_pkt_t);
-            l_ret = l_ret ? DAP_REALLOC(l_ret, l_ret->data_size + sizeof(dap_global_db_pkt_pack_t) + l_add_size)
-                          : DAP_NEW_Z_SIZE(dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_add_size);
-            if (!l_ret) {
+            dap_global_db_pkt_pack_t *l_new_pack = l_ret
+                ? DAP_REALLOC(l_ret, l_ret->data_size + sizeof(dap_global_db_pkt_pack_t) + l_add_size)
+                : DAP_NEW_Z_SIZE(dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_add_size);
+            if (!l_new_pack) {
                 log_it(L_CRITICAL, "Cannot allocate a memory for store object packet");
                 rc = MDBX_PROBLEM;
                 break;
             }
-            dap_global_db_pkt_t *l_pkt = (dap_global_db_pkt_t *)(l_ret->data + l_ret->data_size);
+            l_ret = l_new_pack;
+            dap_global_db_pkt_t *l_pkt = (dap_global_db_pkt_t*)(l_ret->data + l_ret->data_size);
 
             /* Fill packet header */
             if (l_key.iov_len != sizeof(dap_global_db_driver_hash_t)) {
@@ -897,10 +899,14 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
             DAP_DEL_Z(l_obj_arr);
         } else {
             // Add blank object to the end as marker of final itreation
-            l_count_current++;
-            if (l_count_current < l_count_out &&
-                    !(l_obj_arr = DAP_REALLOC(l_obj_arr, l_element_size * l_count_current + l_addition_size)))
-                log_it(L_ERROR, "Cannot cut area to keep %zu <store objects>", l_count_current);
+            ++l_count_current;
+            if (l_count_current < l_count_out) {
+                byte_t *l_obj_arr_cut = DAP_REALLOC(l_obj_arr, l_element_size * l_count_current + l_addition_size);
+                if (!l_obj_arr_cut)
+                    log_it(L_ERROR, "Cannot cut area to keep %zu <store objects>", l_count_current);
+                else
+                    l_obj_arr = l_obj_arr_cut;
+            }
         }
     }
     if ( (MDBX_SUCCESS != rc) && (rc != MDBX_NOTFOUND) )
@@ -1056,9 +1062,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
         size_t l_record_len = sizeof(struct driver_record) + a_store_obj->value_len + l_key_len;
         if (a_store_obj->sign)
             l_record_len += dap_sign_get_size(a_store_obj->sign);
-        struct driver_record *l_record = DAP_NEW_Z_SIZE(struct driver_record, l_record_len);
-        if (!l_record)
-            return log_it(L_CRITICAL, "Cannot allocate memory for new records, %zu bytes, errno=%d", l_record_len, errno), MDBX_PANIC;
+        struct driver_record *l_record = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(struct driver_record, l_record_len, MDBX_PANIC);
         dap_strncpy((char *)l_record->key_n_value_n_sign, a_store_obj->key, DAP_GLOBAL_DB_KEY_SIZE_MAX);
         l_record->key_len = l_key_len;
         l_record->value_len = a_store_obj->value_len;
@@ -1069,12 +1073,12 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
         if (a_store_obj->sign) {
             /* Put the authorization sign */
             l_record->sign_len = dap_sign_get_size(a_store_obj->sign);
-            memcpy(l_record->key_n_value_n_sign + l_key_len + a_store_obj->value_len, a_store_obj->sign, l_record->sign_len);
             if (!l_record->sign_len) {
                 DAP_DELETE(l_record);
                 log_it(L_ERROR, "Global DB store object sign corrupted");
                 return MDBX_EINVAL;
             }
+            memcpy(l_record->key_n_value_n_sign + l_key_len + a_store_obj->value_len, a_store_obj->sign, l_record->sign_len);
         }
         /* So, finaly: do INSERT, COMMIT or ABORT ... */
         l_data.iov_base = l_record;                                                 /* Fill IOV for MDBX data */
@@ -1240,9 +1244,11 @@ MDBX_txn *l_txn = s_txn;
         if (!l_count_current) {
             DAP_DEL_Z(l_obj_arr);
         } else if (l_count_current < l_count_out) {
-            l_obj_arr = DAP_REALLOC(l_obj_arr, l_count_current * sizeof(dap_store_obj_t));
-            if (!l_obj_arr)
+            dap_store_obj_t *l_obj_arr_cut = DAP_REALLOC_COUNT(l_obj_arr, l_count_current);
+            if (!l_obj_arr_cut)
                 log_it(L_ERROR, "Cannot cut area to keep %zu <store objects>", l_count_current);
+            else
+                l_obj_arr = l_obj_arr_cut;
         }
     }
 safe_ret:
