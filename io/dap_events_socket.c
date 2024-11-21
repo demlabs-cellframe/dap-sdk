@@ -1897,7 +1897,7 @@ size_t dap_events_socket_write(dap_events_socket_uuid_t a_es_uuid, const void * 
  * @param l_data_size
  * @return
  */
-size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_uuid, const void *a_data, size_t a_data_size)
+size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_uuid, void *a_data, size_t a_data_size)
 {
 #ifdef DAP_EVENTS_CAPS_IOCP
     dap_overlapped_t *ol = DAP_NEW_SIZE(dap_overlapped_t, sizeof(dap_overlapped_t) + a_data_size);
@@ -1909,21 +1909,17 @@ size_t dap_events_socket_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_
         : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
                                    a_es_uuid, a_w->context->id, GetLastError()), 0 );
 #else
-    dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t); if (!l_msg) return 0;
+    dap_worker_msg_io_t * l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_worker_msg_io_t, 0);
     l_msg->esocket_uuid = a_es_uuid;
     if (a_data && a_data_size)
         l_msg->data = (char*)a_data; // DAP_DUP_SIZE(a_data, a_data_size);
     l_msg->data_size = a_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
-    int l_ret= dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "wite mt: wasn't send pointer to queue: code %d", l_ret);
-        DAP_DEL_Z(l_msg->data);
-        DAP_DELETE(l_msg);
-        return 0;
-    }
-    return a_data_size;
+    int l_ret = dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg);
+    return l_ret
+        ? log_it(L_ERROR, "wite mt: wasn't send pointer to queue: code %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0
+        : a_data_size;
 #endif
 }
 

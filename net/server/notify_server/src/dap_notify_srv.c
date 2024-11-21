@@ -221,7 +221,7 @@ static void s_notify_server_callback_queue(dap_events_socket_t * a_es, void * a_
 #endif
         
         dap_events_socket_write_mt( dap_events_worker_get(l_worker_id),
-                                    l_socket_handler->uuid, l_arg, l_str_len + 1 );
+                                   l_socket_handler->uuid, l_arg, l_str_len + 1 );
     }
     pthread_rwlock_unlock(&s_notify_server_clients_mutex);
     DAP_DELETE(a_arg);
