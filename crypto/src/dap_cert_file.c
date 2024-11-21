@@ -275,7 +275,7 @@ uint8_t* dap_cert_mem_save(dap_cert_t * a_cert, uint32_t *a_cert_size_out)
 {
     dap_enc_key_t *l_key = a_cert->enc_key;
 
-    size_t  l_priv_key_data_size = a_cert->enc_key->priv_key_data_size,
+    uint64_t  l_priv_key_data_size = a_cert->enc_key->priv_key_data_size,
             l_pub_key_data_size = a_cert->enc_key->pub_key_data_size,
             l_metadata_size = l_key->_inheritor_size;
             
@@ -284,7 +284,7 @@ uint8_t* dap_cert_mem_save(dap_cert_t * a_cert, uint32_t *a_cert_size_out)
             *l_metadata = dap_cert_serialize_meta(a_cert, &l_metadata_size);
     if (!l_pub_key_data && !l_priv_key_data)
         return log_it(L_ERROR, "Neither pvt, nor pub key in certificate, nothing to do"), DAP_DELETE(l_metadata), NULL;
-    size_t l_total_size = sizeof(dap_cert_file_hdr_t) + DAP_CERT_ITEM_NAME_MAX + l_priv_key_data_size + l_pub_key_data_size + l_metadata_size;
+    uint64_t l_total_size = sizeof(dap_cert_file_hdr_t) + DAP_CERT_ITEM_NAME_MAX + l_priv_key_data_size + l_pub_key_data_size + l_metadata_size;
 
     dap_cert_file_hdr_t l_hdr = {
         .sign = dap_cert_FILE_HDR_SIGN, .version = dap_cert_FILE_VERSION,
