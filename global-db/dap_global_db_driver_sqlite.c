@@ -813,8 +813,8 @@ clean_and_ret:
 static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
 {
 // sanity check
-    conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);
-    dap_return_val_if_pass(!a_group_mask || !l_conn, NULL);
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group_mask || !(l_conn = s_db_sqlite_get_connection(false)), NULL);
 // preparing
     const char *l_error_msg = "get groups";
     dap_list_t* l_ret = NULL;

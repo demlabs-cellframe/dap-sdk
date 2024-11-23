@@ -396,7 +396,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         break;
                     }
                     size_t l_data_size = a_client_pvt->session_key_open->pub_key_data_size;
-                    uint8_t *l_data = DAP_DUP_SIZE(a_client_pvt->session_key_open->pub_key_data, l_data_size);
+                    uint8_t *l_data = DAP_DUP_SIZE((uint8_t*)a_client_pvt->session_key_open->pub_key_data, l_data_size);
                     if (!l_data) {
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         break;
@@ -429,8 +429,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     // bad request
                     if (l_res < 0)
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                    DAP_DEL_Z(l_data);
-                    DAP_DEL_Z(l_data_str);
+                    DAP_DELETE(l_data);
+                    DAP_DELETE(l_data_str);
                 } break;
 
                 case STAGE_STREAM_CTL: {
