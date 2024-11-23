@@ -184,13 +184,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
     l_data_ptr += a_pkt->key_len;
 
     if (a_pkt->value_len) {
-        a_obj->value = DAP_DUP_SIZE(l_data_ptr, a_pkt->value_len);
-        if (!a_obj->value) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            DAP_DELETE(a_obj->group);
-            DAP_DELETE(a_obj->key);
-            return NULL;
-        }
+        a_obj->value = DAP_DUP_SIZE_RET_VAL_IF_FAIL(l_data_ptr, a_pkt->value_len, NULL, a_obj->group, a_obj->key);
         l_data_ptr += a_pkt->value_len;
     }
 
@@ -205,14 +199,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
             DAP_DEL_Z(a_obj->value);
             return NULL;
         }
-        a_obj->sign = (dap_sign_t *)DAP_DUP_SIZE(l_sign, l_sign_size);
-        if (!a_obj->sign) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            DAP_DELETE(a_obj->group);
-            DAP_DELETE(a_obj->key);
-            DAP_DEL_Z(a_obj->value);
-            return NULL;
-        }
+        a_obj->sign = DAP_DUP_SIZE_RET_VAL_IF_FAIL(l_sign, l_sign_size, NULL, a_obj->group, a_obj->key, a_obj->value);
     }
 
     if (a_addr)

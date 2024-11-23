@@ -449,8 +449,11 @@ static bool s_socket_all_check_activity( void * a_arg)
 void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket)
 {
     dap_return_if_fail(a_worker && a_events_socket);
-#ifdef DAP_EVENTS_CAPS_IOCP
     int l_ret = 0;
+    const char *l_type_str = dap_events_socket_get_type_str(a_events_socket);
+    SOCKET l_s = a_events_socket->socket;
+    dap_events_socket_uuid_t l_uuid = a_events_socket->uuid;
+#ifdef DAP_EVENTS_CAPS_IOCP
     a_events_socket->worker = a_worker;
     if ( dap_worker_get_current() == a_worker )
         s_es_assign_to_context(a_worker->context, &(OVERLAPPED){ .Pointer = a_events_socket });
@@ -462,30 +465,20 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
         l_ret = PostQueuedCompletionStatus(a_worker->context->iocp, 0, (ULONG_PTR)s_es_assign_to_context, (OVERLAPPED*)ol)
             ? 0 : ( DAP_DELETE(ol), GetLastError() );
     }
-    if (l_ret)
-        log_it(L_ERROR, "Can't assign esocket to worker, error %d", l_ret);
-    else
-        debug_if(g_debug_reactor, L_DEBUG,
-                 "Sent es "DAP_FORMAT_ESOCKET_UUID" \"%s\" [%s] to worker #%d",
-                 a_events_socket->uuid, dap_events_socket_get_type_str(a_events_socket),
-                 a_events_socket->socket == INVALID_SOCKET ? "" : dap_itoa(a_events_socket->socket),
-                 a_worker->id);
 #else
-    int l_ret = dap_worker_get_current() == a_worker
-            ? s_queue_es_add(a_worker->queue_es_new, a_events_socket)
-            : dap_events_socket_queue_ptr_send(a_worker->queue_es_new, a_events_socket);
-
+    l_ret = dap_worker_get_current() == a_worker
+        ? s_queue_es_add(a_worker->queue_es_new, a_events_socket)
+        : dap_events_socket_queue_ptr_send(a_worker->queue_es_new, a_events_socket);
+#endif
     if (l_ret)
-        log_it(L_ERROR, dap_worker_get_current() == a_worker
-               ? "Can't assign esocket to worker: \"%s\"(code %d)"
-               : "Can't send pointer in queue: \"%s\"(code %d)", dap_strerror(l_ret), l_ret);
+        log_it(L_ERROR, "Can't %s es \"%s\" [%s], uuid %"DAP_FORMAT_ESOCKET_UUID" to worker #%d, error %d: \"%s\"",
+               dap_worker_get_current() == a_worker ? "assign" : "send",
+               l_type_str, dap_itoa(l_s), l_uuid, a_worker->id, l_ret, dap_strerror(l_ret));
     else 
         debug_if(g_debug_reactor, L_DEBUG,
-               "Sent es %p \"%s\" [%s] to worker #%d",
-               a_events_socket, dap_events_socket_get_type_str(a_events_socket),
-               a_events_socket->socket == INVALID_SOCKET ? "" : dap_itoa(a_events_socket->socket),
-               a_worker->id);
-#endif
+               "%s es \"%s\" [%s], uuid %"DAP_FORMAT_ESOCKET_UUID" to worker #%d",
+               dap_worker_get_current() == a_worker ? "Assigned" : "Sent",
+               l_type_str, dap_itoa(l_s), l_uuid, a_worker->id);
 }
 
 #ifndef DAP_EVENTS_CAPS_IOCP
