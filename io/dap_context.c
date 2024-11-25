@@ -59,10 +59,20 @@
 #include "dap_common.h"
 #include "dap_uuid.h"
 #include "dap_context.h"
-#include "dap_list.h"
 #include "dap_events.h"
 #include "dap_proc_thread.h"
 #include "dap_worker.h"
+
+struct dap_context_msg_run {
+    dap_context_t * context;
+    dap_context_callback_t callback_started;
+    dap_context_callback_t callback_stopped;
+    int priority;
+    int sched_policy;
+    int cpu_id;
+    int flags;
+    void *callback_arg;
+};
 
 static _Thread_local dap_context_t *s_context = NULL;
 
@@ -99,7 +109,7 @@ dap_context_t* dap_context_current() {
  * @brief dap_context_new
  * @return
  */
-dap_context_t * dap_context_new(int a_type)
+dap_context_t *dap_context_new(dap_context_type_t a_type)
 {
    dap_context_t * l_context = DAP_NEW_Z(dap_context_t);
    if (!l_context) {
@@ -131,7 +141,7 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
                     dap_context_callback_t a_callback_loop_after,
                     void * a_callback_arg )
 {
-    dap_context_msg_run_t * l_msg = DAP_NEW_Z(dap_context_msg_run_t);
+    struct dap_context_msg_run * l_msg = DAP_NEW_Z(struct dap_context_msg_run);
     int l_ret;
 
     // Check for OOM
@@ -174,7 +184,7 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
             while (!a_context->started && !l_ret)
                 l_ret = pthread_cond_timedwait(&a_context->started_cond, &a_context->started_mutex, &l_timeout);
             if ( l_ret== ETIMEDOUT ){ // Timeout
-                log_it(L_CRITICAL, "Timeout %d seconds is out: context #%u thread don't respond", DAP_CONTEXT_WAIT_FOR_STARTED_TIME,a_context->id);
+                log_it(L_CRITICAL, "Timeout %d seconds is out: context #%u thread don't respond", DAP_CONTEXT_WAIT_FOR_STARTED_TIME, a_context->id);
             } else if (l_ret != 0){ // Another error
                 log_it(L_CRITICAL, "Can't wait on condition: %d error code", l_ret);
             } else // All is good
@@ -227,7 +237,7 @@ void dap_context_stop_n_kill(dap_context_t * a_context)
  */
 static void *s_context_thread(void *a_arg)
 {
-    dap_context_msg_run_t * l_msg = (dap_context_msg_run_t*) a_arg;
+    struct dap_context_msg_run * l_msg = (struct dap_context_msg_run*) a_arg;
     dap_context_t * l_context = l_msg->context;
     assert(l_context);
     if (s_context)
