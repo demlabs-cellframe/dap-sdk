@@ -956,3 +956,11 @@ dap_enc_key_t *dap_cert_get_keys_from_certs(dap_cert_t **a_certs, size_t a_count
     DAP_DELETE(l_keys);
     return l_ret;
 }
+
+DAP_INLINE const char *dap_cert_get_str_recommended_sign(){
+    return "sig_dil\nsig_falcon\nsig_sphincs\n"
+#ifdef DAP_SHIPOVNIK
+    "sig_shipovnik\n"
+#endif
+    ;
+}

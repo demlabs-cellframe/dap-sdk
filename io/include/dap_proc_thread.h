@@ -61,6 +61,7 @@ typedef struct dap_proc_thread {
 
 #define DAP_PROC_THREAD(a) (dap_proc_thread_t *)((a)->_inheritor);
 
+int dap_proc_thread_create(dap_proc_thread_t *a_thread, int a_cpu_id);
 int dap_proc_thread_init(uint32_t a_threads_count);
 void dap_proc_thread_deinit();
 int dap_proc_thread_loop(dap_context_t *a_context);

@@ -184,8 +184,8 @@ int dap_global_db_init()
         const char **l_white_list = dap_config_get_array_str(g_config, "global_db", "white_list_sync_groups", &l_size_white_list);
         for (int i = 0; i < l_size_white_list; i++)
             s_dbi->whitelist = dap_list_append(s_dbi->whitelist, dap_strdup(l_white_list[i]));
-        // One year for objects lifetime by default
-        s_dbi->store_time_limit = dap_config_get_item_uint32_default(g_config, "global_db", "store_time_limit", 365 * 24);
+        // One week for objects lifetime by default
+        s_dbi->store_time_limit = dap_config_get_item_uint64(g_config, "global_db", "ttl");
         // Time between sync attempts, in seconds
         s_dbi->sync_idle_time = dap_config_get_item_uint32_default(g_config, "global_db", "sync_idle_time", 30);
     }
@@ -267,15 +267,24 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
                                             a_obj->group, a_obj->key);
         return -12;
     }
-    // Limit time
-    uint64_t l_time_store_lim_sec = l_cluster->ttl ? l_cluster->ttl : l_cluster->dbi->store_time_limit * 3600ULL;
-    uint64_t l_limit_time = l_time_store_lim_sec ? dap_nanotime_now() - dap_nanotime_from_sec(l_time_store_lim_sec) : 0;
-    if (l_limit_time && a_obj->timestamp < l_limit_time) {
+    // Check time
+    dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl),
+                   l_now = dap_nanotime_now();
+    if ( a_obj->timestamp > l_now ) {
         if (g_dap_global_db_debug_more) {
             char l_ts_str[DAP_TIME_STR_SIZE];
             dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
-            log_it(L_NOTICE, "Rejected too old object with group %s and key %s and timestamp %s",
-                                            a_obj->group, a_obj->key, l_ts_str);
+            log_it(L_NOTICE, "Rejected record \"%s : %s\" from future ts %s",
+                             a_obj->group, a_obj->key, l_ts_str);
+        }
+        return -13;
+    }
+    if ( l_ttl && a_obj->timestamp + l_ttl < l_now ) {
+        if (g_dap_global_db_debug_more) {
+            char l_ts_str[DAP_TIME_STR_SIZE];
+            dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
+            log_it(L_NOTICE, "Rejected too old record \"%s : %s\" ts %s",
+                             a_obj->group, a_obj->key, l_ts_str);
         }
         return -13;
     }

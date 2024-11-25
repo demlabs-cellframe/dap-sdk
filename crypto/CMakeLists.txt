@@ -119,8 +119,6 @@ file( GLOB CRYPTO_SRCS
       src/sig_tesla/*.c
       src/sig_picnic/*.c
       src/sig_dilithium/*.c
-      src/sig_shipovnik/*.c
-      src/sig_shipovnik/streebog/*.c
       src/ringct20/*.c
       src/falcon/*.c
       ${SPHINCS_BASE_SRCS}
@@ -139,6 +137,17 @@ else()
     list (FILTER CRYPTO_SRCS EXCLUDE REGEX ".*ecdsa.c")
 endif()
 
+if (BUILD_WITH_SHIPOVNIK)
+    file (GLOB SHIPOVNIK_SRC
+        src/sig_shipovnik/*.c
+        src/sig_shipovnik/streebog/*.c
+    )
+    set (CRYPTO_SRCS ${CRYPTO_SRCS} ${SHIPOVNIK_SRC})
+    add_definitions("-DDAP_SHIPOVNIK")
+else()
+    list (FILTER CRYPTO_SRCS EXCLUDE REGEX ".*shipovnik.c")
+endif()
+
 get_filename_component(full_path_src ${CMAKE_CURRENT_SOURCE_DIR}/src/sig_shipovnik/streebog/gost3411-2012.c ABSOLUTE)
 list(REMOVE_ITEM CRYPTO_SRCS "${full_path_src}")
 
@@ -155,8 +164,6 @@ file( GLOB CRYPTO_HEADERS
       src/msrln/*.h
       src/newhope/*.h
       src/sig_bliss/*.h
-      src/sig_shipovnik/*.h
-      src/sig_shipovnik/streebog/*.h
       src/sig_tesla/*.h
       src/sig_picnic/*.h
       src/sig_dilithium/*.h
@@ -171,6 +178,16 @@ if (BUILD_WITH_ECDSA)
     set (CRYPTO_HEADERS ${CRYPTO_HEADERS} ${ECDSA_HDR})
 else()
     list (FILTER CRYPTO_HEADERS EXCLUDE REGEX ".*ecdsa.h")
+endif()
+
+if (BUILD_WITH_SHIPOVNIK)
+    file (GLOB SHIPOVNIK_HDR
+        src/sig_shipovnik/*.h
+        src/sig_shipovnik/streebog/*.h
+    )
+    set (CRYPTO_HEADERS ${CRYPTO_HEADERS} ${SHIPOVNIK_HDR})
+else()
+    list (FILTER CRYPTO_HEADERS EXCLUDE REGEX ".*shipovnik.h")
 endif()
 
 

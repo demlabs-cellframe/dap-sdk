@@ -83,7 +83,9 @@ dap_sign_type_t dap_sign_type_from_key_type( dap_enc_key_type_t a_key_type)
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA: l_sign_type.type = SIG_TYPE_ECDSA; break;
 #endif
+#ifdef DAP_SHIPOVNIK
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK: l_sign_type.type = SIG_TYPE_SHIPOVNIK; break;
+#endif
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED: l_sign_type.type = SIG_TYPE_MULTI_CHAINED; break;
         default: l_sign_type.raw = 0;
     }
@@ -107,7 +109,9 @@ dap_enc_key_type_t  dap_sign_type_to_key_type(dap_sign_type_t  a_chain_sign_type
 #ifdef DAP_ECDSA
         case SIG_TYPE_ECDSA: return DAP_ENC_KEY_TYPE_SIG_ECDSA;
 #endif
+#ifdef DAP_SHIPOVNIK
         case SIG_TYPE_SHIPOVNIK: return DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK;
+#endif
         case SIG_TYPE_MULTI_CHAINED: return DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED;
         default: return DAP_ENC_KEY_TYPE_INVALID;
     }
@@ -133,7 +137,9 @@ const char * dap_sign_type_to_str(dap_sign_type_t a_chain_sign_type)
 #ifdef DAP_ECDSA
         case SIG_TYPE_ECDSA: return "sig_ecdsa";
 #endif
+#ifdef DAP_SHIPOVNIK
         case SIG_TYPE_SHIPOVNIK: return "sig_shipovnik";
+#endif
         case SIG_TYPE_MULTI_COMBINED: return "sig_multi_combined";
         case SIG_TYPE_MULTI_CHAINED: return "sig_multi_chained";
         default: return "UNDEFINED";//DAP_ENC_KEY_TYPE_NULL;
@@ -166,8 +172,10 @@ dap_sign_type_t dap_sign_type_from_str(const char * a_type_str)
     } else if ( !dap_strcmp (a_type_str, "sig_ecdsa") ) {
          l_sign_type.type = SIG_TYPE_ECDSA;
 #endif
+#ifdef DAP_SHIPOVNIK
     } else if ( !dap_strcmp (a_type_str, "sig_shipovnik") ) {
          l_sign_type.type = SIG_TYPE_SHIPOVNIK;
+#endif
     } else if ( !dap_strcmp (a_type_str,"sig_multi_chained") ){
         l_sign_type.type = SIG_TYPE_MULTI_CHAINED;
     // } else if ( !dap_strcmp (a_type_str,"sig_multi_combined") ){
@@ -215,7 +223,9 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
 #endif
+#ifdef DAP_SHIPOVNIK
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+#endif
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
             return a_key->sign_get(a_key, a_data, a_data_size, a_output, *a_output_size);
@@ -459,7 +469,9 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
 #endif
+#ifdef DAP_SHIPOVNIK
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+#endif
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
             l_ret = l_key->sign_verify(l_key, l_verify_data, l_verify_data_size, l_sign_data, l_sign_data_size);
             break;
@@ -590,5 +602,8 @@ DAP_INLINE const char *dap_sign_get_str_recommended_types(){
 #ifdef DAP_ECDSA
     "sig_ecdsa\n"
 #endif
-    "sig_sphincs\nsig_shipovnik\nsig_multi_chained\n";
+#ifdef DAP_SHIPOVNIK
+    "sig_shipovnik\n"
+#endif
+    "sig_sphincs\nsig_multi_chained\n";
 }

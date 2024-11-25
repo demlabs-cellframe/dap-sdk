@@ -60,6 +60,7 @@
 #include <mswsock.h>
 #include <io.h>
 #include <winternl.h>
+#include <ntstatus.h>
 #endif
 
 #ifdef DAP_OS_DARWIN
@@ -86,19 +87,15 @@
 #include "dap_proc_thread.h"
 #include "dap_worker.h"
 
-pthread_key_t g_dap_context_pth_key; // Thread-specific object with pointer on current context
+static _Thread_local dap_context_t *s_context = NULL;
 
 static void *s_context_thread(void *arg); // Context thread
-
-pthread_rwlock_t s_contexts_rwlock = PTHREAD_RWLOCK_INITIALIZER;
-dap_list_t * s_contexts = NULL;
 /**
  * @brief dap_context_init
  * @return
  */
 int dap_context_init()
 {
-    pthread_key_create(&g_dap_context_pth_key,NULL);
 #ifdef DAP_OS_UNIX
     struct rlimit l_fdlimit;
     if (getrlimit(RLIMIT_NOFILE, &l_fdlimit))
@@ -113,14 +110,12 @@ int dap_context_init()
     return 0;
 }
 
-void dap_context_current_print(pthread_key_t g_dap_context_pth_key)
-{
-        log_it(L_ATT, "[!] Not found data by key %d in LTS", g_dap_context_pth_key);
-}
-
 void dap_context_deinit()
 {
-    pthread_key_delete(g_dap_context_pth_key);
+}
+
+dap_context_t* dap_context_current() {
+    return s_context;
 }
 
 /**
@@ -138,10 +133,6 @@ dap_context_t * dap_context_new(int a_type)
    l_context->id = s_context_id_max;
    l_context->type = a_type;
    s_context_id_max++;
-
-   pthread_rwlock_wrlock(&s_contexts_rwlock);
-   s_contexts = dap_list_prepend(s_contexts,l_context);
-   pthread_rwlock_unlock(&s_contexts_rwlock);
    return l_context;
 }
 
@@ -262,7 +253,9 @@ static void *s_context_thread(void *a_arg)
     dap_context_msg_run_t * l_msg = (dap_context_msg_run_t*) a_arg;
     dap_context_t * l_context = l_msg->context;
     assert(l_context);
-
+    if (s_context)
+        return log_it( L_ERROR, "Context %d already bound to current thread", s_context->id ), NULL;
+    s_context = l_context;
     l_context->cpu_id = l_msg->cpu_id;
     int l_priority = l_msg->priority;
 #ifdef DAP_OS_WINDOWS
@@ -320,8 +313,6 @@ static void *s_context_thread(void *a_arg)
         pthread_setschedparam(pthread_self(), l_sched_policy, &l_sched_params);;
     }
 #endif // DAP_OS_WINDOWS
-
-    pthread_setspecific(g_dap_context_pth_key, l_context);
     // Now we're running and initalized for sure, so we can assign flags to the current context
     l_context->running_flags = l_msg->flags;
     l_context->is_running = true;
@@ -354,15 +345,11 @@ static void *s_context_thread(void *a_arg)
 
     log_it(L_NOTICE,"Exiting context #%u", l_context->id);
 
-    // Removes from the list
-    pthread_rwlock_wrlock(&s_contexts_rwlock);
-    s_contexts = dap_list_remove (s_contexts,l_context);
-    pthread_rwlock_unlock(&s_contexts_rwlock);
-
     // Free memory. Because nobody expected to work with context outside itself it have to be safe
     pthread_cond_destroy(&l_context->started_cond);
     pthread_mutex_destroy(&l_context->started_mutex);
     DAP_DELETE(l_context);
+    DAP_DELETE(l_msg);
 
     return NULL;
 }
@@ -397,10 +384,11 @@ int dap_worker_thread_loop(dap_context_t * a_context)
         dap_overlapped_t *ol;
         HANDLE ev; WINBOOL ev_signaled;
         per_io_type_t op;
+        DWORD flags;
         debug_if(g_debug_reactor, L_INFO, "Completed %lu items in context #%d", l_entries_num, a_context->id);
-        for (ULONG i = 0; i < l_entries_num; dap_overlapped_free(ol), ++i, op = 0, ev = NULL, ev_signaled = FALSE) {
-            // DWORD flags;
+        for ( ULONG i = 0; i < l_entries_num; dap_overlapped_free(ol), op = '\0', ev = NULL, ev_signaled = FALSE, ++i ) {
             l_errno = 0;
+            l_bytes = ol_entries[i].dwNumberOfBytesTransferred;
             if (( ol = (dap_overlapped_t*)ol_entries[i].lpOverlapped )) {
                 op = ol->op;
                 ev = ol->ol.hEvent;
@@ -417,17 +405,22 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             case io_write:
                 l_cur = ev ? (dap_events_socket_t*)ol_entries[i].lpCompletionKey
                            : dap_context_find(a_context, (dap_events_socket_uuid_t)ol_entries[i].lpCompletionKey);
+                if ( !l_cur ) {
+                    if (ev) log_it(L_ERROR, "Completion of op '%c', but key is null! Lost %lu bytes", op, l_bytes);
+                    else    log_it(L_ERROR, "Completion of op '%c', but key "DAP_FORMAT_ESOCKET_UUID" not found! Lost %lu bytes",
+                                            op, (dap_events_socket_uuid_t)ol_entries[i].lpCompletionKey, l_bytes);
+                    continue;
+                }
                 break;
             default:
                 l_cur = (dap_events_socket_t*)ol_entries[i].lpCompletionKey;
+                if ( !l_cur ) {
+                    log_it(L_ERROR, "Completion with null key! Dump it");
+                    continue;
+                }
                 break;
             }
-            if ( !l_cur ) {
-                log_it(L_ERROR, "NULL esocket completion, nothing to do");
-                continue;
-            }
             
-            l_bytes = ol_entries[i].dwNumberOfBytesTransferred;
             uint32_t l_cur_flags = l_cur->flags;
             DWORD l_buf_in_size = l_cur->buf_in_size, l_buf_out_size = l_cur->buf_out_size;
             debug_if(g_debug_reactor, L_DEBUG, "\n\tCompletion on \"%s\" "DAP_FORMAT_ESOCKET_UUID", bytes: %lu, operation: '%c', "
@@ -442,7 +435,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                      l_buf_in_size, l_buf_out_size,
                      ev ? ev_signaled ? "SET" : "UNSET" : "N/A",
                      l_cur->pending_read, l_cur->pending_write);
-
             if ( /*!l_cur->context && */ FLAG_CLOSE(l_cur->flags) ) { // Pending delete, socket will be closed
                 if ( op == io_read || l_cur->type == DESCRIPTOR_TYPE_TIMER )
                     l_cur->pending_read = 0;
@@ -457,11 +449,24 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 // AcceptEx completed
                 l_cur->pending_read = 0;
                 if ( NT_ERROR(ol->ol.Internal) ) {
-                    log_it(L_ERROR, "\"AcceptEx\" on "DAP_FORMAT_ESOCKET_UUID" : %zu failed, ntstatus %llx : %s",
-                                    l_cur->uuid, l_cur->socket, ol->ol.Internal, dap_str_ntstatus(ol->ol.Internal));
-                    l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
-                    dap_events_socket_set_readable_unsafe_ex(l_cur, true, ol);
-                    ol = NULL;
+                    log_it(L_ERROR, "\"AcceptEx\" on "DAP_FORMAT_ESOCKET_UUID" : %zu failed, ntstatus 0x%llx : %s",
+                                    l_cur->uuid, l_cur->socket, ol->ol.Internal, dap_str_ntstatus(ol->ol.Internal)); 
+                    closesocket(l_cur->socket2);
+                    if ( ol->ol.Internal == STATUS_CONNECTION_RESET ) {
+                        l_errno = WSAECONNRESET; // It's ok, just continue accept()'ing
+                        dap_events_socket_set_readable_unsafe_ex(l_cur, true, ol);
+                        ol = NULL;
+                    } else {
+                        // l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
+                        /*  
+                            TODO: though another syscall is discouraged here, there's no way to obtain WSA last error
+                            which the cross-platform error-handling functions rely on, since NtStatusToDosError()
+                            returns irrelevant error code for completed WSA*(). NTSTATUS propagation needs tweaking
+                            error handlers for Windows. We'll probably get down to it later
+                        */
+                        WSAGetOverlappedResult(l_cur->socket, &ol->ol, &l_bytes, FALSE, &flags);
+                        l_errno = WSAGetLastError();
+                    }                   
                     break;
                 }
                 
@@ -523,10 +528,18 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_cur->pending_read = 0;
                         if ( !l_bytes ) {
                             if ( NT_ERROR(ol->ol.Internal) ) {
-                                l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
-                                log_it(L_ERROR, "Connection to %s : %u closed with error %d, ntstatus %llx: %s",
-                                                l_cur->remote_addr_str, l_cur->remote_port, l_errno, ol->ol.Internal, 
-                                                dap_str_ntstatus(ol->ol.Internal));  
+                                // l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
+                                /*  
+                                    TODO: though another syscall is discouraged here, there's no way to obtain WSA last error
+                                    which the cross-platform error-handling functions rely on, since NtStatusToDosError()
+                                    returns irrelevant error code for completed WSA*(). NTSTATUS propagation needs tweaking
+                                    error handlers for Windows. We'll probably get down to it later
+                                */
+                                WSAGetOverlappedResult(l_cur->socket, &ol->ol, &l_bytes, FALSE, &flags);
+                                l_errno = WSAGetLastError();
+                                log_it(L_ERROR, "Connection to %s : %u closed with error %d: \"%s\", ntstatus 0x%llx",
+                                                l_cur->remote_addr_str, l_cur->remote_port, l_errno, dap_strerror(l_errno),
+                                                ol->ol.Internal);  
                             } else {
                                 log_it(L_INFO, "Connection to %s : %u closed", l_cur->remote_addr_str, l_cur->remote_port);
                                 if (!l_cur->no_close)
@@ -564,10 +577,27 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         --l_cur->pending_write;
                     if ( !l_cur->server && l_cur->flags & DAP_SOCK_CONNECTING ) {
                         if ( NT_ERROR(ol->ol.Internal) ) {
-                            l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
-                            log_it(L_ERROR, "ConnectEx to %s : %u failed, ntstatus %llx: %s",
-                                            l_cur->remote_addr_str, l_cur->remote_port, ol->ol.Internal, 
-                                            dap_str_ntstatus(ol->ol.Internal));
+                            // l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
+                            /*  
+                                TODO: though another syscall is discouraged here, there's no way to obtain WSA last error
+                                which the cross-platform error-handling functions rely on, since NtStatusToDosError()
+                                returns irrelevant error code for completed WSA*(). NTSTATUS propagation needs tweaking
+                                error handlers for Windows. We'll probably get down to it later
+                            */
+                            WSAGetOverlappedResult(l_cur->socket, &ol->ol, &l_bytes, FALSE, &flags);
+                            l_errno = WSAGetLastError();
+                            log_it(L_ERROR, "ConnectEx to %s : %u failed with error %d: \"%s\", ntstatus 0x%llx",
+                                            l_cur->remote_addr_str, l_cur->remote_port, l_errno, dap_strerror(l_errno),
+                                            ol->ol.Internal);
+                            /* TODO: optimization
+                            switch (l_errno) {
+                                case WSAECONNREFUSED:
+                                case WSAENETUNREACH:
+                                case WSAETIMEDOUT:
+                                    // Retry with the same socket!
+                                    break;
+                                default: break;
+                            } */
                             break;
                         } else if ( setsockopt(l_cur->socket, SOL_SOCKET, SO_UPDATE_CONNECT_CONTEXT, NULL, 0) ) {
                             l_errno = WSAGetLastError();
@@ -586,10 +616,18 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         break;
                     } else if ( !l_bytes ) {
                         if ( NT_ERROR(ol->ol.Internal) ) {
-                            l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
-                            log_it(L_ERROR, "Connection on es %zu to remote %s : %u closed with ntstatus %llx: %s",
-                                           l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port, ol->ol.Internal,
-                                           dap_str_ntstatus(ol->ol.Internal));
+                            // l_errno = pfnRtlNtStatusToDosError(ol->ol.Internal);
+                            /*  
+                                TODO: though another syscall is discouraged here, there's no way to obtain WSA last error
+                                which the cross-platform error-handling functions rely on, since NtStatusToDosError()
+                                returns irrelevant error code for completed WSA*(). NTSTATUS propagation needs tweaking
+                                error handlers for Windows. We'll probably get down to it later
+                            */
+                            WSAGetOverlappedResult(l_cur->socket, &ol->ol, &l_bytes, FALSE, &flags);
+                            l_errno = WSAGetLastError();
+                            log_it(L_ERROR, "Connection on es %zu to remote %s : %u closed with error %d: %s, ntstatus 0x%llx",
+                                           l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port, l_errno, dap_strerror(l_errno),
+                                           ol->ol.Internal);
                         } else
                             log_it(L_INFO, "Connection on es %zu to remote %s : %u closed",
                                            l_cur->socket, l_cur->remote_addr_str, l_cur->remote_port);
@@ -1507,7 +1545,7 @@ int dap_context_add(dap_context_t * a_context, dap_events_socket_t * a_es )
     }
 
 #ifdef DAP_EVENTS_CAPS_IOCP
-    // TODO: reassignment requires some extra calls to WDK:
+    // TODO: reassignment requires some extra calls to WDK. Also there must be no pending I/O ops
     /*
         #include <ntifs.h>
         int len = sizeof(FILE_COMPLETION_INFORMATION);
