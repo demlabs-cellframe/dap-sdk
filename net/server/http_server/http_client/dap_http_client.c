@@ -553,8 +553,8 @@ void dap_http_client_write(dap_http_client_t *a_http_client)
                     a_http_client->reply_status_code, a_http_client->reply_reason_phrase[0] ?
                     a_http_client->reply_reason_phrase : http_status_reason_phrase(a_http_client->reply_status_code) );
     /* Write HTTP headres */
-    char l_buf[32];
-    dap_time_to_str_rfc822( l_buf, sizeof(l_buf) - 1, time( NULL ) );
+    char l_buf[DAP_TIME_STR_SIZE];
+    dap_time_to_str_rfc822( l_buf, DAP_TIME_STR_SIZE, time( NULL ) );
     dap_http_header_add( &a_http_client->out_headers, "Date", l_buf );
 
     for ( dap_http_header_t *hdr = a_http_client->out_headers; hdr; hdr = a_http_client->out_headers ) {
