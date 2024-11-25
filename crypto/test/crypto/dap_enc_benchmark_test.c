@@ -10,11 +10,8 @@
 /*--------------------------TRANSFER TEST BLOCK--------------------------*/
 static void s_transfer_test(dap_enc_key_type_t a_key_type, int a_times, int *a_gen_time, int *a_alice_shared, int *a_bob_shared)
 {
-    dap_enc_key_t **l_alice_keys = NULL;
-    dap_enc_key_t **l_bob_keys = NULL;
-
-    DAP_NEW_Z_COUNT_RET(l_alice_keys, dap_enc_key_t*, a_times, NULL);
-    DAP_NEW_Z_COUNT_RET(l_bob_keys, dap_enc_key_t*, a_times, l_alice_keys);
+    dap_enc_key_t **l_alice_keys = DAP_NEW_Z_COUNT_RET_IF_FAIL(dap_enc_key_t*, a_times);
+    dap_enc_key_t **l_bob_keys = DAP_NEW_Z_COUNT_RET_IF_FAIL(dap_enc_key_t*, a_times, l_alice_keys);
 
     int l_t1 = get_cur_time_msec();
 
@@ -75,17 +72,12 @@ static void s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *
     size_t seed_size = sizeof(uint8_t);
     uint8_t seed[sizeof(uint8_t)];
     randombytes(seed, seed_size);
-    uint8_t **l_signs = NULL;
-    uint8_t **l_source = NULL;
-    dap_enc_key_t **l_keys = NULL;
+    uint8_t *l_signs[a_times], *l_source[a_times];
+    dap_enc_key_t *l_keys[a_times];
     size_t l_source_size[a_times];
     dap_enc_key_t *l_key_temp = dap_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
     size_t max_signature_size = dap_sign_create_output_unserialized_calc_size(l_key_temp, 0);
     dap_enc_key_delete(l_key_temp);
-
-    DAP_NEW_Z_COUNT_RET(l_signs, uint8_t*, a_times, NULL);
-    DAP_NEW_Z_COUNT_RET(l_source, uint8_t*, a_times, l_signs);
-    DAP_NEW_Z_COUNT_RET(l_keys, dap_enc_key_t*, a_times, l_source, l_signs);
 
     int l_t1 = 0;
     *a_sig_time = 0;
@@ -99,9 +91,9 @@ static void s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *
         }
         // ----------
         
-        DAP_NEW_Z_SIZE_RET(l_signs[i], uint8_t, max_signature_size, NULL);
+        l_signs[i] = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, max_signature_size);
         l_source_size[i] = 1 + random_uint32_t(20);
-        DAP_NEW_Z_SIZE_RET(l_source[i], uint8_t, l_source_size[i], NULL);
+        l_source[i] = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, l_source_size[i]);
         randombytes(l_source[i], l_source_size[i]);
 
         l_t1 = get_cur_time_msec();
@@ -137,19 +129,15 @@ static void s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *
         dap_enc_key_delete(l_keys[i]);
         DAP_DELETE(l_source[i]);
     }
-    DAP_DEL_MULTY(l_signs, l_source, l_keys);
 }
 
 static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, int *a_sig_time, int *a_verify_time)
 {
     size_t seed_size = sizeof(uint8_t);
     uint8_t seed[seed_size];
-    dap_sign_t **l_signs = NULL;
-    uint8_t **l_source = NULL;
+    dap_sign_t *l_signs[a_times];
+    uint8_t *l_source[a_times];
     size_t l_source_size[a_times];
-
-    DAP_NEW_Z_COUNT_RET(l_signs, dap_sign_t*, a_times, NULL);
-    DAP_NEW_Z_COUNT_RET(l_source, uint8_t*, a_times, l_signs);
 
     int l_t1 = 0;
     *a_sig_time = 0;
@@ -164,7 +152,7 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
         }
         // ----------
         l_source_size[i] = 1 + random_uint32_t(20);
-        DAP_NEW_Z_SIZE_RET(l_source[i], uint8_t, l_source_size[i], NULL);
+        l_source[i] = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, l_source_size[i]);
         randombytes(l_source[i], l_source_size[i]);
         
         l_t1 = get_cur_time_msec();
@@ -199,7 +187,6 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
     for(int i = 0; i < a_times; ++i) {
         DAP_DEL_MULTY(l_signs[i], l_source[i]);
     }
-    DAP_DEL_MULTY(l_signs, l_source);
 }
 
 static void s_sign_verify_test_becnhmark(const char *a_name, dap_enc_key_type_t a_key_type, int a_times) {

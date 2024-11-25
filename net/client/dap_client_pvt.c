@@ -302,7 +302,7 @@ static bool s_stream_timer_timeout_after_connected_check(void * a_arg)
 
 void dap_client_pvt_queue_add(dap_client_pvt_t *a_client_pvt, const char a_ch_id, uint8_t a_type, void *a_data, size_t a_data_size)
 {
-    dap_client_pkt_queue_elm_t *l_pkt = DAP_NEW_SIZE(dap_client_pkt_queue_elm_t, sizeof(dap_client_pkt_queue_elm_t) + a_data_size);
+    dap_client_pkt_queue_elm_t *l_pkt = DAP_NEW_Z_SIZE(dap_client_pkt_queue_elm_t, sizeof(dap_client_pkt_queue_elm_t) + a_data_size);
     l_pkt->ch_id = a_ch_id;
     l_pkt->type = a_type;
     l_pkt->data_size = a_data_size;
@@ -340,18 +340,13 @@ int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *
     dap_return_val_if_pass(!a_cert || !a_size || !a_data, 0);
 
     dap_sign_t *l_sign = dap_sign_create(a_cert->enc_key, a_signing_data, a_signing_size, 0);
-    dap_return_val_if_pass(!l_sign, 0);
-
-    size_t l_sign_size = dap_sign_get_size(l_sign);
-    *a_data = DAP_REALLOC(*a_data, (*a_size + l_sign_size) * sizeof(uint8_t));
-    if (!*a_data) {
-        DAP_DELETE(l_sign);
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return 0;
-    }
-    memcpy(*a_data + *a_size, l_sign, l_sign_size);
-    *a_size += l_sign_size;
+    dap_return_val_if_fail(l_sign, 0);    
+    size_t l_sign_size = dap_sign_get_size(l_sign), l_size = *a_size;
+    byte_t *l_data = DAP_REALLOC_RET_VAL_IF_FAIL(*a_data, l_size + l_sign_size, 0, l_sign);
+    memcpy(l_data + l_size, l_sign, l_sign_size);
     DAP_DELETE(l_sign);
+    *a_data = l_data;
+    *a_size = l_size + l_sign_size;
     return 1;
 }
 
@@ -401,9 +396,11 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         break;
                     }
                     size_t l_data_size = a_client_pvt->session_key_open->pub_key_data_size;
-                    uint8_t *l_data = DAP_NEW_Z_SIZE(uint8_t, l_data_size);
-                    memcpy(l_data, a_client_pvt->session_key_open->pub_key_data, a_client_pvt->session_key_open->pub_key_data_size);
-
+                    uint8_t *l_data = DAP_DUP_SIZE((uint8_t*)a_client_pvt->session_key_open->pub_key_data, l_data_size);
+                    if (!l_data) {
+                        a_client_pvt->stage_status = STAGE_STATUS_ERROR;
+                        break;
+                    }
                     dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
                     size_t l_sign_count = 0;
                     if (a_client_pvt->client->auth_cert)
@@ -432,8 +429,8 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                     // bad request
                     if (l_res < 0)
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
-                    DAP_DEL_Z(l_data);
-                    DAP_DEL_Z(l_data_str);
+                    DAP_DELETE(l_data);
+                    DAP_DELETE(l_data_str);
                 } break;
 
                 case STAGE_STREAM_CTL: {
@@ -589,15 +586,9 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                                                     s_stream_timer_timeout_check,l_stream_es_uuid_ptr);
                     }
                     else if (l_err != EINPROGRESS && l_err != -1){
-                        char l_errbuf[128] = {0};
-
-                        if (l_err)
-                            strerror_r(l_err,l_errbuf,sizeof (l_errbuf));
-                        else
-                            strncpy(l_errbuf,"Unknown Error",sizeof(l_errbuf)-1);
                         log_it(L_ERROR, "Remote address can't connect (%s:%hu) with sock_id %"DAP_FORMAT_SOCKET": \"%s\" (code %d)",
-                                            a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port,
-                                            l_es->socket, l_errbuf, l_err);
+                                        a_client_pvt->client->link_info.uplink_addr, a_client_pvt->client->link_info.uplink_port,
+                                        l_es->socket, dap_strerror(l_err), l_err);
                         dap_events_socket_delete_unsafe(l_es, true);
                         a_client_pvt->stage_status = STAGE_STATUS_ERROR;
                         a_client_pvt->last_error = ERROR_STREAM_CONNECT;
@@ -636,7 +627,7 @@ static void s_stage_status_after(dap_client_pvt_t *a_client_pvt)
                         dap_stream_ch_new(a_client_pvt->stream, (uint8_t)a_client_pvt->client->active_channels[i]);
 
                     char l_full_path[2048];
-                    snprintf(l_full_path, sizeof(l_full_path) - 1, "%s/globaldb?session_id=%u", DAP_UPLINK_PATH_STREAM,
+                    snprintf(l_full_path, sizeof(l_full_path), "%s/globaldb?session_id=%u", DAP_UPLINK_PATH_STREAM,
                                                 dap_client_get_stream_id(a_client_pvt->client));
 
                     dap_events_socket_write_f_unsafe( a_client_pvt->stream_es, "GET /%s HTTP/1.1\r\n"
@@ -801,99 +792,55 @@ int dap_client_pvt_request(dap_client_pvt_t * a_client_internal, const char * a_
  * @param a_response_proc
  * @param a_response_error
  */
-void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char * a_path,
-        const char * a_sub_url, const char * a_query
-        , void * a_request, size_t a_request_size
-        , dap_client_callback_data_size_t a_response_proc
-        , dap_client_callback_int_t a_response_error)
+void dap_client_pvt_request_enc(dap_client_pvt_t * a_client_internal, const char *a_path,
+                                const char *a_sub_url, const char * a_query, void *a_request, size_t a_request_size,
+                                dap_client_callback_data_size_t a_response_proc, dap_client_callback_int_t a_response_error)
 {
     bool is_query_enc = true; // if true, then encode a_query string  [Why do we even need this?]
-
-    debug_if(s_debug_more, L_DEBUG, "Encrypted request: sub_url '%s' query '%s'", a_sub_url ? a_sub_url : "NULL",
-            a_query ? a_query : "NULL");
-
-    size_t l_sub_url_size = a_sub_url ? strlen(a_sub_url) : 0;
-    size_t l_query_size = a_query ? strlen(a_query) : 0;
-//    size_t l_url_size;
-//    char l_url[1024] = { 0 };
-//    snprintf(l_url, 1024, "http://%s:%u", a_client_internal->uplink_addr, a_client_internal->uplink_port);
-//    l_url_size = strlen(l_url);
-
-    size_t l_sub_url_enc_size_max = l_sub_url_size ? (5 * l_sub_url_size + 16) : 0;
-    char *l_sub_url_enc = l_sub_url_size ? DAP_NEW_Z_SIZE(char, l_sub_url_enc_size_max + 1) : NULL;
-
-    size_t l_query_enc_size_max = (is_query_enc) ? (l_query_size * 5 + 16) : l_query_size;
-    char *l_query_enc =
-            (is_query_enc) ? (l_query_size ? DAP_NEW_Z_SIZE(char, l_query_enc_size_max + 1) : NULL) : (char*) a_query;
-
-//    size_t l_url_full_size_max = 5 * l_sub_url_size + 5 * l_query_size + 16 + l_url_size + 2;
-//    char * l_url_full = DAP_NEW_Z_SIZE(char, l_url_full_size_max + 1);
-
-    size_t l_request_enc_size_max = a_request_size ? a_request_size * 2 + 16 : 0;
-    char * l_request_enc = a_request_size ? DAP_NEW_Z_SIZE(char, l_request_enc_size_max + 1) : NULL;
-    size_t l_request_enc_size = 0;
-
-    a_client_internal->request_response_callback = a_response_proc;
-    a_client_internal->request_error_callback = a_response_error;
-    a_client_internal->is_encrypted = true;
-    dap_enc_data_type_t l_enc_type;
-
-    if(a_client_internal->uplink_protocol_version >= 21)
-        l_enc_type = DAP_ENC_DATA_TYPE_B64_URLSAFE;
-    else
-        l_enc_type = DAP_ENC_DATA_TYPE_B64;
-
-    if(l_sub_url_size)
-        dap_enc_code(a_client_internal->session_key,
-                a_sub_url, l_sub_url_size,
-                l_sub_url_enc, l_sub_url_enc_size_max,
-                l_enc_type);
-
-    if(is_query_enc && l_query_size)
-        dap_enc_code(a_client_internal->session_key,
-                a_query, l_query_size,
-                l_query_enc, l_query_enc_size_max,
-                l_enc_type);
-
-    if(a_request_size)
-        l_request_enc_size = dap_enc_code(a_client_internal->session_key,
-                a_request, a_request_size,
-                l_request_enc, l_request_enc_size_max,
-                DAP_ENC_DATA_TYPE_RAW);
-
-    size_t l_path_size= l_query_enc_size_max + l_sub_url_enc_size_max + 1;
-    char *l_path = DAP_NEW_Z_SIZE(char, l_path_size);
-    l_path[0] = '\0';
-    if(a_path) {
-        if(l_sub_url_size){
-            if(l_query_size){
-                snprintf(l_path, l_path_size, "%s/%s?%s", a_path?a_path:"",
-                             l_sub_url_enc?l_sub_url_enc:"",
-                                   l_query_enc?l_query_enc:"");
-            }else{
-                snprintf(l_path, l_path_size, "%s/%s", a_path, l_sub_url_enc);
+    debug_if (s_debug_more, L_DEBUG, "Encrypt request: sub_url '%s' query '%s'",
+             a_sub_url ? a_sub_url : "", a_query ? a_query : "");
+    dap_enc_data_type_t l_enc_type = a_client_internal->uplink_protocol_version >= 21
+        ? DAP_ENC_DATA_TYPE_B64_URLSAFE : DAP_ENC_DATA_TYPE_B64;
+    char *l_path = NULL, *l_request_enc = NULL;
+    if (a_path && *a_path) {
+        size_t l_suburl_len = a_sub_url && *a_sub_url ? dap_strlen(a_sub_url) : 0,
+               l_suburl_enc_size = dap_enc_code_out_size(a_client_internal->session_key, l_suburl_len, l_enc_type),
+               l_query_len = a_query && *a_query ? dap_strlen(a_query) : 0,
+               l_query_enc_size = dap_enc_code_out_size(a_client_internal->session_key, l_query_len, l_enc_type),
+               l_path_size = dap_strlen(a_path) + l_suburl_enc_size + l_query_enc_size + 3;
+        l_path = DAP_NEW_Z_SIZE(char, l_path_size);
+        char *l_offset = dap_strncpy(l_path, a_path, l_path_size);
+        *l_offset++ = '/';
+        if (l_suburl_enc_size) {
+            l_offset += dap_enc_code(a_client_internal->session_key, a_sub_url, l_suburl_len,
+                                     l_offset, l_suburl_enc_size, l_enc_type);
+            if (l_query_enc_size) {
+                *l_offset++ = '?';
+                dap_enc_code(a_client_internal->session_key, a_query, l_query_len,
+                             l_offset, l_query_enc_size, l_enc_type);
             }
-        } else {
-            dap_stpcpy(l_path, a_path);
         }
     }
+    size_t l_req_enc_size = 0;
+    if (a_request && a_request_size) {
+        l_req_enc_size = dap_enc_code_out_size(a_client_internal->session_key, a_request_size, l_enc_type) + 1;
+        l_request_enc = DAP_NEW_Z_SIZE(char, l_req_enc_size);
+        dap_enc_code(a_client_internal->session_key, a_request, a_request_size,
+                     l_request_enc, l_req_enc_size, DAP_ENC_DATA_TYPE_RAW);
+    }
+    char *l_custom = dap_strdup_printf("KeyID: %s\r\n%s",
+        a_client_internal->session_key_id ? a_client_internal->session_key_id : "NULL",
+        a_client_internal->is_close_session ? "SessionCloseAfterRequest: true\r\n" : "");
 
-    size_t l_size_required = a_client_internal->session_key_id ? strlen(a_client_internal->session_key_id) + 40 : 40;
-    char *l_custom = DAP_NEW_Z_SIZE(char, l_size_required);
-    size_t l_off = snprintf(l_custom, l_size_required, "KeyID: %s\r\n", a_client_internal->session_key_id ? a_client_internal->session_key_id : "NULL");
-    if (a_client_internal->is_close_session)
-        snprintf(l_custom + l_off, l_size_required - l_off, "%s\r\n", "SessionCloseAfterRequest: true");
-
-    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker, a_client_internal->client->link_info.uplink_addr,
-                            a_client_internal->client->link_info.uplink_port,
-                            a_request ? "POST" : "GET", "text/text",
-                            l_path, l_request_enc, l_request_enc_size, NULL,
-                            s_request_response, s_request_error, a_client_internal, l_custom);
-    DAP_DEL_Z(l_sub_url_enc);
-    DAP_DEL_Z(l_custom);
-    DAP_DEL_Z(l_query_enc);
-    DAP_DEL_Z(l_path);
-    DAP_DEL_Z(l_request_enc);
+    a_client_internal->request_response_callback    = a_response_proc;
+    a_client_internal->request_error_callback       = a_response_error;
+    a_client_internal->is_encrypted                 = true;
+    a_client_internal->http_client = dap_client_http_request(a_client_internal->worker,
+        a_client_internal->client->link_info.uplink_addr, a_client_internal->client->link_info.uplink_port,
+        a_request ? "POST" : "GET", "text/text", l_path, l_request_enc, l_req_enc_size, NULL,
+        s_request_response, s_request_error, a_client_internal, l_custom);
+    
+    DAP_DEL_MULTY(l_path, l_request_enc, l_custom);
 }
 
 /**
@@ -920,34 +867,27 @@ static void s_request_error(int a_err_code, void * a_obj)
  * @param a_response_size
  * @param a_obj
  */
-static void s_request_response(void * a_response, size_t a_response_size, void * a_obj, http_status_code_t a_http_code)
+static void s_request_response(void * a_response, size_t a_response_size, void * a_obj, UNUSED_ARG http_status_code_t a_http_code)
 {
-    (void)a_http_code;
     dap_client_pvt_t * l_client_pvt = (dap_client_pvt_t *) a_obj;
     assert(l_client_pvt);
+    if ( !l_client_pvt->request_response_callback )
+        return log_it(L_ERROR, "No request_response_callback in encrypted client!");
     l_client_pvt->http_client = NULL;
-    if (l_client_pvt->is_encrypted && l_client_pvt->session_key) {
-        size_t l_response_dec_size_max = a_response_size ? a_response_size * 2 + 16 : 0;
-        char * l_response_dec = a_response_size ? DAP_NEW_Z_SIZE(char, l_response_dec_size_max) : NULL;
-        size_t l_response_dec_size = 0;
-        if(a_response_size)
-            l_response_dec_size = dap_enc_decode(l_client_pvt->session_key,
-                    a_response, a_response_size,
-                    l_response_dec, l_response_dec_size_max,
-                    DAP_ENC_DATA_TYPE_RAW);
-
-        if ( l_client_pvt->request_response_callback )
-            l_client_pvt->request_response_callback(l_client_pvt->client, l_response_dec, l_response_dec_size);
-        else
-            log_it(L_ERROR, "NULL request_response_callback for encrypted client %p", l_client_pvt->client );
-
-        if(l_response_dec)
-            DAP_DELETE(l_response_dec);
-    } else {
-        if ( l_client_pvt->request_response_callback )
+    
+    if (a_response && a_response_size) {
+        if (l_client_pvt->is_encrypted) {
+            if (!l_client_pvt->session_key)
+                return log_it(L_ERROR, "No session key in encrypted client!");
+            size_t l_len = dap_enc_decode_out_size(l_client_pvt->session_key, a_response_size, DAP_ENC_DATA_TYPE_RAW);
+            char *l_response = DAP_NEW_Z_SIZE(char, l_len + 1);
+            l_len = dap_enc_decode(l_client_pvt->session_key, a_response, a_response_size,
+                                   l_response, l_len, DAP_ENC_DATA_TYPE_RAW);
+            l_response[l_len] = '\0';
+            l_client_pvt->request_response_callback(l_client_pvt->client, l_response, l_len);
+            DAP_DELETE(l_response);
+        } else
             l_client_pvt->request_response_callback(l_client_pvt->client, a_response, a_response_size);
-        else
-            log_it(L_ERROR, "NULL request_response_callback for unencrypted  client %p", l_client_pvt->client );
     }
 }
 
@@ -983,16 +923,14 @@ int s_json_multy_obj_parse_str(const char *a_key, const char *a_val, int a_count
  * @param a_response
  * @param a_response_size
  */
-static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_data_size)
+static void s_enc_init_response(dap_client_t *a_client, void *a_data, size_t a_data_size)
 {
 // sanity check
     dap_client_pvt_t * l_client_pvt = DAP_CLIENT_PVT(a_client);
     dap_return_if_pass(!l_client_pvt || !a_data);
 // func work
-    char *l_session_id_b64 = NULL;
-    char *l_bob_message_b64 = NULL;
-    char *l_node_sign_b64 = NULL;
-    char *l_bob_message = NULL;
+    char *l_data = (char*)a_data, *l_session_id_b64 = NULL,
+         *l_bob_message_b64 = NULL, *l_node_sign_b64 = NULL, *l_bob_message = NULL;
     l_client_pvt->last_error = ERROR_NO_ERROR;
     while(l_client_pvt->last_error == ERROR_NO_ERROR) {
         // first checks
@@ -1002,14 +940,14 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             break;
         }
         if (a_data_size <= 10) {
-            log_it(L_ERROR, "ENC: Wrong response (size %zu data '%s')", a_data_size, (char* )a_data);
+            log_it(L_ERROR, "ENC: Wrong response (size %zu data '%s')", a_data_size, l_data);
             l_client_pvt->last_error = ERROR_ENC_NO_KEY;
             break;
         }
         size_t l_bob_message_size = 0;
         int l_json_parse_count = 0;
         // parse data
-        struct json_object *jobj = json_tokener_parse((const char *) a_data);
+        struct json_object *jobj = json_tokener_parse(l_data);
         if(jobj) {
             // parse encrypt_id & encrypt_msg
             json_object_object_foreach(jobj, key, val)
@@ -1037,7 +975,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
         // check data
         if (l_json_parse_count < 2 || l_json_parse_count > 4) {
             l_client_pvt->last_error = ERROR_ENC_NO_KEY;
-            log_it(L_ERROR, "ENC: Wrong response (size %zu data '%s')", a_data_size, (char* ) a_data);
+            log_it(L_ERROR, "ENC: Wrong response (size %zu data '%s')", a_data_size, l_data);
             break;
         }
         if (!l_session_id_b64 || !l_bob_message_b64) {
@@ -1046,18 +984,14 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
             break;
         }
         // decode session key id
-        DAP_NEW_Z_SIZE_RET(l_client_pvt->session_key_id, char, strlen(l_session_id_b64) + 1, l_session_id_b64, l_bob_message_b64, l_node_sign_b64);
-        if (!dap_enc_base64_decode(l_session_id_b64, strlen(l_session_id_b64),
-                l_client_pvt->session_key_id, DAP_ENC_DATA_TYPE_B64)) {
-            log_it(L_WARNING, "ENC: Can't decode session id from base64");
-            l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
-        } else {
-            log_it(L_DEBUG, "ENC: session Key ID %s", l_client_pvt->session_key_id);
-        }
+        size_t l_len = strlen(l_session_id_b64), l_decoded_len;
+        l_client_pvt->session_key_id = DAP_NEW_Z_SIZE_RET_IF_FAIL(char, DAP_ENC_BASE64_DECODE_SIZE(l_len) + 1, l_session_id_b64, l_bob_message_b64, l_node_sign_b64);
+        l_decoded_len = dap_enc_base64_decode(l_session_id_b64, l_len, l_client_pvt->session_key_id, DAP_ENC_DATA_TYPE_B64);
+        log_it(L_DEBUG, "ENC: session Key ID %s", l_client_pvt->session_key_id);
         // decode bob message
-        DAP_NEW_Z_SIZE_RET(l_bob_message, char, strlen(l_bob_message_b64) + 1, l_session_id_b64, l_bob_message_b64, l_node_sign_b64, l_client_pvt->session_key_id);
-        l_bob_message_size = dap_enc_base64_decode(l_bob_message_b64, strlen(l_bob_message_b64),
-                l_bob_message, DAP_ENC_DATA_TYPE_B64);
+        l_len = strlen(l_bob_message_b64);
+        l_bob_message = DAP_NEW_Z_SIZE_RET_IF_FAIL(char, DAP_ENC_BASE64_DECODE_SIZE(l_len) + 1, l_session_id_b64, l_bob_message_b64, l_node_sign_b64, l_client_pvt->session_key_id);
+        l_bob_message_size = dap_enc_base64_decode(l_bob_message_b64, l_len, l_bob_message, DAP_ENC_DATA_TYPE_B64);
         if (!l_bob_message_size) {
             log_it(L_WARNING, "ENC: Can't decode bob message from base64");
             l_client_pvt->last_error = ERROR_ENC_WRONG_KEY;
@@ -1075,7 +1009,7 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
         l_client_pvt->session_key = dap_enc_key_new_generate(l_client_pvt->session_key_type,
                 l_client_pvt->session_key_open->priv_key_data, // shared key
                 l_client_pvt->session_key_open->priv_key_data_size,
-                l_client_pvt->session_key_id, strlen(l_client_pvt->session_key_id), l_client_pvt->session_key_block_size);
+                l_client_pvt->session_key_id, l_decoded_len, l_client_pvt->session_key_block_size);
 
         if (l_client_pvt->stage != STAGE_ENC_INIT) { // We are in wrong stage
             l_client_pvt->last_error = ERROR_WRONG_STAGE;
@@ -1085,10 +1019,11 @@ static void s_enc_init_response(dap_client_t *a_client, void * a_data, size_t a_
         }
         // verify node sign
         if (l_node_sign_b64) {
-            dap_sign_t *l_sign = NULL;
-            DAP_NEW_Z_SIZE_RET(l_sign, dap_sign_t, strlen(l_node_sign_b64) + 1, l_session_id_b64, l_bob_message_b64, l_node_sign_b64, l_bob_message, l_client_pvt->session_key_id);
-            size_t l_decode_len = dap_enc_base64_decode(l_node_sign_b64, strlen(l_node_sign_b64), l_sign, DAP_ENC_DATA_TYPE_B64);
-            if (!dap_sign_verify_all(l_sign, l_decode_len, l_bob_message, l_bob_message_size)) {
+            l_len = strlen(l_node_sign_b64);
+            dap_sign_t *l_sign = DAP_NEW_Z_SIZE_RET_IF_FAIL(dap_sign_t, DAP_ENC_BASE64_DECODE_SIZE(l_len) + 1,
+                l_session_id_b64, l_bob_message_b64, l_node_sign_b64, l_bob_message, l_client_pvt->session_key_id);
+            l_decoded_len = dap_enc_base64_decode(l_node_sign_b64, l_len, l_sign, DAP_ENC_DATA_TYPE_B64);
+            if ( !dap_sign_verify_all(l_sign, l_decoded_len, l_bob_message, l_bob_message_size) ) {
                 dap_stream_node_addr_t l_sign_node_addr = dap_stream_node_addr_from_sign(l_sign);
                 if (l_sign_node_addr.uint64 != a_client->link_info.node_addr.uint64) {
                     log_it(L_WARNING, "Unverified stream to node "NODE_ADDR_FP_STR" signed by "NODE_ADDR_FP_STR"\n", NODE_ADDR_FP_ARGS_S(a_client->link_info.node_addr), NODE_ADDR_FP_ARGS_S(l_sign_node_addr));
@@ -1146,58 +1081,48 @@ static void s_enc_init_error(dap_client_t * a_client, UNUSED_ARG void *a_arg, in
  * @param a_data
  * @param a_data_size
  */
-static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t a_data_size)
+static void s_stream_ctl_response(dap_client_t * a_client, void *a_data, size_t a_data_size)
 {
     dap_client_pvt_t *l_client_pvt = DAP_CLIENT_PVT(a_client);
     if (!l_client_pvt) return;
     if(s_debug_more)
         log_it(L_DEBUG, "STREAM_CTL response %zu bytes length recieved", a_data_size);
-    char * l_response_str = DAP_NEW_Z_SIZE(char, a_data_size + 1);
-    if (!l_response_str) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return;
-    }
-    memcpy(l_response_str, a_data, (uint32_t)a_data_size);
-
+    char *l_response_str = (char*)a_data; // The caller must ensure it's a null-terminated string
+    
     if(a_data_size < 4) {
         log_it(L_ERROR, "STREAM_CTL Wrong reply: '%s'", l_response_str);
         l_client_pvt->last_error = ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT;
         l_client_pvt->stage_status = STAGE_STATUS_ERROR;
         s_stage_status_after(l_client_pvt);
-    } else if(strcmp(l_response_str, "ERROR") == 0) {
+    } else if ( !strncmp(l_response_str, "ERROR", a_data_size) ) {
         log_it(L_WARNING, "STREAM_CTL Got ERROR from the remote site,expecting thats ERROR_AUTH");
         l_client_pvt->last_error = ERROR_STREAM_CTL_ERROR_AUTH;
         l_client_pvt->stage_status = STAGE_STATUS_ERROR;
         s_stage_status_after(l_client_pvt);
     } else {
         int l_arg_count;
-        char *l_stream_key = DAP_NEW_Z_SIZE(char, 4096 * 3);
-        if (!l_stream_key) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            DAP_DEL_Z(l_response_str);
-            return;
-        }
+        char l_stream_key[4096 + 1] = { '\0' };
         uint32_t l_remote_protocol_version;
         dap_enc_key_type_t l_enc_type = l_client_pvt->session_key_type;
         int l_enc_headers = 0;
         uint32_t l_stream_id_int = 0;
 
-        l_arg_count = sscanf(l_response_str, "%u %4096s %u %d %d"
-                , &l_stream_id_int, l_stream_key, &l_remote_protocol_version, &l_enc_type, &l_enc_headers);
+        l_arg_count = sscanf(l_response_str, "%u %4096s %u %d %d",
+                                             &l_stream_id_int, l_stream_key,
+                                             &l_remote_protocol_version,
+                                             &l_enc_type, &l_enc_headers);
         if(l_arg_count < 2) {
             log_it(L_WARNING, "STREAM_CTL Need at least 2 arguments in reply (got %d)", l_arg_count);
             l_client_pvt->last_error = ERROR_STREAM_CTL_ERROR_RESPONSE_FORMAT;
             l_client_pvt->stage_status = STAGE_STATUS_ERROR;
             s_stage_status_after(l_client_pvt);
         } else {
-
             if(l_arg_count > 2) {
                 l_client_pvt->uplink_protocol_version = l_remote_protocol_version;
                 log_it(L_DEBUG, "Uplink protocol version %u", l_remote_protocol_version);
             } else
-                log_it(L_WARNING, "No uplink protocol version, use default version %d"
-                        , l_client_pvt->uplink_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT);
-
+                log_it(L_WARNING, "No uplink protocol version, use default version %d",
+                                  l_client_pvt->uplink_protocol_version = DAP_PROTOCOL_VERSION_DEFAULT);
             if(l_stream_id_int) {
                 //log_it(L_DEBUG, "Stream server id %s, stream key length(base64 encoded) %u"
                 //       ,l_stream_id,strlen(l_stream_key) );
@@ -1209,8 +1134,7 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
 
                 l_client_pvt->stream_id = l_stream_id_int;
                 l_client_pvt->stream_key =
-                        dap_enc_key_new_generate(l_enc_type, l_stream_key, strlen(l_stream_key), NULL, 0,
-                                32);
+                    dap_enc_key_new_generate(l_enc_type, l_stream_key, strlen(l_stream_key), NULL, 0, 32);
 
                 l_client_pvt->is_encrypted_headers = l_enc_headers;
 
@@ -1228,11 +1152,8 @@ static void s_stream_ctl_response(dap_client_t * a_client, void * a_data, size_t
                 l_client_pvt->stage_status = STAGE_STATUS_ERROR;
                 s_stage_status_after(l_client_pvt);
             }
-
         }
-        DAP_DELETE(l_stream_key);
     }
-    DAP_DELETE(l_response_str);
 }
 
 /**
