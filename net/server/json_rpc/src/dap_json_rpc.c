@@ -56,7 +56,7 @@ bool dap_check_node_pkey_in_map(dap_hash_fast_t *a_pkey){
 }
 
 dap_client_http_callback_error_t * dap_json_rpc_error_callback() {
-
+    return NULL;
 }
 
 int dap_json_rpc_init(dap_server_t* a_http_server, dap_config_t *a_config)

@@ -88,10 +88,10 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
         dap_global_db_driver_deinit();
 
     // Fill callbacks with zeros
-    memset(&s_drv_callback, 0, sizeof(dap_global_db_driver_callbacks_t));
+    s_drv_callback = (dap_global_db_driver_callbacks_t){ };
 
     // Setup driver name
-    strncpy( s_used_driver, a_driver_name, sizeof(s_used_driver) - 1);
+    dap_strncpy( s_used_driver, a_driver_name, sizeof(s_used_driver) - 1);
 
     dap_mkdir_with_parents(a_filename_db);
 
@@ -156,32 +156,22 @@ static inline void s_store_obj_copy_one(dap_store_obj_t *a_store_obj_dst, const 
 {
     *a_store_obj_dst = *a_store_obj_src;
     a_store_obj_dst->group = dap_strdup(a_store_obj_src->group);
-    if (a_store_obj_src->group && !a_store_obj_dst->group) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return;
-    }
+    if (a_store_obj_src->group && !a_store_obj_dst->group)
+        return log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+
     a_store_obj_dst->key = dap_strdup(a_store_obj_src->key);
     if (a_store_obj_src->key && !a_store_obj_dst->key) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return;
+        return DAP_DELETE(a_store_obj_dst->group), log_it(L_CRITICAL, "%s", c_error_memory_alloc);
     }
-    if (a_store_obj_src->sign) {
-        a_store_obj_dst->sign = DAP_DUP_SIZE(a_store_obj_src->sign, dap_sign_get_size(a_store_obj_src->sign));
-        if (!a_store_obj_dst->sign) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            return;
-        }
-    }
+    if (a_store_obj_src->sign)
+        a_store_obj_dst->sign = DAP_DUP_SIZE_RET_IF_FAIL(a_store_obj_src->sign, dap_sign_get_size(a_store_obj_src->sign),
+                                                         a_store_obj_dst->group, a_store_obj_dst->key);
     if (a_store_obj_src->value) {
         if (!a_store_obj_src->value_len)
             log_it(L_WARNING, "Inconsistent global DB object copy requested");
-        else {
-            a_store_obj_dst->value = DAP_DUP_SIZE(a_store_obj_src->value, a_store_obj_src->value_len);
-            if (!a_store_obj_dst->value) {
-                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-                return;
-            }
-        }
+        else
+            a_store_obj_dst->value = DAP_DUP_SIZE_RET_IF_FAIL(a_store_obj_src->value, a_store_obj_src->value_len,
+                                                              a_store_obj_dst->group, a_store_obj_dst->key, a_store_obj_dst->sign);
     }
 }
 
@@ -212,8 +202,7 @@ dap_store_obj_t *l_store_obj, *l_store_obj_dst, *l_store_obj_src;
 
 dap_store_obj_t *dap_store_obj_copy_ext(dap_store_obj_t *a_store_obj, void *a_ext, size_t a_ext_size)
 {
-    dap_store_obj_t *l_ret;
-    DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_store_obj_t, sizeof(dap_store_obj_t) + a_ext_size, NULL, NULL);
+    dap_store_obj_t *l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_store_obj_t, sizeof(dap_store_obj_t) + a_ext_size, NULL);
     s_store_obj_copy_one(l_ret, a_store_obj);
     if (a_ext_size)
         memcpy(l_ret->ext, a_ext, a_ext_size);
@@ -242,12 +231,10 @@ void dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count)
     if(!a_store_obj || !a_store_count)
         return;
 
-    dap_store_obj_t *l_store_obj_cur = a_store_obj;
-
-    for ( ; a_store_count--; l_store_obj_cur++ ) {
-        DAP_DEL_MULTY(l_store_obj_cur->group, l_store_obj_cur->key, l_store_obj_cur->value, l_store_obj_cur->sign);
+    for ( dap_store_obj_t *l_cur = a_store_obj; --a_store_count; ++l_cur ) {
+        DAP_DEL_MULTY(l_cur->group, l_cur->key, l_cur->value, l_cur->sign);
     }
-    DAP_DEL_Z(a_store_obj);
+    DAP_DELETE(a_store_obj);
 }
 
 /**

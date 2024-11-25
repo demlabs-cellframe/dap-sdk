@@ -71,14 +71,15 @@ void enc_http_deinit()
 }
 
 static void _enc_http_write_reply(struct dap_http_simple *a_cl_st,
-                                  const char* a_encrypt_id,
-                                  const char* a_encrypt_msg, const char *a_node_sign)
+                                  const char* a_encrypt_id, int a_id_len,
+                                  const char* a_encrypt_msg,int a_msg_len,
+                                  const char* a_node_sign,  int a_sign_len)
 {
     struct json_object *l_jobj = json_object_new_object();
-    json_object_object_add(l_jobj, "encrypt_id", json_object_new_string(a_encrypt_id));
-    json_object_object_add(l_jobj, "encrypt_msg", json_object_new_string(a_encrypt_msg));
+    json_object_object_add(l_jobj, "encrypt_id", json_object_new_string_len(a_encrypt_id, a_id_len));
+    json_object_object_add(l_jobj, "encrypt_msg", json_object_new_string_len(a_encrypt_msg, a_msg_len));
     if (a_node_sign)
-        json_object_object_add(l_jobj, "node_sign", json_object_new_string(a_node_sign));
+        json_object_object_add(l_jobj, "node_sign", json_object_new_string_len(a_node_sign, a_sign_len));
     json_object_object_add(l_jobj, "dap_protocol_version", json_object_new_int(DAP_PROTOCOL_VERSION));
     const char* l_json_str = json_object_to_json_string(l_jobj);
     dap_http_simple_reply(a_cl_st, (void*) l_json_str, (size_t) strlen(l_json_str));
@@ -114,8 +115,10 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
 
         log_it(L_DEBUG, "Stream encryption: %s\t public key exchange: %s",dap_enc_get_type_name(l_enc_block_type),
                dap_enc_get_type_name(l_pkey_exchange_type));
-        uint8_t alice_msg[cl_st->request_size];
-        size_t l_decode_len = dap_enc_base64_decode(cl_st->request, cl_st->request_size, alice_msg, DAP_ENC_DATA_TYPE_B64);
+        size_t l_decode_len = DAP_ENC_BASE64_DECODE_SIZE(cl_st->request_size);
+        uint8_t alice_msg[l_decode_len + 1];
+        l_decode_len = dap_enc_base64_decode(cl_st->request, cl_st->request_size, alice_msg, DAP_ENC_DATA_TYPE_B64);
+        alice_msg[l_decode_len] = '\0';
         dap_chain_hash_fast_t l_sign_hash = {0};
         if (!l_protocol_version && !l_sign_count) {
             if (l_decode_len > l_pkey_exchange_size + sizeof(dap_sign_hdr_t)) {
@@ -176,7 +179,9 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
     
         char    *encrypt_msg = DAP_NEW_Z_SIZE(char, DAP_ENC_BASE64_ENCODE_SIZE(l_pkey_exchange_key->pub_key_data_size) + 1),
                 encrypt_id[DAP_ENC_BASE64_ENCODE_SIZE(DAP_ENC_KS_KEY_ID_SIZE) + 1] = { '\0' };
-        dap_enc_base64_encode(l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, encrypt_msg, DAP_ENC_DATA_TYPE_B64);
+        int l_enc_msg_len = (int)dap_enc_base64_encode( l_pkey_exchange_key->pub_key_data,
+                                                        l_pkey_exchange_key->pub_key_data_size,
+                                                        encrypt_msg, DAP_ENC_DATA_TYPE_B64);
 
         l_enc_key_ks->key = dap_enc_key_new_generate(l_enc_block_type,
                                                l_pkey_exchange_key->priv_key_data, // shared key
@@ -184,7 +189,9 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                                                l_enc_key_ks->id, DAP_ENC_KS_KEY_ID_SIZE, l_block_key_size);
         
         dap_enc_ks_save_in_storage(l_enc_key_ks);
-        dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), encrypt_id, DAP_ENC_DATA_TYPE_B64);
+        int l_enc_id_len = (int)dap_enc_base64_encode(l_enc_key_ks->id, sizeof (l_enc_key_ks->id), 
+                                                      encrypt_id, DAP_ENC_DATA_TYPE_B64),
+            l_node_msg_len = 0;
 
         // save verified node addr and generate own sign
         char* l_node_sign_msg = NULL;
@@ -211,11 +218,11 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
                 DAP_DELETE(l_node_sign);
                 return;
             }
-            dap_enc_base64_encode(l_node_sign, l_node_sign_size, l_node_sign_msg, DAP_ENC_DATA_TYPE_B64);
+            l_node_msg_len = (int)dap_enc_base64_encode(l_node_sign, l_node_sign_size, l_node_sign_msg, DAP_ENC_DATA_TYPE_B64);
             DAP_DELETE(l_node_sign);
         }
 
-        _enc_http_write_reply(cl_st, encrypt_id, encrypt_msg, l_node_sign_msg);
+        _enc_http_write_reply(cl_st, encrypt_id, l_enc_id_len, encrypt_msg, l_enc_msg_len, l_node_sign_msg, l_node_msg_len);
         DAP_DELETE(encrypt_msg);
         dap_enc_key_delete(l_pkey_exchange_key);
         DAP_DEL_Z(l_node_sign_msg);
@@ -249,12 +256,7 @@ enc_http_delegate_t *enc_http_request_decode(struct dap_http_simple *a_http_simp
 
     dap_enc_key_t * l_key= dap_enc_ks_find_http(a_http_simple->http_client);
     if(l_key){
-        enc_http_delegate_t * dg = DAP_NEW_Z(enc_http_delegate_t);
-        if (!dg) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            DAP_DEL_Z(dg);
-            return NULL;
-        }
+        enc_http_delegate_t * dg = DAP_NEW_Z_RET_VAL_IF_FAIL(enc_http_delegate_t, NULL);
         dg->key=l_key;
         dg->http=a_http_simple->http_client;
        // dg->isOk=true;
@@ -391,10 +393,10 @@ size_t enc_http_reply_f(enc_http_delegate_t *a_http_delegate, const char *a_data
     char *l_buf = DAP_NEW_SIZE(char, mem_size);
     if (!l_buf) {
         va_end(ap_copy);
-        log_it(L_ERROR, "Can not allocate memory");
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return 0;
     }
-    vsprintf(l_buf, a_data, ap_copy);
+    vsnprintf(l_buf, mem_size, a_data, ap_copy);
     va_end(ap_copy);
     size_t l_ret = enc_http_reply(a_http_delegate, l_buf, mem_size);
     DAP_DELETE(l_buf);
