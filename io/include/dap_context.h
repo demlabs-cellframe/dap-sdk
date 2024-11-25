@@ -30,34 +30,18 @@
 typedef struct dap_context dap_context_t;
  // Callback for specific client operations like custom init/deinit
 typedef int (*dap_context_callback_t)(dap_context_t *a_context, void *a_arg);
-typedef struct dap_context_msg_callback {
-    dap_context_t *context;
-    dap_context_callback_t callback;
-    void *arg;
-} dap_context_msg_callback_t;
 
-typedef struct dap_context_msg_run{
-    dap_context_t * context;
-    dap_context_callback_t callback_started;
-    dap_context_callback_t callback_stopped;
-    int priority;
-    int sched_policy;
-    int cpu_id;
-    int flags;
-    void * callback_arg;
-} dap_context_msg_run_t;
-
-enum dap_context_type {
+typedef enum dap_context_type {
     DAP_CONTEXT_TYPE_WORKER,
     DAP_CONTEXT_TYPE_PROC_THREAD
-};
+} dap_context_type_t;
 
 typedef struct dap_context {
     uint32_t id;  // Context ID
     int cpu_id; // CPU id (if assigned)      
     pthread_t thread_id; // Thread id
 
-    int type; // Context type
+    dap_context_type_t type; // Context type
 
     // pthread-related fields
     pthread_cond_t started_cond; // Fires when thread started and pre-loop callback executes
@@ -141,7 +125,7 @@ int dap_context_init(); // Init
 void dap_context_deinit(); // Deinit
 
 // New context create
-dap_context_t * dap_context_new(int a_type);
+dap_context_t *dap_context_new(dap_context_type_t a_type);
 
 // Run new context in dedicated thread.
 // ATTENTION: after running the context nobody have to access it outside its own running thread
