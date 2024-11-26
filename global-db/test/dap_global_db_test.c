@@ -19,6 +19,9 @@
 #define DB_FILE "./base.tmp"
 
 static const char *s_db_types[] = {
+#ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
+    "pgsql",
+#endif
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
     "sqlite",
 #endif
@@ -27,10 +30,6 @@ static const char *s_db_types[] = {
 #endif
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
     "mdbx",
-#endif
-
-#ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
-    "pgsql",
 #endif
     "none"
 };
