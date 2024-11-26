@@ -231,7 +231,7 @@ void dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count)
     if(!a_store_obj || !a_store_count)
         return;
 
-    for ( dap_store_obj_t *l_cur = a_store_obj; --a_store_count; ++l_cur ) {
+    for ( dap_store_obj_t *l_cur = a_store_obj; a_store_count--; ++l_cur ) {
         DAP_DEL_MULTY(l_cur->group, l_cur->key, l_cur->value, l_cur->sign);
     }
     DAP_DELETE(a_store_obj);
