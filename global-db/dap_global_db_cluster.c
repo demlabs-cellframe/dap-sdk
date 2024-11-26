@@ -148,7 +148,8 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
     DL_APPEND(a_dbi->clusters, l_cluster);
     if (dap_strcmp(DAP_STREAM_CLUSTER_LOCAL, a_mnemonim))
         dap_proc_thread_timer_add(NULL, s_gdb_cluster_sync_timer_callback, l_cluster, 1000);
-    log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s", dap_guuid_to_hex_str(a_guuid), a_group_mask);
+    log_it(L_INFO, "Successfully added GlobalDB cluster ID %s for group mask %s, TTL %s",
+                    dap_guuid_to_hex_str(a_guuid), a_group_mask, l_cluster->ttl ? dap_itoa(l_cluster->ttl) : "unlimited");
     return l_cluster;
 }
 
@@ -216,6 +217,7 @@ int dap_global_db_cluster_add_notify_callback(dap_global_db_cluster_t *a_cluster
 
 static void s_ch_in_pkt_callback(dap_stream_ch_t *a_ch, uint8_t a_type, const void *a_data, size_t a_data_size, void *a_arg)
 {
+    dap_return_if_fail(a_arg);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "Got packet with message type %hhu size %zu from addr " NODE_ADDR_FP_STR,
                                                            a_type, a_data_size, NODE_ADDR_FP_ARGS_S(a_ch->stream->node));
     dap_global_db_cluster_t *l_cluster = a_arg;

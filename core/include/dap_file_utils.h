@@ -129,8 +129,8 @@ void dap_subs_free(dap_list_name_directories_t *subs_list);
 /*
  * Reads an entire file into allocated memory, with error checking.
  */
-bool dap_file_get_contents(const char *filename, char **contents, size_t *length);
-
+//bool dap_file_get_contents(const char *filename, char **contents, size_t *length);
+char *dap_file_get_contents2(const char *filename, size_t *length);
 /*
  * Creates a path from a series of elements using @separator as the
  * separator between elements. At the boundary between two elements,
@@ -169,6 +169,7 @@ char *dap_build_filename (const char *first_element, ...);
  */
 char* dap_canonicalize_filename(const char *filename, const char *relative_to);
 
+char* dap_canonicalize_path(const char *a_filename, const char *a_path);
 /*
  * Gets the current directory
  * Returns: (type filename) (transfer full): the current directory
