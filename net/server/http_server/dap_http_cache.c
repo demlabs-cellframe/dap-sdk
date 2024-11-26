@@ -43,7 +43,7 @@ dap_http_cache_t * dap_http_cache_update(struct dap_http_url_proc * a_url_proc, 
 {
     dap_http_cache_t * l_ret = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http_cache_t, NULL);
     if (a_body_size) {
-        l_ret->body = DAP_DUP_SIZE_RET_VAL_IF_FAIL(a_body, a_body_size, NULL, l_ret);
+        l_ret->body = DAP_DUP_SIZE_RET_VAL_IF_FAIL((byte_t *)a_body, a_body_size, NULL, l_ret);
         l_ret->body_size = a_body_size;
     }
     l_ret->headers =  dap_http_headers_dup( a_headers);
