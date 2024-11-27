@@ -607,7 +607,9 @@ void dap_cert_add_folder(const char *a_folder_path)
                     l_cert_name[l_filename_len-l_suffix_len] = '\0'; // Remove suffix
                     // Load the cert file
                     if (!dap_cert_add_file(l_cert_name,a_folder_path))
-                        log_it(L_DEBUG,"Cert %s not loaded", l_filename);
+                        log_it(L_ERROR,"Cert %s not loaded", l_filename);
+                    else
+                        log_it(L_DEBUG,"Cert %s loaded", l_filename);
                     DAP_DELETE(l_cert_name);
                 }
             }
