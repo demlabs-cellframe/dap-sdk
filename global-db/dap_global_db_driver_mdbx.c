@@ -558,17 +558,14 @@ int s_fill_store_obj(const char *a_group, MDBX_val *a_key, MDBX_val *a_data, dap
     a_obj->flags = l_record->flags;
         if (a_obj->value_len &&
             !(a_obj->value = DAP_DUP_SIZE(l_record->key_n_value_n_sign + l_record->key_len, a_obj->value_len))) {
-        DAP_DELETE(a_obj->group);
-        DAP_DELETE(a_obj->key);
+        DAP_DEL_MULTY(a_obj->group, a_obj->key);
         return log_it(L_CRITICAL, "Cannot allocate a memory for store object value"), -7;
     }
     if (l_record->sign_len >= sizeof(dap_sign_t)) {
         dap_sign_t *l_sign = (dap_sign_t *)(l_record->key_n_value_n_sign + l_record->key_len + l_record->value_len);
         if (dap_sign_get_size(l_sign) != l_record->sign_len ||
                 !(a_obj->sign = (dap_sign_t *)DAP_DUP_SIZE(l_sign, l_record->sign_len))) {
-            DAP_DELETE(a_obj->group);
-            DAP_DELETE(a_obj->key);
-            DAP_DEL_Z(a_obj->value);
+            DAP_DEL_MULTY(a_obj->group, a_obj->key, a_obj->value);
             if (dap_sign_get_size(l_sign) != l_record->sign_len)
                 return log_it(L_ERROR, "Corrupted global DB record internal value"), -6;
             else
@@ -589,6 +586,7 @@ static int s_get_obj_by_text_key(MDBX_txn *a_txn, MDBX_dbi a_dbi, MDBX_val *a_ke
     if ( MDBX_SUCCESS != (rc = mdbx_cursor_get(l_cursor, a_key, a_data, MDBX_FIRST)) ) {
         if (rc != MDBX_NOTFOUND)
             log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
+        mdbx_cursor_close(l_cursor);
         return rc;
     }
     size_t l_key_len = strlen(a_text_key) + 1;
