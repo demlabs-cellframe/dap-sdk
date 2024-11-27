@@ -615,10 +615,6 @@ int main(int argc, char **argv)
     dap_print_module_name("SQLite");
     s_test_create_db("sqlite");
 #endif
-#ifdef DAP_CHAIN_GDB_ENGINE_CUTTDB
-    dap_print_module_name("CDB");
-    s_test_create_db("cdb");
-#endif
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
     dap_print_module_name("MDBX");
     s_test_create_db("mdbx");
