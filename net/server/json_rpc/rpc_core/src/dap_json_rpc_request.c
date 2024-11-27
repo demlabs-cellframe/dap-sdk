@@ -312,13 +312,13 @@ char *dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request
 
 dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data, size_t data_size)
 {
-    if (data_size < sizeof(dap_json_rpc_http_request_t))
+    __typeof__( (dap_json_rpc_http_request_t){0}.header ) l_hdr;
+    if (data_size < sizeof(l_hdr))
         return log_it(L_ERROR, "Data size is less than minimum: %zu < %zu",
                                data_size, sizeof(dap_json_rpc_http_request_t)),
                NULL;
-    __typeof__( (dap_json_rpc_http_request_t){0}.header ) l_hdr;
     memcpy(&l_hdr, data, sizeof(l_hdr));
-    if ( data_size < sizeof(dap_json_rpc_http_request_t) + l_hdr.data_size + l_hdr.signs_size )
+    if ( data_size < sizeof(l_hdr) + l_hdr.data_size + l_hdr.signs_size )
         return log_it(L_ERROR, "Data size is less than needed: %zu < %zu",
                                data_size, sizeof(dap_json_rpc_http_request_t) + l_hdr.data_size + l_hdr.signs_size),
                NULL;
