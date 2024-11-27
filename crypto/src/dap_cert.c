@@ -408,9 +408,7 @@ void dap_cert_delete(dap_cert_t * a_cert)
         dap_enc_key_delete (a_cert->enc_key );
     if( a_cert->metadata )
         dap_binary_tree_clear(a_cert->metadata);
-    if (a_cert->_pvt)
-        DAP_DELETE( a_cert->_pvt );
-    DAP_DELETE (a_cert );
+    DAP_DEL_MULTY(a_cert->_pvt, a_cert);
 }
 
 static int s_make_cert_path(const char *a_cert_name, const char *a_folder_path, bool a_check_access, char *a_cert_path)
@@ -608,8 +606,10 @@ void dap_cert_add_folder(const char *a_folder_path)
                     char *l_cert_name = dap_strdup(l_filename);
                     l_cert_name[l_filename_len-l_suffix_len] = '\0'; // Remove suffix
                     // Load the cert file
-                    //log_it(L_DEBUG,"Trying to load %s",l_filename);
-                    dap_cert_add_file(l_cert_name,a_folder_path);
+                    if (!dap_cert_add_file(l_cert_name,a_folder_path))
+                        log_it(L_ERROR,"Cert %s not loaded", l_filename);
+                    else
+                        log_it(L_DEBUG,"Cert %s loaded", l_filename);
                     DAP_DELETE(l_cert_name);
                 }
             }
@@ -884,7 +884,12 @@ void *dap_cert_get_meta_custom(dap_cert_t *a_cert, const char *a_field, size_t *
  */
 void dap_cert_deinit()
 {
-
+    dap_cert_item_t *l_cert_item = NULL, *l_cert_tmp;
+    HASH_ITER(hh, s_certs, l_cert_item, l_cert_tmp) {
+         HASH_DEL(s_certs, l_cert_item);
+         dap_cert_delete(l_cert_item->cert);
+         DAP_DELETE (l_cert_item);
+    }
 }
 
 /**
