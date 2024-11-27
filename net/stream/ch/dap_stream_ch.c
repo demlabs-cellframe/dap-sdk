@@ -182,15 +182,12 @@ dap_stm_ch_rec_t    *l_rec = NULL;
     if ( !l_rec )
         log_it(L_ERROR, "dap_stream_ch_t:%p - no record found!", a_stm_ch);
     else {
-        DAP_DELETE(l_rec->stm_ch);
-        DAP_DELETE(l_rec);
-
-
-
+        DAP_DEL_MULTY(l_rec->stm_ch, l_rec);
         debug_if(g_debug_reactor, L_NOTICE, "dap_stream_ch_t:%p - is released", a_stm_ch);
-
     }
 #else
+    dap_list_free_full(a_stm_ch->packet_in_notifiers, NULL);
+    dap_list_free_full(a_stm_ch->packet_out_notifiers, NULL);
     DAP_DELETE(a_stm_ch);
 #endif
     return  0;  /* SS$_SUCCESS */
