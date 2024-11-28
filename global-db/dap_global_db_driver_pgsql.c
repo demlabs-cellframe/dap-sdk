@@ -197,37 +197,32 @@ static void s_connection_destructor(UNUSED_ARG void *a_conn) {
 //     return l_ret;
 // }
 
-// /**
-//  * @brief Executes SQL statements.
-//  * @param a_db a pointer to an instance of SQLite connection
-//  * @param a_query the SQL statement
-//  * @param a_hash pointer to data hash
-//  * @param a_value pointer to data
-//  * @param a_value_len data len to write
-//  * @param a_sign record sign
-//  * @return result code.
-//  */
-// static int s_db_sqlite_exec(sqlite3 *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign)
-// {
-//     dap_return_val_if_pass(!a_db || !a_query, SQLITE_ERROR);
-//     int l_ret = 0;
-//     sqlite3_stmt *l_stmt = NULL;
-//     if (
-//         (l_ret = s_db_sqlite_prepare(a_db, a_query, &l_stmt, a_query)) != SQLITE_OK ||
-//         (a_hash && (l_ret = s_db_sqlite_bind_blob64(l_stmt, 1, a_hash, sizeof(*a_hash), SQLITE_STATIC, a_query)) != SQLITE_OK) ||
-//         (a_value && (l_ret = s_db_sqlite_bind_blob64(l_stmt, 2, a_value, a_value_len, SQLITE_STATIC, a_query)) != SQLITE_OK) ||
-//         (a_sign && (l_ret = s_db_sqlite_bind_blob64(l_stmt, 3, a_sign, dap_sign_get_size(a_sign), SQLITE_STATIC, a_query)) != SQLITE_OK)
-//         ) {
-//         sqlite3_finalize(l_stmt);
-//         return l_ret;
-//     }
-//     l_ret = s_db_sqlite_step(l_stmt, a_query);
-//     sqlite3_finalize(l_stmt);
-//     if (l_ret != SQLITE_DONE && l_ret != SQLITE_ROW) {
-//         return l_ret;
-//     }
-//     return SQLITE_OK;
-// }
+/**
+ * @brief Executes SQL statements.
+ * @param a_db a pointer to an instance of SQLite connection
+ * @param a_query the SQL statement
+ * @param a_hash pointer to data hash
+ * @param a_value pointer to data
+ * @param a_value_len data len to write
+ * @param a_sign record sign
+ * @return result code.
+ */
+static int s_db_pgsql_exec(PGconn *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign)
+{
+    dap_return_val_if_pass(!a_db || !a_query, PGRES_NONFATAL_ERROR);
+    int l_ret = 0;
+    
+    const char *l_param_vals[3] = {a_hash, a_value, a_sign};
+    int l_param_lens[3] = {sizeof(dap_global_db_driver_hash_t), a_value_len, dap_sign_get_size(a_sign)};
+    int l_param_formats[3] = {1, 1, 1};
+    uint8_t l_param_count = 3 - !a_hash - !a_value - !a_sign;
+    PGresult *l_res = PQexecParams(a_db, a_query, l_param_count, NULL, l_param_vals, l_param_lens, l_param_formats, 0);
+    if ( (l_ret = PQresultStatus(l_res)) != PGRES_COMMAND_OK ) {
+        log_it(L_ERROR, "Create tablespace failed with message: \"%s\"", PQresultErrorMessage(l_res));
+        PQclear(l_res);
+    }
+    return l_ret;
+}
 
 /**
  * @brief Prepare connection item
@@ -289,30 +284,30 @@ static conn_list_item_t *s_db_pgsql_get_connection(bool a_trans)
 //     return sqlite3_shutdown();
 // }
 
-// /**
-//  * @brief Creates a table and unique index in the s_db database.
-//  * @param a_table_name a table name string
-//  * @param a_conn connection item to use query
-//  * @return result code
-//  */
-// static int s_db_sqlite_create_group_table(const char *a_table_name, conn_list_item_t *a_conn)
-// {
-// // sanity check
-//     dap_return_val_if_pass(!a_table_name || !a_conn, -EINVAL);
-//     char l_query[512];
+/**
+ * @brief Creates a table and unique index in the s_db database.
+ * @param a_table_name a table name string
+ * @param a_conn connection item to use query
+ * @return result code
+ */
+static int s_db_sqlite_create_group_table(const char *a_table_name, conn_list_item_t *a_conn)
+{
+// sanity check
+    dap_return_val_if_pass(!a_table_name || !a_conn, -EINVAL);
+    char l_query[512];
 
-//     snprintf(l_query, sizeof(l_query) - 1,
-//                     "CREATE TABLE IF NOT EXISTS '%s'(driver_key BLOB UNIQUE NOT NULL PRIMARY KEY ON CONFLICT REPLACE, key TEXT UNIQUE NOT NULL, flags INTEGER, value BLOB, sign BLOB)",
-//                     a_table_name);
-//     return s_db_sqlite_exec(a_conn->conn, l_query, NULL, NULL, 0, NULL);
-// }
+    snprintf(l_query, sizeof(l_query) - 1,
+                    "CREATE TABLE IF NOT EXISTS '%s'(driver_key BLOB UNIQUE NOT NULL PRIMARY KEY ON CONFLICT REPLACE, key TEXT UNIQUE NOT NULL, flags INTEGER, value BLOB, sign BLOB)",
+                    a_table_name);
+    return s_db_pgsql_exec(a_conn->conn, l_query, NULL, NULL, 0, NULL);
+}
 
 /**
  * @brief Applies an object to a database.
  * @param a_store_obj a pointer to the object structure
  * @return result code.
  */
-int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
+static int s_db_pgsql_apply_store_obj(dap_store_obj_t *a_store_obj)
 {
 // sanity check
     dap_return_val_if_pass(!a_store_obj || !a_store_obj->group || (!a_store_obj->crc && a_store_obj->key), -EINVAL);
@@ -333,39 +328,30 @@ int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_ret = -3;
             goto clean_and_ret;
         } else { //add one record
-            l_query = dap_strdup_printf("INSERT INTO '%s' VALUES(?, '%s', '%d', ?, ?) "
-            "ON CONFLICT(key) DO UPDATE SET driver_key = excluded.driver_key, flags = excluded.flags, value = excluded.value, sign = excluded.sign;",
+            l_query = dap_strdup_printf("INSERT INTO \"%s\" VALUES($1, '%s', '%d', $2, $3) "
+            "ON CONFLICT(key) DO UPDATE SET driver_key = EXCLUDED.driver_key, flags = EXCLUDED.flags, value = EXCLUDED.value, EXCLUDED = excluded.sign;",
                                                   l_table_name, a_store_obj->key, (int)(a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW));
         }
         dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
-        l_ret = s_db_sqlite_exec(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
-        if (l_ret == SQLITE_ERROR) {
+        l_ret = s_db_pgsql_exec(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
+        if (l_ret == PGRES_COMMAND_OK) {
             // create table and repeat request
-            if (s_db_sqlite_create_group_table(l_table_name, l_conn) == SQLITE_OK)
-                l_ret = s_db_sqlite_exec(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
+            // if (s_db_sqlite_create_group_table(l_table_name, l_conn) == PGRES_COMMAND_OK)
+            //     l_ret = s_db_pgsql_exec(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
         }
-        PGresult *l_res = PQexec(l_conn, l_query);
-        DAP_DELETE(l_query_str);
-        if (PQresultStatus(l_res) != PGRES_COMMAND_OK) {
-            log_it(L_ERROR, "Create tablespace failed with message: \"%s\"", PQresultErrorMessage(l_res));
-            PQclear(l_res);
-            PQfinish(l_base_conn);
-            return -5;
-        }
-        chmod(a_db_path, S_IRWXU | S_IRWXG | S_IRWXO);
-        PQclear(l_res);
+        DAP_DELETE(l_query);
     } else {
-        if (a_store_obj->key) //delete one record
-            l_query = sqlite3_mprintf("DELETE FROM '%s' WHERE key = '%s'", l_table_name, a_store_obj->key);
-        else // remove all group
-            l_query = sqlite3_mprintf("DROP TABLE IF EXISTS '%s'", l_table_name);
-        l_ret = s_db_sqlite_exec(l_conn->conn, l_query, NULL, NULL, 0, NULL);
+        // if (a_store_obj->key) //delete one record
+        //     l_query = sqlite3_mprintf("DELETE FROM '%s' WHERE key = '%s'", l_table_name, a_store_obj->key);
+        // else // remove all group
+        //     l_query = sqlite3_mprintf("DROP TABLE IF EXISTS '%s'", l_table_name);
+        // l_ret = s_db_pgsql_exec(l_conn->conn, l_query, NULL, NULL, 0, NULL);
     }
 clean_and_ret:
-    s_db_sqlite_free_connection(l_conn, false);
-    if (l_query)
-        sqlite3_free(l_query);
-    DAP_DELETE(l_table_name);
+    // s_db_sqlite_free_connection(l_conn, false);
+    // if (l_query)
+    //     sqlite3_free(l_query);
+    // DAP_DELETE(l_table_name);
     return l_ret;
 }
 
@@ -989,7 +975,7 @@ clean_and_ret:
 //         log_it(L_DEBUG, "Start TX: @%p", l_conn->conn);
     
 //     int l_ret = 0;
-//     s_db_sqlite_exec(l_conn->conn, "BEGIN", NULL, NULL, 0, NULL);
+//     s_db_pgsql_exec(l_conn->conn, "BEGIN", NULL, NULL, 0, NULL);
 //     if ( l_ret != SQLITE_OK ) {
 //         s_db_sqlite_free_connection(l_conn, true);
 //     }
@@ -1009,9 +995,9 @@ clean_and_ret:
 //         log_it(L_DEBUG, "End TX l_conn: @%p", s_conn->conn);
 //     int l_ret = 0;
 //     if (a_commit)
-//         l_ret = s_db_sqlite_exec(s_conn->conn, "COMMIT", NULL, NULL, 0, NULL);
+//         l_ret = s_db_pgsql_exec(s_conn->conn, "COMMIT", NULL, NULL, 0, NULL);
 //     else
-//         l_ret = s_db_sqlite_exec(s_conn->conn, "ROLLBACK", NULL, NULL, 0, NULL);
+//         l_ret = s_db_pgsql_exec(s_conn->conn, "ROLLBACK", NULL, NULL, 0, NULL);
 //     if ( l_ret == SQLITE_OK ) {
 //         s_db_sqlite_free_connection(s_conn, true);
 //     }
@@ -1115,7 +1101,7 @@ int dap_global_db_driver_pgsql_init(const char *a_db_path, dap_global_db_driver_
         PQfinish(l_base_conn);
     }
 
-    a_drv_callback->apply_store_obj         = s_db_sqlite_apply_store_obj;
+    a_drv_callback->apply_store_obj         = s_db_pgsql_apply_store_obj;
     // a_drv_callback->read_store_obj          = s_db_sqlite_read_store_obj;
     // a_drv_callback->read_cond_store_obj     = s_db_sqlite_read_cond_store_obj;
     // a_drv_callback->read_last_store_obj     = s_db_sqlite_read_last_store_obj;

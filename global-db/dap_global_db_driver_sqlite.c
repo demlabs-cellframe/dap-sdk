@@ -320,7 +320,7 @@ static int s_db_sqlite_create_group_table(const char *a_table_name, conn_list_it
  * @param a_store_obj a pointer to the object structure
  * @return result code.
  */
-int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
+static int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
 {
 // sanity check
     dap_return_val_if_pass(!a_store_obj || !a_store_obj->group || (!a_store_obj->crc && a_store_obj->key), -EINVAL);
