@@ -212,7 +212,7 @@ static int s_db_pgsql_exec(PGconn *a_db, const char *a_query, dap_global_db_driv
     dap_return_val_if_pass(!a_db || !a_query, PGRES_NONFATAL_ERROR);
     int l_ret = 0;
     
-    const char *l_param_vals[3] = {a_hash, a_value, a_sign};
+    const char *l_param_vals[3] = {(const char *)a_hash, (const char *)a_value, (const char *)a_sign};
     int l_param_lens[3] = {sizeof(dap_global_db_driver_hash_t), a_value_len, dap_sign_get_size(a_sign)};
     int l_param_formats[3] = {1, 1, 1};
     uint8_t l_param_count = 3 - !a_hash - !a_value - !a_sign;
@@ -236,7 +236,7 @@ static conn_list_item_t *s_db_pgsql_get_connection(bool a_trans)
 // func work
     static int l_conn_idx = 0;
     if (!s_conn) {
-        DAP_NEW_Z_RET_VAL(s_conn, conn_list_item_t, NULL, NULL);
+        s_conn = DAP_NEW_Z_RET_VAL_IF_FAIL(conn_list_item_t, NULL, NULL);
         pthread_key_t s_destructor_key;
         pthread_key_create(&s_destructor_key, s_connection_destructor);
         pthread_setspecific(s_destructor_key, (const void *)s_conn);
@@ -1332,19 +1332,19 @@ static void s_pgsql_fill_object(const char *a_group, dap_store_obj_t *a_obj, PGr
     int q = PQnfields(a_res);
     while (q-- > 0) {
         switch (q) {
-        case PQfnumber(a_res, "obj_val"):
-            a_obj->value_len = PQgetlength(a_res, a_row, q);
-            a_obj->value = DAP_DUP_SIZE(PQgetvalue(a_res, a_row, q), a_obj->value_len);
-            break;
-        case PQfnumber(a_res, "obj_key"):
-            a_obj->key = dap_strdup(PQgetvalue(a_res, a_row, q));
-            break;
-        case PQfnumber(a_res, "obj_ts"):
-            a_obj->timestamp = be64toh(*(time_t*)PQgetvalue(a_res, a_row, q));
-            break;
-        case PQfnumber(a_res, "obj_id"):
-            a_obj->id = be64toh(*(uint64_t*)PQgetvalue(a_res, a_row, q));
-            break;
+        // case PQfnumber(a_res, "obj_val"):
+        //     a_obj->value_len = PQgetlength(a_res, a_row, q);
+        //     a_obj->value = DAP_DUP_SIZE(PQgetvalue(a_res, a_row, q), a_obj->value_len);
+        //     break;
+        // case PQfnumber(a_res, "obj_key"):
+        //     a_obj->key = dap_strdup(PQgetvalue(a_res, a_row, q));
+        //     break;
+        // case PQfnumber(a_res, "obj_ts"):
+        //     a_obj->timestamp = be64toh(*(time_t*)PQgetvalue(a_res, a_row, q));
+        //     break;
+        // case PQfnumber(a_res, "obj_id"):
+        //     a_obj->id = be64toh(*(uint64_t*)PQgetvalue(a_res, a_row, q));
+        //     break;
         }
     }
 }
@@ -1395,7 +1395,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_store_obj(const char *a_group, const c
             log_it(L_ERROR, "Memory allocation error");
             l_count = 0;
         } else {
-            for (int i = 0; i < l_count; ++i) {
+            for (size_t i = 0; i < l_count; ++i) {
                 s_pgsql_fill_object(a_group, (dap_store_obj_t*)(l_obj + i), l_res, i);
             }
         }
@@ -1404,7 +1404,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_store_obj(const char *a_group, const c
     s_pgsql_free_connection(l_conn);
     if (a_count_out)
         *a_count_out = l_count;
-    return l_obj;
+    return NULL;
 }
 
 /**
@@ -1485,7 +1485,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_cond_store_obj(const char *a_group, ui
             log_it(L_ERROR, "Memory allocation error");
             l_count = 0;
         } else {
-            for (int i = 0; i < l_count; ++i) {
+            for (size_t i = 0; i < l_count; ++i) {
                 s_pgsql_fill_object(a_group, (dap_store_obj_t*)(l_obj + i), l_res, i);
             }
         }
@@ -1494,7 +1494,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_cond_store_obj(const char *a_group, ui
     s_pgsql_free_connection(l_conn);
     if (a_count_out)
         *a_count_out = l_count;
-    return l_obj;
+    return NULL;
 }
 
 /**
