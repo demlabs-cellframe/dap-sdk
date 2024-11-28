@@ -497,13 +497,7 @@ int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_fast_t *a_out_hash)
 {
     dap_return_val_if_fail(a_cert && a_cert->enc_key && a_cert->enc_key->pub_key_data &&
                            a_cert->enc_key->pub_key_data_size && a_out_hash , -1);
-    size_t l_pub_key_size;
-    uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_cert->enc_key, &l_pub_key_size);
-    if (!l_pub_key || !l_pub_key_size)
-        return -2;
-    dap_hash_fast(l_pub_key, l_pub_key_size, a_out_hash);
-    DAP_DELETE(l_pub_key);
-    return 0;
+    return dap_enc_key_get_pkey_hash(a_cert->enc_key, a_out_hash);
 }
 
 /**
