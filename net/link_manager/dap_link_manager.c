@@ -1036,10 +1036,12 @@ static bool s_stream_delete_callback(void *a_arg)
     pthread_rwlock_wrlock(&s_link_manager->links_lock);
     dap_link_t *l_link = s_link_manager_link_find(l_node_addr);
     if (!l_link) {
+        DAP_DELETE(a_arg);
         pthread_rwlock_unlock(&s_link_manager->links_lock);
         return false; // It's OK if stream is uregistered with us
     }
     if (!l_link->active_clusters) {
+        DAP_DELETE(a_arg);
         pthread_rwlock_unlock(&s_link_manager->links_lock);
         return false; // It's OK if net is unregistered yet
     }
@@ -1047,6 +1049,7 @@ static bool s_stream_delete_callback(void *a_arg)
     dap_cluster_link_delete_from_all(l_link->active_clusters, l_node_addr);
     if (!l_link->uplink.client)
         s_link_delete(&l_link, false, false);
+    DAP_DELETE(a_arg);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     return false;
 }
