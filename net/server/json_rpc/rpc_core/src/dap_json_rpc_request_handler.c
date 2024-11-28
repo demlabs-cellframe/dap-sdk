@@ -59,7 +59,7 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
 
     dap_hash_fast_t l_sign_pkey_hash;
     bool l_sign_correct = false;
-    dap_sign_t * l_sign = (dap_sign_t*)(l_http_request->request_n_signs + l_http_request->header.data_size + 1);
+    dap_sign_t * l_sign = (dap_sign_t*)DAP_DUP_SIZE(l_http_request->request_n_signs + l_http_request->header.data_size, l_http_request->header.signs_size);
     dap_sign_get_pkey_hash(l_sign, &l_sign_pkey_hash);
     l_sign_correct =  dap_check_node_pkey_in_map(&l_sign_pkey_hash);
     if (l_sign_correct)
@@ -68,10 +68,11 @@ char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_si
         dap_json_rpc_response_t* l_no_rights_res = dap_json_rpc_response_create("You have no rights", TYPE_RESPONSE_STRING, 0); // def id
         char * l_no_rights_res_str = dap_json_rpc_response_to_string(l_no_rights_res);
         dap_json_rpc_http_request_free(l_http_request);
+        DAP_DEL_MULTY(l_sign);
         return l_no_rights_res_str;
     }
     char* l_response = dap_cli_cmd_exec(l_data_str);
     dap_json_rpc_http_request_free(l_http_request);
-    DAP_DEL_MULTY(l_data_str);
+    DAP_DEL_MULTY(l_data_str, l_sign);
     return l_response;
 }
