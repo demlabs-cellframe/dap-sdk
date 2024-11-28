@@ -76,9 +76,8 @@ void s_stream_ch_new(dap_stream_ch_t *a_ch, void *a_arg)
  * @param ch
  * @param arg
  */
-static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void *a_arg)
+static void s_stream_ch_delete(dap_stream_ch_t *a_ch, void UNUSED_ARG *a_arg)
 {
-    UNUSED(a_arg);
     dap_stream_ch_gdb_t *l_ch_gdb = DAP_STREAM_CH_GDB(a_ch);
     debug_if(g_dap_global_db_debug_more, L_NOTICE, "Destroyed GDB sync channel %p with internal data %p", a_ch, l_ch_gdb);
     DAP_DEL_Z(a_ch->internal);
@@ -148,12 +147,11 @@ bool s_proc_thread_reader(void *a_arg)
         DAP_DELETE(l_hashes_pkt);
     } else if (l_type != DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST) {
         debug_if(g_dap_global_db_debug_more, L_INFO, "OUT: GLOBAL_DB_GROUP_REQUEST packet for group %s from first record", l_group);
-        size_t l_pkt_size = dap_global_db_start_pkt_get_size(l_pkt);
-        dap_global_db_start_pkt_t *l_oncoming_pkt = DAP_DUP_SIZE(l_pkt, l_pkt_size);
-        l_oncoming_pkt->last_hash = c_dap_global_db_driver_hash_blank;
+        dap_global_db_driver_hash_t l_tmp_hash = l_pkt->last_hash;
+        l_pkt->last_hash = c_dap_global_db_driver_hash_blank;
         dap_stream_ch_pkt_send_by_addr(l_sender_addr, DAP_STREAM_CH_GDB_ID, DAP_STREAM_CH_GLOBAL_DB_MSG_TYPE_GROUP_REQUEST,
-                                       l_oncoming_pkt, l_pkt_size);
-        DAP_DEL_Z(l_oncoming_pkt);
+                                       l_pkt, dap_global_db_start_pkt_get_size(l_pkt));
+        l_pkt->last_hash = l_tmp_hash;
     }
     if (!l_ret)
         DAP_DELETE(a_arg);

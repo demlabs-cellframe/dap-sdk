@@ -268,11 +268,8 @@ dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
     size_t l_sign_unserialized_size = dap_sign_create_output_unserialized_calc_size(a_key, a_output_wish_size);
     if(l_sign_unserialized_size > 0) {
         size_t l_pub_key_size = 0;
-        uint8_t* l_sign_unserialized = NULL;
-        uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
-
-        // dap_return_val_if_pass(!l_pub_key, NULL);
-        DAP_NEW_Z_SIZE_RET_VAL(l_sign_unserialized, uint8_t, l_sign_unserialized_size, NULL, l_pub_key);
+        uint8_t *l_sign_unserialized = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_sign_unserialized_size, NULL),
+                *l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
         // calc signature [sign_size may decrease slightly]
         if( dap_sign_create_output(a_key, l_sign_data, l_sign_data_size,
                                          l_sign_unserialized, &l_sign_unserialized_size) != 0) {
@@ -282,8 +279,7 @@ dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
             size_t l_sign_ser_size = l_sign_unserialized_size;
             uint8_t *l_sign_ser = dap_enc_key_serialize_sign(a_key->type, l_sign_unserialized, &l_sign_ser_size);
             if ( l_sign_ser ){
-                dap_sign_t *l_ret = NULL;
-                DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_sign_t, sizeof(dap_sign_hdr_t) + l_sign_ser_size + l_pub_key_size, NULL, l_sign_unserialized, l_pub_key, l_sign_ser);
+                dap_sign_t *l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_sign_t, sizeof(dap_sign_hdr_t) + l_sign_ser_size + l_pub_key_size, NULL, l_sign_unserialized, l_pub_key, l_sign_ser);
                 // write serialized public key to dap_sign_t
                 memcpy(l_ret->pkey_n_sign, l_pub_key, l_pub_key_size);
                 l_ret->header.type = dap_sign_type_from_key_type(a_key->type);
@@ -524,17 +520,14 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
             if (l_dup)
                 continue;
         } else
-            DAP_NEW_Z_COUNT_RET_VAL(ret, dap_sign_t *, l_signs_count, NULL, NULL);
+            ret = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_sign_t*, l_signs_count, NULL);
         ret[i++] = l_sign;
         if (*a_signs_count && i == *a_signs_count)
             break;
         if (i == l_signs_count) {
             l_signs_count += l_realloc_count;
-            ret = DAP_REALLOC_COUNT(ret, l_signs_count);
-            if (!ret) {
-                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-                return NULL;
-            }
+            dap_sign_t **l_ret_new = DAP_REALLOC_COUNT_RET_VAL_IF_FAIL(ret, l_signs_count, NULL, ret);
+            ret = l_ret_new;
         }
     }
     *a_signs_count = i;
