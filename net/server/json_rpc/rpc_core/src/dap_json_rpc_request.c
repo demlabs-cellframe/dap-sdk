@@ -302,7 +302,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *d
                                data_size, sizeof(dap_json_rpc_http_request_t) + l_hdr.data_size + l_hdr.signs_size),
                NULL;
 
-    dap_json_rpc_http_request_t *l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_json_rpc_http_request_t, data_size + 1, NULL);
+    dap_json_rpc_http_request_t *l_ret = (dap_json_rpc_http_request_t*)DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(byte_t, data_size + 1, NULL);
     dap_mempcpy(l_ret, data, data_size);
     return l_ret;
 }
