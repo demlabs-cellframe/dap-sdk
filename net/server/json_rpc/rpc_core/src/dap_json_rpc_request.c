@@ -295,19 +295,8 @@ char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_reques
 
 char *dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request, size_t *a_total_size)
 {
-    *a_total_size = a_request->header.data_size + a_request->header.signs_size + sizeof(a_request->header);
-
-    char *a_output = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(char, *a_total_size, NULL),
-         *ptr = dap_mempcpy(a_output, &a_request->header, sizeof(a_request->header));
-
-    char *l_str = dap_json_rpc_request_to_json_string(a_request->request);
-    if (!l_str)
-        return DAP_DELETE(a_output), NULL;
-
-    ptr = dap_mempcpy(ptr, l_str, a_request->header.data_size);
-    DAP_DELETE(l_str);
-    memcpy(ptr, a_request->tsd_n_signs, a_request->header.signs_size);
-    return a_output;
+    *a_total_size = a_request->header.data_size + a_request->header.signs_size + sizeof(a_request->header) + 1;
+    return (char*)a_request;
 }
 
 dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data, size_t data_size)
@@ -324,11 +313,8 @@ dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *d
                NULL;
 
     dap_json_rpc_http_request_t *l_ret
-        = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_json_rpc_http_request_t, sizeof(dap_json_rpc_http_request_t) + l_hdr.signs_size, NULL);
-    l_ret->header = l_hdr;
-    l_ret->request = dap_json_rpc_request_from_json((char*)data + sizeof(l_ret->header));
-    if (l_hdr.signs_size)
-        memcpy(l_ret->tsd_n_signs, (byte_t*)data + sizeof(l_hdr) + l_hdr.data_size, l_hdr.signs_size);
+        = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_json_rpc_http_request_t, sizeof(dap_json_rpc_http_request_t) + l_hdr.signs_size + l_hdr.data_size, NULL);
+    dap_mempcpy(l_ret, data, sizeof(l_hdr) + l_hdr.data_size + l_hdr.signs_size);
     return l_ret;
 }
 
@@ -337,7 +323,6 @@ void dap_json_rpc_http_request_free(dap_json_rpc_http_request_t *a_http_request)
     if (!a_http_request)
         return;
 
-    dap_json_rpc_request_free(a_http_request->request);
     DAP_DELETE(a_http_request);
 }
 
@@ -348,19 +333,19 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
         return log_it(L_ERROR, "Can't convert JSON-request to string!"), NULL;
     int l_len = strlen(l_str);
     dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, l_len, 0);
-    DAP_DELETE(l_str);
+    // DAP_DELETE(l_str);
     if (!l_sign)
         return log_it(L_ERROR, "JSON request signing failed"), NULL;
     size_t l_sign_size = dap_sign_get_size(l_sign);
 
     dap_json_rpc_http_request_t *l_ret
-        = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_json_rpc_http_request_t, sizeof(dap_json_rpc_http_request_t) + l_sign_size, NULL, l_sign);
+        = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_json_rpc_http_request_t, sizeof(dap_json_rpc_http_request_t) + l_len + l_sign_size, NULL, l_sign);
     *l_ret = (dap_json_rpc_http_request_t) {
         .header.data_size = l_len + 1,
         .header.signs_size = l_sign_size,
-        .request = a_request
     };
-    memcpy(l_ret->tsd_n_signs, l_sign, l_sign_size);
+    byte_t* l_cur =  (byte_t*)dap_strncpy((char*)l_ret->request_n_signs, l_str, strlen(l_str));
+    dap_mempcpy(l_cur + 1, l_sign, l_sign_size);
     return DAP_DELETE(l_sign), l_ret;
 }
 
@@ -373,6 +358,7 @@ char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t
     dap_json_rpc_http_request_t *l_http_request = dap_json_rpc_request_sign_by_cert(a_request, l_cert);
     size_t l_http_length = 0;
     char *l_http_str = dap_json_rpc_http_request_serialize(l_http_request, output_data_size);
+    dap_json_rpc_http_request_t* l_http_requestasdfasdf = dap_json_rpc_http_request_deserialize(l_http_str, *output_data_size);
     return DAP_DELETE(l_http_request), l_http_str;
 }
 
