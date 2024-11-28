@@ -74,7 +74,6 @@ int dap_json_rpc_init(dap_server_t* a_http_server, dap_config_t *a_config)
     }
 
     dap_json_rpc_map_init(a_config);
-    dap_json_rpc_request_init("/exec_cmd");
     dap_http_simple_proc_add(l_http, "/exec_cmd", 24000, dap_json_rpc_http_proc);
     return 0;
 }
