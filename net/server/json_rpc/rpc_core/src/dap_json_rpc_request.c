@@ -327,12 +327,12 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
     size_t l_sign_size = dap_sign_get_size(l_sign);
 
     dap_json_rpc_http_request_t *l_ret
-        = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_json_rpc_http_request_t, sizeof(dap_json_rpc_http_request_t) + l_len + l_sign_size + 1 + 1, NULL, l_sign);
+        = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_json_rpc_http_request_t, sizeof(dap_json_rpc_http_request_t) + l_len + 1 + l_sign_size, NULL, l_sign);
     *l_ret = (dap_json_rpc_http_request_t) {
         .header.data_size = l_len + 1,
         .header.signs_size = l_sign_size,
     };
-    byte_t* l_cur =  (byte_t*)dap_strncpy((char*)l_ret->request_n_signs, l_str, strlen(l_str));
+    byte_t* l_cur =  (byte_t*)dap_strncpy((char*)l_ret->request_n_signs, l_str, l_len);
     dap_mempcpy(l_cur + 1, l_sign, l_sign_size);
     return DAP_DELETE(l_sign), l_ret;
 }
