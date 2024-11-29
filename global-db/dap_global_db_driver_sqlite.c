@@ -735,7 +735,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
 // data forming
     size_t l_count_out = 0;
     int rc;
-    for ( rc = 0; l_count_out < l_count && SQLITE_ROW == ( rc = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt) ); ++l_count_out );
+    for ( rc = 0; SQLITE_ROW == ( rc = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt) ) && l_count_out < l_count; ++l_count_out ) {};
     if ( rc != SQLITE_DONE )
         log_it(L_ERROR, "SQLite conditional read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
     if (a_count_out)
@@ -802,7 +802,7 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const ch
 // data forming
     size_t l_count_out = 0;
     int rc;
-    for ( rc = 0; l_count_out < l_count && SQLITE_ROW == ( rc = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt) ); ++l_count_out );
+    for ( rc = 0; SQLITE_ROW == ( rc = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt) ) && l_count_out < l_count; ++l_count_out ) {};
     if ( rc != SQLITE_DONE )
         log_it(L_ERROR, "SQLite read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
     if (a_count_out)
