@@ -285,7 +285,7 @@ char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_reques
 
 char *dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request, size_t *a_total_size)
 {
-    *a_total_size = a_request->header.data_size + a_request->header.signs_size + sizeof(a_request->header) + 1;
+    *a_total_size = a_request->header.data_size + a_request->header.signs_size + sizeof(a_request->header);
     return (char*)DAP_DUP_SIZE(a_request, *a_total_size);
 }
 
