@@ -334,12 +334,11 @@ uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_size)
  * @param a_pub_key_out [option] output pointer to a_sign->header.sign_pkey_size
  * @return uint8_t* 
  */
-uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
+uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_size)
 {
     dap_return_val_if_pass(!a_sign, NULL);
-
-    if(a_pub_key_out)
-        *a_pub_key_out = a_sign->header.sign_pkey_size;
+    if (a_pub_key_size)
+        *a_pub_key_size = a_sign->header.sign_pkey_size;
     return a_sign->pkey_n_sign;
 }
 
