@@ -810,15 +810,18 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a
     dap_return_val_if_fail(a_group && (l_conn = s_db_sqlite_get_connection(false)), NULL);
 
     const char *l_error_msg = "read below timestamp";
-    dap_store_obj_t *l_obj_arr = NULL;
+    char *l_str_query = NULL;
+    size_t l_row = 0;
+    dap_store_obj_t * l_obj_arr = NULL;
     sqlite3_stmt *l_stmt = NULL;
+
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
     if (!l_table_name) {
         log_it(L_ERROR, "Error replacing characters in table name");
         goto clean_and_ret;
     }
 
-    char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s' WHERE timestamp < ? ORDER BY timestamp ASC", l_table_name);
+    l_str_query = sqlite3_mprintf("SELECT * FROM '%s' WHERE timestamp < ? ORDER BY timestamp ASC", l_table_name);
     DAP_DEL_Z(l_table_name);
     if (!l_str_query) {
         log_it(L_ERROR, "Error in SQL request forming");
@@ -836,10 +839,9 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a
     }
 
     size_t l_sizeof_obj = 1;
-    size_t l_row = 0;
     int ret;
 
-    DAP_NEW_Z_COUNT_RET_VAL(l_obj_arr, dap_store_obj_t, l_sizeof_obj, NULL, l_str_query);
+    l_obj_arr = DAP_NEW_Z_COUNT(dap_store_obj_t, l_sizeof_obj);
 
     ret = s_db_sqlite_fill_one_item(a_group, l_obj_arr, l_stmt);
     while(ret == SQLITE_ROW){

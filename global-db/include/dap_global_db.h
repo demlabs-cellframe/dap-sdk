@@ -111,6 +111,8 @@ extern int g_dap_global_db_debug_more;
 
 int dap_global_db_init();
 void dap_global_db_deinit();
+int dap_global_db_clean_init();
+int dap_global_db_clean_deinit();
 
 void dap_global_db_instance_deinit();
 dap_global_db_instance_t *dap_global_db_instance_get_default();
