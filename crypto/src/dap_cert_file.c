@@ -333,8 +333,10 @@ dap_cert_t* dap_cert_file_load(const char * a_cert_file_path)
         dap_cert_add( l_ret );
     fclose(l_file);
     DAP_DELETE(l_data);
-    if (l_err)
-        DAP_DEL_Z(l_ret);
+    if (l_err) {
+        dap_cert_delete(l_ret);
+        l_ret = NULL;
+    }
     return l_ret;
 }
 

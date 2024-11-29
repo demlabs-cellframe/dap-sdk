@@ -1543,7 +1543,7 @@ dap_global_db_obj_t *dap_global_db_objs_copy(const dap_global_db_obj_t *a_objs_s
 void dap_global_db_objs_delete(dap_global_db_obj_t *a_objs, size_t a_count)
 {
     if (a_objs && a_count) {
-        for (dap_global_db_obj_t *l_obj = a_objs; --a_count; ++l_obj)
+        for (dap_global_db_obj_t *l_obj = a_objs; a_count--; ++l_obj)
             DAP_DEL_MULTY(l_obj->key, l_obj->value);
     }
     DAP_DELETE(a_objs);
