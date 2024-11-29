@@ -57,8 +57,9 @@ typedef struct dap_server {
     bool ext_log;
 } dap_server_t;
 
-int dap_server_init( ); // Init server module
-void  dap_server_deinit( void ); // Deinit server module
+int dap_server_init();
+void dap_server_deinit();
+bool dap_server_enabled();
 
 void dap_server_set_default(dap_server_t* a_server);
 dap_server_t* dap_server_get_default();
