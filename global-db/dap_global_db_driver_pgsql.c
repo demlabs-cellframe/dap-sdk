@@ -39,6 +39,8 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 
+#include "dap_enc_base64.h"
+
 #include <pwd.h>
 
 #define LOG_TAG "db_pgsql"
@@ -207,21 +209,58 @@ static inline void s_db_pgsql_free_connection(conn_list_item_t *a_conn, bool a_t
  * @param a_sign record sign
  * @return result code.
  */
-static int s_db_pgsql_exec(PGconn *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign)
+static PGresult *s_db_pgsql_exec(PGconn *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign, ExecStatusType a_valid_result)
 {
-    dap_return_val_if_pass(!a_db || !a_query, PGRES_NONFATAL_ERROR);
-    int l_ret = 0;
+    dap_return_val_if_pass(!a_db || !a_query, NULL);
     
     const char *l_param_vals[3] = {(const char *)a_hash, (const char *)a_value, (const char *)a_sign};
     int l_param_lens[3] = {sizeof(dap_global_db_driver_hash_t), a_value_len, dap_sign_get_size(a_sign)};
     int l_param_formats[3] = {1, 1, 1};
     uint8_t l_param_count = 3 - !a_hash - !a_value - !a_sign;
-    PGresult *l_res = PQexecParams(a_db, a_query, l_param_count, NULL, l_param_vals, l_param_lens, l_param_formats, 0);
-    if ( (l_ret = PQresultStatus(l_res)) != PGRES_COMMAND_OK ) {
-        log_it(L_ERROR, "Query \"%s\" was failed with message: \"%s\"", a_query, PQresultErrorMessage(l_res));
-        PQclear(l_res);
+    PGresult *l_ret = PQexecParams(a_db, a_query, l_param_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1);
+    if ( PQresultStatus(l_ret) != a_valid_result ) {
+        log_it(L_ERROR, "Query \"%s\" was failed with message: \"%s\"", a_query, PQresultErrorMessage(l_ret));
+        log_it(L_DEBUG, "Error message detail:\n\t%s", PQresultErrorField(l_ret, PG_DIAG_MESSAGE_DETAIL));
+        PQclear(l_ret);
+        return NULL;
     }
-    return l_ret == PGRES_COMMAND_OK ? 0 : -1;
+    return l_ret;
+}
+
+
+/**
+ * @brief Executes SQL statements.
+ * @param a_db a pointer to an instance of SQLite connection
+ * @param a_query the SQL statement
+ * @param a_hash pointer to data hash
+ * @param a_value pointer to data
+ * @param a_value_len data len to write
+ * @param a_sign record sign
+ * @return result code.
+ */
+DAP_STATIC_INLINE int s_db_pgsql_exec_command(PGconn *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign)
+{
+    PGresult *l_res = s_db_pgsql_exec(a_db, a_query, a_hash, a_value, a_value_len, a_sign, PGRES_COMMAND_OK);
+    if (l_res) {
+        PQclear(l_res);
+        return 0;
+    }
+    return -1;
+}
+
+/**
+ * @brief Executes SQL statements.
+ * @param a_db a pointer to an instance of SQLite connection
+ * @param a_query the SQL statement
+ * @param a_hash pointer to data hash
+ * @param a_value pointer to data
+ * @param a_value_len data len to write
+ * @param a_sign record sign
+ * @return result code.
+ */
+DAP_STATIC_INLINE PGresult *s_db_pgsql_exec_tuples(PGconn *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign)
+{
+    return s_db_pgsql_exec(a_db, a_query, a_hash, a_value, a_value_len, a_sign, PGRES_TUPLES_OK);
 }
 
 /**
@@ -299,7 +338,7 @@ static int s_db_pgsql_create_group_table(const char *a_table_name, conn_list_ite
     snprintf(l_query, sizeof(l_query) - 1,
                     "CREATE TABLE IF NOT EXISTS \"%s\"(driver_key BYTEA UNIQUE NOT NULL PRIMARY KEY, key TEXT UNIQUE NOT NULL, flags INTEGER, value BYTEA, sign BYTEA)",
                     a_table_name);
-    return s_db_pgsql_exec(a_conn->conn, l_query, NULL, NULL, 0, NULL);
+    return s_db_pgsql_exec_command(a_conn->conn, l_query, NULL, NULL, 0, NULL);
 }
 
 /**
@@ -321,7 +360,6 @@ static int s_db_pgsql_apply_store_obj(dap_store_obj_t *a_store_obj)
 
     int l_ret = 0;
     char *l_query = NULL;
-    char *l_table_name = dap_str_replace_char(a_store_obj->group, '.', '_');
     if (!l_type_erase) {
         if (!a_store_obj->key) {
             log_it(L_ERROR, "Global DB store object unsigned");
@@ -330,73 +368,82 @@ static int s_db_pgsql_apply_store_obj(dap_store_obj_t *a_store_obj)
         } else { //add one record
             l_query = dap_strdup_printf("INSERT INTO \"%s\" VALUES($1, '%s', '%d', $2, $3) "
             "ON CONFLICT(key) DO UPDATE SET driver_key = EXCLUDED.driver_key, flags = EXCLUDED.flags, value = EXCLUDED.value, sign = EXCLUDED.sign;",
-                                                  l_table_name, a_store_obj->key, (int)(a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW));
+                                                  a_store_obj->group, a_store_obj->key, (int)(a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW));
         }
         dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(a_store_obj);
-        l_ret = s_db_pgsql_exec(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
+        l_ret = s_db_pgsql_exec_command(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
         if (l_ret) {
             // create table and repeat request
-            if (!s_db_pgsql_create_group_table(l_table_name, l_conn))
-                l_ret = s_db_pgsql_exec(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
+            if (!s_db_pgsql_create_group_table(a_store_obj->group, l_conn))
+                l_ret = s_db_pgsql_exec_command(l_conn->conn, l_query, &l_driver_key, a_store_obj->value, a_store_obj->value_len, a_store_obj->sign);
         }
     } else {
         if (a_store_obj->key) //delete one record
-            l_query = dap_strdup_printf("DELETE FROM \"%s\" WHERE key = '%s'", l_table_name, a_store_obj->key);
+            l_query = dap_strdup_printf("DELETE FROM \"%s\" WHERE key = '%s'", a_store_obj->group, a_store_obj->key);
         else // remove all group
-            l_query = dap_strdup_printf("DROP TABLE IF EXISTS \"%s\"", l_table_name);
-        l_ret = s_db_pgsql_exec(l_conn->conn, l_query, NULL, NULL, 0, NULL);
+            l_query = dap_strdup_printf("DROP TABLE IF EXISTS \"%s\"", a_store_obj->group);
+        l_ret = s_db_pgsql_exec_command(l_conn->conn, l_query, NULL, NULL, 0, NULL);
     }
 clean_and_ret:
     s_db_pgsql_free_connection(l_conn, false);
-    DAP_DEL_MULTY(l_query, l_table_name);
+    DAP_DELETE(l_query);
     return l_ret;
 }
 
-// /**
-//  * @brief Fills a object from a row
-//  * @param a_group a group name string
-//  * @param a_obj a pointer to the object
-//  * @param a_stmt a ponter to the sqlite3_stmt
-//  * @return result code
-//  */
-// static int s_db_sqlite_fill_one_item(const char *a_group, dap_store_obj_t *a_obj, sqlite3_stmt *a_stmt)
-// {
-// // sanity check
-//     dap_return_val_if_pass(!a_group || !a_obj || !a_stmt, SQLITE_ERROR);
-// // preparing
-//     int l_ret = s_db_sqlite_step(a_stmt, "fill one item");
-//     if(l_ret != SQLITE_ROW)
-//         goto clean_and_ret;
-//     a_obj->group = dap_strdup(a_group);
-//     size_t l_count_col = sqlite3_column_count(a_stmt);
-//     for(size_t i = 0; i < l_count_col; ++i) {
-//         if (i == 0 && sqlite3_column_type(a_stmt, i) == SQLITE_BLOB) {
-//             dap_global_db_driver_hash_t *l_driver_key = (dap_global_db_driver_hash_t *)sqlite3_column_blob(a_stmt, i);
-//             a_obj->timestamp = be64toh(l_driver_key->bets);
-//             a_obj->crc = be64toh(l_driver_key->becrc);
-//             continue;
-//         }
-//         if (i == 1 && sqlite3_column_type(a_stmt, i) == SQLITE_TEXT) {
-//             a_obj->key = dap_strdup((const char *)sqlite3_column_text(a_stmt, i));
-//             continue;
-//         }
-//         if (i == 2 && sqlite3_column_type(a_stmt, i) == SQLITE_INTEGER) {
-//             a_obj->flags = sqlite3_column_int64(a_stmt, i);
-//             continue;
-//         }
-//         if (i == 3 && sqlite3_column_type(a_stmt, i) == SQLITE_BLOB) {
-//             a_obj->value_len = sqlite3_column_bytes(a_stmt, i);
-//             a_obj->value = DAP_DUP_SIZE(sqlite3_column_blob(a_stmt, i), a_obj->value_len);
-//             continue;
-//         }
-//         if (i == 4 && sqlite3_column_type(a_stmt, i) == SQLITE_BLOB) {
-//             a_obj->sign = DAP_DUP_SIZE(sqlite3_column_blob(a_stmt, i), sqlite3_column_bytes(a_stmt, i));
-//             continue;
-//         }
-//     }
-// clean_and_ret:
-//     return l_ret;
-// }
+/**
+ * @brief Fills a object from a row
+ * @param a_group a group name string
+ * @param a_obj a pointer to the object
+ * @param a_stmt a ponter to the sqlite3_stmt
+ * @return result code
+ */
+static int s_db_pgsql_fill_one_item(const char *a_group, dap_store_obj_t *a_obj, PGresult *a_query_res, int a_row)
+{
+// sanity check
+    dap_return_val_if_pass(!a_group || !a_obj || !a_query_res, -1);
+    a_obj->group = dap_strdup(a_group);
+// preparing
+    int l_count_col = PQnfields(a_query_res);
+    int l_count_col_out = 0;
+    const char *l_fields_name[] = {"driver_key", "key", "flags", "value", "sign"};
+    for (size_t i = 0; i < sizeof(l_fields_name) / sizeof (const char *); ++i) {
+        dap_global_db_driver_hash_t *l_driver_key = NULL;
+        int l_col_num = PQfnumber(a_query_res, l_fields_name[i]);
+        int size = 0;
+        size_t l_decode_len = 0;
+        switch (l_col_num) {
+            case 0:
+                l_driver_key = (dap_global_db_driver_hash_t *)PQgetvalue(a_query_res, a_row, l_col_num);
+                a_obj->timestamp = be64toh(l_driver_key->bets);
+                a_obj->crc = be64toh(l_driver_key->becrc);
+                ++l_count_col_out;
+                break;
+            case 1:
+                a_obj->key = dap_strdup((const char*)PQgetvalue(a_query_res, a_row, l_col_num));
+                ++l_count_col_out;
+                break;
+            case 2:
+                a_obj->flags = *((int *)PQgetvalue(a_query_res, a_row, l_col_num));
+                ++l_count_col_out;
+                break;
+            case 3:
+                a_obj->value_len = PQgetlength(a_query_res, a_row, l_col_num);
+                a_obj->value = DAP_DUP_SIZE((byte_t*)PQgetvalue(a_query_res, a_row, l_col_num), a_obj->value_len);
+                ++l_count_col_out;
+                break;
+            case 4:
+                a_obj->sign = DAP_DUP_SIZE((dap_sign_t*)PQgetvalue(a_query_res, a_row, l_col_num), PQgetlength(a_query_res, a_row, l_col_num));
+                ++l_count_col_out;
+                break;
+            default: continue;
+        }
+    }
+    if (l_count_col_out != l_count_col) {
+        log_it(L_ERROR, "Error in PGSQL fill item - filled collumn == %d, expected %d", l_count_col_out, l_count_col);
+        return -2;
+    }
+    return 0;
+}
 
 // /**
 //  * @brief Reads a last object from the s_db database.
@@ -413,18 +460,18 @@ clean_and_ret:
 //     dap_store_obj_t *l_ret = NULL;
 //     sqlite3_stmt *l_stmt = NULL;
 //     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s'"
+//     char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
 //                                         " WHERE flags & '%d' %s 0"
 //                                         " ORDER BY driver_key DESC LIMIT 1",
 //                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
 //                                         a_with_holes ? ">=" : "=");
 //     DAP_DEL_Z(l_table_name);
-//     if (!l_str_query) {
+//     if (!l_query_str) {
 //         log_it(L_ERROR, "Error in SQL request forming");
 //         goto clean_and_ret;
 //     }
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, "last read")!= SQLITE_OK) {
+//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, "last read")!= SQLITE_OK) {
 //         goto clean_and_ret;
 //     }
 // // memory alloc
@@ -434,7 +481,7 @@ clean_and_ret:
 //         goto clean_and_ret;
 //     }
 // // fill item
-//     int l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret, l_stmt);
+//     int l_ret_code = s_db_pgsql_fill_one_item(a_group, l_ret, l_stmt);
 //     if(l_ret_code != SQLITE_ROW && l_ret_code != SQLITE_DONE) {
 //         log_it(L_ERROR, "SQLite last read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
 //         goto clean_and_ret;
@@ -443,7 +490,7 @@ clean_and_ret:
 //         log_it(L_INFO, "There are no records satisfying the last read request");
 //     }
 // clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 1, l_str_query, l_stmt);    
+//     s_db_sqlite_clean(l_conn, 1, l_query_str, l_stmt);    
 //     return l_ret;
 // }
 
@@ -476,22 +523,22 @@ clean_and_ret:
 //     for (size_t i = 1; i + 1 < a_count * 2; i += 2) {
 //         l_blob_str[i] = ',';
 //     }
-//     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+//     char *l_query_str_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
 //                                         " WHERE driver_key IN (%s)",
 //                                         l_table_name, l_blob_str);
-//     char *l_str_query_size = sqlite3_mprintf("SELECT SUM(LENGTH(key)) + SUM(LENGTH(value)) + SUM(LENGTH(sign)) FROM '%s' "
+//     char *l_query_str_size = sqlite3_mprintf("SELECT SUM(LENGTH(key)) + SUM(LENGTH(value)) + SUM(LENGTH(sign)) FROM '%s' "
 //                                         " WHERE driver_key IN (%s)",
 //                                         l_table_name, l_blob_str);
-//     char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s'"
+//     char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
 //                                         " WHERE driver_key IN (%s) ORDER BY driver_key",
 //                                         l_table_name, l_blob_str);
-//     if (!l_str_query_count || !l_str_query) {
+//     if (!l_query_str_count || !l_query_str) {
 //         log_it(L_ERROR, "Error in SQL request forming");
 //         goto clean_and_ret;
 //     }
-//     if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
-//         s_db_sqlite_prepare(l_conn->conn, l_str_query_size, &l_stmt_size, l_error_msg)!= SQLITE_OK ||
-//         s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK)
+//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+//         s_db_sqlite_prepare(l_conn->conn, l_query_str_size, &l_stmt_size, l_error_msg)!= SQLITE_OK ||
+//         s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK)
 //     {
 //         goto clean_and_ret;
 //     }
@@ -515,7 +562,7 @@ clean_and_ret:
 //     }
 //     size_t l_group_name_len = strlen(a_group) + 1;
 //     size_t l_data_size = l_count * (sizeof(dap_global_db_pkt_t) + l_group_name_len + 1) + l_size;
-//     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_data_size, NULL, l_str_query_count, l_str_query);
+//     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_data_size, NULL, l_query_str_count, l_query_str);
 // // data forming
 //     for (size_t i = 0; i < l_count && l_ret->data_size < l_data_size && s_db_sqlite_step(l_stmt, l_error_msg) == SQLITE_ROW; ++i) {
 //         dap_global_db_pkt_t *l_cur_pkt = (dap_global_db_pkt_t *)(l_ret->data + l_ret->data_size);
@@ -571,7 +618,7 @@ clean_and_ret:
 //         log_it(L_ERROR, "Wrong pkt pack size %"DAP_UINT64_FORMAT_U", expected %zu", l_ret->data_size, l_data_size); 
 //     }
 // clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 3, l_str_query, l_str_query_count, l_str_query_size, l_stmt, l_stmt_count, l_stmt_size);
+//     s_db_sqlite_clean(l_conn, 3, l_query_str, l_query_str_count, l_query_str_size, l_stmt, l_stmt_count, l_stmt_size);
 //     DAP_DEL_MULTY(l_table_name, l_blob_str);
 //     return l_ret;
 // }
@@ -592,22 +639,22 @@ clean_and_ret:
 //     dap_global_db_hash_pkt_t *l_ret = NULL;
 //     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
 //     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+//     char *l_query_str_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
 //                                         " WHERE driver_key > ?",
 //                                         l_table_name);
-//     char *l_str_query = sqlite3_mprintf("SELECT driver_key FROM '%s'"
+//     char *l_query_str = sqlite3_mprintf("SELECT driver_key FROM '%s'"
 //                                         " WHERE driver_key > ?"
 //                                         " ORDER BY driver_key LIMIT '%d'",
 //                                         l_table_name, (int)DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT);
 //     DAP_DEL_Z(l_table_name);
-//     if (!l_str_query_count || !l_str_query) {
+//     if (!l_query_str_count || !l_query_str) {
 //         log_it(L_ERROR, "Error in SQL request forming");
 //         goto clean_and_ret;
 //     }
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
-//         s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK ||
+//         s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_bind_blob64(l_stmt, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
 //         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
 //     {
@@ -624,7 +671,7 @@ clean_and_ret:
 //     l_blank_add = l_count == l_blank_add;
 //     l_count += l_blank_add;
 //     size_t l_group_name_len = strlen(a_group) + 1;
-//     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_hash_pkt_t, sizeof(dap_global_db_hash_pkt_t) + l_count * sizeof(dap_global_db_driver_hash_t) + l_group_name_len, NULL, l_str_query_count, l_str_query);
+//     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_hash_pkt_t, sizeof(dap_global_db_hash_pkt_t) + l_count * sizeof(dap_global_db_driver_hash_t) + l_group_name_len, NULL, l_query_str_count, l_query_str);
 // // data forming
 //     size_t l_count_out = 0;
 //     l_ret->group_name_len = l_group_name_len;
@@ -638,7 +685,7 @@ clean_and_ret:
 //     }
 //     l_ret->hashes_count = l_count_out + l_blank_add;
 // clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 2, l_str_query, l_str_query_count, l_stmt, l_stmt_count);
+//     s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_str_count, l_stmt, l_stmt_count);
 //     return l_ret;
 // }
 
@@ -661,25 +708,25 @@ clean_and_ret:
 //     dap_store_obj_t *l_ret = NULL;
 //     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
 //     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+//     char *l_query_str_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
 //                                         " WHERE driver_key > ? AND (flags & '%d' %s 0)",
 //                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
 //                                         a_with_holes ? ">=" : "=");
-//     char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s'"
+//     char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
 //                                         " WHERE driver_key > ? AND (flags & '%d' %s 0)"
 //                                         " ORDER BY driver_key LIMIT '%d'",
 //                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
 //                                         a_with_holes ? ">=" : "=",
 //                                         a_count_out && *a_count_out ? (int)*a_count_out : (int)DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
 //     DAP_DEL_Z(l_table_name);
-//     if (!l_str_query_count || !l_str_query) {
+//     if (!l_query_str_count || !l_query_str) {
 //         log_it(L_ERROR, "Error in SQL request forming");
 //         goto clean_and_ret;
 //     }
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
-//         s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK ||
+//         s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_bind_blob64(l_stmt, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
 //         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
 //     {
@@ -695,88 +742,77 @@ clean_and_ret:
 //     }
 //     l_blank_add = l_count == l_blank_add;
 //     l_count += l_blank_add;
-//     DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_store_obj_t, l_count, NULL, l_str_query_count, l_str_query);
+//     DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_store_obj_t, l_count, NULL, l_query_str_count, l_query_str);
 // // data forming
 //     size_t l_count_out = 0;
 //     int l_ret_code = 0;
-//     for (l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt);
+//     for (l_ret_code = s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_stmt);
 //         l_ret_code == SQLITE_ROW && l_count_out < l_count;
-//         ++l_count_out, l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt)) {}
+//         ++l_count_out, l_ret_code = s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_stmt)) {}
 //     if(l_ret_code != SQLITE_DONE) {
 //         log_it(L_ERROR, "SQLite conditional read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
 //     }
 //     if (a_count_out)
 //         *a_count_out = l_count_out + l_blank_add;
 // clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 2, l_str_query, l_str_query_count, l_stmt, l_stmt_count);
+//     s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_str_count, l_stmt, l_stmt_count);
 //     return l_ret;
 // }
 
-// /**
-//  * @brief Reads some objects from a SQLite database by a_group, a_key.
-//  * @param a_group a group name string
-//  * @param a_key an object key string, if equals NULL reads the whole group
-//  * @param a_count_out[out] a number of objects that were read
-//  * @param a_with_holes if true - read any records, if false - only actual records
-//  * @return If successful, a pointer to an objects, otherwise NULL.
-//  */
-// static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes)
-// {
-// // sanity check
-//     conn_list_item_t *l_conn = NULL;
-//     dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
-// // func work
-//     const char *l_error_msg = "read";
-//     dap_store_obj_t *l_ret = NULL;
-//     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
-//     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_str_query_count = NULL;
-//     char *l_str_query = NULL;
-//     if (a_key) {
-//         l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE key='%s' AND (flags & '%d' %s 0)", l_table_name, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
-//         l_str_query = sqlite3_mprintf("SELECT * FROM '%s' WHERE key='%s' AND (flags & '%d' %s 0)", l_table_name, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
-//     } else { // no limit
-//         l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE flags & '%d' %s 0 ORDER BY driver_key", l_table_name, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
-//         l_str_query = sqlite3_mprintf("SELECT * FROM '%s' WHERE flags & '%d' %s 0 ORDER BY driver_key LIMIT '%d'",
-//                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
-//                                         a_with_holes ? ">=" : "=",
-//                                         a_count_out && *a_count_out ? (int)*a_count_out : -1);
-//     }
-//     DAP_DEL_Z(l_table_name);
-//     if (!l_str_query_count || !l_str_query) {
-//         log_it(L_ERROR, "Error in SQL request forming");
-//         goto clean_and_ret;
-//     }
+/**
+ * @brief Reads some objects from a SQLite database by a_group, a_key.
+ * @param a_group a group name string
+ * @param a_key an object key string, if equals NULL reads the whole group
+ * @param a_count_out[out] a number of objects that were read
+ * @param a_with_holes if true - read any records, if false - only actual records
+ * @return If successful, a pointer to an objects, otherwise NULL.
+ */
+static dap_store_obj_t* s_db_pgsql_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes)
+{
+// sanity check
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
+// func work
+    const char *l_error_msg = "read";
+    dap_store_obj_t *l_ret = NULL;
+    char *l_query_str = NULL;
+    if (a_key) {
+        l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE key='%s' AND (flags & '%d' %s 0)", a_group, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
+    } else { // no limit
+        l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE flags & '%d' %s 0 ORDER BY driver_key LIMIT '%d'",
+                                        a_group, DAP_GLOBAL_DB_RECORD_DEL,
+                                        a_with_holes ? ">=" : "=",
+                                        a_count_out && *a_count_out ? (int)*a_count_out : -1);
+    }
+    if (!l_query_str) {
+        log_it(L_ERROR, "Error in PGSQL request forming");
+        goto clean_and_ret;
+    }
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, NULL, 0, NULL);
+    DAP_DELETE(l_query_str);
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
-//         s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK ||
-//         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
-//     {
-//         goto clean_and_ret;
-//     }
-// // memory alloc
-//     uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
-//     l_count = a_count_out && *a_count_out ? dap_min(*a_count_out, l_count) : l_count;
-//     if (!l_count) {
-//         log_it(L_INFO, "There are no records satisfying the read request");
-//         goto clean_and_ret;
-//     }
-//     DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_store_obj_t, l_count, NULL, l_str_query_count, l_str_query);
-// // data forming
-//     size_t l_count_out = 0;
-//     int l_ret_code = 0;
-//     for (l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt);
-//         l_ret_code == SQLITE_ROW && l_count_out < l_count; 
-//         ++l_count_out, l_ret_code = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt)) {}
-//     if(l_ret_code != SQLITE_DONE) {
-//         log_it(L_ERROR, "SQLite read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
-//     }
-//     if (a_count_out)
-//         *a_count_out = l_count_out;
-// clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 2, l_str_query, l_str_query_count, l_stmt, l_stmt_count);
-//     return l_ret;
-// }
+// memory alloc
+    uint64_t l_count = PQntuples(l_query_res);
+    l_count = a_count_out && *a_count_out ? dap_min(*a_count_out, l_count) : l_count;
+    if (!l_count) {
+        log_it(L_INFO, "There are no records satisfying the read request");
+        goto clean_and_ret;
+    }
+    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        goto clean_and_ret;
+    }
+    
+// data forming
+    size_t l_count_out = 0;
+    for ( ; l_count_out < l_count && !s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_query_res, l_count_out); ++l_count_out ) {};
+    if (a_count_out)
+        *a_count_out = l_count_out;
+clean_and_ret:
+    // s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_str_count, l_stmt, l_stmt_count);
+    PQclear(l_query_res);
+    return l_ret;
+}
 
 // /**
 //  * @brief Gets a list of group names by a_group_mask.
@@ -793,13 +829,13 @@ clean_and_ret:
 //     dap_list_t* l_ret = NULL;
 //     sqlite3_stmt *l_stmt = NULL;
 //     char *l_mask = NULL;
-//     char *l_str_query = sqlite3_mprintf("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%c'", '%');
-//     if (!l_str_query) {
+//     char *l_query_str = sqlite3_mprintf("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%c'", '%');
+//     if (!l_query_str) {
 //         log_it(L_ERROR, "Error in SQL request forming");
 //         goto clean_and_ret;
 //     }
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK) {
+//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK) {
 //         goto clean_and_ret;
 //     }
 //     l_mask = dap_str_replace_char(a_group_mask, '.', '_');
@@ -813,7 +849,7 @@ clean_and_ret:
 //         log_it(L_ERROR, "SQLite read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
 //     }
 // clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 1, l_str_query, l_stmt);
+//     s_db_sqlite_clean(l_conn, 1, l_query_str, l_stmt);
 //     DAP_DEL_Z(l_mask);
 //     return l_ret;
 // }
@@ -835,17 +871,17 @@ clean_and_ret:
 //     size_t l_ret = 0;
 //     sqlite3_stmt *l_stmt_count = NULL;
 //     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+//     char *l_query_str_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
 //                                         " WHERE driver_key > ? AND (flags & '%d' %s 0)",
 //                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
 //                                         a_with_holes ? ">=" : "=");
 //     DAP_DEL_Z(l_table_name);
-//     if (!l_str_query_count) {
+//     if (!l_query_str_count) {
 //         log_it(L_ERROR, "Error in SQL request forming");
 //         goto clean_and_ret;
 //     }
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
 //         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
 //     {
@@ -853,7 +889,7 @@ clean_and_ret:
 //     }
 //     l_ret = sqlite3_column_int64(l_stmt_count, 0);
 // clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 1, l_str_query_count, l_stmt_count);
+//     s_db_sqlite_clean(l_conn, 1, l_query_str_count, l_stmt_count);
 //     return l_ret;
 // }
 
@@ -873,16 +909,16 @@ clean_and_ret:
 //     bool l_ret = false;
 //     sqlite3_stmt *l_stmt_count = NULL;
 //     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+//     char *l_query_str_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
 //                                         " WHERE driver_key = ?",
 //                                         l_table_name);
 //     DAP_DEL_Z(l_table_name);
-//     if (!l_str_query_count) {
+//     if (!l_query_str_count) {
 //         log_it(L_ERROR, "Error in SQL request forming");
 //         goto clean_and_ret;
 //     }
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash, sizeof(a_hash), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
 //         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
 //     {
@@ -890,7 +926,7 @@ clean_and_ret:
 //     }
 //     l_ret = (bool)sqlite3_column_int64(l_stmt_count, 0);
 // clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 1, l_str_query_count, l_stmt_count);
+//     s_db_sqlite_clean(l_conn, 1, l_query_str_count, l_stmt_count);
 //     return l_ret;
 // }
 
@@ -910,23 +946,23 @@ clean_and_ret:
 //     bool l_ret = false;
 //     sqlite3_stmt *l_stmt_count = NULL;
 //     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+//     char *l_query_str_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
 //                                         " WHERE key = '%s'",
 //                                         l_table_name, a_key);
 //     DAP_DEL_Z(l_table_name);
-//     if (!l_str_query_count) {
+//     if (!l_query_str_count) {
 //         log_it(L_ERROR, "Error in SQL request forming");
 //         goto clean_and_ret;
 //     }
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
 //     {
 //         goto clean_and_ret;
 //     }
 //     l_ret = (bool)sqlite3_column_int64(l_stmt_count, 0);
 // clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 1, l_str_query_count, l_stmt_count);
+//     s_db_sqlite_clean(l_conn, 1, l_query_str_count, l_stmt_count);
 //     return l_ret;
 // }
 
@@ -1099,7 +1135,7 @@ int dap_global_db_driver_pgsql_init(const char *a_db_path, dap_global_db_driver_
     }
 
     a_drv_callback->apply_store_obj         = s_db_pgsql_apply_store_obj;
-    // a_drv_callback->read_store_obj          = s_db_sqlite_read_store_obj;
+    a_drv_callback->read_store_obj          = s_db_pgsql_read_store_obj;
     // a_drv_callback->read_cond_store_obj     = s_db_sqlite_read_cond_store_obj;
     // a_drv_callback->read_last_store_obj     = s_db_sqlite_read_last_store_obj;
     // a_drv_callback->transaction_start       = s_db_sqlite_transaction_start;
@@ -1459,7 +1495,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_cond_store_obj(const char *a_group, ui
     char *l_query_str;
     if (a_count_out && *a_count_out)
         l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE obj_id >= '%"DAP_UINT64_FORMAT_U"' "
-                                        "ORDER BY obj_id ASC LIMIT %d", a_group, a_id, *a_count_out);
+                                        "ORDER BY obj_id ASC LIMIT %zu", a_group, a_id, *a_count_out);
     else
         l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE obj_id >= '%"DAP_UINT64_FORMAT_U"' "
                                         "ORDER BY obj_id ASC", a_group, a_id);

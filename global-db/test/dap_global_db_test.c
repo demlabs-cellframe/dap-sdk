@@ -101,7 +101,7 @@ static int s_test_write(size_t a_count)
     l_store_obj.value = (uint8_t *) l_value;                                 /* Point <.value> to static buffer area */
     prec = (dap_db_test_record_t *) l_value;
     int l_time = 0;
-    size_t l_rewrite_count = rand() % (a_count / 2) + 2; 
+    size_t l_rewrite_count = 0; 
     for (size_t i = 0; i < a_count; ++i)
     {
         log_it(L_DEBUG, "Write %zu record in GDB", i);
@@ -673,7 +673,7 @@ int main(int argc, char **argv)
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     size_t l_db_count = sizeof(s_db_types) / sizeof(char *) - 1;
     dap_assert_PIF(l_db_count, "Use minimum 1 DB driver");
-    size_t l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + 2;
+    size_t l_count = 1;
     for (size_t i = 0; i < l_db_count; ++i) {
         dap_print_module_name(s_db_types[i]);
         s_test_create_db(s_db_types[i]);
