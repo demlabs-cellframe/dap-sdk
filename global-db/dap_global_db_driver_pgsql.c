@@ -905,41 +905,38 @@ clean_and_ret:
 //     return l_ret;
 // }
 
-// /**
-//  * @brief Checks if an object is in a database by a_group and a_key.
-//  * @param a_group a group name string
-//  * @param a_key a object key string
-//  * @return Returns true if it is, false it's not.
-//  */
-// static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
-// {
-// // sanity check
-//     conn_list_item_t *l_conn = NULL;
-//     dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), false);
-// // preparing
-//     const char *l_error_msg = "is obj read";
-//     bool l_ret = false;
-//     sqlite3_stmt *l_stmt_count = NULL;
-//     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
-//                                         " WHERE key = '%s'",
-//                                         l_table_name, a_key);
-//     DAP_DEL_Z(l_table_name);
-//     if (!l_query_count_str) {
-//         log_it(L_ERROR, "Error in SQL request forming");
-//         goto clean_and_ret;
-//     }
-    
-//     if(s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
-//         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
-//     {
-//         goto clean_and_ret;
-//     }
-//     l_ret = (bool)sqlite3_column_int64(l_stmt_count, 0);
-// clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 1, l_query_count_str, l_stmt_count);
-//     return l_ret;
-// }
+/**
+ * @brief Checks if an object is in a database by a_group and a_key.
+ * @param a_group a group name string
+ * @param a_key a object key string
+ * @return Returns true if it is, false it's not.
+ */
+static bool s_db_pgsql_is_obj(const char *a_group, const char *a_key)
+{
+// sanity check
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !a_key || !(l_conn = s_db_pgsql_get_connection(false)), 0);
+// preparing
+    const char *l_error_msg = "is obj read";
+    char *l_key_escape = dap_strdup(a_key);
+    if (!PQescapeStringConn(l_conn->conn, l_key_escape, a_key, dap_strlen(a_key), NULL)) {
+        log_it(L_ERROR, "Error in PGSQL string escaping");
+        goto clean_and_ret;
+    }
+    char *l_query_str = dap_strdup_printf("SELECT EXISTS(SELECT * FROM \"%s\" WHERE key='%s')", a_group, l_key_escape);
+    DAP_DELETE(l_key_escape);
+    if (!l_query_str) {
+        log_it(L_ERROR, "Error in PGSQL request forming");
+        goto clean_and_ret;
+    }
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, NULL, 0, NULL);
+    DAP_DELETE(l_query_str);
+    char *l_ret = PQgetvalue(l_query_res, 0, 0);
+clean_and_ret:
+    s_db_pgsql_free_connection(l_conn, false);
+    PQclear(l_query_res);
+    return l_ret ? *l_ret : false;
+}
 
 // /**
 //  * @brief Flushes a SQLite database cahce to disk
@@ -1114,7 +1111,7 @@ int dap_global_db_driver_pgsql_init(const char *a_db_path, dap_global_db_driver_
     a_drv_callback->transaction_end         = s_db_pgsql_transaction_end;
     // a_drv_callback->get_groups_by_mask      = s_db_sqlite_get_groups_by_mask;
     a_drv_callback->read_count_store        = s_db_pgsql_read_count_store;
-    // a_drv_callback->is_obj                  = s_db_sqlite_is_obj;
+    a_drv_callback->is_obj                  = s_db_pgsql_is_obj;
     // a_drv_callback->deinit                  = s_db_sqlite_deinit;
     // a_drv_callback->flush                   = s_db_sqlite_flush;
     // a_drv_callback->get_by_hash             = s_db_sqlite_get_by_hash;

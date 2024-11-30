@@ -937,7 +937,7 @@ static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
 {
 // sanity check
     conn_list_item_t *l_conn = NULL;
-    dap_return_val_if_pass(!a_group || !(l_conn = s_db_sqlite_get_connection(false)), false);
+    dap_return_val_if_pass(!a_group || !a_key || !(l_conn = s_db_sqlite_get_connection(false)), false);
 // preparing
     const char *l_error_msg = "is obj read";
     bool l_ret = false;
