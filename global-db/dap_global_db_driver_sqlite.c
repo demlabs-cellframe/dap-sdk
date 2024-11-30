@@ -425,18 +425,18 @@ static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, boo
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-    char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s'"
+    char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
                                         " WHERE flags & '%d' %s 0"
                                         " ORDER BY driver_key DESC LIMIT 1",
                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=");
     DAP_DEL_Z(l_table_name);
-    if (!l_str_query) {
+    if (!l_query_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
     }
     
-    if(s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, "last read")!= SQLITE_OK) {
+    if(s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, "last read")!= SQLITE_OK) {
         goto clean_and_ret;
     }
 // memory alloc
@@ -455,7 +455,7 @@ static dap_store_obj_t* s_db_sqlite_read_last_store_obj(const char *a_group, boo
         log_it(L_INFO, "There are no records satisfying the last read request");
     }
 clean_and_ret:
-    s_db_sqlite_clean(l_conn, 1, l_str_query, l_stmt);    
+    s_db_sqlite_clean(l_conn, 1, l_query_str, l_stmt);    
     return l_ret;
 }
 
@@ -484,23 +484,23 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     for (size_t k = 0; k < a_count; memcpy(l_blob_str + 2 * (k++), "?,", 2));
     l_blob_str[2 * a_count - 1] = '\0';
 
-    char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+    char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
     char *l_str_query_size = sqlite3_mprintf("SELECT SUM(LENGTH(key)) + SUM(LENGTH(value)) + SUM(LENGTH(sign)) FROM '%s' "
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
-    char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s'"
+    char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
                                         " WHERE driver_key IN (%s) ORDER BY driver_key",
                                         l_table_name, l_blob_str);
     DAP_DEL_MULTY(l_table_name, l_blob_str);
-    if (!l_str_query_count || !l_str_query) {
+    if (!l_query_count_str || !l_query_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
     }
-    if( s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+    if( s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
         s_db_sqlite_prepare(l_conn->conn, l_str_query_size, &l_stmt_size, l_error_msg)  != SQLITE_OK ||
-        s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)            != SQLITE_OK )
+        s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)            != SQLITE_OK )
     {
         goto clean_and_ret;
     }
@@ -597,7 +597,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
             DAP_DEL_Z(l_ret);
     }
 clean_and_ret:
-    s_db_sqlite_clean(l_conn, 3, l_str_query, l_str_query_count, l_str_query_size, l_stmt, l_stmt_count, l_stmt_size);
+    s_db_sqlite_clean(l_conn, 3, l_query_str, l_query_count_str, l_str_query_size, l_stmt, l_stmt_count, l_stmt_size);
     return l_ret;
 }
 
@@ -617,22 +617,22 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
     dap_global_db_hash_pkt_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-    char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+    char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE driver_key > ?",
                                         l_table_name);
-    char *l_str_query = sqlite3_mprintf("SELECT driver_key FROM '%s'"
+    char *l_query_str = sqlite3_mprintf("SELECT driver_key FROM '%s'"
                                         " WHERE driver_key > ?"
                                         " ORDER BY driver_key LIMIT '%d'",
                                         l_table_name, (int)DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT);
     DAP_DEL_Z(l_table_name);
-    if (!l_str_query_count || !l_str_query) {
+    if (!l_query_count_str || !l_query_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
     }
     
-    if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+    if(s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
-        s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK ||
         s_db_sqlite_bind_blob64(l_stmt, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
     {
@@ -672,7 +672,7 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
     }
     l_ret->hashes_count = l_count_out + l_blank_add;
 clean_and_ret:
-    s_db_sqlite_clean(l_conn, 2, l_str_query, l_str_query_count, l_stmt, l_stmt_count);
+    s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_count_str, l_stmt, l_stmt_count);
     return l_ret;
 }
 
@@ -695,25 +695,25 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-    char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+    char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE driver_key > ? AND (flags & '%d' %s 0)",
                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=");
-    char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s'"
+    char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
                                         " WHERE driver_key > ? AND (flags & '%d' %s 0)"
                                         " ORDER BY driver_key LIMIT '%d'",
                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=",
                                         a_count_out && *a_count_out ? (int)*a_count_out : (int)DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
     DAP_DELETE(l_table_name);
-    if (!l_str_query_count || !l_str_query) {
+    if (!l_query_count_str || !l_query_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
     }
     
-    if( s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)                        != SQLITE_OK ||
+    if( s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)                        != SQLITE_OK ||
         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
-        s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)                                    != SQLITE_OK ||
+        s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)                                    != SQLITE_OK ||
         s_db_sqlite_bind_blob64(l_stmt, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg)       != SQLITE_OK ||
         s_db_sqlite_step(l_stmt_count, l_error_msg)                                                             != SQLITE_ROW )
     {
@@ -741,7 +741,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
     if (a_count_out)
         *a_count_out = l_count_out + l_blank_add;
 clean_and_ret:
-    s_db_sqlite_clean(l_conn, 2, l_str_query, l_str_query_count, l_stmt, l_stmt_count);
+    s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_count_str, l_stmt, l_stmt_count);
     return l_ret;
 }
 
@@ -763,26 +763,26 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const ch
     dap_store_obj_t *l_ret = NULL;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-    char *l_str_query_count = NULL;
-    char *l_str_query = NULL;
+    char *l_query_count_str = NULL;
+    char *l_query_str = NULL;
     if (a_key) {
-        l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE key='%s' AND (flags & '%d' %s 0)", l_table_name, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
-        l_str_query = sqlite3_mprintf("SELECT * FROM '%s' WHERE key='%s' AND (flags & '%d' %s 0)", l_table_name, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
+        l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE key='%s' AND (flags & '%d' %s 0)", l_table_name, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
+        l_query_str = sqlite3_mprintf("SELECT * FROM '%s' WHERE key='%s' AND (flags & '%d' %s 0)", l_table_name, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
     } else { // no limit
-        l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE flags & '%d' %s 0 ORDER BY driver_key", l_table_name, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
-        l_str_query = sqlite3_mprintf("SELECT * FROM '%s' WHERE flags & '%d' %s 0 ORDER BY driver_key LIMIT '%d'",
+        l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' WHERE flags & '%d' %s 0 ORDER BY driver_key", l_table_name, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
+        l_query_str = sqlite3_mprintf("SELECT * FROM '%s' WHERE flags & '%d' %s 0 ORDER BY driver_key LIMIT '%d'",
                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=",
                                         a_count_out && *a_count_out ? (int)*a_count_out : -1);
     }
     DAP_DEL_Z(l_table_name);
-    if (!l_str_query_count || !l_str_query) {
+    if (!l_query_count_str || !l_query_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
     }
     
-    if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
-        s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK ||
+    if(s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+        s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK ||
         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
     {
         goto clean_and_ret;
@@ -808,7 +808,7 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const ch
     if (a_count_out)
         *a_count_out = l_count_out;
 clean_and_ret:
-    s_db_sqlite_clean(l_conn, 2, l_str_query, l_str_query_count, l_stmt, l_stmt_count);
+    s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_count_str, l_stmt, l_stmt_count);
     return l_ret;
 }
 
@@ -827,13 +827,13 @@ static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
     dap_list_t* l_ret = NULL;
     sqlite3_stmt *l_stmt = NULL;
     char *l_mask = NULL;
-    char *l_str_query = sqlite3_mprintf("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%c'", '%');
-    if (!l_str_query) {
+    char *l_query_str = sqlite3_mprintf("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%c'", '%');
+    if (!l_query_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
     }
     
-    if(s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg)!= SQLITE_OK) {
+    if(s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK) {
         goto clean_and_ret;
     }
     l_mask = dap_str_replace_char(a_group_mask, '.', '_');
@@ -846,7 +846,7 @@ static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
     if ( rc != SQLITE_DONE )
         log_it(L_ERROR, "SQLite read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
 clean_and_ret:
-    s_db_sqlite_clean(l_conn, 1, l_str_query, l_stmt);
+    s_db_sqlite_clean(l_conn, 1, l_query_str, l_stmt);
     DAP_DEL_Z(l_mask);
     return l_ret;
 }
@@ -868,17 +868,17 @@ static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_dr
     size_t l_ret = 0;
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-    char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+    char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE driver_key > ? AND (flags & '%d' %s 0)",
                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=");
     DAP_DEL_Z(l_table_name);
-    if (!l_str_query_count) {
+    if (!l_query_count_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
     }
     
-    if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+    if(s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
     {
@@ -886,7 +886,7 @@ static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_dr
     }
     l_ret = sqlite3_column_int64(l_stmt_count, 0);
 clean_and_ret:
-    s_db_sqlite_clean(l_conn, 1, l_str_query_count, l_stmt_count);
+    s_db_sqlite_clean(l_conn, 1, l_query_count_str, l_stmt_count);
     return l_ret;
 }
 
@@ -906,16 +906,16 @@ static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t
     bool l_ret = false;
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-    char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+    char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE driver_key = ?",
                                         l_table_name);
     DAP_DEL_Z(l_table_name);
-    if (!l_str_query_count) {
+    if (!l_query_count_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
     }
     
-    if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+    if(s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash, sizeof(a_hash), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
     {
@@ -923,7 +923,7 @@ static bool s_db_sqlite_is_hash(const char *a_group, dap_global_db_driver_hash_t
     }
     l_ret = (bool)sqlite3_column_int64(l_stmt_count, 0);
 clean_and_ret:
-    s_db_sqlite_clean(l_conn, 1, l_str_query_count, l_stmt_count);
+    s_db_sqlite_clean(l_conn, 1, l_query_count_str, l_stmt_count);
     return l_ret;
 }
 
@@ -943,23 +943,23 @@ static bool s_db_sqlite_is_obj(const char *a_group, const char *a_key)
     bool l_ret = false;
     sqlite3_stmt *l_stmt_count = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-    char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+    char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE key = '%s'",
                                         l_table_name, a_key);
     DAP_DEL_Z(l_table_name);
-    if (!l_str_query_count) {
+    if (!l_query_count_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
     }
     
-    if(s_db_sqlite_prepare(l_conn->conn, l_str_query_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+    if(s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
     {
         goto clean_and_ret;
     }
     l_ret = (bool)sqlite3_column_int64(l_stmt_count, 0);
 clean_and_ret:
-    s_db_sqlite_clean(l_conn, 1, l_str_query_count, l_stmt_count);
+    s_db_sqlite_clean(l_conn, 1, l_query_count_str, l_stmt_count);
     return l_ret;
 }
 

@@ -357,7 +357,6 @@ static int s_db_pgsql_apply_store_obj(dap_store_obj_t *a_store_obj)
     conn_list_item_t *l_conn = s_db_pgsql_get_connection(false);
     if (!l_conn)
         return -2;
-
     int l_ret = 0;
     char *l_query = NULL;
     if (!l_type_erase) {
@@ -523,7 +522,7 @@ static int s_db_pgsql_fill_one_item(const char *a_group, dap_store_obj_t *a_obj,
 //     for (size_t i = 1; i + 1 < a_count * 2; i += 2) {
 //         l_blob_str[i] = ',';
 //     }
-//     char *l_query_str_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+//     char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
 //                                         " WHERE driver_key IN (%s)",
 //                                         l_table_name, l_blob_str);
 //     char *l_query_str_size = sqlite3_mprintf("SELECT SUM(LENGTH(key)) + SUM(LENGTH(value)) + SUM(LENGTH(sign)) FROM '%s' "
@@ -532,11 +531,11 @@ static int s_db_pgsql_fill_one_item(const char *a_group, dap_store_obj_t *a_obj,
 //     char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
 //                                         " WHERE driver_key IN (%s) ORDER BY driver_key",
 //                                         l_table_name, l_blob_str);
-//     if (!l_query_str_count || !l_query_str) {
+//     if (!l_query_count_str || !l_query_str) {
 //         log_it(L_ERROR, "Error in SQL request forming");
 //         goto clean_and_ret;
 //     }
-//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+//     if(s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_prepare(l_conn->conn, l_query_str_size, &l_stmt_size, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK)
 //     {
@@ -562,7 +561,7 @@ static int s_db_pgsql_fill_one_item(const char *a_group, dap_store_obj_t *a_obj,
 //     }
 //     size_t l_group_name_len = strlen(a_group) + 1;
 //     size_t l_data_size = l_count * (sizeof(dap_global_db_pkt_t) + l_group_name_len + 1) + l_size;
-//     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_data_size, NULL, l_query_str_count, l_query_str);
+//     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_data_size, NULL, l_query_count_str, l_query_str);
 // // data forming
 //     for (size_t i = 0; i < l_count && l_ret->data_size < l_data_size && s_db_sqlite_step(l_stmt, l_error_msg) == SQLITE_ROW; ++i) {
 //         dap_global_db_pkt_t *l_cur_pkt = (dap_global_db_pkt_t *)(l_ret->data + l_ret->data_size);
@@ -618,7 +617,7 @@ static int s_db_pgsql_fill_one_item(const char *a_group, dap_store_obj_t *a_obj,
 //         log_it(L_ERROR, "Wrong pkt pack size %"DAP_UINT64_FORMAT_U", expected %zu", l_ret->data_size, l_data_size); 
 //     }
 // clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 3, l_query_str, l_query_str_count, l_query_str_size, l_stmt, l_stmt_count, l_stmt_size);
+//     s_db_sqlite_clean(l_conn, 3, l_query_str, l_query_count_str, l_query_str_size, l_stmt, l_stmt_count, l_stmt_size);
 //     DAP_DEL_MULTY(l_table_name, l_blob_str);
 //     return l_ret;
 // }
@@ -639,7 +638,7 @@ static int s_db_pgsql_fill_one_item(const char *a_group, dap_store_obj_t *a_obj,
 //     dap_global_db_hash_pkt_t *l_ret = NULL;
 //     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
 //     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_query_str_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+//     char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
 //                                         " WHERE driver_key > ?",
 //                                         l_table_name);
 //     char *l_query_str = sqlite3_mprintf("SELECT driver_key FROM '%s'"
@@ -647,12 +646,12 @@ static int s_db_pgsql_fill_one_item(const char *a_group, dap_store_obj_t *a_obj,
 //                                         " ORDER BY driver_key LIMIT '%d'",
 //                                         l_table_name, (int)DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT);
 //     DAP_DEL_Z(l_table_name);
-//     if (!l_query_str_count || !l_query_str) {
+//     if (!l_query_count_str || !l_query_str) {
 //         log_it(L_ERROR, "Error in SQL request forming");
 //         goto clean_and_ret;
 //     }
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+//     if(s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
 //         s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_bind_blob64(l_stmt, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
@@ -671,7 +670,7 @@ static int s_db_pgsql_fill_one_item(const char *a_group, dap_store_obj_t *a_obj,
 //     l_blank_add = l_count == l_blank_add;
 //     l_count += l_blank_add;
 //     size_t l_group_name_len = strlen(a_group) + 1;
-//     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_hash_pkt_t, sizeof(dap_global_db_hash_pkt_t) + l_count * sizeof(dap_global_db_driver_hash_t) + l_group_name_len, NULL, l_query_str_count, l_query_str);
+//     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_hash_pkt_t, sizeof(dap_global_db_hash_pkt_t) + l_count * sizeof(dap_global_db_driver_hash_t) + l_group_name_len, NULL, l_query_count_str, l_query_str);
 // // data forming
 //     size_t l_count_out = 0;
 //     l_ret->group_name_len = l_group_name_len;
@@ -685,79 +684,62 @@ static int s_db_pgsql_fill_one_item(const char *a_group, dap_store_obj_t *a_obj,
 //     }
 //     l_ret->hashes_count = l_count_out + l_blank_add;
 // clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_str_count, l_stmt, l_stmt_count);
+//     s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_count_str, l_stmt, l_stmt_count);
 //     return l_ret;
 // }
 
-// /**
-//  * @brief Reads some objects from a database by conditions started from concretic hash
-//  * @param a_group a group name string
-//  * @param a_hash_from startin hash (not include to result)
-//  * @param a_count_out[in] a number of objects to be read, if equals 0 reads with no limits
-//  * @param a_count_out[out] a number of objects that were read
-//  * @param a_with_holes if true - read any records, if false - only actual records
-//  * @return If successful, a pointer to an objects, otherwise NULL.
-//  */
-// static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes)
-// {
-// // sanity check
-//     conn_list_item_t *l_conn = NULL;
-//     dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
-// // preparing
-//     const char *l_error_msg = "conditional read";
-//     dap_store_obj_t *l_ret = NULL;
-//     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
-//     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_query_str_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
-//                                         " WHERE driver_key > ? AND (flags & '%d' %s 0)",
-//                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
-//                                         a_with_holes ? ">=" : "=");
-//     char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
-//                                         " WHERE driver_key > ? AND (flags & '%d' %s 0)"
-//                                         " ORDER BY driver_key LIMIT '%d'",
-//                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
-//                                         a_with_holes ? ">=" : "=",
-//                                         a_count_out && *a_count_out ? (int)*a_count_out : (int)DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
-//     DAP_DEL_Z(l_table_name);
-//     if (!l_query_str_count || !l_query_str) {
-//         log_it(L_ERROR, "Error in SQL request forming");
-//         goto clean_and_ret;
-//     }
+/**
+ * @brief Reads some objects from a database by conditions started from concretic hash
+ * @param a_group a group name string
+ * @param a_hash_from startin hash (not include to result)
+ * @param a_count_out[in] a number of objects to be read, if equals 0 reads with no limits
+ * @param a_count_out[out] a number of objects that were read
+ * @param a_with_holes if true - read any records, if false - only actual records
+ * @return If successful, a pointer to an objects, otherwise NULL.
+ */
+static dap_store_obj_t* s_db_pgsql_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes)
+{
+// sanity check
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
+// func work
+    const char *l_error_msg = "read";
+    dap_store_obj_t *l_ret = NULL;
+    char *l_query_str = dap_strdup_printf("SELECT * FROM \"%s\""
+                                    " WHERE driver_key > $1 AND (flags & '%d' %s 0)"
+                                    " ORDER BY driver_key LIMIT '%d'",
+                                    a_group, DAP_GLOBAL_DB_RECORD_DEL,
+                                    a_with_holes ? ">=" : "=",
+                                    a_count_out && *a_count_out ? (int)*a_count_out : (int)DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
+    if (!l_query_str) {
+        log_it(L_ERROR, "Error in PGSQL request forming");
+        goto clean_and_ret;
+    }
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, NULL, 0, NULL);
+    DAP_DELETE(l_query_str);
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
-//         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
-//         s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK ||
-//         s_db_sqlite_bind_blob64(l_stmt, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
-//         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
-//     {
-//         goto clean_and_ret;
-//     }
-// // memory alloc
-//     uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
-//     uint64_t l_blank_add = l_count;
-//     l_count = a_count_out && *a_count_out ? dap_min(l_count, *a_count_out) : dap_min(l_count, DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
-//     if (!l_count) {
-//         log_it(L_INFO, "There are no records satisfying the conditional read request");
-//         goto clean_and_ret;
-//     }
-//     l_blank_add = l_count == l_blank_add;
-//     l_count += l_blank_add;
-//     DAP_NEW_Z_COUNT_RET_VAL(l_ret, dap_store_obj_t, l_count, NULL, l_query_str_count, l_query_str);
-// // data forming
-//     size_t l_count_out = 0;
-//     int l_ret_code = 0;
-//     for (l_ret_code = s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_stmt);
-//         l_ret_code == SQLITE_ROW && l_count_out < l_count;
-//         ++l_count_out, l_ret_code = s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_stmt)) {}
-//     if(l_ret_code != SQLITE_DONE) {
-//         log_it(L_ERROR, "SQLite conditional read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
-//     }
-//     if (a_count_out)
-//         *a_count_out = l_count_out + l_blank_add;
-// clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_str_count, l_stmt, l_stmt_count);
-//     return l_ret;
-// }
+// memory alloc
+    uint64_t l_count = PQntuples(l_query_res);
+    l_count = a_count_out && *a_count_out ? dap_min(*a_count_out, l_count) : l_count;
+    if (!l_count) {
+        log_it(L_INFO, "There are no records satisfying the read request");
+        goto clean_and_ret;
+    }
+    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        goto clean_and_ret;
+    }
+    
+// data forming
+    size_t l_count_out = 0;
+    for ( ; l_count_out < l_count && !s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_query_res, l_count_out); ++l_count_out ) {};
+    if (a_count_out)
+        *a_count_out = l_count_out;
+clean_and_ret:
+    PQclear(l_query_res);
+    s_db_pgsql_free_connection(l_conn, false);
+    return l_ret;
+}
 
 /**
  * @brief Reads some objects from a SQLite database by a_group, a_key.
@@ -809,7 +791,7 @@ static dap_store_obj_t* s_db_pgsql_read_store_obj(const char *a_group, const cha
     if (a_count_out)
         *a_count_out = l_count_out;
 clean_and_ret:
-    // s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_str_count, l_stmt, l_stmt_count);
+    s_db_pgsql_free_connection(l_conn, false);
     PQclear(l_query_res);
     return l_ret;
 }
@@ -854,44 +836,36 @@ clean_and_ret:
 //     return l_ret;
 // }
 
-// /**
-//  * @brief Reads a number of objects from a s_db database by a hash
-//  * @param a_group a group name string
-//  * @param a_hash_from startin hash (not include to result)
-//  * @param a_with_holes if true - read any records, if false - only actual records
-//  * @return Returns a number of objects.
-//  */
-// static size_t s_db_sqlite_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes)
-// {
-// // sanity check
-//     conn_list_item_t *l_conn = NULL;
-//     dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), 0);
-// // preparing
-//     const char *l_error_msg = "count read";
-//     size_t l_ret = 0;
-//     sqlite3_stmt *l_stmt_count = NULL;
-//     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_query_str_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
-//                                         " WHERE driver_key > ? AND (flags & '%d' %s 0)",
-//                                         l_table_name, DAP_GLOBAL_DB_RECORD_DEL,
-//                                         a_with_holes ? ">=" : "=");
-//     DAP_DEL_Z(l_table_name);
-//     if (!l_query_str_count) {
-//         log_it(L_ERROR, "Error in SQL request forming");
-//         goto clean_and_ret;
-//     }
-    
-//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
-//         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
-//         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
-//     {
-//         goto clean_and_ret;
-//     }
-//     l_ret = sqlite3_column_int64(l_stmt_count, 0);
-// clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 1, l_query_str_count, l_stmt_count);
-//     return l_ret;
-// }
+/**
+ * @brief Reads a number of objects from a s_db database by a hash
+ * @param a_group a group name string
+ * @param a_hash_from startin hash (not include to result)
+ * @param a_with_holes if true - read any records, if false - only actual records
+ * @return Returns a number of objects.
+ */
+static size_t s_db_pgsql_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes)
+{
+// sanity check
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), 0);
+// preparing
+    const char *l_error_msg = "count read";
+    char *l_query_count_str = dap_strdup_printf("SELECT COUNT(*) FROM \"%s\" "
+                                        " WHERE driver_key > $1 AND (flags & '%d' %s 0)",
+                                        a_group, DAP_GLOBAL_DB_RECORD_DEL,
+                                        a_with_holes ? ">=" : "=");
+    if (!l_query_count_str) {
+        log_it(L_ERROR, "Error in PGSQL request forming");
+        goto clean_and_ret;
+    }
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_count_str, &a_hash_from, NULL, 0, NULL);
+    DAP_DELETE(l_query_count_str);
+    uint64_t *l_ret = (uint64_t *)PQgetvalue(l_query_res, 0, 0);
+clean_and_ret:
+    s_db_pgsql_free_connection(l_conn, false);
+    PQclear(l_query_res);
+    return l_ret ? be64toh(*l_ret) : 0;
+}
 
 // /**
 //  * @brief Checks if an object is in a database by hash.
@@ -909,16 +883,16 @@ clean_and_ret:
 //     bool l_ret = false;
 //     sqlite3_stmt *l_stmt_count = NULL;
 //     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_query_str_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+//     char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
 //                                         " WHERE driver_key = ?",
 //                                         l_table_name);
 //     DAP_DEL_Z(l_table_name);
-//     if (!l_query_str_count) {
+//     if (!l_query_count_str) {
 //         log_it(L_ERROR, "Error in SQL request forming");
 //         goto clean_and_ret;
 //     }
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+//     if(s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash, sizeof(a_hash), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
 //         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
 //     {
@@ -926,7 +900,7 @@ clean_and_ret:
 //     }
 //     l_ret = (bool)sqlite3_column_int64(l_stmt_count, 0);
 // clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 1, l_query_str_count, l_stmt_count);
+//     s_db_sqlite_clean(l_conn, 1, l_query_count_str, l_stmt_count);
 //     return l_ret;
 // }
 
@@ -946,23 +920,23 @@ clean_and_ret:
 //     bool l_ret = false;
 //     sqlite3_stmt *l_stmt_count = NULL;
 //     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_query_str_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
+//     char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
 //                                         " WHERE key = '%s'",
 //                                         l_table_name, a_key);
 //     DAP_DEL_Z(l_table_name);
-//     if (!l_query_str_count) {
+//     if (!l_query_count_str) {
 //         log_it(L_ERROR, "Error in SQL request forming");
 //         goto clean_and_ret;
 //     }
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str_count, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
+//     if(s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
 //         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
 //     {
 //         goto clean_and_ret;
 //     }
 //     l_ret = (bool)sqlite3_column_int64(l_stmt_count, 0);
 // clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 1, l_query_str_count, l_stmt_count);
+//     s_db_sqlite_clean(l_conn, 1, l_query_count_str, l_stmt_count);
 //     return l_ret;
 // }
 
@@ -1136,12 +1110,12 @@ int dap_global_db_driver_pgsql_init(const char *a_db_path, dap_global_db_driver_
 
     a_drv_callback->apply_store_obj         = s_db_pgsql_apply_store_obj;
     a_drv_callback->read_store_obj          = s_db_pgsql_read_store_obj;
-    // a_drv_callback->read_cond_store_obj     = s_db_sqlite_read_cond_store_obj;
+    a_drv_callback->read_cond_store_obj     = s_db_pgsql_read_cond_store_obj;
     // a_drv_callback->read_last_store_obj     = s_db_sqlite_read_last_store_obj;
     // a_drv_callback->transaction_start       = s_db_sqlite_transaction_start;
     // a_drv_callback->transaction_end         = s_db_sqlite_transaction_end;
     // a_drv_callback->get_groups_by_mask      = s_db_sqlite_get_groups_by_mask;
-    // a_drv_callback->read_count_store        = s_db_sqlite_read_count_store;
+    a_drv_callback->read_count_store        = s_db_pgsql_read_count_store;
     // a_drv_callback->is_obj                  = s_db_sqlite_is_obj;
     // a_drv_callback->deinit                  = s_db_sqlite_deinit;
     // a_drv_callback->flush                   = s_db_sqlite_flush;
