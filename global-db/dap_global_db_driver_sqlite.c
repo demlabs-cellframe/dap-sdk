@@ -1004,8 +1004,7 @@ static int s_db_sqlite_transaction_start()
     if ( g_dap_global_db_debug_more )
         log_it(L_DEBUG, "Start TX: @%p", l_conn->conn);
     
-    int l_ret = 0;
-    s_db_sqlite_exec(l_conn->conn, "BEGIN", NULL, NULL, 0, NULL);
+    int l_ret = s_db_sqlite_exec(l_conn->conn, "BEGIN", NULL, NULL, 0, NULL);
     if ( l_ret != SQLITE_OK ) {
         s_db_sqlite_free_connection(l_conn, true);
     }

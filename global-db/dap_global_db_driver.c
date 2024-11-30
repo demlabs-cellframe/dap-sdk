@@ -248,8 +248,11 @@ dap_store_obj_t *l_store_obj_cur;
     l_store_obj_cur = a_store_obj;                                          /* We have to  use a power of the address's incremental arithmetic */
     l_ret = 0;                                                              /* Preset return code to OK */
 
-    if (a_store_count > 1 && s_drv_callback.transaction_start)
-        s_drv_callback.transaction_start();
+    if (a_store_count > 1)
+        if (s_drv_callback.transaction_start)
+            s_drv_callback.transaction_start();
+        else
+            debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have transaction_start callback", s_used_driver);
 
     if (s_drv_callback.apply_store_obj) {
         for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
@@ -271,8 +274,11 @@ dap_store_obj_t *l_store_obj_cur;
         }
     }
 
-    if (a_store_count > 1 && s_drv_callback.transaction_end)
-        s_drv_callback.transaction_end(true);
+    if (a_store_count > 1)
+        if (s_drv_callback.transaction_end)
+            s_drv_callback.transaction_end(true);
+        else
+            debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have transaction_end callback", s_used_driver);
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "[%p] Finished DB Request (code %d)", a_store_obj, l_ret);
     return l_ret;

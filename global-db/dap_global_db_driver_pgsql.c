@@ -219,8 +219,9 @@ static PGresult *s_db_pgsql_exec(PGconn *a_db, const char *a_query, dap_global_d
     uint8_t l_param_count = 3 - !a_hash - !a_value - !a_sign;
     PGresult *l_ret = PQexecParams(a_db, a_query, l_param_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1);
     if ( PQresultStatus(l_ret) != a_valid_result ) {
-        log_it(L_ERROR, "Query \"%s\" was failed with message: \"%s\"", a_query, PQresultErrorMessage(l_ret));
-        log_it(L_DEBUG, "Error message detail:\n\t%s", PQresultErrorField(l_ret, PG_DIAG_MESSAGE_DETAIL));
+        const char *l_err = PQresultErrorField(l_ret, PG_DIAG_SQLSTATE);
+        if (!l_err || strcmp(l_err, PGSQL_INVALID_TABLE))
+            log_it(L_ERROR, "Query failed with message: \"%s\"", PQresultErrorMessage(l_ret));
         PQclear(l_ret);
         return NULL;
     }
@@ -968,48 +969,45 @@ clean_and_ret:
 //     return 0;
 // }
 
-// /**
-//  * @brief Starts a outstanding transaction in database.
-//  * @return result code.
-//  */
-// static int s_db_sqlite_transaction_start()
-// {
-// // sanity check
-//     conn_list_item_t *l_conn = NULL;
-//     dap_return_val_if_pass(!(l_conn = s_db_pgsql_get_connection(true)), 0);
-// // func work
-//     if ( g_dap_global_db_debug_more )
-//         log_it(L_DEBUG, "Start TX: @%p", l_conn->conn);
+/**
+ * @brief Starts a outstanding transaction in database.
+ * @return result code.
+ */
+static int s_db_pgsql_transaction_start()
+{
+// sanity check
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!(l_conn = s_db_pgsql_get_connection(true)), 0);
+// func work
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "Start TX: @%p", l_conn->conn);
     
-//     int l_ret = 0;
-//     s_db_pgsql_exec(l_conn->conn, "BEGIN", NULL, NULL, 0, NULL);
-//     if ( l_ret != SQLITE_OK ) {
-//         s_db_pgsql_free_connection(l_conn, true);
-//     }
-//     return  l_ret;
-// }
+    int l_ret = s_db_pgsql_exec_command(l_conn->conn, "BEGIN", NULL, NULL, 0, NULL);
+    if ( l_ret ) {
+        s_db_pgsql_free_connection(l_conn, true);
+    }
+    return  l_ret;
+}
 
-// /**
-//  * @brief Ends a outstanding transaction in database.
-//  * @return result code.
-//  */
-// static int s_db_sqlite_transaction_end(bool a_commit)
-// {
-// // sanity check
-//     dap_return_val_if_pass_err(!s_conn || !s_conn->conn, -1, "Outstanding connection not exist");
-// // func work
-//     if ( g_dap_global_db_debug_more )
-//         log_it(L_DEBUG, "End TX l_conn: @%p", s_conn->conn);
-//     int l_ret = 0;
-//     if (a_commit)
-//         l_ret = s_db_pgsql_exec(s_conn->conn, "COMMIT", NULL, NULL, 0, NULL);
-//     else
-//         l_ret = s_db_pgsql_exec(s_conn->conn, "ROLLBACK", NULL, NULL, 0, NULL);
-//     if ( l_ret == SQLITE_OK ) {
-//         s_db_pgsql_free_connection(s_conn, true);
-//     }
-//     return  l_ret;
-// }
+/**
+ * @brief Ends a outstanding transaction in database.
+ * @return result code.
+ */
+static int s_db_pgsql_transaction_end(bool a_commit)
+{
+// sanity check
+    dap_return_val_if_pass_err(!s_conn || !s_conn->conn, -1, "Outstanding connection not exist");
+// func work
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "End TX l_conn: @%p", s_conn->conn);
+    int l_ret = 0;
+    if (a_commit)
+        l_ret = s_db_pgsql_exec_command(s_conn->conn, "COMMIT", NULL, NULL, 0, NULL);
+    else
+        l_ret = s_db_pgsql_exec_command(s_conn->conn, "ROLLBACK", NULL, NULL, 0, NULL);
+    if ( !l_ret ) {
+        s_db_pgsql_free_connection(s_conn, true);
+    }
+    return  l_ret;
+}
 
 // void dap_global_db_driver_sqlite_set_attempts_count(uint32_t a_attempts, bool a_force)
 // {
@@ -1112,8 +1110,8 @@ int dap_global_db_driver_pgsql_init(const char *a_db_path, dap_global_db_driver_
     a_drv_callback->read_store_obj          = s_db_pgsql_read_store_obj;
     a_drv_callback->read_cond_store_obj     = s_db_pgsql_read_cond_store_obj;
     // a_drv_callback->read_last_store_obj     = s_db_sqlite_read_last_store_obj;
-    // a_drv_callback->transaction_start       = s_db_sqlite_transaction_start;
-    // a_drv_callback->transaction_end         = s_db_sqlite_transaction_end;
+    a_drv_callback->transaction_start       = s_db_pgsql_transaction_start;
+    a_drv_callback->transaction_end         = s_db_pgsql_transaction_end;
     // a_drv_callback->get_groups_by_mask      = s_db_sqlite_get_groups_by_mask;
     a_drv_callback->read_count_store        = s_db_pgsql_read_count_store;
     // a_drv_callback->is_obj                  = s_db_sqlite_is_obj;
