@@ -125,6 +125,8 @@ static void s_gdb_clean_deinit();
 static void s_check_pinned_db_objs_deinit();
 
 static int s_check_pinned_db_objs_init();
+static int s_add_pinned_obj_in_pinned_group(const char *a_group, char * key);
+DAP_STATIC_INLINE char *dap_get_local_pinned_groups(const char *a_group);
 
 // Opcode to string
 static const char *s_msg_opcode_to_str(enum queue_io_msg_opcode a_opcode);
@@ -1287,6 +1289,13 @@ int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callba
     l_msg->callback_arg = a_arg;
     l_msg->callback_result = a_callback;
     l_msg->value_is_pinned = a_pin;
+    if (a_pin) {
+        s_add_pinned_obj_in_pinned_group(a_group, a_key);
+    } else {
+        dap_global_db_del_sync(dap_get_local_pinned_groups(a_group), a_key);
+    }
+    debug_if(g_dap_global_db_debug_more, L_DEBUG, "%s \"%s\" group \"%s\" key from pinned groups",
+                                                    a_pin ? "Add" : "Remove", a_group, a_key);
 
     int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
     if (l_ret != 0) {
@@ -1715,6 +1724,7 @@ static bool s_check_pinned_db_objs_callback() {
 
         for(size_t i = 0; i < l_ret_count; i++) {
             if (l_ret[i].timestamp + l_ttl < l_time_now + s_minimal_ttl) {
+                dap_global_db_set_sync(l_ret->group, l_ret->key, l_ret->value, l_ret->value_len, true);
                 dap_store_obj_t * l_gdb_rec =  dap_global_db_get_raw_sync((char*)l_ret->value, l_ret->key);
                 dap_global_db_set_sync(l_gdb_rec->group, l_gdb_rec->key, l_gdb_rec->value, l_gdb_rec->value_len, true);
                 dap_store_obj_free(l_gdb_rec, 1);
@@ -1734,31 +1744,43 @@ DAP_STATIC_INLINE char *dap_get_local_pinned_groups(const char *a_group)
 static void s_get_all_pinned_objs_in_group(const char *a_group, dap_store_obj_t * a_objs, size_t a_objs_count) {
     for(size_t i = 0; i < a_objs_count; i++) {
         char * l_pinned_mask = dap_get_local_pinned_groups(a_group);
-        if (a_objs[i].flags & DAP_GLOBAL_DB_RECORD_PINNED && !dap_global_db_group_match_mask(a_group, l_pinned_mask)) {
-           if (dap_global_db_set(l_pinned_mask, a_objs[i].key, (uint8_t*)a_group, strlen(a_group) + 1, true, NULL, NULL)) {
-                debug_if(g_dap_global_db_debug_more, L_ERROR, "Adding error in pinned group %s", a_group);
-           } else {
-                debug_if(g_dap_global_db_debug_more, L_INFO, "Pinned objs was added in pinned group %s", a_group);
-            }
-        }
+        if (a_objs[i].flags & DAP_GLOBAL_DB_RECORD_PINNED)
+            s_add_pinned_obj_in_pinned_group(a_group, a_objs[i].key);
         DAP_DELETE(l_pinned_mask);
     }
 }
 
+static int s_add_pinned_obj_in_pinned_group(const char *a_group, char * key){
+    if (!dap_global_db_group_match_mask(a_group, "*.pinned")) {
+        char * l_pinned_mask = dap_get_local_pinned_groups(a_group);
+        if (!dap_global_db_driver_get_groups_by_mask(l_pinned_mask)){
+            if (!dap_global_db_set(l_pinned_mask, key, (uint8_t*)a_group, strlen(a_group) + 1, true, NULL, NULL)) {
+                    debug_if(g_dap_global_db_debug_more, L_INFO, "Pinned objs was added in pinned group %s", l_pinned_mask);
+                    dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(s_dbi, a_group);
+                    if (s_minimal_ttl > l_cluster->ttl *1000)
+                        s_minimal_ttl = l_cluster->ttl *1000;
+            } else {
+                    debug_if(g_dap_global_db_debug_more, L_ERROR, "Adding error in pinned group %s", a_group);
+            }
+        }
+        DAP_DELETE(l_pinned_mask);
+    }
+    return 0;
+}
+
 static int s_check_pinned_db_objs_init() {
     dap_list_t *l_group_list = dap_global_db_driver_get_groups_by_mask("*");
-    dap_nanotime_t l_ttl = dap_nanotime_from_sec(900);                                                     //default 15 min
-    for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list)) {                       //find and add all pinned 
+    dap_nanotime_t l_ttl = dap_nanotime_from_sec(900);
+    for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list)) {
         size_t l_ret_count;
         dap_store_obj_t  * l_ret = dap_global_db_get_all_raw_sync((char*)l_list->data, &l_ret_count);
-        dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(s_dbi, l_ret->group);
-        dap_nanotime_t l_cur_ttl = dap_nanotime_from_sec(l_cluster->ttl);
-        if (l_cur_ttl && l_ttl > l_cur_ttl)
-            l_ttl = l_cur_ttl;
+        if (!l_ret) {
+            dap_store_obj_free(l_ret, l_ret_count);
+            continue;
+        }
         s_get_all_pinned_objs_in_group((char*)l_list->data, l_ret, l_ret_count);
         dap_store_obj_free(l_ret, l_ret_count);
     }
-    s_minimal_ttl = l_ttl/1000;
     s_check_pinned_db_objs_timer = dap_timerfd_start(s_minimal_ttl/2, (dap_timerfd_callback_t)s_check_pinned_db_objs_callback, NULL);
     
     if (!s_check_pinned_db_objs_timer)
