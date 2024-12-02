@@ -172,7 +172,7 @@ static int s_db_sqlite_prepare(sqlite3 *a_db, const char *a_str_query, sqlite3_s
             break;
         dap_usleep(s_sleep_period);
     }
-    debug_if(l_ret != SQLITE_OK && dap_strcmp("no such table", sqlite3_errmsg(a_db)), L_ERROR, "SQLite prepare %s error %d(%s)", a_error_msg ? a_error_msg : "", sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
+    debug_if(l_ret != SQLITE_OK && dap_strncmp("no such table", sqlite3_errmsg(a_db), 13), L_ERROR, "SQLite prepare %s error %d(%s)", a_error_msg ? a_error_msg : "", sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
     return l_ret;
 }
 

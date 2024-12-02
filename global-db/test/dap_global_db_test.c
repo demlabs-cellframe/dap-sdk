@@ -549,7 +549,7 @@ static void s_test_close_db(void)
 static void s_test_all(size_t a_count)
 {
     s_test_write(a_count);
-    // s_test_read(a_count);
+    s_test_read(a_count);
     s_test_read_cond_store(a_count);
     s_test_count(a_count);
     s_test_tx_start_end(a_count, false);  // if after this tests fail try comment

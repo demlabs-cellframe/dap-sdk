@@ -39,6 +39,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
 #include "dap_global_db_pkt.h"
+#include "dap_global_db.h"
 
 #include "dap_enc_base64.h"
 
@@ -227,7 +228,7 @@ static int s_db_pgsql_create_group_table(const char *a_table_name, conn_list_ite
     char l_query[512];
 
     snprintf(l_query, sizeof(l_query) - 1,
-                    "CREATE TABLE IF NOT EXISTS \"%s\"(driver_key BYTEA UNIQUE NOT NULL PRIMARY KEY, key TEXT UNIQUE NOT NULL, flags INTEGER, value BYTEA, sign BYTEA)",
+                    "CREATE TABLE IF NOT EXISTS \"%s\"(driver_key BYTEA UNIQUE NOT NULL PRIMARY KEY, key TEXT UNIQUE NOT NULL, flags INT8, value BYTEA, sign BYTEA)",
                     a_table_name);
     return s_db_pgsql_exec_command(a_conn->conn, l_query, NULL, NULL, 0, NULL, "create_group_table");
 }
@@ -256,7 +257,7 @@ static int s_db_pgsql_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_ret = -3;
             goto clean_and_ret;
         } else { //add one record
-            l_query = dap_strdup_printf("INSERT INTO \"%s\" VALUES($1, '%s', '%d', $2, $3) "
+            l_query = dap_strdup_printf("INSERT INTO \"%s\" (driver_key, key, flags, value, sign) VALUES($1, '%s', '%d', $2, $3) "
             "ON CONFLICT(key) DO UPDATE SET driver_key = EXCLUDED.driver_key, flags = EXCLUDED.flags, value = EXCLUDED.value, sign = EXCLUDED.sign;",
                                                   a_store_obj->group, a_store_obj->key, (int)(a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW));
         }
@@ -317,7 +318,7 @@ static int s_db_pgsql_fill_one_item(const char *a_group, dap_store_obj_t *a_obj,
                 ++l_count_col_out;
                 break;
             case 2:
-                a_obj->flags = *((int *)PQgetvalue(a_query_res, a_row, l_col_num));
+                a_obj->flags = be64toh(*((int64_t *)PQgetvalue(a_query_res, a_row, l_col_num)));
                 ++l_count_col_out;
                 break;
             case 3:
@@ -398,7 +399,7 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
     const char *l_err_msg = "get by hash";
     dap_global_db_pkt_pack_t *l_ret = NULL;
 
-    char **l_param_vals = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(char *, a_count, NULL);
+    const char **l_param_vals = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(char *, a_count, NULL);
     int *l_param_lens = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(int, a_count, NULL, l_param_vals);
     int *l_param_formats = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(int, a_count, NULL, l_param_vals, l_param_lens);
 
@@ -408,8 +409,8 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
         return NULL;
     }
     for (size_t i = 0; i < a_count; ++i) {
-        dap_string_append_printf(l_blob_str, "$%d,", i + 1);
-        l_param_vals[i] = a_hashes + i;
+        dap_string_append_printf(l_blob_str, "$%zu,", i + 1);
+        l_param_vals[i] = (const char *)(a_hashes + i);
         l_param_lens[i] = sizeof(dap_global_db_driver_hash_t);
         l_param_formats[i] = 1;
     }
@@ -430,18 +431,18 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
 // memory alloc
     PGresult *l_query_res = PQexecParams(l_conn->conn, (const char *)l_query_str, a_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1);
     if ( PQresultStatus(l_query_res) != PGRES_TUPLES_OK ) {
-        const char *l_err = PQresultErrorField(l_ret, PG_DIAG_SQLSTATE);
+        const char *l_err = PQresultErrorField(l_query_res, PG_DIAG_SQLSTATE);
         if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
-            log_it(L_ERROR, "Query failed with message: \"%s\"", PQresultErrorMessage(l_ret));
+            log_it(L_ERROR, "Query failed with message: \"%s\"", PQresultErrorMessage(l_query_res));
         PQclear(l_query_res);
         return NULL;
     }
 
     PGresult *l_query_size_res = PQexecParams(l_conn->conn, (const char *)l_query_size_str, a_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1);
     if ( PQresultStatus(l_query_res) != PGRES_TUPLES_OK ) {
-        const char *l_err = PQresultErrorField(l_ret, PG_DIAG_SQLSTATE);
+        const char *l_err = PQresultErrorField(l_query_res, PG_DIAG_SQLSTATE);
         if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
-            log_it(L_ERROR, "Query failed with message: \"%s\"", PQresultErrorMessage(l_ret));
+            log_it(L_ERROR, "Query failed with message: \"%s\"", PQresultErrorMessage(l_query_res));
         PQclear(l_query_res);
         return NULL;
     }
@@ -493,7 +494,7 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
                     break;
                 case 2:
                     if (PQgetlength(l_query_res, i, l_col_num))
-                        l_cur_pkt->flags = (*((int *)PQgetvalue(l_query_res, i, l_col_num))) & DAP_GLOBAL_DB_RECORD_DEL;
+                        l_cur_pkt->flags = be64toh(*((int64_t *)PQgetvalue(l_query_res, i, l_col_num))) & DAP_GLOBAL_DB_RECORD_DEL;
                     ++l_count_col_out;
                     break;
                 case 3:
@@ -731,7 +732,6 @@ static dap_list_t *s_db_pgsql_get_groups_by_mask(const char *a_group_mask)
         if(dap_global_db_group_match_mask(l_table_name, a_group_mask))
             l_ret = dap_list_prepend(l_ret, dap_strdup(l_table_name));
     }
-clean_and_ret:
     PQclear(l_res);
     s_db_pgsql_free_connection(l_conn, false);
     return l_ret;
