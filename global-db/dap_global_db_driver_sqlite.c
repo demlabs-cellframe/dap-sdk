@@ -79,7 +79,7 @@ static void s_connection_destructor(UNUSED_ARG void *a_conn) {
  * @param a_error_message[out] an error message that's received from the SQLite database
  * @return Returns a pointer to an instance of SQLite database structure.
  */
-sqlite3* s_db_sqlite_open(const char *a_filename_utf8, int a_flags, char **a_error_message)
+static sqlite3* s_db_sqlite_open(const char *a_filename_utf8, int a_flags, char **a_error_message)
 {
     sqlite3 *l_db = NULL;
 
@@ -286,7 +286,7 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
  * @brief Deinitializes a SQLite database.
  * @return result code.
  */
-int s_db_sqlite_deinit(void)
+static int s_db_sqlite_deinit(void)
 {
     if (!s_db_inited) {
         log_it(L_WARNING, "SQLite driver already deinited");
