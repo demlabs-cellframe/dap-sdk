@@ -818,45 +818,36 @@ clean_and_ret:
     return l_ret;
 }
 
-// /**
-//  * @brief Gets a list of group names by a_group_mask.
-//  * @param a_group_mask a group name mask
-//  * @return If successful, a pointer to a list of group names, otherwise NULL.
-//  */
-// static dap_list_t *s_db_sqlite_get_groups_by_mask(const char *a_group_mask)
-// {
-// // sanity check
-//     conn_list_item_t *l_conn = NULL;
-//     dap_return_val_if_pass(!a_group_mask || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
-// // preparing
-//     const char *l_error_msg = "get groups";
-//     dap_list_t* l_ret = NULL;
-//     sqlite3_stmt *l_stmt = NULL;
-//     char *l_mask = NULL;
-//     char *l_query_str = sqlite3_mprintf("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%c'", '%');
-//     if (!l_query_str) {
-//         log_it(L_ERROR, "Error in SQL request forming");
-//         goto clean_and_ret;
-//     }
+/**
+ * @brief Gets a list of group names by a_group_mask.
+ * @param a_group_mask a group name mask
+ * @return If successful, a pointer to a list of group names, otherwise NULL.
+ */
+static dap_list_t *s_db_pgsql_get_groups_by_mask(const char *a_group_mask)
+{
+// sanity check
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group_mask || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
+// preparing
+    const char *l_error_msg = "get groups";
+    dap_list_t* l_ret = NULL;
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK) {
-//         goto clean_and_ret;
-//     }
-//     l_mask = dap_str_replace_char(a_group_mask, '.', '_');
-//     int l_ret_code = 0;
-//     for (l_ret_code = s_db_sqlite_step(l_stmt, l_error_msg); l_ret_code == SQLITE_ROW && sqlite3_column_type(l_stmt, 0) == SQLITE_TEXT; l_ret_code = s_db_sqlite_step(l_stmt, l_error_msg)) {
-//         const char *l_table_name = (const char *)sqlite3_column_text(l_stmt, 0);
-//         if (dap_global_db_group_match_mask(l_table_name, l_mask))
-//             l_ret = dap_list_prepend(l_ret, dap_str_replace_char(l_table_name, '_', '.'));
-//     }
-//     if(l_ret_code != SQLITE_DONE) {
-//         log_it(L_ERROR, "SQLite read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
-//     }
-// clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 1, l_query_str, l_stmt);
-//     DAP_DEL_Z(l_mask);
-//     return l_ret;
-// }
+    PGresult *l_res = s_db_pgsql_exec_tuples(
+        l_conn->conn,
+        "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname != 'information_schema' AND schemaname != 'pg_catalog'",
+        NULL, NULL, 0, NULL
+        );
+    size_t l_count = PQntuples(l_res);
+    for (size_t i = 0; i < l_count; ++i) {
+        char *l_table_name = (char *)PQgetvalue(l_res, i, 0);
+        if(dap_global_db_group_match_mask(l_table_name, a_group_mask))
+            l_ret = dap_list_prepend(l_ret, dap_strdup(l_table_name));
+    }
+clean_and_ret:
+    PQclear(l_res);
+    s_db_pgsql_free_connection(l_conn, false);
+    return l_ret;
+}
 
 /**
  * @brief Reads a number of objects from a s_db database by a hash
@@ -1120,7 +1111,7 @@ int dap_global_db_driver_pgsql_init(const char *a_db_path, dap_global_db_driver_
     a_drv_callback->read_last_store_obj     = s_db_pgsql_read_last_store_obj;
     a_drv_callback->transaction_start       = s_db_pgsql_transaction_start;
     a_drv_callback->transaction_end         = s_db_pgsql_transaction_end;
-    // a_drv_callback->get_groups_by_mask      = s_db_sqlite_get_groups_by_mask;
+    a_drv_callback->get_groups_by_mask      = s_db_pgsql_get_groups_by_mask;
     a_drv_callback->read_count_store        = s_db_pgsql_read_count_store;
     a_drv_callback->is_obj                  = s_db_pgsql_is_obj;
     // a_drv_callback->deinit                  = s_db_sqlite_deinit;
