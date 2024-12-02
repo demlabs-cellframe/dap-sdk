@@ -1586,16 +1586,16 @@ void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uu
         dap_overlapped_free(ol);
     }
 #else
-    dap_worker_msg_io_t *l_msg; DAP_NEW_Z_RET(l_msg, dap_worker_msg_io_t, NULL);
+    dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_IF_FAIL(l_msg, dap_worker_msg_io_t);
     l_msg->esocket_uuid = a_es_uuid;
     if (a_is_ready)
         l_msg->flags_set = DAP_SOCK_READY_TO_READ;
     else
         l_msg->flags_unset = DAP_SOCK_READY_TO_READ;
 
-    int l_ret= dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "set readable mt: wasn't send pointer to queue with set readble flag: code %d", l_ret);
+    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg);
+    if (l_ret) {
+        log_it(L_ERROR, "dap_events_socket_queue_ptr_send() error %d", l_ret);
         DAP_DELETE(l_msg);
     }
 #endif
@@ -1638,8 +1638,8 @@ void dap_events_socket_set_writable(dap_worker_t *a_worker, dap_events_socket_uu
     else
         l_msg->flags_unset = DAP_SOCK_READY_TO_WRITE;
 
-    int l_ret= dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg );
-    if (l_ret!=0){
+    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg );
+    if (l_ret) {
         log_it(L_ERROR, "set writable mt: wasn't send pointer to queue: code %d", l_ret);
         DAP_DELETE(l_msg);
     }
@@ -1683,9 +1683,9 @@ size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t 
     l_msg->data_size = a_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
-    int l_ret = dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg);
+    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg);
     return l_ret
-        ? ( log_it(L_ERROR, "wite mt: wasn't send pointer to queue: code %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0 )
+        ? ( log_it(L_ERROR, "dap_events_socket_queue_ptr_send() error %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0 )
         : a_data_size;
 #endif
 }
@@ -1745,18 +1745,12 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
             return 0;
         }
         size_t ret = dap_events_socket_write_unsafe(l_es, l_msg->data, l_msg->data_size);
-        DAP_DELETE(l_msg->data);
-        DAP_DELETE(l_msg);
-        return ret;
+        return DAP_DEL_MULTY(l_msg->data, l_msg), l_ret;
     }
-    int l_ret= dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "Wrrite f mt: wasn't send pointer to queue: code %d", l_ret);
-        DAP_DELETE(l_msg->data);
-        DAP_DELETE(l_msg);
-        return 0;
-    }
-    return l_data_size;
+    int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg);
+    return l_ret
+        ? log_it(L_ERROR, "dap_events_socket_queue_ptr_send() error %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0
+        : l_data_size;
 #endif
 }
 
