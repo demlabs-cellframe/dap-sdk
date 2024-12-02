@@ -172,7 +172,7 @@ static int s_db_sqlite_prepare(sqlite3 *a_db, const char *a_str_query, sqlite3_s
             break;
         dap_usleep(s_sleep_period);
     }
-    debug_if(l_ret != SQLITE_OK, L_DEBUG, "SQLite prepare %s error %d(%s)", a_error_msg ? a_error_msg : "", sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
+    debug_if(l_ret != SQLITE_OK && dap_strcmp("no such table", sqlite3_errmsg(a_db)), L_ERROR, "SQLite prepare %s error %d(%s)", a_error_msg ? a_error_msg : "", sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
     return l_ret;
 }
 
@@ -487,19 +487,19 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
-    char *l_str_query_size = sqlite3_mprintf("SELECT SUM(LENGTH(key)) + SUM(LENGTH(value)) + SUM(LENGTH(sign)) FROM '%s' "
+    char *l_query_size_str = sqlite3_mprintf("SELECT SUM(LENGTH(key)) + SUM(LENGTH(value)) + SUM(LENGTH(sign)) FROM '%s' "
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
     char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
                                         " WHERE driver_key IN (%s) ORDER BY driver_key",
                                         l_table_name, l_blob_str);
     DAP_DEL_MULTY(l_table_name, l_blob_str);
-    if (!l_query_count_str || !l_query_str) {
+    if (!l_query_count_str || !l_query_size_str ||  !l_query_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
     }
     if( s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
-        s_db_sqlite_prepare(l_conn->conn, l_str_query_size, &l_stmt_size, l_error_msg)  != SQLITE_OK ||
+        s_db_sqlite_prepare(l_conn->conn, l_query_size_str, &l_stmt_size, l_error_msg)  != SQLITE_OK ||
         s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)            != SQLITE_OK )
     {
         goto clean_and_ret;
@@ -522,14 +522,14 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
         goto clean_and_ret;
     }
     size_t l_group_name_len = strlen(a_group) + 1;
-    size_t l_data_size = l_count * (sizeof(dap_global_db_pkt_t) + l_group_name_len + 1) + l_size;
+    size_t l_data_size = l_count * (sizeof(dap_global_db_pkt_t) + l_group_name_len + 1) + l_size;  // +1 add \0 to key
     l_ret = DAP_NEW_Z_SIZE(dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_data_size);
     if ( !l_ret ) {
         log_it(L_CRITICAL, "Memory allocation error!");
         goto clean_and_ret;
     }
     byte_t *l_data_pos = l_ret->data, *l_data_end = l_data_pos + l_data_size;
-    for (i = 0; i < l_count && s_db_sqlite_step(l_stmt, l_error_msg) == SQLITE_ROW; ++i) {
+    for (i = 0; s_db_sqlite_step(l_stmt, l_error_msg) == SQLITE_ROW && i < l_count; ++i) {
         dap_global_db_pkt_t *l_cur_pkt = (dap_global_db_pkt_t*)(l_data_pos);
         l_data_pos = l_cur_pkt->data;
         if ( l_data_pos + l_group_name_len > l_data_end )
@@ -556,13 +556,13 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
                             log_it(L_ERROR, "Wrong sign size in GDB group %s", a_group);
                             break;
                         }
-                        l_data_pos = dap_mempcpy(l_data_pos, sqlite3_column_blob(l_stmt, j), l_sign_size);
+                        l_data_pos = dap_mempcpy(l_data_pos, l_sign, l_sign_size);
                     }
                 } continue;
             case SQLITE_TEXT:
                 if ( j == 1 ) {
                     l_cur_pkt->key_len = sqlite3_column_bytes(l_stmt, j);
-                    if ( l_data_pos + l_cur_pkt->key_len > l_data_end )
+                    if ( l_data_pos + l_cur_pkt->key_len  + 1 > l_data_end )
                         break;
                     l_data_pos = dap_mempcpy(l_data_pos, sqlite3_column_text(l_stmt, j), l_cur_pkt->key_len++) + 1;
                 } continue;
@@ -597,7 +597,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
             DAP_DEL_Z(l_ret);
     }
 clean_and_ret:
-    s_db_sqlite_clean(l_conn, 3, l_query_str, l_query_count_str, l_str_query_size, l_stmt, l_stmt_count, l_stmt_size);
+    s_db_sqlite_clean(l_conn, 3, l_query_str, l_query_count_str, l_query_size_str, l_stmt, l_stmt_count, l_stmt_size);
     return l_ret;
 }
 
@@ -640,22 +640,18 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
     }
 // memory alloc
     uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
-    uint64_t l_blank_add = l_count;
-    l_count = dap_min(l_count, DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT);
     if (!l_count) {
         log_it(L_INFO, "There are no records satisfying the hashes read request");
         goto clean_and_ret;
     }
-    l_blank_add = l_count == l_blank_add;
-    l_count += l_blank_add;
     size_t l_group_name_len = strlen(a_group) + 1;
-    l_ret = DAP_NEW_Z_SIZE(dap_global_db_hash_pkt_t, sizeof(dap_global_db_hash_pkt_t) + l_count * sizeof(dap_global_db_driver_hash_t) + l_group_name_len);
+    l_ret = DAP_NEW_Z_SIZE(dap_global_db_hash_pkt_t, sizeof(dap_global_db_hash_pkt_t) + (l_count + 1) * sizeof(dap_global_db_driver_hash_t) + l_group_name_len);
     if (!l_ret) {
-        log_it(L_CRITICAL, "Memory allocation error!");
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         goto clean_and_ret;
     }
 // data forming
-    size_t l_count_out;
+    size_t l_count_out = 0;
     l_ret->group_name_len = l_group_name_len;
     byte_t *l_pos = dap_mempcpy(l_ret->group_n_hashses, a_group, l_group_name_len);
 
@@ -670,7 +666,7 @@ static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, da
         }
         l_pos = dap_mempcpy(l_pos, sqlite3_column_blob(l_stmt, 0), sizeof(dap_global_db_driver_hash_t));
     }
-    l_ret->hashes_count = l_count_out + l_blank_add;
+    l_ret->hashes_count = l_count_out + 1;
 clean_and_ret:
     s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_count_str, l_stmt, l_stmt_count);
     return l_ret;
@@ -729,7 +725,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
     l_blank_add = l_count == l_blank_add;
     l_count += l_blank_add;
     if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         goto clean_and_ret;
     }
 // data forming
@@ -795,7 +791,7 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj(const char *a_group, const ch
         goto clean_and_ret;
     }
     if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
-        log_it(L_CRITICAL, "Memory allocation error");
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         goto clean_and_ret;
     }
     

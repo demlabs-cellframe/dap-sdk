@@ -38,6 +38,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_file_utils.h"
 #include "dap_strfuncs.h"
 #include "dap_file_utils.h"
+#include "dap_global_db_pkt.h"
 
 #include "dap_enc_base64.h"
 
@@ -63,6 +64,7 @@ extern int g_dap_global_db_debug_more;                         /* Enable extensi
 static bool s_db_inited = false;
 static _Thread_local conn_list_item_t *s_conn = NULL;  // local connection
 
+static const char *s_db_fields_name[] = {"driver_key", "key", "flags", "value", "sign"};
 
 static void s_connection_destructor(UNUSED_ARG void *a_conn) {
     PQfinish(s_conn->conn);
@@ -220,7 +222,7 @@ static PGresult *s_db_pgsql_exec(PGconn *a_db, const char *a_query, dap_global_d
     PGresult *l_ret = PQexecParams(a_db, a_query, l_param_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1);
     if ( PQresultStatus(l_ret) != a_valid_result ) {
         const char *l_err = PQresultErrorField(l_ret, PG_DIAG_SQLSTATE);
-        if (!l_err || strcmp(l_err, PGSQL_INVALID_TABLE))
+        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
             log_it(L_ERROR, "Query failed with message: \"%s\"", PQresultErrorMessage(l_ret));
         PQclear(l_ret);
         return NULL;
@@ -405,13 +407,12 @@ static int s_db_pgsql_fill_one_item(const char *a_group, dap_store_obj_t *a_obj,
 // preparing
     int l_count_col = PQnfields(a_query_res);
     int l_count_col_out = 0;
-    const char *l_fields_name[] = {"driver_key", "key", "flags", "value", "sign"};
-    for (size_t i = 0; i < sizeof(l_fields_name) / sizeof (const char *); ++i) {
+    for (size_t i = 0; i < sizeof(s_db_fields_name) / sizeof (const char *); ++i) {
         dap_global_db_driver_hash_t *l_driver_key = NULL;
-        int l_col_num = PQfnumber(a_query_res, l_fields_name[i]);
+        int l_col_num = PQfnumber(a_query_res, s_db_fields_name[i]);
         int size = 0;
         size_t l_decode_len = 0;
-        switch (l_col_num) {
+        switch (i) {
             case 0:
                 l_driver_key = (dap_global_db_driver_hash_t *)PQgetvalue(a_query_res, a_row, l_col_num);
                 a_obj->timestamp = be64toh(l_driver_key->bets);
@@ -489,200 +490,225 @@ clean_and_ret:
     return l_ret;
 }
 
-// /**
-//  * @brief Forming objects pack from hash list.
-//  * @param a_group a group name string
-//  * @param a_hashes pointer to hashes
-//  * @param a_count hashes num
-//  * @return If successful, a pointer to objects pack, otherwise NULL.
-//  */
-// static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count)
-// {
-// // sanity check
-//     conn_list_item_t *l_conn = NULL;
-//     dap_return_val_if_pass(!a_group || !a_hashes || !a_count || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
-// // preparing
-//     const char *l_error_msg = "get by hash";
-//     dap_global_db_pkt_pack_t *l_ret = NULL;
-//     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL, *l_stmt_size = NULL;
-//     char *l_blob_str = DAP_NEW_Z_SIZE(char, a_count * 2);
-//     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     if (!l_blob_str || !l_table_name) {
-//         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-//         DAP_DEL_MULTY(l_table_name, l_blob_str);
-//         return NULL;
-//     }
-//     for (size_t i = 0; i < a_count * 2; i += 2) {
-//         l_blob_str[i] = '?';
-//     }
-//     for (size_t i = 1; i + 1 < a_count * 2; i += 2) {
-//         l_blob_str[i] = ',';
-//     }
-//     char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
-//                                         " WHERE driver_key IN (%s)",
-//                                         l_table_name, l_blob_str);
-//     char *l_query_str_size = sqlite3_mprintf("SELECT SUM(LENGTH(key)) + SUM(LENGTH(value)) + SUM(LENGTH(sign)) FROM '%s' "
-//                                         " WHERE driver_key IN (%s)",
-//                                         l_table_name, l_blob_str);
-//     char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
-//                                         " WHERE driver_key IN (%s) ORDER BY driver_key",
-//                                         l_table_name, l_blob_str);
-//     if (!l_query_count_str || !l_query_str) {
-//         log_it(L_ERROR, "Error in SQL request forming");
-//         goto clean_and_ret;
-//     }
-//     if(s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
-//         s_db_sqlite_prepare(l_conn->conn, l_query_str_size, &l_stmt_size, l_error_msg)!= SQLITE_OK ||
-//         s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK)
-//     {
-//         goto clean_and_ret;
-//     }
-//     for (size_t i = 1; i <= a_count; ++i) {
-//         if( s_db_sqlite_bind_blob64(l_stmt_count, i, a_hashes + i - 1, sizeof(*a_hashes), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
-//             s_db_sqlite_bind_blob64(l_stmt_size, i, a_hashes + i - 1, sizeof(*a_hashes), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
-//             s_db_sqlite_bind_blob64(l_stmt, i, a_hashes + i - 1, sizeof(*a_hashes), SQLITE_STATIC, l_error_msg) != SQLITE_OK)
-//         {
-//             goto clean_and_ret;
-//         }
-//     }
-//     if (s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW || s_db_sqlite_step(l_stmt_size, l_error_msg) != SQLITE_ROW) {
-//         goto clean_and_ret;
-//     }
-// // memory alloc
-//     uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
-//     uint64_t l_size = sqlite3_column_int64(l_stmt_size, 0);
-//     if (!l_count || !l_size) {
-//         log_it(L_INFO, "There are no records satisfying the get by hash request");
-//         goto clean_and_ret;
-//     }
-//     size_t l_group_name_len = strlen(a_group) + 1;
-//     size_t l_data_size = l_count * (sizeof(dap_global_db_pkt_t) + l_group_name_len + 1) + l_size;
-//     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_data_size, NULL, l_query_count_str, l_query_str);
-// // data forming
-//     for (size_t i = 0; i < l_count && l_ret->data_size < l_data_size && s_db_sqlite_step(l_stmt, l_error_msg) == SQLITE_ROW; ++i) {
-//         dap_global_db_pkt_t *l_cur_pkt = (dap_global_db_pkt_t *)(l_ret->data + l_ret->data_size);
-//         size_t l_count_col = sqlite3_column_count(l_stmt);
-//         l_cur_pkt->group_len = l_group_name_len;
-//         memcpy(l_cur_pkt->data, a_group, l_cur_pkt->group_len);
-//         l_cur_pkt->data_len += l_cur_pkt->group_len;
-//         for (size_t j = 0; j < l_count_col; ++j) {
-//             if (j == 0 && sqlite3_column_type(l_stmt, j) == SQLITE_BLOB) {
-//                 if (sqlite3_column_bytes(l_stmt, j)) {
-//                     dap_global_db_driver_hash_t *l_driver_key = (dap_global_db_driver_hash_t *)sqlite3_column_blob(l_stmt, j);
-//                     l_cur_pkt->timestamp = be64toh(l_driver_key->bets);
-//                     l_cur_pkt->crc = be64toh(l_driver_key->becrc);
-//                 }
-//                 continue;
-//             }
-//             if (j == 1 && sqlite3_column_type(l_stmt, j) == SQLITE_TEXT) {
-//                 l_cur_pkt->key_len = sqlite3_column_bytes(l_stmt, j);
-//                 memcpy(l_cur_pkt->data + l_cur_pkt->data_len, sqlite3_column_text(l_stmt, j), l_cur_pkt->key_len);
-//                 l_cur_pkt->key_len++;
-//                 l_cur_pkt->data_len += l_cur_pkt->key_len;
-//                 continue;
-//             }
-//             if (j == 2 && sqlite3_column_type(l_stmt, j) == SQLITE_INTEGER) {
-//                 if (sqlite3_column_bytes(l_stmt, j))
-//                     l_cur_pkt->flags = sqlite3_column_int64(l_stmt, j) & DAP_GLOBAL_DB_RECORD_DEL;
-//                 continue;
-//             }
-//             if (j == 3 && sqlite3_column_type(l_stmt, j) == SQLITE_BLOB) {
-//                 l_cur_pkt->value_len = sqlite3_column_bytes(l_stmt, j);
-//                 memcpy(l_cur_pkt->data + l_cur_pkt->data_len, sqlite3_column_blob(l_stmt, j), l_cur_pkt->value_len);
-//                 l_cur_pkt->data_len += l_cur_pkt->value_len;
-//                 continue;
-//             }
-//             if (j == 4 && sqlite3_column_type(l_stmt, j) == SQLITE_BLOB) {
-//                 size_t l_sign_size = sqlite3_column_bytes(l_stmt, j);
-//                 if (l_sign_size) {
-//                     dap_sign_t *l_sign = (dap_sign_t *)sqlite3_column_blob(l_stmt, j);
-//                     if (l_sign_size != dap_sign_get_size(l_sign)) {
-//                         log_it(L_ERROR, "Wrong sign size from global_db");
-//                         goto clean_and_ret;
-//                     }
-//                     memcpy(l_cur_pkt->data + l_cur_pkt->data_len, sqlite3_column_blob(l_stmt, j), l_sign_size);
-//                     l_cur_pkt->data_len += l_sign_size;
-//                 }
-//                 continue;
-//             }
-//         }
-//         l_ret->data_size += sizeof(dap_global_db_pkt_t) + l_cur_pkt->data_len;
-//         l_ret->obj_count++;
-//     }
-//     if (l_ret->data_size != l_data_size) {
-//         log_it(L_ERROR, "Wrong pkt pack size %"DAP_UINT64_FORMAT_U", expected %zu", l_ret->data_size, l_data_size); 
-//     }
-// clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 3, l_query_str, l_query_count_str, l_query_str_size, l_stmt, l_stmt_count, l_stmt_size);
-//     DAP_DEL_MULTY(l_table_name, l_blob_str);
-//     return l_ret;
-// }
+/**
+ * @brief Forming objects pack from hash list.
+ * @param a_group a group name string
+ * @param a_hashes pointer to hashes
+ * @param a_count hashes num
+ * @return If successful, a pointer to objects pack, otherwise NULL.
+ */
+static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count)
+{
+// sanity check
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !a_hashes || !a_count || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
+// preparing
+    const char *l_error_msg = "get by hash";
+    dap_global_db_pkt_pack_t *l_ret = NULL;
 
-// /**
-//  * @brief Forming hashes pack started from concretic hash.
-//  * @param a_group a group name string
-//  * @param a_hash_from startin hash (not include to result)
-//  * @return If successful, a pointer to hashes pack, otherwise NULL.
-//  */
-// static dap_global_db_hash_pkt_t *s_db_sqlite_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
-// {
-// // sanity check
-//     conn_list_item_t *l_conn = NULL;
-//     dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
-// // preparing
-//     const char *l_error_msg = "hashes read";
-//     dap_global_db_hash_pkt_t *l_ret = NULL;
-//     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
-//     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-//     char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
-//                                         " WHERE driver_key > ?",
-//                                         l_table_name);
-//     char *l_query_str = sqlite3_mprintf("SELECT driver_key FROM '%s'"
-//                                         " WHERE driver_key > ?"
-//                                         " ORDER BY driver_key LIMIT '%d'",
-//                                         l_table_name, (int)DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT);
-//     DAP_DEL_Z(l_table_name);
-//     if (!l_query_count_str || !l_query_str) {
-//         log_it(L_ERROR, "Error in SQL request forming");
-//         goto clean_and_ret;
-//     }
+    char **l_param_vals = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(char *, a_count, NULL);
+    int *l_param_lens = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(int, a_count, NULL, l_param_vals);
+    int *l_param_formats = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(int, a_count, NULL, l_param_vals, l_param_lens);
+
+    dap_string_t *l_blob_str = dap_string_new_len(NULL, a_count * 4);
+    if (!l_blob_str) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        return NULL;
+    }
+    for (size_t i = 0; i < a_count; ++i) {
+        dap_string_append_printf(l_blob_str, "$%d,", i + 1);
+        l_param_vals[i] = a_hashes + i;
+        l_param_lens[i] = sizeof(dap_global_db_driver_hash_t);
+        l_param_formats[i] = 1;
+    }
+    l_blob_str->str[l_blob_str->len - 1] = '\0';
+    --l_blob_str->len;
+    char *l_query_size_str = dap_strdup_printf("SELECT SUM(LENGTH(key)) + SUM(LENGTH(value)) + SUM(LENGTH(sign)) FROM \"%s\" "
+                                        " WHERE driver_key IN (%s)",
+                                        a_group, l_blob_str->str);
+    char *l_query_str = dap_strdup_printf("SELECT * FROM \"%s\""
+                                        " WHERE driver_key IN (%s) ORDER BY driver_key",
+                                        a_group, l_blob_str->str);
+    dap_string_free(l_blob_str, true);
+    if (!l_query_size_str || !l_query_str) {
+        log_it(L_ERROR, "Error in SQL request forming");
+        goto clean_and_ret;
+    }
+
+// memory alloc
+    PGresult *l_query_res = PQexecParams(l_conn->conn, (const char *)l_query_str, a_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1);
+    if ( PQresultStatus(l_query_res) != PGRES_TUPLES_OK ) {
+        const char *l_err = PQresultErrorField(l_ret, PG_DIAG_SQLSTATE);
+        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
+            log_it(L_ERROR, "Query failed with message: \"%s\"", PQresultErrorMessage(l_ret));
+        PQclear(l_query_res);
+        return NULL;
+    }
+
+    PGresult *l_query_size_res = PQexecParams(l_conn->conn, (const char *)l_query_size_str, a_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1);
+    if ( PQresultStatus(l_query_res) != PGRES_TUPLES_OK ) {
+        const char *l_err = PQresultErrorField(l_ret, PG_DIAG_SQLSTATE);
+        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
+            log_it(L_ERROR, "Query failed with message: \"%s\"", PQresultErrorMessage(l_ret));
+        PQclear(l_query_res);
+        return NULL;
+    }
+    size_t l_count = PQntuples(l_query_res);
+    uint64_t *l_size_p = (uint64_t *)PQgetvalue(l_query_size_res, 0, 0);
+    size_t l_size = l_size_p ? be64toh(*l_size_p) : 0;
+    PQclear(l_query_size_res);
+    if ( !l_count || l_size <= 0 ) {
+        log_it(L_INFO, "There are no records satisfying the get by hash request");
+        goto clean_and_ret;
+    }
+    size_t l_group_name_len = strlen(a_group) + 1;
+    size_t l_data_size = l_count * (sizeof(dap_global_db_pkt_t) + l_group_name_len + 1) + l_size;
+    l_ret = DAP_NEW_Z_SIZE(dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_data_size);
+    if ( !l_ret ) {
+        log_it(L_CRITICAL, "Memory allocation error!");
+        goto clean_and_ret;
+    }
+    byte_t
+        *l_data_pos = l_ret->data,
+        *l_data_end = l_data_pos + l_data_size;
+
+    size_t i = 0;
+    for (i = 0; i < l_count; ++i) {
+        dap_global_db_pkt_t *l_cur_pkt = (dap_global_db_pkt_t*)(l_data_pos);
+        l_data_pos = l_cur_pkt->data;
+        if ( l_data_pos + l_group_name_len > l_data_end )
+            break;
+        l_data_pos = dap_mempcpy(l_data_pos, a_group, l_cur_pkt->group_len = l_group_name_len);
+        int l_count_col = PQnfields(l_query_res);
+        int l_count_col_out = 0;
+        for (size_t j = 0; j < sizeof(s_db_fields_name) / sizeof (const char *); ++j) {
+            int l_col_num = PQfnumber(l_query_res, s_db_fields_name[j]);
+            dap_global_db_driver_hash_t *l_driver_key = NULL;
+            size_t l_sign_size = 0;
+            switch (j) {
+                case 0:
+                    l_driver_key = (dap_global_db_driver_hash_t *)PQgetvalue(l_query_res, i, l_col_num);
+                    l_cur_pkt->timestamp = be64toh(l_driver_key->bets);
+                    l_cur_pkt->crc = be64toh(l_driver_key->becrc);
+                    ++l_count_col_out;
+                    break;
+                case 1:
+                    l_cur_pkt->key_len = PQgetlength(l_query_res, i, l_col_num);
+                    if ( l_data_pos + l_cur_pkt->key_len + 1 > l_data_end )
+                        break;
+                    l_data_pos = dap_mempcpy(l_data_pos, PQgetvalue(l_query_res, i, l_col_num), l_cur_pkt->key_len++) + 1;
+                    ++l_count_col_out;
+                    break;
+                case 2:
+                    if (PQgetlength(l_query_res, i, l_col_num))
+                        l_cur_pkt->flags = (*((int *)PQgetvalue(l_query_res, i, l_col_num))) & DAP_GLOBAL_DB_RECORD_DEL;
+                    ++l_count_col_out;
+                    break;
+                case 3:
+                    l_cur_pkt->value_len = PQgetlength(l_query_res, i, l_col_num);
+                    if ( l_data_pos + l_cur_pkt->value_len > l_data_end )
+                        break;
+                    l_data_pos = dap_mempcpy(l_data_pos, PQgetvalue(l_query_res, i, l_col_num), l_cur_pkt->value_len);
+                    ++l_count_col_out;
+                    break;
+                case 4:
+                    l_sign_size = PQgetlength(l_query_res, i, l_col_num);
+                    if (l_sign_size) {
+                        dap_sign_t *l_sign = (dap_sign_t*)PQgetvalue(l_query_res, i, l_col_num);
+                        if ( dap_sign_get_size(l_sign) != l_sign_size || l_data_pos + l_sign_size > l_data_end ) {
+                            log_it(L_ERROR, "Wrong sign size in GDB group %s", a_group);
+                            break;
+                        }
+                        l_data_pos = dap_mempcpy(l_data_pos, l_sign, l_sign_size);
+                    }
+                    ++l_count_col_out;
+                    break;
+                default:
+                    continue;
+            }
+        }
+        if (l_count_col_out != l_count_col) {
+            log_it(L_ERROR, "Error in PGSQL fill pkt pack item - filled collumn == %d, expected %d", l_count_col_out, l_count_col);
+            break;
+        }
+        l_cur_pkt->data_len = (uint32_t)(l_data_pos - l_cur_pkt->data);
+        l_ret->data_size = (uint64_t)(l_data_pos - l_ret->data);
+
+    }
+    l_ret->obj_count = i;
+    if (i < l_count) {
+        log_it(L_ERROR, "Invalid pack size, only %zu / %zu pkts (%zu / %zu bytes) fit the storage",
+                        i, l_count, l_ret->data_size, l_data_size);
+        size_t l_new_size = (size_t)(l_data_pos - (byte_t*)l_ret);
+        dap_global_db_pkt_pack_t *l_new_pack = DAP_REALLOC(l_ret, l_new_size);
+        if (l_new_pack)
+            l_ret = l_new_pack;
+        else
+            DAP_DEL_Z(l_ret);
+    }
+clean_and_ret:
+    PQclear(l_query_res);
+    s_db_pgsql_free_connection(l_conn, false);
+    return l_ret;
+}
+
+/**
+ * @brief Forming hashes pack started from concretic hash.
+ * @param a_group a group name string
+ * @param a_hash_from startin hash (not include to result)
+ * @return If successful, a pointer to hashes pack, otherwise NULL.
+ */
+static dap_global_db_hash_pkt_t *s_db_pgsql_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
+{
+// sanity check
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
+// func work
+    const char *l_error_msg = "read hashes";
+    dap_global_db_hash_pkt_t *l_ret = NULL;
+    char *l_query_str = dap_strdup_printf("SELECT driver_key FROM \"%s\""
+                                        " WHERE driver_key > $1"
+                                        " ORDER BY driver_key LIMIT '%d'",
+                                        a_group, (int)DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT);
+    if (!l_query_str) {
+        log_it(L_ERROR, "Error in PGSQL request forming");
+        goto clean_and_ret;
+    }
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, NULL, 0, NULL);
+    DAP_DELETE(l_query_str);
     
-//     if(s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)!= SQLITE_OK ||
-//         s_db_sqlite_bind_blob64(l_stmt_count, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
-//         s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)!= SQLITE_OK ||
-//         s_db_sqlite_bind_blob64(l_stmt, 1, &a_hash_from, sizeof(a_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
-//         s_db_sqlite_step(l_stmt_count, l_error_msg) != SQLITE_ROW)
-//     {
-//         goto clean_and_ret;
-//     }
-// // memory alloc
-//     uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
-//     uint64_t l_blank_add = l_count;
-//     l_count = dap_min(l_count, DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT);
-//     if (!l_count) {
-//         log_it(L_INFO, "There are no records satisfying the hashes read request");
-//         goto clean_and_ret;
-//     }
-//     l_blank_add = l_count == l_blank_add;
-//     l_count += l_blank_add;
-//     size_t l_group_name_len = strlen(a_group) + 1;
-//     DAP_NEW_Z_SIZE_RET_VAL(l_ret, dap_global_db_hash_pkt_t, sizeof(dap_global_db_hash_pkt_t) + l_count * sizeof(dap_global_db_driver_hash_t) + l_group_name_len, NULL, l_query_count_str, l_query_str);
-// // data forming
-//     size_t l_count_out = 0;
-//     l_ret->group_name_len = l_group_name_len;
-//     byte_t *l_curr_point = l_ret->group_n_hashses + l_ret->group_name_len;
-//     memcpy(l_ret->group_n_hashses, a_group, l_group_name_len);
-//     int l_count_col = sqlite3_column_count(l_stmt);
-//     for(;l_count_out < l_count && s_db_sqlite_step(l_stmt, l_error_msg) == SQLITE_ROW && sqlite3_column_type(l_stmt, 0) == SQLITE_BLOB; ++l_count_out) {
-//         byte_t *l_current_hash = (byte_t*) sqlite3_column_blob(l_stmt, 0);
-//         memcpy(l_curr_point, l_current_hash, sizeof(dap_global_db_driver_hash_t));
-//         l_curr_point += sizeof(dap_global_db_driver_hash_t);
-//     }
-//     l_ret->hashes_count = l_count_out + l_blank_add;
-// clean_and_ret:
-//     s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_count_str, l_stmt, l_stmt_count);
-//     return l_ret;
-// }
+// memory alloc
+    uint64_t l_count = PQntuples(l_query_res);
+    if (!l_count) {
+        log_it(L_INFO, "There are no records satisfying the read request");
+        goto clean_and_ret;
+    }
+    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        goto clean_and_ret;
+    }
+    size_t l_group_name_len = strlen(a_group) + 1;
+    l_ret = DAP_NEW_Z_SIZE(dap_global_db_hash_pkt_t, sizeof(dap_global_db_hash_pkt_t) + (l_count + 1) * sizeof(dap_global_db_driver_hash_t) + l_group_name_len);
+    if (!l_ret) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        goto clean_and_ret;
+    }
+// data forming 
+    l_ret->group_name_len = l_group_name_len;
+    byte_t *l_curr_point = l_ret->group_n_hashses + l_ret->group_name_len;
+    memcpy(l_ret->group_n_hashses, a_group, l_group_name_len);
+    int l_col_num = PQfnumber(l_query_res, "driver_key");
+    for(size_t i = 0; i < l_count; ++i) {
+        dap_global_db_driver_hash_t *l_current_hash = (dap_global_db_driver_hash_t *)PQgetvalue(l_query_res, i, l_col_num);;
+        memcpy(l_curr_point, l_current_hash, sizeof(dap_global_db_driver_hash_t));
+        l_curr_point += sizeof(dap_global_db_driver_hash_t);
+    }
+    l_ret->hashes_count = l_count + 1;
+clean_and_ret:
+    PQclear(l_query_res);
+    s_db_pgsql_free_connection(l_conn, false);
+    return l_ret;
+}
 
 /**
  * @brief Reads some objects from a database by conditions started from concretic hash
@@ -787,8 +813,8 @@ static dap_store_obj_t* s_db_pgsql_read_store_obj(const char *a_group, const cha
     if (a_count_out)
         *a_count_out = l_count_out;
 clean_and_ret:
-    s_db_pgsql_free_connection(l_conn, false);
     PQclear(l_query_res);
+    s_db_pgsql_free_connection(l_conn, false);
     return l_ret;
 }
 
@@ -1099,8 +1125,8 @@ int dap_global_db_driver_pgsql_init(const char *a_db_path, dap_global_db_driver_
     a_drv_callback->is_obj                  = s_db_pgsql_is_obj;
     // a_drv_callback->deinit                  = s_db_sqlite_deinit;
     // a_drv_callback->flush                   = s_db_sqlite_flush;
-    // a_drv_callback->get_by_hash             = s_db_sqlite_get_by_hash;
-    // a_drv_callback->read_hashes             = s_db_sqlite_read_hashes;
+    a_drv_callback->get_by_hash             = s_db_pgsql_get_by_hash;
+    a_drv_callback->read_hashes             = s_db_pgsql_read_hashes;
     a_drv_callback->is_hash                 = s_db_pgsql_is_hash;
     s_db_inited = true;
 
@@ -1288,7 +1314,7 @@ int dap_db_driver_pgsql_apply_store_obj(dap_store_obj_t *a_store_obj)
         l_res = PQexec(l_conn, l_query_str);
         if (PQresultStatus(l_res) != PGRES_COMMAND_OK) {
             const char *l_err = PQresultErrorField(l_res, PG_DIAG_SQLSTATE);
-            if (!l_err || strcmp(l_err, PGSQL_INVALID_TABLE)) {
+            if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE)) {
                 log_it(L_ERROR, "Delete object failed with message: \"%s\"", PQresultErrorMessage(l_res));
                 l_ret = -4;
             }
@@ -1358,7 +1384,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_store_obj(const char *a_group, const c
        l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE obj_key = '%s'", a_group, a_key);
     } else {
         if (a_count_out && *a_count_out)
-            l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" ORDER BY obj_id ASC LIMIT %d", a_group, *a_count_out);
+            l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" ORDER BY obj_id ASC LIMIT %d", a_group, *(int*)a_count_out);
         else
             l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" ORDER BY obj_id ASC", a_group);
     }
@@ -1367,7 +1393,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_store_obj(const char *a_group, const c
     DAP_DELETE(l_query_str);
     if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
         const char *l_err = PQresultErrorField(l_res, PG_DIAG_SQLSTATE);
-        if (!l_err || strcmp(l_err, PGSQL_INVALID_TABLE))
+        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
             log_it(L_ERROR, "Read objects failed with message: \"%s\"", PQresultErrorMessage(l_res));
         PQclear(l_res);
         s_pgsql_free_connection(l_conn);
@@ -1379,7 +1405,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_store_obj(const char *a_group, const c
     if (l_count) {
         dap_store_obj_t *l_obj = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count);
         if (!l_obj) {
-            log_it(L_ERROR, "Memory allocation error");
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             l_count = 0;
         } else {
             for (size_t i = 0; i < l_count; ++i) {
@@ -1413,7 +1439,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_last_store_obj(const char *a_group)
     DAP_DELETE(l_query_str);
     if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
         const char *l_err = PQresultErrorField(l_res, PG_DIAG_SQLSTATE);
-        if (!l_err || strcmp(l_err, PGSQL_INVALID_TABLE))
+        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
             log_it(L_ERROR, "Read last object failed with message: \"%s\"", PQresultErrorMessage(l_res));
         PQclear(l_res);
         s_pgsql_free_connection(l_conn);
@@ -1457,7 +1483,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_cond_store_obj(const char *a_group, ui
     DAP_DELETE(l_query_str);
     if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
         const char *l_err = PQresultErrorField(l_res, PG_DIAG_SQLSTATE);
-        if (!l_err || strcmp(l_err, PGSQL_INVALID_TABLE))
+        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
             log_it(L_ERROR, "Conditional read objects failed with message: \"%s\"", PQresultErrorMessage(l_res));
         PQclear(l_res);
         s_pgsql_free_connection(l_conn);
@@ -1469,7 +1495,7 @@ dap_store_obj_t *dap_db_driver_pgsql_read_cond_store_obj(const char *a_group, ui
     if (l_count) {
         dap_store_obj_t *l_obj = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count);
         if (!l_obj) {
-            log_it(L_ERROR, "Memory allocation error");
+            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             l_count = 0;
         } else {
             for (size_t i = 0; i < l_count; ++i) {
@@ -1540,7 +1566,7 @@ size_t dap_db_driver_pgsql_read_count_store(const char *a_group, uint64_t a_id)
     DAP_DELETE(l_query_str);
     if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
         const char *l_err = PQresultErrorField(l_res, PG_DIAG_SQLSTATE);
-        if (!l_err || strcmp(l_err, PGSQL_INVALID_TABLE))
+        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
             log_it(L_ERROR, "Count objects failed with message: \"%s\"", PQresultErrorMessage(l_res));
         PQclear(l_res);
         s_pgsql_free_connection(l_conn);
@@ -1572,7 +1598,7 @@ bool dap_db_driver_pgsql_is_obj(const char *a_group, const char *a_key)
     DAP_DELETE(l_query_str);
     if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
         const char *l_err = PQresultErrorField(l_res, PG_DIAG_SQLSTATE);
-        if (!l_err || strcmp(l_err, PGSQL_INVALID_TABLE))
+        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
             log_it(L_ERROR, "Existance check of object failed with message: \"%s\"", PQresultErrorMessage(l_res));
         PQclear(l_res);
         s_pgsql_free_connection(l_conn);
