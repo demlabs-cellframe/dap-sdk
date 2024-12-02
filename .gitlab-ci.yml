@@ -15,7 +15,7 @@ stages:
   dependencies: []
   
   
-.tests:amd64.debian:
+tests:amd64.debian:
     extends: .tests
     image: demlabs/debian/amd64:qt5
     before_script: /opt/buildtools/prepare_environment.sh amd64-linux
@@ -28,7 +28,7 @@ stages:
       reports:
          codequality: build/cppcheck.json
 
-.tests:arm32.debian:
+tests:arm32.debian:
     extends: .tests
     image: demlabs/debian/arm32:qt5
     before_script: /opt/buildtools/prepare_environment.sh arm32v7-linux
@@ -36,7 +36,7 @@ stages:
       - mkdir build
       - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc) && ctest --verbose
 
-.tests:arm64.debian:
+tests:arm64.debian:
     extends: .tests
     image: demlabs/debian/arm64:qt5
     before_script: /opt/buildtools/prepare_environment.sh arm64-linux
@@ -44,7 +44,7 @@ stages:
       - mkdir build
       - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON && make -j$(nproc) && ctest --verbose
 
-.build:amd64.windows:
+build:amd64.windows:
     extends: .tests
     image: demlabs/windows/amd64:qt5
     before_script: /opt/buildtools/prepare_environment.sh amd64-windows
@@ -53,7 +53,7 @@ stages:
       - cd build && export PATH=${MXE_ROOT}/usr/bin:$PATH && x86_64-w64-mingw32.static-cmake .. -DCMAKE_BUILD_TYPE=Release && make -j$(nproc)
     
 
-.build:amd64.macos:
+build:amd64.macos:
     extends: .tests
     image: demlabs/macos/amd64:qt5
     before_script: /opt/buildtools/prepare_environment.sh amd64-osx
@@ -62,7 +62,7 @@ stages:
       - cd build && $(${OSXCROSS_ROOT}/bin/osxcross-conf) && export OSXCROSS_NO_INCLUDE_PATH_WARNINGS=1 && export OSXCROSS_HOST=x86_64-apple-darwin20.4 && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${OSXCROSS_ROOT}/toolchain.cmake -DBoost_INCLUDE_DIR=$BOOST_INCLUDE_DIR .. && make -j$(nproc)
 
 
-.build:any.android:
+build:any.android:
     extends: .tests
     image: demlabs/android/any:qt5
     before_script: /opt/buildtools/prepare_environment.sh amd64-osx

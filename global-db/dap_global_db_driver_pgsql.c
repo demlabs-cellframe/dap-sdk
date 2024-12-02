@@ -50,7 +50,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 static char s_db_name[DAP_PGSQL_DBHASHNAME_LEN + 1];
 
 typedef struct conn_pool_item {
-    PGconn *conn;                                               /* SQLITE connection context itself */
+    PGconn *conn;                                               /* PGSQL connection context itself */
     int idx;                                                    /* Just index, no more */
     atomic_flag busy_conn;                                      /* Connection busy flag */
     atomic_flag busy_trans;                                     /* Outstanding transaction busy flag */
@@ -74,11 +74,11 @@ static void s_connection_destructor(UNUSED_ARG void *a_conn) {
 
 
 // /**
-//  * @brief Opens a SQLite database and adds byte_to_bin function.
-//  * @param a_filename_utf8 a SQLite database file name
+//  * @brief Opens a PGSQL database and adds byte_to_bin function.
+//  * @param a_filename_utf8 a PGSQL database file name
 //  * @param a_flags database access flags (SQLITE_OPEN_READONLY, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE)
-//  * @param a_error_message[out] an error message that's received from the SQLite database
-//  * @return Returns a pointer to an instance of SQLite database structure.
+//  * @param a_error_message[out] an error message that's received from the PGSQL database
+//  * @return Returns a pointer to an instance of PGSQL database structure.
 //  */
 // sqlite3* s_db_sqlite_open(const char *a_filename_utf8, int a_flags, char **a_error_message)
 // {
@@ -119,91 +119,9 @@ static inline void s_db_pgsql_free_connection(conn_list_item_t *a_conn, bool a_t
         atomic_flag_clear(&a_conn->busy_conn);
 }
 
-// /**
-//  * @brief Free connection, dynamic num sql items and finalize sqlite3_stmts.
-//  * @param a_conn connection item to free
-//  * @param a_count num of pairs sql item + sqlite3_stmts
-//  */
-// static void s_db_sqlite_clean(conn_list_item_t *a_conn, size_t a_count, ... ) {
-//     va_list l_args_list;
-//     va_start(l_args_list, a_count);
-//     for (size_t i = 0; i < a_count; ++i)
-//         sqlite3_free(va_arg(l_args_list, void*));
-//     for (size_t i = 0; i < a_count; ++i)
-//         sqlite3_finalize(va_arg(l_args_list, void*));
-//     va_end(l_args_list);
-//     s_db_pgsql_free_connection(a_conn, false);
-// }
-
-// /**
-//  * @brief One step to sqlite3_stmt with 7 try is sql bust
-//  * @param a_stmt sqlite3_stmt to step
-//  * @param a_error_msg module name
-//  * @return result code
-//  */
-// static int s_db_sqlite_step(sqlite3_stmt *a_stmt, const char *a_error_msg)
-// {
-//     dap_return_val_if_pass(!a_stmt, SQLITE_ERROR);
-//     int l_ret = 0;
-//     for ( char i = s_attempts_count; i--; ) {
-//         l_ret = sqlite3_step(a_stmt);
-//         if (l_ret != SQLITE_BUSY && l_ret != SQLITE_LOCKED)
-//             break;
-//         dap_usleep(s_sleep_period);
-//     }
-//     debug_if(l_ret != SQLITE_ROW && l_ret != SQLITE_DONE, L_DEBUG, "SQLite step in %s error %d(%s)", a_error_msg ? a_error_msg : "", l_ret, sqlite3_errstr(l_ret));
-//     return l_ret;
-// }
-
-// /**
-//  * @brief One step to sqlite3_stmt with 7 try is sql bust
-//  * @param a_db a pointer to an instance of SQLite connection
-//  * @param a_str_query SQL query string
-//  * @param a_stmt pointer to generate sqlite3_stmt
-//  * @param a_error_msg module name
-//  * @return result code
-//  */
-// static int s_db_sqlite_prepare(sqlite3 *a_db, const char *a_str_query, sqlite3_stmt **a_stmt, const char *a_error_msg)
-// {
-//     dap_return_val_if_pass(!a_stmt || !a_str_query || !a_stmt, SQLITE_ERROR);
-//     int l_ret = 0;
-//     for (char i = s_attempts_count; i--; ) {
-//         l_ret = sqlite3_prepare_v2(a_db, a_str_query, -1, a_stmt, NULL);
-//         if (l_ret != SQLITE_BUSY && l_ret != SQLITE_LOCKED)
-//             break;
-//         dap_usleep(s_sleep_period);
-//     }
-//     debug_if(l_ret != SQLITE_OK, L_DEBUG, "SQLite prepare %s error %d(%s)", a_error_msg ? a_error_msg : "", sqlite3_errcode(a_db), sqlite3_errmsg(a_db));
-//     return l_ret;
-// }
-
-// /**
-//  * @brief One step to sqlite3_stmt with 7 try is sql bust
-//  * @param a_stmt sqlite3_stmt to step
-//  * @param a_pos blob element position in query
-//  * @param a_data blob data
-//  * @param a_data_size blob data size
-//  * @param a_destructor SQL destructor type
-//  * @param a_error_msg module name
-//  * @return result code
-//  */
-// static int s_db_sqlite_bind_blob64(sqlite3_stmt *a_stmt, int a_pos, const void *a_data, sqlite3_uint64 a_data_size, sqlite3_destructor_type a_destructor, const char *a_error_msg)
-// {
-//     dap_return_val_if_pass(!a_stmt || !a_data || !a_data_size || a_pos < 0, SQLITE_ERROR);
-//     int l_ret = 0;
-//     for ( char i = s_attempts_count; i--; ) {
-//         l_ret = sqlite3_bind_blob64(a_stmt, a_pos, a_data, a_data_size, a_destructor);
-//         if (l_ret != SQLITE_BUSY && l_ret != SQLITE_LOCKED)
-//             break;
-//         dap_usleep(s_sleep_period);
-//     }
-//     debug_if(l_ret != SQLITE_OK, L_DEBUG, "SQLite bind blob64 %s error %d(%s)", a_error_msg ? a_error_msg : "", l_ret, sqlite3_errstr(l_ret));
-//     return l_ret;
-// }
-
 /**
  * @brief Executes SQL statements.
- * @param a_db a pointer to an instance of SQLite connection
+ * @param a_db a pointer to an instance of PGSQL connection
  * @param a_query the SQL statement
  * @param a_hash pointer to data hash
  * @param a_value pointer to data
@@ -233,7 +151,7 @@ static PGresult *s_db_pgsql_exec(PGconn *a_db, const char *a_query, dap_global_d
 
 /**
  * @brief Executes SQL statements.
- * @param a_db a pointer to an instance of SQLite connection
+ * @param a_db a pointer to an instance of PGSQL connection
  * @param a_query the SQL statement
  * @param a_hash pointer to data hash
  * @param a_value pointer to data
@@ -253,7 +171,7 @@ DAP_STATIC_INLINE int s_db_pgsql_exec_command(PGconn *a_db, const char *a_query,
 
 /**
  * @brief Executes SQL statements.
- * @param a_db a pointer to an instance of SQLite connection
+ * @param a_db a pointer to an instance of PGSQL connection
  * @param a_query the SQL statement
  * @param a_hash pointer to data hash
  * @param a_value pointer to data
@@ -274,7 +192,7 @@ DAP_STATIC_INLINE PGresult *s_db_pgsql_exec_tuples(PGconn *a_db, const char *a_q
 static conn_list_item_t *s_db_pgsql_get_connection(bool a_trans)
 {
 // sanity check
-    dap_return_val_if_pass_err(!s_db_inited, NULL, "SQLite driver not inited");
+    dap_return_val_if_pass_err(!s_db_inited, NULL, "PGSQL driver not inited");
 // func work
     static int l_conn_idx = 0;
     if (!s_conn) {
@@ -311,20 +229,20 @@ static conn_list_item_t *s_db_pgsql_get_connection(bool a_trans)
     return s_conn;
 }
 
-// /**
-//  * @brief Deinitializes a SQLite database.
-//  * @return result code.
-//  */
-// int s_db_sqlite_deinit(void)
-// {
-//     if (!s_db_inited) {
-//         log_it(L_WARNING, "SQLite driver already deinited");
-//         return -1;
-//     }
-//     s_connection_destructor(NULL);
-//     s_db_inited = false;
-//     return sqlite3_shutdown();
-// }
+/**
+ * @brief Deinitializes a PGSQL database.
+ * @return result code.
+ */
+int s_db_pqsql_deinit(void)
+{
+    if (!s_db_inited) {
+        log_it(L_WARNING, "PGSQL driver already deinited");
+        return -1;
+    }
+    s_connection_destructor(NULL);
+    s_db_inited = false;
+    return 0;
+}
 
 /**
  * @brief Creates a table and unique index in the s_db database.
@@ -764,7 +682,7 @@ clean_and_ret:
 }
 
 /**
- * @brief Reads some objects from a SQLite database by a_group, a_key.
+ * @brief Reads some objects from a PGSQL database by a_group, a_key.
  * @param a_group a group name string
  * @param a_key an object key string, if equals NULL reads the whole group
  * @param a_count_out[out] a number of objects that were read
@@ -940,33 +858,37 @@ clean_and_ret:
     return l_ret ? *l_ret : false;
 }
 
-// /**
-//  * @brief Flushes a SQLite database cahce to disk
-//  * @note The function closes and opens the database connection
-//  * @return result code.
-//  */
-// static int s_db_sqlite_flush()
-// {
-// // sanity check
-//     conn_list_item_t *l_conn = s_db_pgsql_get_connection(false);
-//     dap_return_val_if_pass(!l_conn, -1);
-// // preparing
-//     char *l_error_message = NULL;
-//     log_it(L_DEBUG, "Start flush sqlite data base.");
-//     sqlite3_close(l_conn->conn);
-//     if ( !(l_conn->conn = s_db_sqlite_open(s_filename_db, SQLITE_OPEN_READWRITE, &l_error_message)) ) {
-//         log_it(L_ERROR, "Can't init sqlite err: \"%s\"", l_error_message ? l_error_message: "UNKNOWN");
-//         sqlite3_free(l_error_message);
-//         return -2;
-//     }
+/**
+ * @brief Flushes a PGSQL database cahce to disk
+ * @note The function closes and opens the database connection
+ * @return result code.
+ */
+static int s_db_pgsql_flush()
+{
+// sanity check
+    conn_list_item_t *l_conn = s_db_pgsql_get_connection(false);
+    dap_return_val_if_pass(!l_conn, -1);
+// preparing
+    log_it(L_DEBUG, "Start flush PGSQL data base.");
+    int l_ret = 0;
+    // if () {
+    //     log_it(L_ERROR, "Flushing database on disk failed with message: \"%s\"", PQresultErrorMessage(l_res));
+    //     l_ret = -5;
+    // }
+    if (!s_db_pgsql_exec_command(l_conn->conn, "CHECKPOINT", NULL, NULL, 0, NULL)) {
+        if (s_db_pgsql_exec_command(l_conn->conn, "VACUUM", NULL, NULL, 0, NULL)) {
+            // log_it(L_ERROR, "Vaccuming database failed with message: \"%s\"", PQresultErrorMessage(l_res));
+            l_ret = -2;
+        }
+    }
 
-// #ifndef _WIN32
-//     sync();
-// #endif
-//     s_db_pgsql_free_connection(l_conn, false);
-//     s_db_pgsql_free_connection(l_conn, true);
-//     return 0;
-// }
+#ifndef _WIN32
+    sync();
+#endif
+    s_db_pgsql_free_connection(l_conn, false);
+    s_db_pgsql_free_connection(l_conn, true);
+    return l_ret;
+}
 
 /**
  * @brief Starts a outstanding transaction in database.
@@ -1014,7 +936,7 @@ static int s_db_pgsql_transaction_end(bool a_commit)
 // }
 
 // /**
-//  * @brief Initializes a SQLite database.
+//  * @brief Initializes a PGSQL database.
 //  * @note no thread safe
 //  * @param a_filename_db a path to the database file
 //  * @param a_drv_callback a pointer to a structure of callback functions
@@ -1024,7 +946,7 @@ int dap_global_db_driver_pgsql_init(const char *a_db_path, dap_global_db_driver_
 {
 // sanity check
     dap_return_val_if_pass(!a_db_path, -1);
-    dap_return_val_if_pass_err(s_db_inited, -2, "SQLite driver already init")
+    dap_return_val_if_pass_err(s_db_inited, -2, "PGSQL driver already init")
 // func work
 
 
@@ -1114,519 +1036,12 @@ int dap_global_db_driver_pgsql_init(const char *a_db_path, dap_global_db_driver_
     a_drv_callback->get_groups_by_mask      = s_db_pgsql_get_groups_by_mask;
     a_drv_callback->read_count_store        = s_db_pgsql_read_count_store;
     a_drv_callback->is_obj                  = s_db_pgsql_is_obj;
-    // a_drv_callback->deinit                  = s_db_sqlite_deinit;
-    // a_drv_callback->flush                   = s_db_sqlite_flush;
+    a_drv_callback->deinit                  = s_db_pqsql_deinit;
+    a_drv_callback->flush                   = s_db_pgsql_flush;
     a_drv_callback->get_by_hash             = s_db_pgsql_get_by_hash;
     a_drv_callback->read_hashes             = s_db_pgsql_read_hashes;
     a_drv_callback->is_hash                 = s_db_pgsql_is_hash;
     s_db_inited = true;
 
     return 0;
-}
-
-
-struct dap_pgsql_conn_pool_item {
-    PGconn *conn;
-    int busy;
-};
-
-static PGconn *s_trans_conn = NULL;
-static struct dap_pgsql_conn_pool_item s_conn_pool[DAP_PGSQL_POOL_COUNT];
-static pthread_rwlock_t s_db_rwlock = PTHREAD_RWLOCK_INITIALIZER;
-
-static PGconn *s_pgsql_get_connection(void)
-{
-    if (pthread_rwlock_wrlock(&s_db_rwlock) == EDEADLK) {
-        return s_trans_conn;
-    }
-    PGconn *l_ret = NULL;
-    for (int i = 0; i < DAP_PGSQL_POOL_COUNT; i++) {
-        if (!s_conn_pool[i].busy) {
-            l_ret = s_conn_pool[i].conn;
-            s_conn_pool[i].busy = 1;
-            break;
-        }
-    }
-    pthread_rwlock_unlock(&s_db_rwlock);
-    return l_ret;
-}
-
-static void s_pgsql_free_connection(PGconn *a_conn)
-{
-    if (pthread_rwlock_wrlock(&s_db_rwlock) == EDEADLK) {
-        return;
-    }
-    for (int i = 0; i < DAP_PGSQL_POOL_COUNT; i++) {
-        if (s_conn_pool[i].conn == a_conn) {
-            s_conn_pool[i].busy = 0;
-			break;
-        }
-    }
-    pthread_rwlock_unlock(&s_db_rwlock);
-}
-
-/**
- * @brief Deinitializes a PostgreSQL database.
- * 
- * @return Returns 0 if successful.
- */
-int dap_db_driver_pgsql_deinit(void)
-{
-    pthread_rwlock_wrlock(&s_db_rwlock);
-    for (int j = 0; j < DAP_PGSQL_POOL_COUNT; j++)
-        PQfinish(s_conn_pool[j].conn);
-    pthread_rwlock_unlock(&s_db_rwlock);
-    pthread_rwlock_destroy(&s_db_rwlock);
-    return 0;
-}
-
-/**
- * @brief Starts a transaction in a PostgreSQL database.
- * 
- * @return Returns 0 if successful, otherwise -1.
- */
-int dap_db_driver_pgsql_start_transaction(void)
-{
-    s_trans_conn = s_pgsql_get_connection();
-    if (!s_trans_conn)
-        return -1;
-    pthread_rwlock_wrlock(&s_db_rwlock);
-    PGresult *l_res = PQexec(s_trans_conn, "BEGIN");
-    if (PQresultStatus(l_res) != PGRES_COMMAND_OK) {
-        log_it(L_ERROR, "Begin transaction failed with message: \"%s\"", PQresultErrorMessage(l_res));
-        pthread_rwlock_unlock(&s_db_rwlock);
-        s_pgsql_free_connection(s_trans_conn);
-        s_trans_conn = NULL;
-    }
-    return 0;
-}
-
-/**
- * @brief Ends a transaction in a PostgreSQL database.
- * 
- * @return Returns 0 if successful, otherwise -1.
- */
-int dap_db_driver_pgsql_end_transaction(void)
-{
-    if (!s_trans_conn)
-        return -1;
-    PGresult *l_res = PQexec(s_trans_conn, "COMMIT");
-    if (PQresultStatus(l_res) != PGRES_COMMAND_OK) {
-        log_it(L_ERROR, "End transaction failed with message: \"%s\"", PQresultErrorMessage(l_res));
-    }
-    pthread_rwlock_unlock(&s_db_rwlock);
-    s_pgsql_free_connection(s_trans_conn);
-    s_trans_conn = NULL;
-    return 0;
-}
-
-/**
- * @brief Creates a table in a PostgreSQL database.
- * 
- * @param a_table_name a table name string
- * @param a_conn a pointer to the connection object
- * @return Returns 0 if successful, otherwise -1.
- */
-static int s_pgsql_create_group_table(const char *a_table_name, PGconn *a_conn)
-{
-    if (!a_table_name)
-        return -1;
-    int l_ret = 0;
-    char *l_query_str = dap_strdup_printf("CREATE TABLE \"%s\""
-                                          "(obj_id BIGSERIAL PRIMARY KEY, obj_ts BIGINT, "
-                                          "obj_key TEXT UNIQUE, obj_val BYTEA)",
-                                          a_table_name);
-    PGresult *l_res = PQexec(a_conn, l_query_str);
-    DAP_DELETE(l_query_str);
-    if (PQresultStatus(l_res) != PGRES_COMMAND_OK) {
-        log_it(L_ERROR, "Create table failed with message: \"%s\"", PQresultErrorMessage(l_res));
-        l_ret = -3;
-    }
-    PQclear(l_res);
-    return l_ret;
-}
-
-/**
- * @brief Applies an object to a PostgreSQL database.
- * 
- * @param a_store_obj a pointer to the object structure
- * @return Returns 0 if successful, else a error code less than zero.
- */
-int dap_db_driver_pgsql_apply_store_obj(dap_store_obj_t *a_store_obj)
-{
-    if (!a_store_obj || !a_store_obj->group)
-        return -1;
-    char *l_query_str = NULL;
-    int l_ret = 0;
-    PGresult *l_res = NULL;
-    PGconn *l_conn = s_pgsql_get_connection();
-    if (!l_conn) {
-        log_it(L_ERROR, "Can't pick PostgreSQL connection from pool");
-        return -2;
-    }
-    if (true /* a_store_obj->type == 'a' */) {
-        const char *l_param_vals[2];
-        time_t l_ts_to_store = htobe64(a_store_obj->timestamp);
-        l_param_vals[0] = (const char *)&l_ts_to_store;
-        l_param_vals[1] = (const char *)a_store_obj->value;
-        int l_param_lens[2] = {sizeof(time_t), a_store_obj->value_len};
-        int l_param_formats[2] = {1, 1};
-        l_query_str = dap_strdup_printf("INSERT INTO \"%s\" (obj_ts, obj_key, obj_val) VALUES ($1, '%s', $2) "
-                                        "ON CONFLICT (obj_key) DO UPDATE SET "
-                                        "obj_id = EXCLUDED.obj_id, obj_ts = EXCLUDED.obj_ts, obj_val = EXCLUDED.obj_val;",
-                                        a_store_obj->group,  a_store_obj->key);
-
-        // execute add request
-        l_res = PQexecParams(l_conn, l_query_str, 2, NULL, l_param_vals, l_param_lens, l_param_formats, 0);
-        if (PQresultStatus(l_res) != PGRES_COMMAND_OK) {
-            if (s_trans_conn) { //we shouldn't fail within a transaacion
-                dap_db_driver_pgsql_end_transaction();
-                dap_db_driver_pgsql_start_transaction();
-                l_conn = s_pgsql_get_connection();
-            }
-            if (s_pgsql_create_group_table(a_store_obj->group, l_conn) == 0) {
-                PQclear(l_res);
-                l_res = PQexecParams(l_conn, l_query_str, 2, NULL, l_param_vals, l_param_lens, l_param_formats, 0);
-            }
-            if (PQresultStatus(l_res) != PGRES_COMMAND_OK) {
-                log_it(L_ERROR, "Add object failed with message: \"%s\"", PQresultErrorMessage(l_res));
-                l_ret = -3;
-            }
-        }
-    } else if (true /*a_store_obj->type == 'd'*/) {
-        // delete one record
-        if (a_store_obj->key)
-            l_query_str = dap_strdup_printf("DELETE FROM \"%s\" WHERE obj_key = '%s'",
-                                            a_store_obj->group, a_store_obj->key);
-        // remove all group
-        else
-            l_query_str = dap_strdup_printf("DROP TABLE \"%s\"", a_store_obj->group);
-        // execute delete request
-        l_res = PQexec(l_conn, l_query_str);
-        if (PQresultStatus(l_res) != PGRES_COMMAND_OK) {
-            const char *l_err = PQresultErrorField(l_res, PG_DIAG_SQLSTATE);
-            if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE)) {
-                log_it(L_ERROR, "Delete object failed with message: \"%s\"", PQresultErrorMessage(l_res));
-                l_ret = -4;
-            }
-        }
-    }
-    else {
-        // log_it(L_ERROR, "Unknown store_obj type '0x%x'", a_store_obj->type);
-        s_pgsql_free_connection(l_conn);
-        return -5;
-    }
-    DAP_DELETE(l_query_str);
-    PQclear(l_res);
-    s_pgsql_free_connection(l_conn);
-    return l_ret;
-}
-
-/**
- * @brief Fills a object from a row
- * @param a_group a group name string
- * @param a_obj a pointer to the object
- * @param a_res a pointer to the result structure
- * @param a_row a row number
- * @return (none)
- */
-static void s_pgsql_fill_object(const char *a_group, dap_store_obj_t *a_obj, PGresult *a_res, int a_row)
-{
-    a_obj->group = dap_strdup(a_group);
-    int q = PQnfields(a_res);
-    while (q-- > 0) {
-        switch (q) {
-        // case PQfnumber(a_res, "obj_val"):
-        //     a_obj->value_len = PQgetlength(a_res, a_row, q);
-        //     a_obj->value = DAP_DUP_SIZE(PQgetvalue(a_res, a_row, q), a_obj->value_len);
-        //     break;
-        // case PQfnumber(a_res, "obj_key"):
-        //     a_obj->key = dap_strdup(PQgetvalue(a_res, a_row, q));
-        //     break;
-        // case PQfnumber(a_res, "obj_ts"):
-        //     a_obj->timestamp = be64toh(*(time_t*)PQgetvalue(a_res, a_row, q));
-        //     break;
-        // case PQfnumber(a_res, "obj_id"):
-        //     a_obj->id = be64toh(*(uint64_t*)PQgetvalue(a_res, a_row, q));
-        //     break;
-        }
-    }
-}
-
-/**
- * @brief Reads some objects from a PostgreSQL database by a_group and a_key.
- * @param a_group a group name string
- * @param a_key an object key string, if equals NULL reads the whole group
- * @param a_count_out[in] a number of objects to be read, if equals 0 reads with no limits
- * @param a_count_out[out] a number of objects that were read
- * @return If successful, a pointer to an objects, otherwise a null pointer.
- */
-dap_store_obj_t *dap_db_driver_pgsql_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out)
-{
-    if (!a_group)
-        return NULL;
-    PGconn *l_conn = s_pgsql_get_connection();
-    if (!l_conn) {
-        log_it(L_ERROR, "Can't pick PostgreSQL connection from pool");
-        return NULL;
-    }
-    char *l_query_str;
-    if (a_key) {
-       l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE obj_key = '%s'", a_group, a_key);
-    } else {
-        if (a_count_out && *a_count_out)
-            l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" ORDER BY obj_id ASC LIMIT %d", a_group, *(int*)a_count_out);
-        else
-            l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" ORDER BY obj_id ASC", a_group);
-    }
-
-    PGresult *l_res = PQexecParams(l_conn, l_query_str, 0, NULL, NULL, NULL, NULL, 1);
-    DAP_DELETE(l_query_str);
-    if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
-        const char *l_err = PQresultErrorField(l_res, PG_DIAG_SQLSTATE);
-        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
-            log_it(L_ERROR, "Read objects failed with message: \"%s\"", PQresultErrorMessage(l_res));
-        PQclear(l_res);
-        s_pgsql_free_connection(l_conn);
-        return NULL;
-    }
-
-    // parse reply
-    size_t l_count = PQntuples(l_res);
-    if (l_count) {
-        dap_store_obj_t *l_obj = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count);
-        if (!l_obj) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            l_count = 0;
-        } else {
-            for (size_t i = 0; i < l_count; ++i) {
-                s_pgsql_fill_object(a_group, (dap_store_obj_t*)(l_obj + i), l_res, i);
-            }
-        }
-    }
-    PQclear(l_res);
-    s_pgsql_free_connection(l_conn);
-    if (a_count_out)
-        *a_count_out = l_count;
-    return NULL;
-}
-
-/**
- * @brief Reads a last object from a PostgreSQL database.
- * @param a_group a group name string
- * @return Returns a pointer to the object if successful, otherwise a null pointer.
- */
-dap_store_obj_t *dap_db_driver_pgsql_read_last_store_obj(const char *a_group)
-{
-    if (!a_group)
-        return NULL;
-    PGconn *l_conn = s_pgsql_get_connection();
-    if (!l_conn) {
-        log_it(L_ERROR, "Can't pick PostgreSQL connection from pool");
-        return NULL;
-    }
-    char *l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" ORDER BY obj_id DESC LIMIT 1", a_group);
-    PGresult *l_res = PQexecParams(l_conn, l_query_str, 0, NULL, NULL, NULL, NULL, 1);
-    DAP_DELETE(l_query_str);
-    if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
-        const char *l_err = PQresultErrorField(l_res, PG_DIAG_SQLSTATE);
-        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
-            log_it(L_ERROR, "Read last object failed with message: \"%s\"", PQresultErrorMessage(l_res));
-        PQclear(l_res);
-        s_pgsql_free_connection(l_conn);
-        return NULL;
-    }
-    dap_store_obj_t *l_obj = NULL;
-    if (PQntuples(l_res)) {
-        l_obj = DAP_NEW_Z(dap_store_obj_t);
-        s_pgsql_fill_object(a_group, l_obj, l_res, 0);
-    }
-    PQclear(l_res);
-    s_pgsql_free_connection(l_conn);
-    return l_obj;
-}
-
-/**
- * @brief Reads some objects from a PostgreSQL database by conditions.
- * @param a_group a group name string
- * @param a_id id
- * @param a_count_out[in] a number of objects to be read, if equals 0 reads with no limits
- * @param a_count_out[out] a number of objects that were read 
- * @return If successful, a pointer to an objects, otherwise a null pointer. 
- */
-dap_store_obj_t *dap_db_driver_pgsql_read_cond_store_obj(const char *a_group, uint64_t a_id, size_t *a_count_out)
-{
-    if (!a_group)
-        return NULL;
-    PGconn *l_conn = s_pgsql_get_connection();
-    if (!l_conn) {
-        log_it(L_ERROR, "Can't pick PostgreSQL connection from pool");
-        return NULL;
-    }
-    char *l_query_str;
-    if (a_count_out && *a_count_out)
-        l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE obj_id >= '%"DAP_UINT64_FORMAT_U"' "
-                                        "ORDER BY obj_id ASC LIMIT %zu", a_group, a_id, *a_count_out);
-    else
-        l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE obj_id >= '%"DAP_UINT64_FORMAT_U"' "
-                                        "ORDER BY obj_id ASC", a_group, a_id);
-    PGresult *l_res = PQexecParams(l_conn, l_query_str, 0, NULL, NULL, NULL, NULL, 1);
-    DAP_DELETE(l_query_str);
-    if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
-        const char *l_err = PQresultErrorField(l_res, PG_DIAG_SQLSTATE);
-        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
-            log_it(L_ERROR, "Conditional read objects failed with message: \"%s\"", PQresultErrorMessage(l_res));
-        PQclear(l_res);
-        s_pgsql_free_connection(l_conn);
-        return NULL;
-    }
-
-    // parse reply
-    size_t l_count = PQntuples(l_res);
-    if (l_count) {
-        dap_store_obj_t *l_obj = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count);
-        if (!l_obj) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            l_count = 0;
-        } else {
-            for (size_t i = 0; i < l_count; ++i) {
-                s_pgsql_fill_object(a_group, (dap_store_obj_t*)(l_obj + i), l_res, i);
-            }
-        }
-    }
-    PQclear(l_res);
-    s_pgsql_free_connection(l_conn);
-    if (a_count_out)
-        *a_count_out = l_count;
-    return NULL;
-}
-
-/**
- * @brief Gets a list of group names from a PostgreSQL database by a_group_mask.
- * @param a_group_mask a group name mask
- * @return Returns a pointer to a list of group names if successful, otherwise a null pointer.
- */
-dap_list_t *dap_db_driver_pgsql_get_groups_by_mask(const char *a_group_mask)
-{
-    if (!a_group_mask)
-        return NULL;
-    PGconn *l_conn = s_pgsql_get_connection();
-    if (!l_conn) {
-        log_it(L_ERROR, "Can't pick PostgreSQL connection from pool");
-        return NULL;
-    }
-    const char *l_query_str = "SELECT tablename FROM pg_catalog.pg_tables WHERE "
-                              "schemaname != 'information_schema' AND schemaname != 'pg_catalog'";
-    PGresult *l_res = PQexec(l_conn, l_query_str);
-    if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
-        log_it(L_ERROR, "Read tables failed with message: \"%s\"", PQresultErrorMessage(l_res));
-        PQclear(l_res);
-        s_pgsql_free_connection(l_conn);
-        return NULL;
-    }
-
-    dap_list_t *l_ret_list = NULL;
-    for (int i = 0; i < PQntuples(l_res); i++) {
-        char *l_table_name = (char *)PQgetvalue(l_res, i, 0);
-        if(!dap_fnmatch(a_group_mask, l_table_name, 0))
-            l_ret_list = dap_list_prepend(l_ret_list, dap_strdup(l_table_name));
-    }
-    PQclear(l_res);
-    s_pgsql_free_connection(l_conn);
-    return l_ret_list;
-}
-
-/**
- * @brief Reads a number of objects from a PostgreSQL database by a_group and a_id.
- * @param a_group a group name string
- * @param a_id id starting from which the quantity is calculated
- * @return Returns a number of objects.
- */
-size_t dap_db_driver_pgsql_read_count_store(const char *a_group, uint64_t a_id)
-{
-    if (!a_group)
-        return 0;
-    PGconn *l_conn = s_pgsql_get_connection();
-    if (!l_conn) {
-        log_it(L_ERROR, "Can't pick PostgreSQL connection from pool");
-        return 0;
-    }
-    char *l_query_str = dap_strdup_printf("SELECT count(*) FROM \"%s\" WHERE obj_id >= '%"DAP_UINT64_FORMAT_U"'",
-                                          a_group, a_id);
-    PGresult *l_res = PQexecParams(l_conn, l_query_str, 0, NULL, NULL, NULL, NULL, 1);
-    DAP_DELETE(l_query_str);
-    if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
-        const char *l_err = PQresultErrorField(l_res, PG_DIAG_SQLSTATE);
-        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
-            log_it(L_ERROR, "Count objects failed with message: \"%s\"", PQresultErrorMessage(l_res));
-        PQclear(l_res);
-        s_pgsql_free_connection(l_conn);
-        return 0;
-    }
-    size_t l_ret = be64toh(*(uint64_t *)PQgetvalue(l_res, 0, 0));
-    PQclear(l_res);
-    s_pgsql_free_connection(l_conn);
-    return l_ret;
-}
-
-/**
- * @brief Checks if an object is in a PostgreSQL database by a_group and a_key.
- * @param a_group a group name string
- * @param a_key a object key string
- * @return Returns true if it is, false it's not.
- */
-bool dap_db_driver_pgsql_is_obj(const char *a_group, const char *a_key)
-{
-    if (!a_group)
-        return NULL;
-    PGconn *l_conn = s_pgsql_get_connection();
-    if (!l_conn) {
-        log_it(L_ERROR, "Can't pick PostgreSQL connection from pool");
-        return NULL;
-    }
-    char *l_query_str = dap_strdup_printf("SELECT EXISTS(SELECT * FROM \"%s\" WHERE obj_key = '%s')", a_group, a_key);
-    PGresult *l_res = PQexecParams(l_conn, l_query_str, 0, NULL, NULL, NULL, NULL, 1);
-    DAP_DELETE(l_query_str);
-    if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
-        const char *l_err = PQresultErrorField(l_res, PG_DIAG_SQLSTATE);
-        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
-            log_it(L_ERROR, "Existance check of object failed with message: \"%s\"", PQresultErrorMessage(l_res));
-        PQclear(l_res);
-        s_pgsql_free_connection(l_conn);
-        return 0;
-    }
-    int l_ret = *PQgetvalue(l_res, 0, 0);
-    PQclear(l_res);
-    s_pgsql_free_connection(l_conn);
-    return l_ret;
-}
-
-/**
- * @brief Flushes a PostgreSQ database cahce to disk.
- * @return Returns 0 if successful, else a error code less than zero.
- */
-int dap_db_driver_pgsql_flush()
-{
-    PGconn *l_conn = s_pgsql_get_connection();
-    if (!l_conn) {
-        log_it(L_ERROR, "Can't pick PostgreSQL connection from pool");
-        return -4;
-    }
-    int l_ret = 0;
-    PGresult *l_res = PQexec(l_conn, "CHECKPOINT");
-    if (PQresultStatus(l_res) != PGRES_COMMAND_OK) {
-        log_it(L_ERROR, "Flushing database on disk failed with message: \"%s\"", PQresultErrorMessage(l_res));
-        l_ret = -5;
-    }
-    PQclear(l_res);
-    if (!l_ret) {
-        PGresult *l_res = PQexec(l_conn, "VACUUM");
-        if (PQresultStatus(l_res) != PGRES_COMMAND_OK) {
-            log_it(L_ERROR, "Vaccuming database failed with message: \"%s\"", PQresultErrorMessage(l_res));
-            l_ret = -6;
-        }
-        PQclear(l_res);
-    }
-    s_pgsql_free_connection(l_conn);
-    return l_ret;
 }
