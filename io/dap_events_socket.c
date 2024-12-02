@@ -1586,7 +1586,7 @@ void dap_events_socket_set_readable(dap_worker_t *a_worker, dap_events_socket_uu
         dap_overlapped_free(ol);
     }
 #else
-    dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_IF_FAIL(l_msg, dap_worker_msg_io_t);
+    dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_IF_FAIL(dap_worker_msg_io_t);
     l_msg->esocket_uuid = a_es_uuid;
     if (a_is_ready)
         l_msg->flags_set = DAP_SOCK_READY_TO_READ;
@@ -1745,7 +1745,7 @@ size_t dap_events_socket_write_f(dap_worker_t *a_worker, dap_events_socket_uuid_
             return 0;
         }
         size_t ret = dap_events_socket_write_unsafe(l_es, l_msg->data, l_msg->data_size);
-        return DAP_DEL_MULTY(l_msg->data, l_msg), l_ret;
+        return DAP_DEL_MULTY(l_msg->data, l_msg), ret;
     }
     int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg);
     return l_ret
