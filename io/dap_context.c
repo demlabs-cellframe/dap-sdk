@@ -111,12 +111,8 @@ dap_context_t* dap_context_current() {
  */
 dap_context_t *dap_context_new(dap_context_type_t a_type)
 {
-   dap_context_t * l_context = DAP_NEW_Z(dap_context_t);
-   if (!l_context) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
-   }
    static atomic_uint_fast64_t s_context_id_max = 0;
+   dap_context_t * l_context = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_context_t, NULL);
    l_context->id = s_context_id_max;
    l_context->type = a_type;
    s_context_id_max++;
@@ -141,14 +137,8 @@ int dap_context_run(dap_context_t * a_context,int a_cpu_id, int a_sched_policy, 
                     dap_context_callback_t a_callback_loop_after,
                     void * a_callback_arg )
 {
-    struct dap_context_msg_run * l_msg = DAP_NEW_Z(struct dap_context_msg_run);
+    struct dap_context_msg_run * l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct dap_context_msg_run, ENOMEM);
     int l_ret;
-
-    // Check for OOM
-    if(! l_msg){
-        log_it(L_CRITICAL, "Can't allocate memory for context create message");
-        return ENOMEM;
-    }
 
     // Prefill message structure for new context's thread
     l_msg->context = a_context;
@@ -340,8 +330,6 @@ static void *s_context_thread(void *a_arg)
 
     return NULL;
 }
-
-
 
 /**
  * @brief dap_context_poll_update
@@ -594,11 +582,8 @@ lb_exit:
 #ifdef DAP_EVENTS_CAPS_IOCP
         log_it(L_ERROR, "IOCP update failed, errno %lu %llu", l_errno, a_es->socket);
 #else
-        char l_errbuf[128];
-        l_errbuf[0]=0;
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        log_it(L_ERROR,"Can't update client socket state on poll/epoll/kqueue fd %" DAP_FORMAT_SOCKET ": \"%s\" (%d)",
-            a_es->socket, l_errbuf, l_errno);
+        log_it(L_ERROR,"Can't update client socket state on poll/epoll/kqueue fd %" DAP_FORMAT_SOCKET ", error %d: \"%s\"",
+            a_es->socket, l_errno, dap_strerror(l_errno) );
 #endif
         return l_errno;
     }
@@ -806,25 +791,13 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     int l_pipe[2];
-    char l_errbuf[255];
-    int l_errno;
-    l_errbuf[0]=0;
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
     if( pipe2(l_pipe,O_DIRECT | O_NONBLOCK ) < 0 ){
 #elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     if( pipe(l_pipe) < 0 ){
 #endif
-        l_errno = errno;
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        switch (l_errno) {
-            case EINVAL: log_it(L_CRITICAL, "Too old linux version thats doesn't support O_DIRECT flag for pipes (%s)", l_errbuf); break;
-            default: log_it( L_ERROR, "Error detected, can't create pipe(): '%s' (%d)", l_errbuf, l_errno);
-        }
-        DAP_DELETE(l_es);
-        return NULL;
+        return DAP_DELETE(l_es), log_it(L_ERROR, "pipe() failed, error %d: '%s'", errno, dap_strerror(errno)), NULL;
     }
-    //else
-     //   log_it(L_DEBUG, "Created one-way unnamed packet pipe %d->%d", l_pipe[0], l_pipe[1]);
     l_es->fd = l_pipe[0];
     l_es->fd2 = l_pipe[1];
 
@@ -847,10 +820,8 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 #if !defined (DAP_OS_ANDROID)
     FILE* l_sys_max_pipe_size_fd = fopen("/proc/sys/fs/pipe-max-size", "r");
     if (l_sys_max_pipe_size_fd) {
-        const int l_file_buf_size = 64;
-        char l_file_buf[l_file_buf_size];
-        memset(l_file_buf, 0, l_file_buf_size);
-        fread(l_file_buf, l_file_buf_size, 1, l_sys_max_pipe_size_fd);
+        char l_file_buf[64] = "";
+        fread(l_file_buf, sizeof(l_file_buf), 1, l_sys_max_pipe_size_fd);
         uint64_t l_sys_max_pipe_size = strtoull(l_file_buf, 0, 10);
         fcntl(l_pipe[0], F_SETPIPE_SZ, l_sys_max_pipe_size);
         fclose(l_sys_max_pipe_size_fd);
@@ -964,25 +935,9 @@ dap_events_socket_t * dap_context_create_event(dap_context_t * a_context, dap_ev
 #endif
 
 #ifdef DAP_EVENTS_CAPS_EVENT_EVENTFD
-    if((l_es->fd = eventfd(0,EFD_NONBLOCK) ) < 0 ){
-        int l_errno = errno;
-        char l_errbuf[128];
-        l_errbuf[0]=0;
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        switch (l_errno) {
-            case EINVAL: log_it(L_CRITICAL, "An unsupported value was specified in flags: \"%s\" (%d)", l_errbuf, l_errno); break;
-            case EMFILE: log_it(L_CRITICAL, "The per-process limit on the number of open file descriptors has been reached: \"%s\" (%d)", l_errbuf, l_errno); break;
-            case ENFILE: log_it(L_CRITICAL, "The system-wide limit on the total number of open files has been reached: \"%s\" (%d)", l_errbuf, l_errno); break;
-            case ENODEV: log_it(L_CRITICAL, "Could not mount (internal) anonymous inode device: \"%s\" (%d)", l_errbuf, l_errno); break;
-            case ENOMEM: log_it(L_CRITICAL, "There was insufficient memory to create a new eventfd file descriptor: \"%s\" (%d)", l_errbuf, l_errno); break;
-            default: log_it( L_ERROR, "Error detected, can't create eventfd: '%s' (%d)", l_errbuf, l_errno);
-        }
-        DAP_DELETE(l_es);
-        return NULL;
-    }else {
-        l_es->fd2 = l_es->fd;
-        //log_it(L_DEBUG, "Created eventfd descriptor %d", l_es->fd );
-    }
+    if ( (l_es->fd = eventfd(0,EFD_NONBLOCK) ) < 0 )
+        return DAP_DELETE(l_es), log_it(L_ERROR, "Can't create eventfd, error %d: '%s'", errno, dap_strerror(errno)), NULL;
+    l_es->fd2 = l_es->fd;
 #elif defined DAP_EVENTS_CAPS_WEPOLL
     l_es->socket        = socket(AF_INET, SOCK_DGRAM, 0);
 
@@ -1064,17 +1019,8 @@ dap_events_socket_t * dap_context_create_pipe(dap_context_t * a_context, dap_eve
 
 #if defined(DAP_EVENTS_CAPS_PIPE_POSIX)
     int l_pipe[2];
-    int l_errno;
-    char l_errbuf[128];
-    l_errbuf[0]=0;
-    if( pipe(l_pipe) < 0 ){
-        l_errno = errno;
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        log_it( L_ERROR, "Error detected, can't create pipe(): '%s' (%d)", l_errbuf, l_errno);
-        DAP_DELETE(l_es);
-        return NULL;
-    }//else
-     //   log_it(L_DEBUG, "Created one-way unnamed bytestream pipe %d->%d", l_pipe[0], l_pipe[1]);
+    if( pipe(l_pipe) < 0 )
+        return DAP_DELETE(l_es), log_it( L_ERROR, "Error detected, can't create pipe(), error %d: '%s'", errno, dap_strerror(errno)), NULL;
     l_es->fd = l_pipe[0];
     l_es->fd2 = l_pipe[1];
 #if defined DAP_OS_UNIX

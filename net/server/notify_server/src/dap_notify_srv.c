@@ -69,12 +69,10 @@ int dap_notify_server_init()
         .new_callback = s_notify_server_callback_new,
         .delete_callback = s_notify_server_callback_delete
     };
-    if ( !(s_notify_server = dap_server_new("notify_server", NULL, &l_client_callbacks)) ) {
-        log_it(L_INFO, "Notify server not initalized");
-        return -1;
-    }
-    log_it(L_NOTICE,"Notify server initalized");
-    return 0;
+    s_notify_server = dap_server_new("notify_server", NULL, &l_client_callbacks);
+    return s_notify_server
+        ? ( log_it(L_INFO,"Notify server initalized"), 0 )
+        : ( log_it(L_WARNING, "Notify server not initalized"), -1 );
 }
 
 /**
@@ -88,7 +86,7 @@ void dap_notify_server_deinit()
 void s_notify_server_broadcast(const char *a_data)
 {
     size_t l_str_len = dap_strlen(a_data);
-    if ( !l_str_len++ )
+    if ( !l_str_len )
         return;
     if (s_notify_data_user_callback)
         s_notify_data_user_callback(a_data);
@@ -99,7 +97,7 @@ void s_notify_server_broadcast(const char *a_data)
             log_it(L_ERROR, "Wrong worker id %u for interthread communication", l_worker_id);
             continue;
         }
-        dap_events_socket_write(dap_events_worker_get(l_worker_id), it->uuid, a_data, l_str_len);
+        dap_events_socket_write(dap_events_worker_get(l_worker_id), it->uuid, a_data, l_str_len + 1);
     }
     pthread_rwlock_unlock(&s_notify_server_clients_mutex);
 }
@@ -139,7 +137,7 @@ int dap_notify_server_send_f(const char *a_format, ...)
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         return -1;
     }
-    vsprintf(l_str, a_format, ap_copy);
+    vsnprintf(l_str, l_str_size, a_format, ap_copy);
     va_end(ap_copy);
     
     return dap_proc_thread_callback_add_pri(NULL, s_notify_server_callback_queue, l_str, DAP_QUEUE_MSG_PRIORITY_LOW);

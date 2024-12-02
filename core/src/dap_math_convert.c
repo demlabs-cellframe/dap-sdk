@@ -402,12 +402,15 @@ uint256_t dap_uint256_scan_decimal(const char *a_str_decimal)
         if ( (l_pos ) >  DATOSHI_DEGREE )
             return  log_it(L_WARNING, "Incorrect balance format of '%s' - too much precision", l_buf), uint256_0;
 
+        l_pos = l_len - (l_point - l_buf) - 1;                                      /* Check number of decimals after dot */
+        if ( l_pos > DATOSHI_DEGREE )
+            return  log_it(L_WARNING, "Incorrect balance format of '%s' - too much precision", l_buf), uint256_0;
+
         /* "123.456" -> "123456" */
         memmove(l_point, l_point + 1, l_pos);                                   /* Shift left a right part of the decimal string
                                                                                 to dot symbol place */
         *(l_point + l_pos) = '\0';
     }
-
     /* Add trailer zeros:
      *                pos
      *                 |
@@ -479,7 +482,9 @@ char *dap_uint256_decimal_to_char(uint256_t a_decimal){ //dap_chain_balance_to_c
 
 const char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_round_position, bool is_round)
 {
-    return dap_uint256_char_to_round_char(dap_uint256_decimal_to_char(a_uint256), a_round_position, is_round);
+    char *l_uint256_str = dap_uint256_decimal_to_char(a_uint256);
+    const char *l_ret = dap_uint256_char_to_round_char(l_uint256_str, a_round_position, is_round);
+    return DAP_DELETE(l_uint256_str), l_ret;
 }
 
 const char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_pos, bool is_round)
@@ -487,10 +492,8 @@ const char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_
     _Thread_local static char s_buf[DATOSHI_POW256 + 3];
     char *l_dot_pos = strchr(a_str_decimal, '.'), *l_res = s_buf;
     int l_len = strlen(a_str_decimal);
-    if (!l_dot_pos || a_round_pos >= DATOSHI_DEGREE || ( l_len - (l_dot_pos - a_str_decimal) <= a_round_pos )) {
-        memcpy(l_res, a_str_decimal, l_len + 1);
-        return l_res;
-    }
+    if (!l_dot_pos || a_round_pos >= DATOSHI_DEGREE || ( l_len - (l_dot_pos - a_str_decimal) <= a_round_pos ))
+        return memcpy(l_res, a_str_decimal, l_len + 1);
 
     int l_new_len = (l_dot_pos - a_str_decimal) + a_round_pos + 1;
     *l_res = '0';

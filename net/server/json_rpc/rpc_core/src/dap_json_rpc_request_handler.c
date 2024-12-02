@@ -35,7 +35,6 @@ int dap_json_rpc_unregistration_request_handler(const char *a_name)
 
 char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_size)
 {
-
     if (!a_request) {
         log_it(L_ERROR, "Empty request");
         return NULL;
