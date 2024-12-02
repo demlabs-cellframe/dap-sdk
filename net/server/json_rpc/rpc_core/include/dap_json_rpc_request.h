@@ -44,12 +44,10 @@ typedef struct dap_json_rpc_http_request
     struct {
         uint32_t data_size;
         uint32_t signs_size;
-    } DAP_ALIGN_PACKED header;
-    dap_json_rpc_request_t * request;
-    byte_t tsd_n_signs[];
-}dap_json_rpc_http_request_t;
+    }  header;
+    byte_t request_n_signs[];
+} DAP_ALIGN_PACKED dap_json_rpc_http_request_t;
 
-int dap_json_rpc_request_init(const char *a_url_service);
 /**
  * Create a new dap_json_rpc_request_t instance.
  *
