@@ -43,6 +43,7 @@
 #include "dap_list.h"
 #include "dap_common.h"
 #include "dap_global_db.h"
+#include "dap_config.h"
 
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
 #include "dap_global_db_driver_sqlite.h"
@@ -118,7 +119,7 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
         l_ret = dap_global_db_driver_pgsql_init(PG_CONNINFO, &s_drv_callback);
         #endif
     #else
-        l_ret = dap_global_db_driver_pgsql_init(a_filename_db, &s_drv_callback); 
+        l_ret = dap_global_db_driver_pgsql_init(dap_config_get_item_str_default(g_config, "global_db", "pg_conninfo", "dbname=postgres"), &s_drv_callback); 
     #endif
 #endif
     else
