@@ -110,14 +110,14 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
 #ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
     else if(!dap_strcmp(s_used_driver, "pgsql"))
     #ifdef DAP_TESTS
-        #ifndef PG_CONNINFO
     {
-        log_it(L_WARNING, "PG_CONNINFO not defined, use to tests a_filename_db:\"%s\"", a_filename_db);
-        l_ret = dap_global_db_driver_pgsql_init(a_filename_db, &s_drv_callback);
-    }
-        #else
-        l_ret = dap_global_db_driver_pgsql_init(PG_CONNINFO, &s_drv_callback);
-        #endif
+        char *l_pg_conninfo = getenv("PG_CONNINFO");
+        if (!l_pg_conninfo) {
+            log_it(L_WARNING, "PG_CONNINFO not defined, using to tests second conn info:\"%s\"", a_filename_db);
+            l_ret = dap_global_db_driver_pgsql_init(a_filename_db, &s_drv_callback);
+        } else {
+            l_ret = dap_global_db_driver_pgsql_init(l_pg_conninfo, &s_drv_callback);
+        }
     #else
         l_ret = dap_global_db_driver_pgsql_init(dap_config_get_item_str_default(g_config, "global_db", "pg_conninfo", "dbname=postgres"), &s_drv_callback); 
     #endif

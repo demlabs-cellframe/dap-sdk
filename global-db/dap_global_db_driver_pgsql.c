@@ -671,10 +671,15 @@ static dap_store_obj_t* s_db_pgsql_read_store_obj(const char *a_group, const cha
     if (a_key) {
         l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE key='%s' AND (flags & '%d' %s 0)", a_group, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
     } else { // no limit
-        l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE flags & '%d' %s 0 ORDER BY driver_key LIMIT '%d'",
+        if (a_count_out && *a_count_out)
+            l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE flags & '%d' %s 0 ORDER BY driver_key LIMIT '%d'",
                                         a_group, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=",
                                         a_count_out && *a_count_out ? (int)*a_count_out : -1);
+        else
+            l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE flags & '%d' %s 0 ORDER BY driver_key",
+                                        a_group, DAP_GLOBAL_DB_RECORD_DEL,
+                                        a_with_holes ? ">=" : "=");
     }
     if (!l_query_str) {
         log_it(L_ERROR, "Error in PGSQL request forming");
@@ -760,8 +765,8 @@ static size_t s_db_pgsql_read_count_store(const char *a_group, dap_global_db_dri
     DAP_DELETE(l_query_count_str);
     uint64_t *l_ret = (uint64_t *)PQgetvalue(l_query_res, 0, 0);
 clean_and_ret:
-    s_db_pgsql_free_connection(l_conn, false);
     PQclear(l_query_res);
+    s_db_pgsql_free_connection(l_conn, false);
     return l_ret ? be64toh(*l_ret) : 0;
 }
 
@@ -786,8 +791,8 @@ static bool s_db_pgsql_is_hash(const char *a_group, dap_global_db_driver_hash_t 
     DAP_DELETE(l_query_str);
     char *l_ret = PQgetvalue(l_query_res, 0, 0);
 clean_and_ret:
-    s_db_pgsql_free_connection(l_conn, false);
     PQclear(l_query_res);
+    s_db_pgsql_free_connection(l_conn, false);
     return l_ret ? *l_ret : false;
 }
 
@@ -812,8 +817,8 @@ static bool s_db_pgsql_is_obj(const char *a_group, const char *a_key)
     DAP_DELETE(l_query_str);
     char *l_ret = PQgetvalue(l_query_res, 0, 0);
 clean_and_ret:
-    s_db_pgsql_free_connection(l_conn, false);
     PQclear(l_query_res);
+    s_db_pgsql_free_connection(l_conn, false);
     return l_ret ? *l_ret : false;
 }
 

@@ -164,6 +164,10 @@ static int s_test_read(size_t a_count)
 {
     dap_test_msg("Start reading %zu records ...", a_count);
     int l_time = 0;
+    size_t l_read_count = 0;
+    dap_store_obj_t *l_store_obj = dap_global_db_driver_read(DAP_DB$T_GROUP, NULL, &l_read_count, true);
+    dap_assert_PIF(l_read_count == a_count, "All records count not equal writed");
+    dap_store_obj_free(l_store_obj, l_read_count);
     for (size_t i = 0; i < a_count; ++i ) {
         dap_chain_hash_fast_t csum = { 0 };;
         dap_db_test_record_t *prec = NULL;
