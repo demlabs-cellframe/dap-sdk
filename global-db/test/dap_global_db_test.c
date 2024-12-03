@@ -65,29 +65,16 @@ typedef struct __dap_test_record__ {
 
 static int s_test_create_db(const char *db_type)
 {
-    int rc;
+    int l_rc = 0;
     char l_cmd[MAX_PATH];
     dap_test_msg("Initializatiion test db %s driver in %s file", db_type, DB_FILE);
 
-    if( dap_dir_test(DB_FILE) ) {
-        rmdir(DB_FILE);
-        snprintf(l_cmd, sizeof(l_cmd), "rm -rf %s", DB_FILE);
-        if ( (rc = system(l_cmd)) )
-             log_it(L_ERROR, "system(%s)->%d", l_cmd, rc);
-    }
+    if (!dap_strcmp(db_type, "pgsql"))
+        l_rc = dap_global_db_driver_init(db_type, "dbname=postgres");
     else
-        unlink(DB_FILE);
-    // if (!dap_strcmp(db_type, "pgsql"))
-    //     rc = dap_global_db_driver_init(db_type, "dbname=postgres");
-    if (!dap_strcmp(db_type, "pgsql")) {
-        char *l_db_name = dap_strdup_printf("dbname=post%s", "gres"); 
-        rc = dap_global_db_driver_init(db_type, l_db_name);
-        DAP_DELETE(l_db_name);
-    }
-    else
-        rc = dap_global_db_driver_init(db_type, DB_FILE);
-    dap_assert(rc == 0, "Initialization db driver");
-    return rc;
+        l_rc = dap_global_db_driver_init(db_type, DB_FILE);
+    dap_assert(l_rc == 0, "Initialization db driver");
+    return l_rc;
 }
 
 static int s_test_write(size_t a_count)
