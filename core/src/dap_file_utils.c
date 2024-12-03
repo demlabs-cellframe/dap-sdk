@@ -172,7 +172,7 @@ int dap_mkdir_with_parents(const char *a_dir_path)
         return -1;
     }
     char path[strlen(a_dir_path) + 1], *p;
-    dap_strncpy(path, a_dir_path, sizeof(path) - 1);
+    dap_strncpy(path, a_dir_path, sizeof(path));
     // skip the root component if it is present, i.e. the "/" in Unix or "C:\" in Windows
 #ifdef DAP_OS_WINDOWS
     if(((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z'))

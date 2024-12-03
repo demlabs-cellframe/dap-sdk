@@ -373,8 +373,8 @@ dap_cert_t* dap_cert_mem_load(const void *a_data, size_t a_data_size)
         return log_it(L_ERROR, "Cert data size exeeds file size, %zu > %zu", l_size_req, a_data_size), NULL;
 
     char l_name[DAP_CERT_ITEM_NAME_MAX];
-    dap_strncpy(l_name, (const char*)l_data, DAP_CERT_ITEM_NAME_MAX - 1);
-    l_data += DAP_CERT_ITEM_NAME_MAX;
+    dap_strncpy(l_name, (const char*)l_data, sizeof(l_name));
+    l_data += sizeof(l_name);
     if (!( l_ret = dap_cert_new(l_name) ))
         return log_it(L_ERROR, "Can't create cert '%s'", l_name), NULL;
     else if (!( l_ret->enc_key = dap_enc_key_new(dap_sign_type_to_key_type(l_hdr.sign_type)) ))

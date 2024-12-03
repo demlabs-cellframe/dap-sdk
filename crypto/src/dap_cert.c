@@ -382,7 +382,7 @@ int dap_cert_add(dap_cert_t *a_cert)
     if (l_cert_item)
         return log_it(L_WARNING, "Certificate with name %s already present in memory", a_cert->name), -2;
     l_cert_item = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_cert_item_t, -3);
-    dap_strncpy(l_cert_item->name, a_cert->name, sizeof(l_cert_item->name) - 1);
+    dap_strncpy(l_cert_item->name, a_cert->name, sizeof(l_cert_item->name));
     l_cert_item->cert = a_cert;
     HASH_ADD_STR(s_certs, name, l_cert_item);
     return 0;
@@ -638,7 +638,7 @@ dap_cert_metadata_t *dap_cert_new_meta(const char *a_key, dap_cert_metadata_type
     dap_cert_metadata_t *l_new_meta = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_cert_metadata_t, l_meta_item_size, NULL);
     l_new_meta->length = a_value_size;
     l_new_meta->type = a_type;
-    l_new_meta->key = dap_strncpy( (char*)dap_mempcpy(l_new_meta->value, a_value, a_value_size), a_key, l_keylen );
+    l_new_meta->key = dap_strncpy( (char*)dap_mempcpy(l_new_meta->value, a_value, a_value_size), a_key, l_keylen + 1 );
     return l_new_meta;
 }
 

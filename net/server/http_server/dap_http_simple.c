@@ -289,7 +289,7 @@ inline static void s_copy_reply_and_mime_to_response( dap_http_simple_t *a_simpl
         return  log_it( L_WARNING, " cl_sh->reply_size equal 0" );
 
     a_simple->http_client->out_content_length = a_simple->reply_size;
-    dap_strncpy( a_simple->http_client->out_content_type, a_simple->reply_mime, sizeof(a_simple->http_client->out_content_type) - 1 );
+    dap_strncpy( a_simple->http_client->out_content_type, a_simple->reply_mime, sizeof(a_simple->http_client->out_content_type) );
     return;
 }
 
@@ -308,7 +308,7 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
     const char* json_str = json_object_to_json_string( jobj );
     dap_http_simple_reply(a_http_simple, (void*) json_str, (size_t) strlen(json_str) );
 
-    dap_strncpy( a_http_simple->reply_mime, "application/json", sizeof(a_http_simple->reply_mime) - 1 );
+    dap_strncpy( a_http_simple->reply_mime, "application/json", sizeof(a_http_simple->reply_mime) );
 
     s_copy_reply_and_mime_to_response( a_http_simple );
 

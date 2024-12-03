@@ -87,7 +87,7 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
     s_drv_callback = (dap_global_db_driver_callbacks_t){ };
 
     // Setup driver name
-    dap_strncpy( s_used_driver, a_driver_name, sizeof(s_used_driver) - 1);
+    dap_strncpy( s_used_driver, a_driver_name, sizeof(s_used_driver));
 
     dap_mkdir_with_parents(a_filename_db);
 

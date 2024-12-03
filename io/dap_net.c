@@ -113,7 +113,7 @@ int dap_net_parse_config_address(const char *a_src, char *a_addr, uint16_t *a_po
     char *a_addr2 = a_addr ? a_addr : a_saddr ? DAP_NEW_STACK_SIZE(char, l_len + 1) : NULL;
     if ( !a_addr2 )
         return l_len;
-    dap_strncpy(a_addr2, a_src, l_len);
+    dap_strncpy(a_addr2, a_src, l_len + 1);
     return a_saddr ? dap_net_resolve_host(a_addr2, a_port ? dap_itoa(*a_port) : NULL, true, a_saddr, a_family) : l_len;
 }
 

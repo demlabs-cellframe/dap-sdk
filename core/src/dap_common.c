@@ -268,7 +268,7 @@ const char * dap_get_appname()
  */
 void dap_set_appname(const char * a_appname)
 {
-    dap_strncpy(s_appname, a_appname, sizeof(s_appname) - 1);
+    dap_strncpy(s_appname, a_appname, sizeof(s_appname));
 }
 
 enum dap_log_level dap_log_level_get( void ) {
@@ -465,7 +465,7 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
         }
     }
 #endif
-    char s_format[LOG_FORMAT_LEN] = { '\0' };
+    char s_format[LOG_FORMAT_LEN];
     unsigned offset = s_ansi_seq_color_len[a_ll];
     memcpy(s_format, s_ansi_seq_color[a_ll], offset);
     offset += s_update_log_time(s_format + offset);
@@ -473,7 +473,7 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
             ? snprintf(s_format + offset, LOG_FORMAT_LEN - offset,"%s[%s][%s:%d] %s\n", s_log_level_tag[a_ll], a_log_tag, func_name, line_num, a_fmt)
             : snprintf(s_format + offset, LOG_FORMAT_LEN - offset, "%s[%s] %s\n", s_log_level_tag[a_ll], a_log_tag, a_fmt);
     if (offset >= LOG_FORMAT_LEN) {
-        dap_strncpy(s_format + LOG_FORMAT_LEN - 5, "...\n", 4);
+        dap_strncpy(s_format + LOG_FORMAT_LEN - 5, "...\n", 5);
     }
     va_list va;
     va_start(va, a_fmt);
