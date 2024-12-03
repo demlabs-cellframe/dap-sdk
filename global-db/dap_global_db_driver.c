@@ -88,12 +88,12 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
 
     // Setup driver name
     dap_strncpy( s_used_driver, a_driver_name, sizeof(s_used_driver) - 1);
-
-    dap_mkdir_with_parents(a_filename_db);
-
-    // Compose path
+    
     char l_db_path_ext[strlen(a_driver_name) + strlen(a_filename_db) + 6];
-    snprintf(l_db_path_ext, sizeof(l_db_path_ext), "%s/gdb-%s", a_filename_db, a_driver_name);
+    if (dap_strcmp(s_used_driver, "pgsql")) { // Compose path
+        dap_mkdir_with_parents(a_filename_db);
+        snprintf(l_db_path_ext, sizeof(l_db_path_ext), "%s/gdb-%s", a_filename_db, a_driver_name);
+    }
 
    // Check for engine
     if(!dap_strcmp(s_used_driver, "ldb"))
