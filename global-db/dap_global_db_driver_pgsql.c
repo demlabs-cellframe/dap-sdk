@@ -895,6 +895,7 @@ int dap_global_db_driver_pgsql_init(const char *a_db_conn_info, dap_global_db_dr
     dap_return_val_if_pass(!a_db_conn_info, -1);
     dap_return_val_if_pass_err(s_db_inited, -2, "PGSQL driver already init")
 // func work
+    debug_if(g_dap_global_db_debug_more, L_INFO, "PGSQL will use second conn info: %s", a_db_conn_info);
     dap_strncpy(s_db_conn_info, a_db_conn_info, MAX_PATH);
     conn_list_item_t *l_base_conn = s_db_pgsql_get_connection(false);
     if (!l_base_conn) {
