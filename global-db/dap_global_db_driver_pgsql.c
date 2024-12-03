@@ -105,7 +105,14 @@ static int s_db_pgsql_exec_command(PGconn *a_db, const char *a_query, dap_global
     int l_param_lens[3] = {sizeof(dap_global_db_driver_hash_t), a_value_len, dap_sign_get_size(a_sign)};
     int l_param_formats[3] = {1, 1, 1};
     uint8_t l_param_count = a_hash || a_value || a_sign ? 3 : 0;
-    PGresult *l_query_res = PQexecParams(a_db, a_query, l_param_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1);
+    while(PQisBusy(a_db)){dap_usleep(500000);}
+    if ( PQsendQueryParams(a_db, a_query, l_param_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1) != 1) {
+        log_it(L_ERROR, "Query send \"%s\" failed with message: \"%s\"", a_error_msg, PQerrorMessage(a_db));
+        return -2;
+    }
+    PGresult *l_query_res = NULL;
+    while (!(l_query_res = PQgetResult(a_db)));
+
     if ( PQresultStatus(l_query_res) != PGRES_COMMAND_OK ) {
         const char *l_err = PQresultErrorField(l_query_res, PG_DIAG_SQLSTATE);
         if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
@@ -131,12 +138,17 @@ static int s_db_pgsql_exec_command(PGconn *a_db, const char *a_query, dap_global
 static PGresult *s_db_pgsql_exec_tuples(PGconn *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, const char *a_error_msg)
 {
     dap_return_val_if_pass(!a_db || !a_query, NULL);
-    
-    PGresult *l_ret = PQexecParams(a_db, a_query, 
+    while(PQisBusy(a_db)){dap_usleep(500000);}
+    if (PQsendQueryParams(a_db, a_query, 
         a_hash ? 1 : 0, NULL, 
         a_hash ? (const char*[]){ a_hash } : NULL,
         a_hash ? (const int[]){ sizeof(dap_global_db_driver_hash_t)} : NULL,
-        a_hash ? (const int[]){ 1 } : NULL, 1);
+        a_hash ? (const int[]){ 1 } : NULL, 1) != 1) {
+            log_it(L_ERROR, "Query send \"%s\" failed with message: \"%s\"", a_error_msg, PQerrorMessage(a_db));
+            return NULL;
+        }
+    PGresult *l_ret = NULL;
+    while (!(l_ret = PQgetResult(a_db)));
     if ( PQresultStatus(l_ret) != PGRES_TUPLES_OK ) {
         const char *l_err = PQresultErrorField(l_ret, PG_DIAG_SQLSTATE);
         if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
@@ -419,27 +431,42 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
     }
 
 // memory alloc
-    PGresult *l_query_res = PQexecParams(l_conn->conn, (const char *)l_query_str, a_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1);
-    if ( PQresultStatus(l_query_res) != PGRES_TUPLES_OK ) {
-        const char *l_err = PQresultErrorField(l_query_res, PG_DIAG_SQLSTATE);
-        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
-            log_it(L_ERROR, "Query failed with message: \"%s\"", PQresultErrorMessage(l_query_res));
-        PQclear(l_query_res);
-        return NULL;
-    }
 
-    PGresult *l_query_size_res = PQexecParams(l_conn->conn, (const char *)l_query_size_str, a_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1);
-    if ( PQresultStatus(l_query_res) != PGRES_TUPLES_OK ) {
-        const char *l_err = PQresultErrorField(l_query_res, PG_DIAG_SQLSTATE);
-        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
-            log_it(L_ERROR, "Query failed with message: \"%s\"", PQresultErrorMessage(l_query_res));
-        PQclear(l_query_res);
-        return NULL;
+    while(PQisBusy(l_conn->conn)){dap_usleep(500000);}
+    if ( PQsendQueryParams(l_conn->conn, (const char *)l_query_size_str, a_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1) != 1) {
+        log_it(L_ERROR, "Query send failed with message: \"%s\"", PQerrorMessage(l_conn->conn));
+        goto clean_and_ret;
     }
-    size_t l_count = PQntuples(l_query_res);
+    PGresult *l_query_size_res = NULL;
+    while (!(l_query_size_res = PQgetResult(l_conn->conn)));
+    if ( PQresultStatus(l_query_size_res) != PGRES_TUPLES_OK ) {
+        const char *l_err = PQresultErrorField(l_query_size_res, PG_DIAG_SQLSTATE);
+        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
+            log_it(L_ERROR, "Query failed with message: \"%s\"", PQresultErrorMessage(l_query_size_res));
+        PQclear(l_query_size_res);
+        goto clean_and_ret;
+    }
     uint64_t *l_size_p = (uint64_t *)PQgetvalue(l_query_size_res, 0, 0);
     size_t l_size = l_size_p ? be64toh(*l_size_p) : 0;
     PQclear(l_query_size_res);
+
+
+    while(PQisBusy(l_conn->conn)){dap_usleep(500000);}
+    if ( PQsendQueryParams(l_conn->conn, (const char *)l_query_str, a_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1) != 1) {
+        log_it(L_ERROR, "Query send failed with message: \"%s\"", PQerrorMessage(l_conn->conn));
+        goto clean_and_ret; 
+    }
+    PGresult *l_query_res = NULL;
+    while (!(l_query_res = PQgetResult(l_conn->conn)));
+    
+    if ( PQresultStatus(l_query_res) != PGRES_TUPLES_OK ) {
+        const char *l_err = PQresultErrorField(l_query_res, PG_DIAG_SQLSTATE);
+        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
+            log_it(L_ERROR, "Query failed with message: \"%s\"", PQresultErrorMessage(l_query_res));
+        PQclear(l_query_res);
+        goto clean_and_ret;
+    }
+    size_t l_count = PQntuples(l_query_res);
     if ( !l_count || l_size <= 0 ) {
         log_it(L_INFO, "There are no records satisfying the get by hash request");
         goto clean_and_ret;
