@@ -109,7 +109,18 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
 
 #ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
     else if(!dap_strcmp(s_used_driver, "pgsql"))
-        l_ret = dap_global_db_driver_pgsql_init(l_db_path_ext, &s_drv_callback);
+    #ifdef DAP_TESTS
+        #ifndef PG_CONNINFO
+            #error "PG_CONNINFO not defined"
+        #else
+        {
+            log_it(L_INFO, "PGSQL will init with second configs: %s", PG_CONNINFO);
+            l_ret = dap_global_db_driver_pgsql_init(PG_CONNINFO, &s_drv_callback);
+        }
+        #endif
+    #else
+        l_ret = dap_global_db_driver_pgsql_init(l_db_path_ext, &s_drv_callback); 
+    #endif
 #endif
     else
         log_it(L_ERROR, "Unknown global_db driver \"%s\"", a_driver_name);

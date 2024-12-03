@@ -48,7 +48,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #define LOG_TAG "db_pgsql"
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_PGSQL
 
-static char s_db_name[DAP_PGSQL_DBHASHNAME_LEN + 1];
+static char s_db_conn_info[MAX_PATH + 1];
 
 typedef struct conn_pool_item {
     PGconn *conn;                                               /* PGSQL connection context itself */
@@ -171,9 +171,7 @@ static conn_list_item_t *s_db_pgsql_get_connection(bool a_trans)
         pthread_key_t s_destructor_key;
         pthread_key_create(&s_destructor_key, s_connection_destructor);
         pthread_setspecific(s_destructor_key, (const void *)s_conn);
-        char *l_conn_str = dap_strdup_printf("dbname=%s", s_db_name);
-        s_conn->conn = PQconnectdb(l_conn_str);
-        DAP_DELETE(l_conn_str);
+        s_conn->conn = PQconnectdb(s_db_conn_info);
         if (PQstatus(s_conn->conn) != CONNECTION_OK) {
             log_it(L_ERROR, "Can't connect PostgreSQL database: \"%s\"", PQerrorMessage(s_conn->conn));
             DAP_DEL_Z(s_conn);
@@ -891,80 +889,17 @@ static int s_db_pgsql_transaction_end(bool a_commit)
  * @param a_drv_callback a pointer to a structure of callback functions
  * @return pass - 0, error - other.
  */
-int dap_global_db_driver_pgsql_init(const char *a_db_path, dap_global_db_driver_callbacks_t *a_drv_callback)
+int dap_global_db_driver_pgsql_init(const char *a_db_conn_info, dap_global_db_driver_callbacks_t *a_drv_callback)
 {
 // sanity check
-    dap_return_val_if_pass(!a_db_path, -1);
+    dap_return_val_if_pass(!a_db_conn_info, -1);
     dap_return_val_if_pass_err(s_db_inited, -2, "PGSQL driver already init")
 // func work
-
-
-    dap_hash_fast_t l_dir_hash;
-    dap_hash_fast(a_db_path, strlen(a_db_path), &l_dir_hash);
-    dap_htoa64(s_db_name, l_dir_hash.raw, DAP_PGSQL_DBHASHNAME_LEN);
-    s_db_name[DAP_PGSQL_DBHASHNAME_LEN] = '\0';
-    if (!dap_dir_test(a_db_path) || !readdir(opendir(a_db_path))) {
-        // Check paths and create them if nessesary
-        if (!dap_dir_test(a_db_path)) {
-            log_it(L_NOTICE, "No directory %s, trying to create...", a_db_path);
-            dap_mkdir_with_parents(a_db_path);
-            if (!dap_dir_test(a_db_path)) {
-                char l_errbuf[255];
-                l_errbuf[0] = '\0';
-                strerror_r(errno, l_errbuf, sizeof(l_errbuf));
-                log_it(L_ERROR, "Can't create directory, error code %d, error string \"%s\"", errno, l_errbuf);
-                return -1;
-            }
-            log_it(L_NOTICE,"Directory created");
-            chown(a_db_path, getpwnam("postgres")->pw_uid, -1);
-        }
-        char l_absolute_path[MAX_PATH] = {};
-        if (realpath(a_db_path, l_absolute_path) == NULL) {
-            log_it(L_ERROR, "Can't get absolute db dir path");
-            return -2;
-        }
-
-        // Create PostgreSQL database
-        const char *l_base_conn_str = "dbname=postgres";
-        PGconn *l_base_conn = PQconnectdb(l_base_conn_str);
-        if (PQstatus(l_base_conn) != CONNECTION_OK) {
-            log_it(L_ERROR, "Can't init PostgreSQL database: \"%s\"", PQerrorMessage(l_base_conn));
-            PQfinish(l_base_conn);
-            return -3;
-        }
-        char *l_query_str = dap_strdup_printf("DROP DATABASE IF EXISTS \"%s\"", s_db_name);
-        int l_ret = s_db_pgsql_exec_command(l_base_conn, l_query_str, NULL, NULL, 0, NULL, "drop database");
-        DAP_DELETE(l_query_str);
-        if (l_ret) {
-            PQfinish(l_base_conn);
-            return -4;
-        }
-
-        l_query_str = dap_strdup_printf("DROP TABLESPACE IF EXISTS \"%s\"", s_db_name);
-        l_ret = s_db_pgsql_exec_command(l_base_conn, l_query_str, NULL, NULL, 0, NULL, "drop tablespace");
-        DAP_DELETE(l_query_str);
-        if (l_ret) {
-            PQfinish(l_base_conn);
-            return -5;
-        }
-        l_query_str = dap_strdup_printf("CREATE TABLESPACE \"%s\" LOCATION '%s'", s_db_name, l_absolute_path);
-        l_ret = s_db_pgsql_exec_command(l_base_conn, l_query_str, NULL, NULL, 0, NULL, "create tablespace");
-        DAP_DELETE(l_query_str);
-        if (l_ret) {
-            PQfinish(l_base_conn);
-            return -6;
-        }
-
-        chmod(a_db_path, S_IRWXU | S_IRWXG | S_IRWXO);
-
-        l_query_str = dap_strdup_printf("CREATE DATABASE \"%s\" WITH TABLESPACE \"%s\"", s_db_name, s_db_name);
-        l_ret = s_db_pgsql_exec_command(l_base_conn, l_query_str, NULL, NULL, 0, NULL, "create database");
-        DAP_DELETE(l_query_str);
-        if (l_ret) {
-            PQfinish(l_base_conn);
-            return -7;
-        }
-        PQfinish(l_base_conn);
+    dap_strncpy(s_db_conn_info, a_db_conn_info, MAX_PATH);
+    conn_list_item_t *l_base_conn = s_db_pgsql_get_connection(false);
+    if (!l_base_conn) {
+        log_it(L_ERROR, "Can't create base connection to PGSQL db");
+        return -3;
     }
 
     a_drv_callback->apply_store_obj         = s_db_pgsql_apply_store_obj;
