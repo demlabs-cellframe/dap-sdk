@@ -94,20 +94,50 @@ static inline void s_db_pgsql_free_connection(conn_list_item_t *a_conn, bool a_t
  * @param a_value pointer to data
  * @param a_value_len data len to write
  * @param a_sign record sign
- * @param a_valid_result requried result to validation check
  * @param a_error_msg additional error log info
- * @return result code.
+ * @return pass 0, error - other.
  */
-static PGresult *s_db_pgsql_exec(PGconn *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign, ExecStatusType a_valid_result, const char *a_error_msg)
+static int s_db_pgsql_exec_command(PGconn *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign, const char *a_error_msg)
 {
     dap_return_val_if_pass(!a_db || !a_query, NULL);
     
     const char *l_param_vals[3] = {(const char *)a_hash, (const char *)a_value, (const char *)a_sign};
     int l_param_lens[3] = {sizeof(dap_global_db_driver_hash_t), a_value_len, dap_sign_get_size(a_sign)};
     int l_param_formats[3] = {1, 1, 1};
-    uint8_t l_param_count = 3 - !a_hash - !a_value - !a_sign;
-    PGresult *l_ret = PQexecParams(a_db, a_query, l_param_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1);
-    if ( PQresultStatus(l_ret) != a_valid_result ) {
+    uint8_t l_param_count = a_hash || a_value || a_sign ? 3 : 0;
+    PGresult *l_query_res = PQexecParams(a_db, a_query, l_param_count, NULL, l_param_vals, l_param_lens, l_param_formats, 1);
+    if ( PQresultStatus(l_query_res) != PGRES_COMMAND_OK ) {
+        const char *l_err = PQresultErrorField(l_query_res, PG_DIAG_SQLSTATE);
+        if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
+            log_it(L_ERROR, "Query \"%s\" failed with message: \"%s\"", a_error_msg, PQresultErrorMessage(l_query_res));
+        PQclear(l_query_res);
+        return -1;
+    }
+    PQclear(l_query_res);
+    return 0;
+}
+
+/**
+ * @brief Executes PGSQL statements.
+ * @param a_db a pointer to an instance of PGSQL connection
+ * @param a_query the PGSQL statement
+ * @param a_hash pointer to data hash
+ * @param a_value pointer to data
+ * @param a_value_len data len to write
+ * @param a_sign record sign
+ * @param a_error_msg additional error log info
+ * @return pass pointer to PGresult, error NULL.
+ */
+static PGresult *s_db_pgsql_exec_tuples(PGconn *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, const char *a_error_msg)
+{
+    dap_return_val_if_pass(!a_db || !a_query, NULL);
+    
+    PGresult *l_ret = PQexecParams(a_db, a_query, 
+        a_hash ? 1 : 0, NULL, 
+        a_hash ? (const char*[]){ a_hash } : NULL,
+        a_hash ? (const int[]){ sizeof(dap_global_db_driver_hash_t)} : NULL,
+        a_hash ? (const int[]){ 1 } : NULL, 1);
+    if ( PQresultStatus(l_ret) != PGRES_TUPLES_OK ) {
         const char *l_err = PQresultErrorField(l_ret, PG_DIAG_SQLSTATE);
         if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
             log_it(L_ERROR, "Query \"%s\" failed with message: \"%s\"", a_error_msg, PQresultErrorMessage(l_ret));
@@ -115,44 +145,6 @@ static PGresult *s_db_pgsql_exec(PGconn *a_db, const char *a_query, dap_global_d
         return NULL;
     }
     return l_ret;
-}
-
-
-/**
- * @brief Executes PGSQL statements.
- * @param a_db a pointer to an instance of PGSQL connection
- * @param a_query the PGSQL statement
- * @param a_hash pointer to data hash
- * @param a_value pointer to data
- * @param a_value_len data len to write
- * @param a_sign record sign
- * @param a_error_msg additional error log info
- * @return result s_db_pgsql_exec code.
- */
-DAP_STATIC_INLINE int s_db_pgsql_exec_command(PGconn *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign, const char *a_error_msg)
-{
-    PGresult *l_res = s_db_pgsql_exec(a_db, a_query, a_hash, a_value, a_value_len, a_sign, PGRES_COMMAND_OK, a_error_msg);
-    if (l_res) {
-        PQclear(l_res);
-        return 0;
-    }
-    return -1;
-}
-
-/**
- * @brief Executes PGSQL statements.
- * @param a_db a pointer to an instance of PGSQL connection
- * @param a_query the PGSQL statement
- * @param a_hash pointer to data hash
- * @param a_value pointer to data
- * @param a_value_len data len to write
- * @param a_sign record sign
- * @param a_error_msg additional error log info
- * @return result s_db_pgsql_exec code.
- */
-DAP_STATIC_INLINE PGresult *s_db_pgsql_exec_tuples(PGconn *a_db, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign, const char *a_error_msg)
-{
-    return s_db_pgsql_exec(a_db, a_query, a_hash, a_value, a_value_len, a_sign, PGRES_TUPLES_OK, a_error_msg);
 }
 
 /**
@@ -360,7 +352,7 @@ static dap_store_obj_t* s_db_pgsql_read_last_store_obj(const char *a_group, bool
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, NULL, 0, NULL, "read_last_store_obj");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, "read_last_store_obj");
     DAP_DELETE(l_query_str);
     
 // memory alloc
@@ -564,7 +556,7 @@ static dap_global_db_hash_pkt_t *s_db_pgsql_read_hashes(const char *a_group, dap
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, NULL, 0, NULL, "read_hashes");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, "read_hashes");
     DAP_DELETE(l_query_str);
     
 // memory alloc
@@ -626,7 +618,7 @@ static dap_store_obj_t* s_db_pgsql_read_cond_store_obj(const char *a_group, dap_
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, NULL, 0, NULL, "read_cond_store_obj");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, "read_cond_store_obj");
     DAP_DELETE(l_query_str);
     
 // memory alloc
@@ -685,7 +677,7 @@ static dap_store_obj_t* s_db_pgsql_read_store_obj(const char *a_group, const cha
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, NULL, 0, NULL, "read_store_obj");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, "read_store_obj");
     DAP_DELETE(l_query_str);
     
 // memory alloc
@@ -727,7 +719,7 @@ static dap_list_t *s_db_pgsql_get_groups_by_mask(const char *a_group_mask)
     PGresult *l_res = s_db_pgsql_exec_tuples(
         l_conn->conn,
         "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname != 'information_schema' AND schemaname != 'pg_catalog'",
-        NULL, NULL, 0, NULL,
+        NULL,
         "get_groups_by_mask");
     size_t l_count = PQntuples(l_res);
     for (size_t i = 0; i < l_count; ++i) {
@@ -761,12 +753,12 @@ static size_t s_db_pgsql_read_count_store(const char *a_group, dap_global_db_dri
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_count_str, &a_hash_from, NULL, 0, NULL, "read_count_store");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_count_str, &a_hash_from, "read_count_store");
     DAP_DELETE(l_query_count_str);
     uint64_t *l_ret = (uint64_t *)PQgetvalue(l_query_res, 0, 0);
 clean_and_ret:
-    PQclear(l_query_res);
     s_db_pgsql_free_connection(l_conn, false);
+    PQclear(l_query_res);
     return l_ret ? be64toh(*l_ret) : 0;
 }
 
@@ -787,12 +779,12 @@ static bool s_db_pgsql_is_hash(const char *a_group, dap_global_db_driver_hash_t 
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash, NULL, 0, NULL, "is_hash");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash, "is_hash");
     DAP_DELETE(l_query_str);
     char *l_ret = PQgetvalue(l_query_res, 0, 0);
 clean_and_ret:
-    PQclear(l_query_res);
     s_db_pgsql_free_connection(l_conn, false);
+    PQclear(l_query_res);
     return l_ret ? *l_ret : false;
 }
 
@@ -813,12 +805,12 @@ static bool s_db_pgsql_is_obj(const char *a_group, const char *a_key)
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, NULL, 0, NULL, "is_obj");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, "is_obj");
     DAP_DELETE(l_query_str);
     char *l_ret = PQgetvalue(l_query_res, 0, 0);
 clean_and_ret:
-    PQclear(l_query_res);
     s_db_pgsql_free_connection(l_conn, false);
+    PQclear(l_query_res);
     return l_ret ? *l_ret : false;
 }
 
