@@ -110,7 +110,6 @@ void dap_dns_client_read(dap_events_socket_t *a_es, UNUSED_ARG void *a_arg) {
                   *dns_reply    = DAP_NEW_Z_RET_IF_FAIL(dap_dns_buf_t, dns_message);
     dns_message->data           = DAP_NEW_Z_SIZE_RET_IF_FAIL(char, a_es->buf_in_size + 1, dns_message, dns_reply);
     dns_reply->data             = DAP_NEW_Z_SIZE_RET_IF_FAIL(char, block_len, dns_message->data, dns_message, dns_reply);
-
 // func work
     dns_message->data[a_es->buf_in_size] = 0;
     dap_events_socket_pop_from_buf_in(a_es, dns_message->data, a_es->buf_in_size);
