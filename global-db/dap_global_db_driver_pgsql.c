@@ -897,11 +897,12 @@ int dap_global_db_driver_pgsql_init(const char *a_db_conn_info, dap_global_db_dr
 // func work
     debug_if(g_dap_global_db_debug_more, L_INFO, "PGSQL will use second conn info: %s", a_db_conn_info);
     dap_strncpy(s_db_conn_info, a_db_conn_info, MAX_PATH);
-    conn_list_item_t *l_base_conn = s_db_pgsql_get_connection(false);
-    if (!l_base_conn) {
-        log_it(L_ERROR, "Can't create base connection to PGSQL db");
+    PGconn *l_base_conn = PQconnectdb(s_db_conn_info);
+    if (PQstatus(l_base_conn) != CONNECTION_OK) {
+        log_it(L_ERROR, "Can't create base connection to PGSQL db: \"%s\"", PQerrorMessage(l_base_conn));
         return -3;
     }
+    PQfinish(l_base_conn);
 
     a_drv_callback->apply_store_obj         = s_db_pgsql_apply_store_obj;
     a_drv_callback->read_store_obj          = s_db_pgsql_read_store_obj;
