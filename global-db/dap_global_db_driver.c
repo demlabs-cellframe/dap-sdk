@@ -79,7 +79,6 @@ static dap_global_db_driver_callbacks_t s_drv_callback;                         
 int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_db)
 {
     int l_ret = -1;
-
     if (s_used_driver[0] )
         dap_global_db_driver_deinit();
 
@@ -88,7 +87,7 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
 
     // Setup driver name
     dap_strncpy( s_used_driver, a_driver_name, sizeof(s_used_driver) - 1);
-    
+
     char l_db_path_ext[strlen(a_driver_name) + strlen(a_filename_db) + 6];
     if (dap_strcmp(s_used_driver, "pgsql")) { // Compose path
         dap_mkdir_with_parents(a_filename_db);
@@ -119,7 +118,7 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
         l_ret = dap_global_db_driver_pgsql_init(PG_CONNINFO, &s_drv_callback);
         #endif
     #else
-        l_ret = dap_global_db_driver_pgsql_init(l_db_path_ext, &s_drv_callback); 
+        l_ret = dap_global_db_driver_pgsql_init(a_filename_db, &s_drv_callback); 
     #endif
 #endif
     else
