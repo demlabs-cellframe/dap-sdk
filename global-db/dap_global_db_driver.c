@@ -118,6 +118,7 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
         } else {
             l_ret = dap_global_db_driver_pgsql_init(l_pg_conninfo, &s_drv_callback);
         }
+    }
     #else
         l_ret = dap_global_db_driver_pgsql_init(dap_config_get_item_str_default(g_config, "global_db", "pg_conninfo", "dbname=postgres"), &s_drv_callback); 
     #endif
