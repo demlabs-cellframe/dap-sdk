@@ -4,8 +4,6 @@
 
 #define LOG_TAG "dap_json_rpc_request"
 
-static char *s_url_service = NULL;
-
 struct exec_cmd_request {
     dap_client_pvt_t * client_pvt;
 #ifdef DAP_OS_WINDOWS
@@ -25,14 +23,6 @@ enum ExecCmdRetCode {
     EXEC_CMD_ERR_WAIT_TIMEOUT,
     EXEC_CMD_ERR_UNKNOWN
 };
-
-int dap_json_rpc_request_init(const char *a_url_service)
-{
-    if (s_url_service)
-        return 1;
-    s_url_service = dap_strdup(a_url_service);
-    return 0;
-}
 
 static struct exec_cmd_request* s_exec_cmd_request_init(dap_client_pvt_t * a_client_pvt)
 {
@@ -296,49 +286,30 @@ char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_reques
 char *dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request, size_t *a_total_size)
 {
     *a_total_size = a_request->header.data_size + a_request->header.signs_size + sizeof(a_request->header);
-
-    char *a_output = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(char, *a_total_size, NULL),
-         *ptr = dap_mempcpy(a_output, &a_request->header, sizeof(a_request->header));
-
-    char *l_str = dap_json_rpc_request_to_json_string(a_request->request);
-    if (!l_str)
-        return DAP_DELETE(a_output), NULL;
-
-    ptr = dap_mempcpy(ptr, l_str, a_request->header.data_size);
-    DAP_DELETE(l_str);
-    memcpy(ptr, a_request->tsd_n_signs, a_request->header.signs_size);
-    return a_output;
+    return (char*)DAP_DUP_SIZE(a_request, *a_total_size);
 }
 
 dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data, size_t data_size)
 {
-    if (data_size < sizeof(dap_json_rpc_http_request_t))
+    __typeof__( (dap_json_rpc_http_request_t){0}.header ) l_hdr;
+    if (data_size < sizeof(l_hdr))
         return log_it(L_ERROR, "Data size is less than minimum: %zu < %zu",
                                data_size, sizeof(dap_json_rpc_http_request_t)),
                NULL;
-    __typeof__( (dap_json_rpc_http_request_t){0}.header ) l_hdr;
     memcpy(&l_hdr, data, sizeof(l_hdr));
-    if ( data_size < sizeof(dap_json_rpc_http_request_t) + l_hdr.data_size + l_hdr.signs_size )
+    if ( data_size < sizeof(l_hdr) + l_hdr.data_size + l_hdr.signs_size )
         return log_it(L_ERROR, "Data size is less than needed: %zu < %zu",
                                data_size, sizeof(dap_json_rpc_http_request_t) + l_hdr.data_size + l_hdr.signs_size),
                NULL;
 
-    dap_json_rpc_http_request_t *l_ret
-        = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_json_rpc_http_request_t, sizeof(dap_json_rpc_http_request_t) + l_hdr.signs_size, NULL);
-    l_ret->header = l_hdr;
-    l_ret->request = dap_json_rpc_request_from_json((char*)data + sizeof(l_ret->header));
-    if (l_hdr.signs_size)
-        memcpy(l_ret->tsd_n_signs, (byte_t*)data + sizeof(l_hdr) + l_hdr.data_size, l_hdr.signs_size);
+    dap_json_rpc_http_request_t *l_ret = (dap_json_rpc_http_request_t*)DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(byte_t, data_size + 1, NULL);
+    dap_mempcpy(l_ret, data, data_size);
     return l_ret;
 }
 
 void dap_json_rpc_http_request_free(dap_json_rpc_http_request_t *a_http_request)
 {
-    if (!a_http_request)
-        return;
-
-    dap_json_rpc_request_free(a_http_request->request);
-    DAP_DELETE(a_http_request);
+    DAP_DEL_Z(a_http_request);
 }
 
 dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_request_t *a_request, dap_cert_t *a_cert)
@@ -348,23 +319,23 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
         return log_it(L_ERROR, "Can't convert JSON-request to string!"), NULL;
     int l_len = strlen(l_str);
     dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, l_len, 0);
-    DAP_DELETE(l_str);
     if (!l_sign)
-        return log_it(L_ERROR, "JSON request signing failed"), NULL;
+        return DAP_DELETE(l_str), log_it(L_ERROR, "JSON request signing failed"), NULL;
     size_t l_sign_size = dap_sign_get_size(l_sign);
 
-    dap_json_rpc_http_request_t *l_ret
-        = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_json_rpc_http_request_t, sizeof(dap_json_rpc_http_request_t) + l_sign_size, NULL, l_sign);
+    dap_json_rpc_http_request_t *l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_json_rpc_http_request_t,
+                                                    sizeof(dap_json_rpc_http_request_t) + l_len + 1 + l_sign_size, NULL, l_sign, l_str);
     *l_ret = (dap_json_rpc_http_request_t) {
         .header.data_size = l_len + 1,
         .header.signs_size = l_sign_size,
-        .request = a_request
     };
-    memcpy(l_ret->tsd_n_signs, l_sign, l_sign_size);
-    return DAP_DELETE(l_sign), l_ret;
+    byte_t* l_cur =  (byte_t*)dap_strncpy((char*)l_ret->request_n_signs, l_str, l_len);
+    dap_mempcpy(l_cur + 1, l_sign, l_sign_size);
+    return DAP_DEL_MULTY(l_sign, l_str), l_ret;
 }
 
-char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size){
+char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t *output_data_size)
+{
     a_request->id = 0;
     dap_cert_t *l_cert = dap_cert_find_by_name("node-addr");
     if (!l_cert)

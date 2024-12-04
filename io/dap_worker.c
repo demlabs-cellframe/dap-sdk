@@ -1328,7 +1328,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     }
 #endif
                 } else {
-                    int l_error_len = sizeof(l_errno);
+                    socklen_t l_error_len = sizeof(l_errno);
 
                     getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno, &l_error_len);
                     if(l_errno == EINPROGRESS) {

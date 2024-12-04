@@ -404,7 +404,7 @@ char* dap_stpcpy(char *a_dest, const char *a_src)
 char *dap_strncpy(char *a_dst, const char *a_src, size_t a_limit)
 {
     dap_return_val_if_fail(a_dst && a_src && a_limit, NULL);
-    for (; ( *a_dst = --a_limit ? *a_src++ : '\0' ); *a_dst++ );
+    for (; ( *a_dst = --a_limit ? *a_src++ : '\0' ); a_dst++ );
     return a_dst;
 }
 

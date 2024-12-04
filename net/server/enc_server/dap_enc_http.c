@@ -362,24 +362,16 @@ void enc_http_reply_encode(struct dap_http_simple *a_http_simple,enc_http_delega
 
 void enc_http_delegate_delete(enc_http_delegate_t * dg)
 {
-    if(dg->cookie)
-        free(dg->cookie);
-    if(dg->in_query)
-        free(dg->in_query);
-    if(dg->request)
-        free(dg->request);
-    if(dg->response)
-        free(dg->response);
-    if(dg->url_path)
-        free(dg->url_path);
-    free(dg);
+    DAP_DEL_MULTY(dg->cookie, dg->in_query, dg->request, dg->response, dg->url_path, dg);
 }
 
-size_t enc_http_reply(enc_http_delegate_t * dg, void * data, size_t data_size)
+size_t enc_http_reply(enc_http_delegate_t *a_http_delegate, const void *a_data, size_t a_data_size)
 {
-    size_t wb= (data_size > (dg->response_size_max - dg->response_size) )? (dg->response_size_max - dg->response_size):data_size;
-    memcpy(dg->response+dg->response_size,data,wb);
-    dg->response_size+=wb;
+    size_t wb = a_data_size > a_http_delegate->response_size_max - a_http_delegate->response_size
+            ? a_http_delegate->response_size_max - a_http_delegate->response_size
+            : a_data_size;
+    memcpy(a_http_delegate->response + a_http_delegate->response_size, a_data, wb);
+    a_http_delegate->response_size += wb;
     return wb;
 }
 
