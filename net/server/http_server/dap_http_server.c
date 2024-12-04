@@ -107,7 +107,7 @@ dap_server_t* dap_http_server_new(const char *a_cfg_section, const char *a_serve
     dap_http_server_t *l_http_server = DAP_NEW_Z(dap_http_server_t);
     l_server->_inheritor = l_http_server;
     l_http_server->server = l_server;
-    dap_strncpy(l_http_server->server_name, a_server_name, sizeof(l_http_server->server_name) - 1);
+    dap_strncpy(l_http_server->server_name, a_server_name, sizeof(l_http_server->server_name));
     return l_server;
 }
 

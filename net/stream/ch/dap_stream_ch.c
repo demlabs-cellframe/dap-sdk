@@ -182,15 +182,14 @@ dap_stm_ch_rec_t    *l_rec = NULL;
     if ( !l_rec )
         log_it(L_ERROR, "dap_stream_ch_t:%p - no record found!", a_stm_ch);
     else {
-        DAP_DELETE(l_rec->stm_ch);
-        DAP_DELETE(l_rec);
-
-
-
+        dap_list_free_full(a_stm_ch->packet_in_notifiers, NULL);
+        dap_list_free_full(a_stm_ch->packet_out_notifiers, NULL);
+        DAP_DEL_MULTY(l_rec->stm_ch, l_rec);
         debug_if(g_debug_reactor, L_NOTICE, "dap_stream_ch_t:%p - is released", a_stm_ch);
-
     }
 #else
+    dap_list_free_full(a_stm_ch->packet_in_notifiers, NULL);
+    dap_list_free_full(a_stm_ch->packet_out_notifiers, NULL);
     DAP_DELETE(a_stm_ch);
 #endif
     return  0;  /* SS$_SUCCESS */
@@ -209,7 +208,8 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
 {
     dap_stream_ch_proc_t * proc=dap_stream_ch_proc_find(a_id);
     if(proc){
-
+        dap_stream_ch_t **l_channels = DAP_REALLOC_COUNT_RET_VAL_IF_FAIL(a_stream->channel, a_stream->channel_count + 1, NULL);
+        a_stream->channel = l_channels;
         dap_stream_ch_t* l_ch_new = dap_stream_ch_alloc();
 
         l_ch_new->me = l_ch_new;
@@ -232,7 +232,6 @@ dap_stream_ch_t* dap_stream_ch_new(dap_stream_t* a_stream, uint8_t a_id)
         if(l_ch_new->proc->new_callback)
             l_ch_new->proc->new_callback(l_ch_new,NULL);
 
-        a_stream->channel = DAP_REALLOC(a_stream->channel, sizeof(dap_stream_ch_t *) * (a_stream->channel_count + 1));
         a_stream->channel[l_ch_new->stream->channel_count++] = l_ch_new;
 
         return l_ch_new;
