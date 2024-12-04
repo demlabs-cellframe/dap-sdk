@@ -770,12 +770,13 @@ char* dap_log_get_last_n_lines(const char *filename, int N) {
         return NULL;
     }
 
-    long l_file_pos = ftell(file);
-    if (l_file_pos < 0) {
+    long l_ret = ftell(file);
+    if (l_ret < 0) {
         return NULL;
     }
-    long l_end_pos = l_file_pos;
-    long l_n_line_pos = 0;
+    unsigned l_file_pos = *(unsigned*)l_ret;
+    unsigned l_end_pos = l_file_pos;
+    unsigned l_n_line_pos = 0;
     while (l_file_pos > 0) {
         char buf[l_len];
         size_t to_read = (l_file_pos >= l_len) ? l_len : l_file_pos;
