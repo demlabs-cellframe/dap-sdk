@@ -668,7 +668,7 @@ static void s_test_multithread(size_t a_count)
 
 int main(int argc, char **argv)
 {
-    dap_log_level_set(L_INFO);
+    dap_log_level_set(L_WARNING);
     dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
     g_dap_global_db_debug_more = true;
     size_t l_db_count = sizeof(s_db_types) / sizeof(char *) - 1;
