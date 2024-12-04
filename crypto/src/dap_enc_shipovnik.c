@@ -22,8 +22,8 @@ void dap_enc_sig_shipovnik_key_new_generate(dap_enc_key_t * key, UNUSED_ARG cons
         UNUSED_ARG size_t kex_size, const void *seed, size_t seed_size,
         UNUSED_ARG size_t key_size)
 {
-    DAP_NEW_Z_SIZE_RET(key->priv_key_data, void, SHIPOVNIK_SECRETKEYBYTES, NULL);
-    DAP_NEW_Z_SIZE_RET(key->pub_key_data, void, SHIPOVNIK_PUBLICKEYBYTES, key->priv_key_data);
+    key->priv_key_data = DAP_NEW_Z_SIZE_RET_IF_FAIL(void, SHIPOVNIK_SECRETKEYBYTES);
+    key->pub_key_data = DAP_NEW_Z_SIZE_RET_IF_FAIL(void, SHIPOVNIK_PUBLICKEYBYTES, key->priv_key_data);
     key->priv_key_data_size = SHIPOVNIK_SECRETKEYBYTES;
     key->pub_key_data_size = SHIPOVNIK_PUBLICKEYBYTES;
     if (!seed || !seed_size) {

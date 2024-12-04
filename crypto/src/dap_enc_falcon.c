@@ -85,10 +85,10 @@ void dap_enc_sig_falcon_key_new_generate(dap_enc_key_t *a_key, const void *kex_b
     a_key->pub_key_data_size = sizeof(falcon_public_key_t);
     a_key->priv_key_data_size = sizeof(falcon_private_key_t);
 
-    DAP_NEW_Z_SIZE_RET(l_skey, falcon_private_key_t, a_key->priv_key_data_size, NULL);
-    DAP_NEW_Z_SIZE_RET(l_pkey, falcon_public_key_t, a_key->pub_key_data_size, l_skey);
-    DAP_NEW_Z_SIZE_RET(l_skey->data, uint8_t, FALCON_PRIVKEY_SIZE(l_logn), l_skey, l_pkey);
-    DAP_NEW_Z_SIZE_RET(l_pkey->data, uint8_t, FALCON_PUBKEY_SIZE(l_logn), l_skey->data, l_skey, l_pkey);
+    l_skey = DAP_NEW_Z_SIZE_RET_IF_FAIL(falcon_private_key_t, a_key->priv_key_data_size);
+    l_pkey = DAP_NEW_Z_SIZE_RET_IF_FAIL(falcon_public_key_t, a_key->pub_key_data_size, l_skey);
+    l_skey->data = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, FALCON_PRIVKEY_SIZE(l_logn), l_skey, l_pkey);
+    l_pkey->data = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, FALCON_PUBKEY_SIZE(l_logn), l_skey->data, l_skey, l_pkey);
 
     l_skey->degree = s_falcon_sign_degree;
     l_skey->kind = s_falcon_kind;
@@ -170,7 +170,7 @@ int dap_enc_sig_falcon_get_sign(dap_enc_key_t *a_key, const void *a_msg, const s
     }
 
     if (l_sig_len)
-        DAP_NEW_Z_SIZE_RET_VAL(l_sig->sig_data, byte_t, l_sig_len, -1, NULL);
+        l_sig->sig_data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(byte_t, l_sig_len, -1);
 
     l_ret = falcon_sign_dyn(
             &l_rng,
@@ -241,7 +241,7 @@ uint8_t *dap_enc_sig_falcon_write_public_key(const void *a_public_key, size_t *a
 // func work
     falcon_public_key_t *l_public_key = (falcon_public_key_t *)a_public_key;
     uint64_t l_buflen = dap_enc_sig_falcon_ser_public_key_size(a_public_key);
-    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
+    uint8_t *l_buf = DAP_VA_SERIALIZE_NEW(l_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_public_key->degree, (uint64_t)sizeof(uint32_t),
         &l_public_key->kind, (uint64_t)sizeof(uint32_t),
@@ -266,7 +266,7 @@ uint8_t *dap_enc_sig_falcon_write_private_key(const void *a_private_key, size_t 
 // func work
     falcon_private_key_t *l_private_key = (falcon_private_key_t *)a_private_key;
     uint64_t l_buflen = dap_enc_sig_falcon_ser_private_key_size(a_private_key);
-    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 10,
+    uint8_t *l_buf = DAP_VA_SERIALIZE_NEW(l_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_private_key->degree, (uint64_t)sizeof(uint32_t),
         &l_private_key->kind, (uint64_t)sizeof(uint32_t),
@@ -286,11 +286,10 @@ void *dap_enc_sig_falcon_read_private_key(const uint8_t *a_buf, size_t a_buflen)
     uint64_t l_buflen = 0;
     uint64_t l_skey_len = a_buflen - sizeof(uint64_t) - sizeof(uint32_t) * 3;
 
-    falcon_private_key_t *l_skey = NULL;
-    DAP_NEW_Z_RET_VAL(l_skey, falcon_private_key_t, NULL, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_skey->data, uint8_t, l_skey_len, NULL, l_skey);
+    falcon_private_key_t *l_skey = DAP_NEW_Z_RET_VAL_IF_FAIL(falcon_private_key_t, NULL);
+    l_skey->data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_skey_len, NULL, l_skey);
 
-    int l_res_des = dap_deserialize_multy(a_buf, a_buflen, 10, 
+    int l_res_des = DAP_VA_DESERIALIZE(a_buf, a_buflen, 
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_skey->degree, (uint64_t)sizeof(uint32_t),
         &l_skey->kind, (uint64_t)sizeof(uint32_t),
@@ -320,11 +319,10 @@ void *dap_enc_sig_falcon_read_public_key(const uint8_t *a_buf, size_t a_buflen)
     uint64_t l_buflen = 0;
     uint64_t l_pkey_len = a_buflen - sizeof(uint64_t) - sizeof(uint32_t) * 3;
 
-    falcon_public_key_t *l_pkey = NULL;
-    DAP_NEW_Z_RET_VAL(l_pkey, falcon_public_key_t, NULL, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_pkey->data, uint8_t, l_pkey_len, NULL, l_pkey);
+    falcon_public_key_t *l_pkey = DAP_NEW_Z_RET_VAL_IF_FAIL(falcon_public_key_t, NULL);
+    l_pkey->data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_pkey_len, NULL, l_pkey);
 
-    int l_res_des = dap_deserialize_multy(a_buf, a_buflen, 10, 
+    int l_res_des = DAP_VA_DESERIALIZE(a_buf, a_buflen, 
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_pkey->degree, (uint64_t)sizeof(uint32_t),
         &l_pkey->kind, (uint64_t)sizeof(uint32_t),
@@ -354,7 +352,7 @@ uint8_t *dap_enc_sig_falcon_write_signature(const void *a_sign, size_t *a_buflen
     falcon_signature_t *l_sign = (falcon_signature_t*)a_sign;
 // func work
     uint64_t l_buflen = dap_enc_sig_falcon_ser_sig_size(a_sign);
-    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 12,
+    uint8_t *l_buf = DAP_VA_SERIALIZE_NEW(l_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_sign->degree, (uint64_t)sizeof(uint32_t),
         &l_sign->kind, (uint64_t)sizeof(uint32_t),
@@ -375,11 +373,10 @@ void *dap_enc_sig_falcon_read_signature(const uint8_t* a_buf, size_t a_buflen)
     uint64_t l_buflen = 0;
     uint64_t l_sig_len = a_buflen - sizeof(uint64_t) * 2 - sizeof(uint32_t) * 3;
 
-    falcon_signature_t *l_sign = NULL;
-    DAP_NEW_Z_RET_VAL(l_sign, falcon_signature_t, NULL, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, l_sig_len, NULL, l_sign);
+    falcon_signature_t *l_sign = DAP_NEW_Z_RET_VAL_IF_FAIL(falcon_signature_t, NULL);
+    l_sign->sig_data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_sig_len, NULL, l_sign);
 
-    int l_res_des = dap_deserialize_multy(a_buf, a_buflen, 12, 
+    int l_res_des = DAP_VA_DESERIALIZE(a_buf, a_buflen, 
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_sign->degree, (uint64_t)sizeof(uint32_t),
         &l_sign->kind, (uint64_t)sizeof(uint32_t),

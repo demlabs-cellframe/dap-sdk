@@ -40,7 +40,7 @@ dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type
 #define dap_tsd_get_object(a,typeconv) ( a->size >= sizeof(typeconv) ? ((typeconv*) a->data) : (typeconv *) {0})
 
 #define _dap_tsd_get_scalar(tsd,dest) ({ tsd->size >= sizeof(*dest) ? memcpy(dest, tsd->data, sizeof(*dest)) : NULL; *dest; })
-#define _dap_tsd_get_object(tsd,desttype) ( tsd->size >= sizeof(desttype) ? DAP_CAST_PTR(desttype,tsd->data) : DAP_CAST_PTR(desttype, NULL) )
+#define _dap_tsd_get_object(tsd,desttype) ( tsd->size >= sizeof(desttype) ? (desttype*)tsd->data : NULL )
 
 #define DAP_TSD_CORRUPTED_STRING "<CORRUPTED STRING>"
 // NULL-terminated string

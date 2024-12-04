@@ -165,9 +165,7 @@ if (DAPSDK_MODULES MATCHES "avrestream")
     message("[+] Module 'av-restream'")
 endif()
 
-if(DARWIN)
-    add_subdirectory(3rdparty/libmagic-darwin)
-elseif(ANDROID)
+if(ANDROID)
     include_directories(3rdparty/)
 endif()
 

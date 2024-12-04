@@ -74,7 +74,7 @@ typedef struct dap_global_db_sync_context {
 } dap_global_db_sync_context_t;
 
 typedef struct dap_global_db_cluster {
-    const char *groups_mask;                    // GDB cluster coverage area
+    char *groups_mask;                          // GDB cluster coverage area
     dap_cluster_t *links_cluster;               // Cluster container for network links
     dap_cluster_t *role_cluster;                // Cluster container for members with especial roles
     dap_global_db_role_t default_role;          // Role assined for new membersadded with default one

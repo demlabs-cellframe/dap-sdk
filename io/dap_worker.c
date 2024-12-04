@@ -127,18 +127,15 @@ int dap_worker_context_callback_started(dap_context_t *a_context, void *a_arg)
     dap_worker_t *l_worker = (dap_worker_t*) a_arg;
     assert(l_worker);
     if (s_worker)
-        return log_it(L_ERROR, "Worker %u is already assigned to current thread", s_worker->id), -1;
+        return log_it(L_ERROR, "Worker %u is already assigned to current thread %ld",
+                               s_worker->id, s_worker->context->thread_id),
+            -1;
     s_worker = l_worker;
 #if defined(DAP_EVENTS_CAPS_KQUEUE)
     a_context->kqueue_fd = kqueue();
 
-    if (a_context->kqueue_fd == -1 ){
-        int l_errno = errno;
-        char l_errbuf[255];
-        strerror_r(l_errno,l_errbuf,sizeof(l_errbuf));
-        log_it (L_CRITICAL,"Can't create kqueue(): '%s' code %d",l_errbuf,l_errno);
-        return -1;
-    }
+    if (a_context->kqueue_fd == -1)
+        return log_it (L_CRITICAL, "kqueue(), error %d: \"%s\"", errno, dap_strerror(errno)), -1;
 
     a_context->kqueue_events_selected_count_max = 100;
     a_context->kqueue_events_count_max = DAP_EVENTS_SOCKET_MAX;
@@ -156,10 +153,7 @@ int dap_worker_context_callback_started(dap_context_t *a_context, void *a_arg)
     if ( a_context->epoll_fd == -1 ) {
         int l_errno = errno;
 #endif
-        char l_errbuf[128];
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        og_it(L_CRITICAL, "Error create epoll fd: %s (%d)", l_errbuf, l_errno);
-        return -1;
+        return log_it(L_ERROR, "epoll_create() error %d: \"%s\"", l_errno, dap_strerror(l_errno)), -1;
     }
 #elif defined DAP_EVENTS_CAPS_IOCP
     if ( !(a_context->iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1)) )
@@ -306,8 +300,6 @@ static void s_queue_es_reassign_callback( dap_events_socket_t * a_es, void * a_a
     assert(a_es);
     dap_context_t * l_context = a_es->context;
     assert(l_context);
-    dap_worker_t * l_worker = a_es->worker;
-    assert(l_worker);
     dap_worker_msg_reassign_t * l_msg = (dap_worker_msg_reassign_t*) a_arg;
     assert(l_msg);
     dap_events_socket_t * l_es_reassign;
@@ -472,8 +464,11 @@ static bool s_socket_all_check_activity( void * a_arg)
 void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a_events_socket)
 {
     dap_return_if_fail(a_worker && a_events_socket);
-#ifdef DAP_EVENTS_CAPS_IOCP
     int l_ret = 0;
+    const char *l_type_str = dap_events_socket_get_type_str(a_events_socket);
+    SOCKET l_s = a_events_socket->socket;
+    dap_events_socket_uuid_t l_uuid = a_events_socket->uuid;
+#ifdef DAP_EVENTS_CAPS_IOCP
     a_events_socket->worker = a_worker;
     if ( dap_worker_get_current() == a_worker )
         s_es_assign_to_context(a_worker->context, &(OVERLAPPED){ .Pointer = a_events_socket });
@@ -485,30 +480,20 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
         l_ret = PostQueuedCompletionStatus(a_worker->context->iocp, 0, (ULONG_PTR)s_es_assign_to_context, (OVERLAPPED*)ol)
             ? 0 : ( DAP_DELETE(ol), GetLastError() );
     }
-    if (l_ret)
-        log_it(L_ERROR, "Can't assign esocket to worker, error %d", l_ret);
-    else
-        debug_if(g_debug_reactor, L_DEBUG,
-                 "Sent es "DAP_FORMAT_ESOCKET_UUID" \"%s\" [%s] to worker #%d",
-                 a_events_socket->uuid, dap_events_socket_get_type_str(a_events_socket),
-                 a_events_socket->socket == INVALID_SOCKET ? "" : dap_itoa(a_events_socket->socket),
-                 a_worker->id);
 #else
-    int l_ret = dap_worker_get_current() == a_worker
-            ? s_queue_es_add(a_worker->queue_es_new, a_events_socket)
-            : dap_events_socket_queue_ptr_send(a_worker->queue_es_new, a_events_socket);
-
+    l_ret = dap_worker_get_current() == a_worker
+        ? s_queue_es_add(a_worker->queue_es_new, a_events_socket)
+        : dap_events_socket_queue_ptr_send(a_worker->queue_es_new, a_events_socket);
+#endif
     if (l_ret)
-        log_it(L_ERROR, dap_worker_get_current() == a_worker
-               ? "Can't assign esocket to worker: \"%s\"(code %d)"
-               : "Can't send pointer in queue: \"%s\"(code %d)", dap_strerror(l_ret), l_ret);
+        log_it(L_ERROR, "Can't %s es \"%s\" [%s], uuid "DAP_FORMAT_ESOCKET_UUID" to worker #%d, error %d: \"%s\"",
+               dap_worker_get_current() == a_worker ? "assign" : "send",
+               l_type_str, dap_itoa(l_s), l_uuid, a_worker->id, l_ret, dap_strerror(l_ret));
     else 
         debug_if(g_debug_reactor, L_DEBUG,
-               "Sent es %p \"%s\" [%s] to worker #%d",
-               a_events_socket, dap_events_socket_get_type_str(a_events_socket),
-               a_events_socket->socket == INVALID_SOCKET ? "" : dap_itoa(a_events_socket->socket),
-               a_worker->id);
-#endif
+               "%s es \"%s\" [%s], uuid "DAP_FORMAT_ESOCKET_UUID" to worker #%d",
+               dap_worker_get_current() == a_worker ? "Assigned" : "Sent",
+               l_type_str, dap_itoa(l_s), l_uuid, a_worker->id);
 }
 
 /**
@@ -890,8 +875,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
         }
     } while (!a_context->signal_exit);
 #else  // IOCP
-    socklen_t l_error_len = sizeof(l_errno);
-    char l_error_buf[128] = {0};
     ssize_t l_bytes_sent = 0, l_bytes_read = 0, l_sockets_max;
     int l_selected_sockets = 0;
     do {
@@ -912,13 +895,12 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #error "Unimplemented poll wait analog for this platform"
 #endif
         if(l_selected_sockets == -1) {
-            if( errno == EINTR)
+            if( (l_errno = errno) == EINTR)
                 continue;
 #ifdef DAP_OS_WINDOWS
             log_it(L_ERROR, "Context thread %d got errno %d", a_context->id, WSAGetLastError());
 #else
-            strerror_r(l_errno, l_error_buf, sizeof (l_error_buf) - 1);
-            log_it(L_ERROR, "Context thread %d got errno:\"%s\" (%d)", a_context->id, l_error_buf, l_errno);
+            log_it(L_ERROR, "Context thread %d got error: %d: \"%s\"", a_context->id, l_errno, dap_strerror(l_errno));
             assert(l_errno);
 #endif
             break;
@@ -1080,7 +1062,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     if (l_cur->callbacks.error_callback)
                         l_cur->callbacks.error_callback(l_cur, l_sock_err); // Call callback to process error event
 #ifndef DAP_OS_WINDOWS
-                        log_it(L_INFO, "Socket shutdown (EPOLLHUP): %s", strerror(l_sock_err));
+                        log_it(L_INFO, "Socket shutdown (EPOLLHUP): %s", dap_strerror(l_sock_err));
                     }
 #endif
                     break;
@@ -1114,12 +1096,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 case DESCRIPTOR_TYPE_SOCKET_CLIENT:
                 case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                     getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size);
-#ifdef DAP_OS_WINDOWS
-                    log_it(L_ERROR, "Winsock error: %d", l_sock_err);
-#else
-                    log_it(L_ERROR, "Socket error: %s", strerror(l_sock_err));
-#endif
-                default: ;
+                    log_it(L_ERROR, "Socket error %d: \"%s\"", l_sock_err, dap_strerror(l_sock_err));
+                default: break;
                 }
                 dap_events_socket_set_readable_unsafe(l_cur, false);
                 dap_events_socket_set_writable_unsafe(l_cur, false);
@@ -1218,9 +1196,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 if( l_errno == EAGAIN || l_errno == EWOULDBLOCK){// Everything is good, we'll receive ACCEPT on next poll
                                     continue;
                                 }else{
-                                    char l_errbuf[128];
-                                    strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-                                    log_it(L_WARNING,"accept() on socket %d error:\"%s\"(%d)",l_cur->socket, l_errbuf,l_errno);
+                                    log_it(L_WARNING, "accept() on socket %d error %d: \"%s\"",
+                                                      l_cur->socket, l_errno, dap_strerror(l_errno));
                                     break;
                                 }
                             }
@@ -1280,7 +1257,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #else
                         if (l_cur->type != DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL && l_errno != EAGAIN && l_errno != EWOULDBLOCK)
                         { // If we have non-blocking socket
-                            log_it(L_ERROR, "Some error occured in recv() function: %s", strerror(errno));
+                            log_it(L_ERROR, "recv() error %d: \"%s\"", l_errno, dap_strerror(errno));
 #endif
                             dap_events_socket_set_readable_unsafe(l_cur, false);
                             if (!l_cur->no_close)
@@ -1351,15 +1328,14 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     }
 #endif
                 } else {
-                    l_error_len = sizeof(l_errno);
+                    int l_error_len = sizeof(l_errno);
 
                     getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno, &l_error_len);
                     if(l_errno == EINPROGRESS) {
                         log_it(L_DEBUG, "Connecting with %s in progress...", l_cur->remote_addr_str);
                     }else if (l_errno){
-                        strerror_r(l_errno, l_error_buf, sizeof (l_error_buf));
-                        log_it(L_ERROR,"Connecting error with %s: \"%s\" (code %d)", l_cur->remote_addr_str,
-                               l_error_buf, l_errno);
+                        log_it(L_ERROR, "Connecting with %s error %d: \"%s\"",
+                                        l_cur->remote_addr_str, l_errno, dap_strerror(l_errno));
                         if ( l_cur->callbacks.error_callback )
                             l_cur->callbacks.error_callback(l_cur, l_errno);
                     }else{
@@ -1473,7 +1449,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #else
                         if (l_cur->type != DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL && l_errno != EAGAIN && l_errno != EWOULDBLOCK)
                         { // If we have non-blocking socket
-                            log_it(L_ERROR, "Some error occured in send(): %s (code %d)", strerror(l_errno), l_errno);
+                            log_it(L_ERROR, "send() error %d: \"%s\"", l_errno, dap_strerror(l_errno));
 #endif
                             if (!l_cur->no_close)
                                 l_cur->flags |= DAP_SOCK_SIGNAL_CLOSE;

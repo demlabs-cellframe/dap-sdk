@@ -136,7 +136,7 @@ static void _ip_addr_msg_handler(struct nlmsghdr *nlh,
 
         /* fill result */
         result->addr.ip = htonl(*((uint32_t *)RTA_DATA(rth)));
-        strcpy(result->addr.s_ip, inet_str);
+        strncpy(result->addr.s_ip, inet_str, MAX_IP_STR_LEN);
         if_indextoname(ifa->ifa_index, result->addr.interface_name);
     }
 }
