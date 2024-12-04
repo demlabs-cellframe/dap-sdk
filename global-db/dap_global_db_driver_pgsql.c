@@ -89,9 +89,7 @@ static inline void s_db_pgsql_free_connection(conn_list_item_t *a_conn, bool a_t
 static PGresult *s_db_pgsql_exec(PGconn *a_conn, const char *a_query, int a_param_count, const char *const *a_param_vals, const int *a_param_lens, const int *a_param_formats, int a_result_format, ExecStatusType a_req_result, const char *a_error_msg)
 {   
     // int busy_count = PQisBusy(a_conn);
-    // printf("busy count = %d\n", busy_count);
     // while(busy_count == 1){
-    //     printf("busy count cycle = %d\n", busy_count);
     //     dap_usleep(500000);
     // }
     // if ( PQsendQueryParams(a_conn, a_query, a_param_count, NULL, a_param_vals, a_param_lens, a_param_formats, a_result_format) != 1) {
@@ -261,7 +259,7 @@ static int s_db_pgsql_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_ret = -3;
             goto clean_and_ret;
         } else { //add one record
-            l_query = dap_strdup_printf("INSERT INTO \"%s\" (driver_key, key, flags, value, sign) VALUES($1, '%s', '%d', $2, $3) "
+            l_query = dap_strdup_printf("INSERT INTO \"%s\" (driver_key, key, flags, value, sign) VALUES($1, '%s', '%d', $2, $3)"
             "ON CONFLICT(key) DO UPDATE SET driver_key = EXCLUDED.driver_key, flags = EXCLUDED.flags, value = EXCLUDED.value, sign = EXCLUDED.sign;",
                                                   a_store_obj->group, a_store_obj->key, (int)(a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW));
         }
@@ -275,10 +273,10 @@ static int s_db_pgsql_apply_store_obj(dap_store_obj_t *a_store_obj)
     } else {
         const char *l_err_msg;
         if (a_store_obj->key) {  // delete one record
-            l_query = dap_strdup_printf("DELETE FROM \"%s\" WHERE key = '%s'", a_store_obj->group, a_store_obj->key);
+            l_query = dap_strdup_printf("DELETE FROM \"%s\" WHERE key = '%s';", a_store_obj->group, a_store_obj->key);
             l_err_msg = "delete";
         } else {  // remove all group
-            l_query = dap_strdup_printf("DROP TABLE IF EXISTS \"%s\"", a_store_obj->group);
+            l_query = dap_strdup_printf("DROP TABLE IF EXISTS \"%s\";", a_store_obj->group);
             l_err_msg = "drop table";
         }
         l_ret = s_db_pgsql_exec_command(l_conn->conn, l_query, NULL, NULL, 0, NULL, l_err_msg);
@@ -359,7 +357,7 @@ static dap_store_obj_t* s_db_pgsql_read_last_store_obj(const char *a_group, bool
     dap_store_obj_t *l_ret = NULL;
     char *l_query_str = dap_strdup_printf("SELECT * FROM \"%s\""
                                         " WHERE flags & '%d' %s 0"
-                                        " ORDER BY driver_key DESC LIMIT 1",
+                                        " ORDER BY driver_key DESC LIMIT 1;",
                                         a_group, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=");
     if (!l_query_str) {
@@ -421,10 +419,10 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
     l_blob_str->str[l_blob_str->len - 1] = '\0';
     --l_blob_str->len;
     char *l_query_size_str = dap_strdup_printf("SELECT SUM(LENGTH(key)) + SUM(LENGTH(value)) + SUM(LENGTH(sign)) FROM \"%s\" "
-                                        " WHERE driver_key IN (%s)",
+                                        " WHERE driver_key IN (%s);",
                                         a_group, l_blob_str->str);
     char *l_query_str = dap_strdup_printf("SELECT * FROM \"%s\""
-                                        " WHERE driver_key IN (%s) ORDER BY driver_key",
+                                        " WHERE driver_key IN (%s) ORDER BY driver_key;",
                                         a_group, l_blob_str->str);
     dap_string_free(l_blob_str, true);
     if (!l_query_size_str || !l_query_str) {
@@ -558,7 +556,7 @@ static dap_global_db_hash_pkt_t *s_db_pgsql_read_hashes(const char *a_group, dap
     dap_global_db_hash_pkt_t *l_ret = NULL;
     char *l_query_str = dap_strdup_printf("SELECT driver_key FROM \"%s\""
                                         " WHERE driver_key > $1"
-                                        " ORDER BY driver_key LIMIT '%d'",
+                                        " ORDER BY driver_key LIMIT '%d';",
                                         a_group, (int)DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT);
     if (!l_query_str) {
         log_it(L_ERROR, "Error in PGSQL request forming");
@@ -618,7 +616,7 @@ static dap_store_obj_t* s_db_pgsql_read_cond_store_obj(const char *a_group, dap_
     dap_store_obj_t *l_ret = NULL;
     char *l_query_str = dap_strdup_printf("SELECT * FROM \"%s\""
                                     " WHERE driver_key > $1 AND (flags & '%d' %s 0)"
-                                    " ORDER BY driver_key LIMIT '%d'",
+                                    " ORDER BY driver_key LIMIT '%d';",
                                     a_group, DAP_GLOBAL_DB_RECORD_DEL,
                                     a_with_holes ? ">=" : "=",
                                     a_count_out && *a_count_out ? (int)*a_count_out : (int)DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
@@ -669,15 +667,15 @@ static dap_store_obj_t* s_db_pgsql_read_store_obj(const char *a_group, const cha
     dap_store_obj_t *l_ret = NULL;
     char *l_query_str = NULL;
     if (a_key) {
-        l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE key='%s' AND (flags & '%d' %s 0)", a_group, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
+        l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE key='%s' AND (flags & '%d' %s 0);", a_group, a_key, DAP_GLOBAL_DB_RECORD_DEL, a_with_holes ? ">=" : "=");
     } else { // no limit
         if (a_count_out && *a_count_out)
-            l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE flags & '%d' %s 0 ORDER BY driver_key LIMIT '%d'",
+            l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE flags & '%d' %s 0 ORDER BY driver_key LIMIT '%d';",
                                         a_group, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=",
                                         a_count_out && *a_count_out ? (int)*a_count_out : -1);
         else
-            l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE flags & '%d' %s 0 ORDER BY driver_key",
+            l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE flags & '%d' %s 0 ORDER BY driver_key;",
                                         a_group, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=");
     }
@@ -754,7 +752,7 @@ static size_t s_db_pgsql_read_count_store(const char *a_group, dap_global_db_dri
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), 0);
 // preparing
     char *l_query_count_str = dap_strdup_printf("SELECT COUNT(*) FROM \"%s\" "
-                                        " WHERE driver_key > $1 AND (flags & '%d' %s 0)",
+                                        " WHERE driver_key > $1 AND (flags & '%d' %s 0);",
                                         a_group, DAP_GLOBAL_DB_RECORD_DEL,
                                         a_with_holes ? ">=" : "=");
     if (!l_query_count_str) {
@@ -782,7 +780,7 @@ static bool s_db_pgsql_is_hash(const char *a_group, dap_global_db_driver_hash_t 
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), 0);
 // preparing
-    char *l_query_str = dap_strdup_printf("SELECT EXISTS(SELECT * FROM \"%s\" WHERE driver_key=$1)", a_group);
+    char *l_query_str = dap_strdup_printf("SELECT EXISTS(SELECT * FROM \"%s\" WHERE driver_key=$1);", a_group);
     if (!l_query_str) {
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
@@ -808,7 +806,7 @@ static bool s_db_pgsql_is_obj(const char *a_group, const char *a_key)
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !a_key || !(l_conn = s_db_pgsql_get_connection(false)), 0);
 // preparing
-    char *l_query_str = dap_strdup_printf("SELECT EXISTS(SELECT * FROM \"%s\" WHERE key='%s')", a_group, a_key);
+    char *l_query_str = dap_strdup_printf("SELECT EXISTS(SELECT * FROM \"%s\" WHERE key='%s');", a_group, a_key);
     if (!l_query_str) {
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
