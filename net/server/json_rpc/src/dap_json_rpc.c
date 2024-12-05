@@ -74,7 +74,6 @@ int dap_json_rpc_init(dap_server_t* a_http_server, dap_config_t *a_config)
     }
 
     dap_json_rpc_map_init(a_config);
-    dap_json_rpc_request_init("/exec_cmd");
     dap_http_simple_proc_add(l_http, "/exec_cmd", 24000, dap_json_rpc_http_proc);
     return 0;
 }
@@ -142,10 +141,16 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         char * l_res_str = dap_json_rpc_request_handler(l_dg->request, l_dg->request_size);
         if (l_res_str) {
             enc_http_reply(l_dg, l_res_str, strlen(l_res_str));
+            DAP_DELETE(l_res_str);
         } else {
-            enc_http_reply(l_dg, "Wrong request", strlen("Wrong request"));
+            json_object* l_json_obj_res = json_object_new_array();
+            json_object_array_add(l_json_obj_res, json_object_new_string("Wrong request"));
+            char *l_json_str_res = json_object_to_json_string(l_json_obj_res);
+            enc_http_reply(l_dg, l_json_str_res, strlen(l_json_str_res));
+            json_object_put(l_json_obj_res);
+            DAP_DELETE(l_json_str_res);
+            log_it(L_ERROR,"Wrong request");
         }
-        DAP_DEL_Z(l_res_str);
         *return_code = Http_Status_OK;
         enc_http_reply_encode(a_http_simple,l_dg);
         enc_http_delegate_delete(l_dg);
