@@ -30,9 +30,9 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <postgresql/libpq-fe.h>
 
 #include "dap_global_db_driver_pgsql.h"
-#include "/usr/include/postgresql/libpq-fe.h"
 #include "dap_common.h"
 #include "dap_hash.h"
 #include "dap_file_utils.h"

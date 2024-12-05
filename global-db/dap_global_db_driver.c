@@ -123,7 +123,7 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
     #else
     {
         uint16_t l_arr_len = 0;
-        char **l_conn_info_arr = dap_config_get_array_str(g_config, "global_db", "pg_conninfo", &l_arr_len);
+        const char **l_conn_info_arr = dap_config_get_array_str(g_config, "global_db", "pg_conninfo", &l_arr_len);
         dap_string_t *l_conn_info = NULL;
         if (l_arr_len) {
             l_conn_info = dap_string_new_len(NULL, l_arr_len * 16);
