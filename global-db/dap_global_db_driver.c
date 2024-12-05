@@ -117,7 +117,6 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
             l_ret = dap_global_db_driver_pgsql_init(a_filename_db, &s_drv_callback);
         } else {
             l_ret = dap_global_db_driver_pgsql_init(l_pg_conninfo, &s_drv_callback);
-            DAP_DELETE(l_pg_conninfo);
         }
     }
     #else
