@@ -111,7 +111,7 @@ uint8_t *dap_enc_sig_tesla_write_signature(const void *a_sign, size_t *a_buflen_
 // func work
     uint64_t l_buflen = dap_enc_sig_tesla_ser_sig_size(l_sign);
     uint32_t l_kind = l_sign->kind;
-    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8,
+    uint8_t *l_buf = DAP_VA_SERIALIZE_NEW(l_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_kind, (uint64_t)sizeof(uint32_t),
         &l_sign->sig_len, (uint64_t)sizeof(uint64_t),
@@ -130,11 +130,10 @@ void *dap_enc_sig_tesla_read_signature(const uint8_t *a_buf, size_t a_buflen)
 // func work
     uint64_t l_buflen;
     uint64_t l_sig_len = a_buflen - sizeof(uint64_t) * 2 - sizeof(uint32_t);
-    tesla_signature_t* l_sign = NULL;
-    DAP_NEW_Z_RET_VAL(l_sign, tesla_signature_t, NULL, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, l_sig_len, NULL, l_sign);
+    tesla_signature_t* l_sign = DAP_NEW_Z_RET_VAL_IF_FAIL(tesla_signature_t, NULL);
+    l_sign->sig_data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_sig_len, NULL, l_sign);
     uint32_t l_kind = 0;
-    int l_res_des = dap_deserialize_multy(a_buf, a_buflen, 8,
+    int l_res_des = DAP_VA_DESERIALIZE(a_buf, a_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_kind, (uint64_t)sizeof(uint32_t),
         &l_sign->sig_len, (uint64_t)sizeof(uint64_t),
@@ -163,7 +162,7 @@ uint8_t *dap_enc_sig_tesla_write_private_key(const void *a_private_key, size_t *
 // func work
     uint64_t l_buflen = dap_enc_sig_tesla_ser_private_key_size(a_private_key); //CRYPTO_PUBLICKEYBYTES;
     uint32_t l_kind = l_private_key->kind;
-    uint8_t *l_buf =  dap_serialize_multy(NULL, l_buflen, 6,
+    uint8_t *l_buf =  DAP_VA_SERIALIZE_NEW(l_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_kind, (uint64_t)sizeof(uint32_t),
         l_private_key->data, (uint64_t)p.CRYPTO_SECRETKEYBYTES
@@ -181,11 +180,10 @@ void *dap_enc_sig_tesla_read_private_key(const uint8_t *a_buf, size_t a_buflen)
 // func work
     uint64_t l_buflen;
     uint64_t l_skey_len = a_buflen - sizeof(uint64_t) - sizeof(uint32_t);
-    tesla_private_key_t* l_skey = NULL;
-    DAP_NEW_Z_RET_VAL(l_skey, tesla_private_key_t, NULL, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_skey->data, uint8_t, l_skey_len, NULL, l_skey);
+    tesla_private_key_t* l_skey = DAP_NEW_Z_RET_VAL_IF_FAIL(tesla_private_key_t, NULL);
+    l_skey->data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_skey_len, NULL, l_skey);
     uint32_t l_kind = 0;
-    int l_res_des = dap_deserialize_multy(a_buf, a_buflen,  6,
+    int l_res_des = DAP_VA_DESERIALIZE(a_buf, a_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_kind, (uint64_t)sizeof(uint32_t),
         l_skey->data, (uint64_t)l_skey_len
@@ -214,7 +212,7 @@ uint8_t *dap_enc_sig_tesla_write_public_key(const void *a_public_key, size_t *a_
 // func work
     uint64_t l_buflen = dap_enc_sig_tesla_ser_public_key_size(a_public_key);
     uint32_t l_kind = l_public_key->kind;
-    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
+    uint8_t *l_buf = DAP_VA_SERIALIZE_NEW(l_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_kind, (uint64_t)sizeof(uint32_t),
         l_public_key->data, (uint64_t)p.CRYPTO_PUBLICKEYBYTES
@@ -232,11 +230,10 @@ void *dap_enc_sig_tesla_read_public_key(const uint8_t *a_buf, size_t a_buflen)
 // func work
     uint64_t l_buflen;
     uint64_t l_pkey_len = a_buflen - sizeof(uint64_t) - sizeof(uint32_t);
-    tesla_public_key_t* l_pkey = NULL;
-    DAP_NEW_Z_RET_VAL(l_pkey, tesla_public_key_t, NULL, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_pkey->data, uint8_t, l_pkey_len, NULL, l_pkey);
+    tesla_public_key_t* l_pkey = DAP_NEW_Z_RET_VAL_IF_FAIL(tesla_public_key_t, NULL);
+    l_pkey->data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_pkey_len, NULL, l_pkey);
     uint32_t l_kind = 0;
-    int l_res_des = dap_deserialize_multy(a_buf, a_buflen,  6,
+    int l_res_des = DAP_VA_DESERIALIZE(a_buf, a_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_kind, (uint64_t)sizeof(uint32_t),
         l_pkey->data, (uint64_t)l_pkey_len

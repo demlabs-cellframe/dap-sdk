@@ -36,9 +36,9 @@ typedef struct dap_global_db_cluster dap_global_db_cluster_t;
 
 // Global DB instance with settings data
 typedef struct dap_global_db_instance {
-    uint32_t version;           // Current GlobalDB version
-    const char *storage_path;   // GlobalDB storage path
-    const char *driver_name;    // GlobalDB driver name
+    uint32_t version;     // Current GlobalDB version
+    char *storage_path;   // GlobalDB storage path
+    char *driver_name;    // GlobalDB driver name
     dap_list_t *whitelist;
     dap_list_t *blacklist;
     uint64_t store_time_limit;
@@ -48,7 +48,7 @@ typedef struct dap_global_db_instance {
 } dap_global_db_instance_t;
 
 typedef struct dap_global_db_obj {
-    const char *key;
+    char *key;
     uint8_t *value;
     size_t value_len;
     dap_nanotime_t timestamp;

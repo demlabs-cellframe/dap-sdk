@@ -1,5 +1,6 @@
 #include "dap_json_rpc.h"
 #include "dap_json_rpc_request_handler.h"
+#include "dap_json_rpc_response_handler.h"
 #include "dap_http_server.h"
 #include "dap_pkey.h"
 #include "dap_config.h"
@@ -10,9 +11,9 @@
 #include "dap_enc_ks.h"
 
 #define LOG_TAG "dap_json_rpc_rpc"
+#define DAP_EXEC_CMD_URL "/exec_cmd"
 
 #define KEX_KEY_STR_SIZE 128
-#define DAP_EXEC_CMD_URL "/exec_cmd"
 
 static bool exec_cmd_module = false;
 typedef struct dap_exec_cmd_pkey {
@@ -40,7 +41,7 @@ static int dap_json_rpc_map_deinit() {
     dap_exec_cmd_pkey_t* l_pkey = NULL, *tmp = NULL;
     HASH_ITER(hh, s_exec_cmd_map, l_pkey, tmp) {
         HASH_DEL(s_exec_cmd_map, l_pkey);
-        DAP_DEL_Z(l_pkey);
+        DAP_DELETE(l_pkey);
     }
     return 0;
 }
@@ -69,10 +70,12 @@ int dap_json_rpc_init(dap_server_t* a_http_server, dap_config_t *a_config)
     }
 
     dap_json_rpc_map_init(a_config);
-    dap_json_rpc_request_init("/exec_cmd");
     dap_http_simple_proc_add(l_http, "/exec_cmd", 24000, dap_json_rpc_http_proc);
     return 0;
+}
 
+dap_client_http_callback_error_t * dap_json_rpc_error_callback() {
+    return NULL;
 }
 
 bool dap_json_rpc_exec_cmd_inited(){
@@ -138,8 +141,15 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         char * l_res_str = dap_json_rpc_request_handler(l_dg->request, l_dg->request_size);
         if (l_res_str) {
             enc_http_reply(l_dg, l_res_str, strlen(l_res_str));
+            DAP_DELETE(l_res_str);
         } else {
-            enc_http_reply(l_dg, "Wrong request", strlen("Wrong request"));
+            json_object* l_json_obj_res = json_object_new_array();
+            json_object_array_add(l_json_obj_res, json_object_new_string("Wrong request"));
+            const char * l_json_str_res = json_object_to_json_string(l_json_obj_res);
+            enc_http_reply(l_dg, l_json_str_res, strlen(l_json_str_res));
+            json_object_put(l_json_obj_res);
+            DAP_DELETE(l_json_str_res);
+            log_it(L_ERROR,"Wrong request");
         }
         DAP_DEL_Z(l_res_str);
         *return_code = Http_Status_OK;

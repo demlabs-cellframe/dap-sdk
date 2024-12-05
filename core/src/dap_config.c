@@ -449,10 +449,12 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
         return l_item->val.val_str;
     case DAP_CONFIG_ITEM_ARRAY:
         return *l_item->val.val_arr;
-    case DAP_CONFIG_ITEM_DECIMAL:
-        return dap_itoa(l_item->val.val_int);
     case DAP_CONFIG_ITEM_BOOL:
         return l_item->val.val_bool ? "true" : "false";
+    case DAP_CONFIG_ITEM_DECIMAL: {
+        static _Thread_local char s_ret[sizeof(dap_maxint_str_t)];
+        return (const char*)memcpy(s_ret, dap_itoa(l_item->val.val_int), sizeof(dap_maxint_str_t));
+    }
     default:
         log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
         return a_default;
@@ -460,14 +462,12 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
 }
 
 char *dap_config_get_item_str_path_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_default) {
-    dap_config_item_t *l_item = dap_config_get_item(a_config, a_section, a_item_name);
-    if (!l_item)
+    const char *l_val = dap_config_get_item_str(a_config, a_section, a_item_name);
+    if (!l_val)
         return dap_strdup(a_default);
-    if (l_item->type != DAP_CONFIG_ITEM_STRING) {
-        log_it(L_ERROR, "Parameter \"%s\" '%c' is not string", l_item->name, l_item->type);
-        return dap_strdup(a_default);
-    }
-    char *l_dir = dap_path_get_dirname(a_config->path), *l_ret = dap_canonicalize_filename(l_item->val.val_str, l_dir);
+    if ( dap_path_is_absolute(l_val) )
+        return dap_strdup(l_val);
+    char *l_dir = dap_path_get_dirname(a_config->path), *l_ret = dap_canonicalize_path(l_val, l_dir);
     //log_it(L_DEBUG, "Config-path item: %s: composed from %s and %s", l_ret, l_item->val.val_str, l_dir);
     return DAP_DELETE(l_dir), l_ret;
 }
@@ -482,7 +482,7 @@ const char **dap_config_get_array_str(dap_config_t *a_config, const char *a_sect
         log_it(L_WARNING, "Parameter \"%s\" '%c' is not array", l_item->name, l_item->type);
         if (array_length)
             *array_length = 1;
-        static _Thread_local const char* s_ret = NULL;
+        static _Thread_local const char* s_ret;
         return s_ret = dap_config_get_item_str(a_config, a_section, a_item_name), &s_ret;
     }
     if (array_length)
@@ -491,25 +491,21 @@ const char **dap_config_get_array_str(dap_config_t *a_config, const char *a_sect
 }
 
 char **dap_config_get_item_str_path_array(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length) { 
-    if (!array_length)
+    if ( !array_length )
         return NULL;
-    const char ** conf_relative = dap_config_get_array_str(a_config, a_section, a_item_name, array_length);
-    char ** addrs_relative = DAP_NEW_Z_COUNT(char*, *array_length);
-    for (int i = 0; i < *array_length; ++i)
-    {
-        char * l_cfgpath = dap_path_get_dirname(a_config->path);
-        addrs_relative[i] =  dap_canonicalize_filename(conf_relative[i], l_cfgpath);
-        DAP_DELETE(l_cfgpath);
+    const char **l_paths_cfg = dap_config_get_array_str(a_config, a_section, a_item_name, array_length);
+    if ( !l_paths_cfg || !*array_length )
+        return NULL;
+    char *l_cfg_path = dap_path_get_dirname(a_config->path), **l_paths = DAP_NEW_Z_COUNT(char*, *array_length);
+    for (int i = 0; i < *array_length; ++i) {
+        l_paths[i] = dap_path_is_absolute(l_paths_cfg[i]) ? dap_strdup(l_paths_cfg[i]) : dap_canonicalize_path(l_paths_cfg[i], l_cfg_path);
     }
-    return addrs_relative;
+    return DAP_DELETE(l_cfg_path), l_paths;
 }
 
-void dap_config_get_item_str_path_array_free(char **paths_array, uint16_t *array_length) {
-    if (!array_length)
-        return;
-    for (int i = 0; i < *array_length; ++i)
-        DAP_DEL_Z(paths_array[i]);
-    DAP_DEL_Z(paths_array);
+void dap_config_get_item_str_path_array_free(char **paths_array, uint16_t array_length) {
+    DAP_DEL_ARRAY(paths_array, array_length);
+    DAP_DELETE(paths_array);
 }
 
 double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, double a_default) {
@@ -546,8 +542,8 @@ int dap_config_stream_addrs_parse(dap_config_t *a_cfg, const char *a_config, con
     dap_return_val_if_pass(!a_cfg || !a_config || !a_config || !a_section || !a_addrs_count, -1);
     const char **l_nodes_addrs = dap_config_get_array_str(a_cfg, a_config, a_section, a_addrs_count);
     if (*a_addrs_count) {
-        log_it(L_DEBUG, "Start parse stream addrs in cofnig %s section %s", a_config, a_section);
-        DAP_NEW_Z_COUNT_RET_VAL(*a_addrs, dap_stream_node_addr_t, *a_addrs_count, -2, NULL);
+        log_it(L_DEBUG, "Start parse stream addrs in config %s section %s", a_config, a_section);
+        *a_addrs = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_stream_node_addr_t, *a_addrs_count, -2);
         for (uint16_t i = 0; i < *a_addrs_count; ++i) {
             if (dap_stream_node_addr_from_str(*a_addrs + i, l_nodes_addrs[i])) {
                 log_it(L_ERROR, "Incorrect format of %s address \"%s\", fix net config and restart node", a_section, l_nodes_addrs[i]);

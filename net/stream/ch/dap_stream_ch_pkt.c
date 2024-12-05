@@ -107,7 +107,7 @@ size_t dap_stream_ch_pkt_write_f(dap_stream_worker_t * a_worker , dap_stream_ch_
     }
     l_msg->data_size = l_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
-    l_data_size = vsprintf(l_msg->data, a_format, ap_copy);
+    l_data_size = vsnprintf(l_msg->data, l_data_size, a_format, ap_copy);
     va_end(ap_copy);
     va_end(ap);
 
@@ -166,7 +166,7 @@ size_t dap_stream_ch_pkt_write(dap_stream_worker_t *a_worker , dap_stream_ch_uui
     l_msg->ch_uuid = a_ch_uuid;
     l_msg->ch_pkt_type = a_type; 
     if (a_data && a_data_size)
-        l_msg->data = DAP_DUP_SIZE(a_data, a_data_size);
+        l_msg->data = DAP_DUP_SIZE((char*)a_data, a_data_size);
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
     l_msg->data_size = a_data_size;
 
@@ -210,7 +210,7 @@ int dap_stream_ch_pkt_send(dap_stream_worker_t *a_worker, dap_events_socket_uuid
     l_msg->ch_pkt_type = a_type;
     l_msg->ch_id = a_ch_id;
     if (a_data && a_data_size) {
-        l_msg->data = DAP_DUP_SIZE(a_data, a_data_size);
+        l_msg->data = DAP_DUP_SIZE((char*)a_data, a_data_size);
         if (!l_msg->data) {
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             DAP_DELETE(l_msg);
@@ -344,7 +344,7 @@ ssize_t dap_stream_ch_pkt_write_f_unsafe(dap_stream_ch_t *a_ch, uint8_t a_type, 
         va_end(ap_copy);
         return l_data_size--;
     }
-    vsprintf(l_data, a_format, ap_copy);
+    vsnprintf(l_data, l_data_size, a_format, ap_copy);
     va_end(ap_copy);
     size_t l_ret = dap_stream_ch_pkt_write_unsafe(a_ch, a_type, l_data, l_data_size);
     DAP_DELETE(l_data);
