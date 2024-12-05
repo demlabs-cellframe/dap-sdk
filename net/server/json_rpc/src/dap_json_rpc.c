@@ -145,7 +145,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         } else {
             json_object* l_json_obj_res = json_object_new_array();
             json_object_array_add(l_json_obj_res, json_object_new_string("Wrong request"));
-            const char * l_json_str_res = json_object_to_json_string(l_json_obj_res);
+            char *l_json_str_res = json_object_to_json_string(l_json_obj_res);
             enc_http_reply(l_dg, l_json_str_res, strlen(l_json_str_res));
             json_object_put(l_json_obj_res);
             DAP_DELETE(l_json_str_res);
