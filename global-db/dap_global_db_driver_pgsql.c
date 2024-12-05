@@ -88,16 +88,6 @@ static inline void s_db_pgsql_free_connection(conn_list_item_t *a_conn, bool a_t
 
 static PGresult *s_db_pgsql_exec(PGconn *a_conn, const char *a_query, int a_param_count, const char *const *a_param_vals, const int *a_param_lens, const int *a_param_formats, int a_result_format, ExecStatusType a_req_result, const char *a_error_msg)
 {   
-    // int busy_count = PQisBusy(a_conn);
-    // while(busy_count == 1){
-    //     dap_usleep(500000);
-    // }
-    // if ( PQsendQueryParams(a_conn, a_query, a_param_count, NULL, a_param_vals, a_param_lens, a_param_formats, a_result_format) != 1) {
-    //     log_it(L_ERROR, "Query send \"%s\" failed with message: \"%s\"", a_error_msg, PQerrorMessage(a_conn));
-    //     return -2;
-    // }
-    // PGresult *l_query_res = NULL;
-    // while (!(l_query_res = PQgetResult(a_conn)));
     PGresult *l_query_res = PQexecParams(a_conn, a_query, a_param_count, NULL, a_param_vals, a_param_lens, a_param_formats, a_result_format);
     if ( PQresultStatus(l_query_res) != a_req_result ) {
         const char *l_err = PQresultErrorField(l_query_res, PG_DIAG_SQLSTATE);
@@ -911,8 +901,8 @@ int dap_global_db_driver_pgsql_init(const char *a_db_conn_info, dap_global_db_dr
     a_drv_callback->read_store_obj          = s_db_pgsql_read_store_obj;
     a_drv_callback->read_cond_store_obj     = s_db_pgsql_read_cond_store_obj;
     a_drv_callback->read_last_store_obj     = s_db_pgsql_read_last_store_obj;
-    a_drv_callback->transaction_start       = s_db_pgsql_transaction_start;
-    a_drv_callback->transaction_end         = s_db_pgsql_transaction_end;
+    // a_drv_callback->transaction_start       = s_db_pgsql_transaction_start;
+    // a_drv_callback->transaction_end         = s_db_pgsql_transaction_end;
     a_drv_callback->get_groups_by_mask      = s_db_pgsql_get_groups_by_mask;
     a_drv_callback->read_count_store        = s_db_pgsql_read_count_store;
     a_drv_callback->is_obj                  = s_db_pgsql_is_obj;

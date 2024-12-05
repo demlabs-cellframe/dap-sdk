@@ -117,10 +117,24 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
             l_ret = dap_global_db_driver_pgsql_init(a_filename_db, &s_drv_callback);
         } else {
             l_ret = dap_global_db_driver_pgsql_init(l_pg_conninfo, &s_drv_callback);
+            DAP_DELETE(l_pg_conninfo);
         }
     }
     #else
-        l_ret = dap_global_db_driver_pgsql_init(dap_config_get_item_str_default(g_config, "global_db", "pg_conninfo", "dbname=postgres"), &s_drv_callback); 
+    {
+        uint16_t l_arr_len = 0;
+        char **l_conn_info_arr = dap_config_get_array_str(g_config, "global_db", "pg_conninfo", &l_arr_len);
+        dap_string_t *l_conn_info = NULL;
+        if (l_arr_len) {
+            l_conn_info = dap_string_new_len(NULL, l_arr_len * 16);
+            while (l_arr_len--)
+                dap_string_append_printf(l_conn_info, "%s ", l_conn_info_arr[l_arr_len]);
+        } else {
+            l_conn_info = dap_string_new("dbname=postgres");
+        }
+        l_ret = dap_global_db_driver_pgsql_init(l_conn_info->str, &s_drv_callback);
+        dap_string_free(l_conn_info, true);
+    }
     #endif
 #endif
     else
