@@ -62,7 +62,7 @@ int dap_enc_init()
  */
 void dap_enc_deinit()
 {
-
+    dap_cert_deinit();
 }
 
 bool dap_enc_debug_more()

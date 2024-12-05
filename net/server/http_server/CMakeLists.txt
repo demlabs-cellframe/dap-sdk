@@ -34,7 +34,7 @@ if (UNIX)
 endif()
 
 if(WIN32)
-  target_link_libraries(${PROJECT_NAME} magic regex tre intl iconv
+  target_link_libraries(${PROJECT_NAME} regex tre intl iconv
   kernel32
   user32
   shell32
@@ -53,9 +53,6 @@ if(WIN32)
   crypt32
   secur32
 )
-endif()
-if (UNIX AND NOT ANDROID)
-    target_link_libraries(${PROJECT_NAME} magic)
 endif()
 target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json-c)
 

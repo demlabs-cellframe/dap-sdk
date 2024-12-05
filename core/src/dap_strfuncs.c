@@ -1204,3 +1204,12 @@ char *dap_str_replace_char(const char *a_src, char a_ch1, char a_ch2)
         *l_str = a_ch2;
     return l_dst;
 }
+
+bool dap_check_valid_password(const char *a_str, size_t a_str_len) {
+    for (size_t i=0; i < a_str_len; i++) {
+        if (a_str[i] < '!' || a_str[i] > '~') {
+            return false;
+        }
+    }
+    return true;
+}

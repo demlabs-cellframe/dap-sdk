@@ -53,6 +53,7 @@ void dap_json_rpc_params_add_param(dap_json_rpc_params_t *a_params, dap_json_rpc
 {
     dap_json_rpc_param_t **new_params = DAP_REALLOC_COUNT_RET_IF_FAIL(a_params->params, a_params->length + 1);
     new_params[a_params->length] = a_param;
+    a_params->params = new_params;
     ++a_params->length;
 }
 

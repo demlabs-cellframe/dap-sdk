@@ -48,10 +48,6 @@
 #include "dap_global_db_driver_sqlite.h"
 #endif
 
-#ifdef DAP_CHAIN_GDB_ENGINE_CUTTDB
-#include "dap_global_db_driver_cdb.h"
-#endif
-
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
 #include "dap_global_db_driver_mdbx.h"
 #endif
@@ -105,10 +101,6 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
     else if(!dap_strcmp(s_used_driver, "sqlite") || !dap_strcmp(s_used_driver, "sqlite3") )
         l_ret = dap_global_db_driver_sqlite_init(l_db_path_ext, &s_drv_callback);
-#endif
-#ifdef DAP_CHAIN_GDB_ENGINE_CUTTDB
-    else if(!dap_strcmp(s_used_driver, "cdb"))
-        l_ret = dap_global_db_driver_cdb_init(l_db_path_ext, &s_drv_callback);
 #endif
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
     else if(!dap_strcmp(s_used_driver, "mdbx"))
@@ -231,7 +223,7 @@ void dap_store_obj_free(dap_store_obj_t *a_store_obj, size_t a_store_count)
     if(!a_store_obj || !a_store_count)
         return;
 
-    for ( dap_store_obj_t *l_cur = a_store_obj; --a_store_count; ++l_cur ) {
+    for ( dap_store_obj_t *l_cur = a_store_obj; a_store_count--; ++l_cur ) {
         DAP_DEL_MULTY(l_cur->group, l_cur->key, l_cur->value, l_cur->sign);
     }
     DAP_DELETE(a_store_obj);

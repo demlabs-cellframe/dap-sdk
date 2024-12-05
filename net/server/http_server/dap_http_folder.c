@@ -37,7 +37,6 @@
 #endif
 
 #include <pthread.h>
-#include <magic.h>
 
 #include "dap_common.h"
 #include "dap_events_socket.h"
@@ -48,7 +47,7 @@
 
 typedef struct dap_http_url_proc_folder {
     char local_path[4096];
-    magic_t mime_detector;
+    //magic_t mime_detector;
 } dap_http_url_proc_folder_t;
 
 #define URL_PROC_FOLDER(a) ((dap_http_url_proc_folder_t*) (a)->_inhertior )
@@ -123,7 +122,7 @@ int dap_http_folder_add(dap_http_server_t *sh, const char *url_path, const char 
   }
   strncpy( up_folder->local_path, local_path, sizeof(up_folder->local_path)-1 );
 
-  up_folder->mime_detector = magic_open( MAGIC_SYMLINK | MAGIC_MIME | MAGIC_PRESERVE_ATIME );
+  /*up_folder->mime_detector = magic_open( MAGIC_SYMLINK | MAGIC_MIME | MAGIC_PRESERVE_ATIME );
 
   if ( up_folder->mime_detector == NULL) {
     log_it( L_CRITICAL,"Can't init MIME detection library" );
@@ -136,13 +135,12 @@ int dap_http_folder_add(dap_http_server_t *sh, const char *url_path, const char 
 #else
   if( 0 != magic_load( up_folder->mime_detector, "data.mag" )  ) {
 #endif
-
     log_it( L_CRITICAL, "Can't load MIME magic detection database" );
     magic_close( up_folder->mime_detector );
     free( up_folder );
     return -2;
   }
-
+  */
   dap_http_add_proc(  sh, 
                       url_path, 
                       up_folder, 
@@ -253,16 +251,16 @@ bool dap_http_folder_headers_write( dap_http_client_t *cl_ht, void * arg)
     cl_ht->reply_status_code = Http_Status_OK;
     strncpy( cl_ht->reply_reason_phrase,"OK",sizeof(cl_ht->reply_reason_phrase)-1 );
 
-    const char *mime_type = magic_file( up_folder->mime_detector, cl_ht_file->local_path );
-    if( mime_type ) {
+    const char *mime_type = "application/octet-stream";/* magic_file( up_folder->mime_detector, cl_ht_file->local_path );
+
+    if( mime_type ) { */
       strncpy(cl_ht->out_content_type,mime_type,sizeof(cl_ht->out_content_type)-1);
       log_it( L_DEBUG, "MIME type detected: '%s'", mime_type );
-    }
-    else {
+    /*} else {
       cl_ht->reply_status_code = Http_Status_NotFound;
       cl_ht->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
       log_it(L_WARNING,"Can't detect MIME type of %s file: %s",cl_ht_file->local_path,magic_error(up_folder->mime_detector));
-    }
+    }*/
   }
 
   return false;

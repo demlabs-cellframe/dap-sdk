@@ -471,12 +471,12 @@ void dap_worker_add_events_socket(dap_worker_t *a_worker, dap_events_socket_t *a
         : dap_events_socket_queue_ptr_send(a_worker->queue_es_new, a_events_socket);
 #endif
     if (l_ret)
-        log_it(L_ERROR, "Can't %s es \"%s\" [%s], uuid %"DAP_FORMAT_ESOCKET_UUID" to worker #%d, error %d: \"%s\"",
+        log_it(L_ERROR, "Can't %s es \"%s\" [%s], uuid "DAP_FORMAT_ESOCKET_UUID" to worker #%d, error %d: \"%s\"",
                dap_worker_get_current() == a_worker ? "assign" : "send",
                l_type_str, dap_itoa(l_s), l_uuid, a_worker->id, l_ret, dap_strerror(l_ret));
     else 
         debug_if(g_debug_reactor, L_DEBUG,
-               "%s es \"%s\" [%s], uuid %"DAP_FORMAT_ESOCKET_UUID" to worker #%d",
+               "%s es \"%s\" [%s], uuid "DAP_FORMAT_ESOCKET_UUID" to worker #%d",
                dap_worker_get_current() == a_worker ? "Assigned" : "Sent",
                l_type_str, dap_itoa(l_s), l_uuid, a_worker->id);
 }
