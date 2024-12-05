@@ -112,7 +112,7 @@ static PGresult *s_db_pgsql_exec(PGconn *a_conn, const char *a_query, int a_para
  */
 static int s_db_pgsql_exec_command(PGconn *a_conn, const char *a_query, dap_global_db_driver_hash_t *a_hash, byte_t *a_value, size_t a_value_len, dap_sign_t *a_sign, const char *a_error_msg)
 {
-    dap_return_val_if_pass(!a_conn || !a_query, NULL);
+    dap_return_val_if_pass(!a_conn || !a_query, -1);
     
     const char *l_param_vals[3] = {(const char *)a_hash, (const char *)a_value, (const char *)a_sign};
     int l_param_lens[3] = {sizeof(dap_global_db_driver_hash_t), a_value_len, dap_sign_get_size(a_sign)};
@@ -122,7 +122,7 @@ static int s_db_pgsql_exec_command(PGconn *a_conn, const char *a_query, dap_glob
     PGresult *l_query_res = s_db_pgsql_exec(a_conn, a_query, l_param_count, l_param_vals, l_param_lens, l_param_formats, 1, PGRES_COMMAND_OK, a_error_msg);
 
     if ( !l_query_res ) {
-        return -1;
+        return -2;
     }
     PQclear(l_query_res);
     return 0;
@@ -144,7 +144,7 @@ static PGresult *s_db_pgsql_exec_tuples(PGconn *a_conn, const char *a_query, dap
     dap_return_val_if_pass(!a_conn || !a_query, NULL);
     return s_db_pgsql_exec(a_conn, a_query, 
         a_hash ? 1 : 0, 
-        a_hash ? (const char*[]){ a_hash } : NULL,
+        a_hash ? (const char*[]){ (const char*)a_hash } : NULL,
         a_hash ? (const int[]){ sizeof(dap_global_db_driver_hash_t)} : NULL,
         a_hash ? (const int[]){ 1 } : NULL, 1, PGRES_TUPLES_OK, a_error_msg);
 }
@@ -391,7 +391,7 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
     const char *l_err_msg = "get by hash";
     dap_global_db_pkt_pack_t *l_ret = NULL;
 
-    const char **l_param_vals = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(char *, a_count, NULL);
+    const char **l_param_vals = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(const char *, a_count, NULL);
     int *l_param_lens = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(int, a_count, NULL, l_param_vals);
     int *l_param_formats = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(int, a_count, NULL, l_param_vals, l_param_lens);
 
