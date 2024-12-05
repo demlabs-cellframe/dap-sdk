@@ -18,6 +18,22 @@
 
 #define DB_FILE "./base.tmp"
 
+static const char *s_db_types[] = {
+#ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
+    "pgsql",
+#endif
+#ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
+    "sqlite",
+#endif
+#ifdef DAP_CHAIN_GDB_ENGINE_CUTTDB
+    "cdb",
+#endif
+#ifdef DAP_CHAIN_GDB_ENGINE_MDBX
+    "mdbx",
+#endif
+    "none"
+};
+
 // benchmarks
 static int    s_write = 0;
 static int    s_read = 0;
@@ -49,21 +65,16 @@ typedef struct __dap_test_record__ {
 
 static int s_test_create_db(const char *db_type)
 {
-    int rc;
+    int l_rc = 0;
     char l_cmd[MAX_PATH];
     dap_test_msg("Initializatiion test db %s driver in %s file", db_type, DB_FILE);
 
-    if( dap_dir_test(DB_FILE) ) {
-        rmdir(DB_FILE);
-        snprintf(l_cmd, sizeof(l_cmd), "rm -rf %s", DB_FILE);
-        if ( (rc = system(l_cmd)) )
-             log_it(L_ERROR, "system(%s)->%d", l_cmd, rc);
-    }
+    if (!dap_strcmp(db_type, "pgsql"))
+        l_rc = dap_global_db_driver_init(db_type, "dbname=postgres");
     else
-        unlink(DB_FILE);
-    rc = dap_global_db_driver_init(db_type, DB_FILE);
-    dap_assert(rc == 0, "Initialization db driver");
-    return rc;
+        l_rc = dap_global_db_driver_init(db_type, DB_FILE);
+    dap_assert(l_rc == 0, "Initialization db driver");
+    return l_rc;
 }
 
 static int s_test_write(size_t a_count)
@@ -85,7 +96,7 @@ static int s_test_write(size_t a_count)
     l_store_obj.value = (uint8_t *) l_value;                                 /* Point <.value> to static buffer area */
     prec = (dap_db_test_record_t *) l_value;
     int l_time = 0;
-    size_t l_rewrite_count = rand() % (a_count / 2) + 2; 
+    size_t l_rewrite_count = rand() % (a_count / 2) + 2;
     for (size_t i = 0; i < a_count; ++i)
     {
         log_it(L_DEBUG, "Write %zu record in GDB", i);
@@ -153,6 +164,10 @@ static int s_test_read(size_t a_count)
 {
     dap_test_msg("Start reading %zu records ...", a_count);
     int l_time = 0;
+    size_t l_read_count = 0;
+    dap_store_obj_t *l_store_obj = dap_global_db_driver_read(DAP_DB$T_GROUP, NULL, &l_read_count, true);
+    dap_assert_PIF(l_read_count == a_count, "All records count not equal writed");
+    dap_store_obj_free(l_store_obj, l_read_count);
     for (size_t i = 0; i < a_count; ++i ) {
         dap_chain_hash_fast_t csum = { 0 };;
         dap_db_test_record_t *prec = NULL;
@@ -610,21 +625,11 @@ static void s_test_multithread(size_t a_count)
 
 int main(int argc, char **argv)
 {
-    dap_log_level_set(L_ERROR);
-#ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
-    dap_print_module_name("SQLite");
-    s_test_create_db("sqlite");
-#endif
-#ifdef DAP_CHAIN_GDB_ENGINE_MDBX
-    dap_print_module_name("MDBX");
-    s_test_create_db("mdbx");
-#endif
-
-#ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
-    dap_print_module_name("PostgresQL");
-    s_test_create_db("pgsql");
-#endif
-
+    dap_log_level_set(L_WARNING);
+    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
+    g_dap_global_db_debug_more = true;
+    size_t l_db_count = sizeof(s_db_types) / sizeof(char *) - 1;
+    dap_assert_PIF(l_db_count, "Use minimum 1 DB driver");
     size_t l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + 2;
     int l_t1 = get_cur_time_msec();
     s_test_all(l_count);
