@@ -222,12 +222,10 @@ static int s_db_pgsql_create_group_table(const char *a_table_name, conn_list_ite
 {
 // sanity check
     dap_return_val_if_pass(!a_table_name || !a_conn, -EINVAL);
-    char l_query[512];
-
-    snprintf(l_query, sizeof(l_query) - 1,
-                    "CREATE TABLE IF NOT EXISTS \"%s\"(driver_key BYTEA UNIQUE NOT NULL PRIMARY KEY, key TEXT UNIQUE NOT NULL, flags INT8, value BYTEA, sign BYTEA)",
-                    a_table_name);
-    return s_db_pgsql_exec_command(a_conn->conn, l_query, NULL, NULL, 0, NULL, __FUNCTION__);
+    char *l_query = dap_strdup_printf("CREATE TABLE IF NOT EXISTS \"%s\"(driver_key BYTEA UNIQUE NOT NULL PRIMARY KEY, key TEXT UNIQUE NOT NULL, flags INT8, value BYTEA, sign BYTEA)", a_table_name);
+    int l_ret = s_db_pgsql_exec_command(a_conn->conn, l_query, NULL, NULL, 0, NULL, __FUNCTION__);
+    DAP_DELETE(l_query)
+    return l_ret;
 }
 
 /**
@@ -301,8 +299,6 @@ static int s_db_pgsql_fill_one_item(const char *a_group, dap_store_obj_t *a_obj,
     for (size_t i = 0; i < sizeof(s_db_fields_name) / sizeof (const char *); ++i) {
         dap_global_db_driver_hash_t *l_driver_key = NULL;
         int l_col_num = PQfnumber(a_query_res, s_db_fields_name[i]);
-        int size = 0;
-        size_t l_decode_len = 0;
         switch (i) {
             case 0:
                 l_driver_key = (dap_global_db_driver_hash_t *)PQgetvalue(a_query_res, a_row, l_col_num);
@@ -402,6 +398,7 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
     dap_string_t *l_blob_str = dap_string_new_len(NULL, a_count * 4);
     if (!l_blob_str) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        DAP_DEL_MULTY(l_param_vals, l_param_lens, l_param_formats);
         return NULL;
     }
     for (size_t i = 0; i < a_count; ++i) {
@@ -534,7 +531,7 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
     }
 clean_and_ret:
     PQclear(l_query_res);
-    DAP_DEL_MULTY(l_query_size_str, l_query_str);
+    DAP_DEL_MULTY(l_query_size_str, l_query_str, l_param_vals, l_param_lens, l_param_formats);
     s_db_pgsql_free_connection(l_conn, false);
     return l_ret;
 }
@@ -876,9 +873,7 @@ static int s_db_pgsql_transaction_end(bool a_commit)
         l_ret = s_db_pgsql_exec_command(s_conn->conn, "COMMIT", NULL, NULL, 0, NULL, "commit");
     else
         l_ret = s_db_pgsql_exec_command(s_conn->conn, "ROLLBACK", NULL, NULL, 0, NULL, "rollback");
-    if ( !l_ret ) {
-        s_db_pgsql_free_connection(s_conn, true);
-    }
+    s_db_pgsql_free_connection(s_conn, true);
     return  l_ret;
 }
 
