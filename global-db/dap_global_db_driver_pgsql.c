@@ -224,7 +224,7 @@ static int s_db_pgsql_create_group_table(const char *a_table_name, conn_list_ite
     dap_return_val_if_pass(!a_table_name || !a_conn, -EINVAL);
     char *l_query = dap_strdup_printf("CREATE TABLE IF NOT EXISTS \"%s\"(driver_key BYTEA UNIQUE NOT NULL PRIMARY KEY, key TEXT UNIQUE NOT NULL, flags INT8, value BYTEA, sign BYTEA)", a_table_name);
     int l_ret = s_db_pgsql_exec_command(a_conn->conn, l_query, NULL, NULL, 0, NULL, __FUNCTION__);
-    DAP_DELETE(l_query)
+    DAP_DELETE(l_query);
     return l_ret;
 }
 
