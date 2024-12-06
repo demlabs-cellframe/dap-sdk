@@ -65,6 +65,11 @@ static _Thread_local conn_list_item_t *s_conn = NULL;  // local connection
 
 static const char *s_db_fields_name[] = {"driver_key", "key", "flags", "value", "sign"};
 
+DAP_STATIC_INLINE void s_request_err_msg(const char *a_request_str)
+{
+    return debug_if(g_dap_global_db_debug_more, L_INFO, "There are no records satisfying the %s request", a_request_str);
+}
+
 static void s_connection_destructor(UNUSED_ARG void *a_conn) {
     PQfinish(s_conn->conn);
     log_it(L_DEBUG, "Close  connection: @%p/%p, usage: %llu", s_conn, s_conn->conn, s_conn->usage);
@@ -92,7 +97,7 @@ static PGresult *s_db_pgsql_exec(PGconn *a_conn, const char *a_query, int a_para
     if ( PQresultStatus(l_query_res) != a_req_result ) {
         const char *l_err = PQresultErrorField(l_query_res, PG_DIAG_SQLSTATE);
         if (!l_err || dap_strcmp(l_err, PGSQL_INVALID_TABLE))
-            log_it(L_ERROR, "Query \"%s\" failed with message: \"%s\"", a_error_msg, PQresultErrorMessage(l_query_res));
+            log_it(L_ERROR, "Query from \"%s\" was failed with message: \"%s\"", a_error_msg, PQresultErrorMessage(l_query_res));
         PQclear(l_query_res);
         return  NULL;
     }
@@ -222,7 +227,7 @@ static int s_db_pgsql_create_group_table(const char *a_table_name, conn_list_ite
     snprintf(l_query, sizeof(l_query) - 1,
                     "CREATE TABLE IF NOT EXISTS \"%s\"(driver_key BYTEA UNIQUE NOT NULL PRIMARY KEY, key TEXT UNIQUE NOT NULL, flags INT8, value BYTEA, sign BYTEA)",
                     a_table_name);
-    return s_db_pgsql_exec_command(a_conn->conn, l_query, NULL, NULL, 0, NULL, "create_group_table");
+    return s_db_pgsql_exec_command(a_conn->conn, l_query, NULL, NULL, 0, NULL, __FUNCTION__);
 }
 
 /**
@@ -354,13 +359,13 @@ static dap_store_obj_t* s_db_pgsql_read_last_store_obj(const char *a_group, bool
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, "read_last_store_obj");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, __FUNCTION__);
     DAP_DELETE(l_query_str);
     
 // memory alloc
     uint64_t l_count = PQntuples(l_query_res);
     if (!l_count) {
-        log_it(L_INFO, "There are no records satisfying the last read request");
+        s_request_err_msg(__FUNCTION__);
         goto clean_and_ret;
     }
     if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
@@ -388,7 +393,6 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_pass(!a_group || !a_hashes || !a_count || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
 // preparing
-    const char *l_err_msg = "get by hash";
     dap_global_db_pkt_pack_t *l_ret = NULL;
 
     const char **l_param_vals = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(const char *, a_count, NULL);
@@ -408,7 +412,7 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
     }
     l_blob_str->str[l_blob_str->len - 1] = '\0';
     --l_blob_str->len;
-    char *l_query_size_str = dap_strdup_printf("SELECT SUM(LENGTH(key)) + SUM(LENGTH(value)) + SUM(LENGTH(sign)) FROM \"%s\" "
+    char *l_query_size_str = dap_strdup_printf("SELECT COALESCE(SUM(LENGTH(key)), 0) + COALESCE(SUM(LENGTH(value)), 0) + COALESCE(SUM(LENGTH(sign)), 0) FROM \"%s\" "
                                         " WHERE driver_key IN (%s);",
                                         a_group, l_blob_str->str);
     char *l_query_str = dap_strdup_printf("SELECT * FROM \"%s\""
@@ -421,8 +425,10 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
     }
 
 // memory alloc
-
-    PGresult *l_query_size_res = s_db_pgsql_exec(l_conn->conn, (const char *)l_query_size_str, a_count, l_param_vals, l_param_lens, l_param_formats, 1, PGRES_TUPLES_OK, "get_by_hash_count");
+    // size count
+    PGresult
+        *l_query_res = NULL, 
+        *l_query_size_res = s_db_pgsql_exec(l_conn->conn, (const char *)l_query_size_str, a_count, l_param_vals, l_param_lens, l_param_formats, 1, PGRES_TUPLES_OK, "get_by_hash_size_count");
     if ( !l_query_size_res ) {
         goto clean_and_ret;
     }
@@ -430,27 +436,28 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
     int64_t l_size = l_size_p ? be64toh(*l_size_p) : 0;
     PQclear(l_query_size_res);
 
-    PGresult *l_query_res = s_db_pgsql_exec(l_conn->conn, (const char *)l_query_str, a_count, l_param_vals, l_param_lens, l_param_formats, 1, PGRES_TUPLES_OK, "get_by_hash_count");;
-    
+    // get data
+    l_query_res = s_db_pgsql_exec(l_conn->conn, (const char *)l_query_str, a_count, l_param_vals, l_param_lens, l_param_formats, 1, PGRES_TUPLES_OK, __FUNCTION__);;
     if ( !l_query_res ) {
         goto clean_and_ret;
     }
     size_t l_count = PQntuples(l_query_res);
     if ( !l_count || l_size <= 0 ) {
-        log_it(L_INFO, "There are no records satisfying the get by hash request");
+        s_request_err_msg(__FUNCTION__);
         goto clean_and_ret;
     }
+    // memory alloc
     size_t l_group_name_len = strlen(a_group) + 1;
     size_t l_data_size = l_count * (sizeof(dap_global_db_pkt_t) + l_group_name_len + 1) + l_size;
     l_ret = DAP_NEW_Z_SIZE(dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_data_size);
     if ( !l_ret ) {
-        log_it(L_CRITICAL, "Memory allocation error!");
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         goto clean_and_ret;
     }
+    // fill data
     byte_t
         *l_data_pos = l_ret->data,
         *l_data_end = l_data_pos + l_data_size;
-
     size_t i = 0;
     for (i = 0; i < l_count; ++i) {
         dap_global_db_pkt_t *l_cur_pkt = (dap_global_db_pkt_t*)(l_data_pos);
@@ -527,6 +534,7 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
     }
 clean_and_ret:
     PQclear(l_query_res);
+    DAP_DEL_MULTY(l_query_size_str, l_query_str);
     s_db_pgsql_free_connection(l_conn, false);
     return l_ret;
 }
@@ -552,13 +560,13 @@ static dap_global_db_hash_pkt_t *s_db_pgsql_read_hashes(const char *a_group, dap
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, "read_hashes");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, __FUNCTION__);
     DAP_DELETE(l_query_str);
     
 // memory alloc
     uint64_t l_count = PQntuples(l_query_res);
     if (!l_count) {
-        log_it(L_INFO, "There are no records satisfying the read_hashes request");
+        s_request_err_msg(__FUNCTION__);
         goto clean_and_ret;
     }
     if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
@@ -614,14 +622,14 @@ static dap_store_obj_t* s_db_pgsql_read_cond_store_obj(const char *a_group, dap_
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, "read_cond_store_obj");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash_from, __FUNCTION__);
     DAP_DELETE(l_query_str);
     
 // memory alloc
     uint64_t l_count = PQntuples(l_query_res);
     l_count = a_count_out && *a_count_out ? dap_min(*a_count_out, l_count) : l_count;
     if (!l_count) {
-        log_it(L_INFO, "There are no records satisfying the read cond request");
+        s_request_err_msg(__FUNCTION__);
         goto clean_and_ret;
     }
     if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
@@ -673,14 +681,14 @@ static dap_store_obj_t* s_db_pgsql_read_store_obj(const char *a_group, const cha
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, "read_store_obj");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, __FUNCTION__);
     DAP_DELETE(l_query_str);
     
 // memory alloc
     uint64_t l_count = PQntuples(l_query_res);
     l_count = a_count_out && *a_count_out ? dap_min(*a_count_out, l_count) : l_count;
     if (!l_count) {
-        log_it(L_INFO, "There are no records satisfying the read_store_obj request");
+        s_request_err_msg(__FUNCTION__);
         goto clean_and_ret;
     }
     if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
@@ -715,8 +723,7 @@ static dap_list_t *s_db_pgsql_get_groups_by_mask(const char *a_group_mask)
     PGresult *l_res = s_db_pgsql_exec_tuples(
         l_conn->conn,
         "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname != 'information_schema' AND schemaname != 'pg_catalog'",
-        NULL,
-        "get_groups_by_mask");
+        NULL, __FUNCTION__);
     size_t l_count = PQntuples(l_res);
     for (size_t i = 0; i < l_count; ++i) {
         char *l_table_name = (char *)PQgetvalue(l_res, i, 0);
@@ -749,7 +756,7 @@ static size_t s_db_pgsql_read_count_store(const char *a_group, dap_global_db_dri
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_count_str, &a_hash_from, "read_count_store");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_count_str, &a_hash_from, __FUNCTION__);
     DAP_DELETE(l_query_count_str);
     uint64_t *l_ret = (uint64_t *)PQgetvalue(l_query_res, 0, 0);
 clean_and_ret:
@@ -775,7 +782,7 @@ static bool s_db_pgsql_is_hash(const char *a_group, dap_global_db_driver_hash_t 
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash, "is_hash");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &a_hash, __FUNCTION__);
     DAP_DELETE(l_query_str);
     char *l_ret = PQgetvalue(l_query_res, 0, 0);
 clean_and_ret:
@@ -801,7 +808,7 @@ static bool s_db_pgsql_is_obj(const char *a_group, const char *a_key)
         log_it(L_ERROR, "Error in PGSQL request forming");
         goto clean_and_ret;
     }
-    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, "is_obj");
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, __FUNCTION__);
     DAP_DELETE(l_query_str);
     char *l_ret = PQgetvalue(l_query_res, 0, 0);
 clean_and_ret:
