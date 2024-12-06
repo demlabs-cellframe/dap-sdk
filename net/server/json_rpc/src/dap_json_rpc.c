@@ -102,7 +102,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         dap_enc_key_type_t l_enc_type = dap_stream_get_preferred_encryption_type();
         size_t l_enc_key_size = 32;
         int l_enc_headers = 0;
-        bool l_is_legacy=true;
+        // bool l_is_legacy=true;
         char *l_tok_tmp;
         char *l_tok = strtok_r(l_dg->url_path, ",", &l_tok_tmp);
         while (l_tok) {
@@ -114,12 +114,12 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
                     strncpy(l_channels_str,l_subtok_value,sizeof (l_channels_str)-1);
                 }else if(strcmp(l_subtok_name,"enc_type")==0){
                     l_enc_type = atoi(l_subtok_value);
-                    l_is_legacy = false;
+                    // l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_key_size")==0){
                     l_enc_key_size = (size_t) atoi(l_subtok_value);
                     if (l_enc_key_size > l_dg->request_size )
                         l_enc_key_size = 32;
-                    l_is_legacy = false;
+                    // l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_headers")==0){
                     l_enc_headers = atoi(l_subtok_value);
                 }
@@ -145,8 +145,8 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         } else {
             json_object* l_json_obj_res = json_object_new_array();
             json_object_array_add(l_json_obj_res, json_object_new_string("Wrong request"));
-            const char * l_json_str_res = json_object_to_json_string(l_json_obj_res);
-            enc_http_reply(l_dg, l_json_str_res, strlen(l_json_str_res));
+            const char *l_json_str_res = json_object_to_json_string(l_json_obj_res);
+            enc_http_reply(l_dg, (void *)l_json_str_res, strlen(l_json_str_res));
             json_object_put(l_json_obj_res);
             DAP_DELETE(l_json_str_res);
             log_it(L_ERROR,"Wrong request");
