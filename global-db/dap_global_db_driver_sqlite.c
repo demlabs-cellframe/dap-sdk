@@ -307,7 +307,7 @@ static int s_db_sqlite_create_group_table(const char *a_table_name, conn_list_it
 {
 // sanity check
     dap_return_val_if_pass(!a_table_name || !a_conn, -EINVAL);
-    char *l_query = dap_strdup_printf("CREATE TABLE IF NOT EXISTS '%s'"
+    char *l_query = dap_strdup_printf("CREATE TABLE IF NOT EXISTS \"%s\""
         "(driver_key BLOB UNIQUE NOT NULL PRIMARY KEY ON CONFLICT REPLACE, key TEXT UNIQUE NOT NULL, flags INTEGER, value BLOB, sign BLOB)",
         a_table_name);
     int l_ret = s_db_sqlite_exec(a_conn->conn, l_query, NULL, NULL, 0, NULL);
@@ -339,7 +339,7 @@ static int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
             l_ret = -3;
             goto clean_and_ret;
         } else { //add one record
-            l_query = sqlite3_mprintf("INSERT INTO '%s' VALUES(?, '%s', '%d', ?, ?) "
+            l_query = sqlite3_mprintf("INSERT INTO \"%s\" VALUES(?, '%s', '%d', ?, ?) "
             "ON CONFLICT(key) DO UPDATE SET driver_key = excluded.driver_key, flags = excluded.flags, value = excluded.value, sign = excluded.sign;",
                                                   a_store_obj->group, a_store_obj->key, (int)(a_store_obj->flags & ~DAP_GLOBAL_DB_RECORD_NEW));
         }
@@ -352,9 +352,9 @@ static int s_db_sqlite_apply_store_obj(dap_store_obj_t *a_store_obj)
         }
     } else {
         if (a_store_obj->key) //delete one record
-            l_query = sqlite3_mprintf("DELETE FROM '%s' WHERE key = '%s'", a_store_obj->group, a_store_obj->key);
+            l_query = sqlite3_mprintf("DELETE FROM \"%s\" WHERE key = '%s'", a_store_obj->group, a_store_obj->key);
         else // remove all group
-            l_query = sqlite3_mprintf("DROP TABLE IF EXISTS '%s'", a_store_obj->group);
+            l_query = sqlite3_mprintf("DROP TABLE IF EXISTS \"%s\"", a_store_obj->group);
         l_ret = s_db_sqlite_exec(l_conn->conn, l_query, NULL, NULL, 0, NULL);
     }
 clean_and_ret:
