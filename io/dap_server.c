@@ -75,6 +75,8 @@
 
 #define LOG_TAG "dap_server"
 
+bool s_server_enabled = false;
+
 static void s_es_server_new     (dap_events_socket_t *a_es, void *a_arg);
 static void s_es_server_accept  (dap_events_socket_t *a_es_listener, SOCKET a_remote_socket, struct sockaddr_storage *a_remote_addr);
 static void s_es_server_error   (dap_events_socket_t *a_es, int a_arg);
@@ -87,7 +89,12 @@ static dap_server_t* s_default_server = NULL;
  */
 int dap_server_init()
 {
-    return log_it(L_NOTICE, "Server module initialized"), 0;
+    s_server_enabled = dap_config_get_item_bool_default(g_config, "server", "enabled", false);
+    return debug_if(s_server_enabled, L_INFO, "Server module initialized"), 0;
+}
+
+bool dap_server_enabled() {
+    return s_server_enabled;
 }
 
 /**
@@ -275,7 +282,8 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
         for (i = 0; i < l_count; ++i) {
             char l_cur_ip[INET6_ADDRSTRLEN] = { '\0' }; uint16_t l_cur_port = 0;
             if ( 0 > dap_net_parse_config_address( l_addrs[i], l_cur_ip, &l_cur_port, NULL, NULL) ) {
-                log_it( L_ERROR, "Incorrect format of address \"%s\", fix net config and restart node", l_addrs[i] );
+                log_it( L_ERROR, "Incorrect format of address \"%s\", fix [server] section in cellframe-node.cfg and restart",
+                                 l_addrs[i] );
                 continue;
             }
             if ( !l_cur_port ) // Probably need old format
