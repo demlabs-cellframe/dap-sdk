@@ -23,27 +23,12 @@ You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#include <stddef.h>
-#include <string.h>
-#include <pthread.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/stat.h>
 #include <postgresql/libpq-fe.h>
 
 #include "dap_global_db_driver_pgsql.h"
 #include "dap_common.h"
-#include "dap_hash.h"
-#include "dap_file_utils.h"
-#include "dap_strfuncs.h"
-#include "dap_file_utils.h"
 #include "dap_global_db_pkt.h"
 #include "dap_global_db.h"
-
-#include "dap_enc_base64.h"
-
-#include <pwd.h>
 
 #define LOG_TAG "db_pgsql"
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_PGSQL
