@@ -708,12 +708,16 @@ int main(int argc, char **argv)
     sprintf(s_group_worng, "%s", DAP_DB$T_GROUP_WRONG_PREF);
     sprintf(s_group_not_existed, "%s", DAP_DB$T_GROUP_NOT_EXISTED_PREF);
 
-    srand( (unsigned int)time(NULL) );
-    dap_random_string_fill(s_group + strlen(DAP_DB$T_GROUP_PREF), 32);
-    dap_random_string_fill(s_group_worng + strlen(DAP_DB$T_GROUP_WRONG_PREF), 32);
-    dap_random_string_fill(s_group_not_existed + strlen(DAP_DB$T_GROUP_NOT_EXISTED_PREF), 32);
-
     for (size_t i = 0; i < l_db_count; ++i) {
+        srand( (unsigned int)time(NULL) );
+        dap_random_string_fill(s_group + strlen(DAP_DB$T_GROUP_PREF), 32);
+        dap_random_string_fill(s_group_worng + strlen(DAP_DB$T_GROUP_WRONG_PREF), 32);
+        dap_random_string_fill(s_group_not_existed + strlen(DAP_DB$T_GROUP_NOT_EXISTED_PREF), 32);
+
+        dap_test_msg("s_group name %s", s_group);
+        dap_test_msg("s_group_worng name %s", s_group_worng);
+        dap_test_msg("s_group_not_existed name %s", s_group_not_existed);
+
         dap_print_module_name(s_db_types[i]);
         s_test_create_db(s_db_types[i]);
         int l_t1 = get_cur_time_msec();
