@@ -1143,7 +1143,6 @@ DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_ad
         return -2;
     return sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4
         || sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, (uint64_t*)a_addr) == 1
-        || sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_X, (uint64_t*)a_addr) == 1
         ? 0 : -1;
 }
 

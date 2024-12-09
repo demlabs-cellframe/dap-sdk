@@ -79,3 +79,4 @@ DAP_STATIC_INLINE int dap_proc_thread_timer_add(dap_proc_thread_t *a_thread, dap
     return dap_proc_thread_timer_add_pri(a_thread, a_callback, a_callback_arg, a_timeout_ms, false, DAP_QUEUE_MSG_PRIORITY_NORMAL);
 }
 size_t dap_proc_thread_get_avg_queue_size();
+uint32_t dap_proc_thread_get_count();
