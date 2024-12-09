@@ -29,6 +29,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_common.h"
 #include "dap_global_db_pkt.h"
 #include "dap_global_db.h"
+#include "dap_strfuncs.h"
 
 #define LOG_TAG "db_pgsql"
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_PGSQL
