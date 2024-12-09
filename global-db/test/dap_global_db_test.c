@@ -58,9 +58,9 @@ typedef struct __dap_test_record__ {
 #define DAP_DB$SZ_DATA                  8192
 #define DAP_DB$SZ_KEY                   64
 #define DAP_DB$SZ_HOLES                 3
-#define DAP_DB$T_GROUP_PREF                  "group.zero_"
-#define DAP_DB$T_GROUP_WRONG_PREF            "group.wrong_"
-#define DAP_DB$T_GROUP_NOT_EXISTED_PREF      "group.not.existed_"
+#define DAP_DB$T_GROUP_PREF                  "group.zero."
+#define DAP_DB$T_GROUP_WRONG_PREF            "group.wrong."
+#define DAP_DB$T_GROUP_NOT_EXISTED_PREF      "group.not.existed."
 static char s_group[64] = {};
 static char s_group_worng[64] = {};
 static char s_group_not_existed[64] = {};
