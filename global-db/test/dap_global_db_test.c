@@ -544,7 +544,7 @@ static void s_test_tx_start_end(size_t a_count, bool a_missing_allow)
         dap_assert_PIF(a_count == dap_global_db_driver_count(s_group, (dap_global_db_driver_hash_t){0}, true), "Wrong records count after restoring");
     }
     dap_store_obj_free(l_objs, l_count);
-    dap_pass_msg("tx_start tx_end check");    
+    dap_pass_msg("tx_start tx_end check");
 }
 
 static void s_test_close_db(void)
@@ -584,7 +584,6 @@ static void s_test_all(size_t a_count)
     s_test_get_groups_by_mask();
     s_get_groups_by_mask = get_cur_time_msec() - s_get_groups_by_mask;
 }
-
 
 static void *s_test_thread_rewrite_records(void *a_arg)
 {
@@ -638,8 +637,11 @@ static void *s_test_thread(void *a_arg)
 
 static void s_test_multithread(size_t a_count)
 {
-    uint32_t l_thread_count = 2;
-    log_it(L_INFO, "Test with %u threads", l_thread_count);
+    uint32_t l_thread_count = 3;
+#ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
+    dap_global_db_driver_sqlite_set_attempts_count(l_thread_count);
+#endif
+    dap_test_msg("Test with %u threads", l_thread_count);
     pthread_t *l_threads = DAP_NEW_Z_COUNT(pthread_t, l_thread_count);
 
     size_t l_objs_count = 0;
