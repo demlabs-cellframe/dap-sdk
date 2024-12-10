@@ -1800,6 +1800,8 @@ static int s_add_pinned_obj_in_pinned_group(const char *a_group, dap_store_obj_t
             s_check_pinned_db_objs_deinit();
             s_minimal_ttl = dap_nanotime_from_sec(l_cluster->ttl);
             s_check_pinned_db_objs_timer = dap_timerfd_start(dap_nanotime_to_militime(s_minimal_ttl/2), (dap_timerfd_callback_t)s_check_pinned_db_objs_callback, NULL);
+        } else if (!s_check_pinned_db_objs_timer) {
+            s_check_pinned_db_objs_timer = dap_timerfd_start(dap_nanotime_to_militime(s_minimal_ttl/2), (dap_timerfd_callback_t)s_check_pinned_db_objs_callback, NULL);
         }
         dap_store_obj_free_one(l_ret_check);
         DAP_DELETE(l_pinned_mask);
