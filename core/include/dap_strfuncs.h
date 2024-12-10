@@ -138,6 +138,14 @@ int dap_unichar_to_utf8 (unichar c, char   *outbuf);
  **/
 char* dap_utf16_to_utf8(const unichar2 *str, long len, long *items_read, long *items_written);
 
+/**
+ * @brief Checks that the string contains only Latin characters, numbers and special characters except spaces.
+ * @param a_str
+ * @param a_str_len
+ * @return
+ */
+bool dap_check_valid_password(const char *a_str, size_t a_str_len);
+
 #ifdef __cplusplus
 }
 #endif
