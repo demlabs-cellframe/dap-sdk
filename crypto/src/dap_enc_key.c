@@ -1262,7 +1262,14 @@ int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out)
     uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
     if (!l_pub_key)
         return -2;
-    dap_hash_fast(l_pub_key, l_pub_key_size, a_hash_out);
+    switch (a_key->type) {
+        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+            dap_enc_sig_ecdsa_hash_fast((const unsigned char *)l_pub_key, l_pub_key_size, (unsigned char *)a_hash_out);
+            break;
+        default:
+            dap_hash_fast(l_pub_key, l_pub_key_size, a_hash_out);
+            break;
+    }
     DAP_DELETE(l_pub_key);
     return 0;
 }

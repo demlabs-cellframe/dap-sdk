@@ -95,7 +95,7 @@ int dap_cert_sign_output(dap_cert_t *a_cert, const void *a_data, size_t a_data_s
 
 int dap_cert_compare_with_sign (dap_cert_t *a_cert,const dap_sign_t *a_sign);
 
-size_t dap_cert_sign_output_size(dap_cert_t *a_cert, size_t a_size_wished);
+size_t dap_cert_sign_output_size(dap_cert_t *a_cert);
 
 int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer);
 

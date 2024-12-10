@@ -128,7 +128,7 @@ size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs,
         l_certs[l_certs_pos] = dap_cert_find_by_name(l_cert_str);
         // if certificate is found
         if(l_certs[l_certs_pos]) {
-            l_sign_total_size += dap_cert_sign_output_size(l_certs[l_certs_pos],0);
+            l_sign_total_size += dap_cert_sign_output_size(l_certs[l_certs_pos]);
             l_certs_pos++;
         } else {
             log_it(L_WARNING,"Can't load cert %s",l_cert_str);
@@ -152,9 +152,9 @@ size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs,
  * @param a_size_wished wished data size (don't used in current implementation)
  * @return size_t
  */
-size_t dap_cert_sign_output_size(dap_cert_t * a_cert, size_t a_size_wished)
+size_t dap_cert_sign_output_size(dap_cert_t * a_cert)
 {
-    return dap_sign_create_output_unserialized_calc_size( a_cert->enc_key,a_size_wished);
+    return dap_sign_create_output_unserialized_calc_size( a_cert->enc_key);
 }
 
 /**

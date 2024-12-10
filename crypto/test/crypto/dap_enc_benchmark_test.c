@@ -76,7 +76,7 @@ static void s_sign_verify_test(dap_enc_key_type_t a_key_type, int a_times, int *
     dap_enc_key_t *l_keys[a_times];
     size_t l_source_size[a_times];
     dap_enc_key_t *l_key_temp = dap_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
-    size_t max_signature_size = dap_sign_create_output_unserialized_calc_size(l_key_temp, 0);
+    size_t max_signature_size = dap_sign_create_output_unserialized_calc_size(l_key_temp);
     dap_enc_key_delete(l_key_temp);
 
     int l_t1 = 0;

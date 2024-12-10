@@ -57,6 +57,8 @@ typedef uint32_t dap_sign_type_enum_t;
 #define DAP_SIGN_HASH_TYPE_SHA3      0x01
 #define DAP_SIGN_HASH_TYPE_STREEBOG  0x02
 
+#define DAP_PKEY_HASHING_FLAG (uint32_t)1 << 7
+
 typedef union dap_sign_type {
     dap_sign_type_enum_t type;
     uint32_t raw;
@@ -127,11 +129,11 @@ static inline int dap_sign_verify_all(dap_sign_t * a_sign, const size_t a_sign_s
 const char *dap_sign_get_str_recommended_types();
 
 // Create sign of data hash with key provided algorythm of signing and hashing (independently)
-dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, size_t a_output_wish_size );
+dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, uint32_t a_hash_type);
 //Create sign on raw data without hashing. Singing algorythm is key provided
 int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, void * a_output, size_t *a_output_size);
 
-size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t * a_key,size_t a_output_wish_size );
+size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t *a_key);
 //int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size
 //                                 , void * a_output, size_t a_output_size );
 
