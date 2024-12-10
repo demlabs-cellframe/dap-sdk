@@ -64,7 +64,9 @@ void dap_json_rpc_param_remove(dap_json_rpc_param_t *param)
 
 void dap_json_rpc_params_remove_all(dap_json_rpc_params_t *a_params)
 {
-    for (uint32_t i=0x0 ; i < dap_json_rpc_params_length(a_params) && a_params; i++){
+    if (!a_params)
+        return;
+    for (uint32_t i = 0; i < dap_json_rpc_params_length(a_params); i++){
         dap_json_rpc_param_remove(a_params->params[i]);
     }
     DAP_DEL_MULTY(a_params->params, a_params);
