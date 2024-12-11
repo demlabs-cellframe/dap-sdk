@@ -60,6 +60,18 @@ void benchmark_mgs_rate(const char *test_name, float rate)
     dap_pass_msg_benchmark(test_name, buf);
 }
 
+
+/**
+ * @return current time in milliseconds
+ */
+u_int64_t get_cur_time_nsec(void)
+{
+    struct timespec time;
+    clock_gettime(CLOCK_MONOTONIC, &time);
+    return ((u_int64_t)time.tv_sec << 32) | ((u_int32_t) (time.tv_nsec));;
+}
+
+
 /**
  * @return current time in milliseconds
  */
