@@ -193,6 +193,7 @@ int json_commands(const char * a_name) {
             "net",
             "srv_stake",
             "voting",
+            "emit_delegate",
             "exec_cmd"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
