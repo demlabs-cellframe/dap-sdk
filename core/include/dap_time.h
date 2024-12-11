@@ -31,9 +31,9 @@ dap_nanotime_t dap_nanotime_from_sec(dap_time_t a_time);
 // Get seconds from nanotime
 dap_time_t dap_nanotime_to_sec(dap_nanotime_t a_time);
 
-dap_millitime_t dap_nanotime_to_militime(dap_nanotime_t a_time);
+dap_millitime_t dap_nanotime_to_millitime(dap_nanotime_t a_time);
 
-dap_nanotime_t dap_militime_to_nanotime(dap_millitime_t a_time);
+dap_nanotime_t dap_millitime_to_nanotime(dap_millitime_t a_time);
 /**
  * @brief dap_chain_time_now Get current time in seconds since January 1, 1970 (UTC)
  * @return Returns current UTC time in seconds.
