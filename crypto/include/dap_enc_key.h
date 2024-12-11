@@ -30,6 +30,7 @@
 #include <time.h>
 #include <stdint.h>
 #include "dap_common.h"
+#include "dap_hash.h"
 
 typedef enum dap_enc_data_type{DAP_ENC_DATA_TYPE_RAW,
 
@@ -330,6 +331,8 @@ void dap_enc_key_signature_delete(dap_enc_key_type_t a_key_type, uint8_t *a_sig_
 void dap_enc_key_delete(dap_enc_key_t *a_key);
 
 dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_t a_count);
+
+int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out);
 
 #ifdef __cplusplus
 }
