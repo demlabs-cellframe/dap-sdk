@@ -56,8 +56,9 @@ typedef uint32_t dap_sign_type_enum_t;
 #define DAP_SIGN_HASH_TYPE_NONE      0x00
 #define DAP_SIGN_HASH_TYPE_SHA3      0x01
 #define DAP_SIGN_HASH_TYPE_STREEBOG  0x02
+#define DAP_SIGN_HASH_TYPE_SIGN      0x03
 
-#define DAP_PKEY_HASHING_FLAG (uint32_t)1 << 7
+#define DAP_PKEY_HASHING_FLAG (uint32_t)1 << 31
 
 typedef union dap_sign_type {
     dap_sign_type_enum_t type;
@@ -82,6 +83,7 @@ typedef struct dap_sign
     uint8_t pkey_n_sign[]; /// @param sig @brief raw signature data
 } DAP_ALIGN_PACKED dap_sign_t;
 
+typedef uint8_t *(*dap_sign_callback_t)(const uint8_t *, size_t *);
 
 #ifdef __cplusplus
 extern "C" {

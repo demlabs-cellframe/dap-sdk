@@ -37,6 +37,7 @@
 
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
 static bool s_dap_sign_debug_more = false;
+static dap_sign_callback_t s_get_pkey_by_hash = NULL;
 
 /**
  * @brief dap_sign_init
@@ -261,7 +262,7 @@ dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
     bool l_use_pkey_hash = a_hash_type & DAP_PKEY_HASHING_FLAG;
     dap_return_val_if_pass_err(l_use_pkey_hash && l_hash_type == DAP_SIGN_HASH_TYPE_NONE, "Sign with DAP_PKEY_HASHING_FLAG can't have DAP_SIGN_HASH_TYPE_NONE", NULL);
 
-    if(l_hash_type == DAP_SIGN_HASH_TYPE_NONE || a_key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA) {
+    if(l_hash_type == DAP_SIGN_HASH_TYPE_NONE || l_hash_type == DAP_SIGN_HASH_TYPE_SIGN) {
         l_sign_data = a_data;
         l_sign_data_size = a_data_size;
     } else {
@@ -343,6 +344,14 @@ uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_size)
 uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_size)
 {
     dap_return_val_if_pass(!a_sign, NULL);
+    bool l_use_pkey_hash = a_sign->header.hash_type & DAP_PKEY_HASHING_FLAG;
+    if (l_use_pkey_hash) {
+        if (!s_get_pkey_by_hash) {
+            log_it(L_ERROR, "Can't get pkey by hash, callback s_get_pkey_by_hash not inited");
+            return NULL;
+        }
+        return s_get_pkey_by_hash(a_sign->pkey_n_sign, a_pub_key_size);
+    }
     if (a_pub_key_size)
         *a_pub_key_size = a_sign->header.sign_pkey_size;
     return a_sign->pkey_n_sign;
@@ -441,7 +450,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
         log_it(L_WARNING,"Incorrect signature, can't extract key");
         return -3;
     }
-    size_t l_sign_data_ser_size;
+    size_t l_sign_data_ser_size = 0;
     uint8_t *l_sign_data_ser = dap_sign_get_sign(a_chain_sign, &l_sign_data_ser_size);
 
     if ( !l_sign_data_ser ){
@@ -465,14 +474,16 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
     const void *l_verify_data;
     size_t l_verify_data_size;
     dap_chain_hash_fast_t l_verify_data_hash;
+    uint32_t l_hash_type = a_chain_sign->header.hash_type & ~DAP_PKEY_HASHING_FLAG;
+    bool l_use_pkey_hash = a_chain_sign->header.hash_type & DAP_PKEY_HASHING_FLAG;
 
-    if(a_chain_sign->header.hash_type == DAP_SIGN_HASH_TYPE_NONE || l_key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA){
+    if(l_hash_type == DAP_SIGN_HASH_TYPE_NONE || l_hash_type == DAP_SIGN_HASH_TYPE_SIGN){
         l_verify_data = a_data;
         l_verify_data_size = a_data_size;
-    }else{
+    } else {
         l_verify_data = &l_verify_data_hash;
         l_verify_data_size = sizeof(l_verify_data_hash);
-        switch(s_sign_hash_type_default){
+        switch(l_hash_type){
             case DAP_SIGN_HASH_TYPE_SHA3: dap_hash_fast(a_data,a_data_size,&l_verify_data_hash); break;
             default: log_it(L_CRITICAL, "Incorrect signature: we can't check hash with hash type 0x%02x",s_sign_hash_type_default);
             dap_enc_key_signature_delete(l_key->type, l_sign_data);
