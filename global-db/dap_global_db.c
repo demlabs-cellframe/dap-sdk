@@ -1789,7 +1789,7 @@ static int s_add_pinned_obj_in_pinned_group(dap_store_obj_t * a_objs){
         char * l_pinned_mask = dap_get_local_pinned_groups_mask(a_objs->group);
         dap_store_obj_t * l_ret_check = dap_global_db_get_raw_sync(l_pinned_mask, a_objs->key);
         if (!l_ret_check) {
-            if (!dap_global_db_set(l_pinned_mask, a_objs->key, NULL, 0, true, NULL, NULL)) {
+            if (!dap_global_db_set_sync(l_pinned_mask, a_objs->key, NULL, 0, true)) {
                 debug_if(g_dap_global_db_debug_more, L_INFO, "Pinned objs was added in pinned group %s, %s key", l_pinned_mask, a_objs->key);
                 a_objs->timestamp = dap_time_now();
                 dap_global_db_driver_apply(a_objs, 1);
