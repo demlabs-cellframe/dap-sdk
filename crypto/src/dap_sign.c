@@ -255,11 +255,9 @@ dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
     dap_return_val_if_fail(a_key && a_key->priv_key_data && a_key->priv_key_data_size, NULL);
     const void *l_sign_data = NULL;
     size_t l_sign_data_size = 0;
-    dap_chain_hash_fast_t
-        l_sign_data_hash = {},
-        l_pkey_hash = {};
-    uint32_t l_hash_type = DAP_REMOVE_PKEY_HASHING_FLAG(a_hash_type);
-    bool l_use_pkey_hash = DAP_GET_PKEY_HASHING_FLAG(a_hash_type);
+    dap_chain_hash_fast_t l_sign_data_hash = {};
+    uint32_t l_hash_type = DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a_hash_type);
+    bool l_use_pkey_hash = DAP_SIGN_GET_PKEY_HASHING_FLAG(a_hash_type);
     if (dap_enc_key_is_insign_hashing(a_key->type)) {
         if (l_hash_type != DAP_SIGN_HASH_TYPE_SIGN && l_hash_type != DAP_SIGN_HASH_TYPE_DEFAULT)
             log_it(L_WARNING, "%s enc key use insign hashing, hash type change to DAP_SIGN_HASH_TYPE_SIGN (0x%02x)", dap_enc_get_type_name(a_key->type), DAP_SIGN_HASH_TYPE_SIGN);
@@ -293,8 +291,8 @@ dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
         uint8_t *l_sign_unserialized = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_sign_unserialized_size, NULL),
                 *l_pub_key = NULL;   
         if (l_use_pkey_hash) {
-            dap_enc_key_get_pkey_hash(a_key, &l_pkey_hash);
-            l_pub_key = (uint8_t *)&l_pkey_hash;
+            l_pub_key = DAP_NEW_Z(dap_hash_fast_t);
+            dap_enc_key_get_pkey_hash(a_key, (dap_hash_fast_t *)l_pub_key);
             l_pub_key_size = DAP_HASH_FAST_SIZE;
         } else {
             l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
@@ -316,7 +314,7 @@ dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
                 memcpy(l_ret->pkey_n_sign + l_pub_key_size, l_sign_ser, l_sign_ser_size);
                 l_ret->header.sign_pkey_size =(uint32_t) l_pub_key_size;
                 l_ret->header.sign_size = (uint32_t) l_sign_ser_size;
-                l_ret->header.hash_type = a_hash_type;
+                l_ret->header.hash_type = l_use_pkey_hash ? DAP_SIGN_ADD_PKEY_HASHING_FLAG(l_hash_type) : l_hash_type;
 
                 dap_enc_key_signature_delete(a_key->type, l_sign_unserialized);
                 DAP_DEL_MULTY(l_sign_ser, l_pub_key);
@@ -356,7 +354,7 @@ uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_size)
 uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_size)
 {
     dap_return_val_if_pass(!a_sign, NULL);
-    bool l_use_pkey_hash = DAP_GET_PKEY_HASHING_FLAG(a_sign->header.hash_type);
+    bool l_use_pkey_hash = DAP_SIGN_GET_PKEY_HASHING_FLAG(a_sign->header.hash_type);
     if (l_use_pkey_hash) {
         if (!s_get_pkey_by_hash) {
             log_it(L_ERROR, "Can't get pkey by hash, callback s_get_pkey_by_hash not inited");
@@ -380,7 +378,7 @@ uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_size)
 bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_hash)
 {
     dap_return_val_if_fail(a_sign && a_sign->header.sign_pkey_size, false);
-    if (DAP_GET_PKEY_HASHING_FLAG(a_sign->header.hash_type)) {
+    if (DAP_SIGN_GET_PKEY_HASHING_FLAG(a_sign->header.hash_type)) {
         if (a_sign->header.sign_pkey_size > DAP_HASH_FAST_SIZE) {
             log_it(L_ERROR, "Error in pkey size check, expected <= %zu, in sign %u", sizeof(dap_chain_hash_fast_t), a_sign->header.sign_pkey_size);
             return false;
@@ -486,8 +484,11 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
     const void *l_verify_data;
     size_t l_verify_data_size;
     dap_chain_hash_fast_t l_verify_data_hash;
-    uint32_t l_hash_type = DAP_REMOVE_PKEY_HASHING_FLAG(a_chain_sign->header.hash_type);
-    bool l_use_pkey_hash = DAP_GET_PKEY_HASHING_FLAG(a_chain_sign->header.hash_type);
+    uint32_t l_hash_type = DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a_chain_sign->header.hash_type);
+    bool l_use_pkey_hash = DAP_SIGN_GET_PKEY_HASHING_FLAG(a_chain_sign->header.hash_type);
+
+    if(l_hash_type == DAP_SIGN_HASH_TYPE_DEFAULT)
+        log_it(L_WARNING, "Detected DAP_SIGN_HASH_TYPE_DEFAULT (0x%02x) hash type in sign ", DAP_SIGN_HASH_TYPE_DEFAULT);
 
     if(l_hash_type == DAP_SIGN_HASH_TYPE_NONE || l_hash_type == DAP_SIGN_HASH_TYPE_SIGN){
         l_verify_data = a_data;
@@ -497,7 +498,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
         l_verify_data_size = sizeof(l_verify_data_hash);
         switch(l_hash_type){
             case DAP_SIGN_HASH_TYPE_SHA3: dap_hash_fast(a_data,a_data_size,&l_verify_data_hash); break;
-            default: log_it(L_CRITICAL, "Incorrect signature: we can't check hash with hash type 0x%02x",s_sign_hash_type_default);
+            default: log_it(L_CRITICAL, "Incorrect signature: we can't check hash with hash type 0x%02x", s_sign_hash_type_default);
             dap_enc_key_signature_delete(l_key->type, l_sign_data);
             dap_enc_key_delete(l_key);
             return -5;
@@ -650,4 +651,11 @@ DAP_INLINE const char *dap_sign_get_str_recommended_types()
     "sig_shipovnik\n"
 #endif
     "sig_sphincs\nsig_multi_chained\n";
+}
+
+int dap_sign_set_pkey_by_hash_callback (dap_sign_callback_t a_callback)
+{
+    dap_return_val_if_pass_err(s_get_pkey_by_hash, -1, "s_get_pkey_by_hash already inited");
+    s_get_pkey_by_hash = a_callback;
+    return 0;
 }

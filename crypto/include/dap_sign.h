@@ -56,13 +56,13 @@ typedef uint32_t dap_sign_type_enum_t;
 #define DAP_SIGN_HASH_TYPE_NONE      0x00
 #define DAP_SIGN_HASH_TYPE_SHA3      0x01
 #define DAP_SIGN_HASH_TYPE_STREEBOG  0x02
-#define DAP_SIGN_HASH_TYPE_SIGN      0xfe
-#define DAP_SIGN_HASH_TYPE_DEFAULT   0xff  // not transferred in network, first try use sign hash, if false, use s_sign_hash_type_default
+#define DAP_SIGN_HASH_TYPE_SIGN      0x0e
+#define DAP_SIGN_HASH_TYPE_DEFAULT   0x0f  // not transferred in network, first try use sign hash, if false, use s_sign_hash_type_default
 
-#define DAP_PKEY_HASHING_FLAG (uint32_t)1 << 31
-#define DAP_ADD_PKEY_HASHING_FLAG(a) (a) | DAP_PKEY_HASHING_FLAG
-#define DAP_REMOVE_PKEY_HASHING_FLAG(a) (a) & ~DAP_PKEY_HASHING_FLAG
-#define DAP_GET_PKEY_HASHING_FLAG(a) (a) & DAP_PKEY_HASHING_FLAG
+#define DAP_SIGN_PKEY_HASHING_FLAG ((uint8_t)1 << 7)
+#define DAP_SIGN_ADD_PKEY_HASHING_FLAG(a) ((a) | DAP_SIGN_PKEY_HASHING_FLAG)
+#define DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a) ((a) & ~DAP_SIGN_PKEY_HASHING_FLAG)
+#define DAP_SIGN_GET_PKEY_HASHING_FLAG(a) ((a) & DAP_SIGN_PKEY_HASHING_FLAG)
 
 typedef union dap_sign_type {
     dap_sign_type_enum_t type;
@@ -159,6 +159,8 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
 
 void dap_sign_get_information(dap_sign_t *a_sign, dap_string_t *a_str_out, const char *a_hash_out_type);
 void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type);
+
+int dap_sign_set_pkey_by_hash_callback (dap_sign_callback_t a_callback);
 
 #ifdef __cplusplus
 }
