@@ -1211,3 +1211,15 @@ dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_
     l_ret->_pvt = l_params;
     return l_ret;
 }
+
+int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out)
+{
+    dap_return_val_if_fail(a_key && a_key->pub_key_data && a_key->pub_key_data_size && a_hash_out, -1);
+    size_t l_pub_key_size;
+    uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
+    if (!l_pub_key)
+        return -2;
+    int ret = !dap_hash_fast(l_pub_key, l_pub_key_size, a_hash_out);
+    DAP_DELETE(l_pub_key);
+    return ret;
+}

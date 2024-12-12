@@ -1073,6 +1073,14 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
     a_drv_callback->is_hash                 = s_db_sqlite_is_hash;
     s_db_inited = true;
 
+    conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);
+    if (!l_conn) {
+        log_it(L_ERROR, "Can't create base connection\n");
+        s_db_inited = false;
+        return -3;
+    }
+
     dap_global_db_driver_sqlite_set_attempts_count(dap_proc_thread_get_count(), false);
+    s_db_sqlite_free_connection(l_conn, false);
     return l_ret;
 }
