@@ -86,8 +86,8 @@ typedef struct dap_sign
     dap_sign_hdr_t header; /// Only header's hash is used for verification
     uint8_t pkey_n_sign[]; /// @param sig @brief raw signature data
 } DAP_ALIGN_PACKED dap_sign_t;
-
-typedef uint8_t *(*dap_sign_callback_t)(const uint8_t *, size_t *);
+typedef struct dap_pkey dap_pkey_t;
+typedef dap_pkey_t *(*dap_sign_callback_t)(const uint8_t *);
 
 #ifdef __cplusplus
 extern "C" {

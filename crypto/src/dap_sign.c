@@ -32,6 +32,7 @@
 #include "dap_enc_base58.h"
 #include "dap_json_rpc_errors.h"
 #include "dap_config.h"
+#include "dap_pkey.h"
 
 #define LOG_TAG "dap_sign"
 
@@ -360,7 +361,10 @@ uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_size)
             log_it(L_ERROR, "Can't get pkey by hash, callback s_get_pkey_by_hash not inited");
             return NULL;
         }
-        return s_get_pkey_by_hash(a_sign->pkey_n_sign, a_pub_key_size);
+        dap_pkey_t *l_pkey = s_get_pkey_by_hash(a_sign->pkey_n_sign);
+        if (a_pub_key_size)
+            *a_pub_key_size = l_pkey->header.size;
+        return l_pkey->pkey;
     }
     if (a_pub_key_size)
         *a_pub_key_size = a_sign->header.sign_pkey_size;
