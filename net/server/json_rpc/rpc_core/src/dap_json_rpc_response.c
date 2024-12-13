@@ -303,10 +303,10 @@ void json_print_for_file_cmd(dap_json_rpc_response_t* response) {
                 }
             }
         } else {
-            json_print_object(response->result_json_object, 0);
+            json_print_object(response->result_json_object, -1);
         }
     } else {
-        json_print_object(response->result_json_object, 0);
+        json_print_object(response->result_json_object, -1);
     }
 }
 
