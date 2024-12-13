@@ -110,5 +110,6 @@ dap_pkey_t *dap_pkey_get_from_base58_str(const char *a_base58_str)
 
 DAP_INLINE dap_pkey_t *dap_pkey_get_from_str( const char *a_pkey_str)
 {
-    return dap_pkey_get_from_hex_str(a_pkey_str) || dap_pkey_get_from_base58_str(a_pkey_str);
+    dap_pkey_t *l_ret = dap_pkey_get_from_hex_str(a_pkey_str);
+    return  l_ret ? l_ret : dap_pkey_get_from_base58_str(a_pkey_str);
 }

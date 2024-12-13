@@ -1,5 +1,6 @@
 #include "dap_enc_benchmark_test.h"
 #include "dap_sign.h"
+#include "dap_pkey.h"
 #include "dap_test.h"
 #include "dap_enc_test.h"
 #include "rand/dap_rand.h"
@@ -8,14 +9,13 @@
 
 typedef struct pkey_hash_table {
     uint8_t *pkey_hash;
-    uint8_t *pkey;
-    size_t pkey_size;
+    dap_pkey_t *pkey;
     UT_hash_handle hh;
 } pkey_hash_table_t;
 
 static pkey_hash_table_t *s_pkey_hash_table = NULL;
 
-static uint8_t *s_get_pkey_by_hash_callback(const uint8_t *a_hash, size_t *a_pkey_size)
+static dap_pkey_t *s_get_pkey_by_hash_callback(const uint8_t *a_hash)
 {
     pkey_hash_table_t *l_finded = NULL;
 
@@ -24,7 +24,6 @@ static uint8_t *s_get_pkey_by_hash_callback(const uint8_t *a_hash, size_t *a_pke
         if (!memcmp(l_current->pkey_hash, a_hash, DAP_CHAIN_HASH_FAST_SIZE))
             l_finded = l_current;
     }
-    *a_pkey_size = l_finded->pkey_size;
     return l_finded->pkey;
 }
 
@@ -197,7 +196,7 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
             dap_assert_PIF(dap_sign_get_pkey_hash(l_signs[i], &l_hash), "Get pkeyhash by sign");
             dap_assert_PIF(!memcmp(l_item->pkey_hash, &l_hash, DAP_CHAIN_HASH_FAST_SIZE), "pkey hash in enc_key and sign equal")
 
-            l_item->pkey = dap_enc_key_serialize_pub_key(key, &l_item->pkey_size);
+            l_item->pkey = dap_pkey_from_enc_key (key);
             HASH_ADD(hh, s_pkey_hash_table, pkey_hash, DAP_CHAIN_HASH_FAST_SIZE, l_item);
         }
         *a_sig_time += get_cur_time_msec() - l_t1;
