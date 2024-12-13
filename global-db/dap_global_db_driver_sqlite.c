@@ -42,6 +42,7 @@ along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/
 #include "dap_file_utils.h"
 #include "dap_global_db_pkt.h"
 #include "dap_global_db.h"
+#include "dap_proc_thread.h"
 
 #define LOG_TAG "db_sqlite"
 #define DAP_GLOBAL_DB_TYPE_CURRENT DAP_GLOBAL_DB_TYPE_SQLITE
@@ -58,7 +59,7 @@ extern int g_dap_global_db_debug_more;                         /* Enable extensi
 
 static char s_filename_db [MAX_PATH];
 
-static const char s_attempts_count = 7;
+static uint32_t s_attempts_count = 10;
 static const int s_sleep_period = 500 * 1000;  /* Wait 0.5 sec */;
 static bool s_db_inited = false;
 static _Thread_local conn_list_item_t *s_conn = NULL;  // local connection
@@ -248,13 +249,19 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
         pthread_key_create(&s_destructor_key, s_connection_destructor);
         pthread_setspecific(s_destructor_key, (const void *)s_conn);
         char *l_error_message = NULL;
-        if ( !(s_conn->conn = s_db_sqlite_open(s_filename_db, SQLITE_OPEN_READWRITE, &l_error_message)) ) {
+        if ( !(s_conn->conn = s_db_sqlite_open(s_filename_db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, &l_error_message)) ) {
             log_it(L_ERROR, "Can't init sqlite err: \"%s\"", l_error_message ? l_error_message: "UNKNOWN");
             sqlite3_free(l_error_message);
             DAP_DEL_Z(s_conn);
             return NULL;
         }
         s_conn->idx = l_conn_idx++;
+        if((s_db_sqlite_exec(s_conn->conn, "PRAGMA synchronous = NORMAL", NULL, NULL, 0, NULL)))
+            log_it(L_ERROR, "can't set new synchronous mode\n");
+        if(s_db_sqlite_exec(s_conn->conn, "PRAGMA journal_mode = WAL", NULL, NULL, 0, NULL))
+            log_it(L_ERROR, "can't set new journal mode\n");
+        if(s_db_sqlite_exec(s_conn->conn, "PRAGMA page_size = 4096", NULL, NULL, 0, NULL))
+            log_it(L_ERROR, "can't set page_size\n");
         log_it(L_DEBUG, "SQL connection #%d is created @%p", s_conn->idx, s_conn);
     }
     // busy check
@@ -1098,6 +1105,11 @@ static int s_db_sqlite_transaction_end(bool a_commit)
     return  l_ret;
 }
 
+void dap_global_db_driver_sqlite_set_attempts_count(uint32_t a_attempts, bool a_force)
+{
+    s_attempts_count = a_force ? a_attempts : dap_max(s_attempts_count, a_attempts);
+}
+
 /**
  * @brief Initializes a SQLite database.
  * @note no thread safe
@@ -1164,15 +1176,7 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
         return -3;
     }
 
-    if((s_db_sqlite_exec(l_conn->conn, "PRAGMA synchronous = NORMAL", NULL, NULL, 0, NULL)))
-        log_it(L_ERROR, "can't set new synchronous mode\n");
-    if(s_db_sqlite_exec(l_conn->conn, "PRAGMA journal_mode = OFF", NULL, NULL, 0, NULL))
-        log_it(L_ERROR, "can't set new journal mode\n");
-    if(s_db_sqlite_exec(l_conn->conn, "PRAGMA page_size = 4096", NULL, NULL, 0, NULL))
-        log_it(L_ERROR, "can't set page_size\n");
-    // vacuum need?
-    // if(s_db_sqlite_exec(l_conn, "PRAGMA auto_vacuum = INCREMENTAL", NULL, NULL, 0, NULL))
-    //     log_it(L_ERROR, "can't set autovacuum mode\n");
+    dap_global_db_driver_sqlite_set_attempts_count(dap_proc_thread_get_count(), false);
     s_db_sqlite_free_connection(l_conn, false);
     return l_ret;
 }
