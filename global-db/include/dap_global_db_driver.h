@@ -56,7 +56,7 @@ typedef struct dap_global_db_driver_hash {
 
 typedef struct dap_store_obj {
     char *group;                    // Name of database table analogue (key-value DB have no 'table' defined)
-    const char *key;                // Unique database key
+    char *key;                      // Unique database key
     byte_t *value;                  // Database value corresponsing with database key
     size_t value_len;               // Length of database value
     uint8_t flags;                  // Record flags

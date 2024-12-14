@@ -99,3 +99,14 @@ void gen_vector(uint16_t *s) {
   uint64_t buf[N_shipovnik];
   shuffle(entropy, s, buf, N_shipovnik);
 }
+
+void gen_vector_with_seed(uint16_t *s, uint32_t *seed) {
+
+  memset(s + W_shipovnik, 0, sizeof(uint16_t) * (N_shipovnik - W_shipovnik));
+  for (size_t i = 0; i < W_shipovnik; ++i) {
+    s[i] = 1;
+  }
+
+  uint64_t buf[N_shipovnik];
+  shuffle(seed, s, buf, N_shipovnik);
+}

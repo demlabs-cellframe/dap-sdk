@@ -39,7 +39,7 @@ typedef enum dap_cert_metadata_type {
     DAP_CERT_META_DATETIME_PERIOD,
     DAP_CERT_META_SIGN,
     DAP_CERT_META_CUSTOM
-} dap_cert_metadata_type_t;
+} DAP_PACKED dap_cert_metadata_type_t;
 
 typedef struct dap_cert_metadata {
     const char *key;
@@ -63,9 +63,7 @@ extern "C" {
 
 int dap_cert_init();
 
-DAP_STATIC_INLINE const char *dap_cert_get_str_recommended_sign(){
-    return "sig_dil\nsig_falcon\nsig_sphincs\nsig_shipovnik\n";
-}
+const char *dap_cert_get_str_recommended_sign();
 
 dap_cert_t *dap_cert_new(const char *a_name);
 int dap_cert_add(dap_cert_t *a_cert);

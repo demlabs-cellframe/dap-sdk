@@ -1,4 +1,8 @@
 #include "dap_json_rpc_request_handler.h"
+#include "dap_cli_server.h"
+#include "dap_hash.h"
+#include "dap_sign.h"
+#include "dap_json_rpc.h"
 
 #define LOG_TAG "dap_json_rpc_request_handler"
 
@@ -37,32 +41,38 @@ int dap_json_rpc_unregistration_request_handler(const char *a_name)
     }
 }
 
-#if 0
-void dap_json_rpc_request_handler(dap_json_rpc_request_t *a_request,  dap_http_simple_t *a_client)
+char * dap_json_rpc_request_handler(const char * a_request,  size_t a_request_size)
 {
-    // log_it(L_DEBUG, "Processing request");
-    // if (a_request->id == 0){
-    //     dap_json_rpc_notification_handler(a_request->method, a_request->params);
-    // } else {
-    //     dap_json_rpc_response_t *l_response = DAP_NEW(dap_json_rpc_response_t);
-    //     if (!l_response) {
-    //         log_it(L_CRITICAL, "Memory allocation error");
-    //         return;
-    //     }
-    //     l_response->id = a_request->id;
-    //     dap_json_rpc_request_handler_t *l_handler = NULL;
-    //     HASH_FIND_STR(s_handler_hash_table, a_request->method, l_handler);
-    //     if (l_handler == NULL){
-    //         dap_json_rpc_error_t *l_err = dap_json_rpc_error_search_by_code(1);
-    //         l_response->type_result = TYPE_RESPONSE_NULL;
-    //         l_response->error = l_err;
-    //         log_it(L_NOTICE, "Can't processing the request. Handler %s not registration. ", a_request->method);
-    //     } else {
-    //         l_response->error = NULL;
-    //         l_handler->func(a_request->params, l_response, a_request->method);
-    //         log_it(L_NOTICE, "Calling handler request name: %s", a_request->method);
-    //     }
-    //     dap_json_rpc_response_send(l_response, a_client);
-    // }
+    if (!a_request) {
+        log_it(L_ERROR, "Empty request");
+        return NULL;
+    }
+    log_it(L_INFO, "Processing exec_cmd request");
+    dap_json_rpc_http_request_t* l_http_request = dap_json_rpc_http_request_deserialize(a_request, a_request_size);
+    if (!l_http_request) {
+        log_it(L_ERROR, "Can't read request");
+        return NULL;
+    }
+
+    char * l_data_str = DAP_NEW_Z_COUNT(char, l_http_request->header.data_size);
+    dap_mempcpy(l_data_str, l_http_request->request_n_signs, l_http_request->header.data_size);
+
+    dap_hash_fast_t l_sign_pkey_hash;
+    bool l_sign_correct = false;
+    dap_sign_t * l_sign = (dap_sign_t*)DAP_DUP_SIZE(l_http_request->request_n_signs + l_http_request->header.data_size, l_http_request->header.signs_size);
+    dap_sign_get_pkey_hash(l_sign, &l_sign_pkey_hash);
+    l_sign_correct =  dap_check_node_pkey_in_map(&l_sign_pkey_hash);
+    if (l_sign_correct)
+        l_sign_correct = !dap_sign_verify_all(l_sign, l_http_request->header.signs_size, l_data_str, strlen(l_data_str));
+    if (!l_sign_correct) {
+        dap_json_rpc_response_t* l_no_rights_res = dap_json_rpc_response_create("You have no rights", TYPE_RESPONSE_STRING, 0); // def id
+        char * l_no_rights_res_str = dap_json_rpc_response_to_string(l_no_rights_res);
+        dap_json_rpc_http_request_free(l_http_request);
+        DAP_DEL_MULTY(l_sign);
+        return l_no_rights_res_str;
+    }
+    char* l_response = dap_cli_cmd_exec(l_data_str);
+    dap_json_rpc_http_request_free(l_http_request);
+    DAP_DEL_MULTY(l_data_str, l_sign);
+    return l_response;
 }
-#endif

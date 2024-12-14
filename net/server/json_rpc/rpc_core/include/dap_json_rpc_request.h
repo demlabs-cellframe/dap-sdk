@@ -26,6 +26,7 @@
 #include "dap_json_rpc_response_handler.h"
 #include "dap_json_rpc_params.h"
 #include "dap_client_http.h"
+#include "dap_client_pvt.h"
 
 #ifdef __cplusplus
 extern "C"{
@@ -38,7 +39,15 @@ typedef struct dap_json_rpc_request
     uint64_t id;
 }dap_json_rpc_request_t;
 
-int dap_json_rpc_request_init(const char *a_url_service);
+typedef struct dap_json_rpc_http_request
+{
+    struct {
+        uint32_t data_size;
+        uint32_t signs_size;
+    }  header;
+    byte_t request_n_signs[];
+} DAP_ALIGN_PACKED dap_json_rpc_http_request_t;
+
 /**
  * Create a new dap_json_rpc_request_t instance.
  *
@@ -69,10 +78,15 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data);
  *         or NULL on failure.
  */
 char *dap_json_rpc_request_to_json_string(const dap_json_rpc_request_t *a_request);
+dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *data, size_t data_size);
+char * dap_json_rpc_http_request_serialize(dap_json_rpc_http_request_t *a_request, size_t *a_total_size);
+void dap_json_rpc_http_request_free(dap_json_rpc_http_request_t *a_http_request);
+char* dap_json_rpc_request_to_http_str(dap_json_rpc_request_t *a_request, size_t*output_data_size);
 
-void dap_json_rpc_request_send(dap_json_rpc_request_t *a_request, dap_json_rpc_response_handler_func_t *response_handler,
-                               const char *a_uplink_addr, const uint16_t a_uplink_port,
-                               dap_client_http_callback_error_t func_error);
+char * dap_json_rpc_enc_request(dap_client_pvt_t* a_client_internal, char * a_request_data_str, size_t a_request_data_size,
+                                char ** a_path, size_t * a_enc_request_size, char ** a_custom_header);
+
+int dap_json_rpc_request_send(dap_client_pvt_t*  a_client_internal, dap_json_rpc_request_t *a_request, json_object** a_response);
 
 #ifdef __cplusplus
 }

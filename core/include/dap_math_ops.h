@@ -470,7 +470,7 @@ static inline int SUM_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint256_t*
     overflow_flag=SUM_128_128(carry_in_128,a_256_bit.hi,&intermediate_value);
     overflow_flag_intermediate=SUM_128_128(intermediate_value,b_256_bit.hi,&intermediate_value);
     c_256_bit->hi = intermediate_value;
-    overflow_flag=overflow_flag||overflow_flag_intermediate;
+    overflow_flag |= overflow_flag_intermediate;
 #else
     uint256_t tmp = uint256_0;
     overflow_flag=SUM_128_128(a_256_bit.lo,b_256_bit.lo,&tmp.lo);
@@ -484,7 +484,7 @@ static inline int SUM_256_256(uint256_t a_256_bit,uint256_t b_256_bit,uint256_t*
     overflow_flag_bis=SUM_128_128(intermediate_value,b_256_bit.hi,&tmp.hi);
     c_256_bit->hi = tmp.hi;
     c_256_bit->lo = tmp.lo;
-    overflow_flag=overflow_flag||overflow_flag_bis;
+    overflow_flag |= overflow_flag_bis;
 #endif
     return overflow_flag;
 }

@@ -38,8 +38,30 @@ static int s_context_callback_started(dap_context_t *a_context, void *a_arg);
 static int s_context_callback_stopped(dap_context_t *a_context, void *a_arg);
 
 /**
+ * @brief add and run context to thread
+ * @param a_thread alocated thread memory
+ * @param a_cpu_id cpu id to thread assign
+ * @return result of dap_context_run (0 all OK)
+ */
+
+int dap_proc_thread_create(dap_proc_thread_t *a_thread, int a_cpu_id)
+{
+    dap_return_val_if_pass(!a_thread || a_thread->context, -1);
+
+    a_thread->context = dap_context_new(DAP_CONTEXT_TYPE_PROC_THREAD);
+    a_thread->context->_inheritor = a_thread;
+    int l_ret = dap_context_run(a_thread->context, a_cpu_id, DAP_CONTEXT_POLICY_TIMESHARING,
+                                DAP_CONTEXT_PRIORITY_NORMAL, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED,
+                                s_context_callback_started, s_context_callback_stopped, a_thread);
+    if (l_ret) {
+        log_it(L_CRITICAL, "Create thread failed with code %d", l_ret);
+    }
+    return l_ret;
+}
+
+/**
  * @brief dap_proc_thread_init
- * @param a_cpu_count 0 means autodetect
+ * @param a_threads_count 0 means autodetect
  * @return
  */
 
@@ -50,19 +72,11 @@ int dap_proc_thread_init(uint32_t a_threads_count)
         return -1;
     }
     s_threads = DAP_NEW_Z_SIZE(dap_proc_thread_t, sizeof(dap_proc_thread_t) * s_threads_count);
-    for (uint32_t i = 0; i < s_threads_count; i++) {
-        dap_proc_thread_t *l_thread = s_threads + i;
-        l_thread->context = dap_context_new(DAP_CONTEXT_TYPE_PROC_THREAD);
-        l_thread->context->_inheritor = l_thread;
-        int l_ret = dap_context_run(l_thread->context, i, DAP_CONTEXT_POLICY_TIMESHARING,
-                                    DAP_CONTEXT_PRIORITY_NORMAL, DAP_CONTEXT_FLAG_WAIT_FOR_STARTED,
-                                    s_context_callback_started, s_context_callback_stopped, l_thread);
-        if (l_ret) {
-            log_it(L_CRITICAL, "Create thread failed with code %d", l_ret);
-            return l_ret;
-        }
+    int l_ret = 0;
+    for (uint32_t i = 0; i < s_threads_count && !l_ret; ++i) {
+        l_ret = dap_proc_thread_create(s_threads + i, i);
     }
-    return 0;
+    return l_ret;
 }
 
 /**
@@ -83,6 +97,15 @@ void dap_proc_thread_deinit()
 dap_proc_thread_t *dap_proc_thread_get(uint32_t a_cpu_id)
 {
     return (a_cpu_id < s_threads_count) ? &s_threads[a_cpu_id] : NULL;
+}
+
+/**
+ * @brief dap_proc_thread_get_count
+ * @return s_threads_count
+ */
+DAP_INLINE uint32_t dap_proc_thread_get_count()
+{
+    return s_threads_count;
 }
 
 /**
@@ -167,7 +190,8 @@ int dap_proc_thread_loop(dap_context_t *a_context)
                !(l_item = s_proc_queue_pull(l_thread, &l_item_priority)))
             pthread_cond_wait(&l_thread->queue_event, &l_thread->queue_lock);
         pthread_mutex_unlock(&l_thread->queue_lock);
-        debug_if(g_debug_reactor, L_DEBUG, "Call callback %p with arg %p on thread %p",
+        if (l_item)
+            debug_if(g_debug_reactor, L_DEBUG, "Call callback %p with arg %p on thread %p",
                                             l_item->callback, l_item->callback_arg, l_thread);
         if (!a_context->signal_exit &&
                 l_item->callback(l_item->callback_arg))

@@ -43,29 +43,14 @@ bool dap_isstralnum(const char *c)
  */
 char* dap_strcat2(const char* s1, const char* s2)
 {
-  size_t size1 = 0;
-  size_t size2 = 0;
-  if (!s1)
-    size1 = 0;
-  else
-    size1 = strlen(s1);
-  if (!s2)
-    size2 = 0;
-  else
-    size2 = strlen(s2);
-    
-  char* result = malloc(size1 + size2 + 1);
-
-  if(result == NULL) 
-  {
-    exit(EXIT_FAILURE);
-  }
-
-  memcpy(result, s1, size1);
-  memcpy(result+size1, s2, size2);
-  free((void*)s1);
-  result[size1 + size2] = '\0';
-  return result;
+    size_t size1 = s1 ? strlen(s1) : 0, size2 = s2 ? strlen(s2) : 0;
+    char *l_ret = (char*)s1;
+    if (size2) {
+        l_ret = DAP_REALLOC_RET_VAL_IF_FAIL((char*)s1, size1 + size2 + 1, (char*)s1);
+        char *l_pos = (char*)dap_mempcpy(l_ret + size1, s2, size2);
+        *l_pos = '\0';
+    }
+    return l_ret;
 }
 
 
@@ -200,8 +185,7 @@ int128_t dap_strtoi128(const char *p, char **endp, int base)
  */
 char *dap_utoa128(char *dest, uint128_t v, int base)
 {
-    char buf[129];
-    char *p = buf + 128;
+    char buf[129], *p = buf + 128;
     const char *digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     *p = '\0';
@@ -302,7 +286,7 @@ int dap_strncmp(const char *a_str1, const char *a_str2, size_t a_n)
 
 char* dap_strdup(const char *a_str)
 {
-    return a_str ? DAP_DUP_SIZE(a_str, strlen(a_str) + 1) : NULL;
+    return a_str ? DAP_DUP_SIZE((char*)a_str, strlen(a_str) + 1) : NULL;
 }
 
 /**
@@ -718,8 +702,7 @@ char **dap_str_appv(char **a_dst, char **a_src, size_t *a_count) {
         return a_dst;
     }
     l_count = l_count_dst + l_count_src + 1;
-    char **l_res = DAP_REALLOC_COUNT(a_dst, l_count);
-    char **l_src = a_src;
+    char **l_res = DAP_REALLOC_COUNT(a_dst, l_count), **l_src = a_src, **l_new;
     while (l_src && l_count_src--) {
         if (**l_src)
             l_res[l_count_dst++] = *l_src;
@@ -730,8 +713,10 @@ char **dap_str_appv(char **a_dst, char **a_src, size_t *a_count) {
         l_src++;
     }
     l_res[l_count_dst] = NULL;
-    if (l_count > l_count_dst + 1)
-        l_res = DAP_REALLOC_COUNT(l_res, l_count_dst + 1);
+    if (l_count > l_count_dst + 1) {
+        l_new = DAP_REALLOC_COUNT_RET_VAL_IF_FAIL(l_res, l_count_dst + 1, NULL, l_res);
+        l_res = l_new;
+    }
     if (a_count)
         *a_count = l_count_dst;
     return l_res;
@@ -827,8 +812,7 @@ char* dap_strchug(char *a_string)
 
     dap_return_val_if_fail(a_string != NULL, NULL);
 
-    for(l_start = (unsigned char*) a_string; *l_start && dap_ascii_isspace(*l_start); l_start++)
-        ;
+    for (l_start = (unsigned char*) a_string; *l_start && dap_ascii_isspace(*l_start); l_start++);
 
     memmove(a_string, l_start, strlen((char *) l_start) + 1);
 
@@ -1219,4 +1203,13 @@ char *dap_str_replace_char(const char *a_src, char a_ch1, char a_ch2)
     for ( l_str = l_dst; (l_str = strchr(l_str, a_ch1)); l_str++)
         *l_str = a_ch2;
     return l_dst;
+}
+
+bool dap_check_valid_password(const char *a_str, size_t a_str_len) {
+    for (size_t i=0; i < a_str_len; i++) {
+        if (a_str[i] < '!' || a_str[i] > '~') {
+            return false;
+        }
+    }
+    return true;
 }
