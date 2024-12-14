@@ -68,7 +68,7 @@ void dap_json_rpc_param_remove(dap_json_rpc_param_t *param)
     if (param->type == TYPE_PARAM_JSON) {
         json_object *l_obj = (json_object*)param->value_param;
         json_object_put(l_obj);
-        DAP_DEL_Z(param);
+        DAP_DELETE(param);
     } else {
         DAP_DEL_MULTY(param->value_param, param);
     }
