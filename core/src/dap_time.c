@@ -195,7 +195,8 @@ dap_time_t dap_time_from_str_simplified(const char *a_time_str)
         return l_time;
     }
     struct tm l_tm = {};
-    strptime(a_time_str, "%y%m%d", &l_tm);
+    char *l_ret = strptime(a_time_str, "%y%m%d", &l_tm);
+    if (!l_ret || dap_strcmp(l_ret, "")) return l_time;
     l_tm.tm_sec++;
     time_t tmp = mktime(&l_tm);
     l_time = (tmp <= 0) ? 0 : tmp;
