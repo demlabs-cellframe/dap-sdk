@@ -924,3 +924,11 @@ DAP_INLINE const char *dap_cert_get_str_recommended_sign(){
 #endif
     ;
 }
+
+char *dap_cert_get_pkey_str(dap_cert_t *a_cert, const char *a_str_type)
+{
+    dap_pkey_t *l_pkey = dap_cert_to_pkey(a_cert);
+    char *l_ret = dap_pkey_to_str(l_pkey, a_str_type);
+    DAP_DELETE(l_pkey);
+    return l_ret;
+}
