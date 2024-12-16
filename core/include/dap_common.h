@@ -913,7 +913,10 @@ void dap_common_deinit(void);
 // set max items in log list
 void dap_log_set_max_item(unsigned int a_max);
 // get logs from list
-char *dap_log_get_item(time_t a_start_time, int a_limit);
+char *dap_log_get_item(const char *filename, time_t a_start_time, int a_limit);
+char* dap_log_get_last_n_lines(const char *filename, int N);
+int dap_log_export_string_to_file(const char *a_string, const char *dest_file_str);
+int dap_log_clear_file(const char *filename);
 
 DAP_PRINTF_ATTR(5, 6) void _log_it(const char * func_name, int line_num, const char * log_tag, enum dap_log_level, const char * format, ... );
 #define log_it_fl(_log_level, ...) _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__)
