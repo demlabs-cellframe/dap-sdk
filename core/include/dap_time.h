@@ -12,6 +12,8 @@
 #define DAP_END_OF_DAYS 4102444799
 // Constant to convert seconds to nanoseconds
 #define DAP_NSEC_PER_SEC 1000000000
+// Constant to convert msec to nanoseconds
+#define DAP_NSEC_PER_MSEC 1000000
 // Constant to convert seconds to microseconds
 #define DAP_USEC_PER_SEC 1000000
 // Seconds per day
@@ -21,12 +23,17 @@
 typedef uint64_t dap_time_t;
 // time in nanoseconds
 typedef uint64_t dap_nanotime_t;
+// time in milliseconds
+typedef uint64_t dap_millitime_t;
 
 // Create nanotime from second
 dap_nanotime_t dap_nanotime_from_sec(dap_time_t a_time);
 // Get seconds from nanotime
 dap_time_t dap_nanotime_to_sec(dap_nanotime_t a_time);
 
+dap_millitime_t dap_nanotime_to_millitime(dap_nanotime_t a_time);
+
+dap_nanotime_t dap_millitime_to_nanotime(dap_millitime_t a_time);
 /**
  * @brief dap_chain_time_now Get current time in seconds since January 1, 1970 (UTC)
  * @return Returns current UTC time in seconds.
