@@ -104,7 +104,7 @@ static pthread_mutex_t s_check_db_mutex = PTHREAD_MUTEX_INITIALIZER; // Check ve
 static int s_check_db_ret = INVALID_RETCODE; // Check version return value
 static dap_timerfd_t* s_check_pinned_db_objs_timer;
 static dap_timerfd_t* s_check_gdb_clean_timer;
-static dap_nanotime_t s_minimal_ttl = 1800000000000;  //def hald an hour
+static dap_nanotime_t s_minimal_ttl = 1800000000000;  //def half of hour
 
 static dap_global_db_instance_t *s_dbi = NULL; // GlobalDB instance is only static now
 
@@ -226,7 +226,8 @@ lb_return:
     return l_rc;
 }
 
-int dap_global_db_clean_init() {
+int dap_global_db_clean_init()
+{
     int l_rc = 0;
     if ( (l_rc = s_pinned_objs_group_init()))
         return log_it(L_ERROR, "GlobalDB pinned objs init failed"), l_rc;
@@ -237,9 +238,11 @@ int dap_global_db_clean_init() {
     return l_rc;
 }
 
-int dap_global_db_clean_deinit() {
+int dap_global_db_clean_deinit()
+{
     s_check_pinned_db_objs_deinit();
     s_gdb_clean_deinit();
+    return 0;
 }
 
 /**
@@ -1712,8 +1715,9 @@ static int s_gdb_clean_init() {
     return 0;
 }
 
-static void s_gdb_clean_deinit() {
-    dap_timerfd_delete_mt(s_check_gdb_clean_timer->worker, s_check_gdb_clean_timer->esocket_uuid);
+static void s_gdb_clean_deinit()
+{
+    dap_timerfd_delete(s_check_gdb_clean_timer->worker, s_check_gdb_clean_timer->esocket_uuid);
 }
 
 
@@ -1806,7 +1810,7 @@ static int s_add_pinned_obj_in_pinned_group(dap_store_obj_t * a_objs){
             if (l_cluster->ttl != 0)
                 s_minimal_ttl = dap_nanotime_from_sec(l_cluster->ttl);
             s_check_pinned_db_objs_timer = dap_timerfd_start(dap_nanotime_to_millitime(s_minimal_ttl/2), (dap_timerfd_callback_t)s_check_pinned_db_objs_callback, NULL);
-            debug_if(g_dap_global_db_debug_more, L_INFO, "New pinned callback timer %llu", s_minimal_ttl);
+            debug_if(g_dap_global_db_debug_more, L_INFO, "New pinned callback timer %" DAP_UINT64_FORMAT_U, s_minimal_ttl);
         }
         dap_store_obj_free_one(l_ret_check);
         DAP_DELETE(l_pinned_mask);
@@ -1840,7 +1844,7 @@ static int s_pinned_objs_group_init() {
 
 static void s_check_pinned_db_objs_deinit() {
     if (s_check_pinned_db_objs_timer)
-        dap_timerfd_delete_mt(s_check_pinned_db_objs_timer->worker, s_check_pinned_db_objs_timer->esocket_uuid);
+        dap_timerfd_delete(s_check_pinned_db_objs_timer->worker, s_check_pinned_db_objs_timer->esocket_uuid);
 }
 
 

@@ -7,7 +7,6 @@
 #include <time.h>
 #include "dap_common.h"
 #include "dap_time.h"
-#include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_common"
 
