@@ -46,12 +46,13 @@ static ecdsa_context_t *s_context_create()
     return s_context;
 }
 
-void dap_enc_sig_ecdsa_hash_fast(const unsigned char *a_data, size_t a_data_size, unsigned char *a_out)
+int dap_enc_sig_ecdsa_hash_fast(const unsigned char *a_data, size_t a_data_size, dap_hash_fast_t *a_out)
 {
     secp256k1_sha256 l_hasher;
     secp256k1_sha256_initialize(&l_hasher);
     secp256k1_sha256_write(&l_hasher, a_data, a_data_size);
-    secp256k1_sha256_finalize(&l_hasher, a_out);
+    secp256k1_sha256_finalize(&l_hasher, (unsigned char *)a_out);
+    return 0;
 }
 
 void dap_enc_sig_ecdsa_key_new(dap_enc_key_t *a_key) {
