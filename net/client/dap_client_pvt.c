@@ -339,7 +339,7 @@ int s_add_cert_sign_to_data(const dap_cert_t *a_cert, uint8_t **a_data, size_t *
 {
     dap_return_val_if_pass(!a_cert || !a_size || !a_data, 0);
 
-    dap_sign_t *l_sign = dap_sign_create(a_cert->enc_key, a_signing_data, a_signing_size, 0);
+    dap_sign_t *l_sign = dap_sign_create(a_cert->enc_key, a_signing_data, a_signing_size, DAP_SIGN_HASH_TYPE_DEFAULT);
     dap_return_val_if_fail(l_sign, 0);    
     size_t l_sign_size = dap_sign_get_size(l_sign), l_size = *a_size;
     byte_t *l_data = DAP_REALLOC_RET_VAL_IF_FAIL(*a_data, l_size + l_sign_size, 0, l_sign);
