@@ -25,7 +25,7 @@ uint8_t *dap_enc_sig_ecdsa_write_signature(const void* a_sign, size_t *a_sign_ou
 uint8_t *dap_enc_sig_ecdsa_write_public_key(const void *a_public_key, size_t *a_buflen_out);
 void* dap_enc_sig_ecdsa_read_signature(const uint8_t *a_buf, size_t a_buflen);
 void* dap_enc_sig_ecdsa_read_public_key(const uint8_t *a_buf, size_t a_buflen);
-void dap_enc_sig_ecdsa_hash_fast(const unsigned char *a_data, size_t a_data_size, unsigned char *a_out);
+int dap_enc_sig_ecdsa_hash_fast(const unsigned char *a_data, size_t a_data_size, dap_hash_fast_t *a_out);
 
 DAP_STATIC_INLINE uint64_t dap_enc_sig_ecdsa_ser_key_size(UNUSED_ARG const void *a_in) {
     return ECDSA_PRIVATE_KEY_SIZE;

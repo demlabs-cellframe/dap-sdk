@@ -25,6 +25,7 @@
 #include "dap_common.h"
 #include "dap_pkey.h"
 #include "dap_enc_base58.h"
+#include "dap_strfuncs.h"
 
 #define LOG_TAG "chain_key"
 
@@ -76,11 +77,11 @@ dap_pkey_t *dap_pkey_get_from_hex_str(const char *a_hex_str)
     dap_return_val_if_pass(!a_hex_str, NULL);
     int l_str_len = dap_strlen(a_hex_str) - 2;
     // from hex to binary 
-    if (l_str_len < 1 || !dap_strncmp(a_hex_str, "0x", 2) && !dap_is_hex_string(a_hex_str + 2, l_str_len)) {
+    if (l_str_len < 1 || (!dap_strncmp(a_hex_str, "0x", 2) && !dap_is_hex_string(a_hex_str + 2, l_str_len))) {
         return NULL;
     }
     dap_pkey_t *l_ret = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_pkey_t, l_str_len / 2 + 1, NULL);
-    size_t l_out_size = dap_hex2bin(l_ret, a_hex_str + 2, l_str_len);
+    size_t l_out_size = dap_hex2bin((uint8_t *)l_ret, a_hex_str + 2, l_str_len);
     if (l_ret->header.type.type == DAP_PKEY_TYPE_NULL || l_out_size != dap_pkey_get_size(l_ret)) {
         log_it(L_ERROR, "Error in read pkey from hex string");
         DAP_DEL_Z(l_ret);
