@@ -1258,22 +1258,23 @@ dap_enc_key_t *dap_enc_merge_keys_to_multisign_key(dap_enc_key_t **a_keys, size_
 int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out)
 {
     dap_return_val_if_fail(a_key && a_key->pub_key_data && a_key->pub_key_data_size && a_hash_out, -1);
-    size_t l_pub_key_size;
+    size_t l_pub_key_size = 0;
     uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
+    int l_ret = 0;
     if (!l_pub_key)
         return -2;
     switch (a_key->type) {
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
-            dap_enc_sig_ecdsa_hash_fast((const unsigned char *)l_pub_key, l_pub_key_size, (unsigned char *)a_hash_out);
+            l_ret = dap_enc_sig_ecdsa_hash_fast((const unsigned char *)l_pub_key, l_pub_key_size, (unsigned char *)a_hash_out);
             break;
 #endif
         default:
-            dap_hash_fast(l_pub_key, l_pub_key_size, a_hash_out);
+            l_ret = dap_hash_fast(l_pub_key, l_pub_key_size, a_hash_out);
             break;
     }
     DAP_DELETE(l_pub_key);
-    return 0;
+    return l_ret;
 }
 
 /**
