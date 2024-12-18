@@ -1270,7 +1270,7 @@ int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out)
             break;
 #endif
         default:
-            l_ret = dap_hash_fast(l_pub_key, l_pub_key_size, a_hash_out);
+            l_ret = !dap_hash_fast(l_pub_key, l_pub_key_size, a_hash_out);
             break;
     }
     DAP_DELETE(l_pub_key);
