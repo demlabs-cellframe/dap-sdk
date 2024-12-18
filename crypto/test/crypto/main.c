@@ -9,8 +9,10 @@
 
 int main(void) {
     // switch off debug info from library
+    dap_log_level_set(L_WARNING);
+    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
+    
     int l_ret = 0;
-    dap_log_level_set(L_ERROR);
     const int l_times = 5;
 
     test_encypt_decrypt(l_times, DAP_ENC_KEY_TYPE_SALSA2012, 32);

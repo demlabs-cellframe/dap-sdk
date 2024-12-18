@@ -95,7 +95,7 @@ int dap_cert_sign_output(dap_cert_t *a_cert, const void *a_data, size_t a_data_s
 
 int dap_cert_compare_with_sign (dap_cert_t *a_cert,const dap_sign_t *a_sign);
 
-size_t dap_cert_sign_output_size(dap_cert_t *a_cert, size_t a_size_wished);
+size_t dap_cert_sign_output_size(dap_cert_t *a_cert);
 
 int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer);
 
@@ -125,6 +125,7 @@ time_t dap_cert_get_meta_period(dap_cert_t *a_cert, const char *a_field);
 dap_sign_t *dap_cert_get_meta_sign(dap_cert_t *a_cert, const char *a_field);
 void *dap_cert_get_meta_custom(dap_cert_t *a_cert, const char *a_field, size_t *a_meta_size_out);
 dap_enc_key_t *dap_cert_get_keys_from_certs(dap_cert_t **a_certs, size_t a_count, size_t a_key_start_index);
+char *dap_cert_get_pkey_str(dap_cert_t *a_cert, const char *a_str_type);
 #ifdef __cplusplus
 }
 #endif

@@ -128,7 +128,7 @@ size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs,
         l_certs[l_certs_pos] = dap_cert_find_by_name(l_cert_str);
         // if certificate is found
         if(l_certs[l_certs_pos]) {
-            l_sign_total_size += dap_cert_sign_output_size(l_certs[l_certs_pos],0);
+            l_sign_total_size += dap_cert_sign_output_size(l_certs[l_certs_pos]);
             l_certs_pos++;
         } else {
             log_it(L_WARNING,"Can't load cert %s",l_cert_str);
@@ -152,9 +152,9 @@ size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs,
  * @param a_size_wished wished data size (don't used in current implementation)
  * @return size_t
  */
-size_t dap_cert_sign_output_size(dap_cert_t * a_cert, size_t a_size_wished)
+size_t dap_cert_sign_output_size(dap_cert_t * a_cert)
 {
-    return dap_sign_create_output_unserialized_calc_size( a_cert->enc_key,a_size_wished);
+    return dap_sign_create_output_unserialized_calc_size( a_cert->enc_key);
 }
 
 /**
@@ -185,7 +185,7 @@ dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_
 {
     dap_return_val_if_fail(a_cert && a_cert->enc_key && a_cert->enc_key->priv_key_data &&
                            a_cert->enc_key->priv_key_data_size && a_data && a_data_size, NULL);
-    dap_sign_t *l_ret = dap_sign_create(a_cert->enc_key, a_data, a_data_size, a_output_size_wished);
+    dap_sign_t *l_ret = dap_sign_create(a_cert->enc_key, a_data, a_data_size, DAP_SIGN_HASH_TYPE_DEFAULT);
 
     if (l_ret)
         log_it(L_INFO, "Sign sizes: %d %d", l_ret->header.sign_size, l_ret->header.sign_pkey_size);
@@ -923,4 +923,12 @@ DAP_INLINE const char *dap_cert_get_str_recommended_sign(){
     "sig_shipovnik\n"
 #endif
     ;
+}
+
+char *dap_cert_get_pkey_str(dap_cert_t *a_cert, const char *a_str_type)
+{
+    dap_pkey_t *l_pkey = dap_cert_to_pkey(a_cert);
+    char *l_ret = dap_pkey_to_str(l_pkey, a_str_type);
+    DAP_DELETE(l_pkey);
+    return l_ret;
 }

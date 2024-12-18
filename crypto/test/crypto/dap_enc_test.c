@@ -465,7 +465,7 @@ static void test_serialize_deserialize_pub_priv(dap_enc_key_type_t key_type)
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
         case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
-            sig_buf_size = dap_sign_create_output_unserialized_calc_size(key, 0);
+            sig_buf_size = dap_sign_create_output_unserialized_calc_size(key);
             sig_buf = calloc(sig_buf_size, 1);
             is_sig = key->sign_get(key, source_buf, source_size, sig_buf, sig_buf_size);
             break;

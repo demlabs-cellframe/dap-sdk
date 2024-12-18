@@ -1219,7 +1219,26 @@ int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out)
     uint8_t *l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);
     if (!l_pub_key)
         return -2;
-    int ret = !dap_hash_fast(l_pub_key, l_pub_key_size, a_hash_out);
+    switch (a_key->type) {
+#ifdef DAP_ECDSA
+        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+            dap_enc_sig_ecdsa_hash_fast((const unsigned char *)l_pub_key, l_pub_key_size, (unsigned char *)a_hash_out);
+            break;
+#endif
+        default:
+            dap_hash_fast(l_pub_key, l_pub_key_size, a_hash_out);
+            break;
+    }
     DAP_DELETE(l_pub_key);
     return ret;
+}
+
+/**
+ * @brief check if this key type use insign hashing
+ * @param a_type checked enc_key type
+ * @return true if this enc_key type hashing signing data, false if not
+ */
+DAP_INLINE bool dap_enc_key_is_insign_hashing(dap_enc_key_type_t a_type)
+{
+    return a_type == DAP_ENC_KEY_TYPE_SIG_ECDSA;
 }
