@@ -812,6 +812,77 @@ clean_and_ret:
     return l_ret;
 }
 
+static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * l_count) {
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_fail(a_group && (l_conn = s_db_sqlite_get_connection(false)), NULL);
+
+    const char *l_error_msg = "read below timestamp";
+    char *l_str_query = NULL;
+    size_t l_row = 0;
+    dap_store_obj_t * l_obj_arr = NULL;
+    sqlite3_stmt *l_stmt = NULL;
+
+    char *l_table_name = dap_str_replace_char(a_group, '.', '_');
+    if (!l_table_name) {
+        log_it(L_ERROR, "Error replacing characters in table name");
+        goto clean_and_ret;
+    }
+
+    l_str_query = sqlite3_mprintf("SELECT * FROM '%s' WHERE timestamp < ? ORDER BY timestamp ASC", l_table_name);
+    DAP_DEL_Z(l_table_name);
+    if (!l_str_query) {
+        log_it(L_ERROR, "Error in SQL request forming");
+        goto clean_and_ret;
+    }
+
+    if (s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg) != SQLITE_OK) {
+        log_it(L_ERROR, "Error preparing SQL query: %s", sqlite3_errmsg(l_conn->conn));
+        goto clean_and_ret;
+    }
+
+    if (sqlite3_bind_int64(l_stmt, 1, a_timestamp) != SQLITE_OK) {
+        log_it(L_ERROR, "Error binding parameter: %s", sqlite3_errmsg(l_conn->conn));
+        goto clean_and_ret;
+    }
+
+    size_t l_sizeof_obj = 1;
+    int ret;
+
+    l_obj_arr = DAP_NEW_Z_COUNT(dap_store_obj_t, l_sizeof_obj);
+
+    ret = s_db_sqlite_fill_one_item(a_group, l_obj_arr, l_stmt);
+    while(ret == SQLITE_ROW){
+        if (l_row >= l_sizeof_obj) {
+            l_sizeof_obj += 16;
+            dap_store_obj_t* l_tmp = DAP_REALLOC(l_obj_arr, l_sizeof_obj*sizeof(dap_store_obj_t));
+            if (!l_tmp) {
+                log_it(L_ERROR, "Cannot allocate memory for store object, errno=%d", errno);
+                DAP_DELETE(l_obj_arr);
+                l_obj_arr = NULL;
+                ret = SQLITE_ERROR;
+                break;
+            }
+            l_obj_arr = l_tmp;
+        }
+        ret = s_db_sqlite_fill_one_item(a_group, l_obj_arr + l_row, l_stmt);
+        l_row++;
+    }
+    
+    if (ret != SQLITE_DONE) {
+        log_it(L_ERROR, "Error fetching rows: %s", sqlite3_errmsg(l_conn->conn));
+        DAP_DEL_Z(l_obj_arr);
+        l_obj_arr = NULL;
+    }
+
+
+clean_and_ret:
+    s_db_sqlite_clean(l_conn, 1, l_str_query, l_stmt);
+    *l_count = l_row;
+    return l_obj_arr;
+}
+
+
+
 /**
  * @brief Gets a list of group names by a_group_mask.
  * @param a_group_mask a group name mask
@@ -1081,20 +1152,21 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
     }
     DAP_DEL_Z(l_filename_dir);
 
-    a_drv_callback->apply_store_obj         = s_db_sqlite_apply_store_obj;
-    a_drv_callback->read_store_obj          = s_db_sqlite_read_store_obj;
-    a_drv_callback->read_cond_store_obj     = s_db_sqlite_read_cond_store_obj;
-    a_drv_callback->read_last_store_obj     = s_db_sqlite_read_last_store_obj;
-    a_drv_callback->transaction_start       = s_db_sqlite_transaction_start;
-    a_drv_callback->transaction_end         = s_db_sqlite_transaction_end;
-    a_drv_callback->get_groups_by_mask      = s_db_sqlite_get_groups_by_mask;
-    a_drv_callback->read_count_store        = s_db_sqlite_read_count_store;
-    a_drv_callback->is_obj                  = s_db_sqlite_is_obj;
-    a_drv_callback->deinit                  = s_db_sqlite_deinit;
-    a_drv_callback->flush                   = s_db_sqlite_flush;
-    a_drv_callback->get_by_hash             = s_db_sqlite_get_by_hash;
-    a_drv_callback->read_hashes             = s_db_sqlite_read_hashes;
-    a_drv_callback->is_hash                 = s_db_sqlite_is_hash;
+    a_drv_callback->apply_store_obj              = s_db_sqlite_apply_store_obj;
+    a_drv_callback->read_store_obj               = s_db_sqlite_read_store_obj;
+    a_drv_callback->read_cond_store_obj          = s_db_sqlite_read_cond_store_obj;
+    a_drv_callback->read_store_obj_by_timestamp  = s_db_sqlite_read_store_obj_below_timestamp;
+    a_drv_callback->read_last_store_obj          = s_db_sqlite_read_last_store_obj;
+    a_drv_callback->transaction_start            = s_db_sqlite_transaction_start;
+    a_drv_callback->transaction_end              = s_db_sqlite_transaction_end;
+    a_drv_callback->get_groups_by_mask           = s_db_sqlite_get_groups_by_mask;
+    a_drv_callback->read_count_store             = s_db_sqlite_read_count_store;
+    a_drv_callback->is_obj                       = s_db_sqlite_is_obj;
+    a_drv_callback->deinit                       = s_db_sqlite_deinit;
+    a_drv_callback->flush                        = s_db_sqlite_flush;
+    a_drv_callback->get_by_hash                  = s_db_sqlite_get_by_hash;
+    a_drv_callback->read_hashes                  = s_db_sqlite_read_hashes;
+    a_drv_callback->is_hash                      = s_db_sqlite_is_hash;
     s_db_inited = true;
 
     conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);

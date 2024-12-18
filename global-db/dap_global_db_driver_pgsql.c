@@ -177,17 +177,18 @@ int dap_db_driver_pgsql_init(const char *a_filename_dir, dap_db_driver_callbacks
     }
     DAP_DELETE(l_conn_str);
     pthread_rwlock_init(&s_db_rwlock, 0);
-    a_drv_callback->transaction_start = dap_db_driver_pgsql_start_transaction;
-    a_drv_callback->transaction_end = dap_db_driver_pgsql_end_transaction;
-    a_drv_callback->apply_store_obj = dap_db_driver_pgsql_apply_store_obj;
-    a_drv_callback->read_store_obj = dap_db_driver_pgsql_read_store_obj;
-    a_drv_callback->read_cond_store_obj = dap_db_driver_pgsql_read_cond_store_obj;
-    a_drv_callback->read_last_store_obj = dap_db_driver_pgsql_read_last_store_obj;
-    a_drv_callback->get_groups_by_mask  = dap_db_driver_pgsql_get_groups_by_mask;
-    a_drv_callback->read_count_store = dap_db_driver_pgsql_read_count_store;
-    a_drv_callback->is_obj = dap_db_driver_pgsql_is_obj;
-    a_drv_callback->deinit = dap_db_driver_pgsql_deinit;
-    a_drv_callback->flush = dap_db_driver_pgsql_flush;
+    a_drv_callback->transaction_start           = dap_db_driver_pgsql_start_transaction;
+    a_drv_callback->transaction_end             = dap_db_driver_pgsql_end_transaction;
+    a_drv_callback->apply_store_obj             = dap_db_driver_pgsql_apply_store_obj;
+    a_drv_callback->read_store_obj              = dap_db_driver_pgsql_read_store_obj;
+    a_drv_callback->read_cond_store_obj         = dap_db_driver_pgsql_read_cond_store_obj;
+    a_drv_callback->read_store_obj_by_timestamp = dap_db_pgsql_read_store_obj_below_timestamp;
+    a_drv_callback->read_last_store_obj         = dap_db_driver_pgsql_read_last_store_obj;
+    a_drv_callback->get_groups_by_mask          = dap_db_driver_pgsql_get_groups_by_mask;
+    a_drv_callback->read_count_store            = dap_db_driver_pgsql_read_count_store;
+    a_drv_callback->is_obj                      = dap_db_driver_pgsql_is_obj;
+    a_drv_callback->deinit                      = dap_db_driver_pgsql_deinit;
+    a_drv_callback->flush                       = dap_db_driver_pgsql_flush;
     return 0;
 }
 
@@ -526,6 +527,62 @@ dap_store_obj_t *dap_db_driver_pgsql_read_cond_store_obj(const char *a_group, ui
         *a_count_out = l_count;
     return l_obj;
 }
+
+dap_store_obj_t* dap_db_pgsql_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count) {
+    if (!a_group) 
+        return NULL;
+
+    PGconn *l_conn = s_pgsql_get_connection();
+    if (!l_conn) {
+        log_it(L_ERROR, "Can't acquire PostgreSQL connection from pool");
+        return NULL;
+    }
+
+    dap_store_obj_t *l_ret = NULL;
+    char *l_query_str = NULL;
+
+    l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE timestamp < '%" DAP_UINT64_FORMAT_U "' ORDER BY timestamp ASC", a_group, a_timestamp);
+    if (!l_query_str) {
+        log_it(L_ERROR, "Failed to allocate query string");
+        s_pgsql_free_connection(l_conn);
+        return NULL;
+    }
+
+    PGresult *l_res = PQexecParams(l_conn, l_query_str, 0, NULL, NULL, NULL, NULL, 1);
+    DAP_DELETE(l_query_str);
+
+    if (PQresultStatus(l_res) != PGRES_TUPLES_OK) {
+        log_it(L_ERROR, "Error executing query: %s", PQresultErrorMessage(l_res));
+        PQclear(l_res);
+        s_pgsql_free_connection(l_conn);
+        return NULL;
+    }
+
+    size_t l_count_out = PQntuples(l_res);
+    *a_count = l_count_out;
+    if (l_count_out > 0) {
+        l_ret = DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * l_count_out);
+        if (!l_ret) {
+            log_it(L_ERROR, "Failed to allocate memory for result set");
+            PQclear(l_res);
+            s_pgsql_free_connection(l_conn);
+            return NULL;
+        }
+
+        for (size_t i = 0; i < l_count_out; i++) {
+            dap_store_obj_t *l_obj_cur = l_ret + i;
+            s_pgsql_fill_object(a_group, l_obj_cur, l_res, i);
+        }
+    } else {
+        log_it(L_INFO, "No records found below the specified timestamp");
+    }
+
+    PQclear(l_res);
+    s_pgsql_free_connection(l_conn);
+
+    return l_ret;
+}
+
 
 /**
  * @brief Gets a list of group names from a PostgreSQL database by a_group_mask.
