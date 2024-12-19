@@ -123,7 +123,6 @@ static int s_context_callback_stopped( dap_context_t * a_context, void *a_arg);
 static int s_gdb_clean_init();
 static void s_gdb_clean_deinit();
 static void s_check_pinned_db_objs_deinit();
-static int s_gdb_clear_node_list_init();
 
 static int s_pinned_objs_group_init();
 static int s_add_pinned_obj_in_pinned_group(dap_store_obj_t * a_objs);
@@ -1693,6 +1692,7 @@ static bool s_clean_old_obj_gdb_callback() {
         for(size_t i = 0; i < l_ret_count; i++) {
             if (!(l_ret[i].flags & DAP_GLOBAL_DB_RECORD_PINNED) && l_ttl != 0) {
                 if (l_ret[i].timestamp + l_ttl < l_time_now) {
+                    log_it(L_MSG, "Delete from gdb obj %s group, %s key", l_ret[i].group, l_ret[i].key);
                     debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from gdb obj %s group, %s key", l_ret[i].group, l_ret[i].key);
                     if (l_cluster->del_callback)
                         l_cluster->del_callback(l_ret+i, NULL);
@@ -1708,7 +1708,7 @@ static bool s_clean_old_obj_gdb_callback() {
 
 static int s_gdb_clean_init() {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Init global_db clean old objects");
-    s_check_gdb_clean_timer = dap_timerfd_start(1800000, (dap_timerfd_callback_t)s_clean_old_obj_gdb_callback, NULL);
+    s_check_gdb_clean_timer = dap_timerfd_start(18000, (dap_timerfd_callback_t)s_clean_old_obj_gdb_callback, NULL);
     if (!s_check_gdb_clean_timer)
         return -1;
     return 0;
