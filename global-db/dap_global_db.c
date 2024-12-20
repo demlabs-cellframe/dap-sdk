@@ -1712,7 +1712,7 @@ static bool s_clean_old_obj_gdb_callback() {
 
 static int s_gdb_clean_init() {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Init global_db clean old objects");
-    s_check_gdb_clean_timer = dap_timerfd_start(18000, (dap_timerfd_callback_t)s_clean_old_obj_gdb_callback, NULL);
+    s_check_gdb_clean_timer = dap_timerfd_start(1800000, (dap_timerfd_callback_t)s_clean_old_obj_gdb_callback, NULL);
     if (!s_check_gdb_clean_timer)
         return -1;
     return 0;
