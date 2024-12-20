@@ -1677,7 +1677,7 @@ static bool s_clean_old_obj_gdb_callback() {
             continue;
         }
         size_t l_ret_count;
-        dap_store_obj_t * l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - s_minimal_ttl + 100, &l_ret_count);
+        dap_store_obj_t * l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now + 100, &l_ret_count);
         if (!l_ret || !l_ret->group) {
             DAP_DELETE(l_ret);
             continue;
@@ -1690,15 +1690,19 @@ static bool s_clean_old_obj_gdb_callback() {
 
         dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
         for(size_t i = 0; i < l_ret_count; i++) {
-            if (!(l_ret[i].flags & DAP_GLOBAL_DB_RECORD_PINNED) && l_ttl != 0) {
-                if (l_ret[i].timestamp + l_ttl < l_time_now) {
-                    log_it(L_MSG, "Delete from gdb obj %s group, %s key", l_ret[i].group, l_ret[i].key);
-                    debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from gdb obj %s group, %s key", l_ret[i].group, l_ret[i].key);
-                    if (l_cluster->del_callback)
-                        l_cluster->del_callback(l_ret+i, NULL);
-                    else dap_global_db_driver_delete(l_ret + i, 1);
+            if (!(l_ret[i].flags & DAP_GLOBAL_DB_RECORD_PINNED)) {
+                if (l_ttl != 0) {
+                    if (l_ret[i].timestamp + l_ttl < l_time_now) {
+                        debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from gdb obj %s group, %s key", l_ret[i].group, l_ret[i].key);
+                        if (l_cluster->del_callback)
+                            l_cluster->del_callback(l_ret+i, NULL);
+                        else dap_global_db_driver_delete(l_ret + i, 1);
+                    }
+                } else if ( l_ret[i].flags & DAP_GLOBAL_DB_RECORD_DEL && dap_global_db_group_match_mask(l_ret->group, "local.*")) {       
+                    debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from empty local gdb obj %s group, %s key", l_ret[i].group, l_ret[i].key);
+                    dap_global_db_driver_delete(l_ret + i, 1);
                 }
-            }
+            } 
         }
         DAP_DELETE(l_ret);
     }
