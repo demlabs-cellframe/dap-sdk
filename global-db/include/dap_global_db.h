@@ -140,6 +140,8 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
 int dap_global_db_pin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_del(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
+int dap_global_db_del_ex(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_len,
+                                                              dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_flush( dap_global_db_callback_result_t a_callback, void *a_arg);
 
 // Set multiple. In callback writes total processed objects to a_values_total and a_values_count to the a_values_count as well

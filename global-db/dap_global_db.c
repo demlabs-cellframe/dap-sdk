@@ -1358,7 +1358,8 @@ inline int dap_global_db_del_sync(const char *a_group, const char *a_key)
  * @param a_arg
  * @return
  */
-int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg)
+int dap_global_db_del_ex(const char * a_group, const char *a_key, const void * a_value, 
+                         const size_t a_value_len, dap_global_db_callback_result_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_group, DAP_GLOBAL_DB_RC_ERROR);
     struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
@@ -1368,6 +1369,10 @@ int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_cal
     l_msg->key = dap_strdup(a_key);
     l_msg->callback_arg = a_arg;
     l_msg->callback_result = a_callback;
+    if (a_value_len) {
+        l_msg->value = a_value;
+        l_msg->value_length = a_value_len;
+    }
 
     int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
     if (l_ret != 0) {
@@ -1377,6 +1382,10 @@ int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_cal
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent del request for \"%s\" group \"%s\" key", a_group, a_key);
 
     return l_ret;
+}
+
+int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg) {
+    return dap_global_db_del_ex(a_group, a_key, NULL, 0, a_callback, a_arg);
 }
 
 /**
