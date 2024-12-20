@@ -199,6 +199,8 @@ int json_commands(const char * a_name) {
             "token_update_sign",
             "token_decl_sign",
             "chain_ca_pub",
+            "token_emit",
+            "find",
             "exec_cmd"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
