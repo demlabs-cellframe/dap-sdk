@@ -484,13 +484,10 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
     }
 
     int l_ret = 0;
-    //uint8_t * l_sign = a_chain_sign->pkey_n_sign + a_chain_sign->header.sign_pkey_size;
     const void *l_verify_data;
     size_t l_verify_data_size;
     dap_chain_hash_fast_t l_verify_data_hash;
     uint32_t l_hash_type = DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a_chain_sign->header.hash_type);
-    bool l_use_pkey_hash = DAP_SIGN_GET_PKEY_HASHING_FLAG(a_chain_sign->header.hash_type);
-
     if(l_hash_type == DAP_SIGN_HASH_TYPE_DEFAULT)
         log_it(L_WARNING, "Detected DAP_SIGN_HASH_TYPE_DEFAULT (0x%02x) hash type in sign ", DAP_SIGN_HASH_TYPE_DEFAULT);
 

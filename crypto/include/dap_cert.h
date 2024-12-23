@@ -89,7 +89,7 @@ int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_fast_t *a_out_hash);
 dap_cert_t *dap_cert_find_by_name(const char *a_cert_name);
 dap_list_t *dap_cert_get_all_mem();
 
-dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, size_t a_output_size_wished);
+dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, uint32_t a_hash_type);
 // Sign raw data, without hashing
 int dap_cert_sign_output(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, void *a_output, size_t *a_output_size);
 

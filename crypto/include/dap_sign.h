@@ -59,7 +59,7 @@ typedef uint32_t dap_sign_type_enum_t;
 #define DAP_SIGN_HASH_TYPE_SIGN      0x0e
 #define DAP_SIGN_HASH_TYPE_DEFAULT   0x0f  // not transferred in network, first try use sign hash, if false, use s_sign_hash_type_default
 
-#define DAP_SIGN_PKEY_HASHING_FLAG ((uint8_t)1 << 7)
+#define DAP_SIGN_PKEY_HASHING_FLAG ((uint32_t)1 << 7)
 #define DAP_SIGN_ADD_PKEY_HASHING_FLAG(a) ((a) | DAP_SIGN_PKEY_HASHING_FLAG)
 #define DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a) ((a) & ~DAP_SIGN_PKEY_HASHING_FLAG)
 #define DAP_SIGN_GET_PKEY_HASHING_FLAG(a) ((a) & DAP_SIGN_PKEY_HASHING_FLAG)
