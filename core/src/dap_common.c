@@ -50,8 +50,6 @@
 #define DAP_LOG_USE_SPINLOCK    0
 #define DAP_LOG_HISTORY         1
 
-#define LAST_ERROR_MAX  255
-
 #define LOG_TAG "dap_common"
 
 typedef void (*print_callback) (unsigned a_off, const char *a_fmt, va_list va);
@@ -77,10 +75,11 @@ const uint256_t uint256_max = {.hi = uint128_max, .lo = uint128_max};
 
 const uint512_t uint512_0 = {};
 
-const char *c_error_memory_alloc = "Memory allocation error";
-const char *c_error_sanity_check = "Sanity check error";
+const char *c_error_memory_alloc = "Memory allocation error",
+           *c_error_sanity_check = "Sanity check error",
+           doof = 0;
 
-static const char *s_log_level_tag[ 16 ] = {
+static const char *s_log_level_tag[ ] = {
     " [DBG] ", // L_DEBUG     = 0
     " [INF] ", // L_INFO      = 1,
     " [ * ] ", // L_NOTICE    = 2,
@@ -103,7 +102,7 @@ static const char *s_log_level_tag[ 16 ] = {
 #endif
 };
 
-const char *s_ansi_seq_color[ 16 ] = {
+const char *s_ansi_seq_color[ ] = {
 
     "\x1b[0;37;40m",   // L_DEBUG     = 0
     "\x1b[1;32;40m",   // L_INFO      = 2,
@@ -127,10 +126,10 @@ const char *s_ansi_seq_color[ 16 ] = {
 #endif
 };
 
-static unsigned int s_ansi_seq_color_len[16] = {0};
+static unsigned int s_ansi_seq_color_len[ sizeof(s_ansi_seq_color) / sizeof(char*) ] = { };
 
-#ifdef _WIN32
-    WORD log_level_colors[ 16 ] = {
+#ifdef DAP_OS_WINDOWS
+    WORD log_level_colors[ ] = {
         7,              // L_DEBUG
         10,              // L_INFO
          2,             // L_NOTICE
@@ -153,9 +152,7 @@ static unsigned int s_ansi_seq_color_len[16] = {0};
 static volatile bool s_log_term_signal = false;
 char* g_sys_dir_path = NULL;
 
-static char s_log_file_path[MAX_PATH]   = {'\0'},
-            s_log_dir_path[MAX_PATH]    = {'\0'},
-            s_log_tag_fmt_str[10]       = {'\0'};
+static char s_log_file_path[MAX_PATH + 1], s_log_tag_fmt_str[10];
 
 static enum dap_log_level s_dap_log_level = L_DEBUG;
 static FILE *s_log_file = NULL;
@@ -168,7 +165,7 @@ static void print_it_none (unsigned a_off, const char *a_fmt, va_list va){}
 static void print_it_alog (unsigned a_off, const char *a_fmt, va_list va);
 #endif
 
-#define LOG_FORMAT_LEN  4096
+#define LOG_FORMAT_LEN  2048
 #define LOG_BUF_SIZE    32768
 
 static print_callback s_print_callback = print_it_none;
@@ -239,7 +236,7 @@ void dap_log_set_external_output(LOGGER_EXTERNAL_OUTPUT output, void *param)
   }
 }
 
-static char* s_appname = NULL;
+static char s_appname[32];
 
 DAP_STATIC_INLINE int s_update_log_time(char *a_datetime_str) {
     time_t t = time(NULL);
@@ -261,7 +258,7 @@ void dap_log_level_set( enum dap_log_level a_ll ) {
  */
 const char * dap_get_appname()
 {
-    return s_appname?s_appname: "dap";
+    return *s_appname ? s_appname : "dap";
 }
 
 /**
@@ -271,8 +268,7 @@ const char * dap_get_appname()
  */
 void dap_set_appname(const char * a_appname)
 {
-    s_appname = dap_strdup(a_appname);
-
+    dap_strncpy(s_appname, a_appname, sizeof(s_appname) - 1);
 }
 
 enum dap_log_level dap_log_level_get( void ) {
@@ -299,19 +295,11 @@ void dap_set_log_tag_width(size_t a_width) {
  * @param int a_count - count deleted args
  * @param void* a_to_delete
  */
-void dap_delete_multy(int a_count, ...)
+void dap_delete_multy(size_t a_count, ...)
 {
-    if (a_count <= 0) {
-        log_it(L_ERROR, "Wrong count in DAP_DELETE macros, maybe many args?");
-        return;
-    }
     va_list l_args_list;
     va_start(l_args_list, a_count);
-    while (a_count > 0) {
-        void *l_to_delete = va_arg(l_args_list, void*);
-        DAP_DEL_Z(l_to_delete);
-        a_count--;
-    }
+    for ( void *l_cur; a_count-- && (( l_cur = va_arg(l_args_list, void*) ), 1); DAP_DELETE(l_cur) );
     va_end(l_args_list);
 }
 
@@ -322,27 +310,31 @@ void dap_delete_multy(int a_count, ...)
  * @param a_count - args count, should be even
  * @return pointer if pass, else NULL
  */
-uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...)
+uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, ...)
 {
-    dap_return_val_if_pass(!a_size || a_count % 2, NULL);
-
-    uint8_t *l_ret = a_data;
-    // allocate memory, if need
-    if (!l_ret)
-        DAP_NEW_Z_SIZE_RET_VAL(l_ret, uint8_t, a_size, NULL, NULL);
-    uint64_t l_shift_mem = 0;
+    dap_return_val_if_pass( !a_size, NULL );
+    uint8_t *l_ret = a_data ? a_data : DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, a_size, NULL),
+            *l_pos = l_ret,
+            *l_end = l_pos + a_size;
+    uint64_t l_size = 0;
     va_list l_args;
-    va_start(l_args, a_count);
-    for (int i = 0; i < a_count / 2; ++i) {
-        uint8_t *l_arg = va_arg(l_args, uint8_t *);
-        uint64_t l_size = va_arg(l_args, uint64_t);
-        memcpy(l_ret + l_shift_mem, l_arg, l_size);
-        l_shift_mem += l_size;
-    }
-    if (l_shift_mem != a_size) {
-        log_it(L_WARNING, "Error size in the object serialize. %"DAP_UINT64_FORMAT_U" != %"DAP_UINT64_FORMAT_U"", l_shift_mem, a_size);
+    va_start(l_args, a_size);
+    for (uint8_t *l_arg; ( l_arg = va_arg(l_args, uint8_t*) ) != DOOF_PTR; ) {
+        l_size = va_arg(l_args, uint64_t);
+        if (!l_arg || !l_size)
+            continue;
+        else if (l_pos + l_size > l_end)
+            break;
+        l_pos = dap_mempcpy(l_pos, l_arg, l_size);
     }
     va_end(l_args);
+    l_size = (uint64_t)(l_pos - l_ret);
+    if ( l_size != a_size ) {
+        log_it(L_ERROR, "Serialized data size mismatch");
+        if (!a_data)
+            DAP_DELETE(l_ret);
+        l_ret = NULL;
+    }
     return l_ret;
 }
 
@@ -353,28 +345,26 @@ uint8_t *dap_serialize_multy(uint8_t *a_data, uint64_t a_size, int a_count, ...)
  * @param a_count - args count, should be even, memory NOT allocating
  * @return 0 if pass, other if error
  */
-int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, int a_count, ...)
+int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, ...)
 {
-    dap_return_val_if_pass(!a_size || a_count % 2, -1);
+    dap_return_val_if_pass(!a_data || !a_size, -1);
 
-    uint64_t l_shift_mem = 0;
+    uint64_t l_size = 0, l_shift = 0;
     va_list l_args;
-    va_start(l_args, a_count);
-    for (int i = 0; i < a_count / 2; ++i) {
-        uint8_t *l_arg = va_arg(l_args, uint8_t *);
-        uint64_t l_size = va_arg(l_args, uint64_t);
-        if (l_shift_mem + l_size > a_size) {
-            log_it(L_ERROR, "Error size in the object deserialize. %"DAP_UINT64_FORMAT_U" > %"DAP_UINT64_FORMAT_U"", l_shift_mem + l_size, a_size);
+    va_start(l_args, a_size);
+    for (uint8_t *l_arg; ( l_arg = va_arg(l_args, uint8_t*) ) != DOOF_PTR; ) {
+        l_size = va_arg(l_args, uint64_t);
+        if (l_shift + l_size > a_size) {
+            log_it(L_ERROR, "Objects sizes exeed total buffer size: %"DAP_UINT64_FORMAT_U" > %"DAP_UINT64_FORMAT_U"", l_shift + l_size, a_size);
             va_end(l_args);
             return -2;
         }
-        memcpy(l_arg, a_data + l_shift_mem, l_size);
-        l_shift_mem += l_size;
-    }
-    if (l_shift_mem != a_size) {
-        log_it(L_WARNING, "Error size in the object deserialize. %"DAP_UINT64_FORMAT_U" != %"DAP_UINT64_FORMAT_U"", l_shift_mem, a_size);
+        memcpy(l_arg, a_data + l_shift, l_size);
+        l_shift += l_size;
     }
     va_end(l_args);
+    if (l_shift < a_size)
+        log_it(L_WARNING, "Unprocessed %"DAP_UINT64_FORMAT_U" bytes after deserialization", a_size - l_shift);
     return 0;
 }
 
@@ -392,19 +382,16 @@ static int s_dap_log_open(const char *a_log_file_path, bool a_new) {
  * @param a_log_dirpath const char *: path to log directory. Saved in s_log_dir_path variable. For example. C:\\Users\\Public\\Document\\cellframe-node\\var\\log
  * @return int. (0 if succcess, -1 if error)
  */
-int dap_common_init( const char *a_console_title, const char *a_log_file_path, const char *a_log_dirpath) {
+int dap_common_init( const char UNUSED_ARG *a_console_title, const char *a_log_file_path ) {
 
     // init randomer
     srand( (unsigned int)time(NULL) );
-    (void) a_console_title;
     strncpy( s_log_tag_fmt_str, "[%s]\t",sizeof (s_log_tag_fmt_str));
     for (int i = 0; i < 16; ++i)
             s_ansi_seq_color_len[i] =(unsigned int) strlen(s_ansi_seq_color[i]);
     if ( a_log_file_path && a_log_file_path[0] ) {
         if (s_dap_log_open(a_log_file_path, false))
             return -1;
-        if (a_log_dirpath != s_log_dir_path)
-            dap_stpcpy(s_log_dir_path,  a_log_dirpath);
         if (a_log_file_path != s_log_file_path)
             dap_stpcpy(s_log_file_path, a_log_file_path);
     }
@@ -448,7 +435,7 @@ static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
     va_copy(va_file, va);
     s_print_callback(a_off, a_fmt, va);
     if (!s_log_file) {
-        if (dap_common_init(dap_get_appname(), s_log_file_path, s_log_dir_path) || !s_log_file) {
+        if ( dap_common_init(dap_get_appname(), s_log_file_path ) || !s_log_file) {
             va_end(va_file);
             return;
         }
@@ -478,7 +465,7 @@ void _log_it(const char * func_name, int line_num, const char *a_log_tag, enum d
         }
     }
 #endif
-    static _Thread_local char s_format[LOG_FORMAT_LEN] = { '\0' };
+    char s_format[LOG_FORMAT_LEN] = { '\0' };
     unsigned offset = s_ansi_seq_color_len[a_ll];
     memcpy(s_format, s_ansi_seq_color[a_ll], offset);
     offset += s_update_log_time(s_format + offset);
@@ -774,10 +761,10 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
  * @brief log_error Error log
  * @return
  */
-char *dap_strerror(long long err) {
-    static _Thread_local char s_error[LAST_ERROR_MAX] = {'\0'};
+dap_error_str_t dap_strerror_(long long err) {
+    dap_error_str_t l_ret = { };
+    char *s_error = (char*)&l_ret;
 #ifdef DAP_OS_WINDOWS
-    *s_error = '\0';
     DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
                   NULL, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_error, LAST_ERROR_MAX, NULL);
     if (l_len)
@@ -787,52 +774,50 @@ char *dap_strerror(long long err) {
     if ( strerror_r(err, s_error, LAST_ERROR_MAX) )
 #endif
         snprintf(s_error, LAST_ERROR_MAX, "Unknown error code %lld", err);
-    return s_error;
+    return l_ret;
 }
 
 #ifdef DAP_OS_WINDOWS
-char *dap_str_ntstatus(DWORD err) {
-    static _Thread_local char s_nterror[LAST_ERROR_MAX] = {'\0'};
+dap_error_str_t dap_str_ntstatus_(DWORD err) {
+    dap_error_str_t l_ret = { };
+    char *s_nterror = (char*)&l_ret;
     HMODULE ntdll = GetModuleHandle("ntdll.dll");
     if (!ntdll)
-        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())), s_nterror;
-    *s_nterror = '\0';
+        return log_it(L_CRITICAL, "NtDll error \"%s\"", dap_strerror(GetLastError())), l_ret;
     DWORD l_len = FormatMessage(FORMAT_MESSAGE_FROM_HMODULE | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_MAX_WIDTH_MASK,
                   ntdll, err, MAKELANGID (LANG_ENGLISH, SUBLANG_DEFAULT), s_nterror, LAST_ERROR_MAX, NULL);
     return ( l_len 
         ? *(s_nterror + l_len - 1) = '\0'
-        : snprintf(s_nterror, LAST_ERROR_MAX, "Unknown error code %lld", err) ), s_nterror;
+        : snprintf(s_nterror, LAST_ERROR_MAX, "Unknown error code %lld", err) ), l_ret;
 }
 #endif
 
 #if 1
-#define INT_DIGITS 19   /* enough for 64 bit integer */
 
 /**
  * @brief itoa  The function converts an integer num to a string equivalent and places the result in a string
  * @param[in] i number
  * @return
  */
-char *dap_itoa(long long i)
+dap_maxint_str_t dap_itoa_(long long i)
 {
     /* Room for INT_DIGITS digits, - and '\0' */
-    static _Thread_local char buf[INT_DIGITS + 2];
-    char *p = buf + INT_DIGITS + 1; /* points to terminating '\0' */
+    char buf[INT_DIGITS + 2], *p = buf + INT_DIGITS + 1; /* points to terminating '\0' */
     if (i >= 0) {
         do {
             *--p = '0' + (i % 10);
             i /= 10;
         } while (i != 0);
-        return p;
-    }
-    else {      /* i < 0 */
+    } else {      /* i < 0 */
         do {
             *--p = '0' - (i % 10);
             i /= 10;
         } while (i != 0);
         *--p = '-';
     }
-    return p;
+    dap_maxint_str_t l_ret = { };
+    memcpy(&l_ret, p, (size_t)(buf + sizeof(buf) - p - 1));
+    return l_ret;
 }
 
 #endif
@@ -989,8 +974,7 @@ static const char l_possible_chars[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnop
  */
 void dap_random_string_fill(char *str, size_t length) {
     for(size_t i = 0; i < length; i++)
-        str[i] = l_possible_chars[
-                rand() % (sizeof(l_possible_chars) - 1)];
+        str[i] = l_possible_chars[rand() % (sizeof(l_possible_chars) - 1)];
 }
 
 /**
@@ -1563,11 +1547,13 @@ void dap_common_enable_cleaner_log(size_t a_timeout, size_t a_max_size){
 #ifdef __cplusplus
 extern "C" {
 #endif
-const char *dap_stream_node_addr_to_str_static(dap_stream_node_addr_t a_address)
+
+
+dap_node_addr_str_t dap_stream_node_addr_to_str_static_(dap_stream_node_addr_t a_address)
 {
-    static _Thread_local char s_buf[23] = { '\0' };
-    snprintf(s_buf, sizeof(s_buf), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
-    return s_buf;
+    dap_node_addr_str_t l_ret = { };
+    snprintf((char*)&l_ret, sizeof(l_ret), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
+    return l_ret;
 }
 #ifdef __cplusplus
 }

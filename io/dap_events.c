@@ -89,8 +89,6 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #include <pthread.h>
 
 #include "dap_common.h"
-#include "dap_strfuncs.h"
-#include "dap_server.h"
 #include "dap_events.h"
 #include "dap_context.h"
 #include "dap_events_socket.h"
@@ -199,16 +197,7 @@ void dap_cpu_assign_thread_on(uint32_t a_cpu_id)
     if(l_retcode != 0)
 #endif
     {
-        char l_errbuf[128]={0};
-        switch (l_retcode) {
-            case EFAULT: strncpy(l_errbuf,"A supplied memory address was invalid.",sizeof (l_errbuf)-1); break;
-            case EINVAL: strncpy(l_errbuf,"The affinity bit mask mask contains no processors that are currently physically on the system and permitted to the thread",sizeof (l_errbuf)-1); break;
-            case ESRCH:  strncpy(l_errbuf,"No thread with the ID thread could be found",sizeof (l_errbuf)-1); break;
-            case EPFNOSUPPORT: strncpy(l_errbuf,"System doesn't support thread affinity set",sizeof (l_errbuf)-1); break;
-            default:     strncpy(l_errbuf,"Unknown error",sizeof (l_errbuf)-1);
-        }
-        log_it(L_ERROR, "Worker #%u: error in set affinity thread call: %s (%d)",a_cpu_id, l_errbuf , l_retcode);
-        //abort();
+        log_it(L_ERROR, "Set affinity error %d: \"%s\"", l_retcode, dap_strerror(l_retcode));
     }
 #endif
 #else

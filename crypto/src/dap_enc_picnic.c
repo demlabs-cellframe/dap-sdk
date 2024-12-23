@@ -110,9 +110,7 @@ int dap_enc_sig_picnic_get_sign(dap_enc_key_t *a_key, const void *a_msg, const s
     picnic_privatekey_t* sk = a_key->priv_key_data;
     paramset_t paramset;
     dap_return_val_if_pass((l_ret = get_param_set(sk->params, &paramset)) != EXIT_SUCCESS, l_ret);
-    // memory alloc
-    signature_t *l_sig = NULL;
-    DAP_NEW_Z_RET_VAL(l_sig, signature_t, -1, NULL);
+    signature_t *l_sig = DAP_NEW_Z_RET_VAL_IF_FAIL(signature_t, -1);
 
     allocateSignature(l_sig, &paramset);
     dap_return_val_if_pass(!l_sig, -1);
@@ -146,13 +144,8 @@ int dap_enc_sig_picnic_verify_sign(dap_enc_key_t *a_key, const void *a_msg, cons
     paramset_t paramset;
     dap_return_val_if_pass((l_ret = get_param_set(pk->params, &paramset)) != EXIT_SUCCESS, l_ret);
     // memory alloc
-    signature_t *l_sig = NULL;
-    DAP_NEW_Z_RET_VAL(l_sig, signature_t, -1, NULL);
-
+    signature_t *l_sig = DAP_NEW_Z_RET_VAL_IF_FAIL(signature_t, -1);
     allocateSignature(l_sig, &paramset);
-    if(!l_sig) {
-        return -1;
-    }
 
     l_ret = deserializeSignature(l_sig, (const uint8_t*)a_sig, a_sig_len, &paramset);
     if(l_ret != EXIT_SUCCESS) {

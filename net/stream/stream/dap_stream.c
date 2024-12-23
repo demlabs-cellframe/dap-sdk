@@ -1063,39 +1063,36 @@ dap_list_t *dap_stream_find_all_by_addr(dap_stream_node_addr_t *a_addr)
  */
 dap_stream_node_addr_t dap_stream_node_addr_from_sign(dap_sign_t *a_sign)
 {
-    dap_stream_node_addr_t l_ret = {0};
+    dap_stream_node_addr_t l_ret = { };
     dap_return_val_if_pass(!a_sign, l_ret);
 
     dap_hash_fast_t l_node_addr_hash;
-    dap_sign_get_pkey_hash(a_sign, &l_node_addr_hash);
-    dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
-
+    if ( dap_sign_get_pkey_hash(a_sign, &l_node_addr_hash) )
+        dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
     return l_ret;
 }
 
 dap_stream_node_addr_t dap_stream_node_addr_from_cert(dap_cert_t *a_cert)
 {
-    dap_stream_node_addr_t l_ret = {0};
+    dap_stream_node_addr_t l_ret = { };
     dap_return_val_if_pass(!a_cert, l_ret);
 
     // Get certificate public key hash
     dap_hash_fast_t l_node_addr_hash;
-    dap_cert_get_pkey_hash(a_cert, &l_node_addr_hash);
-    dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
-
+    if ( !dap_cert_get_pkey_hash(a_cert, &l_node_addr_hash) )
+        dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
     return l_ret;
 }
 
 dap_stream_node_addr_t dap_stream_node_addr_from_pkey(dap_pkey_t *a_pkey)
 {
-    dap_stream_node_addr_t l_ret = {0};
+    dap_stream_node_addr_t l_ret = { };
     dap_return_val_if_pass(!a_pkey, l_ret);
 
     // Get certificate public key hash
     dap_hash_fast_t l_node_addr_hash;
-    dap_pkey_get_hash(a_pkey, &l_node_addr_hash);
-    dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
-
+    if ( dap_pkey_get_hash(a_pkey, &l_node_addr_hash) )
+        dap_stream_node_addr_from_hash(&l_node_addr_hash, &l_ret);
     return l_ret;
 }
 
@@ -1104,7 +1101,7 @@ static void s_stream_fill_info(dap_stream_t *a_stream, dap_stream_info_t *a_out_
     a_out_info->node_addr = a_stream->node;
     a_out_info->remote_addr_str = dap_strdup_printf("%-*s", INET_ADDRSTRLEN - 1, a_stream->esocket->remote_addr_str);
     a_out_info->remote_port = a_stream->esocket->remote_port;
-    a_out_info->channels = DAP_NEW_Z_SIZE(char, a_stream->channel_count + 1);
+    a_out_info->channels = DAP_NEW_Z_SIZE_RET_IF_FAIL(char, a_stream->channel_count + 1, a_out_info->remote_addr_str);
     for (size_t i = 0; i < a_stream->channel_count; i++)
         a_out_info->channels[i] = a_stream->channel[i]->proc->id;
     a_out_info->total_packets_sent = a_stream->seq_id;

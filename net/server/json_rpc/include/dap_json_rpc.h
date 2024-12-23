@@ -29,6 +29,8 @@
 #include "dap_strfuncs.h"
 #include "dap_json_rpc_request.h"
 #include "dap_json_rpc_request_handler.h"
+#include "dap_config.h"
+#include "dap_hash.h"
 
 #ifdef __cplusplus
 extern "C"{
@@ -38,10 +40,13 @@ typedef enum dap_json_rpc_version{
     RPC_VERSION_1
 }dap_json_rpc_version_t;
 
-int dap_json_rpc_init(dap_server_t* a_http_server);
+int dap_json_rpc_init(dap_server_t* a_http_server, dap_config_t *a_config);
 void dap_json_rpc_deinit();
 void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg);
 void dap_json_rpc_add_proc_http(struct dap_http_server*sh, const char *URL);
+bool dap_check_node_pkey_in_map(dap_hash_fast_t *a_pkey);
+bool dap_json_rpc_exec_cmd_inited();
+dap_client_http_callback_error_t * dap_json_rpc_error_callback();
 
 #ifdef __cplusplus
 }

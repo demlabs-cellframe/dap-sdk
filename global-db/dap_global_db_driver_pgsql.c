@@ -359,17 +359,22 @@ int dap_db_driver_pgsql_apply_store_obj(dap_store_obj_t *a_store_obj)
 static void s_pgsql_fill_object(const char *a_group, dap_store_obj_t *a_obj, PGresult *a_res, int a_row)
 {
     a_obj->group = dap_strdup(a_group);
-
-    for (int i = 0; i < PQnfields(a_res); i++) {
-        if (i == PQfnumber(a_res, "obj_id")) {
-            a_obj->id = be64toh(*(uint64_t *)PQgetvalue(a_res, a_row, i));
-        } else if (i == PQfnumber(a_res, "obj_ts")) {
-            a_obj->timestamp = be64toh(*(time_t *)PQgetvalue(a_res, a_row, i));
-        } else if ((i == PQfnumber(a_res, "obj_key"))) {
-            a_obj->key = dap_strdup(PQgetvalue(a_res, a_row, i));
-        } else if ((i == PQfnumber(a_res, "obj_val"))) {
-            a_obj->value_len = PQgetlength(a_res, a_row, i);
-            a_obj->value = DAP_DUP_SIZE(PQgetvalue(a_res, a_row, i), a_obj->value_len);
+    int q = PQnfields(a_res);
+    while (q-- > 0) {
+        switch (q) {
+        case PQfnumber(a_res, "obj_val"):
+            a_obj->value_len = PQgetlength(a_res, a_row, q);
+            a_obj->value = DAP_DUP_SIZE(PQgetvalue(a_res, a_row, q), a_obj->value_len);
+            break;
+        case PQfnumber(a_res, "obj_key"):
+            a_obj->key = dap_strdup(PQgetvalue(a_res, a_row, q));
+            break;
+        case PQfnumber(a_res, "obj_ts"):
+            a_obj->timestamp = be64toh(*(time_t*)PQgetvalue(a_res, a_row, q));
+            break;
+        case PQfnumber(a_res, "obj_id"):
+            a_obj->id = be64toh(*(uint64_t*)PQgetvalue(a_res, a_row, q));
+            break;
         }
     }
 }
@@ -414,11 +419,16 @@ dap_store_obj_t *dap_db_driver_pgsql_read_store_obj(const char *a_group, const c
 
     // parse reply
     size_t l_count = PQntuples(l_res);
-    dap_store_obj_t *l_obj = l_count ? DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * l_count) : NULL;
-    for (int i = 0; i < l_count; i++) {
-        // fill currrent item
-        dap_store_obj_t *l_obj_cur = l_obj + i;
-        s_pgsql_fill_object(a_group, l_obj_cur, l_res, i);
+    if (l_count) {
+        dap_store_obj_t *l_obj = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count);
+        if (!l_obj) {
+            log_it(L_ERROR, "Memory allocation error");
+            l_count = 0;
+        } else {
+            for (int i = 0; i < l_count; ++i) {
+                s_pgsql_fill_object(a_group, (dap_store_obj_t*)(l_obj + i), l_res, i);
+            }
+        }
     }
     PQclear(l_res);
     s_pgsql_free_connection(l_conn);
@@ -499,11 +509,16 @@ dap_store_obj_t *dap_db_driver_pgsql_read_cond_store_obj(const char *a_group, ui
 
     // parse reply
     size_t l_count = PQntuples(l_res);
-    dap_store_obj_t *l_obj = l_count ? DAP_NEW_Z_SIZE(dap_store_obj_t, sizeof(dap_store_obj_t) * l_count) : NULL;
-    for (int i = 0; i < l_count; i++) {
-        // fill currrent item
-        dap_store_obj_t *l_obj_cur = l_obj + i;
-        s_pgsql_fill_object(a_group, l_obj_cur, l_res, i);
+    if (l_count) {
+        dap_store_obj_t *l_obj = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count);
+        if (!l_obj) {
+            log_it(L_ERROR, "Memory allocation error");
+            l_count = 0;
+        } else {
+            for (int i = 0; i < l_count; ++i) {
+                s_pgsql_fill_object(a_group, (dap_store_obj_t*)(l_obj + i), l_res, i);
+            }
+        }
     }
     PQclear(l_res);
     s_pgsql_free_connection(l_conn);

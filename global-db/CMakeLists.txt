@@ -29,14 +29,6 @@ if(BUILD_WITH_GDB_DRIVER_SQLITE)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DSQLITE_THREADSAFE=2")
 endif()
 
-if(BUILD_WITH_GDB_DRIVER_CUTTDB)
-    list(APPEND dap_global_db_SRC dap_global_db_driver_cdb.c)
-    list(APPEND dap_global_db_HDR include/dap_global_db_driver_cdb.h)
-    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../3rdparty/cuttdb ${CMAKE_CURRENT_BINARY_DIR}/../3rdparty/cuttdb)
-    set(dap_global_db_LIBS ${dap_global_db_LIBS} dap_cuttdb)
-    add_definitions("-DDAP_CHAIN_GDB_ENGINE_CUTTDB")
-endif()
-
 add_library(${PROJECT_NAME} STATIC ${dap_global_db_SRC} ${dap_global_db_HDR})
 
 target_link_libraries(${PROJECT_NAME} ${dap_global_db_LIBS})
