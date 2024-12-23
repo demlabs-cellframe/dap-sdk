@@ -321,7 +321,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
     if (!l_str)
         return log_it(L_ERROR, "Can't convert JSON-request to string!"), NULL;
     int l_len = strlen(l_str);
-    dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, l_len, 0);
+    dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, l_len, DAP_SIGN_HASH_TYPE_DEFAULT);
     if (!l_sign)
         return log_it(L_ERROR, "JSON request signing failed"), NULL;
     size_t l_sign_size = dap_sign_get_size(l_sign);

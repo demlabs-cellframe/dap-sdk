@@ -181,11 +181,11 @@ int dap_cert_sign_output(dap_cert_t * a_cert, const void * a_data, size_t a_data
  * @param a_output_size_wished wished data size (don't used in current implementation)
  * @return dap_sign_t*
  */
-dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, size_t a_output_size_wished)
+dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, uint32_t a_hash_type)
 {
     dap_return_val_if_fail(a_cert && a_cert->enc_key && a_cert->enc_key->priv_key_data &&
                            a_cert->enc_key->priv_key_data_size && a_data && a_data_size, NULL);
-    dap_sign_t *l_ret = dap_sign_create(a_cert->enc_key, a_data, a_data_size, DAP_SIGN_HASH_TYPE_DEFAULT);
+    dap_sign_t *l_ret = dap_sign_create(a_cert->enc_key, a_data, a_data_size, a_hash_type);
 
     if (l_ret)
         log_it(L_INFO, "Sign sizes: %d %d", l_ret->header.sign_size, l_ret->header.sign_pkey_size);
@@ -202,7 +202,7 @@ dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_
  * @param a_cert_signer dap_cert_t certificate object, which signs a_cert
  * @return int
  */
-int dap_cert_add_cert_sign(dap_cert_t * a_cert, dap_cert_t * a_cert_signer)
+int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer)
 {
     if (a_cert->enc_key->pub_key_data_size && a_cert->enc_key->pub_key_data) {
         dap_sign_item_t * l_sign_item = DAP_NEW_Z(dap_sign_item_t);
@@ -210,7 +210,7 @@ int dap_cert_add_cert_sign(dap_cert_t * a_cert, dap_cert_t * a_cert_signer)
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return -1;
         }
-        l_sign_item->sign = dap_cert_sign (a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_data_size,0);
+        l_sign_item->sign = dap_cert_sign(a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_data_size, DAP_SIGN_HASH_TYPE_DEFAULT);
         DL_APPEND ( PVT(a_cert)->signs, l_sign_item );
         return 0;
     } else {
