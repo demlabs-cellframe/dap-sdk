@@ -7,7 +7,6 @@
 #include <time.h>
 #include "dap_common.h"
 #include "dap_time.h"
-#include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_common"
 
@@ -57,6 +56,16 @@ dap_nanotime_t dap_nanotime_from_sec(dap_time_t a_time)
 dap_time_t dap_nanotime_to_sec(dap_nanotime_t a_time)
 {
     return a_time / DAP_NSEC_PER_SEC;
+}
+
+dap_millitime_t dap_nanotime_to_millitime(dap_nanotime_t a_time)
+{
+    return a_time / DAP_NSEC_PER_MSEC;
+}
+
+dap_nanotime_t dap_millitime_to_nanotime(dap_millitime_t a_time)
+{
+    return (dap_nanotime_t)a_time * DAP_NSEC_PER_MSEC;
 }
 
 /**

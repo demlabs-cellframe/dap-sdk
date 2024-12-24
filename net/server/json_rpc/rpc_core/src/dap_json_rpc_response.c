@@ -166,7 +166,8 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
 
 int json_print_commands(const char * a_name) {
     const char* long_cmd[] = {
-            "tx_history"
+            "tx_history",
+            "file"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
@@ -277,6 +278,38 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
     }
 }
 
+void json_print_for_file_cmd(dap_json_rpc_response_t* response) {
+    if (!response || !response->result_json_object) {
+        printf("Response is empty\n");
+        return;
+    }
+    if (json_object_get_type(response->result_json_object) == json_type_array) {
+        int result_count = json_object_array_length(response->result_json_object);
+        if (result_count <= 0) {
+            printf("Response array is empty\n");
+            return;
+        }
+        if (json_object_is_type(json_object_array_get_idx(response->result_json_object, 0), json_type_array)) {
+            for (int i = 0; i < result_count; i++) {
+                struct json_object *json_obj_result = json_object_array_get_idx(response->result_json_object, i);
+                if (!json_obj_result) {
+                    printf("Failed to get array element at index %d\n", i);
+                    continue;
+                }
+                for (size_t j = 0; j < json_object_array_length(json_obj_result); j++) {
+                    struct json_object *json_obj = json_object_array_get_idx(json_obj_result, j);
+                    if (json_obj)
+                        printf("%s", json_object_get_string(json_obj));
+                }
+            }
+        } else {
+            json_print_object(response->result_json_object, -1);
+        }
+    } else {
+        json_print_object(response->result_json_object, -1);
+    }
+}
+
 void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
     json_object * json_obj_response = json_object_array_get_idx(response->result_json_object, 0);
     json_object * j_obj_net_name, * j_arr_chains, * j_obj_chain, *j_obj_removed, *j_arr_datums, *j_arr_total;
@@ -326,8 +359,9 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                 return -2;
             }
             switch(json_print_commands(cmd_name)) {
-                case 1: json_print_for_tx_history(response); break; return 0;
-                // case 2: json_print_for_mempool_list(response); break; return 0;
+                case 1: json_print_for_tx_history(response); break;
+                case 2: json_print_for_file_cmd(response); break;
+                // case 2: json_print_for_mempool_list(response); break;
                 default: {
                         json_print_object(response->result_json_object, 0);
                     }

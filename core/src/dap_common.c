@@ -710,11 +710,11 @@ struct timespec now;
  * @param a_limit
  * @return
  */
-char *dap_log_get_item(time_t a_start_time, int a_limit)
+char *dap_log_get_item(const char *filename, time_t a_start_time, int a_limit)
 {
     unsigned l_len = LOG_FORMAT_LEN * 8;
     char l_line[l_len];
-	FILE *fp = fopen(s_log_file_path, "rb+"); // rb+ is for unignoring \r
+	FILE *fp = fopen(filename, "rb+"); // rb+ is for unignoring \r
 	if (!fp) {
 		return NULL;
 	}
@@ -755,6 +755,90 @@ char *dap_log_get_item(time_t a_start_time, int a_limit)
 	fclose(fp);
     //log_it(L_DEBUG, "Chunk is %s", l_buf); 
     return l_buf;
+}
+
+char* dap_log_get_last_n_lines(const char *filename, int N) {
+
+    unsigned l_len = 2048 * 8;
+    char l_line[l_len];
+	FILE *file = fopen(filename, "rb+"); // rb+ is for unignoring \r
+	if (!file) {
+		return NULL;
+	}
+    int counter = 0;
+    if (fseek(file, 0, SEEK_END) != 0) {
+        return NULL;
+    }
+
+    long l_ret = ftell(file);
+    if (l_ret < 0) {
+        return NULL;
+    }
+    unsigned l_file_pos = l_ret;
+    unsigned l_end_pos = l_file_pos;
+    unsigned l_n_line_pos = 0;
+    while (l_file_pos > 0) {
+        char buf[l_len];
+        size_t to_read = (l_file_pos >= l_len) ? l_len : l_file_pos;
+        l_file_pos -= to_read;
+
+        if (fseek(file, l_file_pos, SEEK_SET) != 0) {
+            return NULL;
+        }
+
+        size_t res = fread(buf, 1, to_read, file);
+        if (ferror(file)) {
+            return NULL;
+        }
+
+        for (int i = res - 1; i >= 0; i--) {
+            if (buf[i] == '\n') {
+                counter++;
+                if (counter > N) {
+                    l_n_line_pos = l_file_pos + i + 1;
+                    break;
+                }
+            }
+        }
+
+        if (l_file_pos == 0 || l_n_line_pos > 0) {
+            break;
+        }
+    }
+
+    long l_read_size = l_end_pos - l_n_line_pos - 1;
+    char * l_res = DAP_NEW_Z_SIZE(char, l_read_size + 1);
+    fseek(file, l_n_line_pos, SEEK_SET);
+    fread(l_res, l_read_size, 1, file);
+	fclose(file);
+
+    return l_res;
+}
+
+
+int dap_log_export_string_to_file(const char *a_string, const char *dest_file_str) {
+    if (!a_string)
+        return -1;
+
+    FILE *dest_file = fopen(dest_file_str, "w");
+    if (!dest_file)
+        return -2;
+
+    size_t l_read_size = strlen(a_string);
+
+    fwrite(a_string, l_read_size, 1, dest_file);
+    fclose(dest_file);
+    return 0;
+}
+
+int dap_log_clear_file(const char *filename) {
+    FILE *file = fopen(filename, "w");
+    if (!file) {
+        return -1;
+    }
+
+    fclose(file);
+    return 0;
 }
 
 /**

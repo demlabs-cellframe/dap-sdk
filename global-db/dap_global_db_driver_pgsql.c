@@ -631,6 +631,44 @@ clean_and_ret:
     return l_ret;
 }
 
+static dap_store_obj_t *s_db_pgsql_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t *a_count_out)
+{
+// sanity check
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
+// func work
+    dap_store_obj_t *l_ret = NULL;
+
+    char *l_query_str = dap_strdup_printf("SELECT * FROM \"%s\" WHERE timestamp < '%" DAP_UINT64_FORMAT_U "' ORDER BY timestamp ASC", a_group, a_timestamp);
+    if (!l_query_str) {
+        log_it(L_ERROR, "Error in PGSQL request forming");
+        goto clean_and_ret;
+    }
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, NULL, __FUNCTION__);
+    DAP_DELETE(l_query_str);
+
+// memory alloc
+    uint64_t l_count = PQntuples(l_query_res);
+    if (!l_count) {
+        s_request_err_msg(__FUNCTION__);
+        goto clean_and_ret;
+    }
+    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        goto clean_and_ret;
+    }
+
+    size_t l_count_out = 0;
+    for ( ; l_count_out < l_count && !s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_query_res, l_count_out); ++l_count_out ) {};
+    if (a_count_out)
+        *a_count_out = l_count_out;
+clean_and_ret:
+    PQclear(l_query_res);
+    s_db_pgsql_free_connection(l_conn, false);
+    return l_ret;
+}
+
+
 /**
  * @brief Reads some objects from a PGSQL database by a_group, a_key.
  * @param a_group a group name string
@@ -885,20 +923,21 @@ int dap_global_db_driver_pgsql_init(const char *a_db_conn_info, dap_global_db_dr
     }
     PQfinish(l_base_conn);
 
-    a_drv_callback->apply_store_obj         = s_db_pgsql_apply_store_obj;
-    a_drv_callback->read_store_obj          = s_db_pgsql_read_store_obj;
-    a_drv_callback->read_cond_store_obj     = s_db_pgsql_read_cond_store_obj;
-    a_drv_callback->read_last_store_obj     = s_db_pgsql_read_last_store_obj;
+    a_drv_callback->apply_store_obj                 = s_db_pgsql_apply_store_obj;
+    a_drv_callback->read_store_obj                  = s_db_pgsql_read_store_obj;
+    a_drv_callback->read_cond_store_obj             = s_db_pgsql_read_cond_store_obj;
+    a_drv_callback->read_last_store_obj             = s_db_pgsql_read_last_store_obj;
     // a_drv_callback->transaction_start       = s_db_pgsql_transaction_start;
     // a_drv_callback->transaction_end         = s_db_pgsql_transaction_end;
-    a_drv_callback->get_groups_by_mask      = s_db_pgsql_get_groups_by_mask;
-    a_drv_callback->read_count_store        = s_db_pgsql_read_count_store;
-    a_drv_callback->is_obj                  = s_db_pgsql_is_obj;
-    a_drv_callback->deinit                  = s_db_pqsql_deinit;
-    a_drv_callback->flush                   = s_db_pgsql_flush;
-    a_drv_callback->get_by_hash             = s_db_pgsql_get_by_hash;
-    a_drv_callback->read_hashes             = s_db_pgsql_read_hashes;
-    a_drv_callback->is_hash                 = s_db_pgsql_is_hash;
+    a_drv_callback->read_store_obj_by_timestamp     = s_db_pgsql_read_store_obj_below_timestamp;
+    a_drv_callback->get_groups_by_mask              = s_db_pgsql_get_groups_by_mask;
+    a_drv_callback->read_count_store                = s_db_pgsql_read_count_store;
+    a_drv_callback->is_obj                          = s_db_pgsql_is_obj;
+    a_drv_callback->deinit                          = s_db_pqsql_deinit;
+    a_drv_callback->flush                           = s_db_pgsql_flush;
+    a_drv_callback->get_by_hash                     = s_db_pgsql_get_by_hash;
+    a_drv_callback->read_hashes                     = s_db_pgsql_read_hashes;
+    a_drv_callback->is_hash                         = s_db_pgsql_is_hash;
     s_db_inited = true;
 
     return 0;

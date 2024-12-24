@@ -438,6 +438,20 @@ dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_ke
         debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have read_store_obj callback", s_used_driver);
     return l_ret;
 }
+/**
+ * @brief Reads all objects with timestamp below a_timestamp USE DAP_DELETE to free return objects
+ * @param a_group
+ * @param a_timestamp
+ */
+dap_store_obj_t *dap_global_db_driver_read_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * l_count)
+{
+    dap_store_obj_t *l_ret = NULL;
+    // read records using the selected database engine
+    if (s_drv_callback.read_store_obj_by_timestamp)
+        l_ret = s_drv_callback.read_store_obj_by_timestamp(a_group, a_timestamp, l_count);
+    return l_ret;
+}
+
 
 /**
  * @brief Checks if an object is in a database by a_group and a_key.
