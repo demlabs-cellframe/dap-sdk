@@ -204,6 +204,6 @@ dap_pkey_t *dap_pkey_get_from_hex_str(const char *a_hex_str);
 dap_pkey_t *dap_pkey_get_from_base58_str(const char *a_base58_str);
 dap_pkey_t *dap_pkey_get_from_str( const char *a_pkey_str);
 
-char *dap_pkey_to_hex_str(dap_pkey_t *a_pkey);
-char *dap_pkey_to_base58_str(dap_pkey_t *a_pkey);
-char *dap_pkey_to_str(dap_pkey_t *a_pkey, const char *a_str_type);
+const char *dap_pkey_to_hex_str(const dap_pkey_t *a_pkey);
+const char *dap_pkey_to_base58_str(const dap_pkey_t *a_pkey);
+const char *dap_pkey_to_str(const dap_pkey_t *a_pkey, const char *a_str_type);
