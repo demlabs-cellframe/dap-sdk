@@ -109,7 +109,7 @@ dap_pkey_t *dap_pkey_get_from_base58_str(const char *a_base58_str)
 }
 
 
-DAP_INLINE dap_pkey_t *dap_pkey_get_from_str( const char *a_pkey_str)
+DAP_INLINE dap_pkey_t *dap_pkey_get_from_str(const char *a_pkey_str)
 {
     dap_pkey_t *l_ret = dap_pkey_get_from_hex_str(a_pkey_str);
     return  l_ret ? l_ret : dap_pkey_get_from_base58_str(a_pkey_str);
@@ -117,10 +117,10 @@ DAP_INLINE dap_pkey_t *dap_pkey_get_from_str( const char *a_pkey_str)
 
 /**
  * @brief dap_pkey_get_hex_str
- * @param a_hash_str
- * @return pass - pointer to dap_pkey_t, error - NULL
+ * @param a_pkey
+ * @return pass - pointer hex str, error - NULL
  */
-char *dap_pkey_to_hex_str(dap_pkey_t *a_pkey)
+const char *dap_pkey_to_hex_str(const dap_pkey_t *a_pkey)
 {
     size_t l_pkey_size = dap_pkey_get_size(a_pkey);
     dap_return_val_if_pass(!l_pkey_size, NULL);
@@ -134,10 +134,10 @@ char *dap_pkey_to_hex_str(dap_pkey_t *a_pkey)
 
 /**
  * @brief dap_pkey_get_base58_str
- * @param a_base58_str
- * @return pass - pointer to dap_pkey_t, error - NULL
+ * @param a_pkey
+ * @return pass - pointer base58 str, error - NULL
  */
-char *dap_pkey_to_base58_str(dap_pkey_t *a_pkey)
+const char *dap_pkey_to_base58_str(const dap_pkey_t *a_pkey)
 {
     size_t l_pkey_size = dap_pkey_get_size(a_pkey);
     dap_return_val_if_pass(!l_pkey_size, NULL);
@@ -148,7 +148,7 @@ char *dap_pkey_to_base58_str(dap_pkey_t *a_pkey)
 }
 
 
-DAP_INLINE char *dap_pkey_to_str(dap_pkey_t *a_pkey, const char *a_str_type)
+DAP_INLINE const char *dap_pkey_to_str(const dap_pkey_t *a_pkey, const char *a_str_type)
 {
     return  dap_strcmp(a_str_type, "hex") ? dap_pkey_to_base58_str(a_pkey) : dap_pkey_to_hex_str(a_pkey);
 }
