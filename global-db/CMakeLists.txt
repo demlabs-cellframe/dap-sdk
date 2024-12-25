@@ -21,7 +21,7 @@ if(BUILD_WITH_GDB_DRIVER_PGSQL)
     set(dap_global_db_LIBS ${dap_global_db_LIBS} pq)
     add_definitions("-DDAP_CHAIN_GDB_ENGINE_PGSQL")
     if(WIN32)
-        set(dap_global_db_LIBS ${dap_global_db_LIBS} ssl crypto z pgcommon )
+        set(dap_global_db_LIBS ${dap_global_db_LIBS} ssl crypto z pgcommon pgport)
     endif()
 endif()
 
