@@ -727,21 +727,24 @@ static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_g
             }
             l_obj_arr = l_tmp;
         }
-        if (s_fill_store_obj(a_group, &l_key, &l_data, (dap_store_obj_t *)l_obj_arr + l_count_current)) {
+        if (s_fill_store_obj(a_group, &l_key, &l_data, l_obj_arr + l_count_current)) {
             rc = MDBX_PROBLEM;
             DAP_DELETE(l_obj_arr);
             l_obj_arr = NULL;
             break;
         }
 
-        if (((dap_store_obj_t *)l_obj_arr + l_count_current)->timestamp > a_timestamp)
+        if ((l_obj_arr + l_count_current)->timestamp > a_timestamp) {
+            DAP_DEL_MULTY((l_obj_arr + l_count_current)->group, (l_obj_arr + l_count_current)->key, (l_obj_arr + l_count_current)->value, (l_obj_arr + l_count_current)->sign);
             break;
+        }
             
         l_count_current++;
 
         rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT);
     }
-    *a_count = l_count_current;
+    if (a_count)
+        *a_count = l_count_current;
     if (l_count_current > 0) {
         // remove last object with greater timestamp
         dap_store_obj_t *l_tmp = DAP_REALLOC(l_obj_arr, l_count_current * sizeof(dap_store_obj_t));
@@ -752,6 +755,9 @@ static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_g
             DAP_DELETE(l_obj_arr);
             rc = MDBX_PROBLEM;
         }
+    } else {
+        DAP_DELETE(l_obj_arr);
+        l_obj_arr = NULL;
     }
 
     if (rc != MDBX_SUCCESS && rc != MDBX_NOTFOUND && !l_obj_arr) {
