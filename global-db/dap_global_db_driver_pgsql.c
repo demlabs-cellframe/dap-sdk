@@ -615,6 +615,46 @@ static dap_store_obj_t* s_db_pgsql_read_cond_store_obj(const char *a_group, dap_
         s_request_err_msg(__FUNCTION__);
         goto clean_and_ret;
     }
+    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count + 1) )) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        goto clean_and_ret;
+    }
+    
+// data forming
+    size_t l_count_out = 0;
+    for ( ; l_count_out < l_count && !s_db_pgsql_fill_one_item(a_group, l_ret + l_count_out, l_query_res, l_count_out); ++l_count_out ) {};
+    if (a_count_out)
+        *a_count_out = l_count_out;
+clean_and_ret:
+    PQclear(l_query_res);
+    s_db_pgsql_free_connection(l_conn, false);
+    return l_ret;
+}
+
+static dap_store_obj_t *s_db_pgsql_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t *a_count_out)
+{
+// sanity check
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_pass(!a_group || !(l_conn = s_db_pgsql_get_connection(false)), NULL);
+// func work
+    dap_store_obj_t *l_ret = NULL;
+    char *l_query_str = dap_strdup_printf("SELECT * FROM \"%s\""
+                                    " WHERE driver_key < $1"
+                                    " ORDER BY driver_key;", a_group);
+    if (!l_query_str) {
+        log_it(L_ERROR, "Error in PGSQL request forming");
+        goto clean_and_ret;
+    }
+    dap_global_db_driver_hash_t l_hash_from = { .bets = htobe64(a_timestamp), .becrc = (uint64_t)-1 };
+    PGresult *l_query_res = s_db_pgsql_exec_tuples(l_conn->conn, l_query_str, &l_hash_from, __FUNCTION__);
+    DAP_DELETE(l_query_str);
+    
+// memory alloc
+    uint64_t l_count = PQntuples(l_query_res);
+    if (!l_count) {
+        s_request_err_msg(__FUNCTION__);
+        goto clean_and_ret;
+    }
     if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         goto clean_and_ret;
@@ -630,6 +670,7 @@ clean_and_ret:
     s_db_pgsql_free_connection(l_conn, false);
     return l_ret;
 }
+
 
 /**
  * @brief Reads some objects from a PGSQL database by a_group, a_key.
