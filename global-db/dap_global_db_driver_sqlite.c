@@ -831,7 +831,7 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a
         log_it(L_INFO, "There are no records satisfying the conditional read request");
         goto clean_and_ret;
     }
-    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
+    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count + 1) )) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         goto clean_and_ret;
     }

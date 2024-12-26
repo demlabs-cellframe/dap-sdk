@@ -655,7 +655,7 @@ static dap_store_obj_t *s_db_pgsql_read_store_obj_below_timestamp(const char *a_
         s_request_err_msg(__FUNCTION__);
         goto clean_and_ret;
     }
-    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
+    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count + 1) )) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         goto clean_and_ret;
     }
