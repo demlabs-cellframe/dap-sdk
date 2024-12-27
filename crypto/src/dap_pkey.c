@@ -69,7 +69,7 @@ dap_pkey_t *dap_pkey_get_from_sign(dap_sign_t *a_sign)
 
 /**
  * @brief dap_pkey_get_hex_str
- * @param a_hash_str
+ * @param a_hex_str
  * @return pass - pointer to dap_pkey_t, error - NULL
  */
 dap_pkey_t *dap_pkey_get_from_hex_str(const char *a_hex_str)
@@ -109,6 +109,11 @@ dap_pkey_t *dap_pkey_get_from_base58_str(const char *a_base58_str)
 }
 
 
+/**
+ * @brief dap_pkey_get_from_str
+ * @param a_pkey_str
+ * @return pass - pointer to dap_pkey_t, error - NULL
+ */
 DAP_INLINE dap_pkey_t *dap_pkey_get_from_str(const char *a_pkey_str)
 {
     dap_pkey_t *l_ret = dap_pkey_get_from_hex_str(a_pkey_str);
@@ -118,9 +123,9 @@ DAP_INLINE dap_pkey_t *dap_pkey_get_from_str(const char *a_pkey_str)
 /**
  * @brief dap_pkey_get_hex_str
  * @param a_pkey
- * @return pass - pointer hex str, error - NULL
+ * @return pass - pointer to hex str, error - NULL
  */
-const char *dap_pkey_to_hex_str(const dap_pkey_t *a_pkey)
+char *dap_pkey_to_hex_str(const dap_pkey_t *a_pkey)
 {
     size_t l_pkey_size = dap_pkey_get_size(a_pkey);
     dap_return_val_if_pass(!l_pkey_size, NULL);
@@ -135,9 +140,9 @@ const char *dap_pkey_to_hex_str(const dap_pkey_t *a_pkey)
 /**
  * @brief dap_pkey_get_base58_str
  * @param a_pkey
- * @return pass - pointer base58 str, error - NULL
+ * @return pass - pointer to base58 str, error - NULL
  */
-const char *dap_pkey_to_base58_str(const dap_pkey_t *a_pkey)
+char *dap_pkey_to_base58_str(const dap_pkey_t *a_pkey)
 {
     size_t l_pkey_size = dap_pkey_get_size(a_pkey);
     dap_return_val_if_pass(!l_pkey_size, NULL);
@@ -147,8 +152,13 @@ const char *dap_pkey_to_base58_str(const dap_pkey_t *a_pkey)
     return l_ret;
 }
 
-
-DAP_INLINE const char *dap_pkey_to_str(const dap_pkey_t *a_pkey, const char *a_str_type)
+/**
+ * @brief dap_pkey_get_base58_str
+ * @param a_pkey
+ * @param a_str_type - hex or base58
+ * @return pass - pointer to str, error - NULL
+ */
+DAP_INLINE char *dap_pkey_to_str(const dap_pkey_t *a_pkey, const char *a_str_type)
 {
     return  dap_strcmp(a_str_type, "hex") ? dap_pkey_to_base58_str(a_pkey) : dap_pkey_to_hex_str(a_pkey);
 }

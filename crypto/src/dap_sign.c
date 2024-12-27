@@ -38,7 +38,7 @@
 
 static uint8_t s_sign_hash_type_default = DAP_SIGN_HASH_TYPE_SHA3;
 static bool s_dap_sign_debug_more = false;
-static dap_sign_callback_t s_get_pkey_by_hash = NULL;
+static dap_sign_callback_t s_get_pkey_by_hash_callback = NULL;
 
 /**
  * @brief dap_sign_init
@@ -247,7 +247,7 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
  * @param a_key dap_enc_key_t key object
  * @param a_data const void * buffer with data
  * @param a_data_size const size_t buffer size
- * @param a_output_wish_size size_t output buffer size
+ * @param a_hash_type data and pkey hash type
  * @return dap_sign_t* 
  */
 dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
@@ -347,27 +347,30 @@ uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_size)
 
 /**
  * @brief get a_sign->pkey_n_sign and a_sign->header.sign_pkey_size (optionally)
- * 
  * @param a_sign dap_sign_t sign object
  * @param a_pub_key_out [option] output pointer to a_sign->header.sign_pkey_size
  * @return uint8_t* 
  */
-uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_size)
+uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
 {
     dap_return_val_if_pass(!a_sign, NULL);
     bool l_use_pkey_hash = DAP_SIGN_GET_PKEY_HASHING_FLAG(a_sign->header.hash_type);
     if (l_use_pkey_hash) {
-        if (!s_get_pkey_by_hash) {
-            log_it(L_ERROR, "Can't get pkey by hash, callback s_get_pkey_by_hash not inited");
+        if (!s_get_pkey_by_hash_callback) {
+            log_it(L_ERROR, "Can't get pkey by hash, callback s_get_pkey_by_hash_callback not inited");
             return NULL;
         }
-        dap_pkey_t *l_pkey = s_get_pkey_by_hash(a_sign->pkey_n_sign);
-        if (a_pub_key_size)
-            *a_pub_key_size = l_pkey->header.size;
+        dap_pkey_t *l_pkey = s_get_pkey_by_hash_callback(a_sign->pkey_n_sign);
+        if (!l_pkey) {
+            log_it(L_ERROR, "Can't get pkey by hash %s", dap_hash_fast_to_str_static((dap_hash_fast_t *)a_sign->pkey_n_sign));
+            return NULL;
+        }
+        if (a_pub_key_out)
+            *a_pub_key_out = l_pkey->header.size;
         return l_pkey->pkey;
     }
-    if (a_pub_key_size)
-        *a_pub_key_size = a_sign->header.sign_pkey_size;
+    if (a_pub_key_out)
+        *a_pub_key_out = a_sign->header.sign_pkey_size;
     return a_sign->pkey_n_sign;
 }
 
@@ -387,7 +390,7 @@ bool dap_sign_get_pkey_hash(dap_sign_t *a_sign, dap_chain_hash_fast_t *a_sign_ha
             log_it(L_ERROR, "Error in pkey size check, expected <= %zu, in sign %u", sizeof(dap_chain_hash_fast_t), a_sign->header.sign_pkey_size);
             return false;
         }
-        return (bool)memcpy(a_sign_hash, a_sign->pkey_n_sign, a_sign->header.sign_pkey_size);
+        return memcpy(a_sign_hash, a_sign->pkey_n_sign, a_sign->header.sign_pkey_size) ? true : false;
     }
     return  dap_hash_fast(a_sign->pkey_n_sign, a_sign->header.sign_pkey_size, a_sign_hash);
 }
@@ -496,7 +499,7 @@ int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a
         l_verify_data_size = a_data_size;
     } else {
         l_verify_data = &l_verify_data_hash;
-        l_verify_data_size = sizeof(l_verify_data_hash);
+        l_verify_data_size = DAP_CHAIN_HASH_FAST_SIZE;
         switch(l_hash_type){
             case DAP_SIGN_HASH_TYPE_SHA3: dap_hash_fast(a_data,a_data_size,&l_verify_data_hash); break;
             default: log_it(L_CRITICAL, "Incorrect signature: we can't check hash with hash type 0x%02x", s_sign_hash_type_default);
@@ -654,9 +657,13 @@ DAP_INLINE const char *dap_sign_get_str_recommended_types()
     "sig_sphincs\nsig_multi_chained\n";
 }
 
-int dap_sign_set_pkey_by_hash_callback (dap_sign_callback_t a_callback)
+/**
+ * @brief init callback to search pkey by hash
+ * @return if pass 0, other - error
+ */
+int dap_sign_set_pkey_by_hash_callback(dap_sign_callback_t a_callback)
 {
-    dap_return_val_if_pass_err(s_get_pkey_by_hash, -1, "s_get_pkey_by_hash already inited");
-    s_get_pkey_by_hash = a_callback;
+    dap_return_val_if_pass_err(s_get_pkey_by_hash_callback, -1, "s_get_pkey_by_hash_callback already inited");
+    s_get_pkey_by_hash_callback = a_callback;
     return 0;
 }

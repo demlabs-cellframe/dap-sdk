@@ -149,7 +149,6 @@ size_t dap_cert_parse_str_list(const char * a_certs_str, dap_cert_t *** a_certs,
  * @brief
  * simply call dap_sign_create_output_unserialized_calc_size( a_cert->enc_key,a_size_wished)
  * @param a_cert dap_cert_t * certificate object
- * @param a_size_wished wished data size (don't used in current implementation)
  * @return size_t
  */
 size_t dap_cert_sign_output_size(dap_cert_t * a_cert)
@@ -178,7 +177,7 @@ int dap_cert_sign_output(dap_cert_t * a_cert, const void * a_data, size_t a_data
  * @param a_cert dap_cert_t * certificate object
  * @param a_data data for signing
  * @param a_data_size data size
- * @param a_output_size_wished wished data size (don't used in current implementation)
+ * @param a_hash_type data and pkey hash type
  * @return dap_sign_t*
  */
 dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, uint32_t a_hash_type)
@@ -925,6 +924,12 @@ DAP_INLINE const char *dap_cert_get_str_recommended_sign(){
     ;
 }
 
+/**
+ * @brief get pkey_full str from cert
+ * @param a_cert pointer to certificate
+ * @param a_str_type str type, hex or base58
+ * @return pointer to pkey_full str
+ */
 char *dap_cert_get_pkey_str(dap_cert_t *a_cert, const char *a_str_type)
 {
     dap_pkey_t *l_pkey = dap_cert_to_pkey(a_cert);
