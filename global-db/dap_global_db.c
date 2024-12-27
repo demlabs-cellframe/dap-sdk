@@ -1664,7 +1664,7 @@ static int s_check_db_version()
     return l_ret;
 }
 
-static bool s_clean_old_obj_gdb_callback() {
+static void s_clean_old_obj_gdb_callback() {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Start clean old objs in gdb callback");
     dap_nanotime_t l_time_now = dap_nanotime_now();
     dap_list_t *l_group_list = dap_global_db_driver_get_groups_by_mask("*");
@@ -1707,19 +1707,15 @@ static bool s_clean_old_obj_gdb_callback() {
         DAP_DELETE(l_ret);
     }
     dap_list_free(l_group_list);
-    return true;
 }
 
 static int s_gdb_clean_init() {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Init global_db clean old objects");
-    s_check_gdb_clean_timer = dap_timerfd_start(1800000, (dap_timerfd_callback_t)s_clean_old_obj_gdb_callback, NULL);
-    if (!s_check_gdb_clean_timer)
-        return -1;
+    dap_proc_thread_timer_add(NULL, (dap_thread_timer_callback_t)s_clean_old_obj_gdb_callback, NULL, 18000);
     return 0;
 }
 
 static void s_gdb_clean_deinit() {
-    dap_timerfd_delete_mt(s_check_gdb_clean_timer->worker, s_check_gdb_clean_timer->esocket_uuid);
 }
 
 
@@ -1767,6 +1763,15 @@ static bool s_check_pinned_db_objs_callback() {
     return true;
 }
 
+static bool s_start_check_pinned_db_objs_callback() {
+    int l_ret = dap_proc_thread_callback_add(NULL, s_check_pinned_db_objs_callback, NULL);
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Can't exec pinned objs check request, code %d", l_ret);
+    } else
+        debug_if(g_dap_global_db_debug_more, L_DEBUG, "Sent request for pinned objs check");
+    return true;
+}
+
 DAP_STATIC_INLINE char *dap_get_local_pinned_groups_mask(const char *a_group)
 {
     return dap_strdup_printf("local.%s.pinned", a_group);
@@ -1811,8 +1816,8 @@ static int s_add_pinned_obj_in_pinned_group(dap_store_obj_t * a_objs){
             s_check_pinned_db_objs_deinit();
             if (l_cluster->ttl != 0)
                 s_minimal_ttl = dap_nanotime_from_sec(l_cluster->ttl);
-            s_check_pinned_db_objs_timer = dap_timerfd_start(dap_nanotime_to_millitime(s_minimal_ttl/2), (dap_timerfd_callback_t)s_check_pinned_db_objs_callback, NULL);
-            debug_if(g_dap_global_db_debug_more, L_INFO, "New pinned callback timer %llu", s_minimal_ttl);
+            s_check_pinned_db_objs_timer = dap_timerfd_start(dap_nanotime_to_millitime(s_minimal_ttl/2), (dap_timerfd_callback_t)s_start_check_pinned_db_objs_callback, NULL);
+            debug_if(g_dap_global_db_debug_more, L_INFO, "New pinned callback timer %llu sec", dap_nanotime_to_sec(s_minimal_ttl/2));
         }
         dap_store_obj_free_one(l_ret_check);
         DAP_DELETE(l_pinned_mask);
