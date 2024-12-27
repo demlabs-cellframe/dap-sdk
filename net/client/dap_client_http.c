@@ -217,9 +217,6 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
         if ((l_client_http->request && l_client_http->request_size))
             snprintf(l_get_str, sizeof(l_get_str), "?%s", l_client_http->request) ;
     }
-#ifdef DAP_EVENTS_CAPS_IOCP
-    a_esocket->no_close = true;
-#endif
 
     char *l_out_buf = NULL;
     int l_header_size = asprintf(&l_out_buf, "%s /%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
