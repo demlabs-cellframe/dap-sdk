@@ -1704,14 +1704,14 @@ static void s_clean_old_obj_gdb_callback() {
                 }
             } 
         }
-        DAP_DELETE(l_ret);
+        dap_store_obj_free(l_ret, l_ret_count);
     }
     dap_list_free(l_group_list);
 }
 
 static int s_gdb_clean_init() {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Init global_db clean old objects");
-    dap_proc_thread_timer_add(NULL, (dap_thread_timer_callback_t)s_clean_old_obj_gdb_callback, NULL, 18000);
+    dap_proc_thread_timer_add(NULL, (dap_thread_timer_callback_t)s_clean_old_obj_gdb_callback, NULL, 1800000);
     return 0;
 }
 
@@ -1757,10 +1757,10 @@ static bool s_check_pinned_db_objs_callback() {
                 dap_store_obj_free(l_gdb_rec, 1);
             }
         }
-        DAP_DELETE(l_ret);
+        dap_store_obj_free(l_ret, l_ret_count);
     }
     dap_list_free(l_group_list);
-    return true;
+    return false;
 }
 
 static bool s_start_check_pinned_db_objs_callback() {
