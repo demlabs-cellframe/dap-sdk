@@ -63,7 +63,7 @@ static inline void s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_
 typedef struct cli_cmd_arg {
     dap_worker_t *worker;
     dap_events_socket_uuid_t es_uid;
-    size_t shift, buf_size;
+    size_t buf_size;
     char *buf, status;
 } cli_cmd_arg_t;
 
@@ -96,16 +96,15 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
     }
     case 3:
     default:
-        l_arg->shift = (size_t)(l_arg->buf - (char*)a_es->buf_in);
-        if ( a_es->buf_in_size < l_arg->buf_size + l_arg->shift )
+        size_t l_hdr_len = (size_t)(l_arg->buf - (char*)a_es->buf_in);
+        if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
+        l_arg->buf = DAP_DUP_SIZE(l_arg->buf, l_arg->buf_size);
         l_arg->worker = a_es->worker;
         l_arg->es_uid = a_es->uuid;
         dap_proc_thread_callback_add_pri(NULL, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
-        a_es->buf_in = NULL;
         a_es->buf_in_size = 0;
         a_es->callbacks.arg = NULL;
-        a_es->flags &= ~DAP_SOCK_READY_TO_READ;
         return;
     }
 
@@ -114,6 +113,10 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
     log_it(L_DEBUG, "Incomplete cmd request:\r\n%s", buf_dump);
     DAP_DELETE(buf_dump);
     a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+}
+
+DAP_STATIC_INLINE void s_cli_cmd_delete(dap_events_socket_t *a_es, void UNUSED_ARG *a_arg) {
+    DAP_DELETE(a_es->callbacks.arg);
 }
 
 /**
@@ -127,7 +130,7 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
 int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
 {
     s_debug_cli = a_debug_more;
-    dap_events_socket_callbacks_t l_callbacks = { .read_callback = s_cli_cmd_schedule };
+    dap_events_socket_callbacks_t l_callbacks = { .read_callback = s_cli_cmd_schedule, .delete_callback = s_cli_cmd_delete };
     if (!( s_cli_server = dap_server_new(a_cfg_section, NULL, &l_callbacks) )) {
         log_it(L_ERROR, "CLI server not initialized");
         return -2;
@@ -376,8 +379,7 @@ static bool s_cli_cmd_exec(void *a_arg) {
                                             "%s", dap_strlen(l_ret), l_ret);
     dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination
-    //dap_events_socket_remove_and_delete_mt(l_arg->worker, l_arg->es_uid); // No need...
-    DAP_DEL_MULTY(l_ret, (char*)(l_arg->buf - l_arg->shift), /* l_full_ret, */ l_arg);
+    DAP_DEL_MULTY(l_ret, l_arg->buf, /* l_full_ret, */ l_arg);
     return false;
 }
 
