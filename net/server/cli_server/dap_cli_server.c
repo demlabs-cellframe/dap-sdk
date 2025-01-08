@@ -95,7 +95,7 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         ++l_arg->status;
     }
     case 3:
-    default:
+    default: {
         size_t l_hdr_len = (size_t)(l_arg->buf - (char*)a_es->buf_in);
         if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
@@ -106,6 +106,7 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         a_es->buf_in_size = 0;
         a_es->callbacks.arg = NULL;
         return;
+    }
     }
 
     dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 500 Internal Server Error\r\n");
