@@ -329,7 +329,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
         .header.data_size = l_len + 1,
         .header.signs_size = l_sign_size,
     };
-    byte_t* l_cur =  (byte_t*)dap_strncpy((char*)l_ret->request_n_signs, l_str, l_len);
+    byte_t* l_cur = (byte_t*)dap_strncpy((char*)l_ret->request_n_signs, l_str, l_len);
     memcpy(l_cur + 1, l_sign, l_sign_size);
     return DAP_DEL_MULTY(l_sign, l_str), l_ret;
 }
