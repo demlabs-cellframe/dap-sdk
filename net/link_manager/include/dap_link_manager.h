@@ -50,7 +50,6 @@ typedef struct dap_link_manager_callbacks {
     dap_link_manager_callback_fill_net_info_t fill_net_info;
     dap_link_manager_callback_link_request_t link_request;
     dap_link_manager_callback_link_count_changed_t link_count_changed;
-
 } dap_link_manager_callbacks_t;
 
 // connection states
