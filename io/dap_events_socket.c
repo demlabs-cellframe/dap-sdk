@@ -1659,11 +1659,9 @@ size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t 
     dap_return_val_if_fail(a_worker, 0);
     if (a_worker == dap_worker_get_current()) {
         dap_events_socket_t *l_es = dap_context_find(a_worker->context, a_es_uuid);
-        if (!l_es) {
-            log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id);
-            return 0;
-        }
-        return dap_events_socket_write_unsafe(l_es, a_data, a_data_size);
+        return l_es
+            ? dap_events_socket_write_unsafe(l_es, a_data, a_data_size)
+            : ( log_it(L_WARNING, "UUID " DAP_UINT64_FORMAT_x " doesn't exists in worker %u", a_worker->id), 0 );
     }
 
 #ifdef DAP_EVENTS_CAPS_IOCP
