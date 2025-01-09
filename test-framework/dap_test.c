@@ -1,6 +1,7 @@
 #include "dap_test.h"
 
 #include <sys/time.h>
+#include <bits/stdint-uintn.h>
 
 /*
  How to use benchmark_xxx() functions:
@@ -62,13 +63,13 @@ void benchmark_mgs_rate(const char *test_name, float rate)
 
 
 /**
- * @return current time in milliseconds
+ * @return current time in nanoseconds
  */
-u_int64_t get_cur_time_nsec(void)
+uint64_t get_cur_time_nsec(void)
 {
     struct timespec time;
     clock_gettime(CLOCK_MONOTONIC, &time);
-    return ((u_int64_t)time.tv_sec << 32) | ((u_int32_t) (time.tv_nsec));;
+    return (uint64_t)time.tv_sec * 1000000000 + time.tv_nsec;
 }
 
 
