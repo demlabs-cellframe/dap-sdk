@@ -64,7 +64,7 @@ typedef struct cli_cmd_arg {
     dap_worker_t *worker;
     dap_events_socket_uuid_t es_uid;
     size_t buf_size;
-    char buf[];
+    char *buf, status;
 } cli_cmd_arg_t;
 
 static bool s_cli_cmd_exec(void *a_arg);
@@ -78,39 +78,57 @@ void dap_json_rpc_cli_handler_add(const char *a_method, handler_func_cli_t* a_fu
     HASH_ADD_STR(s_json_rpc_handler, method, l_handler);
 }
 
-DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, UNUSED_ARG void *a_arg) {
-    static const char l_content_len_str[] = "Content-Length: ";
-    char *l_len_token = strstr((char*)a_es->buf_in, l_content_len_str);
-#define m_dump_error_and_ret ({ \
-    const char l_error_str[] = "{ \"type\": 0, \"result\":\" Invalid request\", \"errors\": null, \"id\": 1 }", \
-        l_err_format_str[] = "HTTP/1.1 400 Bad Request\r\nContent-Length: %zu\r\n\r\n%s"; \
-    dap_events_socket_write_f_unsafe(a_es, l_err_format_str, sizeof(l_error_str) - 1, l_error_str); \
-    char *buf_dump = dap_dump_hex(a_es->buf_in, dap_max(a_es->buf_in_size, (size_t)65536)); \
-    log_it(L_DEBUG, "Incomplete cmd request: %s", buf_dump); \
-    DAP_DELETE(buf_dump); \
-})
-    if (!l_len_token || !strpbrk(l_len_token, "\r\n"))
-        return m_dump_error_and_ret;
-    long l_cmd_len = strtol(l_len_token + sizeof(l_content_len_str) - 1, NULL, 10);
-    
-    if (!l_cmd_len || l_cmd_len > 65536)
-        return m_dump_error_and_ret;
+DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg) {
+    cli_cmd_arg_t *l_arg = a_arg ? (cli_cmd_arg_t*)a_arg : DAP_NEW_Z(cli_cmd_arg_t);
+    switch (l_arg->status) {
+    case 0: {
+        a_es->callbacks.arg = l_arg;
+        ++l_arg->status;
+    }
+    case 1: {
+        static const char l_content_len_str[] = "Content-Length: ";
+        l_arg->buf = strstr((char*)a_es->buf_in, l_content_len_str);
+        if ( !l_arg->buf || !strpbrk(l_arg->buf, "\r\n") )
+            return;
+        if (( l_arg->buf_size = (size_t)strtol(l_arg->buf + sizeof(l_content_len_str) - 1, NULL, 10) ))
+            ++l_arg->status;
+        else
+            break;
+    }
+    case 2: { // Find header end and throw out header
+        static const char l_head_end_str[] = "\r\n\r\n";
+        char *l_hdr_end_token = strstr(l_arg->buf, l_head_end_str);
+        if (!l_hdr_end_token)
+            return;
+        l_arg->buf = l_hdr_end_token + sizeof(l_head_end_str) - 1;
+        ++l_arg->status;
+    }
+    case 3:
+    default: {
+        size_t l_hdr_len = (size_t)(l_arg->buf - (char*)a_es->buf_in);
+        if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
+            return;
+        l_arg->buf = DAP_DUP_SIZE(l_arg->buf, l_arg->buf_size);
+        l_arg->worker = a_es->worker;
+        l_arg->es_uid = a_es->uuid;
+        dap_proc_thread_callback_add_pri(NULL, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
+        a_es->buf_in_size = 0;
+        a_es->callbacks.arg = NULL;
+        return;
+    }
+    }
 
-    static const char l_head_end_str[] = "\r\n\r\n";
-    char *l_hdr_end_token = strstr(l_len_token, l_head_end_str);
-    if (!l_hdr_end_token)
-        return m_dump_error_and_ret;
-    else
-        l_hdr_end_token += ( sizeof(l_head_end_str) - 1 );
-    if (a_es->buf_in_size > l_cmd_len + (size_t)(l_hdr_end_token - (char*)a_es->buf_in))
-        return m_dump_error_and_ret;
-    cli_cmd_arg_t *l_arg = DAP_NEW_Z_SIZE(cli_cmd_arg_t, sizeof(cli_cmd_arg_t) + l_cmd_len + 1);
-    *l_arg = (cli_cmd_arg_t){ .worker = a_es->worker, .es_uid = a_es->uuid, .buf_size = l_cmd_len };
-    memcpy(l_arg->buf, l_hdr_end_token, l_cmd_len);
-    dap_proc_thread_callback_add_pri(NULL, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
-    a_es->buf_in_size = 0;
-#undef m_dump_error_and_ret
+    dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 500 Internal Server Error\r\n");
+    char *buf_dump = dap_dump_hex(a_es->buf_in, dap_min(a_es->buf_in_size, (size_t)65536));
+    log_it(L_DEBUG, "Incomplete cmd request:\r\n%s", buf_dump);
+    DAP_DELETE(buf_dump);
+    a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
 }
+
+static void s_cli_cmd_delete(dap_events_socket_t *a_es, void UNUSED_ARG *a_arg) {
+    DAP_DELETE(a_es->callbacks.arg);
+}
+
 
 /**
  * @brief dap_cli_server_init
@@ -123,7 +141,7 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, UNUSED_ARG 
 int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
 {
     s_debug_cli = a_debug_more;
-    dap_events_socket_callbacks_t l_callbacks = { .read_callback = s_cli_cmd_schedule };
+    dap_events_socket_callbacks_t l_callbacks = { .read_callback = s_cli_cmd_schedule, .delete_callback = s_cli_cmd_delete };
     if (!( s_cli_server = dap_server_new(a_cfg_section, NULL, &l_callbacks) )) {
         log_it(L_ERROR, "CLI server not initialized");
         return -2;
@@ -384,9 +402,8 @@ static bool s_cli_cmd_exec(void *a_arg) {
                                             "Content-Length: %zu\r\n\r\n"
                                             "%s", dap_strlen(l_ret), l_ret);
     dap_events_socket_write(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
-    // TODO: pagination
-    //dap_events_socket_remove_and_delete(l_arg->worker, l_arg->es_uid); // No need...
-    DAP_DEL_MULTY(l_ret, /*l_full_ret,*/ a_arg);
+    // TODO: pagination and ouput optimizations
+    DAP_DEL_MULTY(l_ret, l_arg->buf, l_full_ret, l_arg);
     return false;
 }
 

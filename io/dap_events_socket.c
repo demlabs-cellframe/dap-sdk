@@ -1174,8 +1174,8 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
         return;
     default:
         a_es->pending_read = 0;
-        log_it(L_ERROR, "Operation \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID" failed with error %lu",
-                        func, dap_events_socket_get_type_str(a_es), a_es->uuid, l_err);
+        log_it(L_ERROR, "Operation \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID" failed with error %ld: \"%s\"",
+                        func, dap_events_socket_get_type_str(a_es), a_es->uuid, l_err, dap_strerror(l_err));
         if ( a_es->callbacks.error_callback )
             a_es->callbacks.error_callback(a_es, l_err);
         if ( !a_es->no_close )
@@ -1277,8 +1277,8 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_es, bool a
         return;
     default:
         --a_es->pending_write;
-        log_it(L_ERROR, "Operation \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID" failed with error %lu",
-                        func, dap_events_socket_get_type_str(a_es), a_es->uuid, l_err);
+        log_it(L_ERROR, "Operation \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID" failed with error %ld: \"%s\"",
+                        func, dap_events_socket_get_type_str(a_es), a_es->uuid, l_err, dap_strerror(l_err));
         if ( a_es->callbacks.error_callback )
             a_es->callbacks.error_callback(a_es, l_err);
         if ( !a_es->no_close )
@@ -1674,16 +1674,15 @@ size_t dap_events_socket_write(dap_worker_t *a_worker, dap_events_socket_uuid_t 
         : ( DAP_DELETE(ol), log_it(L_ERROR, "Can't schedule writing to %"DAP_UINT64_FORMAT_U" in context #%d, error %d",
                                    a_es_uuid, a_worker->context->id, GetLastError()), 0 );
 #else
-    dap_worker_msg_io_t * l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_worker_msg_io_t, 0);
+    dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_worker_msg_io_t, 0);
     l_msg->esocket_uuid = a_es_uuid;
-    if (a_data && a_data_size)
-        l_msg->data = (char*)a_data; // DAP_DUP_SIZE(a_data, a_data_size);
+    l_msg->data = DAP_DUP_SIZE((char*)a_data, a_data_size);
     l_msg->data_size = a_data_size;
     l_msg->flags_set = DAP_SOCK_READY_TO_WRITE;
 
     int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_es_io, l_msg);
     return l_ret
-        ? ( log_it(L_ERROR, "dap_events_socket_queue_ptr_send() error %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0 )
+        ? ( log_it(L_ERROR, "queue_ptr_send() error %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0 )
         : a_data_size;
 #endif
 }

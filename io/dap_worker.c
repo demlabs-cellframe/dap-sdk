@@ -331,11 +331,10 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
     assert(l_msg);
     // Check if it was removed from the list
     dap_events_socket_t *l_msg_es = dap_context_find(l_context, l_msg->esocket_uuid);
-    if ( l_msg_es == NULL){
-        log_it(L_INFO, "We got i/o message for esocket %"DAP_UINT64_FORMAT_U" thats now not in list. Lost %zu data", l_msg->esocket_uuid, l_msg->data_size);
-        DAP_DELETE(l_msg->data);
-        DAP_DELETE(l_msg);
-        return;
+    if ( !l_msg_es ) {
+        log_it(L_ERROR, "Es %"DAP_UINT64_FORMAT_U" not found on worker %d. Lost %zu bytes",
+                         l_msg->esocket_uuid, a_es->worker->id, l_msg->data_size);
+        return DAP_DEL_MULTY(l_msg->data, l_msg)
     }
 
     if (l_msg->flags_set & DAP_SOCK_CONNECTING)
@@ -724,7 +723,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     if (l_cur->callbacks.read_callback) {
                         l_cur->last_time_active = time(NULL);
                         debug_if(g_debug_reactor, L_DEBUG, "Received %lu bytes from socket %zu", l_bytes, l_cur->socket);
-                        l_cur->callbacks.read_callback(l_cur, NULL);
+                        l_cur->callbacks.read_callback(l_cur, l_cur->callbacks.arg);
                         if (!l_cur->context) {
                             debug_if(g_debug_reactor, L_DEBUG, "Es %p : %zu unattached from context %u", l_cur, l_cur->socket, a_context->id);
                             continue;
