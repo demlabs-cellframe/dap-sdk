@@ -33,7 +33,7 @@ typedef struct dap_tsd {
 byte_t     *dap_tsd_write   (byte_t *a_ptr, uint16_t a_type, const void *a_data, size_t a_data_size);
 dap_tsd_t  *dap_tsd_create  (uint16_t a_type, const void *a_data, size_t a_data_size);
 dap_tsd_t  *dap_tsd_find    (byte_t *a_data, size_t a_data_size, uint16_t a_type);
-dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type);
+dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type, size_t a_type_size);
 
 #define dap_tsd_create_scalar(type,value) dap_tsd_create(type, &value, sizeof(value))
 #define dap_tsd_get_scalar(a,typeconv) ( a->size >= sizeof(typeconv) ? *((typeconv*) a->data) : (typeconv) {0})
