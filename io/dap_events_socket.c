@@ -190,10 +190,10 @@ static void s_es_set_flag(dap_context_t *a_c, OVERLAPPED *a_ol) {
 }
 
 static void s_es_reassign(dap_context_t *a_c, OVERLAPPED *a_ol) {
-    dap_events_socket_t *a_es = dap_context_find(a_c, (dap_events_socket_uuid_t)a_ol->Pointer);
+    dap_events_socket_t *a_es = dap_context_find(a_c, (dap_events_socket_uuid_t)a_ol->Internal);
     if (!a_es)
-        return log_it(L_ERROR, "Es #"DAP_FORMAT_ESOCKET_UUID" not found in context #%d", a_ol->Pointer, a_c->id);
-    dap_worker_t *l_new_worker = (dap_worker_t*)a_ol->Internal;
+        return log_it(L_ERROR, "Es #"DAP_FORMAT_ESOCKET_UUID" not found in context #%d", a_ol->Internal, a_c->id);
+    dap_worker_t *l_new_worker = (dap_worker_t*)a_ol->Pointer;
     if ( a_es->was_reassigned && a_es->flags & DAP_SOCK_REASSIGN_ONCE )
         log_it(L_INFO, "Multiple worker switches for %p are forbidden", a_es);
     else
@@ -409,8 +409,8 @@ void dap_events_socket_reassign_between_workers(dap_worker_t *a_worker_old, dap_
     }
 #ifdef DAP_EVENTS_CAPS_IOCP
     dap_overlapped_t *ol = DAP_NEW_Z(dap_overlapped_t);
-    ol->ol.Internal = (ULONG_PTR)a_worker_new;
-    ol->ol.Pointer = a_es_uuid;
+    ol->ol.Pointer = a_worker_new;
+    ol->ol.Internal = a_es_uuid;
     ol->op = io_call;
     if ( !PostQueuedCompletionStatus(a_worker_old->context->iocp, 0, (ULONG_PTR)s_es_reassign, (OVERLAPPED*)ol) ) {
         log_it(L_ERROR, "Can't reassign es % " DAP_UINT64_FORMAT_x ",  error %d", a_es_uuid, GetLastError());

@@ -334,7 +334,7 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg)
     if ( !l_msg_es ) {
         log_it(L_ERROR, "Es %"DAP_UINT64_FORMAT_U" not found on worker %d. Lost %zu bytes",
                          l_msg->esocket_uuid, a_es->worker->id, l_msg->data_size);
-        return DAP_DEL_MULTY(l_msg->data, l_msg)
+        return DAP_DEL_MULTY(l_msg->data, l_msg);
     }
 
     if (l_msg->flags_set & DAP_SOCK_CONNECTING)
