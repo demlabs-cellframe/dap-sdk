@@ -1058,8 +1058,10 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
         DAP_DEL_MULTY(l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
-    l_msg->value = DAP_DUP_SIZE_RET_VAL_IF_FAIL((char*)a_value, a_value_length, DAP_GLOBAL_DB_RC_CRITICAL, l_msg->key, l_msg->group, l_msg);
-    l_msg->value_length = a_value_length;
+    if (a_value && a_value_length) {
+        l_msg->value = DAP_DUP_SIZE_RET_VAL_IF_FAIL((char*)a_value, a_value_length, DAP_GLOBAL_DB_RC_CRITICAL, l_msg->key, l_msg->group, l_msg);
+        l_msg->value_length = a_value_length;
+    }
     l_msg->value_is_pinned = a_pin_value;
     l_msg->callback_arg = a_arg;
     l_msg->callback_result = a_callback;

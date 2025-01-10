@@ -601,7 +601,7 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
             }
         } 
     }
-
+        
     assert(l_link->active_clusters == NULL);
 
     bool l_link_preserve = (a_client_preserve || l_link->static_clusters) && !a_force;
@@ -968,7 +968,7 @@ static bool s_stream_add_callback(void *a_arg)
     DL_FOREACH(l_link->static_clusters, l_item) {
         dap_cluster_t *l_cluster = l_item->data;
         if (l_cluster->status == DAP_CLUSTER_STATUS_ENABLED){
-            dap_cluster_member_add(l_cluster, l_node_addr, 0, NULL);  
+            dap_cluster_member_add(l_cluster, l_node_addr, 0, NULL);       
             if (l_link->link_manager->callbacks.link_count_changed){
                 l_link->link_manager->callbacks.link_count_changed();
             }
@@ -1106,7 +1106,7 @@ static bool s_link_accounting_callback(void *a_arg)
                 dap_cluster_member_add(l_cluster, l_node_addr, 0, NULL);
                 if (l_link->link_manager->callbacks.link_count_changed){
                     l_link->link_manager->callbacks.link_count_changed();
-                }
+                } 
             } else {
                 for (dap_list_t *l_item = l_link->static_clusters; l_item; l_item = l_item->next) {
                     if (l_cluster == l_item->data) {
