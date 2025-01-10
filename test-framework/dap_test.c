@@ -37,7 +37,6 @@ void benchmark_mgs_time(const char *test_name, int dt)
         snprintf(buf, 120, "(%.3lf sec.)", dt * 1. / 1000);
     }
     else {
-
         snprintf(buf, 120, "(%d msec.)", dt);
     }
     dap_pass_msg_benchmark(test_name, buf);
