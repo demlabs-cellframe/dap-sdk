@@ -1,7 +1,6 @@
 #include "dap_test.h"
 
 #include <sys/time.h>
-#include <bits/stdint-uintn.h>
 
 /*
  How to use benchmark_xxx() functions:
