@@ -97,7 +97,13 @@ void s_notify_server_broadcast(const char *a_data)
             log_it(L_ERROR, "Wrong worker id %u for interthread communication", l_worker_id);
             continue;
         }
-        dap_events_socket_write(dap_events_worker_get(l_worker_id), it->uuid, a_data, l_str_len + 1);
+        dap_events_socket_write(dap_events_worker_get(l_worker_id), it->uuid, 
+#ifdef DAP_EVENTS_CAPS_IOCP
+            a_data,
+#else
+            DAP_DUP_SIZE((char*)a_data, l_str_len + 1),
+#endif        
+            l_str_len + 1);
     }
     pthread_rwlock_unlock(&s_notify_server_clients_mutex);
 }

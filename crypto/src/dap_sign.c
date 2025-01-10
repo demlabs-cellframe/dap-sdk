@@ -293,7 +293,7 @@ dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
                 *l_pub_key = NULL;   
         if (l_use_pkey_hash) {
             l_pub_key = DAP_NEW_Z(dap_hash_fast_t);
-            dap_enc_key_get_pkey_hash(a_key, (dap_hash_fast_t *)l_pub_key);
+            dap_enc_key_get_pkey_hash(a_key, (dap_hash_fast_t*)l_pub_key);
             l_pub_key_size = DAP_HASH_FAST_SIZE;
         } else {
             l_pub_key = dap_enc_key_serialize_pub_key(a_key, &l_pub_key_size);

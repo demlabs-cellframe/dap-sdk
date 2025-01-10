@@ -309,7 +309,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *d
 
 void dap_json_rpc_http_request_free(dap_json_rpc_http_request_t *a_http_request)
 {
-    DAP_DEL_Z(a_http_request);
+    DAP_DELETE(a_http_request);
 }
 
 dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_request_t *a_request, dap_cert_t *a_cert)
@@ -329,8 +329,8 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
         .header.data_size = l_len + 1,
         .header.signs_size = l_sign_size,
     };
-    byte_t* l_cur =  (byte_t*)dap_strncpy((char*)l_ret->request_n_signs, l_str, l_len);
-    dap_mempcpy(l_cur + 1, l_sign, l_sign_size);
+    byte_t* l_cur = (byte_t*)dap_strncpy((char*)l_ret->request_n_signs, l_str, l_len);
+    memcpy(l_cur + 1, l_sign, l_sign_size);
     return DAP_DEL_MULTY(l_sign, l_str), l_ret;
 }
 
