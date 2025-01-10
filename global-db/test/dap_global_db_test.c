@@ -99,7 +99,7 @@ static int s_test_create_db(const char *db_type)
     return rc;
 }
 
-static int s_test_write(size_t a_count)
+static int s_test_write(size_t a_count, bool a_with_value)
 {
     dap_store_obj_t l_store_obj = {0};
     int l_value_len = 0, *l_pvalue, i, ret;
@@ -115,7 +115,7 @@ static int s_test_write(size_t a_count)
 
                                     /* "Table" name */
     l_store_obj.key = l_key;                                                /* Point <.key> to the buffer with the key of record */
-    l_store_obj.value = (uint8_t *) l_value;                                 /* Point <.value> to static buffer area */
+    l_store_obj.value = a_with_value ? (uint8_t *) l_value : NULL;                                 /* Point <.value> to static buffer area */
     prec = (dap_db_test_record_t *) l_value;
     size_t l_rewrite_count = rand() % (a_count / 2) + 2; 
     for (size_t i = 0; i < a_count; ++i)
@@ -127,17 +127,17 @@ static int s_test_write(size_t a_count)
 
         clock_gettime(CLOCK_REALTIME, &now);                                /* Get and save record's timestamp */
         l_store_obj.timestamp = ((uint64_t)now.tv_sec << 32) | ((uint32_t) (now.tv_nsec));
-
-        prec->len = rand() % DAP_DB$SZ_DATA + 1;                                /* Variable payload length */
-        l_pvalue   = (int *) prec->data;
-        for (int  i = prec->len / sizeof(int); i--; l_pvalue++)             /* Fill record's payload with random data */
-            *l_pvalue = rand() + 1;
-        sprintf(prec->data, "DATA$%08zx%s", i, i < l_rewrite_count ? "rw" : "");                         /* Just for fun ... */
-        l_value_len = prec->len + sizeof(dap_db_test_record_t);
-        l_store_obj.value_len = l_value_len;
-        assert(l_store_obj.value_len < sizeof(l_value));
-
-        dap_hash_fast (prec->data, prec->len, &prec->csum);                 /* Compute a hash of the payload part of the record */
+        if (a_with_value) {
+            prec->len = rand() % DAP_DB$SZ_DATA + 1;                                /* Variable payload length */
+            l_pvalue   = (int *) prec->data;
+            for (int  i = prec->len / sizeof(int); i--; l_pvalue++)             /* Fill record's payload with random data */
+                *l_pvalue = rand() + 1;
+            sprintf(prec->data, "DATA$%08zx%s", i, i < l_rewrite_count ? "rw" : "");                         /* Just for fun ... */
+            l_value_len = prec->len + sizeof(dap_db_test_record_t);
+            l_store_obj.value_len = l_value_len;
+            assert(l_store_obj.value_len < sizeof(l_value));
+            dap_hash_fast (prec->data, prec->len, &prec->csum);                 /* Compute a hash of the payload part of the record */
+        }
 
         if (i >= l_rewrite_count) {
             l_store_obj.flags = i % DAP_DB$SZ_HOLES ? 0 : DAP_GLOBAL_DB_RECORD_DEL;
@@ -198,14 +198,16 @@ static int s_test_read(size_t a_count, bool a_bench)
         dap_assert_PIF(!strcmp(DAP_DB$T_GROUP, l_store_obj->group), "Check group name");
         dap_assert_PIF(!strcmp(l_key, l_store_obj->key), "Check key name");
 
-        prec = (dap_db_test_record_t *) l_store_obj->value;
-        log_it(L_DEBUG, "Retrieved object: [%s, %s, %zu octets]", l_store_obj->group, l_store_obj->key,
-                     l_store_obj->value_len);
-        log_it(L_DEBUG, "Record: ['%.*s', %d octets]", prec->len, prec->data, prec->len);
-        dap_hash_fast(prec->data, prec->len,
-                      &csum);                       /* Compute a hash of the payload part of the record */
-        dap_assert_PIF(memcmp(&csum, &prec->csum, sizeof(dap_chain_hash_fast_t)) == 0,
-                       "Record check sum"); /* Integriry checking ... */
+        if (l_store_obj->value) {
+            prec = (dap_db_test_record_t *) l_store_obj->value;
+            log_it(L_DEBUG, "Retrieved object: [%s, %s, %zu octets]", l_store_obj->group, l_store_obj->key,
+                        l_store_obj->value_len);
+            log_it(L_DEBUG, "Record: ['%.*s', %d octets]", prec->len, prec->data, prec->len);
+            dap_hash_fast(prec->data, prec->len,
+                        &csum);                       /* Compute a hash of the payload part of the record */
+            dap_assert_PIF(memcmp(&csum, &prec->csum, sizeof(dap_chain_hash_fast_t)) == 0,
+                        "Record check sum"); /* Integriry checking ... */
+        }
         dap_store_obj_free_one(l_store_obj);
     }
     dap_pass_msg("read check");
@@ -223,8 +225,6 @@ static int s_test_read_all(size_t a_count)
     s_read_all_with_holes = get_cur_time_nsec() - s_read_all_with_holes;
     dap_assert_PIF(l_count == a_count, "Count of all read records with holes not equal count of write records");
     for (size_t i = 0; i < l_count; ++i ) {
-        dap_chain_hash_fast_t csum = { 0 };
-        dap_db_test_record_t *prec = NULL;
         dap_store_obj_t *l_store_obj = l_store_obj_all + i;
         char l_key[64] = { 0 };
         snprintf(l_key, sizeof(l_key), "KEY$%08zx", i);           /* Generate a key of record */
@@ -235,14 +235,17 @@ static int s_test_read_all(size_t a_count)
         dap_assert_PIF(!strcmp(DAP_DB$T_GROUP, l_store_obj->group), "Check group name");
         dap_assert_PIF(!strcmp(l_key, l_store_obj->key), "Check key name");
 
-        prec = (dap_db_test_record_t *) l_store_obj->value;
-        log_it(L_DEBUG, "Retrieved object: [%s, %s, %zu octets]", l_store_obj->group, l_store_obj->key,
-                     l_store_obj->value_len);
-        log_it(L_DEBUG, "Record: ['%.*s', %d octets]", prec->len, prec->data, prec->len);
-        dap_hash_fast(prec->data, prec->len,
-                      &csum);                       /* Compute a hash of the payload part of the record */
-        dap_assert_PIF(memcmp(&csum, &prec->csum, sizeof(dap_chain_hash_fast_t)) == 0,
-                       "Record check sum"); /* Integriry checking ... */
+        if (l_store_obj->value) {
+            dap_chain_hash_fast_t csum = { 0 };
+            dap_db_test_record_t *prec = (dap_db_test_record_t *) l_store_obj->value;
+            log_it(L_DEBUG, "Retrieved object: [%s, %s, %zu octets]", l_store_obj->group, l_store_obj->key,
+                        l_store_obj->value_len);
+            log_it(L_DEBUG, "Record: ['%.*s', %d octets]", prec->len, prec->data, prec->len);
+            dap_hash_fast(prec->data, prec->len,
+                        &csum);                       /* Compute a hash of the payload part of the record */
+            dap_assert_PIF(memcmp(&csum, &prec->csum, sizeof(dap_chain_hash_fast_t)) == 0,
+                        "Record check sum"); /* Integriry checking ... */
+        }
     }
     dap_store_obj_free(l_store_obj_all, l_count);
     dap_pass_msg("read_all check");
@@ -352,8 +355,10 @@ static void s_test_count(size_t a_count, bool a_bench)
         dap_assert_PIF(l_store_obj, "Records-Not-Found");
         
         uint64_t l_time = get_cur_time_nsec();
-        dap_assert_PIF(a_count - i == dap_global_db_driver_count(DAP_DB$T_GROUP, l_driver_key, true), "Count with holes");
+        size_t l_count = dap_global_db_driver_count(DAP_DB$T_GROUP, l_driver_key, true);
         s_count_with_holes += a_bench ? get_cur_time_nsec() - l_time : 0;
+        dap_assert_PIF(a_count - i == l_count, "Count with holes");
+        
         
         l_driver_key = dap_global_db_driver_hash_get(l_store_obj);
         dap_store_obj_free_one(l_store_obj);
@@ -371,8 +376,9 @@ static void s_test_count(size_t a_count, bool a_bench)
         dap_assert_PIF(l_store_obj, "Records-Not-Found");
         
         uint64_t l_time = get_cur_time_nsec();
-        dap_assert_PIF(a_count / DAP_DB$SZ_HOLES * (DAP_DB$SZ_HOLES - 1) - k == dap_global_db_driver_count(DAP_DB$T_GROUP, l_driver_key, false), "Count without holes");
+        size_t l_count = dap_global_db_driver_count(DAP_DB$T_GROUP, l_driver_key, false);
         s_count_without_holes += a_bench ? get_cur_time_nsec() - l_time : 0;
+        dap_assert_PIF(a_count / DAP_DB$SZ_HOLES * (DAP_DB$SZ_HOLES - 1) - k == l_count, "Count without holes");
 
         l_driver_key = dap_global_db_driver_hash_get(l_store_obj);
         dap_store_obj_free_one(l_store_obj);
@@ -655,9 +661,9 @@ static void s_test_close_db(void)
 }
 
 
-static void s_test_all(size_t a_count)
+static void s_test_all(size_t a_count, bool a_with_value)
 {
-    s_test_write(a_count);
+    s_test_write(a_count, a_with_value);
     s_test_read(a_count, true);
     s_test_read_all(a_count);
     s_test_read_cond_store(a_count, true);
@@ -767,23 +773,48 @@ static void s_test_multithread(size_t a_count)
     dap_pass_msg("multithread check");
 }
 
-int main(int argc, char **argv)
+static void s_test_full(size_t a_db_count, size_t a_count, bool a_with_value)
 {
-    dap_log_level_set(L_WARNING);
-    size_t l_db_count = sizeof(s_db_types) / sizeof(char *) - 1;
-    dap_assert_PIF(l_db_count, "Use minimum 1 DB driver");
-    size_t l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + 2;
-    for (size_t i = 0; i < l_db_count; ++i) {
+    for (size_t i = 0; i < a_db_count; ++i) {
+        s_write = 0;
+        s_rewrite = 0;
+        s_read = 0;
+        s_read_all_with_holes = 0;
+        s_read_all_without_holes = 0;
+        s_read_cond_store = 0;
+        s_count_with_holes = 0;
+        s_count_without_holes = 0;
+        s_tx_start_end_erase = 0;
+        s_tx_start_end_add = 0;
+        s_flush = 0;
+        s_is_obj = 0;
+        s_is_obj_wrong = 0;
+        s_is_obj_not_existed = 0;
+        s_is_hash = 0;
+        s_is_hash_wrong = 0;
+        s_is_hash_not_existed = 0;
+        s_last_with_holes = 0;
+        s_last_without_holes = 0;
+        s_last_with_holes_wrong = 0;
+        s_last_without_holes_wrong = 0;
+        s_last_with_holes_not_existed = 0;
+        s_last_without_holes_not_existed = 0;
+        s_read_hashes = 0;
+        s_read_hashes_wrong = 0;
+        s_read_hashes_not_existed = 0;
+        s_get_by_hash = 0;
+        s_get_groups_by_mask = 0;
+
         dap_print_module_name(s_db_types[i]);
         s_test_create_db(s_db_types[i]);
         uint64_t l_t1 = get_cur_time_nsec();
-        s_test_all(l_count);
+        s_test_all(a_count, true);
         uint64_t l_t2 = get_cur_time_nsec();
         char l_msg[120] = {0};
-        sprintf(l_msg, "All tests to %zu records", l_count);
-    dap_print_module_name("Multithread");  // TODO need update test, fail on pipelines
-        // s_test_multithread(l_count);
-    dap_print_module_name("Benchmark");
+        sprintf(l_msg, "All tests to %zu records", a_count);
+        dap_print_module_name("Multithread");
+        s_test_multithread(a_count);
+        dap_print_module_name("Benchmark");
         benchmark_mgs_time("Tests to write", s_write / 1000000);
         benchmark_mgs_time("Tests to rewrite", s_rewrite / 1000000);
         benchmark_mgs_time("Tests to read", s_read / 1000000);
@@ -815,5 +846,19 @@ int main(int argc, char **argv)
         benchmark_mgs_time(l_msg, (l_t2 - l_t1) / 1000000);
         s_test_close_db();
     }
+
+}
+
+int main(int argc, char **argv)
+{
+    dap_log_level_set(L_DEBUG);
+    size_t l_db_count = sizeof(s_db_types) / sizeof(char *) - 1;
+    dap_assert_PIF(l_db_count, "Use minimum 1 DB driver");
+    size_t l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + 2;
+    dap_assert_PIF(!(l_count % DAP_DB$SZ_HOLES), "If l_count \% DAP_DB$SZ_HOLES tests will fail");
+    dap_print_module_name("Tests with value");
+    s_test_full(l_db_count, l_count, true);
+    dap_print_module_name("Tests without value");
+    s_test_full(l_db_count, l_count, false);
 }
 
