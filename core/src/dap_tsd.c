@@ -68,7 +68,7 @@ dap_tsd_t *dap_tsd_find(byte_t *a_data, size_t a_data_size, uint16_t a_type)
     return NULL;
 }
 
-dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type)
+dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type, size_t a_type_size)
 {
     dap_list_t *l_ret = NULL;
     for (uint64_t l_offset = 0; l_offset + sizeof(dap_tsd_t) < a_data_size && l_offset + sizeof(dap_tsd_t) > l_offset; ) {
@@ -76,8 +76,8 @@ dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type
         uint64_t l_tsd_size = dap_tsd_size(l_tsd);
         if (l_tsd_size + l_offset > a_data_size || l_tsd_size + l_offset < l_offset)
             break;
-        if ( l_tsd->type == a_type )
-            l_ret = dap_list_append(l_ret, l_tsd);
+        if ( l_tsd->type == a_type && (!a_type_size || l_tsd->size == a_type_size) )
+            l_ret = dap_list_append(l_ret, DAP_DUP_SIZE(l_tsd, dap_tsd_size(l_tsd)));
         l_offset += l_tsd_size;
     }
     return l_ret;
