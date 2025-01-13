@@ -1434,7 +1434,12 @@ DAP_INLINE int dap_global_db_erase_table(const char *a_group, dap_global_db_call
  */
 static void s_msg_opcode_delete(struct queue_io_msg * a_msg)
 {
-    int l_res = dap_global_db_del_sync(a_msg->group, a_msg->key);
+    int l_res = 0;
+    if (a_msg->value && a_msg->value_length) {
+        l_res = dap_global_db_del_sync_ex(a_msg->group, a_msg->key, a_msg->value, a_msg->value_length);
+    } else {
+        l_res = dap_global_db_del_sync(a_msg->group, a_msg->key);
+    }
 
     if(a_msg->callback_result) {
         a_msg->callback_result(a_msg->dbi, l_res==0 ? DAP_GLOBAL_DB_RC_SUCCESS:
