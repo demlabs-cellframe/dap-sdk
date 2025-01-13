@@ -4,22 +4,13 @@
 
 dap_json_rpc_param_t* dap_json_rpc_create_param(void * data, dap_json_rpc_type_param_t type)
 {
-    dap_json_rpc_param_t *param = DAP_NEW(dap_json_rpc_param_t);
-    if (!param) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
-    }
-
-    param->value_param = data;
-    param->type = type;
-
-    return param;
+    dap_json_rpc_param_t param = { .type = type, .value_param = data };
+    return DAP_DUP(&param);
 }
 
 dap_json_rpc_params_t* dap_json_rpc_params_create(void)
 {
-    dap_json_rpc_params_t *params = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_rpc_params_t, NULL);
-    return params;
+    return DAP_NEW_Z(dap_json_rpc_params_t);
 }
 
 void dap_json_rpc_params_add_data(dap_json_rpc_params_t *a_params, const void *a_value,
@@ -59,11 +50,13 @@ void dap_json_rpc_params_add_param(dap_json_rpc_params_t *a_params, dap_json_rpc
 
 void dap_json_rpc_param_remove(dap_json_rpc_param_t *param)
 {
+    dap_return_if_fail(param);
     DAP_DEL_MULTY(param->value_param, param);
 }
 
 void dap_json_rpc_params_remove_all(dap_json_rpc_params_t *a_params)
 {
+    dap_return_if_fail(a_params);
     for (uint32_t i=0x0 ; i < dap_json_rpc_params_length(a_params); i++){
         dap_json_rpc_param_remove(a_params->params[i]);
     }
@@ -72,17 +65,17 @@ void dap_json_rpc_params_remove_all(dap_json_rpc_params_t *a_params)
 
 uint32_t dap_json_rpc_params_length(dap_json_rpc_params_t *a_params)
 {
-    return a_params->length;
+    return a_params ? a_params->length : 0;
 }
 
 void *dap_json_rpc_params_get(dap_json_rpc_params_t *a_params, uint32_t index)
 {
-    return a_params->length > index ? a_params->params[index]->value_param : NULL;
+    return a_params && a_params->length > index ? a_params->params[index]->value_param : NULL;
 }
 
 dap_json_rpc_type_param_t dap_json_rpc_params_get_type_param(dap_json_rpc_params_t *a_params, uint32_t index)
 {
-    return a_params->length > index ? a_params->params[index]->type : TYPE_PARAM_NULL;
+    return a_params && a_params->length > index ? a_params->params[index]->type : TYPE_PARAM_NULL;
 }
 
 dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *a_array_list)
