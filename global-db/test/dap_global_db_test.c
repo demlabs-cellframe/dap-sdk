@@ -281,7 +281,7 @@ static void s_test_read_obj_below_timestamp(size_t a_count)
         l_blank_check = dap_global_db_driver_hash_get(l_store_obj + l_cur_count - 1);
         dap_assert_PIF(l_count <= DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + dap_global_db_driver_hash_is_blank(&l_blank_check), "Wrong finded records count");
         dap_assert_PIF(!strcmp(s_group, (l_objs + i)->group), "Wrong group");
-        for (size_t j = 0; i < l_cur_count && i + j < l_count; ++j) {
+        for (size_t j = 0; j < l_cur_count && i + j < l_count; ++j) {
             dap_assert_PIF(!dap_store_obj_driver_obj_compare(l_store_obj + j, l_objs + i + j), "Records not equal");
         }
         dap_store_obj_free(l_store_obj, l_cur_count);

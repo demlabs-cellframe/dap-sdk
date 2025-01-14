@@ -684,7 +684,7 @@ ret:
 
 static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count) {
     dap_return_val_if_fail(a_group, NULL);
-    dap_global_db_driver_hash_t l_hash_from = { .bets = htobe64(a_timestamp), .becrc = 0 };
+    dap_global_db_driver_hash_t l_hash_from = { .bets = htobe64(a_timestamp), .becrc = (uint64_t)-1 };
     return s_db_mdbx_read_cond(a_group, l_hash_from, a_count, false, true, true);
 }
 
@@ -869,6 +869,12 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
         if (a_prev && MDBX_NOTFOUND == rc)
             rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_LAST);
         if (MDBX_SUCCESS != rc) {
+            if (MDBX_NOTFOUND != rc)
+                log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
+            goto safe_ret;
+        }
+    } else if (a_prev) {
+        if (MDBX_SUCCESS != (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_PREV))) {
             if (MDBX_NOTFOUND != rc)
                 log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
             goto safe_ret;
