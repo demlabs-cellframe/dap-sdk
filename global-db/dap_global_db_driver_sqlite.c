@@ -820,11 +820,13 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a
     dap_store_obj_t * l_ret = NULL;
 
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
-    char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM \"%s\""
-                                        " WHERE driver_key < ?", a_group);
-    char *l_query_str = sqlite3_mprintf("SELECT * FROM \"%s\""
+    char *l_table_name = dap_str_replace_char(a_group, '.', '_');
+    char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s'"
+                                        " WHERE driver_key < ?", l_table_name);
+    char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
                                         " WHERE driver_key < ?"
-                                        " ORDER BY driver_key", a_group);
+                                        " ORDER BY driver_key DESC LIMIT '%d'", l_table_name, (int)DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
+    DAP_DELETE(l_table_name);
     if (!l_query_count_str || !l_query_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
@@ -841,6 +843,7 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a
     }
 // memory alloc
     uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
+    l_count = a_count_out && *a_count_out ? dap_min(l_count, *a_count_out) : dap_min(l_count, DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
     if (!l_count) {
         log_it(L_INFO, "There are no records satisfying the conditional read request");
         goto clean_and_ret;

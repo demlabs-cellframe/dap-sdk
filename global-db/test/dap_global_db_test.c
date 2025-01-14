@@ -269,22 +269,21 @@ static void s_test_read_cond_store(size_t a_count)
 static void s_test_read_obj_below_timestamp(size_t a_count)
 {
     size_t l_count = 0;
-    int l_time = get_cur_time_msec();
     dap_store_obj_t *l_objs = dap_global_db_driver_read_obj_below_timestamp(s_group, (dap_nanotime_t)(-1), &l_count);
-    s_read_cond_store += get_cur_time_msec() - l_time;
     dap_assert_PIF(l_objs, "Records-Not-Found");
-    dap_assert_PIF(a_count == l_count, "Wrong finded records count");
+    dap_global_db_driver_hash_t l_blank_check = dap_global_db_driver_hash_get(l_objs + l_count - 1);
+    dap_assert_PIF(l_count <= DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + dap_global_db_driver_hash_is_blank(&l_blank_check), "Wrong finded records count");
 
-    for (size_t i = 0; i < a_count; ++i) {
+    for (size_t i = 0; i < l_count; ++i) {
         size_t l_cur_count = 0;
         dap_store_obj_t *l_store_obj = dap_global_db_driver_read_obj_below_timestamp(s_group, (l_objs + i)->timestamp, &l_cur_count);
         dap_assert_PIF(l_store_obj, "Record-Not-Found");
-        dap_assert_PIF(i + 1 == l_cur_count, "Wrong finded records count");
+        l_blank_check = dap_global_db_driver_hash_get(l_store_obj + l_cur_count - 1);
+        dap_assert_PIF(l_count <= DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + dap_global_db_driver_hash_is_blank(&l_blank_check), "Wrong finded records count");
         dap_assert_PIF(!strcmp(s_group, (l_objs + i)->group), "Wrong group");
-        for (size_t j = 0; j < l_cur_count; ++j) {
-            dap_assert_PIF(!dap_store_obj_driver_obj_compare(l_store_obj + j, l_objs + j), "Records not equal");
+        for (size_t j = 0; i < l_cur_count && i + j < l_count; ++j) {
+            dap_assert_PIF(!dap_store_obj_driver_obj_compare(l_store_obj + j, l_objs + i + j), "Records not equal");
         }
-
         dap_store_obj_free(l_store_obj, l_cur_count);
     }
     dap_store_obj_free(l_objs, l_count);
