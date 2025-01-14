@@ -18,11 +18,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
         return NULL;
     }
 
-    dap_json_rpc_response_t *response = DAP_NEW(dap_json_rpc_response_t);
-    if (!response) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
-    }
+    dap_json_rpc_response_t *response = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_rpc_response_t, NULL);
     
     response->id = id;
     response->type = type;
