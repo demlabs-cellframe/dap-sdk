@@ -1325,8 +1325,8 @@ void dap_events_socket_set_readable_unsafe_ex(dap_events_socket_t *a_es, bool a_
         return;
     default:
         a_es->pending_read = 0;
-        log_it(L_ERROR, "Operation \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID" failed with error %lu",
-                        func, dap_events_socket_get_type_str(a_es), a_es->uuid, l_err);
+        log_it(L_ERROR, "Operation \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID" failed with error %ld: \"%s\"",
+                        func, dap_events_socket_get_type_str(a_es), a_es->uuid, l_err, dap_strerror(l_err));
         if ( a_es->callbacks.error_callback )
             a_es->callbacks.error_callback(a_es, l_err);
         if ( !a_es->no_close )
@@ -1428,8 +1428,8 @@ void dap_events_socket_set_writable_unsafe_ex( dap_events_socket_t *a_es, bool a
         return;
     default:
         --a_es->pending_write;
-        log_it(L_ERROR, "Operation \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID" failed with error %lu",
-                        func, dap_events_socket_get_type_str(a_es), a_es->uuid, l_err);
+        log_it(L_ERROR, "Operation \"%s\" on [%s] "DAP_FORMAT_ESOCKET_UUID" failed with error %ld: \"%s\"",
+                        func, dap_events_socket_get_type_str(a_es), a_es->uuid, l_err, dap_strerror(l_err));
         if ( a_es->callbacks.error_callback )
             a_es->callbacks.error_callback(a_es, l_err);
         if ( !a_es->no_close )
