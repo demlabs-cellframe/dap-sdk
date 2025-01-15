@@ -133,6 +133,31 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *
     return params;
 }
 
+dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(json_object *a_subcmd, json_object *a_args)
+{
+    if (a_subcmd == NULL || a_args)
+        return NULL;
+    dap_json_rpc_params_t *params = dap_json_rpc_params_create();
+
+    // add subcmd to params
+
+    int length = json_object_array_length(a_args);
+    json_type jobj_type = json_object_get_type(a_args);
+
+    if (jobj_type != json_type_object){
+        return NULL;
+    }
+
+    for (int i = 0; i < length; i++){
+        json_object *jobj = json_object_array_get_idx(a_args, i);
+
+        char * l_str_tmp = dap_strdup(json_object_get_string(jobj));
+        dap_json_rpc_params_add_data(params, l_str_tmp, TYPE_PARAM_STRING);
+        DAP_FREE(l_str_tmp);
+    }
+    return params;
+}
+
 char *dap_json_rpc_params_get_string_json(dap_json_rpc_params_t * a_params)
 {
     dap_return_val_if_fail(a_params, NULL);
