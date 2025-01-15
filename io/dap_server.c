@@ -283,6 +283,12 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
             if ( dap_server_listen_addr_add(l_server, l_cur_ip, l_cur_port, DESCRIPTOR_TYPE_SOCKET_LISTENING, &l_callbacks) )
                 log_it( L_ERROR, "Can't add address \"%s : %u\" to listen in server", l_cur_ip, l_cur_port);
         }
+        l_server->while_list = (char**)dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_WHITE_LIST, NULL);
+        l_server->black_list = (char**)dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_BLACK_LIST, NULL);
+        if (l_server->while_list && l_server->black_list) {
+            log_it(L_CRITICAL, "Server %s has white and black list, change configs", a_cfg_section);
+            return NULL;
+        }
     }
     if (!l_server->es_listeners) {
         log_it(L_INFO, "Server with no listeners created. "
@@ -312,6 +318,44 @@ static void s_es_server_error(dap_events_socket_t *a_es, int a_errno)
     log_it(L_WARNING, "Server socket %d error %d: %s", a_es->socket, a_errno, dap_strerror(a_errno));
 }
 
+static bool s_address_in_list(const char **a_list, size_t a_list_size, const char *a_address) {
+    for (size_t i = 0; i < a_list_size; i++) {
+        if (dap_strcmp(a_address, a_list[i]) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool s_check_allowed_connection(dap_server_t *a_server, const char *a_listener_addr_str, struct sockaddr_storage *a_remote_addr) {
+    bool l_is_allowed_to_connect = true;
+    if (a_server->while_list) {
+        size_t l_white_list_size = dap_str_countv(a_server->while_list);
+        if (!s_address_in_list(a_server->while_list, l_white_list_size, a_listener_addr_str)) {
+            l_is_allowed_to_connect = false;
+        }
+    }
+
+    if (l_is_allowed_to_connect && a_server->black_list) {
+        size_t l_black_list_size = dap_str_countv(a_server->black_list);
+        if (s_address_in_list(a_server->black_list, l_black_list_size, a_listener_addr_str)) {
+            l_is_allowed_to_connect = false;
+        }
+    }
+
+    if (!l_is_allowed_to_connect && ((struct sockaddr_in *)a_remote_addr)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)
+#ifdef DAP_OS_UNIX
+    && a_remote_addr->ss_family != AF_UNIX
+#endif
+    ) {
+        log_it(L_ERROR, "No permission to connect from address %s", a_listener_addr_str);
+        return false;
+    }
+
+    return l_is_allowed_to_connect;
+}
+
+
 /**
  * @brief s_es_server_accept
  * @param a_events
@@ -336,6 +380,10 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
                         a_es_listener->socket, errno, dap_strerror(errno));
         return;
     }
+    
+    if (!s_check_allowed_connection(l_server, a_es_listener->listener_addr_str, a_remote_addr))
+        return;
+
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
     l_es_new->server = l_server;
     unsigned short l_family = a_remote_addr->ss_family;
@@ -390,6 +438,8 @@ void dap_server_delete(dap_server_t *a_server)
         a_server->es_listeners = l_tmp->next;
         DAP_DELETE(l_tmp);
     }
+    dap_strfreev(a_server->while_list);
+    dap_strfreev(a_server->black_list);
     if(a_server->delete_callback)
         a_server->delete_callback(a_server,NULL);
 

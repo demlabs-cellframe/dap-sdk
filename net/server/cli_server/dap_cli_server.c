@@ -57,6 +57,8 @@ static bool s_debug_cli = false;
 
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
+static char ** s_allowed_cmd = NULL;
+static size_t s_allowed_cmd_count = 0;
 
 static inline void s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex);
 
@@ -68,6 +70,36 @@ typedef struct cli_cmd_arg {
 } cli_cmd_arg_t;
 
 static bool s_cli_cmd_exec(void *a_arg);
+
+static bool s_allowed_cmd_check(char * a_buf) {
+    bool l_ret = false;
+    enum json_tokener_error jterr;
+    char * l_method;
+    json_object *jobj = json_tokener_parse_verbose(a_buf, &jterr),
+                *jobj_method = NULL;
+    if (jterr == json_tokener_success) {
+        if (json_object_object_get_ex(jobj, "method", &jobj_method))
+            l_method = dap_strdup(json_object_get_string(jobj_method));
+        else {
+            log_it(L_ERROR, "Wrong type of request");
+            json_object_put(jobj);
+            return false;
+        }
+    } else {
+        log_it(L_ERROR, "JSON parsing failed: %s", json_tokener_error_desc(jterr));
+        return false;
+    }
+    
+    for (size_t i = 0; i < s_allowed_cmd_count; i++) {
+        if (dap_strcmp(l_method, s_allowed_cmd[i]) == 0) {
+            l_ret = true;
+            break;
+        }
+    }
+    DAP_DELETE(l_method);
+    json_object_put(jobj);
+    return l_ret;
+}
 
 DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg) {
     cli_cmd_arg_t *l_arg = a_arg ? (cli_cmd_arg_t*)a_arg : DAP_NEW_Z(cli_cmd_arg_t);
@@ -99,6 +131,16 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         size_t l_hdr_len = (size_t)(l_arg->buf - (char*)a_es->buf_in);
         if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
+
+        if (((struct sockaddr_in *)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)
+#ifdef DAP_OS_UNIX
+        && a_es->addr_storage.ss_family != AF_UNIX
+#endif
+        ) {
+            if (!s_allowed_cmd_check(l_arg->buf))
+                return;
+        }
+
         l_arg->buf = DAP_DUP_SIZE(l_arg->buf, l_arg->buf_size);
         l_arg->worker = a_es->worker;
         l_arg->es_uid = a_es->uuid;
@@ -136,6 +178,8 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
         log_it(L_ERROR, "CLI server not initialized");
         return -2;
     }
+    s_allowed_cmd = (char**)dap_config_get_array_str(g_config, a_cfg_section, "allowed_cmd", NULL);
+    s_allowed_cmd_count = dap_str_countv(s_allowed_cmd);
     log_it(L_INFO, "CLI server initialized");
     return 0;
 }
@@ -145,6 +189,7 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
  */
 void dap_cli_server_deinit()
 {
+    dap_strfreev(s_allowed_cmd);
     dap_server_delete(s_cli_server);
 }
 
