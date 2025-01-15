@@ -236,7 +236,8 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
     json_object *jobj = json_tokener_parse_verbose(a_data, &jterr),
                 *jobj_id = NULL,
                 *jobj_method = NULL,
-                *jobj_params = NULL;
+                *jobj_params = NULL,
+                *l_arguments_obj = NULL;
     if (jterr == json_tokener_success)
         do {
             if (json_object_object_get_ex(jobj, "id", &jobj_id))
@@ -255,16 +256,16 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
 
             if (json_object_object_get_ex(jobj, "params", &jobj_params))
                 request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
-            else if (json_object_object_get_ex(jobj, "subcommand", &jobj_params)) {
-                json_object *l_arguments_obj = NULL;
-                if (json_object_object_get_ex(jobj, "arguments", &l_arguments_obj)){
-                    request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_params, l_arguments_obj);
-                } else {
-                    log_it(L_ERROR, "Error parse JSON string, Can't find array arguments for request with id: %" DAP_UINT64_FORMAT_U, request->id);
-                    break;
-                }
+            else if(json_object_object_get_ex(jobj, "subcommand", &jobj_params) ||
+                    json_object_object_get_ex(jobj, "arguments", &l_arguments_obj)){                   
+                    if (l_arguments_obj){
+                        request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_params, l_arguments_obj, request->method);
+                    } else {
+                        log_it(L_ERROR, "Error parse JSON string, Can't find array arguments for request with id: %" DAP_UINT64_FORMAT_U, request->id);
+                        break;
+                    }
             } else {
-                log_it(L_ERROR, "Error parse JSON string, Can't find array params for request with id: %" DAP_UINT64_FORMAT_U, request->id);
+                log_it(L_ERROR, "Error parse JSON string, Can't find array params or subcomand and arguments for request with id: %" DAP_UINT64_FORMAT_U, request->id);
                 break;
             }
             json_object_put(jobj);
