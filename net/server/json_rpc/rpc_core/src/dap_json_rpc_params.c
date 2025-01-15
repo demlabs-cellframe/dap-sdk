@@ -1,4 +1,5 @@
 #include "dap_json_rpc_params.h"
+#include "dap_string.h"
 
 #define LOG_TAG "dap_json_rpc_params"
 
@@ -118,38 +119,39 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *
     return params;
 }
 
-dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(json_object *a_subcmd, json_object *a_args)
+dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(json_object *a_subcmd, json_object *a_args, const char* a_method)
 {
-    if (a_subcmd == NULL || a_args)
+    if (a_method == NULL || a_args == NULL)
         return NULL;
     dap_json_rpc_params_t *params = dap_json_rpc_params_create();
 
+    dap_string_t * l_str_tmp = dap_string_new("");
     // add subcmd to params
-
-    int length = json_object_array_length(a_args);
-    json_type jobj_type = json_object_get_type(a_args);
-
-    if (jobj_type != json_type_object){
-        return NULL;
-    }
+    dap_string_append_printf(l_str_tmp, "%s;", a_method);
+    if(a_subcmd)
+        dap_string_append_printf(l_str_tmp, "%s;", json_object_get_string( a_subcmd));
 
     json_object_object_foreach(a_args, key, val){
         const char *l_key_str = NULL;
         const char *l_val_str = NULL;
-        if(json_object_get_type(key) == json_type_string) {
-            l_key_str = json_object_get_string(key);
-        }
         if(json_object_get_type(val) == json_type_string) {
+            l_key_str = key;
             l_val_str = json_object_get_string(val);
         }
 
         if(l_key_str){
-            char * l_str_tmp = dap_strdup_printf("-%s;%s%s", l_key_str, l_val_str ? l_val_str : "", l_val_str ? ";" : "");
-            dap_json_rpc_params_add_data(params, l_str_tmp, TYPE_PARAM_STRING);
-            DAP_FREE(l_str_tmp);
+            dap_string_append_printf(l_str_tmp, "-%s;%s;", l_key_str, l_val_str ? l_val_str : "");
+            
+        } else {
+            return log_it(L_CRITICAL, "Bad argument!"), dap_string_free(l_str_tmp, true),  NULL;
         }
-        
     }
+
+    l_str_tmp->str[strlen(l_str_tmp->str) - 1] = '\0';
+
+    dap_json_rpc_params_add_data(params, l_str_tmp->str, TYPE_PARAM_STRING);
+    dap_string_free(l_str_tmp, true);
+
     return params;
 }
 
