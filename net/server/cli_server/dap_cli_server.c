@@ -141,7 +141,7 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
                 return;
         }
 
-        l_arg->buf = DAP_DUP_SIZE(l_arg->buf, l_arg->buf_size);
+        l_arg->buf = strndup(l_arg->buf, l_arg->buf_size);
         l_arg->worker = a_es->worker;
         l_arg->es_uid = a_es->uuid;
         dap_proc_thread_callback_add_pri(NULL, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
