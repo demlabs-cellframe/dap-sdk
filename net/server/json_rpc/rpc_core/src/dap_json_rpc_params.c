@@ -133,12 +133,22 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(json_obj
         return NULL;
     }
 
-    for (int i = 0; i < length; i++){
-        json_object *jobj = json_object_array_get_idx(a_args, i);
+    json_object_object_foreach(a_args, key, val){
+        const char *l_key_str = NULL;
+        const char *l_val_str = NULL;
+        if(json_object_get_type(key) == json_type_string) {
+            l_key_str = json_object_get_string(key);
+        }
+        if(json_object_get_type(val) == json_type_string) {
+            l_val_str = json_object_get_string(val);
+        }
 
-        char * l_str_tmp = dap_strdup(json_object_get_string(jobj));
-        dap_json_rpc_params_add_data(params, l_str_tmp, TYPE_PARAM_STRING);
-        DAP_FREE(l_str_tmp);
+        if(l_key_str){
+            char * l_str_tmp = dap_strdup_printf("-%s;%s%s", l_key_str, l_val_str ? l_val_str : "", l_val_str ? ";" : "");
+            dap_json_rpc_params_add_data(params, l_str_tmp, TYPE_PARAM_STRING);
+            DAP_FREE(l_str_tmp);
+        }
+        
     }
     return params;
 }
