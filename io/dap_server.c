@@ -336,9 +336,6 @@ static bool s_check_allowed_connection(dap_server_t *a_server, struct sockaddr_s
     } else if (a_remote_addr->ss_family == AF_INET6) {
         struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)a_remote_addr;
         inet_ntop(AF_INET6, &addr6->sin6_addr, l_remote_addr_str, sizeof(l_remote_addr_str));
-    } else {
-        log_it(L_ERROR, "Unknown address family %d", a_remote_addr->ss_family);
-        return false;
     }
 
     if (a_server->white_list) {
@@ -380,7 +377,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     assert(l_server);
 
     dap_events_socket_t * l_es_new = NULL;
-    debug_if(l_server->ext_log, L_DEBUG, "Listening socket %"DAP_FORMAT_SOCKET" uuid "DAP_FORMAT_ESOCKET_UUID" binded on %s:%u "
+    log_it( L_MSG, "Listening socket %"DAP_FORMAT_SOCKET" uuid "DAP_FORMAT_ESOCKET_UUID" binded on %s:%u "
                                          "accepted new connection from remote %"DAP_FORMAT_SOCKET"",
                                          a_es_listener->socket, a_es_listener->uuid,
                                          a_es_listener->listener_addr_str, a_es_listener->listener_port, a_remote_socket);
