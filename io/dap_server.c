@@ -318,7 +318,7 @@ static void s_es_server_error(dap_events_socket_t *a_es, int a_errno)
     log_it(L_WARNING, "Server socket %d error %d: %s", a_es->socket, a_errno, dap_strerror(a_errno));
 }
 
-static bool s_address_in_list(const char **a_list, size_t a_list_size, const char *a_address) {
+static bool s_address_in_list(char **a_list, size_t a_list_size, char *a_address) {
     for (size_t i = 0; i < a_list_size; i++) {
         if (dap_strcmp(a_address, a_list[i]) == 0) {
             return true;
@@ -327,7 +327,7 @@ static bool s_address_in_list(const char **a_list, size_t a_list_size, const cha
     return false;
 }
 
-static bool s_check_allowed_connection(dap_server_t *a_server, const char *a_listener_addr_str, struct sockaddr_storage *a_remote_addr) {
+static bool s_check_allowed_connection(dap_server_t *a_server, char *a_listener_addr_str, struct sockaddr_storage *a_remote_addr) {
     bool l_is_allowed_to_connect = true;
     if (a_server->while_list) {
         size_t l_white_list_size = dap_str_countv(a_server->while_list);
@@ -381,7 +381,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         return;
     }
     
-    if (!s_check_allowed_connection(l_server, a_es_listener->listener_addr_str, a_remote_addr))
+    if (!s_check_allowed_connection(l_server, a_es_listener->remote_addr_str, a_remote_addr))
         return;
 
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
