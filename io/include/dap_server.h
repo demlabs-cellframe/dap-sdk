@@ -55,7 +55,7 @@ typedef struct dap_server {
     dap_list_t *es_listeners;
     void *_inheritor;
     bool ext_log;
-    char ** while_list;
+    char ** white_list;
     char ** black_list;
 } dap_server_t;
 
