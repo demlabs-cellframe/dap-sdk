@@ -32,7 +32,6 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
     sphincsplus_private_key_t *l_skey = NULL;
     sphincsplus_public_key_t *l_pkey = NULL;
     sphincsplus_base_params_t l_params = {0};
-    unsigned char *l_seed_buf = NULL;
 
     if (sphincsplus_set_config(s_default_config) || sphincsplus_get_params(s_default_config, &l_params)) {
         log_it(L_CRITICAL, "Error load sphincsplus config");
@@ -41,7 +40,7 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
     
     // seed norming
     size_t l_seed_buf_size = dap_enc_sig_sphincsplus_crypto_sign_seedbytes();
-    DAP_NEW_Z_SIZE_RET(l_seed_buf, unsigned char, l_seed_buf_size, NULL);
+    unsigned char *l_seed_buf = DAP_NEW_Z_SIZE_RET_IF_FAIL(unsigned char, l_seed_buf_size, NULL);
     if(a_seed && a_seed_size > 0) {
         shake256(l_seed_buf, l_seed_buf_size, (const unsigned char *) a_seed, a_seed_size);
     } else {
@@ -52,10 +51,10 @@ void dap_enc_sig_sphincsplus_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG c
     a_key->priv_key_data_size = sizeof(sphincsplus_private_key_t);
     a_key->pub_key_data_size = sizeof(sphincsplus_public_key_t);
 
-    DAP_NEW_Z_SIZE_RET(l_skey, sphincsplus_private_key_t, a_key->priv_key_data_size, l_seed_buf);
-    DAP_NEW_Z_SIZE_RET(l_pkey, sphincsplus_public_key_t, a_key->pub_key_data_size, l_seed_buf, l_skey);
-    DAP_NEW_Z_SIZE_RET(l_skey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(), l_seed_buf, l_skey, l_pkey);
-    DAP_NEW_Z_SIZE_RET(l_pkey->data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(), l_seed_buf, l_skey->data, l_skey, l_pkey);
+    l_skey = DAP_NEW_Z_SIZE_RET_IF_FAIL(sphincsplus_private_key_t, a_key->priv_key_data_size, l_seed_buf);
+    l_pkey = DAP_NEW_Z_SIZE_RET_IF_FAIL(sphincsplus_public_key_t, a_key->pub_key_data_size, l_seed_buf, l_skey);
+    l_skey->data = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(), l_seed_buf, l_skey, l_pkey);
+    l_pkey->data = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(), l_seed_buf, l_skey->data, l_skey, l_pkey);
 
     if(sphincsplus_crypto_sign_seed_keypair(l_pkey->data, l_skey->data, l_seed_buf)) {
         log_it(L_CRITICAL, "Error generating Sphincs key pair");
@@ -86,12 +85,9 @@ int dap_enc_sig_sphincsplus_get_sign(dap_enc_key_t *a_key, const void *a_msg_in,
         return -3;
     }
 
-    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, dap_enc_sig_sphincsplus_crypto_sign_bytes(), -3, NULL);
-
+    l_sign->sig_data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, dap_enc_sig_sphincsplus_crypto_sign_bytes(), -3);
     l_sign->sig_params = l_skey->params;
-    int l_ret = sphincsplus_crypto_sign_signature(l_sign->sig_data, &l_sign->sig_len, (const unsigned char *)a_msg_in, a_msg_size, l_skey->data);
-    
-    return l_ret;
+    return sphincsplus_crypto_sign_signature(l_sign->sig_data, &l_sign->sig_len, (const unsigned char *)a_msg_in, a_msg_size, l_skey->data);
 }
 
 size_t dap_enc_sig_sphincsplus_get_sign_msg(dap_enc_key_t *a_key, const void *a_msg, const size_t a_msg_size,
@@ -111,7 +107,7 @@ size_t dap_enc_sig_sphincsplus_get_sign_msg(dap_enc_key_t *a_key, const void *a_
     }
 
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign_out;
-    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, l_sign_bytes + a_msg_size, 0, NULL);
+    l_sign->sig_data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_sign_bytes + a_msg_size, 0);
 
     l_sign->sig_params = l_skey->params;
     int l_ret = sphincsplus_crypto_sign(l_sign->sig_data, &l_sign->sig_len, (const unsigned char *)a_msg, a_msg_size, l_skey->data);
@@ -193,7 +189,7 @@ uint8_t *dap_enc_sig_sphincsplus_write_private_key(const void *a_private_key, si
     sphincsplus_set_params(&l_private_key->params);
     uint64_t l_secret_length = dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes();
     uint64_t l_buflen = dap_enc_sig_sphincsplus_ser_private_key_size((void *)l_private_key);
-    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6,
+    uint8_t *l_buf = DAP_VA_SERIALIZE_NEW(l_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_private_key->params, (uint64_t)sizeof(sphincsplus_base_params_t),
         l_private_key->data, (uint64_t)l_secret_length
@@ -212,11 +208,10 @@ void *dap_enc_sig_sphincsplus_read_private_key(const uint8_t *a_buf, size_t a_bu
     uint64_t l_buflen = 0;
     uint64_t l_skey_len = a_buflen -  sizeof(uint64_t) - sizeof(sphincsplus_base_params_t);
 
-    sphincsplus_private_key_t *l_skey = NULL;
-    DAP_NEW_Z_RET_VAL(l_skey, sphincsplus_private_key_t, NULL, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_skey->data, uint8_t, l_skey_len, NULL, l_skey);
+    sphincsplus_private_key_t *l_skey = DAP_NEW_Z_RET_VAL_IF_FAIL(sphincsplus_private_key_t, NULL);
+    l_skey->data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_skey_len, NULL, l_skey);
 
-    int l_res_des = dap_deserialize_multy(a_buf, a_buflen, 6, 
+    int l_res_des = DAP_VA_DESERIALIZE(a_buf, a_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_skey->params, (uint64_t)sizeof(sphincsplus_base_params_t),
         l_skey->data, (uint64_t)l_skey_len
@@ -248,7 +243,7 @@ uint8_t *dap_enc_sig_sphincsplus_write_public_key(const void* a_public_key, size
     sphincsplus_set_params(&l_public_key->params);
     uint64_t l_public_length = dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(&l_public_key->params);
     uint64_t l_buflen = dap_enc_sig_sphincsplus_ser_public_key_size(a_public_key);
-    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 6, 
+    uint8_t *l_buf = DAP_VA_SERIALIZE_NEW(l_buflen, 
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_public_key->params, (uint64_t)sizeof(sphincsplus_base_params_t),
         l_public_key->data, (uint64_t)l_public_length
@@ -267,11 +262,10 @@ void *dap_enc_sig_sphincsplus_read_public_key(const uint8_t *a_buf, size_t a_buf
     uint64_t l_buflen = 0;
     uint64_t l_pkey_len = a_buflen -  sizeof(uint64_t) - sizeof(sphincsplus_base_params_t);
 
-    sphincsplus_public_key_t *l_pkey = NULL;
-    DAP_NEW_Z_RET_VAL(l_pkey, sphincsplus_public_key_t, NULL, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_pkey->data, uint8_t, l_pkey_len, NULL, l_pkey);
+    sphincsplus_public_key_t *l_pkey = DAP_NEW_Z_RET_VAL_IF_FAIL(sphincsplus_public_key_t, NULL);
+    l_pkey->data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_pkey_len, NULL, l_pkey);
 
-    int l_res_des = dap_deserialize_multy(a_buf, a_buflen, 6, 
+    int l_res_des = DAP_VA_DESERIALIZE(a_buf, a_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_pkey->params, (uint64_t)sizeof(sphincsplus_base_params_t),
         l_pkey->data, (uint64_t)l_pkey_len
@@ -301,7 +295,7 @@ uint8_t *dap_enc_sig_sphincsplus_write_signature(const void *a_sign, size_t *a_b
     sphincsplus_signature_t *l_sign = (sphincsplus_signature_t *)a_sign;
 // func work
     uint64_t l_buflen = dap_enc_sig_sphincsplus_ser_sig_size(a_sign);
-    uint8_t *l_buf = dap_serialize_multy(NULL, l_buflen, 8, 
+    uint8_t *l_buf = DAP_VA_SERIALIZE_NEW(l_buflen, 
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_sign->sig_params, (uint64_t)sizeof(sphincsplus_base_params_t),
         &l_sign->sig_len, (uint64_t)sizeof(uint64_t),
@@ -320,11 +314,10 @@ void *dap_enc_sig_sphincsplus_read_signature(const uint8_t *a_buf, size_t a_bufl
 // func work
     uint64_t l_buflen;
     uint64_t l_sig_len = a_buflen - sizeof(uint64_t) * 2 - sizeof(sphincsplus_base_params_t);
-    sphincsplus_signature_t* l_sign = NULL;
-    DAP_NEW_Z_RET_VAL(l_sign, sphincsplus_signature_t, NULL, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_sign->sig_data, uint8_t, l_sig_len, NULL, l_sign);
+    sphincsplus_signature_t* l_sign = DAP_NEW_Z_RET_VAL_IF_FAIL(sphincsplus_signature_t, NULL);
+    l_sign->sig_data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_sig_len, NULL, l_sign);
 
-    int l_res_des = dap_deserialize_multy(a_buf, a_buflen, 8, 
+    int l_res_des = DAP_VA_DESERIALIZE(a_buf, a_buflen,
         &l_buflen, (uint64_t)sizeof(uint64_t),
         &l_sign->sig_params, (uint64_t)sizeof(sphincsplus_base_params_t),
         &l_sign->sig_len, (uint64_t)sizeof(uint64_t),

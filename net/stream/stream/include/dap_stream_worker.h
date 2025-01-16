@@ -50,7 +50,7 @@ typedef struct dap_stream_worker_msg_send {
     dap_events_socket_uuid_t uuid;
     char ch_id;
     uint8_t ch_pkt_type;
-    const void *data;
+    void *data;
     size_t data_size;
 } dap_stream_worker_msg_send_t;
 

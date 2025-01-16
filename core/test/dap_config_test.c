@@ -119,7 +119,7 @@ void test_get_bool_default()
 void test_array_str()
 {
     uint16_t arraySize;
-    char ** result_arr = dap_config_get_array_str(config, "server_options", "str_arr", &arraySize);
+    const char **result_arr = dap_config_get_array_str(config, "server_options", "str_arr", &arraySize);
 
     dap_assert(result_arr != NULL, "Get array str from config");
     dap_assert(arraySize == STR_ARR_LEN, "Check array length");
@@ -131,7 +131,7 @@ void test_array_str()
 
 void test_array_int() {
     uint16_t arraySize;
-    char ** result_arr = dap_config_get_array_str(config, "server_options", "int_arr", &arraySize);
+    const char **result_arr = dap_config_get_array_str(config, "server_options", "int_arr", &arraySize);
 
     dap_assert(result_arr != NULL, "Get array int");
     dap_assert(arraySize == INT_ARR_LEN, "Check array int length");

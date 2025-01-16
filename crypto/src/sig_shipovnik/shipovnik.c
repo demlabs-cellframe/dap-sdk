@@ -48,6 +48,17 @@ void shipovnik_generate_keys(uint8_t *sk, uint8_t *pk) {
   syndrome(H_PRIME, sk, pk);
 }
 
+void shipovnik_generate_keys_with_seed(uint8_t *sk, uint8_t *pk, uint32_t *seed) {
+  ALLOC_ON_STACK(uint16_t, s, N_shipovnik);
+  gen_vector_with_seed(s, seed);
+  for (size_t i = 0; i < N_shipovnik; ++i) {
+    size_t j = i / 8;
+    sk[j] <<= 1;
+    sk[j] |= s[i] & 1;
+  }
+  syndrome(H_PRIME, sk, pk);
+}
+
 #define SIGMA_Y_SIZE (SIGMA_PACKED_BYTES + SHIPOVNIK_PUBLICKEYBYTES)
 
 void shipovnik_sign(const uint8_t *sk, const uint8_t *msg, size_t msg_len,

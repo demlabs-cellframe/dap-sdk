@@ -41,6 +41,7 @@ typedef bool (*dap_link_manager_callback_disconnected_t)(dap_link_t *, uint64_t,
 typedef void (*dap_link_manager_callback_error_t)(dap_link_t *, uint64_t, int);
 typedef int (*dap_link_manager_callback_fill_net_info_t)(dap_link_t *);
 typedef int (*dap_link_manager_callback_link_request_t)(uint64_t);
+typedef int (*dap_link_manager_callback_link_count_changed_t)();
 
 typedef struct dap_link_manager_callbacks {
     dap_link_manager_callback_connected_t connected;
@@ -48,6 +49,8 @@ typedef struct dap_link_manager_callbacks {
     dap_link_manager_callback_error_t error;
     dap_link_manager_callback_fill_net_info_t fill_net_info;
     dap_link_manager_callback_link_request_t link_request;
+    dap_link_manager_callback_link_count_changed_t link_count_changed;
+
 } dap_link_manager_callbacks_t;
 
 // connection states
@@ -83,6 +86,7 @@ typedef struct dap_link_manager {
     dap_list_t *nets;           // managed nets list
     dap_link_t *links;          // links HASH_TAB
     pthread_rwlock_t links_lock;
+    pthread_rwlock_t nets_lock;
     dap_link_manager_callbacks_t callbacks;  // callbacks
 } dap_link_manager_t;
 

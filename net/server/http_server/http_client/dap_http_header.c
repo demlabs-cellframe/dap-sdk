@@ -201,11 +201,7 @@ dap_http_header_t *l_new_header;
  */
 inline dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const char *a_name, const char *a_value)
 {
-    dap_http_header_t *l_new_header = DAP_NEW_Z(dap_http_header_t);
-    if (!l_new_header) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
-    }
+    dap_http_header_t *l_new_header = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http_header_t, NULL);
 
     l_new_header->namesz = strnlen(a_name, DAP_HTTP$SZ_FIELD_NAME);
     memcpy(l_new_header->name, a_name, l_new_header->namesz);
@@ -285,17 +281,10 @@ dap_http_header_t * dap_http_headers_dup(dap_http_header_t * a_top)
 {
     dap_http_header_t *l_hdr = NULL, *l_ret = NULL;
 
-    DL_FOREACH(a_top,l_hdr){
-        dap_http_header_t * l_hdr_copy = DAP_NEW_Z(dap_http_header_t);
-        if (!l_hdr_copy) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            return l_ret;
-        }
-
+    DL_FOREACH(a_top, l_hdr) {
+        dap_http_header_t * l_hdr_copy = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http_header_t, l_ret);
         memcpy(l_hdr_copy->name, l_hdr->name, l_hdr_copy->namesz = l_hdr->namesz);
         memcpy(l_hdr_copy->value, l_hdr->value, l_hdr_copy->valuesz = l_hdr->valuesz);
-
-
         DL_APPEND(l_ret, l_hdr_copy);
     }
 

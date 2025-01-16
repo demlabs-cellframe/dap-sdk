@@ -42,3 +42,10 @@ void shuffle(const uint32_t *p, uint16_t *pi, uint64_t *buf, size_t len);
  * @param[out] s buffer to be filled. Should have size at least 'N'.
  */
 void gen_vector(uint16_t *s);
+
+/**
+ * @brief Generate random binary vector.
+ * @param[in] seed seed array. Should have size at least 'N'.
+ * @param[out] s buffer to be filled. Should have size at least 'N'.
+ */
+void gen_vector_with_seed(uint16_t *s, uint32_t *seed);
