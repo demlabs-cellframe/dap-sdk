@@ -156,10 +156,11 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(json_obj
         const char *l_key_str = NULL;
         const char *l_val_str = NULL;
         enum json_type l_subcmd_type = json_object_get_type(val);
-        if(l_subcmd_type == json_type_string || l_subcmd_type == json_type_null) {
+        if(l_subcmd_type == json_type_string || 
+            l_subcmd_type == json_type_null || l_subcmd_type == json_type_object) {
             l_key_str = key;
             l_val_str = json_object_get_string(val);
-        }
+        } 
 
         if(l_key_str){
             dap_string_append_printf(l_str_tmp, "-%s;%s;", l_key_str, l_val_str ? l_val_str : "");
