@@ -57,8 +57,6 @@ static bool s_debug_cli = false;
 
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
-static char ** s_allowed_cmd = NULL;
-static size_t s_allowed_cmd_count = 0;
 
 static inline void s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex);
 
@@ -90,7 +88,9 @@ static bool s_allowed_cmd_check(char * a_buf) {
         return false;
     }
     
-    for (size_t i = 0; i < s_allowed_cmd_count; i++) {
+    uint16_t s_allowed_cmd_count = 0;
+    char ** s_allowed_cmd = (char**)dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", &s_allowed_cmd_count);
+    for (uint16_t i = 0; i < s_allowed_cmd_count; i++) {
         if (dap_strcmp(l_method, s_allowed_cmd[i]) == 0) {
             l_ret = true;
             break;
@@ -178,8 +178,6 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
         log_it(L_ERROR, "CLI server not initialized");
         return -2;
     }
-    s_allowed_cmd = (char**)dap_config_get_array_str(g_config, a_cfg_section, "allowed_cmd", NULL);
-    s_allowed_cmd_count = dap_str_countv(s_allowed_cmd);
     log_it(L_INFO, "CLI server initialized");
     return 0;
 }
@@ -189,7 +187,6 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
  */
 void dap_cli_server_deinit()
 {
-    dap_strfreev(s_allowed_cmd);
     dap_server_delete(s_cli_server);
 }
 
