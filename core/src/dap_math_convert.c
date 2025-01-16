@@ -490,6 +490,7 @@ const char *dap_uint256_decimal_to_round_char(uint256_t a_uint256, uint8_t a_rou
 const char *dap_uint256_char_to_round_char(char* a_str_decimal, uint8_t a_round_pos, bool is_round)
 {
     _Thread_local static char s_buf[DATOSHI_POW256 + 3];
+    memset(s_buf, 0, sizeof(s_buf));
     char *l_dot_pos = strchr(a_str_decimal, '.'), *l_res = s_buf;
     int l_len = strlen(a_str_decimal);
     if (!l_dot_pos || a_round_pos >= DATOSHI_DEGREE || ( l_len - (l_dot_pos - a_str_decimal) <= a_round_pos ))

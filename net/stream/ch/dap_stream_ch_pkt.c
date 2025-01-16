@@ -201,32 +201,18 @@ int dap_stream_ch_pkt_send(dap_stream_worker_t *a_worker, dap_events_socket_uuid
         }
         return dap_stream_ch_pkt_write_unsafe(l_ch, a_type, a_data, a_data_size);
     }
-    dap_stream_worker_msg_send_t *l_msg = DAP_NEW_Z(dap_stream_worker_msg_send_t);
-    if (!l_msg) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return -2;
-    }
+    dap_stream_worker_msg_send_t *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_stream_worker_msg_send_t, -2);
     l_msg->uuid = a_uuid;
     l_msg->ch_pkt_type = a_type;
     l_msg->ch_id = a_ch_id;
-    if (a_data && a_data_size) {
-        l_msg->data = DAP_DUP_SIZE((char*)a_data, a_data_size);
-        if (!l_msg->data) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            DAP_DELETE(l_msg);
-            return -3;
-        }
-    }
+    if (a_data && a_data_size)
+        l_msg->data = DAP_DUP_SIZE_RET_VAL_IF_FAIL((char*)a_data, a_data_size, -3, l_msg);
     l_msg->data_size = a_data_size;
 
     int l_ret = dap_events_socket_queue_ptr_send(a_worker->queue_ch_send, l_msg);
-    if (l_ret) {
-        log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
-        DAP_DEL_Z(l_msg->data);
-        DAP_DELETE(l_msg);
-        return -4;
-    }
-    return 0;
+    return l_ret
+        ? ( log_it(L_ERROR, "queue_ptr_send() error %d", l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), -4 )
+        : 0;
 }
 
 int dap_stream_ch_pkt_send_by_addr(dap_stream_node_addr_t *a_addr, const char a_ch_id, uint8_t a_type, const void *a_data, size_t a_data_size)
