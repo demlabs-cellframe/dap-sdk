@@ -283,8 +283,18 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
             if ( dap_server_listen_addr_add(l_server, l_cur_ip, l_cur_port, DESCRIPTOR_TYPE_SOCKET_LISTENING, &l_callbacks) )
                 log_it( L_ERROR, "Can't add address \"%s : %u\" to listen in server", l_cur_ip, l_cur_port);
         }
-        l_server->white_list = (char**)dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_WHITE_LIST, NULL);
-        l_server->black_list = (char**)dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_BLACK_LIST, NULL);
+
+        uint16_t l_list_size = 0;
+        l_server->white_list = (char**)dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_WHITE_LIST, &l_list_size);
+        if (l_server->white_list) {
+            l_server->white_list = DAP_REALLOC_COUNT(l_server->white_list, l_list_size+1);
+            l_server->white_list[l_list_size+1] = NULL;
+        }
+        l_server->black_list = (char**)dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_BLACK_LIST, &l_list_size);
+        if (l_server->black_list) {
+            l_server->black_list = DAP_REALLOC_COUNT(l_server->black_list, l_list_size+1);
+            l_server->black_list[l_list_size+1] = NULL;
+        }
         if (l_server->white_list && l_server->black_list) {
             log_it(L_CRITICAL, "Server %s has white and black list, change configs", a_cfg_section);
             return NULL;
