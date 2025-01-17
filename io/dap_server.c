@@ -328,21 +328,31 @@ static bool s_address_in_list(char **a_list, size_t a_list_size, char *a_address
 }
 
 static bool s_check_allowed_connection(dap_server_t *a_server, struct sockaddr_storage *a_remote_addr) {
+    if (!a_server || !a_remote_addr) {
+        log_it(L_ERROR, "Invalid args");
+        return false;
+    }
+
     bool l_is_allowed_to_connect = true;
     char l_remote_addr_str[INET6_ADDRSTRLEN] = {0};
+
     if (a_remote_addr->ss_family == AF_INET) {
         struct sockaddr_in *addr4 = (struct sockaddr_in *)a_remote_addr;
-        inet_ntop(AF_INET, &addr4->sin_addr, l_remote_addr_str, sizeof(l_remote_addr_str));
+        if (!inet_ntop(AF_INET, &addr4->sin_addr, l_remote_addr_str, sizeof(l_remote_addr_str))) {
+            log_it(L_ERROR, "Failed to convert IPv4 address to string");
+            return false;
+        }
     } else if (a_remote_addr->ss_family == AF_INET6) {
         struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)a_remote_addr;
-        inet_ntop(AF_INET6, &addr6->sin6_addr, l_remote_addr_str, sizeof(l_remote_addr_str));
+        if (!inet_ntop(AF_INET6, &addr6->sin6_addr, l_remote_addr_str, sizeof(l_remote_addr_str))) {
+            log_it(L_ERROR, "Failed to convert IPv6 address to string");
+            return false;
+        }
     }
 
     if (a_server->white_list) {
         size_t l_white_list_size = dap_str_countv(a_server->white_list);
-        if (!s_address_in_list(a_server->white_list, l_white_list_size, l_remote_addr_str)) {
-            l_is_allowed_to_connect = false;
-        }
+        l_is_allowed_to_connect = s_address_in_list(a_server->white_list, l_white_list_size, l_remote_addr_str);
     }
 
     if (l_is_allowed_to_connect && a_server->black_list) {
@@ -353,20 +363,23 @@ static bool s_check_allowed_connection(dap_server_t *a_server, struct sockaddr_s
     }
 
     if (!l_is_allowed_to_connect) {
-        if ( ((struct sockaddr_in *)a_remote_addr)->sin_addr.s_addr == htonl(INADDR_LOOPBACK)
-#ifdef DAP_OS_UNIX
-            || a_remote_addr->ss_family == AF_UNIX
-#endif
-        ) {
+        if (((struct sockaddr_in *)a_remote_addr)->sin_addr.s_addr == htonl(INADDR_LOOPBACK)) {
             l_is_allowed_to_connect = true;
-        } else {   
-            log_it(L_ERROR, "No permission to connect from address %s", l_remote_addr_str);
+        }
+#ifdef DAP_OS_UNIX
+        else if (a_remote_addr->ss_family == AF_UNIX) {
+            l_is_allowed_to_connect = true;
+        }
+#endif
+        else {
+            log_it(L_ERROR, "Connection rejected from address %s (not in whitelist or in blacklist)", l_remote_addr_str);
             return false;
         }
     }
 
     return l_is_allowed_to_connect;
 }
+
 
 
 /**
