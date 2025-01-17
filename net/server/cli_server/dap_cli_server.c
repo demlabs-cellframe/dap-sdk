@@ -198,6 +198,19 @@ static inline void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback
     log_it(L_DEBUG,"Added command %s",l_cmd_item->name);
 }
 
+int is_json_clear_method(const char *a_name) {
+    static const char *long_method[] = {
+            "j_tx_create"
+    };
+    for (size_t i = 0; i < sizeof(long_method)/sizeof(long_method[0]); i++) {
+        if (!strcmp(a_name, long_method[i])) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+
 int json_commands(const char * a_name) {
     static const char* long_cmd[] = {
             "tx_history",
