@@ -352,15 +352,17 @@ static bool s_check_allowed_connection(dap_server_t *a_server, struct sockaddr_s
         }
     }
 
-    if (!l_is_allowed_to_connect && ( ((struct sockaddr_in *)a_remote_addr)->sin_addr.s_addr == htonl(INADDR_LOOPBACK)
+    if (!l_is_allowed_to_connect) {
+        if ( ((struct sockaddr_in *)a_remote_addr)->sin_addr.s_addr == htonl(INADDR_LOOPBACK)
 #ifdef DAP_OS_UNIX
-    || a_remote_addr->ss_family == AF_UNIX
+            || a_remote_addr->ss_family == AF_UNIX
 #endif
-    )) {
-        l_is_allowed_to_connect = true;
-    } else {   
-        log_it(L_ERROR, "No permission to connect from address %s", l_remote_addr_str);
-        return false;
+        ) {
+            l_is_allowed_to_connect = true;
+        } else {   
+            log_it(L_ERROR, "No permission to connect from address %s", l_remote_addr_str);
+            return false;
+        }
     }
 
     return l_is_allowed_to_connect;
