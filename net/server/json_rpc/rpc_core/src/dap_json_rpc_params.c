@@ -1,4 +1,5 @@
 #include "dap_json_rpc_params.h"
+#include "dap_string.h"
 
 #define LOG_TAG "dap_json_rpc_params"
 
@@ -130,6 +131,64 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *
                 dap_json_rpc_params_add_data(params, NULL, TYPE_PARAM_NULL);
         }
     }
+    return params;
+}
+
+dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(json_object *a_subcmd, json_object *a_args, const char* a_method)
+{
+    if (a_method == NULL || a_args == NULL)
+        return NULL;
+    dap_json_rpc_params_t *params = dap_json_rpc_params_create();
+
+    dap_string_t * l_str_tmp = dap_string_new("");
+    // add subcmd to params
+    dap_string_append_printf(l_str_tmp, "%s;", a_method);
+    if(a_subcmd){
+        enum json_type l_subcmd_type = json_object_get_type(a_subcmd);
+        if(l_subcmd_type == json_type_array){
+            int length = json_object_array_length(a_subcmd);
+            
+            for (int i = 0; i < length; i++){
+                json_object *jobj = json_object_array_get_idx(a_subcmd, i);
+                json_type jobj_type = json_object_get_type(jobj);
+
+                if (jobj_type != json_type_string){
+                    log_it(L_ERROR, "Bad subcommand type");
+                    dap_string_free(l_str_tmp, true);
+                    return NULL;
+                }
+
+                dap_string_append_printf(l_str_tmp, "%s;", json_object_get_string(jobj));
+            }
+        } else if (l_subcmd_type == json_type_string) { 
+            dap_string_append_printf(l_str_tmp, "%s;", json_object_get_string( a_subcmd));
+        } else {
+            return log_it(L_CRITICAL, "Subcomand must be array or string type."), dap_string_free(l_str_tmp, true),  NULL;
+        }
+    }
+        
+    json_object_object_foreach(a_args, key, val){
+        const char *l_key_str = NULL;
+        const char *l_val_str = NULL;
+        enum json_type l_subcmd_type = json_object_get_type(val);
+        if(l_subcmd_type == json_type_string || 
+            l_subcmd_type == json_type_null || l_subcmd_type == json_type_object) {
+            l_key_str = key;
+            l_val_str = json_object_get_string(val);
+        } 
+
+        if(l_key_str){
+            dap_string_append_printf(l_str_tmp, "-%s;%s;", l_key_str, l_val_str ? l_val_str : "");
+        } else {
+            return log_it(L_CRITICAL, "Bad argument!"), dap_string_free(l_str_tmp, true),  NULL;
+        }
+    }
+
+    l_str_tmp->str[strlen(l_str_tmp->str) - 1] = '\0';
+
+    dap_json_rpc_params_add_data(params, l_str_tmp->str, TYPE_PARAM_STRING);
+    dap_string_free(l_str_tmp, true);
+
     return params;
 }
 

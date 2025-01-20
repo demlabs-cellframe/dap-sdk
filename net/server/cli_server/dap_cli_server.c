@@ -210,6 +210,7 @@ int is_json_clear_method(const char *a_name) {
     return 0;
 }
 
+
 int json_commands(const char * a_name) {
     static const char* long_cmd[] = {
             "tx_history",
