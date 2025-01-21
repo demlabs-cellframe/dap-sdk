@@ -56,6 +56,13 @@ typedef uint32_t dap_sign_type_enum_t;
 #define DAP_SIGN_HASH_TYPE_NONE      0x00
 #define DAP_SIGN_HASH_TYPE_SHA3      0x01
 #define DAP_SIGN_HASH_TYPE_STREEBOG  0x02
+#define DAP_SIGN_HASH_TYPE_SIGN      0x0e
+#define DAP_SIGN_HASH_TYPE_DEFAULT   0x0f  // not transferred in network, first try use sign hash, if false, use s_sign_hash_type_default
+
+#define DAP_SIGN_PKEY_HASHING_FLAG ((uint32_t)1 << 7)
+#define DAP_SIGN_ADD_PKEY_HASHING_FLAG(a) ((a) | DAP_SIGN_PKEY_HASHING_FLAG)
+#define DAP_SIGN_REMOVE_PKEY_HASHING_FLAG(a) ((a) & ~DAP_SIGN_PKEY_HASHING_FLAG)
+#define DAP_SIGN_GET_PKEY_HASHING_FLAG(a) ((a) & DAP_SIGN_PKEY_HASHING_FLAG)
 
 typedef union dap_sign_type {
     dap_sign_type_enum_t type;
@@ -79,7 +86,8 @@ typedef struct dap_sign
     dap_sign_hdr_t header; /// Only header's hash is used for verification
     uint8_t pkey_n_sign[]; /// @param sig @brief raw signature data
 } DAP_ALIGN_PACKED dap_sign_t;
-
+typedef struct dap_pkey dap_pkey_t;
+typedef dap_pkey_t *(*dap_sign_callback_t)(const uint8_t *);
 
 #ifdef __cplusplus
 extern "C" {
@@ -127,11 +135,11 @@ static inline int dap_sign_verify_all(dap_sign_t * a_sign, const size_t a_sign_s
 const char *dap_sign_get_str_recommended_types();
 
 // Create sign of data hash with key provided algorythm of signing and hashing (independently)
-dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, size_t a_output_wish_size );
+dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, uint32_t a_hash_type);
 //Create sign on raw data without hashing. Singing algorythm is key provided
 int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, void * a_output, size_t *a_output_size);
 
-size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t * a_key,size_t a_output_wish_size );
+size_t dap_sign_create_output_unserialized_calc_size(dap_enc_key_t *a_key);
 //int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size
 //                                 , void * a_output, size_t a_output_size );
 
@@ -151,6 +159,8 @@ dap_sign_t **dap_sign_get_unique_signs(void *a_data, size_t a_data_size, size_t 
 
 void dap_sign_get_information(dap_sign_t *a_sign, dap_string_t *a_str_out, const char *a_hash_out_type);
 void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_sign, json_object *a_json_out, const char *a_hash_out_type);
+
+int dap_sign_set_pkey_by_hash_callback (dap_sign_callback_t a_callback);
 
 #ifdef __cplusplus
 }

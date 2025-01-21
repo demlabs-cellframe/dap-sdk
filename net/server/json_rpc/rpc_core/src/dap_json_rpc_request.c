@@ -236,7 +236,8 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
     json_object *jobj = json_tokener_parse_verbose(a_data, &jterr),
                 *jobj_id = NULL,
                 *jobj_method = NULL,
-                *jobj_params = NULL;
+                *jobj_params = NULL,
+                *l_arguments_obj = NULL;
     if (jterr == json_tokener_success)
         do {
             if (json_object_object_get_ex(jobj, "id", &jobj_id))
@@ -255,11 +256,19 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
 
             if (json_object_object_get_ex(jobj, "params", &jobj_params))
                 request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
-            else {
-                log_it(L_ERROR, "Error parse JSON string, Can't find array params for request with id: %" DAP_UINT64_FORMAT_U, request->id);
+            else if(json_object_object_get_ex(jobj, "arguments", &l_arguments_obj)){
+                    json_object_object_get_ex(jobj, "subcommand", &jobj_params);                   
+                    request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_params, l_arguments_obj, request->method);
+            } else {
+                log_it(L_ERROR, "Error parse JSON string, Can't find array params or subcomand and arguments for request with id: %" DAP_UINT64_FORMAT_U, request->id);
                 break;
             }
             json_object_put(jobj);
+            if (!request->params){
+                dap_json_rpc_params_remove_all(request->params);
+                DAP_DEL_MULTY(request->method, request);
+                return NULL;
+            }
             return request;
         } while (0);
     else
@@ -309,7 +318,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_http_request_deserialize(const void *d
 
 void dap_json_rpc_http_request_free(dap_json_rpc_http_request_t *a_http_request)
 {
-    DAP_DEL_Z(a_http_request);
+    DAP_DELETE(a_http_request);
 }
 
 dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_request_t *a_request, dap_cert_t *a_cert)
@@ -318,7 +327,7 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
     if (!l_str)
         return log_it(L_ERROR, "Can't convert JSON-request to string!"), NULL;
     int l_len = strlen(l_str);
-    dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, l_len, 0);
+    dap_sign_t *l_sign = dap_cert_sign(a_cert, l_str, l_len, DAP_SIGN_HASH_TYPE_DEFAULT);
     if (!l_sign)
         return DAP_DELETE(l_str), log_it(L_ERROR, "JSON request signing failed"), NULL;
     size_t l_sign_size = dap_sign_get_size(l_sign);
@@ -329,8 +338,8 @@ dap_json_rpc_http_request_t *dap_json_rpc_request_sign_by_cert(dap_json_rpc_requ
         .header.data_size = l_len + 1,
         .header.signs_size = l_sign_size,
     };
-    byte_t* l_cur =  (byte_t*)dap_strncpy((char*)l_ret->request_n_signs, l_str, l_len);
-    dap_mempcpy(l_cur + 1, l_sign, l_sign_size);
+    byte_t* l_cur = (byte_t*)dap_strncpy((char*)l_ret->request_n_signs, l_str, l_len);
+    memcpy(l_cur + 1, l_sign, l_sign_size);
     return DAP_DEL_MULTY(l_sign, l_str), l_ret;
 }
 

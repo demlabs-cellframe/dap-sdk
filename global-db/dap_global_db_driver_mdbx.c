@@ -566,7 +566,7 @@ int s_fill_store_obj(const char *a_group, MDBX_val *a_key, MDBX_val *a_data, dap
     if (l_record->sign_len >= sizeof(dap_sign_t)) {
         dap_sign_t *l_sign = (dap_sign_t *)(l_record->key_n_value_n_sign + l_record->key_len + l_record->value_len);
         if (dap_sign_get_size(l_sign) != l_record->sign_len ||
-                !(a_obj->sign = (dap_sign_t *)DAP_DUP_SIZE(l_sign, l_record->sign_len))) {
+                !(a_obj->sign = DAP_DUP_SIZE(l_sign, l_record->sign_len))) {
             DAP_DEL_MULTY(a_obj->group, a_obj->key, a_obj->value);
             if (dap_sign_get_size(l_sign) != l_record->sign_len)
                 return log_it(L_ERROR, "Corrupted global DB record internal value"), -6;

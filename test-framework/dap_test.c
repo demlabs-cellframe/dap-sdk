@@ -36,7 +36,6 @@ void benchmark_mgs_time(const char *test_name, int dt)
         snprintf(buf, 120, "(%.3lf sec.)", dt * 1. / 1000);
     }
     else {
-
         snprintf(buf, 120, "(%d msec.)", dt);
     }
     dap_pass_msg_benchmark(test_name, buf);
@@ -59,6 +58,18 @@ void benchmark_mgs_rate(const char *test_name, float rate)
     }
     dap_pass_msg_benchmark(test_name, buf);
 }
+
+
+/**
+ * @return current time in nanoseconds
+ */
+uint64_t get_cur_time_nsec(void)
+{
+    struct timespec time;
+    clock_gettime(CLOCK_MONOTONIC, &time);
+    return (uint64_t)time.tv_sec * 1000000000 + time.tv_nsec;
+}
+
 
 /**
  * @return current time in milliseconds

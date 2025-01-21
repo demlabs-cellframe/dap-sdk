@@ -46,12 +46,13 @@ static ecdsa_context_t *s_context_create()
     return s_context;
 }
 
-DAP_STATIC_INLINE void s_sha256_hashing(const unsigned char *a_data, size_t a_data_size, unsigned char *a_out)
+int dap_enc_sig_ecdsa_hash_fast(const unsigned char *a_data, size_t a_data_size, dap_hash_fast_t *a_out)
 {
     secp256k1_sha256 l_hasher;
     secp256k1_sha256_initialize(&l_hasher);
     secp256k1_sha256_write(&l_hasher, a_data, a_data_size);
-    secp256k1_sha256_finalize(&l_hasher, a_out);
+    secp256k1_sha256_finalize(&l_hasher, (unsigned char *)a_out);
+    return 0;
 }
 
 void dap_enc_sig_ecdsa_key_new(dap_enc_key_t *a_key) {
@@ -88,7 +89,7 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const v
     }
 // keypair generate
     if(a_seed && a_seed_size > 0) {
-        s_sha256_hashing((const unsigned char *)a_seed, a_seed_size, (unsigned char *)a_key->priv_key_data);
+        dap_enc_sig_ecdsa_hash_fast((const unsigned char *)a_seed, a_seed_size, (unsigned char *)a_key->priv_key_data);
         if (!secp256k1_ec_seckey_verify(l_ctx, (const unsigned char*)a_key->priv_key_data)) {
             log_it(L_ERROR, "Error verify ECDSA private key");
             DAP_DEL_Z(a_key->priv_key_data);
@@ -124,7 +125,7 @@ int dap_enc_sig_ecdsa_get_sign(struct dap_enc_key *l_key, const void *a_msg, con
     dap_return_val_if_pass_err(l_key->priv_key_data_size != sizeof(ecdsa_private_key_t), -3, "Invalid ecdsa private key size");
 // msg hashing
     byte_t l_msghash[32] = { '\0' };
-    s_sha256_hashing(a_msg, a_msg_size, l_msghash);
+    dap_enc_sig_ecdsa_hash_fast(a_msg, a_msg_size, l_msghash);
 // context create
     int l_ret = 0;
     ecdsa_context_t *l_ctx = s_context_create();
@@ -143,7 +144,7 @@ int dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key *l_key, const void *a_msg, 
     dap_return_val_if_pass_err(l_key->pub_key_data_size != sizeof(ecdsa_public_key_t), -3, "Invalid ecdsa public key size");
 // msg hashing
     byte_t l_msghash[32] = { '\0' };
-    s_sha256_hashing(a_msg, a_msg_size, l_msghash);
+    dap_enc_sig_ecdsa_hash_fast(a_msg, a_msg_size, l_msghash);
 // context create
     int l_ret = 0;
     ecdsa_context_t *l_ctx = s_context_create();
