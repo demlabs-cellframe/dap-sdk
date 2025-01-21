@@ -422,7 +422,7 @@ dap_stream_node_addr_t *dap_cluster_get_all_members_addrs(dap_cluster_t *a_clust
             }
         }
         if (l_bias < l_count)
-            ret = DAP_REALLOC(ret, sizeof(dap_stream_node_addr_t) * l_bias);
+            ret = DAP_REALLOC_COUNT(ret, l_bias);
     }
     pthread_rwlock_unlock(&a_cluster->members_lock);
     if (a_count)

@@ -68,8 +68,7 @@ dap_global_db_legacy_list_t *dap_global_db_legacy_list_start(const char *a_net_n
     if (!l_items_number)
         return NULL;
 
-    dap_global_db_legacy_list_t *l_db_legacy_list;
-    DAP_NEW_Z_RET_VAL(l_db_legacy_list, dap_global_db_legacy_list_t, NULL, NULL);
+    dap_global_db_legacy_list_t *l_db_legacy_list = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_global_db_legacy_list_t, NULL);
     l_db_legacy_list->groups = l_db_legacy_list->current_group = l_groups;
     l_db_legacy_list->items_rest = l_db_legacy_list->items_number = l_items_number;
 
@@ -154,13 +153,10 @@ dap_global_db_pkt_old_t *dap_global_db_pkt_pack_old(dap_global_db_pkt_old_t *a_o
 {
     if (!a_new_pkt)
         return a_old_pkt;
-    a_old_pkt = a_old_pkt
-            ? DAP_REALLOC(a_old_pkt, sizeof(dap_global_db_pkt_old_t) + a_old_pkt->data_size + a_new_pkt->data_size)
-            : DAP_NEW_Z_SIZE(dap_global_db_pkt_old_t, sizeof(dap_global_db_pkt_old_t) + a_new_pkt->data_size);
-    if (!a_old_pkt) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
-    }
+    dap_global_db_pkt_old_t *l_old_pkt_new = a_old_pkt
+        ? DAP_REALLOC_RET_VAL_IF_FAIL(a_old_pkt, sizeof(dap_global_db_pkt_old_t) + a_old_pkt->data_size + a_new_pkt->data_size, NULL)
+        : DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_global_db_pkt_old_t, sizeof(dap_global_db_pkt_old_t) + a_new_pkt->data_size, NULL);
+    a_old_pkt = l_old_pkt_new;
     memcpy(a_old_pkt->data + a_old_pkt->data_size, a_new_pkt->data, a_new_pkt->data_size);
     a_old_pkt->data_size += a_new_pkt->data_size;
     ++a_old_pkt->obj_count;

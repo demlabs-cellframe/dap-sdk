@@ -245,8 +245,7 @@ int dap_server_callbacks_set(dap_server_t* a_server, dap_events_socket_callbacks
  */
 dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callbacks_t *a_server_callbacks, dap_events_socket_callbacks_t *a_client_callbacks)
 {
-    dap_server_t *l_server = NULL;
-    DAP_NEW_Z_RET_VAL(l_server, dap_server_t, NULL, NULL);
+    dap_server_t *l_server = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_server_t, NULL);
     dap_events_socket_callbacks_t l_callbacks = {
         .accept_callback = s_es_server_accept,
         .new_callback    = s_es_server_new,
@@ -270,7 +269,7 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
                     log_it(L_ERROR, "chmod() on socket path failed, errno %d: \"%s\"",
                                     errno, dap_strerror(errno));
         }
-        dap_config_get_item_str_path_array_free(l_paths, &l_count);
+        dap_config_get_item_str_path_array_free(l_paths, l_count);
 #endif
         const char **l_addrs = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_LISTEN_ADDRS, &l_count);
         for (i = 0; i < l_count; ++i) {

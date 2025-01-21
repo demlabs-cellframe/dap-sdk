@@ -62,7 +62,7 @@ typedef enum dap_cluster_status {
 } dap_cluster_status_t;
 
 typedef struct dap_cluster {
-    const char *mnemonim;           // Field for alternative cluster finding, unique
+    char *mnemonim;                 // Field for alternative cluster finding, unique
     dap_guuid_t guuid;              // Unique global cluster id
     dap_cluster_type_t type;        // Link management type
     dap_cluster_status_t status;    // Active or inactive for now

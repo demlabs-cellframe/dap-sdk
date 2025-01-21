@@ -23,19 +23,16 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
     int l_ret = 0;
     size_t seed_size = sizeof(uint8_t);
     uint8_t seed[seed_size];
-    dap_sign_t **l_signs = NULL;
-    uint8_t **l_source = NULL;
+    dap_sign_t *l_signs[a_times];
+    uint8_t *l_source[a_times];
     size_t l_source_size[a_times];
-
-    DAP_NEW_Z_COUNT_RET_VAL(l_signs, dap_sign_t*, a_times, 1, NULL);
-    DAP_NEW_Z_COUNT_RET_VAL(l_source, uint8_t*, a_times, 1, l_signs);
 
     for (int i = 0; i < a_times; ++i) {
         randombytes(seed, seed_size);
 
          // ----------
         l_source_size[i] = 1 + random_uint32_t(20);
-        DAP_NEW_Z_SIZE_RET_VAL(l_source[i], uint8_t, l_source_size[i], 1, NULL);
+        l_source[i] = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_source_size[i], 1, NULL);
         randombytes(l_source[i], l_source_size[i]);
         
         dap_enc_key_t *key = s_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
@@ -64,11 +61,8 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
         dap_assert_PIF(!l_verified, "Deserialize and verifying signature");
         l_ret |= l_verified;
     }
-
-    for(int i = 0; i < a_times; ++i) {
-        DAP_DEL_MULTY(l_signs[i], l_source[i]);
-    }
-    DAP_DEL_MULTY(l_signs, l_source);
+    DAP_DEL_ARRAY(l_signs, a_times);
+    DAP_DEL_ARRAY(l_source, a_times);
     return l_ret;
 }
 

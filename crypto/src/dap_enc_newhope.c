@@ -30,7 +30,6 @@
 #include <unistd.h>
 
 #include "dap_enc_newhope.h"
-#include "dap_common.h"
 #include "rand/dap_rand.h"
 #include "newhope/newhope_cpapke.h"
 #include "newhope/newhope_params.h"
@@ -67,18 +66,12 @@ void dap_enc_newhope_kem_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const
                                     UNUSED_ARG size_t a_kex_size, UNUSED_ARG const void *a_seed, 
                                     UNUSED_ARG size_t a_seed_size, UNUSED_ARG size_t a_key_size)
 {
-// sanity check
     dap_return_if_pass(!a_key);
-// work prepare
     DAP_NEWHOPE_SIGN_SECURITY newhope_type = NEWHOPE_1024;
     dap_enc_newhope_pke_set_type(newhope_type);
-// memory alloc
-    uint8_t *l_skey, *l_pkey;
-    DAP_NEW_Z_SIZE_RET(l_skey, uint8_t, NEWHOPE_CPAPKE_SECRETKEYBYTES, NULL);
-    DAP_NEW_Z_SIZE_RET(l_pkey, uint8_t, NEWHOPE_CPAPKE_PUBLICKEYBYTES, l_skey);
-// crypto calc
+    uint8_t *l_skey = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, NEWHOPE_CPAPKE_SECRETKEYBYTES),
+            *l_pkey = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, NEWHOPE_CPAPKE_PUBLICKEYBYTES, l_skey);
     cpapke_keypair(l_pkey, l_skey);
-// post func work
     DAP_DEL_MULTY(a_key->_inheritor, a_key->pub_key_data);
     a_key->_inheritor = l_skey;
     a_key->pub_key_data = l_pkey;
@@ -109,9 +102,8 @@ size_t dap_enc_newhope_gen_bob_shared_key(dap_enc_key_t *a_bob_key, const void *
 // sanity check
     dap_return_val_if_pass(!a_bob_key || !a_alice_pub || !a_cypher_msg || a_alice_pub_size < NEWHOPE_CPAPKE_PUBLICKEYBYTES, 0)
 // memory alloc
-    uint8_t *l_shared_key, *l_cypher_msg;
-    DAP_NEW_Z_SIZE_RET_VAL(l_shared_key, uint8_t, NEWHOPE_SYMBYTES, 0, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_cypher_msg, uint8_t, NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0, l_shared_key);
+    uint8_t *l_shared_key = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, NEWHOPE_SYMBYTES, false),
+            *l_cypher_msg =  DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, NEWHOPE_CPAKEM_CIPHERTEXTBYTES, false, l_shared_key);
 // crypto calc
     if (crypto_kem_enc(l_cypher_msg, l_shared_key, a_alice_pub)) {
         DAP_DEL_MULTY(l_cypher_msg, l_shared_key);
@@ -131,8 +123,7 @@ size_t dap_enc_newhope_gen_alice_shared_key(dap_enc_key_t *a_alice_key, UNUSED_A
 // sanity check
     dap_return_val_if_pass(!a_alice_key || !a_cypher_msg || a_cypher_msg_size < NEWHOPE_CPAKEM_CIPHERTEXTBYTES, 0);
 // memory alloc
-    uint8_t *l_shared_key = NULL;
-    DAP_NEW_Z_SIZE_RET_VAL(l_shared_key, uint8_t, NEWHOPE_SYMBYTES, 0, NULL);
+    uint8_t *l_shared_key = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, NEWHOPE_SYMBYTES, 0);
 // crypto calc
     if (crypto_kem_dec(l_shared_key, a_cypher_msg, a_alice_key->_inheritor)) {
         DAP_DELETE(l_shared_key);

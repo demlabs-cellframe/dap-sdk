@@ -8,7 +8,6 @@ if(WIN32)
   include_directories(../../../../os/win32/)
   include_directories(../../../../3rdparty/wepoll/include/)
   include_directories(../../../../3rdparty/uthash/src/)
-  include_directories(../../../../3rdparty/libmagic/src/)
 endif()
 
 add_library(${PROJECT_NAME} STATIC ${HTTP_SRCS} ${HTTP_HDRS})

@@ -250,8 +250,8 @@ char* dap_enc_base58_to_hex_str_from_str(const char *a_in_str)
     return l_out_str;
 }
 
-const char *dap_enc_base58_encode_hash_to_str_static(const dap_chain_hash_fast_t *a_in_hash)
+dap_enc_b58_hash_str_t dap_enc_base58_encode_hash_to_str_static_(const dap_chain_hash_fast_t *a_in_hash)
 {
-    _Thread_local static char s_buf[DAP_ENC_BASE58_ENCODE_SIZE(sizeof(dap_chain_hash_fast_t))] = { '\0' };
-    return dap_enc_base58_encode(a_in_hash, sizeof(dap_chain_hash_fast_t), s_buf) ? s_buf : NULL;
+    dap_enc_b58_hash_str_t l_ret = { };
+    return dap_enc_base58_encode(a_in_hash, sizeof(dap_chain_hash_fast_t), (char*)&l_ret), l_ret;
 }

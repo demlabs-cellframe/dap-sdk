@@ -58,7 +58,7 @@ dap_process_memory_t get_proc_mem_current(void)
 
 dap_process_memory_t get_proc_mem_by_pid(pid_t pid)
 {
-    char buf[126] = {0};
-    sprintf(buf, "/proc/%d/status", pid);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "/proc/%d/status", pid);
     return _get_process_memory(buf);
 }

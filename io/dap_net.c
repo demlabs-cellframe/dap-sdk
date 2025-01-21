@@ -33,7 +33,7 @@
 int dap_net_resolve_host(const char *a_host, const char *a_port, bool a_numeric_only, struct sockaddr_storage *a_addr_out, int *a_family)
 {
     dap_return_val_if_fail_err(a_addr_out, -1, "Required storage is not provided");
-    memset(a_addr_out, 0, sizeof(*a_addr_out));
+    *a_addr_out = (struct sockaddr_storage){ };
 
     
     int l_ret = 0;
