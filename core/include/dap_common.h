@@ -61,10 +61,11 @@
 #ifndef __cplusplus
 # include <stdatomic.h>
 #else
-# include <atomic>
-# define _Atomic(X) std::atomic< X >
+#include <atomic>
+#define _Atomic(X) std::atomic< X >
 #define atomic_bool _Atomic(bool)
 #define atomic_uint _Atomic(uint)
+#define atomic_int _Atomic(int)
 #endif
 
 #ifdef __MACH__

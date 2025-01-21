@@ -552,7 +552,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     if (l_cur->callbacks.read_callback) {
                         l_cur->last_time_active = time(NULL);
                         debug_if(g_debug_reactor, L_DEBUG, "Received %lu bytes from socket %zu", l_bytes, l_cur->socket);
-                        l_cur->callbacks.read_callback(l_cur, NULL);
+                        l_cur->callbacks.read_callback(l_cur, l_cur->callbacks.arg);
                         if (!l_cur->context) {
                             debug_if(g_debug_reactor, L_DEBUG, "Es %p : %zu unattached from context %u", l_cur, l_cur->socket, a_context->id);
                             continue;
