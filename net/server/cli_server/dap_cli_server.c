@@ -96,6 +96,8 @@ static bool s_allowed_cmd_check(char * a_buf) {
             break;
         }
     }
+    if (!l_ret)
+        log_it(L_ERROR, "Forbidden command for remote execution: %s", l_method);
     DAP_DELETE(l_method);
     json_object_put(jobj);
     return l_ret;
@@ -137,8 +139,9 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         && a_es->addr_storage.ss_family != AF_UNIX
 #endif
         ) {
-            if (!s_allowed_cmd_check(l_arg->buf))
+            if (!s_allowed_cmd_check(l_arg->buf)) {
                 return;
+            }
         }
 
         l_arg->buf = strndup(l_arg->buf, l_arg->buf_size);
