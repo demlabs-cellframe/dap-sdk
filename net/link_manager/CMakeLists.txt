@@ -23,7 +23,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE .)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../3rdparty/uthash/src)
 
 if(INSTALL_DAP_SDK)
-set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_CLIENT_HEADERS}")
+set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${DAP_LINK_MANAGER_HEADERS}")
 INSTALL(TARGETS ${PROJECT_NAME} 
         LIBRARY DESTINATION lib/dap/net/link_manager/
         ARCHIVE DESTINATION lib/dap/net/link_manager/
