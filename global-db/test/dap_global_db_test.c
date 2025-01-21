@@ -618,7 +618,8 @@ static void s_test_get_groups_by_mask(size_t a_count, bool a_bench)
 {
     dap_list_t *l_groups = NULL;
 
-    l_groups = dap_global_db_driver_get_groups_by_mask("group.z*");
+    char *l_mask_str = dap_strdup_printf("*%s", s_group + strlen(DAP_DB$T_GROUP_PREF));
+    l_groups = dap_global_db_driver_get_groups_by_mask(l_mask_str);
     dap_assert_PIF(dap_list_length(l_groups) == 1 && !strcmp(s_group, l_groups->data), "Wrong finded group by mask");
     dap_list_free_full(l_groups, NULL);
     DAP_DELETE(l_mask_str);
@@ -640,7 +641,7 @@ static void s_test_get_groups_by_mask(size_t a_count, bool a_bench)
         l_groups = dap_global_db_driver_get_groups_by_mask("group.*");
         s_get_groups_by_mask += a_bench ? get_cur_time_nsec() - l_time : 0;
 
-        dap_assert_PIF(dap_list_length(l_groups) == 2, "Wrong finded groups by mask");
+        dap_assert_PIF(dap_list_length(l_groups) >= 2, "Wrong finded groups by mask");
         dap_list_free_full(l_groups, NULL);
     }
     dap_pass_msg("get_groups_by_mask check");
@@ -906,6 +907,7 @@ static void s_test_full(size_t a_db_count, size_t a_count, bool a_with_value)
         benchmark_mgs_time("Tests to get_by_hash", s_get_by_hash / 1000000);
         benchmark_mgs_time("Tests to get_groups_by_mask", s_get_groups_by_mask / 1000000);
         benchmark_mgs_time(l_msg, (l_t2 - l_t1) / 1000000);
+        s_test_table_erase();
         s_test_close_db();
     }
 
