@@ -63,7 +63,7 @@ dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type
  * @param a_tsd_list
  * @return total size
  */
-DAP_STATIC_INLINE size_t dap_tsd_calc_size(dap_list_t *a_tsd_list)
+DAP_STATIC_INLINE size_t dap_tsd_calc_list_size(dap_list_t *a_tsd_list)
 {
     size_t l_ret = 0;
     for ( dap_list_t* l_iter = dap_list_first(a_tsd_list); l_iter; l_iter = l_iter->next ) {
