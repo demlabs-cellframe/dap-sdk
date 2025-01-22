@@ -58,3 +58,31 @@ dap_list_t *dap_tsd_find_all(byte_t *a_data, size_t a_data_size, uint16_t a_type
                 ? (dap_tsd_t*)l_pos : NULL);                                                                                \
             l_pos += iter_size                                                                                              \
         )
+/**
+ * @brief calculate total tsd size from tsd list
+ * @param a_tsd_list
+ * @return total size
+ */
+DAP_STATIC_INLINE size_t dap_tsd_calc_size(dap_list_t *a_tsd_list)
+{
+    size_t l_ret = 0;
+    for ( dap_list_t* l_iter = dap_list_first(a_tsd_list); l_iter; l_iter = l_iter->next ) {
+        l_ret += dap_tsd_size((dap_tsd_t *) l_iter->data);
+    }
+    return l_ret;
+}
+
+/**
+ * @brief serialise data from tsd list
+ * @param a_dst - pointer to allocated memory
+ * @param a_tsd_list - list with tsd data
+ */
+DAP_STATIC_INLINE void dap_tsd_fill_from_list(byte_t *a_dst, dap_list_t *a_tsd_list)
+{
+    size_t l_offset = 0;
+    for ( dap_list_t* l_iter = dap_list_first(a_tsd_list); l_iter; l_iter = l_iter->next) {
+        size_t l_tsd_size = dap_tsd_size((dap_tsd_t *) l_iter->data);
+        memcpy(a_dst + l_offset, l_iter->data, l_tsd_size);
+        l_offset += l_tsd_size;
+    }
+}
