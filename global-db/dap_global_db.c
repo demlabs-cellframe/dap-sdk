@@ -1726,7 +1726,7 @@ static bool s_check_pinned_db_objs_callback() {
     size_t l_count = 0;
     for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list), ++l_count) {
         size_t l_ret_count;
-        dap_store_obj_t * l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - s_minimal_ttl/2, &l_ret_count); 
+        dap_store_obj_t * l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now + s_minimal_ttl/2, &l_ret_count); 
         if (!l_ret || !l_ret->group)
             continue;
         char * l_group_name = dap_get_group_from_pinned_groups_mask(l_ret->group);
