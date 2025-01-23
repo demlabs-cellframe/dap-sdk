@@ -76,8 +76,9 @@ DAP_STATIC_INLINE size_t dap_tsd_calc_list_size(dap_list_t *a_tsd_list)
  * @brief serialise data from tsd list
  * @param a_dst - pointer to allocated memory
  * @param a_tsd_list - list with tsd data
+ * @return filled size
  */
-DAP_STATIC_INLINE void dap_tsd_fill_from_list(byte_t *a_dst, dap_list_t *a_tsd_list)
+DAP_STATIC_INLINE size_t dap_tsd_fill_from_list(byte_t *a_dst, dap_list_t *a_tsd_list)
 {
     size_t l_offset = 0;
     for ( dap_list_t* l_iter = dap_list_first(a_tsd_list); l_iter; l_iter = l_iter->next) {
@@ -85,4 +86,5 @@ DAP_STATIC_INLINE void dap_tsd_fill_from_list(byte_t *a_dst, dap_list_t *a_tsd_l
         memcpy(a_dst + l_offset, l_iter->data, l_tsd_size);
         l_offset += l_tsd_size;
     }
+    return l_offset;
 }
