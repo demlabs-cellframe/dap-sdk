@@ -256,8 +256,7 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
 
             if (json_object_object_get_ex(jobj, "params", &jobj_params))
                 request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
-            else if(json_object_object_get_ex(jobj, "arguments", &l_arguments_obj)){
-                    json_object_object_get_ex(jobj, "subcommand", &jobj_params);                   
+            else if(json_object_object_get_ex(jobj, "arguments", &l_arguments_obj) || json_object_object_get_ex(jobj, "subcommand", &jobj_params)){
                     request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_params, l_arguments_obj, request->method);
             } else {
                 log_it(L_ERROR, "Error parse JSON string, Can't find array params or subcomand and arguments for request with id: %" DAP_UINT64_FORMAT_U, request->id);
