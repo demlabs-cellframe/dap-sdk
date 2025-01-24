@@ -121,7 +121,7 @@ dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *
 
 dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(json_object *a_subcmd, json_object *a_args, const char* a_method)
 {
-    if (a_method == NULL || (a_args == NULL && a_subcmd == NULL))
+    if (a_method == NULL )
         return NULL;
     dap_json_rpc_params_t *params = dap_json_rpc_params_create();
 

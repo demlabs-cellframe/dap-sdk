@@ -261,12 +261,9 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
 
             if (jobj_params)
                 request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
-            else if(jobj_subcmd || l_arguments_obj){
+            else 
                 request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_subcmd, l_arguments_obj, request->method);
-            } else {
-                log_it(L_ERROR, "Error parse JSON string, Can't find array params or subcomand and arguments for request with id: %" DAP_UINT64_FORMAT_U, request->id);
-                break;
-            }
+
             json_object_put(jobj);
             if (!request->params){
                 dap_json_rpc_params_remove_all(request->params);
