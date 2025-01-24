@@ -1693,7 +1693,7 @@ static void s_clean_old_obj_gdb_callback() {
 
         dap_nanotime_t l_ttl = dap_nanotime_from_sec(l_cluster->ttl);
         for(size_t i = 0; i < l_ret_count; i++) {
-            if (!s_check_is_obj_pinned(l_ret[i].group, l_ret[i].key)) {
+            if (l_ret[i].group && l_ret[i].key && !s_check_is_obj_pinned(l_ret[i].group, l_ret[i].key)) {
                 if (l_ttl != 0) {
                     if (l_ret[i].timestamp + l_ttl < l_time_now) {
                         debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from gdb obj %s group, %s key", l_ret[i].group, l_ret[i].key);
@@ -1739,8 +1739,8 @@ static bool s_check_pinned_db_objs_callback() {
     dap_list_t *l_group_list = dap_global_db_driver_get_groups_by_mask("*.pinned");
     size_t l_count = 0;
     for (dap_list_t *l_list = l_group_list; l_list; l_list = dap_list_next(l_list), ++l_count) {
-        size_t l_ret_count;
-        dap_store_obj_t * l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now + s_minimal_ttl/2 + 100, &l_ret_count); 
+        size_t l_ret_count = 0;
+        dap_store_obj_t * l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - s_minimal_ttl/2 + 100, &l_ret_count); 
         if (!l_ret || !l_ret->group)
             continue;
         char * l_group_name = dap_get_group_from_pinned_groups_mask(l_ret->group);

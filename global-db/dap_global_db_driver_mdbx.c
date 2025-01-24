@@ -885,7 +885,7 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
 
     l_obj_arr = DAP_NEW_Z_SIZE(byte_t, (l_count_out + 1) * l_element_size + l_addition_size);
     if (!l_obj_arr) {
-        log_it(L_CRITICAL, "Can't allocate memory");
+        log_it(L_CRITICAL, "Can't allocate memory l_count_out %lu, l_element_size %lu, l_addition_size %lu", l_count_out, l_element_size, l_addition_size);
         goto safe_ret;
     }
     if (a_keys_only_read) {
