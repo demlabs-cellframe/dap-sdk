@@ -230,6 +230,7 @@ int json_commands(const char * a_name) {
             "token",
             "esbocs",
             "global_db",
+            "net_srv",
             "net",
             "srv_stake",
             "voting",
