@@ -123,8 +123,11 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
 #ifdef DAP_OS_UNIX
             && a_es->addr_storage.ss_family != AF_UNIX
 #endif
-            && !s_allowed_cmd_check(l_arg->buf) )
-                return;
+            && !s_allowed_cmd_check(l_arg->buf) ) {
+                dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 403 Forbidden\r\n");
+                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                return DAP_DELETE(l_arg);
+            }
 
         l_arg->buf = strndup(l_arg->buf, l_arg->buf_size);
         l_arg->worker = a_es->worker;
@@ -132,8 +135,7 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         dap_proc_thread_callback_add_pri(NULL, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
         a_es->buf_in_size = 0;
         a_es->callbacks.arg = NULL;
-        return;
-    }
+    } return;
     }
 
     dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 500 Internal Server Error\r\n");
