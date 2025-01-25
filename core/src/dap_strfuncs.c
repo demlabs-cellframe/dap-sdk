@@ -516,6 +516,16 @@ char* dap_strjoinv(const char *a_separator, char **a_str_array)
     return l_string;
 }
 
+char* const dap_str_find(const char **a_str_array, const char *a_str) {
+    if (!a_str_array || !a_str)
+        return NULL;
+    for (size_t i = 0; !!a_str_array[i]; ++i) {
+        if ( !dap_strcmp(a_str, a_str_array[i]) )
+            return a_str_array[i];
+    }
+    return NULL;
+}
+
 /**
  * dap_strjoin:
  * @a_separator: (allow-none): a string to insert between each of the

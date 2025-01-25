@@ -47,6 +47,8 @@
 #define DAP_CFG_PARAM_SOCK_PATH         "listen-path"
 #define DAP_CFG_PARAM_SOCK_PERMISSIONS  "listen-unix-socket-permissions"
 #define DAP_CFG_PARAM_LEGACY_PORT       "listen-port-tcp"
+#define DAP_CFG_PARAM_WHITE_LIST        "white-list"
+#define DAP_CFG_PARAM_BLACK_LIST        "black-list"
 
 typedef struct dap_link_info {
     dap_stream_node_addr_t node_addr;
