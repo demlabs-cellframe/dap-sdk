@@ -69,38 +69,23 @@ typedef struct cli_cmd_arg {
 
 static bool s_cli_cmd_exec(void *a_arg);
 
-static bool s_allowed_cmd_check(char * a_buf) {
-    bool l_ret = false;
+static bool s_allowed_cmd_check(char *a_buf) {
     enum json_tokener_error jterr;
-    char * l_method;
+    char *l_method = NULL;
     json_object *jobj = json_tokener_parse_verbose(a_buf, &jterr),
                 *jobj_method = NULL;
-    if (jterr == json_tokener_success) {
-        if (json_object_object_get_ex(jobj, "method", &jobj_method))
-            l_method = dap_strdup(json_object_get_string(jobj_method));
-        else {
-            log_it(L_ERROR, "Wrong type of request");
-            json_object_put(jobj);
-            return false;
-        }
-    } else {
-        log_it(L_ERROR, "JSON parsing failed: %s", json_tokener_error_desc(jterr));
+    if ( jterr != json_tokener_success ) 
+        return log_it(L_ERROR, "Can't parse json command, error %s", json_tokener_error_desc(jterr)), false;
+    if ( json_object_object_get_ex(jobj, "method", &jobj_method) )
+        l_method = json_object_get_string(jobj_method);
+    else {
+        log_it(L_ERROR, "Invalid command request, dump it");
+        json_object_put(jobj);
         return false;
     }
-    
-    uint16_t s_allowed_cmd_count = 0;
-    char ** s_allowed_cmd = (char**)dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", &s_allowed_cmd_count);
-    for (uint16_t i = 0; i < s_allowed_cmd_count; i++) {
-        if (dap_strcmp(l_method, s_allowed_cmd[i]) == 0) {
-            l_ret = true;
-            break;
-        }
-    }
-    if (!l_ret)
-        log_it(L_ERROR, "Forbidden command for remote execution: %s", l_method);
-    DAP_DELETE(l_method);
-    json_object_put(jobj);
-    return l_ret;
+
+    bool l_allowed = !!dap_str_find( dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", NULL), l_method );
+    return debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method), json_object_put(jobj), l_allowed;
 }
 
 DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg) {
@@ -134,15 +119,12 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
 
-        if (((struct sockaddr_in *)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)
+        if ( ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)
 #ifdef DAP_OS_UNIX
-        && a_es->addr_storage.ss_family != AF_UNIX
+            && a_es->addr_storage.ss_family != AF_UNIX
 #endif
-        ) {
-            if (!s_allowed_cmd_check(l_arg->buf)) {
+            && !s_allowed_cmd_check(l_arg->buf) )
                 return;
-            }
-        }
 
         l_arg->buf = strndup(l_arg->buf, l_arg->buf_size);
         l_arg->worker = a_es->worker;

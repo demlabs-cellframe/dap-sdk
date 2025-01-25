@@ -284,20 +284,12 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
                 log_it( L_ERROR, "Can't add address \"%s : %u\" to listen in server", l_cur_ip, l_cur_port);
         }
 
-        uint16_t l_list_size = 0;
-        l_server->white_list = (char**)dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_WHITE_LIST, &l_list_size);
-        if (l_server->white_list) {
-            l_server->white_list = DAP_REALLOC_COUNT(l_server->white_list, l_list_size+1);
-            l_server->white_list[l_list_size+1] = NULL;
-        }
-        l_server->black_list = (char**)dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_BLACK_LIST, &l_list_size);
-        if (l_server->black_list) {
-            l_server->black_list = DAP_REALLOC_COUNT(l_server->black_list, l_list_size+1);
-            l_server->black_list[l_list_size+1] = NULL;
-        }
-        if (l_server->white_list && l_server->black_list) {
-            log_it(L_CRITICAL, "Server %s has white and black list, change configs", a_cfg_section);
-            return NULL;
+        l_server->whitelist = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_WHITE_LIST, NULL);
+        l_server->blacklist = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_BLACK_LIST, NULL);
+
+        if (l_server->whitelist && l_server->blacklist) {
+            log_it(L_CRITICAL, "Server can't have both black- and whitelists, fix section [%s]", a_cfg_section);
+            l_server->whitelist = NULL; /* Blacklist will have priority */
         }
     }
     if (!l_server->es_listeners) {
@@ -328,65 +320,34 @@ static void s_es_server_error(dap_events_socket_t *a_es, int a_errno)
     log_it(L_WARNING, "Server socket %d error %d: %s", a_es->socket, a_errno, dap_strerror(a_errno));
 }
 
-static bool s_address_in_list(char **a_list, size_t a_list_size, char *a_address) {
-    for (size_t i = 0; i < a_list_size; i++) {
-        if (dap_strcmp(a_address, a_list[i]) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
 static bool s_check_allowed_connection(dap_server_t *a_server, struct sockaddr_storage *a_remote_addr) {
-    if (!a_server || !a_remote_addr) {
-        log_it(L_ERROR, "Invalid args");
-        return false;
-    }
+    dap_return_val_if_fail(a_server && a_remote_addr, false);
 
     bool l_is_allowed_to_connect = true;
-    char l_remote_addr_str[INET6_ADDRSTRLEN] = {0};
+    char l_remote_addr_str[INET6_ADDRSTRLEN] = "", l_port_str[32] = "";
 
-    if (a_remote_addr->ss_family == AF_INET) {
-        struct sockaddr_in *addr4 = (struct sockaddr_in *)a_remote_addr;
-        if (!inet_ntop(AF_INET, &addr4->sin_addr, l_remote_addr_str, sizeof(l_remote_addr_str))) {
-            log_it(L_ERROR, "Failed to convert IPv4 address to string");
-            return false;
-        }
-    } else if (a_remote_addr->ss_family == AF_INET6) {
-        struct sockaddr_in6 *addr6 = (struct sockaddr_in6 *)a_remote_addr;
-        if (!inet_ntop(AF_INET6, &addr6->sin6_addr, l_remote_addr_str, sizeof(l_remote_addr_str))) {
-            log_it(L_ERROR, "Failed to convert IPv6 address to string");
-            return false;
-        }
-    }
-
-    if (a_server->white_list) {
-        size_t l_white_list_size = dap_str_countv(a_server->white_list);
-        l_is_allowed_to_connect = s_address_in_list(a_server->white_list, l_white_list_size, l_remote_addr_str);
-    }
-
-    if (l_is_allowed_to_connect && a_server->black_list) {
-        size_t l_black_list_size = dap_str_countv(a_server->black_list);
-        if (s_address_in_list(a_server->black_list, l_black_list_size, l_remote_addr_str)) {
-            l_is_allowed_to_connect = false;
-        }
-    }
-
-    if (!l_is_allowed_to_connect) {
-        if (((struct sockaddr_in *)a_remote_addr)->sin_addr.s_addr == htonl(INADDR_LOOPBACK)) {
-            l_is_allowed_to_connect = true;
-        }
-#ifdef DAP_OS_UNIX
-        else if (a_remote_addr->ss_family == AF_UNIX) {
-            l_is_allowed_to_connect = true;
-        }
+    switch (a_remote_addr->ss_family) {
+    case AF_INET:
+    case AF_INET6:
+        if (getnameinfo((struct sockaddr*)a_remote_addr, sizeof(*a_remote_addr), l_remote_addr_str,
+            sizeof(l_remote_addr_str), l_port_str, sizeof(l_port_str), NI_NUMERICHOST | NI_NUMERICSERV))
+        {
+#ifdef DAP_OS_WINDOWS
+            _set_errno(WSAGetLastError());
 #endif
-        else {
-            log_it(L_ERROR, "Connection rejected from address %s (not in whitelist or in blacklist)", l_remote_addr_str);
-            return false;
-        }
+            log_it(L_ERROR, "getnameinfo() error %d: %s", errno, dap_strerror(errno));
+            l_is_allowed_to_connect = false;
+        } else
+            l_is_allowed_to_connect = a_server->whitelist
+                ? !!dap_str_find(a_server->whitelist, l_remote_addr_str) : !dap_str_find(a_server->blacklist, l_remote_addr_str);
+        break;
+    case AF_UNIX:
+    default:
+        break;
     }
 
+    debug_if(!l_is_allowed_to_connect, L_ERROR, "Connection from remote %s : %s rejected",
+              l_remote_addr_str, l_port_str);
     return l_is_allowed_to_connect;
 }
 
