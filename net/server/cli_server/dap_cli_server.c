@@ -211,7 +211,20 @@ int json_commands(const char * a_name) {
             "srv_stake",
             "voting",
             "emit_delegate",
-            "exec_cmd"
+            "token_decl",
+            "token_update",
+            "token_update_sign",
+            "token_decl_sign",
+            "chain_ca_pub",
+            "token_emit",
+            "find",
+            "version",
+            "remove",
+            "gdb_import",
+            "stats",
+            "print_log",
+            "stake_lock",
+            "exec_cmd"            
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
