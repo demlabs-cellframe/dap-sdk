@@ -210,6 +210,7 @@ int json_commands(const char * a_name) {
             "net",
             "srv_stake",
             "voting",
+            "srv_xchange",
             "emit_delegate",
             "exec_cmd"
     };
