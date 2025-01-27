@@ -376,7 +376,8 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
         if (( l_server->whitelist
             ? !!dap_str_find(l_server->whitelist, l_remote_addr_str) 
             : !dap_str_find(l_server->blacklist, l_remote_addr_str) ))
-                return debug_if(l_server->ext_log, L_INFO, "Connection from %s : %s denied. Dump it");
+                return debug_if(l_server->ext_log, L_INFO, "Connection from %s : %s denied. Dump it",
+                                l_remote_addr_str, l_port_str);
                 
         debug_if(l_server->ext_log, L_INFO, "Connection accepted from %s : %s, socket %"DAP_FORMAT_SOCKET,
                                             l_remote_addr_str, l_port_str, a_remote_socket);

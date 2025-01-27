@@ -198,7 +198,7 @@ dap_time_t dap_time_from_str_simplified(const char *a_time_str)
     struct tm l_tm = {};
     char *ret = strptime(a_time_str, "%y%m%d", &l_tm);
     if ( !ret || *ret )
-        return log_it(L_ERROR, "Invalid timestamp \"%s\", expected simplified string \%y\%m\%d", a_time_str), 0;
+        return log_it(L_ERROR, "Invalid timestamp \"%s\", expected simplified string \"yy\"mm\"dd", a_time_str), 0;
     l_tm.tm_sec++;
     time_t tmp = mktime(&l_tm);
     return tmp > 0 ? (dap_time_t)tmp : 0;
