@@ -71,7 +71,7 @@ static bool s_cli_cmd_exec(void *a_arg);
 
 static bool s_allowed_cmd_check(char *a_buf) {
     enum json_tokener_error jterr;
-    char *l_method = NULL;
+    const char *l_method;
     json_object *jobj = json_tokener_parse_verbose(a_buf, &jterr),
                 *jobj_method = NULL;
     if ( jterr != json_tokener_success ) 
