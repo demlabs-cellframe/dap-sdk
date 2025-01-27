@@ -1696,7 +1696,7 @@ static void s_clean_old_obj_gdb_callback() {
             if (l_ret[i].group && l_ret[i].key && !s_check_is_obj_pinned(l_ret[i].group, l_ret[i].key)) {
                 if (l_ttl != 0) {
                     if (l_ret[i].timestamp + l_ttl < l_time_now) {
-                        debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from gdb obj %s group, %s key", l_ret[i].group, l_ret[i].key);
+                        debug_if(g_dap_global_db_debug_more, L_INFO, "Try to delete from global_db obj %s group, %s key", l_ret[i].group, l_ret[i].key);
                         if (l_cluster->del_callback)
                             l_cluster->del_callback(l_ret+i, NULL);
                         else dap_global_db_driver_delete(l_ret + i, 1);
@@ -1766,7 +1766,7 @@ static bool s_check_pinned_db_objs_callback() {
                 debug_if(g_dap_global_db_debug_more, L_INFO, "Repin gdb obj %s group, %s key", l_gdb_rec->group, l_gdb_rec->key);
                 l_ret->timestamp = l_time_now;
                 dap_global_db_set_raw_sync(l_ret+i, 1);
-                l_gdb_rec->timestamp = l_time_now;
+                l_gdb_rec->timestamp = dap_nanotime_now();
                 dap_global_db_set_raw_sync(l_gdb_rec, 1);
                 dap_store_obj_free(l_gdb_rec, 1);
             }
@@ -1794,12 +1794,18 @@ DAP_STATIC_INLINE char *dap_get_local_pinned_groups_mask(const char *a_group)
 DAP_STATIC_INLINE char *dap_get_group_from_pinned_groups_mask(const char *a_group) {
     if (!a_group)
         return NULL;
-    char ** l_group_arr = dap_strsplit(a_group, ".", 3);
+    char ** l_group_arr = dap_strsplit(a_group, ".", 10);
     if (!l_group_arr[1] || !l_group_arr[2]) {
         dap_strfreev(l_group_arr);
         return NULL;
     }
-    char *result = dap_strdup_printf("%s.%s", l_group_arr[1], l_group_arr[2]);
+    size_t l_size = dap_str_countv(l_group_arr);
+    char * result = dap_strdup_printf("%s.%s", l_group_arr[1], l_group_arr[2]);
+    for (size_t i = 3; i < l_size - 1;i++) {
+        char * tmp = dap_strdup_printf("%s.%s", result, l_group_arr[i]);
+        DAP_DELETE(result);
+        result = tmp;
+    }
     dap_strfreev(l_group_arr);
     return result;
 }
