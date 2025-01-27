@@ -313,7 +313,7 @@ static void s_test_read_cond_store(size_t a_count, bool a_bench)
         dap_store_obj_free(l_objs, l_count);
     }
 
-    l_count = 99;
+    l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT / 4;
     l_driver_key = (dap_global_db_driver_hash_t){0};
     size_t l_total_count = 0;
     for (dap_store_obj_t *l_objs = dap_global_db_driver_cond_read(DAP_DB$T_GROUP, l_driver_key, &l_count, true);
@@ -328,7 +328,7 @@ static void s_test_read_cond_store(size_t a_count, bool a_bench)
     }
     dap_assert_PIF(l_total_count - dap_global_db_driver_hash_is_blank(&l_driver_key) == a_count, "Total cond read count with holes not equal total records count");
 
-    l_count = 99;
+    l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT / 4;
     l_driver_key = (dap_global_db_driver_hash_t){0};
     l_total_count = 0;
     for (dap_store_obj_t *l_objs = dap_global_db_driver_cond_read(DAP_DB$T_GROUP, l_driver_key, &l_count, false);
