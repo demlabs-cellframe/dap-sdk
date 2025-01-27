@@ -363,13 +363,16 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
             _set_errno(WSAGetLastError());
 #endif
             log_it(L_ERROR, "getnameinfo() error %d: %s", errno, dap_strerror(errno));
+            closesocket(a_remote_socket);
             return;
         }
         if (( l_server->whitelist
-            ? !!dap_str_find(l_server->whitelist, l_remote_addr_str) 
-            : !dap_str_find(l_server->blacklist, l_remote_addr_str) ))
+            ? !dap_str_find(l_server->whitelist, l_remote_addr_str) 
+            : !!dap_str_find(l_server->blacklist, l_remote_addr_str) )) {
+                closesocket(a_remote_socket);
                 return debug_if(l_server->ext_log, L_INFO, "Connection from %s : %s denied. Dump it",
                                 l_remote_addr_str, l_port_str);
+            }
                 
         debug_if(l_server->ext_log, L_INFO, "Connection accepted from %s : %s, socket %"DAP_FORMAT_SOCKET,
                                             l_remote_addr_str, l_port_str, a_remote_socket);
@@ -378,8 +381,8 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
             log_it(L_WARNING, "Can't disable Nagle alg, error %d: %s", errno, dap_strerror(errno));
         break;
     default:
-        log_it(L_ERROR, "Unsupported protocol family %hu from accept()", a_remote_addr->ss_family);
-        break;
+        closesocket(a_remote_socket);
+        return log_it(L_ERROR, "Unsupported protocol family %hu from accept()", a_remote_addr->ss_family);
     }
     l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
     l_es_new->server = l_server;
