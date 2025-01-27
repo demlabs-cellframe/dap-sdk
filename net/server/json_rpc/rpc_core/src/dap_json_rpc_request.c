@@ -236,7 +236,9 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
     json_object *jobj = json_tokener_parse_verbose(a_data, &jterr),
                 *jobj_id = NULL,
                 *jobj_method = NULL,
-                *jobj_params = NULL;
+                *jobj_params = NULL,
+                *jobj_subcmd = NULL,
+                *l_arguments_obj = NULL;
     if (jterr == json_tokener_success)
         do {
             if (json_object_object_get_ex(jobj, "id", &jobj_id))
@@ -253,13 +255,21 @@ dap_json_rpc_request_t *dap_json_rpc_request_from_json(const char *a_data)
                 break;
             }
 
-            if (json_object_object_get_ex(jobj, "params", &jobj_params))
+            json_object_object_get_ex(jobj, "params", &jobj_params);
+            json_object_object_get_ex(jobj, "subcommand", &jobj_subcmd);
+            json_object_object_get_ex(jobj, "arguments", &l_arguments_obj);
+
+            if (jobj_params)
                 request->params = dap_json_rpc_params_create_from_array_list(jobj_params);
-            else {
-                log_it(L_ERROR, "Error parse JSON string, Can't find array params for request with id: %" DAP_UINT64_FORMAT_U, request->id);
-                break;
-            }
+            else 
+                request->params = dap_json_rpc_params_create_from_subcmd_and_args(jobj_subcmd, l_arguments_obj, request->method);
+
             json_object_put(jobj);
+            if (!request->params){
+                dap_json_rpc_params_remove_all(request->params);
+                DAP_DEL_MULTY(request->method, request);
+                return NULL;
+            }
             return request;
         } while (0);
     else
