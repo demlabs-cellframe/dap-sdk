@@ -1828,7 +1828,7 @@ static int s_add_pinned_obj_in_pinned_group(dap_store_obj_t * a_objs){
         if (!l_ret_check) {
             if (!dap_global_db_set_sync(l_pinned_mask, a_objs->key, NULL, 0, true)) {
                 debug_if(g_dap_global_db_debug_more, L_INFO, "Pinned objs was added in pinned group %s, %s key", l_pinned_mask, a_objs->key);
-                a_objs->timestamp = dap_time_now();
+                a_objs->timestamp = dap_nanotime_now();
                 dap_global_db_driver_apply(a_objs, 1);
             } else
                 debug_if(g_dap_global_db_debug_more, L_ERROR, "Adding error in pinned group %s", a_objs->group);
