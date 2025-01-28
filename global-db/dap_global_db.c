@@ -1425,7 +1425,7 @@ int dap_global_db_del_ex(const char * a_group, const char *a_key, const void * a
     l_msg->callback_arg = a_arg;
     l_msg->callback_result = a_callback;
     if (a_value_len) {
-        l_msg->value = DAP_DUP_SIZE((void *)a_value, a_value_len);
+        l_msg->value = DAP_DUP_SIZE(a_value, a_value_len);
         l_msg->value_length = a_value_len;
     }
 
