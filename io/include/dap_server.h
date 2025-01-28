@@ -53,6 +53,7 @@ typedef struct dap_server {
     dap_server_callback_t delete_callback;
     dap_cpu_stats_t cpu_stats;
     dap_list_t *es_listeners;
+    const char **whitelist, **blacklist;
     void *_inheritor;
     bool ext_log;
 } dap_server_t;
