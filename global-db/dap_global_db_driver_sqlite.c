@@ -720,16 +720,14 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
         goto clean_and_ret;
     }
 // memory alloc
-    uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0), l_blank_add = l_count;
+    uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
     l_count = a_count_out && *a_count_out ? dap_min(l_count, *a_count_out) : dap_min(l_count, DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
     if (!l_count) {
         log_it(L_INFO, "There are no records satisfying the conditional read request");
         goto clean_and_ret;
     }
-    l_blank_add = l_count == l_blank_add;
-    l_count += l_blank_add;
-    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
-        log_it(L_CRITICAL, "Memory allocation error");
+    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count + 1) )) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         goto clean_and_ret;
     }
 // data forming
@@ -739,7 +737,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
     if ( rc != SQLITE_DONE )
         log_it(L_ERROR, "SQLite conditional read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
     if (a_count_out)
-        *a_count_out = l_count_out + l_blank_add;
+        *a_count_out = l_count_out;
 clean_and_ret:
     s_db_sqlite_clean(l_conn, 2, l_str_query, l_str_query_count, l_stmt, l_stmt_count);
     return l_ret;
@@ -812,73 +810,59 @@ clean_and_ret:
     return l_ret;
 }
 
-static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * l_count) {
+static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t *a_count_out) {
     conn_list_item_t *l_conn = NULL;
     dap_return_val_if_fail(a_group && (l_conn = s_db_sqlite_get_connection(false)), NULL);
 
     const char *l_error_msg = "read below timestamp";
     char *l_str_query = NULL;
     size_t l_row = 0;
-    dap_store_obj_t * l_obj_arr = NULL;
-    sqlite3_stmt *l_stmt = NULL;
+    dap_store_obj_t * l_ret = NULL;
 
+    sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
     char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-    if (!l_table_name) {
-        log_it(L_ERROR, "Error replacing characters in table name");
-        goto clean_and_ret;
-    }
-
-    l_str_query = sqlite3_mprintf("SELECT * FROM '%s' WHERE timestamp < ? ORDER BY timestamp ASC", l_table_name);
-    DAP_DEL_Z(l_table_name);
-    if (!l_str_query) {
+    char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s'"
+                                        " WHERE driver_key < ?", l_table_name);
+    char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
+                                        " WHERE driver_key < ?"
+                                        " ORDER BY driver_key DESC LIMIT '%d'", l_table_name, (int)DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
+    DAP_DELETE(l_table_name);
+    if (!l_query_count_str || !l_query_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
     }
 
-    if (s_db_sqlite_prepare(l_conn->conn, l_str_query, &l_stmt, l_error_msg) != SQLITE_OK) {
-        log_it(L_ERROR, "Error preparing SQL query: %s", sqlite3_errmsg(l_conn->conn));
+    dap_global_db_driver_hash_t l_hash_from = { .bets = htobe64(a_timestamp), .becrc = (uint64_t)-1 };
+    if( s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)                        != SQLITE_OK ||
+        s_db_sqlite_bind_blob64(l_stmt_count, 1, &l_hash_from, sizeof(l_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
+        s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)                                    != SQLITE_OK ||
+        s_db_sqlite_bind_blob64(l_stmt, 1, &l_hash_from, sizeof(l_hash_from), SQLITE_STATIC, l_error_msg)       != SQLITE_OK ||
+        s_db_sqlite_step(l_stmt_count, l_error_msg)                                                             != SQLITE_ROW )
+    {
         goto clean_and_ret;
     }
-
-    if (sqlite3_bind_int64(l_stmt, 1, a_timestamp) != SQLITE_OK) {
-        log_it(L_ERROR, "Error binding parameter: %s", sqlite3_errmsg(l_conn->conn));
+// memory alloc
+    uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
+    l_count = a_count_out && *a_count_out ? dap_min(l_count, *a_count_out) : dap_min(l_count, DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
+    if (!l_count) {
+        log_it(L_INFO, "There are no records satisfying the conditional read request");
         goto clean_and_ret;
     }
-
-    size_t l_sizeof_obj = 1;
-    int ret;
-
-    l_obj_arr = DAP_NEW_Z_COUNT(dap_store_obj_t, l_sizeof_obj);
-
-    ret = s_db_sqlite_fill_one_item(a_group, l_obj_arr, l_stmt);
-    while(ret == SQLITE_ROW){
-        if (l_row >= l_sizeof_obj) {
-            l_sizeof_obj += 16;
-            dap_store_obj_t* l_tmp = DAP_REALLOC(l_obj_arr, l_sizeof_obj*sizeof(dap_store_obj_t));
-            if (!l_tmp) {
-                log_it(L_ERROR, "Cannot allocate memory for store object, errno=%d", errno);
-                DAP_DELETE(l_obj_arr);
-                l_obj_arr = NULL;
-                ret = SQLITE_ERROR;
-                break;
-            }
-            l_obj_arr = l_tmp;
-        }
-        ret = s_db_sqlite_fill_one_item(a_group, l_obj_arr + l_row, l_stmt);
-        l_row++;
+    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        goto clean_and_ret;
     }
-    
-    if (ret != SQLITE_DONE) {
-        log_it(L_ERROR, "Error fetching rows: %s", sqlite3_errmsg(l_conn->conn));
-        DAP_DEL_Z(l_obj_arr);
-        l_obj_arr = NULL;
-    }
-
-
+// data forming
+    size_t l_count_out = 0;
+    int rc;
+    for ( rc = 0; SQLITE_ROW == ( rc = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt) ) && l_count_out < l_count; ++l_count_out ) {};
+    if ( rc != SQLITE_DONE )
+        log_it(L_ERROR, "SQLite conditional read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+    if (a_count_out)
+        *a_count_out = l_count_out;
 clean_and_ret:
-    s_db_sqlite_clean(l_conn, 1, l_str_query, l_stmt);
-    *l_count = l_row;
-    return l_obj_arr;
+    s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_count_str, l_stmt, l_stmt_count);
+    return l_ret;
 }
 
 

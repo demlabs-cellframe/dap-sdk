@@ -93,19 +93,19 @@ static int              s_db_mdbx_deinit();
 static int              s_db_mdbx_flush(void);
 static int              s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj);
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group, bool a_with_holes);
-static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count);
+static dap_store_obj_t  *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count);
 static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
 static bool             s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static bool             s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes);
-static void             *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes);
+static void             *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes, bool a_prev);
 static inline dap_global_db_hash_pkt_t *s_db_mdbx_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
 {
-    return s_db_mdbx_read_cond(a_group, a_hash_from, NULL, true, true);
+    return s_db_mdbx_read_cond(a_group, a_hash_from, NULL, true, true, false);
 }
 static inline dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes)
 {
-    return s_db_mdbx_read_cond(a_group, a_hash_from, a_count_out, false, a_with_holes);
+    return s_db_mdbx_read_cond(a_group, a_hash_from, a_count_out, false, a_with_holes, false);
 }
 static size_t           s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
 static dap_list_t       *s_db_mdbx_get_groups_by_mask(const char *a_group_mask);
@@ -684,87 +684,8 @@ ret:
 
 static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count) {
     dap_return_val_if_fail(a_group, NULL);
-
-    int rc;
-    dap_db_ctx_t *l_db_ctx;
-    MDBX_val l_key = {0}, l_data = {0};
-    MDBX_cursor *l_cursor = NULL;
-    dap_store_obj_t *l_obj_arr = NULL;
-
-    if (!(l_db_ctx = s_get_db_ctx_for_group(a_group)))
-        return NULL;
-
-    MDBX_txn *l_txn = s_txn;
-    if (!s_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, MDBX_TXN_RDONLY, &l_txn))) {
-        log_it(L_ERROR, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc));
-        return NULL;
-    }
-
-    if (MDBX_SUCCESS != (rc = mdbx_cursor_open(l_txn, l_db_ctx->dbi, &l_cursor))) {
-        log_it(L_ERROR, "mdbx_cursor_open: (%d) %s", rc, mdbx_strerror(rc));
-        goto ret_obj_timestamp;
-    }
-
-    size_t l_sizeof_obj = 1, l_count_current = 0;
-    l_obj_arr = DAP_CALLOC(l_sizeof_obj, sizeof(dap_store_obj_t));
-    if (!l_obj_arr) {
-        log_it(L_ERROR, "Cannot allocate memory for store object, errno=%d", errno);
-        rc = MDBX_PROBLEM;
-        goto ret_obj_timestamp;
-    }
-
-    rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_FIRST);
-    while (rc == MDBX_SUCCESS) {
-        if (l_count_current >= l_sizeof_obj){
-            l_sizeof_obj += 16;
-            dap_store_obj_t* l_tmp = DAP_REALLOC(l_obj_arr, l_sizeof_obj*sizeof(dap_store_obj_t));
-            if (!l_tmp) {
-                log_it(L_ERROR, "Cannot allocate memory for store object, errno=%d", errno);
-                DAP_DELETE(l_obj_arr);
-                l_obj_arr = NULL;
-                rc = MDBX_PROBLEM;
-                break;
-            }
-            l_obj_arr = l_tmp;
-        }
-        if (s_fill_store_obj(a_group, &l_key, &l_data, (dap_store_obj_t *)l_obj_arr + l_count_current)) {
-            rc = MDBX_PROBLEM;
-            DAP_DELETE(l_obj_arr);
-            l_obj_arr = NULL;
-            break;
-        }
-
-        if (((dap_store_obj_t *)l_obj_arr + l_count_current)->timestamp > a_timestamp)
-            break;
-            
-        l_count_current++;
-
-        rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT);
-    }
-    *a_count = l_count_current;
-    if (l_count_current > 0) {
-        // remove last object with greater timestamp
-        dap_store_obj_t *l_tmp = DAP_REALLOC(l_obj_arr, l_count_current * sizeof(dap_store_obj_t));
-        if (l_tmp) {
-            l_obj_arr = l_tmp;
-        }  else {
-            log_it(L_ERROR, "Cannot allocate memory for store object, errno=%d", errno);
-            DAP_DELETE(l_obj_arr);
-            rc = MDBX_PROBLEM;
-        }
-    }
-
-    if (rc != MDBX_SUCCESS && rc != MDBX_NOTFOUND && !l_obj_arr) {
-        log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
-    }
-
-ret_obj_timestamp:
-    if (l_cursor)
-        mdbx_cursor_close(l_cursor);
-    if (!s_txn)
-        mdbx_txn_commit(l_txn);
-
-    return l_obj_arr;
+    dap_global_db_driver_hash_t l_hash_from = { .bets = htobe64(a_timestamp), .becrc = (uint64_t)-1 };
+    return s_db_mdbx_read_cond(a_group, l_hash_from, a_count, false, false, true);
 }
 
 
@@ -918,7 +839,7 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
  * @param a_count_out[out] a number of objects that were read
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
-static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes)
+static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes, bool a_prev)
 {
     dap_return_val_if_fail(a_group && *a_group, NULL);  /* Sanity check */
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
@@ -943,17 +864,28 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
     }
     MDBX_val l_key = { .iov_base = &a_hash_from, .iov_len = sizeof(a_hash_from) },
              l_data = {};
-    if ( MDBX_SUCCESS != (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_SET_UPPERBOUND))) {
-        if (rc != MDBX_NOTFOUND)
-            log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
-        goto safe_ret;
+    rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_SET_UPPERBOUND);
+    if ( MDBX_SUCCESS != rc) {
+        if (a_prev && MDBX_NOTFOUND == rc)
+            rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_LAST);
+        if (MDBX_SUCCESS != rc) {
+            if (MDBX_NOTFOUND != rc)
+                log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
+            goto safe_ret;
+        }
+    } else if (a_prev) {
+        if (MDBX_SUCCESS != (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_PREV))) {
+            if (MDBX_NOTFOUND != rc)
+                log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
+            goto safe_ret;
+        }
     }
     size_t l_group_name_len = l_db_ctx->namelen + 1;
     size_t l_addition_size = a_keys_only_read ? l_group_name_len + sizeof(dap_global_db_hash_pkt_t): 0;
 
     l_obj_arr = DAP_NEW_Z_SIZE(byte_t, (l_count_out + 1) * l_element_size + l_addition_size);
     if (!l_obj_arr) {
-        log_it(L_CRITICAL, "Can't allocate memory");
+        log_it(L_CRITICAL, "Can't allocate memory l_count_out %lu, l_element_size %lu, l_addition_size %lu", l_count_out, l_element_size, l_addition_size);
         goto safe_ret;
     }
     if (a_keys_only_read) {
@@ -979,7 +911,7 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
             }
         }
     } while (l_count_current < l_count_out &&
-                (MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))));
+            (MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, a_prev ? MDBX_PREV : MDBX_NEXT))));
     // cut unused memory
     if (rc == MDBX_NOTFOUND) {
         if (!l_count_current) {
