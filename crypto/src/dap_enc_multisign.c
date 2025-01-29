@@ -336,7 +336,7 @@ int dap_enc_sig_multisign_get_sign(dap_enc_key_t *a_key, const void *a_msg_in, c
             return -4;
         }
         int l_num = l_sign->key_seq[i];
-        dap_sign_t *l_dap_sign_step = dap_sign_create(l_params->keys[l_num], &l_data_hash, sizeof(dap_chain_hash_fast_t), DAP_SIGN_HASH_TYPE_DEFAULT);
+        dap_sign_t *l_dap_sign_step = dap_sign_create(l_params->keys[l_num], &l_data_hash, sizeof(dap_chain_hash_fast_t));
         if (!l_dap_sign_step) {
             log_it (L_ERROR, "Can't create multi-signature step signature");
             DAP_DEL_MULTY(l_sign->key_hashes, l_sign->key_seq, l_sign->meta, l_sign->sign_data);

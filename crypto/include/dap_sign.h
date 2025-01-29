@@ -134,7 +134,12 @@ static inline int dap_sign_verify_all(dap_sign_t * a_sign, const size_t a_sign_s
 const char *dap_sign_get_str_recommended_types();
 
 // Create sign of data hash with key provided algorythm of signing and hashing (independently)
-dap_sign_t * dap_sign_create(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, uint32_t a_hash_type);
+dap_sign_t * dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, uint32_t a_hash_type);
+
+DAP_STATIC_INLINE dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void *a_data, const size_t a_data_size)
+{
+    return dap_sign_create_with_hash_type(a_key, a_data, a_data_size, DAP_SIGN_HASH_TYPE_DEFAULT);
+}
 //Create sign on raw data without hashing. Singing algorythm is key provided
 int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size_t a_data_size, void * a_output, size_t *a_output_size);
 
