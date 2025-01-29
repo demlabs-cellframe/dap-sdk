@@ -61,10 +61,11 @@
 #ifndef __cplusplus
 # include <stdatomic.h>
 #else
-# include <atomic>
-# define _Atomic(X) std::atomic< X >
+#include <atomic>
+#define _Atomic(X) std::atomic< X >
 #define atomic_bool _Atomic(bool)
 #define atomic_uint _Atomic(uint)
+#define atomic_int _Atomic(int)
 #endif
 
 #ifdef __MACH__
@@ -913,7 +914,10 @@ void dap_common_deinit(void);
 // set max items in log list
 void dap_log_set_max_item(unsigned int a_max);
 // get logs from list
-char *dap_log_get_item(time_t a_start_time, int a_limit);
+char *dap_log_get_item(const char *filename, time_t a_start_time, int a_limit);
+char* dap_log_get_last_n_lines(const char *filename, int N);
+int dap_log_export_string_to_file(const char *a_string, const char *dest_file_str);
+int dap_log_clear_file(const char *filename);
 
 DAP_PRINTF_ATTR(5, 6) void _log_it(const char * func_name, int line_num, const char * log_tag, enum dap_log_level, const char * format, ... );
 #define log_it_fl(_log_level, ...) _log_it(__FUNCTION__, __LINE__, LOG_TAG, _log_level, ##__VA_ARGS__)
@@ -1143,7 +1147,6 @@ DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_ad
         return -2;
     return sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4
         || sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, (uint64_t*)a_addr) == 1
-        || sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_X, (uint64_t*)a_addr) == 1
         ? 0 : -1;
 }
 
