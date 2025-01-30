@@ -1738,7 +1738,7 @@ static void s_clean_old_obj_gdb_callback() {
                         debug_if(g_dap_global_db_debug_more, L_INFO, "Try to delete from global_db the obj %s group, %s key", l_ret[i].group, l_ret[i].key);
                         if (l_cluster->del_callback)
                             l_cluster->del_callback(l_ret+i, NULL);
-                        else dap_global_db_del_sync_ex(l_ret[i].group, l_ret[i].key, GDB_TTL_DELETE_ERR_CODE, strlen(GDB_TTL_DELETE_ERR_CODE));
+                        else dap_del_global_db_obj_by_ttl(l_ret + i);
                     }
                 } else if ( l_ret[i].flags & DAP_GLOBAL_DB_RECORD_DEL && dap_global_db_group_match_mask(l_ret->group, "local.*")) {       
                     debug_if(g_dap_global_db_debug_more, L_INFO, "Delete from empty local global_db obj %s group, %s key", l_ret[i].group, l_ret[i].key);
@@ -1749,6 +1749,11 @@ static void s_clean_old_obj_gdb_callback() {
         dap_store_obj_free(l_ret, l_ret_count);
     }
     dap_list_free(l_group_list);
+}
+
+int dap_del_global_db_obj_by_ttl(dap_store_obj_t* a_obj) {
+    debug_if(g_dap_global_db_debug_more, L_INFO, "Delete expired ttl global_db obj %s group, %s key", a_obj->group, a_obj->key);
+    return dap_global_db_del_sync_ex(a_obj->group, a_obj->key, GDB_TTL_DELETE_ERR_CODE, strlen(GDB_TTL_DELETE_ERR_CODE));
 }
 
 static int s_gdb_clean_init() {
