@@ -67,7 +67,7 @@ typedef struct cli_cmd_arg {
     char *buf, status;
 } cli_cmd_arg_t;
 
-static bool s_cli_cmd_exec(void *a_arg);
+static void* s_cli_cmd_exec(void *a_arg);
 
 static bool s_allowed_cmd_check(char *a_buf) {
     enum json_tokener_error jterr;
@@ -132,7 +132,14 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         l_arg->buf = strndup(l_arg->buf, l_arg->buf_size);
         l_arg->worker = a_es->worker;
         l_arg->es_uid = a_es->uuid;
-        dap_proc_thread_callback_add_pri(NULL, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
+
+        pthread_t l_tid;
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+        pthread_create(&l_tid, &attr, s_cli_cmd_exec, l_arg);
+
+        //dap_proc_thread_callback_add_pri(NULL, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
         a_es->buf_in_size = 0;
         a_es->callbacks.arg = NULL;
     } return;
@@ -416,7 +423,7 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
     return l_alias->standard_command;
 }
 
-static bool s_cli_cmd_exec(void *a_arg) {
+static void *s_cli_cmd_exec(void *a_arg) {
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
     char    *l_ret = dap_cli_cmd_exec(l_arg->buf),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
@@ -425,7 +432,7 @@ static bool s_cli_cmd_exec(void *a_arg) {
     dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination
     DAP_DEL_MULTY(l_ret, l_arg->buf, /* l_full_ret, */ l_arg);
-    return false;
+    return NULL;
 }
 
 char *dap_cli_cmd_exec(char *a_req_str) {
