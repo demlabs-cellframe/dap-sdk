@@ -1822,19 +1822,20 @@ static bool s_check_pinned_db_objs_callback() {
                     continue;
                 }
                 debug_if(g_dap_global_db_debug_more, L_INFO, "Repin gdb obj %s group, %s key", l_gdb_rec->group, l_gdb_rec->key);
-                l_ret->timestamp = l_time_now;
-                dap_global_db_set_raw_sync(l_ret+i, 1);
+                dap_global_db_set_sync(l_ret[i].group, l_ret[i].key, l_ret[i].value, l_ret[i].value_len, true);
+                // dap_global_db_set_raw_sync(l_ret+i, 1);
                 switch (s_is_require_restore_del_pin_obj(l_gdb_rec)) {
                     case 0:
-                        l_gdb_rec->flags = DAP_GLOBAL_DB_RECORD_NEW | DAP_GLOBAL_DB_RECORD_PINNED;
-                        l_gdb_rec->value = l_ret[i].value;
-                        l_gdb_rec->value_len = l_ret[i].value_len;
+                        dap_global_db_set_sync(l_gdb_rec->group, l_gdb_rec->key, l_ret[i].value, l_ret[i].value_len, true);
+                        break;
                     case -1:
-                        l_gdb_rec->timestamp = l_time_now;
-                        dap_global_db_set_raw_sync(l_gdb_rec, 1);
+                        dap_global_db_set_sync(l_gdb_rec->group, l_gdb_rec->key, l_gdb_rec->value, l_gdb_rec->value_len, true);
+                        // dap_global_db_set_raw_sync(l_gdb_rec, 1);
                         break;
                     case 1:
                         s_del_pinned_obj_from_pinned_group_by_source_group(l_ret[i].group, l_ret[i].key);
+                        if (l_gdb_rec->flags & DAP_GLOBAL_DB_RECORD_PINNED)
+                            dap_global_db_unpin_sync(l_gdb_rec->group, l_gdb_rec->key);
                         break;
                     default: break;
                 }
