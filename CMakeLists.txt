@@ -93,6 +93,7 @@ if (BUILD_DAP_SDK_TESTS)
     set(DAPSDK_MODULES "app-cli crypto io network-core network-server network-link_manager network-client global-db test-framework")
     set(SPHINCSPLUS_FLEX ON)
     message("[+] Enable dap_sdk_tests")
+    add_definitions("-DDAP_SDK_TESTS")
 endif ()
 
 if (DAPSDK_MODULES MATCHES "test-framework")
