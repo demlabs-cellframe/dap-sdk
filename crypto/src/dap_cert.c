@@ -172,19 +172,18 @@ int dap_cert_sign_output(dap_cert_t * a_cert, const void * a_data, size_t a_data
 }
 
 /**
- * @brief
- * sign data by encryption key from certificate
+ * @brief sign data by encryption key from certificate with choosed hash type
  * @param a_cert dap_cert_t * certificate object
  * @param a_data data for signing
  * @param a_data_size data size
  * @param a_hash_type data and pkey hash type
  * @return dap_sign_t*
  */
-dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, uint32_t a_hash_type)
+dap_sign_t *dap_cert_sign_with_hash_type(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, uint32_t a_hash_type)
 {
     dap_return_val_if_fail(a_cert && a_cert->enc_key && a_cert->enc_key->priv_key_data &&
                            a_cert->enc_key->priv_key_data_size && a_data && a_data_size, NULL);
-    dap_sign_t *l_ret = dap_sign_create(a_cert->enc_key, a_data, a_data_size, a_hash_type);
+    dap_sign_t *l_ret = dap_sign_create_with_hash_type(a_cert->enc_key, a_data, a_data_size, a_hash_type);
 
     if (l_ret)
         log_it(L_INFO, "Sign sizes: %d %d", l_ret->header.sign_size, l_ret->header.sign_pkey_size);
@@ -209,7 +208,7 @@ int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer)
             log_it(L_CRITICAL, "%s", c_error_memory_alloc);
             return -1;
         }
-        l_sign_item->sign = dap_cert_sign(a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_data_size, DAP_SIGN_HASH_TYPE_DEFAULT);
+        l_sign_item->sign = dap_cert_sign(a_cert_signer,a_cert->enc_key->pub_key_data,a_cert->enc_key->pub_key_data_size);
         DL_APPEND ( PVT(a_cert)->signs, l_sign_item );
         return 0;
     } else {
