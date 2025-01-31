@@ -1821,23 +1821,25 @@ static bool s_check_pinned_db_objs_callback() {
                     debug_if(g_dap_global_db_debug_more, L_INFO, "Can't find source gdb obj %s group, %s key delete obj from pinned group gdb ", l_group_name, l_ret[i].key);
                     continue;
                 }
-                debug_if(g_dap_global_db_debug_more, L_INFO, "Repin gdb obj %s group, %s key", l_gdb_rec->group, l_gdb_rec->key);
                 dap_global_db_set_sync(l_ret[i].group, l_ret[i].key, l_ret[i].value, l_ret[i].value_len, true);
-                // dap_global_db_set_raw_sync(l_ret+i, 1);
                 switch (s_is_require_restore_del_pin_obj(l_gdb_rec)) {
                     case 0:
                         dap_global_db_set_sync(l_gdb_rec->group, l_gdb_rec->key, l_ret[i].value, l_ret[i].value_len, true);
+                        debug_if(g_dap_global_db_debug_more, L_INFO, "Restore pinned gdb obj %s group, %s key after ttl delete", l_gdb_rec->group, l_gdb_rec->key);
                         break;
                     case -1:
                         dap_global_db_set_sync(l_gdb_rec->group, l_gdb_rec->key, l_gdb_rec->value, l_gdb_rec->value_len, true);
-                        // dap_global_db_set_raw_sync(l_gdb_rec, 1);
+                        debug_if(g_dap_global_db_debug_more, L_INFO, "Repin gdb obj %s group, %s key", l_gdb_rec->group, l_gdb_rec->key);
                         break;
                     case 1:
+                        debug_if(g_dap_global_db_debug_more, L_INFO, "Remove pinned gdb obj %s group, %s key after manually delete", l_gdb_rec->group, l_gdb_rec->key);
                         s_del_pinned_obj_from_pinned_group_by_source_group(l_ret[i].group, l_ret[i].key);
                         if (l_gdb_rec->flags & DAP_GLOBAL_DB_RECORD_PINNED)
                             dap_global_db_unpin_sync(l_gdb_rec->group, l_gdb_rec->key);
                         break;
-                    default: break;
+                    default: 
+                        debug_if(g_dap_global_db_debug_more, L_INFO, "Unrecognized pinned gdb obj %s group, %s key", l_gdb_rec->group, l_gdb_rec->key);
+                        break;
                 }
                 dap_store_obj_free(l_gdb_rec, 1);
             }
