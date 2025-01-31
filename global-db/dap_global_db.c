@@ -346,12 +346,16 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
         if (l_read_obj) { // Need to rewrite existed value
             l_required_role = DAP_GDB_MEMBER_ROLE_ROOT;
             if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED) {
-                if (!dap_sign_compare_pkeys(a_obj->sign, l_read_obj->sign) && dap_strcmp((const char*)a_obj->value, GDB_TTL_DELETE_ERR_CODE)) {
-                    debug_if(g_dap_global_db_debug_more, L_INFO, "Try to rewrite pinned global_db record with group %s and key %s is pinned "
-                                                                 "rewrite object with new timestamp and reject current obj",
-                                                                 l_read_obj->group, l_read_obj->key);
-                    l_ret = -15;
-                    goto free_n_exit;
+                if (!dap_sign_compare_pkeys(a_obj->sign, l_read_obj->sign) && a_obj->value) {
+                    if (!dap_strcmp((const char*)a_obj->value, GDB_TTL_DELETE_ERR_CODE)) {
+                        debug_if(g_dap_global_db_debug_more, L_INFO, "Try to rewrite pinned global_db record with group %s and key %s is pinned "
+                                                                    "rewrite object with new timestamp and reject current obj",
+                                                                    l_read_obj->group, l_read_obj->key);
+                        DAP_DELETE(a_obj->value);
+                        a_obj->flags = DAP_GLOBAL_DB_RECORD_NEW | DAP_GLOBAL_DB_RECORD_PINNED;
+                        a_obj->value = DAP_DUP_SIZE(l_read_obj->value, l_read_obj->value_len);
+                        a_obj->value_len = l_read_obj->value_len;
+                    } 
                 }
                 l_existed_obj_pinned = true;
             }
@@ -1824,12 +1828,12 @@ static bool s_check_pinned_db_objs_callback() {
                 dap_global_db_set_sync(l_ret[i].group, l_ret[i].key, l_ret[i].value, l_ret[i].value_len, true);
                 switch (s_is_require_restore_del_pin_obj(l_gdb_rec)) {
                     case 0:
-                        dap_global_db_set_sync(l_gdb_rec->group, l_gdb_rec->key, l_ret[i].value, l_ret[i].value_len, true);
                         debug_if(g_dap_global_db_debug_more, L_INFO, "Restore pinned gdb obj %s group, %s key after ttl delete", l_gdb_rec->group, l_gdb_rec->key);
+                        dap_global_db_set_sync(l_gdb_rec->group, l_gdb_rec->key, l_ret[i].value, l_ret[i].value_len, true);
                         break;
                     case -1:
-                        dap_global_db_set_sync(l_gdb_rec->group, l_gdb_rec->key, l_gdb_rec->value, l_gdb_rec->value_len, true);
                         debug_if(g_dap_global_db_debug_more, L_INFO, "Repin gdb obj %s group, %s key", l_gdb_rec->group, l_gdb_rec->key);
+                        dap_global_db_set_sync(l_gdb_rec->group, l_gdb_rec->key, l_gdb_rec->value, l_gdb_rec->value_len, true);
                         break;
                     case 1:
                         debug_if(g_dap_global_db_debug_more, L_INFO, "Remove pinned gdb obj %s group, %s key after manually delete", l_gdb_rec->group, l_gdb_rec->key);
