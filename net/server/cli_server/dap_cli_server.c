@@ -128,7 +128,7 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
                 a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
                 return;
             }
-
+                
         l_arg->buf = strndup(l_arg->buf, l_arg->buf_size);
         l_arg->worker = a_es->worker;
         l_arg->es_uid = a_es->uuid;
@@ -429,9 +429,10 @@ static void *s_cli_cmd_exec(void *a_arg) {
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                             "Content-Length: %zu\r\n\r\n"
                                             "%s", dap_strlen(l_ret), l_ret);
+    DAP_DELETE(l_ret);
     dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination
-    DAP_DEL_MULTY(l_ret, l_arg->buf, /* l_full_ret, */ l_arg);
+    DAP_DEL_MULTY(l_arg->buf, /* l_full_ret, */ l_arg);
     return NULL;
 }
 
