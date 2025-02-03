@@ -41,6 +41,7 @@ static uint64_t    s_read = 0;
 static uint64_t    s_read_all_with_holes = 0;
 static uint64_t    s_read_all_without_holes = 0;
 static uint64_t    s_read_cond_store = 0;
+static uint64_t    s_read_below_timestamp = 0;
 static uint64_t    s_count_with_holes = 0;
 static uint64_t    s_count_without_holes = 0;
 static uint64_t    s_tx_start_end_erase = 0;
@@ -352,7 +353,7 @@ static void s_test_read_obj_below_timestamp(size_t a_count)
     size_t l_count = 0;
     int l_time = get_cur_time_msec();
     dap_store_obj_t *l_objs = dap_global_db_driver_read_obj_below_timestamp(s_group, (dap_nanotime_t)(-1), &l_count);
-    s_read_cond_store += get_cur_time_msec() - l_time;
+    s_read_below_timestamp += get_cur_time_msec() - l_time;
     dap_assert_PIF(l_objs, "Records-Not-Found");
     dap_assert_PIF(a_count == l_count, "Wrong finded records count");
 
@@ -836,6 +837,7 @@ static void s_test_full(size_t a_db_count, size_t a_count, bool a_with_value)
         s_read_all_with_holes = 0;
         s_read_all_without_holes = 0;
         s_read_cond_store = 0;
+        s_read_below_timestamp = 0;
         s_count_with_holes = 0;
         s_count_without_holes = 0;
         s_tx_start_end_erase = 0;
@@ -884,6 +886,7 @@ static void s_test_full(size_t a_db_count, size_t a_count, bool a_with_value)
         benchmark_mgs_time("Tests to read_all with holes", s_read_all_with_holes / 1000000);
         benchmark_mgs_time("Tests to read_all without holes", s_read_all_without_holes / 1000000);
         benchmark_mgs_time("Tests to read_cond_store", s_read_cond_store / 1000000);
+        benchmark_mgs_time("Tests to read_below_timestamp", s_read_below_timestamp / 1000000);
         benchmark_mgs_time("Tests to count with holes", s_count_with_holes / 1000000);
         benchmark_mgs_time("Tests to count without holes", s_count_without_holes / 1000000);
         benchmark_mgs_time("Tests to tx_start_end erase record", s_tx_start_end_erase / 1000000);
