@@ -37,11 +37,11 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
         
         dap_enc_key_t *key = s_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
         if (key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
-            l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i], DAP_SIGN_HASH_TYPE_DEFAULT);
+            l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i]);
         else {
             dap_chain_hash_fast_t l_hash;
             dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
-            l_signs[i] = dap_sign_create(key, &l_hash, sizeof(l_hash), DAP_SIGN_HASH_TYPE_DEFAULT);
+            l_signs[i] = dap_sign_create(key, &l_hash, sizeof(l_hash));
         }
         
         dap_assert_PIF(l_signs[i], "Signing message and serialize");
