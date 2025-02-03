@@ -93,7 +93,7 @@ static int              s_db_mdbx_deinit();
 static int              s_db_mdbx_flush(void);
 static int              s_db_mdbx_apply_store_obj(dap_store_obj_t *a_store_obj);
 static dap_store_obj_t  *s_db_mdbx_read_last_store_obj(const char* a_group, bool a_with_holes);
-static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count);
+static dap_store_obj_t  *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count);
 static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
 static bool             s_db_mdbx_is_obj(const char *a_group, const char *a_key);
 static bool             s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
@@ -682,7 +682,7 @@ ret:
     return l_obj;
 }
 
-static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count) {
+static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t *a_count) {
     dap_return_val_if_fail(a_group, NULL);
 
     int rc;
@@ -727,24 +727,28 @@ static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_g
             }
             l_obj_arr = l_tmp;
         }
-        if (s_fill_store_obj(a_group, &l_key, &l_data, (dap_store_obj_t *)l_obj_arr + l_count_current)) {
+        if (s_fill_store_obj(a_group, &l_key, &l_data, l_obj_arr + l_count_current)) {
             rc = MDBX_PROBLEM;
             DAP_DELETE(l_obj_arr);
             l_obj_arr = NULL;
             break;
         }
 
-        if (((dap_store_obj_t *)l_obj_arr + l_count_current)->timestamp > a_timestamp)
+        if ((l_obj_arr + l_count_current)->timestamp > a_timestamp) {
+            DAP_DEL_MULTY((l_obj_arr + l_count_current)->group, (l_obj_arr + l_count_current)->key, (l_obj_arr + l_count_current)->value, (l_obj_arr + l_count_current)->sign);
+            memset(l_obj_arr + l_count_current, 0, sizeof(dap_store_obj_t));
             break;
+        }
             
         l_count_current++;
 
         rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT);
     }
-    *a_count = l_count_current;
+    if (a_count)
+        *a_count = l_count_current;
     if (l_count_current > 0) {
         // remove last object with greater timestamp
-        dap_store_obj_t *l_tmp = DAP_REALLOC(l_obj_arr, l_count_current * sizeof(dap_store_obj_t));
+        dap_store_obj_t *l_tmp = DAP_REALLOC(l_obj_arr, (l_count_current + 1) * sizeof(dap_store_obj_t));
         if (l_tmp) {
             l_obj_arr = l_tmp;
         }  else {
@@ -752,6 +756,9 @@ static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_g
             DAP_DELETE(l_obj_arr);
             rc = MDBX_PROBLEM;
         }
+    } else {
+        DAP_DELETE(l_obj_arr);
+        l_obj_arr = NULL;
     }
 
     if (rc != MDBX_SUCCESS && rc != MDBX_NOTFOUND && !l_obj_arr) {
