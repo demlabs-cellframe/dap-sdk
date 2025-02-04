@@ -1948,9 +1948,9 @@ static int s_pinned_objs_group_init() {
             continue;
         }
         s_get_all_pinned_objs_in_group(l_ret, l_ret_count);
-        s_check_pinned_db_objs_callback();
         dap_store_obj_free(l_ret, l_ret_count);
     }
+    s_check_pinned_db_objs_callback();
     return 0;
 }
 
