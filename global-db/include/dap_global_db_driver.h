@@ -185,7 +185,7 @@ int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_co
 dap_store_obj_t *dap_global_db_driver_read_last(const char *a_group, bool a_with_holes);
 dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes);
 dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out, bool a_with_holes);
-dap_store_obj_t *dap_global_db_driver_read_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * l_count);
+dap_store_obj_t *dap_global_db_driver_read_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t *a_count);
 dap_global_db_pkt_pack_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
 bool dap_global_db_driver_is(const char *a_group, const char *a_key);
 bool dap_global_db_driver_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
