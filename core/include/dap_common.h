@@ -267,8 +267,11 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_REALLOC_RET_IF_FAIL(p, s, ...)      DAP_REALLOC_RET_VAL_IF_FAIL(p, s, , __VA_ARGS__)
 #define DAP_REALLOC_COUNT_RET_IF_FAIL(p, c, ...) DAP_REALLOC_COUNT_RET_VAL_IF_FAIL(p, c, , __VA_ARGS__)
 
-#define dap_return_val_if_pass_err(e, r, s) do { if (e) { _log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", s); return r; } } while(0);
-#define dap_return_val_if_fail_err(e, r, s) dap_return_val_if_pass_err(!(e), r, s)
+#define dap_return_val_if_pass_err(e, r, ...) do { \
+    if (e) { _log_it(__FUNCTION__, __LINE__, LOG_TAG, L_ERROR, ##__VA_ARGS__); return r; } \
+} while(0);
+
+#define dap_return_val_if_fail_err(e, r, ...) dap_return_val_if_pass_err(!(e), r, s)
 #define dap_return_val_if_pass(e, r)    dap_return_val_if_pass_err(e, r, c_error_sanity_check)
 #define dap_return_val_if_fail(e, r)    dap_return_val_if_fail_err(e, r, c_error_sanity_check)
 #define dap_return_if_pass_err(e, s)    dap_return_val_if_pass_err(e, , s)
