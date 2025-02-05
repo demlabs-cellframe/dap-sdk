@@ -1966,7 +1966,7 @@ static int s_pinned_objs_group_init() {
         dap_store_obj_free(l_ret, l_ret_count);
     }
     log_it(L_MSG, "Sleep for init");
-    sleep(50000);  // TODO remove it's for test 
+    sleep(10000);  // TODO remove it's for test 
     s_check_pinned_db_objs_callback();
     return 0;
 }
