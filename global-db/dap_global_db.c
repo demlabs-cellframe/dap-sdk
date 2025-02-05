@@ -105,7 +105,6 @@ static int s_check_db_ret = INVALID_RETCODE; // Check version return value
 static dap_timerfd_t* s_check_pinned_db_objs_timer;
 static dap_timerfd_t* s_check_gdb_clean_timer;
 static dap_nanotime_t s_minimal_ttl = 3600000000000;  //def half an hour
-#define GDB_TTL_DELETE_ERR_CODE "12345"
 
 static dap_global_db_instance_t *s_dbi = NULL; // GlobalDB instance is only static now
 
@@ -312,13 +311,15 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
         return -13;
     }
     if ( l_ttl && a_obj->timestamp + l_ttl < l_now ) {
-        if (g_dap_global_db_debug_more) {
-            char l_ts_str[DAP_TIME_STR_SIZE];
-            dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
-            log_it(L_NOTICE, "Rejected too old record \"%s : %s\" ts %s",
-                             a_obj->group, a_obj->key, l_ts_str);
+        if (dap_strcmp((const char*)a_obj->value, DAP_GLOBAL_DB_MANUAL_DEL)) {
+            if (g_dap_global_db_debug_more) {
+                char l_ts_str[DAP_TIME_STR_SIZE];
+                dap_time_to_str_rfc822(l_ts_str, sizeof(l_ts_str), dap_nanotime_to_sec(a_obj->timestamp));
+                log_it(L_NOTICE, "Rejected too old record \"%s : %s\" ts %s",
+                                a_obj->group, a_obj->key, l_ts_str);
+            }
+            return -13;
         }
-        return -13;
     }
 
     dap_global_db_role_t l_signer_role = DAP_GDB_MEMBER_ROLE_INVALID;
@@ -346,8 +347,8 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
         if (l_read_obj) { // Need to rewrite existed value
             l_required_role = DAP_GDB_MEMBER_ROLE_ROOT;
             if (l_read_obj->flags & DAP_GLOBAL_DB_RECORD_PINNED) {
-                if (!dap_sign_compare_pkeys(a_obj->sign, l_read_obj->sign) && a_obj->value) {
-                    if (!dap_strcmp((const char*)a_obj->value, GDB_TTL_DELETE_ERR_CODE)) {
+                if (!dap_sign_compare_pkeys(a_obj->sign, l_read_obj->sign)) {
+                    if (!dap_strcmp((const char*)a_obj->value, DAP_GLOBAL_DB_TTL_DEL)) {
                         debug_if(g_dap_global_db_debug_more, L_INFO, "Try to rewrite pinned global_db record with group %s and key %s is pinned "
                                                                     "rewrite object with new timestamp and reject current obj",
                                                                     l_read_obj->group, l_read_obj->key);
@@ -355,7 +356,21 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
                         a_obj->flags = DAP_GLOBAL_DB_RECORD_NEW | DAP_GLOBAL_DB_RECORD_PINNED;
                         a_obj->value = DAP_DUP_SIZE(l_read_obj->value, l_read_obj->value_len);
                         a_obj->value_len = l_read_obj->value_len;
-                    } 
+                    } else if (!dap_strcmp((const char*)a_obj->value, DAP_GLOBAL_DB_MANUAL_DEL)) {
+                        if (a_obj->timestamp < l_read_obj->timestamp) {
+                            if (g_dap_global_db_debug_more) {
+                                char l_ts_str_old[DAP_TIME_STR_SIZE];
+                                dap_time_to_str_rfc822(l_ts_str_old, sizeof(l_ts_str_old), dap_nanotime_to_sec(a_obj->timestamp));
+                                char l_ts_str_new[DAP_TIME_STR_SIZE];
+                                dap_time_to_str_rfc822(l_ts_str_new, sizeof(l_ts_str_new), dap_nanotime_to_sec(a_obj->timestamp));
+                                log_it(L_NOTICE, "Rejected too old record \"%s : %s\" ts %s, newest record \"%s : %s\" ts %s",
+                                                a_obj->group, a_obj->key, l_ts_str_old, l_read_obj->group, l_read_obj->key, l_ts_str_new);
+                            }
+                            l_ret = -13;
+                            goto free_n_exit;
+                        }
+
+                    }
                 }
                 l_existed_obj_pinned = true;
             }
@@ -1757,7 +1772,7 @@ static void s_clean_old_obj_gdb_callback() {
 
 int dap_del_global_db_obj_by_ttl(dap_store_obj_t* a_obj) {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Delete expired ttl global_db obj %s group, %s key", a_obj->group, a_obj->key);
-    return dap_global_db_del_sync_ex(a_obj->group, a_obj->key, GDB_TTL_DELETE_ERR_CODE, strlen(GDB_TTL_DELETE_ERR_CODE));
+    return dap_global_db_del_sync_ex(a_obj->group, a_obj->key, DAP_GLOBAL_DB_TTL_DEL, strlen(DAP_GLOBAL_DB_TTL_DEL));
 }
 
 static int s_gdb_clean_init() {
@@ -1789,7 +1804,7 @@ static bool s_check_is_obj_pinned(const char * a_group, const char * a_key) {
 static int s_is_require_restore_del_pin_obj(dap_store_obj_t * a_pinned_obj) {
     if (dap_store_obj_get_type(a_pinned_obj) == DAP_GLOBAL_DB_OPTYPE_DEL) {
         if (a_pinned_obj->value)
-            if (!dap_strcmp((const char*)a_pinned_obj->value, GDB_TTL_DELETE_ERR_CODE))
+            if (!dap_strcmp((const char*)a_pinned_obj->value, DAP_GLOBAL_DB_TTL_DEL))
                 return 0;
         return 1;
     }
@@ -1950,6 +1965,7 @@ static int s_pinned_objs_group_init() {
         s_get_all_pinned_objs_in_group(l_ret, l_ret_count);
         dap_store_obj_free(l_ret, l_ret_count);
     }
+    s_check_pinned_db_objs_callback();
     return 0;
 }
 
