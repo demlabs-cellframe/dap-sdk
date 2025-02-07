@@ -103,7 +103,6 @@ static pthread_mutex_t s_check_db_mutex = PTHREAD_MUTEX_INITIALIZER; // Check ve
 #define INVALID_RETCODE +100500
 static int s_check_db_ret = INVALID_RETCODE; // Check version return value
 static dap_timerfd_t* s_check_pinned_db_objs_timer;
-static dap_timerfd_t* s_check_gdb_clean_timer;
 static dap_nanotime_t s_minimal_ttl = 3600000000000;  //def half an hour
 
 static dap_global_db_instance_t *s_dbi = NULL; // GlobalDB instance is only static now
@@ -1777,7 +1776,7 @@ int dap_del_global_db_obj_by_ttl(dap_store_obj_t* a_obj) {
 
 static int s_gdb_clean_init() {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Init global_db clean old objects");
-    dap_proc_thread_timer_add(NULL, (dap_thread_timer_callback_t)s_clean_old_obj_gdb_callback, NULL, 180000);  ///1800000
+    dap_proc_thread_timer_add(NULL, (dap_thread_timer_callback_t)s_clean_old_obj_gdb_callback, NULL, 1800000);
     return 0;
 }
 
@@ -1798,9 +1797,9 @@ static bool s_check_is_obj_pinned(const char * a_group, const char * a_key) {
 
 /// @brief 
 /// @param a_pinned_obj 
-/// @return 0 object was deleted by ttl, 
+/// @return 0 object was deleted by ttl
 ///         1 obj was manually deleted
-///         -1 obj not the hole,
+///         -1 obj not the hole
 static int s_is_require_restore_del_pin_obj(dap_store_obj_t * a_pinned_obj) {
     if (dap_store_obj_get_type(a_pinned_obj) == DAP_GLOBAL_DB_OPTYPE_DEL) {
         if (a_pinned_obj->value)
@@ -1965,7 +1964,7 @@ static int s_pinned_objs_group_init() {
         s_get_all_pinned_objs_in_group(l_ret, l_ret_count);
         dap_store_obj_free(l_ret, l_ret_count);
     }
-    dap_proc_thread_timer_add_pri(NULL, s_check_pinned_db_objs_callback, NULL, 120000, true, DAP_QUEUE_MSG_PRIORITY_NORMAL);
+    dap_proc_thread_timer_add_pri(NULL, s_check_pinned_db_objs_callback, NULL, 300000, true, DAP_QUEUE_MSG_PRIORITY_NORMAL);  // 5 min wait before repin
     return 0;
 }
 
