@@ -32,6 +32,9 @@
 #define DAP_GLOBAL_DB_LOCAL_LAST_HASH       "local.lasthash"
 #define DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT     5 // seconds
 
+#define DAP_GLOBAL_DB_TTL_DEL       "111"
+#define DAP_GLOBAL_DB_MANUAL_DEL    "222"
+
 typedef struct dap_global_db_cluster dap_global_db_cluster_t;
 
 // Global DB instance with settings data
@@ -144,6 +147,7 @@ int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_ca
 int dap_global_db_del(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_del_ex(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_len,
                                                               dap_global_db_callback_result_t a_callback, void *a_arg);
+int dap_del_global_db_obj_by_ttl(dap_store_obj_t* a_obj);
 int dap_global_db_flush( dap_global_db_callback_result_t a_callback, void *a_arg);
 
 // Set multiple. In callback writes total processed objects to a_values_total and a_values_count to the a_values_count as well
