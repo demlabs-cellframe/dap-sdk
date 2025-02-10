@@ -389,7 +389,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     l_es_new->type = l_es_type;
     l_es_new->addr_storage = *a_remote_addr;
     l_es_new->remote_port = strtol(l_port_str, NULL, 10);
-    dap_strncpy(l_es_new->remote_addr_str, l_remote_addr_str, sizeof(INET6_ADDRSTRLEN));
+    dap_strncpy(l_es_new->remote_addr_str, l_remote_addr_str, INET6_ADDRSTRLEN);
     dap_worker_add_events_socket( dap_events_worker_get_auto(), l_es_new );
 }
 
