@@ -126,6 +126,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             }
             l_tok = strtok_r(NULL, ",", &l_tok_tmp);
         }
+        *return_code = Http_Status_OK;
         log_it(L_DEBUG,"Encryption type %s (enc headers %d)",dap_enc_get_type_name(l_enc_type), l_enc_headers);
         UNUSED(l_is_legacy);
         dap_http_header_t *l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
@@ -145,17 +146,16 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         } else {
             json_object* l_json_obj_res = json_object_new_array();
             json_object_array_add(l_json_obj_res, json_object_new_string("Wrong request"));
-            const char * l_json_str_res = json_object_to_json_string(l_json_obj_res);
-            enc_http_reply(l_dg, l_json_str_res, strlen(l_json_str_res));
+            size_t l_strlen = 0;
+            const char *l_json_str_res = json_object_to_json_string_length(l_json_obj_res, JSON_C_TO_STRING_SPACED, &l_strlen);
+            enc_http_reply(l_dg, (char*)l_json_str_res, l_strlen);
             json_object_put(l_json_obj_res);
-            DAP_DELETE(l_json_str_res);
-            log_it(L_ERROR,"Wrong request");
+            log_it(L_ERROR, "Wrong request");
+            *return_code = Http_Status_BadRequest;
         }
-        DAP_DEL_Z(l_res_str);
-        *return_code = Http_Status_OK;
         enc_http_reply_encode(a_http_simple,l_dg);
         enc_http_delegate_delete(l_dg);
-    }else{
+    } else {
         log_it(L_ERROR,"Wrong request");
         *return_code = Http_Status_BadRequest;
     }

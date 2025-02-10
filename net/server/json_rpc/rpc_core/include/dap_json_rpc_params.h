@@ -137,6 +137,8 @@ dap_json_rpc_type_param_t dap_json_rpc_params_get_type_param(dap_json_rpc_params
  */
 dap_json_rpc_params_t * dap_json_rpc_params_create_from_array_list(json_object *a_array_list);
 
+dap_json_rpc_params_t * dap_json_rpc_params_create_from_subcmd_and_args(json_object *a_subcmd, json_object *a_args, const char* a_method);
+
 /**
  * Get a JSON string representation of dap_json_rpc_params_t.
  *

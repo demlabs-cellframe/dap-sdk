@@ -295,7 +295,7 @@ dap_config_t *dap_config_open(const char* a_file_path) {
         return NULL;
     }
     log_it(L_DEBUG, "Looking for config name %s...", a_file_path);
-    char l_path[MAX_PATH] = { '\0' };
+    char l_path[MAX_PATH + 1] = "";
     const char *l_suffix = "";
     size_t l_path_len = strlen(a_file_path);
     if (l_path_len < 4 || strcmp(a_file_path + l_path_len - 4, ".cfg"))
@@ -558,3 +558,4 @@ int dap_config_stream_addrs_parse(dap_config_t *a_cfg, const char *a_config, con
 void dap_config_deinit() {
 
 }
+
