@@ -1713,7 +1713,7 @@ static int s_gdb_clean_init() {
 }
 
 static void s_gdb_clean_deinit() {
-    dap_timerfd_delete_mt(s_check_gdb_clean_timer->worker, s_check_gdb_clean_timer->esocket_uuid);
+    dap_timerfd_delete(s_check_gdb_clean_timer->worker, s_check_gdb_clean_timer->esocket_uuid);
 }
 
 
@@ -1840,7 +1840,7 @@ static int s_pinned_objs_group_init() {
 
 static void s_check_pinned_db_objs_deinit() {
     if (s_check_pinned_db_objs_timer)
-        dap_timerfd_delete_mt(s_check_pinned_db_objs_timer->worker, s_check_pinned_db_objs_timer->esocket_uuid);
+        dap_timerfd_delete(s_check_pinned_db_objs_timer->worker, s_check_pinned_db_objs_timer->esocket_uuid);
 }
 
 
