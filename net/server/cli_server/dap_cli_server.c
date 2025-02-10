@@ -67,7 +67,26 @@ typedef struct cli_cmd_arg {
     char *buf, status;
 } cli_cmd_arg_t;
 
-static bool s_cli_cmd_exec(void *a_arg);
+static void* s_cli_cmd_exec(void *a_arg);
+
+static bool s_allowed_cmd_check(char *a_buf) {
+    enum json_tokener_error jterr;
+    const char *l_method;
+    json_object *jobj = json_tokener_parse_verbose(a_buf, &jterr),
+                *jobj_method = NULL;
+    if ( jterr != json_tokener_success ) 
+        return log_it(L_ERROR, "Can't parse json command, error %s", json_tokener_error_desc(jterr)), false;
+    if ( json_object_object_get_ex(jobj, "method", &jobj_method) )
+        l_method = json_object_get_string(jobj_method);
+    else {
+        log_it(L_ERROR, "Invalid command request, dump it");
+        json_object_put(jobj);
+        return false;
+    }
+
+    bool l_allowed = !!dap_str_find( dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", NULL), l_method );
+    return debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method), json_object_put(jobj), l_allowed;
+}
 
 DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg) {
     cli_cmd_arg_t *l_arg = a_arg ? (cli_cmd_arg_t*)a_arg : DAP_NEW_Z(cli_cmd_arg_t);
@@ -99,14 +118,31 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         size_t l_hdr_len = (size_t)(l_arg->buf - (char*)a_es->buf_in);
         if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
+
+        if ( ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)
+#ifdef DAP_OS_UNIX
+            && a_es->addr_storage.ss_family != AF_UNIX
+#endif
+            && !s_allowed_cmd_check(l_arg->buf) ) {
+                dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 403 Forbidden\r\n");
+                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                return;
+            }
+                
         l_arg->buf = strndup(l_arg->buf, l_arg->buf_size);
         l_arg->worker = a_es->worker;
         l_arg->es_uid = a_es->uuid;
-        dap_proc_thread_callback_add_pri(NULL, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
+
+        pthread_t l_tid;
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+        pthread_create(&l_tid, &attr, s_cli_cmd_exec, l_arg);
+
+        //dap_proc_thread_callback_add_pri(NULL, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
         a_es->buf_in_size = 0;
         a_es->callbacks.arg = NULL;
-        return;
-    }
+    } return;
     }
 
     dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 500 Internal Server Error\r\n");
@@ -207,11 +243,26 @@ int json_commands(const char * a_name) {
             "token",
             "esbocs",
             "global_db",
+            "net_srv",
             "net",
             "srv_stake",
             "voting",
+            "srv_xchange",
             "emit_delegate",
-            "exec_cmd"
+            "token_decl",
+            "token_update",
+            "token_update_sign",
+            "token_decl_sign",
+            "chain_ca_pub",
+            "token_emit",
+            "find",
+            "version",
+            "remove",
+            "gdb_import",
+            "stats",
+            "print_log",
+            "stake_lock",
+            "exec_cmd"            
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
@@ -372,16 +423,17 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
     return l_alias->standard_command;
 }
 
-static bool s_cli_cmd_exec(void *a_arg) {
+static void *s_cli_cmd_exec(void *a_arg) {
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
     char    *l_ret = dap_cli_cmd_exec(l_arg->buf),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                             "Content-Length: %zu\r\n\r\n"
                                             "%s", dap_strlen(l_ret), l_ret);
+    DAP_DELETE(l_ret);
     dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination
-    DAP_DEL_MULTY(l_ret, l_arg->buf, /* l_full_ret, */ l_arg);
-    return false;
+    DAP_DEL_MULTY(l_arg->buf, /* l_full_ret, */ l_arg);
+    return NULL;
 }
 
 char *dap_cli_cmd_exec(char *a_req_str) {
