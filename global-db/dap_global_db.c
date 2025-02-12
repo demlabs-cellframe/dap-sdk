@@ -1754,8 +1754,8 @@ static void s_clean_old_obj_gdb_callback() {
                 if (l_ttl != 0) {
                     if (l_ret[i].timestamp + l_ttl < l_time_now) {
                         debug_if(g_dap_global_db_debug_more, L_INFO, "Try to delete from global_db the obj %s group, %s key", l_ret[i].group, l_ret[i].key);
-                        if (l_ret[i].flags & DAP_GLOBAL_DB_RECORD_DEL && !dap_strcmp(l_ret[i].value, DAP_GLOBAL_DB_TTL_DEL))
-                             dap_global_db_driver_delete(l_ret + i, 1);
+                        if (l_ret[i].flags & DAP_GLOBAL_DB_RECORD_DEL || !l_ret[i].value || !l_ret[i].key)
+                            dap_global_db_driver_delete(l_ret + i, 1);
                         else if (l_cluster->del_callback)
                             l_cluster->del_callback(l_ret+i, NULL);
                         else dap_del_global_db_obj_by_ttl(l_ret + i);
@@ -1778,7 +1778,7 @@ int dap_del_global_db_obj_by_ttl(dap_store_obj_t* a_obj) {
 
 static int s_gdb_clean_init() {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Init global_db clean old objects");
-    dap_proc_thread_timer_add(NULL, (dap_thread_timer_callback_t)s_clean_old_obj_gdb_callback, NULL, 1800000);
+    dap_proc_thread_timer_add(NULL, (dap_thread_timer_callback_t)s_clean_old_obj_gdb_callback, NULL, 18000); //1800000
     return 0;
 }
 
