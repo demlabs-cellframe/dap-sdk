@@ -775,12 +775,12 @@ char *dap_file_get_contents2(const char *a_filename, size_t *length)
 #endif
         return log_it(L_ERROR, "Can't open file \"%s\", error %d: %s", a_filename, l_err, dap_strerror(l_err)), NULL;
     }
-    off_t l_size = fseeko(f, 0, SEEK_END) ? ftello(f) : -1;
+    off_t l_size = !fseeko(f, 0, SEEK_END) ? ftello(f) : -1;
     char *l_buffer = NULL;
     if (l_size <= 0) {
         log_it(L_ERROR, "Can't get file %s size or file is empty", a_filename);
         l_err = -3;
-    } else if (!( l_buffer = DAP_NEW_Z_SIZE(char, l_size)) ) {
+    } else if (!( l_buffer = DAP_NEW_Z_SIZE(char, l_size + 1)) ) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         l_err = -4;
     } else {
