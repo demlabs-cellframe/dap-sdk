@@ -1778,7 +1778,7 @@ int dap_del_global_db_obj_by_ttl(dap_store_obj_t* a_obj) {
 
 static int s_gdb_clean_init() {
     debug_if(g_dap_global_db_debug_more, L_INFO, "Init global_db clean old objects");
-    dap_proc_thread_timer_add(NULL, (dap_thread_timer_callback_t)s_clean_old_obj_gdb_callback, NULL, 18000); //1800000
+    dap_proc_thread_timer_add(NULL, (dap_thread_timer_callback_t)s_clean_old_obj_gdb_callback, NULL, 1800000);
     return 0;
 }
 
