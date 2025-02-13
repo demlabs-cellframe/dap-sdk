@@ -57,9 +57,8 @@ const char *dap_config_path()
     return s_configs_path;
 }
 
-#define dap_config_item_del(a_item)         \
+#define dap_config_item_del(a_item, a_full)         \
 do {                                        \
-    DAP_DELETE(a_item->name);               \
     switch (a_item->type) {                 \
     case DAP_CONFIG_ITEM_STRING:            \
         DAP_DELETE(a_item->val.val_str);    \
@@ -70,31 +69,38 @@ do {                                        \
     default:                                \
         break;                              \
     }                                       \
-    DAP_DELETE(a_item);                     \
+    if (a_full)                             \
+        DAP_DEL_MULTY(a_item->name, a_item);\
 } while (0)
+
+DAP_STATIC_INLINE void s_config_item_dump(dap_config_item_t *a_item)
+{
+    dap_return_if_pass(!a_item);
+    switch (a_item->type) {
+        case DAP_CONFIG_ITEM_STRING:
+            log_it(L_DEBUG, " String param: %s = %s", a_item->name, a_item->val.val_str);
+            break;
+        case DAP_CONFIG_ITEM_DECIMAL:
+            log_it(L_DEBUG, " Int param: %s = %"DAP_UINT64_FORMAT_U, a_item->name, a_item->val.val_int);
+            break;
+        case DAP_CONFIG_ITEM_BOOL:
+            log_it(L_DEBUG, " Bool param: %s = %d", a_item->name, a_item->val.val_bool);
+            break;
+        case DAP_CONFIG_ITEM_ARRAY: {
+            log_it(L_DEBUG, " Array param: %s = ", a_item->name);
+            for (char **l_str = a_item->val.val_arr; *l_str; ++l_str) {
+                log_it(L_DEBUG, " %s", *l_str);
+            }
+            break;
+        }
+    }
+}
 
 void dap_config_dump(dap_config_t *a_conf) {
     dap_config_item_t *l_item = NULL, *l_tmp = NULL;
     log_it(L_DEBUG, " Config %s", a_conf->path);
     HASH_ITER(hh, a_conf->items, l_item, l_tmp) {
-        switch (l_item->type) {
-        case DAP_CONFIG_ITEM_STRING:
-            log_it(L_DEBUG, " String param: %s = %s", l_item->name, l_item->val.val_str);
-            break;
-        case DAP_CONFIG_ITEM_DECIMAL:
-            log_it(L_DEBUG, " Int param: %s = %"DAP_UINT64_FORMAT_U, l_item->name, l_item->val.val_int);
-            break;
-        case DAP_CONFIG_ITEM_BOOL:
-            log_it(L_DEBUG, " Bool param: %s = %d", l_item->name, l_item->val.val_bool);
-            break;
-        case DAP_CONFIG_ITEM_ARRAY: {
-            log_it(L_DEBUG, " Array param: %s = ", l_item->name);
-            for (char **l_str = l_item->val.val_arr; *l_str; ++l_str) {
-                log_it(L_DEBUG, " %s", *l_str);
-            }
-            break;
-        }
-        }
+        s_config_item_dump(l_item);
     }
 }
 
@@ -252,14 +258,15 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
                 *c = '_';
         }
         HASH_FIND_STR((*a_conf)->items, l_name, l_item);
-
+        
+        bool l_replace = false;
         switch (l_type) {
         // 'r' is for an item being removed
         case 'r':
             DAP_DELETE(l_name);
             if (l_item) {
                 HASH_DEL((*a_conf)->items, l_item);
-                dap_config_item_del(l_item);
+                dap_config_item_del(l_item, true);
             }
             dap_strfreev(l_values_arr);
             l_values_arr = NULL;
@@ -267,18 +274,21 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
         case DAP_CONFIG_ITEM_ARRAY:
             l_item_val.val_arr = dap_str_appv(l_item_val.val_arr, l_values_arr, NULL);
             DAP_DEL_Z(l_values_arr);
-            if (l_item)
-                dap_strfreev(l_item->val.val_arr);
         default:
             if (!l_item) {
                 l_item = DAP_NEW_Z(dap_config_item_t);
                 l_item->name = l_name;
                 HASH_ADD_KEYPTR(hh, (*a_conf)->items, l_item->name, strlen(l_item->name), l_item);
             } else {
-                DAP_DELETE(l_name);
+                log_it(L_WARNING, "Config item %s from %s.cfg already exist and will be replace", l_item->name, (*a_conf)->path);
+                s_config_item_dump(l_item);
+                dap_config_item_del(l_item, false);
+                l_replace = true;
             }
             l_item->type = l_type;
             l_item->val = l_item_val;
+            if (l_replace)
+                s_config_item_dump(l_item);
             break;
         }
     }
@@ -525,7 +535,7 @@ void dap_config_close(dap_config_t *a_conf) {
     dap_config_item_t *l_item = NULL, *l_tmp = NULL;
     HASH_ITER(hh, a_conf->items, l_item, l_tmp) {
         HASH_DEL(a_conf->items, l_item);
-        dap_config_item_del(l_item);
+        dap_config_item_del(l_item, true);
     }
 #if 0
     HASH_DEL(g_configs_table, a_conf);
