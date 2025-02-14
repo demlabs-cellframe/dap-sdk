@@ -7,7 +7,7 @@ This code was taken from the SPHINCS reference implementation and is public doma
 #else
     #include <fcntl.h>
     #include <unistd.h>
-    #include <threads.h>
+    #include <pthread.h>
     static _Thread_local int fd = -1;
 #endif
 
