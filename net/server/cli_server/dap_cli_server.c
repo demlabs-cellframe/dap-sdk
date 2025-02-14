@@ -454,6 +454,8 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     dap_json_rpc_params_t * params = request->params;
 
     char *str_cmd = dap_json_rpc_params_get(params, 0);
+    if (!str_cmd)
+        str_cmd = cmd_name;
     int res = -1;
     char *str_reply = NULL;
     json_object* l_json_arr_reply = json_object_new_array();
