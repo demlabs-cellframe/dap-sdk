@@ -271,11 +271,11 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
     if (e) { _log_it(__FUNCTION__, __LINE__, LOG_TAG, L_ERROR, ##__VA_ARGS__); return r; } \
 } while(0);
 
-#define dap_return_val_if_fail_err(e, r, ...) dap_return_val_if_pass_err(!(e), r, s)
-#define dap_return_val_if_pass(e, r)    dap_return_val_if_pass_err(e, r, c_error_sanity_check)
-#define dap_return_val_if_fail(e, r)    dap_return_val_if_fail_err(e, r, c_error_sanity_check)
-#define dap_return_if_pass_err(e, s)    dap_return_val_if_pass_err(e, , s)
-#define dap_return_if_fail_err(e, s)    dap_return_val_if_fail_err(e, , s)
+#define dap_return_val_if_fail_err(e, r, ...)   dap_return_val_if_pass_err(!(e), r, ##__VA_ARGS__)
+#define dap_return_val_if_pass(e, r)            dap_return_val_if_pass_err(e, r, c_error_sanity_check)
+#define dap_return_val_if_fail(e, r)            dap_return_val_if_fail_err(e, r, c_error_sanity_check)
+#define dap_return_if_pass_err(e, ...)          dap_return_val_if_pass_err(e, , __VA_ARGS__)
+#define dap_return_if_fail_err(e, ...)          dap_return_val_if_fail_err(e, , __VA_ARGS__)
 #define dap_return_if_pass(e)   dap_return_if_pass_err(e, c_error_sanity_check)
 #define dap_return_if_fail(e)   dap_return_if_fail_err(e, c_error_sanity_check)
 

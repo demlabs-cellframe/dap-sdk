@@ -42,11 +42,7 @@ static void s_cluster_member_delete(dap_cluster_member_t *a_member);
  */
 dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_cluster_type_t a_type)
 {
-    dap_cluster_t *ret = DAP_NEW_Z(dap_cluster_t);
-    if (!ret) {
-        log_it(L_CRITICAL, "Insufficient memory");
-        return NULL;
-    }
+    dap_cluster_t *ret = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_cluster_t, NULL);
     pthread_rwlock_init(&ret->members_lock, NULL);
     ret->type = a_type;
     ret->guuid = a_guuid;
