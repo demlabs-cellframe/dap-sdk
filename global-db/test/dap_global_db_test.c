@@ -35,19 +35,35 @@ static const char *s_db_types[] = {
 };
 
 // benchmarks
-static int    s_write = 0;
-static int    s_read = 0;
-static int    s_read_cond_store = 0;
-static int    s_read_obj_below_timestamp = 0;
-static int    s_count = 0;
-static int    s_tx_start_end = 0;
-static int    s_flush = 0;
-static int    s_is_obj = 0;
-static int    s_is_hash = 0;
-static int    s_last = 0;
-static int    s_read_hashes = 0;
-static int    s_get_by_hash = 0;
-static int    s_get_groups_by_mask = 0;
+static uint64_t    s_write = 0;
+static uint64_t    s_rewrite = 0;
+static uint64_t    s_read = 0;
+static uint64_t    s_read_all_with_holes = 0;
+static uint64_t    s_read_all_without_holes = 0;
+static uint64_t    s_read_cond_store = 0;
+static uint64_t    s_read_below_timestamp = 0;
+static uint64_t    s_count_with_holes = 0;
+static uint64_t    s_count_without_holes = 0;
+static uint64_t    s_tx_start_end_erase = 0;
+static uint64_t    s_tx_start_end_add = 0;
+static uint64_t    s_flush = 0;
+static uint64_t    s_is_obj = 0;
+static uint64_t    s_is_obj_wrong = 0;
+static uint64_t    s_is_obj_not_existed = 0;
+static uint64_t    s_is_hash = 0;
+static uint64_t    s_is_hash_wrong = 0;
+static uint64_t    s_is_hash_not_existed = 0;
+static uint64_t    s_last_with_holes = 0;
+static uint64_t    s_last_without_holes = 0;
+static uint64_t    s_last_with_holes_wrong = 0;
+static uint64_t    s_last_without_holes_wrong = 0;
+static uint64_t    s_last_with_holes_not_existed = 0;
+static uint64_t    s_last_without_holes_not_existed = 0;
+static uint64_t    s_read_hashes = 0;
+static uint64_t    s_read_hashes_wrong = 0;
+static uint64_t    s_read_hashes_not_existed = 0;
+static uint64_t    s_get_by_hash = 0;
+static uint64_t    s_get_groups_by_mask = 0;
 
 
 typedef struct __dap_test_record__ {
@@ -63,7 +79,7 @@ typedef struct __dap_test_record__ {
 #define DAP_DB$T_GROUP_WRONG_PREF            "group.wrong."
 #define DAP_DB$T_GROUP_NOT_EXISTED_PREF      "group.not.existed."
 static char s_group[64] = {};
-static char s_group_worng[64] = {};
+static char s_group_wrong[64] = {};
 static char s_group_not_existed[64] = {};
 
 
@@ -149,7 +165,7 @@ static int s_test_write(size_t a_count, bool a_with_value)
             dap_assert_PIF(!ret, "Rewrite with key conflict record to DB");
         }
 
-        l_store_obj.group = s_group_worng;
+        l_store_obj.group = s_group_wrong;
         l_store_obj.crc = i + 1;
         snprintf(l_key, sizeof(l_key), "KEY$%09zx", i);
 
@@ -176,9 +192,9 @@ static int s_test_read(size_t a_count, bool a_bench)
         char l_key[64] = { 0 };
         snprintf(l_key, sizeof(l_key), "KEY$%08zx", i);           /* Generate a key of record */
 
-        l_time = get_cur_time_msec();
+        uint64_t l_time = get_cur_time_nsec();
         dap_store_obj_t *l_store_obj = dap_global_db_driver_read(s_group, l_key, NULL, true);
-        s_read += get_cur_time_msec() - l_time;
+        s_read += a_bench ? get_cur_time_nsec() - l_time : 0;
 
         dap_assert_PIF(l_store_obj, "Record-Not-Found");
         if (l_store_obj->sign)  // to test rewriting with hash conflict some records wiwthout sign
@@ -209,7 +225,7 @@ static int s_test_read_all(size_t a_count)
     // with holes
     size_t l_count = 0;
     s_read_all_with_holes = get_cur_time_nsec();
-    dap_store_obj_t *l_store_obj_all = dap_global_db_driver_read(DAP_DB$T_GROUP, NULL, &l_count, true);
+    dap_store_obj_t *l_store_obj_all = dap_global_db_driver_read(s_group, NULL, &l_count, true);
     s_read_all_with_holes = get_cur_time_nsec() - s_read_all_with_holes;
     dap_assert_PIF(l_count == a_count, "Count of all read records with holes not equal count of write records");
     for (size_t i = 0; i < l_count; ++i ) {
@@ -220,7 +236,7 @@ static int s_test_read_all(size_t a_count)
         dap_assert_PIF(l_store_obj, "Record-Not-Found");
         if (l_store_obj->sign)  // to test rewriting with hash conflict some records wiwthout sign
             dap_assert_PIF(dap_global_db_pkt_check_sign_crc(l_store_obj), "Record sign not verified");
-        dap_assert_PIF(!strcmp(DAP_DB$T_GROUP, l_store_obj->group), "Check group name");
+        dap_assert_PIF(!strcmp(s_group, l_store_obj->group), "Check group name");
         dap_assert_PIF(!strcmp(l_key, l_store_obj->key), "Check key name");
 
         if (l_store_obj->value) {
@@ -241,7 +257,7 @@ static int s_test_read_all(size_t a_count)
     // without holes
     l_count = 0;
     s_read_all_without_holes = get_cur_time_nsec();
-    l_store_obj_all = dap_global_db_driver_read(DAP_DB$T_GROUP, NULL, &l_count, false);
+    l_store_obj_all = dap_global_db_driver_read(s_group, NULL, &l_count, false);
     s_read_all_without_holes = get_cur_time_nsec() - s_read_all_without_holes;
     dap_assert_PIF(l_count == a_count - a_count / DAP_DB$SZ_HOLES, "Count of all read records without holes not equal count of write records");
     for (size_t i = 0, j = 0; i < a_count; ++i ) {
@@ -255,7 +271,7 @@ static int s_test_read_all(size_t a_count)
             dap_assert_PIF(l_store_obj, "Record-Not-Found");
             if (l_store_obj->sign)  // to test rewriting with hash conflict some records wiwthout sign
                 dap_assert_PIF(dap_global_db_pkt_check_sign_crc(l_store_obj), "Record sign not verified");
-            dap_assert_PIF(!strcmp(DAP_DB$T_GROUP, l_store_obj->group), "Check group name");
+            dap_assert_PIF(!strcmp(s_group, l_store_obj->group), "Check group name");
             dap_assert_PIF(!strcmp(l_key, l_store_obj->key), "Check key name");
 
             prec = (dap_db_test_record_t *) l_store_obj->value;
@@ -280,9 +296,10 @@ static void s_test_read_cond_store(size_t a_count, bool a_bench)
     dap_global_db_driver_hash_t l_driver_key = {0};
     size_t l_count = 0;
     for (size_t i = 0; i < a_count; ++i) {
-        l_time = get_cur_time_msec();
+        uint64_t l_time = get_cur_time_nsec();
         dap_store_obj_t *l_objs = dap_global_db_driver_cond_read(s_group, l_driver_key, &l_count, true);
-        s_read_cond_store += get_cur_time_msec() - l_time;
+        s_read_cond_store += a_bench ? get_cur_time_nsec() - l_time : 0;
+        
         dap_assert_PIF(l_objs, "Records-Not-Found");
         dap_global_db_driver_hash_t l_blank_check = dap_global_db_driver_hash_get(l_objs + l_count - 1);
         dap_assert_PIF(l_count <= DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + dap_global_db_driver_hash_is_blank(&l_blank_check), "Wrong finded records count");
@@ -300,7 +317,7 @@ static void s_test_read_cond_store(size_t a_count, bool a_bench)
         dap_store_obj_free(l_objs, l_count);
     }
 
-    l_count = 99;
+    l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT / 4;
     l_driver_key = (dap_global_db_driver_hash_t){0};
     size_t l_total_count = 0;
     for (dap_store_obj_t *l_objs = dap_global_db_driver_cond_read(s_group, l_driver_key, &l_count, true);
@@ -315,7 +332,7 @@ static void s_test_read_cond_store(size_t a_count, bool a_bench)
     }
     dap_assert_PIF(l_total_count - dap_global_db_driver_hash_is_blank(&l_driver_key) == a_count, "Total cond read count with holes not equal total records count");
 
-    l_count = 99;
+    l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT / 4;
     l_driver_key = (dap_global_db_driver_hash_t){0};
     l_total_count = 0;
     for (dap_store_obj_t *l_objs = dap_global_db_driver_cond_read(s_group, l_driver_key, &l_count, false);
@@ -335,21 +352,48 @@ static void s_test_read_cond_store(size_t a_count, bool a_bench)
 static void s_test_read_obj_below_timestamp(size_t a_count)
 {
     size_t l_count = 0;
+    int l_time = get_cur_time_msec();
     dap_store_obj_t *l_objs = dap_global_db_driver_read_obj_below_timestamp(s_group, (dap_nanotime_t)(-1), &l_count);
+    s_read_below_timestamp += get_cur_time_msec() - l_time;
     dap_assert_PIF(l_objs, "Records-Not-Found");
-    dap_global_db_driver_hash_t l_blank_check = dap_global_db_driver_hash_get(l_objs + l_count - 1);
-    dap_assert_PIF(l_count <= DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + dap_global_db_driver_hash_is_blank(&l_blank_check), "Wrong finded records count");
+    dap_assert_PIF(a_count == l_count, "Wrong finded records count");
 
-    for (size_t i = 0; i < l_count; ++i) {
+    for (size_t i = 0; i < a_count; ++i) {
         size_t l_cur_count = 0;
         dap_store_obj_t *l_store_obj = dap_global_db_driver_read_obj_below_timestamp(s_group, (l_objs + i)->timestamp, &l_cur_count);
         dap_assert_PIF(l_store_obj, "Record-Not-Found");
-        l_blank_check = dap_global_db_driver_hash_get(l_store_obj + l_cur_count - 1);
-        dap_assert_PIF(l_count <= DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + dap_global_db_driver_hash_is_blank(&l_blank_check), "Wrong finded records count");
+        dap_assert_PIF(i + 1 == l_cur_count, "Wrong finded records count");
         dap_assert_PIF(!strcmp(s_group, (l_objs + i)->group), "Wrong group");
-        for (size_t j = 0; j < l_cur_count && i + j < l_count; ++j) {
-            dap_assert_PIF(!dap_store_obj_driver_obj_compare(l_store_obj + j, l_objs + i + j), "Records not equal");
+        for (size_t j = 0; j < l_cur_count; ++j) {
+            dap_assert_PIF(!dap_store_obj_driver_obj_compare(l_store_obj + j, l_objs + j), "Records not equal");
         }
+
+        dap_store_obj_free(l_store_obj, l_cur_count);
+    }
+    dap_store_obj_free(l_objs, l_count);
+
+    dap_pass_msg("read_obj_below_timestamp check");
+}
+
+static void s_test_read_obj_below_timestamp(size_t a_count)
+{
+    size_t l_count = 0;
+    int l_time = get_cur_time_msec();
+    dap_store_obj_t *l_objs = dap_global_db_driver_read_obj_below_timestamp(s_group, (dap_nanotime_t)(-1), &l_count);
+    s_read_below_timestamp += get_cur_time_msec() - l_time;
+    dap_assert_PIF(l_objs, "Records-Not-Found");
+    dap_assert_PIF(a_count == l_count, "Wrong finded records count");
+
+    for (size_t i = 0; i < a_count; ++i) {
+        size_t l_cur_count = 0;
+        dap_store_obj_t *l_store_obj = dap_global_db_driver_read_obj_below_timestamp(s_group, (l_objs + i)->timestamp, &l_cur_count);
+        dap_assert_PIF(l_store_obj, "Record-Not-Found");
+        dap_assert_PIF(i + 1 == l_cur_count, "Wrong finded records count");
+        dap_assert_PIF(!strcmp(s_group, (l_objs + i)->group), "Wrong group");
+        for (size_t j = 0; j < l_cur_count; ++j) {
+            dap_assert_PIF(!dap_store_obj_driver_obj_compare(l_store_obj + j, l_objs + j), "Records not equal");
+        }
+
         dap_store_obj_free(l_store_obj, l_cur_count);
     }
     dap_store_obj_free(l_objs, l_count);
@@ -366,9 +410,11 @@ static void s_test_count(size_t a_count)
         dap_store_obj_t *l_store_obj = dap_global_db_driver_read(s_group, l_key, NULL, true);
         dap_assert_PIF(l_store_obj, "Records-Not-Found");
         
-        l_time = get_cur_time_msec();
-        dap_assert_PIF(a_count - i == dap_global_db_driver_count(s_group, l_driver_key, true), "Count with holes");
-        s_count += get_cur_time_msec() - l_time;
+        uint64_t l_time = get_cur_time_nsec();
+        size_t l_count = dap_global_db_driver_count(s_group, l_driver_key, true);
+        s_count_with_holes += a_bench ? get_cur_time_nsec() - l_time : 0;
+        dap_assert_PIF(a_count - i == l_count, "Count with holes");
+        
         
         l_driver_key = dap_global_db_driver_hash_get(l_store_obj);
         dap_store_obj_free_one(l_store_obj);
@@ -385,16 +431,17 @@ static void s_test_count(size_t a_count)
         dap_store_obj_t *l_store_obj = dap_global_db_driver_read(s_group, l_key, NULL, false);
         dap_assert_PIF(l_store_obj, "Records-Not-Found");
         
-        l_time = get_cur_time_msec();
-        dap_assert_PIF(a_count / DAP_DB$SZ_HOLES * (DAP_DB$SZ_HOLES - 1) - k == dap_global_db_driver_count(s_group, l_driver_key, false), "Count without holes");
-        s_count += get_cur_time_msec() - l_time;
+        uint64_t l_time = get_cur_time_nsec();
+        size_t l_count = dap_global_db_driver_count(s_group, l_driver_key, false);
+        s_count_without_holes += a_bench ? get_cur_time_nsec() - l_time : 0;
+        dap_assert_PIF(a_count / DAP_DB$SZ_HOLES * (DAP_DB$SZ_HOLES - 1) - k == l_count, "Count without holes");
 
         l_driver_key = dap_global_db_driver_hash_get(l_store_obj);
         dap_store_obj_free_one(l_store_obj);
     }
     
-    dap_assert_PIF(a_count == dap_global_db_driver_count(s_group_worng, (dap_global_db_driver_hash_t){0}, true), "Count in wrong group with holes");
-    dap_assert_PIF(a_count / DAP_DB$SZ_HOLES * (DAP_DB$SZ_HOLES - 1) == dap_global_db_driver_count(s_group_worng, (dap_global_db_driver_hash_t){0}, false), "Count in wrong group without holes");
+    dap_assert_PIF(a_count == dap_global_db_driver_count(s_group_wrong, (dap_global_db_driver_hash_t){0}, true), "Count in wrong group with holes");
+    dap_assert_PIF(a_count / DAP_DB$SZ_HOLES * (DAP_DB$SZ_HOLES - 1) == dap_global_db_driver_count(s_group_wrong, (dap_global_db_driver_hash_t){0}, false), "Count in wrong group without holes");
     dap_assert_PIF(!dap_global_db_driver_count(s_group_not_existed, (dap_global_db_driver_hash_t){0}, true), "Count in not existed group with holes");
     dap_assert_PIF(!dap_global_db_driver_count(s_group_not_existed, (dap_global_db_driver_hash_t){0}, false), "Count in not existed group without holes");
     dap_pass_msg("count check");
@@ -405,15 +452,23 @@ static void s_test_is_obj(size_t a_count, bool a_bench)
     for (size_t i = 0; i < a_count; ++i) {
         char l_key[64] = { 0 };
         snprintf(l_key, sizeof(l_key), "KEY$%08zx", i);           /* Generate a key of record */
-        dap_assert_PIF(dap_global_db_driver_is(s_group, l_key), "Key not finded")
-        dap_assert_PIF(!dap_global_db_driver_is(s_group_worng, l_key), "Key finded in wrong group")
-        dap_assert_PIF(!dap_global_db_driver_is(s_group_not_existed, l_key), "Key finded in not existed group")
+        uint64_t l_time = get_cur_time_nsec();
+        dap_assert_PIF(dap_global_db_driver_is(s_group, l_key), "Key not finded");
+        s_is_obj += a_bench ? get_cur_time_nsec() - l_time : 0;
+
+        l_time = get_cur_time_nsec();
+        dap_assert_PIF(!dap_global_db_driver_is(s_group_wrong, l_key), "Key finded in wrong group");
+        s_is_obj_wrong += a_bench ? get_cur_time_nsec() - l_time : 0;
+        
+        l_time = get_cur_time_nsec();
+        dap_assert_PIF(!dap_global_db_driver_is(s_group_not_existed, l_key), "Key finded in not existed group");
+        s_is_obj_not_existed += a_bench ? get_cur_time_nsec() - l_time : 0;
     }
     for (size_t i = a_count; i < a_count * 2; ++i) {
         char l_key[64] = { 0 };
         snprintf(l_key, sizeof(l_key), "KEY$%08zx", i);           /* Generate a key of record */
         dap_assert_PIF(!dap_global_db_driver_is(s_group, l_key), "Finded not existed key")
-        dap_assert_PIF(!dap_global_db_driver_is(s_group_worng, l_key), "Finded not existed key in wrong group")
+        dap_assert_PIF(!dap_global_db_driver_is(s_group_wrong, l_key), "Finded not existed key in wrong group")
         dap_assert_PIF(!dap_global_db_driver_is(s_group_not_existed, l_key), "Finded not existed key in not existed group")
     }
     dap_pass_msg("is_obj check");
@@ -428,15 +483,22 @@ static void s_test_is_hash(size_t a_count, bool a_bench)
         dap_assert_PIF(l_store_obj, "Record-Not-Found");
         dap_global_db_driver_hash_t l_driver_key = dap_global_db_driver_hash_get(l_store_obj);
         
-        int l_time = get_cur_time_msec();
+        uint64_t l_time = get_cur_time_nsec();
         dap_assert_PIF(dap_global_db_driver_is_hash(s_group, l_driver_key), "Hash not finded")
-        dap_assert_PIF(!dap_global_db_driver_is_hash(s_group_worng, l_driver_key), "Hash finded in wrong group")
+        s_is_hash += a_bench ? get_cur_time_nsec() - l_time : 0;
+
+        l_time = get_cur_time_nsec();
+        dap_assert_PIF(!dap_global_db_driver_is_hash(s_group_wrong, l_driver_key), "Hash finded in wrong group")
+        s_is_hash_wrong += a_bench ? get_cur_time_nsec() - l_time : 0;
+
+        l_time = get_cur_time_nsec();
         dap_assert_PIF(!dap_global_db_driver_is_hash(s_group_not_existed, l_driver_key), "Hash finded in not existed group")
+        s_is_hash_not_existed += a_bench ? get_cur_time_nsec() - l_time : 0;
+        
         l_driver_key.becrc = 0;
         dap_assert_PIF(!dap_global_db_driver_is_hash(s_group, l_driver_key), "Finded not existed hash")
-        dap_assert_PIF(!dap_global_db_driver_is_hash(s_group_worng, l_driver_key), "Finded not existed hash in wrong group")
+        dap_assert_PIF(!dap_global_db_driver_is_hash(s_group_wrong, l_driver_key), "Finded not existed hash in wrong group")
         dap_assert_PIF(!dap_global_db_driver_is_hash(s_group_not_existed, l_driver_key), "Finded not existed hash in not existed group")
-        s_is_hash = get_cur_time_msec() - l_time;
         
         dap_store_obj_free_one(l_store_obj);
     }
@@ -448,28 +510,52 @@ static void s_test_last(size_t a_count, bool a_bench)
     char l_key[64] = { 0 };
     // with holes
     snprintf(l_key, sizeof(l_key), "KEY$%08zx", a_count - 1);
-    dap_store_obj_t *l_store_obj = dap_global_db_driver_read_last(s_group, true);
-    dap_assert_PIF(l_store_obj && !strcmp(l_key, l_store_obj->key), "Last with holes");
-    dap_store_obj_free_one(l_store_obj);
+    for (size_t i = 0; i < a_count; ++i) {
+        uint64_t l_time = get_cur_time_nsec();
+        dap_store_obj_t *l_store_obj = dap_global_db_driver_read_last(s_group, true);
+        s_last_with_holes += a_bench ? get_cur_time_nsec() - l_time : 0;
 
-    l_store_obj = dap_global_db_driver_read_last(s_group_worng, true);
-    dap_assert_PIF(l_store_obj && strcmp(l_key, l_store_obj->key), "Last with holes in wrong group");
-    dap_store_obj_free_one(l_store_obj);
+        dap_assert_PIF(l_store_obj && !strcmp(l_key, l_store_obj->key), "Last with holes");
+        dap_store_obj_free_one(l_store_obj);
 
-    l_store_obj = dap_global_db_driver_read_last(s_group_not_existed, true);
-    dap_assert_PIF(!l_store_obj, "Last with holes in not existed group");
+        l_time = get_cur_time_nsec();
+        l_store_obj = dap_global_db_driver_read_last(s_group_wrong, true);
+        s_last_with_holes_wrong += a_bench ? get_cur_time_nsec() - l_time : 0;
+
+        dap_assert_PIF(l_store_obj && strcmp(l_key, l_store_obj->key), "Last with holes in wrong group");
+        dap_store_obj_free_one(l_store_obj);
+
+        l_time = get_cur_time_nsec();
+        l_store_obj = dap_global_db_driver_read_last(s_group_not_existed, true);
+        s_last_with_holes_not_existed += a_bench ? get_cur_time_nsec() - l_time : 0;
+
+        dap_assert_PIF(!l_store_obj, "Last with holes in not existed group");
+    }
+
     // without holes
     snprintf(l_key, sizeof(l_key), "KEY$%08zx", a_count - 1 - a_count % DAP_DB$SZ_HOLES);
-    l_store_obj = dap_global_db_driver_read_last(s_group, false);
-    dap_assert_PIF(l_store_obj && !strcmp(l_key, l_store_obj->key), "Last without holes");
-    dap_store_obj_free_one(l_store_obj);
+    
+    for (size_t i = 0; i < a_count; ++i) {
+        uint64_t l_time = get_cur_time_nsec();
+        dap_store_obj_t *l_store_obj = dap_global_db_driver_read_last(s_group, false);
+        s_last_without_holes += a_bench ? get_cur_time_nsec() - l_time : 0;
 
-    l_store_obj = dap_global_db_driver_read_last(s_group_worng, false);
-    dap_assert_PIF(l_store_obj && strcmp(l_key, l_store_obj->key), "Last without holes in wrong group");
-    dap_store_obj_free_one(l_store_obj);
+        dap_assert_PIF(l_store_obj && !strcmp(l_key, l_store_obj->key), "Last without holes");
+        dap_store_obj_free_one(l_store_obj);
 
-    l_store_obj = dap_global_db_driver_read_last(s_group_not_existed, false);
-    dap_assert_PIF(!l_store_obj, "Last without holes in not existed group");
+        l_time = get_cur_time_nsec();
+        l_store_obj = dap_global_db_driver_read_last(s_group_wrong, false);
+        s_last_without_holes_wrong += a_bench ? get_cur_time_nsec() - l_time : 0;
+        
+        dap_assert_PIF(l_store_obj && strcmp(l_key, l_store_obj->key), "Last without holes in wrong group");
+        dap_store_obj_free_one(l_store_obj);
+
+        l_time = get_cur_time_nsec();
+        l_store_obj = dap_global_db_driver_read_last(s_group_not_existed, false);
+        s_last_without_holes_not_existed += a_bench ? get_cur_time_nsec() - l_time : 0;
+
+        dap_assert_PIF(!l_store_obj, "Last without holes in not existed group");
+    }
     dap_pass_msg("read_last check");
 }
 
@@ -478,11 +564,17 @@ static void s_test_read_hashes(size_t a_count, bool a_bench)
 {
     dap_global_db_driver_hash_t l_driver_key = {0};
     for (size_t i = 0; i < a_count; ++i) {
-        l_time = get_cur_time_msec();
+        uint64_t l_time = get_cur_time_nsec();
         dap_global_db_hash_pkt_t *l_hashes = dap_global_db_driver_hashes_read(s_group, l_driver_key);
-        dap_global_db_hash_pkt_t *l_hashes_wrong = dap_global_db_driver_hashes_read(s_group_worng, l_driver_key);
+        s_read_hashes += a_bench ? get_cur_time_nsec() - l_time : 0;
+
+        l_time = get_cur_time_nsec();
+        dap_global_db_hash_pkt_t *l_hashes_wrong = dap_global_db_driver_hashes_read(s_group_wrong, l_driver_key);
+        s_read_hashes_wrong += a_bench ? get_cur_time_nsec() - l_time : 0;
+
+        l_time = get_cur_time_nsec();
         dap_global_db_hash_pkt_t *l_hashes_not_existed = dap_global_db_driver_hashes_read(s_group_not_existed, l_driver_key);
-        s_read_hashes += get_cur_time_msec() - l_time;
+        s_read_hashes_not_existed += a_bench ? get_cur_time_nsec() - l_time : 0;
 
         dap_assert_PIF(l_hashes && l_hashes_wrong, "Hashes-Not-Found");
         dap_assert_PIF(!l_hashes_not_existed, "Finded hashes in not existed group");
@@ -511,9 +603,9 @@ static void s_test_get_by_hash(size_t a_count, bool a_bench)
     for (size_t i = 0; i < a_count; ++i) {
         dap_global_db_hash_pkt_t *l_hashes = dap_global_db_driver_hashes_read(s_group, l_driver_key);
         
-        l_time = get_cur_time_msec();
+        uint64_t l_time = get_cur_time_nsec();
         dap_global_db_pkt_pack_t *l_objs = dap_global_db_driver_get_by_hash(s_group, (dap_global_db_driver_hash_t *)(l_hashes->group_n_hashses + l_hashes->group_name_len), l_hashes->hashes_count);
-        s_get_by_hash += get_cur_time_msec() - l_time;
+        s_get_by_hash += a_bench ? get_cur_time_nsec() - l_time : 0;
 
         dap_assert_PIF(l_objs, "Records-Not-Found");
         dap_assert_PIF(l_objs->obj_count == l_hashes->hashes_count - dap_global_db_driver_hash_is_blank((dap_global_db_driver_hash_t *)(l_hashes->group_n_hashses + l_hashes->group_name_len) + l_hashes->hashes_count - 1), "Wrong finded records count");
@@ -569,16 +661,16 @@ static void s_test_get_by_hash(size_t a_count, bool a_bench)
 static void s_test_get_groups_by_mask(size_t a_count, bool a_bench)
 {
     dap_list_t *l_groups = NULL;
+
     char *l_mask_str = dap_strdup_printf("*%s", s_group + strlen(DAP_DB$T_GROUP_PREF));
-    
-    l_groups = dap_global_db_driver_get_groups_by_mask(l_mask_str);    
+    l_groups = dap_global_db_driver_get_groups_by_mask(l_mask_str);
     dap_assert_PIF(dap_list_length(l_groups) == 1 && !strcmp(s_group, l_groups->data), "Wrong finded group by mask");
     dap_list_free_full(l_groups, NULL);
     DAP_DELETE(l_mask_str);
 
-    l_mask_str = dap_strdup_printf("*%s", s_group_worng + strlen(DAP_DB$T_GROUP_WRONG_PREF));
+    l_mask_str = dap_strdup_printf("*%s", s_group_wrong + strlen(DAP_DB$T_GROUP_WRONG_PREF));
     l_groups = dap_global_db_driver_get_groups_by_mask(l_mask_str);
-    dap_assert_PIF(dap_list_length(l_groups) == 1 && !strcmp(s_group_worng, l_groups->data), "Wrong finded group by mask");
+    dap_assert_PIF(dap_list_length(l_groups) == 1 && !strcmp(s_group_wrong, l_groups->data), "Wrong finded group by mask");
     dap_list_free_full(l_groups, NULL);
     DAP_DELETE(l_mask_str);
 
@@ -588,9 +680,14 @@ static void s_test_get_groups_by_mask(size_t a_count, bool a_bench)
     dap_list_free_full(l_groups, NULL);
     DAP_DELETE(l_mask_str);
 
-    l_groups = dap_global_db_driver_get_groups_by_mask("group.*");
-    dap_assert_PIF(dap_list_length(l_groups) >= 2, "Wrong finded groups by mask");
-    dap_list_free_full(l_groups, NULL);
+    for (size_t i = 0; i < a_count; ++i) {
+        uint64_t l_time = get_cur_time_nsec();
+        l_groups = dap_global_db_driver_get_groups_by_mask("group.*");
+        s_get_groups_by_mask += a_bench ? get_cur_time_nsec() - l_time : 0;
+
+        dap_assert_PIF(dap_list_length(l_groups) >= 2, "Wrong finded groups by mask");
+        dap_list_free_full(l_groups, NULL);
+    }
     dap_pass_msg("get_groups_by_mask check");
 }
 
@@ -644,11 +741,12 @@ static void s_test_close_db(void)
 
 static void s_test_all(size_t a_count, bool a_with_value)
 {
-    s_test_write(a_count);
-    s_test_read(a_count);
-    s_test_read_cond_store(a_count);
+    s_test_write(a_count, a_with_value);
+    s_test_read(a_count, true);
+    s_test_read_all(a_count);
+    s_test_read_cond_store(a_count, true);
     s_test_read_obj_below_timestamp(a_count);
-    s_test_count(a_count);
+    s_test_count(a_count, true);
     s_test_tx_start_end(a_count, false);  // if after this tests fail try comment
 
     s_flush = get_cur_time_nsec();
@@ -764,64 +862,120 @@ void s_test_table_erase() {
     l_erase_table_obj.group = s_group;
     dap_global_db_driver_apply(&l_erase_table_obj, 1);
     dap_assert_PIF(!dap_global_db_driver_cond_read(s_group, (dap_global_db_driver_hash_t){0}, NULL, true), "Erase zero table");
-    l_erase_table_obj.group = s_group_worng;
+    l_erase_table_obj.group = s_group_wrong;
     dap_global_db_driver_apply(&l_erase_table_obj, 1);
-    dap_assert_PIF(!dap_global_db_driver_cond_read(s_group_worng, (dap_global_db_driver_hash_t){0}, NULL, true), "Erase wrong table");
+    dap_assert_PIF(!dap_global_db_driver_cond_read(s_group_wrong, (dap_global_db_driver_hash_t){0}, NULL, true), "Erase wrong table");
     l_erase_table_obj.group = s_group_not_existed;
     dap_global_db_driver_apply(&l_erase_table_obj, 1);
     dap_assert_PIF(!dap_global_db_driver_cond_read(s_group_not_existed, (dap_global_db_driver_hash_t){0}, NULL, true), "Erase not existed table");
     dap_assert(true, "Table erased");
 }
 
-int main(int argc, char **argv)
+static void s_test_full(size_t a_db_count, size_t a_count, bool a_with_value)
 {
-    dap_log_level_set(L_WARNING);
-    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
-    g_dap_global_db_debug_more = true;
-    size_t l_db_count = sizeof(s_db_types) / sizeof(char *) - 1;
-    dap_assert_PIF(l_db_count, "Use minimum 1 DB driver");
-    size_t l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + 2;
+    for (size_t i = 0; i < a_db_count; ++i) {
+        s_write = 0;
+        s_rewrite = 0;
+        s_read = 0;
+        s_read_all_with_holes = 0;
+        s_read_all_without_holes = 0;
+        s_read_cond_store = 0;
+        s_read_below_timestamp = 0;
+        s_count_with_holes = 0;
+        s_count_without_holes = 0;
+        s_tx_start_end_erase = 0;
+        s_tx_start_end_add = 0;
+        s_flush = 0;
+        s_is_obj = 0;
+        s_is_obj_wrong = 0;
+        s_is_obj_not_existed = 0;
+        s_is_hash = 0;
+        s_is_hash_wrong = 0;
+        s_is_hash_not_existed = 0;
+        s_last_with_holes = 0;
+        s_last_without_holes = 0;
+        s_last_with_holes_wrong = 0;
+        s_last_without_holes_wrong = 0;
+        s_last_with_holes_not_existed = 0;
+        s_last_without_holes_not_existed = 0;
+        s_read_hashes = 0;
+        s_read_hashes_wrong = 0;
+        s_read_hashes_not_existed = 0;
+        s_get_by_hash = 0;
+        s_get_groups_by_mask = 0;
 
-    sprintf(s_group, "%s", DAP_DB$T_GROUP_PREF);
-    sprintf(s_group_worng, "%s", DAP_DB$T_GROUP_WRONG_PREF);
-    sprintf(s_group_not_existed, "%s", DAP_DB$T_GROUP_NOT_EXISTED_PREF);
-
-    for (size_t i = 0; i < l_db_count; ++i) {
         srand( (unsigned int)time(NULL) );
         dap_random_string_fill(s_group + strlen(DAP_DB$T_GROUP_PREF), 32);
-        dap_random_string_fill(s_group_worng + strlen(DAP_DB$T_GROUP_WRONG_PREF), 32);
+        dap_random_string_fill(s_group_wrong + strlen(DAP_DB$T_GROUP_WRONG_PREF), 32);
         dap_random_string_fill(s_group_not_existed + strlen(DAP_DB$T_GROUP_NOT_EXISTED_PREF), 32);
 
         dap_test_msg("s_group name %s", s_group);
-        dap_test_msg("s_group_worng name %s", s_group_worng);
+        dap_test_msg("s_group_wrong name %s", s_group_wrong);
         dap_test_msg("s_group_not_existed name %s", s_group_not_existed);
 
         dap_print_module_name(s_db_types[i]);
         s_test_create_db(s_db_types[i]);
-        int l_t1 = get_cur_time_msec();
-        s_test_all(l_count);
-        int l_t2 = get_cur_time_msec();
+        uint64_t l_t1 = get_cur_time_nsec();
+        s_test_all(a_count, true);
+        uint64_t l_t2 = get_cur_time_nsec();
         char l_msg[120] = {0};
-        sprintf(l_msg, "Tests to %zu records", l_count);
-    dap_print_module_name("Multithread");  // TODO need update test, fail on pipelines
-        s_test_multithread(l_count);
-    dap_print_module_name("Benchmark");
-        benchmark_mgs_time(l_msg, l_t2 - l_t1);
-        benchmark_mgs_time("Tests to write", s_write);
-        benchmark_mgs_time("Tests to read", s_read);
-        benchmark_mgs_time("Tests to read_cond_store", s_read_cond_store);
-        benchmark_mgs_time("Tests to read_obj_below_timestamp", s_read_obj_below_timestamp);
-        benchmark_mgs_time("Tests to count", s_count);
-        benchmark_mgs_time("Tests to tx_start_end", s_tx_start_end);
-        benchmark_mgs_time("Tests to flush", s_flush);
-        benchmark_mgs_time("Tests to is_obj", s_is_obj);
-        benchmark_mgs_time("Tests to is_hash", s_is_hash);
-        benchmark_mgs_time("Tests to last", s_last);
-        benchmark_mgs_time("Tests to read_hashes", s_read_hashes);
-        benchmark_mgs_time("Tests to get_by_hash", s_get_by_hash);
-        benchmark_mgs_time("Tests to get_groups_by_mask", s_get_groups_by_mask);
+        sprintf(l_msg, "All tests to %zu records", a_count);
+        dap_print_module_name("Multithread");
+        s_test_multithread(a_count);
+        dap_print_module_name("Benchmark");
+        benchmark_mgs_time("Tests to write", s_write / 1000000);
+        benchmark_mgs_time("Tests to rewrite", s_rewrite / 1000000);
+        benchmark_mgs_time("Tests to read", s_read / 1000000);
+        benchmark_mgs_time("Tests to read_all with holes", s_read_all_with_holes / 1000000);
+        benchmark_mgs_time("Tests to read_all without holes", s_read_all_without_holes / 1000000);
+        benchmark_mgs_time("Tests to read_cond_store", s_read_cond_store / 1000000);
+        benchmark_mgs_time("Tests to read_below_timestamp", s_read_below_timestamp / 1000000);
+        benchmark_mgs_time("Tests to count with holes", s_count_with_holes / 1000000);
+        benchmark_mgs_time("Tests to count without holes", s_count_without_holes / 1000000);
+        benchmark_mgs_time("Tests to tx_start_end erase record", s_tx_start_end_erase / 1000000);
+        benchmark_mgs_time("Tests to tx_start_end add record", s_tx_start_end_add / 1000000);
+        benchmark_mgs_time("Tests to flush", s_flush / 1000000);
+        benchmark_mgs_time("Tests to is_obj", s_is_obj / 1000000);
+        benchmark_mgs_time("Tests to is_obj in wrong group", s_is_obj_wrong / 1000000);
+        benchmark_mgs_time("Tests to is_obj in not existed group", s_is_obj_not_existed / 1000000);
+        benchmark_mgs_time("Tests to is_hash", s_is_hash / 1000000);
+        benchmark_mgs_time("Tests to is_hash in wrong group", s_is_hash_wrong / 1000000);
+        benchmark_mgs_time("Tests to is_hash in not existed group", s_is_hash_not_existed / 1000000);
+        benchmark_mgs_time("Tests to last with holes", s_last_with_holes / 1000000);
+        benchmark_mgs_time("Tests to last without holes", s_last_without_holes / 1000000);
+        benchmark_mgs_time("Tests to last with holes in wrong group", s_last_with_holes_wrong / 1000000);
+        benchmark_mgs_time("Tests to last without holes in wrong group", s_last_without_holes_wrong / 1000000);
+        benchmark_mgs_time("Tests to last with holes in not existed group", s_last_with_holes_not_existed / 1000000);
+        benchmark_mgs_time("Tests to last without holes in not existed group", s_last_without_holes_not_existed / 1000000);
+        benchmark_mgs_time("Tests to read_hashes", s_read_hashes / 1000000);
+        benchmark_mgs_time("Tests to read_hashes in wrong group", s_read_hashes_wrong / 1000000);
+        benchmark_mgs_time("Tests to read_hashes in not existed group", s_read_hashes_not_existed / 1000000);
+        benchmark_mgs_time("Tests to get_by_hash", s_get_by_hash / 1000000);
+        benchmark_mgs_time("Tests to get_groups_by_mask", s_get_groups_by_mask / 1000000);
+        benchmark_mgs_time(l_msg, (l_t2 - l_t1) / 1000000);
         s_test_table_erase();
         s_test_close_db();
     }
+
+}
+
+int main(int argc, char **argv)
+{
+    dap_log_level_set(L_WARNING);
+    dap_log_set_external_output(LOGGER_OUTPUT_STDOUT, NULL);
+    size_t l_db_count = sizeof(s_db_types) / sizeof(char *) - 1;
+    dap_assert_PIF(l_db_count, "Use minimum 1 DB driver");
+    g_dap_global_db_debug_more = true;
+    size_t l_count = DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT + 2;
+    dap_assert_PIF(!(l_count % DAP_DB$SZ_HOLES), "If (l_count \% DAP_DB$SZ_HOLES) != 0 tests will fail");
+    
+    sprintf(s_group, "%s", DAP_DB$T_GROUP_PREF);
+    sprintf(s_group_wrong, "%s", DAP_DB$T_GROUP_WRONG_PREF);
+    sprintf(s_group_not_existed, "%s", DAP_DB$T_GROUP_NOT_EXISTED_PREF);
+    
+    dap_print_module_name("Tests with value");
+    s_test_full(l_db_count, l_count, true);
+    dap_print_module_name("Tests without value");
+    s_test_full(l_db_count, l_count, false);
 }
 

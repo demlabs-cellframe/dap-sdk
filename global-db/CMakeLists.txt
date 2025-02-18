@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project (dap_global_db C)
 
-file(GLOB dap_global_db_SRC dap_global_db.c dap_global_db_driver.c dap_global_db_ch.c dap_global_db_pkt.c dap_global_db_cluster.c dap_global_db_legacy.c)
+file(GLOB dap_global_db_SRC dap_global_db.c dap_global_db_driver.c dap_global_db_ch.c dap_global_db_pkt.c dap_global_db_cluster.c)
 file(GLOB dap_global_db_HDR include/*.h)
 
 set(dap_global_db_LIBS dap_core dap_io dap_crypto dap_stream dap_link_manager dap_json-c)
@@ -20,6 +20,9 @@ if(BUILD_WITH_GDB_DRIVER_PGSQL)
     list(APPEND dap_global_db_SRC dap_global_db_driver_pgsql.c)
     set(dap_global_db_LIBS ${dap_global_db_LIBS} pq)
     add_definitions("-DDAP_CHAIN_GDB_ENGINE_PGSQL")
+    if(WIN32)
+        set(dap_global_db_LIBS ${dap_global_db_LIBS} ssl crypto z pgcommon pgport)
+    endif()
 endif()
 
 if(BUILD_WITH_GDB_DRIVER_SQLITE)

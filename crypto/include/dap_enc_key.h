@@ -340,7 +340,7 @@ int dap_enc_key_get_pkey_hash(dap_enc_key_t *a_key, dap_hash_fast_t *a_hash_out)
  * @param a_type checked enc_key type
  * @return true if this enc_key type hashing signing data, false if not
  */
-DAP_INLINE bool dap_enc_key_is_insign_hashing(dap_enc_key_type_t a_type)
+DAP_STATIC_INLINE bool dap_enc_key_is_insign_hashing(dap_enc_key_type_t a_type)
 {
     return a_type == DAP_ENC_KEY_TYPE_SIG_ECDSA;
 }

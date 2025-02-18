@@ -682,7 +682,7 @@ ret:
     return l_obj;
 }
 
-static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count) {
+static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t *a_count) {
     dap_return_val_if_fail(a_group, NULL);
     dap_global_db_driver_hash_t l_hash_from = { .bets = htobe64(a_timestamp), .becrc = (uint64_t)-1 };
     return s_db_mdbx_read_cond(a_group, l_hash_from, a_count, false, true, true);
