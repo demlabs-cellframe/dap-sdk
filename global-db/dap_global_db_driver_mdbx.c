@@ -864,22 +864,17 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
     }
     MDBX_val l_key = { .iov_base = &a_hash_from, .iov_len = sizeof(a_hash_from) },
              l_data = {};
-    rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_SET_UPPERBOUND);
+    if (a_prev)
+        rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_FIRST);
+    else
+        rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_SET_UPPERBOUND);
     if ( MDBX_SUCCESS != rc) {
-        if (a_prev && MDBX_NOTFOUND == rc)
-            rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_LAST);
-        if (MDBX_SUCCESS != rc) {
-            if (MDBX_NOTFOUND != rc)
-                log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
-            goto safe_ret;
-        }
-    } else if (a_prev) {
-        if (MDBX_SUCCESS != (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_PREV))) {
-            if (MDBX_NOTFOUND != rc)
-                log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
-            goto safe_ret;
-        }
+        if (rc != MDBX_NOTFOUND)
+            log_it(L_ERROR, "mdbx_cursor_get: (%d) %s", rc, mdbx_strerror(rc));
+        goto safe_ret;
     }
+    if (a_prev && memcmp(l_key.iov_base, &a_hash_from, sizeof(a_hash_from)) >= 0)
+        goto safe_ret;
     size_t l_group_name_len = l_db_ctx->namelen + 1;
     size_t l_addition_size = a_keys_only_read ? l_group_name_len + sizeof(dap_global_db_hash_pkt_t): 0;
 
@@ -895,6 +890,8 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
     }
     /* Iterate cursor to retrieve records from DB */
     do {
+        if (a_prev && memcmp(l_key.iov_base, &a_hash_from, sizeof(a_hash_from)) >= 0)
+            break;
         if (a_keys_only_read) {
             if (l_key.iov_len == sizeof(dap_global_db_driver_hash_t)) {
                 dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_obj_arr;
@@ -911,7 +908,7 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
             }
         }
     } while (l_count_current < l_count_out &&
-            (MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, a_prev ? MDBX_PREV : MDBX_NEXT))));
+            (MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT))));
     // cut unused memory
     if (rc == MDBX_NOTFOUND) {
         if (!l_count_current) {
