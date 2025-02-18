@@ -139,7 +139,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
                 return;
             }
         }
-        char * l_res_str = dap_json_rpc_request_handler(l_dg->request, l_dg->request_size);
+        char *l_res_str = dap_json_rpc_request_handler(l_dg->request, l_dg->request_size);
         if (l_res_str) {
             enc_http_reply(l_dg, l_res_str, strlen(l_res_str));
             DAP_DELETE(l_res_str);
@@ -153,6 +153,7 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
             log_it(L_ERROR, "Wrong request");
             *return_code = Http_Status_BadRequest;
         }
+        *return_code = Http_Status_OK;
         enc_http_reply_encode(a_http_simple,l_dg);
         enc_http_delegate_delete(l_dg);
     } else {

@@ -103,11 +103,7 @@ dap_global_db_cluster_t *dap_global_db_cluster_add(dap_global_db_instance_t *a_d
             return NULL;
         }
     }
-    dap_global_db_cluster_t *l_cluster = DAP_NEW_Z(dap_global_db_cluster_t);
-    if (!l_cluster) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
-    }
+    dap_global_db_cluster_t *l_cluster = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_global_db_cluster_t, NULL);
     if (a_mnemonim)
         l_cluster->links_cluster = dap_cluster_by_mnemonim(a_mnemonim);
     if (!l_cluster->links_cluster) {
