@@ -69,7 +69,7 @@ static void s_link_manager_print_links_info(dap_link_manager_t *a_link_manager);
 
 static dap_list_t *s_find_net_item_by_id(uint64_t a_net_id)
 {
-    dap_return_val_if_pass_err(!s_link_manager, NULL, s_init_error);
+    dap_return_val_if_pass_err(!s_link_manager, NULL, "%s", s_init_error);
     dap_return_val_if_pass(!a_net_id, NULL);
     dap_list_t *l_item = NULL;
     DL_FOREACH(s_link_manager->nets, l_item)
@@ -233,7 +233,7 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
 void dap_link_manager_deinit()
 {
 // sanity check
-    dap_return_if_pass_err(!s_link_manager, s_init_error);
+    dap_return_if_pass_err(!s_link_manager, "%s", s_init_error);
 // func work
     dap_link_manager_set_condition(false);
     dap_link_t *l_link = NULL, *l_link_tmp;
@@ -434,7 +434,7 @@ bool dap_link_manager_get_net_condition(uint64_t a_net_id)
 static dap_link_t *s_link_manager_link_find(dap_stream_node_addr_t *a_node_addr)
 {
 // sanity check
-    dap_return_val_if_pass_err(!s_link_manager, NULL, s_init_error);
+    dap_return_val_if_pass_err(!s_link_manager, NULL, "%s", s_init_error);
     dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64, NULL);
     dap_link_t *ret = NULL;
     HASH_FIND(hh, s_link_manager->links, a_node_addr, sizeof(*a_node_addr), ret);
@@ -738,7 +738,7 @@ void s_links_request(dap_link_manager_t *a_link_manager)
 void s_update_states(void *a_arg)
 {
 // sanity check
-    dap_return_if_pass_err(!s_link_manager, s_init_error);
+    dap_return_if_pass_err(!s_link_manager, "%s", s_init_error);
     assert(a_arg == s_link_manager);
     dap_link_manager_t *l_link_manager = a_arg;
     // if inactive return
@@ -804,7 +804,7 @@ DAP_STATIC_INLINE dap_link_t *s_link_manager_downlink_create(dap_stream_node_add
 inline int dap_link_manager_link_create(dap_stream_node_addr_t *a_node_addr, uint64_t a_associated_net_id)
 {
 // sanity check
-    dap_return_val_if_pass_err(!s_link_manager, -3, s_init_error);
+    dap_return_val_if_pass_err(!s_link_manager, -3, "%s", s_init_error);
     dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64, -5);
     if (a_node_addr->uint64 == g_node_addr.uint64)
         return -1;
@@ -917,7 +917,7 @@ int dap_link_manager_link_update(dap_stream_node_addr_t *a_node_addr, const char
  */
 bool dap_link_manager_link_find(dap_stream_node_addr_t *a_node_addr, uint64_t a_net_id)
 {
-    dap_return_val_if_pass_err(!s_link_manager, NULL, s_init_error);
+    dap_return_val_if_pass_err(!s_link_manager, NULL, "%s", s_init_error);
     dap_return_val_if_pass(!a_node_addr || !a_node_addr->uint64, NULL);
     dap_link_t *l_link = NULL;
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
@@ -1167,7 +1167,7 @@ void dap_link_manager_accounting_link_in_net(uint64_t a_net_id, dap_stream_node_
 DAP_INLINE void dap_link_manager_set_condition(bool a_new_condition)
 {
 // sanity check
-    dap_return_if_pass_err(!s_link_manager, s_init_error);
+    dap_return_if_pass_err(!s_link_manager, "%s", s_init_error);
     s_link_manager->active = a_new_condition;
 }
 
@@ -1178,7 +1178,7 @@ DAP_INLINE void dap_link_manager_set_condition(bool a_new_condition)
 DAP_INLINE bool dap_link_manager_get_condition()
 {
 // sanity check
-    dap_return_val_if_pass_err(!s_link_manager, false, s_init_error);
+    dap_return_val_if_pass_err(!s_link_manager, false, "%s", s_init_error);
 // func work
     return s_link_manager->active;
 }
@@ -1191,7 +1191,7 @@ DAP_INLINE bool dap_link_manager_get_condition()
 void dap_link_manager_add_static_links_cluster(dap_cluster_member_t *a_member, void *a_arg)
 {
 // sanity check
-    dap_return_if_pass_err(!s_link_manager, s_init_error);
+    dap_return_if_pass_err(!s_link_manager, "%s", s_init_error);
     dap_return_if_pass(!a_member || !a_arg);
 // func work
     dap_stream_node_addr_t *l_node_addr = &a_member->addr;
@@ -1220,7 +1220,7 @@ void dap_link_manager_add_static_links_cluster(dap_cluster_member_t *a_member, v
 void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member, void *a_arg)
 {
 // sanity check
-    dap_return_if_pass_err(!s_link_manager, s_init_error);
+    dap_return_if_pass_err(!s_link_manager, "%s", s_init_error);
     dap_return_if_pass(!a_member || !a_arg);
 // func work
     dap_stream_node_addr_t *l_node_addr = &a_member->addr;

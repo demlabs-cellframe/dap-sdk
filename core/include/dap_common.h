@@ -272,12 +272,12 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 } while(0);
 
 #define dap_return_val_if_fail_err(e, r, ...)   dap_return_val_if_pass_err(!(e), r, ##__VA_ARGS__)
-#define dap_return_val_if_pass(e, r)            dap_return_val_if_pass_err(e, r, c_error_sanity_check)
-#define dap_return_val_if_fail(e, r)            dap_return_val_if_fail_err(e, r, c_error_sanity_check)
-#define dap_return_if_pass_err(e, ...)          dap_return_val_if_pass_err(e, , __VA_ARGS__)
-#define dap_return_if_fail_err(e, ...)          dap_return_val_if_fail_err(e, , __VA_ARGS__)
-#define dap_return_if_pass(e)   dap_return_if_pass_err(e, c_error_sanity_check)
-#define dap_return_if_fail(e)   dap_return_if_fail_err(e, c_error_sanity_check)
+#define dap_return_val_if_pass(e, r)            dap_return_val_if_pass_err(e, r, "%s", c_error_sanity_check)
+#define dap_return_val_if_fail(e, r)            dap_return_val_if_fail_err(e, r, "%s", c_error_sanity_check)
+#define dap_return_if_pass_err(e, ...)          dap_return_val_if_pass_err(e, , ##__VA_ARGS__)
+#define dap_return_if_fail_err(e, ...)          dap_return_val_if_fail_err(e, , ##__VA_ARGS__)
+#define dap_return_if_pass(e)   dap_return_if_pass_err(e, "%s", c_error_sanity_check)
+#define dap_return_if_fail(e)   dap_return_if_fail_err(e, "%s", c_error_sanity_check)
 
 #ifndef __cplusplus
 #define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))
