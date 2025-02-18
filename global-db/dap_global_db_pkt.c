@@ -98,7 +98,7 @@ dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uin
     if (a_key) {
         // Exclude CRC field from sign
         l_sign = dap_sign_create(a_key, (uint8_t *)l_pkt + sizeof(uint64_t),
-                                 dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t), DAP_SIGN_HASH_TYPE_DEFAULT);
+                                 dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t));
         if (!l_sign) {
             log_it(L_ERROR, "Can't sign serialized global DB object");
             DAP_DELETE(l_pkt);

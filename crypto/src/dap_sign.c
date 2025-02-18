@@ -242,15 +242,14 @@ int dap_sign_create_output(dap_enc_key_t *a_key, const void * a_data, const size
 }
 
 /**
- * @brief sign data with specified key
- * 
+ * @brief sign data with specified key with choosed hash type
  * @param a_key dap_enc_key_t key object
  * @param a_data const void * buffer with data
  * @param a_data_size const size_t buffer size
  * @param a_hash_type data and pkey hash type
  * @return dap_sign_t* 
  */
-dap_sign_t *dap_sign_create(dap_enc_key_t *a_key, const void * a_data,
+dap_sign_t *dap_sign_create_with_hash_type(dap_enc_key_t *a_key, const void * a_data,
         const size_t a_data_size, uint32_t a_hash_type)
 {
     dap_return_val_if_fail(a_key && a_key->priv_key_data && a_key->priv_key_data_size, NULL);

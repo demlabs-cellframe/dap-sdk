@@ -39,8 +39,13 @@
 #define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL                              /* A maximum number of groups */
 #define DAP_GLOBAL_DB_KEY_SIZE_MAX          512UL                               /* A limit for the key's length in DB */
 
-#define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 256UL                             /* Default count of records to return with conditional read */
-#define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  512UL                             /* Default count of keys to return with conditional read */
+#ifndef DAP_SDK_TESTS
+    #define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 256UL                             /* Default count of records to return with conditional read */
+    #define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  512UL                             /* Default count of keys to return with conditional read */
+#else  // to more fast tests
+    #define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 25UL
+    #define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  50UL  
+#endif
 
 // Main record flags (DB saved)
 #define DAP_GLOBAL_DB_RECORD_DEL        BIT(0)                                  /* Information of record deletion (key, timestamp and sign) propagated over sync */
@@ -180,7 +185,7 @@ int dap_global_db_driver_delete(dap_store_obj_t * a_store_obj, size_t a_store_co
 dap_store_obj_t *dap_global_db_driver_read_last(const char *a_group, bool a_with_holes);
 dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes);
 dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_key, size_t *count_out, bool a_with_holes);
-dap_store_obj_t *dap_global_db_driver_read_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * l_count);
+dap_store_obj_t *dap_global_db_driver_read_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t *a_count);
 dap_global_db_pkt_pack_t *dap_global_db_driver_get_by_hash(const char *a_group, dap_global_db_driver_hash_t *a_hashes, size_t a_count);
 bool dap_global_db_driver_is(const char *a_group, const char *a_key);
 bool dap_global_db_driver_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);

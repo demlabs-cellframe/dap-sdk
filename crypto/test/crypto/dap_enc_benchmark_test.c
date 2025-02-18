@@ -183,10 +183,10 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
         
         dap_chain_hash_fast_t l_hash = {};
         if (key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
-            l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i], l_hash_type);
+            l_signs[i] = dap_sign_create_with_hash_type(key, l_source[i], l_source_size[i], l_hash_type);
         else {
             dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
-            l_signs[i] = dap_sign_create(key, &l_hash, sizeof(l_hash), l_hash_type);
+            l_signs[i] = dap_sign_create_with_hash_type(key, &l_hash, sizeof(l_hash), l_hash_type);
         }
         if (i % 2) {
             pkey_hash_table_t *l_item = DAP_NEW_Z(pkey_hash_table_t);
