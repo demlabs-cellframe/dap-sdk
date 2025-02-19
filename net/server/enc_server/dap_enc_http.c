@@ -199,7 +199,7 @@ void enc_http_proc(struct dap_http_simple *cl_st, void * arg)
             l_enc_key_ks->node_addr = dap_stream_node_addr_from_sign(l_sign);
 
             dap_cert_t *l_node_cert = dap_cert_find_by_name(DAP_STREAM_NODE_ADDR_CERT_NAME);
-            dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size, 0);
+            dap_sign_t *l_node_sign = dap_sign_create(l_node_cert->enc_key,l_pkey_exchange_key->pub_key_data, l_pkey_exchange_key->pub_key_data_size);
             if (!l_node_sign) {
                 dap_enc_key_delete(l_pkey_exchange_key);
                 DAP_DELETE(encrypt_msg);
