@@ -439,7 +439,7 @@ dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_ke
     return l_ret;
 }
 /**
- * @brief Reads all objects with timestamp below a_timestamp USE DAP_DELETE to free return objects
+ * @brief Reads all objects with timestamp below given 
  * @param a_group
  * @param a_timestamp
  */
