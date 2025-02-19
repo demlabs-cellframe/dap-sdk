@@ -1741,7 +1741,7 @@ static void s_clean_old_obj_gdb_callback() {
         while ((l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - s_minimal_ttl/2 + 100, &l_ret_count)) != NULL && l_ret->group) {
             dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(s_dbi, l_ret->group);
             if (!l_cluster) {
-                DAP_DELETE(l_ret);
+                dap_store_obj_free(l_ret, l_ret_count);
                 continue;
             }
 
