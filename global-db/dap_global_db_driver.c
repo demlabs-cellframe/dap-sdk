@@ -109,7 +109,7 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
 
 #ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
     else if(!dap_strcmp(s_used_driver, "pgsql"))
-    #ifdef DAP_TESTS
+    #ifdef DAP_SDK_TESTS
     {
         char *l_pg_conninfo = getenv("PG_CONNINFO");
         if (!l_pg_conninfo) {
