@@ -276,6 +276,8 @@ static int _dap_config_load(const char* a_abs_path, dap_config_t **a_conf) {
                 HASH_ADD_KEYPTR(hh, (*a_conf)->items, l_item->name, strlen(l_item->name), l_item);
             } else {
                 DAP_DELETE(l_name);
+                if ( l_type == DAP_CONFIG_ITEM_STRING )
+                    DAP_DELETE(l_item->val.val_str);
             }
             l_item->type = l_type;
             l_item->val = l_item_val;

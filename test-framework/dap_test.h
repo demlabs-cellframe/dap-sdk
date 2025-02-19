@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <bits/stdint-uintn.h>
 
 #define TEXT_COLOR_RED   "\x1B[31m"
 #define TEXT_COLOR_GRN   "\x1B[32m"
@@ -70,6 +71,7 @@
 #define dap_str_equals(str1, str2) strcmp(str1, str2) == 0
 #define dap_strn_equals(str1, str2, count) strncmp(str1, str2, count) == 0
 int get_cur_time_msec(void);
+uint64_t get_cur_time_nsec(void);
 
 /*
  How to use benchmark_xxx() functions:

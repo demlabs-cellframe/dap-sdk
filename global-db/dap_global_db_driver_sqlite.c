@@ -487,7 +487,7 @@ static dap_global_db_pkt_pack_t *s_db_sqlite_get_by_hash(const char *a_group, da
     char *l_str_query_count = sqlite3_mprintf("SELECT COUNT(*) FROM '%s' "
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
-    char *l_str_query_size = sqlite3_mprintf("SELECT SUM(LENGTH(key)) + SUM(LENGTH(value)) + SUM(LENGTH(sign)) FROM '%s' "
+    char *l_str_query_size = sqlite3_mprintf("SELECT COALESCE(SUM(LENGTH(key)), 0) + COALESCE(SUM(LENGTH(value)), 0) + COALESCE(SUM(LENGTH(sign)), 0) FROM '%s' "
                                         " WHERE driver_key IN (%s)",
                                         l_table_name, l_blob_str);
     char *l_str_query = sqlite3_mprintf("SELECT * FROM '%s'"
