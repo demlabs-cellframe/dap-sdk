@@ -194,12 +194,10 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
         return 4;
     }
 
-#ifdef SO_REUSEPORT
+#if 0 // #ifdef SO_REUSEPORT
     l_option = 1;
-    if ( setsockopt(l_socket, SOL_SOCKET, SO_REUSEPORT, (const char*)&l_option, sizeof(int)) < 0 ) {
-        close_socket_due_to_fail("setsockopt(SO_REUSEPORT)");
-        return 5;
-    }
+    if ( setsockopt(l_socket, SOL_SOCKET, SO_REUSEPORT, (const char*)&l_option, sizeof(int)) < 0 )
+        debug_if(a_server->ext_log, L_INFO, "setsockopt(SO_REUSEPORT) is not supported");
 #endif
 
     if ( bind(l_socket, (struct sockaddr*)&l_saddr, l_len) < 0 ) {
