@@ -32,9 +32,6 @@
 #define DAP_GLOBAL_DB_LOCAL_LAST_HASH       "local.lasthash"
 #define DAP_GLOBAL_DB_SYNC_WAIT_TIMEOUT     5 // seconds
 
-#define DAP_GLOBAL_DB_TTL_DEL       "111"
-#define DAP_GLOBAL_DB_MANUAL_DEL    "222"
-
 typedef struct dap_global_db_cluster dap_global_db_cluster_t;
 
 // Global DB instance with settings data
