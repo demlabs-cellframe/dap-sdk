@@ -114,12 +114,12 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
                     strncpy(l_channels_str,l_subtok_value,sizeof (l_channels_str)-1);
                 }else if(strcmp(l_subtok_name,"enc_type")==0){
                     l_enc_type = atoi(l_subtok_value);
-                    l_is_legacy = false;
+                    // l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_key_size")==0){
                     l_enc_key_size = (size_t) atoi(l_subtok_value);
                     if (l_enc_key_size > l_dg->request_size )
                         l_enc_key_size = 32;
-                    l_is_legacy = false;
+                    // l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_headers")==0){
                     l_enc_headers = atoi(l_subtok_value);
                 }
