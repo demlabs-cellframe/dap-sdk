@@ -83,11 +83,9 @@ dap_time_t dap_time_now(void)
  */
 dap_nanotime_t dap_nanotime_now(void)
 {
-    dap_nanotime_t l_time_nsec;
     struct timespec cur_time;
     clock_gettime(CLOCK_REALTIME, &cur_time);
-    l_time_nsec = (dap_nanotime_t)cur_time.tv_sec * DAP_NSEC_PER_SEC + cur_time.tv_nsec;
-    return l_time_nsec;
+    return (dap_nanotime_t)cur_time.tv_sec * DAP_NSEC_PER_SEC + cur_time.tv_nsec;
 }
 
 /**
@@ -180,16 +178,13 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
  */
 dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
 {
-    dap_time_t l_time = 0;
-    if(!a_time_str) {
-        return l_time;
-    }
-    struct tm l_tm = {};
-    strptime(a_time_str, "%d %b %Y %T %z", &l_tm);
-
+    dap_return_val_if_fail(a_time_str, 0);
+    struct tm l_tm = { };
+    char *ret = strptime(a_time_str, "%d %b %Y %T %z", &l_tm);
+    if ( !ret || *ret )
+        return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
     time_t tmp = mktime(&l_tm);
-    l_time = (tmp <= 0) ? 0 : tmp;
-    return l_time;
+    return tmp > 0 ? (dap_time_t)tmp : 0;
 }
 
 /**
@@ -199,16 +194,14 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
  */
 dap_time_t dap_time_from_str_simplified(const char *a_time_str)
 {
-    dap_time_t l_time = 0;
-    if(!a_time_str) {
-        return l_time;
-    }
+    dap_return_val_if_fail(a_time_str, 0);
     struct tm l_tm = {};
-    strptime(a_time_str, "%y%m%d", &l_tm);
+    char *ret = strptime(a_time_str, "%y%m%d", &l_tm);
+    if ( !ret || *ret )
+        return log_it(L_ERROR, "Invalid timestamp \"%s\", expected simplified string \"yy\"mm\"dd", a_time_str), 0;
     l_tm.tm_sec++;
     time_t tmp = mktime(&l_tm);
-    l_time = (tmp <= 0) ? 0 : tmp;
-    return l_time;
+    return tmp > 0 ? (dap_time_t)tmp : 0;
 }
 
 /**

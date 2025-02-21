@@ -39,6 +39,7 @@ DAP_PRINTF_ATTR(1, 2) char *dap_strdup_printf(const char *a_format, ...);
 char *dap_strncpy(char *a_dst, const char *a_src, size_t a_limit);
 char* dap_stpcpy(char *a_dest, const char *a_src);
 char* dap_strstr_len(const char *a_haystack, ssize_t a_haystack_len, const char *a_needle);
+const char* dap_str_find(const char **a_str_array, const char *a_str);
 // concatenates all of str_array's strings, sliding in an optional separator, the returned string is newly allocated.
 char* dap_strjoinv(const char *a_separator, char **a_str_array);
 char *dap_strjoin(const char *a_separator, ...);
