@@ -253,6 +253,9 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_DUP_SIZE_RET_VAL_IF_FAIL(p, s, r, ...) ({ \
     void *_p = DAP_DUP_SIZE(p, s); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
 })
+#define DAP_DUP_RET_VAL_IF_FAIL(p, r, ...) ({ \
+    void *_p = DAP_DUP(p); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
+})
 #define DAP_REALLOC_RET_VAL_IF_FAIL(p, s, r, ...) ({ \
     void *_p = DAP_REALLOC(p, s); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
 })
@@ -263,6 +266,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_NEW_Z_RET_IF_FAIL(t, ...)           DAP_NEW_Z_RET_VAL_IF_FAIL(t, , __VA_ARGS__)
 #define DAP_NEW_Z_SIZE_RET_IF_FAIL(t, s, ...)   DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(t, s, , __VA_ARGS__)
 #define DAP_NEW_Z_COUNT_RET_IF_FAIL(t, c, ...)  DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(t, c, , __VA_ARGS__)
+#define DAP_DUP_RET_IF_FAIL(p, ...)             DAP_DUP_RET_VAL_IF_FAIL(p, , __VA_ARGS__)
 #define DAP_DUP_SIZE_RET_IF_FAIL(p, s, ...)     DAP_DUP_SIZE_RET_VAL_IF_FAIL(p, s, , __VA_ARGS__)
 #define DAP_REALLOC_RET_IF_FAIL(p, s, ...)      DAP_REALLOC_RET_VAL_IF_FAIL(p, s, , __VA_ARGS__)
 #define DAP_REALLOC_COUNT_RET_IF_FAIL(p, c, ...) DAP_REALLOC_COUNT_RET_VAL_IF_FAIL(p, c, , __VA_ARGS__)
