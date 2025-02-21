@@ -1798,13 +1798,13 @@ static bool s_check_pinned_db_objs_callback() {
                     dap_store_obj_t * l_gdb_rec =  dap_global_db_get_raw_sync(l_group_name, l_ret[i].key);
                     if (!l_gdb_rec) {
                         debug_if(g_dap_global_db_debug_more, L_INFO, "Can't find source gdb obj %s group, %s key restore them", l_group_name, l_ret[i].key);
-                        dap_global_db_set_sync(l_group_name, l_gdb_rec->key, l_ret[i].value, l_ret[i].value_len, true);
+                        dap_global_db_set_sync(l_group_name, l_ret[i].key, l_ret[i].value, l_ret[i].value_len, true);
                         continue;
                     }
                     dap_global_db_set_sync(l_ret[i].group, l_ret[i].key, l_ret[i].value, l_ret[i].value_len, true);
                     switch (s_is_require_restore_del_pin_obj(l_gdb_rec)) {
                         case 0:
-                            debug_if(g_dap_global_db_debug_more, L_INFO, "Restore pinned gdb obj %s group, %s key after ttl delete", l_gdb_rec->group, l_gdb_rec->key);
+                            debug_if(g_dap_global_db_debug_more, L_INFO, "Repin pinned gdb obj %s group, %s key", l_gdb_rec->group, l_gdb_rec->key);
                             dap_global_db_set_sync(l_gdb_rec->group, l_gdb_rec->key, l_ret[i].value, l_ret[i].value_len, true);
                             break;
                         case -1:
