@@ -289,6 +289,14 @@ dap_server_t *dap_server_new(const char *a_cfg_section, dap_events_socket_callba
             if ( dap_server_listen_addr_add(l_server, l_cur_ip, l_cur_port, DESCRIPTOR_TYPE_SOCKET_LISTENING, &l_callbacks) )
                 log_it( L_ERROR, "Can't add address \"%s : %u\" to listen in server", l_cur_ip, l_cur_port);
         }
+
+        l_server->whitelist = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_WHITE_LIST, NULL);
+        l_server->blacklist = dap_config_get_array_str(g_config, a_cfg_section, DAP_CFG_PARAM_BLACK_LIST, NULL);
+
+        if (l_server->whitelist && l_server->blacklist) {
+            log_it(L_CRITICAL, "Server can't have both black- and whitelists, fix section [%s]", a_cfg_section);
+            l_server->whitelist = NULL; /* Blacklist will have priority */
+        }
     }
     if (!l_server->es_listeners) {
         log_it(L_INFO, "Server with no listeners created. "
@@ -329,7 +337,7 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
     dap_server_t *l_server = a_es_listener->server;
     assert(l_server);
 
-    dap_events_socket_t * l_es_new = NULL;
+    dap_events_socket_t *l_es_new = NULL;
     debug_if(l_server->ext_log, L_DEBUG, "Listening socket %"DAP_FORMAT_SOCKET" uuid "DAP_FORMAT_ESOCKET_UUID" binded on %s:%u "
                                          "accepted new connection from remote %"DAP_FORMAT_SOCKET"",
                                          a_es_listener->socket, a_es_listener->uuid,
@@ -342,43 +350,54 @@ static void s_es_server_accept(dap_events_socket_t *a_es_listener, SOCKET a_remo
                         a_es_listener->socket, errno, dap_strerror(errno));
         return;
     }
-    l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
-    l_es_new->server = l_server;
-    unsigned short l_family = a_remote_addr->ss_family;
-    l_es_new->type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
-    l_es_new->addr_storage = *a_remote_addr;
-    char l_port_str[NI_MAXSERV];
+    char l_remote_addr_str[INET6_ADDRSTRLEN] = "", l_port_str[NI_MAXSERV] = "";
 
-    switch (l_family) {
+    dap_events_desc_type_t l_es_type = DESCRIPTOR_TYPE_SOCKET_CLIENT;
+    switch (a_remote_addr->ss_family) {
 #ifdef DAP_OS_UNIX
     case AF_UNIX:
-        l_es_new->type = DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT;
+        l_es_type = DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT;
         debug_if(l_server->ext_log, L_INFO, "Connection accepted at \"%s\", socket %"DAP_FORMAT_SOCKET,
                                             a_es_listener->remote_addr_str, a_remote_socket);
         break;
 #endif
     case AF_INET:
     case AF_INET6:
-        if (getnameinfo((struct sockaddr*)a_remote_addr, sizeof(*a_remote_addr), l_es_new->remote_addr_str,
-            sizeof(l_es_new->remote_addr_str), l_port_str, sizeof(l_port_str), NI_NUMERICHOST | NI_NUMERICSERV))
+        if ( getnameinfo((struct sockaddr*)a_remote_addr, sizeof(*a_remote_addr), 
+                         l_remote_addr_str, sizeof(l_remote_addr_str),
+                         l_port_str, sizeof(l_port_str), NI_NUMERICHOST | NI_NUMERICSERV) )
         {
 #ifdef DAP_OS_WINDOWS
             _set_errno(WSAGetLastError());
 #endif
             log_it(L_ERROR, "getnameinfo() error %d: %s", errno, dap_strerror(errno));
+            closesocket(a_remote_socket);
             return;
-        } 
-        l_es_new->remote_port = strtol(l_port_str, NULL, 10);
-        debug_if(l_server->ext_log, L_INFO, "Connection accepted from %s : %hu, socket %"DAP_FORMAT_SOCKET,
-                                            l_es_new->remote_addr_str, l_es_new->remote_port, a_remote_socket);
+        }
+        if (( l_server->whitelist
+            ? !dap_str_find(l_server->whitelist, l_remote_addr_str) 
+            : !!dap_str_find(l_server->blacklist, l_remote_addr_str) )) {
+                closesocket(a_remote_socket);
+                return debug_if(l_server->ext_log, L_INFO, "Connection from %s : %s denied. Dump it",
+                                l_remote_addr_str, l_port_str);
+            }
+                
+        debug_if(l_server->ext_log, L_INFO, "Connection accepted from %s : %s, socket %"DAP_FORMAT_SOCKET,
+                                            l_remote_addr_str, l_port_str, a_remote_socket);
         int one = 1;
-        if ( setsockopt(l_es_new->socket, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one)) < 0 )
+        if ( setsockopt(a_remote_socket, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one)) < 0 )
             log_it(L_WARNING, "Can't disable Nagle alg, error %d: %s", errno, dap_strerror(errno));
         break;
     default:
-        log_it(L_ERROR, "Unsupported protocol family %hu from accept()", l_family);
-        break;
+        closesocket(a_remote_socket);
+        return log_it(L_ERROR, "Unsupported protocol family %hu from accept()", a_remote_addr->ss_family);
     }
+    l_es_new = dap_events_socket_wrap_no_add(a_remote_socket, &l_server->client_callbacks);
+    l_es_new->server = l_server;
+    l_es_new->type = l_es_type;
+    l_es_new->addr_storage = *a_remote_addr;
+    l_es_new->remote_port = strtol(l_port_str, NULL, 10);
+    dap_strncpy(l_es_new->remote_addr_str, l_remote_addr_str, INET6_ADDRSTRLEN);
     dap_worker_add_events_socket( dap_events_worker_get_auto(), l_es_new );
 }
 
