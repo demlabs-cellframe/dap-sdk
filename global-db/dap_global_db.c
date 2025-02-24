@@ -1880,6 +1880,10 @@ static bool s_check_pinned_db_objs_callback() {
     return false;
 }
 
+static void s_check_pinned_db_objs_timer_callback(void* UNUSED_ARG a_arg) {
+    s_check_pinned_db_objs_callback();
+}
+
 static bool s_start_check_pinned_db_objs_callback() {
     int l_ret = dap_proc_thread_callback_add(NULL, s_check_pinned_db_objs_callback, NULL);
     if (l_ret != 0) {
@@ -1921,7 +1925,7 @@ static void s_set_pinned_timer(const char * a_group) {
             s_minimal_ttl = dap_nanotime_from_sec(l_cluster->ttl);
         s_check_pinned_db_objs_timer = dap_timerfd_start(dap_nanotime_to_millitime(s_minimal_ttl/2), 
                                                         (dap_timerfd_callback_t)s_start_check_pinned_db_objs_callback, NULL);
-        debug_if(g_dap_global_db_debug_more, L_INFO, "New pinned callback timer %llu sec", dap_nanotime_to_sec(s_minimal_ttl/2));
+        debug_if(g_dap_global_db_debug_more, L_INFO, "New pinned callback timer %"DAP_UINT64_FORMAT_U" sec", dap_nanotime_to_sec(s_minimal_ttl/2));
     }
 }
 
@@ -1976,7 +1980,7 @@ static int s_pinned_objs_group_init() {
         s_get_all_pinned_objs_in_group(l_ret, l_ret_count);
         dap_store_obj_free(l_ret, l_ret_count);
     }
-    dap_proc_thread_timer_add_pri(NULL, (dap_thread_timer_callback_t)s_check_pinned_db_objs_callback, NULL, 300000, true, DAP_QUEUE_MSG_PRIORITY_NORMAL);  // 5 min wait before repin
+    dap_proc_thread_timer_add_pri(NULL, (dap_thread_timer_callback_t)s_check_pinned_db_objs_timer_callback, NULL, 300000, true, DAP_QUEUE_MSG_PRIORITY_NORMAL);  // 5 min wait before repin
     return 0;
 }
 
