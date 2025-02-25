@@ -772,7 +772,7 @@ static void s_test_multithread(size_t a_count)
 {
     uint32_t l_thread_count = 3;
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
-    dap_global_db_driver_sqlite_set_attempts_count(l_thread_count);
+    dap_global_db_driver_sqlite_set_attempts_count(l_thread_count, false);
 #endif
     dap_test_msg("Test with %u threads", l_thread_count);
     pthread_t *l_threads = DAP_NEW_Z_COUNT(pthread_t, l_thread_count);
