@@ -57,4 +57,4 @@ int dap_nanotime_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_nanotime_
 int timespec_diff(struct timespec *a_start, struct timespec *a_stop, struct timespec *a_result);
 
 dap_time_t dap_time_from_str_simplified(const char *a_time_str);
-
+dap_time_t dap_time_from_str_custom(const char *a_time_str, const char *a_format_str);
