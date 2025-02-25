@@ -275,7 +275,7 @@ static int s_start(dap_plugin_manifest_t * a_manifest)
             return -1;
         }
         l_module->pvt_data = l_pvt_data;
-        strncpy(l_module->name, a_manifest->name, sizeof(l_module->name)-1);
+        dap_strncpy(l_module->name, a_manifest->name, sizeof(l_module->name));
         l_module->name[sizeof(l_module->name) - 1] = '\0';  // Warning avoid
         l_module->type = l_type;
         l_module->manifest = a_manifest;
