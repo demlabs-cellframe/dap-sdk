@@ -229,7 +229,7 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_DELETE(p)         free((void*)(p))
 #define DAP_DEL_Z(p)          do { DAP_FREE(p); (p) = NULL; } while (0);
 #define DAP_DEL_ARRAY(p, c)   for ( intmax_t _c = p ? (intmax_t)(c) : 0; _c > 0; DAP_DELETE(p[--_c]) );
-#define DAP_DUP_SIZE(p, s)    ({ intmax_t _s = (intmax_t)(s); void *_p = ( (uintptr_t)(p) && _s >= DAP_TYPE_SIZE(p) ) ? calloc(1, _s) : NULL; _p ? DAP_CAST(__typeof__(p), memcpy(_p, (p), _s)) : NULL; })
+#define DAP_DUP_SIZE(p, s)    ({ intmax_t _s = (intmax_t)(s); __typeof__(p) _p = ( (uintptr_t)(p) && _s >= DAP_TYPE_SIZE(p) ) ? DAP_CAST(__typeof__(p), calloc(1, _s)) : NULL; _p ? DAP_CAST(__typeof__(p), memcpy(_p, (p), _s)) : NULL; })
 #define DAP_DUP(p)            ({ __typeof__(p) _p = p; _p = (uintptr_t)_p ? calloc(1, sizeof(*(p))) : NULL; if (_p) *_p = *(p); _p; })
 
 #endif
