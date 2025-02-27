@@ -55,6 +55,8 @@
 static dap_server_t *s_cli_server = NULL;
 static bool s_debug_cli = false;
 static atomic_int_fast64_t s_cmd_thread_count = 0;
+static bool s_allowed_cmd_control = false;
+static const char **s_allowed_cmd_array = NULL;
 
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
@@ -72,7 +74,9 @@ typedef struct cli_cmd_arg {
 
 static void* s_cli_cmd_exec(void *a_arg);
 
-static bool s_allowed_cmd_check(char *a_buf) {
+static bool s_allowed_cmd_check(const char *a_buf) {
+    if (s_allowed_cmd_array)
+        return false;
     enum json_tokener_error jterr;
     const char *l_method;
     json_object *jobj = json_tokener_parse_verbose(a_buf, &jterr),
@@ -87,7 +91,7 @@ static bool s_allowed_cmd_check(char *a_buf) {
         return false;
     }
 
-    bool l_allowed = !!dap_str_find( dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", NULL), l_method );
+    bool l_allowed = !!dap_str_find( s_allowed_cmd_array, l_method );
     return debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method), json_object_put(jobj), l_allowed;
 }
 
@@ -122,11 +126,14 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
 
-        if ( ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)
+        if (!(   
 #ifdef DAP_OS_UNIX
-            && a_es->addr_storage.ss_family != AF_UNIX
+            a_es->addr_storage.ss_family == AF_UNIX ||
 #endif
-            && !s_allowed_cmd_check(l_arg->buf) ) {
+            ( ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr == htonl(INADDR_LOOPBACK) && !s_allowed_cmd_control) ||
+
+            (((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr && s_allowed_cmd_control && s_allowed_cmd_check(l_arg->buf)))
+        ) {
                 dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 403 Forbidden\r\n");
                 a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
                 return;
@@ -578,4 +585,11 @@ void dap_cli_server_statistic_callback_add(dap_cli_server_cmd_stat_callback_t a_
         log_it(L_ERROR, "Dap cli server statistic callback already added");
     else
     s_stat_callback = a_callback;
+}
+
+DAP_INLINE void dap_cli_server_set_allowed_cmd_check(const char **a_cmd_array)
+{
+    dap_return_if_pass_err(s_allowed_cmd_array, "Allowed cmd array already exist");
+    s_allowed_cmd_array = a_cmd_array;
+    s_allowed_cmd_control = true;
 }

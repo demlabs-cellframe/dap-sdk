@@ -83,3 +83,4 @@ int64_t dap_cli_get_cmd_thread_count();
 int json_commands(const char * a_name);
 char *dap_cli_cmd_exec(char *a_req_str);
 void dap_cli_server_statistic_callback_add(dap_cli_server_cmd_stat_callback_t a_callback);
+void dap_cli_server_set_allowed_cmd_check(const char **a_cmd_array);
