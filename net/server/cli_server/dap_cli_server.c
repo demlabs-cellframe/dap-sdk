@@ -264,6 +264,7 @@ int json_commands(const char * a_name) {
             "stake_lock",
             "exec_cmd",            
             "srv_datum",
+            "decree",
             "node"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
