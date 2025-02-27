@@ -79,6 +79,10 @@ void dap_json_rpc_add_standart_erros(void);
         dap_json_rpc_error_add(a_json_arr_reply, DAP_JSON_RPC_ERR_CODE_MEMORY_ALLOCATED, "[%s] %s",  LOG_TAG, c_error_memory_alloc); \
     } while (0)
 
+#define dap_json_rpc_allocation_put(a_json_obj_reply) \
+        json_object_put(a_json_obj_reply), DAP_JSON_RPC_ERR_CODE_MEMORY_ALLOCATED 
+
+
 #ifdef __cplusplus
 }
 #endif
