@@ -69,7 +69,7 @@ json_object *dap_http_ban_list_client_dump(const char *a_addr) {
     ban_record_t *l_rec = NULL, *l_tmp = NULL;
     json_object *l_jobj_out = json_object_new_object();
     json_object *l_jobj_array = NULL;
-    if (!l_jobj_out) return dap_json_rpc_allocation_put(l_jobj_out);
+    if (!l_jobj_out) return dap_json_rpc_allocation_put(l_jobj_out), NULL;
     pthread_rwlock_rdlock(&s_ban_list_lock);
     if (a_addr) {
         HASH_FIND_STR(s_ban_list, a_addr, l_rec);
