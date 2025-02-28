@@ -405,34 +405,20 @@ bool dap_sign_compare_pkeys(dap_sign_t *l_sign1, dap_sign_t *l_sign2)
     return (l_pkey_ser_size1 == l_pkey_ser_size2) && !memcmp(l_pkey_ser1, l_pkey_ser2, l_pkey_ser_size1);
 }
 
-/**
- * @brief verify, if a_sign->header.sign_pkey_size and a_sign->header.sign_size bigger, then a_max_key_size
- * 
- * @param a_sign signed data object 
- * @param a_max_sign_size max size of signature
- * @return true 
- * @return false 
- */
-bool dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign_size)
-{
-    return (a_max_sign_size > sizeof(dap_sign_t)) && (a_sign->header.sign_size) &&
-           (a_sign->header.sign_pkey_size) && (a_sign->header.type.type != SIG_TYPE_NULL) &&
-           ((uint64_t)a_sign->header.sign_size + a_sign->header.sign_pkey_size + sizeof(dap_sign_t) <= (uint64_t)a_max_sign_size);
-}
 
 /**
  * @brief get deserialized pub key from dap_sign_t
- * 
  * @param a_chain_sign dap_sign_t object
+ * @param a_pkey
  * @return dap_enc_key_t* 
  */
-dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign)
+dap_enc_key_t *dap_sign_to_enc_key_by_pkey(dap_sign_t *a_chain_sign, dap_pkey_t *a_pkey)
 {
     dap_enc_key_type_t l_type = dap_sign_type_to_key_type(a_chain_sign->header.type);
     dap_return_val_if_pass(l_type == DAP_ENC_KEY_TYPE_INVALID, NULL);
 
     size_t l_pkey_size = 0;
-    uint8_t *l_pkey = dap_sign_get_pkey(a_chain_sign, &l_pkey_size);
+    uint8_t *l_pkey = a_pkey ? a_pkey->pkey : dap_sign_get_pkey(a_chain_sign, &l_pkey_size);
     dap_enc_key_t * l_ret =  dap_enc_key_new(l_type);
     // deserialize public key
     if (dap_enc_key_deserialize_pub_key(l_ret, l_pkey, l_pkey_size)) {
@@ -447,13 +433,14 @@ dap_enc_key_t *dap_sign_to_enc_key(dap_sign_t * a_chain_sign)
  * @param a_chain_sign dap_sign_t a_chain_sign object
  * @param a_data const void * buffer with data
  * @param a_data_size const size_t  buffer size
+ * @param a_pkey pkey to verofy sign
  * @return 0 valid signature, else invalid signature with error code
  */
-int dap_sign_verify(dap_sign_t *a_chain_sign, const void *a_data, const size_t a_data_size)
+int dap_sign_verify_by_pkey(dap_sign_t *a_chain_sign, const void *a_data, const size_t a_data_size, dap_pkey_t *a_pkey)
 {
     dap_return_val_if_pass(!a_chain_sign || !a_data, -2);
 
-    dap_enc_key_t *l_key = dap_sign_to_enc_key(a_chain_sign);
+    dap_enc_key_t *l_key = dap_sign_to_enc_key_by_pkey(a_chain_sign, a_pkey);
     if ( !l_key ){
         log_it(L_WARNING,"Incorrect signature, can't extract key");
         return -3;
