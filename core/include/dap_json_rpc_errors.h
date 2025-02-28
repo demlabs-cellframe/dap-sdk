@@ -80,7 +80,7 @@ void dap_json_rpc_add_standart_erros(void);
     } while (0)
 
 #define dap_json_rpc_allocation_put(a_json_obj_reply) \
-        json_object_put(a_json_obj_reply), DAP_JSON_RPC_ERR_CODE_MEMORY_ALLOCATED 
+        json_object_put(a_json_obj_reply), NULL
 
 
 #ifdef __cplusplus
