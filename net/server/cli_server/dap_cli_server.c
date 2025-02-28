@@ -54,6 +54,7 @@
 
 static dap_server_t *s_cli_server = NULL;
 static bool s_debug_cli = false;
+static bool s_allowed_cmd_control = false;
 
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
@@ -119,11 +120,11 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
             return;
 
-        if ( ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)
+        if ( (((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)
 #ifdef DAP_OS_UNIX
-            && a_es->addr_storage.ss_family != AF_UNIX
+            && a_es->addr_storage.ss_family != AF_UNIX 
 #endif
-            && !s_allowed_cmd_check(l_arg->buf) ) {
+            ) || (((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr && s_allowed_cmd_control && !s_allowed_cmd_check(l_arg->buf) ) ) {
                 dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 403 Forbidden\r\n");
                 a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
                 return;
@@ -173,6 +174,7 @@ int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
         log_it(L_ERROR, "CLI server not initialized");
         return -2;
     }
+    s_allowed_cmd_control = dap_config_get_item_bool_default(g_config, a_cfg_section, "allowed_cmd_control", s_allowed_cmd_control);
     log_it(L_INFO, "CLI server initialized");
     return 0;
 }
