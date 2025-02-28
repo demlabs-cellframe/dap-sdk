@@ -79,11 +79,11 @@ json_object *dap_http_ban_list_client_dump(const char *a_addr) {
             json_object_object_add(l_jobj_out, a_addr, json_object_new_string("Address is not banlisted"));
     } else {
         l_jobj_array = json_object_new_array();
-        if (!l_jobj_array) return dap_json_rpc_allocation_put(l_jobj_out);
+        if (!l_jobj_array) return dap_json_rpc_allocation_put(l_jobj_out), NULL;
         json_object_object_add(l_jobj_out, "banlist", l_jobj_array);        
         HASH_ITER(hh, s_ban_list, l_rec, l_tmp) {
             json_object *l_jobj_addr = json_object_new_object();
-            if (!l_jobj_addr) return dap_json_rpc_allocation_put(l_jobj_out);
+            if (!l_jobj_addr) return dap_json_rpc_allocation_put(l_jobj_out), NULL;
             json_object_object_add(l_jobj_addr, "num", json_object_new_int(num++));
             s_dap_http_ban_list_client_dump_single(l_rec, l_jobj_addr);
             json_object_array_add(l_jobj_array, l_jobj_addr);
