@@ -1769,7 +1769,7 @@ static bool s_check_is_obj_pinned(const char * a_group, const char * a_key) {
 /// @return 0 restore obj
 ///         -1 obj is the hole, delete them
 static int s_is_require_restore_del_pin_obj(dap_store_obj_t * a_pinned_obj) {
-    if (a_pinned_obj->flags & DAP_GLOBAL_DB_RECORD_DEL)
+    if (dap_store_obj_get_type(a_pinned_obj) == DAP_GLOBAL_DB_OPTYPE_DEL)
         return -1;
     return 0;
 }
@@ -1901,7 +1901,6 @@ static void s_del_pinned_obj_from_pinned_group_by_source_group(const char * a_gr
 }
 
 static void s_get_all_pinned_objs_in_group(dap_store_obj_t * a_objs, size_t a_objs_count) {
-    debug_if(g_dap_global_db_debug_more, L_INFO, "Get all pinned obj");
     for(size_t i = 0; i < a_objs_count; i++) {
         if (a_objs[i].flags & DAP_GLOBAL_DB_RECORD_PINNED)
             s_add_pinned_obj_in_pinned_group(a_objs + i);
