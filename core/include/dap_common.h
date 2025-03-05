@@ -253,6 +253,9 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_DUP_SIZE_RET_VAL_IF_FAIL(p, s, r, ...) ({ \
     void *_p = DAP_DUP_SIZE(p, s); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
 })
+#define DAP_DUP_RET_VAL_IF_FAIL(p, r, ...) ({ \
+    void *_p = DAP_DUP(p); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
+})
 #define DAP_REALLOC_RET_VAL_IF_FAIL(p, s, r, ...) ({ \
     void *_p = DAP_REALLOC(p, s); if (!_p) { log_it(L_CRITICAL, "%s", c_error_memory_alloc); DAP_DEL_MULTY(__VA_ARGS__); return r; } _p; \
 })
@@ -263,18 +266,22 @@ static inline void *s_vm_extend(const char *a_rtn_name, int a_rtn_line, void *a_
 #define DAP_NEW_Z_RET_IF_FAIL(t, ...)           DAP_NEW_Z_RET_VAL_IF_FAIL(t, , __VA_ARGS__)
 #define DAP_NEW_Z_SIZE_RET_IF_FAIL(t, s, ...)   DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(t, s, , __VA_ARGS__)
 #define DAP_NEW_Z_COUNT_RET_IF_FAIL(t, c, ...)  DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(t, c, , __VA_ARGS__)
+#define DAP_DUP_RET_IF_FAIL(p, ...)             DAP_DUP_RET_VAL_IF_FAIL(p, , __VA_ARGS__)
 #define DAP_DUP_SIZE_RET_IF_FAIL(p, s, ...)     DAP_DUP_SIZE_RET_VAL_IF_FAIL(p, s, , __VA_ARGS__)
 #define DAP_REALLOC_RET_IF_FAIL(p, s, ...)      DAP_REALLOC_RET_VAL_IF_FAIL(p, s, , __VA_ARGS__)
 #define DAP_REALLOC_COUNT_RET_IF_FAIL(p, c, ...) DAP_REALLOC_COUNT_RET_VAL_IF_FAIL(p, c, , __VA_ARGS__)
 
-#define dap_return_val_if_pass_err(e, r, s) do { if (e) { _log_it(__FUNCTION__, __LINE__, LOG_TAG, L_WARNING, "%s", s); return r; } } while(0);
-#define dap_return_val_if_fail_err(e, r, s) dap_return_val_if_pass_err(!(e), r, s)
-#define dap_return_val_if_pass(e, r)    dap_return_val_if_pass_err(e, r, c_error_sanity_check)
-#define dap_return_val_if_fail(e, r)    dap_return_val_if_fail_err(e, r, c_error_sanity_check)
-#define dap_return_if_pass_err(e, s)    dap_return_val_if_pass_err(e, , s)
-#define dap_return_if_fail_err(e, s)    dap_return_val_if_fail_err(e, , s)
-#define dap_return_if_pass(e)   dap_return_if_pass_err(e, c_error_sanity_check)
-#define dap_return_if_fail(e)   dap_return_if_fail_err(e, c_error_sanity_check)
+#define dap_return_val_if_pass_err(e, r, ...) do { \
+    if (e) { _log_it(__FUNCTION__, __LINE__, LOG_TAG, L_ERROR, ##__VA_ARGS__); return r; } \
+} while(0);
+
+#define dap_return_val_if_fail_err(e, r, ...)   dap_return_val_if_pass_err(!(e), r, ##__VA_ARGS__)
+#define dap_return_val_if_pass(e, r)            dap_return_val_if_pass_err(e, r, "%s", c_error_sanity_check)
+#define dap_return_val_if_fail(e, r)            dap_return_val_if_fail_err(e, r, "%s", c_error_sanity_check)
+#define dap_return_if_pass_err(e, ...)          dap_return_val_if_pass_err(e, , ##__VA_ARGS__)
+#define dap_return_if_fail_err(e, ...)          dap_return_val_if_fail_err(e, , ##__VA_ARGS__)
+#define dap_return_if_pass(e)   dap_return_if_pass_err(e, "%s", c_error_sanity_check)
+#define dap_return_if_fail(e)   dap_return_if_fail_err(e, "%s", c_error_sanity_check)
 
 #ifndef __cplusplus
 #define DAP_IS_ALIGNED(p) !((uintptr_t)DAP_CAST_PTR(void, p) % _Alignof(typeof(p)))

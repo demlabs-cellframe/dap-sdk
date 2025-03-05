@@ -42,11 +42,7 @@ static void s_cluster_member_delete(dap_cluster_member_t *a_member);
  */
 dap_cluster_t *dap_cluster_new(const char *a_mnemonim, dap_guuid_t a_guuid, dap_cluster_type_t a_type)
 {
-    dap_cluster_t *ret = DAP_NEW_Z(dap_cluster_t);
-    if (!ret) {
-        log_it(L_CRITICAL, "Insufficient memory");
-        return NULL;
-    }
+    dap_cluster_t *ret = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_cluster_t, NULL);
     pthread_rwlock_init(&ret->members_lock, NULL);
     ret->type = a_type;
     ret->guuid = a_guuid;
@@ -267,63 +263,46 @@ void dap_cluster_broadcast(dap_cluster_t *a_cluster, const char a_ch_id, uint8_t
 json_object *dap_cluster_get_links_info_json(dap_cluster_t *a_cluster)
 {
     json_object *l_jobj_ret = json_object_new_object();
+    if (!l_jobj_ret) return dap_json_rpc_allocation_put(l_jobj_ret);
     json_object *l_jobj_downlinks = json_object_new_array();
+    if (!l_jobj_downlinks) return dap_json_rpc_allocation_put(l_jobj_ret);
+    json_object_object_add(l_jobj_ret, "downlinks", l_jobj_downlinks);
     json_object *l_jobj_uplinks = json_object_new_array();
-    if (!l_jobj_ret || !l_jobj_downlinks || !l_jobj_uplinks){
-        json_object_put(l_jobj_ret);
-        json_object_put(l_jobj_uplinks);
-        json_object_put(l_jobj_downlinks);
-        return NULL;
-    }
+    if (!l_jobj_uplinks) return dap_json_rpc_allocation_put(l_jobj_ret);
+    json_object_object_add(l_jobj_ret, "uplinks", l_jobj_uplinks);    
     size_t l_total_links_count = 0;
     dap_stream_info_t *l_links_info = dap_stream_get_links_info(a_cluster, &l_total_links_count);
     if (l_links_info) {
         for (size_t i = 0; i < l_total_links_count; i++) {
             dap_stream_info_t *l_link_info = l_links_info + i;
             json_object *l_jobj_info = json_object_new_object();
-            char *l_addr = dap_strdup_printf(NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(l_link_info->node_addr));
-            json_object *l_jobj_node_addr = json_object_new_string(l_addr);
-            DAP_DELETE(l_addr);
-            json_object *l_jobj_ip = json_object_new_string(l_link_info->remote_addr_str);
-            json_object *l_jobj_port = json_object_new_int(l_link_info->remote_port);
-            json_object *l_jobj_channel = json_object_new_string(l_link_info->channels);
-            json_object *l_jobj_total_packets_sent  = json_object_new_uint64(l_link_info->total_packets_sent);
-            if (!l_jobj_info || !l_jobj_node_addr || !l_jobj_ip || !l_jobj_port || !l_jobj_channel || !l_jobj_total_packets_sent) {
-                json_object_put(l_jobj_info);
-                json_object_put(l_jobj_node_addr);
-                json_object_put(l_jobj_ip);
-                json_object_put(l_jobj_port);
-                json_object_put(l_jobj_channel);
-                json_object_put(l_jobj_total_packets_sent);
-                json_object_put(l_jobj_ret);
-                json_object_put(l_jobj_downlinks);
-                json_object_put(l_jobj_uplinks);
-                return NULL;
-            }
-            json_object_object_add(l_jobj_info, "addr", l_jobj_node_addr);
-            json_object_object_add(l_jobj_info, "ip", l_jobj_ip);
-            json_object_object_add(l_jobj_info, "port", l_jobj_port);
-            json_object_object_add(l_jobj_info, "channel", l_jobj_channel);
-            json_object_object_add(l_jobj_info, "total_packets_sent", l_jobj_total_packets_sent);
+            if (!l_jobj_info) return dap_json_rpc_allocation_put(l_jobj_ret);
             if (l_link_info->is_uplink) {
                 json_object_array_add(l_jobj_uplinks, l_jobj_info);
             } else {
-                json_object_array_add(l_jobj_downlinks, l_jobj_downlinks);
+                json_object_array_add(l_jobj_downlinks, l_jobj_info);
             }
+            char *l_addr = dap_strdup_printf(NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(l_link_info->node_addr));
+            json_object *l_jobj_node_addr = json_object_new_string(l_addr);
+            DAP_DELETE(l_addr);
+            if (!l_jobj_node_addr) return dap_json_rpc_allocation_put(l_jobj_ret);
+            json_object_object_add(l_jobj_info, "addr", l_jobj_node_addr);
+            json_object *l_jobj_ip = json_object_new_string(l_link_info->remote_addr_str);
+            if (!l_jobj_ip) return dap_json_rpc_allocation_put(l_jobj_ret);
+            json_object_object_add(l_jobj_info, "ip", l_jobj_ip);
+            json_object *l_jobj_port = json_object_new_int(l_link_info->remote_port);
+            if (!l_jobj_port) return dap_json_rpc_allocation_put(l_jobj_ret);
+            json_object_object_add(l_jobj_info, "port", l_jobj_port);
+            json_object *l_jobj_channel = json_object_new_string(l_link_info->channels);
+            if (!l_jobj_channel) return dap_json_rpc_allocation_put(l_jobj_ret);
+            json_object_object_add(l_jobj_info, "channel", l_jobj_channel);
+            json_object *l_jobj_total_packets_sent  = json_object_new_uint64(l_link_info->total_packets_sent);
+            if (!l_jobj_total_packets_sent) return dap_json_rpc_allocation_put(l_jobj_ret);
+            json_object_object_add(l_jobj_info, "total_packets_sent", l_jobj_total_packets_sent);
         }
         dap_stream_delete_links_info(l_links_info, l_total_links_count);
     }
-    assert(l_total_links_count == json_object_array_length(l_jobj_uplinks) + json_object_array_length(l_jobj_downlinks));
-    if (json_object_array_length(l_jobj_uplinks)) {
-        json_object_object_add(l_jobj_ret, "uplinks", l_jobj_uplinks);
-    } else {
-        json_object_object_add(l_jobj_ret, "uplinks", json_object_new_null());
-    }
-    if (json_object_array_length(l_jobj_downlinks)) {
-        json_object_object_add(l_jobj_ret, "downlinks", l_jobj_downlinks);
-    } else {
-        json_object_object_add(l_jobj_ret, "downlinks", l_jobj_downlinks);
-    }
+    assert(l_total_links_count == json_object_array_length(l_jobj_uplinks) + json_object_array_length(l_jobj_downlinks));    
     return l_jobj_ret;
 }
 

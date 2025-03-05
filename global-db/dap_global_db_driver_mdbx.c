@@ -99,12 +99,15 @@ static bool             s_db_mdbx_is_obj(const char *a_group, const char *a_key)
 static bool             s_db_mdbx_is_hash(const char *a_group, dap_global_db_driver_hash_t a_hash);
 static dap_store_obj_t  *s_db_mdbx_read_store_obj(const char *a_group, const char *a_key, size_t *a_count_out, bool a_with_holes);
 static void             *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes, bool a_prev);
+static void             *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes, bool a_prev);
 static inline dap_global_db_hash_pkt_t *s_db_mdbx_read_hashes(const char *a_group, dap_global_db_driver_hash_t a_hash_from)
 {
+    return s_db_mdbx_read_cond(a_group, a_hash_from, NULL, true, true, false);
     return s_db_mdbx_read_cond(a_group, a_hash_from, NULL, true, true, false);
 }
 static inline dap_store_obj_t *s_db_mdbx_read_cond_store_obj(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_with_holes)
 {
+    return s_db_mdbx_read_cond(a_group, a_hash_from, a_count_out, false, a_with_holes, false);
     return s_db_mdbx_read_cond(a_group, a_hash_from, a_count_out, false, a_with_holes, false);
 }
 static size_t           s_db_mdbx_read_count_store(const char *a_group, dap_global_db_driver_hash_t a_hash_from, bool a_with_holes);
@@ -683,7 +686,10 @@ ret:
 }
 
 static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count) {
+static dap_store_obj_t *s_db_mdbx_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t * a_count) {
     dap_return_val_if_fail(a_group, NULL);
+    dap_global_db_driver_hash_t l_hash_from = { .bets = htobe64(a_timestamp), .becrc = (uint64_t)-1 };
+    return s_db_mdbx_read_cond(a_group, l_hash_from, a_count, false, true, true);
     dap_global_db_driver_hash_t l_hash_from = { .bets = htobe64(a_timestamp), .becrc = (uint64_t)-1 };
     return s_db_mdbx_read_cond(a_group, l_hash_from, a_count, false, true, true);
 }
@@ -840,6 +846,7 @@ static dap_global_db_pkt_pack_t *s_db_mdbx_get_by_hash(const char *a_group, dap_
  * @return If successful, a pointer to an objects, otherwise NULL.
  */
 static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes, bool a_prev)
+static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_t a_hash_from, size_t *a_count_out, bool a_keys_only_read, bool a_with_holes, bool a_prev)
 {
     dap_return_val_if_fail(a_group && *a_group, NULL);  /* Sanity check */
     dap_db_ctx_t *l_db_ctx = s_get_db_ctx_for_group(a_group);
@@ -880,11 +887,14 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
             goto safe_ret;
         }
     }
+    if (a_prev && memcmp(l_key.iov_base, &a_hash_from, sizeof(a_hash_from)) >= 0)
+        goto safe_ret;
     size_t l_group_name_len = l_db_ctx->namelen + 1;
     size_t l_addition_size = a_keys_only_read ? l_group_name_len + sizeof(dap_global_db_hash_pkt_t): 0;
 
     l_obj_arr = DAP_NEW_Z_SIZE(byte_t, (l_count_out + 1) * l_element_size + l_addition_size);
     if (!l_obj_arr) {
+        log_it(L_CRITICAL, "Can't allocate memory l_count_out %lu, l_element_size %lu, l_addition_size %lu", l_count_out, l_element_size, l_addition_size);
         log_it(L_CRITICAL, "Can't allocate memory l_count_out %lu, l_element_size %lu, l_addition_size %lu", l_count_out, l_element_size, l_addition_size);
         goto safe_ret;
     }
@@ -895,6 +905,8 @@ static void *s_db_mdbx_read_cond(const char *a_group, dap_global_db_driver_hash_
     }
     /* Iterate cursor to retrieve records from DB */
     do {
+        if (a_prev && memcmp(l_key.iov_base, &a_hash_from, sizeof(a_hash_from)) >= 0)
+            break;
         if (a_keys_only_read) {
             if (l_key.iov_len == sizeof(dap_global_db_driver_hash_t)) {
                 dap_global_db_hash_pkt_t *l_pkt = (dap_global_db_hash_pkt_t *)l_obj_arr;

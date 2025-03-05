@@ -350,7 +350,7 @@ static void s_test_read_cond_store(size_t a_count, bool a_bench)
 
 static void s_test_read_obj_below_timestamp(size_t a_count)
 {
-    size_t l_count = 0;
+    size_t l_count = a_count;
     int l_time = get_cur_time_msec();
     dap_store_obj_t *l_objs = dap_global_db_driver_read_obj_below_timestamp(s_group, (dap_nanotime_t)(-1), &l_count);
     s_read_below_timestamp += get_cur_time_msec() - l_time;
@@ -358,7 +358,7 @@ static void s_test_read_obj_below_timestamp(size_t a_count)
     dap_assert_PIF(a_count == l_count, "Wrong finded records count");
 
     for (size_t i = 0; i < a_count; ++i) {
-        size_t l_cur_count = 0;
+        size_t l_cur_count = a_count;
         dap_store_obj_t *l_store_obj = dap_global_db_driver_read_obj_below_timestamp(s_group, (l_objs + i)->timestamp, &l_cur_count);
         dap_assert_PIF(l_store_obj, "Record-Not-Found");
         dap_assert_PIF(i + 1 == l_cur_count, "Wrong finded records count");
@@ -772,7 +772,7 @@ static void s_test_multithread(size_t a_count)
 {
     uint32_t l_thread_count = 3;
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
-    dap_global_db_driver_sqlite_set_attempts_count(l_thread_count);
+    dap_global_db_driver_sqlite_set_attempts_count(l_thread_count, false);
 #endif
     dap_test_msg("Test with %u threads", l_thread_count);
     pthread_t *l_threads = DAP_NEW_Z_COUNT(pthread_t, l_thread_count);
