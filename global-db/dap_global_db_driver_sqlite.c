@@ -708,7 +708,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
         goto clean_and_ret;
     }
 // memory alloc
-    uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0);
+    uint64_t l_count = sqlite3_column_int64(l_stmt_count, 0), l_blank_add = l_count;
     l_count = a_count_out && *a_count_out ? dap_min(l_count, *a_count_out) : dap_min(l_count, DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT);
     if (!l_count) {
         log_it(L_INFO, "There are no records satisfying the conditional read request");
