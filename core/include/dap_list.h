@@ -27,7 +27,7 @@ typedef struct __dap_list__ {
     struct __dap_list__ *next, *prev;
 } dap_list_t;
 
-typedef void (*dap_callback_destroyed_t)(void *a_free_func);
+typedef void (*dap_callback_destroyed_t)(void *a_list_data);
 typedef int (*dap_callback_compare_t)(dap_list_t *a_list1, dap_list_t *a_list2);
 typedef void *(*dap_callback_copy_t)(const void *a_data, void *a_user_arg);
 
