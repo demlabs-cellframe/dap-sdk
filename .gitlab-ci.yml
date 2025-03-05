@@ -21,6 +21,7 @@ tests:amd64.debian:
     before_script: /opt/buildtools/prepare_environment.sh amd64-linux
     script:
       - pwd
+      - env
       - mkdir build
       - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose && make cppcheck
       - cd /opt/buildtools/ && python3 -m cppcheck_codequality  --input-file=${CI_PROJECT_DIR}/build/cppcheck_results.xml --output-file=${CI_PROJECT_DIR}/build/cppcheck.json

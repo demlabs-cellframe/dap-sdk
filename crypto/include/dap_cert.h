@@ -89,13 +89,18 @@ int dap_cert_get_pkey_hash(dap_cert_t *a_cert, dap_hash_fast_t *a_out_hash);
 dap_cert_t *dap_cert_find_by_name(const char *a_cert_name);
 dap_list_t *dap_cert_get_all_mem();
 
-dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, size_t a_output_size_wished);
+dap_sign_t *dap_cert_sign_with_hash_type(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, uint32_t a_hash_type);
+DAP_STATIC_INLINE dap_sign_t *dap_cert_sign(dap_cert_t *a_cert, const void *a_data, size_t a_data_size)
+{
+    return dap_cert_sign_with_hash_type(a_cert, a_data, a_data_size, DAP_SIGN_HASH_TYPE_DEFAULT);
+}
+
 // Sign raw data, without hashing
 int dap_cert_sign_output(dap_cert_t *a_cert, const void *a_data, size_t a_data_size, void *a_output, size_t *a_output_size);
 
 int dap_cert_compare_with_sign (dap_cert_t *a_cert,const dap_sign_t *a_sign);
 
-size_t dap_cert_sign_output_size(dap_cert_t *a_cert, size_t a_size_wished);
+size_t dap_cert_sign_output_size(dap_cert_t *a_cert);
 
 int dap_cert_add_cert_sign(dap_cert_t *a_cert, dap_cert_t *a_cert_signer);
 
@@ -125,6 +130,7 @@ time_t dap_cert_get_meta_period(dap_cert_t *a_cert, const char *a_field);
 dap_sign_t *dap_cert_get_meta_sign(dap_cert_t *a_cert, const char *a_field);
 void *dap_cert_get_meta_custom(dap_cert_t *a_cert, const char *a_field, size_t *a_meta_size_out);
 dap_enc_key_t *dap_cert_get_keys_from_certs(dap_cert_t **a_certs, size_t a_count, size_t a_key_start_index);
+char *dap_cert_get_pkey_str(dap_cert_t *a_cert, const char *a_str_type);
 #ifdef __cplusplus
 }
 #endif

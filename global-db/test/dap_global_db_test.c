@@ -25,14 +25,13 @@ static const char *s_db_types[] = {
 #ifdef DAP_CHAIN_GDB_ENGINE_MDBX
     "mdbx",
 #endif
-#ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
-    "sqlite",
-#endif
 #ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
     "pgsql",
 #endif
     "none"
 };
+
+void dap_global_db_driver_sqlite_set_attempts_count(uint32_t a_attempts, bool a_force);
 
 // benchmarks
 static uint64_t    s_write = 0;
@@ -648,6 +647,7 @@ static void s_test_get_groups_by_mask(size_t a_count, bool a_bench)
     dap_pass_msg("get_groups_by_mask check");
 }
 
+
 static void s_test_flush()
 {
     dap_global_db_driver_flush();
@@ -773,7 +773,7 @@ static void s_test_multithread(size_t a_count)
 {
     uint32_t l_thread_count = 3;
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
-    dap_global_db_driver_sqlite_set_attempts_count(l_thread_count);
+    dap_global_db_driver_sqlite_set_attempts_count(l_thread_count, false);
 #endif
     dap_test_msg("Test with %u threads", l_thread_count);
     pthread_t *l_threads = DAP_NEW_Z_COUNT(pthread_t, l_thread_count);
@@ -914,7 +914,6 @@ static void s_test_full(size_t a_db_count, size_t a_count, bool a_with_value)
         s_test_table_erase();
         s_test_close_db();
     }
-
 }
 
 int main(int argc, char **argv)
@@ -936,4 +935,5 @@ int main(int argc, char **argv)
     dap_print_module_name("Tests without value");
     s_test_full(l_db_count, l_count, false);
 }
+
 

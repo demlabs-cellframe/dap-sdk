@@ -43,6 +43,7 @@
 #include "dap_list.h"
 #include "dap_common.h"
 #include "dap_global_db.h"
+#include "dap_config.h"
 
 #ifdef DAP_CHAIN_GDB_ENGINE_SQLITE
 #include "dap_global_db_driver_sqlite.h"
@@ -79,7 +80,6 @@ static dap_global_db_driver_callbacks_t s_drv_callback;                         
 int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_db)
 {
     int l_ret = -1;
-
     if (s_used_driver[0] )
         dap_global_db_driver_deinit();
 
@@ -89,11 +89,11 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
     // Setup driver name
     dap_strncpy( s_used_driver, a_driver_name, sizeof(s_used_driver) - 1);
 
-    dap_mkdir_with_parents(a_filename_db);
-
-    // Compose path
     char l_db_path_ext[strlen(a_driver_name) + strlen(a_filename_db) + 6];
-    snprintf(l_db_path_ext, sizeof(l_db_path_ext), "%s/gdb-%s", a_filename_db, a_driver_name);
+    if (dap_strcmp(s_used_driver, "pgsql")) { // Compose path
+        dap_mkdir_with_parents(a_filename_db);
+        snprintf(l_db_path_ext, sizeof(l_db_path_ext), "%s/gdb-%s", a_filename_db, a_driver_name);
+    }
 
    // Check for engine
     if(!dap_strcmp(s_used_driver, "ldb"))
@@ -109,7 +109,32 @@ int dap_global_db_driver_init(const char *a_driver_name, const char *a_filename_
 
 #ifdef DAP_CHAIN_GDB_ENGINE_PGSQL
     else if(!dap_strcmp(s_used_driver, "pgsql"))
-        l_ret = dap_global_db_driver_pgsql_init(l_db_path_ext, &s_drv_callback);
+    #ifdef DAP_SDK_TESTS
+    {
+        char *l_pg_conninfo = getenv("PG_CONNINFO");
+        if (!l_pg_conninfo) {
+            log_it(L_WARNING, "PG_CONNINFO not defined, using to tests second conn info:\"%s\"", a_filename_db);
+            l_ret = dap_global_db_driver_pgsql_init(a_filename_db, &s_drv_callback);
+        } else {
+            l_ret = dap_global_db_driver_pgsql_init(l_pg_conninfo, &s_drv_callback);
+        }
+    }
+    #else
+    {
+        uint16_t l_arr_len = 0;
+        const char **l_conn_info_arr = dap_config_get_array_str(g_config, "global_db", "pg_conninfo", &l_arr_len);
+        dap_string_t *l_conn_info = NULL;
+        if (l_arr_len) {
+            l_conn_info = dap_string_new_len(NULL, l_arr_len * 16);
+            while (l_arr_len--)
+                dap_string_append_printf(l_conn_info, "%s ", l_conn_info_arr[l_arr_len]);
+        } else {
+            l_conn_info = dap_string_new("dbname=postgres");
+        }
+        l_ret = dap_global_db_driver_pgsql_init(l_conn_info->str, &s_drv_callback);
+        dap_string_free(l_conn_info, true);
+    }
+    #endif
 #endif
     else
         log_it(L_ERROR, "Unknown global_db driver \"%s\"", a_driver_name);
@@ -141,6 +166,8 @@ int dap_global_db_driver_flush(void)
 {
     if (s_drv_callback.flush)
         return s_drv_callback.flush();
+    else
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have flush callback", s_used_driver);
     return 0;
 }
 
@@ -248,8 +275,8 @@ dap_store_obj_t *l_store_obj_cur;
     l_store_obj_cur = a_store_obj;                                          /* We have to  use a power of the address's incremental arithmetic */
     l_ret = 0;                                                              /* Preset return code to OK */
 
-    if (a_store_count > 1 && s_drv_callback.transaction_start)
-        s_drv_callback.transaction_start();
+    if (a_store_count > 1)
+        dap_global_db_driver_txn_start();
 
     if (s_drv_callback.apply_store_obj) {
         for(int i = a_store_count; !l_ret && i; l_store_obj_cur++, i--) {
@@ -269,10 +296,12 @@ dap_store_obj_t *l_store_obj_cur;
             else if (l_ret)
                 log_it(L_ERROR, "[%p] Can't write item %s/%s (code %d)", a_store_obj, l_store_obj_cur->group, l_store_obj_cur->key, l_ret);
         }
+    } else {
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have apply_store_obj callback", s_used_driver);
     }
 
-    if (a_store_count > 1 && s_drv_callback.transaction_end)
-        s_drv_callback.transaction_end(true);
+    if (a_store_count > 1)
+        dap_global_db_driver_txn_end(true);
 
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "[%p] Finished DB Request (code %d)", a_store_obj, l_ret);
     return l_ret;
@@ -322,6 +351,8 @@ size_t dap_global_db_driver_count(const char *a_group, dap_global_db_driver_hash
     // read the number of items
     if (s_drv_callback.read_count_store)
         l_count_out = s_drv_callback.read_count_store(a_group, a_hash_from, a_with_holes);
+    else
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have read_count_store callback", s_used_driver);
     return l_count_out;
 }
 
@@ -337,6 +368,8 @@ dap_list_t *dap_global_db_driver_get_groups_by_mask(const char *a_group_mask)
     dap_list_t *l_list = NULL;
     if(s_drv_callback.get_groups_by_mask)
         l_list = s_drv_callback.get_groups_by_mask(a_group_mask);
+    else
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have get_groups_by_mask callback", s_used_driver);
     return l_list;
 }
 
@@ -352,6 +385,8 @@ dap_store_obj_t *dap_global_db_driver_read_last(const char *a_group, bool a_with
     // read records using the selected database engine
     if(s_drv_callback.read_last_store_obj)
         l_ret = s_drv_callback.read_last_store_obj(a_group, a_with_holes);
+    else
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have read_last_store_obj callback", s_used_driver);
     return l_ret;
 }
 
@@ -361,6 +396,8 @@ dap_global_db_hash_pkt_t *dap_global_db_driver_hashes_read(const char *a_group, 
     // read records using the selected database engine
     if (s_drv_callback.read_hashes)
         return s_drv_callback.read_hashes(a_group, a_hash_from);
+    else
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have read_hashes callback", s_used_driver);
     return NULL;
 }
 
@@ -377,6 +414,8 @@ dap_store_obj_t *dap_global_db_driver_cond_read(const char *a_group, dap_global_
     // read records using the selected database engine
     if (s_drv_callback.read_cond_store_obj)
         return s_drv_callback.read_cond_store_obj(a_group, a_hash_from, a_count_out, a_with_holes);
+    else
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have read_cond_store callback", s_used_driver);
     return NULL;
 }
 
@@ -395,6 +434,8 @@ dap_store_obj_t *dap_global_db_driver_read(const char *a_group, const char *a_ke
     // read records using the selected database engine
     if (s_drv_callback.read_store_obj)
         l_ret = s_drv_callback.read_store_obj(a_group, a_key, a_count_out, a_with_holes);
+    else
+        debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have read_store_obj callback", s_used_driver);
     return l_ret;
 }
 /**
@@ -425,6 +466,7 @@ bool dap_global_db_driver_is(const char *a_group, const char *a_key)
     // read records using the selected database engine
     if (s_drv_callback.is_obj && a_group && a_key)
         return s_drv_callback.is_obj(a_group, a_key);
+    debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have is_obj callback", s_used_driver);
     return false;
 }
 
@@ -432,6 +474,7 @@ bool dap_global_db_driver_is_hash(const char *a_group, dap_global_db_driver_hash
 {
     if (s_drv_callback.is_hash && a_group)
         return s_drv_callback.is_hash(a_group, a_hash);
+    debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have is_hash callback", s_used_driver);
     return false;
 }
 
@@ -439,15 +482,22 @@ dap_global_db_pkt_pack_t *dap_global_db_driver_get_by_hash(const char *a_group, 
 {
     if (s_drv_callback.get_by_hash && a_group)
         return s_drv_callback.get_by_hash(a_group, a_hashes, a_count);
+    debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have get_by_hash callback", s_used_driver);
     return NULL;
 }
 
 int dap_global_db_driver_txn_start()
 {
-    return s_drv_callback.transaction_start ? s_drv_callback.transaction_start() : -1;
+    if (s_drv_callback.transaction_start)
+        return s_drv_callback.transaction_start();
+    debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have transaction_start callback", s_used_driver);
+    return -1;
 }
 
 int dap_global_db_driver_txn_end(bool a_commit)
 {
-    return s_drv_callback.transaction_end ? s_drv_callback.transaction_end(a_commit) : -1;
+    if (s_drv_callback.transaction_end)
+        return  s_drv_callback.transaction_end(a_commit);
+    debug_if(g_dap_global_db_debug_more, L_WARNING, "Driver %s not have transaction_end callback", s_used_driver);
+    return -1;
 }
