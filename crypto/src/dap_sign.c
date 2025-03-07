@@ -350,24 +350,9 @@ uint8_t* dap_sign_get_sign(dap_sign_t *a_sign, size_t *a_sign_size)
  * @param a_pub_key_out [option] output pointer to a_sign->header.sign_pkey_size
  * @return uint8_t* 
  */
-uint8_t* dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
+uint8_t *dap_sign_get_pkey(dap_sign_t *a_sign, size_t *a_pub_key_out)
 {
     dap_return_val_if_pass(!a_sign, NULL);
-    bool l_use_pkey_hash = DAP_SIGN_GET_PKEY_HASHING_FLAG(a_sign->header.hash_type);
-    if (l_use_pkey_hash) {
-        if (!s_get_pkey_by_hash_callback) {
-            log_it(L_ERROR, "Can't get pkey by hash, callback s_get_pkey_by_hash_callback not inited");
-            return NULL;
-        }
-        dap_pkey_t *l_pkey = s_get_pkey_by_hash_callback(a_sign->pkey_n_sign);
-        if (!l_pkey) {
-            log_it(L_ERROR, "Can't get pkey by hash %s", dap_hash_fast_to_str_static((dap_hash_fast_t *)a_sign->pkey_n_sign));
-            return NULL;
-        }
-        if (a_pub_key_out)
-            *a_pub_key_out = l_pkey->header.size;
-        return l_pkey->pkey;
-    }
     if (a_pub_key_out)
         *a_pub_key_out = a_sign->header.sign_pkey_size;
     return a_sign->pkey_n_sign;
@@ -425,7 +410,7 @@ dap_enc_key_t *dap_sign_to_enc_key_by_pkey(dap_sign_t *a_chain_sign, dap_pkey_t 
     dap_enc_key_type_t l_type = dap_sign_type_to_key_type(a_chain_sign->header.type);
     dap_return_val_if_pass(l_type == DAP_ENC_KEY_TYPE_INVALID, NULL);
 
-    size_t l_pkey_size = 0;
+    size_t l_pkey_size = a_pkey ? a_pkey->header.size : 0;
     uint8_t *l_pkey = a_pkey ? a_pkey->pkey : dap_sign_get_pkey(a_chain_sign, &l_pkey_size);
     dap_enc_key_t * l_ret =  dap_enc_key_new(l_type);
     // deserialize public key
