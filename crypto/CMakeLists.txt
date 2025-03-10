@@ -121,6 +121,7 @@ file( GLOB CRYPTO_SRCS
       src/sig_dilithium/*.c
       src/ringct20/*.c
       src/falcon/*.c
+      src/bigint/*.c
       ${SPHINCS_BASE_SRCS}
       ${SPHINCS_SRCS}
 ) 
@@ -169,6 +170,7 @@ file( GLOB CRYPTO_HEADERS
       src/sig_dilithium/*.h
       src/ringct20/*.h
       src/falcon/*.h
+      src/bigint/*.h
       ${SPHINCS_BASE_HEADERS}
       ${SPHINCS_HEADERS}
       include/*.h
