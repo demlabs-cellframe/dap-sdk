@@ -144,7 +144,7 @@ int dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key *l_key, const void *a_msg, 
     dap_return_val_if_pass_err(l_key->pub_key_data_size != sizeof(ecdsa_public_key_t), -3, "Invalid ecdsa public key size");
 // msg hashing
     byte_t l_msghash[32] = { '\0' };
-    dap_enc_sig_ecdsa_hash_fast(a_msg, a_msg_size, l_msghash);
+    dap_enc_sig_ecdsa_hash_fast(a_msg, a_msg_size, (dap_hash_fast_t *)l_msghash);
 // context create
     int l_ret = 0;
     ecdsa_context_t *l_ctx = s_context_create();
