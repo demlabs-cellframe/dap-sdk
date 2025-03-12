@@ -89,7 +89,7 @@ void dap_enc_sig_ecdsa_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const v
     }
 // keypair generate
     if(a_seed && a_seed_size > 0) {
-        dap_enc_sig_ecdsa_hash_fast((const unsigned char *)a_seed, a_seed_size, (unsigned char *)a_key->priv_key_data);
+        dap_enc_sig_ecdsa_hash_fast((const unsigned char *)a_seed, a_seed_size, (dap_hash_fast_t *)a_key->priv_key_data);
         if (!secp256k1_ec_seckey_verify(l_ctx, (const unsigned char*)a_key->priv_key_data)) {
             log_it(L_ERROR, "Error verify ECDSA private key");
             DAP_DEL_Z(a_key->priv_key_data);
@@ -125,7 +125,7 @@ int dap_enc_sig_ecdsa_get_sign(struct dap_enc_key *l_key, const void *a_msg, con
     dap_return_val_if_pass_err(l_key->priv_key_data_size != sizeof(ecdsa_private_key_t), -3, "Invalid ecdsa private key size");
 // msg hashing
     byte_t l_msghash[32] = { '\0' };
-    dap_enc_sig_ecdsa_hash_fast(a_msg, a_msg_size, l_msghash);
+    dap_enc_sig_ecdsa_hash_fast(a_msg, a_msg_size, (dap_hash_fast_t *)l_msghash);
 // context create
     int l_ret = 0;
     ecdsa_context_t *l_ctx = s_context_create();
@@ -144,7 +144,7 @@ int dap_enc_sig_ecdsa_verify_sign(struct dap_enc_key *l_key, const void *a_msg, 
     dap_return_val_if_pass_err(l_key->pub_key_data_size != sizeof(ecdsa_public_key_t), -3, "Invalid ecdsa public key size");
 // msg hashing
     byte_t l_msghash[32] = { '\0' };
-    dap_enc_sig_ecdsa_hash_fast(a_msg, a_msg_size, l_msghash);
+    dap_enc_sig_ecdsa_hash_fast(a_msg, a_msg_size, (dap_hash_fast_t *)l_msghash);
 // context create
     int l_ret = 0;
     ecdsa_context_t *l_ctx = s_context_create();
@@ -232,11 +232,13 @@ void dap_enc_sig_ecdsa_public_key_delete(void *a_public_key) {
     DAP_DELETE(a_public_key);
 }
 
-void dap_enc_sig_ecdsa_private_and_public_keys_delete(dap_enc_key_t* a_key) {
+void dap_enc_sig_ecdsa_private_and_public_keys_delete(dap_enc_key_t* a_key)
+{
+    if (a_key->priv_key_data)
         dap_enc_sig_ecdsa_private_key_delete(a_key->priv_key_data);
-        dap_enc_sig_ecdsa_public_key_delete(a_key->pub_key_data);
-        a_key->pub_key_data = NULL;
-        a_key->priv_key_data = NULL;
-        a_key->pub_key_data_size = 0;
-        a_key->priv_key_data_size = 0;
+    dap_enc_sig_ecdsa_public_key_delete(a_key->pub_key_data);
+    a_key->pub_key_data = NULL;
+    a_key->priv_key_data = NULL;
+    a_key->pub_key_data_size = 0;
+    a_key->priv_key_data_size = 0;
 }
