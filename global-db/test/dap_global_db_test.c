@@ -355,7 +355,7 @@ static void s_test_read_obj_below_timestamp(size_t a_count)
     dap_store_obj_t *l_objs = dap_global_db_driver_read_obj_below_timestamp(s_group, (dap_nanotime_t)(-1), &l_count);
     s_read_below_timestamp += get_cur_time_msec() - l_time;
     dap_assert_PIF(l_objs, "Records-Not-Found");
-    // dap_assert_PIF(a_count == l_count, "Wrong finded records count"); // comment for pipeline
+    dap_assert_PIF(a_count == l_count, "Wrong finded records count");
 
     for (size_t i = 0; i < a_count; ++i) {
         size_t l_cur_count = a_count;
