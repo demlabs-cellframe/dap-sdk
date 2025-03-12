@@ -756,6 +756,7 @@ static void *s_test_thread(void *a_arg)
     size_t l_count = *(size_t *)a_arg;
     s_test_read(l_count, false);
     s_test_read_cond_store(l_count, false);
+    s_test_read_obj_below_timestamp(l_count);
     s_test_count(l_count, false);
     s_test_flush();
     s_test_is_obj(l_count, false);
