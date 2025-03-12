@@ -1,4 +1,4 @@
-#include "bigint.h"
+#include "circuit_formalism.h"
 
 
 int dap_bigint_ripple_carry_adder(dap_bigint_t* a, dap_bigint_t* b,dap_bigint_t* sum){
@@ -26,21 +26,32 @@ int dap_bigint_unsigned_ripple_carry_adder(dap_bigint_t* a,dap_bigint_t* b,dap_b
 
     int limb_counter;
     int sum_size=dap_get_sum_size_from_unsigned_terms(a,b);
-
+    dap_full_adder_t ith_limb_adder;
+    unsigned char carry_out_from_full_adder_for_next_limb=0;
 
     for(limb_counter = 1; limb_counter < sum_size; limb_counter++)
     {
-        //Take Bit from Register A and B and put in adder
-        am = getBitAt(this->A, i, &error);
-        b = getBitAt(this->B, i, &error);
-        c_in = getCarryOutBit(&this->adders[i-1]);
-        setInputBits(&this->adders[i], a, b, c_in);
-        //Compute ADD for that bit in the adder
-        dap_full_adder(&this->adders[i]);
-        //Take result from ADD and place in Result register
-        setBitAt(&this->R, i, getResultBit(&this->adders[i]));
+        //take values from ith limb of a and b and put in full adder structure
+        uint64_t a_ith_limb = get_val_at_ith_limb(a);
+        uint64_t b_ith_limb = get_val_at_ith_limb(b);
+
+        //set carry-in "bit" from previous limb iteration
+        uint64_t carry_in_ith_limb = carry_out_from_full_adder_for_next_limb;
+
+        //initialize full adder and set inputs
+        dap_full_adder_t ith_limb_full_adder;
+        dap_initialize_full_adder(ith_limb_full_adder);
+        dap_set_adder_inputs(ith_limb_full_adder,a_ith_limb,b_ith_limb);
+
+        //do the actual addition operation in the full adder
+        dap_full_adder_execute(ith_limb_full_adder);
+
+        //transfer outputs from full adder struct to bigint output and carry_out variable for next limb iteration
+        dap_set_carry_out_from_full_adder_for_next_limb(ith_limb_full_adder,carry_out_from_full_adder_for_next_limb);
+        dap_set_ith_limb_in_sum(ith_limb_full_adder,sum)
     }
 
+    return 0;
 
 }
 
