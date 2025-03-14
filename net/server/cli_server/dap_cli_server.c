@@ -249,7 +249,7 @@ int json_commands(const char * a_name) {
             "net_srv",
             "net",
             "srv_stake",
-            "voting",
+            "poll",
             "emit_delegate",
             "token_decl",
             "token_update",
