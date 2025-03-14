@@ -54,6 +54,7 @@
 
 static dap_server_t *s_cli_server = NULL;
 static bool s_debug_cli = false;
+static atomic_int_fast64_t s_cmd_thread_count = 0;
 
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
@@ -424,6 +425,7 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
 }
 
 static void *s_cli_cmd_exec(void *a_arg) {
+    atomic_fetch_add(&s_cmd_thread_count, 1);
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
     char    *l_ret = dap_cli_cmd_exec(l_arg->buf),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
@@ -433,6 +435,7 @@ static void *s_cli_cmd_exec(void *a_arg) {
     dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination
     DAP_DEL_MULTY(l_arg->buf, /* l_full_ret, */ l_arg);
+    atomic_fetch_sub(&s_cmd_thread_count, 1);
     return NULL;
 }
 
@@ -541,4 +544,9 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     dap_json_rpc_response_free(response);
     dap_json_rpc_request_free(request);
     return response_string;
+}
+
+DAP_INLINE int64_t dap_cli_get_cmd_thread_count()
+{
+    return atomic_load(&s_cmd_thread_count);
 }
