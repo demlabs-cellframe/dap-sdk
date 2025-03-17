@@ -58,7 +58,7 @@ static bool s_debug_cli = false;
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
 
-static inline void s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex);
+static inline dap_cli_cmd_t *s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex);
 
 typedef struct cli_cmd_arg {
     dap_worker_t *worker;
@@ -191,9 +191,9 @@ void dap_cli_server_deinit()
  * @param a_doc
  * @param a_doc_ex
  */
-void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex)
+dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex)
 {
-    s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex);
+    return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex);
 }
 
 /**
@@ -204,12 +204,12 @@ void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a
  * @param a_doc
  * @param a_doc_ex
  */
-static inline void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex)
+static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex)
 {
     dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
     if (!l_cmd_item) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return;
+        return NULL;
     }
     snprintf(l_cmd_item->name,sizeof (l_cmd_item->name),"%s",a_name);
     l_cmd_item->doc = strdup( a_doc);
@@ -262,7 +262,8 @@ int json_commands(const char * a_name) {
             "stats",
             "print_log",
             "stake_lock",
-            "exec_cmd"            
+            "exec_cmd",
+            "policy"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
@@ -399,18 +400,20 @@ dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name)
     return l_cmd_item;
 }
 
-void dap_cli_server_alias_add(const char *a_alias, const char *a_pre_cmd, dap_cli_cmd_t *a_cmd) {
-    if (!a_alias || !a_pre_cmd || !a_cmd)
-        return;
-    dap_cli_cmd_aliases_t *l_alias = DAP_NEW(dap_cli_cmd_aliases_t);
+dap_cli_cmd_aliases_t *dap_cli_server_alias_add(const char *a_alias, const char *a_pre_cmd, dap_cli_cmd_t *a_cmd)
+{
+    if (!a_alias || !a_cmd)
+        return NULL;
+    dap_cli_cmd_aliases_t *l_alias = DAP_NEW_Z(dap_cli_cmd_aliases_t);
     size_t l_alias_size = dap_strlen(a_alias);
     memcpy(l_alias->alias, a_alias, l_alias_size);
-    l_alias->alias[l_alias_size] = '\0';
-    size_t l_addition_size = dap_strlen(a_pre_cmd);
-    memcpy(l_alias->addition, a_pre_cmd, l_addition_size);
-    l_alias->addition[l_addition_size] = '\0';
+    if (a_pre_cmd) {
+        size_t l_addition_size = dap_strlen(a_pre_cmd);
+        memcpy(l_alias->addition, a_pre_cmd, l_addition_size);
+    }
     l_alias->standard_command = a_cmd;
     HASH_ADD_STR(s_command_alias, alias, l_alias);
+    return l_alias;
 }
 
 dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_append, char **a_ncmd) {
