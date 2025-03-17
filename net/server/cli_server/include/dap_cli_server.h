@@ -65,7 +65,7 @@ typedef struct dap_cli_cmd_aliases{
 int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section);
 void dap_cli_server_deinit();
 
-void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex);
+dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex);
 DAP_PRINTF_ATTR(2, 3) void dap_cli_server_cmd_set_reply_text(void **a_str_reply, const char *str, ...);
 int dap_cli_server_cmd_find_option_val( char** argv, int arg_start, int arg_end, const char *opt_name, const char **opt_value);
 int dap_cli_server_cmd_check_option( char** argv, int arg_start, int arg_end, const char *opt_name);
@@ -74,7 +74,7 @@ void dap_cli_server_cmd_apply_overrides(const char * a_name, const dap_cli_serve
 dap_cli_cmd_t* dap_cli_server_cmd_get_first();
 dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name);
 
-void dap_cli_server_alias_add(const char *a_alias, const char *a_pre_cmd, dap_cli_cmd_t *a_cmd);
+dap_cli_cmd_aliases_t *dap_cli_server_alias_add(dap_cli_cmd_t *a_cmd, const char *a_pre_cmd, const char *a_alias);
 dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_cli, char **a_append, char **a_ncmd);
 
 //for json
