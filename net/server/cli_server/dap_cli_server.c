@@ -262,7 +262,8 @@ int json_commands(const char * a_name) {
             "stats",
             "print_log",
             "stake_lock",
-            "exec_cmd"            
+            "exec_cmd",
+            "policy"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
