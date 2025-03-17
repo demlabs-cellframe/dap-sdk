@@ -77,6 +77,7 @@ static dap_cluster_t        *s_global_links_cluster = NULL;
 static pthread_rwlock_t     s_streams_lock = PTHREAD_RWLOCK_INITIALIZER;    // Lock for all tables and list under
 static dap_stream_t         *s_authorized_streams = NULL;                   // Authorized streams hashtable by addr
 static dap_stream_t         *s_streams = NULL;                              // Double-linked list
+static int32_t              s_streams_count = 0;                            // Stream count
 static dap_enc_key_type_t   s_stream_get_preferred_encryption_type = DAP_ENC_KEY_TYPE_IAES;
 
 static int s_add_stream_info(authorized_stream_t **a_hash_table, authorized_stream_t *a_item, dap_stream_t *a_stream);
@@ -966,8 +967,10 @@ void s_stream_delete_from_list(dap_stream_t *a_stream)
         return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !");
 
     dap_stream_t *l_stream = NULL;
-    if (a_stream->prev)
+    if (a_stream->prev) {
         DL_DELETE(s_streams, a_stream);
+        --s_streams_count;
+    }
     if (a_stream->authorized) {
         // It's an authorized stream, try to replace it in hastable
         if (a_stream->primary)
@@ -995,6 +998,7 @@ int dap_stream_add_to_list(dap_stream_t *a_stream)
     if ( lock == EDEADLK )
         return log_it(L_CRITICAL, "! Attempt to aquire streams lock recursively !"), -666;
     DL_APPEND(s_streams, a_stream);
+    ++s_streams_count;
     if (a_stream->authorized)
         l_ret = s_stream_add_to_hashtable(a_stream);
     pthread_rwlock_unlock(&s_streams_lock);
@@ -1157,6 +1161,12 @@ dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a
         *a_count = i;
     return l_ret;
 }
+
+
+inline int32_t dap_stream_get_links_count()
+{
+    return s_streams_count;
+} 
 
 void dap_stream_delete_links_info(dap_stream_info_t *a_info, size_t a_count)
 {
