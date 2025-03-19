@@ -32,8 +32,8 @@ int dap_bigint_unsigned_ripple_carry_adder(dap_bigint_t* a,dap_bigint_t* b,dap_b
     for(limb_counter = 1; limb_counter < sum_size; limb_counter++)
     {
         //take values from ith limb of a and b and put in full adder structure
-        uint64_t a_ith_limb = get_val_at_ith_limb(a);
-        uint64_t b_ith_limb = get_val_at_ith_limb(b);
+        uint64_t a_ith_limb = get_val_at_ith_limb(a, limb_counter);
+        uint64_t b_ith_limb = get_val_at_ith_limb(b,limb_counter);
 
         //set carry-in "bit" from previous limb iteration
         uint64_t carry_in_ith_limb = carry_out_from_full_adder_for_next_limb;
