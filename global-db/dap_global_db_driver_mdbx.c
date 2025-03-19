@@ -1048,16 +1048,16 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
     dap_return_val_if_fail(a_store_obj && a_store_obj->group && (a_store_obj->crc || !a_store_obj->key), -EINVAL)     /* Sanity checks ... */
 
     uint8_t l_type_erase = a_store_obj->flags & DAP_GLOBAL_DB_RECORD_ERASE;
-    dap_return_val_if_fail(a_store_obj->key || l_type_erase, -EINVAL);
+    dap_return_val_if_pass(!a_store_obj->key && !l_type_erase, -EINVAL);
 
     dap_db_ctx_t *l_db_ctx;
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group)) ) {               /* Get a DB context for the group */
+        if (l_type_erase)                                                           /* Nothing to do anymore */
+            return a_store_obj->key ? DAP_GLOBAL_DB_RC_NOT_FOUND : DAP_GLOBAL_DB_RC_SUCCESS;
                                                                                     /* Group is not found ? Try to create table for new group */
         if ( !(l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE, a_txn)) )
             return  log_it(L_WARNING, "Cannot create DB context for the group '%s'", a_store_obj->group), -EIO;
         log_it(L_NOTICE, "DB context for the group '%s' has been created", a_store_obj->group);
-        if (l_type_erase)                                                           /* Nothing to do anymore */
-            return a_store_obj->key ? DAP_GLOBAL_DB_RC_NOT_FOUND : DAP_GLOBAL_DB_RC_SUCCESS;
     }
     int rc = -EIO;
     MDBX_val l_key = {}, l_data;
@@ -1116,10 +1116,13 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
             /* Drop the whole table */
             if (MDBX_SUCCESS != (rc = mdbx_drop(a_txn, l_db_ctx->dbi, true)))
                 log_it (L_ERROR, "mdbx_drop: (%d) %s", rc, mdbx_strerror(rc));
-            dap_assert ( !pthread_rwlock_wrlock(&s_db_ctxs_rwlock) );
+            /* Need to think out lock policy for exclude BAD_DBI errors
+             * dap_assert ( !pthread_rwlock_wrlock(&s_db_ctxs_rwlock) );
             HASH_DEL(s_db_ctxs, l_db_ctx);
             dap_assert ( !pthread_rwlock_unlock(&s_db_ctxs_rwlock) );
             DAP_DELETE(l_db_ctx);
+            */
+            rc = MDBX_SUCCESS;
         }
         if (l_key.iov_len && rc == MDBX_SUCCESS) {
             rc = mdbx_del(a_txn, l_db_ctx->dbi, &l_key, NULL);
