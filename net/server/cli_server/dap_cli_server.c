@@ -59,7 +59,9 @@ static atomic_int_fast64_t s_cmd_thread_count = 0;
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
 
-static inline dap_cli_cmd_t *s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex);
+static dap_cli_server_cmd_stat_callback_t s_stat_callback = NULL;
+
+static inline dap_cli_cmd_t *s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex, int16_t a_id);
 
 typedef struct cli_cmd_arg {
     dap_worker_t *worker;
@@ -192,9 +194,9 @@ void dap_cli_server_deinit()
  * @param a_doc
  * @param a_doc_ex
  */
-dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex)
+dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, int16_t a_id, const char *a_doc_ex)
 {
-    return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex);
+    return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex, a_id);
 }
 
 /**
@@ -205,7 +207,7 @@ dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_ca
  * @param a_doc
  * @param a_doc_ex
  */
-static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex)
+static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex, int16_t a_id)
 {
     dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
     if (!l_cmd_item) {
@@ -221,6 +223,7 @@ static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cm
     } else {
         l_cmd_item->func = (dap_cli_server_cmd_callback_t )(void *)a_func;
     }
+    l_cmd_item->id = a_id;
     HASH_ADD_STR(cli_commands,name,l_cmd_item);
     log_it(L_DEBUG,"Added command %s",l_cmd_item->name);
     return l_cmd_item;
@@ -241,7 +244,6 @@ int json_commands(const char * a_name) {
             "chain_ca_copy",
             "dag",
             "block",
-            "dag",
             "token",
             "esbocs",
             "global_db",
@@ -508,6 +510,8 @@ char *dap_cli_cmd_exec(char *a_req_str) {
         }
         // Call the command function
         if(l_cmd &&  l_argv && l_cmd->func) {
+            if (s_stat_callback)
+                s_stat_callback(l_cmd->id, true);
             if (json_commands(cmd_name)) {
                 res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply);
             } else if (l_cmd->arg_func) {
@@ -515,6 +519,8 @@ char *dap_cli_cmd_exec(char *a_req_str) {
             } else {
                 res = l_cmd->func(l_argc, l_argv, (void *)&str_reply);
             }
+            if (s_stat_callback)
+                s_stat_callback(l_cmd->id, false);
         } else if (l_cmd) {
             log_it(L_WARNING,"NULL arguments for input for command \"%s\"", str_cmd);
             dap_json_rpc_error_add(l_json_arr_reply, -1, "NULL arguments for input for command \"%s\"", str_cmd);
@@ -557,4 +563,16 @@ char *dap_cli_cmd_exec(char *a_req_str) {
 DAP_INLINE int64_t dap_cli_get_cmd_thread_count()
 {
     return atomic_load(&s_cmd_thread_count);
+}
+
+/**
+ * @brief dap_cli_server_cmd_add
+ * @param a_callback callback to statistic collect
+ */
+void dap_cli_server_statistic_callback_add(dap_cli_server_cmd_stat_callback_t a_callback)
+{
+    if (a_callback && s_stat_callback)
+        log_it(L_ERROR, "Dap cli server statistic callback already added");
+    else
+    s_stat_callback = a_callback;
 }

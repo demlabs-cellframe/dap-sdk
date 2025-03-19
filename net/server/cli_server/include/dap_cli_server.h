@@ -32,6 +32,7 @@
 
 typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, void **a_str_reply);
 typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, void **a_str_reply);
+typedef void (*dap_cli_server_cmd_stat_callback_t)(int16_t a_cmd_num, bool a_flag);  // use to statistic collect
 
 typedef void (*dap_cli_server_override_log_cmd_callback_t)(const char*);
 
@@ -50,6 +51,7 @@ typedef struct dap_cli_cmd{
     char *doc; /* Documentation for this function.  */
     char *doc_ex; /* Full documentation for this function.  */
     dap_cli_server_cmd_override_t overrides; /* Used to change default behaviour */
+    int16_t id;
     UT_hash_handle hh;
 } dap_cli_cmd_t;
 
@@ -64,7 +66,7 @@ typedef struct dap_cli_cmd_aliases{
 int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section);
 void dap_cli_server_deinit();
 
-dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex);
+dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, int16_t a_id, const char *a_doc_ex);
 DAP_PRINTF_ATTR(2, 3) void dap_cli_server_cmd_set_reply_text(void **a_str_reply, const char *str, ...);
 int dap_cli_server_cmd_find_option_val( char** argv, int arg_start, int arg_end, const char *opt_name, const char **opt_value);
 int dap_cli_server_cmd_check_option( char** argv, int arg_start, int arg_end, const char *opt_name);
@@ -80,3 +82,4 @@ int64_t dap_cli_get_cmd_thread_count();
 //for json
 int json_commands(const char * a_name);
 char *dap_cli_cmd_exec(char *a_req_str);
+void dap_cli_server_statistic_callback_add(dap_cli_server_cmd_stat_callback_t a_callback);
