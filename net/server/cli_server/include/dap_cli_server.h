@@ -32,7 +32,7 @@
 
 typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, void **a_str_reply);
 typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, void **a_str_reply);
-typedef void (*dap_cli_server_cmd_stat_callback_t)(int16_t a_cmd_num, bool a_flag);  // use to statistic collect
+typedef void (*dap_cli_server_cmd_stat_callback_t)(int16_t a_cmd_num, int64_t a_call_time);  // use to statistic collect
 
 typedef void (*dap_cli_server_override_log_cmd_callback_t)(const char*);
 
