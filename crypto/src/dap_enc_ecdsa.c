@@ -221,7 +221,8 @@ void dap_enc_sig_ecdsa_signature_delete(void *a_sig){
 }
 
 void dap_enc_sig_ecdsa_private_key_delete(void *a_private_key) {
-    dap_return_if_pass(!a_private_key);
+    if (!a_private_key)
+        return;
     memset_safe( ((ecdsa_private_key_t*)a_private_key)->data, 0, ECDSA_PRIVATE_KEY_SIZE);
     DAP_DELETE(a_private_key);
 }
