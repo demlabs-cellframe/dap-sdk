@@ -1072,7 +1072,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
         // Check again if anyone change protected HT before us
         l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group);
         if (!l_db_ctx) {
-            l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE, a_txn);
+            l_db_ctx = s_cre_db_ctx_for_group(a_store_obj->group, MDBX_CREATE, NULL);
             if (!l_db_ctx) {
                 pthread_rwlock_unlock(&s_db_ctxs_rwlock);
                 return log_it(L_WARNING, "Cannot create DB context for the group '%s'", a_store_obj->group), -EIO;
