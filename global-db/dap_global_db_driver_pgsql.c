@@ -930,6 +930,7 @@ int dap_global_db_driver_pgsql_init(const char *a_db_conn_info, dap_global_db_dr
     a_drv_callback->read_store_obj          = s_db_pgsql_read_store_obj;
     a_drv_callback->read_cond_store_obj     = s_db_pgsql_read_cond_store_obj;
     a_drv_callback->read_last_store_obj     = s_db_pgsql_read_last_store_obj;
+    a_drv_callback->read_store_obj_by_timestamp = s_db_pgsql_read_store_obj_below_timestamp;
     // a_drv_callback->transaction_start       = s_db_pgsql_transaction_start;
     // a_drv_callback->transaction_end         = s_db_pgsql_transaction_end;
     a_drv_callback->get_groups_by_mask      = s_db_pgsql_get_groups_by_mask;
