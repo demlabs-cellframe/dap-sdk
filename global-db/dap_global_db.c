@@ -1890,8 +1890,11 @@ DAP_STATIC_INLINE char *dap_get_group_from_pinned_groups_mask(const char *a_grou
     return result;
 }
 
-static void s_set_pinned_timer(const char * a_group) {
+static void s_set_pinned_timer(const char *a_group)
+{
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(s_dbi, a_group);
+    if (!l_cluster)
+        return;
     if ((l_cluster->ttl != 0 && s_minimal_ttl > dap_nanotime_from_sec(l_cluster->ttl)) || !s_check_pinned_db_objs_timer) {
         s_check_pinned_db_objs_deinit();
         if (l_cluster->ttl != 0)
