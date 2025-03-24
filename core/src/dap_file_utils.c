@@ -46,6 +46,7 @@
 #ifdef DAP_OS_WINDOWS
 #include <windows.h>
 #include <io.h>
+#define realpath(abs_path, rel_path) _fullpath((rel_path), (abs_path), PATH_MAX)
 #endif
 
 #include "dap_common.h"
@@ -166,14 +167,12 @@ bool dap_dir_test(const char * a_dir_path)
 int dap_mkdir_with_parents(const char *a_dir_path)
 {
     // validation of a pointer
-    if(a_dir_path == NULL || a_dir_path[0] == '\0') {
+    if (!a_dir_path || !*a_dir_path) {
         errno = EINVAL;
         return -1;
     }
-    char path[strlen(a_dir_path) + 1];
-    memset(path, '\0', strlen(a_dir_path) + 1);
-    memcpy(path, a_dir_path, strlen(a_dir_path));
-    char *p;
+    char path[strlen(a_dir_path) + 1], *p;
+    dap_strncpy(path, a_dir_path, sizeof(path) - 1);
     // skip the root component if it is present, i.e. the "/" in Unix or "C:\" in Windows
 #ifdef DAP_OS_WINDOWS
     if(((path[0] >= 'a' && path[0] <= 'z') || (path[0] >= 'A' && path[0] <= 'Z'))
@@ -299,19 +298,12 @@ char* dap_path_get_basename(const char *a_file_name)
  */
 bool dap_path_is_absolute(const char *a_file_name)
 {
-    dap_return_val_if_fail(a_file_name != NULL, false);
-
-    if(DAP_IS_DIR_SEPARATOR(a_file_name[0]))
-        return true;
-
 #ifdef DAP_OS_WINDOWS
-    // Recognize drive letter on native Windows
-    if (dap_ascii_isalpha(a_file_name[0]) &&
-            a_file_name[1] == ':' && DAP_IS_DIR_SEPARATOR (a_file_name[2]))
-    return true;
+    return dap_strlen(a_file_name) > 2 
+        && dap_ascii_isalpha(a_file_name[0]) && a_file_name[1] == ':' && DAP_IS_DIR_SEPARATOR (a_file_name[2]);
+#else
+    return a_file_name && ( DAP_IS_DIR_SEPARATOR(*a_file_name) || !dap_strncmp(a_file_name, "~/", 2) );
 #endif
-
-    return false;
 }
 
 /**
@@ -395,7 +387,6 @@ const char *dap_path_skip_root (const char *file_name)
  */
 char* dap_path_get_dirname(const char *a_file_name)
 {
-    log_it(L_DEBUG,"dap_path_get_dirname(a_file_name=\"%s\")", a_file_name);
     char *l_base;
     size_t l_len;
 
@@ -464,7 +455,7 @@ char* dap_path_get_dirname(const char *a_file_name)
         {
             l_len = (uint32_t) strlen (a_file_name) + 1;
             l_base = DAP_NEW_SIZE (char, l_len + 1);
-            strcpy (l_base, a_file_name);
+            strncpy (l_base, a_file_name, l_len - 1);
             l_base[l_len-1] = DAP_DIR_SEPARATOR;
             l_base[l_len] = 0;
             return l_base;
@@ -484,7 +475,6 @@ char* dap_path_get_dirname(const char *a_file_name)
     l_base = DAP_NEW_SIZE(char, l_len + 1);
     memcpy(l_base, a_file_name, l_len);
     l_base[l_len] = 0;
-    log_it(L_DEBUG,"l_base=%s",l_base);
     return l_base;
 }
 
@@ -571,6 +561,7 @@ const char* dap_path_get_ext(const char *a_filename)
     return NULL ;
 }
 
+#if 0
 static bool get_contents_stdio(const char *filename, FILE *f, char **contents, size_t *length)
 {
     char buf[4096];
@@ -767,7 +758,46 @@ bool dap_file_get_contents(const char *filename, char **contents, size_t *length
     return dap_get_contents_posix(filename, contents, length);
 #endif
 }
+#endif
 
+char *dap_file_get_contents2(const char *a_filename, size_t *length)
+{
+    dap_return_val_if_fail(length, NULL);
+    if ( !dap_file_test(a_filename) )
+        return log_it(L_ERROR, "File \"%s\" not found", a_filename), NULL;
+    int l_err = 0;
+    FILE *f = fopen(a_filename, "rb");
+    if (!f) {
+#ifdef DAP_OS_WINDOWS
+        l_err = GetLastError();
+#else
+        l_err = errno;
+#endif
+        return log_it(L_ERROR, "Can't open file \"%s\", error %d: %s", a_filename, l_err, dap_strerror(l_err)), NULL;
+    }
+    off_t l_size = !fseeko(f, 0, SEEK_END) ? ftello(f) : -1;
+    char *l_buffer = NULL;
+    if (l_size <= 0) {
+        log_it(L_ERROR, "Can't get file %s size or file is empty", a_filename);
+        l_err = -3;
+    } else if (!( l_buffer = DAP_NEW_Z_SIZE(char, l_size + 1)) ) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        l_err = -4;
+    } else {
+        rewind(f);
+        if ( fread(l_buffer, 1, l_size, f) < (size_t)l_size ) {
+            log_it(L_ERROR, "Can't read full file %s", a_filename);
+            l_err = -5;
+        }
+    }
+    fclose(f);
+    if (l_err) {
+        DAP_DEL_Z(l_buffer);
+        *length = 0;
+    } else
+        *length = l_size;
+    return l_err ? ( DAP_DELETE(l_buffer), NULL ) : l_buffer;
+}
 
 
 
@@ -1124,8 +1154,118 @@ char* dap_build_filename(const char *first_element, ...)
  * Returns: (type filename) (transfer full): a newly allocated string with the
  * canonical file path
  */
+char* dap_canonicalize_path(const char *a_filename, const char *a_path) {
+    if (!a_path)
+        a_path = "";
+    if (!a_filename)
+        a_filename = "";
+    char *path = dap_strdup_printf("%s/%s", a_path, a_filename);
+    size_t i = 0, j = 0, k = 0;
+
+    //Replace backslashes with forward slashes
+    while (path[i] != '\0') {
+        //Forward slash or backslash separator found?
+        if (path[i] == '/' || path[i] == '\\') {
+            path[k++] = '/';
+            while (path[i] == '/' || path[i] == '\\')
+                i++;
+        } else
+            path[k++] = path[i++];
+    }
+    path[k] = '\0';
+
+    i = j = k = 0;
+
+    do {
+        //Forward slash separator found
+        if ( path[i] == '/' || path[i] == '\0' ) {
+            //"." element found?
+            if ( (i - j) == 1 && path[j] == '.' ) {
+                //Check whether the pathname is empty
+                if (!k) {
+                    if (path[i] == '\0')
+                        path[k++] = '.';
+                    else if (path[i] == '/' && path[i + 1] == '\0') {
+                        strcpy(path + k, "./");
+                        k += 2;
+                    }
+                } else if (k > 1) {
+                    //Remove the final slash if necessary
+                    if ( path[i] == '\0' )
+                        k--;
+                }
+            }
+            //".." element found?
+            else if ( (i - j) == 2 && !strncmp(path + j, "..", 2) ) {
+                //Check whether the pathname is empty
+                if (!k) {
+                    strcpy(path + k, "..");
+                    k += 2;
+                    //Append a slash if necessary
+                    if (path[i] == '/')
+                        path[k++] = '/';
+                } else if (k > 1) {
+                    //Search the path for the previous slash
+                    for (j = 1; j < k; ++j) {
+                        if ( path[k - j - 1] == '/' )
+                            break;
+                    }
+                    //Slash separator found?
+                    if (j < k) {
+                        if (!strncmp(path + k - j, "..", 2)) {
+                            strcpy(path + k, "..");
+                            k += 2;
+                        } else
+                            k -= (j + 1);
+
+                        //Append a slash if necessary
+                        if ((k == 0 && path[0] == '/') || path[i] == '/')
+                            path[k++] = '/';
+                    } else { //No slash separator found?
+                        if (k == 3 && !strncmp (path, "..", 2)) {
+                            strcpy(path + k, "..");
+                            k += 2;
+                            //Append a slash if necessary
+                            if (path[i] == '/')
+                                path[k++] = '/';
+                        } else if (path[i] == '\0') {
+                            *path = '.';
+                            k = 1;
+                        } else if (path[i] == '/' && path[i + 1] == '\0') {
+                            strcpy(path + k, "./");
+                            k = 2;
+                        } else
+                            k = 0;
+                    }
+                }
+            } else {
+                //Copy directory name
+                memmove (path + k, path + j, i - j);
+                //Advance write pointer
+                k += i - j;
+
+                //Append a slash if necessary
+                if (path[i] == '/')
+                    path[k++] = '/';
+            }
+
+            //Move to the next token
+            while (path[i] == '/')
+                i++;
+            j = i;
+        } else if (!k)
+            for ( ; path[i] == '.' || path[i] == '/'; ++i, ++j);
+    } while (path[i++] != '\0');
+    path[k] = '\0';
+    return path;
+}
+
 char* dap_canonicalize_filename(const char *filename, const char *relative_to)
 {
+    char buf[MAX_PATH + 1];
+    snprintf(buf, sizeof(buf), "%s/%s", relative_to, filename);
+    return realpath(buf, NULL);
+#if 0
     char *canon, *input, *output, *after_root, *output_start;
 
     dap_return_val_if_fail(relative_to == NULL || dap_path_is_absolute (relative_to), NULL);
@@ -1238,6 +1378,7 @@ char* dap_canonicalize_filename(const char *filename, const char *relative_to)
     *output = '\0';
 
     return canon;
+#endif
 }
 
 
@@ -1598,9 +1739,9 @@ static bool s_tar_file_add(int a_outfile, const char *a_fname, const char *a_fpa
     union tar_buffer l_buffer;
     if(!a_outfile)
         return false;
-    char *l_filebuf = NULL;
     size_t l_filelen = 0;
-    if(dap_file_get_contents(a_fpath, &l_filebuf, &l_filelen)) {
+    char *l_filebuf = dap_file_get_contents2(a_fpath, &l_filelen);
+    if(l_filebuf) {
         struct stat l_stat_info;
         int remaining = l_filelen; // how much is left to write
         // fill header

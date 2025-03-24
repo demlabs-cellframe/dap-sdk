@@ -58,49 +58,102 @@ static bool s_debug_cli = false;
 static dap_cli_cmd_t *cli_commands = NULL;
 static dap_cli_cmd_aliases_t *s_command_alias = NULL;
 
-static inline void s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex);
+static inline dap_cli_cmd_t *s_cmd_add_ex(const char *a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex);
 
 typedef struct cli_cmd_arg {
     dap_worker_t *worker;
     dap_events_socket_uuid_t es_uid;
     size_t buf_size;
-    char buf[];
+    char *buf, status;
 } cli_cmd_arg_t;
 
-static bool s_cli_cmd_exec(void *a_arg);
+static void* s_cli_cmd_exec(void *a_arg);
 
-DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, UNUSED_ARG void *a_arg) {
-    static const char l_content_len_str[] = "Content-Length: ";
-    char *l_len_token = strstr((char*)a_es->buf_in, l_content_len_str);
-#define m_dump_error_and_ret ({ \
-    const char l_error_str[] = "{ \"type\": 0, \"result\":\" Invalid request\", \"errors\": null, \"id\": 1 }", \
-        l_err_format_str[] = "HTTP/1.1 400 Bad Request\r\nContent-Length: %zu\r\n\r\n%s"; \
-    dap_events_socket_write_f_unsafe(a_es, l_err_format_str, sizeof(l_error_str) - 1, l_error_str); \
-    char *buf_dump = dap_dump_hex(a_es->buf_in, dap_max(a_es->buf_in_size, (size_t)65536)); \
-    log_it(L_DEBUG, "Incomplete cmd request: %s", buf_dump); \
-    DAP_DELETE(buf_dump); \
-})
-    if (!l_len_token || !strpbrk(l_len_token, "\r\n"))
-        return m_dump_error_and_ret;
-    long l_cmd_len = strtol(l_len_token + sizeof(l_content_len_str) - 1, NULL, 10);
-    
-    if (!l_cmd_len || l_cmd_len > 65536)
-        return m_dump_error_and_ret;
+static bool s_allowed_cmd_check(char *a_buf) {
+    enum json_tokener_error jterr;
+    const char *l_method;
+    json_object *jobj = json_tokener_parse_verbose(a_buf, &jterr),
+                *jobj_method = NULL;
+    if ( jterr != json_tokener_success ) 
+        return log_it(L_ERROR, "Can't parse json command, error %s", json_tokener_error_desc(jterr)), false;
+    if ( json_object_object_get_ex(jobj, "method", &jobj_method) )
+        l_method = json_object_get_string(jobj_method);
+    else {
+        log_it(L_ERROR, "Invalid command request, dump it");
+        json_object_put(jobj);
+        return false;
+    }
 
-    static const char l_head_end_str[] = "\r\n\r\n";
-    char *l_hdr_end_token = strstr(l_len_token, l_head_end_str);
-    if (!l_hdr_end_token)
-        return m_dump_error_and_ret;
-    else
-        l_hdr_end_token += ( sizeof(l_head_end_str) - 1 );
-    if (a_es->buf_in_size > l_cmd_len + (size_t)(l_hdr_end_token - (char*)a_es->buf_in))
-        return m_dump_error_and_ret;
-    cli_cmd_arg_t *l_arg = DAP_NEW_Z_SIZE(cli_cmd_arg_t, sizeof(cli_cmd_arg_t) + l_cmd_len + 1);
-    *l_arg = (cli_cmd_arg_t){ .worker = a_es->worker, .es_uid = a_es->uuid, .buf_size = l_cmd_len };
-    memcpy(l_arg->buf, l_hdr_end_token, l_cmd_len);
-    dap_proc_thread_callback_add_pri(NULL, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
-    a_es->buf_in_size = 0;
-#undef m_dump_error_and_ret
+    bool l_allowed = !!dap_str_find( dap_config_get_array_str(g_config, "cli-server", "allowed_cmd", NULL), l_method );
+    return debug_if(!l_allowed, L_ERROR, "Command %s is restricted", l_method), json_object_put(jobj), l_allowed;
+}
+
+DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg) {
+    cli_cmd_arg_t *l_arg = a_arg ? (cli_cmd_arg_t*)a_arg : DAP_NEW_Z(cli_cmd_arg_t);
+    switch (l_arg->status) {
+    case 0: {
+        a_es->callbacks.arg = l_arg;
+        ++l_arg->status;
+    }
+    case 1: {
+        static const char l_content_len_str[] = "Content-Length: ";
+        l_arg->buf = strstr((char*)a_es->buf_in, l_content_len_str);
+        if ( !l_arg->buf || !strpbrk(l_arg->buf, "\r\n") )
+            return;
+        if (( l_arg->buf_size = (size_t)strtol(l_arg->buf + sizeof(l_content_len_str) - 1, NULL, 10) ))
+            ++l_arg->status;
+        else
+            break;
+    }
+    case 2: { // Find header end and throw out header
+        static const char l_head_end_str[] = "\r\n\r\n";
+        char *l_hdr_end_token = strstr(l_arg->buf, l_head_end_str);
+        if (!l_hdr_end_token)
+            return;
+        l_arg->buf = l_hdr_end_token + sizeof(l_head_end_str) - 1;
+        ++l_arg->status;
+    }
+    case 3:
+    default: {
+        size_t l_hdr_len = (size_t)(l_arg->buf - (char*)a_es->buf_in);
+        if ( a_es->buf_in_size < l_arg->buf_size + l_hdr_len )
+            return;
+
+        if ( ((struct sockaddr_in*)&a_es->addr_storage)->sin_addr.s_addr != htonl(INADDR_LOOPBACK)
+#ifdef DAP_OS_UNIX
+            && a_es->addr_storage.ss_family != AF_UNIX
+#endif
+            && !s_allowed_cmd_check(l_arg->buf) ) {
+                dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 403 Forbidden\r\n");
+                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                return;
+            }
+                
+        l_arg->buf = strndup(l_arg->buf, l_arg->buf_size);
+        l_arg->worker = a_es->worker;
+        l_arg->es_uid = a_es->uuid;
+
+        pthread_t l_tid;
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+        pthread_create(&l_tid, &attr, s_cli_cmd_exec, l_arg);
+
+        //dap_proc_thread_callback_add_pri(NULL, s_cli_cmd_exec, l_arg, DAP_QUEUE_MSG_PRIORITY_HIGH);
+        a_es->buf_in_size = 0;
+        a_es->callbacks.arg = NULL;
+    } return;
+    }
+
+    dap_events_socket_write_f_unsafe(a_es, "HTTP/1.1 500 Internal Server Error\r\n");
+    char *buf_dump = dap_dump_hex(a_es->buf_in, dap_min(a_es->buf_in_size, (size_t)65536));
+    log_it(L_DEBUG, "Incomplete cmd request:\r\n%s", buf_dump);
+    DAP_DELETE(buf_dump);
+    a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+}
+
+DAP_STATIC_INLINE void s_cli_cmd_delete(dap_events_socket_t *a_es, void UNUSED_ARG *a_arg) {
+    DAP_DELETE(a_es->callbacks.arg);
 }
 
 /**
@@ -114,7 +167,7 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, UNUSED_ARG 
 int dap_cli_server_init(bool a_debug_more, const char *a_cfg_section)
 {
     s_debug_cli = a_debug_more;
-    dap_events_socket_callbacks_t l_callbacks = { .read_callback = s_cli_cmd_schedule };
+    dap_events_socket_callbacks_t l_callbacks = { .read_callback = s_cli_cmd_schedule, .delete_callback = s_cli_cmd_delete };
     if (!( s_cli_server = dap_server_new(a_cfg_section, NULL, &l_callbacks) )) {
         log_it(L_ERROR, "CLI server not initialized");
         return -2;
@@ -138,9 +191,9 @@ void dap_cli_server_deinit()
  * @param a_doc
  * @param a_doc_ex
  */
-void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex)
+dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, const char *a_doc_ex)
 {
-    s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex);
+    return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex);
 }
 
 /**
@@ -151,12 +204,12 @@ void dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a
  * @param a_doc
  * @param a_doc_ex
  */
-static inline void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex)
+static inline dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex)
 {
     dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
     if (!l_cmd_item) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return;
+        return NULL;
     }
     snprintf(l_cmd_item->name,sizeof (l_cmd_item->name),"%s",a_name);
     l_cmd_item->doc = strdup( a_doc);
@@ -169,6 +222,7 @@ static inline void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback
     }
     HASH_ADD_STR(cli_commands,name,l_cmd_item);
     log_it(L_DEBUG,"Added command %s",l_cmd_item->name);
+    return l_cmd_item;
 }
 
 int json_commands(const char * a_name) {
@@ -190,10 +244,27 @@ int json_commands(const char * a_name) {
             "token",
             "esbocs",
             "global_db",
+            "net_srv",
             "net",
             "srv_stake",
-            "voting",
-            "exec_cmd"
+            "poll",
+            "srv_xchange",
+            "emit_delegate",
+            "token_decl",
+            "token_update",
+            "token_update_sign",
+            "token_decl_sign",
+            "chain_ca_pub",
+            "token_emit",
+            "find",
+            "version",
+            "remove",
+            "gdb_import",
+            "stats",
+            "print_log",
+            "stake_lock",
+            "exec_cmd",
+            "policy"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
@@ -330,41 +401,44 @@ dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name)
     return l_cmd_item;
 }
 
-void dap_cli_server_alias_add(const char *a_alias, const char *a_pre_cmd, dap_cli_cmd_t *a_cmd) {
-    if (!a_alias || !a_pre_cmd || !a_cmd)
-        return;
-    dap_cli_cmd_aliases_t *l_alias = DAP_NEW(dap_cli_cmd_aliases_t);
+dap_cli_cmd_aliases_t *dap_cli_server_alias_add(dap_cli_cmd_t *a_cmd, const char *a_pre_cmd, const char *a_alias)
+{
+    if (!a_alias || !a_cmd)
+        return NULL;
+    dap_cli_cmd_aliases_t *l_alias = DAP_NEW_Z(dap_cli_cmd_aliases_t);
     size_t l_alias_size = dap_strlen(a_alias);
     memcpy(l_alias->alias, a_alias, l_alias_size);
-    l_alias->alias[l_alias_size] = '\0';
-    size_t l_addition_size = dap_strlen(a_pre_cmd);
-    memcpy(l_alias->addition, a_pre_cmd, l_addition_size);
-    l_alias->addition[l_addition_size] = '\0';
+    if (a_pre_cmd) {
+        size_t l_addition_size = dap_strlen(a_pre_cmd);
+        memcpy(l_alias->addition, a_pre_cmd, l_addition_size);
+    }
     l_alias->standard_command = a_cmd;
     HASH_ADD_STR(s_command_alias, alias, l_alias);
+    return l_alias;
 }
 
-dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_append, char **a_ncmd) {
+dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_append, char **a_ncmd)
+{
     dap_cli_cmd_aliases_t *l_alias = NULL;
     HASH_FIND_STR(s_command_alias, a_alias, l_alias);
     if (!l_alias)
         return NULL;
-    *a_append = dap_strdup(l_alias->addition);
+    *a_append = l_alias->addition[0] ? dap_strdup(l_alias->addition) : NULL;
     *a_ncmd = dap_strdup(l_alias->standard_command->name);
     return l_alias->standard_command;
 }
 
-static bool s_cli_cmd_exec(void *a_arg) {
+static void *s_cli_cmd_exec(void *a_arg) {
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
     char    *l_ret = dap_cli_cmd_exec(l_arg->buf),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
                                             "Content-Length: %zu\r\n\r\n"
                                             "%s", dap_strlen(l_ret), l_ret);
+    DAP_DELETE(l_ret);
     dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination
-    //dap_events_socket_remove_and_delete_mt(l_arg->worker, l_arg->es_uid); // No need...
-    DAP_DEL_MULTY(l_ret, /*l_full_ret,*/ a_arg);
-    return false;
+    DAP_DEL_MULTY(l_arg->buf, /* l_full_ret, */ l_arg);
+    return NULL;
 }
 
 char *dap_cli_cmd_exec(char *a_req_str) {
@@ -385,6 +459,8 @@ char *dap_cli_cmd_exec(char *a_req_str) {
     dap_json_rpc_params_t * params = request->params;
 
     char *str_cmd = dap_json_rpc_params_get(params, 0);
+    if (!str_cmd)
+        str_cmd = cmd_name;
     int res = -1;
     char *str_reply = NULL;
     json_object* l_json_arr_reply = json_object_new_array();
@@ -406,32 +482,35 @@ char *dap_cli_cmd_exec(char *a_req_str) {
             DAP_DELETE(l_str_cmd);
         }
 
-        char ** l_argv = dap_strsplit(str_cmd, ";", -1);
-        int argc = 0;
+        char **l_argv = dap_strsplit(str_cmd, ";", -1);
+        int l_argc = 0;
         // Count argc
-        while (l_argv[argc] != NULL) argc++;
+        while (l_argv[l_argc] != NULL)
+            l_argc++;
         // Support alias
         if (l_finded_by_alias) {
-            int l_argc = argc + 1;
-            char **al_argv = DAP_NEW_Z_COUNT(char*, l_argc + 1);
-            al_argv[0] = l_ncmd;
-            al_argv[1] = l_append_cmd;
-            for (int i = 1; i < argc; i++)
-                al_argv[i + 1] = l_argv[i];
             cmd_name = l_ncmd;
             DAP_FREE(l_argv[0]);
-            DAP_DEL_Z(l_argv);
-            l_argv = al_argv;
-            argc = l_argc;
+            l_argv[0] = l_ncmd;
+            if (l_append_cmd) {
+                l_argc++;
+                char **al_argv = DAP_NEW_Z_COUNT(char*, l_argc + 1);
+                al_argv[1] = l_ncmd;
+                al_argv[1] = l_append_cmd;
+                for (int i = 1; i < l_argc; i++)
+                    al_argv[i + 1] = l_argv[i];
+                DAP_DEL_Z(l_argv);
+                l_argv = al_argv;
+            }
         }
         // Call the command function
         if(l_cmd &&  l_argv && l_cmd->func) {
             if (json_commands(cmd_name)) {
-                res = l_cmd->func(argc, l_argv, (void *)&l_json_arr_reply);
+                res = l_cmd->func(l_argc, l_argv, (void *)&l_json_arr_reply);
             } else if (l_cmd->arg_func) {
-                res = l_cmd->func_ex(argc, l_argv, l_cmd->arg_func, (void *)&str_reply);
+                res = l_cmd->func_ex(l_argc, l_argv, l_cmd->arg_func, (void *)&str_reply);
             } else {
-                res = l_cmd->func(argc, l_argv, (void *)&str_reply);
+                res = l_cmd->func(l_argc, l_argv, (void *)&str_reply);
             }
         } else if (l_cmd) {
             log_it(L_WARNING,"NULL arguments for input for command \"%s\"", str_cmd);
@@ -441,7 +520,7 @@ char *dap_cli_cmd_exec(char *a_req_str) {
             dap_json_rpc_error_add(l_json_arr_reply, -1, "No function for command \"%s\" but it registred?!", str_cmd);
         }
         // find '-verbose' command
-        l_verbose = dap_cli_server_cmd_find_option_val(l_argv, 1, argc, "-verbose", NULL);
+        l_verbose = dap_cli_server_cmd_find_option_val(l_argv, 1, l_argc, "-verbose", NULL);
         dap_strfreev(l_argv);
     } else {
         dap_json_rpc_error_add(l_json_arr_reply, -1, "can't recognize command=%s", str_cmd);

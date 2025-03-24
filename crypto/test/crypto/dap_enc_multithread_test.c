@@ -6,6 +6,8 @@
 #include "dap_enc_sphincsplus.h"
 
 #define LOG_TAG "dap_crypto_multithread_tests"
+void dap_enc_sig_sphincsplus_set_default_config(sphincsplus_config_t  a_new_config);
+int dap_enc_sig_sphincsplus_get_configs_count();
 
 static dap_enc_key_t *s_enc_key_new_generate(dap_enc_key_type_t a_key_type, const void *a_kex_buf, size_t a_kex_size, const void *a_seed, size_t a_seed_size, size_t a_key_size) {
     switch (a_key_type)
@@ -23,28 +25,25 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
     int l_ret = 0;
     size_t seed_size = sizeof(uint8_t);
     uint8_t seed[seed_size];
-    dap_sign_t **l_signs = NULL;
-    uint8_t **l_source = NULL;
+    dap_sign_t *l_signs[a_times];
+    uint8_t *l_source[a_times];
     size_t l_source_size[a_times];
-
-    DAP_NEW_Z_COUNT_RET_VAL(l_signs, dap_sign_t*, a_times, 1, NULL);
-    DAP_NEW_Z_COUNT_RET_VAL(l_source, uint8_t*, a_times, 1, l_signs);
 
     for (int i = 0; i < a_times; ++i) {
         randombytes(seed, seed_size);
 
          // ----------
         l_source_size[i] = 1 + random_uint32_t(20);
-        DAP_NEW_Z_SIZE_RET_VAL(l_source[i], uint8_t, l_source_size[i], 1, NULL);
+        l_source[i] = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, l_source_size[i], 1, NULL);
         randombytes(l_source[i], l_source_size[i]);
         
         dap_enc_key_t *key = s_enc_key_new_generate(a_key_type, NULL, 0, seed, seed_size, 0);
         if (key->type == DAP_ENC_KEY_TYPE_SIG_ECDSA)
-            l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i], 0);
+            l_signs[i] = dap_sign_create(key, l_source[i], l_source_size[i]);
         else {
             dap_chain_hash_fast_t l_hash;
             dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
-            l_signs[i] = dap_sign_create(key, &l_hash, sizeof(l_hash), 0);
+            l_signs[i] = dap_sign_create(key, &l_hash, sizeof(l_hash));
         }
         
         dap_assert_PIF(l_signs[i], "Signing message and serialize");
@@ -64,11 +63,8 @@ static int s_test_thread(dap_enc_key_type_t a_key_type, int a_times)
         dap_assert_PIF(!l_verified, "Deserialize and verifying signature");
         l_ret |= l_verified;
     }
-
-    for(int i = 0; i < a_times; ++i) {
-        DAP_DEL_MULTY(l_signs[i], l_source[i]);
-    }
-    DAP_DEL_MULTY(l_signs, l_source);
+    DAP_DEL_ARRAY(l_signs, a_times);
+    DAP_DEL_ARRAY(l_source, a_times);
     return l_ret;
 }
 

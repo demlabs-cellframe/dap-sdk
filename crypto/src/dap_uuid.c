@@ -96,12 +96,11 @@ void dap_uuid_generate_nonce(void *a_nonce, size_t a_nonce_size)
     SHAKE128((unsigned char *)a_nonce, a_nonce_size, (unsigned char *)l_input, sizeof(l_input));
 }
 
-_Thread_local static char s_buf[sizeof(uint128_t) * 2 + 3];
-
-const char *dap_guuid_to_hex_str(dap_guuid_t a_guuid)
+dap_guuid_str_t dap_guuid_to_hex_str_(dap_guuid_t a_guuid)
 {
-    sprintf(s_buf, "0x%016" DAP_UINT64_FORMAT_X "%016" DAP_UINT64_FORMAT_X, a_guuid.net_id, a_guuid.srv_id);
-    return (const char *)s_buf;
+    dap_guuid_str_t l_ret;
+    return snprintf((char*)&l_ret, sizeof(l_ret), "0x%016" DAP_UINT64_FORMAT_X "%016" DAP_UINT64_FORMAT_X,
+        a_guuid.net_id, a_guuid.srv_id), l_ret;
 }
 
 
@@ -117,9 +116,10 @@ dap_guuid_t dap_guuid_from_hex_str(const char *a_hex_str, bool *succsess)
         if (succsess) *succsess = false;
         return ret;
     }
-    sprintf(s_buf, "0x%s", a_hex_str + 16 + 2);
+    dap_guuid_str_t l_str;
+    snprintf((char*)&l_str, sizeof(l_str), "0x%s", a_hex_str + 16 + 2);
     uint64_t l_net_id, l_srv_id;
-    if (dap_id_uint64_parse(a_hex_str, &l_net_id) || dap_id_uint64_parse(s_buf, &l_srv_id))
+    if (dap_id_uint64_parse(a_hex_str, &l_net_id) || dap_id_uint64_parse(l_str.s, &l_srv_id))
     {
         if (succsess) *succsess = false;
         return ret;

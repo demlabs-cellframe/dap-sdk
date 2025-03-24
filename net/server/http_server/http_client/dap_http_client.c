@@ -534,7 +534,6 @@ void dap_http_client_read( dap_events_socket_t *a_esocket, void *a_arg )
  */
 void dap_http_client_write(dap_http_client_t *a_http_client)
 {
-    dap_http_header_t *hdr = a_http_client->out_headers;
     if ( a_http_client->proc ) {
         // We check out_headers because if they are - we send only cached headers and don't call headers_write_callback at all
         if (!a_http_client->out_headers) {
@@ -554,11 +553,11 @@ void dap_http_client_write(dap_http_client_t *a_http_client)
                     a_http_client->reply_status_code, a_http_client->reply_reason_phrase[0] ?
                     a_http_client->reply_reason_phrase : http_status_reason_phrase(a_http_client->reply_status_code) );
     /* Write HTTP headres */
-    char l_buf[128];
-    dap_time_to_str_rfc822( l_buf, sizeof(l_buf) - 1, time( NULL ) );
+    char l_buf[DAP_TIME_STR_SIZE];
+    dap_time_to_str_rfc822( l_buf, DAP_TIME_STR_SIZE, time( NULL ) );
     dap_http_header_add( &a_http_client->out_headers, "Date", l_buf );
 
-    for ( hdr = a_http_client->out_headers; hdr; hdr = a_http_client->out_headers ) {
+    for ( dap_http_header_t *hdr = a_http_client->out_headers; hdr; hdr = a_http_client->out_headers ) {
         a_http_client->esocket->buf_out_size += snprintf((char *) a_http_client->esocket->buf_out + a_http_client->esocket->buf_out_size,
                                                             a_http_client->esocket->buf_out_size_max - a_http_client->esocket->buf_out_size,
                                                             "%s: %s" CRLF, hdr->name, hdr->value);
@@ -573,7 +572,7 @@ bool dap_http_client_write_callback(dap_events_socket_t *a_esocket, void *a_arg)
     dap_http_client_t *l_http_client = DAP_HTTP_CLIENT(a_esocket);
     if (!l_http_client)
         return false;
-    if (l_http_client->reply_status_code != Http_Status_OK || l_http_client->state_read == DAP_HTTP_CLIENT_STATE_NONE) {
+    if (l_http_client->state_read == DAP_HTTP_CLIENT_STATE_NONE) {
         // No write data if error code set
         l_http_client->esocket->flags |= DAP_SOCK_SIGNAL_CLOSE;
         return false;

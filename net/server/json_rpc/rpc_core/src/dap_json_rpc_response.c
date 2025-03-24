@@ -18,11 +18,7 @@ dap_json_rpc_response_t* dap_json_rpc_response_create(void * result, dap_json_rp
         return NULL;
     }
 
-    dap_json_rpc_response_t *response = DAP_NEW(dap_json_rpc_response_t);
-    if (!response) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
-    }
+    dap_json_rpc_response_t *response = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_json_rpc_response_t, NULL);
     
     response->id = id;
     response->type = type;
@@ -216,7 +212,7 @@ void json_print_value(json_object *obj, const char *key, int indent_level, bool 
             printf(print_separator ? "%s, " : "%s", json_object_get_string(obj));
             break;
         case json_type_int:
-            printf("%d", json_object_get_int(obj));
+            printf("%lld", json_object_get_int64(obj));
             break;
         case json_type_double:
             printf("%lf", json_object_get_double(obj));

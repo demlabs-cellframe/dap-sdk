@@ -56,7 +56,7 @@ bool dap_check_node_pkey_in_map(dap_hash_fast_t *a_pkey){
 }
 
 dap_client_http_callback_error_t * dap_json_rpc_error_callback() {
-
+    return NULL;
 }
 
 int dap_json_rpc_init(dap_server_t* a_http_server, dap_config_t *a_config)
@@ -74,7 +74,6 @@ int dap_json_rpc_init(dap_server_t* a_http_server, dap_config_t *a_config)
     }
 
     dap_json_rpc_map_init(a_config);
-    dap_json_rpc_request_init("/exec_cmd");
     dap_http_simple_proc_add(l_http, "/exec_cmd", 24000, dap_json_rpc_http_proc);
     return 0;
 }
@@ -115,20 +114,21 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
                     strncpy(l_channels_str,l_subtok_value,sizeof (l_channels_str)-1);
                 }else if(strcmp(l_subtok_name,"enc_type")==0){
                     l_enc_type = atoi(l_subtok_value);
-                    l_is_legacy = false;
+                    // l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_key_size")==0){
                     l_enc_key_size = (size_t) atoi(l_subtok_value);
                     if (l_enc_key_size > l_dg->request_size )
                         l_enc_key_size = 32;
-                    l_is_legacy = false;
+                    // l_is_legacy = false;
                 }else if(strcmp(l_subtok_name,"enc_headers")==0){
                     l_enc_headers = atoi(l_subtok_value);
                 }
             }
             l_tok = strtok_r(NULL, ",", &l_tok_tmp);
         }
+        *return_code = Http_Status_OK;
         log_it(L_DEBUG,"Encryption type %s (enc headers %d)",dap_enc_get_type_name(l_enc_type), l_enc_headers);
-
+        UNUSED(l_is_legacy);
         dap_http_header_t *l_hdr_key_id = dap_http_header_find(a_http_simple->http_client->in_headers, "KeyID");
         dap_enc_ks_key_t *l_ks_key = NULL;
         if (l_hdr_key_id) {
@@ -142,14 +142,20 @@ void dap_json_rpc_http_proc(dap_http_simple_t *a_http_simple, void *a_arg)
         char * l_res_str = dap_json_rpc_request_handler(l_dg->request, l_dg->request_size);
         if (l_res_str) {
             enc_http_reply(l_dg, l_res_str, strlen(l_res_str));
+            DAP_DELETE(l_res_str);
         } else {
-            enc_http_reply(l_dg, "Wrong request", strlen("Wrong request"));
+            json_object* l_json_obj_res = json_object_new_array();
+            json_object_array_add(l_json_obj_res, json_object_new_string("Wrong request"));
+            size_t l_strlen = 0;
+            const char *l_json_str_res = json_object_to_json_string_length(l_json_obj_res, JSON_C_TO_STRING_SPACED, &l_strlen);
+            enc_http_reply(l_dg, (char*)l_json_str_res, l_strlen);
+            json_object_put(l_json_obj_res);
+            log_it(L_ERROR,"Wrong request");
+            *return_code = Http_Status_BadRequest;
         }
-        DAP_DEL_Z(l_res_str);
-        *return_code = Http_Status_OK;
         enc_http_reply_encode(a_http_simple,l_dg);
         enc_http_delegate_delete(l_dg);
-    }else{
+    } else {
         log_it(L_ERROR,"Wrong request");
         *return_code = Http_Status_BadRequest;
     }

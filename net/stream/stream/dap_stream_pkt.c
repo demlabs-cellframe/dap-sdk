@@ -88,33 +88,19 @@ size_t dap_stream_pkt_write_mt(dap_worker_t * a_w,dap_events_socket_uuid_t a_es_
     memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
     return dap_events_socket_write_mt(a_w, a_es_uuid, s_pkt_buf, l_full_size);
 #else
-    dap_worker_msg_io_t * l_msg = DAP_NEW_Z(dap_worker_msg_io_t);
-    if (!l_msg) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return 0;
-    }
-    dap_stream_pkt_hdr_t *l_pkt_hdr;
+    dap_worker_msg_io_t *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_worker_msg_io_t, 0);
     l_msg->esocket_uuid = a_es_uuid;
-    l_msg->data_size = 16-a_data_size%16+a_data_size+sizeof(*l_pkt_hdr);
-    l_msg->data = DAP_NEW_SIZE(void,l_msg->data_size);
-    if (!l_msg) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        DAP_DEL_Z(l_msg);
-        return 0;
-    }
-    l_pkt_hdr=(dap_stream_pkt_hdr_t*) l_msg->data;
-    memset(l_pkt_hdr,0,sizeof(*l_pkt_hdr));
-    memcpy(l_pkt_hdr->sig,c_dap_stream_sig,sizeof(l_pkt_hdr->sig));
-    l_msg->data_size=sizeof (*l_pkt_hdr) +dap_enc_code(a_key, a_data,a_data_size, ((byte_t*)l_msg->data)+sizeof (*l_pkt_hdr),l_msg->data_size-sizeof (*l_pkt_hdr),DAP_ENC_DATA_TYPE_RAW);
+    l_msg->data_size = dap_enc_code_out_size(a_key, a_data_size, DAP_ENC_DATA_TYPE_RAW);
+    l_msg->data = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(byte_t, l_msg->data_size, 0, l_msg);
+    dap_stream_pkt_hdr_t *l_pkt_hdr = (dap_stream_pkt_hdr_t*)l_msg->data;
+    memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
+    l_msg->data_size = sizeof(*l_pkt_hdr) + dap_enc_code(a_key, a_data, a_data_size,
+        ((byte_t*)l_msg->data) + sizeof(*l_pkt_hdr), l_msg->data_size, DAP_ENC_DATA_TYPE_RAW);
 
-    int l_ret= dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg );
-    if (l_ret!=0){
-        log_it(L_ERROR, "Wasn't send pointer to queue: code %d", l_ret);
-        DAP_DELETE(l_msg->data);
-        DAP_DELETE(l_msg);
-        return 0;
-    }
-    return a_data_size;
+    int l_ret = dap_events_socket_queue_ptr_send(a_w->queue_es_io, l_msg);
+    return l_ret
+        ? log_it(L_ERROR, "Can't send msg to queue %d, error %d", a_w->queue_es_io->fd, l_ret), DAP_DEL_MULTY(l_msg->data, l_msg), 0
+        : a_data_size;
 #endif
 }
 

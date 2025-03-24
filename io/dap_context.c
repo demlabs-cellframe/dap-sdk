@@ -552,7 +552,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     if (l_cur->callbacks.read_callback) {
                         l_cur->last_time_active = time(NULL);
                         debug_if(g_debug_reactor, L_DEBUG, "Received %lu bytes from socket %zu", l_bytes, l_cur->socket);
-                        l_cur->callbacks.read_callback(l_cur, NULL);
+                        l_cur->callbacks.read_callback(l_cur, l_cur->callbacks.arg);
                         if (!l_cur->context) {
                             debug_if(g_debug_reactor, L_DEBUG, "Es %p : %zu unattached from context %u", l_cur, l_cur->socket, a_context->id);
                             continue;
@@ -730,8 +730,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #ifdef DAP_OS_WINDOWS
             log_it(L_ERROR, "Context thread %d got errno %d", a_context->id, WSAGetLastError());
 #else
-            strerror_r(l_errno, l_error_buf, sizeof (l_error_buf) - 1);
-            log_it(L_ERROR, "Context thread %d got errno:\"%s\" (%d)", a_context->id, l_error_buf, l_errno);
+            log_it(L_ERROR, "Context thread %d got error: %d: \"%s\"", a_context->id, errno, dap_strerror(errno));
             assert(l_errno);
 #endif
             break;
@@ -1031,9 +1030,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                                 if( l_errno == EAGAIN || l_errno == EWOULDBLOCK){// Everything is good, we'll receive ACCEPT on next poll
                                     continue;
                                 }else{
-                                    char l_errbuf[128];
-                                    strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-                                    log_it(L_WARNING,"accept() on socket %d error:\"%s\"(%d)",l_cur->socket, l_errbuf,l_errno);
+                                    log_it(L_WARNING,"accept() on socket %d error %d: \"%s\"",l_cur->socket, l_errno, dap_strerror(l_errno));
                                     break;
                                 }
                             }
@@ -1165,14 +1162,12 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
                 } else {
                     l_error_len = sizeof(l_errno);
-
                     getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_errno, &l_error_len);
                     if(l_errno == EINPROGRESS) {
                         log_it(L_DEBUG, "Connecting with %s in progress...", l_cur->remote_addr_str);
                     }else if (l_errno){
-                        strerror_r(l_errno, l_error_buf, sizeof (l_error_buf));
-                        log_it(L_ERROR,"Connecting error with %s: \"%s\" (code %d)", l_cur->remote_addr_str,
-                               l_error_buf, l_errno);
+                        log_it(L_ERROR,"Connecting with %s failed, error %d: \"%s\"", l_cur->remote_addr_str,
+                                        l_errno, dap_strerror(l_errno));
                         if ( l_cur->callbacks.error_callback )
                             l_cur->callbacks.error_callback(l_cur, l_errno);
                     }else{
@@ -1657,11 +1652,8 @@ lb_exit:
 #ifdef DAP_EVENTS_CAPS_IOCP
         log_it(L_ERROR, "IOCP update failed, errno %lu %llu", l_errno, a_es->socket);
 #else
-        char l_errbuf[128];
-        l_errbuf[0]=0;
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        log_it(L_ERROR,"Can't update client socket state on poll/epoll/kqueue fd %" DAP_FORMAT_SOCKET ": \"%s\" (%d)",
-            a_es->socket, l_errbuf, l_errno);
+        log_it(L_ERROR,"Can't update client socket state on poll/epoll/kqueue fd %" DAP_FORMAT_SOCKET ", error %d: \"%s\"",
+            a_es->socket, l_errno, dap_strerror(l_errno) );
 #endif
         return l_errno;
     }
@@ -1869,25 +1861,13 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2) || defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     int l_pipe[2];
-    char l_errbuf[255];
-    int l_errno;
-    l_errbuf[0]=0;
 #if defined(DAP_EVENTS_CAPS_QUEUE_PIPE2)
     if( pipe2(l_pipe,O_DIRECT | O_NONBLOCK ) < 0 ){
 #elif defined(DAP_EVENTS_CAPS_QUEUE_PIPE)
     if( pipe(l_pipe) < 0 ){
 #endif
-        l_errno = errno;
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        switch (l_errno) {
-            case EINVAL: log_it(L_CRITICAL, "Too old linux version thats doesn't support O_DIRECT flag for pipes (%s)", l_errbuf); break;
-            default: log_it( L_ERROR, "Error detected, can't create pipe(): '%s' (%d)", l_errbuf, l_errno);
-        }
-        DAP_DELETE(l_es);
-        return NULL;
+        return DAP_DELETE(l_es), log_it(L_ERROR, "pipe() failed, error %d: '%s'", errno, dap_strerror(errno)), NULL;
     }
-    //else
-     //   log_it(L_DEBUG, "Created one-way unnamed packet pipe %d->%d", l_pipe[0], l_pipe[1]);
     l_es->fd = l_pipe[0];
     l_es->fd2 = l_pipe[1];
 
@@ -1910,10 +1890,8 @@ dap_events_socket_t *dap_context_find(dap_context_t * a_context, dap_events_sock
 #if !defined (DAP_OS_ANDROID)
     FILE* l_sys_max_pipe_size_fd = fopen("/proc/sys/fs/pipe-max-size", "r");
     if (l_sys_max_pipe_size_fd) {
-        const int l_file_buf_size = 64;
-        char l_file_buf[l_file_buf_size];
-        memset(l_file_buf, 0, l_file_buf_size);
-        fread(l_file_buf, l_file_buf_size, 1, l_sys_max_pipe_size_fd);
+        char l_file_buf[64] = "";
+        fread(l_file_buf, sizeof(l_file_buf), 1, l_sys_max_pipe_size_fd);
         uint64_t l_sys_max_pipe_size = strtoull(l_file_buf, 0, 10);
         fcntl(l_pipe[0], F_SETPIPE_SZ, l_sys_max_pipe_size);
         fclose(l_sys_max_pipe_size_fd);
@@ -2027,25 +2005,9 @@ dap_events_socket_t * dap_context_create_event(dap_context_t * a_context, dap_ev
 #endif
 
 #ifdef DAP_EVENTS_CAPS_EVENT_EVENTFD
-    if((l_es->fd = eventfd(0,EFD_NONBLOCK) ) < 0 ){
-        int l_errno = errno;
-        char l_errbuf[128];
-        l_errbuf[0]=0;
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        switch (l_errno) {
-            case EINVAL: log_it(L_CRITICAL, "An unsupported value was specified in flags: \"%s\" (%d)", l_errbuf, l_errno); break;
-            case EMFILE: log_it(L_CRITICAL, "The per-process limit on the number of open file descriptors has been reached: \"%s\" (%d)", l_errbuf, l_errno); break;
-            case ENFILE: log_it(L_CRITICAL, "The system-wide limit on the total number of open files has been reached: \"%s\" (%d)", l_errbuf, l_errno); break;
-            case ENODEV: log_it(L_CRITICAL, "Could not mount (internal) anonymous inode device: \"%s\" (%d)", l_errbuf, l_errno); break;
-            case ENOMEM: log_it(L_CRITICAL, "There was insufficient memory to create a new eventfd file descriptor: \"%s\" (%d)", l_errbuf, l_errno); break;
-            default: log_it( L_ERROR, "Error detected, can't create eventfd: '%s' (%d)", l_errbuf, l_errno);
-        }
-        DAP_DELETE(l_es);
-        return NULL;
-    }else {
-        l_es->fd2 = l_es->fd;
-        //log_it(L_DEBUG, "Created eventfd descriptor %d", l_es->fd );
-    }
+    if ( (l_es->fd = eventfd(0,EFD_NONBLOCK) ) < 0 )
+        return DAP_DELETE(l_es), log_it(L_ERROR, "Can't create eventfd, error %d: '%s'", errno, dap_strerror(errno)), NULL;
+    l_es->fd2 = l_es->fd;
 #elif defined DAP_EVENTS_CAPS_WEPOLL
     l_es->socket        = socket(AF_INET, SOCK_DGRAM, 0);
 
@@ -2128,17 +2090,8 @@ dap_events_socket_t * dap_context_create_pipe(dap_context_t * a_context, dap_eve
 
 #if defined(DAP_EVENTS_CAPS_PIPE_POSIX)
     int l_pipe[2];
-    int l_errno;
-    char l_errbuf[128];
-    l_errbuf[0]=0;
-    if( pipe(l_pipe) < 0 ){
-        l_errno = errno;
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        log_it( L_ERROR, "Error detected, can't create pipe(): '%s' (%d)", l_errbuf, l_errno);
-        DAP_DELETE(l_es);
-        return NULL;
-    }//else
-     //   log_it(L_DEBUG, "Created one-way unnamed bytestream pipe %d->%d", l_pipe[0], l_pipe[1]);
+    if( pipe(l_pipe) < 0 )
+        return DAP_DELETE(l_es), log_it( L_ERROR, "Error detected, can't create pipe(), error %d: '%s'", errno, dap_strerror(errno)), NULL;
     l_es->fd = l_pipe[0];
     l_es->fd2 = l_pipe[1];
 #if defined DAP_OS_UNIX

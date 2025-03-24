@@ -46,7 +46,7 @@ const char *dap_config_get_item_str_default(dap_config_t *a_config, const char *
 char *dap_config_get_item_str_path_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, const char *a_default);
 const char** dap_config_get_array_str(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length);
 char **dap_config_get_item_str_path_array(dap_config_t *a_config, const char *a_section, const char *a_item_name, uint16_t *array_length);
-void dap_config_get_item_str_path_array_free(char **paths_array, uint16_t *array_length);
+void dap_config_get_item_str_path_array_free(char **paths_array, uint16_t array_length);
 double dap_config_get_item_double_default(dap_config_t *a_config, const char *a_section, const char *a_item_name, double a_default);
 int dap_config_stream_addrs_parse(dap_config_t *a_cfg, const char *a_config, const char *a_section, dap_stream_node_addr_t **a_addrs, uint16_t *a_addrs_count);
 

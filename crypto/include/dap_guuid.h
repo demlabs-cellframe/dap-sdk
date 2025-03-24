@@ -33,6 +33,10 @@ typedef union dap_guuid {
     uint128_t raw;
 } DAP_ALIGN_PACKED dap_guuid_t;
 
+typedef union dap_guuid_str {
+    const char s[ 2 * sizeof(uint128_t) + 3 ];
+} dap_guuid_str_t;
+
 static inline dap_guuid_t dap_guuid_new()
 {
     uint128_t l_ret = dap_uuid_generate_uint128();
@@ -41,7 +45,8 @@ static inline dap_guuid_t dap_guuid_new()
 
 DAP_STATIC_INLINE dap_guuid_t dap_guuid_compose(uint64_t a_net_id, uint64_t a_service_id)
 {
-    return (dap_guuid_t){ .net_id = a_net_id, .srv_id = a_service_id };
+    return (dap_guuid_t){{ .net_id = a_net_id, .srv_id = a_service_id }};
 }
-const char *dap_guuid_to_hex_str(dap_guuid_t a_guuid);
+dap_guuid_str_t dap_guuid_to_hex_str_(dap_guuid_t a_guuid);
+#define dap_guuid_to_hex_str(guid) dap_guuid_to_hex_str_(guid).s
 dap_guuid_t dap_guuid_from_hex_str(const char *a_hex_str, bool *success);

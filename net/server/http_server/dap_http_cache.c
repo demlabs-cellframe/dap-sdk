@@ -41,24 +41,12 @@ dap_http_cache_t * dap_http_cache_update(struct dap_http_url_proc * a_url_proc, 
                                          dap_http_header_t * a_headers, const char * a_response_phrase, int a_respoonse_code,
                                          time_t a_ts_expire )
 {
-    dap_http_cache_t * l_ret = DAP_NEW_Z(dap_http_cache_t);
-    if (!l_ret) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
-    }
-    if(a_body_size){
-        l_ret->body = DAP_NEW_SIZE(byte_t,a_body_size);
-        if (!l_ret->body) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            DAP_DEL_Z(l_ret);
-            return NULL;
-        }
-        memcpy(l_ret->body,a_body,a_body_size);
+    dap_http_cache_t * l_ret = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_http_cache_t, NULL);
+    if (a_body_size) {
+        l_ret->body = DAP_DUP_SIZE_RET_VAL_IF_FAIL((byte_t*)a_body, a_body_size, NULL, l_ret);
         l_ret->body_size = a_body_size;
     }
     l_ret->headers =  dap_http_headers_dup( a_headers);
-
-
     l_ret->ts_expire = a_ts_expire;
     l_ret->url_proc = a_url_proc;
     if(a_response_phrase)
@@ -69,7 +57,6 @@ dap_http_cache_t * dap_http_cache_update(struct dap_http_url_proc * a_url_proc, 
     dap_http_header_t * l_hdr_date= dap_http_header_find(l_ret->headers,"Date");
     if(l_hdr_date)
         dap_http_header_remove(&l_ret->headers,l_hdr_date);
-
 
     // Reset current cache for url_proc and replace with our own
     pthread_rwlock_wrlock(&a_url_proc->cache_rwlock);

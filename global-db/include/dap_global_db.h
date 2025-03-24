@@ -36,9 +36,9 @@ typedef struct dap_global_db_cluster dap_global_db_cluster_t;
 
 // Global DB instance with settings data
 typedef struct dap_global_db_instance {
-    uint32_t version;           // Current GlobalDB version
-    const char *storage_path;   // GlobalDB storage path
-    const char *driver_name;    // GlobalDB driver name
+    uint32_t version;     // Current GlobalDB version
+    char *storage_path;   // GlobalDB storage path
+    char *driver_name;    // GlobalDB driver name
     dap_list_t *whitelist;
     dap_list_t *blacklist;
     uint64_t store_time_limit;
@@ -48,7 +48,7 @@ typedef struct dap_global_db_instance {
 } dap_global_db_instance_t;
 
 typedef struct dap_global_db_obj {
-    const char *key;
+    char *key;
     uint8_t *value;
     size_t value_len;
     dap_nanotime_t timestamp;
@@ -140,6 +140,8 @@ int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_cou
 int dap_global_db_pin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_del(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg);
+int dap_global_db_del_ex(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_len,
+                                                              dap_global_db_callback_result_t a_callback, void *a_arg);
 int dap_global_db_flush( dap_global_db_callback_result_t a_callback, void *a_arg);
 
 // Set multiple. In callback writes total processed objects to a_values_total and a_values_count to the a_values_count as well
@@ -162,6 +164,7 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
 int dap_global_db_pin_sync(const char *a_group, const char *a_key);
 int dap_global_db_unpin_sync(const char *a_group, const char *a_key);
 int dap_global_db_del_sync(const char *a_group, const char *a_key);
+int dap_global_db_del_sync_ex(const char *a_group, const char *a_key, const char * a_value, size_t a_value_size);
 int dap_global_db_flush_sync();
 
 bool dap_global_db_isalnum_group_key(const dap_store_obj_t *a_obj, bool a_not_null_key);

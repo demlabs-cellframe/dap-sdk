@@ -219,9 +219,7 @@ void dap_global_db_instance_deinit()
     dap_return_if_fail(s_dbi)
     dap_list_free_full(s_dbi->blacklist, NULL);
     dap_list_free_full(s_dbi->whitelist, NULL);
-    DAP_DEL_Z(s_dbi->driver_name);
-    DAP_DEL_Z(s_dbi->storage_path);
-    DAP_DEL_Z(s_dbi);
+    DAP_DEL_MULTY(s_dbi->driver_name, s_dbi->storage_path, s_dbi);
 }
 
 inline dap_global_db_instance_t *dap_global_db_instance_get_default()
@@ -430,8 +428,7 @@ byte_t *dap_global_db_get_sync(const char *a_group,
 int dap_global_db_get(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_group && a_key, DAP_GLOBAL_DB_RC_ERROR);
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_GET;
     l_msg->group = dap_strdup(a_group);
@@ -504,8 +501,7 @@ dap_store_obj_t *dap_global_db_get_raw_sync(const char *a_group, const char *a_k
 int dap_global_db_get_raw(const char *a_group, const char *a_key, dap_global_db_callback_result_raw_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_group && a_key, DAP_GLOBAL_DB_RC_ERROR);
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_GET_RAW;
     l_msg->group = dap_strdup(a_group);
@@ -575,8 +571,7 @@ dap_nanotime_t dap_global_db_get_del_ts_sync(const char *a_group, const char *a_
 int dap_global_db_get_del_ts(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_group && a_key, DAP_GLOBAL_DB_RC_ERROR);
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_GET_DEL_TS;
     l_msg->group = dap_strdup(a_group);
@@ -663,8 +658,7 @@ byte_t *dap_global_db_get_last_sync(const char *a_group, char **a_key, size_t *a
 int dap_global_db_get_last(const char * a_group, dap_global_db_callback_result_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_group, DAP_GLOBAL_DB_RC_ERROR);
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_GET_LAST;
     l_msg->group = dap_strdup(a_group);
@@ -728,9 +722,7 @@ dap_store_obj_t *dap_global_db_get_last_raw_sync(const char *a_group)
 int dap_global_db_get_last_raw(const char * a_group, dap_global_db_callback_result_raw_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_group, DAP_GLOBAL_DB_RC_ERROR);
-
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_GET_LAST_RAW;
     l_msg->group = dap_strdup(a_group);
@@ -791,8 +783,7 @@ dap_global_db_obj_t *dap_global_db_get_all_sync(const char *a_group, size_t *a_o
 int dap_global_db_get_all(const char *a_group, size_t a_results_page_size, dap_global_db_callback_results_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_group, DAP_GLOBAL_DB_RC_ERROR);
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_GET_ALL;
     l_msg->group = dap_strdup(a_group);
@@ -891,8 +882,7 @@ dap_store_obj_t *dap_global_db_get_all_raw_sync(const char* a_group, size_t *a_o
 int dap_global_db_get_all_raw(const char *a_group, size_t a_results_page_size, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_group, DAP_GLOBAL_DB_RC_ERROR);
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_GET_ALL_RAW;
     l_msg->group = dap_strdup(a_group);
@@ -1013,8 +1003,7 @@ int dap_global_db_set_sync(const char *a_group, const char *a_key, const void *a
 int dap_global_db_set(const char * a_group, const char *a_key, const void * a_value, const size_t a_value_length, bool a_pin_value, dap_global_db_callback_result_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_group && a_key, DAP_GLOBAL_DB_RC_ERROR);
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_SET;
     l_msg->group = dap_strdup(a_group);
@@ -1029,13 +1018,10 @@ int dap_global_db_set(const char * a_group, const char *a_key, const void * a_va
         DAP_DEL_MULTY(l_msg->group, l_msg);
         return DAP_GLOBAL_DB_RC_CRITICAL;
     }
-    l_msg->value = DAP_DUP_SIZE(a_value, a_value_length);
-    if (!l_msg->value && a_value) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        DAP_DEL_MULTY(l_msg->key, l_msg->group, l_msg);
-        return DAP_GLOBAL_DB_RC_CRITICAL;
+    if (a_value && a_value_length) {
+        l_msg->value = DAP_DUP_SIZE_RET_VAL_IF_FAIL((char*)a_value, a_value_length, DAP_GLOBAL_DB_RC_CRITICAL, l_msg->key, l_msg->group, l_msg);
+        l_msg->value_length = a_value_length;
     }
-    l_msg->value_length = a_value_length;
     l_msg->value_is_pinned = a_pin_value;
     l_msg->callback_arg = a_arg;
     l_msg->callback_result = a_callback;
@@ -1104,8 +1090,7 @@ int dap_global_db_set_raw_sync(dap_store_obj_t *a_store_objs, size_t a_store_obj
 int dap_global_db_set_raw(dap_store_obj_t *a_store_objs, size_t a_store_objs_count, dap_global_db_callback_results_raw_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_store_objs && a_store_objs_count, DAP_GLOBAL_DB_RC_ERROR);
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_SET_RAW;
     l_msg->callback_arg = a_arg;
@@ -1161,8 +1146,7 @@ static void s_msg_opcode_set_raw(struct queue_io_msg * a_msg)
 int dap_global_db_set_multiple_zc(const char *a_group, dap_global_db_obj_t *a_values, size_t a_values_count, dap_global_db_callback_results_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_group && a_values && a_values_count, DAP_GLOBAL_DB_RC_ERROR);
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_SET_MULTIPLE;
     l_msg->group = dap_strdup(a_group);
@@ -1198,7 +1182,8 @@ static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
     size_t i=0;
 #ifdef DAP_TPS_TEST
     FILE *l_mempool_file = fopen("/opt/cellframe-node/share/ca/mempool_start.txt", "a");
-    fclose(l_mempool_file);
+    if (l_mempool_file)
+        fclose(l_mempool_file);
     log_it(L_TPS, "Start write %zu records to mempool", a_msg->values_count);
 #endif
     if(a_msg->values_count>0) {
@@ -1216,7 +1201,8 @@ static void s_msg_opcode_set_multiple_zc(struct queue_io_msg * a_msg)
     dap_global_db_objs_delete( a_msg->values, a_msg->values_count);
 #ifdef DAP_TPS_TEST
     l_mempool_file = fopen("/opt/cellframe-node/share/ca/mempool_finish.txt", "a");
-    fclose(l_mempool_file);
+    if (l_mempool_file)
+        fclose(l_mempool_file);
     log_it(L_TPS, "Finish write %zu records to mempool ", a_msg->values_count);
 #endif
 }
@@ -1256,8 +1242,7 @@ int dap_global_db_unpin_sync(const char *a_group, const char *a_key)
 
 int s_db_object_pin(const char *a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg, bool a_pin)
 {
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_PIN;
     l_msg->group = dap_strdup(a_group);
@@ -1334,14 +1319,20 @@ int dap_global_db_unpin(const char *a_group, const char *a_key, dap_global_db_ca
  * @param a_key
  * @return
  */
-static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_group, const char *a_key)
+static int s_del_sync_with_dbi_ex(dap_global_db_instance_t *a_dbi, const char *a_group, const char *a_key, const char * a_value, size_t a_value_len)
 {
     dap_store_obj_t l_store_obj = {
-        .key        = a_key,
-        .group      = (char *)a_group,
+        .key        = (char*)a_key,
+        .group      = (char*)a_group,
         .flags      = DAP_GLOBAL_DB_RECORD_NEW | (a_key ? DAP_GLOBAL_DB_RECORD_DEL : DAP_GLOBAL_DB_RECORD_ERASE),
         .timestamp  = dap_nanotime_now()
     };
+
+    if (a_value) {
+        l_store_obj.value = (byte_t*)a_value;
+        l_store_obj.value_len = a_value_len;
+    }
+
     if (a_key)
         l_store_obj.sign = dap_store_obj_sign(&l_store_obj, a_dbi->signing_key, &l_store_obj.crc);
 
@@ -1359,11 +1350,22 @@ static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_gr
     return l_res;
 }
 
+static int s_del_sync_with_dbi(dap_global_db_instance_t *a_dbi, const char *a_group, const char *a_key) {
+    return s_del_sync_with_dbi_ex(a_dbi, a_group, a_key, NULL, 0);
+}
+
 inline int dap_global_db_del_sync(const char *a_group, const char *a_key)
 {
     dap_return_val_if_fail(s_dbi && a_group, DAP_GLOBAL_DB_RC_ERROR);
     return s_del_sync_with_dbi(s_dbi, a_group, a_key);
 }
+
+inline int dap_global_db_del_sync_ex(const char *a_group, const char *a_key, const char * a_value, size_t a_value_len)
+{
+    dap_return_val_if_fail(s_dbi && a_group, DAP_GLOBAL_DB_RC_ERROR);
+    return s_del_sync_with_dbi_ex(s_dbi, a_group, a_key, a_value, a_value_len);
+}
+
 
 /**
  * @brief dap_global_db_delete
@@ -1373,17 +1375,21 @@ inline int dap_global_db_del_sync(const char *a_group, const char *a_key)
  * @param a_arg
  * @return
  */
-int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg)
+int dap_global_db_del_ex(const char * a_group, const char *a_key, const void * a_value, 
+                         const size_t a_value_len, dap_global_db_callback_result_t a_callback, void *a_arg)
 {
     dap_return_val_if_fail(s_dbi && a_group, DAP_GLOBAL_DB_RC_ERROR);
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_DELETE;
     l_msg->group = dap_strdup(a_group);
     l_msg->key = dap_strdup(a_key);
     l_msg->callback_arg = a_arg;
     l_msg->callback_result = a_callback;
+    if (a_value_len) {
+        l_msg->value = DAP_DUP_SIZE((void *)a_value, a_value_len);
+        l_msg->value_length = a_value_len;
+    }
 
     int l_ret = dap_proc_thread_callback_add(NULL, s_queue_io_callback, l_msg);
     if (l_ret != 0) {
@@ -1393,6 +1399,10 @@ int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_cal
         debug_if(g_dap_global_db_debug_more, L_DEBUG, "Have sent del request for \"%s\" group \"%s\" key", a_group, a_key);
 
     return l_ret;
+}
+
+int dap_global_db_del(const char * a_group, const char *a_key, dap_global_db_callback_result_t a_callback, void *a_arg) {
+    return dap_global_db_del_ex(a_group, a_key, NULL, 0, a_callback, a_arg);
 }
 
 /**
@@ -1424,7 +1434,12 @@ DAP_INLINE int dap_global_db_erase_table(const char *a_group, dap_global_db_call
  */
 static void s_msg_opcode_delete(struct queue_io_msg * a_msg)
 {
-    int l_res = dap_global_db_del_sync(a_msg->group, a_msg->key);
+    int l_res = 0;
+    if (a_msg->value && a_msg->value_length) {
+        l_res = dap_global_db_del_sync_ex(a_msg->group, a_msg->key, a_msg->value, a_msg->value_length);
+    } else {
+        l_res = dap_global_db_del_sync(a_msg->group, a_msg->key);
+    }
 
     if(a_msg->callback_result) {
         a_msg->callback_result(a_msg->dbi, l_res==0 ? DAP_GLOBAL_DB_RC_SUCCESS:
@@ -1454,8 +1469,7 @@ int dap_global_db_flush_sync()
 int dap_global_db_flush(dap_global_db_callback_result_t a_callback, void * a_arg)
 {
     dap_return_val_if_fail(s_dbi, DAP_GLOBAL_DB_RC_ERROR);
-    struct queue_io_msg *l_msg;
-    DAP_NEW_Z_RET_VAL(l_msg, struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL, NULL);
+    struct queue_io_msg *l_msg = DAP_NEW_Z_RET_VAL_IF_FAIL(struct queue_io_msg, DAP_GLOBAL_DB_RC_CRITICAL);
     l_msg->dbi = s_dbi;
     l_msg->opcode = MSG_OPCODE_FLUSH;
     l_msg->callback_arg = a_arg;
@@ -1496,8 +1510,7 @@ dap_global_db_obj_t *dap_global_db_objs_copy(const dap_global_db_obj_t *a_objs_s
 
     /* Run over array's elements */
     const dap_global_db_obj_t *l_obj = a_objs_src;
-    dap_global_db_obj_t *l_objs_dest;
-    DAP_NEW_Z_COUNT_RET_VAL(l_objs_dest, dap_global_db_obj_t, a_count, NULL, NULL);
+    dap_global_db_obj_t *l_objs_dest = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_global_db_obj_t, a_count, NULL);
     for (dap_global_db_obj_t *l_cur = l_objs_dest; a_count--; l_cur++, l_obj++) {
         *l_cur = *l_obj;
         if (l_obj->key) {
@@ -1533,19 +1546,11 @@ dap_global_db_obj_t *dap_global_db_objs_copy(const dap_global_db_obj_t *a_objs_s
  */
 void dap_global_db_objs_delete(dap_global_db_obj_t *a_objs, size_t a_count)
 {
-dap_global_db_obj_t *l_obj;
-
-    if (!a_objs && !a_count)
-        return;
-
-    dap_return_if_fail(a_objs && a_count)                                   /* Sanity checks */
-
-    for(l_obj = a_objs; a_count--; l_obj++) {                               /* Run over array's elements */
-        DAP_DEL_Z(l_obj->key);
-        DAP_DEL_Z(l_obj->value);
+    if (a_objs && a_count) {
+        for (dap_global_db_obj_t *l_obj = a_objs; a_count--; ++l_obj)
+            DAP_DEL_MULTY(l_obj->key, l_obj->value);
     }
-
-    DAP_DELETE(a_objs);                                                     /* Finaly kill the the array */
+    DAP_DELETE(a_objs);
 }
 
 /**

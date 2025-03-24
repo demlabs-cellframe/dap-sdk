@@ -80,7 +80,7 @@ dap_http_user_agent_ptr_t dap_http_user_agent_new_from_str(const char* a_user_ag
 
     char* l_major = strtok(l_version, ".");
     char* l_minor = strtok(NULL, ".");
-    if(l_minor == NULL) {
+    if(!l_major || !l_minor) {
         log_it(L_ERROR, "Wrong input value %s", a_user_agent_str);
         goto END;
     }

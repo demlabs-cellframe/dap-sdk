@@ -103,7 +103,7 @@ dap_proc_thread_t *dap_proc_thread_get(uint32_t a_cpu_id)
  * @brief dap_proc_thread_get_count
  * @return s_threads_count
  */
-uint32_t dap_proc_thread_get_count()
+DAP_INLINE uint32_t dap_proc_thread_get_count()
 {
     return s_threads_count;
 }

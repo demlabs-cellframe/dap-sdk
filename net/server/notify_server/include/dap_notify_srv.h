@@ -32,6 +32,6 @@ int dap_notify_server_send_mt(const char * a_data);
 DAP_PRINTF_ATTR(1, 2) int dap_notify_server_send_f_mt(const char *a_format, ...);
 
 typedef bool (*dap_notify_data_user_callback_t)(const char *data);
-void dap_notify_data_set_user_callback(dap_notify_data_user_callback_t callback);
+void dap_notify_data_set_user_callback(dap_notify_data_user_callback_t a_cb);
 
-void dap_notify_srv_set_callback_new(dap_events_socket_callback_t);
+void dap_notify_srv_set_callback_new(dap_events_socket_callback_t a_cb);

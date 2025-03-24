@@ -58,11 +58,8 @@ void dap_enc_msrln_key_generate(dap_enc_key_t *a_key, UNUSED_ARG const void *a_k
 {
 // sanity check
     dap_return_if_pass(!a_key);
-// memory alloc
-    uint8_t *l_skey, *l_pkey;
-    DAP_NEW_Z_SIZE_RET(l_skey, uint8_t, MSRLN_PKA_BYTES * sizeof(uint32_t), NULL);
-    DAP_NEW_Z_SIZE_RET(l_pkey, uint8_t, MSRLN_PKA_BYTES, l_skey);
-// crypto calc
+    uint8_t *l_skey = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, MSRLN_PKA_BYTES * sizeof(int32_t)),
+            *l_pkey = DAP_NEW_Z_SIZE_RET_IF_FAIL(uint8_t, MSRLN_PKA_BYTES, l_skey);
     PLatticeCryptoStruct PLCS = LatticeCrypto_allocate();
     LatticeCrypto_initialize(PLCS, (RandomBytes)randombytes, MSRLN_generate_a, MSRLN_get_error);
     if (MSRLN_KeyGeneration_A((int32_t *) l_skey, l_pkey, PLCS) != CRYPTO_MSRLN_SUCCESS) {
@@ -93,9 +90,8 @@ size_t dap_enc_msrln_gen_bob_shared_key(dap_enc_key_t *a_bob_key, const void *a_
 // sanity check
     dap_return_val_if_pass(!a_bob_key || !a_alice_pub || !a_cypher_msg || a_alice_pub_size != MSRLN_PKA_BYTES, 0);
 // memory alloc
-    uint8_t *l_shared_key, *l_cypher_msg;
-    DAP_NEW_Z_SIZE_RET_VAL(l_shared_key, uint8_t, MSRLN_SHAREDKEY_BYTES, 0, NULL);
-    DAP_NEW_Z_SIZE_RET_VAL(l_cypher_msg, uint8_t, MSRLN_PKB_BYTES, 0, l_shared_key);
+    uint8_t *l_shared_key = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, MSRLN_SHAREDKEY_BYTES, 0),
+            *l_cypher_msg = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, MSRLN_PKB_BYTES, 0, l_shared_key);
 // crypto calc
     PLatticeCryptoStruct PLCS = LatticeCrypto_allocate();
     LatticeCrypto_initialize(PLCS, (RandomBytes)randombytes, MSRLN_generate_a, MSRLN_get_error);
@@ -129,8 +125,7 @@ size_t dap_enc_msrln_gen_alice_shared_key(dap_enc_key_t *a_alice_key, const void
 // sanity check
     dap_return_val_if_pass(!a_alice_key || !a_alice_priv || !a_cypher_msg || a_cypher_msg_size < MSRLN_PKB_BYTES, 0);
 // memory alloc
-    uint8_t *l_shared_key = NULL;
-    DAP_NEW_Z_SIZE_RET_VAL(l_shared_key, uint8_t, MSRLN_SHAREDKEY_BYTES, 0, NULL);
+    uint8_t *l_shared_key = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(uint8_t, MSRLN_SHAREDKEY_BYTES, 0);
 // crypto calc
     if (MSRLN_SecretAgreement_A(a_cypher_msg, (int32_t *) a_alice_priv, l_shared_key) != CRYPTO_MSRLN_SUCCESS) {
         DAP_DEL_Z(l_shared_key);

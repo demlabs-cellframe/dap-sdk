@@ -73,11 +73,8 @@ void dap_client_deinit()
  */
 dap_client_t *dap_client_new(dap_client_callback_t a_stage_status_error_callback, void *a_callbacks_arg)
 {
-// memory alloc
-    dap_client_t *l_client = NULL;
-    DAP_NEW_Z_RET_VAL(l_client, dap_client_t, NULL, NULL);
-    DAP_NEW_Z_RET_VAL(l_client->_internal, dap_client_pvt_t, NULL, l_client);
-// func work
+    dap_client_t *l_client = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_client_t, NULL);
+    l_client->_internal = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_client_pvt_t, NULL, l_client);
     l_client->stage_status_error_callback = a_stage_status_error_callback;
     l_client->callbacks_arg = a_callbacks_arg;
     // CONSTRUCT dap_client object

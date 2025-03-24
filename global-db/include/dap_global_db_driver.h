@@ -39,8 +39,13 @@
 #define DAP_GLOBAL_DB_GROUPS_COUNT_MAX      1024UL                              /* A maximum number of groups */
 #define DAP_GLOBAL_DB_KEY_SIZE_MAX          512UL                               /* A limit for the key's length in DB */
 
-#define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 256UL                             /* Default count of records to return with conditional read */
-#define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  512UL                             /* Default count of keys to return with conditional read */
+#ifndef DAP_SDK_TESTS
+    #define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 256UL                             /* Default count of records to return with conditional read */
+    #define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  512UL                             /* Default count of keys to return with conditional read */
+#else  // to more fast tests
+    #define DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT 25UL
+    #define DAP_GLOBAL_DB_COND_READ_KEYS_DEFAULT  50UL  
+#endif
 
 // Main record flags (DB saved)
 #define DAP_GLOBAL_DB_RECORD_DEL        BIT(0)                                  /* Information of record deletion (key, timestamp and sign) propagated over sync */
@@ -56,7 +61,7 @@ typedef struct dap_global_db_driver_hash {
 
 typedef struct dap_store_obj {
     char *group;                    // Name of database table analogue (key-value DB have no 'table' defined)
-    const char *key;                // Unique database key
+    char *key;                      // Unique database key
     byte_t *value;                  // Database value corresponsing with database key
     size_t value_len;               // Length of database value
     uint8_t flags;                  // Record flags

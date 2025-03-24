@@ -289,8 +289,7 @@ inline static void s_copy_reply_and_mime_to_response( dap_http_simple_t *a_simpl
         return  log_it( L_WARNING, " cl_sh->reply_size equal 0" );
 
     a_simple->http_client->out_content_length = a_simple->reply_size;
-    strcpy( a_simple->http_client->out_content_type, a_simple->reply_mime );
-
+    dap_strncpy( a_simple->http_client->out_content_type, a_simple->reply_mime, sizeof(a_simple->http_client->out_content_type) - 1 );
     return;
 }
 
@@ -309,7 +308,7 @@ inline static void s_write_response_bad_request( dap_http_simple_t * a_http_simp
     const char* json_str = json_object_to_json_string( jobj );
     dap_http_simple_reply(a_http_simple, (void*) json_str, (size_t) strlen(json_str) );
 
-    strcpy( a_http_simple->reply_mime, "application/json" );
+    dap_strncpy( a_http_simple->reply_mime, "application/json", sizeof(a_http_simple->reply_mime) - 1 );
 
     s_copy_reply_and_mime_to_response( a_http_simple );
 
@@ -451,10 +450,16 @@ void s_http_client_data_read( dap_http_client_t *a_http_client, void * a_arg )
     if( bytes_to_read ) {
         // Oops! The client sent more data than write in the CONTENT_LENGTH header
         if(l_http_simple->request_size + bytes_to_read > l_http_simple->request_size_max){
-            log_it(L_WARNING, "Oops! Client sent more data length=%zu than in content-length=%zu in request", l_http_simple->request_size + bytes_to_read, a_http_client->in_content_length);
+            log_it(L_WARNING, "Client sent more data length=%zu than in content-length=%zu in request", l_http_simple->request_size + bytes_to_read, a_http_client->in_content_length);
             l_http_simple->request_size_max = l_http_simple->request_size + bytes_to_read + 1;
             // increase input buffer
-            l_http_simple->request = DAP_REALLOC(l_http_simple->request, l_http_simple->request_size_max);
+            byte_t *l_req_new = DAP_REALLOC((byte_t*)l_http_simple->request, l_http_simple->request_size_max);
+            if (!l_req_new) {
+                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+                dap_events_socket_set_readable_unsafe(a_http_client->esocket, false);
+                return;
+            }
+            l_http_simple->request = l_req_new;
         }
         if(l_http_simple->request){// request_byte=request
             memcpy( l_http_simple->request_byte + l_http_simple->request_size, a_http_client->esocket->buf_in, bytes_to_read );
@@ -527,7 +532,7 @@ size_t dap_http_simple_reply_f(dap_http_simple_t *a_http_simple, const char *a_f
         return 0;
     }
     char *l_buf = DAP_NEW_SIZE(char, l_buf_size);
-    vsprintf(l_buf, a_format, ap_copy);
+    vsnprintf(l_buf, l_buf_size, a_format, ap_copy);
     va_end(ap_copy);
 
     size_t l_ret = dap_http_simple_reply(a_http_simple, l_buf, l_buf_size);

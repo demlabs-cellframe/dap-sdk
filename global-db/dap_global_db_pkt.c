@@ -41,14 +41,12 @@ dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old
     if (!a_new_pkt)
         return a_old_pkt;
     size_t l_add_size = dap_global_db_pkt_get_size(a_new_pkt);
-    dap_global_db_pkt_pack_t *l_old_pkt;
-    if (a_old_pkt)
-        l_old_pkt = (dap_global_db_pkt_pack_t *)DAP_REALLOC(a_old_pkt, a_old_pkt->data_size + sizeof(dap_global_db_pkt_pack_t) + l_add_size);
-    else
-        DAP_NEW_Z_SIZE_RET_VAL(l_old_pkt, dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_add_size, a_old_pkt, NULL);
+    dap_global_db_pkt_pack_t *l_old_pkt = !a_old_pkt
+        ? DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_global_db_pkt_pack_t, sizeof(dap_global_db_pkt_pack_t) + l_add_size, NULL)
+        : DAP_REALLOC_RET_VAL_IF_FAIL(a_old_pkt, a_old_pkt->data_size + sizeof(dap_global_db_pkt_pack_t) + l_add_size, NULL);
     memcpy(l_old_pkt->data + l_old_pkt->data_size, a_new_pkt, l_add_size);
     l_old_pkt->data_size += l_add_size;
-    l_old_pkt->obj_count++;
+    ++l_old_pkt->obj_count;
     return l_old_pkt;
 }
 
@@ -60,16 +58,11 @@ dap_global_db_pkt_pack_t *dap_global_db_pkt_pack(dap_global_db_pkt_pack_t *a_old
 dap_global_db_pkt_t *dap_global_db_pkt_serialize(dap_store_obj_t *a_store_obj)
 {
     dap_return_val_if_fail(a_store_obj, NULL);
-
     size_t l_group_len = dap_strlen(a_store_obj->group);
     size_t l_key_len = dap_strlen(a_store_obj->key);
     size_t l_sign_len = a_store_obj->sign ? dap_sign_get_size(a_store_obj->sign) : 0;
     size_t l_data_size_out = l_group_len + l_key_len + a_store_obj->value_len + l_sign_len;
-    dap_global_db_pkt_t *l_pkt = DAP_NEW_Z_SIZE(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t));
-    if (!l_pkt) {
-        log_it(L_CRITICAL, "Insufficient memory");
-        return NULL;
-    }
+    dap_global_db_pkt_t *l_pkt = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_global_db_pkt_t, l_data_size_out + sizeof(dap_global_db_pkt_t), NULL);
 
     /* Fill packet header */
     l_pkt->timestamp = a_store_obj->timestamp;
@@ -105,7 +98,7 @@ dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uin
     if (a_key) {
         // Exclude CRC field from sign
         l_sign = dap_sign_create(a_key, (uint8_t *)l_pkt + sizeof(uint64_t),
-                                 dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t), 0);
+                                 dap_global_db_pkt_get_size(l_pkt) - sizeof(uint64_t));
         if (!l_sign) {
             log_it(L_ERROR, "Can't sign serialized global DB object");
             DAP_DELETE(l_pkt);
@@ -115,12 +108,8 @@ dap_sign_t *dap_store_obj_sign(dap_store_obj_t *a_obj, dap_enc_key_t *a_key, uin
     if (a_checksum) {
         if (a_key) {
             size_t l_sign_len = dap_sign_get_size(l_sign);
-            l_pkt = DAP_REALLOC(l_pkt, dap_global_db_pkt_get_size(l_pkt) + l_sign_len);
-            if (!l_pkt) {
-                log_it(L_CRITICAL, "Not enough memory");
-                DAP_DELETE(l_sign);
-                return NULL;
-            }
+            dap_global_db_pkt_t *l_new_pkt = DAP_REALLOC_RET_VAL_IF_FAIL(l_pkt, dap_global_db_pkt_get_size(l_pkt) + l_sign_len, NULL, l_sign);
+            l_pkt = l_new_pkt;
             memcpy(l_pkt->data + l_pkt->data_len, l_sign, l_sign_len);
             l_pkt->data_len += l_sign_len;
         }
@@ -195,13 +184,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
     l_data_ptr += a_pkt->key_len;
 
     if (a_pkt->value_len) {
-        a_obj->value = DAP_DUP_SIZE(l_data_ptr, a_pkt->value_len);
-        if (!a_obj->value) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            DAP_DELETE(a_obj->group);
-            DAP_DELETE(a_obj->key);
-            return NULL;
-        }
+        a_obj->value = DAP_DUP_SIZE_RET_VAL_IF_FAIL(l_data_ptr, a_pkt->value_len, NULL, a_obj->group, a_obj->key);
         l_data_ptr += a_pkt->value_len;
     }
 
@@ -216,14 +199,7 @@ static byte_t *s_fill_one_store_obj(dap_global_db_pkt_t *a_pkt, dap_store_obj_t 
             DAP_DEL_Z(a_obj->value);
             return NULL;
         }
-        a_obj->sign = (dap_sign_t *)DAP_DUP_SIZE(l_sign, l_sign_size);
-        if (!a_obj->sign) {
-            log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-            DAP_DELETE(a_obj->group);
-            DAP_DELETE(a_obj->key);
-            DAP_DEL_Z(a_obj->value);
-            return NULL;
-        }
+        a_obj->sign = DAP_DUP_SIZE_RET_VAL_IF_FAIL(l_sign, l_sign_size, NULL, a_obj->group, a_obj->key, a_obj->value);
     }
 
     if (a_addr)
