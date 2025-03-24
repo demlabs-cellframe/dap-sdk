@@ -241,12 +241,14 @@ MDBX_val    l_key_iov, l_data_iov;
     MDBX_txn *l_txn = a_txn;
     if (!a_txn && MDBX_SUCCESS != (rc = mdbx_txn_begin(s_mdbx_env, NULL, 0, &l_txn)) ) {
         DAP_DEL_Z(l_db_ctx);
-        return  log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+        return log_it(L_CRITICAL, "mdbx_txn_begin: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
 
     if  ( MDBX_SUCCESS != (rc = mdbx_dbi_open(l_txn, a_group, a_flags, &l_db_ctx->dbi)) ) {
         DAP_DEL_Z(l_db_ctx);
-        return  log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), NULL;
+        if (!a_txn)
+            mdbx_txn_abort(l_txn);
+        return log_it(L_CRITICAL, "mdbx_dbi_open: (%d) %s", rc, mdbx_strerror(rc)), NULL;
     }
 
     /*
@@ -1060,15 +1062,15 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
 
     uint8_t l_type_erase = a_store_obj->flags & DAP_GLOBAL_DB_RECORD_ERASE;
     dap_db_ctx_t *l_db_ctx;
-    pthread_rwlock_rdlock(&s_db_ctxs_rwlock);
+    pthread_rwlock_wrlock(&s_db_ctxs_rwlock);
     if ( !(l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group)) ) {               /* Get a DB context for the group */
         if (l_type_erase) {                                                         /* Nothing to do anymore */
             pthread_rwlock_unlock(&s_db_ctxs_rwlock);
             return DAP_GLOBAL_DB_RC_NOT_FOUND;
         }                                                                           /* Group is not found ? Try to create table for new group */
         // Reacquire rwlock for write
-        pthread_rwlock_unlock(&s_db_ctxs_rwlock);
-        pthread_rwlock_wrlock(&s_db_ctxs_rwlock);
+//        pthread_rwlock_unlock(&s_db_ctxs_rwlock);
+//        pthread_rwlock_wrlock(&s_db_ctxs_rwlock);
         // Check again if anyone change protected HT before us
         l_db_ctx = s_get_db_ctx_for_group(a_store_obj->group);
         if (!l_db_ctx) {
@@ -1318,13 +1320,8 @@ MDBX_txn *l_txn = s_txn;
                     break;
                 }
                 l_count_current++;
-                l_count_out--;
-                l_obj++;
             }
         } while (MDBX_SUCCESS == (rc = mdbx_cursor_get(l_cursor, &l_key, &l_data, MDBX_NEXT)) && l_count_out);
-
-        if ( (MDBX_SUCCESS != rc) && (rc != MDBX_NOTFOUND) )
-            log_it (L_ERROR, "mdbx_get ALL: (%d) %s", rc, mdbx_strerror(rc));
 
         // Cut unused memory
         if (!l_count_current) {
