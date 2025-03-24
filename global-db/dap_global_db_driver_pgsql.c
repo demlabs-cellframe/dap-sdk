@@ -22,8 +22,11 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
-
+#ifdef DAP_OS_DARWIN
+#include <libpq-fe.h>
+#else
 #include <postgresql/libpq-fe.h>
+#endif
 
 #include "dap_global_db_driver_pgsql.h"
 #include "dap_common.h"
@@ -57,6 +60,8 @@ DAP_STATIC_INLINE void s_request_err_msg(const char *a_request_str)
 }
 
 static void s_connection_destructor(UNUSED_ARG void *a_conn) {
+    if (!s_conn)
+        return;
     PQfinish(s_conn->conn);
     log_it(L_DEBUG, "Close  connection: @%p/%p, usage: %llu", s_conn, s_conn->conn, s_conn->usage);
     DAP_DEL_Z(s_conn);

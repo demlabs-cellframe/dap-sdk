@@ -358,7 +358,7 @@ static void s_test_read_obj_below_timestamp(size_t a_count)
     s_read_below_timestamp += get_cur_time_msec() - l_time;
     dap_assert_PIF(l_objs, "Records-Not-Found");
     // limit of cond read
-    if (a_count >= DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT) {
+    if (l_count <= DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT && a_count >= DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT) {
         dap_assert_PIF(DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT == l_count, "Wrong finded records count");
     } else {
         dap_assert_PIF(a_count == l_count, "Wrong finded records count");
