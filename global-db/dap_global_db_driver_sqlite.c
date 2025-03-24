@@ -63,9 +63,12 @@ static uint32_t s_attempts_count = 10;
 static const int s_sleep_period = 500 * 1000;  /* Wait 0.5 sec */;
 static bool s_db_inited = false;
 static _Thread_local conn_list_item_t *s_conn = NULL;  // local connection
+static _Thread_local pthread_key_t s_destructor_key;
 
 
 static void s_connection_destructor(UNUSED_ARG void *a_conn) {
+    if (!s_conn)
+        return;
     sqlite3_close(s_conn->conn);
     log_it(L_DEBUG, "Close  connection: @%p/%p, usage: %llu", s_conn, s_conn->conn, s_conn->usage);
     DAP_DEL_Z(s_conn);
@@ -245,7 +248,6 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
     static int l_conn_idx = 0;
     if (!s_conn) {
         s_conn = DAP_NEW_Z_RET_VAL_IF_FAIL(conn_list_item_t, NULL);
-        pthread_key_t s_destructor_key;
         pthread_key_create(&s_destructor_key, s_connection_destructor);
         pthread_setspecific(s_destructor_key, (const void *)s_conn);
         char *l_error_message = NULL;
@@ -808,13 +810,11 @@ static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a
     dap_store_obj_t * l_ret = NULL;
     uint64_t l_count = a_count_out && *a_count_out ? *a_count_out : DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT;
     sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
-    char *l_table_name = dap_str_replace_char(a_group, '.', '_');
-    char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM '%s'"
-                                        " WHERE driver_key < ?", l_table_name);
-    char *l_query_str = sqlite3_mprintf("SELECT * FROM '%s'"
+    char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM \"%s\""
+                                        " WHERE driver_key < ?", a_group);
+    char *l_query_str = sqlite3_mprintf("SELECT * FROM \"%s\""
                                         " WHERE driver_key < ?"
                                         " ORDER BY driver_key LIMIT '%d'", a_group, (int)l_count);
-    DAP_DELETE(l_table_name);
     if (!l_query_count_str || !l_query_str) {
         log_it(L_ERROR, "Error in SQL request forming");
         goto clean_and_ret;
