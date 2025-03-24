@@ -17,7 +17,7 @@ stages:
   
 tests:amd64.debian:
     extends: .tests
-    image: demlabs/debian/amd64:qt5
+    image: demlabs/debian/amd64:qt6
     before_script: /opt/buildtools/prepare_environment.sh amd64-linux
     script:
       - pwd
