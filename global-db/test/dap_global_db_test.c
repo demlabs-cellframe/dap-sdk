@@ -99,7 +99,7 @@ static int s_test_create_db(const char *db_type)
     return l_rc;
 }
 
-static int s_test_write(size_t a_count, bool a_with_value)
+static int s_test_write(size_t a_count)
 {
     dap_store_obj_t l_store_obj = {0};
     int l_value_len = 0, *l_pvalue, i, ret;
@@ -115,7 +115,6 @@ static int s_test_write(size_t a_count, bool a_with_value)
 
                                     /* "Table" name */
     l_store_obj.key = l_key;                                                /* Point <.key> to the buffer with the key of record */
-    l_store_obj.value = a_with_value ? (uint8_t *) l_value : NULL;                                 /* Point <.value> to static buffer area */
     prec = (dap_db_test_record_t *) l_value;
     size_t l_rewrite_count = rand() % (a_count / 2) + 2; 
     for (size_t i = 0; i < a_count; ++i)
@@ -127,7 +126,8 @@ static int s_test_write(size_t a_count, bool a_with_value)
 
         clock_gettime(CLOCK_REALTIME, &now);                                /* Get and save record's timestamp */
         l_store_obj.timestamp = ((uint64_t)now.tv_sec << 32) | ((uint32_t) (now.tv_nsec));
-        if (a_with_value) {
+        if (i % 2) {
+            l_store_obj.value = (uint8_t *) l_value;                                /* Point <.value> to static buffer area */
             prec->len = rand() % DAP_DB$SZ_DATA + 1;                                /* Variable payload length */
             l_pvalue   = (int *) prec->data;
             for (int  i = prec->len / sizeof(int); i--; l_pvalue++)             /* Fill record's payload with random data */
@@ -137,6 +137,9 @@ static int s_test_write(size_t a_count, bool a_with_value)
             l_store_obj.value_len = l_value_len;
             assert(l_store_obj.value_len < sizeof(l_value));
             dap_hash_fast (prec->data, prec->len, &prec->csum);                 /* Compute a hash of the payload part of the record */
+        } else {
+            l_store_obj.value = NULL;
+            l_store_obj.value_len = 0;
         }
 
         if (i >= l_rewrite_count) {
@@ -704,9 +707,9 @@ static void s_test_close_db(void)
 }
 
 
-static void s_test_all(size_t a_count, bool a_with_value)
+static void s_test_all(size_t a_count)
 {
-    s_test_write(a_count, a_with_value);
+    s_test_write(a_count);
     s_test_read(a_count, true);
     s_test_read_all(a_count);
     s_test_read_cond_store(a_count, true);
@@ -837,7 +840,7 @@ void s_test_table_erase() {
     dap_assert(true, "Table erased");
 }
 
-static void s_test_full(size_t a_db_count, size_t a_count, bool a_with_value)
+static void s_test_full(size_t a_db_count, size_t a_count)
 {
     for (size_t i = 0; i < a_db_count; ++i) {
         s_write = 0;
@@ -882,7 +885,7 @@ static void s_test_full(size_t a_db_count, size_t a_count, bool a_with_value)
         dap_print_module_name(s_db_types[i]);
         s_test_create_db(s_db_types[i]);
         uint64_t l_t1 = get_cur_time_nsec();
-        s_test_all(a_count, true);
+        s_test_all(a_count);
         uint64_t l_t2 = get_cur_time_nsec();
         char l_msg[120] = {0};
         sprintf(l_msg, "All tests to %zu records", a_count);
@@ -938,10 +941,8 @@ int main(int argc, char **argv)
     sprintf(s_group_wrong, "%s", DAP_DB$T_GROUP_WRONG_PREF);
     sprintf(s_group_not_existed, "%s", DAP_DB$T_GROUP_NOT_EXISTED_PREF);
     
-    dap_print_module_name("Tests with value");
-    s_test_full(l_db_count, l_count, true);
-    dap_print_module_name("Tests without value");
-    s_test_full(l_db_count, l_count, false);
+    dap_print_module_name("Tests with combined value");
+    s_test_full(l_db_count, l_count);
 }
 
 

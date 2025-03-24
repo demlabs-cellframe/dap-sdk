@@ -208,12 +208,24 @@ static void s_sign_verify_ser_test(dap_enc_key_type_t a_key_type, int a_times, i
     l_t1 = get_cur_time_msec();
     for(int i = 0; i < a_times; ++i) {
         int l_verified = 0;
-        if (dap_sign_type_to_key_type(l_signs[i]->header.type) == DAP_ENC_KEY_TYPE_SIG_ECDSA)
-            l_verified = dap_sign_verify(l_signs[i], l_source[i], l_source_size[i]);
-        else {
+        if (dap_sign_type_to_key_type(l_signs[i]->header.type) == DAP_ENC_KEY_TYPE_SIG_ECDSA) {
+            if (dap_sign_is_use_pkey_hash(l_signs[i])) {
+                dap_hash_fast_t l_sign_pkey_hash = {};
+                dap_sign_get_pkey_hash(l_signs[i], &l_sign_pkey_hash);
+                l_verified = dap_sign_verify_by_pkey(l_signs[i], l_source[i], l_source_size[i], s_get_pkey_by_hash_callback( (const uint8_t *)&l_sign_pkey_hash));
+            } else {
+                l_verified = dap_sign_verify(l_signs[i], l_source[i], l_source_size[i]);
+            }
+        } else {
             dap_chain_hash_fast_t l_hash;
             dap_hash_fast(l_source[i], l_source_size[i], &l_hash);
-            l_verified = dap_sign_verify(l_signs[i], &l_hash, sizeof(l_hash));
+            if (dap_sign_is_use_pkey_hash(l_signs[i])) {
+                dap_hash_fast_t l_sign_pkey_hash = {};
+                dap_sign_get_pkey_hash(l_signs[i], &l_sign_pkey_hash);
+                l_verified = dap_sign_verify_by_pkey(l_signs[i], &l_hash, sizeof(l_hash), s_get_pkey_by_hash_callback( (const uint8_t *)&l_sign_pkey_hash));
+            } else {
+                l_verified = dap_sign_verify(l_signs[i], &l_hash, sizeof(l_hash));
+            }
         }
         dap_assert_PIF(!l_verified, "Deserialize and verifying signature");
     }

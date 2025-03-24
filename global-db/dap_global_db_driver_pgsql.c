@@ -400,7 +400,7 @@ static dap_global_db_pkt_pack_t *s_db_pgsql_get_by_hash(const char *a_group, dap
     }
     l_blob_str->str[l_blob_str->len - 1] = '\0';
     --l_blob_str->len;
-    char *l_query_size_str = dap_strdup_printf("SELECT COALESCE(SUM(LENGTH(key)), 0) + COALESCE(SUM(LENGTH(value)), 0) + COALESCE(SUM(LENGTH(sign)), 0) FROM \"%s\" "
+    char *l_query_size_str = dap_strdup_printf("SELECT SUM(LENGTH(key)) + COALESCE(SUM(LENGTH(value)), 0) + COALESCE(SUM(LENGTH(sign)), 0) FROM \"%s\" "
                                         " WHERE driver_key IN (%s);",
                                         a_group, l_blob_str->str);
     char *l_query_str = dap_strdup_printf("SELECT * FROM \"%s\""
