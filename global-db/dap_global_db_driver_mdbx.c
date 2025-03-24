@@ -1079,9 +1079,7 @@ static int s_db_mdbx_apply_store_obj_with_txn(dap_store_obj_t *a_store_obj, MDBX
             }
             log_it(L_NOTICE, "DB context for the group '%s' has been created", a_store_obj->group);
         }
-        // Reacquire rwlock for read with recursive call
-        pthread_rwlock_unlock(&s_db_ctxs_rwlock);
-        return s_db_mdbx_apply_store_obj_with_txn(a_store_obj, a_txn);
+        // Continue exec having write lock held
     }
     int rc = -EIO;
     MDBX_val l_key = {}, l_data;
