@@ -196,6 +196,29 @@ dap_time_t dap_time_from_str_simplified(const char *a_time_str)
 }
 
 /**
+ * @brief Convert dap_time_t to string in simplified format [%y%m%d = 220610 = 10 june 2022 00:00]
+ * @param[in] a_time Time to convert
+ * @return Pointer to the string or NULL if error
+ */
+const char* dap_time_to_str_simplified(dap_time_t a_time)
+{
+    static char buffer[7]; // "yyMMdd" + null terminator
+    struct tm *l_tm;
+    time_t time = (time_t)a_time;
+
+    l_tm = localtime(&time);
+    if (l_tm == NULL) {
+        return NULL;
+    }
+
+    if (strftime(buffer, sizeof(buffer), "%y%m%d", l_tm) == 0) {
+        return NULL;
+    }
+
+    return buffer;
+}
+
+/**
  * @brief time_to_rfc822 Convert dap_chain_time_t to string with RFC822 formatted date and time
  * @param[out] out Output buffer
  * @param[out] out_size_mac Maximum size of output buffer
