@@ -77,7 +77,7 @@ dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name);
 
 dap_cli_cmd_aliases_t *dap_cli_server_alias_add(dap_cli_cmd_t *a_cmd, const char *a_pre_cmd, const char *a_alias);
 dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_cli, char **a_append, char **a_ncmd);
-int64_t dap_cli_get_cmd_thread_count();
+int32_t dap_cli_get_cmd_thread_count();
 
 //for json
 int json_commands(const char * a_name);

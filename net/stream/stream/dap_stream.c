@@ -1163,7 +1163,7 @@ dap_stream_info_t *dap_stream_get_links_info(dap_cluster_t *a_cluster, size_t *a
 }
 
 
-inline int32_t dap_stream_get_links_count()
+DAP_INLINE int32_t dap_stream_get_links_count()
 {
     return s_streams_count;
 } 

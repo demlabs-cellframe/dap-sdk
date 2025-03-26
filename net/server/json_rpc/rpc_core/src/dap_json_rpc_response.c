@@ -212,7 +212,7 @@ void json_print_value(json_object *obj, const char *key, int indent_level, bool 
             printf(print_separator ? "%s, " : "%s", json_object_get_string(obj));
             break;
         case json_type_int:
-            printf("%lld", json_object_get_int64(obj));
+            printf("%ld", json_object_get_int64(obj));
             break;
         case json_type_double:
             printf("%lf", json_object_get_double(obj));
