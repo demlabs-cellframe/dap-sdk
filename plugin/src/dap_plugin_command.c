@@ -22,7 +22,7 @@ void dap_plugin_command_init(void)
 {
     if (!s_l_restart_plugins){
         dap_cli_server_cmd_add("plugin", s_command_handler,
-                                           "Commands for working with plugins:\n",
+                                           "Commands for working with plugins:\n", -1,
                                            "plugin list\n"
                                            "\tShow plugins list\n"
                                            "plugin show <plugin name>\n"
