@@ -75,7 +75,7 @@ typedef struct cli_cmd_arg {
 static void* s_cli_cmd_exec(void *a_arg);
 
 static bool s_allowed_cmd_check(const char *a_buf) {
-    if (s_allowed_cmd_array)
+    if (!s_allowed_cmd_array)
         return false;
     enum json_tokener_error jterr;
     const char *l_method;
