@@ -120,13 +120,13 @@ int dap_network_monitor_init(dap_network_monitor_notification_callback_t cb)
     l_es->type = DESCRIPTOR_TYPE_SOCKET_RAW;
     memcpy(&l_es->addr_storage, &storage, sizeof(storage));
     l_es->addr_size = sizeof(storage);
-    l_es->flags &= DAP_SOCK_MSG_ORIENTED;
+    l_es->flags = DAP_SOCK_MSG_ORIENTED | DAP_SOCK_READY_TO_READ;
     l_es->no_close = true;
     es_uuid = l_es->uuid;
     s_notify_cb = cb;
     es_worker = dap_events_worker_get_auto();
     dap_worker_add_events_socket( es_worker, l_es );
-    log_it(L_INFO, "Network monitor initialized");
+    log_it(L_INFO, "Network monitor initialized, es uid "DAP_FORMAT_ESOCKET_UUID", worker #%u", es_uuid, es_worker->id);
     return 0;
 }
 

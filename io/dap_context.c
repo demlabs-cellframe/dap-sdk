@@ -991,6 +991,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     break;
 
                     case DESCRIPTOR_TYPE_SOCKET_RAW:
+                        l_must_read_smth = true;
                         if ( l_cur->flags & DAP_SOCK_MSG_ORIENTED ) {
                             struct iovec iov = { l_cur->buf_in, l_cur->buf_in_size_max - l_cur->buf_in_size };
                             struct msghdr msg = { .msg_name = &l_cur->addr_storage, .msg_namelen = l_cur->addr_size, .msg_iov = &iov, .msg_iovlen = 1 };
