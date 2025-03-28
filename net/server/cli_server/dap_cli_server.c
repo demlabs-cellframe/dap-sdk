@@ -251,10 +251,6 @@ int json_commands(const char * a_name) {
             "net",
             "srv_stake",
             "poll",
-<<<<<<< HEAD
-=======
-            "srv_xchange",
->>>>>>> 71c503d8 (hotfix-alias)
             "emit_delegate",
             "token_decl",
             "token_update",
