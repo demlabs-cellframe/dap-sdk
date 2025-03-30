@@ -2,47 +2,6 @@ cmake_minimum_required(VERSION 3.10)
 project(DAP_SDK_NATIVE C)
 set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
-include(ExternalProject)
-
-add_subdirectory(3rdparty/json-c EXCLUDE_FROM_ALL)
-
-set(JSON-C-CONFIG_COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/json-c/
-    -DCMAKE_INSTALL_PREFIX:PATH=${CMAKE_CURRENT_BINARY_DIR}/deps/
-    -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-    -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
-    -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-    -DCMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}
-    -DCMAKE_GENERATOR=${CMAKE_GENERATOR})
-
-##TODO: customize for universal platforms
-if ("${CMAKE_HOST_SYSTEM}" MATCHES ".*Windows.*")
-    if (ANDROID)
-        set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND}
-            -DANDROID_NATIVE_API_LEVEL=29
-            -DANDROID_ABI=arm64-v8a
-            -DANDROID_PLATFORM=${ANDROID_PLATFORM}
-            -DCMAKE_TOOLCHAIN_FILE=D:/android-sdk/ndk/21.4.7075529/build/cmake/android.toolchain.cmake
-            -G=Ninja)
-    else()
-        set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND})
-    endif()
-elseif(ANDROID)
-    set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} -E env PATH=$ENV{PATH}
-        ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND}
-        -DANDROID_NATIVE_API_LEVEL=${ANDROID_NATIVE_API_LEVEL}
-        -DANDROID_ABI=${ANDROID_ABI}
-        -DANDROID_PLATFORM=${ANDROID_PLATFORM}
-        -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE})
-else()
-    set(JSON-C-CONFIG_COMMAND ${CMAKE_COMMAND} ${JSON-C-CONFIG_COMMAND})
-endif()
-
-message("json-c build cmd ${JSON-C-CONFIG_COMMAND}")
-
-ExternalProject_Add(dap_json-c_dep
-                    SOURCE_DIR ${PROJECT_SOURCE_DIR}/3rdparty/json-c/
-                    CONFIGURE_COMMAND ${JSON-C-CONFIG_COMMAND})
-
 include(cmake/OS_Detection.cmake)
 if (INSTALL_DAP_SDK)
     INSTALL(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/deps/ DESTINATION ./)
