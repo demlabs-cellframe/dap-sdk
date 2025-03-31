@@ -7,7 +7,7 @@ int dap_adder_sub_block(dap_full_adder_t* full_adder){
         full_adder->sum=full_adder->b-full_adder->a;
     }
 
-    if (full_adder->a > full_adder->b){
+    if (full_adder->a == full_adder->b){
         full_adder->sum=full_adder->b-full_adder->a;
     }
 

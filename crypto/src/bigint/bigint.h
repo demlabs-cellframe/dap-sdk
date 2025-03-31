@@ -2,6 +2,8 @@
 #define BIGINT_H
 #endif // BIGINT_H
 #include <stdint.h>
+#include <stdbool.h>
+
 
 //we will initially test a similar structure as GMP
 //little endian in the sense that the first limb of
@@ -13,6 +15,12 @@
 typedef struct dap_bigint {
     uint64_t header, *body;
 } dap_bigint_t;
+
+
+
+
+
+
 
 
 

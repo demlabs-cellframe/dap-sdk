@@ -26,6 +26,22 @@ struct dap_adder_subtractor{
     uint64_t po_data_zero;
 
 };
-
-
 typedef struct dap_adder_subtractor dap_adder_subtractor_t;
+
+typedef struct dap_slice_a {
+    struct {
+        union {
+                struct {
+                bool carry_out:1;
+                bool zero:1;
+                bool all_ones:1;
+            } DAP_ALIGN_PACKED;
+        };
+    } DAP_ALIGN_PACKED;
+    uint64_t a;
+    uint64_t b;
+    uint64_t sum;
+    uint64_t carry_out;
+} DAP_ALIGN_PACKED dap_slice_a_t;
+
+

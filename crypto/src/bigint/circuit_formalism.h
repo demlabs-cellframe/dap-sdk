@@ -5,22 +5,29 @@
 
 #include "bigint.h"
 
-struct dap_half_adder{
+typedef struct dap_half_adder{
     uint64_t a;
     uint64_t b;
-    unsigned char carry_out;
+    bool carry_out:1;
     uint64_t sum;
-};
+}DAP_ALIGN_PACKED dap_half_adder_t;
 
-typedef struct dap_half_adder dap_half_adder_t;
 
-struct dap_full_adder{
+
+typedef struct dap_full_adder{
     uint64_t a;
     uint64_t b;
-    unsigned char carry_in;
-    unsigned char carry_out;
     uint64_t sum;
-};
+    struct {
+        union {
+            struct {
+                bool carry_in:1;
+                bool carry_out:1;
+            } DAP_ALIGN_PACKED;
+        };
+    };
+
+}DAP_ALIGN_PACKED dap_full_adder_t;
 
 
-typedef struct dap_full_adder dap_full_adder_t;
+
