@@ -598,12 +598,7 @@ void dap_sign_get_information_json(json_object* a_json_arr_reply, dap_sign_t* a_
     }
     json_object_object_add(a_json_out,"Public key size",json_object_new_uint64(a_sign->header.sign_pkey_size));
     json_object_object_add(a_json_out,"Signature size",json_object_new_uint64(a_sign->header.sign_size));
-    char *signature_str = strndup((const char*)a_sign->pkey_n_sign, a_sign->header.sign_size);
-    json_object_object_add(a_json_out, "Signature", json_object_new_string(signature_str));
-    free(signature_str);
-
 }
-
 /**
  * @brief return string with recommended types
  * @return string with recommended types
