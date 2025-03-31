@@ -76,7 +76,7 @@ void dap_cli_server_cmd_apply_overrides(const char * a_name, const dap_cli_serve
 dap_cli_cmd_t* dap_cli_server_cmd_get_first();
 dap_cli_cmd_t* dap_cli_server_cmd_find(const char *a_name);
 
-void dap_cli_server_alias_add(const char *a_alias, const char *a_pre_cmd, dap_cli_cmd_t *a_cmd);
+dap_cli_cmd_aliases_t *dap_cli_server_alias_add(dap_cli_cmd_t *a_cmd, const char *a_pre_cmd, const char *a_alias);
 dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_cli, char **a_append, char **a_ncmd);
 int32_t dap_cli_get_cmd_thread_count();
 
