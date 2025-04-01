@@ -203,11 +203,8 @@ void dap_cli_server_deinit()
  */
 DAP_STATIC_INLINE void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex, int16_t a_id)
 {
-    dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z(dap_cli_cmd_t);
-    if (!l_cmd_item) {
-        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-        return NULL;
-    }
+    dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z_RET_IF_FAIL(dap_cli_cmd_t);
+
     snprintf(l_cmd_item->name,sizeof (l_cmd_item->name),"%s",a_name);
     l_cmd_item->doc = strdup( a_doc);
     l_cmd_item->doc_ex = strdup( a_doc_ex);
@@ -220,7 +217,6 @@ DAP_STATIC_INLINE void s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_call
     l_cmd_item->id = a_id;
     HASH_ADD_STR(cli_commands,name,l_cmd_item);
     log_it(L_DEBUG,"Added command %s",l_cmd_item->name);
-    return l_cmd_item;
 }
 
 /**
