@@ -1142,14 +1142,8 @@ int exec_silent(const char *a_cmd);
 }
 #endif
 
-DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str)
-{
-    if (!a_addr || !a_addr_str)
-        return -2;
-    return sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4
-        || sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, (uint64_t*)a_addr) == 1
-        ? 0 : -1;
-}
+int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str);
+
 
 DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
 
