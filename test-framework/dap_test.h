@@ -5,7 +5,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#ifdef DAP_OS_DARWIN
+#include <stdint.h>
+#else
 #include <bits/stdint-uintn.h>
+#endif
+
 
 #define TEXT_COLOR_RED   "\x1B[31m"
 #define TEXT_COLOR_GRN   "\x1B[32m"

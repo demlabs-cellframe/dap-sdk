@@ -442,7 +442,7 @@ byte_t *dap_global_db_get_sync(const char *a_group,
     dap_return_val_if_fail(s_dbi && a_group && a_key, NULL);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get call executes for group \"%s\" and key \"%s\"", a_group, a_key);
     size_t l_count_records = 0;
-    dap_store_obj_t *l_store_obj = dap_global_db_driver_read(a_group, a_key, &l_count_records, false);
+    dap_store_obj_t *l_store_obj = dap_global_db_driver_read(a_group, a_key, &l_count_records, true);
     if (l_count_records > 1)
         log_it(L_ERROR, "Get more than one global DB object by one key is unexpected");
     if (!l_store_obj)
@@ -1767,12 +1767,10 @@ static int s_gdb_clean_init()
     return 0;
 }
 
-static void s_gdb_clean_deinit()
-{
+static void s_gdb_clean_deinit() {
 }
 
-static bool s_check_is_obj_pinned(const char * a_group, const char * a_key)
-{
+static bool s_check_is_obj_pinned(const char * a_group, const char * a_key) {
     bool l_ret = false;
     if (dap_global_db_group_match_mask(a_group, "*pinned")) { 
         l_ret = true;
@@ -1788,8 +1786,7 @@ static bool s_check_is_obj_pinned(const char * a_group, const char * a_key)
 /// @param a_pinned_obj 
 /// @return 0 restore obj
 ///         -1 obj is the hole, delete them
-static int s_is_require_restore_del_pin_obj(dap_store_obj_t * a_pinned_obj)
-{
+static int s_is_require_restore_del_pin_obj(dap_store_obj_t * a_pinned_obj) {
     if (dap_store_obj_get_type(a_pinned_obj) == DAP_GLOBAL_DB_OPTYPE_DEL)
         return -1;
     return 0;
@@ -1856,8 +1853,7 @@ static bool s_check_pinned_db_objs_callback(void UNUSED_ARG *a_arg)
     return false;
 }
 
-static bool s_start_check_pinned_db_objs_callback()
-{
+static bool s_start_check_pinned_db_objs_callback() {
     int l_ret = dap_proc_thread_callback_add(NULL, s_check_pinned_db_objs_callback, NULL);
     if (l_ret != 0) {
         log_it(L_ERROR, "Can't exec pinned objs check request, code %d", l_ret);
@@ -1901,7 +1897,7 @@ static void s_set_pinned_timer(const char *a_group)
             s_minimal_ttl = dap_nanotime_from_sec(l_cluster->ttl);
         s_check_pinned_db_objs_timer = dap_timerfd_start(dap_nanotime_to_millitime(s_minimal_ttl/2), 
                                                         (dap_timerfd_callback_t)s_start_check_pinned_db_objs_callback, NULL);
-        debug_if(g_dap_global_db_debug_more, L_INFO, "New pinned callback timer %"DAP_UINT64_FORMAT_x" sec", (uint64_t)dap_nanotime_to_sec(s_minimal_ttl/2));
+        debug_if(g_dap_global_db_debug_more, L_INFO, "New pinned callback timer %"DAP_UINT64_FORMAT_U" sec", (uint64_t)dap_nanotime_to_sec(s_minimal_ttl/2));
     }
 }
 
