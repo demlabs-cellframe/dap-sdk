@@ -23,6 +23,8 @@
 */
 #pragma once
 
+
+
 #include <stdint.h>
 #include "dap_common.h"
 #include "dap_enc_key.h"
@@ -173,6 +175,10 @@ typedef struct dap_pkey {
     uint8_t pkey[];             // Raw pkey data
 } DAP_PACKED dap_pkey_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 DAP_STATIC_INLINE size_t dap_pkey_get_size(const dap_pkey_t *a_pkey) { return a_pkey ? sizeof(dap_pkey_t) + a_pkey->header.size : 0; }
 
 dap_pkey_t *dap_pkey_from_enc_key(dap_enc_key_t *a_key);
@@ -201,3 +207,7 @@ dap_pkey_t *dap_pkey_get_from_str( const char *a_pkey_str);
 char *dap_pkey_to_hex_str(const dap_pkey_t *a_pkey);
 char *dap_pkey_to_base58_str(const dap_pkey_t *a_pkey);
 char *dap_pkey_to_str(const dap_pkey_t *a_pkey, const char *a_str_type);
+
+#ifdef __cplusplus
+}
+#endif
