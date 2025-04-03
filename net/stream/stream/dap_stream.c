@@ -199,6 +199,7 @@ int dap_stream_init(dap_config_t * a_config)
 void dap_stream_deinit()
 {
     dap_stream_ch_deinit( );
+    dap_cluster_deinit();
 }
 
 /**

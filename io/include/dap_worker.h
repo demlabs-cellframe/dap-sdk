@@ -83,6 +83,7 @@ extern "C" {
 
 int dap_worker_init( size_t a_conn_timeout );
 void dap_worker_deinit();
+void dap_worker_free(dap_worker_t *);
 
 dap_worker_t *dap_worker_get_current();
 #define dap_worker_get_auto dap_events_worker_get_auto

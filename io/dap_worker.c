@@ -58,7 +58,7 @@ static void s_queue_es_io_callback( dap_events_socket_t * a_es, void * a_arg);
 #endif
 static void s_queue_callback_callback( dap_events_socket_t * a_es, void * a_arg);
 
-dap_worker_t *dap_worker_get_current() {
+DAP_INLINE dap_worker_t *dap_worker_get_current() {
     return s_worker;
 }
 
@@ -78,6 +78,11 @@ int dap_worker_init( size_t a_conn_timeout )
 
 void dap_worker_deinit( )
 {
+}
+
+void dap_worker_free(dap_worker_t *a_worker)
+{
+    DAP_DELETE(a_worker);
 }
 
 /**

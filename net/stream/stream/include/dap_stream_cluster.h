@@ -97,3 +97,4 @@ void dap_cluster_link_delete_from_all(dap_list_t *a_cluster_list, dap_stream_nod
 dap_stream_node_addr_t dap_cluster_get_random_link(dap_cluster_t *a_cluster);
 dap_stream_node_addr_t *dap_cluster_get_all_members_addrs(dap_cluster_t *a_cluster, size_t *a_count, int a_role);
 void dap_cluster_members_register(dap_cluster_t *a_cluster);
+void dap_cluster_deinit();

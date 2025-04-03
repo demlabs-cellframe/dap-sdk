@@ -35,6 +35,36 @@ static pthread_rwlock_t s_clusters_rwlock = PTHREAD_RWLOCK_INITIALIZER;
 
 static void s_cluster_member_delete(dap_cluster_member_t *a_member);
 
+void dap_cluster_deinit()
+{
+    dap_cluster_t *l_cur = NULL, *l_temp = NULL;
+    pthread_rwlock_wrlock(&s_clusters_rwlock);
+
+    HASH_ITER(hh_str, s_cluster_mnemonims, l_cur, l_temp) {
+        dap_cluster_t *l_to_del = NULL;
+        HASH_FIND(hh, s_clusters, &l_cur->guuid, sizeof(l_cur->guuid), l_to_del);
+        if (l_to_del)
+            HASH_DEL(s_clusters, l_to_del);
+        HASH_DEL(s_cluster_mnemonims, l_cur);
+        dap_cluster_delete_all_members(l_cur);
+        assert(!l_cur->_inheritor);
+        DAP_DELETE(l_cur);
+    }
+    HASH_ITER(hh, s_clusters, l_cur, l_temp) {
+        // if (l_cur->mnemonim) {
+        //     dap_cluster_t *l_temp_mnemonim = NULL;
+        //     HASH_FIND(hh_str, s_cluster_mnemonims, l_cur->mnemonim, strlen(l_cur->mnemonim), l_temp_mnemonim);
+        //     if (l_temp_mnemonim)
+        //         HASH_DEL(s_cluster_mnemonims, l_temp_mnemonim);
+        // }
+        HASH_DEL(s_clusters, l_cur);
+        dap_cluster_delete_all_members(l_cur);
+        assert(!l_cur->_inheritor);
+        DAP_DELETE(l_cur);
+    }
+    pthread_rwlock_unlock(&s_clusters_rwlock);
+}
+
 /**
  * @brief dap_cluster_new
  * @param a_options
@@ -106,13 +136,18 @@ dap_cluster_t *dap_cluster_by_mnemonim(const char *a_mnemonim)
  */
 void dap_cluster_delete(dap_cluster_t *a_cluster)
 {
-    if (!a_cluster)
-        return;
+    dap_return_if_pass(!a_cluster);
     pthread_rwlock_wrlock(&s_clusters_rwlock);
-    HASH_DEL(s_clusters, a_cluster);
+    dap_cluster_t *l_to_delete = NULL;
+    HASH_FIND(hh, s_clusters, &a_cluster->guuid, sizeof(a_cluster->guuid), l_to_delete);
+    if(l_to_delete)
+        HASH_DEL(s_clusters, l_to_delete);
     if (a_cluster->mnemonim) {
-        HASH_DELETE(hh_str, s_cluster_mnemonims, a_cluster);
-        DAP_DELETE(a_cluster->mnemonim);
+        HASH_FIND(hh_str, s_cluster_mnemonims, a_cluster->mnemonim, strlen(a_cluster->mnemonim), l_to_delete);
+        if(l_to_delete) {
+            pthread_rwlock_unlock(&s_clusters_rwlock);
+            return;
+        }
     }
     pthread_rwlock_unlock(&s_clusters_rwlock);
     dap_cluster_delete_all_members(a_cluster);

@@ -301,10 +301,12 @@ void dap_events_deinit( )
     dap_events_socket_deinit();
     dap_worker_deinit();
 
-    dap_events_wait();
-
-    if ( s_workers )
+    if ( s_workers ) {
+        for( uint32_t i = 0; i < s_threads_count; i++ ) {
+            dap_worker_free(s_workers[i]);
+        }
         DAP_DELETE( s_workers );
+    }
 
     s_workers_init = 0;
 #ifdef DAP_OS_WINDOWS
