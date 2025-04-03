@@ -5,6 +5,8 @@
 #include <stdbool.h>
 
 
+
+
 //we will initially test a similar structure as GMP
 //little endian in the sense that the first limb of
 //body is the least significant and the last limb is the
@@ -17,7 +19,14 @@ typedef struct dap_bigint {
 } dap_bigint_t;
 
 
+int dap_bigint_is_signed(dap_bigint_t* a){
+    return (a->header & (~(a->header) + 1));
+}
 
+int dap_bigint_get_size_sum(dap_bigint_t* a,dap_bigint_t* b){
+
+    return 0;
+}
 
 
 
