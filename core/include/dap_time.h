@@ -27,6 +27,26 @@ dap_nanotime_t dap_nanotime_from_sec(dap_time_t a_time);
 // Get seconds from nanotime
 dap_time_t dap_nanotime_to_sec(dap_nanotime_t a_time);
 
+typedef union dap_time_simpl_str {
+    const char s[7];
+} dap_time_simpl_str_t;
+
+/**
+ * @brief Convert dap_time_t to string in simplified format [%y%m%d = 220610 = 10 june 2022 00:00]
+ * @param[in] a_time Time to convert
+ * @return Pointer to the string or NULL if error
+ */
+static inline dap_time_simpl_str_t s_dap_time_to_str_simplified (dap_time_t a_time) {
+    time_t time = (time_t)a_time;
+    struct tm *l_tm = localtime(&time);
+    dap_time_simpl_str_t res = { };
+    if ( l_tm )
+        strftime( (char*)res.s, sizeof(res.s), "%y%m%d", l_tm );
+    return res;
+}
+
+#define dap_time_to_str_simplified(t) s_dap_time_to_str_simplified(t).s
+
 /**
  * @brief dap_chain_time_now Get current time in seconds since January 1, 1970 (UTC)
  * @return Returns current UTC time in seconds.
@@ -38,12 +58,8 @@ dap_time_t dap_time_now(void);
  */
 dap_nanotime_t dap_nanotime_now(void);
 
-
 // crossplatform usleep
 void dap_usleep(uint64_t a_microseconds);
-
-
-char* dap_nanotime_to_str(dap_nanotime_t *a_time, char* a_buf);
 
 /**
  * @brief dap_time_to_str_rfc822 This function converts time to stirng format.
@@ -53,7 +69,6 @@ char* dap_nanotime_to_str(dap_nanotime_t *a_time, char* a_buf);
  */
 int dap_time_to_str_rfc822(char * out, size_t out_size_max, dap_time_t a_time);
 dap_time_t dap_time_from_str_rfc822(const char *a_time_str);
-const char* dap_time_to_str_simplified(dap_time_t a_time);
 int dap_nanotime_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_nanotime_t a_chain_time);
 int timespec_diff(struct timespec *a_start, struct timespec *a_stop, struct timespec *a_result);
 
