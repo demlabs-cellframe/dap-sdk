@@ -28,6 +28,11 @@
 #include <stdbool.h>
 #include <net/if.h>
 #include <linux/rtnetlink.h>
+#include <netinet/in.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef enum {
     // like in rtnetlink defines
@@ -58,9 +63,6 @@ typedef struct {
     };
 } dap_network_notification_t;
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef void (*dap_network_monitor_notification_callback_t)
               (const dap_network_notification_t *notification);
