@@ -59,6 +59,16 @@ dap_time_t dap_nanotime_to_sec(dap_nanotime_t a_time)
     return a_time / DAP_NSEC_PER_SEC;
 }
 
+dap_millitime_t dap_nanotime_to_millitime(dap_nanotime_t a_time)
+{
+    return a_time / DAP_NSEC_PER_MSEC;
+}
+
+dap_nanotime_t dap_millitime_to_nanotime(dap_millitime_t a_time)
+{
+    return (dap_nanotime_t)a_time * DAP_NSEC_PER_MSEC;
+}
+
 /**
  * @brief dap_chain_time_now Get current time in seconds since January 1, 1970 (UTC)
  * @return Returns current UTC time in seconds.
@@ -206,4 +216,21 @@ int dap_nanotime_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_nanotime_
 {
     time_t l_time = dap_nanotime_to_sec(a_chain_time);
     return dap_time_to_str_rfc822(a_out, a_out_size_max, l_time);
+}
+
+/**
+ * @brief Convert time str to dap_time_t by custom format
+ * @param a_time_str
+ * @param a_format_str
+ * @return time from string or 0 if bad time format
+ */
+dap_time_t dap_time_from_str_custom(const char *a_time_str, const char *a_format_str)
+{
+    dap_return_val_if_pass(!a_time_str || !a_format_str, 0);
+    struct tm l_tm = {};
+    char *ret = strptime(a_time_str, a_format_str, &l_tm);
+    if ( !ret || *ret )
+        return log_it(L_ERROR, "Invalid timestamp \"%s\" by format \"%s\"", a_time_str, a_format_str), 0;
+    time_t tmp = mktime(&l_tm);
+    return tmp > 0 ? (dap_time_t)tmp : 0;
 }
