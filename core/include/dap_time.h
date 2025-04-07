@@ -12,6 +12,8 @@
 #define DAP_END_OF_DAYS 4102444799
 // Constant to convert seconds to nanoseconds
 #define DAP_NSEC_PER_SEC 1000000000
+// Constant to convert msec to nanoseconds
+#define DAP_NSEC_PER_MSEC 1000000
 // Constant to convert seconds to microseconds
 #define DAP_USEC_PER_SEC 1000000
 // Seconds per day
@@ -21,11 +23,17 @@
 typedef uint64_t dap_time_t;
 // time in nanoseconds
 typedef uint64_t dap_nanotime_t;
+// time in milliseconds
+typedef uint64_t dap_millitime_t;
 
 // Create nanotime from second
-dap_nanotime_t dap_nanotime_from_sec(dap_time_t a_time);
+static inline dap_nanotime_t dap_nanotime_from_sec(dap_time_t a_time) {
+    return (dap_nanotime_t)a_time * DAP_NSEC_PER_SEC;
+}
 // Get seconds from nanotime
-dap_time_t dap_nanotime_to_sec(dap_nanotime_t a_time);
+static inline dap_time_t dap_nanotime_to_sec(dap_nanotime_t a_time) {
+    return a_time / DAP_NSEC_PER_SEC;
+}
 
 typedef union dap_time_simpl_str {
     const char s[7];
@@ -47,16 +55,30 @@ static inline dap_time_simpl_str_t s_dap_time_to_str_simplified (dap_time_t a_ti
 
 #define dap_time_to_str_simplified(t) s_dap_time_to_str_simplified(t).s
 
+static inline dap_millitime_t dap_nanotime_to_millitime(dap_nanotime_t a_time) {
+    return a_time / DAP_NSEC_PER_MSEC;
+}
+
+static inline dap_nanotime_t dap_millitime_to_nanotime(dap_millitime_t a_time) {
+    return (dap_nanotime_t)a_time * DAP_NSEC_PER_MSEC;
+}
+
 /**
  * @brief dap_chain_time_now Get current time in seconds since January 1, 1970 (UTC)
  * @return Returns current UTC time in seconds.
  */
-dap_time_t dap_time_now(void);
+static inline dap_time_t dap_time_now() {
+    return (dap_time_t)time(NULL);
+}
 /**
  * @brief dap_clock_gettime Get current time in nanoseconds since January 1, 1970 (UTC)
  * @return Returns current UTC time in nanoseconds.
  */
-dap_nanotime_t dap_nanotime_now(void);
+static inline dap_nanotime_t dap_nanotime_now(void) {
+    struct timespec cur_time;
+    clock_gettime(CLOCK_REALTIME, &cur_time);
+    return (dap_nanotime_t)cur_time.tv_sec * DAP_NSEC_PER_SEC + cur_time.tv_nsec;
+}
 
 // crossplatform usleep
 void dap_usleep(uint64_t a_microseconds);
