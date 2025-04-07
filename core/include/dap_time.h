@@ -26,6 +26,10 @@ typedef uint64_t dap_nanotime_t;
 // time in milliseconds
 typedef uint64_t dap_millitime_t;
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 // Create nanotime from second
 static inline dap_nanotime_t dap_nanotime_from_sec(dap_time_t a_time) {
     return (dap_nanotime_t)a_time * DAP_NSEC_PER_SEC;
@@ -96,3 +100,7 @@ int timespec_diff(struct timespec *a_start, struct timespec *a_stop, struct time
 
 dap_time_t dap_time_from_str_simplified(const char *a_time_str);
 dap_time_t dap_time_from_str_custom(const char *a_time_str, const char *a_format_str);
+
+#ifdef __cplusplus
+}
+#endif
