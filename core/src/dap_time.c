@@ -46,49 +46,6 @@ int clock_gettime(clockid_t clock_id, struct timespec *spec)
 #endif
 #endif
 
-
-// Create time from second
-dap_nanotime_t dap_nanotime_from_sec(dap_time_t a_time)
-{
-    return (dap_nanotime_t)a_time * DAP_NSEC_PER_SEC;
-}
-
-// Get seconds from time
-dap_time_t dap_nanotime_to_sec(dap_nanotime_t a_time)
-{
-    return a_time / DAP_NSEC_PER_SEC;
-}
-
-dap_millitime_t dap_nanotime_to_millitime(dap_nanotime_t a_time)
-{
-    return a_time / DAP_NSEC_PER_MSEC;
-}
-
-dap_nanotime_t dap_millitime_to_nanotime(dap_millitime_t a_time)
-{
-    return (dap_nanotime_t)a_time * DAP_NSEC_PER_MSEC;
-}
-
-/**
- * @brief dap_chain_time_now Get current time in seconds since January 1, 1970 (UTC)
- * @return Returns current UTC time in seconds.
- */
-dap_time_t dap_time_now(void)
-{
-    return (dap_time_t)time(NULL);
-}
-
-/**
- * @brief dap_chain_time_now Get current time in nanoseconds since January 1, 1970 (UTC)
- * @return Returns current UTC time in nanoseconds.
- */
-dap_nanotime_t dap_nanotime_now(void)
-{
-    struct timespec cur_time;
-    clock_gettime(CLOCK_REALTIME, &cur_time);
-    return (dap_nanotime_t)cur_time.tv_sec * DAP_NSEC_PER_SEC + cur_time.tv_nsec;
-}
-
 /**
  * dap_usleep:
  * @a_microseconds: number of microseconds to pause
