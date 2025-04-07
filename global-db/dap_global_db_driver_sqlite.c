@@ -63,9 +63,12 @@ static uint32_t s_attempts_count = 10;
 static const int s_sleep_period = 500 * 1000;  /* Wait 0.5 sec */;
 static bool s_db_inited = false;
 static _Thread_local conn_list_item_t *s_conn = NULL;  // local connection
+static _Thread_local pthread_key_t s_destructor_key;
 
 
 static void s_connection_destructor(UNUSED_ARG void *a_conn) {
+    if (!s_conn)
+        return;
     sqlite3_close(s_conn->conn);
     log_it(L_DEBUG, "Close  connection: @%p/%p, usage: %llu", s_conn, s_conn->conn, s_conn->usage);
     DAP_DEL_Z(s_conn);
@@ -245,7 +248,6 @@ static conn_list_item_t *s_db_sqlite_get_connection(bool a_trans)
     static int l_conn_idx = 0;
     if (!s_conn) {
         s_conn = DAP_NEW_Z_RET_VAL_IF_FAIL(conn_list_item_t, NULL);
-        pthread_key_t s_destructor_key;
         pthread_key_create(&s_destructor_key, s_connection_destructor);
         pthread_setspecific(s_destructor_key, (const void *)s_conn);
         char *l_error_message = NULL;
@@ -727,7 +729,7 @@ static dap_store_obj_t* s_db_sqlite_read_cond_store_obj(const char *a_group, dap
     if ( rc != SQLITE_DONE )
         log_it(L_ERROR, "SQLite conditional read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
     if (a_count_out)
-        *a_count_out = l_count_out + l_blank_add;
+        *a_count_out = l_count_out;
 clean_and_ret:
     s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_count_str, l_stmt, l_stmt_count);
     return l_ret;
@@ -797,6 +799,60 @@ clean_and_ret:
     s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_count_str, l_stmt, l_stmt_count);
     return l_ret;
 }
+
+static dap_store_obj_t* s_db_sqlite_read_store_obj_below_timestamp(const char *a_group, dap_nanotime_t a_timestamp, size_t *a_count_out) {
+    conn_list_item_t *l_conn = NULL;
+    dap_return_val_if_fail(a_group && (l_conn = s_db_sqlite_get_connection(false)), NULL);
+
+    const char *l_error_msg = "read below timestamp";
+    char *l_str_query = NULL;
+    size_t l_row = 0;
+    dap_store_obj_t * l_ret = NULL;
+    uint64_t l_count = a_count_out && *a_count_out ? *a_count_out : DAP_GLOBAL_DB_COND_READ_COUNT_DEFAULT;
+    sqlite3_stmt *l_stmt_count = NULL, *l_stmt = NULL;
+    char *l_query_count_str = sqlite3_mprintf("SELECT COUNT(*) FROM \"%s\""
+                                        " WHERE driver_key < ?", a_group);
+    char *l_query_str = sqlite3_mprintf("SELECT * FROM \"%s\""
+                                        " WHERE driver_key < ?"
+                                        " ORDER BY driver_key LIMIT '%d'", a_group, (int)l_count);
+    if (!l_query_count_str || !l_query_str) {
+        log_it(L_ERROR, "Error in SQL request forming");
+        goto clean_and_ret;
+    }
+
+    dap_global_db_driver_hash_t l_hash_from = { .bets = htobe64(a_timestamp), .becrc = (uint64_t)-1 };
+    if( s_db_sqlite_prepare(l_conn->conn, l_query_count_str, &l_stmt_count, l_error_msg)                        != SQLITE_OK ||
+        s_db_sqlite_bind_blob64(l_stmt_count, 1, &l_hash_from, sizeof(l_hash_from), SQLITE_STATIC, l_error_msg) != SQLITE_OK ||
+        s_db_sqlite_prepare(l_conn->conn, l_query_str, &l_stmt, l_error_msg)                                    != SQLITE_OK ||
+        s_db_sqlite_bind_blob64(l_stmt, 1, &l_hash_from, sizeof(l_hash_from), SQLITE_STATIC, l_error_msg)       != SQLITE_OK ||
+        s_db_sqlite_step(l_stmt_count, l_error_msg)                                                             != SQLITE_ROW )
+    {
+        goto clean_and_ret;
+    }
+// memory alloc
+    uint64_t l_count_int = dap_min(l_count, (uint64_t)sqlite3_column_int64(l_stmt_count, 0));
+    if (!l_count_int) {
+        log_it(L_INFO, "There are no records satisfying the conditional read request");
+        goto clean_and_ret;
+    }
+    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count_int) )) {
+        log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+        goto clean_and_ret;
+    }
+// data forming
+    size_t l_count_out = 0;
+    int rc;
+    for ( rc = 0; SQLITE_ROW == ( rc = s_db_sqlite_fill_one_item(a_group, l_ret + l_count_out, l_stmt) ) && l_count_out < l_count; ++l_count_out ) {};
+    if ( rc != SQLITE_DONE )
+        log_it(L_ERROR, "SQLite conditional read error %d(%s)", sqlite3_errcode(l_conn->conn), sqlite3_errmsg(l_conn->conn));
+    if (a_count_out)
+        *a_count_out = l_count_out;
+clean_and_ret:
+    s_db_sqlite_clean(l_conn, 2, l_query_str, l_query_count_str, l_stmt, l_stmt_count);
+    return l_ret;
+}
+
+
 
 /**
  * @brief Gets a list of group names by a_group_mask.
@@ -1057,20 +1113,21 @@ int dap_global_db_driver_sqlite_init(const char *a_filename_db, dap_global_db_dr
     }
     DAP_DEL_Z(l_filename_dir);
 
-    a_drv_callback->apply_store_obj         = s_db_sqlite_apply_store_obj;
-    a_drv_callback->read_store_obj          = s_db_sqlite_read_store_obj;
-    a_drv_callback->read_cond_store_obj     = s_db_sqlite_read_cond_store_obj;
-    a_drv_callback->read_last_store_obj     = s_db_sqlite_read_last_store_obj;
-    a_drv_callback->transaction_start       = s_db_sqlite_transaction_start;
-    a_drv_callback->transaction_end         = s_db_sqlite_transaction_end;
-    a_drv_callback->get_groups_by_mask      = s_db_sqlite_get_groups_by_mask;
-    a_drv_callback->read_count_store        = s_db_sqlite_read_count_store;
-    a_drv_callback->is_obj                  = s_db_sqlite_is_obj;
-    a_drv_callback->deinit                  = s_db_sqlite_deinit;
-    a_drv_callback->flush                   = s_db_sqlite_flush;
-    a_drv_callback->get_by_hash             = s_db_sqlite_get_by_hash;
-    a_drv_callback->read_hashes             = s_db_sqlite_read_hashes;
-    a_drv_callback->is_hash                 = s_db_sqlite_is_hash;
+    a_drv_callback->apply_store_obj              = s_db_sqlite_apply_store_obj;
+    a_drv_callback->read_store_obj               = s_db_sqlite_read_store_obj;
+    a_drv_callback->read_cond_store_obj          = s_db_sqlite_read_cond_store_obj;
+    a_drv_callback->read_store_obj_by_timestamp  = s_db_sqlite_read_store_obj_below_timestamp;
+    a_drv_callback->read_last_store_obj          = s_db_sqlite_read_last_store_obj;
+    a_drv_callback->transaction_start            = s_db_sqlite_transaction_start;
+    a_drv_callback->transaction_end              = s_db_sqlite_transaction_end;
+    a_drv_callback->get_groups_by_mask           = s_db_sqlite_get_groups_by_mask;
+    a_drv_callback->read_count_store             = s_db_sqlite_read_count_store;
+    a_drv_callback->is_obj                       = s_db_sqlite_is_obj;
+    a_drv_callback->deinit                       = s_db_sqlite_deinit;
+    a_drv_callback->flush                        = s_db_sqlite_flush;
+    a_drv_callback->get_by_hash                  = s_db_sqlite_get_by_hash;
+    a_drv_callback->read_hashes                  = s_db_sqlite_read_hashes;
+    a_drv_callback->is_hash                      = s_db_sqlite_is_hash;
     s_db_inited = true;
 
     conn_list_item_t *l_conn = s_db_sqlite_get_connection(false);

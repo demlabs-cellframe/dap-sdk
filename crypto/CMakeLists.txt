@@ -148,6 +148,9 @@ else()
     list (FILTER CRYPTO_SRCS EXCLUDE REGEX ".*shipovnik.c")
 endif()
 
+list (FILTER CRYPTO_SRCS EXCLUDE REGEX ".*test_falcon.c$")
+list (FILTER CRYPTO_SRCS EXCLUDE REGEX ".*speed.c$")
+
 get_filename_component(full_path_src ${CMAKE_CURRENT_SOURCE_DIR}/src/sig_shipovnik/streebog/gost3411-2012.c ABSOLUTE)
 list(REMOVE_ITEM CRYPTO_SRCS "${full_path_src}")
 

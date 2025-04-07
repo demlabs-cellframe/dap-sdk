@@ -110,16 +110,6 @@ bool s_proc_thread_reader(void *a_arg)
             for (i = 0; i < l_hashes_pkt->hashes_count && be64toh((l_hashes_diff + i)->bets) + l_ttl < l_now; i++) {
                 if (dap_global_db_driver_hash_is_blank(l_hashes_diff + i))
                     break;
-                dap_store_obj_t l_to_del = { .timestamp = be64toh((l_hashes_diff + i)->bets),
-                                             .crc = be64toh((l_hashes_diff + i)->becrc),
-                                             .group = (char *)l_group };
-                int l_res = dap_global_db_driver_delete(&l_to_del, 1);
-                if (g_dap_global_db_debug_more) {
-                    char l_to_del_ts[DAP_TIME_STR_SIZE];
-                    dap_time_to_str_rfc822(l_to_del_ts, sizeof(l_to_del_ts), dap_nanotime_to_sec(l_to_del.timestamp));
-                    log_it(l_res ? L_WARNING : L_DEBUG, "%s too old object with group %s and timestamp %s",
-                                                             l_res ? "Can't remove" : "Removed", l_group, l_to_del_ts);
-                }
             }
             if (i == l_hashes_pkt->hashes_count) {
                 l_pkt->last_hash = l_hashes_diff[l_hashes_pkt->hashes_count - 1];

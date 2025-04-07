@@ -15,7 +15,9 @@ add_library(${PROJECT_NAME} STATIC ${CORE_UNIX_SRCS} ${CORE_UNIX_HEADERS}
 
 target_link_libraries(${PROJECT_NAME} dap_core)
 
-target_link_libraries(${PROJECT_NAME} pthread)
+if (NOT ANDROID)
+    target_link_libraries(${PROJECT_NAME} pthread)
+endif()
 
 target_include_directories(dap_core_unix INTERFACE .)
 

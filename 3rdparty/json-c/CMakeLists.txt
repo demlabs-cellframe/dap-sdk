@@ -489,81 +489,14 @@ if (BUILD_STATIC_LIBS AND BUILD_SHARED_LIBS)
     list(APPEND CMAKE_TARGETS ${STATIC_LIB})
 endif ()
 
-# Always create new install dirs with 0755 permissions, regardless of umask
-set(CMAKE_INSTALL_DEFAULT_DIRECTORY_PERMISSIONS
-	OWNER_READ
-	OWNER_WRITE
-	OWNER_EXECUTE
-	GROUP_READ
-	GROUP_EXECUTE
-	WORLD_READ
-	WORLD_EXECUTE
-   )
-
-install(TARGETS ${CMAKE_TARGETS}
-    EXPORT ${PROJECT_NAME}-targets
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} ${CMAKE_INSTALL_INCLUDEDIR}/json-c
-)
-
-install(EXPORT ${PROJECT_NAME}-targets
-    FILE ${PROJECT_NAME}-targets.cmake
-    NAMESPACE ${PROJECT_NAME}::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
-)
-
-configure_package_config_file(
-    "cmake/Config.cmake.in"
-    ${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake
-    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}"
-)
-
-install(
-    FILES ${PROJECT_BINARY_DIR}/${PROJECT_NAME}-config.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
-)
-
-if (UNIX OR MINGW OR CYGWIN)
-    SET(prefix ${CMAKE_INSTALL_PREFIX})
-    # exec_prefix is prefix by default and CMake does not have the
-    # concept.
-    SET(exec_prefix ${CMAKE_INSTALL_PREFIX})
-    SET(libdir ${CMAKE_INSTALL_FULL_LIBDIR})
-    SET(includedir ${CMAKE_INSTALL_FULL_INCLUDEDIR})
-    SET(VERSION ${PROJECT_VERSION})
-
-	# Linking against the static json-c requires
-	# dependent packages to include additional libs:
-	SET(LIBS_LIST ${CMAKE_REQUIRED_LIBRARIES})
-
-	# Note: We would need cmake >= 3.12 in order to use list(TRANSFORM ...)
-	function(list_transform_prepend var prefix)
-		set(temp "")
-		foreach(f ${${var}})
-			list(APPEND temp "${prefix}${f}")
-		endforeach()
-		set(${var} "${temp}" PARENT_SCOPE)
-	endfunction()
-	list_transform_prepend(LIBS_LIST "-l")
-
-	string(REPLACE ";" " " LIBS "${LIBS_LIST}")
-
-    configure_file(json-c.pc.in json-c.pc @ONLY)
-    set(INSTALL_PKGCONFIG_DIR "${CMAKE_INSTALL_LIBDIR}/pkgconfig" CACHE PATH "Installation directory for pkgconfig (.pc) files")
-    install(FILES ${PROJECT_BINARY_DIR}/json-c.pc DESTINATION "${INSTALL_PKGCONFIG_DIR}")
-endif ()
-
-install(FILES ${JSON_C_PUBLIC_HEADERS} DESTINATION ${CMAKE_INSTALL_FULL_INCLUDEDIR}/json-c)
-
-#if (CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND BUILD_TESTING AND
-#   (NOT MSVC OR NOT (MSVC_VERSION LESS 1800)) # Tests need at least VS2013
-#   )
-#add_subdirectory(tests)
-#endif()
-
-#if (NOT MSVC)  # cmd line apps don't built on Windows currently.
-#add_subdirectory(apps)
-#endif()
-
+# json-c installation
+if(INSTALL_SDK)
+    install(TARGETS ${CMAKE_TARGETS}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR}/dap/json-c
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/dap/json-c
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}/dap/json-c
+    )
+    install(FILES ${JSON_C_PUBLIC_HEADERS}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/json-c
+    )
+endif()

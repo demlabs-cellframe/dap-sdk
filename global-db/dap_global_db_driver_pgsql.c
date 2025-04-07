@@ -22,8 +22,11 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with any DAP SDK based project.  If not, see <http://www.gnu.org/licenses/>.
 */
-
+#ifdef DAP_OS_DARWIN
+#include <libpq-fe.h>
+#else
 #include <postgresql/libpq-fe.h>
+#endif
 
 #include "dap_global_db_driver_pgsql.h"
 #include "dap_common.h"
@@ -57,6 +60,8 @@ DAP_STATIC_INLINE void s_request_err_msg(const char *a_request_str)
 }
 
 static void s_connection_destructor(UNUSED_ARG void *a_conn) {
+    if (!s_conn)
+        return;
     PQfinish(s_conn->conn);
     log_it(L_DEBUG, "Close  connection: @%p/%p, usage: %llu", s_conn, s_conn->conn, s_conn->usage);
     DAP_DEL_Z(s_conn);
@@ -655,7 +660,7 @@ static dap_store_obj_t *s_db_pgsql_read_store_obj_below_timestamp(const char *a_
         s_request_err_msg(__FUNCTION__);
         goto clean_and_ret;
     }
-    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count) )) {
+    if (!( l_ret = DAP_NEW_Z_COUNT(dap_store_obj_t, l_count + 1) )) {
         log_it(L_CRITICAL, "%s", c_error_memory_alloc);
         goto clean_and_ret;
     }
@@ -669,7 +674,7 @@ clean_and_ret:
     PQclear(l_query_res);
     s_db_pgsql_free_connection(l_conn, false);
     return l_ret;
-}
+}    
 
 
 /**
@@ -930,6 +935,7 @@ int dap_global_db_driver_pgsql_init(const char *a_db_conn_info, dap_global_db_dr
     a_drv_callback->read_store_obj          = s_db_pgsql_read_store_obj;
     a_drv_callback->read_cond_store_obj     = s_db_pgsql_read_cond_store_obj;
     a_drv_callback->read_last_store_obj     = s_db_pgsql_read_last_store_obj;
+    a_drv_callback->read_store_obj_by_timestamp = s_db_pgsql_read_store_obj_below_timestamp;
     // a_drv_callback->transaction_start       = s_db_pgsql_transaction_start;
     // a_drv_callback->transaction_end         = s_db_pgsql_transaction_end;
     a_drv_callback->get_groups_by_mask      = s_db_pgsql_get_groups_by_mask;

@@ -59,7 +59,7 @@ if (BUILD_WITH_ZIP)
     set(CORE_LIBRARIES ${CORE_LIBRARIES} zip)
     add_definitions ("-DDAP_BUILD_WITH_ZIP")
 endif()
-
+add_subdirectory(../3rdparty/json-c ${CMAKE_CURRENT_BINARY_DIR}/json-c)
 target_link_libraries(${PROJECT_NAME} ${CORE_LIBRARIES} dap_json-c)
 
 if(BUILD_DAP_TESTS)
