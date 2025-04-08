@@ -1639,6 +1639,22 @@ dap_node_addr_str_t dap_stream_node_addr_to_str_static_(dap_stream_node_addr_t a
     snprintf((char*)&l_ret, sizeof(l_ret), NODE_ADDR_FP_STR, NODE_ADDR_FP_ARGS_S(a_address));
     return l_ret;
 }
+
+int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str)
+{
+    if (!a_addr || !a_addr_str)
+        return -2;
+    bool l_res = true;
+    size_t l_len = 0;
+    for (; l_res && *(a_addr_str + l_len) && l_len < 23; l_len++) {
+        l_res &= *(a_addr_str + l_len) == ':' || isxdigit(*(a_addr_str + l_len));
+    }
+    l_res &= l_len == 18 || l_len == 22;
+    return l_res ? (sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4
+        || sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, (uint64_t*)a_addr) == 1
+        ? 0 : -1) : -4;
+}
+
 #ifdef __cplusplus
 }
 #endif

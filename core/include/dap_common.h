@@ -433,10 +433,12 @@ DAP_STATIC_INLINE void _dap_page_aligned_free(void *ptr) {
 #define DAP_UINT64_FORMAT_X  "llX"
 #define DAP_UINT64_FORMAT_x  "llx"
 #define DAP_UINT64_FORMAT_U  "llu"
+#define DAP_INT64_FORMAT     "lld"
 #elif (__SIZEOF_LONG__ == 8)
 #define DAP_UINT64_FORMAT_X  "lX"
 #define DAP_UINT64_FORMAT_x  "lx"
 #define DAP_UINT64_FORMAT_U  "lu"
+#define DAP_INT64_FORMAT     "ld"
 #else
 #error "DAP_UINT64_FORMAT_* are undefined for your platform"
 #endif
@@ -1152,14 +1154,8 @@ int exec_silent(const char *a_cmd);
 }
 #endif
 
-DAP_STATIC_INLINE int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str)
-{
-    if (!a_addr || !a_addr_str)
-        return -2;
-    return sscanf(a_addr_str, NODE_ADDR_FP_STR, NODE_ADDR_FPS_ARGS(a_addr)) == 4
-        || sscanf(a_addr_str, "0x%016" DAP_UINT64_FORMAT_x, (uint64_t*)a_addr) == 1
-        ? 0 : -1;
-}
+int dap_stream_node_addr_from_str(dap_stream_node_addr_t *a_addr, const char *a_addr_str);
+
 
 DAP_STATIC_INLINE bool dap_stream_node_addr_is_blank(dap_stream_node_addr_t *a_addr) { return !a_addr->uint64; }
 
