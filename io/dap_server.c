@@ -219,6 +219,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
     l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
 #endif
 #endif
+    l_es->addr_size = l_len;
     dap_strncpy(l_es->listener_addr_str, a_addr, INET6_ADDRSTRLEN);
     l_es->listener_port = a_port;
     l_es->addr_storage = l_saddr;

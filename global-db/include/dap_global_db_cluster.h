@@ -55,6 +55,7 @@ DAP_STATIC_INLINE const char *dap_global_db_cluster_role_str(dap_global_db_role_
 }
 
 typedef void (*dap_store_obj_callback_notify_t)(dap_store_obj_t *a_obj, void *a_arg);
+typedef void (*dap_cluster_del_callback_t)(dap_store_obj_t *a_obj, void *a_arg);
 
 typedef struct dap_global_db_notifier {
     dap_store_obj_callback_notify_t callback_notify;
@@ -77,6 +78,7 @@ typedef struct dap_global_db_cluster {
     char *groups_mask;                          // GDB cluster coverage area
     dap_cluster_t *links_cluster;               // Cluster container for network links
     dap_cluster_t *role_cluster;                // Cluster container for members with especial roles
+    dap_cluster_del_callback_t del_callback;    // Special cluster delete callback for global_db
     dap_global_db_role_t default_role;          // Role assined for new membersadded with default one
     uint64_t ttl;                               // Time-to-life for objects in the cluster, in seconds
     bool owner_root_access;                     // Deny if false, grant overwise
