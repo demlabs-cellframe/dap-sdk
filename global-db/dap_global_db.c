@@ -284,6 +284,14 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
     return true;
 }
 
+static void s_store_obj_update_timestamp(dap_store_obj_t *a_obj, dap_global_db_instance_t *a_dbi, dap_nanotime_t a_new_timestamp)
+{
+    a_obj->timestamp = a_new_timestamp;
+    DAP_DEL_Z(a_obj->sign);
+    a_obj->crc = 0;
+    a_obj->sign = dap_store_obj_sign(a_obj, a_dbi ? a_dbi->signing_key :  dap_global_db_instance_get_default()->signing_key, &a_obj->crc);
+}
+
 static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_obj)
 {
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(a_dbi, a_obj->group);
@@ -370,10 +378,7 @@ static int s_store_obj_apply(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a
     case 1:         // Received object is older
         if (a_obj->key && (a_obj->flags & DAP_GLOBAL_DB_RECORD_NEW)) {
             dap_nanotime_t l_time_diff = l_read_obj->timestamp - a_obj->timestamp;
-            a_obj->timestamp = l_read_obj->timestamp + 1;
-            DAP_DEL_Z(a_obj->sign);
-            a_obj->crc = 0;
-            a_obj->sign = dap_store_obj_sign(a_obj, a_dbi->signing_key, &a_obj->crc);
+            s_store_obj_update_timestamp(a_obj, a_dbi, l_read_obj->timestamp + 1);
             debug_if(g_dap_global_db_debug_more, L_WARNING, "DB record with group %s and key %s need time correction for %"DAP_UINT64_FORMAT_U" seconds to be properly applied",
                                                             a_obj->group, a_obj->key, dap_nanotime_to_sec(l_time_diff));
             if (!a_obj->sign) {
@@ -1912,7 +1917,7 @@ static int s_add_pinned_obj_in_pinned_group(dap_store_obj_t * a_objs){
         if (!l_ret_check) {
             if (!dap_global_db_set_sync(l_pinned_mask, a_objs->key, a_objs->value, a_objs->value_len, false)) {
                 debug_if(g_dap_global_db_debug_more, L_INFO, "Pinned objs was added in pinned group %s, %s key", l_pinned_mask, a_objs->key);
-                a_objs->timestamp = dap_nanotime_now();
+                s_store_obj_update_timestamp(a_objs, NULL, dap_nanotime_now());
                 dap_global_db_driver_apply(a_objs, 1);
             } else
                 debug_if(g_dap_global_db_debug_more, L_ERROR, "Adding error in pinned group %s", a_objs->group);
