@@ -442,7 +442,7 @@ byte_t *dap_global_db_get_sync(const char *a_group,
     dap_return_val_if_fail(s_dbi && a_group && a_key, NULL);
     debug_if(g_dap_global_db_debug_more, L_DEBUG, "get call executes for group \"%s\" and key \"%s\"", a_group, a_key);
     size_t l_count_records = 0;
-    dap_store_obj_t *l_store_obj = dap_global_db_driver_read(a_group, a_key, &l_count_records, true);
+    dap_store_obj_t *l_store_obj = dap_global_db_driver_read(a_group, a_key, &l_count_records, false);
     if (l_count_records > 1)
         log_it(L_ERROR, "Get more than one global DB object by one key is unexpected");
     if (!l_store_obj)
