@@ -126,6 +126,7 @@ typedef struct queue_entry {
 // If set - queue limited to sizeof(void*) size of data transmitted
 #define DAP_SOCK_FILE_MAPPED       BIT( 7 )
 #define DAP_SOCK_QUEUE_PTR         BIT( 8 )
+#define DAP_SOCK_MSG_ORIENTED      BIT( 9 )
 
 #define FLAG_CLOSE(f)           (f & DAP_SOCK_SIGNAL_CLOSE)
 #define FLAG_READ_NOCLOSE(f)    (!(f & DAP_SOCK_SIGNAL_CLOSE) && (f & DAP_SOCK_READY_TO_READ))
@@ -201,7 +202,8 @@ typedef struct dap_events_socket_callbacks {
 #define DAP_QUEUE_MAX_MSGS              1024
 
 typedef enum {
-    DESCRIPTOR_TYPE_SOCKET_CLIENT = 0,
+    DESCRIPTOR_TYPE_SOCKET_RAW,
+    DESCRIPTOR_TYPE_SOCKET_CLIENT,
     DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT,
     DESCRIPTOR_TYPE_SOCKET_LISTENING,
     DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING,
@@ -212,7 +214,8 @@ typedef enum {
     DESCRIPTOR_TYPE_QUEUE,
     /* all above are readable/writeable */
     DESCRIPTOR_TYPE_TIMER,
-    DESCRIPTOR_TYPE_EVENT
+    DESCRIPTOR_TYPE_EVENT,
+    DESCRIPTOR_TYPE_MAX
 } dap_events_desc_type_t;
 
 
@@ -287,13 +290,8 @@ typedef struct dap_events_socket {
     pthread_rwlock_t buf_out_lock;
 #endif
     struct sockaddr_storage addr_storage;
+    uint8_t addr_size;
     // Remote address, port and others
-    union {
-#ifdef DAP_OS_UNIX
-        struct sockaddr_un remote_path;
-        struct sockaddr_un listener_path; // Path to UNIX socket
-#endif
-    };
 
     union {
         char remote_addr_str[DAP_HOSTADDR_STRLEN];
@@ -354,7 +352,7 @@ typedef struct dap_events_socket_uuid_w_data{
     };
 } dap_events_socket_uuid_w_data_t;
 
-extern const char *s_socket_type_to_str[];
+extern const char *s_socket_type_to_str[DESCRIPTOR_TYPE_MAX];
 
 typedef struct dap_events_socket_handler_hh{
     dap_events_socket_t * esocket;
@@ -449,22 +447,7 @@ size_t  dap_events_socket_insert_buf_out(dap_events_socket_t * a_es, void *a_dat
 
 DAP_STATIC_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t *a_es)
 {
-    if (!a_es)
-        return "CORRUPTED";
-    switch (a_es->type) {
-    case DESCRIPTOR_TYPE_SOCKET_CLIENT:         return "CLIENT";
-    case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:   return "LOCAL_CLIENT";
-    case DESCRIPTOR_TYPE_SOCKET_LISTENING:      return "SERVER";
-    case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:return "LOCAL_SERVER";
-    case DESCRIPTOR_TYPE_SOCKET_UDP:            return "CLIENT_UDP";
-    case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL:     return "CLIENT_SSL";
-    case DESCRIPTOR_TYPE_FILE:                  return "FILE";
-    case DESCRIPTOR_TYPE_PIPE:                  return "PIPE";
-    case DESCRIPTOR_TYPE_QUEUE:                 return "QUEUE";
-    case DESCRIPTOR_TYPE_TIMER:                 return "TIMER";
-    case DESCRIPTOR_TYPE_EVENT:                 return "EVENT";
-    default:                                    return "UNKNOWN";
-    }
+    return a_es && a_es->type > 0 && a_es->type < DESCRIPTOR_TYPE_MAX ? s_socket_type_to_str[a_es->type] : "UNKNOWN";
 }
 
 DAP_INLINE int dap_close_socket(SOCKET s) {
