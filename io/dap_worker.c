@@ -187,6 +187,7 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
     int err = dap_context_add(a_worker->context, a_esocket);
     if (!err) {
         switch (a_esocket->type) {
+        case DESCRIPTOR_TYPE_SOCKET_RAW:
         case DESCRIPTOR_TYPE_SOCKET_UDP:
         case DESCRIPTOR_TYPE_SOCKET_CLIENT:
         case DESCRIPTOR_TYPE_SOCKET_LISTENING:
