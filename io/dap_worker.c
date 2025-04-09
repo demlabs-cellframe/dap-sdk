@@ -202,6 +202,7 @@ int dap_worker_add_events_socket_unsafe(dap_worker_t *a_worker, dap_events_socke
     int err = dap_context_add(a_worker->context, a_esocket);
     if (!err) {
         switch (a_esocket->type) {
+        case DESCRIPTOR_TYPE_SOCKET_RAW:
         case DESCRIPTOR_TYPE_SOCKET_UDP:
         case DESCRIPTOR_TYPE_SOCKET_CLIENT:
         case DESCRIPTOR_TYPE_SOCKET_LISTENING:
@@ -1011,6 +1012,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
             case DESCRIPTOR_TYPE_SOCKET_LISTENING:
 #ifdef DAP_OS_UNIX
             case DESCRIPTOR_TYPE_SOCKET_LOCAL_LISTENING:
+            case DESCRIPTOR_TYPE_SOCKET_RAW:
 #endif
             case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
             case DESCRIPTOR_TYPE_TIMER:
@@ -1045,7 +1047,8 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                 switch (l_cur->type ){
                 case DESCRIPTOR_TYPE_SOCKET_UDP:
                 case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
-                case DESCRIPTOR_TYPE_SOCKET_CLIENT: {
+                case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+                case DESCRIPTOR_TYPE_SOCKET_RAW: {
                     getsockopt(l_cur->socket, SOL_SOCKET, SO_ERROR, (void *)&l_sock_err, (socklen_t *)&l_sock_err_size);
 #ifndef DAP_OS_WINDOWS
                     if (l_sock_err) {
@@ -1139,19 +1142,29 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                         l_errno = errno;
 #endif
                     break;
-                    case DESCRIPTOR_TYPE_SOCKET_UDP: {
+                    case DESCRIPTOR_TYPE_SOCKET_UDP:
                         l_must_read_smth = true;
-                        socklen_t l_size = sizeof(l_cur->addr_storage);
                         l_bytes_read = recvfrom(l_cur->fd, (char *) (l_cur->buf_in + l_cur->buf_in_size),
                                                 l_cur->buf_in_size_max - l_cur->buf_in_size, 0,
-                                                (struct sockaddr *)&l_cur->addr_storage, &l_size);
+                                                (struct sockaddr *)&l_cur->addr_storage, &l_cur->addr_size);
 
 #ifdef DAP_OS_WINDOWS
                         l_errno = WSAGetLastError();
 #else
                         l_errno = errno;
 #endif
-                    }
+                    break;
+                    case DESCRIPTOR_TYPE_SOCKET_RAW:
+                        l_must_read_smth = true;
+                        if ( l_cur->flags & DAP_SOCK_MSG_ORIENTED ) {
+                            struct iovec iov = { l_cur->buf_in, l_cur->buf_in_size_max - l_cur->buf_in_size };
+                            struct msghdr msg = { .msg_name = &l_cur->addr_storage, .msg_namelen = l_cur->addr_size, .msg_iov = &iov, .msg_iovlen = 1 };
+                            l_bytes_read = recvmsg(l_cur->fd, &msg, 0);
+                        } else
+                            l_bytes_read = recvfrom(l_cur->fd, (char *) (l_cur->buf_in + l_cur->buf_in_size),
+                                                    l_cur->buf_in_size_max - l_cur->buf_in_size, 0,
+                                                    (struct sockaddr*)&l_cur->addr_storage, &l_cur->addr_size);
+                        l_errno = errno;
                     break;
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL: {
                         l_must_read_smth = true;
@@ -1288,6 +1301,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+                    case DESCRIPTOR_TYPE_SOCKET_RAW:
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL:
                             dap_events_socket_set_readable_unsafe(l_cur, false);
                             dap_events_socket_set_writable_unsafe(l_cur, false);

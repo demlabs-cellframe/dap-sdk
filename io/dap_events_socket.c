@@ -88,6 +88,11 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 
 #define LOG_TAG "dap_events_socket"
 
+const char *s_socket_type_to_str[DESCRIPTOR_TYPE_MAX] = { 
+    "RAW", "CLIENT", "LOCAL CLIENT", "SERVER", "LOCAL SERVER", "UDP CLIENT", "SSL CLIENT",
+    "FILE", "PIPE", "QUEUE", "TIMER", "EVENT"
+};
+
 // Item for QUEUE_PTR input esocket
 struct queue_ptr_input_item{
     dap_events_socket_t * esocket;
@@ -462,35 +467,40 @@ dap_events_socket_t * dap_events_socket_create_type_pipe(dap_worker_t *a_w, dap_
  */
 dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, dap_events_socket_callbacks_t* a_callbacks)
 {
-    int l_sock_type = SOCK_STREAM;
-    int l_sock_class = AF_INET;
+    int l_type = SOCK_STREAM, l_fam = AF_INET, l_prot = IPPROTO_IP;
 
-    switch(a_type){
-        case DESCRIPTOR_TYPE_SOCKET_CLIENT:
-        break;
-        case DESCRIPTOR_TYPE_SOCKET_UDP :
-            l_sock_type = SOCK_DGRAM;
-        break;
-        case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
+    switch(a_type) {
+    case DESCRIPTOR_TYPE_SOCKET_CLIENT:
+    break;
+    case DESCRIPTOR_TYPE_SOCKET_UDP:
+        l_type = SOCK_DGRAM;
+        l_prot = IPPROTO_UDP;
+    break;
+    case DESCRIPTOR_TYPE_SOCKET_LOCAL_CLIENT:
 #ifdef DAP_OS_UNIX
-            l_sock_class = AF_LOCAL;
+        l_fam = AF_LOCAL;
 #elif defined DAP_OS_WINDOWS
-            l_sock_class = AF_INET;
+        l_fam = AF_INET;
 #endif
-        break;
-        default:
-            log_it(L_CRITICAL,"Can't create socket type %d", a_type );
-            return NULL;
+    break;
+#ifdef DAP_OS_LINUX
+    case DESCRIPTOR_TYPE_SOCKET_RAW:
+        l_type = SOCK_RAW;
+    break;
+#endif
+    default:
+        log_it(L_CRITICAL,"Can't create socket type %d", a_type );
+        return NULL;
     }
 
 #ifdef DAP_OS_WINDOWS
-    SOCKET l_sock = socket(l_sock_class, l_sock_type, IPPROTO_IP);
+    SOCKET l_sock = socket(l_fam, l_type, l_prot);
     u_long l_socket_flags = 1;
     if (ioctlsocket((SOCKET)l_sock, (long)FIONBIO, &l_socket_flags))
         log_it(L_ERROR, "Error ioctl %d", WSAGetLastError());
 #else
-    int l_sock = socket(l_sock_class, l_sock_type, 0);
-    int l_sock_flags = fcntl( l_sock, F_GETFL);
+    int l_sock = socket(l_fam, l_type, l_prot);
+    int l_sock_flags = fcntl(l_sock, F_GETFL);
     l_sock_flags |= O_NONBLOCK;
     fcntl( l_sock, F_SETFL, l_sock_flags);
 
@@ -499,13 +509,14 @@ dap_events_socket_t * dap_events_socket_create(dap_events_desc_type_t a_type, da
         return NULL;
     }
 #endif
-    dap_events_socket_t * l_es =dap_events_socket_wrap_no_add(l_sock,a_callbacks);
+    dap_events_socket_t *l_es = dap_events_socket_wrap_no_add(l_sock, a_callbacks);
     if(!l_es){
         log_it(L_CRITICAL,"Can't allocate memory for the new esocket");
+        closesocket(l_sock);
         return NULL;
     }
-    l_es->type = a_type ;
-    debug_if(g_debug_reactor, L_DEBUG,"Created socket %"DAP_FORMAT_SOCKET" type %d", l_sock,l_es->type);
+    l_es->type = a_type;
+    debug_if(g_debug_reactor, L_DEBUG, "Created socket %"DAP_FORMAT_SOCKET" type %d", l_sock,l_es->type);
     return l_es;
 }
 
