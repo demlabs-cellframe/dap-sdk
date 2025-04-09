@@ -11,9 +11,10 @@ int dap_initialize_full_adder(dap_full_adder_t* full_adder){
     return 0;
 }
 
-int dap_set_adder_inputs(dap_full_adder_t* full_adder, uint64_t sum_op_a, uint64_t sum_op_b){
+int dap_set_adder_inputs(dap_full_adder_t* full_adder, uint64_t sum_op_a, uint64_t sum_op_b,bool carry_in){
     full_adder->a=sum_op_a;
     full_adder->b=sum_op_b;
+    full_adder->carry_in=carry_in;
 
     return 0;
 }
@@ -32,13 +33,19 @@ int dap_set_ith_limb_in_sum(dap_bigint_t* sum,int limb_index, uint64_t limb_valu
     return 0;
 }
 
+int dap_set_carry_in_for_full_adder_from_previous_limb(dap_full_adder_t* full_adder, bool carry_in){
+    full_adder->carry_in=carry_in;
+    return 0;
+}
 //This function simply takes the carry out present in the full adder, and
 //populates it into a variable that can be then used in the adder chaining
 //calculations.
 int dap_set_carry_out_from_full_adder_for_next_limb(dap_full_adder_t* full_adder,bool carry_out){
-
-
+    full_adder->carry_out=carry_out;
+    return 0;
 }
+
+
 
 //This function takes the limb of index "limb_index" from the bigint structure
 //and returns it as a uint64_t value. This value is then used to populate the
@@ -60,5 +67,14 @@ int dap_bigint_get_size_sum(dap_bigint_t* a, dap_bigint_t*b){
 //Returns the length of the bigint, in uint64_t limb count.
 int dap_get_bigint_limb_count(dap_bigint_t* a){
 
+    return 0;
+}
+
+//The below function assumes that bigint is in LSB at the limb level
+//A Ripple Carry Adder chains adders from LSB to MSB so
+//it is logically consistent to have an LSB bigint type.
+int dap_set_highest_limb_in_sum(uint64_t carry_in,dap_bigint_t* sum){
+    int last_limb_before_carry=dap_get_bigint_size_limbs(sum);
+    sum->body[last_limb_before_carry+1]=carry_in;
     return 0;
 }

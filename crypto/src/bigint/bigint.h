@@ -19,20 +19,12 @@ typedef struct dap_bigint {
 } dap_bigint_t;
 
 
-int dap_bigint_is_signed(dap_bigint_t* a){
-    return (a->header & (~(a->header) + 1));
-}
 
-int dap_bigint_get_size_sum(dap_bigint_t* a,dap_bigint_t* b){
+
+
+int dap_get_bigint_size_limbs(dap_bigint_t* a){
+    //returns the size of the bigint, in limb count
 
     return 0;
 }
-
-
-
-
-
-
-
-//dap_get_sum_size_from_unsigned_terms
 

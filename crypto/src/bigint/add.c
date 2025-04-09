@@ -1,4 +1,5 @@
 #include "circuit_formalism.h"
+#define LOG_TAG "large integer arithmetic"
 
 
 
@@ -22,7 +23,10 @@ int dap_bigint_2scompl_ripple_carry_adder(dap_bigint_t* a,dap_bigint_t* b,dap_bi
     }
 
     int limb_counter;
-    unsigned char carry_out_from_full_adder_for_next_limb=0;
+
+    uint64_t carry_out_from_full_adder_for_next_limb=0;
+    uint64_t carry_in_ith_limb = carry_out_from_full_adder_for_next_limb;
+
     int size_sum=dap_bigint_get_size_sum(a,b);
 
     //initialize full adder
@@ -44,7 +48,7 @@ int dap_bigint_2scompl_ripple_carry_adder(dap_bigint_t* a,dap_bigint_t* b,dap_bi
         uint64_t carry_in_ith_limb = carry_out_from_full_adder_for_next_limb;
 
         //set adder inputs
-        if (dap_set_adder_inputs(&ith_limb_full_adder,a_ith_limb,b_ith_limb)!=0){
+        if (dap_set_adder_inputs(&ith_limb_full_adder,a_ith_limb,b_ith_limb,carry_in_ith_limb)!=0){
             log_it(L_ERROR, "failed to set Adder inputs");
         };
 
@@ -61,8 +65,13 @@ int dap_bigint_2scompl_ripple_carry_adder(dap_bigint_t* a,dap_bigint_t* b,dap_bi
         if (dap_set_ith_limb_in_sum(&ith_limb_full_adder,sum){
             log_it(L_ERROR, "Failed to set limb in sum structure");
         };
-    }
 
+    };
+
+    if (dap_set_highest_limb_in_sum(carry_out_from_full_adder_for_next_limb,sum)){
+        log_it(L_ERROR, "Failed to set last (carry) limb in sum");
+
+    }
     return 0;
 
 }
