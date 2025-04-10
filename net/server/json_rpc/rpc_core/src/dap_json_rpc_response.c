@@ -162,7 +162,9 @@ dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_stri
 
 int json_print_commands(const char * a_name) {
     const char* long_cmd[] = {
-            "tx_history"
+            "tx_history",
+            "ledger",
+            "srv_stake list keys"
     };
     for (size_t i = 0; i < sizeof(long_cmd)/sizeof(long_cmd[0]); i++) {
         if (!strcmp(a_name, long_cmd[i])) {
@@ -294,6 +296,50 @@ void  json_print_for_mempool_list(dap_json_rpc_response_t* response){
     }
 }
 
+void json_print_for_srv_stake_list_keys(dap_json_rpc_response_t* response){
+    if (!response || !response->result_json_object) {
+        printf("Response is empty\n");
+        return;
+    }
+    if (json_object_get_type(response->result_json_object) == json_type_array) {
+        int result_count = json_object_array_length(response->result_json_object);
+        if (result_count <= 0) {
+            printf("Response array is empty\n");
+            return;
+        }
+        for (int i = 0; i < result_count; i++) {
+            struct json_object *json_obj_result = json_object_array_get_idx(response->result_json_object, i);
+            if (!json_obj_result) {
+                printf("Failed to get array element at index %d\n", i);
+                continue;
+            }
+
+            json_object *j_obj_sum, *j_obj_accepted, *j_obj_rejected, *j_obj_chain, *j_obj_net_name;
+            if (json_object_object_get_ex(json_obj_result, "tx_sum", &j_obj_sum) &&
+                json_object_object_get_ex(json_obj_result, "accepted_tx", &j_obj_accepted) &&
+                json_object_object_get_ex(json_obj_result, "rejected_tx", &j_obj_rejected)) {
+                json_object_object_get_ex(json_obj_result, "chain", &j_obj_chain);
+                json_object_object_get_ex(json_obj_result, "network", &j_obj_net_name);
+
+                if (j_obj_sum && j_obj_accepted && j_obj_rejected && j_obj_chain && j_obj_net_name) {
+                    printf("Print %d transactions in network %s chain %s. \n"
+                            "Of which %d were accepted into the ledger and %d were rejected.\n",
+                            json_object_get_int(j_obj_sum), json_object_get_string(j_obj_net_name),
+                            json_object_get_string(j_obj_chain), json_object_get_int(j_obj_accepted), json_object_get_int(j_obj_rejected));
+                } else {
+                    printf("Missing required fields in array element at index %d\n", i);
+                }
+            } else {
+                json_print_object(json_obj_result, 0);
+            }
+            printf("\n");
+        }
+    } else {
+        json_print_object(response->result_json_object, 0);
+    }
+
+}
+
 int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name) {
     if (!response) {
         printf("Empty response");
@@ -324,6 +370,7 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
             switch(json_print_commands(cmd_name)) {
                 case 1: json_print_for_tx_history(response); break; return 0;
                 case 2: json_print_for_mempool_list(response); break; return 0;
+                case 3: json_print_for_srv_stake_list_keys(response); break; return 0;
                 default: {
                         json_print_object(response->result_json_object, 0);
                     }
