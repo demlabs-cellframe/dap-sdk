@@ -1256,33 +1256,32 @@ void dap_link_manager_remove_static_links_cluster(dap_cluster_member_t *a_member
  */
 dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, size_t *a_uplinks_count, size_t *a_downlinks_count, bool a_established_only)
 {
-// sanity check
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
     dap_return_val_if_pass(!l_net || !l_net->link_clusters, NULL);
-// func work
     size_t l_uplinks_count = 0, l_downlinks_count = 0;
-// memory alloc
-    
-// func work
+    dap_stream_node_addr_t *l_ret = NULL;
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
     size_t i, l_cur_count = 0;
     dap_stream_node_addr_t *l_links_addrs = dap_cluster_get_all_members_addrs((dap_cluster_t *)l_net->link_clusters->data, &l_cur_count, -1);
-    dap_stream_node_addr_t *l_ret = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_stream_node_addr_t, l_cur_count, NULL);
-    for (i = 0; i < l_cur_count; ++i) {
-        dap_link_t *l_link = NULL;
-        HASH_FIND(hh, s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
-        if (!l_link || (l_link->is_uplink && a_established_only && l_link->uplink.state != LINK_STATE_ESTABLISHED)) {
-            continue;
-        } else if (l_link->is_uplink) {  // first uplinks, second downlinks
-            l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_ret[l_uplinks_count].uint64;
-            l_ret[l_uplinks_count].uint64 = l_link->addr.uint64;
-            ++l_uplinks_count;
-        } else {
-            l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_link->addr.uint64;
-            ++l_downlinks_count;
+    if ( l_cur_count ) {
+        l_ret = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_stream_node_addr_t, l_cur_count, NULL);
+        for (i = 0; i < l_cur_count; ++i) {
+            dap_link_t *l_link = NULL;
+            HASH_FIND(hh, s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
+            if (!l_link || (l_link->is_uplink && a_established_only && l_link->uplink.state != LINK_STATE_ESTABLISHED)) {
+                continue;
+            } else if (l_link->is_uplink) {  // first uplinks, second downlinks
+                l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_ret[l_uplinks_count].uint64;
+                l_ret[l_uplinks_count].uint64 = l_link->addr.uint64;
+                ++l_uplinks_count;
+            } else {
+                l_ret[l_uplinks_count + l_downlinks_count].uint64 = l_link->addr.uint64;
+                ++l_downlinks_count;
+            }
         }
-    }
-    DAP_DEL_Z(l_links_addrs);
+        DAP_DELETE(l_links_addrs);
+    } else
+        log_it(L_INFO, "No links in net with ID 0x%016" DAP_UINT64_FORMAT_x, l_net->id);
     pthread_rwlock_unlock(&s_link_manager->links_lock);
     if (!l_uplinks_count && !l_downlinks_count)
         DAP_DEL_Z(l_ret);
