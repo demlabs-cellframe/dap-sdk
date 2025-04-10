@@ -211,7 +211,7 @@ int dap_link_manager_init(const dap_link_manager_callbacks_t *a_callbacks)
         log_it(L_ERROR, "Default link manager not inited");
         return -2;
     }
-    if (dap_proc_thread_timer_add(NULL, s_update_states, s_link_manager, s_timer_update_states)) {
+    if (dap_proc_thread_timer_add(s_query_thread, s_update_states, s_link_manager, s_timer_update_states)) {
         log_it(L_ERROR, "Can't activate timer on link manager");
         return -3;
     }
@@ -483,18 +483,22 @@ void dap_link_manager_remove_links_cluster(dap_cluster_member_t *a_member, void 
  * @param a_client - client to connect
  * @param a_arg - callback args, pointer dap_managed_net_t
  */
-void s_client_connected_callback(dap_client_t *a_client, void UNUSED_ARG *a_arg)
+void s_client_connected_callback(dap_client_t *a_client, void *a_arg)
 {
-// sanity check
-    dap_return_if_pass(!a_client || !DAP_LINK(a_client) );
-    dap_link_t *l_link = DAP_LINK(a_client);
-// func work
-    log_it(L_NOTICE, "Stream connection with node "NODE_ADDR_FP_STR" (%s:%hu) established",
+    dap_return_if_pass( !a_client || !DAP_LINK(a_client) );
+    dap_stream_node_addr_t *l_addr = (dap_stream_node_addr_t*)a_arg;
+    pthread_rwlock_wrlock(&s_link_manager->links_lock);
+    dap_link_t *l_link = s_link_manager_link_find(l_addr);
+    if ( l_link && l_link == DAP_LINK(a_client) ) {
+        log_it(L_NOTICE, "Stream connection with node "NODE_ADDR_FP_STR" (%s:%hu) established",
                 NODE_ADDR_FP_ARGS_S(l_link->uplink.client->link_info.node_addr),
                 l_link->uplink.client->link_info.uplink_addr, l_link->uplink.client->link_info.uplink_port);
-    l_link->uplink.attempts_count = 0;
-    l_link->uplink.state = LINK_STATE_ESTABLISHED;
-    l_link->uplink.es_uuid = DAP_CLIENT_PVT(a_client)->stream_es->uuid;
+        l_link->uplink.attempts_count = 0;
+        l_link->uplink.state = LINK_STATE_ESTABLISHED;
+        l_link->uplink.es_uuid = DAP_CLIENT_PVT(a_client)->stream_es->uuid;
+    } else
+        log_it(L_ERROR, "Link with "NODE_ADDR_FP_STR" already dropped!", NODE_ADDR_FP_ARGS(l_addr));
+    pthread_rwlock_unlock(&s_link_manager->links_lock);
 }
 
 void s_link_drop(dap_link_t *a_link, bool a_disconnected)
@@ -665,7 +669,7 @@ static void s_link_connect(dap_link_t *a_link)
 void s_links_wake_up(dap_link_manager_t *a_link_manager)
 {
     dap_time_t l_now = dap_time_now();
-    pthread_rwlock_rdlock(&a_link_manager->links_lock);
+    pthread_rwlock_wrlock(&a_link_manager->links_lock);
     dap_link_t *it, *tmp;
     HASH_ITER(hh, a_link_manager->links, it, tmp) {
         if (!it->uplink.client)
@@ -775,8 +779,11 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
     if (s_debug_more)
         s_link_manager_print_links_info(s_link_manager);
     if (a_with_client) {
-        if (!l_link->uplink.client)
-            l_link->uplink.client = dap_client_new(s_client_error_callback, NULL);
+        if (!l_link->uplink.client) {
+            l_link->uplink.client = dap_client_new(s_client_error_callback, DAP_DUP(a_node_addr));
+            l_link->uplink.client->del_arg = true;
+            DAP_CLIENT_PVT(l_link->uplink.client)->worker = dap_worker_get_current();
+        }
         else
             debug_if(s_debug_more, L_DEBUG, "Link " NODE_ADDR_FP_STR " already have a client", NODE_ADDR_FP_ARGS(a_node_addr));
         l_link->uplink.client->_inheritor = l_link;
@@ -907,7 +914,7 @@ int dap_link_manager_link_update(dap_stream_node_addr_t *a_node_addr, const char
     }
     l_args->port = a_port;
     l_args->addr = *a_node_addr;
-    return dap_proc_thread_callback_add(NULL, s_link_update_callback, l_args);
+    return dap_proc_thread_callback_add(s_query_thread, s_link_update_callback, l_args);
 }
 
 /**
@@ -1253,17 +1260,14 @@ dap_stream_node_addr_t *dap_link_manager_get_net_links_addrs(uint64_t a_net_id, 
     dap_managed_net_t *l_net = s_find_net_by_id(a_net_id);
     dap_return_val_if_pass(!l_net || !l_net->link_clusters, NULL);
 // func work
-    size_t l_count = 0, l_uplinks_count = 0, l_downlinks_count = 0;
-    l_count = dap_cluster_members_count((dap_cluster_t *)l_net->link_clusters->data);
-    if (!l_count) {
-        return NULL;
-    }
+    size_t l_uplinks_count = 0, l_downlinks_count = 0;
 // memory alloc
-    dap_stream_node_addr_t *l_ret = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_stream_node_addr_t, l_count, NULL);
+    
 // func work
     pthread_rwlock_rdlock(&s_link_manager->links_lock);
     size_t i, l_cur_count = 0;
     dap_stream_node_addr_t *l_links_addrs = dap_cluster_get_all_members_addrs((dap_cluster_t *)l_net->link_clusters->data, &l_cur_count, -1);
+    dap_stream_node_addr_t *l_ret = DAP_NEW_Z_COUNT_RET_VAL_IF_FAIL(dap_stream_node_addr_t, l_cur_count, NULL);
     for (i = 0; i < l_cur_count; ++i) {
         dap_link_t *l_link = NULL;
         HASH_FIND(hh, s_link_manager->links, l_links_addrs + i, sizeof(l_links_addrs[i]), l_link);
