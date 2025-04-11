@@ -440,7 +440,7 @@ size_t  dap_events_socket_insert_buf_out(dap_events_socket_t * a_es, void *a_dat
 
 DAP_STATIC_INLINE const char *dap_events_socket_get_type_str(dap_events_socket_t *a_es)
 {
-    return a_es && a_es->type > 0 && a_es->type < DESCRIPTOR_TYPE_MAX ? s_socket_type_to_str[a_es->type] : "UNKNOWN";
+    return a_es && a_es->type >= 0 && a_es->type < DESCRIPTOR_TYPE_MAX ? s_socket_type_to_str[a_es->type] : "UNKNOWN";
 }
 
 DAP_INLINE int dap_close_socket(SOCKET s) {

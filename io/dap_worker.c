@@ -1239,6 +1239,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_EVENT:
                         dap_events_socket_event_proc_input_unsafe(l_cur);
                     break;
+                    default: break;
                 }
 
                 if (l_must_read_smth){ // Socket/Descriptor read
@@ -1390,13 +1391,24 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_SOCKET_UDP:
                         l_bytes_sent = sendto(l_cur->socket, (const char *)l_cur->buf_out,
                                               l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL,
-                                              (struct sockaddr *)&l_cur->addr_storage, sizeof(l_cur->addr_storage));
+                                              (struct sockaddr *)&l_cur->addr_storage, l_cur->addr_size);
 #ifdef DAP_OS_WINDOWS
                         dap_events_socket_set_writable_unsafe(l_cur,false);
                         l_errno = WSAGetLastError();
 #else
                         l_errno = errno;
 #endif
+                    break;
+                    case DESCRIPTOR_TYPE_SOCKET_RAW:
+                        if ( l_cur->flags & DAP_SOCK_MSG_ORIENTED ) { 
+                            struct iovec iov = { l_cur->buf_out, l_cur->buf_out_size_max - l_cur->buf_out_size };
+                            struct msghdr msg = { .msg_name = &l_cur->addr_storage, .msg_namelen = l_cur->addr_size, .msg_iov = &iov, .msg_iovlen = 1 };
+                            l_bytes_sent = sendmsg(l_cur->fd, &msg, 0);
+                        } else
+                            l_bytes_sent = sendto(l_cur->socket, (const char *)l_cur->buf_out,
+                                                  l_cur->buf_out_size, MSG_DONTWAIT | MSG_NOSIGNAL,
+                                                  (struct sockaddr*)&l_cur->addr_storage, l_cur->addr_size);
+                        l_errno = errno;
                     break;
                     case DESCRIPTOR_TYPE_SOCKET_CLIENT_SSL: {
 #ifndef DAP_NET_CLIENT_NO_SSL
