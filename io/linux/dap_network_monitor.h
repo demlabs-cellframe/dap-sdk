@@ -48,7 +48,7 @@ typedef struct {
     dap_network_monitor_notification_type_t type;
     union {
         struct {
-            char interface_name[IF_NAMESIZE], s_ip[INET_ADDRSTRLEN];
+            char interface_name[IF_NAMESIZE + 1], s_ip[INET_ADDRSTRLEN];
             uint32_t ip;
         } addr; // for IP_ADDR_ADD, IP_ADDR_REMOVE
         struct {
@@ -57,7 +57,7 @@ typedef struct {
             uint8_t protocol, netmask;
         } route; // for IP_ROUTE_ADD, IP_ROUTE_REMOVE
         struct {
-            char interface_name[IF_NAMESIZE];
+            char interface_name[IF_NAMESIZE + 1];
             bool is_up, is_running;
         } link; // for RTM_NEWLINK, RTM_DELLINK
     };
