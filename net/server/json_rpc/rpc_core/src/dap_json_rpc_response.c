@@ -426,10 +426,10 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                 case 2: json_print_for_mempool_list(response); break; return 0;
             case 3: {
                         printf("---------------MATCHED--------------------\n");
-                        json_print_for_srv_stake_list_keys(response);
+                        json_print_for_block_list(response);
             }break; return 0;
                 default: {
-                        json_print_for_srv_stake_list_keys(response);
+                        json_print_for_block_list(response);
                         printf("---------------NOT matched--------------------\n");
                         json_print_object(response->result_json_object, 0);
                     }
