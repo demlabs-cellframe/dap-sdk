@@ -404,7 +404,7 @@ void json_print_for_dag_list(dap_json_rpc_response_t* response){
             printf("Response array is empty\n");
             return;
         }
-        printf("Node addres \t\t| Pkey hash \t\t\t\t\t\t\t     | Stake val | Eff val | Rel weight | Sover addr | Sover tax\n");
+        printf("Event number \t\t| Hash \t\t\t\t\t\t\t     | Time create\n");
         struct json_object *json_obj_array = json_object_array_get_idx(response->result_json_object, 0);
         result_count = json_object_array_length(json_obj_array);
         for (int i = 0; i < result_count; i++) {
@@ -414,15 +414,15 @@ void json_print_for_dag_list(dap_json_rpc_response_t* response){
                 continue;
             }
 
-            json_object *j_obj_block_number, *j_obj_hash, *j_obj_create;
-            if (json_object_object_get_ex(json_obj_result, "block number", &j_obj_block_number) &&
+            json_object *j_obj_event_number, *j_obj_hash, *j_obj_create;
+            if (json_object_object_get_ex(json_obj_result, "event number", &j_obj_event_number) &&
                 json_object_object_get_ex(json_obj_result, "hash", &j_obj_hash) &&
                 json_object_object_get_ex(json_obj_result, "ts_create", &j_obj_create))
             {
 
-                if (j_obj_block_number && j_obj_hash && j_obj_create) {
+                if (j_obj_event_number && j_obj_hash && j_obj_create) {
                     printf("%s \t| %s | %s",
-                            json_object_get_string(j_obj_block_number), json_object_get_string(j_obj_hash), json_object_get_string(j_obj_create));
+                            json_object_get_string(j_obj_event_number), json_object_get_string(j_obj_hash), json_object_get_string(j_obj_create));
                 } else {
                     printf("Missing required fields in array element at index %d\n", i);
                 }
@@ -470,10 +470,11 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                 case 2: json_print_for_mempool_list(response); break; return 0;
             case 3: {
                         printf("---------------MATCHED--------------------\n");
-                        json_print_for_block_list(response);
+                        //json_print_for_block_list(response);
             }break; return 0;
                 default: {
-                        json_print_for_block_list(response);
+                        //json_print_for_block_list(response);
+                        //json_print_for_dag_list(response);
                         printf("---------------NOT matched--------------------\n");
                         json_print_object(response->result_json_object, 0);
                     }
