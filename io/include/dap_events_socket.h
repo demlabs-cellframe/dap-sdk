@@ -290,7 +290,7 @@ typedef struct dap_events_socket {
     pthread_rwlock_t buf_out_lock;
 #endif
     struct sockaddr_storage addr_storage;
-    uint8_t addr_size;
+    socklen_t addr_size;
     // Remote address, port and others
 
     union {
