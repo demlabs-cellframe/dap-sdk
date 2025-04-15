@@ -42,6 +42,7 @@ __RCSID("$NetBSD: strptime.c,v 1.36 2012/03/13 21:13:48 christos Exp $");
 #include <string.h>
 #include <time.h>
 #include <stdint.h>
+#include "dap_time.h"
 /*
 #include <tzfile.h>
 #include "private.h"
@@ -104,7 +105,7 @@ strncasecmp(const char *a, const char *b, size_t c)
 
 
 char *
-strptime(const char *buf, const char *fmt, struct tm *tm)
+strptime(const char *buf, const char *fmt, dap_tm *tm)
 {
 	unsigned char c;
 	const unsigned char *bp, *ep;

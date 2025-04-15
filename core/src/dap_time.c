@@ -11,9 +11,6 @@
 #define LOG_TAG "dap_common"
 
 #ifdef _WIN32
-
-extern char *strptime(const char *s, const char *format, struct tm *tm);
-
 /* Identifier for system-wide realtime clock.  */
 #ifndef CLOCK_REALTIME
 #define CLOCK_REALTIME              0
@@ -43,6 +40,7 @@ int clock_gettime(clockid_t clock_id, struct timespec *spec)
     return 0;
 }
 #endif
+
 #endif
 
 
@@ -169,7 +167,7 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
     return l_ret;
 }
 
-dap_time_t dap_timegm(struct tm *a_tm)
+dap_time_t dap_timegm(dap_tm *a_tm)
 {
     long int l_tz_shift;
 #ifdef DAP_OS_WINDOWS
@@ -201,7 +199,7 @@ dap_time_t dap_timegm(struct tm *a_tm)
 dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
 {
     dap_return_val_if_fail(a_time_str, 0);
-    struct tm l_tm = { };
+    dap_tm l_tm = { };
     char *ret = strptime(a_time_str, "%d %b %Y %T %z", &l_tm);
     if ( !ret || *ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
@@ -216,7 +214,7 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
 dap_time_t dap_time_from_str_simplified(const char *a_time_str)
 {
     dap_return_val_if_fail(a_time_str, 0);
-    struct tm l_tm = {};
+    dap_tm l_tm = {};
     char *ret = strptime(a_time_str, "%y%m%d", &l_tm);
     if ( !ret || *ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected simplified string \"yy\"mm\"dd", a_time_str), 0;
@@ -246,10 +244,9 @@ int dap_nanotime_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_nanotime_
 dap_time_t dap_time_from_str_custom(const char *a_time_str, const char *a_format_str)
 {
     dap_return_val_if_pass(!a_time_str || !a_format_str, 0);
-    struct tm l_tm = {};
+    dap_tm l_tm = {};
     char *ret = strptime(a_time_str, a_format_str, &l_tm);
     if ( !ret || *ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\" by format \"%s\"", a_time_str, a_format_str), 0;
-    time_t tmp = mktime(&l_tm);
-    return tmp > 0 ? (dap_time_t)tmp : 0;
+    return dap_timegm(&l_tm);
 }

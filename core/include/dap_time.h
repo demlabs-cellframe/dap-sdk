@@ -5,6 +5,29 @@
 
 #ifdef DAP_OS_WINDOWS
 #define localtime_r(a, b) localtime_s((b), (a))
+#ifndef TM_GMTOFF
+typedef struct _dap_tm {
+    int tm_sec;             /* Seconds.	[0-60] (1 leap second) */
+    int tm_min;             /* Minutes.	[0-59] */
+    int tm_hour;			/* Hours.	[0-23] */
+    int tm_mday;			/* Day.		[1-31] */
+    int tm_mon;             /* Month.	[0-11] */
+    int tm_year;			/* Year	- 1900.  */
+    int tm_wday;			/* Day of week.	[0-6] */
+    int tm_yday;			/* Days in year.[0-365]	*/
+    int tm_isdst;			/* DST.		[-1/0/1]*/
+
+    long int TM_GMTOFF;		/* Seconds east of UTC.  */
+    const char *TM_ZONE 	/* Timezone abbreviation.  */
+} dap_tm;
+
+#define TM_GMTOFF
+#else
+typedef struct tm dap_tm;
+#endif
+extern char *strptime(const char *s, const char *format, dap_tm *tm);
+#else
+typedef struct tm dap_tm;
 #endif
 
 #define DAP_TIME_STR_SIZE 32
@@ -62,6 +85,6 @@ int dap_time_to_str_rfc822(char * out, size_t out_size_max, dap_time_t a_time);
 dap_time_t dap_time_from_str_rfc822(const char *a_time_str);
 int dap_nanotime_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_nanotime_t a_chain_time);
 int timespec_diff(struct timespec *a_start, struct timespec *a_stop, struct timespec *a_result);
-dap_time_t dap_timegm(struct tm *a_tm);
+dap_time_t dap_timegm(dap_tm *a_tm);
 dap_time_t dap_time_from_str_simplified(const char *a_time_str);
 dap_time_t dap_time_from_str_custom(const char *a_time_str, const char *a_format_str);
