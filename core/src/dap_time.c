@@ -7,14 +7,10 @@
 #include <time.h>
 #include "dap_common.h"
 #include "dap_time.h"
-#include "dap_strfuncs.h"
 
 #define LOG_TAG "dap_common"
 
 #ifdef _WIN32
-
-extern char *strptime(const char *s, const char *format, struct tm *tm);
-
 /* Identifier for system-wide realtime clock.  */
 #ifndef CLOCK_REALTIME
 #define CLOCK_REALTIME              0
@@ -44,7 +40,51 @@ int clock_gettime(clockid_t clock_id, struct timespec *spec)
     return 0;
 }
 #endif
+
 #endif
+
+
+// Create time from second
+dap_nanotime_t dap_nanotime_from_sec(dap_time_t a_time)
+{
+    return (dap_nanotime_t)a_time * DAP_NSEC_PER_SEC;
+}
+
+// Get seconds from time
+dap_time_t dap_nanotime_to_sec(dap_nanotime_t a_time)
+{
+    return a_time / DAP_NSEC_PER_SEC;
+}
+
+dap_millitime_t dap_nanotime_to_millitime(dap_nanotime_t a_time)
+{
+    return a_time / DAP_NSEC_PER_MSEC;
+}
+
+dap_nanotime_t dap_millitime_to_nanotime(dap_millitime_t a_time)
+{
+    return (dap_nanotime_t)a_time * DAP_NSEC_PER_MSEC;
+}
+
+/**
+ * @brief dap_chain_time_now Get current time in seconds since January 1, 1970 (UTC)
+ * @return Returns current UTC time in seconds.
+ */
+dap_time_t dap_time_now(void)
+{
+    return (dap_time_t)time(NULL);
+}
+
+/**
+ * @brief dap_chain_time_now Get current time in nanoseconds since January 1, 1970 (UTC)
+ * @return Returns current UTC time in nanoseconds.
+ */
+dap_nanotime_t dap_nanotime_now(void)
+{
+    struct timespec cur_time;
+    clock_gettime(CLOCK_REALTIME, &cur_time);
+    return (dap_nanotime_t)cur_time.tv_sec * DAP_NSEC_PER_SEC + cur_time.tv_nsec;
+}
 
 /**
  * dap_usleep:
@@ -127,6 +167,34 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
     return l_ret;
 }
 
+dap_time_t dap_timegm(dap_tm *a_tm)
+{
+    long int l_tz_shift = a_tm->tm_gmtoff;
+    struct tm l_tm;
+#ifdef DAP_OS_WINDOWS
+    l_tm.tm_sec = a_tm->tm_sec;
+    l_tm.tm_min = a_tm->tm_min;
+    l_tm.tm_hour = a_tm->tm_hour;
+    l_tm.tm_mday = a_tm->tm_mday;
+    l_tm.tm_mon = a_tm->tm_mon;
+    l_tm.tm_year = a_tm->tm_year;
+#else
+    l_tm = *a_tm;
+#endif
+    time_t tmp = mktime(&l_tm);
+    if (!tmp)
+        return 0;
+    long int l_timezone;
+#ifdef DAP_OS_WINDOWS
+    TIME_ZONE_INFORMATION l_tz_info;
+    GetTimeZoneInformation(&l_tz_info);
+    l_timezone = l_tz_info.Bias;
+#else
+    l_timezone = timezone;
+#endif
+    return tmp - l_timezone - l_tz_shift;
+}
+
 /**
  * @brief Get time_t from string with RFC822 formatted
  * @brief (not WIN32) "%d %b %y %T %z" == "02 Aug 22 19:50:41 +0300"
@@ -137,12 +205,11 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
 dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
 {
     dap_return_val_if_fail(a_time_str, 0);
-    struct tm l_tm = { };
+    dap_tm l_tm = { };
     char *ret = strptime(a_time_str, "%d %b %Y %T %z", &l_tm);
     if ( !ret || *ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
-    time_t tmp = mktime(&l_tm);
-    return tmp > 0 ? (dap_time_t)tmp : 0;
+    return dap_timegm(&l_tm);
 }
 
 /**
@@ -153,13 +220,12 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
 dap_time_t dap_time_from_str_simplified(const char *a_time_str)
 {
     dap_return_val_if_fail(a_time_str, 0);
-    struct tm l_tm = {};
+    dap_tm l_tm = {};
     char *ret = strptime(a_time_str, "%y%m%d", &l_tm);
     if ( !ret || *ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected simplified string \"yy\"mm\"dd", a_time_str), 0;
     l_tm.tm_sec++;
-    time_t tmp = mktime(&l_tm);
-    return tmp > 0 ? (dap_time_t)tmp : 0;
+    return dap_timegm(&l_tm);
 }
 
 /**
@@ -184,10 +250,9 @@ int dap_nanotime_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_nanotime_
 dap_time_t dap_time_from_str_custom(const char *a_time_str, const char *a_format_str)
 {
     dap_return_val_if_pass(!a_time_str || !a_format_str, 0);
-    struct tm l_tm = {};
+    dap_tm l_tm = {};
     char *ret = strptime(a_time_str, a_format_str, &l_tm);
     if ( !ret || *ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\" by format \"%s\"", a_time_str, a_format_str), 0;
-    time_t tmp = mktime(&l_tm);
-    return tmp > 0 ? (dap_time_t)tmp : 0;
+    return dap_timegm(&l_tm);
 }
