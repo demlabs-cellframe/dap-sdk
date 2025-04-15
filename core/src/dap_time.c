@@ -169,6 +169,23 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
     return l_ret;
 }
 
+dap_time_t dap_timegm(struct tm *a_tm)
+{
+    long int l_tz_shift = a_tm->tm_gmtoff;
+    time_t tmp = mktime(a_tm);
+    if (!tmp)
+        return 0;
+    long int l_timezone;
+#ifdef DAP_OS_WINDOWS
+    TIME_ZONE_INFORMATION l_tz_info;
+    GetTimeZoneInformation(&l_tz_info);
+    l_timezone = l_tz_info.Bias;
+#else
+    l_timezone = timezone;
+#endif
+    return tmp - l_timezone - l_tz_shift;
+}
+
 /**
  * @brief Get time_t from string with RFC822 formatted
  * @brief (not WIN32) "%d %b %y %T %z" == "02 Aug 22 19:50:41 +0300"
@@ -183,8 +200,7 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
     char *ret = strptime(a_time_str, "%d %b %Y %T %z", &l_tm);
     if ( !ret || *ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
-    time_t tmp = mktime(&l_tm);
-    return tmp > 0 ? (dap_time_t)tmp : 0;
+    return dap_timegm(&l_tm);
 }
 
 /**
@@ -200,8 +216,7 @@ dap_time_t dap_time_from_str_simplified(const char *a_time_str)
     if ( !ret || *ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected simplified string \"yy\"mm\"dd", a_time_str), 0;
     l_tm.tm_sec++;
-    time_t tmp = mktime(&l_tm);
-    return tmp > 0 ? (dap_time_t)tmp : 0;
+    return dap_timegm(&l_tm);
 }
 
 /**
