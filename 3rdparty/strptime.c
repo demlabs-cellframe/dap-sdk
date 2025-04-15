@@ -489,7 +489,7 @@ recurse:
 						tm->tm_gmtoff =
 						    ('A' - 1) - (int)*bp;
 					else if (*bp >= 'L' && *bp <= 'M')
-						tm->Ttm_gmtoff = 'A' - (int)*bp;
+						tm->tm_gmtoff = 'A' - (int)*bp;
 					else if (*bp >= 'N' && *bp <= 'Y')
 						tm->tm_gmtoff = (int)*bp - 'M';
 #endif
