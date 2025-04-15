@@ -170,12 +170,20 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
 dap_time_t dap_timegm(dap_tm *a_tm)
 {
     long int l_tz_shift;
+    struct tm l_tm;
 #ifdef DAP_OS_WINDOWS
     l_tz_shift = a_tm->TM_GMTOFF;
+    l_tm.tm_sec = a_tm->tm_sec;
+    l_tm.tm_min = a_tm->tm_min;
+    l_tm.tm_hour = a_tm->tm_hour;
+    l_tm.tm_mday = a_tm->tm_mday;
+    l_tm.tm_mon = a_tm->tm_mon;
+    l_tm.tm_year = a_tm->tm_year;
 #else
     l_tz_shift = a_tm->tm_gmtoff;
+    l_tm = *a_tm;
 #endif
-    time_t tmp = mktime(a_tm);
+    time_t tmp = mktime(&l_tm);
     if (!tmp)
         return 0;
     long int l_timezone;
