@@ -171,7 +171,12 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
 
 dap_time_t dap_timegm(struct tm *a_tm)
 {
-    long int l_tz_shift = a_tm->tm_gmtoff;
+    long int l_tz_shift;
+#ifdef DAP_OS_WINDOWS
+    l_tz_shift = a_tm->TM_GMTOFF;
+#else
+    l_tz_shift = a_tm->tm_gmtoff;
+#endif
     time_t tmp = mktime(a_tm);
     if (!tmp)
         return 0;
