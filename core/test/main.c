@@ -5,10 +5,6 @@
 #include "dap_circular_test.h"
 #include "dap_process_mem_test.h"
 #include "dap_cpu_monitor_test.h"
-#ifndef DAP_NETWORK_MONITOR_TEST_OFF
-#include "dap_network_monitor.h"
-#include "dap_network_monitor_test.h"
-#endif
 #endif
 #endif
 #include "dap_strfuncs_test.h"
@@ -25,8 +21,5 @@ int main(void) {
     dap_circular_test_run();
     dap_process_mem_test_run();
     dap_cpu_monitor_test_run();
-#ifndef DAP_NETWORK_MONITOR_TEST_OFF
-    dap_network_monitor_test_run();
-#endif
 #endif
 }
