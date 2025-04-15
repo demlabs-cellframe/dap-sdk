@@ -466,15 +466,20 @@ void json_print_for_token_list(dap_json_rpc_response_t* response){
         printf("______________________________________________________________________________________________________\n");
         struct json_object *json_obj_array = json_object_array_get_idx(response->result_json_object, 0);
         struct json_object *j_object_tokens = NULL;
+        struct json_object *j_object_tKEL = NULL;
         char *l_limit = NULL;
         if (!json_object_object_get_ex(json_obj_array, "TOKENS", &j_object_tokens)) {
             printf("TOKENS is empty\n");
             return;
         }
-        result_count = json_object_array_length(j_object_tokens);
-        printf("TOKENS is %d\n", result_count);
-        struct json_object *json_obj_array2 = json_object_array_get_idx(j_object_tokens, 1);
+        struct json_object *json_obj_array2 = json_object_array_get_idx(j_object_tokens, 0);
         result_count = json_object_array_length(json_obj_array2);
+        printf("TOKENS is %d\n", result_count);
+        if (json_object_object_get_ex(json_obj_array2, "mtKEL", &j_object_tKEL)) {
+            printf("mtKEL found\n");
+            return;
+        }
+        
         printf("TOKENS is %d\n", result_count);
         for (int i = 0; i < result_count; i++) {
             struct json_object *json_obj_result = json_object_array_get_idx(j_object_tokens, i);
@@ -549,7 +554,7 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
             }break; return 0;
                 default: {
                         //json_print_for_block_list(response);
-                        //json_print_for_token_list(response);
+                        json_print_for_token_list(response);
                         printf("---------------NOT matched--------------------\n");
                         json_print_object(response->result_json_object, 0);
                     }
