@@ -10,6 +10,9 @@
 #       ifndef TM_ZONE
 #       define TM_ZONE
 #       endif
+#       ifndef __UNCONST
+#       define __UNCONST(x)
+#       endif
     typedef struct _dap_tm {
         int tm_sec;             /* Seconds.	[0-60] (1 leap second) */
         int tm_min;             /* Minutes.	[0-59] */
@@ -21,8 +24,8 @@
         int tm_yday;			/* Days in year.[0-365]	*/
         int tm_isdst;			/* DST.		[-1/0/1]*/
 
-        long int TM_GMTOFF;		/* Seconds east of UTC.  */
-        const char *TM_ZONE; 	/* Timezone abbreviation.  */
+        long int tm_gmtoff;		/* Seconds east of UTC.  */
+        const char *tm_zone; 	/* Timezone abbreviation.  */
     } dap_tm;
 #   else
     typedef struct tm dap_tm;

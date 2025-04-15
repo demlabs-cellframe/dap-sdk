@@ -387,10 +387,10 @@ recurse:
           || strncasecmp((const char *)bp, utc, 3) == 0) {
 				tm->tm_isdst = 0;
 #ifdef TM_GMTOFF
-				tm->TM_GMTOFF = 0;
+				tm->tm_gmtoff = 0;
 #endif
 #ifdef TM_ZONE
-				tm->TM_ZONE = gmt;
+				tm->tm_zone = gmt;
 #endif
 				bp += 3;
 			} else {
@@ -400,10 +400,10 @@ recurse:
 				if (ep != NULL) {
 					tm->tm_isdst = i;
 #ifdef TM_GMTOFF
-					tm->TM_GMTOFF = -(timezone);
+					tm->tm_gmtoff = -(timezone);
 #endif
 #ifdef TM_ZONE
-					tm->TM_ZONE = tzname[i];
+					tm->tm_zone = tzname[i];
 #endif
 				}
 				bp = ep;
@@ -443,10 +443,10 @@ recurse:
 			case 'Z':
 				tm->tm_isdst = 0;
 #ifdef TM_GMTOFF
-				tm->TM_GMTOFF = 0;
+				tm->tm_gmtoff = 0;
 #endif
 #ifdef TM_ZONE
-				tm->TM_ZONE = utc;
+				tm->tm_zone = utc;
 #endif
 				continue;
 			case '+':
@@ -460,10 +460,10 @@ recurse:
 				ep = find_string(bp, &i, nast, NULL, 4);
 				if (ep != NULL) {
 #ifdef TM_GMTOFF
-					tm->TM_GMTOFF = -5 - i;
+					tm->tm_gmtoff = -5 - i;
 #endif
 #ifdef TM_ZONE
-					tm->TM_ZONE = __UNCONST(nast[i]);
+					tm->tm_zone = __UNCONST(nast[i]);
 #endif
 					bp = ep;
 					continue;
@@ -472,10 +472,10 @@ recurse:
 				if (ep != NULL) {
 					tm->tm_isdst = 1;
 #ifdef TM_GMTOFF
-					tm->TM_GMTOFF = -4 - i;
+					tm->tm_gmtoff = -4 - i;
 #endif
 #ifdef TM_ZONE
-					tm->TM_ZONE = __UNCONST(nadt[i]);
+					tm->tm_zone = __UNCONST(nadt[i]);
 #endif
 					bp = ep;
 					continue;
@@ -486,15 +486,15 @@ recurse:
 #ifdef TM_GMTOFF
 					/* Argh! No 'J'! */
 					if (*bp >= 'A' && *bp <= 'I')
-						tm->TM_GMTOFF =
+						tm->tm_gmtoff =
 						    ('A' - 1) - (int)*bp;
 					else if (*bp >= 'L' && *bp <= 'M')
-						tm->TM_GMTOFF = 'A' - (int)*bp;
+						tm->Ttm_gmtoff = 'A' - (int)*bp;
 					else if (*bp >= 'N' && *bp <= 'Y')
-						tm->TM_GMTOFF = (int)*bp - 'M';
+						tm->tm_gmtoff = (int)*bp - 'M';
 #endif
 #ifdef TM_ZONE
-					tm->TM_ZONE = NULL; /* XXX */
+					tm->tm_zone = NULL; /* XXX */
 #endif
 					bp++;
 					continue;
@@ -532,10 +532,10 @@ recurse:
 				offs = -offs;
 			tm->tm_isdst = 0;	/* XXX */
 #ifdef TM_GMTOFF
-			tm->TM_GMTOFF = offs;
+			tm->tm_gmtoff = offs;
 #endif
 #ifdef TM_ZONE
-			tm->TM_ZONE = NULL;	/* XXX */
+			tm->tm_zone = NULL;	/* XXX */
 #endif
 			continue;
 
