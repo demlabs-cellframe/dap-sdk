@@ -19,11 +19,6 @@
 extern "C" {
 #endif
 
-
-#ifdef _WIN32
-char *strptime(const char *buff, const char *fmt, struct tm *tm);
-#endif
-
 bool dap_isstralnum(const char *c);
 size_t dap_strlen(const char *a_str);
 char* dap_strcat2(const char* s1, const char* s2);
