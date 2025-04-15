@@ -310,7 +310,7 @@ recurse:
 					continue;
 				}
 
-				tm = localtime(&sse);
+				tm = (dap_tm *)localtime(&sse);
             if (tm == NULL)
 					bp = NULL;
 			}
@@ -463,7 +463,7 @@ recurse:
 					tm->tm_gmtoff = -5 - i;
 #endif
 #ifdef TM_ZONE
-					tm->tm_zone = __UNCONST(nast[i]);
+					tm->tm_zone = nast[i];
 #endif
 					bp = ep;
 					continue;
@@ -475,7 +475,7 @@ recurse:
 					tm->tm_gmtoff = -4 - i;
 #endif
 #ifdef TM_ZONE
-					tm->tm_zone = __UNCONST(nadt[i]);
+					tm->tm_zone = nadt[i];
 #endif
 					bp = ep;
 					continue;
