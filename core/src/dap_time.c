@@ -145,7 +145,7 @@ dap_time_t dap_timegm(dap_tm *a_tm)
 #ifdef DAP_OS_WINDOWS
     TIME_ZONE_INFORMATION l_tz_info;
     GetTimeZoneInformation(&l_tz_info);
-    l_timezone = l_tz_info.Bias;
+    l_timezone = l_tz_info.Bias * 60;
 #else
     l_timezone = timezone;
 #endif
