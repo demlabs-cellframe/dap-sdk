@@ -126,12 +126,7 @@ DAP_STATIC_INLINE int dap_sign_verify_size(dap_sign_t *a_sign, size_t a_max_sign
  */
 DAP_STATIC_INLINE int dap_sign_verify_all(dap_sign_t *a_sign, const size_t a_sign_size_max, const void * a_data, const size_t a_data_size)
 {
-    if ( dap_sign_verify_size(a_sign,a_sign_size_max) ) {
-        return -2;
-    } else if ( dap_sign_verify(a_sign,a_data, a_data_size) ) {
-        return -1;
-    }
-    return 0;
+    return dap_sign_verify_size(a_sign, a_sign_size_max) ? -2 : dap_sign_verify(a_sign, a_data, a_data_size) ? -1 : 0;
 }
 
 const char *dap_sign_get_str_recommended_types();

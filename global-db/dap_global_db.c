@@ -1740,7 +1740,7 @@ static void s_clean_old_obj_gdb_callback(void UNUSED_ARG *a_arg) {
                         if (l_ret[i].timestamp + l_ttl < l_time_now) {
                             debug_if(g_dap_global_db_debug_more, L_INFO, "Try to delete from global_db the obj %s group, %s key", l_ret[i].group, l_ret[i].key);
                             if (l_cluster->del_callback)
-                                l_cluster->del_callback(l_ret+i, NULL);
+                                l_cluster->del_callback(l_ret+i, l_cluster->del_arg);
                             else dap_global_db_driver_delete(l_ret + i, 1);
                         }
                     } else if ( l_ret[i].flags & DAP_GLOBAL_DB_RECORD_DEL && dap_global_db_group_match_mask(l_ret->group, "local.*")) {       
