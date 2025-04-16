@@ -126,7 +126,7 @@ int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time
 
 dap_time_t dap_timegm(dap_tm *a_tm)
 {
-    long int l_tz_shift = a_tm->tm_gmtoff;
+    long int l_tz_shift;
     struct tm l_tm;
 #ifdef DAP_OS_WINDOWS
     l_tm.tm_sec = a_tm->tm_sec;
@@ -135,17 +135,17 @@ dap_time_t dap_timegm(dap_tm *a_tm)
     l_tm.tm_mday = a_tm->tm_mday;
     l_tm.tm_mon = a_tm->tm_mon;
     l_tm.tm_year = a_tm->tm_year;
+    l_tz_shift = (a_tm->tm_gmtoff / 100) * 3600 + (a_tm->tm_gmtoff % 100) * 60;
 #else
     l_tm = *a_tm;
+    l_tz_shift = a_tm->tm_gmtoff;
 #endif
     time_t tmp = mktime(&l_tm);
     if (!tmp)
         return 0;
     long int l_timezone;
 #ifdef DAP_OS_WINDOWS
-    TIME_ZONE_INFORMATION l_tz_info;
-    GetTimeZoneInformation(&l_tz_info);
-    l_timezone = l_tz_info.Bias * 60;
+    l_timezone = 0;
 #else
     l_timezone = timezone;
 #endif
