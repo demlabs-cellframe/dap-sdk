@@ -782,7 +782,6 @@ static dap_link_t *s_link_manager_link_create(dap_stream_node_addr_t *a_node_add
         if (!l_link->uplink.client) {
             l_link->uplink.client = dap_client_new(s_client_error_callback, DAP_DUP(a_node_addr));
             l_link->uplink.client->del_arg = true;
-            DAP_CLIENT_PVT(l_link->uplink.client)->worker = dap_worker_get_current();
         }
         else
             debug_if(s_debug_more, L_DEBUG, "Link " NODE_ADDR_FP_STR " already have a client", NODE_ADDR_FP_ARGS(a_node_addr));
