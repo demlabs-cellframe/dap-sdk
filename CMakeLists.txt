@@ -7,11 +7,7 @@ include(cmake/OS_Detection.cmake)
 #    INSTALL(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/deps/ DESTINATION ./)
 #endif()
 
-# Check for the DAP_VERSION variable
-if(NOT DEFINED DAP_VERSION)
-    set(DAP_VERSION "0.0.0")  # You can set the default value here
-endif()
-
+---------------------------------------------------
 # Pass the DAP_VERSION variable to the build
 add_definitions(-DDAP_VERSION="${DAP_VERSION}")
 
@@ -30,7 +26,7 @@ endif()
 
 # Output the value of DAP_VERSION
 message("DAP_VERSION is set to ${DAP_VERSION}")
-
+---------------------------------------------------
 if (CELLFRAME_MODULES MATCHES "core")
     set(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
 endif()
@@ -66,6 +62,7 @@ else()
 endif()
 
 if (BUILD_DAP_SDK_TESTS)
+    set(DAP_VERSION "0.0.0")
     set(BUILD_DAP_TESTS ON)
     set(BUILD_CRYPTO_TESTS ON)
     set(BUILD_GLOBAL_DB_TEST ON)
