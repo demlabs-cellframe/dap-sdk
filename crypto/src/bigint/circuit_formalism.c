@@ -2,32 +2,31 @@
 
 //set adder to all zeros to make sure values are as expected
 int dap_initialize_full_adder(dap_full_adder_t* full_adder){
-    full_adder->specific_adder_for_limb_size.adder_64.a=0;
-    full_adder->specific_adder_for_limb_size.adder_64.b=0;
-    full_adder->specific_adder_for_limb_size.adder_64.sum=0;
-    full_adder->specific_adder_for_limb_size.adder_64.carry_in=0;
-    full_adder->specific_adder_for_limb_size.adder_64.carry_out=0;
+    full_adder->specific_adder_for_limb_size.adder_64.adder_a=0;
+    full_adder->specific_adder_for_limb_size.adder_64.adder_b=0;
+    full_adder->specific_adder_for_limb_size.adder_64.adder_sum=0;
+    full_adder->specific_adder_for_limb_size.adder_64.adder_carry_in=0;
+    full_adder->specific_adder_for_limb_size.adder_64.adder_carry_out=0;
 
     return 0;
 }
 
 int dap_set_adder_inputs(dap_full_adder_t* full_adder, void*  sum_op_a, void* sum_op_b,bool carry_in){
-    full_adder->specific_adder_for_limb_size.adder_64.a=(uint64_t) sum_op_a;
-    full_adder->specific_adder_for_limb_size.adder_64.b=(uint64_t) sum_op_b;
-    full_adder->specific_adder_for_limb_size.adder_64.carry_in=carry_in;
+    full_adder->specific_adder_for_limb_size.adder_64.adder_a=(uint64_t) sum_op_a;
+    full_adder->specific_adder_for_limb_size.adder_64.adder_b=(uint64_t) sum_op_b;
+    full_adder->specific_adder_for_limb_size.adder_64.adder_carry_in=carry_in;
 
     return 0;
 }
 
 //this code performs the addition operation for uint64_t "bits" like an ordinary full adder
 int dap_full_adder_execute(dap_full_adder_t* full_adder){
-    uint64_t full_adder_a=full_adder->specific_adder_for_limb_size.adder_64.a;
-    uint64_t full_adder_b=full_adder->specific_adder_for_limb_size.adder_64.b;
-    uint64_t full_adder_carry_in=(uint64_t)full_adder->specific_adder_for_limb_size.adder_64.carry_in;
+    uint64_t full_adder_a=full_adder->specific_adder_for_limb_size.adder_64.adder_a;
+    uint64_t full_adder_b=full_adder->specific_adder_for_limb_size.adder_64.adder_b;
+    uint64_t full_adder_carry_in=(uint64_t)full_adder->specific_adder_for_limb_size.adder_64.adder_carry_in;
 
-
-    full_adder->specific_adder_for_limb_size.adder_64.sum=(full_adder_a)+(full_adder_b)+(full_adder_carry_in);
-    full_adder->specific_adder_for_limb_size.adder_64.carry_out=((full_adder->specific_adder_for_limb_size.adder_64.sum) < (full_adder_a+full_adder_b)); //overflow predicate
+    full_adder->specific_adder_for_limb_size.adder_64.adder_sum=(full_adder_a)+(full_adder_b)+(full_adder_carry_in);
+    full_adder->specific_adder_for_limb_size.adder_64.adder_carry_out=((full_adder->specific_adder_for_limb_size.adder_64.sum) < (full_adder_a+full_adder_b)); //overflow predicate
 
     return 0;
 }
@@ -37,26 +36,25 @@ int dap_full_adder_execute(dap_full_adder_t* full_adder){
 //populates it into a variable that can be then used in the adder chaining
 //calculations.
 int dap_set_carry_out_from_full_adder_for_next_limb(dap_full_adder_t* full_adder,bool carry_out){
-    full_adder->specific_adder_for_limb_size.adder_64.carry_out=carry_out;
+    full_adder->specific_adder_for_limb_size.adder_64.adder_carry_out=carry_out;
     return 0;
 }
 
 
-//This function takes the limb of index "limb_index" from the bigint structure
-//and returns it as a uint64_t value. This value is then used to populate the
-//full adder structure for calculation.
-uint64_t get_val_at_ith_limb(dap_bigint_t* a, int limb_index){
-    uint64_t val_at_ith_limb=a->body[limb_index];
 
-    return val_at_ith_limb;
-}
+//Sets the size, in count of limbs of the bigints, of the sum of two bigints.
+//This function does not do a security check and ASSUMES that the register size of
+//both bigints are the same.
+//The logic of this function is that the largest possible size of a sum of two
+//integers (in limbs) is the sum of the size of the larger of the operands
+//with one, because this is the scenario where the addition has generated a
+//carry.
+long dap_bigint_get_max_size_sum_in_limbs(dap_bigint_t* a, dap_bigint_t*b){
+    long a_count_limbs=dap_get_bigint_limb_count(a);
+    long b_count_limbs=dap_get_bigint_limb_count(b);
+    long sum_len=MAX(a_count_limbs,b_count_limbs)+1;
 
-//Sets the size, in count of 64 BIT LIMBS, of the sum of two bigints.
-int dap_bigint_get_size_sum(dap_bigint_t* a, dap_bigint_t*b){
-    int a_count_limbs=dap_get_bigint_limb_count(a);
-    int b_count_limbs=dap_get_bigint_limb_count(b);
-
-    return MAX(a_count_limbs,b_count_limbs);
+    return sum_len;
 }
 
 //The below function assumes that bigint is in LSB at the limb level
