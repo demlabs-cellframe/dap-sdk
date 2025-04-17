@@ -132,5 +132,5 @@ int dap_network_monitor_init(dap_network_monitor_notification_callback_t cb)
 
 void dap_network_monitor_deinit(void)
 {
-    dap_events_socket_remove_and_delete_mt( es_worker, es_uuid );
+    dap_events_socket_remove_and_delete( es_worker, es_uuid );
 }
