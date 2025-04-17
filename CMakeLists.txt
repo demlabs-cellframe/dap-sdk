@@ -15,6 +15,19 @@ endif()
 # Pass the DAP_VERSION variable to the build
 add_definitions(-DDAP_VERSION="${DAP_VERSION}")
 
+# Define BUILD_TS and BUILD_HASH
+if(DEFINED ENV{CI_COMMIT_TIMESTAMP})
+    add_definitions(-DBUILD_TS="\\\"$ENV{CI_COMMIT_TIMESTAMP}\\\"")
+else()
+    add_definitions(-DBUILD_TS="\\\"unknown\\\"")
+endif()
+
+if(DEFINED ENV{CI_COMMIT_SHORT_SHA})
+    add_definitions(-DBUILD_HASH="\\\"$ENV{CI_COMMIT_SHORT_SHA}\\\"")
+else()
+    add_definitions(-DBUILD_HASH="\\\"unknown\\\"")
+endif()
+
 # Output the value of DAP_VERSION
 message("DAP_VERSION is set to ${DAP_VERSION}")
 
