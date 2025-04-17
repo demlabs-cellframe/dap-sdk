@@ -7,6 +7,17 @@ include(cmake/OS_Detection.cmake)
 #    INSTALL(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/deps/ DESTINATION ./)
 #endif()
 
+# Check for the DAP_VERSION variable
+if(NOT DEFINED DAP_VERSION)
+    set(DAP_VERSION "0.0.0")  # You can set the default value here
+endif()
+
+# Pass the DAP_VERSION variable to the build
+add_definitions(-DDAP_VERSION="${DAP_VERSION}")
+
+# Output the value of DAP_VERSION
+message("DAP_VERSION is set to ${DAP_VERSION}")
+
 if (CELLFRAME_MODULES MATCHES "core")
     set(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
 endif()
@@ -24,7 +35,6 @@ if (CELLFRAME_MODULES MATCHES "avrestream")
 endif()
 
 if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
-
     set(DAPSDK_MODULES "core crypto io network-core network-link_manager network-client network-server")
     set(CELLFRAME_LIBS ${CELLFRAME_LIBS} dap_core dap_crypto dap_io dap_server dap_client m)
     if(NOT ANDROID)
@@ -35,7 +45,7 @@ if (CELLFRAME_MODULES MATCHES "dap-sdk-net-client")
     endif()
 endif()
 
-# We switch off SSL until its not switched on back
+# We switch off SSL until it's switched back on
 if(DAPSDK_MODULES MATCHES "ssl-support")
     add_definitions("-DDAP_NET_CLIENT_SSL")
 else()
