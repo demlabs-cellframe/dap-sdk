@@ -7,7 +7,7 @@ include(cmake/OS_Detection.cmake)
 #    INSTALL(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/deps/ DESTINATION ./)
 #endif()
 
----------------------------------------------------
+##################################################
 # Pass the DAP_VERSION variable to the build
 add_definitions(-DDAP_VERSION="${DAP_VERSION}")
 
@@ -26,7 +26,8 @@ endif()
 
 # Output the value of DAP_VERSION
 message("DAP_VERSION is set to ${DAP_VERSION}")
----------------------------------------------------
+##################################################
+
 if (CELLFRAME_MODULES MATCHES "core")
     set(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
 endif()
