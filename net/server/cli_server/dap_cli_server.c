@@ -201,7 +201,8 @@ void dap_cli_server_deinit()
  * @param a_doc
  * @param a_doc_ex
  */
-DAP_STATIC_INLINE dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, void *a_arg_func, const char *a_doc, const char *a_doc_ex, int16_t a_id)
+DAP_STATIC_INLINE dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_server_cmd_callback_ex_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc,
+                                                void *a_arg_func, const char *a_doc, const char *a_doc_ex, int16_t a_id)
 {
     dap_cli_cmd_t *l_cmd_item = DAP_NEW_Z_RET_VAL_IF_FAIL(dap_cli_cmd_t, NULL);
 
@@ -214,6 +215,7 @@ DAP_STATIC_INLINE dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_serve
     } else {
         l_cmd_item->func = (dap_cli_server_cmd_callback_t )(void *)a_func;
     }
+    l_cmd_item->func_rpc = a_func_rpc;
     l_cmd_item->id = a_id;
     HASH_ADD_STR(cli_commands,name,l_cmd_item);
     log_it(L_DEBUG,"Added command %s",l_cmd_item->name);
@@ -227,9 +229,10 @@ DAP_STATIC_INLINE dap_cli_cmd_t *s_cmd_add_ex(const char * a_name, dap_cli_serve
  * @param a_doc
  * @param a_doc_ex
  */
-dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, const char *a_doc, int16_t a_id, const char *a_doc_ex)
+dap_cli_cmd_t *dap_cli_server_cmd_add(const char * a_name, dap_cli_server_cmd_callback_t a_func, dap_cli_server_cmd_callback_func_json a_func_rpc,
+                                                                                            const char *a_doc, int16_t a_id, const char *a_doc_ex)
 {
-    return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, NULL, a_doc, a_doc_ex, a_id);
+    return s_cmd_add_ex(a_name, (dap_cli_server_cmd_callback_ex_t)(void *)a_func, a_func_rpc, NULL, a_doc, a_doc_ex, a_id);
 }
 
 int json_commands(const char * a_name) {

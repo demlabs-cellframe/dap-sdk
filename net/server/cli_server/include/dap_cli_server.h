@@ -33,6 +33,7 @@
 
 typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, void **a_str_reply);
 typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, void **a_str_reply);
+typedef int (*dap_cli_server_cmd_callback_func_json)(dap_json_rpc_response_t* response);
 typedef void (*dap_cli_server_cmd_stat_callback_t)(int16_t a_cmd_num, int64_t a_call_time);  // use to statistic collect
 
 typedef void (*dap_cli_server_override_log_cmd_callback_t)(const char*);
@@ -48,6 +49,8 @@ typedef struct dap_cli_cmd{
         dap_cli_server_cmd_callback_t func; /* Function to call to do the job. */
         dap_cli_server_cmd_callback_ex_t func_ex; /* Function with additional arg to call to do the job. */
     };
+    dap_cli_server_cmd_callback_func_json func_rpc;
+    void *arg_funс_rpc;
     void *arg_func; /* additional argument of function*/
     char *doc; /* Documentation for this function.  */
     char *doc_ex; /* Full documentation for this function.  */
