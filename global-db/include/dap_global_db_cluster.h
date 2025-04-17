@@ -79,10 +79,7 @@ typedef struct dap_global_db_cluster {
     dap_cluster_t *links_cluster;               // Cluster container for network links
     dap_cluster_t *role_cluster;                // Cluster container for members with especial roles
     dap_cluster_del_callback_t del_callback;    // Special cluster delete callback for global_db
-<<<<<<< HEAD
     void *del_arg;                              // Delete callback custom argument
-=======
->>>>>>> e48fc36f (Feature 13903)
     dap_global_db_role_t default_role;          // Role assined for new membersadded with default one
     uint64_t ttl;                               // Time-to-life for objects in the cluster, in seconds
     bool owner_root_access;                     // Deny if false, grant overwise
