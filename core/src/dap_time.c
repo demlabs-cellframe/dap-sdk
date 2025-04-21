@@ -11,7 +11,7 @@
 
 #define LOG_TAG "dap_common"
 
-#ifdef _WIN32
+#ifdef DAP_OS_WINDOWS
 
 extern char *strptime(const char *s, const char *format, struct tm *tm);
 
@@ -138,11 +138,30 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
 {
     dap_return_val_if_fail(a_time_str, 0);
     struct tm l_tm = { };
-    char *ret = strptime(a_time_str, "%d %b %Y %T %z", &l_tm);
-    if ( !ret || *ret )
+    char *ret = strptime(a_time_str, "%d %b %Y %T"
+        #ifndef DAP_OS_WINDOWS
+                                    " %z"
+        #endif
+                        , &l_tm);
+    if ( !ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
+#ifdef DAP_OS_WINDOWS
+    char sign, hr, min;
+    int l_bias;
+    if ( sscanf(ret, " %c%2d%2d", &sign, &hr, &min) == 3 && ( ( sign == '+' && hr <= 14 ) || ( sign == '-' && hr <= 11 ) ) && ( !min || min == 30 ) )
+        l_bias = hr * 3600 + min * 60;
+    else
+        return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
+    if (sign == '-')
+        l_bias = -l_bias;
+#endif
     time_t tmp = mktime(&l_tm);
-    return tmp > 0 ? (dap_time_t)tmp : 0;
+    if ( !tmp )
+        return 0;
+#ifdef DAP_OS_WINDOWS
+    tmp += l_bias;
+#endif
+    return tmp;
 }
 
 /**
