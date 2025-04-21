@@ -1075,6 +1075,7 @@ int dap_worker_thread_loop(dap_context_t * a_context)
                     case DESCRIPTOR_TYPE_EVENT:
                         dap_events_socket_event_proc_input_unsafe(l_cur);
                     break;
+                    default: break;
                 }
 
                 if (l_must_read_smth){ // Socket/Descriptor read
