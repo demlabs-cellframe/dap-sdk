@@ -154,6 +154,9 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
     if (sign == '-')
         l_bias = -l_bias;
+#else
+    if ( *ret )
+        return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
 #endif
     time_t tmp = mktime(&l_tm);
     if ( !tmp )
