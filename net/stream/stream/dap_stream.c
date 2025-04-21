@@ -412,7 +412,8 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
         log_it(L_ERROR,"stream delete NULL instance");
         return;
     }
-
+    s_stream_delete_from_list(a_stream);
+    a_stream->esocket_uuid = 0;
     while (a_stream->channel_count)
         dap_stream_ch_delete(a_stream->channel[a_stream->channel_count - 1]);
 
@@ -428,7 +429,6 @@ void dap_stream_delete_unsafe(dap_stream_t *a_stream)
     atomic_fetch_add(&s_memstat[MEMSTAT$K_STM].free_nr, 1);
 #endif
 
-    s_stream_delete_from_list(a_stream);
     DAP_DEL_Z(a_stream->buf_fragments);
     DAP_DELETE(a_stream);
     log_it(L_NOTICE,"Stream connection is over");
@@ -445,10 +445,9 @@ static void s_esocket_callback_delete(dap_events_socket_t* a_esocket, void * a_a
     assert (a_esocket);
 
     dap_stream_t *l_stm = DAP_STREAM(a_esocket);
-    a_esocket->_inheritor = NULL; // To prevent double free
     l_stm->esocket = NULL;
-    l_stm->esocket_uuid = 0;
     dap_stream_delete_unsafe(l_stm);
+    a_esocket->_inheritor = NULL; // To prevent double free
 }
 
 /**
@@ -662,10 +661,9 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
     dap_stream_t *l_stm = DAP_STREAM(a_http_client);
     if (!l_stm)
         return;
-    a_http_client->_inheritor = NULL; // To prevent double free
     l_stm->esocket = NULL;
-    l_stm->esocket_uuid = 0;
     dap_stream_delete_unsafe(l_stm);
+    a_http_client->_inheritor = NULL; // To prevent double free
 }
 
 /**
