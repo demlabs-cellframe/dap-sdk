@@ -1,4 +1,5 @@
 #include "dap_json_rpc_response.h"
+#include "dap_cli_server.h"
 
 #define LOG_TAG "dap_json_rpc_response"
 #define INDENTATION_LEVEL "    "
@@ -451,16 +452,16 @@ void json_print_for_dag_list(dap_json_rpc_response_t* response){
 
 }
 
-void json_print_for_token_list(dap_json_rpc_response_t* response){
+int json_print_for_token_list(dap_json_rpc_response_t* response){
     if (!response || !response->result_json_object) {
         printf("Response is empty\n");
-        return;
+        return -1;
     }
     if (json_object_get_type(response->result_json_object) == json_type_array) {
         int result_count = json_object_array_length(response->result_json_object);
         if (result_count <= 0) {
             printf("Response array is empty\n");
-            return;
+            return -2;
         }
         printf("TOKENS is %d\n", result_count);
         printf("______________________________________________________________________________________________________\n");
@@ -470,14 +471,14 @@ void json_print_for_token_list(dap_json_rpc_response_t* response){
         char *l_limit = NULL;
         if (!json_object_object_get_ex(json_obj_array, "TOKENS", &j_object_tokens)) {
             printf("TOKENS is empty\n");
-            return;
+            return -3;
         }
         struct json_object *json_obj_array2 = json_object_array_get_idx(j_object_tokens, 0);
         result_count = json_object_array_length(json_obj_array2);
         printf("TOKENS is %d\n", result_count);
         if (json_object_object_get_ex(json_obj_array2, "mtKEL", &j_object_tKEL)) {
             printf("mtKEL found\n");
-            return;
+            return -4;
         }
         
         printf("TOKENS is %d\n", result_count);
@@ -514,7 +515,7 @@ void json_print_for_token_list(dap_json_rpc_response_t* response){
     } else {
         json_print_object(response->result_json_object, 0);
     }
-
+    return 0;
 }
 
 
@@ -548,13 +549,16 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
             switch(json_print_commands(cmd_name)) {
                 case 1: json_print_for_tx_history(response); break; return 0;
                 case 2: json_print_for_mempool_list(response); break; return 0;
-            case 3: {
+                case 3: {
                         printf("---------------MATCHED--------------------\n");
                         //json_print_for_block_list(response);
-            }break; return 0;
+                }break; return 0;
                 default: {
                         //json_print_for_block_list(response);
-                        json_print_for_token_list(response);
+                        dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(cmd_name);
+                        if (l_cmd)
+                            l_cmd->func_rpc(response);
+                        //json_print_for_token_list(response);
                         printf("---------------NOT matched--------------------\n");
                         json_print_object(response->result_json_object, 0);
                     }
