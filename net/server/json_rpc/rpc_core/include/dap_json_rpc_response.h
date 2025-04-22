@@ -104,7 +104,6 @@ char* dap_json_rpc_response_to_string(const dap_json_rpc_response_t* response);
  *                                      during structure creation.
  */
 dap_json_rpc_response_t* dap_json_rpc_response_from_string(const char* json_string);
-int json_print_for_token_list(dap_json_rpc_response_t* response);
 
 void json_print_object(struct json_object *obj, int indent_level);
 void json_print_value(struct json_object *obj, const char *key, int indent_level, bool print_separator);

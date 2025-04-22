@@ -305,26 +305,18 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                 return -2;
             }
             switch(json_print_commands(cmd_name)) {
-                case 1: json_print_for_tx_history(response); break; return 0;
-                case 2: json_print_for_mempool_list(response); break; return 0;
-                case 3: {
-                        printf("---------------MATCHED--------------------\n");
-                        //json_print_for_block_list(response);
-                }break; return 0;
+                case 1: json_print_for_tx_history(response); break; return 0;                
+                break; return 0;
                 default: {
-                        //json_print_for_block_list(response);
+                        
                         dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(cmd_name);
                         if (l_cmd){
-                            printf("---------------found--------------------\n");
                             l_cmd->func_rpc(response);
                         }
-                        else 
-                        printf("---------------not found %s--------------------\n", cmd_name);
-                        //json_print_for_token_list(response);
-                        printf("---------------NOT matched--------------------\n");
-                        json_print_object(response->result_json_object, 0);
+                        else
+                            json_print_object(response->result_json_object, 0);
                     }
-                    break;
+                break;
             }
             break;
     }
