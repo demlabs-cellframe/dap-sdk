@@ -211,6 +211,8 @@ void dap_client_delete_unsafe(dap_client_t *a_client)
     dap_return_if_fail(a_client);
     dap_client_pvt_delete_unsafe( DAP_CLIENT_PVT(a_client) );
     DAP_DEL_Z(a_client->active_channels);
+    if (a_client->del_arg)
+        DAP_DELETE(a_client->callbacks_arg);
     DAP_DELETE(a_client);
 }
 
