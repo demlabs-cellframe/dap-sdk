@@ -155,8 +155,11 @@ if (APPLE AND CMAKE_OSX_ARCHITECTURES)
     
 else()
     # single architecture builds
-    STRING(REPLACE "/" "_" PROJECT_PATH_SAFE ${CMAKE_CURRENT_SOURCE_DIR})
-    SET(XKCP_BUILD_DIR "/tmp/xkcp_build_${PROJECT_PATH_SAFE}")
+
+    #STRING(REPLACE "/" "_" PROJECT_PATH_SAFE ${CMAKE_CURRENT_SOURCE_DIR})
+    #SET(XKCP_BUILD_DIR "/tmp/xkcp_build_${PROJECT_PATH_SAFE}")
+
+    SET(XKCP_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/xkcp_build_src/)
     
     copy_source_files(${XKCP_BUILD_DIR})
     
