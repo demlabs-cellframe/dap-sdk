@@ -78,8 +78,8 @@ cppcheck_full_analysis:
   image: demlabs/debian/amd64:cpp_check
   timeout: 12h
   script:
-    - cd /builds/cellframe/cellframe-node
-    - mkdir -p build && cd build
+#   - cd /builds/cellframe/cellframe-node
+    - mkdir -p cpp_report && cd cpp_report
     - cmake -DENABLE_CPPCHECK_ANALYSIS=ON ..
     - make cppcheck_analysis
     - echo "HTML report generated at build/cppcheck_html_report/index.html"
