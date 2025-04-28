@@ -91,12 +91,29 @@ long dap_get_bigint_limb_count(dap_bigint_t* a){
 //This function takes the limb of index "limb_index" from the bigint structure
 //and returns it as a uint64_t value. This value is then used to populate the
 //full adder structure for calculation.
-uint64_t get_val_at_ith_limb(dap_bigint_t* a, int limb_index){
-    uint64_t val_at_ith_limb=a->body[limb_index];
+uint64_t get_val_at_ith_limb_64(dap_bigint_t* a, int limb_index){
 
+    uint64_t val_at_ith_limb=a->data.limb_64.body[limb_index];
     return val_at_ith_limb;
 }
 
+uint32_t get_val_at_ith_limb_32(dap_bigint_t* a, int limb_index){
+
+    uint32_t val_at_ith_limb=a->data.limb_32.body[limb_index];
+    return val_at_ith_limb;
+}
+
+uint16_t get_val_at_ith_limb_16(dap_bigint_t* a, int limb_index){
+
+    uint16_t val_at_ith_limb=a->data.limb_16.body[limb_index];
+    return val_at_ith_limb;
+}
+
+uint8_t get_val_at_ith_limb_8(dap_bigint_t* a, int limb_index){
+
+    uint8_t val_at_ith_limb=a->data.limb_8.body[limb_index];
+    return val_at_ith_limb;
+}
 
 int dap_check_2_bigint_limb_size_equal(dap_bigint_t* a, dap_bigint_t* b){
 

@@ -26,7 +26,7 @@ int dap_full_adder_execute(dap_full_adder_t* full_adder){
     uint64_t full_adder_carry_in=(uint64_t)full_adder->specific_adder_for_limb_size.adder_64.adder_carry_in;
 
     full_adder->specific_adder_for_limb_size.adder_64.adder_sum=(full_adder_a)+(full_adder_b)+(full_adder_carry_in);
-    full_adder->specific_adder_for_limb_size.adder_64.adder_carry_out=((full_adder->specific_adder_for_limb_size.adder_64.sum) < (full_adder_a+full_adder_b)); //overflow predicate
+    full_adder->specific_adder_for_limb_size.adder_64.adder_carry_out=((full_adder->specific_adder_for_limb_size.adder_64.adder_sum) < (full_adder_a+full_adder_b)); //overflow predicate
 
     return 0;
 }
@@ -61,7 +61,25 @@ long dap_bigint_get_max_size_sum_in_limbs(dap_bigint_t* a, dap_bigint_t*b){
 //A Ripple Carry Adder chains adders from LSB to MSB so
 //it is logically consistent to have an LSB bigint type.
 int dap_set_highest_limb_in_sum(bool carry_in,dap_bigint_t* sum){
-    int last_limb_before_carry=dap_get_bigint_size_limbs(sum);
-    sum->body[last_limb_before_carry+1]=carry_in;
+    int last_limb_before_carry=dap_get_bigint_limb_count(sum);
+    switch(sum->limb_size){
+
+    case(64):
+            sum->data.limb_64.body[last_limb_before_carry+1]=carry_in;
+        break;
+
+    case(32):
+        sum->data.limb_32.body[last_limb_before_carry+1]=carry_in;
+        break;
+
+    case(16):
+        sum->data.limb_16.body[last_limb_before_carry+1]=carry_in;
+        break;
+
+    case(8):
+        sum->data.limb_8.body[last_limb_before_carry+1]=carry_in;
+        break;
+    }
+
     return 0;
 }
