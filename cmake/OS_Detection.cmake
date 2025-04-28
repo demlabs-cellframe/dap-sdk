@@ -268,7 +268,7 @@ IF(CPPCHECK)
         cppcheck
         COMMAND
             ${CPPCHECK} --enable=all --project=${CMAKE_BINARY_DIR}/compile_commands.json --std=c++11 --verbose --quiet
-            --xml-version=2 --language=c++ --suppress=missingIncludeSystem
+            --xml-version=2 --language=c++ --suppress=missingIncludeSystem --suppress=*:3rdparty/*
             --output-file=${CMAKE_BINARY_DIR}/cppcheck_results.xml ${CHECK_CXX_SOURCE_FILES}
         COMMENT "Generate cppcheck report for the project")
 
