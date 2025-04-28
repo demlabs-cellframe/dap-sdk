@@ -82,10 +82,10 @@ cppcheck_full_analysis:
     - mkdir -p cpp_report && cd cpp_report
     - cmake -DENABLE_CPPCHECK_ANALYSIS=ON ..
     - make cppcheck_analysis
-    - echo "HTML report generated at build/cppcheck_html_report/index.html"
+    - echo "HTML report generated at cpp_report/cppcheck_html_report/index.html"
   artifacts:
     paths:
-      - build/cppcheck_html_report/
+      - cpp_report/cppcheck_html_report/
     expire_in: 1 day
   rules:
     - when: manual
