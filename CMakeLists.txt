@@ -146,8 +146,11 @@ if(ENABLE_CPPCHECK_ANALYSIS)
                 --enable=warning,style,performance,portability
                 --quiet
                 --xml
+                --force
+                --suppress=missingIncludeSystem
+                --suppress=*:3rdparty/*
+                --suppress=*:_deps/*
                 ${CMAKE_SOURCE_DIR}/avrestream
-                ${CMAKE_SOURCE_DIR}/cmake
                 ${CMAKE_SOURCE_DIR}/core
                 ${CMAKE_SOURCE_DIR}/crypto
                 ${CMAKE_SOURCE_DIR}/examples
