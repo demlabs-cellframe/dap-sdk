@@ -97,6 +97,7 @@ cppcheck_full_analysis:
 # Generates a code quality report in JSON format for merge requests, identifying potential issues in the codebase.
 cppcheck_code_quality:
   image: demlabs/debian/amd64:cpp_check
+  extends: .tests
   timeout: 1h
   script:
     - /usr/bin/cppcheck --xml --library=std --suppress=missingIncludeSystem --suppress=preprocessorErrorDirective --suppress=*:3rdparty/* -j$(nproc) -q . 2> cppcheck-report.xml
