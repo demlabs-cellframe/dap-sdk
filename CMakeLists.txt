@@ -146,9 +146,6 @@ if(ENABLE_CPPCHECK_ANALYSIS)
                 --enable=warning,style,performance,portability
                 --quiet
                 --xml
-#                -I ${CMAKE_SOURCE_DIR}/dap-sdk/core/include
-#                -I ${CMAKE_SOURCE_DIR}/cellframe-sdk/modules/common/include
-#                -I ${CMAKE_SOURCE_DIR}/python-cellframe/include
                 ${CMAKE_SOURCE_DIR}/avrestream
                 ${CMAKE_SOURCE_DIR}/cmake
                 ${CMAKE_SOURCE_DIR}/core
