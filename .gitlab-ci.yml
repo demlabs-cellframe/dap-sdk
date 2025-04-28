@@ -23,11 +23,13 @@ tests:amd64.debian:
       - pwd
       - env
       - mkdir build
-      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose && make cppcheck
-      - cd /opt/buildtools/ && python3 -m cppcheck_codequality  --input-file=${CI_PROJECT_DIR}/build/cppcheck_results.xml --output-file=${CI_PROJECT_DIR}/build/cppcheck.json
-    artifacts:
-      reports:
-         codequality: build/cppcheck.json
+# This is old realisation of ccp_check_code_quality(delete it if new realisation is working correctly(needs min 2 MR to test)(28.04.2025):
+#      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose && make cppcheck
+#      - cd /opt/buildtools/ && python3 -m cppcheck_codequality  --input-file=${CI_PROJECT_DIR}/build/cppcheck_results.xml --output-file=${CI_PROJECT_DIR}/build/cppcheck.json
+      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose
+#    artifacts:
+#      reports:
+#         codequality: build/cppcheck.json
 
 tests:arm32.debian:
     extends: .tests
@@ -93,7 +95,7 @@ cppcheck_full_analysis:
 
 
 # Generates a code quality report in JSON format for merge requests, identifying potential issues in the codebase.
-.cppcheck_code_quality:
+cppcheck_code_quality:
   image: demlabs/debian/amd64:cpp_check
   timeout: 1h
   script:
@@ -107,9 +109,11 @@ cppcheck_full_analysis:
       - gl-code-quality-report.json
     expire_in: 4 week
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      when: always
-      allow_failure: true
+#    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+#      when: always
+     - when: manual
+
+       allow_failure: true
   tags:
     - ci-polygon
 
