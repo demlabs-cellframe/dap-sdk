@@ -3,6 +3,7 @@ variables:
 
 stages:
     - build
+    - cppchecks
 
 .ci-polygon:
   tags:
@@ -69,7 +70,8 @@ build:any.android:
 
 # Performs an in-depth static code analysis with cppcheck, producing a detailed HTML report for manual inspection.
 cppcheck_full_analysis:
-  extends: .tests
+  extends: .ci-polygon
+  stage: cppchecks
   image: demlabs/debian/amd64:cpp_check
   timeout: 1h
   script:
@@ -91,7 +93,8 @@ cppcheck_full_analysis:
 # Generates a code quality report in JSON format for merge requests, identifying potential issues in the codebase.
 cppcheck_code_quality:
   image: demlabs/debian/amd64:cpp_check
-  extends: .tests
+  extends: .ci-polygon
+  stage: cppchecks
   timeout: 1h
   script:
     - /usr/bin/cppcheck --xml --library=std --suppress=missingIncludeSystem --suppress=preprocessorErrorDirective --suppress=*:3rdparty/* -j$(nproc) -q . 2> cppcheck-report.xml
