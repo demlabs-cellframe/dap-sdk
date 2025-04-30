@@ -12,6 +12,10 @@ stages:
 .tests:  
   extends: .ci-polygon
   stage: build
+  rules:
+   - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+     when: always
+   - when: always
   timeout: 3 hours 30 minutes
   dependencies: []
   
