@@ -98,28 +98,29 @@ int timespec_diff(struct timespec *a_start, struct timespec *a_stop, struct time
  */
 int dap_time_to_str_rfc822(char *a_out, size_t a_out_size_max, dap_time_t a_time)
 {
-    struct tm *l_tmp;
-    time_t l_time = a_time;
-    l_tmp = localtime(&l_time);
-    if (!l_tmp) {
-        log_it(L_ERROR, "Can't convert data from unix format to structured one");
-        return -2;
-    }
-    int l_ret = strftime(a_out, a_out_size_max, "%a, %d %b %Y %H:%M:%S"
-                     #ifndef DAP_OS_WINDOWS
-                                                " %z"
-                     #endif
-                         , l_tmp);
-    if (!l_ret) {
-        log_it(L_ERROR, "Can't print formatted time in string");
-        return -1;
-    }
+    struct tm l_tm = { };
 #ifdef DAP_OS_WINDOWS
     // %z is unsupported on Windows platform
     TIME_ZONE_INFORMATION l_tz_info;
     GetTimeZoneInformation(&l_tz_info);
     char l_tz_str[8];
     snprintf(l_tz_str, sizeof(l_tz_str), l_tz_info.Bias <= 0 ? " +%02d%02d" : " %03d%02d", -l_tz_info.Bias / 60, l_tz_info.Bias % 60);
+    a_time -= l_tz_info.Bias * 60;
+    if ( gmtime_s(&l_tm, &a_time) )
+#else
+    if ( !localtime_r(&a_time, &l_tm) )
+#endif
+        return log_it(L_ERROR, "Can't convert UNIX timestamp %"DAP_UINT64_FORMAT_U, a_time), -2;
+    int l_ret = strftime(a_out, a_out_size_max, "%a, %d %b %Y %H:%M:%S"
+                     #ifndef DAP_OS_WINDOWS
+                                                " %z"
+                     #endif
+                         , &l_tm);
+    if (!l_ret) {
+        log_it(L_ERROR, "Can't print formatted time in string");
+        return -1;
+    }
+#ifdef DAP_OS_WINDOWS
     if (l_ret < a_out_size_max)
         l_ret += snprintf(a_out + l_ret, a_out_size_max - l_ret, l_tz_str);
 #endif
@@ -157,7 +158,10 @@ dap_time_t dap_time_from_str_rfc822(const char *a_time_str)
 #else
     if ( *ret )
         return log_it(L_ERROR, "Invalid timestamp \"%s\", expected RFC822 string", a_time_str), 0;
-    l_off = l_tm.tm_gmtoff + timezone;
+    time_t l_now = time(NULL);
+    struct tm l_tm_now = { };
+    localtime_r(&l_now, &l_tm_now);
+    l_off = -l_tm_now.tm_gmtoff;
     time_t tmp = mktime(&l_tm);
 #endif
     return tmp ? tmp - l_off : 0;
