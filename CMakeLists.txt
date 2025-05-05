@@ -130,3 +130,56 @@ endif()
 if(ANDROID)
     include_directories(3rdparty/)
 endif()
+
+
+# Option to enable full cppcheck analysis
+option(ENABLE_CPPCHECK_ANALYSIS "Enable full cppcheck static analysis" OFF)
+
+# Cpp check
+if(ENABLE_CPPCHECK_ANALYSIS)
+    find_program(CPPCHECK cppcheck)
+    if(CPPCHECK)
+        message(STATUS "Found cppcheck: ${CPPCHECK}")
+        add_custom_target(cppcheck_analysis
+            COMMAND ${CPPCHECK}
+                --std=c11
+                --enable=warning,style,performance,portability
+                --quiet
+                --xml
+                --force
+                --suppress=missingIncludeSystem
+                --suppress=*:3rdparty/*
+                --suppress=*:_deps/*
+                ${CMAKE_SOURCE_DIR}/avrestream
+                ${CMAKE_SOURCE_DIR}/core
+                ${CMAKE_SOURCE_DIR}/crypto
+                ${CMAKE_SOURCE_DIR}/examples
+                ${CMAKE_SOURCE_DIR}/global-db
+                ${CMAKE_SOURCE_DIR}/io
+                ${CMAKE_SOURCE_DIR}/net
+                ${CMAKE_SOURCE_DIR}/plugin
+                ${CMAKE_SOURCE_DIR}/test-framework
+                2> ${CMAKE_BINARY_DIR}/cppcheck_report.xml
+            COMMAND cppcheck-htmlreport
+                --file ${CMAKE_BINARY_DIR}/cppcheck_report.xml
+                --report-dir ${CMAKE_BINARY_DIR}/cppcheck_html_report
+                --source-dir ${CMAKE_SOURCE_DIR}
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "Running full cppcheck static analysis and generating HTML report in ${CMAKE_BINARY_DIR}/cppcheck_html_report"
+        )
+    else()
+        message(WARNING "cppcheck not found, cppcheck_analysis target unavailable")
+    endif()
+endif()
+
+find_program(CPPCHECK cppcheck)
+if(CPPCHECK)
+    message(STATUS "Found cppcheck: ${CPPCHECK}")
+    add_custom_target(lint
+        COMMAND ${CPPCHECK} --enable=warning,style --std=c11 ${CMAKE_SOURCE_DIR}/sources
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Running cppcheck on source files"
+    )
+else()
+    message(WARNING "cppcheck not found, lint target unavailable")
+endif()
