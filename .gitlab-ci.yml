@@ -3,6 +3,7 @@ variables:
 
 stages:
     - build
+    - cppchecks
 
 .ci-polygon:
   tags:
@@ -11,6 +12,10 @@ stages:
 .tests:  
   extends: .ci-polygon
   stage: build
+  rules:
+   - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+     when: always
+   - when: always
   timeout: 3 hours 30 minutes
   dependencies: []
   
@@ -22,11 +27,7 @@ tests:amd64.debian:
       - pwd
       - env
       - mkdir build
-      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose && make cppcheck
-      - cd /opt/buildtools/ && python3 -m cppcheck_codequality  --input-file=${CI_PROJECT_DIR}/build/cppcheck_results.xml --output-file=${CI_PROJECT_DIR}/build/cppcheck.json
-    artifacts:
-      reports:
-         codequality: build/cppcheck.json
+      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose
 
 tests:arm32.debian:
     extends: .tests
@@ -69,3 +70,49 @@ build:any.android:
     script:
       - mkdir build
       - cd build &&  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${ANDROID_CMAKE_TOOLCHAIN} .. && make -j$(nproc)
+
+# Performs an in-depth static code analysis with cppcheck, producing a detailed HTML report for manual inspection.
+cppcheck_full_analysis:
+  extends: .ci-polygon
+  stage: cppchecks
+  image: demlabs/debian/amd64:cpp_check
+  timeout: 1h
+  script:
+    - mkdir -p cpp_report && cd cpp_report
+    - cmake -DENABLE_CPPCHECK_ANALYSIS=ON ..
+    - make cppcheck_analysis
+    - echo "HTML report generated at cpp_report/cppcheck_html_report/index.html"
+  artifacts:
+    paths:
+      - cpp_report/cppcheck_html_report/
+    expire_in: 30 day
+  rules:
+    - when: manual
+      allow_failure: true
+  tags:
+    - ci-polygon
+
+
+# Generates a code quality report in JSON format for merge requests, identifying potential issues in the codebase.
+cppcheck_code_quality:
+  image: demlabs/debian/amd64:cpp_check
+  extends: .ci-polygon
+  stage: cppchecks
+  timeout: 1h
+  script:
+    - /usr/bin/cppcheck --xml --library=std --suppress=missingIncludeSystem --suppress=preprocessorErrorDirective --suppress=*:3rdparty/* -j$(nproc) -q . 2> cppcheck-report.xml
+    - cppcheck-codequality --input-file cppcheck-report.xml --output-file gl-code-quality-report.json
+    - cat gl-code-quality-report.json
+  artifacts:
+    reports:
+      codequality: gl-code-quality-report.json
+    paths:
+      - gl-code-quality-report.json
+    expire_in: 4 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+      allow_failure: true
+  tags:
+    - ci-polygon
+
