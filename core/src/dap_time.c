@@ -13,8 +13,6 @@
 
 #ifdef DAP_OS_WINDOWS
 
-extern char *strptime(const char *s, const char *format, struct tm *tm);
-
 /* Identifier for system-wide realtime clock.  */
 #ifndef CLOCK_REALTIME
 #define CLOCK_REALTIME              0
