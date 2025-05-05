@@ -163,7 +163,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
 
     switch (l_fam) {
     case AF_INET: case AF_INET6: case AF_UNIX:
-        l_socket = socket(l_fam, a_type == DESCRIPTOR_TYPE_SOCKET_UDP ? SOCK_DGRAM : SOCK_STREAM, 0);
+        l_socket = ( a_type == DESCRIPTOR_TYPE_SOCKET_UDP ) ? socket(l_fam, SOCK_DGRAM, IPPROTO_UDP) : socket(l_fam, SOCK_STREAM, IPPROTO_IP);
     break;
     default:
         log_it(L_ERROR, "Can't resolve address \"%s : %d\" and add it to server!", a_addr, a_port);
@@ -226,6 +226,7 @@ int dap_server_listen_addr_add( dap_server_t *a_server, const char *a_addr, uint
     l_es->ev_base_flags |= EPOLLET | EPOLLEXCLUSIVE;
 #endif
 #endif
+    l_es->addr_size = l_len;
     dap_strncpy(l_es->listener_addr_str, a_addr, INET6_ADDRSTRLEN);
     l_es->listener_port = a_port;
     l_es->addr_storage = l_saddr;

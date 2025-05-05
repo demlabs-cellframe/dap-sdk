@@ -68,6 +68,8 @@ typedef struct cli_cmd_arg {
     dap_events_socket_uuid_t es_uid;
     size_t buf_size;
     char *buf, status;
+
+    time_t time_start;
 } cli_cmd_arg_t;
 
 static void* s_cli_cmd_exec(void *a_arg);
@@ -139,7 +141,9 @@ DAP_STATIC_INLINE void s_cli_cmd_schedule(dap_events_socket_t *a_es, void *a_arg
         l_arg->buf = strndup(l_arg->buf, l_arg->buf_size);
         l_arg->worker = a_es->worker;
         l_arg->es_uid = a_es->uuid;
+        l_arg->time_start = dap_nanotime_now();
 
+        
         pthread_t l_tid;
         pthread_attr_t attr;
         pthread_attr_init(&attr);
@@ -443,8 +447,9 @@ static void *s_cli_cmd_exec(void *a_arg) {
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
     char    *l_ret = dap_cli_cmd_exec(l_arg->buf),
             *l_full_ret = dap_strdup_printf("HTTP/1.1 200 OK\r\n"
-                                            "Content-Length: %zu\r\n\r\n"
-                                            "%s", dap_strlen(l_ret), l_ret);
+                                            "Content-Length: %zu\r\n"
+                                            "Processing-Time: %zu\r\n\r\n"
+                                            "%s", dap_strlen(l_ret), dap_nanotime_now() - l_arg->time_start, l_ret);
     DAP_DELETE(l_ret);
     dap_events_socket_write(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
     // TODO: pagination and output optimizations

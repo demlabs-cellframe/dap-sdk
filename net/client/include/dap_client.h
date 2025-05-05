@@ -89,6 +89,7 @@ typedef struct dap_client {
 
     bool always_reconnect; // Always reconnect ever number of tries are over
     bool connect_on_demand; // Automatically connect with writing request
+    bool del_arg;
 
     dap_client_stage_t stage_target;
     dap_client_callback_t stage_target_done_callback;
