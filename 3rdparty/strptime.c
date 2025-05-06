@@ -42,7 +42,6 @@ __RCSID("$NetBSD: strptime.c,v 1.36 2012/03/13 21:13:48 christos Exp $");
 #include <string.h>
 #include <time.h>
 #include <stdint.h>
-#include "dap_time.h"
 /*
 #include <tzfile.h>
 #include "private.h"
@@ -105,7 +104,7 @@ strncasecmp(const char *a, const char *b, size_t c)
 
 
 char *
-strptime(const char *buf, const char *fmt, dap_tm *tm)
+strptime(const char *buf, const char *fmt, struct tm *tm)
 {
 	unsigned char c;
 	const unsigned char *bp, *ep;
@@ -310,7 +309,7 @@ recurse:
 					continue;
 				}
 
-				tm = (dap_tm *)localtime(&sse);
+				tm = localtime(&sse);
             if (tm == NULL)
 					bp = NULL;
 			}
@@ -387,10 +386,10 @@ recurse:
           || strncasecmp((const char *)bp, utc, 3) == 0) {
 				tm->tm_isdst = 0;
 #ifdef TM_GMTOFF
-				tm->tm_gmtoff = 0;
+				tm->TM_GMTOFF = 0;
 #endif
 #ifdef TM_ZONE
-				tm->tm_zone = gmt;
+				tm->TM_ZONE = gmt;
 #endif
 				bp += 3;
 			} else {
@@ -400,10 +399,10 @@ recurse:
 				if (ep != NULL) {
 					tm->tm_isdst = i;
 #ifdef TM_GMTOFF
-					tm->tm_gmtoff = -(timezone);
+					tm->TM_GMTOFF = -(timezone);
 #endif
 #ifdef TM_ZONE
-					tm->tm_zone = tzname[i];
+					tm->TM_ZONE = tzname[i];
 #endif
 				}
 				bp = ep;
@@ -443,10 +442,10 @@ recurse:
 			case 'Z':
 				tm->tm_isdst = 0;
 #ifdef TM_GMTOFF
-				tm->tm_gmtoff = 0;
+				tm->TM_GMTOFF = 0;
 #endif
 #ifdef TM_ZONE
-				tm->tm_zone = utc;
+				tm->TM_ZONE = utc;
 #endif
 				continue;
 			case '+':
@@ -460,10 +459,10 @@ recurse:
 				ep = find_string(bp, &i, nast, NULL, 4);
 				if (ep != NULL) {
 #ifdef TM_GMTOFF
-					tm->tm_gmtoff = -5 - i;
+					tm->TM_GMTOFF = -5 - i;
 #endif
 #ifdef TM_ZONE
-					tm->tm_zone = nast[i];
+					tm->TM_ZONE = __UNCONST(nast[i]);
 #endif
 					bp = ep;
 					continue;
@@ -472,10 +471,10 @@ recurse:
 				if (ep != NULL) {
 					tm->tm_isdst = 1;
 #ifdef TM_GMTOFF
-					tm->tm_gmtoff = -4 - i;
+					tm->TM_GMTOFF = -4 - i;
 #endif
 #ifdef TM_ZONE
-					tm->tm_zone = nadt[i];
+					tm->TM_ZONE = __UNCONST(nadt[i]);
 #endif
 					bp = ep;
 					continue;
@@ -486,15 +485,15 @@ recurse:
 #ifdef TM_GMTOFF
 					/* Argh! No 'J'! */
 					if (*bp >= 'A' && *bp <= 'I')
-						tm->tm_gmtoff =
+						tm->TM_GMTOFF =
 						    ('A' - 1) - (int)*bp;
 					else if (*bp >= 'L' && *bp <= 'M')
-						tm->tm_gmtoff = 'A' - (int)*bp;
+						tm->TM_GMTOFF = 'A' - (int)*bp;
 					else if (*bp >= 'N' && *bp <= 'Y')
-						tm->tm_gmtoff = (int)*bp - 'M';
+						tm->TM_GMTOFF = (int)*bp - 'M';
 #endif
 #ifdef TM_ZONE
-					tm->tm_zone = NULL; /* XXX */
+					tm->TM_ZONE = NULL; /* XXX */
 #endif
 					bp++;
 					continue;
@@ -532,10 +531,10 @@ recurse:
 				offs = -offs;
 			tm->tm_isdst = 0;	/* XXX */
 #ifdef TM_GMTOFF
-			tm->tm_gmtoff = offs;
+			tm->TM_GMTOFF = offs;
 #endif
 #ifdef TM_ZONE
-			tm->tm_zone = NULL;	/* XXX */
+			tm->TM_ZONE = NULL;	/* XXX */
 #endif
 			continue;
 
