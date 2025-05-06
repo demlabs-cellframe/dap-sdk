@@ -454,7 +454,7 @@ static int s_stream_ch_place_notifier(dap_stream_node_addr_t *a_stream_addr, uin
 {
     dap_worker_t *l_worker = NULL;
     dap_events_socket_uuid_t l_uuid = dap_stream_find_by_addr(a_stream_addr, &l_worker);
-    if (!l_worker)
+    if (!l_worker || !l_uuid)
         return -1;
     struct place_notifier_arg *l_arg = DAP_NEW(struct place_notifier_arg);
     *l_arg = (struct place_notifier_arg) { .es_uuid = l_uuid, .ch_id = a_ch_id, .direction = a_direction,
