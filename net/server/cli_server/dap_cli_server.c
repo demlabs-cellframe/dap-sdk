@@ -432,18 +432,6 @@ dap_cli_cmd_t *dap_cli_server_cmd_find_by_alias(const char *a_alias, char **a_ap
     return l_alias->standard_command;
 }
 
-static const char *s_node_type() {
-    if (dap_config_get_item_bool_default(g_config, "cli-server", "allowed_cmd_control", false))
-        return "Public";
-    else
-        return "Private";
-}
-
-static const char *s_node_version_header() {
-    return "CellframeNode, " DAP_VERSION ", " BUILD_TS ", " BUILD_HASH;
-}
-
-
 static void *s_cli_cmd_exec(void *a_arg) {
     cli_cmd_arg_t *l_arg = (cli_cmd_arg_t*)a_arg;
     char    *l_ret = dap_cli_cmd_exec(l_arg->buf),
@@ -455,8 +443,9 @@ static void *s_cli_cmd_exec(void *a_arg) {
                                             "%s", 
                                             dap_strlen(l_ret), 
                                             dap_nanotime_now() - l_arg->time_start, 
-                                            s_node_type(), 
-                                            s_node_version_header(), 
+                                            dap_config_get_item_bool_default(g_config, "cli-server", "allowed_cmd_control", false)
+                                                ? "Public" : "Private", 
+                                            "CellframeNode, " DAP_VERSION ", " BUILD_TS ", " BUILD_HASH, 
                                              l_ret);
     DAP_DELETE(l_ret);
     dap_events_socket_write_mt(l_arg->worker, l_arg->es_uid, l_full_ret, dap_strlen(l_full_ret));
