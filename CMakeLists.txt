@@ -8,10 +8,26 @@ include(cmake/OS_Detection.cmake)
 #endif()
 
 
-# Output the value of DAP_VERSION
-message("DAP_VERSION is set to ${DAP_VERSION}")
-##################################################
+if (NOT DEFINED DAP_VERSION)
+    message(WARNING "DAP_VERSION is not defined")
+    set(DAP_VERSION "0.0.0")
+endif()
 
+if (NOT DEFINED BUILD_TS)
+    message(WARNING "BUILD_TS is not defined")
+    set(BUILD_TS "0")
+endif()
+
+if (NOT DEFINED BUILD_HASH)
+    message(WARNING "BUILD_HASH is not defined")
+    set(BUILD_HASH "0")
+endif()
+
+add_definitions("-DDAP_VERSION=${DAP_VERSION}")
+add_definitions("-DBUILD_TS=${BUILD_TS}")
+add_definitions("-DBUILD_HASH=${BUILD_HASH}")
+
+##################################################
 if (CELLFRAME_MODULES MATCHES "core")
     set(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
 endif()
