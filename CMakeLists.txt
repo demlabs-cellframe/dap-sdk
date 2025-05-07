@@ -3,15 +3,27 @@ project(DAP_SDK_NATIVE C)
 set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
 include(cmake/OS_Detection.cmake)
-#if (INSTALL_DAP_SDK)
-#    INSTALL(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/deps/ DESTINATION ./)
-#endif()
 
+if (NOT DEFINED DAP_VERSION)
+    message(WARNING "DAP_VERSION is not defined")
+    set(DAP_VERSION "0.0.0")
+endif()
 
-# Output the value of DAP_VERSION
-message("DAP_VERSION is set to ${DAP_VERSION}")
+if (NOT DEFINED BUILD_TS)
+    message(WARNING "BUILD_TS is not defined")
+    set(BUILD_TS "0")
+endif()
+
+if (NOT DEFINED BUILD_HASH)
+    message(WARNING "BUILD_HASH is not defined")
+    set(BUILD_HASH "0")
+endif()
+
+add_definitions("-DDAP_VERSION=\"${DAP_VERSION}\"")
+add_definitions("-DBUILD_TS=\"${BUILD_TS}\"")
+add_definitions("-DBUILD_HASH=\"${BUILD_HASH}\"")
+
 ##################################################
-
 if (CELLFRAME_MODULES MATCHES "core")
     set(DAPSDK_MODULES "${DAPSDK_MODULES} core crypto io")
 endif()
@@ -47,7 +59,6 @@ else()
 endif()
 
 if (BUILD_DAP_SDK_TESTS)
-    set(DAP_VERSION "0.0.0")
     set(BUILD_DAP_TESTS ON)
     set(BUILD_CRYPTO_TESTS ON)
     set(BUILD_GLOBAL_DB_TEST ON)
