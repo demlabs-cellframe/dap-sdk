@@ -3,28 +3,25 @@ project(DAP_SDK_NATIVE C)
 set(DAP_SDK_NATIVE_VERSION "2.4-0")
 
 include(cmake/OS_Detection.cmake)
-#if (INSTALL_DAP_SDK)
-#    INSTALL(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/deps/ DESTINATION ./)
-#endif()
-
 
 if (NOT DEFINED DAP_VERSION)
     message(WARNING "DAP_VERSION is not defined")
     set(DAP_VERSION "0.0.0")
-    add_definitions("-DDAP_VERSION=\"${DAP_VERSION}\"")
 endif()
 
 if (NOT DEFINED BUILD_TS)
     message(WARNING "BUILD_TS is not defined")
     set(BUILD_TS "0")
-    add_definitions("-DBUILD_TS=\"${BUILD_TS}\"")
 endif()
 
 if (NOT DEFINED BUILD_HASH)
     message(WARNING "BUILD_HASH is not defined")
     set(BUILD_HASH "0")
-    add_definitions("-DBUILD_HASH=\"${BUILD_HASH}\"")
 endif()
+
+add_definitions("-DDAP_VERSION=\"${DAP_VERSION}\"")
+add_definitions("-DBUILD_TS=\"${BUILD_TS}\"")
+add_definitions("-DBUILD_HASH=\"${BUILD_HASH}\"")
 
 ##################################################
 if (CELLFRAME_MODULES MATCHES "core")
