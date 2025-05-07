@@ -51,7 +51,7 @@ build:amd64.windows:
     before_script: /opt/buildtools/prepare_environment.sh amd64-windows
     script:
       - mkdir build
-      - cd build && export PATH=${MXE_ROOT}/usr/bin:$PATH && x86_64-w64-mingw32.static-cmake .. -DCMAKE_BUILD_TYPE=Release && make -j$(nproc)
+      - cd build && export PATH=${MXE_ROOT}/usr/bin:$PATH && x86_64-w64-mingw32.static-cmake .. -DDAP_VERSION="test" -DBUILD_TS="$CI_COMMIT_TIMESTAMP}" -DBUILD_HASH="$CI_COMMIT_SHORT_SHA" -DCMAKE_BUILD_TYPE=Release && make -j$(nproc)
     
 
 build:amd64.macos:
@@ -60,7 +60,7 @@ build:amd64.macos:
     before_script: /opt/buildtools/prepare_environment.sh amd64-osx
     script:
       - mkdir build
-      - cd build && $(${OSXCROSS_ROOT}/bin/osxcross-conf) && export OSXCROSS_NO_INCLUDE_PATH_WARNINGS=1 && export OSXCROSS_HOST=x86_64-apple-darwin20.4 && cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${OSXCROSS_ROOT}/toolchain.cmake -DBoost_INCLUDE_DIR=$BOOST_INCLUDE_DIR .. && make -j$(nproc)
+      - cd build && $(${OSXCROSS_ROOT}/bin/osxcross-conf) && export OSXCROSS_NO_INCLUDE_PATH_WARNINGS=1 && export OSXCROSS_HOST=x86_64-apple-darwin20.4 && cmake -DCMAKE_BUILD_TYPE=Release -DDAP_VERSION="test" -DBUILD_TS="$CI_COMMIT_TIMESTAMP}" -DBUILD_HASH="$CI_COMMIT_SHORT_SHA"  -DCMAKE_TOOLCHAIN_FILE=${OSXCROSS_ROOT}/toolchain.cmake -DBoost_INCLUDE_DIR=$BOOST_INCLUDE_DIR .. && make -j$(nproc)
 
 
 build:any.android:
@@ -69,7 +69,7 @@ build:any.android:
     before_script: /opt/buildtools/prepare_environment.sh amd64-osx
     script:
       - mkdir build
-      - cd build &&  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${ANDROID_CMAKE_TOOLCHAIN} .. && make -j$(nproc)
+      - cd build &&  cmake -DCMAKE_BUILD_TYPE=Release -DDAP_VERSION="test" -DBUILD_TS="$CI_COMMIT_TIMESTAMP}" -DBUILD_HASH="$CI_COMMIT_SHORT_SHA"  -DCMAKE_TOOLCHAIN_FILE=${ANDROID_CMAKE_TOOLCHAIN} .. && make -j$(nproc)
 
 # Performs an in-depth static code analysis with cppcheck, producing a detailed HTML report for manual inspection.
 cppcheck_full_analysis:
