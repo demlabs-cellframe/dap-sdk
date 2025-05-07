@@ -27,7 +27,7 @@ tests:amd64.debian:
       - pwd
       - env
       - mkdir build
-      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose
+      - cd build && cmake .. -DDAP_VERSION="test" -DBUILD_TS="$CI_COMMIT_TIMESTAMP}" -DBUILD_HASH="$CI_COMMIT_SHORT_SHA" -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON -DBUILD_WITH_ECDSA=ON -DBUILD_WITH_GDB_DRIVER_MDBX=ON && make -j$(nproc) && ctest --verbose
 
 tests:arm32.debian:
     extends: .tests
@@ -35,7 +35,7 @@ tests:arm32.debian:
     before_script: /opt/buildtools/prepare_environment.sh arm32v7-linux
     script:
       - mkdir build
-      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON && make -j$(nproc) && ctest --verbose
+      - cd build && cmake ..  -DDAP_VERSION="test" -DBUILD_TS="$CI_COMMIT_TIMESTAMP}" -DBUILD_HASH="$CI_COMMIT_SHORT_SHA"  -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON && make -j$(nproc) && ctest --verbose
 
 tests:arm64.debian:
     extends: .tests
@@ -43,7 +43,7 @@ tests:arm64.debian:
     before_script: /opt/buildtools/prepare_environment.sh arm64-linux
     script:
       - mkdir build
-      - cd build && cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON && make -j$(nproc) && ctest --verbose
+      - cd build && cmake ..  -DDAP_VERSION="test" -DBUILD_TS="$CI_COMMIT_TIMESTAMP}" -DBUILD_HASH="$CI_COMMIT_SHORT_SHA"  -DCMAKE_BUILD_TYPE=Release -DBUILD_DAP_SDK_TESTS=ON && make -j$(nproc) && ctest --verbose
 
 build:amd64.windows:
     extends: .tests
