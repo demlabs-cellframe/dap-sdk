@@ -437,6 +437,7 @@ __extern_C key_t ftok(const char *, int);
 #endif /*---------------------------------------------------------------------*/
 
 #if defined(__ANDROID_API__) || defined(ANDROID)
+#pragma message "!~! MDBX_WORDBITS = " MDBX_STRINGIFY(MDBX_WORDBITS) " , UINTPTR_MAX = " MDBX_STRINGIFY(UINTPTR_MAX) ", ULONG_MAX = " MDBX_STRINGIFY(ULONG_MAX) ", _FILE_OFFSET_BITS = " MDBX_STRINGIFY(_FILE_OFFSET_BITS)
 #include <android/log.h>
 #if __ANDROID_API__ >= 21
 #include <sys/sendfile.h>
