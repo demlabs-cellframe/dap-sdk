@@ -11,21 +11,20 @@ include(cmake/OS_Detection.cmake)
 if (NOT DEFINED DAP_VERSION)
     message(WARNING "DAP_VERSION is not defined")
     set(DAP_VERSION "0.0.0")
+    add_definitions("-DDAP_VERSION=\"${DAP_VERSION}\"")
 endif()
 
 if (NOT DEFINED BUILD_TS)
     message(WARNING "BUILD_TS is not defined")
     set(BUILD_TS "0")
+    add_definitions("-DBUILD_TS=\"${BUILD_TS}\"")
 endif()
 
 if (NOT DEFINED BUILD_HASH)
     message(WARNING "BUILD_HASH is not defined")
     set(BUILD_HASH "0")
+    add_definitions("-DBUILD_HASH=\"${BUILD_HASH}\"")
 endif()
-
-add_definitions("-DDAP_VERSION=${DAP_VERSION}")
-add_definitions("-DBUILD_TS=${BUILD_TS}")
-add_definitions("-DBUILD_HASH=${BUILD_HASH}")
 
 ##################################################
 if (CELLFRAME_MODULES MATCHES "core")
@@ -63,7 +62,6 @@ else()
 endif()
 
 if (BUILD_DAP_SDK_TESTS)
-    set(DAP_VERSION "0.0.0")
     set(BUILD_DAP_TESTS ON)
     set(BUILD_CRYPTO_TESTS ON)
     set(BUILD_GLOBAL_DB_TEST ON)
