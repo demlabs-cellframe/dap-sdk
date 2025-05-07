@@ -1579,10 +1579,8 @@ MDBX_MAYBE_UNUSED MDBX_NOTHROW_PURE_FUNCTION static inline uint32_t osal_bswap32
 
 #if UINTPTR_MAX > 0xffffFFFFul || ULONG_MAX > 0xffffFFFFul || defined(_WIN64)
 #define MDBX_WORDBITS 64
-#pragma message "MDBX_WORDBITS == 64, UINTPTR_MAX = " MDBX_STRINGIFY(UINTPTR_MAX) ", ULONG_MAX = " MDBX_STRINGIFY(ULONG_MAX)
 #else
 #define MDBX_WORDBITS 32
-#pragma message "MDBX_WORDBITS == 64, UINTPTR_MAX = " MDBX_STRINGIFY(UINTPTR_MAX) ", ULONG_MAX = " MDBX_STRINGIFY(ULONG_MAX)
 #endif /* MDBX_WORDBITS */
 
 /*******************************************************************************
