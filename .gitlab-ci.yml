@@ -94,8 +94,7 @@ build:android:
     image: demlabs/android/any:qt5
     before_script: /opt/buildtools/prepare_environment.sh amd64-windows
     script:
-      - ./prod_build/build.sh release --target android -DDUMMY_INSTALL=1
-
+      - cd build &&  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=${ANDROID_CMAKE_TOOLCHAIN} .. && make -j$(nproc)
 
 # Performs an in-depth static code analysis with cppcheck, producing a detailed HTML report for manual inspection.
 cppcheck_full_analysis:
