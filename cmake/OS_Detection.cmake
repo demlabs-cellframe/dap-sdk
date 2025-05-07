@@ -40,6 +40,7 @@ else()
     endif()
 endif()
 
+add_definitions("-D_FILE_OFFSET_BITS=64")
 
 if(CMAKE_SIZEOF_VOID_P EQUAL "8")
   set(DEFAULT_BUILD_64 ON)
