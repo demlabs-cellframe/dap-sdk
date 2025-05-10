@@ -5,7 +5,7 @@
 
 #ifdef DAP_OS_WINDOWS
 #define localtime_r(a, b) localtime_s((b), (a))
-extern char *strptime(const char *s, const char *format, dap_tm *tm);
+extern char *strptime(const char *s, const char *format, struct tm *tm);
 #endif
 
 #define DAP_TIME_STR_SIZE 32
