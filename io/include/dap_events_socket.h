@@ -50,8 +50,8 @@ typedef int SOCKET;
     #include <unistd.h>
     #include <sys/un.h>
 #elif defined(DAP_OS_LINUX)
-    //#define DAP_EVENTS_CAPS_EPOLL
-    #define DAP_EVENTS_CAPS_POLL
+    #define DAP_EVENTS_CAPS_EPOLL
+    //#define DAP_EVENTS_CAPS_POLL
     #define DAP_EVENTS_CAPS_PIPE_POSIX
     #define DAP_EVENTS_CAPS_QUEUE_PIPE2
     #define DAP_EVENTS_CAPS_EVENT_EVENTFD
