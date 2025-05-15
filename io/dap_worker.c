@@ -1492,8 +1492,6 @@ int dap_worker_thread_loop(dap_context_t * a_context)
 #endif
                     } else if (l_bytes_sent) {
                         debug_if(g_debug_reactor, L_DEBUG, "Output: %zu from %zu bytes are sent", l_bytes_sent, l_cur->buf_out_size);
-                        if (l_cur->type == DESCRIPTOR_TYPE_SOCKET_CLIENT || l_cur->type == DESCRIPTOR_TYPE_SOCKET_UDP)
-                            l_cur->last_time_active = l_cur_time;
                         if (l_bytes_sent <= (ssize_t) l_cur->buf_out_size) {
                             l_cur->buf_out_size -= l_bytes_sent;
                             if (l_cur->buf_out_size)

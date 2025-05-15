@@ -37,7 +37,8 @@
 #include "dap_strfuncs.h"
 #include "dap_enc_ks.h"
 
-#define STREAM_KEEPALIVE_TIMEOUT    3   // How  often send keeplive messages (seconds)
+#define STREAM_KEEPALIVE_HEARTBEAT  3   // How often send keeplive messages (seconds)
+#define STREAM_KEEPALIVE_DELAY      10  // Minimum seconds to wait before send 1st keepalive message (maximum is 2*DELAY) after stream reading last activity
 
 typedef struct dap_stream_ch dap_stream_ch_t;
 typedef struct dap_stream_worker dap_stream_worker_t;

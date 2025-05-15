@@ -361,7 +361,7 @@ dap_stream_t *s_stream_new(dap_http_client_t *a_http_client, dap_stream_node_add
     }
     *l_es_uuid = l_ret->esocket->uuid;
     l_ret->keepalive_timer = dap_timerfd_start_on_worker(l_ret->esocket->worker,
-                                                         STREAM_KEEPALIVE_TIMEOUT * 1000,
+                                                         STREAM_KEEPALIVE_DELAY * 1000,
                                                          (dap_timerfd_callback_t)s_callback_server_keepalive,
                                                          l_es_uuid);
     l_ret->esocket->callbacks.worker_assign_callback = s_esocket_callback_worker_assign;
@@ -557,8 +557,6 @@ static bool s_http_client_data_write(dap_http_client_t * a_http_client, void UNU
  */
 static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, dap_worker_t * a_worker)
 {
-    if (!a_esocket->is_initalized)
-        return;
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
     assert(l_stream);
     dap_stream_add_to_list(l_stream);
@@ -572,7 +570,7 @@ static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, da
         *l_es_uuid = a_esocket->uuid;
         dap_timerfd_callback_t l_callback = a_esocket->server ? s_callback_server_keepalive : s_callback_client_keepalive;
         l_stream->keepalive_timer = dap_timerfd_start_on_worker(a_worker,
-                                                                STREAM_KEEPALIVE_TIMEOUT * 1000,
+                                                                STREAM_KEEPALIVE_DELAY * 1000,
                                                                 l_callback,
                                                                 l_es_uuid);
     }
@@ -828,13 +826,12 @@ static void s_stream_proc_pkt_in(dap_stream_t * a_stream, dap_stream_pkt_t *a_pk
         };
         memcpy(l_ret_pkt.sig, c_dap_stream_sig, sizeof(c_dap_stream_sig));
         dap_events_socket_write_unsafe(a_stream->esocket, &l_ret_pkt, sizeof(l_ret_pkt));
-        // Reset client keepalive timer
         if (a_stream->keepalive_timer) {
+            a_stream->keepalive_timer->timeout_ms = STREAM_KEEPALIVE_DELAY;
             dap_timerfd_reset_unsafe(a_stream->keepalive_timer);
         }
     } break;
     case STREAM_PKT_TYPE_ALIVE:
-        a_stream->is_active = false; // To prevent keep-alive concurrency
         debug_if(s_debug, L_DEBUG, "Keep alive response recieved");
         break;
     default:
@@ -909,28 +906,28 @@ static bool s_callback_keepalive(void *a_arg, bool a_server_side)
         log_it(L_ERROR, "l_worker is NULL");
         return false;
     }
-    dap_events_socket_t * l_es = dap_context_find(l_worker->context, *l_es_uuid);
-    if(l_es) {
-        assert(a_server_side == !!l_es->server);
-        dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
-        assert(l_stream);
-        if (l_stream->is_active) {
-            l_stream->is_active = false;
-            return true;
-        }
-        if(s_debug)
-            log_it(L_DEBUG,"Keepalive for sock fd %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x, l_es->socket, *l_es_uuid);
-        dap_stream_pkt_hdr_t l_pkt = {};
-        l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
-        memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
-        dap_events_socket_write_unsafe( l_es, &l_pkt, sizeof(l_pkt));
-        return true;
-    }else{
+    dap_events_socket_t *l_es = dap_context_find(l_worker->context, *l_es_uuid);
+    if (!l_es) {
         if(s_debug)
             log_it(L_INFO,"Keepalive for sock uuid %016"DAP_UINT64_FORMAT_x" removed", *l_es_uuid);
         DAP_DELETE(l_es_uuid);
         return false; // Socket is removed from worker
     }
+    assert(a_server_side == !!l_es->server);
+    dap_stream_t *l_stream = dap_stream_get_from_es(l_es);
+    assert(l_stream);
+    if (l_stream->is_active) {
+        l_stream->is_active = false;
+        return true;
+    }
+    if (s_debug)
+        log_it(L_DEBUG,"Keepalive for sock fd %"DAP_FORMAT_SOCKET" uuid 0x%016"DAP_UINT64_FORMAT_x, l_es->socket, *l_es_uuid);
+    dap_stream_pkt_hdr_t l_pkt = {};
+    l_pkt.type = STREAM_PKT_TYPE_KEEPALIVE;
+    memcpy(l_pkt.sig, c_dap_stream_sig, sizeof(l_pkt.sig));
+    dap_events_socket_write_unsafe( l_es, &l_pkt, sizeof(l_pkt));
+    l_stream->keepalive_timer->timeout_ms = STREAM_KEEPALIVE_HEARTBEAT;
+    return true;
 }
 
 static bool s_callback_client_keepalive(void *a_arg)
