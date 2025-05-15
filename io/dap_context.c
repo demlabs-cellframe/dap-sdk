@@ -1456,12 +1456,8 @@ int dap_context_poll_update(dap_events_socket_t * a_esocket)
 #else
             int l_errno = errno;
 #endif
-            char l_errbuf[128];
-            l_errbuf[0]=0;
-            strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-            log_it(L_ERROR,"Can't update client socket state in the epoll_fd %"DAP_FORMAT_HANDLE": \"%s\" (%d)",
-                   a_esocket->context->epoll_fd, l_errbuf, l_errno);
-            return l_errno;
+            return log_it(L_CRITICAL, "Error updating client socket state in the epoll_fd %"DAP_FORMAT_HANDLE": \"%s\" (%d)",
+                a_esocket->context->epoll_fd, dap_strerror(l_errno), l_errno), -1;
         }
     }
 
@@ -1737,15 +1733,9 @@ int dap_context_remove( dap_events_socket_t * a_es)
     }
 
     // remove from epoll
-    if ( epoll_ctl( l_context->epoll_fd, EPOLL_CTL_DEL, a_es->socket, &a_es->ev) == -1 ) {
-        int l_errno = errno;
-        char l_errbuf[128];
-        strerror_r(l_errno, l_errbuf, sizeof (l_errbuf));
-        log_it( L_ERROR,"Can't remove event socket's handler from the epoll_fd %"DAP_FORMAT_HANDLE"  \"%s\" (%d)",
-                l_context->epoll_fd, l_errbuf, l_errno);
-        l_ret = l_errno;
-    } //else
-      //  log_it( L_DEBUG,"Removed epoll's event from context #%u", l_context->id );
+    if ( epoll_ctl( l_context->epoll_fd, EPOLL_CTL_DEL, a_es->socket, &a_es->ev) == -1 )
+        return log_it(L_CRITICAL, "Error removing event socket's handler from the epoll_fd %"DAP_FORMAT_HANDLE"  \"%s\" (%d)",
+                l_context->epoll_fd, dap_strerror(errno), errno), -1;
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
     if (a_es->socket == -1) {
         log_it(L_ERROR, "Trying to remove bad socket from kqueue, a_es=%p", a_es);
