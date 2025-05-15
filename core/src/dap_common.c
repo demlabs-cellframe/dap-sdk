@@ -369,10 +369,23 @@ int dap_deserialize_multy(const uint8_t *a_data, uint64_t a_size, ...)
 }
 
 static int s_dap_log_open(const char *a_log_file_path, bool a_new) {
-    if (! (s_log_file = s_log_file ? freopen(a_log_file_path, a_new ? "w" : "a", s_log_file) : fopen( a_log_file_path, a_new ? "w" : "a" )) )
-        return fprintf( stderr, "Can't open log file %s \n", a_log_file_path ), -1;
+    const char *mode = a_new ? "w" : "a";
+    if (s_log_file) {
+      s_log_file = freopen(a_log_file_path, mode, s_log_file);
+    } else {
+      s_log_file = fopen(a_log_file_path, mode);
+    }
+    if (!s_log_file) {
+      fprintf(stderr, "Can't open log file '%s' in mode '%s': %s\n",
+              a_log_file_path, mode, strerror(errno));
+      return -1;
+    }
     static char s_buf_file[LOG_BUF_SIZE];
-    return setvbuf(s_log_file, s_buf_file, _IOLBF, LOG_BUF_SIZE);
+    if (setvbuf(s_log_file, s_buf_file, _IOLBF, LOG_BUF_SIZE) != 0) {
+      fprintf(stderr, "Failed to set buffer for log file '%s': %s\n",
+              a_log_file_path, strerror(errno));
+      return -1;
+    }
 }
 
 /**
@@ -426,8 +439,11 @@ int wdap_common_init( const char *a_console_title, const wchar_t *a_log_filename
  * @brief dap_common_deinit Deinitialise
  */
 void dap_common_deinit( ) {
-    if (s_log_file)
-        fclose(s_log_file);
+  if (s_log_file){
+    fclose(s_log_file);
+    s_log_file = NULL;
+  }
+
 }
 
 static void print_it(unsigned a_off, const char *a_fmt, va_list va) {
