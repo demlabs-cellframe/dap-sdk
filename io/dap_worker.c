@@ -136,6 +136,7 @@ int dap_worker_context_callback_started(dap_context_t * a_context, void *a_arg)
         int l_errno = errno;
 #endif
         return log_it(L_CRITICAL, "Error creating epoll fd: %s (%d)", dap_strerror(l_errno), l_errno), -1;
+    }
 #elif defined DAP_EVENTS_CAPS_IOCP
     if ( !(a_context->iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 1)) )
         return log_it(L_CRITICAL, "Creating IOCP failed! Error %d: \"%s\"",

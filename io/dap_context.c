@@ -1734,7 +1734,7 @@ int dap_context_remove( dap_events_socket_t * a_es)
 
     // remove from epoll
     if ( epoll_ctl( l_context->epoll_fd, EPOLL_CTL_DEL, a_es->socket, &a_es->ev) == -1 )
-        return log_it(L_CRITICAL, "Error removing event socket's handler from the epoll_fd %"DAP_FORMAT_HANDLE"  \"%s\" (%d)",
+        return log_it(L_CRITICAL, "Error removing event socket's handler from the epoll_fd %"DAP_FORMAT_HANDLE" \"%s\" (%d)",
                 l_context->epoll_fd, dap_strerror(errno), errno), -1;
 #elif defined(DAP_EVENTS_CAPS_KQUEUE)
     if (a_es->socket == -1) {
