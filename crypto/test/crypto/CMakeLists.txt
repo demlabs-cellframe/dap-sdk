@@ -15,6 +15,9 @@ endif()
 
 file(GLOB SRC *.h *.c)
 
+# Явно добавляем файлы тестов Chipmunk
+list(APPEND SRC dap_enc_chipmunk_test.h dap_enc_chipmunk_test.c)
+
 add_executable(${PROJECT_NAME} ${SRC})
 
 target_link_libraries(${PROJECT_NAME} dap_test dap_core dap_crypto m)

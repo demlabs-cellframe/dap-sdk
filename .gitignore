@@ -1,4 +1,5 @@
 # Prerequisites
+CTestTestfile.cmake
 build/*
 debug/*
 .devcontainer/*

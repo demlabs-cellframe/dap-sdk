@@ -483,61 +483,6 @@ dap_enc_key_callbacks_t s_callbacks[]={
       },
 
 
-    [DAP_ENC_KEY_TYPE_SIG_RINGCT20]={
-        .name =                             "SIG_RINGCT20",
-        .enc =                              NULL,
-        .dec =                              NULL,
-        .enc_na =                           dap_enc_sig_ringct20_get_sign_with_pb_list,//dap_enc_sig_ringct20_get_sign,
-        .dec_na =                           dap_enc_sig_ringct20_verify_sign,
-        .dec_na_ext =                       dap_enc_sig_ringct20_verify_sign_with_pbk_list,
-        .gen_key_public =                   NULL,
-        .ser_pub_key_size =                 NULL,
-        .gen_bob_shared_key =               NULL,
-        .gen_alice_shared_key =             NULL,
-        .new_callback =                     dap_enc_sig_ringct20_key_new,
-        .delete_callback =                  dap_enc_sig_ringct20_key_delete,
-        .new_generate_callback =            dap_enc_sig_ringct20_key_new_generate,
-        .enc_out_size =                     NULL,
-        .dec_out_size =                     NULL,
-        .sign_get =                         NULL,
-        .sign_verify =                      NULL
-    },
-    [DAP_ENC_KEY_TYPE_SIG_FALCON]={
-        .name =                             "SIG_FALCON",
-        .enc =                              NULL,
-        .dec =                              NULL,
-        .enc_na =                           NULL,
-        .dec_na =                           NULL,
-        .gen_key_public =                   NULL,
-        .gen_bob_shared_key =               NULL,
-        .gen_alice_shared_key =             NULL,
-        .enc_out_size =                     NULL,
-        .dec_out_size =                     NULL,
-
-        .new_callback =                     dap_enc_sig_falcon_key_new,
-        .new_generate_callback =            dap_enc_sig_falcon_key_new_generate,
-    
-        .delete_callback =                  dap_enc_sig_falcon_key_delete,
-        .del_sign =                         falcon_signature_delete,
-        .del_pub_key =                      falcon_public_key_delete,
-        .del_priv_key =                     falcon_private_key_delete,
-    
-        .sign_get =                         dap_enc_sig_falcon_get_sign,
-        .sign_verify =                      dap_enc_sig_falcon_verify_sign,
-
-        .ser_sign =                         dap_enc_sig_falcon_write_signature,
-        .ser_priv_key =                     dap_enc_sig_falcon_write_private_key,
-        .ser_pub_key =                      dap_enc_sig_falcon_write_public_key,
-        .ser_priv_key_size =                dap_enc_sig_falcon_ser_private_key_size,
-        .ser_pub_key_size =                 dap_enc_sig_falcon_ser_public_key_size,
-
-        .deser_sign =                       dap_enc_sig_falcon_read_signature,
-        .deser_priv_key =                   dap_enc_sig_falcon_read_private_key,
-        .deser_pub_key =                    dap_enc_sig_falcon_read_public_key,
-        .deser_sign_size =                  dap_enc_sig_falcon_deser_sig_size,
-        .deser_pub_key_size =               dap_enc_sig_falcon_deser_public_key_size,
-        .deser_priv_key_size =              dap_enc_sig_falcon_deser_private_key_size,
-    },
     [DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS]={
         .name =                             "SIG_SPHINCSPLUS",
         .enc =                              NULL,
@@ -574,6 +519,40 @@ dap_enc_key_callbacks_t s_callbacks[]={
         .deser_pub_key_size =               dap_enc_sig_sphincsplus_deser_public_key_size,
         .deser_priv_key_size =              dap_enc_sig_sphincsplus_deser_private_key_size,
     },
+
+/*
+    [DAP_ENC_KEY_TYPE_SIG_CHIPMUNK]={
+          .name =                             "SIG_CHIPMUNK",
+          .enc =                              NULL,
+          .dec =                              NULL,
+          .enc_na =                           NULL,
+          .dec_na =                           NULL,
+          .gen_key_public =                   NULL,
+          .gen_bob_shared_key =               NULL,
+          .gen_alice_shared_key =             NULL,
+          .enc_out_size =                     NULL,
+          .dec_out_size =                     NULL,
+
+          .new_callback =                     dap_enc_chipmunk_key_new,
+          .new_generate_callback =            dap_enc_chipmunk_key_generate,
+
+          .delete_callback =                  dap_enc_chipmunk_key_delete,
+          .del_sign =                         NULL,
+          .del_pub_key =                      NULL,
+          .del_priv_key =                     NULL,
+
+          .sign_get =                         dap_enc_chipmunk_sign,
+          .sign_verify =                      dap_enc_chipmunk_verify,
+
+          .ser_priv_key_size =                NULL,
+          .ser_pub_key_size =                 NULL,
+
+          .deser_priv_key_size =              NULL,
+          .deser_pub_key_size =               NULL,
+          .deser_sign_size =                  NULL
+    },
+*/
+
     [DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED]={
         .name =                             "SIG_MULTI_CHAINED",
         .enc =                              NULL,
@@ -664,6 +643,7 @@ uint8_t *dap_enc_key_serialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_si
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:
@@ -698,8 +678,8 @@ uint8_t* dap_enc_key_deserialize_sign(dap_enc_key_type_t a_key_type, uint8_t *a_
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
         case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
-        //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_CHAINED:
         case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM:
             if (!s_callbacks[a_key_type].deser_sign || !s_callbacks[a_key_type].deser_sign_size) {
@@ -732,6 +712,7 @@ uint8_t* dap_enc_key_serialize_priv_key(dap_enc_key_t *a_key, size_t *a_buflen_o
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
             if (!s_callbacks[a_key->type].ser_priv_key) {
                 log_it(L_ERROR, "No callback for private key serialize to %s enc key", dap_enc_get_type_name(a_key->type));
@@ -765,7 +746,7 @@ uint8_t* dap_enc_key_serialize_pub_key(dap_enc_key_t *a_key, size_t *a_buflen_ou
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        case DAP_ENC_KEY_TYPE_SIG_ECDSA:
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
             if (!s_callbacks[a_key->type].ser_pub_key) {
                 log_it(L_ERROR, "No callback for public key serialize to %s enc key", dap_enc_get_type_name(a_key->type));
@@ -798,7 +779,7 @@ int dap_enc_key_deserialize_priv_key(dap_enc_key_t *a_key, const uint8_t *a_buf,
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
             if (!s_callbacks[a_key->type].deser_priv_key) {
                 log_it(L_ERROR, "No callback for private key deserialize to %s enc key", dap_enc_get_type_name(a_key->type));
@@ -855,8 +836,7 @@ int dap_enc_key_deserialize_pub_key(dap_enc_key_t *a_key, const uint8_t *a_buf, 
         case DAP_ENC_KEY_TYPE_SIG_TESLA:
         case DAP_ENC_KEY_TYPE_SIG_DILITHIUM:
         case DAP_ENC_KEY_TYPE_SIG_FALCON:
-        case DAP_ENC_KEY_TYPE_SIG_ECDSA:    
-        //case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
+        case DAP_ENC_KEY_TYPE_SIG_SHIPOVNIK:
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS:
             if (!s_callbacks[a_key->type].deser_pub_key) {
                 log_it(L_ERROR, "No callback for public key deserialize to %s enc key", dap_enc_get_type_name(a_key->type));

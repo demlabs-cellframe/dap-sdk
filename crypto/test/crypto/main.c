@@ -4,6 +4,7 @@
 #include "dap_enc_benchmark_test.h"
 #include "dap_enc_multithread_test.h"
 #include "dap_enc_ringct20_test.h"
+#include "dap_enc_chipmunk_test.h"
 #include "rand/dap_rand.h"
 #include "dap_common.h"
 
@@ -38,5 +39,6 @@ int main(void) {
     dap_enc_ringct20_tests_run(l_times);
     dap_enc_benchmark_tests_run(l_times);
     dap_enc_multithread_tests_run(l_times);
+    dap_enc_chipmunk_tests_run(l_times);
     return 0;
 }
