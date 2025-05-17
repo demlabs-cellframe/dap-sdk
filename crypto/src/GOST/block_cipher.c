@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <memory.h>
 #ifdef __MACH__
-#include <sys/malloc.h>
+#include <malloc/malloc.h>
 #endif
 #include <stdlib.h>
 
