@@ -415,7 +415,7 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
  * @param a_sign Pointer to multi-signature structure to destroy
  * @return None
  */
-void dap_multi_sign_delete(dap_multi_sign_t *a_sign)
+void dap_multi_sign_delete(void *a_sign)
 {
     dap_return_if_pass(!a_sign);
     dap_multi_sign_t *l_sign = (dap_multi_sign_t*)a_sign;
