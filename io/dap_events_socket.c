@@ -89,7 +89,7 @@ typedef cpuset_t cpu_set_t; // Adopt BSD CPU setstructure to POSIX variant
 #define LOG_TAG "dap_events_socket"
 
 const char *s_socket_type_to_str[DESCRIPTOR_TYPE_MAX] = { 
-    "RAW", "CLIENT", "LOCAL CLIENT", "SERVER", "LOCAL SERVER", "UDP CLIENT", "SSL CLIENT",
+    "CLIENT", "LOCAL CLIENT", "SERVER", "LOCAL SERVER", "UDP CLIENT", "SSL CLIENT", "RAW", 
     "FILE", "PIPE", "QUEUE", "TIMER", "EVENT"
 };
 
