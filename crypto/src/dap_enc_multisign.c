@@ -418,5 +418,6 @@ int dap_enc_sig_multisign_verify_sign(dap_enc_key_t *a_key, const void *a_msg, c
 void dap_multi_sign_delete(dap_multi_sign_t *a_sign)
 {
     dap_return_if_pass(!a_sign);
-    DAP_DEL_MULTY(a_sign->sign_data, a_sign->key_hashes, a_sign->meta, a_sign->key_seq);
+    dap_multi_sign_t *l_sign = (dap_multi_sign_t*)a_sign;
+    DAP_DEL_MULTY(l_sign->sign_data, l_sign->key_hashes, l_sign->meta, l_sign->key_seq);
 }
