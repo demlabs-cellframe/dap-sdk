@@ -45,7 +45,7 @@
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_session.h"
 #include "dap_events_socket.h"
-
+#include "dap_enc_base64.h"
 #include "dap_http_server.h"
 #include "dap_http_client.h"
 #include "dap_http_header.h"
@@ -674,7 +674,12 @@ static void s_http_client_delete(dap_http_client_t * a_http_client, void *a_arg)
 size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream && a_stream->esocket && a_stream->esocket->buf_in, 0);
-    byte_t *l_pos = a_stream->esocket->buf_in, *l_end = l_pos + a_stream->esocket->buf_in_size;
+    size_t l_bin_buf_size = DAP_ENC_BASE64_DECODE_SIZE(a_stream->esocket->buf_in_size);
+    byte_t *l_bin_buf = DAP_NEW_Z_RET_VAL_IF_FAIL(byte_t, l_bin_buf_size, 0);
+    l_bin_buf = DAP_DUP_SIZE_RET_VAL_IF_FAIL(a_stream->esocket->buf_in, a_stream->esocket->buf_in_size, 0);
+    //size_t l_decoded_size = dap_enc_base64_decode((char *)a_stream->esocket->buf_in,
+    //                                              a_stream->esocket->buf_in_size, l_bin_buf, DAP_ENC_DATA_TYPE_B64);
+    byte_t *l_pos = l_bin_buf, *l_end = l_pos + l_bin_buf_size;
     size_t l_shift = 0, l_processed_size = 0;
     while ( l_pos < l_end && (l_pos = memchr( l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos))) ) {
         if ( (size_t)(l_end - l_pos) < sizeof(dap_stream_pkt_hdr_t) )
@@ -694,8 +699,10 @@ size_t dap_stream_data_proc_read (dap_stream_t *a_stream)
         } else
             ++l_pos;
     }
+    DAP_DELETE(l_bin_buf);
+    //l_processed_size = DAP_ENC_BASE64_ENCODE_SIZE(l_processed_size);
     debug_if( s_dump_packet_headers && l_processed_size, L_DEBUG, "Processed %lu / %lu bytes",
-              l_processed_size, (size_t)(l_end - a_stream->esocket->buf_in) );
+                                                                l_processed_size, a_stream->esocket->buf_in_size );
     return l_processed_size;
 }
 
