@@ -557,6 +557,8 @@ static bool s_http_client_data_write(dap_http_client_t * a_http_client, void UNU
  */
 static void s_esocket_callback_worker_assign(dap_events_socket_t * a_esocket, dap_worker_t * a_worker)
 {
+    if (!a_esocket->is_initalized)
+        return;
     dap_stream_t *l_stream = dap_stream_get_from_es(a_esocket);
     assert(l_stream);
     dap_stream_add_to_list(l_stream);
