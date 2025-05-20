@@ -1835,7 +1835,7 @@ static bool s_check_pinned_db_objs_callback() {
             l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - l_ttl + s_minimal_ttl + 100, &l_ret_count);
         }
     }
-    dap_list_free(l_group_list);
+    dap_list_free_full(l_group_list, NULL);
     return false;
 }
 
@@ -1939,6 +1939,7 @@ static int s_pinned_objs_group_init() {
         s_get_all_pinned_objs_in_group(l_ret, l_ret_count);
         dap_store_obj_free(l_ret, l_ret_count);
     }
+    dap_list_free_full(l_group_list, NULL);
     dap_proc_thread_timer_add_pri(NULL, s_check_pinned_db_objs_timer_callback, NULL, 300000, true, DAP_QUEUE_MSG_PRIORITY_NORMAL);  // 5 min wait before repin
     return 0;
 }
