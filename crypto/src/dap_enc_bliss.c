@@ -87,8 +87,8 @@ void dap_enc_sig_bliss_key_new_generate(dap_enc_key_t *a_key, UNUSED_ARG const v
         return;
     }
 
-    a_key->pub_key_data_size = sizeof(bliss_public_key_t);
-    a_key->pub_key_data = DAP_NEW_SIZE(void, a_key->pub_key_data_size);
+    a_key->pub_key_size = sizeof(bliss_public_key_t);
+    a_key->pub_key_data = DAP_NEW_SIZE(void, a_key->pub_key_size);
     l_retcode = bliss_b_public_key_extract((bliss_public_key_t *) a_key->pub_key_data,
             (const bliss_private_key_t *) a_key->priv_key_data);
     if(l_retcode != BLISS_B_NO_ERROR) {
@@ -140,7 +140,7 @@ void dap_enc_sig_bliss_key_delete(dap_enc_key_t *key)
         key->pub_key_data = NULL;
     }
     key->priv_key_data_size = 0;
-    key->pub_key_data_size = 0;
+    key->pub_key_size = 0;
 }
 
 /* Serialize a signature */

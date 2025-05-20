@@ -13,6 +13,7 @@ DAP_STATIC_INLINE const char *s_key_type_to_str(dap_enc_key_type_t a_signe_key_t
         case DAP_ENC_KEY_TYPE_SIG_PICNIC: return "PICNIC";
         case DAP_ENC_KEY_TYPE_SIG_FALCON: return "FALCON";
         case DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS: return "SPHINCSPLUS";
+        case DAP_ENC_KEY_TYPE_SIG_CHIPMUNK: return "CHIPMUNK";
 #ifdef DAP_ECDSA
         case DAP_ENC_KEY_TYPE_SIG_ECDSA: return "ECDSA";
         case DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM: return "ECDSA+DILITHIUM";

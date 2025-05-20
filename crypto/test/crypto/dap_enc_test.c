@@ -5,6 +5,7 @@
 #include "rand/dap_rand.h"
 #include "dap_sign.h"
 #include "dap_enc.h"
+#include "dap_enc_chipmunk_test.h"
 
 #define LOG_TAG "dap_crypto_enc_tests"
 #define DAP_CHAIN_ATOM_MAX_SIZE (256 * 1024) // 256 KB
@@ -15,6 +16,7 @@ const dap_enc_key_type_t c_key_type_arr[] = {
         DAP_ENC_KEY_TYPE_SIG_DILITHIUM,
         DAP_ENC_KEY_TYPE_SIG_FALCON,
         DAP_ENC_KEY_TYPE_SIG_SPHINCSPLUS,
+        DAP_ENC_KEY_TYPE_SIG_CHIPMUNK,
 #ifdef DAP_ECDSA
         DAP_ENC_KEY_TYPE_SIG_ECDSA,
         DAP_ENC_KEY_TYPE_SIG_MULTI_ECDSA_DILITHIUM
@@ -544,5 +546,7 @@ void dap_enc_tests_run() {
         dap_print_module_name(l_module_name);
         test_serialize_deserialize_pub_priv(c_key_type_arr[i]);
     }
+    // Добавляем тесты модуля Chipmunk
+    dap_enc_chipmunk_tests_run();
     dap_cleanup_test_case();
 }
