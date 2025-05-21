@@ -152,30 +152,34 @@ static int dap_enc_chipmunk_sign_verify_test(void)
         
         // Verify signature
         log_it(L_INFO, "Verifying Chipmunk signature");
-        int l_verify_result = dap_enc_chipmunk_verify_sign(l_key, l_message, l_message_len, l_sign, l_sign_size);
+        int l_ret_verify = dap_enc_chipmunk_verify_sign(l_key, l_message, l_message_len, l_sign, l_sign_size);
         
-        if (l_verify_result != 0) {
-            log_it(L_ERROR, "Chipmunk signature verification failed, error code: %d", l_verify_result);
+        if (l_ret_verify == 0) {
+            log_it(L_INFO, "Chipmunk signature verification successful");
+        } else {
+            log_it(L_ERROR, "Chipmunk signature verification failed, error code: %d", l_ret_verify);
             l_result = -3;
-            // Не выходим сразу, продолжаем тесты
-        } else {
-            log_it(L_NOTICE, "Chipmunk signature verified successfully");
         }
         
-        // Проверка с измененным сообщением (должна не пройти)
-        const char l_modified_message[] = "Modified message for chipmunk signature";
-        size_t l_modified_message_len = strlen(l_modified_message);
-        
+        // Test signature verification with a modified message (should fail)
         log_it(L_INFO, "Testing signature verification with modified message (should fail)");
-        int l_verify_modified = dap_enc_chipmunk_verify_sign(l_key, l_modified_message, l_modified_message_len, l_sign, l_sign_size);
         
-        // Измененное сообщение должно не пройти верификацию (результат должен быть отрицательным)
-        if (l_verify_modified == 0) {
-            log_it(L_ERROR, "Chipmunk signature verification with modified message passed incorrectly!");
-            l_result = -4;
-        } else {
+        // Модифицируем сообщение, добавляя символ
+        char* l_modified_message = calloc(1, l_message_len + 5);
+        memcpy(l_modified_message, l_message, l_message_len);
+        strcat(l_modified_message, "test");
+        
+        int l_ret_verify_modified = dap_enc_chipmunk_verify_sign(l_key, l_modified_message, l_message_len + 4, l_sign, l_sign_size);
+        
+        // Теперь проверка должна не пройти, результат должен быть отрицательным
+        if (l_ret_verify_modified < 0) {
             log_it(L_NOTICE, "Chipmunk signature verification with modified message correctly failed (expected behavior)");
+        } else {
+            log_it(L_ERROR, "Chipmunk signature verification with modified message unexpectedly succeeded");
+            l_result = -4;
         }
+        
+        free(l_modified_message);
     }
     
     // Освобождаем ресурсы
@@ -292,6 +296,57 @@ static int dap_enc_chipmunk_challenge_poly_test(void)
     return 0;
 }
 
+// Тестовая функция для проверки сериализации/десериализации challenge seed
+static int s_test_chipmunk_serialization() {
+    log_it(L_INFO, "Testing Chipmunk challenge seed serialization/deserialization...");
+    
+    // Создаем тестовый challenge seed
+    uint8_t l_test_seed[32] = {0};
+    for (int i = 0; i < 32; i++) {
+        l_test_seed[i] = (uint8_t)i;
+    }
+    
+    // Создаем тестовую подпись
+    chipmunk_signature_t l_sig_src = {0};
+    memcpy(l_sig_src.c, l_test_seed, sizeof(l_sig_src.c));
+    
+    // Выводим исходный c_seed
+    log_it(L_DEBUG, "Original c_seed: %02x%02x%02x%02x...",
+           l_sig_src.c[0], l_sig_src.c[1], l_sig_src.c[2], l_sig_src.c[3]);
+    
+    // Сериализуем подпись
+    uint8_t l_serialized[CHIPMUNK_SIGNATURE_SIZE] = {0};
+    int l_ret = chipmunk_signature_to_bytes(l_serialized, &l_sig_src);
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to serialize signature");
+        return -1;
+    }
+    
+    // Десериализуем подпись
+    chipmunk_signature_t l_sig_dst = {0};
+    l_ret = chipmunk_signature_from_bytes(&l_sig_dst, l_serialized);
+    if (l_ret != 0) {
+        log_it(L_ERROR, "Failed to deserialize signature");
+        return -2;
+    }
+    
+    // Выводим десериализованный c_seed
+    log_it(L_DEBUG, "Deserialized c_seed: %02x%02x%02x%02x...",
+           l_sig_dst.c[0], l_sig_dst.c[1], l_sig_dst.c[2], l_sig_dst.c[3]);
+    
+    // Проверяем, что c_seed совпадает
+    for (int i = 0; i < 32; i++) {
+        if (l_sig_src.c[i] != l_sig_dst.c[i]) {
+            log_it(L_ERROR, "Challenge seed mismatch at byte %d: original=%02x, deserialized=%02x",
+                   i, l_sig_src.c[i], l_sig_dst.c[i]);
+            return -3;
+        }
+    }
+    
+    log_it(L_INFO, "Challenge seed serialization/deserialization test PASSED");
+    return 0;
+}
+
 /**
  * @brief Run all Chipmunk tests.
  * 
@@ -327,6 +382,12 @@ int dap_enc_chipmunk_tests_run(void)
         log_it(L_ERROR, "Challenge polynomial test FAILED! This is a critical issue.");
     } else {
         log_it(L_INFO, "Challenge polynomial test PASSED");
+    }
+    
+    // Добавляем тест сериализации/десериализации challenge seed
+    if (s_test_chipmunk_serialization() != 0) {
+        log_it(L_ERROR, "Challenge seed serialization test FAILED");
+        return -4;
     }
     
     // Test signature generation and verification
