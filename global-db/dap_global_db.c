@@ -1835,7 +1835,7 @@ static bool s_check_pinned_db_objs_callback() {
             l_ret = dap_global_db_driver_read_obj_below_timestamp((char*)l_list->data, l_time_now - l_ttl + s_minimal_ttl + 100, &l_ret_count);
         }
     }
-    dap_list_free(l_group_list);
+    dap_list_free_full(l_group_list, NULL);
     return false;
 }
 
@@ -1874,6 +1874,8 @@ DAP_STATIC_INLINE char *dap_get_group_from_pinned_groups_mask(const char *a_grou
 
 static void s_set_pinned_timer(const char * a_group) {
     dap_global_db_cluster_t *l_cluster = dap_global_db_cluster_by_group(s_dbi, a_group);
+    if (!l_cluster)
+        return;
     if ((l_cluster->ttl != 0 && s_minimal_ttl > dap_nanotime_from_sec(l_cluster->ttl)) || !s_check_pinned_db_objs_timer) {
         s_check_pinned_db_objs_deinit();
         if (l_cluster->ttl != 0)
@@ -1937,6 +1939,7 @@ static int s_pinned_objs_group_init() {
         s_get_all_pinned_objs_in_group(l_ret, l_ret_count);
         dap_store_obj_free(l_ret, l_ret_count);
     }
+    dap_list_free_full(l_group_list, NULL);
     dap_proc_thread_timer_add_pri(NULL, s_check_pinned_db_objs_timer_callback, NULL, 300000, true, DAP_QUEUE_MSG_PRIORITY_NORMAL);  // 5 min wait before repin
     return 0;
 }
