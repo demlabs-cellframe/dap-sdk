@@ -33,7 +33,7 @@
 
 typedef int (*dap_cli_server_cmd_callback_ex_t)(int argc, char ** argv, void *arg_func, void **a_str_reply);
 typedef int (*dap_cli_server_cmd_callback_t)(int argc, char ** argv, void **a_str_reply);
-typedef int (*dap_cli_server_cmd_callback_func_json)(dap_json_rpc_response_t* response);
+typedef int (*dap_cli_server_cmd_callback_func_json)(dap_json_rpc_response_t* response, char ** cmd_param, int cmd_cnt);
 
 typedef void (*dap_cli_server_override_log_cmd_callback_t)(const char*);
 

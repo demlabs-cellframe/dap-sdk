@@ -242,7 +242,8 @@ int dap_app_cli_post_command( dap_app_cli_connect_param_t a_socket, dap_app_cli_
             dap_json_rpc_response_free(response);
             return -1;
         }
-        if (dap_json_rpc_response_printf_result(response, a_cmd->cmd_name) != 0) {
+        
+        if (dap_json_rpc_response_printf_result(response, a_cmd->cmd_name, a_cmd->cmd_param, a_cmd->cmd_param_count) != 0) {
             printf("Something wrong with response\n");
         }
         dap_json_rpc_response_free(response);

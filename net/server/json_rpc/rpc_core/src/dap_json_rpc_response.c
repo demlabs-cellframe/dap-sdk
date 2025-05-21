@@ -277,7 +277,7 @@ void json_print_for_tx_history(dap_json_rpc_response_t* response) {
     }
 }
 
-int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name) {
+int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char * cmd_name, char ** cmd_params, int cmd_cnt) {
     if (!response) {
         printf("Empty response");
         return -1;
@@ -311,7 +311,7 @@ int dap_json_rpc_response_printf_result(dap_json_rpc_response_t* response, char 
                         
                         dap_cli_cmd_t *l_cmd = dap_cli_server_cmd_find(cmd_name);
                         if (l_cmd){
-                            l_cmd->func_rpc(response);
+                            l_cmd->func_rpc(response, cmd_params, cmd_cnt);
                         }
                         else
                             json_print_object(response->result_json_object, 0);
