@@ -67,7 +67,7 @@ DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_ser_private_key_size(const vo
     if(!a_skey)
         return 0;
 // func work
-    return sizeof(uint64_t) + sizeof(sphincsplus_base_params_t) + dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes(&((sphincsplus_private_key_t *)a_skey)->params);
+    return sizeof(uint64_t) + sizeof(sphincsplus_base_params_t) + dap_enc_sig_sphincsplus_crypto_sign_secretkeybytes();
 }
 
 DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_ser_public_key_size(const void *a_pkey)
@@ -76,7 +76,7 @@ DAP_STATIC_INLINE uint64_t dap_enc_sig_sphincsplus_ser_public_key_size(const voi
     if(!a_pkey)
         return 0;
 // func work
-    return sizeof(uint64_t) + sizeof(sphincsplus_base_params_t) + dap_enc_sig_sphincsplus_crypto_sign_publickeybytes(&((sphincsplus_public_key_t *)a_pkey)->params);
+    return sizeof(uint64_t) + sizeof(sphincsplus_base_params_t) + dap_enc_sig_sphincsplus_crypto_sign_publickeybytes();
 }
 
 #ifdef DAP_CRYPTO_TESTS
