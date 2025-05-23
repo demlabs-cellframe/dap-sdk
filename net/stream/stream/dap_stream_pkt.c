@@ -32,8 +32,7 @@
 
 #define LOG_TAG "stream_pkt"
 
-//const uint8_t c_dap_stream_sig [STREAM_PKT_SIG_SIZE] = {0xa0,0x95,0x96,0xa9,0x9e,0x5c,0xfb,0xfa};
-const uint8_t c_dap_stream_sig [STREAM_PKT_SIG_SIZE] = {0xcb,0xa6,0x38,0x12,0xef,0x1a,0x02,0xd7};
+const uint8_t c_dap_stream_sig[STREAM_PKT_SIG_SIZE] = {0xa0,0x95,0x96,0xa9,0x9e,0x5c,0xfb,0xfa};
 
 /**
  * @brief stream_pkt_read
@@ -64,25 +63,23 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     size_t l_full_size = dap_enc_key_get_enc_size(l_key->type, a_data_size) + sizeof(dap_stream_pkt_hdr_t);
 
     dap_stream_pkt_t *l_pkt = l_full_size <= sizeof(s_pkt_buf) ? (dap_stream_pkt_t *)s_pkt_buf : DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_stream_pkt_t, l_full_size, 0);
-    *l_pkt = (dap_stream_pkt_t) {
-            .hdr = (dap_stream_pkt_hdr_t) {
-                    .size = dap_enc_code( l_key, a_data, a_data_size, l_pkt + sizeof(*l_pkt),
-                                          l_full_size - sizeof(*l_pkt), DAP_ENC_DATA_TYPE_RAW ),
-                    .timestamp = dap_time_now(),
-                    .type = a_type,
-                    .src_addr = g_node_addr.uint64,
-                    .dst_addr = a_stream->node.uint64
-            }
+    l_pkt->hdr = (dap_stream_pkt_hdr_t) {
+            .size = dap_enc_code( l_key, a_data, a_data_size, (byte_t *)l_pkt + sizeof(*l_pkt),
+                                  l_full_size - sizeof(*l_pkt), DAP_ENC_DATA_TYPE_RAW ),
+            .timestamp = dap_time_now(),
+            .type = a_type,
+            .src_addr = g_node_addr.uint64,
+            .dst_addr = a_stream->node.uint64
     };
 
     memcpy(l_pkt->hdr.sig, c_dap_stream_sig, STREAM_PKT_SIG_SIZE);
-    //size_t ret = dap_events_socket_write_unsafe(a_stream->esocket, l_pkt, l_full_size);
+    size_t ret = dap_events_socket_write_unsafe(a_stream->esocket, l_pkt, l_full_size);
 
     char *l_b64_buf = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(char, DAP_ENC_BASE64_ENCODE_SIZE(l_full_size), 0);
     size_t l_b64_size = dap_enc_base64_encode(l_pkt, l_full_size, l_b64_buf, DAP_ENC_DATA_TYPE_B64);
     if (l_full_size > sizeof(s_pkt_buf))
         DAP_DELETE(l_pkt);
-    size_t ret = dap_events_socket_write_unsafe(a_stream->esocket, l_b64_buf, l_b64_size);
+    //size_t ret = dap_events_socket_write_unsafe(a_stream->esocket, l_b64_buf, l_b64_size);
     DAP_DELETE(l_b64_buf);
     return ret;
 }
