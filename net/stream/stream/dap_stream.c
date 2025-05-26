@@ -677,11 +677,11 @@ size_t dap_stream_data_proc_read(dap_stream_t *a_stream)
 {
     dap_return_val_if_fail(a_stream && a_stream->esocket && a_stream->esocket->buf_in, 0);
     size_t l_decoded_size = a_stream->esocket->buf_in_size;
-    byte_t *l_bin_buf = DAP_DUP_SIZE_RET_VAL_IF_FAIL(a_stream->esocket->buf_in, a_stream->esocket->buf_in_size, 0);   // uncomment it for base64 disable
-    size_t l_bin_buf_size = DAP_ENC_BASE64_DECODE_SIZE(a_stream->esocket->buf_in_size) + 100;
-    //byte_t *l_bin_buf = DAP_NEW_Z_RET_VAL_IF_FAIL(byte_t, l_bin_buf_size, 0);
-    //l_decoded_size = dap_enc_base64_decode((char *)a_stream->esocket->buf_in,                            // comment it for base64 disable
-    //                                              a_stream->esocket->buf_in_size, l_bin_buf, DAP_ENC_DATA_TYPE_B64);
+    //byte_t *l_bin_buf = DAP_DUP_SIZE_RET_VAL_IF_FAIL(a_stream->esocket->buf_in, a_stream->esocket->buf_in_size, 0);     // uncomment it for base64 disable
+    size_t l_bin_buf_size = DAP_ENC_BASE64_DECODE_SIZE(a_stream->esocket->buf_in_size) + 1;
+    byte_t *l_bin_buf = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(byte_t, l_bin_buf_size, 0);                                           // comment it for base64 disable
+    l_decoded_size = dap_enc_base64_decode((char *)a_stream->esocket->buf_in,
+                                                  a_stream->esocket->buf_in_size, l_bin_buf, DAP_ENC_DATA_TYPE_B64);
     byte_t *l_pos = l_bin_buf, *l_end = l_pos + l_decoded_size;
     size_t l_shift = 0, l_processed_size = 0;
     while ( l_pos < l_end && (l_pos = memchr( l_pos, c_dap_stream_sig[0], (size_t)(l_end - l_pos))) ) {
