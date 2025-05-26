@@ -58,7 +58,6 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     if (a_data_size > DAP_STREAM_PKT_FRAGMENT_SIZE)
         return log_it(L_ERROR, "Too big fragment size %zu", a_data_size), 0;
     static _Thread_local char s_pkt_buf[DAP_STREAM_PKT_FRAGMENT_SIZE + sizeof(dap_stream_pkt_hdr_t) + 0x40] = { 0 };
-    a_stream->is_active = true;
     dap_enc_key_t *l_key = a_stream->session->key;
     size_t l_full_size = dap_enc_key_get_enc_size(l_key->type, a_data_size) + sizeof(dap_stream_pkt_hdr_t);
 
@@ -73,13 +72,5 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     };
 
     memcpy(l_pkt->hdr.sig, c_dap_stream_sig, STREAM_PKT_SIG_SIZE);
-    //size_t ret = dap_events_socket_write_unsafe(a_stream->esocket, l_pkt, l_full_size); // uncomment it for base64 disable
-
-    char *l_b64_buf = DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(char, DAP_ENC_BASE64_ENCODE_SIZE(l_full_size), 0);
-    size_t l_b64_size = dap_enc_base64_encode(l_pkt, l_full_size, l_b64_buf, DAP_ENC_DATA_TYPE_B64);
-    if (l_full_size > sizeof(s_pkt_buf))
-        DAP_DELETE(l_pkt);
-    size_t ret = dap_events_socket_write_unsafe(a_stream->esocket, l_b64_buf, l_b64_size); // comment it for base64 disable
-    DAP_DELETE(l_b64_buf);
-    return ret;
+    return dap_events_socket_write_unsafe(a_stream->esocket, l_pkt, l_full_size); // uncomment it for base64 disable
 }
