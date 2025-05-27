@@ -28,10 +28,11 @@
 #include "dap_stream_ch.h"
 #include "dap_stream_ch_pkt.h"
 #include "dap_stream_pkt.h"
+#include "dap_enc_base64.h"
 
 #define LOG_TAG "stream_pkt"
 
-const uint8_t c_dap_stream_sig [STREAM_PKT_SIG_SIZE] = {0xa0,0x95,0x96,0xa9,0x9e,0x5c,0xfb,0xfa};
+const uint8_t c_dap_stream_sig[STREAM_PKT_SIG_SIZE] = {0xa0,0x95,0x96,0xa9,0x9e,0x5c,0xfb,0xfa};
 
 /**
  * @brief stream_pkt_read
@@ -57,14 +58,19 @@ size_t dap_stream_pkt_write_unsafe(dap_stream_t *a_stream, uint8_t a_type, const
     if (a_data_size > DAP_STREAM_PKT_FRAGMENT_SIZE)
         return log_it(L_ERROR, "Too big fragment size %zu", a_data_size), 0;
     static _Thread_local char s_pkt_buf[DAP_STREAM_PKT_FRAGMENT_SIZE + sizeof(dap_stream_pkt_hdr_t) + 0x40] = { 0 };
-    a_stream->is_active = true;
     dap_enc_key_t *l_key = a_stream->session->key;
     size_t l_full_size = dap_enc_key_get_enc_size(l_key->type, a_data_size) + sizeof(dap_stream_pkt_hdr_t);
-    dap_stream_pkt_hdr_t *l_pkt_hdr = (dap_stream_pkt_hdr_t*)s_pkt_buf;
-    *l_pkt_hdr = (dap_stream_pkt_hdr_t) { .size = dap_enc_code( l_key, a_data, a_data_size, s_pkt_buf + sizeof(*l_pkt_hdr),
-                                                                l_full_size - sizeof(*l_pkt_hdr), DAP_ENC_DATA_TYPE_RAW ),
-                                          .timestamp = dap_time_now(), .type = a_type,
-                                          .src_addr = g_node_addr.uint64, .dst_addr = a_stream->node.uint64 };
-    memcpy(l_pkt_hdr->sig, c_dap_stream_sig, sizeof(l_pkt_hdr->sig));
-    return dap_events_socket_write_unsafe(a_stream->esocket, s_pkt_buf, l_full_size);
+
+    dap_stream_pkt_t *l_pkt = l_full_size <= sizeof(s_pkt_buf) ? (dap_stream_pkt_t *)s_pkt_buf : DAP_NEW_Z_SIZE_RET_VAL_IF_FAIL(dap_stream_pkt_t, l_full_size, 0);
+    l_pkt->hdr = (dap_stream_pkt_hdr_t) {
+            .size = dap_enc_code( l_key, a_data, a_data_size, (byte_t *)l_pkt + sizeof(*l_pkt),
+                                  l_full_size - sizeof(*l_pkt), DAP_ENC_DATA_TYPE_RAW ),
+            .timestamp = dap_time_now(),
+            .type = a_type,
+            .src_addr = g_node_addr.uint64,
+            .dst_addr = a_stream->node.uint64
+    };
+
+    memcpy(l_pkt->hdr.sig, c_dap_stream_sig, STREAM_PKT_SIG_SIZE);
+    return dap_events_socket_write_unsafe(a_stream->esocket, l_pkt, l_full_size); // uncomment it for base64 disable
 }
