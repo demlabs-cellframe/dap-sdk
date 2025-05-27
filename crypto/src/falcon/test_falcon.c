@@ -5004,7 +5004,7 @@ test_speed(void)
 #endif
 
 int
-fmain(void)
+f2main(void)
 {
 	unsigned old;
 
