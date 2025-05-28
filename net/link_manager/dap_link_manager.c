@@ -598,12 +598,8 @@ void s_link_delete(dap_link_t **a_link, bool a_force, bool a_client_preserve)
 
     if (l_link->active_clusters){
         dap_cluster_link_delete_from_all(l_link->active_clusters, &l_link->addr);
-        if (l_link->is_uplink && l_link->link_manager->callbacks.link_count_changed){
-            for(dap_list_t *it=l_link->uplink.associated_nets;it;it=it->next){
-                dap_managed_net_t *l_net = it->data;
-                l_link->link_manager->callbacks.link_count_changed(l_net->id);
-            }
-        } 
+        if (l_link->is_uplink && l_link->link_manager->callbacks.link_count_changed)
+            l_link->link_manager->callbacks.link_count_changed();
     }
         
     assert(l_link->active_clusters == NULL);
