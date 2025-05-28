@@ -529,7 +529,20 @@ int chipmunk_sign(const uint8_t *a_private_key, const uint8_t *a_message,
     }
     
     // Создаем hint для низкозначащих битов коэффициентов
-    chipmunk_make_hint(l_sig.hint, &l_w, &l_cs2);
+    // Сначала вычисляем w' = w - cs2
+    chipmunk_poly_t l_w_prime = {0};
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        // Вычисляем разность w - cs2
+        int64_t diff = (int64_t)l_w.coeffs[i] - (int64_t)l_cs2.coeffs[i];
+        
+        // Приводим к диапазону [0, CHIPMUNK_Q-1]
+        diff = ((diff % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
+        
+        l_w_prime.coeffs[i] = (int32_t)diff;
+    }
+    
+    // Теперь создаем hint биты от w' и w
+    chipmunk_make_hint(l_sig.hint, &l_w_prime, &l_w);
     
     // Подсчитываем количество ненулевых битов в hint для проверки
     if (s_debug_more) {

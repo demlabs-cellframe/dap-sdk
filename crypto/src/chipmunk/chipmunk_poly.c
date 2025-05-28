@@ -404,89 +404,84 @@ void chipmunk_poly_highbits(chipmunk_poly_t *a_out, const chipmunk_poly_t *a_in)
 }
 
 /**
- * @brief Apply hint bits to produce w1
+ * @brief Apply hint bits to recover w1 from w'
  * 
- * @param a_out Output polynomial with applied hints
- * @param a_in Input polynomial w to be hinted
- * @param a_hint Hint bit array
+ * @param a_out Output polynomial w1 (high bits)
+ * @param a_w_prime Input polynomial w' 
+ * @param a_hint Hint bits array
  */
-void chipmunk_use_hint(chipmunk_poly_t *a_out, const chipmunk_poly_t *a_in, const uint8_t a_hint[CHIPMUNK_N/8]) {
-    if (!a_out || !a_in || !a_hint) {
+void chipmunk_use_hint(chipmunk_poly_t *a_out, const chipmunk_poly_t *a_w_prime, const uint8_t a_hint[CHIPMUNK_N/8]) {
+    if (!a_out || !a_w_prime || !a_hint) {
         log_it(L_ERROR, "NULL input parameters in chipmunk_use_hint");
         return;
     }
     
-    int32_t l_decomp_coeff[2]; // [0] - low bits, [1] - high bits
+    // Инициализируем выходной полином нулями
+    memset(a_out->coeffs, 0, sizeof(a_out->coeffs));
     
-    // Инициализируем выходной полином конкретным значением для детерминизма
-    // Используем константное значение 11 для всех коэффициентов вместо 0,
-    // это создаст более стабильное преобразование для хеширования
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        a_out->coeffs[i] = 11; // Значение 11 выбрано экспериментальным путем
-    }
-    
-    // Применяем подсказку к каждому коэффициенту полинома (если нужно)
+    // Применяем hint биты к каждому коэффициенту полинома
     for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
         // Проверяем бит подсказки для этого коэффициента
         uint8_t l_hint_bit = (a_hint[l_i/8] >> (l_i % 8)) & 1;
         
+        // Приводим коэффициент w' к диапазону [0, CHIPMUNK_Q-1]
+        int32_t l_w_prime_coeff = ((a_w_prime->coeffs[l_i] % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
+        
+        // Вычисляем high биты от w' (как в функции подписания)
+        int32_t l_w1_base = l_w_prime_coeff >> (CHIPMUNK_D - 1);
+        
+        // Применяем hint бит для коррекции
         if (l_hint_bit) {
-            // Разложить коэффициент на high и low биты
-            s_decompose(l_decomp_coeff, a_in->coeffs[l_i]);
-            
-            // Применяем подсказку если бит установлен, модифицируем high биты
-            if (l_decomp_coeff[0] > 0) {
-                // Если low биты положительные, увеличиваем high биты
-                a_out->coeffs[l_i] = (l_decomp_coeff[1] + 1) & 15;
-            } else if (l_decomp_coeff[0] < 0) {
-                // Если low биты отрицательные, уменьшаем high биты
-                a_out->coeffs[l_i] = (l_decomp_coeff[1] - 1) & 15;
-            } else {
-                // Если low биты равны 0, используем только high биты
-                a_out->coeffs[l_i] = l_decomp_coeff[1];
-            }
+            // Если hint бит установлен, увеличиваем high биты на 1
+            l_w1_base = (l_w1_base + 1) & 15; // Ограничиваем 4 битами
         }
+        
+        // Сохраняем результат (только 4 бита)
+        a_out->coeffs[l_i] = l_w1_base & 15;
     }
     
-    // Логируем для отладки
-    log_it(L_DEBUG, "Applied hint to polynomial, first 4 coeffs: %d %d %d %d",
-           a_out->coeffs[0], a_out->coeffs[1], a_out->coeffs[2], a_out->coeffs[3]);
+    // Отладка
+    if (s_debug_more) {
+        int l_hint_count = 0;
+        for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
+            if ((a_hint[l_i/8] >> (l_i % 8)) & 1) {
+                l_hint_count++;
+            }
+        }
+        log_it(L_DEBUG, "Applied hint with %d nonzero bits, first 4 w1 coeffs: %d %d %d %d", 
+               l_hint_count, a_out->coeffs[0], a_out->coeffs[1], a_out->coeffs[2], a_out->coeffs[3]);
+    }
 }
 
 /**
  * @brief Compute hint bits for verification
  * 
  * @param a_hint Output hint bits array
- * @param a_poly1 First polynomial (z)
- * @param a_poly2 Second polynomial (r)
+ * @param a_w_prime First polynomial (w')
+ * @param a_w Second polynomial (w)
  */
-void chipmunk_make_hint(uint8_t a_hint[CHIPMUNK_N/8], const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2) {
-    if (!a_hint || !a_poly1 || !a_poly2) {
+void chipmunk_make_hint(uint8_t a_hint[CHIPMUNK_N/8], const chipmunk_poly_t *a_w_prime, const chipmunk_poly_t *a_w) {
+    if (!a_hint || !a_w_prime || !a_w) {
         log_it(L_ERROR, "NULL input parameters in chipmunk_make_hint");
         return;
     }
     
-    int32_t l_decomp1[2], l_decomp2[2];
+    int32_t l_decomp_w_prime[2], l_decomp_w[2];
     
     // Инициализируем массив hint нулями
     memset(a_hint, 0, CHIPMUNK_N/8);
     
     // Для каждого коэффициента
     for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        // Получаем полином Ay = Az - Cs2
-        int32_t l_coeff = a_poly1->coeffs[l_i] - a_poly2->coeffs[l_i];
+        // Разложить w' на high и low биты
+        s_decompose(l_decomp_w_prime, a_w_prime->coeffs[l_i]);
         
-        // Нормализуем по модулю q
-        l_coeff = ((l_coeff % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
+        // Разложить w на high и low биты
+        s_decompose(l_decomp_w, a_w->coeffs[l_i]);
         
-        // Разложить полином на high и low биты
-        s_decompose(l_decomp1, l_coeff);
-        
-        // Также разложить poly1 (z)
-        s_decompose(l_decomp2, a_poly1->coeffs[l_i]);
-        
-        // Если high биты отличаются - устанавливаем бит подсказки
-        if (l_decomp1[1] != l_decomp2[1]) {
+        // Если high биты w' и w отличаются - устанавливаем бит подсказки
+        // Это означает, что при восстановлении w1 из w' нужна коррекция
+        if (l_decomp_w_prime[1] != l_decomp_w[1]) {
             a_hint[l_i/8] |= (1 << (l_i % 8));
         }
     }
