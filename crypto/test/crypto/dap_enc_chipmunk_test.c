@@ -348,6 +348,508 @@ static int s_test_chipmunk_serialization() {
 }
 
 /**
+ * @brief Тест для проверки подписей разных объектов разными ключами
+ * Проверяет, что подписи от разных ключей не взаимозаменяемы
+ * 
+ * @return int 0 при успехе, отрицательный код при ошибке
+ */
+static int dap_enc_chipmunk_different_signatures_test(void)
+{
+    log_it(L_INFO, "Testing signatures for different objects with different keys...");
+    
+    // Создаем два ключа для подписи
+    dap_enc_key_t *l_key1 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, NULL, 0, 0);
+    dap_enc_key_t *l_key2 = dap_enc_key_new_generate(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK, NULL, 0, NULL, 0, 0);
+    
+    if (!l_key1 || !l_key2) {
+        log_it(L_ERROR, "Failed to create Chipmunk keys");
+        if (l_key1) dap_enc_key_delete(l_key1);
+        if (l_key2) dap_enc_key_delete(l_key2);
+        return -1;
+    }
+    
+    // Размер подписи
+    size_t l_sign_size = dap_enc_chipmunk_calc_signature_size();
+    
+    // Создаем два разных объекта для подписи
+    const char l_message1[] = "First test message for comparison";
+    const char l_message2[] = "Second completely different message";
+    size_t l_message1_len = strlen(l_message1);
+    size_t l_message2_len = strlen(l_message2);
+    
+    // Выделяем память для подписей
+    uint8_t *l_sign1_key1 = DAP_NEW_Z_SIZE(uint8_t, l_sign_size);
+    uint8_t *l_sign2_key2 = DAP_NEW_Z_SIZE(uint8_t, l_sign_size);
+    
+    if (!l_sign1_key1 || !l_sign2_key2) {
+        log_it(L_ERROR, "Failed to allocate memory for signatures");
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        if (l_sign1_key1) DAP_DELETE(l_sign1_key1);
+        if (l_sign2_key2) DAP_DELETE(l_sign2_key2);
+        return -1;
+    }
+    
+    // Создаем подписи для обоих объектов разными ключами
+    int l_ret1 = dap_enc_chipmunk_get_sign(l_key1, l_message1, l_message1_len, l_sign1_key1, l_sign_size);
+    int l_ret2 = dap_enc_chipmunk_get_sign(l_key2, l_message2, l_message2_len, l_sign2_key2, l_sign_size);
+    
+    if (l_ret1 <= 0 || l_ret2 <= 0) {
+        log_it(L_ERROR, "Failed to sign messages, error codes: %d, %d", l_ret1, l_ret2);
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        DAP_DELETE(l_sign1_key1);
+        DAP_DELETE(l_sign2_key2);
+        return -2;
+    }
+    
+    // Извлекаем c_seed из обеих подписей
+    chipmunk_signature_t l_sig1 = {0};
+    chipmunk_signature_t l_sig2 = {0};
+    
+    if (chipmunk_signature_from_bytes(&l_sig1, l_sign1_key1) != 0 || 
+        chipmunk_signature_from_bytes(&l_sig2, l_sign2_key2) != 0) {
+        log_it(L_ERROR, "Failed to parse signatures");
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        DAP_DELETE(l_sign1_key1);
+        DAP_DELETE(l_sign2_key2);
+        return -3;
+    }
+    
+    // Выводим c_seed для наглядности
+    log_it(L_DEBUG, "Signature 1 c_seed: %02x%02x%02x%02x...",
+           l_sig1.c[0], l_sig1.c[1], l_sig1.c[2], l_sig1.c[3]);
+    log_it(L_DEBUG, "Signature 2 c_seed: %02x%02x%02x%02x...",
+           l_sig2.c[0], l_sig2.c[1], l_sig2.c[2], l_sig2.c[3]);
+    
+    // Проверяем, что c_seed отличаются
+    int l_seeds_differ = 0;
+    for (size_t i = 0; i < sizeof(l_sig1.c); i++) {
+        if (l_sig1.c[i] != l_sig2.c[i]) {
+            l_seeds_differ = 1;
+            break;
+        }
+    }
+    
+    if (!l_seeds_differ) {
+        log_it(L_ERROR, "Challenge seeds of different messages are identical! This should not happen!");
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        DAP_DELETE(l_sign1_key1);
+        DAP_DELETE(l_sign2_key2);
+        return -4;
+    }
+    
+    // Проверяем каждую подпись своим ключом - должны пройти верификацию
+    int l_verify1 = dap_enc_chipmunk_verify_sign(l_key1, l_message1, l_message1_len, l_sign1_key1, l_sign_size);
+    int l_verify2 = dap_enc_chipmunk_verify_sign(l_key2, l_message2, l_message2_len, l_sign2_key2, l_sign_size);
+    
+    if (l_verify1 != 0 || l_verify2 != 0) {
+        log_it(L_ERROR, "Signature verification failed with correct keys: %d, %d", l_verify1, l_verify2);
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        DAP_DELETE(l_sign1_key1);
+        DAP_DELETE(l_sign2_key2);
+        return -5;
+    }
+    
+    // Проверяем перекрестную верификацию с неправильными ключами
+    int l_cross_verify1 = dap_enc_chipmunk_verify_sign(l_key2, l_message1, l_message1_len, l_sign1_key1, l_sign_size);
+    int l_cross_verify2 = dap_enc_chipmunk_verify_sign(l_key1, l_message2, l_message2_len, l_sign2_key2, l_sign_size);
+    
+    // Эти проверки должны быть неуспешными
+    if (l_cross_verify1 == 0 || l_cross_verify2 == 0) {
+        log_it(L_ERROR, "Cross verification with wrong keys unexpectedly succeeded: %d, %d", 
+               l_cross_verify1, l_cross_verify2);
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        DAP_DELETE(l_sign1_key1);
+        DAP_DELETE(l_sign2_key2);
+        return -6;
+    }
+    
+    // Очистка ресурсов
+    dap_enc_key_delete(l_key1);
+    dap_enc_key_delete(l_key2);
+    DAP_DELETE(l_sign1_key1);
+    DAP_DELETE(l_sign2_key2);
+    
+    log_it(L_NOTICE, "Different objects with different keys test PASSED");
+    return 0;
+}
+
+/**
+ * @brief Тест для проверки верификации поврежденной подписи
+ * Проверяет, что поврежденная подпись не проходит верификацию
+ * 
+ * @return int 0 при успехе, отрицательный код при ошибке
+ */
+static int dap_enc_chipmunk_corrupted_signature_test(void)
+{
+    log_it(L_INFO, "Testing verification of corrupted signatures...");
+    
+    // Создаем ключ для подписи
+    dap_enc_key_t *l_key = dap_enc_key_new(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK);
+    if (!l_key) {
+        log_it(L_ERROR, "Failed to create Chipmunk key");
+        return -1;
+    }
+    
+    // Размер подписи
+    size_t l_sign_size = dap_enc_chipmunk_calc_signature_size();
+    
+    // Создаем сообщение для подписи
+    const char l_message[] = "Message for testing corrupted signatures";
+    size_t l_message_len = strlen(l_message);
+    
+    // Выделяем память для подписи
+    uint8_t *l_sign = DAP_NEW_Z_SIZE(uint8_t, l_sign_size);
+    if (!l_sign) {
+        log_it(L_ERROR, "Failed to allocate memory for signature");
+        dap_enc_key_delete(l_key);
+        return -1;
+    }
+    
+    // Создаем подпись
+    int l_ret = dap_enc_chipmunk_get_sign(l_key, l_message, l_message_len, l_sign, l_sign_size);
+    if (l_ret <= 0) {
+        log_it(L_ERROR, "Failed to sign message, error code: %d", l_ret);
+        dap_enc_key_delete(l_key);
+        DAP_DELETE(l_sign);
+        return -2;
+    }
+    
+    // Проверяем, что подпись действительна
+    int l_verify = dap_enc_chipmunk_verify_sign(l_key, l_message, l_message_len, l_sign, l_sign_size);
+    if (l_verify != 0) {
+        log_it(L_ERROR, "Original signature verification failed unexpectedly, error code: %d", l_verify);
+        dap_enc_key_delete(l_key);
+        DAP_DELETE(l_sign);
+        return -3;
+    }
+    
+    // Создаем копии подписи для различных видов повреждений
+    uint8_t *l_sign_c_corrupted = DAP_NEW_SIZE(uint8_t, l_sign_size);
+    uint8_t *l_sign_z_corrupted = DAP_NEW_SIZE(uint8_t, l_sign_size);
+    uint8_t *l_sign_hint_corrupted = DAP_NEW_SIZE(uint8_t, l_sign_size);
+    
+    if (!l_sign_c_corrupted || !l_sign_z_corrupted || !l_sign_hint_corrupted) {
+        log_it(L_ERROR, "Failed to allocate memory for corrupted signatures");
+        dap_enc_key_delete(l_key);
+        DAP_DELETE(l_sign);
+        if (l_sign_c_corrupted) DAP_DELETE(l_sign_c_corrupted);
+        if (l_sign_z_corrupted) DAP_DELETE(l_sign_z_corrupted);
+        if (l_sign_hint_corrupted) DAP_DELETE(l_sign_hint_corrupted);
+        return -4;
+    }
+    
+    // Копируем подпись в буферы
+    memcpy(l_sign_c_corrupted, l_sign, l_sign_size);
+    memcpy(l_sign_z_corrupted, l_sign, l_sign_size);
+    memcpy(l_sign_hint_corrupted, l_sign, l_sign_size);
+    
+    // 1. Повреждаем c_seed (первые 32 байта подписи)
+    // Меняем все 32 байта c_seed на случайные - это гарантировано нарушит подпись
+    for (int i = 0; i < 32; i++) {
+        l_sign_c_corrupted[i] = (uint8_t)rand();
+    }
+    
+    // 2. Повреждаем полином z (средняя часть подписи)
+    // Портим больше значений и более серьезно, чтобы точно нарушить подпись
+    // Начало полинома z находится на смещении 32 (после c_seed)
+    size_t z_offset = 32;
+    size_t z_size = CHIPMUNK_N * sizeof(int32_t);
+    for (size_t i = 0; i < z_size / 4; i++) {  // Портим 25% байтов полинома z
+        size_t idx = z_offset + (rand() % z_size);
+        l_sign_z_corrupted[idx] = (uint8_t)rand();
+    }
+    
+    // 3. Повреждаем hint биты (конец подписи)
+    // Hint биты начинаются после z
+    size_t l_hint_offset = 32 + CHIPMUNK_N * sizeof(int32_t);
+    // Установим все hint биты в 1, что сделает подпись невалидной
+    memset(l_sign_hint_corrupted + l_hint_offset, 0xFF, CHIPMUNK_N/8);
+    
+    // Проверяем каждую поврежденную подпись
+    int l_verify_c_corrupted = dap_enc_chipmunk_verify_sign(l_key, l_message, l_message_len, 
+                                                          l_sign_c_corrupted, l_sign_size);
+    int l_verify_z_corrupted = dap_enc_chipmunk_verify_sign(l_key, l_message, l_message_len, 
+                                                         l_sign_z_corrupted, l_sign_size);
+    int l_verify_hint_corrupted = dap_enc_chipmunk_verify_sign(l_key, l_message, l_message_len, 
+                                                            l_sign_hint_corrupted, l_sign_size);
+    
+    // Все поврежденные подписи должны не пройти верификацию (должны вернуть отрицательное значение)
+    bool l_c_test_passed = (l_verify_c_corrupted < 0);
+    bool l_z_test_passed = (l_verify_z_corrupted < 0);
+    bool l_hint_test_passed = (l_verify_hint_corrupted < 0);
+    
+    // Выводим результаты для каждого типа повреждения
+    log_it(l_c_test_passed ? L_NOTICE : L_ERROR, 
+           "Verification of signature with corrupted c_seed %s (return code: %d)",
+           l_c_test_passed ? "correctly failed" : "unexpectedly succeeded", 
+           l_verify_c_corrupted);
+    
+    log_it(l_z_test_passed ? L_NOTICE : L_ERROR, 
+           "Verification of signature with corrupted z polynomial %s (return code: %d)",
+           l_z_test_passed ? "correctly failed" : "unexpectedly succeeded", 
+           l_verify_z_corrupted);
+    
+    log_it(l_hint_test_passed ? L_NOTICE : L_ERROR, 
+           "Verification of signature with corrupted hint bits %s (return code: %d)",
+           l_hint_test_passed ? "correctly failed" : "unexpectedly succeeded", 
+           l_verify_hint_corrupted);
+    
+    // Освобождаем ресурсы
+    dap_enc_key_delete(l_key);
+    DAP_DELETE(l_sign);
+    DAP_DELETE(l_sign_c_corrupted);
+    DAP_DELETE(l_sign_z_corrupted);
+    DAP_DELETE(l_sign_hint_corrupted);
+    
+    // Итоговый результат - положительный только если все тесты прошли
+    if (l_c_test_passed && l_z_test_passed && l_hint_test_passed) {
+        log_it(L_NOTICE, "All corrupted signature tests PASSED");
+        return 0;
+    } else {
+        log_it(L_ERROR, "Some corrupted signature tests FAILED");
+        return -5;
+    }
+}
+
+/**
+ * @brief Тест для проверки подписей одного объекта с одним ключом
+ * Проверяет, что подписи одного и того же объекта одним ключом дают
+ * разные c_seed из-за случайной составляющей при подписи
+ * 
+ * @return int 0 при успехе, отрицательный код при ошибке
+ */
+static int dap_enc_chipmunk_same_object_signatures_test(void)
+{
+    log_it(L_INFO, "Testing signatures for the same object with the same key...");
+    
+    // Создаем ключ для подписи
+    dap_enc_key_t *l_key = dap_enc_key_new(DAP_ENC_KEY_TYPE_SIG_CHIPMUNK);
+    if (!l_key) {
+        log_it(L_ERROR, "Failed to create Chipmunk key");
+        return -1;
+    }
+    
+    // Размер подписи
+    size_t l_sign_size = dap_enc_chipmunk_calc_signature_size();
+    
+    // Создаем один объект для подписи
+    const char l_message[] = "Test message to be signed multiple times";
+    size_t l_message_len = strlen(l_message);
+    
+    // Выделяем память для подписей
+    uint8_t *l_sign1 = DAP_NEW_Z_SIZE(uint8_t, l_sign_size);
+    uint8_t *l_sign2 = DAP_NEW_Z_SIZE(uint8_t, l_sign_size);
+    
+    if (!l_sign1 || !l_sign2) {
+        log_it(L_ERROR, "Failed to allocate memory for signatures");
+        dap_enc_key_delete(l_key);
+        if (l_sign1) DAP_DELETE(l_sign1);
+        if (l_sign2) DAP_DELETE(l_sign2);
+        return -1;
+    }
+    
+    // Создаем две подписи для одного объекта одним ключом
+    int l_ret1 = dap_enc_chipmunk_get_sign(l_key, l_message, l_message_len, l_sign1, l_sign_size);
+    int l_ret2 = dap_enc_chipmunk_get_sign(l_key, l_message, l_message_len, l_sign2, l_sign_size);
+    
+    if (l_ret1 <= 0 || l_ret2 <= 0) {
+        log_it(L_ERROR, "Failed to sign message, error codes: %d, %d", l_ret1, l_ret2);
+        dap_enc_key_delete(l_key);
+        DAP_DELETE(l_sign1);
+        DAP_DELETE(l_sign2);
+        return -2;
+    }
+    
+    // Извлекаем c_seed из обеих подписей
+    chipmunk_signature_t l_sig1 = {0};
+    chipmunk_signature_t l_sig2 = {0};
+    
+    if (chipmunk_signature_from_bytes(&l_sig1, l_sign1) != 0 || 
+        chipmunk_signature_from_bytes(&l_sig2, l_sign2) != 0) {
+        log_it(L_ERROR, "Failed to parse signatures");
+        dap_enc_key_delete(l_key);
+        DAP_DELETE(l_sign1);
+        DAP_DELETE(l_sign2);
+        return -3;
+    }
+    
+    // Выводим c_seed для наглядности
+    log_it(L_DEBUG, "Signature 1 c_seed: %02x%02x%02x%02x...",
+           l_sig1.c[0], l_sig1.c[1], l_sig1.c[2], l_sig1.c[3]);
+    log_it(L_DEBUG, "Signature 2 c_seed: %02x%02x%02x%02x...",
+           l_sig2.c[0], l_sig2.c[1], l_sig2.c[2], l_sig2.c[3]);
+    
+    // Проверяем, что c_seed различаются
+    int l_seeds_differ = 0;
+    for (size_t i = 0; i < sizeof(l_sig1.c); i++) {
+        if (l_sig1.c[i] != l_sig2.c[i]) {
+            l_seeds_differ = 1;
+            break;
+        }
+    }
+    
+    // Для алгоритма Chipmunk ожидается случайная составляющая,
+    // поэтому подписи одного и того же сообщения должны отличаться
+    if (!l_seeds_differ) {
+        log_it(L_ERROR, "Challenge seeds of the same message signed twice are identical! This might indicate a problem with randomness.");
+        dap_enc_key_delete(l_key);
+        DAP_DELETE(l_sign1);
+        DAP_DELETE(l_sign2);
+        return -4;
+    } else {
+        log_it(L_NOTICE, "Challenge seeds of the same message signed twice are different (as expected with random component)");
+    }
+    
+    // Проверяем, что обе подписи валидны
+    int l_verify1 = dap_enc_chipmunk_verify_sign(l_key, l_message, l_message_len, l_sign1, l_sign_size);
+    int l_verify2 = dap_enc_chipmunk_verify_sign(l_key, l_message, l_message_len, l_sign2, l_sign_size);
+    
+    if (l_verify1 != 0 || l_verify2 != 0) {
+        log_it(L_ERROR, "Signature verification failed: %d, %d", l_verify1, l_verify2);
+        dap_enc_key_delete(l_key);
+        DAP_DELETE(l_sign1);
+        DAP_DELETE(l_sign2);
+        return -5;
+    }
+    
+    // Очистка ресурсов
+    dap_enc_key_delete(l_key);
+    DAP_DELETE(l_sign1);
+    DAP_DELETE(l_sign2);
+    
+    log_it(L_NOTICE, "Same object with same key test PASSED");
+    return 0;
+}
+
+/**
+ * @brief Test cross-verification of signatures with wrong keys
+ */
+static int test_cross_verification(void)
+{
+    log_it(L_NOTICE, "Testing cross verification with wrong keys...");
+    
+    // Создаем первый ключ
+    dap_enc_key_t *l_key1 = dap_enc_chipmunk_key_new();
+    if (!l_key1) {
+        log_it(L_ERROR, "Failed to create first key in test_cross_verification");
+        return -1;
+    }
+    
+    // Создаем второй ключ
+    dap_enc_key_t *l_key2 = dap_enc_chipmunk_key_new();
+    if (!l_key2) {
+        log_it(L_ERROR, "Failed to create second key in test_cross_verification");
+        dap_enc_key_delete(l_key1);
+        return -1;
+    }
+    
+    // Создаем тестовое сообщение
+    const char l_message[] = "Test message for cross verification";
+    size_t l_message_len = strlen(l_message);
+    
+    // Размер подписи
+    size_t l_sign_size = dap_enc_chipmunk_calc_signature_size();
+    
+    // Выделяем память для подписей
+    uint8_t *l_sign1 = DAP_NEW_Z_SIZE(uint8_t, l_sign_size);
+    if (!l_sign1) {
+        log_it(L_ERROR, "Failed to allocate memory for first signature");
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        return -1;
+    }
+    
+    // Подписываем сообщение первым ключом
+    int l_ret1 = dap_enc_chipmunk_get_sign(l_key1, l_message, l_message_len, l_sign1, l_sign_size);
+    if (l_ret1 <= 0) {
+        log_it(L_ERROR, "Failed to sign message with first key, error code: %d", l_ret1);
+        DAP_DELETE(l_sign1);
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        return -2;
+    }
+    
+    // Проверяем подпись с правильным ключом - должна пройти верификацию
+    int l_verify1 = dap_enc_chipmunk_verify_sign(l_key1, l_message, l_message_len, l_sign1, l_sign_size);
+    if (l_verify1 != 0) {
+        log_it(L_ERROR, "Verification failed with correct key, error code: %d", l_verify1);
+        DAP_DELETE(l_sign1);
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        return -3;
+    }
+    
+    log_it(L_NOTICE, "Verification with correct key succeeded (expected behavior)");
+    
+    // Проверяем подпись с неправильным ключом - должна НЕ пройти верификацию
+    int l_cross_verify = dap_enc_chipmunk_verify_sign(l_key2, l_message, l_message_len, l_sign1, l_sign_size);
+    
+    // Если проверка подписи с неправильным ключом прошла успешно - это ошибка
+    if (l_cross_verify == 0) {
+        log_it(L_ERROR, "Cross-verification unexpectedly succeeded with wrong key");
+        DAP_DELETE(l_sign1);
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        return -4;
+    }
+    
+    log_it(L_NOTICE, "Cross-verification correctly failed with error code %d (expected behavior)", l_cross_verify);
+    
+    // Повторяем тест в обратном порядке
+    // Выделяем память для второй подписи
+    uint8_t *l_sign2 = DAP_NEW_Z_SIZE(uint8_t, l_sign_size);
+    if (!l_sign2) {
+        log_it(L_ERROR, "Failed to allocate memory for second signature");
+        DAP_DELETE(l_sign1);
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        return -1;
+    }
+    
+    // Подписываем сообщение вторым ключом
+    int l_ret2 = dap_enc_chipmunk_get_sign(l_key2, l_message, l_message_len, l_sign2, l_sign_size);
+    if (l_ret2 <= 0) {
+        log_it(L_ERROR, "Failed to sign message with second key, error code: %d", l_ret2);
+        DAP_DELETE(l_sign1);
+        DAP_DELETE(l_sign2);
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        return -2;
+    }
+    
+    // Проверяем вторую подпись с первым (неправильным) ключом
+    l_cross_verify = dap_enc_chipmunk_verify_sign(l_key1, l_message, l_message_len, l_sign2, l_sign_size);
+    
+    // Если проверка подписи с неправильным ключом прошла успешно - это ошибка
+    if (l_cross_verify == 0) {
+        log_it(L_ERROR, "Cross-verification unexpectedly succeeded with wrong key (second case)");
+        DAP_DELETE(l_sign1);
+        DAP_DELETE(l_sign2);
+        dap_enc_key_delete(l_key1);
+        dap_enc_key_delete(l_key2);
+        return -4;
+    }
+    
+    log_it(L_NOTICE, "Second cross-verification correctly failed with error code %d (expected behavior)", 
+           l_cross_verify);
+    
+    // Очистка ресурсов
+    DAP_DELETE(l_sign1);
+    DAP_DELETE(l_sign2);
+    dap_enc_key_delete(l_key1);
+    dap_enc_key_delete(l_key2);
+    
+    log_it(L_NOTICE, "All cross-verification tests PASSED");
+    return 0;
+}
+
+/**
  * @brief Run all Chipmunk tests.
  * 
  * @return int 0 if all tests pass, non-zero otherwise
@@ -419,6 +921,46 @@ int dap_enc_chipmunk_tests_run(void)
         log_it(L_INFO, "Key deletion test FAILED");
     } else {
         log_it(L_INFO, "Key deletion test PASSED");
+    }
+    
+    // Test different signatures
+    log_it(L_INFO, "Testing different signatures with different keys...");
+    l_res = dap_enc_chipmunk_different_signatures_test();
+    if (l_res != 0) {
+        l_ret += 1;
+        log_it(L_ERROR, "Different signatures test FAILED");
+    } else {
+        log_it(L_INFO, "Different signatures test PASSED");
+    }
+    
+    // Test corrupted signature
+    log_it(L_INFO, "Testing verification of corrupted signatures...");
+    l_res = dap_enc_chipmunk_corrupted_signature_test();
+    if (l_res != 0) {
+        l_ret += 1;
+        log_it(L_ERROR, "Corrupted signature test FAILED");
+    } else {
+        log_it(L_INFO, "Corrupted signature test PASSED");
+    }
+    
+    // Test same object signatures
+    log_it(L_INFO, "Testing signatures for the same object with the same key...");
+    l_res = dap_enc_chipmunk_same_object_signatures_test();
+    if (l_res != 0) {
+        l_ret += 1;
+        log_it(L_ERROR, "Same object signatures test FAILED");
+    } else {
+        log_it(L_INFO, "Same object signatures test PASSED");
+    }
+    
+    // Test cross-verification
+    log_it(L_INFO, "Testing cross-verification with wrong keys...");
+    l_res = test_cross_verification();
+    if (l_res != 0) {
+        l_ret += 1;
+        log_it(L_ERROR, "Cross-verification test FAILED");
+    } else {
+        log_it(L_INFO, "Cross-verification test PASSED");
     }
     
     // Return 0 if all tests passed, non-zero otherwise

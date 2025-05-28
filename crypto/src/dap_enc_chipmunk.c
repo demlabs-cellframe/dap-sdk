@@ -261,16 +261,42 @@ int dap_enc_chipmunk_verify_sign(dap_enc_key_t *key, const void *data, const siz
     // Освобождаем временный буфер вне зависимости от результата проверки
     DAP_DELETE(l_temp_signature);
     
+    // Обработка возвращаемого значения
     if (result != 0) {
-        // Это не ошибка в коде, а результат проверки подписи
-        if (result == -5) {
-            log_it(L_WARNING, "Signature verification failed (challenge mismatch)");
-        } else {
-            log_it(L_ERROR, "Signature verification failed with error code %d", result);
+        // Логирование ошибок разных типов для диагностики
+        switch (result) {
+            case -1:
+                log_it(L_ERROR, "Signature verification failed: invalid parameters or memory allocation error");
+                break;
+            case -2:
+                log_it(L_ERROR, "Signature verification failed: processing error in NTT transformations");
+                break;
+            case -3:
+                log_it(L_ERROR, "Signature verification failed: z polynomial has invalid coefficients");
+                break;
+            case -4:
+                log_it(L_ERROR, "Signature verification failed: w' polynomial has suspicious distribution");
+                break;
+            case -5:
+                log_it(L_WARNING, "Signature verification failed: hint bits problem");
+                break;
+            case -6:
+                log_it(L_ERROR, "Signature verification failed: wrong key used for verification");
+                break;
+            case -7:
+                log_it(L_ERROR, "Signature verification failed: integrity check failed");
+                break;
+            default:
+                log_it(L_ERROR, "Signature verification failed with unknown error code %d", result);
         }
+        
+        // Всегда возвращаем отрицательное значение (код ошибки) при неудачной верификации
+        return result;
     }
     
-    return result;
+    // Верификация прошла успешно
+    log_it(L_INFO, "Chipmunk signature verified successfully");
+    return 0;
 }
 
 // Clean up key data, remove key pair
