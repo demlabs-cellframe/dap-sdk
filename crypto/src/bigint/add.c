@@ -1,8 +1,8 @@
 #include "add_specific_limb_size.h"
-#define LOG_TAG "large integer arithmetic"
+
 
 //The below functions use two's complement representation.
-//As a result, the "circuitry" for signed and unsigned is the SAME.
+//As a result, the "circuitry" for signed and unsigned is te SAME.
 //The idea here is that we start out with two input and one output
 //bigint structures. The main function loop is indexed on the limb
 //of the sum, calculated as a function. At each limb index, an

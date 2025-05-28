@@ -16,18 +16,27 @@ endif()
 #INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIR}
 #                    ../../include/)
 
+# Find GTest package
+find_package(GTest REQUIRED)
+include_directories(${GTEST_INCLUDE_DIRS})
 
 add_executable(${PROJECT_NAME}
                bigint_tests.cc
+               bigint_logic_tests.cc
 )
+
 target_link_libraries(${PROJECT_NAME}
-		dap_core
-		${Boost_LIBRARIES}
-		m
+        dap_core
+        ${Boost_LIBRARIES}
+        ${GTEST_LIBRARIES}
+        pthread
+        m
 )
+
 target_include_directories(${PROJECT_NAME}
         INTERFACE
         ../../include/
+        ${GTEST_INCLUDE_DIRS}
 )
 
 

@@ -6,10 +6,6 @@
 
 #include "bigint.h"
 
-#define MAX(a,b) \
-({ __typeof__ (a) _a = (a); \
-       __typeof__ (b) _b = (b); \
-     _a > _b ? _a : _b; })
 
 typedef struct dap_full_adder_64{
         uint64_t adder_a;
