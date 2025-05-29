@@ -205,6 +205,22 @@ bool dap_zip_directory(const char *a_inputdir, const char * a_output_filename);
  */
 bool dap_tar_directory(const char *a_inputdir, const char *a_output_tar_filename);
 
+/**
+ * Check available disk space
+ *
+ * @a_path: path to check (file or directory)
+ * @a_min_free_mb: minimum required free space in megabytes
+ * @return: true if enough space available, false otherwise
+ */
+bool dap_disk_space_check(const char *a_path, uint64_t a_min_free_mb);
+
+/**
+ * Get available disk space in bytes
+ *
+ * @a_path: path to check (file or directory)
+ * @return: available space in bytes, or 0 on error
+ */
+uint64_t dap_disk_space_get(const char *a_path);
 
 #ifdef __cplusplus
 }

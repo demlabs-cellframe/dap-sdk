@@ -31,6 +31,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <limits.h>
+#include <dirent.h>
 #ifdef DAP_BUILD_WITH_ZIP
 #include <zip.h>
 #endif
@@ -47,6 +48,8 @@
 #include <windows.h>
 #include <io.h>
 #define realpath(abs_path, rel_path) _fullpath((rel_path), (abs_path), PATH_MAX)
+#else
+#include <sys/statfs.h>
 #endif
 
 #include "dap_common.h"
@@ -515,16 +518,22 @@ dap_list_name_directories_t *dap_get_subs(const char *a_path_dir){
     DIR *dir = opendir(a_path_dir);
     struct dirent *entry = readdir(dir);
     while (entry != NULL){
-        if (strcmp(entry->d_name, "..") != 0 && strcmp(entry->d_name, ".") != 0 && entry->d_type == DT_DIR){
-            element = (dap_list_name_directories_t *)malloc(sizeof(dap_list_name_directories_t));
-            if (!element) {
-                log_it(L_CRITICAL, "%s", c_error_memory_alloc);
-                closedir(dir);
-                DAP_DEL_Z(list);
-                return NULL;
+        if (strcmp(entry->d_name, "..") != 0 && strcmp(entry->d_name, ".") != 0) {
+            // Build full path to check if it's a directory
+            char *full_path = dap_build_filename(a_path_dir, entry->d_name, NULL);
+            if (dap_dir_test(full_path)) {
+                element = (dap_list_name_directories_t *)malloc(sizeof(dap_list_name_directories_t));
+                if (!element) {
+                    log_it(L_CRITICAL, "%s", c_error_memory_alloc);
+                    DAP_DELETE(full_path);
+                    closedir(dir);
+                    DAP_DEL_Z(list);
+                    return NULL;
+                }
+                element->name_directory = dap_strdup(entry->d_name);
+                LL_APPEND(list, element);
             }
-            element->name_directory = dap_strdup(entry->d_name);
-            LL_APPEND(list, element);
+            DAP_DELETE(full_path);
         }
         entry = readdir(dir);
     }
@@ -1433,7 +1442,7 @@ char* dap_get_current_dir(void)
     const char *pwd;
     char *buffer = NULL;
     char *dir = NULL;
-    static u_long max_len = 0;
+    static unsigned long max_len = 0;
     struct stat pwdbuf, dotbuf;
 
     pwd = getenv("PWD");
@@ -1540,7 +1549,7 @@ void dap_rm_rf(const char *path)
     dir = opendir(path);
     if(dir == NULL)
     {
-        /* Assume it’s a file. Ignore failure. */
+        /* Assume it's a file. Ignore failure. */
         remove(path);
         return;
     }
@@ -1884,4 +1893,93 @@ bool dap_tar_directory(const char *a_inputdir, const char *a_output_tar_filename
     write(l_outfile, &buffer, BLOCKSIZE);
     close(l_outfile);
     return l_ret;
+}
+
+/**
+ * Get available disk space in bytes
+ *
+ * @a_path: path to check (file or directory)
+ * @return: available space in bytes, or 0 on error
+ */
+uint64_t dap_disk_space_get(const char *a_path)
+{
+    if (!a_path || !*a_path) {
+        log_it(L_ERROR, "Invalid path parameter for disk space check");
+        return 0;
+    }
+
+    char *l_check_path = NULL;
+    
+    // If path is a file, get its directory
+    if (dap_file_test(a_path)) {
+        l_check_path = dap_path_get_dirname(a_path);
+    } else if (dap_dir_test(a_path)) {
+        l_check_path = dap_strdup(a_path);
+    } else {
+        // Path doesn't exist, try parent directory
+        l_check_path = dap_path_get_dirname(a_path);
+        if (!dap_dir_test(l_check_path)) {
+            log_it(L_ERROR, "Cannot find accessible path for disk space check: %s", a_path);
+            DAP_DELETE(l_check_path);
+            return 0;
+        }
+    }
+
+#ifdef DAP_OS_WINDOWS
+    ULARGE_INTEGER l_free_bytes;
+    if (!GetDiskFreeSpaceExA(l_check_path, &l_free_bytes, NULL, NULL)) {
+        log_it(L_ERROR, "Failed to get disk space info for path: %s, error: %d", 
+               l_check_path, GetLastError());
+        DAP_DELETE(l_check_path);
+        return 0;
+    }
+    DAP_DELETE(l_check_path);
+    return (uint64_t)l_free_bytes.QuadPart;
+#else
+    struct statfs l_stfs;
+    if (statfs(l_check_path, &l_stfs) == -1) {
+        log_it(L_ERROR, "Failed to get disk space info for path: %s, errno: %d (%s)", 
+               l_check_path, errno, strerror(errno));
+        DAP_DELETE(l_check_path);
+        return 0;
+    }
+    
+    DAP_DELETE(l_check_path);
+    
+    // Calculate available space in bytes
+    uint64_t l_free_bytes = (uint64_t)l_stfs.f_bavail * (uint64_t)l_stfs.f_bsize;
+    return l_free_bytes;
+#endif
+}
+
+/**
+ * Check available disk space
+ *
+ * @a_path: path to check (file or directory)  
+ * @a_min_free_mb: minimum required free space in megabytes
+ * @return: true if enough space available, false otherwise
+ */
+bool dap_disk_space_check(const char *a_path, uint64_t a_min_free_mb)
+{
+    if (!a_path) {
+        log_it(L_ERROR, "Invalid path parameter for disk space check");
+        return false;
+    }
+
+    uint64_t l_free_bytes = dap_disk_space_get(a_path);
+    if (l_free_bytes == 0) {
+        return false; // Error already logged in dap_disk_space_get
+    }
+
+    uint64_t l_free_mb = l_free_bytes / (1024 * 1024);
+    
+    if (l_free_mb < a_min_free_mb) {
+        log_it(L_WARNING, "Insufficient disk space: %"DAP_UINT64_FORMAT_U" MB available, %"DAP_UINT64_FORMAT_U" MB required (path: %s)",
+               l_free_mb, a_min_free_mb, a_path);
+        return false;
+    }
+    
+    log_it(L_DEBUG, "Disk space check passed: %"DAP_UINT64_FORMAT_U" MB available (required: %"DAP_UINT64_FORMAT_U" MB) for path: %s",
+           l_free_mb, a_min_free_mb, a_path);
+    return true;
 }

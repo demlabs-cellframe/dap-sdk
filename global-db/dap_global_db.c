@@ -35,8 +35,23 @@
 #include "dap_global_db_driver.h"
 #include "dap_global_db_cluster.h"
 #include "dap_global_db_pkt.h"
+#include "dap_cluster.h"
+#include "dap_string.h"
+#include "dap_stream_node.h"
+
+// System headers for disk space checking
+#ifdef DAP_OS_LINUX
+#include <sys/statvfs.h>
+#elif defined(DAP_OS_WINDOWS)
+#include <windows.h>
+#elif defined(DAP_OS_MACOS)
+#include <sys/statvfs.h>
+#endif
 
 #define LOG_TAG "dap_global_db"
+
+// Minimum free disk space required for write operations (in MB)
+#define DAP_GLOBAL_DB_MIN_FREE_SPACE_MB 100
 
 int g_dap_global_db_debug_more = false;                                         /* Enable extensible debug output */
 
@@ -282,6 +297,17 @@ bool dap_global_db_group_match_mask(const char *a_group, const char *a_mask)
     if (l_mask_it == l_wildcard && ++l_mask_it < l_mask_tail)
         return strstr(l_group_it, l_mask_it);
     return true;
+}
+
+/**
+ * @brief Check available disk space before write operations
+ * @param a_db_path Path to check disk space for
+ * @param a_min_free_mb Minimum required free space in MB
+ * @return true if sufficient space available, false otherwise
+ */
+static bool s_check_disk_space(const char *a_db_path, uint64_t a_min_free_mb)
+{
+    return dap_disk_space_check(a_db_path, a_min_free_mb);
 }
 
 static void s_store_obj_update_timestamp(dap_store_obj_t *a_obj, dap_global_db_instance_t *a_dbi, dap_nanotime_t a_new_timestamp)
@@ -997,6 +1023,12 @@ static bool s_msg_opcode_get_all_raw(struct queue_io_msg *a_msg)
 static int s_set_sync_with_ts(dap_global_db_instance_t *a_dbi, const char *a_group, const char *a_key, const void *a_value,
                               const size_t a_value_length, bool a_pin_value, dap_nanotime_t a_timestamp)
 {
+    // Check disk space before writing
+    if (!s_check_disk_space(a_dbi->storage_path, DAP_GLOBAL_DB_MIN_FREE_SPACE_MB)) {
+        log_it(L_ERROR, "Write operation blocked due to insufficient disk space for group %s key %s", a_group, a_key);
+        return DAP_GLOBAL_DB_RC_INSUFFICIENT_SPACE;
+    }
+
     dap_store_obj_t l_store_data = {
         .timestamp  = a_timestamp,
         .flags      = DAP_GLOBAL_DB_RECORD_NEW | (a_pin_value ? DAP_GLOBAL_DB_RECORD_PINNED : 0),
@@ -1103,6 +1135,12 @@ static void s_msg_opcode_set(struct queue_io_msg * a_msg)
 
 int s_db_set_raw_sync(dap_global_db_instance_t *a_dbi, dap_store_obj_t *a_store_objs, size_t a_store_objs_count)
 {
+    // Check disk space before mass write operations
+    if (!s_check_disk_space(a_dbi->storage_path, DAP_GLOBAL_DB_MIN_FREE_SPACE_MB)) {
+        log_it(L_ERROR, "Mass write operation blocked due to insufficient disk space (%zu objects)", a_store_objs_count);
+        return DAP_GLOBAL_DB_RC_INSUFFICIENT_SPACE;
+    }
+
     int l_ret = DAP_GLOBAL_DB_RC_ERROR;
     if (a_store_objs_count > 1)
         dap_global_db_driver_txn_start();

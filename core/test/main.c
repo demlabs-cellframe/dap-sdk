@@ -8,6 +8,7 @@
 #endif
 #endif
 #include "dap_strfuncs_test.h"
+#include "dap_file_utils_test.h"
 #include "dap_common.h"
 
 
@@ -17,6 +18,7 @@ int main(void) {
     dap_strfuncs_tests_run();
     dap_config_tests_run();
     dap_common_test_run();
+    dap_file_utils_tests_run();
 #ifdef DAP_OS_UNIX
     dap_circular_test_run();
     dap_process_mem_test_run();
