@@ -24,34 +24,20 @@
 #pragma once
 
 #include <stddef.h>
+
+// Include common header definitions (structure and common functions)
+#include "dap_http_header.h"
+
 #include "dap_http_client.h"
 
-//Structure for holding HTTP header in the bidirectional list
-#define     DAP_HTTP$SZ_FIELD_NAME  256                                 /* Length of the HTTP's header field name */
-#define     DAP_HTTP$SZ_FIELD_VALUE 1024                                /* -- // -- value string */
-
-
-typedef struct dap_http_header{
-                                                                            /* Area to keep HT field name and value */
-    char    name[DAP_HTTP$SZ_FIELD_NAME],
-            value[DAP_HTTP$SZ_FIELD_VALUE];
-
-    size_t  namesz, valuesz;                                                /* Dimension of corresponding field */
-    int     htfld;                                                          /* HTTP Field numeric Id */
-
-    struct dap_http_header *next, *prev;                                    /* List's element links */
-} dap_http_header_t;
-
-
-
+// Server-specific functions
 int dap_http_header_init(); // Init module
 void dap_http_header_deinit(); // Deinit module
 
+// Server-specific parser that fills dap_http_client_t fields
 int dap_http_header_parse(dap_http_client_t *cl_ht, const char *ht_line, size_t ht_line_len);
 
-dap_http_header_t *dap_http_header_add(dap_http_header_t **a_top, const char *a_name, const char *a_value);
-
-
+// Convenience function for adding output headers
 static inline struct dap_http_header* dap_http_out_header_add(dap_http_client_t *ht, const char *name, const char *value)
 {
     return dap_http_header_add(&ht->out_headers, name, value);
@@ -59,30 +45,19 @@ static inline struct dap_http_header* dap_http_out_header_add(dap_http_client_t 
 
 DAP_PRINTF_ATTR(3, 4) dap_http_header_t *dap_http_out_header_add_f(dap_http_client_t *ht, const char *name, const char *value, ...);
 
-dap_http_header_t *dap_http_header_find(dap_http_header_t * ht, const char*name);
-
-dap_http_header_t * dap_http_headers_dup(dap_http_header_t * a_top);
-
-void dap_http_header_remove(dap_http_header_t **a_top,dap_http_header_t *a_hdr);
-
-// For debug output
-void print_dap_http_headers(dap_http_header_t * a_ht);
+// Backward compatibility - use dap_http_header_print instead
+#define print_dap_http_headers dap_http_header_print
 
 /*
- * https://en.wikipedia.org/wiki/List_of_HTTP_header_fields
- * Don't change order of field until u undrstand what u do
+ * Server-specific HTTP constants
  */
 #define HTTP$SZ_METHOD      16                                              /* POST, GET, HEAD ... */
-#define HTTP_FLD$SZ_NAME    64                                              /* Maximum HTTP Field name */
-#define HTTP_FLD$SZ_VALUE   1024                                            /* -- // -- field length */
 
+// Server-specific HTTP field codes
 enum    {
-
     HTTP_FLD$K_CONNECTION = 0,                                              /* Connection: Keep-Alive */
     HTTP_FLD$K_CONTENT_TYPE,                                                /* Content-Type: application/x-www-form-urlencoded */
     HTTP_FLD$K_CONTENT_LEN,                                                 /* Content-Length: 348 */
     HTTP_FLD$K_COOKIE,                                                      /* Cookie: $Version=1; Skin=new; */
-
-
     HTTP_FLD$K_EOL                                                          /* End-Of-List marker, mast be last element here */
 };

@@ -49,9 +49,13 @@
 #include "dap_server.h"
 #include "dap_events_socket.h"
 #include "dap_http_server.h"
-#include "dap_http_header.h"
+#include "dap_http_header_server.h"
 #include "dap_http_client.h"
 #include "dap_strfuncs.h"
+#include "dap_worker.h"
+#include "dap_events.h"
+#include "dap_timerfd.h"
+#include "dap_http_ban_list_client.h"
 
 #define LOG_TAG "http"
 /**

@@ -47,6 +47,7 @@
 #include "dap_events_socket.h"
 
 #include "dap_http_server.h"
+#include "dap_http_header_server.h"
 #include "dap_http_client.h"
 #include "dap_http_header.h"
 #include "http_status_code.h"
