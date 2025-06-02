@@ -65,15 +65,18 @@ static void http_response_full_callback(void *a_body, size_t a_body_size,
 // Test function
 void test_http_redirect()
 {
+    dap_common_init(NULL, "log.txt");
+    dap_log_level_set(L_DEBUG);
     // Initialize
-    dap_events_init(0, 0);
+    dap_events_init(1, 0);
+    dap_events_start();
     dap_client_http_init();
     
     // Test URLs
     const char *test_urls[][3] = {
         // {host, port, path}
         {"httpbin.org", "80", "/redirect/3"},  // Will redirect 3 times
-        {"httpbin.org", "80", "/bytes/100000"}, // Large response (100KB)
+        {"httpbin.org", "80", "/bytes/10000000"}, // Large response (100KB)
         {"httpbin.org", "80", "/redirect/15"},  // Too many redirects (will fail)
         {"httpbin.org", "80", "/status/301"},   // 301 without Location (will fail)
         {NULL, NULL, NULL}
@@ -97,9 +100,23 @@ void test_http_redirect()
         snprintf(url, sizeof(url), "http://%s:%d%s", host, port, path);
         
         printf("\n>>> Testing URL: %s\n", url);
-        
+        dap_client_http_request_async(NULL,                      // worker (auto)
+            host,                      // host
+            port,                      // port
+            "GET",                     // method
+            NULL,                      // content type
+            path,                      // path
+            NULL,                      // request body
+            0,                         // request size
+            NULL,                      // cookie
+            http_response_full_callback, // full callback
+            http_error_callback,       // error callback
+            NULL, NULL,
+            (void *)strdup(url),               // callback arg
+            NULL                       // custom headers
+            );
         // Make request with full callback
-        dap_client_http_t *l_client = dap_client_http_request_full(
+        /*dap_client_http_t *l_client = dap_client_http_request_full(
             NULL,                      // worker (auto)
             host,                      // host
             port,                      // port
@@ -111,17 +128,17 @@ void test_http_redirect()
             NULL,                      // cookie
             http_response_full_callback, // full callback
             http_error_callback,       // error callback
-            (void *)url,               // callback arg
+            (void *)strdup(url),               // callback arg
             NULL                       // custom headers
-        );
+        );*/
         
-        if(!l_client) {
+        /*if(!l_client) {
             printf("Failed to create HTTP client for %s\n", url);
             continue;
-        }
+        }*/
         
         // Wait for response (simplified - in real app use proper event loop)
-        sleep(5);
+        sleep(1);
     }
     
     // Cleanup

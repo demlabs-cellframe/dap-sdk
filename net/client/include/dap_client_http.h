@@ -70,7 +70,7 @@ typedef struct dap_client_http {
     // Add new fields for headers processing and redirects
     struct dap_http_header *response_headers;   // Parsed response headers
     uint8_t redirect_count;                      // Current redirect count
-    #define DAP_CLIENT_HTTP_MAX_REDIRECTS 10    // Maximum allowed redirects
+#define DAP_CLIENT_HTTP_MAX_REDIRECTS 5    // Maximum allowed redirects
 
     // Request args
     char uplink_addr[DAP_HOSTADDR_STRLEN];

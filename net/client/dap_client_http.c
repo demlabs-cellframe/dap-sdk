@@ -706,15 +706,11 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
             l_client_http->response_size_max - l_client_http->response_size);
 
     // search http header
-    if(!l_client_http->is_header_read && l_client_http->response_size > 4
-            && !l_client_http->content_length) {
-        for(size_t l_pos = 0; l_pos < l_client_http->response_size - 4; l_pos++) {
-            uint8_t *l_str = l_client_http->response + l_pos;
-            if(!dap_strncmp((const char*) l_str, "\r\n\r\n", 4)) {
-                l_client_http->header_length = l_pos + 4;
-                l_client_http->is_header_read = true;
-                break;
-            }
+    if(!l_client_http->is_header_read && l_client_http->response_size > 4 && !l_client_http->content_length) {
+        char *l_crlf = strstr((char*)l_client_http->response, "\r\n\r\n");
+        if (l_crlf) {
+            l_client_http->header_length = l_crlf - (char*)l_client_http->response + 4;
+            l_client_http->is_header_read = true;
         }
     }
     
