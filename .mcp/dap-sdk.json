@@ -1,0 +1,71 @@
+{
+  "module_name": "dap-sdk",
+  "structure": {
+    "core": {
+      "description": "Core functionality and data structures",
+      "key_files": [
+        "core/include/dap_common.h",
+        "core/include/dap_strfuncs.h", 
+        "core/include/dap_context.h"
+      ],
+      "purpose": "Basic utilities, memory management, string operations"
+    },
+    "crypto": {
+      "description": "Cryptographic functions and algorithms",
+      "key_files": [
+        "crypto/include/dap_enc_base64.h",
+        "crypto/src/sig_*/"
+      ],
+      "purpose": "Digital signatures, encryption, hashing"
+    },
+    "net": {
+      "description": "Network communication layer",
+      "components": {
+        "client": {
+          "key_files": [
+            "net/client/include/dap_client_http.h",
+            "net/client/dap_client_http.c"
+          ],
+          "recent_changes": [
+            "Optimized redirect handling with connection reuse",
+            "Added async request patterns",
+            "C++ compatibility headers"
+          ]
+        },
+        "server": {
+          "key_files": [
+            "net/server/http_server/include/dap_http_client.h"
+          ]
+        },
+        "common": {
+          "key_files": [
+            "net/common/http/include/dap_http_header.h"
+          ]
+        }
+      }
+    },
+    "io": {
+      "description": "I/O operations and event handling",
+      "key_files": [
+        "io/include/dap_events_socket.h",
+        "io/include/dap_worker.h"
+      ]
+    },
+    "global-db": {
+      "description": "Global database functionality",
+      "key_files": [
+        "global-db/include/"
+      ]
+    }
+  },
+  "dependencies": {
+    "external": ["openssl", "wolfssl", "json-c", "uthash"],
+    "internal": []
+  },
+  "patterns": {
+    "memory_management": "DAP_NEW_Z, DAP_DELETE patterns",
+    "error_handling": "Return codes and callbacks", 
+    "threading": "Worker-based event handling",
+    "callbacks": "Function pointer patterns for async operations"
+  }
+} 
