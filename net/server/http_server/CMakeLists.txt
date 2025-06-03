@@ -24,6 +24,7 @@ add_library(${PROJECT_NAME} STATIC ${HTTP_SERVER_SRCS} ${HTTP_SERVER_HDRS})
 target_include_directories(${PROJECT_NAME} INTERFACE . http_client/include/)
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/uthash/src)
+target_include_directories(${PROJECT_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../../common/http/include)
 
 if(DARWIN)
     target_include_directories(${PROJECT_NAME} PRIVATE /usr/local/include)
@@ -54,7 +55,7 @@ if(WIN32)
   secur32
 )
 endif()
-target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json-c)
+target_link_libraries(${PROJECT_NAME} dap_core dap_io dap_json-c dap_http_common)
 
 if(INSTALL_DAP_SDK)
 set_target_properties(${PROJECT_NAME}  PROPERTIES PUBLIC_HEADER "${HTTP_SERVER_HDRS}")
