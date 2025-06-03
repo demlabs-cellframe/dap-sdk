@@ -47,6 +47,7 @@
 #define LOG_TAG "dap_client_http"
 
 #define DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX 65536 //40960
+#define DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT (10 * 1024 * 1024) // 10MB максимальный размер ответа
 
 // Static variables
 static bool s_debug_more = false;
@@ -760,7 +761,8 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
                 : 0;
 
         // Set request size as Content-Length header
-        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", l_client_http->request_size);
+        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Content-Length: %zu\r\n", 
+                                l_client_http->request_size);
     }
 
     // adding string for GET request
@@ -907,6 +909,39 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         log_it(L_ERROR, "s_http_read: l_client_http is NULL!");
         return;
     }
+    
+
+#define m_http_error_exit(error_code, format, ...) do { \
+    log_it(L_ERROR, "s_http_read: " format, ##__VA_ARGS__); \
+    if(l_client_http->error_callback) { \
+        l_client_http->error_callback(error_code, l_client_http->callbacks_arg); \
+    } \
+    l_client_http->were_callbacks_called = true; \
+    a_es->flags |= DAP_SOCK_SIGNAL_CLOSE; \
+    return; \
+} while(0)
+    
+    // Additional safety checks
+    if (!a_es->buf_in) {
+        m_http_error_exit(EINVAL, "event socket buf_in is NULL for esocket "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
+    }
+    
+    // Validate buffer consistency
+    if (a_es->buf_in_size > a_es->buf_in_size_max) {
+        m_http_error_exit(EFAULT, "event socket buffer corruption detected (size %zu > max %zu)", 
+                          a_es->buf_in_size, a_es->buf_in_size_max);
+    }
+    
+    if (!l_client_http->response) {
+        m_http_error_exit(EINVAL, "HTTP client response buffer is NULL!");
+    }
+    
+    // Validate HTTP client buffer consistency  
+    if (l_client_http->response_size > l_client_http->response_size_max) {
+        m_http_error_exit(EFAULT, "HTTP client buffer corruption detected (size %zu > max %zu)", 
+                          l_client_http->response_size, l_client_http->response_size_max);
+    }
+    
     l_client_http->ts_last_read = time(NULL);
     
     // Check if we need to expand buffer
@@ -918,26 +953,14 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         size_t l_new_size = l_client_http->response_size + l_available_in_socket + 4096; // Add extra 4KB
         
         // Limit maximum buffer size to prevent memory exhaustion
-        if(l_new_size > 10 * 1024 * 1024) { // 10MB limit
-            log_it(L_ERROR, "Response size exceeds maximum allowed size of 10MB");
-            if(l_client_http->error_callback) {
-                l_client_http->error_callback(-413, l_client_http->callbacks_arg);
-            }
-            l_client_http->were_callbacks_called = true;
-            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-            return;
+        if(l_new_size > DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT) {
+            m_http_error_exit(-413, "Response size exceeds maximum allowed size of %d bytes (requested: %zu)", DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT, l_new_size);
         }
         
         uint8_t *l_new_response = DAP_REALLOC(l_client_http->response, l_new_size);
         if(!l_new_response) {
-            log_it(L_ERROR, "Can't expand response buffer from %zu to %zu bytes", 
-                   l_client_http->response_size_max, l_new_size);
-            if(l_client_http->error_callback) {
-                l_client_http->error_callback(ENOMEM, l_client_http->callbacks_arg);
-            }
-            l_client_http->were_callbacks_called = true;
-            a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-            return;
+            m_http_error_exit(ENOMEM, "Can't expand response buffer from %zu to %zu bytes", 
+                              l_client_http->response_size_max, l_new_size);
         }
         
         l_client_http->response = l_new_response;
@@ -947,10 +970,31 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         }
     }
     
-    // read data
-    l_client_http->response_size += dap_events_socket_pop_from_buf_in(a_es,
+    // Additional bounds check before data copy
+    size_t l_max_copy_size = l_client_http->response_size_max - l_client_http->response_size;
+    if (l_max_copy_size == 0) {
+        log_it(L_WARNING, "s_http_read: No space left in response buffer");
+        return;
+    }
+    
+    // read data using safe function with additional validation
+    size_t l_read_bytes = dap_events_socket_pop_from_buf_in(a_es,
             l_client_http->response + l_client_http->response_size,
-            l_client_http->response_size_max - l_client_http->response_size);
+            l_max_copy_size);
+    
+    if (l_read_bytes == 0) {
+        // No data was read, which might be normal or indicate an error
+        // The pop function will have logged any errors
+        return;
+    }
+    
+    // Validate read operation result
+    if (l_client_http->response_size + l_read_bytes > l_client_http->response_size_max) {
+        m_http_error_exit(EOVERFLOW, "Buffer overflow detected! size %zu + read %zu > max %zu", 
+                          l_client_http->response_size, l_read_bytes, l_client_http->response_size_max);
+    }
+    
+    l_client_http->response_size += l_read_bytes;
 
     // search http header
     if(!l_client_http->is_header_read && l_client_http->response_size > 4 && !l_client_http->content_length) {
@@ -1014,13 +1058,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
             
             // Check redirect count
             if(l_client_http->redirect_count >= DAP_CLIENT_HTTP_MAX_REDIRECTS) {
-                log_it(L_ERROR, "Too many redirects (%d), stopping", l_client_http->redirect_count);
-                if(l_client_http->error_callback) {
-                    l_client_http->error_callback(-301, l_client_http->callbacks_arg); // Custom error code for too many redirects
-                }
-                l_client_http->were_callbacks_called = true;
-                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                return;
+                m_http_error_exit(-301, "Too many redirects (%d), stopping", l_client_http->redirect_count);
             }
             
             // Find Location header
@@ -1033,21 +1071,10 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
                     return;
                 } else {
                     // Failed to process redirect
-                    if(l_client_http->error_callback) {
-                        l_client_http->error_callback(ENOMEM, l_client_http->callbacks_arg);
-                    }
-                    l_client_http->were_callbacks_called = true;
-                    a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                    return;
+                    m_http_error_exit(ENOMEM, "Failed to process redirect");
                 }
             } else {
-                log_it(L_ERROR, "HTTP %d redirect but no Location header found", l_status_code);
-                if(l_client_http->error_callback) {
-                    l_client_http->error_callback(-302, l_client_http->callbacks_arg); // Custom error code for redirect without location
-                }
-                l_client_http->were_callbacks_called = true;
-                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
-                return;
+                m_http_error_exit(-302, "HTTP %d redirect but no Location header found", l_status_code);
             }
         }
     }
@@ -1089,6 +1116,8 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         l_client_http->were_callbacks_called = true;
         a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
     }
+
+#undef m_http_error_exit
 }
 
 
