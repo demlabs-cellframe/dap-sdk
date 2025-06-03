@@ -325,7 +325,7 @@ dap_cert_t* dap_cert_file_load(const char * a_cert_file_path)
     byte_t *l_data = DAP_NEW_Z_SIZE(byte_t, l_file_size);
     if ( fread(l_data, 1, l_file_size, l_file) != l_file_size ) {
         l_err = -1;
-        log_it(L_ERROR, "Can't read %"DAP_UINT64_FORMAT_U" bytes from the disk!", l_file_size);
+        log_it(L_ERROR, "Can't read %zu bytes from the disk!", l_file_size);
     } else if (!( l_ret = dap_cert_mem_load(l_data, l_file_size) )) {
         log_it(L_ERROR, "Can't load cert from file");
         l_err = -2;

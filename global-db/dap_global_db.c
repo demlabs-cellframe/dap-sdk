@@ -1920,8 +1920,8 @@ static void s_get_all_pinned_objs_in_group(dap_store_obj_t * a_objs, size_t a_ob
     }
 }
 
-static void s_check_pinned_db_objs_timer_callback(void *a_arg) {
-    s_check_pinned_db_objs_callback(a_arg);
+static void s_check_pinned_db_objs_timer_callback(void* UNUSED_ARG a_arg) {
+    s_check_pinned_db_objs_callback();
 }
 
 static int s_pinned_objs_group_init() {
