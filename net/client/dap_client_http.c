@@ -46,7 +46,6 @@
 
 #define LOG_TAG "dap_client_http"
 
-#define DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX 65536 //40960
 #define DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT (10 * 1024 * 1024) // 10MB максимальный размер ответа
 
 // Static variables
@@ -954,7 +953,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         
         // Limit maximum buffer size to prevent memory exhaustion
         if(l_new_size > DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT) {
-            m_http_error_exit(-413, "Response size exceeds maximum allowed size of %d bytes (requested: %zu)", DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT, l_new_size);
+            m_http_error_exit(-413, "Response size exceeds maximum allowed size of %zu bytes (requested: %zu)", (size_t)DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT, l_new_size);
         }
         
         uint8_t *l_new_response = DAP_REALLOC(l_client_http->response, l_new_size);
