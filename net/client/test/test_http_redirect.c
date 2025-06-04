@@ -113,7 +113,8 @@ void test_http_redirect()
             http_error_callback,       // error callback
             NULL, NULL,
             (void *)strdup(url),               // callback arg
-            NULL                       // custom headers
+            NULL,                      // custom headers
+            true                       // follow_redirects = true (default behavior)
             );
         // Make request with full callback
         /*dap_client_http_t *l_client = dap_client_http_request_full(
@@ -160,7 +161,8 @@ void test_http_redirect()
         http_error_callback,       // error callback
         NULL, NULL,
         strdup("redirect-to?url=http://httpbin.org/get"),                   // callback arg
-        NULL                    // custom headers
+        NULL,                    // custom headers
+        true                     // follow_redirects = true
     );
     
     // Wait for response
@@ -183,7 +185,8 @@ void test_http_redirect()
         http_error_callback,       // error callback
         NULL, NULL,
         strdup("redirect-to?url=http://example.com/"),                   // callback arg
-        NULL                    // custom headers
+        NULL,                    // custom headers
+        true                     // follow_redirects = true
     );
     
     // Wait for response
@@ -206,8 +209,54 @@ void test_http_redirect()
         http_error_callback,       // error callback
         NULL, NULL,
         strdup("redirect-to?url=/get"),                   // callback arg
-        NULL                    // custom headers
+        NULL,                    // custom headers
+        true                     // follow_redirects = true
     );
+
+    // Test new follow_redirects flag
+    printf("\n=== Testing follow_redirects flag ===\n");
+    
+    // Test with follow_redirects = false (should return redirect response)
+    printf("Test 4: follow_redirects = false\n");
+    dap_client_http_request_simple_async(
+        NULL,                    // worker
+        "httpbin.org",          // host
+        80,                     // port
+        "GET",                  // method
+        NULL,                   // content type
+        "/redirect/2",          // path that redirects
+        NULL,                   // request body
+        0,                      // request size
+        NULL,                   // cookie
+        http_response_full_callback, // full callback
+        http_error_callback,       // error callback
+        strdup("follow_redirects=false"),  // callback arg
+        NULL,                   // custom headers
+        false                   // follow_redirects = false
+    );
+    
+    sleep(2);
+    
+    // Test with follow_redirects = true (should follow redirects)
+    printf("Test 5: follow_redirects = true\n");
+    dap_client_http_request_simple_async(
+        NULL,                    // worker
+        "httpbin.org",          // host
+        80,                     // port
+        "GET",                  // method
+        NULL,                   // content type
+        "/redirect/2",          // path that redirects
+        NULL,                   // request body
+        0,                      // request size
+        NULL,                   // cookie
+        http_response_full_callback, // full callback
+        http_error_callback,       // error callback
+        strdup("follow_redirects=true"),   // callback arg
+        NULL,                   // custom headers
+        true                    // follow_redirects = true
+    );
+    
+    sleep(2);
 
     // Cleanup
     dap_client_http_deinit();

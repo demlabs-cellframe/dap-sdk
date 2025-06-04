@@ -70,6 +70,7 @@ typedef struct dap_client_http {
     // Add new fields for headers processing and redirects
     struct dap_http_header *response_headers;   // Parsed response headers
     uint8_t redirect_count;                      // Current redirect count
+    bool follow_redirects;                       // Whether to follow redirects automatically
 #define DAP_CLIENT_HTTP_MAX_REDIRECTS 5    // Maximum allowed redirects
 
     // Request args
@@ -107,7 +108,8 @@ dap_client_http_t *dap_client_http_request(dap_worker_t * a_worker,const char *a
 dap_client_http_t *dap_client_http_request_full(dap_worker_t * a_worker,const char *a_uplink_addr, uint16_t a_uplink_port, const char * a_method,
         const char* a_request_content_type, const char * a_path, const void *a_request, size_t a_request_size,
         char * a_cookie, dap_client_http_callback_full_t a_response_callback,
-        dap_client_http_callback_error_t a_error_callback, void *a_callbacks_arg, char *a_custom_headers);
+        dap_client_http_callback_error_t a_error_callback, void *a_callbacks_arg, char *a_custom_headers,
+        bool a_follow_redirects);
 
 uint64_t dap_client_http_get_connect_timeout_ms();
 void dap_client_http_set_connect_timeout_ms(uint64_t a_timeout_ms);
@@ -130,7 +132,8 @@ void dap_client_http_request_async(
         dap_client_http_callback_started_t a_started_callback,
         dap_client_http_callback_progress_t a_progress_callback,
         void *a_callbacks_arg, 
-        char *a_custom_headers);
+        char *a_custom_headers,
+        bool a_follow_redirects);
 
 // Simplified version without progress/started callbacks
 void dap_client_http_request_simple_async(
@@ -146,7 +149,8 @@ void dap_client_http_request_simple_async(
         dap_client_http_callback_full_t a_response_callback,
         dap_client_http_callback_error_t a_error_callback,
         void *a_callbacks_arg, 
-        char *a_custom_headers);
+        char *a_custom_headers,
+        bool a_follow_redirects);
 
 #ifdef __cplusplus
 }
