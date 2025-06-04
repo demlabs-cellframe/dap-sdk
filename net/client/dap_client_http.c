@@ -320,7 +320,7 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
         ssize_t l_out_buf_size = l_header_size;
         if (a_client_http->request && a_client_http->request_size){
             l_out_buf_size += a_client_http->request_size + 1;
-            char *l_out_new = DAP_REALLOC_RET_IF_FAIL(l_out_buf, l_out_buf_size, l_out_buf);
+            char *l_out_new = DAP_REALLOC_RET_VAL_IF_FAIL(l_out_buf, l_out_buf_size, false, l_out_buf);
             l_out_buf = l_out_new;
             memcpy(l_out_buf + l_header_size, a_client_http->request, a_client_http->request_size);
         }
