@@ -91,7 +91,7 @@ typedef struct dap_client_http {
 
 #define DAP_CLIENT_HTTP(a) (a ? (dap_client_http_t *) (a)->_inheritor : NULL)
 
-
+int dap_client_http_set_timeouts(uint64_t a_timeout_ms, uint64_t a_timeout_read_after_connect_ms);
 int dap_client_http_init();
 void dap_client_http_deinit();
 
@@ -112,7 +112,7 @@ dap_client_http_t *dap_client_http_request_full(dap_worker_t * a_worker,const ch
         bool a_follow_redirects);
 
 uint64_t dap_client_http_get_connect_timeout_ms();
-void dap_client_http_set_connect_timeout_ms(uint64_t a_timeout_ms);
+uint64_t dap_client_http_get_read_after_connect_timeout_ms();
 
 void dap_client_http_close_unsafe(dap_client_http_t *a_client_http);
 
