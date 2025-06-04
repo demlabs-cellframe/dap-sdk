@@ -1669,16 +1669,6 @@ void dap_events_socket_delete_unsafe(dap_events_socket_t *a_esocket, bool a_pres
     debug_if(g_debug_reactor, L_DEBUG, "Deleting esocket "DAP_FORMAT_ESOCKET_UUID" type %s", 
              a_esocket->uuid, dap_events_socket_get_type_str(a_esocket));
     
-    if (a_esocket->buf_in && a_esocket->buf_in_size > a_esocket->buf_in_size_max) {
-        log_it(L_WARNING, "Buffer corruption detected during cleanup: buf_in_size %zu > max %zu (esocket "DAP_FORMAT_ESOCKET_UUID")", 
-               a_esocket->buf_in_size, a_esocket->buf_in_size_max, a_esocket->uuid);
-    }
-    
-    if (a_esocket->buf_out && a_esocket->buf_out_size > a_esocket->buf_out_size_max) {
-        log_it(L_WARNING, "Buffer corruption detected during cleanup: buf_out_size %zu > max %zu (esocket "DAP_FORMAT_ESOCKET_UUID")", 
-               a_esocket->buf_out_size, a_esocket->buf_out_size_max, a_esocket->uuid);
-    }
-    
 #ifndef DAP_EVENTS_CAPS_IOCP
     dap_events_socket_descriptor_close(a_esocket);
 #endif
@@ -2096,68 +2086,19 @@ ssize_t dap_events_socket_write_f_unsafe(dap_events_socket_t *a_es, const char *
  */
 size_t dap_events_socket_pop_from_buf_in(dap_events_socket_t *a_es, void *a_data, size_t a_data_size)
 {
-    // Input validation
-    if (!a_es) {
-        log_it(L_ERROR, "dap_events_socket_pop_from_buf_in: a_es is NULL");
-        return 0;
-    }
+    dap_return_val_if_pass_err(!a_es || !a_data || !a_data_size || !a_es->buf_in || !a_es->buf_in_size,
+                                0, "Sanity check error");
     
-    if (!a_data) {
-        log_it(L_ERROR, "dap_events_socket_pop_from_buf_in: a_data is NULL");
-        return 0;
-    }
-    
-    if (!a_es->buf_in) {
-        log_it(L_ERROR, "dap_events_socket_pop_from_buf_in: buf_in is NULL for esocket "DAP_FORMAT_ESOCKET_UUID, a_es->uuid);
-        return 0;
-    }
-    
-    if (a_data_size == 0) {
-        return 0; // Nothing to copy
-    }
-    
-    if (a_es->buf_in_size == 0) {
-        return 0; // No data available
-    }
-    
-    // Buffer bounds validation - critical check!
-    if (a_es->buf_in_size > a_es->buf_in_size_max) {
-        log_it(L_ERROR, "dap_events_socket_pop_from_buf_in: buf_in_size (%zu) > buf_in_size_max (%zu) for esocket "DAP_FORMAT_ESOCKET_UUID, 
-               a_es->buf_in_size, a_es->buf_in_size_max, a_es->uuid);
-        // Try to recover by resetting buffer state
-        a_es->buf_in_size = 0;
-        return 0;
-    }
-    
-    // Determine actual copy size
-    size_t l_copy_size = dap_min(a_data_size, a_es->buf_in_size);
-    
-    // Copy data to output buffer
-    memcpy(a_data, a_es->buf_in, l_copy_size);
-    
-    // Update buffer state
-    if (l_copy_size < a_es->buf_in_size) {
-        // Shift remaining data to the beginning of buffer
-        size_t l_remaining = a_es->buf_in_size - l_copy_size;
-        
-        // Additional safety check before memmove
-        if (l_copy_size + l_remaining <= a_es->buf_in_size_max) {
-            memmove(a_es->buf_in, a_es->buf_in + l_copy_size, l_remaining);
-            a_es->buf_in_size = l_remaining;
-        } else {
-            log_it(L_ERROR, "dap_events_socket_pop_from_buf_in: buffer corruption detected, resetting buffer");
-            a_es->buf_in_size = 0;
-            return l_copy_size; // Return what we copied successfully
-        }
+    if ( a_data_size < a_es->buf_in_size )
+    {
+        memcpy(a_data, a_es->buf_in, a_data_size);
+        memmove(a_es->buf_in, a_es->buf_in + a_data_size, a_es->buf_in_size -= a_data_size);
     } else {
-        // All data consumed
+        memcpy(a_data, a_es->buf_in, a_es->buf_in_size);
+        a_data_size = a_es->buf_in_size;
         a_es->buf_in_size = 0;
-    }
-    
-    debug_if(g_debug_reactor, L_DEBUG, "Popped %zu bytes from buf_in, remaining: %zu bytes", 
-             l_copy_size, a_es->buf_in_size);
-    
-    return l_copy_size;
+    }    
+    return a_data_size;
 }
 
 

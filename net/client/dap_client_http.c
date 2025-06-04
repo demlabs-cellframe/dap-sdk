@@ -46,7 +46,6 @@
 
 #define LOG_TAG "dap_client_http"
 
-#define DAP_CLIENT_HTTP_RESPONSE_SIZE_MAX 65536 //40960
 #define DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT (10 * 1024 * 1024) // 10MB максимальный размер ответа
 
 // Static variables
@@ -101,7 +100,8 @@ static void s_client_http_request_async_impl(
         char * a_cookie, 
         dap_client_http_async_context_t *a_ctx,
         char *a_custom_headers,
-        bool a_is_https);
+        bool a_is_https,
+        bool a_follow_redirects);
 
 http_status_code_t s_extract_http_code(void *a_response, size_t a_response_size);
 
@@ -320,7 +320,7 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
         ssize_t l_out_buf_size = l_header_size;
         if (a_client_http->request && a_client_http->request_size){
             l_out_buf_size += a_client_http->request_size + 1;
-            char *l_out_new = DAP_REALLOC_RET_VAL_IF_FAIL(l_out_buf, l_out_buf_size, l_out_buf, false);
+            char *l_out_new = DAP_REALLOC_RET_VAL_IF_FAIL(l_out_buf, l_out_buf_size, false, l_out_buf);
             l_out_buf = l_out_new;
             memcpy(l_out_buf + l_header_size, a_client_http->request, a_client_http->request_size);
         }
@@ -381,7 +381,8 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
             a_client_http->cookie,
             l_redirect_ctx,
             a_client_http->request_custom_headers,
-            l_is_https
+            l_is_https,
+            false
         );
         
         DAP_DELETE(l_new_path);
@@ -411,6 +412,7 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
  * @param a_response_callback_full Full response callback with headers
  * @param a_callbacks_arg Callback argument
  * @param a_redirect_count Redirect counter
+ * @param a_follow_redirects Follow redirects flag
  * @param a_error_code Output error code on failure
  * @return dap_client_http_t* on success (for sync), NULL on failure
  */
@@ -431,6 +433,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
     dap_client_http_callback_full_t a_response_callback_full,
     void *a_callbacks_arg,
     uint8_t a_redirect_count,
+    bool a_follow_redirects,
     int *a_error_code)
 {
     // Set up socket callbacks
@@ -519,6 +522,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
     l_client_http->response_callback_full = a_response_callback_full;
     l_client_http->callbacks_arg = a_callbacks_arg;
     l_client_http->redirect_count = a_redirect_count;
+    l_client_http->follow_redirects = a_follow_redirects;
 
     if (a_request && a_request_size) {
         l_client_http->request = DAP_NEW_Z_SIZE(byte_t, a_request_size + 1);
@@ -954,7 +958,7 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         
         // Limit maximum buffer size to prevent memory exhaustion
         if(l_new_size > DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT) {
-            m_http_error_exit(-413, "Response size exceeds maximum allowed size of %d bytes (requested: %zu)", DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT, l_new_size);
+            m_http_error_exit(-413, "Response size exceeds maximum allowed size of %zu bytes (requested: %zu)", (size_t)DAP_CLIENT_HTTP_RESPONSE_SIZE_LIMIT, l_new_size);
         }
         
         uint8_t *l_new_response = DAP_REALLOC(l_client_http->response, l_new_size);
@@ -1055,6 +1059,31 @@ static void s_http_read(dap_events_socket_t * a_es, void * arg)
         http_status_code_t l_status_code = s_extract_http_code(l_client_http->response, l_client_http->response_size);
         if(l_status_code == Http_Status_MovedPermanently || l_status_code == Http_Status_Found || 
            l_status_code == Http_Status_TemporaryRedirect || l_status_code == Http_Status_PermanentRedirect) {
+            
+            // Check if redirects should be followed
+            if(!l_client_http->follow_redirects) {
+                log_it(L_INFO, "HTTP %d redirect detected but follow_redirects is disabled, returning response to user", l_status_code);
+                
+                // Call the callback with current response including redirect status
+                if(l_client_http->response_callback_full) {
+                    l_client_http->response_callback_full(
+                            l_client_http->response + l_client_http->header_length,
+                            l_client_http->response_size - l_client_http->header_length,
+                            l_client_http->response_headers,
+                            l_client_http->callbacks_arg, 
+                            l_status_code);
+                } else if(l_client_http->response_callback) {
+                    l_client_http->response_callback(
+                            l_client_http->response + l_client_http->header_length,
+                            l_client_http->response_size - l_client_http->header_length,
+                            l_client_http->callbacks_arg, 
+                            l_status_code);
+                }
+                
+                l_client_http->were_callbacks_called = true;
+                a_es->flags |= DAP_SOCK_SIGNAL_CLOSE;
+                return;
+            }
             
             // Check redirect count
             if(l_client_http->redirect_count >= DAP_CLIENT_HTTP_MAX_REDIRECTS) {
@@ -1291,7 +1320,7 @@ dap_client_http_t * dap_client_http_request_custom (
         a_worker, a_uplink_addr, a_uplink_port, a_method,
         a_request_content_type, a_path, a_request, a_request_size,
         a_cookie, a_custom_headers, a_over_ssl, a_error_callback,
-        a_response_callback, NULL, a_callbacks_arg, 0, &l_error_code
+        a_response_callback, NULL, a_callbacks_arg, 0, false, &l_error_code
     );
     
     if (!l_client_http) {
@@ -1374,10 +1403,11 @@ dap_client_http_t *dap_client_http_request(dap_worker_t * a_worker,const char *a
 dap_client_http_t *dap_client_http_request_full(dap_worker_t * a_worker,const char *a_uplink_addr, uint16_t a_uplink_port, const char * a_method,
         const char* a_request_content_type, const char * a_path, const void *a_request, size_t a_request_size,
         char * a_cookie, dap_client_http_callback_full_t a_response_callback,
-        dap_client_http_callback_error_t a_error_callback, void *a_callbacks_arg, char *a_custom_headers)
+        dap_client_http_callback_error_t a_error_callback, void *a_callbacks_arg, char *a_custom_headers,
+        bool a_follow_redirects)
 {
     int l_error_code = 0;
-    dap_client_http_t *l_client = s_client_http_create_and_connect(
+    dap_client_http_t *l_client_http = s_client_http_create_and_connect(
         a_worker, a_uplink_addr, a_uplink_port, a_method,
         a_request_content_type, a_path, a_request, a_request_size,
         a_cookie, a_custom_headers, false, // not SSL
@@ -1386,16 +1416,17 @@ dap_client_http_t *dap_client_http_request_full(dap_worker_t * a_worker,const ch
         a_response_callback, // Full callback
         a_callbacks_arg, 
         0, // redirect count
+        a_follow_redirects,
         &l_error_code
     );
     
-    if (!l_client) {
+    if (!l_client_http) {
         if (a_error_callback)
             a_error_callback(l_error_code, a_callbacks_arg);
         return NULL;
     }
     
-    return l_client;
+    return l_client_http;
 }
 
 void dap_client_http_close_unsafe(dap_client_http_t *a_client_http)
@@ -1462,7 +1493,8 @@ static void s_client_http_request_async_impl(
         char * a_cookie, 
         dap_client_http_async_context_t *a_ctx,
         char *a_custom_headers,
-        bool a_is_https)
+        bool a_is_https,
+        bool a_follow_redirects)
 {
     // Call started callback if provided BEFORE creating connection
     if(a_ctx->started_callback) {
@@ -1479,6 +1511,7 @@ static void s_client_http_request_async_impl(
         s_async_response_callback,        // Full response callback  
         a_ctx,                           // Pass context as callback arg
         a_ctx->redirect_count,           // Pass redirect count
+        a_follow_redirects,
         &l_error_code
     );
     
@@ -1511,7 +1544,8 @@ void dap_client_http_request_async(
         dap_client_http_callback_started_t a_started_callback,
         dap_client_http_callback_progress_t a_progress_callback,
         void *a_callbacks_arg, 
-        char *a_custom_headers)
+        char *a_custom_headers,
+        bool a_follow_redirects)
 {
     // Create async context
     dap_client_http_async_context_t *l_ctx = DAP_NEW_Z(dap_client_http_async_context_t);
@@ -1533,7 +1567,8 @@ void dap_client_http_request_async(
     s_client_http_request_async_impl(
         a_worker, a_uplink_addr, a_uplink_port, a_method,
         a_request_content_type, a_path, a_request, a_request_size,
-        a_cookie, l_ctx, a_custom_headers, false // false for non-SSL
+        a_cookie, l_ctx, a_custom_headers, false, // false for non-SSL
+        a_follow_redirects
     );
 }
 
@@ -1554,14 +1589,15 @@ void dap_client_http_request_simple_async(
         dap_client_http_callback_full_t a_response_callback,
         dap_client_http_callback_error_t a_error_callback,
         void *a_callbacks_arg, 
-        char *a_custom_headers)
+        char *a_custom_headers,
+        bool a_follow_redirects)
 {
     dap_client_http_request_async(
         a_worker, a_uplink_addr, a_uplink_port, a_method,
         a_request_content_type, a_path, a_request, a_request_size,
         a_cookie, a_response_callback, a_error_callback,
         NULL, NULL, // No started/progress callbacks
-        a_callbacks_arg, a_custom_headers
+        a_callbacks_arg, a_custom_headers, a_follow_redirects
     );
 }
 
