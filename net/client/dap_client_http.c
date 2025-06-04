@@ -324,7 +324,7 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
             l_out_buf = l_out_new;
             memcpy(l_out_buf + l_header_size, a_client_http->request, a_client_http->request_size);
         }
-        
+        a_es->buf_in_size = 0;
         dap_events_socket_write_unsafe(a_es, l_out_buf, l_out_buf_size);
         DAP_DEL_Z(l_out_buf);
         DAP_DELETE(l_new_path);
