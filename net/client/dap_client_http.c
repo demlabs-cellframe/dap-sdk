@@ -50,8 +50,8 @@
 
 // Static variables
 static bool s_debug_more = false;
-static uint64_t s_client_timeout_ms = 20000;
-static uint64_t s_client_timeout_read_after_connect_ms = 5000;
+static uint64_t s_client_timeout_ms;
+static uint64_t s_client_timeout_read_after_connect_ms;
 static uint32_t s_max_attempts = 5;
 
 #ifndef DAP_NET_CLIENT_NO_SSL
@@ -1601,6 +1601,14 @@ void dap_client_http_request_simple_async(
     );
 }
 
+int dap_client_http_set_timeouts(uint64_t a_timeout_ms, uint64_t a_timeout_read_after_connect_ms) {
+    if ( s_client_timeout_ms != 0 )
+        return log_it(L_ERROR, "HTTP client timeouts are already set"), -1;
+    s_client_timeout_ms = a_timeout_ms;
+    s_client_timeout_read_after_connect_ms = a_timeout_read_after_connect_ms;
+    return 0;
+}
+
 /**
  * @brief dap_client_http_init
  * @return
@@ -1609,8 +1617,10 @@ int dap_client_http_init()
 {
     s_debug_more = dap_config_get_item_bool_default(g_config,"dap_client","debug_more",false);
     s_max_attempts = dap_config_get_item_uint32_default(g_config,"dap_client","max_tries",5);
-    s_client_timeout_ms = dap_config_get_item_uint32_default(g_config,"dap_client","timeout",10)*1000;
-    s_client_timeout_read_after_connect_ms = (time_t) dap_config_get_item_uint64_default(g_config,"dap_client","timeout_read_after_connect",5)*1000;
+    if ( s_client_timeout_ms == 0 ) {
+        s_client_timeout_ms = dap_config_get_item_uint32_default(g_config, "dap_client", "timeout", 20) * 1000;
+        s_client_timeout_read_after_connect_ms = (time_t) dap_config_get_item_uint64_default(g_config, "dap_client", "timeout_read_after_connect", 5) * 1000;
+    }
 #ifndef DAP_NET_CLIENT_NO_SSL
     wolfSSL_Init();
     wolfSSL_Debugging_ON ();
@@ -1663,10 +1673,10 @@ uint64_t dap_client_http_get_connect_timeout_ms()
 }
 
 /**
- * @brief dap_client_http_set_connect_timeout_ms
- * @param a_timeout_ms
+ * @brief dap_client_http_get_read_after_connect_timeout_ms
+ * @return
  */
-void dap_client_http_set_connect_timeout_ms(uint64_t a_timeout_ms)
+uint64_t dap_client_http_get_read_after_connect_timeout_ms()
 {
-    s_client_timeout_ms = a_timeout_ms;
+    return s_client_timeout_read_after_connect_ms;
 }
