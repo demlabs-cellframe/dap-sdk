@@ -104,12 +104,9 @@ static int test_hots_basic(void) {
                                    strlen(l_test_message), &l_signature, &l_params);
     printf("Verification result: %d\n", l_result);
     
-    if (l_result == 1) {
+    if (l_result == 0) {
         printf("✓ HOTS verification successful\n");
         return 0;
-    } else if (l_result == 0) {
-        printf("❌ HOTS verification failed - signature invalid\n");
-        return -1;
     } else {
         printf("❌ HOTS verification failed with error code %d\n", l_result);
         return -1;
@@ -151,7 +148,7 @@ static int test_hots_multiple_keys(void) {
         }
         
         int l_verify_result = chipmunk_hots_verify(&l_pk, (const uint8_t*)TEST_MESSAGE, strlen(TEST_MESSAGE), &l_signature, &l_params);
-        if (l_verify_result != 1) {
+        if (l_verify_result != 0) {
             printf("❌ HOTS verification failed for counter %u\n", l_counter);
             return -1;
         }

@@ -349,7 +349,7 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
  * @param a_message_len Message length
  * @param a_signature Signature to verify
  * @param a_params Public parameters
- * @return 1 if valid, 0 if invalid, negative on error
+ * @return 0 if valid (standard C convention), negative on error
  */
 int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_message,
                         size_t a_message_len, const chipmunk_hots_signature_t *a_signature,
@@ -472,7 +472,20 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     printf("  Final right sum first coeffs: %d %d %d %d\n",
            l_right_ntt.coeffs[0], l_right_ntt.coeffs[1], l_right_ntt.coeffs[2], l_right_ntt.coeffs[3]);
     
-    // **ИСПРАВЛЕНО**: Compare results
+    // **ТЕСТ**: Сначала попробуем сравнение в NTT домене
+    printf("🔍 Testing direct NTT domain comparison:\n");
+    printf("  Left NTT first coeffs:  %d %d %d %d\n",
+           l_left_ntt.coeffs[0], l_left_ntt.coeffs[1], l_left_ntt.coeffs[2], l_left_ntt.coeffs[3]);
+    printf("  Right NTT first coeffs: %d %d %d %d\n",
+           l_right_ntt.coeffs[0], l_right_ntt.coeffs[1], l_right_ntt.coeffs[2], l_right_ntt.coeffs[3]);
+    
+    bool l_ntt_equal = chipmunk_poly_equal(&l_left_ntt, &l_right_ntt);
+    if (l_ntt_equal) {
+        printf("✅ NTT DOMAIN VERIFICATION SUCCESSFUL!\n");
+        return 0;  // Standard C convention: 0 for success
+    }
+    
+    // **ИСПРАВЛЕНО**: Compare results in time domain as backup
     // Original Rust: let res = HOTSPoly::from(&left) == HOTSPoly::from(&right);
     // Преобразуем результаты в time domain для сравнения
     chipmunk_poly_t l_left_time = l_left_ntt;
@@ -492,10 +505,10 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
     bool l_equal = chipmunk_poly_equal(&l_left_time, &l_right_time);
     
     if (l_equal) {
-        printf("✅ VERIFICATION SUCCESSFUL: Equations match!\n");
-        return 0;
+        printf("✅ TIME DOMAIN VERIFICATION SUCCESSFUL: Equations match!\n");
+        return 0;  // Standard C convention: 0 for success
     } else {
-        printf("❌ VERIFICATION FAILED: Equations don't match\n");
+        printf("❌ VERIFICATION FAILED: Equations don't match in both domains\n");
         
         // Count differing coefficients for debugging
         int l_diff_count = 0;
@@ -511,6 +524,6 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
         }
         printf("  Total differing coefficients: %d/%d\n", l_diff_count, CHIPMUNK_N);
         
-        return -1;  // Return 0 for invalid signature
+        return -1;  // Standard C convention: negative for failure/invalid signature
     }
 } 

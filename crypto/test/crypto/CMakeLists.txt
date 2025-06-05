@@ -38,6 +38,9 @@ add_executable(chipmunk_invntt_fix_test chipmunk_invntt_fix_test.c)
 # Add simple debug test for step-by-step NTT/invNTT analysis
 add_executable(chipmunk_ntt_debug_simple chipmunk_ntt_debug_simple.c)
 
+# Add Merkle Tree test
+add_executable(chipmunk_tree_test test_chipmunk_tree.c)
+
 target_link_libraries(${PROJECT_NAME} dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk-test dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk_hots_test dap_test dap_core dap_crypto m)
@@ -45,6 +48,7 @@ target_link_libraries(chipmunk_ntt_debug_test dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk_ntt_symmetry_test dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk_invntt_fix_test dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk_ntt_debug_simple dap_test dap_core dap_crypto m)
+target_link_libraries(chipmunk_tree_test dap_test dap_core dap_crypto m)
 
 # Добавляем путь к dap_test.h
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework)
@@ -73,6 +77,12 @@ target_include_directories(chipmunk_ntt_debug_simple PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../../src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../include
 )
+target_include_directories(chipmunk_tree_test PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/chipmunk
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+)
 
 add_test(
     NAME crypto-test
@@ -87,4 +97,9 @@ add_test(
 add_test(
     NAME chipmunk-hots-test
     COMMAND chipmunk_hots_test
+)
+
+add_test(
+    NAME chipmunk-tree-test
+    COMMAND chipmunk_tree_test
 )

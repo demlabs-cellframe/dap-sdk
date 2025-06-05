@@ -35,5 +35,38 @@
       "consistency": "Uniform terminology",
       "localization": "Cultural adaptation for each language"
     }
+  },
+  "coding_standards": {
+    "memory_management": {
+      "rule": "Use DAP_DELETE and DAP_FREE macros instead of direct free()",
+      "example": "DAP_DELETE(pointer); // for single objects\nDAP_DEL_MULTY(pointer); // for arrays"
+    },
+    "no_openssl": {
+      "rule": "ЗАПРЕЩЕНО использовать OpenSSL. Все функции хэширования должны использовать только собственные реализации DAP SDK",
+      "rationale": "Проект использует собственные криптографические примитивы для независимости от внешних библиотек",
+      "examples": {
+        "wrong": "#include <openssl/sha.h>\nSHA256(data, len, hash);",
+        "correct": "#include \"dap_hash.h\"\ndap_hash_fast(data, len, hash);"
+      },
+      "hash_functions": {
+        "sha256": "dap_hash_fast() или dap_enc_hash()",
+        "keccak": "Использовать XKCP библиотеку через dap_crypto_XKCP",
+        "general": "Все хэш-функции доступны через dap_hash.h"
+      }
+    },
+    "file_layout": {
+      "order": [
+        "Copyright header",
+        "Include guards or #pragma once",
+        "System includes (sorted alphabetically)",
+        "DAP SDK includes (sorted alphabetically)",
+        "Local includes",
+        "Defines and macros",
+        "Type definitions",
+        "Static variables",
+        "Function declarations",
+        "Function implementations"
+      ]
+    }
   }
 }

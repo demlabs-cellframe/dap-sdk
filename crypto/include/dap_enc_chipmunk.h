@@ -76,6 +76,18 @@ dap_enc_key_t *dap_enc_chipmunk_key_generate(
  */
 void dap_enc_chipmunk_key_delete(dap_enc_key_t *key);
 
+// Serialization functions
+uint8_t* dap_enc_chipmunk_write_private_key(const void *a_key, size_t *a_buflen_out);
+uint8_t* dap_enc_chipmunk_write_public_key(const void *a_key, size_t *a_buflen_out);
+uint64_t dap_enc_chipmunk_ser_private_key_size(const void *a_key);
+uint64_t dap_enc_chipmunk_ser_public_key_size(const void *a_key);
+
+// Deserialization functions  
+void* dap_enc_chipmunk_read_private_key(const uint8_t *a_buf, size_t a_buflen);
+void* dap_enc_chipmunk_read_public_key(const uint8_t *a_buf, size_t a_buflen);
+uint64_t dap_enc_chipmunk_deser_private_key_size(const void *unused);
+uint64_t dap_enc_chipmunk_deser_public_key_size(const void *unused);
+
 #ifdef __cplusplus
 }
 #endif 

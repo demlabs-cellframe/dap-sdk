@@ -33,3 +33,6 @@ void dap_enc_tests_run(void);
 void dap_enc_benchmark_tests_run(int a_times);
 void dap_init_test_case();
 void dap_cleanup_test_case();
+
+// NTT comparison test
+int dap_enc_test_ntt_comparison(void);

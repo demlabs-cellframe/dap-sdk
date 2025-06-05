@@ -1,11 +1,12 @@
 {
   "version": "1.0",
   "created": "2025-01-03T15:00:00Z",
-  "updated": "2025-06-05T14:00:00Z",
+  "updated": "2025-06-05T21:30:00Z",
   "description": "Index of all tasks and contexts in DAP SDK project",
   "current_task": {
     "source": ".local/index.json",
-    "description": "Reference to current active task"
+    "description": "Reference to current active task",
+    "status": "Debug build environment ready for development"
   },
   "task_data_references": {
     "context": ".local/context.json",
@@ -28,6 +29,13 @@
       "auto_load": true,
       "category": "development_standards"
     }
+  },
+  "build_system": {
+    "debug_build_ready": true,
+    "directory": "build/",
+    "xkcp_integration": "Fixed and working",
+    "test_suite": ["crypto-test", "chipmunk-test", "chipmunk_hots_test"],
+    "cmake_config": "Debug with comprehensive crypto tests"
   },
   "system_info": {
     "context_management": "Local task data in .local/ directory",

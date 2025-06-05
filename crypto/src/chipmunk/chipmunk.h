@@ -69,8 +69,8 @@ enum chipmunk_error_t {
 #define CHIPMUNK_SAMPLE_THRESHOLD 4292988235U ///< Largest multiple of q < 2^32
 #define CHIPMUNK_GAMMA       6               ///< Number of polynomials in decomposed poly
 #define CHIPMUNK_ALPHA_H     37              ///< Hamming weight of hash of message
-#define CHIPMUNK_PHI         4               ///< Infinity norm bound for s0
-#define CHIPMUNK_PHI_SAMPLE_THRESHOLD 4294967286U ///< Largest multiple of (2*phi+1) < 2^32
+#define CHIPMUNK_PHI         13              ///< Infinity norm bound for s0 (CRITICAL: must match Rust PHI = 13)
+#define CHIPMUNK_PHI_SAMPLE_THRESHOLD 4294967274U ///< Largest multiple of (2*phi+1) < 2^32
 #define CHIPMUNK_PHI_ALPHA_H 481             ///< Norm bound of s_1 = phi * alpha_H
 #define CHIPMUNK_PHI_ALPHA_H_SAMPLE_THRESHOLD 4294966518U ///< Largest multiple of (2*PHI_ALPHA_H+1) < 2^32
 
@@ -85,9 +85,9 @@ enum chipmunk_error_t {
 #define CHIPMUNK_ENCODING_NORM_BOUND 425     ///< Norm bound for alphas and a_star
 
 // Key and signature sizes (updated for correct parameters)
-#define CHIPMUNK_PRIVATE_KEY_SIZE (32 + 48 + CHIPMUNK_PUBLIC_KEY_SIZE) // key_seed + tr + public_key
 #define CHIPMUNK_PUBLIC_KEY_SIZE  (32 + CHIPMUNK_N*4*2) // rho_seed + v0 + v1
-#define CHIPMUNK_SIGNATURE_SIZE   (32 + CHIPMUNK_N*4*CHIPMUNK_GAMMA) // c_seed + sigma[GAMMA]
+#define CHIPMUNK_PRIVATE_KEY_SIZE (32 + 48 + CHIPMUNK_PUBLIC_KEY_SIZE) // key_seed + tr + public_key
+#define CHIPMUNK_SIGNATURE_SIZE   (CHIPMUNK_N*4*CHIPMUNK_GAMMA) // sigma[GAMMA]
 
 /**
  * @brief Polynomial structure used in Chipmunk operations
@@ -119,7 +119,6 @@ typedef struct chipmunk_private_key {
  * @brief Signature structure for Chipmunk HOTS algorithm
  */
 typedef struct chipmunk_signature {
-    uint8_t c_seed[32];                    ///< Challenge seed for rejection sampling
     chipmunk_poly_t sigma[CHIPMUNK_GAMMA]; ///< HOTS signature polynomials
 } chipmunk_signature_t;
 

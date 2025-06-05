@@ -39,6 +39,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <errno.h>
+#include <stddef.h>  // для offsetof
 
 #define LOG_TAG "chipmunk"
 
@@ -88,6 +89,23 @@ int chipmunk_init(void) {
 int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
                     uint8_t *a_private_key, size_t a_private_key_size) {
     debug_if(s_debug_more, L_DEBUG, "chipmunk_keypair: Starting HOTS key generation");
+    
+    // ДОБАВЛЯЕМ ДИАГНОСТИКУ РАЗМЕРОВ СТРУКТУР
+    printf("=== CHIPMUNK STRUCTURE SIZES ===\n");
+    printf("sizeof(chipmunk_poly_t) = %zu (expected %d)\n", 
+           sizeof(chipmunk_poly_t), CHIPMUNK_N * 4);
+    printf("sizeof(chipmunk_public_key_t) = %zu (expected %d)\n", 
+           sizeof(chipmunk_public_key_t), CHIPMUNK_PUBLIC_KEY_SIZE);
+    printf("sizeof(chipmunk_private_key_t) = %zu (expected %d)\n", 
+           sizeof(chipmunk_private_key_t), CHIPMUNK_PRIVATE_KEY_SIZE);
+    printf("offsetof(chipmunk_private_key_t, tr) = %zu\n", 
+           offsetof(chipmunk_private_key_t, tr));
+    printf("offsetof(chipmunk_private_key_t, pk) = %zu\n", 
+           offsetof(chipmunk_private_key_t, pk));
+    printf("=================================\n");
+    fflush(stdout);
+    
+    log_it(L_DEBUG, "=== STRUCTURE SIZE DIAGNOSTICS ===");
     
     // Проверка параметров
     if (!a_public_key || !a_private_key) {
@@ -295,14 +313,6 @@ int chipmunk_sign(const uint8_t *a_private_key, const uint8_t *a_message,
     // Конвертируем HOTS подпись в формат Chipmunk
     chipmunk_signature_t l_sig = {0};
     
-    // Генерируем случайный c_seed для каждой подписи
-    if (randombytes(l_sig.c_seed, 32) != 0) {
-        log_it(L_ERROR, "Failed to generate random c_seed");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_hots_sk, sizeof(l_hots_sk));
-        return CHIPMUNK_ERROR_INTERNAL;
-    }
-    
     // Копируем все GAMMA полиномов sigma
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
         memcpy(&l_sig.sigma[i], &l_hots_sig.sigma[i], sizeof(chipmunk_poly_t));
@@ -389,7 +399,7 @@ int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message,
     int l_result = chipmunk_hots_verify(&l_hots_pk, a_message, a_message_len, 
                                         &l_hots_sig, &l_hots_params);
     
-    if (l_result != 0) {
+    if (l_result != 0) {  // Стандартное C соглашение: 0 для успеха, отрицательное для ошибки
         log_it(L_ERROR, "HOTS signature verification failed: %d", l_result);
         return CHIPMUNK_ERROR_VERIFY_FAILED;
     }
@@ -408,12 +418,20 @@ int chipmunk_public_key_to_bytes(uint8_t *a_output, const chipmunk_public_key_t 
     }
     
     size_t l_offset = 0;
+    size_t l_expected_size = 32 + (CHIPMUNK_N * 4 * 2); // rho_seed + v0 + v1
+    
+    printf("=== chipmunk_public_key_to_bytes DEBUG ===\n");
+    printf("Expected size: %zu (should be %d)\n", l_expected_size, CHIPMUNK_PUBLIC_KEY_SIZE);
+    printf("Output buffer: %p\n", a_output);
+    printf("CHIPMUNK_N = %d\n", CHIPMUNK_N);
     
     // Write rho_seed (32 bytes)
+    printf("Writing rho_seed at offset %zu\n", l_offset);
     memcpy(a_output + l_offset, a_key->rho_seed, 32);
     l_offset += 32;
     
     // Write v0 polynomial (CHIPMUNK_N * 4 bytes)
+    printf("Writing v0 polynomial at offset %zu (size %d)\n", l_offset, CHIPMUNK_N * 4);
     for (int i = 0; i < CHIPMUNK_N; i++) {
         int32_t l_coeff = a_key->v0.coeffs[i];
         a_output[l_offset] = (uint8_t)(l_coeff & 0xFF);
@@ -424,6 +442,7 @@ int chipmunk_public_key_to_bytes(uint8_t *a_output, const chipmunk_public_key_t 
     }
     
     // Write v1 polynomial (CHIPMUNK_N * 4 bytes)
+    printf("Writing v1 polynomial at offset %zu (size %d)\n", l_offset, CHIPMUNK_N * 4);
     for (int i = 0; i < CHIPMUNK_N; i++) {
         int32_t l_coeff = a_key->v1.coeffs[i];
         a_output[l_offset] = (uint8_t)(l_coeff & 0xFF);
@@ -432,6 +451,9 @@ int chipmunk_public_key_to_bytes(uint8_t *a_output, const chipmunk_public_key_t 
         a_output[l_offset + 3] = (uint8_t)((l_coeff >> 24) & 0xFF);
         l_offset += 4;
     }
+    
+    printf("Total bytes written: %zu\n", l_offset);
+    printf("===========================================\n");
     
     return CHIPMUNK_ERROR_SUCCESS;
 }
@@ -446,17 +468,31 @@ int chipmunk_private_key_to_bytes(uint8_t *a_output, const chipmunk_private_key_
     }
     
     size_t l_offset = 0;
+    size_t l_total_size = 32 + 48 + CHIPMUNK_PUBLIC_KEY_SIZE;
+    
+    printf("=== chipmunk_private_key_to_bytes DEBUG ===\n");
+    printf("Expected total size: %zu\n", l_total_size);
+    printf("Output buffer pointer: %p\n", a_output);
     
     // Write key_seed (32 bytes)
+    printf("Writing key_seed at offset %zu\n", l_offset);
     memcpy(a_output + l_offset, a_key->key_seed, 32);
     l_offset += 32;
     
     // Write tr (48 bytes)
+    printf("Writing tr at offset %zu\n", l_offset);
     memcpy(a_output + l_offset, a_key->tr, 48);
     l_offset += 48;
     
     // Write public key
-    return chipmunk_public_key_to_bytes(a_output + l_offset, &a_key->pk);
+    printf("Writing public key at offset %zu\n", l_offset);
+    printf("Calling chipmunk_public_key_to_bytes with buffer at %p\n", a_output + l_offset);
+    int result = chipmunk_public_key_to_bytes(a_output + l_offset, &a_key->pk);
+    
+    printf("chipmunk_public_key_to_bytes returned %d\n", result);
+    printf("===========================================\n");
+    
+    return result;
 }
 
 /**
@@ -469,10 +505,6 @@ int chipmunk_signature_to_bytes(uint8_t *a_output, const chipmunk_signature_t *a
     }
     
     size_t l_offset = 0;
-    
-    // Write c_seed (32 bytes)
-    memcpy(a_output + l_offset, a_sig->c_seed, 32);
-    l_offset += 32;
     
     // Write all GAMMA sigma polynomials
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
@@ -503,32 +535,28 @@ int chipmunk_public_key_from_bytes(chipmunk_public_key_t *a_key, const uint8_t *
     
     // Read v0 polynomial (CHIPMUNK_N * 4 bytes)
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        uint32_t l_coeff = ((uint32_t)a_input[32 + i*4]) | 
-                              (((uint32_t)a_input[32 + i*4 + 1]) << 8) | 
-                              (((uint32_t)a_input[32 + i*4 + 2]) << 16) |
-                              (((uint32_t)a_input[32 + i*4 + 3]) << 24);
+        // ИСПРАВЛЕНО: читаем как знаковое число для корректной обработки отрицательных коэффициентов
+        uint32_t l_raw = ((uint32_t)a_input[32 + i*4]) | 
+                        (((uint32_t)a_input[32 + i*4 + 1]) << 8) | 
+                        (((uint32_t)a_input[32 + i*4 + 2]) << 16) |
+                        (((uint32_t)a_input[32 + i*4 + 3]) << 24);
         
-        // Нормализуем значение в диапазон [0, CHIPMUNK_Q-1]
-        if (l_coeff >= CHIPMUNK_Q) {
-            l_coeff %= CHIPMUNK_Q;
-        }
-        
-        a_key->v0.coeffs[i] = l_coeff;
+        // Интерпретируем как знаковое число и приводим к диапазону [0, Q-1]
+        int32_t l_signed = (int32_t)l_raw;
+        a_key->v0.coeffs[i] = ((l_signed % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
     }
     
     // Read v1 polynomial (CHIPMUNK_N * 4 bytes)
     for (int i = 0; i < CHIPMUNK_N; i++) {
-        uint32_t l_coeff = ((uint32_t)a_input[32 + CHIPMUNK_N*4 + i*4]) | 
-                              (((uint32_t)a_input[32 + CHIPMUNK_N*4 + i*4 + 1]) << 8) | 
-                              (((uint32_t)a_input[32 + CHIPMUNK_N*4 + i*4 + 2]) << 16) |
-                              (((uint32_t)a_input[32 + CHIPMUNK_N*4 + i*4 + 3]) << 24);
+        // ИСПРАВЛЕНО: читаем как знаковое число для корректной обработки отрицательных коэффициентов
+        uint32_t l_raw = ((uint32_t)a_input[32 + CHIPMUNK_N*4 + i*4]) | 
+                        (((uint32_t)a_input[32 + CHIPMUNK_N*4 + i*4 + 1]) << 8) | 
+                        (((uint32_t)a_input[32 + CHIPMUNK_N*4 + i*4 + 2]) << 16) |
+                        (((uint32_t)a_input[32 + CHIPMUNK_N*4 + i*4 + 3]) << 24);
         
-        // Нормализуем значение в диапазон [0, CHIPMUNK_Q-1]
-        if (l_coeff >= CHIPMUNK_Q) {
-            l_coeff %= CHIPMUNK_Q;
-        }
-        
-        a_key->v1.coeffs[i] = l_coeff;
+        // Интерпретируем как знаковое число и приводим к диапазону [0, Q-1]
+        int32_t l_signed = (int32_t)l_raw;
+        a_key->v1.coeffs[i] = ((l_signed % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
     }
     
     return CHIPMUNK_ERROR_SUCCESS;
@@ -576,10 +604,6 @@ int chipmunk_signature_from_bytes(chipmunk_signature_t *a_sig, const uint8_t *a_
     
     // Clear structure before filling
     memset(a_sig, 0, sizeof(chipmunk_signature_t));
-    
-    // Read c_seed (32 bytes)
-    memcpy(a_sig->c_seed, a_input + l_offset, 32);
-    l_offset += 32;
     
     // Read all GAMMA sigma polynomials
     for (int i = 0; i < CHIPMUNK_GAMMA; i++) {

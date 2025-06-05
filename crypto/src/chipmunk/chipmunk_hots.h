@@ -114,7 +114,7 @@ int chipmunk_hots_sign(const chipmunk_hots_sk_t *a_sk, const uint8_t *a_message,
  * @param a_message_len Message length
  * @param a_signature Signature to verify
  * @param a_params Public parameters
- * @return 1 if valid, 0 if invalid, negative on error
+ * @return 0 if valid, negative on error or invalid signature
  */
 int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_message,
                         size_t a_message_len, const chipmunk_hots_signature_t *a_signature,

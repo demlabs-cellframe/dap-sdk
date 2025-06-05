@@ -35,6 +35,26 @@ dap_enc_key_t *dap_enc_chipmunk_key_new(void)
     debug_if(s_debug_more, L_DEBUG, "Created dap_enc_key_t structure at %p", (void*)l_key);
     debug_if(s_debug_more, L_DEBUG, "dap_enc_chipmunk_key_new: Allocated main key structure at %p", (void*)l_key);
 
+    // ДОБАВЛЯЕМ ДИАГНОСТИКУ РАЗМЕРОВ СТРУКТУР
+    log_it(L_NOTICE, "=== STRUCTURE SIZE CHECK IN dap_enc_chipmunk_key_new ===");
+    log_it(L_NOTICE, "sizeof(chipmunk_poly_t) = %zu (expected %d)", 
+           sizeof(chipmunk_poly_t), CHIPMUNK_N * 4);
+    log_it(L_NOTICE, "sizeof(chipmunk_public_key_t) = %zu (expected %d)", 
+           sizeof(chipmunk_public_key_t), CHIPMUNK_PUBLIC_KEY_SIZE);
+    log_it(L_NOTICE, "sizeof(chipmunk_private_key_t) = %zu (expected %d)", 
+           sizeof(chipmunk_private_key_t), CHIPMUNK_PRIVATE_KEY_SIZE);
+    log_it(L_NOTICE, "=================================");
+
+    // ДОБАВЛЯЕМ ВЫВОД КОНСТАНТ
+    printf("\n=== CHIPMUNK CONSTANTS CHECK ===\n");
+    printf("CHIPMUNK_N = %d\n", CHIPMUNK_N);
+    printf("CHIPMUNK_PUBLIC_KEY_SIZE = %d\n", CHIPMUNK_PUBLIC_KEY_SIZE);  
+    printf("CHIPMUNK_PRIVATE_KEY_SIZE = %d\n", CHIPMUNK_PRIVATE_KEY_SIZE);
+    printf("Calculated pub size: 32 + %d*4*2 = %d\n", CHIPMUNK_N, 32 + CHIPMUNK_N*4*2);
+    printf("Calculated priv size: 32 + 48 + %d = %d\n", CHIPMUNK_PUBLIC_KEY_SIZE, 32 + 48 + CHIPMUNK_PUBLIC_KEY_SIZE);
+    printf("=================================\n");
+    fflush(stdout);
+
     // Set key type and management functions
     l_key->type = DAP_ENC_KEY_TYPE_SIG_CHIPMUNK;
     l_key->dec_na = 0;
@@ -43,8 +63,28 @@ dap_enc_key_t *dap_enc_chipmunk_key_new(void)
     l_key->sign_verify = dap_enc_chipmunk_verify_sign;
     
     // Генерация ключей
+    log_it(L_DEBUG, "CHIPMUNK_PRIVATE_KEY_SIZE = %d", CHIPMUNK_PRIVATE_KEY_SIZE);
+    log_it(L_DEBUG, "CHIPMUNK_PUBLIC_KEY_SIZE = %d", CHIPMUNK_PUBLIC_KEY_SIZE);
+    log_it(L_DEBUG, "CHIPMUNK_SIGNATURE_SIZE = %d", CHIPMUNK_SIGNATURE_SIZE);
+    
     l_key->priv_key_data_size = CHIPMUNK_PRIVATE_KEY_SIZE;
     l_key->pub_key_data_size = CHIPMUNK_PUBLIC_KEY_SIZE;
+    
+    // ДОБАВЛЯЕМ ПРОВЕРКУ СРАЗУ ПОСЛЕ УСТАНОВКИ
+    printf("\n=== IMMEDIATELY AFTER SIZE ASSIGNMENT ===\n");
+    printf("l_key->priv_key_data_size = %zu (should be %d)\n", 
+           l_key->priv_key_data_size, CHIPMUNK_PRIVATE_KEY_SIZE);
+    printf("l_key->pub_key_data_size = %zu (should be %d)\n", 
+           l_key->pub_key_data_size, CHIPMUNK_PUBLIC_KEY_SIZE);
+    if (l_key->priv_key_data_size != CHIPMUNK_PRIVATE_KEY_SIZE || 
+        l_key->pub_key_data_size != CHIPMUNK_PUBLIC_KEY_SIZE) {
+        printf("❌ CORRUPTION DETECTED IMMEDIATELY!\n");
+        printf("l_key address: %p\n", (void*)l_key);
+        printf("&priv_key_data_size: %p\n", (void*)&l_key->priv_key_data_size);
+        printf("&pub_key_data_size: %p\n", (void*)&l_key->pub_key_data_size);
+    }
+    printf("=========================================\n");
+    fflush(stdout);
     
     // Выделяем память под закрытый ключ
     l_key->priv_key_data = DAP_NEW_Z_SIZE(uint8_t, l_key->priv_key_data_size);
@@ -66,23 +106,71 @@ dap_enc_key_t *dap_enc_chipmunk_key_new(void)
     // Generate Chipmunk keypair
     debug_if(s_debug_more, L_DEBUG, "dap_enc_chipmunk_key_new: Calling chipmunk_keypair");
     
-    if (chipmunk_keypair(l_key->pub_key_data, l_key->pub_key_data_size,
-                         l_key->priv_key_data, l_key->priv_key_data_size) != 0) {
-        log_it(L_ERROR, "Failed to generate Chipmunk keypair");
-        
-        // Очищаем и освобождаем память
-        if (l_key->priv_key_data) {
-            DAP_DELETE(l_key->priv_key_data);
-            l_key->priv_key_data = NULL;
+    log_it(L_DEBUG, "BEFORE chipmunk_keypair: priv_key_data_size = %zu, pub_key_data_size = %zu", 
+           l_key->priv_key_data_size, l_key->pub_key_data_size);
+    
+    // ДОБАВЛЯЕМ ПРОСТОЙ PRINTF ПЕРЕД ВЫЗОВОМ
+    printf("\n=== ABOUT TO CALL chipmunk_keypair ===\n");
+    printf("Public key buffer: %p, size: %zu\n", l_key->pub_key_data, l_key->pub_key_data_size);
+    printf("Private key buffer: %p, size: %zu\n", l_key->priv_key_data, l_key->priv_key_data_size);
+    printf("=====================================\n");
+    fflush(stdout);
+    
+    // ДОБАВЛЕНА ПРОВЕРКА УКАЗАТЕЛЕЙ И АДРЕСОВ
+    log_it(L_DEBUG, "Memory layout: l_key=%p, &priv_key_data_size=%p, &pub_key_data_size=%p", 
+           l_key, &l_key->priv_key_data_size, &l_key->pub_key_data_size);
+    log_it(L_DEBUG, "Data pointers: priv_key_data=%p, pub_key_data=%p", 
+           l_key->priv_key_data, l_key->pub_key_data);
+    
+    int ret = chipmunk_keypair(l_key->pub_key_data, l_key->pub_key_data_size,
+                              l_key->priv_key_data, l_key->priv_key_data_size);
+    
+    printf("\n=== AFTER chipmunk_keypair ===\n");
+    printf("Return value: %d\n", ret);
+    printf("l_key->priv_key_data_size = %zu (should be %d)\n", 
+           l_key->priv_key_data_size, CHIPMUNK_PRIVATE_KEY_SIZE);
+    printf("l_key->pub_key_data_size = %zu (should be %d)\n", 
+           l_key->pub_key_data_size, CHIPMUNK_PUBLIC_KEY_SIZE);
+    
+    // Проверка на коррупцию
+    if (l_key->priv_key_data_size != CHIPMUNK_PRIVATE_KEY_SIZE) {
+        printf("!!! CORRUPTION DETECTED IN priv_key_data_size !!!\n");
+        printf("Hex dump of size field: ");
+        uint8_t *size_ptr = (uint8_t*)&l_key->priv_key_data_size;
+        for (size_t i = 0; i < sizeof(size_t); i++) {
+            printf("%02x ", size_ptr[i]);
         }
-        
-        if (l_key->pub_key_data) {
-            DAP_DELETE(l_key->pub_key_data);
-            l_key->pub_key_data = NULL;
+        printf("\n");
+    }
+    
+    if (l_key->pub_key_data_size != CHIPMUNK_PUBLIC_KEY_SIZE) {
+        printf("!!! CORRUPTION DETECTED IN pub_key_data_size !!!\n");
+        printf("Hex dump of size field: ");
+        uint8_t *size_ptr = (uint8_t*)&l_key->pub_key_data_size;
+        for (size_t i = 0; i < sizeof(size_t); i++) {
+            printf("%02x ", size_ptr[i]);
         }
-        
-        DAP_DELETE(l_key);
+        printf("\n");
+    }
+    printf("==============================\n");
+    
+    if (ret != 0) {
+        log_it(L_ERROR, "chipmunk_keypair failed with error %d", ret);
+        dap_enc_key_delete(l_key);
         return NULL;
+    }
+    
+    log_it(L_DEBUG, "AFTER chipmunk_keypair: priv_key_data_size = %zu, pub_key_data_size = %zu", 
+           l_key->priv_key_data_size, l_key->pub_key_data_size);
+           
+    // ДОБАВЛЕНА ПРОВЕРКА НА КОРРУПЦИЮ СРАЗУ ПОСЛЕ ВЫЗОВА
+    if (l_key->priv_key_data_size != CHIPMUNK_PRIVATE_KEY_SIZE) {
+        log_it(L_ERROR, "CORRUPTION: priv_key_data_size changed from %d to %zu after chipmunk_keypair!", 
+               CHIPMUNK_PRIVATE_KEY_SIZE, l_key->priv_key_data_size);
+    }
+    if (l_key->pub_key_data_size != CHIPMUNK_PUBLIC_KEY_SIZE) {
+        log_it(L_ERROR, "CORRUPTION: pub_key_data_size changed from %d to %zu after chipmunk_keypair!", 
+               CHIPMUNK_PUBLIC_KEY_SIZE, l_key->pub_key_data_size);
     }
     
     debug_if(s_debug_more, L_DEBUG, "Successfully generated Chipmunk keypair");
@@ -329,4 +417,119 @@ void dap_enc_chipmunk_key_delete(dap_enc_key_t *a_key)
     }
     
     debug_if(s_debug_more, L_DEBUG, "dap_enc_chipmunk_key_delete: Chipmunk key deletion completed");
+}
+
+// Serialization functions for private and public keys
+uint8_t* dap_enc_chipmunk_write_private_key(const void *a_key, size_t *a_buflen_out)
+{
+    const dap_enc_key_t *l_key = (const dap_enc_key_t *)a_key;
+    if (!l_key) {
+        log_it(L_ERROR, "Private key serialization: key is NULL");
+        return NULL;
+    }
+    if (!l_key->priv_key_data) {
+        log_it(L_ERROR, "Private key serialization: priv_key_data is NULL");
+        return NULL;
+    }
+    if (!a_buflen_out) {
+        log_it(L_ERROR, "Private key serialization: buflen_out is NULL");
+        return NULL;
+    }
+    
+    log_it(L_DEBUG, "BEFORE: Private key serialization: priv_key_data_size = %zu (expected %d)", 
+           l_key->priv_key_data_size, CHIPMUNK_PRIVATE_KEY_SIZE);
+    log_it(L_DEBUG, "priv_key_data pointer = %p", l_key->priv_key_data);
+    
+    if (l_key->priv_key_data_size > 1000000) { // Больше 1MB - подозрительно
+        log_it(L_ERROR, "CORRUPTION DETECTED: priv_key_data_size = %zu is too large! Expected = %d", 
+               l_key->priv_key_data_size, CHIPMUNK_PRIVATE_KEY_SIZE);
+        return NULL;
+    }
+    
+    *a_buflen_out = l_key->priv_key_data_size;
+    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, *a_buflen_out);
+    if (!l_buf) {
+        log_it(L_ERROR, "Memory allocation failed for private key serialization, size = %zu", *a_buflen_out);
+        return NULL;
+    }
+    
+    memcpy(l_buf, l_key->priv_key_data, *a_buflen_out);
+    return l_buf;
+}
+
+uint8_t* dap_enc_chipmunk_write_public_key(const void *a_key, size_t *a_buflen_out)
+{
+    const dap_enc_key_t *l_key = (const dap_enc_key_t *)a_key;
+    if (!l_key || !l_key->pub_key_data || !a_buflen_out) {
+        log_it(L_ERROR, "Invalid parameters for public key serialization");
+        return NULL;
+    }
+    
+    *a_buflen_out = l_key->pub_key_data_size;
+    uint8_t *l_buf = DAP_NEW_SIZE(uint8_t, *a_buflen_out);
+    if (!l_buf) {
+        log_it(L_ERROR, "Memory allocation failed for public key serialization");
+        return NULL;
+    }
+    
+    memcpy(l_buf, l_key->pub_key_data, *a_buflen_out);
+    return l_buf;
+}
+
+uint64_t dap_enc_chipmunk_ser_private_key_size(const void *a_key)
+{
+    const dap_enc_key_t *l_key = (const dap_enc_key_t *)a_key;
+    return l_key ? l_key->priv_key_data_size : 0;
+}
+
+uint64_t dap_enc_chipmunk_ser_public_key_size(const void *a_key)
+{
+    const dap_enc_key_t *l_key = (const dap_enc_key_t *)a_key;
+    return l_key ? l_key->pub_key_data_size : 0;
+}
+
+void* dap_enc_chipmunk_read_private_key(const uint8_t *a_buf, size_t a_buflen)
+{
+    if (!a_buf || a_buflen != CHIPMUNK_PRIVATE_KEY_SIZE) {
+        log_it(L_ERROR, "Invalid buffer for private key deserialization");
+        return NULL;
+    }
+    
+    uint8_t *l_key = DAP_NEW_SIZE(uint8_t, a_buflen);
+    if (!l_key) {
+        log_it(L_ERROR, "Memory allocation failed for private key deserialization");
+        return NULL;
+    }
+    
+    memcpy(l_key, a_buf, a_buflen);
+    return l_key;
+}
+
+void* dap_enc_chipmunk_read_public_key(const uint8_t *a_buf, size_t a_buflen)
+{
+    if (!a_buf || a_buflen != CHIPMUNK_PUBLIC_KEY_SIZE) {
+        log_it(L_ERROR, "Invalid buffer for public key deserialization");
+        return NULL;
+    }
+    
+    uint8_t *l_key = DAP_NEW_SIZE(uint8_t, a_buflen);
+    if (!l_key) {
+        log_it(L_ERROR, "Memory allocation failed for public key deserialization");
+        return NULL;
+    }
+    
+    memcpy(l_key, a_buf, a_buflen);
+    return l_key;
+}
+
+uint64_t dap_enc_chipmunk_deser_private_key_size(const void *unused)
+{
+    (void)unused;
+    return CHIPMUNK_PRIVATE_KEY_SIZE;
+}
+
+uint64_t dap_enc_chipmunk_deser_public_key_size(const void *unused)
+{
+    (void)unused;
+    return CHIPMUNK_PUBLIC_KEY_SIZE;
 } 
