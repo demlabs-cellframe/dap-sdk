@@ -120,6 +120,13 @@ int chipmunk_hots_verify(const chipmunk_hots_pk_t *a_pk, const uint8_t *a_messag
                         size_t a_message_len, const chipmunk_hots_signature_t *a_signature,
                         const chipmunk_hots_params_t *a_params);
 
+/**
+ * @brief Enable/disable debug output for HOTS module
+ * 
+ * @param a_enable Enable debug output if true
+ */
+void chipmunk_hots_set_debug(bool a_enable);
+
 #ifdef __cplusplus
 }
 #endif 

@@ -988,15 +988,15 @@ static int test_multi_signature_aggregation(void)
             return -4;
         }
         
-        // Создаем дерево с одним листом (массив из CHIPMUNK_TREE_LEAF_COUNT листов)
-        chipmunk_hvc_poly_t leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT];
+        // Создаем дерево с одним листом (массив из CHIPMUNK_TREE_LEAF_COUNT_DEFAULT листов)
+        chipmunk_hvc_poly_t leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
         leaf_nodes[0] = hvc_poly;  // Первый лист - наш ключ
         // Остальные листы остаются нулевыми (дерево частично заполнено)
-        for (size_t j = 1; j < CHIPMUNK_TREE_LEAF_COUNT; j++) {
+        for (size_t j = 1; j < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; j++) {
             memset(&leaf_nodes[j], 0, sizeof(chipmunk_hvc_poly_t));
         }
         
-        ret = chipmunk_tree_new_with_leaf_nodes(&trees[i], leaf_nodes, &hasher);
+        ret = chipmunk_tree_new_with_leaf_nodes(&trees[i], leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, &hasher);
         if (ret != 0) {
             log_it(L_ERROR, "Failed to create tree with leaf nodes for signer %zu", i);
             return -5;
@@ -1158,13 +1158,13 @@ static int test_batch_verification(void)
             if (ret != 0) return -3;
             
             // Создаем дерево с листьями
-            chipmunk_hvc_poly_t leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT];
+            chipmunk_hvc_poly_t leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT_DEFAULT];
             leaf_nodes[0] = hvc_poly;
-            for (size_t j = 1; j < CHIPMUNK_TREE_LEAF_COUNT; j++) {
+            for (size_t j = 1; j < CHIPMUNK_TREE_LEAF_COUNT_DEFAULT; j++) {
                 memset(&leaf_nodes[j], 0, sizeof(chipmunk_hvc_poly_t));
             }
             
-            ret = chipmunk_tree_new_with_leaf_nodes(&trees[i], leaf_nodes, &batch_hasher);
+            ret = chipmunk_tree_new_with_leaf_nodes(&trees[i], leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, &batch_hasher);
             if (ret != 0) return -4;
             
             ret = chipmunk_create_individual_signature(

@@ -8,7 +8,7 @@
 
 // Добавляем недостающие определения
 #define CHIPMUNK_W CHIPMUNK_WIDTH               // Use WIDTH from chipmunk.h
-#define CHIPMUNK_TREE_LEAVES CHIPMUNK_TREE_LEAF_COUNT  // Use TREE_LEAF_COUNT from chipmunk_tree.h
+#define CHIPMUNK_TREE_LEAVES CHIPMUNK_TREE_LEAF_COUNT_DEFAULT  // Use default leaf count
 
 // Типы для совместимости (используем существующие типы из chipmunk_hots.h)
 typedef chipmunk_hots_sk_t chipmunk_hots_secret_key_t;

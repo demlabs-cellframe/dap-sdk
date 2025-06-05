@@ -158,18 +158,23 @@ int chipmunk_hvc_hash_decom_then_hash(const chipmunk_hvc_hasher_t *a_hasher,
  * @brief Create tree with given leaf nodes
  */
 int chipmunk_tree_new_with_leaf_nodes(chipmunk_tree_t *a_tree, 
-                                       const chipmunk_hvc_poly_t a_leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT],
+                                       const chipmunk_hvc_poly_t *a_leaf_nodes,
+                                       size_t a_leaf_count,
                                        const chipmunk_hvc_hasher_t *a_hasher) {
     if (!a_tree || !a_leaf_nodes || !a_hasher) {
         log_it(L_ERROR, "NULL parameters in chipmunk_tree_new_with_leaf_nodes");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
 
-    log_it(L_DEBUG, "Creating Merkle tree with %d leaves", CHIPMUNK_TREE_LEAF_COUNT);
+    log_it(L_DEBUG, "Creating Merkle tree with %zu leaves", a_leaf_count);
 
     // Copy leaf nodes - check for self-assignment to avoid undefined behavior
     if (a_tree->leaf_nodes != a_leaf_nodes) {
-        memcpy(a_tree->leaf_nodes, a_leaf_nodes, sizeof(a_tree->leaf_nodes));
+        size_t copy_size = a_leaf_count * sizeof(chipmunk_hvc_poly_t);
+        if (copy_size > sizeof(a_tree->leaf_nodes)) {
+            copy_size = sizeof(a_tree->leaf_nodes);
+        }
+        memcpy(a_tree->leaf_nodes, a_leaf_nodes, copy_size);
     }
 
     // Build tree bottom-up
@@ -242,7 +247,7 @@ int chipmunk_tree_init(chipmunk_tree_t *a_tree, const chipmunk_hvc_hasher_t *a_h
 
     // Initialize all leaf nodes to zero
     memset(a_tree->leaf_nodes, 0, sizeof(a_tree->leaf_nodes));
-    return chipmunk_tree_new_with_leaf_nodes(a_tree, a_tree->leaf_nodes, a_hasher);
+    return chipmunk_tree_new_with_leaf_nodes(a_tree, a_tree->leaf_nodes, CHIPMUNK_TREE_LEAF_COUNT_DEFAULT, a_hasher);
 }
 
 /**
@@ -260,7 +265,7 @@ const chipmunk_hvc_poly_t* chipmunk_tree_root(const chipmunk_tree_t *a_tree) {
  * @brief Generate membership proof - simplified version
  */
 int chipmunk_tree_gen_proof(const chipmunk_tree_t *a_tree, size_t a_index, chipmunk_path_t *a_path) {
-    if (!a_tree || !a_path || a_index >= CHIPMUNK_TREE_LEAF_COUNT) {
+    if (!a_tree || !a_path || a_index >= CHIPMUNK_TREE_LEAF_COUNT_DEFAULT) {
         log_it(L_ERROR, "Invalid parameters in chipmunk_tree_gen_proof");
         return CHIPMUNK_ERROR_INVALID_PARAM;
     }
