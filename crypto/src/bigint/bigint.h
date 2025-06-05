@@ -1,6 +1,6 @@
 #ifndef BIGINT_H
 #define BIGINT_H
-#endif // BIGINT_H
+
 #include <stdint.h>
 #include <stdbool.h>
 #include "dap_common.h"
@@ -352,3 +352,5 @@ int dap_bitwise_logical_op(dap_bigint_t* a, dap_bigint_t* b, dap_bigint_t* outpu
     }
     return 0;
 }
+
+#endif // BIGINT_H

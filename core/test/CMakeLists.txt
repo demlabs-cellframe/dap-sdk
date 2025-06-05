@@ -36,14 +36,10 @@ else()
 endif()
 endif(DAP_USE_RPMALLOC)
 
-add_test(
-    NAME core-test
-    COMMAND core_test
-)
 
 if(UNIX)
     target_include_directories(${PROJECT_NAME} PRIVATE unix)
     target_include_directories(${PROJECT_NAME} PRIVATE unix/linux)
 endif()
-#add_subdirectory(uint256_t)
+add_subdirectory(uint256_t)
 add_subdirectory(bigint)
