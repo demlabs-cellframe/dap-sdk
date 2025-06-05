@@ -80,3 +80,6 @@ debug/
 .vscode/
 .devcontainer/
 
+# Context working files
+context/.local/
+

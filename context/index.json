@@ -1,0 +1,52 @@
+{
+  "version": "1.0",
+  "created": "2025-01-03T15:00:00Z",
+  "updated": "2025-06-05T13:37:00Z",
+  "description": "Index of all tasks and contexts in DAP SDK project",
+  "tasks": {
+    "chipmunk_hots": {
+      "id": "chipmunk_hots",
+      "name": "Chipmunk HOTS Implementation",
+      "description": "Implementation of HOTS component for Chipmunk signature scheme",
+      "status": "completed",
+      "progress": 100,
+      "context_path": ".local/context.json",
+      "progress_path": ".local/progress.json",
+      "index_path": ".local/index.json",
+      "start_date": "2024-12-30T10:00:00Z",
+      "completion_date": "2025-01-03T18:00:00Z",
+      "files_count": 8,
+      "lines_count": 3500,
+      "tests_passing": "100%"
+    }
+  },
+  "statistics": {
+    "total_tasks": 1,
+    "completed_tasks": 1,
+    "active_tasks": 0,
+    "total_lines": 3500,
+    "total_files": 8
+  },
+  "project_files": {
+    "code_templates.json": {
+      "description": "Code templates and patterns for DAP SDK development",
+      "auto_load": true,
+      "category": "development_standards"
+    },
+    "coding_guidelines.json": {
+      "description": "Coding guidelines and best practices",
+      "auto_load": true,
+      "category": "development_standards"
+    },
+    "project_standards.json": {
+      "description": "Project documentation and quality standards",
+      "auto_load": true,
+      "category": "development_standards"
+    }
+  },
+  "directories": {
+    "scripts": "Common scripts for all tasks",
+    "tests": "Common tests and utilities",
+    ".local": "Local files for current tasks (ignored in git)"
+  }
+}

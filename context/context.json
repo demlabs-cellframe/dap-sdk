@@ -1,0 +1,48 @@
+{
+  "version": "1.0",
+  "created": "2025-01-03T15:00:00Z",
+  "updated": "2025-06-05T13:37:00Z",
+  "project": {
+    "name": "DAP SDK",
+    "description": "Decentralized Application Platform Software Development Kit",
+    "repository": "dap-sdk.dev",
+    "focus_area": "Quantum-resistant cryptography and blockchain infrastructure"
+  },
+  "cryptographic_components": {
+    "chipmunk": {
+      "type": "post-quantum digital signature",
+      "status": "HOTS component completed",
+      "description": "Lattice-based multi-signature scheme for synchronized settings",
+      "security_level": "112-bit quantum resistance",
+      "implementation": "C language",
+      "base_problem": "Ring-SIS (Ring Short Integer Solution)",
+      "key_features": [
+        "Non-interactive aggregation",
+        "Rogue-key attack resistant",
+        "Compact signatures",
+        "Blockchain optimized"
+      ]
+    }
+  },
+  "auto_load_files": [
+    "code_templates.json",
+    "coding_guidelines.json",
+    "project_standards.json"
+  ],
+  "technical_stack": {
+    "languages": [
+      "C",
+      "CMake"
+    ],
+    "build_system": "CMake",
+    "testing": "Custom test framework",
+    "documentation": "Markdown",
+    "platform": "Cross-platform (Linux, macOS, Windows)"
+  },
+  "quality_metrics": {
+    "test_coverage": "100% for HOTS",
+    "code_review": "Required",
+    "documentation": "Comprehensive",
+    "security_review": "Ongoing"
+  }
+}

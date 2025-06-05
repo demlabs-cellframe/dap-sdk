@@ -1,0 +1,61 @@
+{
+  "version": "1.0",
+  "created": "2025-01-03T15:00:00Z",
+  "description": "Structure for organizing task context in DAP SDK",
+  "context_structure": {
+    "global_files": {
+      "index.json": "Global index of all tasks",
+      "structure.json": "This file - structure description",
+      "context.json": "Common project context",
+      "code_templates.json": "Code templates and patterns",
+      "coding_guidelines.json": "Coding guidelines and best practices",
+      "project_standards.json": "Project documentation standards",
+      "scripts/": "Common scripts for all tasks",
+      "tests/": "Common tests and utilities"
+    },
+    "local_files": {
+      ".local/context.json": "Current task context",
+      ".local/progress.json": "Current task progress",
+      ".local/index.json": "Current task file index",
+      ".local/scripts/": "Scripts for specific task",
+      ".local/tests/": "Tests for specific task"
+    }
+  },
+  "workflow": {
+    "new_task": [
+      "Create entry in context/index.json",
+      "Create context/.local/context.json for task",
+      "Create context/.local/progress.json for tracking",
+      "Create context/.local/index.json for task files",
+      "Update common context/context.json"
+    ],
+    "complete_task": [
+      "Update status in context/index.json",
+      "Archive .local files (optional)",
+      "Update general statistics"
+    ]
+  },
+  "conventions": {
+    "status_values": ["planned", "active", "paused", "completed", "archived"],
+    "progress_range": "0-100",
+    "date_format": "ISO 8601 (YYYY-MM-DDTHH:mm:ssZ)",
+    "file_encoding": "UTF-8",
+    "indentation": "2 spaces"
+  },
+  "git_policy": {
+    "tracked": [
+      "context/index.json",
+      "context/structure.json", 
+      "context/context.json",
+      "context/code_templates.json",
+      "context/coding_guidelines.json",
+      "context/project_standards.json",
+      "context/scripts/",
+      "context/tests/"
+    ],
+    "ignored": [
+      "context/.local/*"
+    ],
+    "rationale": "Local task files should not be committed to git to avoid conflicts between developers"
+  }
+} 
