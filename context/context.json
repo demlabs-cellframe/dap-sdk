@@ -1,28 +1,21 @@
 {
   "version": "1.0",
   "created": "2025-01-03T15:00:00Z",
-  "updated": "2025-06-05T13:37:00Z",
+  "updated": "2025-06-05T14:00:00Z",
   "project": {
     "name": "DAP SDK",
     "description": "Decentralized Application Platform Software Development Kit",
     "repository": "dap-sdk.dev",
     "focus_area": "Quantum-resistant cryptography and blockchain infrastructure"
   },
-  "cryptographic_components": {
-    "chipmunk": {
-      "type": "post-quantum digital signature",
-      "status": "HOTS component completed",
-      "description": "Lattice-based multi-signature scheme for synchronized settings",
-      "security_level": "112-bit quantum resistance",
-      "implementation": "C language",
-      "base_problem": "Ring-SIS (Ring Short Integer Solution)",
-      "key_features": [
-        "Non-interactive aggregation",
-        "Rogue-key attack resistant",
-        "Compact signatures",
-        "Blockchain optimized"
-      ]
-    }
+  "current_task_data": {
+    "source": ".local/context.json",
+    "description": "Current task details and technical context"
+  },
+  "project_structure": {
+    "source": "structure.json",
+    "description": "Complete project structure with module references",
+    "modules": "modules/*.json"
   },
   "auto_load_files": [
     "code_templates.json",
@@ -39,10 +32,24 @@
     "documentation": "Markdown",
     "platform": "Cross-platform (Linux, macOS, Windows)"
   },
-  "quality_metrics": {
-    "test_coverage": "100% for HOTS",
+  "cryptographic_focus": {
+    "post_quantum": "Lattice-based cryptography",
+    "security_level": "112-bit quantum resistance",
+    "target_applications": [
+      "Digital signatures",
+      "Multi-signatures",
+      "Blockchain integration"
+    ]
+  },
+  "quality_standards": {
     "code_review": "Required",
     "documentation": "Comprehensive",
-    "security_review": "Ongoing"
+    "security_review": "Ongoing",
+    "compatibility": "Reference implementation matching"
+  },
+  "navigation_helpers": {
+    "load_full_context": "./context/scripts/load_full_context.sh",
+    "load_specific_module": "./context/scripts/load_module.sh <module_name>",
+    "available_modules": ["crypto", "core", "net", "other"]
   }
 }

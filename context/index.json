@@ -1,31 +1,16 @@
 {
   "version": "1.0",
   "created": "2025-01-03T15:00:00Z",
-  "updated": "2025-06-05T13:37:00Z",
+  "updated": "2025-06-05T14:00:00Z",
   "description": "Index of all tasks and contexts in DAP SDK project",
-  "tasks": {
-    "chipmunk_hots": {
-      "id": "chipmunk_hots",
-      "name": "Chipmunk HOTS Implementation",
-      "description": "Implementation of HOTS component for Chipmunk signature scheme",
-      "status": "completed",
-      "progress": 100,
-      "context_path": ".local/context.json",
-      "progress_path": ".local/progress.json",
-      "index_path": ".local/index.json",
-      "start_date": "2024-12-30T10:00:00Z",
-      "completion_date": "2025-01-03T18:00:00Z",
-      "files_count": 8,
-      "lines_count": 3500,
-      "tests_passing": "100%"
-    }
+  "current_task": {
+    "source": ".local/index.json",
+    "description": "Reference to current active task"
   },
-  "statistics": {
-    "total_tasks": 1,
-    "completed_tasks": 1,
-    "active_tasks": 0,
-    "total_lines": 3500,
-    "total_files": 8
+  "task_data_references": {
+    "context": ".local/context.json",
+    "progress": ".local/progress.json", 
+    "task_index": ".local/index.json"
   },
   "project_files": {
     "code_templates.json": {
@@ -43,6 +28,11 @@
       "auto_load": true,
       "category": "development_standards"
     }
+  },
+  "system_info": {
+    "context_management": "Local task data in .local/ directory",
+    "git_policy": ".local/ directory is git-ignored for task isolation",
+    "update_policy": "Task changes require only .local/ file updates"
   },
   "directories": {
     "scripts": "Common scripts for all tasks",
