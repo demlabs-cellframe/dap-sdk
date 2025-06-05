@@ -178,6 +178,15 @@ DAP_STATIC_INLINE dap_hash_str_t dap_get_data_hash_str(const void *a_data, size_
     return l_ret;
 }
 
+/**
+ * @brief Compute SHA2-256 hash
+ * @param[out] a_output Output buffer (must be 32 bytes)
+ * @param[in] a_input Input data
+ * @param[in] a_inlen Input length
+ * @return Returns 0 on success, negative error code on failure
+ */
+int dap_hash_sha2_256(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen);
+
 #ifdef __cplusplus
 }
 #endif

@@ -27,13 +27,13 @@
 #include <stdint.h>
 #include "chipmunk.h"
 
-// NTT parameters
-#define CHIPMUNK_ZETAS_MONT_LEN 512
+// NTT parameters for q = 3168257 (corrected from original Rust implementation)
+#define CHIPMUNK_ZETAS_MONT_LEN 128
 
-/**
- * @brief Montgomery representation of roots of unity for NTT
- */
-extern const int32_t g_zetas_mont[CHIPMUNK_ZETAS_MONT_LEN];
+// Montgomery parameters for q = 3168257
+#define CHIPMUNK_MONT_R          (1U << 22)    // Montgomery reduction parameter R = 2^22
+#define CHIPMUNK_MONT_R_INV      202470        // R^(-1) mod q
+#define CHIPMUNK_QINV            202470        // -q^(-1) mod 2^22
 
 /**
  * @brief Transform polynomial to NTT form
@@ -59,27 +59,27 @@ int chipmunk_ntt_pointwise_montgomery(int32_t a_c[CHIPMUNK_N],
                                      const int32_t a_b[CHIPMUNK_N]);
 
 /**
- * @brief Perform Montgomery reduction
+ * @brief Perform Montgomery reduction for q = 3168257
  * @param[in,out] a_r Value to reduce
  */
 void chipmunk_ntt_montgomery_reduce(int32_t *a_r);
 
 /**
- * @brief Reduce value modulo q
+ * @brief Reduce value modulo q = 3168257
  * @param[in] a_value Value to reduce
  * @return Reduced value
  */
 int32_t chipmunk_ntt_mod_reduce(int32_t a_value);
 
 /**
- * @brief Perform Barrett reduction
+ * @brief Perform Barrett reduction for q = 3168257
  * @param[in] a_value Value to reduce
  * @return Reduced value
  */
 int32_t chipmunk_ntt_barrett_reduce(int32_t a_value);
 
 /**
- * @brief Multiply two values with Montgomery reduction
+ * @brief Multiply two values with Montgomery reduction for q = 3168257
  * @param[in] a_a First value
  * @param[in] a_b Second value
  * @return Result of multiplication
@@ -87,7 +87,7 @@ int32_t chipmunk_ntt_barrett_reduce(int32_t a_value);
 int32_t chipmunk_ntt_montgomery_multiply(int32_t a_a, int32_t a_b);
 
 /**
- * @brief Multiply value by 2^32 modulo q (Montgomery domain conversion)
+ * @brief Convert value to Montgomery domain (multiply by R mod q)
  * @param[in] a_value Value to convert
  * @return Value in Montgomery domain
  */

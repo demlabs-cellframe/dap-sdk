@@ -22,10 +22,12 @@
     along with any DAP based project.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#include "dap_enc_base64.h"
 #include "chipmunk.h"
 #include "chipmunk_poly.h"
 #include "chipmunk_ntt.h"
 #include "chipmunk_hash.h"
+#include "chipmunk_hots.h"
 #include "dap_common.h"
 #include "dap_crypto_common.h"
 #include "rand/dap_rand.h"
@@ -48,7 +50,7 @@
 #define CHIPMUNK_ETA 2  // Error distribution parameter η
 
 // Флаг для расширенного логирования
-static bool s_debug_more = false;
+static bool s_debug_more = true;
 
 static volatile int g_initialized = 0;
 
@@ -85,164 +87,109 @@ int chipmunk_init(void) {
  */
 int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
                     uint8_t *a_private_key, size_t a_private_key_size) {
+    debug_if(s_debug_more, L_DEBUG, "chipmunk_keypair: Starting HOTS key generation");
+    
+    // Проверка параметров
     if (!a_public_key || !a_private_key) {
-        log_it(L_ERROR, "NULL input parameters in chipmunk_keypair");
+        log_it(L_ERROR, "NULL key buffers in chipmunk_keypair");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
-    if (a_public_key_size < CHIPMUNK_PUBLIC_KEY_SIZE || a_private_key_size < CHIPMUNK_PRIVATE_KEY_SIZE) {
-        log_it(L_ERROR, "Buffer too small for chipmunk_keypair");
-        return CHIPMUNK_ERROR_BUFFER_TOO_SMALL;
+    if (a_public_key_size != CHIPMUNK_PUBLIC_KEY_SIZE ||
+        a_private_key_size != CHIPMUNK_PRIVATE_KEY_SIZE) {
+        log_it(L_ERROR, "Invalid key buffer sizes in chipmunk_keypair: pub %zu (expected %d), priv %zu (expected %d)",
+               a_public_key_size, CHIPMUNK_PUBLIC_KEY_SIZE,
+               a_private_key_size, CHIPMUNK_PRIVATE_KEY_SIZE);
+        return CHIPMUNK_ERROR_INVALID_SIZE;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "chipmunk_keypair: Starting key generation");
-    
-    // Создаем все структуры на стеке вместо кучи
-    chipmunk_private_key_t l_sk;
-    chipmunk_public_key_t l_pk;
-    chipmunk_poly_t l_a;
-    uint8_t l_seed[32];
-    uint8_t l_rho[32];
-    uint8_t l_pk_bytes[CHIPMUNK_PUBLIC_KEY_SIZE];
-    int result = CHIPMUNK_ERROR_SUCCESS;
-    
-    // Очищаем структуры
-    memset(&l_sk, 0, sizeof(chipmunk_private_key_t));
-    memset(&l_pk, 0, sizeof(chipmunk_public_key_t));
-    memset(&l_a, 0, sizeof(chipmunk_poly_t));
-    memset(l_seed, 0, sizeof(l_seed));
-    memset(l_rho, 0, sizeof(l_rho));
-    memset(l_pk_bytes, 0, sizeof(l_pk_bytes));
-    
-    // Генерируем случайный seed
-    debug_if(s_debug_more, L_DEBUG, "Generating random seed for key generation");
-    if (randombytes(l_seed, 32) != 0) {
-        log_it(L_ERROR, "Failed to generate random seed");
+    // Генерируем основной seed для ключей
+    uint8_t l_key_seed[32];
+    if (randombytes(l_key_seed, 32) != 0) {
+        log_it(L_ERROR, "Failed to generate random key seed");
         return CHIPMUNK_ERROR_INIT_FAILED;
     }
     
-    // Копируем seed в приватный ключ
-    memcpy(l_sk.key_seed, l_seed, 32);
-    
-    // Генерируем полиномы s1 и s2
-    debug_if(s_debug_more, L_DEBUG, "Generating polynomial s1");
-    result = chipmunk_poly_uniform(&l_sk.s1, l_seed, 0);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed to generate polynomial s1");
-        return result;
-    }
-
-    
-    debug_if(s_debug_more, L_DEBUG, "Generating polynomial s2");
-    result = chipmunk_poly_uniform(&l_sk.s2, l_seed, 1);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed to generate polynomial s2");
-        return result;
-    }
-
-    
-    // Генерируем случайный rho для A
-    debug_if(s_debug_more, L_DEBUG, "Generating random rho for polynomial A");
-    if (randombytes(l_rho, 32) != 0) {
-        log_it(L_ERROR, "Failed to generate randomizer");
+    // Генерируем rho для публичных параметров
+    uint8_t l_rho_seed[32];
+    if (randombytes(l_rho_seed, 32) != 0) {
+        log_it(L_ERROR, "Failed to generate rho seed");
         return CHIPMUNK_ERROR_INIT_FAILED;
     }
     
-    // Копируем rho в публичный ключ
-    memset(l_pk.rho.coeffs, 0, sizeof(l_pk.rho.coeffs)); // Сначала очищаем весь массив
-    for (unsigned int i = 0; i < 8 && i < (32 / sizeof(int32_t)); i++) {
-        uint32_t val = ((uint32_t)l_rho[i*4]) | 
-                      (((uint32_t)l_rho[i*4 + 1]) << 8) | 
-                      (((uint32_t)l_rho[i*4 + 2]) << 16) | 
-                      (((uint32_t)l_rho[i*4 + 3]) << 24);
-        
-        // Гарантируем, что значение находится в допустимом диапазоне [0, CHIPMUNK_Q-1]
-        l_pk.rho.coeffs[i] = val % CHIPMUNK_Q;
-    }
-
-    
-    // Генерируем полином A
-    debug_if(s_debug_more, L_DEBUG, "Generating polynomial A");
-    result = chipmunk_poly_uniform(&l_a, l_rho, 0);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed to generate polynomial A");
-        return result;
-    }
-
-    
-    // Вычисляем публичный ключ h = a * s1 + s2
-    debug_if(s_debug_more, L_DEBUG, "Computing public key h = a * s1 + s2");
-    
-    result = chipmunk_poly_ntt(&l_a);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed in NTT transform of A");
-        return result;
+    // Генерируем HOTS параметры из rho_seed (как при подписи/верификации!)
+    chipmunk_hots_params_t l_hots_params = {0};
+    for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
+        if (dap_chipmunk_hash_sample_matrix(l_hots_params.a[i].coeffs, l_rho_seed, i) != 0) {
+            log_it(L_ERROR, "Failed to generate polynomial A[%d]", i);
+            return CHIPMUNK_ERROR_HASH_FAILED;
+        }
+        // Преобразуем в NTT домен
+        chipmunk_poly_ntt(&l_hots_params.a[i]);
     }
     
-    result = chipmunk_poly_ntt(&l_sk.s1);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed in NTT transform of s1");
-        return result;
+    // Генерируем полноценные HOTS ключи
+    chipmunk_hots_pk_t l_hots_pk = {0};
+    chipmunk_hots_sk_t l_hots_sk = {0};
+    
+    if (chipmunk_hots_keygen(l_key_seed, 0, &l_hots_params, &l_hots_pk, &l_hots_sk) != 0) {
+        log_it(L_ERROR, "Failed to generate HOTS keys");
+        return CHIPMUNK_ERROR_INTERNAL;
     }
     
-    result = chipmunk_poly_pointwise(&l_pk.h, &l_a, &l_sk.s1);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Overflow in polynomial multiplication");
-        return result;
-    }
+    // Создаем структуры для новых ключей
+    chipmunk_private_key_t l_sk = {0};
+    chipmunk_public_key_t l_pk = {0};
     
-    result = chipmunk_poly_invntt(&l_pk.h);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Failed in inverse NTT transform");
-        return result;
-    }
+    // Копируем key_seed в приватный ключ
+    memcpy(l_sk.key_seed, l_key_seed, 32);
     
-    result = chipmunk_poly_add(&l_pk.h, &l_pk.h, &l_sk.s2);
-    if (result != CHIPMUNK_ERROR_SUCCESS) {
-        log_it(L_ERROR, "Overflow in polynomial addition");
-        return result;
-    }
+    // Копируем rho_seed в публичный ключ
+    memcpy(l_pk.rho_seed, l_rho_seed, 32);
+    
+    // Копируем v0 и v1 из HOTS ключей
+    memcpy(&l_pk.v0, &l_hots_pk.v0, sizeof(chipmunk_poly_t));
+    memcpy(&l_pk.v1, &l_hots_pk.v1, sizeof(chipmunk_poly_t));
     
     // Сохраняем публичный ключ в приватном ключе
-    debug_if(s_debug_more, L_DEBUG, "Saving public key to private key");
-    memcpy(&l_sk.pk.h.coeffs, &l_pk.h.coeffs, sizeof(l_pk.h.coeffs));
-    memcpy(&l_sk.pk.rho.coeffs, &l_pk.rho.coeffs, sizeof(l_pk.rho.coeffs));
-
+    memcpy(&l_sk.pk, &l_pk, sizeof(l_pk));
     
-    // Вычисляем хеш публичного ключа для комиттмента
-    debug_if(s_debug_more, L_DEBUG, "Serializing public key to calculate hash");
-    result = chipmunk_public_key_to_bytes(l_pk_bytes, &l_pk);
+    // Вычисляем хеш публичного ключа для коммитмента
+    uint8_t l_pk_bytes[CHIPMUNK_PUBLIC_KEY_SIZE];
+    int result = chipmunk_public_key_to_bytes(l_pk_bytes, &l_pk);
     if (result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to serialize public key");
         return result;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Computing public key hash");
-    result = dap_chipmunk_hash_sha3_256(l_sk.tr, l_pk_bytes, CHIPMUNK_PUBLIC_KEY_SIZE);
+    // Используем SHA3-384 для tr (48 байт)
+    result = dap_chipmunk_hash_sha3_384(l_sk.tr, l_pk_bytes, CHIPMUNK_PUBLIC_KEY_SIZE);
     if (result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to compute public key hash");
         return result;
     }
-
     
     // Сериализуем ключи для вывода
-    debug_if(s_debug_more, L_DEBUG, "Serializing private key to output buffer");
     result = chipmunk_private_key_to_bytes(a_private_key, &l_sk);
     if (result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to serialize private key");
         return result;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Serializing public key to output buffer");
     result = chipmunk_public_key_to_bytes(a_public_key, &l_pk);
     if (result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to serialize public key");
         return result;
     }
     
-    debug_if(s_debug_more, L_DEBUG, "Successfully generated Chipmunk keypair");
+    debug_if(s_debug_more, L_DEBUG, "Successfully generated Chipmunk HOTS keypair");
     
-    return result;
+    // Очищаем секретные данные
+    secure_clean(&l_hots_sk, sizeof(l_hots_sk));
+    secure_clean(&l_sk, sizeof(l_sk));
+    secure_clean(l_key_seed, sizeof(l_key_seed));
+    
+    return CHIPMUNK_ERROR_SUCCESS;
 }
 
 /**
@@ -256,343 +203,126 @@ int chipmunk_keypair(uint8_t *a_public_key, size_t a_public_key_size,
  */
 int chipmunk_sign(const uint8_t *a_private_key, const uint8_t *a_message, 
                   size_t a_message_len, uint8_t *a_signature) {
+    log_it(L_INFO, "Starting Chipmunk HOTS signature generation");
+    
     if (!a_private_key || !a_message || !a_signature) {
         log_it(L_ERROR, "NULL input parameters in chipmunk_sign");
-        return -1;
+        return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
     // Проверка на максимальный размер сообщения
     if (a_message_len > 10 * 1024 * 1024) { // 10MB max message size
-        log_it(L_ERROR, "Message too large for signing in chipmunk_sign");
-        return -1;
+        log_it(L_ERROR, "Message too large for signing");
+        return CHIPMUNK_ERROR_INVALID_SIZE;
     }
-    
-    // Создаем все структуры на стеке для предотвращения утечек памяти и инициализируем их нулями
-    chipmunk_private_key_t l_sk = {0};
-    chipmunk_poly_t l_y = {0};
-    chipmunk_poly_t l_w = {0};
-    chipmunk_poly_t l_c = {0};
-    chipmunk_signature_t l_sig = {0};
     
     // Парсим приватный ключ
+    chipmunk_private_key_t l_sk = {0};
     if (chipmunk_private_key_from_bytes(&l_sk, a_private_key) != 0) {
-        log_it(L_ERROR, "Failed to parse private key in chipmunk_sign");
+        log_it(L_ERROR, "Failed to parse private key");
+        return CHIPMUNK_ERROR_INVALID_PARAM;
+    }
+    
+    // Генерируем HOTS параметры из rho_seed
+    chipmunk_hots_params_t l_hots_params = {0};
+    for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
+        if (dap_chipmunk_hash_sample_matrix(l_hots_params.a[i].coeffs, l_sk.pk.rho_seed, i) != 0) {
+            log_it(L_ERROR, "Failed to generate polynomial A[%d]", i);
         secure_clean(&l_sk, sizeof(l_sk));
-        return -2;
-    }
-    
-    // Шаг 1: Генерируем случайный полином y с коэффициентами в [-gamma1+1, gamma1-1]
-    // Используем dap_random_byte для генерации случайных чисел
-    uint8_t l_seed[32] = {0};
-    
-    // Генерация случайного seed
-    for (size_t i = 0; i < sizeof(l_seed); i++) {
-        l_seed[i] = dap_random_byte();
-    }
-    
-    // Генерация y из seed
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // Используем seed и индекс для получения коэффициента
-        uint32_t l_rnd;
-        dap_chipmunk_hash_shake128((uint8_t*)&l_rnd, sizeof(l_rnd), l_seed, sizeof(l_seed));
-        
-        // Обновляем seed для следующего коэффициента
-        l_seed[0]++;
-        
-        // Маппим случайное значение на диапазон [-gamma1+1, gamma1-1]
-        l_y.coeffs[i] = (l_rnd % (2 * (CHIPMUNK_GAMMA1 - 1))) - (CHIPMUNK_GAMMA1 - 1);
-    }
-    
-    // Шаг 2: преобразуем A*y в NTT домен и вычисляем w = A*y
-    // Копируем y для NTT преобразования
-    chipmunk_poly_t l_y_ntt = {0};
-    memcpy(&l_y_ntt.coeffs, &l_y.coeffs, sizeof(l_y.coeffs));
-    
-    // Преобразуем y в NTT домен
-    if (chipmunk_poly_ntt(&l_y_ntt) != 0) {
-        log_it(L_ERROR, "NTT transform failed in chipmunk_sign");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        return -3;
-    }
-    
-    // Генерируем A из seed
-    chipmunk_poly_t l_a = {0};
-    if (chipmunk_poly_uniform(&l_a, (uint8_t*)l_sk.pk.rho.coeffs, 0) != 0) {
-        log_it(L_ERROR, "Failed to generate polynomial A in chipmunk_sign");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        return -3;
-    }
-    
-    // Преобразуем A в NTT домен
-    if (chipmunk_poly_ntt(&l_a) != 0) {
-        log_it(L_ERROR, "NTT transform failed in chipmunk_sign");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        return -3;
-    }
-    
-    // Вычисляем w = A*y в NTT домене
-    if (chipmunk_poly_pointwise(&l_w, &l_a, &l_y_ntt) != 0) {
-        log_it(L_ERROR, "Polynomial multiplication failed in chipmunk_sign");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        return -3;
-    }
-    
-    // Преобразуем w обратно из NTT домена
-    if (chipmunk_poly_invntt(&l_w) != 0) {
-        log_it(L_ERROR, "InvNTT transform failed in chipmunk_sign");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        return -3;
-    }
-    
-    // Вычисляем высокие биты w (w1) для включения в хеш
-    chipmunk_poly_t l_w1 = {0};
-    
-    // Разложить полином w на высокие (w1) и низкие биты
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // Приводим к диапазону [0, Q-1]
-        int32_t l_coeff = ((l_w.coeffs[i] % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
-        
-        // Получаем high биты (старшие 4 бита)
-        int32_t l_high = l_coeff >> (CHIPMUNK_D - 1);
-        
-        // Сохраняем только высокобитную часть в w1 (4 бита)
-        l_w1.coeffs[i] = l_high & 15;
-    }
-    
-    // Формируем буфер для хеширования содержащий w1 и сообщение
-    // w1 в компактной форме: 1 байт на коэффициент
-    size_t l_w1_msg_size = CHIPMUNK_N + a_message_len;
-    
-    // Выделяем память для буфера
-    uint8_t *l_w1_msg = DAP_NEW_SIZE(uint8_t, l_w1_msg_size);
-    if (!l_w1_msg) {
-        log_it(L_ERROR, "Memory allocation failed in chipmunk_sign");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        secure_clean(&l_sig, sizeof(l_sig));
-        return CHIPMUNK_ERROR_MEMORY;
-    }
-    
-    // Очищаем весь буфер перед заполнением для детерминистичного хеширования
-    memset(l_w1_msg, 0, l_w1_msg_size);
-    
-    // Помещаем w1 в буфер, 1 байт на коэффициент
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        l_w1_msg[i] = (uint8_t)(l_w1.coeffs[i] & 0xFF);
-    }
-    
-    // Добавляем сообщение
-    memcpy(l_w1_msg + CHIPMUNK_N, a_message, a_message_len);
-    
-    // Отладочная информация
-    if (s_debug_more) {
-        log_it(L_DEBUG, "Sign: w1_msg buffer first bytes: %02x%02x%02x%02x",
-               l_w1_msg[0], l_w1_msg[1], l_w1_msg[2], l_w1_msg[3]);
-        
-        log_it(L_DEBUG, "Sign: Input buffer for hash (w1_msg)[%zu]: %02x%02x%02x%02x...",
-               l_w1_msg_size, l_w1_msg[0], l_w1_msg[1], l_w1_msg[2], l_w1_msg[3]);
-        
-        // Подробный вывод первых 32 байт буфера для анализа различий с верификацией
-        char l_buffer_hex[128] = {0};
-        for (size_t i = 0; i < 32 && i < l_w1_msg_size; i++) {
-            sprintf(l_buffer_hex + i*2, "%02x", l_w1_msg[i]);
+            return CHIPMUNK_ERROR_HASH_FAILED;
         }
-        log_it(L_DEBUG, "Sign: Первые 32 байта w1_msg: %s", l_buffer_hex);
+        // Преобразуем в NTT домен
+        chipmunk_poly_ntt(&l_hots_params.a[i]);
     }
     
-    // Шаг 3: Вычисляем c_seed = H(w1 || m)
-    if (dap_chipmunk_hash_sha3_256(l_sig.c, l_w1_msg, l_w1_msg_size) != 0) {
-        log_it(L_ERROR, "Hash operation failed in chipmunk_sign");
-        DAP_DELETE(l_w1_msg);
+    // Восстанавливаем HOTS секретный ключ из key_seed
+    chipmunk_hots_sk_t l_hots_sk = {0};
+    
+    // Используем тот же метод что и в chipmunk_hots_keygen!
+    // Initialize the RNG with seed and counter (как в Rust)
+    uint8_t l_derived_seed[32];
+    uint8_t l_counter_bytes[4];
+    uint32_t a_counter = 0; // такой же counter как при генерации ключей
+    l_counter_bytes[0] = (a_counter >> 24) & 0xFF;
+    l_counter_bytes[1] = (a_counter >> 16) & 0xFF;
+    l_counter_bytes[2] = (a_counter >> 8) & 0xFF;
+    l_counter_bytes[3] = a_counter & 0xFF;
+    
+    // Concatenate seed and counter
+    uint8_t l_seed_and_counter[36];
+    memcpy(l_seed_and_counter, l_sk.key_seed, 32);
+    memcpy(l_seed_and_counter + 32, l_counter_bytes, 4);
+    
+    // Hash to get derived seed (точно как в chipmunk_hots_keygen)
+    dap_hash_fast_t l_hash_out;
+    dap_hash_fast(l_seed_and_counter, 36, &l_hash_out);
+    memcpy(l_derived_seed, &l_hash_out, 32);
+    
+    // Генерируем секретные ключи точно как в chipmunk_hots_keygen
+    for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
+        // Generate s0[i] in time domain, then convert to NTT
+        uint8_t l_s0_seed[36];
+        memcpy(l_s0_seed, l_derived_seed, 32);
+        uint32_t l_s0_nonce = a_counter + i;
+        memcpy(l_s0_seed + 32, &l_s0_nonce, 4);
+        
+        chipmunk_poly_uniform_mod_p(&l_hots_sk.s0[i], l_s0_seed, CHIPMUNK_PHI);
+        // Преобразуем s0[i] в NTT домен для хранения
+        chipmunk_ntt(l_hots_sk.s0[i].coeffs);
+        
+        // Generate s1[i] in time domain, then convert to NTT  
+        uint8_t l_s1_seed[36];
+        memcpy(l_s1_seed, l_derived_seed, 32);
+        uint32_t l_s1_nonce = a_counter + CHIPMUNK_GAMMA + i;
+        memcpy(l_s1_seed + 32, &l_s1_nonce, 4);
+        
+        chipmunk_poly_uniform_mod_p(&l_hots_sk.s1[i], l_s1_seed, CHIPMUNK_PHI_ALPHA_H);
+        // Преобразуем s1[i] в NTT домен для хранения
+        chipmunk_ntt(l_hots_sk.s1[i].coeffs);
+    }
+    
+    // Генерируем HOTS подпись
+    chipmunk_hots_signature_t l_hots_sig = {0};
+    int l_result = chipmunk_hots_sign(&l_hots_sk, a_message, a_message_len, &l_hots_sig);
+    
+    if (l_result != 0) {
+        log_it(L_ERROR, "HOTS signature failed with error %d", l_result);
         secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        secure_clean(&l_sig, sizeof(l_sig));
-        return CHIPMUNK_ERROR_HASH_FAILED;
+        secure_clean(&l_hots_sk, sizeof(l_hots_sk));
+        return l_result;
     }
     
-    // Освобождаем память буфера
-    DAP_DELETE(l_w1_msg);
+    // Конвертируем HOTS подпись в формат Chipmunk
+    chipmunk_signature_t l_sig = {0};
     
-    // Отладка: показываем вычисленный challenge seed
-    if (s_debug_more) {
-        log_it(L_DEBUG, "Sign: Challenge seed calculated: %02x%02x%02x%02x...",
-               l_sig.c[0], l_sig.c[1], l_sig.c[2], l_sig.c[3]);
-    }
-           
-    // Создаем полином c на основе challenge seed
-    if (chipmunk_poly_challenge(&l_c, l_sig.c) != 0) {
-        log_it(L_ERROR, "Failed to create challenge polynomial in chipmunk_sign");
+    // Генерируем случайный c_seed для каждой подписи
+    if (randombytes(l_sig.c_seed, 32) != 0) {
+        log_it(L_ERROR, "Failed to generate random c_seed");
         secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        secure_clean(&l_sig, sizeof(l_sig));
+        secure_clean(&l_hots_sk, sizeof(l_hots_sk));
         return CHIPMUNK_ERROR_INTERNAL;
     }
     
-    // Преобразуем c и s1 в NTT домен
-    chipmunk_poly_t l_c_ntt = {0};
-    memcpy(&l_c_ntt.coeffs, &l_c.coeffs, sizeof(l_c.coeffs));
-    
-    chipmunk_poly_t l_s1_ntt = {0};
-    memcpy(&l_s1_ntt.coeffs, &l_sk.s1.coeffs, sizeof(l_sk.s1.coeffs));
-    
-    if (chipmunk_poly_ntt(&l_c_ntt) != 0 || chipmunk_poly_ntt(&l_s1_ntt) != 0) {
-        log_it(L_ERROR, "NTT transform failed in chipmunk_sign");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        secure_clean(&l_sig, sizeof(l_sig));
-        return CHIPMUNK_ERROR_INTERNAL;
-    }
-    
-    // Вычисляем c*s1 в NTT домене
-    chipmunk_poly_t l_cs1 = {0};
-    if (chipmunk_poly_pointwise(&l_cs1, &l_c_ntt, &l_s1_ntt) != 0) {
-        log_it(L_ERROR, "Polynomial multiplication failed in chipmunk_sign");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        secure_clean(&l_sig, sizeof(l_sig));
-        return CHIPMUNK_ERROR_INTERNAL;
-    }
-    
-    // Преобразуем c*s1 обратно из NTT домена
-    if (chipmunk_poly_invntt(&l_cs1) != 0) {
-        log_it(L_ERROR, "InvNTT transform failed in chipmunk_sign");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        secure_clean(&l_sig, sizeof(l_sig));
-        return CHIPMUNK_ERROR_INTERNAL;
-    }
-    
-    // Вычисляем z = y + c*s1
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // Вычисляем сумму с приведением по модулю CHIPMUNK_Q
-        int64_t l_temp = (int64_t)l_y.coeffs[i] + (int64_t)l_cs1.coeffs[i];
-        
-        // Приводим к диапазону [0, CHIPMUNK_Q-1]
-        l_temp = ((l_temp % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
-        
-        // Приводим к центрированному представлению [-CHIPMUNK_Q/2, CHIPMUNK_Q/2]
-        if (l_temp >= CHIPMUNK_Q / 2)
-            l_temp -= CHIPMUNK_Q;
-        
-        // Принудительно ограничиваем коэффициенты максимальным значением
-        if (l_temp > (CHIPMUNK_GAMMA1 - 1))
-            l_temp = CHIPMUNK_GAMMA1 - 1;
-        else if (l_temp < -(CHIPMUNK_GAMMA1 - 1))
-            l_temp = -(CHIPMUNK_GAMMA1 - 1);
-            
-        // Сохраняем результат
-        l_sig.z.coeffs[i] = (int32_t)l_temp;
-    }
-    
-    // Дополнительная проверка нормы полинома z
-    if (chipmunk_poly_chknorm(&l_sig.z, CHIPMUNK_GAMMA1 - 1) != 0) {
-        log_it(L_ERROR, "Generated z polynomial has coefficients outside the valid range despite normalization");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        secure_clean(&l_sig, sizeof(l_sig));
-        return -3;
-    }
-    
-    // Создаем hint для снижения размера подписи
-    // Сначала нужно вычислить cs2
-    chipmunk_poly_t l_s2_ntt = {0};
-    memcpy(&l_s2_ntt.coeffs, &l_sk.s2.coeffs, sizeof(l_sk.s2.coeffs));
-    
-    if (chipmunk_poly_ntt(&l_s2_ntt) != 0) {
-        log_it(L_ERROR, "NTT transform failed in chipmunk_sign");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        secure_clean(&l_sig, sizeof(l_sig));
-        return CHIPMUNK_ERROR_INTERNAL;
-    }
-    
-    chipmunk_poly_t l_cs2 = {0};
-    if (chipmunk_poly_pointwise(&l_cs2, &l_c_ntt, &l_s2_ntt) != 0) {
-        log_it(L_ERROR, "Polynomial multiplication failed in chipmunk_sign");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        secure_clean(&l_sig, sizeof(l_sig));
-        return CHIPMUNK_ERROR_INTERNAL;
-    }
-    
-    if (chipmunk_poly_invntt(&l_cs2) != 0) {
-        log_it(L_ERROR, "InvNTT transform failed in chipmunk_sign");
-        secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        secure_clean(&l_sig, sizeof(l_sig));
-        return CHIPMUNK_ERROR_INTERNAL;
-    }
-    
-    // Создаем hint для низкозначащих битов коэффициентов
-    // Сначала вычисляем w' = w - cs2
-    chipmunk_poly_t l_w_prime = {0};
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // Вычисляем разность w - cs2
-        int64_t diff = (int64_t)l_w.coeffs[i] - (int64_t)l_cs2.coeffs[i];
-        
-        // Приводим к диапазону [0, CHIPMUNK_Q-1]
-        diff = ((diff % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
-        
-        l_w_prime.coeffs[i] = (int32_t)diff;
-    }
-    
-    // Теперь создаем hint биты от w' и w
-    chipmunk_make_hint(l_sig.hint, &l_w_prime, &l_w);
-    
-    // Подсчитываем количество ненулевых битов в hint для проверки
-    if (s_debug_more) {
-        int l_hint_bits = 0;
-        int l_hint_sections_with_bits = 0;
-        
-        for (int i = 0; i < CHIPMUNK_N/8; i++) {
-            int l_section_bits = 0;
-            for (int j = 0; j < 8; j++) {
-                if ((l_sig.hint[i] >> j) & 1) {
-                    l_section_bits++;
-                    l_hint_bits++;
-                }
-            }
-            if (l_section_bits > 0) {
-                l_hint_sections_with_bits++;
-            }
-        }
-        
-        log_it(L_DEBUG, "Hint bits analysis: total bits=%d, sections with bits=%d", 
-               l_hint_bits, l_hint_sections_with_bits);
-    }
-    
-    // Отладка: выводим challenge seed перед сериализацией
-    if (s_debug_more) {
-        log_it(L_DEBUG, "Sign: Challenge seed before serialization: %02x%02x%02x%02x...",
-               l_sig.c[0], l_sig.c[1], l_sig.c[2], l_sig.c[3]);
+    // Копируем все GAMMA полиномов sigma
+    for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
+        memcpy(&l_sig.sigma[i], &l_hots_sig.sigma[i], sizeof(chipmunk_poly_t));
     }
     
     // Сериализуем подпись
     if (chipmunk_signature_to_bytes(a_signature, &l_sig) != 0) {
-        log_it(L_ERROR, "Failed to serialize signature in chipmunk_sign");
+        log_it(L_ERROR, "Failed to serialize signature");
         secure_clean(&l_sk, sizeof(l_sk));
-        secure_clean(&l_y, sizeof(l_y));
-        secure_clean(&l_sig, sizeof(l_sig));
+        secure_clean(&l_hots_sk, sizeof(l_hots_sk));
         return CHIPMUNK_ERROR_INTERNAL;
-    }
-    
-    // Диагностика: проверяем, что c_seed правильно сериализован
-    if (s_debug_more) {
-        log_it(L_DEBUG, "Sign: First bytes of serialized signature: %02x%02x%02x%02x...",
-               a_signature[0], a_signature[1], a_signature[2], a_signature[3]);
     }
     
     // Очищаем секретные данные
     secure_clean(&l_sk, sizeof(l_sk));
-    secure_clean(&l_y, sizeof(l_y));
+    secure_clean(&l_hots_sk, sizeof(l_hots_sk));
+    secure_clean(&l_hots_sig, sizeof(l_hots_sig));
     
-    log_it(L_INFO, "Signature successfully generated");
-    return 0;
+    log_it(L_INFO, "HOTS signature successfully generated");
+    return CHIPMUNK_ERROR_SUCCESS;
 }
 
 /**
@@ -606,211 +336,66 @@ int chipmunk_sign(const uint8_t *a_private_key, const uint8_t *a_message,
  */
 int chipmunk_verify(const uint8_t *a_public_key, const uint8_t *a_message, 
                     size_t a_message_len, const uint8_t *a_signature) {
+    log_it(L_INFO, "Starting HOTS signature verification");
+    
     if (!a_public_key || !a_message || !a_signature) {
         log_it(L_ERROR, "NULL input parameters in chipmunk_verify");
-        return -1;
+        return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
     // Проверка на максимальный размер сообщения
     if (a_message_len > 10 * 1024 * 1024) { // 10MB max message size
-        log_it(L_ERROR, "Message too large for verification in chipmunk_verify");
-        return -1;
+        log_it(L_ERROR, "Message too large for verification");
+        return CHIPMUNK_ERROR_INVALID_SIZE;
     }
     
     // Парсим публичный ключ
     chipmunk_public_key_t l_pk = {0};
     if (chipmunk_public_key_from_bytes(&l_pk, a_public_key) != 0) {
-        log_it(L_ERROR, "Failed to parse public key in chipmunk_verify");
-        return -1;
+        log_it(L_ERROR, "Failed to parse public key");
+        return CHIPMUNK_ERROR_INVALID_PARAM;
     }
     
     // Парсим подпись
     chipmunk_signature_t l_sig = {0};
     if (chipmunk_signature_from_bytes(&l_sig, a_signature) != 0) {
-        log_it(L_ERROR, "Failed to parse signature in chipmunk_verify");
-        return -1;
+        log_it(L_ERROR, "Failed to parse signature");
+        return CHIPMUNK_ERROR_INVALID_PARAM;
     }
     
-    // Проверка нормы полинома z - строгая проверка согласно спецификации алгоритма
-    if (chipmunk_poly_chknorm(&l_sig.z, CHIPMUNK_GAMMA1 - 1) != 0) {
-        log_it(L_ERROR, "z polynomial has coefficients outside the valid range");
-        return -3;
-    }
-    
-    // Создаем копию полинома z для преобразования в NTT домен
-    chipmunk_poly_t l_z = {0};
-    memcpy(&l_z.coeffs, &l_sig.z.coeffs, sizeof(l_z.coeffs));
-    
-    // Преобразуем z в NTT домен
-    if (chipmunk_poly_ntt(&l_z) != 0) {
-        log_it(L_ERROR, "Failed to transform z to NTT domain in chipmunk_verify");
-        return -2;
-    }
-    
-    // Генерируем матрицу A из pk.rho
-    chipmunk_poly_t l_a = {0};
-    if (chipmunk_poly_uniform(&l_a, (uint8_t*)l_pk.rho.coeffs, 0) != 0) {
-        log_it(L_ERROR, "Failed to generate polynomial A in chipmunk_verify");
-        return -2;
-    }
-    
-    // Преобразуем A в NTT домен
-    if (chipmunk_poly_ntt(&l_a) != 0) {
-        log_it(L_ERROR, "Failed to transform A to NTT domain in chipmunk_verify");
-        return -2;
-    }
-    
-    // Вычисляем A*z в NTT домене
-    chipmunk_poly_t l_az = {0};
-    if (chipmunk_poly_pointwise(&l_az, &l_a, &l_z) != 0) {
-        log_it(L_ERROR, "Failed to compute A*z in NTT domain in chipmunk_verify");
-        return -2;
-    }
-    
-    // Преобразуем обратно из NTT домена
-    if (chipmunk_poly_invntt(&l_az) != 0) {
-        log_it(L_ERROR, "Failed to convert A*z back from NTT domain in chipmunk_verify");
-        return -2;
-    }
-    
-    // Создаем полином challenge на основе seed из подписи
-    chipmunk_poly_t l_c = {0};
-    if (chipmunk_poly_challenge(&l_c, l_sig.c) != 0) {
-        log_it(L_ERROR, "Failed to create challenge polynomial in chipmunk_verify");
-        return -1;
-    }
-    
-    // Преобразуем c в NTT домен для вычисления c*t1
-    chipmunk_poly_t l_c_ntt = {0};
-    memcpy(&l_c_ntt.coeffs, &l_c.coeffs, sizeof(l_c.coeffs));
-    
-    if (chipmunk_poly_ntt(&l_c_ntt) != 0) {
-        log_it(L_ERROR, "Failed to transform challenge to NTT domain in chipmunk_verify");
-        return -2;
-    }
-    
-    // Вычисляем c*t1 = c*h в NTT домене
-    chipmunk_poly_t l_ct1 = {0};
-    if (chipmunk_poly_pointwise(&l_ct1, &l_c_ntt, &l_pk.h) != 0) {
-        log_it(L_ERROR, "Failed to compute c*t1 in NTT domain in chipmunk_verify");
-        return -2;
-    }
-    
-    // Преобразуем c*t1 обратно из NTT домена
-    if (chipmunk_poly_invntt(&l_ct1) != 0) {
-        log_it(L_ERROR, "Failed to convert c*t1 back from NTT domain in chipmunk_verify");
-        return -2;
-    }
-    
-    // Вычисляем w' = Az - ct1
-    chipmunk_poly_t l_w_prime = {0};
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        // Вычисляем разность Az - ct1
-        int64_t diff = (int64_t)l_az.coeffs[i] - (int64_t)l_ct1.coeffs[i];
-        
-        // Приводим к диапазону [0, CHIPMUNK_Q-1]
-        diff = ((diff % CHIPMUNK_Q) + CHIPMUNK_Q) % CHIPMUNK_Q;
-        
-        l_w_prime.coeffs[i] = (int32_t)diff;
-    }
-    
-    // По алгоритму теперь нужно применить hint биты для получения w1
-    // Создаем выходной полином w1 (высокие биты w')
-    chipmunk_poly_t l_w1 = {0};
-    
-    // Применяем hint биты для получения w1 из w'
-    chipmunk_use_hint(&l_w1, &l_w_prime, l_sig.hint);
-    
-    // Проверка стандартных ограничений на w1
-    int l_w1_zeros = 0;
-    int l_w1_large = 0;
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        if (l_w1.coeffs[i] == 0) l_w1_zeros++;
-        if (l_w1.coeffs[i] > 15) l_w1_large++;  // w1 должен содержать только 4-битные значения
-    }
-    
-    // Если слишком много нулей или слишком больших значений - подозрительно
-    if (l_w1_zeros > CHIPMUNK_N * 0.9 || l_w1_large > 0) {
-        log_it(L_ERROR, "w1 polynomial has suspicious values distribution (zeros: %d, large: %d)", 
-              l_w1_zeros, l_w1_large);
-        return -4;
-    }
-    
-    // По спецификации алгоритма, для проверки подписи нужно вычислить хеш от w1 || message
-    // и сравнить его с c из подписи
-    
-    // Создаем буфер для w1 || message
-    // На w1 достаточно 1 байта на каждый коэффициент (т.к. это 4-битные значения)
-    size_t l_w1_msg_size = CHIPMUNK_N + a_message_len;
-    uint8_t *l_w1_msg = malloc(l_w1_msg_size);
-    if (!l_w1_msg) {
-        log_it(L_ERROR, "Failed to allocate memory for w1||msg in chipmunk_verify");
-        return -1;
-    }
-    
-    // Помещаем w1 в буфер, используя 1 байт на каждый коэффициент
-    for (int i = 0; i < CHIPMUNK_N; i++) {
-        l_w1_msg[i] = (uint8_t)(l_w1.coeffs[i] & 0xFF);
-    }
-    
-    // Добавляем сообщение
-    memcpy(l_w1_msg + CHIPMUNK_N, a_message, a_message_len);
-    
-    // Вычисляем хеш w1||message
-    uint8_t l_computed_c[32] = {0};
-    if (dap_chipmunk_hash_sha3_256(l_computed_c, l_w1_msg, l_w1_msg_size) != 0) {
-        log_it(L_ERROR, "Failed to compute hash in chipmunk_verify");
-        free(l_w1_msg);
-        return -2;
-    }
-    
-    // Выводим для отладки
-    if (s_debug_more) {
-        log_it(L_DEBUG, "Verify: w1_msg buffer first bytes: %02x%02x%02x%02x",
-               l_w1_msg[0], l_w1_msg[1], l_w1_msg[2], l_w1_msg[3]);
-        
-        log_it(L_DEBUG, "Verify: Input buffer for hash (w1_msg)[%zu]: %02x%02x%02x%02x...",
-               l_w1_msg_size, l_w1_msg[0], l_w1_msg[1], l_w1_msg[2], l_w1_msg[3]);
-        
-        // Выводим первые байты для диагностики
-        char debug_buf[128] = {0};
-        int max_bytes = 32 < l_w1_msg_size ? 32 : l_w1_msg_size;
-        for (int i = 0; i < max_bytes; i++) {
-            sprintf(debug_buf + i*2, "%02x", l_w1_msg[i]);
+    // Генерируем HOTS параметры из rho_seed
+    chipmunk_hots_params_t l_hots_params = {0};
+    for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
+        if (dap_chipmunk_hash_sample_matrix(l_hots_params.a[i].coeffs, l_pk.rho_seed, i) != 0) {
+            log_it(L_ERROR, "Failed to generate polynomial A[%d]", i);
+            return CHIPMUNK_ERROR_HASH_FAILED;
         }
-        log_it(L_DEBUG, "Verify: Первые %d байта w1_msg: %s", max_bytes, debug_buf);
-        
-        log_it(L_DEBUG, "Verify: Challenge seed expected: %02x%02x%02x%02x...",
-               l_computed_c[0], l_computed_c[1], l_computed_c[2], l_computed_c[3]);
-        
-        log_it(L_DEBUG, "Verify: Challenge seed in signature: %02x%02x%02x%02x...",
-               l_sig.c[0], l_sig.c[1], l_sig.c[2], l_sig.c[3]);
+        // Преобразуем в NTT домен
+        chipmunk_poly_ntt(&l_hots_params.a[i]);
     }
     
-    free(l_w1_msg);
+    // Создаем HOTS публичный ключ
+    chipmunk_hots_pk_t l_hots_pk = {0};
+    memcpy(&l_hots_pk.v0, &l_pk.v0, sizeof(chipmunk_poly_t));
+    memcpy(&l_hots_pk.v1, &l_pk.v1, sizeof(chipmunk_poly_t));
     
-    // Сравниваем вычисленный хеш с c из подписи
-    // По спецификации Dilithium/Chipmunk, вычисленный хеш должен точно совпадать с c из подписи
-    // Допустимо несовпадение лишь в последних битах из-за округления при расчете hint битов
-    int l_matching_bytes = 0;
-    for (int i = 0; i < 32; i++) {
-        if (l_computed_c[i] == l_sig.c[i]) {
-            l_matching_bytes++;
-        } else {
-            break; // Если найдено несовпадение, прекращаем проверку
-        }
+    // Создаем HOTS подпись
+    chipmunk_hots_signature_t l_hots_sig = {0};
+    for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
+        memcpy(&l_hots_sig.sigma[i], &l_sig.sigma[i], sizeof(chipmunk_poly_t));
     }
     
-    // Требуем совпадения как минимум первых 16 байт (128 бит) хеша
-    // Это обеспечивает надежную защиту от подделки с вероятностью 2^-128
-    if (l_matching_bytes < 16) {
-        log_it(L_ERROR, "Signature verification failed: challenge seed mismatch (matching bytes: %d/32)",
-               l_matching_bytes);
-        return -10; // Особый код ошибки для несоответствия ключа и подписи
+    // Используем HOTS функцию верификации
+    int l_result = chipmunk_hots_verify(&l_hots_pk, a_message, a_message_len, 
+                                        &l_hots_sig, &l_hots_params);
+    
+    if (l_result != 0) {
+        log_it(L_ERROR, "HOTS signature verification failed: %d", l_result);
+        return CHIPMUNK_ERROR_VERIFY_FAILED;
     }
     
-    log_it(L_INFO, "Signature verified successfully (matching bytes: %d/32)", l_matching_bytes);
-    return 0; // Подпись действительна
+    log_it(L_INFO, "HOTS signature verified successfully");
+    return CHIPMUNK_ERROR_SUCCESS;
 }
 
 /**
@@ -822,44 +407,31 @@ int chipmunk_public_key_to_bytes(uint8_t *a_output, const chipmunk_public_key_t 
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
-    // Write h polynomial - serialize only coefficients, 3 bytes per coefficient
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        // Убедимся, что коэффициент находится в допустимом диапазоне [0, CHIPMUNK_Q-1]
-        uint32_t l_coeff = a_key->h.coeffs[l_i];
-        if (l_coeff >= CHIPMUNK_Q) {
-            l_coeff %= CHIPMUNK_Q;
-        }
-        
-        a_output[l_i*3] = l_coeff & 0xff;
-        a_output[l_i*3 + 1] = (l_coeff >> 8) & 0xff;
-        a_output[l_i*3 + 2] = (l_coeff >> 16) & 0xff;
+    size_t l_offset = 0;
+    
+    // Write rho_seed (32 bytes)
+    memcpy(a_output + l_offset, a_key->rho_seed, 32);
+    l_offset += 32;
+    
+    // Write v0 polynomial (CHIPMUNK_N * 4 bytes)
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int32_t l_coeff = a_key->v0.coeffs[i];
+        a_output[l_offset] = (uint8_t)(l_coeff & 0xFF);
+        a_output[l_offset + 1] = (uint8_t)((l_coeff >> 8) & 0xFF);
+        a_output[l_offset + 2] = (uint8_t)((l_coeff >> 16) & 0xFF);
+        a_output[l_offset + 3] = (uint8_t)((l_coeff >> 24) & 0xFF);
+        l_offset += 4;
     }
     
-    // Write rho seed - we store only a 32-byte seed rather than the entire rho.coeffs array
-    uint8_t l_seed[32] = {0};
-    
-    // Проверим, что количество коэффициентов не превышает CHIPMUNK_N
-    int l_max_coeffs = (CHIPMUNK_N < 8) ? CHIPMUNK_N : 8;
-    
-    // Copy the first 32 bytes of the rho polynomial coefficients as the seed
-    for (int i = 0; i < l_max_coeffs; i++) {
-        // Нормализуем значения перед сериализацией
-        uint32_t l_normalized = a_key->rho.coeffs[i];
-        if (l_normalized >= CHIPMUNK_Q) {
-            l_normalized %= CHIPMUNK_Q;
-        }
-        
-        // Убедимся, что не выходим за пределы массива
-        if (i*4 + 3 < 32) {
-            l_seed[i*4] = l_normalized & 0xff;
-            l_seed[i*4 + 1] = (l_normalized >> 8) & 0xff; 
-            l_seed[i*4 + 2] = (l_normalized >> 16) & 0xff;
-            l_seed[i*4 + 3] = (l_normalized >> 24) & 0xff;
-        }
+    // Write v1 polynomial (CHIPMUNK_N * 4 bytes)
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        int32_t l_coeff = a_key->v1.coeffs[i];
+        a_output[l_offset] = (uint8_t)(l_coeff & 0xFF);
+        a_output[l_offset + 1] = (uint8_t)((l_coeff >> 8) & 0xFF);
+        a_output[l_offset + 2] = (uint8_t)((l_coeff >> 16) & 0xFF);
+        a_output[l_offset + 3] = (uint8_t)((l_coeff >> 24) & 0xFF);
+        l_offset += 4;
     }
-    
-    // Write the 32-byte seed after the h polynomial coefficients
-    memcpy(a_output + CHIPMUNK_N*3, l_seed, 32);
     
     return CHIPMUNK_ERROR_SUCCESS;
 }
@@ -873,54 +445,18 @@ int chipmunk_private_key_to_bytes(uint8_t *a_output, const chipmunk_private_key_
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
-    // Проверим, что буфер достаточной длины для хранения всей информации о ключе
-    size_t l_required_size = CHIPMUNK_N*6 + 32 + 48 + CHIPMUNK_PUBLIC_KEY_SIZE;
-    if (l_required_size > CHIPMUNK_PRIVATE_KEY_SIZE) {
-        log_it(L_ERROR, "Buffer size mismatch in chipmunk_private_key_to_bytes: required %zu, defined %d", 
-               l_required_size, CHIPMUNK_PRIVATE_KEY_SIZE);
-        return CHIPMUNK_ERROR_BUFFER_TOO_SMALL;
-    }
+    size_t l_offset = 0;
     
-    // Write s1
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        uint32_t l_coeff = a_key->s1.coeffs[l_i];
-        // Нормализуем значение, если оно превышает CHIPMUNK_Q
-        if (l_coeff >= CHIPMUNK_Q) {
-            l_coeff %= CHIPMUNK_Q;
-        }
-        
-        a_output[l_i*3] = l_coeff & 0xff;
-        a_output[l_i*3 + 1] = (l_coeff >> 8) & 0xff;
-        a_output[l_i*3 + 2] = (l_coeff >> 16) & 0xff;
-    }
+    // Write key_seed (32 bytes)
+    memcpy(a_output + l_offset, a_key->key_seed, 32);
+    l_offset += 32;
     
-    // Write s2
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        uint32_t l_coeff = a_key->s2.coeffs[l_i];
-        // Нормализуем значение, если оно превышает CHIPMUNK_Q
-        if (l_coeff >= CHIPMUNK_Q) {
-            l_coeff %= CHIPMUNK_Q;
-        }
-        
-        a_output[CHIPMUNK_N*3 + l_i*3] = l_coeff & 0xff;
-        a_output[CHIPMUNK_N*3 + l_i*3 + 1] = (l_coeff >> 8) & 0xff;
-        a_output[CHIPMUNK_N*3 + l_i*3 + 2] = (l_coeff >> 16) & 0xff;
-    }
+    // Write tr (48 bytes)
+    memcpy(a_output + l_offset, a_key->tr, 48);
+    l_offset += 48;
     
-    // Write key_seed
-    memcpy(a_output + CHIPMUNK_N*6, a_key->key_seed, 32);
-    
-    // Write tr
-    memcpy(a_output + CHIPMUNK_N*6 + 32, a_key->tr, 48);
-    
-    // Write public key - сначала проверим, что смещение в пределах буфера
-    size_t l_public_key_offset = CHIPMUNK_N*6 + 32 + 48;
-    if (l_public_key_offset + CHIPMUNK_PUBLIC_KEY_SIZE > CHIPMUNK_PRIVATE_KEY_SIZE) {
-        log_it(L_ERROR, "Output buffer too small for public key part in chipmunk_private_key_to_bytes");
-        return CHIPMUNK_ERROR_BUFFER_TOO_SMALL;
-    }
-    
-    return chipmunk_public_key_to_bytes(a_output + l_public_key_offset, &a_key->pk);
+    // Write public key
+    return chipmunk_public_key_to_bytes(a_output + l_offset, &a_key->pk);
 }
 
 /**
@@ -932,45 +468,23 @@ int chipmunk_signature_to_bytes(uint8_t *a_output, const chipmunk_signature_t *a
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
-    // Verify that CHIPMUNK_N is divisible by 8 for hint bit packing
-    if (CHIPMUNK_N % 8 != 0) {
-        log_it(L_ERROR, "Invalid CHIPMUNK_N value in chipmunk_signature_to_bytes, must be divisible by 8");
-        return CHIPMUNK_ERROR_INVALID_PARAM;
+    size_t l_offset = 0;
+    
+    // Write c_seed (32 bytes)
+    memcpy(a_output + l_offset, a_sig->c_seed, 32);
+    l_offset += 32;
+    
+    // Write all GAMMA sigma polynomials
+    for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
+        for (int j = 0; j < CHIPMUNK_N; j++) {
+            int32_t l_coeff = a_sig->sigma[i].coeffs[j];
+            a_output[l_offset] = (uint8_t)(l_coeff & 0xFF);
+            a_output[l_offset + 1] = (uint8_t)((l_coeff >> 8) & 0xFF);
+            a_output[l_offset + 2] = (uint8_t)((l_coeff >> 16) & 0xFF);
+            a_output[l_offset + 3] = (uint8_t)((l_coeff >> 24) & 0xFF);
+            l_offset += 4;
+        }
     }
-    
-    // Отладка: выводим данные c_seed для проверки
-    log_it(L_DEBUG, "Serialize signature, c_seed: %02x%02x%02x%02x...",
-           a_sig->c[0], a_sig->c[1], a_sig->c[2], a_sig->c[3]);
-    log_it(L_DEBUG, "Full 32-byte c_seed hex: %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
-           a_sig->c[0], a_sig->c[1], a_sig->c[2], a_sig->c[3], a_sig->c[4], a_sig->c[5], a_sig->c[6], a_sig->c[7],
-           a_sig->c[8], a_sig->c[9], a_sig->c[10], a_sig->c[11], a_sig->c[12], a_sig->c[13], a_sig->c[14], a_sig->c[15],
-           a_sig->c[16], a_sig->c[17], a_sig->c[18], a_sig->c[19], a_sig->c[20], a_sig->c[21], a_sig->c[22], a_sig->c[23],
-           a_sig->c[24], a_sig->c[25], a_sig->c[26], a_sig->c[27], a_sig->c[28], a_sig->c[29], a_sig->c[30], a_sig->c[31]);
-    
-    // Очищаем a_output перед записью для предотвращения утечки данных
-    memset(a_output, 0, CHIPMUNK_SIGNATURE_SIZE);
-    
-    // First write c (32 bytes) - важно сохранять именно исходные данные из подписи
-    memcpy(a_output, a_sig->c, sizeof(a_sig->c));
-    
-    // Отладка: проверяем, что c_seed корректно скопирован
-    log_it(L_DEBUG, "After copy to output buffer, c_seed: %02x%02x%02x%02x...",
-           a_output[0], a_output[1], a_output[2], a_output[3]);
-    
-    // Далее записываем z коэффициенты (CHIPMUNK_N * 4 байт) с точным сохранением значений
-    uint8_t *l_ptr = a_output + sizeof(a_sig->c);
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        int32_t l_coeff = a_sig->z.coeffs[l_i];
-        // Используем прямую запись без нормализации для точного сохранения значений
-        l_ptr[0] = (uint8_t)(l_coeff & 0xFF);
-        l_ptr[1] = (uint8_t)((l_coeff >> 8) & 0xFF);
-        l_ptr[2] = (uint8_t)((l_coeff >> 16) & 0xFF);
-        l_ptr[3] = (uint8_t)((l_coeff >> 24) & 0xFF);
-        l_ptr += 4;
-    }
-    
-    // Наконец записываем hint (CHIPMUNK_N/8 байт) без изменений
-    memcpy(l_ptr, a_sig->hint, CHIPMUNK_N/8);
     
     return CHIPMUNK_ERROR_SUCCESS;
 }
@@ -984,36 +498,37 @@ int chipmunk_public_key_from_bytes(chipmunk_public_key_t *a_key, const uint8_t *
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
-    // Read h polynomial
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        uint32_t l_coeff = ((uint32_t)a_input[l_i*3]) | 
-                              (((uint32_t)a_input[l_i*3 + 1]) << 8) | 
-                              (((uint32_t)a_input[l_i*3 + 2]) << 16);
-        
-        // Явно проверяем, что значение не превышает CHIPMUNK_Q
-        if (l_coeff >= CHIPMUNK_Q) {
-            l_coeff %= CHIPMUNK_Q;
-        }
-        
-        a_key->h.coeffs[l_i] = l_coeff;
-    }
+    // Read rho_seed (32 bytes)
+    memcpy(a_key->rho_seed, a_input, 32);
     
-    // Read rho seed - initialize rest of the polynomial to 0
-    memset(a_key->rho.coeffs, 0, sizeof(a_key->rho.coeffs));
-    
-    // Convert 32-byte seed to polynomial coefficients
-    for (int i = 0; i < 8 && i < CHIPMUNK_N; i++) {
-        uint32_t l_coeff = ((uint32_t)a_input[CHIPMUNK_N*3 + i*4]) | 
-                              (((uint32_t)a_input[CHIPMUNK_N*3 + i*4 + 1]) << 8) | 
-                              (((uint32_t)a_input[CHIPMUNK_N*3 + i*4 + 2]) << 16) |
-                              (((uint32_t)a_input[CHIPMUNK_N*3 + i*4 + 3]) << 24);
+    // Read v0 polynomial (CHIPMUNK_N * 4 bytes)
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        uint32_t l_coeff = ((uint32_t)a_input[32 + i*4]) | 
+                              (((uint32_t)a_input[32 + i*4 + 1]) << 8) | 
+                              (((uint32_t)a_input[32 + i*4 + 2]) << 16) |
+                              (((uint32_t)a_input[32 + i*4 + 3]) << 24);
         
         // Нормализуем значение в диапазон [0, CHIPMUNK_Q-1]
         if (l_coeff >= CHIPMUNK_Q) {
             l_coeff %= CHIPMUNK_Q;
         }
         
-        a_key->rho.coeffs[i] = l_coeff;
+        a_key->v0.coeffs[i] = l_coeff;
+    }
+    
+    // Read v1 polynomial (CHIPMUNK_N * 4 bytes)
+    for (int i = 0; i < CHIPMUNK_N; i++) {
+        uint32_t l_coeff = ((uint32_t)a_input[32 + CHIPMUNK_N*4 + i*4]) | 
+                              (((uint32_t)a_input[32 + CHIPMUNK_N*4 + i*4 + 1]) << 8) | 
+                              (((uint32_t)a_input[32 + CHIPMUNK_N*4 + i*4 + 2]) << 16) |
+                              (((uint32_t)a_input[32 + CHIPMUNK_N*4 + i*4 + 3]) << 24);
+        
+        // Нормализуем значение в диапазон [0, CHIPMUNK_Q-1]
+        if (l_coeff >= CHIPMUNK_Q) {
+            l_coeff %= CHIPMUNK_Q;
+        }
+        
+        a_key->v1.coeffs[i] = l_coeff;
     }
     
     return CHIPMUNK_ERROR_SUCCESS;
@@ -1028,42 +543,18 @@ int chipmunk_private_key_from_bytes(chipmunk_private_key_t *a_key, const uint8_t
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
-    // Read s1
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        uint32_t l_coeff = ((uint32_t)a_input[l_i*3]) | 
-                               (((uint32_t)a_input[l_i*3 + 1]) << 8) | 
-                               (((uint32_t)a_input[l_i*3 + 2]) << 16);
-        
-        // Нормализуем значение в диапазон [0, CHIPMUNK_Q-1]
-        if (l_coeff >= CHIPMUNK_Q) {
-            l_coeff %= CHIPMUNK_Q;
-        }
-        
-        a_key->s1.coeffs[l_i] = l_coeff;
-    }
+    size_t l_offset = 0;
     
-    // Read s2
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        uint32_t l_coeff = ((uint32_t)a_input[CHIPMUNK_N*3 + l_i*3]) | 
-                               (((uint32_t)a_input[CHIPMUNK_N*3 + l_i*3 + 1]) << 8) | 
-                               (((uint32_t)a_input[CHIPMUNK_N*3 + l_i*3 + 2]) << 16);
-        
-        // Нормализуем значение в диапазон [0, CHIPMUNK_Q-1]
-        if (l_coeff >= CHIPMUNK_Q) {
-            l_coeff %= CHIPMUNK_Q;
-        }
-        
-        a_key->s2.coeffs[l_i] = l_coeff;
-    }
+    // Read key_seed (32 bytes)
+    memcpy(a_key->key_seed, a_input + l_offset, 32);
+    l_offset += 32;
     
-    // Read key_seed
-    memcpy(a_key->key_seed, a_input + CHIPMUNK_N*6, 32);
-    
-    // Read tr
-    memcpy(a_key->tr, a_input + CHIPMUNK_N*6 + 32, 48);
+    // Read tr (48 bytes)
+    memcpy(a_key->tr, a_input + l_offset, 48);
+    l_offset += 48;
     
     // Read public key
-    int l_result = chipmunk_public_key_from_bytes(&a_key->pk, a_input + CHIPMUNK_N*6 + 32 + 48);
+    int l_result = chipmunk_public_key_from_bytes(&a_key->pk, a_input + l_offset);
     if (l_result != CHIPMUNK_ERROR_SUCCESS) {
         log_it(L_ERROR, "Failed to deserialize public key part in private key");
         return l_result;
@@ -1081,43 +572,27 @@ int chipmunk_signature_from_bytes(chipmunk_signature_t *a_sig, const uint8_t *a_
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     
-    // Verify that CHIPMUNK_N is divisible by 8 for hint bit packing
-    if (CHIPMUNK_N % 8 != 0) {
-        log_it(L_ERROR, "Invalid CHIPMUNK_N value in chipmunk_signature_from_bytes, must be divisible by 8");
-            return CHIPMUNK_ERROR_INVALID_PARAM;
-    }
+    size_t l_offset = 0;
     
-    // Очищаем структуру перед заполнением для предотвращения смешивания данных
+    // Clear structure before filling
     memset(a_sig, 0, sizeof(chipmunk_signature_t));
     
-    // Отладка: вывод данных c_seed из входного буфера
-    log_it(L_DEBUG, "Deserialize signature, input c_seed: %02x%02x%02x%02x...",
-           a_input[0], a_input[1], a_input[2], a_input[3]);
+    // Read c_seed (32 bytes)
+    memcpy(a_sig->c_seed, a_input + l_offset, 32);
+    l_offset += 32;
     
-    // Первые 32 байта подписи - это c_seed для challenge полинома
-    // Копируем их напрямую без модификаций
-    memcpy(a_sig->c, a_input, sizeof(a_sig->c));
-    
-    // Отладка: проверяем, что c_seed скопирован корректно
-    log_it(L_DEBUG, "After copy to sig structure, c_seed: %02x%02x%02x%02x...",
-           a_sig->c[0], a_sig->c[1], a_sig->c[2], a_sig->c[3]);
-    
-    // Следующие CHIPMUNK_N*4 байт - коэффициенты z полинома
-    // Важно: каждый коэффициент занимает 4 байта и читаем их без модификаций
-    const uint8_t *l_ptr = a_input + sizeof(a_sig->c);
-    for (int l_i = 0; l_i < CHIPMUNK_N; l_i++) {
-        // Используем побайтовое чтение для восстановления с сохранением типа
-        a_sig->z.coeffs[l_i] = (int32_t)(
-            (uint32_t)l_ptr[0] | 
-            ((uint32_t)l_ptr[1] << 8) | 
-            ((uint32_t)l_ptr[2] << 16) | 
-            ((uint32_t)l_ptr[3] << 24)
-        );
-        l_ptr += 4;
+    // Read all GAMMA sigma polynomials
+    for (int i = 0; i < CHIPMUNK_GAMMA; i++) {
+        for (int j = 0; j < CHIPMUNK_N; j++) {
+            a_sig->sigma[i].coeffs[j] = (int32_t)(
+                (uint32_t)a_input[l_offset] | 
+                ((uint32_t)a_input[l_offset + 1] << 8) | 
+                ((uint32_t)a_input[l_offset + 2] << 16) | 
+                ((uint32_t)a_input[l_offset + 3] << 24)
+            );
+            l_offset += 4;
+        }
     }
-    
-    // Последние CHIPMUNK_N/8 байт - это hint биты, копируем без изменений
-    memcpy(a_sig->hint, l_ptr, CHIPMUNK_N/8);
     
     return CHIPMUNK_ERROR_SUCCESS;
 } 

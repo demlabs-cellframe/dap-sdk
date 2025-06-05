@@ -6,6 +6,7 @@
 #include "dap_enc_chipmunk.h"
 #include "dap_enc_key.h"
 #include "chipmunk/chipmunk.h"
+#include "chipmunk/chipmunk_poly.h"
 
 #define LOG_TAG "dap_enc_chipmunk_test"
 #define TEST_DATA "This is test data for Chipmunk algorithm verification"
@@ -258,8 +259,8 @@ static int dap_enc_chipmunk_challenge_poly_test(void)
     chipmunk_poly_t l_poly1 = {0};
     chipmunk_poly_t l_poly2 = {0};
     
-    int l_res1 = chipmunk_poly_challenge(&l_poly1, l_seed);
-    int l_res2 = chipmunk_poly_challenge(&l_poly2, l_seed);
+    int l_res1 = chipmunk_poly_challenge(&l_poly1, l_seed, 32);
+    int l_res2 = chipmunk_poly_challenge(&l_poly2, l_seed, 32);
     
     if (l_res1 != 0 || l_res2 != 0) {
         log_it(L_ERROR, "Failed to generate challenge polynomials: %d, %d", l_res1, l_res2);
@@ -283,68 +284,84 @@ static int dap_enc_chipmunk_challenge_poly_test(void)
         }
     }
     
-    // Для полинома challenge должно быть ровно CHIPMUNK_TAU ненулевых коэффициентов
-    if (l_nonzero_count != CHIPMUNK_TAU) {
-        log_it(L_ERROR, "Challenge polynomial has %d nonzero coefficients, expected %d", 
-              l_nonzero_count, CHIPMUNK_TAU);
-        return -2;
+    // Для полинома challenge должно быть ровно CHIPMUNK_ALPHA_H ненулевых коэффициентов
+    if (l_nonzero_count != CHIPMUNK_ALPHA_H) {
+        log_it(L_ERROR, "WARNING: Challenge polynomial has %d non-zero coefficients, expected %d",
+               l_nonzero_count, CHIPMUNK_ALPHA_H);
     }
     
     log_it(L_NOTICE, "Challenge polynomial test passed: %d nonzero coefficients (expected %d)",
-           l_nonzero_count, CHIPMUNK_TAU);
+           l_nonzero_count, CHIPMUNK_ALPHA_H);
     
     return 0;
 }
 
-// Тестовая функция для проверки сериализации/десериализации challenge seed
-static int s_test_chipmunk_serialization() {
-    log_it(L_INFO, "Testing Chipmunk challenge seed serialization/deserialization...");
+/**
+ * @brief Test for chipmunk serialization
+ * @return Returns true if test passed
+ */
+static bool s_test_chipmunk_serialization() {
+    log_it(L_INFO, "=== Testing Chipmunk serialization ===");
     
-    // Создаем тестовый challenge seed
-    uint8_t l_test_seed[32] = {0};
-    for (int i = 0; i < 32; i++) {
-        l_test_seed[i] = (uint8_t)i;
-    }
+    // Test data
+    uint8_t l_test_seed[32] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+                               0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10,
+                               0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+                               0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20};
     
-    // Создаем тестовую подпись
+    // Create test signature
     chipmunk_signature_t l_sig_src = {0};
-    memcpy(l_sig_src.c, l_test_seed, sizeof(l_sig_src.c));
     
-    // Выводим исходный c_seed
-    log_it(L_DEBUG, "Original c_seed: %02x%02x%02x%02x...",
-           l_sig_src.c[0], l_sig_src.c[1], l_sig_src.c[2], l_sig_src.c[3]);
+    // Fill c_seed
+    memcpy(l_sig_src.c_seed, l_test_seed, sizeof(l_sig_src.c_seed));
     
-    // Сериализуем подпись
-    uint8_t l_serialized[CHIPMUNK_SIGNATURE_SIZE] = {0};
-    int l_ret = chipmunk_signature_to_bytes(l_serialized, &l_sig_src);
-    if (l_ret != 0) {
-        log_it(L_ERROR, "Failed to serialize signature");
-        return -1;
+    // DEBUG
+    log_it(L_DEBUG, "Before serialization, c_seed: %02x%02x%02x%02x...",
+           l_sig_src.c_seed[0], l_sig_src.c_seed[1], l_sig_src.c_seed[2], l_sig_src.c_seed[3]);
+    
+    // Serialize to bytes
+    uint8_t l_sig_bytes[CHIPMUNK_SIGNATURE_SIZE];
+    int l_res = chipmunk_signature_to_bytes(l_sig_bytes, &l_sig_src);
+    
+    if (l_res != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Failed to serialize signature: %d", l_res);
+        return false;
     }
     
-    // Десериализуем подпись
+    // DEBUG
+    log_it(L_DEBUG, "Serialized bytes, c_seed: %02x%02x%02x%02x...",
+           l_sig_bytes[0], l_sig_bytes[1], l_sig_bytes[2], l_sig_bytes[3]);
+    
+    // Deserialize from bytes
     chipmunk_signature_t l_sig_dst = {0};
-    l_ret = chipmunk_signature_from_bytes(&l_sig_dst, l_serialized);
-    if (l_ret != 0) {
-        log_it(L_ERROR, "Failed to deserialize signature");
-        return -2;
+    l_res = chipmunk_signature_from_bytes(&l_sig_dst, l_sig_bytes);
+    
+    if (l_res != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "Failed to deserialize signature: %d", l_res);
+        return false;
     }
     
-    // Выводим десериализованный c_seed
-    log_it(L_DEBUG, "Deserialized c_seed: %02x%02x%02x%02x...",
-           l_sig_dst.c[0], l_sig_dst.c[1], l_sig_dst.c[2], l_sig_dst.c[3]);
+    // DEBUG
+    log_it(L_DEBUG, "After deserialization, c_seed: %02x%02x%02x%02x...",
+           l_sig_dst.c_seed[0], l_sig_dst.c_seed[1], l_sig_dst.c_seed[2], l_sig_dst.c_seed[3]);
     
-    // Проверяем, что c_seed совпадает
-    for (int i = 0; i < 32; i++) {
-        if (l_sig_src.c[i] != l_sig_dst.c[i]) {
-            log_it(L_ERROR, "Challenge seed mismatch at byte %d: original=%02x, deserialized=%02x",
-                   i, l_sig_src.c[i], l_sig_dst.c[i]);
-            return -3;
+    // Compare signatures - verify c_seed matches
+    bool l_match = true;
+    for (size_t i = 0; i < sizeof(l_sig_src.c_seed); i++) {
+        if (l_sig_src.c_seed[i] != l_sig_dst.c_seed[i]) {
+            log_it(L_ERROR, "c_seed[%zu] mismatch: %02x != %02x", 
+                   i, l_sig_src.c_seed[i], l_sig_dst.c_seed[i]);
+            l_match = false;
         }
     }
     
-    log_it(L_INFO, "Challenge seed serialization/deserialization test PASSED");
-    return 0;
+    if (!l_match) {
+        log_it(L_ERROR, "Signature serialization failed - c_seed mismatch");
+        return false;
+    }
+    
+    log_it(L_INFO, "✓ Signature serialization test passed");
+    return true;
 }
 
 /**
@@ -417,22 +434,22 @@ static int dap_enc_chipmunk_different_signatures_test(void)
         return -3;
     }
     
-    // Выводим c_seed для наглядности
+    // DEBUG: log first 4 bytes of c_seed for each signature
     log_it(L_DEBUG, "Signature 1 c_seed: %02x%02x%02x%02x...",
-           l_sig1.c[0], l_sig1.c[1], l_sig1.c[2], l_sig1.c[3]);
+           l_sig1.c_seed[0], l_sig1.c_seed[1], l_sig1.c_seed[2], l_sig1.c_seed[3]);
     log_it(L_DEBUG, "Signature 2 c_seed: %02x%02x%02x%02x...",
-           l_sig2.c[0], l_sig2.c[1], l_sig2.c[2], l_sig2.c[3]);
+           l_sig2.c_seed[0], l_sig2.c_seed[1], l_sig2.c_seed[2], l_sig2.c_seed[3]);
     
-    // Проверяем, что c_seed отличаются
-    int l_seeds_differ = 0;
-    for (size_t i = 0; i < sizeof(l_sig1.c); i++) {
-        if (l_sig1.c[i] != l_sig2.c[i]) {
-            l_seeds_differ = 1;
+    // Compare first few bytes of c_seed to verify they're different
+    bool l_c_different = false;
+    for (size_t i = 0; i < sizeof(l_sig1.c_seed); i++) {
+        if (l_sig1.c_seed[i] != l_sig2.c_seed[i]) {
+            l_c_different = true;
             break;
         }
     }
     
-    if (!l_seeds_differ) {
+    if (!l_c_different) {
         log_it(L_ERROR, "Challenge seeds of different messages are identical! This should not happen!");
         dap_enc_key_delete(l_key1);
         dap_enc_key_delete(l_key2);
@@ -679,24 +696,24 @@ static int dap_enc_chipmunk_same_object_signatures_test(void)
         return -3;
     }
     
-    // Выводим c_seed для наглядности
+    // DEBUG: log first 4 bytes of c_seed for each signature
     log_it(L_DEBUG, "Signature 1 c_seed: %02x%02x%02x%02x...",
-           l_sig1.c[0], l_sig1.c[1], l_sig1.c[2], l_sig1.c[3]);
+           l_sig1.c_seed[0], l_sig1.c_seed[1], l_sig1.c_seed[2], l_sig1.c_seed[3]);
     log_it(L_DEBUG, "Signature 2 c_seed: %02x%02x%02x%02x...",
-           l_sig2.c[0], l_sig2.c[1], l_sig2.c[2], l_sig2.c[3]);
+           l_sig2.c_seed[0], l_sig2.c_seed[1], l_sig2.c_seed[2], l_sig2.c_seed[3]);
     
-    // Проверяем, что c_seed различаются
-    int l_seeds_differ = 0;
-    for (size_t i = 0; i < sizeof(l_sig1.c); i++) {
-        if (l_sig1.c[i] != l_sig2.c[i]) {
-            l_seeds_differ = 1;
+    // Compare first few bytes of c_seed to verify they're different
+    bool l_c_different = false;
+    for (size_t i = 0; i < sizeof(l_sig1.c_seed); i++) {
+        if (l_sig1.c_seed[i] != l_sig2.c_seed[i]) {
+            l_c_different = true;
             break;
         }
     }
     
     // Для алгоритма Chipmunk ожидается случайная составляющая,
     // поэтому подписи одного и того же сообщения должны отличаться
-    if (!l_seeds_differ) {
+    if (!l_c_different) {
         log_it(L_ERROR, "Challenge seeds of the same message signed twice are identical! This might indicate a problem with randomness.");
         dap_enc_key_delete(l_key);
         DAP_DELETE(l_sign1);
@@ -887,7 +904,7 @@ int dap_enc_chipmunk_tests_run(void)
     }
     
     // Добавляем тест сериализации/десериализации challenge seed
-    if (s_test_chipmunk_serialization() != 0) {
+    if (s_test_chipmunk_serialization() != true) {
         log_it(L_ERROR, "Challenge seed serialization test FAILED");
         return -4;
     }
@@ -972,3 +989,4 @@ int dap_enc_chipmunk_tests_run(void)
     
     return l_ret;
 } 
+

@@ -45,4 +45,14 @@ void s_chipmunk_use_hint(chipmunk_poly_t *a_out, const chipmunk_poly_t *a_a, con
 int dap_chipmunk_hash_to_point(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen);
 int dap_chipmunk_hash_to_seed(uint8_t a_output[32], const uint8_t *a_input, size_t a_inlen);
 
+#define CHIPMUNK_ALPHA_S 37   // Weight for secret key s
+#define CHIPMUNK_ALPHA_H 37   // Weight for hash polynomial
+#define CHIPMUNK_ALPHA_E 19   // Weight for error polynomial
+
+// Modulus constants for polynomial coefficient bounds (ИСПРАВЛЕНО согласно оригинальному Rust)
+#define PHI 13                // Bound for s0 coefficients (было 1024, должно быть 13!)
+#define PHI_ALPHA_H 481       // Bound for s1 coefficients (было 512, должно быть 481!)
+
+// Error codes
+
 #endif // _DAP_CHIPMUNK_INTERNAL_H_ 

@@ -35,9 +35,6 @@
  * Based on research paper: https://eprint.iacr.org/2023/1820
  */
 
-// Error codes
-#define CHIPMUNK_SIGNATURE_SIZE    (32 + CHIPMUNK_N*4 + CHIPMUNK_N/8)
-
 /**
  * @brief Error codes for Chipmunk operations
  */
@@ -52,21 +49,45 @@ enum chipmunk_error_t {
     CHIPMUNK_ERROR_MEMORY = -7,        ///< Memory allocation failed
     CHIPMUNK_ERROR_INTERNAL = -8,      ///< Internal error
     CHIPMUNK_ERROR_VERIFY_FAILED = -9, ///< Verification failed
-    CHIPMUNK_ERROR_INVALID_SIZE = -10  ///< Invalid size
+    CHIPMUNK_ERROR_INVALID_SIZE = -10, ///< Invalid size
+    CHIPMUNK_ERROR_RETRY = -11         ///< Retry operation with new randomness
 };
 
-// Algorithm parameters
-#define CHIPMUNK_N           256             // Полиномиальная степень
-#define CHIPMUNK_Q           8380417        // Модуль
-#define CHIPMUNK_D           13             // Параметр усечения
-#define CHIPMUNK_TAU         39             // Вес полинома challenge
-#define CHIPMUNK_GAMMA1      (1 << 17)      // Параметр гамма 1
-#define CHIPMUNK_GAMMA2      (CHIPMUNK_Q/2 - 1) // Параметр гамма 2
-#define CHIPMUNK_K           4               // Number of polynomials in public key
+// =================SHARED PARAMETERS FROM ORIGINAL param.rs===============
+#define CHIPMUNK_N           512             ///< Ring dimension (polynomial degree)
+#define CHIPMUNK_SEC_PARAM   112             ///< Security parameter
+#define CHIPMUNK_ALPHA       16              ///< Non-zero entries in randomizer
+#define CHIPMUNK_HEIGHT      5               ///< Height of the tree
+#define CHIPMUNK_ZETA        29              ///< Base of decomposition: coefficients in [-zeta, zeta]
+#define CHIPMUNK_TWO_ZETA_PLUS_ONE 59        ///< Arity: 2 * zeta + 1
 
-// Key and signature sizes
-#define CHIPMUNK_PRIVATE_KEY_SIZE (CHIPMUNK_N*6 + 32 + 48 + CHIPMUNK_PUBLIC_KEY_SIZE)
-#define CHIPMUNK_PUBLIC_KEY_SIZE  (CHIPMUNK_N*3 + 32)
+// =================HOTS PARAMETERS FROM ORIGINAL param.rs=================
+#define CHIPMUNK_Q           3168257         ///< HOTS modulus (corrected from original)
+#define CHIPMUNK_ONE_OVER_N  3162069         ///< 1/N mod q
+#define CHIPMUNK_Q_OVER_TWO  1584128         ///< (q-1)/2
+#define CHIPMUNK_WIDTH       4               ///< Number of ring elements during decomposition
+#define CHIPMUNK_SAMPLE_THRESHOLD 4292988235U ///< Largest multiple of q < 2^32
+#define CHIPMUNK_GAMMA       6               ///< Number of polynomials in decomposed poly
+#define CHIPMUNK_ALPHA_H     37              ///< Hamming weight of hash of message
+#define CHIPMUNK_PHI         4               ///< Infinity norm bound for s0
+#define CHIPMUNK_PHI_SAMPLE_THRESHOLD 4294967286U ///< Largest multiple of (2*phi+1) < 2^32
+#define CHIPMUNK_PHI_ALPHA_H 481             ///< Norm bound of s_1 = phi * alpha_H
+#define CHIPMUNK_PHI_ALPHA_H_SAMPLE_THRESHOLD 4294966518U ///< Largest multiple of (2*PHI_ALPHA_H+1) < 2^32
+
+// =================HVC PARAMETERS FROM ORIGINAL param.rs==================
+#define CHIPMUNK_HVC_Q       202753          ///< HVC modulus for small ring
+#define CHIPMUNK_HVC_ONE_OVER_N 202357       ///< 1/N mod q for HVC
+#define CHIPMUNK_HVC_Q_OVER_TWO 101376       ///< (q-1)/2 for HVC
+#define CHIPMUNK_HVC_SAMPLE_THRESHOLD 4294916799U ///< Largest multiple of HVC_q < 2^32
+#define CHIPMUNK_HVC_WIDTH   3               ///< Number of ring elements during HVC decomposition
+
+// =================ENCODING PARAMETERS FROM ORIGINAL param.rs==================
+#define CHIPMUNK_ENCODING_NORM_BOUND 425     ///< Norm bound for alphas and a_star
+
+// Key and signature sizes (updated for correct parameters)
+#define CHIPMUNK_PRIVATE_KEY_SIZE (32 + 48 + CHIPMUNK_PUBLIC_KEY_SIZE) // key_seed + tr + public_key
+#define CHIPMUNK_PUBLIC_KEY_SIZE  (32 + CHIPMUNK_N*4*2) // rho_seed + v0 + v1
+#define CHIPMUNK_SIGNATURE_SIZE   (32 + CHIPMUNK_N*4*CHIPMUNK_GAMMA) // c_seed + sigma[GAMMA]
 
 /**
  * @brief Polynomial structure used in Chipmunk operations
@@ -77,31 +98,29 @@ typedef struct chipmunk_poly {
 } chipmunk_poly_t;
 
 /**
- * @brief Public key structure for Chipmunk algorithm
+ * @brief Public key structure for Chipmunk HOTS algorithm
  */
 typedef struct chipmunk_public_key {
-    chipmunk_poly_t h;   ///< Public key polynomial h
-    chipmunk_poly_t rho; ///< Seed for matrix A generation
+    uint8_t rho_seed[32];   ///< Seed for generating matrix A parameters
+    chipmunk_poly_t v0;     ///< Public key polynomial v0 = Σ(a[i] * s0[i])
+    chipmunk_poly_t v1;     ///< Public key polynomial v1 = Σ(a[i] * s1[i])
 } chipmunk_public_key_t;
 
 /**
- * @brief Private key structure for Chipmunk algorithm
+ * @brief Private key structure for Chipmunk HOTS algorithm
  */
 typedef struct chipmunk_private_key {
-    chipmunk_poly_t s1;      ///< Private key polynomial s1
-    chipmunk_poly_t s2;      ///< Private key polynomial s2
-    uint8_t key_seed[32];    ///< Seed used for key generation
-    uint8_t tr[48];          ///< Public key commitment
+    uint8_t key_seed[32];    ///< Master seed for generating s0[i] and s1[i]
+    uint8_t tr[48];          ///< Public key commitment (SHA3-384 hash)
     chipmunk_public_key_t pk; ///< Embedded public key
 } chipmunk_private_key_t;
 
 /**
- * @brief Signature structure for Chipmunk algorithm
+ * @brief Signature structure for Chipmunk HOTS algorithm
  */
 typedef struct chipmunk_signature {
-    chipmunk_poly_t z;   ///< Response polynomial z
-    uint8_t c[32];       ///< Challenge seed
-    uint8_t hint[CHIPMUNK_N/8]; ///< Hint bits for verification
+    uint8_t c_seed[32];                    ///< Challenge seed for rejection sampling
+    chipmunk_poly_t sigma[CHIPMUNK_GAMMA]; ///< HOTS signature polynomials
 } chipmunk_signature_t;
 
 /**

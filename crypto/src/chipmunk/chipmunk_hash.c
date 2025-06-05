@@ -26,9 +26,32 @@
 #include "dap_hash.h"
 #include "dap_crypto_common.h"
 #include "chipmunk.h"
+// Добавляем SHA2-256 из secp256k1 с правильными путями
+#include "../../3rdparty/secp256k1/src/hash.h"
+#include "../../3rdparty/secp256k1/src/hash_impl.h"
 #include <string.h>
 
 #define LOG_TAG "chipmunk_hash"
+
+/**
+ * @brief Compute SHA2-256 hash using DAP wrapper
+ * @param[out] a_output Output buffer (32 bytes)
+ * @param[in] a_input Input data
+ * @param[in] a_inlen Input length
+ * @return Returns 0 on success, negative error code on failure
+ */
+static int dap_chipmunk_hash_sha2_256(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen) {
+    if (!a_output || !a_input) {
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    
+    int l_result = dap_hash_sha2_256(a_output, a_input, a_inlen);
+    if (l_result != 0) {
+        return CHIPMUNK_ERROR_HASH_FAILED;
+    }
+    
+    return CHIPMUNK_ERROR_SUCCESS;
+}
 
 /**
  * @brief Initialize hash functions for Chipmunk
@@ -49,6 +72,32 @@ int dap_chipmunk_hash_sha3_256(uint8_t *a_output, const uint8_t *a_input, size_t
     
     // Perform SHA3-256 hash
     SHA3_256(a_output, a_input, a_inlen);
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+/**
+ * @brief SHA3-384 wrapper function implementation
+ */
+int dap_chipmunk_hash_sha3_384(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen) {
+    if (!a_output || !a_input) {
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    
+    // Perform SHA3-384 hash
+    SHA3_384(a_output, a_input, a_inlen);
+    return CHIPMUNK_ERROR_SUCCESS;
+}
+
+/**
+ * @brief SHA3-512 wrapper function implementation
+ */
+int dap_chipmunk_hash_sha3_512(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen) {
+    if (!a_output || !a_input) {
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    
+    // Perform SHA3-512 hash
+    SHA3_512(a_output, a_input, a_inlen);
     return CHIPMUNK_ERROR_SUCCESS;
 }
 
@@ -106,16 +155,16 @@ int dap_chipmunk_hash_shake128(uint8_t *a_output, size_t a_outlen, const uint8_t
     // Очищаем выходной буфер для безопасности
     memset(a_output, 0, l_outlen);
     
-    // Generate output in chunks of 32 bytes
+    // Generate output in chunks of 32 bytes using SHA2-256
     for (size_t l_offset = 0; l_offset < l_outlen; l_offset += 32) {
         // Обновляем счетчик для каждого блока
         l_tmp_input[a_inlen] = l_counter++;
         
-        // SHA3-256 буфер для одного блока
+        // SHA2-256 буфер для одного блока
         uint8_t l_buffer[32] = {0};
         
-        // Вызываем SHA3-256
-        int l_result = dap_chipmunk_hash_sha3_256(l_buffer, l_tmp_input, a_inlen + 1);
+        // Вызываем SHA2-256 (ИСПРАВЛЕНО: теперь используем правильный SHA2)
+        int l_result = dap_chipmunk_hash_sha2_256(l_buffer, l_tmp_input, a_inlen + 1);
         if (l_result != CHIPMUNK_ERROR_SUCCESS) {
             // Безопасная очистка перед выходом
             memset(l_tmp_input, 0, a_inlen + 1);
@@ -145,7 +194,8 @@ int dap_chipmunk_hash_to_seed(uint8_t a_output[32], const uint8_t *a_message, si
         log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_to_seed");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    return dap_chipmunk_hash_sha3_256(a_output, a_message, a_msglen);
+    // ИСПРАВЛЕНО: Используем SHA2-256 вместо SHA3-256
+    return dap_chipmunk_hash_sha2_256(a_output, a_message, a_msglen);
 }
 
 /**
@@ -156,7 +206,8 @@ int dap_chipmunk_hash_challenge(uint8_t a_output[32], const uint8_t *a_input, si
         log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_challenge");
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
-    return dap_chipmunk_hash_sha3_256(a_output, a_input, a_inlen);
+    // ИСПРАВЛЕНО: Используем SHA2-256 вместо SHA3-256
+    return dap_chipmunk_hash_sha2_256(a_output, a_input, a_inlen);
 }
 
 /**
@@ -223,16 +274,17 @@ int dap_chipmunk_hash_sample_poly(int32_t *a_poly, const uint8_t a_seed[32], uin
         // Маскируем до 23 бит
         l_t &= 0x7FFFFF; 
         
-        // Приводим к диапазону [0, q-1]
-        l_t = l_t % CHIPMUNK_Q;
+        // Согласно алгоритму Chipmunk, полином y должен иметь коэффициенты
+        // в диапазоне [-gamma1, gamma1], где gamma1 = 2^17 = 131072
+        // Маппим l_t на диапазон [-gamma1, gamma1]
+        const int32_t l_gamma1 = 1 << 17; // 131072
+        const uint32_t l_range = 2 * l_gamma1 + 1; // 262145
         
-        // Переводим в диапазон [-q/2, q/2)
-        if (l_t > CHIPMUNK_Q / 2) {
-            l_t = l_t - CHIPMUNK_Q;
-        }
+        // Приводим к диапазону [0, range-1], затем сдвигаем к [-gamma1, gamma1]
+        uint32_t l_reduced = l_t % l_range;
+        int32_t l_coeff = (int32_t)l_reduced - l_gamma1;
         
-        // Сохраняем коэффициент
-        a_poly[i] = (int32_t)l_t;
+        a_poly[i] = l_coeff;
     }
     
     // Безопасно очищаем и освобождаем память
@@ -252,4 +304,83 @@ int dap_chipmunk_hash_to_point(uint8_t *a_output, const uint8_t *a_input, size_t
         return CHIPMUNK_ERROR_NULL_PARAM;
     }
     return dap_chipmunk_hash_sha3_256(a_output, a_input, a_inlen);
+}
+
+/**
+ * @brief Generate random polynomial for matrix A based on seed and nonce
+ * 
+ * @param[out] a_poly Output polynomial coefficients
+ * @param[in] a_seed 32-byte seed
+ * @param[in] a_nonce Nonce value
+ * @return Returns 0 on success, negative values on error
+ */
+int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce) 
+{
+    if (!a_poly || !a_seed) {
+        log_it(L_ERROR, "NULL input parameters in dap_chipmunk_hash_sample_matrix");
+        return CHIPMUNK_ERROR_NULL_PARAM;
+    }
+    
+    // Инициализируем буфер для запроса (seed + nonce)
+    uint8_t l_buf[34] = {0}; // 32 bytes seed + 2 bytes nonce
+    
+    // Копируем seed
+    memcpy(l_buf, a_seed, 32);
+    
+    // Добавляем nonce в младшем порядке байтов (little-endian)
+    l_buf[32] = a_nonce & 0xff;
+    l_buf[33] = (a_nonce >> 8) & 0xff;
+    
+    // Проверяем переполнение при умножении для вычисления размера выходного буфера
+    if (CHIPMUNK_N > SIZE_MAX / 3) {
+        log_it(L_ERROR, "Size overflow in dap_chipmunk_hash_sample_matrix");
+        // Очищаем полином, чтобы не оставлять неинициализированные данные
+        memset(a_poly, 0, CHIPMUNK_N * sizeof(int32_t));
+        return CHIPMUNK_ERROR_OVERFLOW;
+    }
+    
+    // Вычисляем размер буфера для SHAKE128 (3 байта на коэффициент)
+    const size_t l_total_bytes = CHIPMUNK_N * 3;
+    
+    // Выделяем память под временный буфер
+    uint8_t *l_sample_bytes = DAP_NEW_Z_SIZE(uint8_t, l_total_bytes);
+    if (!l_sample_bytes) {
+        log_it(L_ERROR, "Memory allocation failed in dap_chipmunk_hash_sample_matrix");
+        // Очищаем полином, чтобы не оставлять неинициализированные данные
+        memset(a_poly, 0, CHIPMUNK_N * sizeof(int32_t));
+        return CHIPMUNK_ERROR_MEMORY;
+    }
+    
+    // Получаем расширенный выход через SHAKE128
+    int l_result = dap_chipmunk_hash_shake128(l_sample_bytes, l_total_bytes, l_buf, sizeof(l_buf));
+    if (l_result != CHIPMUNK_ERROR_SUCCESS) {
+        log_it(L_ERROR, "SHAKE128 failed in dap_chipmunk_hash_sample_matrix with error %d", l_result);
+        memset(l_sample_bytes, 0, l_total_bytes);
+        DAP_DELETE(l_sample_bytes);
+        memset(a_poly, 0, CHIPMUNK_N * sizeof(int32_t));
+        return l_result;
+    }
+    
+    // Конвертируем байты в коэффициенты полинома A
+    for (int i = 0, j = 0; i < CHIPMUNK_N; i++, j += 3) {
+        uint32_t l_t = ((uint32_t)l_sample_bytes[j]) | 
+                      (((uint32_t)l_sample_bytes[j + 1]) << 8) | 
+                      (((uint32_t)l_sample_bytes[j + 2]) << 16);
+        
+        // Маскируем до 23 бит
+        l_t &= 0x7FFFFF; 
+        
+        // Приводим к диапазону [0, q-1]
+        l_t = l_t % CHIPMUNK_Q;
+        
+        // Для полинома A коэффициенты должны быть в диапазоне [0, q-1]
+        // согласно алгоритму Chipmunk из статьи
+        a_poly[i] = (int32_t)l_t;
+    }
+    
+    // Безопасно очищаем и освобождаем память
+    memset(l_sample_bytes, 0, l_total_bytes);
+    DAP_DELETE(l_sample_bytes);
+    
+    return CHIPMUNK_ERROR_SUCCESS;  // Успешное выполнение
 } 

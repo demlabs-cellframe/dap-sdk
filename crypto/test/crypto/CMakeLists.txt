@@ -23,12 +23,56 @@ add_executable(${PROJECT_NAME} ${COMMON_SRC})
 # Отдельный таргет для тестирования только модуля chipmunk
 add_executable(chipmunk-test chipmunk_test_main.c dap_enc_chipmunk_test.c dap_enc_chipmunk_test.h)
 
+# Отдельный таргет для тестирования только HOTS модуля
+add_executable(chipmunk_hots_test chipmunk_hots_test.c)
+
+# Add debug test for HOTS mathematical verification
+add_executable(chipmunk_ntt_debug_test chipmunk_ntt_debug_test.c)
+
+# Add NTT symmetry test for debugging invNTT issues
+add_executable(chipmunk_ntt_symmetry_test chipmunk_ntt_symmetry_test.c)
+
+# Add test for correct n^(-1) constant calculation
+add_executable(chipmunk_invntt_fix_test chipmunk_invntt_fix_test.c)
+
+# Add simple debug test for step-by-step NTT/invNTT analysis
+add_executable(chipmunk_ntt_debug_simple chipmunk_ntt_debug_simple.c)
+
 target_link_libraries(${PROJECT_NAME} dap_test dap_core dap_crypto m)
 target_link_libraries(chipmunk-test dap_test dap_core dap_crypto m)
+target_link_libraries(chipmunk_hots_test dap_test dap_core dap_crypto m)
+target_link_libraries(chipmunk_ntt_debug_test dap_test dap_core dap_crypto m)
+target_link_libraries(chipmunk_ntt_symmetry_test dap_test dap_core dap_crypto m)
+target_link_libraries(chipmunk_invntt_fix_test dap_test dap_core dap_crypto m)
+target_link_libraries(chipmunk_ntt_debug_simple dap_test dap_core dap_crypto m)
 
 # Добавляем путь к dap_test.h
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework)
 target_include_directories(chipmunk-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework)
+target_include_directories(chipmunk_hots_test PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/chipmunk
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+)
+target_include_directories(chipmunk_ntt_debug_test PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/chipmunk
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+)
+target_include_directories(chipmunk_ntt_symmetry_test PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/chipmunk
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+)
+target_include_directories(chipmunk_ntt_debug_simple PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../../test-framework
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src/chipmunk
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../include
+)
 
 add_test(
     NAME crypto-test
@@ -38,4 +82,9 @@ add_test(
 add_test(
     NAME chipmunk-test
     COMMAND chipmunk-test
+)
+
+add_test(
+    NAME chipmunk-hots-test
+    COMMAND chipmunk_hots_test
 )

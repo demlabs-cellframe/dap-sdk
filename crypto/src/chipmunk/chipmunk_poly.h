@@ -26,9 +26,10 @@
 #ifndef _CHIPMUNK_POLY_H_
 #define _CHIPMUNK_POLY_H_
 
-#include <stdint.h>
-#include <stdlib.h>
 #include "chipmunk.h"
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -91,13 +92,24 @@ int chipmunk_poly_pointwise(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_
 int chipmunk_poly_uniform(chipmunk_poly_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce);
 
 /**
- * @brief Create challenge polynomial
+ * @brief Decompose polynomial into power-of-2 base representation
  * 
- * @param a_poly Output polynomial to be filled with challenge coefficients
- * @param a_seed 32-byte seed for deterministic generation
+ * @param r1 Output polynomial for higher bits  
+ * @param r0 Output polynomial for lower bits
+ * @param a Input polynomial to decompose
  * @return int CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
  */
-int chipmunk_poly_challenge(chipmunk_poly_t *a_poly, const uint8_t a_seed[32]);
+int chipmunk_poly_decompose(chipmunk_poly_t *r1, chipmunk_poly_t *r0, const chipmunk_poly_t *a);
+
+/**
+ * @brief Generate challenge polynomial from hash
+ * 
+ * @param c Output challenge polynomial
+ * @param hash Input hash bytes
+ * @param hash_len Length of hash
+ * @return int CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
+ */
+int chipmunk_poly_challenge(chipmunk_poly_t *c, const uint8_t *hash, size_t hash_len);
 
 /**
  * @brief Check polynomial norm
@@ -109,12 +121,13 @@ int chipmunk_poly_challenge(chipmunk_poly_t *a_poly, const uint8_t a_seed[32]);
 int chipmunk_poly_chknorm(const chipmunk_poly_t *a_poly, int32_t a_bound);
 
 /**
- * @brief Decompose a polynomial into high and low parts
+ * @brief Extract and pack high bits from polynomial
  * 
- * @param a_out Output polynomial with high bits (w1)
- * @param a_in Input polynomial
+ * @param a_output Output buffer for packed high bits (128 bytes)
+ * @param a_poly Input polynomial
+ * @return int CHIPMUNK_ERROR_SUCCESS on success, error code otherwise
  */
-void chipmunk_poly_highbits(chipmunk_poly_t *a_out, const chipmunk_poly_t *a_in);
+int chipmunk_poly_highbits(uint8_t *a_output, const chipmunk_poly_t *a_poly);
 
 /**
  * @brief Apply hint bits to produce w1
@@ -133,6 +146,58 @@ void chipmunk_use_hint(chipmunk_poly_t *a_out, const chipmunk_poly_t *a_in, cons
  * @param a_poly2 Second polynomial (r)
  */
 void chipmunk_make_hint(uint8_t a_hint[CHIPMUNK_N/8], const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2);
+
+/**
+ * @brief Create polynomial from hash of message
+ * 
+ * @param a_poly Output polynomial
+ * @param a_message Message to hash
+ * @param a_message_len Message length
+ * @return 0 on success, negative on error
+ */
+int chipmunk_poly_from_hash(chipmunk_poly_t *a_poly, const uint8_t *a_message, size_t a_message_len);
+
+/**
+ * @brief Multiply two polynomials in NTT domain
+ * 
+ * @param a_result Output polynomial (can be same as input)
+ * @param a_poly1 First polynomial (in NTT domain)
+ * @param a_poly2 Second polynomial (in NTT domain)
+ */
+void chipmunk_poly_mul_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2);
+
+/**
+ * @brief Add two polynomials in NTT domain
+ * 
+ * @param a_result Output polynomial (can be same as input)
+ * @param a_poly1 First polynomial (in NTT domain)
+ * @param a_poly2 Second polynomial (in NTT domain)
+ */
+void chipmunk_poly_add_ntt(chipmunk_poly_t *a_result, const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2);
+
+/**
+ * @brief Check if two polynomials are equal
+ * 
+ * @param a_poly1 First polynomial
+ * @param a_poly2 Second polynomial
+ * @return true if equal, false otherwise
+ */
+bool chipmunk_poly_equal(const chipmunk_poly_t *a_poly1, const chipmunk_poly_t *a_poly2);
+
+/**
+ * @brief Generate random polynomial in time domain
+ * @param a_poly Output polynomial
+ * @param a_seed Seed for generation
+ * @param a_seed_len Seed length
+ * @param a_modulus Modulus for coefficients
+ * @return 0 on success, negative on error
+ */
+int dap_random_poly_time_domain(chipmunk_poly_t *a_poly, const uint8_t *a_seed, size_t a_seed_len, int a_modulus);
+
+/**
+ * @brief Generate uniform polynomial with coefficients in range [-bound, bound]
+ */
+int chipmunk_poly_uniform_mod_p(chipmunk_poly_t *a_poly, const uint8_t a_seed[36], int32_t a_bound);
 
 #ifdef __cplusplus
 }

@@ -38,10 +38,28 @@ int dap_chipmunk_hash_init(void);
  * @brief Compute SHA3-256 hash
  * @param[out] a_output Output buffer (32 bytes)
  * @param[in] a_input Input data
- * @param[in] a_inlen Input length
- * @return Returns 0 on success, negative error code on failure
+ * @param[in] a_input_len Input data length
+ * @return 0 on success
  */
-int dap_chipmunk_hash_sha3_256(uint8_t *a_output, const uint8_t *a_input, size_t a_inlen);
+int dap_chipmunk_hash_sha3_256(uint8_t *a_output, const uint8_t *a_input, size_t a_input_len);
+
+/**
+ * @brief Compute SHA3-384 hash
+ * @param[out] a_output Output buffer (48 bytes)
+ * @param[in] a_input Input data
+ * @param[in] a_input_len Input data length
+ * @return 0 on success
+ */
+int dap_chipmunk_hash_sha3_384(uint8_t *a_output, const uint8_t *a_input, size_t a_input_len);
+
+/**
+ * @brief Compute SHA3-512 hash
+ * @param[out] a_output Output buffer (64 bytes)
+ * @param[in] a_input Input data
+ * @param[in] a_input_len Input data length
+ * @return 0 on success
+ */
+int dap_chipmunk_hash_sha3_512(uint8_t *a_output, const uint8_t *a_input, size_t a_input_len);
 
 /**
  * @brief SHAKE-128 wrapper function for extendable output
@@ -89,5 +107,15 @@ int dap_chipmunk_hash_challenge(uint8_t a_output[32], const uint8_t *a_input, si
  * @return Returns 0 on success, -1 for NULL pointers, -2 for overflow, -3 for memory allocation failure
  */
 int dap_chipmunk_hash_sample_poly(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce);
+
+/**
+ * @brief Generate random polynomial for matrix A based on seed and nonce
+ * 
+ * @param a_poly Output polynomial coefficients array
+ * @param a_seed Input seed (must be 32 bytes)
+ * @param a_nonce Nonce value
+ * @return Returns 0 on success, -1 for NULL pointers, -2 for overflow, -3 for memory allocation failure
+ */
+int dap_chipmunk_hash_sample_matrix(int32_t *a_poly, const uint8_t a_seed[32], uint16_t a_nonce);
 
 #endif // _CHIPMUNK_HASH_H_ 
