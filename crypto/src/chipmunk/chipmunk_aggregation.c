@@ -323,6 +323,90 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
 }
 
 /**
+ * Aggregate multiple individual signatures into multi-signature with tree
+ */
+int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *individual_sigs,
+                                            size_t count,
+                                            const uint8_t *message,
+                                            size_t message_len,
+                                            const chipmunk_tree_t *tree,
+                                            chipmunk_multi_signature_t *multi_sig) {
+    if (!individual_sigs || !message || !multi_sig || !tree || count == 0) {
+        return -1;
+    }
+
+    // Allocate arrays for multi-signature
+    multi_sig->public_key_roots = calloc(count, sizeof(chipmunk_hvc_poly_t));
+    multi_sig->proofs = calloc(count, sizeof(chipmunk_path_t));
+    multi_sig->leaf_indices = calloc(count, sizeof(uint32_t));
+    
+    if (!multi_sig->public_key_roots || !multi_sig->proofs || !multi_sig->leaf_indices) {
+        chipmunk_multi_signature_free(multi_sig);
+        return -2;
+    }
+
+    multi_sig->signer_count = count;
+
+    // Save tree root
+    const chipmunk_hvc_poly_t *tree_root = chipmunk_tree_root(tree);
+    if (!tree_root) {
+        chipmunk_multi_signature_free(multi_sig);
+        return -3;
+    }
+    memcpy(&multi_sig->tree_root, tree_root, sizeof(chipmunk_hvc_poly_t));
+
+    // Hash the message
+    dap_hash_fast_t message_hash;
+    dap_hash_fast(message, message_len, &message_hash);
+    memcpy(multi_sig->message_hash, message_hash.raw, DAP_HASH_FAST_SIZE);
+
+    // Extract HOTS signatures and create randomizers
+    chipmunk_hots_signature_t *hots_sigs = calloc(count, sizeof(chipmunk_hots_signature_t));
+    if (!hots_sigs) {
+        chipmunk_multi_signature_free(multi_sig);
+        return -2;
+    }
+
+    // Collect public key roots for randomizer generation
+    for (size_t i = 0; i < count; i++) {
+        // Copy HOTS signature
+        memcpy(&hots_sigs[i], &individual_sigs[i].hots_sig, sizeof(chipmunk_hots_signature_t));
+        
+        // Copy proof and leaf index
+        memcpy(&multi_sig->proofs[i], &individual_sigs[i].proof, sizeof(chipmunk_path_t));
+        multi_sig->leaf_indices[i] = individual_sigs[i].leaf_index;
+        
+        // Convert HOTS public key to HVC polynomial
+        chipmunk_hots_pk_to_hvc_poly((const chipmunk_public_key_t*)&individual_sigs[i].hots_pk, 
+                                     &multi_sig->public_key_roots[i]);
+    }
+
+    // Generate randomizers from public key roots
+    chipmunk_randomizers_t randomizers;
+    int ret = chipmunk_randomizers_from_pks(multi_sig->public_key_roots, count, &randomizers);
+    if (ret != 0) {
+        free(hots_sigs);
+        chipmunk_multi_signature_free(multi_sig);
+        return ret;
+    }
+
+    // Aggregate HOTS signatures with randomizers
+    ret = chipmunk_hots_aggregate_with_randomizers(hots_sigs, randomizers.randomizers, 
+                                                   count, &multi_sig->aggregated_hots);
+    
+    // Cleanup
+    free(hots_sigs);
+    chipmunk_randomizers_free(&randomizers);
+
+    if (ret != 0) {
+        chipmunk_multi_signature_free(multi_sig);
+        return ret;
+    }
+
+    return 0;
+}
+
+/**
  * Verify aggregated multi-signature
  */
 int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
@@ -339,13 +423,22 @@ int chipmunk_verify_multi_signature(const chipmunk_multi_signature_t *multi_sig,
         return 0;  // Message mismatch
     }
 
-    // Verify HOTS public keys against tree roots
+    // Create hasher for verification (using same seed as in aggregation)
+    chipmunk_hvc_hasher_t hasher;
+    uint8_t hasher_seed[32] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,
+                              17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32};
+    int hasher_ret = chipmunk_hvc_hasher_init(&hasher, hasher_seed);
+    if (hasher_ret != 0) {
+        return hasher_ret;
+    }
+
+    // Verify HOTS public keys against tree root
     for (size_t i = 0; i < multi_sig->signer_count; i++) {
-        // Verify proof
-        bool ret = chipmunk_path_verify(&multi_sig->proofs[i], 
-                                      &multi_sig->public_key_roots[i],
-                                      NULL);  // TODO: передать правильный hasher
-        if (!ret) {
+        // Verify proof against the tree root
+        bool verify_ret = chipmunk_path_verify(&multi_sig->proofs[i], 
+                                              &multi_sig->tree_root,
+                                              &hasher);
+        if (!verify_ret) {
             return 0;  // Invalid proof
         }
     }

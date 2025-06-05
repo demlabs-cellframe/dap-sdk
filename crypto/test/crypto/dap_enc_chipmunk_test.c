@@ -11,6 +11,8 @@
 #include "chipmunk/chipmunk.h"
 #include "chipmunk/chipmunk_poly.h"
 #include "chipmunk/chipmunk_hots.h"
+#include "chipmunk/chipmunk_aggregation.h"
+#include "chipmunk/chipmunk_tree.h"
 
 #define LOG_TAG "dap_enc_chipmunk_test"
 #define TEST_DATA "This is test data for Chipmunk algorithm verification"
@@ -904,6 +906,338 @@ static int test_hots_verification_diagnostic(void)
 }
 
 /**
+ * @brief Test multi-signature aggregation with 3-5 signers
+ * 
+ * @return int Test result (0 - success)
+ */
+static int test_multi_signature_aggregation(void)
+{
+    log_it(L_INFO, "=== Multi-Signature Aggregation Test ===");
+    
+    const size_t num_signers = 3;  // Начнем с 3-х участников
+    const char test_message[] = "Multi-party contract agreement";
+    const size_t message_len = strlen(test_message);
+    
+    // Создаем ключи для всех участников
+    chipmunk_private_key_t private_keys[num_signers];
+    chipmunk_public_key_t public_keys[num_signers];
+    chipmunk_hots_pk_t hots_public_keys[num_signers];
+    chipmunk_hots_sk_t hots_secret_keys[num_signers];
+    
+    log_it(L_INFO, "Generating keys for %zu signers...", num_signers);
+    
+    for (size_t i = 0; i < num_signers; i++) {
+        int ret = chipmunk_keypair((uint8_t*)&public_keys[i], sizeof(chipmunk_public_key_t),
+                                   (uint8_t*)&private_keys[i], sizeof(chipmunk_private_key_t));
+        if (ret != 0) {
+            log_it(L_ERROR, "Failed to generate keypair for signer %zu", i);
+            return -1;
+        }
+        
+        // Получаем HOTS ключи из Chipmunk ключей
+        hots_public_keys[i].v0 = private_keys[i].pk.v0;
+        hots_public_keys[i].v1 = private_keys[i].pk.v1;
+        
+        // Секретный ключ нужно получить из Chipmunk ключа другим способом
+        // Пока упростим - сгенерируем HOTS ключи напрямую
+        chipmunk_hots_params_t hots_params;
+        if (chipmunk_hots_setup(&hots_params) != 0) {
+            log_it(L_ERROR, "Failed to setup HOTS params for signer %zu", i);
+            return -1;
+        }
+        
+        uint8_t hots_seed[32];
+        memcpy(hots_seed, private_keys[i].key_seed, 32);
+        uint32_t counter = (uint32_t)i;
+        
+        if (chipmunk_hots_keygen(hots_seed, counter, &hots_params, 
+                                &hots_public_keys[i], &hots_secret_keys[i]) != 0) {
+            log_it(L_ERROR, "Failed to generate HOTS keys for signer %zu", i);
+            return -1;
+        }
+        
+        log_it(L_DEBUG, "Generated keypair for signer %zu", i);
+    }
+    
+    // Создаем Merkle деревья для каждого участника
+    chipmunk_tree_t trees[num_signers];
+    chipmunk_hvc_hasher_t hasher;
+    
+    // Инициализируем hasher с тестовым seed
+    uint8_t hasher_seed[32] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,
+                              17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32};
+    int ret = chipmunk_hvc_hasher_init(&hasher, hasher_seed);
+    if (ret != 0) {
+        log_it(L_ERROR, "Failed to initialize HVC hasher");
+        return -2;
+    }
+    
+    for (size_t i = 0; i < num_signers; i++) {
+        // Инициализируем пустое дерево
+        int ret = chipmunk_tree_init(&trees[i], &hasher);
+        if (ret != 0) {
+            log_it(L_ERROR, "Failed to initialize tree for signer %zu", i);
+            return -3;
+        }
+        
+        // Конвертируем HOTS public key в HVC poly для дерева
+        chipmunk_hvc_poly_t hvc_poly;
+        ret = chipmunk_hots_pk_to_hvc_poly(&public_keys[i], &hvc_poly);
+        if (ret != 0) {
+            log_it(L_ERROR, "Failed to convert HOTS pk to HVC poly for signer %zu", i);
+            return -4;
+        }
+        
+        // Создаем дерево с одним листом (массив из CHIPMUNK_TREE_LEAF_COUNT листов)
+        chipmunk_hvc_poly_t leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT];
+        leaf_nodes[0] = hvc_poly;  // Первый лист - наш ключ
+        // Остальные листы остаются нулевыми (дерево частично заполнено)
+        for (size_t j = 1; j < CHIPMUNK_TREE_LEAF_COUNT; j++) {
+            memset(&leaf_nodes[j], 0, sizeof(chipmunk_hvc_poly_t));
+        }
+        
+        ret = chipmunk_tree_new_with_leaf_nodes(&trees[i], leaf_nodes, &hasher);
+        if (ret != 0) {
+            log_it(L_ERROR, "Failed to create tree with leaf nodes for signer %zu", i);
+            return -5;
+        }
+        
+        log_it(L_DEBUG, "Initialized tree for signer %zu", i);
+    }
+    
+    // Создаем индивидуальные подписи
+    chipmunk_individual_sig_t individual_sigs[num_signers];
+    
+    log_it(L_INFO, "Creating individual signatures...");
+    
+    for (size_t i = 0; i < num_signers; i++) {
+        int ret = chipmunk_create_individual_signature(
+            (uint8_t*)test_message, message_len,
+            &hots_secret_keys[i], &hots_public_keys[i],
+            &trees[i], 0,  // leaf_index = 0 (единственный лист)
+            &individual_sigs[i]
+        );
+        
+        if (ret != 0) {
+            log_it(L_ERROR, "Failed to create individual signature for signer %zu", i);
+            return -5;
+        }
+        
+        log_it(L_DEBUG, "Created individual signature for signer %zu", i);
+    }
+    
+    // Агрегируем подписи
+    chipmunk_multi_signature_t multi_sig;
+    
+    log_it(L_INFO, "Aggregating signatures...");
+    
+    ret = chipmunk_aggregate_signatures(
+        individual_sigs, num_signers,
+        (uint8_t*)test_message, message_len,
+        &multi_sig
+    );
+    
+    if (ret != 0) {
+        log_it(L_ERROR, "Failed to aggregate signatures, error: %d", ret);
+        return -6;
+    }
+    
+    log_it(L_INFO, "Successfully aggregated %zu signatures", num_signers);
+    
+    // Проверяем агрегированную подпись
+    log_it(L_INFO, "Verifying aggregated signature...");
+    
+    ret = chipmunk_verify_multi_signature(&multi_sig, (uint8_t*)test_message, message_len);
+    
+    if (ret != 1) {
+        log_it(L_ERROR, "Multi-signature verification failed, result: %d", ret);
+        return -7;
+    }
+    
+    log_it(L_INFO, "Multi-signature verification PASSED!");
+    
+    // Тест с неправильным сообщением (должен провалиться)
+    const char wrong_message[] = "Wrong message";
+    ret = chipmunk_verify_multi_signature(&multi_sig, (uint8_t*)wrong_message, strlen(wrong_message));
+    
+    if (ret > 0) {
+        log_it(L_ERROR, "Multi-signature verification with wrong message should have failed");
+        return -8;
+    }
+    
+    log_it(L_INFO, "Wrong message verification correctly failed");
+    
+    // Cleanup
+    for (size_t i = 0; i < num_signers; i++) {
+        chipmunk_tree_clear(&trees[i]);
+        chipmunk_individual_signature_free(&individual_sigs[i]);
+    }
+    chipmunk_multi_signature_free(&multi_sig);
+    
+    log_it(L_INFO, "Multi-signature aggregation test COMPLETED successfully");
+    return 0;
+}
+
+/**
+ * @brief Test batch verification of multiple multi-signatures
+ * 
+ * @return int Test result (0 - success)
+ */
+static int test_batch_verification(void)
+{
+    log_it(L_INFO, "=== Batch Verification Test ===");
+    
+    const size_t num_batches = 3;
+    const size_t signers_per_batch = 2;
+    
+    // Массивы тестовых сообщений
+    const char* test_messages[num_batches] = {
+        "First batch transaction",
+        "Second batch transaction", 
+        "Third batch transaction"
+    };
+    
+    chipmunk_multi_signature_t multi_sigs[num_batches];
+    
+    log_it(L_INFO, "Creating %zu multi-signatures with %zu signers each...", 
+           num_batches, signers_per_batch);
+    
+    // Создаем несколько мульти-подписей
+    for (size_t batch = 0; batch < num_batches; batch++) {
+        const char* message = test_messages[batch];
+        size_t message_len = strlen(message);
+        
+        // Генерируем ключи для участников этого батча
+        chipmunk_private_key_t private_keys[signers_per_batch];
+        chipmunk_public_key_t public_keys[signers_per_batch];
+        chipmunk_hots_pk_t hots_public_keys[signers_per_batch];
+        chipmunk_hots_sk_t hots_secret_keys[signers_per_batch];
+        
+        for (size_t i = 0; i < signers_per_batch; i++) {
+            int ret = chipmunk_keypair((uint8_t*)&public_keys[i], sizeof(chipmunk_public_key_t),
+                                       (uint8_t*)&private_keys[i], sizeof(chipmunk_private_key_t));
+            if (ret != 0) {
+                log_it(L_ERROR, "Failed to generate keypair for batch %zu, signer %zu", batch, i);
+                return -1;
+            }
+            
+            hots_public_keys[i].v0 = private_keys[i].pk.v0;
+            hots_public_keys[i].v1 = private_keys[i].pk.v1;
+            
+            // Генерируем HOTS ключи
+            chipmunk_hots_params_t batch_hots_params;
+            if (chipmunk_hots_setup(&batch_hots_params) != 0) return -1;
+            
+            uint8_t batch_hots_seed[32];
+            memcpy(batch_hots_seed, private_keys[i].key_seed, 32);
+            uint32_t batch_counter = (uint32_t)(batch * signers_per_batch + i);
+            
+            if (chipmunk_hots_keygen(batch_hots_seed, batch_counter, &batch_hots_params, 
+                                    &hots_public_keys[i], &hots_secret_keys[i]) != 0) {
+                return -1;
+            }
+        }
+        
+        // Создаем деревья и индивидуальные подписи
+        chipmunk_tree_t trees[signers_per_batch];
+        chipmunk_individual_sig_t individual_sigs[signers_per_batch];
+        
+        // Создаем hasher для этого батча
+        chipmunk_hvc_hasher_t batch_hasher;
+        uint8_t batch_hasher_seed[32];
+        for (size_t j = 0; j < 32; j++) {
+            batch_hasher_seed[j] = (uint8_t)(batch * 32 + j + 1);  // Уникальный seed для каждого батча
+        }
+        int batch_ret = chipmunk_hvc_hasher_init(&batch_hasher, batch_hasher_seed);
+        if (batch_ret != 0) return -2;
+        
+        for (size_t i = 0; i < signers_per_batch; i++) {
+            // Конвертируем HOTS public key в HVC poly
+            chipmunk_hvc_poly_t hvc_poly;
+            int ret = chipmunk_hots_pk_to_hvc_poly(&public_keys[i], &hvc_poly);
+            if (ret != 0) return -3;
+            
+            // Создаем дерево с листьями
+            chipmunk_hvc_poly_t leaf_nodes[CHIPMUNK_TREE_LEAF_COUNT];
+            leaf_nodes[0] = hvc_poly;
+            for (size_t j = 1; j < CHIPMUNK_TREE_LEAF_COUNT; j++) {
+                memset(&leaf_nodes[j], 0, sizeof(chipmunk_hvc_poly_t));
+            }
+            
+            ret = chipmunk_tree_new_with_leaf_nodes(&trees[i], leaf_nodes, &batch_hasher);
+            if (ret != 0) return -4;
+            
+            ret = chipmunk_create_individual_signature(
+                (uint8_t*)message, message_len,
+                &hots_secret_keys[i], &hots_public_keys[i],
+                &trees[i], 0,
+                &individual_sigs[i]
+            );
+            if (ret != 0) return -5;
+        }
+        
+        // Агрегируем подписи для этого батча
+        int ret = chipmunk_aggregate_signatures(
+            individual_sigs, signers_per_batch,
+            (uint8_t*)message, message_len,
+            &multi_sigs[batch]
+        );
+        
+        if (ret != 0) {
+            log_it(L_ERROR, "Failed to aggregate signatures for batch %zu", batch);
+            return -6;
+        }
+        
+        // Cleanup batch resources
+        for (size_t i = 0; i < signers_per_batch; i++) {
+            chipmunk_tree_clear(&trees[i]);
+            chipmunk_individual_signature_free(&individual_sigs[i]);
+        }
+        
+        log_it(L_DEBUG, "Created multi-signature for batch %zu", batch);
+    }
+    
+    // Инициализируем контекст батч-верификации
+    chipmunk_batch_context_t batch_context;
+    int ret = chipmunk_batch_context_init(&batch_context, num_batches);
+    if (ret != 0) {
+        log_it(L_ERROR, "Failed to initialize batch context");
+        return -7;
+    }
+    
+    // Добавляем все подписи в батч
+    for (size_t i = 0; i < num_batches; i++) {
+        ret = chipmunk_batch_add_signature(&batch_context, &multi_sigs[i], 
+                                           (uint8_t*)test_messages[i], strlen(test_messages[i]));
+        if (ret != 0) {
+            log_it(L_ERROR, "Failed to add signature %zu to batch", i);
+            return -8;
+        }
+    }
+    
+    log_it(L_INFO, "Performing batch verification of %zu signatures...", num_batches);
+    
+    // Выполняем батч-верификацию
+    ret = chipmunk_batch_verify(&batch_context);
+    
+    if (ret != 1) {
+        log_it(L_ERROR, "Batch verification failed, result: %d", ret);
+        return -9;
+    }
+    
+    log_it(L_INFO, "Batch verification PASSED!");
+    
+    // Cleanup
+    chipmunk_batch_context_free(&batch_context);
+    for (size_t i = 0; i < num_batches; i++) {
+        chipmunk_multi_signature_free(&multi_sigs[i]);
+    }
+    
+    log_it(L_INFO, "Batch verification test COMPLETED successfully");
+    return 0;
+}
+
+/**
  * @brief Run all Chipmunk tests.
  * 
  * @return int 0 if all tests pass, non-zero otherwise
@@ -1025,6 +1359,26 @@ int dap_enc_chipmunk_tests_run(void)
         log_it(L_ERROR, "HOTS verification diagnostic test FAILED");
     } else {
         log_it(L_INFO, "HOTS verification diagnostic test PASSED");
+    }
+    
+    // Test multi-signature aggregation
+    log_it(L_INFO, "Testing multi-signature aggregation...");
+    l_res = test_multi_signature_aggregation();
+    if (l_res != 0) {
+        l_ret += 1;
+        log_it(L_ERROR, "Multi-signature aggregation test FAILED");
+    } else {
+        log_it(L_INFO, "Multi-signature aggregation test PASSED");
+    }
+    
+    // Test batch verification
+    log_it(L_INFO, "Testing batch verification...");
+    l_res = test_batch_verification();
+    if (l_res != 0) {
+        l_ret += 1;
+        log_it(L_ERROR, "Batch verification test FAILED");
+    } else {
+        log_it(L_INFO, "Batch verification test PASSED");
     }
     
     // Return 0 if all tests passed, non-zero otherwise

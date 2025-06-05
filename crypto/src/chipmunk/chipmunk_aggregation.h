@@ -47,7 +47,8 @@ typedef struct {
 // Aggregated multi-signature structure
 typedef struct {
     chipmunk_aggregated_hots_sig_t aggregated_hots;  // Aggregated HOTS signatures
-    chipmunk_hvc_poly_t *public_key_roots;           // Tree roots for each signer
+    chipmunk_hvc_poly_t tree_root;                   // Root of the Merkle tree
+    chipmunk_hvc_poly_t *public_key_roots;           // HVC polynomials for each signer's public key
     chipmunk_path_t *proofs;                         // Merkle proofs for each signer
     uint32_t *leaf_indices;                          // Leaf indices for each signer
     size_t signer_count;                             // Number of signers
@@ -150,6 +151,23 @@ int chipmunk_aggregate_signatures(const chipmunk_individual_sig_t *individual_si
                                   const uint8_t *message,
                                   size_t message_len,
                                   chipmunk_multi_signature_t *multi_sig);
+
+/**
+ * Aggregate multiple individual signatures into multi-signature with tree
+ * @param individual_sigs Array of individual signatures
+ * @param count Number of signatures
+ * @param message Message that was signed
+ * @param message_len Length of message
+ * @param tree The Merkle tree containing all signers
+ * @param multi_sig Output multi-signature
+ * @return 0 on success, negative on error
+ */
+int chipmunk_aggregate_signatures_with_tree(const chipmunk_individual_sig_t *individual_sigs,
+                                            size_t count,
+                                            const uint8_t *message,
+                                            size_t message_len,
+                                            const chipmunk_tree_t *tree,
+                                            chipmunk_multi_signature_t *multi_sig);
 
 /**
  * Verify aggregated multi-signature
