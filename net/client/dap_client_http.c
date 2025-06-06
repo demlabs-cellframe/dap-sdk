@@ -338,7 +338,7 @@ static void s_client_http_reset_for_redirect(dap_client_http_t *a_client_http, c
     
     // Update path
     DAP_DELETE(a_client_http->path);
-    a_client_http->path = dap_strdup(a_new_path);
+    a_client_http->path = dap_strdup(a_new_path + (int)(a_new_path[0] == '/'));
     
     // Increment redirect counter
     a_client_http->redirect_count++;
@@ -472,34 +472,13 @@ static bool s_process_http_redirect(dap_events_socket_t *a_es, dap_client_http_t
                     : 0;
         }
         
-        // Prepare GET query string if needed
-        char l_get_str[1024] = {0};
-        if(!dap_strcmp(a_client_http->method, "GET") && a_client_http->request && a_client_http->request_size) {
-            snprintf(l_get_str, sizeof(l_get_str), "?%s", (char*)a_client_http->request);
-        }
-        
-        // Build and send request
-        char *l_out_buf = NULL;
-        int l_header_size = asprintf(&l_out_buf, "%s /%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
-                                    a_client_http->method, l_new_path, l_get_str,
-                                    a_client_http->uplink_addr, l_request_headers);
-        
-        if(!l_out_buf || l_header_size == -1){
-            log_it(L_ERROR, "Can't create headers string for redirect");
-            DAP_DELETE(l_new_path);
-            return false;
-        }
-        
-        ssize_t l_out_buf_size = l_header_size;
-        if (a_client_http->request && a_client_http->request_size){
-            l_out_buf_size += a_client_http->request_size + 1;
-            char *l_out_new = DAP_REALLOC_RET_VAL_IF_FAIL(l_out_buf, l_out_buf_size, false, l_out_buf);
-            l_out_buf = l_out_new;
-            memcpy(l_out_buf + l_header_size, a_client_http->request, a_client_http->request_size);
-        }
-        
-        dap_events_socket_write_unsafe(a_es, l_out_buf, l_out_buf_size);
-        DAP_DEL_Z(l_out_buf);
+        bool l_get = !dap_strcmp(a_client_http->method, "GET") && a_client_http->request && a_client_http->request_size;
+        dap_events_socket_write_f_unsafe(a_es, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
+            a_client_http->method, l_new_path,
+            l_get ? "?" : "", l_get ? (char*)a_client_http->request : "",
+            a_client_http->uplink_addr,
+            l_request_headers);
+
         DAP_DELETE(l_new_path);
         
         return true;
@@ -686,7 +665,7 @@ static dap_client_http_t* s_client_http_create_and_connect(
     l_ev_socket->_inheritor = l_client_http;
     l_client_http->es = l_ev_socket;
     l_client_http->method = dap_strdup(a_method);
-    l_client_http->path = dap_strdup(a_path);
+    l_client_http->path = dap_strdup(a_path + (int)(a_path[0] == '/'));
     l_client_http->request_content_type = dap_strdup(a_request_content_type);
 
     // Set callbacks BEFORE adding to worker (critical for thread safety)
@@ -952,45 +931,12 @@ static void s_http_connected(dap_events_socket_t * a_esocket)
                                 l_client_http->request_size);
     }
 
-    // adding string for GET request
-    char l_get_str[l_client_http->request_size + 2];
-    l_get_str[0] = '\0';
-    if(! dap_strcmp(l_client_http->method, "GET") ) {
-        // We hide our request and mask them as possible
-        l_offset += snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "User-Agent: Mozilla\r\n");
-        l_offset += l_client_http->request_custom_headers
-                ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "%s", l_client_http->request_custom_headers)
-                : 0;
-        l_offset += l_client_http->cookie
-                ? snprintf(l_request_headers + l_offset, l_offset2 -= l_offset, "Cookie: %s\r\n", l_client_http->cookie)
-                : 0;
-
-        if ((l_client_http->request && l_client_http->request_size))
-            snprintf(l_get_str, sizeof(l_get_str), "?%s", l_client_http->request) ;
-    }
-
-    char *l_out_buf = NULL;
-    int l_header_size = asprintf(&l_out_buf, "%s /%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
-                                                l_client_http->method, l_client_http->path, l_get_str,
-                                                l_client_http->uplink_addr, l_request_headers);
-    
-    if(!l_out_buf || l_header_size == -1){
-        log_it(L_ERROR, "Can't create headers string or memory allocation error.");
-        return;
-    }
-
-    
-    ssize_t l_out_buf_size = l_header_size;
-    if (l_client_http->request && l_client_http->request_size){
-        l_out_buf_size += l_client_http->request_size + 1;
-        char *l_out_new = DAP_REALLOC_RET_IF_FAIL(l_out_buf, l_out_buf_size, l_out_buf);
-        l_out_buf = l_out_new;
-        memcpy(l_out_buf + l_header_size, l_client_http->request, l_client_http->request_size);
-    }
-        
-
-    dap_events_socket_write_unsafe(a_esocket, l_out_buf, l_out_buf_size);
-    DAP_DEL_Z(l_out_buf);
+    bool l_get = !dap_strcmp(l_client_http->method, "GET") && l_client_http->request && l_client_http->request_size;
+    dap_events_socket_write_f_unsafe(a_esocket, "%s /%s%s%s HTTP/1.1\r\n" "Host: %s\r\n" "%s\r\n",
+        l_client_http->method, l_client_http->path,
+        l_get ? "?" : "", l_get ? (char*)l_client_http->request : "",
+        l_client_http->uplink_addr,
+        l_request_headers);
 }
 
 /**
