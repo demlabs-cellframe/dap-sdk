@@ -724,7 +724,22 @@ bool dap_sign_is_aggregated(dap_sign_t *a_sign)
     // Check signature type specific aggregation markers
     switch (a_sign->header.type.type) {
         case SIG_TYPE_CHIPMUNK:
-            return true;
+        {
+            // For Chipmunk: check if signature contains aggregation metadata
+            // Aggregated signatures have special format:
+            // - No public key stored (sign_pkey_size == 0)
+            // - Signature data starts with signer count (uint32_t)
+            // - Must have minimum size for metadata
+            
+            if (a_sign->header.sign_pkey_size == 0 && 
+                a_sign->header.sign_size >= sizeof(uint32_t)) {
+                // This looks like an aggregated signature
+                return true;
+            }
+            
+            // Regular Chipmunk signature has public key data
+            return false;
+        }
         default:
             return false;
     }

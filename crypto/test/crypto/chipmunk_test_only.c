@@ -579,6 +579,7 @@ int main(void)
     timer_start(&overall_timer);
     
     int result = 0;
+    double overall_time;
     
     // Test 1: 3-signer multi-signature
     int test1_result = test_multi_signature_aggregation();
@@ -602,7 +603,7 @@ int main(void)
     }
 
 cleanup:
-    double overall_time = timer_end(&overall_timer);
+    overall_time = timer_end(&overall_timer);
     
     if (result == 0) {
         printf("\n🎉 ALL TESTS PASSED SUCCESSFULLY!");

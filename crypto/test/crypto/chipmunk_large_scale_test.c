@@ -117,7 +117,6 @@ static int test_large_scale_performance(size_t num_signers)
                                         sizeof(chipmunk_public_key_t) + 
                                         sizeof(chipmunk_hots_pk_t) + 
                                         sizeof(chipmunk_hots_sk_t));
-    char memory_str[64];
     format_memory_size(total_memory, memory_str, sizeof(memory_str));
     log_it(L_INFO, "   💾 Allocating %s for key storage", memory_str);
     
